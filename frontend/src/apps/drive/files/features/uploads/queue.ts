@@ -23,7 +23,13 @@ import { isTransient, online, pause } from '../network'
 import { sha256 } from './checksum'
 import { formatSize } from './format'
 import { createUploadRecords, type UploadRecord, type UploadRecords } from './records'
-import type { FolderUpload, PickedFile } from './sources'
+import {
+  FolderReadError,
+  type CapturedDrop,
+  type FolderUpload,
+  type PickedFile,
+  type UploadSelection,
+} from './sources'
 
 /**
  * Drive's upload queue (spec §6). One per tab: it survives folder and area
@@ -35,13 +41,15 @@ export const PARALLEL_FILES = 3
 /** How long the indicator stays `done` after the last upload finishes. */
 export const DONE_MS = 3000
 
-const EXPIRED_NOTE = 'The earlier upload expired. This file starts again.'
-const DIRECT_NOTE = 'This upload cannot continue where it stopped. It starts again.'
+const expiredNote = () => __('The earlier upload expired. This file starts again.')
+const directNote = () => __('This upload cannot continue where it stopped. It starts again.')
 /** How long an upload keeps trying while the browser reports a network. */
 export const RETRY_FOR_MS = 5 * 60_000
 const BACKOFF_MS = [1000, 2000, 4000, 8000, 16_000, 30_000]
 /** A server clock a little behind this tab's still counts a finished file as new. */
 const CLOCK_SKEW_MS = 60_000
+/** A folder walk shorter than this never shows "Reading folder…". */
+const READING_DELAY_MS = 300
 
 export type UploadState =
   | 'queued'
@@ -132,6 +140,8 @@ export interface UploadIndicator {
   fraction: number | null
   tone: 'running' | 'paused' | 'done'
   attention: boolean
+  /** The run's bytes while it is active; `fraction` is their ratio. */
+  bytes: { sent: number; total: number } | null
 }
 
 interface Batch {
@@ -202,6 +212,10 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     halted: null,
     /** Folder uploads still creating their folders. */
     preparing: 0,
+    /** The folders those uploads create, and how many are done. */
+    folders: { created: 0, total: 0 },
+    /** A dropped folder tree is being walked, after a short wait (t30-reading-folder). */
+    reading: null as { found: number } | null,
     /** The user looked at the tracker since the last failure. */
     seen: true,
     trackerOpen: false,
@@ -230,28 +244,31 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     const attention =
       !state.seen &&
       entries.value.some((entry) => entry.state === 'failed' || entry.state === 'interrupted')
-    if (active.value.length || state.preparing) {
+    if (active.value.length || state.preparing || state.reading) {
       const counted = [...jobs.values()].filter(
         (job) => job.run === run && job.entry.state !== 'skipped',
       )
-      const size = counted.reduce((sum, job) => sum + job.entry.size, 0)
+      const total = counted.reduce((sum, job) => sum + job.entry.size, 0)
       const sent = counted.reduce(
         (sum, job) => sum + (job.entry.state === 'done' ? job.entry.size : job.entry.sent),
         0,
       )
       return {
-        fraction: size ? sent / size : 0,
+        fraction: total ? sent / total : 0,
         // Spec §6.3: paused or retrying, when no file moves.
         tone: state.halted || isStalled(active.value) ? 'paused' : 'running',
         attention,
+        bytes: { sent, total },
       }
     }
-    if (state.showDone) return { fraction: 1, tone: 'done', attention }
-    return attention ? { fraction: null, tone: 'running', attention } : null
+    if (state.showDone) return { fraction: 1, tone: 'done', attention, bytes: null }
+    return attention ? { fraction: null, tone: 'running', attention, bytes: null } : null
   })
 
   /** Files a reload would stop or lose: queued and held ones have no record yet. */
-  const hasUnsavedWork = computed(() => active.value.length > 0 || state.preparing > 0)
+  const hasUnsavedWork = computed(
+    () => active.value.length > 0 || state.preparing > 0 || !!state.reading,
+  )
 
   // The listener is there only while work is, since Firefox keeps no page
   // with one in its back-forward cache (t29-leave-warning).
@@ -382,6 +399,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     }))
     const batch: Batch = { size: fitting.length, applied: null }
     state.preparing += 1
+    state.folders.total += trimmed.reduce((sum, folder) => sum + 1 + folder.folders.length, 0)
     reveal()
     try {
       for (const folder of trimmed) await createTree(folder, target.parent, batch, signal)
@@ -389,8 +407,44 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
       if (!signal.aborted) throw error
     } finally {
       if (!signal.aborted) state.preparing -= 1
+      if (!state.preparing) state.folders = { created: 0, total: 0 }
     }
     pump()
+  }
+
+  /**
+   * Walks a dropped folder tree (t30-reading-folder). The tracker shows the
+   * files found once the walk takes longer than `READING_DELAY_MS`. A walk
+   * the browser refuses leaves a failed row; the drop is gone, so it has no Retry.
+   */
+  async function readFolders(
+    drop: Pick<CapturedDrop, 'folders' | 'read'>,
+    target: UploadTarget,
+  ): Promise<UploadSelection | null> {
+    const signal = lifetime.signal
+    const reading = reactive({ found: 0 })
+    const shown = setTimeout(() => {
+      state.reading = reading
+      reveal()
+    }, READING_DELAY_MS)
+    try {
+      return await drop.read(() => {
+        reading.found += 1
+      })
+    } catch (error) {
+      if (signal.aborted) return null
+      const folder = error instanceof FolderReadError ? error.folder : (drop.folders[0] ?? '')
+      const entry = addJob({ file: new File([], folder) }, target.parent, {
+        size: 1,
+        applied: null,
+      })
+      fail(jobs.get(entry.id)!, __('Could not read “{0}”.', [folder]), false)
+      reveal()
+      return null
+    } finally {
+      clearTimeout(shown)
+      if (state.reading === reading) state.reading = null
+    }
   }
 
   async function createTree(
@@ -402,6 +456,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     signal.throwIfAborted()
     const top = await createTopFolder(parent, folder.title, signal)
     signal.throwIfAborted()
+    state.folders.created += 1
     if (!top) return
     const ids = new Map<string, string | null>([['', top]])
     for (const path of folder.folders) {
@@ -409,6 +464,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
       const above = ids.get(at < 0 ? '' : path.slice(0, at)) ?? null
       const created = above ? await createFolder(above, path.slice(at + 1), signal) : null
       signal.throwIfAborted()
+      state.folders.created += 1
       ids.set(path, created && !('error' in created) ? created.name : null)
     }
     for (const item of folder.files) {
@@ -576,7 +632,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
   async function continueSession(job: Job): Promise<boolean> {
     const session = job.session!
     if (session.mode === 'direct') {
-      if (!job.directSent) restart(job, DIRECT_NOTE)
+      if (!job.directSent) restart(job, directNote())
       return true
     }
     try {
@@ -593,7 +649,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
         await confirmArrival(job)
         return false
       }
-      restart(job, EXPIRED_NOTE)
+      restart(job, expiredNote())
       return true
     }
   }
@@ -1016,7 +1072,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
           error: null,
           retryable: true,
           // A direct target lasts minutes and takes the whole file at once.
-          note: record.mode === 'direct' ? DIRECT_NOTE : null,
+          note: record.mode === 'direct' ? directNote() : null,
           node: null,
           offline: false,
         })
@@ -1087,6 +1143,8 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     running.clear()
     jobs.clear()
     state.preparing = 0
+    state.folders = { created: 0, total: 0 }
+    state.reading = null
     state.halted = null
     state.seen = true
     state.trackerOpen = false
@@ -1108,6 +1166,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     setPrompts,
     uploadFiles,
     uploadFolders,
+    readFolders,
     replaceFile,
     cancel,
     cancelAll,

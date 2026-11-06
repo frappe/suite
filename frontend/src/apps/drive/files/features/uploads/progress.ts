@@ -10,7 +10,7 @@ import { uploadQueue, type UploadIndicator, type UploadPrompts } from './queue'
  */
 export interface DriveUploadProgress {
   readonly current: UploadIndicator | null
-  /** The queue holds entries or is preparing folders: the tracker has something to show. */
+  /** The queue holds entries, or reads or prepares folders: the tracker has something to show. */
   readonly busy: boolean
   open(): void
 }
@@ -30,7 +30,7 @@ export function driveUploadProgress(): DriveUploadProgress {
       return queue.indicator.value
     },
     get busy() {
-      return queue.entries.value.length > 0 || queue.state.preparing > 0
+      return queue.entries.value.length > 0 || queue.state.preparing > 0 || !!queue.state.reading
     },
     open: () => queue.openTracker(),
   }

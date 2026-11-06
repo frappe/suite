@@ -335,10 +335,19 @@ test("a batch larger than the free space offers to upload what fits", async ({ p
 
 	const dialog = page.getByRole("dialog", { name: "Not enough space" });
 	await expect(dialog.getByText("1 of 2 files fit.")).toBeVisible();
-	await dialog.getByRole("button", { name: "Upload what fits" }).click();
+	await dialog.getByRole("button", { name: "Upload 1 file" }).click();
 
 	await expect(doneEntries(page)).toHaveCount(1);
 	expect((await children(api, home.name)).rows.map((row) => row.title)).toEqual(["fits.txt"]);
+	await expect(page.getByRole("heading", { name: "1 file uploaded" })).toBeVisible();
+
+	// Nothing fits: a toast says so, with nothing to choose.
+	const again = page.waitForEvent("filechooser");
+	await useNewMenu(page, "Upload files");
+	await (await again).setFiles([{ name: "big.txt", mimeType: "text/plain", buffer: Buffer.alloc(100, 1) }]);
+	await expect(page.getByText("Not enough space to upload")).toBeVisible();
+	await expect(page.getByText(/This file needs .+, and only .+ is free\./)).toBeVisible();
+	await expect(page.getByRole("dialog", { name: "Not enough space" })).toHaveCount(0);
 });
 
 test("a restore whose folder is gone asks for a destination in the same root", async ({ page }) => {

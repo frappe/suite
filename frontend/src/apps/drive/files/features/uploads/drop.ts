@@ -1,8 +1,9 @@
 import { readonly, ref } from 'vue'
 
 import type { DriveNode } from '@/apps/drive/client/types'
+import { isTweakOn } from '@/platform/tweaks'
 
-import { uploadTargetOf, type UploadTarget } from './queue'
+import { uploadQueue, uploadTargetOf, type UploadTarget } from './queue'
 import { captureDrop, dragHasFiles, type UploadSelection } from './sources'
 
 /** A place that takes dropped files, and the name the overlay shows for it. */
@@ -57,7 +58,12 @@ export function useUploadDrop(
         // The transfer empties when this handler returns; read it now.
         const captured = captureDrop(event.dataTransfer)
         if (!captured.hasFiles) return
-        void captured.read().then((selection) => upload(selection, found.target))
+        // A folder tree can take seconds to walk; the tracker says so (t30-reading-folder).
+        const reading =
+          captured.folders.length && isTweakOn('t30-reading-folder')
+            ? uploadQueue().readFolders(captured, found.target)
+            : captured.read()
+        void reading.then((selection) => selection && upload(selection, found.target))
       },
     }
   }

@@ -19,6 +19,7 @@ import {
   type UploadRecord,
   type UploadRecords,
 } from './records'
+import { FolderReadError } from './sources'
 
 // An in-memory Drive server behind `fetch`, installed before any import so the
 // platform transport sends every request here. It follows the upload contract
@@ -1121,6 +1122,53 @@ describe('Leaving and coming back', () => {
       ['notes.txt', 'done'],
     ])
     expect(drive.titlesIn('folder')).toEqual(['notes.txt', 'photo.jpg'])
+  })
+})
+
+describe('Reading a dropped folder', () => {
+  it('shows the files found while a slow walk runs, then hands the tree over', async () => {
+    const queue = createUploadQueue({ records: memoryRecords() })
+    let finish!: () => void
+    const walked = new Promise<void>((resolve) => (finish = resolve))
+    const reading = queue.readFolders(
+      {
+        folders: ['photos'],
+        read: async (onFound) => {
+          onFound?.()
+          onFound?.()
+          await walked
+          return { files: [], folders: [{ title: 'photos', folders: [], files: [] }] }
+        },
+      },
+      target,
+    )
+
+    await until(() => queue.state.reading !== null, 'the reading state')
+    expect(queue.state.reading?.found).toBe(2)
+    expect(queue.state.trackerOpen).toBe(true)
+    finish()
+    expect((await reading)?.folders.map((folder) => folder.title)).toEqual(['photos'])
+    expect(queue.state.reading).toBeNull()
+  })
+
+  it('a walk the browser refuses adds a failed row with no Retry', async () => {
+    const queue = createUploadQueue({ records: memoryRecords() })
+    const selection = await queue.readFolders(
+      {
+        folders: ['photos', 'music'],
+        read: async () => {
+          throw new FolderReadError('music')
+        },
+      },
+      target,
+    )
+
+    expect(selection).toBeNull()
+    expect(queue.entries.value.map((entry) => [entry.title, entry.state, entry.error])).toEqual([
+      ['music', 'failed', 'Could not read “music”.'],
+    ])
+    expect(queue.entries.value[0]!.retryable).toBe(false)
+    expect(queue.state.trackerOpen).toBe(true)
   })
 })
 
