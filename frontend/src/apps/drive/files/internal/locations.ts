@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 
 import { api, client, useQuery } from '@/api'
+import { bootRoots } from '@/apps/drive/client/roots'
 import type { DriveBreadcrumb, DriveNode, DriveRoots } from '@/apps/drive/client/types'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
@@ -95,12 +96,18 @@ export function trashLocation(
   }
 }
 
-/** `locationTitle` bound to the caller's roots, for templates. Call it in a component's setup. */
+/**
+ * `locationTitle` bound to the caller's roots, for templates. Call it in a
+ * component's setup. With `t24-boot-roots`, the roots the page arrived with
+ * name a root until the query answers, so "My files" never shows first as
+ * the root's stored title.
+ */
 export function useLocationTitle(): (node: Pick<DriveBreadcrumb, 'name' | 'title'>) => string {
   const session = useSession()
   // A guest has no roots to discover (spec §10.13).
   const discovered = useQuery(api.drive.roots.list, () =>
     session.status.value === 'authenticated' ? {} : false,
   )
-  return (node) => locationTitle(node, discovered.data)
+  const booted = isTweakOn('t24-boot-roots') ? bootRoots() : null
+  return (node) => locationTitle(node, discovered.data ?? booted)
 }

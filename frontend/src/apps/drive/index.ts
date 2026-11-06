@@ -404,8 +404,12 @@ export const DriveListSkeletonRows = defineAsyncComponent(
   () => import('@/apps/drive/files/features/ListSkeletonRows.vue'),
 )
 
-/** The document header's shape while a document opens. Shows `title` when one is known. */
+/** The document header's shape while a document opens. Shows `title` and `location` when they are known. */
 export { default as DriveDocumentHeaderSkeleton } from '@/apps/drive/files/features/document/DocumentHeaderSkeleton.vue'
+export {
+  openingLocation,
+  openingLocationState,
+} from '@/apps/drive/files/features/document/openingLocation'
 
 export { PANEL_BUTTONS } from '@/apps/drive/files/features/document/header'
 export type { DocumentPanel } from '@/apps/drive/client/types'

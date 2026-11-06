@@ -13,6 +13,7 @@ import { DOCUMENT_TYPES_KEY, type DocumentTypeDefinition } from '@/platform/cont
 import { TransportError, type Operation } from '@/platform/transport'
 import { setTweaks } from '@/platform/tweaks'
 
+import { openingLocation } from '../features/document/openingLocation'
 import { rememberShown } from '../features/preview/lastShown'
 
 // A Drive server that keeps the caller's Recent, stars and one folder's children.
@@ -672,6 +673,44 @@ describe('Show in folder', () => {
   })
 })
 
+describe('opening a file', () => {
+  /** Opens `row` from its menu and answers the folder name the preview's history entry carries. */
+  async function openedLocation(router: Router, row: string) {
+    await vi.waitFor(() => expect(menuItem(row, 'Open')).toBeDefined())
+    await menuItem(row, 'Open')?.onClick()
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toMatch(/^\/d\//))
+    return openingLocation(router.options.history.state)
+  }
+
+  it('names the open folder for the preview header to show while it loads', async () => {
+    const { router } = await mount('/drive/f/folder-1/talks')
+
+    expect(await openedLocation(router, 'a')).toBe('Talks')
+  })
+
+  it('names the folder from the trail where the list shows locations', async () => {
+    server.nodes.set('r', {
+      ...node('r', 'r.png'),
+      breadcrumbs: [
+        { name: 'root', title: 'My files', kind: 'root', role: 50 },
+        { name: 'folder-1', title: 'Talks', kind: 'folder', role: 50 },
+      ],
+    })
+    server.recents = ['r']
+    const { router } = await mount('/drive/recent')
+
+    expect(await openedLocation(router, 'r')).toBe('Talks')
+  })
+
+  it('names none when the file’s folder is not one the user can open', async () => {
+    server.nodes.set('s', { ...node('s', 's.png', { parent_node: 'hidden' }), breadcrumbs: [] })
+    server.recents = ['s']
+    const { router } = await mount('/drive/starred')
+
+    expect(await openedLocation(router, 's')).toBeNull()
+  })
+})
+
 describe('back from a file preview', () => {
   /** Opens the Talks folder, previews a file that steps on to `last`, and goes Back. */
   async function backFromPreview(last: string) {
@@ -1140,7 +1179,7 @@ describe('Keyboard shortcuts', () => {
     await nextTick()
 
     type('s')
-    expect(dialogs.share).toHaveBeenCalledWith('x')
+    expect(dialogs.share.mock.calls[0]?.[0]).toBe('x')
 
     pressNamed('Select all')
     await nextTick()

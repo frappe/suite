@@ -8,6 +8,14 @@
     :aria-label="title ? `Opening ${title}` : 'Opening document'"
   >
     <div class="flex min-w-0 flex-1 items-center gap-1">
+      <!-- The folder, the way back and the icon take DocumentHeader's sizes, so the title stays put when it loads. -->
+      <template v-if="location">
+        <span class="size-7 shrink-0 md:hidden" aria-hidden="true" />
+        <span class="max-w-48 truncate px-1 text-base text-ink-gray-5 max-md:hidden">{{
+          location
+        }}</span>
+        <span class="text-base text-ink-gray-4 max-md:hidden" aria-hidden="true">/</span>
+      </template>
       <span class="size-4.5 shrink-0 animate-pulse rounded-3 bg-surface-gray-3" />
       <span v-if="title" class="min-w-0 truncate px-2 text-base font-medium text-ink-gray-8">{{
         title
@@ -33,5 +41,9 @@
 </template>
 
 <script setup lang="ts">
-defineProps<{ title?: string }>()
+defineProps<{
+  title?: string
+  /** The folder the file's header names, when the opener knew it. */
+  location?: string
+}>()
 </script>

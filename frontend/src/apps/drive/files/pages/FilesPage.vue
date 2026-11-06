@@ -329,7 +329,12 @@ import {
   type InfiniteQueryState,
 } from '@/api'
 import { driveNodeRoute, newDocumentRoute, useDriveDialogs } from '@/apps/drive'
-import { createDocument, openAsSpreadsheet, opensAsSpreadsheet } from '@/apps/drive/client/nodes'
+import {
+  createDocument,
+  folderOf,
+  openAsSpreadsheet,
+  opensAsSpreadsheet,
+} from '@/apps/drive/client/nodes'
 import { bootRoots } from '@/apps/drive/client/roots'
 import type { DriveBatchResult, DriveNode } from '@/apps/drive/client/types'
 import { isDriveLocked } from '@/apps/drive/client/unlock'
@@ -341,7 +346,7 @@ import { useSession } from '@/platform/session'
 import { openAreaShortcuts } from '@/platform/shortcuts'
 import { translate as __ } from '@/platform/translation'
 import { TransportError } from '@/platform/transport'
-import { useTweak } from '@/platform/tweaks'
+import { isTweakOn, useTweak } from '@/platform/tweaks'
 
 import { inBatches } from '../features/batches'
 import BatchOutcome from '../features/BatchOutcome.vue'
@@ -354,6 +359,7 @@ import {
   type MovedItem,
 } from '../features/changeToast'
 import CreateNodeDialog, { type CreateRequest } from '../features/CreateNodeDialog.vue'
+import { openingLocationState } from '../features/document/openingLocation'
 import { downloadItems } from '../features/downloads'
 import type { DraggedItems } from '../features/dragMove'
 import { emptyState, emptyStateWithActions, type FilesDestination } from '../features/emptyState'
@@ -1536,9 +1542,16 @@ async function openNode(row: DriveNode, newTab = false) {
  */
 function openTarget(row: DriveNode): RouteLocationRaw {
   if (row.kind === 'folder') return { path: nodePath(row), query: presentationQuery.value }
-  if (row.kind === 'file')
-    return { ...driveNodeRoute(row), query: { type: typeQuery(listingTypes.value) } }
-  return driveNodeRoute(row)
+  if (row.kind !== 'file') return driveNodeRoute(row)
+  const target = driveNodeRoute(row)
+  const state = { ...target.state, ...openingLocationState(previewLocation(row)) }
+  return { ...target, state, query: { type: typeQuery(listingTypes.value) } }
+}
+/** The folder a file's preview header names, when this listing knows it, so its opening header names it too. */
+function previewLocation(row: DriveNode): string | null {
+  const parent = detail.data?.name === row.parent_node ? detail.data : null
+  const folder = row.breadcrumbs ? folderOf(row) : parent
+  return folder ? locationTitle(folder, discovered.data) : null
 }
 /** The address an item's name links to (t39). An external link asks before it opens, so it has none. */
 function nodeHref(row: DriveNode): string | undefined {
