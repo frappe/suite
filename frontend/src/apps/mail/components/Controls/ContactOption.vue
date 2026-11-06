@@ -15,15 +15,22 @@
       class="text-ink-gray-6 truncate leading-tighter"
       :class="{ 'text-sm': size === 'md' }"
     >
-      <template v-for="(part, i) in highlight(contact.email)" :key="i">
-        <span v-if="part.match" class="text-ink-gray-8 !font-medium">{{ part.text }}</span>
-        <template v-else>{{ part.text }}</template>
+      <template v-for="(part, i) in addressParts" :key="i">
+        <span
+          :class="{
+            'text-ink-gray-8 !font-medium': part.match,
+            'text-ink-gray-8': part.domain && !part.match,
+          }"
+          >{{ part.text }}</span
+        >
       </template>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
+
 import type { DraftRecipient } from '@/apps/mail/types'
 
 // How a contact reads in any of the pickers — recipient autocomplete, the contacts
@@ -36,11 +43,30 @@ import type { DraftRecipient } from '@/apps/mail/types'
 //
 // `query` is what has been typed, marked where it appears in the name and the address: the row
 // shows why it matched, and two rows under one name differ where the typing landed.
-const { query = '' } = defineProps<{
+// `domainTellsApart` is set where another row carries the same name: the address's domain is then
+// what tells the two apart, and it reads as dark as the name.
+const {
+  contact,
+  query = '',
+  domainTellsApart = false,
+} = defineProps<{
   contact: DraftRecipient
   size?: 'sm' | 'md'
   query?: string
+  domainTellsApart?: boolean
 }>()
+
+/** The address's parts, with the domain marked when it is what tells this contact apart. */
+const addressParts = computed(() => {
+  const at = contact.email.lastIndexOf('@')
+  // Typing across the @ marks the whole address as one match; the split would lose it.
+  if (!domainTellsApart || at < 0 || query.includes('@'))
+    return highlight(contact.email).map((p) => ({ ...p, domain: false }))
+  return [
+    ...highlight(contact.email.slice(0, at)).map((p) => ({ ...p, domain: false })),
+    ...highlight(contact.email.slice(at)).map((p) => ({ ...p, domain: true })),
+  ]
+})
 
 /** `text` split around the first case-insensitive occurrence of the query. */
 const highlight = (text: string) => {
