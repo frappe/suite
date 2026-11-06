@@ -42,7 +42,7 @@ const { initPresentationDoc, inReadonlyMode, loadTemplates, viewOnly } =
 const { offlineCopyStatus } = await import('@/apps/slides/stores/offlineCopy')
 const { RECORD_PREFIX } = await import('@/apps/slides/utils/slidesCaches')
 const { keepRecovery, readRecovery, removeNewestRecovery } = await import('./recovery')
-const { toast } = await import('frappe-ui')
+const { toast, useKeyboardShortcut } = await import('frappe-ui')
 const { changeSlideInSlideshow } = await import('@/apps/slides/stores/slideshow')
 const { router: slidesRouter } = await import('@/apps/slides/router')
 const { setActiveElements } = await import('@/apps/slides/stores/element')
@@ -339,6 +339,24 @@ describe('a deck on the content layer', () => {
     await vi.waitFor(() => expect(room.close).toHaveBeenCalled())
     expect(drawnTexts()).toEqual(own)
     expect(thumbnails(mounted.root)).toHaveLength(served.slides.length)
+  })
+
+  it('starts no slideshow on a converted presentation from Mod+P', async () => {
+    convertedRoom('one')
+    mounted = await openedSurface({ deck: { is_converted: true } })
+    await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+    const fullscreen = vi.fn(async () => {})
+    document.documentElement.requestFullscreen = fullscreen
+    vi.mocked(slidesRouter.replace).mockClear()
+    const shortcuts = vi.mocked(useKeyboardShortcut).mock.calls.at(-1)![0] as unknown as Array<{
+      combo: string
+      handler: () => void
+    }>
+
+    shortcuts.find(({ combo }) => combo === 'Mod+P')!.handler()
+
+    expect(fullscreen).not.toHaveBeenCalled()
+    expect(slidesRouter.replace).not.toHaveBeenCalled()
   })
 
   it('says a converted presentation could not open when its room does not, and draws no rows', async () => {
