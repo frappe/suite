@@ -1,5 +1,5 @@
 import { type Node as PMNode, type ResolvedPos } from '@tiptap/pm/model'
-import { TableMap } from '@tiptap/pm/tables'
+import { findTable, rowIsHeader, TableMap } from '@tiptap/pm/tables'
 
 export type Axis = 'row' | 'column'
 
@@ -16,21 +16,13 @@ export class TableShape {
   }
 
   static around($pos: ResolvedPos): TableShape | null {
-    for (let depth = $pos.depth; depth >= 0; depth--) {
-      const node = $pos.node(depth)
-      if (node.type.spec.tableRole === 'table') return new TableShape(node, $pos.start(depth))
-    }
-    return null
+    const table = findTable($pos)
+    return table && new TableShape(table.node, table.start)
   }
 
   static at(doc: PMNode, pos: number): TableShape | null {
     if (pos < 0 || pos > doc.content.size) return null
     return TableShape.around(doc.resolve(pos))
-  }
-
-  /** The position of the table node itself */
-  get pos() {
-    return this.start - 1
   }
 
   count(axis: Axis) {
@@ -66,13 +58,7 @@ export class TableShape {
   /** How many leading rows hold only header cells */
   get headerRows() {
     let rows = 0
-    for (const row of this.node.children) {
-      const isHeader =
-        row.childCount > 0 &&
-        row.children.every((cell) => cell.type.spec.tableRole === 'header_cell')
-      if (!isHeader) break
-      rows++
-    }
+    while (rows < this.map.height && rowIsHeader(this.map, this.node, rows)) rows++
     return rows
   }
 }
