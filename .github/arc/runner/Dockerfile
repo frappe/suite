@@ -28,7 +28,7 @@ RUN yarn config set yarn-offline-mirror /tmp/suite-yarn-mirror \
     && yarn --cwd sfu install --frozen-lockfile --ignore-scripts --non-interactive --production=false \
     && rm -rf e2e/node_modules sfu/node_modules /tmp/yarn-cache
 
-FROM ghcr.io/actions/actions-runner:2.336.0
+FROM ghcr.io/actions/actions-runner:2.338.2
 
 USER root
 
