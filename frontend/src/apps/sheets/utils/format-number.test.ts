@@ -448,6 +448,12 @@ describe('dateSerialFromShown', () => {
     ])
       expect(dateShownFromSerial(dateSerialFromShown(shown, code), code)).toBe(shown)
   })
+  it('labels a serial without the time, a locale tag or later sections', () => {
+    expect(dateShownFromSerial(46000.75, 'm/d/yyyy h:mm AM/PM')).toBe('12/9/2025')
+    expect(dateShownFromSerial(46000, '[$-409]m/d/yyyy')).toBe('12/9/2025')
+    expect(dateShownFromSerial(46000, 'm/d/yyyy;@')).toBe('12/9/2025')
+    expect(dateShownFromSerial(46000, 'd mmm yyyy')).toBe('9 Dec 2025')
+  })
   it('is NaN for text or a non-date code', () => {
     expect(dateSerialFromShown('hello', 'm/d/yyyy')).toBeNaN()
     expect(dateSerialFromShown('12/9/2025', 'general')).toBeNaN()

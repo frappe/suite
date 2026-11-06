@@ -246,14 +246,17 @@ export function dateSerialFromShown(shown: unknown, code: string | null | undefi
 
 // The other way round: a day serial shown with the date part of an
 // Excel-style code (`m/d/yyyy` → `12/9/2025`, `dd/mm/yyyy` → `09/12/2025`).
-// The time part is left out. Charts label a date axis with it.
+// The time part, `[$-409]`-style locale tags and any `;` sections after the
+// first are left out. Charts label a date axis with it.
 export function dateShownFromSerial(serial: number, code: string | null | undefined): string {
   const d = new Date(Math.round((Math.floor(serial) - 25569) * 86400000))
   if (isNaN(d.getTime())) return String(serial)
   const datePart =
     String(code ?? '')
       .replace(/"[^"]*"/g, '')
-      .split(/\s*[h[]/i)[0] ?? ''
+      .split(';')[0]
+      ?.replace(/\[[^\]]*\]/g, '')
+      .split(/\s*h/i)[0] ?? ''
   const pad = (n: number) => String(n).padStart(2, '0')
   const name = (opts: Intl.DateTimeFormatOptions) =>
     d.toLocaleString('en', { ...opts, timeZone: 'UTC' })
