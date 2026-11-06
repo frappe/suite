@@ -423,7 +423,7 @@ describe('share writes (spec §7.4, §7.7, §7.9)', () => {
     await share.remove(share.sections.value!.people[0]!)
 
     expect(share.sections.value!.people).toEqual([])
-    expect(share.notice.value).toBe('Asha still has access through Design team.')
+    expect(share.notice.value).toBe('Removed Asha. Asha still has access through Design team.')
   })
 
   it('names the owner, the people the grants name, and the organization in its words', async () => {

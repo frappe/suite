@@ -15,6 +15,7 @@ import {
 } from '@/apps/drive/client/grants'
 import { canManage, DRIVE_ROLES, type DriveNode, type DrivePerson } from '@/apps/drive/client/types'
 import type { ImperativeClient } from '@/platform/server-state/types'
+import { translate as __ } from '@/platform/translation'
 import { isTweakOn } from '@/platform/tweaks'
 
 import {
@@ -31,6 +32,8 @@ import {
 export type RowKey = string
 export const PICKER: RowKey = 'picker'
 export const NEW_LINK_ROW: RowKey = 'new-link'
+/** The notice's Undo, which puts back a removed row. */
+export const UNDO_ROW: RowKey = 'undo'
 
 /** A write that lowers the caller's own role from grants: the role they hold, and the one they would keep. */
 export interface AccessLoss {
@@ -67,6 +70,8 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
   const errors = reactive(new Map<RowKey, string>())
   const pending = reactive(new Set<RowKey>())
   const notice = ref('')
+  /** The row the notice's Undo writes back, with `t33-undo-remove`. The next write clears it. */
+  const removed = shallowRef<{ principal: string; write: GrantWrite } | null>(null)
   /** A write went through since the dialog opened. */
   const changed = ref(false)
   /** Users' names by id: from the owner and the people the grants name, and from the picker. */
@@ -124,6 +129,8 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
     pending.add(key)
     if (!fail) errors.delete(key)
     notice.value = ''
+    removed.value = null
+    errors.delete(UNDO_ROW)
     try {
       const answer = await run()
       changed.value = true
@@ -218,15 +225,15 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
     /** Removes the local row. Then says whether access remains, and why (§7.4). */
     async remove(row: LocalRow, below = false) {
       const principal = row.grant.principal
-      const removed = await change(principal, { principal, role: null }, async () => ({
+      const outcome = await change(principal, { principal, role: null }, async () => ({
         count:
           row.kind === 'link' && row.grant.name
             ? await grants.removeGrant(row.grant.name)
             : await grants.remove(principal, below),
       }))
-      if (!removed) return
+      if (!outcome) return
       // The count includes the row here, which this Remove started from.
-      const inside = below && removed.count ? removed.count - 1 : 0
+      const inside = below && outcome.count ? outcome.count - 1 : 0
       const insideText = inside
         ? `Removed from ${inside} ${inside === 1 ? 'item' : 'items'} inside. `
         : ''
@@ -237,7 +244,31 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
           explanation &&
           remainingAccess(label(principal), principal, explanation, titles.value, label)
       }
-      notice.value = `${insideText}${remaining ?? ''}`.trim()
+      // A plain Remove can be undone. Removing inside asks first instead (§7.4).
+      const undoable =
+        isTweakOn('t33-undo-remove') && !below && row.kind !== 'link' && !row.expired && !row.denied
+      if (undoable) {
+        removed.value = {
+          principal,
+          write: {
+            role: row.grant.role,
+            ...keep(row.grant),
+            // Putting someone back is not news to them.
+            ...(row.kind === 'user' ? { notify: false } : {}),
+          },
+        }
+      }
+      const removedText = undoable ? `${__('Removed {0}.', [label(principal)])} ` : ''
+      notice.value = `${removedText}${insideText}${remaining ?? ''}`.trim()
+    },
+
+    /** Whether the notice offers Undo for the row a Remove just took away. */
+    canUndo: computed(() => removed.value !== null),
+    /** Puts back the row a Remove just took away, with its role and expiry, and no email. */
+    undoRemove() {
+      const last = removed.value
+      if (!last) return Promise.resolve(undefined)
+      return write(UNDO_ROW, () => grants.put(last.principal, last.write))
     },
 
     deny: (principal: string) =>

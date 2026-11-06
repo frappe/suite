@@ -18,7 +18,7 @@ describe('tweaks', () => {
   it('starts with every tweak on', async () => {
     const { isTweakOn } = await load()
     expect(isTweakOn('t1')).toBe(true)
-    expect(isTweakOn('t33')).toBe(true)
+    expect(isTweakOn('t33-undo-remove')).toBe(true)
   })
 
   it('updates a component at once, and a switch survives a reload', async () => {

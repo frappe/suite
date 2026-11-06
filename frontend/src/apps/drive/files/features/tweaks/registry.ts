@@ -25,7 +25,7 @@ export interface Tweak {
 /** Every Drive tweak, one per line. Split an item into sub-ids such as `t3-folder-menu`. */
 // prettier-ignore
 export const tweaks = [
-  { id: 't1', item: 1, group: 'Bugs', label: 'No false "Change your own access?" warning', description: 'Changing the workspace access as the owner no longer asks whether you want to change your own access.', ready: false },
+  { id: 't1', item: 1, group: 'Bugs', label: 'Accurate "Change your own access?" warning', description: 'The warning says what you can still do after the change, such as "You will only be able to view this item".', ready: true },
   { id: 't2', item: 2, group: 'Bugs', label: 'Page stays still behind the share dialog', description: 'Changing access no longer redraws the sidebar, breadcrumb and listing behind the share dialog.', ready: true },
   { id: 't3-folder-menu', item: 3, group: 'Merge similar concepts', label: 'Folder menu has the row actions', description: 'The open folder\'s "…" menu offers the same actions as its row menu, and Move to trash goes up to the parent folder.', ready: true },
   { id: 't3-selection-menu', item: 3, group: 'Merge similar concepts', label: 'Selection bar with "…"', description: 'The selection bar shows the count first, and one selected item gets a "…" button with its row menu.', ready: true },
@@ -74,7 +74,9 @@ export const tweaks = [
   { id: 't31-bell-read', item: 31, group: 'Slow operations', label: 'No unread bell entry for a zip you got', description: 'A zip this tab started downloading is marked read in the bell, so the badge counts only zips nobody has started.', ready: true },
   { id: 't31-bell-details', item: 31, group: 'Slow operations', label: 'Zip size and expiry in the bell', description: 'A ready zip in the bell shows its size and until when it can be downloaded.', ready: true },
   { id: 't32-readable-failures', item: 32, group: 'Slow operations', label: 'Readable partial failures', description: 'A partial bulk failure names its items with their icons and says why each failed, such as "2 of 5 items could not be moved".', ready: true },
-  { id: 't33', item: 33, group: 'Slow operations', label: 'Safer public access and link actions', description: 'Making a folder public and deleting a link ask first, and both offer Undo.', ready: false },
+  { id: 't33-confirm-irreversible', item: 33, group: 'Slow operations', label: 'Ask before what cannot be undone', description: 'Deleting a live link and "Remove here and inside" ask first.', ready: true },
+  { id: 't33-undo-remove', item: 33, group: 'Slow operations', label: 'Undo after Remove', description: 'After a plain Remove, the share dialog offers Undo, which puts the role back without an email.', ready: true },
+  { id: 't33-public-folder-wording', item: 33, group: 'Slow operations', label: 'Clear public wording', description: 'A public folder says everything in it is public, and Copy link says anyone with the link can view.', ready: true },
 ] as const satisfies readonly Tweak[]
 
 /** Adds Drive's ids to `TweakId`, so platform code can read a Drive tweak by a checked id. */

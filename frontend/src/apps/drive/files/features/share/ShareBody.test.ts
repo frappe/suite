@@ -4,7 +4,7 @@ import { createApp, defineComponent, h, type PropType, type VNode } from 'vue'
 
 import type { DriveGrant, GrantList } from '@/apps/drive/client/grants'
 import { testClient } from '@/apps/drive/client/testClient'
-import { toast } from '@/platform/feedback'
+import { confirm, toast } from '@/platform/feedback'
 import type { Transport } from '@/platform/transport'
 import { setTweaks } from '@/platform/tweaks'
 
@@ -77,16 +77,36 @@ const grant = (principal: string, role: number, extra: Partial<DriveGrant> = {})
 })
 
 /** A server holding the item's own grants; `inherited` is what its folders give. */
-function server(inherited: GrantList['inherited'] = []) {
+function server(inherited: GrantList['inherited'] = [], kind = 'file') {
   const local = new Map<string, DriveGrant>()
-  const writes: Array<{ id: string; principal: unknown; role?: unknown }> = []
+  const writes: Array<{ id: string; principal: unknown; role?: unknown; notify?: unknown }> = []
   const transport: Transport = {
     request: async (operation, input) => {
-      const { principal, role } = (input ?? {}) as { principal?: string; role?: number }
+      const {
+        principal,
+        role,
+        notify,
+        grant: id,
+      } = (input ?? {}) as {
+        principal?: string
+        role?: number
+        notify?: boolean
+        grant?: string
+      }
       if (operation.id === 'node_get')
-        return fromAny({ kind: 'file', name: 'doc', title: 'Plan', access: { role: 50 } })
+        return fromAny({ kind, name: 'doc', title: 'Plan', access: { role: 50 } })
+      if (operation.id === 'grant_delete' && id) {
+        writes.push({ id: operation.id, principal: id })
+        for (const [key, value] of local) if (value.name === id) local.delete(key)
+        return fromAny({ count: 1 })
+      }
       if (operation.id === 'node_put_grant' && principal && typeof role === 'number') {
-        writes.push({ id: operation.id, principal, role })
+        writes.push({
+          id: operation.id,
+          principal,
+          role,
+          ...(notify === undefined ? {} : { notify }),
+        })
         const written = grant(principal === '$LINK' ? '$LINK:new' : principal, role, {
           url: principal === '$LINK' ? '/l/new' : undefined,
         })
@@ -223,5 +243,72 @@ it('with the access tweaks off, a switch off over a public folder blocks here an
     expect(local.has('$PUBLIC')).toBe(false)
   } finally {
     setTweaks(['t4-access-words', 't4-public-off'], true)
+  }
+})
+
+it('asks before deleting a live link, and deletes an expired link at once', async () => {
+  vi.mocked(confirm).mockResolvedValueOnce(false).mockResolvedValueOnce(true)
+  const { local, writes, transport } = server()
+  local.set('$LINK:old', grant('$LINK:old', 10, { name: 'old', expires_on: '2020-01-01' }))
+  local.set('$LINK:live', grant('$LINK:live', 10, { name: 'live', url: '/l/live' }))
+  const { choose } = await mount(transport)
+
+  choose('Expired', 'Delete link')
+  await vi.waitFor(() => expect(writes).toEqual([{ id: 'grant_delete', principal: 'old' }]))
+  expect(confirm).not.toHaveBeenCalled()
+
+  choose('No expiry', 'Delete link')
+  await vi.waitFor(() => expect(confirm).toHaveBeenCalledTimes(1))
+  expect(vi.mocked(confirm).mock.calls[0]?.[0]).toMatchObject({ title: 'Delete this link?' })
+  expect(writes).toHaveLength(1)
+  choose('No expiry', 'Delete link')
+  await vi.waitFor(() => expect(writes).toContainEqual({ id: 'grant_delete', principal: 'live' }))
+})
+
+it('offers Undo after Remove, which puts the role back without an email', async () => {
+  const { local, writes, transport } = server()
+  local.set('leo@northwind.test', grant('leo@northwind.test', 20))
+  const { root, choose } = await mount(transport)
+
+  choose('leo@northwind.test', 'Remove')
+  const undo = () =>
+    [...root.querySelectorAll('button')].find((item) => item.textContent?.trim() === 'Undo')
+  await vi.waitFor(() => expect(undo()).toBeDefined())
+  expect(root.querySelector('[role="status"]')?.textContent).toContain('Removed')
+  undo()!.click()
+
+  await vi.waitFor(() => expect(local.get('leo@northwind.test')?.role).toBe(20))
+  expect(writes).toEqual([
+    { id: 'node_delete_grant', principal: 'leo@northwind.test' },
+    { id: 'node_put_grant', principal: 'leo@northwind.test', role: 20, notify: false },
+  ])
+  await vi.waitFor(() => expect(undo()).toBeUndefined())
+})
+
+it('says a public folder shows everything in it, and with t33 off offers no Undo', async () => {
+  const { transport } = server([], 'folder')
+  const { root, row } = await mount(transport)
+  root.querySelector<HTMLButtonElement>('[role="switch"][aria-label="Public on the web"]')!.click()
+  await vi.waitFor(() =>
+    expect(row('Public on the web').textContent).toContain(
+      'Anyone on the internet can view this folder and everything in it',
+    ),
+  )
+  cleanup?.()
+
+  setTweaks(['t33-undo-remove'], false)
+  try {
+    const off = server()
+    off.local.set('leo@northwind.test', grant('leo@northwind.test', 20))
+    const mounted = await mount(off.transport)
+    mounted.choose('leo@northwind.test', 'Remove')
+    await vi.waitFor(() => expect(off.local.has('leo@northwind.test')).toBe(false))
+    expect(
+      [...mounted.root.querySelectorAll('button')].some(
+        (item) => item.textContent?.trim() === 'Undo',
+      ),
+    ).toBe(false)
+  } finally {
+    setTweaks(['t33-undo-remove'], true)
   }
 })

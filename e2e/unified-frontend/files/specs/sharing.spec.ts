@@ -138,7 +138,7 @@ test("a person's access ends on a chosen day, and a role change keeps it", async
 	expect(stored).toMatchObject({ role: 20, expires_on: "2031-01-15T18:29:59Z" });
 });
 
-test("removing a person's grant takes them off the list and the server", async ({ page }) => {
+test("removing a person's grant takes them off the list and the server, and Undo puts it back", async ({ page }) => {
 	await putGrant(file.name, PERSON, { role: 10 });
 	const dialog = await openShare(page, file.name);
 
@@ -146,6 +146,10 @@ test("removing a person's grant takes them off the list and the server", async (
 	await page.getByRole("menuitem", { name: "Remove", exact: true }).click();
 	await expect(rowFor(dialog, PERSON)).toHaveCount(0);
 	expect((await grants(file.name)).some((grant) => grant.principal === PERSON)).toBe(false);
+
+	await dialog.getByRole("button", { name: "Undo" }).click();
+	await expect(accessButton(rowFor(dialog, PERSON))).toHaveAccessibleName(/: View$/);
+	expect((await grants(file.name)).find((grant) => grant.principal === PERSON)?.role).toBe(10);
 });
 
 test("an inherited grant shows its source; Deny access here, then Allow again", async ({ page }) => {

@@ -23,13 +23,28 @@
         @send-link="(email, role) => state.sendLink(email, role)"
       />
       <ErrorMessage v-if="state.errors.get(PICKER)" :message="state.errors.get(PICKER)" />
+      <div
+        v-if="state.notice.value && state.canUndo.value"
+        class="flex items-center gap-3 rounded-4 bg-surface-gray-2 py-1 pl-3 pr-1"
+      >
+        <p role="status" class="min-w-0 flex-1 py-1 text-p-sm text-ink-gray-7">
+          {{ state.notice.value }}
+        </p>
+        <Button
+          variant="ghost"
+          :label="__('Undo')"
+          :loading="state.isPending(UNDO_ROW)"
+          @click="state.undoRemove()"
+        />
+      </div>
       <p
-        v-if="state.notice.value"
+        v-else-if="state.notice.value"
         role="status"
         class="rounded-4 bg-surface-gray-2 px-3 py-2 text-p-sm text-ink-gray-7"
       >
         {{ state.notice.value }}
       </p>
+      <ErrorMessage v-if="state.errors.get(UNDO_ROW)" :message="state.errors.get(UNDO_ROW)" />
 
       <section v-if="!picked" :aria-label="__('Who has access')">
         <div class="mb-1 flex h-7 items-center justify-between gap-3">
@@ -106,7 +121,7 @@
                 "
                 size="sm"
                 class="shrink-0"
-                :model-value="publicEnabled(row.access)"
+                :model-value="isOpen(row.access)"
                 :aria-label="publicName()"
                 :disabled="state.isPending(PUBLIC)"
                 @update:model-value="(enabled) => state.setPublic(enabled)"
@@ -231,6 +246,7 @@ import { copyLink, copyNewLink, formatDay, stampDay } from './shareFormat'
 import ShareLinkDialog from './ShareLinkDialog.vue'
 import { roleMenu } from './shareMenu'
 import {
+  isOpen,
   isPublicFromAncestor,
   type GeneralAccess,
   type InheritedRow,
@@ -238,7 +254,7 @@ import {
   type PickedPerson,
 } from './shareModel'
 import SharePicker from './SharePicker.vue'
-import { NEW_LINK_ROW, PICKER, type ShareState } from './useShare'
+import { NEW_LINK_ROW, PICKER, UNDO_ROW, type ShareState } from './useShare'
 
 /** One ordered list of principals, with inherited grants in place by reach. */
 const props = defineProps<{ state: ShareState; autofocusPicker?: boolean }>()
@@ -250,6 +266,8 @@ const accessWords = useTweak('t4-access-words')
 const publicRemoves = useTweak('t4-public-off')
 const oneRoleMenu = useTweak('t5')
 const newLinkButton = useTweak('t9')
+const confirmIrreversible = useTweak('t33-confirm-irreversible')
+const folderWording = useTweak('t33-public-folder-wording')
 const publicFromAncestor = computed(() => !!sections.value && isPublicFromAncestor(sections.value))
 // Who put the node here (`node.owner`), when the Owner row does not already
 // name them: always in the Shared root, where no one is Owner.
@@ -383,9 +401,7 @@ function rowDescription(row: UnifiedRow): string {
     if (row.access.state === 'off') return __('Workspace access is turned off')
     if (row.access.state === 'denied') return __('Denied here')
     if (row.access.state === 'expired') return expiredDescription(row.access)
-    return row.kind === 'public'
-      ? __('Anyone on the internet can view')
-      : __('Everyone in this workspace')
+    return row.kind === 'public' ? publicReach() : __('Everyone in this workspace')
   }
   const grant = row.type === 'local' ? row.grantRow.grant : row.inherited.entry.grant
   if (row.type === 'local' && row.grantRow.denied) return __('Denied here')
@@ -411,13 +427,20 @@ function generalDescription(row: Extract<UnifiedRow, { type: 'general' }>): stri
   if (access.state === 'off') return row.kind === 'public' ? __('Not public') : __('Not shared')
   if (access.state === 'denied') return row.kind === 'public' ? __('Not public') : __('Denied here')
   if (access.state === 'expired') return expiredDescription(access)
-  if (row.kind === 'public') return __('Anyone on the internet can view')
+  if (row.kind === 'public') return publicReach()
   const role = access.state === 'local' ? access.row.grant.role : access.entry.grant.role
   if (role === DRIVE_ROLES.read) return __('Can view')
   if (role === DRIVE_ROLES.comment) return __('Can comment')
   if (role === DRIVE_ROLES.upload) return __('Can upload')
   if (role === DRIVE_ROLES.edit) return __('Can edit')
   return __(roleLabel(role))
+}
+
+/** What public access reaches. Publishing a folder publishes everything in it, with `t33-public-folder-wording`. */
+function publicReach(): string {
+  return folderWording.value && node.value?.kind === 'folder'
+    ? __('Anyone on the internet can view this folder and everything in it')
+    : __('Anyone on the internet can view')
 }
 
 function expiredDescription(access: Extract<GeneralAccess, { state: 'expired' }>): string {
@@ -433,14 +456,6 @@ function expiredDescription(access: Extract<GeneralAccess, { state: 'expired' }>
  */
 function showsPublicSwitch(access: GeneralAccess): boolean {
   return !publicRemoves.value || (!publicFromAncestor.value && access.state !== 'denied')
-}
-
-function publicEnabled(access: GeneralAccess): boolean {
-  return (
-    access.state === 'local' ||
-    access.state === 'inherited' ||
-    (access.state === 'expired' && access.entry !== null)
-  )
 }
 
 function rowValue(row: UnifiedRow): string {
@@ -650,7 +665,7 @@ function removalOptions(row: Extract<UnifiedRow, { type: 'local' }>): DropdownOp
         label: __('Delete link'),
         icon: 'lucide-trash-2',
         theme: 'red',
-        onClick: () => void props.state.remove(grantRow),
+        onClick: () => void deleteLink(grantRow),
       },
     ]
   const options: DropdownOption[] = [
@@ -666,9 +681,46 @@ function removalOptions(row: Extract<UnifiedRow, { type: 'local' }>): DropdownOp
       label: __('Remove here and inside'),
       icon: 'lucide-folder-x',
       theme: 'red',
-      onClick: () => void props.state.remove(grantRow, true),
+      onClick: () => void removeInside(row),
     })
   return options
+}
+
+/**
+ * A live link's URL cannot come back, so deleting it asks first, as Get new
+ * URL does (§7.4). An expired link deletes at once.
+ */
+async function deleteLink(row: LocalRow) {
+  if (
+    confirmIrreversible.value &&
+    !(await confirm({
+      title: __('Delete this link?'),
+      message: __("Anyone using this link loses access. This can't be undone."),
+      confirmLabel: __('Delete link'),
+      destructive: true,
+    }))
+  )
+    return
+  await props.state.remove(row)
+}
+
+/** Removing a person from everything inside has no Undo, so it asks first. */
+async function removeInside(row: Extract<UnifiedRow, { type: 'local' }>) {
+  const name = rowName(row)
+  if (
+    confirmIrreversible.value &&
+    !(await confirm({
+      title: __('Remove {0} from everything inside?', [name]),
+      message: __(
+        "{0} loses access to this folder and to everything inside it that was shared with them. This can't be undone.",
+        [name],
+      ),
+      confirmLabel: __('Remove'),
+      destructive: true,
+    }))
+  )
+    return
+  await props.state.remove(row.grantRow, true)
 }
 
 /** "New link": a View link with no expiry and no password, copied at once (§7.7). */

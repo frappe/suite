@@ -25,7 +25,7 @@
       <div v-if="!picked" class="mt-5 flex items-center gap-2 border-t border-outline-gray-1 pt-4">
         <div v-if="address" class="min-w-0">
           <Button icon-left="lucide-link" :label="__('Copy link')" @click="copyLink(address)" />
-          <p class="mt-1.5 text-p-xs text-ink-gray-5">{{ __('For people with access') }}</p>
+          <p class="mt-1.5 text-p-xs text-ink-gray-5">{{ caption }}</p>
         </div>
         <Button class="ml-auto" variant="ghost" :label="__('Done')" @click="open = false" />
       </div>
@@ -58,7 +58,7 @@
       <div v-if="captionedFooter" class="flex items-center justify-between gap-2">
         <div v-if="address" class="min-w-0">
           <Button icon-left="lucide-link" :label="__('Copy link')" @click="copyLink(address)" />
-          <p class="mt-1.5 text-p-xs text-ink-gray-5">{{ __('For people with access') }}</p>
+          <p class="mt-1.5 text-p-xs text-ink-gray-5">{{ caption }}</p>
         </div>
         <Button class="ml-auto" variant="ghost" :label="__('Done')" @click="open = false" />
       </div>
@@ -88,6 +88,7 @@ import { nodeIcon, nodeIconTint } from '../../internal/icons'
 import { useLocationTitle } from '../../internal/locations'
 import ShareBody from './ShareBody.vue'
 import { accessLossMessage, copyLink } from './shareFormat'
+import { isOpen } from './shareModel'
 import { useShare } from './useShare'
 
 const props = defineProps<{ node: string }>()
@@ -153,6 +154,13 @@ const address = computed(() => {
   const { name, title, kind } = current
   return driveNodeRoute(name, title, kind === 'root' ? 'folder' : kind).path
 })
+const folderWording = useTweak('t33-public-folder-wording')
+/** Who the item's own address opens for. Public viewers open it too, so it is the public link. */
+const caption = computed(() =>
+  folderWording.value && isOpen(state.sections.value?.public ?? null)
+    ? __('Anyone with the link can view')
+    : __('For people with access'),
+)
 
 onMounted(() => void state.load())
 // The opener refreshes what it shows when a write went through.

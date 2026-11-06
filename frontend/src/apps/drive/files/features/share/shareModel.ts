@@ -126,6 +126,15 @@ export function isPublicFromAncestor(sections: ShareSections): boolean {
   return (nearest?.entry.grant.role ?? 0) > 0
 }
 
+/** Whether everyone at the org, or the public, can open the node now: here, from a folder, or from a folder while the local row has expired. */
+export function isOpen(access: GeneralAccess | null): boolean {
+  return (
+    access?.state === 'local' ||
+    access?.state === 'inherited' ||
+    (access?.state === 'expired' && access.entry !== null)
+  )
+}
+
 function generalAccess(
   principal: string,
   local: LocalRow[],
@@ -254,10 +263,6 @@ export function sharedWith(
   ].flatMap((grant) =>
     gives(grant) ? [grant.person?.full_name ?? principalLabel(grant.principal)] : [],
   )
-  const open = (access: GeneralAccess | null) =>
-    access?.state === 'local' ||
-    access?.state === 'inherited' ||
-    !!(access?.state === 'expired' && access.entry)
   const links = [
     ...(sections.links ?? []).map((row) => row.grant),
     ...list.inherited
@@ -266,8 +271,8 @@ export function sharedWith(
   ].filter(gives).length
   return [
     ...new Set(named),
-    ...(open(sections.organization) ? [organizationLabel(workspace)] : []),
-    ...(open(sections.public) ? [principalLabel(PUBLIC)] : []),
+    ...(isOpen(sections.organization) ? [organizationLabel(workspace)] : []),
+    ...(isOpen(sections.public) ? [principalLabel(PUBLIC)] : []),
     ...(links ? [links === 1 ? '1 share link' : `${links} share links`] : []),
   ]
 }
