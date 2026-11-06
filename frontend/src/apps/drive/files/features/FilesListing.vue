@@ -196,6 +196,7 @@
                 class="flex min-w-0 items-center gap-1.5 text-base text-ink-gray-7"
                 :class="canShare?.(row) && !selectionMode && 'cursor-pointer hover:text-ink-gray-9'"
                 @click="onAccessClick($event, row)"
+                @dblclick="onAccessDblclick($event, row)"
               >
                 <span
                   :class="[audienceIcon(row.audience), 'size-4 shrink-0 text-ink-gray-5']"
@@ -829,11 +830,19 @@ function onNameClick(event: MouseEvent) {
   if (event.metaKey || event.ctrlKey) event.stopPropagation()
   else event.preventDefault()
 }
+/** Whether a click on an item's Access cell is the share dialog's rather than the row's. */
+function sharesOnClick(event: MouseEvent, row: DriveNode) {
+  if (props.selectionMode || event.metaKey || event.ctrlKey || event.shiftKey) return false
+  return !!props.canShare?.(row)
+}
 function onAccessClick(event: MouseEvent, row: DriveNode) {
-  if (props.selectionMode || event.metaKey || event.ctrlKey || event.shiftKey) return
-  if (!props.canShare?.(row)) return
+  if (!sharesOnClick(event, row)) return
   event.stopPropagation()
   emit('share', row)
+}
+/** A double click there opens Share once, not the item as well. */
+function onAccessDblclick(event: MouseEvent, row: DriveNode) {
+  if (sharesOnClick(event, row)) event.stopPropagation()
 }
 function rowDate(row: DriveNode) {
   return formatModified(byOpened.value ? (row.opened_at ?? null) : row.modified)

@@ -459,6 +459,30 @@ describe('FilesListing access column', () => {
     expect(events.shared).toEqual(['three'])
     expect(events.opened).toEqual(['org'])
   })
+
+  it('opens only Share on a double click on the cell, and the item where the user may not share', async () => {
+    const { root, events } = mount({
+      rows: audienceRows,
+      columns: ['access'],
+      canShare: (node) => node.name !== 'org',
+    })
+    await nextTick()
+    const doubleClick = (text: string) => {
+      const words = [...root.querySelectorAll<HTMLElement>('span')].find(
+        (span) => span.textContent === text,
+      )!
+      words.click()
+      words.click()
+      words.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, detail: 2 }))
+    }
+
+    doubleClick('3 people')
+    expect(events.opened).toEqual([])
+    expect(events.shared).toContain('three')
+
+    doubleClick('Your organization')
+    expect(events.opened).toContain('org')
+  })
 })
 
 describe('FilesListing selected runs', () => {
