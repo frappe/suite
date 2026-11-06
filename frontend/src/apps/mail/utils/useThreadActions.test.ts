@@ -9,6 +9,7 @@ import { useThreadActions } from './useThreadActions'
 const mocks = vi.hoisted(() => ({
   useMutation: vi.fn<typeof import('@/api').useMutation>(),
   holdDraft: vi.fn(),
+  raiseOptimisticToast: vi.fn(),
 }))
 vi.mock('@/api', async (original) => ({
   ...(await original<typeof import('@/api')>()),
@@ -17,7 +18,7 @@ vi.mock('@/api', async (original) => ({
 vi.mock('@/apps/mail/composables/useComposeWindow', () => ({ closeComposeWindowFor: vi.fn() }))
 vi.mock('@/apps/mail/utils', () => ({
   getIcon: vi.fn(),
-  raiseOptimisticToast: vi.fn(),
+  raiseOptimisticToast: mocks.raiseOptimisticToast,
   raisePromiseToast: vi.fn(),
   commitAfterUndo: vi.fn(),
 }))
@@ -134,4 +135,46 @@ it('discarding a reply draft from the list holds only the draft, not the mail it
   vi.unstubAllGlobals()
 
   expect(mocks.holdDraft.mock.calls.map(([id]) => id)).toEqual(['reply'])
+})
+
+const archiveFrom = (mailbox: string) => {
+  const message = { id: 'm1', name: 'm1', draft: 0, junk: 0, mailboxes: [{ mailbox_id: mailbox }] }
+  const conversation = { ...message, thread_id: 't1', messages: [message] }
+  return scope.run(() =>
+    useThreadActions({
+      rows: computed(() => [conversation] as never),
+      mailbox: computed(() => mailbox),
+      threadID: computed(() => undefined),
+      selections: ref([]),
+      mailThreadRef: ref(null),
+      resetThreads: vi.fn(),
+      syncAfterAction: vi.fn(),
+      removeThreadsFromList: () => [conversation] as never,
+      restoreThreadsToList: vi.fn(),
+      refillIfEmpty: vi.fn(),
+      goToMailbox: vi.fn(),
+      goToNextThreadOrMailbox: vi.fn(),
+    }),
+  )!
+}
+
+// raiseOptimisticToast says a plain message on the click, and waits for the answer to work out one
+// it has to read off it.
+it('names an archive out of the Inbox outright, so its toast can come with the click', () => {
+  fetcher.mockReturnValue(new Promise(() => {}))
+  vi.stubGlobal('__', (text: string) => text)
+  archiveFrom('inbox').handleArchiveThreads(['t1'])
+  vi.unstubAllGlobals()
+
+  expect(mocks.raiseOptimisticToast.mock.calls.at(-1)?.[1]).toBe('Thread archived.')
+})
+
+it('leaves the toast to the answer when archiving from a list the row stays on', () => {
+  fetcher.mockReturnValue(new Promise(() => {}))
+  vi.stubGlobal('__', (text: string) => text)
+  archiveFrom('a-folder').handleArchiveThreads(['t1'])
+  const told = mocks.raiseOptimisticToast.mock.calls.at(-1)?.[1]
+  expect(told({ left_inbox: false })).toBe('Added to Archive.')
+  expect(told({ left_inbox: true })).toBe('Thread archived.')
+  vi.unstubAllGlobals()
 })
