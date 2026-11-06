@@ -1,6 +1,10 @@
-import { api, useQuery } from '@/api'
+import { ref } from 'vue'
+
+import { api, client, useQuery } from '@/api'
 import type { DriveBreadcrumb, DriveNode, DriveRoots } from '@/apps/drive/client/types'
 import { useSession } from '@/platform/session'
+import { translate as __ } from '@/platform/translation'
+import { isTweakOn } from '@/platform/tweaks'
 
 /** The sidebar place a folder belongs to. */
 export type FilesLocation = 'personal' | 'organization' | 'shared'
@@ -9,6 +13,38 @@ export const LOCATION_LABELS: Record<FilesLocation, string> = {
   personal: 'My files',
   organization: 'Organization files',
   shared: 'Shared with me',
+}
+
+// The workspace name an admin gives in Setup ("Set up your workspace") and
+// Settings, stored as Suite Settings `workspace_name`. The server page boots
+// it; a page without that boot asks the site once.
+const workspace = ref(window.suite_workspace_name ?? '')
+let asked = false
+
+/**
+ * The company name the Organization root shows under, with `t41-company-files`.
+ * Empty with the tweak off or while no name is known. Reactive.
+ */
+export function organizationName(): string {
+  if (!isTweakOn('t41-company-files')) return ''
+  if (!asked && window.suite_workspace_name === undefined) {
+    asked = true
+    client
+      .query(api.suite.site.get)
+      .then((site) => {
+        workspace.value = site.workspace_name
+      })
+      .catch(() => {
+        asked = false
+      })
+  }
+  return workspace.value.trim()
+}
+
+/** The name of a sidebar place. The Organization root is "<company> files" once the company is known. */
+export function locationLabel(location: FilesLocation): string {
+  const name = location === 'organization' ? organizationName() : ''
+  return name ? __('{0} files', [name]) : LOCATION_LABELS[location]
 }
 
 /**
@@ -22,7 +58,7 @@ export function locationTitle(
 ): string {
   if (discovered && node.name === discovered.personal.node) return LOCATION_LABELS.personal
   if (discovered?.organization && node.name === discovered.organization.node)
-    return LOCATION_LABELS.organization
+    return locationLabel('organization')
   return node.title
 }
 

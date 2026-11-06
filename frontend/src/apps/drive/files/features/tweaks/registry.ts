@@ -38,7 +38,6 @@ export const tweaks = [
   { id: 't6', item: 6, group: 'Merge similar concepts', label: 'One byte format', description: 'Every size in Drive counts in 1024s, as upload limits do, without a trailing ".0" and with your decimal separator.', ready: true },
   { id: 't7', item: 7, group: 'Merge similar concepts', label: 'One "Folder" in the New menu', description: 'The New menu\'s upload items say "Upload files" and "Upload folder", so only Create has "Folder".', ready: true },
   { id: 't8', item: 8, group: 'Fewer steps', label: 'New document opens at once', description: 'A new document, spreadsheet, presentation or drawing opens with the default title instead of asking for a name.', ready: true },
-  { id: 't9', item: 9, group: 'Fewer steps', label: 'Share link in one click', description: 'A visible "New link" button creates a view link and copies it.', ready: true },
   { id: 't10', item: 10, group: 'Fewer steps', label: 'Desktop share footer', description: 'The desktop share dialog footer has a captioned Copy link and a Done button, like the phone layout.', ready: true },
   { id: 't11', item: 11, group: 'Fewer steps', label: 'Simpler duplicate-name dialog', description: 'The duplicate-name dialog has one Skip, shows the New name field only for Rename, and names its button after the choice.', ready: true },
   { id: 't12', item: 12, group: 'Fewer steps', label: 'Empty states with actions', description: 'Each empty view has its sidebar icon, an empty folder offers an "Upload files" button, and an empty search offers "Clear search".', ready: true },
@@ -95,6 +94,7 @@ export const tweaks = [
   { id: 't33-public-folder-wording', item: 33, group: 'Slow operations', label: 'Clear public wording', description: 'A public folder says everything in it is public, and Copy link says anyone with the link can view.', ready: true },
   { id: 't34-bulk-trash-confirm', item: 34, group: 'Slow operations', label: 'Ask before trashing several items', description: 'Moving two or more items to Trash, by any route, first asks with the count; one item still goes at once with Undo.', ready: true },
   { id: 't35-default-columns', item: 35, group: 'Habits', label: 'Type and Size shown by default', description: 'The list shows Modified, Type and Size to anyone who has not chosen columns, and keeps the columns a user did choose.', ready: true },
+  { id: 't41-company-files', item: 41, group: 'Merge similar concepts', label: 'Company name on the shared root', description: 'Drive names the Organization files root after your company, such as "Northwind Labs files", wherever it shows.', ready: true },
   { id: 't45-home-new', item: 45, group: 'Fewer steps', label: 'New cards on Home', description: 'Home shows a New section above Recent with one card each to create a document, spreadsheet, presentation or drawing in My files.', ready: true },
 ] as const satisfies readonly Tweak[]
 

@@ -10,7 +10,7 @@
       />
       <SidebarItem
         v-if="discovered.data?.organization"
-        label="Organization files"
+        :label="locationLabel('organization')"
         icon="lucide-building-2"
         route="/drive/organization"
         :active="current === 'organization'"
@@ -55,7 +55,11 @@ import { api, useQuery } from '@/api'
 import StorageMeter from '@/apps/drive/files/features/StorageMeter.vue'
 import { isTweakPanelOpen } from '@/apps/drive/files/features/tweaks/panel'
 import { TRASH_TARGET, type DragMove } from '@/apps/drive/files/features/useDragMove'
-import { locationOf, type FilesLocation } from '@/apps/drive/files/internal/locations'
+import {
+  locationLabel,
+  locationOf,
+  type FilesLocation,
+} from '@/apps/drive/files/internal/locations'
 import { AreaSidebarFooter } from '@/platform/area-sidebar'
 import { translate as __ } from '@/platform/translation'
 

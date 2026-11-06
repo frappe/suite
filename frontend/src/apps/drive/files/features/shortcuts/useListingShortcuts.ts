@@ -11,6 +11,8 @@ import { useKeySequences, type KeySequenceShortcut, type Letter } from '@/platfo
 import { translate as __ } from '@/platform/translation'
 import { useTweak } from '@/platform/tweaks'
 
+import { locationLabel, organizationName } from '../../internal/locations'
+
 /** What a shortcut runs: the menu option that offers the same action, so the menu's rules apply. */
 export type ListingCommand = Pick<DropdownActionOption, 'onClick' | 'disabled'>
 
@@ -183,7 +185,11 @@ export function useListingShortcuts(
     letter('U', __('Upload files'), (offered) => offered.upload),
     letter('N', __('New folder'), (offered) => offered.newFolder),
     view('H', __('My files'), 'personal'),
-    view('E', __('Organization files'), 'organization'),
+    view(
+      'E',
+      organizationName() ? locationLabel('organization') : __('Organization files'),
+      'organization',
+    ),
     view('I', __('Shared with me'), 'shared'),
     view('R', __('Recent'), 'recent'),
     view('F', __('Starred'), 'starred'),

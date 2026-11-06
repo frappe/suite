@@ -1,5 +1,7 @@
 import { translate as __ } from '@/platform/translation'
 
+import { organizationName } from '../internal/locations'
+
 export type FilesDestination =
   'personal' | 'organization' | 'folder' | 'shared' | 'recent' | 'starred' | 'trash'
 
@@ -82,11 +84,18 @@ export function emptyState({
   switch (destination) {
     case 'personal':
       return { title: 'No files yet', description: addHint || 'Files you add will appear here.' }
-    case 'organization':
+    case 'organization': {
+      const company = organizationName()
+      if (company)
+        return {
+          title: __('No {0} files yet', [company]),
+          description: addHint || __('Files added for {0} will appear here.', [company]),
+        }
       return {
         title: 'No organization files yet',
         description: addHint || 'Files added for your organization will appear here.',
       }
+    }
     case 'folder':
       if (inTrash)
         return {

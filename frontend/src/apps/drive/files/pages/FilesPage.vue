@@ -189,10 +189,11 @@
           <TabButtons
             v-if="trashTabs"
             class="mt-3 max-w-96"
+            :fluid="!!organizationName()"
             :model-value="route.query.root === 'organization' ? 'organization' : 'personal'"
             :options="[
               { value: 'personal', label: 'My files' },
-              { value: 'organization', label: 'Organization files' },
+              { value: 'organization', label: locationLabel('organization') },
             ]"
             @update:model-value="switchTrashRoot"
           />
@@ -391,7 +392,13 @@ import { useDragMove } from '../features/useDragMove'
 import { useListingSelection } from '../features/useListingSelection'
 import ViewSettings from '../features/ViewSettings.vue'
 import { nodeIcon, nodeIconTint } from '../internal/icons'
-import { LOCATION_LABELS, locationTitle, trashLocation } from '../internal/locations'
+import {
+  LOCATION_LABELS,
+  locationLabel,
+  locationTitle,
+  organizationName,
+  trashLocation,
+} from '../internal/locations'
 import { slugify } from '../internal/slugify'
 import FilesPanel from './FilesPanel.vue'
 
@@ -569,7 +576,7 @@ const placeLabel = computed(() => {
   return (
     {
       personal: LOCATION_LABELS.personal,
-      organization: LOCATION_LABELS.organization,
+      organization: locationLabel('organization'),
       shared: LOCATION_LABELS.shared,
       recent: 'Recent',
       starred: 'Starred',
@@ -616,6 +623,7 @@ const breadcrumbs = computed(() => {
 })
 usePageTitle(() => {
   if (isSearching.value) return `Search results for “${searchTerm.value}”`
+  if (props.destination === 'organization' && organizationName()) return placeLabel.value
   return props.destination === 'folder' ? (folderTitle.value ?? '') : ''
 })
 const folderParent = computed<RouteLocationRaw | null>(() => {

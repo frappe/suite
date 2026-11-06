@@ -16,7 +16,7 @@ import { toast } from '@/platform/feedback'
 import { translate as __ } from '@/platform/translation'
 import { isTweakOn } from '@/platform/tweaks'
 
-import { LOCATION_LABELS, locationTitle } from '../internal/locations'
+import { LOCATION_LABELS, locationLabel, locationTitle } from '../internal/locations'
 import {
   cancelDrag,
   draggedItems,
@@ -117,7 +117,7 @@ export function useDragMove(options: {
       return { kind: 'folder', node: key, title, role: DRIVE_ROLES.manage, ancestors: [] }
     }
     if (key === organizationNode.value) {
-      const title = LOCATION_LABELS.organization
+      const title = locationLabel('organization')
       const role = organization.data?.access?.role
       return { kind: 'folder', node: key, title, role, ancestors: [] }
     }

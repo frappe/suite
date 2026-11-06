@@ -1,6 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { emptyState, emptyStateWithActions } from './emptyState'
+
+// No company name: the organization root keeps its generic copy, and nothing asks the site.
+beforeEach(() => {
+  window.suite_workspace_name = ''
+})
 
 describe('empty states', () => {
   it('says a search found nothing, whatever the view', () => {
@@ -52,6 +57,17 @@ describe('empty states', () => {
     expect(emptyState({ destination: 'trash', term: '', canCreate: false }).description).toContain(
       '30 days',
     )
+  })
+
+  it('names the company in an empty organization root', async () => {
+    vi.resetModules()
+    window.suite_workspace_name = 'Northwind Labs'
+    const fresh = await import('./emptyState')
+    expect(fresh.emptyState({ destination: 'organization', term: '', canCreate: false })).toEqual({
+      title: 'No Northwind Labs files yet',
+      description: 'Files added for Northwind Labs will appear here.',
+    })
+    delete window.suite_workspace_name
   })
 })
 

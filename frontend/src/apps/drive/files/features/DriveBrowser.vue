@@ -112,7 +112,7 @@ import type { DriveAccess, DriveNode } from '@/apps/drive/client/types'
 import { translate as __ } from '@/platform/translation'
 
 import { nodeIcon, nodeIconTint } from '../internal/icons'
-import { locationTitle } from '../internal/locations'
+import { locationLabel, locationTitle } from '../internal/locations'
 import { useOpenedKey } from '../internal/openedKey'
 import { SKELETON_BAR } from './listSkeleton'
 
@@ -168,7 +168,7 @@ const rootOptions = computed(() =>
   [
     { value: 'personal', label: __('My files') },
     ...(discovered.data?.organization
-      ? [{ value: 'organization', label: __('Organization files') }]
+      ? [{ value: 'organization', label: locationLabel('organization') }]
       : []),
   ].filter(
     (option) =>
