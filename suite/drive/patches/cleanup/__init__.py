@@ -62,8 +62,9 @@ census and disk-settings snapshot every later phase needs (step 1); the
 `File` rows of Presentation pictures Build turned into nodes, unless a slide
 body still names one (also step 1); the
 seven `File` custom fields and three property setters (step 2); every
-legacy Drive doctype and the old notification columns, after which
-`Drive Notification.activity` becomes required (step 3); the verification
+legacy Drive doctype and the old notification columns (step 3). A
+notification points at an activity or at a download, so `activity` stays
+optional. Then come the verification
 that no governed `DocShare` row survived Build, the Writer/Sheet history
 doctypes, and the comment stores Build migrated (step 4); the
 title/trashed/settings columns, all ten of §3.13's `Drive Disk Settings`

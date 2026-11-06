@@ -15,14 +15,15 @@ import { createGuestCommentName, type GuestCommentName } from '@/apps/drive/clie
 import { driveLinks } from '@/apps/drive/client/links'
 import { createDocument, recordVisit } from '@/apps/drive/client/nodes'
 import { openDriveDocumentSession, type DocumentSession } from '@/apps/drive/client/session'
-import type { DriveBreadcrumb, DriveNode } from '@/apps/drive/client/types'
+import { DRIVE_ROLES, type DriveBreadcrumb, type DriveNode } from '@/apps/drive/client/types'
 import { announceTrash } from '@/apps/drive/files/features/changeToast'
 import { presentDialog, rememberDialogContext } from '@/apps/drive/files/features/dialogHost'
 import { nodeActions, type ActionNode } from '@/apps/drive/files/features/nodeActions'
 import { observePreviewRefresh } from '@/apps/drive/files/features/previewRefresh'
+import { usePaletteSearch } from '@/apps/drive/files/features/usePaletteSearch'
 import { useLocationTitle } from '@/apps/drive/files/internal/locations'
 import { slugify } from '@/apps/drive/files/internal/slugify'
-import type { AreaDefinition } from '@/platform/contracts'
+import type { AreaDefinition, PaletteSearchSource } from '@/platform/contracts'
 import { toast } from '@/platform/feedback'
 import { newDocumentState, openingTitleState } from '@/platform/page-meta'
 import { useSession } from '@/platform/session'
@@ -197,6 +198,12 @@ export function driveNodeRoute(
   return { path: `${base}${slug ? `/${slug}` : ''}`, state: openingTitleState(label) }
 }
 
+/** Drive's nodes by name, for the command palette on pages with no search of their own. */
+export const drivePaletteSearch: PaletteSearchSource = {
+  label: () => __('Drive'),
+  use: (term) => usePaletteSearch(term, driveNodeRoute),
+}
+
 /** Opens a document this tab has just created. Its page takes typing before the document loads. */
 export function newDocumentRoute(node: DriveNodeSummary): RouteLocationPathRaw {
   const route = driveNodeRoute(node)
@@ -214,7 +221,8 @@ export interface DriveDocumentAction {
 /**
  * A document's own Drive actions for its menu: `back` to the folder it is in,
  * and its `node` actions, Duplicate and Delete. Each shows only when the caller
- * may take it. Call it in a component's setup.
+ * may take it: Duplicate copies into the folder, so it needs UPLOAD there.
+ * Call it in a component's setup.
  */
 export function useDriveDocumentActions(
   session: DocumentSession,
@@ -222,12 +230,13 @@ export function useDriveDocumentActions(
   const account = useSession()
   const actions = documentActions(session)
   return computed(() => {
-    const isFiled = session.folder.value !== null
+    const folder = session.folder.value
     const can = nodeActions(actionNodeOf(session), account.status.value === 'authenticated')
+    const canUploadToFolder = folder !== null && folder.role >= DRIVE_ROLES.upload
     return {
-      back: actionsWhere([[isFiled, actions.back]]),
+      back: actionsWhere([[folder !== null, actions.back]]),
       node: actionsWhere([
-        [isFiled && can.copy, actions.duplicate],
+        [canUploadToFolder && can.copy, actions.duplicate],
         [can.trash, actions.delete],
       ]),
     }
@@ -388,6 +397,8 @@ export const filePreviewSurface = defineAsyncComponent(
 export interface DriveDialogs {
   /** Opens the folder picker to move `node`. Resolves with the moved node, or `undefined` when cancelled. */
   move(node: string): Promise<DriveNodeSummary | undefined>
+  /** Opens the folder picker to copy `node`. Resolves with the copy, or `undefined` when cancelled. */
+  copy(node: string): Promise<DriveNodeSummary | undefined>
   /** Shows read-only details of `node`. Resolves when the dialog closes. */
   showDetails(node: string): Promise<void>
   /** Opens the share dialog for `node`. Resolves when it closes: `true` when a write in it went through. */
@@ -407,6 +418,13 @@ export function useDriveDialogs(): DriveDialogs {
         () => import('@/apps/drive/files/features/MoveNodeDialog.vue'),
         { node },
         'moved',
+      ),
+    copy: (node) =>
+      presentDialog<DriveNodeSummary>(
+        context,
+        () => import('@/apps/drive/files/features/CopyNodeDialog.vue'),
+        { node },
+        'copied',
       ),
     showDetails: async (node) => {
       await presentDialog(context, () => import('@/apps/drive/files/features/NodeInfoDialog.vue'), {

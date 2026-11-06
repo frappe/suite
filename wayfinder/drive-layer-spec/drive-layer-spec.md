@@ -3179,9 +3179,6 @@ page (§11.4).
 | DELETE | `/nodes/<id>` | MANAGE on node | none | `{count}` | 403, 409 when the node is not a trash root |
 | GET | `/nodes/<id>/children` | READ on node | `?limit=&cursor=&order_by=&ascending=&type=folder,document,spreadsheet,presentation,pdf,image,video,audio&expand=access,breadcrumbs,preview` | cursor page of node shapes | 409 on a document node |
 | POST | `/nodes/<id>/copy` | READ on node, UPLOAD on `parent_node` | `{parent_node, title?}` | node shape | 403, 409, 413 |
-| POST | `/nodes/<id>/archive` | READ on every included node | none | `{status, file_name, size, error}` | 409 above the synchronous cap |
-| GET | `/nodes/<id>/archive` | READ on folder | none | `{status, file_name, size, error}` | none |
-| GET | `/nodes/<id>/archive/download` | READ on folder and every archived node | none | streamed ZIP when ready | none |
 | POST | `/nodes/batch` | per node | `{nodes: [...], patch: {...}}` | batch shape | none |
 | POST | `/nodes/batch/purge` | MANAGE on each node | `{nodes: [...]}` | batch shape | none |
 | PUT | `/nodes/<id>/content` | EDIT on node | `{upload_id, checksum?, content_modified?}` | node shape | 403, 413 |
@@ -3218,18 +3215,66 @@ each route takes one body shape.
 the document, then mints a signed `/f/` URL per child node with a 15-minute
 TTL. The page calls it again at 10 minutes [012 §2, §3, 014].
 
-Folder archives build synchronously. The server caps total uncompressed file
-and document bytes at 512 MiB, spools the ZIP, and stores it as a private blob
-for one hour. The build checks READ on the folder and on every included active
-node before writing bytes. One unreadable descendant refuses the whole build.
-The download route rechecks READ on every node recorded in the build before
-streaming the ready blob through the active storage driver. It checks those
-original members even if they have moved out of the folder. A missing,
-trashed, or unreadable member refuses the download; rebuild the archive to
-update its contents. Cached builds without a member list must be rebuilt.
-The legacy `_build_zip` helper is coupled to legacy `File` rows and
-`FileManager.iter_blocks()`. The workflow does not import that layer. It keeps
-the same `ZIP_STORED` streaming shape over `File Blob` storage drivers.
+**Downloads**
+
+| Method | Path | R | Body | `data` | Errors |
+|---|---|---|---|---|---|
+| POST | `/downloads` | READ on every selected node | `{nodes: [...]}` | download shape | 404, 409 |
+| GET | `/downloads/<id>` | the requester | none | download shape | 404 |
+| GET | `/downloads/<id>/content` | the requester; READ on every member | none | streamed ZIP | 404, as an HTML page |
+
+A download is one person's zip of one or more nodes. Its name is 128 random
+bits. `POST /downloads` records a `Drive Download` row in `Preparing` and
+queues a job on the long queue after commit. The download shape is `{name,
+title, status, delivery, size, expires_at, error, url}`. `status` is
+`Preparing`, `Ready`, `Failed`, or `Expired` once a ready zip's day is over;
+`url` is set only while it is `Ready`. One node names the zip after itself.
+Several nodes under one readable folder name it after that folder. Anything
+else is "Suite download.zip".
+
+Asking again for the same nodes with the same links answers the caller's
+`Preparing` or `Ready` row instead of building a second zip; a ready zip whose
+member the caller can no longer read is not reused. A caller may have three
+downloads `Preparing` at once, and a fourth is refused with `DriveConflict`.
+Every Guest is one requester, so Guests are counted per set of links.
+
+`delivery` says how the zip reaches the caller. A signed-in caller who reads
+every selected node through their own principals gets an `Inbox` download:
+the job is built with those principals alone, and a `Drive Notification` that
+points at the download, not at an activity row, links the zip; the page that
+asked polls as well, so the download also starts there while it stays open. A
+Guest, or a caller who reads a selected node only through a share link, gets
+a `Page` download: the row keeps the request's link credentials, there is no
+notification, and the page that asked polls `GET /downloads/<id>` and opens
+`url` itself. A browser navigation carries no `X-Drive-Links` header, so the
+content route adds the recorded links to the caller's own principals.
+
+The job checks READ on every selected node and every active descendant before
+it writes bytes. One unreadable member fails the whole zip. It caps
+uncompressed bytes at 4 GiB and writes `ZIP_STORED` entries, as Zip64 so a
+file over 2 GiB fits, into a spooled file. `put_blob` then copies that file
+into the active storage driver as a private `File Blob`, so the worker needs
+free temporary disk of about twice the zip's size, up to 8 GiB. The job then
+marks the row `Ready` or `Failed`, and an `Inbox` download notifies its
+requester and emits `drive:changed`.
+
+The content route rechecks READ on every recorded member, even one that has
+moved out of the folder, before it streams the blob through the active
+storage driver. A missing, trashed or unreadable member, a revoked or expired
+link, or an expired zip refuses it. A browser opens this route itself, so a
+refusal answers 404 as an HTML page that says why, not as a JSON envelope. A
+download is visible only to its requester.
+
+A zip expires 24 hours after it is ready. A download still `Preparing` an hour
+and a quarter after it was asked for, which is the job timeout and a margin,
+has stalled: `GET /downloads/<id>` answers it `Failed` at once, so a waiting
+page stops, asking again neither reuses it nor counts it among the three, and
+a job that only starts then builds nothing.
+An hourly job then records it `Failed` and notifies an `Inbox` requester. A
+download whose job
+cannot be queued fails at once. The same job deletes expired downloads and
+their notifications. The storage collector then frees the blob, because
+`Drive Download.blob` is its only reference.
 
 **Uploads**
 
@@ -3410,7 +3455,7 @@ node, content, author, author_name, mentions, creation, modified}`.
 
 | Method | Path | R | Body | `data` |
 |---|---|---|---|---|
-| GET | `/notifications` | own | `?limit=&cursor=&unread=` | cursor page of `{activity, read, ...}` |
+| GET | `/notifications` | own | `?limit=&cursor=&unread=` | cursor page of `{activity, read, ...}` or `{download, read, ...}` |
 | GET | `/notifications/unread-count` | own | none | `{unread: <n>}` |
 | POST | `/notifications/read` | own | `{notifications: [...]}` or `{all: true}` | `{count}` |
 | GET | `/roots` | signed-in caller | none | `{personal: {node, title}, organization: {node, title} \| null}` |
@@ -3674,9 +3719,9 @@ an old client or an old bug report can find the new call.
 | `get_file_content` | `GET /nodes/<id>/content` |
 | `stream_file_content` | `GET /nodes/<id>/content` |
 | `get_thumbnail` | `GET /nodes/<id>?expand=preview` |
-| `download_folder` | `POST /nodes/<id>/archive` |
-| `download_status` | `GET /nodes/<id>/archive` |
-| `download_archive` | `GET /nodes/<id>/archive/download` |
+| `download_folder` | `POST /downloads` |
+| `download_status` | the download's notification, or the `POST /downloads` result |
+| `download_archive` | `GET /downloads/<id>/content` |
 | `create_auth_token` | dropped; `/f/` signatures replace it [008] |
 | `does_entity_exist` | `GET /nodes/<id>` |
 | `get_new_title` | dropped; `DriveConflict` replaces it (§8.6) |

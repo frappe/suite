@@ -14,6 +14,7 @@ connection's snapshot is dropped, which `reread` does.
 """
 
 import io
+import json
 import time
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
@@ -1812,6 +1813,24 @@ class TestGrantedCollaborator(DriveHTTPCase):
         self.assertEqual(answer["access"]["source_node"], self.folder)
         self.assertEqual(answer["access"]["source_principal"], STRANGER)
 
+    def test_each_breadcrumb_carries_the_callers_role_there(self):
+        # The owner's root is not the editor's to see, so both trails start at the shared folder.
+        node = self.data(
+            self.drive(
+                "GET", f"{PREFIX}/nodes/{self.file}", query={"expand": "breadcrumbs"}, sid=self.stranger_sid
+            )
+        )
+        listed = self.data(
+            self.drive(
+                "GET",
+                f"{PREFIX}/nodes/{self.folder}/children",
+                query={"expand": "breadcrumbs"},
+                sid=self.stranger_sid,
+            )
+        )
+        for trail in (node["breadcrumbs"], listed["rows"][0]["breadcrumbs"]):
+            self.assertEqual([(step["name"], step["role"]) for step in trail], [(self.folder, EDIT)])
+
     def test_a_link_that_ties_an_own_grant_is_not_named_as_the_source(self):
         # §5.1 makes pass 1 the answer when it ties pass 2, and `via_link` says
         # so. The source fields have to agree: naming the deeper link while
@@ -2426,6 +2445,16 @@ class TestViewRoutes(DriveHTTPCase):
             with self.subTest(type=unknown):
                 answer = self.as_owner("GET", f"{PREFIX}/views/recents", query={"type": unknown})
                 self.refusal(answer, 400, "DriveError")
+
+    def test_named_recents_are_removed_from_the_query_string_and_the_rest_stay(self):
+        self.data(self.as_owner("POST", f"{PREFIX}/nodes/{self.folder}/visit", body={}))
+        self.data(self.as_owner("POST", f"{PREFIX}/nodes/{self.file}/visit", body={}))
+        # The generated client sends a list in a query string as JSON text.
+        answer = self.data(
+            self.as_owner("DELETE", f"{PREFIX}/views/recents", query={"nodes": json.dumps([self.file])})
+        )
+        self.assertEqual(answer, {"count": 1})
+        self.assertEqual([row["name"] for row in self.view("recents")["rows"]], [self.folder])
 
     def test_every_node_view_filters_by_type_and_the_root_views_refuse_it(self):
         # B46: `?type=` means the same on every node view. `templates` lists

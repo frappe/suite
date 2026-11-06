@@ -6,6 +6,7 @@
  "engine": "InnoDB",
  "field_order": [
   "activity",
+  "download",
   "to_user",
   "read",
   "title_without_access"
@@ -15,8 +16,14 @@
    "fieldname": "activity",
    "fieldtype": "Link",
    "label": "Activity",
-   "options": "Drive Activity",
-   "reqd": 1
+   "options": "Drive Activity"
+  },
+  {
+   "fieldname": "download",
+   "fieldtype": "Link",
+   "label": "Download",
+   "options": "Drive Download",
+   "search_index": 1
   },
   {
    "fieldname": "to_user",
@@ -42,7 +49,7 @@
   }
  ],
  "links": [],
- "modified": "2026-11-04 18:00:00.000000",
+ "modified": "2026-11-06 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Drive",
  "name": "Drive Notification",

@@ -5,7 +5,7 @@
 //
 // Handing it a URL to fetch is not the way to do that here. Constructing the Worker ourselves is
 // the shape Vite compiles as a worker — served as one in dev, emitted as an asset in the build —
-// and it is what lets the worker be wrapped (./pdfWorker.ts) instead of loaded raw. pdf.js takes
+// and it is what lets the worker be wrapped (./worker.ts) instead of loaded raw. pdf.js takes
 // the live Worker through `workerPort`.
 //
 // One module, so the whole frontend shares one copy of pdf.js and one worker: mail's attachment
@@ -17,12 +17,13 @@
 //
 // The worker outlives the documents drawn through it: pdf.js re-attaches to the same port for each
 // one, so there is nothing to tear down between attachments.
-import '@/utils/readableStreamValues'
+import './streamValues'
 
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs'
 
-pdfjs.GlobalWorkerOptions.workerPort = new Worker(new URL('./pdfWorker.ts', import.meta.url), {
+pdfjs.GlobalWorkerOptions.workerPort = new Worker(new URL('./worker.ts', import.meta.url), {
   type: 'module',
 })
 
 export { pdfjs }
+export type { PDFDocumentLoadingTask, PDFDocumentProxy } from 'pdfjs-dist/legacy/build/pdf.mjs'

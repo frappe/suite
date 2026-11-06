@@ -7,6 +7,12 @@ import type {
   CommentDeleteOutput,
   CommentPatchInput,
   CommentPatchOutput,
+  DownloadContentInput,
+  DownloadContentOutput,
+  DownloadGetInput,
+  DownloadGetOutput,
+  DownloadStartInput,
+  DownloadStartOutput,
   GrantDeleteInput,
   GrantDeleteOutput,
   GrantPatchInput,
@@ -17,12 +23,6 @@ import type {
   LinkUnlockOutput,
   NodeActivityInput,
   NodeActivityOutput,
-  NodeArchiveDownloadInput,
-  NodeArchiveDownloadOutput,
-  NodeArchiveStartInput,
-  NodeArchiveStartOutput,
-  NodeArchiveStatusInput,
-  NodeArchiveStatusOutput,
   NodeBatchInput,
   NodeBatchOutput,
   NodeBatchPurgeInput,
@@ -184,8 +184,9 @@ export const operationNodeCreateCreateFolder: Validators<
               name: { title: 'Name', type: 'string' },
               title: { title: 'Title', type: 'string' },
               kind: { title: 'Kind', type: 'string' },
+              role: { title: 'Role', type: 'integer' },
             },
-            required: ['name', 'title', 'kind'],
+            required: ['name', 'title', 'kind', 'role'],
             title: 'BreadcrumbShape',
             type: 'object',
           },
@@ -322,8 +323,9 @@ export const operationNodeCreateCreateFile: Validators<
               name: { title: 'Name', type: 'string' },
               title: { title: 'Title', type: 'string' },
               kind: { title: 'Kind', type: 'string' },
+              role: { title: 'Role', type: 'integer' },
             },
-            required: ['name', 'title', 'kind'],
+            required: ['name', 'title', 'kind', 'role'],
             title: 'BreadcrumbShape',
             type: 'object',
           },
@@ -457,8 +459,9 @@ export const operationNodeCreateCreateLink: Validators<
               name: { title: 'Name', type: 'string' },
               title: { title: 'Title', type: 'string' },
               kind: { title: 'Kind', type: 'string' },
+              role: { title: 'Role', type: 'integer' },
             },
-            required: ['name', 'title', 'kind'],
+            required: ['name', 'title', 'kind', 'role'],
             title: 'BreadcrumbShape',
             type: 'object',
           },
@@ -595,8 +598,9 @@ export const operationNodeCreateCreateDocument: Validators<
               name: { title: 'Name', type: 'string' },
               title: { title: 'Title', type: 'string' },
               kind: { title: 'Kind', type: 'string' },
+              role: { title: 'Role', type: 'integer' },
             },
-            required: ['name', 'title', 'kind'],
+            required: ['name', 'title', 'kind', 'role'],
             title: 'BreadcrumbShape',
             type: 'object',
           },
@@ -823,8 +827,9 @@ export const operationNodeGet: Validators<NodeGetInput, NodeGetOutput> = {
               name: { title: 'Name', type: 'string' },
               title: { title: 'Title', type: 'string' },
               kind: { title: 'Kind', type: 'string' },
+              role: { title: 'Role', type: 'integer' },
             },
-            required: ['name', 'title', 'kind'],
+            required: ['name', 'title', 'kind', 'role'],
             title: 'BreadcrumbShape',
             type: 'object',
           },
@@ -950,8 +955,9 @@ export const operationNodePatchRename: Validators<NodePatchRenameInput, NodePatc
               name: { title: 'Name', type: 'string' },
               title: { title: 'Title', type: 'string' },
               kind: { title: 'Kind', type: 'string' },
+              role: { title: 'Role', type: 'integer' },
             },
-            required: ['name', 'title', 'kind'],
+            required: ['name', 'title', 'kind', 'role'],
             title: 'BreadcrumbShape',
             type: 'object',
           },
@@ -1081,8 +1087,9 @@ export const operationNodePatchMove: Validators<NodePatchMoveInput, NodePatchMov
               name: { title: 'Name', type: 'string' },
               title: { title: 'Title', type: 'string' },
               kind: { title: 'Kind', type: 'string' },
+              role: { title: 'Role', type: 'integer' },
             },
-            required: ['name', 'title', 'kind'],
+            required: ['name', 'title', 'kind', 'role'],
             title: 'BreadcrumbShape',
             type: 'object',
           },
@@ -1211,8 +1218,9 @@ export const operationNodePatchTrash: Validators<NodePatchTrashInput, NodePatchT
               name: { title: 'Name', type: 'string' },
               title: { title: 'Title', type: 'string' },
               kind: { title: 'Kind', type: 'string' },
+              role: { title: 'Role', type: 'integer' },
             },
-            required: ['name', 'title', 'kind'],
+            required: ['name', 'title', 'kind', 'role'],
             title: 'BreadcrumbShape',
             type: 'object',
           },
@@ -1346,8 +1354,9 @@ export const operationNodePatchRestore: Validators<NodePatchRestoreInput, NodePa
                 name: { title: 'Name', type: 'string' },
                 title: { title: 'Title', type: 'string' },
                 kind: { title: 'Kind', type: 'string' },
+                role: { title: 'Role', type: 'integer' },
               },
-              required: ['name', 'title', 'kind'],
+              required: ['name', 'title', 'kind', 'role'],
               title: 'BreadcrumbShape',
               type: 'object',
             },
@@ -1476,8 +1485,9 @@ export const operationNodePatchStamp: Validators<NodePatchStampInput, NodePatchS
               name: { title: 'Name', type: 'string' },
               title: { title: 'Title', type: 'string' },
               kind: { title: 'Kind', type: 'string' },
+              role: { title: 'Role', type: 'integer' },
             },
-            required: ['name', 'title', 'kind'],
+            required: ['name', 'title', 'kind', 'role'],
             title: 'BreadcrumbShape',
             type: 'object',
           },
@@ -1699,8 +1709,9 @@ export const operationNodeChildren: Validators<NodeChildrenInput, NodeChildrenOu
               name: { title: 'Name', type: 'string' },
               title: { title: 'Title', type: 'string' },
               kind: { title: 'Kind', type: 'string' },
+              role: { title: 'Role', type: 'integer' },
             },
-            required: ['name', 'title', 'kind'],
+            required: ['name', 'title', 'kind', 'role'],
             title: 'BreadcrumbShape',
             type: 'object',
           },
@@ -1839,8 +1850,9 @@ export const operationNodeCopy: Validators<NodeCopyInput, NodeCopyOutput> = {
               name: { title: 'Name', type: 'string' },
               title: { title: 'Title', type: 'string' },
               kind: { title: 'Kind', type: 'string' },
+              role: { title: 'Role', type: 'integer' },
             },
-            required: ['name', 'title', 'kind'],
+            required: ['name', 'title', 'kind', 'role'],
             title: 'BreadcrumbShape',
             type: 'object',
           },
@@ -1928,98 +1940,6 @@ export const operationNodeCopy: Validators<NodeCopyInput, NodeCopyOutput> = {
   },
 }
 
-export const operationNodeArchiveStart: Validators<NodeArchiveStartInput, NodeArchiveStartOutput> =
-  {
-    validateInput(value: unknown): asserts value is NodeArchiveStartInput {
-      assertSchema(
-        value,
-        {
-          type: 'object',
-          properties: { node: { type: 'string' } },
-          required: ['node'],
-          additionalProperties: false,
-          $defs: {},
-        },
-        'node_archive_start input',
-      )
-    },
-    validateOutput(value: unknown): asserts value is NodeArchiveStartOutput {
-      assertSchema(
-        value,
-        {
-          properties: {
-            status: { enum: ['building', 'ready', 'failed'], title: 'Status', type: 'string' },
-            file_name: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'File Name' },
-            size: { anyOf: [{ type: 'integer' }, { type: 'null' }], title: 'Size' },
-            error: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Error' },
-          },
-          required: ['status', 'file_name', 'size', 'error'],
-          title: 'ArchiveStatus',
-          type: 'object',
-        },
-        'node_archive_start output',
-      )
-    },
-  }
-
-export const operationNodeArchiveStatus: Validators<
-  NodeArchiveStatusInput,
-  NodeArchiveStatusOutput
-> = {
-  validateInput(value: unknown): asserts value is NodeArchiveStatusInput {
-    assertSchema(
-      value,
-      {
-        type: 'object',
-        properties: { node: { type: 'string' } },
-        required: ['node'],
-        additionalProperties: false,
-        $defs: {},
-      },
-      'node_archive_status input',
-    )
-  },
-  validateOutput(value: unknown): asserts value is NodeArchiveStatusOutput {
-    assertSchema(
-      value,
-      {
-        properties: {
-          status: { enum: ['building', 'ready', 'failed'], title: 'Status', type: 'string' },
-          file_name: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'File Name' },
-          size: { anyOf: [{ type: 'integer' }, { type: 'null' }], title: 'Size' },
-          error: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Error' },
-        },
-        required: ['status', 'file_name', 'size', 'error'],
-        title: 'ArchiveStatus',
-        type: 'object',
-      },
-      'node_archive_status output',
-    )
-  },
-}
-
-export const operationNodeArchiveDownload: Validators<
-  NodeArchiveDownloadInput,
-  NodeArchiveDownloadOutput
-> = {
-  validateInput(value: unknown): asserts value is NodeArchiveDownloadInput {
-    assertSchema(
-      value,
-      {
-        type: 'object',
-        properties: { node: { type: 'string' } },
-        required: ['node'],
-        additionalProperties: false,
-        $defs: {},
-      },
-      'node_archive_download input',
-    )
-  },
-  validateOutput(value: unknown): asserts value is NodeArchiveDownloadOutput {
-    if (!(value instanceof Blob)) throw new TypeError('Expected Blob')
-  },
-}
-
 export const operationNodePutContent: Validators<NodePutContentInput, NodePutContentOutput> = {
   validateInput(value: unknown): asserts value is NodePutContentInput {
     assertSchema(
@@ -2063,8 +1983,9 @@ export const operationNodePutContent: Validators<NodePutContentInput, NodePutCon
               name: { title: 'Name', type: 'string' },
               title: { title: 'Title', type: 'string' },
               kind: { title: 'Kind', type: 'string' },
+              role: { title: 'Role', type: 'integer' },
             },
-            required: ['name', 'title', 'kind'],
+            required: ['name', 'title', 'kind', 'role'],
             title: 'BreadcrumbShape',
             type: 'object',
           },
@@ -2398,8 +2319,9 @@ export const operationUploadFinish: Validators<UploadFinishInput, UploadFinishOu
               name: { title: 'Name', type: 'string' },
               title: { title: 'Title', type: 'string' },
               kind: { title: 'Kind', type: 'string' },
+              role: { title: 'Role', type: 'integer' },
             },
-            required: ['name', 'title', 'kind'],
+            required: ['name', 'title', 'kind', 'role'],
             title: 'BreadcrumbShape',
             type: 'object',
           },
@@ -3140,8 +3062,9 @@ export const operationViewList: Validators<ViewListInput, ViewListOutput> = {
               name: { title: 'Name', type: 'string' },
               title: { title: 'Title', type: 'string' },
               kind: { title: 'Kind', type: 'string' },
+              role: { title: 'Role', type: 'integer' },
             },
-            required: ['name', 'title', 'kind'],
+            required: ['name', 'title', 'kind', 'role'],
             title: 'BreadcrumbShape',
             type: 'object',
           },
@@ -4179,6 +4102,38 @@ export const operationNotificationsList: Validators<
             title: 'ActivityShape',
             type: 'object',
           },
+          DownloadNotificationShape: {
+            description:
+              "A notification that the caller's own download is ready, or that it failed.",
+            properties: {
+              name: { title: 'Name', type: 'string' },
+              read: { title: 'Read', type: 'integer' },
+              creation: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Creation' },
+              download: { $ref: '#/$defs/DownloadShape' },
+            },
+            required: ['name', 'read', 'creation', 'download'],
+            title: 'DownloadNotificationShape',
+            type: 'object',
+          },
+          DownloadShape: {
+            properties: {
+              name: { title: 'Name', type: 'string' },
+              title: { title: 'Title', type: 'string' },
+              status: {
+                enum: ['Preparing', 'Ready', 'Failed', 'Expired'],
+                title: 'Status',
+                type: 'string',
+              },
+              delivery: { enum: ['Inbox', 'Page'], title: 'Delivery', type: 'string' },
+              size: { anyOf: [{ type: 'integer' }, { type: 'null' }], title: 'Size' },
+              expires_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Expires At' },
+              error: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Error' },
+              url: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Url' },
+            },
+            required: ['name', 'title', 'status', 'delivery', 'size', 'expires_at', 'error', 'url'],
+            title: 'DownloadShape',
+            type: 'object',
+          },
           NotificationShape: {
             properties: {
               name: { title: 'Name', type: 'string' },
@@ -4205,7 +4160,16 @@ export const operationNotificationsList: Validators<
           },
         },
         properties: {
-          rows: { items: { $ref: '#/$defs/NotificationShape' }, title: 'Rows', type: 'array' },
+          rows: {
+            items: {
+              anyOf: [
+                { $ref: '#/$defs/NotificationShape' },
+                { $ref: '#/$defs/DownloadNotificationShape' },
+              ],
+            },
+            title: 'Rows',
+            type: 'array',
+          },
           next_cursor: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Next Cursor' },
         },
         required: ['rows', 'next_cursor'],
@@ -4307,6 +4271,107 @@ export const operationNotificationsReadAllNotifications: Validators<
       },
       'notifications_read.all_notifications output',
     )
+  },
+}
+
+export const operationDownloadStart: Validators<DownloadStartInput, DownloadStartOutput> = {
+  validateInput(value: unknown): asserts value is DownloadStartInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: { nodes: { items: { type: 'string' }, title: 'Nodes', type: 'array' } },
+        required: ['nodes'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'download_start input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is DownloadStartOutput {
+    assertSchema(
+      value,
+      {
+        properties: {
+          name: { title: 'Name', type: 'string' },
+          title: { title: 'Title', type: 'string' },
+          status: {
+            enum: ['Preparing', 'Ready', 'Failed', 'Expired'],
+            title: 'Status',
+            type: 'string',
+          },
+          delivery: { enum: ['Inbox', 'Page'], title: 'Delivery', type: 'string' },
+          size: { anyOf: [{ type: 'integer' }, { type: 'null' }], title: 'Size' },
+          expires_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Expires At' },
+          error: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Error' },
+          url: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Url' },
+        },
+        required: ['name', 'title', 'status', 'delivery', 'size', 'expires_at', 'error', 'url'],
+        title: 'DownloadShape',
+        type: 'object',
+      },
+      'download_start output',
+    )
+  },
+}
+
+export const operationDownloadGet: Validators<DownloadGetInput, DownloadGetOutput> = {
+  validateInput(value: unknown): asserts value is DownloadGetInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: { download: { type: 'string' } },
+        required: ['download'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'download_get input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is DownloadGetOutput {
+    assertSchema(
+      value,
+      {
+        properties: {
+          name: { title: 'Name', type: 'string' },
+          title: { title: 'Title', type: 'string' },
+          status: {
+            enum: ['Preparing', 'Ready', 'Failed', 'Expired'],
+            title: 'Status',
+            type: 'string',
+          },
+          delivery: { enum: ['Inbox', 'Page'], title: 'Delivery', type: 'string' },
+          size: { anyOf: [{ type: 'integer' }, { type: 'null' }], title: 'Size' },
+          expires_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Expires At' },
+          error: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Error' },
+          url: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Url' },
+        },
+        required: ['name', 'title', 'status', 'delivery', 'size', 'expires_at', 'error', 'url'],
+        title: 'DownloadShape',
+        type: 'object',
+      },
+      'download_get output',
+    )
+  },
+}
+
+export const operationDownloadContent: Validators<DownloadContentInput, DownloadContentOutput> = {
+  validateInput(value: unknown): asserts value is DownloadContentInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: { download: { type: 'string' } },
+        required: ['download'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'download_content input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is DownloadContentOutput {
+    if (!(value instanceof Blob)) throw new TypeError('Expected Blob')
   },
 }
 

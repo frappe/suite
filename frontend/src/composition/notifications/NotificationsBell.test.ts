@@ -102,7 +102,14 @@ vi.mock('@/api', async () => ({
     error: null,
   }),
   useInfiniteQuery: () => ({
-    rows: [shareNotification(), mentionNotification(), commentNotification()],
+    rows: [
+      shareNotification(),
+      mentionNotification(),
+      commentNotification(),
+      downloadNotification('notice-4', 'Ready'),
+      downloadNotification('notice-5', 'Failed'),
+      downloadNotification('notice-6', 'Expired'),
+    ],
     status: 'success',
     error: null,
     hasNext: false,
@@ -123,6 +130,7 @@ afterEach(() => {
   state.markRead.mockReset()
   state.loadNode.mockReset()
   state.toastError.mockReset()
+  vi.restoreAllMocks()
 })
 describe('Notifications bell', () => {
   it('reads each notification as a sentence naming the person and the item', () => {
@@ -183,6 +191,43 @@ describe('Notifications bell', () => {
       state.push.mock.invocationCallOrder[0]!,
     )
   })
+  it('tells the reader their zip is ready, and its row downloads the zip', async () => {
+    state.markRead.mockResolvedValue({ read: 1 })
+    const assign = vi.fn()
+    vi.spyOn(window, 'location', 'get').mockReturnValue({ ...window.location, assign })
+    const row = notificationRows(mount()).find((button) =>
+      button.textContent?.includes('"Talks.zip" is ready to download'),
+    )
+
+    row?.click()
+    await vi.waitFor(() => expect(assign).toHaveBeenCalled())
+
+    expect(state.markRead).toHaveBeenCalledWith({ notifications: ['notice-4'] })
+    expect(assign).toHaveBeenCalledWith('/api/suite/drive/downloads/notice-4/content')
+    expect(state.loadNode).not.toHaveBeenCalled()
+  })
+  it('says why a download could not be prepared', () => {
+    const row = notificationRows(mount()).find((button) =>
+      button.textContent?.includes('Could not prepare "Talks.zip"'),
+    )
+    expect(row?.textContent).toContain('An item in folder Talks cannot be read')
+  })
+  it('says an expired zip has expired, and its row opens nothing', async () => {
+    state.markRead.mockResolvedValue({ read: 1 })
+    const assign = vi.fn()
+    vi.spyOn(window, 'location', 'get').mockReturnValue({ ...window.location, assign })
+    const row = notificationRows(mount()).find((button) =>
+      button.textContent?.includes('"Talks.zip" has expired'),
+    )
+
+    row?.click()
+    await vi.waitFor(() =>
+      expect(state.markRead).toHaveBeenCalledWith({ notifications: ['notice-6'] }),
+    )
+
+    expect(assign).not.toHaveBeenCalled()
+  })
+
   it('still opens a mention of a document the reader has no access to', async () => {
     state.loadNode.mockRejectedValue(
       new TransportError({ type: 'DriveNotFound', message: 'Not found', status: 404 }),
@@ -319,6 +364,24 @@ function notification(
       via_link: null,
       client: null,
       detail,
+    },
+  }
+}
+function downloadNotification(name: string, status: 'Ready' | 'Failed' | 'Expired') {
+  const ready = status === 'Ready'
+  return {
+    name,
+    read: 0,
+    creation: new Date().toISOString(),
+    download: {
+      name,
+      title: 'Talks.zip',
+      status,
+      delivery: 'Inbox',
+      size: ready ? 2048 : null,
+      expires_at: new Date().toISOString(),
+      error: ready ? null : 'An item in folder Talks cannot be read',
+      url: ready ? `/api/suite/drive/downloads/${name}/content` : null,
     },
   }
 }
