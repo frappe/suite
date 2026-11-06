@@ -404,7 +404,16 @@ import {
   ListHeaderCellSort,
   ListRow,
 } from 'frappe-ui/list'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  shallowRef,
+  watch,
+  type AnchorHTMLAttributes,
+} from 'vue'
 
 import type { InfiniteQueryState } from '@/api'
 import type { DriveAudience, DriveNode } from '@/apps/drive/client/types'
@@ -761,19 +770,20 @@ function audienceLabel(audience: DriveAudience) {
   if (audience.kind === 'link') return __('Anyone with the link')
   return audience.people <= 1 ? __('Only you') : __('{0} people', [audience.people])
 }
+type NameLink = AnchorHTMLAttributes & { onClick: (event: MouseEvent) => void }
 /**
  * An item's name as a link: no Tab stop of its own, no native drag, and an
  * underline only on hover. Cmd/Ctrl-click opens it in a new tab and leaves the
  * selection alone; middle-click opens one natively. Any other click is the
  * item's, as before, and does not follow the link.
  */
-function nameLink(row: DriveNode) {
+function nameLink(row: DriveNode): NameLink | undefined {
   const href = props.nodeHref?.(row)
   if (!href) return undefined
   return {
     href,
     tabindex: -1,
-    draggable: 'false',
+    draggable: false,
     class: 'decoration-ink-gray-4 underline-offset-2 hover:underline [-webkit-touch-callout:none]',
     onClick: onNameClick,
   }
