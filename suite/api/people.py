@@ -51,15 +51,10 @@ _PEOPLE = f"""
 
 # People a node names who are not in the directory above: Administrator as a
 # document's creator.
-_NAMED_USERS = """
+_NAMED_USERS = f"""
     SELECT name, IF(IFNULL(full_name, '') = '', name, full_name) AS label
     FROM `tabUser`
-    WHERE name IN %(users)s AND enabled = 1 AND name != 'Guest'
-"""
-
-_NAMED_USERS_MATCHING = f"""
-    {_NAMED_USERS}
-        AND {_MATCHES_TEXT}
+    WHERE name IN %(users)s AND enabled = 1 AND name != 'Guest' AND {_MATCHES_TEXT}
 """
 
 
@@ -141,7 +136,7 @@ def look_up(node: str, users: list[str]) -> list[PersonUser]:
     asked = {user: answer for user, answer in access.items() if user in labels or user in users}
     named = [user for user in asked if user not in labels]
     if named:
-        labels |= _labels(_NAMED_USERS, {"users": named})
+        labels |= _labels(_NAMED_USERS, {"users": named, "pattern": _contains("")})
     return _ranked_on(labels, asked, drive.MAX_MENTIONS)
 
 
@@ -153,7 +148,7 @@ def _search_on(node: str, query: str) -> PeoplePage:
     access = drive.people_on(node, labels)
     named = [user for user in access if user not in labels]
     if named:
-        labels |= _labels(_NAMED_USERS_MATCHING, {"users": named, "pattern": pattern})
+        labels |= _labels(_NAMED_USERS, {"users": named, "pattern": pattern})
     return {"rows": [*_ranked_on(labels, access, PAGE_SIZE)], "next_cursor": None}
 
 
