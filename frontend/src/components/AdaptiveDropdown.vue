@@ -19,8 +19,9 @@
           <button
             v-for="item in group.items"
             :key="item.label"
-            class="active:bg-surface-gray-1 flex w-full items-center gap-3 rounded-6 px-3 py-2.5 text-base"
+            class="active:bg-surface-gray-1 disabled:text-ink-gray-4 flex w-full items-center gap-3 rounded-6 px-3 py-2.5 text-base"
             :class="item.theme === 'red' ? 'text-ink-red-6' : 'text-ink-gray-8'"
+            :disabled="item.disabled"
             @click="run(item)"
           >
             <!-- A row's own prefix (a checkbox, say) stands where its icon would. -->
@@ -73,6 +74,8 @@ interface OptionItem {
    */
   selected?: boolean
   theme?: string
+  /** Shown but not to be tapped, as frappe-ui's Menu greys a disabled row on desktop. */
+  disabled?: boolean
   /** Replace the icon, and fill the row's far end, as frappe-ui's Menu reads them on desktop. */
   slots?: { prefix?: () => VNode; suffix?: () => VNode }
   /** Leaves the sheet open after the row is tapped, for rows ticked several in a row. */

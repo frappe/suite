@@ -16,11 +16,12 @@ import {
   raisePromiseToast,
 } from '@/apps/mail/utils'
 import { useDiscardingDrafts, useUndo } from '@/apps/mail/utils/composables'
-import { formatDateTime } from '@/apps/mail/utils/datetime'
 import { folderTicks } from '@/apps/mail/utils/folderTicks'
 import { canMoveToMailbox, commonMailboxIds } from '@/apps/mail/utils/mailboxTargets'
 import { mailCopies, mailCopyIds, mailCopyNames, threadStarIds } from '@/apps/mail/utils/mailCopies'
 import { isReceived } from '@/apps/mail/utils/receivedMail'
+import { resnooze, type Waited } from '@/apps/mail/utils/resnooze'
+import { snoozedMessage } from '@/apps/mail/utils/snoozeTimes'
 
 type SetSeenParams = {
   0?: string[]
@@ -857,13 +858,18 @@ export function useThreadActions(deps: {
     setUndoAction(undefined)
     const removed = leaves ? handleSuccessAndRemoveFromList(threadIds, false) : []
     let forwardOk = false
+    let waited: Waited[] = []
+    const account = store.accountId
     const ids = mails.map((m) => m.id)
     const leaving = leaves ? mailbox.value : null
     const forward = (
       action === 'snooze'
         ? snoozeMails.run({ account: store.accountId, ids, until: until!, leaves: leaving })
         : action === 'wake'
-          ? unsnoozeMails.run({ account: store.accountId, ids, leaves: leaving })
+          ? unsnoozeMails.run({ account, ids, leaves: leaving }).then((answer) => {
+              waited = answer.waited
+              return answer
+            })
           : fileMailsSubmit({
               ids,
               action,
@@ -899,7 +905,12 @@ export function useThreadActions(deps: {
           if (!forwardOk) return
           restoreThreadsToList(removed)
           setUndoAction(undefined)
-          const restore = setMailsMailboxesSubmit({ mails: snapshot }).then(() => {
+          // Unsnoozing ended its wait: only snoozing again has it come back at its time.
+          const restore = (
+            action === 'wake'
+              ? resnooze(account, waited)
+              : setMailsMailboxesSubmit({ mails: snapshot })
+          ).then(() => {
             mailboxes.refetch().catch(() => {})
             if (mailbox.value === 'search') resetThreads()
           })
@@ -948,13 +959,13 @@ export function useThreadActions(deps: {
       'snooze',
       threadIds,
       [mailboxIds.inbox, mailboxIds.archive].includes(mailbox.value),
-      () => __('Snoozed until {0}.', [formatDateTime(until, 'ddd, MMM D, h:mm A')]),
+      () => snoozedMessage(threadIds.length, until),
       until,
     )
 
   const unsnoozeThreads = (threadIds: string[]) =>
     fileInPlace('wake', threadIds, mailbox.value === mailboxIds.snoozed, () =>
-      threadIds.length > 1 ? __('Threads back in the Inbox.') : __('Thread back in the Inbox.'),
+      threadIds.length > 1 ? __('Threads unsnoozed.') : __('Thread unsnoozed.'),
     )
 
   const setSpamStatus = (threadIDs: SetSeenParams) => {

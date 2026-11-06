@@ -15,13 +15,15 @@ here, so the lists, All Inboxes and the open thread can't each grow their own.
 | junk        | leaves every folder for Junk, marked     | stays in Sent         | untouched |
 | not_junk    | Junk → Inbox, mark cleared               | untouched             | untouched |
 | trash       | Trash                                    | Trash                 | untouched |
-| snooze      | Inbox, Archive → Snoozed, others kept*** | out of the Inbox      | untouched |
-| wake        | Snoozed → Inbox                          | out of Snoozed        | untouched |
+| snooze      | Inbox, Archive → Snoozed, others kept*** | Inbox → Snoozed****   | untouched |
+| wake        | Snoozed → Inbox                          | Snoozed → Inbox       | untouched |
 
 * Archived from Junk or Trash, it leaves those too, and loses the junk mark.
 ** Not into the Inbox, which holds only mail you received: moved there, your sent mail keeps just Sent.
 *** Mail that is in neither stays as it is: Junk and Trash keep what was thrown out, and a folder of
 yours keeps what was filed there, so waking the conversation doesn't drag it all to the Inbox.
+**** Your mail is in the Inbox only when a reminder brought it back because nobody replied; snoozed
+from there, it comes back there. In Sent alone, it stays.
 """
 
 from typing import Literal, NotRequired, TypedDict
@@ -31,7 +33,7 @@ from frappe import _
 
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import chunked_get, chunked_set, get_account_client, get_mailbox_id_by_role
-from suite.mail.pins import RETURNED_KEYWORD
+from suite.mail.pins import NO_REPLY_KEYWORD, RETURNED_KEYWORD
 from suite.mail.utils import log_mail_error
 
 Action = Literal["archive", "unarchive", "move", "junk", "not_junk", "trash", "snooze", "wake"]
@@ -115,26 +117,22 @@ def plan(action: Action, emails: list[dict], roles: Roles, target: str | None = 
         elif action == "snooze":
             if not roles.get("snoozed"):
                 raise ValueError("Mail can't be snoozed without a Snoozed folder.")
-            if own:
-                # Yours stays in Sent, but out of the Inbox an earlier move could have filed it in.
-                if roles["inbox"] not in boxes:
-                    continue
-                updates[email["id"]] = {f"mailboxIds/{roles['inbox']}": None}
-                continue
-            leaving = [roles[box] for box in ("inbox", "archive") if roles[box] in boxes]
+            # Yours keeps Sent, and waits only if it was in the Inbox.
+            leaving = [
+                roles[box] for box in (("inbox",) if own else ("inbox", "archive")) if roles[box] in boxes
+            ]
             if not leaving or roles["junk"] in boxes or roles["trash"] in boxes:
                 continue
             update = {f"mailboxIds/{roles['snoozed']}": True}
             update |= {f"mailboxIds/{box}": None for box in leaving}
             # It comes back marked anew, or not at all if a reply wakes it first.
-            if keywords.get(RETURNED_KEYWORD):
-                update[f"keywords/{RETURNED_KEYWORD}"] = None
+            for mark in (RETURNED_KEYWORD, NO_REPLY_KEYWORD):
+                if keywords.get(mark):
+                    update[f"keywords/{mark}"] = None
         elif action == "wake":
             if roles.get("snoozed") not in boxes:
                 continue
-            update = {f"mailboxIds/{roles['snoozed']}": None}
-            if not own:
-                update[f"mailboxIds/{roles['inbox']}"] = True
+            update = {f"mailboxIds/{roles['snoozed']}": None, f"mailboxIds/{roles['inbox']}": True}
         elif action == "move":
             if own:
                 # Filed with the conversation, but never into the Inbox: that holds mail you received.

@@ -27,7 +27,7 @@ const handlers = () =>
 const offered = (rows: Partial<Thread>[], inbox: boolean) =>
   selectActions(
     () => rows.map((row) => fromPartial<Thread>({ messages: [], mailboxes: [], ...row })),
-    () => ({ archive: false, trash: false, drafts: false, inbox }),
+    () => ({ archive: false, trash: false, drafts: false, pinnable: inbox }),
     handlers(),
   )
     .filter((action) => action.condition())

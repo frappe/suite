@@ -6,8 +6,11 @@
       </button>
     </Tooltip>
   </template>
+  <!-- A pinned row keeps its pin beside the star at rest, as a starred row keeps its star: filled, in
+       blue, the one mark that says it's pinned, and a click unpins. The same on hover, so nothing
+       moves. -->
   <Tooltip
-    v-if="pinnable && isHovered && !isMobile"
+    v-if="pinnable && (isHovered || pinned) && !isMobile"
     :text="pinned ? __('Unpin') : __('Pin to Top')"
   >
     <button
@@ -15,9 +18,19 @@
       :aria-label="pinned ? __('Unpin') : __('Pin to Top')"
       @click.stop.prevent="emit('setPinned', !pinned)"
     >
-      <component :is="pinned ? PinOff : Pin" class="icon text-ink-gray-5" />
+      <Pin v-if="pinned" class="icon pinned" :style="PINNED_PIN_STYLE" />
+      <Pin v-else class="icon text-ink-gray-5" />
     </button>
   </Tooltip>
+  <!-- Touch: no hover actions, so only a pinned row's, a tap that unpins; sized as the star is. -->
+  <button
+    v-else-if="pinnable && pinned && isMobile"
+    class="action-btn"
+    :aria-label="__('Unpin')"
+    @click.stop.prevent="emit('setPinned', false)"
+  >
+    <Pin class="h-5 w-5" :style="PINNED_PIN_STYLE" />
+  </button>
   <Tooltip v-if="starrable && !isMobile" :text="flagged ? __('Unstar') : __('Star')">
     <button class="action-btn" @click.stop.prevent="emit('setFlagged', !flagged)">
       <Star
@@ -45,10 +58,10 @@
 
 <script setup lang="ts">
 import { Tooltip } from 'frappe-ui'
-import { Archive, ArchiveRestore, Mail, MailOpen, Pin, PinOff, Star, Trash2 } from 'lucide-vue-next'
+import { Archive, ArchiveRestore, Mail, MailOpen, Pin, Star, Trash2 } from 'lucide-vue-next'
 import { computed } from 'vue'
 
-import { FLAGGED_STAR_STYLE } from '@/apps/mail/constants'
+import { FLAGGED_STAR_STYLE, PINNED_PIN_STYLE } from '@/apps/mail/constants'
 import { userStore } from '@/apps/mail/stores/user'
 import type { Thread } from '@/apps/mail/types'
 import { useScreenSize } from '@/apps/mail/utils/composables'
@@ -78,7 +91,7 @@ const {
   // The list is Drafts: its bin discards rather than trashes. Asked of the list, not the thread —
   // a conversation with a reply draft is filed in Drafts and in Inbox alike.
   drafts?: boolean
-  // The list is an Inbox, the one place a pin acts. Not on a stack, whose members are never pinned.
+  // The list's folder takes pins. Not on a stack, whose members are never pinned.
   pinnable?: boolean
 }>()
 
@@ -191,6 +204,10 @@ const actions = computed(() =>
 
 <style scoped>
 .action-btn {
+  /* One square box per action, the size of its glyph and centred on it, whatever wraps the glyph
+     (a tooltip's span, or nothing): a bare inline svg sat on the button's text baseline instead,
+     taller than its glyph and lower than the wrapped ones beside it. */
+  @apply inline-flex size-4 shrink-0 items-center justify-center max-sm:size-5;
   /* Mobile: uneven halo — generous left/right/top, but bottom capped at 10px (the
 	   star's clearance to the row border) so taps meant for the next row's first
 	   line are never captured. ~68×54px effective target on a 20px glyph. */
@@ -198,10 +215,11 @@ const actions = computed(() =>
 }
 
 /* Hover-capable pointers only: on touch, :hover sticks after a tap and the
-   star would stay dark until something else is touched. A flagged star is
-   exempt, or its amber wouldn't show until the pointer left the button. */
+   star would stay dark until something else is touched. A flagged star and a
+   pinned row's pin are exempt, or their colour wouldn't show until the pointer
+   left the button. */
 @media (hover: hover) {
-  .action-btn:hover > :not(.flagged) {
+  .action-btn:hover > :not(.flagged, .pinned) {
     color: var(--ink-gray-8) !important;
     stroke-width: 2 !important;
   }

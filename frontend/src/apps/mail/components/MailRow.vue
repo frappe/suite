@@ -4,8 +4,15 @@
   <component
     :is="to ? RouterLink : 'div'"
     :to="to"
-    class="sm:hover:bg-surface-gray-1 group flex cursor-default select-none space-x-2.5 border-b outline-none focus-visible:outline-none px-3.5 py-2.5 sm:py-2 [-webkit-touch-callout:none] sm:space-x-5 sm:px-5"
-    :class="{ '!bg-surface-gray-1': isSelected || isTouching, '!py-1': isFullWidth }"
+    class="sm:hover:bg-surface-gray-1 group relative flex cursor-default select-none space-x-2.5 border-b outline-none focus-visible:outline-none px-3.5 py-2.5 sm:py-2 [-webkit-touch-callout:none] sm:space-x-5 sm:px-5"
+    :class="{
+      '!bg-surface-gray-1': isSelected || isTouching,
+      '!py-1': isFullWidth,
+      // Under the pills, the room the eye sees above the first line's letters: the row's pt-1, half
+      // of what its 19px line (text-base, 14px at 1.35) leaves of the h-8 it is centred in, and the
+      // font's room above its capitals in that line, about 15px in all.
+      '!pb-3.5': pillsBelow,
+    }"
     :draggable="draggable || undefined"
     @mouseenter="isHovered = true"
     @mouseleave="isHovered = false"
@@ -26,9 +33,12 @@
       class="flex shrink-0 items-center justify-center max-sm:w-10 max-sm:justify-start"
       :class="isFullWidth ? 'h-8' : 'h-10 sm:-mt-1.5'"
     >
+      <!-- Wide: a flex box, as the day headers' is, so the checkbox (an inline-flex) centres on the
+           row's line rather than sitting on a text line's baseline, a few pixels above it. -->
       <div
         v-if="!isMobile && selectable"
         class="checkbox-hitbox -m-3 cursor-pointer p-3"
+        :class="{ flex: isFullWidth }"
         @click.stop.prevent="emit('setSelected', !isSelected)"
       >
         <Checkbox :model-value="isSelected" size="md" class="pointer-events-none" />
@@ -56,7 +66,14 @@
     <div
       class="grow truncate"
       :class="[
-        isFullWidth ? 'flex items-center space-x-3' : 'space-y-1 sm:space-y-0.5',
+        pillsBelow
+          ? // The first line exactly as a plain row's: sender, subject, preview, held to the leading
+            // column's height so the checkbox and date line up with it. The pills go under the subject
+            // and preview, a small gap below.
+            'grid grid-cols-[theme(width.48)_auto_minmax(0,1fr)] grid-rows-[theme(height.8)_auto] items-center gap-x-3 gap-y-1'
+          : isFullWidth
+            ? 'flex items-center space-x-3'
+            : 'space-y-1 sm:space-y-0.5',
         { 'min-h-8': isFullWidth && !showLeading },
       ]"
     >
@@ -65,7 +82,10 @@
         class="flex items-center"
         :class="isFullWidth ? 'w-48 shrink-0' : 'justify-between'"
       >
-        <div class="mr-2 mt-0.5 flex items-center space-x-1.5 truncate">
+        <div
+          class="mr-2 flex items-center space-x-1.5 truncate"
+          :class="{ 'mt-0.5': !isFullWidth }"
+        >
           <span v-if="unread" class="min-h-2 min-w-2 rounded-full bg-blue-500" />
           <h3
             class="truncate text-[15px] !font-medium sm:text-base"
@@ -73,7 +93,7 @@
           >
             <slot name="sender" />
           </h3>
-          <slot name="badges" />
+          <slot name="badges" :is-hovered="isHovered" />
           <!-- The account keeps the sender company in both layouts. It stays affordable
 					     in the sender column because only the odd accounts out are labelled, and
 					     by their short names. -->
@@ -82,12 +102,7 @@
             <span>{{ __('in {0}', [accountLabel]) }}</span>
           </div>
         </div>
-        <!-- A row can show something else where its date goes (a pinned row's pin); hovering shows
-             the date again, and in the wide layout the actions take the place of both. -->
-        <template v-if="!isFullWidth">
-          <slot v-if="$slots.date && !isHovered" name="date" />
-          <MailDate v-else :datetime format="list" />
-        </template>
+        <MailDate v-if="!isFullWidth" :datetime format="list" />
       </div>
 
       <h4
@@ -113,22 +128,28 @@
           <slot name="preview" />
         </h5>
 
-        <div v-if="!isFullWidth" class="ml-3.5 flex space-x-3.5">
+        <div v-if="!isFullWidth" class="ml-3.5 flex items-center gap-3.5">
           <slot name="trailing" :is-hovered="isHovered" />
         </div>
       </div>
 
-      <slot name="extra" :is-full-width="isFullWidth" />
+      <!-- Its own line under the subject, so the first line stays a plain row's. -->
+      <div v-if="pillsBelow" class="col-span-2 col-start-2 -mt-1 flex">
+        <slot name="extra" :is-full-width="isFullWidth" />
+      </div>
+      <slot v-else name="extra" :is-full-width="isFullWidth" />
     </div>
 
     <div
       v-if="isFullWidth"
-      class="flex shrink-0 items-center justify-end space-x-4"
-      :class="trailingWidth"
+      class="flex shrink-0 items-center justify-end gap-4"
+      :class="{ 'h-8 self-start': pillsBelow }"
     >
-      <slot v-if="!isHovered" name="date">
-        <MailDate :datetime format="list" />
-      </slot>
+      <!-- As wide as what it shows: at rest the date and the star (and a pinned row's pin), so the
+           preview runs up to it; hovered, the actions, and the preview, the row's one flexible part,
+           ends its ellipsis sooner to make the room. The pills have a line of their own and the
+           subject's column is fixed, so nothing else moves, and the right edge stays put. -->
+      <MailDate v-if="!isHovered" :datetime format="list" />
       <slot name="trailing" :is-hovered="isHovered" />
     </div>
 
@@ -167,7 +188,7 @@ const {
   selectionMode = false,
   hideAvatar = false,
   accountLabel,
-  trailingSlots = 4,
+  hasExtra = false,
 } = defineProps<{
   // Renders the row as a link when set, and as a plain div when not — a thread opens, a stack expands.
   to?: RouteLocationRaw
@@ -192,9 +213,8 @@ const {
   selectionMode?: boolean
   // Which account received the mail (merged lists), shown beside the sender.
   accountLabel?: string
-  // How many hover actions the list's rows can show (rowActionSlots), which the full-width layout keeps
-  // room for beside the date. Every row in a list gets the same, so their columns line up.
-  trailingSlots?: number
+  // The extra slot has something to show in the wide layout (attachments, folders, a draft's mark).
+  hasExtra?: boolean
   // Whether the row can be dragged onto a folder. Off on touch, where the browser
   // gives HTML5 drag no events at all and a long press already means selection.
   draggable?: boolean
@@ -210,10 +230,8 @@ const user = inject<UserResource>('$user')
 if (!user) throw new Error('Missing required user provider')
 const { isMobile } = useScreenSize()
 
-// A slot is a 1rem icon and the 1rem gap before it, less the first gap. Never narrower than four
-// slots, which the date needs.
-const TRAILING_WIDTHS = ['w-28', 'w-36', 'w-44', 'w-52']
-const trailingWidth = computed(() => TRAILING_WIDTHS[Math.min(Math.max(trailingSlots, 4), 7) - 4])
+// Only a row with pills to move takes a second line; any other keeps the single wide line.
+const pillsBelow = computed(() => isFullWidth.value && hasExtra)
 
 const showAvatar = computed(() => !isSelected && (isMobile.value || !selectable) && !hideAvatar)
 // With no checkbox, no check circle and no avatar there is nothing left to reserve space for.

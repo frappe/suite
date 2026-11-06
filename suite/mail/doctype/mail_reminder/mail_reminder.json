@@ -28,7 +28,7 @@
   },
   {
    "default": "Waiting",
-   "description": "Waiting: not due back yet. Returned: back in the Inbox, held at the top until due_at.",
+   "description": "Waiting: not due back yet. Returned: back in the Inbox; kept to say when it was snoozed and when it came back.",
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
