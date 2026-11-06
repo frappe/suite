@@ -44,11 +44,10 @@ def touch_body(node: str) -> None:
     drive.touch(doctype, document_name)
 
 
-def version_body(node: str, kind: str, label: str | None, actor: str | None = None) -> None:
-    """Store the document's body as a Drive version of `kind`, credited to `actor` or the caller;
-    a milestone Drive refuses is refused."""
+def version_body(node: str, kind: str, label: str | None) -> None:
+    """Store the document's body as a Drive version of `kind`; a milestone Drive refuses is refused."""
     try:
-        drive.take_version(node, kind=kind, label=label, actor=actor)
+        drive.take_version(node, kind=kind, label=label)
     except drive.DriveError as error:
         if kind != "milestone":
             raise
@@ -58,7 +57,7 @@ def version_body(node: str, kind: str, label: str | None, actor: str | None = No
 
 def version_edits(app: str, doc_id: str, claim: Claim) -> None:
     """Store the edits `claim` follows as an automatic version, credited to who made most of them."""
-    version_body(claim.node, "auto", None, main_author(app, doc_id, claim))
+    drive.take_version(claim.node, kind="auto", actor=main_author(app, doc_id, claim))
 
 
 TOUCH = Follower(
