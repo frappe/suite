@@ -123,22 +123,16 @@ const current = ref<BrowserLocation | null>(null)
 const currentDetail = useQuery(api.drive.nodes.get, () =>
   current.value ? { node: current.value.node, expand: 'access' } : false,
 )
+/** The caller's role on the open folder: its fresh details, else what the listing said. */
+const currentRole = computed(() => currentDetail.data?.access?.role ?? current.value?.access?.role)
 const target = computed(() =>
   current.value
-    ? destination(
-        props.mode,
-        props.items,
-        current.value.node,
-        currentDetail.data?.access?.role ?? current.value.access?.role,
-      )
+    ? destination(props.mode, props.items, current.value.node, currentRole.value)
     : { status: 'unknown' as const },
 )
 
 /** The items can go in a new folder here, which the picker then opens. */
-const canCreateFolder = computed(
-  () =>
-    (currentDetail.data?.access?.role ?? current.value?.access?.role ?? 0) >= DRIVE_ROLES.upload,
-)
+const canCreateFolder = computed(() => (currentRole.value ?? 0) >= DRIVE_ROLES.upload)
 /** The move preview is loading, before the confirmation or the move. */
 const checking = ref(false)
 const accessChange = ref<MoveAccessChange | null>(null)
