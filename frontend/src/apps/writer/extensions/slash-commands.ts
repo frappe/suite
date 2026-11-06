@@ -1,11 +1,13 @@
 import type { Editor } from '@tiptap/core'
 import { SlashCommands, type CommandItem } from 'frappe-ui/editor'
 
-import { BLOCK_STYLES, type BlockStyle } from '@/apps/writer/components/core-editor/formatting'
+import {
+  BLOCK_STYLES,
+  LIST_STYLES,
+  type BlockStyle,
+} from '@/apps/writer/components/core-editor/formatting'
 import { INSERTS, type Insert } from '@/apps/writer/components/core-editor/inserts'
 import { translate as __ } from '@/platform/translation/translate'
-
-const LISTS = ['bulletList', 'orderedList', 'taskList']
 
 /**
  * The slash menu, with the names and blocks the toolbar's style select and Insert menu use.
@@ -40,8 +42,8 @@ export function writerSlashItems(
   const media = INSERTS.filter((insert) => insert.group === 'Media')
   const blocks = INSERTS.filter((insert) => insert.group === 'Blocks' && !isStyle(insert))
   const items = [
-    ...BLOCK_STYLES.filter((style) => !LISTS.includes(style.value)).map(styleItem('Text')),
-    ...BLOCK_STYLES.filter((style) => LISTS.includes(style.value)).map(styleItem('Lists')),
+    ...BLOCK_STYLES.filter((style) => !LIST_STYLES.includes(style)).map(styleItem('Text')),
+    ...LIST_STYLES.map(styleItem('Lists')),
     ...media.filter((insert) => insert.isAvailable(editor)).map(insertItem),
     ...siteEmbeds.map((item) => ({ ...item, group: __('Media') })),
     linkItem(),

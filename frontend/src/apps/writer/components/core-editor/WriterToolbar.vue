@@ -211,6 +211,7 @@ import ColorPanel from './ColorPanel.vue'
 import {
   activeBlockStyle,
   BLOCK_STYLES,
+  LIST_STYLES,
   MARKS,
   toggleHighlight,
   type BlockStyle,
@@ -228,10 +229,6 @@ const props = defineProps<{
   isPainting: boolean
 }>()
 
-const LISTS = BLOCK_STYLES.filter((style) =>
-  ['bulletList', 'orderedList', 'taskList'].includes(style.value),
-)
-
 const ALIGNMENTS = [
   { value: 'left', label: 'Align left', icon: 'lucide-align-left' },
   { value: 'center', label: 'Align center', icon: 'lucide-align-center' },
@@ -248,7 +245,9 @@ const isActive = (name: string) => {
 }
 
 const activeBlock = live(() => activeBlockStyle(props.editor))
-const activeList = live(() => LISTS.find((list) => list.isActive(props.editor)) ?? LISTS[1])
+const activeList = live(
+  () => LIST_STYLES.find((list) => list.isActive(props.editor)) ?? LIST_STYLES[1],
+)
 const activeAlign = live(
   () =>
     ALIGNMENTS.find((align) => props.editor.isActive({ textAlign: align.value })) ?? ALIGNMENTS[0],
@@ -281,7 +280,7 @@ function styleOption(style: BlockStyle) {
 }
 
 const blockOptions = live((): DropdownOptions => BLOCK_STYLES.map(styleOption))
-const listOptions = live((): DropdownOptions => LISTS.map(styleOption))
+const listOptions = live((): DropdownOptions => LIST_STYLES.map(styleOption))
 
 const alignOptions = live((): DropdownOptions =>
   ALIGNMENTS.map((align) => ({

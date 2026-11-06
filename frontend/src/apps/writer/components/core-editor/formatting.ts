@@ -21,55 +21,30 @@ function heading(level: Level, label: string): BlockStyle {
   }
 }
 
+function block(value: string, label: string, icon: string, apply: BlockStyle['apply']): BlockStyle {
+  return { value, label, icon, isActive: (editor) => editor.isActive(value), apply }
+}
+
 /** The block styles the toolbar's and bubble menu's style select offer, in menu order. */
 export const BLOCK_STYLES: readonly BlockStyle[] = [
-  {
-    value: 'paragraph',
-    label: 'Text',
-    icon: 'lucide-pilcrow',
-    isActive: (editor) => editor.isActive('paragraph'),
-    apply: (chain) => chain.clearNodes().setParagraph(),
-  },
+  block('paragraph', 'Text', 'lucide-pilcrow', (chain) => chain.clearNodes().setParagraph()),
   heading(1, 'Heading 1'),
   heading(2, 'Heading 2'),
   heading(3, 'Heading 3'),
   heading(4, 'Heading 4'),
-  {
-    value: 'bulletList',
-    label: 'Bulleted list',
-    icon: 'lucide-list',
-    isActive: (editor) => editor.isActive('bulletList'),
-    apply: (chain) => chain.toggleBulletList(),
-  },
-  {
-    value: 'orderedList',
-    label: 'Numbered list',
-    icon: 'lucide-list-ordered',
-    isActive: (editor) => editor.isActive('orderedList'),
-    apply: (chain) => chain.toggleOrderedList(),
-  },
-  {
-    value: 'taskList',
-    label: 'To-do list',
-    icon: 'lucide-list-checks',
-    isActive: (editor) => editor.isActive('taskList'),
-    apply: (chain) => chain.toggleTaskList(),
-  },
-  {
-    value: 'codeBlock',
-    label: 'Code block',
-    icon: 'lucide-square-code',
-    isActive: (editor) => editor.isActive('codeBlock'),
-    apply: (chain) => chain.toggleCodeBlock(),
-  },
-  {
-    value: 'blockquote',
-    label: 'Quote',
-    icon: 'lucide-quote',
-    isActive: (editor) => editor.isActive('blockquote'),
-    apply: (chain) => chain.toggleBlockquote(),
-  },
+  block('bulletList', 'Bulleted list', 'lucide-list', (chain) => chain.toggleBulletList()),
+  block('orderedList', 'Numbered list', 'lucide-list-ordered', (chain) =>
+    chain.toggleOrderedList(),
+  ),
+  block('taskList', 'To-do list', 'lucide-list-checks', (chain) => chain.toggleTaskList()),
+  block('codeBlock', 'Code block', 'lucide-square-code', (chain) => chain.toggleCodeBlock()),
+  block('blockquote', 'Quote', 'lucide-quote', (chain) => chain.toggleBlockquote()),
 ]
+
+/** The list styles, which the toolbar's Lists menu and the slash menu's Lists group offer. */
+export const LIST_STYLES = BLOCK_STYLES.filter((style) =>
+  ['bulletList', 'orderedList', 'taskList'].includes(style.value),
+)
 
 // Containers before what they contain: a paragraph in a list reads as the list
 const PRECEDENCE = [
