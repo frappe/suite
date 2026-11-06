@@ -26,7 +26,7 @@
                 : 'border-outline-gray-2 bg-surface-gray-1'
             "
             :aria-label="`${row} × ${column}`"
-            @pointerenter="setSize(row, column)"
+            @pointerenter="((rows = row), (columns = column))"
             @click="emit('pick', { rows: row, columns: column })"
           />
         </template>
@@ -82,11 +82,6 @@ useEventListener(
 const anchorStyle = computed(() => boxStyle(props.anchor))
 
 onMounted(() => void nextTick(() => grid.value?.focus()))
-
-function setSize(row: number, column: number) {
-  rows.value = row
-  columns.value = column
-}
 
 function onKeydown(event: KeyboardEvent) {
   // Tab moves on, and the keys below must not follow focus out of the grid

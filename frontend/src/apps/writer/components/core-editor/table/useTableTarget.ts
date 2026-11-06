@@ -189,7 +189,7 @@ export function useTableTarget(
   useEventListener(document, 'scroll', schedule, { capture: true, passive: true })
   useEventListener(window, 'resize', schedule)
 
-  return { target, boxes, refresh: schedule }
+  return { target, boxes, wrapper, refresh: schedule }
 }
 
 function targetFrom(editor: Editor, hovered: number | null): TableTarget | null {

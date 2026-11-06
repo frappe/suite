@@ -107,7 +107,7 @@ const layer = useTemplateRef<HTMLElement>('layer')
 const open = reactive({ row: false, column: false, cell: false })
 const isMenuOpen = () => open.row || open.column || open.cell
 
-const { target, boxes, refresh } = useTableTarget(editor, layer, isMenuOpen)
+const { target, boxes, wrapper, refresh } = useTableTarget(editor, layer, isMenuOpen)
 
 // A closed menu hands the controls back to the pointer
 watch(isMenuOpen, (isOpen) => {
@@ -221,8 +221,7 @@ function selectLine(axis: Axis, event: PointerEvent) {
 function addLine(axis: Axis) {
   const current = target.value
   if (!current) return
-  const cell = props.editor.view.nodeDOM(current.cell)
-  const frame = cell instanceof Element ? cell.closest('.tableWrapper') : null
+  const frame = wrapper.value
   new TableEditing(props.editor, current.cell).addLineAtEnd(axis)
   // The new column may be past the card's edge, and the next click should show the next one too
   if (axis === 'column' && frame) frame.scrollLeft = frame.scrollWidth

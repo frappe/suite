@@ -54,8 +54,7 @@ export class TableEditing {
         if (!shape) return false
         if (axis === 'row') {
           const row = shape.node.child(index)
-          let pos = shape.start
-          for (let i = 0; i <= index; i++) pos += shape.node.child(i).nodeSize
+          const pos = tr.doc.resolve(shape.start).posAtIndex(index + 1)
           tr.insert(pos, row.type.create(row.attrs, row.content))
           return true
         }
