@@ -18,16 +18,19 @@ export function useDocumentTabs(editor: Editor) {
     activeTabId.value = (event as CustomEvent<{ tabId: string }>).detail.tabId
   }
 
+  // A caller can unmount after the editor is destroyed, when its view is gone
+  let dom: HTMLElement | undefined
   onMounted(() => {
     updateTabs()
     editor.on('update', updateTabs)
-    editor.view.dom.addEventListener('tab-changed', onTabChanged)
-    editor.view.dom.addEventListener('tab-renamed', updateTabs)
+    dom = editor.view.dom
+    dom.addEventListener('tab-changed', onTabChanged)
+    dom.addEventListener('tab-renamed', updateTabs)
   })
   onBeforeUnmount(() => {
     editor.off('update', updateTabs)
-    editor.view.dom.removeEventListener('tab-changed', onTabChanged)
-    editor.view.dom.removeEventListener('tab-renamed', updateTabs)
+    dom?.removeEventListener('tab-changed', onTabChanged)
+    dom?.removeEventListener('tab-renamed', updateTabs)
   })
 
   function selectTab(id: string) {
