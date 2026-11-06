@@ -338,6 +338,7 @@ import {
   type PresentationChange,
   type PresentationState,
 } from '../features/presentation'
+import { takeShown } from '../features/preview/lastShown'
 import { observePreviewRefresh } from '../features/previewRefresh'
 import { recentFiles } from '../features/recent'
 import RecoveryNotice from '../features/RecoveryNotice.vue'
@@ -1224,13 +1225,20 @@ function openParent() {
   void router.push(typeof parent === 'string' ? { path: parent, state } : { ...parent, state })
 }
 // A navigation that should land on an item names it in the history entry.
+// Back from a file preview lands on the last file it showed.
 const revealing = ref<{ id: string; highlight: boolean } | null>(null)
+const returnFocus = useTweak('t15-return-focus')
 watch(
   () => route.fullPath,
-  () => {
-    const { reveal, highlight } = router.options.history.state
+  (path) => {
+    const { reveal, highlight, forward } = router.options.history.state
+    const shown = typeof forward === 'string' && returnFocus.value ? takeShown(path) : null
     revealing.value =
-      typeof reveal === 'string' ? { id: reveal, highlight: highlight === true } : null
+      typeof reveal === 'string'
+        ? { id: reveal, highlight: highlight === true }
+        : shown
+          ? { id: shown, highlight: false }
+          : null
   },
   { immediate: true },
 )

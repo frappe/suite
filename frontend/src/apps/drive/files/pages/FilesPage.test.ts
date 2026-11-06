@@ -1,11 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, type PropType } from 'vue'
-import { createMemoryHistory, createRouter, RouterView, type Router } from 'vue-router'
+import {
+  createMemoryHistory,
+  createRouter,
+  createWebHistory,
+  RouterView,
+  type Router,
+} from 'vue-router'
 
 import type { DriveNode } from '@/apps/drive/client/types'
 import { DOCUMENT_TYPES_KEY, type DocumentTypeDefinition } from '@/platform/contracts'
 import { TransportError, type Operation } from '@/platform/transport'
 import { setTweaks } from '@/platform/tweaks'
+
+import { rememberShown } from '../features/preview/lastShown'
 
 // A Drive server that keeps the caller's Recent, stars and one folder's children.
 const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
@@ -378,9 +386,12 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-async function mount(path: string): Promise<{ root: HTMLElement; router: Router }> {
+async function mount(
+  path: string,
+  history = createMemoryHistory(),
+): Promise<{ root: HTMLElement; router: Router }> {
   const router = createRouter({
-    history: createMemoryHistory(),
+    history,
     routes: [
       { path: '/drive', component: { render: () => null } },
       {
@@ -604,6 +615,33 @@ describe('Show in folder', () => {
     await vi.waitFor(() => expect(titles()).toEqual(['a.png']))
 
     expect(menuItem('a', 'Show in folder')).toBeUndefined()
+  })
+})
+
+describe('back from a file preview', () => {
+  /** Opens the Talks folder, previews a file that steps on to `last`, and goes Back. */
+  async function backFromPreview(last: string) {
+    const { router } = await mount('/drive/f/folder-1/talks', createWebHistory())
+    await vi.waitFor(() => expect(titles()).toHaveLength(3))
+    await router.push('/d/a/a-png')
+    rememberShown('/drive/f/folder-1/talks', last)
+    router.back()
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/drive/f/folder-1/talks'))
+    await vi.waitFor(() => expect(titles()).toHaveLength(3))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+  afterEach(() => setTweaks(['t15-return-focus'], true))
+
+  it('focuses the row of the last file the preview showed, without a highlight', async () => {
+    await backFromPreview('c')
+    expect(listing.revealed).toEqual(['c'])
+    expect(listing.highlighted).toEqual([])
+  })
+
+  it('focuses nothing with t15-return-focus off', async () => {
+    setTweaks(['t15-return-focus'], false)
+    await backFromPreview('c')
+    expect(listing.revealed).toEqual([])
   })
 })
 

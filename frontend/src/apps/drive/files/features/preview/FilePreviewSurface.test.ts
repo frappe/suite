@@ -3,6 +3,7 @@ import { createApp, defineComponent, h, ref, shallowRef, unref, type PropType, t
 import {
   createMemoryHistory,
   createRouter,
+  createWebHistory,
   RouterLink,
   RouterView,
   type RouteLocationRaw,
@@ -11,7 +12,9 @@ import {
 
 import type { DriveNode } from '@/apps/drive/client/types'
 import type { Operation } from '@/platform/transport'
+import { setTweaks } from '@/platform/tweaks'
 
+import { takeShown } from './lastShown'
 import type { FilePreviewSession } from './session'
 
 vi.mock('frappe-ui', async () => ({
@@ -177,12 +180,14 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
+/** Mounts the preview at `path`. With `from`, the browser's history opened it from that page, so it knows its way back. */
 async function mount(
   opened: FilePreviewSession | Ref<FilePreviewSession>,
   path: string,
+  from?: string,
 ): Promise<{ root: HTMLElement; router: Router }> {
   const router = createRouter({
-    history: createMemoryHistory(),
+    history: from ? createWebHistory() : createMemoryHistory(),
     routes: [
       {
         path: '/d/:node/:slug?',
@@ -191,6 +196,7 @@ async function mount(
       { path: '/drive/f/:node/:slug?', component: { render: () => null } },
     ],
   })
+  if (from) await router.push(from)
   await router.push(path)
   const root = document.createElement('div')
   document.body.append(root)
@@ -303,6 +309,69 @@ describe('file preview', () => {
     opened.value = session('m2', 'notes.markdown', 'application/octet-stream')
     await vi.waitFor(() => expect(root.querySelector('article h1')?.textContent).toBe('Plan'))
     expect(root.querySelector('.cm-content')).toBeNull()
+  })
+
+  describe('keys', () => {
+    const LISTING = '/drive/f/folder-1/talks'
+    afterEach(() => setTweaks(['t15-escape-closes', 't15-arrow-keys', 't15-return-focus'], true))
+
+    it('Escape goes back to the listing, which then focuses the last file shown', async () => {
+      const { root, router } = await mount(
+        session('c', 'c.png', 'image/png'),
+        '/d/c/c-png',
+        LISTING,
+      )
+      await vi.waitFor(() => expect(counter(root)).toBe('3 of 5'))
+      press('ArrowRight')
+      await vi.waitFor(() => expect(router.currentRoute.value.params.node).toBe('d'))
+
+      press('Escape')
+
+      await vi.waitFor(() => expect(router.currentRoute.value.path).toBe(LISTING))
+      expect(takeShown(LISTING)).toBe('d')
+    })
+
+    it('Escape does nothing while a menu or dialog is open, but a tooltip does not stop it', async () => {
+      const { router } = await mount(session('c', 'c.png', 'image/png'), '/d/c/c-png')
+      const layer = document.createElement('div')
+      layer.setAttribute('data-dismissable-layer', '')
+      layer.setAttribute('role', 'menu')
+      document.body.append(layer)
+
+      press('Escape')
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(router.currentRoute.value.params.node).toBe('c')
+
+      layer.setAttribute('role', 'tooltip')
+      press('Escape')
+      // Opened straight from its address, so it opens the folder with the file focused.
+      await vi.waitFor(() => expect(router.currentRoute.value.path).toBe(LISTING))
+      expect(router.options.history.state.reveal).toBe('c')
+    })
+
+    it('steps with the arrows after a click on Next file, and with t15 off Escape stays', async () => {
+      // Focus opens the button's tooltip, which measures itself.
+      vi.stubGlobal(
+        'ResizeObserver',
+        class {
+          observe() {}
+          unobserve() {}
+          disconnect() {}
+        },
+      )
+      const { root, router } = await mount(session('c', 'c.png', 'image/png'), '/d/c/c-png')
+      await vi.waitFor(() => expect(counter(root)).toBe('3 of 5'))
+      root.querySelector<HTMLButtonElement>('[aria-label="Next file"]')!.focus()
+      press('ArrowRight')
+      await vi.waitFor(() => expect(router.currentRoute.value.params.node).toBe('d'))
+
+      setTweaks(['t15-escape-closes', 't15-arrow-keys'], false)
+      root.querySelector<HTMLButtonElement>('[aria-label="Next file"]')!.focus()
+      press('ArrowRight')
+      press('Escape')
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(router.currentRoute.value.params.node).toBe('d')
+    })
   })
 
   describe("the listing's actions", () => {

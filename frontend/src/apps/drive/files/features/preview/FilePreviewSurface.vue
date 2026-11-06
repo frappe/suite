@@ -9,6 +9,7 @@ import { driveNodeRoute, useDriveDialogs } from '@/apps/drive'
 import { nodeContentUrl, openAsSpreadsheet, opensAsSpreadsheet } from '@/apps/drive/client/nodes'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
+import { useTweak } from '@/platform/tweaks'
 
 import { trashLocation, useLocationTitle } from '../../internal/locations'
 import { previewKind } from '../../internal/previewKind'
@@ -20,6 +21,8 @@ import { copyLink } from '../share/shareFormat'
 import { useTrashActions } from '../trash/useTrashActions'
 import { offeredTypes, typeQuery, typesFromQuery } from '../typeFilter'
 import { uploadTargetOf } from '../uploads/queue'
+import { arrowsStep, escapeLeaves } from './keys'
+import { rememberShown } from './lastShown'
 import PdfPreview from './PdfPreview.vue'
 import PreviewFallback from './PreviewFallback.vue'
 import type { FilePreviewSession } from './session'
@@ -151,13 +154,39 @@ function show(row: { name: string; title: string; kind: string } | null) {
   if (row) void router.replace({ ...driveNodeRoute(row), query: typeFilter.value })
 }
 
+// The page that opened the preview focuses the row of the last file shown.
+watch(
+  current,
+  (node) => {
+    const { back } = router.options.history.state
+    // Leaving the preview changes the route too, to a page that is not a file.
+    const isFile = node === props.session.nodeId || files.value.some((row) => row.name === node)
+    if (typeof back === 'string' && isFile) rememberShown(back, node)
+  },
+  { immediate: true },
+)
+const escapeCloses = useTweak('t15-escape-closes')
+const arrowsAfterClick = useTweak('t15-arrow-keys')
+const returnFocus = useTweak('t15-return-focus')
+/** Back to the page that opened the preview, or to the file's folder when the preview was opened directly. */
+function leave() {
+  if (typeof router.options.history.state.back === 'string') return router.back()
+  const state = returnFocus.value ? { reveal: current.value } : undefined
+  void router.push(location.value ? { ...location.value.to, state } : '/drive')
+}
+
 // Arrow keys step through the folder unless something on the page has focus,
 // such as the title field, a video's controls, or the text of a text file.
-// Escape leaves the text.
+// Escape leaves the text, and then the preview.
 useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   if (event.defaultPrevented || event.altKey || event.metaKey || event.ctrlKey || event.shiftKey)
     return
-  if (document.activeElement && document.activeElement !== document.body) return
+  if (event.key === 'Escape' && escapeCloses.value) {
+    if (escapeLeaves(event.target instanceof Element ? event.target : null)) leave()
+    return
+  }
+  const focused = document.activeElement
+  if (arrowsAfterClick.value ? !arrowsStep(focused) : focused && focused !== document.body) return
   if (event.key === 'ArrowLeft') show(previous.value)
   else if (event.key === 'ArrowRight') show(next.value)
 })
