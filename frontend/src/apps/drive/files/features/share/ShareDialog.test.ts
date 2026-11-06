@@ -15,6 +15,7 @@ vi.mock('frappe-ui', async () => {
   return {
     Button: define({ setup: () => () => render('button') }),
     BottomSheet: define({ setup: () => () => null }),
+    Skeleton: define({ setup: () => () => null }),
     // Esc, the close button and a click outside all reach the dialog's owner as this event
     Dialog: define({
       props: { open: Boolean },

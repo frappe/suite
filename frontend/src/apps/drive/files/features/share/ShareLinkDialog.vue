@@ -74,8 +74,13 @@
           />
         </template>
         <template v-else>
-          <Button icon-left="lucide-copy" :label="__('Copy link')" @click="copyLink(url)" />
-          <Button variant="solid" :label="__('Done')" @click="open = false" />
+          <Button :label="__('Done')" @click="open = false" />
+          <Button
+            variant="solid"
+            icon-left="lucide-copy"
+            :label="__('Copy link')"
+            @click="copyLink(url)"
+          />
         </template>
       </div>
     </template>

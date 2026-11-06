@@ -50,13 +50,7 @@
             @update:model-value="createFolderMutation.reset()"
             @keydown.escape.stop.prevent="newFolderTitle = null"
           />
-          <Button
-            type="submit"
-            variant="solid"
-            theme="gray"
-            :label="__('Create')"
-            :loading="createFolderMutation.isPending"
-          />
+          <Button type="submit" :label="__('Create')" :loading="createFolderMutation.isPending" />
         </form>
         <ErrorMessage
           v-if="newFolderTitle !== null && createFolderMutation.error"

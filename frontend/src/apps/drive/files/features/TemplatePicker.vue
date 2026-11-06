@@ -81,6 +81,7 @@
       <div class="flex justify-end gap-2">
         <Button label="Cancel" @click="open = false" />
         <Button
+          v-if="!hasNoTemplates"
           type="submit"
           variant="solid"
           theme="gray"
@@ -140,6 +141,7 @@ const templates = useInfiniteQuery(api.drive.views.list, () =>
     : false,
 )
 const templateRows = computed(() => templates.rows.filter((row): row is DriveNode => 'name' in row))
+const hasNoTemplates = computed(() => templates.status === 'success' && !templateRows.value.length)
 const selected = ref<DriveNode | null>(null)
 const title = ref('')
 const failedPreviews = reactive(new Set<string>())

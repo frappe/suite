@@ -186,14 +186,13 @@
                 :placeholder="__('Expiry date')"
                 :aria-label="__('Access expiry date')"
               />
+              <Button :label="__('Cancel')" @click="closeEditor" />
               <Button
                 type="submit"
-                variant="solid"
                 :label="__('Save')"
                 :loading="state.isPending(rowPrincipal(row))"
                 :disabled="!ready"
               />
-              <Button :label="__('Cancel')" @click="closeEditor" />
             </form>
             <ErrorMessage
               v-if="state.errors.get(rowPrincipal(row))"
