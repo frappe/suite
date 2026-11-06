@@ -305,6 +305,7 @@ import { translate as __ } from '@/platform/translation'
 import { TransportError } from '@/platform/transport'
 import { useTweak } from '@/platform/tweaks'
 
+import { inBatches } from '../features/batches'
 import BatchOutcome from '../features/BatchOutcome.vue'
 import {
   announceCopy,
@@ -745,7 +746,14 @@ const selectedRows = computed(() =>
 )
 const countFirstSelectionBar = useTweak('t3-selection-menu')
 /** The selection bar's words when "N selected" would mislead. */
-const selectionLabel = computed(() => (selection.value.length ? undefined : __('Select items')))
+const loadedLabel = useTweak('t20-loaded-label')
+const selectionLabel = computed(() => {
+  const count = selection.value.length
+  if (!count) return __('Select items')
+  // Select all takes only the loaded pages (spec §5.8), so the count says so.
+  const allLoaded = listing.hasNext && selectedRows.value.length === listing.rows.length
+  return loadedLabel.value && allLoaded ? __('{0} loaded items selected', [count]) : undefined
+})
 /** The selected item, when it is the only one. */
 const onlySelected = computed(() =>
   selectedRows.value.length === 1 ? (selectedRows.value[0] ?? null) : null,
@@ -1731,7 +1739,7 @@ async function runBatch(
   verb: string,
 ): Promise<DriveBatchResult | null> {
   try {
-    const result = await batchMutation.run({ nodes, patch })
+    const result = await inBatches(nodes, (chunk) => batchMutation.run({ nodes: chunk, patch }))
 
     batchOutcome.value = result
     batchVerb.value = verb

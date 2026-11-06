@@ -6,7 +6,8 @@ import { api, client } from '@/api'
 
 import type { DriveFailure } from '@/apps/drive/client/types'
 import { toast } from '@/platform/feedback'
-import { TransportError } from '@/platform/transport'
+
+import { inBatches, refusal } from './batches'
 
 /** An item a change touched, with the title its toast names. */
 export interface ChangedItem {
@@ -188,11 +189,10 @@ async function moveAllBack(items: readonly MovedItem[]): Promise<DriveFailure[]>
     const first = group[0]
     if (!first) continue
     const nodes = group.map((item) => item.node)
+    const patch = { parent_node: first.from, expect_parent_node: first.to }
     try {
-      const result = await client.mutation(
-        api.drive.nodes.batch,
-        { nodes, patch: { parent_node: first.from, expect_parent_node: first.to } },
-        { silent: true },
+      const result = await inBatches(nodes, (chunk) =>
+        client.mutation(api.drive.nodes.batch, { nodes: chunk, patch }, { silent: true }),
       )
       failed.push(...result.failed)
     } catch (cause) {
@@ -208,19 +208,12 @@ async function setState(
 ): Promise<DriveFailure[]> {
   const nodes = items.map((item) => item.node)
   try {
-    return (
-      await client.mutation(api.drive.nodes.batch, { nodes, patch: { state } }, { silent: true })
-    ).failed
+    const result = await inBatches(nodes, (chunk) =>
+      client.mutation(api.drive.nodes.batch, { nodes: chunk, patch: { state } }, { silent: true }),
+    )
+    return result.failed
   } catch (cause) {
     return nodes.map((node) => refusal(node, cause))
-  }
-}
-
-function refusal(node: string, cause: unknown): DriveFailure {
-  return {
-    node,
-    type: cause instanceof TransportError ? cause.type : 'Error',
-    message: cause instanceof Error ? cause.message : 'The action failed.',
   }
 }
 

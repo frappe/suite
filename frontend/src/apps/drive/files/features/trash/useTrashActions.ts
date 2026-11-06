@@ -4,6 +4,7 @@ import { api, useMutation, useQuery } from '@/api'
 import { canManage, type DriveBatchResult } from '@/apps/drive/client/types'
 import { confirm, toast } from '@/platform/feedback'
 
+import { inBatches } from '../batches'
 import { announceRestore, subject, type ChangedItem } from '../changeToast'
 import { presentDialog } from '../dialogHost'
 
@@ -50,12 +51,10 @@ export function useTrashActions(root: () => string | null) {
    */
   async function restore(items: readonly ChangedItem[]): Promise<DriveBatchResult | null> {
     try {
-      const first = await restoring.run({
-        nodes: items.map((item) => item.node),
-        patch: {
-          state: 'Active',
-        },
-      })
+      const first = await inBatches(
+        items.map((item) => item.node),
+        (nodes) => restoring.run({ nodes, patch: { state: 'Active' } }),
+      )
       const homeless = first.failed.filter((failure) => failure.type === DESTINATION_REQUIRED)
       const rootId = root()
       if (!homeless.length || !rootId) return reportRestore(items, first)
@@ -90,13 +89,9 @@ export function useTrashActions(root: () => string | null) {
     parent: string,
   ): Promise<DriveBatchResult | null> {
     try {
-      const second = await restoring.run({
-        nodes,
-        patch: {
-          state: 'Active',
-          parent_node: parent,
-        },
-      })
+      const second = await inBatches(nodes, (chunk) =>
+        restoring.run({ nodes: chunk, patch: { state: 'Active', parent_node: parent } }),
+      )
       return reportRestore(items, {
         ok: [...first.ok, ...second.ok],
         failed: [
@@ -133,9 +128,10 @@ export function useTrashActions(root: () => string | null) {
   /** Deleting forever cannot be undone, so its toast offers no Undo. */
   async function runPurge(items: readonly ChangedItem[]): Promise<DriveBatchResult | null> {
     try {
-      const result = await purging.run({
-        nodes: items.map((item) => item.node),
-      })
+      const result = await inBatches(
+        items.map((item) => item.node),
+        (nodes) => purging.run({ nodes }),
+      )
       const deleted = items.filter((item) => result.ok.includes(item.node))
       if (deleted.length) toast.success(`Deleted ${subject(deleted)} forever`)
       show(result, 'deleted forever')

@@ -19,6 +19,8 @@ const server = vi.hoisted(() => ({
   download: fromPartial<null | (() => unknown)>(null),
   /** The answers to polling a download, one per poll. */
   polls: fromPartial<unknown[]>([]),
+  /** The cursor a folder listing answers with: set, the folder has more to load. */
+  nextCursor: fromPartial<string | null>(null),
 }))
 
 vi.mock('@/platform/transport', async (original) => {
@@ -71,7 +73,7 @@ vi.mock('@/platform/transport', async (original) => {
           case 'node_children':
             return {
               rows: [...server.nodes.values()].filter((row) => row.parent_node === input.node),
-              next_cursor: null,
+              next_cursor: server.nextCursor,
             }
           case 'view_list':
             return { rows: server.recents.map((name) => node(name)), next_cursor: null }
@@ -324,6 +326,7 @@ afterEach(() => {
   server.folderRole = 30
   server.download = null
   server.polls = []
+  server.nextCursor = null
   vi.useRealTimers()
   feedback.toasts.length = 0
   listing.rows = []
@@ -881,6 +884,50 @@ describe('Select on a touch screen', () => {
     await nextTick()
 
     expect(bar(root)).toBe('1 selected')
+  })
+})
+
+describe('Select all in a folder with more to load', () => {
+  afterEach(() => setTweaks(['t20-loaded-label'], true))
+  const bar = (root: HTMLElement) =>
+    [...root.querySelectorAll('span')].find((span) => /selected$/.test(span.textContent ?? ''))
+      ?.textContent
+  async function selectAll(folder = 'folder-1'): Promise<HTMLElement> {
+    server.nextCursor = 'more'
+    const { root } = await mount(`/drive/f/${folder}/talks`)
+    await vi.waitFor(() => expect(menuOf(root, 'More file actions')).toContain('Select all'))
+    choose(root, 'More file actions', 'Select all')
+    await nextTick()
+    return root
+  }
+
+  it('says that only the loaded items are selected', async () => {
+    expect(bar(await selectAll())).toBe('3 loaded items selected')
+  })
+
+  it('says "3 selected" with the tweak off', async () => {
+    setTweaks(['t20-loaded-label'], false)
+    expect(bar(await selectAll())).toBe('3 selected')
+  })
+
+  it('refuses to download more than 200 items in one zip', async () => {
+    for (let index = 0; index < 201; index++) {
+      const name = `big-${index}`
+      server.nodes.set(name, node(name, `${name}.png`, { parent_node: 'folder-big' }))
+    }
+    const root = await selectAll('folder-big')
+
+    const download = [...root.querySelectorAll<HTMLElement>('div')].find(
+      (element) => element.getAttribute('label') === 'Download',
+    )
+    download?.click()
+
+    await vi.waitFor(() => expect(feedback.toasts).toHaveLength(1))
+    expect(feedback.toasts[0]).toMatchObject({
+      kind: 'error',
+      message: 'Download up to 200 items at a time.',
+    })
+    expect(server.calls.filter((call) => call.id === 'download_start')).toEqual([])
   })
 })
 

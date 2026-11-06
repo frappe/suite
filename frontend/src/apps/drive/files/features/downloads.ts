@@ -5,6 +5,7 @@ import type { DriveNode } from '@/apps/drive/client/types'
 import { toast, type ToastId } from '@/platform/feedback'
 import { translate as __ } from '@/platform/translation'
 
+import { MAX_BATCH_NODES } from './batches'
 import { subject } from './changeToast'
 
 export type DriveDownload = DownloadGetOutput
@@ -28,6 +29,11 @@ export async function downloadItems(
   const [only] = rows
   if (rows.length === 1 && only && !ZIPPED_KINDS.has(only.kind)) {
     window.location.assign(nodeContentUrl(only.name, { download: true }))
+    return
+  }
+  // One zip is one request, and the server takes at most this many nodes in one.
+  if (rows.length > MAX_BATCH_NODES) {
+    toast.error(__('Download up to {0} items at a time.', [MAX_BATCH_NODES]))
     return
   }
   const name = subject(rows.map((row) => ({ node: row.name, title: row.title })))
