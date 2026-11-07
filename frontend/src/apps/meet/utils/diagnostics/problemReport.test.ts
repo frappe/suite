@@ -237,3 +237,18 @@ it("uses only the microphone's referenced capture source for audio energy", asyn
 	});
 	expect(new URL(url).searchParams.get("body")).toContain("energy: 0.250");
 });
+
+it("includes silent-media repair attempts in the issue report", async () => {
+	const url = await buildProblemReportMailto({
+		meetingId: "room",
+		diagnostics: {
+			...diagnostics,
+			audioHealth: {
+				paths: [],
+				events: [{ at: 1234, id: "send:microphone", action: "reattach" }],
+			},
+		},
+	});
+	const body = new URL(url).searchParams.get("body");
+	expect(body).toContain("send:microphone: reattach (1234)");
+});

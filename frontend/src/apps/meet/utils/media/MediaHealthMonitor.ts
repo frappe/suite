@@ -28,7 +28,39 @@ interface MediaHealthNetworkStats {
 }
 
 /** Media inspection, recovery, and telemetry operations used by the monitor. */
+export interface AudioSenderSample {
+	sourceId?: string;
+	intentionalPause?: boolean;
+	id: string;
+	packets: number | null;
+	active: boolean;
+}
+
+export type AudioPathState =
+	| "checking"
+	| "unknown"
+	| "healthy"
+	| "degraded"
+	| "recovering"
+	| "exhausted";
+interface AudioPath {
+	transportResetAttempted: boolean;
+	id: string;
+	mediaId: string;
+	state: AudioPathState;
+	attempts: number;
+	packets: number | null;
+	flatSince: number | null;
+	moving: number;
+	reset: boolean;
+}
+
 export interface MediaHealthPort {
+	sampleAudioSender?(): Promise<AudioSenderSample | null>;
+	repairAudioSender?(id: string, attempt: number): Promise<void>;
+	isAudioProducerActive?(entry: ConsumerEntry): boolean;
+	getReceiveEpoch?(): { epoch: number; settled: boolean };
+
 	onRecoveryVerified?(reason: string): void;
 	hasMissingExpectedReceiveMedia?(): boolean;
 	hasExpectedSendMedia?(): boolean;
@@ -94,7 +126,7 @@ const browserEnvironment: MediaHealthEnvironment = {
 	},
 };
 
-const POLL_INTERVAL_MS = 3000;
+const POLL_INTERVAL_MS = 1000;
 
 /**
  * Polls live media health and applies recovery policy independently of Vue.
@@ -102,6 +134,115 @@ const POLL_INTERVAL_MS = 3000;
  * teardown. The optional environment makes lifecycle races deterministic in tests.
  */
 export class MediaHealthMonitor {
+	private senderSourceId: string | undefined;
+	private audioPaths = new Map<string, AudioPath>();
+	private receiveEpoch: number | null = null;
+	private audioEvents: { at: number; id: string; action: string }[] = [];
+	get audioHealth() {
+		return {
+			paths: [...this.audioPaths.values()].map((path) => ({ ...path })),
+			events: this.audioEvents.map((event) => ({ ...event })),
+		};
+	}
+
+	private recordAudio(id: string, action: string): void {
+		this.audioEvents.push({ at: this.environment.now(), id, action });
+		if (this.audioEvents.length > 60) this.audioEvents.shift();
+	}
+
+	private async observeAudio(
+		id: string,
+		mediaId: string,
+		packets: number | null,
+		eligible: boolean,
+		deadline: number,
+		repair: (attempt: number) => Promise<void>,
+	): Promise<void> {
+		let path = this.audioPaths.get(id);
+		if (!path) {
+			path = {
+				transportResetAttempted: false,
+				id,
+				mediaId,
+				state: "checking",
+				attempts: 0,
+				packets: null,
+				flatSince: null,
+				moving: 0,
+				reset: false,
+			};
+			this.audioPaths.set(id, path);
+		}
+
+		if (path.mediaId !== mediaId) {
+			path.mediaId = mediaId;
+			path.packets = null;
+			path.flatSince = null;
+			path.reset = false;
+		}
+		const previous = path.packets;
+		path.packets = packets;
+		if (packets !== null && previous !== null && packets < previous)
+			path.reset = true;
+		if (packets !== null && previous !== null && packets > previous)
+			path.reset = false;
+		if (!eligible || packets === null || previous === null || path.reset) {
+			if (!["degraded", "recovering", "exhausted"].includes(path.state))
+				path.state = "unknown";
+			path.flatSince = null;
+			path.moving = 0;
+			return;
+		}
+		if (packets > previous) {
+			path.flatSince = null;
+			if (++path.moving >= 3) {
+				path.state = "healthy";
+				path.attempts = 0;
+				path.transportResetAttempted = false;
+			}
+			return;
+		}
+		if (path.state === "exhausted") return;
+		path.moving = 0;
+		path.flatSince ??= this.environment.now();
+		if (this.environment.now() - path.flatSince < deadline) return;
+		path.state = "degraded";
+		if (path.attempts === 3) {
+			if (id.startsWith("receive:") && !path.transportResetAttempted) {
+				for (const candidate of this.audioPaths.values()) {
+					if (candidate.id.startsWith("receive:"))
+						candidate.transportResetAttempted = true;
+				}
+				path.state = "recovering";
+				path.flatSince = null;
+				this.recordAudio(id, "reset-receive-transport");
+				try {
+					await this.port.resetReceiveMedia();
+				} catch {
+					this.recordAudio(id, "repair-failed");
+				}
+				return;
+			}
+			path.state = "exhausted";
+			this.recordAudio(id, "exhausted");
+			return;
+		}
+		path.state = "recovering";
+		path.attempts++;
+		path.flatSince = null;
+		this.recordAudio(
+			id,
+			id.startsWith("send:")
+				? ["reattach", "restart-send-ice", "republish"][path.attempts - 1]
+				: "recreate-consumer",
+		);
+		try {
+			await repair(path.attempts);
+		} catch {
+			this.recordAudio(id, "repair-failed");
+		}
+	}
+
 	private stateValue: MediaHealthState = {
 		networkQuality: "unknown",
 		downlinkQuality: "unknown",
@@ -201,6 +342,7 @@ export class MediaHealthMonitor {
 		this.stallDetector.reset();
 		this.decodeStallDetector.reset();
 		this.expectedMediaCounters.clear();
+		this.audioPaths.clear();
 		this.receiveProgress.clear();
 		this.qualityCandidates.clear();
 		this.recovering = null;
@@ -265,6 +407,13 @@ export class MediaHealthMonitor {
 	}
 
 	private resetHealthBaselines(): void {
+		for (const path of this.audioPaths.values()) {
+			path.packets = null;
+			path.flatSince = null;
+			path.moving = 0;
+			if (!["degraded", "recovering", "exhausted"].includes(path.state))
+				path.state = "unknown";
+		}
 		this.receiveProgress.clear();
 		this.qualityCandidates.clear();
 		if (this.recovering) this.recovering.goodSince = null;
@@ -276,10 +425,17 @@ export class MediaHealthMonitor {
 
 	private setState(update: Partial<MediaHealthState>): void {
 		const next = { ...this.stateValue, ...update };
+		const unhealthyAudio = [...this.audioPaths.values()].filter((path) =>
+			["degraded", "recovering", "exhausted"].includes(path.state),
+		);
 		const sendBad =
-			next.networkQuality === "poor" || next.networkQuality === "critical";
+			unhealthyAudio.some((path) => path.id.startsWith("send:")) ||
+			next.networkQuality === "poor" ||
+			next.networkQuality === "critical";
 		const receiveBad =
-			next.downlinkQuality === "poor" || next.downlinkQuality === "critical";
+			unhealthyAudio.some((path) => path.id.startsWith("receive:")) ||
+			next.downlinkQuality === "poor" ||
+			next.downlinkQuality === "critical";
 		next.issue =
 			this.interrupted ??
 			(sendBad && receiveBad
@@ -299,7 +455,14 @@ export class MediaHealthMonitor {
 			this.port.isSignalingConnected?.() === false
 		)
 			next.status = "reconnecting";
-		else if (sendBad || receiveBad) next.status = "degraded";
+		else if (
+			sendBad ||
+			receiveBad ||
+			[...this.audioPaths.values()].some((path) =>
+				["degraded", "recovering", "exhausted"].includes(path.state),
+			)
+		)
+			next.status = "degraded";
 		else if (awaitingMeasurement) next.status = "checking";
 		else
 			next.status =
@@ -400,6 +563,13 @@ export class MediaHealthMonitor {
 		let observed = false;
 		let missingMeasurement = false;
 		for (const { entry, bytes, framesDecoded } of results) {
+			if (
+				entry.kind === "audio" &&
+				this.port.isAudioProducerActive?.(entry) !== true
+			) {
+				this.receiveProgress.delete(entry.id);
+				continue;
+			}
 			if (this.port.isConsumerPaused(entry)) {
 				this.receiveProgress.delete(entry.id);
 				continue;
@@ -590,6 +760,41 @@ export class MediaHealthMonitor {
 				return;
 			}
 			this.updateQuality(stats);
+			const sender = await this.port.sampleAudioSender?.();
+			if (
+				generation !== this.lifecycleGeneration ||
+				this.isLifecycleSuspended()
+			)
+				return;
+			const previousSender = this.audioPaths.get("send:microphone");
+			if (
+				sender?.intentionalPause ||
+				(sender?.sourceId !== undefined &&
+					sender.sourceId !== this.senderSourceId) ||
+				(sender &&
+					previousSender?.state === "exhausted" &&
+					sender.id !== previousSender.mediaId)
+			) {
+				this.audioPaths.delete("send:microphone");
+			}
+			if (sender?.sourceId !== undefined) this.senderSourceId = sender.sourceId;
+			if (sender && !sender.intentionalPause)
+				await this.observeAudio(
+					"send:microphone",
+					sender.id,
+					sender.packets,
+					sender.active && !this.interrupted,
+					2000,
+					(attempt) =>
+						this.port.repairAudioSender?.(sender.id, attempt) ??
+						Promise.resolve(),
+				);
+			if (
+				generation !== this.lifecycleGeneration ||
+				this.isLifecycleSuspended()
+			)
+				return;
+			this.setState({});
 			if (stats.isValid) this.port.reportNetworkQuality(stats);
 			await this.port.reconcileExpectedMedia();
 			await this.checkConsumerStalls(
@@ -611,6 +816,15 @@ export class MediaHealthMonitor {
 	private async checkConsumerStalls(allowRecovery: boolean): Promise<void> {
 		const generation = this.lifecycleGeneration;
 		const consumers = this.port.getConsumers();
+		const audioIds = new Set(
+			consumers
+				.filter((entry) => entry.kind === "audio")
+				.map((entry) => `receive:${entry.producerId}`),
+		);
+		for (const id of this.audioPaths.keys()) {
+			if (id.startsWith("receive:") && !audioIds.has(id))
+				this.audioPaths.delete(id);
+		}
 		if (consumers.length === 0) {
 			this.observeReceiveQuality([]);
 			return;
@@ -620,20 +834,117 @@ export class MediaHealthMonitor {
 			return;
 		}
 
+		const epoch = this.port.getReceiveEpoch?.();
+		if (epoch && (!epoch.settled || epoch.epoch !== this.receiveEpoch)) {
+			this.resetHealthBaselines();
+			this.receiveEpoch = epoch.epoch;
+			if (!epoch.settled) return;
+		}
 		let statsResults = await Promise.all(
 			consumers.map(async (entry): Promise<ConsumerHealthSample> => {
+				let timeout: ReturnType<typeof setTimeout> | undefined;
 				try {
-					const stats = await entry.consumer.getStats();
+					const stats = await Promise.race([
+						entry.consumer.getStats(),
+						new Promise<never>((_resolve, reject) => {
+							timeout = setTimeout(
+								() => reject(new Error("Consumer stats timed out")),
+								1500,
+							);
+						}),
+					]);
 					const { bytesReceived: bytes, framesDecoded } =
 						extractInboundRtpCounters(stats, entry.kind);
 					return { entry, bytes, framesDecoded };
 				} catch {
 					return { entry, bytes: null, framesDecoded: null };
+				} finally {
+					clearTimeout(timeout);
 				}
 			}),
 		);
 		if (generation !== this.lifecycleGeneration || this.isLifecycleSuspended())
 			return;
+		const afterEpoch = this.port.getReceiveEpoch?.();
+		if (epoch && (!afterEpoch?.settled || afterEpoch.epoch !== epoch.epoch)) {
+			this.resetHealthBaselines();
+			return;
+		}
+		// Correlated audio/camera loss points at their shared receive transport.
+		// Preserve the old transport repair latency rather than spending each
+		// consumer's ladder on a transport that cannot deliver any of them.
+		const now = this.environment.now();
+		const sharedStalls = statsResults.filter(({ entry, bytes }) => {
+			if (
+				bytes === null ||
+				this.port.isConsumerPaused(entry) ||
+				this.port.getConsumer(entry.id)?.consumer !== entry.consumer
+			)
+				return false;
+			if (entry.kind === "audio") {
+				const path = this.audioPaths.get(`receive:${entry.producerId}`);
+				return (
+					this.port.isAudioProducerActive?.(entry) === true &&
+					path?.flatSince != null &&
+					now - path.flatSince >= 5000
+				);
+			}
+			const previous = this.receiveProgress.get(entry.id);
+			return (
+				!entry.isScreen &&
+				previous !== undefined &&
+				bytes === previous.bytes &&
+				now - previous.bytesAt >= 5000
+			);
+		});
+		const audioStall = sharedStalls.find(
+			({ entry }) =>
+				entry.kind === "audio" &&
+				!this.audioPaths.get(`receive:${entry.producerId}`)
+					?.transportResetAttempted,
+		);
+		if (sharedStalls.length > 1 && audioStall) {
+			for (const path of this.audioPaths.values())
+				if (path.id.startsWith("receive:")) path.transportResetAttempted = true;
+			const path = this.audioPaths.get(
+				`receive:${audioStall.entry.producerId}`,
+			);
+			if (path) path.state = "recovering";
+			this.recordAudio(
+				`receive:${audioStall.entry.producerId}`,
+				"reset-receive-transport",
+			);
+			await this.port.resetReceiveMedia();
+			this.resetHealthBaselines();
+			return;
+		}
+
+		for (const { entry, bytes } of statsResults) {
+			if (
+				entry.kind !== "audio" ||
+				this.port.getConsumer(entry.id)?.consumer !== entry.consumer
+			)
+				continue;
+			if (this.port.isConsumerPaused(entry)) {
+				this.audioPaths.delete(`receive:${entry.producerId}`);
+				continue;
+			}
+			const eligible = this.port.isAudioProducerActive?.(entry) === true;
+			await this.observeAudio(
+				`receive:${entry.producerId}`,
+				entry.id,
+				bytes,
+				eligible,
+				5000,
+				() => this.port.recoverConsumer(entry),
+			);
+			if (
+				generation !== this.lifecycleGeneration ||
+				this.isLifecycleSuspended()
+			)
+				return;
+		}
+		this.setState({});
 		statsResults = statsResults.filter(
 			({ entry }) =>
 				this.port.getConsumer(entry.id)?.consumer === entry.consumer,
@@ -671,7 +982,10 @@ export class MediaHealthMonitor {
 			}
 		}
 
-		const stalledIds = this.stallDetector.check(samples, allowRecovery);
+		const stalledIds = this.stallDetector.check(
+			samples.filter((sample) => sample.kind !== "audio"),
+			allowRecovery,
+		);
 		const decodeActions = this.decodeStallDetector.check(
 			statsResults
 				.filter(({ entry }) => entry.kind === "video")

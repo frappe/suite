@@ -204,6 +204,14 @@ export async function buildProblemReportMailto(
 		`- Meeting ID: ${meetingId}`,
 		`- Timestamp: ${reportTime}`,
 		...audioSummary(diagnostics?.audioSamples),
+		"Silent media health:",
+		...(diagnostics?.audioHealth?.paths ?? []).map(
+			(path) =>
+				`- ${path.id}: ${path.state}; attempts=${path.attempts}; media=${path.mediaId}`,
+		),
+		...(diagnostics?.audioHealth?.events ?? [])
+			.slice(-10)
+			.map((event) => `- ${event.id}: ${event.action} (${event.at})`),
 		"",
 		"Diagnostic snapshot:",
 		`- URL: ${window.location.href}`,

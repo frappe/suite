@@ -268,6 +268,52 @@ export class SFUMediaManager {
 		);
 	}
 
+	/** Repairs the current microphone without reacquiring capture or touching video. */
+	repairAudioSender(id: string, attempt: number): Promise<void> {
+		const generation = this.sendMediaMutationGeneration;
+		return this.serializeSendMediaMutation(async () => {
+			const producer = this.mediaHandler.audioProducer;
+			const track = producer?.track;
+			const current = () =>
+				generation === this.sendMediaMutationGeneration &&
+				this.mediaHandler.audioProducer === producer &&
+				!producer?.closed &&
+				track?.readyState === "live" &&
+				track.enabled &&
+				!producer.paused;
+			if (!producer || producer.id !== id || !track || !current()) return;
+			if (attempt === 1) {
+				try {
+					await producer.replaceTrack({ track: null });
+				} finally {
+					if (current()) await producer.replaceTrack({ track });
+				}
+			} else if (attempt === 2) {
+				await this.transportManager.restartTransportIce("send");
+			} else if (attempt === 3) {
+				await this.transportManager.discardProducer(producer);
+				if (
+					generation !== this.sendMediaMutationGeneration ||
+					this.mediaHandler.audioProducer !== producer ||
+					track.readyState !== "live" ||
+					!track.enabled
+				)
+					return;
+				const replacement = await this.transportManager.createProducer(track, {
+					type: "microphone",
+				});
+				if (
+					generation !== this.sendMediaMutationGeneration ||
+					this.mediaHandler.audioProducer !== producer
+				) {
+					await this.transportManager.discardProducer(replacement);
+					return;
+				}
+				this.mediaHandler.setProducers({ audioProducer: replacement });
+			}
+		});
+	}
+
 	repairLocalPublication(
 		kind: "audio" | "video",
 		localStream: MediaStream,
@@ -420,8 +466,9 @@ export class SFUMediaManager {
 		if (!localStream && !hasLiveScreen) return {};
 
 		const hasLiveVideo =
-			localStream?.getVideoTracks().some((track) => track.readyState === "live") ??
-			false;
+			localStream
+				?.getVideoTracks()
+				.some((track) => track.readyState === "live") ?? false;
 		const hasLiveAudio =
 			localStream?.getAudioTracks().some((track) => track.readyState === "live") ??
 			false;
@@ -589,12 +636,17 @@ export class SFUMediaManager {
 	}
 
 	async recoverConsumer(entry: ConsumerEntry): Promise<void> {
+		if (this.consumerManager.getConsumer(entry.id)?.consumer !== entry.consumer ||
+			!this.participantManager.hasParticipant(entry.participantId) ||
+			!this.isRemoteSubscriptionDesired(entry) || this.receiveSubscriptionsClosed) return;
+		await this.closeServerConsumer(entry.id);
+		if (this.consumerManager.getConsumer(entry.id)?.consumer !== entry.consumer ||
+			!this.participantManager.hasParticipant(entry.participantId) ||
+			!this.isRemoteSubscriptionDesired(entry) || this.receiveSubscriptionsClosed) return;
 		this.consumerManager.removeConsumer(entry.id);
-		await this.handleConsumerLost({
-			consumerId: entry.id,
+		await this.subscribeToRemoteProducer({
 			participantId: entry.participantId,
 			producerId: entry.producerId,
-			kind: entry.kind,
 			isScreen: entry.isScreen,
 		});
 	}

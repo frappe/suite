@@ -111,6 +111,39 @@ export class TransportManager {
 	private sendTransportGeneration = 0;
 	private recvTransportGeneration = 0;
 	private cameraLayers = new CameraLayerController();
+	private receiveSdpEpoch = 0;
+	private receiveNegotiations = 0;
+	getReceiveEpoch() {
+		return {
+			epoch: this.receiveSdpEpoch,
+			settled: this.receiveNegotiations === 0,
+		};
+	}
+
+	/** Handler promises resolve after the complete offer/answer exchange. */
+	private guardReceiveNegotiation(transport: Transport): void {
+		const handler = transport.handler;
+		const receive = handler.receive.bind(handler);
+		const stop = handler.stopReceiving.bind(handler);
+		const pause = handler.pauseReceiving.bind(handler);
+		const resume = handler.resumeReceiving.bind(handler);
+		const restart = handler.restartIce.bind(handler);
+		const guard = async <T>(operation: () => Promise<T>): Promise<T> => {
+			this.receiveNegotiations++;
+			try {
+				return await operation();
+			} finally {
+				this.receiveSdpEpoch++;
+				this.receiveNegotiations--;
+			}
+		};
+		handler.receive = (...args) => guard(() => receive(...args));
+		handler.stopReceiving = (...args) => guard(() => stop(...args));
+		handler.pauseReceiving = (...args) => guard(() => pause(...args));
+		handler.resumeReceiving = (...args) => guard(() => resume(...args));
+		handler.restartIce = (...args) => guard(() => restart(...args));
+	}
+
 	private producerDiscards = new WeakMap<Producer, Promise<void>>();
 
 	constructor(e2eePolicy?: E2EETransformPolicy) {
@@ -312,6 +345,8 @@ export class TransportManager {
 				transport.close();
 				throw new Error("Receive transport creation was cancelled");
 			}
+			this.guardReceiveNegotiation(transport);
+			this.receiveSdpEpoch++;
 			this.recvTransport = transport;
 			this.setupReceiveTransportHandlers();
 			return transport;
@@ -328,6 +363,7 @@ export class TransportManager {
 	}
 
 	closeReceiveTransport() {
+		this.receiveSdpEpoch++;
 		this.recvTransportGeneration++;
 		this.recvTransportCreation = null;
 		const transport = this.recvTransport;

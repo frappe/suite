@@ -70,6 +70,7 @@ function createManager(
 		addConsumer: ReturnType<typeof vi.fn>;
 		getConsumersByParticipant: ReturnType<typeof vi.fn>;
 		removeConsumer: ReturnType<typeof vi.fn>;
+		getConsumer: ReturnType<typeof vi.fn>;
 	};
 	participantManager: MockParticipantManager;
 } {
@@ -95,6 +96,7 @@ function createManager(
 	};
 
 	const consumerManager = {
+		getConsumer: vi.fn(),
 		getConsumersByParticipant: vi.fn(() => []),
 		removeConsumer: vi.fn(),
 		addConsumer: vi.fn((c) => ({
@@ -1082,17 +1084,22 @@ describe("SFUMediaManager.handleConsumerLost", () => {
 
 	it("removes and recreates only the consumer that never started", async () => {
 		const { mediaManager, transportManager, consumerManager } = createManager();
-		await mediaManager.recoverConsumer({
-			id: "stalled-c1",
-			participantId: "remote-1",
-			producerId: "producer-1",
-			kind: "video",
-			isScreen: false,
-		} as never);
-
+		const entry = {
+			id: "stalled-c1", participantId: "remote-1", producerId: "producer-1",
+			kind: "video", isScreen: false, consumer: {},
+		};
+		consumerManager.getConsumer.mockReturnValue(entry);
+		await mediaManager.recoverConsumer(entry as never);
 		expect(consumerManager.removeConsumer).toHaveBeenCalledWith("stalled-c1");
-		await vi.advanceTimersByTimeAsync(250);
 		expect(transportManager.createConsumer).toHaveBeenCalledOnce();
+	});
+
+	it("does not recreate a stalled consumer for a departed participant", async () => {
+		const { mediaManager, transportManager, consumerManager } = createManager({ hasParticipant: false });
+		const entry = { id: "stalled", participantId: "departed", producerId: "old", kind: "audio", isScreen: false, consumer: {} };
+		consumerManager.getConsumer.mockReturnValue(entry);
+		await mediaManager.recoverConsumer(entry as never);
+		expect(transportManager.createConsumer).not.toHaveBeenCalled();
 	});
 
 	it("does not re-subscribe if the participant has left", async () => {

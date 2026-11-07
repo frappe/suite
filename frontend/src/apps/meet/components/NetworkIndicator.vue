@@ -49,7 +49,12 @@ const severity = computed(() => {
 			downlinkQuality === "critical"
 		)
 			return "critical";
-		if (networkQuality === "poor" || downlinkQuality === "poor") return "poor";
+		if (
+			networkQuality === "poor" ||
+			downlinkQuality === "poor" ||
+			status === "degraded"
+		)
+			return "poor";
 		return null;
 	}
 	if (

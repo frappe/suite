@@ -499,6 +499,7 @@ describe("transport creation", () => {
 		});
 		const transport = {
 			id: "recv-tp",
+			handler: { receive: vi.fn(), stopReceiving: vi.fn(), pauseReceiving: vi.fn(), resumeReceiving: vi.fn(), restartIce: vi.fn() },
 			on: vi.fn(),
 			close: vi.fn(),
 		} as never;

@@ -104,3 +104,15 @@ describe("NetworkIndicator", () => {
 		}
 	});
 });
+
+it("shows the existing degraded notice for a detected media fault without network loss", () => {
+	const { root, app } = mount({
+		networkQuality: "good",
+		downlinkQuality: "good",
+		isTransportFailed: false,
+		status: "degraded",
+		issue: "send",
+	});
+	expect(root.querySelector('[data-network-status="poor"]')).not.toBeNull();
+	app.unmount();
+});

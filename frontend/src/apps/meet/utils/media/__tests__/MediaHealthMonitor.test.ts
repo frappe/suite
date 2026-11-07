@@ -199,6 +199,266 @@ function startMonitor(port: MediaHealthPort, environment: TestEnvironment) {
 }
 
 describe("MediaHealthMonitor", () => {
+	it("recovers correlated audio and video loss within the old audio reset window", async () => {
+		const environment = new TestEnvironment();
+		let restored = false;
+		const audio = makeConsumer(environment, {
+			kind: "audio",
+			bytes: () => (restored ? environment.nowValue : 1000),
+		});
+		const video = makeConsumer(environment, {
+			id: "video",
+			bytes: () => (restored ? environment.nowValue : 1000),
+		});
+		const { port, resetReceiveMedia } = makeManager({
+			consumers: [audio, video],
+		});
+		port.isAudioProducerActive = () => true;
+		resetReceiveMedia.mockImplementation(async () => {
+			restored = true;
+		});
+		const monitor = startMonitor(port, environment);
+		await environment.advance(15_000);
+		expect(restored).toBe(true);
+		expect(resetReceiveMedia).toHaveBeenCalledTimes(1);
+		monitor.stop();
+	});
+
+	it("rearms an exhausted sender after an explicit mic toggle or device change", async () => {
+		const environment = new TestEnvironment();
+		const { port } = makeManager();
+		let sourceId = "device-one";
+		let intentionalPause = false;
+		port.sampleAudioSender = async () => ({
+			id: "mic",
+			sourceId,
+			intentionalPause,
+			packets: 100,
+			active: !intentionalPause,
+		});
+		const repairs: number[] = [];
+		port.repairAudioSender = async (_id, attempt) => {
+			repairs.push(attempt);
+		};
+		const monitor = startMonitor(port, environment);
+		await environment.advance(60_000);
+		intentionalPause = true;
+		await environment.advance(3000);
+		intentionalPause = false;
+		await environment.advance(60_000);
+		sourceId = "device-two";
+		await environment.advance(60_000);
+		expect(repairs).toEqual([1, 2, 3, 1, 2, 3, 1, 2, 3]);
+		monitor.stop();
+	});
+
+	it("gives up on a permanent receive fault across consumer replacements", async () => {
+		const environment = new TestEnvironment();
+		const consumers = [
+			makeConsumer(environment, { kind: "audio", bytes: () => 0 }),
+		];
+		const { port, recoverConsumer, resetReceiveMedia } = makeManager({
+			consumers,
+		});
+		port.isAudioProducerActive = () => true;
+		recoverConsumer.mockImplementation(async () => {
+			consumers[0] = makeConsumer(environment, {
+				id: `replacement-${recoverConsumer.mock.calls.length}`,
+				kind: "audio",
+				bytes: () => 0,
+			});
+		});
+		const monitor = startMonitor(port, environment);
+		await environment.advance(90_000);
+		expect(recoverConsumer).toHaveBeenCalledTimes(3);
+		expect(resetReceiveMedia).toHaveBeenCalledTimes(1);
+		expect(monitor.audioHealth.paths).toContainEqual(
+			expect.objectContaining({ state: "exhausted", attempts: 3 }),
+		);
+		monitor.stop();
+	});
+
+	it("does not reset shared media for consumers removed during stats sampling", async () => {
+		const environment = new TestEnvironment();
+		let removed = false;
+		const audio = makeConsumer(environment, { kind: "audio" });
+		const video = makeConsumer(environment, { id: "video" });
+		const { port, resetReceiveMedia } = makeManager({
+			consumers: [audio, video],
+		});
+		port.isAudioProducerActive = () => true;
+		const lookup = port.getConsumer;
+		port.getConsumer = (id) => (removed ? undefined : lookup(id));
+		const monitor = startMonitor(port, environment);
+		await environment.advance(9000);
+		const stats = audio.consumer.getStats.bind(audio.consumer);
+		audio.consumer.getStats = async () => {
+			removed = true;
+			return stats();
+		};
+		await environment.advance(3000);
+		expect(resetReceiveMedia).not.toHaveBeenCalled();
+		monitor.stop();
+	});
+
+	it("rearms after a rejoin republishes the same retained microphone", async () => {
+		const environment = new TestEnvironment();
+		const { port } = makeManager();
+		let id = "before-rejoin";
+		const repairs: number[] = [];
+		port.sampleAudioSender = async () => ({
+			id,
+			sourceId: "retained-track",
+			packets: 100,
+			active: true,
+		});
+		port.repairAudioSender = async (_id, attempt) => {
+			repairs.push(attempt);
+		};
+		const monitor = startMonitor(port, environment);
+		await environment.advance(60_000);
+		id = "after-rejoin";
+		await environment.advance(60_000);
+		expect(repairs).toEqual([1, 2, 3, 1, 2, 3]);
+		monitor.stop();
+	});
+
+	it("keeps an exhausted warning when media evidence becomes unavailable", async () => {
+		const environment = new TestEnvironment();
+		const { port } = makeManager();
+		let missing = false;
+		port.sampleAudioSender = async () => ({
+			id: "mic",
+			packets: missing ? null : 100,
+			active: !missing,
+		});
+		port.repairAudioSender = async () => {};
+		const monitor = startMonitor(port, environment);
+		await environment.advance(60_000);
+		missing = true;
+		await environment.advance(3000);
+		expect(monitor.state.status).toBe("degraded");
+		expect(monitor.audioHealth.paths[0].state).toBe("exhausted");
+		monitor.stop();
+	});
+
+	it("preserves the sender repair budget through hidden and resumed documents", async () => {
+		const environment = new TestEnvironment();
+		const { port } = makeManager();
+		const repairs: number[] = [];
+		port.sampleAudioSender = async () => ({
+			id: "mic",
+			packets: 100,
+			active: true,
+		});
+		port.repairAudioSender = async (_id, attempt) => {
+			repairs.push(attempt);
+		};
+		const monitor = startMonitor(port, environment);
+		await environment.advance(9000);
+		await environment.setHidden(true);
+		await environment.advance(30_000);
+		await environment.setHidden(false);
+		await environment.advance(60_000);
+		expect(repairs).toEqual([1, 2, 3]);
+		monitor.stop();
+	});
+
+	it("does not repair flat audio without fresh server activity", async () => {
+		const environment = new TestEnvironment();
+		const audio = makeConsumer(environment, { kind: "audio" });
+		const { port, recoverConsumer, resetReceiveMedia } = makeManager({
+			consumers: [audio],
+		});
+		port.isAudioProducerActive = () => false;
+		const monitor = startMonitor(port, environment);
+		await environment.advance(60_000);
+		expect(recoverConsumer).not.toHaveBeenCalled();
+		expect(resetReceiveMedia).not.toHaveBeenCalled();
+		monitor.stop();
+	});
+
+	it("ignores an audio sample spanning a receive SDP epoch", async () => {
+		const environment = new TestEnvironment();
+		let epoch = 1;
+		let settled = true;
+		const audio = makeConsumer(environment, { kind: "audio" });
+		audio.consumer.getStats = async () => {
+			epoch++;
+			return new Map([
+				[
+					"inbound",
+					{ type: "inbound-rtp", kind: "audio", bytesReceived: 1000 },
+				],
+			]);
+		};
+		const { port, recoverConsumer, resetReceiveMedia } = makeManager({
+			consumers: [audio],
+		});
+		port.getReceiveEpoch = () => ({ epoch, settled });
+		port.isAudioProducerActive = () => true;
+		const monitor = startMonitor(port, environment);
+		await environment.advance(60_000);
+		settled = false;
+		await environment.advance(30_000);
+		expect(recoverConsumer).not.toHaveBeenCalled();
+		expect(resetReceiveMedia).not.toHaveBeenCalled();
+		monitor.stop();
+	});
+
+	it("repairs only flat audio with fresh SFU speaker evidence", async () => {
+		const environment = new TestEnvironment();
+		const audio = makeConsumer(environment, { kind: "audio" });
+		audio.consumer.getStats = async () =>
+			new Map([
+				[
+					"inbound",
+					{ type: "inbound-rtp", kind: "audio", bytesReceived: 1000 },
+				],
+			]);
+		const video = makeConsumer(environment, {
+			id: "healthy-video",
+			bytes: () => environment.nowValue,
+		});
+		const { port, recoverConsumer, resetReceiveMedia } = makeManager({
+			consumers: [audio, video],
+		});
+		port.isAudioProducerActive = (entry) => entry === audio;
+		const monitor = startMonitor(port, environment);
+		await environment.advance(12_000);
+		expect(recoverConsumer).toHaveBeenCalledWith(audio);
+		expect(recoverConsumer.mock.calls.every(([entry]) => entry === audio)).toBe(
+			true,
+		);
+		expect(resetReceiveMedia).not.toHaveBeenCalled();
+		monitor.stop();
+	});
+
+	it("bounds active sender repair to reattach, send ICE, republish then gives up", async () => {
+		const environment = new TestEnvironment();
+		const { port } = makeManager();
+		const repairs: number[] = [];
+		port.sampleAudioSender = async () => ({
+			id: "mic",
+			packets: 100,
+			active: true,
+		});
+		port.repairAudioSender = async (_id, attempt) => {
+			repairs.push(attempt);
+		};
+		const monitor = startMonitor(port, environment);
+		await environment.advance(60_000);
+		expect(repairs).toEqual([1, 2, 3]);
+		expect(monitor.audioHealth.paths).toContainEqual(
+			expect.objectContaining({
+				id: "send:microphone",
+				state: "exhausted",
+				attempts: 3,
+			}),
+		);
+		monitor.stop();
+	});
+
 	afterEach(() => vi.restoreAllMocks());
 
 	it.each([
@@ -490,28 +750,25 @@ describe("MediaHealthMonitor", () => {
 	it.each([
 		["send", 25, 0],
 		["receive", 0, 25],
-	] as const)(
-		"attributes %s loss to the correct direction",
-		async (direction, sendLoss, receiveLoss) => {
-			const environment = new TestEnvironment();
-			const { port } = makeManager({
-				getNetworkStats: async () => ({
-					...goodNetworkStats,
-					timestamp: environment.now(),
-					uplink: { rtt: 50, packetLoss: sendLoss, jitter: 0, isValid: true },
-					downlink: {
-						rtt: 50,
-						packetLoss: receiveLoss,
-						jitter: 0,
-						isValid: true,
-					},
-				}),
-			});
-			const monitor = startMonitor(port, environment);
-			await environment.advance(3000);
-			expect(monitor.state.issue).toBe(direction);
-		},
-	);
+	] as const)("attributes %s loss to the correct direction", async (direction, sendLoss, receiveLoss) => {
+		const environment = new TestEnvironment();
+		const { port } = makeManager({
+			getNetworkStats: async () => ({
+				...goodNetworkStats,
+				timestamp: environment.now(),
+				uplink: { rtt: 50, packetLoss: sendLoss, jitter: 0, isValid: true },
+				downlink: {
+					rtt: 50,
+					packetLoss: receiveLoss,
+					jitter: 0,
+					isValid: true,
+				},
+			}),
+		});
+		const monitor = startMonitor(port, environment);
+		await environment.advance(3000);
+		expect(monitor.state.issue).toBe(direction);
+	});
 
 	it("shows reconnecting when signaling is unavailable even if media transports stay connected", async () => {
 		const environment = new TestEnvironment();

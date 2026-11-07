@@ -950,7 +950,10 @@ export class ParticipantConnection {
 			if (
 				(producer.kind === "audio" || producer.kind === "video") &&
 				this.isRemoteProducerDesired(producer) &&
-				!this.hasConsumerForProducer(producer.participantId, producer.producerId)
+				!this.hasConsumerForProducer(
+					producer.participantId,
+					producer.producerId,
+				)
 			) {
 				throw new Error(`Expected subscription missing for ${producer.producerId}`);
 			}
@@ -1820,10 +1823,23 @@ export class ParticipantConnection {
 			)
 				return;
 			const d = { participantIds: value.participantIds };
+			this.audioActivity = { at: Date.now(), participants: d.participantIds };
 			if (this.eventHandlers.onActiveSpeakerChanged) {
 				this.eventHandlers.onActiveSpeakerChanged(d.participantIds);
 			}
 		});
+	}
+
+	private audioActivity: { at: number; participants: string[] } | null = null;
+
+	/** Recent SFU audio-level evidence; roster mic intent alone is insufficient. */
+	isRemoteAudioActive(participantId: string): boolean {
+		return (
+			this.sfuClient.isConnected() &&
+			this.audioActivity !== null &&
+			Date.now() - this.audioActivity.at < 2000 &&
+			this.audioActivity.participants.includes(participantId)
+		);
 	}
 
 	private queueNetworkQuality(participantId: string, quality: string): void {

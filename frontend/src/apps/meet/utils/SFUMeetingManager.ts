@@ -88,6 +88,7 @@ export interface AudioDiagnosticSample {
 
 export interface ConnectionDiagnostics {
 	audioSamples?: AudioDiagnosticSample[];
+	audioHealth?: MediaHealthMonitor["audioHealth"];
 	connectionStatus: ReturnType<SFUClient["getConnectionStatus"]>;
 	transportStats: ReturnType<TransportManager["getTransportStats"]>;
 	networkStats: Awaited<ReturnType<TransportManager["getNetworkStats"]>> | null;
@@ -351,6 +352,12 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
 		});
 
 		this.mediaHealthMonitor = new MediaHealthMonitor({
+			sampleAudioSender: () => this.sampleAudioSender(),
+			repairAudioSender: (id, attempt) =>
+				this.mediaManager.repairAudioSender(id, attempt),
+			getReceiveEpoch: () => this.transportManager.getReceiveEpoch(),
+			isAudioProducerActive: (entry) =>
+				this.connectionManager.isRemoteAudioActive(entry.participantId),
 			isSignalingConnected: () => this.sfuClient.isConnected(),
 			onRecoveryVerified: (reason) =>
 				this.connectionManager.completeTransportRecovery(reason),
@@ -1255,6 +1262,86 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
 		});
 	}
 
+	private microphoneMeter: {
+		track: MediaStreamTrack;
+		context: AudioContext;
+		source: MediaStreamAudioSourceNode;
+		analyser: AnalyserNode;
+	} | null = null;
+
+	private closeMicrophoneMeter(): void {
+		const meter = this.microphoneMeter;
+		this.microphoneMeter = null;
+		if (!meter) return;
+		meter.source.disconnect();
+		void meter.context.close().catch(() => undefined);
+	}
+
+	private async sampleAudioSender() {
+		const producer = this.getLocalProducer("audio");
+		const track = producer?.track;
+		if (!producer || producer.closed || !track) {
+			this.closeMicrophoneMeter();
+			return null;
+		}
+		if (this.microphoneMeter?.track !== track) {
+			this.closeMicrophoneMeter();
+			try {
+				const context = new AudioContext();
+				const source = context.createMediaStreamSource(
+					new MediaStream([track]),
+				);
+				const analyser = context.createAnalyser();
+				analyser.fftSize = 256;
+				source.connect(analyser);
+				this.microphoneMeter = { track, context, source, analyser };
+			} catch {
+				/* Missing source evidence stays unknown. */
+			}
+		}
+		let active = false;
+		const meter = this.microphoneMeter;
+		if (meter?.context.state === "running") {
+			const samples = new Float32Array(meter.analyser.fftSize);
+			meter.analyser.getFloatTimeDomainData(samples);
+			active = samples.some((value) => Math.abs(value) > 0.01);
+		}
+		let timeout: ReturnType<typeof setTimeout> | undefined;
+		try {
+			const stats = await Promise.race([
+				producer.getStats(),
+				new Promise<never>((_resolve, reject) => {
+					timeout = setTimeout(
+						() => reject(new Error("Sender stats timed out")),
+						1500,
+					);
+				}),
+			]);
+			if (this.getLocalProducer("audio") !== producer || producer.closed)
+				return null;
+			const reports = snapshotRTCStatsReports(stats);
+			const outbound = reports.find(
+				(report) => report.type === "outbound-rtp" && !report.isRemote,
+			);
+			return {
+				id: producer.id,
+				sourceId: track.id,
+				intentionalPause: producer.paused || !track.enabled,
+				packets: outbound?.packetsSent ?? null,
+				active:
+					active &&
+					!producer.paused &&
+					track.enabled &&
+					!track.muted &&
+					track.readyState === "live",
+			};
+		} catch {
+			return { id: producer.id, packets: null, active: false };
+		} finally {
+			clearTimeout(timeout);
+		}
+	}
+
 	private async sampleAudioDiagnostics(): Promise<AudioDiagnosticSample> {
 		const playback = Array.from(this.videoManager.audioElements, ([participantId, element]) => ({
 			participantId,
@@ -1306,6 +1393,7 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
 		}
 		return {
 			audioSamples: [firstAudioSample, secondAudioSample],
+			audioHealth: this.mediaHealthMonitor.audioHealth,
 			connectionStatus: this.sfuClient.getConnectionStatus(),
 			transportStats: this.transportManager.getTransportStats(),
 			networkStats,
@@ -1371,6 +1459,7 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
 	async cleanup(): Promise<void> {
 		this.mediaHealthSubscriberCount = 0;
 		this.mediaHealthMonitor.stop();
+		this.closeMicrophoneMeter();
 		await this.disconnect();
 
 		if (this.ownsVideoManager) this.videoManager.cleanup();
