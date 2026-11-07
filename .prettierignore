@@ -14,6 +14,7 @@ coverage/
 
 # Vendored or binary assets.
 frontend/public/
+frontend/packages/collab-prosemirror/dist/
 
 # Prose keeps its own line breaks.
 *.md
