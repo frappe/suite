@@ -4,19 +4,19 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../frontend')
+const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../frontend')
 const summary = JSON.parse(
-  fs.readFileSync(path.join(root, 'test-results/coverage/coverage-summary.json'), 'utf8'),
+  fs.readFileSync(path.join(frontendRoot, 'test-results/coverage/coverage-summary.json'), 'utf8'),
 )
 const reported = new Set(
   Object.keys(summary).map((file) =>
-    path.relative(root, file.replaceAll('\\', '/')).replaceAll('\\', '/'),
+    path.relative(frontendRoot, file.replaceAll('\\', '/')).replaceAll('\\', '/'),
   ),
 )
 const eligible = ['src', 'recorder']
   .flatMap((directory) =>
     fs
-      .readdirSync(path.join(root, directory), { recursive: true })
+      .readdirSync(path.join(frontendRoot, directory), { recursive: true })
       .map((file) => `${directory}/${file.replaceAll('\\', '/')}`),
   )
   .filter(
