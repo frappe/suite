@@ -9,7 +9,7 @@ import { afterAll, describe, expect, it } from 'vitest'
 // The server's Node children, built fresh and run as the server runs them
 // (suite/content/checker.py `node_command`): allowed to read only themselves, so a
 // bundle that splits into chunks or reaches for browser UI fails here first.
-const FRONTEND = path.resolve(__dirname, '../../../..')
+const APP_ROOT = path.resolve(__dirname, '../../../../..')
 const VITE = path.join(
   path.dirname(createRequire(import.meta.url).resolve('vite/package.json')),
   'bin/vite.js',
@@ -39,7 +39,7 @@ function build(mode: 'checker' | 'converter') {
       outDir,
       '--sourcemap',
     ],
-    { cwd: FRONTEND, encoding: 'utf8', timeout: BUILD_LIMIT_MS },
+    { cwd: APP_ROOT, encoding: 'utf8', timeout: BUILD_LIMIT_MS },
   )
   if (child.status !== 0) throw new Error(`build exit ${child.status}: ${child.stderr}`)
   return outDir
