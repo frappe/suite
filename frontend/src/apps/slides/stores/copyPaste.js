@@ -17,6 +17,7 @@ import {
 import { inCropMode } from '@/apps/slides/stores/imageCrop'
 import { contextFor, presentationDoc, presentationId } from '@/apps/slides/stores/presentation'
 import { getNewSlide, insertSlide, slideIndex } from '@/apps/slides/stores/slide'
+import { oldBodyHTML } from '@/apps/slides/stores/tiptapSetup'
 import { getClipboardTable } from '@/apps/slides/utils/clipboardTable'
 import { remapElementIds } from '@/apps/slides/utils/connectors'
 import { getDocFromHTML, hasListMarkup, sanitizeSlideHTML } from '@/apps/slides/utils/helpers'
@@ -121,7 +122,13 @@ const handlePastedJSON = async ({ srcPresentation, srcSlide, isCut, elements }) 
     focusElementId.value &&
     focusElementId.value != pastedArray[0].id
   ) {
-    activeEditor.value.commands.insertContent(pastedArray[0].content)
+    // a body saved as a document is read the way the old view drew it
+    let { content } = pastedArray[0]
+    if (content && typeof content == 'object') {
+      content = oldBodyHTML(content)
+    }
+
+    activeEditor.value.commands.insertContent(content)
     return
   }
 
