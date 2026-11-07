@@ -166,10 +166,11 @@ export function nodeTypeLabel(
   if (node.kind === 'link') return 'Link'
   if (node.kind === 'document') {
     const type = fileType(node)
+    if (!documentTypes.length) return DOCUMENT_LABELS[type] ?? 'Document'
     const definition = documentTypes.find(
       (candidate) => CONTENT_TYPES[candidate.contentDoctype] === type,
     )
-    return definition?.newLabel() ?? DOCUMENT_LABELS[type] ?? 'Document'
+    return definition?.newLabel() ?? node.content_doctype ?? 'Document'
   }
   return storedFile(node).label
 }

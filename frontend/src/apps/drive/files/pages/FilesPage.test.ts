@@ -279,7 +279,7 @@ vi.mock('../features/uploads/DriveUploads.vue', async () => {
 })
 const dialogs = vi.hoisted(() => ({
   showDetails: vi.fn(async () => {}),
-  share: vi.fn(async () => false),
+  share: vi.fn(async (_node: string) => false),
 }))
 vi.mock('@/apps/drive', async (original) => ({
   ...(await original<typeof import('@/apps/drive')>()),

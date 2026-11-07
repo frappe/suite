@@ -679,12 +679,16 @@ describe('FilesListing type column', () => {
     ])
   })
 
-  it('shows the doctype with the tweak off', async () => {
+  it('falls back to Drive’s own names with the tweak off, where a drawing is a document', async () => {
     setTweaks(['t4-type-names'], false)
     const { root } = mount({ columns: ['kind'], rows: documents })
     await nextTick()
 
-    expect(typeIn(root)('sheet')).toBe('Sheet')
+    expect(['sheet', 'draw', 'odd'].map(typeIn(root))).toEqual([
+      'Spreadsheet',
+      'Document',
+      'Document',
+    ])
   })
 })
 
