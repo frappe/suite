@@ -66,3 +66,31 @@ test("flowing replacement consumers qualify recovery tail", () => {
 		true,
 	);
 });
+
+test("blackout remains effective when receive repair replaces counters with zero", () => {
+	const sample = (id, bytes) => ({
+		timestamp: 0,
+		rows: [{ id, producerId: "p", kind: "audio", bytes, frames: 0 }],
+	});
+	const window = {
+		name: "media-blackout",
+		samples: [
+			sample("old", 1000),
+			sample("new", 0),
+			sample("new", 0),
+			sample("new", 0),
+		],
+		relay: {
+			counters: { up: { dropped: 10, delivered: 0 }, down: { delivered: 0 } },
+		},
+	};
+	assert.equal(
+		assess([window], { expectedStreams: 1 }).checks.impairmentEffective,
+		true,
+	);
+	window.samples[1].rows[0].bytes = 1;
+	assert.equal(
+		assess([window], { expectedStreams: 1 }).checks.impairmentEffective,
+		false,
+	);
+});

@@ -13,7 +13,6 @@ export function assess(
 	for (const window of windows) {
 		const first = window.samples[0],
 			last = window.samples.at(-1);
-		const tail = window.samples.at(-4) ?? first;
 		const streams = last.rows.map((row) => {
 			const recent = measureStream(window.samples.slice(-4), row.producerId);
 			let maximumStallMs = 0,
@@ -74,8 +73,8 @@ export function assess(
 				last.rows.length === expectedStreams &&
 				last.rows.every(
 					(row) =>
-						row.bytes ===
-						tail.rows.find((x) => x.producerId === row.producerId)?.bytes,
+						measureStream(window.samples.slice(-4), row.producerId)
+							.bytesDelta === 0,
 				) &&
 				window.relay?.counters.up.dropped > 0 &&
 				window.relay?.counters.up.delivered === 0 &&
