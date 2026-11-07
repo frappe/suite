@@ -30,7 +30,7 @@ htmlcov/
 /suite/**/content/dist/
 /suite/**/public/dist/
 /suite/sheets/public/sheets/
-# Meet DTLN worklet (~17MB) — copied from node_modules by frontend prebuild
+# Meet DTLN worklet (~17MB) — copied from node_modules by the build
 /suite/public/noise-suppression/
 # Built www entrypoints (one per app); the listed pages are hand-written templates
 /suite/**/www/*.html
