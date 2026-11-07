@@ -261,7 +261,7 @@ afterEach(() => {
   state.push.mockReset()
   state.createDocument.mockReset()
   state.canCreate = true
-  setTweaks(['t45-home-new', 't45-compact-a', 't45-compact-b', 't45-compact-c'], true)
+  setTweaks(['t45-home-new'], true)
   state.recentFails = true
   state.upcomingFails = false
   state.upcomingPending = false
@@ -535,28 +535,17 @@ describe('Home page', () => {
       expect(newSection(mount())).toBeNull()
     })
 
-    it.each([
-      ['current', []],
-      ['a', ['t45-compact-a']],
-      ['b', ['t45-compact-b']],
-      ['c', ['t45-compact-c']],
-    ] as const)(
-      'option %s shows the four cards and marks the clicked one busy',
-      async (variant, on) => {
-        setTweaks(['t45-compact-a', 't45-compact-b', 't45-compact-c'], false)
-        setTweaks(on, true)
-        state.createDocument.mockReturnValue(new Promise(() => {}))
-        const root = mount()
-        expect(newSection(root)?.dataset.variant).toBe(variant)
-        expect(
-          [...newSection(root)!.querySelectorAll('button')].map((b) => b.textContent?.trim()),
-        ).toEqual(['Document', 'Spreadsheet', 'Presentation', 'Drawing'])
-        card(root, 'Drawing')!.click()
-        await nextTick()
-        expect(card(root, 'Drawing')!.getAttribute('aria-busy')).toBe('true')
-        expect(card(root, 'Document')!.getAttribute('aria-busy')).toBe('false')
-      },
-    )
+    it('shows the four cards and marks the clicked one busy', async () => {
+      state.createDocument.mockReturnValue(new Promise(() => {}))
+      const root = mount()
+      expect(
+        [...newSection(root)!.querySelectorAll('button')].map((b) => b.textContent?.trim()),
+      ).toEqual(['Document', 'Spreadsheet', 'Presentation', 'Drawing'])
+      card(root, 'Drawing')!.click()
+      await nextTick()
+      expect(card(root, 'Drawing')!.getAttribute('aria-busy')).toBe('true')
+      expect(card(root, 'Document')!.getAttribute('aria-busy')).toBe('false')
+    })
   })
 })
 function mount(): HTMLElement {
