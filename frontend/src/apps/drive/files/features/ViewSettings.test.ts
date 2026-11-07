@@ -16,15 +16,17 @@ import ViewSettings from './ViewSettings.vue'
 // Tests resolve `frappe-ui` to a recorder stub. The panel needs the real
 // popover, segmented control and select, so these reach past the alias.
 vi.mock('frappe-ui', async () => ({
-  Button: (await import('../../../../../node_modules/frappe-ui/src/components/Button/Button.vue'))
-    .default,
-  Popover: (
-    await import('../../../../../node_modules/frappe-ui/src/components/Popover/Popover.vue')
+  Button: (
+    await import('../../../../../../node_modules/frappe-ui/src/components/Button/Button.vue')
   ).default,
-  Select: (await import('../../../../../node_modules/frappe-ui/src/components/Select/Select.vue'))
-    .default,
+  Popover: (
+    await import('../../../../../../node_modules/frappe-ui/src/components/Popover/Popover.vue')
+  ).default,
+  Select: (
+    await import('../../../../../../node_modules/frappe-ui/src/components/Select/Select.vue')
+  ).default,
   TabButtons: (
-    await import('../../../../../node_modules/frappe-ui/src/components/TabButtons/TabButtons.vue')
+    await import('../../../../../../node_modules/frappe-ui/src/components/TabButtons/TabButtons.vue')
   ).default,
 }))
 

@@ -1,0 +1,19 @@
+# Written by `suite.composition.contract.write_all`, and generated from it by
+# `pnpm generate:contract`. CI compares both with fresh output.
+frontend/src/**/contract.json
+frontend/src/**/generated.ts
+frontend/auto-imports.d.ts
+frontend/components.d.ts
+
+# Build output and dependencies.
+frontend/dist/
+frontend/dist-recorder/
+node_modules/
+frontend/test-results/
+coverage/
+
+# Vendored or binary assets.
+frontend/public/
+
+# Prose keeps its own line breaks.
+*.md
