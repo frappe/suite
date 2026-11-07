@@ -1,5 +1,5 @@
 // Speed of the glue on a 100k-cell sheet. Skipped in normal runs; run with
-//   SHEETS_BENCH=1 yarn vitest run src/apps/sheets/collab/glue.bench.test.ts --silent=false
+//   SHEETS_BENCH=1 pnpm exec vitest run src/apps/sheets/collab/glue.bench.test.ts --silent=false
 // Numbers go into COLLAB-DESIGN (Q11: IronCalc rebuild on open).
 
 /// <reference types="node" />
