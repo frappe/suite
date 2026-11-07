@@ -1,5 +1,5 @@
+# The repo root is the app package; this is its one local package.
 packages:
-  - frontend
   - frontend/packages/collab-client
 
 # Was `resolutions` in package.json under Yarn 1. Pins one tiptap core/pm/vue-3

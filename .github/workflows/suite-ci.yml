@@ -118,10 +118,10 @@ jobs:
         run: |
           # Pilot clones the app with --skip-assets; tests use this clone, not the Actions checkout.
           pnpm install --frozen-lockfile
-          pnpm --filter @suite/frontend exec vite build --config vite.checker.config.ts
-          pnpm --filter @suite/frontend exec vite build --config vite.checker.config.ts --mode converter
-          pnpm --filter @suite/frontend exec vite build --config vite.sheets-checker.config.ts
-          pnpm --filter @suite/frontend exec vite build --config vite.sheets-checker.config.ts --mode converter
+          pnpm exec vite build --config vite.checker.config.ts
+          pnpm exec vite build --config vite.checker.config.ts --mode converter
+          pnpm exec vite build --config vite.sheets-checker.config.ts
+          pnpm exec vite build --config vite.sheets-checker.config.ts --mode converter
 
       - name: Start Pilot
         id: start-pilot

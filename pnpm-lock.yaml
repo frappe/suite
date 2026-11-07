@@ -197,19 +197,6 @@ importers:
 
   .:
     dependencies:
-      vue:
-        specifier: ^3.5.38
-        version: 3.5.39(typescript@6.0.3)
-    devDependencies:
-      knip:
-        specifier: ^6.4.1
-        version: 6.18.0
-      typescript:
-        specifier: ^6.0.3
-        version: 6.0.3
-
-  frontend:
-    dependencies:
       '@codemirror/commands':
         specifier: ^6.0.0
         version: 6.10.4
@@ -287,7 +274,7 @@ importers:
         version: 10.67.0(pinia@3.0.4(typescript@6.0.3)(vue@3.5.39(typescript@6.0.3)))(vue@3.5.39(typescript@6.0.3))
       '@suite/collab-client':
         specifier: workspace:*
-        version: link:packages/collab-client
+        version: link:frontend/packages/collab-client
       '@tanstack/vue-virtual':
         specifier: ^3.13.24
         version: 3.13.30(vue@3.5.39(typescript@6.0.3))
@@ -340,8 +327,8 @@ importers:
         specifier: 3.26.0
         version: 3.26.0(@floating-ui/dom@1.7.6)(@tiptap/core@3.26.0(@tiptap/pm@3.26.0))(@tiptap/pm@3.26.0)(vue@3.5.39(typescript@6.0.3))
       '@tiptap/y-tiptap':
-        specifier: link:packages/collab-prosemirror
-        version: link:packages/collab-prosemirror
+        specifier: link:frontend/packages/collab-prosemirror
+        version: link:frontend/packages/collab-prosemirror
       '@vueuse/core':
         specifier: ^14.1.0
         version: 14.3.0(vue@3.5.39(typescript@6.0.3))
@@ -508,6 +495,9 @@ importers:
       globals:
         specifier: ^17.13.0
         version: 17.13.0
+      knip:
+        specifier: ^6.4.1
+        version: 6.18.0
       oxlint:
         specifier: ^1.87.0
         version: 1.91.0(oxlint-tsgolint@7.0.2006)
@@ -523,6 +513,9 @@ importers:
       tailwindcss:
         specifier: ^3.4.19
         version: 3.4.19(yaml@2.9.0)
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
       unplugin-icons:
         specifier: ^22.5.0
         version: 22.5.0(@vue/compiler-sfc@3.5.42)(supports-color@11.0.0)
