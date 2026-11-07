@@ -47,7 +47,6 @@ const JOINS_WHAT_IS_BEFORE = /^(?!\u200b)[\p{M}\p{Cf}\p{Emoji_Modifier}\u1160-\u
 // A value the browser rejects here does nothing, where an unknown property still counts
 const READ_BY_THE_BROWSER = new Set([...INHERITED, OPACITY])
 const ITEM_STYLES = ['color', 'font-family', 'font-size', 'letter-spacing']
-// The editor draws no bullet weight from an item's first text, so a look run can't hold one
 const CARRIED_STYLES = [...ITEM_STYLES, FONT_WEIGHT]
 // Tags the editor reads as its own marks, by the tag it draws them with
 const DRAWN_AS: Record<string, string> = { b: 'strong', i: 'em' }
@@ -113,7 +112,7 @@ type Character = [text: string, look: string, block: number, isBoxed?: boolean]
 interface Drawing {
   blocks: string[]
   markers: string[]
-  // Apart from `markers`: a marker takes its weight from its paragraph, which no look run changes
+  // Apart from `markers`: a look run holds any weight but bold, which saves as a mark and not a weight
   markerWeights: string[]
   runs: Run[]
   items: { paragraph: Element; place: Place }[]
@@ -274,6 +273,10 @@ function markerStyles(item: Element | null) {
   }
 
   return ITEM_STYLES.filter((name) => name !== 'letter-spacing')
+}
+
+function isHeldWeight(weight: string) {
+  return weight !== WEIGHT_KEYWORDS.bold
 }
 
 function markerEntry(place: Place, item: Element | null) {
@@ -547,8 +550,12 @@ export function itemsToHold(old: Element, saved: Element, rules: DrawRules, held
     const savedPlace = savedDrawing.items[at].place
     const isSameSpacing =
       place.styles.get('letter-spacing') === savedPlace.styles.get('letter-spacing')
+    const weight = oldDrawing.markerWeights[at]
+    const isSameWeight = weight === savedDrawing.markerWeights[at] || !isHeldWeight(weight)
     const isSameItem =
-      oldDrawing.markers[at] === savedDrawing.markers[at] && (isSameBody || isSameSpacing)
+      oldDrawing.markers[at] === savedDrawing.markers[at] &&
+      isSameWeight &&
+      (isSameBody || isSameSpacing)
     if (!isSameItem && !held.has(at)) {
       needed.add(at)
     }
@@ -594,6 +601,11 @@ function prependLookRun(paragraph: Element, place: Place) {
     const value = place.styles.get(name)
     return `${name}: ${value}`
   })
+  const weight = place.styles.get(FONT_WEIGHT)!
+  if (isHeldWeight(weight)) {
+    look.push(`${FONT_WEIGHT}: ${weight}`)
+  }
+
   const opacity = markerOpacity(place)
   if (opacity < 1) {
     look.push(`opacity: ${opacity}`)

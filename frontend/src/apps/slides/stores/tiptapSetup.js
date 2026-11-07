@@ -248,6 +248,7 @@ const getItemAttributes = (node) => {
     fontFamily: null,
     letterSpacing: null,
     opacity: null,
+    fontWeight: null,
   }
 
   if (textNode?.marks) {
@@ -266,7 +267,8 @@ const getItemAttributes = (node) => {
 }
 
 const getItemStyle = (node, style = '') => {
-  const { color, fontSize, fontFamily, letterSpacing, opacity } = getItemAttributes(node)
+  const { color, fontSize, fontFamily, letterSpacing, opacity, fontWeight } =
+    getItemAttributes(node)
 
   const styleAttrs = [style]
 
@@ -275,6 +277,11 @@ const getItemStyle = (node, style = '') => {
   if (fontFamily != null) styleAttrs.push(`font-family: ${fontFamily};`)
   if (letterSpacing != null) styleAttrs.push(`letter-spacing: ${letterSpacing};`)
   if (opacity != null) styleAttrs.push(`--marker-opacity: ${opacity / 100};`)
+
+  if (fontWeight != null) {
+    styleAttrs.push(`font-weight: ${fontWeight};`)
+  }
+
   styleAttrs.push(`line-height: ${node.attrs.lineHeight || '1.5'};`)
 
   return styleAttrs.join(' ')

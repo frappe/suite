@@ -57,3 +57,21 @@ describe('an old saved document', () => {
     expect(html).toContain('color: red')
   })
 })
+
+describe('a weighted list item', () => {
+  const weighted = '<ul><li><p><span style="font-weight: 600">a</span></p></li></ul>'
+
+  it('draws its bullet at its first text weight in the editor', () => {
+    const element = document.createElement('div')
+    const editor = new Editor({ element, extensions, content: weighted })
+    expect(element.querySelector('li')!.style.fontWeight).toBe('600')
+    editor.destroy()
+  })
+
+  it('saves its bullet weight in the HTML a view draws', () => {
+    const editor = new Editor({ extensions, content: weighted })
+    const { body } = new DOMParser().parseFromString(editor.getHTML(), 'text/html')
+    expect(body.querySelector('li')!.style.fontWeight).toBe('600')
+    editor.destroy()
+  })
+})

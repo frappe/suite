@@ -365,7 +365,7 @@ describe('text', () => {
     expect(dropped).toEqual([])
   })
 
-  it('carries a list item weight to its text, saying its bullet changes', () => {
+  it('carries a list item weight to its text and its bullet', () => {
     const content = '<ul><li style="font-weight: 600"><p>a</p></li></ul>'
     const { doc, dropped } = converted([{ id: 'box', type: 'text', content }])
     const [{ content: texts }] = bodyOf(doc, 'box').content[0].content[0].content
@@ -373,7 +373,7 @@ describe('text', () => {
     expect(texts[0].marks).toContainEqual(
       expect.objectContaining({ attrs: expect.objectContaining({ fontWeight: '600' }) }),
     )
-    expect(dropped).toEqual([{ kind: 'list-marker-style' }])
+    expect(dropped).toEqual([])
   })
 
   it('keeps the bullet of an item whose text alone is bold', () => {
@@ -585,6 +585,31 @@ describe('what the deck draws, against the old view', () => {
     )
     expect(drawn(item, 'color')).toBe('red')
     expect(drawn(textOf('a'), 'color')).toBe('blue')
+    expect(dropped).toEqual([])
+  })
+
+  it.each(['ul', 'ol'])(
+    'draws a weighted %s item bullet at its weight, as the old view did',
+    (tag) => {
+      const { item, textOf, dropped } = drawnDeck(
+        textBox(
+          `<${tag}><li style="font-weight: 600"><p>a<span style="color: blue">b</span></p></li></${tag}>`,
+        ),
+      )
+      expect(drawn(item, 'font-weight')).toBe('600')
+      expect(drawn(textOf('a'), 'font-weight')).toBe('600')
+      expect(drawn(textOf('b'), 'font-weight')).toBe('600')
+      expect(dropped).toEqual([])
+    },
+  )
+
+  it('keeps an item bullet and its next text unweighted when only the first text is weighted', () => {
+    const { item, textOf, dropped } = drawnDeck(
+      textBox('<ul><li><p><span style="font-weight: 600">a</span>b</p></li></ul>'),
+    )
+    expect(drawn(textOf('a'), 'font-weight')).toBe('600')
+    expect(drawn(textOf('b'), 'font-weight')).toBe('')
+    expect(drawn(item, 'font-weight')).toBe('')
     expect(dropped).toEqual([])
   })
 
