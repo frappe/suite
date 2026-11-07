@@ -145,6 +145,15 @@ class TestConversion(ConversionCase):
         held = [json.loads(slide["elements"]) for slide in payload["slides"]]
         self.assertEqual([[box["id"] for box in boxes] for boxes in held], [["one"], ["two"]])
 
+    def test_a_converted_deck_keeps_its_old_version_with_no_edit_in_its_activity(self):
+        node = self.old_deck([text_box("one")])
+
+        self.assertEqual(self.convert(node), "converted")
+
+        labels = [row.label for row in drive.list_versions(node)["rows"]]
+        self.assertIn("Before collaboration", labels)
+        self.assertFalse(frappe.db.exists("Drive Activity", {"node": node, "action": "edit"}))
+
     def test_the_deck_holds_every_slide_and_box_in_order_and_an_old_file_url(self):
         url = "/private/files/old-picture.png"
         node = self.old_deck([text_box("one"), {"id": "pic", "type": "image", "src": url}], [text_box("two")])

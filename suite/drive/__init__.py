@@ -508,14 +508,22 @@ def people_on(node: str, users: Iterable[str] = ()) -> dict[str, PersonOnNode]:
     return _people_on(node, _principals(), users)
 
 
-def take_version(node: str, *, kind: str = "auto", label: str | None = None, actor: str | None = None) -> int:
+def take_version(
+    node: str,
+    *,
+    kind: str = "auto",
+    label: str | None = None,
+    actor: str | None = None,
+    activity: bool = True,
+) -> int:
     """Store a node's current bytes as an immutable version and return its seq; needs EDIT.
 
     `actor` credits someone other than the caller, as a sweep versioning other people's edits does.
+    `activity=False` records no edit, for a version the system keeps that nobody's edit made.
     """
     from suite.drive._core.versions import take_version as _take_version
 
-    return _take_version(_principals(), node, kind=kind, label=label, actor=actor)
+    return _take_version(_principals(), node, kind=kind, label=label, actor=actor, activity=activity)
 
 
 def check_history_reader(node: str) -> None:

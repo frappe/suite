@@ -205,6 +205,14 @@ class TestConversion(DriveCallbackCase):
             [(reason, bytes(payload)) for reason, payload in kept], [("copy_first", b"<p>Hello world</p>")]
         )
 
+    def test_keeps_the_old_body_as_a_version_with_no_edit_in_its_activity(self):
+        node = self.old_document("<p>Hello world</p>")
+
+        self.assertEqual(conversions.convert_document(writer_content.APP, node), "converted")
+
+        self.assertEqual(self.before_collaboration(node)["html"], "<p>Hello world</p>")
+        self.assertFalse(frappe.db.exists("Drive Activity", {"node": node, "action": "edit"}))
+
     def test_converts_an_empty_document_into_an_empty_copy(self):
         node = self.old_document(None)
 
