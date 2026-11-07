@@ -2,7 +2,7 @@ ARG NODE_VERSION=24-bookworm-slim
 
 FROM node:${NODE_VERSION} AS frontend
 WORKDIR /repo
-RUN corepack enable pnpm && corepack prepare pnpm@12.10.1 --activate
+RUN corepack enable pnpm
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY frontend/packages ./frontend/packages
 RUN pnpm install --frozen-lockfile
