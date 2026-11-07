@@ -471,6 +471,9 @@ importers:
       '@tiptap/extension-bold':
         specifier: 3.27.1
         version: 3.27.1(@tiptap/core@3.26.0(@tiptap/pm@3.26.0))
+      '@tiptap/extension-hard-break':
+        specifier: 3.27.1
+        version: 3.27.1(@tiptap/core@3.26.0(@tiptap/pm@3.26.0))
       '@tiptap/extension-heading':
         specifier: 3.27.1
         version: 3.27.1(@tiptap/core@3.26.0(@tiptap/pm@3.26.0))

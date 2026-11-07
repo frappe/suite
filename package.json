@@ -145,6 +145,7 @@
     "@ianvs/prettier-plugin-sort-imports": "^4.7.1",
     "@sentry/core": "10.67.0",
     "@tiptap/extension-bold": "3.27.1",
+    "@tiptap/extension-hard-break": "3.27.1",
     "@tiptap/extension-heading": "3.27.1",
     "@tiptap/extension-horizontal-rule": "3.27.1",
     "@tiptap/extension-list": "3.27.1",
