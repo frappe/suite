@@ -13,8 +13,8 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils import cstr
 
 from suite import drive
+from suite.drive import EDIT
 from suite.drive._core.errors import DriveForbidden, DriveNotFound
-from suite.drive._core.roles import EDIT
 from suite.slides.doctype.presentation import presentation as presentation_module
 from suite.slides.doctype.presentation.presentation import (
     apply_theme,
