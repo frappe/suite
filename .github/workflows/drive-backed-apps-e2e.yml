@@ -158,11 +158,8 @@ jobs:
           node-version: "24.12.0"
 
       - name: Setup Yarn
-        # bench build runs `yarn build` in the app, whose package.json pins pnpm.
-        # Without this, Corepack's Yarn refuses to run there.
-        run: |
-          corepack enable && corepack prepare yarn@1.22.22 --activate
-          echo COREPACK_ENABLE_STRICT=0 >> "$GITHUB_ENV"
+        # Frappe and the e2e package use Yarn 1. Frappe builds Suite with pnpm.
+        run: corepack enable && corepack prepare yarn@1.22.22 --activate
 
       - name: Install GitHub-hosted dependencies
         if: runner.environment == 'github-hosted'
