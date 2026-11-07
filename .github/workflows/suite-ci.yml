@@ -515,23 +515,6 @@ jobs:
     runs-on: ubuntu-latest
     name: Drive Migration Rehearsal
 
-    services:
-      redis-cache:
-        image: redis:alpine
-        ports:
-          - 13000:6379
-      redis-queue:
-        image: redis:alpine
-        ports:
-          - 11000:6379
-      mariadb:
-        image: mariadb:10.6
-        env:
-          MYSQL_ROOT_PASSWORD: root
-        ports:
-          - 3306:3306
-        options: --health-cmd="mariadb-admin ping" --health-interval=5s --health-timeout=2s --health-retries=3
-
     steps:
       - name: Clone
         uses: actions/checkout@v7
@@ -589,43 +572,48 @@ jobs:
             ${{ runner.os }}-pip-
             ${{ runner.os }}-
 
-      - name: Install MariaDB Client
+      - name: Setup Pilot
         if: steps.drive-migration-changes.outputs.run == '1'
         run: |
-          sudo apt update
-          sudo apt-get install -y mariadb-client
-
-      - name: Setup Bench
-        if: steps.drive-migration-changes.outputs.run == '1'
-        run: |
-          pip install frappe-bench "unittest-xml-reporting~=4.0"
-          bench init --skip-redis-config-generation --skip-assets --python "$(which python)" ~/frappe-bench
-          mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL character_set_server = 'utf8mb4'"
-          mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL collation_server = 'utf8mb4_unicode_ci'"
+          curl -fsSL https://raw.githubusercontent.com/frappe/pilot/v0.0.94-pre-alpha/install.sh | sh
+          export PATH="$HOME/pilot/bin:$HOME/.local/bin:$PATH"
+          printf '%s\n' "$HOME/pilot/bin" "$HOME/.local/bin" >> "$GITHUB_PATH"
+          pilot new frappe-bench --frappe-branch develop
+          pilot -b frappe-bench init
 
       - name: Install Suite
         if: steps.drive-migration-changes.outputs.run == '1'
-        working-directory: /home/runner/frappe-bench
+        working-directory: /home/runner/pilot/benches/frappe-bench
         run: |
-          bench get-app suite $GITHUB_WORKSPACE --skip-assets
-          bench setup requirements --dev
-          bench new-site --db-root-password root --admin-password admin rehearsal_site
-          bench --site rehearsal_site install-app suite
+          uv pip install --python env/bin/python -e "apps/frappe[test]"
+          pilot get-app "$GITHUB_WORKSPACE" --branch "$GITHUB_SHA" --skip-assets
         env:
           CI: "Yes"
 
+      - name: Start Pilot
+        if: steps.drive-migration-changes.outputs.run == '1'
+        run: |
+          pilot -b frappe-bench start > "$RUNNER_TEMP/pilot.log" 2>&1 &
+          curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-delay 1 \
+            http://127.0.0.1:7000/api/v1/health
+
+      - name: Create Rehearsal Site
+        if: steps.drive-migration-changes.outputs.run == '1'
+        working-directory: /home/runner/pilot/benches/frappe-bench
+        run: pilot new-site rehearsal_site --admin-password admin --apps frappe suite
+
       - name: Run Drive Migration Rehearsal
         if: steps.drive-migration-changes.outputs.run == '1'
-        working-directory: /home/runner/frappe-bench
+        working-directory: /home/runner/pilot/benches/frappe-bench
         run: |
           mkdir -p "$GITHUB_WORKSPACE/test-results/drive-migration"
-          bench --site rehearsal_site set-config allow_tests true
-          bench --site rehearsal_site set-config storage_v2 1
+          pilot frappe --site rehearsal_site set-config allow_tests true
+          pilot frappe --site rehearsal_site set-config storage_v2 1
           # The whole-migration rehearsal test opts in through this key; it seeds a
           # legacy Drive dataset, runs Build and Cleanup, and checks the result.
-          bench --site rehearsal_site set-config drive_migration_rehearsal 1
+          pilot frappe --site rehearsal_site set-config drive_migration_rehearsal 1
           status=0
-          bench --site rehearsal_site run-tests --module suite.drive.tests.test_migration --junit-xml-output "$GITHUB_WORKSPACE/test-results/drive-migration/junit-fragments.xml" || status=$?
+          pilot frappe --site rehearsal_site run-tests --module suite.drive.tests.test_migration --junit-xml-output "$GITHUB_WORKSPACE/test-results/drive-migration/junit-fragments.xml" || status=$?
           python "$GITHUB_WORKSPACE/.github/scripts/merge_junit.py" \
             "$GITHUB_WORKSPACE/test-results/drive-migration/junit-fragments.xml" \
             "$GITHUB_WORKSPACE/test-results/drive-migration/junit.xml"
@@ -804,11 +792,8 @@ jobs:
           node-version: "24.12.0"
 
       - name: Setup Yarn
-        # bench build runs `yarn build` in the app, whose package.json pins pnpm.
-        # Without this, Corepack's Yarn refuses to run there.
-        run: |
-          corepack enable && corepack prepare yarn@1.22.22 --activate
-          echo COREPACK_ENABLE_STRICT=0 >> "$GITHUB_ENV"
+        # Frappe and the e2e package use Yarn 1. Frappe builds Suite with pnpm.
+        run: corepack enable && corepack prepare yarn@1.22.22 --activate
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
