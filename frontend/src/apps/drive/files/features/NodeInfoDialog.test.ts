@@ -163,13 +163,13 @@ describe('Details', () => {
     await vi.waitFor(() => expect(field(root, 'Type')).toBe('Spreadsheet'))
   })
 
-  it('shows the raw document type with the tweak off', async () => {
+  it("falls back to Drive's own name with the tweak off", async () => {
     setTweaks(['t4-type-names'], false)
     server.kind = 'document'
     server.contentDoctype = 'Sheet'
     const root = mount('budget')
 
-    await vi.waitFor(() => expect(field(root, 'Type')).toBe('Sheet'))
+    await vi.waitFor(() => expect(field(root, 'Type')).toBe('Spreadsheet'))
   })
 
   it('shows no sharing to someone who may not share it, and does not ask', async () => {
