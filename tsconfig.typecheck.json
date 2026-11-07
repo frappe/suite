@@ -30,8 +30,6 @@
     "frontend/src/shell/**/*.vue",
     "frontend/src/composition/**/*.ts",
     "frontend/src/composition/**/*.vue",
-    "frontend/src/boot/**/*.ts",
-    "frontend/src/boot/**/*.vue",
     "frontend/src/components/settings/**/*.ts",
     "frontend/src/components/settings/**/*.vue",
     "frontend/src/composables/**/*.ts",
