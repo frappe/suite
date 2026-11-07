@@ -453,6 +453,21 @@ importers:
       '@ianvs/prettier-plugin-sort-imports':
         specifier: ^4.7.1
         version: 4.7.1(@vue/compiler-sfc@3.5.42)(prettier@3.9.9)(supports-color@11.0.0)
+      '@sentry/core':
+        specifier: 10.67.0
+        version: 10.67.0
+      '@tiptap/extension-bold':
+        specifier: 3.27.1
+        version: 3.27.1(@tiptap/core@3.26.0(@tiptap/pm@3.26.0))
+      '@tiptap/extension-heading':
+        specifier: 3.27.1
+        version: 3.27.1(@tiptap/core@3.26.0(@tiptap/pm@3.26.0))
+      '@tiptap/extension-horizontal-rule':
+        specifier: 3.27.1
+        version: 3.27.1(@tiptap/core@3.26.0(@tiptap/pm@3.26.0))(@tiptap/pm@3.26.0)
+      '@tiptap/extension-list':
+        specifier: 3.27.1
+        version: 3.27.1(@tiptap/core@3.26.0(@tiptap/pm@3.26.0))(@tiptap/pm@3.26.0)
       '@tiptap/extension-text':
         specifier: ^3.26.0
         version: 3.27.1(@tiptap/core@3.26.0(@tiptap/pm@3.26.0))
