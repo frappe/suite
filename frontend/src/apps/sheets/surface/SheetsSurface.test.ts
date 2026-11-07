@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { computed, createApp, defineComponent, nextTick, onUnmounted, ref, watch } from 'vue'
+import { computed, createApp, defineComponent, h, nextTick, onUnmounted, ref, watch } from 'vue'
 
 import type { DocumentSession } from '@/apps/drive'
 import { railHidden } from '@/platform/rail'
@@ -15,7 +15,15 @@ const toast = vi.hoisted(() => ({
   dismiss: vi.fn(),
 }))
 vi.mock('frappe-ui', () => ({ toast }))
-vi.mock('@/apps/drive', () => ({ DriveDocumentHeader: { render: () => null } }))
+vi.mock('@/apps/drive', () => ({
+  DriveDocumentHeader: defineComponent({
+    props: { panels: { type: Array, default: () => [] } },
+    setup:
+      (props, { slots }) =>
+      () =>
+        h('header', [h('output', { 'data-panels': '' }, props.panels.join()), slots.menus?.()]),
+  }),
+}))
 vi.mock('./SheetCommentsPanel.vue', () => ({ default: { render: () => null } }))
 vi.mock('./SheetVersionsPanel.vue', () => ({ default: { render: () => null } }))
 vi.mock('./navigation', () => ({ useDocumentLeaveGuard: vi.fn() }))
@@ -38,7 +46,7 @@ const editor = await vi.hoisted(async () => {
 vi.mock('@/apps/sheets/components/SheetEditor/index.vue', () => ({
   default: defineComponent({
     props: { writable: Boolean },
-    setup(props, { expose }) {
+    setup(props, { expose, slots }) {
       // As the real editor: once view only, the cell editor closes, and the
       // room commits what it holds when access goes.
       watch(
@@ -83,19 +91,26 @@ vi.mock('@/apps/sheets/components/SheetEditor/index.vue', () => ({
         goToCell: () => true,
         closeNotes: () => {},
       })
-      return () => null
+      const menus = defineComponent({
+        props: { openComments: { type: Function, default: null } },
+        setup: (menu) => () =>
+          menu.openComments ? h('button', { 'data-comment-menu': '' }) : null,
+      })
+      return () => slots.header?.({ menus })
     },
   }),
 }))
 
 const state = ref('Active')
 const role = ref(40)
+const panels = ref(['comments', 'versions'])
 const session = {
   nodeId: 'node-1',
   contentDocname: 'sheet-1',
   title: ref('Budget'),
   state,
   access: computed(() => ({ role: role.value })),
+  panels,
   credentials: { context: {}, fetch: vi.fn() },
   versions: {},
 } as unknown as DocumentSession
@@ -106,6 +121,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   state.value = 'Active'
   role.value = 40
+  panels.value = ['comments', 'versions']
   Object.assign(editor, { saveState: 'clean', unsent: false, draft: null, hasLoadError: false })
 })
 afterEach(() => unmount?.())
@@ -160,6 +176,20 @@ it('keeps the rail on the no-permission page', async () => {
   await settle()
 
   expect(railHidden.value).toBe(false)
+})
+
+it('offers a signed-out reader of a public spreadsheet no comments or versions', async () => {
+  const offered = () => ({
+    panels: document.querySelector('[data-panels]')?.textContent,
+    hasCommentMenu: document.querySelector('[data-comment-menu]') !== null,
+  })
+  panels.value = []
+  await mountSurface()
+  expect(offered()).toEqual({ panels: '', hasCommentMenu: false })
+
+  panels.value = ['comments', 'versions']
+  await nextTick()
+  expect(offered()).toEqual({ panels: 'comments,versions', hasCommentMenu: true })
 })
 
 describe('SheetsSurface losing edit access in the live room', () => {

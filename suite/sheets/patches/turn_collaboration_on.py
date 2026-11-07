@@ -5,7 +5,11 @@ from suite.sheets.content import APP, turn_on
 
 
 def execute() -> None:
-    """Turn Sheets' collaboration on, which it then stays; a first turn-on pauses conversion until the owner unpauses it after the restart."""
+    """Turn Sheets' collaboration on, which it then stays.
+
+    A first turn-on pauses the background conversion until the owner unpauses it after the restart; a document
+    someone opens still converts (suite.content.conversions).
+    """
     already_on = log.mode(APP) == "on"
     turn_on()
     if not already_on:

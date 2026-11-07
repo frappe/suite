@@ -61,6 +61,8 @@ The editor has two modes:
 
 F2 while editing switches between the two modes, and a click inside the editor's text switches to Edit mode.
 
+Opening or closing the editor does not move the cell's text. The editor uses the font, size, weight, alignment, line pitch and first-line position the canvas drew the cell with, and puts the text on the same device pixels at any zoom and screen scale (`overlay.ts`, checked by `editor-matches-canvas.test.ts`). Editing a number in place keeps it right-aligned. Typing over a cell or editing a formula starts from the left, unless the cell sets an alignment.
+
 ### Formula references
 
 While a formula is typed, a click or arrow key inserts a reference **only where one can go**: right after `=`, `(`, `,`, `;`, an operator (`+ - * / ^ & < >`) or `{`. Anywhere else, a click commits the formula and selects the clicked cell.

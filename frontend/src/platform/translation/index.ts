@@ -3,37 +3,27 @@ import type { App, Plugin } from 'vue'
 import { transport } from '@/platform/transport'
 import { api } from '@/platform/transport/api'
 
-import { format, type Replacement } from './format'
+import type { Replacement } from './format'
+import { setCatalog, translate } from './translate'
 
 export type { Replacement } from './format'
-export type TranslationCatalog = Record<string, string>
+export { translate } from './translate'
+export type { TranslationCatalog } from './translate'
 export type TranslationFunction = (
   message: string,
   replace?: Replacement,
   context?: string | null,
 ) => string
 
-let catalog: TranslationCatalog =
-  typeof window === 'undefined' ? {} : (window.translatedMessages ?? {})
 let loadPromise: Promise<void> | null = null
-
-export function translate(
-  message: string,
-  replace?: Replacement,
-  context: string | null = null,
-): string {
-  if (!message || typeof message !== 'string') return message
-  const contextual = context ? catalog[`${message}:${context}`] : undefined
-  return format(contextual || catalog[message] || message, replace)
-}
 
 export function loadTranslations(): Promise<void> {
   if (loadPromise) return loadPromise
   loadPromise = transport
     .request(api.translations.get, {})
     .then((messages) => {
-      catalog = messages ?? {}
-      if (typeof window !== 'undefined') window.translatedMessages = catalog
+      setCatalog(messages ?? {})
+      if (typeof window !== 'undefined') window.translatedMessages = messages ?? {}
     })
     .catch(() => {
       // Rendering source strings is the safe fallback when the catalog route is unavailable.

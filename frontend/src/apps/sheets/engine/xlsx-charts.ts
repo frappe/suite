@@ -186,7 +186,7 @@ interface Rect {
 }
 
 // `A1:C5` (or `$a$1`) as a rect; null for anything else, as the chart
-// overlay reads it (useChartIntegration's getMatrix).
+// overlay reads it (useChartIntegration's getSource).
 function _rect(range: string | undefined): Rect | null {
   const [start = '', end = start] = String(range || '')
     .replace(/\$/g, '')

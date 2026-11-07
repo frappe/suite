@@ -1896,13 +1896,13 @@ class TestConversion(DriveCallbackCase):
         real = conversions.convert_document
         seen = []
 
-        def only_mine(app, node):
+        def only_mine(app, node, *, opened=False):
             seen.append(node)
             if each is not None:
                 each(node)
 
             if node in mine:
-                return real(app, node)
+                return real(app, node, opened=opened)
 
         with patch.object(conversions, "convert_document", only_mine):
             conversions.run_pending(writer_content.APP, writer)

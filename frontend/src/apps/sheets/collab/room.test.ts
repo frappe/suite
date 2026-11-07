@@ -9,7 +9,7 @@ import {
 } from '@/platform/collab'
 
 import { sheetsAdapter } from './adapter'
-import { isLiveNow, openSheetRoom, type SheetRoom } from './room'
+import { openSheetRoom, type SheetRoom } from './room'
 import { roots } from './schema'
 import { docSheets } from './stores'
 import { fakeServer } from './test-room'
@@ -207,13 +207,6 @@ describe('openSheetRoom', { timeout: ROOM_TIMEOUT }, () => {
     }
     await expect(openSheetRoom({ session, client, stores, open })).rejects.toThrow('bad comments')
     expect(room!.close).toHaveBeenCalledTimes(1)
-  })
-
-  it('asks whether a sheet opens live without keeping the room', async () => {
-    const server = fakeServer()
-    expect(await isLiveNow(session, server.open)).toBe(true)
-    expect(server.rooms[0]!.close).toHaveBeenCalledTimes(1)
-    expect(await isLiveNow(session, async () => ({ state: 'unconverted' }))).toBe(false)
   })
 
   it('keeps the room clientID through forwarded commits and a restore made in the room', async () => {

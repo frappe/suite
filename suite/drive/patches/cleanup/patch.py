@@ -20,6 +20,7 @@ from suite.drive.patches.cleanup.removal import (
     phase_slides_media_rows,
     phase_thumbnails,
 )
+from suite.drive.patches.database_marker import refuse_foreign_record, stamp_record
 
 # §14.10's order. Each entry is `(name, callable)`, where the callable takes
 # `(env, batch_size)`: uniform shape for the loop below, even though most
@@ -57,12 +58,16 @@ def execute() -> None:
 def run_cleanup(env, *, batch_size: int = CLEANUP_BATCH_SIZE) -> dict:
     """Run every §14.10 phase against `env`, in order, resumably.
 
-    Three refusals, all before phase 1, none of them repeated inside the
+    Four refusals, all before phase 1, none of them repeated inside the
     loop below: `env.state.refuse_if_corrupt()` (an unreadable existing
     state record is quarantined for forensics and refused outright, never
     silently treated as a fresh site with no prior run — see
-    `CorruptCleanupStateError`); the two §14.10 gates; then the operator's
-    recorded backup. Checked once per call, not once per phase: Cleanup runs
+    `CorruptCleanupStateError`); `refuse_foreign_record` (a record whose
+    marker this database does not hold describes another database, such
+    as the one before a database-only restore); the two §14.10 gates; then
+    the operator's recorded backup. The record is stamped with this
+    database's marker only after all four pass, right before its first
+    write. Checked once per call, not once per phase: Cleanup runs
     single-actor and serial by its own execution rules, so re-scanning the
     whole `File` table before every phase bought no real safety for the
     cost of several full scans a run. A genuine resume — a fresh process,
@@ -79,8 +84,10 @@ def run_cleanup(env, *, batch_size: int = CLEANUP_BATCH_SIZE) -> dict:
     checkpoint claim durability the database never actually committed.
     """
     env.state.refuse_if_corrupt()
+    refuse_foreign_record(env.state, env.markers)
     check_gates(env, batch_size=batch_size)
     require_backup(env)
+    stamp_record(env.state, env.markers)
     env.state.put_backup(env.backup)
 
     results: dict[str, dict] = {}

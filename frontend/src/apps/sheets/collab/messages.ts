@@ -184,3 +184,15 @@ export function upgradingBanner(): Banner {
     ),
   }
 }
+
+/**
+ * An old spreadsheet the converter refused, by its outcome code (`too_large`
+ * gets its own text); `reason` reaches System Managers only.
+ */
+export function notUpgradedBanner(outcome: string | null, reason: string | null): Banner {
+  const text =
+    outcome === 'too_large'
+      ? __('This spreadsheet is too large to edit together, so it stays read-only.')
+      : __("This spreadsheet couldn't be upgraded, so it stays read-only.")
+  return { text: reason ? `${text} ${__('Reason: {0}.', [reason])}` : text }
+}

@@ -166,6 +166,7 @@ const DEFAULT_RETRY_BASE_MS = 100
 const RETRY_BACKOFF_FACTOR = 2
 const REQUEST_TIMEOUT_STATUS = 408
 const TOO_MANY_REQUESTS_STATUS = 429
+const MIN_CLIENT_ERROR_STATUS = 400
 export const MIN_SERVER_ERROR_STATUS = 500
 
 export interface BytesTransport extends Transport {
@@ -195,6 +196,20 @@ interface PreparedRequest {
 
 export function isTransientStatus(status: number): boolean {
   return status === REQUEST_TIMEOUT_STATUS || status === TOO_MANY_REQUESTS_STATUS
+}
+
+/** The server turned the request away, unlike a network or server failure that passes. */
+export function isRefusal(error: unknown): boolean {
+  if (!(error instanceof TransportError)) {
+    return false
+  }
+
+  const { status } = error
+  return (
+    status >= MIN_CLIENT_ERROR_STATUS &&
+    status < MIN_SERVER_ERROR_STATUS &&
+    !isTransientStatus(status)
+  )
 }
 
 export function createTransport(options: CreateTransportOptions = {}): BytesTransport {

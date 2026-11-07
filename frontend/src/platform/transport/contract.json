@@ -2586,6 +2586,10 @@
           "cursor": {
             "title": "Cursor",
             "type": "string"
+          },
+          "node": {
+            "title": "Node",
+            "type": "string"
           }
         },
         "title": "PeopleQuery",
@@ -2654,6 +2658,14 @@
                   }
                 ],
                 "title": "User Image"
+              },
+              "has_access": {
+                "title": "Has Access",
+                "type": "boolean"
+              },
+              "is_blocked": {
+                "title": "Is Blocked",
+                "type": "boolean"
               }
             },
             "required": [
@@ -2704,7 +2716,116 @@
       "errors": [
         "BadRequest",
         "BadCursor",
-        "PermissionError"
+        "PermissionError",
+        "DriveForbidden",
+        "DriveNotFound"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "people_lookup",
+      "kind": "query",
+      "publicName": "people.lookup",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "people/lookup",
+      "pathParams": [],
+      "query": {
+        "properties": {
+          "node": {
+            "title": "Node",
+            "type": "string"
+          },
+          "users": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Users",
+            "type": "array"
+          }
+        },
+        "required": [
+          "node",
+          "users"
+        ],
+        "title": "PeopleLookupQuery",
+        "type": "object"
+      },
+      "body": null,
+      "output": {
+        "$defs": {
+          "PersonUser": {
+            "properties": {
+              "kind": {
+                "const": "user",
+                "title": "Kind",
+                "type": "string"
+              },
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "email": {
+                "title": "Email",
+                "type": "string"
+              },
+              "full_name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Full Name"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              },
+              "has_access": {
+                "title": "Has Access",
+                "type": "boolean"
+              },
+              "is_blocked": {
+                "title": "Is Blocked",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "kind",
+              "name",
+              "email",
+              "full_name",
+              "user_image"
+            ],
+            "title": "PersonUser",
+            "type": "object"
+          }
+        },
+        "items": {
+          "$ref": "#/$defs/PersonUser"
+        },
+        "type": "array"
+      },
+      "errors": [
+        "BadRequest",
+        "BadLookup",
+        "PermissionError",
+        "DriveForbidden",
+        "DriveNotFound"
       ],
       "entity": null,
       "nodeParams": [],

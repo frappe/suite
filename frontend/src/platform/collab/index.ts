@@ -7,6 +7,7 @@ import {
   type CollabRoom,
   type DeviceStore,
   type Opened,
+  type VersionRestored,
 } from '@suite/collab-client'
 
 import { getRealtimeSocket } from '@/platform/realtime'
@@ -38,6 +39,7 @@ export {
   type RestoreResult,
   type RoomPresence,
   type RoomStatus,
+  type VersionRestored,
 } from '@suite/collab-client'
 
 // The open document a room is for, as the app's file session gives it
@@ -217,16 +219,18 @@ export function watchConversion(keys: string[], onTold: () => void) {
 }
 
 // `onThreadsChanged` is told when the document's comment threads may have changed;
-// `watch` gets the room before it applies anything
+// `onVersionRestored` when another tab's restore lands; `watch` gets the room before it applies anything
 export async function openCollabRoom({
   session,
   adapter,
   onThreadsChanged,
+  onVersionRestored,
   watch,
 }: {
   session: CollabSession
   adapter: CollabAdapter
   onThreadsChanged?: () => void
+  onVersionRestored?: (restored: VersionRestored) => void
   watch?: (room: CollabRoom) => void
 }): Promise<Opened> {
   const expectedUser = signedIn()
@@ -239,6 +243,7 @@ export async function openCollabRoom({
     device,
     socket: getRealtimeSocket(),
     threadsChanged: onThreadsChanged,
+    versionRestored: onVersionRestored,
     watch,
   })
 }

@@ -58,7 +58,6 @@ const moduleGraphDebtGroups = [
     entries: [
       'calendar/components/CommandPalette/CalendarFilterPanel.vue|@/apps/mail/components/Controls/ContactCombobox.vue',
       'calendar/components/CommandPalette/CalendarSearchResult.vue|@/components/HighlightedText.vue',
-      'calendar/components/EventAlertList.vue|@/utils/calendarAlert',
       'calendar/components/EventDetail.vue|@/components/LinkifiedText.vue',
       'calendar/components/Modals/EventModal.vue|@/composables/useScreenSize',
       'calendar/components/Modals/EventRepeatSettingsModal.vue|@/composables/useScreenSize',
@@ -78,7 +77,6 @@ const moduleGraphDebtGroups = [
       'calendar/components/Settings/ParticipantIdentitySettings.vue|@/components/settings/AppSettingsHeader.vue',
       'calendar/components/mobile/MobileEventForm.vue|@/components/AdaptiveDropdown.vue',
       'calendar/components/mobile/MobileEventForm.vue|@/composables/useKeyboardInsets',
-      'calendar/components/mobile/MobileEventForm.vue|@/utils/calendarAlert',
       'calendar/pages/CalendarLayout.vue|@/composables/useScreenSize',
       'calendar/pages/CalendarView.vue|@/composables/useScreenSize',
       'calendar/pages/CalendarView.vue|@/stores/root',
@@ -95,7 +93,6 @@ const moduleGraphDebtGroups = [
     removal:
       'Remove each entry when the owner migrates that dependency to platform or a declared product package root.',
     entries: [
-      'mail/components/AttachmentViewer.vue|@/utils/pdfjs',
       'mail/components/CommandPalette/MailSearchResult.vue|@/components/HighlightedText.vue',
       'mail/components/DefaultLayout.vue|@/apps/calendar/components/EventDetail.vue',
       'mail/components/DefaultLayout.vue|@/apps/calendar/components/EventPopover.vue',
@@ -245,11 +242,7 @@ const moduleGraphDebtGroups = [
     owner: 'Writer frontend owner',
     removal:
       'Remove each entry when the owner migrates that dependency to platform or a declared product package root.',
-    entries: [
-      'writer/components/CoreEditor.test.ts|@/stores/root',
-      'writer/components/CoreEditor.vue|@/stores/root',
-      'writer/components/ReadOnlyEditor.test.ts|@/stores/root',
-    ],
+    entries: [],
   },
 ]
 const unstableFrappeUIDebtGroups = [

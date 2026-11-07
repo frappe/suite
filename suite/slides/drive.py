@@ -91,8 +91,6 @@ SATELLITE_PARENT_FIELD = "slides"
 VERSION_SCHEMA = "presentation/1"
 VERSION_MIME = "application/json"
 
-PREVIEW_MIME = "image/webp"
-
 # What a raw scan of an unparseable `elements` column may look at. It
 # over-reports, which only keeps media alive.
 MEDIA_TOKEN = re.compile(r"[A-Za-z0-9_-]{6,140}")
@@ -301,8 +299,9 @@ _ROW_SPEC = drive.ContentTypeSpec(
     export=never_called,
     version_bytes=version_bytes,
     restore_version=restore_version,
-    # The browser captures the deck preview and pushes it through Drive (§9.2,
-    # [012 §8]). Drive never renders a deck and gives it no gap sweep.
+    # The editor captures the first slide and pushes it to Drive's
+    # `POST /nodes/{node}/preview` (§9.2, [012 §8]). Drive never renders a deck
+    # and gives it no gap sweep.
     pushes_preview=True,
     on_purge=on_purge,
     satellites=(drive.Satellite(doctype=SATELLITE_DOCTYPE, link_field=SATELLITE_LINK_FIELD),),
@@ -400,16 +399,6 @@ def adopt_element_media(docname: str, elements: list[dict]) -> list[dict]:
     for element in elements:
         _remap_element(element, mapping)
     return elements
-
-
-def push_deck_preview(docname: str, image_bytes: bytes) -> None:
-    """Push one browser-captured deck preview through Drive (§9.2, [012 §8]).
-
-    Conversion to webp happens in the browser, before the node is asked for
-    anything [012 §9]. Drive checks EDIT at the node and replaces the preview
-    without stamping the deck.
-    """
-    drive.push_preview(node_of(docname), image_bytes, PREVIEW_MIME)
 
 
 def refuse_unreadable_references(deck) -> None:

@@ -1,7 +1,6 @@
 # Copyright (c) 2024, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
 
-import base64
 import json
 import random
 import re
@@ -21,7 +20,6 @@ from suite.slides.content import APP
 
 SYSTEM_TEMPLATE_TITLES = {"Light", "Dark"}
 SYSTEM_TEMPLATE_FIRST_LAYOUT = 2
-MAX_THUMBNAIL_BYTES = 6 * 1024 * 1024
 
 NODE_FIELD = slides_drive.NODE_FIELD
 LOGGED_FIELDS = ("content",)
@@ -107,40 +105,6 @@ class Presentation(drive.DriveContent, Document):
         # (§8.11). It is the deck's only stamp and the daily media sweep's
         # cursor. Debounced to one write per request by the mixin.
         self.drive_touch()
-
-
-def get_thumbnail_content(base64_data: str) -> tuple[bytes, str]:
-    match = re.match(r"^data:(image/[^;]+);base64,(.+)$", base64_data or "", re.DOTALL)
-    if not match:
-        frappe.throw("Invalid thumbnail data")
-
-    mime_type, encoded_content = match.groups()
-    if mime_type != "image/webp":
-        frappe.throw("Unsupported thumbnail image type")
-
-    try:
-        content = base64.b64decode(encoded_content, validate=True)
-    except Exception:
-        frappe.throw("Invalid thumbnail image data")
-
-    if len(content) > MAX_THUMBNAIL_BYTES:
-        frappe.throw("Thumbnail image is too large")
-
-    return content, "webp"
-
-
-@frappe.whitelist()
-def save_presentation_thumbnail(presentation_name: str, base64_data: str) -> str:
-    """Store the browser's deck capture.
-
-    Drive checks EDIT at the node and replaces the `Drive Node Preview` row
-    without stamping the deck ([012 §8]). Conversion to webp already happened
-    in the browser [012 §9]. Nothing is minted on the deck itself, so the
-    answer is empty.
-    """
-    content, _ext = get_thumbnail_content(base64_data)
-    slides_drive.push_deck_preview(presentation_name, content)
-    return ""
 
 
 def slug(text: str) -> str:

@@ -261,7 +261,7 @@
   												     the full width, and the empty space after the address opened
   												     the card too. -->
                                   <div
-                                    class="flex max-w-full items-center space-x-1.5"
+                                    class="flex min-w-0 max-w-full items-center space-x-1.5"
                                     :class="{
                                       'cursor-pointer': !isCollapsed(mail) && !isMobile,
                                       'self-start': !isCollapsed(mail) || isMobile,
@@ -270,7 +270,7 @@
                                     @click="toggleSenderCard(mail, $event)"
                                   >
                                     <span
-                                      class="truncate text-[15px] !font-semibold sm:text-base"
+                                      class="max-w-full shrink-0 truncate text-[15px] !font-semibold sm:text-base"
                                       :class="{
                                         /* A collapsed row is centered against the taller avatar, so
   														   whatever sets the text block's height decides where the name
@@ -287,7 +287,8 @@
                                     </span>
                                     <!-- leading-4: 16px holds Inter's ~15.7px glyph box at 13px, so truncate's
   												     overflow-hidden keeps the descenders of a g or a p, and it still sits
-  												     under the sender name beside it, so the row does not grow. -->
+  												     under the sender name beside it, so the row does not grow. Short of room it
+  												     gives way and the name doesn't: who it's from matters more. -->
                                     <span
                                       v-if="!isMobile && !isCollapsed(mail)"
                                       class="text-ink-gray-5 truncate leading-4"
@@ -625,6 +626,20 @@
                             />
                           </div>
                         </div>
+
+                        <!-- Under the message rather than inside its body: the chips are about the
+                             message, not part of what was written. A message alone has no card
+                             edge to set them off from the Reply row below, so it takes the room. -->
+                        <MessageReactions
+                          v-if="!mail.draft"
+                          :reactions="reactionsOn(mail)"
+                          :own-emails="ownEmails"
+                          :readonly="readonly"
+                          :refusal="mail.cannot_react"
+                          class="mt-4"
+                          :class="{ 'sm:mb-5': thread.length === 1 }"
+                          @react="(emoji: string) => react(mail, emoji)"
+                        />
                       </div>
                     </template>
                   </div>
@@ -744,6 +759,7 @@ import MailActions from '@/apps/mail/components/MailActions.vue'
 import MailDate from '@/apps/mail/components/MailDate.vue'
 import MailDetails from '@/apps/mail/components/MailDetails.vue'
 import MailDetailsPopover from '@/apps/mail/components/MailDetailsPopover.vue'
+import MessageReactions from '@/apps/mail/components/MessageReactions.vue'
 import PlainTextBody from '@/apps/mail/components/PlainTextBody.vue'
 import ScreenerThreadBanner from '@/apps/mail/components/Screener/ScreenerThreadBanner.vue'
 import SenderCard from '@/apps/mail/components/SenderCard.vue'
@@ -757,6 +773,7 @@ import {
   composeWindowDraft,
   isComposeWindowOpen,
 } from '@/apps/mail/composables/useComposeWindow'
+import { useMessageReactions } from '@/apps/mail/composables/useMessageReactions'
 import { trustableDomains, useScreener } from '@/apps/mail/composables/useScreener'
 import { useUnsubscribe } from '@/apps/mail/composables/useUnsubscribe'
 import { FLAGGED_STAR_STYLE } from '@/apps/mail/constants'
@@ -1201,7 +1218,7 @@ const loadThread = () => {
   // mailboxes (e.g. Sent) that aren't shown in this view. The Screener included: reading there is
   // still reading, and leaving it unread left the "waiting to be screened" dot burning after you had
   // looked and simply not decided yet.
-  if (marksSeen && source.some((mail) => !mail.seen)) setThreadSeen(true)
+  if (marksSeen && source.flatMap(mailCopies).some((copy) => !copy.seen)) setThreadSeen(true)
 }
 
 // Mark the whole conversation seen/unseen — every message across all mailboxes, not just the ones
@@ -1244,6 +1261,9 @@ const syncWithSource = () => {
     mail.unscreened = fresh.unscreened
     // A star set or cleared from the list row, or on another device, reaches the open thread.
     mail.flagged = fresh.flagged
+    // A reaction landing on a message already open. It comes with the copy actions have to reach.
+    mail.reactions = fresh.reactions
+    mail.duplicates = fresh.duplicates
   })
 
   // Append any newly-arrived messages, before a trailing draft. Drafts are excluded: the only draft
@@ -1535,6 +1555,20 @@ const handleReload = (isUndo = false) => {
   }
   reload()
 }
+// Not `reload`, which rebuilds the pane: that folds an older message back up, taking the chip just
+// added to it out of sight. The fresh rows sync in place (see syncWithSource).
+// The conversation's account, which in All Inboxes need not be the active one.
+const ownEmails = computed(
+  () => new Set((identities.value.data ?? []).map((identity) => identity.email.toLowerCase())),
+)
+const { reactionsOn, react } = useMessageReactions(
+  () => scopeAccountId.value,
+  ownEmails,
+  () => {
+    if (messages?.length) emit('reloadMails')
+    else void threadFallback.refetch().catch(() => {})
+  },
+)
 const replyForwardActions = computed(() =>
   [
     {

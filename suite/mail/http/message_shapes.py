@@ -57,8 +57,22 @@ class Copy(TypedDict):
     unscreened: NotRequired[Flag]
 
 
+class Reaction(TypedDict):
+    emoji: str
+    from_name: str | None
+    from_email: str | None
+
+
 class Message(Copy):
     message_id: str | None
+    in_reply_to: str | None
+    # What this mail reacts with, when it is a reaction left standing as a message because its target
+    # isn't here. A reaction whose target is here shows under the target's `reactions` instead.
+    reacts_with: list[str]
+    reactions: NotRequired[list[Reaction]]
+    mailing_list: Flag
+    # Why this message can't be reacted to, in words for the reader.
+    cannot_react: NotRequired[str | None]
     subject: str | None
     html_body: str | None
     text_body: str | None
@@ -82,6 +96,8 @@ class AccountTag(TypedDict, total=False):
 
 
 class Thread(Copy, AccountTag):
+    # Listed here only by a reaction, so kept on the page for paging and left out of what is shown.
+    reaction_only: NotRequired[Flag]
     # The senders of this thread's unscreened mail, in the order they first wrote.
     unscreened_senders: NotRequired[list[str]]
     subject: str | None

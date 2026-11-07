@@ -20,6 +20,7 @@ cannot reach it. These helpers raise `frappe.ValidationError`, which the route
 boundary maps to 400.
 """
 
+import json
 from collections.abc import Iterable, Mapping
 from datetime import datetime
 from typing import Literal, NotRequired, TypedDict
@@ -59,6 +60,9 @@ class BreadcrumbShape(TypedDict):
     # A file under a content document has the document as its last crumb, and
     # a document is not a folder a client can list or link to as one.
     kind: str
+    # The caller's role at this step, so a client knows what it may do in the
+    # folder a node sits in (Duplicate needs UPLOAD there) without another read.
+    role: int
 
 
 class PreviewShape(TypedDict):
@@ -116,6 +120,15 @@ class NotificationShape(TypedDict):
     node_title: str
     node_kind: str
     actor: Person
+
+
+class DownloadNotificationShape(TypedDict):
+    """A notification that the caller's own download is ready, or that it failed."""
+
+    name: str
+    read: int
+    creation: str | None
+    download: DownloadShape
 
 
 class Page[T](TypedDict):
@@ -184,6 +197,8 @@ class CreateDocument(TypedDict):
     content_doctype: str
     from_node: NotRequired[str]
     is_template: NotRequired[bool]
+    # A title nobody typed takes §8.6's free title instead of being refused
+    deduplicate_title: NotRequired[bool]
 
 
 @with_config(extra="forbid")
@@ -615,11 +630,24 @@ class CommentEdit(TypedDict):
     text: str
 
 
-class ArchiveStatus(TypedDict):
-    status: Literal["building", "ready", "failed"]
-    file_name: str | None
+class StartDownload(TypedDict):
+    nodes: list[str]
+
+
+class DownloadShape(TypedDict):
+    name: str
+    # The zip's file name.
+    title: str
+    # Expired: the zip was ready, and its day is over.
+    status: Literal["Preparing", "Ready", "Failed", "Expired"]
+    # Inbox: a notification links the zip. Page: the page that asked polls
+    # `GET downloads/<id>`, because the caller's access comes through a link.
+    delivery: Literal["Inbox", "Page"]
     size: int | None
+    expires_at: str | None
     error: str | None
+    # Where the zip is sent from; set only while it is Ready.
+    url: str | None
 
 
 class RootUsageQuery(TypedDict, total=False):
@@ -795,9 +823,9 @@ def version_shape(row: Mapping, known: Mapping[str, Person] | None = None) -> Ve
 def activity_shape(row: Mapping) -> ActivityShape:
     """Return one activity row as §9.4's columns, times formatted.
 
-    Every link token is masked to the bare `$LINK`. §11.2 answers this history
-    to READ, and a Guest holding a published node can reach it, while the token
-    a `share_add` row names and the `via_link` an ordinary row carries are
+    Every link token is masked to the bare `$LINK`. This history answers any
+    signed-in READ, and a Guest is refused it (`activity.history`), while the
+    token a `share_add` row names and the `via_link` an ordinary row carries are
     bearer secrets that reach EDIT (§6.1). Rotation would not close that: the
     row naming the new token is written to the same history. `GET
     /nodes/<id>/grants` is where a token is shown, and it needs MANAGE.
@@ -832,10 +860,37 @@ def _masked_detail(detail: Mapping) -> dict:
     return answer
 
 
-def notification_shapes(rows: list[Mapping]) -> list[NotificationShape]:
+def notification_shapes(rows: list[Mapping]) -> list[NotificationShape | DownloadNotificationShape]:
     """Shape a page of notifications with one lookup of the people who acted."""
-    known = people({row["activity"].get("actor") for row in rows})
-    return [notification_shape(row, known) for row in rows]
+    known = people({row["activity"].get("actor") for row in rows if row.get("activity")})
+    return [
+        download_notification_shape(row) if row.get("download") else notification_shape(row, known)
+        for row in rows
+    ]
+
+
+def download_notification_shape(row: Mapping) -> DownloadNotificationShape:
+    return {
+        "name": row.get("name"),
+        "read": int(row.get("read") or 0),
+        "creation": stamp(row.get("creation")),
+        "download": download_shape(row["download"]),
+    }
+
+
+def download_shape(row: Mapping) -> DownloadShape:
+    """Return one download. Its `url` is the content route while the zip is Ready."""
+    ready = row.get("status") == "Ready"
+    return {
+        "name": row.get("name"),
+        "title": row.get("title"),
+        "status": row.get("status"),
+        "delivery": row.get("delivery"),
+        "size": row.get("size") if ready else None,
+        "expires_at": stamp(row.get("expires_at")),
+        "error": row.get("error") or None,
+        "url": f"/api/suite/drive/downloads/{row['name']}/content" if ready else None,
+    }
 
 
 def notification_shape(row: Mapping, known: Mapping[str, Person]) -> NotificationShape:
@@ -1188,6 +1243,20 @@ def name_list(value, name: str) -> tuple[str, ...]:
         if item not in answer:
             answer.append(item)
     return tuple(answer)
+
+
+def query_name_list(value, name: str) -> tuple[str, ...]:
+    """Accept `name_list` from a query string, where a client sends a list as JSON text.
+
+    A DELETE carries its arguments in the query string (§11.2), and the
+    generated client writes an array there as JSON.
+    """
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            _refuse(name)
+    return name_list(value, name)
 
 
 def identifiers(value, name: str) -> tuple[str, ...]:

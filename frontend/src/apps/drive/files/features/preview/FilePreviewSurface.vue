@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useEventListener, useMediaQuery } from '@vueuse/core'
 import { Button, Dropdown, TabButtons } from 'frappe-ui'
-import { computed, ref, watch } from 'vue'
+import { computed, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { api, useInfiniteQuery, useMutation, useQuery } from '@/api'
@@ -13,12 +13,15 @@ import { translate as __ } from '@/platform/translation'
 
 import { trashLocation, useLocationTitle } from '../../internal/locations'
 import { previewKind } from '../../internal/previewKind'
+import { announceTrash } from '../changeToast'
 import DocumentHeader from '../document/DocumentHeader.vue'
 import { nodeActions } from '../nodeActions'
 import { readPresentationPreference, resolvePresentation } from '../presentation'
+import { copyLink } from '../share/shareFormat'
 import { useTrashActions } from '../trash/useTrashActions'
 import { offeredTypes, typeQuery, typesFromQuery } from '../typeFilter'
 import { uploadTargetOf } from '../uploads/queue'
+import PdfPreview from './PdfPreview.vue'
 import PreviewFallback from './PreviewFallback.vue'
 import type { FilePreviewSession } from './session'
 import { TEXT_PREVIEW_LIMIT } from './textContent'
@@ -93,8 +96,7 @@ const inTrashedFolder = computed(
 )
 const trash = useTrashActions(() => (trashed.value ? file.value.root : null))
 const discovered = useQuery(api.drive.roots.list, () => (signedIn.value ? {} : false))
-const starMutation = useMutation(api.drive.nodes.star)
-const unstarMutation = useMutation(api.drive.nodes.unstar)
+const trashMutation = useMutation(api.drive.nodes.trash)
 
 const header = ref<{ focusTitle(): void } | null>(null)
 const upload = ref<{ pick(): void } | null>(null)
@@ -161,31 +163,45 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   else if (event.key === 'ArrowRight') show(next.value)
 })
 
+// The listing's row menu offers the same actions under the same rules (`nodeActions`).
 const menu = computed(() => [
   ...(opensAsSheet.value
     ? [{ label: __('Open as spreadsheet'), icon: 'lucide-sheet', onClick: openAsSheet }]
+    : []),
+  ...(can.value.copyLink
+    ? [{ label: 'Copy link', icon: 'lucide-link', onClick: copyFileLink }]
     : []),
   ...(can.value.rename
     ? [{ label: 'Rename', icon: 'lucide-pencil', onClick: () => header.value?.focusTitle() }]
     : []),
   ...(can.value.move ? [{ label: 'Move', icon: 'lucide-folder-input', onClick: move }] : []),
-  ...(canReplace.value
-    ? [{ label: 'Upload new version', icon: 'lucide-upload', onClick: () => upload.value?.pick() }]
-    : []),
-  ...(can.value.star
+  ...(can.value.copy
     ? [
         {
-          label: file.value.favourite.value ? 'Unstar' : 'Star',
-          icon: 'lucide-star',
-          onClick: toggleStar,
+          label: 'Make a copy',
+          icon: 'lucide-copy',
+          onClick: () => dialogs.copy(props.session.nodeId),
         },
       ]
+    : []),
+  ...(canReplace.value
+    ? [{ label: 'Upload new version', icon: 'lucide-upload', onClick: () => upload.value?.pick() }]
     : []),
   {
     label: 'Details',
     icon: 'lucide-info',
     onClick: () => void dialogs.showDetails(props.session.nodeId),
   },
+  ...(can.value.trash
+    ? [
+        {
+          label: 'Move to trash',
+          icon: 'lucide-trash-2',
+          theme: 'red' as const,
+          onClick: moveToTrash,
+        },
+      ]
+    : []),
   ...(can.value.restore ? [{ label: 'Restore', icon: 'lucide-undo-2', onClick: restore }] : []),
   ...(can.value.deleteForever
     ? [
@@ -201,6 +217,20 @@ const menu = computed(() => [
 
 const item = computed(() => ({ node: props.session.nodeId, title: props.session.title.value }))
 
+/** The file's own page, as an absolute URL. */
+function copyFileLink() {
+  const page = driveNodeRoute(props.session.nodeId, props.session.title.value, 'file')
+  return copyLink(router.resolve(page).href)
+}
+
+/** The toast's Undo restores the file. The preview goes back to the folder it was in, as a document does. */
+async function moveToTrash() {
+  const trashed = item.value
+  await trashMutation.run({ node: trashed.node, state: 'Trashed' })
+  announceTrash([trashed])
+  await router.push(location.value?.to ?? '/drive')
+}
+
 /** The file comes back in place: the session hears the restore and reads its new state. */
 async function restore() {
   await trash.restore([item.value])
@@ -211,18 +241,6 @@ async function deleteForever() {
   const result = await trash.purge([item.value])
   if (!result?.ok.length) return
   await router.replace(trashLocation(file.value, discovered.data))
-}
-
-/** The menu shows the new state at once, and the old one again if the server refuses. */
-async function toggleStar() {
-  const favourite = file.value.favourite
-  const starred = !favourite.value
-  try {
-    favourite.value = starred
-    await (starred ? starMutation : unstarMutation).run({ node: props.session.nodeId })
-  } catch {
-    favourite.value = !starred
-  }
 }
 
 async function move() {
@@ -261,6 +279,16 @@ watch(
 )
 function chooseMarkdownView(value: string | number) {
   markdownView.value = value === 'preview' ? 'preview' : 'source'
+}
+/** The file fills the screen, without the header. A browser without the Fullscreen API offers no button. */
+const stage = useTemplateRef<HTMLElement>('stage')
+const canFullscreen = computed(
+  () =>
+    !!document.fullscreenEnabled && !empty.value && !['none', 'audio'].includes(preview.value.kind),
+)
+function enterFullscreen() {
+  // The browser may refuse, such as in a frame without permission; the page stays as it is.
+  void stage.value?.requestFullscreen().catch(() => {})
 }
 /** Image types every browser draws. Others, such as HEIC or TIFF, show the server's preview. */
 const WEB_IMAGES = new Set([
@@ -344,6 +372,16 @@ const source = computed(() =>
           aria-label="Download"
           :href="downloadUrl"
         />
+        <Button
+          v-if="canFullscreen"
+          variant="ghost"
+          icon="lucide-maximize"
+          :tooltip="__('Fullscreen')"
+          :aria-label="__('Fullscreen')"
+          @click="enterFullscreen"
+        />
+      </template>
+      <template #menu>
         <Dropdown :options="menu" align="end">
           <Button
             variant="ghost"
@@ -354,59 +392,63 @@ const source = computed(() =>
         </Dropdown>
       </template>
     </DocumentHeader>
-    <TextPreview
-      v-if="preview.kind === 'text'"
-      :src="contentUrl"
-      :download="downloadUrl"
-      :size="file.size.value"
-      :language="preview.language"
-      :title="session.title.value"
-      :rendered="markdown && markdownView === 'preview'"
-    />
-    <PreviewFallback v-else-if="empty" title="Empty file" message="This file has no content." />
-    <img
-      v-else-if="preview.kind === 'image'"
-      :src="source"
-      :alt="session.title.value"
-      class="m-auto max-h-full min-h-0 max-w-full object-contain p-4"
-    />
-    <audio
-      v-else-if="preview.kind === 'audio'"
-      :src="contentUrl"
-      controls
-      class="m-auto w-full max-w-xl"
-    />
-    <video
-      v-else-if="preview.kind === 'video'"
-      :src="contentUrl"
-      controls
-      class="m-auto max-h-full min-h-0 max-w-full"
-    />
-    <iframe
-      v-else-if="preview.kind === 'pdf'"
-      :src="contentUrl"
-      :title="session.title.value"
-      class="min-h-0 flex-1 border-0 bg-surface-base"
-    />
-    <PreviewFallback
-      v-else-if="opensAsSheet"
-      :title="__('No preview')"
-      :message="__('Open this file as a spreadsheet to view and edit it. The file stays as it is.')"
-      :download="downloadUrl"
-    >
-      <Button
-        variant="solid"
-        :label="__('Open as spreadsheet')"
-        icon-left="lucide-sheet"
-        :loading="openingAsSheet"
-        @click="openAsSheet"
+    <div ref="stage" class="flex min-h-0 flex-1 flex-col bg-surface-base">
+      <TextPreview
+        v-if="preview.kind === 'text'"
+        :src="contentUrl"
+        :download="downloadUrl"
+        :size="file.size.value"
+        :language="preview.language"
+        :title="session.title.value"
+        :rendered="markdown && markdownView === 'preview'"
       />
-    </PreviewFallback>
-    <PreviewFallback
-      v-else
-      title="No preview"
-      message="Download this file to open it."
-      :download="downloadUrl"
-    />
+      <PreviewFallback v-else-if="empty" title="Empty file" message="This file has no content." />
+      <img
+        v-else-if="preview.kind === 'image'"
+        :src="source"
+        :alt="session.title.value"
+        class="m-auto max-h-full min-h-0 max-w-full object-contain p-4"
+      />
+      <audio
+        v-else-if="preview.kind === 'audio'"
+        :src="contentUrl"
+        controls
+        class="m-auto w-full max-w-xl"
+      />
+      <video
+        v-else-if="preview.kind === 'video'"
+        :src="contentUrl"
+        controls
+        class="m-auto max-h-full min-h-0 max-w-full"
+      />
+      <PdfPreview
+        v-else-if="preview.kind === 'pdf'"
+        :src="contentUrl"
+        :download="downloadUrl"
+        :title="session.title.value"
+      />
+      <PreviewFallback
+        v-else-if="opensAsSheet"
+        :title="__('No preview')"
+        :message="
+          __('Open this file as a spreadsheet to view and edit it. The file stays as it is.')
+        "
+        :download="downloadUrl"
+      >
+        <Button
+          variant="solid"
+          :label="__('Open as spreadsheet')"
+          icon-left="lucide-sheet"
+          :loading="openingAsSheet"
+          @click="openAsSheet"
+        />
+      </PreviewFallback>
+      <PreviewFallback
+        v-else
+        title="No preview"
+        message="Download this file to open it."
+        :download="downloadUrl"
+      />
+    </div>
   </div>
 </template>

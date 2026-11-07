@@ -49,6 +49,12 @@ export async function openWriterDocument(page: Page, node: string): Promise<void
 	await expect(writerEditor(page)).toBeVisible();
 }
 
+/** Opens or closes a side panel from the document's ⋯ menu. */
+export async function toggleWriterPanel(page: Page, name: "Comments" | "Versions"): Promise<void> {
+	await page.getByRole("button", { name: "More document actions" }).click();
+	await page.getByRole("menuitem", { name }).click();
+}
+
 export function writerEditor(page: Page): Locator {
 	return page.getByRole("textbox", { name: "Document editor" });
 }

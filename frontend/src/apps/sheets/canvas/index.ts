@@ -30,6 +30,7 @@ import { createRangePicker } from './input/range-picker.js'
 import { createTextSink } from './input/text-sink.js'
 import { createMarchingAnts } from './marching-ants.js'
 import { createOverlay } from './overlay.js'
+import { cellBox, cellText } from './painters/cell-text-box.js'
 import { createRenderLoop } from './render-loop.js'
 import { createRenderer } from './renderer.js'
 import { planRowRefit } from './row-refit.js'
@@ -166,8 +167,21 @@ export function createGrid(canvas: HTMLCanvasElement, opts: GridOptions = {}): G
     picker: pick,
     autocomplete: ac,
     activeCell: () => S.anchor,
-    cellRect: (r, c) => ({ x: geo.colX(c), y: geo.rowY(r), w: geo.cw(c), h: geo.rh(r) }),
-    formatAt: (r, c) => cells.getStyle?.(cellId(r, c)) || {},
+    // The box and format the cell painter draws the cell's text with
+    // (cell-text-box.ts), so the editor opens on top of it.
+    cellRect: (r, c) => cellBox(r, c, cells.getMergeInfo?.(cellId(r, c)), geo),
+    formatAt: (r, c) => {
+      const id = cellId(r, c)
+      const val = getValue(id) ?? ''
+      const style = cells.getStyle?.(id) || {}
+      const text = cellText(id, String(val), style, cells.getCondFormat?.(id, val), cells)
+      return {
+        ...text.fmt,
+        autoAlign: text.align,
+        insetLeft: text.iconInset,
+        insetRight: text.rightInset,
+      }
+    },
     getZoom: () => vm.zoom,
     canEdit,
     isCellEditable: (r, c) => !cells.isCellEditable || cells.isCellEditable(r, c),

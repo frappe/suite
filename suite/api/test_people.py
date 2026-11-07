@@ -173,3 +173,6 @@ class TestPeople(IntegrationTestCase):
                 response = self.get({"q": MARK}, auth=auth)
                 self.assertEqual(response.status_code, 403, response.get_data(as_text=True))
                 self.assertNotIn(ASHA, response.get_data(as_text=True))
+
+
+# Apart from the fixtures above, so neither class sees the other's people
