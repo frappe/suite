@@ -23,7 +23,7 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     passWithNoTests: true,
-    setupFiles: ['src/test/setup.ts'],
+    setupFiles: [path.resolve(frontend, 'src/test/setup.ts')],
     // The binding is linked in from frontend/packages, so Vite loads it; its
     // importers must load through Vite too or they get a second copy
     server: { deps: { inline: [/@tiptap\/extension-collaboration/] } },
