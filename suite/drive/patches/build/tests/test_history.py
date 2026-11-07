@@ -421,7 +421,9 @@ class HistoryTest(unittest.TestCase):
                 modified=STAMP,
             ),
         ]
-        source = FakeContent(documents=[document], writer_versions=versions)
+        source = FakeContent(
+            documents=[document], writer_versions=versions, users={"author@example.com": True}
+        )
         env, target = self.environment(source)
         add_document_node(target, "node-1", "Writer Document", "writer-1")
 
@@ -466,7 +468,9 @@ class HistoryTest(unittest.TestCase):
                 modified_by="editor@example.com",
             ),
         ]
-        source = FakeContent(documents=[document], sheet_snapshots=snapshots)
+        source = FakeContent(
+            documents=[document], sheet_snapshots=snapshots, users={"actor@example.com": True}
+        )
         env, target = self.environment(source)
         add_document_node(target, "node-1", "Sheet", "sheet-1")
 
@@ -483,6 +487,40 @@ class HistoryTest(unittest.TestCase):
         self.assertEqual(row["modified_by"], "editor@example.com")
         self.assertEqual(row["size"], len(expected))
         self.assertEqual(target.read_blob(row["blob"]), expected)
+
+    def test_a_writer_version_whose_owner_has_no_user_has_guest_as_its_actor(self):
+        document = content_row("Writer Document", "writer-1", "node-1")
+        version = WriterVersionRow(
+            "version-1", "writer-1", "<p>old</p>", owner="gone@example.com", creation=STAMP, modified=STAMP
+        )
+        source = FakeContent(documents=[document], writer_versions=[version], users={OWNER: True})
+        env, target = self.environment(source)
+        add_document_node(target, "node-1", "Writer Document", "writer-1")
+
+        convert_history_and_comments(env)
+
+        self.assertEqual(target.version_rows["version-1"]["actor"], "Guest")
+
+    def test_a_sheet_snapshot_whose_actor_has_no_user_has_guest_as_its_actor(self):
+        document = content_row("Sheet", "sheet-1", "node-1")
+        snapshot = SheetSnapshotRow(
+            "snapshot-1",
+            "sheet-1",
+            1,
+            "auto",
+            "{}",
+            actor="gone@example.com",
+            owner=OWNER,
+            creation=STAMP,
+            modified=STAMP,
+        )
+        source = FakeContent(documents=[document], sheet_snapshots=[snapshot], users={OWNER: True})
+        env, target = self.environment(source)
+        add_document_node(target, "node-1", "Sheet", "sheet-1")
+
+        convert_history_and_comments(env)
+
+        self.assertEqual(target.version_rows["snapshot-1"]["actor"], "Guest")
 
     def test_an_invalid_snapshot_kind_refuses_the_document(self):
         document = content_row("Sheet", "sheet-1", "node-1")
