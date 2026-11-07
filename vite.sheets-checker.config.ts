@@ -12,10 +12,7 @@ const frontend = path.resolve(__dirname, 'frontend')
 const requireFromRoot = createRequire(path.resolve(__dirname, 'package.json'))
 const yjsVersion = requireFromRoot('yjs/package.json').version
 const converterVersion = JSON.parse(
-  fs.readFileSync(
-    path.resolve(__dirname, 'suite/sheets/content/converter-version.json'),
-    'utf8',
-  ),
+  fs.readFileSync(path.resolve(__dirname, 'suite/sheets/content/converter-version.json'), 'utf8'),
 ).version
 
 // The --permission sandbox allows reading only the bundle, so IronCalc's wasm goes inside it, as

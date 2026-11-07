@@ -26,7 +26,6 @@
   "frontend/src/apps/calendar/utils/recurringScope.test.ts|@typescript-eslint/no-explicit-any": 1,
   "frontend/src/apps/drive/client/session.test.ts|@typescript-eslint/no-explicit-any": 2,
   "frontend/src/apps/mail/components/DeliveryStatusBanner.vue|@typescript-eslint/no-explicit-any": 1,
-  "frontend/src/apps/mail/components/EmailContent.vue|import/no-unresolved": 1,
   "frontend/src/apps/mail/components/OutboxFilters.vue|vue/no-mutating-props": 7,
   "frontend/src/apps/mail/composables/useComposeMail.ts|@typescript-eslint/no-explicit-any": 1,
   "frontend/src/apps/mail/composables/useUpcomingEvents.ts|@typescript-eslint/no-explicit-any": 4,
@@ -41,7 +40,6 @@
   "frontend/src/apps/meet/components/PeoplePanel.vue|@typescript-eslint/no-unused-vars": 1,
   "frontend/src/apps/meet/components/PeopleWaitingSection.vue|@typescript-eslint/no-unused-vars": 1,
   "frontend/src/apps/meet/components/PollMessageCard.vue|@typescript-eslint/no-unused-vars": 1,
-  "frontend/src/apps/meet/components/PreviewToolbar.vue|vue/require-toggle-inside-transition": 1,
   "frontend/src/apps/meet/components/ReactionPicker.vue|@typescript-eslint/no-unused-vars": 1,
   "frontend/src/apps/meet/components/settings/DeviceSettingsTab.vue|@typescript-eslint/no-unused-vars": 1,
   "frontend/src/apps/meet/composables/useBackgroundEffects.ts|@typescript-eslint/no-unused-vars": 1,
@@ -108,7 +106,6 @@
   "frontend/src/apps/slides/components/RotateHandle.vue|vue/block-lang": 1,
   "frontend/src/apps/slides/components/SelectionBox.vue|vue/block-lang": 1,
   "frontend/src/apps/slides/components/SelectionControls.vue|vue/block-lang": 1,
-  "frontend/src/apps/slides/components/SelectionControls.vue|vue/require-valid-default-prop": 1,
   "frontend/src/apps/slides/components/ShadowSection.vue|vue/block-lang": 1,
   "frontend/src/apps/slides/components/ShapeDrawOverlay.vue|@typescript-eslint/no-unused-vars": 1,
   "frontend/src/apps/slides/components/ShapeDrawOverlay.vue|vue/block-lang": 1,
@@ -172,7 +169,6 @@
   "frontend/src/apps/slides/stores/duplicateElementIds.test.ts|@typescript-eslint/no-explicit-any": 2,
   "frontend/src/apps/slides/stores/editLock.test.ts|@typescript-eslint/no-explicit-any": 3,
   "frontend/src/apps/slides/stores/element.js|@typescript-eslint/no-unused-vars": 1,
-  "frontend/src/apps/slides/stores/element.js|vue/return-in-computed-property": 1,
   "frontend/src/apps/slides/stores/historySelection.test.ts|@typescript-eslint/no-explicit-any": 1,
   "frontend/src/apps/slides/stores/lock.test.ts|@typescript-eslint/no-explicit-any": 3,
   "frontend/src/apps/slides/stores/loopSlideshow.test.ts|@typescript-eslint/no-explicit-any": 2,
@@ -214,5 +210,5 @@
   "frontend/src/platform/realtime/index.ts|@typescript-eslint/no-explicit-any": 5,
   "frontend/src/platform/theme/index.test.ts|@typescript-eslint/no-explicit-any": 3,
   "frontend/src/platform/translation/index.test.ts|@typescript-eslint/no-explicit-any": 2,
-  "frontend/vite.config.ts|@typescript-eslint/no-explicit-any": 2
+  "vite.config.ts|@typescript-eslint/no-explicit-any": 2
 }
