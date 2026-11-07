@@ -5,7 +5,7 @@ Don't take my word for any of this. Run it.
 ## Verify the gates yourself (no extra setup)
 
 ```bash
-npx vitest run src/apps/sheets/engine   # runs the automated checks
+pnpm test frontend/src/apps/sheets/engine   # runs the automated checks
 ```
 
 You'll see **57 checks pass** (plus 1 skipped — the differential, which needs the
