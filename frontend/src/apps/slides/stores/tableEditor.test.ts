@@ -1,5 +1,5 @@
+import { AllSelection } from '@tiptap/pm/state'
 import { CellSelection } from '@tiptap/pm/tables'
-import { AllSelection } from 'prosemirror-state'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 

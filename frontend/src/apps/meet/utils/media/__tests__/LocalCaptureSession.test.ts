@@ -319,6 +319,36 @@ describe('LocalCaptureSession', () => {
     expect(microphone.stop).toHaveBeenCalledOnce()
   })
 
+  it('stops tracks and runs every cleanup step when cleanup fails, then reports the first failure', async () => {
+    const microphone = track('microphone', 'audio')
+    const harness = createHarness()
+    harness.setLocalStream(new FakeMediaStream([microphone]) as never)
+    const afterStoppingTracks = vi.fn(async () => {
+      throw new Error('after failed')
+    })
+
+    await expect(
+      harness.session.dispose(async () => {
+        throw new Error('before failed')
+      }, afterStoppingTracks),
+    ).rejects.toThrow('before failed')
+    expect(microphone.stop).toHaveBeenCalledOnce()
+    expect(afterStoppingTracks).toHaveBeenCalledOnce()
+  })
+
+  it('reports a failure after stopping tracks when the earlier cleanup succeeds', async () => {
+    const harness = createHarness()
+
+    await expect(
+      harness.session.dispose(
+        async () => {},
+        async () => {
+          throw new Error('after failed')
+        },
+      ),
+    ).rejects.toThrow('after failed')
+  })
+
   it('drops camera media when camera intent changes during acquisition', async () => {
     const request = deferred<MediaStream>()
     const staleCamera = track('stale-camera', 'video')

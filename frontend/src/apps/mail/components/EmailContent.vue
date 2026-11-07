@@ -33,7 +33,6 @@
 import iframeResizerChildScript from '@iframe-resizer/child/index.umd.js?raw'
 // The package maps `./sfc` only via its (non-honored) `browser` field under
 // Vite 8/Rolldown, so import the concrete SFC file directly.
-// eslint-disable-next-line import/no-unresolved
 import IframeResizer from '@iframe-resizer/vue/iframe-resizer.vue'
 import DOMPurify from 'dompurify'
 import { computed, onMounted, onUnmounted, ref, useTemplateRef } from 'vue'

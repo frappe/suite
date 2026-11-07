@@ -200,7 +200,7 @@ describe('E2EEEpochSignalingController', () => {
       message: 'This encrypted meeting needs the host to join before others can enter.',
     })
 
-    expect((listener.mock.calls[0]?.[0] as CustomEvent).detail).toEqual({
+    expect((listener.mock.calls[0][0] as CustomEvent).detail).toEqual({
       status: 'pending',
       reason: 'waiting-for-host',
       epochNumber: 1,
