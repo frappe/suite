@@ -28,7 +28,7 @@ import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../frontend')
+const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../frontend')
 
 /** Logo edge as a fraction of the canvas' SHORT edge, so it reads the same in
  *  both orientations and on both phones and tablets. iOS home screen icons sit
@@ -38,8 +38,8 @@ const SCALE = Number(argValue('--scale') ?? 0.3)
 const BACKGROUND = argValue('--background') ?? '#ffffff'
 
 const APP = argValue('--app') ?? 'suite'
-const LOGO = path.join(root, `src/platform/brand/${APP}.svg`)
-const OUT_DIR = path.join(root, `public/pwa/${APP}`)
+const LOGO = path.join(frontendRoot, `src/platform/brand/${APP}.svg`)
+const OUT_DIR = path.join(frontendRoot, `public/pwa/${APP}`)
 const SPLASH_DIR = path.join(OUT_DIR, 'splash')
 
 /** The icons: the logo drawn edge to edge over the colour of its own rounded
@@ -50,7 +50,9 @@ const ICONS = [
   { name: 'icon-192.maskable.png', size: 192 },
   { name: 'apple-icon-180.png', size: 180 },
 ]
-const DEVICES = JSON.parse(fs.readFileSync(path.join(root, 'src/platform/pwa/splash-devices.json')))
+const DEVICES = JSON.parse(
+  fs.readFileSync(path.join(frontendRoot, 'src/platform/pwa/splash-devices.json')),
+)
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 
 function argValue(flag) {
@@ -190,4 +192,4 @@ try {
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true })
 }
-console.log(`Done -> ${path.relative(root, OUT_DIR)}`)
+console.log(`Done -> ${path.relative(frontendRoot, OUT_DIR)}`)
