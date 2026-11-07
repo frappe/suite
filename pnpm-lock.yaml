@@ -281,6 +281,9 @@ importers:
       '@tiptap/core':
         specifier: 3.26.0
         version: 3.26.0(@tiptap/pm@3.26.0)
+      '@tiptap/extension-bold':
+        specifier: ^3.26.0
+        version: 3.27.1(@tiptap/core@3.26.0(@tiptap/pm@3.26.0))
       '@tiptap/extension-bullet-list':
         specifier: ^3.26.0
         version: 3.27.1(@tiptap/extension-list@3.27.1(@tiptap/core@3.26.0(@tiptap/pm@3.26.0))(@tiptap/pm@3.26.0))
@@ -468,9 +471,6 @@ importers:
       '@sentry/core':
         specifier: 10.67.0
         version: 10.67.0
-      '@tiptap/extension-bold':
-        specifier: 3.27.1
-        version: 3.27.1(@tiptap/core@3.26.0(@tiptap/pm@3.26.0))
       '@tiptap/extension-hard-break':
         specifier: 3.27.1
         version: 3.27.1(@tiptap/core@3.26.0(@tiptap/pm@3.26.0))

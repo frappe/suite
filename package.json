@@ -16,7 +16,7 @@
   "scripts": {
     "dev": "node scripts/copy-noise-suppression-assets.mjs && node scripts/unlink-frappe-ui.mjs && vite --host",
     "dev:frappe-ui": "node scripts/copy-noise-suppression-assets.mjs && node scripts/link-frappe-ui.mjs && vite --host",
-    "build": "node scripts/copy-noise-suppression-assets.mjs && vite build && vite build --config vite.sw.config.ts && vite build --config vite.checker.config.ts && vite build --config vite.checker.config.ts --mode converter && vite build --config vite.sheets-checker.config.ts && vite build --config vite.sheets-checker.config.ts --mode converter",
+    "build": "node scripts/copy-noise-suppression-assets.mjs && vite build && vite build --config vite.sw.config.ts && vite build --config vite.checker.config.ts && vite build --config vite.checker.config.ts --mode converter && vite build --config vite.sheets-checker.config.ts && vite build --config vite.sheets-checker.config.ts --mode converter && vite build --config vite.slides-checker.config.ts && vite build --config vite.slides-checker.config.ts --mode converter",
     "build:recorder": "vite build --config vite.recorder.config.ts",
     "watch:service-worker": "vite build --config vite.sw.config.ts --watch",
     "dev:recorder": "vite --config vite.recorder.config.ts --host",
@@ -79,6 +79,7 @@
     "@suite/collab-client": "workspace:*",
     "@tanstack/vue-virtual": "^3.13.24",
     "@tiptap/core": "^3.26.0",
+    "@tiptap/extension-bold": "^3.26.0",
     "@tiptap/extension-bullet-list": "^3.26.0",
     "@tiptap/extension-collaboration": "^3.26.0",
     "@tiptap/extension-color": "^3.26.0",
@@ -143,7 +144,6 @@
   "devDependencies": {
     "@ianvs/prettier-plugin-sort-imports": "^4.7.1",
     "@sentry/core": "10.67.0",
-    "@tiptap/extension-bold": "3.27.1",
     "@tiptap/extension-hard-break": "3.27.1",
     "@tiptap/extension-heading": "3.27.1",
     "@tiptap/extension-horizontal-rule": "3.27.1",

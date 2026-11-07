@@ -8,8 +8,9 @@ import { jsdomInBundle, noCanvas, publishedAliases } from './vite.checker.config
 // Slides' Node builds, each one file with the browsers' Yjs, y-tiptap and the editor schema: the
 // checker, which the server runs on demand to judge rows (suite/content/checker.py), and with
 // `--mode converter` the converter, which turns an old deck into a collaborative one
-const requireFromFrontend = createRequire(path.resolve(__dirname, 'package.json'))
-const yjsVersion = requireFromFrontend('yjs/package.json').version
+const frontend = path.resolve(__dirname, 'frontend')
+const requireFromRoot = createRequire(path.resolve(__dirname, 'package.json'))
+const yjsVersion = requireFromRoot('yjs/package.json').version
 
 // The editor setup reaches this only for its one url helper, and it drags in frappe-ui and the stores
 const noMediaUploads: Plugin = {
@@ -20,10 +21,7 @@ const noMediaUploads: Plugin = {
 }
 
 const converterVersion = JSON.parse(
-  fs.readFileSync(
-    path.resolve(__dirname, '../suite/slides/content/converter-version.json'),
-    'utf8',
-  ),
+  fs.readFileSync(path.resolve(__dirname, 'suite/slides/content/converter-version.json'), 'utf8'),
 ).version
 const builds = {
   checker: { plugins: [noMediaUploads], aliases: [] },
@@ -38,18 +36,18 @@ const define = {
 function slidesBuild(name: keyof typeof builds): UserConfig {
   const { plugins, aliases } = builds[name]
   return {
-    root: __dirname,
+    root: frontend,
     define,
     publicDir: false,
     configFile: false,
     plugins,
     resolve: {
-      alias: [{ find: '@', replacement: path.resolve(__dirname, 'src') }, ...aliases],
+      alias: [{ find: '@', replacement: path.resolve(frontend, 'src') }, ...aliases],
       dedupe: ['vue', 'yjs', '@tiptap/pm'],
     },
     ssr: { noExternal: true, target: 'node' },
     build: {
-      ssr: path.resolve(__dirname, `src/apps/slides/collab/${name}-entry.ts`),
+      ssr: path.resolve(frontend, `src/apps/slides/collab/${name}-entry.ts`),
       outDir: '../suite/slides/content/dist',
       // Later builds write only their own file, so none clears another's
       emptyOutDir: false,
