@@ -163,12 +163,12 @@ Meet requires a separate mediasoup SFU server for video calls. Follow the [Frapp
 
 ### Code coverage
 
-From `frontend/`, run `yarn test:ci` to test both Vitest projects and write combined
-coverage to `test-results/coverage/` (Cobertura XML, LCOV and JSON summary), plus
-`test-results/junit.xml`. The exact legacy failure manifest is still enforced.
+From the repo root, run `pnpm test:ci` to test both Vitest projects and write combined
+coverage to `frontend/test-results/coverage/` (Cobertura XML, LCOV and JSON summary), plus
+`frontend/test-results/junit.xml`. The exact legacy failure manifest is still enforced.
 Coverage includes unexecuted source files, excludes test fixtures and declarations,
 and has no percentage threshold. CI fails if any eligible production JS, TS or Vue
-source is missing from the report. `yarn test:coverage-reporting` also checks that
+source is missing from the report. `pnpm test:coverage-reporting` also checks that
 representative untested TS and Vue files retain executable lines at zero coverage
 through the real package and icon resolvers.
 
