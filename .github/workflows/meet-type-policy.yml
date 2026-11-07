@@ -16,6 +16,7 @@ on:
       - "e2e/meet/**"
       - "package.json"
       - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
       - ".github/workflows/meet-type-policy.yml"
   pull_request:
     paths:
@@ -28,6 +29,7 @@ on:
       - "e2e/meet/**"
       - "package.json"
       - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
       - ".github/workflows/meet-type-policy.yml"
   workflow_dispatch:
 
