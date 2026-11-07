@@ -84,6 +84,16 @@ export function captureDrop(transfer: DataTransfer): {
   }
 }
 
+/** The images a paste carries, such as a screenshot. Other pasted files and text are left alone. */
+export function pastedImages(transfer: DataTransfer | null): PickedFile[] {
+  return [...(transfer?.items ?? [])]
+    .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+    .flatMap((item) => {
+      const file = item.getAsFile()
+      return file ? [{ file }] : []
+    })
+}
+
 /** True while a drag carries files from outside the page, not text or a row. */
 export function dragHasFiles(event: DragEvent): boolean {
   return [...(event.dataTransfer?.types ?? [])].includes('Files')

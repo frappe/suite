@@ -8,12 +8,18 @@ it is talking to a database or to a dictionary.
 because past that point §14.11's only rollback is a database restore.
 `for_site()` reads it from site config (`BACKUP_CONFIG_KEY`), and
 `run_cleanup` refuses until it is set (`gate.require_backup`).
+
+`accept_skips` is the same site config key Build reads
+(`drive_build_accept_skips`), so the two patches cannot disagree about
+the reachable rows an operator gave up (§14.9). Gate 1 still counts those
+rows live, prints them, and lets Cleanup delete them.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
+from suite.drive.patches.build.environment import ACCEPT_SKIPS_CONFIG_KEY
 from suite.drive.patches.cleanup.ports import (
     BlobColumnDiscovery,
     ContentRows,
@@ -26,6 +32,7 @@ from suite.drive.patches.cleanup.ports import (
     TransactionGateway,
 )
 from suite.drive.patches.cleanup.state import CleanupState
+from suite.drive.patches.database_marker import DatabaseMarkers
 
 # Matches Build's own batch size (§14.2), for the same reason: a page this
 # size is one round trip a planner tolerates and one unit of resumable work.
@@ -49,7 +56,9 @@ class CleanupEnvironment:
     disk_settings: DiskSettingsSnapshot
     transaction: TransactionGateway
     state: CleanupState
+    markers: DatabaseMarkers
     backup: str | None = None
+    accept_skips: bool = False
 
     @classmethod
     def for_site(cls) -> CleanupEnvironment:
@@ -66,6 +75,7 @@ class CleanupEnvironment:
             SiteTransactionGateway,
             site_blob_columns,
         )
+        from suite.drive.patches.database_marker import SiteDatabaseMarkers
 
         backup = str(frappe.conf.get(BACKUP_CONFIG_KEY) or "").strip() or None
         return cls(
@@ -79,5 +89,7 @@ class CleanupEnvironment:
             disk_settings=SiteDiskSettingsSnapshot(),
             transaction=SiteTransactionGateway(),
             state=CleanupState.for_site(),
+            markers=SiteDatabaseMarkers(),
             backup=backup,
+            accept_skips=bool(frappe.conf.get(ACCEPT_SKIPS_CONFIG_KEY)),
         )

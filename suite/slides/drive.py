@@ -64,6 +64,7 @@ none of them commits. `content.call_app` and `content.call_app_stream` enforce
 that last part.
 """
 
+import dataclasses
 import io
 import json
 import re
@@ -71,7 +72,11 @@ import re
 import frappe
 from frappe import _
 
-from suite import drive
+from suite import content, drive
+from suite.content import checkpoints, with_content
+from suite.slides.content import APP, SCHEMA, blank_state
+from suite.slides.content.conversion import old_row
+from suite.slides.content.files import MEDIA_ID
 
 DOCTYPE = "Presentation"
 MIME = "frappe/slides"
@@ -86,12 +91,6 @@ SATELLITE_PARENT_FIELD = "slides"
 VERSION_SCHEMA = "presentation/1"
 VERSION_MIME = "application/json"
 
-PREVIEW_MIME = "image/webp"
-
-# A media reference is one whole node id. Node names are opaque hashes, so a
-# colour and a `/files/` URL both fail this and a body value is never mistaken
-# for a picture.
-MEDIA_ID = re.compile(r"[A-Za-z0-9_-]{1,140}")
 # What a raw scan of an unparseable `elements` column may look at. It
 # over-reports, which only keeps media alive.
 MEDIA_TOKEN = re.compile(r"[A-Za-z0-9_-]{6,140}")
@@ -108,11 +107,24 @@ SLIDE_BODY_FIELDS = (
     "transition",
     "transition_duration",
     "fade_unmatched_elements",
+    "advance_after",
 )
 
 
 class UnreadableBody(frappe.ValidationError):
     """One deck body Slides could not read."""
+
+
+def holds_log(node: str) -> bool:
+    """Lock `node`'s row, as a conversion does, and say whether its log is the deck now."""
+    old_row(node, lock=True)
+    return bool(content.find(APP, node, for_update=True))
+
+
+def refuse_row_write(node: str) -> None:
+    """Refuse a write to `node`'s rows once its log is the deck: an old tab's save would be lost on them."""
+    if holds_log(node):
+        raise drive.DriveConflict(_("This document saves as you edit; reload it to keep editing"))
 
 
 def create_empty(node: str) -> str:
@@ -268,7 +280,12 @@ def remap_media(docname: str, mapping: dict[str, str]) -> None:
             frappe.db.set_value(SATELLITE_DOCTYPE, row["name"], values, update_modified=False)
 
 
-SPEC = drive.ContentTypeSpec(
+def never_called(*_args: object) -> None:
+    """Stand in for a callback `with_content` requires and Slides doesn't have; SPEC drops it again."""
+    raise NotImplementedError("Slides has no export")
+
+
+_ROW_SPEC = drive.ContentTypeSpec(
     doctype=DOCTYPE,
     mime=MIME,
     node_field=NODE_FIELD,
@@ -279,11 +296,12 @@ SPEC = drive.ContentTypeSpec(
     export_formats=(),
     create_empty=create_empty,
     duplicate=duplicate,
-    export=None,
+    export=never_called,
     version_bytes=version_bytes,
     restore_version=restore_version,
-    # The browser captures the deck preview and pushes it through Drive (§9.2,
-    # [012 §8]). Drive never renders a deck and gives it no gap sweep.
+    # The editor captures the first slide and pushes it to Drive's
+    # `POST /nodes/{node}/preview` (§9.2, [012 §8]). Drive never renders a deck
+    # and gives it no gap sweep.
     pushes_preview=True,
     on_purge=on_purge,
     satellites=(drive.Satellite(doctype=SATELLITE_DOCTYPE, link_field=SATELLITE_LINK_FIELD),),
@@ -291,6 +309,20 @@ SPEC = drive.ContentTypeSpec(
     used_nodes=used_nodes,
     remap_media=remap_media,
 )
+_LOGGED_SPEC = with_content(_ROW_SPEC)
+
+
+def create_seeded(node: str) -> str:
+    """Create a deck; with a log, start it from one blank slide so no tab ever opens a deck with none (Q179)."""
+    docname = _LOGGED_SPEC.create_empty(node)
+    doc = content.find(APP, node)
+    if doc:
+        checkpoints.replace_start(APP, doc.id, blank_state(), SCHEMA.version)
+
+    return docname
+
+
+SPEC = dataclasses.replace(_LOGGED_SPEC, export=None, create_empty=create_seeded)
 
 
 # ---------------------------------------------------------------------------
@@ -367,16 +399,6 @@ def adopt_element_media(docname: str, elements: list[dict]) -> list[dict]:
     for element in elements:
         _remap_element(element, mapping)
     return elements
-
-
-def push_deck_preview(docname: str, image_bytes: bytes) -> None:
-    """Push one browser-captured deck preview through Drive (§9.2, [012 §8]).
-
-    Conversion to webp happens in the browser, before the node is asked for
-    anything [012 §9]. Drive checks EDIT at the node and replaces the preview
-    without stamping the deck.
-    """
-    drive.push_preview(node_of(docname), image_bytes, PREVIEW_MIME)
 
 
 def refuse_unreadable_references(deck) -> None:

@@ -1,26 +1,37 @@
 import { describe, expect, it } from 'vitest'
 import { reactive } from 'vue'
 
+import type { DriveNode } from '@/apps/drive/client/types'
+
 import { createPreviewMemory, useNodePreview, type PreviewNode } from './nodePreview'
 
 function image(url: string | null): PreviewNode {
+  return reactive({ name: 'photo', preview: url ? { url, expires: 0 } : null })
+}
+
+function deck(
+  url: string | null,
+): Pick<DriveNode, 'name' | 'kind' | 'content_doctype' | 'preview'> {
   return reactive({
-    name: 'photo',
-    kind: 'File',
-    content_doctype: null,
+    name: 'deck',
+    kind: 'document',
+    content_doctype: 'Presentation',
     preview: url ? { url, expires: 0 } : null,
   })
 }
 
 describe('a card thumbnail', () => {
-  it('keeps the icon for a presentation, even when it has a preview', () => {
-    const node = reactive<PreviewNode>({
-      name: 'deck',
-      kind: 'document',
-      content_doctype: 'Presentation',
-      preview: { url: '/p/deck.webp', expires: 0 },
-    })
+  it('shows the first slide of a presentation that has a stored preview', () => {
+    const node = deck('/p/deck.webp')
     const preview = useNodePreview(() => node, createPreviewMemory())
+
+    expect(preview.url.value).toBe('/p/deck.webp')
+    preview.loaded()
+    expect(preview.shown.value).toBe(true)
+  })
+
+  it('keeps the type icon for a presentation with no stored preview', () => {
+    const preview = useNodePreview(() => deck(null), createPreviewMemory())
 
     expect(preview.url.value).toBeUndefined()
     expect(preview.shown.value).toBe(false)

@@ -567,6 +567,12 @@ class TestRecordCoercion(UnitTestCase):
         for bad in (None, "no1", {"a": 1}, ["", "a"], ["  "], [1], [None]):
             self.refused(shapes.name_list, bad, "notifications")
 
+    def test_a_query_name_list_reads_the_json_text_a_query_string_carries(self):
+        self.assertEqual(shapes.query_name_list('["b", "a", "b"]', "nodes"), ("b", "a"))
+        self.assertEqual(shapes.query_name_list(["a"], "nodes"), ("a",))
+        for bad in ("a", "[", '{"a": 1}', '[""]', "[1]"):
+            self.refused(shapes.query_name_list, bad, "nodes")
+
     def test_a_name_list_is_capped_at_one_page(self):
         biggest = [f"no{i}" for i in range(shapes.MAX_BATCH_NODES)]
         self.assertEqual(len(shapes.name_list(biggest, "notifications")), shapes.MAX_BATCH_NODES)

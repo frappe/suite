@@ -196,10 +196,13 @@ const ticksAtGate = new Map()
 // the generation each draft holds, so a blocked push does not rewrite it every tick
 const draftGenerations = new Map()
 
+// answers whether the draft holds the snapshot's edits
 const writeSnapshot = async (snapshot, epoch) => {
   const generation = generationFor(snapshot.id)
-  if (draftGenerations.get(snapshot.id) === generation) return
-  if (await writeDraft(snapshot, epoch)) draftGenerations.set(snapshot.id, generation)
+  if (draftGenerations.get(snapshot.id) === generation) return true
+  const written = await writeDraft(snapshot, epoch)
+  if (written) draftGenerations.set(snapshot.id, generation)
+  return written
 }
 
 // true when an online save to the server failed; drives the "Not saved" indicator
@@ -318,6 +321,17 @@ const takeSnapshot = () => {
 const saveDraft = async () => {
   const snapshot = takeSnapshot()
   if (snapshot) await writeSnapshot(snapshot)
+}
+
+// Another tab takes over from the draft, so the edits it holds are no longer this tab's to
+// keep and it has nothing left to warn about. If the write fails the deck stays dirty. The
+// snapshot is taken before the first await, while the tab may still write. A deck with no
+// edits leaves no draft to restore.
+const keepDraftAsClean = async () => {
+  const snapshot = dirty.value && takeSnapshot()
+  if (!snapshot || !(await writeSnapshot(snapshot))) return
+  markClean()
+  clearSaveFailure()
 }
 
 async function holdRefused(snapshot, epoch) {
@@ -456,6 +470,7 @@ export {
   saveChanges,
   saveWithoutDelay,
   saveDraft,
+  keepDraftAsClean,
   stopWrites,
   retireDraft,
   resumeWrites,

@@ -20,7 +20,7 @@ export async function selectDocumentSurface(
 
 <script setup lang="ts">
 import { Button } from 'frappe-ui'
-import { computed, inject, onBeforeUnmount, shallowRef, watch } from 'vue'
+import { computed, defineAsyncComponent, inject, onBeforeUnmount, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import {
@@ -31,10 +31,15 @@ import {
   isDriveNodeLocked,
   openDocumentSession,
 } from '@/apps/drive'
-import { documentTypes } from '@/composition/documentRegistry'
+import { documentTypes, findDocumentType } from '@/composition/documentRegistry'
 import { GUEST_FRAME_KEY } from '@/platform/contracts'
 import { describeFailure } from '@/platform/open-failure'
-import { openingTitle as historyOpeningTitle, usePageTitle } from '@/platform/page-meta'
+import {
+  mentionedBy as historyMentionedBy,
+  openingTitle as historyOpeningTitle,
+  newDocumentType,
+  usePageTitle,
+} from '@/platform/page-meta'
 import { getCookieSessionUser } from '@/platform/session'
 import { TransportError } from '@/platform/transport'
 
@@ -69,6 +74,14 @@ const openingTitle = computed(() =>
   nodeId.value ? historyOpeningTitle(router.options.history.state) : null,
 )
 
+// A document the opener has just created takes typing in its type's opening
+// editor while it opens; its surface takes over what was typed.
+const openingEditor = computed(() => {
+  const contentDoctype = nodeId.value && newDocumentType(router.options.history.state)
+  const load = contentDoctype && findDocumentType(contentDoctype)?.loadOpeningEditor
+  return load ? defineAsyncComponent(load) : null
+})
+
 usePageTitle(() => session.value?.title.value ?? '')
 
 const downloadUrl = computed(() => nodeContentUrl(nodeId.value, { download: true }))
@@ -76,6 +89,13 @@ const downloadUrl = computed(() => nodeContentUrl(nodeId.value, { download: true
 const refused = computed(
   () => session.value?.state.value === 'Refused' || (session.value?.access.value.role ?? 0) < 10,
 )
+
+// The bell row that led here names who mentioned the reader. History state is not reactive, and
+// two entries of one node differ only in their slug, so this follows the whole route.
+const mentionedBy = computed(() => {
+  void route.fullPath
+  return historyMentionedBy(router.options.history.state)
+})
 
 watch(
   [nodeId, reopen],
@@ -130,12 +150,9 @@ watch(
         return
       }
 
-      if (
-        reason instanceof TransportError &&
-        REFUSAL_STATUSES.includes(reason.status) &&
-        getCookieSessionUser()
-      ) {
-        forgetNode(node)
+      if (reason instanceof TransportError && REFUSAL_STATUSES.includes(reason.status)) {
+        if (getCookieSessionUser()) forgetNode(node)
+        return
       }
 
       error.value = failureMessage(reason)
@@ -232,6 +249,7 @@ onBeforeUnmount(() => {
   <div class="flex h-full min-h-0 w-full min-w-0 overflow-hidden bg-surface-base text-ink-gray-8">
     <div v-if="loading" class="flex min-w-0 flex-1 flex-col">
       <DriveDocumentHeaderSkeleton :title="session?.title.value || openingTitle || undefined" />
+      <component :is="openingEditor" v-if="openingEditor" :node="nodeId" />
     </div>
 
     <DriveUnlockScreen v-else-if="locked" :node="nodeId" @unlocked="reopen += 1" />
@@ -245,9 +263,9 @@ onBeforeUnmount(() => {
 
     <div v-else-if="refused" class="m-auto max-w-md px-6 text-center">
       <span class="lucide-lock-keyhole mx-auto block size-6 text-ink-gray-5" aria-hidden="true" />
-      <h1 class="mt-3 text-lg-semibold">You do not have access</h1>
-      <p class="mt-1 text-p-sm text-ink-gray-6">
-        Ask the owner for permission to read this document.
+      <h1 class="mt-3 text-lg-semibold">{{ __('You don’t have access to this document.') }}</h1>
+      <p v-if="mentionedBy" class="mt-1 text-p-sm text-ink-gray-6">
+        {{ __('Ask {0} to share it.', [mentionedBy]) }}
       </p>
     </div>
 
