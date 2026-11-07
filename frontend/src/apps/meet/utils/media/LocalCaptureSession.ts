@@ -1269,9 +1269,10 @@ export class LocalCaptureSession {
       }
       try {
         await afterStoppingTracks()
-      } finally {
-        if (cleanupError) throw cleanupError
+      } catch (error) {
+        if (!cleanupError) throw error
       }
+      if (cleanupError) throw cleanupError
     })
     return this.disposal
   }

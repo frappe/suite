@@ -7,9 +7,18 @@ on:
     paths:
       - "suite/**"
       - "frontend/**"
+      - "scripts/**"
+      - "baselines/**"
+      - "*.js"
+      - "*.ts"
+      - "tsconfig*.json"
+      - ".oxlintrc.json"
+      - ".prettierrc"
+      - ".prettierignore"
       - "realtime/**"
       - "package.json"
-      - "yarn.lock"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
       - "pyproject.toml"
       - ".coveragerc"
       - ".github/scripts/**"
@@ -107,16 +116,20 @@ jobs:
         env:
           CI: "Yes"
 
+      - name: Setup pnpm
+        if: steps.backend-changes.outputs.run == '1'
+        uses: pnpm/action-setup@v6
+
       - name: Build backend content bundles
         if: steps.backend-changes.outputs.run == '1'
         working-directory: /home/runner/pilot/benches/frappe-bench/apps/suite
         run: |
           # Pilot clones the app with --skip-assets; tests use this clone, not the Actions checkout.
-          yarn install --frozen-lockfile --non-interactive
-          yarn workspace @suite/frontend vite build --config vite.checker.config.ts
-          yarn workspace @suite/frontend vite build --config vite.checker.config.ts --mode converter
-          yarn workspace @suite/frontend vite build --config vite.sheets-checker.config.ts
-          yarn workspace @suite/frontend vite build --config vite.sheets-checker.config.ts --mode converter
+          pnpm install --frozen-lockfile
+          pnpm exec vite build --config vite.checker.config.ts
+          pnpm exec vite build --config vite.checker.config.ts --mode converter
+          pnpm exec vite build --config vite.sheets-checker.config.ts
+          pnpm exec vite build --config vite.sheets-checker.config.ts --mode converter
 
       - name: Start Pilot
         id: start-pilot
@@ -272,6 +285,10 @@ jobs:
           echo "Run meet sfu server tests: $run_meet"
           echo "Run meet recorder server tests: $run_recorder"
 
+      - name: Setup pnpm
+        if: steps.node-server-changes.outputs.run_recorder == '1'
+        uses: pnpm/action-setup@v6
+
       - name: Setup Node
         uses: actions/setup-node@v7
         with:
@@ -303,8 +320,8 @@ jobs:
       - name: Build Meet Recorder UI
         if: always() && steps.node-server-changes.outputs.run_recorder == '1'
         run: |
-          yarn install --frozen-lockfile --ignore-scripts
-          yarn workspace @suite/frontend build:recorder
+          pnpm install --frozen-lockfile
+          pnpm build:recorder
 
       - name: Run Meet Recorder Server Tests
         if: always() && steps.node-server-changes.outputs.run_recorder == '1'
@@ -644,50 +661,49 @@ jobs:
             run_frontend=1
           elif [ "${{ github.event_name }}" = "pull_request" ]; then
             changed_files="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")"
-            printf '%s\n' "$changed_files" | grep -Eq '^(frontend/|package\.json|yarn\.lock|\.github/workflows/suite-ci\.yml)' && run_frontend=1 || run_frontend=0
+            printf '%s\n' "$changed_files" | grep -Eq '^(frontend/|scripts/|baselines/|[^/]+\.(js|ts)$|tsconfig[^/]*\.json$|\.oxlintrc\.json|\.prettier|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|\.github/workflows/suite-ci\.yml)' && run_frontend=1 || run_frontend=0
           else
             if [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
               changed_files="$(git diff --name-only HEAD~1 HEAD)"
             else
               changed_files="$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")"
             fi
-            printf '%s\n' "$changed_files" | grep -Eq '^(frontend/|package\.json|yarn\.lock|\.github/workflows/suite-ci\.yml)' && run_frontend=1 || run_frontend=0
+            printf '%s\n' "$changed_files" | grep -Eq '^(frontend/|scripts/|baselines/|[^/]+\.(js|ts)$|tsconfig[^/]*\.json$|\.oxlintrc\.json|\.prettier|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|\.github/workflows/suite-ci\.yml)' && run_frontend=1 || run_frontend=0
           fi
 
           echo "run=$run_frontend" >> $GITHUB_OUTPUT
           echo "Run frontend: $run_frontend"
+
+      - name: Setup pnpm
+        if: steps.frontend-changes.outputs.run == '1'
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node
         if: steps.frontend-changes.outputs.run == '1'
         uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: "yarn"
-          cache-dependency-path: yarn.lock
+          cache: pnpm
 
       - name: Install dependencies
         if: steps.frontend-changes.outputs.run == '1'
-        run: yarn install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Check frontend formatting
         if: steps.frontend-changes.outputs.run == '1'
-        working-directory: frontend
-        run: yarn format:check
+        run: pnpm format:check
 
       - name: Lint frontend
         if: steps.frontend-changes.outputs.run == '1'
-        working-directory: frontend
-        run: yarn lint
+        run: pnpm lint
 
       - name: Check untranslated text
         if: steps.frontend-changes.outputs.run == '1'
-        working-directory: frontend
-        run: yarn check:untranslated
+        run: pnpm check:untranslated
 
       - name: Check generated contract types
         if: steps.frontend-changes.outputs.run == '1'
-        working-directory: frontend
-        run: yarn check:contract
+        run: pnpm check:contract
 
       - name: Create bench site config
         if: steps.frontend-changes.outputs.run == '1'
@@ -697,31 +713,27 @@ jobs:
 
       - name: Check frontend import boundaries
         if: steps.frontend-changes.outputs.run == '1'
-        working-directory: frontend
-        run: yarn check:import-boundaries
+        run: pnpm check:import-boundaries
 
       - name: Typecheck frontend
         if: steps.frontend-changes.outputs.run == '1'
-        working-directory: frontend
-        run: yarn typecheck
+        run: pnpm typecheck
 
       - name: Check frontend bundle budget
         if: steps.frontend-changes.outputs.run == '1'
-        working-directory: frontend
-        run: yarn check:bundle-budget
+        run: pnpm check:bundle-budget
 
       - name: Build
         if: steps.frontend-changes.outputs.run == '1'
-        run: yarn build
+        run: pnpm build
 
       - name: Test
         if: steps.frontend-changes.outputs.run == '1'
-        working-directory: frontend
         run: |
-          mkdir -p test-results
-          yarn test:coverage-reporting
-          yarn test:ci
-          test -s test-results/coverage/cobertura-coverage.xml
+          mkdir -p frontend/test-results
+          pnpm test:coverage-reporting
+          pnpm test:ci
+          test -s frontend/test-results/coverage/cobertura-coverage.xml
 
       - name: Upload Frontend Evidence
         if: always() && steps.frontend-changes.outputs.run == '1'
@@ -792,7 +804,14 @@ jobs:
           node-version: "24.12.0"
 
       - name: Setup Yarn
-        run: corepack enable && corepack prepare yarn@1.22.22 --activate
+        # bench build runs `yarn build` in the app, whose package.json pins pnpm.
+        # Without this, Corepack's Yarn refuses to run there.
+        run: |
+          corepack enable && corepack prepare yarn@1.22.22 --activate
+          echo COREPACK_ENABLE_STRICT=0 >> "$GITHUB_ENV"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
 
       - name: Add to hosts
         run: echo "127.0.0.1 $SITE" | sudo tee -a /etc/hosts
@@ -811,12 +830,7 @@ jobs:
           rm -rf apps/suite "sites/$SITE" sites/assets/suite
           git clone "$GITHUB_WORKSPACE" apps/suite
           uv pip install --quiet -e "$PWD/apps/suite" --python "$PWD/env/bin/python"
-          cache_key=$(cd apps/suite && { node --version; yarn --version; sha256sum package.json yarn.lock frontend/package.json; } | sha256sum | cut -d ' ' -f 1)
-          if [ -f /var/cache/suite-node-modules/key ] && [ "$cache_key" = "$(cat /var/cache/suite-node-modules/key)" ]; then
-            tar -xzf /var/cache/suite-node-modules/node_modules.tar.gz -C apps/suite
-          else
-            yarn --cwd apps/suite install --check-files
-          fi
+          pnpm --dir apps/suite install --frozen-lockfile
           python -c 'from bench.bench import Bench; Bench(".").apps.sync(app_name="suite", app_dir="suite")'
           bench build --app suite
           mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL character_set_server = 'utf8mb4'"
