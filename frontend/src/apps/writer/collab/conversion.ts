@@ -93,14 +93,15 @@ import { isSameColour } from '@/apps/writer/utils/css-colour'
 
 const extensions = writerSchema()
 const schema = getSchema(extensions)
+const LINK_ATTRIBUTES = new Set(['href', 'target', 'rel'])
 
 /**
  * What the conversion couldn't carry over: Drive's table of contents, rebuilt from the headings, a
  * part holding nothing, a change Yjs held back, the words of an old comment's copy away from its
  * anchor, the place of an old comment whose words are gone, a Yjs body holding nothing, read past
  * for the HTML, a property or attribute on the noise list, the count of table cell spans set
- * to the span a browser drew, or an old annotations list no screen draws, its threads kept by
- * their comment marks.
+ * to the span a browser drew, an old annotations list no screen draws, its threads kept by their
+ * comment marks, or the count of links with an empty address, their words kept.
  */
 export type Dropped =
   | { kind: 'toc-hint' }
@@ -112,6 +113,7 @@ export type Dropped =
   | { kind: 'noise'; name: string }
   | { kind: 'table-span'; count: number }
   | { kind: 'old-annotations'; ids: string[] }
+  | { kind: 'empty-link'; count: number }
 
 /** A thread Drive kept only in its 2023 comment marks, under a key its far copies name */
 export interface OldThread {
@@ -364,6 +366,14 @@ function droppedFloats(body: XmlFragment): Dropped[] {
   return [{ kind: 'noise', name: 'dataFloat' }]
 }
 
+function droppedCount(kind: 'empty-link', count: number): Dropped[] {
+  if (!count) {
+    return []
+  }
+
+  return [{ kind, count }]
+}
+
 function droppedAnnotations(ids: string[] | null): Dropped[] {
   if (!ids?.length) {
     return []
@@ -584,6 +594,19 @@ function droppedHtmlFloats(body: HTMLElement) {
 // The HTML the editor reads, its old media mapped and its colours and empty fonts read in place as
 // on the Yjs path; written back from the parse only when that, moving a span's background or the
 // caller changed it. Text goes first, so a mark whose text colour is see-through can unwrap
+// A link with an empty address goes nowhere the editor can hold, so it unwraps to its words; one
+// holding anything more than a link does is left to fail the check
+function dropEmptyLinks(body: HTMLElement) {
+  const links = [...body.querySelectorAll('a[href=""]')].filter((link) =>
+    [...link.attributes].every(({ name }) => LINK_ATTRIBUTES.has(name)),
+  )
+  for (const link of links) {
+    link.replaceWith(...link.childNodes)
+  }
+
+  return links.length
+}
+
 function readableHtml(body: HTMLElement, html: string, isRewritten: boolean) {
   const reads = [readOldTextColours(body), readOldHighlights(body), dropEmptyFonts(body)]
   const isMapped = mapOldMedia(body)
@@ -763,11 +786,16 @@ function fromHtml(html: string) {
   const isFontRead = dropUnclosedFonts(body)
   const mentionTypes = readOldMentions(body)
   const repairedSpans = repairHtmlCellSpans(body)
+  const emptyLinks = dropEmptyLinks(body)
   // Before the defaults go, since dropping one rewrites the style text from the parse
   const raw = rawStyles(body)
   const floats = droppedHtmlFloats(body)
   const isRewritten =
-    !!threads?.threads.length || isFontRead || mentionTypes.length > 0 || repairedSpans > 0
+    !!threads?.threads.length ||
+    isFontRead ||
+    mentionTypes.length > 0 ||
+    repairedSpans > 0 ||
+    emptyLinks > 0
   const node = schema.nodeFromJSON(generateJSON(readableHtml(body, html, isRewritten), extensions))
   const uploadMarks = dropUploadMarks(body)
   const mentionAuthors = dropMentionAuthors(body)
@@ -799,6 +827,7 @@ function fromHtml(html: string) {
         ...names.map((name): Dropped => ({ kind: 'noise', name })),
         ...droppedImages(threads),
         ...droppedSpans(repairedSpans),
+        ...droppedCount('empty-link', emptyLinks),
       ]
     },
   }

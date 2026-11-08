@@ -991,6 +991,27 @@ describe('convertLegacy', () => {
     expect(convertLegacy(legacy, MAX_STATE)).toEqual({ kind: 'failed', reason: 'check' })
   })
 
+  it('drops a link to nowhere, keeping its words, and records it', () => {
+    const link = 'target="_blank" rel="noopener noreferrer nofollow" href=""'
+    const html = `<p>see <a ${link}>here</a> and <a href="">there</a></p>`
+
+    const result = convert({ content: null, html, collab: 0, ycomments: null })
+
+    expect([bodyOf(result.state), result.dropped]).toEqual([
+      page(words('see here and there')),
+      [{ kind: 'empty-link', count: 2 }],
+    ])
+  })
+
+  it('refuses a link to nowhere holding anything more than a link does', () => {
+    const html = '<p><a id="top" href="">here</a></p>'
+
+    expect(convertLegacy({ content: null, html, collab: 0, ycomments: null }, MAX_STATE)).toEqual({
+      kind: 'failed',
+      reason: 'check',
+    })
+  })
+
   it('keeps a Drive video whose source repeats its src', () => {
     const html = '<video src="/v.mp4" controls><source src="/v.mp4" type="video/mp4"></video>'
 
