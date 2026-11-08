@@ -585,12 +585,17 @@ def store_file(
 
 
 def root_locations() -> dict | None:
-    """Answer the caller's Files locations, as `GET roots` does; `None` for a guest or a caller with no Personal root."""
+    """Answer the caller's Files locations, as `GET roots` does; `None` when Drive refuses, so the boot goes on.
+
+    A guest, a caller with no Personal root, or a malformed root all refuse. `GET roots` still answers the refusal inside Drive.
+    """
+    import frappe
+
     from suite.drive._core.roots import discover
 
     try:
         return discover(_principals())
-    except DriveForbidden, DriveNotFound:
+    except frappe.ValidationError:
         return None
 
 

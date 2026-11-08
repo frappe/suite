@@ -86,6 +86,9 @@ class TestRootDiscovery(UnitTestCase):
         guest = Principals("Guest", ("Guest",), ("$PUBLIC",))
         with patch("suite.drive._principals", return_value=self.principals):
             self.assertEqual(drive.root_locations(), discover(self.principals))
+            pair.side_effect = frappe.ValidationError("A malformed root")
+            self.assertIsNone(drive.root_locations())
+            pair.side_effect = None
             sql.return_value = []
             self.assertIsNone(drive.root_locations())
         with patch("suite.drive._principals", return_value=guest):
