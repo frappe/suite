@@ -24,9 +24,11 @@
   "devDependencies": {
     "@playwright/test": "^1.59.1",
     "@types/node": "^24.10.1",
+    "@xstate/graph": "^3.0.4",
     "mediasoup-client": "^3.18.8",
     "socket.io-client": "^4.8.3",
     "typescript": "^6.0.3",
-    "vite": "^8.0.16"
+    "vite": "^8.0.16",
+    "xstate": "^5.33.3"
   }
 }
