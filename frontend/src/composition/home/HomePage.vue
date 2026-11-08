@@ -382,8 +382,6 @@ async function createFromCard(contentDoctype: string) {
   creatingType.value = contentDoctype
   try {
     await createDocument(contentDoctype)
-  } catch {
-    // Drive's creation has already shown why it failed.
   } finally {
     creatingType.value = null
   }

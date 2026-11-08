@@ -29,7 +29,7 @@ import { toast } from '@/platform/feedback'
 import { newDocumentState, openingTitleState } from '@/platform/page-meta'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
-import { buildUrl } from '@/platform/transport'
+import { buildUrl, TransportError } from '@/platform/transport'
 
 export type {
   CredentialGroup,
@@ -155,7 +155,8 @@ export function useDriveDocumentCreation(): DriveDocumentCreation {
       return resolving.value || creating.value
     },
     get canCreate() {
-      return discovered.status !== 'error'
+      const refusal = discovered.error
+      return !(refusal instanceof TransportError && refusal.type === 'DriveNotFound')
     },
     async run({ content_doctype }) {
       resolving.value = true
@@ -395,10 +396,7 @@ export const DriveListSkeletonRows = defineAsyncComponent(
 
 /** The document header's shape while a document opens. Shows `title` and `location` when they are known. */
 export { default as DriveDocumentHeaderSkeleton } from '@/apps/drive/files/features/document/DocumentHeaderSkeleton.vue'
-export {
-  openingLocation,
-  openingLocationState,
-} from '@/apps/drive/files/features/document/openingLocation'
+export { openingLocation } from '@/apps/drive/files/features/document/openingLocation'
 
 export { PANEL_BUTTONS } from '@/apps/drive/files/features/document/header'
 export type { DocumentPanel } from '@/apps/drive/client/types'

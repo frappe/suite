@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, ref, type VNode } from 'vue'
 import { createMemoryHistory, createRouter, RouterView, type HistoryState } from 'vue-router'
 
-import { openingLocationState, type DocumentSession } from '@/apps/drive'
+import type { DocumentSession } from '@/apps/drive'
 import { GUEST_FRAME_KEY } from '@/platform/contracts'
 import { installPageMeta, mentionedByState, openingTitleState } from '@/platform/page-meta'
 import { translationPlugin } from '@/platform/translation'
@@ -23,7 +23,7 @@ const testState = vi.hoisted(() => ({
 
 vi.mock('@/apps/drive', async () => {
   const { defineComponent: define, h: render } = await import('vue')
-  const { driveNodeRoute, openingLocation, openingLocationState } =
+  const { driveNodeRoute, openingLocation } =
     await vi.importActual<typeof import('@/apps/drive')>('@/apps/drive')
   return {
     // Stands in for the password form: a click is a right password.
@@ -44,7 +44,6 @@ vi.mock('@/apps/drive', async () => {
     openDocumentSession: testState.open,
     driveNodeRoute,
     openingLocation,
-    openingLocationState,
     DriveDocumentHeaderSkeleton: define({
       props: { title: String, location: String },
       setup: (props) => () =>
@@ -269,7 +268,7 @@ describe('DocumentHost', () => {
       history: createMemoryHistory(),
       routes: [{ path: '/d/:node/:slug?', name: 'document-host', component: DocumentHost }],
     })
-    const state = { ...openingTitleState('Loose file.txt'), ...openingLocationState('Talks') }
+    const state = { ...openingTitleState('Loose file.txt'), driveLocation: 'Talks' }
     await router.push({ path: '/d/node-1', state })
     const root = document.createElement('div')
     document.body.append(root)
