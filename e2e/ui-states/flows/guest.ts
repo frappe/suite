@@ -204,9 +204,11 @@ export const guest = defineFlow<Event>({
 	async enter(scene) {
 		const content = await fillFolder(scene.api, scene.folder.name);
 		const node = scene.folder.name;
-		const folder = await shareLink(scene, node, ROLE.READ);
+		// First, so no other write can use up its few seconds before the server checks them.
 		const expiresAt = Date.now() + EXPIRES_IN_MS;
 		const expires_on = new Date(expiresAt).toISOString().replace(/\.\d+Z$/, "Z");
+		const expired = (await shareLink(scene, node, ROLE.READ, { expires_on })).url;
+		const folder = await shareLink(scene, node, ROLE.READ);
 		seeded.set(scene, {
 			folder: folder.url,
 			folderGrant: folder.grant,
@@ -214,7 +216,7 @@ export const guest = defineFlow<Event>({
 			document: (await shareLink(scene, content.document.name, ROLE.COMMENT)).url,
 			upload: (await shareLink(scene, node, ROLE.UPLOAD)).url,
 			locked: (await shareLink(scene, node, ROLE.READ, { password: PASSWORD })).url,
-			expired: (await shareLink(scene, node, ROLE.READ, { expires_on })).url,
+			expired,
 			expiresAt,
 		});
 		const page = await visit(scene, folder.url);
