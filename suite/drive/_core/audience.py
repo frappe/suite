@@ -5,23 +5,17 @@ web, everyone at the organization, anyone with a link, or a number of people.
 The share dialog is where names are shown, to those who manage the node.
 """
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping
 from typing import Literal
 
 import frappe
 from frappe.utils import now
 
-from suite.drive._core.access import chain_ids
+from suite.drive._core.access import EXPLAIN_SQL, Acc, chain_ids
+from suite.drive._core.principals import Principals
 
 AudienceKind = Literal["public", "organization", "link", "people"]
-
-GRANTS_SQL = """
-SELECT node, principal, role
-FROM `tabDrive Grant`
-WHERE node IN %(chain)s
-  AND (expires_on IS NULL OR expires_on > %(now)s)
-"""
 
 
 def audiences(rows: Iterable[Mapping]) -> dict[str, dict]:
@@ -34,7 +28,7 @@ def audiences(rows: Iterable[Mapping]) -> dict[str, dict]:
     if not chains:
         return {}
     every_node = sorted({node for chain in chains.values() for node in chain})
-    grants = frappe.db.sql(GRANTS_SQL, {"chain": every_node, "now": now()}, as_dict=True)
+    grants = frappe.db.sql(EXPLAIN_SQL, {"chain": every_node, "now": now()}, as_dict=True)
     by_node = defaultdict(list)
     for grant in grants:
         by_node[grant.node].append(grant)
@@ -43,20 +37,15 @@ def audiences(rows: Iterable[Mapping]) -> dict[str, dict]:
 
 
 def _audience(chain: list[str], by_node: Mapping[str, list], members: Mapping[str, set[str]]) -> dict:
-    # Root first, so a grant nearer the node replaces one further up.
-    nearest: dict[str, int] = {}
-    for node in chain:
-        for grant in by_node.get(node, ()):
-            nearest[grant.principal] = grant.role
+    # Root first, so a grant nearer the node comes after one further up.
+    grants = [grant for node in chain for grant in by_node.get(node, ())]
+    depth = {node: index for index, node in enumerate(chain)}
+    return {"kind": _kind(grants), "people": _people(grants, depth, members)}
+
+
+def _kind(grants: list) -> AudienceKind:
+    nearest = {grant.principal: grant.role for grant in grants}
     allowed = {principal for principal, role in nearest.items() if role}
-    denied = {principal for principal, role in nearest.items() if not role}
-    people = set()
-    for principal in allowed:
-        people |= members.get(principal, {principal} if _is_user(principal) else set())
-    return {"kind": _kind(allowed), "people": len(people - denied)}
-
-
-def _kind(allowed: set[str]) -> AudienceKind:
     if "$PUBLIC" in allowed:
         return "public"
     if "$GENERAL" in allowed:
@@ -64,6 +53,33 @@ def _kind(allowed: set[str]) -> AudienceKind:
     if any(principal.startswith("$LINK:") for principal in allowed):
         return "link"
     return "people"
+
+
+def _people(grants: list, depth: Mapping[str, int], members: Mapping[str, set[str]]) -> int:
+    """Count the named people `Acc` lets open the node.
+
+    People who hold the same grants get the same answer, so a large group costs one resolution.
+    """
+    on_chain = {grant.principal for grant in grants}
+    groups_of = defaultdict(list)
+    for group in on_chain & members.keys():
+        for user in members[group]:
+            groups_of[user].append(group)
+    named = {principal for principal in on_chain if _is_user(principal)}
+    held_by = Counter(
+        tuple(principal for principal in (user, *groups_of[user], "$GENERAL") if principal in on_chain)
+        for user in named | groups_of.keys()
+    )
+    return sum(count for held, count in held_by.items() if _can_open(held, grants, depth))
+
+
+def _can_open(held: tuple[str, ...], grants: list, depth: Mapping[str, int]) -> bool:
+    user = next((principal for principal in held if _is_user(principal)), "")
+    principals = Principals(user=user, own=held, open=())
+    acc = Acc()
+    for grant in grants:
+        acc.offer(grant.principal, grant.role, depth[grant.node], principals)
+    return acc.answer() > 0
 
 
 def _group_members(principals: Iterable[str]) -> dict[str, set[str]]:

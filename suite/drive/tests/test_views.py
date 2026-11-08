@@ -814,6 +814,27 @@ class TestDriveViews(IntegrationTestCase):
             },
         )
 
+    def test_audience_counts_who_can_open_the_node_by_the_access_rule(self):
+        def counted(node):
+            row = frappe.db.get_value("Drive Node", node.name, ["name", "root", "path", "kind"], as_dict=True)
+            return audiences([row])[node.name]["people"]
+
+        ensure_user(THIRD)
+        # Allowed through one group high up and denied through another lower down: that member cannot open the file.
+        team_folder = self._node(self.personal.name, "Team folder")
+        self._grant(team_folder.name, self._group(OTHER, THIRD), READ)
+        closed = self._node(team_folder.name, "Closed")
+        self._grant(closed.name, self._group(OTHER), NONE)
+        # A person denied on a folder and allowed through a group on the file inside can open it.
+        denied_folder = self._node(self.personal.name, "Denied folder")
+        self._grant(denied_folder.name, OTHER, NONE)
+        reopened = self._node(denied_folder.name, "Reopened")
+        self._grant(reopened.name, self._group(OTHER), READ)
+
+        # The owner holds the root; the third person stays in the allowed group.
+        self.assertEqual(counted(closed), 2)
+        self.assertEqual(counted(reopened), 2)
+
     def test_audience_costs_the_same_queries_for_a_short_page_or_a_long_one(self):
         def queries_for(rows):
             with patch.object(frappe.db, "sql", wraps=frappe.db.sql) as sql:
