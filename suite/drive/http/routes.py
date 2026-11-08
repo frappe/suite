@@ -225,8 +225,7 @@ def node_get(node: Given = None, expand: Given = None) -> shapes.NodeShape:
     _mark_favourites(principals, [answer])
     if "access" in asked:
         answer["access"] = describe(row, principals)
-    if "audience" in asked:
-        answer["audience"] = audiences([row])[row.name]
+    _add_audiences(asked, [answer], [row])
     _add_contents_sizes(asked, [answer], [row])
     if "breadcrumbs" in asked:
         answer["breadcrumbs"] = node_core.breadcrumbs(row, principals)
@@ -998,7 +997,7 @@ def view_list(
     principals = _principals()
     name = shapes.required_text(view, "view")
     asked = shapes.expansions(expand)
-    supported = {"preview", "access", "audience", "contents_size"}
+    supported = set(shapes.EXPANSIONS) - {"breadcrumbs"}
     if name in ("search", "shared", "favourites", "recents"):
         supported.add("breadcrumbs")
     if name == "archived-roots":

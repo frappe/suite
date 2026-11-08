@@ -96,8 +96,7 @@ def _group_members(principals: Iterable[str]) -> dict[str, set[str]]:
         fields=["parent", "user"],
     ):
         members[f"$GROUP:{row.parent}"].add(row.user)
-    # A group with no members still answers, so it is not counted as one person.
-    return {f"$GROUP:{group}": members[f"$GROUP:{group}"] for group in groups}
+    return members
 
 
 def _is_user(principal: str) -> bool:
