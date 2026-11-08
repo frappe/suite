@@ -1,9 +1,9 @@
 /** Product-neutral API engine. Owners register scope and effects once, lazily. */
+import { randomId } from '@/platform/random-id'
 import type { Realtime } from '@/platform/realtime'
 import {
   transport as defaultTransport,
   type MutationRef,
-  type Operation,
   type PageRef,
   type QueryRef,
   type TransferRef,
@@ -13,7 +13,6 @@ import {
 import { deleteRetiredEntityStore, Entities } from './entities'
 import { recordMutationFailure } from './errors'
 import { mutationObserver, observe } from './observers'
-import { identityPartition } from './partition'
 import { Reads } from './reads'
 import type {
   CallArgs,
@@ -45,7 +44,6 @@ export type {
 export interface ClientOptions {
   transport?: Transport
   realtime?: Realtime | false
-  identity?: string | null
   feedback?: (error: Error) => void
 }
 
@@ -57,12 +55,7 @@ export function createApiClient(
   const transport = options.transport ?? defaultTransport
   deleteRetiredEntityStore()
   const entities = new Entities()
-  const reads = new Reads(
-    transport,
-    entities,
-    options.realtime,
-    identityPartition(options.identity),
-  )
+  const reads = new Reads(transport, entities, options.realtime, randomId())
   const writes = new Writes(transport, reads, options.feedback ?? reportError)
   const owners = new Map<string, Promise<OwnerRegistration>>()
   const cleanup: Array<() => void> = []
@@ -180,7 +173,6 @@ export function createApiClient(
         ),
       )
     }
-    cleanup.push(...subscribeDriveChanges(realtime, reads))
   }
   return {
     client,
@@ -191,44 +183,13 @@ export function createApiClient(
     onTouch: writes.onTouch.bind(writes),
     onChallenge: writes.onChallenge.bind(writes),
     writesSettled: writes.settled.bind(writes),
-    resetIdentity: (identity?: string | null) =>
-      reads.switchPartition(identityPartition(identity, true)),
+    resetIdentity: () => reads.switchPartition(randomId()),
     invalidate: reads.invalidate.bind(reads),
     dispose() {
       for (const stop of cleanup) stop()
       reads.dispose()
     },
   }
-}
-
-/**
- * Drive's change events come in bursts: an upload of N files sends N. One refresh per window
- * covers a burst. The window starts at the first event and later events do not extend it, so a
- * long burst still refreshes every window (unified frontend §5.9).
- */
-const DRIVE_CHANGE_WINDOW_MS = 400
-
-function subscribeDriveChanges(realtime: Realtime, reads: Reads): Array<() => void> {
-  const isDriveRead = (reference: Operation) => reference.owner === 'drive'
-  // `drive:recent` says only the user's Recent list changed. It is one of the views.
-  const isDriveView = (reference: Operation) =>
-    isDriveRead(reference) && reference.id === 'view_list'
-  let pending: ReturnType<typeof setTimeout> | undefined
-  let everything = false
-  const changed = (all: boolean) => {
-    everything ||= all
-    pending ??= setTimeout(() => {
-      const predicate = everything ? isDriveRead : isDriveView
-      pending = undefined
-      everything = false
-      reads.invalidate(predicate)
-    }, DRIVE_CHANGE_WINDOW_MS)
-  }
-  return [
-    realtime.subscribe('drive:changed', () => changed(true)),
-    realtime.subscribe('drive:recent', () => changed(false)),
-    () => clearTimeout(pending),
-  ]
 }
 
 function reportError(error: Error): void {
