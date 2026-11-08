@@ -49,7 +49,7 @@ export function failureReason(failure: DriveFailure): string {
     case 'DriveNotFound':
       return __('It was moved or deleted by someone else.')
     case 'DriveConflict':
-      return __('An item with this name is already there.')
+      return __('That name is taken in this folder.')
     default:
       return failure.message
   }
