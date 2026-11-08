@@ -478,6 +478,7 @@ const pagerLoading = computed(() => !!folder.value && siblings.status === 'pendi
       <PreviewFallback v-else-if="empty" title="Empty file" message="This file has no content." />
       <PreviewImage
         v-else-if="preview.kind === 'image'"
+        :key="session.nodeId"
         :src="source"
         :alt="session.title.value"
         :download="downloadUrl"

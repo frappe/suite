@@ -24,24 +24,28 @@ const status = ref<'loading' | 'ready' | 'failed'>('loading')
 const slow = ref(false)
 const wait = useTimeoutFn(() => (slow.value = true), 300, { immediate: false })
 const release = holdImages()
+/** The element this preview shows, or waits for when `outgoing` is still up. */
 let shown: HTMLImageElement | null = null
+/** The loaded picture that stays up while a new address for the same file loads. */
+let outgoing: HTMLImageElement | null = null
 
 function show(src: string) {
-  shown?.remove()
+  if (status.value === 'ready' && !outgoing) outgoing = shown
+  else shown?.remove()
   const image = previewImage(src)
   image.alt = props.alt
   image.className = 'm-auto max-h-full min-h-0 max-w-full object-contain p-4'
-  shown = image
-  const ready = image.complete && image.naturalWidth > 0
-  status.value = ready ? 'ready' : 'loading'
-  slow.value = false
-  image.style.opacity = ready ? '' : '0'
   image.style.transition = 'opacity 150ms ease-out'
-  if (!ready) {
-    wait.start()
-    image.addEventListener('load', () => settle(image, 'ready'), { once: true })
-    image.addEventListener('error', () => settle(image, 'failed'), { once: true })
-  }
+  shown = image
+  slow.value = false
+  // The cache lets go of a failed element, so a complete one has loaded.
+  if (image.complete) return settle(image, 'ready')
+  image.style.opacity = '0'
+  image.addEventListener('load', () => settle(image, 'ready'), { once: true })
+  image.addEventListener('error', () => settle(image, 'failed'), { once: true })
+  if (outgoing) return
+  status.value = 'loading'
+  wait.start()
   host.value?.append(image)
 }
 
@@ -49,9 +53,12 @@ function show(src: string) {
 function settle(image: HTMLImageElement, outcome: 'ready' | 'failed') {
   if (image !== shown) return
   wait.stop()
+  outgoing?.remove()
+  outgoing = null
   status.value = outcome
-  if (outcome === 'ready') image.style.opacity = ''
-  else image.remove()
+  if (outcome === 'failed') return image.remove()
+  image.style.opacity = ''
+  if (!image.isConnected) host.value?.append(image)
 }
 
 onMounted(() => show(props.src))
@@ -62,6 +69,7 @@ watch(
 )
 onBeforeUnmount(() => {
   shown?.remove()
+  outgoing?.remove()
   release()
 })
 </script>

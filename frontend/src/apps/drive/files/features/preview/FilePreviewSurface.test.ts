@@ -1,5 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createApp, defineComponent, h, ref, shallowRef, unref, type PropType, type Ref } from 'vue'
+import {
+  createApp,
+  defineComponent,
+  h,
+  nextTick,
+  ref,
+  shallowRef,
+  unref,
+  type PropType,
+  type Ref,
+} from 'vue'
 import {
   createMemoryHistory,
   createRouter,
@@ -349,6 +359,54 @@ describe('file preview', () => {
       opened.value = session('e', 'e.jpg', 'image/jpeg')
 
       await vi.waitFor(() => expect(root.querySelector('img')).toBe(ahead()))
+    })
+
+    it('shows a loaded picture at once, even one with no natural size, such as an SVG with only a viewBox', async () => {
+      const created = vi.spyOn(document, 'createElement')
+      const opened = shallowRef(session('c', 'c.png', 'image/png'))
+      const { root } = await mount(opened, '/d/c/c-png?type=image')
+      await vi.waitFor(() => expect(counter(root)).toBe('2 of 3'))
+      root.querySelector('img')!.dispatchEvent(new Event('load'))
+      const beside = () =>
+        created.mock.results
+          .flatMap((result) => (result.value instanceof HTMLImageElement ? [result.value] : []))
+          .find((image) => image.getAttribute('src') === contentOf('e'))
+      await vi.waitFor(() => expect(beside()).toBeDefined())
+      Object.defineProperty(beside(), 'complete', { value: true })
+      expect(beside()?.naturalWidth).toBe(0)
+
+      opened.value = session('e', 'e.svg', 'image/jpeg')
+
+      await vi.waitFor(() => expect(root.querySelector('img')).toBe(beside()))
+      expect(beside()?.style.opacity).toBe('')
+    })
+
+    it('keeps a server preview up while its URL is signed again, until the new one has loaded', async () => {
+      const created = vi.spyOn(document, 'createElement')
+      const preview = ref<{ url: string } | null>({ url: '/preview?signature=one' })
+      const opened = fromPartial<FilePreviewSession>({
+        ...session('h', 'photo.heic', 'image/heic'),
+        preview,
+      })
+      const { root } = await mount(opened, '/d/h/photo-heic')
+      const first = root.querySelector('img')!
+      expect(first.getAttribute('src')).toBe('/preview?signature=one')
+      first.dispatchEvent(new Event('load'))
+      await vi.waitFor(() => expect(first.style.opacity).toBe(''))
+
+      preview.value = { url: '/preview?signature=two' }
+      const second = () =>
+        created.mock.results
+          .flatMap((result) => (result.value instanceof HTMLImageElement ? [result.value] : []))
+          .find((image) => image.getAttribute('src') === '/preview?signature=two')
+      await vi.waitFor(() => expect(second()).toBeDefined())
+      await nextTick()
+      expect([...root.querySelectorAll('img')]).toEqual([first])
+      expect(first.style.opacity).toBe('')
+
+      second()!.dispatchEvent(new Event('load'))
+      await vi.waitFor(() => expect([...root.querySelectorAll('img')]).toEqual([second()]))
+      expect(second()?.style.opacity).toBe('')
     })
 
     it('shows a spinner after a short wait, then the picture, or Download when it fails', async () => {
