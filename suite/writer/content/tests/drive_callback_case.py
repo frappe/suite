@@ -11,12 +11,29 @@ import frappe
 import pycrdt
 from frappe.utils import now_datetime
 
+import suite.drive._core as drive_core
 from suite import drive
 from suite.content.http import routes
-from suite.drive._core import content as drive_content
 from suite.writer import content as writer_content
 from suite.writer import drive as writer_drive
-from suite.writer.content.tests.support import CheckpointCase, answer, call_route, push_body, read_open
+from suite.writer.content.tests.support import (
+    WRITER,
+    CheckpointCase,
+    answer,
+    call_route,
+    push_body,
+    read_open,
+)
+
+
+def share_as_writer(node: str, principal: str, role: int, **options) -> dict:
+    owner = drive_core.principals.Principals(WRITER, (WRITER, "$GENERAL"), ("$PUBLIC",))
+    return drive_core.access.grant(node, principal, role, owner, **options)
+
+
+def move_as_writer(node: str, folder: str) -> None:
+    owner = drive_core.principals.Principals(WRITER, (WRITER, "$GENERAL"), ("$PUBLIC",))
+    drive_core.nodes.update(owner, node, parent_node=folder)
 
 
 def version_of(docname: str) -> dict:
@@ -66,7 +83,7 @@ class DriveCallbackCase(CheckpointCase):
         with patch.object(frappe, "enqueue"):
             media = drive.store_file(document, title, io.BytesIO(title.encode()))
 
-        aged = now_datetime() - timedelta(days=drive_content.UNUSED_MEDIA_GRACE_DAYS + 1)
+        aged = now_datetime() - timedelta(days=drive_core.content.UNUSED_MEDIA_GRACE_DAYS + 1)
         frappe.db.set_value("Drive Node", media, "creation", aged, update_modified=False)
         frappe.db.commit()
         self.addCleanup(self.delete_document, media)

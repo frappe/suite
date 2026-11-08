@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick } from 'vue'
 
 import type { CalendarEvent } from '@/apps/calendar'
+import { findDocumentType } from '@/composition/documentRegistry'
 import HomePage from '@/composition/home/HomePage.vue'
 
 const state = vi.hoisted(() => ({
@@ -172,6 +173,10 @@ vi.mock('@/apps/drive', async (importOriginal) => ({
     run: state.createDocument,
   }),
   driveNodeRoute: (node: { name: string }) => ({ path: `/d/${node.name}/document` }),
+  newDocumentRoute: (node: { name: string }) => ({
+    path: `/d/${node.name}/document`,
+    query: { new: '1' },
+  }),
 }))
 vi.mock('@/apps/calendar', async (importOriginal) => ({
   upcomingEventWindow: (await importOriginal<typeof import('@/apps/calendar')>())
@@ -240,6 +245,8 @@ vi.mock('@/api', async () => ({
   }),
 }))
 const cleanups: Array<() => void> = []
+// Creating a document starts loading its editor; the file must not end with that still loading.
+afterAll(() => findDocumentType('Writer Document')?.loadOpeningEditor?.())
 afterEach(() => {
   cleanups.splice(0).forEach((cleanup) => cleanup())
   vi.useRealTimers()

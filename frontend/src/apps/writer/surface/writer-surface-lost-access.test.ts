@@ -22,6 +22,10 @@ vi.hoisted(() => {
 
 vi.mock('frappe-ui', async () => (await import('./writer-surface-fakes')).fakeFrappeUi())
 vi.mock('@/apps/drive', async () => (await import('./writer-surface-fakes')).fakeDrive())
+vi.mock('@/platform/session', async (importOriginal) => {
+  const { fakeSession } = await import('./writer-surface-fakes')
+  return fakeSession(await importOriginal<typeof import('@/platform/session')>())
+})
 vi.mock('@/apps/writer/components/CoreEditor.vue', async () =>
   (await import('./writer-surface-fakes')).fakeCoreEditor(),
 )
@@ -81,7 +85,7 @@ async function downloadedChanges(afterClose: (root: Element) => unknown = () => 
   await vi.waitFor(() => expect(warning).toHaveBeenCalled())
   await afterClose(root)
   const [, shown] = warning.mock.lastCall!
-  ;(shown?.action as { onClick: () => void }).onClick()
+  ;(shown!.action as { onClick: () => void }).onClick()
   await vi.waitFor(() => expect(files).toHaveLength(1))
   return files[0] as File
 }

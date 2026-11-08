@@ -130,3 +130,5 @@ suite.drive.patches.adopt_drawings
 suite.drive.patches.cleanup
 # ADR 0001: a Suite Admin edits only with a grant; gives them the creator grants the override skipped.
 suite.drive.patches.grant_admin_creators_edit
+# A notification may point at a download instead of an activity.
+suite.drive.patches.optional_notification_activity

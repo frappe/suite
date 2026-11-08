@@ -1,5 +1,5 @@
 // Size and speed of the collab doc on 100k cells. Skipped in normal runs; run with
-//   SHEETS_BENCH=1 yarn vitest run src/apps/sheets/collab/schema.bench.test.ts --silent=false
+//   SHEETS_BENCH=1 pnpm test frontend/src/apps/sheets/collab/schema.bench.test.ts --silent=false
 // Numbers go into COLLAB-DESIGN (Q11 load time, Q14 size limit).
 
 /// <reference types="node" />

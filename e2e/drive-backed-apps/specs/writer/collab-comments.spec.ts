@@ -7,11 +7,12 @@ import {
 	createWriterDocument,
 	openWriterDocument,
 	uniqueWriterTitle,
+	toggleWriterPanel,
 	writerEditor,
 } from "../../helpers/writer";
 
 async function openComments(page: Page) {
-	await page.getByRole("banner").getByRole("button", { name: "Comments", exact: true }).click();
+	await toggleWriterPanel(page, "Comments");
 	return page.getByRole("complementary", { name: "Comments" });
 }
 
@@ -97,14 +98,19 @@ test.describe("Writer collaboration comments", () => {
 		await expect(row.getByRole("button", { name: "Send reply" })).toHaveCount(0);
 		await expect(threadHeader(row)).toHaveAttribute("aria-expanded", "true");
 		await row.getByText("A reply", { exact: true }).hover();
-		await row.getByRole("button", { name: "More comment actions" }).click();
+		// The thread's own actions come first, then the reply's, which shows once Drive has the reply
+		await expect(row.getByRole("button", { name: "More comment actions" })).toHaveCount(2);
+		await row.getByRole("button", { name: "More comment actions" }).last().click();
 		await page.getByRole("menuitem", { name: "Edit" }).click();
 		await row.getByLabel("Edit comment").fill("A reply, edited");
 		await row.getByRole("button", { name: "Save" }).click();
 		await expect(row.getByText("A reply, edited", { exact: true })).toBeVisible();
+		// The thread's actions show while the pointer is on its row
+		await row.hover();
 		await row.getByRole("button", { name: "Resolve" }).click();
 		await expect(row).toHaveCount(0);
-		await page.getByRole("button", { name: "Undo" }).click();
+		// The toast's Undo; the toolbar has one of its own
+		await page.getByRole("region", { name: /^Notifications/ }).getByRole("button", { name: "Undo" }).click();
 		await expect(row).toHaveCount(1);
 		await row.hover();
 		await row.getByRole("button", { name: "Resolve" }).click();
@@ -180,7 +186,7 @@ test.describe("Writer collaboration comments", () => {
 		await box.pressSequentially(`Ask @${handle}`);
 		const option = panel.getByRole("option");
 		await expect(option).toHaveCount(1);
-		const name = (await option.locator(":scope > span").last().textContent())?.trim() ?? "";
+		const name = (await option.locator("span.truncate").first().textContent())?.trim() ?? "";
 		await page.keyboard.press("Enter");
 		await expect(box).toHaveValue(`Ask @${name} `);
 		await box.pressSequentially("to check");
@@ -216,6 +222,26 @@ test.describe("Writer collaboration comments", () => {
 		await expect(row).toContainText("sentence");
 	});
 
+	test("after a comment on selection, the bubble hides and a double-click starts the next comment", async ({
+		owner,
+	}) => {
+		const { page } = owner;
+		await openWriterDocument(page, node);
+		const drafts = await startCommentOnLastWord(page, "first words then second");
+		await drafts.getByLabel("Add a comment on the text").fill("On the last word");
+		await drafts.getByRole("button", { name: "Comment", exact: true }).click();
+		const bubble = page.locator('[data-slot="bubble-menu"]');
+		await expect(bubble).toBeHidden();
+
+		await writerEditor(page).getByText("first words then", { exact: false }).dblclick({ position: { x: 4, y: 4 } });
+		await bubble.getByRole("button", { name: "Comment" }).click();
+
+		const panel = page.getByRole("complementary", { name: "Comments" });
+		const draft = panel.locator("form").filter({ has: page.getByLabel("Add a comment on the text") });
+		await expect(draft).toContainText("first");
+		await expect(draft).not.toContainText("second");
+	});
+
 	test("restoring a version puts a comment back on the words it brought back, for good", async ({
 		owner,
 	}) => {
@@ -232,7 +258,7 @@ test.describe("Writer collaboration comments", () => {
 		await expect(threadRow(panel, "About this word")).toContainText("Text deleted");
 		await expectSaved(page);
 
-		await page.getByRole("button", { name: /versions/i }).first().click();
+		await toggleWriterPanel(page, "Versions");
 		await page.getByRole("complementary", { name: "Versions" }).getByRole("button", { name: /^With the word/ }).click();
 		await page.getByRole("complementary", { name: "Versions" }).getByRole("button", { name: "Restore this version" }).click();
 		await page.getByRole("dialog").getByRole("button", { name: "Restore", exact: true }).click();
@@ -315,12 +341,14 @@ test.describe("Writer collaboration comments", () => {
 		await row.getByLabel("Reply", { exact: true }).fill("Sent twice");
 		await page.keyboard.press("Enter");
 		await answerLost;
-		await expect(row.getByLabel("Reply", { exact: true })).toHaveValue("Sent twice");
+		// The reply shows at once; a lost answer leaves it in the thread as not sent
+		await expect(row.getByLabel("Reply", { exact: true })).toHaveValue("");
+		await expect(row.getByText("Not sent")).toBeVisible();
 
 		await page.unroute("**/api/suite/drive/threads/*/comments", loseAnswer);
-		await row.getByLabel("Reply", { exact: true }).press("Enter");
+		await row.getByRole("button", { name: "Retry" }).click();
 
-		await expect(row.getByLabel("Reply", { exact: true })).toHaveValue("");
+		await expect(row.getByText("Not sent")).toHaveCount(0);
 		await expect(row.getByText("Sent twice", { exact: true })).toHaveCount(1);
 	});
 });

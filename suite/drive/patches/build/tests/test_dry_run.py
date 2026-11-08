@@ -37,7 +37,7 @@ from suite.drive.patches.build.ports import (
     PermissionRow,
     TreeRow,
 )
-from suite.drive.patches.build.preflight import GO, DiskSettings
+from suite.drive.patches.build.preflight import GO, PACKET_MIN, DiskSettings, ServerFacts
 from suite.drive.patches.build.tests.fakes import (
     FakeBucket,
     FakeContent,
@@ -52,6 +52,7 @@ ALICE = "alice@example.com"
 GHOST = "ghost@example.com"
 STAMP = "2020-01-01 00:00:00.000000"
 ROOT_FOLDER_NAME = "drive"
+SERVER = ServerFacts(max_allowed_packet=PACKET_MIN, node_version="v22.13.0")
 S3_KEYS = {
     LEADING_SLASH: "/photos/holiday.jpg",
     BARE_ROOT_KEY: "report.pdf",
@@ -150,7 +151,9 @@ class DryRunCase(unittest.TestCase):
             self.path, tree=self.tree, drive=self.drive, content=self.content, bucket=self.bucket
         )
         self.out = self.path / "private"
-        self.result = dry_run(self.env, directory=self.out, disk=DiskSettings(root_folder=ROOT_FOLDER_NAME))
+        self.result = dry_run(
+            self.env, directory=self.out, disk=DiskSettings(root_folder=ROOT_FOLDER_NAME), server=SERVER
+        )
         self.report = self.result.report
 
 
@@ -189,7 +192,9 @@ class Counts(DryRunCase):
             storage=FakeStorage(missing_local={"/private/files/local.pdf"}),
         )
 
-        report = dry_run(env, directory=self.out, disk=DiskSettings(root_folder=ROOT_FOLDER_NAME)).report
+        report = dry_run(
+            env, directory=self.out, disk=DiskSettings(root_folder=ROOT_FOLDER_NAME), server=SERVER
+        ).report
 
         self.assertEqual(
             report["file_nodes_by_byte_source"], {BYTES_S3: 4, BYTES_LOCAL: 3, BYTES_UNREACHABLE: 1}

@@ -62,13 +62,12 @@ export async function readSheetInputs(client: WorkbookClient, sheet: string): Pr
   return out
 }
 
-/** A sheet's formula cells (inputs starting with "="). */
+/** A sheet's formula cells (inputs starting with "="), every one of them. */
 export async function readSheetFormulas(
   client: WorkbookClient,
   sheet: string,
 ): Promise<CellInput[]> {
-  const { cells } = await client.findCells({ sheet, query: '=' })
-  return cells.filter((c) => c.input.startsWith('='))
+  return (await client.formulaCells({ sheet })).cells
 }
 
 /**

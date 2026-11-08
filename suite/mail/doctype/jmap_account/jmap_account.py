@@ -18,6 +18,7 @@ from suite.mail.jmap import (
     has_cached_mailboxes,
     invalidate_jmap_identities_cache,
     invalidate_jmap_mailboxes_cache,
+    is_provisioning,
 )
 from suite.mail.store import (
     Entity,
@@ -298,16 +299,39 @@ def sync_jmap_accounts(user: str, accounts: dict[str, dict]) -> bool:
         # saving someone else's settings) would otherwise resolve the account to nobody and fail
         # with "JMAP account <id> does not belong to the user <admin>".
         with user_context(user):
-            for account in new_accounts:
+            for account in _accounts_to_set_up(user, accounts, new_accounts):
                 create_archive_mailbox(account)
                 rename_default_mailboxes(account)
-                build_automation_sieve(account, activate=True)
+                # During setup a missing script on the user's own account fails the setup, so that a
+                # retry finishes it. A shared account's script doesn't decide whether the setup worked.
+                build_automation_sieve(
+                    account,
+                    activate=True,
+                    raise_exception=is_provisioning(user) and accounts[account]["isPersonal"],
+                )
     finally:
         frappe.flags.skip_automation_sieve_build = previous_sieve_flag
         frappe.flags.skip_archive_mailbox_creation = previous_archive_flag
         release_lock(lockname, identifier)
 
     return True
+
+
+def _accounts_to_set_up(user: str, accounts: dict[str, dict], new_accounts: list[str]) -> list[str]:
+    """The accounts whose folders and filters this sync sets up: those it just inserted and, during
+    account setup, the user's own, whose document a failed attempt may have left with the setup
+    undone. Every step looks at what the account already has, so repeating one is safe.
+
+    A disabled user's setup reaches their own account and nothing else (§4.3)."""
+
+    if not is_provisioning(user):
+        return new_accounts
+
+    own = [account for account, details in accounts.items() if details["isPersonal"]]
+    if not frappe.get_cached_value("User", user, "enabled"):
+        return own
+
+    return list(dict.fromkeys(new_accounts + own))
 
 
 def _ensure_jmap_account_docs(user: str, accounts: dict[str, dict]) -> list[str]:

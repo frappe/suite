@@ -219,6 +219,45 @@ export function remainingAccess(
   return title ? `${who} still has access from “${title}”.` : `${who} still has access.`
 }
 
+/**
+ * Who besides the owner can open the node, for its details: people and groups
+ * by name, then the org, the public and the number of share links. A local
+ * row decides for its principal over an ancestor's, so a deny here hides an
+ * inherited grant. Denied and expired rows give nothing and are left out.
+ */
+export function sharedWith(list: GrantList, nodeKind: string, now = new Date()): string[] {
+  const sections = shareSections(list, nodeKind, now)
+  const gives = (grant: DriveGrant) => grant.role > 0 && !isExpired(grant, now)
+  const local = new Set(list.grants.map((grant) => grant.principal))
+  const named = [
+    ...sections.people.map((row) => row.grant),
+    ...sections.inherited.flatMap((part) =>
+      part.rows
+        .filter((row) => row.kind === 'user' || row.kind === 'group')
+        .map((row) => row.entry.grant)
+        .filter((grant) => !local.has(grant.principal)),
+    ),
+  ]
+    .filter(gives)
+    .map((grant) => grant.person?.full_name ?? principalLabel(grant.principal))
+  const open = (access: GeneralAccess | null) =>
+    access?.state === 'local' ||
+    access?.state === 'inherited' ||
+    !!(access?.state === 'expired' && access.entry)
+  const links = [
+    ...(sections.links ?? []).map((row) => row.grant),
+    ...list.inherited
+      .map((entry) => entry.grant)
+      .filter((grant) => principalKind(grant.principal) === 'link'),
+  ].filter(gives).length
+  return [
+    ...new Set(named),
+    ...(open(sections.organization) ? [organizationLabel()] : []),
+    ...(open(sections.public) ? [principalLabel(PUBLIC)] : []),
+    ...(links ? [links === 1 ? '1 share link' : `${links} share links`] : []),
+  ]
+}
+
 /** Everyone at the org, named after the workspace when its name is known. */
 export function organizationLabel(workspace = ''): string {
   return workspace ? `Everyone at ${workspace}` : 'Everyone in your organization'

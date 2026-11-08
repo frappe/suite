@@ -6,6 +6,7 @@ import { translationPlugin } from '@/platform/translation'
 
 import DocumentSidePanel from './DocumentSidePanel.vue'
 import type { useCommentDrafts } from './useCommentDrafts'
+import type { ThreadActions } from './useThreadChanges'
 
 vi.mock('frappe-ui', async () => {
   const { defineComponent: define, h: render, ref: state } = await import('vue')
@@ -112,6 +113,7 @@ async function openVersionsPanel(isRefusingVersions = false) {
       session,
       canComment: true,
       canEditDocument: false,
+      canShare: false,
       canRestoreVersion: false,
       canSaveVersion: false,
       isRestoringVersion: false,
@@ -119,6 +121,7 @@ async function openVersionsPanel(isRefusingVersions = false) {
       threadsReadAt: 1,
       places: null,
       refreshThreads: async () => {},
+      threadActions: {} as ThreadActions,
       drafts: noDrafts,
       saveFirst: async () => {
         steps.push('saved')
@@ -279,6 +282,7 @@ describe('renaming a version in the Versions panel', () => {
         session,
         canComment: true,
         canEditDocument: false,
+        canShare: false,
         canRestoreVersion: false,
         canSaveVersion,
         isRestoringVersion: false,
@@ -286,6 +290,7 @@ describe('renaming a version in the Versions panel', () => {
         threadsReadAt: 1,
         places: null,
         refreshThreads: async () => {},
+        threadActions: {} as ThreadActions,
         drafts: noDrafts,
         saveFirst: async () => {},
       }),
@@ -350,6 +355,7 @@ function panelWhileVersionsLoad(kind: DocumentPanel) {
       session,
       canComment: true,
       canEditDocument: false,
+      canShare: false,
       canRestoreVersion: false,
       canSaveVersion: false,
       isRestoringVersion: false,
@@ -357,6 +363,7 @@ function panelWhileVersionsLoad(kind: DocumentPanel) {
       threadsReadAt: 1,
       places: null,
       refreshThreads: async () => {},
+      threadActions: {} as ThreadActions,
       drafts,
       saveFirst: async () => {},
     }),

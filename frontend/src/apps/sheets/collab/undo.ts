@@ -242,7 +242,9 @@ export function createUndo({ doc, glue, getSelection, maxSteps = 100 }: UndoOpti
       if (!item) continue
       // Alive: written by another tab? Deleted, and not by this step: every
       // later step of this tab is undone already, so another tab deleted it.
-      if (item.deleted ? !Y.isDeleted(deletions, item.id) : item.id.client !== doc.clientID) n++
+      // Yjs merges deleted entries written one after another into one item,
+      // whose last id is the latest value (ISSUES #119).
+      if (item.deleted ? !Y.isDeleted(deletions, item.lastId) : item.id.client !== doc.clientID) n++
     }
     return n
   }
@@ -285,7 +287,8 @@ export function createUndo({ doc, glue, getSelection, maxSteps = 100 }: UndoOpti
       return { done: false, refused: 'edited' }
     }
     // Yjs pops steps until one changes something; hide the older ones so one
-    // Ctrl+Z is never two steps.
+    // Ctrl+Z is never two steps. Yjs tells the listeners while they are
+    // hidden, so tell them again once they are back (ISSUES #119).
     const older = stack.splice(0, stack.length - 1)
     carry = saved
     let done: boolean
@@ -294,14 +297,12 @@ export function createUndo({ doc, glue, getSelection, maxSteps = 100 }: UndoOpti
     } finally {
       carry = undefined
       stack.unshift(...older)
+      changed()
     }
     await glue.settled()
     // A step can only come to nothing because another tab changed what it
     // touched (this tab's later steps are undone already); it is gone.
-    if (!done) {
-      changed()
-      return { done, refused: 'edited' }
-    }
+    if (!done) return { done, refused: 'edited' }
     return {
       done,
       ...(blocked > 0 && { refused: 'partial' as const }),

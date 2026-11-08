@@ -23,7 +23,7 @@ from suite.drive.patches.build.docshare_journal import DOCSHARE_COLUMNS, row_val
 from suite.drive.patches.build.docshare_journal import (
     JournalConflictError as DocShareJournalConflictError,
 )
-from suite.drive.patches.build.environment import BuildEnvironment, LegacyS3Config
+from suite.drive.patches.build.environment import DEFAULT_COPY_WORKERS, BuildEnvironment, LegacyS3Config
 from suite.drive.patches.build.legacy import S3_URL_PREFIX, get_s3_url
 from suite.drive.patches.build.ports import (
     ACTIVE,
@@ -164,7 +164,18 @@ class FakeFiles:
             ]
         )
 
-    def add(self, name, file_url, file_name=None, blob=None, file_type=None, *, status=None, file_size=None):
+    def add(
+        self,
+        name,
+        file_url,
+        file_name=None,
+        blob=None,
+        file_type=None,
+        *,
+        status=None,
+        file_size=None,
+        attached_to_doctype=None,
+    ):
         self.rows[name] = {
             "name": name,
             "file_url": file_url,
@@ -173,6 +184,7 @@ class FakeFiles:
             "file_type": file_type,
             "status": status,
             "file_size": file_size,
+            "attached_to_doctype": attached_to_doctype,
         }
         self.committed[name] = dict(self.rows[name])
         return self
@@ -192,6 +204,7 @@ class FakeFiles:
                 row.get("file_type"),
                 status=row.get("status"),
                 file_size=row.get("file_size"),
+                attached_to_doctype=row.get("attached_to_doctype"),
             )
             for name, row in sorted(self.rows.items())
             if name > after and not row["blob"] and matches(row)
@@ -352,6 +365,7 @@ def build_environment(
     make_id=None,
     make_token=None,
     accept_skips=False,
+    copy_workers=DEFAULT_COPY_WORKERS,
 ):
     """A `BuildEnvironment` wired to fakes, with its state file and copy ledger in `tmp_path`."""
     bucket = bucket if bucket is not None else FakeBucket()
@@ -402,7 +416,9 @@ def build_environment(
         legacy_s3=legacy_s3,
         open_bucket=lambda: bucket,
         copy_ledger=CopyLedger(tmp_path / "drive-build-copied-objects.jsonl"),
+        markers=drive,
         accept_skips=accept_skips,
+        copy_workers=copy_workers,
         tree=tree,
         drive=drive,
         content=content,
@@ -557,6 +573,16 @@ class FakeDrive:
         self.tree = None
         self.docshares_deleted = []
         self.committed_docshares = None
+        # `DatabaseMarkers`: committed as written, so `rollback` keeps them.
+        self.markers = {}
+
+    # -- database markers
+
+    def read_marker(self, key):
+        return self.markers.get(key)
+
+    def write_marker(self, key, marker):
+        self.markers[key] = marker
 
     # -- reads
 

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { createApp, h, nextTick } from 'vue'
 
 import {
   rolesFor,
@@ -10,6 +11,7 @@ import { openDriveDocumentSession } from '@/apps/drive/client/session'
 import { testClient } from '@/apps/drive/client/testClient'
 import type { Transport } from '@/platform/transport'
 
+import ShareBody from './ShareBody.vue'
 import { shareSections } from './shareModel'
 import { useShare } from './useShare'
 
@@ -702,5 +704,31 @@ describe('document session share (spec §8.6, §8.8)', () => {
     expect(whileOpen).toBe(false)
     expect(session.canShare.value).toBe(false)
     session.dispose()
+  })
+})
+
+describe('share dialog words (spec §7.3)', () => {
+  it('says a document is not published on the web, whether web access was never on or was switched off', async () => {
+    const said = async (grants: DriveGrant[]) => {
+      const server = fakeServer((call) => {
+        if (call.id === 'node_get') return node('document')
+        if (call.id === 'node_grants') return { grants, inherited: [] }
+        return null
+      })
+      const state = useShare('doc', { client: testClient(server.transport) })
+      await state.load()
+      const root = document.createElement('div')
+      const app = createApp({ setup: () => () => h(ShareBody, { state }) })
+      app.mount(root)
+      await nextTick()
+      const words = root.textContent ?? ''
+      app.unmount()
+      return words
+    }
+
+    expect(await said([])).toContain('Not published on the web')
+    const switchedOff = await said([grant('$PUBLIC', 0)])
+    expect(switchedOff).toContain('Not published on the web')
+    expect(switchedOff).not.toContain('Denied')
   })
 })

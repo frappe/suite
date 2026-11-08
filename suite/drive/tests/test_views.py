@@ -19,7 +19,7 @@ from suite.drive._core.nodes import (
     views,
 )
 from suite.drive._core.principals import Principals
-from suite.drive._core.roles import EDIT, NONE, READ
+from suite.drive._core.roles import EDIT, MANAGE, NONE, READ
 from suite.drive._core.roots import create_root
 from suite.drive.doctype.drive_node.drive_node import on_doctype_update
 from suite.drive.tests.fixtures import drop_personal_root
@@ -690,8 +690,8 @@ class TestDriveViews(IntegrationTestCase):
 
         self.assertEqual([row.name for row in rows], [match.name])
         self.assertEqual(
-            [(crumb["name"], crumb["kind"]) for crumb in rows[0].breadcrumbs],
-            [(self.personal.name, "root"), (folder.name, "folder")],
+            [(crumb["name"], crumb["kind"], crumb["role"]) for crumb in rows[0].breadcrumbs],
+            [(self.personal.name, "root", MANAGE), (folder.name, "folder", MANAGE)],
         )
         title_reads = [
             call

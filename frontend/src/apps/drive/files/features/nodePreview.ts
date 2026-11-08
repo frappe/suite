@@ -2,7 +2,7 @@ import { computed, reactive, ref, type ComputedRef } from 'vue'
 
 import type { DriveNode } from '@/apps/drive/client/types'
 
-export type PreviewNode = Pick<DriveNode, 'name' | 'kind' | 'content_doctype' | 'preview'>
+export type PreviewNode = Pick<DriveNode, 'name' | 'preview'>
 
 /**
  * What Drive remembers about thumbnails, shared by every card on every page.
@@ -47,10 +47,7 @@ export function useNodePreview(
   // blink back to its type icon.
   const painted = ref(false)
   const url = computed(() => {
-    const current = node()
-    // A slide thumbnail doesn't read well at card size, so presentations keep their icon.
-    if (current.kind === 'document' && current.content_doctype === 'Presentation') return undefined
-    const candidate = current.preview?.url
+    const candidate = node().preview?.url
     return candidate && !memory.failed.has(candidate) ? candidate : undefined
   })
   const shown = computed(() => {
