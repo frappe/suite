@@ -21,11 +21,11 @@
         </div>
       </div>
       <dl
-        class="mt-5 grid grid-cols-[7rem_minmax(0,1fr)] gap-x-4 gap-y-3 border-t border-outline-gray-1 pt-5"
+        class="mt-5 grid grid-cols-[7rem_minmax(0,1fr)] gap-x-4 gap-y-3 border-t border-outline-gray-1 pt-5 text-p-base"
       >
         <template v-for="field in fields" :key="field.label">
-          <dt class="text-p-base text-ink-gray-5">{{ field.label }}</dt>
-          <dd class="break-words text-p-base text-ink-gray-8">{{ field.value }}</dd>
+          <dt class="text-ink-gray-5">{{ field.label }}</dt>
+          <dd class="break-words text-ink-gray-8">{{ field.value }}</dd>
         </template>
       </dl>
     </div>
