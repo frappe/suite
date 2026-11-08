@@ -1,5 +1,4 @@
 /** Product-neutral API engine. Owners register scope and effects once, lazily. */
-import { randomId } from '@/platform/random-id'
 import type { Realtime } from '@/platform/realtime'
 import {
   transport as defaultTransport,
@@ -55,7 +54,7 @@ export function createApiClient(
   const transport = options.transport ?? defaultTransport
   deleteRetiredEntityStore()
   const entities = new Entities()
-  const reads = new Reads(transport, entities, options.realtime, randomId())
+  const reads = new Reads(transport, entities, options.realtime)
   const writes = new Writes(transport, reads, options.feedback ?? reportError)
   const owners = new Map<string, Promise<OwnerRegistration>>()
   const cleanup: Array<() => void> = []
@@ -183,7 +182,7 @@ export function createApiClient(
     onTouch: writes.onTouch.bind(writes),
     onChallenge: writes.onChallenge.bind(writes),
     writesSettled: writes.settled.bind(writes),
-    resetIdentity: () => reads.switchPartition(randomId()),
+    resetIdentity: () => reads.switchPartition(),
     invalidate: reads.invalidate.bind(reads),
     dispose() {
       for (const stop of cleanup) stop()
