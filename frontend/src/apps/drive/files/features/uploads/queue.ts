@@ -206,6 +206,11 @@ export function canRetry(entry: UploadEntry): boolean {
   return entry.state === 'failed' && entry.retryable
 }
 
+/** Whether Retry all takes this upload: anything retryable, except that cancelled ones stay cancelled. */
+export function isInRetryAll(entry: UploadEntry): boolean {
+  return entry.state !== 'cancelled' && canRetry(entry)
+}
+
 /** How a reconnecting upload reads, wherever it shows. */
 export function reconnectingStatus(entry: UploadEntry): string {
   return entry.offline ? __('Waiting for connection…') : __('Connection lost. Retrying…')
@@ -229,7 +234,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     showDone: boolean
   }
   const state = reactive<UploadQueueState>({
-    /** A 413 stopped the queue. It starts nothing until Retry all. */
+    /** A 413 stopped the queue. It starts nothing while a held upload remains, or until the user retries. */
     halted: null,
     /** Folder uploads still creating their folders. */
     preparing: 0,
@@ -989,7 +994,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
   function retryAll() {
     state.halted = null
     for (const job of jobs.values()) {
-      if (job.entry.state !== 'cancelled' && job.file && canRetry(job.entry)) requeue(job)
+      if (job.file && isInRetryAll(job.entry)) requeue(job)
     }
     pump()
   }

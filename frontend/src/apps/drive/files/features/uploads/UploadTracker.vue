@@ -158,6 +158,7 @@ import {
   canRetry,
   isActive,
   isFinishing,
+  isInRetryAll,
   reconnectingStatus,
   uploadQueue,
   type UploadEntry,
@@ -175,9 +176,7 @@ const stopped = computed(() => count('interrupted'))
 const active = computed(() => entries.value.filter(isActive).length)
 /** Anything still uploading, or a folder still being read or created. */
 const busy = computed(() => active.value > 0 || !!queue.state.preparing || !!queue.state.reading)
-const retryable = computed(
-  () => entries.value.filter((entry) => entry.state !== 'cancelled' && canRetry(entry)).length,
-)
+const retryable = computed(() => entries.value.filter(isInRetryAll).length)
 const heading = computed(summaryHeading)
 const subline = computed(summaryLine)
 const overallPercent = computed(() => Math.round((queue.indicator.value?.fraction ?? 0) * 100))
