@@ -12,7 +12,7 @@
   "frontend/src/apps/drive/files/features/document/DocumentHeader.vue": 9,
   "frontend/src/apps/drive/files/features/preview/FilePreviewSurface.vue": 12,
   "frontend/src/apps/drive/files/features/preview/PreviewFallback.vue": 1,
-  "frontend/src/apps/drive/files/features/preview/TextPreview.vue": 3,
+  "frontend/src/apps/drive/files/features/preview/TextPreview.vue": 2,
   "frontend/src/apps/drive/files/features/uploads/DropOverlay.vue": 1,
   "frontend/src/apps/drive/files/pages/FilesPage.vue": 12,
   "frontend/src/apps/drive/files/pages/FilesPanel.vue": 7,

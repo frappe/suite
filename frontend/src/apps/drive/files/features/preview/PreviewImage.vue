@@ -78,10 +78,6 @@ onBeforeUnmount(() => {
       theme="gray"
       class="absolute inset-0 m-auto"
     />
-    <PreviewFallback
-      v-if="status === 'failed'"
-      failed
-      :download="download"
-    />
+    <PreviewFallback v-if="status === 'failed'" failed :download="download" />
   </div>
 </template>

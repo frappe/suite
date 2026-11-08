@@ -144,9 +144,5 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
     message="This file is not plain text. Download it to open it."
     :download="download"
   />
-  <PreviewFallback
-    v-else-if="content?.status === 'failed'"
-    failed
-    :download="download"
-  />
+  <PreviewFallback v-else-if="content?.status === 'failed'" failed :download="download" />
 </template>

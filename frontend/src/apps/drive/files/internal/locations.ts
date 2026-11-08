@@ -47,10 +47,7 @@ export function locationLabel(location: FilesLocation): string {
 }
 
 /** The path of one of the caller's own roots, which have their own pages. Any other node has none. */
-export function rootPath(
-  node: string,
-  discovered: DriveRoots | null | undefined,
-): string | null {
+export function rootPath(node: string, discovered: DriveRoots | null | undefined): string | null {
   if (node === discovered?.personal.node) return '/drive'
   if (node === discovered?.organization?.node) return '/drive/organization'
   return null

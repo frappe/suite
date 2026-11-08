@@ -21,6 +21,7 @@ import {
 } from 'vue-router'
 
 import type { DriveNode } from '@/apps/drive/client/types'
+import type { SessionStatus } from '@/platform/session'
 import type { Operation } from '@/platform/transport'
 
 import { previewImage } from './imageCache'
@@ -150,7 +151,10 @@ vi.mock('@/platform/transport', async (original) => ({
   },
 }))
 
-const account = vi.hoisted(() => ({ status: 'guest' as 'guest' | 'authenticated' }))
+interface Account {
+  status: SessionStatus
+}
+const account = vi.hoisted((): Account => ({ status: 'guest' }))
 vi.mock('@/platform/session', async (original) => {
   const actual = await original<typeof import('@/platform/session')>()
   return {

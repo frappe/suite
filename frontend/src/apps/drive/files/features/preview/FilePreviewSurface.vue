@@ -83,7 +83,10 @@ const opensAsSheet = computed(
 /** While the folder's answer loads, the button keeps its room, so the header does not shift when it comes. */
 const sheetLoading = computed(
   () =>
-    isSpreadsheetFile.value && can.value.copy && !!parent.value && parentFolder.status === 'pending',
+    isSpreadsheetFile.value &&
+    can.value.copy &&
+    !!parent.value &&
+    parentFolder.status === 'pending',
 )
 const openingAsSheet = ref(false)
 async function openAsSheet() {
