@@ -271,20 +271,20 @@ export const share = defineFlow<Event>({
 		async NEW_LINK(scene) {
 			await dialog(scene.page).getByRole("button", { name: "Sharing options" }).click();
 			await scene.page.getByRole("menuitem", { name: "Create share link" }).click();
-			const link = scene.page.getByRole("dialog", { name: "Create share link" });
+			const link = scene.dialog("Create share link");
 			await expect(link).toBeVisible();
 			await link.getByRole("switch", { name: "Password protected" }).click();
 			await link.locator("input[type=password]").fill("relaunch-2026");
 			await expect(link.getByRole("button", { name: "Create link" })).toBeEnabled();
 		},
 		async CREATE(scene) {
-			const link = scene.page.getByRole("dialog", { name: "Create share link" });
+			const link = scene.dialog("Create share link");
 			await link.getByRole("button", { name: "Create link" }).click();
-			const created = scene.page.getByRole("dialog", { name: "Link created" });
+			const created = scene.dialog("Link created");
 			await expect(created.getByRole("button", { name: "Copy link" })).toBeVisible();
 		},
 		async DONE(scene) {
-			const link = scene.page.getByRole("dialog", { name: "Link created" });
+			const link = scene.dialog("Link created");
 			await link.getByRole("button", { name: "Close" }).click();
 			await expect(link).toBeHidden();
 			await expect(dialog(scene.page).getByText(/Password set/)).toBeVisible();

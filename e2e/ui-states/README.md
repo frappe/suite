@@ -27,7 +27,7 @@ Each run writes to `out/`: screenshots in `out/<flow>/`, one `<flow>.json` per f
 
 - `flow.ts`: a flow is an XState machine plus `enter` and one step per event. State `meta.description` is what the canvas shows; `meta.transient` keeps a state in the graph without a screenshot.
 - `bench.ts`: watches the bench's port so a path that failed during a bench restart is walked again.
-- `scene.ts`: one signed-in browser per path, with its own folder under `UI states` in My files (purged on close). `hold()` and `lastHold` for mid-flight and failed requests, `as()` and `pageAs()` for a second user, `perScene()` for a value a flow keeps per path.
+- `scene.ts`: one signed-in browser per path, with its own folder under `UI states` in My files (purged on close). `hold()` and `lastHold` for mid-flight and failed requests, `dialog()`, `toast()` and `rowAction()` for the page's own widgets, `as()` and `pageAs()` for a second user, `perScene()` for a value a flow keeps per path.
 - `content.ts`: fills a folder with the mix a real folder has, and reads `fixtures/`.
 - `capture.spec.ts`: walks the shortest path to every state, screenshots each state the first time a path reaches it, records parent, event and edges.
 - `flows/`: one file per flow; `flows/index.ts` lists them in canvas order.

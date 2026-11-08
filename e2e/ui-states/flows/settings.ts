@@ -107,10 +107,6 @@ function meter(scene: Scene): Locator {
 	return scene.page.getByRole("button", { name: /^Storage: / });
 }
 
-function settingsDialog(scene: Scene): Locator {
-	return scene.page.getByRole("dialog", { name: "Settings" });
-}
-
 /** Rewrites the usage answer, then reloads so the meter reads it. */
 async function rewriteUsage(scene: Scene, usage: Partial<Usage> & Record<string, unknown>): Promise<void> {
 	await scene.page.route(USAGE, async (route: Route) => {
@@ -167,30 +163,30 @@ export const settings = defineFlow<Event>({
 		},
 		async OPEN_STATISTICS(scene) {
 			await meter(scene).click();
-			const dialog = settingsDialog(scene);
+			const dialog = scene.dialog("Settings");
 			await expect(dialog.getByText("Largest files")).toBeVisible();
 			await expect(dialog.getByText(/ used$/).first()).toBeVisible();
 		},
 		async OPEN_STATISTICS_SLOWLY(scene) {
 			await scene.hold(BREAKDOWN);
 			await meter(scene).click();
-			await expect(settingsDialog(scene).getByText("Loading…")).toBeVisible();
+			await expect(scene.dialog("Settings").getByText("Loading…")).toBeVisible();
 		},
 		async OPEN_STATISTICS_FAILS(scene) {
 			const hold = await scene.hold(BREAKDOWN);
 			await hold.abort(500);
 			await meter(scene).click();
-			await expect(settingsDialog(scene).getByText("Storage use could not load.")).toBeVisible();
+			await expect(scene.dialog("Settings").getByText("Storage use could not load.")).toBeVisible();
 		},
 		async ONLY_TRASH_LEFT(scene) {
 			await rewriteUsage(scene, { by_type: [], largest: [] });
 			await meter(scene).click();
-			await expect(settingsDialog(scene).getByText(/^No active files/).first()).toBeVisible();
+			await expect(scene.dialog("Settings").getByText(/^No active files/).first()).toBeVisible();
 		},
 		async OPEN_EXTERNAL_ACCESS_AS_ADMIN(scene) {
 			await answerWebdav(scene, { globally_enabled: false, is_admin: true });
 			await meter(scene).click();
-			const dialog = settingsDialog(scene);
+			const dialog = scene.dialog("Settings");
 			await dialog.getByText("External access", { exact: true }).first().click();
 			await expect(dialog.getByRole("switch", { name: "Enable WebDAV" })).toBeVisible();
 		},
@@ -205,13 +201,13 @@ export const settings = defineFlow<Event>({
 				api_key: null,
 			});
 			await meter(scene).click();
-			const dialog = settingsDialog(scene);
+			const dialog = scene.dialog("Settings");
 			await dialog.getByText("External access", { exact: true }).first().click();
 			await expect(dialog.getByRole("button", { name: "Generate keys" })).toBeVisible();
 		},
 		async GENERATE_KEYS(scene) {
-			await settingsDialog(scene).getByRole("button", { name: "Generate keys" }).click();
-			const secret = scene.page.getByRole("dialog", { name: "API access" });
+			await scene.dialog("Settings").getByRole("button", { name: "Generate keys" }).click();
+			const secret = scene.dialog("API access");
 			await expect(secret.getByText("API secret", { exact: true })).toBeVisible();
 		},
 	},

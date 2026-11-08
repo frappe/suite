@@ -321,16 +321,16 @@ export const upload = defineFlow<Event>({
 				{ name: "Quarter review.pdf", mimeType: "application/pdf", buffer: fixture("Quarter review.pdf") },
 				{ name: "Logo.png", mimeType: "image/png", buffer: fixture("Logo.png") },
 			]);
-			await expect(scene.page.getByRole("dialog", { name: "A file with this name exists" })).toBeVisible();
+			await expect(scene.dialog("A file with this name exists")).toBeVisible();
 		},
 		async SKIP_ALL(scene) {
-			const dialog = scene.page.getByRole("dialog", { name: "A file with this name exists" });
+			const dialog = scene.dialog("A file with this name exists");
 			await dialog.getByText("Apply to all").click();
 			await dialog.getByRole("button", { name: "Skip", exact: true }).click();
 			await expect(entries(scene.page, "skipped")).toHaveCount(2);
 		},
 		async KEEP_BOTH_ALL(scene) {
-			const dialog = scene.page.getByRole("dialog", { name: "A file with this name exists" });
+			const dialog = scene.dialog("A file with this name exists");
 			await dialog.getByText("Apply to all").click();
 			await dialog.getByRole("button", { name: "Keep both" }).click();
 			await expect(entries(scene.page, "done")).toHaveCount(2, TRANSFER);

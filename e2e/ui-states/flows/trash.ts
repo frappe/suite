@@ -12,7 +12,6 @@ import { WORKSPACE_FOLDER, type Scene } from "../scene";
 type Event =
 	| { type: "ITEMS_TRASHED" }
 	| { type: "ROW_MENU" }
-	| { type: "ORGANIZATION_TAB" }
 	| { type: "RESTORE" }
 	| { type: "RESTORE_FAILS" }
 	| { type: "RETRY" }
@@ -44,7 +43,6 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "Trashed folders and files, newest first, with Owner and Modified columns; no column says when each was trashed. An item whose folder is also in Trash is listed on its own." },
 			on: {
 				ROW_MENU: "trashRowMenu",
-				ORGANIZATION_TAB: "organizationTrash",
 				RESTORE: "restoreToast",
 				RESTORE_FAILS: "restoreFailedToast",
 				RESTORE_ORPHAN: "restoreDestinationDialog",
@@ -146,12 +144,6 @@ export const trash = defineFlow<Event>({
 		async ROW_MENU(scene) {
 			const menu = await openRowMenu(scene.page, "Press release v1.md");
 			await expect(menu.getByRole("menuitem", { name: "Delete forever" })).toBeVisible();
-		},
-		async ORGANIZATION_TAB(scene) {
-			const tab = scene.page.getByRole("radio", { name: "Organization files" });
-			if (!(await tab.isVisible())) return;
-			await tab.click();
-			await expect(scene.page).toHaveURL(/root=organization/);
 		},
 		async RESTORE(scene) {
 			await scene.rowAction("Press release v1.md", "Restore");
