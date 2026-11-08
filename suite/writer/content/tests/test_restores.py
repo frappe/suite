@@ -2,18 +2,22 @@ import base64
 import gzip
 import json
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta
 from http import HTTPStatus
 from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 import frappe
 import pycrdt
-from frappe.utils import now_datetime
+from frappe.utils import get_system_timezone, now_datetime
 
 from suite import drive
+from suite.content import restore_notice
 from suite.content.http import routes
 from suite.drive._core.principals import Principals
 from suite.drive._core.versions import read_version
+from suite.writer import content as writer_content
+from suite.writer.content.tests.drive_callback_case import share_as_writer
 from suite.writer.content.tests.support import (
     WRITER,
     CheckpointCase,
@@ -47,9 +51,9 @@ class TestRestoreFence(CheckpointCase):
         rows = drive.list_versions(self.node)["rows"]
         return [row["label"] for row in rows if row["kind"] == "milestone"]
 
-    def milestone_seq(self, label: str) -> int:
+    def last_milestone_seq(self) -> int:
         rows = drive.list_versions(self.node)["rows"]
-        return next(row["seq"] for row in rows if row["label"] == label)
+        return next(row["seq"] for row in rows if row["kind"] == "milestone")
 
     # The document state a version holds, as its stored bytes give it
     def version_state(self, seq: int) -> bytes:
@@ -212,6 +216,81 @@ class TestRestoreFence(CheckpointCase):
             (control_event, control["kind"], control["restore_rev"]), ("suite_collab_ctl", "restored", 3)
         )
 
+    def test_who_restored_what_reaches_a_pull_and_never_the_room_or_a_public_reader(self):
+        share_as_writer(self.node, "$PUBLIC", drive.READ)
+        frappe.db.commit()
+        seq = drive.take_version(self.node, kind="named", label="Draft for review")
+        taken = frappe.db.get_value("Drive Node Version", {"node": self.node, "seq": seq}, "creation")
+        restoring = self.open_tab()
+        _status, fence = self.begin(version=seq)
+        with patch("frappe.publish_realtime") as publish:
+            self.push_word(restoring, "old ", restore=fence["token"])
+
+        heard_in_room = json.dumps([call.args for call in publish.call_args_list])
+        restored = read_frame(call_route(routes.updates_get, self.node).get_data())[0]["restored"]
+        frappe.set_user("Guest")
+        public_pull = read_frame(call_route(routes.updates_get, self.node).get_data())[0]
+        frappe.set_user(WRITER)
+        taken_at = datetime.fromisoformat(restored["version"]["taken_at"])
+
+        self.assertNotIn(WRITER, heard_in_room)
+        self.assertNotIn("Draft for review", heard_in_room)
+        self.assertNotIn("restored", public_pull)
+        self.assertEqual(
+            (
+                restored["by"],
+                restored["version"]["seq"],
+                restored["version"]["label"],
+                restored["restore_rev"],
+            ),
+            (WRITER, seq, "Draft for review", 3),
+        )
+        self.assertEqual(
+            taken_at.astimezone(ZoneInfo(get_system_timezone())).replace(tzinfo=None),
+            taken.replace(microsecond=0),
+        )
+
+    def test_a_public_reader_holding_a_locked_edit_link_still_pulls_after_a_restore(self):
+        share_as_writer(self.node, "$PUBLIC", drive.READ)
+        link = share_as_writer(self.node, "$LINK", drive.EDIT, password="a-long-enough-password")
+        frappe.db.commit()
+        restoring = self.open_tab()
+        _status, fence = self.begin()
+        self.push_word(restoring, "old ", restore=fence["token"])
+
+        frappe.set_user("Guest")
+        token = link["principal"].removeprefix("$LINK:")
+        pulled = read_frame(call_route(routes.updates_get, self.node, links=token).get_data())[0]
+        frappe.set_user(WRITER)
+
+        self.assertNotIn("restored", pulled)
+
+    def test_a_refused_history_reader_of_any_kind_gets_no_restore_notice(self):
+        app = writer_content.APP
+        doc_id = self.doc_row(self.node).id
+        restore_notice.hold(app, doc_id, "token", None)
+        restore_notice.landed(app, doc_id, "token", 3)
+        self.addCleanup(frappe.cache.delete_value, restore_notice.latest_key(app, doc_id))
+        self.assertEqual(restore_notice.for_reader(app, doc_id, self.node)["restored"]["restore_rev"], 3)
+        for refusal in (drive.DriveForbidden, drive.DriveNotFound, drive.DriveLocked, drive.DriveLinkExpired):
+            with self.subTest(refusal=refusal.__name__):
+                with patch.object(drive, "check_history_reader", side_effect=refusal("No")):
+                    self.assertEqual(restore_notice.for_reader(app, doc_id, self.node), {})
+
+    def test_the_version_kept_first_is_named_after_the_version_restored_and_credits_the_restorer(self):
+        named = drive.take_version(self.node, kind="named", label="Draft for review")
+        automatic = drive.take_version(self.node, kind="auto")
+        _status, fence = self.begin(version=named)
+        self.cancel(fence["token"])
+        self.type_into(self.node, [" three"])
+        self.begin(version=automatic)
+
+        rows = [row for row in drive.list_versions(self.node)["rows"] if row["kind"] == "milestone"]
+
+        self.assertEqual(rows[1]["label"], "Before restoring “Draft for review”")
+        self.assertRegex(rows[0]["label"], r"^Before restoring the version from \d{1,2}:\d{2}\s?[AP]M$")
+        self.assertEqual({row["actor"] for row in rows}, {WRITER})
+
     def test_opening_and_pulling_tell_the_last_restore_and_a_standing_fence(self):
         restoring = self.open_tab()
         _status, fence = self.begin()
@@ -241,7 +320,7 @@ class TestRestoreFence(CheckpointCase):
         self.set_doc(self.node, restored_at=now_datetime() - timedelta(seconds=61))
 
         undoing = self.open_tab()
-        before = self.milestone_seq("Before restoring version 1")
+        before = self.last_milestone_seq()
         _status, fence = self.begin(version=before)
         status, _landed = self.push_restore(undoing, self.version_state(before), fence["token"])
 

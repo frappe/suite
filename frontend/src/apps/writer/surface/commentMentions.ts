@@ -33,6 +33,13 @@ export function isComposing(event: KeyboardEvent) {
   return event.isComposing || event.keyCode === IME_KEY_CODE
 }
 
+/** Enter submits a comment box; Shift+Enter and a word still being composed stay in the box. */
+export function submitOnEnter(event: KeyboardEvent, submit: () => unknown) {
+  if (event.shiftKey || isComposing(event)) return
+  event.preventDefault()
+  void submit()
+}
+
 /** The text typed after an `@` that starts a word, up to the caret; null outside one. */
 export function mentionQuery(text: string, caret: number): MentionQuery | null {
   const match = QUERY_BEFORE_CARET.exec(text.slice(0, caret))
@@ -113,6 +120,11 @@ export function toTokens(text: string, picked: PickedPerson[]) {
     const user = users.get(label)
     return `@[${user}]`
   })
+}
+
+/** The people a stored text mentions, each once. */
+export function mentionedIn(content: string) {
+  return [...new Set(Array.from(content.matchAll(TOKEN), ([, user = '']) => user))]
 }
 
 /** The text split around its mentions; with `mentions`, only those people count. */

@@ -30,6 +30,7 @@ export interface PullerRoom extends AccessRoom {
   setHeld(held: Held | null): void
   readonly fence: Pick<RestoreFence, 'follow'>
   followRestore(rev: unknown): boolean
+  noticeHeard(notice: Record<string, unknown> | undefined): void
   updateLimits(limits: Limits): void
   markNeedsRebuild(): void
   stopForGood(reason: string): Promise<void>
@@ -176,6 +177,7 @@ export class Puller {
       return room.markNeedsRebuild()
     }
 
+    room.noticeHeard(header.restored)
     room.setHeld(parseHeld(header.held))
     room.fence.follow(header.restoring_ms)
     if (!room.followRestore(header.restore_rev)) return

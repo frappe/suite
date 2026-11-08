@@ -115,12 +115,13 @@ export function useCommentDrafts({ session, user, room, refreshThreads }: DraftO
     list.send(draft)
     draft.isPosting = true
     const thread = await postOnceSaved(draft, authorName)
-    draft.isPosting = false
+    // Its row stays until the thread is in the list, so the comment never leaves the screen
     if (thread) {
-      list.discard(draft)
       await refreshThreads()
+      list.discard(draft)
     }
 
+    draft.isPosting = false
     return thread
   }
 

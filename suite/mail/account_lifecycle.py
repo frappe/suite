@@ -1,5 +1,6 @@
 """Complete provider account workflows, including first-login credential isolation."""
 
+import json
 import secrets
 from uuid import uuid4
 
@@ -11,8 +12,10 @@ from frappe.utils.password import remove_encrypted_password
 from frappe.utils.password import update_password as set_local_password
 
 from suite.mail.directory import get_active_domain_names, provision_account, set_account_enabled
-from suite.mail.jmap import clear_jmap_session
+from suite.mail.jmap import clear_jmap_session, provisioning
+from suite.mail.storage import queue_refresh
 from suite.mail.suite_cloud import get_client
+from suite.mail.utils import log_mail_error
 from suite.suite_core.account_state import read, write
 from suite.suite_core.administration import require_admin
 from suite.suite_core.storage import state
@@ -53,7 +56,17 @@ def provision(user: str, address: str, *, password: str, operation: str, **optio
         settings = frappe.get_doc("User Settings", {"user": user})
         settings.username = address
         settings.app_password = account["app_password"]
-        settings.save(ignore_permissions=True)
+        # A failed save never clears the cache, and a client would sign in with the address it holds.
+        frappe.clear_document_cache("User Settings", settings.name)
+        # Saving sets up the new account's folders and filters as the user, who stays
+        # disabled while an Admin recreates their Mail account (§4.3).
+        with provisioning(user):
+            settings.save(ignore_permissions=True)
+    except Exception:
+        # Error Log rows outlive a rollback, which accepting an invitation does on failure. Recreation
+        # shows the admin only a fixed message, so this may be the one trace left.
+        log_mail_error(f"Account setup failed for {address}", frappe.get_traceback())
+        raise
     finally:
         client.call("mail.accounts.set_account_enabled", email=address, enabled=False)
     clear_jmap_session(user)
@@ -145,8 +158,6 @@ def recreate(user: str, address: str) -> dict:
 
 
 def invalidate_measurements(user: str, address: str) -> None:
-    import json
-
     doc, _policy, measurements = state(lock=True)
     measurements.get("entries", {}).pop(address, None)
     # None, not removed: a user the refresh doesn't list has no mailbox (`personal_mail_usage`).
@@ -154,6 +165,7 @@ def invalidate_measurements(user: str, address: str) -> None:
     measurements.update(site_mail=None, stale=True)
     doc.measurements = json.dumps(measurements)
     doc.save(ignore_permissions=True)
+    queue_refresh()
 
 
 def complete_password_change(user: str, password: str, *, allow_expired: bool = False) -> None:

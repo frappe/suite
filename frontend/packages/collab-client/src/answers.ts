@@ -1,4 +1,4 @@
-import type { Answer, OpenOptions } from './types'
+import type { Answer, OpenOptions, VersionRestored } from './types'
 
 export const HTTP_OK = 200
 export const HTTP_ACCEPTED = 202
@@ -101,4 +101,17 @@ export function toOpenError(answer: Answer, options: OpenOptions) {
   }
 
   return new CollabOpenError(reply.status, reason)
+}
+
+// A `restored` notice's restorer and version; what it lacks or misspells reads as unknown
+export function readRestored(heard: Record<string, unknown>): VersionRestored {
+  const by = typeof heard.by === 'string' ? heard.by : null
+  const wire = heard.version as { seq?: unknown; label?: unknown; taken_at?: unknown } | null
+  const { seq, label, taken_at: takenAt } = wire ?? {}
+  const isLabel = label === null || typeof label === 'string'
+  if (typeof seq !== 'number' || typeof takenAt !== 'string' || !isLabel) {
+    return { by, version: null }
+  }
+
+  return { by, version: { seq, label, takenAt } }
 }

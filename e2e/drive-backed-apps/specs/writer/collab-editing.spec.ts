@@ -283,7 +283,7 @@ test.describe("Writer collaboration", () => {
 		await typeParagraph(collaborator.page, "Typed while offline");
 		await typeParagraph(owner.page, "Typed while the other tab was offline");
 		await expectSaved(owner.page);
-		await expect(collaborator.page.getByText("Saved", { exact: true })).toBeHidden();
+		await expect(collaborator.page.locator('[data-save-state="clean"]')).toBeHidden();
 
 		await collaborator.context.setOffline(false);
 
@@ -385,7 +385,7 @@ test.describe("Writer collaboration", () => {
 		}
 	});
 
-	test("a second tab counts the first tab's unsent edit and shows Saved once it is sent", async ({
+	test("a second tab says Saving… for the first tab's unsent edit and Saved once it is sent", async ({
 		owner,
 	}) => {
 		// A failed push retries after up to 30 s
@@ -393,16 +393,16 @@ test.describe("Writer collaboration", () => {
 		await owner.page.route(PUSHES, dropPushes);
 		await openWriterDocument(owner.page, node);
 		await typeParagraph(owner.page, "Held in the first tab");
-		const firstCount = await unsentCount(owner.page);
+		await expectSaving(owner.page);
 
 		const second = await owner.context.newPage();
 		await openWriterDocument(second, node);
-		await expect(second.getByText(firstCount, { exact: true })).toBeVisible();
-		await expect(second.getByText("Saved", { exact: true })).toBeHidden();
+		await expectSaving(second);
+		await expect(second.locator('[data-save-state="clean"]')).toBeHidden();
 		expect(await editorBlocks(second)).not.toContain("Held in the first tab");
 
 		await owner.page.unroute(PUSHES, dropPushes);
-		await expect(second.getByText("Saved", { exact: true })).toBeVisible({ timeout: 60_000 });
+		await expect(second.locator('[data-save-state="clean"]')).toBeVisible({ timeout: 60_000 });
 		await expectSaved(owner.page);
 	});
 
@@ -413,10 +413,10 @@ test.describe("Writer collaboration", () => {
 		await owner.page.route(PUSHES, dropPushes);
 		await openWriterDocument(owner.page, node);
 		await typeParagraph(owner.page, "Left by the closed tab");
-		const firstCount = await unsentCount(owner.page);
+		await expectSaving(owner.page);
 		const second = await owner.context.newPage();
 		await openWriterDocument(second, node);
-		await expect(second.getByText(firstCount, { exact: true })).toBeVisible();
+		await expectSaving(second);
 
 		await owner.page.close();
 
@@ -458,11 +458,9 @@ function editorKind() {
 	return names.includes("collaboration") ? "collab" : "plain";
 }
 
-// The header's "<n> unsent", once the tab holds unsent work
-async function unsentCount(page: Page): Promise<string> {
-	const count = page.getByText(/^\d+ unsent$/);
-	await expect(count).toBeVisible();
-	return (await count.textContent()) ?? "";
+// Edits not saved yet: one being sent, or ones waiting to be sent again
+async function expectSaving(page: Page): Promise<void> {
+	await expect(page.locator('[data-save-state="saving"], [data-save-state="unsaved"]')).toBeVisible();
 }
 
 function boldMention(page: Page) {

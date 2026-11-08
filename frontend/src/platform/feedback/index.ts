@@ -34,6 +34,7 @@ export const FeedbackProvider = defineComponent({
 })
 
 export const toast = frappeToast
+export type { ToastId } from 'frappe-ui'
 
 export function confirm(options: ConfirmOptions): Promise<boolean> {
   return new Promise((resolve) => {

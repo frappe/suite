@@ -46,6 +46,10 @@ def document(name: str) -> WriterRow:
     doc.check_permission("read")
     doc.apply_fieldlevel_read_permissions()
     row = doc.as_dict()
+    if frappe.session.user == "Guest" and not _may_comment(doc.node):
+        # A public reader sees the document, not its discussion
+        row.pop("ycomments", None)
+
     if doc.node and not log.find(writer_content.APP, doc.node):
         row["conversion"] = conversion_status(writer_content.APP, doc.node)
 
@@ -56,6 +60,14 @@ def document(name: str) -> WriterRow:
         row["content_modified"] = get_datetime(saved).replace(tzinfo=zone).astimezone(UTC).isoformat()
 
     return row
+
+
+def _may_comment(node: str | None) -> bool:
+    try:
+        drive.check(node, drive.COMMENT)
+    except drive.DriveError:
+        return False
+    return True
 
 
 @frappe.whitelist(methods=["POST"])

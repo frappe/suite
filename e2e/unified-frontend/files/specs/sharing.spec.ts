@@ -81,9 +81,7 @@ const peopleField = (dialog: Locator) => dialog.getByRole("combobox", { name: "A
 async function pickPerson(page: Page, dialog: Locator) {
 	await peopleField(dialog).fill(PERSON.split("@")[0]);
 	await page.getByRole("option", { name: new RegExp(PERSON_NAME) }).click();
-	// The options stay open for more picks; Escape closes them, not the dialog.
-	await peopleField(dialog).press("Escape");
-	await expect(dialog).toBeVisible();
+	// The options close on a pick, so the person picked shows.
 	await expect(dialog.getByRole("list", { name: "People to add" }).getByRole("listitem")).toContainText([PERSON_NAME]);
 }
 

@@ -1,7 +1,7 @@
 import { createDocument, Editor as HeadlessEditor } from '@tiptap/core'
+import { EditorState, Selection, TextSelection } from '@tiptap/pm/state'
 import { cellAround } from '@tiptap/pm/tables'
 import { Editor } from '@tiptap/vue-3'
-import { EditorState, Selection, TextSelection } from 'prosemirror-state'
 import { nextTick, reactive, ref, watch } from 'vue'
 
 import { batchCommand, editElementCommand } from '@/apps/slides/stores/commands'

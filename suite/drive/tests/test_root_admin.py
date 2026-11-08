@@ -351,7 +351,7 @@ class TestUserOffboarding(IntegrationTestCase):
         email = f"drive-idempotent-{uuid4().hex}@example.com"
         self.assertEqual(
             discard_personal_records(email),
-            {"Drive Recent": 0, "Drive Favourite": 0, "Drive Notification": 0},
+            {"Drive Recent": 0, "Drive Favourite": 0, "Drive Notification": 0, "Drive Download": 0},
         )
         with self.assertRaises(frappe.ValidationError):
             discard_personal_records("")

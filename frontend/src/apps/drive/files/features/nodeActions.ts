@@ -63,7 +63,8 @@ export function nodeActions(node: ActionNode, signedIn: boolean): NodeActions {
     // Share needs MANAGE (spec §7.2). A link gives at most EDIT, so guests and link-only readers never see it.
     share: manage,
     copyLink: true,
-    download: node.kind !== 'link',
+    // A folder or a link downloads in a zip; a link becomes a `.url` shortcut.
+    download: true,
     rename: canRename(node),
     move: edit,
     copy: true,

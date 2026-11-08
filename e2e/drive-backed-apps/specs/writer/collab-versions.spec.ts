@@ -19,6 +19,7 @@ import { discardNode, getNode, mediaNodes, purgeNode, trashNode } from "../../he
 import {
 	createWriterDocument,
 	openWriterDocument,
+	toggleWriterPanel,
 	uniqueWriterTitle,
 	writerEditor,
 } from "../../helpers/writer";
@@ -48,10 +49,7 @@ test.describe("Writer collaboration", () => {
 		await saveNamedVersion(owner.context.request, node, "Before the preview");
 		await openWriterDocument(collaborator.page, node);
 
-		await owner.page
-			.getByRole("button", { name: /versions/i })
-			.first()
-			.click();
+		await toggleWriterPanel(owner.page, "Versions");
 		await owner.page
 			.getByRole("complementary", { name: "Versions" })
 			.getByRole("button", { name: /^Before the preview/ })
@@ -107,8 +105,8 @@ test.describe("Writer collaboration", () => {
 		await expect(page.getByText("Version restored")).toBeVisible();
 		const restored = await expectConverged(testApi, node, [page, collaborator.page], ["Kept in the version"]);
 		expect(restored.filter(Boolean)).toEqual(["Kept in the version"]);
-		await expect(panel.getByRole("button", { name: /^Before restoring version \d+/ })).toHaveCount(1);
-		await panel.getByRole("button", { name: /^Before restoring version \d+/ }).click();
+		await expect(panel.getByRole("button", { name: /^Before restoring “Draft one”/ })).toHaveCount(1);
+		await panel.getByRole("button", { name: /^Before restoring “Draft one”/ }).click();
 		await expect(page.getByLabel("Version preview")).toContainText("Typed after the version");
 		await panel.getByRole("button", { name: "Current version", exact: true }).click();
 
@@ -212,10 +210,7 @@ test.describe("Writer collaboration", () => {
 		await owner.page.keyboard.type("First words");
 		await expectSaved(owner.page);
 
-		await owner.page
-			.getByRole("button", { name: /versions/i })
-			.first()
-			.click();
+		await toggleWriterPanel(owner.page, "Versions");
 		const versions = owner.page
 			.getByRole("complementary", { name: "Versions" })
 			.getByRole("button", { name: AUTOMATIC_VERSION });
@@ -239,10 +234,7 @@ test.describe("Writer collaboration", () => {
 		await typeParagraph(page, "Typed after the version");
 		await expectSaved(page);
 
-		await page
-			.getByRole("button", { name: /versions/i })
-			.first()
-			.click();
+		await toggleWriterPanel(page, "Versions");
 		const panel = page.getByRole("complementary", { name: "Versions" });
 		async function download() {
 			const downloaded = page.waitForEvent("download");
@@ -302,23 +294,20 @@ test.describe("Writer collaboration", () => {
 		await expect(panel.getByRole("button", { name: /^Offline try/ })).toHaveCount(0);
 	});
 
-	test("closing the Versions or Comments panel returns focus to the button that opened it", async ({
-		owner,
-	}) => {
+	test("closing the Versions or Comments panel returns focus to the text", async ({ owner }) => {
 		const { page } = owner;
 		await openWriterDocument(page, node);
-		for (const name of ["Versions", "Comments"]) {
-			const opener = page.getByRole("banner").getByRole("button", { name, exact: true });
-			await opener.click();
+		for (const name of ["Versions", "Comments"] as const) {
+			await toggleWriterPanel(page, name);
 			await page
 				.getByRole("complementary", { name })
 				.getByRole("button", { name: "Close panel" })
 				.click();
-			await expect(opener).toBeFocused();
+			await expect(writerEditor(page)).toBeFocused();
 		}
 	});
 
-	test("the Versions panel takes the table of contents' place on the right and moves the text like it", async ({
+	test("the Versions panel opens on the right and moves the text with it", async ({
 		owner,
 	}) => {
 		const { page } = owner;
@@ -331,16 +320,6 @@ test.describe("Writer collaboration", () => {
 		await page.keyboard.type("## Second heading");
 		await expectSaved(page);
 		await saveNamedVersion(owner.context.request, node, "One");
-		const showToc = page.getByRole("button", { name: "Show table of contents" });
-		if (await showToc.isVisible()) {
-			await showToc.click();
-		}
-
-		const tocHeading = page.getByText("Table of contents", { exact: true });
-		const tocEntry = page.getByRole("link", { name: "First heading" });
-		const tocEntryBox = (await tocEntry.boundingBox())!;
-		const tocHeadingBox = (await tocHeading.boundingBox())!;
-		const tocGap = tocEntryBox.y - tocHeadingBox.y;
 		const centredLine = page
 			.getByLabel("Document editor")
 			.locator("p", { hasText: "Centred text" });
@@ -390,10 +369,7 @@ test.describe("Writer collaboration", () => {
 		}
 
 		const opening = sampleMotion();
-		await page
-			.getByRole("button", { name: /versions/i })
-			.first()
-			.click();
+		await toggleWriterPanel(page, "Versions");
 		expectInStep(await opening);
 		const versionsPanel = page.getByRole("complementary", { name: "Versions" });
 		const row = versionsPanel.getByRole("button", { name: /^One/ });
@@ -405,9 +381,6 @@ test.describe("Writer collaboration", () => {
 		const headingBox = (await versionsPanel
 			.getByRole("heading", { name: "Versions" })
 			.boundingBox())!;
-		const firstRowBox = (await versionsPanel
-			.getByRole("button", { name: "Current version", exact: true })
-			.boundingBox())!;
 		expect(
 			await versionsPanel
 				.getByRole("button", { name: "Current version", exact: true })
@@ -417,12 +390,8 @@ test.describe("Writer collaboration", () => {
 					return range.getBoundingClientRect().x;
 				}),
 		).toBe(headingBox.x);
-		expect(firstRowBox.y - headingBox.y).toBe(tocGap);
 
-		await page
-			.getByRole("button", { name: /comments/i })
-			.first()
-			.click();
+		await toggleWriterPanel(page, "Comments");
 		const comments = page.getByRole("complementary", { name: "Comments" });
 		const commentsHeading = (await comments
 			.getByRole("heading", { name: "Comments" })
@@ -434,10 +403,6 @@ test.describe("Writer collaboration", () => {
 				return range.getBoundingClientRect().x;
 			}),
 		).toBe(commentsHeading.x);
-		expect(
-			(await comments.getByRole("button", { name: "Add a comment" }).boundingBox())!.y -
-				commentsHeading.y,
-		).toBe(tocGap);
 
 		const closing = sampleMotion();
 		await page.getByRole("button", { name: "Close panel" }).click();
@@ -457,10 +422,7 @@ test.describe("Writer collaboration", () => {
 		await typeParagraph(page, "Second version");
 		await expectSaved(page);
 		await saveNamedVersion(owner.context.request, node, "Two");
-		await page
-			.getByRole("button", { name: /versions/i })
-			.first()
-			.click();
+		await toggleWriterPanel(page, "Versions");
 		const panel = page.getByRole("complementary", { name: "Versions" });
 		await expect.poll(async () => (await panel.boundingBox())?.width).toBe(321);
 		const editorText = page.getByLabel("Document editor");
@@ -549,10 +511,7 @@ async function slowPushes(route: Route) {
 const AUTOMATIC_VERSION = /^\d{1,2}:\d{2}/;
 
 async function openVersions(page: Page) {
-	await page
-		.getByRole("button", { name: /versions/i })
-		.first()
-		.click();
+	await toggleWriterPanel(page, "Versions");
 	return page.getByRole("complementary", { name: "Versions" });
 }
 
@@ -581,13 +540,17 @@ async function pictureInVersion(page: Page, node: string): Promise<string> {
 async function openRestoreDialog(page: Page): Promise<Locator> {
 	const panel = await openVersions(page);
 	await panel.getByRole("button", { name: /^With a picture/ }).click();
-	await panel.getByRole("button", { name: "Restore this version" }).click();
+	await previewBar(page, "With a picture").getByRole("button", { name: "Restore this version" }).click();
 	return page.getByRole("dialog");
 }
 
 async function restoreFromPreview(page: Page, panel: Locator, label: string) {
 	await panel.getByRole("button", { name: new RegExp(`^${label}`) }).click();
 	await expect(page.getByText(`Viewing ${label}`)).toBeVisible();
-	await panel.getByRole("button", { name: "Restore this version" }).click();
+	await previewBar(page, label).getByRole("button", { name: "Restore this version" }).click();
 	await page.getByRole("dialog").getByRole("button", { name: "Restore", exact: true }).click();
+}
+
+function previewBar(page: Page, label: string) {
+	return page.getByRole("status").filter({ hasText: `Viewing ${label}` });
 }

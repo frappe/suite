@@ -12,7 +12,7 @@
 // column F is now `setCol(F, {bold:true})`, not 100k cell writes that bloat the
 // saved payload to 100MB+ and freeze the main thread.
 
-import { colLabel, parseCellId } from '../utils/cells.js'
+import { cellId, colLabel, parseCellId } from '../utils/cells.js'
 import { deepClone } from '../utils/deep-clone.js'
 import { remapCellKeys, remapIndexKeys } from './ref-remap.js'
 import type { CellPos, IndexMap } from './types.js'
@@ -153,6 +153,32 @@ export function createFormatsEngine() {
   }
   function applyToRows(rows: readonly number[], format: Format, sheet = 'Sheet1') {
     for (const r of rows) setRow(r, format, sheet)
+  }
+
+  // Cells in these columns whose `key` beats the column layer: set on the cell
+  // itself, or on its row (row < cell, but col < row). Writing the column alone
+  // leaves these at their old value.
+  function overridesInCols(cols: readonly number[], key: string, sheet = 'Sheet1'): string[] {
+    const s = store[sheet]
+    if (!s) return []
+    const inCols = new Set(cols)
+    const ids = new Set(
+      _entries(s.cells, (p) => inCols.has(p.col))
+        .filter((e) => e.fmt[key] != null)
+        .map((e) => e.id),
+    )
+    for (const [r, fmt] of Object.entries(s.rows))
+      if (fmt[key] != null) for (const c of cols) ids.add(cellId(Number(r), c))
+    return [...ids]
+  }
+  // Cells in these rows whose `key` is set on the cell itself.
+  function overridesInRows(rows: readonly number[], key: string, sheet = 'Sheet1'): string[] {
+    const s = store[sheet]
+    if (!s) return []
+    const inRows = new Set(rows)
+    return _entries(s.cells, (p) => inRows.has(p.row))
+      .filter((e) => e.fmt[key] != null)
+      .map((e) => e.id)
   }
 
   function toggleColumns(cols: readonly number[], key: string, sheet = 'Sheet1') {
@@ -341,6 +367,8 @@ export function createFormatsEngine() {
     replaceRow,
     applyToColumns,
     applyToRows,
+    overridesInCols,
+    overridesInRows,
     toggleColumns,
     toggleRows,
     clearColumns,
