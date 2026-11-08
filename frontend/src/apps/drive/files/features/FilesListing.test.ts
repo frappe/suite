@@ -893,19 +893,28 @@ describe('FilesListing keyboard', () => {
     expect(tabbable(root)).toEqual(['delta'])
   })
 
-  it('opens with Enter, and leaves Mod+Enter to the new-tab shortcut', async () => {
-    for (const modifier of [{ metaKey: true }, { ctrlKey: true }]) {
-      const { root, events } = mount({ rows: five })
-      await nextTick()
-      root.querySelector<HTMLElement>('[data-node="beta"]')!.focus()
+  describe('Enter and the new-tab key', () => {
+    afterEach(() => vi.restoreAllMocks())
 
-      await press('Enter', modifier)
-      expect(events.opened).toEqual([])
+    for (const [platform, newTab, other] of [
+      ['MacIntel', { metaKey: true }, { ctrlKey: true }],
+      ['Linux x86_64', { ctrlKey: true }, { metaKey: true }],
+    ] as const) {
+      it(`leaves the new-tab key to its shortcut and opens with any other Enter, on ${platform}`, async () => {
+        vi.spyOn(navigator, 'platform', 'get').mockReturnValue(platform)
+        const { root, events } = mount({ rows: five })
+        await nextTick()
+        root.querySelector<HTMLElement>('[data-node="beta"]')!.focus()
 
-      await press('Enter')
-      expect(events.opened).toEqual(['beta'])
-      cleanup?.()
-      cleanup = undefined
+        await press('Enter', newTab)
+        expect(events.opened).toEqual([])
+
+        await press('Enter', other)
+        expect(events.opened).toEqual(['beta'])
+
+        await press('Enter')
+        expect(events.opened).toEqual(['beta', 'beta'])
+      })
     }
   })
 
