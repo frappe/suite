@@ -50,7 +50,7 @@ test("a rename conflict keeps the dialog open with the server message", async ({
 	await dialog.getByRole("button", { name: "Rename" }).click();
 
 	await expect(dialog).toBeVisible();
-	await expect(dialog.getByText(/already|exists|conflict/i)).toBeVisible();
+	await expect(dialog.getByText("That name is taken in this folder.")).toBeVisible();
 	await expect(dialog.getByRole("textbox")).toHaveValue(sibling.title);
 
 	const stored = await getNode(api, target.name);
