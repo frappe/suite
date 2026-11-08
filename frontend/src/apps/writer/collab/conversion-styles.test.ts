@@ -1717,7 +1717,6 @@ describe('convertLegacy on table cell styles', () => {
 
   it.each([
     'border: 1px solid red; position: absolute',
-    'background: #123456',
     'background-color: #fef08a !important',
     'overflow-x: hidden',
     'overflow: hidden; overflow-x: auto',
@@ -1813,6 +1812,69 @@ describe('convertLegacy on table cell styles', () => {
     const result = convert(yTable(yCell('tableCell', { colspan: 2, colwidth: [100] })))
 
     expect(cellOf(result.state).attrs).toMatchObject({ colspan: 2, colwidth: [100] })
+  })
+})
+
+describe('convertLegacy on a table pasted from Word', () => {
+  function converted(cell: string) {
+    return convert({ content: null, html: cell, collab: 0, ycomments: null })
+  }
+
+  it('keeps its colour, width and borders, and records its height', () => {
+    const style =
+      'width:30.6pt; border:solid black 1.0pt; border-left:none; background:#C5DFB3; padding:0in 0in 0in 0in; height:26.35pt'
+
+    const result = converted(htmlCell(`style="${style}"`))
+
+    const { colwidth, style: kept } = cellOf(result.state).attrs
+    expect(colwidth).toEqual([41])
+    expect(kept).toContain('background-color: rgb(197, 223, 179)')
+    expect(kept).toContain('border-style: solid solid solid none')
+    expect(kept).toContain('border-width: 1pt 1pt 1pt medium')
+    expect(kept).not.toMatch(/height|[^-]width: 30/)
+    expect(result.dropped).toEqual([{ kind: 'cell-height', count: 1 }])
+  })
+
+  it.each([
+    ['background:yellow', 'background-color: yellow;'],
+    ['background:#D9D9D9', 'background-color: rgb(217, 217, 217);'],
+  ])('reads the lone colour of "%s" as the cell background', (style, kept) => {
+    const result = converted(htmlCell(`style="${style}"`))
+
+    expect(cellOf(result.state).attrs.style).toBe(kept)
+    expect(result.dropped).toEqual([])
+  })
+
+  it.each([
+    ['width:1in', 96],
+    ['width:120px', 120],
+    ['width:471.55pt', 629],
+  ])('reads "%s" as the column width', (style, width) => {
+    const result = converted(htmlCell(`style="${style}"`))
+
+    expect(cellOf(result.state).attrs.colwidth).toEqual([width])
+    expect(result.dropped).toEqual([])
+  })
+
+  it('keeps a cell width that repeats the column width it was given', () => {
+    const result = converted(htmlCell('colwidth="629" style="width:471.55pt"'))
+
+    expect(cellOf(result.state).attrs.colwidth).toEqual([629])
+  })
+
+  it.each([
+    ['a percent width', 'style="width:50%"'],
+    ['a width against its column width', 'colwidth="90" style="width:30pt"'],
+    ['a width across two columns', 'colspan="2" style="width:30pt"'],
+    ['a background holding more than a colour', 'style="background:#fff url(x.png)"'],
+    ['a border image', 'style="border-image:url(x.png) 1"'],
+  ])('refuses %s', (_name, attributes) => {
+    const html = htmlCell(attributes)
+
+    expect(convertLegacy({ content: null, html, collab: 0, ycomments: null }, MAX_STATE)).toEqual({
+      kind: 'failed',
+      reason: 'check',
+    })
   })
 })
 

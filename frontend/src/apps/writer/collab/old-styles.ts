@@ -98,6 +98,14 @@ const TONES: Record<ColourProperty, { gray: Rgb; none: Rgb }> = {
 const SEMICOLON_NAME = /^\s*(?:"[^"]*;[^"]*"|'[^']*;[^']*')\s*$/
 // The alpha variable closing a colour Tailwind's classes wrote, which they set to full opacity
 const TAILWIND_ALPHA = /\s*\/\s*var\(--tw-[a-z-]*opacity\)\s*\)\s*$/i
+const CELL_WIDTH = /^([\d.]+)(px|pt|in)$/
+const PIXELS_PER_INCH = 96
+const POINTS_PER_INCH = 72
+const PIXELS_PER: Record<string, number> = {
+  px: 1,
+  pt: PIXELS_PER_INCH / POINTS_PER_INCH,
+  in: PIXELS_PER_INCH,
+}
 const WHOLE_NAME = /^([a-z]+|var\(--[a-z0-9-]+\))$/i
 
 // Old Drive's highlight picker, from its DocMenuAndInfoBar: the editor reads these tones as their
@@ -455,6 +463,78 @@ export function repairOldCellSpans(body: XmlFragment) {
   }
 
   return repairedSpans
+}
+
+// A cell's `background` that is only a colour, as that colour, the defaults it set gone; anything
+// more is left to fail the check
+function readCellBackground({ style }: HTMLElement) {
+  const value = style.getPropertyValue('background')
+  const probe = document.createElement('td').style
+  probe.setProperty('background-color', value)
+  const isOnlyColour = !!probe.getPropertyValue('background-color')
+  probe.setProperty('background', value)
+  const parts = [...probe]
+  const isDefault = parts.every(
+    (name) => style.getPropertyValue(name) === probe.getPropertyValue(name),
+  )
+  if (!isOnlyColour || !isDefault || style.getPropertyPriority('background')) {
+    return false
+  }
+
+  for (const name of parts.filter((part) => part !== 'background-color')) {
+    style.removeProperty(name)
+  }
+
+  return true
+}
+
+// A cell's width in a unit that converts to pixels, as its column width; one that disagrees with
+// the width the cell has, or spans columns, is left to fail the check
+function readCellWidth(cell: HTMLElement) {
+  const [, amount, unit] = CELL_WIDTH.exec(cell.style.getPropertyValue('width')) ?? []
+  if (
+    !unit ||
+    cell.style.getPropertyPriority('width') ||
+    Number(cell.getAttribute('colspan') ?? 1) !== 1
+  ) {
+    return false
+  }
+
+  const width = String(Math.round(Number(amount) * PIXELS_PER[unit]))
+  if ((cell.getAttribute('colwidth') ?? width) !== width) {
+    return false
+  }
+
+  cell.setAttribute('colwidth', width)
+  cell.style.removeProperty('width')
+  return true
+}
+
+/**
+ * Reads a pasted cell's sizes and colour where the editor holds them, and takes off a border image
+ * of none, the default. Returns the heights dropped, which the editor has nowhere to hold, and
+ * whether any cell changed.
+ */
+export function readHtmlCellStyles(body: HTMLElement) {
+  let heights = 0
+  let isRead = false
+  for (const cell of body.querySelectorAll<HTMLElement>('td, th')) {
+    const { style } = cell
+    if (style.getPropertyValue('border-image') === 'none') {
+      style.removeProperty('border-image')
+      isRead = true
+    }
+
+    isRead = readCellBackground(cell) || isRead
+    isRead = readCellWidth(cell) || isRead
+    if (style.getPropertyValue('height')) {
+      style.removeProperty('height')
+      heights += 1
+      isRead = true
+    }
+  }
+
+  return { heights, isRead }
 }
 
 export function repairHtmlCellSpans(body: HTMLElement) {

@@ -77,6 +77,7 @@ import {
   mapOldCellStyles,
   mapOldColours,
   moveSpanHighlights,
+  readHtmlCellStyles,
   readOldHighlights,
   readOldTextColours,
   repairHtmlCellSpans,
@@ -101,7 +102,8 @@ const LINK_ATTRIBUTES = new Set(['href', 'target', 'rel'])
  * anchor, the place of an old comment whose words are gone, a Yjs body holding nothing, read past
  * for the HTML, a property or attribute on the noise list, the count of table cell spans set
  * to the span a browser drew, an old annotations list no screen draws, its threads kept by their
- * comment marks, or the count of links with an empty address, their words kept.
+ * comment marks, the count of links with an empty address, their words kept, or the count of
+ * table cell heights.
  */
 export type Dropped =
   | { kind: 'toc-hint' }
@@ -114,6 +116,7 @@ export type Dropped =
   | { kind: 'table-span'; count: number }
   | { kind: 'old-annotations'; ids: string[] }
   | { kind: 'empty-link'; count: number }
+  | { kind: 'cell-height'; count: number }
 
 /** A thread Drive kept only in its 2023 comment marks, under a key its far copies name */
 export interface OldThread {
@@ -366,7 +369,7 @@ function droppedFloats(body: XmlFragment): Dropped[] {
   return [{ kind: 'noise', name: 'dataFloat' }]
 }
 
-function droppedCount(kind: 'empty-link', count: number): Dropped[] {
+function droppedCount(kind: 'empty-link' | 'cell-height', count: number): Dropped[] {
   if (!count) {
     return []
   }
@@ -790,7 +793,9 @@ function fromHtml(html: string) {
   // Before the defaults go, since dropping one rewrites the style text from the parse
   const raw = rawStyles(body)
   const floats = droppedHtmlFloats(body)
+  const cells = readHtmlCellStyles(body)
   const isRewritten =
+    cells.isRead ||
     !!threads?.threads.length ||
     isFontRead ||
     mentionTypes.length > 0 ||
@@ -828,6 +833,7 @@ function fromHtml(html: string) {
         ...droppedImages(threads),
         ...droppedSpans(repairedSpans),
         ...droppedCount('empty-link', emptyLinks),
+        ...droppedCount('cell-height', cells.heights),
       ]
     },
   }
