@@ -31,7 +31,7 @@ export function useListingSelection(ids: () => readonly string[]) {
     selectionMode,
     /** Toggles one item, or with `range` selects from the anchor to it. */
     toggle(id: string, range: boolean) {
-      state.value = toggleSelection(state.value, id, ids(), range, true)
+      state.value = toggleSelection(state.value, id, ids(), range)
     },
     /** Shift+Arrow: grows or shrinks the range as focus moves from `from` to `to`. */
     extend(from: string, to: string) {

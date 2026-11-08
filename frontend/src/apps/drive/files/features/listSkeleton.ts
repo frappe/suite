@@ -14,10 +14,7 @@ export interface SkeletonCell {
  * True while a load is too new for placeholders, so a fast load shows nothing
  * rather than a flash. `delay` is in milliseconds.
  */
-export function useSkeletonDelay(
-  isLoading: Ref<boolean>,
-  delay: () => number = () => SKELETON_DELAY,
-) {
+export function useSkeletonDelay(isLoading: Ref<boolean>, delay = SKELETON_DELAY) {
   const isDue = shallowRef(false)
   let timer: ReturnType<typeof setTimeout> | undefined
   watch(isLoading, restart, { immediate: true })
@@ -28,7 +25,7 @@ export function useSkeletonDelay(
     clearTimeout(timer)
     isDue.value = false
     if (isLoadingNow) {
-      timer = setTimeout(markDue, delay())
+      timer = setTimeout(markDue, delay)
     }
   }
 

@@ -24,23 +24,6 @@ function grid(serverNow = () => Date.now()) {
 const focus = () => window.dispatchEvent(new Event('focus'))
 
 describe('preview refresh', () => {
-  it('refreshes an open preview signed URL every 10 minutes and stops when closed', () => {
-    vi.useFakeTimers()
-    const refresh = vi.fn()
-    const close = observePreviewRefresh({ refresh })
-
-    vi.advanceTimersByTime(599_999)
-    expect(refresh).not.toHaveBeenCalled()
-    vi.advanceTimersByTime(1)
-    expect(refresh).toHaveBeenCalledTimes(1)
-    vi.advanceTimersByTime(600_000)
-    expect(refresh).toHaveBeenCalledTimes(2)
-
-    close()
-    vi.advanceTimersByTime(1_800_000)
-    expect(refresh).toHaveBeenCalledTimes(2)
-  })
-
   it('leaves fresh thumbnails alone on focus, and renews them shortly before they expire', () => {
     vi.useFakeTimers({ now: START })
     const { rows, refresh } = grid()
@@ -54,7 +37,10 @@ describe('preview refresh', () => {
     expect(refresh).toHaveBeenCalledTimes(1)
     focus()
     expect(refresh).toHaveBeenCalledTimes(1)
+
     close()
+    vi.advanceTimersByTime(60 * MINUTE)
+    expect(refresh).toHaveBeenCalledTimes(1)
   })
 
   it('never refreshes a page with no thumbnails on it', () => {

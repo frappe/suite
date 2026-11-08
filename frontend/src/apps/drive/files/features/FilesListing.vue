@@ -601,7 +601,7 @@ const SKELETON_CARD_NAMES = [
 ]
 
 const loading = computed(() => props.query.status === 'pending' && !props.query.rows.length)
-const isBlank = useSkeletonDelay(loading, () => 200)
+const isBlank = useSkeletonDelay(loading, 200)
 /** A 150 ms fade as an element appears, none under reduced motion. Placeholders a load soon replaces barely show. */
 const FADE_IN = 'motion-safe:animate-[files-listing-fade-in_150ms_ease-out]'
 /**

@@ -18,7 +18,7 @@ describe('file selection', () => {
     expect(state.selected.sort()).toEqual(['a', 'c', 'd', 'e'])
     state = extendSelection(state, 'e', 'd', visible)
     expect(state.selected.sort()).toEqual(['a', 'c', 'd'])
-    state = toggleSelection(state, 'b', visible, true, true)
+    state = toggleSelection(state, 'b', visible, true)
     expect(state.selected.sort()).toEqual(['a', 'b', 'c'])
   })
 

@@ -6,25 +6,23 @@ export interface SelectionState {
 }
 
 /**
- * Toggles `node`, or with `range` selects from the anchor to it. With
- * `shrinks`, a range replaces the previous range of the same Shift run instead
- * of adding to it, so Shift+click back towards the anchor deselects.
+ * Toggles `node`, or with `range` selects from the anchor to it. A range
+ * replaces the previous range of the same Shift run instead of adding to it,
+ * so Shift+click back towards the anchor deselects.
  */
 export function toggleSelection(
   state: SelectionState,
   node: string,
   visible: readonly string[],
   range = false,
-  shrinks = false,
 ): SelectionState {
   if (range && state.anchor) {
     const from = visible.indexOf(state.anchor)
     const to = visible.indexOf(node)
     if (from >= 0 && to >= 0) {
       const additions = visible.slice(Math.min(from, to), Math.max(from, to) + 1)
-      const kept = shrinks ? state.base : state.selected
       return {
-        selected: [...new Set([...kept, ...additions])],
+        selected: [...new Set([...state.base, ...additions])],
         anchor: state.anchor,
         base: state.base,
       }
@@ -48,7 +46,7 @@ export function extendSelection(
 ): SelectionState {
   const anchor = state.anchor !== null && visible.includes(state.anchor) ? state.anchor : null
   const run = anchor ? state : { selected: state.selected, anchor: from, base: state.selected }
-  return toggleSelection(run, to, visible, true, true)
+  return toggleSelection(run, to, visible, true)
 }
 
 /** A selection made at once, by Select all or the selection rectangle. */
