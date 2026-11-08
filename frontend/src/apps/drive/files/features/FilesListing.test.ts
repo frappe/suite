@@ -9,6 +9,11 @@ import { useWorkspace } from '@/platform/workspace'
 
 import FilesListing from './FilesListing.vue'
 import { DEFAULT_PRESENTATION, type FilesColumn, type PresentationState } from './presentation'
+import {
+  useListingShortcuts,
+  type ListingCommands,
+  type ListingView,
+} from './shortcuts/useListingShortcuts'
 import { useDragMove } from './useDragMove'
 import { useListingSelection } from './useListingSelection'
 
@@ -86,6 +91,8 @@ function mount(options: {
   drag?: boolean
   canShare?: (node: DriveNode) => boolean
   nodeHref?: (node: DriveNode) => string | undefined
+  /** The page's shortcuts, registered as the page registers them. */
+  shortcuts?: { commands: ListingCommands; open: (view: ListingView) => unknown }
 }) {
   const state = reactive({ selection: options.selection ?? [] })
   type ListingEvents = {
@@ -128,6 +135,13 @@ function mount(options: {
             trash: async () => {},
           })
         : undefined
+      const shortcuts = options.shortcuts
+      if (shortcuts) {
+        useListingShortcuts(() => shortcuts.commands, {
+          enabled: () => true,
+          open: shortcuts.open,
+        })
+      }
       return () =>
         h(FilesListing, {
           query: fromPartial<InstanceType<typeof FilesListing>['$props']['query']>(query),
@@ -812,6 +826,57 @@ describe('FilesListing keyboard', () => {
     expect(focused()).toBe('delta')
     await press('E', { shiftKey: true })
     expect(focused()).toBe('delta')
+  })
+
+  describe('a letter pressed on a focused row', () => {
+    const named = ['Alpha', 'Beta', 'Notes', 'Summary', 'Reports'].map((title) =>
+      file(title.toLowerCase(), `${title}.png`),
+    )
+    function shortcuts() {
+      const ran: string[] = []
+      const record = (name: string) => ({ onClick: () => void ran.push(name) })
+      return {
+        ran,
+        shortcuts: {
+          commands: {
+            share: record('share'),
+            upload: record('upload'),
+            newFolder: record('new folder'),
+          },
+          open: (view: ListingView) => void ran.push(view),
+        },
+      }
+    }
+
+    it('runs the page shortcut while something is selected, and focus stays', async () => {
+      const { ran, shortcuts: page } = shortcuts()
+      const { root, state } = mount({ rows: named, shortcuts: page })
+      await nextTick()
+      root.querySelector<HTMLElement>('[data-node="beta"]')!.focus()
+      await press(' ')
+      expect(state.selection).toEqual(['beta'])
+
+      await press('s')
+      await press('u')
+      await press('n')
+      await press('g')
+      await press('r')
+
+      expect(ran).toEqual(['share', 'upload', 'new folder', 'recent'])
+      expect(focused()).toBe('beta')
+    })
+
+    it('jumps to the next item starting with it while nothing is selected', async () => {
+      const { ran, shortcuts: page } = shortcuts()
+      const { root } = mount({ rows: named, shortcuts: page })
+      await nextTick()
+      root.querySelector<HTMLElement>('[data-node="alpha"]')!.focus()
+
+      await press('s')
+
+      expect(focused()).toBe('summary')
+      expect(ran).toEqual([])
+    })
   })
 
   it('hands focus to the next item when the focused one leaves', async () => {

@@ -16,7 +16,9 @@ const TYPE_AHEAD_PAUSE = 500
  * The listing's keyboard focus (unified frontend spec §5.13). The listing is
  * one Tab stop: only the current item is tabbable, the arrow keys, Home and
  * End move focus without selecting, and Shift with them extends the
- * selection. Typing jumps to the next item whose title starts with what was typed.
+ * selection. While nothing is selected, typing jumps to the next item whose
+ * title starts with what was typed; with a selection, letters are the page's
+ * shortcuts.
  *
  * The current item is the one focused last. The DOM says which element has
  * focus, so this keeps no second copy of it. Call it in a component's setup.
@@ -121,6 +123,7 @@ export function useListingFocus(options: {
   }
 
   function jump(event: KeyboardEvent, index: number): boolean {
+    if (options.selection().length) return false
     const now = Date.now()
     if (now - typedAt > TYPE_AHEAD_PAUSE) typed = ''
     // While a prefix is being typed, Space is part of it, as in "Q3 report".
