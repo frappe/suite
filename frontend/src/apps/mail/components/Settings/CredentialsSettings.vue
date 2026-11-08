@@ -55,7 +55,7 @@
 import { Button, ErrorMessage, FormControl } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 
-import { api, useMutation, useQuery } from '@/api'
+import { api, useMutation, useQuery, type InputOf } from '@/api'
 import { raiseToast } from '@/apps/mail/utils'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
@@ -91,11 +91,12 @@ const isNotDirty = computed(
 
 const saveSettings = useMutation(api.mail.settings.updateCredentials, { silent: true })
 async function save() {
-  await saveSettings.run({
+  const credentials: InputOf<typeof api.mail.settings.updateCredentials> = {
     username: username.value || null,
     backup_email: backupEmail.value || null,
-    ...(appPassword.value ? { app_password: appPassword.value } : {}),
-  })
+  }
+  if (appPassword.value) credentials.app_password = appPassword.value
+  await saveSettings.run(credentials)
   appPassword.value = ''
   raiseToast(__('Credentials updated.'))
   await userSettings.refetch()

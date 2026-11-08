@@ -26,6 +26,15 @@ type EncodedStreams = {
   writableStream?: WritableStream
 }
 
+declare global {
+  interface RTCRtpSender {
+    createEncodedStreams?: () => EncodedStreams
+  }
+  interface RTCRtpReceiver {
+    createEncodedStreams?: () => EncodedStreams
+  }
+}
+
 type EncodedFrameLike = {
   data: ArrayBuffer
   type?: string
@@ -47,7 +56,7 @@ export type TransformableReceiver = RTCRtpReceiver & {
   transform?: unknown
 }
 
-type RTCRtpScriptTransformConstructor = new (worker: Worker, options: object) => unknown
+type RTCRtpScriptTransformConstructor = typeof RTCRtpScriptTransform
 
 type E2EETransformCapability = 'legacy-insertable-streams' | 'rtp-script-transform' | 'none'
 
@@ -237,11 +246,11 @@ export function createEncryptionTransformStream(
   chainState: SenderChainState,
   keyVersion: number | (() => number),
 ): TransformStream {
-  return new TransformStream({
+  return new TransformStream<EncodedFrameLike, EncodedFrameLike>({
     async transform(encodedFrame, controller) {
       const currentKeyVersion = typeof keyVersion === 'function' ? keyVersion() : keyVersion
       const subtle = getSubtle()
-      const typedFrame = encodedFrame as EncodedFrameLike
+      const typedFrame = encodedFrame
       const clearPrefix = getClearPrefix(typedFrame.data, getClearPrefixSize(chainState.mediaType))
       try {
         const { key, generation } = await chainState.nextFrameKey()
@@ -299,7 +308,7 @@ export function createDecryptionTransformStream(
   _receiver: RTCRtpReceiver | undefined,
   mediaType: string,
 ): TransformStream {
-  return new TransformStream({
+  return new TransformStream<EncodedFrameLike, EncodedFrameLike>({
     async transform(encodedFrame, controller) {
       const currentExpectedKeyVersion =
         typeof expectedKeyVersion === 'function' ? expectedKeyVersion() : expectedKeyVersion
@@ -382,12 +391,12 @@ function hasLegacyInsertableStreamSupport(): boolean {
   if (typeof globalThis.RTCRtpSender === 'undefined') return false
   if (typeof globalThis.RTCRtpReceiver === 'undefined') return false
   try {
-    const senderProto = globalThis.RTCRtpSender.prototype as RTCRtpSender & {
+    const senderProto: RTCRtpSender & {
       createEncodedStreams?: () => unknown
-    }
-    const receiverProto = globalThis.RTCRtpReceiver.prototype as RTCRtpReceiver & {
+    } = globalThis.RTCRtpSender.prototype
+    const receiverProto: RTCRtpReceiver & {
       createEncodedStreams?: () => unknown
-    }
+    } = globalThis.RTCRtpReceiver.prototype
     return (
       Object.hasOwn(senderProto, 'createEncodedStreams') &&
       Object.hasOwn(receiverProto, 'createEncodedStreams') &&
@@ -400,13 +409,7 @@ function hasLegacyInsertableStreamSupport(): boolean {
 }
 
 function getRTCRtpScriptTransform(): RTCRtpScriptTransformConstructor | null {
-  return (
-    (
-      globalThis as typeof globalThis & {
-        RTCRtpScriptTransform?: RTCRtpScriptTransformConstructor
-      }
-    ).RTCRtpScriptTransform ?? null
-  )
+  return globalThis.RTCRtpScriptTransform ?? null
 }
 
 export function getE2EETransformCapability(): E2EETransformCapability {

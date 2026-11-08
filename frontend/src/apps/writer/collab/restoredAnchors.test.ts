@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it } from 'vitest'
 import * as yjs from 'yjs'
 
@@ -21,8 +22,8 @@ function documentOf(...texts: string[]) {
 }
 
 function textOf(doc: yjs.Doc, paragraph: number) {
-  const element = doc.getXmlFragment(BODY_FIELD).get(paragraph) as yjs.XmlElement
-  return element.get(0) as yjs.XmlText
+  const element = fromPartial<yjs.XmlElement>(doc.getXmlFragment(BODY_FIELD).get(paragraph))
+  return fromPartial<yjs.XmlText>(element.get(0))
 }
 
 // An anchor on characters `from` to `to` of a paragraph, as a selection makes it
@@ -45,7 +46,7 @@ function covered(doc: yjs.Doc, anchor: string) {
 
   const from = yjs.createAbsolutePositionFromRelativePosition(read.start, doc)!
   const to = yjs.createAbsolutePositionFromRelativePosition(read.end, doc)!
-  return (from.type as yjs.XmlText).toString().slice(from.index, to.index)
+  return fromPartial<yjs.XmlText>(from.type).toString().slice(from.index, to.index)
 }
 
 function versionOf(doc: yjs.Doc) {
@@ -146,7 +147,7 @@ describe('threads after a restore', () => {
     const list = new yjs.XmlElement('bulletList')
     list.insert(0, [item])
     doc.getXmlFragment(BODY_FIELD).insert(0, [list])
-    const text = second.get(0) as yjs.XmlText
+    const text = fromPartial<yjs.XmlText>(second.get(0))
     const anchor = encodeAnchor(
       yjs.createRelativePositionFromTypeIndex(text, 0, 0),
       yjs.createRelativePositionFromTypeIndex(text, 6, -1),

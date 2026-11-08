@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, ref } from 'vue'
 
@@ -19,7 +20,7 @@ vi.mock('@/api', async (original) => ({
   useMutation: mocks.useMutation,
 }))
 
-const report = { name: 'n1', title: 'Quarterly report.pdf', kind: 'file' } as DriveNode
+const report = fromPartial<DriveNode>({ name: 'n1', title: 'Quarterly report.pdf', kind: 'file' })
 
 let cleanup: (() => void) | undefined
 let engine: ReturnType<typeof createApiClient>

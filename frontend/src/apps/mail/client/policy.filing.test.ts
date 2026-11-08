@@ -1,19 +1,22 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { expect, it } from 'vitest'
+
+import type { Operation } from '@/platform/transport'
 
 import { registration } from './policy'
 
 // How a filing changes a cached list before the server answers: the conversation's rows leave the
 // list it names as left, and every other list keeps them until it is read again.
 const updateOf = () => {
-  const policy = registration.policy({
-    id: 'file_mails',
-    kind: 'mutation',
-    publicName: 'messages.file',
-  } as never) as {
-    effects: {
-      optimisticReads: { update: (input: unknown, query: unknown, data: unknown) => unknown }
-    }
-  }
+  const policy = registration.policy(
+    fromPartial<Operation>({
+      id: 'file_mails',
+      kind: 'mutation',
+      publicName: 'messages.file',
+    }),
+  )
+  if (!policy.effects || policy.effects === 'none' || !policy.effects.optimisticReads)
+    throw new Error('Expected mutation cache effects')
   return policy.effects.optimisticReads.update
 }
 

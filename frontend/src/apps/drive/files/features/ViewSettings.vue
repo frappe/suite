@@ -125,6 +125,7 @@ function row<T extends string>(
   labels: Record<T, string>,
   onPick: (value: T) => void,
 ) {
+  // SAFETY: labels is a local closed Record<T, string>; its own keys are exactly the offered values.
   const values = Object.keys(labels) as T[]
   return {
     id,

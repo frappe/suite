@@ -186,10 +186,7 @@ function flush_site(site, writeBudget) {
 		if (writeBudget.hasSent && recipients > writeBudget.remaining) continue;
 
 		site.dirty.delete(room);
-		const states = [...pids]
-			.map((pid) => members?.get(pid))
-			.filter(Boolean)
-			.map(presence_state);
+		const states = [...pids].flatMap((pid) => { const member = members?.get(pid); return member ? [presence_state(member)] : [] });
 		if (!states.length) continue;
 
 		writeBudget.remaining -= recipients;

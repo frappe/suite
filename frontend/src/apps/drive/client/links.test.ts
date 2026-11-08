@@ -13,13 +13,17 @@ function scoped<I, O>(reference: Operation<I, O>, input: I) {
 
 // The Drive server double. Installed before any import, so the platform
 // transport, and the link checks the store sends through it, use it too.
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
+type ServerReply = { status: number; body: unknown }
+
 const net = vi.hoisted(() => {
   const state = {
-    reply: (_path: string, _links: string | null): { status: number; body: unknown } => ({
+    reply: (_path: string, _links: string | null): ServerReply => ({
       status: 200,
       body: {},
     }),
-    sent: [] as Array<{ path: string; links: string | null }>,
+    sent: fromPartial<Array<{ path: string; links: string | null }>>([]),
   }
   globalThis.fetch = async (url: RequestInfo | URL, init?: RequestInit) => {
     const path = String(url).split('?')[0]!
@@ -336,7 +340,7 @@ describe('forgetting Drive link codes', () => {
 
   it('keeps links through sign-in, ignores the guest name while signed in, and clears all on sign out', async () => {
     const { transport, sent } = server()
-    const session = createSession({ request: async () => ({}) } as unknown as Transport)
+    const session = createSession(fromPartial<Transport>({ request: async () => ({}) }))
     const links = createLinkStore({ storage: localStorage, session })
     links.seed(code(1), 'shared')
     links.setGuestName('Ravi (Acme)')
@@ -355,7 +359,7 @@ describe('forgetting Drive link codes', () => {
 })
 
 describe('the stored copy', () => {
-  const session = () => createSession({ request: async () => ({}) } as unknown as Transport)
+  const session = () => createSession(fromPartial<Transport>({ request: async () => ({}) }))
   const headerFor = (links: ReturnType<typeof createLinkStore>, id: string) =>
     links.scope([id]).headers?.['X-Drive-Links'] ?? null
 

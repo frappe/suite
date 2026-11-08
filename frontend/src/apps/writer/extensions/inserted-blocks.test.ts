@@ -1,5 +1,6 @@
 import { Editor } from '@tiptap/core'
 import { NodeSelection, TextSelection } from '@tiptap/pm/state'
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { writerSchema } from '@/apps/writer/schema'
@@ -23,11 +24,11 @@ function open(extension: typeof MediaInsert | typeof ScrollToInserted, content: 
 /** How many block inserts the scroll plugin has counted, which is what makes it scroll. */
 function insertsCounted(target: Editor): number {
   const plugin = target.state.plugins.find((candidate) =>
-    String((candidate.spec.key as { key?: string } | undefined)?.key).startsWith(
+    String(fromPartial<{ key?: string } | undefined>(candidate.spec.key)?.key).startsWith(
       'scrollToInserted',
     ),
   )
-  return plugin?.getState(target.state) as number
+  return fromPartial<number>(plugin?.getState(target.state))
 }
 
 describe('scroll to inserted', () => {

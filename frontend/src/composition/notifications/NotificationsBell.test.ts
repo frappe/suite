@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, nextTick } from 'vue'
 
 import NotificationsBell from '@/composition/notifications/NotificationsBell.vue'
+import { requireTestElement } from '@/platform/testing/dom'
 import { TransportError } from '@/platform/transport'
 
 const state = vi.hoisted(() => ({
@@ -154,7 +155,10 @@ describe('Notifications bell', () => {
   })
   it('does not mark anything read when opened', async () => {
     const root = mount()
-    const bell = root.querySelector('[aria-label="Notifications"]') as HTMLButtonElement
+    const bell = requireTestElement(
+      root.querySelector('[aria-label="Notifications"]'),
+      HTMLButtonElement,
+    )
     bell.click()
     await nextTick()
     expect(state.markRead).not.toHaveBeenCalled()

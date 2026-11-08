@@ -45,9 +45,9 @@ const SHARED_MAIL_DOMAINS = new Set([
 
 /** The '@domain' of each address worth offering to trust, in order, leaving out shared mail domains. */
 export const trustableDomains = (emails: string[]) =>
-  [...new Set(emails.map((email) => email.split('@').pop()?.toLowerCase() ?? ''))]
-    .filter((domain) => domain && !SHARED_MAIL_DOMAINS.has(domain))
-    .map((domain) => `@${domain}`)
+  [...new Set(emails.map((email) => email.split('@').pop()?.toLowerCase() ?? ''))].flatMap(
+    (domain) => (domain && !SHARED_MAIL_DOMAINS.has(domain) ? [`@${domain}`] : []),
+  )
 
 type Destination = 'inbox' | 'archive' | 'trash'
 
@@ -118,7 +118,10 @@ const createShared = () => {
   }
 
   const failed = (error: unknown) =>
-    raiseToast((error as Error).message || __('Action failed.'), 'error')
+    raiseToast(
+      (error instanceof Error ? error.message : String(error)) || __('Action failed.'),
+      'error',
+    )
 
   // Takes a verdict back: the rules it wrote go, and `ids` — the mail it decided — wait again.
   const reverseVerdict = (account: string, emails: string[], ids: string[]) => {

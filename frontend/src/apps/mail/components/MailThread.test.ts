@@ -7,9 +7,11 @@ import MailThread from '@/apps/mail/components/MailThread.vue'
 import type { Mail } from '@/apps/mail/types'
 import { applyRouteMeta } from '@/platform/page-meta'
 
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const query = vi.hoisted(() => ({
   current: {
-    data: undefined as Partial<Mail>[] | undefined,
+    data: fromPartial<Partial<Mail>[] | undefined>(undefined),
     status: 'pending',
     refetch: async () => {},
   },

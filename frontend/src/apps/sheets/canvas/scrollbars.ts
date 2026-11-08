@@ -21,6 +21,11 @@
 import { SCROLLBAR_THICK as THICK } from './constants.js'
 import type { ScrollModel } from './viewport.js'
 
+interface ScrollGeometry {
+  x: AxisGeom | null
+  y: AxisGeom | null
+}
+
 export interface Scrollbars {
   /** Re-place the thumbs for the current scroll (called after every paint). */
   layout(): void
@@ -76,7 +81,7 @@ export function createScrollbars(
   host.style.setProperty('--sn-sb-thick', THICK + 'px')
 
   // Per-axis geometry cached from the last layout(), read by the drag handlers.
-  const geom: { x: AxisGeom | null; y: AxisGeom | null } = { x: null, y: null }
+  const geom: ScrollGeometry = { x: null, y: null }
 
   // ── Auto-hide ────────────────────────────────────────────────────────────
   // `_pinned` (hover/drag) suppresses the fade entirely; otherwise a timer

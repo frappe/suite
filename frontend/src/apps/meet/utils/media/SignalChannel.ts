@@ -150,9 +150,9 @@ export class SocketIOSignalChannel implements SignalChannel {
   updateAuth(token: string): void {
     if (!this.socket) return
     this.socket.auth = { token }
-    const managerOptions = this.socket.io.opts as typeof this.socket.io.opts & {
+    const managerOptions: typeof this.socket.io.opts & {
       auth?: { token?: string }
-    }
+    } = this.socket.io.opts
     managerOptions.auth = { token }
   }
 }

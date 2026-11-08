@@ -39,6 +39,8 @@ export default defineComponent(
       'portalTo',
     ],
     emits: { 'update:open': (value: boolean) => typeof value === 'boolean' },
+    // SAFETY: Vue's SlotsType is a compile-time brand; Object is its runtime
+    // slot option, and setup forwards this Frappe UI slot contract unchanged.
     slots: Object as SlotsType<DropdownSlots>,
   },
 )

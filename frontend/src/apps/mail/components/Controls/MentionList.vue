@@ -53,8 +53,10 @@ onBeforeUpdate(() => (itemRefs.value = []))
 
 // The rows are components, so what comes back is an instance — scrolling wants its
 // element.
-const setItemRef = (el: Element | ComponentPublicInstance | null, index: number) =>
-  (itemRefs.value[index] = ((el as ComponentPublicInstance)?.$el ?? el) as HTMLElement | null)
+const setItemRef = (el: Element | ComponentPublicInstance | null, index: number) => {
+  const element = el instanceof Element ? el : el?.$el
+  itemRefs.value[index] = element instanceof HTMLElement ? element : null
+}
 
 const selectItem = (index: number) => {
   const item = props.items[index]

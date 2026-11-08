@@ -219,7 +219,8 @@ export function createLinkStore(options: LinkStoreOptions): LinkStore {
   }
 
   options.events?.addEventListener('storage', (event) => {
-    const { key, newValue } = event as StorageEvent
+    if (!('key' in event) || !('newValue' in event)) return
+    const { key, newValue } = event
     // Another tab cleared the store, as sign out does. Drop this tab's copy and
     // void every response still on its way.
     if ((key === STORE_KEY || key === null) && newValue === null) forgetAll()
@@ -328,9 +329,10 @@ export function createLinkStore(options: LinkStoreOptions): LinkStore {
       const state = current()
       // Track changes, but rotate only when this request's selected credentials change.
       void accessPartition.value
-      const credentials = [...new Set(nodeIds ?? [])]
-        .map((node) => codeFor(state, node))
-        .filter((code): code is string => Boolean(code))
+      const credentials = [...new Set(nodeIds ?? [])].flatMap((node) => {
+        const mappedValue = codeFor(state, node)
+        return mappedValue ? [mappedValue] : []
+      })
       const selectedCodes = [...new Set(credentials)].sort()
       const signature = JSON.stringify([
         accessEpoch,
@@ -404,7 +406,11 @@ export function createLinkStore(options: LinkStoreOptions): LinkStore {
         const base = codesFor(state, always)
         if (base.size > LINK_CAP) throw new CredentialOverflowError()
         const found: Array<{ nodeIds: string[]; codes: Set<string> }> = []
-        let current = { nodeIds: [] as string[], codes: new Set(base) }
+        interface CredentialGroup {
+          nodeIds: string[]
+          codes: Set<string>
+        }
+        let current: CredentialGroup = { nodeIds: [], codes: new Set(base) }
         for (const node of nodeIds) {
           const code = codeFor(state, node)
           if (code && !current.codes.has(code) && current.codes.size >= LINK_CAP) {
@@ -455,7 +461,7 @@ export function createLinkStore(options: LinkStoreOptions): LinkStore {
   return store
 }
 
-function header(sent: readonly Sent[]): Record<string, string> {
+function header(sent: readonly Sent[]) {
   return {
     [HEADER]: sent.map(({ code, ticket }) => (ticket ? `${code}.${ticket}` : code)).join(','),
   }
@@ -482,11 +488,9 @@ function parse(text: string | null): State {
   if (!isRecord(saved)) return state
   for (const [code, entry] of Object.entries(isRecord(saved.links) ? saved.links : {})) {
     if (TOKEN.test(code) && isLinkEntry(entry)) {
-      state.links.set(code, {
-        target: entry.target,
-        lastUsed: entry.lastUsed,
-        ...(entry.ticket === undefined ? {} : { ticket: entry.ticket }),
-      })
+      const restored: LinkEntry = { target: entry.target, lastUsed: entry.lastUsed }
+      if (entry.ticket !== undefined) restored.ticket = entry.ticket
+      state.links.set(code, restored)
     }
   }
   for (const pair of Array.isArray(saved.tags) ? saved.tags : []) {

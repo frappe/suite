@@ -43,13 +43,15 @@ const SENTENCES: Record<Action, Sentence> = {
   share_remove: (actor, title) => removed(actor, title),
 }
 
-const ROLE_PHRASES: Record<number, () => string> = {
-  [DRIVE_ROLES.read]: () => __('can view'),
-  [DRIVE_ROLES.comment]: () => __('can comment'),
-  [DRIVE_ROLES.upload]: () => __('can upload'),
-  [DRIVE_ROLES.edit]: () => __('can edit'),
-  [DRIVE_ROLES.manage]: () => __('can manage'),
-}
+const ROLE_PHRASES = new Map<string, () => string>(
+  Object.entries({
+    [DRIVE_ROLES.read]: () => __('can view'),
+    [DRIVE_ROLES.comment]: () => __('can comment'),
+    [DRIVE_ROLES.upload]: () => __('can upload'),
+    [DRIVE_ROLES.edit]: () => __('can edit'),
+    [DRIVE_ROLES.manage]: () => __('can manage'),
+  }),
+)
 
 /** One plain sentence for the reader: who did what to which item, or what became of their download. */
 export function notificationSentence(notification: DriveNotification, reader?: string): string {
@@ -82,7 +84,7 @@ export function notificationTime(value: string | null | undefined, now = new Dat
   if (Number.isNaN(date.getTime())) return ''
   const seconds = Math.round((date.getTime() - now.getTime()) / 1_000)
   const absolute = Math.abs(seconds)
-  const [amount, unit] =
+  const [amount, unit]: [number, Intl.RelativeTimeFormatUnit] =
     absolute < 60
       ? [seconds, 'second']
       : absolute < 3_600
@@ -90,10 +92,7 @@ export function notificationTime(value: string | null | undefined, now = new Dat
         : absolute < 86_400
           ? [Math.round(seconds / 3_600), 'hour']
           : [Math.round(seconds / 86_400), 'day']
-  return new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' }).format(
-    amount,
-    unit as Intl.RelativeTimeFormatUnit,
-  )
+  return new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' }).format(amount, unit)
 }
 
 function removed(actor: string, title: string): string {
@@ -101,6 +100,6 @@ function removed(actor: string, title: string): string {
 }
 
 function rolePhrase(role: unknown): string | null {
-  const phrase = typeof role === 'number' ? ROLE_PHRASES[role] : undefined
+  const phrase = typeof role === 'number' ? ROLE_PHRASES.get(String(role)) : undefined
   return phrase ? phrase() : null
 }

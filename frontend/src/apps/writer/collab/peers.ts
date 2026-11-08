@@ -59,9 +59,10 @@ export function personIdleSince(peers: Peer[], peerId: number) {
 
   const person = personKey(tab.user, tab.pid)
   const tabs = peers.filter((peer) => personKey(peer.user, peer.pid) === person)
-  const starts = tabs
-    .map((peer) => peer.idleSince)
-    .filter((start): start is number => start !== null)
+  const starts = tabs.flatMap((peer) => {
+    const mappedValue = peer.idleSince
+    return mappedValue !== null ? [mappedValue] : []
+  })
   if (starts.length < tabs.length) {
     return null
   }

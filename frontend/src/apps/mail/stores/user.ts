@@ -37,12 +37,11 @@ export const withStarred = <T, S>(
   roleOf: (folder: T) => string | null | undefined,
   starred: S,
 ): (T | S)[] => {
-  const sorted: (T | S)[] = [...folders].sort(
-    (a, b) => primaryRank(roleOf(a)) - primaryRank(roleOf(b)),
-  )
-  const afterInbox = folders.length ? sorted.findIndex((f) => roleOf(f as T) === 'inbox') + 1 : 0
-  sorted.splice(afterInbox, 0, starred)
-  return sorted
+  const sorted = [...folders].sort((a, b) => primaryRank(roleOf(a)) - primaryRank(roleOf(b)))
+  const afterInbox = folders.length ? sorted.findIndex((f) => roleOf(f) === 'inbox') + 1 : 0
+  const withStar: (T | S)[] = sorted
+  withStar.splice(afterInbox, 0, starred)
+  return withStar
 }
 
 /** Role → mailbox id map for a mailbox list. Shared with utils/accountScope, which derives the

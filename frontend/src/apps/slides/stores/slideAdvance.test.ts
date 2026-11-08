@@ -42,7 +42,7 @@ describe('a slide that advances on its own', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     replace.mockClear()
-    slides.value = [{ elements: [], advanceAfter: '2' }, { elements: [] }] as any
+    slides.value = [{ elements: [], advanceAfter: '2' }, { elements: [] }]
     slideIndex.value = 0
   })
 
@@ -292,7 +292,7 @@ describe('a slide that advances on its own', () => {
       { elements: [], transition: 'Magic Move', transitionDuration: '3' },
       { elements: [], advanceAfter: '2' },
       { elements: [] },
-    ] as any
+    ]
     slideIndex.value = 1
     scheduleAdvance()
 
@@ -315,7 +315,7 @@ describe('a slide that advances on its own', () => {
       },
       { elements: [], advanceAfter: '2' },
       { elements: [] },
-    ] as any
+    ]
     slideIndex.value = 1
     scheduleAdvance()
 

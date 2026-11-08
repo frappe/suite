@@ -56,12 +56,14 @@ const props = defineProps<{ anchor: Box }>()
 const emit = defineEmits<{ pick: [size: { rows: number; columns: number }]; close: [] }>()
 
 const MAX = { rows: 6, columns: 8 }
-const STEPS: Record<string, [number, number]> = {
-  ArrowDown: [1, 0],
-  ArrowUp: [-1, 0],
-  ArrowRight: [0, 1],
-  ArrowLeft: [0, -1],
-}
+const STEPS = new Map<string, [number, number]>(
+  Object.entries({
+    ArrowDown: [1, 0],
+    ArrowUp: [-1, 0],
+    ArrowRight: [0, 1],
+    ArrowLeft: [0, -1],
+  } satisfies Record<string, [number, number]>),
+)
 
 const rows = ref(3)
 const columns = ref(3)
@@ -89,7 +91,7 @@ function onKeydown(event: KeyboardEvent) {
     emit('close')
     return
   }
-  const step = STEPS[event.key]
+  const step = STEPS.get(event.key)
   if (step || event.key === 'Enter' || event.key === 'Escape') {
     event.preventDefault()
     event.stopPropagation()

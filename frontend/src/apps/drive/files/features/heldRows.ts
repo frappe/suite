@@ -28,9 +28,9 @@ export function heldWhileRearranging<Row>(
     const waiting = source.status === 'pending' && !source.rows.length
     return waiting && held.value?.place === place() ? held.value.rows : source.rows
   })
-  return new Proxy(source, {
-    get(target, key, receiver) {
-      return key === 'rows' ? rows.value : Reflect.get(target, key, receiver)
-    },
+  // Inherited getters and methods keep this listing as their receiver, while
+  // every read still reaches the live source instead of a copied snapshot.
+  return Object.create(source, {
+    rows: { enumerable: true, get: () => rows.value },
   })
 }

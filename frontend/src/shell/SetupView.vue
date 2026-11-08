@@ -295,9 +295,10 @@ function focusStep() {
   const node: Node | undefined = stepFocus[step.value].value?.$el
   const root = node instanceof Element ? node : node?.parentElement
   if (!root) return
-  const target = root.matches('button, input, textarea')
-    ? (root as HTMLElement)
-    : root.querySelector<HTMLElement>('input:not([type="file"]), textarea')
+  const target =
+    root instanceof HTMLElement && root.matches('button, input, textarea')
+      ? root
+      : root.querySelector<HTMLElement>('input:not([type="file"]), textarea')
   target?.focus()
 }
 

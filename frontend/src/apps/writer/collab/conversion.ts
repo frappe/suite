@@ -239,14 +239,16 @@ function withHeadingIds(node: PMNode) {
 function mediaSources(body: XmlFragment) {
   const media = [
     ...body.createTreeWalker((type) => type instanceof XmlElement && MEDIA.has(type.nodeName)),
-  ] as XmlElement[]
+  ].filter((node) => node instanceof XmlElement)
   return JSON.stringify(media.map((element) => element.getAttribute('src')))
 }
 
 const INDENTED = new Set(INDENTED_BLOCKS)
 
 function elementsOf(body: XmlFragment) {
-  return [...body.createTreeWalker((type) => type instanceof XmlElement)] as XmlElement[]
+  return [...body.createTreeWalker((type) => type instanceof XmlElement)].filter(
+    (node) => node instanceof XmlElement,
+  )
 }
 
 // Drive stored its indent and heading line height at defaults it never drew
@@ -267,7 +269,11 @@ function dropDriveDefaults(body: XmlFragment) {
 // An old mark holding no attributes may be stored as true, which the editor reads as that mark
 function readTrueRuns(text: XmlText) {
   let at = 0
-  const runs = text.toDelta() as { insert: unknown; attributes?: Record<string, unknown> }[]
+  interface FormattingRun {
+    insert: unknown
+    attributes?: Record<string, unknown>
+  }
+  const runs: FormattingRun[] = text.toDelta()
   for (const { insert, attributes = {} } of runs) {
     let length = 1
     if (typeof insert === 'string') {
@@ -289,7 +295,9 @@ function readTrueRuns(text: XmlText) {
 }
 
 function readTrueMarks(body: XmlFragment) {
-  const texts = [...body.createTreeWalker((type) => type instanceof XmlText)] as XmlText[]
+  const texts = [...body.createTreeWalker((type) => type instanceof XmlText)].filter(
+    (node) => node instanceof XmlText,
+  )
   for (const text of texts) {
     readTrueRuns(text)
   }
@@ -312,7 +320,7 @@ function dropUploadIds(body: XmlFragment): Dropped[] {
         MEDIA.has(type.nodeName) &&
         type.getAttribute('uploadId') != null,
     ),
-  ] as XmlElement[]
+  ].filter((node) => node instanceof XmlElement)
   for (const element of marked) {
     element.removeAttribute('uploadId')
   }
@@ -481,7 +489,10 @@ const atomRules = Object.values(schema.nodes)
 
 function atomNameOf(element: Element) {
   const found = atomRules.find(
-    ({ rule }) => element.matches(rule.tag) && rule.getAttrs?.(element as HTMLElement) !== false,
+    ({ rule }) =>
+      element instanceof HTMLElement &&
+      element.matches(rule.tag) &&
+      rule.getAttrs?.(element) !== false,
   )
   return found?.name
 }
@@ -613,7 +624,9 @@ function dropEmptyLinks(body: HTMLElement) {
 function readableHtml(body: HTMLElement, html: string, isRewritten: boolean) {
   const reads = [readOldTextColours(body), readOldHighlights(body), dropEmptyFonts(body)]
   const isMapped = mapOldMedia(body)
-  const readable = body.cloneNode(true) as HTMLElement
+  const readable = body.cloneNode(true)
+  if (!(readable instanceof HTMLElement))
+    throw new Error('Readable body clone must be an HTML element')
   const isMoved = moveSpanHighlights(readable)
   if (!reads.includes(true) && !isMoved && !isMapped && !isRewritten) {
     return html
@@ -675,36 +688,38 @@ function dropMentionAuthors(body: HTMLElement) {
 
 // The class sets old Drive's editor wrote on its nodes and never read back, each whole set by its
 // commit and line in DocEditor/TextEditor.vue
-const DRIVE_CLASSES: Record<string, string[]> = {
-  // listItem 81496fa39:313, taskItem d495bcef8:342
-  li: ['prose-list-item', 'my-task-item'],
-  // paragraph 8b59604c7:450, 44ba54162^:450, d3dbf0f92:449
-  p: ['legacy', 'not-prose', 'legacy-p'],
-  // heading not-prose on levels 1 to 3 d081e381d:310 and 1 to 4 637c3281d:316, not-prose leading-7
-  // on levels 1 to 4 802065431:351, legacy on levels 1 to 5 8b59604c7:456
-  ...Object.fromEntries(
-    ['h1', 'h2', 'h3', 'h4'].map((tag) => [tag, ['not-prose', 'not-prose leading-7', 'legacy']]),
-  ),
-  h5: ['legacy'],
-  // bulletList d081e381d:327, orderedList d081e381d:334, taskList d495bcef8:337
-  ul: ['not-prose'],
-  ol: ['not-prose'],
-  // blockquote f5936ffea:408
-  blockquote: ['prose-quoteless text-black border-l-2 pl-2 border-gray-400 text-[0.9em]'],
-  // codeBlock c52d39e28:393, f5936ffea:402
-  pre: [
-    'not-prose my-5 px-4 py-2 text-[0.9em] font-mono text-black bg-gray-50 rounded border border-gray-300 overflow-x-auto',
-    'not-prose my-5 px-4 pt-4 pb-2 text-[0.9em] font-mono text-black bg-gray-50 rounded border border-gray-300 overflow-x-scroll',
-  ],
-  // code f5936ffea:414
-  code: ['not-prose px-px font-mono bg-gray-50 text-[0.85em] rounded-sm border border-gray-300'],
-  // annotation e88592e0:517
-  span: ['cursor-pointer annotation'],
-}
+const DRIVE_CLASSES = new Map<string, string[]>(
+  Object.entries({
+    // listItem 81496fa39:313, taskItem d495bcef8:342
+    li: ['prose-list-item', 'my-task-item'],
+    // paragraph 8b59604c7:450, 44ba54162^:450, d3dbf0f92:449
+    p: ['legacy', 'not-prose', 'legacy-p'],
+    // heading not-prose on levels 1 to 3 d081e381d:310 and 1 to 4 637c3281d:316, not-prose leading-7
+    // on levels 1 to 4 802065431:351, legacy on levels 1 to 5 8b59604c7:456
+    ...Object.fromEntries(
+      ['h1', 'h2', 'h3', 'h4'].map((tag) => [tag, ['not-prose', 'not-prose leading-7', 'legacy']]),
+    ),
+    h5: ['legacy'],
+    // bulletList d081e381d:327, orderedList d081e381d:334, taskList d495bcef8:337
+    ul: ['not-prose'],
+    ol: ['not-prose'],
+    // blockquote f5936ffea:408
+    blockquote: ['prose-quoteless text-black border-l-2 pl-2 border-gray-400 text-[0.9em]'],
+    // codeBlock c52d39e28:393, f5936ffea:402
+    pre: [
+      'not-prose my-5 px-4 py-2 text-[0.9em] font-mono text-black bg-gray-50 rounded border border-gray-300 overflow-x-auto',
+      'not-prose my-5 px-4 pt-4 pb-2 text-[0.9em] font-mono text-black bg-gray-50 rounded border border-gray-300 overflow-x-scroll',
+    ],
+    // code f5936ffea:414
+    code: ['not-prose px-px font-mono bg-gray-50 text-[0.85em] rounded-sm border border-gray-300'],
+    // annotation e88592e0:517
+    span: ['cursor-pointer annotation'],
+  }),
+)
 
 function isDriveClass(element: Element) {
   const tokens = [...element.classList].sort().join(' ')
-  return (DRIVE_CLASSES[element.localName] ?? []).some(
+  return (DRIVE_CLASSES.get(element.localName) ?? []).some(
     (classes) => classes.split(' ').sort().join(' ') === tokens,
   )
 }
@@ -807,9 +822,10 @@ function fromHtml(html: string) {
   const driveClasses = dropDriveClasses(body)
   dropDriveHtmlDefaults(body)
   const source = domInventory(body, atomNameOf)
+  const dropped: Dropped[] = []
   return {
     node,
-    dropped: [] as Dropped[],
+    dropped,
     hasUnreadableThreads,
     threads: threads?.threads ?? [],
     marked,

@@ -42,12 +42,61 @@ const MAX_PENDING_COMMITS = 8;
 const HEALTH_CHECK_TIMEOUT_MS = 5000;
 const STT_KEEPALIVE_INTERVAL_MS = 15_000;
 
+type RealtimeClientEvent =
+	| { type: 'input_audio_buffer.append'; audio: string }
+	| { type: 'input_audio_buffer.commit' | 'session.ping' }
+	| {
+			type: 'session.update';
+			session: {
+				type: 'transcription';
+				audio: {
+					input: {
+						format: { type: 'audio/pcm'; rate: number };
+						transcription: { model: string; language: string; names: string[] };
+						turn_detection: null;
+					};
+				};
+			};
+	  };
+
 interface RealtimeServerMessage {
 	type?: string;
 	item_id?: string;
 	delta?: string;
 	transcript?: string;
 	error?: { message?: string };
+}
+
+type RealtimeFields = Partial<
+	Record<keyof RealtimeServerMessage | 'message', unknown>
+>;
+
+function isRecord(value: unknown): value is RealtimeFields {
+	return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isRealtimeServerMessage(
+	value: unknown,
+): value is RealtimeServerMessage {
+	if (!isRecord(value)) return false;
+	for (const key of ['type', 'item_id', 'delta', 'transcript'] as const) {
+		if (
+			key in value &&
+			typeof value[key] !== 'string' &&
+			value[key] !== undefined
+		)
+			return false;
+	}
+	if ('error' in value && value.error !== undefined) {
+		if (!isRecord(value.error)) return false;
+		if (
+			'message' in value.error &&
+			value.error.message !== undefined &&
+			typeof value.error.message !== 'string'
+		)
+			return false;
+	}
+	return true;
 }
 
 export class SttClient implements ISttClient {
@@ -317,7 +366,10 @@ class SttStream implements ISttStream {
 	private handleMessage(raw: string): void {
 		let message: RealtimeServerMessage;
 		try {
-			message = JSON.parse(raw) as RealtimeServerMessage;
+			const candidate: unknown = JSON.parse(raw);
+			if (!isRealtimeServerMessage(candidate))
+				throw new Error('invalid STT Realtime message');
+			message = candidate;
 		} catch {
 			loggers.stt.warn('Dropping malformed STT Realtime message');
 			return;
@@ -449,7 +501,7 @@ class SttStream implements ISttStream {
 		if (this.pendingCommits === 0) this.resolvePendingWaiters();
 	}
 
-	private sendEvent(event: object): boolean {
+	private sendEvent(event: RealtimeClientEvent): boolean {
 		if (this.socket.readyState !== WebSocket.OPEN) return false;
 		const payload = JSON.stringify(event);
 		if (

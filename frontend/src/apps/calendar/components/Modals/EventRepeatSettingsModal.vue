@@ -3,14 +3,15 @@ import { BottomSheet, Button, Dialog, FormControl, TabButtons } from 'frappe-ui'
 import { Repeat } from 'lucide-vue-next'
 import { computed, inject, reactive, watch } from 'vue'
 
-import { getRepeatMessage } from '@/apps/calendar/utils/format'
+import { getRepeatMessage, type RecurrenceRule } from '@/apps/calendar/utils/format'
 import { useScreenSize } from '@/composables/useScreenSize'
 
 const show = defineModel<boolean>()
 const { startDate, rRule } = defineProps<{ startDate: string; rRule: any }>()
 const emit = defineEmits(['updateRecurrenceRule'])
 
-const dayjs = inject('$dayjs')
+const dayjs = inject<typeof import('dayjs')>('$dayjs')
+if (!dayjs) throw new Error('Missing calendar date formatter')
 
 // Derived from startDate
 const startDay = computed(() => dayjs(startDate).format('dd').toLowerCase())
@@ -24,7 +25,7 @@ const getDefaultRepeat = () => ({
   end: ' ',
   until: dayjs().add(1, 'week').format('YYYY-MM-DD'),
   count: 10,
-  byDay: startDay.value ? [{ day: startDay.value }] : ([] as { day: string }[]),
+  byDay: startDay.value ? [{ day: startDay.value }] : [],
   repeatOn: 'day_of_month',
 })
 
@@ -116,25 +117,17 @@ const monthlyRepeatOnOptions = computed(() => {
 })
 
 const recurrenceRule = computed(() => {
-  const rule: Record<
-    string,
-    string | string[] | number | number[] | { day: string; nthOfPeriod?: number }[]
-  > = { frequency: repeat.frequency, interval: repeat.interval }
+  const rule: RecurrenceRule = { frequency: repeat.frequency, interval: repeat.interval }
 
   if (repeat.frequency === 'weekly' && repeat.byDay.length) {
     rule.byDay = repeat.byDay
   } else if (repeat.frequency === 'monthly') {
-    const monthlyByDay = {
-      day_of_week: [{ day: startDay.value, nthOfPeriod: startWeekNumber.value }],
-      last_day_of_week: [{ day: startDay.value, nthOfPeriod: -1 }],
-    }
-    const monthlyByMonthDay = {
-      day_of_month: [dayjs(startDate).date()],
-      last_day_of_month: [-1],
-    }
-
-    if (repeat.repeatOn in monthlyByDay) rule.byDay = monthlyByDay[repeat.repeatOn]
-    else rule.byMonthDay = monthlyByMonthDay[repeat.repeatOn]
+    if (repeat.repeatOn === 'day_of_week')
+      rule.byDay = [{ day: startDay.value, nthOfPeriod: startWeekNumber.value }]
+    else if (repeat.repeatOn === 'last_day_of_week')
+      rule.byDay = [{ day: startDay.value, nthOfPeriod: -1 }]
+    else if (repeat.repeatOn === 'day_of_month') rule.byMonthDay = [dayjs(startDate).date()]
+    else if (repeat.repeatOn === 'last_day_of_month') rule.byMonthDay = [-1]
   }
 
   // JSCalendar `until` is a LocalDateTime in the event's zone (RFC 8984) — no `Z`.

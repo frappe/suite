@@ -11,10 +11,12 @@ interface Sent {
 
 // A workbook client that records what it is sent; setSheets plays IronCalc
 // reporting its sheet list after an apply or a restore.
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const client = vi.hoisted(() => ({
-  sheets: [] as string[],
-  sent: [] as unknown[],
-  sheetsCb: null as null | (() => void),
+  sheets: fromPartial<string[]>([]),
+  sent: fromPartial<unknown[]>([]),
+  sheetsCb: fromPartial<null | (() => void)>(null),
 }))
 vi.mock('../../core/client', () => ({
   createWorkbookClient: async () => ({
@@ -47,7 +49,7 @@ const namesSent = () => {
     if (c.type === 'batch') c.payload.commands?.forEach(walk)
     else out.push(`${c.type} ${c.payload.name}${c.payload.formula ? ` ${c.payload.formula}` : ''}`)
   }
-  ;(client.sent.splice(0) as Sent[]).forEach(walk)
+  fromPartial<Sent[]>(client.sent.splice(0)).forEach(walk)
   return out
 }
 

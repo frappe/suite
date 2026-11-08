@@ -174,7 +174,9 @@
                 @mousedown.prevent="commitAc(item)"
               >
                 <span class="sn-ac-name">{{ item.name }}</span>
-                <span v-if="item.kind === 'fn'" class="sn-ac-sig">{{ AC_FUNS[item.name] }}</span>
+                <span v-if="item.kind === 'fn'" class="sn-ac-sig">{{
+                  AC_FUNS.get(item.name)
+                }}</span>
                 <span v-else class="sn-ac-badge">sheet</span>
               </div>
             </div>
@@ -2499,34 +2501,34 @@ const visibleRemoteCursors = computed(() => {
   for (const user of _lastRemoteRC.keys()) {
     if (!remoteCursors.value.has(user)) _lastRemoteRC.delete(user)
   }
-  return [...remoteCursors.value.entries()]
-    .filter(([, cursor]) => cursor.subSheet === currentSheet.value)
-    .map(([user, cursor]) => {
-      // Compute a single rect that covers the whole remote range. We pull
-      // the top-left cell rect for x/y and the bottom-right cell rect to
-      // sum the trailing width/height — handles non-uniform column widths
-      // / row heights correctly.
-      const r = cursor.range || {
-        r0: cursor.row,
-        c0: cursor.col,
-        r1: cursor.row,
-        c1: cursor.col,
-      }
-      const tl = grid.getCellRect?.(r.r0, r.c0)
-      const br = grid.getCellRect?.(r.r1, r.c1)
-      if (!tl || !br) return null
-      const width = br.x + br.width - tl.x
-      const height = br.y + br.height - tl.y
-      // Motion detection: the row/col/subSheet stamp is what determines
-      // whether the *peer* moved. If the stamp is unchanged but the pixel
-      // rect differs, that's a local scroll/resize — we leave justMoved
-      // false so the cursor teleports with the viewport rather than
-      // sliding under the user's mouse.
-      const stamp = `${cursor.row}:${cursor.col}:${cursor.subSheet}`
-      const prev = _lastRemoteRC.get(user)
-      const justMoved = prev !== undefined && prev !== stamp
-      _lastRemoteRC.set(user, stamp)
-      return {
+  return [...remoteCursors.value.entries()].flatMap(([user, cursor]) => {
+    if (cursor.subSheet !== currentSheet.value) return []
+    // Compute a single rect that covers the whole remote range. We pull
+    // the top-left cell rect for x/y and the bottom-right cell rect to
+    // sum the trailing width/height — handles non-uniform column widths
+    // / row heights correctly.
+    const r = cursor.range || {
+      r0: cursor.row,
+      c0: cursor.col,
+      r1: cursor.row,
+      c1: cursor.col,
+    }
+    const tl = grid.getCellRect?.(r.r0, r.c0)
+    const br = grid.getCellRect?.(r.r1, r.c1)
+    if (!tl || !br) return []
+    const width = br.x + br.width - tl.x
+    const height = br.y + br.height - tl.y
+    // Motion detection: the row/col/subSheet stamp is what determines
+    // whether the *peer* moved. If the stamp is unchanged but the pixel
+    // rect differs, that's a local scroll/resize — we leave justMoved
+    // false so the cursor teleports with the viewport rather than
+    // sliding under the user's mouse.
+    const stamp = `${cursor.row}:${cursor.col}:${cursor.subSheet}`
+    const prev = _lastRemoteRC.get(user)
+    const justMoved = prev !== undefined && prev !== stamp
+    _lastRemoteRC.set(user, stamp)
+    return [
+      {
         user,
         label: cursor.label,
         justMoved,
@@ -2537,9 +2539,9 @@ const visibleRemoteCursors = computed(() => {
           height: height + 'px',
           ...colourStyle(cursor.colour),
         },
-      }
-    })
-    .filter(Boolean)
+      },
+    ]
+  })
 })
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────

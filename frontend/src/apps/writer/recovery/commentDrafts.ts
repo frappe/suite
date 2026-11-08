@@ -122,10 +122,22 @@ function keyOf(user: string, node: string) {
   return `${PREFIX}${user}:${node}`
 }
 
-function isDraft(value: unknown): value is CommentDraft {
-  const draft = value as Partial<CommentDraft> | null
+interface StoredCommentDraft extends Omit<CommentDraft, 'isSent'> {
+  isSent?: unknown
+}
+
+function isDraft(value: unknown): value is StoredCommentDraft {
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    !('clientId' in value) ||
+    !('anchor' in value) ||
+    !('text' in value)
+  )
+    return false
+  const draft = value
   return (
-    typeof draft?.clientId === 'string' &&
+    typeof draft.clientId === 'string' &&
     typeof draft.anchor === 'string' &&
     typeof draft.text === 'string'
   )

@@ -46,9 +46,7 @@ const SERVER_PREFIXES = new Set(['sheets', 'slides'])
 const ENCODED_SEPARATOR = /%2f|%5c|\\/i
 
 const rowsByLength = new Map<number, Row[]>()
-for (const row of [...(table.rows as Row[])].sort(
-  (a, b) => Number(!isExact(a)) - Number(!isExact(b)),
-)) {
+for (const row of [...table.rows].sort((a, b) => Number(!isExact(a)) - Number(!isExact(b)))) {
   const length = segmentsOf(row.old).length
   rowsByLength.set(length, [...(rowsByLength.get(length) ?? []), row])
 }
@@ -111,7 +109,7 @@ function match(row: Row, segments: string[]): Record<string, string> | null {
 
 function withQuery(address: string, query: string): string {
   if (!query) return address
-  const [base, own] = address.split('?', 2) as [string, string | undefined]
+  const [base = '', own] = address.split('?', 2)
   if (!own) return `${address}?${query}`
   const ownKeys = new Set(own.split('&').map(keyOf))
   const carried = query.split('&').filter((pair) => pair && !ownKeys.has(keyOf(pair)))

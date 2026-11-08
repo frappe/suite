@@ -24,8 +24,9 @@ export function parseSharedStage(value: unknown): SharedStageState | null {
     typeof state.epoch !== 'string' ||
     !state.epoch ||
     state.protocolVersion !== 1 ||
+    typeof state.version !== 'number' ||
     !Number.isSafeInteger(state.version) ||
-    (state.version as number) < 0 ||
+    state.version < 0 ||
     !Array.isArray(state.participantIds) ||
     !Array.isArray(state.activeSpeakerIds)
   )
@@ -63,15 +64,15 @@ export function parseSharedStage(value: unknown): SharedStageState | null {
       presentationOrders[capacity] = [...order]
     }
   }
-  return {
-    ...(typeof state.excludedParticipantId === 'string'
-      ? { excludedParticipantId: state.excludedParticipantId }
-      : {}),
-    ...(presentationOrders ? { presentationOrders } : {}),
+  const stage: SharedStageState = {
     epoch: state.epoch,
     protocolVersion: 1,
-    version: state.version as number,
+    version: state.version,
     participantIds: [...ids],
     activeSpeakerIds: [...active],
   }
+  if (typeof state.excludedParticipantId === 'string')
+    stage.excludedParticipantId = state.excludedParticipantId
+  if (presentationOrders) stage.presentationOrders = presentationOrders
+  return stage
 }

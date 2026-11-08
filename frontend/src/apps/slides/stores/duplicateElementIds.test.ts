@@ -45,7 +45,7 @@ const seedSharedId = (overrides = {}) => {
   slides.value = [
     { clientId: 'c1', elements: [image('shared', '/files/first.webp', overrides)] },
     { clientId: 'c2', elements: [image('shared', '/files/second.webp', overrides)] },
-  ] as any
+  ]
   slideIndex.value = 1
   setCommandHistory(useCommandHistory(slides, { actionOrder, actions: {} }))
 }
@@ -72,7 +72,7 @@ describe('a duplicated slide', () => {
       fadeUnmatchedElements: 0,
     }
 
-    const copy = getNewSlide(true, null, source as any)
+    const copy = getNewSlide(true, null, source)
 
     expect(copy.transition).toBe('Magic Move')
     expect(copy.transitionDuration).toBe(2)

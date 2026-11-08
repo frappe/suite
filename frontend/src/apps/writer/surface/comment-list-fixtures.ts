@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach } from 'vitest'
 import { createApp, h, nextTick, ref, type App } from 'vue'
 
@@ -23,7 +24,7 @@ export function comment(name: string, author: string, content: string) {
   }
 }
 
-export const ON_TEXT = {
+export const ON_TEXT = fromPartial<DocumentThread>({
   name: 'on-text',
   resolved: false,
   comments: [
@@ -31,19 +32,19 @@ export const ON_TEXT = {
     comment('c2', 'Ben Ito', 'Yes'),
     comment('c3', 'Asha Rao', 'Thanks'),
   ],
-} as unknown as DocumentThread
+})
 
-export const WHOLE = {
+export const WHOLE = fromPartial<DocumentThread>({
   name: 'whole',
   resolved: false,
   comments: [comment('c4', 'Ben Ito', 'Looks good overall')],
-} as unknown as DocumentThread
+})
 
-export const DONE = {
+export const DONE = fromPartial<DocumentThread>({
   name: 'done',
   resolved: true,
   comments: [comment('c5', 'Asha Rao', 'Fixed the title'), comment('c6', 'Ben Ito', 'Thanks')],
-} as unknown as DocumentThread
+})
 
 export const PLACES = new Map<string, ThreadPlace>([
   ['on-text', { kind: 'text', from: 5, to: 9, quote: 'the words' }],
@@ -106,14 +107,28 @@ export function fakeDrafts(shown: Partial<ShownDraft>[] = [], answers: (string |
       return answers.shift() ?? null
     },
   }
-  return { posted, list: list as unknown as ReturnType<typeof useCommentDrafts> }
+  return { posted, list: fromPartial<ReturnType<typeof useCommentDrafts>>(list) }
 }
 
 // The list over the three threads, recording each change it asks for and each thread it opens or lights
+interface CommentListOptions {
+  canComment?: boolean
+  threads?: DocumentThread[]
+  openThread?: string | null
+  isRefusingResolve?: boolean
+  isRefusingEdit?: boolean
+  isRefusingRemove?: boolean
+  refusedReplies?: number
+  heldReplies?: Promise<void>
+  canEditDocument?: boolean
+  canShare?: boolean
+  drafts?: ReturnType<typeof fakeDrafts>['list']
+}
+
 export function showList({
   canComment = true,
   threads = [ON_TEXT, WHOLE, DONE],
-  openThread = null as string | null,
+  openThread = null,
   isRefusingResolve = false,
   isRefusingEdit = false,
   isRefusingRemove = false,
@@ -122,7 +137,7 @@ export function showList({
   canEditDocument = false,
   canShare = true,
   drafts = fakeDrafts().list,
-} = {}) {
+}: CommentListOptions = {}) {
   const asked: string[] = []
   const replyIds: string[] = []
   let refusalsLeft = refusedReplies
@@ -162,11 +177,9 @@ export function showList({
               ...listedThread,
               comments: [
                 ...listedThread.comments,
-                comment(
-                  `reply-${replyIds.length}`,
-                  me.id,
-                  text,
-                ) as DocumentThread['comments'][number],
+                fromPartial<DocumentThread['comments'][number]>(
+                  comment(`reply-${replyIds.length}`, me.id, text),
+                ),
               ],
             }
           : listedThread,
@@ -209,7 +222,7 @@ export function showList({
   }
   const readAt = ref<number | null>(null)
   const { threads: shownThreads, actions } = useThreadChanges({
-    session: { comments } as unknown as Pick<DocumentSession, 'comments'>,
+    session: fromPartial<Pick<DocumentSession, 'comments'>>({ comments }),
     readThreads: listed,
     readAt,
     refresh: async () => {

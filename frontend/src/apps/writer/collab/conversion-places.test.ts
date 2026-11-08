@@ -34,6 +34,8 @@ import { placeThread } from '@/apps/writer/collab/places'
 const REFUSED = { kind: 'failed', reason: 'check' }
 const MENTION = '<span class="mention" data-type="mention" data-id="x" data-label="Ann">@Ann</span>'
 
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const forced = vi.hoisted(() => ({ isUnitLost: false, isPlaceShifted: false, calls: 0 }))
 
 vi.mock('@/apps/writer/collab/old-comments', async (importOriginal) => {
@@ -86,7 +88,9 @@ function endIn(text: XmlText) {
 }
 
 function textOf(doc: Doc, index: number) {
-  return (doc.getXmlFragment(BODY_FIELD).get(index) as XmlElement).get(0) as XmlText
+  return fromPartial<XmlText>(
+    fromPartial<XmlElement>(doc.getXmlFragment(BODY_FIELD).get(index)).get(0),
+  )
 }
 
 const DELETED = [{ kind: 'comment-deleted', id: 'c1' }]

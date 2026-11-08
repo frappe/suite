@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const state = vi.hoisted(() => ({
-  guards: [] as Array<() => unknown>,
-  user: null as string | null,
+  guards: fromPartial<Array<() => unknown>>([]),
+  user: fromPartial<string | null>(null),
 }))
 
 vi.mock('@/apps/slides/router', () => ({

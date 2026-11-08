@@ -17,6 +17,10 @@ export const DRIVE_INK = 'rgb(31, 39, 46)'
 
 type Attributes = Record<string, unknown>
 
+function isAttributes<Value>(value: Value): value is Value & Attributes {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
 interface Run {
   insert: unknown
   attributes?: Attributes
@@ -52,7 +56,7 @@ function paletteName(property: ColourProperty, value: string) {
   const { tag, mark, variable } = COLOUR_READS[property]
   const element = document.createElement(tag)
   element.textContent = 'x'
-  let name: unknown = null
+  let name: unknown
   for (const colour of [`var(--${variable}-${value})`, value]) {
     element.setAttribute('style', `${property}: ${colour}`)
     const json: JSONContent = generateJSON(`<p>${element.outerHTML}</p>`, extensions)
@@ -102,11 +106,6 @@ const COLUMN_WIDTH = /^(\d+)px$/
 const CELL_WIDTH = /^([\d.]+)(px|pt|in)$/
 const PIXELS_PER_INCH = 96
 const POINTS_PER_INCH = 72
-const PIXELS_PER: Record<string, number> = {
-  px: 1,
-  pt: PIXELS_PER_INCH / POINTS_PER_INCH,
-  in: PIXELS_PER_INCH,
-}
 const WHOLE_NAME = /^([a-z]+|var\(--[a-z0-9-]+\))$/i
 
 // Old Drive's highlight picker, from its DocMenuAndInfoBar: the editor reads these tones as their
@@ -210,7 +209,7 @@ function withoutSemicolonNames(fontFamily: string) {
 // its quoted names holding a ';' are gone; nothing when neither applies, or with an open quote, a
 // family the editor can't read, a line break, escape or comment before the ';', or when what
 // follows could hold a declaration or swallow the styles drawn after it
-function fontFamilyFormat(fontFamily: unknown): Attributes {
+function fontFamilyFormat(fontFamily: unknown) {
   if (typeof fontFamily !== 'string') {
     return {}
   }
@@ -254,7 +253,7 @@ function highlightName(value: unknown): string | null {
 // The highlight old colours read as: a background colour, which must agree with the highlight the
 // run holds, or that highlight's own colour; null when one can't be read
 function highlightFormat(backgroundColor: unknown, held: unknown): Attributes | null {
-  const heldColour = (held as Attributes | undefined)?.color
+  const heldColour = held && typeof held === 'object' && 'color' in held ? held.color : undefined
   const name = highlightName(backgroundColor)
   const heldName = highlightName(heldColour)
   if (name === null || heldName === null || (name && heldName && name !== heldName)) {
@@ -275,7 +274,8 @@ function highlightFormat(backgroundColor: unknown, held: unknown): Attributes | 
 // The keys that set formatting's old text style colours as palette names, its background on the
 // highlight; null when one reads as no palette colour
 function paletteFormat({ textStyle, namedHighlight }: Attributes): Attributes | null {
-  const { color, backgroundColor, ...rest } = (textStyle ?? {}) as Attributes
+  if (textStyle != null && !isAttributes(textStyle)) return null
+  const { color, backgroundColor, ...rest } = textStyle ?? {}
   const colour = textColourFormat(color)
   const highlight = highlightFormat(backgroundColor, namedHighlight)
   if (!colour || !highlight) {
@@ -290,7 +290,8 @@ function paletteFormat({ textStyle, namedHighlight }: Attributes): Attributes | 
 // Old colours on a text's runs as palette names; false when one reads as none
 function mapTextColours(text: XmlText) {
   let at = 0
-  for (const { insert, attributes = {} } of text.toDelta() as Run[]) {
+  const runs: Run[] = text.toDelta()
+  for (const { insert, attributes = {} } of runs) {
     const format = paletteFormat(attributes)
     if (!format) {
       return false
@@ -320,6 +321,8 @@ function mapPartColours(part: XmlElement) {
     if (value == null) {
       part.removeAttribute(key)
     } else {
+      // SAFETY: paletteFormat produces structured textStyle/namedHighlight marks.
+      // Yjs preserves these attribute objects despite XmlElement's default string generic.
       part.setAttribute(key, value as string)
     }
   }
@@ -350,7 +353,7 @@ const OLD_BORDERS = new Map([
 // The cell style an old border colour name and width drew, the width over the name's; null for a
 // name or width it couldn't have drawn
 function oldBorderStyle(color: unknown, width: unknown) {
-  const isName = color == null || OLD_BORDERS.has(color as string)
+  const isName = color == null || (typeof color === 'string' && OLD_BORDERS.has(color))
   const isWidth = width == null || (typeof width === 'string' && /^\d+(\.\d+)?px$/.test(width))
   if (!isName || !isWidth) {
     return null
@@ -358,7 +361,7 @@ function oldBorderStyle(color: unknown, width: unknown) {
 
   const pieces = []
   if (color != null) {
-    pieces.push(OLD_BORDERS.get(color as string))
+    pieces.push(typeof color === 'string' ? OLD_BORDERS.get(color) : undefined)
   }
 
   if (width != null) {
@@ -437,7 +440,7 @@ function setCellStyle(cell: XmlElement, element: HTMLElement) {
 export function mapOldCellStyles(body: XmlFragment) {
   const cells = [
     ...body.createTreeWalker((type) => type instanceof XmlElement && CELLS.has(type.nodeName)),
-  ] as XmlElement[]
+  ].filter((node) => node instanceof XmlElement)
   return cells.every(mapCellStyle)
 }
 
@@ -452,12 +455,14 @@ function drawnSpan(value: unknown) {
 export function repairOldCellSpans(body: XmlFragment) {
   const cells = [
     ...body.createTreeWalker((type) => type instanceof XmlElement && CELLS.has(type.nodeName)),
-  ] as XmlElement[]
+  ].filter((node) => node instanceof XmlElement)
   const cellSpans = cells.flatMap((cell) => SPANS.map((name) => [cell, name] as const))
   let repairedSpans = 0
   for (const [cell, name] of cellSpans) {
     const value: unknown = cell.getAttribute(name)
     if (value !== undefined && drawnSpan(value) !== value) {
+      // SAFETY: ProseMirror table spans are positive numeric attributes, which
+      // Yjs preserves despite XmlElement's default string attribute generic.
       cell.setAttribute(name, drawnSpan(value) as never)
       repairedSpans += 1
     }
@@ -489,6 +494,14 @@ function readCellBackground({ style }: HTMLElement) {
   return true
 }
 
+function pixelsPer(unit: string) {
+  if (unit === 'pt') {
+    return PIXELS_PER_INCH / POINTS_PER_INCH
+  }
+
+  return unit === 'in' ? PIXELS_PER_INCH : 1
+}
+
 // A cell's width in a unit that converts to pixels, as its column width; one that disagrees with
 // the width the cell has, or spans columns, is left to fail the check
 function readCellWidth(cell: HTMLElement) {
@@ -501,7 +514,7 @@ function readCellWidth(cell: HTMLElement) {
     return false
   }
 
-  const width = String(Math.round(Number(amount) * PIXELS_PER[unit]))
+  const width = String(Math.round(Number(amount) * pixelsPer(unit)))
   if ((cell.getAttribute('colwidth') ?? width) !== width) {
     return false
   }
@@ -511,8 +524,8 @@ function readCellWidth(cell: HTMLElement) {
   return true
 }
 
-function columnWidthOf(col: Element) {
-  const [, width] = COLUMN_WIDTH.exec((col as HTMLElement).style.getPropertyValue('width')) ?? []
+function columnWidthOf(col: HTMLElement) {
+  const [, width] = COLUMN_WIDTH.exec(col.style.getPropertyValue('width')) ?? []
   return width
 }
 
@@ -527,7 +540,9 @@ function setColumnWidths(cells: HTMLTableCellElement[], widths: (string | undefi
 // A table whose pixel widths are only on its column list, those widths put on its cells, which is
 // where the editor holds them; one with a span or a cell width of its own is left to fail the check
 function readColumnWidths(table: HTMLTableElement) {
-  const widths = [...table.querySelectorAll(':scope > colgroup > col')].map(columnWidthOf)
+  const widths = [...table.querySelectorAll<HTMLElement>(':scope > colgroup > col')].map(
+    columnWidthOf,
+  )
   const rows = [...table.rows].map((row) => [...row.cells])
   const isPlain = rows
     .flat()
@@ -593,7 +608,7 @@ export function repairHtmlCellSpans(body: HTMLElement) {
 // Whether formatting holds a text style value with a ';', which would end its declaration where
 // it's drawn
 function holdsStyleBreak({ textStyle }: Attributes = {}) {
-  return Object.values((textStyle ?? {}) as Attributes).some(
+  return Object.values(textStyle ?? {}).some(
     (value) => typeof value === 'string' && value.includes(';'),
   )
 }
@@ -601,7 +616,8 @@ function holdsStyleBreak({ textStyle }: Attributes = {}) {
 export function breaksStyle(body: XmlFragment) {
   return [...body.createTreeWalker(() => true)].some((part) => {
     if (part instanceof XmlText) {
-      return (part.toDelta() as Run[]).some(({ attributes }) => holdsStyleBreak(attributes))
+      const runs: Run[] = part.toDelta()
+      return runs.some(({ attributes }) => holdsStyleBreak(attributes))
     }
 
     return part instanceof XmlElement && holdsStyleBreak(part.getAttributes())

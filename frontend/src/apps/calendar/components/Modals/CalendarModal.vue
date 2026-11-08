@@ -63,20 +63,23 @@ const isNew = computed(() => !calendar)
 
 const form = reactive({ name: '', color: '' })
 
-const COLOR_LABELS = (): Record<string, string> => ({
-  blue: __('Blue'),
-  green: __('Green'),
-  violet: __('Violet'),
-  amber: __('Amber'),
-  pink: __('Pink'),
-  cyan: __('Cyan'),
-  orange: __('Orange'),
-})
+const COLOR_LABELS = () =>
+  new Map<string, string>(
+    Object.entries({
+      blue: __('Blue'),
+      green: __('Green'),
+      violet: __('Violet'),
+      amber: __('Amber'),
+      pink: __('Pink'),
+      cyan: __('Cyan'),
+      orange: __('Orange'),
+    }),
+  )
 
 // A colour set in another client is kept as it is, and offered back as itself.
 const colorOptions = computed(() => {
   const palette = CALENDAR_COLORS.map(({ name, hex }) => ({
-    label: COLOR_LABELS()[name],
+    label: COLOR_LABELS().get(name),
     value: hex,
   }))
   const own = calendar?.color

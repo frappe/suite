@@ -26,9 +26,15 @@ function nonempty(value: unknown): value is string {
 	return typeof value === 'string' && value.length > 0 && value.length <= 512;
 }
 
+type LedgerFields = Partial<Record<keyof Ledger, unknown>>;
+
+function isRecord(value: unknown): value is LedgerFields {
+	return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
 function migrateLegacyLedger(value: unknown): boolean {
-	if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-	const ledger = value as { version?: unknown; jobs?: unknown };
+	if (!isRecord(value)) return false;
+	const ledger = value;
 	if (
 		ledger.version !== 1 ||
 		!ledger.jobs ||
@@ -52,15 +58,15 @@ function migrateLegacyLedger(value: unknown): boolean {
 }
 
 function validLedger(value: unknown): value is Ledger {
-	if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-	const ledger = value as Partial<Ledger>;
+	if (!isRecord(value)) return false;
+	const ledger = value;
 	const ledgerKeys = Object.keys(ledger).sort();
 	if (
 		JSON.stringify(ledgerKeys) !==
 		JSON.stringify(
-			(ledger.consumed_jtis === undefined
+			ledger.consumed_jtis === undefined
 				? ['jobs', 'version']
-				: ['consumed_jtis', 'jobs', 'version']) as string[],
+				: ['consumed_jtis', 'jobs', 'version'],
 		)
 	)
 		return false;
@@ -73,12 +79,14 @@ function validLedger(value: unknown): value is Ledger {
 		return false;
 	if (
 		ledger.consumed_jtis !== undefined &&
-		(typeof ledger.consumed_jtis !== 'object' ||
-			Array.isArray(ledger.consumed_jtis) ||
+		(!isRecord(ledger.consumed_jtis) ||
 			Object.keys(ledger.consumed_jtis).length > MAX_NONCES ||
 			!Object.entries(ledger.consumed_jtis).every(
 				([jti, expiry]) =>
-					nonempty(jti) && Number.isSafeInteger(expiry) && expiry > 0,
+					nonempty(jti) &&
+					typeof expiry === 'number' &&
+					Number.isSafeInteger(expiry) &&
+					expiry > 0,
 			))
 	)
 		return false;
@@ -239,12 +247,27 @@ export class JobStore {
 				if (migrated) await this.persist(this.ledger);
 				await chmod(this.path, 0o600);
 			} catch (error) {
-				if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+				if (
+					!(
+						typeof error === 'object' &&
+						error !== null &&
+						'code' in error &&
+						error.code === 'ENOENT'
+					)
+				)
+					throw error;
 				try {
 					await access(`${this.path}.initialized`, constants.F_OK);
 					throw new Error('initialized ledger is missing');
 				} catch (markerError) {
-					if ((markerError as NodeJS.ErrnoException).code !== 'ENOENT')
+					if (
+						!(
+							typeof markerError === 'object' &&
+							markerError !== null &&
+							'code' in markerError &&
+							markerError.code === 'ENOENT'
+						)
+					)
 						throw markerError;
 				}
 				await this.persist(this.ledger);

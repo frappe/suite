@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
 
@@ -34,7 +35,7 @@ function presenceOf(doc: Y.Doc, peers: Peer[], cursors: Record<number, unknown>)
     peers,
     ownPid: 1,
     ownArrival: 1,
-    awareness: { getStates: () => states } as never,
+    awareness: fromPartial<import('y-protocols/awareness').Awareness>({ getStates: () => states }),
     doc,
   }
 }
@@ -118,7 +119,7 @@ describe('presence', () => {
   it("sends this tab's selection by ids", () => {
     const doc = sheetDoc()
     const setLocalStateField = vi.fn()
-    sendSelection({ awareness: { setLocalStateField } as never }, doc, {
+    sendSelection({ awareness: fromPartial({ setLocalStateField }) }, doc, {
       sheet: 'Sheet2',
       r0: 0,
       c0: 0,

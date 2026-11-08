@@ -103,7 +103,7 @@ const groups = computed(() => {
       const items = visible(entry.options ?? [])
       if (items.length) grouped.push({ label: entry.group, items })
     } else if (entry) {
-      flat.push(entry as OptionItem)
+      flat.push(entry)
     }
   }
   const flatVisible = visible(flat)

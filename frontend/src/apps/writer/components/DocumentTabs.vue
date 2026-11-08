@@ -128,8 +128,11 @@ function onDragStart(event: DragEvent, id: string, index: number) {
 }
 
 function onDragOver(event: DragEvent, index: number) {
+  const checkedEventTarget = event.currentTarget
+  if (!(checkedEventTarget instanceof HTMLElement)) return
+
   if (!draggedId.value) return
-  const { left, width } = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  const { left, width } = checkedEventTarget.getBoundingClientRect()
   dropIndex.value = event.clientX < left + width / 2 ? index : index + 1
 }
 

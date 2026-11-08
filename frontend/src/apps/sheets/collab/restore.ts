@@ -18,6 +18,10 @@ export interface RestoreNotice {
   message: string
 }
 
+function isVersionRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
 /** Reads a stored version: the Yjs state of a `sheets-document/2` version, or null for any other. */
 export async function readVersionState(bytes: Uint8Array): Promise<Uint8Array | null> {
   let version: unknown
@@ -26,8 +30,8 @@ export async function readVersionState(bytes: Uint8Array): Promise<Uint8Array | 
   } catch {
     return null
   }
-  if (typeof version !== 'object' || version === null) return null
-  const { schema, codec, state } = version as Record<string, unknown>
+  if (!isVersionRecord(version)) return null
+  const { schema, codec, state } = version
   if (schema !== 'sheets-document/2' || codec !== 'yjs1' || typeof state !== 'string') return null
   const compressed = Uint8Array.from(atob(state), (c) => c.charCodeAt(0))
   const stream = new Response(compressed).body!.pipeThrough(new DecompressionStream('gzip'))
@@ -47,13 +51,12 @@ export async function readStoredVersion(bytes: Uint8Array): Promise<StoredVersio
   } catch {
     return null
   }
-  const { schema, sheets_data: body } = (version ?? {}) as Record<string, unknown>
+  if (!isVersionRecord(version)) return null
+  const { schema, sheets_data: body } = version
   if (schema !== 'sheet/1' || typeof body !== 'string') return null
   try {
     const parsed: unknown = JSON.parse(body || '{}')
-    return typeof parsed === 'object' && parsed !== null
-      ? { body: parsed as Record<string, unknown> }
-      : null
+    return isVersionRecord(parsed) ? { body: parsed } : null
   } catch {
     return null
   }
@@ -85,30 +88,33 @@ export function alignDoc(current: Y.Doc, version: Y.Doc): void {
       else now[axis].set(sheetId, Y.Array.from(ids.toArray()))
     }
   }
-  for (const name of Object.keys(now) as (keyof typeof now)[]) {
+  for (const name of Object.keys(now)) {
     if (name === 'sheets' || name === 'rows' || name === 'cols') continue
-    const map = now[name] as Y.Map<unknown>
-    const want = then[name] as Y.Map<unknown>
     if (name === 'tails') {
-      for (const [key, n] of want.entries())
-        if (((map.get(key) as number | undefined) ?? -1) < (n as number)) map.set(key, n)
+      for (const [key, n] of then.tails.entries())
+        if ((now.tails.get(key) ?? -1) < n) now.tails.set(key, n)
       continue
     }
+    const map = current.getMap<unknown>(name)
+    const want = version.getMap<unknown>(name)
     for (const key of [...map.keys()]) if (!want.has(key)) map.delete(key)
     for (const [key, value] of want.entries()) if (!same(map.get(key), value)) map.set(key, value)
   }
 }
 
 // Literal __() calls, so the extractor finds them; called when shown.
-const REFUSALS: Record<string, () => string> = {
-  restoring: () => __('Someone else is restoring a version. Try again once it is done.'),
-  behind: () => __('This tab is still catching up. Try again in a moment.'),
-  milestone_failed: () =>
-    __(
-      "The spreadsheet as it is now couldn't be kept as a version first, so nothing was restored.",
-    ),
-  paused: () => __('Saving is paused, so nothing was restored.'),
-}
+const REFUSALS = new Map<string, () => string>([
+  ['restoring', () => __('Someone else is restoring a version. Try again once it is done.')],
+  ['behind', () => __('This tab is still catching up. Try again in a moment.')],
+  [
+    'milestone_failed',
+    () =>
+      __(
+        "The spreadsheet as it is now couldn't be kept as a version first, so nothing was restored.",
+      ),
+  ],
+  ['paused', () => __('Saving is paused, so nothing was restored.')],
+])
 
 /** Restore version `seq` (its stored bytes) into the room. */
 export async function restoreVersion(
@@ -141,10 +147,10 @@ export async function restoreVersion(
           ),
         }
       default: {
-        const known = result.refusal && Object.hasOwn(REFUSALS, result.refusal)
+        const known = result.refusal && REFUSALS.has(result.refusal)
         return {
           isRestored: false,
-          message: known ? REFUSALS[result.refusal!]!() : __('The version was not restored.'),
+          message: known ? REFUSALS.get(result.refusal!)!() : __('The version was not restored.'),
         }
       }
     }

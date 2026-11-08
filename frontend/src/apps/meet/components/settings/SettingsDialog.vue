@@ -29,7 +29,7 @@
         <MeetingAccessSettingsTab v-if="meetingId" :meeting-id="meetingId" />
       </SettingsPanel>
       <SettingsPanel v-for="tab in tabs" :key="tab.id" :value="tab.id">
-        <component :is="bodies[tab.id]" v-bind="bodyProps(tab.id)" />
+        <component :is="bodies.get(tab.id)" v-bind="bodyProps(tab.id)" />
       </SettingsPanel>
     </SettingsContent>
   </SettingsDialog>
@@ -125,7 +125,7 @@ const Failed = defineComponent({
     ),
 })
 
-const bodies = Object.fromEntries(
+const bodies = new Map<MeetTabId, Component>(
   meetSettings.tabs.map((tab) => [
     tab.id,
     defineAsyncComponent({
@@ -135,7 +135,7 @@ const bodies = Object.fromEntries(
       delay: 0,
     }),
   ]),
-) as Record<MeetTabId, Component>
+)
 
 // The props a tab body takes. Only the video tab and the device tabs take any.
 type TabBodyProps = {
@@ -144,11 +144,11 @@ type TabBodyProps = {
 }
 
 function bodyProps(id: MeetTabId): TabBodyProps {
-  return {
-    ...(id === 'meet.video' ? { isVisible: open.value && activeTab.value === id } : {}),
-    ...(DEVICE_TABS.includes(id)
-      ? { onDeviceChanged: (event: DeviceChange) => emit('device-changed', event) }
-      : {}),
+  const body: TabBodyProps = {}
+  if (id === 'meet.video') body.isVisible = open.value && activeTab.value === id
+  if (DEVICE_TABS.includes(id)) {
+    body.onDeviceChanged = (event: DeviceChange) => emit('device-changed', event)
   }
+  return body
 }
 </script>

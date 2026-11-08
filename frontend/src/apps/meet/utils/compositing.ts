@@ -22,7 +22,7 @@ interface CompositingOptions {
  */
 export function applyBlurEffect(
   source: HTMLCanvasElement,
-  mask: ImageBitmap,
+  mask: TexImageSource,
   width: number,
   height: number,
   options: CompositingOptions = {},
@@ -48,7 +48,7 @@ export function applyBlurEffect(
  */
 export function applyVirtualBackground(
   source: HTMLCanvasElement,
-  mask: ImageBitmap,
+  mask: TexImageSource,
   backgroundImageData: ImageData,
   options: CompositingOptions = {},
 ): HTMLCanvasElement {

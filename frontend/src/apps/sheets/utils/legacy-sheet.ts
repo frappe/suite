@@ -69,6 +69,8 @@ function command<T extends NonBatchCommand['type']>(
   type: T,
   payload: Extract<NonBatchCommand, { type: T }>['payload'],
 ): NonBatchCommand {
+  // SAFETY: Extract pairs payload with this exact T discriminator; constructing
+  // the correlated union is the generic step TypeScript cannot distribute.
   return { ...envelope(), type, payload } as NonBatchCommand
 }
 
@@ -100,7 +102,7 @@ export function ironcalcSheetName(name: string): string {
  * more than 31 characters, empty, or the same as an earlier name but for
  * case). Valid names keep theirs; a new name never clashes with another.
  */
-export function ironcalcSheetNames(names: string[]): Record<string, string> {
+export function ironcalcSheetNames(names: string[]) {
   const taken = new Set<string>()
   const refused: string[] = []
   for (const name of names) {
@@ -130,7 +132,8 @@ export function ironcalcSheetNames(names: string[]): Record<string, string> {
 export function planLegacySheet(data: unknown): LegacyPlan | null {
   const snap = unpackSheet(data)
   if (!snap || typeof snap !== 'object') return null
-  const { sheets, current } = snap as { sheets?: unknown; current?: unknown }
+  const sheets = 'sheets' in snap ? snap.sheets : undefined
+  const current = 'current' in snap ? snap.current : undefined
   if (!sheets || typeof sheets !== 'object') return null
   const oldNames = Object.keys(sheets)
   if (!oldNames.length) return null
@@ -156,9 +159,8 @@ export function planLegacySheet(data: unknown): LegacyPlan | null {
   let cells = 0
   let skipped = 0
   const formulas: LegacyFormulaCell[] = []
-  for (const oldName of oldNames) {
+  for (const [oldName, map] of Object.entries(sheets)) {
     const sheet = newName(oldName)
-    const map = (sheets as Record<string, unknown>)[oldName]
     if (!map || typeof map !== 'object') continue
     for (const [id, value] of Object.entries(map)) {
       let input = asInput(value)

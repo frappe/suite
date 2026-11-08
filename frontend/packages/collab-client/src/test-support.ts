@@ -5,9 +5,21 @@ import * as yjs from 'yjs'
 import { hex } from './bytes'
 import { openRoom } from './open'
 import { REMOTE } from './origins'
-import type { Room } from './room'
+import { Room } from './room'
 import { openDeviceStore, type DeviceStore } from './store'
 import type { Answer, CollabEndpoints, CollabRoom, OpenOptions } from './types'
+
+interface StoredCheckpoint {
+  base: number
+  bytes: Uint8Array
+}
+
+interface PublishedRow {
+  rev: number
+  schema: unknown
+  u: string | null
+  restore?: boolean
+}
 
 export function reply(status: number, body: unknown): Answer {
   return {
@@ -17,7 +29,7 @@ export function reply(status: number, body: unknown): Answer {
 }
 
 export function frame(
-  header: object,
+  header: unknown,
   rows: { rev: number; bytes: Uint8Array }[] = [],
   checkpoint: Uint8Array = new Uint8Array(),
 ): Answer {
@@ -76,26 +88,45 @@ function hasShaConflict(session: FakeSession, range: SeqRange) {
 export function fakeServer(state = 'live', lineage = 'L') {
   const rows: { rev: number; bytes: Uint8Array }[] = []
   const sessions = new Map<string, FakeSession>()
-  const access = { refuse: null as Answer | null, canWrite: true, online: true }
+  interface ServerAccess {
+    refuse: Answer | null
+    canWrite: boolean
+    online: boolean
+  }
+  const access: ServerAccess = { refuse: null, canWrite: true, online: true }
   // The gap the server asks for between pushes, on open and in each push reply
-  const pace = { ms: undefined as number | undefined }
+  interface ReplyPace {
+    ms: number | undefined
+  }
+  const pace: ReplyPace = { ms: undefined }
   const calls: string[] = []
   const pulls: number[] = []
   const finals: boolean[] = []
   const schemas: number[] = []
   // Rises with every quarantine; a pull from a tab that heard an older one answers `rebuild`
-  const epoch = { now: 0, sent: [] as (number | undefined)[] }
+  interface ServerEpoch {
+    now: number
+    sent: (number | undefined)[]
+  }
+  const epoch: ServerEpoch = { now: 0, sent: [] }
   // The highest editor schema any stored row was written with
   const schema = { now: 1 }
   // Rows through `base` folded into one state, as a compaction leaves them
-  const checkpoint: { base: number; bytes: Uint8Array } = { base: 0, bytes: new Uint8Array() }
+  const checkpoint: StoredCheckpoint = { base: 0, bytes: new Uint8Array() }
   // The judge's count and last verdict; `answer` is what a report of a rev gets back
   // `held`: the document waits for an admin, so pushes are refused for a while
-  const judge = {
+  interface JudgeFixture {
+    judged: number
+    verdict: string | undefined
+    held: string | undefined
+    reports: number[]
+    answer(): Answer
+  }
+  const judge: JudgeFixture = {
     judged: 0,
-    verdict: undefined as string | undefined,
-    held: undefined as string | undefined,
-    reports: [] as number[],
+    verdict: undefined,
+    held: undefined,
+    reports: [],
     answer: (): Answer => reply(202, { collab: 'judging', judged: judge.judged }),
   }
   // Pieces of big changes by stage, as the server keeps them until a push names the stage
@@ -103,9 +134,13 @@ export function fakeServer(state = 'live', lineage = 'L') {
   const pieces: { stage: string; idx: number }[] = []
   const shas = new Map<string, string>()
   // Whether push answers ask for a render, and the renders submitted, as the server would check them
-  const copy = {
+  interface ReadableCopyFixture {
+    wanted: boolean
+    renders: { rev: number; q_epoch: number; sid: string; lineage: string; html: string }[]
+  }
+  const copy: ReadableCopyFixture = {
     wanted: false,
-    renders: [] as { rev: number; q_epoch: number; sid: string; lineage: string; html: string }[],
+    renders: [],
   }
   const renderHeaders = new Map<
     string,
@@ -113,7 +148,10 @@ export function fakeServer(state = 'live', lineage = 'L') {
   >()
   let nextClient = 1
   // A compacted state counted this big instead of the checkpoint's own size
-  const counted = { state: null as number | null }
+  interface CountedState {
+    state: number | null
+  }
+  const counted: CountedState = { state: null }
   // What the server publishes about sizes: the caps, and how full the document is now
   function limits() {
     return {
@@ -134,7 +172,12 @@ export function fakeServer(state = 'live', lineage = 'L') {
   }
 
   // The realtime service: whether it answers a room set and carries rows, and the tabs' sockets
-  const realtime = { answers: true, publishing: true, sockets: [] as FakeSocket[] }
+  interface RealtimeFixture {
+    answers: boolean
+    publishing: boolean
+    sockets: FakeSocket[]
+  }
+  const realtime: RealtimeFixture = { answers: true, publishing: true, sockets: [] }
   function roomKeys() {
     const now = Date.now() / 1000
     const at = Math.floor(now / 150)
@@ -143,7 +186,9 @@ export function fakeServer(state = 'live', lineage = 'L') {
     return { epoch: at, keys, epoch_seconds: 150, server_time: now }
   }
 
-  function publish(event: string, message: object) {
+  function publish(event: string, message: unknown) {
+    if (!message || typeof message !== 'object')
+      throw new Error('Expected a realtime message object')
     if (!realtime.publishing) return
 
     const room = roomKeys().keys[0]
@@ -368,11 +413,11 @@ export function fakeServer(state = 'live', lineage = 'L') {
           encodedRow = base64(bytes)
         }
 
-        const row: Record<string, unknown> = {
+        const row: PublishedRow = {
           rev: rows.length,
           schema: header.schema,
           u: encodedRow,
-        }
+        } satisfies Record<string, unknown>
         if (isRestore) {
           restore.rev = rows.length
           restore.until = 0
@@ -460,11 +505,17 @@ export function fakeServer(state = 'live', lineage = 'L') {
   }
 
   // A restore under way holds the document until `until`; 0 when none is
-  const restore = {
+  interface RestoreFixture {
+    until: number
+    rev: number
+    token: string
+    notice: Record<string, unknown> | undefined
+  }
+  const restore: RestoreFixture = {
     until: 0,
     rev: 0,
     token: '',
-    notice: undefined as Record<string, unknown> | undefined,
+    notice: undefined,
   }
   function restoringMs() {
     return Math.max(0, restore.until - Date.now()) || undefined
@@ -575,7 +626,7 @@ export function fakeSocket(realtime: { answers: boolean }) {
         handlers.get(event)?.delete(handler)
       }
     },
-    emit(event: string, payload: { rooms: string[] }, ack: (answer: object) => void) {
+    emit(event: string, payload: { rooms: string[] }, ack: (answer: unknown) => void) {
       if (event !== 'suite_collab_rooms' || !socket.connected || !realtime.answers) return
 
       socket.joined = new Set(payload.rooms)
@@ -586,7 +637,7 @@ export function fakeSocket(realtime: { answers: boolean }) {
     connect() {
       socket.connects++
     },
-    hear(event: string, message?: object) {
+    hear(event: string, message?: unknown) {
       for (const handler of handlers.get(event) ?? []) {
         handler(message)
       }
@@ -618,7 +669,7 @@ export function adapterAt(schema: number) {
   return {
     app: 'test',
     schemaVersion: schema,
-    toPeerPosition: (raw: unknown) => raw as object,
+    toPeerPosition: (raw: unknown) => (raw && typeof raw === 'object' ? raw : null),
     toHtml: () => '',
   }
 }
@@ -637,7 +688,8 @@ export async function join(endpoints: CollabEndpoints, extra: Partial<OpenOption
   }
 
   // The room itself, so tests can also reach what the package keeps internal
-  const room = opened.room as Room
+  const room = opened.room
+  if (!(room instanceof Room)) throw new Error('Expected the package room implementation')
   rooms.push(room)
   return room
 }

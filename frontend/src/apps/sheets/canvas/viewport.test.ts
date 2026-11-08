@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createViewport, watchPixelRatio, type ViewportOptions } from './viewport.js'
@@ -133,10 +134,10 @@ describe('viewport — scrolling', () => {
 describe('watchPixelRatio', () => {
   it('fires on a ratio change and re-arms for the new ratio', () => {
     const queries: { media: string; listeners: (() => void)[] }[] = []
-    const win = {
+    const win = fromPartial<Window>({
       devicePixelRatio: 1,
       matchMedia(media: string) {
-        const q = { media, listeners: [] as (() => void)[] }
+        const q = { media, listeners: fromPartial<(() => void)[]>([]) }
         queries.push(q)
         return {
           addEventListener: (_: string, cb: () => void) => q.listeners.push(cb),
@@ -145,12 +146,12 @@ describe('watchPixelRatio', () => {
           },
         }
       },
-    } as unknown as Window
+    })
     const onChange = vi.fn()
     const stop = watchPixelRatio(onChange, win)
     expect(queries[0]!.media).toBe('(resolution: 1dppx)')
 
-    ;(win as { devicePixelRatio: number }).devicePixelRatio = 2
+    Object.defineProperty(win, 'devicePixelRatio', { value: 2, configurable: true })
     queries[0]!.listeners[0]!()
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(queries[1]!.media).toBe('(resolution: 2dppx)')
@@ -161,6 +162,6 @@ describe('watchPixelRatio', () => {
   })
 
   it('is a no-op where matchMedia does not exist', () => {
-    expect(() => watchPixelRatio(() => {}, {} as Window)()).not.toThrow()
+    expect(() => watchPixelRatio(() => {}, fromPartial<Window>({}))()).not.toThrow()
   })
 })

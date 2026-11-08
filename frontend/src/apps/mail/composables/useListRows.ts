@@ -200,8 +200,8 @@ export const useListRows = ({
    * focuses the row it opens, and the open row is marked already.
    */
   const onListFocusIn = (event: FocusEvent) => {
-    const target = event.target as HTMLElement | null
-    if (!target?.matches(':focus-visible')) return
+    const target = event.target
+    if (!(target instanceof HTMLElement) || !target.matches(':focus-visible')) return
     const key = target.closest<HTMLElement>('[data-row-key]')?.dataset.rowKey
     if (key) focusedRowKey.value = key
   }

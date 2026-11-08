@@ -8,6 +8,7 @@ import {
   initProseMirrorDoc,
   yXmlFragmentToProsemirrorJSON,
 } from '@tiptap/y-tiptap'
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach } from 'vitest'
 import {
   applyUpdate,
@@ -77,6 +78,8 @@ export function yRuns(...pieces: [string, Record<string, unknown>?][]) {
 
 export function yHeading(text: string, id?: string) {
   const node = yElement('heading', new XmlText(text))
+  // SAFETY: Yjs stores ProseMirror's numeric heading level unchanged; XmlElement's
+  // default attribute generic describes strings even though its runtime preserves this number.
   node.setAttribute('level', HEADING_LEVEL as never)
   if (id) {
     node.setAttribute('data-toc-id', id)
@@ -102,6 +105,8 @@ export function withChildren(node: XmlElement, ...children: (XmlElement | XmlTex
 export function oldMedia(attributes: Record<string, unknown>) {
   const node = new XmlElement('resizableMedia')
   for (const [key, value] of Object.entries(attributes)) {
+    // SAFETY: these old media attributes intentionally include numeric legacy dimensions;
+    // Yjs preserves the raw value, while XmlElement's default generic describes strings.
     node.setAttribute(key, value as string)
   }
 
@@ -201,8 +206,10 @@ export function shown(editor: Editor, anchor: string) {
 
 // Each stored run of a paragraph's text with the keys it holds
 export function storedRuns(state: Uint8Array, index: number) {
-  const block = opened(state).getXmlFragment(BODY_FIELD).get(index) as XmlElement
-  const runs: { insert: string; attributes?: object }[] = (block.get(0) as XmlText).toDelta()
+  const block = fromPartial<XmlElement>(opened(state).getXmlFragment(BODY_FIELD).get(index))
+  const runs: { insert: string; attributes?: object }[] = fromPartial<XmlText>(
+    block.get(0),
+  ).toDelta()
   return runs.map(({ insert, attributes }) => [insert, Object.keys(attributes ?? {})])
 }
 

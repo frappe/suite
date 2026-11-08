@@ -9,6 +9,12 @@ import notificationContextManager from './notificationContext'
 type FrequencyPoint = [number, number] // [frequency, timeOffset]
 type FrequencyInput = number | FrequencyPoint[]
 
+declare global {
+  interface Window {
+    webkitAudioContext?: typeof AudioContext
+  }
+}
+
 class AudioNotificationManager {
   private audioContext: AudioContext | null = null
   private isInitialized = false
@@ -17,10 +23,7 @@ class AudioNotificationManager {
     if (this.isInitialized) return
 
     try {
-      this.audioContext = new (
-        window.AudioContext ||
-        (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
-      )()
+      this.audioContext = new (window.AudioContext || window.webkitAudioContext)()
       this.isInitialized = true
     } catch (error) {
       console.warn('AudioContext not supported:', error)

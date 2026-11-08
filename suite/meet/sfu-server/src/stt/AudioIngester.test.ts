@@ -1,5 +1,5 @@
-import type { ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
+import { fromPartial } from '@total-typescript/shoehorn';
 import type { Producer, Router } from 'mediasoup/types';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AudioIngester } from './AudioIngester';
@@ -48,9 +48,9 @@ function testIngester(
 		speechDetector: fixtureDetector(),
 		roomId: 'room',
 		participantId: 'speaker',
-		producer: { id: 'producer' } as Producer,
-		router: {} as Router,
-		sttClient: {} as ISttClient,
+		producer: fromPartial<Producer>({ id: 'producer' }),
+		router: fromPartial<Router>({}),
+		sttClient: fromPartial<ISttClient>({}),
 		onUnexpectedStreamClose: vi.fn(),
 		onTranscript: vi.fn(),
 		...options,
@@ -87,11 +87,7 @@ describe('AudioIngester', () => {
 		const ingester = testIngester({
 			speechDetector: detector,
 		});
-		const internals = ingester as unknown as {
-			sttStream: ISttStream;
-			handleDecodedAudio(audio: Buffer): void;
-			runVadCheck(): Promise<void>;
-		};
+		const internals = ingester;
 		internals.sttStream = stream;
 		const audio = Array.from({ length: 12 }, (_, index) =>
 			silenceFrame(index + 1),
@@ -121,11 +117,7 @@ describe('AudioIngester', () => {
 		const ingester = testIngester({
 			speechDetector: detector,
 		});
-		const internals = ingester as unknown as {
-			sttStream: ISttStream;
-			handleDecodedAudio(audio: Buffer): void;
-			runVadCheck(): Promise<void>;
-		};
+		const internals = ingester;
 		internals.sttStream = stream;
 		const softPrefix = Array.from({ length: 19 }, (_, index) => {
 			const frame = Buffer.alloc(FRAME_BYTES);
@@ -134,7 +126,9 @@ describe('AudioIngester', () => {
 			return frame;
 		});
 		const positiveFrame = speechFrame();
-		internals.handleDecodedAudio(Buffer.concat([...softPrefix, positiveFrame, positiveFrame]));
+		internals.handleDecodedAudio(
+			Buffer.concat([...softPrefix, positiveFrame, positiveFrame]),
+		);
 		await internals.runVadCheck();
 		const expectedPrefix =
 			override === undefined
@@ -164,11 +158,7 @@ describe('AudioIngester', () => {
 		const ingester = testIngester({
 			speechDetector: detector,
 		});
-		const internals = ingester as unknown as {
-			sttStream: ISttStream;
-			handleDecodedAudio(audio: Buffer): void;
-			runVadCheck(): Promise<void>;
-		};
+		const internals = ingester;
 		internals.sttStream = stream;
 		internals.handleDecodedAudio(speechFrame());
 		const checking = internals.runVadCheck();
@@ -192,13 +182,8 @@ describe('AudioIngester', () => {
 			speechDetector: detector,
 			onUnexpectedStreamClose: failed,
 		});
-		const internals = ingester as unknown as {
-			running: boolean;
-			sttStream: ISttStream;
-			handleDecodedAudio(audio: Buffer): void;
-			startVadLoop(): void;
-		};
-		internals.running = true;
+		const internals = ingester;
+		internals['running'] = true;
 		internals.sttStream = stream;
 		internals.handleDecodedAudio(speechFrame());
 		internals.startVadLoop();
@@ -232,20 +217,15 @@ describe('AudioIngester', () => {
 		const stream = testStream();
 		const ingester = testIngester({
 			speechDetector: undefined,
-			sttClient: {
+			sttClient: fromPartial<ISttClient>({
 				createStream: vi.fn().mockResolvedValue(stream),
-			} as unknown as ISttClient,
+			}),
 		});
 		const transport = {
 			connect: vi.fn().mockResolvedValue(undefined),
 			close: vi.fn(),
 		};
-		const internals = ingester as unknown as {
-			setupPlainTransport(): Promise<void>;
-			createConsumer(): Promise<void>;
-			startFfmpeg(): Promise<void>;
-			plainTransport: typeof transport | null;
-		};
+		const internals = ingester;
 		vi.spyOn(internals, 'setupPlainTransport').mockImplementation(async () => {
 			internals.plainTransport = transport;
 		});
@@ -301,19 +281,14 @@ describe('AudioIngester', () => {
 			});
 		const onTranscript = vi.fn();
 		const ingester = testIngester({
-			sttClient: { createStream } as unknown as ISttClient,
+			sttClient: fromPartial<ISttClient>({ createStream }),
 			onTranscript,
 		});
 		const transport = {
 			connect: vi.fn().mockResolvedValue(undefined),
 			close: vi.fn(),
 		};
-		const internals = ingester as unknown as {
-			setupPlainTransport(): Promise<void>;
-			createConsumer(): Promise<void>;
-			startFfmpeg(): Promise<void>;
-			plainTransport: typeof transport | null;
-		};
+		const internals = ingester;
 		vi.spyOn(internals, 'setupPlainTransport').mockImplementation(async () => {
 			internals.plainTransport = transport;
 		});
@@ -344,11 +319,7 @@ describe('AudioIngester', () => {
 		const ingester = testIngester({
 			speechDetector: detector,
 		});
-		const internals = ingester as unknown as {
-			sttStream: ISttStream;
-			handleDecodedAudio(data: Buffer): void;
-			runVadCheck(): Promise<void>;
-		};
+		const internals = ingester;
 		internals.sttStream = stream;
 		internals.handleDecodedAudio(silenceFrame(45));
 		await internals.runVadCheck();
@@ -396,13 +367,8 @@ describe('AudioIngester', () => {
 		const ingester = testIngester({
 			onUnexpectedStreamClose: onFailure,
 		});
-		const internals = ingester as unknown as {
-			running: boolean;
-			sttStream: ISttStream;
-			handleDecodedAudio(data: Buffer): void;
-			runVadCheck(): Promise<void>;
-		};
-		internals.running = true;
+		const internals = ingester;
+		internals['running'] = true;
 		internals.sttStream = stream;
 		if (withPreRoll) internals.handleDecodedAudio(silenceFrame(32));
 		internals.handleDecodedAudio(speechFrame());
@@ -465,11 +431,7 @@ describe('AudioIngester', () => {
 		const speechSilence = silenceFrame();
 		const speech2 = speechFrame();
 		const remainder = Buffer.alloc(FRAME_BYTES / 2);
-		const internals = ingester as unknown as {
-			handleDecodedAudio(audio: Buffer): void;
-			sttStream: ISttStream;
-			runVadCheck(): Promise<void>;
-		};
+		const internals = ingester;
 		internals.handleDecodedAudio(
 			Buffer.concat([...silences, speech1, speechSilence, speech2, remainder]),
 		);
@@ -498,11 +460,7 @@ describe('AudioIngester', () => {
 		vi.useFakeTimers();
 		const stream = testStream();
 		const ingester = testIngester();
-		const internals = ingester as unknown as {
-			sttStream: ISttStream;
-			handleDecodedAudio(data: Buffer): void;
-			runVadCheck(): Promise<void>;
-		};
+		const internals = ingester;
 		internals.sttStream = stream;
 		for (let frame = 0; frame < 6; frame++) {
 			internals.handleDecodedAudio(speechFrame());
@@ -540,11 +498,7 @@ describe('AudioIngester', () => {
 	it('finalizes continuous speech at the maximum utterance duration', async () => {
 		const stream = testStream();
 		const ingester = testIngester();
-		const internals = ingester as unknown as {
-			handleDecodedAudio(audio: Buffer): void;
-			sttStream: ISttStream;
-			runVadCheck(): Promise<void>;
-		};
+		const internals = ingester;
 		internals.sttStream = stream;
 		for (let index = 0; index < 151; index++) {
 			internals.handleDecodedAudio(speechFrame());
@@ -560,7 +514,7 @@ describe('AudioIngester', () => {
 		const ingester = testIngester({
 			onUnexpectedStreamClose: onFailure,
 		});
-		const process = new EventEmitter() as ChildProcess;
+		const process = new EventEmitter();
 		Object.assign(process, {
 			killed: false,
 			exitCode: null,
@@ -570,14 +524,10 @@ describe('AudioIngester', () => {
 				return true;
 			}),
 		});
-		const internals = ingester as unknown as {
-			running: boolean;
-			ffmpeg: ChildProcess | null;
-			watchFfmpeg(process: ChildProcess): void;
-		};
-		internals.running = true;
-		internals.ffmpeg = process;
-		internals.watchFfmpeg(process);
+		const internals = ingester;
+		internals['running'] = true;
+		internals['ffmpeg'] = process;
+		internals['watchFfmpeg'](process);
 
 		process.emit('error', new Error('decoder failed'));
 		process.emit('exit', 1, null);

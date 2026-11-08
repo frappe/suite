@@ -5,7 +5,9 @@ import type { Operation } from '@/platform/transport'
 
 import NodeInfoDialog from './NodeInfoDialog.vue'
 
-const server = vi.hoisted(() => ({ role: 50, requests: [] as string[] }))
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
+const server = vi.hoisted(() => ({ role: 50, requests: fromPartial<string[]>([]) }))
 const person = (id: string, full_name: string) => ({ id, full_name, user_image: null })
 const grant = (principal: string, extra: Record<string, unknown> = {}) => ({
   node: 'report',

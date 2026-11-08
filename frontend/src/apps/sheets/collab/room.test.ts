@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
 
@@ -18,7 +19,7 @@ import { cmd, makeStores, newClient, openTab, type Tab } from './test-tabs'
 // Real IronCalc workbooks, several round trips each.
 const ROOM_TIMEOUT = 30_000
 
-const session = { nodeId: 'n1' } as unknown as CollabSession
+const session = fromPartial<CollabSession>({ nodeId: 'n1' })
 
 async function openSheet(open: () => Promise<Opened>): Promise<SheetRoom> {
   const opened = await openSheetRoom({
@@ -198,7 +199,7 @@ describe('openSheetRoom', { timeout: ROOM_TIMEOUT }, () => {
         throw new Error('bad comments')
       },
     }
-    const stores = { ...makeStores(), comments: broken } as unknown as ReturnType<typeof makeStores>
+    const stores = fromPartial<ReturnType<typeof makeStores>>({ ...makeStores(), comments: broken })
     let room: CollabRoom | undefined
     const open = async () => {
       const opened = await server.open()

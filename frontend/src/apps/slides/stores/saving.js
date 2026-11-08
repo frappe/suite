@@ -162,6 +162,7 @@ const getPresentationFromLocalDB = async (id) => {
 const dirty = ref(false)
 
 // whose push is running; there is one at a time, whichever presentation is open
+/** @type {import('vue').Ref<string | null>} */
 const savingFor = ref(null)
 
 const isSaving = computed(() => !!savingFor.value && savingFor.value === presentationId.value)
