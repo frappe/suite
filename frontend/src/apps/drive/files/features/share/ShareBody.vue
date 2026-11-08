@@ -221,7 +221,7 @@ import {
 import { computed, ref } from 'vue'
 
 import { GENERAL, PUBLIC, roleLabel, type PrincipalKind } from '@/apps/drive/client/grants'
-import { DRIVE_ROLES, type DrivePerson } from '@/apps/drive/client/types'
+import type { DrivePerson } from '@/apps/drive/client/types'
 import { confirm } from '@/platform/feedback'
 import { translate as __ } from '@/platform/translation'
 
@@ -229,6 +229,7 @@ import { copyLink, formatDay, stampDay } from './shareFormat'
 import ShareLinkDialog from './ShareLinkDialog.vue'
 import { roleMenu } from './shareMenu'
 import {
+  abilityLabel,
   isOpen,
   isPublicFromAncestor,
   type GeneralAccess,
@@ -407,12 +408,7 @@ function generalDescription(row: Extract<UnifiedRow, { type: 'general' }>): stri
   if (access.state === 'denied') return row.kind === 'public' ? __('Not public') : __('Denied here')
   if (access.state === 'expired') return expiredDescription(access)
   if (row.kind === 'public') return publicReach()
-  const role = generalRole(access)
-  if (role === DRIVE_ROLES.read) return __('Can view')
-  if (role === DRIVE_ROLES.comment) return __('Can comment')
-  if (role === DRIVE_ROLES.upload) return __('Can upload')
-  if (role === DRIVE_ROLES.edit) return __('Can edit')
-  return __(roleLabel(role))
+  return abilityLabel(generalRole(access))
 }
 
 /** What public access reaches. Publishing a folder publishes everything in it. */

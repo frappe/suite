@@ -99,6 +99,7 @@ import { Button, Dialog, ErrorMessage, FormControl, Skeleton, TabButtons } from 
 import { computed, inject, reactive, ref, useTemplateRef, watch } from 'vue'
 
 import { api, useInfiniteQuery, useMutation } from '@/api'
+import { defaultDocumentTitle } from '@/apps/drive/client/nodes'
 import type { DriveNode } from '@/apps/drive/client/types'
 import { DOCUMENT_TYPES_KEY } from '@/platform/contracts'
 
@@ -128,10 +129,9 @@ const typeOptions = computed(() =>
   })),
 )
 const typeKey = ref(documentTypes[0]?.key ?? '')
-const documentType = computed(() =>
-  documentTypes.find((definition) => definition.key === typeKey.value),
+const contentDoctype = computed(
+  () => documentTypes.find((definition) => definition.key === typeKey.value)?.contentDoctype,
 )
-const contentDoctype = computed(() => documentType.value?.contentDoctype)
 const templates = useInfiniteQuery(api.drive.views.list, () =>
   open.value && contentDoctype.value
     ? {
@@ -152,7 +152,7 @@ watch(
   [typeKey, open],
   () => {
     selected.value = null
-    title.value = `Untitled ${(documentType.value?.newLabel() ?? 'Document').toLowerCase()}`
+    title.value = defaultDocumentTitle(contentDoctype.value)
   },
   { immediate: true },
 )

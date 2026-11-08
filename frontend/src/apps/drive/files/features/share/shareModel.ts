@@ -4,13 +4,15 @@ import {
   isExpired,
   principalKind,
   PUBLIC,
+  roleLabel,
   type DriveGrant,
   type GrantExplanation,
   type GrantList,
   type InheritedGrant,
   type PrincipalKind,
 } from '@/apps/drive/client/grants'
-import type { DrivePerson } from '@/apps/drive/client/types'
+import { DRIVE_ROLES, type DrivePerson } from '@/apps/drive/client/types'
+import { translate as __ } from '@/platform/translation'
 
 /**
  * What the share dialog shows, derived from one grants read (unified spec §7.3).
@@ -274,6 +276,16 @@ export function sharedWith(
     ...(isOpen(sections.public) ? [principalLabel(PUBLIC)] : []),
     ...(links ? [links === 1 ? '1 share link' : `${links} share links`] : []),
   ]
+}
+
+/** What a role lets someone do: "Can view", "Can edit". */
+export function abilityLabel(role: number): string {
+  if (role === DRIVE_ROLES.read) return __('Can view')
+  if (role === DRIVE_ROLES.comment) return __('Can comment')
+  if (role === DRIVE_ROLES.upload) return __('Can upload')
+  if (role === DRIVE_ROLES.edit) return __('Can edit')
+  if (role === DRIVE_ROLES.manage) return __('Can manage')
+  return __(roleLabel(role))
 }
 
 /** Everyone at the org, named after the workspace when its name is known. */
