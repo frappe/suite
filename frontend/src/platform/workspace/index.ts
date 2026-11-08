@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { readonly, ref } from 'vue'
 
 import { api, client } from '@/api'
 
@@ -38,5 +38,9 @@ function ensureWorkspaceLoaded() {
  */
 export function useWorkspace() {
   ensureWorkspaceLoaded()
-  return { workspaceName, workspaceLogo, setWorkspace }
+  return {
+    workspaceName: readonly(workspaceName),
+    workspaceLogo: readonly(workspaceLogo),
+    setWorkspace,
+  }
 }
