@@ -1260,11 +1260,12 @@ class TestDavPrincipals(DavCase):
             patch.object(dispatch, "_handler_for", return_value=handler),
             patch.object(log, "configured_level", return_value=None),
             patch("frappe.set_user"),
-            # Reading Suite Settings under this mock makes Frappe cache a wrong controller for it.
-            patch("suite.composition.access.require_access"),
+            # Reading Suite Settings under DavCase's mocked database makes Frappe cache a wrong controller.
+            patch("suite.composition.access.require_access") as gate,
             self.assertRaises(dispatch.DAVResponseException) as caught,
         ):
             dispatch._dispatch(request)
+        gate.assert_called_once_with(USER)
         return caught.exception.response, seen.get("ctx")
 
     def test_the_dispatcher_drops_the_link_header_before_anything_reads_it(self):

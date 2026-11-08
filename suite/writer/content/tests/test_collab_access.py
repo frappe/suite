@@ -115,8 +115,6 @@ class TestWriterCollabAccess(CollabCase):
 
     def test_a_node_no_app_keeps_here_is_not_found_as_a_missing_one_is(self):
         self.set_mode("on")
-        # Every Drive document type has an editor now, so this site pretends none is registered.
-        self.enterContext(patch.object(editors, "for_type", return_value=None))
         root = drive.ensure_personal_root(WRITER)
         parent = frappe.db.get_value("Drive Root", root, "node")
         presentation = drive.create_document(
@@ -137,6 +135,10 @@ class TestWriterCollabAccess(CollabCase):
             ),
         )
 
+        # Slides now keeps Presentation, so only Writer is registered here to leave a type no app keeps.
+        self.enterContext(
+            patch.object(editors, "editors", return_value={writer_content.APP: writer_content.EDITOR})
+        )
         for user, node, answers in expected:
             frappe.set_user(user)
             session_body = json.dumps({"sid": uuid.uuid4().hex}).encode()
