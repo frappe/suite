@@ -186,7 +186,7 @@
           <TabButtons
             v-if="trashTabs"
             class="mt-3 max-w-96"
-            :fluid="!!organizationName()"
+            :fluid="!!workspaceName"
             :model-value="route.query.root === 'organization' ? 'organization' : 'personal'"
             :options="[
               { value: 'personal', label: 'My files' },
@@ -330,6 +330,7 @@ import { useSession } from '@/platform/session'
 import { openAreaShortcuts } from '@/platform/shortcuts'
 import { translate as __ } from '@/platform/translation'
 import { TransportError } from '@/platform/transport'
+import { useWorkspace } from '@/platform/workspace'
 
 import { inBatches } from '../features/batches'
 import BatchOutcome from '../features/BatchOutcome.vue'
@@ -401,7 +402,6 @@ import {
   LOCATION_LABELS,
   locationLabel,
   locationTitle,
-  organizationName,
   rootPath,
   trashLocation,
 } from '../internal/locations'
@@ -417,6 +417,7 @@ const dialogs = useDriveDialogs()
 const documentTypes = inject(DOCUMENT_TYPES_KEY, [])
 const guestFrame = inject(GUEST_FRAME_KEY, null)
 const session = useSession()
+const { workspaceName } = useWorkspace()
 // A visitor without a session gets no sidebar, search or Star (spec §10.3).
 const signedIn = computed(() => session.status.value === 'authenticated')
 // Roots need a session (spec §10.13). A guest only ever opens a shared folder.
@@ -625,7 +626,7 @@ const breadcrumbs = computed(() => {
 })
 usePageTitle(() => {
   if (isSearching.value) return `Search results for “${searchTerm.value}”`
-  if (props.destination === 'organization' && organizationName()) return placeLabel.value
+  if (props.destination === 'organization' && workspaceName.value) return placeLabel.value
   return props.destination === 'folder' ? (folderTitle.value ?? '') : ''
 })
 const folderParent = computed<RouteLocationRaw | null>(() => {

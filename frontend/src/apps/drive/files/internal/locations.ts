@@ -14,14 +14,9 @@ export const LOCATION_LABELS: Record<FilesLocation, string> = {
   shared: 'Shared with me',
 }
 
-/** The company name the Organization root shows under. Empty while no name is known. Reactive. */
-export function organizationName(): string {
-  return useWorkspace().workspaceName.value
-}
-
 /** The name of a sidebar place. The Organization root is "<company> files" once the company is known. */
 export function locationLabel(location: FilesLocation): string {
-  const name = location === 'organization' ? organizationName() : ''
+  const name = location === 'organization' ? useWorkspace().workspaceName.value : ''
   return name ? __('{0} files', [name]) : LOCATION_LABELS[location]
 }
 

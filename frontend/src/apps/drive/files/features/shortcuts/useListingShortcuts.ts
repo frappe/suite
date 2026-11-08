@@ -14,8 +14,9 @@ import {
   type Letter,
 } from '@/platform/shortcuts'
 import { translate as __ } from '@/platform/translation'
+import { useWorkspace } from '@/platform/workspace'
 
-import { locationLabel, organizationName } from '../../internal/locations'
+import { locationLabel } from '../../internal/locations'
 
 /** What a shortcut runs: the menu option that offers the same action, so the menu's rules apply. */
 export type ListingCommand = Pick<DropdownActionOption, 'onClick' | 'disabled'>
@@ -183,7 +184,7 @@ export function useListingShortcuts(
     view('H', __('My files'), 'personal'),
     view(
       'E',
-      organizationName() ? locationLabel('organization') : __('Organization files'),
+      useWorkspace().workspaceName.value ? locationLabel('organization') : __('Organization files'),
       'organization',
     ),
     view('I', __('Shared with me'), 'shared'),

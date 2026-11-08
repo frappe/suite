@@ -48,8 +48,8 @@ export interface ShareOptions {
   me?: string
   /** Asks the caller to confirm a write that lowers their own role to `after`. Resolves true to go on. */
   confirmLoss?: (after: number) => Promise<boolean>
-  /** The workspace name, which names everyone at the org. Empty or `undefined` while unknown. */
-  workspace?: MaybeRefOrGetter<string | undefined>
+  /** The workspace name, which names everyone at the org. Empty while unknown. */
+  workspace?: MaybeRefOrGetter<string>
   /** The name an ancestor shows under, such as "My files" for the caller's own root. Defaults to its title. */
   placeTitle?: (node: { name: string; title: string }) => string
   /** The node as the opener last read it, such as a listing row, shown until the fresh read lands. */

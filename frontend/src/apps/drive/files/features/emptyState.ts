@@ -1,6 +1,5 @@
 import { translate as __ } from '@/platform/translation'
-
-import { organizationName } from '../internal/locations'
+import { useWorkspace } from '@/platform/workspace'
 
 export type FilesDestination =
   'personal' | 'organization' | 'folder' | 'shared' | 'recent' | 'starred' | 'trash'
@@ -76,7 +75,7 @@ function viewState(input: EmptyStateInput): EmptyState {
     case 'personal':
       return { title: 'No files yet', description: hint || 'Files you add will appear here.' }
     case 'organization': {
-      const company = organizationName()
+      const company = useWorkspace().workspaceName.value
       if (company)
         return {
           title: __('No {0} files yet', [company]),
