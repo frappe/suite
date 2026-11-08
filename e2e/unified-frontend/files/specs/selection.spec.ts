@@ -113,7 +113,7 @@ test("a mixed bulk move reports both halves and keeps the failures selected", as
 
 	// One failure names the item and says why, with no Details.
 	await expect(page.getByText("“row-a” could not be moved")).toBeVisible();
-	await expect(page.getByText("An item with this name is already there.")).toBeVisible();
+	await expect(page.getByText("That name is taken in this folder.")).toBeVisible();
 	await expect(page.getByText("1 selected")).toBeVisible();
 	await expect(page.getByRole("button", { name: "Details" })).toHaveCount(0);
 

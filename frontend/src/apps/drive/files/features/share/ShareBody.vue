@@ -1,7 +1,26 @@
 <template>
-  <div class="space-y-5 text-base text-ink-gray-8">
-    <ErrorMessage v-if="state.loadError.value" :message="state.loadError.value" />
-    <p v-else-if="node && !state.canManage.value" class="text-p-sm text-ink-gray-6">
+  <div class="flex flex-col gap-5 text-base text-ink-gray-8">
+    <div
+      v-if="state.loadError.value"
+      role="alert"
+      class="flex flex-col items-center gap-3 py-8 text-center"
+    >
+      <div class="rounded-full bg-surface-gray-2 p-3 text-ink-gray-5">
+        <span class="lucide-cloud-off size-6" aria-hidden="true" />
+      </div>
+      <div>
+        <p class="text-base-medium text-ink-gray-8">{{ __('Could not load who has access') }}</p>
+        <p class="mt-1.5 text-p-sm text-ink-gray-5">{{ state.loadError.value }}</p>
+      </div>
+      <Button
+        class="mt-1"
+        icon-left="lucide-refresh-cw"
+        :label="__('Retry')"
+        :loading="retrying"
+        @click="retry"
+      />
+    </div>
+    <p v-else-if="node && !state.canManage.value" class="text-p-base text-ink-gray-7">
       {{
         __('You can no longer share this item. Only people who can manage it see who has access.')
       }}
@@ -11,6 +30,7 @@
       <SharePicker
         v-if="node"
         v-model:picked="picked"
+        class="flex-1"
         :node-kind="node.kind"
         :disabled="state.isPending(PICKER)"
         :autofocus="autofocusPicker"
@@ -201,7 +221,7 @@ import {
 import { computed, ref } from 'vue'
 
 import { GENERAL, PUBLIC, roleLabel, type PrincipalKind } from '@/apps/drive/client/grants'
-import { DRIVE_ROLES, type DrivePerson } from '@/apps/drive/client/types'
+import type { DrivePerson } from '@/apps/drive/client/types'
 import { confirm } from '@/platform/feedback'
 import { translate as __ } from '@/platform/translation'
 
@@ -209,6 +229,7 @@ import { copyLink, formatDay, stampDay } from './shareFormat'
 import ShareLinkDialog from './ShareLinkDialog.vue'
 import { roleMenu } from './shareMenu'
 import {
+  abilityLabel,
   isOpen,
   isPublicFromAncestor,
   type GeneralAccess,
@@ -229,6 +250,14 @@ const creatingLink = ref(false)
 const ROW_CLASS =
   'relative before:absolute before:left-11 before:right-0 before:top-0 before:border-t before:border-outline-gray-1 first:before:border-0'
 const publicFromAncestor = computed(() => !!sections.value && isPublicFromAncestor(sections.value))
+
+const retrying = ref(false)
+
+async function retry() {
+  retrying.value = true
+  await props.state.load()
+  retrying.value = false
+}
 // Who put the node here (`node.owner`), when the Owner row does not already
 // name them: always in the Shared root, where no one is Owner.
 const addedBy = computed(() => {
@@ -379,12 +408,7 @@ function generalDescription(row: Extract<UnifiedRow, { type: 'general' }>): stri
   if (access.state === 'denied') return row.kind === 'public' ? __('Not public') : __('Denied here')
   if (access.state === 'expired') return expiredDescription(access)
   if (row.kind === 'public') return publicReach()
-  const role = generalRole(access)
-  if (role === DRIVE_ROLES.read) return __('Can view')
-  if (role === DRIVE_ROLES.comment) return __('Can comment')
-  if (role === DRIVE_ROLES.upload) return __('Can upload')
-  if (role === DRIVE_ROLES.edit) return __('Can edit')
-  return __(roleLabel(role))
+  return abilityLabel(generalRole(access))
 }
 
 /** What public access reaches. Publishing a folder publishes everything in it. */

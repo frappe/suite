@@ -3687,7 +3687,7 @@ title §8.6's dedupe rule would give:
 
 ```json
 { "errors": [ { "type": "DriveConflict",
-                "message": "An active Drive node with this title already exists",
+                "message": "That name is taken in this folder.",
                 "free_title": "report (2).pdf" } ] }
 ```
 

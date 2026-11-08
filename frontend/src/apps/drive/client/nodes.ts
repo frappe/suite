@@ -11,10 +11,20 @@ import type { DriveBreadcrumb, DriveNode } from './types'
 export type CreateNodeInput =
   NodeCreateCreateFolderInput | NodeCreateCreateLinkInput | NodeCreateCreateDocumentInput
 
+/** Silent: the create dialog shows every refusal under its form, so none needs a toast. */
 export async function createNode(input: CreateNodeInput): Promise<DriveNode> {
-  if (input.kind === 'folder') return client.mutation(api.drive.nodes.createFolder, input)
-  if (input.kind === 'link') return client.mutation(api.drive.nodes.createLink, input)
-  return client.mutation(api.drive.nodes.createDocument, input)
+  const options = { silent: true }
+  if (input.kind === 'folder') return client.mutation(api.drive.nodes.createFolder, input, options)
+  if (input.kind === 'link') return client.mutation(api.drive.nodes.createLink, input, options)
+  return client.mutation(api.drive.nodes.createDocument, input, options)
+}
+
+/** The title a new document of this type starts with. */
+export function defaultDocumentTitle(contentDoctype: string | undefined): string {
+  if (contentDoctype === 'Sheet') return 'Untitled spreadsheet'
+  if (contentDoctype === 'Presentation') return 'Untitled presentation'
+  if (contentDoctype === 'Drawing') return 'Untitled drawing'
+  return 'Untitled document'
 }
 
 /** Creates a document; `from_node` imports an uploaded file's contents into it (§10.1). */
@@ -24,15 +34,7 @@ export async function createDocument(input: {
   title?: string
   from_node?: string
 }): Promise<DriveNode> {
-  const title =
-    input.title ??
-    (input.content_doctype === 'Sheet'
-      ? 'Untitled spreadsheet'
-      : input.content_doctype === 'Presentation'
-        ? 'Untitled presentation'
-        : input.content_doctype === 'Drawing'
-          ? 'Untitled drawing'
-          : 'Untitled document')
+  const title = input.title ?? defaultDocumentTitle(input.content_doctype)
   // A sibling with the same title, such as an older "Untitled document", makes this one "(2)"
   return client.mutation(api.drive.nodes.createDocument, {
     ...input,

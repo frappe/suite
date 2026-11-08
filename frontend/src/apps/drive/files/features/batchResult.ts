@@ -48,8 +48,6 @@ export function failureReason(failure: DriveFailure): string {
       return __("You don't have permission.")
     case 'DriveNotFound':
       return __('It was moved or deleted by someone else.')
-    case 'DriveConflict':
-      return __('An item with this name is already there.')
     default:
       return failure.message
   }

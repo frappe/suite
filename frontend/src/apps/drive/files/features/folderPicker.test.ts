@@ -372,7 +372,7 @@ describe('Moving into a folder that widens access', () => {
       return found
     })
     expect(row.textContent).toContain('People in Design')
-    expect(row.textContent).toContain('Manage')
+    expect(row.textContent).toContain('Can manage')
     pressInConfirmation('Cancel')
     await Promise.resolve()
     expect(chosen).not.toHaveBeenCalled()

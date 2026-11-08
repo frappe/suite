@@ -246,12 +246,16 @@ test.describe("a visitor without a session", () => {
 			await password.fill("guess");
 			await page.getByRole("button", { name: "Open" }).click();
 		}
-		await expect(page.getByTestId("drive-unlock-message")).toHaveText(/^Try again in \d+:\d{2}$/);
+		await expect(page.getByTestId("drive-unlock-message")).toHaveText(
+			/^Too many attempts\. Try again in \d+ (minute|second)s?\.$/,
+		);
 		await expect(password).toBeDisabled();
 
 		// The lockout survives a reload of the same node.
 		await page.reload();
-		await expect(page.getByTestId("drive-unlock-message")).toHaveText(/^Try again in \d+:\d{2}$/);
+		await expect(page.getByTestId("drive-unlock-message")).toHaveText(
+			/^Too many attempts\. Try again in \d+ (minute|second)s?\.$/,
+		);
 		await expect(password).toBeDisabled();
 	});
 

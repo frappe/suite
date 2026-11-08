@@ -73,7 +73,7 @@
                 :indeterminate="someSelected"
                 tabindex="-1"
                 aria-hidden="true"
-                class="pointer-events-none"
+                class="pointer-events-none [&_input]:mt-0"
               />
             </span>
             <component :is="headerCell" v-bind="headerProps('title')">Name</component>
@@ -128,6 +128,7 @@
             :data-drop-target="drag && row.kind === 'folder' ? row.name : undefined"
             :class="[
               'select-none',
+              FOCUS_RING_INSIDE_ROW,
               runClasses(index),
               checkboxOnHover && 'group/row',
               flashClasses(row),
@@ -164,7 +165,7 @@
                     :model-value="isSelected(row)"
                     tabindex="-1"
                     aria-hidden="true"
-                    class="pointer-events-none"
+                    class="pointer-events-none [&_input]:mt-0"
                   />
                 </span>
                 <span
@@ -320,7 +321,7 @@
                     :model-value="isSelected(row)"
                     tabindex="-1"
                     aria-hidden="true"
-                    class="pointer-events-none"
+                    class="pointer-events-none [&_input]:mt-0"
                   />
                 </span>
                 <Dropdown v-if="!selectionMode" :options="menuOptions(row)" align="end">
@@ -678,6 +679,15 @@ function isHighlighted(row: DriveNode) {
 /** Hides the divider a list row draws along its top edge. */
 const NO_DIVIDER = '[&_[data-slot=list-divider]]:!opacity-0'
 /**
+ * Draws the focus ring inside the row, like a tree row's, so it stays within the
+ * pane's gutter. Like hover, it hides the dividers on both edges.
+ */
+const FOCUS_RING_INSIDE_ROW = [
+  'focus-visible:[outline-offset:-2px]',
+  'focus-visible:[&_[data-slot=list-divider]]:!opacity-0',
+  '[&:focus-visible+*_[data-slot=list-divider]]:!opacity-0',
+]
+/**
  * Consecutive highlighted rows read as one block: only the block's outer
  * corners are rounded, and no divider shows inside it or along its edges. A
  * focused row takes back all four corners, so its focus ring stays rounded.
@@ -740,7 +750,7 @@ type NameLink = AnchorHTMLAttributes & {
 }
 /**
  * An item's name as a link: no Tab stop of its own and no native drag. It
- * looks like a link, underlined in the link colour, only while the pointer is
+ * looks like a link, underlined in its own colour, only while the pointer is
  * on it and Cmd/Ctrl is held. Cmd/Ctrl-click opens it in a new tab and leaves
  * the selection alone; middle-click opens one natively. Any other click is the
  * item's, as before, and does not follow the link.
@@ -752,8 +762,7 @@ function nameLink(row: DriveNode): NameLink | undefined {
     href,
     tabindex: -1,
     draggable: false,
-    class:
-      'underline-offset-2 data-[new-tab]:text-ink-blue-link data-[new-tab]:underline [-webkit-touch-callout:none]',
+    class: 'underline-offset-2 data-[new-tab]:underline [-webkit-touch-callout:none]',
     onClick: onNameClick,
     onPointerenter: watchNewTabKey,
   }
