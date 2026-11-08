@@ -11,6 +11,13 @@ describe('byte counts', () => {
     ).toEqual(['0 B', '1,023 B', '1 KB', '1.1 KB', '150 KB', '2.4 GB', '10 GB'])
   })
 
+  it('moves to the next unit when rounding reaches it, and stays on the largest one', () => {
+    expect(formatBytes(1_048_570, { locale: 'en' })).toBe('1 MB')
+    expect(formatBytes(1023.5 * 1024, { roundUp: true, locale: 'en' })).toBe('1 MB')
+    expect(formatBytes(1024 ** 3 - 1, { locale: 'en' })).toBe('1 GB')
+    expect(formatBytes(1024 ** 5, { locale: 'en' })).toBe('1,024 TB')
+  })
+
   it("uses the reader's decimal separator", () => {
     expect(formatBytes(2.4 * 1024 ** 3, { locale: 'de' })).toBe('2,4 GB')
   })

@@ -20,7 +20,12 @@ export function formatBytes(
   }
   const scale = unit === 0 || value >= 100 ? 1 : 10
   // The epsilon keeps float noise (1.2 * 10 is 12.000000000000002) from rounding up.
-  const rounded = (roundUp ? Math.ceil(value * scale - 1e-9) : Math.round(value * scale)) / scale
+  let rounded = (roundUp ? Math.ceil(value * scale - 1e-9) : Math.round(value * scale)) / scale
+  // Rounding can reach the next unit: 1,023.99 KB reads as 1 MB, not 1,024 KB.
+  if (rounded >= 1024 && unit < UNITS.length - 1) {
+    rounded = 1
+    unit += 1
+  }
   return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(rounded)} ${UNITS[unit]}`
 }
 
