@@ -7,6 +7,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
+from suite.slides.content.tests.support import delete_log
 from suite.slides.patches import move_file_media_to_drive
 from suite.slides.patches.move_file_media_to_drive import convert_deck, execute
 from suite.slides.tests.utils import make_presentation, make_private_image, node_of
@@ -34,6 +35,15 @@ def deck_transactions():
         yield
 
 
+def deck_without_log(title):
+    # What `execute` converts: a new deck starts with a log, and one from before collaboration has none
+    deck = make_presentation(title)
+    with patch.object(frappe.db, "commit"):
+        delete_log(node_of(deck.name))
+
+    return deck
+
+
 def failure_logs(docname):
     return frappe.get_all(
         "Error Log",
@@ -48,7 +58,8 @@ class TestMoveFileMediaToDrive(IntegrationTestCase):
         ensure_user(OWNER)
         frappe.set_user(OWNER)
         self.addCleanup(frappe.set_user, "Administrator")
-        self.deck = make_presentation(f"Legacy media {frappe.generate_hash(6)}")
+        suffix = frappe.generate_hash(6)
+        self.deck = deck_without_log(f"Legacy media {suffix}")
         self.file = make_private_image(self.deck.name)
         self.slide = self.deck.slides[0].name
 
@@ -110,7 +121,8 @@ class TestMoveFileMediaToDrive(IntegrationTestCase):
         self.assertEqual(self.body()[1][0]["src"], foreign.file_url)
 
     def test_a_failed_deck_stays_legacy_and_logged_while_the_others_convert_and_a_rerun_finishes_it(self):
-        healthy = make_presentation(f"Healthy deck {frappe.generate_hash(6)}")
+        suffix = frappe.generate_hash(6)
+        healthy = deck_without_log(f"Healthy deck {suffix}")
         healthy_file = make_private_image(healthy.name)
         healthy_slide = healthy.slides[0].name
         frappe.db.set_value(
@@ -159,7 +171,7 @@ class TestMoveFileMediaToDrive(IntegrationTestCase):
         ensure_user(OTHER_OWNER)
         frappe.set_user(OTHER_OWNER)
         suffix = frappe.generate_hash(6)
-        healthy = make_presentation(f"Healthy deck {suffix}")
+        healthy = deck_without_log(f"Healthy deck {suffix}")
         healthy_file = make_private_image(healthy.name)
         healthy_slide = healthy.slides[0].name
         frappe.db.set_value(
@@ -205,7 +217,7 @@ class TestMoveFileMediaToDrive(IntegrationTestCase):
 
     def test_a_file_that_cannot_be_read_fails_its_deck_and_the_others_still_convert(self):
         suffix = frappe.generate_hash(6)
-        healthy = make_presentation(f"Healthy deck {suffix}")
+        healthy = deck_without_log(f"Healthy deck {suffix}")
         healthy_file = make_private_image(healthy.name)
         healthy_slide = healthy.slides[0].name
         frappe.db.set_value(
