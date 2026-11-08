@@ -128,7 +128,7 @@
             :data-drop-target="drag && row.kind === 'folder' ? row.name : undefined"
             :class="[
               'select-none',
-              FOCUS_FLOATS,
+              FOCUS_RING_INSIDE_ROW,
               runClasses(index),
               checkboxOnHover && 'group/row',
               flashClasses(row),
@@ -679,10 +679,10 @@ function isHighlighted(row: DriveNode) {
 /** Hides the divider a list row draws along its top edge. */
 const NO_DIVIDER = '[&_[data-slot=list-divider]]:!opacity-0'
 /**
- * The focus ring sits inside the row, like a tree row's, so it stays within the
+ * Draws the focus ring inside the row, like a tree row's, so it stays within the
  * pane's gutter. Like hover, it hides the dividers on both edges.
  */
-const FOCUS_FLOATS = [
+const FOCUS_RING_INSIDE_ROW = [
   'focus-visible:[outline-offset:-2px]',
   'focus-visible:[&_[data-slot=list-divider]]:!opacity-0',
   '[&:focus-visible+*_[data-slot=list-divider]]:!opacity-0',

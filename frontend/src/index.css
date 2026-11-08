@@ -67,8 +67,9 @@ body {
 
 /* frappe-ui's toast centres its icon on the whole message, so a two-line message
    leaves the icon between its lines. The icon and message start at the top
-   instead, one line box apart from the action button's height (h-7), so the icon
-   sits on the first line and a one-line message still centres on the button. */
+   instead, so the icon sits on the first line. The margin centres one text line
+   within the height of the h-7 action button, so a one-line message lines up with
+   the button. */
 [data-sonner-toast] > [data-icon],
 [data-sonner-toast] > [data-content] {
   @apply text-p-base;

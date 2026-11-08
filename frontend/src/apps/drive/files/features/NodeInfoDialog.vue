@@ -16,16 +16,16 @@
           <span :class="[nodeIcon(detail.data), nodeIconTint(detail.data), 'size-5']" />
         </span>
         <div class="min-w-0 flex-1">
-          <p class="break-words text-lg-semibold text-ink-gray-8">{{ detail.data.title }}</p>
-          <p class="mt-1 text-sm text-ink-gray-5">{{ summary }}</p>
+          <p class="break-words text-p-lg-semibold text-ink-gray-8">{{ detail.data.title }}</p>
+          <p class="mt-1.5 text-sm text-ink-gray-5">{{ summary }}</p>
         </div>
       </div>
       <dl
-        class="mt-5 grid grid-cols-[7rem_minmax(0,1fr)] gap-x-4 gap-y-3 border-t border-outline-gray-1 pt-5 text-base"
+        class="mt-5 grid grid-cols-[7rem_minmax(0,1fr)] gap-x-4 gap-y-3 border-t border-outline-gray-1 pt-5"
       >
         <template v-for="field in fields" :key="field.label">
-          <dt class="text-ink-gray-5">{{ field.label }}</dt>
-          <dd class="break-words text-ink-gray-8">{{ field.value }}</dd>
+          <dt class="text-p-base text-ink-gray-5">{{ field.label }}</dt>
+          <dd class="break-words text-p-base text-ink-gray-8">{{ field.value }}</dd>
         </template>
       </dl>
     </div>
