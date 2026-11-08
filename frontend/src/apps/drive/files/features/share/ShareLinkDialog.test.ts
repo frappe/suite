@@ -1,3 +1,4 @@
+import { fromAny } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick } from 'vue'
 
@@ -32,10 +33,10 @@ function mountDialog() {
     request: async (operation, input) => {
       if (operation.id === 'node_put_grant') {
         writes.push(input)
-        return { url: '/l/test-link' } as never
+        return fromAny({ url: '/l/test-link' })
       }
-      if (operation.id === 'node_get') return { kind: 'file', access: { role: 50 } } as never
-      return { grants: [], inherited: [], owner: null } as never
+      if (operation.id === 'node_get') return fromAny({ kind: 'file', access: { role: 50 } })
+      return fromAny({ grants: [], inherited: [], owner: null })
     },
   }
   const root = document.createElement('div')

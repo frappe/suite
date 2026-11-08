@@ -159,9 +159,7 @@ function readVersion(row: unknown): SheetVersion[] {
 }
 
 function field(value: unknown, key: string): unknown {
-  return typeof value === 'object' && value !== null
-    ? (value as Record<string, unknown>)[key]
-    : undefined
+  return isFieldRecord(value) && key in value ? value[key] : undefined
 }
 
 function text(value: unknown): string | null {
@@ -174,4 +172,8 @@ export function stampLabel(stamp: string | null): string {
   const when = new Date(stamp.replace(' ', 'T'))
   if (Number.isNaN(when.getTime())) return stamp
   return when.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+}
+
+function isFieldRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
 }

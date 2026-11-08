@@ -105,7 +105,9 @@ export function applyPattern(pattern: Pattern | null | undefined, sources: unkno
 // otherwise), so `samples[0]` is always there.
 
 function _first(samples: readonly SmartFillExample[]) {
-  return samples[0] as SmartFillExample
+  const first = samples[0]
+  if (!first) throw new Error('Pattern detection needs a sample')
+  return first
 }
 
 function _detectLiteral(samples: readonly SmartFillExample[]): Pattern | null {
@@ -281,7 +283,10 @@ function _applyConcat(sources: unknown, cols: readonly number[], sep: string) {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-function _safeGet(arr: unknown, idx: number): unknown {
+function _safeGet<Value>(
+  arr: Value,
+  idx: number,
+): (Value extends readonly (infer Item)[] ? Item : unknown) | null {
   if (!Array.isArray(arr)) return null
   return arr[idx] === undefined ? null : arr[idx]
 }

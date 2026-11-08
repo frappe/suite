@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h } from 'vue'
 
-import { DRIVE_ROLES, type DriveNode } from '@/apps/drive/client/types'
+import { DRIVE_ROLES } from '@/apps/drive/client/types'
+import { requireTestElement } from '@/platform/testing/dom'
 
 import FilePicker from './FilePicker.vue'
 import {
@@ -26,6 +27,8 @@ vi.mock('frappe-ui', async () => ({
 }))
 
 // My files holds Projects and Archive. Projects holds Launch, where the report is, and Launch holds Assets.
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const net = vi.hoisted(() => {
   const folder = (
     name: string,
@@ -35,13 +38,13 @@ const net = vi.hoisted(() => {
   ) => ({
     name,
     title,
-    kind: 'folder' as string,
+    kind: fromPartial<string>('folder'),
     parent_node: parent,
     root: 'mine',
     state: 'Active',
     trash_root: null,
     size: 0,
-    mime: null as string | null,
+    mime: fromPartial<string | null>(null),
     url: null,
     content_doctype: null,
     content_docname: null,
@@ -98,7 +101,7 @@ const net = vi.hoisted(() => {
     const { pathname, searchParams } = new URL(String(url), 'http://drive.test')
     const path = pathname.replace('/api/suite/drive/', '')
     if (path === 'nodes' && init?.method === 'POST') {
-      const input = JSON.parse(String(init.body)) as (typeof created)[number]
+      const input = fromPartial<(typeof created)[number]>(JSON.parse(String(init.body)))
       const parent = nodes.get(input.parent_node)!
       const name = `new-${created.push(input)}`
       const crumbs = [
@@ -231,7 +234,8 @@ describe('Folder picker', () => {
 
   const report: PickedItem = { name: 'report', parent_node: 'launch', root: 'mine' }
   const notes: PickedItem = { name: 'notes', parent_node: 'archive', root: 'mine' }
-  const projects = net.nodes.get('projects') as DriveNode
+  const projects = net.nodes.get('projects')
+  if (!projects) throw new Error('Missing projects fixture')
 
   it('opens in the folder the item is in', async () => {
     openPicker({ mode: 'move', items: [report] })
@@ -268,9 +272,12 @@ describe('File picker', () => {
       return found
     })
   const actionButton = (label: string) =>
-    [...document.querySelectorAll('button')].find(
-      (candidate) => candidate.textContent?.trim() === label,
-    ) as HTMLButtonElement
+    requireTestElement(
+      [...document.querySelectorAll('button')].find(
+        (candidate) => candidate.textContent?.trim() === label,
+      ),
+      HTMLButtonElement,
+    )
 
   it('opens folders and picks the file the user chose', async () => {
     const onChoose = vi.fn()

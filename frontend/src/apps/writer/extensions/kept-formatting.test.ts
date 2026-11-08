@@ -7,6 +7,7 @@ import {
   yXmlFragmentToProseMirrorRootNode,
   type UnplaceableReason,
 } from '@tiptap/y-tiptap'
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as yjs from 'yjs'
 
@@ -74,8 +75,8 @@ function open(state: Uint8Array): Tab {
 
 // A block's text runs as Yjs holds them, the first block's by default
 function storedRuns(tab: Tab, index = 0) {
-  const found = tab.ydoc.getXmlFragment(BODY_FIELD).get(index) as yjs.XmlElement
-  return (found.get(0) as yjs.XmlText).toDelta()
+  const found = fromPartial<yjs.XmlElement>(tab.ydoc.getXmlFragment(BODY_FIELD).get(index))
+  return fromPartial<yjs.XmlText>(found.get(0)).toDelta()
 }
 
 // A mark by its name, or kept formatting by its keys
@@ -159,11 +160,15 @@ describe('formatting the editor cannot show where it sits', () => {
 
     typeAtEnd(tab, 'Z')
 
-    const written = updates.flatMap((update) => yjs.decodeUpdate(update).structs as yjs.Item[])
+    const written = updates.flatMap((update) =>
+      fromPartial<yjs.Item[]>(yjs.decodeUpdate(update).structs),
+    )
     const strings = written.filter((item) => item.content instanceof yjs.ContentString)
     const formats = written.filter((item) => item.content instanceof yjs.ContentFormat)
-    expect(strings.map((item) => (item.content as yjs.ContentString).str)).toEqual(['Z'])
-    expect(formats.map((item) => (item.content as yjs.ContentFormat).value)).toEqual([null])
+    expect(strings.map((item) => fromPartial<yjs.ContentString>(item.content).str)).toEqual(['Z'])
+    expect(formats.map((item) => fromPartial<yjs.ContentFormat>(item.content).value)).toEqual([
+      null,
+    ])
     expect(storedRuns(tab)).toEqual([{ insert: 'abc', attributes: MYSTERY }, { insert: 'Z' }])
   })
 
@@ -390,7 +395,7 @@ describe('the code mark', () => {
 function aroundAtom(name: string, attributes: Attributes) {
   const atom = new yjs.XmlElement<Record<string, string | object>>(name)
   for (const [key, value] of Object.entries(attributes)) {
-    atom.setAttribute(key, value as string | object)
+    atom.setAttribute(key, fromPartial<string | object>(value))
   }
 
   const node = new yjs.XmlElement('paragraph')
@@ -471,8 +476,8 @@ describe('marks on an inline atom', () => {
 
     tab.editor.chain().setTextSelection({ from: 1, to: 4 }).setBold().run()
 
-    const paragraph = tab.ydoc.getXmlFragment(BODY_FIELD).get(0) as yjs.XmlElement
-    const written = (paragraph.get(1) as yjs.XmlElement).getAttributes()
+    const paragraph = fromPartial<yjs.XmlElement>(tab.ydoc.getXmlFragment(BODY_FIELD).get(0))
+    const written = fromPartial<yjs.XmlElement>(paragraph.get(1)).getAttributes()
     expect(written).toEqual({ id: 'ann', bold: {}, ...MYSTERY })
     expect(atomMarks(reload(tab), 'mention')).toEqual(['bold', MYSTERY])
   })

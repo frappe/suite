@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { fromPartial } from '@total-typescript/shoehorn';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig } from '../../config';
 import type { Consumer, Room } from '../../types';
@@ -18,7 +19,7 @@ function makeConsumer(opts: {
 	preferredLayers?: { spatialLayer: number; temporalLayer: number } | null;
 	currentLayers?: { spatialLayer: number; temporalLayer: number } | null;
 }): Consumer {
-	return {
+	return fromPartial<Consumer>({
 		id: 'c1',
 		kind: 'video',
 		paused: opts.paused,
@@ -33,18 +34,20 @@ function makeConsumer(opts: {
 		rtpParameters: { encodings: [{ scalabilityMode: 'L3T1' }] },
 		requestKeyFrame: vi.fn().mockResolvedValue(undefined),
 		setPreferredLayers: vi.fn(),
-	} as unknown as Consumer;
+	});
 }
 
 describe('MediasoupManager.updateConsumerPreferences', () => {
 	it('requests a keyframe when a paused consumer is resumed with no layer change', async () => {
 		const mgr = createManager();
 		const consumer = makeConsumer({ paused: true });
-		vi.spyOn(mgr.consumerManager, 'getConsumerData').mockReturnValue({
-			roomId: 'r1',
-			peerId: 'p1',
-			consumer,
-		} as never);
+		vi.spyOn(mgr.consumerManager, 'getConsumerData').mockReturnValue(
+			fromPartial({
+				roomId: 'r1',
+				peerId: 'p1',
+				consumer,
+			}),
+		);
 		vi.spyOn(mgr.consumerManager, 'resumeConsumer').mockResolvedValue(true);
 		vi.spyOn(
 			mgr.consumerManager,
@@ -66,11 +69,13 @@ describe('MediasoupManager.updateConsumerPreferences', () => {
 	it('does not request a keyframe on a running consumer with no layer change', async () => {
 		const mgr = createManager();
 		const consumer = makeConsumer({ paused: false });
-		vi.spyOn(mgr.consumerManager, 'getConsumerData').mockReturnValue({
-			roomId: 'r1',
-			peerId: 'p1',
-			consumer,
-		} as never);
+		vi.spyOn(mgr.consumerManager, 'getConsumerData').mockReturnValue(
+			fromPartial({
+				roomId: 'r1',
+				peerId: 'p1',
+				consumer,
+			}),
+		);
 		vi.spyOn(mgr.consumerManager, 'resumeConsumer').mockResolvedValue(true);
 		vi.spyOn(
 			mgr.consumerManager,
@@ -93,33 +98,31 @@ describe('MediasoupManager.updateConsumerPreferences', () => {
 describe('MediasoupManager.createConsumer', () => {
 	it('keeps an existing consumer when its replacement fails', async () => {
 		const mgr = createManager();
-		const internals = mgr as unknown as {
-			transportManager: {
-				getTransportData: (transportId: string) => unknown;
-			};
-			producerManager: {
-				getProducerData: (producerId: string) => unknown;
-			};
-			roomManager: { getRoom: (roomId: string) => unknown };
-		};
+		const internals = mgr;
 		const existing = { id: 'existing', producerId: 'producer-1' };
-		vi.spyOn(internals.transportManager, 'getTransportData').mockReturnValue({
-			roomId: 'room-1',
-			peerId: 'peer-1',
-			direction: 'recv',
-			transport: {},
-		} as never);
-		vi.spyOn(internals.producerManager, 'getProducerData').mockReturnValue({
-			roomId: 'room-1',
-			peerId: 'peer-2',
-			producer: { appData: {} },
-		} as never);
-		vi.spyOn(internals.roomManager, 'getRoom').mockReturnValue({
-			router: { canConsume: () => true },
-			peers: new Map(),
-		} as never);
+		vi.spyOn(internals.transportManager, 'getTransportData').mockReturnValue(
+			fromPartial({
+				roomId: 'room-1',
+				peerId: 'peer-1',
+				direction: 'recv',
+				transport: {},
+			}),
+		);
+		vi.spyOn(internals.producerManager, 'getProducerData').mockReturnValue(
+			fromPartial({
+				roomId: 'room-1',
+				peerId: 'peer-2',
+				producer: { appData: {} },
+			}),
+		);
+		vi.spyOn(internals['roomManager'], 'getRoom').mockReturnValue(
+			fromPartial({
+				router: { canConsume: () => true },
+				peers: new Map(),
+			}),
+		);
 		vi.spyOn(mgr.consumerManager, 'getConsumersByPeer').mockReturnValue([
-			{ consumer: existing } as never,
+			fromPartial({ consumer: existing }),
 		]);
 		const closeConsumer = vi.spyOn(mgr.consumerManager, 'closeConsumer');
 		vi.spyOn(mgr.consumerManager, 'createConsumer').mockRejectedValue(
@@ -132,7 +135,7 @@ describe('MediasoupManager.createConsumer', () => {
 				'producer-1',
 				'room-1',
 				'peer-1',
-				{} as never,
+				fromPartial({}),
 			),
 		).rejects.toThrow('consume failed');
 
@@ -141,26 +144,28 @@ describe('MediasoupManager.createConsumer', () => {
 
 	it('rejects a consumer removed while creation is completing', async () => {
 		const mgr = createManager();
-		const internals = mgr as unknown as {
-			transportManager: { getTransportData: (id: string) => unknown };
-			producerManager: { getProducerData: (id: string) => unknown };
-			roomManager: { getRoom: (id: string) => unknown };
-		};
-		vi.spyOn(internals.transportManager, 'getTransportData').mockReturnValue({
-			roomId: 'room-1',
-			peerId: 'peer-1',
-			direction: 'recv',
-			transport: {},
-		} as never);
-		vi.spyOn(internals.producerManager, 'getProducerData').mockReturnValue({
-			roomId: 'room-1',
-			peerId: 'peer-2',
-			producer: { appData: {} },
-		} as never);
-		vi.spyOn(internals.roomManager, 'getRoom').mockReturnValue({
-			router: { canConsume: () => true },
-			peers: new Map([['peer-1', {}]]),
-		} as never);
+		const internals = mgr;
+		vi.spyOn(internals.transportManager, 'getTransportData').mockReturnValue(
+			fromPartial({
+				roomId: 'room-1',
+				peerId: 'peer-1',
+				direction: 'recv',
+				transport: {},
+			}),
+		);
+		vi.spyOn(internals.producerManager, 'getProducerData').mockReturnValue(
+			fromPartial({
+				roomId: 'room-1',
+				peerId: 'peer-2',
+				producer: { appData: {} },
+			}),
+		);
+		vi.spyOn(internals['roomManager'], 'getRoom').mockReturnValue(
+			fromPartial({
+				router: { canConsume: () => true },
+				peers: new Map([['peer-1', {}]]),
+			}),
+		);
 		vi.spyOn(mgr.consumerManager, 'createConsumer').mockResolvedValue({
 			id: 'closed-consumer',
 			producerId: 'producer-1',
@@ -175,7 +180,7 @@ describe('MediasoupManager.createConsumer', () => {
 				'producer-1',
 				'room-1',
 				'peer-1',
-				{} as never,
+				fromPartial({}),
 			),
 		).rejects.toThrow('Failed to create consumer closed-consumer');
 	});
@@ -185,10 +190,8 @@ describe('MediasoupManager participant connections', () => {
 	it('stores peer metadata in the room and updates repeated joins in place', async () => {
 		const mgr = createManager();
 		const room = { peers: new Map() };
-		const internals = mgr as unknown as {
-			roomManager: { getRoom: (roomId: string) => unknown };
-		};
-		vi.spyOn(internals.roomManager, 'getRoom').mockReturnValue(room);
+		const internals = mgr;
+		vi.spyOn(internals['roomManager'], 'getRoom').mockReturnValue(room);
 
 		const first = await mgr.addPeer('room-1', 'peer-1');
 		const repeated = await mgr.addPeer('room-1', 'peer-1', {
@@ -215,31 +218,31 @@ describe('MediasoupManager participant connections', () => {
 
 	it('deduplicates participant snapshots while combining connection media', () => {
 		const mgr = createManager();
-		const internals = mgr as unknown as {
-			roomManager: { getRoom: (roomId: string) => unknown };
-		};
-		vi.spyOn(internals.roomManager, 'getRoom').mockReturnValue({
-			peers: new Map([
-				[
-					'connection-1',
-					{
-						info: { userId: 'user-1', name: 'Alice', isHost: false },
-						producers: new Map([
-							['audio', { kind: 'audio', paused: false, appData: {} }],
-						]),
-					},
-				],
-				[
-					'connection-2',
-					{
-						info: { userId: 'user-1', name: 'Alice', isHost: true },
-						producers: new Map([
-							['video', { kind: 'video', paused: false, appData: {} }],
-						]),
-					},
-				],
-			]),
-		} as never);
+		const internals = mgr;
+		vi.spyOn(internals['roomManager'], 'getRoom').mockReturnValue(
+			fromPartial({
+				peers: new Map([
+					[
+						'connection-1',
+						{
+							info: { userId: 'user-1', name: 'Alice', isHost: false },
+							producers: new Map([
+								['audio', { kind: 'audio', paused: false, appData: {} }],
+							]),
+						},
+					],
+					[
+						'connection-2',
+						{
+							info: { userId: 'user-1', name: 'Alice', isHost: true },
+							producers: new Map([
+								['video', { kind: 'video', paused: false, appData: {} }],
+							]),
+						},
+					],
+				]),
+			}),
+		);
 
 		const participants = mgr.getRoomParticipants('room-1');
 
@@ -254,40 +257,40 @@ describe('MediasoupManager participant connections', () => {
 
 	it('excludes every connection owned by the requesting participant', async () => {
 		const mgr = createManager();
-		const internals = mgr as unknown as {
-			roomManager: { getRoom: (roomId: string) => unknown };
-		};
+		const internals = mgr;
 		const producer = (id: string) => ({
 			id,
 			kind: 'video',
 			paused: false,
 			appData: {},
 		});
-		vi.spyOn(internals.roomManager, 'getRoom').mockReturnValue({
-			peers: new Map([
-				[
-					'connection-1',
-					{
-						info: { userId: 'user-1' },
-						producers: new Map([['own-1', producer('own-1')]]),
-					},
-				],
-				[
-					'connection-2',
-					{
-						info: { userId: 'user-1' },
-						producers: new Map([['own-2', producer('own-2')]]),
-					},
-				],
-				[
-					'connection-3',
-					{
-						info: { userId: 'user-2' },
-						producers: new Map([['remote', producer('remote')]]),
-					},
-				],
-			]),
-		} as never);
+		vi.spyOn(internals['roomManager'], 'getRoom').mockReturnValue(
+			fromPartial({
+				peers: new Map([
+					[
+						'connection-1',
+						{
+							info: { userId: 'user-1' },
+							producers: new Map([['own-1', producer('own-1')]]),
+						},
+					],
+					[
+						'connection-2',
+						{
+							info: { userId: 'user-1' },
+							producers: new Map([['own-2', producer('own-2')]]),
+						},
+					],
+					[
+						'connection-3',
+						{
+							info: { userId: 'user-2' },
+							producers: new Map([['remote', producer('remote')]]),
+						},
+					],
+				]),
+			}),
+		);
 
 		await expect(mgr.getExistingProducers('room-1', 'user-1')).resolves.toEqual(
 			[expect.objectContaining({ id: 'remote', user_id: 'user-2' })],
@@ -298,13 +301,7 @@ describe('MediasoupManager participant connections', () => {
 describe('MediasoupManager producer cleanup', () => {
 	it('finalizes transport-closed producers, consumers, snapshots, and notifications once', async () => {
 		const mgr = createManager();
-		const internals = mgr as unknown as {
-			producerManager: {
-				createProducer: (...args: unknown[]) => Promise<unknown>;
-				getProducerCount: () => number;
-			};
-			roomManager: { getRoom: (roomId: string) => unknown };
-		};
+		const internals = mgr;
 		const producer = Object.assign(new EventEmitter(), {
 			id: 'producer-1',
 			kind: 'video' as const,
@@ -337,7 +334,7 @@ describe('MediasoupManager producer cleanup', () => {
 				['viewer-peer', viewer],
 			]),
 		};
-		vi.spyOn(internals.roomManager, 'getRoom').mockReturnValue(room);
+		vi.spyOn(internals['roomManager'], 'getRoom').mockReturnValue(room);
 		await internals.producerManager.createProducer(
 			{ produce: vi.fn().mockResolvedValue(producer) },
 			'room-1',
@@ -346,17 +343,17 @@ describe('MediasoupManager producer cleanup', () => {
 			'video',
 		);
 		await mgr.consumerManager.createConsumer(
-			{
+			fromPartial({
 				id: 'recv-1',
 				closed: false,
 				dtlsState: 'connected',
 				consume: vi.fn().mockResolvedValue(consumer),
-			} as never,
-			producer as never,
+			}),
+			fromPartial(producer),
 			producer.id,
 			'room-1',
 			'viewer-peer',
-			{} as never,
+			fromPartial({}),
 		);
 		const onProducerClosed = vi.fn();
 		mgr.onProducerClosed(onProducerClosed);
@@ -397,12 +394,8 @@ describe('MediasoupManager resource access', () => {
 				['peer-1', { producers: new Map([['producer-1', {}]]) }],
 			]),
 		};
-		const internals = mgr as unknown as {
-			roomManager: { getRoom: (id: string) => unknown };
-			producerManager: { getProducerIdsByPeer: () => string[] };
-			transportManager: { closePeerTransports: (...args: unknown[]) => void };
-		};
-		vi.spyOn(internals.roomManager, 'getRoom').mockReturnValue(room);
+		const internals = mgr;
+		vi.spyOn(internals['roomManager'], 'getRoom').mockReturnValue(room);
 		vi.spyOn(internals.producerManager, 'getProducerIdsByPeer').mockReturnValue(
 			['producer-1'],
 		);
@@ -423,21 +416,18 @@ describe('MediasoupManager resource access', () => {
 
 	it('removes every peer resource before closing a populated room', async () => {
 		const mgr = createManager();
-		const internals = mgr as unknown as {
-			roomManager: {
-				getRoom: (id: string) => unknown;
-				closeRoom: (id: string) => Promise<void>;
-			};
-		};
-		vi.spyOn(internals.roomManager, 'getRoom').mockReturnValue({
-			peers: new Map([
-				['peer-1', {}],
-				['peer-2', {}],
-			]),
-		} as never);
+		const internals = mgr;
+		vi.spyOn(internals['roomManager'], 'getRoom').mockReturnValue(
+			fromPartial({
+				peers: new Map([
+					['peer-1', {}],
+					['peer-2', {}],
+				]),
+			}),
+		);
 		const removePeer = vi.spyOn(mgr, 'removePeer').mockResolvedValue(undefined);
 		const closeRoom = vi
-			.spyOn(internals.roomManager, 'closeRoom')
+			.spyOn(internals['roomManager'], 'closeRoom')
 			.mockResolvedValue(undefined);
 
 		await mgr.closeRoom('room-1');
@@ -451,21 +441,20 @@ describe('MediasoupManager resource access', () => {
 
 	it('rejects peers joining while their room is closing', async () => {
 		const mgr = createManager();
-		const internals = mgr as unknown as {
-			roomManager: {
-				getRoom: (id: string) => unknown;
-				closeRoom: (id: string) => Promise<void>;
-			};
-		};
-		vi.spyOn(internals.roomManager, 'getRoom').mockReturnValue({
-			peers: new Map([['peer-1', {}]]),
-		} as never);
+		const internals = mgr;
+		vi.spyOn(internals['roomManager'], 'getRoom').mockReturnValue(
+			fromPartial({
+				peers: new Map([['peer-1', {}]]),
+			}),
+		);
 		let release!: () => void;
 		const removing = new Promise<void>((resolve) => {
 			release = resolve;
 		});
 		vi.spyOn(mgr, 'removePeer').mockReturnValue(removing);
-		vi.spyOn(internals.roomManager, 'closeRoom').mockResolvedValue(undefined);
+		vi.spyOn(internals['roomManager'], 'closeRoom').mockResolvedValue(
+			undefined,
+		);
 
 		const closing = mgr.closeRoom('room-1');
 		await expect(mgr.addPeer('room-1', 'peer-2')).rejects.toThrow('is closing');
@@ -475,9 +464,7 @@ describe('MediasoupManager resource access', () => {
 
 	it('requires transport room, peer, and direction to match', () => {
 		const mgr = createManager();
-		const internals = mgr as unknown as {
-			transportManager: { getTransportData: (id: string) => unknown };
-		};
+		const internals = mgr;
 		vi.spyOn(internals.transportManager, 'getTransportData').mockReturnValue({
 			roomId: 'room-1',
 			peerId: 'peer-1',
@@ -505,11 +492,13 @@ describe('MediasoupManager resource access', () => {
 
 	it('rejects a foreign consumer before mutating it', async () => {
 		const mgr = createManager();
-		vi.spyOn(mgr.consumerManager, 'getConsumerData').mockReturnValue({
-			roomId: 'room-1',
-			peerId: 'peer-1',
-			consumer: {},
-		} as never);
+		vi.spyOn(mgr.consumerManager, 'getConsumerData').mockReturnValue(
+			fromPartial({
+				roomId: 'room-1',
+				peerId: 'peer-1',
+				consumer: {},
+			}),
+		);
 
 		const close = vi.spyOn(mgr.consumerManager, 'closeConsumer');
 		const pause = vi.spyOn(mgr.consumerManager, 'pauseConsumer');
@@ -540,11 +529,13 @@ describe('MediasoupManager resource access', () => {
 			mgr.requestConsumerKeyFrame('missing', 'room-1', 'peer-1'),
 		).resolves.toBe(false);
 
-		vi.spyOn(mgr.consumerManager, 'getConsumerData').mockReturnValue({
-			roomId: 'room-1',
-			peerId: 'peer-2',
-			consumer: {},
-		} as never);
+		vi.spyOn(mgr.consumerManager, 'getConsumerData').mockReturnValue(
+			fromPartial({
+				roomId: 'room-1',
+				peerId: 'peer-2',
+				consumer: {},
+			}),
+		);
 		await expect(
 			mgr.requestConsumerKeyFrame('foreign', 'room-1', 'peer-1'),
 		).rejects.toThrow('Consumer ownership mismatch');
@@ -552,10 +543,7 @@ describe('MediasoupManager resource access', () => {
 
 	it('rejects a producer from another room when creating a consumer', async () => {
 		const mgr = createManager();
-		const internals = mgr as unknown as {
-			transportManager: { getTransportData: (id: string) => unknown };
-			producerManager: { getProducerData: (id: string) => unknown };
-		};
+		const internals = mgr;
 		vi.spyOn(internals.transportManager, 'getTransportData').mockReturnValue({
 			roomId: 'room-1',
 			peerId: 'peer-1',
@@ -569,7 +557,7 @@ describe('MediasoupManager resource access', () => {
 		});
 
 		await expect(
-			mgr.createConsumer('t1', 'p1', 'room-1', 'peer-1', {} as never),
+			mgr.createConsumer('t1', 'p1', 'room-1', 'peer-1', fromPartial({})),
 		).rejects.toThrow('does not belong to room room-1');
 	});
 });
@@ -590,24 +578,18 @@ describe('MediasoupManager network quality refresh', () => {
 			paused: false,
 			score: values.map((score) => ({ score })),
 		}));
-		const room = {
+		const room = fromPartial<Room>({
 			id: 'room-1',
 			peers: new Map([
 				['media-peer', { producers: new Map(producers.map((p) => [p.id, p])) }],
 			]),
-		} as unknown as Room;
-		const internals = manager as unknown as {
-			roomManager: {
-				getAllRooms: () => Room[];
-				getRoom: (id: string) => Room | undefined;
-				cleanup: () => Promise<void>;
-			};
-		};
-		vi.spyOn(internals.roomManager, 'getAllRooms').mockReturnValue([room]);
-		vi.spyOn(internals.roomManager, 'getRoom').mockImplementation((id) =>
+		});
+		const internals = manager;
+		vi.spyOn(internals['roomManager'], 'getAllRooms').mockReturnValue([room]);
+		vi.spyOn(internals['roomManager'], 'getRoom').mockImplementation((id) =>
 			id === 'room-1' ? room : undefined,
 		);
-		vi.spyOn(internals.roomManager, 'cleanup').mockResolvedValue();
+		vi.spyOn(internals['roomManager'], 'cleanup').mockResolvedValue();
 		const listener = vi.fn();
 		manager.onNetworkQualityUpdate(listener);
 		return { manager, producers, listener, room };
@@ -688,7 +670,7 @@ async function cameraAllocationFixture() {
 		createAudioLevelObserver: vi.fn().mockResolvedValue(levels),
 		canConsume: vi.fn(() => true),
 	};
-	const workers = Reflect.get(manager, 'workerManager');
+	const workers = manager['workerManager'];
 	vi.spyOn(workers, 'getNextWorker').mockReturnValue({
 		id: 1,
 		worker: { createRouter: vi.fn().mockResolvedValue(router) },
@@ -705,34 +687,39 @@ async function cameraAllocationFixture() {
 	const video = producer('a-video', 'video', 'camera');
 	const otherVideo = producer('b-video', 'video', 'camera');
 	const screen = producer('a-screen', 'video', 'screen');
-	room.peers.set('speaker', {
-		id: 'speaker',
-		producers: new Map([
-			[audio.id, audio],
-			[video.id, video],
-			[screen.id, screen],
-		]),
-	} as never);
-	room.peers.set('listener', {
-		id: 'listener',
-		producers: new Map([[otherVideo.id, otherVideo]]),
-	} as never);
+	room.peers.set(
+		'speaker',
+		fromPartial({
+			id: 'speaker',
+			producers: new Map([
+				[audio.id, audio],
+				[video.id, video],
+				[screen.id, screen],
+			]),
+		}),
+	);
+	room.peers.set(
+		'listener',
+		fromPartial({
+			id: 'listener',
+			producers: new Map([[otherVideo.id, otherVideo]]),
+		}),
+	);
 	const camera = priorityConsumer('camera');
 	const other = priorityConsumer('other', 2);
 	const untouched = priorityConsumer('untouched');
 	vi.spyOn(
 		manager.consumerManager,
 		'getConsumersByProducer',
-	).mockImplementation(
-		(id) =>
-			[
-				{
-					roomId: 'priority-room',
-					peerId: 'receiver',
-					consumer:
-						id === video.id ? camera : id === otherVideo.id ? other : untouched,
-				},
-			] as never,
+	).mockImplementation((id) =>
+		fromPartial([
+			{
+				roomId: 'priority-room',
+				peerId: 'receiver',
+				consumer:
+					id === video.id ? camera : id === otherVideo.id ? other : untouched,
+			},
+		]),
 	);
 	return {
 		manager,
@@ -778,22 +765,19 @@ describe('active speaker camera allocation', () => {
 		expect(notify).toHaveBeenCalledWith('priority-room', ['speaker']);
 		// A receiver that subscribes after the volume event gets the same policy.
 		const late = priorityConsumer('late-camera');
-		room.peers.set('receiver', {
-			id: 'receiver',
-			producers: new Map(),
-		} as never);
-		vi.spyOn(
-			Reflect.get(manager, 'producerManager'),
-			'getProducerData',
-		).mockReturnValue({
+		room.peers.set(
+			'receiver',
+			fromPartial({
+				id: 'receiver',
+				producers: new Map(),
+			}),
+		);
+		vi.spyOn(manager['producerManager'], 'getProducerData').mockReturnValue({
 			producer: video,
 			peerId: 'speaker',
 			roomId: 'priority-room',
 		});
-		vi.spyOn(
-			Reflect.get(manager, 'transportManager'),
-			'getTransportData',
-		).mockReturnValue({
+		vi.spyOn(manager['transportManager'], 'getTransportData').mockReturnValue({
 			roomId: 'priority-room',
 			peerId: 'receiver',
 			direction: 'recv',
@@ -807,17 +791,19 @@ describe('active speaker camera allocation', () => {
 			rtpParameters: { codecs: [], encodings: [] },
 			paused: false,
 		});
-		vi.spyOn(manager.consumerManager, 'getConsumerData').mockReturnValue({
-			roomId: 'priority-room',
-			peerId: 'receiver',
-			consumer: late,
-		} as never);
+		vi.spyOn(manager.consumerManager, 'getConsumerData').mockReturnValue(
+			fromPartial({
+				roomId: 'priority-room',
+				peerId: 'receiver',
+				consumer: late,
+			}),
+		);
 		await manager.createConsumer(
 			'late-t',
 			video.id,
 			'priority-room',
 			'receiver',
-			{} as never,
+			fromPartial({}),
 		);
 		expect(late.setPriority).toHaveBeenCalledWith(2);
 		notify.mockClear();
@@ -851,11 +837,13 @@ describe('active speaker camera allocation', () => {
 describe('MediasoupManager receiver-ready ownership', () => {
 	it('resumes only the owning peer in the owning room', async () => {
 		const manager = createManager();
-		vi.spyOn(manager.consumerManager, 'getConsumerData').mockReturnValue({
-			roomId: 'room',
-			peerId: 'peer',
-			consumer: makeConsumer({ paused: true }),
-		} as never);
+		vi.spyOn(manager.consumerManager, 'getConsumerData').mockReturnValue(
+			fromPartial({
+				roomId: 'room',
+				peerId: 'peer',
+				consumer: makeConsumer({ paused: true }),
+			}),
+		);
 		const resume = vi
 			.spyOn(manager.consumerManager, 'resumeConsumer')
 			.mockResolvedValue(true);

@@ -8,6 +8,8 @@ import type { DocumentSession } from '@/apps/drive'
 import { addSheet, axis, cellKey, initDoc, roots } from '../collab/schema'
 import SheetsSurface from './SheetsSurface.vue'
 
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const ui = vi.hoisted(() => ({
   toast: { error: vi.fn(), warning: vi.fn(), info: vi.fn(), success: vi.fn(), dismiss: vi.fn() },
   dialog: { prompt: vi.fn(), confirm: vi.fn() },
@@ -18,10 +20,12 @@ vi.mock('./navigation', () => ({ useDocumentLeaveGuard: vi.fn() }))
 type Emit = (event: string, ...args: unknown[]) => void
 /** What the mocked children last rendered with, so a test can act as the person would. */
 const seen = vi.hoisted(() => ({
-  header: null as Emit | null,
-  panel: null as { emit: Emit; props: Record<string, unknown> } | null,
-  bar: null as { emit: Emit; props: Record<string, unknown> } | null,
-  editors: [] as { props: Record<string, unknown>; showChanges: unknown[]; goTo: string[] }[],
+  header: fromPartial<Emit | null>(null),
+  panel: fromPartial<{ emit: Emit; props: Record<string, unknown> } | null>(null),
+  bar: fromPartial<{ emit: Emit; props: Record<string, unknown> } | null>(null),
+  editors: fromPartial<
+    { props: Record<string, unknown>; showChanges: unknown[]; goTo: string[] }[]
+  >([]),
 }))
 vi.mock('@/apps/drive', async () => {
   const { defineComponent } = await import('vue')
@@ -30,7 +34,7 @@ vi.mock('@/apps/drive', async () => {
     DriveDocumentHeader: defineComponent({
       emits: ['update:panel'],
       setup: (_props, { emit }) => {
-        seen.header = emit as Emit
+        seen.header = fromPartial<Emit>(emit)
         return () => null
       },
     }),
@@ -43,7 +47,8 @@ function capture(key: 'panel' | 'bar') {
       setup: (_props, { attrs }) => {
         const emit: Emit = (event, ...args) => {
           const name = `on${event[0]!.toUpperCase()}${event.slice(1)}`
-          ;(attrs[name] as ((...a: unknown[]) => void) | undefined)?.(...args)
+          const listener = attrs[name]
+          if (typeof listener === 'function') listener(...args)
         }
         return () => {
           seen[key] = { emit, props: attrs }
@@ -58,7 +63,7 @@ vi.mock('./SheetVersionBar.vue', () => capture('bar'))
 vi.mock('./SheetCommentsPanel.vue', () => ({ default: { render: () => null } }))
 
 /** The live sheet: A1 = "now". Version 3 held A1 = "then". */
-const docs = vi.hoisted(() => ({ live: null as Uint8Array | null }))
+const docs = vi.hoisted(() => ({ live: fromPartial<Uint8Array | null>(null) }))
 vi.mock('@/apps/sheets/components/SheetEditor/index.vue', () => ({
   default: defineComponent({
     props: {
@@ -67,7 +72,11 @@ vi.mock('@/apps/sheets/components/SheetEditor/index.vue', () => ({
       collabSession: { type: Object, default: null },
     },
     setup(props, { expose, slots }) {
-      const record = { props, showChanges: [] as unknown[], goTo: [] as string[] }
+      const record = {
+        props,
+        showChanges: fromPartial<unknown[]>([]),
+        goTo: fromPartial<string[]>([]),
+      }
       seen.editors.push(record)
       expose({
         activeCell: 'A1',
@@ -102,7 +111,9 @@ function sheetDoc(cells: Record<string, string>) {
   const id = addSheet(doc, 'Sheet1')
   doc.transact(() => {
     for (const [at, input] of Object.entries(cells)) {
-      const [row, col] = at.split(',').map(Number) as [number, number]
+      const [row, col] = at.split(',').map(Number)
+      if (row === undefined || col === undefined)
+        throw new Error('Expected a row,column cell address')
       roots(doc).inputs.set(
         cellKey(id, axis(doc, id, 'rows').ensure(row), axis(doc, id, 'cols').ensure(col)),
         input,
@@ -130,7 +141,7 @@ const version = {
 }
 
 const fetchVersion = vi.fn(async () => new Response(stored))
-const session = {
+const session = fromPartial<DocumentSession>({
   nodeId: 'node-1',
   contentDocname: 'sheet-1',
   title: ref('Budget'),
@@ -143,7 +154,7 @@ const session = {
     list: vi.fn(async () => ({ rows: [version], next_cursor: null })),
     contentUrl: (seq: string) => `/versions/${seq}/content`,
   },
-} as unknown as DocumentSession
+})
 
 let unmount: (() => void) | undefined
 beforeEach(() => {
@@ -190,7 +201,7 @@ const lastEditor = () => seen.editors.at(-1)!
 describe('SheetsSurface version preview', () => {
   it('shows a version read-only in place of the live sheet and washes the cells it changed', async () => {
     await openVersions()
-    const [row] = (seen.panel!.props.list as { versions: { value: unknown[] } }).versions.value
+    const [row] = versionRows()
 
     seen.panel!.emit('preview', row)
     await settle()
@@ -206,7 +217,7 @@ describe('SheetsSurface version preview', () => {
 
   it('steps to each changed cell, and back to the live sheet on exit', async () => {
     await openVersions()
-    const [row] = (seen.panel!.props.list as { versions: { value: unknown[] } }).versions.value
+    const [row] = versionRows()
     seen.panel!.emit('preview', row)
     await settle()
 
@@ -224,7 +235,7 @@ describe('SheetsSurface version preview', () => {
 
   it('ends the preview when the Versions panel closes', async () => {
     await openVersions()
-    const [row] = (seen.panel!.props.list as { versions: { value: unknown[] } }).versions.value
+    const [row] = versionRows()
     seen.panel!.emit('preview', row)
     await settle()
 
@@ -234,3 +245,18 @@ describe('SheetsSurface version preview', () => {
     expect(lastEditor().props.version).toBeNull()
   })
 })
+
+function versionRows() {
+  const list = seen.panel?.props.list
+  if (!list || typeof list !== 'object' || !('versions' in list))
+    throw new Error('Expected a versions panel')
+  const versions = list.versions
+  if (
+    !versions ||
+    typeof versions !== 'object' ||
+    !('value' in versions) ||
+    !Array.isArray(versions.value)
+  )
+    throw new Error('Expected version rows')
+  return versions.value
+}

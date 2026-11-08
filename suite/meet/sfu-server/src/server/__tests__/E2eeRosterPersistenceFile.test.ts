@@ -20,7 +20,10 @@ import {
 } from '../E2eeRosterPersistence';
 import { FileRosterPersistence } from '../E2eeRosterPersistenceFile';
 
-function assert(condition: unknown, message: string): asserts condition {
+function assert<Condition>(
+	condition: Condition,
+	message: string,
+): asserts condition {
 	if (!condition) throw new Error(`assertion failed: ${message}`);
 }
 

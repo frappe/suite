@@ -69,6 +69,23 @@ export function currentOwner(parent: string): UploadOwner {
   return { user, link: user === 'Guest' ? driveLinks.linkFor(parent) : null }
 }
 
+function isCompleteUploadRecord(record: Partial<UploadRecord>): record is UploadRecord {
+  return (
+    typeof record.upload_id === 'string' &&
+    (record.mode === 'chunked' || record.mode === 'direct') &&
+    typeof record.parent === 'string' &&
+    typeof record.name === 'string' &&
+    typeof record.size === 'number' &&
+    typeof record.lastModified === 'number' &&
+    typeof record.bytesSent === 'number' &&
+    typeof record.createdAt === 'number' &&
+    typeof record.touchedAt === 'number' &&
+    !!record.owner &&
+    typeof record.owner.user === 'string' &&
+    (record.owner.link === null || typeof record.owner.link === 'string')
+  )
+}
+
 export function createUploadRecords(options: UploadRecordsOptions = {}): UploadRecords {
   const now = options.now ?? Date.now
   const owner = options.owner ?? currentOwner
@@ -89,7 +106,7 @@ export function createUploadRecords(options: UploadRecordsOptions = {}): UploadR
           continue
         }
         if (record.owner?.link !== current.link) continue
-        live.push(record as UploadRecord)
+        if (isCompleteUploadRecord(record)) live.push(record)
       }
       return live.sort((a, b) => a.createdAt - b.createdAt)
     },

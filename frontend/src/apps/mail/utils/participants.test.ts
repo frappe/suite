@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import type { Mail, ThreadParticipant } from '@/apps/mail/types'
@@ -16,7 +17,8 @@ const participant = (name: string, email: string, is_self = false): ThreadPartic
   is_self,
 })
 
-const message = (from_name: string, from_email: string) => ({ from_name, from_email }) as Mail
+const message = (from_name: string, from_email: string) =>
+  fromPartial<Mail>({ from_name, from_email })
 
 const own = new Set(['vibhav@frappe.io'])
 

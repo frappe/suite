@@ -4,7 +4,9 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 
 import { useNewPresentationTheme } from './newPresentation'
 
-const store = vi.hoisted(() => ({ templates: [] as { name: string }[] }))
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
+const store = vi.hoisted(() => ({ templates: fromPartial<{ name: string }[]>([]) }))
 
 vi.mock('@/apps/slides/stores/presentation', async () => {
   const vue = await import('vue')

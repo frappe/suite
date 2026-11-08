@@ -4,7 +4,9 @@ import { ref } from 'vue'
 const slides = ref<unknown[]>([])
 const presentationDoc = ref<Record<string, unknown>>({})
 const presentationId = ref('p1')
-const state = vi.hoisted(() => ({ user: 'me@example.com' as string | null }))
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
+const state = vi.hoisted(() => ({ user: fromPartial<string | null>('me@example.com') }))
 
 vi.mock('@/apps/slides/stores/presentation', () => ({ presentationDoc, presentationId }))
 vi.mock('@/apps/slides/stores/slide', () => ({ slides, currentSlide: ref(null) }))
@@ -165,7 +167,7 @@ describe('pictures of a presentation opened online', () => {
       status: ref('ready'),
       refresh: async () => {},
     }
-    const release = setDocumentMedia(() => handle as never)
+    const release = setDocumentMedia(() => fromPartial(handle))
     show('node1234')
 
     await storeVisitedMedia('p1')

@@ -43,13 +43,34 @@ function accountData(): LegacyAccount | null {
   }
 }
 
+interface LegacyUserResource {
+  data: LegacyAccount | null
+  error: unknown
+  loading: boolean
+  fetched: boolean
+  promise: Promise<LegacyAccount | null> | null
+  fetch(): Promise<LegacyAccount | null>
+  reload(): Promise<LegacyAccount | null>
+  reset(): void
+}
+
+interface LegacyAction<Input> {
+  data: null
+  error: unknown
+  loading: boolean
+  promise: Promise<void> | null
+  submit(input: Input): Promise<void>
+  fetch(input: Input): Promise<void>
+  reset(): void
+}
+
 let userPromise: Promise<LegacyAccount | null> | null = null
-export const userResource = reactive({
-  data: accountData() as LegacyAccount | null,
-  error: null as unknown,
+export const userResource = reactive<LegacyUserResource>({
+  data: accountData(),
+  error: null,
   loading: platformSession.status.value === 'loading',
   fetched: platformSession.status.value !== 'loading',
-  promise: null as Promise<LegacyAccount | null> | null,
+  promise: null,
   async fetch() {
     if (userPromise) return userPromise
     this.loading = true
@@ -97,16 +118,7 @@ watch(
 if (platformSession.user.value) userResource.promise = userResource.fetch()
 
 function legacyAction<Input>(run: (input: Input) => Promise<void>) {
-  const action = reactive({
-    data: null as null,
-    error: null as unknown,
-    loading: false,
-    promise: null as Promise<void> | null,
-    submit: null as unknown as (input: Input) => Promise<void>,
-    fetch: null as unknown as (input: Input) => Promise<void>,
-    reset: null as unknown as () => void,
-  })
-  const submit = async (input: Input) => {
+  async function submit(input: Input) {
     action.loading = true
     action.error = null
     const promise = run(input)
@@ -120,13 +132,20 @@ function legacyAction<Input>(run: (input: Input) => Promise<void>) {
       action.loading = false
     }
   }
-  action.submit = submit
-  action.fetch = submit
-  action.reset = () => {
+  function reset() {
     action.error = null
     action.loading = false
     action.promise = null
   }
+  const action = reactive<LegacyAction<Input>>({
+    data: null,
+    error: null,
+    loading: false,
+    promise: null,
+    submit,
+    fetch: submit,
+    reset,
+  })
   return action
 }
 

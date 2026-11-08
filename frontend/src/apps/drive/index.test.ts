@@ -7,14 +7,17 @@ import type { Operation } from '@/platform/transport'
 // A Drive server with one PDF and some Writer documents, which records each request.
 // `role` is the caller's role on the node; `folder` their role on its folder,
 // or null when they cannot see the folder.
+// The fixture factory runs before static imports, so load its typed builders first.
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const server = vi.hoisted(() => ({
-  requests: [] as string[],
-  documents: {
+  requests: fromPartial<string[]>([]),
+  documents: fromPartial<Record<string, { role: number; folder: number | null }>>({
     brief: { role: 10, folder: 10 },
     mine: { role: 50, folder: 50 },
     'in-viewed-folder': { role: 40, folder: 10 },
     'shared-alone': { role: 10, folder: null },
-  } as Record<string, { role: number; folder: number | null }>,
+  }),
 }))
 
 vi.mock('@/platform/transport', async (actual) => ({

@@ -26,7 +26,7 @@ function connectorOf({ connectorStart, connectorEnd, route }: DeckItem) {
 
 function textOf(doc: Y.Doc, { id, type }: DeckItem) {
   const fragment = boxText(doc, id)
-  if (!TYPES_WITH_TEXT.has(type as string) || !fragment) {
+  if (typeof type !== 'string' || !TYPES_WITH_TEXT.has(type) || !fragment) {
     return {}
   }
 
@@ -44,7 +44,7 @@ export function drawnSlides(doc: Y.Doc): DrawnSlide[] {
       const { frame, connectorStart: _start, connectorEnd: _end, route: _route, ...fields } = box
       return {
         ...fields,
-        ...(frame as object),
+        ...(frame && typeof frame === 'object' ? frame : undefined),
         ...connectorOf(box),
         ...textOf(doc, box),
         zIndex: index + 1,

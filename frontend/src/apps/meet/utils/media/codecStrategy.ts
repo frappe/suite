@@ -1,3 +1,8 @@
+interface BrowserSupportCache {
+  support: SupportInfo | null
+  cachedAt: number
+}
+
 type RtpCodec = {
   mimeType?: string
   mime_type?: string
@@ -24,7 +29,7 @@ type SupportInfo = {
 }
 
 // cache is used to avoid multiple calls to getCapabilities
-const cache: { support: SupportInfo | null; cachedAt: number } = {
+const cache: BrowserSupportCache = {
   support: null,
   cachedAt: 0,
 }
@@ -42,29 +47,32 @@ function detectBrowserSupport() {
   const MAX_CACHE_MS = 60 * 1000
   if (cache.support && nowMs() - cache.cachedAt < MAX_CACHE_MS) return cache.support
 
-  const result: {
-    supportsVP9: boolean
-    supportsSVC: boolean
-    availableScalabilityModes: string[]
-  } = { supportsVP9: false, supportsSVC: false, availableScalabilityModes: [] }
+  const result: SupportInfo = {
+    supportsVP9: false,
+    supportsSVC: false,
+    availableScalabilityModes: [],
+  }
 
   try {
     const senderCaps = RTCRtpSender.getCapabilities('video')
 
-    type SenderCaps = { codecs?: RtpCodec[] } | null
-    const caps = (senderCaps as SenderCaps) || null
+    const caps = senderCaps
     const senderCodecs = Array.isArray(caps?.codecs) ? caps.codecs : []
     const vp9Codec = senderCodecs.find((codec) => {
-      const mime = codec?.mimeType || codec?.mime_type || ''
+      const mime =
+        codec?.mimeType ||
+        (codec && 'mime_type' in codec && typeof codec.mime_type === 'string'
+          ? codec.mime_type
+          : '')
       return mime.toLowerCase().includes('vp9')
     })
 
     if (vp9Codec) {
       result.supportsVP9 = true
-      if (Array.isArray(vp9Codec.scalabilityModes)) {
+      if ('scalabilityModes' in vp9Codec && Array.isArray(vp9Codec.scalabilityModes)) {
         result.availableScalabilityModes = vp9Codec.scalabilityModes.filter(
-          (m) => m.length > 0,
-        ) as string[]
+          (m): m is string => typeof m === 'string' && m.length > 0,
+        )
         if (result.availableScalabilityModes.length > 0) result.supportsSVC = true
       }
     }
@@ -110,7 +118,7 @@ function routerAvailableScalabilityModes(routerCapabilities: RouterCapabilities)
     return mime.toLowerCase().includes('vp9')
   })
   if (vp9 && Array.isArray(vp9.scalabilityModes))
-    return vp9.scalabilityModes.filter((m) => m.length > 0) as string[]
+    return vp9.scalabilityModes.filter((m): m is string => typeof m === 'string' && m.length > 0)
 
   return []
 }

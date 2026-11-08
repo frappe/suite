@@ -168,16 +168,12 @@ export function deleteMap(at: number, count = 1): (i: number) => number | null {
 
 // Rebuild a { cellId: value } map with columns/rows remapped; cells whose
 // column or row was deleted are dropped.
-export function remapCellKeys<V>(
-  obj: Record<string, V>,
-  mapCol: OptionalMap,
-  mapRow: OptionalMap,
-): Record<string, V> {
+export function remapCellKeys<V>(obj: Record<string, V>, mapCol: OptionalMap, mapRow: OptionalMap) {
   const out: Record<string, V> = {}
-  for (const id of Object.keys(obj)) {
+  for (const [id, value] of Object.entries(obj)) {
     const p = parseCellId(id)
     if (!p) {
-      out[id] = obj[id] as V
+      out[id] = value
       continue
     }
     const nc = mapCol ? mapCol(p.col) : p.col
@@ -187,18 +183,18 @@ export function remapCellKeys<V>(
       nr = mapRow(p.row)
       if (nr == null || nr < 0) continue
     }
-    out[cellId(nr, nc)] = obj[id] as V
+    out[cellId(nr, nc)] = value
   }
   return out
 }
 
 // Rebuild an { intKey: value } map with keys remapped; deleted keys dropped.
-export function remapIndexKeys<V>(obj: Record<string, V>, map: IndexMap): Record<number, V> {
+export function remapIndexKeys<V>(obj: Record<string, V>, map: IndexMap) {
   const out: Record<number, V> = {}
-  for (const k of Object.keys(obj)) {
+  for (const [k, value] of Object.entries(obj)) {
     const ni = map(Number(k))
     if (ni == null || ni < 0) continue
-    out[ni] = obj[k] as V
+    out[ni] = value
   }
   return out
 }
@@ -285,7 +281,7 @@ export function remapRefs<T>(
       if (scope !== opLc) return match
 
       const s = parseRef(sRef)
-      const e = isRange ? parseRef(eRef as string) : null
+      const e = isRange ? parseRef(eRef) : null
       if (!s || (isRange && !e)) return match
 
       if (!isRange) {
@@ -301,7 +297,8 @@ export function remapRefs<T>(
 
       // Range → per-axis bounding box of where its cells land. `e` is set:
       // a range whose end failed to parse returned above.
-      const eParts = e as RefParts
+      if (!e) return REF_ERROR
+      const eParts = e
       const cbox = boxAxis(Math.min(s.col, eParts.col), Math.max(s.col, eParts.col), mapCol)
       if (cbox === null) return REF_ERROR
       let rlo: number | null = null,

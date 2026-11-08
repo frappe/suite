@@ -49,7 +49,7 @@ export const mutationEffects = {
 export const registration: OwnerRegistration = {
   policy<I, O>(reference: Operation<I, O>) {
     if (reference.kind === 'query') return {}
-    const effect = mutationEffects[reference.id as keyof typeof mutationEffects]
+    const effect = Object.entries(mutationEffects).find(([id]) => id === reference.id)?.[1]
     if (!effect) throw new TypeError(`Missing Suite effects: ${reference.id}`)
     return { effects: effect }
   },

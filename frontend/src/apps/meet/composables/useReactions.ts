@@ -37,7 +37,7 @@ export function useReactions(deps: {
 
   const onSendReaction = (reactionType: string) => {
     try {
-      const userId = currentUser.currentUser.value?.user_id as string
+      const userId = currentUser.currentUser.value?.user_id
       if (userId) {
         reactionStore.showReactionForUser(userId, reactionType, 5000)
       }

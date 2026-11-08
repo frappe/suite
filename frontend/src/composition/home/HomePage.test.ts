@@ -5,19 +5,22 @@ import type { CalendarEvent } from '@/apps/calendar'
 import { findDocumentType } from '@/composition/documentRegistry'
 import HomePage from '@/composition/home/HomePage.vue'
 
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const state = vi.hoisted(() => ({
-  window: null as unknown,
+  window: vi.fn(),
   recentFails: true,
   upcomingFails: false,
   upcomingPending: false,
   push: vi.fn(),
   createDocument: vi.fn(),
   showSchedule: vi.fn(),
-  events: null as
+  events: fromPartial<
     | (Partial<Omit<CalendarEvent, 'participants'>> & {
         participants?: Partial<CalendarEvent['participants'][number]>[]
       })[]
-    | null,
+    | null
+  >(null),
 }))
 vi.mock('frappe-ui', async () => {
   const { defineComponent, h } = await import('vue')
@@ -56,20 +59,20 @@ vi.mock('frappe-ui', async () => {
       return () =>
         h('div', [
           slots.default?.(),
-          ...(
-            props.options as Array<{
-              label: string
-              onClick?: () => void
-            }>
-          ).map((option) =>
-            h(
-              'button',
-              {
-                onClick: option.onClick,
-              },
-              option.label,
-            ),
-          ),
+          ...props.options.map((option) => {
+            if (
+              !option ||
+              typeof option !== 'object' ||
+              !('label' in option) ||
+              typeof option.label !== 'string'
+            ) {
+              throw new Error('Dropdown options require a text label')
+            }
+            const onClick = 'onClick' in option ? option.onClick : undefined
+            if (onClick !== undefined && typeof onClick !== 'function')
+              throw new Error('Dropdown actions must be callable')
+            return h('button', { onClick }, option.label)
+          }),
         ])
     },
   })
@@ -156,11 +159,9 @@ vi.mock('@/apps/drive', async (importOriginal) => ({
       h(
         'a',
         `${
-          (
-            props.node as {
-              title: string
-            }
-          ).title
+          props.node && typeof props.node === 'object' && 'title' in props.node
+            ? String(props.node.title)
+            : ''
         } ${props.meta}`,
       ),
   }),
@@ -195,7 +196,7 @@ vi.mock('@/apps/meet', () => ({
 vi.mock('@/api', async () => ({
   api: (await import('@/composition/api')).api,
   useQuery: (reference: { id: string }, params?: () => unknown) => {
-    if (reference.id !== 'view_list') state.window = params?.()
+    if (reference.id !== 'view_list') state.window(params?.())
     if (reference.id === 'view_list') {
       return state.recentFails
         ? failedQuery('Recent failed')
@@ -269,7 +270,7 @@ describe('Home page', () => {
       conferencing: null,
     }))
     const root = mount()
-    expect(state.window).toMatchObject({
+    expect(state.window.mock.lastCall?.[0]).toMatchObject({
       from: new Date(2026, 9, 30).toISOString(),
       to: new Date(2026, 10, 2, 23, 59, 59, 999).toISOString(),
     })

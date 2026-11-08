@@ -1,7 +1,13 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { RecorderStageProjectionEvent, RecorderStageSnapshot } from '../../suite/meet/types'
-import type { Participant } from '../src/apps/meet/utils/media/ParticipantManager'
+import type { ConsumerManager } from '../src/apps/meet/utils/media/ConsumerManager'
+import type {
+  Participant,
+  ParticipantManager,
+} from '../src/apps/meet/utils/media/ParticipantManager'
+import type { SFUMediaManager } from '../src/apps/meet/utils/sfu/SFUMediaManager'
 import type { RecorderParticipantData, RecorderParticipantUpdate } from './protocol'
 import {
   RecorderSocketController,
@@ -94,9 +100,9 @@ function harness(
   const calls: string[] = []
   const socketHandlers = new Map<string, (...args: unknown[]) => void>()
   const sfuHandlers = new Map<string, (...args: unknown[]) => void>()
-  let consumerHandlers: Record<string, (...args: never[]) => void> = {}
-  let participantHandlers: Record<string, (...args: never[]) => void> = {}
-  let mediaHandlers: Record<string, (...args: never[]) => void> = {}
+  let consumerHandlers: Parameters<ConsumerManager['setEventHandlers']>[0] = {}
+  let participantHandlers: Parameters<ParticipantManager['setEventHandlers']>[0] = {}
+  let mediaHandlers: Parameters<SFUMediaManager['setEventHandlers']>[0] = {}
   let snapshotRequest = 0
   const participants = new Map<string, Participant>()
   const consumers = new Map<string, ConsumerFixture>()
@@ -142,7 +148,10 @@ function harness(
     const consumer = consumers.get(id)
     if (!consumer) return
     consumers.delete(id)
-    consumerHandlers.onConsumerRemoved?.(id as never, consumer as never)
+    consumerHandlers.onConsumerRemoved?.(
+      id,
+      fromPartial<Parameters<NonNullable<typeof consumerHandlers.onConsumerAdded>>[0]>(consumer),
+    )
   })
   const dependencies = {
     sfuClient: {
@@ -188,27 +197,27 @@ function harness(
         for (const value of values) {
           const item = participantFixture(value)
           participants.set(item.user_id, item)
-          participantHandlers.onParticipantAdded?.(item as never)
+          participantHandlers.onParticipantAdded?.(item)
         }
       }),
       addParticipant: vi.fn((value: RecorderParticipantData) => {
         const item = participantFixture(value)
         participants.set(item.user_id, item)
-        participantHandlers.onParticipantAdded?.(item as never)
+        participantHandlers.onParticipantAdded?.(item)
         return item
       }),
       removeParticipant: vi.fn((id: string) => {
         const removed = participants.delete(id)
-        if (removed) participantHandlers.onParticipantRemoved?.(id as never)
+        if (removed) participantHandlers.onParticipantRemoved?.(id)
         return removed
       }),
       updateMediaState: vi.fn(),
       updateParticipant: vi.fn((id: string, updates: RecorderParticipantUpdate) => {
         const current = participants.get(id)
         if (!current) return null
-        const updated = { ...current, ...updates } as Participant
+        const updated = fromPartial<Participant>({ ...current, ...updates })
         participants.set(id, updated)
-        participantHandlers.onParticipantUpdated?.(id as never, updated as never, updates as never)
+        participantHandlers.onParticipantUpdated?.(id, updated, updates)
         return updated
       }),
       getAllParticipants: vi.fn(() => [...participants.values()]),
@@ -225,11 +234,13 @@ function harness(
       handleNewConsumer: vi.fn(async (consumer: ConsumerFixture) => {
         await options.attachment?.(consumer)
         if (consumer.isScreen)
-          mediaHandlers.onScreenShareStarted?.({
-            participantId: consumer.participantId,
-            stream: new MediaStream(),
-            consumer,
-          } as never)
+          mediaHandlers.onScreenShareStarted?.(
+            fromPartial({
+              participantId: consumer.participantId,
+              stream: new MediaStream(),
+              consumer,
+            }),
+          )
       }),
       handleConsumerLost: vi.fn(),
       subscribeToRemoteProducer: vi.fn(
@@ -243,7 +254,11 @@ function harness(
             isScreen: producer.isScreen,
           }
           consumers.set(consumer.id, consumer)
-          consumerHandlers.onConsumerAdded?.(consumer as never)
+          consumerHandlers.onConsumerAdded?.(
+            fromPartial<Parameters<NonNullable<typeof consumerHandlers.onConsumerAdded>>[0]>(
+              consumer,
+            ),
+          )
           return consumer
         },
       ),
@@ -252,10 +267,10 @@ function harness(
     },
   }
   const controller = new RecorderSocketController(
-    bridge as never,
+    fromPartial(bridge),
     channel,
     options.state,
-    dependencies as never,
+    fromPartial(dependencies),
   )
   return {
     bridge,

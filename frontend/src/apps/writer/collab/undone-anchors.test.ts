@@ -4,6 +4,7 @@ import Document from '@tiptap/extension-document'
 import Paragraph from '@tiptap/extension-paragraph'
 import Text from '@tiptap/extension-text'
 import { yUndoPluginKey } from '@tiptap/y-tiptap'
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
 
@@ -58,7 +59,9 @@ function twoTabs(content: string) {
 
 // A thread on characters [start, end) of a paragraph, made the way a tab makes one
 function anchorOn(doc: Y.Doc, paragraph: number, start: number, end: number) {
-  const text = (doc.getXmlFragment('default').get(paragraph) as Y.XmlElement).get(0) as Y.XmlText
+  const text = fromPartial<Y.XmlText>(
+    fromPartial<Y.XmlElement>(doc.getXmlFragment('default').get(paragraph)).get(0),
+  )
   const from = Y.createRelativePositionFromTypeIndex(text, start, 0)
   const to = Y.createRelativePositionFromTypeIndex(text, end, -1)
   return encodeAnchor(from, to, text.toString().slice(start, end))

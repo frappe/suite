@@ -246,6 +246,8 @@ const StatsSection = defineComponent({
 })
 
 const StreamStats = defineComponent({
+  // SAFETY: useRTCStats supplies the RTCStreamStats projection; Vue's Object
+  // constructor checks the runtime prop while this annotation types its fields.
   props: { stream: { type: Object as () => RTCStreamStats, required: true } },
   setup: (props) => () => {
     const stream = props.stream

@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -17,14 +18,16 @@ function signIn(user: string) {
 
 function kept(node = 'node-1') {
   return readRecovery(node).map((copy) => [
-    (copy.slides[0] as { clientId: string }).clientId,
+    copy.slides[0] && typeof copy.slides[0] === 'object' && 'clientId' in copy.slides[0]
+      ? copy.slides[0].clientId
+      : undefined,
     copy.sticky,
   ])
 }
 
 function downloadedFiles() {
   const created = vi.fn((_file: File) => 'blob:recovery')
-  URL.createObjectURL = created as unknown as typeof URL.createObjectURL
+  URL.createObjectURL = fromPartial<typeof URL.createObjectURL>(created)
   URL.revokeObjectURL = () => {}
 
   vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
@@ -160,7 +163,8 @@ describe('Slides recovery copy', () => {
 
     async function downloaded() {
       expect(downloadRecovery('node-1', 'Plan')).toBe(true)
-      const [file] = files.mock.lastCall as [File]
+      const file = files.mock.lastCall?.[0]
+      if (!(file instanceof File)) throw new Error('Expected a downloaded recovery file')
       return JSON.parse(await file.text()).slides
     }
 

@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn';
 import { describe, expect, it, vi } from 'vitest';
 import { registerChatHandlers } from '../ChatHandlers';
 import { registerHostControlHandlers } from '../HostControlHandlers';
@@ -6,7 +7,10 @@ import { registerProducerHandlers } from '../ProducerHandlers';
 import { registerRaiseHandHandlers } from '../RaiseHandHandlers';
 import { registerReactionHandlers } from '../ReactionHandlers';
 
-type Handler = (data: never, callback?: (response: unknown) => void) => unknown;
+type Handler = (
+	data: unknown,
+	callback?: (response: unknown) => void,
+) => unknown;
 
 function setup(isOwner: boolean) {
 	const handlers = new Map<string, Handler>();
@@ -65,12 +69,12 @@ function setup(isOwner: boolean) {
 			requestCommitForRemoval: vi.fn(),
 		},
 	};
-	registerProducerHandlers(deps as never)(socket as never);
-	registerMediaControlHandlers(deps as never)(socket as never);
-	registerRaiseHandHandlers(deps as never)(socket as never);
-	registerReactionHandlers(deps as never)(socket as never);
-	registerChatHandlers(deps as never)(socket as never);
-	registerHostControlHandlers(deps as never)(socket as never);
+	registerProducerHandlers(fromPartial(deps))(fromPartial(socket));
+	registerMediaControlHandlers(fromPartial(deps))(fromPartial(socket));
+	registerRaiseHandHandlers(fromPartial(deps))(fromPartial(socket));
+	registerReactionHandlers(fromPartial(deps))(fromPartial(socket));
+	registerChatHandlers(fromPartial(deps))(fromPartial(socket));
+	registerHostControlHandlers(fromPartial(deps))(fromPartial(socket));
 	return { handlers, mediasoup, registry };
 }
 
@@ -85,27 +89,27 @@ describe('projection-producing participant handlers', () => {
 				appData: {},
 				rtpParameters: {},
 				transportId: 'tx',
-			} as never,
+			},
 			callback,
 		);
 		await handlers.get('close_producer')?.(
-			{ producerId: 'producer-1' } as never,
+			{ producerId: 'producer-1' },
 			callback,
 		);
 		await handlers.get('pause_producer')?.(
-			{ producerId: 'producer-1' } as never,
+			{ producerId: 'producer-1' },
 			callback,
 		);
 		await handlers.get('resume_producer')?.(
-			{ producerId: 'producer-1' } as never,
+			{ producerId: 'producer-1' },
 			callback,
 		);
-		await handlers.get('media_control')?.({ action: 'mute' } as never);
-		handlers.get('raise_hand')?.({ raised: true } as never, callback);
-		handlers.get('reaction:send')?.({ reaction: 'wave' } as never);
-		handlers.get('chat:send')?.({ message: 'hello' } as never, callback);
+		await handlers.get('media_control')?.({ action: 'mute' });
+		handlers.get('raise_hand')?.({ raised: true }, callback);
+		handlers.get('reaction:send')?.({ reaction: 'wave' });
+		handlers.get('chat:send')?.({ message: 'hello' }, callback);
 		await handlers.get('host_control')?.(
-			{ action: 'lower_hand', targetParticipantId: 'participant-2' } as never,
+			{ action: 'lower_hand', targetParticipantId: 'participant-2' },
 			callback,
 		);
 
@@ -129,11 +133,11 @@ describe('projection-producing participant handlers', () => {
 		const { handlers, registry } = setup(true);
 
 		await handlers.get('pause_producer')?.(
-			{ producerId: 'producer-1' } as never,
+			{ producerId: 'producer-1' },
 			vi.fn(),
 		);
 		await handlers.get('resume_producer')?.(
-			{ producerId: 'producer-1' } as never,
+			{ producerId: 'producer-1' },
 			vi.fn(),
 		);
 
@@ -164,7 +168,7 @@ describe('projection-producing participant handlers', () => {
 			.mockReturnValueOnce(false);
 
 		await handlers.get('pause_producer')?.(
-			{ producerId: 'producer-1' } as never,
+			{ producerId: 'producer-1' },
 			vi.fn(),
 		);
 
@@ -181,7 +185,7 @@ describe('projection-producing participant handlers', () => {
 
 		await handlers.get('media_control')?.({
 			action: { type, enabled },
-		} as never);
+		});
 
 		expect(mediasoup.applyMediaControl).toHaveBeenCalledWith(
 			'room-1',

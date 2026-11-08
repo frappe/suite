@@ -8,6 +8,7 @@ import Text from '@tiptap/extension-text'
 import { EditorState } from '@tiptap/pm/state'
 import { EditorView } from '@tiptap/pm/view'
 import { ySyncPlugin } from '@tiptap/y-tiptap'
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it } from 'vitest'
 import * as yjs from 'yjs'
 
@@ -61,7 +62,9 @@ function quoteOf(editor: Editor, from: number, to: number) {
 }
 
 function paragraphText(doc: yjs.Doc, index = 0) {
-  return (doc.getXmlFragment('default').get(index) as yjs.XmlElement).get(0) as yjs.XmlText
+  return fromPartial<yjs.XmlText>(
+    fromPartial<yjs.XmlElement>(doc.getXmlFragment('default').get(index)).get(0),
+  )
 }
 
 // A thread on characters [start, end) of a paragraph, made the way a tab makes one

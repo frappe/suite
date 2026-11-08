@@ -19,7 +19,7 @@ describe('removing the slide being viewed', () => {
   let history: any
 
   beforeEach(() => {
-    slides.value = [slide('A'), slide('B'), slide('C')] as any
+    slides.value = [slide('A'), slide('B'), slide('C')]
     slidesLength.value = 3
     history = useCommandHistory(slides, { actionOrder, actions })
   })

@@ -1,3 +1,4 @@
+import { fromAny } from '@total-typescript/shoehorn'
 import { describe, expect, it } from 'vitest'
 import { XmlText } from 'yjs'
 
@@ -100,7 +101,7 @@ describe("convertLegacy, Drive's 2023 threads", () => {
 
   it('makes a thread of a mark on a mention', () => {
     const mention = yAtom('mention', { id: 'x', label: 'Ann' })
-    mention.setAttribute('comment', { comment: DRIVE_THREAD } as never)
+    mention.setAttribute('comment', fromAny({ comment: DRIVE_THREAD }))
     const legacy = stored(legacyDoc(yElement('paragraph', new XmlText('hi '), mention)))
 
     const result = convert(legacy)

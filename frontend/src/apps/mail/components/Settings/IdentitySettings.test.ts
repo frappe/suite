@@ -6,10 +6,12 @@ import { installApiErrorHandler } from '@/platform/server-state'
 import IdentitySettings from './IdentitySettings.vue'
 
 // Deferred command replies let each scenario observe the form before and after settlement.
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const resources = vi.hoisted(() => new Map<string, FakeResource>())
 const toasts = vi.hoisted(() => vi.fn())
 const diagnostics = vi.hoisted(() => vi.fn())
-const state = vi.hoisted(() => ({ store: null as unknown as Store }))
+const state = vi.hoisted(() => ({ store: fromPartial<Store>({}) }))
 
 type FakeResource = {
   loading: boolean
@@ -30,7 +32,7 @@ vi.mock('frappe-ui', async () => {
     Button: defineComponent({
       inheritAttrs: false,
       setup(_props, { attrs, slots }) {
-        return () => h('button', attrs, slots.default?.() ?? (attrs.label as string))
+        return () => h('button', attrs, slots.default?.() ?? fromPartial<string>(attrs.label))
       },
     }),
     FormControl: defineComponent({
@@ -46,7 +48,7 @@ vi.mock('frappe-ui', async () => {
       setup(_props, { attrs, slots }) {
         return () => {
           if (!attrs.open) return null
-          const actions = (attrs.actions as { label: string; onClick: () => void }[]) || []
+          const actions = fromPartial<{ label: string; onClick: () => void }[]>(attrs.actions) || []
           return h('div', { 'data-dialog': attrs.title }, [
             attrs.message ? h('p', String(attrs.message)) : null,
             slots.default?.(),
@@ -84,7 +86,15 @@ vi.mock('@/api', async () => {
           return new Promise((resolve, reject) => {
             resource.onSuccess = resolve
             resource.onError = (error) => {
-              const refusal = error as { messages: string[] }
+              if (
+                !error ||
+                typeof error !== 'object' ||
+                !('messages' in error) ||
+                !Array.isArray(error.messages) ||
+                typeof error.messages[0] !== 'string'
+              )
+                throw new Error('Expected a refusal message')
+              const refusal = error
               toasts(refusal.messages[0], 'error')
               reject(new Error(refusal.messages[0]))
             }

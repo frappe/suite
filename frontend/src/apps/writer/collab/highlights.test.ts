@@ -3,6 +3,7 @@ import Collaboration from '@tiptap/extension-collaboration'
 import Document from '@tiptap/extension-document'
 import Paragraph from '@tiptap/extension-paragraph'
 import Text from '@tiptap/extension-text'
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as yjs from 'yjs'
 
@@ -52,11 +53,13 @@ function openEditor(
 }
 
 function threadOn(doc: yjs.Doc, name: string, start: number, end: number, isResolved = false) {
-  const text = (doc.getXmlFragment('default').get(0) as yjs.XmlElement).get(0) as yjs.XmlText
+  const text = fromPartial<yjs.XmlText>(
+    fromPartial<yjs.XmlElement>(doc.getXmlFragment('default').get(0)).get(0),
+  )
   const from = yjs.createRelativePositionFromTypeIndex(text, start, 0)
   const to = yjs.createRelativePositionFromTypeIndex(text, end, -1)
   const anchor = encodeAnchor(from, to, '')
-  return { name, anchor, resolved: isResolved } as DocumentThread
+  return fromPartial<DocumentThread>({ name, anchor, resolved: isResolved })
 }
 
 function highlighted(editor: Editor) {
@@ -70,7 +73,7 @@ function highlighted(editor: Editor) {
 describe('thread highlights', () => {
   it('marks each open thread once the threads are read, and leaves resolved ones plain', () => {
     const doc = new yjs.Doc()
-    const threads = { list: [] as DocumentThread[] }
+    const threads = { list: fromPartial<DocumentThread[]>([]) }
     const editor = openEditor(doc, threads)
     editor.commands.setContent('<p>hello world</p>')
 
@@ -84,7 +87,7 @@ describe('thread highlights', () => {
 
   it('drops the highlight of a thread gone from the list and leaves the text as it was', () => {
     const doc = new yjs.Doc()
-    const threads = { list: [] as DocumentThread[] }
+    const threads = { list: fromPartial<DocumentThread[]>([]) }
     const editor = openEditor(doc, threads)
     editor.commands.setContent('<p>hello world</p>')
     threads.list = [threadOn(doc, 'kept', 0, 5), threadOn(doc, 'deleted', 6, 11)]
@@ -102,7 +105,7 @@ describe('thread highlights', () => {
 
   it("moves with another tab's edit", () => {
     const doc = new yjs.Doc()
-    const threads = { list: [] as DocumentThread[] }
+    const threads = { list: fromPartial<DocumentThread[]>([]) }
     const editor = openEditor(doc, threads)
     editor.commands.setContent('<p>hello world</p>')
     threads.list = [threadOn(doc, 'open', 6, 11)]
@@ -111,10 +114,9 @@ describe('thread highlights', () => {
     const remote = new yjs.Doc()
     yjs.applyUpdate(remote, yjs.encodeStateAsUpdate(doc))
     const before = yjs.encodeStateVector(remote)
-    ;((remote.getXmlFragment('default').get(0) as yjs.XmlElement).get(0) as yjs.XmlText).insert(
-      0,
-      'oh, ',
-    )
+    fromPartial<yjs.XmlText>(
+      fromPartial<yjs.XmlElement>(remote.getXmlFragment('default').get(0)).get(0),
+    ).insert(0, 'oh, ')
     yjs.applyUpdate(doc, yjs.encodeStateAsUpdate(remote, before))
 
     expect([editor.getText(), highlighted(editor)]).toEqual(['oh, hello world', ['open:world']])
@@ -122,7 +124,7 @@ describe('thread highlights', () => {
 
   it('tells the app where each thread is whenever the threads or the text change', () => {
     const doc = new yjs.Doc()
-    const threads = { list: [] as DocumentThread[] }
+    const threads = { list: fromPartial<DocumentThread[]>([]) }
     const told: string[][] = []
     function placed(places: ThreadPlaces) {
       told.push([...places].map(([name, place]) => `${name}:${place.kind}`))
@@ -147,7 +149,7 @@ describe('the text of a comment being written', () => {
 
   it('is marked while the draft is open, opens no thread when clicked, and leaves the text as it was', () => {
     const doc = new yjs.Doc()
-    const threads = { list: [] as DocumentThread[], drafts: [] as string[] }
+    const threads = { list: fromPartial<DocumentThread[]>([]), drafts: fromPartial<string[]>([]) }
     const panel: Panel = { open: null, lit: null, opened: [] }
     const editor = openEditor(doc, threads, () => {}, panel)
     editor.commands.setContent('<p>hello world</p>')
@@ -158,7 +160,7 @@ describe('the text of a comment being written', () => {
     const whileOpen = drafted(editor)
     const world = editor.view.dom.querySelector('[data-comment-draft]')!
     editor.view.someProp('handleClick', (click) =>
-      click(editor.view, 8, { target: world } as never),
+      click(editor.view, 8, fromPartial({ target: world })),
     )
     threads.drafts = []
     redrawThreads(editor.view)
@@ -172,7 +174,7 @@ describe('the text of the thread the panel points at', () => {
   // An editor on "hello world" with a thread on each word
   function twoThreads() {
     const doc = new yjs.Doc()
-    const threads = { list: [] as DocumentThread[] }
+    const threads = { list: fromPartial<DocumentThread[]>([]) }
     const panel: Panel = { open: null, lit: null, opened: [] }
     const editor = openEditor(doc, threads, () => {}, panel)
     editor.commands.setContent('<p>hello world</p>')
@@ -204,12 +206,12 @@ describe('the text of the thread the panel points at', () => {
     const world = editor.view.dom.querySelector('[data-thread="second"]')!
 
     editor.view.someProp('handleClick', (click) =>
-      click(editor.view, 8, { target: world } as never),
+      click(editor.view, 8, fromPartial({ target: world })),
     )
     const caret = editor.state.selection.head
     const paragraph = editor.view.dom.querySelector('p')!
     editor.view.someProp('handleClick', (click) =>
-      click(editor.view, 1, { target: paragraph } as never),
+      click(editor.view, 1, fromPartial({ target: paragraph })),
     )
 
     expect([panel.opened, caret]).toEqual([['second'], 8])
@@ -221,11 +223,12 @@ describe('the text of the thread the panel points at', () => {
     frame.id = 'editor-scroll-container'
     frame.append(editor.view.dom)
     document.body.append(frame)
-    frame.getBoundingClientRect = () => ({ top: 0, bottom: 500 }) as DOMRect
+    frame.getBoundingClientRect = () => fromPartial<DOMRect>({ top: 0, bottom: 500 })
     const parts = [...editor.view.dom.querySelectorAll<HTMLElement>('[data-thread="first"]')]
     for (const [index, part] of parts.entries()) {
       const lineTop = top + index * 20
-      part.getBoundingClientRect = () => ({ top: lineTop, bottom: lineTop + 20 }) as DOMRect
+      part.getBoundingClientRect = () =>
+        fromPartial<DOMRect>({ top: lineTop, bottom: lineTop + 20 })
       part.scrollIntoView = vi.fn()
     }
 
@@ -246,7 +249,7 @@ describe('the text of the thread the panel points at', () => {
 
   it('stays put while any part of text split by another thread is in view, else scrolls to its start', () => {
     const doc = new yjs.Doc()
-    const threads = { list: [] as DocumentThread[] }
+    const threads = { list: fromPartial<DocumentThread[]>([]) }
     const editor = openEditor(doc, threads)
     editor.commands.setContent('<p>hello world</p>')
     threads.list = [threadOn(doc, 'second', 0, 8), threadOn(doc, 'first', 4, 11)]

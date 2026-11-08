@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 // Starting or ending an edit must not move a cell's text: the in-cell editor
 // lays its text out exactly where the cell painter draws it. Each case paints
 // a cell with the real painter on a recording context, opens the overlay on
@@ -105,7 +106,7 @@ function sheet({ fmt = {}, cond, h = 24, w = 100, merge, rightInset = 0 }: Case)
 function paint(c: Case): Draw[] {
   const { geo, cells } = sheet(c)
   const ctx = createMockCtx()
-  ctx.measureText = measureFor(ctx) as never
+  ctx.measureText = fromPartial(measureFor(ctx))
   const draws: Draw[] = []
   ctx.fillText = (text: string, x: number, y: number) => {
     const size = sizeOf(ctx.font)
@@ -124,7 +125,7 @@ function paint(c: Case): Draw[] {
       ink: ctx.fillStyle,
     })
   }
-  const painter = createCellPainter(ctx as never, geo as never)
+  const painter = createCellPainter(fromPartial(ctx), fromPartial(geo))
   painter.drawRegionCells(0, 0, 0, 0, () => c.value, cells, null)
   return draws
 }
@@ -166,7 +167,7 @@ function edit(c: Case) {
   }
 }
 
-const CASES: { [name: string]: Case } = {
+const CASES = {
   'plain text': { value: 'Hello' },
   'a tall row': { value: 'Hello', h: 40 },
   'its own font size': { value: 'Big', fmt: { fontSize: 20 }, h: 32 },
@@ -204,7 +205,7 @@ const CASES: { [name: string]: Case } = {
   'a merged cell, centred': {
     value: 'Title',
     fmt: { align: 'center' },
-    merge: { colSpan: 2, rowSpan: 2 } as MergeInfo,
+    merge: fromPartial<MergeInfo>({ colSpan: 2, rowSpan: 2 }),
   },
   'a filter header, right': { value: 'Col', fmt: { align: 'right' }, rightInset: 19 },
   'a conditional format, bold': { value: 'Flag', cond: { bold: true } },
@@ -215,7 +216,7 @@ const CASES: { [name: string]: Case } = {
     cond: { icon: { shape: 'arrow-up' } },
     rightInset: 19,
   },
-}
+} satisfies { [name: string]: Case }
 
 describe('the in-cell editor draws text where the grid does', () => {
   for (const [name, c] of Object.entries(CASES)) {
@@ -314,7 +315,7 @@ describe('on a laid-out page', () => {
       // Chrome draws a border at least 1 device px, rounded down.
       const set = parseFloat(elt.style.borderWidth)
       const used = Math.max(1, Math.floor(set * dpr)) / dpr
-      return { borderTopWidth: used + 'px' } as CSSStyleDeclaration
+      return fromPartial<CSSStyleDeclaration>({ borderTopWidth: used + 'px' })
     })
     vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(16)
     vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
@@ -322,19 +323,28 @@ describe('on a laid-out page', () => {
     ) {
       let top = 0
       if (this === document.body) top = PAGE_TOP
-      const probe = this.parentElement as HTMLElement | null
+      const probe: HTMLElement | null = this.parentElement
       if (this.tagName === 'SPAN' && probe?.getAttribute('aria-hidden') === 'true')
         top = browserBaseline(
           parseFloat(probe.style.lineHeight),
           parseFloat(probe.style.fontSize),
           dpr,
         )
-      return { top, left: 0, right: 0, bottom: top, width: 0, height: 0, x: 0, y: top } as DOMRect
+      return fromPartial<DOMRect>({
+        top,
+        left: 0,
+        right: 0,
+        bottom: top,
+        width: 0,
+        height: 0,
+        x: 0,
+        y: top,
+      })
     })
     return (set: number) => Math.max(1, Math.floor(set * dpr)) / dpr
   }
 
-  const LAID_OUT: { [name: string]: Case } = {
+  const LAID_OUT = {
     'plain text': { value: 'Hello' },
     'right alignment': { value: 'End', fmt: { align: 'right' } },
     'top alignment': { value: 'Top', fmt: { valign: 'top' }, h: 40 },
@@ -345,7 +355,7 @@ describe('on a laid-out page', () => {
     '24px in a 28px row': { value: 'Big', fmt: { fontSize: 24 }, h: 28 },
     'top alignment, 24px': { value: 'Top', fmt: { valign: 'top', fontSize: 24 }, h: 40 },
     'top alignment, 36px': { value: 'Top', fmt: { valign: 'top', fontSize: 36 }, h: 56 },
-  }
+  } satisfies { [name: string]: Case }
 
   function expectOnCanvasPixels(c: Case, dpr: number, zoom: number) {
     const usedBorder = layOut(dpr)

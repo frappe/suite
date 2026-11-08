@@ -187,9 +187,11 @@ const setPhoneNavHeight = (height: number | null) =>
   height === null
     ? document.documentElement.style.removeProperty('--suite-phone-nav-height')
     : document.documentElement.style.setProperty('--suite-phone-nav-height', `${height}px`)
-useResizeObserver(phoneNav, ([entry]) =>
-  setPhoneNavHeight(entry ? (entry.target as HTMLElement).offsetHeight : null),
-)
+useResizeObserver(phoneNav, ([entry]) => {
+  const checkedEventTarget = entry.target
+  if (!(checkedEventTarget instanceof HTMLElement)) return
+  return setPhoneNavHeight(entry ? checkedEventTarget.offsetHeight : null)
+})
 watch(phoneNav, (element) => {
   if (!element) setPhoneNavHeight(null)
 })

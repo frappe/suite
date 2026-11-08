@@ -6,15 +6,17 @@ import type { DriveNode } from '@/apps/drive/client/types'
 import { TransportError, type Operation } from '@/platform/transport'
 
 // A Drive server that keeps the caller's Recent, stars and one folder's children.
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const server = vi.hoisted(() => ({
-  recents: [] as string[],
+  recents: fromPartial<string[]>([]),
   nodes: new Map<string, DriveNode>(),
   folderRole: 30,
-  calls: [] as Array<{ id: string; input: Record<string, unknown> }>,
+  calls: fromPartial<Array<{ id: string; input: Record<string, unknown> }>>([]),
   /** The answer to a download request: a Preparing download, or an error to throw. */
-  download: null as null | (() => unknown),
+  download: fromPartial<null | (() => unknown)>(null),
   /** The answers to polling a download, one per poll. */
-  polls: [] as unknown[],
+  polls: fromPartial<unknown[]>([]),
 }))
 
 vi.mock('@/platform/transport', async (original) => {
@@ -49,7 +51,9 @@ vi.mock('@/platform/transport', async (original) => {
           case 'view_list':
             return { rows: server.recents.map((name) => node(name)), next_cursor: null }
           case 'view_clear_recents': {
-            const named = input.nodes as string[]
+            const named = input.nodes
+            if (!Array.isArray(named) || !named.every((node) => typeof node === 'string'))
+              throw new Error('Expected node names')
             const before = server.recents.length
             server.recents = server.recents.filter((name) => !named.includes(name))
             return { count: before - server.recents.length }
@@ -84,7 +88,7 @@ interface ShownToast {
   message: string
   options?: { id?: unknown; description?: string; duration?: number }
 }
-const feedback = vi.hoisted(() => ({ toasts: [] as ShownToast[] }))
+const feedback = vi.hoisted(() => ({ toasts: fromPartial<ShownToast[]>([]) }))
 vi.mock('@/platform/feedback', async () => {
   const { defineComponent, h } = await import('vue')
   const slotOnly = defineComponent({
@@ -115,8 +119,8 @@ vi.mock('@/platform/feedback', async () => {
 // The page is under test, not its parts. The listing hands its rows and row
 // menu to the test, and the parts that open their own dialogs stay closed.
 const listing = vi.hoisted(() => ({
-  rows: [] as DriveNode[],
-  menu: null as null | ((row: DriveNode) => MenuGroup[]),
+  rows: fromPartial<DriveNode[]>([]),
+  menu: fromPartial<null | ((row: DriveNode) => MenuGroup[])>(null),
 }))
 interface MenuGroup {
   group: string
@@ -127,8 +131,8 @@ vi.mock('../features/FilesListing.vue', async () => {
   return {
     default: defineComponent({
       props: {
-        query: { type: Object as PropType<{ rows: DriveNode[] }>, required: true },
-        menuOptions: { type: Function as PropType<(row: DriveNode) => MenuGroup[]> },
+        query: { type: fromPartial<PropType<{ rows: DriveNode[] }>>(Object), required: true },
+        menuOptions: { type: fromPartial<PropType<(row: DriveNode) => MenuGroup[]>>(Function) },
       },
       setup(props) {
         return () => {
@@ -165,7 +169,9 @@ vi.mock('@/apps/drive', async (original) => ({
 }))
 // The page's keyboard shortcuts, as it registers them.
 const keys = vi.hoisted(() => ({
-  shortcuts: [] as Array<{ description: string; handler: (event: KeyboardEvent) => void }>,
+  shortcuts: fromPartial<Array<{ description: string; handler: (event: KeyboardEvent) => void }>>(
+    [],
+  ),
 }))
 
 const quiet = () =>

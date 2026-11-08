@@ -124,7 +124,7 @@ function pick(id: string) {
 // any state, and the test is against the wrapper, which never unmounts.
 useEventListener(window, 'mousedown', (event: MouseEvent) => {
   if (!open.value) return
-  if (!root.value?.contains(event.target as Node)) close()
+  if (!root.value?.contains((event.target instanceof Node ? event.target : null))) close()
 })
 
 useEventListener(window, 'keydown', (event: KeyboardEvent) => {

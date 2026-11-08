@@ -46,12 +46,12 @@ export class Entities {
     return loading
   }
 
-  normalize(
-    value: unknown,
+  normalize<Value>(
+    value: Value,
     declaration: EntityDeclaration | null | undefined,
     partition: string,
     revision: number,
-  ): unknown {
+  ): Value | EntityReference | unknown[] | Record<string, unknown> {
     if (Array.isArray(value))
       return value.map((item) => this.normalize(item, declaration, partition, revision))
     if (!isRecord(value) || value instanceof Blob) return value
@@ -148,11 +148,13 @@ function compare(left: string | number | null, right: string | number | null): n
   return String(left).localeCompare(String(right))
 }
 
-export function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord<Value>(value: Value): value is Value & Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function safeData(data: Record<string, unknown>): Record<string, unknown> {
   const { access: _access, ...publicData } = data
-  return JSON.parse(JSON.stringify(publicData)) as Record<string, unknown>
+  const clean: unknown = JSON.parse(JSON.stringify(publicData))
+  if (!isRecord(clean)) throw new Error('Persisted entity data must be an object')
+  return clean
 }

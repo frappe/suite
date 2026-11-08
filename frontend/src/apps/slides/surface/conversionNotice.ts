@@ -6,19 +6,20 @@ export interface ConversionStatus {
 }
 
 // Why every old deck waits, as the server names it to System Managers
-const WAIT_REASONS: Record<string, () => string> = {
-  node: () => translate('the server has no Node 22.13 or newer'),
-  scheduler: () => translate('the scheduler is off'),
-}
+const WAIT_REASONS = new Map<string, () => string>(
+  Object.entries({
+    node: () => translate('the server has no Node 22.13 or newer'),
+    scheduler: () => translate('the scheduler is off'),
+  }),
+)
 
 function reasonLine(reason: string) {
   return translate('Reason: {0}.', [reason])
 }
 
 function waitReason(reason: string) {
-  if (Object.hasOwn(WAIT_REASONS, reason)) {
-    return WAIT_REASONS[reason]()
-  }
+  const explain = WAIT_REASONS.get(reason)
+  if (explain) return explain()
 
   return reason
 }

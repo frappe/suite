@@ -87,7 +87,7 @@ describe('indentation through a parse', () => {
           },
         ],
       },
-    ] as any
+    ]
     slideIndex.value = 0
     focusElementId.value = 't1'
     await nextTick()

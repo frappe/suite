@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
@@ -132,10 +133,10 @@ describe('naming someone who can’t open the document', () => {
 
   it('looks only at the people an edit adds', async () => {
     access.locked = ['ben@x.com', 'arjun@x.com']
-    const asking = {
+    const asking = fromPartial<DocumentThread>({
       ...WHOLE,
       comments: [{ ...comment('c8', 'Asha Rao', 'Ask @[ben@x.com]'), mentions: ['ben@x.com'] }],
-    } as unknown as DocumentThread
+    })
     const { host, asked } = showList({ threads: [asking] })
     await click(rowButton(host, 'Ask'))
     const menu = host.querySelector<HTMLElement>('li button[aria-label="More comment actions"]')

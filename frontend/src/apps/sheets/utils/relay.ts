@@ -8,6 +8,8 @@ const REFUSALS = new Set<unknown>([
 ])
 
 export function isRefusal(err: unknown): boolean {
-  const e = err as { type?: unknown; status?: unknown } | null | undefined
-  return REFUSALS.has(e?.type) || e?.status === 401 || e?.status === 403
+  if (!err || typeof err !== 'object') return false
+  const type = 'type' in err ? err.type : undefined
+  const status = 'status' in err ? err.status : undefined
+  return REFUSALS.has(type) || status === 401 || status === 403
 }

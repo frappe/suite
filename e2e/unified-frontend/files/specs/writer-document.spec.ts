@@ -1,6 +1,5 @@
 import { readFileSync } from "node:fs";
-
-import { type APIRequestContext, type Page, expect, test } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
 import {
 	adminApi,
@@ -51,10 +50,9 @@ async function openDocument(page: Page) {
 }
 
 async function storedHtml(): Promise<string> {
-	const response = await api.get(
-		`/api/v2/document/Writer Document/${encodeURIComponent(doc.content_docname!)}`,
-	);
+	const response = await api.get(`/api/v2/document/Writer Document/${encodeURIComponent(doc.content_docname!)}`);
 	expect(response.ok()).toBe(true);
+	// SAFETY: the successful Writer document read returns the backend HTML field; this test compares it against the independently typed editor text.
 	return ((await response.json()) as { data: { html: string | null } }).data.html ?? "";
 }
 

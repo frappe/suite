@@ -68,7 +68,10 @@ function _classifyStep(times: readonly ParsedTime[]): { step: number } | null {
   if (times.length === 1) return { step: 60 } // single → +1 minute (Google default)
   const diffs: number[] = []
   for (let i = 1; i < times.length; i++) {
-    diffs.push((times[i] as ParsedTime).seconds - (times[i - 1] as ParsedTime).seconds)
+    const current = times[i]
+    const previous = times[i - 1]
+    if (!current || !previous) throw new Error('Time pattern source is incomplete')
+    diffs.push(current.seconds - previous.seconds)
   }
   const step = diffs[0]
   if (!diffs.every((d) => d === step)) return null
@@ -80,12 +83,13 @@ function _classifyStep(times: readonly ParsedTime[]): { step: number } | null {
 export const timeDetector: Detector = {
   detect(values) {
     const parsed = values.map(_parse)
-    if (parsed.some((t) => t === null)) return null
-    const times = parsed as ParsedTime[]
+    if (!parsed.every((t) => t !== null)) return null
+    const times = parsed
     const cls = _classifyStep(times)
     if (!cls) return null
-    const anchorFwd = times[times.length - 1] as ParsedTime
-    const anchorBack = times[0] as ParsedTime
+    const anchorFwd = times[times.length - 1]
+    const anchorBack = times[0]
+    if (!anchorFwd || !anchorBack) return null
     return {
       kind: 'time',
       confidence: 0.92,

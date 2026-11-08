@@ -1,13 +1,10 @@
+import { fromPartial } from '@total-typescript/shoehorn';
 import { describe, expect, it, vi } from 'vitest';
 import { createManager } from '../../__tests__/test-helpers';
 import type { RoomRegistry } from '../../RoomRegistry';
 
 function getRegistry(harness: ReturnType<typeof createManager>): RoomRegistry {
-	return (
-		harness.manager as unknown as {
-			registry: RoomRegistry;
-		}
-	).registry;
+	return harness.manager['registry'];
 }
 
 describe('RoomQueryHandlers recorder projection snapshot', () => {
@@ -18,10 +15,10 @@ describe('RoomQueryHandlers recorder projection snapshot', () => {
 			scope: 'recording',
 			userId: 'recorder:recording-1',
 			recordingProofComplete: true,
-			recordingClaims: {
+			recordingClaims: fromPartial({
 				recording_id: 'recording-1',
 				recorder_job_id: 'job-1',
-			} as never,
+			}),
 		});
 		harness.connect(socket);
 		getRegistry(harness).activateRecorder(socket, 'recording-1', 'job-1');
@@ -45,10 +42,10 @@ describe('RoomQueryHandlers recorder projection snapshot', () => {
 			scope: 'recording',
 			userId: 'recorder:recording-1',
 			recordingProofComplete: true,
-			recordingClaims: {
+			recordingClaims: fromPartial({
 				recording_id: 'recording-1',
 				recorder_job_id: 'job-1',
-			} as never,
+			}),
 		});
 		harness.connect(socket);
 		const registry = getRegistry(harness);
@@ -77,7 +74,9 @@ describe('RoomQueryHandlers recorder projection snapshot', () => {
 					version: 1,
 					participantIds: ['p1'],
 					activeSpeakerIds: [],
-					presentationOrders: Object.fromEntries(Array.from({ length: 16 }, (_, index) => [index + 1, ['p1']])),
+					presentationOrders: Object.fromEntries(
+						Array.from({ length: 16 }, (_, index) => [index + 1, ['p1']]),
+					),
 				},
 				participants: [
 					{

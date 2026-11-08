@@ -17,7 +17,12 @@ const {
 } = await import('./interaction')
 const { setCommandHistory } = await import('./historyMeta')
 
-const find = (id: number) => slides.value[0].elements.find((el: any) => el.id === id) as any
+const find = (id: number) => {
+  const elements = slides.value[0]?.elements
+  if (!Array.isArray(elements)) throw new Error('Expected slide elements')
+  const element = elements.find((element) => element.id === id)
+  return element
+}
 
 // two 100×100 boxes with a connector from the right port of the first to the
 // left port of the second: (200,150) → (400,150); the line is stacked between them
@@ -55,12 +60,12 @@ const fixture = () => [
 ]
 
 beforeEach(() => {
-  slides.value = [{ clientId: 'c1', elements: fixture() }] as any
+  slides.value = [{ clientId: 'c1', elements: fixture() }]
   slideIndex.value = 0
   resetInteractionOffset()
   rotationDelta.value = 0
   pendingConnector.value = null
-  setCommandHistory({ execute: (command: any) => command.execute(slides.value) } as any)
+  setCommandHistory({ execute: (command: any) => command.execute(slides.value) })
 })
 
 describe('connector following its targets', () => {

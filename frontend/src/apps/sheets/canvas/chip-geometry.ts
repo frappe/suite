@@ -65,6 +65,10 @@ export function chipColor(
   for (let k = 0; k < s.length; k++) h = (h * 31 + s.charCodeAt(k)) >>> 0
   return chipPaletteColor(h)
 }
+interface ChipMetricsResult {
+  offsetX: number
+  chipW: number
+}
 
 // Pill placement for `text` in a cell of width `cellW`: its x-offset from the
 // cell's left edge and its width, honouring the cell's horizontal alignment.
@@ -74,7 +78,7 @@ export function chipMetrics(
   text: string,
   fmt: CellFormat | null | undefined,
   cellW: number,
-): { offsetX: number; chipW: number } {
+): ChipMetricsResult {
   ctx.save()
   ctx.font = chipFont(fmt ?? {})
   const tw = ctx.measureText(text).width

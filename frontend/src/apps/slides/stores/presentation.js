@@ -27,6 +27,7 @@ import { slides } from './slide'
 
 const presentationDoc = ref()
 
+/** @type {import('vue').Ref<string | null>} */
 const presentationId = ref(null)
 
 // the user may not write this presentation at all

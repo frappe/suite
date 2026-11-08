@@ -59,10 +59,15 @@ export const DriveMedia = Extension.create<{ media: DocumentMedia | null }>({
   },
 })
 
+interface FollowedMedia {
+  applied: string | null
+  stop: () => void
+}
+
 class MediaDisplay {
   private readonly scope: EffectScope = effectScope(true)
   /** Each followed element, with the handle URL this display last put in it. */
-  private readonly shown = new WeakMap<Element, { applied: string | null; stop: () => void }>()
+  private readonly shown = new WeakMap<Element, FollowedMedia>()
   private readonly observer: MutationObserver
 
   constructor(
@@ -71,7 +76,8 @@ class MediaDisplay {
   ) {
     this.observer = new MutationObserver((records) => {
       for (const record of records) {
-        if (record.type === 'attributes') this.follow(record.target as Element)
+        if (record.type === 'attributes' && record.target instanceof Element)
+          this.follow(record.target)
         else for (const node of record.addedNodes) this.scan(node)
       }
     })
@@ -106,7 +112,7 @@ class MediaDisplay {
     const id = mediaNodeId(src, element.getAttribute('data-node'))
     if (!id) return
 
-    const followed = { applied: null as string | null, stop: () => {} }
+    const followed: FollowedMedia = { applied: null, stop: () => {} }
     this.shown.set(element, followed)
     this.scope.run(() => {
       const handle = this.media(id)

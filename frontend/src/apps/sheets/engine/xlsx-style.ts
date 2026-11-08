@@ -151,24 +151,28 @@ function _hex(color: XColor | undefined, theme: string[]): string | null {
 // ── Cell formats ─────────────────────────────────────────────────────────────
 
 // Our font stacks as an Excel font name; System has none (Excel's default).
-const STACK_NAME: Record<string, string> = {
+const STACK_NAME = {
   [FONT_FAMILY_STACK.inter!]: 'Inter',
   [FONT_FAMILY_STACK.serif!]: 'Georgia',
   [FONT_FAMILY_STACK.mono!]: 'Consolas',
-}
+} satisfies Record<string, string>
 const BORDER_SIDES = [
   ['borderTop', 'top'],
   ['borderBottom', 'bottom'],
   ['borderLeft', 'left'],
   ['borderRight', 'right'],
 ] as const
-const VALIGN_TO: Record<string, string> = { top: 'top', middle: 'middle', bottom: 'bottom' }
-const VALIGN_FROM: Record<string, string> = {
-  top: 'top',
-  middle: 'middle',
-  center: 'middle',
-  bottom: 'bottom',
-}
+const VALIGN_TO = new Map<string, string>(
+  Object.entries({ top: 'top', middle: 'middle', bottom: 'bottom' }),
+)
+const VALIGN_FROM = new Map<string, string>(
+  Object.entries({
+    top: 'top',
+    middle: 'middle',
+    center: 'middle',
+    bottom: 'bottom',
+  }),
+)
 
 function _fontName(stack: unknown): string | null {
   if (typeof stack !== 'string' || !stack) return null
@@ -220,7 +224,7 @@ interface StyleFormat {
 
 /** Our cell format → an ExcelJS style (the number format goes separately). */
 export function styleToXlsx(fmt: Format | null | undefined): XStyle {
-  const f = (fmt || {}) as StyleFormat
+  const f: StyleFormat = fmt || {}
   const style: XStyle = {}
   const font: XFont = {}
   if (f.bold) font.bold = true
@@ -242,7 +246,7 @@ export function styleToXlsx(fmt: Format | null | undefined): XStyle {
 
   const al: XAlignment = {}
   if (f.align === 'left' || f.align === 'center' || f.align === 'right') al.horizontal = f.align
-  const valign = VALIGN_TO[f.valign ?? '']
+  const valign = VALIGN_TO.get(f.valign ?? '')
   if (valign) al.vertical = valign
   if (f.textWrap === 'wrap' || (f.textWrap == null && f.wrapText === true)) al.wrapText = true
   if (Object.keys(al).length) style.alignment = al
@@ -313,7 +317,7 @@ export function styleFromXlsx(
   if (al) {
     const h = al.horizontal === 'centerContinuous' ? 'center' : al.horizontal
     if (h === 'left' || h === 'center' || h === 'right') fmt.align = h
-    if (al.vertical && VALIGN_FROM[al.vertical]) fmt.valign = VALIGN_FROM[al.vertical]
+    if (al.vertical && VALIGN_FROM.get(al.vertical)) fmt.valign = VALIGN_FROM.get(al.vertical)
     if (al.wrapText) fmt.textWrap = 'wrap'
   }
   for (const [ours, side] of BORDER_SIDES) {
@@ -364,28 +368,34 @@ export function customHeightRows(sheetXml: string): Set<number> {
 
 // ── Conditional formats ──────────────────────────────────────────────────────
 
-const OPERATOR: Record<string, string> = {
-  gt: 'greaterThan',
-  lt: 'lessThan',
-  gte: 'greaterThanOrEqual',
-  lte: 'lessThanOrEqual',
-  eq: 'equal',
-  neq: 'notEqual',
-  between: 'between',
-}
-const OPERATOR_FROM = Object.fromEntries(Object.entries(OPERATOR).map(([k, v]) => [v, k]))
-const ICON_SET: Record<string, string> = {
-  arrows3: '3Arrows',
-  circles3: '3TrafficLights1',
-  traffic3: '3TrafficLights2',
-}
-const ICON_SET_FROM: Record<string, string> = {
-  '3Arrows': 'arrows3',
-  '3ArrowsGray': 'arrows3',
-  '3TrafficLights1': 'circles3',
-  '3TrafficLights2': 'traffic3',
-  '3Signs': 'traffic3',
-}
+const OPERATOR = new Map<string, string>(
+  Object.entries({
+    gt: 'greaterThan',
+    lt: 'lessThan',
+    gte: 'greaterThanOrEqual',
+    lte: 'lessThanOrEqual',
+    eq: 'equal',
+    neq: 'notEqual',
+    between: 'between',
+  }),
+)
+const OPERATOR_FROM = Object.fromEntries([...OPERATOR].map(([k, v]) => [v, k]))
+const ICON_SET = new Map<string, string>(
+  Object.entries({
+    arrows3: '3Arrows',
+    circles3: '3TrafficLights1',
+    traffic3: '3TrafficLights2',
+  }),
+)
+const ICON_SET_FROM = new Map<string, string>(
+  Object.entries({
+    '3Arrows': 'arrows3',
+    '3ArrowsGray': 'arrows3',
+    '3TrafficLights1': 'circles3',
+    '3TrafficLights2': 'traffic3',
+    '3Signs': 'traffic3',
+  }),
+)
 
 /** A range as A1 text ('B2:B6', or 'B2' for one cell). */
 function rectToRef({ r0, c0, r1, c1 }: Rect): string {
@@ -403,8 +413,10 @@ export function refToRects(ref: string): Rect[] {
     const s = parseCellId((a || '').replace(/\$/g, '').toUpperCase()),
       e = parseCellId((b || '').replace(/\$/g, '').toUpperCase())
     if (!s || !e) continue
-    const [r0, r1] = [s.row, e.row].sort((x, y) => x - y) as [number, number]
-    const [c0, c1] = [s.col, e.col].sort((x, y) => x - y) as [number, number]
+    const r0 = Math.min(s.row, e.row),
+      r1 = Math.max(s.row, e.row)
+    const c0 = Math.min(s.col, e.col),
+      c1 = Math.max(s.col, e.col)
     out.push({ r0, c0, r1, c1 })
   }
   return out
@@ -464,7 +476,7 @@ export function cfToXlsx(rule: CfRule): XConditionalFormatting | null {
     const [lo, hi] = rule.icons?.thresholds || [0.33, 0.66]
     x = {
       type: 'iconSet',
-      iconSet: ICON_SET[rule.icons?.set || ''] || '3Arrows',
+      iconSet: ICON_SET.get(rule.icons?.set || '') || '3Arrows',
       cfvo: [
         { type: 'percent', value: 0 },
         { type: 'percent', value: Math.round(lo * 100) },
@@ -474,10 +486,11 @@ export function cfToXlsx(rule: CfRule): XConditionalFormatting | null {
   } else if (rule.condition) {
     const { type, value, value2 } = rule.condition
     const style = _dxf(rule.format)
-    if (OPERATOR[type]) {
+    const operator = OPERATOR.get(type)
+    if (operator) {
       const formulae = [_operand(value)]
       if (type === 'between') formulae.push(_operand(value2))
-      x = { type: 'cellIs', operator: OPERATOR[type], formulae, style }
+      x = { type: 'cellIs', operator, formulae, style }
     } else if (type === 'contains') {
       // As a formula: ExcelJS writes a containsText rule without its `text`
       // attribute, which Google reads as "contains nothing" (every cell).
@@ -527,14 +540,16 @@ function _stop(v: XCfvo | undefined): number | null {
   return null
 }
 
-const COMPARE: Record<string, string> = {
-  '>': 'gt',
-  '<': 'lt',
-  '>=': 'gte',
-  '<=': 'lte',
-  '=': 'eq',
-  '<>': 'neq',
-}
+const COMPARE = new Map<string, string>(
+  Object.entries({
+    '>': 'gt',
+    '<': 'lt',
+    '>=': 'gte',
+    '<=': 'lte',
+    '=': 'eq',
+    '<>': 'neq',
+  }),
+)
 
 // An Excel formula rule is worked out for each cell of its range, relative
 // to the range's top-left cell `tl`. One that only tests that cell against a
@@ -543,7 +558,7 @@ const COMPARE: Record<string, string> = {
 function _selfCondition(f: string, tl: string): CfCondition | null {
   const s = f.replace(/\s+/g, '').toUpperCase()
   const cmp = s.match(/^([A-Z]+\d+)(>=|<=|<>|>|<|=)(-?\d+(?:\.\d+)?)$/)
-  if (cmp && cmp[1] === tl) return { type: COMPARE[cmp[2]!]!, value: cmp[3]! }
+  if (cmp && cmp[1] === tl) return { type: COMPARE.get(cmp[2]!)!, value: cmp[3]! }
   if (s === `ISBLANK(${tl})` || s === `LEN(TRIM(${tl}))=0`) return { type: 'empty' }
   if (s === `NOT(ISBLANK(${tl}))` || s === `LEN(TRIM(${tl}))>0`) return { type: 'notempty' }
   return null
@@ -584,7 +599,7 @@ export function cfFromXlsx(
       rule = {
         kind: 'icon-set',
         icons: {
-          set: ICON_SET_FROM[x.iconSet || ''] || 'circles3',
+          set: ICON_SET_FROM.get(x.iconSet || '') || 'circles3',
           thresholds: [_stop(x.cfvo?.[1]) ?? 0.33, _stop(x.cfvo?.[2]) ?? 0.66],
         },
       }

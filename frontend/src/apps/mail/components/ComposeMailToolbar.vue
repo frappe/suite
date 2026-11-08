@@ -125,7 +125,10 @@ const { buttons } = useTextEditorButtons(() => true)
 const fileInput = useTemplateRef('fileInput')
 
 const onFilesSelected = async (e: Event) => {
-  const input = e.target as HTMLInputElement
+  const checkedEventTarget = e.target
+  if (!(checkedEventTarget instanceof HTMLInputElement)) return
+
+  const input = checkedEventTarget
   const files = Array.from(input.files ?? [])
   if (!files.length) return
 

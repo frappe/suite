@@ -70,7 +70,7 @@ function deleteParagraph(tab: Tab) {
   tab.editor.commands.deleteRange({ from: position - 1, to: position + 6 })
 }
 
-const RESTRUCTURES: Record<string, (tab: Tab) => void> = {
+const RESTRUCTURES = {
   join: (tab) => at(tab, 0).joinBackward().run(),
   heading: (tab) => at(tab).setNode('heading', { level: 2 }).run(),
   codeBlock: (tab) => at(tab).setNode('codeBlock').run(),
@@ -80,9 +80,9 @@ const RESTRUCTURES: Record<string, (tab: Tab) => void> = {
   split: (tab) => at(tab, 4).splitBlock().run(),
   deleteParagraph,
   blockMove: (tab) => moveBlockAfterNext(tab.editor, inside(tab, 'defgh')),
-}
+} satisfies Record<string, (tab: Tab) => void>
 
-const ADDITIONS: Record<string, (tab: Tab) => Token> = {
+const ADDITIONS = {
   text: (tab) => typeIn(tab, 'QQ'),
   image: (tab) => {
     at(tab, 2)
@@ -96,7 +96,7 @@ const ADDITIONS: Record<string, (tab: Tab) => Token> = {
       .run()
     return { kind: 'mention', key: 'qq@x.com' }
   },
-}
+} satisfies Record<string, (tab: Tab) => Token>
 
 function typeIn(tab: Tab, key: string, word = 'defgh', offset = 2): Token {
   tab.editor

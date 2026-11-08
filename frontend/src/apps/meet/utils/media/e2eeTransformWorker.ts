@@ -413,6 +413,7 @@ self.addEventListener('message', (event: MessageEvent<WorkerMessage>) => {
 })
 
 self.addEventListener('rtctransform', (event: Event) => {
+  // SAFETY: the browser dispatches rtctransform with readable/writable encoded-frame streams and the options supplied to RTCRtpScriptTransform.
   const transformer = (
     event as Event & {
       transformer: {

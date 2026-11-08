@@ -3,8 +3,10 @@ import { createApp, defineComponent, h, nextTick, ref } from 'vue'
 
 import ShareDialog from './ShareDialog.vue'
 
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const state = vi.hoisted(() => ({
-  asked: [] as string[],
+  asked: fromPartial<string[]>([]),
   answer: true,
 }))
 
