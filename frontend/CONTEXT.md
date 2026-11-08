@@ -134,7 +134,7 @@ _Avoid_: Legacy header, Old menu, Fallback chrome
 ## Flagged Ambiguities
 
 - **Workspace**: today's shell uses it for the site's organisation settings
-  (`shell/useWorkspace.ts`, `WorkspaceSettings.vue`). The base prototype
+  (`platform/workspace`, `WorkspaceSettings.vue`). The base prototype
   used it for a Drive Root. The prototype's switcher is removed; use
   "Drive Root", "Shared Root" or "Personal Root" for the Drive meaning.
 - **App**: older docs use it for a product's code and route prefix. In the
