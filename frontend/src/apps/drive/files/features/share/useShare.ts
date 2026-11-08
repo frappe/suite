@@ -280,10 +280,17 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
     /** Whether the notice offers Undo for the row a Remove just took away. */
     canUndo: computed(() => removed.value !== null),
     /** Puts back the row a Remove just took away, with its role and expiry, and no email. */
-    undoRemove() {
+    async undoRemove() {
       const last = removed.value
-      if (!last) return Promise.resolve(undefined)
-      return write(UNDO_ROW, () => grants.put(last.principal, last.write))
+      if (!last) return undefined
+      const shown = notice.value
+      const restored = await write(UNDO_ROW, () => grants.put(last.principal, last.write))
+      // A failed Undo can be tried again, unless a newer Remove took the notice meanwhile.
+      if (!restored && !removed.value) {
+        removed.value = last
+        notice.value = shown
+      }
+      return restored
     },
 
     deny: (principal: string) =>
@@ -304,29 +311,38 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
      * declined confirm. The picker's message keeps a line for every failure.
      */
     async add(principals: readonly string[], role: number, notify: boolean): Promise<string[]> {
-      // The picker shows before who has access arrives; an existing row's expiry comes from it.
-      await reading
-      errors.delete(PICKER)
-      const lines: string[] = []
-      const fail = (principal: string) => (message: string) => {
-        lines.push(principals.length > 1 ? `${label(principal)}: ${message}` : message)
-        errors.set(PICKER, lines.join('\n'))
+      // The Share button is busy from the first click, or a second one would mail twice.
+      pending.add(PICKER)
+      try {
+        // The picker shows before who has access arrives; an existing row's expiry comes from it.
+        await reading
+        errors.delete(PICKER)
+        const lines: string[] = []
+        const fail = (principal: string) => (message: string) => {
+          lines.push(principals.length > 1 ? `${label(principal)}: ${message}` : message)
+          errors.set(PICKER, lines.join('\n'))
+        }
+        const left: string[] = []
+        for (const principal of principals) {
+          const added = await change(
+            PICKER,
+            { principal, role },
+            () => {
+              const write: Parameters<typeof grants.put>[1] = {
+                role,
+                ...keep(localGrant(principal)),
+              }
+              if (principalKind(principal) === 'user') write.notify = notify
+              return grants.put(principal, write)
+            },
+            fail(principal),
+          )
+          if (!added) left.push(principal)
+        }
+        return left
+      } finally {
+        pending.delete(PICKER)
       }
-      const left: string[] = []
-      for (const principal of principals) {
-        const added = await change(
-          PICKER,
-          { principal, role },
-          () => {
-            const write: Parameters<typeof grants.put>[1] = { role, ...keep(localGrant(principal)) }
-            if (principalKind(principal) === 'user') write.notify = notify
-            return grants.put(principal, write)
-          },
-          fail(principal),
-        )
-        if (!added) left.push(principal)
-      }
-      return left
     },
 
     /** Mints a link for one outsider and emails it (§7.8). */

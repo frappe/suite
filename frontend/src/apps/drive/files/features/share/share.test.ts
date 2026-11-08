@@ -521,6 +521,55 @@ describe('share writes (spec §7.4, §7.7, §7.9)', () => {
     ])
   })
 
+  it('keeps Share busy while it waits for who has access, so a second click cannot mail twice', async () => {
+    let answer = () => {}
+    const reading = new Promise<void>((resolve) => (answer = resolve))
+    const server = fakeServer((call) => {
+      if (call.id === 'node_get') return node('document')
+      if (call.id === 'node_grants') return reading.then(() => ({ grants: [], inherited: [] }))
+      return { grant: grant('asha@example.com', 20) }
+    })
+    const share = useShare('doc', { client: testClient(server.transport) })
+    void share.load()
+
+    const adding = share.add(['asha@example.com'], 20, true)
+    expect(share.isPending('picker')).toBe(true)
+
+    answer()
+    await expect(adding).resolves.toEqual([])
+    expect(share.isPending('picker')).toBe(false)
+    expect(server.calls.filter((call) => call.id === 'node_put_grant')).toHaveLength(1)
+  })
+
+  it('keeps Undo after a failed Undo, so it can be tried again', async () => {
+    let connected = false
+    const server = fakeServer((call) => {
+      if (call.id === 'node_get') return node('document')
+      if (call.id === 'node_grants' && call.input.principal) return new Error('Unknown')
+      if (call.id === 'node_grants')
+        return { grants: [grant('asha@example.com', 20)], inherited: [] }
+      if (call.id === 'node_delete_grant') return { count: 1 }
+      return connected ? { grant: grant('asha@example.com', 20) } : new Error('Connection lost')
+    })
+    const share = useShare('doc', { client: testClient(server.transport) })
+    await share.load()
+    await share.remove(share.sections.value!.people[0]!)
+    const notice = share.notice.value
+    expect(share.canUndo.value).toBe(true)
+
+    await share.undoRemove()
+
+    expect(share.canUndo.value).toBe(true)
+    expect(share.notice.value).toBe(notice)
+    expect(share.errors.get('undo')).toBe('Connection lost')
+
+    connected = true
+    await share.undoRemove()
+
+    expect(share.canUndo.value).toBe(false)
+    expect(share.errors.has('undo')).toBe(false)
+  })
+
   it('keeps the error of every person it could not add, and says who each one is about', async () => {
     const server = fakeServer((call) => {
       if (call.id === 'node_get') return node('document')
