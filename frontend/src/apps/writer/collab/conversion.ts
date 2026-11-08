@@ -53,6 +53,7 @@ import {
   listedComments,
   markedIds,
   markOldThreads,
+  oldAnnotationIds,
   oldCommentAnchors,
   oldRanges,
   rangeAnchors,
@@ -97,8 +98,9 @@ const schema = getSchema(extensions)
  * What the conversion couldn't carry over: Drive's table of contents, rebuilt from the headings, a
  * part holding nothing, a change Yjs held back, the words of an old comment's copy away from its
  * anchor, the place of an old comment whose words are gone, a Yjs body holding nothing, read past
- * for the HTML, a property or attribute on the noise list, or the count of table cell spans set
- * to the span a browser drew.
+ * for the HTML, a property or attribute on the noise list, the count of table cell spans set
+ * to the span a browser drew, or an old annotations list no screen draws, its threads kept by
+ * their comment marks.
  */
 export type Dropped =
   | { kind: 'toc-hint' }
@@ -109,6 +111,7 @@ export type Dropped =
   | { kind: 'empty-yjs' }
   | { kind: 'noise'; name: string }
   | { kind: 'table-span'; count: number }
+  | { kind: 'old-annotations'; ids: string[] }
 
 /** A thread Drive kept only in its 2023 comment marks, under a key its far copies name */
 export interface OldThread {
@@ -361,6 +364,14 @@ function droppedFloats(body: XmlFragment): Dropped[] {
   return [{ kind: 'noise', name: 'dataFloat' }]
 }
 
+function droppedAnnotations(ids: string[] | null): Dropped[] {
+  if (!ids?.length) {
+    return []
+  }
+
+  return [{ kind: 'old-annotations', ids }]
+}
+
 // The check compares the old body with the fresh one as Yjs holds both. Between them: an old frame
 // of a video on the site, read as that video; convertOldMedia, checked on its own by where the media points and by old media holding only what
 // the old editor wrote; a float beside an alignment, dropped (recorded); Drive's defaults, dropped;
@@ -375,7 +386,8 @@ function droppedFloats(body: XmlFragment): Dropped[] {
 function fromYjs(old: Doc) {
   const body = old.getXmlFragment(BODY_FIELD)
   const threads = markOldThreads(body, schema)
-  const hasUnreadableThreads = !threads || unreadableThreads(old).length > 0
+  const annotations = oldAnnotationIds(old, schema)
+  const hasUnreadableThreads = !threads || !annotations || unreadableThreads(old).length > 0
   readSiteVideoFrames(body)
   const media = mediaSources(body)
   const isOldMediaKept = isOldMediaMappable(body)
@@ -396,7 +408,11 @@ function fromYjs(old: Doc) {
   const source = inventory(body, new Set(setAside))
   return {
     node,
-    dropped: [...setAside.map(droppedPart), ...pendingDrop(old)],
+    dropped: [
+      ...setAside.map(droppedPart),
+      ...pendingDrop(old),
+      ...droppedAnnotations(annotations),
+    ],
     hasUnreadableThreads,
     threads: threads?.threads ?? [],
     check: (fresh: XmlFragment): Dropped[] | null => {
@@ -795,7 +811,10 @@ function fromHtmlOverYjs(old: Doc, html: string) {
   return {
     ...parsed,
     dropped: [{ kind: 'empty-yjs' } as const, ...pendingDrop(old)],
-    hasUnreadableThreads: parsed.hasUnreadableThreads || unreadableThreads(old).length > 0,
+    hasUnreadableThreads:
+      parsed.hasUnreadableThreads ||
+      !oldAnnotationIds(old, schema) ||
+      unreadableThreads(old).length > 0,
   }
 }
 

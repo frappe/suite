@@ -13,6 +13,7 @@ import {
   XmlElement,
   XmlFragment,
   XmlText,
+  Map as YMap,
   type RelativePosition,
   type XmlHook,
 } from 'yjs'
@@ -114,16 +115,38 @@ function addMarkEntries(
   }
 }
 
-/** The old comment marks and annotations in `old` that no thread can be made from yet */
+/** The old comment marks in `old` that no thread can be made from yet */
 export function unreadableThreads(old: Doc) {
   const entries: [string, unknown][] = []
   addMarkEntries(old.getXmlFragment(BODY_FIELD), entries)
-  const found = entries.filter(isUnreadableMark).map(([key]) => key)
-  if (old.share.has(ANNOTATIONS_ROOT) && old.getArray(ANNOTATIONS_ROOT).length) {
-    found.push(ANNOTATIONS_ROOT)
+  return entries.filter(isUnreadableMark).map(([key]) => key)
+}
+
+function annotationId(entry: unknown) {
+  if (entry instanceof YMap) {
+    return entry.get('id') as unknown
   }
 
-  return found
+  if (isPlainObject(entry)) {
+    return entry.id
+  }
+
+  return undefined
+}
+
+/** The ids in `old`'s annotations list, or null when a comment mark doesn't carry one of them */
+export function oldAnnotationIds(old: Doc, schema: Schema) {
+  if (!old.share.has(ANNOTATIONS_ROOT)) {
+    return []
+  }
+
+  const marked = markedIds(old.getXmlFragment(BODY_FIELD), schema)
+  const ids = old.getArray(ANNOTATIONS_ROOT).toArray().map(annotationId)
+  if (!ids.every((id) => marked.has(id as string))) {
+    return null
+  }
+
+  return ids as string[]
 }
 
 type IdOf = (attrs: unknown) => string | undefined
