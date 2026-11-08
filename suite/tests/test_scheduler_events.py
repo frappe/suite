@@ -46,8 +46,8 @@ class TestSchedulerEvents(unittest.TestCase):
             with self.subTest(method=method):
                 self.assertEqual(module_name, jobs.__name__)
                 self.assertIn(attr, expected_targets)
-        # Every target in `jobs.py` is wired daily, and nothing else of Drive's
-        # runs on another schedule through the module.
+        # Every target in `jobs.py` is wired daily, except the hourly purge of
+        # expired downloads, and nothing else of Drive's runs on another schedule.
         other_drive_jobs = [
             method
             for event, entries in hooks.scheduler_events.items()
@@ -55,6 +55,8 @@ class TestSchedulerEvents(unittest.TestCase):
             for method in entries
             if method.startswith(jobs.__name__)
         ]
-        self.assertEqual(other_drive_jobs, [])
+        purge_expired_downloads = f"{jobs.__name__}.purge_expired_downloads"
+        self.assertEqual(other_drive_jobs, [purge_expired_downloads])
+        self.assertIn(purge_expired_downloads, hooks.scheduler_events["hourly"])
         wired = {method.rpartition(".")[2] for method in daily_drive_jobs}
-        self.assertEqual(wired, expected_targets)
+        self.assertEqual(wired | {"purge_expired_downloads"}, expected_targets)

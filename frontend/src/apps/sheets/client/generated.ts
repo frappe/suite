@@ -30,6 +30,36 @@ const operationGetSheet: QueryRef<GetSheetInput, GetSheetOutput, GetSheetError> 
   loadValidators: async () => (await import('./validators')).operationGetSheet,
 }
 
+export type GetConversionInput = { name: string }
+
+export type GetConversionOutput = {
+  state: 'converted' | 'pending' | 'refused'
+  outcome?: string
+  reason?: string
+}
+
+export type GetConversionError = never
+
+const operationGetConversion: QueryRef<
+  GetConversionInput,
+  GetConversionOutput,
+  GetConversionError
+> = {
+  id: 'get_conversion',
+  owner: 'sheets',
+  kind: 'query',
+  publicName: 'documents.conversion',
+  envelope: 'message',
+  method: 'GET',
+  path: '/api/method/suite.sheets.api.get_conversion',
+  prefix: '/api/suite/sheets/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: [],
+  loadValidators: async () => (await import('./validators')).operationGetConversion,
+}
+
 export type GetAiSettingsInput = Record<string, never>
 
 export type GetAiSettingsOutput = { enabled: boolean; model: string; keyIsSet: boolean }
@@ -146,6 +176,7 @@ const operationGetLinkPreview: QueryRef<
 export const api = {
   documents: {
     get: operationGetSheet,
+    conversion: operationGetConversion,
   },
   assistant: {
     settings: operationGetAiSettings,

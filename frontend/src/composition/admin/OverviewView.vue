@@ -87,7 +87,7 @@ const kpis = computed(() => {
           <div
             v-for="n in 3"
             :key="n"
-            class="space-y-1.5 border-b border-outline-gray-2 px-5 py-4 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0"
+            class="flex items-center justify-between gap-3 border-b border-outline-gray-2 px-5 py-3 last:border-b-0 sm:block sm:space-y-1.5 sm:py-4 sm:border-b-0 sm:border-r sm:last:border-r-0"
           >
             <DashboardSkeletonText class="text-sm" width="7rem" />
             <DashboardSkeletonText class="text-3xl" width="3rem" />
@@ -114,7 +114,7 @@ const kpis = computed(() => {
           v-for="kpi in kpis"
           :key="kpi.label"
           :to="kpi.route"
-          class="space-y-1.5 border-b border-outline-gray-2 px-5 py-4 last:border-b-0 hover:bg-surface-gray-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-outline-gray-3 sm:border-b-0 sm:border-r sm:last:border-r-0"
+          class="flex items-center justify-between gap-3 border-b border-outline-gray-2 px-5 py-3 last:border-b-0 sm:block sm:space-y-1.5 sm:py-4 hover:bg-surface-gray-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-outline-gray-3 sm:border-b-0 sm:border-r sm:last:border-r-0"
         >
           <p class="text-sm text-ink-gray-5">{{ kpi.label }}</p>
           <p class="text-3xl font-semibold tabular-nums text-ink-gray-9">
@@ -176,7 +176,8 @@ const kpis = computed(() => {
             v-for="domain in pendingDomains.slice(0, 3)"
             :key="domain.id"
             theme="amber"
-            :title="__('{0}: {1}', [domain.name, domainNote(domain)])"
+            :title="domain.name"
+            :description="domainNote(domain)"
           >
             <template #actions>
               <Button

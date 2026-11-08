@@ -37,11 +37,7 @@
           <span class="truncate text-base font-medium text-ink-gray-8" :title="node.title">{{
             node.title
           }}</span>
-          <span
-            v-if="node.favourite"
-            class="lucide-star ml-1.5 size-3.5 shrink-0 text-ink-amber-6"
-            aria-hidden="true"
-          />
+          <StarredIcon v-if="node.favourite" class="ml-1.5 size-3.5 shrink-0" />
         </span>
         <span class="flex min-w-0 items-center gap-1 text-xs text-ink-gray-5">
           <slot name="meta"
@@ -63,6 +59,7 @@ import { computed, type Component } from 'vue'
 
 import type { DriveNode } from '@/apps/drive/client/types'
 import { nodeIcon, nodeIconTint } from '@/apps/drive/files/internal/icons'
+import StarredIcon from '@/apps/drive/files/internal/StarredIcon.vue'
 
 import { useNodePreview } from './nodePreview'
 

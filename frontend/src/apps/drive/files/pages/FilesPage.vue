@@ -58,7 +58,7 @@
             <template v-if="selectionMode">
               <div class="flex min-w-0 items-center gap-2">
                 <Button
-                  v-for="action in bulkActions"
+                  v-for="action in bulkMenu.options"
                   :key="action.label"
                   :label="action.label"
                   :icon-left="action.icon"
@@ -255,21 +255,23 @@ import { computed, h, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue
 import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 
 import { api, client, useInfiniteQuery, useMutation, useQuery } from '@/api'
-import { driveNodeRoute, useDriveDialogs } from '@/apps/drive'
-import { archiveDownloadUrl } from '@/apps/drive/client/archives'
-import { nodeContentUrl, openAsSpreadsheet, opensAsSpreadsheet } from '@/apps/drive/client/nodes'
+import { driveNodeRoute, newDocumentRoute, useDriveDialogs } from '@/apps/drive'
+import { openAsSpreadsheet, opensAsSpreadsheet } from '@/apps/drive/client/nodes'
 import type { DriveBatchResult, DriveNode } from '@/apps/drive/client/types'
 import { isDriveLocked } from '@/apps/drive/client/unlock'
 import { AreaSidebar, openAreaSidebar } from '@/platform/area-sidebar'
 import { DOCUMENT_TYPES_KEY, GUEST_FRAME_KEY } from '@/platform/contracts'
-import { confirm, ContextMenu, Dropdown, toast } from '@/platform/feedback'
+import { confirm, ContextMenu, Dropdown } from '@/platform/feedback'
 import { openingTitle, usePageTitle } from '@/platform/page-meta'
 import { useSession } from '@/platform/session'
+import { openAreaShortcuts } from '@/platform/shortcuts'
+import { translate as __ } from '@/platform/translation'
 import { TransportError } from '@/platform/transport'
 
 import BatchOutcome from '../features/BatchOutcome.vue'
 import { announceCopy, announceMove, announceTrash, type MovedItem } from '../features/changeToast'
 import CreateNodeDialog, { type CreateRequest } from '../features/CreateNodeDialog.vue'
+import { downloadItems } from '../features/downloads'
 import { emptyState, type FilesDestination } from '../features/emptyState'
 import FilesListing from '../features/FilesListing.vue'
 import FolderPicker from '../features/FolderPicker.vue'
@@ -295,6 +297,7 @@ import RecoveryNotice from '../features/RecoveryNotice.vue'
 import RenameDialog from '../features/RenameDialog.vue'
 import { clearSelection, toggleSelection, type SelectionState } from '../features/selection'
 import { copyLink } from '../features/share/shareFormat'
+import { useListingShortcuts, type ListingView } from '../features/shortcuts/useListingShortcuts'
 import TemplatePicker from '../features/TemplatePicker.vue'
 import { useTrashActions } from '../features/trash/useTrashActions'
 import {
@@ -309,6 +312,7 @@ import DriveUploads from '../features/uploads/DriveUploads.vue'
 import { rowDropHandlers, useUploadDrop } from '../features/uploads/drop'
 import DropOverlay from '../features/uploads/DropOverlay.vue'
 import { uploadTargetOf } from '../features/uploads/queue'
+import { pastedImages } from '../features/uploads/sources'
 import ViewSettings from '../features/ViewSettings.vue'
 import { nodeIcon, nodeIconTint } from '../internal/icons'
 import { LOCATION_LABELS, locationTitle, trashLocation } from '../internal/locations'
@@ -629,6 +633,8 @@ function dismissOutcome() {
 }
 // Search replaces the Trash listing, so its rows get no Trash actions.
 const trashActions = computed(() => props.destination === 'trash' && !isSearching.value)
+// The same holds for Recent: a search result can only leave Recent from Recent.
+const recentActions = computed(() => props.destination === 'recent' && !isSearching.value)
 const uploads = ref<InstanceType<typeof DriveUploads> | null>(null)
 // Uploads follow the server's UPLOAD role on the open folder (spec §6.7, §10.13). Saved views and search take none.
 const uploadTarget = computed(() =>
@@ -672,7 +678,7 @@ const trashMutation = useMutation(api.drive.nodes.trash)
 const starMutation = useMutation(api.drive.nodes.star)
 const unstarMutation = useMutation(api.drive.nodes.unstar)
 const visitMutation = useMutation(api.drive.nodes.visit, { silent: true })
-const archiveMutation = useMutation(api.drive.archives.start)
+const clearRecentMutation = useMutation(api.drive.views.clearRecent)
 
 onMounted(() => {
   narrowMedia = window.matchMedia('(max-width: 767px)')
@@ -681,15 +687,15 @@ onMounted(() => {
   stopRealtime = () => {}
   syncSavedViewQuery()
   if (presentation.value.view === 'grid') startPreviewObservation()
-  window.addEventListener('keydown', onWindowKeydown)
   window.addEventListener('popstate', onMobileBack)
+  window.addEventListener('paste', onPaste)
 })
 onBeforeUnmount(() => {
   narrowMedia?.removeEventListener('change', onNarrowChange)
   stopRealtime?.()
   stopPreviews?.()
-  window.removeEventListener('keydown', onWindowKeydown)
   window.removeEventListener('popstate', onMobileBack)
+  window.removeEventListener('paste', onPaste)
 })
 
 watch(
@@ -856,6 +862,22 @@ const trashedNotice = computed<{
     secondary: restore && remove,
   }
 })
+// Options a keyboard shortcut also runs, defined once so the key finds the item its menu shows.
+const selectAllOption: DropdownActionOption = {
+  label: 'Select all',
+  icon: 'lucide-list-checks',
+  onClick: selectAll,
+}
+const newFolderOption = typedOption(
+  'Folder',
+  { kind: 'folder', title: 'Folder', mime: null, content_doctype: null },
+  () => create('folder'),
+)
+const uploadFilesOption: DropdownActionOption = {
+  label: 'Files',
+  icon: 'lucide-upload',
+  onClick: () => pickUpload('files'),
+}
 const moreOptions = computed<DropdownItem[]>(() => [
   ...(folderActions.value.length ? [{ group: 'This folder', options: folderActions.value }] : []),
   ...(hasRows.value
@@ -865,45 +887,92 @@ const moreOptions = computed<DropdownItem[]>(() => [
           hideLabel: true,
           options: [
             { label: 'Select rows', icon: 'lucide-square-check', onClick: selectFirst },
-            { label: 'Select all', icon: 'lucide-list-checks', onClick: selectAll },
+            selectAllOption,
           ],
         },
       ]
     : []),
-])
-/** What a selection of several items offers, in the toolbar and on right-click. */
-// An action is enabled only when every selected row allows it (spec §5.8).
-const bulkActions = computed(() => {
-  const allow = (action: keyof NodeActions) => allAllow(selectedRows.value, action, signedIn.value)
-  return trashActions.value
-    ? [
-        {
-          label: 'Restore',
-          icon: 'lucide-undo-2',
-          disabled: trash.pending.value || !allow('restore'),
-          onClick: runRestore,
-        },
-        {
-          label: 'Delete forever',
-          icon: 'lucide-trash-2',
-          disabled: trash.pending.value || !allow('deleteForever'),
-          onClick: runPurge,
-        },
-      ]
+  // A phone has no keyboard to list.
+  ...(narrow.value
+    ? []
     : [
         {
-          label: 'Move',
-          icon: 'lucide-folder-input',
-          disabled: !allow('move'),
-          onClick: beginBulkMove,
+          group: 'Help',
+          hideLabel: true,
+          options: [
+            { label: 'Keyboard shortcuts', icon: 'lucide-keyboard', onClick: openAreaShortcuts },
+          ],
         },
-        {
-          label: 'Move to trash',
-          icon: 'lucide-trash-2',
-          disabled: !allow('trash'),
-          onClick: runBulkTrash,
-        },
-      ]
+      ]),
+])
+/**
+ * What a selection of several items offers, in the toolbar and on right-click,
+ * and the options among them that a keyboard shortcut runs.
+ */
+// An action is enabled only when every selected row allows it (spec §5.8).
+const bulkMenu = computed(() => {
+  const allow = (action: keyof NodeActions) => allAllow(selectedRows.value, action, signedIn.value)
+  if (trashActions.value) {
+    const restore = {
+      label: 'Restore',
+      icon: 'lucide-undo-2',
+      disabled: trash.pending.value || !allow('restore'),
+      onClick: runRestore,
+    }
+    const remove = {
+      label: 'Delete forever',
+      icon: 'lucide-trash-2',
+      disabled: trash.pending.value || !allow('deleteForever'),
+      onClick: runPurge,
+    }
+    return { options: [restore, remove], commands: { move: undefined, remove } }
+  }
+  const move = {
+    label: 'Move',
+    icon: 'lucide-folder-input',
+    disabled: !allow('move'),
+    onClick: beginBulkMove,
+  }
+  const remove = {
+    label: 'Move to trash',
+    icon: 'lucide-trash-2',
+    disabled: !allow('trash'),
+    onClick: runBulkTrash,
+  }
+  return {
+    options: [
+      move,
+      {
+        label: __('Download'),
+        icon: 'lucide-download',
+        disabled: !allow('download'),
+        onClick: () => downloadItems(selectedRows.value),
+      },
+      // A star is personal, so it needs a session.
+      ...(signedIn.value
+        ? [
+            {
+              label: selectedRows.value.every((row) => row.favourite) ? __('Unstar') : __('Star'),
+              icon: 'lucide-star',
+              disabled: !allow('star'),
+              onClick: () => starRows(selectedRows.value),
+            },
+          ]
+        : []),
+      remove,
+      ...(recentActions.value
+        ? [
+            {
+              label: 'Remove from Recent',
+              icon: 'lucide-list-x',
+              disabled: clearRecentMutation.isPending,
+              onClick: () => removeFromRecent(selectedRows.value),
+            },
+          ]
+        : []),
+    ],
+    commands: { move, remove },
+  }
 })
 /** A menu row led by the type icon the listing shows for what it creates. */
 function typedOption(
@@ -928,11 +997,7 @@ const newOptions = computed<DropdownItem[]>(() => {
     {
       group: 'Create',
       options: [
-        typedOption(
-          'Folder',
-          { kind: 'folder', title: 'Folder', mime: null, content_doctype: null },
-          () => create('folder'),
-        ),
+        newFolderOption,
         ...documents.map((definition) =>
           typedOption(
             definition.newLabel(),
@@ -968,7 +1033,7 @@ const newOptions = computed<DropdownItem[]>(() => {
           {
             group: 'Upload',
             options: [
-              { label: 'Files', icon: 'lucide-upload', onClick: () => pickUpload('files') },
+              uploadFilesOption,
               // Phone pickers offer no folders (spec §5.12).
               ...(narrow.value
                 ? []
@@ -986,6 +1051,43 @@ const newOptions = computed<DropdownItem[]>(() => {
   ]
 })
 
+// A shortcut runs the option a menu shows for it, so it is refused where the menu is.
+useListingShortcuts(
+  () => {
+    const [only, ...others] = selectedRows.value
+    const row = only && !others.length ? rowCommands(only) : undefined
+    const selected = selectionMode.value ? bulkMenu.value.commands : undefined
+    const createMenu = canCreate.value ? newOptions.value : []
+    return {
+      selectAll: shownIn(moreOptions.value, selectAllOption),
+      clearSelection: selectionMode.value ? { onClick: clearSelected } : undefined,
+      move: selected?.move,
+      remove: selected?.remove,
+      openInNewTab: row?.openInNewTab,
+      share: row?.share,
+      upload: shownIn(createMenu, uploadFilesOption),
+      newFolder: shownIn(createMenu, newFolderOption),
+    }
+  },
+  { enabled: () => signedIn.value, open: openView },
+)
+/** `option` when `items` show it, by identity rather than by its translated label. */
+function shownIn(items: readonly DropdownItem[], option: DropdownActionOption) {
+  const shown = items.some((item) =>
+    'group' in item ? item.options.includes(option) : item === option,
+  )
+  return shown ? option : undefined
+}
+function openView(view: ListingView) {
+  const name = {
+    personal: 'files',
+    organization: discovered.data?.organization ? 'files-organization' : null,
+    shared: 'files-shared-with-me',
+    recent: 'files-recent',
+    starred: 'files-starred',
+  }[view]
+  if (name) void router.push({ name })
+}
 function setPresentation(change: PresentationChange) {
   clearSelected()
   void replacePresentation(router, userPresentation.value, change)
@@ -1041,8 +1143,14 @@ function selectAll() {
 function clearSelected() {
   selectionState.value = clearSelection()
 }
-function onWindowKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape' && selectionMode.value) clearSelected()
+/** A pasted image, such as a screenshot, uploads into the open folder as a picked file would. */
+function onPaste(event: ClipboardEvent) {
+  const target = uploadTarget.value
+  if (!target || isTextField(event.target)) return
+  const files = pastedImages(event.clipboardData)
+  if (!files.length) return
+  event.preventDefault()
+  void uploads.value?.upload({ files, folders: [] }, target)
 }
 function onNarrowChange(event: MediaQueryListEvent) {
   narrow.value = event.matches
@@ -1199,7 +1307,7 @@ function onPaneContextMenu(event: MouseEvent) {
 function itemContextOptions(row: DriveNode): DropdownItem[] {
   const selected = selection.value
   if (selected.length > 1 && selected.includes(row.name)) {
-    return [{ group: `${selected.length} selected`, options: bulkActions.value }]
+    return [{ group: `${selected.length} selected`, options: bulkMenu.value.options }]
   }
   if (selected.length && !(selected.length === 1 && selected[0] === row.name)) clearSelected()
   return rowMenuOptions(row)
@@ -1207,21 +1315,14 @@ function itemContextOptions(row: DriveNode): DropdownItem[] {
 /** A row's own menu. `nodeActions` decides what it offers, so a trashed row offers only what Trash allows. */
 function rowMenuOptions(row: DriveNode): DropdownItem[] {
   const can = nodeActions(row, signedIn.value)
+  const { openInNewTab, share } = rowCommands(row, can)
   const groups: { group: string; hideLabel: true; options: DropdownActionOption[] }[] = [
     {
       group: 'Open',
       hideLabel: true,
       options: [
         { label: 'Open', icon: 'lucide-arrow-up-right', onClick: () => openNode(row) },
-        ...(can.openInNewTab
-          ? [
-              {
-                label: 'Open in new tab',
-                icon: 'lucide-external-link',
-                onClick: () => openNode(row, true),
-              },
-            ]
-          : []),
+        ...(openInNewTab ? [openInNewTab] : []),
         ...(can.copy && opensAsSpreadsheet(row) && mayUploadBeside(row)
           ? [
               {
@@ -1231,15 +1332,14 @@ function rowMenuOptions(row: DriveNode): DropdownItem[] {
               },
             ]
           : []),
-        ...(can.share
-          ? [{ label: 'Share', icon: 'lucide-share-2', onClick: () => shareRow(row) }]
-          : []),
+        ...(share ? [share] : []),
         ...(can.copyLink
           ? [{ label: 'Copy link', icon: 'lucide-link', onClick: () => copyNodeLink(row) }]
           : []),
         ...(can.download
-          ? [{ label: 'Download', icon: 'lucide-download', onClick: () => download(row) }]
+          ? [{ label: 'Download', icon: 'lucide-download', onClick: () => downloadItems([row]) }]
           : []),
+        { label: 'Details', icon: 'lucide-info', onClick: () => dialogs.showDetails(row.name) },
       ],
     },
     {
@@ -1277,6 +1377,15 @@ function rowMenuOptions(row: DriveNode): DropdownItem[] {
       hideLabel: true,
       options: [
         { label: 'Select', icon: 'lucide-square-check', onClick: () => selectNode(row, false) },
+        ...(recentActions.value
+          ? [
+              {
+                label: 'Remove from Recent',
+                icon: 'lucide-list-x',
+                onClick: () => removeFromRecent([row]),
+              },
+            ]
+          : []),
       ],
     },
     {
@@ -1316,6 +1425,21 @@ function rowMenuOptions(row: DriveNode): DropdownItem[] {
     },
   ]
   return groups.filter((group) => group.options.length)
+}
+/** The options of a row's menu that a keyboard shortcut runs, when the row allows them. */
+function rowCommands(row: DriveNode, can = nodeActions(row, signedIn.value)) {
+  return {
+    openInNewTab: can.openInNewTab
+      ? {
+          label: 'Open in new tab',
+          icon: 'lucide-external-link',
+          onClick: () => openNode(row, true),
+        }
+      : undefined,
+    share: can.share
+      ? { label: 'Share', icon: 'lucide-share-2', onClick: () => shareRow(row) }
+      : undefined,
+  }
 }
 /**
  * A row's trail, as far as the page knows it. Search rows carry their path. A
@@ -1445,8 +1569,21 @@ async function runBatch(
     return null
   }
 }
+/** Forgets that the user opened the items. Recent is read again, so their rows leave it. */
+async function removeFromRecent(rows: readonly DriveNode[]) {
+  await clearRecentMutation.run({ nodes: rows.map((row) => row.name) })
+  clearSelected()
+}
 async function toggleStar(row: DriveNode) {
-  const starred = !row.favourite
+  await setStar(row, !row.favourite)
+}
+/** Stars every selected item, or unstars them all when every one is already starred. */
+async function starRows(rows: readonly DriveNode[]) {
+  const starred = !rows.every((row) => row.favourite)
+  const changing = rows.filter((row) => !!row.favourite !== starred)
+  await Promise.allSettled(changing.map((row) => setStar(row, starred)))
+}
+async function setStar(row: DriveNode, starred: boolean) {
   const result = starred
     ? await starMutation.run({ node: row.name })
     : await unstarMutation.run({ node: row.name })
@@ -1456,31 +1593,23 @@ async function toggleStar(row: DriveNode) {
 async function shareRow(row: DriveNode) {
   if (await dialogs.share(row.name)) void listing.refetch()
 }
-async function download(row: DriveNode) {
-  if (row.kind === 'folder') {
-    const status = await archiveMutation.run({ node: row.name })
-    if (status?.status === 'ready') window.location.assign(archiveDownloadUrl(row.name))
-    else toast.info('The folder archive is being prepared. Try Download again shortly.')
-    return
-  }
-  window.location.assign(nodeContentUrl(row.name, { download: true }))
-}
 function create(kind: CreateRequest['kind'], contentDoctype?: string) {
   if (!parentId.value) return
+  const definition = documentTypes.find((type) => type.contentDoctype === contentDoctype)
   createRequest.value = {
     parent: parentId.value,
     kind,
     contentDoctype,
-    typeLabel: documentTypes
-      .find((definition) => definition.contentDoctype === contentDoctype)
-      ?.newLabel(),
+    typeLabel: definition?.newLabel(),
   }
   createOpen.value = true
+  // Loaded while the name is typed, so the new document takes typing as soon as it opens.
+  void definition?.loadOpeningEditor?.()
 }
 async function onCreated(created: DriveNode, request: CreateRequest) {
   if (request.kind === 'document') {
     // the document's surface may ask what a new one should start as
-    await router.push({ ...driveNodeRoute(created), query: { new: '1' } })
+    await router.push(newDocumentRoute(created))
     return
   }
   // A search hides what was just added, so the folder shows again.

@@ -105,11 +105,43 @@ class TestBuildGate(unittest.TestCase):
         self.assertIn("two different buckets", str(caught.exception))
 
     def test_one_endpoint_spelled_two_ways_passes(self):
-        env = self.env(
-            storage=FakeStorage(config={"bucket": "drive", "endpoint_url": "https://minio.internal/"}),
-            legacy_s3=LegacyS3Config(enabled=True, bucket="drive", endpoint_url="https://minio.internal"),
-        )
-        check_gate(env)
+        for spelling in ("https://minio.internal/", "HTTPS://minio.internal", "https://MinIO.Internal/"):
+            with self.subTest(spelling=spelling):
+                env = self.env(
+                    storage=FakeStorage(config={"bucket": "drive", "endpoint_url": spelling}),
+                    legacy_s3=LegacyS3Config(
+                        enabled=True, bucket="drive", endpoint_url="https://minio.internal"
+                    ),
+                )
+                check_gate(env)
+
+    def test_another_host_with_the_same_bucket_name_refuses(self):
+        for other in (
+            "https://minio.internal.example",
+            "https://minio2.internal",
+            "https://minio.internal:9000",
+        ):
+            with self.subTest(endpoint=other):
+                env = self.env(
+                    storage=FakeStorage(config={"bucket": "drive", "endpoint_url": other}),
+                    legacy_s3=LegacyS3Config(
+                        enabled=True, bucket="drive", endpoint_url="https://minio.internal"
+                    ),
+                )
+                with self.assertRaises(BuildGateError) as caught:
+                    check_gate(env)
+                self.assertIn("two different buckets", str(caught.exception))
+
+    def test_bucket_names_must_match_exactly(self):
+        for other in ("Drive", "drive/", " drive"):
+            with self.subTest(bucket=other):
+                env = self.env(
+                    storage=FakeStorage(config={"bucket": other}),
+                    legacy_s3=LegacyS3Config(enabled=True, bucket="drive"),
+                )
+                with self.assertRaises(BuildGateError) as caught:
+                    check_gate(env)
+                self.assertIn("Point both at one bucket", str(caught.exception))
 
     def test_a_bucket_it_cannot_read_refuses_before_the_backfill(self):
         # Comparing two strings proves the settings agree, not that the

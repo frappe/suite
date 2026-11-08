@@ -202,6 +202,7 @@
               v-if="previewConfig"
               :config="previewConfig"
               :matrix="previewMatrix"
+              :num-fmts="numFmts"
               width="auto"
               height="auto"
             />
@@ -252,7 +253,8 @@ const CHART_ICONS = {
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
-  // (sheetName, rect) → Promise<string[][]>: the range's shown values.
+  // (sheetName, rect) → Promise<{ displays, numFmts }>: the range's shown
+  // values and their number formats.
   readRange: { type: Function, required: true },
   // () → { maxRow, maxCol } (0-based) of the open sheet's data, or null.
   usedExtent: { type: Function, required: true },
@@ -289,6 +291,8 @@ const opts = reactive({
 
 // Resolved each `detect()` — the actual values backing the preview.
 const matrix = ref([])
+// Their number formats, same shape: a scatter preview reads dates with them.
+const numFmts = ref(null)
 const columns = ref([]) // [{ idx, label, isNumeric }]
 const seriesFilter = ref('')
 
@@ -359,7 +363,7 @@ async function detect() {
   const [start, end] = range.includes(':') ? range.split(':') : [range, range]
   const a = parseCellId(start.trim().toUpperCase()),
     b = parseCellId(end.trim().toUpperCase())
-  const data =
+  const read =
     a && b
       ? await props.readRange(props.currentSheet, {
           r0: Math.min(a.row, b.row),
@@ -369,6 +373,7 @@ async function detect() {
         })
       : null
   if (mine !== _detectSeq) return
+  const data = read?.displays
   if (!data || !data.length) {
     rangeError.value = 'Could not read range.'
     matrix.value = []
@@ -377,6 +382,7 @@ async function detect() {
   }
   rangeError.value = ''
   matrix.value = data
+  numFmts.value = read.numFmts ?? null
   const ncols = data[0]?.length || 0
   const header = hasHeader.value ? data[0] : null
   // Detect numeric columns by sampling the body rows (excluding the header

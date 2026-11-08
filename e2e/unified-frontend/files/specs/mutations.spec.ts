@@ -109,7 +109,7 @@ test("a starred row shows its star and offers Unstar", async ({ page }) => {
 		.toBe(true);
 
 	await page.reload();
-	const star = page.locator(`[data-node='${target.name}'] .lucide-star`);
+	const star = page.locator(`[data-node='${target.name}'] .fill-current`);
 	await expect(star).toBeVisible();
 	await openRowMenu(page, target.title);
 	await expect(page.getByRole("menuitem", { name: "Unstar" })).toBeVisible();

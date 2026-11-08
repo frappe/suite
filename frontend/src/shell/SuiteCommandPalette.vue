@@ -248,6 +248,18 @@
         </CommandPaletteItem>
       </CommandPaletteGroup>
 
+      <CommandPaletteGroup v-if="contentResults.length" :label="resultsLabel(contentLabel)">
+        <CommandPaletteItem v-for="result in contentResults" :key="result.id" :value="result">
+          <template #prefix>
+            <span class="mr-3 size-4 shrink-0" :class="result.icon" aria-hidden="true" />
+          </template>
+          <HighlightedText :text="result.title" :term="searchWords" />
+          <template v-if="result.location" #suffix>
+            <span class="truncate text-p-xs text-ink-gray-5">{{ result.location }}</span>
+          </template>
+        </CommandPaletteItem>
+      </CommandPaletteGroup>
+
       <!-- Unlabelled, the way mail's results are: the palette is already scoped to the app
 			     in view, so a heading naming that app says nothing the reader did not just do. -->
       <CommandPaletteGroup v-if="calendarResults.length" :label="resultsLabel('Events')">
@@ -375,7 +387,7 @@ import {
   type CommandPaletteValue,
 } from 'frappe-ui/experimental'
 import { DialogDescription } from 'reka-ui'
-import { computed, nextTick, onScopeDispose, ref, watch } from 'vue'
+import { computed, inject, nextTick, onScopeDispose, ref, watch } from 'vue'
 import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 
 import { api, useQuery, type InputOf } from '@/api'
@@ -408,7 +420,11 @@ import {
   useScreenSize,
 } from '@/apps/mail/utils/composables'
 import HighlightedText from '@/components/HighlightedText.vue'
-import type { AreaDefinition } from '@/platform/contracts'
+import {
+  PALETTE_SEARCH_KEY,
+  type AreaDefinition,
+  type PaletteSearchResult,
+} from '@/platform/contracts'
 import { openAreaShortcuts } from '@/platform/shortcuts'
 import { cycleThemeAndAnnounce, nextThemeMode, useTheme, type ThemeMode } from '@/platform/theme'
 import { userTimeZone } from '@/platform/time-zone'
@@ -444,6 +460,11 @@ interface MeetResult {
   modified?: string
 }
 
+/** A row of the search a page without its own gets: Drive's files, folders and documents. */
+interface ContentResult extends PaletteSearchResult {
+  resultType: 'content'
+}
+
 interface MailSearchPageItem {
   resultType: 'mail-search-page'
 }
@@ -451,6 +472,7 @@ interface MailSearchPageItem {
 type PaletteItem =
   | MailSearchPageItem
   | MeetResult
+  | ContentResult
   | CalendarSearchResultItem
   | MailResult
   | MailContactSuggestion
@@ -517,8 +539,7 @@ const navigationMode = computed(
   () => !mailSearchOnly.value && query.value.trimStart().startsWith('>'),
 )
 // The area in view decides which search the query line runs. Mail, Calendar
-// and Meet search here; Home and Drive have their own search pages, so the
-// palette only filters commands there.
+// and Meet search their own content; every other page searches Drive.
 const activeApp = computed(() => String(route.meta.area ?? ''))
 const isMailSearchRoute = computed(
   () => mailSearchActive.value && route.params.mailbox === 'search',
@@ -734,7 +755,7 @@ onScopeDispose(unregisterSuiteCommands)
 
 useKeyboardShortcut({
   combo: 'Mod+Shift+K',
-  description: 'Cycle Theme',
+  description: 'Cycle theme',
   group: 'Suite',
   enabled: canChangeTheme,
   allowInInput: true,
@@ -742,6 +763,20 @@ useKeyboardShortcut({
   handler: () => void cycleThemeAndAnnounce(),
 })
 
+const contentSource = inject(PALETTE_SEARCH_KEY, null)
+const contentSearchActive = computed(
+  () =>
+    contentSource !== null &&
+    !mailSearchActive.value &&
+    !calendarSearchActive.value &&
+    activeApp.value !== 'meet',
+)
+const contentLabel = computed(() => contentSource?.label() ?? '')
+const contentInput = ref<string | false>(false)
+const debouncedContentInput = refDebounced(contentInput, 180)
+const contentSearch = contentSource?.use(() =>
+  contentInput.value === false ? false : debouncedContentInput.value,
+)
 const meetInput = ref<InputOf<typeof api.meet.rooms.search> | false>(false)
 const calendarInput = ref<InputOf<typeof api.calendar.events.search> | false>(false)
 const debouncedMeetInput = refDebounced(meetInput, 180)
@@ -765,6 +800,10 @@ const meetResults = computed<MeetResult[]>(() => {
     title: meeting.title || meeting.name,
     resultType: 'meeting' as const,
   }))
+})
+const contentResults = computed<ContentResult[]>(() => {
+  if (!contentSearchActive.value || contentInput.value === false || !contentSearch) return []
+  return contentSearch.results.map((result) => ({ ...result, resultType: 'content' as const }))
 })
 const calendarResults = computed<CalendarSearchResultItem[]>(() => {
   if (activeApp.value !== 'calendar' || !Array.isArray(calendarSearch.data)) return []
@@ -797,10 +836,10 @@ const contextSearchLabel = computed(
       meet: 'Meet',
       mail: 'Mail',
       calendar: 'Calendar',
-    })[activeApp.value],
+    })[activeApp.value] ?? (contentSearchActive.value ? contentLabel.value : undefined),
 )
-// Where nothing is searched (Home and Drive), the query line only filters
-// commands, so it says that instead of offering a search.
+// Where nothing is searched, the query line only filters commands, so it says
+// that instead of offering a search.
 const palettePlaceholder = computed(() => {
   if (navigationMode.value) return 'Switch apps'
   if (contextSearchLabel.value) return `Search in ${contextSearchLabel.value}`
@@ -901,7 +940,7 @@ async function applyMailQuickFilter(option: MailFilterOption) {
 }
 
 watch(
-  [meetResults, calendarResults, mailResults, mailSuggestions],
+  [meetResults, contentResults, calendarResults, mailResults, mailSuggestions],
   async (groups) => {
     // Not on a phone: a highlighted row there reads as a selection nobody made, and the arrow
     // keys it exists for are not on the screen.
@@ -959,9 +998,11 @@ watch(
         time_zone: userTimeZone(),
         filters: calendarFilterParams.value,
       }
+    } else if (contentSearchActive.value) {
+      contentInput.value = text
     } else {
-      // No search here (Home and Drive): only the commands answer, and they are
-      // filtered already, so nothing is left to wait for.
+      // No search here: only the commands answer, and they are filtered
+      // already, so nothing is left to wait for.
       resetSearches()
     }
   },
@@ -1006,6 +1047,8 @@ const isSearching = computed(() => {
   return (
     meetSearch.isFetching ||
     calendarSearch.isFetching ||
+    Boolean(contentSearch?.isFetching) ||
+    contentInput.value !== debouncedContentInput.value ||
     JSON.stringify(meetInput.value) !== JSON.stringify(debouncedMeetInput.value) ||
     JSON.stringify(calendarInput.value) !== JSON.stringify(debouncedCalendarInput.value)
   )
@@ -1036,8 +1079,6 @@ const emptyMessage = computed(() => {
 })
 
 function resetSearches() {
-  meetInput.value = false
-  calendarInput.value = false
   cancelSearches()
   resetMailSearch()
 }
@@ -1045,8 +1086,10 @@ function resetSearches() {
 function cancelSearches() {
   meetInput.value = false
   calendarInput.value = false
+  contentInput.value = false
   meetSearch.cancel()
   calendarSearch.cancel()
+  contentSearch?.cancel()
   cancelMailSearch()
 }
 
@@ -1206,6 +1249,8 @@ async function selectItem(value: CommandPaletteValue, event: CommandPaletteSelec
         account: item.account || undefined,
       },
     }
+  } else if (item.resultType === 'content') {
+    location = item.to
   } else {
     location = { name: 'meet-meeting', params: { meetingId: item.name } }
   }

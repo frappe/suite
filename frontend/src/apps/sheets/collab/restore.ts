@@ -6,9 +6,10 @@
 
 import * as Y from 'yjs'
 
-import type { CollabRoom } from '@/platform/collab'
+import { openCollabRoom, type CollabRoom, type CollabSession } from '@/platform/collab'
 import { translate as __ } from '@/platform/translation'
 
+import { sheetsAdapter } from './adapter'
 import { ROOT, roots } from './schema'
 
 /** What the person is told after a restore. */
@@ -31,6 +32,31 @@ export async function readVersionState(bytes: Uint8Array): Promise<Uint8Array | 
   const compressed = Uint8Array.from(atob(state), (c) => c.charCodeAt(0))
   const stream = new Response(compressed).body!.pipeThrough(new DecompressionStream('gzip'))
   return new Uint8Array(await new Response(stream).arrayBuffer())
+}
+
+/** What a stored version holds: a Yjs state, or the old body (`sheet/1`) of a sheet before editing together. */
+export type StoredVersion = { state: Uint8Array } | { body: Record<string, unknown> }
+
+/** Reads a stored version for showing; null for bytes that are neither kind. */
+export async function readStoredVersion(bytes: Uint8Array): Promise<StoredVersion | null> {
+  const state = await readVersionState(bytes)
+  if (state) return { state }
+  let version: unknown
+  try {
+    version = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))
+  } catch {
+    return null
+  }
+  const { schema, sheets_data: body } = (version ?? {}) as Record<string, unknown>
+  if (schema !== 'sheet/1' || typeof body !== 'string') return null
+  try {
+    const parsed: unknown = JSON.parse(body || '{}')
+    return typeof parsed === 'object' && parsed !== null
+      ? { body: parsed as Record<string, unknown> }
+      : null
+  } catch {
+    return null
+  }
 }
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
@@ -124,5 +150,30 @@ export async function restoreVersion(
     }
   } finally {
     version.destroy()
+  }
+}
+
+/**
+ * Make a fresh copy of the sheet hold a version's Yjs `state`. A copy keeps no
+ * versions, so this is one ordinary edit through the copy's room, not a
+ * restore. False when the copy did not open live or the edit was not saved.
+ */
+export async function writeVersionToCopy(
+  copy: CollabSession,
+  state: Uint8Array,
+  open: typeof openCollabRoom = openCollabRoom,
+): Promise<boolean> {
+  const opened = await open({ session: copy, adapter: sheetsAdapter })
+  if (opened.state !== 'live') return false
+  const { room } = opened
+  const version = new Y.Doc()
+  try {
+    Y.applyUpdate(version, state)
+    room.doc.transact(() => alignDoc(room.doc, version))
+    await room.flush()
+    return room.status.unsentCount === 0
+  } finally {
+    version.destroy()
+    await room.close()
   }
 }

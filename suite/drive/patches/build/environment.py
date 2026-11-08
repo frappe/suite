@@ -7,6 +7,7 @@ talking to a bucket or to a dictionary.
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from functools import partial
 
 from suite.drive.patches.build.copy_ledger import CopyLedger
 from suite.drive.patches.build.ports import (
@@ -24,6 +25,7 @@ from suite.drive.patches.build.ports import (
     UsageLedger,
 )
 from suite.drive.patches.build.state import BuildState
+from suite.drive.patches.database_marker import DatabaseMarkers
 
 # §14.2: Build commits per batch of 1000 rows.
 BUILD_BATCH_SIZE = 1000
@@ -34,6 +36,35 @@ BACKFILL_BATCH_SIZE = 500
 # Site config key an operator sets after reading `private/drive-build-skipped.json`
 # to let Build finish with rows it could not convert (§14.9).
 ACCEPT_SKIPS_CONFIG_KEY = "drive_build_accept_skips"
+
+# Site config key for how many threads read and copy legacy S3 objects at once.
+COPY_WORKERS_CONFIG_KEY = "drive_build_copy_workers"
+DEFAULT_COPY_WORKERS = 8
+MAX_COPY_WORKERS = 32
+
+
+def copy_workers(value: object) -> int:
+    """The copy thread count `drive_build_copy_workers` asks for.
+
+    Unset means the default. Anything that is not a whole number from 1 to
+    `MAX_COPY_WORKERS` stops the migrate before it starts, rather than
+    quietly running with a number the operator did not choose."""
+    if value is None or value == "":
+        return DEFAULT_COPY_WORKERS
+    refusal = ValueError(
+        f"site config `{COPY_WORKERS_CONFIG_KEY}` is {value!r}; set a whole number from 1 to "
+        f"{MAX_COPY_WORKERS}, or remove it to use {DEFAULT_COPY_WORKERS}."
+    )
+    # `int(True)` is 1, so a JSON `true` would otherwise pass as one worker.
+    if isinstance(value, bool):
+        raise refusal
+    try:
+        workers = int(str(value).strip())
+    except ValueError:
+        raise refusal from None
+    if not 1 <= workers <= MAX_COPY_WORKERS:
+        raise refusal
+    return workers
 
 
 @dataclass(frozen=True)
@@ -69,9 +100,14 @@ class BuildEnvironment:
     # Every legacy S3 object the copy step placed, by key, for the manual
     # legacy-object delete. `None` only in a test of a step that never copies.
     copy_ledger: CopyLedger | None = None
+    # Ties `state` to this database (`database_marker`). `None` only in a
+    # test of one step; `run_build` refuses to start without it.
+    markers: DatabaseMarkers | None = None
     # Whether an operator has accepted this run's skipped rows in site config
     # (`drive_build_accept_skips`). Unset, Build refuses to finish with any.
     accept_skips: bool = False
+    # Threads the S3 copy reads and copies with (`drive_build_copy_workers`).
+    copy_workers: int = DEFAULT_COPY_WORKERS
     # Steps 4 to 6. Left optional so the storage step, and every test of it,
     # keeps building the same environment it always did.
     tree: LegacyTree | None = None
@@ -118,18 +154,22 @@ class BuildEnvironment:
             SiteUsage,
         )
         from suite.drive.patches.build.slide_journal import SlidePreimageJournal
+        from suite.drive.patches.database_marker import SiteDatabaseMarkers
 
         refuse_below_upgrade_floor()
+        workers = copy_workers(frappe.conf.get(COPY_WORKERS_CONFIG_KEY))
         return cls(
             storage=SiteStorage(),
             files=SiteFiles(S3_URL_PREFIX),
             state=BuildState.for_site(),
             legacy_s3=LegacyS3Config.for_site(),
             copy_ledger=CopyLedger.for_site(),
+            markers=SiteDatabaseMarkers(),
             accept_skips=bool(frappe.conf.get(ACCEPT_SKIPS_CONFIG_KEY)),
+            copy_workers=workers,
             # Deferred: building the driver constructs a boto3 client, and the
             # gate must be able to refuse a misconfigured site first.
-            open_bucket=BotoBucket.from_site,
+            open_bucket=partial(BotoBucket.from_site, connections=workers),
             tree=SiteTree(),
             drive=SiteDrive(),
             content=SiteContentSource(),
@@ -147,6 +187,13 @@ class BuildEnvironment:
         if self.open_bucket is None:
             raise RuntimeError("Build has no S3 bucket, but the legacy S3 copy step needs one")
         return self.open_bucket()
+
+    def database_markers(self) -> DatabaseMarkers:
+        if self.markers is None:
+            raise RuntimeError(
+                "Build has no database markers, so it cannot tell whose record it would resume"
+            )
+        return self.markers
 
     def ledger(self) -> CopyLedger:
         if self.copy_ledger is None:

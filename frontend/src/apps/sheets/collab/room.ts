@@ -91,17 +91,6 @@ export async function openSheetRoom({
   }
 }
 
-/** Whether the sheet opens live now (its conversion is done). The room opened to ask is closed again. */
-export async function isLiveNow(
-  session: CollabSession,
-  open: typeof openCollabRoom = openCollabRoom,
-): Promise<boolean> {
-  const opened = await open({ session, adapter: sheetsAdapter })
-  if (opened.state !== 'live') return false
-  await opened.room.close()
-  return true
-}
-
 async function glueRoom(
   room: CollabRoom,
   client: WorkbookClient,

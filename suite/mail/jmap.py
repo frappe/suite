@@ -2,6 +2,7 @@ import time
 from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -471,7 +472,7 @@ class SuiteJMAPClient(JMAPClient):
     #: session for the requests that follow.
     sync_owed_after: float | None = None
     #: This client and every account view made from it, which share one session: a refresh on
-    #: any of them is a refresh for all. get_jmap_client and account_view keep the list.
+    #: any of them is a refresh for all. _connect_jmap_client and account_view keep the list.
     peers: list[SuiteJMAPClient] | tuple[SuiteJMAPClient, ...] = ()
 
     def execute(self, batch, *, extra_using: frozenset[str] = frozenset()) -> None:
@@ -548,7 +549,28 @@ class SuiteJMAPClient(JMAPClient):
         store_cached_session(self.user, self.session, sync_owed_after=owed_after)
 
 
-@request_cache
+# Recreating a deleted mailbox keeps its Suite user disabled (admin spec §4.3), yet the new account
+# still needs its folders and filters. Only the setup of that one account may act as the user.
+_provisioned_user: ContextVar[str | None] = ContextVar("mail_provisioned_user", default=None)
+
+
+@contextmanager
+def provisioning(user: str) -> Iterator[None]:
+    """Let the setup of ``user``'s new Mail account reach the mail server while the user is disabled."""
+
+    token = _provisioned_user.set(user)
+    try:
+        yield
+    finally:
+        _provisioned_user.reset(token)
+
+
+def is_provisioning(user: str) -> bool:
+    """Whether ``user``'s Mail account is being set up in this context (see ``provisioning``)."""
+
+    return _provisioned_user.get() == user
+
+
 def get_jmap_client(
     user: str,
     ignore_permissions: bool = False,
@@ -558,10 +580,12 @@ def get_jmap_client(
     """Returns an authenticated JMAP client for the user, reviving the Redis-cached session
     when possible so no discovery round trip is made.
 
-    Cached per request so the many helpers that resolve a client for the same user reuse one
-    instance (and skip the repeated password decryption / session parsing).
+    The client is cached per request so the many helpers that resolve one for the same user reuse
+    it (and skip the repeated password decryption / session parsing). The checks here are not
+    cached: a client built during account setup must not outlive it for a disabled user.
     ``allow_disabled`` is for server-side cleanup that must still reach the mail server on
-    behalf of a user who has just been disabled; requests never pass it.
+    behalf of a user who has just been disabled; requests never pass it. Account setup reaches
+    a disabled user's new account through ``provisioning`` instead.
     """
 
     if not ignore_permissions:
@@ -574,9 +598,14 @@ def get_jmap_client(
             )
 
     enabled = frappe.get_cached_value("User", user, "enabled")
-    if enabled is None or (not enabled and not allow_disabled):
+    if enabled is None or (not enabled and not allow_disabled and not is_provisioning(user)):
         frappe.throw(_("User {0} does not exist or is disabled.").format(frappe.bold(user)))
 
+    return _connect_jmap_client(user, timeout)
+
+
+@request_cache
+def _connect_jmap_client(user: str, timeout: tuple[float, float]) -> SuiteJMAPClient:
     settings = frappe.db.exists("User Settings", {"user": user, "username": ["!=", None]})
     if not settings:
         frappe.throw(_("User {0} does not have JMAP settings configured.").format(frappe.bold(user)))
@@ -637,18 +666,17 @@ def get_jmap_client(
     return client
 
 
-@request_cache
 def get_account_client(
     account: str, ignore_permissions: bool = False, timeout: tuple[float, float] = DEFAULT_TIMEOUT
 ) -> SuiteJMAPClient:
     """Returns a JMAP client scoped to the given account (calls default to its accountId)."""
 
     user = get_user_for_jmap_account(account, raise_exception=True)
-    return account_view(
-        get_jmap_client(user, ignore_permissions=ignore_permissions, timeout=timeout), account
-    )
+    client = get_jmap_client(user, ignore_permissions=ignore_permissions, timeout=timeout)
+    return account_view(client, account)
 
 
+@request_cache
 def account_view(client: SuiteJMAPClient, account: str) -> SuiteJMAPClient:
     """Re-scopes a client to another account, sharing its session and HTTP pool."""
 

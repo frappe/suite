@@ -1,4 +1,5 @@
-import { Extension } from '@tiptap/core'
+import { Extension, generateHTML } from '@tiptap/core'
+import Bold from '@tiptap/extension-bold'
 import BulletList from '@tiptap/extension-bullet-list'
 import Color from '@tiptap/extension-color'
 import ListItem from '@tiptap/extension-list-item'
@@ -9,13 +10,13 @@ import { TextAlign } from '@tiptap/extension-text-align'
 import { TextStyle } from '@tiptap/extension-text-style'
 import { Selection } from '@tiptap/extensions'
 import { joinBackward } from '@tiptap/pm/commands'
+import { Fragment, Slice } from '@tiptap/pm/model'
 import { liftListItem } from '@tiptap/pm/schema-list'
+import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
 import { cellAround, CellSelection } from '@tiptap/pm/tables'
+import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { StarterKit } from '@tiptap/starter-kit'
 import { Editor } from '@tiptap/vue-3'
-import { Fragment, Slice } from 'prosemirror-model'
-import { Plugin, PluginKey, TextSelection } from 'prosemirror-state'
-import { Decoration, DecorationSet } from 'prosemirror-view'
 
 import { scaleAwareColumnResizing } from '@/apps/slides/utils/columnResizing'
 import { getDocFromHTML, hasListMarkup } from '@/apps/slides/utils/helpers'
@@ -26,6 +27,11 @@ const parseElementStyle = (attribute, value) => {
   if (attribute == 'opacity') {
     const val = parseFloat(value)
     return isNaN(val) ? null : Math.round(val * 100)
+  }
+
+  // bold is its own mark and 400 is plain text; `bolder` and `lighter` depend on what's around them
+  if (attribute == 'fontWeight') {
+    return /^\d+$/.test(value) && !['400', '700'].includes(value) ? value : null
   }
 
   return value
@@ -59,7 +65,14 @@ const CustomTextStyle = TextStyle.extend({
   addAttributes() {
     const attrs = {}
 
-    const attributesList = ['fontSize', 'textTransform', 'fontFamily', 'letterSpacing', 'opacity']
+    const attributesList = [
+      'fontSize',
+      'textTransform',
+      'fontFamily',
+      'letterSpacing',
+      'opacity',
+      'fontWeight',
+    ]
 
     attributesList.forEach((attr) => {
       attrs[attr] = {
@@ -70,6 +83,16 @@ const CustomTextStyle = TextStyle.extend({
     })
 
     return attrs
+  },
+})
+
+// 700 alone is bold: any other weight stays that weight, on the text style
+const CustomBold = Bold.extend({
+  parseHTML() {
+    return [
+      ...this.parent().filter((rule) => rule.style !== 'font-weight'),
+      { style: 'font-weight', getAttrs: (value) => /^(bold|700)$/.test(value) && null },
+    ]
   },
 })
 
@@ -225,6 +248,7 @@ const getItemAttributes = (node) => {
     fontFamily: null,
     letterSpacing: null,
     opacity: null,
+    fontWeight: null,
   }
 
   if (textNode?.marks) {
@@ -243,7 +267,8 @@ const getItemAttributes = (node) => {
 }
 
 const getItemStyle = (node, style = '') => {
-  const { color, fontSize, fontFamily, letterSpacing, opacity } = getItemAttributes(node)
+  const { color, fontSize, fontFamily, letterSpacing, opacity, fontWeight } =
+    getItemAttributes(node)
 
   const styleAttrs = [style]
 
@@ -252,6 +277,11 @@ const getItemStyle = (node, style = '') => {
   if (fontFamily != null) styleAttrs.push(`font-family: ${fontFamily};`)
   if (letterSpacing != null) styleAttrs.push(`letter-spacing: ${letterSpacing};`)
   if (opacity != null) styleAttrs.push(`--marker-opacity: ${opacity / 100};`)
+
+  if (fontWeight != null) {
+    styleAttrs.push(`font-weight: ${fontWeight};`)
+  }
+
   styleAttrs.push(`line-height: ${node.attrs.lineHeight || '1.5'};`)
 
   return styleAttrs.join(' ')
@@ -1130,7 +1160,9 @@ export const extensions = [
     blockquote: false,
     codeBlock: false,
     horizontalRule: false,
+    bold: false,
   }),
+  CustomBold,
   CustomParagraph,
   CustomListItem,
   CustomTextStyle,
@@ -1179,3 +1211,31 @@ export const extensions = [
   EmptyCellCaret,
   ColumnWidths,
 ]
+
+function markWithoutFontWeight(mark) {
+  if (mark.type !== 'textStyle' || !mark.attrs) {
+    return mark
+  }
+
+  const { fontWeight: _ignored, ...attrs } = mark.attrs
+  return { ...mark, attrs }
+}
+
+function withoutFontWeight(json) {
+  const cleaned = { ...json }
+  if (json.content) {
+    cleaned.content = json.content.map(withoutFontWeight)
+  }
+
+  if (json.marks) {
+    cleaned.marks = json.marks.map(markWithoutFontWeight)
+  }
+
+  return cleaned
+}
+
+// an element saved as a document was saved before the text style read a weight,
+// and the old view drew it without one
+export function oldBodyHTML(json) {
+  return generateHTML(withoutFontWeight(json), extensions)
+}

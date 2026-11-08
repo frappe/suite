@@ -59,6 +59,7 @@ def search(conversation: list[dict], match: str, matched: list[str] | None = Non
         ),
         patch.object(mail, "get_cached_mailboxes", return_value=MAILBOXES),
         patch.object(mail, "add_user_images_to_emails"),
+        patch.object(mail, "add_reaction_refusals"),
     ):
         rows, total = mail.search_threads("account", {"text": "numbers"}, 0, 20)
     assert total == 1
@@ -155,6 +156,7 @@ class TestPageOrder(UnitTestCase):
             patch.object(mail, "matching_messages", return_value=({}, False)),
             patch.object(mail, "get_cached_mailboxes", return_value=MAILBOXES),
             patch.object(mail, "add_user_images_to_emails"),
+            patch.object(mail, "add_reaction_refusals"),
         ):
             rows, _ = mail.search_threads("account", {"text": "numbers"}, 0, 20)
         self.assertEqual([row["thread_id"] for row in rows], ["b", "a"])

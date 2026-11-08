@@ -1,6 +1,7 @@
 import { api, client } from '@/api'
 import type { ImperativeClient } from '@/platform/server-state/types'
 
+import type { NodeGrantsOutput } from './generated'
 import { DRIVE_ROLES, type DrivePerson } from './types'
 
 /**
@@ -167,18 +168,18 @@ export function endOfDayStamp(date: string): string {
   return new Date(year, month - 1, day, 23, 59, 59).toISOString().replace('.000Z', 'Z')
 }
 
+/** A `grants.list` answer read with `inherited`, as a `GrantList`. */
+export function grantListOf(answer: NodeGrantsOutput): GrantList {
+  return { grants: answer.grants, inherited: answer.inherited ?? [], owner: answer.owner }
+}
+
 // The grant routes name a grant, not a node, so they carry the node's link codes themselves.
 
 /** The grant calls of one node. Every call needs MANAGE on it. */
 export function nodeGrants(node: string, requester: ImperativeClient = client) {
   return {
     async list(): Promise<GrantList> {
-      const answer = await requester.query(api.drive.grants.list, { node, inherited: true })
-      return {
-        grants: 'grants' in answer ? answer.grants : [],
-        inherited: 'inherited' in answer ? (answer.inherited ?? []) : [],
-        owner: 'owner' in answer ? answer.owner : null,
-      }
+      return grantListOf(await requester.query(api.drive.grants.list, { node, inherited: true }))
     },
     async explain(principal: string): Promise<GrantExplanation> {
       const answer = await requester.query(api.drive.grants.list, { node, principal })

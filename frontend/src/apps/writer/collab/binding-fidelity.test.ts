@@ -12,6 +12,7 @@ import {
   syncAll,
   type Tab,
 } from '@/apps/writer/collab/test-support'
+import { BLOCK_STYLES } from '@/apps/writer/components/core-editor/formatting'
 
 vi.mock('@/apps/writer/utils', () => ({ insertTemplate: () => {} }))
 vi.mock('@/apps/writer/resources', () => ({ getTemplates: {} }))
@@ -347,4 +348,17 @@ describe('binding fidelity: random restructures against typing', () => {
       .replace(/<\d+\.\d+>/g, '')
     expect(text.split('sentence')).toHaveLength(WORDS.length + 1)
   })
+})
+
+// The toolbar's own command; a change with no typing must still reach the tab's outbox
+it('sends a list made from the toolbar to another tab', async () => {
+  const tabs = await openTabs(stored({ type: 'paragraph' }), 2)
+  const [first, second] = tabs
+  const bulleted = BLOCK_STYLES.find((style) => style.value === 'bulletList')!
+
+  bulleted.apply(first.editor.chain().focus()).run()
+  expect(first.outbox.length).toBeGreaterThan(0)
+  await syncAll(tabs)
+
+  expect(second.editor.getHTML()).toContain('<ul')
 })
