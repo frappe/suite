@@ -386,7 +386,7 @@
 </template>
 
 <script setup lang="ts">
-import { useMediaQuery, useResizeObserver } from '@vueuse/core'
+import { useMediaQuery } from '@vueuse/core'
 import {
   Alert,
   Avatar,
@@ -412,7 +412,6 @@ import {
   onMounted,
   ref,
   shallowRef,
-  useTemplateRef,
   watch,
   type AnchorHTMLAttributes,
 } from 'vue'
@@ -429,16 +428,7 @@ import { translate as __ } from '@/platform/translation'
 
 import DragMoveLayer from './DragMoveLayer.vue'
 import FileCard from './FileCard.vue'
-import {
-  fitColumns,
-  FITTED_WIDTHS,
-  isMeasuredColumn,
-  LIST_COLUMNS,
-  MEASURED_COLUMNS,
-  measuredWidth,
-  WIDE_ONLY,
-  type MeasuredColumn,
-} from './listColumns'
+import type { MeasuredColumn } from './listColumns'
 import { loadUntilVisible } from './listingWindows'
 import { SKELETON_BAR, useSkeletonDelay, type SkeletonCell } from './listSkeleton'
 import ListSkeletonRows from './ListSkeletonRows.vue'
@@ -446,6 +436,7 @@ import { watchNewTabKey } from './newTabKey'
 import type { FilesColumn, FilesDateColumn, FilesSort, PresentationState } from './presentation'
 import type { DropHandlers } from './uploads/drop'
 import type { DragMove } from './useDragMove'
+import { useListColumns } from './useListColumns'
 import { useListingFocus } from './useListingFocus'
 import { LISTING_ITEM, useMarquee } from './useMarquee'
 import { useWorkspaceName } from './useWorkspaceName'
@@ -621,67 +612,24 @@ watch(
 )
 onBeforeUnmount(() => clearTimeout(emptyFadeTimer))
 const rows = computed(() => props.query.rows)
-const columns = computed(() => props.presentation.columns)
-/** The chosen columns in the rows' order, whatever order they were chosen in. */
-const shownColumns = computed(() => LIST_COLUMNS.filter(shows))
-/** The listing's width, once the browser has measured it. */
-const listingWidth = shallowRef<number>()
-useResizeObserver(listing, ([entry]) => (listingWidth.value = entry?.contentRect.width))
-/** The measured columns' widths, from their widest labels. */
-const measured = shallowRef<Partial<Record<MeasuredColumn, number>>>({})
-function trackWidth(column: FilesColumn) {
-  if (isMeasuredColumn(column)) return measured.value[column] ?? MEASURED_COLUMNS[column].max
-  return FITTED_WIDTHS[column]
+const {
+  shownColumns,
+  tracks: columnTracks,
+  columnClass,
+  rulerLabels,
+  ruler,
+} = useListColumns({
+  listing,
+  chosen: () => props.presentation.columns,
+  rows: () => rows.value,
+  labelOf: rulerLabel,
+})
+/** What a row's measured column says. */
+function rulerLabel(column: MeasuredColumn, row: DriveNode) {
+  if (column === 'kind') return typeLabel(row)
+  if (column === 'owner') return row.owner.full_name
+  return row.audience ? audienceLabel(row.audience) : null
 }
-/**
- * The columns the desktop layout shows. A chosen column the list has no room
- * for is hidden until there is room again; it stays chosen.
- */
-const desktopColumns = computed(() => {
-  const width = listingWidth.value
-  if (width === undefined) return shownColumns.value
-  return fitColumns(shownColumns.value, width, trackWidth)
-})
-/** Each shown measured column's labels in the rows, once each. */
-const rulerLabels = computed(() => {
-  const labels: Partial<Record<MeasuredColumn, string[]>> = {}
-  const labelsOf = (column: MeasuredColumn): string[] =>
-    rows.value.flatMap((row) => {
-      if (column === 'kind') return [typeLabel(row)]
-      if (column === 'owner') return [row.owner.full_name]
-      return row.audience ? [audienceLabel(row.audience)] : []
-    })
-  for (const column of shownColumns.value) {
-    if (isMeasuredColumn(column)) labels[column] = [...new Set(labelsOf(column))]
-  }
-  return labels
-})
-const ruler = useTemplateRef('ruler')
-watch([rulerLabels, ruler], measureColumns, { flush: 'post', immediate: true })
-// Labels measured before the web font loads have the fallback font's widths.
-onMounted(() => void document.fonts?.ready.then(measureColumns))
-/** Sizes each measured column to its widest label. A label with no width has had no layout, so it says nothing. */
-function measureColumns() {
-  const next = { ...measured.value }
-  for (const column of LIST_COLUMNS.filter(isMeasuredColumn)) {
-    const group = ruler.value?.querySelector(`[data-column="${column}"]`)
-    if (!group) continue
-    const widths = [...group.children].map((label) => label.getBoundingClientRect().width)
-    if (widths.some(Boolean)) next[column] = measuredWidth(column, widths.filter(Boolean))
-  }
-  measured.value = next
-}
-const columnTracks = computed(() => {
-  const tracks = (list: FilesColumn[]) => [
-    'minmax(0,1fr)',
-    ...list.map((column) => `${trackWidth(column)}px`),
-    '2.5rem',
-  ]
-  return {
-    base: tracks(shownColumns.value.filter((column) => !WIDE_ONLY.has(column))),
-    md: tracks(desktopColumns.value),
-  }
-})
 const byOpened = computed(() => props.dateColumn === 'opened')
 const headerCell = computed(() => (props.sortable === false ? ListHeaderCell : ListHeaderCellSort))
 const allSelected = computed(() => rows.value.length > 0 && rows.value.every(isSelected))
@@ -711,13 +659,7 @@ onBeforeUnmount(() => {
 })
 
 function shows(column: FilesColumn) {
-  return columns.value.includes(column)
-}
-/** Hides a chosen column the phone layout, the desktop layout or both leave out. */
-function columnClass(column: FilesColumn) {
-  const onDesktop = desktopColumns.value.includes(column)
-  if (!WIDE_ONLY.has(column)) return onDesktop ? undefined : 'md:hidden'
-  return onDesktop ? 'hidden md:flex' : 'hidden'
+  return props.presentation.columns.includes(column)
 }
 
 function skeletonCells() {
