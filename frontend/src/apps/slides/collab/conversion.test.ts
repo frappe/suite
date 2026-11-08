@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
 
 import { extensions } from '@/apps/slides/stores/tiptapSetup'
-import { requireTestElement } from '@/test/dom'
+import { requireTestElement } from '@/platform/testing/dom'
 
 import { convertLegacy, type OldBox } from './conversion'
 import {

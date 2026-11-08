@@ -3,7 +3,7 @@ import { nextTick } from 'vue'
 import { createRelativePositionFromTypeIndex, Doc, XmlText } from 'yjs'
 
 import { encodeAnchor } from '@/apps/writer/collab/anchors'
-import { requireTestElement } from '@/test/dom'
+import { requireTestElement } from '@/platform/testing/dom'
 
 import { confirmed } from './comment-list-fakes'
 import {

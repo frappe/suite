@@ -4,7 +4,7 @@ import StarterKit from '@tiptap/starter-kit'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, h, type App } from 'vue'
 
-import { requireTestElement } from '@/test/dom'
+import { requireTestElement } from '@/platform/testing/dom'
 
 import ColorPanel from './ColorPanel.vue'
 import CellColorSwatches from './table/CellColorSwatches.vue'

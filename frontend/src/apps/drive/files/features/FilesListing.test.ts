@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, reactive } from 'vue'
 
 import type { DriveNode } from '@/apps/drive/client/types'
-import { requireTestElement } from '@/test/dom'
+import { requireTestElement } from '@/platform/testing/dom'
 
 import FilesListing from './FilesListing.vue'
 import { DEFAULT_PRESENTATION, type PresentationState } from './presentation'

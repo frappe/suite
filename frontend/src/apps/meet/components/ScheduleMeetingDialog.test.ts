@@ -2,8 +2,8 @@ import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick } from 'vue'
 
+import { requireTestElement } from '@/platform/testing/dom'
 import { TransportError } from '@/platform/transport'
-import { requireTestElement } from '@/test/dom'
 
 import ScheduleMeetingDialog from './ScheduleMeetingDialog.vue'
 

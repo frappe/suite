@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, ref } from 'vue'
 
-import { requireTestElement } from '@/test/dom'
+import { requireTestElement } from '@/platform/testing/dom'
 
 import KickParticipantDialog from './KickParticipantDialog.vue'
 

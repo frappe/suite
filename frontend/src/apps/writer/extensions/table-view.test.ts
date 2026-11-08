@@ -3,7 +3,7 @@ import type { Node as PMNode } from '@tiptap/pm/model'
 import { afterEach, expect, it, vi } from 'vitest'
 
 import { writerSchema } from '@/apps/writer/schema'
-import { requireTestElement } from '@/test/dom'
+import { requireTestElement } from '@/platform/testing/dom'
 
 import { DEFAULT_COLUMN_WIDTH, WriterTableView } from './table-view'
 

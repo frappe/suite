@@ -3,8 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, ref, type App } from 'vue'
 
 import type { DocumentVersion } from '@/apps/drive'
+import { requireTestElement } from '@/platform/testing/dom'
 import { translationPlugin } from '@/platform/translation'
-import { requireTestElement } from '@/test/dom'
 
 import VersionList from './VersionList.vue'
 

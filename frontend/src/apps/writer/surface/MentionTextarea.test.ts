@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, ref, type App } from 'vue'
 
 import type { WriterUser } from '@/apps/writer/drive'
+import { requireTestElement } from '@/platform/testing/dom'
 import { translationPlugin } from '@/platform/translation'
-import { requireTestElement } from '@/test/dom'
 
 import MentionTextarea from './MentionTextarea.vue'
 

@@ -5,7 +5,7 @@
 // keeps focus in a hidden textarea that hears those events.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { requireTestElement } from '@/test/dom'
+import { requireTestElement } from '@/platform/testing/dom'
 
 import { createGrid } from './index.js'
 import { createMockCtx } from './painters/test-utils.js'

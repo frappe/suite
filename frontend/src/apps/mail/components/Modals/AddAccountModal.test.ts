@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, ref } from 'vue'
 
 import { createApiClient } from '@/platform/server-state'
+import { requireTestElement } from '@/platform/testing/dom'
 import { createTransport } from '@/platform/transport'
-import { requireTestElement } from '@/test/dom'
 
 import AddAccountModal from './AddAccountModal.vue'
 

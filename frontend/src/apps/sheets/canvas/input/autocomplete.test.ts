@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { requireTestElement } from '@/test/dom'
+import { requireTestElement } from '@/platform/testing/dom'
 
 import { createAutocomplete, type AutocompleteOptions } from './autocomplete.js'
 import type { PickRect } from './range-picker.js'

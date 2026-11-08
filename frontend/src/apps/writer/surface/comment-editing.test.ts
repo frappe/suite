@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
 import type { DocumentThread } from '@/apps/drive'
-import { requireTestElement } from '@/test/dom'
+import { requireTestElement } from '@/platform/testing/dom'
 
 import { confirmed, errors, me, warnings } from './comment-list-fakes'
 import {

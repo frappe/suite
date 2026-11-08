@@ -3,8 +3,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, ref, type App } from 'vue'
 
 import type { DocumentPanel, DocumentSession, DocumentVersion } from '@/apps/drive'
+import { requireTestElement } from '@/platform/testing/dom'
 import { translationPlugin } from '@/platform/translation'
-import { requireTestElement } from '@/test/dom'
 
 import DocumentSidePanel from './DocumentSidePanel.vue'
 import type { useCommentDrafts } from './useCommentDrafts'

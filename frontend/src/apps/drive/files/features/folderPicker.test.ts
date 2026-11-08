@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h } from 'vue'
 
 import { DRIVE_ROLES } from '@/apps/drive/client/types'
-import { requireTestElement } from '@/test/dom'
+import { requireTestElement } from '@/platform/testing/dom'
 
 import FilePicker from './FilePicker.vue'
 import {

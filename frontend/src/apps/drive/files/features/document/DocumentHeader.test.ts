@@ -3,8 +3,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, ref, type VNode } from 'vue'
 
 import type { DocumentSession } from '@/apps/drive/client/session'
+import { requireTestElement } from '@/platform/testing/dom'
 import { TransportError } from '@/platform/transport'
-import { requireTestElement } from '@/test/dom'
 
 import type { DocumentPanel } from '../../../client/types'
 import DocumentHeader from './DocumentHeader.vue'

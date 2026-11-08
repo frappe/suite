@@ -21,7 +21,7 @@ import {
   yParagraph,
 } from '@/apps/writer/collab/legacy-fixtures'
 import { writerSchema } from '@/apps/writer/schema'
-import { requireTestElement } from '@/test/dom'
+import { requireTestElement } from '@/platform/testing/dom'
 
 // Each block's tag, left margin with its priority, and line height, as the editor draws them
 function blockLayout(state: Uint8Array) {

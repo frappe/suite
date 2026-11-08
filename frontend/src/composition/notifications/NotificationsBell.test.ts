@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, nextTick } from 'vue'
 
 import NotificationsBell from '@/composition/notifications/NotificationsBell.vue'
+import { requireTestElement } from '@/platform/testing/dom'
 import { TransportError } from '@/platform/transport'
-import { requireTestElement } from '@/test/dom'
 
 const state = vi.hoisted(() => ({
   push: vi.fn(),

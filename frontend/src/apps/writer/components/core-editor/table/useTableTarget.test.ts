@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { effectScope, ref, shallowRef, type EffectScope } from 'vue'
 
 import { writerSchema } from '@/apps/writer/schema'
-import { requireTestElement } from '@/test/dom'
+import { requireTestElement } from '@/platform/testing/dom'
 
 import { useTableTarget } from './useTableTarget'
 
