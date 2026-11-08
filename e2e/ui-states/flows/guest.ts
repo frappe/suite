@@ -3,7 +3,7 @@ import { fillFolder, folderPath } from "../content";
 import { defineFlow, setupFlow } from "../flow";
 import { DRIVE, grantAccess, ROLE } from "../../drive-backed-apps/helpers/drive";
 import { loginViaApi } from "../../shared/auth";
-import { perScene, type Scene } from "../scene";
+import { perScene, VIEWPORT, type Scene } from "../scene";
 
 type Event =
 	| { type: "OPEN_FILE_LINK" }
@@ -154,7 +154,7 @@ async function visit(scene: Scene, path: string, signedIn = false): Promise<Page
 	const browser = scene.context.browser();
 	if (!browser) throw new Error("guest: the scene has no browser");
 	if (visitorContexts?.browser !== browser) {
-		const options = { baseURL: scene.baseURL, viewport: { width: 1440, height: 900 }, colorScheme: "light" } as const;
+		const options = { baseURL: scene.baseURL, viewport: VIEWPORT, colorScheme: "light" } as const;
 		visitorContexts = {
 			browser,
 			signedOut: await browser.newContext(options),

@@ -1,16 +1,10 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { APIRequestContext, Browser, BrowserContext, Page, Route } from "@playwright/test";
-import {
-	createFolder,
-	type DriveNode,
-	purgeNode,
-	trashNode,
-	waitForChild,
-} from "../drive-backed-apps/helpers/drive";
+import type { APIRequestContext, Browser, BrowserContext, Locator, Page, Route } from "@playwright/test";
+import { createFolder, type DriveNode, openRowMenu, purgeNode, trashNode } from "../drive-backed-apps/helpers/drive";
 import { loginViaApi, type Credentials } from "../shared/auth";
 
-const VIEWPORT = { width: 1440, height: 900 };
+export const VIEWPORT = { width: 1440, height: 900 };
 /** Enough for frappe-ui transitions and the 180 ms skeleton delay to finish. */
 const SETTLE_MS = 450;
 export const WORKSPACE_FOLDER = "UI states";
@@ -60,6 +54,14 @@ export interface Scene {
 	settle(): Promise<void>;
 	/** Signs in as another user in a second context, for shares and reactions. */
 	as(user: Credentials): Promise<APIRequestContext>;
+	/** A page signed in as another user, in a second context closed with the scene. */
+	pageAs(user: Credentials): Promise<Page>;
+	/** The open dialog with this accessible name. */
+	dialog(name: string): Locator;
+	/** The first text on the page matching a toast's message. */
+	toast(text: string | RegExp): Locator;
+	/** Picks `action` from the row menu of the item called `title`. */
+	rowAction(title: string, action: string): Promise<void>;
 	close(): Promise<void>;
 }
 
@@ -80,7 +82,7 @@ export function perScene<T>(label: string) {
 
 const statePath = resolve(__dirname, "../drive-backed-apps/.state/run.json");
 
-export function people(): People {
+function people(): People {
 	// SAFETY: global setup wrote this file with the users it provisioned.
 	const run = JSON.parse(readFileSync(statePath, "utf8")) as { users: Credentials[] };
 	const [actor, peer, fresh] = run.users;
@@ -128,7 +130,8 @@ export async function openScene(
 	folderTitle: string,
 ): Promise<Scene> {
 	const who = people();
-	const context = await browser.newContext({ baseURL, viewport: VIEWPORT, colorScheme: "light" });
+	const contextOptions = { baseURL, viewport: VIEWPORT, colorScheme: "light" } as const;
+	const context = await browser.newContext(contextOptions);
 	const api = context.request;
 	await loginViaApi(api, who.actor);
 	const root = await personalRoot(api);
@@ -138,6 +141,12 @@ export async function openScene(
 	const page = await context.newPage();
 	const others: BrowserContext[] = [];
 	let latestHold: Hold | null = null;
+	const signInElsewhere = async (user: Credentials): Promise<BrowserContext> => {
+		const other = await browser.newContext(contextOptions);
+		others.push(other);
+		await loginViaApi(other.request, user);
+		return other;
+	};
 
 	return {
 		page,
@@ -189,10 +198,16 @@ export async function openScene(
 			await page.waitForTimeout(SETTLE_MS);
 		},
 		async as(user) {
-			const other = await browser.newContext({ baseURL });
-			others.push(other);
-			await loginViaApi(other.request, user);
-			return other.request;
+			return (await signInElsewhere(user)).request;
+		},
+		async pageAs(user) {
+			return (await signInElsewhere(user)).newPage();
+		},
+		dialog: (name) => page.getByRole("dialog", { name }),
+		toast: (text) => page.getByText(text).first(),
+		async rowAction(title, action) {
+			const menu = await openRowMenu(page, title);
+			await menu.getByRole("menuitem", { name: action, exact: true }).click();
 		},
 		async close() {
 			try {
@@ -205,5 +220,3 @@ export async function openScene(
 		},
 	};
 }
-
-export { waitForChild };

@@ -1,6 +1,5 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { expect, type Locator } from "@playwright/test";
+import { fixture } from "../content";
 import { defineFlow, setupFlow } from "../flow";
 import {
 	createFolder,
@@ -8,7 +7,7 @@ import {
 	trashNode,
 	uploadFile,
 } from "../../drive-backed-apps/helpers/drive";
-import type { Scene } from "../scene";
+import { WORKSPACE_FOLDER, type Scene } from "../scene";
 
 type Event =
 	| { type: "ITEMS_TRASHED" }
@@ -101,35 +100,21 @@ const machine = setupFlow<Event>().createMachine({
 	},
 });
 
-const logo = readFileSync(resolve(__dirname, "../fixtures/Logo.png"));
-const markdown = (text: string) => Buffer.from(text);
+const logo = fixture("Logo.png");
 
 async function seed(scene: Scene): Promise<void> {
 	const { api } = scene;
 	const parent = scene.folder.name;
 	const folder = await createFolder(api, "Old campaign", parent);
 	await uploadFile(api, "Banner.png", logo, folder.name, "image/png");
-	await uploadFile(api, "Copy deck.md", markdown("# Copy deck\n"), folder.name, "text/markdown");
+	await uploadFile(api, "Copy deck.md", Buffer.from("# Copy deck\n"), folder.name, "text/markdown");
 	const emptyFolder = await createFolder(api, "Unused assets", parent);
-	const release = await uploadFile(api, "Press release v1.md", markdown("# Press release\n"), parent, "text/markdown");
+	const release = await uploadFile(api, "Press release v1.md", Buffer.from("# Press release\n"), parent, "text/markdown");
 	const retired = await createFolder(api, "Retired", parent);
-	const orphan = await uploadFile(api, "Kickoff notes.md", markdown("# Kickoff\n"), retired.name, "text/markdown");
+	const orphan = await uploadFile(api, "Kickoff notes.md", Buffer.from("# Kickoff\n"), retired.name, "text/markdown");
 	await trashNode(api, orphan.name);
 	await trashNode(api, retired.name);
 	for (const node of [folder, emptyFolder, release]) await trashNode(api, node.name);
-}
-
-function dialog(scene: Scene, name: string): Locator {
-	return scene.page.getByRole("dialog", { name });
-}
-
-function toast(scene: Scene, text: string | RegExp): Locator {
-	return scene.page.getByText(text).first();
-}
-
-async function rowAction(scene: Scene, title: string, action: string): Promise<void> {
-	const menu = await openRowMenu(scene.page, title);
-	await menu.getByRole("menuitem", { name: action, exact: true }).click();
 }
 
 function actionsFor(scene: Scene, title: string): Locator {
@@ -169,57 +154,57 @@ export const trash = defineFlow<Event>({
 			await expect(scene.page).toHaveURL(/root=organization/);
 		},
 		async RESTORE(scene) {
-			await rowAction(scene, "Press release v1.md", "Restore");
-			await expect(toast(scene, "Restored “Press release v1.md”")).toBeVisible();
+			await scene.rowAction("Press release v1.md", "Restore");
+			await expect(scene.toast("Restored “Press release v1.md”")).toBeVisible();
 			await expect(actionsFor(scene, "Press release v1.md")).toBeHidden();
 		},
 		async RESTORE_FAILS(scene) {
 			const hold = await scene.hold("**/api/suite/drive/nodes/batch");
 			await hold.abort(500);
-			await rowAction(scene, "Press release v1.md", "Restore");
+			await scene.rowAction("Press release v1.md", "Restore");
 			await expect(scene.page.getByRole("button", { name: "Retry" })).toBeVisible();
 		},
 		async RETRY(scene) {
 			await scene.lastHold.release();
 			await scene.page.getByRole("button", { name: "Retry" }).click();
-			await expect(toast(scene, "Restored “Press release v1.md”")).toBeVisible();
+			await expect(scene.toast("Restored “Press release v1.md”")).toBeVisible();
 			await expect(actionsFor(scene, "Press release v1.md")).toBeHidden();
 		},
 		async RESTORE_ORPHAN(scene) {
-			await rowAction(scene, "Kickoff notes.md", "Restore");
-			const picker = dialog(scene, "Restore to");
+			await scene.rowAction("Kickoff notes.md", "Restore");
+			const picker = scene.dialog("Restore to");
 			await expect(picker.getByText("The folder this item was in is gone.", { exact: false })).toBeVisible();
-			await expect(picker.getByRole("button", { name: "UI states", exact: true })).toBeVisible();
+			await expect(picker.getByRole("button", { name: WORKSPACE_FOLDER, exact: true })).toBeVisible();
 		},
 		async RESTORE_HERE(scene) {
-			const picker = dialog(scene, "Restore to");
-			await picker.getByRole("button", { name: "UI states", exact: true }).click();
+			const picker = scene.dialog("Restore to");
+			await picker.getByRole("button", { name: WORKSPACE_FOLDER, exact: true }).click();
 			await expect(picker.getByRole("button", { name: scene.folder.title, exact: true })).toBeVisible();
 			await picker.getByRole("button", { name: scene.folder.title, exact: true }).click();
 			await expect(picker.getByRole("list", { name: `Folders in ${scene.folder.title}` }).or(picker.getByText("No folders inside"))).toBeVisible();
 			await picker.getByRole("button", { name: "Restore here" }).click();
-			await expect(toast(scene, "Restored “Kickoff notes.md”")).toBeVisible();
+			await expect(scene.toast("Restored “Kickoff notes.md”")).toBeVisible();
 			await expect(actionsFor(scene, "Kickoff notes.md")).toBeHidden();
 		},
 		async DELETE_FOREVER(scene) {
-			await rowAction(scene, "Press release v1.md", "Delete forever");
-			await expect(dialog(scene, "Delete forever?")).toBeVisible();
+			await scene.rowAction("Press release v1.md", "Delete forever");
+			await expect(scene.dialog("Delete forever?")).toBeVisible();
 		},
 		async CONFIRM_DELETE(scene) {
-			await dialog(scene, "Delete forever?").getByRole("button", { name: "Delete forever" }).click();
-			await expect(toast(scene, "Deleted “Press release v1.md” forever")).toBeVisible();
+			await scene.dialog("Delete forever?").getByRole("button", { name: "Delete forever" }).click();
+			await expect(scene.toast("Deleted “Press release v1.md” forever")).toBeVisible();
 			await expect(actionsFor(scene, "Press release v1.md")).toBeHidden();
 		},
 		async EMPTY_TRASH(scene) {
 			await scene.page.getByRole("button", { name: "Empty trash" }).click();
-			await expect(dialog(scene, "Empty trash?")).toBeVisible();
+			await expect(scene.dialog("Empty trash?")).toBeVisible();
 		},
 		async CONFIRM_EMPTY(scene) {
-			await dialog(scene, "Empty trash?").getByRole("button", { name: "Empty trash" }).click();
-			await expect(toast(scene, /^Deleted \d+ items? forever$/)).toBeVisible();
+			await scene.dialog("Empty trash?").getByRole("button", { name: "Empty trash" }).click();
+			await expect(scene.toast(/^Deleted \d+ items? forever$/)).toBeVisible();
 			await expect(scene.page.getByText("Trash is empty")).toBeVisible();
 			await scene.settle();
-			await expect(toast(scene, /^Deleted \d+ items? forever$/)).toBeVisible();
+			await expect(scene.toast(/^Deleted \d+ items? forever$/)).toBeVisible();
 		},
 		async OPEN_TRASHED_FOLDER(scene) {
 			await scene.page.getByText("Old campaign", { exact: true }).click();

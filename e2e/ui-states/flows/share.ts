@@ -8,8 +8,7 @@ import {
 	ROLE,
 	type DriveNode,
 } from "../../drive-backed-apps/helpers/drive";
-import { loginViaApi } from "../../shared/auth";
-import { perScene, type Scene } from "../scene";
+import { perScene } from "../scene";
 
 type Event =
 	| { type: "LOADS" }
@@ -183,22 +182,6 @@ async function chooseRole(page: Page, label: string): Promise<void> {
 	await page.getByRole("menuitem", { name: label, exact: true }).click();
 }
 
-/** A second browser signed in as the peer, closed with the scene's own context. */
-async function managerPage(scene: Scene): Promise<Page> {
-	const browser = scene.context.browser();
-	if (!browser) throw new Error("share: the scene has no browser");
-	const context = await browser.newContext({
-		baseURL: scene.baseURL,
-		viewport: { width: 1440, height: 900 },
-		colorScheme: "light",
-	});
-	scene.context.once("close", () => void context.close());
-	await loginViaApi(context.request, scene.people.peer);
-	const page = await context.newPage();
-	managers.set(scene, page);
-	return page;
-}
-
 export const share = defineFlow<Event>({
 	id: "share",
 	title: "Share dialog",
@@ -329,7 +312,8 @@ export const share = defineFlow<Event>({
 			await expect(dialog(scene.page).getByRole("status")).toContainText("still has access");
 		},
 		async OPEN_AS_MANAGER(scene) {
-			const page = await managerPage(scene);
+			const page = await scene.pageAs(scene.people.peer);
+			managers.set(scene, page);
 			await page.goto("/drive/shared-with-me");
 			await openShare(page, "Handover");
 			await expectReady(page);

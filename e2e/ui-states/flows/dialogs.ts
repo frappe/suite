@@ -1,12 +1,9 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { expect, type Locator } from "@playwright/test";
-import { fillFolder, folderPath, type FolderContent } from "../content";
+import { fillFolder, fixture, folderPath, type FolderContent } from "../content";
 import { defineFlow, setupFlow } from "../flow";
 import {
 	createFolder,
 	grantAccess,
-	openRowMenu,
 	ROLE,
 	row,
 	uploadFile,
@@ -152,16 +149,12 @@ const machine = setupFlow<Event>().createMachine({
 });
 
 const content = perScene<FolderContent>("dialogs: content");
-const logo = readFileSync(resolve(__dirname, "../fixtures/Logo.png"));
+const logo = fixture("Logo.png");
 
 function designReviews(scene: Scene): DriveNode {
 	const folder = content.get(scene).folders[0];
 	if (!folder) throw new Error("dialogs: no Design reviews folder");
 	return folder;
-}
-
-function dialog(scene: Scene, name: string): Locator {
-	return scene.page.getByRole("dialog", { name });
 }
 
 async function openNew(scene: Scene): Promise<Locator> {
@@ -174,19 +167,14 @@ async function openNew(scene: Scene): Promise<Locator> {
 async function newFolder(scene: Scene): Promise<Locator> {
 	const menu = await openNew(scene);
 	await menu.getByRole("menuitem", { name: "Folder", exact: true }).first().click();
-	const created = dialog(scene, "New folder");
+	const created = scene.dialog("New folder");
 	await expect(created.getByRole("textbox", { name: "Name" })).toHaveValue("Untitled folder");
 	return created;
 }
 
-async function rowAction(scene: Scene, title: string, action: string): Promise<void> {
-	const menu = await openRowMenu(scene.page, title);
-	await menu.getByRole("menuitem", { name: action, exact: true }).click();
-}
-
 async function openMovePicker(scene: Scene): Promise<Locator> {
-	await rowAction(scene, "Logo.png", "Move");
-	const picker = dialog(scene, "Move to");
+	await scene.rowAction("Logo.png", "Move");
+	const picker = scene.dialog("Move to");
 	await expect(picker.getByRole("button", { name: "Design reviews", exact: true })).toBeVisible();
 	return picker;
 }
@@ -201,13 +189,9 @@ async function moveToDesignReviews(scene: Scene, items: DriveNode[]): Promise<vo
 	for (const item of items) await row(scene.page, item.name).click({ modifiers: ["ControlOrMeta"] });
 	await expect(scene.page.getByText(`${items.length} selected`)).toBeVisible();
 	await scene.page.getByRole("button", { name: "Move", exact: true }).click();
-	const picker = dialog(scene, "Move to");
+	const picker = scene.dialog("Move to");
 	await pickFolder(picker, "Design reviews");
 	await picker.getByRole("button", { name: "Move here" }).click();
-}
-
-function toast(scene: Scene, text: string | RegExp): Locator {
-	return scene.page.getByText(text).first();
 }
 
 export const dialogs = defineFlow<Event>({
@@ -231,15 +215,15 @@ export const dialogs = defineFlow<Event>({
 		},
 		async NEW_FOLDER(scene) {
 			await scene.page.getByRole("menuitem", { name: "Folder", exact: true }).first().click();
-			await expect(dialog(scene, "New folder").getByRole("textbox", { name: "Name" })).toHaveValue("Untitled folder");
+			await expect(scene.dialog("New folder").getByRole("textbox", { name: "Name" })).toHaveValue("Untitled folder");
 		},
 		async TYPE_NAME(scene) {
-			const field = dialog(scene, "New folder").getByRole("textbox", { name: "Name" });
+			const field = scene.dialog("New folder").getByRole("textbox", { name: "Name" });
 			await field.fill("Press kit");
 			await expect(field).toHaveValue("Press kit");
 		},
 		async CREATE_TAKEN(scene) {
-			const created = dialog(scene, "New folder");
+			const created = scene.dialog("New folder");
 			await created.getByRole("textbox", { name: "Name" }).fill("Design reviews");
 			await created.getByRole("button", { name: "Create", exact: true }).click();
 			await expect(created.getByText("That name is taken in this folder.")).toBeVisible();
@@ -247,7 +231,7 @@ export const dialogs = defineFlow<Event>({
 		async CREATE_SLOW(scene) {
 			await scene.hold("**/api/suite/drive/nodes");
 			const sent = scene.page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/api/suite/drive/nodes"));
-			await dialog(scene, "New folder").getByRole("button", { name: "Create", exact: true }).click();
+			await scene.dialog("New folder").getByRole("button", { name: "Create", exact: true }).click();
 			await sent;
 		},
 		async NEW_DOCUMENT(scene) {
@@ -258,16 +242,16 @@ export const dialogs = defineFlow<Event>({
 		},
 		async FROM_TEMPLATE(scene) {
 			await scene.page.getByRole("menuitem", { name: "From template" }).click();
-			const picker = dialog(scene, "New from template");
+			const picker = scene.dialog("New from template");
 			await expect(picker.getByText("No templates yet").or(picker.getByRole("listbox", { name: "Templates" }))).toBeVisible();
 			await expect(picker.getByRole("textbox", { name: "Name" })).toHaveValue("Untitled document");
 		},
 		async RENAME(scene) {
-			await rowAction(scene, "Quarterly planning", "Rename");
-			await expect(dialog(scene, "Rename").getByRole("textbox", { name: "Name" })).toHaveValue("Quarterly planning");
+			await scene.rowAction("Quarterly planning", "Rename");
+			await expect(scene.dialog("Rename").getByRole("textbox", { name: "Name" })).toHaveValue("Quarterly planning");
 		},
 		async RENAME_TAKEN(scene) {
-			const rename = dialog(scene, "Rename");
+			const rename = scene.dialog("Rename");
 			await rename.getByRole("textbox", { name: "Name" }).fill("Design reviews");
 			await rename.getByRole("button", { name: "Rename", exact: true }).click();
 			await expect(rename.getByText("That name is taken in this folder.")).toBeVisible();
@@ -277,52 +261,52 @@ export const dialogs = defineFlow<Event>({
 			await expect(picker.getByText("The item is already in this folder.")).toBeVisible();
 		},
 		async BROWSE_TOP(scene) {
-			const picker = dialog(scene, "Move to");
+			const picker = scene.dialog("Move to");
 			await picker.getByRole("link", { name: "My files" }).or(picker.getByRole("button", { name: "My files", exact: true })).first().click();
 			await expect(picker.getByRole("list", { name: "Folders in My files" })).toBeVisible();
 		},
 		async OPEN_FOLDER(scene) {
 			await createFolder(scene.api, "Round 1", designReviews(scene).name);
-			const picker = dialog(scene, "Move to");
+			const picker = scene.dialog("Move to");
 			await pickFolder(picker, "Design reviews");
 			await expect(picker.getByRole("button", { name: "Round 1", exact: true })).toBeVisible();
 			await expect(picker.getByRole("button", { name: "Move here" })).toBeEnabled();
 		},
 		async OPEN_EMPTY_FOLDER(scene) {
-			const picker = dialog(scene, "Move to");
+			const picker = scene.dialog("Move to");
 			await picker.getByRole("button", { name: "Archive", exact: true }).click();
 			await expect(picker.getByText("No folders inside")).toBeVisible();
 		},
 		async MOVE_INTO_SHARED(scene) {
-			const picker = dialog(scene, "Move to");
+			const picker = scene.dialog("Move to");
 			await picker.getByRole("button", { name: "Client review", exact: true }).click();
 			await expect(picker.getByText("No folders inside")).toBeVisible();
 			await picker.getByRole("button", { name: "Move here" }).click();
-			await expect(dialog(scene, "More people will get access").getByText("Arjun Mehta")).toBeVisible();
+			await expect(scene.dialog("More people will get access").getByText("Arjun Mehta")).toBeVisible();
 		},
 		async CONFIRM_ACCESS(scene) {
-			await dialog(scene, "More people will get access").getByRole("button", { name: "Move", exact: true }).click();
-			await expect(toast(scene, /Moved “Logo.png” to/)).toBeVisible();
+			await scene.dialog("More people will get access").getByRole("button", { name: "Move", exact: true }).click();
+			await expect(scene.toast(/Moved “Logo.png” to/)).toBeVisible();
 			await expect(row(scene.page, content.get(scene).logo.name)).toBeHidden();
 		},
 		async MOVE_SLOW(scene) {
 			await scene.hold(`**/api/suite/drive/nodes/${content.get(scene).logo.name}`);
 			const sent = scene.page.waitForRequest((request) => request.method() === "PATCH");
-			await dialog(scene, "Move to").getByRole("button", { name: "Move here" }).click();
+			await scene.dialog("Move to").getByRole("button", { name: "Move here" }).click();
 			await sent;
 		},
 		async MOVE_SETTLES(scene) {
 			await scene.lastHold.release();
-			await expect(toast(scene, "Moved “Logo.png” to Design reviews")).toBeVisible();
+			await expect(scene.toast("Moved “Logo.png” to Design reviews")).toBeVisible();
 			await expect(row(scene.page, content.get(scene).logo.name)).toBeHidden();
 		},
 		async COPY(scene) {
-			await rowAction(scene, "Meeting notes.md", "Make a copy");
-			await expect(dialog(scene, "Make a copy").getByRole("button", { name: "Copy here" })).toBeEnabled();
+			await scene.rowAction("Meeting notes.md", "Make a copy");
+			await expect(scene.dialog("Make a copy").getByRole("button", { name: "Copy here" })).toBeEnabled();
 		},
 		async COPY_HERE(scene) {
-			await dialog(scene, "Make a copy").getByRole("button", { name: "Copy here" }).click();
-			await expect(toast(scene, new RegExp(`Copied “Meeting notes.* to ${scene.folder.title}`))).toBeVisible();
+			await scene.dialog("Make a copy").getByRole("button", { name: "Copy here" }).click();
+			await expect(scene.toast(new RegExp(`Copied “Meeting notes.* to ${scene.folder.title}`))).toBeVisible();
 			await expect(scene.page.getByRole("button", { name: /^Actions for Meeting notes.*\(/ })).toBeVisible();
 		},
 		async BULK_MOVE_ONE_CLASH(scene) {
@@ -332,7 +316,7 @@ export const dialogs = defineFlow<Event>({
 			await expect(scene.page.getByText("“Logo.png” could not be moved")).toBeVisible();
 			await expect(scene.page.getByText("That name is taken in this folder.")).toBeVisible();
 			await expect(scene.page.getByRole("button", { name: "Details", exact: true })).toHaveCount(0);
-			await expect(toast(scene, /Moved “Meeting notes.md” to/)).toBeVisible();
+			await expect(scene.toast(/Moved “Meeting notes.md” to/)).toBeVisible();
 		},
 		async BULK_MOVE_TWO_CLASH(scene) {
 			const { logo: logoRow, notes, sheet } = content.get(scene);
@@ -340,19 +324,19 @@ export const dialogs = defineFlow<Event>({
 			await uploadFile(scene.api, "Meeting notes.md", Buffer.from("# Older notes\n"), designReviews(scene).name, "text/markdown");
 			await moveToDesignReviews(scene, [logoRow, notes, sheet]);
 			await expect(scene.page.getByText("2 of 3 items could not be moved")).toBeVisible();
-			await expect(toast(scene, /Moved “Budget 2026” to/)).toBeVisible();
+			await expect(scene.toast(/Moved “Budget 2026” to/)).toBeVisible();
 		},
 		async SHOW_FAILURES(scene) {
 			await scene.page.getByRole("button", { name: "Details", exact: true }).click();
-			await expect(dialog(scene, "Items that failed").getByText("That name is taken in this folder.")).toHaveCount(2);
+			await expect(scene.dialog("Items that failed").getByText("That name is taken in this folder.")).toHaveCount(2);
 		},
 		async DETAILS(scene) {
-			await rowAction(scene, "Quarter review.pdf", "Details");
-			await expect(dialog(scene, "Details").getByText("Arjun Mehta")).toBeVisible();
+			await scene.rowAction("Quarter review.pdf", "Details");
+			await expect(scene.dialog("Details").getByText("Arjun Mehta")).toBeVisible();
 		},
 		async TRASH(scene) {
-			await rowAction(scene, "Budget 2026", "Move to trash");
-			await expect(toast(scene, "Moved “Budget 2026” to Trash")).toBeVisible();
+			await scene.rowAction("Budget 2026", "Move to trash");
+			await expect(scene.toast("Moved “Budget 2026” to Trash")).toBeVisible();
 			await expect(row(scene.page, content.get(scene).sheet.name)).toBeHidden();
 		},
 	},

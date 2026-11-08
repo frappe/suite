@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import type { APIRequestContext } from "@playwright/test";
 import { createDocument, createFolder, uploadFile, type DriveNode } from "../drive-backed-apps/helpers/drive";
 
-const fixture = (name: string) => readFileSync(resolve(__dirname, "fixtures", name));
+export const fixture = (name: string) => readFileSync(resolve(__dirname, "fixtures", name));
 
 export interface FolderContent {
 	folders: DriveNode[];

@@ -1,5 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 import { resolve } from "node:path";
+import { VIEWPORT } from "./scene";
 
 /**
  * Captures every Drive UI state as a screenshot, walking the machines under
@@ -33,7 +34,7 @@ export default defineConfig({
 	reporter: [["list"]],
 	use: {
 		baseURL,
-		viewport: { width: 1440, height: 900 },
+		viewport: VIEWPORT,
 		actionTimeout: 15_000,
 		navigationTimeout: 30_000,
 		launchOptions: { args: ["--unsafely-treat-insecure-origin-as-secure=" + baseURL] },

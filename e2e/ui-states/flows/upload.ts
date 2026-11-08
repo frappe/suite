@@ -1,8 +1,8 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { expect, type FileChooser, type Locator, type Page } from "@playwright/test";
-import { fillFolder, folderPath, type FolderContent } from "../content";
+import { fillFolder, fixture, folderPath, type FolderContent } from "../content";
 import { defineFlow, setupFlow } from "../flow";
 import { chooseNew, row } from "../../drive-backed-apps/helpers/drive";
 import { perScene, type Scene } from "../scene";
@@ -144,7 +144,6 @@ const FOLDER_CREATE = /\/api\/suite\/drive\/nodes(\?|$)/;
 const FIRST_CHUNK_SENT = "2 MB of 24 MB";
 const LARGE_NAMES = ["Launch video.mp4", "Press kit.zip", "Brand assets.zip", "Product shots.zip", "Homepage walkthrough.mov"];
 
-const fixture = (name: string) => readFileSync(resolve(__dirname, "..", "fixtures", name));
 const content = perScene<FolderContent>("upload: content");
 let scratch: string | null = null;
 

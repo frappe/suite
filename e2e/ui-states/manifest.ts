@@ -13,7 +13,7 @@ export interface FlowManifest {
 	edges: EdgeRecord[];
 }
 
-export interface StateRecord {
+interface StateRecord {
 	id: string;
 	description: string;
 	transient: boolean;

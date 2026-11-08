@@ -1,7 +1,5 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { expect, type Page } from "@playwright/test";
-import { folderPath } from "../content";
+import { fixture, folderPath } from "../content";
 import { defineFlow, setupFlow } from "../flow";
 import { purgeNode, row, trashNode, uploadFile, type DriveNode } from "../../drive-backed-apps/helpers/drive";
 import { perScene, type Scene } from "../scene";
@@ -125,7 +123,6 @@ const CODE = 'interface Page {\n\ttitle: string;\n\tpath: string;\n}\n\nexport f
 const ZIP = Buffer.from("504b0506000000000000000000000000000000000000", "hex");
 const CHUNKS = /\/api\/suite\/drive\/uploads\/[^/]+\/chunk/;
 
-const fixture = (name: string) => readFileSync(resolve(__dirname, "..", "fixtures", name));
 const files = perScene<Files>("preview: files");
 
 /**

@@ -5,7 +5,7 @@ const POLL_MS = 200;
 const BACK_TIMEOUT_MS = 120_000;
 const ATTEMPTS = 3;
 
-export interface BenchWatch {
+interface BenchWatch {
 	/** Runs one walk, and runs it again if the bench went away while it ran. */
 	survive(walk: () => Promise<void>): Promise<void>;
 	stop(): void;
