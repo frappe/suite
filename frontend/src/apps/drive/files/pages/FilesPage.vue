@@ -402,6 +402,7 @@ import {
   locationLabel,
   locationTitle,
   organizationName,
+  rootPath,
   trashLocation,
 } from '../internal/locations'
 import { slugify } from '../internal/slugify'
@@ -609,7 +610,7 @@ const breadcrumbs = computed(() => {
     node: crumb.name,
     route: {
       path:
-        rootPath(crumb.name) ??
+        rootPath(crumb.name, discovered.data) ??
         `/drive/f/${encodeURIComponent(crumb.name)}/${slugify(crumb.title)}`,
       query: presentationQuery.value,
     },
@@ -905,7 +906,7 @@ watch(
 watch(
   () => [props.destination, String(route.params.node ?? ''), discovered.data] as const,
   ([destination, id]) => {
-    const root = destination === 'folder' ? rootPath(id) : null
+    const root = destination === 'folder' ? rootPath(id, discovered.data) : null
     if (root) void router.replace({ path: root, query: route.query })
   },
   { immediate: true },
@@ -913,7 +914,7 @@ watch(
 watch(
   () => detail.data,
   (folder) => {
-    if (!folder || props.destination !== 'folder' || rootPath(folder.name)) return
+    if (!folder || props.destination !== 'folder' || rootPath(folder.name, discovered.data)) return
     // The old Drive pages used `/drive/f/<id>` for a file. A non-folder id opens as a document [T020].
     if (folder.kind !== 'folder' && folder.kind !== 'root') {
       void router.replace({
@@ -1311,7 +1312,7 @@ function showRowInFolder(row: DriveNode) {
   const parent = shownParent(row)
   if (!parent) return
   const state = { reveal: row.name, highlight: true }
-  const root = rootPath(parent.name)
+  const root = rootPath(parent.name, discovered.data)
   void router.push(
     root ? { path: root, query: presentationQuery.value, state } : { ...folderPath(parent), state },
   )
@@ -1381,12 +1382,6 @@ function onMobileBack() {
 }
 function requestPanel() {
   openAreaSidebar('files')
-}
-function rootPath(id: string): string | null {
-  if (!id) return null
-  if (id === discovered.data?.personal.node) return '/drive'
-  if (id === discovered.data?.organization?.node) return '/drive/organization'
-  return null
 }
 function typeIcon(value: string | number) {
   const option = typeChoices.value.find((choice) => choice.value === value)

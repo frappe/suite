@@ -146,8 +146,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   />
   <PreviewFallback
     v-else-if="content?.status === 'failed'"
-    title="Could not load the preview"
-    message="Download this file to open it."
+    failed
     :download="download"
   />
 </template>

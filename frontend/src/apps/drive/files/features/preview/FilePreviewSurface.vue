@@ -10,7 +10,7 @@ import { nodeContentUrl, openAsSpreadsheet, opensAsSpreadsheet } from '@/apps/dr
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 
-import { trashLocation, useLocationTitle } from '../../internal/locations'
+import { rootPath, trashLocation, useLocationTitle } from '../../internal/locations'
 import { previewKind } from '../../internal/previewKind'
 import { announceTrash } from '../changeToast'
 import DocumentHeader from '../document/DocumentHeader.vue'
@@ -123,11 +123,8 @@ function openedFromFolder(folderId: string): RouteLocationPathRaw | null {
   const back = router.options.history.state.back
   if (typeof back !== 'string') return null
   const opener = router.resolve(back)
-  const roots = discovered.data
   const showsFolder =
-    opener.params.node === folderId ||
-    (opener.path === '/drive' && folderId === roots?.personal.node) ||
-    (opener.path === '/drive/organization' && folderId === roots?.organization?.node)
+    opener.params.node === folderId || opener.path === rootPath(folderId, discovered.data)
   return showsFolder && !opener.query.q ? { path: opener.path, query: opener.query } : null
 }
 const location = computed(() => {
@@ -364,10 +361,14 @@ watch(
   [files, source, preview],
   () => {
     const own = files.value.findIndex((row) => row.name === props.session.nodeId)
-    const beside = own === -1 ? [] : [files.value[own - 1], files.value[own + 1]]
-    const neighbours = beside
-      .filter((row) => !!row && WEB_IMAGES.has(row.mime ?? '') && row.size <= PRELOAD_LIMIT)
-      .map((row) => nodeContentUrl(row!.name))
+    const neighbours = (own === -1 ? [] : files.value)
+      .filter(
+        (row, index) =>
+          Math.abs(index - own) === 1 &&
+          WEB_IMAGES.has(row.mime ?? '') &&
+          row.size <= PRELOAD_LIMIT,
+      )
+      .map((row) => nodeContentUrl(row.name))
     keepImages(preview.value.kind === 'image' ? source.value : null, neighbours)
   },
   { immediate: true },
@@ -409,7 +410,12 @@ const pagerLoading = computed(() => !!folder.value && siblings.status === 'pendi
           @mousedown.prevent
           @update:model-value="chooseMarkdownView"
         />
-        <template v-if="files.length > 1 && position !== -1">
+        <div
+          v-if="pagerLoading || (files.length > 1 && position !== -1)"
+          class="flex items-center gap-1"
+          :class="pagerLoading && 'invisible'"
+          :aria-hidden="pagerLoading || undefined"
+        >
           <Button
             variant="ghost"
             icon="lucide-chevron-left"
@@ -429,11 +435,6 @@ const pagerLoading = computed(() => !!folder.value && siblings.status === 'pendi
             :disabled="!next"
             @click="show(next)"
           />
-        </template>
-        <div v-else-if="pagerLoading" class="invisible flex items-center gap-1" aria-hidden="true">
-          <Button variant="ghost" icon="lucide-chevron-left" disabled />
-          <span class="text-sm tabular-nums max-md:hidden">{{ __('{0} of {1}', [1, 2]) }}</span>
-          <Button variant="ghost" icon="lucide-chevron-right" disabled />
         </div>
         <!-- A CSV has a text preview, so the "No preview" page never offers this. -->
         <Button
@@ -492,8 +493,7 @@ const pagerLoading = computed(() => !!folder.value && siblings.status === 'pendi
       />
       <PreviewFallback
         v-else-if="preview.kind === 'video' && videoFailed"
-        :title="__('Could not load the preview')"
-        :message="__('Download this file to open it.')"
+        failed
         :download="downloadUrl"
       />
       <audio

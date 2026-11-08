@@ -3,8 +3,6 @@ import { useTimeoutFn } from '@vueuse/core'
 import { Spinner } from 'frappe-ui'
 import { onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 
-import { translate as __ } from '@/platform/translation'
-
 import { previewImage } from './imageCache'
 import PreviewFallback from './PreviewFallback.vue'
 
@@ -82,8 +80,7 @@ onBeforeUnmount(() => {
     />
     <PreviewFallback
       v-if="status === 'failed'"
-      :title="__('Could not load the preview')"
-      :message="__('Download this file to open it.')"
+      failed
       :download="download"
     />
   </div>

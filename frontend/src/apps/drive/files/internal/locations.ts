@@ -46,6 +46,16 @@ export function locationLabel(location: FilesLocation): string {
   return name ? __('{0} files', [name]) : LOCATION_LABELS[location]
 }
 
+/** The path of one of the caller's own roots, which have their own pages. Any other node has none. */
+export function rootPath(
+  node: string,
+  discovered: DriveRoots | null | undefined,
+): string | null {
+  if (node === discovered?.personal.node) return '/drive'
+  if (node === discovered?.organization?.node) return '/drive/organization'
+  return null
+}
+
 /**
  * The name a node shows under. A root's stored title is node data (for an
  * older Personal Root it is the user's name), so the caller's own roots show
