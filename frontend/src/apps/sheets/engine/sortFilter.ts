@@ -467,7 +467,7 @@ export function formatsAfterSort<F>(
   order: number[],
   rect: Rect,
   before: Record<string, F | null | undefined>,
-): Record<string, F | null> {
+) {
   const out: Record<string, F | null> = {}
   order.forEach((from, to) => {
     for (let c = rect.c0; c <= rect.c1; c++) {

@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { toast } from 'frappe-ui'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
@@ -17,11 +18,13 @@ vi.mock('frappe-ui', () => ({
 
 const createRemovalHarness = (sendHostControl: ReturnType<typeof vi.fn> | null) => {
   const banGuest = vi.mocked(client.mutation).mockResolvedValue({ status: 'banned' })
-  const handlers = useMeetingHandlers({
-    meetingId: 'room-1',
-    refreshMeeting: vi.fn(),
-    sfuConnection: { sfuManager: ref(sendHostControl ? { sendHostControl } : null) },
-  } as never)
+  const handlers = useMeetingHandlers(
+    fromPartial({
+      meetingId: 'room-1',
+      refreshMeeting: vi.fn(),
+      sfuConnection: { sfuManager: ref(sendHostControl ? { sendHostControl } : null) },
+    }),
+  )
   return { banGuest, handlers }
 }
 
@@ -36,10 +39,12 @@ describe('useMeetingHandlers', () => {
       guestAuthToken: 'stale-token',
       isInPreview: false,
     }
-    const handlers = useMeetingHandlers({
-      connectionState,
-      sfuConnection: { sfuManager },
-    } as never)
+    const handlers = useMeetingHandlers(
+      fromPartial({
+        connectionState,
+        sfuConnection: { sfuManager },
+      }),
+    )
 
     await handlers.resetToPreview()
 
@@ -52,9 +57,11 @@ describe('useMeetingHandlers', () => {
 
   it('carries preview switch intent into the join', async () => {
     const joinMeetingRoom = vi.fn().mockResolvedValue(undefined)
-    const handlers = useMeetingHandlers({
-      sfuConnection: { joinMeetingRoom },
-    } as never)
+    const handlers = useMeetingHandlers(
+      fromPartial({
+        sfuConnection: { joinMeetingRoom },
+      }),
+    )
 
     await handlers.joinMeetingFromPreview(true)
 
@@ -67,9 +74,11 @@ describe('useMeetingHandlers', () => {
     ['handleLowerHand', 'lower_hand'],
   ] as const)('routes %s through the meeting facade', async (handler, action) => {
     const sendHostControl = vi.fn()
-    const handlers = useMeetingHandlers({
-      sfuConnection: { sfuManager: ref({ sendHostControl }) },
-    } as never)
+    const handlers = useMeetingHandlers(
+      fromPartial({
+        sfuConnection: { sfuManager: ref({ sendHostControl }) },
+      }),
+    )
 
     await handlers[handler]('participant-1')
 

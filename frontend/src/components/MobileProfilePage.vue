@@ -23,7 +23,12 @@
         class="active:bg-surface-gray-1 flex w-full items-center gap-3.5 rounded-6 px-1 py-3.5"
         @click="openSettings('account.profile')"
       >
-        <Avatar :label="fullName" :image="user?.data?.user_image" size="2xl" class="size-14" />
+        <Avatar
+          :label="fullName"
+          :image="user?.data?.user_image ?? undefined"
+          size="2xl"
+          class="size-14"
+        />
         <div class="min-w-0 flex-1 text-left">
           <div class="text-ink-gray-9 truncate text-md !font-semibold">{{ fullName }}</div>
           <div class="text-ink-gray-5 mt-0.5 truncate text-sm">{{ loginId }}</div>
@@ -168,7 +173,10 @@ const ownGroups = computed(() => {
   return groups.filter((group) => kept.includes(group.tabs[0]?.id.split('.')[0] ?? ''))
 })
 
-const user = inject('$user') as { data?: Record<string, any> } | undefined
+interface ProfileUser {
+  data?: { user_image?: string | null; full_name?: string; name?: string; email?: string } | null
+}
+const user = inject<ProfileUser>('$user')
 
 // The same list the Settings dialog shows, so the two cannot drift.
 const settings = useSettingsGroups()

@@ -102,12 +102,14 @@ export interface Editor {
   reposition(): void
 }
 
-const ARROWS: { readonly [key: string]: readonly [number, number] } = {
-  ArrowUp: [-1, 0],
-  ArrowDown: [1, 0],
-  ArrowLeft: [0, -1],
-  ArrowRight: [0, 1],
-}
+const ARROWS = new Map<string, readonly [number, number]>(
+  Object.entries({
+    ArrowUp: [-1, 0],
+    ArrowDown: [1, 0],
+    ArrowLeft: [0, -1],
+    ArrowRight: [0, 1],
+  }),
+)
 
 export function createEditor(o: EditorOptions): Editor {
   const el = o.overlay.el
@@ -204,7 +206,7 @@ export function createEditor(o: EditorOptions): Editor {
       o.picker.keyCommit()
     }
 
-    const arrow = ARROWS[e.key]
+    const arrow = ARROWS.get(e.key)
     if (mode === 'enter' && arrow) {
       const [dr, dc] = arrow
       if (o.picker.isKeyPicking()) {

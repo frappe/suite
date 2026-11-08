@@ -11,6 +11,7 @@ afterEach(() => cleanup?.())
 function render(match: Partial<Match>) {
   const root = document.createElement('div')
   document.body.appendChild(root)
+  // SAFETY: the tests give every field SearchMatch reads for what they assert.
   const app = createApp({ setup: () => () => h(SearchMatch, { match: match as Match }) })
   // Auto-registered in the app; its own test covers how the words show.
   app.component('HighlightedText', { render: () => null })

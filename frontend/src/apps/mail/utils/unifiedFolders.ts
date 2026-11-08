@@ -165,5 +165,5 @@ export const unifiedFolderIcon = (folder: string, folders?: UnifiedFolder[] | nu
   if (folder === STARRED_FOLDER) return 'star'
   const found = folders?.find((f) => f.slug === folder)
   if (!found) return 'folder'
-  return getIcon({ role: found.role, icon: found.icon, _name: found.name } as MailboxData)
+  return getIcon({ role: found.role, icon: found.icon, _name: found.name })
 }

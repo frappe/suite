@@ -210,7 +210,7 @@
 import { Badge, Popover, Tooltip } from 'frappe-ui'
 import { Download, Loader, UserRoundSearch } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, type RouteParamsRaw } from 'vue-router'
 
 import AttachmentCapsule from '@/apps/mail/components/AttachmentCapsule.vue'
 import AttachmentViewer from '@/apps/mail/components/AttachmentViewer.vue'
@@ -313,17 +313,15 @@ const ownEmails = useOwnEmails()
 
 // An account's thread route names its folder by slug (see utils/unifiedFolders); the merged
 // folder's needs none, since its own folder param already says which one.
-const to = computed(() => ({
-  name: threadRouteName,
-  params: {
+const to = computed(() => {
+  const params: RouteParamsRaw = {
     accountId: accountId || route.params.accountId,
-    ...(threadRouteName === UNIFIED_THREAD_ROUTE
-      ? {}
-      : { mailbox: mailboxParam(mailbox, mailboxes.data) }),
     threadID: mail.thread_id,
-  },
-  query: route.query,
-}))
+  }
+  if (threadRouteName !== UNIFIED_THREAD_ROUTE)
+    params.mailbox = mailboxParam(mailbox, mailboxes.data)
+  return { name: threadRouteName, params, query: route.query }
+})
 
 // Where else the conversation is filed. A row stands for one of its messages, which in Sent is your
 // reply — never archived or filed away — so there and in Starred it says where the mail you received
@@ -395,7 +393,12 @@ const avatarLabel = computed(() => threadAvatarLabel(participants.value, mail))
 // In search results, the words the row was found by are marked.
 const isSearchRow = computed(() => mailbox === 'search')
 const markedWords = computed(() =>
-  isSearchRow.value ? searchWords(route.query.text as string, mail.marked_words) : '',
+  isSearchRow.value
+    ? searchWords(
+        (Array.isArray(route.query.text) ? route.query.text[0] : route.query.text) ?? '',
+        mail.marked_words,
+      )
+    : '',
 )
 
 // How the row says which of its messages matched.

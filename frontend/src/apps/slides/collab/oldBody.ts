@@ -17,22 +17,31 @@ const INHERITED = [
 const FONT_WEIGHT = 'font-weight'
 // What `.tableElement table th` gives a header cell
 const HEADER_WEIGHT = '600'
-const WEIGHT_KEYWORDS: Record<string, string> = { normal: '400', bold: '700' }
+const WEIGHT_KEYWORDS = new Map<string, string>([
+  ['normal', '400'],
+  ['bold', '700'],
+])
 // CSS's steps for `bolder` and `lighter`: below each bound, the weight drawn, where null keeps the one inherited
-const RELATIVE_WEIGHTS: Record<string, [below: number, weight: number | null][]> = {
-  bolder: [
-    [350, 400],
-    [550, 700],
-    [900, 900],
-    [Infinity, null],
+const RELATIVE_WEIGHTS = new Map<string, [below: number, weight: number | null][]>([
+  [
+    'bolder',
+    [
+      [350, 400],
+      [550, 700],
+      [900, 900],
+      [Infinity, null],
+    ],
   ],
-  lighter: [
-    [100, null],
-    [550, 100],
-    [750, 400],
-    [Infinity, 700],
+  [
+    'lighter',
+    [
+      [100, null],
+      [550, 100],
+      [750, 400],
+      [Infinity, 700],
+    ],
   ],
-}
+])
 // The app's preflight gives a paragraph no margin, so a zero one draws nothing
 const ZERO_MARGIN = /^margin(-(top|right|bottom|left))?: 0(px)?( 0(px)?)*$/
 const MARKER_OPACITY = '--marker-opacity'
@@ -49,7 +58,10 @@ const READ_BY_THE_BROWSER = new Set([...INHERITED, OPACITY])
 const ITEM_STYLES = ['color', 'font-family', 'font-size', 'letter-spacing']
 const CARRIED_STYLES = [...ITEM_STYLES, FONT_WEIGHT]
 // Tags the editor reads as its own marks, by the tag it draws them with
-const DRAWN_AS: Record<string, string> = { b: 'strong', i: 'em' }
+const DRAWN_AS = new Map<string, string>([
+  ['b', 'strong'],
+  ['i', 'em'],
+])
 // The old view's sanitizer takes these off and keeps what's inside, so they draw nothing
 const STRIPPED_TAGS = new Set(['a', 'code', 'del', 'strike'])
 const FORMATTING_TAGS = new Set([
@@ -75,11 +87,11 @@ const LINE_HEIGHT_RULE = new Set(['p', 'li'])
 // On an inherited property these take the value from above, as if nothing were stated
 const INHERIT_KEYWORDS = new Set(['inherit', 'unset', 'revert', 'revert-layer'])
 // What an attribute means when it's left out; the rest of an element's attributes draw nothing
-const ATTRIBUTE_DEFAULTS: Record<string, string | null> = {
-  colspan: '1',
-  colwidth: null,
-  rowspan: '1',
-}
+const ATTRIBUTE_DEFAULTS = new Map<string, string | null>([
+  ['colspan', '1'],
+  ['colwidth', null],
+  ['rowspan', '1'],
+])
 
 export interface DrawRules {
   // What `.textElement p, .textElement li` or `.tableElement p` give a line
@@ -155,7 +167,7 @@ function attributeEntries(element: Element, tag: string) {
       entries.push(
         ...[...element.classList].map((token): [string, string] => [`class ${token}`, '']),
       )
-    } else if (name in ATTRIBUTE_DEFAULTS && ATTRIBUTE_DEFAULTS[name] !== value) {
+    } else if (ATTRIBUTE_DEFAULTS.has(name) && ATTRIBUTE_DEFAULTS.get(name) !== value) {
       entries.push([`${tag}@${name}`, value])
     }
   }
@@ -164,7 +176,7 @@ function attributeEntries(element: Element, tag: string) {
 }
 
 function isFormatting(node: Node) {
-  return node.nodeType !== Node.ELEMENT_NODE || FORMATTING_TAGS.has((node as Element).localName)
+  return !(node instanceof Element) || FORMATTING_TAGS.has(node.localName)
 }
 
 function isInherited(name: string) {
@@ -182,9 +194,9 @@ function clampedOpacity(value: string) {
 
 // The weight a character draws at, as a number where CSS gives one
 function drawnWeight(value: string, inherited: string) {
-  const steps = RELATIVE_WEIGHTS[value]
+  const steps = RELATIVE_WEIGHTS.get(value)
   if (!steps || Number.isNaN(Number(inherited))) {
-    return WEIGHT_KEYWORDS[value] ?? value
+    return WEIGHT_KEYWORDS.get(value) ?? value
   }
 
   const [, weight] = steps.find(([below]) => Number(inherited) < below)!
@@ -276,7 +288,7 @@ function markerStyles(item: Element | null) {
 }
 
 function isHeldWeight(weight: string) {
-  return weight !== WEIGHT_KEYWORDS.bold
+  return weight !== WEIGHT_KEYWORDS.get('bold')
 }
 
 function markerEntry(place: Place, item: Element | null) {
@@ -335,16 +347,16 @@ function formatsOf(element: Element, drawn: string, own: Map<string, string>) {
 }
 
 function drawInline(node: Node, place: Place, rules: DrawRules, drawing: Drawing) {
-  if (node.nodeType === Node.TEXT_NODE) {
-    drawing.runs.push({ node: node as Text, place })
+  if (node instanceof Text) {
+    drawing.runs.push({ node, place })
     return
   }
 
-  if (node.nodeType !== Node.ELEMENT_NODE) {
+  if (!(node instanceof Element)) {
     return
   }
 
-  const element = node as Element
+  const element = node
   const tag = element.localName
   if (STRIPPED_TAGS.has(tag)) {
     for (const child of element.childNodes) {
@@ -354,7 +366,7 @@ function drawInline(node: Node, place: Place, rules: DrawRules, drawing: Drawing
     return
   }
 
-  const drawn = DRAWN_AS[tag] ?? tag
+  const drawn = DRAWN_AS.get(tag) ?? tag
   const own = new Map(place.formats)
   const next = entered(element, drawn, place, own)
   if (tag === 'br') {
@@ -376,10 +388,10 @@ function drawInline(node: Node, place: Place, rules: DrawRules, drawing: Drawing
 }
 
 function drawNode(node: Node, place: Place, rules: DrawRules, drawing: Drawing) {
-  if (isFormatting(node) || (node as Element).localName === 'br') {
+  if (!(node instanceof Element) || isFormatting(node) || node.localName === 'br') {
     drawInline(node, place, rules, drawing)
   } else {
-    drawBlock(node as Element, place, rules, drawing)
+    drawBlock(node, place, rules, drawing)
   }
 }
 
@@ -399,10 +411,10 @@ function implicitLine(place: Place, drawing: Drawing) {
 function drawChildren(parent: Element, place: Place, rules: DrawRules, drawing: Drawing) {
   let line: Place | null = null
   for (const child of parent.childNodes) {
-    const isInline = isFormatting(child) || (child as Element).localName === 'br'
+    const isInline = !(child instanceof Element) || isFormatting(child) || child.localName === 'br'
     if (!isInline) {
       line = null
-      drawBlock(child as Element, place, rules, drawing)
+      if (child instanceof Element) drawBlock(child, place, rules, drawing)
     } else if (!HOLDS_BARE_TEXT.has(parent.localName)) {
       drawInline(child, place, rules, drawing)
     } else if (line || isDrawnInLine(child, rules)) {
@@ -568,9 +580,10 @@ export function itemsToHold(old: Element, saved: Element, rules: DrawRules, held
 // hold no style and draw one from their first text, so each run takes what it inherited, on a span of its
 // own so it wins. This changes no words
 function carriedStyle({ styles, fromItem, isFadedByItem, opacity }: Place) {
-  const carried = CARRIED_STYLES.filter((name) => fromItem.has(name)).map((name) => {
+  const carried = CARRIED_STYLES.flatMap((name) => {
+    if (!fromItem.has(name)) return []
     const value = styles.get(name)
-    return `${name}: ${value}`
+    return [`${name}: ${value}`]
   })
   if (isFadedByItem) {
     const exact = exactOpacity(opacity)
@@ -597,9 +610,10 @@ function isWholePercent(opacity: number) {
 }
 
 function prependLookRun(paragraph: Element, place: Place) {
-  const look = ITEM_STYLES.filter((name) => place.styles.has(name)).map((name) => {
+  const look = ITEM_STYLES.flatMap((name) => {
+    if (!place.styles.has(name)) return []
     const value = place.styles.get(name)
-    return `${name}: ${value}`
+    return [`${name}: ${value}`]
   })
   const weight = place.styles.get(FONT_WEIGHT)!
   if (isHeldWeight(weight)) {

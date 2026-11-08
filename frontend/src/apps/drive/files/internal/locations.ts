@@ -39,6 +39,10 @@ export function locationOf(
     return 'organization'
   return 'shared'
 }
+interface TrashLocationResult {
+  path: string
+  query: Record<string, string>
+}
 
 /**
  * The Trash tab that lists a node's root. Organization Trash has its own tab;
@@ -47,7 +51,7 @@ export function locationOf(
 export function trashLocation(
   node: Pick<DriveNode, 'root'>,
   discovered: DriveRoots | null | undefined,
-): { path: string; query: Record<string, string> } {
+): TrashLocationResult {
   const organization = discovered?.organization?.node
   return {
     path: '/drive/trash',

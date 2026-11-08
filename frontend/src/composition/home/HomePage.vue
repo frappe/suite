@@ -230,7 +230,6 @@ import {
   newDocumentRoute,
   useDriveDocumentCreation,
   useDrivePreviewRefresh,
-  type DriveNodeSummary,
 } from '@/apps/drive'
 import { ScheduleMeetingDialog } from '@/apps/meet'
 import { documentTypes } from '@/composition/documentRegistry'
@@ -264,7 +263,8 @@ const { query: upcomingQuery, events: cachedUpcomingEvents } = useUpcomingEvents
 const createDocumentMutation = useDriveDocumentCreation()
 const createRoomMutation = useMutation(api.meet.rooms.create)
 const recentRows = computed(() =>
-  ((recentQuery.data?.rows ?? []) as DriveNodeSummary[])
+  (recentQuery.data?.rows ?? [])
+    .filter((node) => 'kind' in node)
     .filter((node) => node.kind !== 'folder')
     .slice(0, RECENT_CARDS),
 )

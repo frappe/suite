@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, ref } from 'vue'
 import { Doc, encodeStateAsUpdate, XmlElement, XmlText } from 'yjs'
@@ -96,14 +97,14 @@ function heldSession(requests: ReturnType<typeof deferred>[]) {
 }
 
 function fakeSession(fetch: (url: string) => Promise<Response>) {
-  return {
+  return fromPartial<DocumentSession>({
     versions: { contentUrl: (seq: string) => `/versions/${seq}` },
     credentials: {
       fetch: vi.fn(fetch),
       fetchHeld: fetch,
       group: () => [],
     },
-  } as unknown as DocumentSession
+  })
 }
 
 function mountPreview(session: DocumentSession, seq = 1) {

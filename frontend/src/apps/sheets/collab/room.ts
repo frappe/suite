@@ -71,10 +71,12 @@ export async function openSheetRoom({
     // 404: no Sheets editor is registered on the server (its registration
     // isn't installed), or no route for it. The old path opens the sheet, and
     // says so itself if the sheet is missing.
-    if ((error as { status?: unknown } | null)?.status === 404) return { state: 'disabled' }
+    if (error && typeof error === 'object' && 'status' in error && error.status === 404)
+      return { state: 'disabled' }
     // A guest (a share link) is refused as "signed out" for a 403 or 404 alike:
     // the old path opens the sheet through the link, or says why it can't.
-    const reason = (error as { reason?: unknown } | null)?.reason
+    const reason =
+      error && typeof error === 'object' && 'reason' in error ? error.reason : undefined
     if (reason === 'signed_out' && (getCookieSessionUser() ?? 'Guest') === 'Guest')
       return { state: 'disabled' }
     throw error

@@ -10,7 +10,6 @@
         :key="option.id"
         type="button"
         :disabled="isSelectionDisabled"
-        @click="handleVote(option.id)"
         class="relative overflow-hidden rounded-full w-full text-left transition-colors text-sm"
         :class="{
           'hover:bg-surface-gray-2 cursor-pointer': !isSelectionDisabled,
@@ -18,6 +17,7 @@
           'bg-surface-violet-2 cursor-default': hasVoted && localVotedOption === option.id,
           'bg-surface-gray-1 cursor-default': hasVoted && localVotedOption !== option.id,
         }"
+        @click="handleVote(option.id)"
       >
         <div
           class="absolute inset-y-0 left-0 transition-all duration-500 ease-out rounded-l-full"
@@ -80,7 +80,7 @@ const pollStore = usePollStore()
 const localVotedOption = ref<string | null>(null)
 
 const livePoll = computed(() => {
-  const storePolls = Object.values(pollStore.polls) as PollPayloadFE[]
+  const storePolls = Object.values(pollStore.polls)
   const foundInStore = storePolls?.find((p) => p.pollId === props.poll.pollId)
   return foundInStore || props.poll
 })

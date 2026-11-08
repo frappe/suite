@@ -52,7 +52,11 @@ const mailboxName = (role: MailboxRole) => mailboxes.data?.find((m) => m.role ==
 const open = defineModel<boolean>('open', { default: false })
 const modifier = 'Mod'
 
-const shortcutGroups = computed(() => [
+interface ShortcutGroup {
+  title: string
+  shortcuts: [string[], string][]
+}
+const shortcutGroups = computed<ShortcutGroup[][]>(() => [
   [
     {
       title: __('Compose'),
@@ -122,18 +126,20 @@ const columns = computed(() => {
   return [[compose], [actions, other], [navigation]]
 })
 
-const keyNames: Record<string, string> = {
-  '↓': 'ArrowDown',
-  '↑': 'ArrowUp',
-  '!': 'Shift+Digit1',
-  '?': 'Shift+Slash',
-  ',': 'Comma',
-  ';': 'Semicolon',
-  Esc: 'Escape',
-}
+const keyNames = new Map<string, string>(
+  Object.entries({
+    '↓': 'ArrowDown',
+    '↑': 'ArrowUp',
+    '!': 'Shift+Digit1',
+    '?': 'Shift+Slash',
+    ',': 'Comma',
+    ';': 'Semicolon',
+    Esc: 'Escape',
+  }),
+)
 
 function combo(tokens: string[]) {
-  return tokens.map((token) => keyNames[token] || token).join('+')
+  return tokens.map((token) => keyNames.get(token) || token).join('+')
 }
 
 function shortcutPresentation(keys: string[]) {

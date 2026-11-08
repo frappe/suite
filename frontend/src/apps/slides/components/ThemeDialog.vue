@@ -91,7 +91,7 @@ const getThemePreviewLayout = (theme: Theme) => {
 const getThemeThumbnailStyles = (theme: Theme) => {
   const layout = getThemePreviewLayout(theme)
   return {
-    ...getThumbnailCardStyles(layout?.thumbnail as string),
+    ...getThumbnailCardStyles(typeof layout?.thumbnail === 'string' ? layout.thumbnail : ''),
     '--tw-ring-offset-color': 'var(--surface-base)',
   }
 }

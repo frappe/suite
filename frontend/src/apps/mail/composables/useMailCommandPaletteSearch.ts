@@ -59,28 +59,28 @@ const RESULT_LIMIT = 10
 
 // The filters that hold one of two answers, and the word each answer goes by in a query. A badge
 // for one of these is worth clicking: there is somewhere for the click to go.
-const INVERTIBLE_FILTERS: Record<string, { true: string; false: string }> = {
-  hasAttachment: { true: 'attachments', false: 'no-attachments' },
-  isRead: { true: 'read', false: 'unread' },
-}
+const INVERTIBLE_FILTERS = new Map<string, { true: string; false: string }>([
+  ['hasAttachment', { true: 'attachments', false: 'no-attachments' }],
+  ['isRead', { true: 'read', false: 'unread' }],
+])
 
 // Every badge is shown as the query it stands for — `from:alice@example.com`, `in:Inbox`,
 // `has:attachment` — which is both the one register for all of them and the thing you would type
 // to get the same filter back.
-const FILTER_OPERATORS: Record<string, string> = {
-  inMailbox: 'in',
-  from: 'from',
-  to: 'to',
-  cc: 'cc',
-  bcc: 'bcc',
-  with: 'with',
-  subject: 'subject',
-  after: 'after',
-  before: 'before',
-  hasAttachment: 'has',
-  isRead: 'is',
-}
-const operatorFor = (key: string) => FILTER_OPERATORS[key] ?? key
+const FILTER_OPERATORS = new Map<string, string>([
+  ['inMailbox', 'in'],
+  ['from', 'from'],
+  ['to', 'to'],
+  ['cc', 'cc'],
+  ['bcc', 'bcc'],
+  ['with', 'with'],
+  ['subject', 'subject'],
+  ['after', 'after'],
+  ['before', 'before'],
+  ['hasAttachment', 'has'],
+  ['isRead', 'is'],
+])
+const operatorFor = (key: string) => FILTER_OPERATORS.get(key) ?? key
 
 export function useMailCommandPaletteSearch(query: Ref<string>, active: Ref<boolean>) {
   const appliedFilters = ref<MailSearchFilterBadge[]>([])
@@ -112,11 +112,12 @@ export function useMailCommandPaletteSearch(query: Ref<string>, active: Ref<bool
     ...filterValues.value,
     ...parseMailSearchQuery(query.value.trim()),
   }))
-  const requestFilter = computed(() => ({
-    ...filter.value,
-    ...(filter.value.after ? { after: utcDayStart(filter.value.after) } : {}),
-    ...(filter.value.before ? { before: utcDayEnd(filter.value.before) } : {}),
-  }))
+  const requestFilter = computed(() => {
+    const values = { ...filter.value }
+    if (filter.value.after) values.after = utcDayStart(filter.value.after)
+    if (filter.value.before) values.before = utcDayEnd(filter.value.before)
+    return values
+  })
   // --- Recent searches ---
 
   const recentSearches = useStorage<MailRecentSearch[]>(recentSearchesKey(), [])
@@ -359,7 +360,7 @@ export function useMailCommandPaletteSearch(query: Ref<string>, active: Ref<bool
   // One rule for what a badge says, so a filter reads the same however it arrived: typed as an
   // operator, chosen from a suggestion, set in the filter panel, or flipped where it stands.
   function badgeFor(key: string, value: string): MailSearchFilterBadge {
-    const answers = INVERTIBLE_FILTERS[key]
+    const answers = INVERTIBLE_FILTERS.get(key)
     if (answers) return { key, value, displayValue: answers[value === 'true' ? 'true' : 'false'] }
     if (key === 'inMailbox') return { key, value, displayValue: findMailbox(value)?._name ?? value }
     return { key, value, displayValue: value }
@@ -380,7 +381,7 @@ export function useMailCommandPaletteSearch(query: Ref<string>, active: Ref<bool
     return (getMailUser().mailboxes.data ?? []).find(
       (mailbox: { id: string; _name: string }) =>
         mailbox.id === wanted || mailbox._name.toLowerCase() === wanted.toLowerCase(),
-    ) as { id: string; _name: string } | undefined
+    )
   }
 
   function absorbQueryFilters() {
@@ -398,12 +399,12 @@ export function useMailCommandPaletteSearch(query: Ref<string>, active: Ref<bool
     query.value = text
   }
 
-  const canInvert = (key: string) => Boolean(INVERTIBLE_FILTERS[key])
+  const canInvert = (key: string) => Boolean(INVERTIBLE_FILTERS.get(key))
 
   // Inverted where it stands, rather than removed and re-applied: a badge that jumped to the end of
   // the row on every click would be a poor thing to click twice.
   function invertFilter(key: string) {
-    if (!INVERTIBLE_FILTERS[key]) return
+    if (!INVERTIBLE_FILTERS.get(key)) return
     appliedFilters.value = appliedFilters.value.map((filter) =>
       filter.key === key ? badgeFor(key, filter.value === 'true' ? 'false' : 'true') : filter,
     )

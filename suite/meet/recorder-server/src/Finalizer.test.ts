@@ -1,6 +1,7 @@
 import type { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
+import { fromPartial } from '@total-typescript/shoehorn';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FfmpegMediaTools } from './Finalizer.js';
 
@@ -12,12 +13,14 @@ describe('FfmpegMediaTools', () => {
 		const ffmpeg = fakeChild();
 		const ffprobe = fakeChild();
 		const children = [ffmpeg, ffprobe];
-		const spawner = vi.fn(() => {
-			const child = children.shift();
-			if (!child) throw new Error('unexpected command');
-			if (child === ffmpeg) setTimeout(() => child.emit('exit', 0, null), 60);
-			return child;
-		}) as unknown as typeof spawn;
+		const spawner = fromPartial<typeof spawn>(
+			vi.fn(() => {
+				const child = children.shift();
+				if (!child) throw new Error('unexpected command');
+				if (child === ffmpeg) setTimeout(() => child.emit('exit', 0, null), 60);
+				return child;
+			}),
+		);
 		let resolved = false;
 		const validation = new FfmpegMediaTools('ffmpeg', 'ffprobe', 100, spawner)
 			.validate('/tmp/unused-media')
@@ -50,7 +53,7 @@ describe('FfmpegMediaTools', () => {
 	it('bounds concatenation and kills a hung command', async () => {
 		vi.useFakeTimers();
 		const ffmpeg = fakeChild();
-		const spawner = vi.fn(() => ffmpeg) as unknown as typeof spawn;
+		const spawner = fromPartial<typeof spawn>(vi.fn(() => ffmpeg));
 		const concatenation = new FfmpegMediaTools(
 			'ffmpeg',
 			'ffprobe',
@@ -71,7 +74,7 @@ describe('FfmpegMediaTools', () => {
 	it('allows final artifact validation to override the segment deadline', async () => {
 		vi.useFakeTimers();
 		const ffmpeg = fakeChild();
-		const spawner = vi.fn(() => ffmpeg) as unknown as typeof spawn;
+		const spawner = fromPartial<typeof spawn>(vi.fn(() => ffmpeg));
 		const validation = new FfmpegMediaTools(
 			'ffmpeg',
 			'ffprobe',
@@ -91,13 +94,10 @@ function fakeChild(): EventEmitter & {
 	stderr: PassThrough;
 	kill: ReturnType<typeof vi.fn>;
 } {
-	const child = new EventEmitter() as EventEmitter & {
-		stdout: PassThrough;
-		stderr: PassThrough;
-		kill: ReturnType<typeof vi.fn>;
-	};
-	child.stdout = new PassThrough();
-	child.stderr = new PassThrough();
-	child.kill = vi.fn(() => true);
+	const child = Object.assign(new EventEmitter(), {
+		stdout: new PassThrough(),
+		stderr: new PassThrough(),
+		kill: vi.fn(() => true),
+	});
 	return child;
 }

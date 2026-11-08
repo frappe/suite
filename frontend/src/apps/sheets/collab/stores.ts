@@ -40,7 +40,6 @@ import type { NamedRangesSnapshot } from '../engine/named-ranges'
 import type { PivotEngine, PivotSnapshot } from '../engine/pivot'
 import type { ProtectionSnapshot } from '../engine/protection'
 import type { SlicersSnapshot } from '../engine/slicers'
-import type { SortFilterSnapshot } from '../engine/sortFilter'
 import type { ValidationSnapshot } from '../engine/validation'
 import { cellId, parseCellId } from '../utils/cells'
 import {
@@ -67,7 +66,8 @@ export interface GlueStores {
   validation?: Store<ValidationSnapshot>
   merge?: Store<MergeSnapshot>
   protection?: Store<ProtectionSnapshot>
-  sortFilter?: Store<SortFilterSnapshot>
+  /** Filter snapshots are opaque here; the converter also holds old filter state verbatim. */
+  sortFilter?: Store<Record<string, unknown>>
   /** Per-sheet view: widths, heights, hidden rows/cols, frozen panes (useSheetTabs). */
   view?: Store<Record<string, unknown>>
   condFormat?: Store<CfSnapshot>
@@ -188,11 +188,10 @@ const ROOTS_OF: Record<StoreName, EntryRoot[]> = {
 // The key part of a sheetState key for each per-sheet store.
 const STATE_KEY = { merge: 'merge', protection: 'protection', sortFilter: 'filter', view: 'view' }
 type StateStore = keyof typeof STATE_KEY
-const STATE_STORES = Object.keys(STATE_KEY) as StateStore[]
-const STATE_STORE_OF = Object.fromEntries(STATE_STORES.map((s) => [STATE_KEY[s], s])) as Record<
-  string,
-  StateStore
->
+const STATE_STORES = ['merge', 'protection', 'sortFilter', 'view'] satisfies StateStore[]
+const STATE_STORE_OF: Record<string, StateStore> = Object.fromEntries(
+  STATE_STORES.map((s) => [STATE_KEY[s], s]),
+)
 
 const ITEM_STORE: Record<'charts' | 'pivots' | 'names', 'charts' | 'pivot' | 'namedRanges'> = {
   charts: 'charts',
@@ -246,7 +245,7 @@ export function storeEntries(
   byCell('comments', stores.comments?.snapshot(), out)
   byCell('validations', stores.validation?.snapshot(), out)
   for (const store of STATE_STORES) {
-    const snap = stores[store]?.snapshot() as Record<string, unknown> | undefined
+    const snap: Record<string, unknown> | undefined = stores[store]?.snapshot()
     for (const [sheet, value] of Object.entries(snap ?? {})) {
       const shared = store === 'view' ? sharedView(value) : value
       out.push(entry('sheetState', { sheet, key: STATE_KEY[store], value: shared }))
@@ -349,7 +348,7 @@ export function writeStores(
   const owned = new Set([...present].flatMap((s) => ROOTS_OF[s]))
   const idOf = new Map(sheets.map((s) => [s.name, s.id]))
   const nameOf = new Map(sheets.map((s) => [s.id, s.name]))
-  const r = roots(doc) as unknown as Record<EntryRoot, Y.Map<unknown>>
+  roots(doc)
   doc.transact(() => {
     const ax = axisCache(doc)
     // A doc format key inside the pivot output is not this tab's to delete:
@@ -370,7 +369,7 @@ export function writeStores(
       if (kv) want.get(e.root)?.set(kv[0], kv[1])
     }
     for (const [root, keys] of want) {
-      const map = r[root]
+      const map = doc.getMap<unknown>(root)
       for (const key of [...map.keys()]) {
         if (!keys.has(key) && owns(root, key, present) && !inOutput(root, key)) map.delete(key)
       }
@@ -391,8 +390,8 @@ export function readEntries(doc: Y.Doc, sheets: SheetRef[]): Entry[] {
   const out: Entry[] = []
   const clone = (v: unknown) => plain(v)
 
-  const cellRoots: ['formats' | 'comments' | 'validations', Y.Map<unknown>][] = [
-    ['formats', r.formats as Y.Map<unknown>],
+  const cellRoots: ['formats' | 'comments' | 'validations', Pick<Y.Map<unknown>, 'entries'>][] = [
+    ['formats', r.formats],
     ['comments', r.comments],
     ['validations', r.validations],
   ]
@@ -406,9 +405,13 @@ export function readEntries(doc: Y.Doc, sheets: SheetRef[]): Entry[] {
       if (row >= 0 && col >= 0) out.push(entry(root, { sheet, row, col, value: clone(value) }))
     }
   }
-  const lineRoots: ['rowFormats' | 'colFormats', Y.Map<unknown>, 'rows' | 'cols'][] = [
-    ['rowFormats', r.rowFormats as Y.Map<unknown>, 'rows'],
-    ['colFormats', r.colFormats as Y.Map<unknown>, 'cols'],
+  const lineRoots: [
+    'rowFormats' | 'colFormats',
+    Pick<Y.Map<unknown>, 'entries'>,
+    'rows' | 'cols',
+  ][] = [
+    ['rowFormats', r.rowFormats, 'rows'],
+    ['colFormats', r.colFormats, 'cols'],
   ]
   for (const [root, map, name] of lineRoots) {
     for (const [key, value] of map.entries()) {
@@ -433,10 +436,23 @@ export function readEntries(doc: Y.Doc, sheets: SheetRef[]): Entry[] {
   ]
   for (const [root, map] of perSheet) {
     for (const [key, value] of map.entries()) {
-      const v = value as { sheet?: string; at?: number; item?: unknown } | null
-      const sheet = v?.sheet === undefined ? undefined : nameOf.get(v.sheet)
+      if (
+        !value ||
+        typeof value !== 'object' ||
+        !('sheet' in value) ||
+        typeof value.sheet !== 'string'
+      )
+        continue
+      const sheet = nameOf.get(value.sheet)
       if (sheet !== undefined)
-        out.push(entry(root, { sheet, key, at: v?.at ?? 0, value: clone(v?.item) }))
+        out.push(
+          entry(root, {
+            sheet,
+            key,
+            at: 'at' in value && typeof value.at === 'number' ? value.at : 0,
+            value: clone('item' in value ? value.item : undefined),
+          }),
+        )
     }
   }
   for (const root of ['charts', 'pivots', 'names'] as const) {
@@ -448,10 +464,7 @@ export function readEntries(doc: Y.Doc, sheets: SheetRef[]): Entry[] {
 
 // ---- restoring ----
 
-function bySheet<T>(
-  list: Entry[],
-  value: (e: Entry) => [string, T],
-): Record<string, Record<string, T>> {
+function bySheet<T>(list: Entry[], value: (e: Entry) => [string, T]) {
   const out: Record<string, Record<string, T>> = {}
   for (const e of list) {
     const [k, v] = value(e)
@@ -460,12 +473,17 @@ function bySheet<T>(
   return out
 }
 
-function itemsBySheet<T>(list: Entry[]): Record<string, T[]> {
+function itemsBySheet<T>(list: Entry[]) {
   const out: Record<string, T[]> = {}
   const order = [...list].sort(
     (a, b) => a.at - b.at || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0),
   )
-  for (const e of order) (out[e.sheet] ??= []).push(e.value as T)
+  for (const e of order) {
+    // SAFETY: callers pair this list's root with its receiving item store; Entry
+    // erases the snapshot type, while sorting leaves the payload itself unchanged.
+    const item = e.value as T
+    ;(out[e.sheet] ??= []).push(item)
+  }
   return out
 }
 
@@ -481,9 +499,19 @@ export function restoreStores(stores: GlueStores, entries: Entry[], only?: Set<S
   if (stores.formats && want('formats')) {
     const snap: Record<string, FormatSheet> = {}
     const sheet = (name: string) => (snap[name] ??= { cells: {}, cols: {}, rows: {} })
-    for (const e of of('formats')) sheet(e.sheet).cells[cellId(e.row, e.col)] = e.value as Format
-    for (const e of of('rowFormats')) sheet(e.sheet).rows[e.row] = e.value as Format
-    for (const e of of('colFormats')) sheet(e.sheet).cols[e.col] = e.value as Format
+    for (const e of of('formats')) {
+      // SAFETY: formats is the FormatsSnapshot cell map; readEntries remaps its
+      // positions without changing the format object written by storeEntries.
+      sheet(e.sheet).cells[cellId(e.row, e.col)] = e.value as Format
+    }
+    for (const e of of('rowFormats')) {
+      // SAFETY: rowFormats is the same Format payload stored under a stable row id.
+      sheet(e.sheet).rows[e.row] = e.value as Format
+    }
+    for (const e of of('colFormats')) {
+      // SAFETY: colFormats is the same Format payload stored under a stable column id.
+      sheet(e.sheet).cols[e.col] = e.value as Format
+    }
     const derived = pivotOutput(stores)
     for (const [name, fs] of Object.entries(derived ? stores.formats.snapshot() : {})) {
       for (const [id, format] of Object.entries(fs.cells ?? {})) {
@@ -495,14 +523,18 @@ export function restoreStores(stores: GlueStores, entries: Entry[], only?: Set<S
   }
   if (stores.comments && want('comments'))
     stores.comments.restore(
+      // SAFETY: the comments root contains this owner's stored comments; bySheet
+      // changes only the stable cell keys back into the owner's A1 keys.
       bySheet(of('comments'), (e) => [cellId(e.row, e.col), e.value]) as CommentsSnapshot,
     )
   if (stores.validation && want('validation'))
     stores.validation.restore(
+      // SAFETY: the validations root carries ValidationSnapshot cell values;
+      // restoring A1 keys leaves each owner's saved rule unchanged.
       bySheet(of('validations'), (e) => [cellId(e.row, e.col), e.value]) as ValidationSnapshot,
     )
   for (const store of STATE_STORES) {
-    const s = stores[store] as Store<Record<string, unknown>> | undefined
+    const s: Store<Record<string, unknown>> | undefined = stores[store]
     if (!s || !want(store)) continue
     const snap: Record<string, unknown> = {}
     for (const e of of('sheetState')) if (e.key === STATE_KEY[store]) snap[e.sheet] = e.value
@@ -517,11 +549,19 @@ export function restoreStores(stores: GlueStores, entries: Entry[], only?: Set<S
   for (const root of ['charts', 'pivots', 'names'] as const) {
     const store = ITEM_STORE[root]
     if (!stores[store] || !want(store)) continue
-    if (root === 'charts') stores.charts?.restore({ charts: items(root) } as ChartSnapshot)
-    if (root === 'names')
+    if (root === 'charts') {
+      // SAFETY: charts contains ChartSnapshot.charts, written by that owner; items
+      // restores the key-to-item envelope after Entry erased its snapshot type.
+      stores.charts?.restore({ charts: items(root) } as ChartSnapshot)
+    }
+    if (root === 'names') {
+      // SAFETY: names is NamedRangesSnapshot.entries, keyed by the owner's normalized names.
       stores.namedRanges?.restore({ entries: items(root) } as NamedRangesSnapshot)
+    }
     if (root === 'pivots' && stores.pivot) {
       const extents = stores.pivot.list().map((p) => [p.id, p._extent ?? null] as const)
+      // SAFETY: pivots holds PivotSnapshot.pivots; derived output extents are restored
+      // separately below because the shared document intentionally omits those extents.
       stores.pivot.restore({ pivots: items(root) } as PivotSnapshot)
       for (const [id, extent] of extents) stores.pivot.setExtent(id, extent)
     }
@@ -530,5 +570,5 @@ export function restoreStores(stores: GlueStores, entries: Entry[], only?: Set<S
 
 /** Which stores read from a given doc root (for restoring only what a change touched). */
 export function storesOfRoot(root: string): StoreName[] {
-  return STORE_NAMES.filter((s) => (ROOTS_OF[s] as string[]).includes(root))
+  return STORE_NAMES.filter((s) => ROOTS_OF[s].some((entryRoot) => entryRoot === root))
 }

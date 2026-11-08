@@ -4,6 +4,7 @@ import {
   activeDatePreset,
   datePresetStart,
   hasSearchConditions,
+  searchQueryFrom,
   searchWords,
   toggledFilter,
   withAllAccounts,
@@ -11,6 +12,15 @@ import {
   withFilter,
   withoutFilters,
 } from './searchFilters'
+
+describe('reading a search off the route', () => {
+  it('holds one value to a key, dropping what a link left empty', () => {
+    expect(searchQueryFrom({ text: 'budget', from: ['a@x.test', 'b@x.test'], to: null })).toEqual({
+      text: 'budget',
+      from: 'a@x.test',
+    })
+  })
+})
 
 describe('editing a search', () => {
   it('sets a filter, and takes it off when it has no value', () => {

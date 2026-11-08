@@ -923,10 +923,11 @@ function enterHint(value: unknown) {
 }
 
 // The search as it stands, as a route query: the search page's, and each result's.
-const mailSearchQuery = computed(() => ({
-  ...mailFilter.value,
-  ...(mailSearchesAllAccounts.value ? { all_accounts: '1' } : {}),
-}))
+const mailSearchQuery = computed(() => {
+  const query = { ...mailFilter.value }
+  if (mailSearchesAllAccounts.value) query.all_accounts = '1'
+  return query
+})
 const mailSearchLocation = (): RouteLocationRaw =>
   mailSearchRoute(userStore().accountId, mailSearchQuery.value)
 
@@ -1026,13 +1027,12 @@ watch(
       // The search being edited says what it searched, so it wins over the remembered
       // preference for as long as the palette is reopened on top of it.
       mailAllAccounts.value = route.query.all_accounts != null
-      setMailFilters(
-        Object.fromEntries(
-          Object.entries(route.query).filter(
-            ([key, value]) => key !== 'text' && key !== 'all_accounts' && typeof value === 'string',
-          ),
-        ) as Record<string, string>,
-      )
+      const filters: Record<string, string> = {}
+      for (const [key, value] of Object.entries(route.query)) {
+        if (key !== 'text' && key !== 'all_accounts' && typeof value === 'string')
+          filters[key] = value
+      }
+      setMailFilters(filters)
     } else if (isUnifiedRoute(route.name)) {
       // Reading every account at once, a search of one would miss what's on the screen.
       mailAllAccounts.value = true
@@ -1100,12 +1100,15 @@ function handleMailFilterBackspace(event: KeyboardEvent) {
 }
 
 function handlePaletteEnter(event: KeyboardEvent) {
+  const checkedEventTarget = event.currentTarget
+  if (!(checkedEventTarget instanceof HTMLElement)) return
+
   if (event.key !== 'Enter') return
   // The listbox still highlights its first row as you type on a phone — that is reka's, not
   // ours — but the page hides it, and Enter must not open a row nobody can see is chosen.
   const activeItem = mailSearchOnly.value
     ? null
-    : (event.currentTarget as HTMLElement).querySelector<HTMLElement>(
+    : checkedEventTarget.querySelector<HTMLElement>(
         '[data-slot="command-palette-item"][data-state="active"]',
       )
 

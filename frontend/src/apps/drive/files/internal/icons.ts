@@ -37,15 +37,17 @@ interface StoredFile {
   label: string
 }
 
-const CONTENT_TYPES: Record<string, FileType> = {
-  'Writer Document': 'doc',
-  // The Sheets surface registers 'Sheet'; 'Spreadsheet' is the older name and
-  // still reaches rows created before it changed.
-  Sheet: 'sheet',
-  Spreadsheet: 'sheet',
-  Presentation: 'slides',
-  Drawing: 'draw',
-}
+const CONTENT_TYPES = new Map<string, FileType>(
+  Object.entries({
+    'Writer Document': 'doc',
+    // The Sheets surface registers 'Sheet'; 'Spreadsheet' is the older name and
+    // still reaches rows created before it changed.
+    Sheet: 'sheet',
+    Spreadsheet: 'sheet',
+    Presentation: 'slides',
+    Drawing: 'draw',
+  }),
+)
 
 /** People's names for Drive's own document types, not their DocType names */
 const DOCUMENT_LABELS: Partial<Record<FileType, string>> = {
@@ -120,7 +122,7 @@ function storedFile({ title, mime }: TypedNode): StoredFile {
 export function fileType(node: TypedNode): FileType {
   if (node.kind === 'folder') return 'folder'
   if (node.kind === 'link') return 'link'
-  if (node.kind === 'document') return CONTENT_TYPES[node.content_doctype ?? ''] ?? 'file'
+  if (node.kind === 'document') return CONTENT_TYPES.get(node.content_doctype ?? '') ?? 'file'
   return storedFile(node).type
 }
 
@@ -144,7 +146,7 @@ export function nodeIconTint(node: TypedNode): string {
 
 /** A document type's icon and ink, as Drive draws its documents. */
 export function documentIcon(contentDoctype: string) {
-  const type = CONTENT_TYPES[contentDoctype] ?? 'file'
+  const type = CONTENT_TYPES.get(contentDoctype) ?? 'file'
   return [fileTypeIcon(type), fileTypeTint(type)]
 }
 

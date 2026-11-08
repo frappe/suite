@@ -3,6 +3,7 @@ import { ref } from 'vue'
 
 import { COL_HEADER_H } from '../../canvas/constants.js'
 import { createChartEngine } from '../../engine/charts.js'
+import type { Rect } from '../../engine/types'
 import { useChartIntegration } from './useChartIntegration.js'
 
 // A grid of 100 px columns and 24 px rows below a 24 px header, behind a
@@ -61,7 +62,7 @@ describe('a new chart', () => {
 // format, so the overlay asks for formats; other charts skip that read.
 describe('a chart source', () => {
   it('reads the number formats only when asked', async () => {
-    const readRange = vi.fn(async (_sn: string, _rect: object, opts: { numFmts: boolean }) => ({
+    const readRange = vi.fn(async (_sn: string, _rect: Rect, opts: { numFmts: boolean }) => ({
       displays: [['Day'], ['12/9/2025']],
       ...(opts.numFmts && { numFmts: [['general'], ['m/d/yyyy']] }),
     }))

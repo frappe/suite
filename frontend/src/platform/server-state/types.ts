@@ -43,7 +43,7 @@ export interface InfiniteQueryState<Row> {
   readonly rows: readonly Row[]
   readonly total: number | undefined
   /** The newest page as it came, for what it says about the list beside the rows. */
-  readonly lastPage: unknown
+  readonly lastPage?: unknown
   readonly hasNext: boolean
   readonly isFetchingNext: boolean
   readonly error: Error | null

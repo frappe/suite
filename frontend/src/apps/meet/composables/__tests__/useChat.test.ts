@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it, vi } from 'vitest'
 
 import { E2EEMeeting } from '../../utils/media/E2EEMeeting'
@@ -14,7 +15,7 @@ vi.mock('../../utils/audioNotifications', () => ({
 
 function makeChatStore(): ChatStore {
   const messages: ChatMessage[] = []
-  return {
+  return fromPartial<ChatStore>({
     isChatOpen: true,
     chatMessages: messages,
     hasUnreadMessages: false,
@@ -25,7 +26,7 @@ function makeChatStore(): ChatStore {
     markAsRead: vi.fn(),
     addMessage: vi.fn((message: ChatMessage) => messages.push(message)),
     $reset: vi.fn(),
-  } as ChatStore
+  })
 }
 
 function makeSFUClient(
@@ -71,8 +72,8 @@ describe('useChat E2EE gating', () => {
     const sfuClient = makeSFUClient()
     const chat = useChat({
       chatStore,
-      currentUser: currentUser as never,
-      sfuClient: sfuClient as never,
+      currentUser: fromPartial(currentUser),
+      sfuClient: fromPartial(sfuClient),
     })
 
     await chat.onSendChat('secret')
@@ -87,8 +88,8 @@ describe('useChat E2EE gating', () => {
     const sfuClient = makeSFUClient()
     const chat = useChat({
       chatStore,
-      currentUser: currentUser as never,
-      sfuClient: sfuClient as never,
+      currentUser: fromPartial(currentUser),
+      sfuClient: fromPartial(sfuClient),
     })
     chat.setupChatEvents(vi.fn())
 
@@ -110,8 +111,8 @@ describe('useChat E2EE gating', () => {
     const notify = vi.fn()
     const chat = useChat({
       chatStore,
-      currentUser: currentUser as never,
-      sfuClient: sfuClient as never,
+      currentUser: fromPartial(currentUser),
+      sfuClient: fromPartial(sfuClient),
     })
     chat.setupChatEvents(notify)
 
@@ -144,8 +145,8 @@ describe('useChat E2EE gating', () => {
     })
     const chat = useChat({
       chatStore,
-      currentUser: currentUser as never,
-      sfuClient: sfuClient as never,
+      currentUser: fromPartial(currentUser),
+      sfuClient: fromPartial(sfuClient),
     })
 
     await chat.onSendChat('After the poll')
@@ -162,8 +163,8 @@ describe('useChat pinning', () => {
     const sfuClient = makeSFUClient()
     const chat = useChat({
       chatStore,
-      currentUser: currentUser as never,
-      sfuClient: sfuClient as never,
+      currentUser: fromPartial(currentUser),
+      sfuClient: fromPartial(sfuClient),
     })
 
     await chat.pinMessage('msg-42')
@@ -177,8 +178,8 @@ describe('useChat pinning', () => {
     const sfuClient = makeSFUClient({ isE2EERequired: vi.fn(() => false) })
     const chat = useChat({
       chatStore,
-      currentUser: currentUser as never,
-      sfuClient: sfuClient as never,
+      currentUser: fromPartial(currentUser),
+      sfuClient: fromPartial(sfuClient),
     })
     chat.setupChatEvents(vi.fn())
 
@@ -209,8 +210,8 @@ describe('useChat pinning', () => {
     const sfuClient = makeSFUClient()
     const chat = useChat({
       chatStore,
-      currentUser: currentUser as never,
-      sfuClient: sfuClient as never,
+      currentUser: fromPartial(currentUser),
+      sfuClient: fromPartial(sfuClient),
     })
     chat.setupChatEvents(vi.fn())
 
@@ -226,8 +227,8 @@ describe('useChat pinning', () => {
     const sfuClient = makeSFUClient({ isE2EERequired: vi.fn(() => false) })
     const chat = useChat({
       chatStore,
-      currentUser: currentUser as never,
-      sfuClient: sfuClient as never,
+      currentUser: fromPartial(currentUser),
+      sfuClient: fromPartial(sfuClient),
     })
     chat.setupChatEvents(vi.fn())
 
@@ -256,8 +257,8 @@ describe('useChat pinning', () => {
     const sfuClient = makeSFUClient({ isE2EERequired: vi.fn(() => false) })
     const chat = useChat({
       chatStore,
-      currentUser: currentUser as never,
-      sfuClient: sfuClient as never,
+      currentUser: fromPartial(currentUser),
+      sfuClient: fromPartial(sfuClient),
     })
     chat.setupChatEvents(vi.fn())
 

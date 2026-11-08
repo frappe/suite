@@ -68,10 +68,15 @@ const folded = computed<DropdownOptions>(() =>
 )
 
 function moveBetweenMenus(event: KeyboardEvent) {
+  const checkedEventTarget = event.currentTarget
+  if (!(checkedEventTarget instanceof HTMLElement)) return
+  const checkedEventTarget1 = event.target
+  if (!(checkedEventTarget1 instanceof HTMLElement)) return
+
   if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
-  const nav = event.currentTarget as HTMLElement
+  const nav = checkedEventTarget
   const triggers = [...nav.querySelectorAll<HTMLElement>('[data-menu]')]
-  const at = triggers.indexOf(event.target as HTMLElement)
+  const at = triggers.indexOf(checkedEventTarget1)
   if (at < 0) return
   event.preventDefault()
   const step = event.key === 'ArrowRight' ? 1 : -1

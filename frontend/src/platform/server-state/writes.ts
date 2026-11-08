@@ -95,7 +95,10 @@ export class Writes {
             ),
             options.signal,
           )
-          if (output !== undefined) return output as O
+          if (output !== undefined) {
+            // SAFETY: the challenge retries this attempt, whose transport output is validated as O; undefined means the challenge declined.
+            return output as O
+          }
         } catch (error) {
           if (isAbort(error)) throw error
           // A declined challenge keeps the original refusal.

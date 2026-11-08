@@ -3,7 +3,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { openCollabRoom } from './index'
 
-const opened = vi.hoisted(() => ({ endpoints: null as CollabEndpoints | null }))
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
+const opened = vi.hoisted(() => ({ endpoints: fromPartial<CollabEndpoints | null>(null) }))
 
 vi.mock('@suite/collab-client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@suite/collab-client')>()),
@@ -30,7 +32,7 @@ async function endpointsFor(user: string) {
   }
 
   const session = { nodeId: 'n1', credentials: { fetch }, title: { value: 'Notes' } }
-  await openCollabRoom({ session, adapter: { app: 'writer' } as CollabAdapter })
+  await openCollabRoom({ session, adapter: fromPartial<CollabAdapter>({ app: 'writer' }) })
   return { endpoints: opened.endpoints!, calls }
 }
 

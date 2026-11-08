@@ -1097,16 +1097,18 @@ const transformThreadMails = (mails: Mail[]) =>
   mails
     // Read-only views (the Screener) pass an explicit message list that isn't scoped to a mailbox.
     .filter((mail) => readonly || (!removedMailIds.has(mail.id) && filterRelevantMails(mail)))
-    // A draft discarded here is still on the server until its Undo has passed, so a reload hands
-    // it back. Left in, it came back as an open editor under the mail it answered — the discard
-    // undone without anyone pressing Undo. The lists leave it out for the same reason.
-    .filter((mail) => !isHeldDraft(mail.id))
-    .map((mail) => ({
-      ...mail,
-      groupedRecipients: getGroupedRecipients(mail.recipients, false),
-      collapsed: !!mail.seen,
-      show: true,
-    }))
+    .flatMap((mail) =>
+      !isHeldDraft(mail.id)
+        ? [
+            {
+              ...mail,
+              groupedRecipients: getGroupedRecipients(mail.recipients, false),
+              collapsed: !!mail.seen,
+              show: true,
+            },
+          ]
+        : [],
+    )
 
 // Messages from the list when present, otherwise the directly-fetched fallback (matched to the
 // current thread so a stale fetch from a previously opened thread is ignored).
@@ -1122,7 +1124,10 @@ const sourceMessages = (): Mail[] | undefined => {
 let landsPending = true
 // The words the search found the thread by, marked in the message it opens on.
 const searchTerm = computed(() =>
-  mailbox === 'search' ? searchWords || ((route.query.text as string) || '').trim() : '',
+  mailbox === 'search'
+    ? searchWords ||
+      ((Array.isArray(route.query.text) ? route.query.text[0] : route.query.text) ?? '').trim()
+    : '',
 )
 const isMatch = (mail: Mail) => !!landOn && mailCopyIds(mail).includes(landOn)
 // The message the pane opens on, unfolded: undefined while it can't be told yet, null for the top.
@@ -1825,12 +1830,7 @@ const syncMailboxMembership = (mailboxId: string, add: boolean) => {
 // Optimistically drop a message from the pane (per-message trash/junk/delete) before its request
 // fires. Returns whether that emptied the visible thread (so the caller can close the pane + drop the
 // row from the list) and a rollback that restores the message in place. Action-agnostic.
-const removeMailFromView = (
-  mailId: string,
-): {
-  emptied: boolean
-  rollback: () => void
-} => {
+const removeMailFromView = (mailId: string) => {
   const idx = thread.value.findIndex((m: Mail) => m.id === mailId)
   if (idx === -1)
     return {
@@ -1944,7 +1944,8 @@ const dropPoppedOutDraft = () => {
   thread.value = thread.value.filter((m: Mail) => !isDraftInWindow(m))
 }
 const popOutDraft = (mail: ComposeMailData) => {
-  draftMails[mail.name as string] = mail
+  if (!mail.name) return
+  draftMails[mail.name] = mail
 
   // Mobile composes on a page of its own rather than in an overlay — see ComposeView. Nothing has
   // to be handed back on the way out: leaving the compose route remounts this thread, so the reply

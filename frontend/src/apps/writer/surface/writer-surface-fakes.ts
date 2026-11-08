@@ -1,25 +1,39 @@
 import { fakeSocket } from '@suite/collab-client/test-support'
 import type { AnyExtension, Editor } from '@tiptap/core'
+import { fromPartial } from '@total-typescript/shoehorn'
 import { reactive, type PropType } from 'vue'
 import type { Doc } from 'yjs'
 
-export const rooms = {
-  next: null as object | null,
-  held: null as Promise<void> | null,
-  openFailure: null as Error | null,
+interface SurfaceRooms {
+  next: object | null
+  held: Promise<void> | null
+  openFailure: Error | null
+  opens: number
+}
+export const rooms: SurfaceRooms = {
+  next: null,
+  held: null,
+  openFailure: null,
   opens: 0,
 }
 // The body the server holds for a document edited without collaboration
-export const stored = {
+interface LegacySurfaceContent {
+  html: string
+  content: string
+  collab: number
+  conversion: {
+    state: 'pending' | 'refused'
+    reason?: string
+    rooms?: { epoch: number; keys: string[]; epoch_seconds: number; server_time: number }
+  } | null
+  reloads: number
+}
+export const stored: LegacySurfaceContent = {
   html: '',
   content: '',
   collab: 0,
   // Set while the document waits for, or was refused, conversion to collaboration
-  conversion: null as {
-    state: 'pending' | 'refused'
-    reason?: string
-    rooms?: { epoch: number; keys: string[]; epoch_seconds: number; server_time: number }
-  } | null,
+  conversion: null,
   reloads: 0,
 }
 // The realtime socket a waiting document's tab listens on for its conversion
@@ -27,7 +41,10 @@ export const realtime = { socket: fakeSocket({ answers: true }) }
 // Mounts the real editors, over a stand-in for CoreEditor, in place of the fakes below
 export const realEditors = { isOn: false }
 // What the document menu's Download took, as the HTML the real menu exports
-export const downloaded = { html: null as string | null }
+interface DownloadedDocument {
+  html: string | null
+}
+export const downloaded: DownloadedDocument = { html: null }
 // Whether a reader is signed in; read when each surface mounts, so a test sets it before opening one
 export const signedIn = { isOn: true }
 
@@ -48,8 +65,8 @@ export async function fakeFrappeUi() {
   return {
     Avatar: emptyComponent,
     Badge: emptyComponent,
-    Dropdown: define({
-      props: { options: Array as () => { label: string; onClick: () => void }[] },
+    Dropdown: define<{ options?: { label: string; onClick: () => void }[] }>({
+      props: ['options'],
       setup: (props) => () =>
         render(
           'div',
@@ -82,7 +99,10 @@ export async function fakeFrappeUi() {
         const input = state<HTMLInputElement | null>(null)
         expose({ focus: () => input.value?.focus() })
         function write(event: Event) {
-          emit('update:modelValue', (event.target as HTMLInputElement).value)
+          emit(
+            'update:modelValue',
+            event.target instanceof HTMLInputElement ? event.target.value : '',
+          )
         }
 
         return () => render('input', { ref: input, value: props.modelValue, onInput: write })
@@ -151,7 +171,7 @@ export async function fakeCoreEditor() {
   return {
     default: define({
       props: {
-        extensions: { type: Array as PropType<AnyExtension[]>, default: () => [] },
+        extensions: { type: fromPartial<PropType<AnyExtension[]>>(Array), default: () => [] },
         rawContent: String,
         editable: Boolean,
       },
@@ -254,10 +274,10 @@ export async function fakeCollabTextEditor(
   const { default: Paragraph } = await import('@tiptap/extension-paragraph')
   const { default: Text } = await import('@tiptap/extension-text')
   const { default: Collaboration } = await import('@tiptap/extension-collaboration')
-  const fake = define({
-    props: { room: Object, editable: Boolean },
+  const fake = define<{ room: { doc: Doc }; editable: boolean }>({
+    props: ['room', 'editable'],
     setup(props, { expose, slots }) {
-      const room = props.room as { doc: Doc }
+      const room = props.room
       const isFrozen = mockRef(false)
       function onFrozen() {
         isFrozen.value = true
@@ -302,8 +322,8 @@ export async function fakeDocumentMenu() {
       props: {
         canSaveVersion: Boolean,
         editable: Boolean,
-        editor: Object as PropType<Editor | null>,
-        panels: { type: Array as PropType<string[]>, default: () => [] },
+        editor: fromPartial<PropType<Editor | null>>(Object),
+        panels: { type: fromPartial<PropType<string[]>>(Array), default: () => [] },
       },
       emits: ['saveVersion', 'togglePanel'],
       setup:

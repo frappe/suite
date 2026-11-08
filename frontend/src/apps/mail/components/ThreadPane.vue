@@ -131,9 +131,12 @@ const clampTo = (width: number) => {
 let stopResize: (() => void) | undefined
 
 const startResize = (event: PointerEvent) => {
+  const checkedEventTarget = event.currentTarget
+  if (!(checkedEventTarget instanceof HTMLElement)) return
+
   if (event.button !== 0 || !listColumn.value) return
   event.preventDefault()
-  const handle = event.currentTarget as HTMLElement
+  const handle = checkedEventTarget
   handle.setPointerCapture(event.pointerId)
   const startX = event.clientX
   const startWidth = listColumn.value.offsetWidth

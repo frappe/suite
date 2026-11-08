@@ -167,7 +167,8 @@ export function createChartEngine() {
       changed = true
       if (mapCol && before && nextRange !== '#REF!' && ch.encoding) {
         // A remapped range that isn't #REF! is still a valid A1 range.
-        const after = parseA1Range(nextRange) as { c0: number }
+        const after = parseA1Range(nextRange)
+        if (!after) throw new Error('Remapped chart range is invalid')
         const local = (li: number) => {
           const g = mapCol(before.c0 + li)
           return g == null || g < 0 ? null : g - after.c0
@@ -213,12 +214,13 @@ export function createChartEngine() {
     for (const ch of onSheet) {
       const id = _newId()
       const copy = deepClone(ch)
+      if (!copy.position) throw new Error('Chart position is missing')
       _charts[id] = {
         ...copy,
         id,
-        position: { ...(copy.position as ChartPosition), sheet: newName },
-        ...(copy.sourceSheet === srcName ? { sourceSheet: newName } : {}),
+        position: { ...copy.position, sheet: newName },
       }
+      if (copy.sourceSheet === srcName) _charts[id].sourceSheet = newName
     }
     if (onSheet.length) _notify()
   }

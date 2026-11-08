@@ -13,6 +13,8 @@ vi.mock('frappe-ui', async () => ({
   ...(await import('../../../../../../../node_modules/frappe-ui/src/components/Select')),
 }))
 
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const directoryRequest = vi.hoisted(() =>
   vi
     .fn<(operation: unknown, input?: { q?: string }) => Promise<PeopleGetOutput>>()
@@ -49,7 +51,7 @@ afterEach(() => cleanup?.())
 // jsdom has no scrolling; the list scrolls the highlighted row into view.
 beforeAll(() => {
   Element.prototype.scrollIntoView = () => {}
-  return () => delete (Element.prototype as Partial<Element>).scrollIntoView
+  return () => delete fromPartial<Partial<Element>>(Element.prototype).scrollIntoView
 })
 
 function mountPicker(

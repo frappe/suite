@@ -399,12 +399,14 @@ const SKELETON_CARD_NAMES = [
 const loading = computed(() => props.query.status === 'pending' && !props.query.rows.length)
 const isBlank = useSkeletonDelay(loading)
 const rows = computed(() => props.query.rows)
-const COLUMN_TRACKS: Record<string, string> = {
-  owner: '12rem',
-  modified: '8rem',
-  kind: '8rem',
-  size: '6rem',
-}
+const COLUMN_TRACKS = new Map<string, string>(
+  Object.entries({
+    owner: '12rem',
+    modified: '8rem',
+    kind: '8rem',
+    size: '6rem',
+  }),
+)
 /** Columns a phone has no room for. Name takes their width. */
 const WIDE_ONLY = new Set(['owner', 'modified', 'kind'])
 // The columns before the date, in the rows' order
@@ -413,7 +415,7 @@ const columns = computed(() => props.presentation.columns)
 const columnTracks = computed(() => {
   const tracks = (list: string[]) => [
     'minmax(0,1fr)',
-    ...list.map((column) => COLUMN_TRACKS[column] ?? '8rem'),
+    ...list.map((column) => COLUMN_TRACKS.get(column) ?? '8rem'),
     '2.5rem',
   ]
   return {
@@ -457,9 +459,9 @@ function wideOnly(column: string) {
 }
 
 function skeletonCells() {
-  const cells: SkeletonCell[] = SIDE_COLUMNS.filter(shows).map((column) => ({
-    class: wideOnly(column),
-  }))
+  const cells: SkeletonCell[] = SIDE_COLUMNS.flatMap((column) =>
+    shows(column) ? [{ class: wideOnly(column) }] : [],
+  )
   if (shows('modified')) {
     cells.push({ class: ['justify-end', wideOnly('modified')], hasDate: true })
   }
@@ -529,7 +531,10 @@ function cardMeta(row: DriveNode) {
   return row.owner.id === session.user.value?.id ? date : `${row.owner.full_name} · ${date}`
 }
 function itemAt(target: EventTarget | null) {
-  const id = (target as Element | null)?.closest(`[${LISTING_ITEM}]`)?.getAttribute(LISTING_ITEM)
+  const id =
+    target instanceof Element
+      ? target.closest(`[${LISTING_ITEM}]`)?.getAttribute(LISTING_ITEM)
+      : null
   return id ? (rows.value.find((row) => row.name === id) ?? null) : null
 }
 function onPointerdown(event: PointerEvent) {
@@ -574,12 +579,15 @@ async function loadMore() {
   })
 }
 function startLongPress(event: PointerEvent, row: DriveNode) {
+  const checkedEventTarget = event.target
+  if (!(checkedEventTarget instanceof Element)) return
+
   cancelLongPress()
   // A mouse selects with a drag or a modifier click. A press on a control inside
   // the item, such as the menu button, belongs to that control: its menu opens
   // on the press, so the release lands on the menu and never cancels the timer.
   // A card is itself a button, so its own element does not count.
-  const control = (event.target as Element).closest('button, [role="checkbox"]')
+  const control = checkedEventTarget.closest('button, [role="checkbox"]')
   if (event.pointerType === 'mouse' || (control && control !== event.currentTarget)) return
   longPress = setTimeout(() => {
     // The press already answered. Swallow the click that follows the release,
@@ -600,9 +608,12 @@ function cancelLongPress() {
   longPress = null
 }
 function onKeydown(event: KeyboardEvent) {
+  const checkedEventTarget = event.target
+  if (!(checkedEventTarget instanceof HTMLElement)) return
+
   // Only keys pressed on the row itself. Enter and Space on its menu button or
   // checkbox belong to that control.
-  const target = event.target as HTMLElement
+  const target = checkedEventTarget
   const node = rows.value.find((row) => row.name === target.dataset.node)
   if (!node) return
   if (event.key === 'Enter') {

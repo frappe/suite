@@ -1,3 +1,5 @@
+import type { LocationQuery } from 'vue-router'
+
 import { parseMailSearchQuery } from '@/apps/mail/components/CommandPalette/searchQuery'
 
 /**
@@ -10,11 +12,21 @@ export type SearchQuery = Record<string, string>
 // Scope, not a condition: it widens where the rest are asked.
 const SCOPE_KEY = 'all_accounts'
 
+/** The route's query as a search: one value to a key, the first where a link repeated it. */
+export function searchQueryFrom(query: LocationQuery) {
+  const search: SearchQuery = {}
+  for (const [key, value] of Object.entries(query)) {
+    const first = Array.isArray(value) ? value[0] : value
+    if (first) search[key] = first
+  }
+  return search
+}
+
 export const hasSearchConditions = (query: SearchQuery) =>
   Object.keys(query).some((key) => key !== SCOPE_KEY)
 
 /** The query with one filter set, or taken off when it has no value. */
-export function withFilter(query: SearchQuery, key: string, value?: string): SearchQuery {
+export function withFilter(query: SearchQuery, key: string, value?: string) {
   const next = { ...query }
   if (value) next[key] = value
   else delete next[key]
@@ -26,7 +38,7 @@ export const toggledFilter = (query: SearchQuery, key: string, value: string) =>
   withFilter(query, key, query[key] === value ? undefined : value)
 
 /** Just the words and the scope: every filter off. */
-export function withoutFilters(query: SearchQuery): SearchQuery {
+export function withoutFilters(query: SearchQuery) {
   const next: SearchQuery = {}
   if (query.text) next.text = query.text
   if (query[SCOPE_KEY]) next[SCOPE_KEY] = query[SCOPE_KEY]

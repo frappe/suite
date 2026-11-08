@@ -29,8 +29,10 @@ export function computeFillDown(
   dir = 1,
   { mode = 'auto' }: { mode?: FillMode } = {},
 ): unknown[][] {
+  const first = srcData[0]
+  if (!first) throw new Error('Source grid is empty')
   return srcData.length === 1
-    ? _fillVerticalFromRow(srcData[0] as readonly unknown[], count, dir, mode)
+    ? _fillVerticalFromRow(first, count, dir, mode)
     : _fillVerticalFromCols(srcData, count, dir, mode)
 }
 
@@ -55,12 +57,11 @@ function _fillVerticalFromRow(
   const nums = _asNumbers(rowVals)
   const step = nums ? _stepOrForced(nums, mode) : null
   const srcCols = rowVals.length
-  const useSeries = mode === 'copy' ? false : step !== null
-  // useSeries means a step was found, which means `nums` parsed.
+  // A numeric step is used only after every source value parsed.
   return Array.from({ length: count }, (_, rOff) =>
     Array.from({ length: srcCols }, (_, ci) =>
-      useSeries
-        ? ((nums as number[])[ci] as number) + dir * (rOff + 1) * srcCols * (step as number)
+      mode !== 'copy' && nums && step !== null
+        ? (nums[ci] ?? NaN) + dir * (rOff + 1) * srcCols * step
         : rowVals[ci],
     ),
   )
@@ -70,7 +71,9 @@ function _fillVerticalFromRow(
 function _fillVerticalFromCols(srcData: Grid, count: number, dir: number, mode: FillMode = 'auto') {
   const srcRows = srcData.length
   // An empty source throws here, as it always has.
-  const srcCols = (srcData[0] as readonly unknown[]).length
+  const first = srcData[0]
+  if (!first) throw new Error('Source grid is empty')
+  const srcCols = first.length
   const colSeries = Array.from({ length: srcCols }, (_, ci) => {
     const vals = srcData.map((row) => row[ci])
     // Skip detection in copy mode so the popup's "Copy cells" choice
@@ -101,7 +104,9 @@ export function computeFillRight(
   { mode = 'auto' }: { mode?: FillMode } = {},
 ): unknown[][] {
   // An empty source throws here, as it always has.
-  const srcCols = (srcData[0] as readonly unknown[]).length
+  const first = srcData[0]
+  if (!first) throw new Error('Source grid is empty')
+  const srcCols = first.length
   return srcCols === 1
     ? _fillHorizontalFromCol(
         srcData.map((r) => r[0]),
@@ -122,13 +127,12 @@ function _fillHorizontalFromCol(
 ) {
   const nums = _asNumbers(colVals)
   const step = nums ? _stepOrForced(nums, mode) : null
-  const useSeries = mode === 'copy' ? false : step !== null
   const srcRows = colVals.length
-  // useSeries means a step was found, which means `nums` parsed.
+  // A numeric step is used only after every source value parsed.
   return colVals.map((v, ri) =>
     Array.from({ length: count }, (_, cOff) =>
-      useSeries
-        ? ((nums as number[])[ri] as number) + dir * (cOff + 1) * srcRows * (step as number)
+      mode !== 'copy' && nums && step !== null
+        ? (nums[ri] ?? NaN) + dir * (cOff + 1) * srcRows * step
         : v,
     ),
   )
@@ -141,7 +145,9 @@ function _fillHorizontalFromRows(
   dir: number,
   mode: FillMode = 'auto',
 ) {
-  const srcCols = (srcData[0] as readonly unknown[]).length
+  const first = srcData[0]
+  if (!first) throw new Error('Source grid is empty')
+  const srcCols = first.length
   return srcData.map((rowVals) => {
     const series =
       mode === 'copy' ? null : detectSeries(rowVals.map((v) => (v == null ? '' : String(v))))
@@ -169,7 +175,7 @@ export function planFill(
   total: Rect,
   inputAt: (r: number, c: number) => unknown,
   mode: FillMode = 'auto',
-): Record<string, string> {
+) {
   const writes: Record<string, string> = {}
   const at = (r: number, c: number) => {
     const id = cellId(r, c)

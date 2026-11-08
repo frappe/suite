@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
 
@@ -14,8 +15,9 @@ import { docSheets } from './stores'
 const DIST = path.resolve(__dirname, '../../../../../suite/sheets/content/dist')
 const CHECKER = path.join(DIST, 'checker.cjs')
 const CONVERTER = path.join(DIST, 'converter.cjs')
-const VERSION = JSON.parse(fs.readFileSync(path.resolve(DIST, '../converter-version.json'), 'utf8'))
-  .version as string
+const VERSION = fromPartial<string>(
+  JSON.parse(fs.readFileSync(path.resolve(DIST, '../converter-version.json'), 'utf8')).version,
+)
 
 // checker.py `framed`: each part after its length in 4 little-endian bytes.
 function framed(parts: Uint8Array[]): Buffer {
@@ -28,7 +30,7 @@ function framed(parts: Uint8Array[]): Buffer {
   )
 }
 
-function run(bundle: string, header: object, ...rest: Uint8Array[]): Record<string, unknown> {
+function run(bundle: string, header: unknown, ...rest: Uint8Array[]): Record<string, unknown> {
   const real = fs.realpathSync(bundle)
   const child = spawnSync(
     process.execPath,
@@ -36,7 +38,7 @@ function run(bundle: string, header: object, ...rest: Uint8Array[]): Record<stri
     { input: framed([Buffer.from(JSON.stringify(header)), ...rest]), env: {}, timeout: 60_000 },
   )
   if (child.status !== 0) throw new Error(`exit ${child.status}: ${child.stderr.toString()}`)
-  return JSON.parse(child.stdout.toString()) as Record<string, unknown>
+  return fromPartial<Record<string, unknown>>(JSON.parse(child.stdout.toString()))
 }
 
 describe.skipIf(!fs.existsSync(CONVERTER))('converter bundle under --permission', () => {
@@ -53,7 +55,7 @@ describe.skipIf(!fs.existsSync(CONVERTER))('converter bundle under --permission'
     const answer = run(CONVERTER, { legacy, maxState: 4 * 1024 * 1024 })
     expect(answer).toMatchObject({ kind: 'converted', version: VERSION, dropped: [] })
     const doc = new Y.Doc()
-    Y.applyUpdate(doc, Buffer.from(answer.state as string, 'base64'))
+    Y.applyUpdate(doc, Buffer.from(fromPartial<string>(answer.state), 'base64'))
     expect(docSheets(doc).map((s) => s.name)).toEqual(['Budget'])
     expect([...roots(doc).inputs.values()].sort()).toEqual(['1200', 'Rent'])
     expect(answer.html).toContain('<td>Rent</td>')

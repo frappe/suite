@@ -245,13 +245,13 @@ const toggles = computed(() => [
 ])
 
 // Lower case, as the words read in a sentence — "from: akash@frappe.io" — not as field names.
-const OPERATOR_LABELS: Record<string, string> = {
+const OPERATOR_LABELS = {
   subject: __('subject'),
   to: __('to'),
   cc: __('cc'),
   bcc: __('bcc'),
   with: __('with'),
-}
+} satisfies Record<string, string>
 const optionLabel = (options: { label: string; value: string }[], value: string) =>
   options.find((option) => option.value === value)?.label ?? value
 

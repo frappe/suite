@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { client } from '@/api'
@@ -158,13 +159,13 @@ describe('media upload', () => {
     const created: Array<Record<string, unknown>> = []
     let received = 0
     vi.mocked(transport.request).mockImplementation(async (operation, input) => {
-      const { publicName } = operation as Operation
+      const { publicName } = fromPartial<Operation>(operation)
       if (publicName === 'uploads.create') {
-        created.push(input as Record<string, unknown>)
+        created.push(fromPartial<Record<string, unknown>>(input))
         return { mode: 'chunked', upload_id: 'u1' }
       }
       if (publicName === 'uploads.chunk') {
-        const { offset, chunk } = input as Chunk
+        const { offset, chunk } = fromPartial<Chunk>(input)
         requests.push({ name: publicName, bytes: chunk.size })
         received = offset + chunk.size
         return { upload_id: 'u1', received }

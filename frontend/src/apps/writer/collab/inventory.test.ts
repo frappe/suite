@@ -1,3 +1,4 @@
+import { fromAny } from '@total-typescript/shoehorn'
 import { describe, expect, it } from 'vitest'
 import { Doc, XmlElement, XmlText } from 'yjs'
 
@@ -10,7 +11,7 @@ type Child = XmlElement | XmlText
 function element(name: string, attributes: Record<string, unknown>, ...children: Child[]) {
   const node = new XmlElement(name)
   for (const [key, value] of Object.entries(attributes)) {
-    node.setAttribute(key, value as string)
+    node.setAttribute(key, fromAny<string, unknown>(value))
   }
 
   node.insert(0, children)
@@ -50,7 +51,7 @@ function highlighted(color: string) {
   return [paragraph(['ab', { highlight: { color } }])]
 }
 
-function linked(attrs: object) {
+function linked(attrs: Record<string, unknown>) {
   return [paragraph(['go', { link: attrs }])]
 }
 

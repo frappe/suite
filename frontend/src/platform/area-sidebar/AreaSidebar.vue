@@ -87,7 +87,6 @@ import {
   isPhone,
   OPEN_AREA_SIDEBAR_EVENT,
   trackAreaSidebar,
-  type OpenAreaSidebarDetail,
 } from './state'
 
 const props = withDefaults(
@@ -122,7 +121,9 @@ provide(AREA_SIDEBAR_FOOTER_KEY, footer)
 watchEffect((onCleanup) => onCleanup(trackAreaSidebar(props.area)))
 
 function onOpenRequest(event: Event) {
-  const detail = (event as CustomEvent<Partial<OpenAreaSidebarDetail>>).detail
+  if (!(event instanceof CustomEvent)) return
+  const detail: unknown = event.detail
+  if (!detail || typeof detail !== 'object' || !('area' in detail)) return
   if (!isPhone.value || detail?.area !== props.area) return
   sheetOpen.value = true
 }

@@ -16,10 +16,10 @@ const mountEditor = (content: string) => {
 }
 
 const paste = (target: Editor, plain: string) => {
-  const event = {
+  const event: any = {
     clipboardData: { getData: (type: string) => (type === 'text/plain' ? plain : '') },
     preventDefault: () => {},
-  } as any
+  }
   const slice = new Slice(Fragment.from(target.schema.text(plain)), 0, 0)
   target.view.someProp('handlePaste', (f: any) => f(target.view, event, slice))
 }

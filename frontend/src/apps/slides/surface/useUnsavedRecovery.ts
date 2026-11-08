@@ -210,7 +210,9 @@ export function useUnsavedRecovery(
   }
 
   function liveSlides() {
-    return JSON.parse(JSON.stringify(slides.value)) as unknown[]
+    const copy: unknown = JSON.parse(JSON.stringify(slides.value))
+    if (!Array.isArray(copy)) throw new Error('Live presentation copy must be an array')
+    return copy
   }
 
   function showRefusal() {

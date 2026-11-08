@@ -108,6 +108,7 @@ const isForward = (trail: Element) =>
 
 // Text a reader would see: not the stylesheet a mail carries in its body.
 const textNodes = (root: Node) => {
+  // SAFETY: Document is the only native DOM node with no ownerDocument.
   const doc = root.ownerDocument ?? (root as Document)
   const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode: (node) =>
@@ -116,11 +117,14 @@ const textNodes = (root: Node) => {
         : NodeFilter.FILTER_ACCEPT,
   })
   const nodes: Text[] = []
-  while (walker.nextNode()) nodes.push(walker.currentNode as Text)
+  while (walker.nextNode()) {
+    // SAFETY: SHOW_TEXT restricts this native walker to Text nodes.
+    nodes.push(walker.currentNode as Text)
+  }
   return nodes
 }
 
-export const findQuoteRoots = (root: ParentNode): Element[] => {
+export const findQuoteRoots = (root: ParentNode & Node): Element[] => {
   const candidates = new Set<Element>()
 
   root.querySelectorAll('[class]').forEach((el) => {
@@ -201,5 +205,5 @@ export const findQuoteRoots = (root: ParentNode): Element[] => {
 
   // A mail that is nothing but a quote is shown as it is — there is nothing else to read.
   const hidden = (node: Node) => trails.some((trail) => trail.contains(node))
-  return textNodes(root as Node).some((node) => !hidden(node)) ? trails : []
+  return textNodes(root).some((node) => !hidden(node)) ? trails : []
 }

@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 // The formula range highlight (a picked range, or the "Tab to fill range"
 // suggestion) must not hide the values it frames (ISSUES #83). Its fill is a
 // solid theme grey, so like the selection fill it has to go under the cell
@@ -13,7 +14,7 @@ type Call = { op: string; fillStyle: string; args: unknown[] }
 // A 2D context that records every call with the fill colour at that moment.
 function createRecordingCtx() {
   const calls: Call[] = []
-  const state: Record<string, unknown> = {
+  const state = {
     fillStyle: '',
     strokeStyle: '',
     lineWidth: 1,
@@ -22,7 +23,7 @@ function createRecordingCtx() {
     textBaseline: '',
     lineDashOffset: 0,
     globalAlpha: 1,
-  }
+  } satisfies Record<string, unknown>
   const ctx = new Proxy(state, {
     get(target, key: string) {
       if (key in target) return target[key]
@@ -61,29 +62,31 @@ function createGeometry() {
 // C5 is being edited.
 function paintWithPicker() {
   const { ctx, calls } = createRecordingCtx()
-  const renderer = createRenderer(ctx as never, createGeometry())
-  const values: Record<string, string> = {
+  const renderer = createRenderer(fromPartial(ctx), createGeometry())
+  const values = {
     [cellId(1, 2)]: '12',
     [cellId(2, 2)]: '45',
     [cellId(3, 2)]: '78',
-  }
-  renderer.render({
-    cssW: 400,
-    cssH: 200,
-    getValue: (id: string) => values[id] ?? '',
-    cells: { getStyle: () => ({}) },
-    sel: { r: 4, c: 2 },
-    selEnd: { r: 4, c: 2 },
-    selMode: 'cell',
-    editing: true,
-    freeze: { rows: 0, cols: 0 },
-    getDiffFor: null,
-    marchAnts: null,
-    marchPhase: 0,
-    pickerRect: { r0: 1, c0: 2, r1: 3, c1: 2 },
-    colDrag: null,
-    zoom: 1,
-  } as never)
+  } satisfies Record<string, string>
+  renderer.render(
+    fromPartial({
+      cssW: 400,
+      cssH: 200,
+      getValue: (id: string) => values[id] ?? '',
+      cells: { getStyle: () => ({}) },
+      sel: { r: 4, c: 2 },
+      selEnd: { r: 4, c: 2 },
+      selMode: 'cell',
+      editing: true,
+      freeze: { rows: 0, cols: 0 },
+      getDiffFor: null,
+      marchAnts: null,
+      marchPhase: 0,
+      pickerRect: { r0: 1, c0: 2, r1: 3, c1: 2 },
+      colDrag: null,
+      zoom: 1,
+    }),
+  )
   return calls
 }
 
@@ -112,7 +115,7 @@ describe('formula range highlight', () => {
     const calls = paintWithPicker()
     const lastText = calls.findLastIndex((c) => c.op === 'fillText' && c.args[0] === '78')
     const dashed = calls.findIndex(
-      (c, i) => i > lastText && c.op === 'setLineDash' && (c.args[0] as number[])[0] === 6,
+      (c, i) => i > lastText && c.op === 'setLineDash' && fromPartial<number[]>(c.args[0])[0] === 6,
     )
 
     expect(dashed).toBeGreaterThan(lastText)

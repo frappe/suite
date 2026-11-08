@@ -5,7 +5,10 @@ import { useListSelection } from './useListSelection'
 
 // Two accounts sharing thread ids, as in the All accounts list: keys carry the account.
 const KEYS = ['a:1', 'b:1', 'a:2', 'b:2', 'a:3']
-const GROUPS: Record<string, string[]> = { today: ['a:1', 'b:1'], earlier: ['a:2', 'b:2', 'a:3'] }
+const GROUPS = { today: ['a:1', 'b:1'], earlier: ['a:2', 'b:2', 'a:3'] } satisfies Record<
+  string,
+  string[]
+>
 
 const mountSelection = () => {
   let selection!: ReturnType<typeof useListSelection>

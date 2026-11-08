@@ -147,7 +147,7 @@ export const useSwipeNav = (enabled: () => boolean, onSwipe: (offset: 1 | -1) =>
     const offset = gesture.end(e.changedTouches[0].clientX, e.changedTouches[0].clientY)
     if (offset) swipe(offset)
   }
-  const onEmailSwipe = (e: Event) => swipe((e as CustomEvent).detail === 'left' ? 1 : -1)
+  const onEmailSwipe = (e: Event) => swipe('detail' in e && e.detail === 'left' ? 1 : -1)
   onMounted(() => window.addEventListener('email-swipe', onEmailSwipe))
   onUnmounted(() => window.removeEventListener('email-swipe', onEmailSwipe))
   return {
@@ -263,8 +263,8 @@ const NON_TEXT_INPUT_TYPES = new Set([
 ])
 const isEditable = (el: Element | null) => {
   if (!el) return false
-  if (el.tagName === 'INPUT') return !NON_TEXT_INPUT_TYPES.has((el as HTMLInputElement).type)
-  return el.tagName === 'TEXTAREA' || (el as HTMLElement).isContentEditable === true
+  if (el instanceof HTMLInputElement) return !NON_TEXT_INPUT_TYPES.has(el.type)
+  return el.tagName === 'TEXTAREA' || (el instanceof HTMLElement && el.isContentEditable)
 }
 
 /**

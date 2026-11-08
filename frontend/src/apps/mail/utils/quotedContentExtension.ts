@@ -27,7 +27,7 @@ export const QuotedContentExtension = TiptapNode.create({
       // then appends to every body — an empty, uneditable block that took the caret on a click
       // below the writing, and left a blank line at the end of every mail.
       priority: 60,
-      getAttrs: (element) => ({ html: (element as HTMLElement).outerHTML }),
+      getAttrs: (element) => ({ html: element.outerHTML }),
     },
   ],
   // A DOM node rather than a spec: the serializer appends it as is, so the markup never meets
@@ -79,7 +79,7 @@ export const QuotedContentExtension = TiptapNode.create({
           }
           return true
         },
-        stopEvent: (event) => quote.contains(event.target as Node),
+        stopEvent: (event) => event.target instanceof Node && quote.contains(event.target),
         ignoreMutation: () => true,
       }
     },
@@ -100,7 +100,7 @@ export const breakOutOfQuote = (root: HTMLElement): boolean => {
   // The outermost level, so the answer is the writer's and not quoted at any depth.
   let quote: Element | null = null
   for (let n: Node | null = caret.startContainer; n && n !== root; n = n.parentNode)
-    if (n.nodeName === 'BLOCKQUOTE') quote = n as Element
+    if (n instanceof Element && n.nodeName === 'BLOCKQUOTE') quote = n
   if (!quote) return false
 
   const rest = root.ownerDocument.createRange()
@@ -127,7 +127,8 @@ export const breakOutOfQuote = (root: HTMLElement): boolean => {
 const displayed = (html: string) => {
   const template = document.createElement('template')
   template.innerHTML = DOMPurify.sanitize(html)
-  return (template.content.firstElementChild as HTMLElement | null) ?? document.createElement('div')
+  const first = template.content.firstElementChild
+  return first instanceof HTMLElement ? first : document.createElement('div')
 }
 
 const VOID = new Set(['BR', 'IMG', 'HR'])

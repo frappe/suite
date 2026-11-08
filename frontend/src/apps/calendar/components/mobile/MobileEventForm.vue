@@ -449,7 +449,7 @@ import {
   UNIT_OPTIONS,
   VISIBILITY_OPTIONS,
 } from '@/apps/calendar/utils/eventOptions'
-import { formatAlertPhrase, getRepeatMessage } from '@/apps/calendar/utils/format'
+import { formatAlertPhrase, getRepeatMessage, type EventAlert } from '@/apps/calendar/utils/format'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import { useKeyboardInsets } from '@/composables/useKeyboardInsets'
 import { meetLogo } from '@/platform/brand'
@@ -489,7 +489,7 @@ const screen = ref<(typeof SCREENS)[number]>('form')
 // focus on the button the form then shows: a ✕ sitting highlighted for something the reader
 // did to a chevron. The tap is spent when the screen changes, so the focus goes with it.
 const leaveScreen = (event: MouseEvent) => {
-  ;(event.currentTarget as HTMLElement | null)?.blur()
+  ;(event.currentTarget instanceof HTMLElement ? event.currentTarget : null)?.blur()
   if (screen.value === 'form') emit('cancel')
   else screen.value = 'form'
 }
@@ -663,7 +663,7 @@ const editAlert = (field: string, value: string | number) => {
   if (index === undefined) return
   emit(
     'setAlerts',
-    event.alerts.map((alert: object, i: number) =>
+    event.alerts.map((alert: EventAlert, i: number) =>
       i === index ? { ...alert, [field]: value } : alert,
     ),
   )
@@ -720,7 +720,7 @@ const applyAlertField = (field: AlertField, value: string | number) => {
     const replacement = value === 'absolute' ? absoluteAlert() : offsetAlert(10, 'minutes')
     return emit(
       'setAlerts',
-      event.alerts.map((alert: object, i: number) =>
+      event.alerts.map((alert: EventAlert, i: number) =>
         i === index ? { ...replacement, action: action ?? 'Display' } : alert,
       ),
     )

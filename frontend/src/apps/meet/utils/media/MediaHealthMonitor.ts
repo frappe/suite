@@ -66,14 +66,15 @@ interface ConsumerHealthSample {
 
 type LifecycleEvent = 'offline' | 'online' | 'pageshow'
 type ScheduledPoll = () => void | Promise<void>
+type PollTimer = ReturnType<typeof setInterval> | number
 
 /** Injectable browser lifecycle and timer boundary used by the monitor. */
 export interface MediaHealthEnvironment {
   now(): number
   isHidden(): boolean
   isOnline(): boolean
-  setInterval(callback: ScheduledPoll, intervalMs: number): unknown
-  clearInterval(handle: unknown): void
+  setInterval(callback: ScheduledPoll, intervalMs: number): PollTimer
+  clearInterval(handle: PollTimer): void
   onVisibilityChange(listener: () => void): () => void
   onLifecycleEvent(event: LifecycleEvent, listener: () => void): () => void
 }
@@ -83,7 +84,7 @@ const browserEnvironment: MediaHealthEnvironment = {
   isHidden: () => document.hidden,
   isOnline: () => navigator.onLine !== false,
   setInterval: (callback, intervalMs) => setInterval(callback, intervalMs),
-  clearInterval: (handle) => clearInterval(handle as ReturnType<typeof setInterval>),
+  clearInterval: (handle) => clearInterval(handle),
   onVisibilityChange: (listener) => {
     document.addEventListener('visibilitychange', listener)
     return () => document.removeEventListener('visibilitychange', listener)
@@ -143,7 +144,7 @@ export class MediaHealthMonitor {
     direction: 'send' | 'recv' | 'both'
     goodSince: number | null
   } | null = null
-  private interval: unknown = null
+  private interval: PollTimer | null = null
   private removeLifecycleListeners: (() => void)[] = []
   private active = false
   private polling = false
@@ -505,10 +506,9 @@ export class MediaHealthMonitor {
       const isFailed =
         transportStats?.sendTransport?.state === 'failed' ||
         transportStats?.recvTransport?.state === 'failed'
-      this.setState({
-        isTransportFailed: isFailed,
-        ...(isFailed ? { networkQuality: 'critical' as const } : {}),
-      })
+      const transportState: Partial<MediaHealthState> = { isTransportFailed: isFailed }
+      if (isFailed) transportState.networkQuality = 'critical'
+      this.setState(transportState)
 
       if (isFailed) {
         this.stallDetector.suspend()
@@ -656,8 +656,7 @@ export class MediaHealthMonitor {
     const stalledSet = new Set(stalledIds)
     this.port.reportMediaStalls(
       samples
-        .filter((sample) => stalledSet.has(sample.id))
-        .map((sample) => sample.kind)
+        .flatMap((sample) => (stalledSet.has(sample.id) ? [sample.kind] : []))
         .filter((kind): kind is 'audio' | 'video' => kind === 'audio' || kind === 'video'),
     )
 

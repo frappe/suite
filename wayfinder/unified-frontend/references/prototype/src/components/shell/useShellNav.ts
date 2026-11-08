@@ -24,8 +24,8 @@ export function useShellNav() {
   const router = useRouter()
 
   const area = computed<AreaId>(() => {
-    const raw = route.params.area as AreaId
-    return AREAS.includes(raw) ? raw : 'home'
+    const raw = route.params.area
+    return AREAS.find(area => area === raw) ?? 'home'
   })
 
   // `:sub*` hands back an array. Every area except Files reads one segment.
@@ -62,8 +62,8 @@ export function useShellNav() {
   const openDoc = computed<DocRef | null>(() => {
     if (area.value !== 'doc') return null
     const [app, id] = segments.value
-    if (!app || !id) return null
-    return { app: app as DocApp, id }
+    if (!app || !id || (app !== 'writer' && app !== 'slides' && app !== 'sheets' && app !== 'pdf')) return null
+    return { app, id }
   })
 
   function docTo(ref: DocRef): RouteLocationRaw {

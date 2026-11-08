@@ -37,9 +37,11 @@ export const SEARCH_TWEAKS = {
 type TweakKey = keyof typeof SEARCH_TWEAKS
 type Tweaks = { [K in TweakKey]: (typeof SEARCH_TWEAKS)[K]['options'][number]['value'] }
 
-const defaults = Object.fromEntries(
-  Object.entries(SEARCH_TWEAKS).map(([key, tweak]) => [key, tweak.default]),
-) as Tweaks
+const defaults: Tweaks = {
+  match: SEARCH_TWEAKS.match.default,
+  filters: SEARCH_TWEAKS.filters.default,
+  opening: SEARCH_TWEAKS.opening.default,
+}
 
 const tweaks: Ref<Tweaks> | null = import.meta.env.DEV
   ? useStorage<Tweaks>('mail-search-tweaks', defaults, undefined, { mergeDefaults: true })

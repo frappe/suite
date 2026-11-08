@@ -175,7 +175,7 @@ export class TransportManager {
 			loggers.transportManager.error(
 				'Failed to connect transport %s: %s',
 				transportId,
-				(error as Error).message,
+				error instanceof Error ? error.message : String(error),
 			);
 			loggers.transportManager.error('Transport state on error: %o', {
 				id: transportData.transport.id,
@@ -241,7 +241,7 @@ export class TransportManager {
 				loggers.transportManager.warn(
 					'Error closing transport %s: %s',
 					transportId,
-					(error as Error).message,
+					error instanceof Error ? error.message : String(error),
 				);
 			}
 			this.transports.delete(transportId);
@@ -263,7 +263,7 @@ export class TransportManager {
 				loggers.transportManager.warn(
 					'Error closing transport %s: %s',
 					transportId,
-					(error as Error).message,
+					error instanceof Error ? error.message : String(error),
 				);
 			}
 		}

@@ -101,7 +101,7 @@ const groups = computed<ListedGroup[]>(() => {
   for (const { group, description, keys } of liveKeySequences()) {
     add(group, { description, sequences: [keys.map((key) => [letterKeycap(key)])] })
   }
-  return [...rowsByGroup].filter(([, rows]) => rows.length).map(([name, rows]) => ({ name, rows }))
+  return [...rowsByGroup].flatMap(([name, rows]) => (rows.length ? [{ name, rows }] : []))
 })
 
 const searchable = computed(

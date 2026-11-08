@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createSession } from '@/platform/session'
@@ -45,7 +46,7 @@ describe('slides caches per user', () => {
   it('clears the user data when the session logs out', async () => {
     localStorage.setItem('slides-offline-copy:p1', '{}')
     const request = vi.fn(async () => ({}))
-    const session = createSession({ request } as Transport)
+    const session = createSession(fromPartial<Transport>({ request }))
     session.onLogout(clearSlidesUserData)
 
     await session.logout()

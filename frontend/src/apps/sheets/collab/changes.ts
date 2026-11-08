@@ -54,7 +54,7 @@ export function changedCells(version: Y.Doc, current: Y.Doc): ChangedCell[] {
 }
 
 /** The same cells as the canvas overlay reads them. */
-export function changedCellMap(cells: readonly ChangedCell[]): ChangedCellMap {
+export function changedCellMap(cells: readonly ChangedCell[]) {
   const map: ChangedCellMap = {}
   for (const { sheet, cell } of cells) (map[sheet] ??= {})[cell] = true
   return map

@@ -1,10 +1,11 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it } from 'vitest'
 
 import type { Mail, Thread } from '@/apps/mail/types'
 
 import { buildListRows, stackKeyOf } from './threadStacks'
 
-const message = (from_email: string, from_name = '') => ({ from_email, from_name }) as Mail
+const message = (from_email: string, from_name = '') => fromPartial<Mail>({ from_email, from_name })
 
 // A relay (Discourse, GitHub, Jira) gives every poster the same address and its own display name, so
 // one notification thread names as many people as it had posters.
@@ -12,7 +13,7 @@ const post = (from_name: string, from_email = 'notifications@github.com') =>
   message(from_email, from_name)
 
 const thread = (overrides: Partial<Thread> = {}): Thread =>
-  ({
+  fromPartial<Thread>({
     name: 'm1',
     account: 'acc1',
     thread_id: 't1',
@@ -23,7 +24,7 @@ const thread = (overrides: Partial<Thread> = {}): Thread =>
     received_at: '2026-07-16 10:00:00',
     seen: 0,
     ...overrides,
-  }) as Thread
+  })
 
 // A thread the user has answered: the bot still wrote first, but the latest sender is now the user.
 const answered = (overrides: Partial<Thread> = {}) =>

@@ -356,7 +356,7 @@
           :land-on="mailbox === 'search' ? (askedMatch ?? currentThread?.match_id) : undefined"
           :search-words="
             mailbox === 'search'
-              ? searchWords(route.query.text as string, currentThread?.marked_words)
+              ? searchWords(searchQuery.text, currentThread?.marked_words)
               : undefined
           "
           :can-go-next="canGoNext"
@@ -492,6 +492,7 @@ import { commonMailboxIds } from '@/apps/mail/utils/mailboxTargets'
 import { threadMailIds, threadStarIds } from '@/apps/mail/utils/mailCopies'
 import { archivable, holdsReceivedMail, unarchivable } from '@/apps/mail/utils/receivedMail'
 import {
+  searchQueryFrom,
   searchWords,
   withAllAccounts,
   withoutFilters,
@@ -837,7 +838,7 @@ const openMatch = (thread: Thread, id: string) => {
   goToThread(thread.thread_id)
 }
 
-const searchQuery = computed(() => route.query as SearchQuery)
+const searchQuery = computed(() => searchQueryFrom(route.query))
 const searchWith = (query: SearchQuery) =>
   router.push({ name: 'mail-mailbox', params: { accountId, mailbox: 'search' }, query })
 const searchHasFilters = computed(() =>
@@ -848,6 +849,7 @@ const searchCanWiden = computed(
 )
 const unavailableAccounts = computed(
   () =>
+    // SAFETY: this query's pages are the search endpoint's, where this field is declared.
     (searchResults.lastPage as { unavailable_accounts?: string[] } | undefined)
       ?.unavailable_accounts ?? [],
 )
@@ -881,9 +883,9 @@ const searchTotal = ref<number | null>(null)
 // The search dialog stores bare `YYYY-MM-DD` days in the route; the API listens UTC, so the
 // day's bounds are resolved in the user's zone here at the request boundary (the URL stays clean).
 const searchFilter = () => {
-  const filter: Record<string, any> = {
+  const filter = {
     ...route.query,
-  }
+  } satisfies Record<string, any>
   if (typeof filter.after === 'string' && filter.after) filter.after = utcDayStart(filter.after)
   if (typeof filter.before === 'string' && filter.before) filter.before = utcDayEnd(filter.before)
   return filter

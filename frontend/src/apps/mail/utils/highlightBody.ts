@@ -18,6 +18,8 @@ export function highlightBody(root: ParentNode & Node, term: string): void {
       .join('|'),
     'gi',
   )
+  // SAFETY: among DOM ParentNodes, Document alone has no ownerDocument; the
+  // other accepted roots (Element and DocumentFragment) always belong to a document.
   const doc = root.ownerDocument ?? (root as Document)
   const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode: (node) =>
@@ -26,7 +28,10 @@ export function highlightBody(root: ParentNode & Node, term: string): void {
         : NodeFilter.FILTER_ACCEPT,
   })
   const nodes: Text[] = []
-  while (walker.nextNode()) nodes.push(walker.currentNode as Text)
+  while (walker.nextNode()) {
+    // SAFETY: SHOW_TEXT returns only native Text nodes; the filter cannot admit other kinds.
+    nodes.push(walker.currentNode as Text)
+  }
   for (const node of nodes) {
     const text = node.data
     const hits = [...text.matchAll(pattern)]

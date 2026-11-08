@@ -56,6 +56,7 @@ import type { UserResource } from '@/apps/mail/types'
 import { mailSearchRoute, useScreenSize } from '@/apps/mail/utils/composables'
 import {
   hasSearchConditions,
+  searchQueryFrom,
   withEditedLine,
   type SearchQuery,
 } from '@/apps/mail/utils/searchFilters'
@@ -72,7 +73,8 @@ defineProps<{
 
 const route = useRoute()
 const router = useRouter()
-const user = inject('$user') as UserResource
+const user = inject<UserResource>('$user')
+if (!user) throw new Error('Missing required user provider')
 const { isMobile } = useScreenSize()
 const store = userStore()
 const root = useRootStore()
@@ -81,14 +83,14 @@ const showReadingPane = computed(() => !!user.data?.show_reading_pane)
 
 const openSearch = () => (root.paletteOpen = true)
 
-const query = computed(() => route.query as SearchQuery)
+const query = computed(() => searchQueryFrom(route.query))
 const searchText = computed(() => query.value.text || '')
 
 const line = ref(searchText.value)
 watch(searchText, (text) => (line.value = text))
 const resetLine = (event: KeyboardEvent) => {
   line.value = searchText.value
-  ;(event.target as HTMLElement).blur()
+  if (event.target instanceof HTMLElement) event.target.blur()
 }
 const commitLine = () => searchWith(withEditedLine(query.value, line.value))
 
