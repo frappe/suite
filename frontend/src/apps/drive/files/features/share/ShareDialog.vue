@@ -87,12 +87,12 @@ import { useMediaQuery } from '@vueuse/core'
 import { BottomSheet, Button, Dialog, Skeleton } from 'frappe-ui'
 import { computed, onMounted, ref, watch } from 'vue'
 
-import { api, useQuery } from '@/api'
 import { driveNodeRoute } from '@/apps/drive'
 import { DRIVE_ROLES, type DriveNode } from '@/apps/drive/client/types'
 import { confirm } from '@/platform/feedback'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
+import { useWorkspace } from '@/platform/workspace'
 
 import { nodeIcon, nodeIconTint } from '../../internal/icons'
 import { useLocationTitle } from '../../internal/locations'
@@ -113,10 +113,7 @@ const isPhone = useMediaQuery('(max-width: 767px)')
 // While people wait to be added, Share is the one solid action.
 const picked = ref(0)
 const session = useSession()
-// The server page boots the workspace name. The Vite dev page does not, so the dialog asks the site.
-const site = useQuery(api.suite.site.get, () =>
-  window.suite_workspace_name === undefined ? {} : false,
-)
+const { workspaceName } = useWorkspace()
 const state = useShare(props.node, {
   me: session.user.value?.id,
   confirmLoss: ({ after }) => {
@@ -130,7 +127,7 @@ const state = useShare(props.node, {
       destructive: true,
     })
   },
-  workspace: () => window.suite_workspace_name ?? site.data?.workspace_name,
+  workspace: workspaceName,
   placeTitle: useLocationTitle(),
   known: props.known,
 })

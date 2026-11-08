@@ -1,10 +1,9 @@
-import { ref } from 'vue'
-
-import { api, client, useQuery } from '@/api'
+import { api, useQuery } from '@/api'
 import { bootRoots } from '@/apps/drive/client/roots'
 import type { DriveBreadcrumb, DriveNode, DriveRoots } from '@/apps/drive/client/types'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
+import { useWorkspace } from '@/platform/workspace'
 
 /** The sidebar place a folder belongs to. */
 export type FilesLocation = 'personal' | 'organization' | 'shared'
@@ -15,29 +14,9 @@ export const LOCATION_LABELS: Record<FilesLocation, string> = {
   shared: 'Shared with me',
 }
 
-// The workspace name an admin gives in Setup ("Set up your workspace") and
-// Settings, stored as Suite Settings `workspace_name`. The server page boots
-// it; a page without that boot asks the site once.
-const workspace = ref(window.suite_workspace_name ?? '')
-let asked = false
-
-/**
- * The company name the Organization root shows under. Empty while no name is
- * known. Reactive.
- */
+/** The company name the Organization root shows under. Empty while no name is known. Reactive. */
 export function organizationName(): string {
-  if (!asked && window.suite_workspace_name === undefined) {
-    asked = true
-    client
-      .query(api.suite.site.get)
-      .then((site) => {
-        workspace.value = site.workspace_name
-      })
-      .catch(() => {
-        asked = false
-      })
-  }
-  return workspace.value.trim()
+  return useWorkspace().workspaceName.value
 }
 
 /** The name of a sidebar place. The Organization root is "<company> files" once the company is known. */

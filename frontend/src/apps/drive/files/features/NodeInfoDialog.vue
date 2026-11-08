@@ -29,12 +29,12 @@ import { api, useQuery } from '@/api'
 import { grantListOf } from '@/apps/drive/client/grants'
 import { canManage } from '@/apps/drive/client/types'
 import type { DocumentTypeDefinition } from '@/platform/contracts'
+import { useWorkspace } from '@/platform/workspace'
 
 import { formatBytes, formatDate } from '../internal/format'
 import { useNodeTypeLabel } from '../internal/icons'
 import { useLocationTitle } from '../internal/locations'
 import { sharedWith } from './share/shareModel'
-import { useWorkspaceName } from './useWorkspaceName'
 
 /**
  * Read-only facts about one node: type, size, location, owner, dates and, for
@@ -56,11 +56,11 @@ const grants = useQuery(api.drive.grants.list, () =>
     ? { node: props.node, inherited: true }
     : false,
 )
-const workspace = useWorkspaceName()
+const { workspaceName: workspace } = useWorkspace()
 const sharing = computed(() => {
   const row = detail.data
   if (!row || !grants.data) return []
-  const names = sharedWith(grantListOf(grants.data), row.kind, new Date(), workspace.value)
+  const names = sharedWith(grantListOf(grants.data), row.kind, workspace.value)
   return [{ label: 'Shared with', value: names.join(', ') || 'Not shared', wraps: true }]
 })
 

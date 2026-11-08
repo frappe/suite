@@ -1,11 +1,14 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
+
+import { useWorkspace } from '@/platform/workspace'
 
 import { emptyState, emptyStateWithActions } from './emptyState'
 
-// No company name: the organization root keeps its generic copy, and nothing asks the site.
-beforeEach(() => {
-  window.suite_workspace_name = ''
-})
+const nameWorkspace = (workspace_name: string) =>
+  useWorkspace().setWorkspace({ workspace_name, workspace_logo: '' })
+
+// No company name: the organization root keeps its generic copy.
+beforeEach(() => nameWorkspace(''))
 
 describe('empty states', () => {
   it('says a search found nothing, whatever the view', () => {
@@ -59,15 +62,12 @@ describe('empty states', () => {
     )
   })
 
-  it('names the company in an empty organization root', async () => {
-    vi.resetModules()
-    window.suite_workspace_name = 'Northwind Labs'
-    const fresh = await import('./emptyState')
-    expect(fresh.emptyState({ destination: 'organization', term: '', canCreate: false })).toEqual({
+  it('names the company in an empty organization root', () => {
+    nameWorkspace('Northwind Labs')
+    expect(emptyState({ destination: 'organization', term: '', canCreate: false })).toEqual({
       title: 'No Northwind Labs files yet',
       description: 'Files added for Northwind Labs will appear here.',
     })
-    delete window.suite_workspace_name
   })
 })
 

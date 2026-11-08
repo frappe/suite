@@ -4,7 +4,7 @@ import { groupName, principalKind } from '@/apps/drive/client/grants'
 import { DRIVE_ROLES, type DriveNode, type DriveRoots } from '@/apps/drive/client/types'
 import { translate as __ } from '@/platform/translation'
 
-import { bootedWorkspace, organizationLabel } from './share/shareModel'
+import { organizationLabel } from './share/shareModel'
 
 export type PickerMode = 'move' | 'copy' | 'restore'
 
@@ -101,7 +101,7 @@ export interface MoveAccessChange {
  */
 export function moveAccessChange(
   previews: readonly NodeMovePreviewOutput[],
-  workspace = bootedWorkspace(),
+  workspace: string,
 ): MoveAccessChange | null {
   const gains = new Map<string, MoveAccessGain>()
   for (const { principal, role, person } of previews.flatMap((preview) => preview.gains)) {

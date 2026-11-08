@@ -5,6 +5,7 @@ import { createApp, h, nextTick, reactive, watch } from 'vue'
 import type { DriveNode } from '@/apps/drive/client/types'
 import { DOCUMENT_TYPES_KEY, type DocumentTypeDefinition } from '@/platform/contracts'
 import { requireTestElement } from '@/platform/testing/dom'
+import { useWorkspace } from '@/platform/workspace'
 
 import FilesListing from './FilesListing.vue'
 import { DEFAULT_PRESENTATION, type FilesColumn, type PresentationState } from './presentation'
@@ -509,7 +510,7 @@ describe('FilesListing name links', () => {
 
 describe('FilesListing access column', () => {
   afterEach(() => {
-    delete window.suite_workspace_name
+    useWorkspace().setWorkspace({ workspace_name: '', workspace_logo: '' })
   })
   const shared = (name: string, kind: 'public' | 'organization' | 'link' | 'people', people = 1) =>
     file(name, `${name}.png`, { audience: { kind, people } })
@@ -524,7 +525,7 @@ describe('FilesListing access column', () => {
     root.querySelector(`[data-node="${name}"]`)?.textContent ?? ''
 
   it('says how widely each item is shared, after the name, and names nobody', async () => {
-    window.suite_workspace_name = 'Northwind Labs'
+    useWorkspace().setWorkspace({ workspace_name: 'Northwind Labs', workspace_logo: '' })
     const { root } = mount({ rows: audienceRows, columns: ['access', 'modified'] })
     await nextTick()
 
@@ -871,7 +872,7 @@ describe('FilesListing drag to move', () => {
     )
     vi.stubGlobal('cancelAnimationFrame', () => {})
     document.elementFromPoint = () => underPointer
-    window.suite_workspace_name = 'Northwind'
+    useWorkspace().setWorkspace({ workspace_name: 'Northwind', workspace_logo: '' })
   })
   afterEach(() => {
     frames = []

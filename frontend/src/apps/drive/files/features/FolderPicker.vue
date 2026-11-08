@@ -78,6 +78,7 @@ import { computed, ref } from 'vue'
 import { api, useQuery } from '@/api'
 import { DRIVE_ROLES } from '@/apps/drive/client/types'
 import { translate as __ } from '@/platform/translation'
+import { useWorkspace } from '@/platform/workspace'
 
 import { nodeIcon, nodeIconTint } from '../internal/icons'
 import DriveBrowser, { type BrowserLocation } from './DriveBrowser.vue'
@@ -92,7 +93,6 @@ import {
   type PickerMode,
 } from './folderPicker'
 import MoveAccessDialog from './MoveAccessDialog.vue'
-import { useWorkspaceName } from './useWorkspaceName'
 
 const props = withDefaults(
   defineProps<{
@@ -137,7 +137,7 @@ const canCreateFolder = computed(() => (currentRole.value ?? 0) >= DRIVE_ROLES.u
 /** The move preview is loading, before the confirmation or the move. */
 const checking = ref(false)
 const accessChange = ref<MoveAccessChange | null>(null)
-const workspace = useWorkspaceName()
+const { workspaceName: workspace } = useWorkspace()
 const reviewingAccess = ref(false)
 let confirmMove = () => {}
 async function choose() {

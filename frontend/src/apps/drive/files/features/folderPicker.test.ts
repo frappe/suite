@@ -399,17 +399,20 @@ describe('move access change', () => {
   const person = { id: 'theo@example.com', full_name: 'Theo Park', user_image: null }
 
   it('lists each principal once with the most it gains, strongest first, and never shows a link token', () => {
-    const change = moveAccessChange([
-      { gains: [{ principal: '$LINK', role: 10 }], role_now: 50, role_after: 50 },
-      {
-        gains: [
-          { principal: person.id, role: 20, person },
-          { principal: '$LINK', role: 40 },
-        ],
-        role_now: 50,
-        role_after: 50,
-      },
-    ])
+    const change = moveAccessChange(
+      [
+        { gains: [{ principal: '$LINK', role: 10 }], role_now: 50, role_after: 50 },
+        {
+          gains: [
+            { principal: person.id, role: 20, person },
+            { principal: '$LINK', role: 40 },
+          ],
+          role_now: 50,
+          role_after: 50,
+        },
+      ],
+      '',
+    )
     expect(change?.gains.map(({ label, role }) => [label, role])).toEqual([
       ['Anyone with a share link', 40],
       ['Theo Park', 20],
@@ -418,16 +421,19 @@ describe('move access change', () => {
   })
 
   it('names org and public access as the share dialog does', () => {
-    const change = moveAccessChange([
-      {
-        gains: [
-          { principal: '$PUBLIC', role: 10 },
-          { principal: '$GENERAL', role: 20 },
-        ],
-        role_now: 50,
-        role_after: 50,
-      },
-    ])
+    const change = moveAccessChange(
+      [
+        {
+          gains: [
+            { principal: '$PUBLIC', role: 10 },
+            { principal: '$GENERAL', role: 20 },
+          ],
+          role_now: 50,
+          role_after: 50,
+        },
+      ],
+      '',
+    )
     expect(change?.gains.map(({ label }) => label)).toEqual([
       'Everyone in your organization',
       'Public on the web',
@@ -444,15 +450,18 @@ describe('move access change', () => {
 
   it("reports the mover's lowest role when it drops, even when nobody gains", () => {
     expect(
-      moveAccessChange([
-        { gains: [], role_now: 50, role_after: 40 },
-        { gains: [], role_now: 50, role_after: 20 },
-      ]),
+      moveAccessChange(
+        [
+          { gains: [], role_now: 50, role_after: 40 },
+          { gains: [], role_now: 50, role_after: 20 },
+        ],
+        '',
+      ),
     ).toEqual({ gains: [], ownRoleAfter: 20 })
   })
 
   it("is null when the move changes nobody's access", () => {
-    expect(moveAccessChange([{ gains: [], role_now: 40, role_after: 40 }])).toBeNull()
+    expect(moveAccessChange([{ gains: [], role_now: 40, role_after: 40 }], '')).toBeNull()
   })
 })
 

@@ -14,6 +14,7 @@ import { api, useQuery } from '@/api'
 import { DRIVE_ROLES, type DriveNode, type DriveRoots } from '@/apps/drive/client/types'
 import { toast } from '@/platform/feedback'
 import { translate as __ } from '@/platform/translation'
+import { useWorkspace } from '@/platform/workspace'
 
 import { LOCATION_LABELS, locationLabel, locationTitle } from '../internal/locations'
 import {
@@ -30,7 +31,6 @@ import {
 import { previewMoveAccess, type MoveAccessChange } from './folderPicker'
 import type { Point } from './marquee'
 import { scrollNearEdge, scrollParent, swallowNextClick } from './useMarquee'
-import { useWorkspaceName } from './useWorkspaceName'
 
 /** The sidebar's Trash carries this as its `data-drop-target`. */
 export const TRASH_TARGET = 'trash'
@@ -69,7 +69,7 @@ export function useDragMove(options: {
     open: false,
     change: null,
   })
-  const workspace = useWorkspaceName()
+  const { workspaceName: workspace } = useWorkspace()
   let scroller: HTMLElement | null = null
   let frame = 0
   let hovered: string | null = null

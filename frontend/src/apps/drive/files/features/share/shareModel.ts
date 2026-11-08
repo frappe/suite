@@ -244,8 +244,8 @@ export function remainingAccess(
 export function sharedWith(
   list: GrantList,
   nodeKind: string,
+  workspace: string,
   now = new Date(),
-  workspace = bootedWorkspace(),
 ): string[] {
   const sections = shareSections(list, nodeKind, now)
   const gives = (grant: DriveGrant) => grant.role > 0 && !isExpired(grant, now)
@@ -274,11 +274,6 @@ export function sharedWith(
     ...(isOpen(sections.public) ? [principalLabel(PUBLIC)] : []),
     ...(links ? [links === 1 ? '1 share link' : `${links} share links`] : []),
   ]
-}
-
-/** The workspace name the server page boots. The Vite dev page boots none. */
-export function bootedWorkspace(): string {
-  return window.suite_workspace_name ?? ''
 }
 
 /** Everyone at the org, named after the workspace when its name is known. */

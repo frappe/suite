@@ -39,10 +39,8 @@ vi.mock('@vueuse/core', async () => {
   const { ref: state } = await import('vue')
   return { useMediaQuery: () => state(false) }
 })
-vi.mock('@/api', () => ({
-  api: { suite: { site: { get: {} } } },
-  useQuery: () => ({ data: null }),
-}))
+vi.mock('@/api', () => ({ api: {}, client: {} }))
+vi.mock('@/platform/workspace', () => ({ useWorkspace: () => ({ workspaceName: { value: '' } }) }))
 vi.mock('@/apps/drive', () => ({ driveNodeRoute: () => ({ path: '/d/node' }) }))
 vi.mock('@/platform/session', () => ({ useSession: () => ({ user: { value: { id: 'me' } } }) }))
 vi.mock('@/platform/feedback', () => ({

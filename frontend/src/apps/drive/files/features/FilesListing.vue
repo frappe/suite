@@ -425,6 +425,7 @@ import StarredIcon from '@/apps/drive/files/internal/StarredIcon.vue'
 import { Dropdown } from '@/platform/feedback'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
+import { useWorkspace } from '@/platform/workspace'
 
 import DragMoveLayer from './DragMoveLayer.vue'
 import FileCard from './FileCard.vue'
@@ -439,7 +440,6 @@ import type { DragMove } from './useDragMove'
 import { useListColumns } from './useListColumns'
 import { useListingFocus } from './useListingFocus'
 import { LISTING_ITEM, useMarquee } from './useMarquee'
-import { useWorkspaceName } from './useWorkspaceName'
 
 const props = defineProps<{
   query: InfiniteQueryState<DriveNode>
@@ -490,7 +490,7 @@ let longPressFired = false
 /** The last press came from touch or a pen, not a mouse. */
 let touchPress = false
 const session = useSession()
-const workspaceName = useWorkspaceName()
+const { workspaceName } = useWorkspace()
 const locationTitle = useLocationTitle()
 const typeLabel = useNodeTypeLabel()
 const { box: marqueeBox, onPointerdown: startMarquee } = useMarquee({
