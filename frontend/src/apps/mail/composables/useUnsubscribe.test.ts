@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { reactive } from 'vue'
 
@@ -22,7 +23,7 @@ vi.mock('frappe-ui', () => ({ toast: { error: (...args: unknown[]) => toastError
 vi.stubGlobal('__', (text: string) => text)
 
 const mail = (id: string, fields: Partial<Mail> = {}) =>
-  ({ id, from_email: 'news@example.com', ...fields }) as Mail
+  fromPartial<Mail>({ id, from_email: 'news@example.com', ...fields })
 const ONE_CLICK = {
   one_click: 'https://n.example/u',
   mailto: null,

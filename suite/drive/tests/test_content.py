@@ -1205,6 +1205,16 @@ class TestContentWorkflows(IntegrationTestCase):
         )
         self.assertIn(CONTENT_DOCTYPE, activity)
 
+    def test_a_title_nobody_typed_is_numbered_instead_of_refused(self):
+        with registered(spec()):
+            self._document("Untitled document")
+            with self.assertRaises(DriveConflict):
+                self._document("Untitled document")
+            second = self._document("Untitled document", deduplicate_title=True)
+            third = self._document("Untitled document", deduplicate_title=True)
+        titles = [frappe.db.get_value("Drive Node", node, "title") for node in (second, third)]
+        self.assertEqual(titles, ["Untitled document (2)", "Untitled document (3)"])
+
     def test_a_factory_failure_leaves_no_node_and_no_document(self):
         def explode(node):
             frappe.get_doc({"doctype": CONTENT_DOCTYPE, "node": node, "body": "[]"}).insert(

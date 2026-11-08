@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, ref } from 'vue'
 
@@ -33,15 +34,18 @@ it('routes tool shortcuts through one activation owner and ignores text inputs a
   const host = document.createElement('div')
   document.body.append(host)
   const app = createApp(App)
-  app.provide(DRAWING_PERSISTENCE, {
-    drawingTitle: ref('Drawing'),
-    editable: ref(true),
-    dirty: ref(false),
-    saving: ref(false),
-    drawingLoading: ref(false),
-    loadError: ref(false),
-    session: { canShare: ref(false) },
-  } as unknown as DrawingPersistence)
+  app.provide(
+    DRAWING_PERSISTENCE,
+    fromPartial<DrawingPersistence>({
+      drawingTitle: ref('Drawing'),
+      editable: ref(true),
+      dirty: ref(false),
+      saving: ref(false),
+      drawingLoading: ref(false),
+      loadError: ref(false),
+      session: { canShare: ref(false) },
+    }),
+  )
   app.mount(host)
   cleanup = () => {
     app.unmount()

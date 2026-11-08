@@ -128,6 +128,83 @@ describe('buildOption — scatter', () => {
     ])
   })
 
+  // A date shows as `12/9/2025`; its number format turns it back into the
+  // day serial, so dates plot in date order and the axis reads as dates.
+  it('plots dates in the X column by their day serial', () => {
+    const rows = [
+      ['Day', 'Units'],
+      ['12/11/2025', 3],
+      ['12/9/2025', 5],
+      ['1/2/2026', 4],
+    ]
+    const fmts = [['general', 'general'], ...rows.slice(1).map(() => ['m/d/yyyy', 'general'])]
+    const opt = buildOption(cfg({ chartType: 'scatter' }), rows, false, fmts)
+    expect(opt.series[0].data).toEqual([
+      [46002, 3],
+      [46000, 5],
+      [46024, 4],
+    ])
+    expect(opt.xAxis.scale).toBe(true)
+    expect(opt.xAxis.axisLabel.formatter(46000)).toBe('12/9/2025')
+    expect(opt.xAxis.axisLabel.formatter(46024)).toBe('1/2/2026')
+  })
+
+  it('reads each date in its own day order', () => {
+    const rows = [
+      ['Day', 'Units'],
+      ['09/12/2025', 5],
+    ]
+    const fmts = [
+      ['general', 'general'],
+      ['dd/mm/yyyy', 'general'],
+    ]
+    const opt = buildOption(cfg({ chartType: 'scatter' }), rows, false, fmts)
+    expect(opt.series[0].data).toEqual([[46000, 5]])
+    expect(opt.xAxis.axisLabel.formatter(46000)).toBe('09/12/2025')
+  })
+
+  it('skips rows whose X is blank or text and plots the dated rest', () => {
+    const rows = [
+      ['Day', 'Units'],
+      ['12/9/2025', 5],
+      ['', 4],
+      ['soon', 6],
+      ['12/10/2025', 7],
+    ]
+    const fmts = [
+      ['general', 'general'],
+      ['m/d/yyyy', 'general'],
+      ['general', 'general'],
+      ['general', 'general'],
+      ['m/d/yyyy', 'general'],
+    ]
+    const opt = buildOption(cfg({ chartType: 'scatter' }), rows, false, fmts)
+    expect(opt.series[0].data).toEqual([
+      [46000, 5],
+      [46001, 7],
+    ])
+  })
+
+  it('says No data when no row can plot', () => {
+    const rows = [
+      ['Name', 'Units'],
+      ['Ann', 5],
+      ['Bob', 3],
+    ]
+    const opt = scatter(rows)
+    expect(opt.title.text).toBe('No data')
+    expect(opt.series).toBeUndefined()
+  })
+
+  it('keeps a number X axis as before', () => {
+    const opt = scatter([
+      ['Price', 'Units'],
+      [10, 5],
+    ])
+    expect(opt.xAxis.scale).toBeUndefined()
+    expect(opt.xAxis.axisLabel.formatter).toBeUndefined()
+  })
+
   it('leaves bar, line and area series as plain Y values', () => {
     const rows = [
       ['Month', 'Sales'],

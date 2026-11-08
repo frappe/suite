@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createViewModel } from '../core/view-model.js'
@@ -6,10 +7,10 @@ import { createSelection } from './selection.js'
 import type { CellProvider, GridHost } from './types.js'
 
 function setup({
-  values = {} as { [id: string]: string },
-  cells = {} as CellProvider,
-  host = {} as GridHost,
-  hiddenRows = [] as number[],
+  values = fromPartial<Record<string, string>>({}),
+  cells = fromPartial<CellProvider>({}),
+  host = fromPartial<GridHost>({}),
+  hiddenRows = fromPartial<number[]>([]),
 } = {}) {
   const vm = createViewModel()
   vm.setHiddenRows(hiddenRows)
@@ -21,7 +22,7 @@ function setup({
   })
   const vp = { ensureVisible: vi.fn() }
   const render = vi.fn()
-  const options = {
+  const options = fromPartial<Parameters<typeof createGridActions>[0]>({
     vm,
     sel,
     cells,
@@ -31,7 +32,7 @@ function setup({
     vp,
     getValue: (id: string) => values[id],
     cellIds: () => Object.keys(values),
-  } as Parameters<typeof createGridActions>[0]
+  })
   const act = createGridActions(options)
   return { vm, sel, act, vp, render, options }
 }

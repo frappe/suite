@@ -13,11 +13,13 @@ interface MeetingEvent {
   participants?: { email: string; _name: string }[]
 }
 
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const state = vi.hoisted(() => ({
   push: vi.fn(),
   request: vi.fn(),
   account: { accountId: 'personal', loadUser: () => Promise.resolve() },
-  events: [] as MeetingEvent[],
+  events: fromPartial<MeetingEvent[]>([]),
 }))
 
 // The window the component last asked the calendar for.

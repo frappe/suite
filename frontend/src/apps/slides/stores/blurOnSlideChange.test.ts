@@ -44,12 +44,12 @@ describe('leaving a slide while a text element is focused', () => {
         command.execute(slides.value)
         recorded.push(command)
       },
-    } as any)
+    })
 
     slides.value = [
       { clientId: 'A', elements: [text('t1')] },
       { clientId: 'B', elements: [text('t2')] },
-    ] as any
+    ]
     slidesLength.value = 2
     slideIndex.value = 0
     activeElementIds.value = []

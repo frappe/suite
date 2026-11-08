@@ -146,11 +146,13 @@ export class Reads {
     const key = this.key(reference, input, partition) + (pages ? ':pages' : '')
     let record = this.records.get(key)
     if (!record) {
-      record = reactive({
+      record = reactive<ReadRecord>({
         key,
+        // SAFETY: the heterogeneous cache erases I/O but keeps this operation, canonical input and policy together under one key.
         reference: reference as Operation,
         input: canonical(input),
         partition,
+        // SAFETY: callbacks receive the input retained with this same reference; the cache never pairs a policy with another operation.
         policy: policy as Policy,
         context,
         value: undefined,
@@ -164,7 +166,7 @@ export class Reads {
         updatedAt: 0,
         minRevision: 0,
         observers: new Set<() => void>(),
-      }) as ReadRecord
+      })
       this.records.set(key, record)
     }
     return record
@@ -270,9 +272,9 @@ export class Reads {
   }
 
   async refreshPages(record: ReadRecord, signal?: AbortSignal): Promise<void> {
-    const reference = record.reference as Operation & {
+    const reference: Operation & {
       page?: import('@/platform/transport').PageCapability
-    }
+    } = record.reference
     const page = reference.page
     if (!page || record.pages.length < 2) {
       await this.fetch(record, record.input, { signal })

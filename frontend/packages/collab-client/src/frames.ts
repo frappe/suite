@@ -53,6 +53,8 @@ interface UnavailableOpenHeader extends DocumentHeader {
 export type OpenHeader = LiveOpenHeader | UnavailableOpenHeader
 
 export interface PullHeader extends DocumentHeader {
+  // Who ran the last restore and what it brought back, for a reader who may see the versions
+  restored?: Record<string, unknown>
   // `rebuild`: the tab may hold a change quarantined since
   state: 'live' | 'rebuild'
   // Rises with every verdict on a suspect document; `verdict` is the last one
@@ -141,15 +143,17 @@ class FrameReader {
 }
 
 // `u32 hlen | header JSON | u32 checkpoint len | checkpoint | u32 n | (u64 rev | u32 len | bytes)*`
-export function decodeFrame<Header>(bytes: Uint8Array): {
+interface DecodedFrame<Header> {
   header: Header
   checkpoint: Uint8Array | null
   rows: Row[]
-} {
+}
+
+export function decodeFrame<Header>(bytes: Uint8Array): DecodedFrame<Header> {
   const reader = new FrameReader(bytes)
   const headerBytes = reader.readBytes(reader.readUint32())
   const headerText = new TextDecoder().decode(headerBytes)
-  // Trusted as the collab server's own reply, not checked field by field
+  // SAFETY: Header is the caller's collab endpoint contract; the authenticated collab server owns its fields, while FrameReader checks byte framing bounds.
   const header = JSON.parse(headerText) as Header
 
   const checkpoint = reader.readBytes(reader.readUint32())

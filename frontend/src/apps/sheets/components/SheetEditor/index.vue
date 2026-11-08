@@ -174,7 +174,9 @@
                 @mousedown.prevent="commitAc(item)"
               >
                 <span class="sn-ac-name">{{ item.name }}</span>
-                <span v-if="item.kind === 'fn'" class="sn-ac-sig">{{ AC_FUNS[item.name] }}</span>
+                <span v-if="item.kind === 'fn'" class="sn-ac-sig">{{
+                  AC_FUNS.get(item.name)
+                }}</span>
                 <span v-else class="sn-ac-badge">sheet</span>
               </div>
             </div>
@@ -206,6 +208,8 @@
           @click="reloadPage"
         />
       </div>
+      <!-- The surface's version preview bar -->
+      <slot name="banner" />
 
       <!-- Canvas grid + filter overlay -->
       <!-- wheel.capture: the link hover card is anchored to a cell's pixel rect,
@@ -236,7 +240,7 @@
         <ChartOverlay
           :charts="chartList"
           :current-sheet="currentSheet"
-          :get-matrix="getChartMatrix"
+          :get-source="getChartSource"
           :data-version="chartMatrixVersion"
           :selected-id="selectedChartId"
           :suppressed="chartDialogOpen"
@@ -502,7 +506,7 @@
       <!-- Chart dialog -->
       <ChartDialog
         v-model="chartDialogOpen"
-        :read-range="_readDisplays"
+        :read-range="_readChartDialogRange"
         :used-extent="_usedExtent"
         :current-sheet="currentSheet"
         :initial-range="chartInitialRange"
@@ -626,10 +630,9 @@
         </template>
       </Dialog>
 
-      <!-- Keyboard shortcut help — frappe-ui's KeyboardShortcutsModal, generated
-         from the shortcut registry populated by useShortcuts.js (via useShortcut),
-         so it can never drift from the handlers. -->
-      <KeyboardShortcutsDialog v-model:open="showShortcutsHelp" title="Keyboard shortcuts" />
+      <!-- Keyboard shortcut help — Suite's list of frappe-ui's shortcut registry,
+         populated by useShortcuts.js, so it can never drift from the handlers. -->
+      <ShortcutsDialog v-model:open="showShortcutsHelp" />
 
       <!-- Slicers — floating value-filter controls (SlicerPanel.vue) -->
       <SlicerPanel
@@ -779,29 +782,27 @@
 
 <script setup>
 import { createReusableTemplate } from '@vueuse/core'
-import {
-  Badge,
-  Button,
-  Dialog,
-  Dropdown,
-  FormControl,
-  KeyboardShortcutsDialog,
-  Spinner,
-  Tooltip,
-} from 'frappe-ui'
+import { Badge, Button, Dialog, Dropdown, FormControl, Spinner, Tooltip } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import * as Y from 'yjs'
 
+import { api, client } from '@/api'
 import { useCurrentUser } from '@/boot/session'
 import { colourStyle } from '@/platform/collab/colours'
+import { ShortcutsDialog } from '@/platform/shortcuts'
 import { translate as __ } from '@/platform/translation'
 
 import { chipColor } from '../../canvas/chip-geometry'
 import { createGrid } from '../../canvas/index'
+import { changedCellMap } from '../../collab/changes'
+import { buildWorkbookFromDoc } from '../../collab/load'
+import { readStoredVersion } from '../../collab/restore'
 import { createChartEngine } from '../../engine/charts.js'
 import { createClipboard } from '../../engine/clipboard.js'
 import { createCommentsEngine } from '../../engine/comments.js'
 import { createCondFormatEngine } from '../../engine/cond-format.js'
+import { fontSizeOps } from '../../engine/font-size.js'
 import { formatScope } from '../../engine/format-scope.js'
 import { createFormatsEngine } from '../../engine/formats.js'
 import { detectHyperlink, isAutoLinkText } from '../../engine/links.js'
@@ -899,6 +900,12 @@ const props = defineProps({
     type: Object,
     default: null,
   },
+  // A stored version's bytes: the editor shows that version read-only
+  // instead of the sheet, and opens no room (the surface's version preview).
+  version: {
+    type: Uint8Array,
+    default: null,
+  },
 })
 // `notes-opened`: the notes panel took the right edge. `reopen`: the live
 // room asks for the editor to be opened again.
@@ -937,7 +944,6 @@ const {
   readWholeSheet: _readWholeSheet,
   sheetExtent: _sheetExtent,
   usedCells: _usedCells,
-  readDisplays: _readDisplays,
   readSourceRange: _readSourceRange,
   clearRect: _clearRect,
   clearSheet: _clearSheet,
@@ -1044,13 +1050,32 @@ async function runSmartFill() {
 // ── Collaboration (collab v1) ─────────────────────────────────────────────────
 // The sheet's live room (useCollabRoom.ts): every edit is saved through it.
 // 'pending' until the load asks the server. A sheet the room can't open shows
-// its old body read-only: 'unconverted' until the server has converted it,
+// its old body read-only: 'unconverted' until the server has converted it
+// (or while this converter refuses its body),
 // 'disabled' for a guest on a share link (the room takes signed-in people only).
 const collabState = ref(props.collabSession ? 'pending' : 'disabled')
 const collabOn = computed(() => collabState.value === 'live')
 const collab = useCollabRoom({
   session: props.collabSession,
-  getStores: () => ({
+  getStores: _glueStores,
+  getSelection: () => {
+    const sel = grid?.getSelection?.()
+    return sel
+      ? { sheet: currentSheet.value, r0: sel.r0, c0: sel.c0, r1: sel.r1, c1: sel.c1 }
+      : null
+  },
+  onRemote: (change) => _onRemoteChange(change),
+  onReopen: () => emit('reopen'),
+  readConversion: () =>
+    client.query(
+      api.sheets.documents.conversion,
+      { name: props.id },
+      { context: props.requestContext },
+    ),
+})
+// The side stores a collab doc fills: the live room's, and a version's.
+function _glueStores() {
+  return {
     formats,
     comments,
     validation,
@@ -1066,16 +1091,8 @@ const collab = useCollabRoom({
     charts,
     pivot,
     namedRanges,
-  }),
-  getSelection: () => {
-    const sel = grid?.getSelection?.()
-    return sel
-      ? { sheet: currentSheet.value, r0: sel.r0, c0: sel.c0, r1: sel.r1, c1: sel.c1 }
-      : null
-  },
-  onRemote: (change) => _onRemoteChange(change),
-  onReopen: () => emit('reopen'),
-})
+  }
+}
 // Zoom is each person's own: the doc leaves it out, so a view from the doc
 // keeps the zoom this tab has.
 function _withLocalZoom(snap) {
@@ -2071,7 +2088,7 @@ const formatMenuOptions = computed(
 let _sheetTabs = null
 // A notice in the top bar (a rejected value, a Smart Fill hint).
 const saveError = ref('')
-const { loadError, legacyCurrent, loadSheet, workbookJson } = usePersistence({
+const { loadError, legacyCurrent, loadSheet, loadBody, workbookJson } = usePersistence({
   engine: {
     start: _startEngine,
     toBytes: _engineBytes,
@@ -2251,16 +2268,19 @@ const {
   onChartResize,
   onChartRefresh,
   selectChart,
-  getMatrix: getChartMatrix,
+  getSource: getChartSource,
 } = useChartIntegration({
   chart: charts,
-  readRange: (sn, rect) => _readDisplays(sn, rect),
+  readRange: (sn, rect, opts) => _readRect(sn, rect, opts),
   currentSheet,
   contextMenu,
   history,
   isDirty,
   getGrid: () => grid,
 })
+// The chart dialog's preview: shown values and their number formats (a
+// scatter chart reads dates with them; the type can change after the read).
+const _readChartDialogRange = (sn, rect) => _readRect(sn, rect, { numFmts: true })
 
 // Who else is here and what they have selected (collab/presence.ts).
 const presentUsers = collab.users
@@ -2481,34 +2501,34 @@ const visibleRemoteCursors = computed(() => {
   for (const user of _lastRemoteRC.keys()) {
     if (!remoteCursors.value.has(user)) _lastRemoteRC.delete(user)
   }
-  return [...remoteCursors.value.entries()]
-    .filter(([, cursor]) => cursor.subSheet === currentSheet.value)
-    .map(([user, cursor]) => {
-      // Compute a single rect that covers the whole remote range. We pull
-      // the top-left cell rect for x/y and the bottom-right cell rect to
-      // sum the trailing width/height — handles non-uniform column widths
-      // / row heights correctly.
-      const r = cursor.range || {
-        r0: cursor.row,
-        c0: cursor.col,
-        r1: cursor.row,
-        c1: cursor.col,
-      }
-      const tl = grid.getCellRect?.(r.r0, r.c0)
-      const br = grid.getCellRect?.(r.r1, r.c1)
-      if (!tl || !br) return null
-      const width = br.x + br.width - tl.x
-      const height = br.y + br.height - tl.y
-      // Motion detection: the row/col/subSheet stamp is what determines
-      // whether the *peer* moved. If the stamp is unchanged but the pixel
-      // rect differs, that's a local scroll/resize — we leave justMoved
-      // false so the cursor teleports with the viewport rather than
-      // sliding under the user's mouse.
-      const stamp = `${cursor.row}:${cursor.col}:${cursor.subSheet}`
-      const prev = _lastRemoteRC.get(user)
-      const justMoved = prev !== undefined && prev !== stamp
-      _lastRemoteRC.set(user, stamp)
-      return {
+  return [...remoteCursors.value.entries()].flatMap(([user, cursor]) => {
+    if (cursor.subSheet !== currentSheet.value) return []
+    // Compute a single rect that covers the whole remote range. We pull
+    // the top-left cell rect for x/y and the bottom-right cell rect to
+    // sum the trailing width/height — handles non-uniform column widths
+    // / row heights correctly.
+    const r = cursor.range || {
+      r0: cursor.row,
+      c0: cursor.col,
+      r1: cursor.row,
+      c1: cursor.col,
+    }
+    const tl = grid.getCellRect?.(r.r0, r.c0)
+    const br = grid.getCellRect?.(r.r1, r.c1)
+    if (!tl || !br) return []
+    const width = br.x + br.width - tl.x
+    const height = br.y + br.height - tl.y
+    // Motion detection: the row/col/subSheet stamp is what determines
+    // whether the *peer* moved. If the stamp is unchanged but the pixel
+    // rect differs, that's a local scroll/resize — we leave justMoved
+    // false so the cursor teleports with the viewport rather than
+    // sliding under the user's mouse.
+    const stamp = `${cursor.row}:${cursor.col}:${cursor.subSheet}`
+    const prev = _lastRemoteRC.get(user)
+    const justMoved = prev !== undefined && prev !== stamp
+    _lastRemoteRC.set(user, stamp)
+    return [
+      {
         user,
         label: cursor.label,
         justMoved,
@@ -2519,9 +2539,9 @@ const visibleRemoteCursors = computed(() => {
           height: height + 'px',
           ...colourStyle(cursor.colour),
         },
-      }
-    })
-    .filter(Boolean)
+      },
+    ]
+  })
 })
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
@@ -2864,7 +2884,7 @@ function _lastTab() {
 // otherwise overwrite with the first sheet.
 let _rememberTab = false
 watch(currentSheet, (sn) => {
-  if (!_rememberTab) return
+  if (!_rememberTab || props.version) return
   try {
     localStorage.setItem(_lastTabKey(), sn)
   } catch {
@@ -2936,8 +2956,42 @@ function _afterWorkbookLoaded() {
   syncFlags()
 }
 
+// A stored version, read-only: built from its Yjs state, or from its old body
+// for a version from before editing together. No room opens.
+async function _openVersion() {
+  try {
+    const stored = await readStoredVersion(props.version)
+    if (!stored) throw new Error('unreadable version')
+    if ('body' in stored) await loadBody(stored.body, { inDrive: true })
+    else await _buildFromState(stored.state)
+  } catch (error) {
+    console.error('[sheets] could not show a version', error)
+    loadError.value = { kind: 'other', message: __("This version can't be shown.") }
+    return
+  }
+  _afterWorkbookLoaded()
+  void _recomputeAllPivots()
+}
+async function _buildFromState(state) {
+  await _startEngine()
+  const doc = new Y.Doc()
+  try {
+    Y.applyUpdate(doc, state)
+    await buildWorkbookFromDoc(doc, _client(), _glueStores())
+  } finally {
+    doc.destroy()
+  }
+}
+// The version preview's changed cells, washed on the canvas; null clears them.
+function showChanges(cells) {
+  grid?.setDiffOverlay(cells ? changedCellMap(cells) : null)
+  grid?.setActiveDiffSheet(currentSheet.value)
+}
+watch(currentSheet, (sheet) => grid?.setActiveDiffSheet(sheet))
+
 async function _loadInitialData() {
   syncFlags()
+  if (props.version) return _openVersion()
   if (props.collabSession && props.id && (await _openCollab())) return
   if (props.id) {
     await loadSheet(props.id)
@@ -2956,6 +3010,8 @@ async function _loadInitialData() {
 // flipped in a finally so a thrown exception never strands the editor with a
 // permanent spinner.
 const isInitialLoad = ref(true)
+let _markLoaded
+const _loaded = new Promise((resolve) => (_markLoaded = resolve))
 onMounted(async () => {
   _setupGridInstance()
   _setupEventListeners()
@@ -2963,6 +3019,7 @@ onMounted(async () => {
     await _loadInitialData()
   } finally {
     isInitialLoad.value = false
+    _markLoaded()
   }
   // Focus the grid on open so arrow-key nav and Cmd+V work immediately, without
   // a priming click. Idle-guarded so a load that opened a dialog keeps its focus.
@@ -3740,6 +3797,11 @@ defineExpose({
   closeNotes: () => {
     notesPanel.open = false
   },
+  /** Resolves once the workbook has loaded, or failed to. */
+  whenLoaded: () => _loaded,
+  /** The live room's doc as one Yjs update; null outside a room. */
+  docState: () => collab.docState(),
+  showChanges,
 })
 // Restores version `seq` through the live room (collab/restore.ts). Throws
 // with the message to show when it didn't land.
@@ -4120,39 +4182,10 @@ function _patchFmtOps(patch) {
   }
 }
 const _clampFont = (v) => Math.max(8, Math.min(72, v))
+// A whole column/row also changes the cells in it with their own size
+// (fontSizeOps), so one undo step covers the layer and those cells.
 function adjustFontSize(delta) {
-  _recordScopedFormatOp({
-    cols: (cols, sn) => {
-      for (const c of cols)
-        formats.setCol(
-          c,
-          {
-            fontSize: _clampFont((formats.getCol(c, sn).fontSize || 13) + delta),
-          },
-          sn,
-        )
-    },
-    rows: (rows, sn) => {
-      for (const r of rows)
-        formats.setRow(
-          r,
-          {
-            fontSize: _clampFont((formats.getRow(r, sn).fontSize || 13) + delta),
-          },
-          sn,
-        )
-    },
-    cells: (ids, sn) => {
-      for (const id of ids)
-        formats.applyToRange(
-          [id],
-          {
-            fontSize: _clampFont((formats.get(id, sn).fontSize || 13) + delta),
-          },
-          sn,
-        )
-    },
-  })
+  _recordScopedFormatOp(fontSizeOps(formats, (size) => _clampFont(size + delta)))
   refreshActiveFormat()
   grid?.render()
   syncFlags()
@@ -4165,11 +4198,7 @@ function adjustFontSize(delta) {
 // Enter or blur) and its list of common sizes.
 function setFontSize(px) {
   const n = _clampFont(parseInt(px, 10) || 13)
-  _recordScopedFormatOp(
-    _patchFmtOps({
-      fontSize: n,
-    }),
-  )
+  _recordScopedFormatOp(fontSizeOps(formats, () => n))
   refreshActiveFormat()
   grid?.render()
   syncFlags()

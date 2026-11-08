@@ -22,13 +22,17 @@ from suite.drive.patches.build.preflight import (
     NO_GO,
     NO_OBJECT_PATH,
     NOT_MIGRATED,
+    PACKET_MIN,
     SIZE_DIFFERS,
     DiskSettings,
+    ServerFacts,
     preflight,
 )
 from suite.drive.patches.build.tests.fakes import FakeBucket, FakeFiles, FakeStorage, build_environment
 
 ROOT_FOLDER_NAME = "drive"
+# A server that passes both server checks, for tests about other checks.
+SERVER = ServerFacts(max_allowed_packet=PACKET_MIN, node_version="v22.13.0")
 
 # One legacy key per shape §14.1 names, as production holds them.
 KEYS = {
@@ -62,7 +66,7 @@ class HealthySite(PreflightCase):
     def test_every_sampled_object_is_found_and_the_verdict_is_go(self):
         env = self.site(KEYS.values())
 
-        report = preflight(env, disk=self.disk)
+        report = preflight(env, disk=self.disk, server=SERVER)
 
         self.assertEqual(report.verdict, GO)
         self.assertEqual(
@@ -82,8 +86,8 @@ class HealthySite(PreflightCase):
         keys = [f"/photos/{index:03d}.jpg" for index in range(60)]
         env = self.site(keys)
 
-        first = preflight(env, disk=self.disk, sample_size=5)
-        second = preflight(env, disk=self.disk, sample_size=5)
+        first = preflight(env, disk=self.disk, server=SERVER, sample_size=5)
+        second = preflight(env, disk=self.disk, server=SERVER, sample_size=5)
 
         (shape,) = first.shapes
         self.assertEqual((shape.rows, shape.sampled, shape.healthy), (60, 5, 5))
@@ -93,7 +97,7 @@ class HealthySite(PreflightCase):
         env = self.site(KEYS.values())
         env.files.add("file-odd", "/somewhere/else.bin", "else.bin")
 
-        report = preflight(env, disk=self.disk)
+        report = preflight(env, disk=self.disk, server=SERVER)
 
         self.assertEqual(report.verdict, GO)
         self.assertEqual(report.blobless.unreachable_rows, [("file-odd", "/somewhere/else.bin")])
@@ -104,7 +108,7 @@ class HealthySite(PreflightCase):
         env.files.add("file-here", "/private/files/here.pdf", "here.pdf")
         env.files.add("file-gone", "/private/files/gone.pdf", "gone.pdf")
 
-        report = preflight(env, disk=self.disk)
+        report = preflight(env, disk=self.disk, server=SERVER)
 
         self.assertEqual(report.verdict, GO)
         self.assertEqual((report.blobless.local, report.blobless.unreachable), (1, 1))
@@ -115,7 +119,7 @@ class MissingObjects(PreflightCase):
     def test_a_sampled_leading_slash_key_without_an_object_is_no_go_and_named(self):
         env = self.site(KEYS.values(), missing=(KEYS[LEADING_SLASH],))
 
-        report = preflight(env, disk=self.disk)
+        report = preflight(env, disk=self.disk, server=SERVER)
 
         self.assertEqual(report.verdict, NO_GO)
         by_shape = {shape.shape: shape for shape in report.shapes}
@@ -133,7 +137,7 @@ class MissingObjects(PreflightCase):
         env = self.site(KEYS.values())
         env.files.add("file-blank", get_s3_url(""), "blank")
 
-        report = preflight(env, disk=self.disk)
+        report = preflight(env, disk=self.disk, server=SERVER)
 
         self.assertEqual(report.verdict, NO_GO)
         self.assertEqual(
@@ -155,7 +159,7 @@ class KnownDefects(PreflightCase):
         env.files.add("file-gone", get_s3_url("/photos/gone.jpg"), "gone.jpg", status=REMOVED)
         env.files.add("file-blank", get_s3_url(""), "blank", status=REMOVED)
 
-        report = preflight(env, disk=self.disk)
+        report = preflight(env, disk=self.disk, server=SERVER)
 
         self.assertEqual(report.verdict, GO)
         self.assertEqual(
@@ -188,7 +192,7 @@ class KnownDefects(PreflightCase):
             {"file": "file-3", "key": healthy[3], "defect": MISSING, "note": "came back"},
         )
 
-        report = preflight(env, disk=self.disk, sample_size=5, accepted_defects=path)
+        report = preflight(env, disk=self.disk, server=SERVER, sample_size=5, accepted_defects=path)
 
         self.assertEqual(report.verdict, NO_GO)
         standing = {d.file: (d.kind, d.standing) for d in report.defects}
@@ -196,7 +200,7 @@ class KnownDefects(PreflightCase):
         self.assertEqual(standing["file-cut"], (SIZE_DIFFERS, ACCEPTED))
         self.assertEqual(standing["file-other"], (MISSING, BLOCKING))
         # Not listed, so only blocking if the sample met it. Head them all to be sure.
-        everything = preflight(env, disk=self.disk, sample_size=None, accepted_defects=path)
+        everything = preflight(env, disk=self.disk, server=SERVER, sample_size=None, accepted_defects=path)
         self.assertEqual(
             sorted((d.file, d.kind) for d in everything.with_standing(BLOCKING)),
             [("file-other", MISSING), ("file-short", SIZE_DIFFERS)],
@@ -225,7 +229,7 @@ class KnownDefects(PreflightCase):
             {"file": "file-other", "key": "/photos/other.png", "defect": MISSING},
             {"file": "file-short", "key": "/photos/short.pdf", "defect": SIZE_DIFFERS},
         )
-        accepted = preflight(env, disk=self.disk, sample_size=None, accepted_defects=path)
+        accepted = preflight(env, disk=self.disk, server=SERVER, sample_size=None, accepted_defects=path)
         self.assertEqual(accepted.verdict, GO)
         self.assertEqual(len(accepted.with_standing(ACCEPTED)), 4)
         self.assertEqual(accepted.stale, [])
@@ -243,7 +247,7 @@ class KnownDefects(PreflightCase):
             (self.path / "absent.json", "cannot read"),
         ):
             with self.subTest(path=path.name):
-                report = preflight(env, disk=self.disk, accepted_defects=path)
+                report = preflight(env, disk=self.disk, server=SERVER, accepted_defects=path)
                 self.assertEqual(report.verdict, NO_GO)
                 (failed,) = [check for check in report.checks if not check.ok]
                 self.assertIn(detail, failed.detail)
@@ -253,11 +257,12 @@ class GateFailures(PreflightCase):
     def test_a_local_driver_with_s3_on_is_no_go_and_skips_the_sample(self):
         env = self.site(KEYS.values(), storage=FakeStorage(driver="local", config={}))
 
-        report = preflight(env, disk=self.disk)
+        report = preflight(env, disk=self.disk, server=SERVER)
 
         self.assertEqual(report.verdict, NO_GO)
-        self.assertEqual([check.ok for check in report.checks], [False, False])
-        self.assertIn("storage_driver", report.checks[0].detail)
+        failed = [check for check in report.checks if not check.ok]
+        self.assertEqual(len(failed), 2)
+        self.assertIn("storage_driver", failed[0].detail)
         self.assertTrue(all(shape.sampled == 0 for shape in report.shapes))
         self.assertIn("[FAILED]", report.render())
 
@@ -268,10 +273,55 @@ class GateFailures(PreflightCase):
             legacy_s3=LegacyS3Config(enabled=False),
         )
 
-        report = preflight(env, disk=self.disk)
+        report = preflight(env, disk=self.disk, server=SERVER)
 
         self.assertEqual(report.verdict, GO)
         self.assertEqual(report.shapes, [])
+
+
+class ServerChecks(PreflightCase):
+    """Two things the migration needs from the server, beyond the site's config."""
+
+    ROOMY = 64 * 1024**2
+
+    def checked(self, server):
+        report = preflight(self.site(KEYS.values()), disk=self.disk, server=server)
+        failed = [check for check in report.checks if not check.ok]
+        return report, failed
+
+    def test_a_64_mib_packet_limit_and_node_22_13_are_go(self):
+        report, failed = self.checked(ServerFacts(max_allowed_packet=self.ROOMY, node_version="v22.13.0"))
+        self.assertEqual(report.verdict, GO)
+        self.assertEqual(failed, [])
+        self.assertIn("Node 22.13 or newer on this server", report.render())
+
+    def test_a_smaller_packet_limit_is_no_go_and_says_how_to_raise_it(self):
+        for packet in (16 * 1024**2, self.ROOMY - 1, None):
+            with self.subTest(packet=packet):
+                report, failed = self.checked(ServerFacts(max_allowed_packet=packet, node_version="v24.11.1"))
+                self.assertEqual(report.verdict, NO_GO)
+                self.assertEqual(len(failed), 1)
+                self.assertIn("max_allowed_packet", failed[0].name)
+                self.assertIn("SET GLOBAL max_allowed_packet=67108864", failed[0].detail)
+
+    def test_node_older_than_22_13_or_absent_is_no_go(self):
+        for version in ("v22.12.1", "v20.18.0", "", None, "not a version"):
+            with self.subTest(version=version):
+                report, failed = self.checked(
+                    ServerFacts(max_allowed_packet=self.ROOMY, node_version=version)
+                )
+                self.assertEqual(report.verdict, NO_GO)
+                self.assertEqual(len(failed), 1)
+                self.assertIn("Node 22.13", failed[0].name)
+                self.assertIn("Install Node 22.13 or newer", failed[0].detail)
+
+    def test_any_newer_node_is_go(self):
+        for version in ("v22.13.0", "v22.20.0", "v23.0.0", "v24.11.1"):
+            with self.subTest(version=version):
+                report, _failed = self.checked(
+                    ServerFacts(max_allowed_packet=self.ROOMY, node_version=version)
+                )
+                self.assertEqual(report.verdict, GO)
 
 
 class NothingIsWritten(PreflightCase):
@@ -279,7 +329,7 @@ class NothingIsWritten(PreflightCase):
         env = self.site(KEYS.values(), missing=(KEYS[BARE_ROOT_KEY],))
         before = {name: dict(row) for name, row in env.files.rows.items()}
 
-        preflight(env, disk=self.disk)
+        preflight(env, disk=self.disk, server=SERVER)
 
         self.assertEqual(env.files.rows, before)
         self.assertEqual(env.files.commits, 0)

@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import json
 import struct
@@ -10,7 +11,7 @@ from frappe.utils import now_datetime
 from frappe.utils.logging import connection_for
 
 from suite import content, drive
-from suite.content import conversions, convert, jobs, log, steps
+from suite.content import checker, conversions, convert, jobs, log, steps
 from suite.content.tests import note
 from suite.content.tests.test_note import APP_TABLE, NoteAppCase, typed
 
@@ -27,8 +28,21 @@ def pause_conversion(paused: bool) -> int:
     return frappe.db.get_value("Suite Collab App", NOTE_ROW, "conversion_paused")
 
 
+def opened_state(frame: bytes) -> str:
+    """Read the state an open frame's header gives."""
+    (length,) = struct.unpack(">I", frame[:4])
+    return json.loads(frame[4 : 4 + length])["state"]
+
+
+def run_queued(enqueue: MagicMock) -> None:
+    """Run the one job `enqueue` was asked for, as a worker would."""
+    [queued] = enqueue.call_args_list
+    frappe.get_attr(queued.args[0])(app=queued.kwargs["app"], node=queued.kwargs["node"])
+
+
 class TestRollout(NoteAppCase):
-    """Pausing an app's conversion stops new conversions at every place one starts."""
+    """Pausing an app's conversion stops the background run at every place it starts; a note someone
+    opens still converts."""
 
     def setUp(self):
         super().setUp()
@@ -107,7 +121,7 @@ class TestRollout(NoteAppCase):
             finally:
                 frappe.destroy()
 
-        def first_document(app: str, node: str) -> str:
+        def first_document(app: str, node: str, *, opened: bool = False) -> str:
             if convert_document.call_count == 1:
                 frappe.db.commit()  # nosemgrep: frappe-manual-commit
                 # A plain read opens the snapshot the next document's pause read sees unless it is current
@@ -219,6 +233,43 @@ class TestRollout(NoteAppCase):
         self.assertEqual((cached[note.EDITOR.app], stored), ("off", "on"))
 
         log.require_enabled(note.EDITOR.app)
+
+    def test_an_old_note_someone_opens_converts_while_paused(self):
+        node = self.old_note()
+        self.assertEqual(pause_conversion(True), 1)
+        # The Node converter's answer, for its version check and the conversion alike
+        answer = {
+            "version": note.EDITOR.conversion.version,
+            "kind": "converted",
+            "from": "html",
+            "state": base64.b64encode(typed(1, "Hello")).decode(),
+            "dropped": [],
+            "anchors": {},
+            "threads": [],
+            "html": "<p>Hello</p>",
+        }
+
+        with patch.object(frappe, "enqueue") as enqueue:
+            first = opened_state(steps.open_document(note.EDITOR.app, node, can_write=False))
+
+        with patch.object(checker, "ask", return_value=answer), patch.object(drive, "take_version"):
+            run_queued(enqueue)
+
+        then = opened_state(steps.open_document(note.EDITOR.app, node, can_write=False))
+        self.assertEqual((first, then), ("unconverted", "live"))
+        [[html]] = frappe.db.sql(f"SELECT `html` FROM `{APP_TABLE}` WHERE `name` = %s", node)
+        self.assertEqual(html, "<p>Hello</p>")
+
+    def test_an_old_note_its_converter_refused_is_not_queued_when_opened(self):
+        node = self.old_note()
+        conversions.record(note.EDITOR.app, node, note.fingerprint_of("<p>Old</p>"), now_datetime(), "check")
+        frappe.db.commit()  # nosemgrep: frappe-manual-commit
+
+        with patch.object(frappe, "enqueue") as enqueue:
+            state = opened_state(steps.open_document(note.EDITOR.app, node, can_write=False))
+
+        self.assertEqual(state, "unconverted")
+        enqueue.assert_not_called()
 
     def test_a_failed_document_keeps_its_error_log(self):
         page = [frappe._dict(node=frappe.generate_hash(length=10)) for _ in range(2)]
@@ -451,12 +502,11 @@ class TestRollout(NoteAppCase):
         self.assertIsNone(log.find(note.EDITOR.app, node))
         self.assertFalse(frappe.db.sql("SELECT 1 FROM `__note_content_conversion` WHERE `node` = %s", node))
 
-    def test_a_paused_backlog_is_not_waiting(self):
+    def test_a_paused_backlog_still_waits_as_its_documents_convert_when_opened(self):
         with (
             patch.object(convert, "editors", return_value={note.EDITOR.app: note.EDITOR}),
             patch.object(convert, "pending_page", return_value=[frappe._dict(node="waiting")]),
         ):
-            self.assertTrue(convert.any_waiting())
             self.assertEqual(pause_conversion(True), 1)
 
-            self.assertFalse(convert.any_waiting())
+            self.assertTrue(convert.any_waiting())

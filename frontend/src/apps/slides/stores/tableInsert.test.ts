@@ -13,7 +13,7 @@ const inserted = () => slides.value[0].elements[0]
 
 beforeEach(() => {
   setCommandHistory(useCommandHistory(slides, { actionOrder, actions }))
-  slides.value = [{ clientId: 'c1', background: '#ffffff', elements: [] }] as any
+  slides.value = [{ clientId: 'c1', background: '#ffffff', elements: [] }]
   slideIndex.value = 0
   Object.assign(slideBounds, { width: 960, height: 540, scale: 1 })
 })

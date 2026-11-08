@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
@@ -27,7 +28,11 @@ const AUTO_WIDTH = 100
 
 let history: ReturnType<typeof useCommandHistory>
 
-const element = () => slides.value[0].elements[0] as any
+const element = () => {
+  const elements = slides.value[0]?.elements
+  if (!Array.isArray(elements) || !elements[0]) throw new Error('Expected a slide element')
+  return elements[0]
+}
 
 const seedText = (align: string, overrides = {}) => {
   const content = `<p style="text-align: ${align}">one</p>`
@@ -36,7 +41,7 @@ const seedText = (align: string, overrides = {}) => {
       clientId: 'c1',
       elements: [{ id: 't1', type: 'text', left: 400, top: 0, content, ...overrides }],
     },
-  ] as any
+  ]
   slideIndex.value = 0
   activeElementIds.value = ['t1']
   elementDiv.innerHTML = content
@@ -45,9 +50,10 @@ const seedText = (align: string, overrides = {}) => {
 beforeEach(() => {
   slideBounds.scale = 1
   // the stand-in renders at its stored width, or at the width its text needs
-  elementDiv.getBoundingClientRect = () => ({ width: element().width || AUTO_WIDTH }) as DOMRect
+  elementDiv.getBoundingClientRect = () =>
+    fromPartial<DOMRect>({ width: element().width || AUTO_WIDTH })
   resetInteractionOffset()
-  history = useCommandHistory(slides, { actionOrder, actions: {} } as any)
+  history = useCommandHistory(slides, { actionOrder, actions: {} })
   setCommandHistory(history)
 })
 

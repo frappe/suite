@@ -6,7 +6,10 @@ export const presentationId = ref('')
 const viewOnly = ref(false)
 export const slides = ref<unknown[]>([])
 const loadedChunks: string[] = []
-export const state = { user: 'a@example.com' as string | null }
+interface VisitedUserFixture {
+  user: string | null
+}
+export const state: VisitedUserFixture = { user: 'a@example.com' }
 
 vi.mock('@/apps/slides/stores/presentation', () => ({ presentationDoc, presentationId, viewOnly }))
 vi.mock('@/apps/slides/stores/slide', () => ({ slides }))
@@ -67,9 +70,16 @@ export const openedNames: string[] = []
 export const requests: { url: string; isMarked: boolean }[] = []
 export const refused = new Set<string>()
 export const answers = new Map<string, string>()
-export const fake = {
-  shell: () => new Response() as Response,
-  holdFetch: null as Promise<unknown> | null,
+interface VisitedCopyFixture {
+  shell(): Response
+  holdFetch: Promise<unknown> | null
+  clock: number
+  lockRequests: number
+  hasWholeBodies: boolean
+}
+export const fake: VisitedCopyFixture = {
+  shell: () => new Response(),
+  holdFetch: null,
   clock: 0,
   lockRequests: 0,
   hasWholeBodies: false,

@@ -1,13 +1,18 @@
 import { describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 import { createRelativePositionFromTypeIndex, Doc, XmlText } from 'yjs'
 
 import { encodeAnchor } from '@/apps/writer/collab/anchors'
+import { requireTestElement } from '@/platform/testing/dom'
 
 import { confirmed } from './comment-list-fakes'
 import {
   buttonNamed,
   click,
   fakeDrafts,
+  ON_TEXT,
+  openRows,
+  rowButton,
   rows,
   settled,
   showList,
@@ -39,6 +44,11 @@ vi.mock('@/apps/drive', async () => {
   return fakeDrive()
 })
 
+vi.mock('@/apps/writer/drive', async () => {
+  const { fakeWriterDrive } = await import('./comment-list-fakes')
+  return fakeWriterDrive()
+})
+
 describe('comments not yet posted', () => {
   function menus(host: Element) {
     return host.querySelectorAll('button[aria-label="More comment actions"]').length
@@ -55,31 +65,26 @@ describe('comments not yet posted', () => {
     const isBoxFirst = !!(
       box.compareDocumentPosition(host.querySelector('ul')!) & Node.DOCUMENT_POSITION_FOLLOWING
     )
-    const faded = [...host.querySelectorAll('li')].map((row) =>
-      row.classList.contains('opacity-60'),
-    )
     const boxes = host.querySelectorAll('textarea').length
 
     const isFocused = document.activeElement === box
 
     expect([
-      (box as HTMLTextAreaElement).value,
+      requireTestElement(box, HTMLTextAreaElement).value,
       boxes,
       isFocused,
       isBoxFirst,
       rows(host),
-      faded,
     ]).toEqual([
       'Still writing',
       1,
       true,
       true,
       [
-        'You Posting… On its way',
-        'You Not posted · Retry Refused',
+        expect.stringMatching(/^Asha Rao \S.* On its way$/),
+        'Asha Rao Not posted · Retry Refused',
         expect.stringMatching(/^Ben Ito .* Looks good overall$/),
       ],
-      [true, false, false],
     ])
   })
 
@@ -88,7 +93,7 @@ describe('comments not yet posted', () => {
       [{ text: 'New words' }, { text: 'Refused', isSent: true }],
       [null, 'thread-9'],
     )
-    const { host, opened } = showList({ drafts: list, openThread: 'whole' })
+    const { host, opened } = showList({ drafts: list })
 
     host.querySelector('form')!.requestSubmit()
     await settled()
@@ -96,6 +101,33 @@ describe('comments not yet posted', () => {
     await settled()
 
     expect([posted, opened]).toEqual([['draft-0', 'draft-1'], ['thread-9']])
+  })
+
+  it('leaves another thread open when a new comment reaches Drive', async () => {
+    const { list } = fakeDrafts([{ text: 'New words' }], ['thread-9'])
+    const { host, opened } = showList({ drafts: list, openThread: 'whole' })
+
+    host.querySelector('form')!.requestSubmit()
+    await settled()
+
+    expect([openRows(host), opened]).toEqual([['whole'], []])
+  })
+
+  it('hands the writer back to the text when a new comment is sent, but not on a reply', async () => {
+    const { list } = fakeDrafts([{ text: 'New words' }], ['thread-9'])
+    const { host, sent } = showList({ drafts: list, threads: [ON_TEXT] })
+
+    host.querySelector('form')!.requestSubmit()
+    await settled()
+    await click(rowButton(host, 'Is this right?'))
+    const replyBox = host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Reply"]')!
+    replyBox.value = 'A reply'
+    replyBox.dispatchEvent(new Event('input'))
+    await nextTick()
+    replyBox.closest('form')!.requestSubmit()
+    await settled()
+
+    expect(sent).toEqual(['sent'])
   })
 
   it('discards a refused comment from its ⋯ only once confirmed, and offers no ⋯ while posting', async () => {
@@ -125,7 +157,7 @@ describe('comments not yet posted', () => {
       1,
       ['Discard this comment?', 'Discard this comment?'],
       2,
-      ['You Posting… On its way'],
+      [expect.stringMatching(/^Asha Rao \S.* On its way$/)],
     ])
   })
 
@@ -141,14 +173,14 @@ describe('comments not yet posted', () => {
     const { list } = fakeDrafts([{ anchor, text: 'Refused', isSent: true }])
     const { host } = showList({ threads: [], drafts: list })
 
-    await click(buttonNamed(host, 'You'))
+    await click(buttonNamed(host, 'Asha Rao'))
     const [openRow] = rows(host)
-    await click(buttonNamed(host, 'You'))
+    await click(buttonNamed(host, 'Asha Rao'))
     const [closedRow] = rows(host)
 
     expect([openRow, closedRow]).toEqual([
-      'You Not posted · Retry the quoted words Refused Discard',
-      'You Not posted · Retry the quoted words Refused',
+      'Asha Rao Not posted · Retry the quoted words Refused Discard',
+      'Asha Rao Not posted · Retry the quoted words Refused',
     ])
   })
 
@@ -161,10 +193,10 @@ describe('comments not yet posted', () => {
     expect([!!host.querySelector('textarea'), rows(host)]).toEqual([
       true,
       [
-        'You Not posted · Retry Refused',
+        'Asha Rao Not posted · Retry Refused',
         expect.stringMatching(/^Ben Ito \S.* Looks good overall$/),
         expect.stringMatching(/^Asha Rao \S.* Is this right\? · 2 replies$/),
-        expect.stringMatching(/^Asha Rao Text deleted .* Fixed the title · 1 reply$/),
+        expect.stringMatching(/^Asha Rao .* gone Text deleted Fixed the title · 1 reply$/),
       ],
     ])
   })

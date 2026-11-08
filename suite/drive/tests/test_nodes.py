@@ -129,6 +129,16 @@ class TestNodeLifecycle(IntegrationTestCase):
         self.assertEqual(renamed.title, "One")
         self.assertEqual(frappe.db.count("Drive Activity", {"node": second, "action": "rename"}), 1)
 
+    def test_titles_are_stored_as_typed_and_collide_as_typed(self):
+        title = "X & y <draft>"
+        folder = create_folder(self.admin, self.root.name, title)
+        self.assertEqual(frappe.db.get_value("Drive Node", folder, "title"), title)
+        with self.assertRaises(DriveConflict):
+            create_folder(self.admin, self.root.name, title)
+
+        other = create_folder(self.admin, self.root.name, "Other")
+        self.assertEqual(update(self.admin, other, title="<b>A</b> &amp; B").title, "<b>A</b> &amp; B")
+
     def test_file_rename_keeps_the_extension(self):
         # (current title, new title, refusal message or None when allowed)
         cases = (

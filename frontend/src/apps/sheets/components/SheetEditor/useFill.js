@@ -87,7 +87,7 @@ export function useFill({
     const mergeChanged = JSON.stringify(beforeMergeSnap) !== JSON.stringify(afterMergeSnap)
     const cfChanged = cfBefore !== cfAfter
     if (refs.length && !cfChanged) {
-      history.pushOp({
+      const operation = {
         opType: 'fill',
         subSheet: sheetName,
         cellRefs: refs,
@@ -100,13 +100,12 @@ export function useFill({
         ...(rowH && { beforeRowH: rowH.before, afterRowH: rowH.after }),
         // Merge restore rides on the same op shape now — revertOp/applyOp
         // call merge.restore when these are present.
-        ...(mergeChanged
-          ? {
-              beforeMerge: beforeMergeSnap,
-              afterMerge: afterMergeSnap,
-            }
-          : {}),
-      })
+      }
+      if (mergeChanged) {
+        operation.beforeMerge = beforeMergeSnap
+        operation.afterMerge = afterMergeSnap
+      }
+      history.pushOp(operation)
       syncFlags()
       isDirty.value = true
     } else {

@@ -5,8 +5,15 @@ export async function loadDevBoot(): Promise<void> {
     cache: 'no-store',
   })
   if (!response.ok) throw new Error('Failed to load Suite boot data')
-  const { message } = (await response.json()) as { message: Record<string, unknown> }
-  if (typeof message?.csrf_token !== 'string' || !message.csrf_token)
+  const body: unknown = await response.json()
+  const message = body && typeof body === 'object' && 'message' in body ? body.message : undefined
+  if (
+    !message ||
+    typeof message !== 'object' ||
+    !('csrf_token' in message) ||
+    typeof message.csrf_token !== 'string' ||
+    !message.csrf_token
+  )
     throw new Error('Suite boot data has no CSRF token')
   Object.assign(window, message)
 }

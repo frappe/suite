@@ -9,13 +9,21 @@ export interface ChatMessage {
   timestamp: string
 }
 
+interface ChatState {
+  isChatOpen: boolean
+  chatMessages: ChatMessage[]
+  hasUnreadMessages: boolean
+  hostOnlyChat: boolean
+  pinnedMessage: ChatMessage | null
+}
+
 export const useChatStore = defineStore('meet-chat', {
-  state: () => ({
+  state: (): ChatState => ({
     isChatOpen: false,
-    chatMessages: [] as ChatMessage[],
+    chatMessages: [],
     hasUnreadMessages: false,
     hostOnlyChat: false,
-    pinnedMessage: null as ChatMessage | null,
+    pinnedMessage: null,
   }),
   actions: {
     toggleChat() {

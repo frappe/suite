@@ -34,6 +34,37 @@ export interface MergeSlice {
   slaveMap: Record<string, string>
 }
 
+function isMergeInfo(value: unknown): value is MergeInfo {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    'r' in value &&
+    typeof value.r === 'number' &&
+    'c' in value &&
+    typeof value.c === 'number' &&
+    'rowSpan' in value &&
+    typeof value.rowSpan === 'number' &&
+    'colSpan' in value &&
+    typeof value.colSpan === 'number'
+  )
+}
+function isMasterMap(value: unknown): value is MergeSlice['masterMap'] {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    Object.values(value).every(isMergeInfo)
+  )
+}
+function isSlaveMap(value: unknown): value is MergeSlice['slaveMap'] {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    Object.values(value).every((master) => typeof master === 'string')
+  )
+}
+
 export type MergeSnapshot = Record<string, MergeSlice>
 
 export type MergeEngine = ReturnType<typeof createMergeEngine>
@@ -63,8 +94,7 @@ export function createMergeEngine() {
   function _unmergeRect(r0: number, c0: number, r1: number, c1: number, sheet: string) {
     const s = store[sheet]
     if (!s) return
-    for (const mid of Object.keys(s.masterMap)) {
-      const { r: mr, c: mc, rowSpan, colSpan } = s.masterMap[mid] as MergeInfo
+    for (const [mid, { r: mr, c: mc, rowSpan, colSpan }] of Object.entries(s.masterMap)) {
       const mr1 = mr + rowSpan - 1,
         mc1 = mc + colSpan - 1
       if (mr1 < r0 || mr > r1 || mc1 < c0 || mc > c1) continue
@@ -135,8 +165,10 @@ export function createMergeEngine() {
   function restore(snap: MergeSnapshot | MergeSlice | null | undefined) {
     for (const k of Object.keys(store)) delete store[k]
     if (!snap) return
-    const legacy = snap as Partial<MergeSlice>
+    const legacy: Partial<MergeSlice> = snap
     if (legacy.masterMap && legacy.slaveMap) {
+      if (!isMasterMap(legacy.masterMap) || !isSlaveMap(legacy.slaveMap))
+        throw new Error('Invalid legacy merges')
       // legacy
       store['Sheet1'] = {
         masterMap: deepClone(legacy.masterMap),
@@ -145,11 +177,12 @@ export function createMergeEngine() {
       return
     }
     // Saved slices may be missing either map.
-    for (const [name, slice] of Object.entries(snap as Record<string, Partial<MergeSlice>>)) {
-      store[name] = {
-        masterMap: deepClone(slice.masterMap || {}),
-        slaveMap: deepClone(slice.slaveMap || {}),
-      }
+    for (const [name, slice] of Object.entries(snap)) {
+      if (!slice || typeof slice !== 'object') throw new Error('Invalid merge slice')
+      const masterMap = ('masterMap' in slice ? slice.masterMap : undefined) || {}
+      const slaveMap = ('slaveMap' in slice ? slice.slaveMap : undefined) || {}
+      if (!isMasterMap(masterMap) || !isSlaveMap(slaveMap)) throw new Error('Invalid merge maps')
+      store[name] = { masterMap: deepClone(masterMap), slaveMap: deepClone(slaveMap) }
     }
   }
 
@@ -175,7 +208,7 @@ export function createMergeEngine() {
   function reorderSheets(orderedNames: readonly string[]) {
     const next: MergeSnapshot = {}
     for (const name of orderedNames) if (store[name]) next[name] = store[name]
-    for (const name of Object.keys(store)) if (!next[name]) next[name] = store[name] as MergeSlice
+    for (const [name, slice] of Object.entries(store)) if (!next[name]) next[name] = slice
     for (const k of Object.keys(store)) delete store[k]
     Object.assign(store, next)
   }

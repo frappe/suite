@@ -30,16 +30,14 @@
 import * as Y from 'yjs'
 
 import type { Glue } from './glue'
+import { isTailId, parseCellKey, parseLineKey, parseStateKey, roots, type AxisName } from './schema'
 import {
-  isTailId,
-  parseCellKey,
-  parseLineKey,
-  parseStateKey,
-  roots,
-  type AxisName,
-  type Roots,
-} from './schema'
-import { selectionFromIds, selectionToIds, type SavedSelection, type Selection } from './selection'
+  readSavedSelection,
+  selectionFromIds,
+  selectionToIds,
+  type SavedSelection,
+  type Selection,
+} from './selection'
 
 export type { Selection }
 
@@ -105,9 +103,9 @@ interface Step {
 export function createUndo({ doc, glue, getSelection, maxSteps = 100 }: UndoOptions): Undo {
   const r = roots(doc)
   // Everything but `meta` (schemaVersion) and `tails` (see the top).
-  const scope = (Object.keys(r) as (keyof Roots)[])
-    .filter((name) => name !== 'meta' && name !== 'tails')
-    .map((name) => r[name] as Y.AbstractType<unknown>)
+  const scope = Object.entries(r)
+    .filter(([name]) => name !== 'meta' && name !== 'tails')
+    .map(([, type]) => type)
   const scopeSet = new Set<unknown>(scope)
 
   const um = new Y.UndoManager(scope, {
@@ -158,11 +156,11 @@ export function createUndo({ doc, glue, getSelection, maxSteps = 100 }: UndoOpti
     const visit = (inserted: boolean) => (struct: Y.Item | Y.GC) => {
       if (!(struct instanceof Y.Item)) return
       const parent = struct.parent
-      if (struct.parentSub !== null && scopeSet.has(parent)) {
+      if (struct.parentSub !== null && scopeSet.has(parent) && parent instanceof Y.AbstractType) {
         const id = `${rootName(parent)}\u0000${struct.parentSub}`
         if (!seen.has(id)) {
           seen.add(id)
-          step.keys.push({ map: parent as unknown as EntryMap, key: struct.parentSub })
+          step.keys.push({ map: parent, key: struct.parentSub })
         }
         return
       }
@@ -226,7 +224,10 @@ export function createUndo({ doc, glue, getSelection, maxSteps = 100 }: UndoOpti
     }
     for (const name of ITEM_MAPS) {
       for (const [key, value] of r[name].entries()) {
-        const sheet = (value as { sheet?: string } | undefined)?.sheet
+        const sheet =
+          value && typeof value === 'object' && 'sheet' in value && typeof value.sheet === 'string'
+            ? value.sheet
+            : undefined
         if (sheet && step.sheets.has(sheet) && byOther(r[name], key)) return true
       }
     }
@@ -242,7 +243,9 @@ export function createUndo({ doc, glue, getSelection, maxSteps = 100 }: UndoOpti
       if (!item) continue
       // Alive: written by another tab? Deleted, and not by this step: every
       // later step of this tab is undone already, so another tab deleted it.
-      if (item.deleted ? !Y.isDeleted(deletions, item.id) : item.id.client !== doc.clientID) n++
+      // Yjs merges deleted entries written one after another into one item,
+      // whose last id is the latest value (ISSUES #119).
+      if (item.deleted ? !Y.isDeleted(deletions, item.lastId) : item.id.client !== doc.clientID) n++
     }
     return n
   }
@@ -273,7 +276,8 @@ export function createUndo({ doc, glue, getSelection, maxSteps = 100 }: UndoOpti
     const stack = which === 'undo' ? um.undoStack : um.redoStack
     const top = stack[stack.length - 1]
     if (!top) return { done: false }
-    const saved = top.meta.get(SELECTION) as SavedSelection | null | undefined
+    const rawSelection: unknown = top.meta.get(SELECTION)
+    const saved = rawSelection === undefined ? undefined : readSavedSelection(rawSelection)
     const info = readStep(top)
     const blocked = changedByOthers(info, top.deletions)
     if (
@@ -285,7 +289,8 @@ export function createUndo({ doc, glue, getSelection, maxSteps = 100 }: UndoOpti
       return { done: false, refused: 'edited' }
     }
     // Yjs pops steps until one changes something; hide the older ones so one
-    // Ctrl+Z is never two steps.
+    // Ctrl+Z is never two steps. Yjs tells the listeners while they are
+    // hidden, so tell them again once they are back (ISSUES #119).
     const older = stack.splice(0, stack.length - 1)
     carry = saved
     let done: boolean
@@ -294,14 +299,12 @@ export function createUndo({ doc, glue, getSelection, maxSteps = 100 }: UndoOpti
     } finally {
       carry = undefined
       stack.unshift(...older)
+      changed()
     }
     await glue.settled()
     // A step can only come to nothing because another tab changed what it
     // touched (this tab's later steps are undone already); it is gone.
-    if (!done) {
-      changed()
-      return { done, refused: 'edited' }
-    }
+    if (!done) return { done, refused: 'edited' }
     return {
       done,
       ...(blocked > 0 && { refused: 'partial' as const }),

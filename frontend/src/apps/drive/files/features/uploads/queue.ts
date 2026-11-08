@@ -9,6 +9,7 @@ import {
   openUpload,
   probeUpload,
   sendDirect,
+  type OpenUploadInput,
   type UploadSession,
 } from '@/apps/drive/client/uploads'
 import { readMaxFileSize } from '@/platform/boot'
@@ -160,9 +161,16 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
   const parallel = options.parallel ?? PARALLEL_FILES
   const maxFileSize = options.maxFileSize ?? readMaxFileSize
   const jobs = shallowReactive(new Map<string, Job>())
-  const state = reactive({
+  interface UploadQueueState {
+    halted: string | null
+    preparing: number
+    seen: boolean
+    trackerOpen: boolean
+    showDone: boolean
+  }
+  const state = reactive<UploadQueueState>({
     /** A 413 stopped the queue. It starts nothing until Retry all. */
-    halted: null as string | null,
+    halted: null,
     /** Folder uploads still creating their folders. */
     preparing: 0,
     /** The user looked at the tracker since the last failure. */
@@ -253,7 +261,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     replaces: string | null = null,
     title = picked.file.name,
   ) {
-    const entry = reactive<UploadEntry>({
+    const entry: UploadEntry = reactive<UploadEntry>({
       id: `upload-${nextId++}`,
       title,
       size: picked.file.size,
@@ -265,7 +273,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
       retryable: true,
       note: null,
       node: null,
-    }) as UploadEntry
+    })
     jobs.set(entry.id, {
       signal: lifetime.signal,
       entry,
@@ -517,16 +525,14 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     while (true) {
       try {
         job.signal.throwIfAborted()
-        job.session = await openUpload(
-          {
-            parent_node: entry.parent,
-            filename: entry.title,
-            size: entry.size,
-            ...(file?.type ? { mime: file.type } : {}),
-            ...(entry.replaces ? { replaces: entry.replaces } : {}),
-          },
-          job.signal,
-        )
+        const input: OpenUploadInput = {
+          parent_node: entry.parent,
+          filename: entry.title,
+          size: entry.size,
+        }
+        if (file?.type) input.mime = file.type
+        if (entry.replaces) input.replaces = entry.replaces
+        job.session = await openUpload(input, job.signal)
         job.signal.throwIfAborted()
         entry.sent = 0
         if (job.staleRecord) await records.remove(job.staleRecord)
@@ -567,14 +573,15 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
         },
       )
       try {
-        const node = await upload.run({
+        const input: Parameters<typeof upload.run>[0] = {
           parent_node: entry.parent,
           filename: entry.title,
-          ...(entry.replaces ? { replaces: entry.replaces } : {}),
-          ...(checksum ? { checksum } : {}),
           file: job.file,
           start: { session: job.session, offset: entry.sent },
-        })
+        }
+        if (entry.replaces) input.replaces = entry.replaces
+        if (checksum) input.checksum = checksum
+        const node = await upload.run(input)
         return complete(job, node)
       } catch (cause) {
         if (!(await settleRefusal(job, platformError(cause)))) return
@@ -728,9 +735,9 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
       bytesSent: job.entry.sent,
       createdAt: job.createdAt,
       touchedAt: now(),
-      ...(job.handle ? { handle: job.handle } : {}),
-      ...(job.entry.replaces ? { replaces: job.entry.replaces } : {}),
     }
+    if (job.handle) record.handle = job.handle
+    if (job.entry.replaces) record.replaces = job.entry.replaces
     await records.save(record).catch(() => undefined)
   }
 
@@ -806,7 +813,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     restored ??= (async () => {
       await clearing
       if (signal.aborted) return
-      const found = await records.load().catch(() => [] as UploadRecord[])
+      const found = await records.load().catch((): UploadRecord[] => [])
       if (signal.aborted) return
       for (const record of found) {
         if (
@@ -815,7 +822,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
           )
         )
           continue
-        const entry = reactive<UploadEntry>({
+        const entry: UploadEntry = reactive<UploadEntry>({
           id: `upload-${nextId++}`,
           title: record.title ?? record.name,
           size: record.size,
@@ -828,7 +835,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
           // A direct target lasts minutes and takes the whole file at once.
           note: record.mode === 'direct' ? DIRECT_NOTE : null,
           node: null,
-        }) as UploadEntry
+        })
         const direct = record.mode === 'direct'
         jobs.set(entry.id, {
           signal,
@@ -905,7 +912,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
 
   return {
     entries,
-    state: state as Readonly<typeof state>,
+    state: state,
     indicator,
     setPrompts,
     uploadFiles,
@@ -930,7 +937,7 @@ export type UploadQueue = ReturnType<typeof createUploadQueue>
 async function readHandle(handle: FileSystemFileHandle | undefined): Promise<File | null> {
   if (!handle) return null
   try {
-    const permissioned = handle as PermissionHandle
+    const permissioned: PermissionHandle = handle
     const options = { mode: 'read' as const }
     let permission = (await permissioned.queryPermission?.(options)) ?? 'granted'
     if (permission !== 'granted')

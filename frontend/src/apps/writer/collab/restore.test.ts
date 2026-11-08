@@ -1,5 +1,6 @@
-import { getSchema } from '@tiptap/core'
+import { getSchema, type JSONContent } from '@tiptap/core'
 import { prosemirrorJSONToYDoc, yXmlFragmentToProsemirrorJSON } from '@tiptap/y-tiptap'
+import { fromAny, fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it } from 'vitest'
 import * as yjs from 'yjs'
 
@@ -35,7 +36,7 @@ function shown(doc: yjs.Doc) {
   return schema.nodeFromJSON(yXmlFragmentToProsemirrorJSON(doc.getXmlFragment(BODY_FIELD))).toJSON()
 }
 
-function documentOf(content: object) {
+function documentOf(content: JSONContent) {
   return prosemirrorJSONToYDoc(schema, content, BODY_FIELD)
 }
 
@@ -48,10 +49,10 @@ function copyOf(doc: yjs.Doc) {
 function textAt(doc: yjs.Doc, ...path: number[]) {
   let node: yjs.XmlFragment | yjs.XmlElement | yjs.XmlText = doc.getXmlFragment(BODY_FIELD)
   for (const index of path) {
-    node = (node as yjs.XmlElement).get(index) as yjs.XmlElement | yjs.XmlText
+    node = fromPartial<yjs.XmlElement>(node).get(index)
   }
 
-  return node as yjs.XmlText
+  return fromPartial<yjs.XmlText>(node)
 }
 
 // The text an anchor covers now: empty once its characters are gone, null once split across blocks
@@ -62,7 +63,7 @@ function quoted(doc: yjs.Doc, anchor: { from: yjs.RelativePosition; to: yjs.Rela
     return null
   }
 
-  return (from.type as yjs.XmlText).toString().slice(from.index, to.index)
+  return fromPartial<yjs.XmlText>(from.type).toString().slice(from.index, to.index)
 }
 
 function anchorOn(node: yjs.XmlText, from: number, to: number) {
@@ -126,7 +127,10 @@ describe('restoreEdit', () => {
     )
     const version = copyOf(current)
     textAt(current, 0, 0).format(0, 10, { bold: null, italic: {} })
-    ;(current.getXmlFragment(BODY_FIELD).get(1) as yjs.XmlElement).setAttribute('level', 3 as never)
+    fromPartial<yjs.XmlElement>(current.getXmlFragment(BODY_FIELD).get(1)).setAttribute(
+      'level',
+      fromAny(3),
+    )
 
     restore(current, 'one', version)
 

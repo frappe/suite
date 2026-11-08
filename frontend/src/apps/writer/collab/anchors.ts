@@ -59,25 +59,34 @@ export function readAnchor(anchor: string): ThreadAnchor {
     return { kind: 'unplaced' }
   }
 
-  return readStoredAnchor(value as Partial<StoredAnchor> | null)
+  return readStoredAnchor(value)
 }
 
-function readStoredAnchor(stored: Partial<StoredAnchor> | null): ThreadAnchor {
-  if (stored?.v !== 1 || typeof stored.q !== 'string') {
+function readStoredAnchor(stored: unknown): ThreadAnchor {
+  if (
+    !stored ||
+    typeof stored !== 'object' ||
+    !('v' in stored) ||
+    !('q' in stored) ||
+    stored.v !== 1 ||
+    typeof stored.q !== 'string'
+  ) {
     return { kind: 'unplaced' }
   }
 
-  if (stored.s === undefined && stored.e === undefined) {
+  const startBytes = 's' in stored ? stored.s : undefined
+  const endBytes = 'e' in stored ? stored.e : undefined
+  if (startBytes === undefined && endBytes === undefined) {
     return { kind: 'deleted', quote: stored.q }
   }
 
-  if (typeof stored.s !== 'string' || typeof stored.e !== 'string') {
+  if (typeof startBytes !== 'string' || typeof endBytes !== 'string') {
     return { kind: 'unplaced' }
   }
 
   try {
-    const start = yjs.decodeRelativePosition(fromBase64(stored.s))
-    const end = yjs.decodeRelativePosition(fromBase64(stored.e))
+    const start = yjs.decodeRelativePosition(fromBase64(startBytes))
+    const end = yjs.decodeRelativePosition(fromBase64(endBytes))
     return { kind: 'text', start, end, quote: stored.q }
   } catch {
     return { kind: 'unplaced' }

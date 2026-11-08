@@ -13,7 +13,8 @@ A bundle is used only when it holds the version the server expects, so one built
 bump is refused.
 
 A conversion either converts or is refused with a reason: the converter's own (check, too_large,
-unreadable-yjs), or the child's failure (child_crash, child_timeout, bad_answer). `dropped` holds
+unreadable-yjs), which may name the rule it broke, or the child's failure (child_crash, child_timeout,
+bad_answer). `dropped` holds
 document text, the words of a pending edit or a comment's copy, so it goes only to the conversion's
 record, never to a log or report.
 
@@ -21,8 +22,9 @@ record, never to a log or report.
 that have no log, newest first, past any this converter refused unless the row changed after the refused
 attempt began or since the `modified` a later run last found its body unchanged at.
 
-Without Node, or with the scheduler off, nothing converts. `check_before_migrate` prints each cause on
-every migrate, and System Managers get one notification per cause until it is fixed.
+Without Node nothing converts; with the scheduler off, only a document someone opens does. While any
+document waits, paused or not, `check_before_migrate` prints each cause on every migrate, and System
+Managers get one notification per cause until it is fixed.
 """
 
 import base64
@@ -75,19 +77,26 @@ class Converted:
 @dataclass(frozen=True)
 class Refused:
     reason: str
+    detail: str | None = None
 
 
-def may_convert(app: str, *, lock: bool = False) -> bool:
-    """Whether the app is on and unpaused; lock=True takes a current read that locks its row until the next commit."""
+def may_convert(app: str, *, lock: bool = False, opened: bool = False) -> bool:
+    """Whether the app is on and unpaused; lock=True takes a current read that locks its row until the next commit.
+
+    The pause holds back only the background run: with opened=True, for a document someone opened, a paused
+    app still converts.
+    """
     row = {"parent": "Suite Collab Settings", "parentfield": "apps", "app": app}
     if not lock:
-        return log.enabled(app) and not frappe.db.get_value("Suite Collab App", row, "conversion_paused")
+        return log.enabled(app) and (
+            opened or not frappe.db.get_value("Suite Collab App", row, "conversion_paused")
+        )
 
     # A lock by filter would hold every app's row and the gaps between them
     name = frappe.db.get_value("Suite Collab App", row)
     fields = ["mode", "conversion_paused"]
     switch = name and frappe.db.get_value("Suite Collab App", name, fields, as_dict=True, for_update=True)
-    return bool(switch) and switch.mode == "on" and not switch.conversion_paused
+    return bool(switch) and switch.mode == "on" and (opened or not switch.conversion_paused)
 
 
 def converter_ready(app: str, conversion: Conversion) -> bool:
@@ -131,6 +140,7 @@ def pending_page(app: str, version: str, after: frappe._dict | None) -> list[fra
     node = frappe.qb.DocType("Drive Node")
     doc = Table(table(app, "doc"))
     refused = refusal_of(app, row, node_field, version)
+    conversion = spec_of(app).conversion
     query = (
         frappe.qb.from_(row)
         .join(node)
@@ -145,6 +155,10 @@ def pending_page(app: str, version: str, after: frappe._dict | None) -> list[fra
         .orderby(row.name, order=Order.desc)
         .limit(PAGE)
     )
+    if conversion:
+        for column, value in conversion.excluded.items():
+            query = query.where(row[column] != value)
+
     if after is not None:
         query = query.where(sorts_after(row, after))
 
@@ -221,9 +235,13 @@ def tell_blocks() -> None:
 
 
 def any_waiting() -> bool:
-    """Whether an app with collaboration on has a document waiting to convert."""
+    """Whether an app with collaboration on has a document waiting to convert; a paused one converts when opened."""
     for app, spec in editors().items():
-        if spec.conversion and may_convert(app) and pending_page(app, spec.conversion.version, None):
+        if (
+            spec.conversion
+            and may_convert(app, opened=True)
+            and pending_page(app, spec.conversion.version, None)
+        ):
             return True
 
     return False
@@ -305,7 +323,7 @@ def failure_reason(error: BaseException | None) -> str:
 def read_answer(answer: dict, max_state: int) -> Converted | Refused:
     """Read the converter's answer, refusing as bad_answer one of another shape."""
     if answer.get("kind") == "failed" and answer.get("reason") in CONVERTER_REASONS:
-        return Refused(answer["reason"])
+        return Refused(answer["reason"], answer.get("detail"))
 
     try:
         state = base64.b64decode(answer["state"], validate=True)

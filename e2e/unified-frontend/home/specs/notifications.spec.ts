@@ -28,9 +28,12 @@ test.beforeEach(async ({ baseURL }) => {
 	// One legacy row on this site carries no activity link, so the route never
 	// counts it. The badge baseline therefore comes from the route itself.
 	alreadyUnread = unreadNotificationNames();
-	baseline = ((await (await api.get(`${DRIVE}/notifications/unread-count`)).json()) as {
-		data: { unread: number };
-	}).data.unread;
+	// SAFETY: Drive notifications/unread-count returns data.unread; this test compares the count before and after its seeded notification.
+	baseline = (
+		(await (await api.get(`${DRIVE}/notifications/unread-count`)).json()) as {
+			data: { unread: number };
+		}
+	).data.unread;
 	seeded = seedNotifications(folder.name);
 });
 

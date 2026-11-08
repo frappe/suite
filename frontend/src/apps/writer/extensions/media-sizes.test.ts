@@ -12,6 +12,9 @@ import { writerSchema } from '../schema'
 vi.mock('@/apps/writer/utils', () => ({ insertTemplate: () => {} }))
 vi.mock('@/apps/writer/resources', () => ({ getTemplates: {} }))
 
+// jsdom has no scrollIntoView, which the editor calls once a picture is put in
+Element.prototype.scrollIntoView ??= () => {}
+
 interface Size {
   width: number
   height: number
@@ -59,14 +62,14 @@ function waitForUpdates() {
   return new Promise((resolve) => setTimeout(resolve, 0))
 }
 
-function image(src: string, attrs: object = {}) {
+function image(src: string, attrs: NonNullable<JSONContent['attrs']> = {}) {
   return {
     type: 'image',
     attrs: { src, ...attrs },
   }
 }
 
-function imageParagraph(src: string, attrs: object = {}) {
+function imageParagraph(src: string, attrs: NonNullable<JSONContent['attrs']> = {}) {
   return {
     type: 'paragraph',
     content: [image(src, attrs)],
@@ -90,8 +93,6 @@ function doc(...content: object[]): JSONContent {
 function editorExtensions(ydoc: yjs.Doc | null) {
   const options: WriterEditorOptions = {
     isCollaborative: !!ydoc,
-    mentionItems: () => [],
-    onMentionQuery: () => {},
     onCommentActivated: () => {},
     onAnchors: () => {},
     scrollParent: () => window,
@@ -129,7 +130,7 @@ function openEditor(content: JSONContent | yjs.Doc, isCollaborative = true) {
 
   const editorOptions: Partial<EditorOptions> = { extensions: editorExtensions(ydoc) }
   if (!ydoc) {
-    editorOptions.content = content as JSONContent
+    editorOptions.content = content
   }
 
   const editor = new Editor(editorOptions)

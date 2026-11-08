@@ -31,7 +31,7 @@ function setup({ sends = true, at = 4 } = {}) {
     peerAhead: (beyond: number) => ahead.push(beyond),
     // The app reads a position as a caret only when it has both ends
     position: (raw: unknown) => {
-      const { anchor, head } = (raw ?? {}) as { anchor?: unknown; head?: unknown }
+      const { anchor, head } = raw ?? {}
       if (anchor && head) {
         return { anchor, head }
       }
@@ -41,7 +41,7 @@ function setup({ sends = true, at = 4 } = {}) {
   }
   const presence = new Presence(socket, hooks)
   presences.push(presence)
-  function hear(event: string, message: object) {
+  function hear(event: string, message: unknown) {
     handlers.get(`suite_collab_presence${event}`)!(message)
   }
 

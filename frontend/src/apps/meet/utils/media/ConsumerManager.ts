@@ -66,7 +66,10 @@ export class ConsumerManager {
 
     const entry: ConsumerEntry = {
       id: consumer.id,
-      participantId: participantIdOverride || (consumer.appData?.userId as string) || '',
+      participantId:
+        participantIdOverride ||
+        (typeof consumer.appData?.userId === 'string' ? consumer.appData.userId : '') ||
+        '',
       producerId: consumer.producerId,
       kind: consumer.kind,
       isScreen: consumer.appData?.type === 'screen' || false,
@@ -80,7 +83,7 @@ export class ConsumerManager {
       resume: consumer.resume.bind(consumer),
     }
 
-    this.consumers.set(consumer.id as string, entry)
+    this.consumers.set(consumer.id, entry)
 
     const emitLost = () => {
       if (this.localCloseInProgress.has(consumer.id)) {

@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { CollabSession } from '@/platform/collab'
@@ -6,7 +7,7 @@ import { openSheetRoom, type OpenSheetOptions } from '../../collab/room'
 import { roots } from '../../collab/schema'
 import { fakeServer } from '../../collab/test-room'
 import { cmd, makeStores, newClient, openTab } from '../../collab/test-tabs'
-import { useCollabRoom } from './useCollabRoom'
+import { useCollabRoom, type SheetConversion } from './useCollabRoom'
 
 const toast = vi.hoisted(() => ({ info: vi.fn() }))
 vi.mock('frappe-ui', () => ({ toast }))
@@ -18,7 +19,7 @@ vi.mock('@/platform/session', () => ({
 // Real IronCalc workbooks, several round trips each.
 const TIMEOUT = 30_000
 
-const session = { nodeId: 'n1' } as unknown as CollabSession
+const session = fromPartial<CollabSession>({ nodeId: 'n1' })
 
 afterEach(() => {
   toast.info.mockClear()
@@ -40,6 +41,7 @@ function editor(server: ReturnType<typeof fakeServer>, extra = {}) {
     getSelection: () => ({ sheet: 'Sheet1', r0: 0, c0: 0, r1: 0, c1: 0 }),
     onRemote,
     onReopen,
+    readConversion: async () => ({ state: 'converted' as const }),
     open: (o: OpenSheetOptions) => openSheetRoom({ ...o, open: server.open }),
     ...extra,
   })
@@ -238,20 +240,63 @@ describe('useCollabRoom', { timeout: TIMEOUT }, () => {
   })
 
   it('shows a sheet waiting for its conversion read-only, then reopens once it is converted', async () => {
-    let converted = false
-    const probe = vi.fn(async () => converted)
+    let state: SheetConversion['state'] = 'pending'
+    const readConversion = vi.fn(async () => ({ state }))
     const { collab, onReopen } = editor(fakeServer(), {
       open: async () => ({ state: 'unconverted' as const }),
-      probe,
+      readConversion,
       retryMs: 5,
     })
     expect(await collab.open(await newClient())).toBe('unconverted')
     expect(collab.editingState.value).toBe('closed')
     expect(collab.banner.value?.text).toContain('being upgraded')
-    await vi.waitFor(() => expect(probe.mock.calls.length).toBeGreaterThan(1))
+    await vi.waitFor(() => expect(readConversion.mock.calls.length).toBeGreaterThan(1))
     expect(onReopen).not.toHaveBeenCalled()
-    converted = true
+    state = 'converted'
     await vi.waitFor(() => expect(onReopen).toHaveBeenCalledTimes(1))
+    await collab.close()
+  })
+
+  it('shows a refused conversion with its reason, and stops asking', async () => {
+    const readConversion = vi.fn(async (): Promise<SheetConversion> => ({
+      state: 'refused',
+      outcome: 'check',
+      reason: 'check: orphan',
+    }))
+    const { collab, onReopen } = editor(fakeServer(), {
+      open: async () => ({ state: 'unconverted' as const }),
+      readConversion,
+      retryMs: 5,
+    })
+    expect(await collab.open(await newClient())).toBe('unconverted')
+
+    await vi.waitFor(() => expect(collab.banner.value?.text).toContain("couldn't be upgraded"))
+    expect(collab.banner.value?.text).toContain('Reason: check: orphan.')
+    expect(collab.banner.value?.text).not.toContain('being upgraded')
+    expect(collab.editingState.value).toBe('closed')
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(readConversion).toHaveBeenCalledTimes(1)
+    expect(onReopen).not.toHaveBeenCalled()
+    await collab.close()
+  })
+
+  it('says a sheet refused as too large is too large to edit together', async () => {
+    const { collab } = editor(fakeServer(), {
+      open: async () => ({ state: 'unconverted' as const }),
+      readConversion: async (): Promise<SheetConversion> => ({
+        state: 'refused',
+        outcome: 'too_large',
+      }),
+      retryMs: 5,
+    })
+    await collab.open(await newClient())
+
+    await vi.waitFor(() =>
+      expect(collab.banner.value?.text).toBe(
+        'This spreadsheet is too large to edit together, so it stays read-only.',
+      ),
+    )
+    expect(collab.editingState.value).toBe('closed')
     await collab.close()
   })
 

@@ -9,14 +9,16 @@
 // All pure — no DOM, no Vue, no engines.  SheetEditor wraps the result with
 // op-logging + history bookkeeping.
 
-const _SEP_LITERAL: { readonly [key: string]: string } = {
-  tab: '\t',
-  comma: ',',
-  semicolon: ';',
-  pipe: '|',
-  space: ' ',
-  period: '.',
-}
+const _SEP_LITERAL = new Map<string, string>(
+  Object.entries({
+    tab: '\t',
+    comma: ',',
+    semicolon: ';',
+    pipe: '|',
+    space: ' ',
+    period: '.',
+  }),
+)
 
 // Auto-detect tries these in order — first one that produces >1 token in at
 // least one cell wins.  Tab and comma rank highest because they're the
@@ -75,7 +77,7 @@ function _parseCsv(s: string, sep: string): string[] {
 // the total number of "extra" tokens beyond 1 per cell.  Zero means nothing
 // to split.
 function _scoreSeparator(values: readonly unknown[], sepKey: string): number {
-  const lit = _SEP_LITERAL[sepKey]
+  const lit = _SEP_LITERAL.get(sepKey)
   let extras = 0
   for (const v of values) {
     if (v == null || v === '') continue
@@ -106,8 +108,8 @@ export function resolveSeparator(
   if (choice === 'auto') {
     const key = detectSeparator(values)
     // Every auto-detect key is in _SEP_LITERAL.
-    return key ? (_SEP_LITERAL[key] as string) : null
+    return key ? (_SEP_LITERAL.get(key) ?? null) : null
   }
   // Only a key string can name a separator; anything else falls through to null.
-  return (typeof choice === 'string' && _SEP_LITERAL[choice]) || null
+  return (typeof choice === 'string' && _SEP_LITERAL.get(choice)) || null
 }

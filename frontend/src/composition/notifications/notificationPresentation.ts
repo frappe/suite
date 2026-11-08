@@ -1,8 +1,15 @@
 import { DRIVE_ROLES, type DriveNotification } from '@/apps/drive'
 import { translate as __ } from '@/platform/translation'
 
-type Action = DriveNotification['activity']['action']
-type Sentence = (actor: string, title: string, notification: DriveNotification) => string
+/** A notification about somebody's action on an item, as opposed to one about the reader's own download. */
+type ActivityNotification = Extract<DriveNotification, { activity: unknown }>
+type Action = ActivityNotification['activity']['action']
+type Sentence = (
+  actor: string,
+  title: string,
+  notification: ActivityNotification,
+  reader: string | undefined,
+) => string
 
 // Every action has a sentence. A new server action fails the typecheck here, and
 // the response validator refuses an action it does not know, so the bell never
@@ -12,7 +19,12 @@ const SENTENCES: Record<Action, Sentence> = {
   rename: (actor, title) => __('{0} renamed "{1}"', [actor, title]),
   move: (actor, title) => __('{0} moved "{1}"', [actor, title]),
   edit: (actor, title) => __('{0} edited "{1}"', [actor, title]),
-  comment: (actor, title) => __('{0} mentioned you in "{1}"', [actor, title]),
+  comment: (actor, title, { activity }, reader) => {
+    const mentions = activity.detail.mentions
+    return Array.isArray(mentions) && mentions.includes(reader)
+      ? __('{0} mentioned you in "{1}"', [actor, title])
+      : __('{0} commented on "{1}"', [actor, title])
+  },
   trash: (actor, title) => __('{0} moved "{1}" to Trash', [actor, title]),
   restore: (actor, title) => __('{0} restored "{1}"', [actor, title]),
   delete: (actor, title) => __('{0} deleted "{1}"', [actor, title]),
@@ -31,25 +43,39 @@ const SENTENCES: Record<Action, Sentence> = {
   share_remove: (actor, title) => removed(actor, title),
 }
 
-const ROLE_PHRASES: Record<number, () => string> = {
-  [DRIVE_ROLES.read]: () => __('can view'),
-  [DRIVE_ROLES.comment]: () => __('can comment'),
-  [DRIVE_ROLES.upload]: () => __('can upload'),
-  [DRIVE_ROLES.edit]: () => __('can edit'),
-  [DRIVE_ROLES.manage]: () => __('can manage'),
-}
+const ROLE_PHRASES = new Map<string, () => string>(
+  Object.entries({
+    [DRIVE_ROLES.read]: () => __('can view'),
+    [DRIVE_ROLES.comment]: () => __('can comment'),
+    [DRIVE_ROLES.upload]: () => __('can upload'),
+    [DRIVE_ROLES.edit]: () => __('can edit'),
+    [DRIVE_ROLES.manage]: () => __('can manage'),
+  }),
+)
 
-/** One plain sentence: who did what to which item, for the reader. */
-export function notificationSentence(notification: DriveNotification): string {
+/** One plain sentence for the reader: who did what to which item, or what became of their download. */
+export function notificationSentence(notification: DriveNotification, reader?: string): string {
+  if ('download' in notification) {
+    const { title, status } = notification.download
+    if (status === 'Failed') return __('Could not prepare "{0}"', [title])
+    if (status === 'Expired') return __('"{0}" has expired. Download the items again.', [title])
+    return __('"{0}" is ready to download', [title])
+  }
   const sentence = SENTENCES[notification.activity.action]
-  return sentence(notification.actor.full_name, notification.node_title, notification)
+  return sentence(notification.actor.full_name, notification.node_title, notification, reader)
 }
 
-/** The comment a mention quotes, or null when the activity carries none. */
+/** The comment a notification quotes, why a download failed, or null. */
 export function notificationExcerpt(notification: DriveNotification): string | null {
+  if ('download' in notification) return notification.download.error
   if (notification.activity.action !== 'comment') return null
   const excerpt = notification.activity.detail.excerpt
   return typeof excerpt === 'string' && excerpt.trim() ? excerpt : null
+}
+
+/** When the notification arrived, or when its activity happened if the row has no stamp. */
+export function notificationAt(notification: DriveNotification): string | null {
+  return notification.creation || ('activity' in notification ? notification.activity.at : null)
 }
 
 export function notificationTime(value: string | null | undefined, now = new Date()): string {
@@ -58,7 +84,7 @@ export function notificationTime(value: string | null | undefined, now = new Dat
   if (Number.isNaN(date.getTime())) return ''
   const seconds = Math.round((date.getTime() - now.getTime()) / 1_000)
   const absolute = Math.abs(seconds)
-  const [amount, unit] =
+  const [amount, unit]: [number, Intl.RelativeTimeFormatUnit] =
     absolute < 60
       ? [seconds, 'second']
       : absolute < 3_600
@@ -66,10 +92,7 @@ export function notificationTime(value: string | null | undefined, now = new Dat
         : absolute < 86_400
           ? [Math.round(seconds / 3_600), 'hour']
           : [Math.round(seconds / 86_400), 'day']
-  return new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' }).format(
-    amount,
-    unit as Intl.RelativeTimeFormatUnit,
-  )
+  return new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' }).format(amount, unit)
 }
 
 function removed(actor: string, title: string): string {
@@ -77,6 +100,6 @@ function removed(actor: string, title: string): string {
 }
 
 function rolePhrase(role: unknown): string | null {
-  const phrase = typeof role === 'number' ? ROLE_PHRASES[role] : undefined
+  const phrase = typeof role === 'number' ? ROLE_PHRASES.get(String(role)) : undefined
   return phrase ? phrase() : null
 }

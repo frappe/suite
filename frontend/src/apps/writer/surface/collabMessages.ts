@@ -44,7 +44,7 @@ export type BannerState = Pick<
 }
 
 // Functions, so each message is translated once the catalog has loaded
-const STOP_MESSAGES: Record<string, () => string> = {
+const STOP_MESSAGES = {
   poison: () => __("This document can't hold a change made in this tab, so saving stopped."),
   browser: () => __("This document can't be edited in this browser version."),
   too_large: () => __('A change in this tab is too large to save. Insert large images as files.'),
@@ -58,15 +58,15 @@ const STOP_MESSAGES: Record<string, () => string> = {
       "A version of this document was restored, so changes made in this tab before it weren't saved.",
     ),
   clock_gap: () => __('This tab fell out of step with the server, so saving stopped.'),
-}
+} satisfies Record<string, () => string>
 // Stops a reload would only repeat
 const LASTING_STOPS = new Set(['browser'])
 
 // Waits that say why changes aren't saving yet; other pauses clear on their own too soon to mention
-const PAUSE_MESSAGES: Record<string, () => string> = {
+const PAUSE_MESSAGES = {
   upload_refused: () =>
     __("Your network is refusing uploads, so your latest changes aren't saved."),
-}
+} satisfies Record<string, () => string>
 
 function recoveryNote(state: BannerState) {
   if (state.isRecoveryKept) {
@@ -357,10 +357,10 @@ function unreadableLine() {
 }
 
 // Why every old document waits, as the server names it to System Managers
-const WAIT_REASONS: Record<string, () => string> = {
+const WAIT_REASONS = {
   node: () => __('the server has no Node 22.13 or newer'),
   scheduler: () => __('the scheduler is off'),
-}
+} satisfies Record<string, () => string>
 
 // An old document the next conversion run makes collaborative, read-only until then
 export function upgradingBanner(reason: string | null, isUnreadable: boolean): Banner {
@@ -447,12 +447,12 @@ export function bannerFor(state: BannerState): Banner | null {
   return savingBanner(state)
 }
 
-const OPEN_FAILURES: Record<string, () => string> = {
+const OPEN_FAILURES = {
   signed_out: () => __("You're signed out. Sign in to open this document."),
   locked: () => __('This document is locked. Unlock it to open it.'),
   stale_session: () => __('You signed in again in another tab. Reload to open this.'),
   user_changed: () => __('Someone else is now signed in here. Reload to open this document.'),
-}
+} satisfies Record<string, () => string>
 
 export function openFailureFor(reason: string | null, status: number | null = null) {
   return (

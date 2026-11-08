@@ -96,8 +96,7 @@ const app = createApp({
       chatReceived: (message) => {
         if (config.publicChat === false) return
         const participant = message.participantId
-          ? (participantStore.participants[message.participantId] as
-              { avatar?: string | null } | undefined)
+          ? participantStore.participants[message.participantId]
           : undefined
         messages.value = [...messages.value, { ...message, avatar: participant?.avatar }].slice(-5)
         const timer = window.setTimeout(() => {

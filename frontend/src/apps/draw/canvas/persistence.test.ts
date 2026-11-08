@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, ref } from 'vue'
 
@@ -32,14 +33,16 @@ let persistence: DrawingPersistence
 async function editor(loadedScene: unknown = scene) {
   network.query.mockResolvedValue({ content: JSON.stringify(loadedScene), modified: 'original' })
   network.mutation.mockResolvedValue({ modified: 'saved' })
-  persistence = new DrawingPersistence({
-    contentDocname: crypto.randomUUID(),
-    nodeId: 'node',
-    title: ref('Drawing'),
-    state: ref('Active'),
-    access: ref({ role: 40 }),
-    credentials: { context: {} },
-  } as unknown as DocumentSession)
+  persistence = new DrawingPersistence(
+    fromPartial<DocumentSession>({
+      contentDocname: crypto.randomUUID(),
+      nodeId: 'node',
+      title: ref('Drawing'),
+      state: ref('Active'),
+      access: ref({ role: 40 }),
+      credentials: { context: {} },
+    }),
+  )
   return persistence
 }
 afterEach(() => {

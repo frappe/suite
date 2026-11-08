@@ -2,9 +2,11 @@ import { anchorEnds } from '@/apps/writer/collab/anchors'
 import { restoreEdit } from '@/apps/writer/collab/restore'
 import { restoredAnchors, type AnchoredThread } from '@/apps/writer/collab/restoredAnchors'
 import { withinTenSeconds } from '@/apps/writer/collab/timeout'
-import type { CollabRoom, RestoreResult } from '@/platform/collab'
+import { fullName, lookUp } from '@/apps/writer/composables/useUsers'
+import type { CollabRoom, RestoreResult, VersionRestored } from '@/platform/collab'
 import { translate as __ } from '@/platform/translation'
 
+import { dayOrTime, versionTime } from './versionDates'
 import { readVersionBody, type ConvertedVersion, type VersionBody } from './versions'
 
 type RestoringRoom = Pick<
@@ -29,13 +31,15 @@ export interface VersionRestore extends RestoreNotice {
 const RESTORE_EVERY_SECONDS = 60
 
 // Functions, so each message is translated once the catalog has loaded
-const REFUSALS: Record<string, () => string> = {
-  restoring: () => __('Someone else is restoring a version. Try again once it is done.'),
-  behind: () => __('This tab is still catching up. Try again in a moment.'),
-  milestone_failed: () =>
-    __("The document as it is now couldn't be kept as a version first, so nothing was restored."),
-  paused: () => __('Saving is paused, so nothing was restored.'),
-}
+const REFUSALS = new Map<string, () => string>(
+  Object.entries({
+    restoring: () => __('Someone else is restoring a version. Try again once it is done.'),
+    behind: () => __('This tab is still catching up. Try again in a moment.'),
+    milestone_failed: () =>
+      __("The document as it is now couldn't be kept as a version first, so nothing was restored."),
+    paused: () => __('Saving is paused, so nothing was restored.'),
+  }),
+)
 
 /** Restores version `seq` from its stored bytes, after this tab's edits are saved; `convert` upgrades an old one. */
 export async function restoreVersion(
@@ -130,9 +134,49 @@ function noticeFor(result: RestoreResult): RestoreNotice {
   }
 
   const refusal = result.refusal ?? ''
-  if (Object.hasOwn(REFUSALS, refusal)) {
-    return { isRestored: false, message: REFUSALS[refusal]() }
-  }
+  const explain = REFUSALS.get(refusal)
+  if (explain) return { isRestored: false, message: explain() }
 
   return { isRestored: false, message: __('The version was not restored.') }
+}
+
+/**
+ * Warns before a restore that changes the document under other people: who has it open now.
+ * Empty when nobody else does.
+ */
+export function othersPresentWarning(people: { id: string; name: string }[], me: string) {
+  const others = people.filter((person) => person.id !== me)
+  const names = [...new Set(others.map((person) => person.name))]
+  if (!names.length) {
+    return ''
+  }
+
+  const listed = new Intl.ListFormat(undefined, { type: 'conjunction' }).format(names)
+  if (names.length === 1) {
+    return __('{0} has this document open now and will be told you restored it.', [listed])
+  }
+
+  return __('{0} have this document open now and will be told you restored it.', [listed])
+}
+
+/** What this person is told when someone else restores a version: who did, and which version. */
+export async function restoredByOther({ by, version }: VersionRestored) {
+  if (by) {
+    await lookUp(by)
+  }
+
+  const who = by ? fullName(by) : __('Someone')
+  if (!version) {
+    return __('{0} restored an earlier version of this document.', [who])
+  }
+
+  if (version.label) {
+    return __('{0} restored the version “{1}”.', [who, version.label])
+  }
+
+  const taken = { creation: version.takenAt }
+  const day = dayOrTime(taken)
+  const time = versionTime(taken)
+  const when = day === time ? time : `${day}, ${time}`
+  return __('{0} restored the version from {1}.', [who, when])
 }

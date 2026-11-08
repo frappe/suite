@@ -180,7 +180,8 @@ const setRoute = () => {
   const day = calendarRef.value?.currentDay
 
   const target = dayjs().year(year).month(month).date(day)
-  const view = calendarRef.value?.activeView as 'Month' | 'Week' | 'Day' | 'Agenda'
+  const view = calendarRef.value?.activeView
+  if (view !== 'Month' && view !== 'Week' && view !== 'Day' && view !== 'Agenda') return
   const name = routeForMode(view)
   const accountId = route.params.accountId
 
@@ -915,7 +916,7 @@ const findLinkedEvent = (
   sources: any[][],
   id,
   recurrence,
-  account = (route.query.account || route.params.accountId) as string,
+  account = route.query.account || route.params.accountId,
 ) => {
   if (!id) return null
   const lists = sources.filter((data) => Array.isArray(data) && data.length)
@@ -935,7 +936,7 @@ const findLinkedEvent = (
 }
 
 const matchLinkedEvent = (data, id, recurrence) => {
-  const rec = (recurrence as string) ?? ''
+  const rec = typeof recurrence === 'string' ? recurrence : ''
   const exact = data.find((e) => e.event_id === id && (e.recurrence_id ?? '') === rec)
   if (exact) return exact
 

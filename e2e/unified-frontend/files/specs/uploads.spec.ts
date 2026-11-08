@@ -1,13 +1,12 @@
 import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-
-import { type APIRequestContext, type Locator, type Page, type Route, expect, test } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Locator, type Page, type Route } from "@playwright/test";
 
 import {
-	DRIVE,
 	adminApi,
 	children,
 	createFolder,
+	DRIVE,
 	getNode,
 	patchNode,
 	purge,
@@ -262,6 +261,7 @@ test("a batch larger than the free space offers to upload what fits", async ({ p
 	// The quota check reads the root's usage. Leave 10 bytes free.
 	await page.route(`**${DRIVE}/roots/*/usage*`, async (route: Route) => {
 		const response = await route.fetch();
+		// SAFETY: the successful Drive quota endpoint returns used_bytes and effective_quota, checked against this upload fixture.
 		const body = (await response.json()) as { data: { used_bytes: number; effective_quota: number } };
 		body.data.effective_quota = body.data.used_bytes + 10;
 		await route.fulfill({ response, json: body });
@@ -318,11 +318,15 @@ test("Delete forever on a mixed batch reports what failed and keeps it selected"
 	await expect(page.getByText("2 selected")).toBeVisible();
 	// Delete only after the batch captures both selected ids. A live refresh
 	// before the click can remove the missing item from the selection entirely.
-	await page.route(`**${DRIVE}/nodes/batch/purge`, async (route) => {
-		expect(route.request().postDataJSON().nodes.sort()).toEqual([first.name, second.name].sort());
-		await purge(api, second.name);
-		await route.continue();
-	}, { times: 1 });
+	await page.route(
+		`**${DRIVE}/nodes/batch/purge`,
+		async (route) => {
+			expect(route.request().postDataJSON().nodes.sort()).toEqual([first.name, second.name].sort());
+			await purge(api, second.name);
+			await route.continue();
+		},
+		{ times: 1 },
+	);
 
 	await page.getByRole("button", { name: "Delete forever" }).click();
 	await page.getByRole("dialog").getByRole("button", { name: "Delete forever" }).click();
@@ -330,7 +334,9 @@ test("Delete forever on a mixed batch reports what failed and keeps it selected"
 	await expect(page.getByText("1 deleted forever · 1 failed")).toBeVisible();
 	await expect(page.getByText("1 selected")).toBeVisible();
 	await page.getByRole("button", { name: "Details" }).click();
-	await expect(page.getByRole("dialog", { name: "Items that failed" }).getByText(second.name, { exact: true })).toBeVisible();
+	await expect(
+		page.getByRole("dialog", { name: "Items that failed" }).getByText(second.name, { exact: true }),
+	).toBeVisible();
 	expect(await nodeExists(first.name)).toBe(false);
 });
 

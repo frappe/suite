@@ -12,8 +12,14 @@ function normalizeMediaControlAction(value: unknown): MediaControlAction {
 		value === 'video_on'
 	)
 		return value;
-	if (value && typeof value === 'object' && !Array.isArray(value)) {
-		const { type, enabled } = value as { type?: unknown; enabled?: unknown };
+	if (
+		value &&
+		typeof value === 'object' &&
+		!Array.isArray(value) &&
+		'type' in value &&
+		'enabled' in value
+	) {
+		const { type, enabled } = value;
 		if (typeof enabled === 'boolean') {
 			if (type === 'audio') return enabled ? 'unmute' : 'mute';
 			if (type === 'video') return enabled ? 'video_on' : 'video_off';
@@ -38,7 +44,7 @@ export function registerMediaControlHandlers(deps: HandlerDeps) {
 				} catch (e) {
 					loggers.socketHandler.warn(
 						'Failed to apply media control on server: %s',
-						(e as Error).message,
+						e instanceof Error ? e.message : String(e),
 					);
 				}
 
@@ -62,7 +68,7 @@ export function registerMediaControlHandlers(deps: HandlerDeps) {
 			} catch (error) {
 				loggers.socketHandler.warn(
 					'media_control handling failed: %s',
-					(error as Error).message,
+					error instanceof Error ? error.message : String(error),
 				);
 			}
 		});

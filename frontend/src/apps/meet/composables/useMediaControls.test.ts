@@ -42,6 +42,8 @@ vi.mock('../data/mediaPreferences', () => ({
   setSelectedSpeakerId: vi.fn(),
 }))
 
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const webglSpies = vi.hoisted(() => ({
   construct: vi.fn(),
   dispose: vi.fn(),
@@ -89,30 +91,32 @@ class FakeMediaStream {
 
 const localTrack = (id: string, kind: 'audio' | 'video') => {
   const listeners = new Map<string, Set<EventListenerOrEventListenerObject>>()
-  const track = Object.assign(Object.create(null), {
-    id,
-    kind,
-    enabled: true,
-    readyState: 'live',
-    stop: vi.fn(() => {
-      track.readyState = 'ended'
+  const track = fromPartial<MediaStreamTrack>(
+    Object.assign(Object.create(null), {
+      id,
+      kind,
+      enabled: true,
+      readyState: 'live',
+      stop: vi.fn(() => {
+        track.readyState = 'ended'
+      }),
+      addEventListener: vi.fn((type: string, listener: EventListenerOrEventListenerObject) => {
+        const handlers = listeners.get(type) ?? new Set()
+        handlers.add(listener)
+        listeners.set(type, handlers)
+      }),
+      removeEventListener: vi.fn((type: string, listener: EventListenerOrEventListenerObject) => {
+        listeners.get(type)?.delete(listener)
+      }),
+      dispatchEvent: vi.fn((event: Event) => {
+        for (const listener of listeners.get(event.type) ?? []) {
+          if (typeof listener === 'function') listener.call(track, event)
+          else listener.handleEvent(event)
+        }
+        return true
+      }),
     }),
-    addEventListener: vi.fn((type: string, listener: EventListenerOrEventListenerObject) => {
-      const handlers = listeners.get(type) ?? new Set()
-      handlers.add(listener)
-      listeners.set(type, handlers)
-    }),
-    removeEventListener: vi.fn((type: string, listener: EventListenerOrEventListenerObject) => {
-      listeners.get(type)?.delete(listener)
-    }),
-    dispatchEvent: vi.fn((event: Event) => {
-      for (const listener of listeners.get(event.type) ?? []) {
-        if (typeof listener === 'function') listener.call(track, event)
-        else listener.handleEvent(event)
-      }
-      return true
-    }),
-  }) as MediaStreamTrack
+  )
   return track
 }
 
@@ -241,19 +245,22 @@ function createCameraHarness({
       track,
       close: vi.fn(),
     }))
-  const createTestProducer = producerFactory as (
-    track: MediaStreamTrack,
-    options: { type: 'microphone' | 'camera' | 'screen' },
-  ) => Promise<TestVideoProducer>
+  const createTestProducer =
+    fromPartial<
+      (
+        track: MediaStreamTrack,
+        options: { type: 'microphone' | 'camera' | 'screen' },
+      ) => Promise<TestVideoProducer>
+    >(producerFactory)
   const getProducer = (kind: 'audio' | 'video' | 'screen') => {
     if (kind === 'audio') return mediaHandler.audioProducer
     if (kind === 'video') return mediaHandler.videoProducer
-    return mediaHandler.screenProducer as TestVideoProducer | null
+    return fromPartial<TestVideoProducer | null>(mediaHandler.screenProducer)
   }
   const setProducer = (kind: 'audio' | 'video' | 'screen', producer: TestVideoProducer | null) => {
     if (kind === 'audio') mediaHandler.audioProducer = producer
     else if (kind === 'video') mediaHandler.videoProducer = producer
-    else mediaHandler.screenProducer = producer as never
+    else mediaHandler.screenProducer = fromPartial(producer)
   }
   const setLocalMediaTrack = vi.fn((kind: 'audio' | 'video', track: MediaStreamTrack | null) => {
     const existingTracks =
@@ -269,10 +276,11 @@ function createCameraHarness({
     publishMediaOverride ??
     vi.fn(
       async (stream: MediaStream, options: { publishVideo?: boolean; publishAudio?: boolean }) => {
-        const result: {
+        type PublicationResult = {
           video?: { status: 'published' }
           audio?: { status: 'published' }
-        } = {}
+        }
+        const result: PublicationResult = {}
         if (options.publishVideo) {
           const track = stream.getVideoTracks()[0] ?? null
           setLocalMediaTrack('video', track)
@@ -417,12 +425,12 @@ function createCameraHarness({
   const dispose = backgroundEffectsOverride?.dispose ?? vi.fn().mockResolvedValue(undefined)
   const effectsApi =
     backgroundEffectsOverride ??
-    ({
+    fromPartial({
       applyBackgroundEffects,
       stopProcessing,
       dispose,
       processedStream: ref(null),
-    } as never)
+    })
   Object.defineProperty(navigator, 'mediaDevices', {
     configurable: true,
     value: { getDisplayMedia, getUserMedia },
@@ -440,18 +448,20 @@ function createCameraHarness({
     removeBackgroundEffectsSource: vi.fn(),
     setAudioOutputDevice: vi.fn().mockResolvedValue(undefined),
   }
-  const controls = useMediaControls({
-    mediaState: state,
-    connectionState: { connectionError: null },
-    raiseHandStore: { raisedHands: {}, lowerHand: vi.fn() },
-    currentUser: { currentUser: ref(null) },
-    sfuClient,
-    sfuManager: managerRef,
-    mediaAttachments,
-    deviceManager,
-    backgroundEffects: effectsApi,
-    noiseCancellation: noiseCancellationOverride ?? { error: ref(null) },
-  } as never)
+  const controls = useMediaControls(
+    fromPartial({
+      mediaState: state,
+      connectionState: { connectionError: null },
+      raiseHandStore: { raisedHands: {}, lowerHand: vi.fn() },
+      currentUser: { currentUser: ref(null) },
+      sfuClient,
+      sfuManager: managerRef,
+      mediaAttachments,
+      deviceManager,
+      backgroundEffects: effectsApi,
+      noiseCancellation: noiseCancellationOverride ?? { error: ref(null) },
+    }),
+  )
 
   return {
     applyBackgroundEffects: effectsApi.applyBackgroundEffects,
@@ -597,7 +607,7 @@ describe('useMediaControls', () => {
     let harness!: ReturnType<typeof createCameraHarness>
     const publishScreenTrack = vi.fn((track: MediaStreamTrack) => {
       if (track === firstTrack) return firstPublication.promise
-      harness.mediaHandler.screenProducer = secondProducer as never
+      harness.mediaHandler.screenProducer = fromPartial(secondProducer)
       return secondPublication.promise
     })
     harness = createCameraHarness({
@@ -651,11 +661,11 @@ describe('useMediaControls', () => {
     await vi.waitFor(() =>
       expect(harness.manager.publishScreenTrack).toHaveBeenCalledWith(screenTrack),
     )
-    harness.mediaHandler.screenProducer = {
+    harness.mediaHandler.screenProducer = fromPartial({
       id: 'screen-producer',
       track: screenTrack,
-    } as never
-    harness.managerRef.value = {} as never
+    })
+    harness.managerRef.value = fromPartial({})
     publication.resolve({
       id: 'screen-producer',
       track: screenTrack,
@@ -687,10 +697,10 @@ describe('useMediaControls', () => {
     await vi.waitFor(() =>
       expect(harness.manager.publishScreenTrack).toHaveBeenCalledWith(screenTrack),
     )
-    harness.mediaHandler.screenProducer = {
+    harness.mediaHandler.screenProducer = fromPartial({
       id: 'replacement-producer',
       track: replacementTrack,
-    } as never
+    })
     publication.resolve({
       id: 'old-producer',
       track: screenTrack,
@@ -729,7 +739,9 @@ describe('useMediaControls', () => {
     oldTrack.dispatchEvent(new Event('ended'))
 
     await vi.waitFor(() => expect(producer.replaceTrack).toHaveBeenCalledOnce())
-    expect((getUserMedia.mock.calls[0][0].video as MediaTrackConstraints).deviceId).toEqual({
+    expect(
+      fromPartial<MediaTrackConstraints>(getUserMedia.mock.calls[0][0].video).deviceId,
+    ).toEqual({
       exact: 'selected-camera',
     })
     expect(producer.track).toBe(nextTrack)
@@ -768,7 +780,9 @@ describe('useMediaControls', () => {
     oldTrack.dispatchEvent(new Event('ended'))
 
     await vi.waitFor(() => expect(producer.replaceTrack).toHaveBeenCalledOnce())
-    expect((getUserMedia.mock.calls[0][0].audio as MediaTrackConstraints).deviceId).toEqual({
+    expect(
+      fromPartial<MediaTrackConstraints>(getUserMedia.mock.calls[0][0].audio).deviceId,
+    ).toEqual({
       exact: 'selected-mic',
     })
     expect(producer.track).toBe(nextTrack)
@@ -897,7 +911,7 @@ describe('useMediaControls', () => {
     await vi.waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledOnce())
 
     app.unmount()
-    request.resolve(new FakeMediaStream([lateTrack]) as never)
+    request.resolve(fromPartial(new FakeMediaStream([lateTrack])))
 
     await vi.waitFor(() => expect(lateTrack.stop).toHaveBeenCalledOnce())
     expect(replaceTrack).not.toHaveBeenCalled()
@@ -949,7 +963,7 @@ describe('useMediaControls', () => {
     await processingEntered.promise
     app.unmount()
     processing.resolve({
-      stream: new FakeMediaStream([processed]) as never,
+      stream: fromPartial(new FakeMediaStream([processed])),
       cleanup,
     })
 
@@ -1002,7 +1016,7 @@ describe('useMediaControls', () => {
     await processingEntered.promise
     app.unmount()
     processing.resolve({
-      stream: new FakeMediaStream([processed]) as never,
+      stream: fromPartial(new FakeMediaStream([processed])),
       cleanup,
     })
 
@@ -1028,21 +1042,23 @@ describe('useMediaControls', () => {
       value: { getUserMedia },
     })
 
-    const controls = useMediaControls({
-      mediaState: {},
-      connectionState: {},
-      raiseHandStore: {},
-      currentUser: {},
-      sfuClient: {},
-      sfuManager: ref(null),
-      deviceManager: {
-        enumerateDevices: vi.fn().mockResolvedValue(undefined),
-        isDeviceAvailable: vi.fn(() => true),
-        findDeviceById: vi.fn(() => ({ label: 'Built-in Microphone' })),
-      },
-      backgroundEffects: {},
-      noiseCancellation: { error: ref(null) },
-    } as never)
+    const controls = useMediaControls(
+      fromPartial({
+        mediaState: {},
+        connectionState: {},
+        raiseHandStore: {},
+        currentUser: {},
+        sfuClient: {},
+        sfuManager: ref(null),
+        deviceManager: {
+          enumerateDevices: vi.fn().mockResolvedValue(undefined),
+          isDeviceAvailable: vi.fn(() => true),
+          findDeviceById: vi.fn(() => ({ label: 'Built-in Microphone' })),
+        },
+        backgroundEffects: {},
+        noiseCancellation: { error: ref(null) },
+      }),
+    )
 
     const result = await controls.acquireUserMedia(false, true, {
       micDeviceId: 'remembered-mic',
@@ -1050,10 +1066,12 @@ describe('useMediaControls', () => {
 
     expect(result.stream).toBe(fallbackStream)
     expect(getUserMedia).toHaveBeenCalledTimes(2)
-    expect((requestedConstraints[0].audio as MediaTrackConstraints).deviceId).toEqual({
+    expect(fromPartial<MediaTrackConstraints>(requestedConstraints[0].audio).deviceId).toEqual({
       exact: 'remembered-mic',
     })
-    expect((requestedConstraints[1].audio as MediaTrackConstraints).deviceId).toBeUndefined()
+    expect(
+      fromPartial<MediaTrackConstraints>(requestedConstraints[1].audio).deviceId,
+    ).toBeUndefined()
   })
 
   it('preserves the selected camera when only the microphone is unavailable', async () => {
@@ -1071,29 +1089,33 @@ describe('useMediaControls', () => {
       value: { getUserMedia },
     })
 
-    const controls = useMediaControls({
-      mediaState: {},
-      connectionState: {},
-      raiseHandStore: {},
-      currentUser: {},
-      sfuClient: {},
-      sfuManager: ref(null),
-      deviceManager: {
-        enumerateDevices: vi.fn().mockResolvedValue(undefined),
-        isDeviceAvailable: vi.fn(() => true),
-        findDeviceById: vi.fn(() => ({ label: 'Built-in Microphone' })),
-      },
-      backgroundEffects: {},
-      noiseCancellation: { error: ref(null) },
-    } as never)
+    const controls = useMediaControls(
+      fromPartial({
+        mediaState: {},
+        connectionState: {},
+        raiseHandStore: {},
+        currentUser: {},
+        sfuClient: {},
+        sfuManager: ref(null),
+        deviceManager: {
+          enumerateDevices: vi.fn().mockResolvedValue(undefined),
+          isDeviceAvailable: vi.fn(() => true),
+          findDeviceById: vi.fn(() => ({ label: 'Built-in Microphone' })),
+        },
+        backgroundEffects: {},
+        noiseCancellation: { error: ref(null) },
+      }),
+    )
 
     await controls.acquireUserMedia(true, true, {
       cameraDeviceId: 'selected-camera',
       micDeviceId: 'missing-mic',
     })
 
-    expect((requestedConstraints[1].audio as MediaTrackConstraints).deviceId).toBeUndefined()
-    expect((requestedConstraints[1].video as MediaTrackConstraints).deviceId).toEqual({
+    expect(
+      fromPartial<MediaTrackConstraints>(requestedConstraints[1].audio).deviceId,
+    ).toBeUndefined()
+    expect(fromPartial<MediaTrackConstraints>(requestedConstraints[1].video).deviceId).toEqual({
       exact: 'selected-camera',
     })
     expect(setSelectedMicId).toHaveBeenCalledWith('')
@@ -1111,21 +1133,23 @@ describe('useMediaControls', () => {
       value: { getUserMedia },
     })
 
-    const controls = useMediaControls({
-      mediaState: {},
-      connectionState: {},
-      raiseHandStore: {},
-      currentUser: {},
-      sfuClient: {},
-      sfuManager: ref(null),
-      deviceManager: {
-        enumerateDevices: vi.fn().mockResolvedValue(undefined),
-        isDeviceAvailable: vi.fn(() => true),
-        findDeviceById: vi.fn(() => ({ label: 'Built-in Microphone' })),
-      },
-      backgroundEffects: {},
-      noiseCancellation: { error: ref(null) },
-    } as never)
+    const controls = useMediaControls(
+      fromPartial({
+        mediaState: {},
+        connectionState: {},
+        raiseHandStore: {},
+        currentUser: {},
+        sfuClient: {},
+        sfuManager: ref(null),
+        deviceManager: {
+          enumerateDevices: vi.fn().mockResolvedValue(undefined),
+          isDeviceAvailable: vi.fn(() => true),
+          findDeviceById: vi.fn(() => ({ label: 'Built-in Microphone' })),
+        },
+        backgroundEffects: {},
+        noiseCancellation: { error: ref(null) },
+      }),
+    )
 
     await expect(
       controls.acquireUserMedia(true, true, {
@@ -1169,38 +1193,40 @@ describe('useMediaControls', () => {
       },
     })
 
-    const controls = useMediaControls({
-      mediaState,
-      connectionState: { connectionError: null },
-      raiseHandStore: { raisedHands: {}, lowerHand: vi.fn() },
-      currentUser: { currentUser: ref(null) },
-      sfuClient: {
-        getUserId: vi.fn(() => null),
-        isConnected: vi.fn(() => true),
-        resumeProducer: vi.fn().mockResolvedValue(undefined),
-        sendMediaControl: vi.fn(),
-      },
-      sfuManager: ref({
-        reconcileLocalProducerTrack: vi.fn(async (_kind, track) => {
-          await audioProducer.replaceTrack({ track })
-          audioProducer.resume()
+    const controls = useMediaControls(
+      fromPartial({
+        mediaState,
+        connectionState: { connectionError: null },
+        raiseHandStore: { raisedHands: {}, lowerHand: vi.fn() },
+        currentUser: { currentUser: ref(null) },
+        sfuClient: {
+          getUserId: vi.fn(() => null),
+          isConnected: vi.fn(() => true),
+          resumeProducer: vi.fn().mockResolvedValue(undefined),
+          sendMediaControl: vi.fn(),
+        },
+        sfuManager: ref({
+          reconcileLocalProducerTrack: vi.fn(async (_kind, track) => {
+            await audioProducer.replaceTrack({ track })
+            audioProducer.resume()
+          }),
         }),
+        deviceManager: {},
+        backgroundEffects: {
+          applyBackgroundEffects: vi.fn(),
+          stopProcessing: vi.fn(),
+          processedStream: ref(null),
+        },
+        noiseCancellation: {
+          applyNoiseCancellation: vi.fn().mockResolvedValue({
+            stream: new FakeMediaStream([nextProcessedTrack]),
+            cleanup: vi.fn(),
+          }),
+          isProcessing: ref(false),
+          error: ref(null),
+        },
       }),
-      deviceManager: {},
-      backgroundEffects: {
-        applyBackgroundEffects: vi.fn(),
-        stopProcessing: vi.fn(),
-        processedStream: ref(null),
-      },
-      noiseCancellation: {
-        applyNoiseCancellation: vi.fn().mockResolvedValue({
-          stream: new FakeMediaStream([nextProcessedTrack]),
-          cleanup: vi.fn(),
-        }),
-        isProcessing: ref(false),
-        error: ref(null),
-      },
-    } as never)
+    )
 
     await controls.toggleMicrophone()
 
@@ -1239,7 +1265,7 @@ describe('useMediaControls', () => {
     const switching = harness.controls.switchInputDevice('microphone', 'next-microphone')
     await vi.waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled())
     harness.mediaHandler.audioProducer = appearedProducer
-    acquisition.resolve(new FakeMediaStream([nextTrack]) as never)
+    acquisition.resolve(fromPartial(new FakeMediaStream([nextTrack])))
     await switching
 
     expect(appearedProducer.replaceTrack).toHaveBeenCalledWith({
@@ -1276,7 +1302,7 @@ describe('useMediaControls', () => {
     await vi.waitFor(() => expect(applyNoiseCancellation).toHaveBeenCalledOnce())
     harness.mediaHandler.audioProducer = null
     processing.resolve({
-      stream: new FakeMediaStream([processedTrack]) as never,
+      stream: fromPartial(new FakeMediaStream([processedTrack])),
       cleanup: vi.fn(),
     })
     await enabling
@@ -1329,7 +1355,7 @@ describe('useMediaControls', () => {
         settled = true
       })
       await vi.advanceTimersByTimeAsync(0)
-      acquisition.resolve(new FakeMediaStream([nextTrack]) as never)
+      acquisition.resolve(fromPartial(new FakeMediaStream([nextTrack])))
       await vi.advanceTimersByTimeAsync(100)
 
       expect(settled).toBe(true)
@@ -1366,7 +1392,7 @@ describe('useMediaControls', () => {
 
     expect(getUserMedia).toHaveBeenCalledTimes(1)
     expect(state.isCameraOn).toBe(false)
-    expect((state.localStream as FakeMediaStream).getVideoTracks()).toEqual([])
+    expect(state.localStream.getVideoTracks()).toEqual([])
     expect(firstTrack.stop).toHaveBeenCalledOnce()
     expect(secondTrack.stop).not.toHaveBeenCalled()
     expect(mediaHandler.videoProducer).toBeNull()
@@ -1401,13 +1427,13 @@ describe('useMediaControls', () => {
         expect(getUserMedia.mock.calls.some(([constraints]) => constraints.audio)).toBe(true)
       })
       if (completionOrder === 'camera-first') {
-        cameraRequest.resolve(new FakeMediaStream([camera]) as never)
+        cameraRequest.resolve(fromPartial(new FakeMediaStream([camera])))
         await vi.waitFor(() => expect(harness.state.isCameraOn).toBe(true))
-        microphoneRequest.resolve(new FakeMediaStream([microphone]) as never)
+        microphoneRequest.resolve(fromPartial(new FakeMediaStream([microphone])))
       } else {
-        microphoneRequest.resolve(new FakeMediaStream([microphone]) as never)
+        microphoneRequest.resolve(fromPartial(new FakeMediaStream([microphone])))
         await vi.waitFor(() => expect(harness.state.isMicOn).toBe(true))
-        cameraRequest.resolve(new FakeMediaStream([camera]) as never)
+        cameraRequest.resolve(fromPartial(new FakeMediaStream([camera])))
       }
       await Promise.all([enablingCamera, enablingMicrophone])
 
@@ -1431,7 +1457,7 @@ describe('useMediaControls', () => {
     await expect(controls.toggleCamera()).rejects.toThrow('producer failed')
 
     expect(state.isCameraOn).toBe(false)
-    expect((state.localStream as FakeMediaStream).getVideoTracks()).toEqual([])
+    expect(state.localStream.getVideoTracks()).toEqual([])
     expect(candidate.stop).toHaveBeenCalledOnce()
     expect(setLocalMediaTrack).not.toHaveBeenCalled()
   })
@@ -1535,7 +1561,7 @@ describe('useMediaControls', () => {
     await expect(failedToggle).rejects.toThrow('producer failed')
     await expect(successfulToggle).resolves.toBeUndefined()
     expect(state.isCameraOn).toBe(true)
-    expect((state.localStream as FakeMediaStream).getVideoTracks()).toEqual([secondTrack])
+    expect(state.localStream.getVideoTracks()).toEqual([secondTrack])
     expect(firstTrack.stop).toHaveBeenCalledOnce()
     expect(secondTrack.stop).not.toHaveBeenCalled()
     expect(mediaHandler.videoProducer).toEqual({
@@ -1915,16 +1941,15 @@ describe('useMediaControls', () => {
     expect(oldCleanup).toHaveBeenCalledOnce()
     expect(oldGenerated.readyState).toBe('ended')
     expect(applyBackgroundEffects).toHaveBeenCalledTimes(2)
-    const restartedInput = applyBackgroundEffects.mock.calls[1][0] as MediaStream
+    const restartedInput = fromPartial<MediaStream>(applyBackgroundEffects.mock.calls[1][0])
     expect(restartedInput.getVideoTracks()).toEqual([adoptedRaw])
     expect(restartedInput.getAudioTracks()).toEqual([healthyAudio])
     expect(healthyAudio.stop).not.toHaveBeenCalled()
     expect(producer.track).toBe(newGenerated)
     expect(publishMedia).toHaveBeenCalledOnce()
-    const [publishedStream, options] = publishMedia.mock.calls[0] as [
-      MediaStream,
-      { publishVideo: boolean; publishAudio: boolean },
-    ]
+    const [publishedStream, options] = fromPartial<
+      [MediaStream, { publishVideo: boolean; publishAudio: boolean }]
+    >(publishMedia.mock.calls[0])
     expect(publishedStream.getVideoTracks()).toEqual([newGenerated])
     expect(publishedStream.getAudioTracks()).toEqual([])
     expect(options).toEqual({ publishVideo: true, publishAudio: false })
@@ -2075,7 +2100,7 @@ describe('useMediaControls', () => {
     expect(cleanup).toHaveBeenCalledOnce()
     expect(candidate.stop).toHaveBeenCalledOnce()
     expect(raw.stop).toHaveBeenCalledOnce()
-    expect((state.localStream as FakeMediaStream).getVideoTracks()).toEqual([])
+    expect(state.localStream.getVideoTracks()).toEqual([])
     expect(state.processedStream).toBeNull()
     expect(state.isCameraOn).toBe(false)
     expect(close).toHaveBeenCalledOnce()
@@ -2192,7 +2217,7 @@ describe('useMediaControls', () => {
     await controls.switchInputDevice('camera', 'next-camera')
 
     expect(state.isCameraOn).toBe(true)
-    expect((state.localStream as FakeMediaStream).getVideoTracks()).toEqual([oldRaw])
+    expect(state.localStream.getVideoTracks()).toEqual([oldRaw])
     expect(state.processedStream).toBeNull()
     expect(oldRaw.readyState).toBe('live')
     expect(candidateRaw.stop).toHaveBeenCalledOnce()
@@ -2241,7 +2266,7 @@ describe('useMediaControls', () => {
     )
 
     expect(state.isCameraOn).toBe(false)
-    expect((state.localStream as FakeMediaStream).getVideoTracks()).toEqual([])
+    expect(state.localStream.getVideoTracks()).toEqual([])
     expect(oldRaw.stop).toHaveBeenCalledOnce()
     expect(candidateRaw.stop).toHaveBeenCalledOnce()
     expect(candidateProcessed.stop).toHaveBeenCalledOnce()
@@ -2286,7 +2311,7 @@ describe('useMediaControls', () => {
     expect(toast.error).not.toHaveBeenCalled()
     expect(toast.warning).not.toHaveBeenCalled()
 
-    acquisition.resolve(new FakeMediaStream([lateVideo, lateAudio]) as never)
+    acquisition.resolve(fromPartial(new FakeMediaStream([lateVideo, lateAudio])))
     await vi.waitFor(() => expect(lateVideo.stop).toHaveBeenCalledOnce())
     expect(lateAudio.stop).toHaveBeenCalledOnce()
     expect(harness.state.isCameraOn).toBe(false)
@@ -2423,7 +2448,7 @@ describe('useMediaControls', () => {
     await vi.waitFor(() => expect(harness.dispose).toHaveBeenCalledOnce())
 
     expect(setSelectedCameraId).not.toHaveBeenCalled()
-    acquisition.resolve(new FakeMediaStream([lateTrack]) as never)
+    acquisition.resolve(fromPartial(new FakeMediaStream([lateTrack])))
     await vi.waitFor(() => expect(lateTrack.stop).toHaveBeenCalledOnce())
   })
 
@@ -2464,7 +2489,7 @@ describe('useMediaControls', () => {
     const acquisition = harness.controls.acquireUserMedia(true, false)
     await requestEntered.promise
     expect(browserFulfillments).toHaveLength(2)
-    for (const fulfill of browserFulfillments) fulfill(resolvedStream as never)
+    for (const fulfill of browserFulfillments) fulfill(fromPartial(resolvedStream))
     app.unmount()
 
     await expect(acquisition).rejects.toMatchObject({ name: 'AbortError' })
@@ -2522,7 +2547,7 @@ describe('useMediaControls', () => {
     expect(toast.error).not.toHaveBeenCalled()
     expect(toast.warning).not.toHaveBeenCalled()
 
-    fallbackRequest.resolve(new FakeMediaStream([lateTrack]) as never)
+    fallbackRequest.resolve(fromPartial(new FakeMediaStream([lateTrack])))
     await vi.waitFor(() => expect(lateTrack.stop).toHaveBeenCalledOnce())
   })
 
@@ -2590,7 +2615,7 @@ describe('useMediaControls', () => {
     expect(rawTrack.stop).toHaveBeenCalledOnce()
     expect(generatedCleanup).toHaveBeenCalledOnce()
     expect(generatedTrack.stop).toHaveBeenCalledOnce()
-    acquisition.resolve(new FakeMediaStream([lateTrack]) as never)
+    acquisition.resolve(fromPartial(new FakeMediaStream([lateTrack])))
     await vi.waitFor(() => expect(lateTrack.stop).toHaveBeenCalledOnce())
   })
 
@@ -2641,7 +2666,7 @@ describe('useMediaControls', () => {
       expect(consoleWarn).not.toHaveBeenCalled()
       expect(toast.error).not.toHaveBeenCalled()
       expect(toast.warning).not.toHaveBeenCalled()
-      acquisition.resolve(new FakeMediaStream([lateTrack]) as never)
+      acquisition.resolve(fromPartial(new FakeMediaStream([lateTrack])))
       await vi.waitFor(() => expect(lateTrack.stop).toHaveBeenCalledOnce())
     },
   )
@@ -2904,7 +2929,7 @@ describe('useMediaControls', () => {
           dispose = vi.fn(() => effects.dispose())
           harness = createCameraHarness({
             getUserMedia: vi.fn().mockResolvedValue(new FakeMediaStream([raw])),
-            backgroundEffects: { ...effects, dispose } as never,
+            backgroundEffects: fromPartial({ ...effects, dispose }),
           })
           return () => null
         },
@@ -3050,10 +3075,12 @@ describe('useMediaControls', () => {
     vi.stubGlobal('SelfieSegmentation', FakeSelfieSegmentation)
     vi.stubGlobal('Image', PendingImage)
     vi.stubGlobal('MediaStreamTrackProcessor', FakeTrackProcessor)
-    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
-      drawImage: vi.fn(),
-      clearRect: vi.fn(),
-    } as never)
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(
+      fromPartial({
+        drawImage: vi.fn(),
+        clearRect: vi.fn(),
+      }),
+    )
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const inputTrack = Object.assign(videoTrack('input'), {
@@ -3070,10 +3097,13 @@ describe('useMediaControls', () => {
     )
     app.mount(document.createElement('div'))
 
-    const applying = effects.applyBackgroundEffects(new FakeMediaStream([inputTrack]) as never, {
-      backgroundImageEnabled: true,
-      selectedBackgroundImage: 'beach',
-    })
+    const applying = effects.applyBackgroundEffects(
+      fromPartial(new FakeMediaStream([inputTrack])),
+      {
+        backgroundImageEnabled: true,
+        selectedBackgroundImage: 'beach',
+      },
+    )
     await readerAllocated.promise
     await imageLoadingStarted.promise
     app.unmount()
@@ -3106,10 +3136,12 @@ describe('useMediaControls', () => {
       close = vi.fn().mockResolvedValue(undefined)
     }
     vi.stubGlobal('SelfieSegmentation', FakeSelfieSegmentation)
-    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
-      drawImage: vi.fn(),
-      clearRect: vi.fn(),
-    } as never)
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(
+      fromPartial({
+        drawImage: vi.fn(),
+        clearRect: vi.fn(),
+      }),
+    )
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const inputTrack = Object.assign(videoTrack('input'), {
@@ -3126,9 +3158,12 @@ describe('useMediaControls', () => {
     )
     app.mount(document.createElement('div'))
 
-    const applying = effects.applyBackgroundEffects(new FakeMediaStream([inputTrack]) as never, {
-      backgroundBlurEnabled: true,
-    })
+    const applying = effects.applyBackgroundEffects(
+      fromPartial(new FakeMediaStream([inputTrack])),
+      {
+        backgroundBlurEnabled: true,
+      },
+    )
     await playbackEntered.promise
     await effects.dispose()
 
@@ -3145,7 +3180,7 @@ describe('useMediaControls', () => {
   })
 
   it('draws each source frame once when auto framing is disabled', async () => {
-    const frame = { close: vi.fn() } as unknown as VideoFrame
+    const frame = fromPartial<VideoFrame>({ close: vi.fn() })
     const bitmap = { close: vi.fn() }
     const read = vi
       .fn()
@@ -3166,8 +3201,8 @@ describe('useMediaControls', () => {
     vi.stubGlobal('OffscreenCanvas', undefined)
     vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue(bitmap))
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext')
-      .mockReturnValueOnce(processingContext as never)
-      .mockReturnValueOnce(outputContext as never)
+      .mockReturnValueOnce(fromPartial(processingContext))
+      .mockReturnValueOnce(fromPartial(outputContext))
     Object.defineProperty(HTMLCanvasElement.prototype, 'captureStream', {
       configurable: true,
       value: vi.fn(() => new FakeMediaStream([outputTrack])),
@@ -3187,7 +3222,7 @@ describe('useMediaControls', () => {
     app.mount(document.createElement('div'))
 
     const session = await effects.applyBackgroundEffects(
-      new FakeMediaStream([inputTrack]) as never,
+      fromPartial(new FakeMediaStream([inputTrack])),
       { autoFramingEnabled: false },
     )
     await vi.waitFor(() => expect(bitmap.close).toHaveBeenCalledOnce())
@@ -3213,7 +3248,7 @@ describe('useMediaControls', () => {
     const outputTrack = videoTrack('output')
     vi.stubGlobal('MediaStreamTrackProcessor', FakeTrackProcessor)
     vi.stubGlobal('OffscreenCanvas', undefined)
-    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as never)
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(fromPartial(context))
     Object.defineProperty(HTMLCanvasElement.prototype, 'captureStream', {
       configurable: true,
       value: vi.fn(() => new FakeMediaStream([outputTrack])),
@@ -3233,7 +3268,7 @@ describe('useMediaControls', () => {
     app.mount(document.createElement('div'))
 
     const session = await effects.applyBackgroundEffects(
-      new FakeMediaStream([inputTrack]) as never,
+      fromPartial(new FakeMediaStream([inputTrack])),
       { autoFramingEnabled: true },
     )
     expect(webglSpies.construct).not.toHaveBeenCalled()
@@ -3248,7 +3283,7 @@ describe('useMediaControls', () => {
 
   it('closes every provisional stream resource when allocation aborts', async () => {
     const operation = new AbortController()
-    const lateFrame = { close: vi.fn() } as unknown as VideoFrame
+    const lateFrame = fromPartial<VideoFrame>({ close: vi.fn() })
     const releaseRead = deferred<{
       done: boolean
       value?: VideoFrame
@@ -3308,7 +3343,7 @@ describe('useMediaControls', () => {
     vi.stubGlobal('MediaStreamTrackProcessor', FakeTrackProcessor)
     vi.stubGlobal('MediaStreamTrackGenerator', FakeTrackGenerator)
     vi.stubGlobal('OffscreenCanvas', FakeOffscreenCanvas)
-    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as never)
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(fromPartial(context))
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const inputTrack = Object.assign(videoTrack('input'), {
@@ -3328,7 +3363,7 @@ describe('useMediaControls', () => {
     await expect(
       withDeadline(
         effects.applyBackgroundEffects(
-          new FakeMediaStream([inputTrack]) as never,
+          fromPartial(new FakeMediaStream([inputTrack])),
           { backgroundBlurEnabled: true },
           operation.signal,
         ),
@@ -3350,8 +3385,8 @@ describe('useMediaControls', () => {
   it('replaces a poisoned segmentation model after fatal reset failure', async () => {
     const secondRead = deferred<{ done: boolean; value: VideoFrame }>()
     const neverRead = new Promise<never>(() => {})
-    const firstFrame = { close: vi.fn() } as unknown as VideoFrame
-    const secondFrame = { close: vi.fn() } as unknown as VideoFrame
+    const firstFrame = fromPartial<VideoFrame>({ close: vi.fn() })
+    const secondFrame = fromPartial<VideoFrame>({ close: vi.fn() })
     const read = vi
       .fn()
       .mockResolvedValueOnce({ done: false, value: firstFrame })
@@ -3388,7 +3423,7 @@ describe('useMediaControls', () => {
     vi.stubGlobal('MediaStreamTrackProcessor', FakeTrackProcessor)
     vi.stubGlobal('OffscreenCanvas', undefined)
     vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue({ close: vi.fn() }))
-    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as never)
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(fromPartial(context))
     Object.defineProperty(HTMLCanvasElement.prototype, 'captureStream', {
       configurable: true,
       value: vi.fn(() => new FakeMediaStream([outputTrack])),
@@ -3408,7 +3443,7 @@ describe('useMediaControls', () => {
     )
     app.mount(document.createElement('div'))
     const session = await effects.applyBackgroundEffects(
-      new FakeMediaStream([inputTrack]) as never,
+      fromPartial(new FakeMediaStream([inputTrack])),
       { backgroundBlurEnabled: true },
     )
 
@@ -3432,8 +3467,8 @@ describe('useMediaControls', () => {
     const peerReadEntered = deferred<void>()
     const releasePeerRead = deferred<{ done: boolean; value: VideoFrame }>()
     const neverRead = new Promise<never>(() => {})
-    const ownerFrame = { close: vi.fn() } as unknown as VideoFrame
-    const peerFrame = { close: vi.fn() } as unknown as VideoFrame
+    const ownerFrame = fromPartial<VideoFrame>({ close: vi.fn() })
+    const peerFrame = fromPartial<VideoFrame>({ close: vi.fn() })
     let processorIndex = 0
     class FakeTrackProcessor {
       readonly index = processorIndex++
@@ -3485,7 +3520,7 @@ describe('useMediaControls', () => {
     vi.stubGlobal('MediaStreamTrackProcessor', FakeTrackProcessor)
     vi.stubGlobal('OffscreenCanvas', undefined)
     vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue({ close: vi.fn() }))
-    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as never)
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(fromPartial(context))
     Object.defineProperty(HTMLCanvasElement.prototype, 'captureStream', {
       configurable: true,
       value: vi.fn(() => new FakeMediaStream([videoTrack('output')])),
@@ -3510,11 +3545,11 @@ describe('useMediaControls', () => {
     app.mount(document.createElement('div'))
 
     const firstSession = await firstEffects.applyBackgroundEffects(
-      new FakeMediaStream([firstInput]) as never,
+      fromPartial(new FakeMediaStream([firstInput])),
       { backgroundBlurEnabled: true },
     )
     const secondSession = await secondEffects.applyBackgroundEffects(
-      new FakeMediaStream([secondInput]) as never,
+      fromPartial(new FakeMediaStream([secondInput])),
       { backgroundBlurEnabled: true },
     )
     await peerReadEntered.promise
@@ -3533,7 +3568,7 @@ describe('useMediaControls', () => {
   })
 
   it('halts fatal recovery when poisoned model invalidation cannot close', async () => {
-    const firstFrame = { close: vi.fn() } as unknown as VideoFrame
+    const firstFrame = fromPartial<VideoFrame>({ close: vi.fn() })
     const releaseRead = deferred<{ done: boolean }>()
     const read = vi
       .fn()
@@ -3576,7 +3611,7 @@ describe('useMediaControls', () => {
     vi.stubGlobal('MediaStreamTrackProcessor', FakeTrackProcessor)
     vi.stubGlobal('OffscreenCanvas', undefined)
     vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue({ close: vi.fn() }))
-    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as never)
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(fromPartial(context))
     Object.defineProperty(HTMLCanvasElement.prototype, 'captureStream', {
       configurable: true,
       value: vi.fn(() => new FakeMediaStream([outputTrack])),
@@ -3596,7 +3631,7 @@ describe('useMediaControls', () => {
     )
     app.mount(document.createElement('div'))
     const session = await effects.applyBackgroundEffects(
-      new FakeMediaStream([inputTrack]) as never,
+      fromPartial(new FakeMediaStream([inputTrack])),
       { backgroundBlurEnabled: true },
     )
 

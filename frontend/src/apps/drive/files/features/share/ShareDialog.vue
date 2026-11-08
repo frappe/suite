@@ -8,7 +8,7 @@
     v-if="isPhone"
     :open="open"
     :title="__('Share')"
-    @update:open="open = $event"
+    @update:open="setOpen"
     @after-leave="emit('after-leave')"
   >
     <div class="px-4 pb-8">
@@ -21,8 +21,8 @@
           {{ state.node.value.title }}
         </p>
       </div>
-      <ShareBody v-model:picking="picking" :state="state" />
-      <div v-if="!picking" class="mt-5 flex items-center gap-2 border-t border-outline-gray-1 pt-4">
+      <ShareBody v-model:picked="picked" :state="state" />
+      <div v-if="!picked" class="mt-5 flex items-center gap-2 border-t border-outline-gray-1 pt-4">
         <div v-if="address" class="min-w-0">
           <Button icon-left="lucide-link" :label="__('Copy link')" @click="copyLink(address)" />
           <p class="mt-1.5 text-p-xs text-ink-gray-5">{{ __('For people with access') }}</p>
@@ -33,14 +33,15 @@
   </BottomSheet>
   <Dialog
     v-else
-    v-model:open="open"
+    :open="open"
     :title="__('Share')"
     size="xl"
+    @update:open="setOpen"
     @after-leave="emit('after-leave')"
   >
     <div
       class="-mx-1 -mt-5 px-1"
-      :class="{ 'max-h-[min(36rem,calc(100dvh_-_16rem))] overflow-y-auto': !picking }"
+      :class="{ 'max-h-[min(36rem,calc(100dvh_-_16rem))] overflow-y-auto': !picked }"
     >
       <div v-if="state.node.value" class="mb-6 flex items-center gap-2.5">
         <span
@@ -51,9 +52,9 @@
           {{ state.node.value.title }}
         </p>
       </div>
-      <ShareBody v-model:picking="picking" :state="state" autofocus-picker />
+      <ShareBody v-model:picked="picked" :state="state" autofocus-picker />
     </div>
-    <template v-if="!picking" #actions>
+    <template v-if="!picked" #actions>
       <div class="flex justify- gap-2">
         <div v-if="address" class="min-w-0">
           <Button icon-left="lucide-link" :label="__('Copy link')" @click="copyLink(address)" />
@@ -86,7 +87,7 @@ const emit = defineEmits<{ 'after-leave': []; changed: [value: boolean] }>()
 
 const isPhone = useMediaQuery('(max-width: 767px)')
 // While people wait to be added, Share is the one solid action.
-const picking = ref(false)
+const picked = ref(0)
 const session = useSession()
 // The server page boots the workspace name. The Vite dev page does not, so the dialog asks the site.
 const site = useQuery(api.suite.site.get, () =>
@@ -104,6 +105,23 @@ const state = useShare(props.node, {
   workspace: () => window.suite_workspace_name ?? site.data?.workspace_name,
   placeTitle: useLocationTitle(),
 })
+
+// People picked but not yet shared are lost on closing, so closing asks first
+async function setOpen(next: boolean) {
+  if (next || !picked.value || (await confirmDiscard())) open.value = next
+}
+
+function confirmDiscard() {
+  return confirm({
+    title:
+      picked.value === 1
+        ? __('Discard 1 person?')
+        : __('Discard {0} people?', [String(picked.value)]),
+    message: __('They haven’t been added yet.'),
+    confirmLabel: __('Discard'),
+    destructive: true,
+  })
+}
 
 /** The item's own address. It opens for people with access; Share links reach anyone. */
 const address = computed(() => {

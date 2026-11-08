@@ -69,7 +69,7 @@ class TestGateAgainstYjs(UnitTestCase):
             self.missing("node is not installed, so Yjs can't judge the gate")
 
         if not YJS.is_dir():
-            self.missing(f"Yjs is not installed at {YJS}; run yarn at the repo root")
+            self.missing(f"Yjs is not installed at {YJS}; run pnpm install at the repo root")
 
         self.node = node
 

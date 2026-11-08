@@ -3,7 +3,7 @@
 from typing import Literal, NotRequired, TypedDict
 
 from suite.composition.http import Route
-from suite.sheets.api import ai_assist, get_ai_settings, get_sheet, save_ai_settings
+from suite.sheets.api import ai_assist, get_ai_settings, get_conversion, get_sheet, save_ai_settings
 from suite.sheets.link_preview import get_link_preview
 
 
@@ -21,6 +21,13 @@ class SheetBody(TypedDict):
     node: str
 
 
+class SheetConversion(TypedDict):
+    state: Literal["converted", "pending", "refused"]
+    # A refused sheet's outcome code, such as `too_large`
+    outcome: NotRequired[str]
+    reason: NotRequired[str]
+
+
 class AISettings(TypedDict):
     enabled: bool
     model: str
@@ -31,6 +38,10 @@ class SaveAISettings(TypedDict, total=False):
     api_key: str
     enabled: Literal[0, 1]
     model: str
+
+
+class SheetDocument(TypedDict):
+    name: str
 
 
 class AssistInput(TypedDict):
@@ -70,6 +81,17 @@ CONTRACT_ROUTES = (
         output=SheetBody,
         kind="query",
         public_name="documents.get",
+        allow_guest=True,
+        envelope="message",
+    ),
+    Route(
+        "GET",
+        "/api/method/suite.sheets.api.get_conversion",
+        "get_conversion",
+        query=SheetDocument,
+        output=SheetConversion,
+        kind="query",
+        public_name="documents.conversion",
         allow_guest=True,
         envelope="message",
     ),

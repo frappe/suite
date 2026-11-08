@@ -1,7 +1,11 @@
 import { defineStore } from 'pinia'
 
+interface RaiseHandState {
+  raisedHands: Record<string, string>
+}
+
 export const useRaiseHandStore = defineStore('meet-raiseHand', {
-  state: () => ({ raisedHands: {} as Record<string, string> }),
+  state: (): RaiseHandState => ({ raisedHands: {} }),
   getters: {
     isHandRaised: (state) => (userId: string) => !!state.raisedHands?.[userId],
   },

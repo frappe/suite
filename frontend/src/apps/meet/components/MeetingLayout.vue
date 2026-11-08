@@ -401,7 +401,16 @@ const floatingReactions = computed(() => {
     uniqueId: string
   }> = []
   for (const [userId, reaction] of Object.entries(reactions)) {
-    if (!sourceIds.has(userId) || !reaction) continue
+    if (
+      !sourceIds.has(userId) ||
+      !reaction ||
+      typeof reaction !== 'object' ||
+      !('emoji' in reaction) ||
+      typeof reaction.emoji !== 'string' ||
+      !('expiresAt' in reaction) ||
+      typeof reaction.expiresAt !== 'number'
+    )
+      continue
     const participant = userId === currentUserId ? currentUser.value : participants.value[userId]
     const userName =
       (participant && 'user_name' in participant ? participant.user_name : undefined) ||
@@ -412,10 +421,10 @@ const floatingReactions = computed(() => {
     result.push({
       userId,
       userName,
-      emoji: (reaction as { emoji: string }).emoji,
-      timestamp: (reaction as { expiresAt: number }).expiresAt - 5000,
-      expiresAt: (reaction as { expiresAt: number }).expiresAt,
-      uniqueId: `${userId}-${(reaction as { emoji: string }).emoji}-${(reaction as { expiresAt: number }).expiresAt}`,
+      emoji: reaction.emoji,
+      timestamp: reaction.expiresAt - 5000,
+      expiresAt: reaction.expiresAt,
+      uniqueId: `${userId}-${reaction.emoji}-${reaction.expiresAt}`,
     })
   }
 

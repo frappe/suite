@@ -39,8 +39,12 @@ OUTSIDER = "writer-collab-outsider@example.com"
 READER = "writer-collab-reader@example.com"
 
 
-def call_route(handler, node: str, *, body: bytes = b"", expected_user: str | None = None):
+def call_route(
+    handler, node: str, *, body: bytes = b"", expected_user: str | None = None, links: str | None = None
+):
     headers = {routes.EXPECTED_USER_HEADER: expected_user or frappe.session.user}
+    if links:
+        headers["X-Drive-Links"] = links
     environ = EnvironBuilder(method="POST", data=body, headers=headers).get_environ()
     frappe.local.request = Request(environ)
     frappe.local.form_dict = frappe._dict()

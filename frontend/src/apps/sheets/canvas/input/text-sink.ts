@@ -101,8 +101,8 @@ export function createTextSink(o: TextSinkOptions): TextSink {
   let composing = false
 
   function onInput(e: Event): void {
-    if (composing || (e as InputEvent).isComposing) return
-    const type = (e as InputEvent).inputType
+    if (composing || ('isComposing' in e && e.isComposing)) return
+    const type = 'inputType' in e ? e.inputType : undefined
     const text = take()
     // A paste or drop is the clipboard code's job (document listeners).
     if (!text || type === 'insertFromPaste' || type === 'insertFromDrop') return

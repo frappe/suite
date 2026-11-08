@@ -1,4 +1,5 @@
 import { judge } from '@suite/collab-client'
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it } from 'vitest'
 import * as yjs from 'yjs'
 
@@ -77,9 +78,15 @@ describe('writerFault', () => {
       image.setAttribute('src', '/files/x.png')
       image.setAttribute('bold', {})
       const block = new yjs.XmlElement('paragraph')
-      block.insert(0, [new yjs.XmlText('a'), mention, image, new yjs.XmlText('b')] as (
-        yjs.XmlElement | yjs.XmlText
-      )[])
+      block.insert(
+        0,
+        fromPartial<(yjs.XmlElement | yjs.XmlText)[]>([
+          new yjs.XmlText('a'),
+          mention,
+          image,
+          new yjs.XmlText('b'),
+        ]),
+      )
       fragment.insert(0, [block])
     }
 
