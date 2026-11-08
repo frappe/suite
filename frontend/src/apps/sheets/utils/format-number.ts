@@ -244,6 +244,37 @@ export function dateSerialFromShown(shown: unknown, code: string | null | undefi
   return Date.UTC(y, mo - 1, day) / 86400000 + 25569 + secs / 86400
 }
 
+// The other way round: a day serial shown with the date part of an
+// Excel-style code (`m/d/yyyy` → `12/9/2025`, `dd/mm/yyyy` → `09/12/2025`).
+// The time part, `[$-409]`-style locale tags and any `;` sections after the
+// first are left out. Charts label a date axis with it.
+export function dateShownFromSerial(serial: number, code: string | null | undefined): string {
+  const d = new Date(Math.round((Math.floor(serial) - 25569) * 86400000))
+  if (isNaN(d.getTime())) return String(serial)
+  const datePart =
+    String(code ?? '')
+      .replace(/"[^"]*"/g, '')
+      .split(';')[0]
+      ?.replace(/\[[^\]]*\]/g, '')
+      .split(/\s*h/i)[0] ?? ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const name = (opts: Intl.DateTimeFormatOptions) =>
+    d.toLocaleString('en', { ...opts, timeZone: 'UTC' })
+  const tokens: Record<string, () => string> = {
+    yyyy: () => String(d.getUTCFullYear()),
+    yy: () => pad(d.getUTCFullYear() % 100),
+    mmmm: () => name({ month: 'long' }),
+    mmm: () => name({ month: 'short' }),
+    mm: () => pad(d.getUTCMonth() + 1),
+    m: () => String(d.getUTCMonth() + 1),
+    dddd: () => name({ weekday: 'long' }),
+    ddd: () => name({ weekday: 'short' }),
+    dd: () => pad(d.getUTCDate()),
+    d: () => String(d.getUTCDate()),
+  }
+  return datePart.replace(/yyyy|yy|m{1,4}|d{1,4}/gi, (t) => tokens[t.toLowerCase()]?.() ?? t)
+}
+
 // Types whose value is a date, not a plain number to round/group.
 const DATE_LIKE = new Set(['date', 'time', 'datetime'])
 

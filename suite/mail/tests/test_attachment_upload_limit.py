@@ -4,53 +4,21 @@ The limit is written here as a number on purpose: 25 MB is the product
 decision, and the test fails if the code drifts from it.
 """
 
-import io
-from contextlib import contextmanager
-
 import frappe
 from frappe.core.doctype.file.exceptions import MaxFileSizeReachedError
 from frappe.tests import IntegrationTestCase
-from werkzeug.test import EnvironBuilder
-from werkzeug.wrappers import Request
 
 from suite.mail.api.account import get_user_info
 from suite.mail.api.mail import upload_file
+from suite.mail.tests.fixtures import upload_request
 
 MB = 1024 * 1024
 LIMIT = 25 * MB
-_UNSET = object()
-
-
-@contextmanager
-def upload_request(content: bytes, filename: str, **form):
-    """Make `content` the multipart body of the current request, as compose sends it."""
-    previous_request = getattr(frappe.local, "request", None)
-    previous_form = frappe.local.form_dict
-    builder = EnvironBuilder(
-        method="POST",
-        data={"file": (io.BytesIO(content), filename), "is_private": "1", "folder": "Home", **form},
-    )
-    frappe.local.request = Request(builder.get_environ())
-    frappe.local.form_dict = frappe._dict({"is_private": "1", "folder": "Home", **form})
-    try:
-        yield
-    finally:
-        frappe.local.request = previous_request
-        frappe.local.form_dict = previous_form
 
 
 class TestAttachmentUploadLimit(IntegrationTestCase):
     def setUp(self):
         frappe.set_user("Administrator")
-        # `upload_file` is rate limited by IP, as a browser request would be.
-        self._request_ip = getattr(frappe.local, "request_ip", _UNSET)
-        frappe.local.request_ip = "127.0.0.1"
-
-    def tearDown(self):
-        if self._request_ip is _UNSET:
-            del frappe.local.request_ip
-        else:
-            frappe.local.request_ip = self._request_ip
 
     def test_an_attachment_at_the_limit_is_stored(self):
         with upload_request(b"x" * LIMIT, "at-the-limit.bin"):

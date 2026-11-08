@@ -71,8 +71,13 @@ async function storedAuthors(node: string): Promise<Array<{ author: string; auth
 }
 
 async function openComments(page: Page, product: Product): Promise<Locator> {
-	// The product's own title bar holds the Comments button. The body may still load behind it.
-	await page.getByRole("button", { name: "Comments" }).click({ timeout: 20_000 });
+	// The product's own title bar holds the way to Comments. The body may still load behind it.
+	if (product.label === "Writer") {
+		await page.getByRole("button", { name: "More document actions" }).click({ timeout: 20_000 });
+		await page.getByRole("menuitem", { name: "Comments" }).click();
+	} else {
+		await page.getByRole("button", { name: "Comments" }).click({ timeout: 20_000 });
+	}
 	const panel = page.getByRole("complementary", { name: "Comments" });
 	if (product.start) {
 		await panel.getByRole("button", { name: product.start }).click();

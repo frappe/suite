@@ -55,3 +55,7 @@ class SuiteBoot(unittest.TestCase):
         self.assertEqual(boot["suite_workspace_logo"], "")
         self.get_onboarding_state.assert_not_called()
         self.get_workspace.assert_not_called()
+
+    def test_a_guest_page_follows_the_readers_system_theme(self):
+        self.frappe.session.user = "Guest"
+        self.assertEqual(www.get_desk_theme(), "Automatic")

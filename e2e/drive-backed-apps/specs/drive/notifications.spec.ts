@@ -1,5 +1,11 @@
 import { expect, test } from "../../fixtures/test";
-import { discardNode, notifications, ROLE } from "../../helpers/drive";
+import {
+	type ActivityNotification,
+	discardNode,
+	type DriveNotification,
+	notifications,
+	ROLE,
+} from "../../helpers/drive";
 import {
 	createWriterDocument,
 	openWriterDocument,
@@ -18,9 +24,9 @@ test("sharing a document notifies the recipient", async ({ owner, collaborator, 
 
 	// The recipient gets an unread pointer at the share, naming the role it gave.
 	const shareNotifications = async () =>
-		(await notifications(collaborator.page.request).catch(() => [])).filter(
-			(row) => row.activity.node === file.name && row.activity.action === "share_add",
-		);
+		(await notifications(collaborator.page.request).catch((): DriveNotification[] => []))
+			.filter((row): row is ActivityNotification => "activity" in row)
+			.filter((row) => row.activity.node === file.name && row.activity.action === "share_add");
 	await expect.poll(shareNotifications).toHaveLength(1);
 	const [notification] = await shareNotifications();
 	expect(notification.read).toBe(0);

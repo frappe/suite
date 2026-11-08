@@ -3,7 +3,12 @@ import type { AnyExtension, Editor } from '@tiptap/core'
 import { reactive, type PropType } from 'vue'
 import type { Doc } from 'yjs'
 
-export const rooms = { next: null as object | null, openFailure: null as Error | null, opens: 0 }
+export const rooms = {
+  next: null as object | null,
+  held: null as Promise<void> | null,
+  openFailure: null as Error | null,
+  opens: 0,
+}
 // The body the server holds for a document edited without collaboration
 export const stored = {
   html: '',
@@ -23,6 +28,19 @@ export const realtime = { socket: fakeSocket({ answers: true }) }
 export const realEditors = { isOn: false }
 // What the document menu's Download took, as the HTML the real menu exports
 export const downloaded = { html: null as string | null }
+// Whether a reader is signed in; read when each surface mounts, so a test sets it before opening one
+export const signedIn = { isOn: true }
+
+export function fakeSession(original: typeof import('@/platform/session')) {
+  return {
+    ...original,
+    isAuthenticated: {
+      get value() {
+        return signedIn.isOn
+      },
+    },
+  }
+}
 
 export async function fakeFrappeUi() {
   const { defineComponent: define, h: render, ref: state } = await import('vue')
@@ -90,30 +108,23 @@ export async function fakeDrive() {
   const { defineComponent: define, h: render, ref: state } = await import('vue')
   return {
     DriveDocumentHeader: define({
-      props: ['saveState', 'viewOnly'],
-      emits: ['update:panel'],
-      setup: (props, { emit, slots }) => {
-        const openVersions = {
-          'data-open-versions': '',
-          onClick: () => emit('update:panel', 'versions'),
-        }
-        const openComments = {
-          'data-open-comments': '',
-          onClick: () => emit('update:panel', 'comments'),
-        }
-        return () => [
-          render('span', {
-            'data-header': '',
-            'data-save-state': props.saveState,
-            'data-view-only': String(!!props.viewOnly),
-          }),
-          render('button', openVersions),
-          render('button', openComments),
-          slots.actions?.(),
-        ]
+      props: {
+        saveState: { type: String, default: null },
+        saveNote: { type: String, default: '' },
+        viewOnly: { type: Boolean, default: false },
       },
+      setup:
+        (props, { slots }) =>
+        () => [
+          render('output', { 'data-save-state': '' }, props.saveState ?? ''),
+          props.viewOnly && render('output', { 'data-view-only': '' }),
+          render('output', props.saveNote),
+          slots.actions?.(),
+          slots.menu?.(),
+        ],
     }),
     DriveCommentAuthor: define({ setup: () => () => null }),
+    DRIVE_ROLES: { read: 10, comment: 20, upload: 30, edit: 40, manage: 50 },
     GUEST_NAME_LIMIT: 140,
     useDriveGuestName: () => ({
       shown: state(false),
@@ -174,6 +185,7 @@ export async function fakeCollabPlatform() {
   return {
     ...client,
     openCollabRoom: async () => {
+      await rooms.held
       rooms.opens++
       if (rooms.openFailure) {
         throw rooms.openFailure
@@ -199,7 +211,14 @@ export function fakeWriterDocument(original: typeof import('./writerDocument')) 
   function writerDocument() {
     function read() {
       const { collab, html, content, conversion } = stored
-      return { name: 'content-1', collab, settings: {}, html, content, conversion }
+      return {
+        name: 'content-1',
+        collab,
+        settings: {},
+        html,
+        content,
+        conversion,
+      }
     }
 
     const resources = reactive({
@@ -284,11 +303,18 @@ export async function fakeDocumentMenu() {
         canSaveVersion: Boolean,
         editable: Boolean,
         editor: Object as PropType<Editor | null>,
+        panels: { type: Array as PropType<string[]>, default: () => [] },
       },
-      emits: ['saveVersion'],
+      emits: ['saveVersion', 'togglePanel'],
       setup:
         (props, { emit }) =>
         () => [
+          ...props.panels.map((panel) =>
+            render('button', {
+              [`data-open-${panel}`]: '',
+              onClick: () => emit('togglePanel', panel),
+            }),
+          ),
           render('button', {
             'data-save-version': '',
             hidden: !props.canSaveVersion,

@@ -7,7 +7,7 @@ import * as Y from 'yjs'
 import { addSheet, axis, cellKey, initDoc, roots } from './schema'
 import { docSheets } from './stores'
 
-// The built bundles (yarn build), run as the server runs them
+// The built bundles (pnpm build), run as the server runs them
 // (suite/content/checker.py `node_command`): allowed to read only themselves.
 // suite/sheets/content/tests check the same bundles from Python, and fail on
 // CI when they are missing; here a missing bundle skips.

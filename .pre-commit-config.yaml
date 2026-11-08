@@ -34,25 +34,33 @@ repos:
     hooks:
       - id: prettier-frontend
         name: Prettier (frontend)
-        entry: bash -c 'cd frontend && ../node_modules/.bin/prettier --write "${@/#frontend\//}"' --
+        entry: node_modules/.bin/prettier --write
         language: system
-        files: ^frontend/.*\.(js|mjs|cjs|ts|mts|tsx|vue|css|json|html)$
+        files: ^(frontend/.*|scripts/.*|baselines/.*|[^/]+)\.(js|mjs|cjs|ts|mts|tsx|vue|css|json|html)$
         exclude: |
-          (?x)^frontend/(
-              src/.*/contract\.json|
-              src/.*/generated\.ts|
-              auto-imports\.d\.ts|
-              components\.d\.ts|
-              public/.*
+          (?x)^(
+              frontend/src/.*/contract\.json|
+              frontend/src/.*/generated\.ts|
+              frontend/auto-imports\.d\.ts|
+              frontend/components\.d\.ts|
+              frontend/public/.*|
+              knip\.json
           )$
+
+      - id: oxlint-frontend
+        name: oxlint (frontend)
+        entry: node_modules/.bin/oxlint --quiet
+        language: system
+        files: ^(frontend/.*|scripts/.*|[^/]+)\.(js|mjs|cjs|ts|mts|tsx|vue)$
+        exclude: ^frontend/src/.*/generated\.ts$
 
       # Staged files only: autofixes are applied, and the baseline comparison
       # is limited to these files. CI runs the whole tree.
       - id: eslint-frontend
         name: ESLint (frontend)
-        entry: node frontend/scripts/lint.mjs --fix
+        entry: node scripts/lint.mjs --fix
         language: system
-        files: ^frontend/.*\.(js|mjs|cjs|ts|mts|tsx|vue)$
+        files: ^(frontend/.*|scripts/.*|[^/]+)\.(js|mjs|cjs|ts|mts|tsx|vue)$
         exclude: |
           (?x)^frontend/(
               src/.*/generated\.ts|
@@ -63,7 +71,7 @@ repos:
 
       - id: knip-e2e
         name: Knip (E2E)
-        entry: yarn knip:e2e
+        entry: pnpm knip:e2e
         language: system
         pass_filenames: false
         files: |
@@ -71,12 +79,12 @@ repos:
               e2e/.*|
               knip\.json|
               package\.json|
-              yarn\.lock
+              pnpm-lock\.yaml
           )$
 
       - id: knip-sfu-server
         name: Knip (SFU Server)
-        entry: yarn knip:sfu-server
+        entry: pnpm knip:sfu-server
         language: system
         pass_filenames: false
         files: |
@@ -84,7 +92,7 @@ repos:
               suite/meet/sfu-server/.*|
               knip\.json|
               package\.json|
-              yarn\.lock
+              pnpm-lock\.yaml
           )$
 
       - id: biome-sfu-server
@@ -101,7 +109,7 @@ repos:
 
       - id: meet-type-policy
         name: Meet Type Policy
-        entry: yarn check:meet-types
+        entry: pnpm check:meet-types
         language: system
         pass_filenames: false
         files: |
@@ -112,7 +120,7 @@ repos:
               suite/meet/type-policy/.*|
               e2e/meet/.*\.(ts|tsx)|
               package\.json|
-              yarn\.lock
+              pnpm-lock\.yaml
           )$
 
 ci:

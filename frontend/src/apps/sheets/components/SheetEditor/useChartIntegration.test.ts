@@ -7,7 +7,7 @@ import { useChartIntegration } from './useChartIntegration.js'
 
 // A grid of 100 px columns and 24 px rows below a 24 px header, behind a
 // 50 px row header: what getCellRect reports with no scroll or zoom.
-function setup({ viewportW = 1400 } = {}) {
+function setup({ viewportW = 1400, readRange = vi.fn(async () => ({ displays: [] })) } = {}) {
   const chart = createChartEngine()
   const grid = {
     getSelection: () => null,
@@ -21,7 +21,7 @@ function setup({ viewportW = 1400 } = {}) {
   }
   const ui = useChartIntegration({
     chart,
-    readRange: vi.fn(async () => []),
+    readRange,
     currentSheet: ref('Sheet1'),
     contextMenu: { open: false },
     history: { push: vi.fn() },
@@ -32,7 +32,7 @@ function setup({ viewportW = 1400 } = {}) {
     ui.onChartConfirm({ type: 'bar', sourceSheet: 'Sheet1', sourceRange })
     return chart.list().at(-1)?.position
   }
-  return { insert }
+  return { insert, ui }
 }
 
 // ISSUES #65: a new chart covered A1:D12 and the column headers, so the
@@ -54,5 +54,38 @@ describe('a new chart', () => {
     const b = insert('A1:B6')
     expect(b?.x).toBeGreaterThan(a?.x ?? 0)
     expect(b?.y).toBeGreaterThan(a?.y ?? 0)
+  })
+})
+
+// ISSUES #110: a scatter chart reads dates in its X column by their number
+// format, so the overlay asks for formats; other charts skip that read.
+describe('a chart source', () => {
+  it('reads the number formats only when asked', async () => {
+    const readRange = vi.fn(async (_sn: string, _rect: object, opts: { numFmts: boolean }) => ({
+      displays: [['Day'], ['12/9/2025']],
+      ...(opts.numFmts && { numFmts: [['general'], ['m/d/yyyy']] }),
+    }))
+    const { ui } = setup({ readRange })
+    expect(ui.getSource('Sheet1', 'A1:A2', { numFmts: true })).toEqual({
+      matrix: [],
+      numFmts: null,
+    })
+    await vi.waitFor(() =>
+      expect(ui.getSource('Sheet1', 'A1:A2', { numFmts: true })).toEqual({
+        matrix: [['Day'], ['12/9/2025']],
+        numFmts: [['general'], ['m/d/yyyy']],
+      }),
+    )
+    expect(readRange).toHaveBeenLastCalledWith(
+      'Sheet1',
+      { r0: 0, c0: 0, r1: 1, c1: 0 },
+      { numFmts: true },
+    )
+    ui.getSource('Sheet1', 'A1:A2')
+    expect(readRange).toHaveBeenLastCalledWith(
+      'Sheet1',
+      { r0: 0, c0: 0, r1: 1, c1: 0 },
+      { numFmts: false },
+    )
   })
 })

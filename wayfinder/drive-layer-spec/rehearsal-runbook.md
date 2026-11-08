@@ -313,6 +313,13 @@ chmod 600 sites/$SITE/private/preflight-run-<n>.txt
 
 The output names real files, so it stays in `private/`.
 
+The preflight also checks the server. MariaDB's global
+`max_allowed_packet` must be at least 64 MiB, and Node 22.13 or newer must
+be on the `PATH` of the bench user. Raise the packet limit before this step,
+as step 14 shows, and keep it raised until after step 14. The bucket names
+must match exactly. The two endpoints can differ only by a trailing slash or
+by the case of the scheme and host.
+
 A defect is `missing` (no object at the key), `size_differs` (the object
 is not the size in `File.file_size`), or `no_object_path` (the URL names no
 key). A defect on a Removed row never blocks. A defect on an Active or
@@ -409,6 +416,26 @@ If Build refuses because of reachable skips, it writes
 other failure, save the traceback and `private/drive-build-state.json`,
 find the cause, and start again from step 6 after a fix.
 
+In production only, Faris can accept the skips with
+`bench --site <site> set-config drive_build_accept_skips 1` and migrate
+again. Accepting means that the listed rows leave Drive: Build gives them no
+node, and Cleanup reads the same key, lets the same rows through its
+reachable-node check, and deletes their `File` rows. After the migrate, the
+backup named in `drive_cleanup_backup` is the only copy of these rows. Keep
+`drive-build-skipped.json` with the migration evidence.
+
+**After a database-only restore.** Build and Cleanup each keep a marker in
+the database that matches their state file. If the database is restored
+without `private/`, for example by Frappe Cloud after a failed migrate, the
+next migrate refuses with "does not belong to this database" and names the
+file. If the restored database is the backup taken before the migrate, move
+every `drive-build-*` and `drive-cleanup-*` file and folder in `private/`
+into a dated folder, and migrate again. Build copies nothing twice and
+records every copy in a new copy ledger. If the restored database is not
+that backup, restore the database and `private/` from the same backup. A
+migrate that continues a matching state file prints
+`Resuming the Drive migration from <file>`.
+
 **Pass:** the runner exits 0 with no changed patch files.
 
 **Record:**
@@ -427,10 +454,38 @@ find the cause, and start again from step 6 after a fix.
   `borrowed_duplicates_collapsed` (B112), `writer_images_wrapped` (B113),
   `writer_media_references_missing`, `media_references_missing_file_rows`
   and `sheet_snapshots_missing`
+- from the report's `evidence.s3_copy` section, the copy timing (see
+  below)
 - from `private/drive-build-skipped.json`: the `missing_bytes` count, and
   that it matches the accepted defects and the unreachable rows from the
   preflight
 - from `private/drive-cleanup-state.json`: that every phase is complete
+
+**Read the copy timing.** `evidence.s3_copy` in
+`private/drive-build-report.json` describes the S3 copy of this run only:
+
+| Field | Meaning |
+|---|---|
+| `workers` | Threads that read and copied objects (`drive_build_copy_workers`, default 8, at most 32). |
+| `seconds` | Wall time of the copy step. |
+| `objects_copied` | Objects copied to a new key. |
+| `objects_reused` | Rows linked to content that was already copied. |
+| `bytes_read` | Bytes Build downloaded to hash. Every object is read once. |
+| `bytes_copied` | Bytes of the new objects. The copy runs inside the bucket, so these bytes do not pass through the bench. |
+| `objects_per_second` | `objects_copied` plus `objects_reused`, divided by `seconds`. |
+| `bytes_read_per_second` | `bytes_read` divided by `seconds`. |
+| `removed_skipped` | Rows with status Removed that no document names. Legacy Drive deleted their objects, Build makes no node for them and Cleanup deletes the rows, so Build does not read or copy them. They are not in `missing_bytes`. |
+
+Use `seconds` to estimate the production downtime of the copy: scale it
+by the production object count and bytes. The read is the main cost. If
+`bytes_read_per_second` is well below the bench's network speed, try more
+workers on the next run, before the migrate:
+
+```bash
+bench --site $SITE set-config drive_build_copy_workers 16
+```
+
+A resumed run reports only the work it did itself.
 
 ### 13. Check the migrated data
 
@@ -563,6 +618,104 @@ other preview.
   `preview_size`
 - for each failed MP4, whether its index comes after the video data
   (see "Known open issues")
+
+## Sheets and Writer conversion
+
+The same steps apply to the production cutover.
+
+A Sheet or Writer document made before collaboration has no log. It must
+be converted before anyone can edit it. On the migrate that first turns
+collaboration on for an app, the patches
+`suite.sheets.patches.turn_collaboration_on` and
+`suite.writer.patches.turn_collaboration_on` also set **Pause
+conversion** for the app in Suite Collab Settings. The pause
+stops only the background run, which converts every old document. A
+document that someone opens is converted at once, paused or not.
+
+### Prerequisites
+
+Check these on the server, as the user that runs the workers:
+
+```bash
+node --version    # v22.13 or newer, on the workers' PATH
+bench build --app suite
+ls -l apps/suite/suite/sheets/content/dist/converter.cjs apps/suite/suite/writer/content/dist/converter.cjs
+```
+
+`bench build --app suite` runs `yarn build` in the app. That build makes
+the converters, with `vite build --mode converter` in `frontend/`. A
+converter is used only when it holds the version in
+`suite/<app>/content/converter-version.json`, so build again after every
+update.
+
+Without Node or a converter, nothing converts: not the background run,
+and not a document that someone opens. Each `bench migrate` prints
+`Collaborative documents can't be upgraded: ...` when Node or the
+scheduler is missing. System Managers get one notification for each
+cause. A missing or old converter is not printed. It shows only as the
+Error Log in "Watch the backlog".
+
+Conversion runs as background jobs. A document that someone opens needs
+a worker for the `collab` queue, or the `default` queue when the bench
+has no `collab` worker. The background run needs the scheduler and a
+`long` worker.
+
+### What people see
+
+- A document that is not converted opens read-only. A Sheet shows the
+  banner "This spreadsheet is being upgraded for editing together. It is
+  read-only until then."
+- Opening it queues its conversion. A small sheet converts in a few
+  seconds after the job starts. A Sheet tab checks again every five
+  seconds; a Writer tab is told by a realtime event. Both become editable
+  without a reload.
+- Each open of a waiting document queues it, at most once a minute
+  however many people open it. A tab that stays open does not queue it
+  again: a document whose job did not convert it, for example with no
+  converter, is asked for again only when someone opens it again.
+- A document that the converter refused stays read-only, and opening it
+  does not queue it again. A Sheet shows "This spreadsheet couldn't be
+  upgraded, so it stays read-only." One refused as too large shows "This
+  spreadsheet is too large to edit together, so it stays read-only." A
+  System Manager also sees the reason. Find these documents with the
+  outcomes query below.
+
+### Clear the pause
+
+After `bench build`, the restart, and a check that some opened documents
+converted, clear the pause. In Desk, open Suite Collab Settings and clear
+**Pause conversion** on the `sheets` and `writer` rows. Then the
+scheduler converts the rest of the backlog, newest first, about every
+four minutes, for up to ten minutes for each run.
+
+Keep the pause set if the server cannot take the load of the background
+run during working hours. Documents that people open still convert.
+
+### Watch the backlog
+
+Documents that wait for conversion:
+
+```sql
+SELECT COUNT(*) FROM `tabSheet` s
+JOIN `tabDrive Node` n ON n.name = s.node AND n.state = 'Active'
+LEFT JOIN `__sheets_content_doc` d ON d.node = s.node AND d.mode != 'purged'
+WHERE d.id IS NULL;
+```
+
+Outcomes so far, and the refusals to explain:
+
+```sql
+SELECT outcome, reason, COUNT(*) FROM `__sheets_content_conversion`
+GROUP BY outcome, reason;
+```
+
+For Writer, use `tabWriter Document`, `__writer_content_doc` and
+`__writer_content_conversion`. A run that did not start leaves an Error
+Log titled `Collab conversion: <app> did not run`, once an hour for each
+reason.
+
+**Pass:** the waiting count falls to the refusals only. Every refusal has
+a known cause.
 
 ## Browser checks
 

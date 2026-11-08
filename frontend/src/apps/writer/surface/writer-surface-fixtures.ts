@@ -1,14 +1,14 @@
 import { fakeSocket } from '@suite/collab-client/test-support'
 import type { Editor as TiptapEditor } from '@tiptap/core'
 import { expect, vi } from 'vitest'
-import { createApp, defineComponent, h, nextTick, ref, type App, type Ref } from 'vue'
+import { computed, createApp, defineComponent, h, nextTick, ref, type App, type Ref } from 'vue'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import { Doc } from 'yjs'
 
 import type { DocumentSession } from '@/apps/drive'
 import { translationPlugin } from '@/platform/translation'
 
-import { downloaded, realEditors, realtime, rooms, stored } from './writer-surface-fakes'
+import { downloaded, realEditors, realtime, rooms, signedIn, stored } from './writer-surface-fakes'
 
 export type Versions = DocumentSession['versions']
 export type Comments = DocumentSession['comments']
@@ -36,6 +36,12 @@ function surfaceSession(
     title: ref('Quarterly plan'),
     state,
     access,
+    canShare: computed(() => state.value === 'Active' && access.value.role >= 50),
+    // What the server answers: Drive's own test holds the session to the same rule
+    panels: computed(() => [
+      ...(signedIn.isOn || access.value.role >= 20 ? ['comments'] : []),
+      ...(signedIn.isOn || access.value.role >= 40 ? ['versions'] : []),
+    ]),
     refreshAccess: async () => {},
     versions,
     credentials: {
@@ -99,6 +105,7 @@ export function resetSurface() {
   openedApp = null
   document.body.innerHTML = ''
   rooms.next = null
+  rooms.held = null
   rooms.openFailure = null
   rooms.opens = 0
   stored.html = ''
@@ -109,6 +116,7 @@ export function resetSurface() {
   stored.reloads = 0
   realtime.socket = fakeSocket({ answers: true })
   downloaded.html = null
+  signedIn.isOn = true
   vi.restoreAllMocks()
 }
 

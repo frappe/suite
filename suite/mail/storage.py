@@ -1,5 +1,6 @@
 """Bulk provider Mail measurements, retaining old entries on partial failure (admin spec §7)."""
 
+import json
 from decimal import Decimal
 
 import frappe
@@ -7,6 +8,7 @@ from frappe.utils import get_datetime, now_datetime
 
 from suite.mail.directory import get_account_email
 from suite.mail.suite_cloud import get_client
+from suite.suite_core.storage import state
 
 TTL_SECONDS = 6 * 60 * 60
 
@@ -91,6 +93,46 @@ def measurements(previous: dict, *, refresh: bool = False) -> dict:
         result["stale"] = True
         frappe.log_error(title="Suite Mail storage refresh failed", message=frappe.get_traceback())
     return result
+
+
+def refresh() -> None:
+    """Measure what is due and save it to the site's storage state.
+
+    Drive additions and account workflows lock this row, so it stays unlocked during provider calls
+    (a stalled provider would fail them). A row that changed meanwhile may say usage is unknown, and
+    these numbers may predate that change: save nothing, and measure again in a new job (spec §7).
+    """
+    seen = (
+        frappe.db.get_value("Suite Storage State", "site", ["measurements", "modified"], as_dict=True) or {}
+    )
+    previous = json.loads(seen.get("measurements") or "{}")
+    updated = measurements(previous)
+    if updated == previous:
+        return
+    doc, _policy, _latest = state(lock=True)
+    if doc.modified != seen.get("modified"):
+        queue_refresh()
+        return
+    doc.measurements = json.dumps(updated)
+    doc.save(ignore_permissions=True)
+
+
+def queue_refresh() -> None:
+    """Measure again as soon as this transaction commits.
+
+    A mailbox change leaves the site total unknown, which pauses Drive additions (spec §7), so the
+    pause lasts until a worker runs this job, not until the hourly refresh.
+    """
+    frappe.db.after_commit.add(_push_refresh)
+
+
+def _push_refresh() -> None:
+    # Pushed after the commit, not through `enqueue_after_commit`: a Redis failure inside the commit
+    # would fail a request whose account change is already saved. The hourly refresh still runs.
+    try:
+        frappe.enqueue("suite.mail.storage.refresh", queue="short")
+    except Exception:
+        frappe.logger("suite.mail").exception("Mail: could not queue a storage refresh")
 
 
 def _inventory(client, method: str) -> list[dict]:

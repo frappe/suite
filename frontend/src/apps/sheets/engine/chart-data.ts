@@ -4,16 +4,19 @@
 //   * the chart config (chartType, encoding, options, title, hasHeader)
 //   * the source matrix (a 2D array from sheet.getRangeValues)
 //   * optional boolean `isDark` indicating whether dark mode is active
+//   * optional `numFmts`: the cells' number format codes, same shape as the
+//     matrix, so a scatter chart can read dates in its X column
 //
 // and returns a fully-populated ECharts option suitable for `<v-chart :option="…" />`.
 // No Vue, no DOM, no sheet engine — easy to unit-test.
 
-import { displayNumber } from '../utils/format-number.js'
+import { dateSerialFromShown, dateShownFromSerial, displayNumber } from '../utils/format-number.js'
 import { ESPRESSO_PALETTE, type ChartEncoding, type ChartSpec } from './charts.js'
 
 const ESPRESSO_FONT = 'InterVar, Inter, ui-sans-serif, system-ui, sans-serif'
 
 type Row = unknown[]
+type Codes = (string | null | undefined)[][]
 type CartesianKind = 'bar' | 'line' | 'area' | 'scatter'
 
 /**
@@ -21,12 +24,28 @@ type CartesianKind = 'bar' | 'line' | 'area' | 'scatter'
  * @param config  — ChartConfig from createChartEngine
  * @param matrix — 2D source values from getRangeValues
  * @param isDark — whether dark mode is active
+ * @param numFmts — the cells' number format codes, same shape as `matrix`
  * @returns ECharts option object
  */
-export function buildOption(config: ChartSpec, matrix: Row[] | null | undefined, isDark = false) {
+export function buildOption(
+  config: ChartSpec,
+  matrix: Row[] | null | undefined,
+  isDark = false,
+  numFmts?: Codes | null,
+) {
   if (!matrix?.length) return _emptyOption(config, isDark)
-  const { headerRow, dataRows } = _splitHeader(matrix, config.hasHeader !== false)
+  const hasHeader = config.hasHeader !== false
+  const { headerRow, dataRows: shownRows } = _splitHeader(matrix, hasHeader)
   const encoding = _normaliseEncoding(config.encoding, matrix[0]?.length || 0)
+  const scatterX =
+    config.chartType === 'scatter'
+      ? _datesToSerials(
+          shownRows,
+          encoding.x,
+          numFmts ? _splitHeader(numFmts, hasHeader).dataRows : null,
+        )
+      : null
+  const dataRows = scatterX?.rows ?? shownRows
   // Group-and-aggregate by the X column when the user asks for it. With
   // aggregation off this is a no-op and each row plots as-is (the original
   // behaviour); with it on, rows sharing an X value collapse into one, which
@@ -42,8 +61,19 @@ export function buildOption(config: ChartSpec, matrix: Row[] | null | undefined,
       return _cartesianOption(config, headerRow, rows, encoding, 'line', isDark)
     case 'area':
       return _cartesianOption(config, headerRow, rows, encoding, 'area', isDark)
-    case 'scatter':
-      return _cartesianOption(config, headerRow, rows, encoding, 'scatter', isDark)
+    case 'scatter': {
+      const opt = _cartesianOption(
+        config,
+        headerRow,
+        rows,
+        encoding,
+        'scatter',
+        isDark,
+        scatterX?.dateCode,
+      )
+      // Every row skipped (text or blank X or Y): say so, not a bare grid.
+      return opt.series.some((s) => s.data.length) ? opt : _emptyOption(config, isDark)
+    }
     default:
       return _cartesianOption(config, headerRow, rows, encoding, 'bar', isDark)
   }
@@ -116,6 +146,7 @@ function _cartesianOption(
   encoding: ChartEncoding,
   kind: CartesianKind,
   isDark: boolean,
+  dateCode?: string,
 ) {
   const xs = dataRows.map((r) => r[encoding.x])
   const seriesIx = encoding.y
@@ -211,8 +242,16 @@ function _cartesianOption(
     xAxis: {
       type: kind === 'scatter' ? 'value' : 'category',
       data: kind === 'scatter' ? undefined : xs.map(_toLabel),
+      // A date axis spans the dates, not 0 to today's serial, steps in
+      // whole days and reads in the sheet's date format.
+      ...(dateCode && { scale: true, minInterval: 1 }),
       axisLine: { lineStyle: { color: axisLineColor } },
-      axisLabel: { color: axisLabelColor, fontFamily: ESPRESSO_FONT, fontSize: 11 },
+      axisLabel: {
+        color: axisLabelColor,
+        fontFamily: ESPRESSO_FONT,
+        fontSize: 11,
+        ...(dateCode && { formatter: (v: number) => dateShownFromSerial(v, dateCode) }),
+      },
       splitLine: { show: false },
     },
     yAxis: {
@@ -326,12 +365,12 @@ function _baseOption(config: ChartSpec, isDark = false) {
   }
 }
 
-function _splitHeader(
-  matrix: Row[],
+function _splitHeader<T extends unknown[]>(
+  matrix: T[],
   hasHeader: boolean,
-): { headerRow: Row | null; dataRows: Row[] } {
+): { headerRow: T | null; dataRows: T[] } {
   if (hasHeader && matrix.length > 1) {
-    return { headerRow: matrix[0] as Row, dataRows: matrix.slice(1) }
+    return { headerRow: matrix[0] as T, dataRows: matrix.slice(1) }
   }
   return { headerRow: null, dataRows: matrix }
 }
@@ -366,6 +405,30 @@ function _xyPairs(dataRows: Row[], xCol: number, yCol: number): [number, number]
     if (!isNaN(x) && !isNaN(y)) out.push([x, y])
   }
   return out
+}
+
+// A date shows as text (`12/9/2025`); its number format turns it back into
+// the day serial, so a scatter X column of dates plots in date order. Other
+// cells stay as they are. `dateCode` is the first date's format, for the
+// axis labels; undefined when the column holds no date.
+function _datesToSerials(
+  dataRows: Row[],
+  xCol: number,
+  codes: Codes | null,
+): { rows: Row[]; dateCode?: string | undefined } {
+  if (!codes) return { rows: dataRows }
+  let dateCode: string | undefined
+  const rows = dataRows.map((r, i) => {
+    const code = codes[i]?.[xCol]
+    if (!isNaN(displayNumber(r[xCol]))) return r
+    const serial = dateSerialFromShown(r[xCol], code)
+    if (isNaN(serial)) return r
+    dateCode ??= code ?? undefined
+    const out = r.slice()
+    out[xCol] = serial
+    return out
+  })
+  return { rows, dateCode }
 }
 
 function _toLabel(v: unknown) {

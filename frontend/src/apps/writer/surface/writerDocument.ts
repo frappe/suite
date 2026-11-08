@@ -67,12 +67,25 @@ export function createWriterDocument(
     doc: null as WriterDocumentRow | null,
     readFailure: null as string | null,
     reload: () => load(),
+    setLocked,
     read,
   })
   async function load() {
     const row = await client.query(api.writer.documents.get, { name }, { context })
     document.doc = { ...row, settings: settingsOf(row.settings) }
     document.readFailure = null
+  }
+
+  async function setLocked(lock: boolean) {
+    const row = document.doc
+    if (!row) return
+    const settings = { ...row.settings, lock }
+    await client.mutation(
+      api.writer.documents.updateSettings,
+      { name, data: JSON.stringify(settings) },
+      { context },
+    )
+    row.settings = settings
   }
 
   async function read() {

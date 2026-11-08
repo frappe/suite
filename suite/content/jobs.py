@@ -23,6 +23,9 @@ TRIM = "suite.content.jobs.trim"
 CHECK_RENDER = "suite.content.jobs.check_render"
 CONVERT = "suite.content.jobs.convert_pending"
 CONVERT_ONE = "suite.content.jobs.convert_one"
+CONVERT_OPENED = "suite.content.jobs.convert_opened"
+# How long before another open asks again for a document still waiting, as many people may open it at once
+REQUEST_EVERY_S = 60
 
 
 def delete_purged(app: str, doc_id: str) -> None:
@@ -86,6 +89,36 @@ def convert_one(app: str, node: str) -> None:
     conversion = spec_of(app).conversion
     if conversion is not None and convert.may_convert(app):
         conversions.run_one(app, conversion, node)
+
+
+def request_conversion(app: str, node: str) -> None:
+    """Ask for `node`'s conversion, paused or not, once someone opens it while it waits; at most once a minute."""
+    key = f"suite-convert-opened-{app}-{node}"
+    if (
+        spec_of(app).conversion is None
+        or frappe.cache.get_value(key)
+        or not conversions.is_waiting(app, node)
+    ):
+        return
+
+    frappe.cache.set_value(key, 1, expires_in_sec=REQUEST_EVERY_S)
+    try:
+        scheduling.enqueue(CONVERT_OPENED, key, timeout=convert.TIMEOUT, app=app, node=node)
+    except Exception:
+        # A request is only a hint: the open still answers, and an open a minute later asks again
+        frappe.log_error(title=f"Collab conversion: {app} request failed", message=node)
+
+
+def convert_opened(app: str, node: str) -> None:
+    """Convert a document someone opened, as its queued job.
+
+    It runs as Administrator, as the scheduled run does, because the conversion keeps a version of the old
+    body: a reader's open converts the document too, though the reader can't edit it.
+    """
+    frappe.set_user("Administrator")
+    conversion = spec_of(app).conversion
+    if conversion is not None:
+        conversions.run_one(app, conversion, node, opened=True)
 
 
 def judge(app: str, doc_id: str) -> None:

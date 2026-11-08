@@ -3,8 +3,8 @@
     <div :style="slideStyles">
       <SlideElement
         v-for="element in elements"
-        :key="`thumbnail-${element.id}`"
-        mode="thumbnail"
+        :key="`${mode}-${element.id}`"
+        :mode="mode"
         :element="element"
         :data-index="element.id"
       />
@@ -20,6 +20,8 @@ import SlideElement from '@/apps/slides/components/SlideElement.vue'
 const props = defineProps({
   slide: { type: Object, required: true },
   scale: { type: Number, default: 160 / 960 },
+  // a viewer draws a video and a moving gif, a thumbnail only their stills
+  mode: { type: String, default: 'thumbnail' },
 })
 
 const elements = computed(() => {

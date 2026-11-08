@@ -41,6 +41,7 @@ from suite.drive.patches.build.tests.fakes import (
     InterruptedRun,
     build_environment,
 )
+from suite.drive.patches.database_marker import ForeignRecordError
 
 OWNER = "owner@example.com"
 SOURCE_CREATION = "2020-01-01 00:00:00.000000"
@@ -312,6 +313,25 @@ class WholePatchTest(unittest.TestCase):
         run_build(resumed)
         self.assertIn(self.DOCUMENT, self.drive.node_rows)
         self.assertTrue(resumed.state.usage().completed)
+
+    def test_a_record_from_before_a_database_only_restore_is_refused_by_name(self):
+        killed = self.make_env()
+        self.drive.fail_pair = self.PERSONAL
+        with self.assertRaises(Exception):
+            run_build(killed)
+        self.drive.fail_pair = None
+        # The restore brings back the database from before the migrate. The
+        # record under `private/` still claims the storage step.
+        self.drive.rollback()
+        self.drive.markers.clear()
+        nodes = dict(self.drive.node_rows)
+
+        with self.assertRaises(ForeignRecordError) as caught:
+            run_build(self.make_env())
+
+        self.assertIn(str(killed.state.path), str(caught.exception))
+        self.assertIn("drive-build-*", str(caught.exception))
+        self.assertEqual(self.drive.node_rows, nodes)
 
 
 OTHER = "other@example.com"
