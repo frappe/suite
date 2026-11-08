@@ -1379,8 +1379,23 @@ describe('convertLegacy on pasted HTML span colours, read as on the Yjs path', (
     })
   })
 
-  it("refuses an HTML span colour the editor can't read, whose alpha is a variable", () => {
-    const html = '<p>a<span style="color: rgb(0 0 0 / var(--tw-text-opacity))">b</span></p>'
+  it('reads a Tailwind colour by its channels, its alpha variable being full opacity', () => {
+    const black = 'color: rgb(0 0 0 / var(--tw-text-opacity))'
+    const red = 'color: rgb(220 38 38 / var(--tw-text-opacity))'
+    const html = `<p><span style="${black}">a</span><span style="${red}">b</span></p>`
+
+    const result = convert({ content: null, html, collab: 0, ycomments: null })
+
+    const [{ content }] = bodyOf(result.state).content
+    expect(drawnColours(content)).toEqual([
+      ['a', []],
+      ['b', [['textStyle', 'red']]],
+    ])
+    expect(result.dropped).toEqual([])
+  })
+
+  it("refuses an HTML span colour the editor can't read, whose alpha is a variable of its own", () => {
+    const html = '<p>a<span style="color: rgb(0 0 0 / var(--my-alpha))">b</span></p>'
 
     expect(convertLegacy({ content: null, html, collab: 0, ycomments: null }, MAX_STATE)).toEqual({
       kind: 'failed',

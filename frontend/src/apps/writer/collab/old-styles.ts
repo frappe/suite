@@ -96,6 +96,8 @@ const TONES: Record<ColourProperty, { gray: Rgb; none: Rgb }> = {
 // A palette name or any var(--...) reference, with nothing around it
 // A whole font family that is a quoted name holding a ';'
 const SEMICOLON_NAME = /^\s*(?:"[^"]*;[^"]*"|'[^']*;[^']*')\s*$/
+// The alpha variable closing a colour Tailwind's classes wrote, which they set to full opacity
+const TAILWIND_ALPHA = /\s*\/\s*var\(--tw-[a-z-]*opacity\)\s*\)\s*$/i
 const WHOLE_NAME = /^([a-z]+|var\(--[a-z0-9-]+\))$/i
 
 // Old Drive's highlight picker, from its DocMenuAndInfoBar: the editor reads these tones as their
@@ -128,10 +130,12 @@ function oldDriveName(property: ColourProperty, rgb: ReturnType<typeof rgbOf>) {
 // The palette name an old colour keeps its look as, '' when it looks like none: old Drive's own,
 // the one the editor reads, or for a tone it reads as none, gray or no colour by whichever is
 // nearer; null when it can't be read or holds more than a colour
-function oldPaletteName(property: ColourProperty, value: string): string | null {
-  if (value.includes(';')) {
+function oldPaletteName(property: ColourProperty, stored: string): string | null {
+  if (stored.includes(';')) {
     return null
   }
+
+  const value = stored.replace(TAILWIND_ALPHA, ')')
 
   const rgb = rgbOf(value)
   if (rgb?.alpha === 0 || LOOKS_UNSET[property].includes(value.trim().toLowerCase())) {
