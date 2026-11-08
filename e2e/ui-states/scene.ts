@@ -70,35 +70,12 @@ export function people(): People {
 	return { actor, peer, fresh };
 }
 
-let workspace: Promise<string> | null = null;
-
-/**
- * The `UI states` folder under the actor's root, created once per run. Two
- * workers can race to create it; the loser takes the winner's folder.
- */
-function workspaceFolder(api: APIRequestContext, root: string): Promise<string> {
-	workspace ??= (async () => {
-		const existing = await findWorkspaceFolder(api, root);
-		if (existing) return existing;
-		try {
-			return (await createFolder(api, WORKSPACE_FOLDER, root)).name;
-		} catch (error) {
-			const created = await findWorkspaceFolder(api, root);
-			if (!created) throw error;
-			return created;
-		}
-	})().catch((error: unknown) => {
-		// A failed lookup must not stick: the next path asks again.
-		workspace = null;
-		throw error;
-	});
-	return workspace;
-}
-
-async function findWorkspaceFolder(api: APIRequestContext, root: string): Promise<string | undefined> {
+/** The `UI states` folder under the actor's root, created by the first path that needs it. */
+async function workspaceFolder(api: APIRequestContext, root: string): Promise<string> {
 	const rows = await api.get(`/api/suite/drive/nodes/${root}/children`);
 	const { data } = (await rows.json()) as { data: { rows: DriveNode[] } };
-	return data.rows.find((row) => row.title === WORKSPACE_FOLDER)?.name;
+	const existing = data.rows.find((row) => row.title === WORKSPACE_FOLDER);
+	return existing?.name ?? (await createFolder(api, WORKSPACE_FOLDER, root)).name;
 }
 
 /**

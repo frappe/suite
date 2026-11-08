@@ -21,9 +21,10 @@ export default defineConfig({
 	testDir: __dirname,
 	testMatch: /capture\.spec\.ts/,
 	outputDir: resolve(__dirname, ".runs"),
-	fullyParallel: true,
+	// One spec file without fullyParallel: flows run one after another, since they share the users' Trash and Recent.
+	fullyParallel: false,
 	retries: 0,
-	// Two workers so global setup provisions four users: actor, peer, fresh, spare.
+	// Global setup provisions two users per configured worker: actor, peer, fresh, spare.
 	workers: 2,
 	timeout: 15 * 60_000,
 	expect: { timeout: 10_000 },

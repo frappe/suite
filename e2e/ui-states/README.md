@@ -4,7 +4,7 @@ Walks every Drive screen and interaction state as an explicit state machine and 
 
 ## Run
 
-The bench that serves the site must be running, with `allow_tests`, `storage_v2` and `ignore_csrf` set on the site. One capture at a time: runs share the provisioned users.
+The bench that serves the site must be running, with `allow_tests`, `storage_v2` and `ignore_csrf` set on the site. One capture at a time, and one flow at a time within it: flows share the provisioned users, so their Trash and Recent.
 
 ```sh
 cd e2e/ui-states
