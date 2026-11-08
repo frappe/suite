@@ -6,7 +6,7 @@ import frappe
 from frappe.utils import now_datetime
 
 from suite import drive
-from suite.content import touches
+from suite.content import editors, touches
 from suite.content.http import routes
 from suite.drive._core.access import grant
 from suite.drive._core.principals import Principals
@@ -115,6 +115,8 @@ class TestWriterCollabAccess(CollabCase):
 
     def test_a_node_no_app_keeps_here_is_not_found_as_a_missing_one_is(self):
         self.set_mode("on")
+        # Every Drive document type has an editor now, so this site pretends none is registered.
+        self.enterContext(patch.object(editors, "for_type", return_value=None))
         root = drive.ensure_personal_root(WRITER)
         parent = frappe.db.get_value("Drive Root", root, "node")
         presentation = drive.create_document(

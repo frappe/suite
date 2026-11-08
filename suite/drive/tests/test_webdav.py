@@ -1260,6 +1260,8 @@ class TestDavPrincipals(DavCase):
             patch.object(dispatch, "_handler_for", return_value=handler),
             patch.object(log, "configured_level", return_value=None),
             patch("frappe.set_user"),
+            # Reading Suite Settings under this mock makes Frappe cache a wrong controller for it.
+            patch("suite.composition.access.require_access"),
             self.assertRaises(dispatch.DAVResponseException) as caught,
         ):
             dispatch._dispatch(request)
