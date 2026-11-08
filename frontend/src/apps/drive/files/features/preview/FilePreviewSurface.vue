@@ -185,12 +185,15 @@ watch(
   },
   { immediate: true },
 )
-/** Where the way back in the header goes, or back a page when the header has none. */
+/**
+ * Where the way back in the header goes, or back a page when the header has
+ * none. A guest with neither stays: their only way in is the link that opened this file.
+ */
 function leave() {
   if (location.value)
     return void router.push({ ...location.value.to, state: { reveal: current.value } })
   if (typeof router.options.history.state.back === 'string') return router.back()
-  void router.push('/drive')
+  if (signedIn.value) void router.push('/drive')
 }
 
 // Arrow keys step through the folder unless something on the page has focus,

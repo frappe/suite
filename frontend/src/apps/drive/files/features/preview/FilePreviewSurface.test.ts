@@ -136,6 +136,15 @@ vi.mock('@/platform/transport', async (original) => ({
   },
 }))
 
+const account = vi.hoisted(() => ({ status: 'guest' as 'guest' | 'authenticated' }))
+vi.mock('@/platform/session', async (original) => {
+  const actual = await original<typeof import('@/platform/session')>()
+  return {
+    ...actual,
+    useSession: () => ({ ...actual.useSession(), status: ref(account.status) }),
+  }
+})
+
 const { default: FilePreviewSurface } = await import('./FilePreviewSurface.vue')
 
 function session(
@@ -179,6 +188,7 @@ afterEach(() => {
   unmount = null
   folderState = 'Active'
   folderRole = 30
+  account.status = 'guest'
   requests.length = 0
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
@@ -199,6 +209,7 @@ async function mount(
         component: { render: () => h(FilePreviewSurface, { session: unref(opened) }) },
       },
       { path: '/drive/f/:node/:slug?', component: { render: () => null } },
+      { path: '/drive', component: { render: () => null } },
     ],
   })
   if (from) await router.push(from)
@@ -395,6 +406,33 @@ describe('file preview', () => {
       // Opened straight from its address, so it opens the folder with the file focused.
       await vi.waitFor(() => expect(router.currentRoute.value.path).toBe(LISTING))
       expect(router.options.history.state.reveal).toBe('c')
+    })
+
+    describe('with no folder to go back to and no page before it', () => {
+      const shared = () =>
+        fromPartial<FilePreviewSession>({
+          ...session('c', 'c.png', 'image/png'),
+          folder: ref(null),
+          parent: ref(null),
+        })
+
+      it('Escape keeps a guest on the file, since Drive would send them to the login page', async () => {
+        const { router } = await mount(shared(), '/d/c/c-png')
+
+        press('Escape')
+        await new Promise((resolve) => setTimeout(resolve, 20))
+
+        expect(router.currentRoute.value.path).toBe('/d/c/c-png')
+      })
+
+      it('Escape takes a signed-in user to their files', async () => {
+        account.status = 'authenticated'
+        const { router } = await mount(shared(), '/d/c/c-png')
+
+        press('Escape')
+
+        await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/drive'))
+      })
     })
 
     it('steps with the arrows after a click on Next file', async () => {
