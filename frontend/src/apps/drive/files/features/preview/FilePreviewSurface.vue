@@ -428,7 +428,8 @@ const pagerLoading = computed(() => !!folder.value && siblings.status === 'pendi
             :disabled="!previous"
             @click="show(previous)"
           />
-          <span class="text-sm tabular-nums text-ink-gray-5 max-md:hidden"
+          <!-- The counter's width fits any two-digit count, so the arrows hold still as it changes. -->
+          <span class="min-w-14 text-center text-sm tabular-nums text-ink-gray-5 max-md:hidden"
             >{{ position + 1 }} of {{ files.length }}</span
           >
           <Button

@@ -23,7 +23,9 @@
       <span v-else class="ml-2 h-4 w-40 animate-pulse rounded-4 bg-surface-gray-3" />
     </div>
     <div class="flex shrink-0 items-center gap-1" aria-hidden="true">
-      <span class="me-1 h-3 w-20 animate-pulse rounded-3 bg-surface-gray-3 max-md:hidden" />
+      <!-- A file in a folder keeps its pager's width, empty as the pager is while it loads. -->
+      <span v-if="location" class="h-7 w-30 max-md:w-15" />
+      <span v-else class="me-1 h-3 w-20 animate-pulse rounded-3 bg-surface-gray-3 max-md:hidden" />
       <span
         v-for="panel in 2"
         :key="panel"
