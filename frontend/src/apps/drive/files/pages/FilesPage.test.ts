@@ -84,6 +84,12 @@ vi.mock('@/platform/transport', async (original) => {
             if (trashed) trashed.state = 'Trashed'
             return trashed
           }
+          case 'node_patch.move': {
+            await server.gate
+            const moved = node(input.node)
+            if (moved) moved.parent_node = String(input.parent_node)
+            return moved
+          }
           case 'node_batch': {
             await server.gate
             if (server.refusal) throw server.refusal
@@ -319,9 +325,27 @@ vi.mock('frappe-ui', () => ({
   TextInput: quiet(),
   useKeyboardShortcut: (configs: ShortcutConfig[]) => shortcuts.push(...configs),
 }))
+/** What the page last handed the folder picker. */
+const picker = vi.hoisted(() => ({
+  attrs: fromPartial<{
+    open?: boolean
+    mode?: string
+    onChoose?: (parent: string, destination: string) => unknown
+  }>({}),
+}))
+vi.doMock('../features/FolderPicker.vue', () => ({
+  default: defineComponent({
+    inheritAttrs: false,
+    setup:
+      (_props, { attrs }) =>
+      () => {
+        picker.attrs = fromAny(attrs)
+        return null
+      },
+  }),
+}))
 for (const part of [
   '../features/ViewSettings.vue',
-  '../features/FolderPicker.vue',
   '../features/TemplatePicker.vue',
   '../features/RenameDialog.vue',
   '../features/CreateNodeDialog.vue',
@@ -982,6 +1006,29 @@ describe('A selection', () => {
     expect(menuOf(root, 'More actions')).toEqual([])
   })
 
+  it('lets go of a row trashed from its own menu, so the bar does not count what has left', async () => {
+    server.folderRole = 40
+    const root = await select('a')
+
+    choose(root, 'More actions', 'Move to trash')
+
+    await vi.waitFor(() => expect(server.nodes.get('a')?.state).toBe('Trashed'))
+    await vi.waitFor(() => expect(root.textContent).not.toContain('1 selected'))
+  })
+
+  it('lets go of a row moved from its own menu, and keeps the rest of the selection', async () => {
+    server.folderRole = 40
+    const root = await select('a', 'c')
+    expect(root.textContent).toContain('2 selected')
+
+    menuItem('a', 'Move')?.onClick()
+    await nextTick()
+    await picker.attrs.onChoose?.('folder-2', 'Archive')
+
+    await vi.waitFor(() => expect(server.nodes.get('a')?.parent_node).toBe('folder-2'))
+    await vi.waitFor(() => expect(root.textContent).toContain('1 selected'))
+  })
+
   it('stars every item, then offers to unstar them all', async () => {
     const root = await select('a', 'c')
 
@@ -1173,6 +1220,29 @@ describe('Trash and move before Drive answers', () => {
         expect.objectContaining({ kind: 'error', message: 'Not allowed' }),
       ),
     )
+  })
+
+  it('leaves a picker opened meanwhile alone, and reports the move it finished', async () => {
+    server.folderRole = 40
+    await mount('/drive/f/folder-1/talks')
+    await vi.waitFor(() => expect(titles()).toHaveLength(3))
+
+    menuItem('a', 'Move')?.onClick()
+    await nextTick()
+    const moving = picker.attrs.onChoose?.('folder-2', 'Archive')
+    await nextTick()
+    expect(picker.attrs.open).toBe(false)
+
+    menuItem('c', 'Make a copy')?.onClick()
+    await nextTick()
+    expect(picker.attrs).toMatchObject({ open: true, mode: 'copy' })
+
+    release()
+    await moving
+    await nextTick()
+
+    expect(picker.attrs).toMatchObject({ open: true, mode: 'copy' })
+    expect(feedback.toasts.at(-1)?.message).toBe('Moved “a.png” to Archive')
   })
 
   it('takes a selection out at once, and brings back only the items that failed', async () => {

@@ -1769,7 +1769,14 @@ async function runPurge() {
 }
 async function trashRow(row: DriveNode) {
   const item = itemOf(row)
-  if (await trashMutation.run({ node: row.name, state: 'Trashed' })) announceTrash([item])
+  if (!(await trashMutation.run({ node: row.name, state: 'Trashed' }))) return
+  deselect(row)
+  announceTrash([item])
+}
+/** A row that has left the listing leaves the selection too, as a batch's rows do. */
+function deselect(row: DriveNode) {
+  if (selection.value.includes(row.name))
+    picked.keepOnly(selection.value.filter((name) => name !== row.name))
 }
 /** A trashed folder opens read-only, so the page goes up to its parent first. */
 async function trashOpenFolder(folder: DriveNode) {
@@ -1799,6 +1806,9 @@ function beginBulkMove() {
   pickerOpen.value = true
 }
 async function applyPicker(parent: string, destination: string) {
+  // A move closes the picker at once, so another action can reopen it before this one answers.
+  const mode = pickerMode.value
+  const row = activeNode.value
   // Read before the move: a move changes each node's parent in place.
   const moving: MovedItem[] = (
     pickerBulk.value ? selectedRows.value : activeNode.value ? [activeNode.value] : []
@@ -1808,7 +1818,7 @@ async function applyPicker(parent: string, destination: string) {
       : [],
   )
   // The moved rows leave the list at once, so the picker closes with them.
-  if (pickerMode.value === 'move') pickerOpen.value = false
+  if (mode === 'move') pickerOpen.value = false
   if (pickerBulk.value) {
     const result = await runBatch(
       moving.map((item) => item.node),
@@ -1816,7 +1826,6 @@ async function applyPicker(parent: string, destination: string) {
       'moved',
     )
     if (!result) return
-    pickerOpen.value = false
     announceMove(
       moving.filter((item) => result.ok.includes(item.node)),
       destination,
@@ -1825,14 +1834,15 @@ async function applyPicker(parent: string, destination: string) {
     if (!result.failed.length) batchOutcome.value = null
     return
   }
-  if (!activeNode.value) return
-  const result =
-    pickerMode.value === 'move'
-      ? await moveMutation.run({ node: activeNode.value.name, parent_node: parent })
-      : await copyMutation.run({ node: activeNode.value.name, parent_node: parent })
-
-  if (pickerMode.value === 'move') announceMove(moving, destination)
-  else announceCopy({ node: result.name, title: result.title }, destination)
+  if (!row) return
+  if (mode === 'move') {
+    await moveMutation.run({ node: row.name, parent_node: parent })
+    deselect(row)
+    announceMove(moving, destination)
+    return
+  }
+  const copy = await copyMutation.run({ node: row.name, parent_node: parent })
+  announceCopy({ node: copy.name, title: copy.title }, destination)
   pickerOpen.value = false
 }
 async function runBulkTrash() {
