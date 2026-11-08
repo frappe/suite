@@ -526,6 +526,36 @@ describe('convertLegacy', () => {
     ])
   })
 
+  it.each([
+    [
+      'InterVar, ui-sans-serif, system-ui, sans-serif, " font-size: 16px;"',
+      'InterVar, ui-sans-serif, system-ui, sans-serif',
+    ],
+    ["'a;b', Inter; x", 'Inter'],
+  ])('reads past a quoted name holding a semicolon in the Yjs font family %j', (value, family) => {
+    const legacy = stored(legacyDoc(yMarked('word', { textStyle: { fontFamily: value } })))
+
+    const result = convert(legacy)
+
+    const [{ content }] = bodyOf(result.state).content
+    expect([content[0].marks, result.dropped]).toEqual([
+      [{ type: 'textStyle', attrs: expect.objectContaining({ fontFamily: family }) }],
+      [],
+    ])
+  })
+
+  it.each(['" font-size: 16px;;;"', "'Brand;Sans'"])(
+    'converts a Yjs font family %j, only a quoted name holding a semicolon, as no font',
+    (value) => {
+      const legacy = stored(legacyDoc(yMarked('word', { textStyle: { fontFamily: value } })))
+
+      const result = convert(legacy)
+
+      const [{ content }] = bodyOf(result.state).content
+      expect([content[0].marks, result.dropped]).toEqual([undefined, []])
+    },
+  )
+
   it.each([';', '; x'])(
     "converts a Yjs font family %j with nothing before its ';' as no font",
     (value) => {
@@ -549,7 +579,6 @@ describe('convertLegacy', () => {
     'Inter; colour: red',
     'Inter; x (',
     'Inter; "x',
-    "'Brand;Sans'",
     '"A;B"; C',
     'Inter; x /* y',
     'Inter; x\\',

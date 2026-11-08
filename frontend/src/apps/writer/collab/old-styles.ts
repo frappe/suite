@@ -94,6 +94,8 @@ const TONES: Record<ColourProperty, { gray: Rgb; none: Rgb }> = {
 }
 
 // A palette name or any var(--...) reference, with nothing around it
+// A whole font family that is a quoted name holding a ';'
+const SEMICOLON_NAME = /^\s*(?:"[^"]*;[^"]*"|'[^']*;[^']*')\s*$/
 const WHOLE_NAME = /^([a-z]+|var\(--[a-z0-9-]+\))$/i
 
 // Old Drive's highlight picker, from its DocMenuAndInfoBar: the editor reads these tones as their
@@ -176,30 +178,46 @@ function textColourFormat(color: unknown): Attributes | null {
   return { color: name || null }
 }
 
-// An old font family whose first ';' ends it, read as the editor reads the family before it;
-// nothing when it holds no ';', an open quote, a family the editor can't read, a line break,
-// escape or comment before the ';', or when what follows could hold a declaration or swallow the
-// styles drawn after it
+// An old font family without its quoted names holding a ';', which name no font, so a browser
+// reads past them to the next family; unchanged when a quote stays open, or with an escape or
+// comment to misread
+function withoutSemicolonNames(fontFamily: string) {
+  const families = fontFamily.match(/(?:[^,"']|"[^"]*"|'[^']*')+/g) ?? []
+  if (families.join(',') !== fontFamily || /\\|\/\*/.test(fontFamily)) {
+    return fontFamily
+  }
+
+  return families
+    .filter((family) => !SEMICOLON_NAME.test(family))
+    .join(',')
+    .trim()
+}
+
+// An old font family whose first ';' ends it, read as the editor reads the family before it, once
+// its quoted names holding a ';' are gone; nothing when neither applies, or with an open quote, a
+// family the editor can't read, a line break, escape or comment before the ';', or when what
+// follows could hold a declaration or swallow the styles drawn after it
 function fontFamilyFormat(fontFamily: unknown): Attributes {
   if (typeof fontFamily !== 'string') {
     return {}
   }
 
-  const end = fontFamily.indexOf(';')
+  const value = withoutSemicolonNames(fontFamily)
+  const [before, ...after] = value.split(';')
   if (
-    end < 0 ||
-    !/^[\p{L}\p{N} \t,._;-]*$/u.test(fontFamily.slice(end + 1)) ||
-    unclosedQuote(fontFamily) ||
-    /[\n\r\f]/.test(fontFamily.slice(0, end)) ||
-    /\\|\/\*/.test(fontFamily.slice(0, end))
+    (value === fontFamily && !after.length) ||
+    !/^[\p{L}\p{N} \t,._;-]*$/u.test(after.join(';')) ||
+    unclosedQuote(value) ||
+    /[\n\r\f]/.test(before) ||
+    /\\|\/\*/.test(before)
   ) {
     return {}
   }
 
   const element = document.createElement('span')
-  element.style.setProperty('font-family', fontFamily.slice(0, end))
+  element.style.setProperty('font-family', before)
   const family = element.style.fontFamily.replace(/['"]+/g, '')
-  if (!family && fontFamily.slice(0, end).trim()) {
+  if (!family && before.trim()) {
     return {}
   }
 
