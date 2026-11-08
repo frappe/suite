@@ -97,7 +97,7 @@ function typeFilter(scene: Scene) {
 export const listing = defineFlow<Event>({
 	id: "listing",
 	title: "Folder listing",
-	folderTitle: "Website relaunch",
+	folderTitle: "Brand refresh",
 	source: "frontend/src/apps/drive/files/features/FilesListing.vue",
 	machine,
 	async enter(scene) {

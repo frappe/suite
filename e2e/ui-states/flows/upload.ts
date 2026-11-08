@@ -245,7 +245,7 @@ async function rehold(scene: Scene): Promise<void> {
 export const upload = defineFlow<Event>({
 	id: "upload",
 	title: "Uploads",
-	folderTitle: "Website relaunch",
+	folderTitle: "Photo shoot",
 	source: "frontend/src/apps/drive/files/features/uploads/queue.ts",
 	machine,
 	async enter(scene) {

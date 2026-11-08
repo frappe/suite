@@ -221,7 +221,7 @@ async function managerPage(scene: Scene): Promise<Page> {
 export const share = defineFlow<Event>({
 	id: "share",
 	title: "Share dialog",
-	folderTitle: "Website relaunch",
+	folderTitle: "Partner portal",
 	source: "frontend/src/apps/drive/files/features/share/",
 	machine,
 	async enter(scene) {

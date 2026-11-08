@@ -296,11 +296,11 @@ export const places = defineFlow<Event>({
 		},
 		async NARROW(scene) {
 			await scene.page.setViewportSize({ width: 390, height: 844 });
-			await expect(scene.page.getByRole("button", { name: "Website relaunch" })).toBeVisible();
+			await expect(scene.page.getByRole("button", { name: scene.folder.title })).toBeVisible();
 			await expect(scene.page.getByRole("listitem").first()).toBeVisible();
 		},
 		async OPEN_PLACES(scene) {
-			await scene.page.getByRole("button", { name: "Website relaunch" }).click();
+			await scene.page.getByRole("button", { name: scene.folder.title }).click();
 			await expect(scene.page.getByRole("dialog").getByRole("link", { name: "Shared with me" })).toBeVisible();
 		},
 		async SIGN_IN_AS_NEW_USER(scene) {

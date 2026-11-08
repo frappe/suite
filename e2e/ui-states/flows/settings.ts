@@ -131,7 +131,7 @@ async function answerWebdav(scene: Scene, answer: Record<string, unknown>): Prom
 export const settings = defineFlow<Event>({
 	id: "settings",
 	title: "Drive settings",
-	folderTitle: "Website relaunch",
+	folderTitle: "Annual report",
 	source: "frontend/src/apps/drive/files/features/settings/StatisticsSettings.vue",
 	machine,
 	async enter(scene) {

@@ -72,15 +72,43 @@ export function people(): People {
 
 let workspace: Promise<string> | null = null;
 
-/** The `UI states` folder under the actor's root, created once per run. */
+/**
+ * The `UI states` folder under the actor's root, created once per run. Two
+ * workers can race to create it; the loser takes the winner's folder.
+ */
 function workspaceFolder(api: APIRequestContext, root: string): Promise<string> {
 	workspace ??= (async () => {
-		const rows = await api.get(`/api/suite/drive/nodes/${root}/children`);
-		const { data } = (await rows.json()) as { data: { rows: DriveNode[] } };
-		const found = data.rows.find((row) => row.title === WORKSPACE_FOLDER);
-		return found?.name ?? (await createFolder(api, WORKSPACE_FOLDER, root)).name;
+		const existing = await findWorkspaceFolder(api, root);
+		if (existing) return existing;
+		try {
+			return (await createFolder(api, WORKSPACE_FOLDER, root)).name;
+		} catch (error) {
+			const created = await findWorkspaceFolder(api, root);
+			if (!created) throw error;
+			return created;
+		}
 	})();
 	return workspace;
+}
+
+async function findWorkspaceFolder(api: APIRequestContext, root: string): Promise<string | undefined> {
+	const rows = await api.get(`/api/suite/drive/nodes/${root}/children`);
+	const { data } = (await rows.json()) as { data: { rows: DriveNode[] } };
+	return data.rows.find((row) => row.title === WORKSPACE_FOLDER)?.name;
+}
+
+/**
+ * Each flow owns one folder title, so a folder already there is left by a run
+ * that died before `close()`. It goes before this one takes its place.
+ */
+async function createSceneFolder(api: APIRequestContext, title: string, parent: string): Promise<DriveNode> {
+	const rows = await api.get(`/api/suite/drive/nodes/${parent}/children`);
+	const { data } = (await rows.json()) as { data: { rows: DriveNode[] } };
+	for (const stale of data.rows.filter((row) => row.title === title)) {
+		await trashNode(api, stale.name);
+		await purgeNode(api, stale.name);
+	}
+	return createFolder(api, title, parent);
 }
 
 export async function openScene(
@@ -97,7 +125,7 @@ export async function openScene(
 	const root = data.personal.node;
 	const parent = await workspaceFolder(api, root);
 	const stamp = Date.now().toString(36);
-	const folder = await createFolder(api, folderTitle, parent);
+	const folder = await createSceneFolder(api, folderTitle, parent);
 	const page = await context.newPage();
 	const others: BrowserContext[] = [];
 

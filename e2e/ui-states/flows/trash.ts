@@ -151,7 +151,7 @@ function actionsFor(scene: Scene, title: string): Locator {
 export const trash = defineFlow<Event>({
 	id: "trash",
 	title: "Trash",
-	folderTitle: "Website relaunch",
+	folderTitle: "Office move",
 	source: "frontend/src/apps/drive/files/features/trash/useTrashActions.ts",
 	machine,
 	async enter(scene) {
@@ -207,9 +207,9 @@ export const trash = defineFlow<Event>({
 		async RESTORE_HERE(scene) {
 			const picker = dialog(scene, "Restore to");
 			await picker.getByRole("button", { name: "UI states", exact: true }).click();
-			await expect(picker.getByRole("button", { name: "Website relaunch", exact: true })).toBeVisible();
-			await picker.getByRole("button", { name: "Website relaunch", exact: true }).click();
-			await expect(picker.getByRole("list", { name: "Folders in Website relaunch" }).or(picker.getByText("No folders inside"))).toBeVisible();
+			await expect(picker.getByRole("button", { name: scene.folder.title, exact: true })).toBeVisible();
+			await picker.getByRole("button", { name: scene.folder.title, exact: true }).click();
+			await expect(picker.getByRole("list", { name: `Folders in ${scene.folder.title}` }).or(picker.getByText("No folders inside"))).toBeVisible();
 			await picker.getByRole("button", { name: "Restore here" }).click();
 			await expect(toast(scene, "Restored “Kickoff notes.md”")).toBeVisible();
 			await expect(actionsFor(scene, "Kickoff notes.md")).toBeHidden();

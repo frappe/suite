@@ -191,7 +191,7 @@ async function submitPassword(page: Page, password: string, wrong = true): Promi
 export const guest = defineFlow<Event>({
 	id: "guest",
 	title: "Guest access",
-	folderTitle: "Website relaunch",
+	folderTitle: "Press kit",
 	source: "frontend/src/apps/drive/files/features/linkAccess.ts",
 	machine,
 	async enter(scene) {

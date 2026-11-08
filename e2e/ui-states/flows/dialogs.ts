@@ -210,7 +210,7 @@ function toast(scene: Scene, text: string | RegExp): Locator {
 export const dialogs = defineFlow<Event>({
 	id: "dialogs",
 	title: "Create, rename, move, copy",
-	folderTitle: "Website relaunch",
+	folderTitle: "Design system",
 	source: "frontend/src/apps/drive/files/pages/FilesPage.vue",
 	machine,
 	async enter(scene) {
@@ -317,7 +317,7 @@ export const dialogs = defineFlow<Event>({
 		},
 		async COPY_HERE(scene) {
 			await dialog(scene, "Make a copy").getByRole("button", { name: "Copy here" }).click();
-			await expect(toast(scene, /Copied “Meeting notes.* to Website relaunch/)).toBeVisible();
+			await expect(toast(scene, new RegExp(`Copied “Meeting notes.* to ${scene.folder.title}`))).toBeVisible();
 			await expect(scene.page.getByRole("button", { name: /^Actions for Meeting notes.*\(/ })).toBeVisible();
 		},
 		async BULK_MOVE_CLASH(scene) {

@@ -163,7 +163,7 @@ function nodeRead(node: DriveNode): RegExp {
 export const preview = defineFlow<Event>({
 	id: "preview",
 	title: "File preview",
-	folderTitle: "Website relaunch",
+	folderTitle: "Launch assets",
 	source: "frontend/src/apps/drive/files/features/preview/FilePreviewSurface.vue",
 	machine,
 	async enter(scene) {

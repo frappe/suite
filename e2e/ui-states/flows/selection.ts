@@ -99,7 +99,7 @@ async function expectSelected(scene: Scene, count: number): Promise<void> {
 export const selection = defineFlow<Event>({
 	id: "selection",
 	title: "Selection",
-	folderTitle: "Website relaunch",
+	folderTitle: "Q3 campaign",
 	source: "frontend/src/apps/drive/files/features/selection.ts",
 	machine,
 	async enter(scene) {
