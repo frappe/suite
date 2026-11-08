@@ -264,18 +264,27 @@ def preview_expansions(nodes: Iterable[str]) -> dict[str, dict]:
         fields=["node", "blob"],
     )
     expires = preview_expiry(int(time.time()))
-    previews = {}
-    for row in rows:
-        blob = frappe.get_doc("File Blob", row.blob)
-        # Frappe adds the lifetime to its own clock reading, so read the clock right before it.
-        url = signed_url_for_blob(blob, f"{row.node}.webp", expires - int(time.time()))
-        previews[row.node] = {"url": url, "expires": expires}
-    return previews
+    return {row.node: {"url": preview_url(row, expires), "expires": expires} for row in rows}
+
+
+def preview_url(row: frappe._dict, expires: int) -> str:
+    """The one URL of a preview until `expires`. Object storage signs the current second
+    into a URL, so signing per listing would make the browser load the image again."""
+    cache = frappe.cache()
+    key = f"drive_preview_url:{row.node}:{row.blob}:{expires}"
+    if url := cache.get_value(key):
+        return url
+    blob = frappe.get_doc("File Blob", row.blob)
+    # Frappe adds the lifetime to its own clock reading, so read the clock right before it.
+    url = signed_url_for_blob(blob, f"{row.node}.webp", expires - int(time.time()))
+    # A later step asks for a later expiry, so nothing reads this key after one step.
+    cache.set_value(key, url, expires_in_sec=PREVIEW_EXPIRY_STEP_SECONDS)
+    return url
 
 
 def preview_expiry(now: int) -> int:
     """At least the preview lifetime away, rounded up to a step, so that listings a few
-    minutes apart sign the same URL and the browser keeps the image it already has."""
+    minutes apart share one expiry, reuse one URL, and the browser keeps the image it has."""
     step = PREVIEW_EXPIRY_STEP_SECONDS
     return -(-(now + PREVIEW_TTL_SECONDS) // step) * step
 
