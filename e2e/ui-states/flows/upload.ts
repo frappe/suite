@@ -19,9 +19,11 @@ type Event =
 	| { type: "STORAGE_FULL" }
 	| { type: "RETRY_ALL" }
 	| { type: "RELOAD" }
+	| { type: "RELOAD_ELSEWHERE" }
 	| { type: "OPEN_FROM_RAIL" }
 	| { type: "RESUME" }
 	| { type: "CLOSE_TRACKER" }
+	| { type: "LEAVE_DRIVE" }
 	| { type: "SAME_NAMES" }
 	| { type: "SKIP_ALL" }
 	| { type: "KEEP_BOTH_ALL" }
@@ -57,13 +59,14 @@ const machine = setup({ types: { events: {} as Event } }).createMachine({
 			on: { DROP: "uploadingOne" },
 		},
 		uploadingOne: {
-			meta: { description: "One file uploading: the tracker opens by itself with the bytes sent and a progress bar; the rail dot is orange." },
+			meta: { description: "One file uploading: the tracker opens by itself with the bytes sent and a progress bar, and has no close button until uploads are over; the rail dot is orange." },
 			on: {
 				FINISHES: "done",
 				CHUNK_FAILS: "failed",
 				STORAGE_FULL: "held",
-				RELOAD: "interruptedUnseen",
-				CLOSE_TRACKER: "trackerClosed",
+				RELOAD: "interrupted",
+				RELOAD_ELSEWHERE: "interruptedUnseen",
+				LEAVE_DRIVE: "uploadingElsewhere",
 			},
 		},
 		uploadingMany: {
@@ -88,20 +91,20 @@ const machine = setup({ types: { events: {} as Event } }).createMachine({
 			meta: { description: "The server answered 413: the queue stops, the entry is paused and the tracker says storage is full, with Retry all." },
 			on: { RETRY_ALL: "retrying" },
 		},
-		trackerClosed: {
-			meta: { description: "The tracker closed while a file uploads: only the orange dot on the Drive rail item shows the work." },
+		uploadingElsewhere: {
+			meta: { description: "The user went to another area while a file uploads: Drive's tracker is not on screen, and only the orange dot on the Drive rail item shows the work." },
 			on: { CHUNK_FAILS: "failedUnseen", OPEN_FROM_RAIL: "uploadingOne" },
 		},
 		failedUnseen: {
-			meta: { description: "A chunk failed while the tracker was closed: the rail dot turns red and asks for attention." },
+			meta: { description: "A chunk failed while the user was in another area: the rail dot turns red and asks for attention." },
 			on: { OPEN_FROM_RAIL: "failed" },
 		},
 		interruptedUnseen: {
-			meta: { description: "The page reloaded mid-upload: the tracker stays closed and the red dot says an upload stopped." },
+			meta: { description: "The page reloaded in another area mid-upload: Drive's tracker is not on screen, so the red dot on the Drive rail item says an upload stopped." },
 			on: { OPEN_FROM_RAIL: "interrupted" },
 		},
 		interrupted: {
-			meta: { description: "The tracker opened from the rail (which also goes to My files): the stopped upload with where it stopped and Resume." },
+			meta: { description: "A reload in Drive reopens the tracker by itself, and that counts as seeing it, so there is no red dot: the stopped upload with where it stopped and Resume." },
 			on: { RESUME: "resumed" },
 		},
 		resumed: {
@@ -123,23 +126,23 @@ const machine = setup({ types: { events: {} as Event } }).createMachine({
 			on: { KEEP_BOTH_FOLDER: "preparingFolders" },
 		},
 		preparingFolders: {
-			meta: { description: "The folder tree is being created before any file starts: \"Preparing upload\" and \"Creating folders…\"." },
+			meta: { description: "The folder tree is being created before any file starts: the tracker says \"Creating folders…\" with a count of folders made." },
 			on: { FINISHES: "done" },
 		},
 		quotaSomeFit: {
-			meta: { description: "Five files need more than the free space: the confirm says how many fit and offers Upload what fits." },
+			meta: { description: "Five files need more than the free space: the confirm says how many fit, and its button says how many it will upload." },
 		},
 		quotaNoneFit: {
-			meta: { description: "One file larger than the free space: the confirm says none fit and only cancels." },
+			meta: { description: "One file larger than the free space: nothing to choose, so no dialog, only an error toast with what it needs and Manage storage." },
 		},
 	},
 });
 
-/** 24 MiB: the first 16 MiB chunk goes through, so a held second chunk shows real progress. */
+/** 24 MiB: the first 2 MiB chunk goes through, so a held second chunk shows real progress. */
 const LARGE = 24 * 1024 * 1024;
 const LATER_CHUNKS = /\/api\/suite\/drive\/uploads\/[^/]+\/chunk\?offset=[1-9]/;
 const FOLDER_CREATE = /\/api\/suite\/drive\/nodes(\?|$)/;
-const SIXTEEN_OF_24 = "16.0 MB of 24.0 MB";
+const FIRST_CHUNK_SENT = "2 MB of 24 MB";
 const LARGE_NAMES = ["Launch video.mp4", "Press kit.zip", "Brand assets.zip", "Product shots.zip", "Homepage walkthrough.mov"];
 
 const fixture = (name: string) => readFileSync(resolve(__dirname, "..", "fixtures", name));
@@ -192,7 +195,8 @@ export async function holdUnretried(page: Page, url: RegExp): Promise<Hold> {
 		route.fulfill({
 			status: status ?? 500,
 			contentType: "application/json",
-			body: JSON.stringify({ exc_type: "ServerError", message: "Something went wrong" }),
+			// A 413 without Drive's own type reads as a proxy's body limit, and the chunk goes again at half the size.
+			body: JSON.stringify({ exc_type: status === 413 ? "DriveOverQuota" : "ServerError", message: "Something went wrong" }),
 		});
 	const handler = async (route: Route) => {
 		if (passing) await route.continue();
@@ -213,7 +217,7 @@ export async function holdUnretried(page: Page, url: RegExp): Promise<Hold> {
 }
 
 async function pick(scene: Scene, files: Parameters<FileChooser["setFiles"]>[0]): Promise<void> {
-	const [chooser] = await Promise.all([scene.page.waitForEvent("filechooser"), chooseNew(scene.page, "Files")]);
+	const [chooser] = await Promise.all([scene.page.waitForEvent("filechooser"), chooseNew(scene.page, "Upload files")]);
 	await chooser.setFiles(files);
 }
 
@@ -229,11 +233,12 @@ async function leaveFree(scene: Scene, free: number): Promise<void> {
 	});
 }
 
-/** 16 MiB chunks can take a while on a busy bench. */
+/** Chunks grow to 16 MiB and can take a while on a busy bench. */
 const TRANSFER = { timeout: 45_000 };
 
 async function expectUploading(page: Page, count: number): Promise<void> {
-	await expect(tracker(page).getByText(SIXTEEN_OF_24)).toHaveCount(count, TRANSFER);
+	// The tracker's summary line can read the same; the count is of the files' own rows.
+	await expect(tracker(page).locator('[data-slot="upload-entry"]').getByText(FIRST_CHUNK_SENT)).toHaveCount(count, TRANSFER);
 }
 
 /** Lets the held chunk go, then holds the next attempt again so the retry is seen mid-flight. */
@@ -316,6 +321,11 @@ export const upload = defineFlow<Event>({
 		},
 		async RELOAD(scene) {
 			await scene.page.reload();
+			await expect(tracker(scene.page).getByRole("button", { name: "Resume" })).toBeVisible();
+			await expect(railDot(scene.page)).toHaveCount(0);
+		},
+		async RELOAD_ELSEWHERE(scene) {
+			await scene.goto("/meet");
 			await expect(railDot(scene.page)).toHaveAttribute("data-attention", "true");
 			await expect(tracker(scene.page)).toBeHidden();
 		},
@@ -331,6 +341,12 @@ export const upload = defineFlow<Event>({
 			await chooser.setFiles(largeFiles(1));
 			await expectUploading(scene.page, 1);
 			await expect(entries(scene.page, "uploading")).toHaveCount(1);
+		},
+		async LEAVE_DRIVE(scene) {
+			await scene.page.getByRole("link", { name: "Meet" }).filter({ visible: true }).first().click();
+			await expect(scene.page).toHaveURL(/\/meet/);
+			await expect(tracker(scene.page)).toBeHidden();
+			await expect(railDot(scene.page)).toBeVisible();
 		},
 		async CLOSE_TRACKER(scene) {
 			await tracker(scene.page).getByRole("button", { name: "Close uploads" }).click();
@@ -352,14 +368,14 @@ export const upload = defineFlow<Event>({
 		async KEEP_BOTH_ALL(scene) {
 			const dialog = scene.page.getByRole("dialog", { name: "A file with this name exists" });
 			await dialog.getByText("Apply to all").click();
-			await dialog.getByRole("button", { name: "Continue" }).click();
+			await dialog.getByRole("button", { name: "Keep both" }).click();
 			await expect(entries(scene.page, "done")).toHaveCount(2, TRANSFER);
 		},
 		async SAME_FOLDER(scene) {
 			await scene.page.getByRole("button", { name: "New", exact: true }).click();
 			const [chooser] = await Promise.all([
 				scene.page.waitForEvent("filechooser"),
-				scene.page.getByRole("menuitem", { name: "Folder", exact: true }).last().click(),
+				scene.page.getByRole("menuitem", { name: "Upload folder", exact: true }).click(),
 			]);
 			await chooser.setFiles(join(scratchDir(), "Design reviews"));
 			await expect(scene.page.getByRole("dialog").getByText("A folder with this name exists")).toBeVisible();
@@ -372,12 +388,17 @@ export const upload = defineFlow<Event>({
 		async PICK_TOO_MANY(scene) {
 			await leaveFree(scene, 50 * 1024 * 1024);
 			await pick(scene, largeFiles(5));
-			await expect(scene.page.getByRole("dialog").getByText("2 of 5 files fit")).toBeVisible();
+			const dialog = scene.page.getByRole("dialog");
+			await expect(dialog.getByText("2 of 5 files fit")).toBeVisible();
+			await expect(dialog.getByRole("button", { name: "Upload 2 files" })).toBeVisible();
 		},
 		async PICK_TOO_BIG(scene) {
 			await leaveFree(scene, 1024 * 1024);
 			await pick(scene, largeFiles(1));
-			await expect(scene.page.getByRole("dialog").getByText("none of them fit")).toBeVisible();
+			await expect(scene.page.getByText("Not enough space to upload")).toBeVisible();
+			await expect(scene.page.getByText("This file needs 24 MB, and only 1 MB is free.")).toBeVisible();
+			await expect(scene.page.getByRole("button", { name: "Manage storage" })).toBeVisible();
+			await expect(scene.page.getByRole("dialog")).toBeHidden();
 		},
 	},
 });

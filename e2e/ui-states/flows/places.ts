@@ -61,7 +61,7 @@ const machine = setup({ types: { events: {} as Event } }).createMachine({
 			meta: { description: "Organization files at /drive/organization. This site has no Organization root, so the sidebar has no link to it, the listing query never runs, and skeleton rows stay forever." },
 		},
 		sharedWithMe: {
-			meta: { description: "Shared with me: what other people shared, each row with its owner and where it lives." },
+			meta: { description: "Shared with me: what other people shared, each row with its owner. The folder sits in the sharer's own files, which the user cannot read, so the row names no location." },
 			on: { OPEN_SHARED_FOLDER: "sharedFolder" },
 		},
 		sharedFolder: {

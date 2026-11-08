@@ -18,7 +18,8 @@ type Event =
 	| { type: "OPEN_EXTERNAL_ACCESS" }
 	| { type: "GENERATE_KEYS" };
 
-const GB = 1_000_000_000;
+/** Usage answers are whole bytes; the UI counts in base 1024. */
+const gigabytes = (count: number) => Math.round(count * 1024 ** 3);
 
 /**
  * The sidebar storage meter and Drive's two Settings tabs. In the code the
@@ -57,17 +58,17 @@ const machine = setup({ types: { events: {} as Event } }).createMachine({
 			meta: { description: "The usage request failed: the meter disappears, with nothing in its place and no retry." },
 		},
 		meterOk: {
-			meta: { description: "Usage rewritten to 2.4 GB of a 10 GB quota: a grey bar and \"2.4 GB of 10.0 GB used\"." },
+			meta: { description: "Usage rewritten to 2.4 GB of a 10 GB quota: a grey bar and \"2.4 GB of 10 GB used\"." },
 		},
 		meterNear: {
 			meta: { description: "Usage rewritten to 9.3 GB of 10 GB, past the 90% line: the bar turns amber. Nothing else warns." },
 			on: { OPEN_STATISTICS: "statisticsNearQuota" },
 		},
 		meterFull: {
-			meta: { description: "Usage rewritten to 10.4 GB of 10 GB: the bar is full and red, and the line still reads \"10.4 GB of 10.0 GB used\"." },
+			meta: { description: "Usage rewritten to 10.4 GB of 10 GB: the bar is full and red, and the line still reads \"10.4 GB of 10 GB used\"." },
 		},
 		statistics: {
-			meta: { description: "The meter opens Settings on Drive > Statistics: \"5 KB used\" over an empty bar track (there is no quota, but the bar still shows), totals by type and the largest files. External access is absent from the nav because WebDAV is off and the user is no admin." },
+			meta: { description: "The meter opens Settings on Drive > Storage: the bytes used over an empty bar track (there is no quota, but the bar still shows), totals by type and the largest files. External access is absent from the nav because WebDAV is off and the user is no admin." },
 		},
 		statisticsNearQuota: {
 			meta: { description: "Statistics with the rewritten 9.3 GB of 10 GB: the progress bar stays neutral, unlike the amber sidebar meter." },
@@ -154,16 +155,16 @@ export const settings = defineFlow<Event>({
 			await expect(meter(scene)).toBeHidden();
 		},
 		async QUOTA_SET(scene) {
-			await rewriteUsage(scene, { used_bytes: 2.4 * GB, effective_quota: 10 * GB });
-			await expect(meter(scene)).toHaveAccessibleName(/2\.4 GB of 10\.0 GB used/);
+			await rewriteUsage(scene, { used_bytes: gigabytes(2.4), effective_quota: gigabytes(10) });
+			await expect(meter(scene)).toHaveAccessibleName(/2\.4 GB of 10 GB used/);
 		},
 		async NEAR_QUOTA(scene) {
-			await rewriteUsage(scene, { used_bytes: 9.3 * GB, effective_quota: 10 * GB });
-			await expect(meter(scene)).toHaveAccessibleName(/9\.3 GB of 10\.0 GB used/);
+			await rewriteUsage(scene, { used_bytes: gigabytes(9.3), effective_quota: gigabytes(10) });
+			await expect(meter(scene)).toHaveAccessibleName(/9\.3 GB of 10 GB used/);
 		},
 		async OVER_QUOTA(scene) {
-			await rewriteUsage(scene, { used_bytes: 10.4 * GB, effective_quota: 10 * GB });
-			await expect(meter(scene)).toHaveAccessibleName(/10\.4 GB of 10\.0 GB used/);
+			await rewriteUsage(scene, { used_bytes: gigabytes(10.4), effective_quota: gigabytes(10) });
+			await expect(meter(scene)).toHaveAccessibleName(/10\.4 GB of 10 GB used/);
 		},
 		async OPEN_STATISTICS(scene) {
 			await meter(scene).click();

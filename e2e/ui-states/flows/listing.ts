@@ -54,14 +54,14 @@ const machine = setup({ types: { events: {} as Event } }).createMachine({
 			},
 		},
 		empty: {
-			meta: { description: "A folder with nothing in it, with the hint to use New." },
+			meta: { description: "A folder with nothing in it: the hint to use New, an Upload files button and “or drop files here”." },
 		},
 		searchResults: {
 			meta: { description: "Search across all files: each row shows where it lives." },
 			on: { CLEAR_SEARCH: "populated" },
 		},
 		searchEmpty: {
-			meta: { description: "A search term nothing matches." },
+			meta: { description: "A search term nothing matches: “No results for” the term, with a Clear search button in the empty state." },
 			on: { CLEAR_SEARCH: "populated" },
 		},
 		filtered: {
@@ -132,10 +132,11 @@ export const listing = defineFlow<Event>({
 		},
 		async SEARCH_MISS(scene) {
 			await scene.page.getByRole("searchbox", { name: "Search all files" }).fill("zxqv");
-			await expect(scene.page.getByText("No files match this search")).toBeVisible();
+			await expect(scene.page.getByText("No results for “zxqv”")).toBeVisible();
 		},
 		async CLEAR_SEARCH(scene) {
-			await scene.page.getByRole("button", { name: "Clear search" }).click();
+			// With no results the empty state has its own Clear search, after the field's.
+			await scene.page.getByRole("button", { name: "Clear search" }).last().click();
 			await expectRows(scene);
 		},
 		async FILTER(scene) {

@@ -7,6 +7,8 @@ import type { Scene } from "../scene";
 
 type Event =
 	| { type: "OPEN_MORE" }
+	| { type: "HOVER_NAME" }
+	| { type: "TICK_CHECKBOX" }
 	| { type: "FOCUS_ROW" }
 	| { type: "SPACE" }
 	| { type: "RIGHT_CLICK_ROW" }
@@ -30,9 +32,10 @@ const machine = setup({ types: { events: {} as Event } }).createMachine({
 	initial: "none",
 	states: {
 		none: {
-			meta: { description: "Nothing selected: type icons, search and Type filter in the toolbar, and the pointer's row lit." },
+			meta: { description: "Nothing selected: type icons, search and Type filter in the toolbar, Select all always in the header, and the pointer's row lit." },
 			on: {
 				OPEN_MORE: "moreMenu",
+				HOVER_NAME: "checkboxOnHover",
 				FOCUS_ROW: "focused",
 				RIGHT_CLICK_ROW: "contextMenu",
 				RIGHT_CLICK_EMPTY: "paneMenu",
@@ -41,11 +44,15 @@ const machine = setup({ types: { events: {} as Event } }).createMachine({
 				DRAG: "marquee",
 			},
 		},
+		checkboxOnHover: {
+			meta: { description: "The pointer on a row's icon or name: that row's checkbox takes the icon's place. Elsewhere on the row, the icon stays." },
+			on: { TICK_CHECKBOX: "one" },
+		},
 		moreMenu: {
-			meta: { description: "More file actions with nothing selected: the folder's own Share, Copy link and Rename, then Select rows, Select all and Keyboard shortcuts." },
+			meta: { description: "More file actions with nothing selected: “This folder” with the open folder's own actions, then Select all and Keyboard shortcuts. A mouse selects with the row checkbox, so there is no entry to start selecting." },
 		},
 		focused: {
-			meta: { description: "A row reached with the keyboard: a focus ring around it. Enter opens it, Space selects it." },
+			meta: { description: "A row reached with the keyboard: a focus ring around it and its checkbox in the icon's place. Enter opens it, Space selects it." },
 			on: { SPACE: "one" },
 		},
 		contextMenu: {
@@ -58,7 +65,7 @@ const machine = setup({ types: { events: {} as Event } }).createMachine({
 			meta: { description: "The row's Actions button: the same menu as a right-click, anchored to the button." },
 		},
 		one: {
-			meta: { description: "One row selected: checkboxes replace the type icons, Select all shows a dash, and the toolbar becomes Move, Download, Star, Move to trash, “1 selected” and Done. Search, Type, View settings and More leave." },
+			meta: { description: "One row selected: checkboxes replace the type icons, Select all shows a dash, and the toolbar becomes “1 selected”, Move, Download, Star, Move to trash, a … menu with the row's own actions, and Done. Search, Type, View settings and More leave." },
 			on: { SHIFT_CLICK: "many", SELECT_ALL: "all" },
 		},
 		many: {
@@ -75,7 +82,7 @@ const machine = setup({ types: { events: {} as Event } }).createMachine({
 			meta: { description: "Dragging from empty space: a rectangle, and every row it touches selected as it goes." },
 		},
 		cleared: {
-			meta: { description: "Done: the selection clears and the plain toolbar comes back; More now sits under the pointer." },
+			meta: { description: "Done: the selection clears, the plain toolbar comes back and row checkboxes go back behind the icons; More now sits under the pointer. Select all stays in the header." },
 		},
 	},
 });
@@ -111,7 +118,18 @@ export const selection = defineFlow<Event>({
 	events: {
 		async OPEN_MORE(scene) {
 			await scene.page.getByRole("button", { name: "More file actions" }).click();
-			await expect(menu(scene).getByRole("menuitem", { name: "Select rows" })).toBeVisible();
+			await expect(menu(scene).getByRole("menuitem", { name: "Select all" })).toBeVisible();
+			await expect(menu(scene).getByRole("menuitem", { name: "Select rows" })).toHaveCount(0);
+		},
+		async HOVER_NAME(scene) {
+			await row(scene.page, contentOf(scene).document.name).getByText("Launch brief", { exact: true }).hover();
+			await expect(scene.page.getByRole("checkbox", { name: "Select Launch brief", exact: true })).toBeVisible();
+			await expect(scene.page.getByRole("checkbox", { name: /^Select (?!all$)/ })).toHaveCount(1);
+		},
+		async TICK_CHECKBOX(scene) {
+			await scene.page.getByRole("checkbox", { name: "Select Launch brief", exact: true }).click();
+			await expectSelected(scene, 1);
+			await expect(scene.page.getByRole("button", { name: "Done" })).toBeVisible();
 		},
 		async FOCUS_ROW(scene) {
 			await scene.page.mouse.move(0, 0);
@@ -120,6 +138,7 @@ export const selection = defineFlow<Event>({
 			await target.focus();
 			await scene.page.keyboard.press("Shift");
 			await expect(target).toBeFocused();
+			await expect(scene.page.getByRole("checkbox", { name: "Select Launch brief", exact: true })).toBeVisible();
 		},
 		async SPACE(scene) {
 			await scene.page.keyboard.press("Space");
@@ -166,7 +185,8 @@ export const selection = defineFlow<Event>({
 		async DONE(scene) {
 			await scene.page.getByRole("button", { name: "Done" }).click();
 			await expect(scene.page.getByRole("searchbox", { name: "Search all files" })).toBeVisible();
-			await expect(scene.page.getByRole("checkbox", { name: /^Select / })).toHaveCount(0);
+			await expect(scene.page.getByRole("checkbox", { name: /^Select (?!all$)/ })).toHaveCount(0);
+			await expect(scene.page.getByRole("checkbox", { name: "Select all" })).toHaveAttribute("aria-checked", "false");
 		},
 	},
 });

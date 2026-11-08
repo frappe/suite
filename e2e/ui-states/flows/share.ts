@@ -20,7 +20,6 @@ type Event =
 	| { type: "SHARE" }
 	| { type: "CLOSE" }
 	| { type: "OPEN_ROW_MENU" }
-	| { type: "OPEN_ROLES" }
 	| { type: "SET_EXPIRY" }
 	| { type: "SAVE_FAILS" }
 	| { type: "ORGANIZATION_ON" }
@@ -48,7 +47,7 @@ const machine = setup({ types: { events: {} as Event } }).createMachine({
 	initial: "loading",
 	states: {
 		loading: {
-			meta: { description: "Grants still loading: four skeleton rows under the item's title." },
+			meta: { description: "Grants still loading: skeleton rows under Who has access." },
 			on: { LOADS: "ready", FAILS: "loadError" },
 		},
 		loadError: {
@@ -82,11 +81,8 @@ const machine = setup({ types: { events: {} as Event } }).createMachine({
 			meta: { description: "The person shared with now has their own row, with the role chosen." },
 		},
 		rowMenu: {
-			meta: { description: "A person's row menu: Role, Set expiry, Remove, Remove here and inside." },
-			on: { OPEN_ROLES: "roleMenu", SET_EXPIRY: "expiryEditor" },
-		},
-		roleMenu: {
-			meta: { description: "The Role submenu, the current role ticked." },
+			meta: { description: "A person's row menu: the roles inline with the current one ticked, then Set expiry, Remove and, on a folder, Remove here and inside." },
+			on: { SET_EXPIRY: "expiryEditor" },
 		},
 		expiryEditor: {
 			meta: { description: "Set expiry opens an inline date field with Save and Cancel under the row." },
@@ -95,7 +91,7 @@ const machine = setup({ types: { events: {} as Event } }).createMachine({
 			meta: { description: "A role change the server refused: the message shows under that row, and the transport's toast repeats it." },
 		},
 		organizationLowersOwn: {
-			meta: { description: "The owner sets Everyone to View: the org's row would sit nearer than the owner's root grant, so the dialog warns they lose sharing." },
+			meta: { description: "The owner sets Everyone to View: the org's row would sit nearer than the owner's root grant, so “Change your own access?” warns they will only be able to view it." },
 			on: { CONFIRM_OWN: "ownerLostManage" },
 		},
 		ownerLostManage: {
@@ -108,7 +104,7 @@ const machine = setup({ types: { events: {} as Event } }).createMachine({
 			},
 		},
 		publicOn: {
-			meta: { description: "Web access switched on: anyone on the internet can view." },
+			meta: { description: "Public on the web switched on: anyone can view everything in the folder." },
 		},
 		linkDialog: {
 			meta: { description: "Create share link: access, expiry a month out, and a password." },
@@ -140,7 +136,7 @@ const machine = setup({ types: { events: {} as Event } }).createMachine({
 			on: { LOWER_OWN: "lowerOwnAccessConfirm" },
 		},
 		lowerOwnAccessConfirm: {
-			meta: { description: "Lowering their own role asks first: they will no longer be able to share this item." },
+			meta: { description: "Lowering their own role asks first: “Change your own access?” says what they will still be able to do." },
 			on: { CONFIRM: "managerLostManage" },
 		},
 		managerLostManage: {
@@ -198,7 +194,6 @@ async function expectReady(page: Page): Promise<void> {
 }
 
 async function chooseRole(page: Page, label: string): Promise<void> {
-	await page.getByRole("menuitem", { name: "Role", exact: true }).hover();
 	await page.getByRole("menuitem", { name: label, exact: true }).click();
 }
 
@@ -277,11 +272,8 @@ export const share = defineFlow<Event>({
 		},
 		async OPEN_ROW_MENU(scene) {
 			await accessButton(scene.page, "Arjun Mehta").click();
-			await expect(scene.page.getByRole("menuitem", { name: "Remove", exact: true })).toBeVisible();
-		},
-		async OPEN_ROLES(scene) {
-			await scene.page.getByRole("menuitem", { name: "Role", exact: true }).hover();
 			await expect(scene.page.getByRole("menuitem", { name: "Comment", exact: true })).toBeVisible();
+			await expect(scene.page.getByRole("menuitem", { name: "Remove", exact: true })).toBeVisible();
 		},
 		async SET_EXPIRY(scene) {
 			await scene.page.getByRole("menuitem", { name: "Set expiry" }).click();
@@ -296,8 +288,8 @@ export const share = defineFlow<Event>({
 			await expect(accessButton(scene.page, "Arjun Mehta")).toHaveText(/Edit/);
 		},
 		async ORGANIZATION_ON(scene) {
-			await dialog(scene.page).getByLabel(/^Access for Everyone/).click();
-			await scene.page.getByRole("option", { name: "View", exact: true }).click();
+			await accessButton(scene.page, /^Access for Everyone/).click();
+			await chooseRole(scene.page, "View");
 			await expect(scene.page.getByText("Change your own access?")).toBeVisible();
 		},
 		async CONFIRM_OWN(scene) {
@@ -305,8 +297,8 @@ export const share = defineFlow<Event>({
 			await expect(scene.page.getByText("You can no longer share this item.")).toBeVisible();
 		},
 		async PUBLIC_ON(scene) {
-			await dialog(scene.page).getByRole("switch", { name: "Everyone on the web" }).click();
-			await expect(dialog(scene.page).getByText("Anyone on the internet can view")).toBeVisible();
+			await dialog(scene.page).getByRole("switch", { name: "Public on the web" }).click();
+			await expect(dialog(scene.page).getByText("Anyone can view everything in it")).toBeVisible();
 		},
 		async NEW_LINK(scene) {
 			await dialog(scene.page).getByRole("button", { name: "Sharing options" }).click();

@@ -35,7 +35,8 @@ type Event =
 	| { type: "MOVE_SETTLES" }
 	| { type: "COPY" }
 	| { type: "COPY_HERE" }
-	| { type: "BULK_MOVE_CLASH" }
+	| { type: "BULK_MOVE_ONE_CLASH" }
+	| { type: "BULK_MOVE_TWO_CLASH" }
 	| { type: "SHOW_FAILURES" }
 	| { type: "DETAILS" }
 	| { type: "TRASH" };
@@ -58,14 +59,15 @@ const machine = setup({ types: { events: {} as Event } }).createMachine({
 				RENAME: "rename",
 				MOVE: "movePickerHere",
 				COPY: "copyPicker",
-				BULK_MOVE_CLASH: "batchOutcomePartial",
+				BULK_MOVE_ONE_CLASH: "batchOutcomeOneFailed",
+				BULK_MOVE_TWO_CLASH: "batchOutcomeSomeFailed",
 				DETAILS: "infoDialog",
 				TRASH: "trashToast",
 			},
 		},
 		newMenu: {
-			meta: { description: "New: Folder, one entry per document kind, Link and From template, then Upload files or a folder." },
-			on: { NEW_FOLDER: "createFolder", NEW_DOCUMENT: "createDocument", FROM_TEMPLATE: "templatePicker" },
+			meta: { description: "New: Folder, one entry per document kind, Link and From template, then Upload files and Upload folder." },
+			on: { NEW_FOLDER: "createFolder", NEW_DOCUMENT: "documentOpened", FROM_TEMPLATE: "templatePicker" },
 		},
 		createFolder: {
 			meta: { description: "New folder opens with “Untitled folder” selected, so typing replaces it." },
@@ -81,8 +83,8 @@ const machine = setup({ types: { events: {} as Event } }).createMachine({
 		createFolderBusy: {
 			meta: { description: "Create pressed and the request still out: the button spins." },
 		},
-		createDocument: {
-			meta: { description: "The same dialog for a Writer document: “New document” with “Untitled document”." },
+		documentOpened: {
+			meta: { description: "New Document asks nothing: the untitled document is created at once and opens in the editor." },
 		},
 		templatePicker: {
 			meta: { description: "New from template: a tab per document kind, the templates of that kind, and a Name prefilled “Untitled document” like any new document." },
@@ -131,8 +133,11 @@ const machine = setup({ types: { events: {} as Event } }).createMachine({
 		copiedToast: {
 			meta: { description: "The copy lands beside the original and a toast names where; a copy offers no Undo." },
 		},
-		batchOutcomePartial: {
-			meta: { description: "A bulk move where one item clashes with a name in the destination: an amber alert counts both, a toast reports what moved, and the failed item stays selected." },
+		batchOutcomeOneFailed: {
+			meta: { description: "A bulk move where one item clashes with a name in the destination: an amber alert names it and says why, with no Details, a toast reports what moved, and the failed item stays selected." },
+		},
+		batchOutcomeSomeFailed: {
+			meta: { description: "A bulk move where two of three items clash: an amber alert counts them and offers Details, a toast reports what moved, and the failed items stay selected." },
 			on: { SHOW_FAILURES: "batchFailures" },
 		},
 		batchFailures: {
@@ -203,6 +208,16 @@ async function pickFolder(picker: Locator, title: string): Promise<void> {
 	await expect(picker.getByRole("list", { name: `Folders in ${title}` }).or(picker.getByText("No folders inside"))).toBeVisible();
 }
 
+/** Selects `items` and moves them into Design reviews from the selection toolbar. */
+async function moveToDesignReviews(scene: Scene, items: DriveNode[]): Promise<void> {
+	for (const item of items) await row(scene.page, item.name).click({ modifiers: ["ControlOrMeta"] });
+	await expect(scene.page.getByText(`${items.length} selected`)).toBeVisible();
+	await scene.page.getByRole("button", { name: "Move", exact: true }).click();
+	const picker = dialog(scene, "Move to");
+	await pickFolder(picker, "Design reviews");
+	await picker.getByRole("button", { name: "Move here" }).click();
+}
+
 function toast(scene: Scene, text: string | RegExp): Locator {
 	return scene.page.getByText(text).first();
 }
@@ -249,7 +264,9 @@ export const dialogs = defineFlow<Event>({
 		},
 		async NEW_DOCUMENT(scene) {
 			await scene.page.getByRole("menuitem", { name: "Document", exact: true }).click();
-			await expect(dialog(scene, "New document").getByRole("textbox", { name: "Name" })).toHaveValue("Untitled document");
+			await expect(scene.page).toHaveURL(/\/d\//);
+			await expect(scene.page.getByText("Untitled document").first()).toBeVisible();
+			await expect(scene.page.getByRole("dialog")).toHaveCount(0);
 		},
 		async FROM_TEMPLATE(scene) {
 			await scene.page.getByRole("menuitem", { name: "From template" }).click();
@@ -320,22 +337,26 @@ export const dialogs = defineFlow<Event>({
 			await expect(toast(scene, new RegExp(`Copied “Meeting notes.* to ${scene.folder.title}`))).toBeVisible();
 			await expect(scene.page.getByRole("button", { name: /^Actions for Meeting notes.*\(/ })).toBeVisible();
 		},
-		async BULK_MOVE_CLASH(scene) {
+		async BULK_MOVE_ONE_CLASH(scene) {
 			const { logo: logoRow, notes } = content(scene);
 			await uploadFile(scene.api, "Logo.png", logo, designReviews(scene).name, "image/png");
-			await row(scene.page, logoRow.name).click({ modifiers: ["ControlOrMeta"] });
-			await row(scene.page, notes.name).click({ modifiers: ["ControlOrMeta"] });
-			await expect(scene.page.getByText("2 selected")).toBeVisible();
-			await scene.page.getByRole("button", { name: "Move", exact: true }).click();
-			const picker = dialog(scene, "Move to");
-			await pickFolder(picker, "Design reviews");
-			await picker.getByRole("button", { name: "Move here" }).click();
-			await expect(scene.page.getByText("1 moved · 1 failed")).toBeVisible();
+			await moveToDesignReviews(scene, [logoRow, notes]);
+			await expect(scene.page.getByText("“Logo.png” could not be moved")).toBeVisible();
+			await expect(scene.page.getByText("That name is taken in this folder.")).toBeVisible();
+			await expect(scene.page.getByRole("button", { name: "Details", exact: true })).toHaveCount(0);
 			await expect(toast(scene, /Moved “Meeting notes.md” to/)).toBeVisible();
+		},
+		async BULK_MOVE_TWO_CLASH(scene) {
+			const { logo: logoRow, notes, sheet } = content(scene);
+			await uploadFile(scene.api, "Logo.png", logo, designReviews(scene).name, "image/png");
+			await uploadFile(scene.api, "Meeting notes.md", Buffer.from("# Older notes\n"), designReviews(scene).name, "text/markdown");
+			await moveToDesignReviews(scene, [logoRow, notes, sheet]);
+			await expect(scene.page.getByText("2 of 3 items could not be moved")).toBeVisible();
+			await expect(toast(scene, /Moved “Budget 2026” to/)).toBeVisible();
 		},
 		async SHOW_FAILURES(scene) {
 			await scene.page.getByRole("button", { name: "Details", exact: true }).click();
-			await expect(dialog(scene, "Items that failed").getByText("That name is taken in this folder.")).toBeVisible();
+			await expect(dialog(scene, "Items that failed").getByText("That name is taken in this folder.")).toHaveCount(2);
 		},
 		async DETAILS(scene) {
 			await rowAction(scene, "Quarter review.pdf", "Details");
