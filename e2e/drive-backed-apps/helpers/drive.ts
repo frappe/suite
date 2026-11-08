@@ -302,7 +302,7 @@ export function sidebarLink(page: Page, label: string): Locator {
 /** Choose `item` from the New menu in the page header. */
 export async function chooseNew(page: Page, item: string): Promise<void> {
 	await page.getByRole("button", { name: "New", exact: true }).click();
-	await page.getByRole("menuitem", { name: item, exact: true }).first().click();
+	await page.getByRole("menuitem", { name: item, exact: true }).click();
 }
 
 /** Move the item titled `title` into `destination` through the row menu and the folder picker. */

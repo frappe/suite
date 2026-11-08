@@ -33,7 +33,7 @@ test.afterEach(async () => {
 
 async function useNewMenu(page: import("@playwright/test").Page, item: string) {
 	await page.getByRole("button", { name: "New", exact: true }).click();
-	await page.getByRole("menuitem", { name: item, exact: true }).first().click();
+	await page.getByRole("menuitem", { name: item, exact: true }).click();
 }
 
 test("New Folder creates a folder in the open destination", async ({ page }) => {

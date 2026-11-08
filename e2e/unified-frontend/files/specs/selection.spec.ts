@@ -111,7 +111,7 @@ test("a mixed bulk move reports both halves and keeps the failures selected", as
 	await dialog.getByRole("button", { name: destination.title }).click();
 	await dialog.getByRole("button", { name: "Move here", exact: true }).click();
 
-	// One failure names the item and says why, with no Details (t32).
+	// One failure names the item and says why, with no Details.
 	await expect(page.getByText("“row-a” could not be moved")).toBeVisible();
 	await expect(page.getByText("An item with this name is already there.")).toBeVisible();
 	await expect(page.getByText("1 selected")).toBeVisible();
