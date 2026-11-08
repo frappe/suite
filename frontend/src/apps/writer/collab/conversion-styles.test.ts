@@ -1878,6 +1878,40 @@ describe('convertLegacy on a table pasted from Word', () => {
   })
 })
 
+describe('convertLegacy on a table sized only by its column list', () => {
+  function table(cols: string, cell: string) {
+    return `<table style="min-width: 666px"><colgroup>${cols}</colgroup><tr>${cell}</tr></table>`
+  }
+
+  function widths(state: Uint8Array) {
+    const [{ content }] = bodyOf(state).content
+    return content[0].content.map(({ attrs }: JSONContent) => attrs?.colwidth)
+  }
+
+  const COLS = '<col style="width: 510px"><col style="width: 131px"><col style="min-width: 25px">'
+  const CELL = '<td colspan="1" rowspan="1"><p>x</p></td>'
+
+  it('puts each column width on its cells', () => {
+    const html = table(COLS, CELL.repeat(3))
+
+    const result = convert({ content: null, html, collab: 0, ycomments: null })
+
+    expect([widths(result.state), result.dropped]).toEqual([[[510], [131], null], []])
+  })
+
+  it.each([
+    ['a cell spanning columns', '<td colspan="2"><p>x</p></td>' + CELL],
+    ['a cell with its own column width', '<td colwidth="90"><p>x</p></td>' + CELL.repeat(2)],
+  ])('refuses column widths beside %s', (_name, cells) => {
+    const html = table(COLS, cells)
+
+    expect(convertLegacy({ content: null, html, collab: 0, ycomments: null }, MAX_STATE)).toEqual({
+      kind: 'failed',
+      reason: 'check',
+    })
+  })
+})
+
 describe('convertLegacy on table cell spans', () => {
   const REPAIRED = [{ kind: 'table-span', count: 1 }]
 

@@ -98,6 +98,7 @@ const TONES: Record<ColourProperty, { gray: Rgb; none: Rgb }> = {
 const SEMICOLON_NAME = /^\s*(?:"[^"]*;[^"]*"|'[^']*;[^']*')\s*$/
 // The alpha variable closing a colour Tailwind's classes wrote, which they set to full opacity
 const TAILWIND_ALPHA = /\s*\/\s*var\(--tw-[a-z-]*opacity\)\s*\)\s*$/i
+const COLUMN_WIDTH = /^(\d+)px$/
 const CELL_WIDTH = /^([\d.]+)(px|pt|in)$/
 const PIXELS_PER_INCH = 96
 const POINTS_PER_INCH = 72
@@ -510,8 +511,40 @@ function readCellWidth(cell: HTMLElement) {
   return true
 }
 
+function columnWidthOf(col: Element) {
+  const [, width] = COLUMN_WIDTH.exec((col as HTMLElement).style.getPropertyValue('width')) ?? []
+  return width
+}
+
+function setColumnWidths(cells: HTMLTableCellElement[], widths: (string | undefined)[]) {
+  for (const [index, cell] of cells.entries()) {
+    if (widths[index]) {
+      cell.setAttribute('colwidth', widths[index])
+    }
+  }
+}
+
+// A table whose pixel widths are only on its column list, those widths put on its cells, which is
+// where the editor holds them; one with a span or a cell width of its own is left to fail the check
+function readColumnWidths(table: HTMLTableElement) {
+  const widths = [...table.querySelectorAll(':scope > colgroup > col')].map(columnWidthOf)
+  const rows = [...table.rows].map((row) => [...row.cells])
+  const isPlain = rows
+    .flat()
+    .every((cell) => !cell.hasAttribute('colwidth') && cell.colSpan === 1 && cell.rowSpan === 1)
+  if (!isPlain || !widths.some(Boolean) || rows.some((row) => row.length > widths.length)) {
+    return false
+  }
+
+  for (const cells of rows) {
+    setColumnWidths(cells, widths)
+  }
+
+  return true
+}
+
 /**
- * Reads a pasted cell's sizes and colour where the editor holds them, and takes off a border image
+ * Reads a pasted table's sizes and colours where the editor holds them, and takes off a border image
  * of none, the default. Returns the heights dropped, which the editor has nowhere to hold, and
  * whether any cell changed.
  */
@@ -532,6 +565,10 @@ export function readHtmlCellStyles(body: HTMLElement) {
       heights += 1
       isRead = true
     }
+  }
+
+  for (const table of body.querySelectorAll('table')) {
+    isRead = readColumnWidths(table) || isRead
   }
 
   return { heights, isRead }
