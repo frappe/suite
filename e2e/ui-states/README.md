@@ -6,7 +6,7 @@ Walks every Drive screen and interaction state as an explicit state machine and 
 
 Install once, from `e2e/`: `yarn install`, then `npx playwright install chromium`.
 
-The bench that serves the site must be running, with `allow_tests`, `storage_v2` and `ignore_csrf` set on the site. One capture at a time, and one flow at a time within it: flows share the provisioned users, so their Trash and Recent.
+The bench that serves the site must be running, with `allow_tests`, `storage_v2` and `ignore_csrf` set on the site. One capture at a time, and one flow at a time within it: flows share the provisioned users, so their Trash, Recent and Shared with me would mix.
 
 ```sh
 cd e2e/ui-states
