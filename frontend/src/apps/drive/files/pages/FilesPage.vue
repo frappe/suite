@@ -207,7 +207,7 @@
           <BatchOutcome
             :result="trash.outcome.value ?? batchOutcome"
             :verb="trash.outcome.value ? trash.verb.value : batchVerb"
-            :rows="listing.rows as DriveNode[]"
+            :rows="listing.rows"
             class="mt-3"
             @dismiss="dismissOutcome"
           />

@@ -48,14 +48,11 @@ import { batchFailureTitle, failureReason, type BatchItem, type BatchVerb } from
  * A batch's failures (spec §6.11). `rows` are the items the page lists; the
  * failed ones are named by their titles and icons from there, never by id.
  */
-const props = withDefaults(
-  defineProps<{
-    result: DriveBatchResult | null
-    verb: BatchVerb
-    rows?: readonly BatchItem[]
-  }>(),
-  { rows: () => [] },
-)
+const props = defineProps<{
+  result: DriveBatchResult | null
+  verb: BatchVerb
+  rows: readonly BatchItem[]
+}>()
 defineEmits<{ dismiss: [] }>()
 const details = ref(false)
 const detailsAction: AlertAction = {
@@ -64,7 +61,7 @@ const detailsAction: AlertAction = {
     details.value = true
   },
 }
-// Every row the page has shown, newest copy first. A live refresh can drop an
+// Every row the page has shown, in its latest form. A live refresh can drop an
 // item from the listing while its batch is still in flight.
 const known = new Map<string, BatchItem>()
 watch(

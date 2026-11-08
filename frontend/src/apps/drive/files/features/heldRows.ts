@@ -9,6 +9,19 @@ import type { FilesSort } from './presentation'
 const HELD_SIGN_MS = 150
 
 /**
+ * `source` with its `rows`, and any `extras`, read from getters. Inherited
+ * getters and methods keep `source` as their receiver, so every other read
+ * still reaches the live source instead of a copied snapshot.
+ */
+export function withRows<Row, Extras extends object = object>(
+  source: InfiniteQueryState<Row>,
+  rows: () => readonly Row[],
+  extras?: { [Key in keyof Extras]: TypedPropertyDescriptor<Extras[Key]> },
+): InfiniteQueryState<Row> & Readonly<Extras> {
+  return Object.create(source, { rows: { enumerable: true, get: rows }, ...extras })
+}
+
+/**
  * Keeps a listing's last rows on screen while the same place is read again in
  * a new arrangement: another sort, order or view, or another search
  * term. Without it the listing empties to a skeleton and back, and the user
@@ -42,10 +55,7 @@ export function heldWhileRearranging<Row>(
     if (now) timer = setTimeout(() => (isHeld.value = true), HELD_SIGN_MS)
   })
   if (getCurrentScope()) onScopeDispose(() => clearTimeout(timer))
-  // Inherited getters and methods keep this listing as their receiver, while
-  // every read still reaches the live source instead of a copied snapshot.
-  return Object.create(source, {
-    rows: { enumerable: true, get: () => rows.value },
+  return withRows(source, () => rows.value, {
     isHeld: { enumerable: true, get: () => isHeld.value },
   })
 }
@@ -100,11 +110,7 @@ export function withCreatedRows<Row extends DriveNode>(
     return shown
   })
   return {
-    // Inherited getters and methods keep this listing as their receiver, while
-    // every read still reaches the live source instead of a copied snapshot.
-    listing: Object.create(source, {
-      rows: { enumerable: true, get: () => rows.value },
-    }),
+    listing: withRows(source, () => rows.value),
     add(row) {
       const current = order()
       if (!current) return
