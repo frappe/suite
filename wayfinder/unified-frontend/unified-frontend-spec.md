@@ -817,14 +817,15 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
 | Surface | `expand` |
 |---|---|
 | Open folder detail and header | `access,breadcrumbs` |
-| Folder and root list rows | `access` |
+| Folder and root list rows | `access`, plus `audience` when the Access column shows and `contents_size` when the Size column shows |
 | Folder and root grid tiles | `access,preview` |
-| Saved-view list rows | `access`; Shared with me, Starred and Recent add `breadcrumbs` |
+| Saved-view list rows | `access`, plus `audience` and `contents_size` as for folder rows; Shared with me, Starred and Recent add `breadcrumbs` |
 | Saved-view grid tiles | `access,preview`; Shared with me, Starred and Recent add `breadcrumbs` |
-| Search rows | `access,breadcrumbs`, plus `preview` in grid |
+| Search rows | `access,breadcrumbs`, plus `preview` in grid, and `audience` and `contents_size` in list as for folder rows |
 
 [T006, Drive §11.3]
 
+- Trash shows no folder size, so it never asks for `contents_size`.
 - Breadcrumbs describe the open folder once. They are not repeated on each
   child. Search, Shared with me, Starred and Recent are the exception: each
   row shows its path, for example `My files > Finance` [T006].

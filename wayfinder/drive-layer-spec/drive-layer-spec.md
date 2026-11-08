@@ -3178,10 +3178,10 @@ page (§11.4).
 | Method | Path | R | Body | `data` | Extra errors |
 |---|---|---|---|---|---|
 | POST | `/nodes` | UPLOAD on `parent_node` | one body per kind: `{kind: "folder", parent_node, title}` \| `{kind: "file", parent_node, title, blob, size, mime, content_modified?}` \| `{kind: "link", parent_node, title, url}` \| `{kind: "document", parent_node, title, content_doctype, from_node?, is_template?}` | node shape | 403, 409, 413 |
-| GET | `/nodes/<id>` | READ on node | `?expand=access,breadcrumbs,preview` | node shape | none |
+| GET | `/nodes/<id>` | READ on node | `?expand=access,audience,breadcrumbs,contents_size,preview` | node shape | none |
 | PATCH | `/nodes/<id>` | see §8.2 | `{title}` \| `{parent_node, expect_parent_node?}` \| `{state}` \| `{parent_node, state: "Active"}` for restore \| `{content_modified}` | node shape | 403, 409 (`DriveMoved` when `expect_parent_node` no longer holds), 413 |
 | DELETE | `/nodes/<id>` | MANAGE on node | none | `{count}` | 403, 409 when the node is not a trash root |
-| GET | `/nodes/<id>/children` | READ on node | `?limit=&cursor=&order_by=&ascending=&type=folder,document,spreadsheet,presentation,pdf,image,video,audio&expand=access,breadcrumbs,preview` | cursor page of node shapes | 409 on a document node |
+| GET | `/nodes/<id>/children` | READ on node | `?limit=&cursor=&order_by=&ascending=&type=folder,document,spreadsheet,presentation,pdf,image,video,audio&expand=access,audience,breadcrumbs,contents_size,preview` | cursor page of node shapes | 409 on a document node |
 | POST | `/nodes/<id>/copy` | READ on node, UPLOAD on `parent_node` | `{parent_node, title?}` | node shape | 403, 409, 413 |
 | POST | `/nodes/batch` | per node | `{nodes: [...], patch: {...}}` | batch shape | none |
 | POST | `/nodes/batch/purge` | MANAGE on each node | `{nodes: [...]}` | batch shape | none |
@@ -3430,7 +3430,7 @@ Every node-valued view accepts `expand=access`; the workflow resolves roles
 with one grant union for the page. `search`, `shared`, `favourites` and
 `recents` also accept `expand=breadcrumbs`, because their rows come from anywhere in the
 tree and the page shows where each one lives; the ancestor titles come from
-one union for the page. There is no per-row access or breadcrumb query.
+one union for the page. There is no per-row access or breadcrumb query. Every node-valued view also accepts `audience` and `contents_size` (§11.3).
 
 **Versions, comments**
 
@@ -3571,7 +3571,7 @@ root, the trash root's `name` on a node trashed with it, and `null` while
 Active. A client uses it to tell the node it may restore from the nodes
 inside it, and to name and link that node from a trashed folder (§5.6).
 
-Three expansions, each costing its queries only when named in `?expand=`:
+Five expansions, each costing its queries only when named in `?expand=`:
 
 In responses, `root` is the effective root node id (§3.1), including the
 node's own id when `kind=root`. The root node's stored `root` field remains
@@ -3581,13 +3581,15 @@ copy archive state or quota counters into the node's stored fields.
 | Name | Adds |
 |---|---|
 | `access` | `{"role": 40, "via_link": "$LINK:...", "source_node": "...", "source_principal": "..."}` |
+| `audience` | `{"kind": "public" \| "organization" \| "link" \| "people", "people": 3}`: how wide the node's sharing is and how many named people can open it, resolved by the same nearest-grant rule as access (§5). It names nobody |
 | `breadcrumbs` | `[{"name", "title", "kind"}]` from the root down to the parent. `kind` tells a folder from a content document, which a client never lists as one (§8.10) |
+| `contents_size` | Integer. The bytes of the files in a folder at every depth, trashed files left out. Folders only; other rows omit it |
 | `preview` | `{"url": "/f/<blob>/<file>?e=&s=", "expires": <epoch>}` |
 
 `access` is available on every node-valued detail, children page, and frozen
 view. It is resolved in one batch per page. `breadcrumbs` is available on a
 node detail and children page, and on the `search`, `shared`,
-`favourites` and `recents` views with one ancestor-title union per page. A `recents` row additionally carries `opened_at`; this is a view field,
+`favourites` and `recents` views with one ancestor-title union per page. `audience` and `contents_size` are available on a node detail, a children page and every node-valued view: `audience` costs two queries per page whatever its size (the live grants and the group members), and `contents_size` one query per page, none on a page with no folder. A `recents` row additionally carries `opened_at`; this is a view field,
 not a stored node field.
 
 Every node-valued detail, children page, and node view also carries
