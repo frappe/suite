@@ -105,6 +105,7 @@ import { useRouter } from 'vue-router'
 import { api, useInfiniteQuery, useMutation, useQuery } from '@/api'
 import { driveNodeRoute, loadDriveNodeSummary, type DriveNotification } from '@/apps/drive'
 import {
+  isDownloadExpired,
   notificationAt,
   notificationExcerpt,
   notificationSentence,
@@ -133,7 +134,7 @@ async function openNotification(notification: DriveNotification) {
   }
   if ('download' in notification) {
     // A failed or expired download has nothing to open; reading it is enough.
-    if (!notification.download.url) return
+    if (!notification.download.url || isDownloadExpired(notification.download)) return
     open.value = false
     window.location.assign(notification.download.url)
     return

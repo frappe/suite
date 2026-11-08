@@ -101,11 +101,15 @@ export function notificationTime(value: string | null | undefined, now = new Dat
 
 type DownloadNotice = Extract<DriveNotification, { download: unknown }>['download']
 
-/** The list may be older than the expiry, so a Ready row past it reads as expired here. */
+/** The list may be older than the expiry, so a Ready row past it counts as expired here. */
+export function isDownloadExpired(download: DownloadNotice, now = new Date()): boolean {
+  return !!download.expires_at && new Date(download.expires_at).getTime() <= now.getTime()
+}
+
 function downloadDetails(download: DownloadNotice, now: Date): string | null {
   if (download.status !== 'Ready') return download.error
+  if (isDownloadExpired(download, now)) return __('Expired')
   const expires = download.expires_at ? new Date(download.expires_at) : null
-  if (expires && expires.getTime() <= now.getTime()) return __('Expired')
   const size = download.size === null ? null : formatDriveBytes(download.size)
   if (!expires || Number.isNaN(expires.getTime())) return size
   const until = new Intl.DateTimeFormat(undefined, {

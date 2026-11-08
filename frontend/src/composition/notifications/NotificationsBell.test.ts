@@ -111,6 +111,7 @@ vi.mock('@/api', async () => ({
       downloadNotification('notice-4', 'Ready'),
       downloadNotification('notice-5', 'Failed'),
       downloadNotification('notice-6', 'Expired'),
+      expiredSinceLoaded(),
     ],
     status: 'success',
     error: null,
@@ -234,6 +235,21 @@ describe('Notifications bell', () => {
     row?.click()
     await vi.waitFor(() =>
       expect(state.markRead).toHaveBeenCalledWith({ notifications: ['notice-6'] }),
+    )
+
+    expect(assign).not.toHaveBeenCalled()
+  })
+
+  it('a ready zip that expired after the list loaded opens nothing', async () => {
+    state.markRead.mockResolvedValue({ read: 1 })
+    const assign = vi.fn()
+    vi.spyOn(window, 'location', 'get').mockReturnValue({ ...window.location, assign })
+    const row = notificationRows(mount()).at(-1)
+    expect(row?.textContent).toContain('Expired')
+
+    row?.click()
+    await vi.waitFor(() =>
+      expect(state.markRead).toHaveBeenCalledWith({ notifications: ['notice-7'] }),
     )
 
     expect(assign).not.toHaveBeenCalled()
@@ -377,6 +393,10 @@ function notification(
       detail,
     },
   }
+}
+function expiredSinceLoaded() {
+  const row = downloadNotification('notice-7', 'Ready')
+  return { ...row, download: { ...row.download, expires_at: '2020-01-01T00:00:00Z' } }
 }
 function downloadNotification(name: string, status: 'Ready' | 'Failed' | 'Expired') {
   const ready = status === 'Ready'
