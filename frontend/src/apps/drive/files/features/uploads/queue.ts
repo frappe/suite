@@ -202,8 +202,11 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
   interface UploadQueueState {
     halted: string | null
     preparing: number
+    folders: { created: number; total: number }
+    reading: { found: number } | null
     seen: boolean
     trackerOpen: boolean
+    trackerMounted: boolean
     showDone: boolean
   }
   const state = reactive<UploadQueueState>({
@@ -214,7 +217,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     /** The folders those uploads create, and how many are done. */
     folders: { created: 0, total: 0 },
     /** A dropped folder tree is being walked, after a short wait. */
-    reading: null as { found: number } | null,
+    reading: null,
     /** The user looked at the tracker since the last failure. */
     seen: true,
     trackerOpen: false,

@@ -167,7 +167,7 @@ export function nodeTypeLabel(
     const type = fileType(node)
     if (!documentTypes.length) return DOCUMENT_LABELS[type] ?? 'Document'
     const definition = documentTypes.find(
-      (candidate) => CONTENT_TYPES[candidate.contentDoctype] === type,
+      (candidate) => CONTENT_TYPES.get(candidate.contentDoctype) === type,
     )
     return definition?.newLabel() ?? node.content_doctype ?? 'Document'
   }
