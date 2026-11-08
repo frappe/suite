@@ -4,8 +4,7 @@ import { api, client } from '@/api'
 import type { ImperativeClient } from '@/platform/server-state/types'
 import { getCookieSessionUser } from '@/platform/session'
 import {
-  isTransientStatus,
-  MIN_SERVER_ERROR_STATUS,
+  isRefusal,
   TransportError,
   type RequestContext,
   type RequestScope,
@@ -20,14 +19,21 @@ import type {
 } from './generated'
 import { driveLinks } from './links'
 import { folderOf } from './nodes'
-import { canManage, type DriveAccess, type DriveBreadcrumb, type DriveNode } from './types'
+import { createStar } from './star'
+import {
+  canManage,
+  documentPanels,
+  type DocumentPanel,
+  type DriveAccess,
+  type DriveBreadcrumb,
+  type DriveNode,
+} from './types'
 
 export const ACCESS_REFRESH_MS = 5 * 60_000
 export const MEDIA_REFRESH_MS = 10 * 60_000
 const MEDIA_RETRY_MS = 2_000
 const MEDIA_RETRY_GROWTH = 2
 const MEDIA_RETRY_MAX_MS = 30_000
-const MIN_CLIENT_ERROR_STATUS = 400
 export type SessionState = 'Active' | 'Trashed' | 'Refused'
 /** `unanswered`: a read for this picture failed in passing and none has answered for it yet. */
 export type MediaStatus = 'loading' | 'unanswered' | 'ready' | 'refused'
@@ -82,8 +88,21 @@ export interface DocumentSession {
   readonly access: Readonly<Ref<DriveAccess>>
   /** The caller may share: MANAGE (unified spec §7.2). A product shows Share only then. */
   readonly canShare: Readonly<Ref<boolean>>
+  /** The side panels the caller can open; the server refuses the others. */
+  readonly panels: Readonly<Ref<readonly DocumentPanel[]>>
   /** The folder the document was in when it opened; null when the caller cannot read it. */
   readonly folder: Readonly<Ref<DriveBreadcrumb | null>>
+  /** When the content last changed, as of opening. The wire's UTC time. */
+  readonly editedAt: string | null
+  /** When the document was created, and the name of who created it. */
+  readonly createdAt: string | null
+  readonly createdBy: string | null
+  /** The caller's own star. */
+  readonly isStarred: Readonly<Ref<boolean>>
+  /** Starred sends no link codes, so a node reached only through a link takes no star (spec §10.7). */
+  readonly canStar: Readonly<Ref<boolean>>
+  /** Shows the new state at once, and the old one again if the server refuses. */
+  setStarred(starred: boolean): Promise<void>
   rename(title: string): Promise<DriveNode>
   /**
    * Opens the Drive share dialog. Access is read again after each write in
@@ -138,7 +157,7 @@ interface SessionDependencies {
   /** The node, when the caller has read it with `access` expanded. The session then opens without reading it again. */
   node?: DriveNode
   share?: ShareOpener
-  window?: Window
+  window?: Pick<Window, 'addEventListener' | 'removeEventListener'>
   signedIn?: () => string | null
   setInterval?: typeof globalThis.setInterval
   clearInterval?: typeof globalThis.clearInterval
@@ -167,8 +186,8 @@ export async function openDriveDocumentSession(
   }
   // A node reached through a share link records no visit: Recent sends no link
   // codes, so it could never show it (spec §10.13). The same rule as
-  // `isLinkOnly` in `files/features/linkAccess.ts`.
-  if (!node.access?.via_link) {
+  // `isLinkOnly` in `files/features/linkAccess.ts`. A signed-out reader has no Recent.
+  if (!node.access?.via_link && signedIn()) {
     void requester
       .mutation(
         api.drive.nodes.visit,
@@ -186,6 +205,13 @@ export async function openDriveDocumentSession(
   const state = ref<SessionState>(toSessionState(node))
   const access = ref<DriveAccess>(node.access ?? {})
   const folder = ref<DriveBreadcrumb | null>(folderOf(node))
+  const star = createStar(
+    requester,
+    nodeId,
+    node.favourite ?? false,
+    () => state.value === 'Active' && !access.value.via_link && !!signedIn(),
+    controller.signal,
+  )
   const handles = new Map<string, InternalMediaHandle>()
   let disposed = false
   let mediaPromise: Promise<void> | null = null
@@ -207,6 +233,7 @@ export async function openDriveDocumentSession(
       title.value = fresh.title
       state.value = toSessionState(fresh)
       access.value = fresh.access ?? {}
+      star.isStarred.value = fresh.favourite ?? false
     } catch (error) {
       if (!isRefusal(error)) return
 
@@ -345,7 +372,12 @@ export async function openDriveDocumentSession(
     state: readonly(state),
     access: readonly(access),
     canShare: computed(() => canShare(state.value, access.value)),
+    panels: computed(() => documentPanels(access.value, !!signedIn())),
     folder: readonly(folder),
+    editedAt: node.content_modified ?? node.modified,
+    createdAt: node.creation,
+    createdBy: node.owner?.full_name ?? null,
+    ...star,
     async rename(nextTitle) {
       const updated = await requester.mutation(
         api.drive.nodes.rename,
@@ -608,13 +640,12 @@ async function responseError(response: Response): Promise<TransportError> {
     .clone()
     .json()
     .catch(() => null)
-  const record = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {}
-  const first = Array.isArray(record.errors)
-    ? (record.errors[0] as Record<string, unknown> | undefined)
-    : undefined
-  const type = [first?.type, record.exc_type].find(
-    (value): value is string => typeof value === 'string',
-  )
+  const errors = body && typeof body === 'object' && 'errors' in body ? body.errors : undefined
+  const first: unknown = Array.isArray(errors) ? errors[0] : undefined
+  const firstType = first && typeof first === 'object' && 'type' in first ? first.type : undefined
+  const legacyType =
+    body && typeof body === 'object' && 'exc_type' in body ? body.exc_type : undefined
+  const type = [firstType, legacyType].find((value): value is string => typeof value === 'string')
   return new TransportError({
     type: type ?? 'RequestError',
     message: response.statusText,
@@ -634,19 +665,6 @@ export function canShare(state: SessionState, access: DriveAccess): boolean {
   return state === 'Active' && canManage({ access })
 }
 
-// the server turned the request away, unlike a network or server failure that passes
-function isRefusal(error: unknown): boolean {
-  if (!(error instanceof TransportError)) {
-    return false
-  }
-
-  const { status } = error
-  return (
-    status >= MIN_CLIENT_ERROR_STATUS &&
-    status < MIN_SERVER_ERROR_STATUS &&
-    !isTransientStatus(status)
-  )
-}
 function toSessionState(node: DriveNode): SessionState {
   if ((node.access?.role ?? 0) < 10) return 'Refused'
   return node.state === 'Trashed' ? 'Trashed' : 'Active'

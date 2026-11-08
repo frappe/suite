@@ -1,4 +1,4 @@
-import { type Locator, type Page, expect, test } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { failRequest, MOBILE_VIEWPORT, patchAccount } from "../../helpers/shell";
 
@@ -76,7 +76,12 @@ test.describe("desktop", () => {
 		const settings = await openSettingsFromRail(page);
 		await expect(settings.getByRole("tabpanel").getByRole("heading", { name: "Profile" })).toBeVisible();
 
-		for (const body of ["PreferencesSettings.vue", "StatisticsSettings.vue", "CredentialsSettings.vue", "CalendarsSettings.vue"]) {
+		for (const body of [
+			"PreferencesSettings.vue",
+			"StatisticsSettings.vue",
+			"CredentialsSettings.vue",
+			"CalendarsSettings.vue",
+		]) {
 			expect(served.has(body), `${body} before its click`).toBe(false);
 		}
 
@@ -127,6 +132,7 @@ async function holdUsage(page: Page, breakdown: Record<string, unknown>) {
 		const url = new URL(route.request().url());
 		expect(url.searchParams.get("expand")).toBe("breakdown");
 		const response = await route.fetch();
+		// SAFETY: the Suite-owned settings endpoint returns the data projection whose saved preferences this journey checks.
 		const body = (await response.json()) as { data: Record<string, unknown> };
 		expect(body.data).toHaveProperty("by_type");
 		expect(body.data).toHaveProperty("largest");

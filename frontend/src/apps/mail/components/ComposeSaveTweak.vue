@@ -28,8 +28,8 @@ const options: { value: DraftSavePlacement; label: string }[] = [
   { value: 'send', label: __('Send') },
 ]
 try {
-  const saved = localStorage.getItem(KEY) as DraftSavePlacement | null
-  if (options.some((option) => option.value === saved)) draftSavePlacement.value = saved!
+  const saved = options.find((option) => option.value === localStorage.getItem(KEY))
+  if (saved) draftSavePlacement.value = saved.value
 } catch {
   /* The panel works for this page without it. */
 }

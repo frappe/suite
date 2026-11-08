@@ -3,16 +3,18 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { announceCopy, announceMove, announceRestore, announceTrash } from './changeToast'
 
 // A Drive server that records each move and keeps every node's parent.
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const net = vi.hoisted(() => {
   const state = {
     parents: new Map<string, string>(),
-    requests: [] as Array<{ method: string; path: string; body: unknown }>,
+    requests: fromPartial<Array<{ method: string; path: string; body: unknown }>>([]),
     /** The folder the server refuses to move items into, with its message. */
-    refuse: null as { parent: string; message: string } | null,
+    refuse: fromPartial<{ parent: string; message: string } | null>(null),
     /** Each node's state, as a trash or restore left it. */
     states: new Map<string, string>(),
     /** A node the server refuses to restore, with its message. */
-    refuseRestore: null as { node: string; message: string } | null,
+    refuseRestore: fromPartial<{ node: string; message: string } | null>(null),
   }
   const node = (name: string) => ({
     name,
@@ -57,7 +59,14 @@ const net = vi.hoisted(() => {
       return json({ data: node(name) })
     }
     if (init.method === 'POST' && path === 'nodes/batch' && body.patch.state) {
-      const { nodes, patch } = body as { nodes: string[]; patch: { state: string } }
+      if (
+        !Array.isArray(body.nodes) ||
+        !body.nodes.every((name: unknown) => typeof name === 'string') ||
+        typeof body.patch.state !== 'string'
+      )
+        throw new Error('Expected a batch state change')
+      const nodes: string[] = body.nodes
+      const patch = { state: String(body.patch.state) }
       const refused = patch.state === 'Active' ? state.refuseRestore : null
       const failed = refused ? nodes.filter((name) => name === refused.node) : []
       for (const name of nodes) if (!failed.includes(name)) state.states.set(name, patch.state)
@@ -73,9 +82,19 @@ const net = vi.hoisted(() => {
       })
     }
     if (init.method === 'POST' && path === 'nodes/batch') {
-      const { nodes, patch } = body as {
-        nodes: string[]
-        patch: { parent_node: string; expect_parent_node?: string }
+      if (
+        !Array.isArray(body.nodes) ||
+        !body.nodes.every((name: unknown) => typeof name === 'string') ||
+        typeof body.patch?.parent_node !== 'string'
+      )
+        throw new Error('Expected a batch move')
+      const nodes: string[] = body.nodes
+      const patch = {
+        parent_node: String(body.patch.parent_node),
+        expect_parent_node:
+          typeof body.patch.expect_parent_node === 'string'
+            ? body.patch.expect_parent_node
+            : undefined,
       }
       const refuse = state.refuse
       if (refuse && refuse.parent === patch.parent_node) {
@@ -115,7 +134,7 @@ interface ShownToast {
   description?: string
   action?: { label: string; onClick: () => void }
 }
-const feedback = vi.hoisted(() => ({ toasts: [] as ShownToast[] }))
+const feedback = vi.hoisted(() => ({ toasts: fromPartial<ShownToast[]>([]) }))
 vi.mock('@/platform/feedback', () => ({
   toast: {
     success: (message: string, options?: Omit<ShownToast, 'kind' | 'message'>) =>

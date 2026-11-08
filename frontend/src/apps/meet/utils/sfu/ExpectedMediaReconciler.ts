@@ -109,20 +109,21 @@ export class ExpectedMediaReconciler {
     if (this.allExpectedMediaHealthy()) return Promise.resolve()
     if (signal.aborted) return Promise.reject(signal.reason)
     return new Promise<void>((resolve, reject) => {
-      const waiter = {} as HealthWaiter
       const finish = (complete: () => void) => {
         clearTimeout(waiter.timer)
         signal.removeEventListener('abort', waiter.abort)
         this.healthWaiters.delete(waiter)
         complete()
       }
-      waiter.resolve = () => finish(resolve)
-      waiter.reject = (error) => finish(() => reject(error))
-      waiter.abort = () => waiter.reject(signal.reason)
-      waiter.timer = setTimeout(
-        () => waiter.reject(new Error('Expected media did not become healthy')),
-        timeoutMs,
-      )
+      const waiter: HealthWaiter = {
+        resolve: () => finish(resolve),
+        reject: (error) => finish(() => reject(error)),
+        abort: () => waiter.reject(signal.reason),
+        timer: setTimeout(
+          () => waiter.reject(new Error('Expected media did not become healthy')),
+          timeoutMs,
+        ),
+      }
       this.healthWaiters.add(waiter)
       signal.addEventListener('abort', waiter.abort, { once: true })
     })
@@ -166,7 +167,9 @@ export class ExpectedMediaReconciler {
       })
       .catch((error) => {
         const outcome =
-          (error as { name?: unknown } | null)?.name === 'AbortError' ? 'cancelled' : 'failure'
+          !!error && typeof error === 'object' && 'name' in error && error.name === 'AbortError'
+            ? 'cancelled'
+            : 'failure'
         this.finishRepair(key, entry, outcome)
         throw error
       })

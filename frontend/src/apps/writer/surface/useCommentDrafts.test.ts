@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { toast } from 'frappe-ui'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -48,8 +49,8 @@ function keyOf(id: ID) {
 function fakeRoom() {
   const listeners = new Set<() => void>()
   const saved = new Set<string>()
-  const state = { stopped: null as string | null }
-  const room = {
+  const state = { stopped: fromPartial<string | null>(null) }
+  const room = fromPartial<CollabRoom>({
     doc: new Doc(),
     get status() {
       return { stopReason: state.stopped }
@@ -59,7 +60,7 @@ function fakeRoom() {
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
-  } as unknown as CollabRoom
+  })
   function tell() {
     for (const listener of [...listeners]) {
       listener()
@@ -88,10 +89,10 @@ function driveComments(answers: (() => Promise<unknown>)[] = []) {
     posts.push(input)
     return answers.shift()?.() ?? Promise.resolve({ name: 'thread-1' })
   })
-  const session = { nodeId: 'doc-1', comments: { create } } as unknown as Pick<
-    DocumentSession,
-    'comments' | 'nodeId'
-  >
+  const session = fromPartial<Pick<DocumentSession, 'comments' | 'nodeId'>>({
+    nodeId: 'doc-1',
+    comments: { create },
+  })
   return { session, posts }
 }
 
@@ -318,9 +319,10 @@ describe('posting a comment on the whole document', () => {
 
       return { name: `thread-${taken.size}` }
     })
-    const session = { nodeId: 'doc-1', comments: { create } } as unknown as ReturnType<
-      typeof driveComments
-    >['session']
+    const session = fromPartial<ReturnType<typeof driveComments>['session']>({
+      nodeId: 'doc-1',
+      comments: { create },
+    })
     const { drafts, start, write, post } = openDrafts(session, null)
     start(DOCUMENT_ANCHOR)
     write(drafts.value[0], 'Ship it')

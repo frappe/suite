@@ -62,11 +62,23 @@ const removeStored = (key: string) => {
   }
 }
 
+const isDraftCopy = (value: unknown): value is DraftCopy =>
+  typeof value === 'object' &&
+  value !== null &&
+  'key' in value &&
+  !!value.key &&
+  'mail' in value &&
+  !!value.mail &&
+  'ids' in value &&
+  Array.isArray(value.ids) &&
+  'savedAt' in value &&
+  typeof value.savedAt === 'number'
+
 const parse = (raw: string | null): DraftCopy | undefined => {
   if (!raw) return undefined
   try {
-    const copy = JSON.parse(raw) as DraftCopy
-    return copy?.key && copy.mail && typeof copy.savedAt === 'number' ? copy : undefined
+    const copy: unknown = JSON.parse(raw)
+    return isDraftCopy(copy) ? copy : undefined
   } catch {
     return undefined
   }

@@ -22,11 +22,13 @@ const loading = ref(true)
 const loadingMore = ref(false)
 const loadError = ref('')
 
-const KIND_LABELS: Record<string, string> = {
-  auto: 'Automatic version',
-  named: 'Named version',
-  milestone: 'Milestone',
-}
+const KIND_LABELS = new Map<string, string>(
+  Object.entries({
+    auto: 'Automatic version',
+    named: 'Named version',
+    milestone: 'Milestone',
+  }),
+)
 
 async function load(cursor?: string) {
   try {
@@ -85,7 +87,7 @@ function confirmRestore(version: SlidesVersion) {
 }
 
 function versionLabel(version: SlidesVersion): string {
-  return version.label || KIND_LABELS[version.kind] || 'Version'
+  return version.label || KIND_LABELS.get(version.kind) || 'Version'
 }
 
 function message(error: unknown, fallback: string): string {

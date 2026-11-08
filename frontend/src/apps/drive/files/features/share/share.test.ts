@@ -1,4 +1,6 @@
+import { fromAny, fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it, vi } from 'vitest'
+import { createApp, h, nextTick } from 'vue'
 
 import {
   rolesFor,
@@ -10,6 +12,7 @@ import { openDriveDocumentSession } from '@/apps/drive/client/session'
 import { testClient } from '@/apps/drive/client/testClient'
 import type { Transport } from '@/platform/transport'
 
+import ShareBody from './ShareBody.vue'
 import { shareSections } from './shareModel'
 import { useShare } from './useShare'
 
@@ -60,11 +63,12 @@ function fakeServer(answer: (call: Call) => unknown) {
   const calls: Call[] = []
   const transport: Transport = {
     request: async (operation, input) => {
-      const call = { id: operation.id, input: input as Record<string, unknown> }
+      if (!input || typeof input !== 'object') throw new Error('Expected a Drive request object')
+      const call = { id: operation.id, input: Object.fromEntries(Object.entries(input)) }
       calls.push(call)
       const result = answer(call)
       if (result instanceof Error) throw result
-      return result as never
+      return fromAny(result)
     },
   }
   return { calls, transport }
@@ -657,10 +661,12 @@ describe('share writes that touch the caller (spec §7.4, §7.9)', () => {
     const transport: Transport = {
       request: (operation) =>
         operation.id === 'node_get'
-          ? (new Promise((resolve) => {
-              answer = resolve
-            }) as never)
-          : (Promise.resolve({ grants: [], inherited: [] }) as never),
+          ? fromAny(
+              new Promise<unknown>((resolve) => {
+                answer = resolve
+              }),
+            )
+          : fromAny(Promise.resolve({ grants: [], inherited: [] })),
     }
     const share = useShare('doc', { client: testClient(transport) })
     const first = share.load()
@@ -685,8 +691,8 @@ describe('document session share (spec §8.6, §8.8)', () => {
     let whileOpen: boolean | undefined
     const session = await openDriveDocumentSession('doc', {
       client: testClient(server.transport),
-      setInterval: vi.fn() as unknown as typeof setInterval,
-      clearInterval: vi.fn() as unknown as typeof clearInterval,
+      setInterval: fromPartial<typeof setInterval>(vi.fn()),
+      clearInterval: fromPartial<typeof clearInterval>(vi.fn()),
       share: async (id) => {
         const share = useShare(id, { client: testClient(server.transport) })
         await share.load()
@@ -702,5 +708,31 @@ describe('document session share (spec §8.6, §8.8)', () => {
     expect(whileOpen).toBe(false)
     expect(session.canShare.value).toBe(false)
     session.dispose()
+  })
+})
+
+describe('share dialog words (spec §7.3)', () => {
+  it('says a document is not published on the web, whether web access was never on or was switched off', async () => {
+    const said = async (grants: DriveGrant[]) => {
+      const server = fakeServer((call) => {
+        if (call.id === 'node_get') return node('document')
+        if (call.id === 'node_grants') return { grants, inherited: [] }
+        return null
+      })
+      const state = useShare('doc', { client: testClient(server.transport) })
+      await state.load()
+      const root = document.createElement('div')
+      const app = createApp({ setup: () => () => h(ShareBody, { state }) })
+      app.mount(root)
+      await nextTick()
+      const words = root.textContent ?? ''
+      app.unmount()
+      return words
+    }
+
+    expect(await said([])).toContain('Not published on the web')
+    const switchedOff = await said([grant('$PUBLIC', 0)])
+    expect(switchedOff).toContain('Not published on the web')
+    expect(switchedOff).not.toContain('Denied')
   })
 })

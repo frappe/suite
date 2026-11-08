@@ -4,7 +4,15 @@ import { writeDraftCopy, type DraftCopy } from '@/apps/mail/utils/draftCopies'
 
 import { offerDraftCopies, withdrawDraftCopyOffer } from './useDraftRecovery'
 
-const toast = vi.hoisted(() => ({ warning: vi.fn(() => 'offer'), dismiss: vi.fn() }))
+type OfferOptions = {
+  description: string
+  action: { onClick: () => void }
+  cancel: { onClick: () => void }
+}
+const toast = vi.hoisted(() => ({
+  warning: vi.fn<(message: string, options: OfferOptions) => string>(() => 'offer'),
+  dismiss: vi.fn(),
+}))
 vi.mock('frappe-ui', () => ({ toast }))
 vi.stubGlobal('__', (text: string, args: string[] = []) =>
   args.reduce((result, arg, index) => result.replace(`{${index}}`, arg), text),
@@ -32,11 +40,7 @@ const copy = (over: Partial<DraftCopy> = {}): DraftCopy => ({
   },
   ...over,
 })
-type ToastCall = [
-  string,
-  { description: string; action: { onClick: () => void }; cancel: { onClick: () => void } },
-]
-const offered = () => toast.warning.mock.calls as unknown as ToastCall[]
+const offered = () => toast.warning.mock.calls
 
 beforeEach(() => {
   localStorage.clear()

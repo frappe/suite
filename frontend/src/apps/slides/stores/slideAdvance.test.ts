@@ -42,7 +42,7 @@ describe('a slide that advances on its own', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     replace.mockClear()
-    slides.value = [{ elements: [], advanceAfter: '2' }, { elements: [] }] as any
+    slides.value = [{ elements: [], advanceAfter: '2' }, { elements: [] }]
     slideIndex.value = 0
   })
 
@@ -75,6 +75,39 @@ describe('a slide that advances on its own', () => {
     await nextTick()
     expect(replace).not.toHaveBeenCalled()
   })
+
+  it.each([
+    ['above the range', '5000', 3_600_000],
+    ['above the range, as a number', 5000, 3_600_000],
+    ['below the range', '0.5', 1000],
+    ['zero', '0', 1000],
+    ['negative', '-3', 1000],
+  ])('reads a stored delay %s within 1 to 3600 seconds', async (_, stored, delay) => {
+    slides.value[0].advanceAfter = stored
+    scheduleAdvance()
+
+    vi.advanceTimersByTime(delay - 1)
+    await nextTick()
+    expect(replace).not.toHaveBeenCalled()
+
+    vi.advanceTimersByTime(1)
+    await nextTick()
+    expect(slideQueryOfLastReplace()).toMatchObject({ query: { slide: 2 } })
+    expect(slides.value[0].advanceAfter).toBe(stored)
+  })
+
+  it.each([['abc'], ['5abc'], [''], ['   '], [null], ['Infinity']])(
+    'waits for a click when its stored delay is %j',
+    async (stored) => {
+      slides.value[0].advanceAfter = stored
+      scheduleAdvance()
+
+      vi.advanceTimersByTime(4_000_000)
+      await nextTick()
+      expect(replace).not.toHaveBeenCalled()
+      expect(slides.value[0].advanceAfter).toBe(stored)
+    },
+  )
 
   it('counts its delay after a video ends', async () => {
     const video = addVideo({ paused: false })
@@ -259,7 +292,7 @@ describe('a slide that advances on its own', () => {
       { elements: [], transition: 'Magic Move', transitionDuration: '3' },
       { elements: [], advanceAfter: '2' },
       { elements: [] },
-    ] as any
+    ]
     slideIndex.value = 1
     scheduleAdvance()
 
@@ -282,7 +315,7 @@ describe('a slide that advances on its own', () => {
       },
       { elements: [], advanceAfter: '2' },
       { elements: [] },
-    ] as any
+    ]
     slideIndex.value = 1
     scheduleAdvance()
 

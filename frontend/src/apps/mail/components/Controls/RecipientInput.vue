@@ -334,10 +334,13 @@ const typedRecipient = computed<DraftRecipient | null>(() => {
  * sits in flow above the keyboard, and more than that just pushes the message body off the
  * screen.
  */
+type ContactSuggestion = (typeof contacts.value)[number]
 const inlineSuggestions = computed(() => {
   if (!suggestionsTo || !isFocused.value) return []
 
-  const contacts = options.value.filter((o) => 'email' in o) as DraftRecipient[]
+  const contacts = options.value.filter(
+    (option): option is ContactSuggestion => 'email' in option && typeof option.email === 'string',
+  )
   const typed = typedRecipient.value
   const isSuggested = contacts.some((c) => c.email.toLowerCase() === typed?.email.toLowerCase())
 
@@ -403,7 +406,7 @@ const handleClick = () => {
 defineExpose({ setFocus, commitTyped })
 
 const handleContainerKeydown = (e: KeyboardEvent) => {
-  const inputEl = containerRef.value?.querySelector('input') as HTMLInputElement | null
+  const inputEl = containerRef.value?.querySelector('input') ?? null
   const isInputFocused = document.activeElement === inputEl
   const isAtInputStart = inputEl?.selectionStart === 0 && inputEl?.selectionEnd === 0
 
@@ -426,11 +429,14 @@ const handleContainerKeydown = (e: KeyboardEvent) => {
 }
 
 const handleTagClick = (e: MouseEvent, i: number) => {
+  const checkedEventTarget = e.currentTarget
+  if (!(checkedEventTarget instanceof Element)) return
+
   e.stopPropagation()
   // Kept off the container on mobile too: a tap meant for a chip's menu must not also focus the
   // field, which would expand the row and move the chip the menu is about to hang off.
   if (!isMobile.value) focusedTagIndex.value = i
-  openMenu(displayedRecipients.value[i], e.currentTarget as Element)
+  openMenu(displayedRecipients.value[i], checkedEventTarget)
 }
 
 /**
@@ -547,7 +553,7 @@ const draggedEmail = ref<string | null>(null)
 let dragStartTimer: ReturnType<typeof setTimeout> | undefined
 const handleDragStart = (e: DragEvent, recipient: DraftRecipient) => {
   e.dataTransfer?.setData('recipient', JSON.stringify({ recipient, from: field }))
-  const chip = e.currentTarget as HTMLElement | null
+  const chip = e.currentTarget instanceof HTMLElement ? e.currentTarget : null
   // Everything else waits for the drag to be under way: Chrome drops a drag whose page changes
   // in the same tick it starts, and opening Cc and Bcc (so there is somewhere to drop) does.
   dragStartTimer = setTimeout(() => {
@@ -572,11 +578,28 @@ const handleDrop = (e: DragEvent) => {
   const data = e.dataTransfer?.getData('recipient')
   if (!data) return
 
-  const { recipient, from } = JSON.parse(data) as {
-    recipient: DraftRecipient
-    from: RecipientField
+  let payload: unknown
+  try {
+    payload = JSON.parse(data)
+  } catch {
+    return
   }
-  emit('move', recipient, from, field)
+  if (!payload || typeof payload !== 'object' || !('recipient' in payload) || !('from' in payload))
+    return
+  const { recipient, from } = payload
+  if (from !== 'to' && from !== 'cc' && from !== 'bcc') return
+  if (
+    !recipient ||
+    typeof recipient !== 'object' ||
+    !('email' in recipient) ||
+    typeof recipient.email !== 'string'
+  )
+    return
+  const dropped: DraftRecipient = { email: recipient.email }
+  if ('display_name' in recipient && typeof recipient.display_name === 'string')
+    dropped.display_name = recipient.display_name
+  if ('image' in recipient && typeof recipient.image === 'string') dropped.image = recipient.image
+  emit('move', dropped, from, field)
 }
 
 const debouncedSearch = refDebounced(searchText, 200)
@@ -600,7 +623,9 @@ const options = computed(() => {
   return [
     ...(contacts.value.filter((option) => !selectedEmails.value.includes(option.email)) || []),
     {
-      type: 'custom',
+      type: 'custom' as const,
+      key: 'create-recipient',
+      label: searchText.value,
       slot: 'create',
       condition: () => !contacts.value.length,
       onClick: ({ query }: { query: string }) => addValues(query),

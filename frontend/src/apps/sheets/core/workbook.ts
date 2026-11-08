@@ -119,6 +119,8 @@ export interface Workbook {
    * order (row by row), at most `limit` of them.
    */
   findInputs(sheet: string, query: string, limit: number): FoundCell[]
+  /** Every formula cell (input starting with "="), row by row. Not capped. */
+  formulaCells(sheet: string): FoundCell[]
   /** Every non-empty cell as flat [row, col, row, col, …] (1-based), row by row. */
   usedCells(sheet: string): number[]
   /** Count / numeric count / sum over a range (1-based, inclusive). */
@@ -615,6 +617,14 @@ export function createWorkbook({
         scanCells(sheetIndex(sheet), (row, col, input) => {
           if (input.toLowerCase().includes(q)) found.push({ row, col, input })
           return found.length >= limit
+        })
+        return found
+      }),
+    formulaCells: (sheet) =>
+      read(() => {
+        const found: FoundCell[] = []
+        scanCells(sheetIndex(sheet), (row, col, input) => {
+          if (input.startsWith('=')) found.push({ row, col, input })
         })
         return found
       }),

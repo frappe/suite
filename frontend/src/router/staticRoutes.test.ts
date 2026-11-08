@@ -3,14 +3,16 @@ import type { RouteLocationNormalized } from 'vue-router'
 
 // The router reads the onboarding state from the server boot when it is present,
 // so no request is needed. The session is a stand-in whose status each test sets.
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const state = vi.hoisted(() => {
   window.suite_is_onboarded = true
   window.suite_can_onboard = false
   return {
-    status: 'authenticated' as 'guest' | 'authenticated',
-    user: null as { setup_required: boolean } | null,
+    status: fromPartial<'guest' | 'authenticated'>('authenticated'),
+    user: fromPartial<{ setup_required: boolean } | null>(null),
     jmap: true,
-    remembered: [] as [token: string, node: string][],
+    remembered: fromPartial<[token: string, node: string][]>([]),
   }
 })
 

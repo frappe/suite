@@ -9,7 +9,11 @@ const { interactionOffset, commitInteraction, resetInteractionOffset } =
   await import('./interaction')
 const { setCommandHistory } = await import('./historyMeta')
 
-const element = () => slides.value[0].elements[0] as any
+const element = () => {
+  const elements = slides.value[0]?.elements
+  if (!Array.isArray(elements) || !elements[0]) throw new Error('Expected a slide element')
+  return elements[0]
+}
 
 // 3 columns of 101 scale by 1.2 to 121.2 each, rounding to 363 not the 364 dragged to
 const table = { rows: 2, cols: 3, columnWidth: 101, dragged: 61 }
@@ -36,13 +40,13 @@ describe('committing a table frame resize', () => {
           },
         ],
       },
-    ] as any
+    ]
     slideIndex.value = 0
     activeElementIds.value = [1]
     resetInteractionOffset()
     updateSelectionBounds({ left: 100, top: 50, width: element().width, height: 80 })
 
-    setCommandHistory({ execute: (command: any) => command.execute(slides.value) } as any)
+    setCommandHistory({ execute: (command: any) => command.execute(slides.value) })
   })
 
   it('lands on the columns rather than on the cursor', () => {

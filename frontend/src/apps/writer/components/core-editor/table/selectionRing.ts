@@ -1,0 +1,57 @@
+export interface Box {
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
+/** A box as the `left`, `top`, `width` and `height` of an absolutely placed element */
+export const boxStyle = ({ left, top, width, height }: Box) => ({
+  left: `${left}px`,
+  top: `${top}px`,
+  width: `${width}px`,
+  height: `${height}px`,
+})
+
+/** The smallest box around every element's rect */
+export function unionBox(elements: Iterable<Element>): Box | null {
+  const rects = [...elements].map((element) => element.getBoundingClientRect())
+  if (!rects.length) return null
+  const left = Math.min(...rects.map((rect) => rect.left))
+  const top = Math.min(...rects.map((rect) => rect.top))
+  const right = Math.max(...rects.map((rect) => rect.right))
+  const bottom = Math.max(...rects.map((rect) => rect.bottom))
+  return { left, top, width: right - left, height: bottom - top }
+}
+
+const CARD_RADIUS = '12px'
+
+/**
+ * frappe-ui draws a multi-cell selection as one box over the cells' border boxes. Inside the table
+ * its left and top lines move out onto the neighbours' rules, as a single cell's ring does
+ * (table.css). On the table's edge the box lies on the card's frame, and at a corner it takes the
+ * frame's radius, so the rounded card does not clip it.
+ */
+export function fitSelectionBox(wrapper: HTMLElement, selection: Box) {
+  const ring = wrapper.querySelector<HTMLElement>('.table-selection-box')
+  const table = wrapper.querySelector('table')?.getBoundingClientRect()
+  if (!ring || !table) return
+  const near = (a: number, b: number) => Math.abs(a - b) <= 1.5
+  const edge = {
+    top: near(selection.top, table.top),
+    left: near(selection.left, table.left),
+    right: near(selection.left + selection.width, table.right),
+    bottom: near(selection.top + selection.height, table.bottom),
+  }
+  const left = edge.left ? 0 : -1
+  const top = edge.top ? 0 : -1
+  ring.style.marginLeft = `${left}px`
+  ring.style.marginTop = `${top}px`
+  ring.style.width = `${selection.width - left}px`
+  ring.style.height = `${selection.height - top}px`
+  const radius = (isCorner: boolean) => (isCorner ? CARD_RADIUS : '0px')
+  ring.style.borderTopLeftRadius = radius(edge.top && edge.left)
+  ring.style.borderTopRightRadius = radius(edge.top && edge.right)
+  ring.style.borderBottomLeftRadius = radius(edge.bottom && edge.left)
+  ring.style.borderBottomRightRadius = radius(edge.bottom && edge.right)
+}

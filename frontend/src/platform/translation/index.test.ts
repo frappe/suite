@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({ request: vi.fn() }))
@@ -48,14 +49,16 @@ describe('translation', () => {
     mocks.request.mockReturnValueOnce(new Promise((resolve) => (release = resolve)))
     const { installTranslation } = await import('./index')
     const app = {
-      config: { globalProperties: {} as Record<string, unknown> },
+      config: { globalProperties: fromPartial<Record<string, unknown>>({}) },
       use(plugin: { install(target: any): void }) {
         plugin.install(this)
         return this
       },
     }
     let installed = false
-    const pending = installTranslation(app as any).then(() => {
+    const pending = installTranslation(
+      fromPartial<Parameters<typeof installTranslation>[0]>(app),
+    ).then(() => {
       installed = true
     })
     expect(typeof app.config.globalProperties.__).toBe('function')

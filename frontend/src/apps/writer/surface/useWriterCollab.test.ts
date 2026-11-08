@@ -1,3 +1,4 @@
+import type { RoomStatus } from '@suite/collab-client'
 import { describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
@@ -6,27 +7,30 @@ import { openCollabRoom } from '@/platform/collab'
 
 import { useWriterCollab } from './useWriterCollab'
 
+// The fixture factory runs before static imports, so load its typed builders first.
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const fakeRooms = vi.hoisted(() => {
   function makeRoom() {
     return {
       status: {
         canWrite: true,
-        blockReason: null as string | null,
-        stopReason: null as string | null,
+        blockReason: fromPartial<RoomStatus['blockReason']>(null),
+        stopReason: fromPartial<RoomStatus['stopReason']>(null),
         keptCopyCount: 0,
         hasCopyFailed: false,
-        pauseReason: null as string | null,
-        holdReason: null as string | null,
+        pauseReason: fromPartial<RoomStatus['pauseReason']>(null),
+        holdReason: fromPartial<RoomStatus['holdReason']>(null),
         isRestoring: false,
         hasNewerSchema: false,
         isReopenNeeded: false,
-        saveState: 'clean',
+        saveState: fromPartial<RoomStatus['saveState']>('clean'),
         unsentCount: 0,
         othersUnsentCount: 0,
         isKeptOnDevice: true,
         isAtLimit: false,
       },
-      listeners: [] as (() => void)[],
+      listeners: fromPartial<(() => void)[]>([]),
       onChange(listener: () => void) {
         this.listeners.push(listener)
         return () => {}
@@ -44,19 +48,26 @@ const fakeRooms = vi.hoisted(() => {
 
 vi.mock('@/platform/collab', async () => ({
   ...(await import('@suite/collab-client')),
-  openCollabRoom: vi.fn(async ({ watch }: { watch: (room: object) => void }) => {
-    fakeRooms.openCount++
-    watch(fakeRooms.room)
-    return { state: 'live', room: fakeRooms.room }
-  }),
+  openCollabRoom: vi.fn(
+    async ({ watch }: { watch: (room: ReturnType<typeof fakeRooms.makeRoom>) => void }) => {
+      fakeRooms.openCount++
+      watch(fakeRooms.room)
+      return { state: 'live', room: fakeRooms.room }
+    },
+  ),
 }))
 
 vi.mock('@/apps/writer/collab/adapter', () => ({ writerAdapter: { app: 'writer' } }))
 
-const watched = vi.hoisted(() => new Map<object, (removals: unknown[]) => void>())
+const watched = vi.hoisted(
+  () => new Map<ReturnType<typeof fakeRooms.makeRoom>, (removals: unknown[]) => void>(),
+)
 
 vi.mock('@/apps/writer/collab/removals', () => ({
-  watchRemovals: (room: object, report: (removals: unknown[]) => void) => {
+  watchRemovals: (
+    room: ReturnType<typeof fakeRooms.makeRoom>,
+    report: (removals: unknown[]) => void,
+  ) => {
     watched.set(room, report)
     return () => watched.delete(room)
   },
@@ -69,12 +80,12 @@ const keepRemovedWork = vi.hoisted(() =>
 vi.mock('@/apps/writer/recovery/copies', () => ({ keepRemovedWork }))
 
 async function openCollab(retainRecovery = () => false, mayEdit = () => true) {
-  const session = { nodeId: 'node-1', title: { value: 'Plan' } } as DocumentSession
+  const session = fromPartial<DocumentSession>({ nodeId: 'node-1', title: { value: 'Plan' } })
   const collab = useWriterCollab(
     session,
     retainRecovery,
     mayEdit,
-    () => {},
+    { threadsChanged: () => {}, versionRestored: () => {} },
     () => false,
   )
   await collab.open()
@@ -88,7 +99,7 @@ async function newerSchemaBanner(load: typeof useWriterCollab, session: Document
     session,
     () => false,
     () => true,
-    () => {},
+    { threadsChanged: () => {}, versionRestored: () => {} },
     () => false,
   )
   await collab.open()
@@ -114,7 +125,13 @@ describe('writer collab editing state', () => {
     const collab = await openCollab()
     expect(collab.editingPaused.value).toBe(false)
 
-    for (const blockReason of ['signed_out', 'locked', 'offline', 'stale_session', 'other_user']) {
+    for (const blockReason of [
+      'signed_out',
+      'locked',
+      'offline',
+      'stale_session',
+      'other_user',
+    ] as const) {
       const canKeepWriting =
         blockReason === 'signed_out' || blockReason === 'locked' || blockReason === 'offline'
       becomes({
@@ -177,7 +194,7 @@ describe('writer collab editing state', () => {
 
   it('leaves a lost right or a read-only room as view only', async () => {
     const collab = await openCollab()
-    for (const blockReason of ['lost_edit', 'lost_read']) {
+    for (const blockReason of ['lost_edit', 'lost_read'] as const) {
       becomes({ blockReason, saveState: 'failed', canWrite: false })
       expect(collab.editingPaused.value).toBe(false)
     }
@@ -257,7 +274,7 @@ describe('writer collab editing state', () => {
   })
 
   it('says a reload will not help once the banner is back right after one', async () => {
-    const session = { nodeId: 'node-reloaded' } as DocumentSession
+    const session = fromPartial<DocumentSession>({ nodeId: 'node-reloaded' })
     const firstLoad = await newerSchemaBanner(useWriterCollab, session)
     vi.resetModules()
     const reloaded = await import('./useWriterCollab')
@@ -272,7 +289,7 @@ describe('writer collab editing state', () => {
   })
 
   it('keeps asking for a reload when the document opens again without one', async () => {
-    const session = { nodeId: 'node-reopened' } as DocumentSession
+    const session = fromPartial<DocumentSession>({ nodeId: 'node-reopened' })
     await newerSchemaBanner(useWriterCollab, session)
     const reopened = await newerSchemaBanner(useWriterCollab, session)
 
@@ -282,7 +299,7 @@ describe('writer collab editing state', () => {
   })
 
   it('keeps asking for a reload where the browser blocks this tab’s storage', async () => {
-    const session = { nodeId: 'node-blocked' } as DocumentSession
+    const session = fromPartial<DocumentSession>({ nodeId: 'node-blocked' })
     const blocked = vi.spyOn(globalThis, 'sessionStorage', 'get').mockImplementation(() => {
       throw new DOMException('Blocked', 'SecurityError')
     })
@@ -535,15 +552,15 @@ describe('writer collab rebuild', () => {
     fakeRooms.room = fakeRooms.makeRoom()
     watched.clear()
     vi.mocked(openCollabRoom).mockImplementationOnce(async ({ watch }) => {
-      watch?.(fakeRooms.room as never)
+      watch?.(fromPartial(fakeRooms.room))
       return opened()
     })
-    const session = { nodeId: 'node-1', title: { value: 'Plan' } } as DocumentSession
+    const session = fromPartial<DocumentSession>({ nodeId: 'node-1', title: { value: 'Plan' } })
     const collab = useWriterCollab(
       session,
       () => false,
       () => true,
-      () => {},
+      { threadsChanged: () => {}, versionRestored: () => {} },
       () => false,
     )
 

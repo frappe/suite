@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, ref } from 'vue'
 
@@ -21,7 +22,7 @@ import {
   TOO_LONG_MESSAGE,
 } from './comment-list-fixtures'
 import CommentList from './CommentList.vue'
-import type { ThreadActions } from './useDocumentPanel'
+import type { ThreadActions } from './useThreadChanges'
 
 vi.mock('@/platform/session', async () => {
   const { fakeSession } = await import('./comment-list-fakes')
@@ -48,6 +49,11 @@ vi.mock('@/apps/drive', async () => {
   return fakeDrive()
 })
 
+vi.mock('@/apps/writer/drive', async () => {
+  const { fakeWriterDrive } = await import('./comment-list-fakes')
+  return fakeWriterDrive()
+})
+
 describe('commenting on the whole document', () => {
   function documentBox() {
     return document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Add a comment"]')
@@ -72,7 +78,8 @@ describe('commenting on the whole document', () => {
       places: PLACES,
       canComment: true,
       canEditDocument: false,
-      actions: {} as ThreadActions,
+      canShare: true,
+      actions: fromPartial<ThreadActions>({ isUnsent: () => false, isNotSent: () => false }),
       drafts,
     }
     const app = createApp(() => h(CommentList, props))
@@ -99,6 +106,33 @@ describe('commenting on the whole document', () => {
       false,
       ['draft-0'],
       ['document "Ship it"'],
+    ])
+  })
+
+  it('posts on Enter as a reply does, and keeps a new line on Shift+Enter or with an empty box', async () => {
+    const { list, posted } = fakeDrafts()
+    const { host } = showList({ drafts: list })
+    await click(buttonNamed(host, 'Add a comment'))
+    await nextTick()
+    function press(options: KeyboardEventInit) {
+      const event = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true, ...options })
+      documentBox()!.dispatchEvent(event)
+      return event.defaultPrevented
+    }
+
+    const onEmpty = press({})
+    await type('Ship it')
+    const onShift = press({ shiftKey: true })
+    const postedBeforeEnter = [...posted]
+    const onEnter = press({})
+    await settled()
+
+    expect([onEmpty, onShift, postedBeforeEnter, onEnter, posted]).toEqual([
+      true,
+      false,
+      [],
+      true,
+      ['draft-0'],
     ])
   })
 
@@ -227,6 +261,6 @@ describe('commenting on the whole document', () => {
     ])
     const { host } = showList({ threads: [], drafts: list })
 
-    expect(rows(host)).toEqual(['You Posting… Ship it'])
+    expect(rows(host)).toEqual([expect.stringMatching(/^Asha Rao \S.* Ship it$/)])
   })
 })

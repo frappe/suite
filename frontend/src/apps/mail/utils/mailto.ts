@@ -52,11 +52,12 @@ export const parseMailto = (href: string): ComposeMailData | null => {
   const subject = headers.get('subject')
   const body = headers.get('body')
 
-  return {
+  const mail: ComposeMailData = {
     to: [...recipients(addresses), ...recipients(headers.get('to'))],
     cc: recipients(headers.get('cc')),
     bcc: recipients(headers.get('bcc')),
-    ...(subject ? { subject } : {}),
-    ...(body ? { html_body: toHtml(body) } : {}),
   }
+  if (subject) mail.subject = subject
+  if (body) mail.html_body = toHtml(body)
+  return mail
 }

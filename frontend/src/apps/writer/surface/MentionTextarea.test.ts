@@ -2,19 +2,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, ref, type App } from 'vue'
 
 import type { WriterUser } from '@/apps/writer/drive'
+import { requireTestElement } from '@/platform/testing/dom'
 import { translationPlugin } from '@/platform/translation'
 
 import MentionTextarea from './MentionTextarea.vue'
+
+// The fixture factory runs before static imports, so load its typed builders first.
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
 
 const people = vi.hoisted(() => ({
   isLoggedIn: true,
   /** While true, searches get no answer until the test gives one. */
   isHeld: false,
   /** Names known now; a lookup learns the rest, once let through. */
-  known: {} as Record<string, string>,
-  later: {} as Record<string, string>,
+  known: fromPartial<Record<string, string>>({}),
+  later: fromPartial<Record<string, string>>({}),
   letLookupsThrough: (): void => {},
-  searched: [] as string[],
+  searched: fromPartial<string[]>([]),
 }))
 
 vi.mock('@/platform/session', async (importOriginal) => ({
@@ -70,7 +74,7 @@ vi.mock('frappe-ui', async () => {
           },
         })
         function write(event: Event) {
-          emit('update:modelValue', (event.target as HTMLTextAreaElement).value)
+          emit('update:modelValue', requireTestElement(event.target, HTMLTextAreaElement).value)
         }
 
         return () => render('textarea', { ref: field, value: props.modelValue, onInput: write })
@@ -79,10 +83,14 @@ vi.mock('frappe-ui', async () => {
   }
 })
 
-const { offered, answered } = (await import('@/apps/writer/composables/useUsers')) as unknown as {
+interface MentionUserState {
   offered: { value: WriterUser[] }
   answered: { value: string | null }
 }
+const mentionUserState: MentionUserState = await vi.importMock<MentionUserState>(
+  '@/apps/writer/composables/useUsers',
+)
+const { offered, answered } = mentionUserState
 
 function person(name: string, fullName: string) {
   return { name, email: name, full_name: fullName, user_image: null, value: name, label: fullName }
@@ -155,13 +163,26 @@ async function settled() {
   await nextTick()
 }
 
+// Each row's lines: the name, then the email and whether they can open the document when shown
+function rowLines(option: Element | null | undefined) {
+  if (!option) {
+    return []
+  }
+
+  const lines = [option, ...option.querySelectorAll('*')].filter(
+    (line) => !line.children.length && line.textContent?.trim(),
+  )
+  return lines.map((line) => line.textContent?.trim())
+}
+
+// The name in each row
 function listed() {
   const list = document.querySelector('[role="listbox"]')
-  return list && [...list.children].map((option) => option.textContent?.trim())
+  return list && [...list.children].map((option) => rowLines(option)[0])
 }
 
 function chosen() {
-  return document.querySelector('[aria-selected="true"]')?.textContent?.trim()
+  return rowLines(document.querySelector('[aria-selected="true"]'))[0]
 }
 
 describe('picking a person with @ in a comment box', () => {
@@ -179,6 +200,24 @@ describe('picking a person with @ in a comment box', () => {
       ['Ann Lee', 'Ben Roy'],
       ['Ann Lee', 'Ben Roy'],
       ['', 'be'],
+    ])
+  })
+
+  it("shows each person's email, and marks people who can't open the document", async () => {
+    offered.value = [
+      { ...ANN, has_access: true },
+      { ...BEN, has_access: false },
+      { ...person('Administrator', 'Administrator'), email: 'admin@x.com' },
+    ]
+    const { box } = openBox()
+
+    await type(box, '@')
+    const rows = [...document.querySelector('[role="listbox"]')!.children].map(rowLines)
+
+    expect(rows).toEqual([
+      ['Ann Lee', 'ann@x.com'],
+      ['Ben Roy', 'ben@x.com', 'No access'],
+      ['Administrator', 'admin@x.com'],
     ])
   })
 

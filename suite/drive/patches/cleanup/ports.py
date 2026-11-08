@@ -134,9 +134,6 @@ class SchemaGateway(Protocol):
         rows, never as columns, so this is the Single-doctype counterpart to
         `drop_columns`, not an alternate implementation of it."""
 
-    def require_field(self, doctype: str, fieldname: str) -> None:
-        """Make a field `reqd: 1` without touching the shipped doctype JSON."""
-
     def custom_fields_present(self, fieldnames: tuple[str, ...]) -> frozenset[str]:
         """The subset of these `File` custom-field names that still exist,
         checked directly against `Custom Field` rows — never inferred from
@@ -425,28 +422,6 @@ class SiteSchemaGateway:
         frappe.db.delete("Singles", {"doctype": doctype, "field": ["in", existing]})
         frappe.clear_document_cache(doctype, doctype)
         return len(existing)
-
-    def require_field(self, doctype: str, fieldname: str) -> None:
-        """Idempotent: a resumed phase, or a rehearsal that already ran, finds
-        the setter in place and only makes sure of its value."""
-        import frappe
-
-        key = {"doc_type": doctype, "field_name": fieldname, "property": "reqd"}
-        existing = frappe.db.get_value("Property Setter", key)
-        if existing:
-            frappe.db.set_value("Property Setter", existing, "value", "1")
-            frappe.clear_cache(doctype=doctype)
-            return
-        frappe.make_property_setter(
-            {
-                "doctype": doctype,
-                "fieldname": fieldname,
-                "property": "reqd",
-                "value": "1",
-                "property_type": "Check",
-            },
-            ignore_validate=True,
-        )
 
     def custom_fields_present(self, fieldnames: tuple[str, ...]) -> frozenset[str]:
         import frappe

@@ -1,3 +1,4 @@
+import { fromAny } from '@total-typescript/shoehorn'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createApp, h } from 'vue'
 
@@ -46,23 +47,30 @@ it('restores inherited public access so unpublishing the ancestor also unpublish
   const transport: Transport = {
     request: async (operation, input) => {
       if (operation.id === 'node_get')
-        return { kind: 'file', name: 'doc', access: { role: 50 } } as never
+        return fromAny({ kind: 'file', name: 'doc', access: { role: 50 } })
       if (operation.id === 'node_put_grant') {
-        const { role } = input as { role: number }
+        if (
+          !input ||
+          typeof input !== 'object' ||
+          !('role' in input) ||
+          typeof input.role !== 'number'
+        )
+          throw new Error('Expected a grant role')
+        const { role } = input
         local = { ...publicGrant, name: 'local-public', node: 'doc', role }
-        return local as never
+        return fromAny(local)
       }
       if (operation.id === 'node_delete_grant') {
         local = undefined
-        return { count: 1 } as never
+        return fromAny({ count: 1 })
       }
-      return {
+      return fromAny({
         grants: local ? [local] : [],
         inherited: ancestorPublished
           ? [{ grant: publicGrant, redacted: false, source_node: 'folder', source_title: 'Launch' }]
           : [],
         owner: null,
-      } as never
+      })
     },
   }
   const state = useShare('doc', { client: testClient(transport) })

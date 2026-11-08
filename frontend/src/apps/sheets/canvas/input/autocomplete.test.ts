@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { requireTestElement } from '@/platform/testing/dom'
+
 import { createAutocomplete, type AutocompleteOptions } from './autocomplete.js'
 import type { PickRect } from './range-picker.js'
 
@@ -24,7 +26,7 @@ function setup(over: Partial<AutocompleteOptions> = {}) {
     acceptSuggestion: vi.fn(),
   }
   const onInput = vi.fn()
-  const cells: Record<string, string> = { '0,0': '10', '1,0': '20' }
+  const cells = { '0,0': '10', '1,0': '20' } satisfies Record<string, string>
   const ac = createAutocomplete({
     parent,
     input,
@@ -46,7 +48,7 @@ function setup(over: Partial<AutocompleteOptions> = {}) {
     const e = new KeyboardEvent('keydown', { key: k, cancelable: true })
     return ac.handleKey(e)
   }
-  const popup = () => parent.querySelector('div') as HTMLDivElement
+  const popup = () => requireTestElement(parent.querySelector('div'), HTMLDivElement)
   return { ac, input, type, key, popup, picker, shown, onInput }
 }
 

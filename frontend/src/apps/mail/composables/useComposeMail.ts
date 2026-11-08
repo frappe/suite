@@ -109,7 +109,8 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   // Sends as the enclosing pane's account (the thread's owning account in All Inboxes, the active
   // one everywhere else): identities, the default outgoing address and every draft call resolve
   // through this scope.
-  const user = inject('$user') as UserResource
+  const user = inject<UserResource>('$user')
+  if (!user) throw new Error('Mail user resource is not provided')
   const scope = injectAccountScope()
   const { accountId: scopeAccountId, identities, mailboxIds } = scope
   const getIdentity = (email: string) =>

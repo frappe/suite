@@ -78,7 +78,7 @@ export const classifySaveError = (
       return { kind: 'unavailable', retryAfterMs: error.retryAfterMs }
     return { kind: 'refused', message: error.message }
   }
-  if ((error as { name?: string } | null)?.name === 'AbortError')
+  if (typeof error === 'object' && error !== null && 'name' in error && error.name === 'AbortError')
     return isOnline ? { kind: 'unavailable' } : { kind: 'offline' }
   return { kind: 'refused', message: error instanceof Error ? error.message : String(error) }
 }

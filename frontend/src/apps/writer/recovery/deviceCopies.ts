@@ -22,11 +22,6 @@ import { keepPageCopy } from './copies'
  */
 type OldRow = Pick<WriterDocumentRow, 'content' | 'html' | 'content_modified' | 'conversion'>
 
-interface OldDraft {
-  val?: unknown
-  saved?: unknown
-}
-
 const KEPT_PREFIX = 'suite:writer-device-copied:'
 const schema = getSchema(writerSchema())
 
@@ -48,8 +43,8 @@ export async function keepDeviceCopies(session: DocumentSession, row: OldRow) {
 
 async function keepYjsCopy(session: DocumentSession, row: OldRow) {
   const node = session.nodeId
-  const updates = await readFrom<unknown[]>(`fdoc-${node}`, 'updates', (store) => store.getAll())
-  if (!updates?.length) {
+  const updates = await readFrom(`fdoc-${node}`, 'updates', (store) => store.getAll())
+  if (!Array.isArray(updates) || !updates.length) {
     return
   }
 
@@ -91,6 +86,9 @@ function mergedDoc(base: yjs.Doc, updates: unknown[]) {
   for (const update of updates) {
     // An update Yjs can't read is skipped, not copied
     try {
+      if (Object.prototype.toString.call(update) !== '[object Uint8Array]') continue
+      // SAFETY: the native Uint8Array brand accepts restored updates across realms;
+      // Yjs reads only this byte array's numeric entries and length.
       yjs.applyUpdate(merged, update as Uint8Array)
     } catch {
       continue
@@ -101,9 +99,10 @@ function mergedDoc(base: yjs.Doc, updates: unknown[]) {
 }
 
 async function keepDraftCopy(node: string, title: string, row: OldRow) {
-  const draft = await readFrom<OldDraft>('Writer', 'content', (store) => store.get(node))
-  const html = draft?.val
-  const saved = draft?.saved
+  const draft = await readFrom('Writer', 'content', (store) => store.get(node))
+  if (!draft || typeof draft !== 'object' || !('val' in draft) || !('saved' in draft)) return
+  const html = draft.val
+  const saved = draft.saved
   if (typeof html !== 'string' || !(saved instanceof Date) || html === (row.html ?? '')) {
     return
   }
@@ -192,11 +191,11 @@ async function keepState(node: string, title: string, state: Uint8Array) {
 }
 
 // Reads one store of a database that already exists, never creating it
-async function readFrom<T>(
+async function readFrom(
   name: string,
   storeName: string,
   read: (store: IDBObjectStore) => IDBRequest,
-): Promise<T | undefined> {
+): Promise<unknown> {
   const db = await openExisting(name)
   if (!db) {
     return undefined
@@ -207,9 +206,9 @@ async function readFrom<T>(
       return undefined
     }
 
-    return await new Promise<T | undefined>((resolve) => {
+    return await new Promise<unknown>((resolve) => {
       const request = read(db.transaction(storeName).objectStore(storeName))
-      request.onsuccess = () => resolve(request.result as T)
+      request.onsuccess = () => resolve(request.result)
       request.onerror = () => resolve(undefined)
     })
   } finally {

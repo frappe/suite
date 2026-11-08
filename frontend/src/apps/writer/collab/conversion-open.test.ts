@@ -23,7 +23,11 @@ import { writerSchema } from '@/apps/writer/schema'
 
 type Open = (doc: Doc) => Editor
 
-const opener = vi.hoisted(() => ({ open: null as null | ((open: Open, doc: Doc) => Editor) }))
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
+const opener = vi.hoisted(() => ({
+  open: fromPartial<null | ((open: Open, doc: Doc) => Editor)>(null),
+}))
 
 vi.mock('@/apps/writer/collab/tab-editor', async (importOriginal) => {
   const real = await importOriginal<typeof import('@/apps/writer/collab/tab-editor')>()
@@ -50,8 +54,8 @@ function list(...items: XmlElement[]) {
 function withoutFirstWords(open: Open, doc: Doc) {
   const copy = new Doc()
   applyUpdate(copy, encodeStateAsUpdate(doc))
-  const first = copy.getXmlFragment(BODY_FIELD).get(0) as XmlElement
-  const text = first.get(0) as XmlText
+  const first = fromPartial<XmlElement>(copy.getXmlFragment(BODY_FIELD).get(0))
+  const text = fromPartial<XmlText>(first.get(0))
   text.delete(0, text.length)
   return open(copy)
 }

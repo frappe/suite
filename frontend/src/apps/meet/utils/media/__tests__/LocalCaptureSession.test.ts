@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -36,30 +37,32 @@ class FakeMediaStream {
 
 function track(id: string, kind: 'audio' | 'video') {
   const listeners = new Map<string, Set<EventListenerOrEventListenerObject>>()
-  const value = Object.assign(Object.create(null), {
-    id,
-    kind,
-    enabled: true,
-    readyState: 'live',
-    stop: vi.fn(() => {
-      value.readyState = 'ended'
+  const value = fromPartial<MediaStreamTrack>(
+    Object.assign(Object.create(null), {
+      id,
+      kind,
+      enabled: true,
+      readyState: 'live',
+      stop: vi.fn(() => {
+        value.readyState = 'ended'
+      }),
+      addEventListener: vi.fn((type: string, listener: EventListenerOrEventListenerObject) => {
+        const handlers = listeners.get(type) ?? new Set()
+        handlers.add(listener)
+        listeners.set(type, handlers)
+      }),
+      removeEventListener: vi.fn((type: string, listener: EventListenerOrEventListenerObject) => {
+        listeners.get(type)?.delete(listener)
+      }),
+      dispatchEvent: vi.fn((event: Event) => {
+        for (const listener of listeners.get(event.type) ?? []) {
+          if (typeof listener === 'function') listener.call(value, event)
+          else listener.handleEvent(event)
+        }
+        return true
+      }),
     }),
-    addEventListener: vi.fn((type: string, listener: EventListenerOrEventListenerObject) => {
-      const handlers = listeners.get(type) ?? new Set()
-      handlers.add(listener)
-      listeners.set(type, handlers)
-    }),
-    removeEventListener: vi.fn((type: string, listener: EventListenerOrEventListenerObject) => {
-      listeners.get(type)?.delete(listener)
-    }),
-    dispatchEvent: vi.fn((event: Event) => {
-      for (const listener of listeners.get(event.type) ?? []) {
-        if (typeof listener === 'function') listener.call(value, event)
-        else listener.handleEvent(event)
-      }
-      return true
-    }),
-  }) as MediaStreamTrack
+  )
   return value
 }
 
@@ -81,10 +84,12 @@ function createHarness(overrides: Partial<LocalCaptureSessionOptions> = {}) {
   const reconcileCamera = vi.fn().mockResolvedValue(undefined)
   const reconcileMicrophone = vi.fn().mockResolvedValue(undefined)
   const publish = vi.fn<LocalCaptureSessionOptions['publication']['publish']>(
-    async (_stream, publicationOptions) => ({
-      ...(publicationOptions.publishVideo ? { video: { status: 'published' as const } } : {}),
-      ...(publicationOptions.publishAudio ? { audio: { status: 'published' as const } } : {}),
-    }),
+    async (_stream, publicationOptions) => {
+      const result: Awaited<ReturnType<LocalCaptureSessionOptions['publication']['publish']>> = {}
+      if (publicationOptions.publishVideo) result.video = { status: 'published' }
+      if (publicationOptions.publishAudio) result.audio = { status: 'published' }
+      return result
+    },
   )
   const options: LocalCaptureSessionOptions = {
     capture,
@@ -160,7 +165,7 @@ describe('LocalCaptureSession', () => {
     await vi.waitFor(() => expect(harness.options.capture).toHaveBeenCalledOnce())
     await harness.session.dispose(async () => {})
     await expect(acquisition).rejects.toMatchObject({ name: 'AbortError' })
-    request.resolve(new FakeMediaStream([lateCamera]) as never)
+    request.resolve(fromPartial(new FakeMediaStream([lateCamera])))
 
     await vi.waitFor(() => expect(lateCamera.stop).toHaveBeenCalledOnce())
     expect(harness.reconcileCamera).not.toHaveBeenCalled()
@@ -199,19 +204,19 @@ describe('LocalCaptureSession', () => {
       .mockReturnValueOnce(firstRequest.promise)
       .mockResolvedValueOnce(new FakeMediaStream([secondTrack]))
     const harness = createHarness({ capture })
-    harness.setLocalStream(new FakeMediaStream([initialTrack]) as never)
+    harness.setLocalStream(fromPartial(new FakeMediaStream([initialTrack])))
 
     const first = harness.session.switchCamera('camera-one')
     const second = harness.session.switchCamera('camera-two')
     await vi.waitFor(() => expect(capture).toHaveBeenCalledOnce())
-    firstRequest.resolve(new FakeMediaStream([firstTrack]) as never)
+    firstRequest.resolve(fromPartial(new FakeMediaStream([firstTrack])))
     await Promise.all([first, second])
 
     expect(capture).toHaveBeenCalledTimes(2)
-    expect((capture.mock.calls[0][0].video as MediaTrackConstraints).deviceId).toEqual({
+    expect(fromPartial<MediaTrackConstraints>(capture.mock.calls[0][0].video).deviceId).toEqual({
       exact: 'camera-one',
     })
-    expect((capture.mock.calls[1][0].video as MediaTrackConstraints).deviceId).toEqual({
+    expect(fromPartial<MediaTrackConstraints>(capture.mock.calls[1][0].video).deviceId).toEqual({
       exact: 'camera-two',
     })
     expect(initialTrack.stop).toHaveBeenCalledOnce()
@@ -225,12 +230,12 @@ describe('LocalCaptureSession', () => {
     const initialTrack = track('initial-camera', 'video')
     const staleTrack = track('stale-camera', 'video')
     const harness = createHarness({ capture: vi.fn(() => request.promise) })
-    harness.setLocalStream(new FakeMediaStream([initialTrack]) as never)
+    harness.setLocalStream(fromPartial(new FakeMediaStream([initialTrack])))
 
     const switching = harness.session.switchCamera('next-camera')
     await vi.waitFor(() => expect(harness.options.capture).toHaveBeenCalledOnce())
     harness.replacePublicationOwner()
-    request.resolve(new FakeMediaStream([staleTrack]) as never)
+    request.resolve(fromPartial(new FakeMediaStream([staleTrack])))
     await switching
 
     expect(staleTrack.stop).toHaveBeenCalledOnce()
@@ -246,7 +251,7 @@ describe('LocalCaptureSession', () => {
       capture: vi.fn().mockResolvedValue(new FakeMediaStream([candidateTrack])),
       applyCameraEffects: vi.fn(() => effects.promise),
     })
-    harness.setLocalStream(new FakeMediaStream([initialTrack]) as never)
+    harness.setLocalStream(fromPartial(new FakeMediaStream([initialTrack])))
 
     const switching = harness.session.switchCamera('next-camera')
     await vi.waitFor(() => expect(harness.options.applyCameraEffects).toHaveBeenCalledOnce())
@@ -282,7 +287,7 @@ describe('LocalCaptureSession', () => {
         publish: vi.fn().mockResolvedValue({}),
       },
     })
-    harness.setLocalStream(new FakeMediaStream([initialTrack]) as never)
+    harness.setLocalStream(fromPartial(new FakeMediaStream([initialTrack])))
 
     const switching = harness.session.switchCamera('next-camera')
     await vi.waitFor(() => expect(harness.options.applyCameraEffects).toHaveBeenCalledOnce())
@@ -304,7 +309,7 @@ describe('LocalCaptureSession', () => {
     const releaseMicrophone = deferred<void>()
     const microphone = track('microphone', 'audio')
     const harness = createHarness()
-    harness.setLocalStream(new FakeMediaStream([microphone]) as never)
+    harness.setLocalStream(fromPartial(new FakeMediaStream([microphone])))
     const transition = harness.session.runMicrophoneTransition(() => releaseMicrophone.promise)
     const beforeStoppingTracks = vi.fn()
 
@@ -317,6 +322,36 @@ describe('LocalCaptureSession', () => {
 
     expect(beforeStoppingTracks).toHaveBeenCalledOnce()
     expect(microphone.stop).toHaveBeenCalledOnce()
+  })
+
+  it('stops tracks and runs every cleanup step when cleanup fails, then reports the first failure', async () => {
+    const microphone = track('microphone', 'audio')
+    const harness = createHarness()
+    harness.setLocalStream(fromPartial(new FakeMediaStream([microphone])))
+    const afterStoppingTracks = vi.fn(async () => {
+      throw new Error('after failed')
+    })
+
+    await expect(
+      harness.session.dispose(async () => {
+        throw new Error('before failed')
+      }, afterStoppingTracks),
+    ).rejects.toThrow('before failed')
+    expect(microphone.stop).toHaveBeenCalledOnce()
+    expect(afterStoppingTracks).toHaveBeenCalledOnce()
+  })
+
+  it('reports a failure after stopping tracks when the earlier cleanup succeeds', async () => {
+    const harness = createHarness()
+
+    await expect(
+      harness.session.dispose(
+        async () => {},
+        async () => {
+          throw new Error('after failed')
+        },
+      ),
+    ).rejects.toThrow('after failed')
   })
 
   it('drops camera media when camera intent changes during acquisition', async () => {
@@ -337,7 +372,7 @@ describe('LocalCaptureSession', () => {
 
     await vi.waitFor(() => expect(harness.options.capture).toHaveBeenCalledOnce())
     cameraEnabled = false
-    request.resolve(new FakeMediaStream([staleCamera]) as never)
+    request.resolve(fromPartial(new FakeMediaStream([staleCamera])))
     await transition
 
     expect(staleCamera.stop).toHaveBeenCalledOnce()
@@ -383,7 +418,7 @@ describe('LocalCaptureSession', () => {
     })
     const operation = harness.session.createOperation()
     const publishing = harness.session.publish(
-      new FakeMediaStream([camera]) as never,
+      fromPartial(new FakeMediaStream([camera])),
       { publishVideo: true, publishAudio: false },
       operation,
     )
@@ -588,12 +623,12 @@ describe('LocalCaptureSession', () => {
     const ended = vi.fn().mockResolvedValue(undefined)
     const first = track('first', 'video')
     const second = track('second', 'video')
-    let localStream: MediaStream | null = new FakeMediaStream([first]) as never
+    let localStream: MediaStream | null = fromPartial(new FakeMediaStream([first]))
     const harness = createHarness({
       getLocalStream: () => localStream,
       onCameraTrackEnded: ended,
     })
-    localStream = new FakeMediaStream([second]) as never
+    localStream = fromPartial(new FakeMediaStream([second]))
     harness.session.observeLocalTracks()
     Reflect.set(first, 'readyState', 'ended')
     first.dispatchEvent(new Event('ended'))
@@ -615,8 +650,8 @@ describe('LocalCaptureSession', () => {
     const currentStream = new FakeMediaStream([currentAudio, restoredCamera])
 
     const result = mergeReacquiredMedia({
-      acquiredStream: new FakeMediaStream([staleCamera, unrequestedAudio]) as never,
-      currentStream: currentStream as never,
+      acquiredStream: fromPartial(new FakeMediaStream([staleCamera, unrequestedAudio])),
+      currentStream: fromPartial(currentStream),
       requestedCamera: true,
       requestedMicrophone: false,
       cameraEnabled: true,
@@ -637,7 +672,7 @@ describe('LocalCaptureSession', () => {
     const camera = track('camera', 'video')
     const microphone = track('microphone', 'audio')
     const detached = track('detached', 'video')
-    let localStream: MediaStream | null = new FakeMediaStream([camera, microphone]) as never
+    let localStream: MediaStream | null = fromPartial(new FakeMediaStream([camera, microphone]))
     const harness = createHarness({ getLocalStream: () => localStream })
     harness.session.detachCameraTrack(detached)
 
@@ -764,7 +799,7 @@ describe('LocalCaptureSession', () => {
       capture: vi.fn().mockResolvedValue(new FakeMediaStream([candidate])),
       prepareMicrophone: vi.fn().mockResolvedValue(null),
     })
-    harness.setLocalStream(new FakeMediaStream([oldTrack]) as never)
+    harness.setLocalStream(fromPartial(new FakeMediaStream([oldTrack])))
 
     await expect(harness.session.switchMicrophone('next-microphone')).rejects.toThrow(
       'No live processed microphone track',
@@ -799,7 +834,7 @@ describe('LocalCaptureSession', () => {
         publish: vi.fn().mockResolvedValue({}),
       },
     })
-    harness.setLocalStream(new FakeMediaStream([oldTrack]) as never)
+    harness.setLocalStream(fromPartial(new FakeMediaStream([oldTrack])))
 
     await expect(harness.session.switchMicrophone('preferred-microphone')).rejects.toThrow(
       'replace failed',
@@ -839,7 +874,7 @@ describe('LocalCaptureSession', () => {
         publish: vi.fn().mockResolvedValue({}),
       },
     })
-    harness.setLocalStream(new FakeMediaStream([oldTrack]) as never)
+    harness.setLocalStream(fromPartial(new FakeMediaStream([oldTrack])))
 
     await expect(harness.session.switchMicrophone('next-microphone')).rejects.toBe(failure)
 
@@ -881,7 +916,7 @@ describe('LocalCaptureSession', () => {
         publish: vi.fn().mockResolvedValue({}),
       },
     })
-    harness.setLocalStream(new FakeMediaStream([oldTrack]) as never)
+    harness.setLocalStream(fromPartial(new FakeMediaStream([oldTrack])))
 
     const switching = harness.session.switchMicrophone('next-microphone')
     await vi.waitFor(() => expect(reconcileMicrophone).toHaveBeenCalled())
@@ -916,7 +951,7 @@ describe('LocalCaptureSession', () => {
         publish: vi.fn().mockResolvedValue({}),
       },
     })
-    harness.setLocalStream(new FakeMediaStream([oldTrack]) as never)
+    harness.setLocalStream(fromPartial(new FakeMediaStream([oldTrack])))
     const commitSpy = vi.spyOn(harness.session, 'runStreamCommit')
     const blocker = harness.session.runStreamCommit(
       harness.session.createOperation(),
@@ -974,7 +1009,7 @@ describe('LocalCaptureSession', () => {
       return Promise.reject(failure)
     })
     harness = createHarness({ capture })
-    harness.setLocalStream(new FakeMediaStream([oldTrack]) as never)
+    harness.setLocalStream(fromPartial(new FakeMediaStream([oldTrack])))
 
     await expect(harness.session.switchMicrophone('preferred-microphone')).rejects.toBe(failure)
 
@@ -1024,7 +1059,7 @@ describe('LocalCaptureSession', () => {
       applyCameraEffects: vi.fn(() => effects.promise),
       onCameraTrackEnded: ended,
     })
-    harness.setLocalStream(new FakeMediaStream([oldTrack]) as never)
+    harness.setLocalStream(fromPartial(new FakeMediaStream([oldTrack])))
 
     const switching = harness.session.switchCamera('next-camera')
     await vi.waitFor(() => expect(harness.options.applyCameraEffects).toHaveBeenCalled())
@@ -1053,7 +1088,7 @@ describe('LocalCaptureSession', () => {
       },
     })
     session = harness.session
-    harness.setLocalStream(new FakeMediaStream([microphone]) as never)
+    harness.setLocalStream(fromPartial(new FakeMediaStream([microphone])))
 
     Reflect.set(microphone, 'readyState', 'ended')
     microphone.dispatchEvent(new Event('ended'))

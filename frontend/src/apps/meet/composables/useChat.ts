@@ -249,11 +249,12 @@ export function useChat(deps: {
       const message: ChatMessage = {
         id: Date.now() + Math.random(),
         messageId,
-        user_id: currentUser.currentUser.value?.user_id as string,
+        user_id: currentUser.currentUser.value?.user_id ?? '',
         user_name:
-          (currentUser.currentUser.value?.full_name as string) ||
-          (currentUser.currentUser.value?.name as string) ||
-          (currentUser.currentUser.value?.user_id as string),
+          currentUser.currentUser.value?.full_name ||
+          currentUser.currentUser.value?.name ||
+          currentUser.currentUser.value?.user_id ||
+          '',
         message: text,
         timestamp,
       }

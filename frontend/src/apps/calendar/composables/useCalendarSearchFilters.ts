@@ -27,8 +27,13 @@ const FIELDS: { key: keyof CalendarSearchFilter; label: string }[] = [
   { key: 'before', label: 'To' },
 ]
 
-const emptyFilter = () =>
-  Object.fromEntries(FIELDS.map(({ key }) => [key, ''])) as CalendarSearchFilter
+const emptyFilter = (): CalendarSearchFilter => ({
+  calendar: '',
+  attendee: '',
+  organizer: '',
+  after: '',
+  before: '',
+})
 
 /**
  * The advanced filters behind the palette's sliders button, and the badges that say which of

@@ -66,7 +66,7 @@ const STATUS_TABS = [
 
 const identityOptions = computed(() => [
   { label: __('All identities'), value: '' },
-  ...((store.identities.data || []) as { id: string; email: string }[]).map((identity) => ({
+  ...(store.identities.data || []).map((identity) => ({
     label: identity.email,
     value: identity.id,
   })),

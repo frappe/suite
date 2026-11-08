@@ -2194,3 +2194,8 @@ yn@3.1.1:
   version "3.1.1"
   resolved "https://registry.npmjs.org/yn/-/yn-3.1.1.tgz"
   integrity sha512-Ux4ygGWsu2c7isFWe8Yu1YluJmqVhxqK2cLXNQA5AcC3QfbGNpM7fu0Y8b/z16pXLnFxZYvWhd3fhBY9DLmC6Q==
+
+"@total-typescript/shoehorn@^0.1.2":
+  version "0.1.2"
+  resolved "https://registry.npmjs.org/@total-typescript/shoehorn/-/shoehorn-0.1.2.tgz#a0c095ce8cb9b4ae3556bcff42702ddb072e9d18"
+  integrity sha512-p7nNZbOZIofpDNyP0u1BctFbjxD44Qc+oO5jufgQdFdGIXJLc33QRloJpq7k5T59CTgLWfQSUxsuqLcmeurYRw==

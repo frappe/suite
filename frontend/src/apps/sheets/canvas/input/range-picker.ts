@@ -183,9 +183,8 @@ export function createRangePicker(o: RangePickerOptions): RangePicker {
 
   function target(): PickInput | null {
     const el = o.activeElement()
-    const ok = el instanceof HTMLInputElement || el === o.editorElement
-    if (!ok) return null
-    const input = el as PickInput
+    if (!(el instanceof HTMLInputElement) && el !== o.editorElement) return null
+    const input = el instanceof HTMLInputElement ? el : o.editorElement
     // A pick in progress owns the input even mid-reference.
     if (key?.target === input) return input
     return canInsertRef(input.value, caretOf(input)) ? input : null

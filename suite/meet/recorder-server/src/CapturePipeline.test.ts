@@ -53,6 +53,30 @@ afterEach(async () => {
 });
 
 describe('capture pipeline', () => {
+	it.each([
+		{ segments: [null] },
+		{ gaps: [null] },
+		{ capture_epochs: [null] },
+		{ artifact: null },
+	])(
+		'rejects malformed nested manifest entries without throwing: %j',
+		(patch) => {
+			expect(
+				validManifest({
+					version: 2,
+					revision: 0,
+					job: 'job',
+					state: 'capturing',
+					epochs: 1,
+					capture_epochs: [],
+					segments: [],
+					gaps: [],
+					...patch,
+				}),
+			).toBe(false);
+		},
+	);
+
 	it('accepts legacy manifests and strictly validates capture epoch launches', async () => {
 		const legacy: CaptureManifest = {
 			version: 1,
@@ -150,12 +174,11 @@ describe('capture pipeline', () => {
 				m.gaps.push({ started_at: '2026-01-01T00:00:01.000Z', reason: 'two' }),
 			),
 		]);
-		const disk = JSON.parse(await readFile(manifest.path, 'utf8')) as {
-			revision: number;
-			gaps: unknown[];
-		};
-		expect(disk).toMatchObject({ revision: 2 });
-		expect(disk.gaps).toHaveLength(2);
+		const disk: unknown = JSON.parse(await readFile(manifest.path, 'utf8'));
+		expect(disk).toMatchObject({
+			revision: 2,
+			gaps: [{ reason: 'one' }, { reason: 'two' }],
+		});
 	});
 
 	it('recovers its write queue after a rejected update without publishing it', async () => {

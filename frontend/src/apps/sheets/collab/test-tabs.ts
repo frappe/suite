@@ -30,10 +30,15 @@ import { docSheets, storeEntries } from './stores'
 const require = createRequire(import.meta.url)
 initSync({ module: fs.readFileSync(require.resolve('@ironcalc/wasm/wasm_bg.wasm')) })
 
+interface TestWorkerPort {
+  onmessage: ((event: { data: unknown }) => void) | null
+  postMessage(message: unknown): void
+}
+
 function fakePort() {
   const host = createWorkerHost()
-  const port = {
-    onmessage: null as ((e: { data: unknown }) => void) | null,
+  const port: TestWorkerPort = {
+    onmessage: null,
     postMessage(message: unknown) {
       setTimeout(() => port.onmessage?.({ data: host.handle(structuredClone(message)) }), 0)
     },
@@ -74,7 +79,7 @@ export interface Tab {
 }
 
 let seq = 0
-export function cmd(type: string, payload: object) {
+export function cmd(type: string, payload: unknown) {
   return { id: `t${seq++}`, actor: 'test', ts: seq, type, payload }
 }
 
@@ -152,7 +157,7 @@ async function readAll(t: Tab, what: 'input' | 'display'): Promise<Record<string
 }
 
 /** Every input as the tab's doc says it, as { 'Sheet!A1': input }: what its IronCalc must hold. */
-export function docInputs(t: Tab): Record<string, string> {
+export function docInputs(t: Tab) {
   const out: Record<string, string> = {}
   const nameOf = new Map(docSheets(t.doc).map((s) => [s.id, s.name]))
   for (const [key, input] of roots(t.doc).inputs.entries()) {

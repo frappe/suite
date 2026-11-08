@@ -46,7 +46,8 @@ const POLICY_KEYS = ['recording_allowed'];
 
 export class AuthError extends Error {}
 
-function exactKeys(value: object, expected: string[]): boolean {
+function exactKeys(value: unknown, expected: string[]): boolean {
+	if (!value || typeof value !== 'object') return false;
 	return JSON.stringify(Object.keys(value).sort()) === JSON.stringify(expected);
 }
 
@@ -353,9 +354,18 @@ export function parseHealthClaims(value: unknown): HealthClaims {
 	};
 }
 
-function claimString(value: object, key: string): string {
-	if (!(key in value)) throw new AuthError('invalid claims');
-	const claim = value[key as keyof typeof value];
+type ClaimFields = Partial<
+	Record<keyof CommandClaims | keyof HealthClaims, unknown>
+>;
+
+function isClaimRecord(value: unknown): value is ClaimFields {
+	return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function claimString(value: unknown, key: keyof ClaimFields): string {
+	if (!isClaimRecord(value) || !(key in value))
+		throw new AuthError('invalid claims');
+	const claim = value[key];
 	if (typeof claim !== 'string') throw new AuthError('invalid claims');
 	return claim;
 }

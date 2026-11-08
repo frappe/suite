@@ -1,21 +1,24 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createApp, defineComponent, h, ref } from 'vue'
-import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
+import { createApp, defineComponent, h, ref, type VNode } from 'vue'
+import { createMemoryHistory, createRouter, RouterView, type HistoryState } from 'vue-router'
 
+import type { DocumentSession } from '@/apps/drive'
 import { GUEST_FRAME_KEY } from '@/platform/contracts'
-import { installPageMeta, openingTitleState } from '@/platform/page-meta'
+import { installPageMeta, mentionedByState, openingTitleState } from '@/platform/page-meta'
 import { translationPlugin } from '@/platform/translation'
 import { TransportError } from '@/platform/transport'
 
 import DocumentHost, { selectDocumentSurface } from './DocumentHost.vue'
+
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
 
 const testState = vi.hoisted(() => ({
   open: vi.fn(),
   dispose: vi.fn(),
   nodeLocked: vi.fn(),
   forget: vi.fn(),
-  surface: { name: 'WriterTestSurface', render: (): unknown => null },
-  preview: { name: 'FileTestSurface', props: ['session'], render: (): unknown => null },
+  surface: { name: 'WriterTestSurface', render: (): VNode | null => null },
+  preview: { name: 'FileTestSurface', props: ['session'], render: (): VNode | null => null },
 }))
 
 vi.mock('@/apps/drive', async () => {
@@ -70,12 +73,15 @@ testState.preview.render = function (this: { session: { title: { value: string }
   return h('div', { 'data-preview': '' }, this.session.title.value)
 }
 
-async function mountHost(provide?: (app: ReturnType<typeof createApp>) => void) {
+async function mountHost(
+  provide?: (app: ReturnType<typeof createApp>) => void,
+  state?: HistoryState,
+) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [{ path: '/d/:node/:slug?', name: 'document-host', component: DocumentHost }],
   })
-  await router.push('/d/node-1/quarterly-plan')
+  await router.push({ path: '/d/node-1/quarterly-plan', state })
   await router.isReady()
   const root = document.createElement('div')
   document.body.append(root)
@@ -83,22 +89,25 @@ async function mountHost(provide?: (app: ReturnType<typeof createApp>) => void) 
   provide?.(app)
   app.use(router).use(translationPlugin)
   app.mount(root)
-  return { root, app }
+  return { root, app, router }
 }
 
 const refusal = (status: number, type: string) =>
   new TransportError({ status, type, message: type })
 
 function session(contentDoctype = 'Writer Document') {
-  return {
+  const title = ref('Quarterly plan')
+  const state = ref<DocumentSession['state']['value']>('Active')
+  const fixture = fromPartial<DocumentSession>({
     nodeId: 'node-1',
     contentDoctype,
     contentDocname: 'content-1',
-    title: ref('Quarterly plan'),
-    state: ref('Active'),
+    title,
+    state,
     access: ref({ role: 40 }),
     dispose: testState.dispose,
-  } as any
+  })
+  return { ...fixture, title, state }
 }
 
 afterEach(() => {
@@ -112,14 +121,14 @@ afterEach(() => {
 
 describe('DocumentHost', () => {
   it('selects the registered product adapter and the Drive file surface', async () => {
-    const definitions = [
+    const definitions: any = [
       {
         contentDoctype: 'Writer Document',
         newLabel: () => 'New document',
         icon: {},
         loadSurface: async () => testState.surface,
       },
-    ] as any
+    ]
     expect(await selectDocumentSurface(session(), definitions)).toBe(testState.surface)
     expect(await selectDocumentSurface(session('File'), definitions)).toBe(testState.preview)
     expect(await selectDocumentSurface(session('Unknown'), definitions)).toBeNull()
@@ -146,7 +155,7 @@ describe('DocumentHost', () => {
 
   it('keeps the document open through its slideshow, and its slug once back', async () => {
     testState.open.mockResolvedValue(session())
-    const view = { render: (): unknown => null }
+    const view = { render: (): VNode | null => null }
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
@@ -182,7 +191,7 @@ describe('DocumentHost', () => {
   it('drops the slug when a rename would turn it into a view', async () => {
     const opened = session()
     testState.open.mockResolvedValue(opened)
-    const view = { render: (): unknown => null }
+    const view = { render: (): VNode | null => null }
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
@@ -331,7 +340,9 @@ describe('DocumentHost', () => {
     await vi.waitFor(() => expect(root.querySelector('[data-surface]')).not.toBeNull())
 
     open.state.value = 'Refused'
-    await vi.waitFor(() => expect(root.textContent).toContain('You do not have access'))
+    await vi.waitFor(() =>
+      expect(root.textContent).toContain('You don’t have access to this document.'),
+    )
     await new Promise((resolve) => setTimeout(resolve, 20))
 
     expect(testState.nodeLocked).toHaveBeenCalledOnce()
@@ -408,7 +419,9 @@ describe('DocumentHost', () => {
       testState.open.mockRejectedValue(refusal(status, 'Refused'))
       const { root, app } = await mountHost()
 
-      await vi.waitFor(() => expect(root.textContent).toContain('Could not open this document'))
+      await vi.waitFor(() =>
+        expect(root.textContent).toContain('You don’t have access to this document.'),
+      )
       expect(testState.forget).toHaveBeenCalledExactlyOnceWith('node-1')
       app.unmount()
     },
@@ -418,8 +431,47 @@ describe('DocumentHost', () => {
     testState.open.mockRejectedValue(refusal(403, 'Refused'))
     const { root, app } = await mountHost()
 
-    await vi.waitFor(() => expect(root.textContent).toContain('Could not open this document'))
+    await vi.waitFor(() =>
+      expect(root.textContent).toContain('You don’t have access to this document.'),
+    )
     expect(testState.forget).not.toHaveBeenCalled()
+    app.unmount()
+  })
+
+  it.each([403, 404, 410])('a %i names no internal id and offers no retry', async (status) => {
+    testState.open.mockRejectedValue(refusal(status, 'Drive node node-1 was not found'))
+    const { root, app } = await mountHost()
+
+    await vi.waitFor(() =>
+      expect(root.textContent).toContain('You don’t have access to this document.'),
+    )
+    expect(root.textContent).not.toContain('node-1')
+    expect(root.textContent).not.toContain('not found')
+    expect(root.textContent).not.toContain('Ask')
+    expect(root.querySelector('button')).toBeNull()
+    app.unmount()
+  })
+
+  it('asks the person who mentioned the reader when the bell led here', async () => {
+    testState.open.mockRejectedValue(refusal(404, 'Refused'))
+    const { root, app } = await mountHost(undefined, mentionedByState('Sam Rao'))
+
+    await vi.waitFor(() => expect(root.textContent).toContain('Ask Sam Rao to share it.'))
+    app.unmount()
+  })
+
+  it('names who to ask for the history entry shown, on a page of the same node', async () => {
+    testState.open.mockRejectedValue(refusal(404, 'Refused'))
+    const { root, app, router } = await mountHost()
+    await vi.waitFor(() => expect(root.textContent).toContain('You don’t have access'))
+    expect(root.textContent).not.toContain('to share it.')
+
+    await router.push({ path: '/d/node-1/plan-title', state: mentionedByState('Sam Rao') })
+    await vi.waitFor(() => expect(root.textContent).toContain('Ask Sam Rao to share it.'))
+
+    router.back()
+    await vi.waitFor(() => expect(root.textContent).not.toContain('to share it.'))
+    expect(root.textContent).toContain('You don’t have access')
     app.unmount()
   })
 
@@ -449,6 +501,7 @@ describe('DocumentHost', () => {
     const { root, app } = await mountHost()
 
     await vi.waitFor(() => expect(root.textContent).toContain('Could not open this document'))
+    expect(root.querySelector('button')).not.toBeNull()
     expect(testState.forget).not.toHaveBeenCalled()
     app.unmount()
   })

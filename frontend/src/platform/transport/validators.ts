@@ -41,6 +41,8 @@ import type {
   OnboardingPostOutput,
   PeopleGetInput,
   PeopleGetOutput,
+  PeopleLookupInput,
+  PeopleLookupOutput,
   SiteGetInput,
   SiteGetOutput,
   SitePatchCompleteOnboardingInput,
@@ -1296,6 +1298,7 @@ export const operationPeopleGet: Validators<PeopleGetInput, PeopleGetOutput> = {
         properties: {
           q: { title: 'Q', type: 'string' },
           cursor: { title: 'Cursor', type: 'string' },
+          node: { title: 'Node', type: 'string' },
         },
         required: [],
         additionalProperties: false,
@@ -1326,6 +1329,8 @@ export const operationPeopleGet: Validators<PeopleGetInput, PeopleGetOutput> = {
               email: { title: 'Email', type: 'string' },
               full_name: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Full Name' },
               user_image: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'User Image' },
+              has_access: { title: 'Has Access', type: 'boolean' },
+              is_blocked: { title: 'Is Blocked', type: 'boolean' },
             },
             required: ['kind', 'name', 'email', 'full_name', 'user_image'],
             title: 'PersonUser',
@@ -1345,6 +1350,51 @@ export const operationPeopleGet: Validators<PeopleGetInput, PeopleGetOutput> = {
         type: 'object',
       },
       'people_get output',
+    )
+  },
+}
+
+export const operationPeopleLookup: Validators<PeopleLookupInput, PeopleLookupOutput> = {
+  validateInput(value: unknown): asserts value is PeopleLookupInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          node: { title: 'Node', type: 'string' },
+          users: { items: { type: 'string' }, title: 'Users', type: 'array' },
+        },
+        required: ['node', 'users'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'people_lookup input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is PeopleLookupOutput {
+    assertSchema(
+      value,
+      {
+        $defs: {
+          PersonUser: {
+            properties: {
+              kind: { const: 'user', title: 'Kind', type: 'string' },
+              name: { title: 'Name', type: 'string' },
+              email: { title: 'Email', type: 'string' },
+              full_name: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Full Name' },
+              user_image: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'User Image' },
+              has_access: { title: 'Has Access', type: 'boolean' },
+              is_blocked: { title: 'Is Blocked', type: 'boolean' },
+            },
+            required: ['kind', 'name', 'email', 'full_name', 'user_image'],
+            title: 'PersonUser',
+            type: 'object',
+          },
+        },
+        items: { $ref: '#/$defs/PersonUser' },
+        type: 'array',
+      },
+      'people_lookup output',
     )
   },
 }

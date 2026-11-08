@@ -1,8 +1,15 @@
 import { gzipSync } from 'node:zlib'
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
 
-import { alignDoc, readVersionState, restoreVersion } from './restore'
+import {
+  alignDoc,
+  readStoredVersion,
+  readVersionState,
+  restoreVersion,
+  writeVersionToCopy,
+} from './restore'
 import { addSheet, axis, cellKey, initDoc, roots } from './schema'
 
 function sheetWith(cells: Record<string, string>) {
@@ -11,7 +18,7 @@ function sheetWith(cells: Record<string, string>) {
   const id = addSheet(doc, 'Sheet1')
   doc.transact(() => {
     for (const [at, input] of Object.entries(cells)) {
-      const [row, col] = at.split(',').map(Number) as [number, number]
+      const [row, col] = fromPartial<[number, number]>(at.split(',').map(Number))
       roots(doc).inputs.set(
         cellKey(id, axis(doc, id, 'rows').ensure(row), axis(doc, id, 'cols').ensure(col)),
         input,
@@ -83,7 +90,7 @@ describe('restoreVersion', () => {
     flush: vi.fn(async () => {}),
     restoreVersion: vi.fn(async (_v: number, edit: () => void) => {
       if (outcome === 'landed') doc.transact(edit)
-      return { outcome, refusal } as never
+      return fromPartial({ outcome, refusal })
     }),
   })
 
@@ -123,5 +130,78 @@ describe('restoreVersion', () => {
     const version = sheetWith({ '0,0': '1' })
     expect(await readVersionState(versionBytes(version, 'writer-document/2'))).toBeNull()
     expect(await readVersionState(versionBytes(version))).toBeInstanceOf(Uint8Array)
+  })
+})
+
+describe('readStoredVersion', () => {
+  const encode = (value: unknown) => new TextEncoder().encode(JSON.stringify(value))
+
+  it('reads a version made while editing together as its Yjs state', async () => {
+    const stored = await readStoredVersion(versionBytes(sheetWith({ '0,0': '1' })))
+    expect(stored && 'state' in stored).toBe(true)
+  })
+
+  it('reads a version from before editing together as its old body', async () => {
+    const body = { sheet: { Sheet1: { A1: 'old' } } }
+    const stored = await readStoredVersion(
+      encode({ schema: 'sheet/1', sheets_data: JSON.stringify(body), head_seq: 3 }),
+    )
+    expect(stored).toEqual({ body })
+  })
+
+  it("reads neither another app's version nor bytes that are not JSON", async () => {
+    expect(
+      await readStoredVersion(encode({ schema: 'writer-document/1', content: 'x' })),
+    ).toBeNull()
+    expect(await readStoredVersion(new Uint8Array([0xff, 0xfe]))).toBeNull()
+  })
+})
+
+describe('writeVersionToCopy', () => {
+  const copy = { nodeId: 'copy', credentials: { fetch }, title: { value: 'Budget (copy)' } }
+
+  function liveRoom(doc: Y.Doc, unsentAfterFlush = 0) {
+    const room = {
+      doc,
+      status: { unsentCount: 0 },
+      flush: vi.fn(async () => {
+        room.status = { unsentCount: unsentAfterFlush }
+      }),
+      close: vi.fn(async () => {}),
+    }
+    return room
+  }
+
+  it("makes the copy's doc the version, sends it as one edit and closes the room", async () => {
+    const version = sheetWith({ '0,0': 'then', '2,1': '=A1' })
+    const copyDoc = new Y.Doc()
+    Y.applyUpdate(copyDoc, Y.encodeStateAsUpdate(version))
+    copyDoc.transact(() => roots(copyDoc).inputs.set('x:y:z', 'now'))
+    const room = liveRoom(copyDoc)
+    const open = vi.fn(async () => ({
+      state: 'live' as const,
+      room: fromPartial<import('@/platform/collab').CollabRoom>(room),
+    }))
+    const state = await readVersionState(versionBytes(version))
+
+    expect(await writeVersionToCopy(copy, state!, open)).toBe(true)
+    expect(open).toHaveBeenCalledWith(expect.objectContaining({ session: copy }))
+    expect(json(copyDoc)).toBe(json(version))
+    expect(room.flush).toHaveBeenCalled()
+    expect(room.close).toHaveBeenCalled()
+  })
+
+  it('answers false when the copy does not open live or its edit stays unsent', async () => {
+    const state = Y.encodeStateAsUpdate(sheetWith({ '0,0': '1' }))
+    const unconverted = vi.fn(async () => ({ state: 'unconverted' as const }))
+    expect(await writeVersionToCopy(copy, state, unconverted)).toBe(false)
+
+    const room = liveRoom(new Y.Doc(), 1)
+    const stuck = vi.fn(async () => ({
+      state: 'live' as const,
+      room: fromPartial<import('@/platform/collab').CollabRoom>(room),
+    }))
+    expect(await writeVersionToCopy(copy, state, stuck)).toBe(false)
+    expect(room.close).toHaveBeenCalled()
   })
 })

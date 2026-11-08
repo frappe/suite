@@ -77,6 +77,7 @@ const activeElement = computed(() => {
   } else if (activeElementIds.value.length == 1) {
     return activeElements.value[0]
   }
+  return undefined
 })
 
 const isMultiSelection = computed(() => activeElementIds.value.length > 1)
@@ -195,9 +196,9 @@ const getInitialTableContent = (cells, columnWidths, cellStyles) => {
       type: 'textStyle',
       attrs: { ...cellStyles, color: getTextColor(style), fontSize: getFontSize(style) },
     },
-    ...['bold', 'italic', 'underline', 'strike']
-      .filter((mark) => style[mark])
-      .map((type) => ({ type })),
+    ...['bold', 'italic', 'underline', 'strike'].flatMap((mark) =>
+      style[mark] ? [{ type: mark }] : [],
+    ),
   ]
 
   const getParagraph = (line, style) => ({

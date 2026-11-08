@@ -1,5 +1,6 @@
 import { getSchema } from '@tiptap/core'
 import { prosemirrorJSONToYDoc } from '@tiptap/y-tiptap'
+import { fromPartial } from '@total-typescript/shoehorn'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { encodeStateAsUpdate } from 'yjs'
 
@@ -31,11 +32,11 @@ function embed(id: string) {
 }
 
 const refresh = vi.fn(async () => {})
-const session = {
+const session = fromPartial<DocumentSession>({
   nodeId: 'doc-1',
   credentials: { context: {} },
   media: () => ({ refresh }),
-} as unknown as DocumentSession
+})
 
 function binned(name: string, title: string, role: number, trashRoot = name) {
   return { name, title, state: 'Trashed', trash_root: trashRoot, access: { role } }

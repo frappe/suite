@@ -21,14 +21,18 @@ test.describe("Meet in the shell", () => {
 		await patchAccount(page, MAIL_ACCOUNT);
 	});
 
-	test("the rail lists Meet after Calendar and marks it active, and the page drops its own sidebar", async ({ page }) => {
+	test("the rail lists Meet after Calendar and marks it active, and the page drops its own sidebar", async ({
+		page,
+	}) => {
 		await page.goto("/meet");
 		await expect(meetHome(page)).toBeVisible();
 
 		// The rail labels carry the Mail unread count, so read each label's first word.
 		const items = rail(page).getByRole("link");
 		await expect(items).toHaveCount(6);
-		const labels = await items.evaluateAll((links) => links.map((link) => link.getAttribute("aria-label")?.split(",")[0]));
+		const labels = await items.evaluateAll((links) =>
+			links.map((link) => link.getAttribute("aria-label")?.split(",")[0]),
+		);
 		expect(labels).toEqual(["Home", "Drive", "Mail", "Calendar", "Meet", "People"]);
 		await expect(rail(page).getByRole("link", { name: "Meet" })).toHaveAttribute("aria-current", "page");
 		await expect(meetHeader(page)).toHaveCount(0);
@@ -50,7 +54,10 @@ test.describe("Meet in the shell", () => {
 	});
 
 	test("Meet's guard sends a user who is not a System Manager from the audio test to Meet", async ({ page }) => {
-		await patchAccount(page, { roles: { system_manager: false, suite_admin: false }, capabilities: { jmap: true, systemManager: false } });
+		await patchAccount(page, {
+			roles: { system_manager: false, suite_admin: false },
+			capabilities: { jmap: true, systemManager: false },
+		});
 		await page.goto("/meet/audio-test");
 		await expect(page).toHaveURL(/\/meet$/);
 		await expect(meetHome(page)).toBeVisible();
@@ -61,6 +68,7 @@ test.describe("Meet in the shell", () => {
 		const api = await adminApi(baseURL!);
 		const created = await api.post("/api/suite/meet/rooms", { data: { type: "open" } });
 		expect(created.ok()).toBe(true);
+		// SAFETY: the successful Meet room-creation endpoint returns data.code, which this journey uses to open the created room.
 		const { code } = ((await created.json()) as { data: { code: string } }).data;
 		const context = await browser.newContext({ baseURL, storageState: { cookies: [], origins: [] } });
 		try {

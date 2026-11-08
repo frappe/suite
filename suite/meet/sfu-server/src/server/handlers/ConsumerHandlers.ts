@@ -37,9 +37,12 @@ export function registerConsumerHandlers(deps: HandlerDeps) {
 			} catch (error) {
 				loggers.socketHandler.error(
 					'Error creating consumer: %s',
-					(error as Error).message,
+					error instanceof Error ? error.message : String(error),
 				);
-				callback({ success: false, error: (error as Error).message });
+				callback({
+					success: false,
+					error: error instanceof Error ? error.message : String(error),
+				});
 			} finally {
 				deps.telemetry.recordMediaOperation(
 					{
@@ -65,7 +68,10 @@ export function registerConsumerHandlers(deps: HandlerDeps) {
 				);
 				callback({ success: true, resumed });
 			} catch (error) {
-				callback({ success: false, error: (error as Error).message });
+				callback({
+					success: false,
+					error: error instanceof Error ? error.message : String(error),
+				});
 			}
 		});
 
@@ -83,9 +89,12 @@ export function registerConsumerHandlers(deps: HandlerDeps) {
 			} catch (error) {
 				loggers.socketHandler.error(
 					'Error closing consumer: %s',
-					(error as Error).message,
+					error instanceof Error ? error.message : String(error),
 				);
-				callback({ success: false, error: (error as Error).message });
+				callback({
+					success: false,
+					error: error instanceof Error ? error.message : String(error),
+				});
 			}
 		});
 
@@ -114,9 +123,12 @@ export function registerConsumerHandlers(deps: HandlerDeps) {
 			} catch (error) {
 				loggers.socketHandler.warn(
 					'Error updating consumer preferences: %s',
-					(error as Error).message,
+					error instanceof Error ? error.message : String(error),
 				);
-				callback({ success: false, error: (error as Error).message });
+				callback({
+					success: false,
+					error: error instanceof Error ? error.message : String(error),
+				});
 			}
 		});
 
@@ -133,9 +145,12 @@ export function registerConsumerHandlers(deps: HandlerDeps) {
 			} catch (error) {
 				loggers.socketHandler.error(
 					'Error requesting consumer key frame: %s',
-					(error as Error).message,
+					error instanceof Error ? error.message : String(error),
 				);
-				callback({ success: false, error: (error as Error).message });
+				callback({
+					success: false,
+					error: error instanceof Error ? error.message : String(error),
+				});
 			}
 		});
 	};

@@ -11,7 +11,8 @@ const bundledFaceDetector = vi.hoisted(() => {
     send = vi.fn().mockResolvedValue(undefined)
     setOptions = vi.fn()
   }
-  const moduleDefault: { FaceDetection: typeof FaceDetection | undefined } = {
+  type DetectorModule = { FaceDetection: typeof FaceDetection | undefined }
+  const moduleDefault: DetectorModule = {
     FaceDetection,
   }
   return { close, FaceDetection, moduleDefault }

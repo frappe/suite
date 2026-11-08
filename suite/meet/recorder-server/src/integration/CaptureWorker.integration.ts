@@ -3,6 +3,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import puppeteer, { type Browser } from 'puppeteer-core';
 import { CaptureWorker } from '../CaptureWorker.js';
+import { validManifest } from '../ManifestStore.js';
 import {
 	type ManagedProcess,
 	ProcessSupervisor,
@@ -177,9 +178,11 @@ try {
 	]);
 	if (decodeWarnings.trim())
 		throw new Error(`artifact decode warning: ${decodeWarnings.slice(-2000)}`);
-	const persisted = JSON.parse(
+	const persisted: unknown = JSON.parse(
 		await readFile(worker.manifest.path, 'utf8'),
-	) as typeof manifest;
+	);
+	if (!validManifest(persisted))
+		throw new Error('persisted capture manifest is invalid');
 	if (persisted.state !== expectedState)
 		throw new Error('persisted manifest state mismatch');
 	const result = {

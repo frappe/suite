@@ -1,17 +1,17 @@
-import { request, type APIRequestContext, type Locator, type Page, expect, test } from "@playwright/test";
+import { expect, request, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 
 import {
-	DRIVE,
 	adminApi,
 	createDocument,
 	createFolder,
+	DRIVE,
 	purge,
 	roots,
 	runTag,
 	uploadFile,
 	type DriveNode,
 } from "../../helpers/drive";
-import { PERSON, PERSON_NAME, ensurePerson, personContext } from "../../helpers/person";
+import { ensurePerson, PERSON, PERSON_NAME, personContext } from "../../helpers/person";
 import { MOBILE_VIEWPORT } from "../../helpers/shell";
 
 /** Stage 9: the Drive share dialog (unified spec §7), opened from a /d/ surface. */
@@ -50,12 +50,14 @@ test.afterEach(async () => {
 async function grants(node: string): Promise<Grant[]> {
 	const response = await api.get(`${DRIVE}/nodes/${node}/grants`);
 	expect(response.ok(), await response.text()).toBe(true);
+	// SAFETY: the successful Drive grants endpoints return their generated Grant projection for the node this journey owns.
 	return ((await response.json()).data as { grants: Grant[] }).grants;
 }
 
 async function putGrant(node: string, principal: string, body: Record<string, unknown>): Promise<Grant> {
 	const response = await api.put(`${DRIVE}/nodes/${node}/grants/${encodeURIComponent(principal)}`, { data: body });
 	expect(response.ok(), await response.text()).toBe(true);
+	// SAFETY: the successful Drive grants endpoints return their generated Grant projection for the node this journey owns.
 	return (await response.json()).data as Grant;
 }
 
@@ -81,9 +83,7 @@ const peopleField = (dialog: Locator) => dialog.getByRole("combobox", { name: "A
 async function pickPerson(page: Page, dialog: Locator) {
 	await peopleField(dialog).fill(PERSON.split("@")[0]);
 	await page.getByRole("option", { name: new RegExp(PERSON_NAME) }).click();
-	// The options stay open for more picks; Escape closes them, not the dialog.
-	await peopleField(dialog).press("Escape");
-	await expect(dialog).toBeVisible();
+	// The options close on a pick, so the person picked shows.
 	await expect(dialog.getByRole("list", { name: "People to add" }).getByRole("listitem")).toContainText([PERSON_NAME]);
 }
 

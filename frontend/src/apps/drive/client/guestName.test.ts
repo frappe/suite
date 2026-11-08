@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { createSession } from '@/platform/session'
@@ -8,7 +9,7 @@ import { createLinkStore } from './links'
 
 /** A guest's browser: a link store on `localStorage` and a session nobody signed in to. */
 function browser() {
-  const session = createSession({ request: async () => ({}) } as unknown as Transport)
+  const session = createSession(fromPartial<Transport>({ request: async () => ({}) }))
   const links = createLinkStore({ storage: localStorage, session })
   return { session, links, field: () => createGuestCommentName(links, session) }
 }

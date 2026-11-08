@@ -105,8 +105,8 @@ const props = defineProps<{
   share: (people: PickedPerson[], role: number, notify: boolean) => Promise<PickedPerson[]>
 }>()
 const emit = defineEmits<{ sendLink: [email: string, role: number] }>()
-/** Whether anyone waits to be added, so the dialog can step its own actions back. */
-const picking = defineModel<boolean>('picking', { default: false })
+/** How many people wait to be added, so the dialog can step its own actions back. */
+const picked = defineModel<number>('picked', { default: 0 })
 
 const combobox = useTemplateRef<{ focus: (options?: FocusOptions) => void }>('combobox')
 const query = ref('')
@@ -118,12 +118,12 @@ const notify = ref(true)
 const staged = ref<PickedPerson[]>([])
 let request = 0
 watch(
-  () => staged.value.length > 0,
-  (pending) => (picking.value = pending),
+  () => staged.value.length,
+  (count) => (picked.value = count),
 )
 onUnmounted(() => {
   request += 1
-  picking.value = false
+  picked.value = 0
 })
 
 const roleOptions = computed(() =>
@@ -156,7 +156,6 @@ const options = computed(() => [
             ? __('1 member')
             : __('{0} members', [person.member_count]),
       icon: person.kind === 'user' ? 'lucide-user' : 'lucide-users',
-      keepOpen: true,
       onClick: () => pick(person.kind === 'user' ? `user:${person.email}` : `group:${person.name}`),
     })),
   {
@@ -227,7 +226,7 @@ function pick(value: string | number | null | undefined) {
       : { principal: groupPrincipal(id), kind: 'group', label: id, name: null }
   if (!staged.value.some((entry) => entry.principal === picked.principal))
     staged.value = [...staged.value, picked]
-  // Pointer selection moves focus to the option; return it to the open search.
+  // The list closes so the person picked shows; focus returns to the search for the next one.
   void nextTick(() => {
     query.value = ''
     combobox.value?.focus()

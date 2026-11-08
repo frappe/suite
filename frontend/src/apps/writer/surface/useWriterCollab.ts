@@ -12,6 +12,7 @@ import {
   type LostAccess,
   type Opened,
   type RoomStatus,
+  type VersionRestored,
 } from '@/platform/collab'
 import { TransportError } from '@/platform/transport'
 
@@ -21,6 +22,12 @@ import { markNewerSchemaShown } from './newerSchemaMark'
 export type CollabMode = 'opening' | 'readonly' | 'unconverted' | 'live' | 'failed'
 
 type EditingState = 'editing' | 'paused' | 'closed'
+
+/** What the room tells the page: comment threads that may have changed, and another tab's restore. */
+export interface RoomNotices {
+  threadsChanged: () => void
+  versionRestored: (restored: VersionRestored) => void
+}
 
 // Whether the person can type: "paused" for a reason that clears, "closed" when they can't (or lost the right to)
 function editingStateOf(roomStatus: RoomStatus): EditingState {
@@ -53,13 +60,13 @@ function editingStateOf(roomStatus: RoomStatus): EditingState {
 
 // A Writer document's live room: opening it, mirroring its state for the page, and closing it
 // `retainRecovery` keeps the editor's HTML in this browser when the room stops holding unsent work
-// `mayEdit` is whether the person may edit the document. `threadsChanged` is told when its comment threads may have changed
+// `mayEdit` is whether the person may edit the document. `notices` hears what the room tells the page
 // `isFrozen` is whether the editor met content it can't show
 export function useWriterCollab(
   session: DocumentSession,
   retainRecovery: () => boolean,
   mayEdit: () => boolean,
-  threadsChanged: () => void,
+  notices: RoomNotices,
   isFrozen: () => boolean,
 ) {
   const mode = shallowRef<CollabMode>('opening')
@@ -124,7 +131,8 @@ export function useWriterCollab(
       const opened = await openCollabRoom({
         session,
         adapter: writerAdapter,
-        onThreadsChanged: threadsChanged,
+        onThreadsChanged: notices.threadsChanged,
+        onVersionRestored: notices.versionRestored,
         watch: (openingRoom) => {
           stopRemovals = watchRemovals(openingRoom, keepRemovals)
         },

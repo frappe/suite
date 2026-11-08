@@ -1,3 +1,4 @@
+import { fromAny } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createTransport, TransportError, type Operation } from './index'
@@ -47,7 +48,11 @@ describe('transport', () => {
     expect(new Headers(init?.headers).get('Content-Type')).toBe('application/octet-stream')
 
     await expect(
-      client.request(chunk, { upload_id: 'u1', offset: 0, chunk: 'not bytes' as unknown as Blob }),
+      client.request(chunk, {
+        upload_id: 'u1',
+        offset: 0,
+        chunk: fromAny<Blob, unknown>('not bytes'),
+      }),
     ).rejects.toThrow(TypeError)
     expect(fetcher).toHaveBeenCalledTimes(1)
   })
@@ -157,7 +162,7 @@ describe('transport', () => {
   })
 
   it('stops retrying a GET whose fetcher resolves nothing', async () => {
-    const fetcher = vi.fn(async () => undefined as unknown as Response)
+    const fetcher = vi.fn(async () => fromAny<Response, unknown>(undefined))
     const client = createTransport({ fetch: fetcher, maxRetries: 3, retryBaseMs: 0 })
     await expect(client.request(getNode, { node: 'n1' })).rejects.toBeInstanceOf(TypeError)
     expect(fetcher).toHaveBeenCalledOnce()
@@ -318,10 +323,9 @@ describe('transport', () => {
         validateOutput: () => {},
       }),
     }
-    const request = createTransport({ fetch: fetcher }).request(strict, {
-      node: 'n1',
-      role: 'user',
-    } as { node: string })
+    // Deliberately send an extra property to exercise runtime input validation.
+    const malformed = { node: 'n1', role: 'user' }
+    const request = createTransport({ fetch: fetcher }).request(strict, malformed)
 
     await expect(request).rejects.toThrow('node_get input.role is not allowed')
     expect(fetcher).not.toHaveBeenCalled()

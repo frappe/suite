@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, ref, type PropType } from 'vue'
 
@@ -31,7 +32,7 @@ vi.mock('frappe-ui', () => {
           h('button', attrs),
     }),
     Dropdown: defineComponent({
-      props: { options: { type: Array as PropType<MenuEntry[]>, required: true } },
+      props: { options: { type: fromPartial<PropType<MenuEntry[]>>(Array), required: true } },
       setup:
         (props, { slots }) =>
         () =>
@@ -65,7 +66,15 @@ const session = {
 let host: HTMLElement | null = null
 let unmount = () => {}
 
-function mountMenu(isEditable: boolean, canSaveVersion = false, onSaveVersion = () => {}) {
+function mountMenu(
+  isEditable: boolean,
+  canSaveVersion = false,
+  onSaveVersion = () => {},
+  lock: { canLock: boolean; isLocked: boolean; onSetLocked?: (lock: boolean) => void } = {
+    canLock: false,
+    isLocked: false,
+  },
+) {
   host = document.createElement('div')
   document.body.append(host)
   const app = createApp(() =>
@@ -76,6 +85,7 @@ function mountMenu(isEditable: boolean, canSaveVersion = false, onSaveVersion = 
       editable: isEditable,
       canSaveVersion,
       onSaveVersion,
+      ...lock,
     }),
   )
   app.mount(host)
@@ -101,6 +111,29 @@ afterEach(() => {
 })
 
 describe('Writer document menu', () => {
+  it('offers a reader neither Lock nor Unlock', () => {
+    expect(mountMenu(false, false, () => {}, { canLock: false, isLocked: true })).not.toContain(
+      'Unlock document',
+    )
+  })
+
+  it('locks an unlocked document and unlocks a locked one', () => {
+    for (const isLocked of [false, true]) {
+      const onSetLocked = vi.fn()
+      const label = isLocked ? 'Unlock document' : 'Lock document'
+      expect(mountMenu(false, false, () => {}, { canLock: true, isLocked, onSetLocked })).toContain(
+        label,
+      )
+
+      const items = [...host!.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+      items.find((item) => item.textContent === label)!.click()
+
+      expect(onSetLocked).toHaveBeenCalledExactlyOnceWith(!isLocked)
+      unmount()
+      host?.remove()
+    }
+  })
+
   it('offers a reader the downloads but not Import DOCX', () => {
     expect(mountMenu(false)).toEqual(['Download as DOCX', 'Download as Markdown'])
   })
@@ -143,5 +176,52 @@ describe('Writer document menu', () => {
     focusMenuButton()
 
     expect(onSaveVersion.mock.calls.length).toBe(0)
+  })
+})
+
+describe('the side panels in the menu', () => {
+  function showMenu(panels: ('comments' | 'versions')[]) {
+    const toggled: string[] = []
+    host = document.createElement('div')
+    document.body.append(host)
+    const app = createApp(() =>
+      h(WriterDocumentMenu, {
+        session,
+        editor: null,
+        settings: {},
+        editable: false,
+        canSaveVersion: false,
+        canLock: false,
+        isLocked: false,
+        panels,
+        onTogglePanel: (panel: string) => toggled.push(panel),
+      }),
+    )
+    app.mount(host)
+    unmount = () => app.unmount()
+    return { toggled, items: [...host.querySelectorAll<HTMLElement>('[role="menuitem"]')] }
+  }
+
+  it('offers the panels this person can open, first, and toggles the one picked', () => {
+    const { items, toggled } = showMenu(['comments', 'versions'])
+
+    items[1].click()
+
+    expect([items.slice(0, 2).map((item) => item.textContent), toggled]).toEqual([
+      ['Comments', 'Versions'],
+      ['versions'],
+    ])
+  })
+
+  it('offers no panel that this person cannot open', () => {
+    const { items } = showMenu(['comments'])
+
+    expect(items.map((item) => item.textContent)).not.toContain('Versions')
+  })
+
+  it('stays usable for the panels before the editor has opened', () => {
+    showMenu(['comments'])
+
+    expect(host!.querySelector('button')!.disabled).toBe(false)
   })
 })

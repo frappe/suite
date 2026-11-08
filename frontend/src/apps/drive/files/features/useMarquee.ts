@@ -54,7 +54,8 @@ export function useMarquee(options: {
   function onPointerdown(event: PointerEvent) {
     const area = options.area.value
     if (!area || event.pointerType !== 'mouse' || event.button !== 0) return
-    const target = event.target as Element
+    const target = event.target
+    if (!(target instanceof Element)) return
     const item = target.closest(`[${LISTING_ITEM}]`)
     const control = target.closest(INTERACTIVE)
     // A control outside an item, or a menu button or checkbox inside one, keeps its press.
@@ -178,7 +179,8 @@ function scrollParent(element: HTMLElement): HTMLElement {
   for (let parent = element.parentElement; parent; parent = parent.parentElement) {
     if (/(auto|scroll)/.test(getComputedStyle(parent).overflowY)) return parent
   }
-  return (document.scrollingElement as HTMLElement | null) ?? document.documentElement
+  const root = document.scrollingElement
+  return root instanceof HTMLElement ? root : document.documentElement
 }
 
 /** The click that ends a drag lands on whatever is under the pointer. It must not open or toggle it. */

@@ -19,10 +19,11 @@ from unittest.mock import call as expected_call
 import frappe
 
 from suite.drive._core.roles import MANAGE, NONE
-from suite.drive.patches.build.environment import BuildEnvironment, LegacyS3Config
+from suite.drive.patches.build.environment import DEFAULT_COPY_WORKERS, BuildEnvironment, LegacyS3Config
 from suite.drive.patches.build.legacy import S3_URL_PREFIX
 from suite.drive.patches.build.ports import (
     ACTIVE,
+    BOTOCORE_POOL_CONNECTIONS,
     GRANT_COLUMNS,
     NODE_COLUMNS,
     NODE_READ_COLUMNS,
@@ -372,6 +373,58 @@ class TestTheSiteWiring(StubbedDatabase):
         self.assertEqual(bucket.bucket, "drive-bucket")
         self.assertIs(bucket.client, driver.client)
 
+    def test_a_copy_within_botocores_pool_shares_the_drivers_client(self):
+        driver = SimpleNamespace(bucket="drive-bucket", client=object(), _client_error=ValueError)
+        with (
+            patch("frappe.storage.driver.get_driver", return_value=driver),
+            patch("boto3.client") as client,
+        ):
+            bucket = BotoBucket.from_site(connections=BOTOCORE_POOL_CONNECTIONS)
+
+        self.assertIs(bucket.client, driver.client)
+        client.assert_not_called()
+
+    def test_a_wider_copy_gets_a_client_with_a_pool_to_match(self):
+        # More threads than connections would drop a connection after every
+        # request. The second client reaches the same bucket the same way.
+        from botocore.config import Config
+
+        driver_client = MagicMock()
+        driver_client.meta.config = Config(signature_version="s3v4")
+        driver = SimpleNamespace(bucket="drive-bucket", client=driver_client, _client_error=ValueError)
+        conf = frappe._dict(
+            storage_driver_config={
+                "bucket": "drive-bucket",
+                "region": "ap-south-1",
+                "endpoint_url": "https://minio/",
+                "access_key_id": "key",
+                "secret_access_key": "secret",
+            }
+        )
+        with (
+            patch("frappe.storage.driver.get_driver", return_value=driver),
+            patch.object(frappe, "conf", conf),
+            patch("boto3.client") as client,
+        ):
+            bucket = BotoBucket.from_site(connections=32)
+
+        self.assertIs(bucket.client, client.return_value)
+        self.assertEqual(bucket.bucket, "drive-bucket")
+        ((service,), arguments) = client.call_args
+        config = arguments.pop("config")
+        self.assertEqual(service, "s3")
+        self.assertEqual(
+            arguments,
+            {
+                "region_name": "ap-south-1",
+                "endpoint_url": "https://minio/",
+                "aws_access_key_id": "key",
+                "aws_secret_access_key": "secret",
+            },
+        )
+        self.assertEqual(config.max_pool_connections, 32)
+        self.assertEqual(config.signature_version, "s3v4")
+
     def test_the_environment_defers_building_the_driver(self):
         # Constructing the driver makes a boto3 client, and the gate has to
         # be able to refuse a misconfigured site before that happens.
@@ -384,7 +437,22 @@ class TestTheSiteWiring(StubbedDatabase):
             env = BuildEnvironment.for_site()
 
         get_driver.assert_not_called()
-        self.assertIs(env.open_bucket.__func__, BotoBucket.from_site.__func__)
+        self.assertIs(env.open_bucket.func.__func__, BotoBucket.from_site.__func__)
+        self.assertEqual(env.open_bucket.keywords, {"connections": DEFAULT_COPY_WORKERS})
+        self.assertEqual(env.copy_workers, DEFAULT_COPY_WORKERS)
+
+    def test_the_copy_workers_come_from_site_config(self):
+        settings = frappe._dict(enabled=1, bucket="b", endpoint_url="")
+        conf = frappe._dict(drive_build_copy_workers="16")
+        with (
+            patch.object(frappe, "get_single", return_value=settings),
+            patch.object(frappe, "conf", conf),
+            patch("frappe.get_site_path", return_value="/tmp/x/private/state.json"),
+        ):
+            env = BuildEnvironment.for_site()
+
+        self.assertEqual(env.copy_workers, 16)
+        self.assertEqual(env.open_bucket.keywords, {"connections": 16})
 
     def test_a_site_with_no_bucket_factory_says_so(self):
         env = BuildEnvironment(
@@ -602,6 +670,28 @@ class TestSiteTree(StubbedDatabase):
         )
         self.assertEqual(get_all.call_args.kwargs["order_by"], "name asc")
         self.assertEqual(get_all.call_args.kwargs["limit"], 25)
+
+    def test_an_everyone_share_with_no_user_keeps_null_for_its_restore(self):
+        stored = frappe._dict(
+            name="d1",
+            share_doctype="Sheet",
+            share_name="sheet-1",
+            user=None,
+            read=1,
+            write=0,
+            share=0,
+            submit=0,
+            everyone=1,
+            owner="owner@example.com",
+            creation="2020-01-01 00:00:00",
+            modified="2020-01-02 00:00:00",
+            modified_by="owner@example.com",
+        )
+        with patch.object(frappe, "get_all", return_value=[stored]):
+            (row,) = SiteTree().docshares("", 10)
+
+        # §14.11 puts the journaled row back as it was: NULL, not ""
+        self.assertIsNone(row.preimage()["user"])
 
 
 # One root pair, in the shape `root_pairs` hands it over: only the columns

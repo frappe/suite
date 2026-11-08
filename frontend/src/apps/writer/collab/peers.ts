@@ -18,6 +18,19 @@ export function peerName(user: string, peerId: number) {
   return fullName(user)
 }
 
+const INITIALS = 2
+
+/** The first letters of a person's first two names, as their avatar shows them. */
+export function initialsOf(name: string) {
+  return name
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, INITIALS)
+    .map((word) => word[0])
+    .join('')
+    .toUpperCase()
+}
+
 // Calls `named` once a signed-in person's full name has been looked up; a guest's name never changes
 export async function whenNamed(user: string, named: () => void) {
   if (user !== GUEST_USER) {
@@ -46,9 +59,10 @@ export function personIdleSince(peers: Peer[], peerId: number) {
 
   const person = personKey(tab.user, tab.pid)
   const tabs = peers.filter((peer) => personKey(peer.user, peer.pid) === person)
-  const starts = tabs
-    .map((peer) => peer.idleSince)
-    .filter((start): start is number => start !== null)
+  const starts = tabs.flatMap((peer) => {
+    const mappedValue = peer.idleSince
+    return mappedValue !== null ? [mappedValue] : []
+  })
   if (starts.length < tabs.length) {
     return null
   }

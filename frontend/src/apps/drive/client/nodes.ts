@@ -1,6 +1,5 @@
 /** Named node workflows and browser content addresses. Ordinary calls use @/api. */
 import { api, client } from '@/api'
-import { TransportError, type PlatformError } from '@/platform/transport'
 
 import type {
   NodeCreateCreateDocumentInput,
@@ -34,29 +33,13 @@ export async function createDocument(input: {
         : input.content_doctype === 'Drawing'
           ? 'Untitled drawing'
           : 'Untitled document')
-  const create = (name: string, silent: boolean) =>
-    client.mutation(
-      api.drive.nodes.createDocument,
-      { ...input, title: name, kind: 'document' },
-      { silent },
-    )
-  // The first try is silent so the expected conflict shows no error; any
-  // other refusal is reported here instead.
-  try {
-    return await create(title, true)
-  } catch (error) {
-    // The folder already holds a document of that title, such as "Untitled
-    // spreadsheet": Drive refuses it and names the next free one, with " (2)".
-    if (error instanceof TransportError && error.type === 'DriveConflict') {
-      const free = error.details.free_title
-      if (typeof free === 'string') return create(free, false)
-    }
-    // Loaded on demand, as in ../index.ts: it pulls frappe-ui in.
-    void import('@/platform/feedback').then(({ reportMutationError }) =>
-      reportMutationError(error as PlatformError),
-    )
-    throw error
-  }
+  // A sibling with the same title, such as an older "Untitled document", makes this one "(2)"
+  return client.mutation(api.drive.nodes.createDocument, {
+    ...input,
+    title,
+    kind: 'document',
+    deduplicate_title: true,
+  })
 }
 
 const SPREADSHEET_FILE = /\.(xlsx|csv)$/i

@@ -2,14 +2,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, nextTick, ref } from 'vue'
 
 import { stopDraftSavers } from '@/apps/mail/composables/draftSaver'
-import type { ComposeMailData } from '@/apps/mail/types'
+import type { Attachment, ComposeMailData } from '@/apps/mail/types'
 import { TransportError } from '@/platform/transport'
 
 import { useComposeMail } from './useComposeMail'
 
 const server = vi.hoisted(() => ({ updateDraft: vi.fn(), create: vi.fn(), deleteDraft: vi.fn() }))
 const requestCompose = vi.hoisted(() => vi.fn())
-const toastError = vi.hoisted(() => vi.fn(() => 'toast-id'))
+type UnsavedToast = { action: { onClick: () => void } }
+const toastError = vi.hoisted(() =>
+  vi.fn<(message: string, options: UnsavedToast) => string>(() => 'toast-id'),
+)
 const toastDismiss = vi.hoisted(() => vi.fn())
 const raiseToast = vi.hoisted(() => vi.fn())
 const commitAfterUndo = vi.hoisted(() => vi.fn())
@@ -65,6 +68,15 @@ vi.mock('@/apps/mail/utils/composables', () => ({
   useUndo: () => ({ setUndoAction: vi.fn(), retireUndoAction: vi.fn() }),
 }))
 
+const uploaded = (file_url: string): Attachment => ({
+  filename: 'brief.pdf',
+  blob_id: '',
+  type: 'application/pdf',
+  size: 1,
+  file_url,
+  disposition: 'attachment',
+})
+
 const draft: ComposeMailData = {
   id: 'draft-1',
   to: [{ email: 'dana@brightwave.example' }],
@@ -73,7 +85,6 @@ const draft: ComposeMailData = {
   attachments: [],
 }
 
-type ToastCall = [string, { action: { onClick: () => void } }]
 const saved = (id: string) => ({ id, status: 'Drafted', error: null })
 const sent = { id: 'sent-1', status: 'Submitted', error: null }
 const networkDown = () => new TransportError({ type: 'NetworkError', message: 'down', status: 0 })
@@ -212,13 +223,13 @@ describe('saving a draft', () => {
     composer.mail.html_body = '<p>Edited</p>'
     const saving = composer.saveDraft()
     await tick()
-    composer.mail.attachments.push({ file_url: '/private/files/brief.pdf' } as never)
+    composer.mail.attachments.push(uploaded('/private/files/brief.pdf'))
     await nextTick()
     first.resolve(saved('draft-2'))
     await saving
 
     expect(server.updateDraft.mock.calls.at(-1)![0].attachments).toEqual([
-      { file_url: '/private/files/brief.pdf' },
+      uploaded('/private/files/brief.pdf'),
     ])
   })
 
@@ -572,7 +583,7 @@ describe('leaving', () => {
     await nextTick()
 
     expect(toastError).toHaveBeenCalledOnce()
-    const [message, options] = toastError.mock.calls[0] as unknown as ToastCall
+    const [message, options] = toastError.mock.calls[0]
     expect(message).toBe('Draft not saved.')
     options.action.onClick()
     expect(requestCompose).toHaveBeenCalledWith(
@@ -611,7 +622,7 @@ describe('leaving', () => {
     composer.mail.html_body = '<p>Last words.</p>'
     open = false
     await composer.leave()
-    const [, options] = toastError.mock.calls[0] as unknown as ToastCall
+    const [, options] = toastError.mock.calls[0]
     options.action.onClick()
     server.updateDraft.mockClear()
     await vi.advanceTimersByTimeAsync(120_000)
@@ -624,7 +635,7 @@ describe('leaving', () => {
     const upload = deferred()
     void composer.trackUpload(
       'brief.pdf',
-      upload.promise.then(() => composer.mail.attachments.push({ file_url: '/f/b.pdf' } as never)),
+      upload.promise.then(() => composer.mail.attachments.push(uploaded('/f/b.pdf'))),
     )
     composer.mail.html_body = '<p>See attached</p>'
     open = false
@@ -634,7 +645,7 @@ describe('leaving', () => {
 
     upload.resolve(undefined)
     await leaving
-    expect(server.updateDraft.mock.calls.at(-1)![0].attachments).toEqual([{ file_url: '/f/b.pdf' }])
+    expect(server.updateDraft.mock.calls.at(-1)![0].attachments).toEqual([uploaded('/f/b.pdf')])
   })
 
   it('still saves the file when an earlier save lands while it uploads', async () => {
@@ -648,7 +659,7 @@ describe('leaving', () => {
     const upload = deferred()
     void composer.trackUpload(
       'brief.pdf',
-      upload.promise.then(() => composer.mail.attachments.push({ file_url: '/f/b.pdf' } as never)),
+      upload.promise.then(() => composer.mail.attachments.push(uploaded('/f/b.pdf'))),
     )
     composer.mail.html_body = '<p>See attached</p>'
     await tick()
@@ -660,7 +671,7 @@ describe('leaving', () => {
 
     upload.resolve(undefined)
     await leaving
-    expect(sent.at(-1)).toEqual([{ file_url: '/f/b.pdf' }])
+    expect(sent.at(-1)).toEqual([uploaded('/f/b.pdf')])
   })
 
   it('a composition with a file uploading is not an untouched one', async () => {

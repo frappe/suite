@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it } from 'vitest'
 
 import type { MailboxData } from '@/apps/mail/types'
@@ -12,7 +13,7 @@ import {
 } from './unifiedFolders'
 
 const mailbox = (id: string, slug: string | null): MailboxData =>
-  ({ id, slug, _name: slug ?? id, role: null }) as MailboxData
+  fromPartial<MailboxData>({ id, slug, _name: slug ?? id, role: null })
 
 const mailboxes = [
   mailbox('a', 'inbox'),

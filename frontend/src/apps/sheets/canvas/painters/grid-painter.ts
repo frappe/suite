@@ -41,13 +41,16 @@ export function createGridPainter(
     ctx.strokeStyle = COLORS.gridLine
     ctx.lineWidth = 1
     ctx.beginPath()
+    // The closing line is the last row's bottom edge, not rowY(r1 + 1): in a
+    // frozen pane, row r1 + 1 is the first scrolled row, and its scrolled
+    // position can fall inside the pane. Same for columns.
     for (let r = r0; r <= r1 + 1; r++) {
-      const y = rowY(r) + 0.5
+      const y = (r <= r1 ? rowY(r) : rowY(r1) + rh(r1)) + 0.5
       ctx.moveTo(ROW_HEADER_W, y)
       ctx.lineTo(cssW, y)
     }
     for (let c = c0; c <= c1 + 1; c++) {
-      const x = colX(c) + 0.5
+      const x = (c <= c1 ? colX(c) : colX(c1) + cw(c1)) + 0.5
       ctx.moveTo(x, COL_HEADER_H)
       ctx.lineTo(x, cssH)
     }

@@ -346,6 +346,10 @@ interface InboundRtpReport {
   framesDecoded?: number
   mimeType?: string
 }
+interface ExtractInboundRtpCountersResult {
+  bytesReceived: number | null
+  framesDecoded: number | null
+}
 
 export function extractInboundRtpCounters(
   stats: {
@@ -353,7 +357,7 @@ export function extractInboundRtpCounters(
     get?(id: string): InboundRtpReport | undefined
   },
   kind?: 'audio' | 'video',
-): { bytesReceived: number | null; framesDecoded: number | null } {
+): ExtractInboundRtpCountersResult {
   let bytesReceived: number | null = null
   let framesDecoded: number | null = null
   for (const report of stats.values()) {

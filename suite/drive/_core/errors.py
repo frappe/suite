@@ -27,6 +27,10 @@ class DriveOverQuota(DriveError):
     http_status_code = 413
 
 
+class DriveStorageUnmeasured(DriveOverQuota):
+    """Storage isn't measured yet, so the addition can't be checked; it may pass after a refresh."""
+
+
 class DriveFileTooLarge(DriveError):
     """One file is larger than the site accepts (§11.6).
 

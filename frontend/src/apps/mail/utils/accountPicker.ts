@@ -27,9 +27,11 @@ export function useAccountPicker(selected: Ref<string[]>, exclude: () => string[
   const options = computed(() => {
     const excluded = new Set(exclude())
     const seen = new Set<string>()
-    return [...picked.value, ...(accounts.data ?? [])]
-      .filter((a) => !excluded.has(a.id) && !seen.has(a.id) && seen.add(a.id))
-      .map((a) => ({ label: a.email, value: a.id }))
+    return [...picked.value, ...(accounts.data ?? [])].flatMap((a) =>
+      !excluded.has(a.id) && !seen.has(a.id) && seen.add(a.id)
+        ? [{ label: a.email, value: a.id }]
+        : [],
+    )
   })
 
   const reset = () => {

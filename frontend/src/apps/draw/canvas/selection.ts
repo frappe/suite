@@ -5,6 +5,8 @@ import { rectangleCenter, rectangleCorners, rotatePoint } from './rectangle-inte
 import {
   DEFAULT_FREE_DRAW_PRESSURE,
   lineControlPoint,
+  type DiamondShape,
+  type EllipseShape,
   type FreeDrawShape,
   type ImageShape,
   type LineShape,
@@ -15,9 +17,20 @@ import {
   type TextShape,
 } from './scene'
 
-export type Shape = RectangleShape | TextShape | ImageShape | FreeDrawShape | LineShape
+type PlainRectangleShape = RectangleShape & { kind?: never }
+
+export type Shape =
+  | PlainRectangleShape
+  | EllipseShape
+  | DiamondShape
+  | TextShape
+  | ImageShape
+  | FreeDrawShape
+  | LineShape
 export type Scene = {
-  rectangles: (RectangleShape | TextShape | ImageShape | FreeDrawShape)[]
+  rectangles: (
+    PlainRectangleShape | EllipseShape | DiamondShape | TextShape | ImageShape | FreeDrawShape
+  )[]
   lines: LineShape[]
 }
 export function isLine(shape: Shape): shape is LineShape {
@@ -93,12 +106,62 @@ export function transformShape(shape: Shape, from: RectangleShape, to: Rectangle
     cornerRadius: shape.cornerRadius * scale,
   }
   if (result.labelFontSize) result.labelFontSize *= scale
-  const text = result as TextShape
-  if (text.kind === 'text') text.fontSize = Math.max(1, text.fontSize * scale)
+  if ('kind' in result && result.kind === 'text')
+    result.fontSize = Math.max(1, result.fontSize * scale)
   return result
 }
+function validateLabels(shape: Shape) {
+  const label = 'label' in shape ? shape.label : undefined
+  const labelFontSize = 'labelFontSize' in shape ? shape.labelFontSize : undefined
+  const labelFontFamily = 'labelFontFamily' in shape ? shape.labelFontFamily : undefined
+  const labelFill = 'labelFill' in shape ? shape.labelFill : undefined
+  const labelFontWeight = 'labelFontWeight' in shape ? shape.labelFontWeight : undefined
+  const labelFontStyle = 'labelFontStyle' in shape ? shape.labelFontStyle : undefined
+  const labelTextDecoration = 'labelTextDecoration' in shape ? shape.labelTextDecoration : undefined
+  const labelTextAlign = 'labelTextAlign' in shape ? shape.labelTextAlign : undefined
+  if (label !== undefined && typeof label !== 'string') throw new Error(__('Invalid label'))
+  if (
+    labelFontSize !== undefined &&
+    (typeof labelFontSize !== 'number' || !Number.isFinite(labelFontSize) || labelFontSize <= 0)
+  )
+    throw new Error(__('Invalid label size'))
+  if (
+    labelFontFamily !== undefined &&
+    !(['shantell', 'inter', 'georgia', 'mono'] satisfies TextFontFamily[]).some(
+      (family) => family === labelFontFamily,
+    )
+  )
+    throw new Error(__('Invalid label font'))
+  if (labelFill !== undefined && typeof labelFill !== 'string')
+    throw new Error(__('Invalid label fill'))
+  if (
+    labelFontWeight !== undefined &&
+    !([400, 500, 600, 700] satisfies TextFontWeight[]).some((weight) => weight === labelFontWeight)
+  )
+    throw new Error(__('Invalid label weight'))
+  if (
+    labelFontStyle !== undefined &&
+    !['normal', 'italic'].some((style) => style === labelFontStyle)
+  )
+    throw new Error(__('Invalid label style'))
+  if (
+    labelTextDecoration !== undefined &&
+    !['none', 'underline', 'line-through'].some((decoration) => decoration === labelTextDecoration)
+  )
+    throw new Error(__('Invalid label decoration'))
+  if (
+    labelTextAlign !== undefined &&
+    !(['left', 'center', 'right', 'justify'] satisfies TextAlign[]).some(
+      (align) => align === labelTextAlign,
+    )
+  )
+    throw new Error(__('Invalid label alignment'))
+}
+
 export function parseScene(value: unknown): Scene {
   if (!value || typeof value !== 'object') throw new Error(__('Invalid drawing'))
+  // SAFETY: this view is local to the parser: every shape's identity, geometry,
+  // discriminator and kind-specific fields are checked below before the Scene can escape.
   const scene = JSON.parse(JSON.stringify(value)) as Scene
   if (
     !Array.isArray(scene.rectangles) ||
@@ -115,45 +178,7 @@ export function parseScene(value: unknown): Scene {
       throw new Error(__('Invalid group'))
     if (shape.order !== undefined && !Number.isFinite(shape.order))
       throw new Error(__('Invalid layer'))
-    const rectangle = shape as RectangleShape
-    if (rectangle.label !== undefined && typeof rectangle.label !== 'string')
-      throw new Error(__('Invalid label'))
-    if (
-      rectangle.labelFontSize !== undefined &&
-      (!Number.isFinite(rectangle.labelFontSize) || rectangle.labelFontSize <= 0)
-    )
-      throw new Error(__('Invalid label size'))
-    if (
-      rectangle.labelFontFamily !== undefined &&
-      !(['shantell', 'inter', 'georgia', 'mono'] satisfies TextFontFamily[]).includes(
-        rectangle.labelFontFamily,
-      )
-    )
-      throw new Error(__('Invalid label font'))
-    if (rectangle.labelFill !== undefined && typeof rectangle.labelFill !== 'string')
-      throw new Error(__('Invalid label fill'))
-    if (
-      rectangle.labelFontWeight !== undefined &&
-      !([400, 500, 600, 700] satisfies TextFontWeight[]).includes(rectangle.labelFontWeight)
-    )
-      throw new Error(__('Invalid label weight'))
-    if (
-      rectangle.labelFontStyle !== undefined &&
-      !['normal', 'italic'].includes(rectangle.labelFontStyle)
-    )
-      throw new Error(__('Invalid label style'))
-    if (
-      rectangle.labelTextDecoration !== undefined &&
-      !['none', 'underline', 'line-through'].includes(rectangle.labelTextDecoration)
-    )
-      throw new Error(__('Invalid label decoration'))
-    if (
-      rectangle.labelTextAlign !== undefined &&
-      !(['left', 'center', 'right', 'justify'] satisfies TextAlign[]).includes(
-        rectangle.labelTextAlign,
-      )
-    )
-      throw new Error(__('Invalid label alignment'))
+    validateLabels(shape)
     if (
       'stroke' in shape &&
       shape.stroke !== undefined &&
@@ -215,7 +240,7 @@ export function parseScene(value: unknown): Scene {
     )
       throw new Error(__('Invalid free draw'))
     if (isFreeDraw(shape)) {
-      const pressures = (shape as { pressures?: unknown }).pressures
+      const pressures = shape.pressures
       if (pressures === undefined) {
         shape.pressures = shape.points.map(() => DEFAULT_FREE_DRAW_PRESSURE)
       } else if (
@@ -232,9 +257,9 @@ export function parseScene(value: unknown): Scene {
         throw new Error(__('Invalid free draw pressure'))
       }
     }
-    const text = shape as TextShape
-    if (text.kind === 'text') {
-      if ((text as { fontFamily?: unknown }).fontFamily === 'monday') text.fontFamily = 'shantell'
+    if ('kind' in shape && shape.kind === 'text') {
+      const text = shape
+      if (['monday'].includes(text.fontFamily ?? '')) text.fontFamily = 'shantell'
       if (typeof text.text !== 'string' || !Number.isFinite(text.fontSize) || text.fontSize <= 0)
         throw new Error(__('Invalid text'))
       if (
@@ -264,8 +289,8 @@ export function parseScene(value: unknown): Scene {
       )
         throw new Error(__('Invalid text alignment'))
     }
-    const image = shape as ImageShape
-    if (image.kind === 'image') {
+    if ('kind' in shape && shape.kind === 'image') {
+      const image = shape
       if (
         typeof image.src !== 'string' ||
         !/^data:image\/(png|jpe?g|gif|webp);base64,/i.test(image.src)
@@ -308,5 +333,5 @@ export function parseScene(value: unknown): Scene {
 }
 
 export function isFreeDraw(shape: Shape): shape is FreeDrawShape {
-  return (shape as { kind?: string }).kind === 'freedraw'
+  return 'kind' in shape && shape.kind === 'freedraw'
 }

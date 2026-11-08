@@ -92,10 +92,12 @@ function call(action: string, payload: string): string {
 
 /** Seed two unread notifications that point at one existing node. */
 export function seedNotifications(node: string): string[] {
+	// SAFETY: PROGRAM in this module emits the RESULT JSON projection for this exact action; call rejects missing RESULT output.
 	return JSON.parse(call("seed", node)) as string[];
 }
 
 export function notificationState(names: string[]): Array<{ name: string; read: number }> {
+	// SAFETY: PROGRAM in this module emits the RESULT JSON projection for this exact action; call rejects missing RESULT output.
 	return JSON.parse(call("state", JSON.stringify(names))) as Array<{ name: string; read: number }>;
 }
 
@@ -105,6 +107,7 @@ export function dropNotifications(names: string[]): void {
 
 /** The account's unread rows before a journey seeds its own. */
 export function unreadNotificationNames(): string[] {
+	// SAFETY: PROGRAM in this module emits the RESULT JSON projection for this exact action; call rejects missing RESULT output.
 	return JSON.parse(call("unread", "")) as string[];
 }
 

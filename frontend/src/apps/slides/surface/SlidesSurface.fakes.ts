@@ -14,6 +14,8 @@ import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import type { DocumentSession } from '@/apps/drive'
 import { translationPlugin } from '@/platform/translation'
 
+const { fromPartial, fromAny } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const server = vi.hoisted(() => ({ fetch: vi.fn() }))
 export const saves: unknown[] = []
 export const previews: unknown[] = []
@@ -27,7 +29,14 @@ const versionsPanel = vi.hoisted(() => ({
 }))
 const themeChange = vi.hoisted(() => ({ update: (_theme: string) => {} }))
 const forgetTemplates = vi.hoisted(() => ({ run: () => {} }))
-const propertiesPanel = vi.hoisted(() => ({ real: null as Component | null }))
+interface PropertiesPanelFixture {
+  real: Component | null
+}
+const propertiesPanel = vi.hoisted((): PropertiesPanelFixture => ({ real: null }))
+// a converted presentation's room; tests hand it a live one
+const collabRoom = vi.hoisted(() => ({
+  open: vi.fn(async (): Promise<unknown> => ({ state: 'failed' })),
+}))
 export const fakeServer = { isRefusing: false, isFailingTemplates: false, opens: 0 }
 
 interface MenuEntry {
@@ -142,7 +151,7 @@ vi.mock('@/platform/session', async (importOriginal) => {
     }),
   }
 })
-const warms = vi.hoisted(() => [] as Promise<void>[])
+const warms = vi.hoisted((): Promise<void>[] => [])
 vi.mock('@/apps/slides/stores/offlineCopy', async (importOriginal) => {
   const store = await importOriginal<typeof import('@/apps/slides/stores/offlineCopy')>()
   function warmOfflineCopyAssets(id: string) {
@@ -162,6 +171,10 @@ vi.mock('@/apps/slides/stores/visitedCopies', async (importOriginal) => ({
   rememberVisit: visits.remember,
   cancelVisit: visits.cancel,
 }))
+vi.mock('@/platform/collab', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  openCollabRoom: collabRoom.open,
+}))
 vi.mock('@/apps/slides/router', () => ({
   router: { currentRoute: { value: { params: {}, query: {} } }, replace: vi.fn() },
 }))
@@ -169,12 +182,13 @@ vi.mock('@/apps/drive', () => ({
   documentSessionUrls: () => [],
   GUEST_NAME_LIMIT: 50,
   DriveDocumentHeader: {
-    props: { recoverable: Boolean },
+    props: { recoverable: Boolean, panels: { type: Array, default: () => [] } },
     emits: ['download-changes', 'update:panel'],
     setup:
-      (props: { recoverable: boolean }, { slots, emit }: SetupContext) =>
+      (props: { recoverable: boolean; panels: string[] }, { slots, emit }: SetupContext) =>
       () =>
         h('header', [
+          h('output', { 'data-panels': '' }, props.panels.join()),
           slots.actions?.(),
           slots.primary?.(),
           slots.icon?.({ icon: '' }),
@@ -281,19 +295,21 @@ function session(
   docname: string,
   access: Ref<{ role: number }>,
   media: DocumentSession['media'],
+  panels: DocumentSession['panels']['value'],
 ): DocumentSession {
-  return {
+  return fromPartial<DocumentSession>({
     nodeId: 'node-1',
     contentDoctype: 'Presentation',
     contentDocname: docname,
     title: ref('Quarterly plan'),
     state: ref('Active'),
     access,
+    panels: ref(panels),
     refreshAccess: async () => {},
     credentials: { context: undefined, heldContext: undefined },
     versions: { restore: (seq: string) => versionRestore.run(seq) },
     media,
-  } as unknown as DocumentSession
+  })
 }
 
 export async function openedSurface({
@@ -301,8 +317,11 @@ export async function openedSurface({
   role = 50,
   slides = served.slides,
   firstLoad,
-  media = (() => undefined) as unknown as DocumentSession['media'],
+  // These surface tests have no media handles unless the caller supplies one.
+  media = fromAny<DocumentSession['media'], () => undefined>(() => undefined),
   composite,
+  deck,
+  panels = ['comments', 'versions'],
 }: {
   path?: string
   role?: number
@@ -310,6 +329,8 @@ export async function openedSurface({
   firstLoad?: Promise<void | Response>
   media?: DocumentSession['media']
   composite?: Record<string, unknown[] | Error>
+  deck?: Record<string, unknown>
+  panels?: DocumentSession['panels']['value']
 } = {}) {
   const docname = `p${++fakeServer.opens}`
   const loads: Array<Promise<void | Response>> = []
@@ -399,10 +420,11 @@ export async function openedSurface({
       slides,
       name: docname,
       is_composite: composite ? 1 : 0,
+      ...deck,
     })
   })
   const access = ref({ role })
-  const opened = session(docname, access, media)
+  const opened = session(docname, access, media, panels)
   const view = { render: () => null }
   const router = createRouter({
     history: createMemoryHistory(),
@@ -424,7 +446,7 @@ export async function openedSurface({
   const root = document.createElement('div')
   document.body.append(root)
   app.mount(root)
-  if (!firstLoad && !composite) {
+  if (!firstLoad && !composite && !deck?.is_converted) {
     await vi.waitFor(() => expect(thumbnails(root)).toHaveLength(slides.length))
   }
 
@@ -462,6 +484,7 @@ export function startsFromEmptyStore() {
 }
 
 export {
+  collabRoom,
   server,
   signedIn,
   versionsPanel,
