@@ -22,7 +22,8 @@ vi.mock('@/platform/feedback', () => ({
     error: (message: string) => fake.toasts.push(message),
   },
 }))
-vi.mock('../uploads/queue', () => ({
+vi.mock('../uploads/queue', async (importActual) => ({
+  ...(await importActual<typeof import('../uploads/queue')>()),
   uploadQueue: () => ({ replaceFile: () => fake.entry }),
 }))
 

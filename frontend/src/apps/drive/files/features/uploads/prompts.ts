@@ -4,8 +4,8 @@ import { confirm, toast } from '@/platform/feedback'
 import { openSettings } from '@/platform/settings'
 import { translate as __ } from '@/platform/translation'
 
+import { formatBytes } from '../../internal/format'
 import { presentDialog } from '../dialogHost'
-import { formatBytes } from './format'
 import type { CollisionChoice, UploadPrompts } from './queue'
 
 /**

@@ -38,12 +38,12 @@
         :label="__('Cancel all')"
         @click="queue.cancelAll()"
       />
-      <!-- Closing only hides the list, and only once uploads are over. -->
+      <!-- Offered once uploads are over: closing hides the list and clears the finished rows. -->
       <Button
         v-if="!busy"
         variant="ghost"
         icon="lucide-x"
-        :aria-label="active ? __('Hide uploads') : __('Close uploads')"
+        :aria-label="__('Close uploads')"
         @click="queue.closeTracker()"
       />
       <Progress
@@ -150,10 +150,19 @@ import { driveNodeRoute } from '@/apps/drive'
 import { openSettings } from '@/platform/settings'
 import { translate as __ } from '@/platform/translation'
 
+import { formatBytes } from '../../internal/format'
 import { TimeLeft } from './eta'
-import { formatBytes } from './format'
 import { pickFiles } from './picker'
-import { isFinishing, uploadQueue, type UploadEntry, type UploadQueue } from './queue'
+import {
+  canCancel,
+  canRetry,
+  isActive,
+  isFinishing,
+  reconnectingStatus,
+  uploadQueue,
+  type UploadEntry,
+  type UploadQueue,
+} from './queue'
 
 /** The upload list (spec §6.3). Opening it counts as seeing its failures. */
 const props = defineProps<{ queue?: UploadQueue }>()
@@ -162,21 +171,12 @@ const entries = computed(() => queue.entries.value)
 const count = (state: UploadEntry['state']) =>
   entries.value.filter((entry) => entry.state === state).length
 const stopped = computed(() => count('interrupted'))
-const running = computed(
-  () =>
-    entries.value.filter((entry) =>
-      ['queued', 'checking', 'uploading', 'reconnecting'].includes(entry.state),
-    ).length,
-)
 /** Uploads still to send, held ones too. */
-const active = computed(() => running.value + count('held'))
+const active = computed(() => entries.value.filter(isActive).length)
 /** Anything still uploading, or a folder still being read or created. */
 const busy = computed(() => active.value > 0 || !!queue.state.preparing || !!queue.state.reading)
 const retryable = computed(
-  () =>
-    entries.value.filter(
-      (entry) => (entry.state === 'failed' && entry.retryable) || entry.state === 'held',
-    ).length,
+  () => entries.value.filter((entry) => entry.state !== 'cancelled' && canRetry(entry)).length,
 )
 const heading = computed(summaryHeading)
 const subline = computed(summaryLine)
@@ -279,18 +279,6 @@ function dismissible(entry: UploadEntry) {
   return ['failed', 'cancelled', 'interrupted'].includes(entry.state)
 }
 
-function canRetry(entry: UploadEntry) {
-  if (entry.state === 'held' || entry.state === 'cancelled') return true
-  return entry.state === 'failed' && entry.retryable
-}
-
-function canCancel(entry: UploadEntry) {
-  return (
-    ['queued', 'checking', 'uploading', 'reconnecting', 'held'].includes(entry.state) &&
-    !isFinishing(entry)
-  )
-}
-
 function status(entry: UploadEntry): string {
   if (entry.note && ['queued', 'checking', 'uploading', 'interrupted'].includes(entry.state))
     return entry.note
@@ -303,7 +291,7 @@ function status(entry: UploadEntry): string {
       if (isFinishing(entry)) return __('Finishing…')
       return __('{0} of {1}', [formatBytes(entry.sent), formatBytes(entry.size)])
     case 'reconnecting':
-      return entry.offline ? __('Waiting for connection…') : __('Connection lost. Retrying…')
+      return reconnectingStatus(entry)
     case 'cancelled':
       return __('Cancelled')
     case 'held':

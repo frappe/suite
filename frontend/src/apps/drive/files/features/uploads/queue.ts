@@ -18,9 +18,9 @@ import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 import { TransportError, type PlatformError } from '@/platform/transport'
 
+import { formatBytes } from '../../internal/format'
 import { isTransient, online, pause } from '../network'
 import { sha256 } from './checksum'
-import { formatSize } from './format'
 import { createUploadRecords, type UploadRecord, type UploadRecords } from './records'
 import {
   FolderReadError,
@@ -192,6 +192,25 @@ export interface UploadQueueOptions {
 
 const ACTIVE: readonly UploadState[] = ['queued', 'checking', 'uploading', 'reconnecting', 'held']
 
+/** Still to send, a held upload too. */
+export function isActive(entry: UploadEntry): boolean {
+  return ACTIVE.includes(entry.state)
+}
+
+export function canCancel(entry: UploadEntry): boolean {
+  return isActive(entry) && !isFinishing(entry)
+}
+
+export function canRetry(entry: UploadEntry): boolean {
+  if (entry.state === 'held' || entry.state === 'cancelled') return true
+  return entry.state === 'failed' && entry.retryable
+}
+
+/** How a reconnecting upload reads, wherever it shows. */
+export function reconnectingStatus(entry: UploadEntry): string {
+  return entry.offline ? __('Waiting for connection…') : __('Connection lost. Retrying…')
+}
+
 export function createUploadQueue(options: UploadQueueOptions = {}) {
   const records = options.records ?? createUploadRecords({ now: options.now })
   const now = options.now ?? Date.now
@@ -240,7 +259,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
   let clearing: Promise<void> = Promise.resolve()
 
   const entries = computed(() => [...jobs.values()].map((job) => job.entry))
-  const active = computed(() => entries.value.filter((entry) => ACTIVE.includes(entry.state)))
+  const active = computed(() => entries.value.filter(isActive))
 
   const indicator = computed<UploadIndicator | null>(() => {
     const attention =
@@ -249,7 +268,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     if (active.value.length || state.preparing || state.reading) {
       const counted = [...jobs.values()].filter(
         // Stopped files drop out, so the bar and time left describe what is still going.
-        (job) => job.run === run && (ACTIVE.includes(job.entry.state) || job.entry.state === 'done'),
+        (job) => job.run === run && (isActive(job.entry) || job.entry.state === 'done'),
       )
       const total = counted.reduce((sum, job) => sum + job.entry.size, 0)
       const sent = counted.reduce(
@@ -326,7 +345,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     batch: Batch,
     replaces: string | null = null,
     title = picked.file.name,
-  ) {
+  ): Job {
     const entry: UploadEntry = reactive<UploadEntry>({
       id: `upload-${nextId++}`,
       title,
@@ -341,7 +360,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
       node: null,
       offline: false,
     })
-    jobs.set(entry.id, {
+    const job: Job = {
       ...control(),
       entry,
       file: picked.file,
@@ -356,8 +375,14 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
       run,
       createdAt: now(),
       ...freshJob(),
-    })
-    return entry
+    }
+    jobs.set(entry.id, job)
+    return job
+  }
+
+  /** A row for something that failed before a file could start. */
+  function failedRow(title: string, parent: string, message: string) {
+    fail(addJob({ file: new File([], title) }, parent, { size: 1, applied: null }), message, false)
   }
 
   /** A job's abort, which `forget()` also triggers. */
@@ -437,11 +462,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     } catch (error) {
       if (signal.aborted) return null
       const folder = error instanceof FolderReadError ? error.folder : (drop.folders[0] ?? '')
-      const entry = addJob({ file: new File([], folder) }, target.parent, {
-        size: 1,
-        applied: null,
-      })
-      fail(jobs.get(entry.id)!, __('Could not read “{0}”.', [folder]), false)
+      failedRow(folder, target.parent, __('Could not read “{0}”.', [folder]))
       reveal()
       return null
     } finally {
@@ -472,8 +493,8 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     }
     for (const item of folder.files) {
       const into = ids.get(item.folder) ?? null
-      const entry = addJob({ file: item.file }, into ?? parent, batch)
-      if (!into) fail(jobs.get(entry.id)!, 'Its folder could not be created.', false)
+      const job = addJob({ file: item.file }, into ?? parent, batch)
+      if (!into) fail(job, 'Its folder could not be created.', false)
     }
     pump()
   }
@@ -491,8 +512,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
       if (!('error' in created)) return created.name
       const freeTitle = created.error.free_title
       if (created.error.type !== 'DriveConflict' || typeof freeTitle !== 'string') {
-        const entry = addJob({ file: new File([], title) }, parent, { size: 1, applied: null })
-        fail(jobs.get(entry.id)!, created.error.message, false)
+        failedRow(title, parent, created.error.message)
         return null
       }
       const choice = await ask((p) => p.folderCollision({ title: next, freeTitle }))
@@ -522,15 +542,9 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     target: { node: string; parent: string; title: string },
     picked: PickedFile,
   ): UploadEntry {
-    const entry = addJob(
-      picked,
-      target.parent,
-      { size: 1, applied: null },
-      target.node,
-      target.title,
-    )
+    const job = addJob(picked, target.parent, { size: 1, applied: null }, target.node, target.title)
     pump()
-    return entry
+    return job.entry
   }
 
   /**
@@ -945,7 +959,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
 
   function stop(id: string) {
     const job = jobs.get(id)
-    if (!job || !ACTIVE.includes(job.entry.state) || isFinishing(job.entry)) return
+    if (!job || !canCancel(job.entry)) return
     job.controller.abort()
     job.entry.state = 'cancelled'
     job.entry.error = null
@@ -964,8 +978,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
   /** Retry resumes from the bytes the server holds (spec §6.11). */
   function retry(id: string) {
     const job = jobs.get(id)
-    if (!job || !['failed', 'held', 'cancelled'].includes(job.entry.state)) return
-    if (!job.file || !job.entry.retryable) return
+    if (!job?.file || !canRetry(job.entry)) return
     // Retrying is the user saying the queue may start again.
     state.halted = null
     requeue(job)
@@ -976,12 +989,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
   function retryAll() {
     state.halted = null
     for (const job of jobs.values()) {
-      if (
-        (job.entry.state === 'failed' || job.entry.state === 'held') &&
-        job.file &&
-        job.entry.retryable
-      )
-        requeue(job)
+      if (job.entry.state !== 'cancelled' && job.file && canRetry(job.entry)) requeue(job)
     }
     pump()
   }
@@ -1121,14 +1129,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
   /** Removes an entry that is not running. An interrupted one also forgets its record. */
   async function dismiss(id: string) {
     const job = jobs.get(id)
-    if (
-      !job ||
-      job.entry.state === 'uploading' ||
-      job.entry.state === 'checking' ||
-      job.entry.state === 'queued' ||
-      job.entry.state === 'reconnecting'
-    )
-      return
+    if (!job || (isActive(job.entry) && job.entry.state !== 'held')) return
     jobs.delete(id)
     releaseHalt()
     if (job.session && job.entry.state !== 'done') await records.remove(job.session.upload_id)
@@ -1227,8 +1228,8 @@ type PermissionHandle = FileSystemFileHandle & {
 /** The server's `DriveFileTooLarge` message, for a file refused before any request. */
 function tooLargeMessage(limit: number, size: number): string {
   return __('Files can be up to {0}. This one is {1}.', [
-    formatSize(limit),
-    formatSize(size, { roundUp: true }),
+    formatBytes(limit),
+    formatBytes(size, { roundUp: true }),
   ])
 }
 

@@ -16,7 +16,7 @@ import { computed, ref, watch } from 'vue'
 import { confirm, toast } from '@/platform/feedback'
 import { translate as __ } from '@/platform/translation'
 
-import { uploadQueue, type UploadEntry } from '../uploads/queue'
+import { isActive, reconnectingStatus, uploadQueue, type UploadEntry } from '../uploads/queue'
 
 /**
  * Replaces the file's bytes from the browser (spec §6.8). A browser replace
@@ -27,19 +27,15 @@ const props = defineProps<{ node: string; parent: string; title: string }>()
 const emit = defineEmits<{ replaced: [] }>()
 const input = ref<HTMLInputElement>()
 const entry = ref<UploadEntry | null>(null)
-const uploading = computed(
-  () =>
-    !!entry.value &&
-    ['queued', 'checking', 'uploading', 'reconnecting', 'held'].includes(entry.value.state),
-)
+const uploading = computed(() => !!entry.value && isActive(entry.value))
 /**
- * What the badge says, in the upload tracker's words. A cancelled replace
- * shows none, but stays watched: Retry in the tracker still finishes it here.
+ * What the badge says. A cancelled replace shows none, but stays watched:
+ * Retry in the tracker still finishes it here.
  */
 const status = computed(() => {
   if (!uploading.value || !entry.value) return null
   if (entry.value.state !== 'reconnecting') return __('Uploading new version…')
-  return entry.value.offline ? __('Waiting for connection…') : __('Connection lost. Retrying…')
+  return reconnectingStatus(entry.value)
 })
 
 function pick() {
