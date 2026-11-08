@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h } from 'vue'
 
-import type { DocumentTypeDefinition } from '@/platform/contracts'
+import { DOCUMENT_TYPES_KEY, type DocumentTypeDefinition } from '@/platform/contracts'
 import type { Operation } from '@/platform/transport'
 
 import NodeInfoDialog from './NodeInfoDialog.vue'
@@ -115,9 +115,8 @@ const spreadsheets: DocumentTypeDefinition = {
 
 function mount(node: string) {
   const root = document.createElement('div')
-  const app = createApp({
-    render: () => h(NodeInfoDialog, { node, open: true, documentTypes: [spreadsheets] }),
-  })
+  const app = createApp({ render: () => h(NodeInfoDialog, { node, open: true }) })
+  app.provide(DOCUMENT_TYPES_KEY, [spreadsheets])
   app.mount(root)
   unmount = () => app.unmount()
   return root

@@ -28,7 +28,6 @@ import { computed } from 'vue'
 import { api, useQuery } from '@/api'
 import { grantListOf } from '@/apps/drive/client/grants'
 import { canManage } from '@/apps/drive/client/types'
-import type { DocumentTypeDefinition } from '@/platform/contracts'
 import { useWorkspace } from '@/platform/workspace'
 
 import { formatBytes, formatDate } from '../internal/format'
@@ -41,11 +40,7 @@ import { sharedWith } from './share/shareModel'
  * someone who may share it, who else can open it. Reading grants takes MANAGE
  * (Drive spec §11.2), so other callers see no sharing line.
  */
-const props = defineProps<{
-  node: string
-  /** The app's document types, which a dialog mounted outside App.vue cannot inject. */
-  documentTypes?: readonly DocumentTypeDefinition[]
-}>()
+const props = defineProps<{ node: string }>()
 const open = defineModel<boolean>('open', { required: true })
 const detail = useQuery(api.drive.nodes.get, () =>
   open.value && props.node ? { node: props.node, expand: 'access,breadcrumbs' } : false,
@@ -64,7 +59,7 @@ const sharing = computed(() => {
   return [{ label: 'Shared with', value: names.join(', ') || 'Not shared', wraps: true }]
 })
 
-const typeLabel = useNodeTypeLabel(props.documentTypes)
+const typeLabel = useNodeTypeLabel()
 const locationTitle = useLocationTitle()
 
 const fields = computed<Array<{ label: string; value: string; wraps?: boolean }>>(() => {

@@ -7,7 +7,9 @@ import App from '@/App.vue'
 import { installEventReminders } from '@/apps/calendar'
 import { clearSlidesUserData } from '@/apps/slides/utils/serviceWorker'
 import { initSentry } from '@/boot/sentry'
+import { documentTypes } from '@/composition/documentRegistry'
 import { watchBuild } from '@/platform/build'
+import { DOCUMENT_TYPES_KEY } from '@/platform/contracts'
 import { initializeCursor } from '@/platform/cursor'
 import { installErrorLog } from '@/platform/error-log'
 import { installApiErrorHandler } from '@/platform/server-state'
@@ -23,6 +25,8 @@ watchBuild()
 installEventReminders({ open: (path) => void router.push(path) })
 
 const app = createApp(App)
+// Dialogs opened by function call render in the app's context, so this reaches them too.
+app.provide(DOCUMENT_TYPES_KEY, documentTypes)
 
 // The Slides service worker keeps this user's responses. Every logout path ends
 // in the platform session, so the next user never receives them.

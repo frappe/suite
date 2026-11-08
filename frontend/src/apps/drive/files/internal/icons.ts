@@ -52,13 +52,6 @@ const CONTENT_TYPES = new Map<string, FileType>(
   }),
 )
 
-/** People's names for Drive's own document types, not their DocType names */
-const DOCUMENT_LABELS: Partial<Record<FileType, string>> = {
-  doc: 'Document',
-  sheet: 'Spreadsheet',
-  slides: 'Presentation',
-}
-
 /** Drive's own documents, PDFs and media each have a colour; everything else is gray. */
 const TINTS: Record<FileType, string> = {
   folder: 'text-ink-gray-6',
@@ -154,18 +147,14 @@ export function documentIcon(contentDoctype: string) {
 }
 
 /**
- * The type's name. With `documentTypes`, a document takes its New menu name,
- * such as "Spreadsheet" for a Sheet; an unknown doctype keeps its own name.
+ * The type's name. A document takes its New menu name, such as "Spreadsheet"
+ * for a Sheet; an unknown doctype keeps its own name.
  */
-export function nodeTypeLabel(
-  node: TypedNode,
-  documentTypes: readonly DocumentTypeDefinition[] = [],
-): string {
+function nodeTypeLabel(node: TypedNode, documentTypes: readonly DocumentTypeDefinition[]): string {
   if (node.kind === 'folder') return 'Folder'
   if (node.kind === 'link') return 'Link'
   if (node.kind === 'document') {
     const type = fileType(node)
-    if (!documentTypes.length) return DOCUMENT_LABELS[type] ?? 'Document'
     const definition = documentTypes.find(
       (candidate) => CONTENT_TYPES.get(candidate.contentDoctype) === type,
     )
@@ -174,12 +163,8 @@ export function nodeTypeLabel(
   return storedFile(node).label
 }
 
-/**
- * `nodeTypeLabel`, naming documents as the New menu does. A dialog mounted outside App.vue passes the types it
- * was given, since it cannot inject them.
- */
-export function useNodeTypeLabel(
-  documentTypes: readonly DocumentTypeDefinition[] = inject(DOCUMENT_TYPES_KEY, []),
-): (node: TypedNode) => string {
+/** `nodeTypeLabel` with the app's document types. Call it in a component's setup. */
+export function useNodeTypeLabel(): (node: TypedNode) => string {
+  const documentTypes = inject(DOCUMENT_TYPES_KEY, [])
   return (node) => nodeTypeLabel(node, documentTypes)
 }
