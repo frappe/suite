@@ -26,7 +26,7 @@ E2E_BENCH_PATH=/path/to/bench UI_STATES_FLOWS=listing,share \
 ## Writing a flow
 
 1. Read the code the flow covers and name every state the user can see, including loading, empty, failed and mid-flight ones. Name states for what the user sees, not for the code's variables.
-2. Put the machine in `setup({ types: { events: {} as Event } }).createMachine(...)`. Every state needs `meta.description`. Keep machines flat; a second presentation (grid, phone) is its own flow or its own states.
+2. Put the machine in `setupFlow<Event>().createMachine(...)`. Every state needs `meta.description`. Keep machines flat; a second presentation (grid, phone) is its own flow or its own states.
 3. `enter` seeds through the API (`content.ts`, `drive-backed-apps/helpers/drive.ts`) and navigates. Each event step performs the interaction and waits for the target state with an `expect`, so a screenshot is never taken early.
 4. Reach unreachable states with `scene.hold()`: hold a request for a skeleton or mid-flight state, `abort()` it for a failure, `release()` to continue. The transport retries 5xx, so `abort()` keeps failing until `release()`.
 5. Run the flow, look at every screenshot in `out/<flow>/`, and fix steps whose screenshot is not the state they claim.

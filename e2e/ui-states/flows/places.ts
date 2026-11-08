@@ -1,8 +1,7 @@
 import { expect, type Route } from "@playwright/test";
-import { setup } from "xstate";
 import type { Credentials } from "../../shared/auth";
 import { fillFolder, folderPath, type FolderContent } from "../content";
-import { defineFlow } from "../flow";
+import { defineFlow, setupFlow } from "../flow";
 import {
 	DRIVE,
 	type DriveNode,
@@ -39,7 +38,7 @@ type Event =
  * files and the Trash tabs show. Recovery copies is its own page,
  * `RecoveryPage.vue`, reached from `RecoveryNotice.vue`.
  */
-const machine = setup({ types: { events: {} as Event } }).createMachine({
+const machine = setupFlow<Event>().createMachine({
 	id: "places",
 	initial: "myFiles",
 	states: {

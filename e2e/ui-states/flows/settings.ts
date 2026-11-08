@@ -1,7 +1,6 @@
 import { expect, type Locator, type Route } from "@playwright/test";
-import { setup } from "xstate";
 import { fillFolder, folderPath } from "../content";
-import { defineFlow } from "../flow";
+import { defineFlow, setupFlow } from "../flow";
 import type { Hold, Scene } from "../scene";
 
 type Event =
@@ -31,7 +30,7 @@ const gigabytes = (count: number) => Math.round(count * 1024 ** 3);
  * and has WebDAV off, so quota levels and External access come from answers
  * the flow rewrites in the browser; the description of each such state says so.
  */
-const machine = setup({ types: { events: {} as Event } }).createMachine({
+const machine = setupFlow<Event>().createMachine({
 	id: "settings",
 	initial: "meterNoQuota",
 	states: {
@@ -119,6 +118,7 @@ async function rewriteUsage(scene: Scene, usage: Partial<Usage> & Record<string,
 		// The page can close while a rewrite is in flight; that request no longer matters.
 		const response = await route.fetch().catch(() => null);
 		if (!response) return;
+		// SAFETY: the Drive API's usage endpoint answers an object under `data`.
 		const body = (await response.json()) as { data: Record<string, unknown> };
 		await route.fulfill({ response, json: { data: { ...body.data, ...usage } } }).catch(() => undefined);
 	});

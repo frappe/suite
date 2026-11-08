@@ -1,8 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, type Locator } from "@playwright/test";
-import { setup } from "xstate";
-import { defineFlow } from "../flow";
+import { defineFlow, setupFlow } from "../flow";
 import {
 	createFolder,
 	openRowMenu,
@@ -35,7 +34,7 @@ type Event =
  * gone, the shared `confirm()` dialog, and `FilesPage.vue`'s `trashTabs`,
  * `trashedFolder` and `trashedNotice`.
  */
-const machine = setup({ types: { events: {} as Event } }).createMachine({
+const machine = setupFlow<Event>().createMachine({
 	id: "trash",
 	initial: "trashEmpty",
 	states: {

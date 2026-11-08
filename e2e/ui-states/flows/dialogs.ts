@@ -1,9 +1,8 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, type Locator } from "@playwright/test";
-import { setup } from "xstate";
 import { fillFolder, folderPath, type FolderContent } from "../content";
-import { defineFlow } from "../flow";
+import { defineFlow, setupFlow } from "../flow";
 import {
 	createFolder,
 	grantAccess,
@@ -48,7 +47,7 @@ type Event =
  * `pickerBulk`, `templatesOpen`, `batchOutcome`, `activeNode`) and
  * `FolderPicker.vue`'s `checking` and `reviewingAccess`.
  */
-const machine = setup({ types: { events: {} as Event } }).createMachine({
+const machine = setupFlow<Event>().createMachine({
 	id: "dialogs",
 	initial: "folder",
 	states: {

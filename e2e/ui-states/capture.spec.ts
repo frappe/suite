@@ -2,8 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { test } from "@playwright/test";
 import { createTestModel } from "@xstate/graph";
-import type { EventObject } from "xstate";
-import type { AnyFlow as Flow, StateMeta } from "./flow";
+import type { AnyFlow } from "./flow";
 import { flows } from "./flows";
 import { watchBench } from "./bench";
 import { describeMachine, writeManifest, type EdgeRecord, type FlowManifest } from "./manifest";
@@ -38,10 +37,10 @@ for (const flow of flows) {
 						await flow.enter(scene);
 						let previous: string | null = null;
 						for (const step of path.steps) {
-							const state = stateId(step.state.value);
-							if (step.event.type !== "xstate.init") {
-								await runEvent(flow, scene, step.event);
-								recordEdge(manifest.edges, previous as string, step.event.type, state);
+							const state = String(step.state.value);
+							if (previous !== null) {
+								await flow.events[step.event.type](scene);
+								recordEdge(manifest.edges, previous, step.event.type, state);
 							}
 							await capture(flow, scene, manifest, state, previous, step.event.type);
 							previous = state;
@@ -58,18 +57,6 @@ for (const flow of flows) {
 	});
 }
 
-function stateId(value: unknown): string {
-	return typeof value === "string" ? value : JSON.stringify(value);
-}
-
-async function runEvent(flow: Flow, scene: Scene, event: EventObject): Promise<void> {
-	const run = flow.events[event.type as keyof typeof flow.events] as
-		| ((scene: Scene, event: EventObject) => Promise<void>)
-		| undefined;
-	if (!run) throw new Error(`${flow.id} has no step for event ${event.type}`);
-	await run(scene, event);
-}
-
 function recordEdge(edges: EdgeRecord[], from: string, event: string, to: string): void {
 	if (!edges.some((edge) => edge.from === from && edge.event === event && edge.to === to)) {
 		edges.push({ from, event, to });
@@ -78,7 +65,7 @@ function recordEdge(edges: EdgeRecord[], from: string, event: string, to: string
 
 /** Screenshots a state the first time a path reaches it. */
 async function capture(
-	flow: Flow,
+	flow: AnyFlow,
 	scene: Scene,
 	manifest: FlowManifest,
 	state: string,
@@ -88,12 +75,11 @@ async function capture(
 	const record = manifest.states.find((candidate) => candidate.id === state);
 	if (!record) throw new Error(`${flow.id} reached unknown state ${state}`);
 	if (record.screenshot) return;
-	const meta = (flow.machine.states[state]?.meta ?? {}) as StateMeta;
 	await flow.settle?.[state]?.(scene);
 	await scene.settle();
 	record.parent = parent;
 	record.via = parent ? via : null;
-	if (meta.transient) return;
+	if (record.transient) return;
 	const file = `${flow.id}/${state}.png`;
 	const frame = flow.frame?.(scene, state) ?? null;
 	const options = { path: resolve(OUT_DIR, file), animations: "disabled" as const, caret: "hide" as const };

@@ -33,17 +33,20 @@ export interface EdgeRecord {
 
 export function describeMachine(machine: AnyStateMachine): Pick<FlowManifest, "initial" | "states"> {
 	const states = Object.entries(machine.states).map(([id, node]) => {
-		const meta = (node.meta ?? {}) as StateMeta;
+		const meta: StateMeta | undefined = node.meta;
+		if (!meta?.description) throw new Error(`${machine.id}: state ${id} has no meta.description`);
 		return {
 			id,
-			description: meta.description ?? "",
+			description: meta.description,
 			transient: meta.transient ?? false,
 			screenshot: null,
 			parent: null,
 			via: null,
 		};
 	});
-	return { initial: String(machine.config.initial ?? states[0]?.id ?? ""), states };
+	const { initial } = machine.config;
+	if (typeof initial !== "string") throw new Error(`${machine.id} has no initial state`);
+	return { initial, states };
 }
 
 export function writeManifest(outDir: string, manifest: FlowManifest): void {

@@ -1,7 +1,6 @@
 import { expect, type Locator, type Page } from "@playwright/test";
-import { setup } from "xstate";
 import { folderPath } from "../content";
-import { defineFlow } from "../flow";
+import { defineFlow, setupFlow } from "../flow";
 import {
 	createFolder,
 	grantAccess,
@@ -42,7 +41,7 @@ type Event =
  * `useShare.ts` refs (`node`, `loadError`, `canManage`), the picker's `staged`
  * list, `creatingLink`, the inline `editing` form and per-row `errors`.
  */
-const machine = setup({ types: { events: {} as Event } }).createMachine({
+const machine = setupFlow<Event>().createMachine({
 	id: "share",
 	initial: "loading",
 	states: {

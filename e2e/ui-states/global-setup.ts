@@ -15,8 +15,10 @@ const NAMES = [
 /** Provisions the e2e users, then gives them names fit for a screenshot. */
 export default async function globalSetup(config: FullConfig): Promise<void> {
 	await provisionUsers(config);
-	const baseURL = config.projects[0]?.use.baseURL as string;
+	const baseURL = config.projects[0]?.use.baseURL;
+	if (typeof baseURL !== "string") throw new Error("Playwright baseURL is required");
 	const statePath = resolve(__dirname, "../drive-backed-apps/.state/run.json");
+	// SAFETY: `provisionUsers` has just written this file with the users it created.
 	const { users } = JSON.parse(readFileSync(statePath, "utf8")) as { users: Credentials[] };
 	const admin = await request.newContext({ baseURL });
 	await loginViaApi(admin);

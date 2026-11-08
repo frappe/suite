@@ -2,9 +2,8 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expect, type FileChooser, type Locator, type Page, type Route } from "@playwright/test";
-import { setup } from "xstate";
 import { fillFolder, folderPath, type FolderContent } from "../content";
-import { defineFlow } from "../flow";
+import { defineFlow, setupFlow } from "../flow";
 import { chooseNew, row } from "../../drive-backed-apps/helpers/drive";
 import type { Hold, Scene } from "../scene";
 
@@ -38,7 +37,7 @@ type Event =
  * rail dot show also turns on the queue's `trackerOpen`, `seen`, `halted`,
  * `preparing` and `showDone` flags and on the dialogs in `prompts.ts`.
  */
-const machine = setup({ types: { events: {} as Event } }).createMachine({
+const machine = setupFlow<Event>().createMachine({
 	id: "upload",
 	initial: "idle",
 	states: {
@@ -227,6 +226,7 @@ async function leaveFree(scene: Scene, free: number): Promise<void> {
 		// The scene may close while a usage read is on its way.
 		const response = await route.fetch().catch(() => null);
 		if (!response) return;
+		// SAFETY: the Drive API's usage endpoint answers these fields, or an error without `data`.
 		const body = (await response.json()) as { data?: { used_bytes: number; effective_quota: number } };
 		if (body.data) body.data.effective_quota = body.data.used_bytes + free;
 		await route.fulfill({ response, json: body }).catch(() => undefined);

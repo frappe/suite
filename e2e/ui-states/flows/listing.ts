@@ -1,7 +1,6 @@
 import { expect } from "@playwright/test";
-import { setup } from "xstate";
 import { fillFolder, folderPath, type FolderContent } from "../content";
-import { defineFlow } from "../flow";
+import { defineFlow, setupFlow } from "../flow";
 import { row } from "../../drive-backed-apps/helpers/drive";
 import type { Hold, Scene } from "../scene";
 
@@ -26,7 +25,7 @@ type Event =
  * `heldWhileRearranging`, `useSkeletonDelay`, `emptyState()` and the `q` and
  * `type` route queries.
  */
-const machine = setup({ types: { events: {} as Event } }).createMachine({
+const machine = setupFlow<Event>().createMachine({
 	id: "listing",
 	initial: "blank",
 	states: {

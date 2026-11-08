@@ -1,7 +1,6 @@
 import { expect, type Locator } from "@playwright/test";
-import { setup } from "xstate";
 import { fillFolder, folderPath, type FolderContent } from "../content";
-import { defineFlow } from "../flow";
+import { defineFlow, setupFlow } from "../flow";
 import { openRowMenu, row } from "../../drive-backed-apps/helpers/drive";
 import type { Scene } from "../scene";
 
@@ -27,7 +26,7 @@ type Event =
  * `selectionMode` it derives, `contextOpen` + `contextRow` for the
  * right-click menu, and `useMarquee`'s `box` while a drag is on.
  */
-const machine = setup({ types: { events: {} as Event } }).createMachine({
+const machine = setupFlow<Event>().createMachine({
 	id: "selection",
 	initial: "none",
 	states: {

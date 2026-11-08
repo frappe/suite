@@ -64,22 +64,29 @@ export interface Scene {
 const statePath = resolve(__dirname, "../drive-backed-apps/.state/run.json");
 
 export function people(): People {
+	// SAFETY: global setup wrote this file with the users it provisioned.
 	const run = JSON.parse(readFileSync(statePath, "utf8")) as { users: Credentials[] };
 	const [actor, peer, fresh] = run.users;
 	if (!actor || !peer || !fresh) throw new Error("ui-states needs three provisioned users");
 	return { actor, peer, fresh };
 }
 
+async function childrenOf(api: APIRequestContext, parent: string): Promise<DriveNode[]> {
+	const response = await api.get(`/api/suite/drive/nodes/${parent}/children`);
+	// SAFETY: the Drive API's children endpoint answers this envelope.
+	const { data } = (await response.json()) as { data: { rows: DriveNode[] } };
+	return data.rows;
+}
+
 /** The `UI states` folder under the actor's root, created by the first path that needs it. */
 async function workspaceFolder(api: APIRequestContext, root: string): Promise<string> {
-	const rows = await api.get(`/api/suite/drive/nodes/${root}/children`);
-	const { data } = (await rows.json()) as { data: { rows: DriveNode[] } };
-	const existing = data.rows.find((row) => row.title === WORKSPACE_FOLDER);
+	const existing = (await childrenOf(api, root)).find((row) => row.title === WORKSPACE_FOLDER);
 	return existing?.name ?? (await createFolder(api, WORKSPACE_FOLDER, root)).name;
 }
 
 async function personalRoot(api: APIRequestContext): Promise<string> {
 	const roots = await api.get("/api/suite/drive/roots");
+	// SAFETY: the Drive API's roots endpoint answers this envelope for a signed-in user.
 	const { data } = (await roots.json()) as { data: { personal: { node: string } } };
 	return data.personal.node;
 }
@@ -91,9 +98,7 @@ async function personalRoot(api: APIRequestContext): Promise<string> {
  */
 export async function recreateFolder(api: APIRequestContext, title: string, parent?: string): Promise<DriveNode> {
 	const under = parent ?? (await personalRoot(api));
-	const rows = await api.get(`/api/suite/drive/nodes/${under}/children`);
-	const { data } = (await rows.json()) as { data: { rows: DriveNode[] } };
-	for (const stale of data.rows.filter((row) => row.title === title)) {
+	for (const stale of (await childrenOf(api, under)).filter((row) => row.title === title)) {
 		await trashNode(api, stale.name);
 		await purgeNode(api, stale.name);
 	}

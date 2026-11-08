@@ -1,7 +1,6 @@
 import { expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
-import { setup } from "xstate";
 import { fillFolder, folderPath } from "../content";
-import { defineFlow } from "../flow";
+import { defineFlow, setupFlow } from "../flow";
 import { DRIVE, grantAccess, ROLE } from "../../drive-backed-apps/helpers/drive";
 import { loginViaApi } from "../../shared/auth";
 import type { Scene } from "../scene";
@@ -30,7 +29,7 @@ type Event =
  * (`pending`, `error`, `lockedUntil`), `linkAccess.ts` for what a link-only
  * caller may do, and the server's dead-link page for `/l/<token>`.
  */
-const machine = setup({ types: { events: {} as Event } }).createMachine({
+const machine = setupFlow<Event>().createMachine({
 	id: "guest",
 	initial: "folderAsGuest",
 	states: {
@@ -246,7 +245,9 @@ export const guest = defineFlow<Event>({
 			await page.getByRole("menuitem", { name: "Comments" }).click();
 			await expect(page.getByLabel("Your name")).toBeVisible();
 			// The closed menu hands focus back to its trigger, whose tooltip would cover the header.
-			await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+			await page.evaluate(() => {
+				if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+			});
 			await page.mouse.move(560, 480);
 			await expect(page.getByRole("tooltip")).toHaveCount(0);
 		},

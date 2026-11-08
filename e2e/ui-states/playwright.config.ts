@@ -43,7 +43,7 @@ export default defineConfig({
 		url: new URL("/api/method/suite.drive.e2e_api.provision_users", testApiUrl).href,
 		command: `${resolve(benchPath, "env/bin/python")} -m frappe.utils.bench_helper frappe serve --port ${new URL(testApiUrl).port || "80"} --noreload`,
 		cwd: resolve(benchPath, "sites"),
-		env: { ...process.env, DEV_SERVER: "1" } as Record<string, string>,
+		env: { DEV_SERVER: "1" },
 		reuseExistingServer: true,
 		timeout: 120_000,
 		gracefulShutdown: { signal: "SIGTERM" as const, timeout: 5_000 },

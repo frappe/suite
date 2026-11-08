@@ -1,9 +1,8 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, type Page } from "@playwright/test";
-import { setup } from "xstate";
 import { folderPath } from "../content";
-import { defineFlow } from "../flow";
+import { defineFlow, setupFlow } from "../flow";
 import { purgeNode, row, trashNode, uploadFile, type DriveNode } from "../../drive-backed-apps/helpers/drive";
 import type { Hold, Scene } from "../scene";
 import { holdUnretried } from "./upload";
@@ -32,7 +31,7 @@ type Event =
  * `refused`; inside the surface `previewKind()`, `empty` and `opensAsSheet`
  * pick the viewer, and `UploadNewVersion.vue` adds a badge while a replace runs.
  */
-const machine = setup({ types: { events: {} as Event } }).createMachine({
+const machine = setupFlow<Event>().createMachine({
 	id: "preview",
 	initial: "folder",
 	states: {
