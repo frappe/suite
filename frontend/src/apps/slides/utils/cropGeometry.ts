@@ -82,16 +82,16 @@ export const panCrop = (crop: CropRect, localDelta: Point, frame: Size): CropRec
 }
 
 // per axis: -1 grabs the low edge (left/top), 1 the high edge, 0 leaves the axis alone
-const GRAB_SIGN: Record<string, Point> = {
-  left: { x: -1, y: 0 },
-  right: { x: 1, y: 0 },
-  top: { x: 0, y: -1 },
-  bottom: { x: 0, y: 1 },
-  'top-left': { x: -1, y: -1 },
-  'top-right': { x: 1, y: -1 },
-  'bottom-left': { x: -1, y: 1 },
-  'bottom-right': { x: 1, y: 1 },
-}
+const GRAB_SIGN = new Map<string, Point>([
+  ['left', { x: -1, y: 0 }],
+  ['right', { x: 1, y: 0 }],
+  ['top', { x: 0, y: -1 }],
+  ['bottom', { x: 0, y: 1 }],
+  ['top-left', { x: -1, y: -1 }],
+  ['top-right', { x: 1, y: -1 }],
+  ['bottom-left', { x: -1, y: 1 }],
+  ['bottom-right', { x: 1, y: 1 }],
+])
 
 const dragCropEdge = (
   offset: number,
@@ -129,8 +129,9 @@ export const resizeCrop = (
   handle: string,
   localEdgeDelta: Point,
   minFrame: Size,
-): { crop: CropRect; localEdgeDelta: Point } => {
-  const grab = GRAB_SIGN[handle]
+) => {
+  const grab = GRAB_SIGN.get(handle)
+  if (!grab) throw new Error(`Unknown crop handle: ${handle}`)
 
   const xAxis = dragCropEdge(
     crop.x,

@@ -1,11 +1,11 @@
 import { toast } from 'frappe-ui'
-import tinycolor from 'tinycolor2'
 import { computed, ref } from 'vue'
 
 import { api, client } from '@/api'
 import { normalizeZIndices } from '@/apps/slides/stores/element'
 import { normalizeColor } from '@/apps/slides/utils/color'
 import { serverAnswers } from '@/apps/slides/utils/offlineRequests'
+import { migrateShadow } from '@/apps/slides/utils/oldShadow'
 import { appDocumentTitle } from '@/platform/page-meta'
 import { randomId } from '@/platform/random-id'
 import { getCookieSessionUser } from '@/platform/session'
@@ -27,14 +27,17 @@ import { slides } from './slide'
 
 const presentationDoc = ref()
 
+/** @type {import('vue').Ref<string | null>} */
 const presentationId = ref(null)
 
 // the user may not write this presentation at all
 const viewOnly = ref(false)
 
-// no write access, another tab of this browser holds the edit lock, or the server
-// refused this tab's version; a reload is the only way on from the last one
-const inReadonlyMode = computed(() => viewOnly.value || lockedElsewhere.value || saveRefused.value)
+// Another tab of this browser edits the presentation, or the server refused this
+// tab's version. Only the refusal needs a reload.
+const writesBlocked = computed(() => lockedElsewhere.value || saveRefused.value)
+// That, or the user has no write access.
+const inReadonlyMode = computed(() => viewOnly.value || writesBlocked.value)
 
 const applyReverseTransition = ref(false)
 
@@ -112,29 +115,6 @@ const transformElements = async (elements) => {
   }
 
   return newEls
-}
-
-const migrateShadow = (el) => {
-  // legacy px shadow (shadowSpread/shadowOffsetX/shadowOffsetY) -> size-relative model
-  if (el.shadowOffset != null) return
-  const hasLegacyShadow =
-    el.shadowSpread != null || el.shadowOffsetX != null || el.shadowOffsetY != null
-  if (!hasLegacyShadow) return
-
-  const refSize = Number(el.width) || 1
-  const offsetX = Number(el.shadowOffsetX || 0)
-  const offsetY = Number(el.shadowOffsetY || 0)
-  const toRelativeSize = (px) => Math.round((px / refSize) * 1000) / 10
-  const offsetAngle = ((Math.atan2(offsetY, offsetX) * 180) / Math.PI + 360) % 360
-
-  el.shadowBlur = toRelativeSize(Number(el.shadowSpread || 0))
-  el.shadowOffset = toRelativeSize(Math.hypot(offsetX, offsetY))
-  el.shadowAngle = offsetX || offsetY ? Math.round(offsetAngle) : 45
-  el.shadowOpacity = Math.round(tinycolor(el.shadowColor || '#000000ff').getAlpha() * 100)
-
-  delete el.shadowSpread
-  delete el.shadowOffsetX
-  delete el.shadowOffsetY
 }
 
 const parseElements = (value, slide) => {
@@ -258,6 +238,12 @@ const fetchPresentation = async (name, load) => {
   const clientIdsRepaired = normalizeSlideDoc(doc)
   for (const slide of doc.slides || []) {
     slide.elements = await transformElements(slide.elements)
+  }
+
+  // the rows of a deck the layer holds or is about to take are only there to read,
+  // so a draft stays on the device, unrestored
+  if (doc.is_converted || doc.conversion) {
+    return { doc, content: JSON.parse(JSON.stringify(doc.slides || [])), dirty: false }
   }
 
   const hasServerAnswered = needsServerCheck(local, doc.modified, landed) && (await serverAnswers())
@@ -505,6 +491,7 @@ export {
   presentationTheme,
   viewOnly,
   inReadonlyMode,
+  writesBlocked,
   savePresentationDoc,
   initPresentationDoc,
   showsSlides,

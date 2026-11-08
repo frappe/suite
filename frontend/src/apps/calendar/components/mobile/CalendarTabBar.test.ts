@@ -4,7 +4,9 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 
 import CalendarTabBar from '@/apps/calendar/components/mobile/CalendarTabBar.vue'
 
-const calls = vi.hoisted(() => ({ sheets: [] as string[] }))
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
+const calls = vi.hoisted(() => ({ sheets: fromPartial<string[]>([]) }))
 
 // Unit tests alias frappe-ui to a stub. The bar and its items are the real
 // components here, so a wrong prop name fails the test.

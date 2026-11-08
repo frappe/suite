@@ -82,12 +82,12 @@ export function readPresentationPreference(): Partial<PresentationState> | null 
 
 function oneOf<T extends string>(value: unknown, allowed: readonly T[]): T | null {
   const item = Array.isArray(value) ? value[0] : value
-  return typeof item === 'string' && allowed.includes(item as T) ? (item as T) : null
+  return allowed.find((candidate) => candidate === item) ?? null
 }
 
 function normalizeColumns(value: unknown): string[] {
   if (!Array.isArray(value)) return [...DEFAULT_PRESENTATION.columns]
   return value.filter((column): column is FilesColumn =>
-    (FILES_COLUMNS as readonly unknown[]).includes(column),
+    FILES_COLUMNS.some((candidate) => candidate === column),
   )
 }

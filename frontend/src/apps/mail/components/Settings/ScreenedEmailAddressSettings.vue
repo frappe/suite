@@ -185,7 +185,7 @@ const sortField = ref<SortField>('modified')
 const sortDir = ref<'asc' | 'desc'>('desc')
 const sortLabel = computed(() => SORT_LABELS[sortField.value])
 const sortOptions = computed(() =>
-  (Object.keys(SORT_LABELS) as SortField[]).map((field) => ({
+  (['modified', 'creation', 'email'] satisfies SortField[]).map((field) => ({
     label: SORT_LABELS[field],
     onClick: () => (sortField.value = field),
   })),
@@ -215,7 +215,10 @@ const rows = computed(() => {
         : '',
     }))
 })
-const selectedEmails = () => Array.from(listViewRef.value?.selections ?? []) as string[]
+const selectedEmails = () =>
+  Array.from(listViewRef.value?.selections ?? []).filter(
+    (value): value is string => typeof value === 'string',
+  )
 
 // Bulk edit: `screen_email_addresses` upserts the action for every selected address and rebuilds the
 // sieve script only once, so switching many senders between Block/Junk/Accept is a single request.
@@ -230,7 +233,7 @@ async function editScreenedAddressesSubmit({ action }: { action: ScreeningAction
   raiseToast(__('Action updated.'))
   listViewRef.value?.toggleAllRows()
 }
-const bulkActionOptions = (['Accepted', 'Spam'] as ScreeningAction[]).map((action) => ({
+const bulkActionOptions = (['Accepted', 'Spam'] satisfies ScreeningAction[]).map((action) => ({
   label: ACTION_LABELS[action] ?? action,
   onClick: () =>
     editScreenedAddressesSubmit({

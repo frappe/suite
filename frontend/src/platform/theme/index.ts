@@ -136,6 +136,9 @@ export const resolvedMode = singleton.resolvedMode
 export const setTheme = singleton.set
 export const cycleTheme = singleton.cycle
 
+/** One toast for every theme announcement, so pressing the shortcut again updates it in place. */
+const THEME_TOAST_ID = 'theme-mode'
+
 /**
  * Moves to the next mode and says in a toast which one it moved to, for the theme shortcut and
  * menu items, which change the page without showing the mode they chose. A save that fails puts
@@ -146,7 +149,7 @@ export async function cycleThemeAndAnnounce(): Promise<void> {
   // import would put frappe-ui's dialog and toast stack in the first download.
   const { toast } = await import('@/platform/feedback')
   if (!(await singleton.cycle())) {
-    toast.error(__('Could not save the theme'))
+    toast.error(__('Could not save the theme'), { id: THEME_TOAST_ID })
     return
   }
   const mode = singleton.savedMode.value
@@ -154,6 +157,7 @@ export async function cycleThemeAndAnnounce(): Promise<void> {
     mode === 'automatic'
       ? __('Theme set to follow your system')
       : __('Theme changed to {0}', [__(mode === 'light' ? 'Light' : 'Dark')]),
+    { id: THEME_TOAST_ID },
   )
 }
 export const withOverride = singleton.withOverride

@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, expect, it } from 'vitest'
 
 import { useDiscardingDrafts } from './composables'
@@ -36,7 +37,7 @@ it('keeps a row nothing is being discarded from', () => {
 
 // A conversation in Inbox whose newest message is a reply draft: the row reads off the draft.
 const inboxRow = () =>
-  ({
+  fromPartial<Parameters<typeof withoutHeldDrafts>[0]>({
     draft: 1,
     preview: 'my reply',
     from_name: 'Me',
@@ -60,7 +61,7 @@ const inboxRow = () =>
         recipients: [],
       },
     ],
-  }) as unknown as Parameters<typeof withoutHeldDrafts>[0]
+  })
 
 it('reads a row off the message before a discarded reply draft', () => {
   holdDraft('reply')

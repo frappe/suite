@@ -10,9 +10,9 @@ import RecipientInput from './RecipientInput.vue'
 // so each test says which it is before mounting.
 const isMobile = vi.hoisted(() => ({ value: true }))
 // The address book's answer to whatever is typed.
-const suggested = vi.hoisted(() => ({
-  value: [] as { email: string; name?: string; user_image?: string }[],
-}))
+const suggested = vi.hoisted<{
+  value: { email: string; name?: string; user_image?: string }[]
+}>(() => ({ value: [] }))
 
 vi.mock('frappe-ui', async () => {
   const { defineComponent, h } = await import('vue')
@@ -37,7 +37,9 @@ vi.mock('frappe-ui', async () => {
         return () =>
           h('input', {
             ...keys(),
-            onInput: (e: Event) => emit('update:query', (e.target as HTMLInputElement).value),
+            onInput: (e: Event) => {
+              if (e.target instanceof HTMLInputElement) emit('update:query', e.target.value)
+            },
           })
       },
     }),
@@ -251,9 +253,9 @@ describe('RecipientInput suggestions in the page', () => {
     await typeInto(root, 'sa')
 
     const domains = options(list).map((option) =>
-      [...option.querySelectorAll('span')]
-        .filter((span) => span.textContent?.startsWith('@'))
-        .map((span) => span.className.includes('text-ink-gray-8')),
+      [...option.querySelectorAll('span')].flatMap((span) =>
+        span.textContent?.startsWith('@') ? [span.className.includes('text-ink-gray-8')] : [],
+      ),
     )
     expect(domains).toEqual([[true], [true], []])
   })

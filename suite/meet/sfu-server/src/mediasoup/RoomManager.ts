@@ -1,5 +1,5 @@
 import type * as mediasoup from 'mediasoup';
-import type { Room, RtpCodecCapability } from '../types';
+import type { Room, RouterRtpCodecCapability } from '../types';
 import { loggers } from '../utils/logger';
 
 const MAX_AUDIO_LEVEL_ENTRIES = 20;
@@ -13,7 +13,7 @@ export class RoomManager {
 		workerId: number,
 		worker: mediasoup.types.Worker,
 		webRtcServer: mediasoup.types.WebRtcServer,
-		mediaCodecs: RtpCodecCapability[],
+		mediaCodecs: RouterRtpCodecCapability[],
 		onActiveSpeaker?: (roomId: string, participantIds: string[]) => void,
 	): Promise<Room> {
 		if (this.rooms.has(roomId)) {
@@ -88,7 +88,7 @@ export class RoomManager {
 			loggers.roomManager.warn(
 				'Error closing router for room %s: %s',
 				roomId,
-				(error as Error).message,
+				error instanceof Error ? error.message : String(error),
 			);
 		}
 

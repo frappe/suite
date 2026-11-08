@@ -53,10 +53,14 @@ export const scopeOptions = ({
   unavailable = [],
   isFirst = false,
 }: { unavailable?: RecurringScope[]; isFirst?: boolean } = {}): RecurringScopeOption[] =>
-  (['instance', 'following', 'series'] as const)
-    .filter((value) => !(isFirst && value === 'following'))
-    .map((value) => ({
-      value,
-      label: scopeLabels()[value],
-      disabled: unavailable.includes(value),
-    }))
+  (['instance', 'following', 'series'] as const).flatMap((value) =>
+    !(isFirst && value === 'following')
+      ? [
+          {
+            value: value,
+            label: scopeLabels()[value],
+            disabled: unavailable.includes(value),
+          },
+        ]
+      : [],
+  )

@@ -3,6 +3,8 @@
  * Handles participant state management and updates
  */
 
+import { isUnknownRecord } from '../../types'
+
 export interface Participant {
   user_id: string
   user_name: string
@@ -77,9 +79,11 @@ export class ParticipantManager {
   }
 
   addParticipant(participantData: ParticipantData): Participant {
+    const userId = participantData.participantId || participantData.user_id
+    if (!userId) throw new Error('Participant identity is required')
     const displayName = participantData.userData?.name || participantData.user_name || ''
     const participant: Participant = {
-      user_id: participantData.participantId || (participantData.user_id as string),
+      user_id: userId,
       user_name: displayName,
       avatar: participantData.userData?.avatar || participantData.avatar || null,
       initials: this.generateInitials(displayName || participantData.participantId || ''),
@@ -215,30 +219,26 @@ export class ParticipantManager {
   }
 }
 
-function isObject(value: unknown): value is object {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function stringField(value: object, key: string): string | undefined {
-  if (!(key in value)) return undefined
-  const field = Reflect.get(value, key)
+function stringField(value: unknown, key: string): string | undefined {
+  if (!isUnknownRecord(value) || !(key in value)) return undefined
+  const field = value[key]
   return typeof field === 'string' ? field : undefined
 }
 
-function booleanField(value: object, key: string): boolean | undefined {
-  if (!(key in value)) return undefined
-  const field = Reflect.get(value, key)
+function booleanField(value: unknown, key: string): boolean | undefined {
+  if (!isUnknownRecord(value) || !(key in value)) return undefined
+  const field = value[key]
   return typeof field === 'boolean' ? field : undefined
 }
 
-function numberField(value: object, key: string): number | undefined {
-  if (!(key in value)) return undefined
-  const field = Reflect.get(value, key)
+function numberField(value: unknown, key: string): number | undefined {
+  if (!isUnknownRecord(value) || !(key in value)) return undefined
+  const field = value[key]
   return typeof field === 'number' && Number.isFinite(field) ? field : undefined
 }
 
 function normalizeUserData(value: unknown): ParticipantUserData | undefined {
-  if (!isObject(value)) return undefined
+  if (!isUnknownRecord(value)) return undefined
   const avatar = 'avatar' in value && value.avatar === null ? null : stringField(value, 'avatar')
   return {
     name: stringField(value, 'name'),
@@ -251,7 +251,7 @@ function normalizeUserData(value: unknown): ParticipantUserData | undefined {
 }
 
 export function normalizeParticipantData(value: unknown): ParticipantData | null {
-  if (!isObject(value)) return null
+  if (!isUnknownRecord(value)) return null
   const participantId = stringField(value, 'participantId')
   const userId = stringField(value, 'user_id') ?? stringField(value, 'id')
   if (!participantId && !userId) return null

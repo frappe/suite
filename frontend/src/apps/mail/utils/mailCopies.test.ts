@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it } from 'vitest'
 
 import type { Mail, MailCopy, Thread } from '@/apps/mail/types'
@@ -5,11 +6,11 @@ import type { Mail, MailCopy, Thread } from '@/apps/mail/types'
 import { mailCopies, mailCopyIds, mailCopyNames, rowMailIds, threadStarIds } from './mailCopies'
 
 const mail = (overrides: Partial<Mail> = {}): Mail =>
-  ({ name: 'message-d1', id: 'd1', ...overrides }) as Mail
+  fromPartial<Mail>({ name: 'message-d1', id: 'd1', ...overrides })
 
 // What the server hangs off a self-addressed message: the copy sitting in Sent, which the thread
 // doesn't show but every action still has to reach.
-const sentCopy = { name: 'message-s1', id: 's1' } as MailCopy
+const sentCopy = fromPartial<MailCopy>({ name: 'message-s1', id: 's1' })
 
 describe('mailCopies', () => {
   it('is the message itself when the account holds only one of it', () => {
@@ -33,7 +34,7 @@ describe('mailCopies', () => {
 
 // The row names one message of its thread — in Sent, for a mail to yourself, the copy the pane does
 // not render.
-const row = (id: string, messages: Mail[]): Thread => ({ id, messages }) as Thread
+const row = (id: string, messages: Mail[]): Thread => fromPartial<Thread>({ id, messages })
 
 describe('rowMailIds', () => {
   it('reaches the copy the pane shows when the row stands for the other one', () => {
@@ -46,7 +47,7 @@ describe('rowMailIds', () => {
   })
 
   it('falls back to the row itself when its conversation is not loaded', () => {
-    expect(rowMailIds({ id: 'x1' } as Thread)).toEqual(['x1'])
+    expect(rowMailIds(fromPartial<Thread>({ id: 'x1' }))).toEqual(['x1'])
   })
 })
 
@@ -59,7 +60,7 @@ describe('threadStarIds', () => {
   })
 
   it('unstars a starred copy the thread does not show', () => {
-    const hiddenStarred = { name: 'message-s1', id: 's1', flagged: 1 } as MailCopy
+    const hiddenStarred = fromPartial<MailCopy>({ name: 'message-s1', id: 's1', flagged: 1 })
     const sent = mail({ id: 'a', name: 'message-a', flagged: 0, duplicates: [hiddenStarred] })
     expect(threadStarIds(row('b', [sent, newest]), false).sort()).toEqual(['b', 's1'])
   })

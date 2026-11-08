@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { api } from '@/api'
@@ -12,11 +13,14 @@ vi.mock('@/api', async (original) => {
   return { ...real, client: { ...real.client, query } }
 })
 
-const context = { links: ['link-1'] }
+const context = {
+  partition: () => 'link-1',
+  scope: () => ({ headers: { 'X-Link-Token': 'link-1' } }),
+}
 
 function opened() {
   const session = { contentDocname: 'content-1', credentials: { context } }
-  return createWriterDocument(session as unknown as DocumentSession)
+  return createWriterDocument(fromPartial<DocumentSession>(session))
 }
 
 describe('locked documents', () => {

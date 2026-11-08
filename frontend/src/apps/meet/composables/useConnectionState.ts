@@ -25,15 +25,11 @@ export function readGuestSession(meetingId: string): StoredGuestSession | null {
   const guestSessionToken = sessionStorage.getItem(GUEST_SESSION_KEYS.guestSessionToken)
   const storedMeetingId = sessionStorage.getItem(GUEST_SESSION_KEYS.meetingId)
   const guestName = sessionStorage.getItem(GUEST_SESSION_KEYS.guestName)
-  const status = sessionStorage.getItem(GUEST_SESSION_KEYS.status)
-  if (
-    !guestId ||
-    !guestSessionToken ||
-    storedMeetingId !== meetingId ||
-    !guestName ||
-    !status ||
-    !['pending', 'admitted', 'rejected', 'banned', 'expired'].includes(status)
-  ) {
+  const rawStatus = sessionStorage.getItem(GUEST_SESSION_KEYS.status)
+  const status = (['pending', 'admitted', 'rejected', 'banned', 'expired'] as const).find(
+    (status) => status === rawStatus,
+  )
+  if (!guestId || !guestSessionToken || storedMeetingId !== meetingId || !guestName || !status) {
     return null
   }
   return {
@@ -41,7 +37,7 @@ export function readGuestSession(meetingId: string): StoredGuestSession | null {
     guestSessionToken,
     meetingId: storedMeetingId,
     guestName,
-    status: status as GuestSessionStatus,
+    status,
   }
 }
 
@@ -94,16 +90,28 @@ export function shouldAutoConnectAdmittedGuest(subscribedSession: StoredGuestSes
   return subscribedSession.status === 'pending'
 }
 
+interface ConnectionStoreState {
+  connectionError: string | null
+  connectionMoved: boolean
+  isInPreview: boolean
+  codecStrategy: string
+  networkQuality: string
+  guestId: string | null
+  guestAuthToken: string | null
+  guestSessionToken: string | null
+  justCreated: boolean
+}
+
 export const useConnectionState = defineStore('meet-connection', {
-  state: () => ({
-    connectionError: null as string | null,
+  state: (): ConnectionStoreState => ({
+    connectionError: null,
     connectionMoved: false,
     isInPreview: true,
     codecStrategy: 'svc',
     networkQuality: 'good',
-    guestId: null as string | null,
-    guestAuthToken: null as string | null,
-    guestSessionToken: null as string | null,
+    guestId: null,
+    guestAuthToken: null,
+    guestSessionToken: null,
     justCreated: false,
   }),
 })

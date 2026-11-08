@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it } from 'vitest'
 
 import type { DocumentThread } from '@/apps/drive'
@@ -6,7 +7,7 @@ import type { ThreadPlace } from '@/apps/writer/collab/places'
 import { threadRows } from './threadRows'
 
 function thread(name: string) {
-  return { name } as DocumentThread
+  return fromPartial<DocumentThread>({ name })
 }
 
 function shown(rows: ReturnType<typeof threadRows>) {

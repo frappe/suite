@@ -230,7 +230,7 @@ export class TsMlsEpochProtocolProvider implements EpochProtocolProvider {
       32,
       cipherSuite,
     )
-    return secret as Uint8Array<ArrayBuffer>
+    return new Uint8Array(secret)
   }
 
   private async buildStateResult(state: ClientState): Promise<EpochStateResult> {

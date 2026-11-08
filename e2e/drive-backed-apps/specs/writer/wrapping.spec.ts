@@ -1,11 +1,7 @@
 import type { Locator, Page } from "@playwright/test";
+
 import { expect, test } from "../../fixtures/test";
-import {
-	createWriterDocument,
-	openWriterDocument,
-	uniqueWriterTitle,
-	writerEditor,
-} from "../../helpers/writer";
+import { createWriterDocument, openWriterDocument, uniqueWriterTitle, writerEditor } from "../../helpers/writer";
 
 const PARAGRAPH =
 	"We do not deduct pay for taking leave. 45 annual leave will be provided " +
@@ -21,10 +17,7 @@ const LINK =
 const WIDTHS = [320, 400, 480, 560, 640];
 
 function computed(locator: Locator, property: string) {
-	return locator.evaluate(
-		(node, prop) => getComputedStyle(node).getPropertyValue(prop),
-		property,
-	);
+	return locator.evaluate((node, prop) => getComputedStyle(node).getPropertyValue(prop), property);
 }
 
 // A word the browser drew on two lines has one client rect per line.
@@ -48,7 +41,8 @@ function splitWords(paragraph: Locator): Promise<string[]> {
 
 function setEditorWidth(editor: Locator, width: number): Promise<void> {
 	return editor.evaluate((node, value) => {
-		(node as HTMLElement).style.width = `${value}px`;
+		if (!(node instanceof HTMLElement)) throw new Error("Expected an editor element");
+		node.style.width = `${value}px`;
 	}, width);
 }
 
@@ -63,15 +57,9 @@ async function typeParagraphs(page: Page, editor: Locator): Promise<void> {
 // That keyword is deprecated, it means `overflow-wrap: anywhere`, and it lets
 // an engine cut a word at the end of a line although the whole word fits on
 // the next one. The writer pins the standard pair instead.
-test("the editor keeps a word whole and still wraps a long link", async ({
-	owner,
-	run,
-}) => {
+test("the editor keeps a word whole and still wraps a long link", async ({ owner, run }) => {
 	const { page } = owner;
-	const file = await createWriterDocument(
-		page.request,
-		uniqueWriterTitle(run.run_id, "wrapping"),
-	);
+	const file = await createWriterDocument(page.request, uniqueWriterTitle(run.run_id, "wrapping"));
 	await openWriterDocument(page, file.name);
 
 	const editor = writerEditor(page);
@@ -87,10 +75,6 @@ test("the editor keeps a word whole and still wraps a long link", async ({
 		await expect.poll(() => splitWords(paragraph)).toEqual([]);
 		// The link has no place to break, so it may be cut — but it must stay
 		// inside the page rather than push the column wider.
-		await expect
-			.poll(() =>
-				link.evaluate((node) => node.scrollWidth - node.clientWidth),
-			)
-			.toBeLessThanOrEqual(0);
+		await expect.poll(() => link.evaluate((node) => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(0);
 	}
 });

@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it } from 'vitest'
 
 import { prefersLightInk, relativeLuminance } from './contrast.js'
@@ -9,9 +10,9 @@ describe('relativeLuminance', () => {
   })
 
   it('weights green above red above blue, as the eye does', () => {
-    const red = relativeLuminance('#ff0000') as number
-    const green = relativeLuminance('#00ff00') as number
-    const blue = relativeLuminance('#0000ff') as number
+    const red = fromPartial<number>(relativeLuminance('#ff0000'))
+    const green = fromPartial<number>(relativeLuminance('#00ff00'))
+    const blue = fromPartial<number>(relativeLuminance('#0000ff'))
     expect(green).toBeGreaterThan(red)
     expect(red).toBeGreaterThan(blue)
   })

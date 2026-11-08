@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
 import { initSync } from '@ironcalc/wasm'
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it } from 'vitest'
 
 import { createWorkbookClient, type WorkbookClient } from '../core/client'
@@ -19,7 +20,7 @@ initSync({ module: fs.readFileSync(require.resolve('@ironcalc/wasm/wasm_bg.wasm'
 function fakePort() {
   const host = createWorkerHost()
   const port = {
-    onmessage: null as ((e: { data: unknown }) => void) | null,
+    onmessage: fromPartial<((e: { data: unknown }) => void) | null>(null),
     postMessage(message: unknown) {
       setTimeout(() => port.onmessage?.({ data: host.handle(structuredClone(message)) }), 0)
     },

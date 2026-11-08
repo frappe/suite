@@ -61,6 +61,7 @@ function fieldsOf(heard: unknown): Record<string, unknown> {
     return {}
   }
 
+  // SAFETY: heard is a non-null object; arbitrary fields remain unknown and each payload parser checks the fields it consumes.
   return heard as Record<string, unknown>
 }
 

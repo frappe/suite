@@ -1,3 +1,4 @@
+import { fromAny, fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createTransport, TransportError, type Transport } from '@/platform/transport'
@@ -169,11 +170,36 @@ describe('document session comments', () => {
   })
 })
 
+describe('document session panels', () => {
+  it('offers a signed-out person only the panels the server would answer, and a signed-in person both', async () => {
+    const panelsFor = async (role: number, user: string | null) => {
+      const session = await openDriveDocumentSession('deck', {
+        signedIn: () => user,
+        client: testClient(
+          transport((id, input) =>
+            id === 'node_get' ? { ...documentNode(input.node), access: { role } } : {},
+          ),
+        ),
+      })
+      const { value } = session.panels
+      session.dispose()
+      return value
+    }
+
+    expect(await panelsFor(10, null)).toEqual([])
+    expect(await panelsFor(20, null)).toEqual(['comments'])
+    expect(await panelsFor(30, null)).toEqual(['comments'])
+    expect(await panelsFor(40, null)).toEqual(['comments', 'versions'])
+    expect(await panelsFor(10, 'reader@suite.test')).toEqual(['comments', 'versions'])
+  })
+})
+
 describe('document session visits', () => {
-  it("records a visit for the caller's own access, and none when a share link decides it", async () => {
+  it("records a visit for the caller's own access, and none when a share link decides it or nobody is signed in", async () => {
     const visits: string[] = []
-    const open = (viaLink: string | null) =>
-      openDriveDocumentSession(viaLink ? 'linked' : 'own', {
+    const open = (viaLink: string | null, user: string | null = 'owner@suite.test') =>
+      openDriveDocumentSession(viaLink ? 'linked' : user ? 'own' : 'public', {
+        signedIn: () => user,
         client: testClient(
           transport((id, input) => {
             if (id === 'node_visit') visits.push(input.node)
@@ -186,10 +212,12 @@ describe('document session visits', () => {
 
     const own = await open(null)
     const linked = await open(`$LINK:${code(1)}`)
+    const publicRead = await open(null, null)
 
     expect(visits).toEqual(['own'])
     own.dispose()
     linked.dispose()
+    publicRead.dispose()
   })
 })
 
@@ -224,23 +252,27 @@ describe('document session media', () => {
     return { node, url: `/private/files/b7x2k9q4mz/${node}.png`, expires: 1 }
   }
 
-  async function openedWithHeldRead(window?: Window) {
+  async function openedWithHeldRead(
+    window?: Pick<Window, 'addEventListener' | 'removeEventListener'>,
+  ) {
     const answers: Array<(media: unknown[]) => void> = []
     const failures: Array<(error: unknown) => void> = []
     const requester: Transport = {
       request: (operation) => {
         if (operation.id === 'node_get') {
-          return Promise.resolve(documentNode('root')) as never
+          return fromPartial(Promise.resolve(documentNode('root')))
         }
 
         if (operation.id !== 'node_media') {
-          return Promise.resolve({}) as never
+          return fromPartial(Promise.resolve({}))
         }
 
-        return new Promise((resolve, reject) => {
-          answers.push((media) => resolve({ media }))
-          failures.push(reject)
-        }) as never
+        return fromPartial(
+          new Promise((resolve, reject) => {
+            answers.push((media) => resolve({ media }))
+            failures.push(reject)
+          }),
+        )
       },
     }
     const session = await openDriveDocumentSession('root', {
@@ -371,7 +403,7 @@ describe('document session media', () => {
 
     it('reads again when the browser comes back online', async () => {
       const browser = new EventTarget()
-      const { session, answers, failures } = await openedWithHeldRead(browser as Window)
+      const { session, answers, failures } = await openedWithHeldRead(browser)
       const waiting = session.media('waiting')
       await vi.waitFor(() => expect(answers).toHaveLength(1))
       failures[0](new TypeError('Failed to fetch'))
@@ -474,7 +506,14 @@ describe('document session access refresh', () => {
           return Promise.reject(nextFailure)
         }
 
-        return Promise.resolve(documentNode((input as { node: string }).node) as never)
+        if (
+          !input ||
+          typeof input !== 'object' ||
+          !('node' in input) ||
+          typeof input.node !== 'string'
+        )
+          throw new Error('Expected a document node input')
+        return Promise.resolve(fromAny(documentNode(input.node)))
       },
     }
     const dependencies = {
@@ -510,7 +549,14 @@ describe('document session access refresh', () => {
     const requester: Transport = {
       request: (operation, input) => {
         if (operation.id !== 'node_get' || !nextFailure) {
-          return Promise.resolve(documentNode((input as { node: string }).node) as never)
+          if (
+            !input ||
+            typeof input !== 'object' ||
+            !('node' in input) ||
+            typeof input.node !== 'string'
+          )
+            throw new Error('Expected a document node input')
+          return Promise.resolve(fromAny(documentNode(input.node)))
         }
 
         refusedCount += 1
@@ -519,7 +565,7 @@ describe('document session access refresh', () => {
     }
     const dependencies = {
       client: testClient(requester),
-      window: fakeWindow as Window,
+      window: fakeWindow,
       signedIn: () => user,
     }
     const session = await openDriveDocumentSession('root', dependencies)
@@ -558,7 +604,7 @@ describe('document session access', () => {
     })
     const session = await openDriveDocumentSession('deck', {
       client: testClient(requester),
-      window: new EventTarget() as Window,
+      window: new EventTarget(),
     })
     expect(reads).toBe(1)
     expect(session.access.value.role).toBe(40)
@@ -576,6 +622,25 @@ describe('document session access', () => {
     await Promise.resolve()
     expect(reads).toBe(2)
   })
+
+  it('a Suite Admin with a Comment grant can share, as the server allows', async () => {
+    const requester = transport((id, input) =>
+      id === 'node_get'
+        ? {
+            ...documentNode(input.node),
+            access: { role: 20, via_link: null, can_manage: true },
+          }
+        : {},
+    )
+    const session = await openDriveDocumentSession('deck', {
+      client: testClient(requester),
+      window: new EventTarget(),
+    })
+
+    expect(session.access.value.role).toBe(20)
+    expect(session.canShare.value).toBe(true)
+    session.dispose()
+  })
 })
 
 describe('document session rename', () => {
@@ -588,13 +653,13 @@ describe('document session rename', () => {
       free_title: 'Rates (2)',
     })
     const session = await openDriveDocumentSession('sheet', {
-      node: documentNode('sheet') as never,
+      node: fromPartial(documentNode('sheet')),
       client: testClient(
         {
           request: (operation) =>
             operation.id === 'node_patch.rename'
               ? Promise.reject(conflict)
-              : Promise.resolve({} as never),
+              : Promise.resolve(fromAny({})),
         },
         feedback,
       ),

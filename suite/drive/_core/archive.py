@@ -1,10 +1,11 @@
-"""Authorized, synchronous folder archive builds."""
+"""The zip writer behind Drive downloads: members in, one private File Blob out."""
 
 import io
 import re
 import tempfile
 import zipfile
 from contextlib import closing
+from typing import IO
 
 import frappe
 from frappe import _
@@ -12,203 +13,106 @@ from frappe.storage.blob import put_blob
 from frappe.storage.driver import get_driver
 
 from suite.drive._core import content
-from suite.drive._core import nodes as node_core
-from suite.drive._core.errors import DriveConflict, DriveNotFound
+from suite.drive._core.errors import DriveConflict
 from suite.drive._core.principals import Principals
 
-ARCHIVE_TTL_SECONDS = 60 * 60
-MAX_ARCHIVE_BYTES = 512 * 1024 * 1024
-ARCHIVE_NODES = f"""
-    SELECT {node_core.NODE_FIELDS}
-    FROM `tabDrive Node` n
-    WHERE n.name IN %(nodes)s AND n.state = 'Active'
-"""
+MAX_DOWNLOAD_BYTES = 4 * 1024 * 1024 * 1024
 
 
-def start(principals: Principals, node: str) -> dict:
-    """Build one readable folder archive now and return its terminal status."""
-    folder, rows = _authorized_rows(principals, node)
-    key = _cache_key(principals.user, folder.name)
-    frappe.cache().set_value(
-        key,
-        {"status": "building", "file_name": f"{_segment(folder.title)}.zip"},
-        expires_in_sec=ARCHIVE_TTL_SECONDS,
-    )
-    try:
-        blob, size = _build(principals, folder, rows)
-    except Exception as error:
-        frappe.cache().set_value(
-            key,
-            {"status": "failed", "error": str(error)},
-            expires_in_sec=ARCHIVE_TTL_SECONDS,
-        )
-        raise
-    answer = {
-        "status": "ready",
-        "file_name": f"{_segment(folder.title)}.zip",
-        "size": size,
-        "blob": blob,
-        "nodes": [row.name for row in rows],
-    }
-    frappe.cache().set_value(key, answer, expires_in_sec=ARCHIVE_TTL_SECONDS)
-    return _public_status(answer)
+def write_zip(principals: Principals, members: list[frappe._dict]) -> tuple[str, int]:
+    """Write the members into one stored zip and return its private File Blob and size.
 
-
-def status(principals: Principals, node: str) -> dict:
-    """Return this caller's current archive build state for one folder."""
-    folder = _folder(principals, node)
-    entry = frappe.cache().get_value(_cache_key(principals.user, folder.name))
-    if not isinstance(entry, dict):
-        raise DriveNotFound(_("No Drive archive build was found"))
-    return _public_status(entry)
-
-
-def download(principals: Principals, node: str) -> tuple[frappe.model.document.Document, str]:
-    """Return the ready private blob after rechecking every archived node."""
-    folder = _folder(principals, node)
-    entry = frappe.cache().get_value(_cache_key(principals.user, folder.name))
-    if not isinstance(entry, dict) or entry.get("status") != "ready" or not entry.get("blob"):
-        raise DriveNotFound(_("The Drive archive is not ready"))
-    # Check the original members: a move can take bytes out of this subtree
-    # without taking them out of the cached ZIP (Drive spec §11.2).
-    members = entry.get("nodes")
-    if not members:
-        raise DriveNotFound(_("Rebuild this Drive archive before downloading it"))
-    rows = frappe.db.sql(ARCHIVE_NODES, {"nodes": tuple(members)}, as_dict=True)
-    if len(node_core._readable_rows(rows, principals)) != len(members):
-        raise DriveNotFound(_("A node in this Drive archive cannot be read"))
-    try:
-        blob = frappe.get_doc("File Blob", entry["blob"])
-    except frappe.DoesNotExistError:
-        raise DriveNotFound(_("The Drive archive is no longer available")) from None
-    if blob.status != "Ready" or not blob.is_private:
-        raise DriveNotFound(_("The Drive archive is no longer available"))
-    return blob, entry.get("file_name") or f"{_segment(folder.title)}.zip"
-
-
-def _authorized_rows(principals: Principals, node: str) -> tuple[frappe._dict, list[frappe._dict]]:
-    folder = _folder(principals, node)
-    prefix = f"{folder.path or '/'}{folder.name}/%"
-    descendants = frappe.db.sql(
-        f"""
-        SELECT {node_core.NODE_FIELDS}
-        FROM `tabDrive Node` n
-        WHERE n.root = %(root)s
-          AND n.state = 'Active'
-          AND n.path LIKE %(prefix)s
-          AND NOT EXISTS (
-              SELECT 1
-              FROM JSON_TABLE(
-                  CASE WHEN COALESCE(n.path, '') = '' THEN '[]'
-                       ELSE CONCAT('[\"', REPLACE(TRIM(BOTH '/' FROM n.path), '/', '\",\"'), '\"]')
-                  END,
-                  '$[*]' COLUMNS (
-                      name VARCHAR(140) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci PATH '$'
-                  )
-              ) AS ancestor_id
-              JOIN `tabDrive Node` document_ancestor ON document_ancestor.name = ancestor_id.name
-              WHERE document_ancestor.kind = 'document'
-          )
-        ORDER BY CHAR_LENGTH(n.path), n.name
-        """,
-        {"root": folder.root, "prefix": prefix},
-        as_dict=True,
-    )
-    checked = node_core._readable_rows(descendants, principals)
-    if len(checked) != len(descendants):
-        raise DriveNotFound(_("A node in this Drive folder cannot be read"))
-    return folder, [folder, *descendants]
-
-
-def _folder(principals: Principals, node: str) -> frappe._dict:
-    folder = node_core.get(principals, node)
-    if folder.kind != "folder" or folder.state != "Active":
-        raise DriveConflict(_("Only an active Drive folder can be archived"))
-    return folder
-
-
-def _build(principals: Principals, folder: frappe._dict, rows: list[frappe._dict]) -> tuple[str, int]:
-    declared = sum(int(row.size or 0) for row in rows if row.kind == "file")
-    if declared > MAX_ARCHIVE_BYTES:
-        raise DriveConflict(_("This Drive folder is too large to archive synchronously"))
-
-    blob_names = tuple({row.blob for row in rows if row.blob})
-    blobs = (
-        {
-            row.name: row
-            for row in frappe.get_all(
-                "File Blob",
-                filters={"name": ["in", blob_names]},
-                fields=["name", "key", "driver", "is_private", "status"],
-            )
-        }
-        if blob_names
-        else {}
-    )
-    paths = {folder.name: _segment(folder.title)}
+    Members come each ancestor before its descendants. A member whose folder is
+    not in the zip sits at its top. A zip over `MAX_DOWNLOAD_BYTES` is refused.
+    """
+    declared = sum(int(row.size or 0) for row in members if row.kind == "file")
+    if declared > MAX_DOWNLOAD_BYTES:
+        raise _too_large()
+    blobs = _file_blobs(members)
+    paths: dict[str, str] = {}
+    taken: set[str] = set()
     written = 0
     with tempfile.SpooledTemporaryFile(max_size=16 * 1024 * 1024, mode="w+b") as target:
         with zipfile.ZipFile(target, "w", zipfile.ZIP_STORED, allowZip64=True) as archive:
-            archive.writestr(paths[folder.name] + "/", b"")
-            for row in rows[1:]:
+            for row in members:
                 parent = paths.get(row.parent_node)
-                if parent is None:
-                    raise DriveConflict(_("The Drive folder tree is inconsistent"))
-                path = f"{parent}/{_segment(row.title)}"
-                paths[row.name] = path
+                folder = f"{parent}/" if parent else ""
                 if row.kind == "folder":
-                    archive.writestr(path + "/", b"")
+                    paths[row.name] = _free(folder + segment(row.title), taken)
+                    archive.writestr(paths[row.name] + "/", b"")
                 elif row.kind == "file":
-                    written = _write_file(archive, path, row, blobs, written)
+                    path = _free(folder + segment(row.title), taken)
+                    written = _write(archive, path, _file_stream(row, blobs), written)
                 elif row.kind == "document":
                     stream, _mime, filename = content.export_document(principals, row.name)
-                    written = _write_stream(archive, f"{parent}/{_segment(filename)}", stream, written)
+                    written = _write(archive, _free(folder + segment(filename), taken), stream, written)
                 elif row.kind == "link":
-                    written = _write_stream(
-                        archive,
-                        path + ".url",
-                        io.BytesIO(f"[InternetShortcut]\nURL={row.url or ''}\n".encode()),
-                        written,
+                    shortcut = io.BytesIO(f"[InternetShortcut]\nURL={row.url or ''}\n".encode())
+                    written = _write(
+                        archive, _free(f"{folder}{segment(row.title)}.url", taken), shortcut, written
                     )
         size = target.tell()
         target.seek(0)
-        blob = put_blob(target, is_private=True, filename=f"{_segment(folder.title)}.zip")
+        blob = put_blob(target, is_private=True, filename="download.zip")
     return blob.name, size
 
 
-def _write_file(archive, path, row, blobs, written: int) -> int:
+def _file_blobs(members: list[frappe._dict]) -> dict[str, frappe._dict]:
+    names = tuple({row.blob for row in members if row.kind == "file" and row.blob})
+    if not names:
+        return {}
+    found = frappe.get_all(
+        "File Blob",
+        filters={"name": ["in", names]},
+        fields=["name", "key", "driver", "is_private", "status"],
+    )
+    return {blob.name: blob for blob in found}
+
+
+def _file_stream(row: frappe._dict, blobs: dict[str, frappe._dict]) -> IO[bytes]:
     if not row.blob and int(row.size or 0) == 0:
-        return _write_stream(archive, path, io.BytesIO(), written)
+        return io.BytesIO()
     blob = blobs.get(row.blob)
     if not blob or blob.status != "Ready" or not blob.is_private:
-        raise DriveConflict(_("Drive file bytes are unavailable"))
-    stream = get_driver(blob.driver).read(blob.key, is_private=True)
-    return _write_stream(archive, path, stream, written)
+        raise DriveConflict(_("The bytes of {0} are unavailable").format(row.title))
+    return get_driver(blob.driver).read(blob.key, is_private=True)
 
 
-def _write_stream(archive, path: str, stream, written: int) -> int:
-    with closing(stream), archive.open(path, "w") as destination:
+def _write(archive: zipfile.ZipFile, path: str, stream: IO[bytes], written: int) -> int:
+    # Zip64 from the start: an entry's size is unknown until its stream ends,
+    # and without it an entry over 2 GiB fails when it closes.
+    with closing(stream), archive.open(path, "w", force_zip64=True) as destination:
         while block := stream.read(1024 * 1024):
             written += len(block)
-            if written > MAX_ARCHIVE_BYTES:
-                raise DriveConflict(_("This Drive folder is too large to archive synchronously"))
+            if written > MAX_DOWNLOAD_BYTES:
+                raise _too_large()
             destination.write(block)
     return written
 
 
-def _cache_key(user: str, node: str) -> str:
-    return f"drive:folder-archive:{user}:{node}"
+def _too_large() -> DriveConflict:
+    """The refusal for a download over the cap. It names the cap, so the user knows what fits."""
+    limit = f"{MAX_DOWNLOAD_BYTES // (1024 * 1024 * 1024)} GB"
+    return DriveConflict(
+        _(
+            "This download is larger than {0}, the most Drive can put in one zip. Download fewer items at a time."
+        ).format(limit)
+    )
 
 
-def _public_status(entry: dict) -> dict:
-    return {
-        "status": entry.get("status"),
-        "file_name": entry.get("file_name"),
-        "size": entry.get("size"),
-        "error": entry.get("error"),
-    }
+def _free(path: str, taken: set[str]) -> str:
+    """Return `path`, or `name (2).ext` and so on when the zip already holds it."""
+    head, slash, name = path.rpartition("/")
+    stem, dot, extension = name.rpartition(".") if "." in name.lstrip(".") else (name, "", "")
+    candidate, number = path, 1
+    while candidate.casefold() in taken:
+        number += 1
+        candidate = f"{head}{slash}{stem} ({number}){dot}{extension}"
+    taken.add(candidate.casefold())
+    return candidate
 
 
-def _segment(title: str) -> str:
+def segment(title: str) -> str:
+    """A title as one safe zip path segment."""
     cleaned = re.sub(r"[\\/\x00-\x1f\x7f]", "_", (title or "download").strip())
     return "download" if cleaned in ("", ".", "..") else cleaned

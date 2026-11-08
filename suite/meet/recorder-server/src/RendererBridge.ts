@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { access, stat } from 'node:fs/promises';
 import type { Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import express from 'express';
 import puppeteer, {
@@ -170,10 +169,11 @@ const RENDERER_REASON_CODES = new Set([
 ]);
 
 function hasExactKeys(
-	value: object,
+	value: unknown,
 	required: string[],
 	optional: string[] = [],
 ): boolean {
+	if (!value || typeof value !== 'object') return false;
 	const keys = Object.keys(value);
 	return (
 		required.every((key) => keys.includes(key)) &&
@@ -242,7 +242,9 @@ export class ChromiumRendererBridge implements RendererBridge {
 			this.server?.once('listening', resolve);
 			this.server?.once('error', reject);
 		});
-		const address = this.server.address() as AddressInfo;
+		const address = this.server.address();
+		if (!address || typeof address === 'string')
+			throw new Error('recorder listener has no TCP address');
 		this.rendererOrigin = `http://127.0.0.1:${address.port}`;
 		this.available = true;
 	}
@@ -282,20 +284,23 @@ export class ChromiumRendererBridge implements RendererBridge {
 		let browser: Browser | undefined;
 		try {
 			const workerEnvironment = this.options.workerEnvironment?.(command.job);
-			const launching = this.adapter.launch({
+			const launchOptions: NonNullable<
+				Parameters<BrowserAdapter['launch']>[0]
+			> = {
 				executablePath: this.options.executablePath,
 				headless: false,
-				...(workerEnvironment ? { env: workerEnvironment } : {}),
-				defaultViewport: null,
-				ignoreDefaultArgs: ['--enable-automation'],
-				args: [
-					...args,
-					'--kiosk',
-					'--window-position=0,0',
-					'--window-size=1920,1080',
-					'--force-device-scale-factor=1',
-				],
-			});
+			};
+			if (workerEnvironment) launchOptions.env = workerEnvironment;
+			launchOptions.defaultViewport = null;
+			launchOptions.ignoreDefaultArgs = ['--enable-automation'];
+			launchOptions.args = [
+				...args,
+				'--kiosk',
+				'--window-position=0,0',
+				'--window-size=1920,1080',
+				'--force-device-scale-factor=1',
+			];
+			const launching = this.adapter.launch(launchOptions);
 			void launching.then(
 				(lateBrowser) => {
 					if (pending.cancelled)
@@ -731,22 +736,24 @@ export class ChromiumRendererBridge implements RendererBridge {
 		const renderer = this.jobs.get(job);
 		if (!renderer || renderer.generation !== generation) return;
 		if (lifecycle.type === 'configured') renderer.resolveConfiguration?.();
-		void this.lifecycleHandler({
+		const event: RendererLifecycleEvent = {
 			job,
 			generation,
 			type: lifecycle.type,
 			occurredAt: lifecycle.occurredAt,
-			...(lifecycle.reasonCode ? { reason: lifecycle.reasonCode } : {}),
-		});
+		};
+		if (lifecycle.reasonCode) event.reason = lifecycle.reasonCode;
+		void this.lifecycleHandler(event);
 	}
 
 	private receiveCaptureAcknowledgement(
 		job: string,
 		generation: number,
-		value: object,
+		value: unknown,
 	): void {
 		const renderer = this.jobs.get(job);
 		if (!renderer || renderer.generation !== generation) return;
+		if (!value || typeof value !== 'object') return;
 		const capture = renderer.capture;
 		if ('type' in value && value.type === 'suite-recorder:capture-prepared') {
 			const acknowledgement = parseCapturePrepared(value);
@@ -820,7 +827,8 @@ export class ChromiumRendererBridge implements RendererBridge {
 	}
 }
 
-export function parseRendererPublicKeyReady(value: object): PublicJwk | null {
+export function parseRendererPublicKeyReady(value: unknown): PublicJwk | null {
+	if (!value || typeof value !== 'object') return null;
 	if (
 		!hasExactKeys(value, [
 			'type',
@@ -842,7 +850,7 @@ export function parseRendererPublicKeyReady(value: object): PublicJwk | null {
 	return { kty, crv, x, y };
 }
 
-export function parseRendererLifecycle(value: object):
+export function parseRendererLifecycle(value: unknown):
 	| {
 			job: string;
 			type: RendererLifecycleEvent['type'];
@@ -850,6 +858,7 @@ export function parseRendererLifecycle(value: object):
 			reasonCode?: string;
 	  }
 	| undefined {
+	if (!value || typeof value !== 'object') return undefined;
 	if (
 		!('type' in value) ||
 		!('protocol_version' in value) ||
@@ -861,15 +870,15 @@ export function parseRendererLifecycle(value: object):
 		!value.job
 	)
 		return undefined;
-	const types: Record<string, RendererLifecycleEvent['type']> = {
-		'suite-recorder:configuration-accepted': 'configured',
-		'suite-recorder:proof-complete': 'proof_complete',
-		'suite-recorder:join-complete': 'joined',
-		'suite-recorder:capture-ready': 'capture_ready',
-		'suite-recorder:room-empty': 'room_empty',
-	};
+	const types = new Map<string, RendererLifecycleEvent['type']>([
+		['suite-recorder:configuration-accepted', 'configured'],
+		['suite-recorder:proof-complete', 'proof_complete'],
+		['suite-recorder:join-complete', 'joined'],
+		['suite-recorder:capture-ready', 'capture_ready'],
+		['suite-recorder:room-empty', 'room_empty'],
+	]);
 	const lifecycleType =
-		typeof value.type === 'string' ? types[value.type] : undefined;
+		typeof value.type === 'string' ? types.get(value.type) : undefined;
 	if (lifecycleType) {
 		if (
 			!hasExactKeys(value, ['type', 'protocol_version', 'occurred_at', 'job'])
@@ -909,8 +918,9 @@ export function parseRendererLifecycle(value: object):
 }
 
 export function parseCapturePrepared(
-	value: object,
+	value: unknown,
 ): { job: string; epoch: number; occurredAt: string } | undefined {
+	if (!value || typeof value !== 'object') return undefined;
 	if (
 		!hasExactKeys(value, [
 			'type',
@@ -929,18 +939,19 @@ export function parseCapturePrepared(
 		typeof value.job !== 'string' ||
 		!value.job ||
 		!('epoch' in value) ||
+		typeof value.epoch !== 'number' ||
 		!Number.isSafeInteger(value.epoch) ||
 		Number(value.epoch) < 0
 	)
 		return undefined;
 	return {
 		job: value.job,
-		epoch: value.epoch as number,
+		epoch: value.epoch,
 		occurredAt: value.occurred_at,
 	};
 }
 
-export function parseCaptureStartedAccepted(value: object):
+export function parseCaptureStartedAccepted(value: unknown):
 	| {
 			job: string;
 			epoch: number;
@@ -948,6 +959,7 @@ export function parseCaptureStartedAccepted(value: object):
 			captureStartedAt: string;
 	  }
 	| undefined {
+	if (!value || typeof value !== 'object') return undefined;
 	if (
 		!hasExactKeys(value, [
 			'type',
@@ -967,6 +979,7 @@ export function parseCaptureStartedAccepted(value: object):
 		typeof value.job !== 'string' ||
 		!value.job ||
 		!('epoch' in value) ||
+		typeof value.epoch !== 'number' ||
 		!Number.isSafeInteger(value.epoch) ||
 		Number(value.epoch) < 0 ||
 		!('capture_started_at' in value) ||
@@ -975,7 +988,7 @@ export function parseCaptureStartedAccepted(value: object):
 		return undefined;
 	return {
 		job: value.job,
-		epoch: value.epoch as number,
+		epoch: value.epoch,
 		occurredAt: value.occurred_at,
 		captureStartedAt: value.capture_started_at,
 	};

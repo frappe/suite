@@ -127,10 +127,11 @@ export class RecorderRendererBridge {
   }
 
   async initialize(target: Pick<Window, 'postMessage'> = window): Promise<JsonWebKey> {
-    const pair = (await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, false, [
-      'sign',
-      'verify',
-    ])) as CryptoKeyPair
+    const pair: CryptoKeyPair = await crypto.subtle.generateKey(
+      { name: 'ECDSA', namedCurve: 'P-256' },
+      false,
+      ['sign', 'verify'],
+    )
     this.privateKey = pair.privateKey
     const exported = await crypto.subtle.exportKey('jwk', pair.publicKey)
     const publicKey = {
@@ -162,7 +163,7 @@ export class RecorderRendererBridge {
         if (!message) return
         this.configured = true
         this.job = message.config.job
-        source.removeEventListener('message', receive as EventListener)
+        source.removeEventListener('message', receive)
         this.post({
           type: 'suite-recorder:configuration-accepted',
           protocol_version: RECORDER_PROTOCOL_VERSION,
@@ -171,7 +172,7 @@ export class RecorderRendererBridge {
         })
         resolve(Object.freeze({ ...message.config }))
       }
-      source.addEventListener('message', receive as EventListener)
+      source.addEventListener('message', receive)
     })
   }
 
@@ -209,13 +210,13 @@ export class RecorderRendererBridge {
     const unbind = () => {
       if (!bound) return
       bound = false
-      source.removeEventListener('message', receive as EventListener)
+      source.removeEventListener('message', receive)
     }
     const failClosed = (diagnostic: string) => {
       unbind()
       controller.failCaptureCommand(diagnostic)
     }
-    source.addEventListener('message', receive as EventListener)
+    source.addEventListener('message', receive)
     return unbind
   }
 
@@ -315,7 +316,8 @@ export class RecorderRendererBridge {
 const boundedDiagnostic = (diagnostic?: string): { diagnostic?: string } =>
   diagnostic ? { diagnostic: diagnostic.slice(0, 256) } : {}
 
-const hasExactKeys = (value: object, required: string[], optional: string[] = []): boolean => {
+const hasExactKeys = (value: unknown, required: string[], optional: string[] = []): boolean => {
+  if (!value || typeof value !== 'object') return false
   const keys = Object.keys(value)
   return (
     required.every((key) => keys.includes(key)) &&
@@ -374,7 +376,7 @@ const parseConfig = (value: unknown): RecorderConfig | null => {
     ('publicChat' in value && typeof value.publicChat !== 'boolean')
   )
     return null
-  return {
+  const config: RecorderConfig = {
     job: value.job,
     grant: value.grant,
     meetingId: value.meetingId,
@@ -382,10 +384,10 @@ const parseConfig = (value: unknown): RecorderConfig | null => {
     frappeOrigin: value.frappeOrigin,
     socketPath: value.socketPath,
     acceptedAt: value.acceptedAt,
-    ...('publicChat' in value && typeof value.publicChat === 'boolean'
-      ? { publicChat: value.publicChat }
-      : {}),
   }
+  if ('publicChat' in value && typeof value.publicChat === 'boolean')
+    config.publicChat = value.publicChat
+  return config
 }
 
 export const parseConfigureMessage = (
@@ -421,6 +423,7 @@ export const parsePrepareCaptureMessage = (value: unknown): PrepareCaptureComman
     typeof value.job !== 'string' ||
     !value.job ||
     !('epoch' in value) ||
+    typeof value.epoch !== 'number' ||
     !Number.isSafeInteger(value.epoch) ||
     Number(value.epoch) < 0
   )
@@ -429,7 +432,7 @@ export const parsePrepareCaptureMessage = (value: unknown): PrepareCaptureComman
     type: value.type,
     protocol_version: RECORDER_PROTOCOL_VERSION,
     job: value.job,
-    epoch: value.epoch as number,
+    epoch: value.epoch,
   }
 }
 
@@ -447,6 +450,7 @@ export const parseCaptureStartedMessage = (value: unknown): CaptureStartedComman
     typeof value.job !== 'string' ||
     !value.job ||
     !('epoch' in value) ||
+    typeof value.epoch !== 'number' ||
     !Number.isSafeInteger(value.epoch) ||
     Number(value.epoch) < 0 ||
     !('capture_started_at' in value) ||
@@ -457,7 +461,7 @@ export const parseCaptureStartedMessage = (value: unknown): CaptureStartedComman
     type: value.type,
     protocol_version: RECORDER_PROTOCOL_VERSION,
     job: value.job,
-    epoch: value.epoch as number,
+    epoch: value.epoch,
     capture_started_at: value.capture_started_at,
   }
 }

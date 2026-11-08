@@ -78,6 +78,10 @@ function labelText(names: string[]): string {
   const rest = names.length - shown.length
   return shown.join(', ') + (rest ? ` +${rest}` : '')
 }
+interface ReadPresenceResult {
+  users: PresentUser[]
+  cursors: Map<string, RemoteCursor>
+}
 
 /** Everyone else in the room, read from the room's presence against the doc's row/col ids now. */
 export function readPresence(
@@ -85,7 +89,7 @@ export function readPresence(
   doc: Y.Doc,
   me: string,
   person: (user: string) => Person,
-): { users: PresentUser[]; cursors: Map<string, RemoteCursor> } {
+): ReadPresenceResult {
   const own: Peer = {
     pid: presence.ownPid,
     user: me,
@@ -93,7 +97,7 @@ export function readPresence(
     idleSince: null,
   }
   const colours = roomColours(presence.peers, own)
-  const states = presence.awareness.getStates() as Map<number, { cursor?: unknown }>
+  const states: Map<number, { cursor?: unknown }> = presence.awareness.getStates()
   const users: PresentUser[] = []
   const cursors = new Map<string, RemoteCursor>()
   // Each cell with a label on it: the cursor that carries it, and the name of

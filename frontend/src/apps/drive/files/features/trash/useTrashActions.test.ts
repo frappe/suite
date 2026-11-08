@@ -4,6 +4,8 @@ import { createApp, defineComponent, h } from 'vue'
 import { useTrashActions } from './useTrashActions'
 
 // A Drive server that keeps each node's state. Its purge route can fail once.
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const net = vi.hoisted(() => {
   const state = {
     states: new Map<string, string>(),
@@ -20,12 +22,26 @@ const net = vi.hoisted(() => {
         state.failNextPurge = false
         return json({ errors: [{ type: 'ServerError', message: 'Drive is busy' }] }, 503)
       }
-      const { nodes } = body as { nodes: string[] }
+      if (
+        !body ||
+        !Array.isArray(body.nodes) ||
+        !body.nodes.every((name: unknown) => typeof name === 'string')
+      )
+        throw new Error('Expected node IDs to purge')
+      const nodes: string[] = body.nodes
       for (const name of nodes) state.states.delete(name)
       return json({ data: { ok: nodes, failed: [] } })
     }
     if (init.method === 'POST' && path === 'nodes/batch') {
-      const { nodes, patch } = body as { nodes: string[]; patch: { state: string } }
+      if (
+        !body ||
+        !Array.isArray(body.nodes) ||
+        !body.nodes.every((name: unknown) => typeof name === 'string') ||
+        typeof body.patch?.state !== 'string'
+      )
+        throw new Error('Expected node IDs and a state patch')
+      const nodes: string[] = body.nodes
+      const patch = { state: String(body.patch.state) }
       for (const name of nodes) state.states.set(name, patch.state)
       return json({ data: { ok: nodes, failed: [] } })
     }
@@ -39,7 +55,7 @@ interface ShownToast {
   message: string
   action?: { label: string; onClick: () => void }
 }
-const feedback = vi.hoisted(() => ({ toasts: [] as ShownToast[] }))
+const feedback = vi.hoisted(() => ({ toasts: fromPartial<ShownToast[]>([]) }))
 vi.mock('@/platform/feedback', () => ({
   confirm: async () => true,
   toast: {

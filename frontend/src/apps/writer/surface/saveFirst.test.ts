@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { RoomStatus } from '@/platform/collab'
@@ -10,8 +11,8 @@ function fakeRoom(saveState: RoomStatus['saveState']) {
   const room = {
     status: {
       saveState,
-      blockReason: null as 'offline' | 'signed_out' | null,
-      pauseReason: null as string | null,
+      blockReason: fromPartial<'offline' | 'signed_out' | null>(null),
+      pauseReason: fromPartial<string | null>(null),
     },
     flush: vi.fn(() => Promise.resolve()),
     onChange(listener: () => void) {
@@ -33,7 +34,8 @@ async function outcome(saving: Promise<void>) {
     await saving
     return 'saved'
   } catch (error) {
-    return (error as Error).message
+    if (!(error instanceof Error)) throw error
+    return error.message
   }
 }
 

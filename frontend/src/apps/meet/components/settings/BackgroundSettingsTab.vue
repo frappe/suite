@@ -96,13 +96,13 @@
         <div
           v-for="option in allBackgroundOptionsTyped"
           :key="option.name"
-          @click="handleBackgroundOptionClick(option)"
           class="relative cursor-pointer rounded-6 border-2 overflow-hidden transition-all duration-200 hover:shadow-sm group"
           :class="[
             selectedBackgroundOption === option.name
               ? 'border-outline-gray-3 ring-1 ring-outline-gray-2'
               : 'border-outline-gray-1 hover:border-outline-gray-2',
           ]"
+          @click="handleBackgroundOptionClick(option)"
         >
           <div class="aspect-video bg-surface-gray-2 relative">
             <!-- For blur option -->
@@ -151,8 +151,8 @@
             <!-- Delete button for custom images -->
             <div
               v-if="option.isCustom"
-              @click.stop="handleDeleteCustomImage(option.name)"
               class="absolute top-1 right-1 w-5 h-5 bg-surface-gray-5 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer hover:bg-surface-gray-6"
+              @click.stop="handleDeleteCustomImage(option.name)"
             >
               <lucide-x class="w-3 h-3 text-ink-gray-9" />
             </div>
@@ -333,7 +333,10 @@ function handleBackgroundOptionClick(option: BackgroundOption) {
 }
 
 async function handleFileSelect(event: Event) {
-  const target = event.target as HTMLInputElement
+  const checkedEventTarget = event.target
+  if (!(checkedEventTarget instanceof HTMLInputElement)) return
+
+  const target = checkedEventTarget
   const file = target.files?.[0]
   if (!file) return
 
@@ -517,8 +520,11 @@ async function applyPreviewOptions() {
 }
 
 function handleImageError(event: Event) {
+  const checkedEventTarget = event.target
+  if (!(checkedEventTarget instanceof HTMLImageElement)) return
+
   // Replace broken image with a placeholder
-  const target = event.target as HTMLImageElement
+  const target = checkedEventTarget
   target.style.display = 'none'
   const parent = target.parentElement
   if (parent) {

@@ -34,7 +34,7 @@ import dayjs from '@/apps/calendar/utils/dayjs'
 import { serverEventId } from '@/apps/calendar/utils/eventIdentity'
 import { VISIBILITY_OPTIONS } from '@/apps/calendar/utils/eventOptions'
 import { formEventFields, formStart, occurrenceStart } from '@/apps/calendar/utils/eventWrite'
-import { getRepeatMessage } from '@/apps/calendar/utils/format'
+import { getRepeatMessage, type EventAlert } from '@/apps/calendar/utils/format'
 import {
   isFirstOccurrence,
   scopeOptions,
@@ -220,9 +220,9 @@ const eventParams = computed(() =>
 const patch = computed(() => {
   const current: Record<string, unknown> = eventParams.value
   const changed = Object.fromEntries(
-    [...new Set([...Object.keys(current), ...Object.keys(originalParams)])]
-      .filter((k) => JSON.stringify(current[k]) !== JSON.stringify(originalParams[k]))
-      .map((k) => [k, current[k]]),
+    [...new Set([...Object.keys(current), ...Object.keys(originalParams)])].flatMap((k) =>
+      JSON.stringify(current[k]) !== JSON.stringify(originalParams[k]) ? [[k, current[k]]] : [],
+    ),
   )
   // A changed start is a wall clock in the viewer's zone; without the zone alongside it the
   // server would reinterpret those numbers in the event's stored zone.
@@ -711,14 +711,14 @@ const shouldShowRecurringEventModal = computed(
 
 // Touching the alert UI is a choice about reminders: from here on an empty
 // list means cleared, not "still following the calendar's defaults".
-const addAlert = (alert: object) => {
+const addAlert = (alert: EventAlert) => {
   event.followsDefaults = false
   event.alerts.push(alert)
 }
 
 // The phone's alert picker replaces a row outright, or drops it: same statement as
 // addAlert's, about a list it rewrites rather than appends to.
-const setAlerts = (alerts: object[]) => {
+const setAlerts = (alerts: EventAlert[]) => {
   event.followsDefaults = false
   event.alerts = alerts
 }

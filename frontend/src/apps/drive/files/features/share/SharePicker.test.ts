@@ -13,6 +13,8 @@ vi.mock('frappe-ui', async () => ({
   ...(await import('../../../../../../../node_modules/frappe-ui/src/components/Select')),
 }))
 
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const directoryRequest = vi.hoisted(() =>
   vi
     .fn<(operation: unknown, input?: { q?: string }) => Promise<PeopleGetOutput>>()
@@ -49,7 +51,7 @@ afterEach(() => cleanup?.())
 // jsdom has no scrolling; the list scrolls the highlighted row into view.
 beforeAll(() => {
   Element.prototype.scrollIntoView = () => {}
-  return () => delete (Element.prototype as Partial<Element>).scrollIntoView
+  return () => delete fromPartial<Partial<Element>>(Element.prototype).scrollIntoView
 })
 
 function mountPicker(
@@ -97,7 +99,7 @@ const staged = () =>
   )
 
 describe('Share picker', () => {
-  it('keeps suggestions open and search focused for consecutive picks, revealing access after the first pick', async () => {
+  it('closes suggestions after a pick so the person shows, keeping search focused for the next pick', async () => {
     const input = mountPicker()
 
     expect(document.querySelector('[aria-label="Access for people you add"]')).toBeNull()
@@ -106,13 +108,8 @@ describe('Share picker', () => {
       expect(staged()).toEqual(['Maya Fernandes'])
       expect(document.activeElement).toBe(input)
       expect(input.value).toBe('')
-      expect(input.getAttribute('aria-expanded')).toBe('true')
+      expect(input.getAttribute('aria-expanded')).toBe('false')
       expect(document.querySelector('[aria-label="Access for people you add"]')).not.toBeNull()
-      expect(
-        [...document.querySelectorAll('[role="option"]')].some((option) =>
-          option.textContent?.includes('Maya Fernandes'),
-        ),
-      ).toBe(false)
     })
 
     clickRow(await type(input, 'le'), 'Leah Thomas')

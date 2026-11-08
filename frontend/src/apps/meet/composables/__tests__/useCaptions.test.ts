@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { toast } from 'frappe-ui'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp } from 'vue'
@@ -33,7 +34,7 @@ function mountCaptions(sfuClient: ReturnType<typeof createSfuClient>, initiallyE
   let captions!: ReturnType<typeof useCaptions>
   const app = createApp({
     setup() {
-      captions = useCaptions({ sfuClient: sfuClient as never })
+      captions = useCaptions({ sfuClient: fromPartial(sfuClient) })
       return () => null
     },
   })
@@ -123,9 +124,9 @@ describe('useCaptions', () => {
   it('maintains bounded caption lines from valid STT segments', () => {
     const sfuClient = createSfuClient()
     const captions = mountCaptions(sfuClient)
-    const handleSegment = sfuClient.on.mock.calls.find(
-      ([event]) => event === 'stt:segment',
-    )?.[1] as (payload: unknown) => void
+    const handleSegment = fromPartial<(payload: unknown) => void>(
+      sfuClient.on.mock.calls.find(([event]) => event === 'stt:segment')?.[1],
+    )
     const segment = (participantId: string, text: string, isFinal = false) =>
       handleSegment({
         segment: { participantId, text, isFinal, timestamp: '2026-09-19T00:00:00Z' },

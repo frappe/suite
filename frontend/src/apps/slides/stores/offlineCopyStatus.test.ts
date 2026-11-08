@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 
@@ -255,7 +256,7 @@ describe('the start-up copy', () => {
       const running = runIt(id)
       await new Promise((resolve) => setTimeout(resolve, 0))
       presentationDoc.value = null
-      presentationId.value = null as never
+      presentationId.value = fromPartial(null)
       viewOnly.value = false
       answer()
       await running

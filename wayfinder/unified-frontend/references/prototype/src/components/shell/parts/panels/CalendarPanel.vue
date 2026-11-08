@@ -94,8 +94,8 @@ const upcoming = computed(() => {
 function whenLabel(event: CalEvent) {
   const day = dayjs(event.start)
   const dayLabel = day.format(ISO) === today() ? 'Today' : day.format('ddd D MMM')
-  if (isAllDay(event)) return `${dayLabel} · All day`
-  const start = dayjs().startOf('day').add(event.startMin as number, 'minute')
+  if (isAllDay(event) || typeof event.startMin !== 'number') return `${dayLabel} · All day`
+  const start = dayjs().startOf('day').add(event.startMin, 'minute')
   return `${dayLabel} · ${start.format('HH:mm')}`
 }
 </script>

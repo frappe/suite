@@ -18,8 +18,13 @@ export class RouteManager {
 		try {
 			const pkgPath = path.join(__dirname, '..', '..', 'package.json');
 			const raw = fs.readFileSync(pkgPath, 'utf8');
-			const json = JSON.parse(raw) as { version?: string };
-			return json.version ?? 'unknown';
+			const json: unknown = JSON.parse(raw);
+			return json &&
+				typeof json === 'object' &&
+				'version' in json &&
+				typeof json.version === 'string'
+				? json.version
+				: 'unknown';
 		} catch (_err) {
 			return 'unknown';
 		}

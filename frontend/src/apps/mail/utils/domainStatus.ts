@@ -19,10 +19,15 @@ export const domainStatusLabel = (status: DomainStatus) =>
     Disabled: __('Disabled'),
   })[status]
 
-export const domainStatusBadge = (status?: DomainStatus) =>
+interface DomainStatusBadge {
+  label: string
+  theme: BadgeTheme
+}
+
+export const domainStatusBadge = (status?: DomainStatus): DomainStatusBadge =>
   status
     ? { label: domainStatusLabel(status), theme: THEMES[status] }
-    : { label: '', theme: 'gray' as BadgeTheme }
+    : { label: '', theme: 'gray' }
 
 export const domainStatusOptions = () => [
   { label: __('All'), value: 'All' },

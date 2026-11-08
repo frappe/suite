@@ -227,6 +227,8 @@ test("another user's rename refreshes an open shared folder without navigation",
 		await observer.goto(`/drive/f/${home.name}?view=list`);
 		const socket = await connected;
 		await expect(observer.getByText(file.title, { exact: true })).toBeVisible();
+		// The folder's name joins the URL once the folder loads, which can follow the listing.
+		await expect(observer).toHaveURL(new RegExp(`/drive/f/${home.name}/[^/?]+\\?view=list$`));
 		const originalURL = observer.url();
 		let navigations = 0;
 		observer.on("framenavigated", (frame) => {

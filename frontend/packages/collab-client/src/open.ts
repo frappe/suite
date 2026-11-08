@@ -170,7 +170,9 @@ async function trySaveSession(
     await store.saveSession(session)
     return 'saved'
   } catch (error) {
-    return (error as Error)?.name === 'ConstraintError' ? 'clash' : 'failed'
+    return error && typeof error === 'object' && 'name' in error && error.name === 'ConstraintError'
+      ? 'clash'
+      : 'failed'
   }
 }
 

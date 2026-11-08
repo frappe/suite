@@ -1,7 +1,6 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
+import contract from '../../suite/meet/recording/contracts/v1.json'
 import {
   parseRecorderStageProjectionEvent,
   parseRecorderStageSnapshot,
@@ -13,26 +12,6 @@ import {
   parseConfigureMessage,
   parsePrepareCaptureMessage,
 } from './rendererBridge'
-
-type VectorSet = { accepted: unknown[]; rejected: unknown[] }
-
-const contract = JSON.parse(
-  readFileSync(resolve(process.cwd(), '../suite/meet/recording/contracts/v1.json'), 'utf8'),
-) as {
-  vocabularies: { recorder_stage_projection_payload_types: string[] }
-  vectors: {
-    proof_challenges: {
-      accepted: unknown[]
-      rejected: unknown[]
-    }
-    proof_responses: { accepted: unknown[]; rejected: unknown[] }
-    renderer_configure: { accepted: unknown[]; rejected: unknown[] }
-    recorder_stage_snapshots: VectorSet
-    recorder_stage_projection_events: VectorSet
-    renderer_prepare_capture: VectorSet
-    renderer_capture_started: VectorSet
-  }
-}
 
 describe('recording protocol contract v1', () => {
   it('runs shared proof challenge vectors through the production parser', () => {
@@ -59,9 +38,11 @@ describe('recording protocol contract v1', () => {
     for (const value of contract.vectors.recorder_stage_projection_events.rejected)
       expect(parseRecorderStageProjectionEvent(value)).toBeNull()
     expect(
-      contract.vectors.recorder_stage_projection_events.accepted.map(
-        (value) => (value as { payload: { type: string } }).payload.type,
-      ),
+      contract.vectors.recorder_stage_projection_events.accepted.map((value) => {
+        const event = parseRecorderStageProjectionEvent(value)
+        if (!event) throw new Error('Expected an accepted stage event')
+        return event.payload.type
+      }),
     ).toEqual(contract.vocabularies.recorder_stage_projection_payload_types)
   })
 

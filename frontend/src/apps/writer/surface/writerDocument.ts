@@ -40,11 +40,13 @@ function parseSettings(stored: unknown): unknown {
   return stored
 }
 
+function isWriterSettings(value: unknown): value is WriterSettings {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
 function settingsOf(stored: unknown): WriterSettings {
   const settings = parseSettings(stored)
-  if (settings && typeof settings === 'object' && !Array.isArray(settings)) {
-    return settings as WriterSettings
-  }
+  if (isWriterSettings(settings)) return settings
 
   return {}
 }
@@ -63,16 +65,36 @@ export function createWriterDocument(
 ) {
   const context = session.credentials.context
   const name = session.contentDocname
-  const document = reactive({
-    doc: null as WriterDocumentRow | null,
-    readFailure: null as string | null,
+  interface WriterDocumentState {
+    doc: WriterDocumentRow | null
+    readFailure: string | null
+    reload: typeof load
+    setLocked: typeof setLocked
+    read: typeof read
+  }
+  const document = reactive<WriterDocumentState>({
+    doc: null,
+    readFailure: null,
     reload: () => load(),
+    setLocked,
     read,
   })
   async function load() {
     const row = await client.query(api.writer.documents.get, { name }, { context })
     document.doc = { ...row, settings: settingsOf(row.settings) }
     document.readFailure = null
+  }
+
+  async function setLocked(lock: boolean) {
+    const row = document.doc
+    if (!row) return
+    const settings = { ...row.settings, lock }
+    await client.mutation(
+      api.writer.documents.updateSettings,
+      { name, data: JSON.stringify(settings) },
+      { context },
+    )
+    row.settings = settings
   }
 
   async function read() {

@@ -30,7 +30,7 @@ const leaveLastSlide = async () => {
 describe('presenting from the navbar', () => {
   beforeEach(() => {
     vi.useFakeTimers()
-    slides.value = [{ elements: [] }, { elements: [] }, { elements: [], advanceAfter: '1' }] as any
+    slides.value = [{ elements: [] }, { elements: [] }, { elements: [], advanceAfter: '1' }]
     slideIndex.value = 0
     replace.mockClear()
   })
@@ -118,7 +118,7 @@ describe('presenting from the navbar', () => {
   })
 
   it('replays a single slide on its own', async () => {
-    slides.value = [{ elements: [], advanceAfter: '1' }] as any
+    slides.value = [{ elements: [], advanceAfter: '1' }]
     const video = document.createElement('video')
     const play = vi.fn(() => Promise.resolve())
     Object.defineProperties(video, {

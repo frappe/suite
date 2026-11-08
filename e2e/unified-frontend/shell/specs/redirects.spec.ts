@@ -31,8 +31,19 @@ test.afterAll(async () => {
 /** Navigates inside the running app, the way a click on an old link does. */
 async function openInApp(page: Page, path: string): Promise<void> {
 	await page.evaluate((target) => {
-		const app = (document.querySelector("#app") as unknown as { __vue_app__: { config: { globalProperties: { $router: { push(to: string): Promise<unknown> } } } } }).__vue_app__;
-		void app.config.globalProperties.$router.push(target);
+		const root = document.querySelector("#app");
+		if (!root || !("__vue_app__" in root)) throw new Error("Vue app is not mounted");
+		const app = root.__vue_app__;
+		if (!app || typeof app !== "object" || !("config" in app)) throw new Error("Vue config is missing");
+		const config = app.config;
+		if (!config || typeof config !== "object" || !("globalProperties" in config))
+			throw new Error("Vue globals are missing");
+		const globals = config.globalProperties;
+		if (!globals || typeof globals !== "object" || !("$router" in globals)) throw new Error("Router is missing");
+		const router = globals.$router;
+		if (!router || typeof router !== "object" || !("push" in router) || typeof router.push !== "function")
+			throw new Error("Router push is missing");
+		void router.push(target);
 	}, path);
 }
 
@@ -88,7 +99,9 @@ test("an old link the server must read loads the page from the server", async ({
 		// Only the request matters, so no page waits for its `load` event.
 		await page.goto("/home", { waitUntil: "domcontentloaded" });
 		await expect(page.getByRole("heading", { name: "Recent" })).toBeVisible();
-		const load = page.waitForRequest((request) => request.isNavigationRequest() && new URL(request.url()).pathname === old);
+		const load = page.waitForRequest(
+			(request) => request.isNavigationRequest() && new URL(request.url()).pathname === old,
+		);
 		// The full page load can end the evaluate's context before it returns.
 		await openInApp(page, old).catch(() => undefined);
 		await load;

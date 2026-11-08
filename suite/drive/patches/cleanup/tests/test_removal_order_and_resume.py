@@ -1,5 +1,6 @@
 """`run_cleanup`: order, checkpointing, resume, rerun-gates, and refusal."""
 
+import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -21,6 +22,7 @@ from suite.drive.patches.cleanup.tests.fakes import (
     cleanup_environment,
     fake_blob_columns,
 )
+from suite.drive.patches.database_marker import ForeignRecordError
 
 
 def _healthy_env(tmp_path, **overrides):
@@ -226,6 +228,65 @@ class TestCleanupStateQuarantinePersistence(unittest.TestCase):
         self.assertEqual(state.load(), {"version": 1})
 
 
+class TestRunCleanupAfterADatabaseOnlyRestore(unittest.TestCase):
+    """§14.11 restores the database and `private/` together. An automatic
+    restore of the database alone leaves a record that claims phases the
+    restored database never saw; Cleanup must refuse it, not skip them."""
+
+    def setUp(self):
+        self.tmp = TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.path = Path(self.tmp.name)
+
+    def test_a_record_whose_marker_the_database_lacks_is_refused_by_name(self):
+        env = _healthy_env(self.path)
+        run_cleanup(env)
+
+        restored = _healthy_env(self.path)
+        with self.assertRaises(ForeignRecordError) as caught:
+            run_cleanup(restored)
+
+        self.assertIn(str(restored.state.path), str(caught.exception))
+        self.assertIn("drive-cleanup-*", str(caught.exception))
+        self.assertEqual(restored.files.deleted, [])
+
+    def test_a_record_with_no_marker_is_refused(self):
+        env = _healthy_env(self.path)
+        env.state.save({"file_rows": {"completed": True}})
+
+        with self.assertRaises(ForeignRecordError) as caught:
+            run_cleanup(env)
+
+        self.assertIn("no database marker", str(caught.exception))
+        self.assertEqual(env.files.deleted, [])
+
+    def test_the_marker_is_in_the_database_before_the_record_claims_work(self):
+        env = _healthy_env(self.path)
+        run_cleanup(env)
+        recorded = json.loads(env.state.path.read_text(encoding="utf-8"))["database_marker"]
+        self.assertEqual(env.markers.read_marker(env.state.path.name), recorded)
+
+    def test_a_record_that_claims_no_work_is_stamped_again(self):
+        # A refused gate leaves nothing on disk, but a record holding only
+        # its marker (a run killed right after the stamp) claims nothing.
+        env = _healthy_env(self.path)
+        env.state.save({"database_marker": "from-another-database"})
+
+        run_cleanup(env)
+
+        self.assertTrue(env.state.get("thumbnails").completed)
+
+    def test_moving_the_records_aside_lets_cleanup_start_over(self):
+        env = _healthy_env(self.path)
+        run_cleanup(env)
+        env.state.path.rename(self.path / "aside.json")
+
+        restored = _healthy_env(self.path)
+        run_cleanup(restored)
+
+        self.assertIn("a", restored.files.deleted)
+
+
 class TestRunCleanupOrder(unittest.TestCase):
     def setUp(self):
         self.tmp = TemporaryDirectory()
@@ -317,10 +378,12 @@ class TestRunCleanupResume(unittest.TestCase):
         env = _healthy_env(self.path)
         run_cleanup(env)
 
-        # A fresh process, same durable state file: every phase reads back
-        # `completed`, so a second run must not touch any fake's ports at all.
+        # A fresh process, same durable state file and same database marker:
+        # every phase reads back `completed`, so a second run must not touch
+        # any fake's ports at all.
         second_env = _healthy_env(self.path)
         second_env.state = env.state
+        second_env.markers = env.markers
         run_cleanup(second_env)
         self.assertEqual(second_env.files.deleted, [])
         self.assertEqual(second_env.files.delete_calls, [])

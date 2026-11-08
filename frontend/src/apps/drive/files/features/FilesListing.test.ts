@@ -1,7 +1,9 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, reactive } from 'vue'
 
 import type { DriveNode } from '@/apps/drive/client/types'
+import { requireTestElement } from '@/platform/testing/dom'
 
 import FilesListing from './FilesListing.vue'
 import { DEFAULT_PRESENTATION, type PresentationState } from './presentation'
@@ -53,10 +55,11 @@ function mount(options: {
   view?: PresentationState['view']
   columns?: string[]
   selection?: string[]
-  status?: string
+  status?: 'pending' | 'success' | 'error'
 }) {
   const state = reactive({ selection: options.selection ?? [] })
-  const events: { previewErrors: string[] } = { previewErrors: [] }
+  type ListingEvents = { previewErrors: string[] }
+  const events: ListingEvents = { previewErrors: [] }
   const query = reactive({
     status: options.status ?? 'success',
     rows: options.rows,
@@ -72,7 +75,7 @@ function mount(options: {
   const app = createApp({
     setup: () => () =>
       h(FilesListing, {
-        query: query as never,
+        query: fromPartial<InstanceType<typeof FilesListing>['$props']['query']>(query),
         presentation: {
           ...DEFAULT_PRESENTATION,
           view: options.view ?? 'list',
@@ -115,7 +118,10 @@ describe('FilesListing paging', () => {
       query.hasNext = false
     })
 
-    intersect([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver)
+    intersect(
+      [fromPartial<IntersectionObserverEntry>({ isIntersecting: true })],
+      fromPartial<IntersectionObserver>({}),
+    )
     await nextTick()
     expect(fetchNext).not.toHaveBeenCalled()
 
@@ -132,9 +138,15 @@ describe('FilesListing paging', () => {
     })
     await nextTick()
 
-    intersect([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver)
+    intersect(
+      [fromPartial<IntersectionObserverEntry>({ isIntersecting: true })],
+      fromPartial<IntersectionObserver>({}),
+    )
     expect(fetchNext).not.toHaveBeenCalled()
-    ;(root.querySelector('[label="Retry loading more"]') as HTMLButtonElement).click()
+    requireTestElement(
+      root.querySelector('[label="Retry loading more"]'),
+      HTMLButtonElement,
+    ).click()
     await nextTick()
     expect(fetchNext).toHaveBeenCalledOnce()
   })
@@ -151,12 +163,12 @@ describe('FilesListing selection', () => {
     expect(row('Beta.png')?.getAttribute('aria-checked')).toBe('false')
     expect(header()?.getAttribute('aria-checked')).toBe('mixed')
 
-    ;(root.querySelector('[data-node="b"]') as HTMLElement).click()
+    requireTestElement(root.querySelector('[data-node="b"]'), HTMLElement).click()
     await nextTick()
     expect(state.selection).toEqual(['a', 'b'])
     expect(header()?.getAttribute('aria-checked')).toBe('true')
 
-    ;(header() as HTMLElement).click()
+    requireTestElement(header(), HTMLElement).click()
     await nextTick()
     expect(state.selection).toEqual([])
     expect(header()).toBeNull()
@@ -209,7 +221,7 @@ describe('FilesListing type column', () => {
       'File',
       'ZIP',
       'Image',
-      'Writer Document',
+      'Document',
     ])
     expect(icon('md')).toContain('file-icon-text')
     expect(icon('json')).toContain('file-icon-code')

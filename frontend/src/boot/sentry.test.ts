@@ -6,7 +6,9 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 
 import { initSentry } from './sentry'
 
-const { bodies } = vi.hoisted(() => ({ bodies: [] as (string | Uint8Array)[] }))
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
+const { bodies } = vi.hoisted(() => ({ bodies: fromPartial<(string | Uint8Array)[]>([]) }))
 const app = createApp({})
 vi.mock('@/boot/session', () => ({ getSessionUser: () => 'Guest' }))
 vi.mock('@sentry/vue', async (importOriginal) => {

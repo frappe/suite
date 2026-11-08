@@ -123,6 +123,12 @@ interface ScreenShareStopExtra {
   message?: string
 }
 
+function errorName(error: unknown) {
+  return error && typeof error === 'object' && 'name' in error && typeof error.name === 'string'
+    ? error.name
+    : undefined
+}
+
 export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
   const {
     mediaState,
@@ -328,7 +334,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
       null,
     onLocalStreamChanged: () => {
       if (mediaState.localVideo) {
-        setLocalVideoRef(mediaState.localVideo as HTMLVideoElement)
+        setLocalVideoRef(mediaState.localVideo)
       }
     },
     onCameraDisabled: () => {
@@ -470,7 +476,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
       return
     }
 
-    let transformationError: unknown = null
+    let transformationError: unknown
     try {
       if (backgroundSession && !forceRestart) {
         await backgroundSession.updateOptions({
@@ -930,8 +936,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
       setCameraEnabled(false)
 
       const isPermissionError =
-        (error as Error).name === 'NotAllowedError' ||
-        (error as Error).name === 'PermissionDeniedError'
+        errorName(error) === 'NotAllowedError' || errorName(error) === 'PermissionDeniedError'
       toast.warning(
         isPermissionError
           ? 'Media access denied. Enable permissions in browser settings.'
@@ -1023,8 +1028,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
             if (isCameraLifecycleAbort(err, operation)) throw err
             console.error('Failed to get camera stream:', err)
             const isPermissionError =
-              (err as Error).name === 'NotAllowedError' ||
-              (err as Error).name === 'PermissionDeniedError'
+              errorName(err) === 'NotAllowedError' || errorName(err) === 'PermissionDeniedError'
             toast.error(
               isPermissionError
                 ? 'Camera access denied. Enable in browser settings.'
@@ -1057,15 +1061,14 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
                 mediaState.cameraPermissionGranted = true
                 if (mediaState.localVideo) {
                   assertCurrentCameraOperation(operation)
-                  setLocalVideoRef(mediaState.localVideo as HTMLVideoElement)
+                  setLocalVideoRef(mediaState.localVideo)
                 }
               }
             } catch (err) {
               if (isCameraLifecycleAbort(err, operation)) throw err
               console.error('Failed to add video track:', err)
               const isPermissionError =
-                (err as Error).name === 'NotAllowedError' ||
-                (err as Error).name === 'PermissionDeniedError'
+                errorName(err) === 'NotAllowedError' || errorName(err) === 'PermissionDeniedError'
               toast.error(
                 isPermissionError
                   ? 'Camera access denied. Enable in browser settings.'
@@ -1170,7 +1173,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
         t.stop()
       }
     }
-    const selfId = currentUser.currentUser.value?.user_id as string
+    const selfId = currentUser.currentUser.value?.user_id
     if (selfId && mediaState.screenShareStreams) {
       if (mediaState.screenShareStreams[selfId]) {
         delete mediaState.screenShareStreams[selfId]
@@ -1278,14 +1281,14 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
           console.error('Failed to publish screen share producer:', pubErr)
           if (mediaState.isScreenSharing && mediaState.screenShareStream === screenStream) {
             await stopScreenShare('publish-failed', {
-              message: (pubErr as Error)?.message,
+              message: pubErr instanceof Error ? pubErr.message : undefined,
             })
           }
           throw pubErr
         }
       }
     } catch (error) {
-      if ((error as Error).name === 'NotAllowedError') {
+      if (errorName(error) === 'NotAllowedError') {
         console.log('User cancelled screen share')
       } else {
         console.error('Screen share failed:', error)

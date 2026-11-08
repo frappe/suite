@@ -49,10 +49,12 @@ from uuid import uuid4
 
 import frappe
 from frappe import _
+from frappe.utils import escape_html
+from frappe.utils.response import as_page, respond_as_web_page
 from werkzeug.wrappers import Response
 
 from suite.drive import framework
-from suite.drive._core import access, archive, comments, content, previews, roots, versions
+from suite.drive._core import access, comments, content, downloads, previews, roots, versions
 from suite.drive._core import activity as activity_core
 from suite.drive._core import nodes as node_core
 from suite.drive._core import upload as upload_core
@@ -131,6 +133,8 @@ def _refuse(kind: type, message: str, **fields) -> None:
         # A password link is opened at POST /links/<token>/unlock, not by
         # logging in, so name that instead of inviting a browser login prompt.
         frappe.local.response_headers["WWW-Authenticate"] = 'DriveLink realm="drive"'
+    # A refusal is an answer, not a crash, so it carries no server traceback
+    frappe.local.flags.disable_traceback = True
     extra = {name: value for name, value in fields.items() if value is not None}
     try:
         frappe.throw(message, kind)
@@ -177,6 +181,7 @@ def node_create(
     content_doctype: Given = None,
     from_node: Given = None,
     is_template: Given = None,
+    deduplicate_title: Given = None,
 ) -> shapes.NodeShape:
     """Create one node of any kind a client may create below `parent_node` (§8.3).
 
@@ -202,6 +207,7 @@ def node_create(
         content_doctype=shapes.text(content_doctype, "content_doctype"),
         from_node=shapes.text(from_node, "from_node"),
         is_template=shapes.flag(is_template, "is_template", False),
+        deduplicate_title=shapes.flag(deduplicate_title, "deduplicate_title", False),
     )
     return shapes.node_shape(node_core.stored(created))
 
@@ -332,8 +338,7 @@ def node_children(
         # folder's own trail with the folder itself appended. `children`
         # already read and authorized that folder: reading it again would let
         # a grant revoked mid-request 404 a page the plain listing answered.
-        listed = result["container"]
-        trail = [*node_core.breadcrumbs(listed, principals), node_core.crumb(listed)]
+        trail = node_core.breadcrumbs(result["container"], principals, inclusive=True)
         for answer in rows:
             answer["breadcrumbs"] = list(trail)
     return shapes.page(result, rows)
@@ -355,25 +360,33 @@ def node_copy(node: Given = None, parent_node: Given = None, title: Given = None
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @_route
-def node_archive_start(node: Given = None) -> shapes.ArchiveStatus:
-    """Build one bounded folder archive synchronously."""
-    return archive.start(_principals(), shapes.required_text(node, "node"))
+def download_start(nodes: Given = None) -> shapes.DownloadShape:
+    """Queue one zip of the selected nodes, or answer the one already asked for."""
+    return shapes.download_shape(downloads.start(_principals(), shapes.identifiers(nodes, "nodes")))
 
 
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 @_route
-def node_archive_status(node: Given = None) -> shapes.ArchiveStatus:
-    """Report this caller's current folder archive build."""
-    return archive.status(_principals(), shapes.required_text(node, "node"))
+def download_get(download: Given = None) -> shapes.DownloadShape:
+    """Answer one of the caller's downloads, for the page that polls a Page download."""
+    return shapes.download_shape(downloads.get(_principals(), shapes.required_text(download, "download")))
 
 
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 @_route
-def node_archive_download(node: Given = None) -> Response:
-    """Send a ready folder archive, redirecting to the driver's signed URL when it has one."""
+def download_content(download: Given = None) -> Response:
+    """Send the caller's ready zip, redirecting to the driver's signed URL when it has one.
+
+    A browser opens this URL itself, from a notification or a finished poll, so
+    a refusal answers a page that says why rather than a JSON envelope.
+    """
     from frappe.storage.serve import stream_blob
 
-    blob, filename = archive.download(_principals(), shapes.required_text(node, "node"))
+    try:
+        blob, filename = downloads.ready_blob(_principals(), shapes.required_text(download, "download"))
+    except (DriveError, frappe.ValidationError) as refusal:
+        respond_as_web_page(_("Download unavailable"), escape_html(str(refusal)), http_status_code=404)
+        return as_page()
     return stream_blob(
         blob,
         filename,
@@ -1026,7 +1039,7 @@ def _view_filters(name: str, root: Given, content_doctype: Given, term: Given, l
 @_route
 def view_clear_recents(nodes: Given = None) -> shapes.Count:
     """Clear the caller's own recents, and never their favourites (§9.5)."""
-    named = None if nodes is None else shapes.name_list(nodes, "nodes")
+    named = None if nodes is None else shapes.query_name_list(nodes, "nodes")
     return {"count": activity_core.clear_recents(_principals(), named)}
 
 
@@ -1274,7 +1287,7 @@ def comment_delete(comment: Given = None) -> shapes.Count:
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 @_route
 def node_activity(node: Given = None, limit: Given = None, cursor: Given = None) -> dict:
-    """Page one readable node's history, newest first (§9.4)."""
+    """Page one readable node's history, newest first (§9.4). A Guest is refused with a Drive error."""
     result = activity_core.history(
         _principals(),
         shapes.required_text(node, "node"),
@@ -1322,8 +1335,8 @@ def node_delete_favourite(node: Given = None) -> shapes.Count:
 @_route
 def notifications_list(
     limit: Given = None, cursor: Given = None, unread: Given = None
-) -> shapes.Page[shapes.NotificationShape]:
-    """Page the caller's own inbox. A notification points at one activity row."""
+) -> shapes.Page[shapes.NotificationShape | shapes.DownloadNotificationShape]:
+    """Page the caller's own inbox. A notification points at one activity row or at one of the caller's downloads."""
     result = activity_core.notifications(
         _principals(),
         only_unread=shapes.flag(unread, "unread", False),

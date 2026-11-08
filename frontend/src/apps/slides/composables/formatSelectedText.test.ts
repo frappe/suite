@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
@@ -29,7 +30,7 @@ const nextFrame = () => frames.splice(0).forEach((frame) => frame())
 // jsdom lays nothing out, so a measuring div is as wide as its font size times its text
 const measuredWidth = function (this: HTMLElement) {
   const fontSize = Number(this.innerHTML.match(/font-size: (\d+)px/)?.[1] ?? 10)
-  return { width: fontSize * (this.textContent?.length ?? 0), height: 0 } as DOMRect
+  return fromPartial<DOMRect>({ width: fontSize * (this.textContent?.length ?? 0), height: 0 })
 }
 
 const element = (id: string) => slides.value[0].elements.find((el: any) => el.id === id)

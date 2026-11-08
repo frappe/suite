@@ -7,7 +7,7 @@ from uuid import uuid4
 import frappe
 from frappe.tests import IntegrationTestCase, UnitTestCase
 
-from suite.drive._core.errors import DriveForbidden, DriveNotFound, DriveOverQuota
+from suite.drive._core.errors import DriveForbidden, DriveNotFound, DriveOverQuota, DriveStorageUnmeasured
 from suite.drive._core.principals import Principals
 from suite.drive._core.quota import (
     ADMIT_SQL,
@@ -269,6 +269,42 @@ class TestRootReservationsAndRecompute(IntegrationTestCase):
                 admit(self.root, 1)
 
         self.assertEqual(frappe.db.get_value("Drive Root", self.root, "used_bytes"), 1)
+
+    def test_storage_not_measured_yet_is_its_own_over_quota_and_an_overage_is_not(self):
+        from suite.suite_core.storage import state
+
+        doc, _policy, _measurements = state()
+        kept = (doc.policy, doc.measurements)
+        self.addCleanup(
+            lambda: frappe.db.set_value(
+                "Suite Storage State", "site", dict(zip(("policy", "measurements"), kept, strict=True))
+            )
+        )
+        frappe.db.set_value("Drive Root", self.root, "used_bytes", 0, update_modified=False)
+        measured = {"site_mail": 10, "allowance": 0, "personal": {self.user: 10}}
+        for measurements, refusal in (
+            ({}, DriveStorageUnmeasured),
+            ({"site_mail": 10, "allowance": 0}, DriveStorageUnmeasured),
+            (measured, DriveOverQuota),
+        ):
+            frappe.db.set_value(
+                "Suite Storage State",
+                "site",
+                {
+                    "policy": frappe.as_json({"users": {self.user: {"cap": 0}}}),
+                    "measurements": frappe.as_json(measurements),
+                },
+            )
+            with (
+                patch("suite.suite_core.utils.is_suite_cloud_configured", return_value=True),
+                self.assertRaises(DriveOverQuota) as caught,
+            ):
+                admit(self.root, 1)
+
+            self.assertIs(type(caught.exception), refusal, msg=measurements)
+            self.assertEqual(caught.exception.http_status_code, 413)
+
+        self.assertEqual(frappe.db.get_value("Drive Root", self.root, "used_bytes"), 0)
 
     def test_releasing_more_than_is_used_leaves_the_root_at_zero_not_negative(self):
         frappe.db.set_value("Drive Root", self.root, "used_bytes", 3, update_modified=False)

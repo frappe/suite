@@ -5,17 +5,27 @@ import type { InfiniteQueryState } from '@/platform/server-state'
 
 import { heldWhileRearranging } from './heldRows'
 
+interface ListingState extends Omit<InfiniteQueryState<string>, 'status' | 'rows'> {
+  status: InfiniteQueryState<string>['status']
+  rows: string[]
+}
+
 /** A listing as the page sees it: a read that starts empty and pending each time its input changes. */
 function listing() {
-  const state = reactive({
-    status: 'pending' as InfiniteQueryState<string>['status'],
-    rows: [] as string[],
+  const state = reactive<ListingState>({
+    status: 'pending',
+    rows: [],
+    isFetching: false,
+    total: undefined,
+    hasNext: false,
+    isFetchingNext: false,
+    error: null,
+    async refetch() {},
+    async fetchNext() {},
+    cancel() {},
   })
   const place = ref('folder-a')
-  const shown = heldWhileRearranging(
-    state as unknown as InfiniteQueryState<string>,
-    () => place.value,
-  )
+  const shown = heldWhileRearranging(state, () => place.value)
   return {
     shown,
     place,
