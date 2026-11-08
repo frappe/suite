@@ -4,7 +4,6 @@ import type { Credentials } from "../../shared/auth";
 import { fillFolder, folderPath, type FolderContent } from "../content";
 import { defineFlow } from "../flow";
 import {
-	createFolder,
 	DRIVE,
 	type DriveNode,
 	grantAccess,
@@ -14,7 +13,7 @@ import {
 	trashNode,
 	uploadFile,
 } from "../../drive-backed-apps/helpers/drive";
-import type { Scene } from "../scene";
+import { recreateFolder, type Scene } from "../scene";
 
 type Event =
 	| { type: "GO_ORGANIZATION" }
@@ -205,7 +204,7 @@ export const places = defineFlow<Event>({
 				return;
 			}
 			const peer = await scene.as(scene.people.peer);
-			const folder = await createFolder(peer, SHARED_TITLE);
+			const folder = await recreateFolder(peer, SHARED_TITLE);
 			await uploadFile(peer, "Colour palette.md", Buffer.from("# Palette\n"), folder.name, "text/markdown");
 			await grantAccess(peer, folder.name, scene.people.actor.email, ROLE.READ);
 			sharedFolders.set(scene, folder);

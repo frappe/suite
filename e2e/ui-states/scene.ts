@@ -78,18 +78,26 @@ async function workspaceFolder(api: APIRequestContext, root: string): Promise<st
 	return existing?.name ?? (await createFolder(api, WORKSPACE_FOLDER, root)).name;
 }
 
+async function personalRoot(api: APIRequestContext): Promise<string> {
+	const roots = await api.get("/api/suite/drive/roots");
+	const { data } = (await roots.json()) as { data: { personal: { node: string } } };
+	return data.personal.node;
+}
+
 /**
- * Each flow owns one folder title, so a folder already there is left by a run
- * that died before `close()`. It goes before this one takes its place.
+ * Creates a folder under `parent`, by default the user's root, after removing
+ * any folder of that title. Users are new each run, so one already there is
+ * left by an earlier walk of this path that a bench restart cut short.
  */
-async function createSceneFolder(api: APIRequestContext, title: string, parent: string): Promise<DriveNode> {
-	const rows = await api.get(`/api/suite/drive/nodes/${parent}/children`);
+export async function recreateFolder(api: APIRequestContext, title: string, parent?: string): Promise<DriveNode> {
+	const under = parent ?? (await personalRoot(api));
+	const rows = await api.get(`/api/suite/drive/nodes/${under}/children`);
 	const { data } = (await rows.json()) as { data: { rows: DriveNode[] } };
 	for (const stale of data.rows.filter((row) => row.title === title)) {
 		await trashNode(api, stale.name);
 		await purgeNode(api, stale.name);
 	}
-	return createFolder(api, title, parent);
+	return createFolder(api, title, under);
 }
 
 export async function openScene(
@@ -101,12 +109,10 @@ export async function openScene(
 	const context = await browser.newContext({ baseURL, viewport: VIEWPORT, colorScheme: "light" });
 	const api = context.request;
 	await loginViaApi(api, who.actor);
-	const roots = await api.get("/api/suite/drive/roots");
-	const { data } = (await roots.json()) as { data: { personal: { node: string } } };
-	const root = data.personal.node;
+	const root = await personalRoot(api);
 	const parent = await workspaceFolder(api, root);
 	const stamp = Date.now().toString(36);
-	const folder = await createSceneFolder(api, folderTitle, parent);
+	const folder = await recreateFolder(api, folderTitle, parent);
 	const page = await context.newPage();
 	const others: BrowserContext[] = [];
 
