@@ -5,6 +5,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
 import type { TextLanguage } from '../../internal/previewKind'
 import type { CodeView } from './codeView'
+import PreviewFailed from './PreviewFailed.vue'
 import PreviewFallback from './PreviewFallback.vue'
 import { loadTextContent, TEXT_PREVIEW_LIMIT, type TextContent } from './textContent'
 
@@ -144,5 +145,5 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
     message="This file is not plain text. Download it to open it."
     :download="download"
   />
-  <PreviewFallback v-else-if="content?.status === 'failed'" failed :download="download" />
+  <PreviewFailed v-else-if="content?.status === 'failed'" :download="download" />
 </template>

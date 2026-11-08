@@ -4,7 +4,7 @@ import { Spinner } from 'frappe-ui'
 import { onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 
 import { previewImage } from './imageCache'
-import PreviewFallback from './PreviewFallback.vue'
+import PreviewFailed from './PreviewFailed.vue'
 
 /**
  * The preview's picture: the element the image cache keeps loaded. It fades
@@ -78,6 +78,6 @@ onBeforeUnmount(() => {
       theme="gray"
       class="absolute inset-0 m-auto"
     />
-    <PreviewFallback v-if="status === 'failed'" failed :download="download" />
+    <PreviewFailed v-if="status === 'failed'" :download="download" />
   </div>
 </template>

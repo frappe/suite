@@ -24,6 +24,7 @@ import { keepImages, releaseImages } from './imageCache'
 import { arrowsStep, escapeLeaves } from './keys'
 import { rememberShown } from './lastShown'
 import PdfPreview from './PdfPreview.vue'
+import PreviewFailed from './PreviewFailed.vue'
 import PreviewFallback from './PreviewFallback.vue'
 import PreviewImage from './PreviewImage.vue'
 import type { FilePreviewSession } from './session'
@@ -494,11 +495,7 @@ const pagerLoading = computed(() => !!folder.value && siblings.status === 'pendi
         :alt="session.title.value"
         :download="downloadUrl"
       />
-      <PreviewFallback
-        v-else-if="preview.kind === 'video' && videoFailed"
-        failed
-        :download="downloadUrl"
-      />
+      <PreviewFailed v-else-if="preview.kind === 'video' && videoFailed" :download="downloadUrl" />
       <audio
         v-else-if="preview.kind === 'audio'"
         :src="contentUrl"
