@@ -66,6 +66,7 @@ import {
   isOldLayout,
   isOldMediaMappable,
   oldLayout,
+  readSiteVideoFrames,
 } from '@/apps/writer/collab/old-media'
 import {
   breaksStyle,
@@ -360,8 +361,8 @@ function droppedFloats(body: XmlFragment): Dropped[] {
   return [{ kind: 'noise', name: 'dataFloat' }]
 }
 
-// The check compares the old body with the fresh one as Yjs holds both. Between them:
-// convertOldMedia, checked on its own by where the media points and by old media holding only what
+// The check compares the old body with the fresh one as Yjs holds both. Between them: an old frame
+// of a video on the site, read as that video; convertOldMedia, checked on its own by where the media points and by old media holding only what
 // the old editor wrote; a float beside an alignment, dropped (recorded); Drive's defaults, dropped;
 // a mark stored as true where the mark holds no attributes, read as that mark; frappe-ui's upload
 // id on media, dropped (recorded); Drive's mention author and type, dropped (recorded); an atom key
@@ -375,6 +376,7 @@ function fromYjs(old: Doc) {
   const body = old.getXmlFragment(BODY_FIELD)
   const threads = markOldThreads(body, schema)
   const hasUnreadableThreads = !threads || unreadableThreads(old).length > 0
+  readSiteVideoFrames(body)
   const media = mediaSources(body)
   const isOldMediaKept = isOldMediaMappable(body)
   const floats = droppedFloats(body)

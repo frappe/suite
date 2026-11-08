@@ -9,6 +9,10 @@ const schema = getSchema(writerSchema())
 const OLD_MEDIA = 'resizableMedia'
 // Drive's earlier image was a block, which this editor holds only among text
 const OLD_IMAGE = 'image'
+const OLD_FRAME = 'iframe'
+const SITE_VIDEO = /^\/files\/[^?#]+\.(?:mp4|webm|ogg|mov)$/i
+// What an old frame and a video both hold
+const FRAME_VIDEO_KEYS = ['src', 'width', 'height', 'align', 'title']
 const ALIGNMENTS = ['left', 'center', 'right']
 const FLOATS = ['left', 'right']
 // All the old editor's resizable media ever declared
@@ -183,6 +187,45 @@ function converted(old: XmlElement, parent: Parent, index: number) {
   }
 
   return [element('paragraph', {}), video]
+}
+
+// Whether an old frame only plays a video file on this site: anything else it sets beyond what a
+// video holds is the frame's own default, or a sandbox granting no more than the default does
+function isSiteVideoFrame(frame: XmlElement) {
+  const { src, sandbox, ...stored } = frame.getAttributes() as Record<string, unknown>
+  const defaults = schema.nodes.iframe.spec.attrs ?? {}
+  const allowed = String(defaults.sandbox.default).split(' ')
+  return (
+    frame.length === 0 &&
+    typeof src === 'string' &&
+    SITE_VIDEO.test(src) &&
+    (sandbox == null ||
+      String(sandbox)
+        .split(' ')
+        .every((token) => allowed.includes(token))) &&
+    Object.entries(stored).every(
+      ([key, value]) =>
+        FRAME_VIDEO_KEYS.includes(key) || value == null || value === defaults[key]?.default,
+    )
+  )
+}
+
+function videoOfFrame(frame: XmlElement) {
+  const entries = Object.entries(frame.getAttributes()).filter(([key]) =>
+    FRAME_VIDEO_KEYS.includes(key),
+  )
+  return element('video', Object.fromEntries(entries))
+}
+
+/** Reads each top-level old frame of a video on this site as that video, which the copy can keep. */
+export function readSiteVideoFrames(body: XmlFragment) {
+  for (const [index, block] of body.toArray().entries()) {
+    if (block instanceof XmlElement && block.nodeName === OLD_FRAME && isSiteVideoFrame(block)) {
+      const video = videoOfFrame(block)
+      body.delete(index, 1)
+      body.insert(index, [video])
+    }
+  }
 }
 
 // Each old image becomes an image in its own paragraph, and each old video a video

@@ -243,13 +243,26 @@ class TestConversion(DriveCallbackCase):
         )
         self.assertEqual(copy.find("img")["src"], PNG_SOURCE)
 
+    def test_keeps_an_old_frame_of_a_site_video_as_that_video_in_the_copy(self):
+        node = self.old_yjs_document(
+            pycrdt.XmlElement("paragraph", None, [pycrdt.XmlText("Watch this")]),
+            pycrdt.XmlElement("iframe", {"src": "/files/talk.mp4"}),
+        )
+
+        self.assertEqual(conversions.convert_document(writer_content.APP, node), "converted")
+
+        copy = BeautifulSoup(
+            frappe.db.get_value("Writer Document", self.docname_of(node), "html"), "html.parser"
+        )
+        self.assertEqual((copy.find("video")["src"], copy.find("iframe")), ("/files/talk.mp4", None))
+
     def test_refuses_a_body_whose_embed_or_picture_the_copy_cannot_keep(self):
         for name, tag, src in (
             # nh3 strips this scheme before kept_value sees it
             ("javascript iframe", "iframe", "javascript:alert(1)"),
             ("html data iframe", "iframe", "data:text/html,<p>Hi</p>"),
             ("http iframe", "iframe", "http://www.youtube.com/embed/abc"),
-            ("relative iframe", "iframe", "/files/talk.mp4"),
+            ("relative iframe", "iframe", "/files/notes.pdf"),
             ("svg data picture", "image", "data:image/svg+xml;base64,PHN2Zy8+"),
             ("html data picture", "image", "data:text/html,<p>Hi</p>"),
             ("upper case html data picture", "image", "DATA:text/html,<p>Hi</p>"),
