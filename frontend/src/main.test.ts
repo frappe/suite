@@ -10,11 +10,19 @@ const boot = vi.hoisted(() => {
     release: () => release(),
     installEventReminders: vi.fn(),
     preloadPage: vi.fn(),
+    rendered: vi.fn(),
   }
 })
 
 vi.mock('./index.css', () => ({}))
-vi.mock('@/App.vue', () => ({ default: { render: () => null } }))
+vi.mock('@/App.vue', () => ({
+  default: {
+    render: () => {
+      boot.rendered()
+      return null
+    },
+  },
+}))
 vi.mock('@/apps/calendar', () => ({ installEventReminders: boot.installEventReminders }))
 vi.mock('@/apps/slides/utils/serviceWorker', () => ({ clearSlidesUserData: vi.fn() }))
 vi.mock('@/boot/sentry', () => ({ initSentry: vi.fn().mockResolvedValue(undefined) }))
@@ -43,19 +51,26 @@ afterAll(() => {
   window.__ = originalTranslate
 })
 
-it('loads a page’s code only once the global __ and the catalog are there', async () => {
-  delete window.__
-  const seen: string[] = []
-  boot.preloadPage.mockImplementation(() => seen.push(typeof window.__))
+it(
+  'loads a page’s code only once the global __ and the catalog are there',
+  { timeout: 30_000 },
+  async () => {
+    document.body.innerHTML = '<div id="app"></div>'
+    delete window.__
+    const seen: string[] = []
+    boot.preloadPage.mockImplementation(() => seen.push(typeof window.__))
 
-  const started = import('./main')
-  await vi.waitFor(() => expect(boot.installEventReminders).toHaveBeenCalled())
+    const started = import('./main')
+    await vi.waitFor(() => expect(boot.installEventReminders).toHaveBeenCalled())
 
-  // The catalog is still on its way, so a page evaluated now would freeze English labels.
-  expect(boot.preloadPage).not.toHaveBeenCalled()
+    // The catalog is still on its way, so a page evaluated now would freeze English labels.
+    expect(boot.preloadPage).not.toHaveBeenCalled()
 
-  boot.release()
-  await started
+    boot.release()
+    await started
 
-  expect(seen).toEqual(['function'])
-})
+    expect(seen).toEqual(['function'])
+    // The app mounts after the sprite plugin's import, so nothing is left loading after the test.
+    await vi.waitFor(() => expect(boot.rendered).toHaveBeenCalled(), { timeout: 25_000 })
+  },
+)
