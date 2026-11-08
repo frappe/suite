@@ -4,7 +4,7 @@
  * fresh signed address each time, so the browser's cache cannot do this.
  */
 const kept = new Map<string, HTMLImageElement>()
-/** Counts `keepImages` calls, so an older call's pending work and a release can tell a newer one came. */
+/** Moves on with each `keepImages` call and each release that lands, so older pending work can tell it is out of date. */
 let keeps = 0
 
 /** The kept element for `url`, loading it now if it is not kept. A failed load is let go, so the next show tries again. */
@@ -43,6 +43,8 @@ export function keepImages(shown: string | null, beside: readonly string[]): voi
 export function releaseImages(): void {
   const keep = keeps
   queueMicrotask(() => {
-    if (keep === keeps) kept.clear()
+    if (keep !== keeps) return
+    keeps++
+    kept.clear()
   })
 }
