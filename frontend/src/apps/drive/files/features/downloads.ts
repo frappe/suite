@@ -21,10 +21,9 @@ const SLOW_AFTER_MS = 60_000
 const GIVE_UP_AFTER_MS = 75 * 60_000
 const BACKOFF_MS = [2000, 4000, 8000, 15_000]
 
-export interface SettleOptions {
+interface SettleOptions {
   /** `false` while a poll cannot reach the server, `true` when one gets through again. */
   onConnection?: (connected: boolean) => void
-  now?: () => number
 }
 
 /** A folder or a link downloads in a zip; anything else downloads its own bytes. */
@@ -124,9 +123,9 @@ export async function settledDownload(
 async function pollPatiently(
   download: DriveDownload,
   signal: AbortSignal,
-  { onConnection, now = Date.now }: SettleOptions,
+  { onConnection }: SettleOptions,
 ): Promise<DriveDownload> {
-  const started = now()
+  const started = Date.now()
   let current = download
   let failures = 0
   let connected = true
@@ -135,7 +134,7 @@ async function pollPatiently(
     connected = value
   }
   while (current.status === 'Preparing') {
-    const waited = now() - started
+    const waited = Date.now() - started
     if (waited >= GIVE_UP_AFTER_MS)
       return { ...current, status: 'Failed', error: __('The zip took too long. Try again.') }
     const delay = failures
@@ -166,7 +165,7 @@ async function pollPatiently(
  * delivered it. That notification is marked read here, so the bell counts only downloads nobody has started. It stays in the
  * bell, as the download's link until it expires.
  */
-export async function markDownloadDelivered(download: DriveDownload): Promise<void> {
+async function markDownloadDelivered(download: DriveDownload): Promise<void> {
   if (download.delivery !== 'Inbox') return
   try {
     const unread = await client.query(api.drive.notifications.list, { unread: true, limit: 60 })

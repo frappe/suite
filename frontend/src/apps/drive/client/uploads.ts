@@ -137,7 +137,7 @@ async function sendChunks(
  * The next chunk's size. Chunks start small and follow the link's speed, so
  * progress moves on a slow link and a lost chunk costs seconds.
  */
-export class ChunkSize {
+class ChunkSize {
   bytes = FIRST_CHUNK_BYTES
   /** The largest size the way to the server accepts. */
   private ceiling = MAX_CHUNK_BYTES
