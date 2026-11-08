@@ -1,5 +1,5 @@
 <template>
-  <div class="space-y-3">
+  <div class="flex flex-col gap-3">
     <div class="flex items-start gap-2">
       <Combobox
         ref="combobox"
@@ -16,7 +16,14 @@
         :empty-text="__('No people or groups found')"
         :aria-label="fieldLabel"
         @update:open="onOpen"
-      />
+      >
+        <template #item-person="{ item }">
+          <div class="flex min-w-0 items-baseline gap-3">
+            <span class="truncate">{{ item.label }}</span>
+            <span class="ml-auto truncate text-sm text-ink-gray-5">{{ item.description }}</span>
+          </div>
+        </template>
+      </Combobox>
       <Dropdown v-if="staged.length" :options="roleChoices" align="end">
         <Button
           variant="ghost"
@@ -31,7 +38,7 @@
     </div>
 
     <!-- People picked wait here, so Notify can be chosen before anyone is added (§7.8). -->
-    <div v-if="staged.length" class="space-y-3">
+    <div v-if="staged.length" class="flex flex-1 flex-col gap-3">
       <ul :aria-label="__('People to add')">
         <li
           v-for="person in staged"
@@ -65,7 +72,7 @@
         </li>
       </ul>
       <div
-        class="flex flex-wrap items-center justify-end gap-2 border-t border-outline-gray-1 pt-4"
+        class="mt-auto flex flex-wrap items-center justify-end gap-2 border-t border-outline-gray-1 pt-4"
       >
         <Checkbox
           v-if="staged.some((person) => person.kind === 'user')"
@@ -151,6 +158,8 @@ const options = computed(() => [
     .map((person) => ({
       type: 'custom' as const,
       key: person.kind === 'user' ? `user:${person.email}` : `group:${person.name}`,
+      // Name and email or member count share one line (`#item-person`).
+      slot: 'person',
       label: person.kind === 'user' ? person.full_name || person.email : person.name,
       description:
         person.kind === 'user'

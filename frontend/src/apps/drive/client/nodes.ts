@@ -11,10 +11,12 @@ import type { DriveBreadcrumb, DriveNode } from './types'
 export type CreateNodeInput =
   NodeCreateCreateFolderInput | NodeCreateCreateLinkInput | NodeCreateCreateDocumentInput
 
+/** Silent: the create dialog shows every refusal under its form, so none needs a toast. */
 export async function createNode(input: CreateNodeInput): Promise<DriveNode> {
-  if (input.kind === 'folder') return client.mutation(api.drive.nodes.createFolder, input)
-  if (input.kind === 'link') return client.mutation(api.drive.nodes.createLink, input)
-  return client.mutation(api.drive.nodes.createDocument, input)
+  const options = { silent: true }
+  if (input.kind === 'folder') return client.mutation(api.drive.nodes.createFolder, input, options)
+  if (input.kind === 'link') return client.mutation(api.drive.nodes.createLink, input, options)
+  return client.mutation(api.drive.nodes.createDocument, input, options)
 }
 
 /** Creates a document; `from_node` imports an uploaded file's contents into it (§10.1). */

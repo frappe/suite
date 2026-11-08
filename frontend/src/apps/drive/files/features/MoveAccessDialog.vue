@@ -20,7 +20,7 @@
           <span class="min-w-0 flex-1 truncate text-base text-ink-gray-8" :title="gain.label">
             {{ gain.label }}
           </span>
-          <span class="shrink-0 text-base text-ink-gray-5">{{ __(roleLabel(gain.role)) }}</span>
+          <span class="shrink-0 text-base text-ink-gray-5">{{ abilityLabel(gain.role) }}</span>
         </li>
       </ul>
       <p v-if="ownAccess" class="text-p-base text-ink-gray-7">{{ ownAccess }}</p>
@@ -39,9 +39,22 @@ import { Avatar, Button, Dialog } from 'frappe-ui'
 import { computed } from 'vue'
 
 import { principalKind, roleLabel } from '@/apps/drive/client/grants'
+import { DRIVE_ROLES } from '@/apps/drive/client/types'
 import { translate as __ } from '@/platform/translation'
 
 import type { MoveAccessChange } from './folderPicker'
+
+const ABILITY_LABELS = new Map<number, () => string>([
+  [DRIVE_ROLES.read, () => __('Can view')],
+  [DRIVE_ROLES.comment, () => __('Can comment')],
+  [DRIVE_ROLES.upload, () => __('Can upload')],
+  [DRIVE_ROLES.edit, () => __('Can edit')],
+  [DRIVE_ROLES.manage, () => __('Can manage')],
+])
+
+function abilityLabel(role: number): string {
+  return ABILITY_LABELS.get(role)?.() ?? __(roleLabel(role))
+}
 
 const GAIN_ICONS: Record<ReturnType<typeof principalKind>, string> = {
   user: 'lucide-user',

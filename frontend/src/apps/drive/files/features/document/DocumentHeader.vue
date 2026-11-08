@@ -361,8 +361,8 @@ async function rename(): Promise<string | null> {
     if (!(error instanceof TransportError)) {
       return error instanceof Error ? error.message : __('Could not rename this file.')
     }
-    // Drive names a free title only when the title is taken. Its own message
-    // for that is written for developers.
+    // Drive names a free title only when the title is taken, so the message
+    // can offer it.
     const free = error.details.free_title
     if (error.type === 'DriveConflict' && typeof free === 'string') {
       return __('That name is taken in this folder. Try “{0}”.', [free])

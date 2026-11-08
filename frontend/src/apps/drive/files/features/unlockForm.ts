@@ -18,11 +18,12 @@ export interface UnlockFormOptions {
 
 const LOCKOUT_KEY = 'suite:drive-unlock-lockout:'
 
-/** "14:32" for fourteen minutes and 32 seconds. Rounds up, so the form never opens early. */
+/** "15 minutes" for 14:32, "40 seconds" under a minute. Rounds up, so the form never opens early. */
 export function formatWait(ms: number): string {
   const seconds = Math.max(0, Math.ceil(ms / 1000))
-  const minutes = Math.floor(seconds / 60)
-  return `${minutes}:${String(seconds % 60).padStart(2, '0')}`
+  if (seconds < 60) return seconds === 1 ? '1 second' : `${seconds} seconds`
+  const minutes = Math.ceil(seconds / 60)
+  return minutes === 1 ? '1 minute' : `${minutes} minutes`
 }
 
 export function useUnlockForm(node: () => string, options: UnlockFormOptions = {}) {
@@ -39,7 +40,7 @@ export function useUnlockForm(node: () => string, options: UnlockFormOptions = {
   const waitMs = computed(() => Math.max(0, lockedUntil.value - clock.value))
   const disabled = computed(() => pending.value || waitMs.value > 0)
   const message = computed(() =>
-    waitMs.value > 0 ? `Try again in ${formatWait(waitMs.value)}` : error.value,
+    waitMs.value > 0 ? `Too many attempts. Try again in ${formatWait(waitMs.value)}.` : error.value,
   )
 
   function stopTimer() {

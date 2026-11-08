@@ -2748,7 +2748,7 @@ def _refuse_sibling_collision(
     """
     free = _free_title(parent, title, exclude=exclude, for_update=for_update)
     if free != title:
-        raise DriveConflict(_("An active Drive node with this title already exists"), free_title=free)
+        raise DriveConflict(_("That name is taken in this folder."), free_title=free)
 
 
 # Page size for both blob-source scans below. Storage deduplicates by

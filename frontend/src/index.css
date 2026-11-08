@@ -65,6 +65,23 @@ body {
   cursor: pointer;
 }
 
+/* frappe-ui's toast centres its icon on the whole message, so a two-line message
+   leaves the icon between its lines. The icon and message start at the top
+   instead, one line box apart from the action button's height (h-7), so the icon
+   sits on the first line and a one-line message still centres on the button. */
+[data-sonner-toast] > [data-icon],
+[data-sonner-toast] > [data-content] {
+  @apply text-p-base;
+  align-self: flex-start;
+  margin-block: calc((theme(spacing.7) - 1lh) / 2);
+}
+
+[data-sonner-toast] > [data-icon] {
+  display: flex;
+  align-items: center;
+  height: 1lh;
+}
+
 /* frappe-ui's off switch puts a thumb the colour of the page on a dark track, which is
    about 1.8:1 in dark mode. A light thumb reads as a control. */
 :root[data-theme='dark'] [role='switch'][data-state='unchecked'] > span {

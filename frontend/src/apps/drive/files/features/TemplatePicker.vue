@@ -77,7 +77,7 @@
           </div>
         </template>
       </div>
-      <FormControl v-model="title" label="Name" required :disabled="!selected" />
+      <FormControl v-model="title" label="Name" required />
       <div class="flex justify-end gap-2">
         <Button label="Cancel" @click="open = false" />
         <Button
@@ -128,9 +128,10 @@ const typeOptions = computed(() =>
   })),
 )
 const typeKey = ref(documentTypes[0]?.key ?? '')
-const contentDoctype = computed(
-  () => documentTypes.find((definition) => definition.key === typeKey.value)?.contentDoctype,
+const documentType = computed(() =>
+  documentTypes.find((definition) => definition.key === typeKey.value),
 )
+const contentDoctype = computed(() => documentType.value?.contentDoctype)
 const templates = useInfiniteQuery(api.drive.views.list, () =>
   open.value && contentDoctype.value
     ? {
@@ -146,13 +147,17 @@ const selected = ref<DriveNode | null>(null)
 const title = ref('')
 const failedPreviews = reactive(new Set<string>())
 const copy = useMutation(api.drive.nodes.copy)
-watch([typeKey, open], () => {
-  selected.value = null
-  title.value = ''
-})
+// Named like any new document. The copy takes the next free "(2)" title if this one is taken.
+watch(
+  [typeKey, open],
+  () => {
+    selected.value = null
+    title.value = `Untitled ${(documentType.value?.newLabel() ?? 'Document').toLowerCase()}`
+  },
+  { immediate: true },
+)
 function choose(row: DriveNode) {
   selected.value = row
-  title.value = row.title
 }
 function chooseAndCreate(row: DriveNode) {
   choose(row)
