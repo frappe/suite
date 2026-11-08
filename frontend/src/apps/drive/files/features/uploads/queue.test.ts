@@ -6,6 +6,7 @@ import { transport } from '@/platform/transport'
 
 import {
   createUploadQueue,
+  RETRY_FOR_MS,
   uploadQueue,
   uploadTargetOf,
   type UploadPrompts,
@@ -60,6 +61,8 @@ const drive = vi.hoisted(() => {
     bodyLimit: Infinity,
     /** Answers a request with a network failure or a status instead of the server. */
     drop: fromPartial<((method: string, path: string) => 'network' | number | null) | null>(null),
+    /** The connection to the bucket goes after `sent` bytes, when this answers a number. */
+    bucketDrop: fromPartial<(() => number | null) | null>(null),
     /** Runs after the server handled a request, before its reply leaves. */
     lose: fromPartial<((method: string, path: string) => boolean) | null>(null),
     nextId: 0,
@@ -246,6 +249,12 @@ const drive = vi.hoisted(() => {
       if (!(bytes instanceof Blob)) throw new Error('An upload must contain a file blob')
       const id = String(form.get('key')).replace('uploads/', '')
       setTimeout(() => {
+        const droppedAt = state.bucketDrop?.() ?? null
+        if (droppedAt !== null) {
+          this.upload.onprogress?.({ loaded: droppedAt })
+          this.onerror?.()
+          return
+        }
         state.posts.push({ url: this.url, fields: names, size: bytes.size })
         this.upload.onprogress?.({ loaded: Math.floor(bytes.size / 2) })
         this.upload.onprogress?.({ loaded: bytes.size })
@@ -275,6 +284,7 @@ const drive = vi.hoisted(() => {
       state.before = null
       state.bodyLimit = Infinity
       state.drop = null
+      state.bucketDrop = null
       state.lose = null
       state.nodes.set('folder', {
         name: 'folder',
@@ -931,6 +941,82 @@ describe('Cancel and reconnect', () => {
     expect(asked.asked).toEqual(['a.txt'])
     expect(queue.entries.value.map((entry) => entry.state)).toEqual(['done', 'cancelled'])
     expect(drive.titlesIn('folder')).toEqual(['a (1).txt', 'a.txt', 'b.txt'])
+  })
+
+  it('cancelling the held upload lets the files behind it go, with no Retry all', async () => {
+    drive.state.createLimit = 50
+    const queue = createUploadQueue({ records: memoryRecords(), parallel: 1 })
+    queue.setPrompts(prompts())
+
+    await queue.uploadFiles([{ file: file('big.bin', 80) }, { file: file('small.bin', 10) }], target)
+    await until(() => queue.state.halted !== null, 'the halt')
+    queue.cancel(queue.entries.value[0]!.id)
+
+    expect(queue.state.halted).toBeNull()
+    await settled(queue)
+    expect(queue.entries.value.map((entry) => entry.state)).toEqual(['cancelled', 'done'])
+    expect(drive.titlesIn('folder')).toEqual(['small.bin'])
+  })
+
+  it('leaves the queue halted while another upload is still held', async () => {
+    drive.state.createLimit = 50
+    const queue = createUploadQueue({ records: memoryRecords(), parallel: 2 })
+    queue.setPrompts(prompts())
+
+    await queue.uploadFiles([{ file: file('one.bin', 80) }, { file: file('two.bin', 90) }], target)
+    await until(
+      () => queue.entries.value.every((entry) => entry.state === 'held'),
+      'both uploads to be held',
+    )
+    queue.cancel(queue.entries.value[0]!.id)
+
+    expect(queue.state.halted).toBe('This Drive is full.')
+    queue.cancelAll()
+    expect(queue.state.halted).toBeNull()
+  })
+
+  it('leaves a cancelled file out of the run’s bytes', async () => {
+    const queue = createUploadQueue({ records: memoryRecords(), parallel: 1 })
+    queue.setPrompts(prompts())
+    let release: (() => void) | null = null
+    drive.state.before = (method) => {
+      if (PUT(method) && !release) return new Promise((resolve) => (release = resolve))
+    }
+
+    await queue.uploadFiles([{ file: file('keep.bin', 100) }, { file: file('stop.bin', 300) }], target)
+    await until(() => release !== null, 'the first chunk')
+    expect(queue.indicator.value?.bytes?.total).toBe(400)
+
+    queue.cancel(queue.entries.value[1]!.id)
+
+    expect(queue.indicator.value?.bytes?.total).toBe(100)
+    release!()
+    await settled(queue)
+  })
+
+  it('a direct upload that moved bytes gets a fresh retry window', async () => {
+    drive.state.direct = true
+    let clock = 0
+    let posts = 0
+    drive.state.bucketDrop = () => {
+      posts += 1
+      if (posts === 1) return 0
+      if (posts > 2) return null
+      // The restarted request runs for longer than the retry window, then the connection blips.
+      clock += RETRY_FOR_MS + 1
+      return 20
+    }
+    const queue = createUploadQueue({
+      records: memoryRecords(),
+      now: () => clock,
+      backoff: () => 0,
+    })
+    queue.setPrompts(prompts())
+
+    await queue.uploadFiles([{ file: file('film.mov', 40) }], target)
+    await settled(queue)
+
+    expect(queue.entries.value[0]!.state).toBe('done')
   })
 
   it('offline, waits for the network without a limit while other files keep waiting', async () => {

@@ -248,7 +248,8 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
       entries.value.some((entry) => entry.state === 'failed' || entry.state === 'interrupted')
     if (active.value.length || state.preparing || state.reading) {
       const counted = [...jobs.values()].filter(
-        (job) => job.run === run && job.entry.state !== 'skipped',
+        // Stopped files drop out, so the bar and time left describe what is still going.
+        (job) => job.run === run && (ACTIVE.includes(job.entry.state) || job.entry.state === 'done'),
       )
       const total = counted.reduce((sum, job) => sum + job.entry.size, 0)
       const sent = counted.reduce(
@@ -785,6 +786,8 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
         session,
         file,
         (sent) => {
+          // Bytes moved, so the connection is back.
+          if (sent > entry.sent) job.retries = null
           entry.sent = sent
         },
         job.signal,
@@ -931,6 +934,16 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
    * does not offer it again.
    */
   function cancel(id: string) {
+    stop(id)
+    releaseHalt()
+  }
+
+  function cancelAll() {
+    for (const entry of active.value) stop(entry.id)
+    releaseHalt()
+  }
+
+  function stop(id: string) {
     const job = jobs.get(id)
     if (!job || !ACTIVE.includes(job.entry.state) || isFinishing(job.entry)) return
     job.controller.abort()
@@ -941,8 +954,11 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     if (session) void job.saving.then(() => records.remove(session.upload_id))
   }
 
-  function cancelAll() {
-    for (const entry of active.value) cancel(entry.id)
+  /** A halt stands for a held upload, so with none left the queue goes on. */
+  function releaseHalt() {
+    if (!state.halted || entries.value.some((entry) => entry.state === 'held')) return
+    state.halted = null
+    pump()
   }
 
   /** Retry resumes from the bytes the server holds (spec §6.11). */
@@ -1114,6 +1130,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     )
       return
     jobs.delete(id)
+    releaseHalt()
     if (job.session && job.entry.state !== 'done') await records.remove(job.session.upload_id)
   }
 
