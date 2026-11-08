@@ -688,6 +688,11 @@ jobs:
         if: steps.frontend-changes.outputs.run == '1'
         run: pnpm install --frozen-lockfile
 
+      - name: Install E2E dependencies for typed lint
+        if: steps.frontend-changes.outputs.run == '1'
+        working-directory: e2e
+        run: corepack yarn install --frozen-lockfile --non-interactive
+
       - name: Check frontend formatting
         if: steps.frontend-changes.outputs.run == '1'
         run: pnpm format:check
