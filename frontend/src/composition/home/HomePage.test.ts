@@ -511,11 +511,13 @@ describe('Home page', () => {
 
     it('frees the card again when creation fails', async () => {
       state.createDocument.mockRejectedValueOnce(new Error('Storage is full'))
-      const root = mount()
+      const reported = vi.fn()
+      const root = mount(reported)
       state.createDocument.mockResolvedValueOnce({ name: 'new-node' })
       card(root, 'Document')!.click()
       await new Promise((resolve) => setTimeout(resolve))
       expect(card(root, 'Document')!.getAttribute('aria-busy')).toBe('false')
+      expect(reported).toHaveBeenCalledOnce()
       expect(state.push).not.toHaveBeenCalled()
 
       card(root, 'Document')!.click()
@@ -541,10 +543,11 @@ describe('Home page', () => {
     })
   })
 })
-function mount(): HTMLElement {
+function mount(onError?: (error: unknown) => void): HTMLElement {
   const root = document.createElement('div')
   document.body.appendChild(root)
   const app = createApp(HomePage)
+  if (onError) app.config.errorHandler = onError
   app.mount(root)
   cleanups.push(() => {
     app.unmount()

@@ -948,7 +948,10 @@ describe('Cancel and reconnect', () => {
     const queue = createUploadQueue({ records: memoryRecords(), parallel: 1 })
     queue.setPrompts(prompts())
 
-    await queue.uploadFiles([{ file: file('big.bin', 80) }, { file: file('small.bin', 10) }], target)
+    await queue.uploadFiles(
+      [{ file: file('big.bin', 80) }, { file: file('small.bin', 10) }],
+      target,
+    )
     await until(() => queue.state.halted !== null, 'the halt')
     queue.cancel(queue.entries.value[0]!.id)
 
@@ -983,7 +986,10 @@ describe('Cancel and reconnect', () => {
       if (PUT(method) && !release) return new Promise((resolve) => (release = resolve))
     }
 
-    await queue.uploadFiles([{ file: file('keep.bin', 100) }, { file: file('stop.bin', 300) }], target)
+    await queue.uploadFiles(
+      [{ file: file('keep.bin', 100) }, { file: file('stop.bin', 300) }],
+      target,
+    )
     await until(() => release !== null, 'the first chunk')
     expect(queue.indicator.value?.bytes?.total).toBe(400)
 
