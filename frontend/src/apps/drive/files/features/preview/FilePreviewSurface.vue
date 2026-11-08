@@ -80,6 +80,11 @@ const parentFolder = useQuery(api.drive.nodes.get, () =>
 const opensAsSheet = computed(
   () => isSpreadsheetFile.value && can.value.copy && !!uploadTargetOf(parentFolder.data),
 )
+/** While the folder's answer loads, the button keeps its room, so the header does not shift when it comes. */
+const sheetLoading = computed(
+  () =>
+    isSpreadsheetFile.value && can.value.copy && !!parent.value && parentFolder.status === 'pending',
+)
 const openingAsSheet = ref(false)
 async function openAsSheet() {
   if (!parent.value) return
@@ -432,7 +437,8 @@ const pagerLoading = computed(() => !!folder.value && siblings.status === 'pendi
         </div>
         <!-- A CSV has a text preview, so the "No preview" page never offers this. -->
         <Button
-          v-if="opensAsSheet && preview.kind === 'text' && !empty"
+          v-if="(opensAsSheet || sheetLoading) && preview.kind === 'text' && !empty"
+          :class="sheetLoading && 'invisible'"
           :label="__('Open as spreadsheet')"
           icon-left="lucide-sheet"
           :loading="openingAsSheet"

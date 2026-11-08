@@ -108,6 +108,8 @@ const FOLDER: Row[] = [
 let folderState = 'Active'
 /** The caller's role on the folder a file sits in. */
 let folderRole = 30
+/** Holds back the folder's answer while a test looks at the page without it. */
+let folderAnswer: Promise<void> | null = null
 function typeOf(row: Row): string {
   if (row.kind === 'folder') return 'folder'
   if (row.mime === 'application/pdf') return 'pdf'
@@ -124,6 +126,7 @@ vi.mock('@/platform/transport', async (original) => ({
       requests.push({ id: operation.id, input })
       if (operation.id === 'node_patch.trash') return { name: input.node, state: 'Trashed' }
       if (operation.id === 'node_get') {
+        await folderAnswer
         return {
           name: input.node,
           kind: 'folder',
@@ -199,6 +202,7 @@ afterEach(() => {
   unmount = null
   folderState = 'Active'
   folderRole = 30
+  folderAnswer = null
   account.status = 'guest'
   requests.length = 0
   vi.unstubAllGlobals()
@@ -263,6 +267,19 @@ describe('file preview', () => {
       const { root } = await mount(session('g', 'data.csv', 'text/csv'), '/d/g/data-csv')
 
       await vi.waitFor(() => expect(openAsSheetButton(root)).toBeDefined())
+    })
+
+    it('keeps the button out of sight but in its place until the folder answers', async () => {
+      let answer = () => {}
+      folderAnswer = new Promise((resolve) => (answer = resolve))
+      vi.stubGlobal('fetch', async () => new Response('a,b\n1,2\n'))
+      const opened = { ...session('g', 'data.csv', 'text/csv'), parent: ref('folder-4') }
+      const { root } = await mount(fromPartial<FilePreviewSession>(opened), '/d/g/data-csv')
+
+      await vi.waitFor(() => expect(openAsSheetButton(root)?.className).toContain('invisible'))
+
+      answer()
+      await vi.waitFor(() => expect(openAsSheetButton(root)?.className).not.toContain('invisible'))
     })
 
     it('does not offer it to someone who can only read the folder', async () => {
