@@ -1174,6 +1174,51 @@ class WriterBodyTest(unittest.TestCase):
             self.assertEqual(content.writer_images_wrapped, 1)
             self.assertEqual(content.writer_bodies_rewritten, 1)
 
+    def test_a_rewritten_body_keeps_the_changes_yjs_held_back(self):
+        # Later edits whose earlier part never reached the server: Yjs holds
+        # them unapplied until that part comes, so a rewrite must carry them
+        author = pycrdt.Doc()
+        fragment = pycrdt.XmlFragment()
+        author["default"] = fragment
+        text = pycrdt.XmlText("early")
+        fragment.children.append(paragraph(text))
+        missing = author.get_update()
+        before = author.get_state()
+        with author.transaction():
+            text += " later"
+            del text[0:2]
+
+        held = author.get_update(before)
+        listed = yjs_body(
+            pycrdt.XmlElement(
+                "bulletList",
+                None,
+                [pycrdt.XmlElement("listItem", None, [image(src=embed("own-1"))])],
+            )
+        )
+        merged = pycrdt.merge_updates(base64.b64decode(listed), held)
+        src = embed("own-1")
+        self.add_document(
+            "held-doc",
+            "node-h",
+            body=WriterBody(
+                content=base64.b64encode(merged).decode("ascii"),
+                html=f'<ul><li><img src="{src}"></li></ul>',
+            ),
+        )
+        self.add_picture("own-1", "node-h", "blob-own", "chart.png")
+
+        content = convert_history_and_comments(self.env)
+
+        self.assertEqual(content.writer_images_wrapped, 1)
+        arrived = pycrdt.Doc()
+        arrived_fragment = pycrdt.XmlFragment()
+        arrived["default"] = arrived_fragment
+        arrived.apply_update(base64.b64decode(self.source.writer_bodies["held-doc"].content))
+        arrived.apply_update(missing)
+        blocks = {child.tag: child for child in arrived_fragment.children}
+        self.assertEqual(str(next(iter(blocks["paragraph"].children))), "rly later")
+
 
 if __name__ == "__main__":
     unittest.main()
