@@ -214,8 +214,8 @@
           <FilesListing
             ref="listingView"
             class="flex-1 transition-opacity"
-            :class="{ 'opacity-60': rearranging }"
-            :aria-busy="rearranging || undefined"
+            :class="{ 'opacity-60': listing.isHeld }"
+            :aria-busy="listing.isHeld || undefined"
             :query="listing"
             :presentation="presentation"
             :selection="selection"
@@ -254,7 +254,7 @@
                   icon-left="lucide-upload"
                   @click="pickUpload('files')"
                 />
-                <span v-if="canDropFiles" class="text-p-sm text-ink-gray-5">{{
+                <span v-if="finePointer" class="text-p-sm text-ink-gray-5">{{
                   __('or drop files here')
                 }}</span>
               </div>
@@ -345,7 +345,7 @@ import CreateNodeDialog, { type CreateRequest } from '../features/CreateNodeDial
 import { openingLocationState } from '../features/document/openingLocation'
 import { downloadItems } from '../features/downloads'
 import type { DraggedItems } from '../features/dragMove'
-import { emptyStateWithActions, type FilesDestination } from '../features/emptyState'
+import { emptyState, type FilesDestination } from '../features/emptyState'
 import FilesListing from '../features/FilesListing.vue'
 import FolderPicker from '../features/FolderPicker.vue'
 import { folderTrail, type FolderTrail } from '../features/folderTrail'
@@ -442,8 +442,7 @@ const pickerMode = ref<'move' | 'copy'>('move')
 const pickerBulk = ref(false)
 const batchOutcome = ref<DriveBatchResult | null>(null)
 const batchVerb = ref<BatchVerb>('moved')
-const narrow = ref(false)
-let narrowMedia: MediaQueryList | null = null
+const narrow = useMediaQuery('(max-width: 767px)')
 let stopRealtime: (() => void) | null = null
 let stopPreviews: (() => void) | null = null
 let visitedFolder = ''
@@ -462,7 +461,7 @@ const userPresentation = computed(() => {
  * order, so they show it without overwriting the user's choice.
  */
 const presentation = computed<PresentationState>(() => {
-  const chosen = { ...userPresentation.value, sort: listedSort.value }
+  const chosen = settingsPresentation.value
   // Decided from the place, not the rows, so the loading skeleton and the
   // loaded list have the same columns.
   const shown = { ...chosen, columns: chosen.columns.filter(isOfferedColumn) }
@@ -776,8 +775,6 @@ const listing = heldWhileRearranging(createdRows.listing, () =>
     typeQuery(listingTypes.value),
   ].join('|'),
 )
-// The old rows dim while the new order loads.
-const rearranging = computed(() => listing.isHeld)
 const hasRows = computed(() => listing.rows.length > 0)
 const settledEmpty = computed(() => !hasRows.value && listing.status !== 'pending')
 // A trashed folder's own Restore needs its root too, for a restore into a folder the user picks.
@@ -831,10 +828,8 @@ const selectionLabel = computed(() => {
 const onlySelected = computed(() =>
   selectedRows.value.length === 1 ? (selectedRows.value[0] ?? null) : null,
 )
-/** Only a fine pointer can drag files in: phones and tablets cannot. */
-const canDropFiles = window.matchMedia('(hover: hover) and (pointer: fine)').matches
 const empty = computed(() => {
-  return emptyStateWithActions({
+  return emptyState({
     destination: props.destination,
     term: searchTerm.value,
     canCreate: canCreate.value,
@@ -856,9 +851,6 @@ const visitMutation = useMutation(api.drive.nodes.visit, { silent: true })
 const clearRecentMutation = useMutation(api.drive.views.clearRecent)
 
 onMounted(() => {
-  narrowMedia = window.matchMedia('(max-width: 767px)')
-  narrow.value = narrowMedia.matches
-  narrowMedia.addEventListener('change', onNarrowChange)
   stopRealtime = () => {}
   syncSavedViewQuery()
   if (presentation.value.view === 'grid') startPreviewObservation()
@@ -866,7 +858,6 @@ onMounted(() => {
   window.addEventListener('paste', onPaste)
 })
 onBeforeUnmount(() => {
-  narrowMedia?.removeEventListener('change', onNarrowChange)
   stopRealtime?.()
   stopPreviews?.()
   window.removeEventListener('popstate', onMobileBack)
@@ -1037,6 +1028,7 @@ const folderGroups = computed<DropdownItem[]>(() => {
   const folder = openFolder.value
   return folder ? folderMenu(rowMenuOptions(folder), () => trashOpenFolder(folder)) : []
 })
+/** A mouse: it can drag files in, and has the checkbox on hover. Phones and tablets have neither. */
 const finePointer = useMediaQuery('(hover: hover) and (pointer: fine)')
 /** How a touch device starts selecting. A mouse has the checkbox on hover instead. */
 const selectEntry = computed<DropdownActionOption[]>(() =>
@@ -1183,7 +1175,7 @@ const newOptions = computed<DropdownItem[]>(() => {
               mime: null,
               content_doctype: definition.contentDoctype,
             },
-            () => create('document', definition.contentDoctype),
+            () => void createAndOpen(definition.contentDoctype),
           ),
         ),
         typedOption(
@@ -1373,9 +1365,6 @@ function onPaste(event: ClipboardEvent) {
   if (!files.length) return
   event.preventDefault()
   void uploads.value?.upload({ files, folders: [] }, target)
-}
-function onNarrowChange(event: MediaQueryListEvent) {
-  narrow.value = event.matches
 }
 function onMobileBack() {
   if (selectionMode.value) clearSelected()
@@ -1749,10 +1738,7 @@ async function moveDragged(
   { items, fromSelection }: DraggedItems,
   folder: { node: string; title: string },
 ) {
-  pickerMode.value = 'move'
-  pickerBulk.value = fromSelection
-  if (!fromSelection) activeNode.value = items[0] ?? null
-  await applyPicker(folder.node, folder.title)
+  await moveItems(items, folder.node, folder.title, { bulk: fromSelection })
 }
 async function trashDragged({ items: [only], fromSelection }: DraggedItems) {
   if (fromSelection) await runBulkTrash()
@@ -1806,20 +1792,33 @@ function beginBulkMove() {
   pickerOpen.value = true
 }
 async function applyPicker(parent: string, destination: string) {
-  // A move closes the picker at once, so another action can reopen it before this one answers.
-  const mode = pickerMode.value
   const row = activeNode.value
+  if (pickerMode.value === 'copy') {
+    if (!row) return
+    const copy = await copyMutation.run({ node: row.name, parent_node: parent })
+    announceCopy({ node: copy.name, title: copy.title }, destination)
+    pickerOpen.value = false
+    return
+  }
+  // The moved rows leave the list at once, so the picker closes with them.
+  pickerOpen.value = false
+  const rows = pickerBulk.value ? selectedRows.value : row ? [row] : []
+  await moveItems(rows, parent, destination, { bulk: pickerBulk.value })
+}
+/** Moves `rows` to `parent`: together as a batch, or one row on its own. */
+async function moveItems(
+  rows: readonly DriveNode[],
+  parent: string,
+  destination: string,
+  { bulk }: { bulk: boolean },
+) {
   // Read before the move: a move changes each node's parent in place.
-  const moving: MovedItem[] = (
-    pickerBulk.value ? selectedRows.value : activeNode.value ? [activeNode.value] : []
-  ).flatMap((row) =>
+  const moving: MovedItem[] = rows.flatMap((row) =>
     row.parent_node
       ? [{ node: row.name, title: row.title, from: row.parent_node, to: parent }]
       : [],
   )
-  // The moved rows leave the list at once, so the picker closes with them.
-  if (mode === 'move') pickerOpen.value = false
-  if (pickerBulk.value) {
+  if (bulk) {
     const result = await runBatch(
       moving.map((item) => item.node),
       { parent_node: parent },
@@ -1834,16 +1833,11 @@ async function applyPicker(parent: string, destination: string) {
     if (!result.failed.length) batchOutcome.value = null
     return
   }
+  const [row] = rows
   if (!row) return
-  if (mode === 'move') {
-    await moveMutation.run({ node: row.name, parent_node: parent })
-    deselect(row)
-    announceMove(moving, destination)
-    return
-  }
-  const copy = await copyMutation.run({ node: row.name, parent_node: parent })
-  announceCopy({ node: copy.name, title: copy.title }, destination)
-  pickerOpen.value = false
+  await moveMutation.run({ node: row.name, parent_node: parent })
+  deselect(row)
+  announceMove(moving, destination)
 }
 async function runBulkTrash() {
   const trashing = selectedRows.value.map(itemOf)
@@ -1909,36 +1903,29 @@ async function shareRow(row: DriveNode) {
   if (await dialogs.share(row.name, row)) void listing.refetch()
 }
 let creatingDocument = false
-function create(kind: CreateRequest['kind'], contentDoctype?: string) {
+function create(kind: CreateRequest['kind']) {
   if (!parentId.value) return
-  if (kind === 'document' && contentDoctype) {
-    void createAndOpen({ parent: parentId.value, kind, contentDoctype })
-    return
-  }
   createRequest.value = { parent: parentId.value, kind }
   createOpen.value = true
 }
 /** Creates a document with its default title and opens it; a second click meanwhile does nothing. */
-async function createAndOpen(request: CreateRequest & { contentDoctype: string }) {
-  if (creatingDocument) return
+async function createAndOpen(contentDoctype: string) {
+  const parent = parentId.value
+  if (!parent || creatingDocument) return
   creatingDocument = true
   try {
     // createDocument reports its own errors.
     const created = await createDocument({
-      parent_node: request.parent,
-      content_doctype: request.contentDoctype,
+      parent_node: parent,
+      content_doctype: contentDoctype,
     }).catch(() => null)
-    if (created) await onCreated(created, request)
+    // The document's surface may ask what a new one should start as.
+    if (created) await router.push(newDocumentRoute(created))
   } finally {
     creatingDocument = false
   }
 }
-async function onCreated(created: DriveNode, request: CreateRequest) {
-  if (request.kind === 'document') {
-    // the document's surface may ask what a new one should start as
-    await router.push(newDocumentRoute(created))
-    return
-  }
+function onCreated(created: DriveNode) {
   // A search hides what was just added, so the folder shows again.
   if (isSearching.value) clearSearch()
   else if (created.parent_node === parentId.value) createdRows.add(created)
