@@ -99,7 +99,7 @@ export interface MoveAccessChange {
  * From each item's move preview. `null` when the move goes ahead without
  * asking. `workspace` names everyone at the org.
  */
-export function moveAccessChange(
+function moveAccessChange(
   previews: readonly NodeMovePreviewOutput[],
   workspace: string,
 ): MoveAccessChange | null {

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h } from 'vue'
 
+import type { NodeMovePreviewOutput } from '@/apps/drive/client/generated'
 import { DRIVE_ROLES } from '@/apps/drive/client/types'
 import { requireTestElement } from '@/platform/testing/dom'
 
@@ -9,7 +10,7 @@ import {
   canOpenFolder,
   destination,
   itemsRoot,
-  moveAccessChange,
+  previewMoveAccess,
   type PickedItem,
   type PickerMode,
 } from './folderPicker'
@@ -82,7 +83,7 @@ const net = vi.hoisted(() => {
     ],
   ])
   // What moving into each folder gives: Archive is shared with the Design group.
-  const previews = new Map([
+  const previews = new Map<string, NodeMovePreviewOutput>([
     [
       'archive',
       {
@@ -115,7 +116,9 @@ const net = vi.hoisted(() => {
     if (path === 'roots')
       return json({ personal: { node: 'mine', title: 'Aanya' }, organization: null })
     const into = new URL(String(url), 'http://drive.test').searchParams.get('parent_node')
-    const preview = /\/move-preview$/.test(path) && into ? previews.get(into) : undefined
+    const moving = path.match(/^nodes\/([^/]+)\/move-preview$/)?.[1]
+    const preview =
+      moving && into ? (previews.get(`${moving}>${into}`) ?? previews.get(into)) : undefined
     if (preview) return json(preview)
     const [, name, children] = path.match(/^nodes\/([^/]+)(\/children)?$/) ?? []
     const node = name ? nodes.get(name) : undefined
@@ -398,8 +401,17 @@ describe('Moving into a folder that widens access', () => {
 describe('move access change', () => {
   const person = { id: 'theo@example.com', full_name: 'Theo Park', user_image: null }
 
-  it('lists each principal once with the most it gains, strongest first, and never shows a link token', () => {
-    const change = moveAccessChange(
+  /** The change for moving one item per answer, with the server giving that answer for its item. */
+  function moveAccessChange(answers: NodeMovePreviewOutput[], workspace: string) {
+    const items = answers.map((answer, index) => {
+      net.previews.set(`item-${index}>target`, answer)
+      return { name: `item-${index}` }
+    })
+    return previewMoveAccess(items, 'target', workspace)
+  }
+
+  it('lists each principal once with the most it gains, strongest first, and never shows a link token', async () => {
+    const change = await moveAccessChange(
       [
         { gains: [{ principal: '$LINK', role: 10 }], role_now: 50, role_after: 50 },
         {
@@ -420,8 +432,8 @@ describe('move access change', () => {
     expect(change?.ownRoleAfter).toBeNull()
   })
 
-  it('names org and public access as the share dialog does', () => {
-    const change = moveAccessChange(
+  it('names org and public access as the share dialog does', async () => {
+    const change = await moveAccessChange(
       [
         {
           gains: [
@@ -440,17 +452,17 @@ describe('move access change', () => {
     ])
   })
 
-  it('names org access after the workspace it is given', () => {
-    const change = moveAccessChange(
+  it('names org access after the workspace it is given', async () => {
+    const change = await moveAccessChange(
       [{ gains: [{ principal: '$GENERAL', role: 20 }], role_now: 50, role_after: 50 }],
       'Northwind',
     )
     expect(change?.gains.map(({ label }) => label)).toEqual(['Everyone at Northwind'])
   })
 
-  it("reports the mover's lowest role when it drops, even when nobody gains", () => {
+  it("reports the mover's lowest role when it drops, even when nobody gains", async () => {
     expect(
-      moveAccessChange(
+      await moveAccessChange(
         [
           { gains: [], role_now: 50, role_after: 40 },
           { gains: [], role_now: 50, role_after: 20 },
@@ -460,8 +472,8 @@ describe('move access change', () => {
     ).toEqual({ gains: [], ownRoleAfter: 20 })
   })
 
-  it("is null when the move changes nobody's access", () => {
-    expect(moveAccessChange([{ gains: [], role_now: 40, role_after: 40 }], '')).toBeNull()
+  it("is null when the move changes nobody's access", async () => {
+    expect(await moveAccessChange([{ gains: [], role_now: 40, role_after: 40 }], '')).toBeNull()
   })
 })
 
