@@ -29,8 +29,8 @@
     "generate:contract": "node scripts/generate-contract.mjs",
     "format": "prettier --write frontend scripts baselines '*.{js,ts}' 'tsconfig*.json' package.json .oxlintrc.json",
     "format:check": "prettier --check frontend scripts baselines '*.{js,ts}' 'tsconfig*.json' package.json .oxlintrc.json",
-    "lint": "oxlint --quiet frontend scripts *.js *.ts && node scripts/lint.mjs",
-    "lint:fix": "oxlint --quiet --fix frontend scripts *.js *.ts && node scripts/lint.mjs --fix",
+    "lint": "oxlint --quiet . && node scripts/lint.mjs",
+    "lint:fix": "oxlint --quiet --fix . && node scripts/lint.mjs --fix",
     "check:contract": "node scripts/generate-contract.mjs --check",
     "check:untranslated": "node scripts/check-untranslated.mjs",
     "check:import-boundaries": "node scripts/check-import-boundaries.mjs",
@@ -48,7 +48,9 @@
     "knip:root": "knip --workspace .",
     "knip:e2e": "knip --workspace e2e",
     "knip:recorder-server": "knip --workspace suite/meet/recorder-server",
-    "knip:sfu-server": "knip --workspace suite/meet/sfu-server"
+    "knip:sfu-server": "knip --workspace suite/meet/sfu-server",
+    "lint:anti-slop": "oxlint .",
+    "test:anti-slop": "node --test tools/oxlint/anti-slop.test.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.0.0",
@@ -143,6 +145,7 @@
   },
   "devDependencies": {
     "@ianvs/prettier-plugin-sort-imports": "^4.7.1",
+    "@oxlint/plugins": "1.91.0",
     "@sentry/core": "10.67.0",
     "@tiptap/extension-hard-break": "3.27.1",
     "@tiptap/extension-heading": "3.27.1",
@@ -163,7 +166,7 @@
     "fake-indexeddb": "^6.2.5",
     "globals": "^17.13.0",
     "knip": "^6.4.1",
-    "oxlint": "^1.87.0",
+    "oxlint": "1.91.0",
     "oxlint-tsgolint": "^7.0.2003",
     "postcss": "^8.5.14",
     "prettier": "^3.9.9",
