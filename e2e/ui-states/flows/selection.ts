@@ -2,7 +2,7 @@ import { expect, type Locator } from "@playwright/test";
 import { fillFolder, folderPath, type FolderContent } from "../content";
 import { defineFlow, setupFlow } from "../flow";
 import { openRowMenu, row } from "../../drive-backed-apps/helpers/drive";
-import type { Scene } from "../scene";
+import { perScene, type Scene } from "../scene";
 
 type Event =
 	| { type: "OPEN_MORE" }
@@ -86,13 +86,7 @@ const machine = setupFlow<Event>().createMachine({
 	},
 });
 
-const content = new WeakMap<Scene, FolderContent>();
-
-function contentOf(scene: Scene): FolderContent {
-	const found = content.get(scene);
-	if (!found) throw new Error("selection: the scene has no content");
-	return found;
-}
+const content = perScene<FolderContent>("selection: content");
 
 function menu(scene: Scene): Locator {
 	return scene.page.getByRole("menu");
@@ -112,7 +106,7 @@ export const selection = defineFlow<Event>({
 		content.set(scene, await fillFolder(scene.api, scene.folder.name));
 		await scene.goto(folderPath(scene.folder));
 		await expect(scene.page.getByRole("button", { name: "Actions for Logo.png", exact: true })).toBeVisible();
-		await row(scene.page, contentOf(scene).document.name).hover();
+		await row(scene.page, content.get(scene).document.name).hover();
 	},
 	events: {
 		async OPEN_MORE(scene) {
@@ -121,7 +115,7 @@ export const selection = defineFlow<Event>({
 			await expect(menu(scene).getByRole("menuitem", { name: "Select rows" })).toHaveCount(0);
 		},
 		async HOVER_NAME(scene) {
-			await row(scene.page, contentOf(scene).document.name).getByText("Launch brief", { exact: true }).hover();
+			await row(scene.page, content.get(scene).document.name).getByText("Launch brief", { exact: true }).hover();
 			await expect(scene.page.getByRole("checkbox", { name: "Select Launch brief", exact: true })).toBeVisible();
 			await expect(scene.page.getByRole("checkbox", { name: /^Select (?!all$)/ })).toHaveCount(1);
 		},
@@ -132,7 +126,7 @@ export const selection = defineFlow<Event>({
 		},
 		async FOCUS_ROW(scene) {
 			await scene.page.mouse.move(0, 0);
-			const target = row(scene.page, contentOf(scene).document.name);
+			const target = row(scene.page, content.get(scene).document.name);
 			await scene.page.getByRole("searchbox", { name: "Search all files" }).focus();
 			await target.focus();
 			await scene.page.keyboard.press("Shift");
@@ -144,7 +138,7 @@ export const selection = defineFlow<Event>({
 			await expectSelected(scene, 1);
 		},
 		async RIGHT_CLICK_ROW(scene) {
-			await row(scene.page, contentOf(scene).brief.name).click({ button: "right" });
+			await row(scene.page, content.get(scene).brief.name).click({ button: "right" });
 			await expect(menu(scene).getByRole("menuitem", { name: "Rename" })).toBeVisible();
 		},
 		async RIGHT_CLICK_EMPTY(scene) {
@@ -156,12 +150,12 @@ export const selection = defineFlow<Event>({
 			await expect(opened.getByRole("menuitem", { name: "Rename" })).toBeVisible();
 		},
 		async CONTROL_CLICK(scene) {
-			await row(scene.page, contentOf(scene).sheet.name).click({ modifiers: ["ControlOrMeta"] });
+			await row(scene.page, content.get(scene).sheet.name).click({ modifiers: ["ControlOrMeta"] });
 			await expectSelected(scene, 1);
 			await expect(scene.page.getByRole("button", { name: "Done" })).toBeVisible();
 		},
 		async SHIFT_CLICK(scene) {
-			await row(scene.page, contentOf(scene).logo.name).click({ modifiers: ["Shift"] });
+			await row(scene.page, content.get(scene).logo.name).click({ modifiers: ["Shift"] });
 			await expectSelected(scene, 3);
 		},
 		async SELECT_ALL(scene) {
@@ -170,7 +164,7 @@ export const selection = defineFlow<Event>({
 			await expect(scene.page.getByRole("checkbox", { name: "Select all" })).toHaveAttribute("aria-checked", "true");
 		},
 		async RIGHT_CLICK_SELECTED(scene) {
-			await row(scene.page, contentOf(scene).document.name).click({ button: "right" });
+			await row(scene.page, content.get(scene).document.name).click({ button: "right" });
 			await expect(menu(scene).getByText("3 selected")).toBeVisible();
 			await expect(menu(scene).getByRole("menuitem", { name: "Move to trash" })).toBeVisible();
 		},

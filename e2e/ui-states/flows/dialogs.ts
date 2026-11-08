@@ -12,7 +12,7 @@ import {
 	uploadFile,
 	type DriveNode,
 } from "../../drive-backed-apps/helpers/drive";
-import type { Hold, Scene } from "../scene";
+import { perScene, type Scene } from "../scene";
 
 type Event =
 	| { type: "OPEN_NEW" }
@@ -151,22 +151,11 @@ const machine = setupFlow<Event>().createMachine({
 	},
 });
 
-interface Seeded extends FolderContent {
-	shared: DriveNode;
-}
-
-const seeded = new WeakMap<Scene, Seeded>();
-const holds = new WeakMap<Scene, Hold>();
+const content = perScene<FolderContent>("dialogs: content");
 const logo = readFileSync(resolve(__dirname, "../fixtures/Logo.png"));
 
-function content(scene: Scene): Seeded {
-	const found = seeded.get(scene);
-	if (!found) throw new Error("dialogs: the scene has no content");
-	return found;
-}
-
 function designReviews(scene: Scene): DriveNode {
-	const folder = content(scene).folders[0];
+	const folder = content.get(scene).folders[0];
 	if (!folder) throw new Error("dialogs: no Design reviews folder");
 	return folder;
 }
@@ -232,7 +221,7 @@ export const dialogs = defineFlow<Event>({
 		const shared = await createFolder(scene.api, "Client review", scene.folder.name);
 		await grantAccess(scene.api, shared.name, scene.people.peer.email, ROLE.READ);
 		await grantAccess(scene.api, filled.brief.name, scene.people.peer.email, ROLE.COMMENT);
-		seeded.set(scene, { ...filled, shared });
+		content.set(scene, filled);
 		await scene.goto(folderPath(scene.folder));
 		await expect(scene.page.getByRole("button", { name: "Actions for Logo.png", exact: true })).toBeVisible();
 	},
@@ -256,7 +245,7 @@ export const dialogs = defineFlow<Event>({
 			await expect(created.getByText("That name is taken in this folder.")).toBeVisible();
 		},
 		async CREATE_SLOW(scene) {
-			holds.set(scene, await scene.hold("**/api/suite/drive/nodes"));
+			await scene.hold("**/api/suite/drive/nodes");
 			const sent = scene.page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/api/suite/drive/nodes"));
 			await dialog(scene, "New folder").getByRole("button", { name: "Create", exact: true }).click();
 			await sent;
@@ -314,18 +303,18 @@ export const dialogs = defineFlow<Event>({
 		async CONFIRM_ACCESS(scene) {
 			await dialog(scene, "More people will get access").getByRole("button", { name: "Move", exact: true }).click();
 			await expect(toast(scene, /Moved “Logo.png” to/)).toBeVisible();
-			await expect(row(scene.page, content(scene).logo.name)).toBeHidden();
+			await expect(row(scene.page, content.get(scene).logo.name)).toBeHidden();
 		},
 		async MOVE_SLOW(scene) {
-			holds.set(scene, await scene.hold(`**/api/suite/drive/nodes/${content(scene).logo.name}`));
+			await scene.hold(`**/api/suite/drive/nodes/${content.get(scene).logo.name}`);
 			const sent = scene.page.waitForRequest((request) => request.method() === "PATCH");
 			await dialog(scene, "Move to").getByRole("button", { name: "Move here" }).click();
 			await sent;
 		},
 		async MOVE_SETTLES(scene) {
-			await holds.get(scene)?.release();
+			await scene.lastHold.release();
 			await expect(toast(scene, "Moved “Logo.png” to Design reviews")).toBeVisible();
-			await expect(row(scene.page, content(scene).logo.name)).toBeHidden();
+			await expect(row(scene.page, content.get(scene).logo.name)).toBeHidden();
 		},
 		async COPY(scene) {
 			await rowAction(scene, "Meeting notes.md", "Make a copy");
@@ -337,7 +326,7 @@ export const dialogs = defineFlow<Event>({
 			await expect(scene.page.getByRole("button", { name: /^Actions for Meeting notes.*\(/ })).toBeVisible();
 		},
 		async BULK_MOVE_ONE_CLASH(scene) {
-			const { logo: logoRow, notes } = content(scene);
+			const { logo: logoRow, notes } = content.get(scene);
 			await uploadFile(scene.api, "Logo.png", logo, designReviews(scene).name, "image/png");
 			await moveToDesignReviews(scene, [logoRow, notes]);
 			await expect(scene.page.getByText("“Logo.png” could not be moved")).toBeVisible();
@@ -346,7 +335,7 @@ export const dialogs = defineFlow<Event>({
 			await expect(toast(scene, /Moved “Meeting notes.md” to/)).toBeVisible();
 		},
 		async BULK_MOVE_TWO_CLASH(scene) {
-			const { logo: logoRow, notes, sheet } = content(scene);
+			const { logo: logoRow, notes, sheet } = content.get(scene);
 			await uploadFile(scene.api, "Logo.png", logo, designReviews(scene).name, "image/png");
 			await uploadFile(scene.api, "Meeting notes.md", Buffer.from("# Older notes\n"), designReviews(scene).name, "text/markdown");
 			await moveToDesignReviews(scene, [logoRow, notes, sheet]);
@@ -364,7 +353,7 @@ export const dialogs = defineFlow<Event>({
 		async TRASH(scene) {
 			await rowAction(scene, "Budget 2026", "Move to trash");
 			await expect(toast(scene, "Moved “Budget 2026” to Trash")).toBeVisible();
-			await expect(row(scene.page, content(scene).sheet.name)).toBeHidden();
+			await expect(row(scene.page, content.get(scene).sheet.name)).toBeHidden();
 		},
 	},
 });

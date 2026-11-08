@@ -1,7 +1,7 @@
 import { expect, type Locator, type Route } from "@playwright/test";
 import { fillFolder, folderPath } from "../content";
 import { defineFlow, setupFlow } from "../flow";
-import type { Hold, Scene } from "../scene";
+import type { Scene } from "../scene";
 
 type Event =
 	| { type: "METER_LOADS_SLOWLY" }
@@ -99,7 +99,6 @@ interface Usage {
 	effective_quota: number;
 }
 
-const holds = new WeakMap<Scene, Hold>();
 const USAGE = "**/api/suite/drive/roots/*/usage*";
 const BREAKDOWN = "**/api/suite/drive/roots/*/usage?*expand=breakdown*";
 const WEBDAV = "**/api/suite/drive/webdav";
@@ -142,7 +141,7 @@ export const settings = defineFlow<Event>({
 	},
 	events: {
 		async METER_LOADS_SLOWLY(scene) {
-			holds.set(scene, await scene.hold(USAGE));
+			await scene.hold(USAGE);
 			await scene.page.reload();
 			await expect(scene.page.getByRole("searchbox", { name: "Search all files" })).toBeVisible();
 			await expect(meter(scene)).toBeHidden();
@@ -173,7 +172,7 @@ export const settings = defineFlow<Event>({
 			await expect(dialog.getByText(/ used$/).first()).toBeVisible();
 		},
 		async OPEN_STATISTICS_SLOWLY(scene) {
-			holds.set(scene, await scene.hold(BREAKDOWN));
+			await scene.hold(BREAKDOWN);
 			await meter(scene).click();
 			await expect(settingsDialog(scene).getByText("Loading…")).toBeVisible();
 		},

@@ -2,7 +2,7 @@ import { expect } from "@playwright/test";
 import { fillFolder, folderPath, type FolderContent } from "../content";
 import { defineFlow, setupFlow } from "../flow";
 import { row } from "../../drive-backed-apps/helpers/drive";
-import type { Hold, Scene } from "../scene";
+import { perScene, type Scene } from "../scene";
 
 type Event =
 	| { type: "LOADS" }
@@ -78,8 +78,7 @@ const machine = setupFlow<Event>().createMachine({
 	},
 });
 
-const content = new WeakMap<Scene, FolderContent>();
-const holds = new WeakMap<Scene, Hold>();
+const content = perScene<FolderContent>("listing: content");
 
 function childrenOf(scene: Scene): string {
 	return `**/api/suite/drive/nodes/${scene.folder.name}/children*`;
@@ -101,7 +100,7 @@ export const listing = defineFlow<Event>({
 	machine,
 	async enter(scene) {
 		content.set(scene, await fillFolder(scene.api, scene.folder.name));
-		holds.set(scene, await scene.hold(childrenOf(scene)));
+		await scene.hold(childrenOf(scene));
 		await scene.goto(folderPath(scene.folder));
 	},
 	settle: {
@@ -112,15 +111,15 @@ export const listing = defineFlow<Event>({
 	},
 	events: {
 		async LOADS(scene) {
-			await holds.get(scene)?.release();
+			await scene.lastHold.release();
 			await expectRows(scene);
 		},
 		async FAILS(scene) {
-			await holds.get(scene)?.abort(500);
+			await scene.lastHold.abort(500);
 			await expect(scene.page.getByRole("button", { name: "Retry" })).toBeVisible();
 		},
 		async RETRY(scene) {
-			await holds.get(scene)?.release();
+			await scene.lastHold.release();
 			await scene.page.getByRole("button", { name: "Retry" }).click();
 			await expectRows(scene);
 		},
@@ -161,17 +160,15 @@ export const listing = defineFlow<Event>({
 			await expectRows(scene);
 		},
 		async RESORT(scene) {
-			holds.set(scene, await scene.hold(childrenOf(scene)));
+			await scene.hold(childrenOf(scene));
 			await scene.page.getByRole("button", { name: "Modified" }).click();
 		},
 		async SETTLES(scene) {
-			await holds.get(scene)?.release();
+			await scene.lastHold.release();
 			await expectRows(scene);
 		},
 		async OPEN_EMPTY(scene) {
-			const empty = content.get(scene)?.emptyFolder;
-			if (!empty) throw new Error("listing: the scene has no content");
-			await row(scene.page, empty.name).click();
+			await row(scene.page, content.get(scene).emptyFolder.name).click();
 			await expect(scene.page.getByText("This folder is empty")).toBeVisible();
 		},
 	},

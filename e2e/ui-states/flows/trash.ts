@@ -7,9 +7,8 @@ import {
 	openRowMenu,
 	trashNode,
 	uploadFile,
-	type DriveNode,
 } from "../../drive-backed-apps/helpers/drive";
-import type { Hold, Scene } from "../scene";
+import type { Scene } from "../scene";
 
 type Event =
 	| { type: "ITEMS_TRASHED" }
@@ -102,19 +101,10 @@ const machine = setupFlow<Event>().createMachine({
 	},
 });
 
-interface Trashed {
-	folder: DriveNode;
-	emptyFolder: DriveNode;
-	release: DriveNode;
-	orphan: DriveNode;
-}
-
-const trashed = new WeakMap<Scene, Trashed>();
-const holds = new WeakMap<Scene, Hold>();
 const logo = readFileSync(resolve(__dirname, "../fixtures/Logo.png"));
 const markdown = (text: string) => Buffer.from(text);
 
-async function seed(scene: Scene): Promise<Trashed> {
+async function seed(scene: Scene): Promise<void> {
 	const { api } = scene;
 	const parent = scene.folder.name;
 	const folder = await createFolder(api, "Old campaign", parent);
@@ -127,7 +117,6 @@ async function seed(scene: Scene): Promise<Trashed> {
 	await trashNode(api, orphan.name);
 	await trashNode(api, retired.name);
 	for (const node of [folder, emptyFolder, release]) await trashNode(api, node.name);
-	return { folder, emptyFolder, release, orphan };
 }
 
 function dialog(scene: Scene, name: string): Locator {
@@ -164,7 +153,7 @@ export const trash = defineFlow<Event>({
 	},
 	events: {
 		async ITEMS_TRASHED(scene) {
-			trashed.set(scene, await seed(scene));
+			await seed(scene);
 			await scene.page.reload();
 			await expect(actionsFor(scene, "Press release v1.md")).toBeVisible();
 			await expect(actionsFor(scene, "Kickoff notes.md")).toBeVisible();
@@ -187,12 +176,11 @@ export const trash = defineFlow<Event>({
 		async RESTORE_FAILS(scene) {
 			const hold = await scene.hold("**/api/suite/drive/nodes/batch");
 			await hold.abort(500);
-			holds.set(scene, hold);
 			await rowAction(scene, "Press release v1.md", "Restore");
 			await expect(scene.page.getByRole("button", { name: "Retry" })).toBeVisible();
 		},
 		async RETRY(scene) {
-			await holds.get(scene)?.release();
+			await scene.lastHold.release();
 			await scene.page.getByRole("button", { name: "Retry" }).click();
 			await expect(toast(scene, "Restored “Press release v1.md”")).toBeVisible();
 			await expect(actionsFor(scene, "Press release v1.md")).toBeHidden();

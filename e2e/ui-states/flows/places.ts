@@ -12,7 +12,7 @@ import {
 	trashNode,
 	uploadFile,
 } from "../../drive-backed-apps/helpers/drive";
-import { recreateFolder, type Scene } from "../scene";
+import { perScene, recreateFolder, type Scene } from "../scene";
 
 type Event =
 	| { type: "GO_ORGANIZATION" }
@@ -127,16 +127,10 @@ const SHARED_TITLE = "Brand assets";
 /** Writer's page copy (`apps/writer/recovery/copies.ts`), as a tab that lost its connection keeps it. */
 const RECOVERY_KEY = "suite:writer-recovery:";
 
-const content = new WeakMap<Scene, FolderContent>();
-const sharedFolders = new WeakMap<Scene, DriveNode>();
+const content = perScene<FolderContent>("places: content");
+const sharedFolder = perScene<DriveNode>("places: shared folder");
 /** Scenes whose page signed in as `people.fresh` (see `showAs`). */
 const newUsers = new WeakSet<Scene>();
-
-function contentOf(scene: Scene): FolderContent {
-	const found = content.get(scene);
-	if (!found) throw new Error("places: the scene has no content");
-	return found;
-}
 
 /**
  * Shows the page as `user` while `scene.api` stays the actor's, so the
@@ -206,14 +200,12 @@ export const places = defineFlow<Event>({
 			const folder = await recreateFolder(peer, SHARED_TITLE);
 			await uploadFile(peer, "Colour palette.md", Buffer.from("# Palette\n"), folder.name, "text/markdown");
 			await grantAccess(peer, folder.name, scene.people.actor.email, ROLE.READ);
-			sharedFolders.set(scene, folder);
+			sharedFolder.set(scene, folder);
 			await goPlace(scene, "Shared with me", "Shared with me");
 			await expectItem(scene, folder);
 		},
 		async OPEN_SHARED_FOLDER(scene) {
-			const folder = sharedFolders.get(scene);
-			if (!folder) throw new Error("places: nothing was shared");
-			await row(scene.page, folder.name).click();
+			await row(scene.page, sharedFolder.get(scene).name).click();
 			await expect(scene.page.getByRole("button", { name: "Actions for Colour palette.md" })).toBeVisible();
 		},
 		async GO_RECENT(scene) {
@@ -222,7 +214,7 @@ export const places = defineFlow<Event>({
 				await expectEmpty(scene, "No recent files");
 				return;
 			}
-			const { document, brief } = contentOf(scene);
+			const { document, brief } = content.get(scene);
 			for (const node of [brief, document]) {
 				const visit = await scene.api.post(`${DRIVE}/nodes/${node.name}/visit`, { data: {} });
 				expect(visit.ok()).toBe(true);
@@ -236,7 +228,7 @@ export const places = defineFlow<Event>({
 				await expectEmpty(scene, "No starred files");
 				return;
 			}
-			const { folders, sheet } = contentOf(scene);
+			const { folders, sheet } = content.get(scene);
 			for (const node of [folders[0], sheet]) {
 				if (!node) continue;
 				const star = await scene.api.put(`${DRIVE}/nodes/${node.name}/favourite`, { data: {} });
@@ -251,14 +243,14 @@ export const places = defineFlow<Event>({
 				await expectEmpty(scene, "Trash is empty");
 				return;
 			}
-			const { notes, logo } = contentOf(scene);
+			const { notes, logo } = content.get(scene);
 			await trashNode(scene.api, notes.name);
 			await trashNode(scene.api, logo.name);
 			await goPlace(scene, "Trash", "Trash");
 			await expectItem(scene, logo);
 		},
 		async KEEP_UNSAVED_WORK(scene) {
-			const { document } = contentOf(scene);
+			const { document } = content.get(scene);
 			const copy = {
 				node: document.name,
 				title: document.title,
@@ -283,7 +275,7 @@ export const places = defineFlow<Event>({
 		},
 		async OPEN_FOLDER(scene) {
 			await scene.goto(folderPath(scene.folder));
-			await expectItem(scene, contentOf(scene).logo);
+			await expectItem(scene, content.get(scene).logo);
 		},
 		async SHOW_GRID(scene) {
 			await scene.page.getByRole("button", { name: "View settings" }).click();

@@ -9,7 +9,7 @@ import {
 	type DriveNode,
 } from "../../drive-backed-apps/helpers/drive";
 import { loginViaApi } from "../../shared/auth";
-import type { Hold, Scene } from "../scene";
+import { perScene, type Scene } from "../scene";
 
 type Event =
 	| { type: "LOADS" }
@@ -150,26 +150,13 @@ const machine = setupFlow<Event>().createMachine({
 	},
 });
 
-interface Seeded {
-	launch: DriveNode;
-	agency: DriveNode;
-	handover: DriveNode;
-}
-
-const seeded = new WeakMap<Scene, Seeded>();
-const holds = new WeakMap<Scene, Hold>();
-const managers = new WeakMap<Scene, Page>();
+const agencyFolder = perScene<DriveNode>("share: Agency folder");
+const managers = perScene<Page>("share: manager page");
 const MANAGER_STATES = new Set(["managerReady", "lowerOwnAccessConfirm", "managerLostManage"]);
 
 const GRANTS = "**/api/suite/drive/nodes/*/grants*";
 /** One principal's grant write; the grants list and explain reads carry no principal path. */
 const GRANT_WRITE = /\/api\/suite\/drive\/nodes\/[^/]+\/grants\/[^?]+/;
-
-function seed(scene: Scene): Seeded {
-	const found = seeded.get(scene);
-	if (!found) throw new Error("share: the scene has no content");
-	return found;
-}
 
 function dialog(page: Page): Locator {
 	return page.getByRole("dialog").filter({ hasText: "Share" }).first();
@@ -232,24 +219,23 @@ export const share = defineFlow<Event>({
 		await grantAccess(api, pressKit.name, people.fresh.email, ROLE.EDIT);
 		const handover = await createFolder(api, "Handover", scene.folder.name);
 		await grantAccess(api, handover.name, people.peer.email, ROLE.MANAGE);
-		seeded.set(scene, { launch, agency, handover });
+		agencyFolder.set(scene, agency);
 		await scene.goto(folderPath(scene.folder));
-		holds.set(scene, await scene.hold(GRANTS));
+		await scene.hold(GRANTS);
 		await openShare(scene.page, "Launch plan");
 		await expect(dialog(scene.page).getByLabel("Loading who has access")).toBeVisible();
 	},
 	frame(scene, state) {
-		const manager = managers.get(scene);
-		return manager && MANAGER_STATES.has(state) ? manager.locator("body") : null;
+		return MANAGER_STATES.has(state) ? managers.get(scene).locator("body") : null;
 	},
 	events: {
 		async LOADS(scene) {
-			await holds.get(scene)?.release();
+			await scene.lastHold.release();
 			await expectReady(scene.page);
 			await expect(accessButton(scene.page, "Arjun Mehta")).toBeVisible();
 		},
 		async FAILS(scene) {
-			await holds.get(scene)?.abort(417);
+			await scene.lastHold.abort(417);
 			await expect(dialog(scene.page).getByText("Something went wrong")).toBeVisible();
 		},
 		async TYPE_NAME(scene) {
@@ -279,8 +265,8 @@ export const share = defineFlow<Event>({
 			await expect(dialog(scene.page).getByRole("button", { name: "Save" })).toBeVisible();
 		},
 		async SAVE_FAILS(scene) {
-			holds.set(scene, await scene.hold(GRANT_WRITE));
-			await holds.get(scene)?.abort(417);
+			const hold = await scene.hold(GRANT_WRITE);
+			await hold.abort(417);
 			await accessButton(scene.page, "Arjun Mehta").click();
 			await chooseRole(scene.page, "Comment");
 			await expect(dialog(scene.page).getByText("Something went wrong")).toBeVisible();
@@ -328,7 +314,7 @@ export const share = defineFlow<Event>({
 		async OPEN_INHERITED(scene) {
 			await scene.page.keyboard.press("Escape");
 			await expect(dialog(scene.page)).toBeHidden();
-			await scene.goto(folderPath(seed(scene).agency));
+			await scene.goto(folderPath(agencyFolder.get(scene)));
 			await openShare(scene.page, "Press kit");
 			await expect(dialog(scene.page).getByText("via Agency").first()).toBeVisible();
 		},
@@ -351,14 +337,12 @@ export const share = defineFlow<Event>({
 		},
 		async LOWER_OWN(scene) {
 			const page = managers.get(scene);
-			if (!page) throw new Error("share: no manager page");
 			await accessButton(page, "Arjun Mehta").click();
 			await chooseRole(page, "Edit");
 			await expect(page.getByText("Change your own access?")).toBeVisible();
 		},
 		async CONFIRM(scene) {
 			const page = managers.get(scene);
-			if (!page) throw new Error("share: no manager page");
 			await page.getByRole("button", { name: "Change", exact: true }).click();
 			await expect(page.getByText("You can no longer share this item.")).toBeVisible();
 		},

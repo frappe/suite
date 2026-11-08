@@ -22,7 +22,7 @@ export const WORKSPACE_FOLDER = "UI states";
  */
 export interface Hold {
 	release(): Promise<void>;
-	abort(status?: number): Promise<void>;
+	abort(status: number): Promise<void>;
 }
 
 export interface People {
@@ -54,11 +54,28 @@ export interface Scene {
 	goto(path: string): Promise<void>;
 	/** Holds requests whose URL matches until released or aborted. */
 	hold(url: string | RegExp): Promise<Hold>;
+	/** The most recent `hold()` of this scene. Throws when there is none. */
+	readonly lastHold: Hold;
 	/** Waits for transitions and the skeleton delay. */
-	settle(ms?: number): Promise<void>;
+	settle(): Promise<void>;
 	/** Signs in as another user in a second context, for shares and reactions. */
 	as(user: Credentials): Promise<APIRequestContext>;
 	close(): Promise<void>;
+}
+
+/** A value a flow keeps per scene, set in `enter` or a step. `get` throws when it was never set. */
+export function perScene<T>(label: string) {
+	const values = new WeakMap<Scene, T>();
+	return {
+		set(scene: Scene, value: T): void {
+			values.set(scene, value);
+		},
+		get(scene: Scene): T {
+			const value = values.get(scene);
+			if (value === undefined) throw new Error(`${label} was never set on this scene`);
+			return value;
+		},
+	};
 }
 
 const statePath = resolve(__dirname, "../drive-backed-apps/.state/run.json");
@@ -120,6 +137,7 @@ export async function openScene(
 	const folder = await recreateFolder(api, folderTitle, parent);
 	const page = await context.newPage();
 	const others: BrowserContext[] = [];
+	let latestHold: Hold | null = null;
 
 	return {
 		page,
@@ -136,32 +154,39 @@ export async function openScene(
 		async hold(url) {
 			// The handler stays routed for the scene's life: unrouting lets a held request through.
 			const held: Route[] = [];
-			let status: number | null = null;
+			let failing: number | null = null;
 			let passing = false;
-			const fail = (route: Route) =>
+			const fail = (route: Route, status: number) =>
 				route.fulfill({
-					status: status ?? 500,
+					status,
 					contentType: "application/json",
-					body: JSON.stringify({ exc_type: "ServerError", message: "Something went wrong" }),
+					// A 413 without Drive's own type reads as a proxy's body limit, and the chunk goes again at half the size.
+					body: JSON.stringify({ exc_type: status === 413 ? "DriveOverQuota" : "ServerError", message: "Something went wrong" }),
 				});
 			await page.route(url, async (route) => {
 				if (passing) await route.continue();
-				else if (status === null) held.push(route);
-				else await fail(route);
+				else if (failing === null) held.push(route);
+				else await fail(route, failing);
 			});
-			return {
+			const hold: Hold = {
 				async release() {
 					passing = true;
 					await Promise.all(held.splice(0).map((route) => route.continue().catch(() => undefined)));
 				},
-				async abort(next = 500) {
-					status = next;
-					await Promise.all(held.splice(0).map((route) => fail(route).catch(() => undefined)));
+				async abort(status) {
+					failing = status;
+					await Promise.all(held.splice(0).map((route) => fail(route, status).catch(() => undefined)));
 				},
 			};
+			latestHold = hold;
+			return hold;
 		},
-		async settle(ms = SETTLE_MS) {
-			await page.waitForTimeout(ms);
+		get lastHold() {
+			if (!latestHold) throw new Error("The scene has no held request");
+			return latestHold;
+		},
+		async settle() {
+			await page.waitForTimeout(SETTLE_MS);
 		},
 		async as(user) {
 			const other = await browser.newContext({ baseURL });

@@ -1,11 +1,11 @@
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { expect, type FileChooser, type Locator, type Page, type Route } from "@playwright/test";
+import { expect, type FileChooser, type Locator, type Page } from "@playwright/test";
 import { fillFolder, folderPath, type FolderContent } from "../content";
 import { defineFlow, setupFlow } from "../flow";
 import { chooseNew, row } from "../../drive-backed-apps/helpers/drive";
-import type { Hold, Scene } from "../scene";
+import { perScene, type Scene } from "../scene";
 
 type Event =
 	| { type: "DROP_ENTERS" }
@@ -145,8 +145,7 @@ const FIRST_CHUNK_SENT = "2 MB of 24 MB";
 const LARGE_NAMES = ["Launch video.mp4", "Press kit.zip", "Brand assets.zip", "Product shots.zip", "Homepage walkthrough.mov"];
 
 const fixture = (name: string) => readFileSync(resolve(__dirname, "..", "fixtures", name));
-const content = new WeakMap<Scene, FolderContent>();
-const holds = new WeakMap<Scene, Hold>();
+const content = perScene<FolderContent>("upload: content");
 let scratch: string | null = null;
 
 /** Files on disk, so a Resume pick has the same name, size and modified time as the first pick. */
@@ -177,42 +176,7 @@ function railDot(page: Page): Locator {
 }
 
 async function holdLaterChunks(scene: Scene): Promise<void> {
-	holds.set(scene, await holdUnretried(scene.page, LATER_CHUNKS));
-}
-
-/**
- * `scene.hold()` without unrouting. `scene.hold()` unroutes on abort and
- * release, and Playwright then lets a held request through: an aborted chunk
- * or node read succeeds, and a chunk sent as the route goes away can stall.
- * This handler stays in place and answers every request itself.
- */
-export async function holdUnretried(page: Page, url: RegExp): Promise<Hold> {
-	const held: Route[] = [];
-	let status: number | null = null;
-	let passing = false;
-	const fail = (route: Route) =>
-		route.fulfill({
-			status: status ?? 500,
-			contentType: "application/json",
-			// A 413 without Drive's own type reads as a proxy's body limit, and the chunk goes again at half the size.
-			body: JSON.stringify({ exc_type: status === 413 ? "DriveOverQuota" : "ServerError", message: "Something went wrong" }),
-		});
-	const handler = async (route: Route) => {
-		if (passing) await route.continue();
-		else if (status === null) held.push(route);
-		else await fail(route);
-	};
-	await page.route(url, handler);
-	return {
-		async release() {
-			passing = true;
-			await Promise.all(held.splice(0).map((route) => route.continue()));
-		},
-		async abort(next = 500) {
-			status = next;
-			await Promise.all(held.splice(0).map((route) => fail(route).catch(() => undefined)));
-		},
-	};
+	await scene.hold(LATER_CHUNKS);
 }
 
 async function pick(scene: Scene, files: Parameters<FileChooser["setFiles"]>[0]): Promise<void> {
@@ -243,7 +207,7 @@ async function expectUploading(page: Page, count: number): Promise<void> {
 
 /** Lets the held chunk go, then holds the next attempt again so the retry is seen mid-flight. */
 async function rehold(scene: Scene): Promise<void> {
-	await holds.get(scene)?.release();
+	await scene.lastHold.release();
 	await holdLaterChunks(scene);
 }
 
@@ -260,8 +224,7 @@ export const upload = defineFlow<Event>({
 	},
 	events: {
 		async DROP_ENTERS(scene) {
-			const logo = content.get(scene)?.logo;
-			if (!logo) throw new Error("upload: the scene has no content");
+			const { logo } = content.get(scene);
 			const transfer = await scene.page.evaluateHandle(() => {
 				const data = new DataTransfer();
 				data.items.add(new File(["x"], "Launch video.mp4", { type: "video/mp4" }));
@@ -271,8 +234,7 @@ export const upload = defineFlow<Event>({
 			await expect(scene.page.locator('[data-slot="upload-drop-overlay"]')).toBeVisible();
 		},
 		async DROP(scene) {
-			const logo = content.get(scene)?.logo;
-			if (!logo) throw new Error("upload: the scene has no content");
+			const { logo } = content.get(scene);
 			await holdLaterChunks(scene);
 			const transfer = await scene.page.evaluateHandle((size) => {
 				const data = new DataTransfer();
@@ -294,13 +256,13 @@ export const upload = defineFlow<Event>({
 			await expect(entries(scene.page, "queued")).toHaveCount(2);
 		},
 		async FINISHES(scene) {
-			await holds.get(scene)?.release();
+			await scene.lastHold.release();
 			await expect(entries(scene.page, "done").first()).toBeVisible(TRANSFER);
 			await expect(tracker(scene.page).locator('[data-slot="upload-entry"]:not([data-state="done"])')).toHaveCount(0, TRANSFER);
 		},
 		async CHUNK_FAILS(scene) {
 			const open = await tracker(scene.page).isVisible();
-			await holds.get(scene)?.abort(500);
+			await scene.lastHold.abort(500);
 			if (open) await expect(tracker(scene.page).getByRole("button", { name: "Retry", exact: true })).toBeVisible();
 			else await expect(railDot(scene.page)).toHaveAttribute("data-attention", "true");
 		},
@@ -310,7 +272,7 @@ export const upload = defineFlow<Event>({
 			await expectUploading(scene.page, 1);
 		},
 		async STORAGE_FULL(scene) {
-			await holds.get(scene)?.abort(413);
+			await scene.lastHold.abort(413);
 			await expect(entries(scene.page, "held")).toHaveCount(1);
 			await expect(tracker(scene.page).getByText("Storage is full", { exact: true })).toBeVisible();
 		},
@@ -381,7 +343,7 @@ export const upload = defineFlow<Event>({
 			await expect(scene.page.getByRole("dialog").getByText("A folder with this name exists")).toBeVisible();
 		},
 		async KEEP_BOTH_FOLDER(scene) {
-			holds.set(scene, await scene.hold(FOLDER_CREATE));
+			await scene.hold(FOLDER_CREATE);
 			await scene.page.getByRole("dialog").getByRole("button", { name: "Keep both" }).click();
 			await expect(tracker(scene.page).getByText("Creating folders…")).toBeVisible();
 		},

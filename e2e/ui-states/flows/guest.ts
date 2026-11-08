@@ -3,7 +3,7 @@ import { fillFolder, folderPath } from "../content";
 import { defineFlow, setupFlow } from "../flow";
 import { DRIVE, grantAccess, ROLE } from "../../drive-backed-apps/helpers/drive";
 import { loginViaApi } from "../../shared/auth";
-import type { Scene } from "../scene";
+import { perScene, type Scene } from "../scene";
 
 type Event =
 	| { type: "OPEN_FILE_LINK" }
@@ -128,15 +128,9 @@ const PASSWORD = "relaunch-2026";
 const UNKNOWN = `/l/${"A".repeat(22)}`;
 const EXPIRES_IN_MS = 4_000;
 
-const seeded = new WeakMap<Scene, Links>();
+const links = perScene<Links>("guest: links");
 let visitorContexts: VisitorContexts | null = null;
 let openVisitorPage: Page | null = null;
-
-function links(scene: Scene): Links {
-	const found = seeded.get(scene);
-	if (!found) throw new Error("guest: the scene has no links");
-	return found;
-}
 
 function visitorPage(): Page {
 	if (!openVisitorPage) throw new Error("guest: no visitor page");
@@ -208,7 +202,7 @@ export const guest = defineFlow<Event>({
 		const expires_on = new Date(expiresAt).toISOString().replace(/\.\d+Z$/, "Z");
 		const expired = (await shareLink(scene, node, ROLE.READ, { expires_on })).url;
 		const folder = await shareLink(scene, node, ROLE.READ);
-		seeded.set(scene, {
+		links.set(scene, {
 			folder: folder.url,
 			folderGrant: folder.grant,
 			file: (await shareLink(scene, content.brief.name, ROLE.READ)).url,
@@ -227,7 +221,7 @@ export const guest = defineFlow<Event>({
 	},
 	events: {
 		async OPEN_FILE_LINK(scene) {
-			const page = await visit(scene, links(scene).file);
+			const page = await visit(scene, links.get(scene).file);
 			await expect(page).toHaveURL(/\/d\//);
 			await expect(page.getByRole("button", { name: "Sign in" }).first()).toBeVisible();
 			// The preview frame loads the file by its plain URL; give its answer time to paint.
@@ -235,7 +229,7 @@ export const guest = defineFlow<Event>({
 			await page.waitForTimeout(1_500);
 		},
 		async OPEN_DOCUMENT_LINK(scene) {
-			const page = await visit(scene, links(scene).document);
+			const page = await visit(scene, links.get(scene).document);
 			await expect(page.getByTestId("guest-frame")).toBeVisible();
 			await expect(page.getByRole("button", { name: "More document actions" })).toBeVisible();
 		},
@@ -252,7 +246,7 @@ export const guest = defineFlow<Event>({
 			await expect(page.getByRole("tooltip")).toHaveCount(0);
 		},
 		async OPEN_UPLOAD_LINK(scene) {
-			const page = await visit(scene, links(scene).upload);
+			const page = await visit(scene, links.get(scene).upload);
 			await expect(page.getByRole("button", { name: "Actions for Launch brief" })).toBeVisible();
 			await expect(page.getByRole("button", { name: "New" }).first()).toBeVisible();
 		},
@@ -262,7 +256,7 @@ export const guest = defineFlow<Event>({
 			await expect(page.getByRole("menuitem", { name: "Upload files" })).toBeVisible();
 		},
 		async OPEN_LOCKED_LINK(scene) {
-			const page = await visit(scene, links(scene).locked);
+			const page = await visit(scene, links.get(scene).locked);
 			await expect(page.getByRole("heading", { name: "Password required" })).toBeVisible();
 			await expect(page.getByText("Launch brief")).toHaveCount(0);
 		},
@@ -286,7 +280,7 @@ export const guest = defineFlow<Event>({
 			await expect(page.getByRole("button", { name: "Actions for Launch brief" })).toBeVisible();
 		},
 		async OPEN_EXPIRED_LINK(scene) {
-			const { expired, expiresAt } = links(scene);
+			const { expired, expiresAt } = links.get(scene);
 			const left = expiresAt + 1_000 - Date.now();
 			if (left > 0) await scene.page.waitForTimeout(left);
 			const page = await visit(scene, expired);
@@ -301,14 +295,14 @@ export const guest = defineFlow<Event>({
 			await expect(page.getByRole("heading", { name: "Sign in to open this" })).toBeVisible();
 		},
 		async LINK_REMOVED(scene) {
-			const response = await scene.api.delete(`${DRIVE}/grants/${links(scene).folderGrant}`);
+			const response = await scene.api.delete(`${DRIVE}/grants/${links.get(scene).folderGrant}`);
 			expect(response.ok(), await response.text()).toBe(true);
 			const page = visitorPage();
 			await page.reload();
 			await expect(page.getByRole("heading", { name: "Sign in to open this" })).toBeVisible();
 		},
 		async OPEN_AS_MEMBER(scene) {
-			const page = await visit(scene, links(scene).folder, true);
+			const page = await visit(scene, links.get(scene).folder, true);
 			await expect(page.getByTestId("guest-frame")).toHaveCount(0);
 			await expect(page.getByRole("button", { name: "Actions for Launch brief" })).toBeVisible();
 		},

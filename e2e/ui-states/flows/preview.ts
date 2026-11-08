@@ -4,8 +4,7 @@ import { expect, type Page } from "@playwright/test";
 import { folderPath } from "../content";
 import { defineFlow, setupFlow } from "../flow";
 import { purgeNode, row, trashNode, uploadFile, type DriveNode } from "../../drive-backed-apps/helpers/drive";
-import type { Hold, Scene } from "../scene";
-import { holdUnretried } from "./upload";
+import { perScene, type Scene } from "../scene";
 
 type Event =
 	| { type: "OPEN_SLOW" }
@@ -127,14 +126,7 @@ const ZIP = Buffer.from("504b0506000000000000000000000000000000000000", "hex");
 const CHUNKS = /\/api\/suite\/drive\/uploads\/[^/]+\/chunk/;
 
 const fixture = (name: string) => readFileSync(resolve(__dirname, "..", "fixtures", name));
-const seeded = new WeakMap<Scene, Files>();
-const holds = new WeakMap<Scene, Hold>();
-
-function files(scene: Scene): Files {
-	const found = seeded.get(scene);
-	if (!found) throw new Error("preview: the scene has no files");
-	return found;
-}
+const files = perScene<Files>("preview: files");
 
 /**
  * Opens a file as the user does, with a double-click. The double-click's text
@@ -167,7 +159,7 @@ export const preview = defineFlow<Event>({
 	machine,
 	async enter(scene) {
 		const parent = scene.folder.name;
-		seeded.set(scene, {
+		files.set(scene, {
 			pdf: await uploadFile(scene.api, "Quarter review.pdf", fixture("Quarter review.pdf"), parent, "application/pdf"),
 			markdown: await uploadFile(scene.api, "Launch plan.md", Buffer.from(MARKDOWN), parent, "text/markdown"),
 			text: await uploadFile(scene.api, "Release notes.txt", Buffer.from(TEXT), parent, "text/plain"),
@@ -187,26 +179,26 @@ export const preview = defineFlow<Event>({
 	},
 	events: {
 		async OPEN_SLOW(scene) {
-			const { pdf } = files(scene);
-			holds.set(scene, await holdUnretried(scene.page, nodeRead(pdf)));
+			const { pdf } = files.get(scene);
+			await scene.hold(nodeRead(pdf));
 			await doubleClick(scene, pdf);
 			await expect(scene.page.getByRole("status", { name: `Opening ${pdf.title}` })).toBeVisible();
 		},
 		async LOADS(scene) {
-			await holds.get(scene)?.release();
-			await expect(fileName(scene.page)).toHaveValue(files(scene).pdf.title);
+			await scene.lastHold.release();
+			await expect(fileName(scene.page)).toHaveValue(files.get(scene).pdf.title);
 		},
 		async FAILS(scene) {
-			await holds.get(scene)?.abort(500);
+			await scene.lastHold.abort(500);
 			await expect(scene.page.getByText("Could not open this document")).toBeVisible();
 		},
 		async TRY_AGAIN(scene) {
-			await holds.get(scene)?.release();
+			await scene.lastHold.release();
 			await scene.page.getByRole("button", { name: "Try again" }).click();
-			await expect(fileName(scene.page)).toHaveValue(files(scene).pdf.title);
+			await expect(fileName(scene.page)).toHaveValue(files.get(scene).pdf.title);
 		},
 		async OPEN_MARKDOWN(scene) {
-			await open(scene, files(scene).markdown);
+			await open(scene, files.get(scene).markdown);
 			await expect(scene.page.getByRole("heading", { name: "Launch plan" })).toBeVisible();
 		},
 		async SHOW_SOURCE(scene) {
@@ -214,25 +206,25 @@ export const preview = defineFlow<Event>({
 			await expect(scene.page.getByText("# Launch plan")).toBeVisible();
 		},
 		async OPEN_TEXT(scene) {
-			await open(scene, files(scene).text);
+			await open(scene, files.get(scene).text);
 			await expect(scene.page.getByText("Faster image loading")).toBeVisible();
 		},
 		async OPEN_CODE(scene) {
-			await open(scene, files(scene).code);
+			await open(scene, files.get(scene).code);
 			await expect(scene.page.getByText("export function sitemap")).toBeVisible();
 		},
 		async OPEN_IMAGE(scene) {
-			const { image } = files(scene);
+			const { image } = files.get(scene);
 			await open(scene, image);
 			await expect(scene.page.getByRole("img", { name: image.title })).toBeVisible();
 			await expect.poll(() => scene.page.getByRole("img", { name: image.title }).evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
 		},
 		async OPEN_UNKNOWN(scene) {
-			await open(scene, files(scene).archive);
+			await open(scene, files.get(scene).archive);
 			await expect(scene.page.getByRole("heading", { name: "No preview" })).toBeVisible();
 		},
 		async OPEN_EMPTY(scene) {
-			await open(scene, files(scene).empty);
+			await open(scene, files.get(scene).empty);
 			await expect(scene.page.getByRole("heading", { name: "Empty file" })).toBeVisible();
 		},
 		async OPEN_WITHOUT_ACCESS(scene) {
@@ -256,12 +248,12 @@ export const preview = defineFlow<Event>({
 			await expect(scene.page.getByRole("dialog").getByText("Upload new version?")).toBeVisible();
 		},
 		async REPLACE(scene) {
-			holds.set(scene, await holdUnretried(scene.page, CHUNKS));
+			await scene.hold(CHUNKS);
 			await scene.page.getByRole("dialog").getByRole("button", { name: "Replace" }).click();
 			await expect(scene.page.getByText("Uploading new version…")).toBeVisible();
 		},
 		async FINISHES(scene) {
-			await holds.get(scene)?.release();
+			await scene.lastHold.release();
 			await expect(scene.page.getByText("New version uploaded")).toBeVisible();
 			await expect(scene.page.getByText("Pricing page")).toBeVisible();
 		},
