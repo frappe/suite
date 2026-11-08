@@ -186,12 +186,13 @@ const pendingLine = ref<LineShape>()
 const pendingText = ref<RectangleShape>()
 const pendingDraw = ref<FreeDrawShape>()
 const erasedShapeIds = ref<string[]>([])
-const drawStyle = reactive({
-  // SAFETY: the initial stroke is a string; the drawing tool also accepts null when stroke is disabled.
-  stroke: '#171717' as string | null,
+const drawStyle = reactive<
+  Required<Pick<RectangleShape, 'stroke' | 'fill' | 'strokeWidth' | 'strokeStyle' | 'opacity'>>
+>({
+  stroke: '#171717',
   fill: 'none',
   strokeWidth: 3,
-  strokeStyle: 'solid' as const,
+  strokeStyle: 'solid',
   opacity: 1,
 })
 const croppingImageId = ref<string>()

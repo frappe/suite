@@ -20,22 +20,12 @@ interface CaptionObservation {
 }
 
 interface Clip {
-	id: string;
-	audio: string;
-	reference: string;
-	speaker: string;
-	expectSpeech?: boolean;
-	speechStartSeconds?: number | null;
-	speechEndSeconds?: number | null;
+  id: string; audio: string; reference: string; speaker: string; expectSpeech?: boolean;
+  speechStartSeconds?: number | null; speechEndSeconds?: number | null;
 }
 interface Prediction {
-	id: string;
-	transcript: string;
-	speaker?: string;
-	firstTextSeconds?: number;
-	finalAfterSpeechSeconds?: number;
-	finalAfterAudioSeconds?: number;
-	failed?: boolean;
+  id: string; transcript: string; speaker?: string;
+  firstTextSeconds?: number; finalAfterSpeechSeconds?: number; finalAfterAudioSeconds?: number; failed?: boolean;
 }
 
 const manifestPath = process.env.MEET_CAPTION_MANIFEST;

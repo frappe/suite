@@ -5,7 +5,7 @@ interface FrappeResponse<T> {
 	data?: T;
 }
 
-export async function frappeData<T>(response: APIResponse): Promise<T> {
+export async function frappeData<T>(response: Pick<APIResponse, "ok" | "status" | "text" | "json">): Promise<T> {
 	if (!response.ok()) {
 		throw new Error(`Frappe request failed with ${response.status()}: ${await response.text()}`);
 	}

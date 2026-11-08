@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { frappeData } from "../../../shared/frappe";
 import { expect, test, type APIRequestContext, type Browser, type Page } from "@playwright/test";
 
 import {
@@ -164,10 +165,8 @@ async function ensureLinkOnlyUser(): Promise<void> {
 async function shareByLink(node: string, role: number): Promise<string> {
 	const response = await api.put(`${DRIVE}/nodes/${node}/grants/$LINK`, { data: { role } });
 	expect(response.ok()).toBe(true);
-	// The answer is the grant row itself.
-	// SAFETY: this successful Suite endpoint returns its owned principal/references/slides projection; slide elements are serialized JSON by the Slides save API.
-	const body = (await response.json()) as { data?: { principal: string }; message?: { principal: string } };
-	return (body.data ?? body.message)!.principal.replace("$LINK:", "");
+	const grant = await frappeData<{ principal: string }>(response);
+	return grant.principal.replace("$LINK:", "");
 }
 
 /** A browser signed in as the link-only person, holding these links. */
@@ -238,9 +237,7 @@ test("a composite sends the link code of a deck that is shared on its own", asyn
 	expect(((await listed.request().headerValue("x-drive-links")) ?? "").split(",").sort()).toEqual(
 		[deckCode, partCode].sort(),
 	);
-	// SAFETY: this successful Suite endpoint returns its owned principal/references/slides projection; slide elements are serialized JSON by the Slides save API.
-	const references = ((await listed.json()) as { message: { references: Array<{ node: string | null }> } }).message
-		.references;
+	const { references } = await frappeData<{ references: Array<{ node: string | null }> }>(listed);
 	expect(references.map((row) => row.node)).toEqual([part.name, null]);
 
 	const answer = await group;
@@ -268,11 +265,7 @@ test("restores a saved version and reloads the deck", async ({ page }) => {
 	await expect(page.locator(SHAPE_RECT).first()).toBeVisible();
 
 	await page.getByRole("button", { name: "Versions" }).click();
-	await versions
-		.getByRole("listitem")
-		.filter({ hasText: "Empty deck" })
-		.getByRole("button", { name: "Restore" })
-		.click();
+	await versions.getByRole("listitem").filter({ hasText: "Empty deck" }).getByRole("button", { name: "Restore" }).click();
 	await page.getByRole("dialog").getByRole("button", { name: "Restore", exact: true }).click();
 	await expect(page.getByText("Version restored")).toBeVisible();
 
@@ -288,12 +281,12 @@ const SHAPE_RECT = 'svg rect[stroke-width$="px"]';
 /** How many rectangles the server copy of a presentation holds. */
 async function rectangles(client: APIRequestContext, docname: string): Promise<number> {
 	const response = await client.get(`/api/resource/Presentation/${encodeURIComponent(docname)}`);
-	// SAFETY: this successful Suite endpoint returns its owned principal/references/slides projection; slide elements are serialized JSON by the Slides save API.
-	const doc = ((await response.json()) as { data: { slides: Array<{ elements: string }> } }).data;
-	// SAFETY: this successful Suite endpoint returns its owned principal/references/slides projection; slide elements are serialized JSON by the Slides save API.
-	return doc.slides
-		.flatMap((slide) => JSON.parse(slide.elements || "[]") as Array<{ shapeType?: string }>)
-		.filter((element) => element.shapeType === "rectangle").length;
+	const doc = await frappeData<{ slides: Array<{ elements: string }> }>(response);
+	return doc.slides.flatMap((slide) => {
+		const elements: unknown = JSON.parse(slide.elements || "[]");
+		if (!Array.isArray(elements)) throw new Error("Expected slide elements to be an array");
+		return elements.filter((element) => element?.shapeType === "rectangle");
+	}).length;
 }
 
 declare global {

@@ -438,7 +438,9 @@ export async function bodyLimitProxy(target: string, limit = 2 ** 20, bareRefusa
 		if (bareRefusal) {
 			outgoing.writeHead(413).end();
 		} else {
-			outgoing.writeHead(413, { "content-type": "text/html" }).end("<h1>413 Request Entity Too Large</h1>");
+			outgoing
+				.writeHead(413, { "content-type": "text/html" })
+				.end("<h1>413 Request Entity Too Large</h1>");
 		}
 	}
 

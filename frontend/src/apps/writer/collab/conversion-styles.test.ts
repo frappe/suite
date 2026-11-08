@@ -21,6 +21,7 @@ import {
   yParagraph,
 } from '@/apps/writer/collab/legacy-fixtures'
 import { writerSchema } from '@/apps/writer/schema'
+import { requireTestElement } from '@/test/dom'
 
 // Each block's tag, left margin with its priority, and line height, as the editor draws them
 function blockLayout(state: Uint8Array) {
@@ -1995,11 +1996,3 @@ describe("convertLegacy on old Drive's class sets", () => {
     ])
   })
 })
-
-function requireTestElement<T extends Element>(
-  value: unknown,
-  constructor: new (...args: never[]) => T,
-): T {
-  if (!(value instanceof constructor)) throw new Error(`Expected ${constructor.name}`)
-  return value
-}

@@ -4,6 +4,7 @@ import { createApp, h, nextTick, ref, type App } from 'vue'
 
 import type { DocumentVersion } from '@/apps/drive'
 import { translationPlugin } from '@/platform/translation'
+import { requireTestElement } from '@/test/dom'
 
 import VersionList from './VersionList.vue'
 
@@ -425,11 +426,3 @@ describe('renaming a version', () => {
     expect(document.activeElement === menuButton).toBe(true)
   })
 })
-
-function requireTestElement<T extends Element>(
-  value: unknown,
-  constructor: new (...args: never[]) => T,
-): T {
-  if (!(value instanceof constructor)) throw new Error(`Expected ${constructor.name}`)
-  return value
-}

@@ -2,6 +2,8 @@ import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it, vi } from 'vitest'
 import { createApp, ref } from 'vue'
 
+import { requireTestElement } from '@/test/dom'
+
 import RecorderRenderer from './RecorderRenderer.vue'
 
 window.matchMedia = fromPartial(
@@ -295,11 +297,3 @@ describe('RecorderRenderer', () => {
     app.unmount()
   })
 })
-
-function requireTestElement<T extends Element>(
-  value: unknown,
-  constructor: new (...args: never[]) => T,
-): T {
-  if (!(value instanceof constructor)) throw new Error(`Expected ${constructor.name}`)
-  return value
-}

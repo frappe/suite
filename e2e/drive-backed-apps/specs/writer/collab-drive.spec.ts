@@ -95,7 +95,10 @@ test.describe("Writer collaboration", () => {
 		await sidebarLink(page, "Trash").click();
 		menu = await openRowMenu(page, title);
 		await menu.getByRole("menuitem", { name: "Delete forever", exact: true }).click();
-		await page.getByRole("dialog").getByRole("button", { name: "Delete forever", exact: true }).click();
+		await page
+			.getByRole("dialog")
+			.getByRole("button", { name: "Delete forever", exact: true })
+			.click();
 
 		await expect.poll(() => canReadNode(page.request, node)).toBe(false);
 		await expect

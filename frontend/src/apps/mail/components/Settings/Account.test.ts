@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, reactive } from 'vue'
 
+import { requireTestElement } from '@/test/dom'
+
 import Account from './Account.vue'
 
 const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
@@ -171,11 +173,3 @@ it('retains a refused save and reports no success', async () => {
   expect(locale.value).toBe('fr-FR')
   expect(state.toast).not.toHaveBeenCalled()
 })
-
-function requireTestElement<T extends Element>(
-  value: unknown,
-  constructor: new (...args: never[]) => T,
-): T {
-  if (!(value instanceof constructor)) throw new Error(`Expected ${constructor.name}`)
-  return value
-}

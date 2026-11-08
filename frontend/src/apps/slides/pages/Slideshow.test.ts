@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, nextTick, type App } from 'vue'
 
+import { requireTestElement } from '@/test/dom'
+
 vi.mock('frappe-ui', async (original) => ({
   ...(await original<Record<string, unknown>>()),
   usePageMeta: () => undefined,
@@ -97,11 +99,3 @@ describe('presenting', () => {
     )
   })
 })
-
-function requireTestElement<T extends Element>(
-  value: unknown,
-  constructor: new (...args: never[]) => T,
-): T {
-  if (!(value instanceof constructor)) throw new Error(`Expected ${constructor.name}`)
-  return value
-}

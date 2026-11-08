@@ -52,8 +52,7 @@ test.beforeAll(async ({ baseURL }) => {
 	api = await adminApi(baseURL!);
 	const personal = (await roots(api)).personal.node;
 	home = await createFolder(api, personal, runTag("uf11-guest-names"));
-	for (const product of PRODUCTS)
-		docs.set(product.label, await createDocument(api, home.name, product.title, product.doctype));
+	for (const product of PRODUCTS) docs.set(product.label, await createDocument(api, home.name, product.title, product.doctype));
 });
 
 test.afterAll(async () => {

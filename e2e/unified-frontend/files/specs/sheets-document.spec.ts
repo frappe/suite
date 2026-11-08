@@ -83,10 +83,7 @@ test("renames, comments and opens versions without a legacy Drive call", async (
 	]);
 
 	// An edit still waiting to be sent goes into the version first.
-	await page
-		.locator("canvas")
-		.first()
-		.click({ position: { x: 80, y: 40 } });
+	await page.locator("canvas").first().click({ position: { x: 80, y: 40 } });
 	await page.keyboard.type("777");
 	await page.keyboard.press("Enter");
 	await page.getByRole("button", { name: "Versions" }).click();
@@ -107,11 +104,7 @@ test("renames, comments and opens versions without a legacy Drive call", async (
 	// The room keeps the state a restore replaces as a version of its own.
 	const before = versions.getByRole("listitem").filter({ hasText: "Before restoring “Journey version”" });
 	await expect(before).toHaveCount(0);
-	await versions
-		.getByRole("listitem")
-		.filter({ hasText: "Journey version" })
-		.getByRole("button", { name: "More version actions" })
-		.click();
+	await versions.getByRole("listitem").filter({ hasText: "Journey version" }).getByRole("button", { name: "More version actions" }).click();
 	await page.getByRole("menuitem", { name: "Restore this version" }).click();
 	await page.getByRole("dialog", { name: "Restore this version?" }).getByRole("button", { name: "Restore" }).click();
 	await expect(page.getByText("Version restored")).toBeVisible();
@@ -140,10 +133,7 @@ test("losing edit access freezes the sheet, stops sending its edits and offers t
 	await page.route(/\/content\/[^/]+\/updates/, (route) =>
 		route.request().method() === "POST" ? route.abort("failed") : route.continue(),
 	);
-	await page
-		.locator("canvas")
-		.first()
-		.click({ position: { x: 80, y: 40 } });
+	await page.locator("canvas").first().click({ position: { x: 80, y: 40 } });
 	await page.keyboard.type("4242");
 	await page.keyboard.press("Enter");
 	await page.keyboard.type("5150");
@@ -185,10 +175,7 @@ test("text typed without a keydown starts the edit, and grid keys still work", a
 		await nameBox.press("Enter");
 	};
 
-	await page
-		.locator("canvas")
-		.first()
-		.click({ position: { x: 80, y: 40 } });
+	await page.locator("canvas").first().click({ position: { x: 80, y: 40 } });
 	await page.keyboard.insertText("₹250");
 	await page.keyboard.press("Enter");
 	await goTo("A1");
@@ -271,10 +258,7 @@ test("a person who holds only an edit link opens and saves the sheet", async ({ 
 	await expect(page.getByText("View only", { exact: true })).toHaveCount(0);
 
 	const saved = page.waitForResponse((answer) => PUSH.test(`${answer.request().method()} ${answer.url()}`));
-	await page
-		.locator("canvas")
-		.first()
-		.click({ position: { x: 80, y: 40 } });
+	await page.locator("canvas").first().click({ position: { x: 80, y: 40 } });
 	await page.keyboard.type("6060");
 	await page.keyboard.press("Enter");
 	const answer = await saved;

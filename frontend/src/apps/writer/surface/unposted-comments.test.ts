@@ -3,6 +3,7 @@ import { nextTick } from 'vue'
 import { createRelativePositionFromTypeIndex, Doc, XmlText } from 'yjs'
 
 import { encodeAnchor } from '@/apps/writer/collab/anchors'
+import { requireTestElement } from '@/test/dom'
 
 import { confirmed } from './comment-list-fakes'
 import {
@@ -200,11 +201,3 @@ describe('comments not yet posted', () => {
     ])
   })
 })
-
-function requireTestElement<T extends Element>(
-  value: unknown,
-  constructor: new (...args: never[]) => T,
-): T {
-  if (!(value instanceof constructor)) throw new Error(`Expected ${constructor.name}`)
-  return value
-}

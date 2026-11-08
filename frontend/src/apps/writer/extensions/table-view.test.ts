@@ -3,6 +3,7 @@ import type { Node as PMNode } from '@tiptap/pm/model'
 import { afterEach, expect, it, vi } from 'vitest'
 
 import { writerSchema } from '@/apps/writer/schema'
+import { requireTestElement } from '@/test/dom'
 
 import { DEFAULT_COLUMN_WIDTH, WriterTableView } from './table-view'
 
@@ -77,11 +78,3 @@ it('fades only the sides that have more to scroll to', () => {
   view.destroy()
   view.dom.remove()
 })
-
-function requireTestElement<T extends Element>(
-  value: unknown,
-  constructor: new (...args: never[]) => T,
-): T {
-  if (!(value instanceof constructor)) throw new Error(`Expected ${constructor.name}`)
-  return value
-}

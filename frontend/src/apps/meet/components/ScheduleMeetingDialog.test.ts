@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick } from 'vue'
 
 import { TransportError } from '@/platform/transport'
+import { requireTestElement } from '@/test/dom'
 
 import ScheduleMeetingDialog from './ScheduleMeetingDialog.vue'
 
@@ -240,11 +241,3 @@ describe('Shared meeting scheduler', () => {
     expect(root.querySelector('input')).toBeNull()
   })
 })
-
-function requireTestElement<T extends Element>(
-  value: unknown,
-  constructor: new (...args: never[]) => T,
-): T {
-  if (!(value instanceof constructor)) throw new Error(`Expected ${constructor.name}`)
-  return value
-}

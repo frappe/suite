@@ -29,7 +29,13 @@ export async function shareWriterDocument(
 	options: { user?: string; read: boolean; write?: boolean; comment?: boolean },
 ): Promise<void> {
 	const principal = options.user || "$PUBLIC";
-	const role = options.write ? ROLE.EDIT : options.comment ? ROLE.COMMENT : options.read ? ROLE.READ : ROLE.NONE;
+	const role = options.write
+		? ROLE.EDIT
+		: options.comment
+			? ROLE.COMMENT
+			: options.read
+				? ROLE.READ
+				: ROLE.NONE;
 	if (role === ROLE.NONE) await revokeAccess(request, node, principal);
 	else await grantAccess(request, node, principal, role);
 }

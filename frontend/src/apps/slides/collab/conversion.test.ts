@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
 
 import { extensions } from '@/apps/slides/stores/tiptapSetup'
+import { requireTestElement } from '@/test/dom'
 
 import { convertLegacy, type OldBox } from './conversion'
 import {
@@ -1104,11 +1105,3 @@ describe('refusals', () => {
     })
   })
 })
-
-function requireTestElement<T extends Element>(
-  value: unknown,
-  constructor: new (...args: never[]) => T,
-): T {
-  if (!(value instanceof constructor)) throw new Error(`Expected ${constructor.name}`)
-  return value
-}

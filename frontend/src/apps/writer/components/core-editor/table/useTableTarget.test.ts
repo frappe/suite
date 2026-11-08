@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { effectScope, ref, shallowRef, type EffectScope } from 'vue'
 
 import { writerSchema } from '@/apps/writer/schema'
+import { requireTestElement } from '@/test/dom'
 
 import { useTableTarget } from './useTableTarget'
 
@@ -180,11 +181,3 @@ describe('table target', () => {
     expect(target.value).toBeNull()
   })
 })
-
-function requireTestElement<T extends Element>(
-  value: unknown,
-  constructor: new (...args: never[]) => T,
-): T {
-  if (!(value instanceof constructor)) throw new Error(`Expected ${constructor.name}`)
-  return value
-}

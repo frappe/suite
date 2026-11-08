@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
 import type { DocumentThread } from '@/apps/drive'
+import { requireTestElement } from '@/test/dom'
 
 import { confirmed, errors, me, warnings } from './comment-list-fakes'
 import {
@@ -395,11 +396,3 @@ describe('an edit while someone else changes the comment', () => {
     expect([editBox()?.value, warnings]).toEqual(['Mine', []])
   })
 })
-
-function requireTestElement<T extends Element>(
-  value: unknown,
-  constructor: new (...args: never[]) => T,
-): T {
-  if (!(value instanceof constructor)) throw new Error(`Expected ${constructor.name}`)
-  return value
-}

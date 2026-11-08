@@ -5,25 +5,12 @@ import { io, type Socket } from "socket.io-client";
 type Transport = ReturnType<Device["createSendTransport"]> | ReturnType<Device["createRecvTransport"]>;
 type Media = "audio" | "video" | "both" | "none";
 interface Config {
-	sfuUrl: string;
-	meetingId: string;
-	token: string;
-	userId: string;
-	name: string;
-	media: Media;
-	consume: boolean;
-	renderMedia: boolean;
-	rotatingAudio: boolean;
-	audioActive: boolean;
+	sfuUrl: string; meetingId: string; token: string; userId: string; name: string;
+	media: Media; consume: boolean; renderMedia: boolean; rotatingAudio: boolean; audioActive: boolean;
 	representativeCamera: boolean;
 	representativeScreen: boolean;
 }
-interface ProducerEvent {
-	producerId: string;
-	participantId?: string;
-	user_id?: string;
-	id?: string;
-}
+interface ProducerEvent { producerId: string; participantId?: string; user_id?: string; id?: string; }
 
 let socket: Socket | undefined;
 let device: Device | undefined;
@@ -57,9 +44,7 @@ function request<T extends object>(event: string, data: unknown): Promise<T & { 
 
 function wire(transport: Transport) {
 	transport.on("connect", ({ dtlsParameters }, done, fail) => {
-		request("connect_webrtc_transport", { transportId: transport.id, dtlsParameters })
-			.then(() => done())
-			.catch(fail);
+		request("connect_webrtc_transport", { transportId: transport.id, dtlsParameters }).then(() => done()).catch(fail);
 	});
 }
 
@@ -75,18 +60,13 @@ async function receiveTransport() {
 		wire(receive);
 		return receive;
 	})();
-	try {
-		return await receivePending;
-	} finally {
-		receivePending = undefined;
-	}
+	try { return await receivePending; } finally { receivePending = undefined; }
 }
 
 async function subscribe(config: Config, event: ProducerEvent) {
 	const producerId = event.producerId || event.id || "";
 	const owner = event.participantId || event.user_id;
-	if (stopping || !config.consume || owner === config.userId || consumers.has(producerId) || pending.has(producerId))
-		return;
+	if (stopping || !config.consume || owner === config.userId || consumers.has(producerId) || pending.has(producerId)) return;
 	const work = (async () => {
 		const transport = await receiveTransport();
 		const options = await request<{
@@ -112,21 +92,14 @@ async function subscribe(config: Config, event: ProducerEvent) {
 				if (!(element instanceof HTMLVideoElement)) throw new Error("Expected a video element");
 				const video = element;
 				renderedVideos.set(producerId, video);
-				if (!config.renderMedia)
-					Object.assign(video.style, { position: "fixed", left: "-2px", width: "1px", height: "1px" });
+				if (!config.renderMedia) Object.assign(video.style, { position: "fixed", left: "-2px", width: "1px", height: "1px" });
 			}
 			document.querySelector("#media")?.append(element);
 			void element.play();
 		}
 	})();
 	pending.set(producerId, work);
-	try {
-		await work;
-	} catch {
-		errors.push("consumer setup failed");
-	} finally {
-		pending.delete(producerId);
-	}
+	try { await work; } catch { errors.push("consumer setup failed"); } finally { pending.delete(producerId); }
 }
 
 async function publish(config: Config) {
@@ -138,10 +111,8 @@ async function publish(config: Config) {
 		const oscillator = audioContext.createOscillator();
 		audioGain = audioContext.createGain();
 		const destination = audioContext.createMediaStreamDestination();
-		oscillator.frequency.value = 440;
-		audioGain.gain.value = config.audioActive ? 0.15 : 0;
-		oscillator.connect(audioGain).connect(destination);
-		oscillator.start();
+		oscillator.frequency.value = 440; audioGain.gain.value = config.audioActive ? 0.15 : 0;
+		oscillator.connect(audioGain).connect(destination); oscillator.start();
 		stream = destination.stream;
 	} else if (config.representativeCamera || config.representativeScreen) {
 		cameraCanvas = document.createElement("canvas");
@@ -173,8 +144,7 @@ async function publish(config: Config) {
 	wire(send);
 	send.on("produce", ({ kind, rtpParameters, appData }, done, fail) => {
 		request<{ id: string }>("create_producer", { transportId: send!.id, kind, rtpParameters, appData })
-			.then(({ id }) => done({ id }))
-			.catch(fail);
+			.then(({ id }) => done({ id })).catch(fail);
 	});
 	for (const track of stream.getTracks()) {
 		const options: Parameters<typeof send.produce>[0] = {
@@ -200,16 +170,13 @@ async function start(config: Config) {
 		reconnection: false,
 	});
 	await new Promise<void>((resolve, reject) => {
-		socket!.once("connect", resolve);
-		socket!.once("connect_error", () => reject(new Error("socket connection failed")));
+		socket!.once("connect", resolve); socket!.once("connect_error", () => reject(new Error("socket connection failed")));
 	});
 	const queued: ProducerEvent[] = [];
 	socket.on("producer_created", (event: ProducerEvent) =>
 		device ? void subscribe(config, event) : queued.push(event),
 	);
-	socket.on("disconnect", () => {
-		if (!stopping) phase = "failed";
-	});
+	socket.on("disconnect", () => { if (!stopping) phase = "failed"; });
 	const joined = performance.now();
 	await request("join_room", {
 		roomId: config.meetingId,
@@ -236,35 +203,22 @@ async function start(config: Config) {
 }
 
 async function status() {
-	let bytesSent = 0,
-		bytesReceived = 0,
-		packetsLost = 0,
-		packetsReceived = 0;
-	const producerStats = [],
-		consumerStats = [];
+	let bytesSent = 0, bytesReceived = 0, packetsLost = 0, packetsReceived = 0;
+	const producerStats = [], consumerStats = [];
 	for (const [id, endpoint] of producers) {
 		let bytes = 0,
 			framesEncoded: number | null = null,
 			framesPerSecond: number | null = null;
-		let totalAudioEnergy: number | null = null,
-			sourceWidth: number | null = null,
-			sourceHeight: number | null = null,
-			sourceFramesPerSecond: number | null = null;
+		let totalAudioEnergy: number | null = null, sourceWidth: number | null = null, sourceHeight: number | null = null, sourceFramesPerSecond: number | null = null;
 		for (const report of (await endpoint.getStats()).values()) {
 			if (report.type === "outbound-rtp" && !report.isRemote) {
-				bytes += Number(report.bytesSent || 0);
-				framesEncoded = Number.isFinite(report.framesEncoded) ? Number(report.framesEncoded) : framesEncoded;
+				bytes += Number(report.bytesSent || 0); framesEncoded = Number.isFinite(report.framesEncoded) ? Number(report.framesEncoded) : framesEncoded;
 				framesPerSecond = Number.isFinite(report.framesPerSecond) ? Number(report.framesPerSecond) : framesPerSecond;
 			}
 			if (report.type === "media-source") {
-				totalAudioEnergy = Number.isFinite(report.totalAudioEnergy)
-					? Number(report.totalAudioEnergy)
-					: totalAudioEnergy;
-				sourceWidth = Number.isFinite(report.width) ? Number(report.width) : sourceWidth;
-				sourceHeight = Number.isFinite(report.height) ? Number(report.height) : sourceHeight;
-				sourceFramesPerSecond = Number.isFinite(report.framesPerSecond)
-					? Number(report.framesPerSecond)
-					: sourceFramesPerSecond;
+				totalAudioEnergy = Number.isFinite(report.totalAudioEnergy) ? Number(report.totalAudioEnergy) : totalAudioEnergy;
+				sourceWidth = Number.isFinite(report.width) ? Number(report.width) : sourceWidth; sourceHeight = Number.isFinite(report.height) ? Number(report.height) : sourceHeight;
+				sourceFramesPerSecond = Number.isFinite(report.framesPerSecond) ? Number(report.framesPerSecond) : sourceFramesPerSecond;
 			}
 		}
 		bytesSent += bytes;
@@ -285,18 +239,13 @@ async function status() {
 		let bytes = 0,
 			framesDecoded: number | null = null,
 			frameWidth: number | null = null;
-		let frameHeight: number | null = null,
-			framesPerSecond: number | null = null;
-		for (const report of (await endpoint.getStats()).values())
-			if (report.type === "inbound-rtp" && !report.isRemote) {
-				bytes += Number(report.bytesReceived || 0);
-				packetsLost += Number(report.packetsLost || 0);
-				packetsReceived += Number(report.packetsReceived || 0);
-				framesDecoded = Number.isFinite(report.framesDecoded) ? Number(report.framesDecoded) : framesDecoded;
-				frameWidth = Number.isFinite(report.frameWidth) ? Number(report.frameWidth) : frameWidth;
-				frameHeight = Number.isFinite(report.frameHeight) ? Number(report.frameHeight) : frameHeight;
-				framesPerSecond = Number.isFinite(report.framesPerSecond) ? Number(report.framesPerSecond) : framesPerSecond;
-			}
+		let frameHeight: number | null = null, framesPerSecond: number | null = null;
+		for (const report of (await endpoint.getStats()).values()) if (report.type === "inbound-rtp" && !report.isRemote) {
+			bytes += Number(report.bytesReceived || 0); packetsLost += Number(report.packetsLost || 0); packetsReceived += Number(report.packetsReceived || 0);
+			framesDecoded = Number.isFinite(report.framesDecoded) ? Number(report.framesDecoded) : framesDecoded;
+			frameWidth = Number.isFinite(report.frameWidth) ? Number(report.frameWidth) : frameWidth; frameHeight = Number.isFinite(report.frameHeight) ? Number(report.frameHeight) : frameHeight;
+			framesPerSecond = Number.isFinite(report.framesPerSecond) ? Number(report.framesPerSecond) : framesPerSecond;
+		}
 		bytesReceived += bytes;
 		consumerStats.push({
 			producerId,
@@ -346,18 +295,13 @@ function setAudioActive(active: boolean) {
 }
 
 async function stop() {
-	stopping = true;
-	await Promise.allSettled(pending.values());
+	stopping = true; await Promise.allSettled(pending.values());
 	if (cameraTimer !== undefined) window.clearInterval(cameraTimer);
 	for (const endpoint of consumers.values()) endpoint.close();
 	for (const endpoint of producers.values()) endpoint.close();
-	receive?.close();
-	send?.close();
-	stream?.getTracks().forEach((track) => track.stop());
+	receive?.close(); send?.close(); stream?.getTracks().forEach((track) => track.stop());
 	await audioContext?.close();
-	if (socket?.connected) socket.emit("leave_room", {});
-	socket?.disconnect();
-	phase = "stopped";
+	if (socket?.connected) socket.emit("leave_room", {}); socket?.disconnect(); phase = "stopped";
 	cameraCanvas?.remove();
 	return { localMediaReleased: !stream || stream.getTracks().every((track) => track.readyState === "ended") };
 }

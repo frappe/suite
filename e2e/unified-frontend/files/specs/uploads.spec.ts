@@ -167,9 +167,7 @@ test("a batch upload asks about a taken title and keeps both", async ({ page }) 
 
 	const chooser = page.waitForEvent("filechooser");
 	await useNewMenu(page, "Upload files");
-	await (
-		await chooser
-	).setFiles([
+	await (await chooser).setFiles([
 		{ name: "report.pdf", mimeType: "application/pdf", buffer: Buffer.from("second") },
 		{ name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("notes") },
 	]);
@@ -228,10 +226,7 @@ test("a folder upload from New creates the tree", async ({ page }) => {
 
 	const chooser = page.waitForEvent("filechooser");
 	await page.getByRole("button", { name: "New", exact: true }).click();
-	await page
-		.locator('[data-slot="group"]', { hasText: "Upload" })
-		.getByRole("menuitem", { name: "Folder", exact: true })
-		.click();
+	await page.locator('[data-slot="group"]', { hasText: "Upload" }).getByRole("menuitem", { name: "Folder", exact: true }).click();
 	await (await chooser).setFiles(resolve(__dirname, "fixtures/upload-folder"));
 
 	await expect(doneEntries(page)).toHaveCount(2);
@@ -275,9 +270,7 @@ test("a batch larger than the free space offers to upload what fits", async ({ p
 
 	const chooser = page.waitForEvent("filechooser");
 	await useNewMenu(page, "Upload files");
-	await (
-		await chooser
-	).setFiles([
+	await (await chooser).setFiles([
 		{ name: "fits.txt", mimeType: "text/plain", buffer: Buffer.from("small") },
 		{ name: "too-big.txt", mimeType: "text/plain", buffer: Buffer.alloc(100, 1) },
 	]);

@@ -11,67 +11,49 @@ import { verifyAudioPublication } from "./publication.mjs";
 import { validateAudioTiming } from "./report.mjs";
 
 export interface CaptionObservation {
-	captionId: string;
-	participantId: string;
-	participantName: string;
-	text: string;
-	isFinal: boolean;
-	observedAt: number;
+  captionId: string;
+  participantId: string;
+  participantName: string;
+  text: string;
+  isFinal: boolean;
+  observedAt: number;
 }
 
 interface AudioTrackState {
-	enabled: boolean;
-	muted: boolean;
-	readyState: MediaStreamTrackState;
+  enabled: boolean; muted: boolean; readyState: MediaStreamTrackState;
 }
 interface AudioRtpCounters {
-	type: string;
-	timestamp?: number;
-	bytesSent?: number;
-	packetsSent?: number;
-	totalAudioEnergy?: number;
-	totalSamplesDuration?: number;
-	audioLevel?: number;
-	packetsLost?: number;
-	roundTripTime?: number;
+  type: string; timestamp?: number; bytesSent?: number; packetsSent?: number;
+  totalAudioEnergy?: number; totalSamplesDuration?: number; audioLevel?: number;
+  packetsLost?: number; roundTripTime?: number;
 }
 export interface AudioCaptureDiagnostics {
-	observedAt: number;
-	audioContextState: AudioContextState;
-	peakSourceAmplitude: number;
-	destinationTrack: AudioTrackState;
-	issuedTracks: AudioTrackState[];
-	connections: {
-		connectionState: RTCPeerConnectionState;
-		iceConnectionState: RTCIceConnectionState;
-		senders: AudioTrackState[];
-		reports: AudioRtpCounters[];
-	}[];
+  observedAt: number; audioContextState: AudioContextState; peakSourceAmplitude: number;
+  destinationTrack: AudioTrackState; issuedTracks: AudioTrackState[];
+  connections: {
+    connectionState: RTCPeerConnectionState; iceConnectionState: RTCIceConnectionState;
+    senders: AudioTrackState[]; reports: AudioRtpCounters[];
+  }[];
 }
 interface AudioCaptureSettings {
-	decodedSampleRate: number;
-	decodedChannels: number;
-	audioContextSampleRate: number;
-	trackSettings: MediaTrackSettings;
+  decodedSampleRate: number; decodedChannels: number; audioContextSampleRate: number;
+  trackSettings: MediaTrackSettings;
 }
 interface AudioPlayback {
-	startedAt: number;
-	durationSeconds: number;
-	captureSettings: AudioCaptureSettings;
+  startedAt: number; durationSeconds: number; captureSettings: AudioCaptureSettings;
 }
 declare global {
-	interface Window {
-		__captionAudio: {
-			duration(): Promise<number>;
-			diagnostics(): Promise<AudioCaptureDiagnostics | undefined>;
-			play(): Promise<AudioPlayback>;
-		};
-		__captionObservations: CaptionObservation[];
-	}
+  interface Window {
+    __captionAudio: {
+      duration(): Promise<number>;
+      diagnostics(): Promise<AudioCaptureDiagnostics | undefined>;
+      play(): Promise<AudioPlayback>;
+    };
+    __captionObservations: CaptionObservation[];
+  }
 }
 
-export type CaptionPhase =
-	"observer-login" | "audio-input" | "observer-join" | "speaker-join" | "captions-enable" | "audio-play" | "collection";
+export type CaptionPhase = "observer-login" | "audio-input" | "observer-join" | "speaker-join" | "captions-enable" | "audio-play" | "collection";
 export class CaptionCaseError extends Error {
 	readonly category: "invalid-speech-bounds" | "audio-input" | "audio-publication" | "browser-or-service";
 	constructor(

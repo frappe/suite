@@ -4,6 +4,8 @@ import StarterKit from '@tiptap/starter-kit'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createApp, h, type App } from 'vue'
 
+import { requireTestElement } from '@/test/dom'
+
 import ColorPanel from './ColorPanel.vue'
 import CellColorSwatches from './table/CellColorSwatches.vue'
 
@@ -93,11 +95,3 @@ describe('colour swatches', () => {
     ])
   })
 })
-
-function requireTestElement<T extends Element>(
-  value: unknown,
-  constructor: new (...args: never[]) => T,
-): T {
-  if (!(value instanceof constructor)) throw new Error(`Expected ${constructor.name}`)
-  return value
-}

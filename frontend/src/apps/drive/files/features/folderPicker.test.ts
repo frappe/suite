@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h } from 'vue'
 
 import { DRIVE_ROLES } from '@/apps/drive/client/types'
+import { requireTestElement } from '@/test/dom'
 
 import FilePicker from './FilePicker.vue'
 import {
@@ -482,11 +483,3 @@ describe('New folder in the picker', () => {
     await vi.waitFor(() => expect(chosen).toHaveBeenCalledWith('new-1', 'Drafts'))
   })
 })
-
-function requireTestElement<T extends Element>(
-  value: unknown,
-  constructor: new (...args: never[]) => T,
-): T {
-  if (!(value instanceof constructor)) throw new Error(`Expected ${constructor.name}`)
-  return value
-}

@@ -14,7 +14,8 @@ import { loginViaApi, type Credentials } from "../../shared/auth";
 import { testApiUrl } from "../global-setup";
 
 const statePath = resolve(__dirname, "../.state/run.json");
-const userStatePath = (index: number) => resolve(__dirname, `../.state/user-${index}.json`);
+const userStatePath = (index: number) =>
+	resolve(__dirname, `../.state/user-${index}.json`);
 
 /** One row of `suite.drive.e2e_api.provision_users`. */
 interface ProvisionedUser extends Credentials {

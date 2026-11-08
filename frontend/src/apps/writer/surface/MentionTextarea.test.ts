@@ -3,6 +3,7 @@ import { createApp, h, nextTick, ref, type App } from 'vue'
 
 import type { WriterUser } from '@/apps/writer/drive'
 import { translationPlugin } from '@/platform/translation'
+import { requireTestElement } from '@/test/dom'
 
 import MentionTextarea from './MentionTextarea.vue'
 
@@ -447,11 +448,3 @@ describe('the caret while the stored text changes under the box', () => {
     expect([box.value, text.value, listed()]).toEqual(['@', '@', ['Ann Lee', 'Ben Roy']])
   })
 })
-
-function requireTestElement<T extends Element>(
-  value: unknown,
-  constructor: new (...args: never[]) => T,
-): T {
-  if (!(value instanceof constructor)) throw new Error(`Expected ${constructor.name}`)
-  return value
-}

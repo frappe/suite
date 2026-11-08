@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createApp } from 'vue'
 
+import { requireTestElement } from '@/test/dom'
+
 import RecordingIndicator from './RecordingIndicator.vue'
 
 const recording = {
@@ -37,11 +39,3 @@ describe('RecordingIndicator', () => {
     app.unmount()
   })
 })
-
-function requireTestElement<T extends Element>(
-  value: unknown,
-  constructor: new (...args: never[]) => T,
-): T {
-  if (!(value instanceof constructor)) throw new Error(`Expected ${constructor.name}`)
-  return value
-}

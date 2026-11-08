@@ -5,6 +5,8 @@
 // keeps focus in a hidden textarea that hears those events.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { requireTestElement } from '@/test/dom'
+
 import { createGrid } from './index.js'
 import { createMockCtx } from './painters/test-utils.js'
 
@@ -96,11 +98,3 @@ describe('keys on the focused grid', () => {
     expect(h.editorValue()).toBe('x')
   })
 })
-
-function requireTestElement<T extends Element>(
-  value: unknown,
-  constructor: new (...args: never[]) => T,
-): T {
-  if (!(value instanceof constructor)) throw new Error(`Expected ${constructor.name}`)
-  return value
-}

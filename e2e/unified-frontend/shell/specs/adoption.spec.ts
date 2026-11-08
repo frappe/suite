@@ -104,8 +104,7 @@ test.describe("Meet in the shell", () => {
 });
 
 const calendarHeader = (page: Page) => page.locator("[data-slot='sidebar-header'] button", { hasText: "Calendar" });
-const calendarTabBar = (page: Page) =>
-	page.locator("nav").filter({ has: page.getByRole("button", { name: "Profile" }) });
+const calendarTabBar = (page: Page) => page.locator("nav").filter({ has: page.getByRole("button", { name: "Profile" }) });
 
 test.describe("Calendar in the shell", () => {
 	test.skip(!process.env.E2E_MAIL, "needs a mail server");

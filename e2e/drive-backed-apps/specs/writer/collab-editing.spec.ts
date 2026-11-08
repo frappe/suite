@@ -88,7 +88,8 @@ test.describe("Writer collaboration", () => {
 	});
 
 	test("bold over a mention shows in the other tab and after a reload", async ({ owner, collaborator }) => {
-		const mentionLine = '<p>a<span class="mention" data-type="mention" data-id="ann" data-label="Ann">@Ann</span>b</p>';
+		const mentionLine =
+			'<p>a<span class="mention" data-type="mention" data-id="ann" data-label="Ann">@Ann</span>b</p>';
 		await openWriterDocument(owner.page, node);
 		await openWriterDocument(collaborator.page, node);
 		await pasteHtml(owner.page, mentionLine);
@@ -282,7 +283,9 @@ test.describe("Writer collaboration", () => {
 		await expectSaved(owner.page);
 		const compacted = await compactNow(testApi, node);
 		await trimNow(testApi, node);
-		await expect.poll(() => trimmedRev(testApi, node), { timeout: 30_000 }).toBe(compacted.body_rev - 1);
+		await expect
+			.poll(() => trimmedRev(testApi, node), { timeout: 30_000 })
+			.toBe(compacted.body_rev - 1);
 
 		await collaborator.context.setOffline(false);
 
@@ -315,7 +318,9 @@ test.describe("Writer collaboration", () => {
 			};
 		}
 
-		await expect.poll(compactionStatus, { timeout: 30_000 }).toEqual({ compacted: true, tail_rows: 0 });
+		await expect
+			.poll(compactionStatus, { timeout: 30_000 })
+			.toEqual({ compacted: true, tail_rows: 0 });
 		const stored = await serverBlocks(testApi, node);
 		expect(stored.join("\n")).toContain("Typed just before the last tab closed");
 

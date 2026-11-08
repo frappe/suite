@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
+import { requireTestElement } from '@/test/dom'
+
 import {
   fakeServer,
   openedSurface,
@@ -189,14 +191,6 @@ describe('a copy that outlived its page', () => {
     expect(untouched.sticky).toBe(false)
   })
 })
-
-function requireTestElement<T extends Element>(
-  value: unknown,
-  constructor: new (...args: never[]) => T,
-): T {
-  if (!(value instanceof constructor)) throw new Error(`Expected ${constructor.name}`)
-  return value
-}
 
 function savedSlides(value: unknown) {
   if (!value || typeof value !== 'object' || !('slides' in value) || !Array.isArray(value.slides))

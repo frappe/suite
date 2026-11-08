@@ -66,7 +66,8 @@ async function unwrap<T>(response: APIResponse, what: string): Promise<T> {
  * so that product issue does not fail an unrelated test; the warning keeps it visible.
  */
 async function driveRequest<T>(request: APIRequestContext, method: Method, path: string, body?: unknown): Promise<T> {
-	const send = () => request[method](`${DRIVE}/${path}`, body === undefined ? undefined : { data: body });
+	const send = () =>
+		request[method](`${DRIVE}/${path}`, body === undefined ? undefined : { data: body });
 	let response = await send();
 	if (response.status() === 508 && (await response.text()).includes("QueryDeadlockError")) {
 		console.warn(`B86: ${method.toUpperCase()} ${DRIVE}/${path} deadlocked; retrying once`);
@@ -293,7 +294,9 @@ export async function rowMenuItems(page: Page, title: string): Promise<string[]>
 
 /** The Drive sidebar link labelled `label` ("My files", "Trash", …), kept apart from a same-named breadcrumb. */
 export function sidebarLink(page: Page, label: string): Locator {
-	return page.getByRole("complementary", { name: "Drive" }).getByRole("link", { name: label, exact: true });
+	return page
+		.getByRole("complementary", { name: "Drive" })
+		.getByRole("link", { name: label, exact: true });
 }
 
 /**
@@ -330,7 +333,8 @@ export async function uploadViaUi(page: Page, file: { name: string; mimeType: st
 	const [chooser] = await Promise.all([page.waitForEvent("filechooser"), chooseNew(page, "Files")]);
 	const finished = page.waitForResponse(
 		(response) =>
-			response.request().method() === "POST" && /\/api\/suite\/drive\/uploads\/[^/]+\/finish/.test(response.url()),
+			response.request().method() === "POST" &&
+			/\/api\/suite\/drive\/uploads\/[^/]+\/finish/.test(response.url()),
 	);
 	await chooser.setFiles(file);
 	const response = await finished;

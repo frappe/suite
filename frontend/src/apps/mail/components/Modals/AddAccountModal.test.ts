@@ -3,6 +3,7 @@ import { createApp, defineComponent, h, nextTick, ref } from 'vue'
 
 import { createApiClient } from '@/platform/server-state'
 import { createTransport } from '@/platform/transport'
+import { requireTestElement } from '@/test/dom'
 
 import AddAccountModal from './AddAccountModal.vue'
 
@@ -296,11 +297,3 @@ describe('Add user', () => {
     )
   })
 })
-
-function requireTestElement<T extends Element>(
-  value: unknown,
-  constructor: new (...args: never[]) => T,
-): T {
-  if (!(value instanceof constructor)) throw new Error(`Expected ${constructor.name}`)
-  return value
-}

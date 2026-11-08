@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, reactive } from 'vue'
 
 import type { DriveNode } from '@/apps/drive/client/types'
+import { requireTestElement } from '@/test/dom'
 
 import FilesListing from './FilesListing.vue'
 import { DEFAULT_PRESENTATION, type PresentationState } from './presentation'
@@ -272,11 +273,3 @@ describe('FilesListing loading', () => {
     expect(root.querySelector('[data-node="a"]')?.textContent).toContain('Alpha.png')
   })
 })
-
-function requireTestElement<T extends Element>(
-  value: unknown,
-  constructor: new (...args: never[]) => T,
-): T {
-  if (!(value instanceof constructor)) throw new Error(`Expected ${constructor.name}`)
-  return value
-}

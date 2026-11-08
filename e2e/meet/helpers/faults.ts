@@ -10,7 +10,10 @@ export interface VideoProgress {
 }
 
 function remoteVideo(page: Page, participantName: string) {
-	return page.locator("[data-testid^='participant-tile-']", { hasText: participantName }).locator("video").first();
+	return page
+		.locator("[data-testid^='participant-tile-']", { hasText: participantName })
+		.locator("video")
+		.first();
 }
 
 export async function readRemoteVideoProgress(page: Page, participantName: string): Promise<VideoProgress> {
@@ -42,7 +45,10 @@ export function monitorRemoteVideoContinuity(page: Page, participantName: string
 			if (current.trackId !== trackId) {
 				throw new Error(`Healthy ${participantName} video track was replaced`);
 			}
-			if (current.currentTime > previous.currentTime || current.decodedFrames > previous.decodedFrames) {
+			if (
+				current.currentTime > previous.currentTime ||
+				current.decodedFrames > previous.decodedFrames
+			) {
 				lastProgressAt = Date.now();
 			}
 			if (Date.now() - lastProgressAt > 3000) {
@@ -76,7 +82,8 @@ export async function expectLocalTrackReplaced(page: Page, kind: MediaKind, prev
 		.poll(
 			async () => {
 				const trackId = await page.evaluate(
-					(mediaKind) => window.__meetMediaFaults?.latestLocalTrackId(mediaKind) ?? null,
+					(mediaKind) =>
+						window.__meetMediaFaults?.latestLocalTrackId(mediaKind) ?? null,
 					kind,
 				);
 				return Boolean(trackId && trackId !== previousTrackId);
@@ -93,7 +100,8 @@ export async function injectRemoteVideoFault(
 ): Promise<VideoProgress> {
 	const baseline = await readRemoteVideoProgress(page, participantName);
 	const injected = await page.evaluate(
-		({ trackId, faultName }) => window.__meetMediaFaults?.injectReceiverStats(trackId, faultName) ?? false,
+		({ trackId, faultName }) =>
+			window.__meetMediaFaults?.injectReceiverStats(trackId, faultName) ?? false,
 		{ trackId: baseline.trackId, faultName: fault },
 	);
 	if (!injected) throw new Error(`Could not inject ${fault} for ${participantName}`);
@@ -102,14 +110,16 @@ export async function injectRemoteVideoFault(
 
 export async function armNextRemoteVideoFault(page: Page, fault: ReceiverFault): Promise<void> {
 	await page.evaluate((faultName) => {
-		if (!window.__meetMediaFaults) throw new Error("Media fault bridge unavailable");
+		if (!window.__meetMediaFaults)
+			throw new Error("Media fault bridge unavailable");
 		window.__meetMediaFaults.armNextVideoReceiverFault(faultName);
 	}, fault);
 }
 
 export async function setBrowserLifecycle(page: Page, state: { hidden: boolean; online: boolean }): Promise<void> {
 	await page.evaluate((next) => {
-		if (!window.__meetMediaFaults) throw new Error("Media fault bridge unavailable");
+		if (!window.__meetMediaFaults)
+			throw new Error("Media fault bridge unavailable");
 		window.__meetMediaFaults.setBrowserLifecycle(next);
 	}, state);
 }

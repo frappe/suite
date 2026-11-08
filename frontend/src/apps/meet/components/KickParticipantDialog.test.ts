@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, ref } from 'vue'
 
+import { requireTestElement } from '@/test/dom'
+
 import KickParticipantDialog from './KickParticipantDialog.vue'
 
 vi.mock('frappe-ui', async () => {
@@ -93,11 +95,3 @@ describe('KickParticipantDialog', () => {
     app.unmount()
   })
 })
-
-function requireTestElement<T extends Element>(
-  value: unknown,
-  constructor: new (...args: never[]) => T,
-): T {
-  if (!(value instanceof constructor)) throw new Error(`Expected ${constructor.name}`)
-  return value
-}

@@ -50,7 +50,8 @@ test.describe("Writer collaboration", () => {
 		const waitReasons: string[] = [];
 		async function recordWait(response: Response) {
 			const isPush =
-				response.request().method() === "POST" && /\/api\/suite\/content\/[^/]+\/updates/.test(response.url());
+				response.request().method() === "POST" &&
+				/\/api\/suite\/content\/[^/]+\/updates/.test(response.url());
 			if (isPush && response.status() === 423) {
 				// SAFETY: the successful collaboration update endpoint returns the collab protocol verdict that this test asserts.
 				const refusal = (await response.json()) as { collab: string };
@@ -178,7 +179,8 @@ test.describe("Writer collaboration", () => {
 	test("a big paste is saved in pieces and reads back whole", async ({ owner, testApi }) => {
 		const pieces: string[] = [];
 		function recordPiece(request: Request) {
-			const stagesPiece = request.method() === "PUT" && /\/api\/suite\/content\/[^/]+\/stage\//.test(request.url());
+			const stagesPiece =
+				request.method() === "PUT" && /\/api\/suite\/content\/[^/]+\/stage\//.test(request.url());
 			if (stagesPiece) {
 				pieces.push(request.url());
 			}
@@ -197,7 +199,9 @@ test.describe("Writer collaboration", () => {
 		expect(pieces.length).toBeGreaterThanOrEqual(3);
 		const log = await logId(testApi, node);
 		// The readable copy's pieces stay staged until the queued render check installs it
-		await expect.poll(async () => (await logRowCounts(testApi, log)).stage, { timeout: 30_000 }).toBe(0);
+		await expect
+			.poll(async () => (await logRowCounts(testApi, log)).stage, { timeout: 30_000 })
+			.toBe(0);
 	});
 
 	test("a paste too large for one save is refused before it enters the document", async ({ owner, testApi }) => {
@@ -277,7 +281,9 @@ test.describe("Writer collaboration", () => {
 		}
 
 		await expect(writerEditor(owner.page)).not.toContainText("Delete me");
-		await expect.poll(async () => (await serverBlocks(testApi, node)).join("")).not.toContain("Delete me");
+		await expect
+			.poll(async () => (await serverBlocks(testApi, node)).join(""))
+			.not.toContain("Delete me");
 		await expect(owner.page.getByText(banner)).toBeVisible();
 		// Checked at once, as typing that went in would also leave once its refusal rebuilds the tab
 		await owner.page.keyboard.type("Typed while full");
@@ -312,7 +318,9 @@ test.describe("Writer collaboration", () => {
 			await tab.keyboard.press("Backspace");
 		}
 
-		await expect.poll(async () => (await serverBlocks(testApi, node)).join("")).not.toContain("Delete me");
+		await expect
+			.poll(async () => (await serverBlocks(testApi, node)).join(""))
+			.not.toContain("Delete me");
 		// Pushes go out in order, so typing the tab had taken would be saved by now
 		expect((await serverBlocks(testApi, node)).join("")).not.toContain("typed while full");
 

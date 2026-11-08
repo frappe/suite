@@ -31,7 +31,8 @@ export async function expectVideoReceiving(video: Locator): Promise<void> {
 			if (stream !== null && !(stream instanceof MediaStream)) throw new Error("Expected a media stream");
 			const videoTrack = stream?.getVideoTracks()[0] ?? null;
 			const decodedFrames = quality?.totalVideoFrames ?? 0;
-			const hasDecodedPlayback = decodedFrames > 0 || videoEl.currentTime > 0;
+			const hasDecodedPlayback =
+				decodedFrames > 0 || videoEl.currentTime > 0;
 			return {
 				currentTime: videoEl.currentTime,
 				decodedFrames,

@@ -46,7 +46,8 @@ test.describe("one Suite PWA", () => {
 
 	test("every area links the Suite manifest, and Mail and Calendar their own", async ({ page }) => {
 		// Under the app's base: `/` on Vite's dev server, the built assets' prefix otherwise.
-		const manifestOf = (app: string) => new RegExp(`^(/assets/suite/frontend)?/pwa/${app}/manifest\\.webmanifest$`);
+		const manifestOf = (app: string) =>
+			new RegExp(`^(/assets/suite/frontend)?/pwa/${app}/manifest\\.webmanifest$`);
 		const expected = {
 			"/home": "suite",
 			"/drive": "suite",

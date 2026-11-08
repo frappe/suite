@@ -6,7 +6,8 @@ import { loginViaApi, type Credentials } from "../shared/auth";
 import { frappeData } from "../shared/frappe";
 
 const statePath = resolve(__dirname, ".state/run.json");
-const userStatePath = (index: number) => resolve(__dirname, `.state/user-${index}.json`);
+const userStatePath = (index: number) =>
+	resolve(__dirname, `.state/user-${index}.json`);
 const admin: Credentials = {
 	email: process.env.E2E_ADMIN_EMAIL ?? "Administrator",
 	password: process.env.E2E_ADMIN_PASSWORD ?? "admin",

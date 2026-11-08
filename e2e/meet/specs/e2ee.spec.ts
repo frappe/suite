@@ -52,7 +52,9 @@ async function openMeetingInformation(page: Page): Promise<void> {
 
 async function readFingerprint(page: Page): Promise<string> {
 	await openMeetingInformation(page);
-	const section = page.getByText("Encryption fingerprint", { exact: true }).locator("xpath=..");
+	const section = page
+		.getByText("Encryption fingerprint", { exact: true })
+		.locator("xpath=..");
 	await expect(section).toBeVisible({ timeout: 30_000 });
 	return (await section.locator("pre").innerText()).trim();
 }

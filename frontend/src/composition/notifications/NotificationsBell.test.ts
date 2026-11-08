@@ -3,6 +3,7 @@ import { createApp, nextTick } from 'vue'
 
 import NotificationsBell from '@/composition/notifications/NotificationsBell.vue'
 import { TransportError } from '@/platform/transport'
+import { requireTestElement } from '@/test/dom'
 
 const state = vi.hoisted(() => ({
   push: vi.fn(),
@@ -387,12 +388,4 @@ function downloadNotification(name: string, status: 'Ready' | 'Failed' | 'Expire
       url: ready ? `/api/suite/drive/downloads/${name}/content` : null,
     },
   }
-}
-
-function requireTestElement<T extends Element>(
-  value: unknown,
-  constructor: new (...args: never[]) => T,
-): T {
-  if (!(value instanceof constructor)) throw new Error(`Expected ${constructor.name}`)
-  return value
 }

@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { requireTestElement } from '@/test/dom'
+
 import { createAutocomplete, type AutocompleteOptions } from './autocomplete.js'
 import type { PickRect } from './range-picker.js'
 
@@ -111,11 +113,3 @@ describe('autocomplete', () => {
     expect(popup().style.display).toBe('none')
   })
 })
-
-function requireTestElement<T extends Element>(
-  value: unknown,
-  constructor: new (...args: never[]) => T,
-): T {
-  if (!(value instanceof constructor)) throw new Error(`Expected ${constructor.name}`)
-  return value
-}

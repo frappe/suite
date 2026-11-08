@@ -4,6 +4,7 @@ import { createApp, h, nextTick, ref, type VNode } from 'vue'
 
 import type { DocumentSession } from '@/apps/drive/client/session'
 import { TransportError } from '@/platform/transport'
+import { requireTestElement } from '@/test/dom'
 
 import type { DocumentPanel } from '../../../client/types'
 import DocumentHeader from './DocumentHeader.vue'
@@ -415,11 +416,3 @@ describe('DocumentHeader, compact (Sheets)', () => {
     expect(header.lastElementChild!.contains(edited)).toBe(true)
   })
 })
-
-function requireTestElement<T extends Element>(
-  value: unknown,
-  constructor: new (...args: never[]) => T,
-): T {
-  if (!(value instanceof constructor)) throw new Error(`Expected ${constructor.name}`)
-  return value
-}

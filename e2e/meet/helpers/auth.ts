@@ -17,7 +17,11 @@ export async function provisionMeetHost(request: APIRequestContext): Promise<voi
 	const { data: credentials } = (await response.json()) as {
 		data?: Credentials;
 	};
-	if (!credentials || credentials.email !== meetHost.email || credentials.password !== meetHost.password) {
+	if (
+		!credentials ||
+		credentials.email !== meetHost.email ||
+		credentials.password !== meetHost.password
+	) {
 		throw new Error("Meet host provisioning returned unexpected credentials");
 	}
 }

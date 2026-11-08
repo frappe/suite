@@ -4,6 +4,7 @@ import { createApp, h, nextTick, ref, type App } from 'vue'
 
 import type { DocumentPanel, DocumentSession, DocumentVersion } from '@/apps/drive'
 import { translationPlugin } from '@/platform/translation'
+import { requireTestElement } from '@/test/dom'
 
 import DocumentSidePanel from './DocumentSidePanel.vue'
 import type { useCommentDrafts } from './useCommentDrafts'
@@ -395,11 +396,3 @@ describe('the Comments panel while versions load', () => {
     ]).toEqual([false, true])
   })
 })
-
-function requireTestElement<T extends Element>(
-  value: unknown,
-  constructor: new (...args: never[]) => T,
-): T {
-  if (!(value instanceof constructor)) throw new Error(`Expected ${constructor.name}`)
-  return value
-}
