@@ -1,4 +1,4 @@
-import { expect, type BrowserContext, type Page } from "@playwright/test";
+import { expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { setup } from "xstate";
 import { fillFolder, folderPath } from "../content";
 import { defineFlow } from "../flow";
@@ -63,7 +63,7 @@ const machine = setup({ types: { events: {} as Event } }).createMachine({
 			on: { OPEN_NEW: "uploadNewMenu" },
 		},
 		uploadNewMenu: {
-			meta: { description: "New through an Upload link: folders, links and uploads, no document kinds, since the guest could not edit what they made." },
+			meta: { description: "New through an Upload link: Folder, Link, Upload files and Upload folder, no document kinds, since the guest could not edit what they made." },
 		},
 		locked: {
 			meta: { description: "A password link: Password required, with no title, owner or kind of the item." },
@@ -114,10 +114,15 @@ interface Links {
 	expiresAt: number;
 }
 
-/** The visitor's browser, one per run so its HTTP cache spares the server a full asset load per visit. */
-interface Visitor {
-	context: BrowserContext;
-	page: Page | null;
+/**
+ * The visitor's contexts, kept for the run so their HTTP cache spares the server
+ * a full asset load per visit. A response landing after `clearCookies` puts a
+ * session back, so only a context that never signs in is surely signed out.
+ */
+interface VisitorContexts {
+	browser: Browser;
+	signedOut: BrowserContext;
+	signedIn: BrowserContext;
 }
 
 const PASSWORD = "relaunch-2026";
@@ -125,7 +130,8 @@ const UNKNOWN = `/l/${"A".repeat(22)}`;
 const EXPIRES_IN_MS = 4_000;
 
 const seeded = new WeakMap<Scene, Links>();
-let visitor: Visitor | null = null;
+let visitorContexts: VisitorContexts | null = null;
+let openVisitorPage: Page | null = null;
 
 function links(scene: Scene): Links {
 	const found = seeded.get(scene);
@@ -134,8 +140,8 @@ function links(scene: Scene): Links {
 }
 
 function visitorPage(): Page {
-	if (!visitor?.page) throw new Error("guest: no visitor page");
-	return visitor.page;
+	if (!openVisitorPage) throw new Error("guest: no visitor page");
+	return openVisitorPage;
 }
 
 /** Makes a share link on `node` and answers its `/l/<token>` path and grant id. */
@@ -154,15 +160,16 @@ async function shareLink(
 async function visit(scene: Scene, path: string, signedIn = false): Promise<Page> {
 	const browser = scene.context.browser();
 	if (!browser) throw new Error("guest: the scene has no browser");
-	if (visitor?.context.browser() !== browser) {
-		const context = await browser.newContext({
-			baseURL: scene.baseURL,
-			viewport: { width: 1440, height: 900 },
-			colorScheme: "light",
-		});
-		visitor = { context, page: null };
+	if (visitorContexts?.browser !== browser) {
+		const options = { baseURL: scene.baseURL, viewport: { width: 1440, height: 900 }, colorScheme: "light" } as const;
+		visitorContexts = {
+			browser,
+			signedOut: await browser.newContext(options),
+			signedIn: await browser.newContext(options),
+		};
 	}
-	const previous = visitor.page;
+	const context = signedIn ? visitorContexts.signedIn : visitorContexts.signedOut;
+	const previous = openVisitorPage;
 	if (previous?.url().startsWith(scene.baseURL)) {
 		await previous.evaluate(() => {
 			localStorage.clear();
@@ -170,10 +177,10 @@ async function visit(scene: Scene, path: string, signedIn = false): Promise<Page
 		});
 	}
 	await previous?.close();
-	await visitor.context.clearCookies();
-	if (signedIn) await loginViaApi(visitor.context.request, scene.people.peer);
-	const page = await visitor.context.newPage();
-	visitor.page = page;
+	await context.clearCookies();
+	if (signedIn) await loginViaApi(context.request, scene.people.peer);
+	const page = await context.newPage();
+	openVisitorPage = page;
 	await page.goto(path);
 	return page;
 }
@@ -215,7 +222,7 @@ export const guest = defineFlow<Event>({
 		await expect(page.getByRole("button", { name: "Actions for Launch brief" })).toBeVisible();
 	},
 	frame() {
-		return visitor?.page?.locator("body") ?? null;
+		return openVisitorPage?.locator("body") ?? null;
 	},
 	events: {
 		async OPEN_FILE_LINK(scene) {
@@ -249,7 +256,7 @@ export const guest = defineFlow<Event>({
 		async OPEN_NEW(scene) {
 			const page = visitorPage();
 			await page.getByRole("button", { name: "New" }).first().click();
-			await expect(page.getByRole("menuitem", { name: "Files" })).toBeVisible();
+			await expect(page.getByRole("menuitem", { name: "Upload files" })).toBeVisible();
 		},
 		async OPEN_LOCKED_LINK(scene) {
 			const page = await visit(scene, links(scene).locked);
