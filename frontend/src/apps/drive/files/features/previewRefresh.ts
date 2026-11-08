@@ -17,11 +17,7 @@ export interface PreviewRefreshOptions {
   clearInterval?: typeof globalThis.clearInterval
 }
 
-/**
- * Due when the earliest preview on screen expires within the margin, or when the last refresh
- * is a lifetime less the margin ago. The second rule covers a browser clock behind the server's.
- * When fresh rows already look due, the browser clock is ahead, and only the second rule applies.
- */
+/** Refreshes the rows while the page is visible, before their previews expire. Returns a function that stops. */
 export function observePreviewRefresh(options: PreviewRefreshOptions): () => void {
   const targetWindow = options.window ?? window
   const targetDocument = options.document ?? document
@@ -37,6 +33,11 @@ export function observePreviewRefresh(options: PreviewRefreshOptions): () => voi
       .reduce((soonest, row) => Math.min(soonest, row.preview?.expires ?? Infinity), Infinity)
     return earliest * 1000 - Date.now()
   }
+  /**
+   * Due when the earliest preview on screen expires within the margin, or when the last refresh
+   * is a lifetime less the margin ago. The second rule covers a browser clock behind the server's.
+   * When fresh rows already look due, the browser clock is ahead, and only the second rule applies.
+   */
   const isDue = () => {
     const left = remaining()
     if (left === Infinity) return false
