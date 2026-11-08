@@ -5,7 +5,7 @@ import { onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 
 import { translate as __ } from '@/platform/translation'
 
-import { holdImages, previewImage } from './imageCache'
+import { previewImage } from './imageCache'
 import PreviewFallback from './PreviewFallback.vue'
 
 /**
@@ -23,7 +23,6 @@ const host = useTemplateRef<HTMLElement>('host')
 const status = ref<'loading' | 'ready' | 'failed'>('loading')
 const slow = ref(false)
 const wait = useTimeoutFn(() => (slow.value = true), 300, { immediate: false })
-const release = holdImages()
 /** The element this preview shows, or waits for when `outgoing` is still up. */
 let shown: HTMLImageElement | null = null
 /** The loaded picture that stays up while a new address for the same file loads. */
@@ -70,7 +69,6 @@ watch(
 onBeforeUnmount(() => {
   shown?.remove()
   outgoing?.remove()
-  release()
 })
 </script>
 

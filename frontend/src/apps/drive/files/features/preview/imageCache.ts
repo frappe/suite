@@ -4,8 +4,8 @@
  * fresh signed address each time, so the browser's cache cannot do this.
  */
 const kept = new Map<string, HTMLImageElement>()
-/** Previews on screen. The host swaps one for the next, so the last one leaving clears the cache only if no other comes. */
-let holders = 0
+/** Counts `keepImages` calls, so an older call's pending work and a release can tell a newer one came. */
+let keeps = 0
 
 /** The kept element for `url`, loading it now if it is not kept. A failed load is let go, so the next show tries again. */
 export function previewImage(url: string): HTMLImageElement {
@@ -18,8 +18,6 @@ export function previewImage(url: string): HTMLImageElement {
   kept.set(url, image)
   return image
 }
-
-let keeps = 0
 
 /**
  * Keeps the picture on screen and the ones `beside` it, and lets every other
@@ -37,13 +35,14 @@ export function keepImages(shown: string | null, beside: readonly string[]): voi
   image.addEventListener('error', loadBeside, { once: true })
 }
 
-/** Marks a preview on screen. The returned function marks it gone. */
-export function holdImages(): () => void {
-  holders += 1
-  return () => {
-    holders -= 1
-    queueMicrotask(() => {
-      if (!holders) kept.clear()
-    })
-  }
+/**
+ * Lets every picture go once the preview has left. The host swaps one preview
+ * for the next in the same tick and the next calls `keepImages` in its setup,
+ * so a step keeps the pictures it needs.
+ */
+export function releaseImages(): void {
+  const keep = keeps
+  queueMicrotask(() => {
+    if (keep === keeps) kept.clear()
+  })
 }

@@ -23,6 +23,7 @@ import {
 import type { DriveNode } from '@/apps/drive/client/types'
 import type { Operation } from '@/platform/transport'
 
+import { previewImage } from './imageCache'
 import type { FilePreviewSession } from './session'
 
 vi.mock('frappe-ui', async () => ({
@@ -205,18 +206,28 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-/** Mounts the preview at `path`. With `from`, the browser's history opened it from that page, so it knows its way back. */
+/**
+ * Mounts the preview at `path`. With `from`, the browser's history opened it from that page, so
+ * it knows its way back. With `keyed`, a new file replaces the preview, as the document host does.
+ */
 async function mount(
   opened: FilePreviewSession | Ref<FilePreviewSession>,
   path: string,
   from?: string,
+  keyed = false,
 ): Promise<{ root: HTMLElement; router: Router }> {
   const router = createRouter({
     history: from ? createWebHistory() : createMemoryHistory(),
     routes: [
       {
         path: '/d/:node/:slug?',
-        component: { render: () => h(FilePreviewSurface, { session: unref(opened) }) },
+        component: {
+          render: () =>
+            h(FilePreviewSurface, {
+              session: unref(opened),
+              key: keyed ? unref(opened).nodeId : undefined,
+            }),
+        },
       },
       { path: '/drive/f/:node/:slug?', component: { render: () => null } },
       { path: '/drive', component: { render: () => null } },
@@ -359,6 +370,46 @@ describe('file preview', () => {
       opened.value = session('e', 'e.jpg', 'image/jpeg')
 
       await vi.waitFor(() => expect(root.querySelector('img')).toBe(ahead()))
+    })
+
+    describe('between previews', () => {
+      const imagesOf = (created: { mock: { results: Array<{ value: unknown }> } }) =>
+        created.mock.results.flatMap((result) =>
+          result.value instanceof HTMLImageElement ? [result.value] : [],
+        )
+      const pdf = () => session('b', 'b.pdf', 'application/pdf')
+
+      it('keeps the pictures beside a PDF the step arrives at, so the next step shows one at once', async () => {
+        vi.stubGlobal('fetch', async () => new Response(''))
+        const created = vi.spyOn(document, 'createElement')
+        const opened = shallowRef(session('a', 'a.png', 'image/png'))
+        const { root } = await mount(opened, '/d/a/a-png', undefined, true)
+        await vi.waitFor(() => expect(counter(root)).toBe('1 of 5'))
+
+        opened.value = pdf()
+        const beside = () => imagesOf(created).find((image) => image.src.endsWith(contentOf('c')))
+        await vi.waitFor(() => expect(beside()).toBeDefined())
+        await new Promise((resolve) => setTimeout(resolve, 0))
+
+        opened.value = session('c', 'c.png', 'image/png')
+        await vi.waitFor(() => expect(root.querySelector('img')).toBe(beside()))
+      })
+
+      it('lets the pictures go when a preview that shows none closes', async () => {
+        vi.stubGlobal('fetch', async () => new Response(''))
+        const created = vi.spyOn(document, 'createElement')
+        const { root } = await mount(pdf(), '/d/b/b-pdf')
+        await vi.waitFor(() => expect(counter(root)).toBe('2 of 5'))
+        const beside = () => imagesOf(created).find((image) => image.src.endsWith(contentOf('c')))
+        await vi.waitFor(() => expect(beside()).toBeDefined())
+        const before = beside()
+
+        unmount?.()
+        unmount = null
+        await new Promise((resolve) => setTimeout(resolve, 0))
+
+        expect(previewImage(contentOf('c'))).not.toBe(before)
+      })
     })
 
     it('shows a loaded picture at once, even one with no natural size, such as an SVG with only a viewBox', async () => {

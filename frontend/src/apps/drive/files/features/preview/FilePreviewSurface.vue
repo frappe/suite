@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useEventListener, useMediaQuery } from '@vueuse/core'
 import { Button, Dropdown, TabButtons } from 'frappe-ui'
-import { computed, ref, useTemplateRef, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter, type RouteLocationPathRaw } from 'vue-router'
 
 import { api, useInfiniteQuery, useMutation, useQuery } from '@/api'
@@ -20,7 +20,7 @@ import { copyLink } from '../share/shareFormat'
 import { useTrashActions } from '../trash/useTrashActions'
 import { offeredTypes, typeQuery, typesFromQuery } from '../typeFilter'
 import { uploadTargetOf } from '../uploads/queue'
-import { keepImages } from './imageCache'
+import { keepImages, releaseImages } from './imageCache'
 import { arrowsStep, escapeLeaves } from './keys'
 import { rememberShown } from './lastShown'
 import PdfPreview from './PdfPreview.vue'
@@ -367,6 +367,7 @@ watch(
   },
   { immediate: true },
 )
+onBeforeUnmount(releaseImages)
 const videoFailed = ref(false)
 watch(contentUrl, () => (videoFailed.value = false))
 /** While the folder loads, the pager keeps its room, so the header does not shift when it comes. */
