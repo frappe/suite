@@ -36,19 +36,17 @@ vi.mock('@/router', () => ({
   preloadPage: boot.preloadPage,
 }))
 vi.mock('@/shell/ShellLayout.vue', () => ({ default: {} }))
-vi.mock('frappe-ui/experimental', () => ({ spritePlugin: { install: vi.fn() } }))
 
-const testGlobal = globalThis as { __?: unknown }
-const originalTranslate = testGlobal.__
+const originalTranslate = window.__
 
 afterAll(() => {
-  testGlobal.__ = originalTranslate
+  window.__ = originalTranslate
 })
 
 it('loads a page’s code only once the global __ and the catalog are there', async () => {
-  delete testGlobal.__
-  const seen: unknown[] = []
-  boot.preloadPage.mockImplementation(() => seen.push(typeof testGlobal.__))
+  delete window.__
+  const seen: string[] = []
+  boot.preloadPage.mockImplementation(() => seen.push(typeof window.__))
 
   const started = import('./main')
   await vi.waitFor(() => expect(boot.installEventReminders).toHaveBeenCalled())
