@@ -321,7 +321,7 @@ export class SFUMediaManager {
           results.videoError = error
           console.warn(
             'Failed to publish video, continuing without video:',
-            (error as Error).message,
+            error instanceof Error ? error.message : String(error),
           )
         }
       }
@@ -347,7 +347,7 @@ export class SFUMediaManager {
           results.audioError = error
           console.warn(
             'Failed to publish audio, continuing without audio:',
-            (error as Error).message,
+            error instanceof Error ? error.message : String(error),
           )
         }
       }
@@ -509,7 +509,7 @@ export class SFUMediaManager {
       console.warn('Failed to re-subscribe to lost consumer', {
         participantId: info.participantId,
         producerId: info.producerId,
-        error: (error as Error).message,
+        error: error instanceof Error ? error.message : String(error),
       })
     })
   }
@@ -667,11 +667,11 @@ export class SFUMediaManager {
   async handleNewConsumer(consumer: ConsumerEntry): Promise<void> {
     const { participantId, kind, isScreen } = consumer
 
-    if (this.processedConsumers.has(consumer?.id as string)) {
+    if (this.processedConsumers.has(consumer?.id)) {
       return
     }
 
-    this.processedConsumers.add(consumer?.id as string)
+    this.processedConsumers.add(consumer?.id)
 
     if (!participantId) {
       return
@@ -682,7 +682,7 @@ export class SFUMediaManager {
       return
     }
 
-    if (!this.participantManager.hasParticipant(participantId as string)) {
+    if (!this.participantManager.hasParticipant(participantId)) {
       this.participantManager.addParticipant({
         user_id: participantId,
         user_name: participantId,
@@ -695,9 +695,9 @@ export class SFUMediaManager {
     }
 
     if (kind === 'video') {
-      await this.attachVideoConsumer(participantId as string, consumer)
+      await this.attachVideoConsumer(participantId, consumer)
     } else if (kind === 'audio') {
-      await this.attachAudioConsumer(participantId as string, consumer)
+      await this.attachAudioConsumer(participantId, consumer)
     }
   }
 
@@ -715,7 +715,8 @@ export class SFUMediaManager {
         !this.isRemoteSubscriptionDesired(consumer)
       )
         return
-      const track = consumer.track as MediaStreamTrack
+      const track = consumer.track
+      if (!track) return
       const stream = new MediaStream([track])
 
       try {
@@ -753,7 +754,8 @@ export class SFUMediaManager {
     this.selectedProducerIds.set(key, consumer.producerId)
     return this.serializeAttachment(key, async () => {
       if (this.selectedProducerIds.get(key) !== consumer.producerId) return
-      const track = consumer.track as MediaStreamTrack
+      const track = consumer.track
+      if (!track) return
       const stream = new MediaStream([track])
 
       try {
@@ -832,7 +834,8 @@ export class SFUMediaManager {
 
   async handleScreenShareConsumer(consumer: ConsumerEntry): Promise<void> {
     const participantId = consumer.participantId
-    const track = consumer.track as MediaStreamTrack
+    const track = consumer.track
+    if (!track) return
 
     const allConsumers = this.consumerManager.getAllConsumers()
     const allCameraConsumers = allConsumers.filter((c) => c.kind === 'video' && !c.isScreen)

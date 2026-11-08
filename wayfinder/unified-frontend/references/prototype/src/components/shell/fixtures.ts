@@ -292,21 +292,21 @@ const PERSONAL_FILES: FileRow[] = [
 ]
 
 /** Each workspace owns its whole tree, so switching swaps the Files area. */
-const WORKSPACE_FILES: Record<WorkspaceId, FileRow[]> = {
+const WORKSPACE_FILES = {
   arohi: FRAPPE_FILES,
   // Kept keyed but unlisted: the personal tree is here for the day a second
   // workspace goes back into WORKSPACES.
   personal: PERSONAL_FILES,
-}
+} satisfies Record<WorkspaceId, FileRow[]>
 
 /** Owner faces, so the Files list reads as real data instead of initials. */
-export const PEOPLE: Record<string, string> = {
+export const PEOPLE = {
   'Arohi Mittal': USER.avatar,
   'Neha Kulkarni': 'https://avatars.githubusercontent.com/u/583231?v=4',
   'Priya Nair': 'https://avatars.githubusercontent.com/u/1?v=4',
   'Aditya Verma': 'https://avatars.githubusercontent.com/u/2?v=4',
   'Rushabh Mehta': 'https://avatars.githubusercontent.com/u/4?v=4',
-}
+} satisfies Record<string, string>
 
 export const FOLDERS = [
   { id: 'all', label: 'All files', icon: 'lucide-folder' },
@@ -315,10 +315,10 @@ export const FOLDERS = [
   { id: 'trash', label: 'Trash', icon: 'lucide-trash-2' },
 ]
 
-const BY_ID: Record<WorkspaceId, Map<string, FileRow>> = {
+const BY_ID = {
   arohi: new Map(FRAPPE_FILES.map((file) => [file.id, file])),
   personal: new Map(PERSONAL_FILES.map((file) => [file.id, file])),
-}
+} satisfies Record<WorkspaceId, Map<string, FileRow>>
 
 const NO_FILES: FileRow[] = []
 

@@ -146,7 +146,8 @@ function caretPlugins(editor: Editor, presence: RoomPresence) {
   }
 
   const placedAwareness = withHeldCarets(awareness, (position) => canPlace(editor, position))
-  // The plugin reads only the members a held awareness has
+  // SAFETY: the pinned cursor plugin uses only getStates/getLocalState,
+  // setLocalStateField, on and off; HeldAwareness forwards those exact members.
   return [
     yCursorPlugin(placedAwareness as Awareness, cursorOptions),
     flagsPlugin(presence, flags, colourOf),
@@ -322,6 +323,10 @@ interface Caret {
   head: unknown
 }
 
+function isCaret(value: unknown): value is Caret {
+  return !!value && typeof value === 'object' && 'anchor' in value && 'head' in value
+}
+
 // The members of an awareness the cursor plugin uses
 type HeldAwareness = Pick<
   Awareness,
@@ -343,8 +348,8 @@ function heldStates(
 
   const shownStates = new Map<number, Record<string, unknown>>()
   for (const [id, state] of states) {
-    const cursor = state.cursor as Caret | null | undefined
-    if (cursor && canPlacePosition(cursor.anchor) && canPlacePosition(cursor.head)) {
+    const cursor = state.cursor
+    if (isCaret(cursor) && canPlacePosition(cursor.anchor) && canPlacePosition(cursor.head)) {
       heldCarets.set(id, cursor)
     }
 
@@ -377,19 +382,11 @@ function withHeldCarets(
   }
 }
 
-interface CaretRange {
-  anchor?: unknown
-  head?: unknown
-}
-
-interface ItemId {
-  client?: unknown
-  clock?: unknown
-}
-
 // A peer's caret as Writer draws it: only the numbers a relative position needs reach the cursor plugin
 export function caretPosition(cursor: unknown) {
-  const { anchor: rawAnchor, head: rawHead } = (cursor ?? {}) as CaretRange
+  if (!cursor || typeof cursor !== 'object') return null
+  const rawAnchor = 'anchor' in cursor ? cursor.anchor : undefined
+  const rawHead = 'head' in cursor ? cursor.head : undefined
   const anchor = sanitizePosition(rawAnchor)
   const head = sanitizePosition(rawHead)
   if (!anchor || !head) {
@@ -403,7 +400,11 @@ export function caretPosition(cursor: unknown) {
 }
 
 function sanitizePosition(raw: unknown) {
-  const { type, tname, item, assoc } = (raw ?? {}) as Record<string, unknown>
+  if (!raw || typeof raw !== 'object') return null
+  const type = 'type' in raw ? raw.type : undefined
+  const tname = 'tname' in raw ? raw.tname : undefined
+  const item = 'item' in raw ? raw.item : undefined
+  const assoc = 'assoc' in raw ? raw.assoc : undefined
   const itemId = sanitizeItemId(item)
   const typeId = sanitizeItemId(type)
   if (itemId === undefined || typeId === undefined) {
@@ -434,8 +435,14 @@ function sanitizeItemId(raw: unknown) {
     return null
   }
 
-  const { client, clock } = raw as ItemId
-  if (!Number.isInteger(client) || !Number.isInteger(clock)) {
+  if (typeof raw !== 'object' || !('client' in raw) || !('clock' in raw)) return undefined
+  const { client, clock } = raw
+  if (
+    typeof client !== 'number' ||
+    typeof clock !== 'number' ||
+    !Number.isInteger(client) ||
+    !Number.isInteger(clock)
+  ) {
     return undefined
   }
 

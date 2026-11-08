@@ -169,7 +169,7 @@ export function useSplitText({
     }
 
     const separator = resolveSeparator(
-      sourceCells.filter((cell) => cell.value != null).map((cell) => cell.value),
+      sourceCells.flatMap((cell) => (cell.value != null ? [cell.value] : [])),
       choice,
     )
 

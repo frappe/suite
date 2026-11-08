@@ -17,6 +17,8 @@ import {
   type EditorElement,
 } from './writer-surface-fixtures'
 
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 vi.hoisted(() => {
   vi.stubGlobal('__SUITE_BUILD__', '100')
   vi.stubEnv('DEV', false)
@@ -78,7 +80,7 @@ describe('commenting from the editor', () => {
     const presence = { awareness: new Awareness(room.doc), peers: [], onChange: () => () => {} }
     Object.assign(room, { presence })
     room.status = { ...room.status, restoreRev: 0 }
-    const comments = { list: async () => ({ threads: threads(room.doc) }) } as unknown as Comments
+    const comments = fromPartial<Comments>({ list: async () => ({ threads: threads(room.doc) }) })
     const root = await openedSurface(undefined, '/d/node-1', comments)
     const element = root.querySelector<EditorElement>('[data-editor] .ProseMirror')!
     return { root, editor: element.editor }
@@ -149,7 +151,7 @@ describe('commenting from the editor', () => {
 
     const world = editor.view.dom.querySelector('[data-thread]')!
     editor.view.someProp('handleClick', (click) =>
-      click(editor.view, 8, { target: world } as never),
+      click(editor.view, 8, fromPartial({ target: world })),
     )
     await settled()
 
@@ -160,7 +162,9 @@ describe('commenting from the editor', () => {
 
 // A thread on "world" in a document reading "hello world"
 function threadOnWorld(doc: Doc) {
-  const text = (doc.getXmlFragment('default').get(0) as XmlElement).get(0) as XmlText
+  const text = fromPartial<XmlText>(
+    fromPartial<XmlElement>(doc.getXmlFragment('default').get(0)).get(0),
+  )
   const from = createRelativePositionFromTypeIndex(text, 6, 0)
   const to = createRelativePositionFromTypeIndex(text, 11, -1)
   const comment = {
@@ -172,10 +176,10 @@ function threadOnWorld(doc: Doc) {
     creation: new Date().toISOString(),
   }
   const anchor = encodeAnchor(from, to, 'world')
-  return {
+  return fromPartial<DocumentThread>({
     name: 'world',
     anchor,
     resolved: false,
     comments: [comment],
-  } as unknown as DocumentThread
+  })
 }

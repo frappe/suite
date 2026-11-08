@@ -1,9 +1,11 @@
 import { getSchema } from '@tiptap/core'
 import { yXmlFragmentToProseMirrorRootNode } from '@tiptap/y-tiptap'
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
 
 import { extensions } from '@/apps/slides/stores/tiptapSetup'
+import { requireTestElement } from '@/platform/testing/dom'
 
 import { convertLegacy, type OldBox } from './conversion'
 import {
@@ -40,7 +42,7 @@ function converted(...elementLists: OldBox[][]) {
 }
 
 function refusal(box: Record<string, unknown>) {
-  const elements = [{ id: 'box', type: 'text', content: '<p>a</p>', ...box }] as OldBox[]
+  const elements: OldBox[] = [{ id: 'box', type: 'text', content: '<p>a</p>', ...box }]
   return convertLegacy({ slides: [{ id: 'slide', elements }] }, MAX_STATE)
 }
 
@@ -101,7 +103,8 @@ describe('old forms', () => {
     const slides = [{ id: 'slide', elements: [], background: 'rgb(255, 0, 0)' }]
     const answer = convertLegacy({ slides }, MAX_STATE)
     const doc = new Y.Doc()
-    Y.applyUpdate(doc, (answer as { state: Uint8Array }).state)
+    if (!('state' in answer)) throw new Error('Expected converted state')
+    Y.applyUpdate(doc, answer.state)
     const [slide] = readSlides(doc)
     expect(slide.background).toBe('#ff0000ff')
   })
@@ -184,7 +187,8 @@ describe('order', () => {
     const slides = ['z', 'a', 'm'].map((id) => ({ id, elements: [] }))
     const answer = convertLegacy({ slides }, MAX_STATE)
     const doc = new Y.Doc()
-    Y.applyUpdate(doc, (answer as { state: Uint8Array }).state)
+    if (!('state' in answer)) throw new Error('Expected converted state')
+    Y.applyUpdate(doc, answer.state)
     expect(slideIds(doc)).toEqual(['z', 'a', 'm'])
   })
 
@@ -481,7 +485,7 @@ describe('what the deck draws, against the old view', () => {
   // As CSS inheritance does, from the element a character sits in up to the box
   function drawn(root: Element, name: string) {
     for (let at: Element | null = root; at; at = at.parentElement) {
-      const value = (at as HTMLElement).style?.getPropertyValue(name)
+      const value = requireTestElement(at, HTMLElement).style?.getPropertyValue(name)
       if (value) {
         return value
       }
@@ -494,7 +498,7 @@ describe('what the deck draws, against the old view', () => {
   function contentOf(doc: Y.Doc) {
     const [slide] = drawnSlides(doc)
     const [box] = slide.elements
-    return box.content as string
+    return fromPartial<string>(box.content)
   }
 
   function drawnParts(html: string) {
@@ -709,7 +713,7 @@ describe('what the deck draws, against the old view', () => {
 
     it('keeps a space between words in the size it drew at', () => {
       const { doc } = converted([
-        tableBox('<p>a<span style="font-size: 40px"> </span>b</p>') as OldBox,
+        fromPartial<OldBox>(tableBox('<p>a<span style="font-size: 40px"> </span>b</p>')),
       ])
       const [, space] = bodyOf(doc, 'box').content[0].content[0].content[0].content[0].content
       expect(space.text).toBe(' ')
@@ -748,7 +752,7 @@ describe('what the deck draws, against the old view', () => {
     })
 
     it('keeps a space between bare runs in a cell', () => {
-      const { doc } = converted([tableBox('<span>a</span> <span>b</span>') as OldBox])
+      const { doc } = converted([fromPartial<OldBox>(tableBox('<span>a</span> <span>b</span>'))])
       const [run] = bodyOf(doc, 'box').content[0].content[0].content[0].content[0].content
       expect(run.text).toBe('a b')
     })

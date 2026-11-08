@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { toast } from 'frappe-ui'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref, shallowRef } from 'vue'
@@ -14,12 +15,12 @@ vi.mock('@/platform/session', async () => {
 })
 
 function thread(name: string, ...comments: [string, string][]) {
-  return {
+  return fromPartial<DocumentThread>({
     name,
     node: 'doc-1',
     resolved: false,
     comments: comments.map(([comment, content]) => ({ name: comment, thread: name, content })),
-  } as unknown as DocumentThread
+  })
 }
 
 // Drive answering by hand: each call waits until it is answered, in the order it was sent
@@ -44,7 +45,7 @@ function drive(read: DocumentThread[]) {
   const readAt = ref<number | null>(null)
   const refresh = vi.fn(async () => {})
   const changes = useThreadChanges({
-    session: { comments } as unknown as Pick<DocumentSession, 'comments'>,
+    session: fromPartial<Pick<DocumentSession, 'comments'>>({ comments }),
     readThreads,
     readAt,
     refresh,

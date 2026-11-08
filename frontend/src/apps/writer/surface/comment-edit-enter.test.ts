@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
+import { requireTestElement } from '@/platform/testing/dom'
+
 import {
   click,
   labelled,
@@ -66,7 +68,7 @@ describe('Enter in the box that edits a comment', () => {
     const edit = [...owner.querySelectorAll('[role="menuitem"]')].find(
       (element) => element.textContent === 'Edit',
     )
-    await click(edit as HTMLElement)
+    await click(requireTestElement(edit, HTMLElement))
     await nextTick()
   }
 

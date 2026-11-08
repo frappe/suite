@@ -58,7 +58,8 @@ const effects = {
 export const registration: OwnerRegistration = {
   policy<I, O>(reference: Operation<I, O>) {
     if (reference.kind === 'query') return {}
-    const effect = effects[reference.id as keyof typeof effects]
+    const entry = Object.entries(effects).find(([id]) => id === reference.id)
+    const effect = entry?.[1]
     if (!effect) throw new TypeError(`Missing Meet effects: ${reference.id}`)
     return { effects: effect }
   },

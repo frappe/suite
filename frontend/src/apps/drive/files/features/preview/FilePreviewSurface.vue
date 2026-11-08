@@ -7,7 +7,6 @@ import { useRoute, useRouter } from 'vue-router'
 import { api, useInfiniteQuery, useMutation, useQuery } from '@/api'
 import { driveNodeRoute, useDriveDialogs } from '@/apps/drive'
 import { nodeContentUrl, openAsSpreadsheet, opensAsSpreadsheet } from '@/apps/drive/client/nodes'
-import type { DocumentSession } from '@/apps/drive/client/session'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 
@@ -28,12 +27,12 @@ import { TEXT_PREVIEW_LIMIT } from './textContent'
 import TextPreview from './TextPreview.vue'
 import UploadNewVersion from './UploadNewVersion.vue'
 
-const props = defineProps<{ session: DocumentSession }>()
+const props = defineProps<{ session: FilePreviewSession }>()
 const route = useRoute()
 const router = useRouter()
 const dialogs = useDriveDialogs()
 const locationTitle = useLocationTitle()
-const file = computed(() => props.session as FilePreviewSession)
+const file = computed(() => props.session)
 const mime = computed(() => file.value.mime ?? '')
 const previewUrl = computed(() => file.value.preview.value?.url ?? '')
 /** Bumped after a new version, so the browser fetches the new bytes. */

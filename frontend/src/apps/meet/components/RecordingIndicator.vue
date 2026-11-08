@@ -22,8 +22,7 @@ const elapsed = computed(() => {
   const minutes = Math.floor((seconds % 3600) / 60)
   const remainder = seconds % 60
   return [hours, minutes, remainder]
-    .filter((_, index) => hours > 0 || index > 0)
-    .map((part) => String(part).padStart(2, '0'))
+    .flatMap((part, index) => (hours > 0 || index > 0 ? [String(part).padStart(2, '0')] : []))
     .join(':')
 })
 

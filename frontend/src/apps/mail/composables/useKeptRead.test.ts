@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it } from 'vitest'
 import { nextTick, ref } from 'vue'
 
@@ -6,7 +7,7 @@ import type { Thread } from '@/apps/mail/types'
 import { useKeptRead } from './useKeptRead'
 
 const row = (id: string, at: string, seen: 0 | 1 = 0) =>
-  ({ thread_id: id, received_at: at, seen }) as unknown as Thread
+  fromPartial<Thread>({ thread_id: id, received_at: at, seen })
 const ids = (rows: Thread[]) => rows.map((r) => r.thread_id)
 
 const setUp = () => {

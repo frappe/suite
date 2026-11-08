@@ -21,20 +21,22 @@ export interface Keycap {
 export type KeyStroke = readonly Keycap[]
 
 /** Punctuation and digit key names in frappe-ui's combo grammar, as the character they type. */
-const CHARACTERS: Readonly<Record<string, string>> = {
-  slash: '/',
-  backslash: '\\',
-  backtick: '`',
-  comma: ',',
-  period: '.',
-  semicolon: ';',
-  quote: "'",
-  bracketleft: '[',
-  bracketright: ']',
-  minus: '-',
-  equal: '=',
-  plus: '+',
-}
+const CHARACTERS = new Map<string, string>(
+  Object.entries({
+    slash: '/',
+    backslash: '\\',
+    backtick: '`',
+    comma: ',',
+    period: '.',
+    semicolon: ';',
+    quote: "'",
+    bracketleft: '[',
+    bracketright: ']',
+    minus: '-',
+    equal: '=',
+    plus: '+',
+  }),
+)
 
 /** True on an Apple platform, where `Mod` is Command. Agrees with frappe-ui's matcher. */
 export function isMacPlatform(): boolean {
@@ -77,14 +79,16 @@ function modifierCaps(held: ReadonlySet<string>, mac: boolean): Keycap[] {
 
 function keyCap(key: string, mac: boolean): Keycap {
   const special = specialKeys(mac)
-  if (Object.hasOwn(special, key)) return special[key]
-  if (Object.hasOwn(CHARACTERS, key)) return plain(CHARACTERS[key])
+  const named = special.get(key)
+  if (named) return named
+  const character = CHARACTERS.get(key)
+  if (character !== undefined) return plain(character)
   if (/^digit\d$/.test(key)) return plain(key.slice(-1))
   if (key.length === 1 || /^f\d+$/.test(key)) return plain(key.toUpperCase())
   return plain(key.charAt(0).toUpperCase() + key.slice(1))
 }
 
-function specialKeys(mac: boolean): Readonly<Record<string, Keycap>> {
+function specialKeys(mac: boolean) {
   const everywhere = {
     arrowup: { label: '↑', spoken: __('Up arrow') },
     arrowdown: { label: '↓', spoken: __('Down arrow') },
@@ -93,31 +97,35 @@ function specialKeys(mac: boolean): Readonly<Record<string, Keycap>> {
     space: plain(__('Space')),
   }
   if (mac) {
-    return {
+    return new Map(
+      Object.entries({
+        ...everywhere,
+        escape: { label: '⎋', spoken: __('Escape') },
+        enter: { label: '↩', spoken: __('Return') },
+        backspace: { label: '⌫', spoken: __('Delete') },
+        delete: { label: '⌦', spoken: __('Forward delete') },
+        tab: { label: '⇥', spoken: __('Tab') },
+        home: { label: '↖', spoken: __('Home') },
+        end: { label: '↘', spoken: __('End') },
+        pageup: { label: '⇞', spoken: __('Page up') },
+        pagedown: { label: '⇟', spoken: __('Page down') },
+      }),
+    )
+  }
+  return new Map(
+    Object.entries({
       ...everywhere,
-      escape: { label: '⎋', spoken: __('Escape') },
-      enter: { label: '↩', spoken: __('Return') },
-      backspace: { label: '⌫', spoken: __('Delete') },
-      delete: { label: '⌦', spoken: __('Forward delete') },
-      tab: { label: '⇥', spoken: __('Tab') },
-      home: { label: '↖', spoken: __('Home') },
-      end: { label: '↘', spoken: __('End') },
-      pageup: { label: '⇞', spoken: __('Page up') },
-      pagedown: { label: '⇟', spoken: __('Page down') },
-    }
-  }
-  return {
-    ...everywhere,
-    escape: { label: __('Esc'), spoken: __('Escape') },
-    enter: plain(__('Enter')),
-    backspace: plain(__('Backspace')),
-    delete: plain(__('Delete')),
-    tab: plain(__('Tab')),
-    home: plain(__('Home')),
-    end: plain(__('End')),
-    pageup: plain(__('Page up')),
-    pagedown: plain(__('Page down')),
-  }
+      escape: { label: __('Esc'), spoken: __('Escape') },
+      enter: plain(__('Enter')),
+      backspace: plain(__('Backspace')),
+      delete: plain(__('Delete')),
+      tab: plain(__('Tab')),
+      home: plain(__('Home')),
+      end: plain(__('End')),
+      pageup: plain(__('Page up')),
+      pagedown: plain(__('Page down')),
+    }),
+  )
 }
 
 function plain(label: string): Keycap {

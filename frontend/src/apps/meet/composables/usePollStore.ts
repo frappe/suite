@@ -2,8 +2,12 @@ import { defineStore } from 'pinia'
 
 import type { PollPayloadFE } from '../types'
 
+interface PollState {
+  polls: Record<string, PollPayloadFE>
+}
+
 export const usePollStore = defineStore('poll', {
-  state: () => ({ polls: {} as Record<string, PollPayloadFE> }),
+  state: (): PollState => ({ polls: {} }),
   getters: {
     activePolls: (state) => Object.values(state.polls).filter((poll) => poll.isActive),
   },

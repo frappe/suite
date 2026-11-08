@@ -19,7 +19,6 @@ import {
 
 const MAX_SHOWN = 6
 const MAX_LINES = 5
-const STEPS: Record<string, number> = { ArrowDown: 1, ArrowUp: -1 }
 
 defineOptions({ inheritAttrs: false })
 
@@ -138,7 +137,7 @@ function moveActive(step: number) {
 // The list's keys while it is open; true when the key was the list's
 function takeListKey(key: string) {
   const [person] = offered.value.slice(active.value, active.value + 1)
-  const step = STEPS[key]
+  const step = key === 'ArrowDown' ? 1 : key === 'ArrowUp' ? -1 : 0
   if (step) {
     moveActive(step)
   } else if (key === 'Enter' || key === 'Tab') {

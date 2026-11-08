@@ -12,7 +12,13 @@ import {
 	writeFile,
 } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative } from 'node:path';
-import type { CaptureManifest } from './captureTypes.js';
+import type {
+	CaptureArtifact,
+	CaptureEpoch,
+	CaptureGap,
+	CaptureManifest,
+	CaptureSegment,
+} from './captureTypes.js';
 
 export function safeJobDirectory(root: string, job: string): string {
 	return join(root, createHash('sha256').update(job).digest('hex'));
@@ -23,7 +29,7 @@ const timestamp = (value: unknown): value is string =>
 	!Number.isNaN(Date.parse(value)) &&
 	new Date(value).toISOString() === value;
 
-function safeManifestFile(value: unknown): value is string {
+function safeManifestFile<Value>(value: Value): value is Value & string {
 	return (
 		typeof value === 'string' &&
 		value.length > 0 &&
@@ -36,72 +42,101 @@ function positiveInteger(value: unknown): value is number {
 	return Number.isSafeInteger(value) && Number(value) > 0;
 }
 
+type CaptureFields = Partial<
+	Record<
+		| keyof CaptureManifest
+		| keyof CaptureSegment
+		| keyof CaptureGap
+		| keyof CaptureArtifact
+		| keyof CaptureEpoch,
+		unknown
+	>
+>;
+
+function isRecord(value: unknown): value is CaptureFields {
+	return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
 export function validManifest(value: unknown): value is CaptureManifest {
-	if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-	const m = value as CaptureManifest;
-	return (
-		(m.version === 1 || m.version === 2) &&
-		Number.isSafeInteger(m.revision) &&
-		m.revision >= 0 &&
-		typeof m.job === 'string' &&
-		['capturing', 'sealing', 'complete', 'partial', 'failed'].includes(
+	if (!isRecord(value)) return false;
+	const m = value;
+	if (
+		(m.version !== 1 && m.version !== 2) ||
+		typeof m.revision !== 'number' ||
+		!Number.isSafeInteger(m.revision) ||
+		m.revision < 0 ||
+		typeof m.job !== 'string' ||
+		typeof m.state !== 'string' ||
+		!['capturing', 'sealing', 'complete', 'partial', 'failed'].includes(
 			m.state,
-		) &&
-		Number.isSafeInteger(m.epochs) &&
-		m.epochs >= 0 &&
-		((m.version === 1 && m.capture_epochs === undefined) ||
-			(Array.isArray(m.capture_epochs) &&
-				m.capture_epochs.every(
-					(record, index) =>
-						record !== null &&
-						typeof record === 'object' &&
-						!Array.isArray(record) &&
-						Object.keys(record).length === 2 &&
-						Object.hasOwn(record, 'epoch') &&
-						Object.hasOwn(record, 'capture_started_at') &&
-						Number.isSafeInteger(record.epoch) &&
-						record.epoch >= 0 &&
-						record.epoch < m.epochs &&
-						(index === 0 ||
-							(record.epoch > (m.capture_epochs?.[index - 1]?.epoch ?? -1) &&
-								record.capture_started_at >=
-									(m.capture_epochs?.[index - 1]?.capture_started_at ?? ''))) &&
-						timestamp(record.capture_started_at),
-				))) &&
-		Array.isArray(m.segments) &&
-		Array.isArray(m.gaps) &&
-		(m.reason === undefined ||
-			(typeof m.reason === 'string' && m.reason.length > 0)) &&
+		) ||
+		typeof m.epochs !== 'number' ||
+		!Number.isSafeInteger(m.epochs) ||
+		m.epochs < 0 ||
+		!Array.isArray(m.segments) ||
+		!Array.isArray(m.gaps) ||
+		(m.reason !== undefined &&
+			(typeof m.reason !== 'string' || m.reason.length === 0))
+	)
+		return false;
+	const epochs = m.epochs;
+	const captureEpochs = m.capture_epochs;
+	const captureEpochsValid =
+		(m.version === 1 && captureEpochs === undefined) ||
+		(Array.isArray(captureEpochs) &&
+			captureEpochs.every(
+				(record, index) =>
+					isRecord(record) &&
+					Object.keys(record).length === 2 &&
+					Object.hasOwn(record, 'epoch') &&
+					Object.hasOwn(record, 'capture_started_at') &&
+					typeof record.epoch === 'number' &&
+					Number.isSafeInteger(record.epoch) &&
+					record.epoch >= 0 &&
+					record.epoch < epochs &&
+					timestamp(record.capture_started_at) &&
+					(index === 0 ||
+						(record.epoch > (captureEpochs[index - 1]?.epoch ?? -1) &&
+							record.capture_started_at >=
+								(captureEpochs[index - 1]?.capture_started_at ?? ''))),
+			));
+	if (!captureEpochsValid) return false;
+	return (
 		m.segments.every(
-			(s, i) =>
-				s.index === i &&
-				Number.isSafeInteger(s.epoch) &&
-				s.epoch >= 0 &&
-				s.epoch < m.epochs &&
-				safeManifestFile(s.file) &&
-				s.file.startsWith(
-					`epoch-${String(s.epoch).padStart(3, '0')}-segment-`,
+			(segment, index) =>
+				isRecord(segment) &&
+				segment.index === index &&
+				typeof segment.epoch === 'number' &&
+				Number.isSafeInteger(segment.epoch) &&
+				segment.epoch >= 0 &&
+				segment.epoch < epochs &&
+				safeManifestFile(segment.file) &&
+				segment.file.startsWith(
+					`epoch-${String(segment.epoch).padStart(3, '0')}-segment-`,
 				) &&
-				positiveInteger(s.bytes) &&
-				typeof s.sha256 === 'string' &&
-				/^[a-f0-9]{64}$/.test(s.sha256) &&
-				positiveInteger(s.duration_ms) &&
-				timestamp(s.started_at) &&
+				positiveInteger(segment.bytes) &&
+				typeof segment.sha256 === 'string' &&
+				/^[a-f0-9]{64}$/.test(segment.sha256) &&
+				positiveInteger(segment.duration_ms) &&
+				timestamp(segment.started_at) &&
 				(m.version === 1 ||
-					m.capture_epochs?.some((record) => record.epoch === s.epoch) ===
-						true),
+					(Array.isArray(captureEpochs) &&
+						captureEpochs.some((record) => record.epoch === segment.epoch))),
 		) &&
 		m.gaps.every(
-			(g) =>
-				timestamp(g.started_at) &&
-				(g.ended_at === undefined ||
-					(timestamp(g.ended_at) && g.ended_at >= g.started_at)) &&
-				typeof g.reason === 'string' &&
-				g.reason.length > 0,
+			(gap) =>
+				isRecord(gap) &&
+				timestamp(gap.started_at) &&
+				(gap.ended_at === undefined ||
+					(timestamp(gap.ended_at) && gap.ended_at >= gap.started_at)) &&
+				typeof gap.reason === 'string' &&
+				gap.reason.length > 0,
 		) &&
 		(m.artifact === undefined ||
-			(safeManifestFile(m.artifact.file) &&
+			(isRecord(m.artifact) &&
+				safeManifestFile(m.artifact.file) &&
 				positiveInteger(m.artifact.bytes) &&
+				typeof m.artifact.sha256 === 'string' &&
 				/^[a-f0-9]{64}$/.test(m.artifact.sha256) &&
 				positiveInteger(m.artifact.duration_ms))) &&
 		(['complete', 'partial'].includes(m.state)

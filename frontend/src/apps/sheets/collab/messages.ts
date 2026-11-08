@@ -47,28 +47,40 @@ export function editingStateOf(status: RoomStatus): 'editing' | 'paused' | 'clos
 
 // Each message is a literal __() call, so the extractor finds it; called when
 // a banner is built, so it is translated in the person's language.
-const STOP_MESSAGES: Record<string, () => string> = {
-  poison: () => __("This spreadsheet can't hold a change made in this tab, so saving stopped."),
-  browser: () => __("This spreadsheet can't be edited in this browser version."),
-  too_large: () => __('A change in this tab is too large to save. Make it in smaller parts.'),
-  document_full: () => __("This sheet is full, so a change in this tab couldn't be saved."),
-  disabled: () =>
-    __('Editing together was switched off for Sheets, so saving stopped in this tab.'),
-  schema: () =>
-    __('This spreadsheet was edited in a newer version of Sheets, so saving stopped in this tab.'),
-  restored: () =>
-    __(
-      "A version of this spreadsheet was restored, so changes made in this tab before it weren't saved.",
-    ),
-  clock_gap: () => __('This tab fell out of step with the server, so saving stopped.'),
-}
+const STOP_MESSAGES = new Map<string, () => string>([
+  ['poison', () => __("This spreadsheet can't hold a change made in this tab, so saving stopped.")],
+  ['browser', () => __("This spreadsheet can't be edited in this browser version.")],
+  ['too_large', () => __('A change in this tab is too large to save. Make it in smaller parts.')],
+  ['document_full', () => __("This sheet is full, so a change in this tab couldn't be saved.")],
+  [
+    'disabled',
+    () => __('Editing together was switched off for Sheets, so saving stopped in this tab.'),
+  ],
+  [
+    'schema',
+    () =>
+      __(
+        'This spreadsheet was edited in a newer version of Sheets, so saving stopped in this tab.',
+      ),
+  ],
+  [
+    'restored',
+    () =>
+      __(
+        "A version of this spreadsheet was restored, so changes made in this tab before it weren't saved.",
+      ),
+  ],
+  ['clock_gap', () => __('This tab fell out of step with the server, so saving stopped.')],
+])
 // Stops a reload would only repeat
 const LASTING_STOPS = new Set(['browser'])
 
-const PAUSE_MESSAGES: Record<string, () => string> = {
-  upload_refused: () =>
-    __("Your network is refusing uploads, so your latest changes aren't saved."),
-}
+const PAUSE_MESSAGES = new Map<string, () => string>([
+  [
+    'upload_refused',
+    () => __("Your network is refusing uploads, so your latest changes aren't saved."),
+  ],
+])
 
 const isSafeOnDevice = (s: RoomStatus) => s.isKeptOnDevice && !s.hasCopyFailed
 
@@ -128,8 +140,8 @@ const BLOCKED: Record<Blocked, (s: RoomStatus) => Banner> = {
 }
 
 function stopped(s: RoomStatus): Banner {
-  const known = s.stopReason && Object.hasOwn(STOP_MESSAGES, s.stopReason)
-  const reason = known ? STOP_MESSAGES[s.stopReason!]!() : __('Saving stopped in this tab.')
+  const known = s.stopReason && STOP_MESSAGES.has(s.stopReason)
+  const reason = known ? STOP_MESSAGES.get(s.stopReason!)!() : __('Saving stopped in this tab.')
   if (keepOpen(s) || (s.stopReason && LASTING_STOPS.has(s.stopReason)))
     return withKeepOpen(reason, s)
   return keepOpenOrReload(reason, __('Reload to keep editing.'), s)
@@ -164,8 +176,8 @@ export function bannerFor(s: RoomStatus): Banner | null {
         'Someone is restoring a version of this spreadsheet. You can edit again once it is done.',
       ),
     }
-  if (s.pauseReason && Object.hasOwn(PAUSE_MESSAGES, s.pauseReason)) {
-    const text = PAUSE_MESSAGES[s.pauseReason]!()
+  if (s.pauseReason && PAUSE_MESSAGES.has(s.pauseReason)) {
+    const text = PAUSE_MESSAGES.get(s.pauseReason)!()
     if (isSafeOnDevice(s)) return { text: `${text} ${__("They're kept on this device.")}` }
     return { text: text + keepOpen(s) }
   }

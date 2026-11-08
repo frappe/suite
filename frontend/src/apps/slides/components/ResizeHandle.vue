@@ -109,9 +109,9 @@ const getLineResizerStyles = () => {
         right: resizer === 'line-right' ? offset : 'auto',
         top: `calc(50% - ${scaledPx(size / 2)})`,
       }
-  return {
+  /** @type {import('vue').CSSProperties} */
+  const style = {
     ...getHandleBaseStyles(slideBounds.scale),
-    ...(snapped ? { border: `${1 / slideBounds.scale}px solid ${portColor}` } : {}),
     backgroundColor: snapped ? portColor : props.filled ? selectionColor : '#ffffff',
     borderRadius: '9999px',
     cursor: 'ew-resize',
@@ -119,6 +119,8 @@ const getLineResizerStyles = () => {
     width: scaledPx(size),
     height: scaledPx(size),
   }
+  if (snapped) style.border = `${1 / slideBounds.scale}px solid ${portColor}`
+  return style
 }
 
 const resizerStyles = computed(() => {

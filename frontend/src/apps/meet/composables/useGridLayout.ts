@@ -36,7 +36,7 @@ export function useGridLayout(mediaState?: MediaState): GridLayout {
     if (mediaState.isScreenSharing && currentUserStore.currentUser.value?.user_id) {
       shares.push({
         source: 'local',
-        participantId: currentUserStore.currentUser.value?.user_id as string,
+        participantId: currentUserStore.currentUser.value?.user_id,
         consumerId: 'local-screen',
         startedAt: mediaState.localScreenShareStartedAt || 0,
       })

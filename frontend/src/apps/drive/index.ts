@@ -320,7 +320,7 @@ function actionNodeOf(session: DocumentSession): ActionNode {
 }
 
 function actionsWhere(items: [boolean, DriveDocumentAction][]): DriveDocumentAction[] {
-  return items.filter(([isShown]) => isShown).map(([, action]) => action)
+  return items.flatMap(([isShown, action]) => (isShown ? [action] : []))
 }
 
 /** What a document session and a file preview session each need of the node, so one read opens either. */

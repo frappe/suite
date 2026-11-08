@@ -3,7 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import FrappePushNotification from './frappe-push-notification'
 
 // The relay's subscriptions, as the server keeps them for this token.
-const relay = vi.hoisted(() => ({ subscribed: new Set<string>(), calls: [] as string[] }))
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
+const relay = vi.hoisted(() => ({
+  subscribed: new Set<string>(),
+  calls: fromPartial<string[]>([]),
+}))
 vi.mock('firebase/app', () => ({ initializeApp: vi.fn() }))
 vi.mock('firebase/messaging', () => ({
   deleteToken: vi.fn(),

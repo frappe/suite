@@ -1,6 +1,6 @@
 import type { Socket } from 'socket.io';
 import { loggers } from '../../utils/logger';
-import type { HandlerDeps, TypedSocket } from './Handler';
+import type { HandlerDeps } from './Handler';
 
 /** Registers per-socket caption subscription controls. */
 export function registerSttHandlers(deps: HandlerDeps) {
@@ -19,7 +19,7 @@ export function registerSttHandlers(deps: HandlerDeps) {
 					return;
 				}
 
-				const typedSocket = socket as TypedSocket;
+				const typedSocket = socket;
 				const roomId = typedSocket.roomId;
 				if (typeof data?.enabled !== 'boolean') {
 					callback({ success: false, error: 'enabled must be a boolean' });
@@ -48,7 +48,7 @@ export function registerSttHandlers(deps: HandlerDeps) {
 								loggers.socketHandler.warn(
 									'Failed to start STT for room %s: %s',
 									roomId,
-									(error as Error).message,
+									error instanceof Error ? error.message : String(error),
 								);
 							});
 					}
@@ -60,7 +60,7 @@ export function registerSttHandlers(deps: HandlerDeps) {
 							loggers.socketHandler.warn(
 								'Failed to stop STT for room %s: %s',
 								roomId,
-								(error as Error).message,
+								error instanceof Error ? error.message : String(error),
 							);
 						});
 					}
@@ -68,9 +68,12 @@ export function registerSttHandlers(deps: HandlerDeps) {
 			} catch (error) {
 				loggers.socketHandler.warn(
 					'stt:toggle failed: %s',
-					(error as Error).message,
+					error instanceof Error ? error.message : String(error),
 				);
-				callback({ success: false, error: (error as Error).message });
+				callback({
+					success: false,
+					error: error instanceof Error ? error.message : String(error),
+				});
 			}
 		});
 	};

@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it, vi } from 'vitest'
 
 // The id counter lives at module level, so each test loads a fresh copy of
@@ -83,13 +84,13 @@ describe('CondFormatEngine on formatted numbers', () => {
 
   it('scales colours over formatted numbers', async () => {
     const cf = await freshEngine()
-    const shown: Record<string, string> = { A1: '1,000', A2: '$0', A3: '50%' }
+    const shown = { A1: '1,000', A2: '$0', A3: '50%' } satisfies Record<string, string>
     cf.addRule(
-      {
+      fromPartial({
         kind: 'color-scale',
         range: { r0: 0, c0: 0, r1: 2, c1: 0 },
         scale: { variant: '2color' },
-      } as never,
+      }),
       'S',
     )
     const get = (id: string) => shown[id] ?? ''

@@ -144,10 +144,12 @@ const { mailboxes, mailboxIds } = injectAccountScope()
 // folder's own param otherwise (see utils/unifiedFolders).
 const mailbox = computed(() =>
   route.name === UNIFIED_THREAD_ROUTE
-    ? (mailboxForUnifiedFolder(route.params.folder, mailboxes.value.data as MailboxData[]) ?? '')
-    : mailboxIdForParam(route.params.mailbox, mailboxes.value.data as MailboxData[]),
+    ? (mailboxForUnifiedFolder(route.params.folder, mailboxes.value.data ?? []) ?? '')
+    : mailboxIdForParam(route.params.mailbox, mailboxes.value.data ?? []),
 )
-const threadID = computed(() => route.params.threadID as string)
+const threadID = computed(() =>
+  Array.isArray(route.params.threadID) ? (route.params.threadID[0] ?? '') : route.params.threadID,
+)
 
 // Back returns to the list the thread was opened from: the merged folder
 // list on its thread route, the mailbox list otherwise.

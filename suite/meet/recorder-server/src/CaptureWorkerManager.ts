@@ -40,6 +40,14 @@ export interface CaptureWorkerManagerOptions
 	maxConcurrent: number;
 }
 
+interface RecoveredCapture {
+	type: 'complete' | 'partial' | 'failed';
+	artifact?: CaptureArtifact;
+	gaps: CaptureGap[];
+	capturedBytes: number;
+	captureStartedAt?: string;
+}
+
 export class CaptureWorkerManager implements RendererBridge {
 	private readonly workers = new Map<string, ManagedWorker>();
 	private readonly operations = new Map<string, Promise<void>>();
@@ -217,27 +225,24 @@ export class CaptureWorkerManager implements RendererBridge {
 		);
 		return promise;
 	}
-	async recoverStopping(job: string): Promise<{
-		type: 'complete' | 'partial' | 'failed';
-		artifact?: CaptureArtifact;
-		gaps: CaptureGap[];
-		capturedBytes: number;
-	}> {
+	async recoverStopping(job: string): Promise<RecoveredCapture> {
 		const worker = this.createWorker(job, {
 			...this.options,
 			display: this.nextDisplay++,
 		});
 		const type = await worker.recoverStopped();
 		const result = worker.captureResult();
-		return {
+		const recoveredArtifact: Pick<RecoveredCapture, 'artifact'> = {};
+		if (result.artifact) recoveredArtifact.artifact = result.artifact;
+		const recovered: RecoveredCapture = {
 			type,
-			...(result.artifact ? { artifact: result.artifact } : {}),
+			...recoveredArtifact,
 			gaps: result.gaps,
 			capturedBytes: result.capturedBytes,
-			...(result.captureStartedAt
-				? { captureStartedAt: result.captureStartedAt }
-				: {}),
 		};
+		if (result.captureStartedAt)
+			recovered.captureStartedAt = result.captureStartedAt;
+		return recovered;
 	}
 	async close(): Promise<void> {
 		this.closing = true;
@@ -303,20 +308,19 @@ export class CaptureWorkerManager implements RendererBridge {
 			outcome = 'failed';
 			reason = 'capture_not_committed';
 		}
-		await this.handler({
+		const event: RendererLifecycleEvent = {
 			job,
 			generation: managed.generation,
 			type: outcome,
-			...(reason ? { reason } : {}),
-			...(result.artifact && outcome !== 'failed'
-				? { artifact: result.artifact }
-				: {}),
-			gaps: result.gaps,
-			capturedBytes: result.capturedBytes,
-			...(outcome === 'partial' && !reason
-				? { reason: reason ?? 'capture_interrupted' }
-				: {}),
-		});
+		};
+		if (reason) event.reason = reason;
+		if (result.artifact && outcome !== 'failed')
+			event.artifact = result.artifact;
+		event.gaps = result.gaps;
+		event.capturedBytes = result.capturedBytes;
+		if (outcome === 'partial' && !reason)
+			event.reason = reason ?? 'capture_interrupted';
+		await this.handler(event);
 	}
 	private async lifecycle(event: RendererLifecycleEvent): Promise<void> {
 		const managed = this.workers.get(event.job);

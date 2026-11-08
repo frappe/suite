@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ConsumerManager } from '../../media/ConsumerManager'
@@ -46,12 +47,12 @@ function setup() {
   element.play = vi.fn().mockResolvedValue(undefined)
   videoManager.registerVideoElement('a', element)
   const manager = new SFUMediaManager(
-    {
+    fromPartial({
       transportManager: { createConsumer, sfuClient: { closeConsumer } },
       consumerManager: consumers,
       videoManager,
       participantManager: { hasParticipant: () => true, getParticipant: () => undefined },
-    } as never,
+    }),
     () => 'self',
   )
   manager.setRemoteSubscriptionPolicy(
@@ -136,12 +137,12 @@ describe('camera demand', () => {
       await f.manager.subscribeToRemoteProducer(replacement)
       const entry = f.consumers.getAllConsumers().at(-1)!
       await f.manager.handleNewConsumer(entry)
-      expect((f.element.srcObject as MediaStream).getVideoTracks()).toEqual([entry.track])
+      expect(fromPartial<MediaStream>(f.element.srcObject).getVideoTracks()).toEqual([entry.track])
       gate.resolve()
       await closing
-      expect((f.element.srcObject as MediaStream)?.getVideoTracks()).toEqual([entry.track])
+      expect(fromPartial<MediaStream>(f.element.srcObject)?.getVideoTracks()).toEqual([entry.track])
       await f.manager.reattachAfterProducerClosed('a', 'camera-a')
-      expect((f.element.srcObject as MediaStream)?.getVideoTracks()).toEqual([entry.track])
+      expect(fromPartial<MediaStream>(f.element.srcObject)?.getVideoTracks()).toEqual([entry.track])
     },
   )
 
@@ -163,7 +164,9 @@ describe('camera demand', () => {
     await Promise.all([old, closing])
     expect([...f.serverConsumers.keys()]).toEqual([replacement.id])
     expect(f.consumers.getAllConsumers()).toEqual([replacement])
-    expect((f.element.srcObject as MediaStream).getVideoTracks()).toEqual([replacement.track])
+    expect(fromPartial<MediaStream>(f.element.srcObject).getVideoTracks()).toEqual([
+      replacement.track,
+    ])
   })
 
   it('creates only selected remote cameras and preserves audio and screens when demand shrinks', async () => {

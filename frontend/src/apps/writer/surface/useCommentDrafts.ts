@@ -152,7 +152,7 @@ async function sendDraft(session: DraftOptions['session'], draft: ShownDraft, au
     )
     return thread.name
   } catch (error) {
-    if ((error as { type?: unknown } | null)?.type === 'DriveConflict') {
+    if (error && typeof error === 'object' && 'type' in error && error.type === 'DriveConflict') {
       toast.error('This comment was already posted with different words. Discard it to remove it.')
     } else {
       showError(error, 'Could not add the comment.')

@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it } from 'vitest'
 
 import type { Mail, Thread } from '@/apps/mail/types'
@@ -8,7 +9,7 @@ const INBOX = 'mb-inbox'
 const SENT = 'mb-sent'
 
 const message = (mailbox: string, received_at: string, overrides: Partial<Mail> = {}): Mail =>
-  ({
+  fromPartial<Mail>({
     from_name: 'Ms. Paola',
     from_email: 'paola@iitkgp.ac.in',
     preview: 'The first tranche looks difficult, November…',
@@ -18,7 +19,7 @@ const message = (mailbox: string, received_at: string, overrides: Partial<Mail> 
     received_at,
     mailboxes: [{ mailbox_id: mailbox }],
     ...overrides,
-  }) as unknown as Mail
+  })
 
 // The mail that started it, four days old, and the reply sent today — which the account keeps in Sent
 // and nowhere else, since a mail you send is never delivered to your own Inbox.
@@ -30,7 +31,7 @@ const replied = message(SENT, '2026-09-21 11:43:00', {
 })
 
 const row = (messages: Mail[]): Thread =>
-  ({
+  fromPartial<Thread>({
     thread_id: 't1',
     subject: 'ERPNext session for University of IIT Kharagpur',
     received_at: 'stale',
@@ -41,7 +42,7 @@ const row = (messages: Mail[]): Thread =>
     draft: 0,
     attachments: [],
     messages,
-  }) as unknown as Thread
+  })
 
 describe('resummariseRow', () => {
   it('dates an Inbox row by the last mail that arrived, not by the reply you sent', () => {

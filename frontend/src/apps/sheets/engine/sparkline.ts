@@ -23,8 +23,6 @@ export type SparkGeometry =
   | { kind: 'line'; points: { x: number; y: number }[] }
   | { kind: 'bars'; bars: { x: number; y: number; w: number; h: number; neg: boolean }[] }
 
-const SPARK_TYPES = new Set<string>(['line', 'column'])
-
 // A colour is a hex literal (#rgb…#rrggbbaa) or a real CSS colour keyword. We
 // validate against the actual keyword set — a bare /[a-z]+/ would admit a typo
 // ("bluee") that canvas silently ignores, leaving the sparkline in whatever
@@ -60,7 +58,7 @@ function _isColor(c: string): boolean {
 // Normalise a type argument to a supported chart type (default 'line').
 export function sparkType(v: unknown): SparkType {
   const t = String(v ?? '').toLowerCase()
-  return SPARK_TYPES.has(t) ? (t as SparkType) : 'line'
+  return t === 'column' ? 'column' : 'line'
 }
 
 // Build a spec from a (possibly mixed) data array plus options. Empty cells and
@@ -85,7 +83,7 @@ export function sparkSpec(
 }
 
 export function isSparkSpec(v: unknown): v is SparkSpec {
-  return !!(v && typeof v === 'object' && (v as { __spark?: unknown }).__spark === true)
+  return !!(v && typeof v === 'object' && '__spark' in v && v.__spark === true)
 }
 
 // Given a spec and the cell's pixel box, return the primitives to draw:

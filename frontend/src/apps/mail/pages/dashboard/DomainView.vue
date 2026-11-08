@@ -131,6 +131,8 @@ const showEdit = ref(false)
 const domain = useQuery(api.mail.admin.domains.get, () => ({
   domain_id: domainId,
 }))
+// SAFETY: suite/mail/api/admin.py::get_domain combines _domain_row with DNS record projections; pending queries are undefined.
+const domainData = computed(() => domain.data as DomainData | undefined)
 usePageMeta(() => appPageMeta(domain.data?.name || domainId, 'Mail'))
 watch(
   () => domain.error,
@@ -142,15 +144,11 @@ watch(
     })
   },
 )
-const domainRecords = computed<DNSRecord[]>(
-  () => (domain.data as DomainData | undefined)?.dns_records || [],
-)
+const domainRecords = computed<DNSRecord[]>(() => domainData.value?.dns_records || [])
 
 // Suite Cloud groups the records (authentication, routing, transport security, ...) and says
 // which groups a domain needs before it goes live; the page renders whatever it sends.
-const recordGroups = computed<RecordGroup[]>(
-  () => (domain.data as DomainData | undefined)?.dns_record_groups || [],
-)
+const recordGroups = computed<RecordGroup[]>(() => domainData.value?.dns_record_groups || [])
 const recordsOf = (group: string) => domainRecords.value.filter((record) => record.group === group)
 const verifyDomain = useMutation(api.mail.admin.domains.verify)
 async function verifyDomainSubmit() {
@@ -190,7 +188,7 @@ async function setEnabledSubmit(values: { enabled: boolean }) {
   )
 }
 const downloadFile = (content: string, extension: string, mimeType: string) => {
-  const domainName = (domain.data as DomainData | undefined)?.name || domainId
+  const domainName = domainData.value?.name || domainId
   const fileName = `${domainName.replace(/[^a-zA-Z0-9.-]+/g, '_')}.${extension}`
   const blob = new Blob([content], {
     type: mimeType,
@@ -232,7 +230,7 @@ const BREADCRUMBS = computed(() => [
   },
 ])
 const confirmDialogAction = ref<'deleteDomain' | 'disableDomain'>('deleteDomain')
-const badge = computed(() => domainStatusBadge((domain.data as DomainData | undefined)?.status))
+const badge = computed(() => domainStatusBadge(domainData.value?.status))
 const confirmDialogOptions = computed(() => {
   const config = {
     disableDomain: {
@@ -267,12 +265,12 @@ const confirmDialogOptions = computed(() => {
     ],
   }
 })
-const isEnabled = computed(() => !!(domain.data as DomainData | undefined)?.is_enabled)
+const isEnabled = computed(() => !!domainData.value?.is_enabled)
 
 // Facts under the domain name: the description, when it was added (exact time on hover), and
 // the delivery settings, each explained on hover since a bare "Sub-addressing on" says little.
 const metaEntries = computed(() => {
-  const data = domain.data as DomainData | undefined
+  const data = domainData.value
   const entries: {
     text: string
     tooltip?: string

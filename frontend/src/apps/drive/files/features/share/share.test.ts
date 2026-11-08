@@ -1,3 +1,4 @@
+import { fromAny, fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick } from 'vue'
 
@@ -62,11 +63,12 @@ function fakeServer(answer: (call: Call) => unknown) {
   const calls: Call[] = []
   const transport: Transport = {
     request: async (operation, input) => {
-      const call = { id: operation.id, input: input as Record<string, unknown> }
+      if (!input || typeof input !== 'object') throw new Error('Expected a Drive request object')
+      const call = { id: operation.id, input: Object.fromEntries(Object.entries(input)) }
       calls.push(call)
       const result = answer(call)
       if (result instanceof Error) throw result
-      return result as never
+      return fromAny(result)
     },
   }
   return { calls, transport }
@@ -659,10 +661,12 @@ describe('share writes that touch the caller (spec §7.4, §7.9)', () => {
     const transport: Transport = {
       request: (operation) =>
         operation.id === 'node_get'
-          ? (new Promise((resolve) => {
-              answer = resolve
-            }) as never)
-          : (Promise.resolve({ grants: [], inherited: [] }) as never),
+          ? fromAny(
+              new Promise<unknown>((resolve) => {
+                answer = resolve
+              }),
+            )
+          : fromAny(Promise.resolve({ grants: [], inherited: [] })),
     }
     const share = useShare('doc', { client: testClient(transport) })
     const first = share.load()
@@ -687,8 +691,8 @@ describe('document session share (spec §8.6, §8.8)', () => {
     let whileOpen: boolean | undefined
     const session = await openDriveDocumentSession('doc', {
       client: testClient(server.transport),
-      setInterval: vi.fn() as unknown as typeof setInterval,
-      clearInterval: vi.fn() as unknown as typeof clearInterval,
+      setInterval: fromPartial<typeof setInterval>(vi.fn()),
+      clearInterval: fromPartial<typeof clearInterval>(vi.fn()),
       share: async (id) => {
         const share = useShare(id, { client: testClient(server.transport) })
         await share.load()

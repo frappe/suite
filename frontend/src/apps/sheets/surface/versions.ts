@@ -175,15 +175,17 @@ export async function copyFromVersion(
 }
 
 // Literal __() calls, so the extractor finds them; called when shown.
-const KIND_LABELS: Record<string, () => string> = {
-  auto: () => __('Automatic version'),
-  named: () => __('Named version'),
-  milestone: () => __('Milestone'),
-}
+const KIND_LABELS = new Map<string, () => string>(
+  Object.entries({
+    auto: () => __('Automatic version'),
+    named: () => __('Named version'),
+    milestone: () => __('Milestone'),
+  }),
+)
 
 /** A version's name, or what kind of version it is. */
 export function versionTitle(version: SheetVersion): string {
-  return version.label || KIND_LABELS[version.kind]?.() || __('Version')
+  return version.label || KIND_LABELS.get(version.kind)?.() || __('Version')
 }
 
 /** When a version was taken, and by whom. */

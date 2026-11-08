@@ -8,6 +8,17 @@ on:
       - "suite/**"
       - "frontend/**"
       - "scripts/**"
+      - "tools/oxlint/**"
+      - "**/*.js"
+      - "**/*.mjs"
+      - "**/*.cjs"
+      - "**/*.jsx"
+      - "**/*.ts"
+      - "**/*.mts"
+      - "**/*.cts"
+      - "**/*.tsx"
+      - "**/*.vue"
+      - ".pre-commit-config.yaml"
       - "baselines/**"
       - "*.js"
       - "*.ts"
@@ -649,14 +660,14 @@ jobs:
             run_frontend=1
           elif [ "${{ github.event_name }}" = "pull_request" ]; then
             changed_files="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")"
-            printf '%s\n' "$changed_files" | grep -Eq '^(frontend/|scripts/|baselines/|[^/]+\.(js|ts)$|tsconfig[^/]*\.json$|\.oxlintrc\.json|\.prettier|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|\.github/workflows/suite-ci\.yml)' && run_frontend=1 || run_frontend=0
+            printf '%s\n' "$changed_files" | grep -Eq '^(.*\.(js|mjs|cjs|jsx|ts|mts|cts|tsx|vue)$|frontend/|scripts/|tools/oxlint/|\.pre-commit-config\.yaml$|baselines/|[^/]+\.(js|ts)$|tsconfig[^/]*\.json$|\.oxlintrc\.json|\.prettier|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|\.github/workflows/suite-ci\.yml)' && run_frontend=1 || run_frontend=0
           else
             if [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
               changed_files="$(git diff --name-only HEAD~1 HEAD)"
             else
               changed_files="$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")"
             fi
-            printf '%s\n' "$changed_files" | grep -Eq '^(frontend/|scripts/|baselines/|[^/]+\.(js|ts)$|tsconfig[^/]*\.json$|\.oxlintrc\.json|\.prettier|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|\.github/workflows/suite-ci\.yml)' && run_frontend=1 || run_frontend=0
+            printf '%s\n' "$changed_files" | grep -Eq '^(.*\.(js|mjs|cjs|jsx|ts|mts|cts|tsx|vue)$|frontend/|scripts/|tools/oxlint/|\.pre-commit-config\.yaml$|baselines/|[^/]+\.(js|ts)$|tsconfig[^/]*\.json$|\.oxlintrc\.json|\.prettier|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|\.github/workflows/suite-ci\.yml)' && run_frontend=1 || run_frontend=0
           fi
 
           echo "run=$run_frontend" >> $GITHUB_OUTPUT
@@ -677,11 +688,20 @@ jobs:
         if: steps.frontend-changes.outputs.run == '1'
         run: pnpm install --frozen-lockfile
 
+      - name: Install E2E dependencies for typed lint
+        if: steps.frontend-changes.outputs.run == '1'
+        working-directory: e2e
+        run: corepack yarn install --frozen-lockfile --non-interactive
+
       - name: Check frontend formatting
         if: steps.frontend-changes.outputs.run == '1'
         run: pnpm format:check
 
-      - name: Lint frontend
+      - name: Test anti-slop integration
+        if: steps.frontend-changes.outputs.run == '1'
+        run: pnpm test:anti-slop
+
+      - name: Lint JavaScript and TypeScript
         if: steps.frontend-changes.outputs.run == '1'
         run: pnpm lint
 

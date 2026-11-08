@@ -20,7 +20,7 @@ function mount(host = {}) {
     host: { canEdit: () => true, ...host },
   })
   grid.resize(800, 600)
-  const editor = () => parent.querySelector('textarea') as HTMLTextAreaElement | null
+  const editor = () => parent.querySelector('textarea')
   const press = (key: string, init: KeyboardEventInit = {}) => {
     const target = grid.isEditing() ? editor()! : canvas
     target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, ...init }))

@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
@@ -279,7 +280,7 @@ describe('threads changed since last opened', () => {
 
   function withReply(thread: DocumentThread) {
     const reply = { ...comment('c9', 'Ben Ito', 'One more'), modified: '2026-10-02 09:00:00' }
-    return { ...thread, comments: [...thread.comments, reply] } as DocumentThread
+    return fromPartial<DocumentThread>({ ...thread, comments: [...thread.comments, reply] })
   }
 
   it('dots a row changed since, open or resolved, and clears it once opened, never dotting drafts', async () => {
@@ -323,12 +324,12 @@ describe('threads changed since last opened', () => {
 })
 
 describe('people a comment mentions', () => {
-  const ASKING = {
+  const ASKING = fromPartial<DocumentThread>({
     ...WHOLE,
     comments: [
       { ...comment('c8', 'Asha Rao', 'Ask @[ben@x.com] or @[ghost]'), mentions: ['ben@x.com'] },
     ],
-  } as unknown as DocumentThread
+  })
 
   it('names the people Drive found mentioned, in the row and the open thread, and leaves the rest as written', async () => {
     const { host } = showList({ threads: [ASKING] })
@@ -345,7 +346,7 @@ describe('people a comment mentions', () => {
   it('names a person Drive found mentioned whatever the case of their token', () => {
     const { host } = showList({
       threads: [
-        {
+        fromPartial<DocumentThread>({
           ...WHOLE,
           comments: [
             {
@@ -353,7 +354,7 @@ describe('people a comment mentions', () => {
               mentions: ['ben@x.com'],
             },
           ],
-        } as unknown as DocumentThread,
+        }),
       ],
     })
 
@@ -383,13 +384,13 @@ describe('people a comment mentions', () => {
 
 describe('a comment kept from the old Drive', () => {
   const PHOTO = { full_name: 'Asha Rao', user_image: '/asha.png' }
-  const KEPT = {
+  const KEPT = fromPartial<DocumentThread>({
     ...WHOLE,
     comments: [
       { ...comment('c9', 'Asha Rao', 'From 2023'), author_name: 'Old Name', person: PHOTO },
       { ...comment('c10', 'Asha Rao', 'Also 2023'), author_name: 'Other Name', person: PHOTO },
     ],
-  } as unknown as DocumentThread
+  })
 
   // Each person shown, by their photo or, with none, their initials
   function avatars(host: Element) {
@@ -417,7 +418,7 @@ describe('a comment kept from the old Drive', () => {
   })
 
   it('names the person and shows their photo when no old name is kept', async () => {
-    const SIGNED = {
+    const SIGNED = fromPartial<DocumentThread>({
       ...WHOLE,
       comments: [
         comment('c11', 'Asha Rao', 'Now'),
@@ -426,7 +427,7 @@ describe('a comment kept from the old Drive', () => {
           person: { full_name: 'Ben Ito', user_image: '/ben.png' },
         },
       ],
-    } as unknown as DocumentThread
+    })
     const { host } = showList({ threads: [SIGNED] })
 
     await click(rowButton(host, 'Now'))
@@ -441,7 +442,7 @@ describe('a comment kept from the old Drive', () => {
   })
 
   it('names the person and shows their photo when the old name is blank', async () => {
-    const BLANK = {
+    const BLANK = fromPartial<DocumentThread>({
       ...WHOLE,
       comments: [
         { ...comment('c13', 'Asha Rao', 'Then'), author_name: ' ' },
@@ -451,7 +452,7 @@ describe('a comment kept from the old Drive', () => {
           person: { full_name: 'Ben Ito', user_image: '/ben.png' },
         },
       ],
-    } as unknown as DocumentThread
+    })
     const { host } = showList({ threads: [BLANK] })
 
     await click(rowButton(host, 'Then'))

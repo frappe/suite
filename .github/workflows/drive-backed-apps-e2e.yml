@@ -185,7 +185,7 @@ jobs:
           rm -rf apps/suite sites/drive-writer.test sites/assets/suite
           git clone "$GITHUB_WORKSPACE" apps/suite
           uv pip install --quiet -e "$PWD/apps/suite" --python "$PWD/env/bin/python"
-          corepack pnpm --dir apps/suite install --frozen-lockfile
+          (cd apps/suite && corepack pnpm install --frozen-lockfile)
           python -c 'from bench.bench import Bench; Bench(".").apps.sync(app_name="suite", app_dir="suite")'
           bench build --app suite
           mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL character_set_server = 'utf8mb4'"

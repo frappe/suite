@@ -80,7 +80,8 @@ export class VideoElementManager implements MediaAttachmentFacade {
 
   /** Legacy remote-video facade used by the recorder and existing tile callers. */
   registerVideoElement(participantId: string, element: HTMLElement): void {
-    this.registerRemoteVideoElement(participantId, element as HTMLVideoElement)
+    if (!(element instanceof HTMLVideoElement)) throw new Error('Expected a video element')
+    this.registerRemoteVideoElement(participantId, element)
   }
 
   registerLocalPreview(element: HTMLVideoElement | null): void {
@@ -214,7 +215,10 @@ export class VideoElementManager implements MediaAttachmentFacade {
         await element.play()
         this.clearPlaybackHandler(element)
       } catch (error) {
-        console.warn(`Unable to play media for ${attachmentId}:`, (error as Error).message)
+        console.warn(
+          `Unable to play media for ${attachmentId}:`,
+          error instanceof Error ? error.message : String(error),
+        )
       }
     }
     this.playbackHandlers.set(element, playOnInteraction)
@@ -342,7 +346,8 @@ export class VideoElementManager implements MediaAttachmentFacade {
     const tracks = role === 'remote-audio' ? stream.getAudioTracks() : stream.getVideoTracks()
     if (!tracks.length) return
     const trackIds = tracks.map((track) => track.id).join(',')
-    const currentTracks = (element.srcObject as MediaStream | null)
+    const currentStream = element.srcObject instanceof MediaStream ? element.srcObject : null
+    const currentTracks = currentStream
       ?.getTracks()
       .map((track) => track.id)
       .join(',')
@@ -398,12 +403,20 @@ export class VideoElementManager implements MediaAttachmentFacade {
       return true
     } catch (error) {
       if (!isCurrent()) return true
-      if ((error as DOMException).name === 'NotAllowedError') {
+      if (
+        error !== null &&
+        typeof error === 'object' &&
+        'name' in error &&
+        error.name === 'NotAllowedError'
+      ) {
         if (!this.strictAttachmentTimeoutMs) {
           this.addUserInteractionHandler(element, attachmentId)
         }
       } else {
-        console.warn(`Media play failed for ${attachmentId}:`, (error as Error).message)
+        console.warn(
+          `Media play failed for ${attachmentId}:`,
+          error instanceof Error ? error.message : String(error),
+        )
       }
       if (this.strictAttachmentTimeoutMs) throw error
       return false

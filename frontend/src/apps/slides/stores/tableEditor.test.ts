@@ -1,5 +1,6 @@
 import { AllSelection } from '@tiptap/pm/state'
 import { CellSelection } from '@tiptap/pm/tables'
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
@@ -65,7 +66,7 @@ const typedText = () => activeEditor.value.state.doc.textContent.replaceAll(ZWSP
 // the element store re-runs its editor lifecycle on a selection change, so build
 // the editor under test after those watchers settle
 const mountTable = async (content: string, editable = true) => {
-  slides.value = [{ clientId: 'c1', elements: [{ id: 1, type: 'table', content }] }] as any
+  slides.value = [{ clientId: 'c1', elements: [{ id: 1, type: 'table', content }] }]
   slideIndex.value = 0
   activeElementIds.value = [1]
   focusElementId.value = editable ? 1 : null
@@ -282,7 +283,7 @@ describe('what the table can still say about its own width', () => {
     initTextEditor('t1', seeded(), true)
     caretInCell(2)
 
-    activeEditor.value.view.pasteHTML(bareTable(1, 3), {} as any)
+    activeEditor.value.view.pasteHTML(bareTable(1, 3), fromPartial<ClipboardEvent>({}))
 
     expect(getTableWidth(activeEditor.value.getHTML())).toBe(450)
   })

@@ -1226,7 +1226,7 @@ const fileThreads = (
   const folderOfTarget = target ? folderName(target) : undefined
   const done = (answers: unknown[]) => {
     if (action === 'archive')
-      return !answers.some((a) => (a as { left_inbox?: boolean })?.left_inbox)
+      return !answers.some((a) => !!a && typeof a === 'object' && 'left_inbox' in a && a.left_inbox)
         ? __('Added to Archive.')
         : one
           ? __('Thread archived.')
@@ -1367,7 +1367,7 @@ const actPerAccount = (
     refreshThreads()
     const someLanded = results.some((r) => r.status === 'fulfilled')
     raiseToast(
-      (failure.reason as Error)?.message || __('Action failed.'),
+      failure.reason instanceof Error ? failure.reason.message : __('Action failed.'),
       'error',
       someLanded ? undo : undefined,
     )

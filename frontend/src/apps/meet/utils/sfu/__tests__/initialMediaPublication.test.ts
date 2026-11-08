@@ -1,9 +1,10 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { publishInitialMediaWithRetry } from '../initialMediaPublication'
 import type { PublishedMedia } from '../SFUMediaManager'
 
-const stream = {} as MediaStream
+const stream = fromPartial<MediaStream>({})
 
 afterEach(() => {
   vi.useRealTimers()
@@ -17,10 +18,10 @@ describe('publishInitialMediaWithRetry', () => {
     const publish = vi
       .fn<() => Promise<PublishedMedia>>()
       .mockResolvedValueOnce({
-        videoProducer: videoProducer as never,
+        videoProducer: fromPartial(videoProducer),
         audioError: new Error('temporary audio failure'),
       })
-      .mockResolvedValueOnce({ audioProducer: audioProducer as never })
+      .mockResolvedValueOnce({ audioProducer: fromPartial(audioProducer) })
 
     const publication = publishInitialMediaWithRetry(publish, stream, {
       publishVideo: true,

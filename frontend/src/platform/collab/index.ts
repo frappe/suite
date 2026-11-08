@@ -73,7 +73,18 @@ const STAGE: Operation = {
   pathParams: ['node', 'stage_id', 'piece_index'],
 }
 
-function jsonBody(value: object) {
+type SessionRequest = {
+  sid: string
+  claim?: NonNullable<Parameters<CollabEndpoints['session']>[1]>
+}
+type ContentRequest =
+  | { stage_id: string }
+  | SessionRequest
+  | { rev: number }
+  | { seen_rev: number; version: number }
+  | { token: string }
+
+function jsonBody(value: ContentRequest) {
   return new TextEncoder().encode(JSON.stringify(value))
 }
 
@@ -131,7 +142,7 @@ function sessionEndpoints(
 ): Pick<CollabEndpoints, 'session' | 'suspect'> {
   return {
     session: (sessionId, claim) => {
-      const sessionClaim: Record<string, unknown> = { sid: sessionId }
+      const sessionClaim: SessionRequest = { sid: sessionId }
       if (claim) {
         sessionClaim.claim = claim
       }

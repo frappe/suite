@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 
@@ -45,18 +46,19 @@ const { handleCopy, handleCut, handlePaste } = await import('./copyPaste')
 const { insertSlide } = await import('@/apps/slides/stores/slide')
 const { toast } = await import('frappe-ui')
 
-const makeCopyEvent = (target: EventTarget | null) => ({
-  target,
-  preventDefault: vi.fn(),
-  clipboardData: { setData: vi.fn(), getData: vi.fn(() => '') },
-})
+const makeCopyEvent = (target: EventTarget | null) =>
+  fromPartial<ClipboardEvent>({
+    target,
+    preventDefault: vi.fn(),
+    clipboardData: { setData: vi.fn(), getData: vi.fn(() => '') },
+  })
 
 beforeEach(() => {
   activeElementIds.value = ['e1']
   activeElements.value = [{ id: 'e1' }]
   presentationDoc.value = null
   document.body.innerHTML = ''
-  ;(document.activeElement as HTMLElement | null)?.blur?.()
+  if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
 })
 
 afterEach(() => {
@@ -72,7 +74,7 @@ describe('handleCopy from editable targets', () => {
     input.select()
 
     const e = makeCopyEvent(input)
-    handleCopy(e as any)
+    handleCopy(e)
 
     expect(e.preventDefault).not.toHaveBeenCalled()
     expect(e.clipboardData.setData).not.toHaveBeenCalled()
@@ -84,7 +86,7 @@ describe('handleCopy from editable targets', () => {
     textarea.focus()
 
     const e = makeCopyEvent(textarea)
-    handleCopy(e as any)
+    handleCopy(e)
 
     expect(e.preventDefault).not.toHaveBeenCalled()
     expect(e.clipboardData.setData).not.toHaveBeenCalled()
@@ -99,7 +101,7 @@ describe('handleCopy from editable targets', () => {
     vi.spyOn(document, 'activeElement', 'get').mockReturnValue(editor)
 
     const e = makeCopyEvent(editor)
-    handleCopy(e as any)
+    handleCopy(e)
 
     expect(e.preventDefault).not.toHaveBeenCalled()
     expect(e.clipboardData.setData).not.toHaveBeenCalled()
@@ -111,7 +113,7 @@ describe('handleCopy from editable targets', () => {
     vi.spyOn(document, 'activeElement', 'get').mockReturnValue(input)
 
     const e = makeCopyEvent(document.body)
-    handleCopy(e as any)
+    handleCopy(e)
 
     expect(e.preventDefault).not.toHaveBeenCalled()
     expect(e.clipboardData.setData).not.toHaveBeenCalled()
@@ -121,7 +123,7 @@ describe('handleCopy from editable targets', () => {
 describe('handleCopy from the canvas', () => {
   it('still hijacks copy for selected elements', () => {
     const e = makeCopyEvent(document.body)
-    handleCopy(e as any)
+    handleCopy(e)
 
     expect(e.preventDefault).toHaveBeenCalled()
     expect(e.clipboardData.setData).toHaveBeenCalledWith(
@@ -135,7 +137,7 @@ describe('handleCopy from the canvas', () => {
     activeElements.value = []
 
     const e = makeCopyEvent(document.body)
-    handleCopy(e as any)
+    handleCopy(e)
 
     expect(e.preventDefault).toHaveBeenCalled()
     expect(e.clipboardData.setData).toHaveBeenCalledWith('application/json', expect.any(String))
@@ -149,7 +151,7 @@ describe('handleCut', () => {
     activeElements.value = [{ id: 'e1', locked: true }, { id: 'e2' }]
 
     const e = makeCopyEvent(document.body)
-    handleCut(e as any)
+    handleCut(e)
 
     const payload = JSON.parse(e.clipboardData.setData.mock.calls[0][1])
     expect(payload.isCut).toBe(true)

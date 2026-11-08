@@ -107,6 +107,11 @@ const BLUETOOTH_DEVICE_LABEL_REGEX =
 
 const isBluetoothMicLabel = (label: string | undefined): boolean =>
   !!label && BLUETOOTH_DEVICE_LABEL_REGEX.test(label.toLowerCase())
+interface MergeReacquiredMediaResult {
+  stream: MediaStream
+  adoptedCamera: boolean
+  adoptedMicrophone: boolean
+}
 
 export function mergeReacquiredMedia({
   acquiredStream,
@@ -117,11 +122,7 @@ export function mergeReacquiredMedia({
   microphoneEnabled,
   cameraTrackBeforeRequest,
   microphoneTrackBeforeRequest,
-}: ReacquiredMediaOptions): {
-  stream: MediaStream
-  adoptedCamera: boolean
-  adoptedMicrophone: boolean
-} {
+}: ReacquiredMediaOptions): MergeReacquiredMediaResult {
   const stream = currentStream ?? new MediaStream()
   const adoptedTracks = new Set<MediaStreamTrack>()
   const currentLiveTracks = new Set(
@@ -234,11 +235,12 @@ export class LocalCaptureSession {
   }
 
   isLifecycleAbort(error: unknown, operation?: LocalCaptureOperation): boolean {
-    const candidate = error as { name?: unknown; message?: unknown } | null
+    if (!error || typeof error !== 'object' || !('name' in error)) return false
+    const candidate = error
     return (
       candidate?.name === 'AbortError' &&
       ((operation?.signal ?? this.lifecycleAbortController.signal).aborted ||
-        candidate.message === 'Local capture lifecycle has ended')
+        ('message' in candidate && candidate.message === 'Local capture lifecycle has ended'))
     )
   }
 
@@ -412,24 +414,20 @@ export class LocalCaptureSession {
       if (owner) operation.publicationOwner = owner
     }
     if (!operation.publicationOwner) {
-      return {
-        ...(options.publishVideo
-          ? {
-              video: {
-                status: 'failed' as const,
-                error: new Error('Video publication owner is unavailable'),
-              },
-            }
-          : {}),
-        ...(options.publishAudio
-          ? {
-              audio: {
-                status: 'failed' as const,
-                error: new Error('Audio publication owner is unavailable'),
-              },
-            }
-          : {}),
+      const unavailable: LocalCapturePublicationResult = {}
+      if (options.publishVideo) {
+        unavailable.video = {
+          status: 'failed',
+          error: new Error('Video publication owner is unavailable'),
+        }
       }
+      if (options.publishAudio) {
+        unavailable.audio = {
+          status: 'failed',
+          error: new Error('Audio publication owner is unavailable'),
+        }
+      }
+      return unavailable
     }
     const published = await this.options.publication.publish(stream, options)
     this.assertCurrent(operation)
@@ -736,25 +734,18 @@ export class LocalCaptureSession {
           : null
         const videoTrack = effectiveVideoTrack?.readyState === 'live' ? effectiveVideoTrack : null
         const audioTrack = effectiveAudioTrack?.readyState === 'live' ? effectiveAudioTrack : null
-        let publication: LocalCapturePublicationResult = {
-          ...(adoptedCamera && !videoTrack
-            ? {
-                video: {
-                  status: 'failed' as const,
-                  error: new Error('No live effective camera track is available for publication'),
-                },
-              }
-            : {}),
-          ...(adoptedMicrophone && !audioTrack
-            ? {
-                audio: {
-                  status: 'failed' as const,
-                  error: new Error(
-                    'No live effective microphone track is available for publication',
-                  ),
-                },
-              }
-            : {}),
+        let publication: LocalCapturePublicationResult = {}
+        if (adoptedCamera && !videoTrack) {
+          publication.video = {
+            status: 'failed',
+            error: new Error('No live effective camera track is available for publication'),
+          }
+        }
+        if (adoptedMicrophone && !audioTrack) {
+          publication.audio = {
+            status: 'failed',
+            error: new Error('No live effective microphone track is available for publication'),
+          }
         }
         if (videoTrack || audioTrack) {
           try {
@@ -1175,10 +1166,13 @@ export class LocalCaptureSession {
   }
 
   private isMissingDeviceError(candidate: unknown): boolean {
-    const error = candidate as Error & { constraint?: string }
+    if (!candidate || typeof candidate !== 'object' || !('name' in candidate)) return false
+    const error = candidate
     return (
       error.name === 'NotFoundError' ||
-      (error.name === 'OverconstrainedError' && error.constraint === 'deviceId')
+      (error.name === 'OverconstrainedError' &&
+        'constraint' in error &&
+        error.constraint === 'deviceId')
     )
   }
 

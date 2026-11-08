@@ -119,7 +119,7 @@ export function useThreadActions(deps: {
   const threadMails = (threadIds: string[]): MailCopy[] => {
     const items = (rows.value ?? []).filter((t: Thread) => threadIds.includes(t.thread_id))
     // In search, each result is itself a mail with no nested conversation.
-    if (mailbox.value === 'search') return items as unknown as MailCopy[]
+    if (mailbox.value === 'search') return items
     return items.flatMap((t: Thread) => (t.messages ?? []).flatMap(mailCopies))
   }
   const allMailIds = (threadIds: string[]): string[] => threadMails(threadIds).map((m) => m.id)
@@ -623,14 +623,11 @@ export function useThreadActions(deps: {
       })
     const originOf = (tid: string): string | undefined =>
       rows.value?.find((t: Thread) => t.thread_id === tid)?.mailboxes[0]?.mailbox_id
-    const originalState: Record<string, string[]> = selectedThreads.reduce(
-      (acc: Record<string, string[]>, tid: string) => {
-        const key = originOf(tid)
-        if (key) (acc[key] ??= []).push(tid)
-        return acc
-      },
-      {} as Record<string, string[]>,
-    )
+    const originalState: Record<string, string[]> = {}
+    for (const tid of selectedThreads) {
+      const key = originOf(tid)
+      if (key) (originalState[key] ??= []).push(tid)
+    }
     if (JSON.stringify(originalState) === JSON.stringify(threadIDs)) return
     closeComposeWindowHolding(selectedThreads)
     const movesAll = (t: string) => [mailboxIds.junk, mailboxIds.trash].includes(t)
@@ -801,7 +798,7 @@ export function useThreadActions(deps: {
     action: 'archive' | 'unarchive' | 'move',
     threadIds: string[],
     target?: string,
-  ): Record<string, Mailbox[]> => {
+  ) => {
     const entry = (id: string) => mailboxEntry(id)
     const shows: Record<string, Mailbox[]> = {}
     rows.value
@@ -1225,8 +1222,7 @@ export function useThreadActions(deps: {
   const touchedRows = (threadIds: string[]) =>
     rows.value.filter((t: Thread) => threadIds.includes(t.thread_id))
 
-  const landedOf = (result: unknown) =>
-    result instanceof Promise ? (result as Promise<boolean>) : undefined
+  const landedOf = (result: unknown) => (result instanceof Promise ? result : undefined)
 
   const handleMoveThreads = (threadIDs: Record<string, string[]>) => {
     const touched = touchedRows(Object.values(threadIDs).flat())

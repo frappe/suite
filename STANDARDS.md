@@ -372,10 +372,19 @@ frontend/src/
   imports. `pnpm format` writes, `pnpm format:check` fails CI, and the
   pre-commit hook formats staged files. Generated files and Markdown are
   ignored (`.prettierignore`).
-- oxlint (`.oxlintrc.json`, type-aware) runs first in `pnpm lint`.
+- oxlint (`.oxlintrc.json`, type-aware) runs first in `pnpm lint` over all
+  repository JavaScript, TypeScript and Vue source, including Node services and
+  E2E tests. The pre-commit hook checks staged source; policy changes check the
+  whole tree. Dependencies, generated output and vendored code are excluded.
   Its errors fail the check with no baseline; its correctness warnings are
   advisory. ESLint skips every rule oxlint runs (`eslint-plugin-oxlint`), so
   a rule that ESLint enforced must be an error in `.oxlintrc.json`.
+- Dillon Mulroy's anti-slop plugin is vendored under `tools/oxlint/anti-slop/`.
+  Every selected rule is an error in normal lint, pre-commit and CI, with no
+  baseline. `.oxlintrc.json` owns Suite's selection; `pnpm lint:anti-slop` shows
+  all diagnostics. The vendored `UPSTREAM.md` records provenance and exceptions
+  for boundary validation, module mocking, domain names and formatting. Keep
+  `oxlint` and `@oxlint/plugins` pinned to the same exact version when upgrading.
 - ESLint (`eslint.config.js`: `eslint-plugin-vue` recommended,
   `@vue/eslint-config-typescript` recommended, layout rules off) checks
   correctness. `pnpm lint` compares errors to `baselines/eslint.json`, keyed

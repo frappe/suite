@@ -111,7 +111,8 @@ export const DRAWN_BLANK = 'drawn-blank'
 // Undo can restore an item without a key a co-editor changed. No order sorts
 // first, then by id, so every tab agrees until ticket 53's write-back
 function orderOf(item: Item) {
-  return (item.get('order') ?? '') as string
+  const value = item.get('order')
+  return typeof value === 'string' ? value : ''
 }
 
 function slidesOf(doc: Y.Doc): Y.Map<Item> {
@@ -191,10 +192,10 @@ function boxesInOrder(doc: Y.Doc, slideId: string) {
 function orderAfter(siblings: Sibling[], afterId: string | null) {
   const found = siblings.find(({ id }) => id === afterId) ?? siblings.at(-1)
   const after = afterId === null ? undefined : found
-  const lo = (after?.item.get('order') ?? '') as string
+  const lo = after ? orderOf(after.item) : ''
   const next = siblings.find(({ item }) => orderOf(item) > lo)
 
-  return orderBetween(lo, (next?.item.get('order') ?? null) as string | null)
+  return orderBetween(lo, next ? orderOf(next.item) : null)
 }
 
 function orderOnTop(siblings: Sibling[]) {
@@ -251,7 +252,7 @@ function writeBoxes(doc: Y.Doc, parent: string, boxes: DeckItem[]) {
     boxesOf(doc).set(id, box)
     box.set('parent', parent)
     box.set('order', boxOrder)
-    if (TYPES_WITH_TEXT.has(fields.type as string)) {
+    if (typeof fields.type === 'string' && TYPES_WITH_TEXT.has(fields.type)) {
       box.set('text', new Y.XmlFragment())
     }
 
@@ -282,7 +283,7 @@ export function addBox(doc: Y.Doc, parent: string, fields: Fields) {
     boxesOf(doc).set(id, box)
     box.set('parent', parent)
     box.set('order', orderOnTop(siblings))
-    if (TYPES_WITH_TEXT.has(fields.type as string)) {
+    if (typeof fields.type === 'string' && TYPES_WITH_TEXT.has(fields.type)) {
       box.set('text', new Y.XmlFragment())
     }
 
@@ -308,7 +309,8 @@ export function setBox(doc: Y.Doc, id: string, fields: Fields) {
 }
 
 export function boxText(doc: Y.Doc, id: string): Y.XmlFragment | undefined {
-  return boxesOf(doc).get(id)?.get('text') as Y.XmlFragment | undefined
+  const text = boxesOf(doc).get(id)?.get('text')
+  return text instanceof Y.XmlFragment ? text : undefined
 }
 
 export function moveSlide(doc: Y.Doc, id: string, afterId: string | null) {
@@ -327,9 +329,9 @@ export function moveBox(doc: Y.Doc, id: string, afterId: string | null) {
     return
   }
 
-  const others = boxesInOrder(doc, box.get('parent') as string).filter(
-    (sibling) => sibling.id !== id,
-  )
+  const parent = box.get('parent')
+  if (typeof parent !== 'string') return
+  const others = boxesInOrder(doc, parent).filter((sibling) => sibling.id !== id)
   box.set('order', orderAfter(others, afterId))
 }
 
@@ -386,7 +388,8 @@ function boxEntriesBySlide(doc: Y.Doc) {
   const bySlide = new Map<string, [string, Item][]>()
   for (const entry of boxesOf(doc).entries()) {
     const [, box] = entry
-    const parent = box.get('parent') as string
+    const parent = box.get('parent')
+    if (typeof parent !== 'string') continue
     if (!bySlide.has(parent)) {
       bySlide.set(parent, [])
     }
@@ -400,8 +403,14 @@ function boxEntriesBySlide(doc: Y.Doc) {
 // A connector end draws free when its target is gone, or is not on this slide
 function freeLostEnds(box: DeckItem, onSlide: Set<string>) {
   for (const key of CONNECTOR_ENDS) {
-    const end = box[key] as { elementId: string } | null | undefined
-    if (end && !onSlide.has(end.elementId)) {
+    const end = box[key]
+    if (
+      end &&
+      (typeof end !== 'object' ||
+        !('elementId' in end) ||
+        typeof end.elementId !== 'string' ||
+        !onSlide.has(end.elementId))
+    ) {
       box[key] = null
     }
   }
