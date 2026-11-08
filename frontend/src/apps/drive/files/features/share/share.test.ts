@@ -818,6 +818,41 @@ describe('opening the share dialog fast', () => {
     expect(share.sections.value).not.toBeNull()
   })
 
+  it("takes its first read from the opener's reads, and asks the server after a write", async () => {
+    const server = fakeServer((call) => {
+      if (call.id === 'node_get') return node('folder')
+      if (call.id === 'node_grants')
+        return {
+          grants: [grant('asha@example.com', 20), grant('theo@example.com', 10)],
+          inherited: [],
+        }
+      return grant('asha@example.com', 20)
+    })
+    const share = useShare('doc', {
+      client: testClient(server.transport),
+      reads: {
+        node: Promise.resolve(fromAny(node('folder'))),
+        list: Promise.resolve(
+          fromPartial<GrantList>({ grants: [grant('asha@example.com', 40)], inherited: [] }),
+        ),
+      },
+    })
+    const principals = () => share.sections.value!.people.map((row) => row.grant.principal)
+
+    await share.load()
+    expect(server.calls).toEqual([])
+    expect(principals()).toEqual(['asha@example.com'])
+
+    await share.setRole(share.sections.value!.people[0]!, 20)
+
+    expect(server.calls.map((call) => call.id)).toEqual([
+      'node_put_grant',
+      'node_get',
+      'node_grants',
+    ])
+    expect(principals()).toEqual(['asha@example.com', 'theo@example.com'])
+  })
+
   it('does not read who has access when the fresh item says the caller can no longer manage it', async () => {
     const server = fakeServer((call) => (call.id === 'node_get' ? node('folder', 30) : undefined))
     const share = useShare('doc', { client: testClient(server.transport) })
