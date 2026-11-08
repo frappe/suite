@@ -324,9 +324,9 @@ describe('file preview', () => {
       const opened = shallowRef(session('c', 'c.png', 'image/png'))
       const { root } = await mount(opened, '/d/c/c-png?type=image')
       const made = () =>
-        created.mock.results
-          .map((result) => result.value as unknown)
-          .filter((value): value is HTMLImageElement => value instanceof HTMLImageElement)
+        created.mock.results.flatMap((result) =>
+          result.value instanceof HTMLImageElement ? [result.value] : [],
+        )
       const ahead = () => made().find((image) => image.getAttribute('src') === contentOf('e'))
       await vi.waitFor(() => expect(counter(root)).toBe('2 of 3'))
       // The pictures beside wait for the one on screen, so they do not slow it down.

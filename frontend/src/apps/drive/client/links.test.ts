@@ -465,7 +465,7 @@ describe('access partitions', () => {
   const store = () =>
     createLinkStore({
       storage: memoryStorage(),
-      session: createSession({ request: async () => ({}) } as unknown as Transport),
+      session: createSession(fromPartial<Transport>({ request: async () => ({}) })),
       events: new EventTarget(),
     })
   it('keeps a read in its partition until access is invalidated, with or without a link code', () => {

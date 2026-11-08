@@ -95,7 +95,7 @@ export function useListingFocus(options: {
   }
 
   function onFocusin(event: FocusEvent) {
-    const id = (event.target as Element | null)?.getAttribute?.(ITEM)
+    const id = event.target instanceof Element ? event.target.getAttribute(ITEM) : null
     if (id) current.value = id
   }
 

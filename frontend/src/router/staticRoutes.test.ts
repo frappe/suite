@@ -75,12 +75,14 @@ describe('first page preload', () => {
     const recent = vi.fn(async () => ({ default: {} }))
     const myFiles = vi.fn(async () => ({ default: {} }))
     const files = findArea('files')!
-    const loadRoutes = vi.spyOn(files, 'loadRoutes').mockResolvedValue({
-      routes: [
-        { path: '', component: myFiles },
-        { path: 'recent', component: recent },
-      ],
-    } as Awaited<ReturnType<typeof files.loadRoutes>>)
+    const loadRoutes = vi.spyOn(files, 'loadRoutes').mockResolvedValue(
+      fromPartial<Awaited<ReturnType<typeof files.loadRoutes>>>({
+        routes: [
+          { path: '', component: myFiles },
+          { path: 'recent', component: recent },
+        ],
+      }),
+    )
 
     preloadPage('/drive/recent')
     await vi.waitFor(() => expect(recent).toHaveBeenCalled())

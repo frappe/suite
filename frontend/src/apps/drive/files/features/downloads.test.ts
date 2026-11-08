@@ -7,7 +7,10 @@ import { TransportError, type Operation } from '@/platform/transport'
 import { settledDownload, type DriveDownload } from './downloads'
 
 // The download poll's server: each poll takes the next answer, an Error is thrown.
-const server = vi.hoisted(() => ({ polls: [] as unknown[], calls: 0 }))
+const server = vi.hoisted(() => {
+  const polls: unknown[] = []
+  return { polls, calls: 0 }
+})
 
 vi.mock('@/platform/transport', async (original) => {
   const actual = await original<typeof import('@/platform/transport')>()

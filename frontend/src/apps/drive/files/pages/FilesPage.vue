@@ -1428,7 +1428,7 @@ function startPreviewObservation() {
     refresh: async () => {
       await listing.refetch()
     },
-    rows: () => listing.rows as DriveNode[],
+    rows: () => listing.rows,
   })
 }
 function refreshPreviews() {
@@ -1741,7 +1741,7 @@ function rowDrop(row: DriveNode) {
 const dragMove = useDragMove({
   enabled: () =>
     signedIn.value && concreteDestination.value && !isSearching.value && !trashedFolder.value,
-  rows: () => listing.rows as DriveNode[],
+  rows: () => listing.rows,
   selection: () => selection.value,
   folder: () => (detail.data?.name === parentId.value ? detail.data : null),
   roots: () => discovered.data,

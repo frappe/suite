@@ -40,10 +40,9 @@ function scopedNodes(input: unknown): string[] {
 /** What a batch changes on each node it names, while it is on its way. */
 function batchPatch(input: unknown): Record<string, unknown> | undefined {
   const { state, parent_node } = record(record(input).patch)
-  const patch = {
-    ...(typeof state === 'string' ? { state } : {}),
-    ...(typeof parent_node === 'string' ? { parent_node } : {}),
-  }
+  const patch: Record<string, unknown> = {}
+  if (typeof state === 'string') patch.state = state
+  if (typeof parent_node === 'string') patch.parent_node = parent_node
   return Object.keys(patch).length ? patch : undefined
 }
 /** The nodes a batch answered as failed. */

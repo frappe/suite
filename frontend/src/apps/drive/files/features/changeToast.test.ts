@@ -9,7 +9,7 @@ import {
 } from './changeToast'
 
 // A Drive server that records each move and keeps every node's parent.
-const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+const { fromAny, fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
 
 const net = vi.hoisted(() => {
   const state = {
@@ -340,7 +340,9 @@ describe('Trash and restore toasts with Undo', () => {
     undo()
     await vi.waitFor(() => expect(feedback.toasts).toHaveLength(2))
     expect(
-      net.requests.map((request) => (request.body as { nodes: string[] }).nodes.length),
+      net.requests.map(
+        (request) => fromAny<{ nodes: string[] }, unknown>(request.body).nodes.length,
+      ),
     ).toEqual([200, 50])
     expect([...net.states.values()].every((state) => state === 'Active')).toBe(true)
     expect(feedback.toasts[1]).toMatchObject({ kind: 'success', message: 'Restored 250 items' })

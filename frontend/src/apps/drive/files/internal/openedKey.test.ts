@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { expect, it, vi } from 'vitest'
 import { nextTick, ref } from 'vue'
 
@@ -8,7 +9,7 @@ it('changes the key once the dialog around the element has finished opening', as
   const opening = new Promise<void>((resolve) => (finish = resolve))
   const dialog = document.createElement('div')
   dialog.setAttribute('role', 'dialog')
-  dialog.getAnimations = () => [{ finished: opening } as unknown as Animation]
+  dialog.getAnimations = () => [fromPartial<Animation>({ finished: opening })]
   const inside = dialog.appendChild(document.createElement('div'))
   const element = ref<Element | null>(null)
   const key = useOpenedKey(element)

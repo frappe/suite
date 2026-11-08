@@ -749,7 +749,7 @@ describe('opening the share dialog fast', () => {
         asked.push(operation.id)
         const value = operation.id === 'node_get' ? node('folder') : { grants: [], inherited: [] }
         return new Promise((resolve) => {
-          release.set(operation.id, () => resolve(value as never))
+          release.set(operation.id, () => resolve(fromAny(value)))
         })
       },
     }

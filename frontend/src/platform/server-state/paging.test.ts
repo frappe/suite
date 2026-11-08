@@ -1,3 +1,4 @@
+import { fromAny } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { effectScope, ref } from 'vue'
 
@@ -218,7 +219,9 @@ describe('a write that takes rows out of a paged listing', () => {
     path: '/remove',
   }
   const field = (value: unknown, key: string): unknown =>
-    value && typeof value === 'object' ? (value as Record<string, unknown>)[key] : undefined
+    value && typeof value === 'object'
+      ? fromAny<Record<string, unknown>, unknown>(value)[key]
+      : undefined
   const strings = (value: unknown): string[] =>
     Array.isArray(value) ? value.filter((id) => typeof id === 'string') : []
 

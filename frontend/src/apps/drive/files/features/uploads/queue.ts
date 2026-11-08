@@ -1261,11 +1261,9 @@ function isSameFile(job: Job, file: File): boolean {
   )
 }
 
-async function hasReadPermission(handle: FileSystemFileHandle | undefined): Promise<boolean> {
+async function hasReadPermission(handle: PermissionHandle | undefined): Promise<boolean> {
   if (!handle) return false
-  const permission = await (handle as PermissionHandle)
-    .queryPermission?.({ mode: 'read' })
-    .catch(() => 'denied' as const)
+  const permission = await handle.queryPermission?.({ mode: 'read' }).catch(() => 'denied' as const)
   return permission === 'granted'
 }
 

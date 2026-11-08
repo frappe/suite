@@ -2,14 +2,14 @@ import { describe, expect, it } from 'vitest'
 
 import { fitColumns, measuredWidth } from './listColumns'
 
-const WIDTHS: Record<string, number> = {
-  access: 160,
-  kind: 128,
-  owner: 192,
-  size: 96,
-  modified: 128,
-}
-const width = (column: string) => WIDTHS[column] ?? 0
+const WIDTHS = new Map([
+  ['access', 160],
+  ['kind', 128],
+  ['owner', 192],
+  ['size', 96],
+  ['modified', 128],
+])
+const width = (column: string) => WIDTHS.get(column) ?? 0
 const ALL = ['access', 'kind', 'owner', 'size', 'modified']
 
 describe('fitColumns', () => {

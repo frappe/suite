@@ -1,12 +1,18 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AppContext } from 'vue'
 
 import { uploadPrompts } from './prompts'
 
-const fake = vi.hoisted(() => ({
-  toasts: [] as { message: string; action?: { label: string; onClick: () => void } }[],
-  openSettings: vi.fn(),
-}))
+interface Toast {
+  message: string
+  action?: { label: string; onClick: () => void }
+}
+
+const fake = vi.hoisted(() => {
+  const toasts: Toast[] = []
+  return { toasts, openSettings: vi.fn() }
+})
 vi.mock('@/platform/feedback', () => ({
   confirm: async () => false,
   toast: {
@@ -20,7 +26,7 @@ afterEach(() => {
   fake.toasts = []
 })
 
-const prompts = () => uploadPrompts({} as AppContext, async () => null)
+const prompts = () => uploadPrompts(fromPartial<AppContext>({}), async () => null)
 const full = { total: 20 * 1024 * 1024, free: 1024, fitting: 0, count: 2 }
 
 describe('a batch that does not fit', () => {

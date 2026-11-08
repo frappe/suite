@@ -1,3 +1,4 @@
+import { fromAny } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { computed, createApp, defineComponent, h, reactive, type App } from 'vue'
 
@@ -61,11 +62,11 @@ function entry(state: UploadState, fields: Partial<UploadEntry> = {}): UploadEnt
 }
 
 /** The queue as the tracker reads it. */
-function fakeQueue(rows: UploadEntry[], state: Partial<UploadQueue['state']> = {}) {
+function fakeQueue(rows: UploadEntry[], state: Partial<UploadQueue['state']> = {}): UploadQueue {
   const list = reactive(rows)
   const sent = list.reduce((sum, row) => sum + row.sent, 0)
   const total = list.reduce((sum, row) => sum + row.size, 0)
-  return {
+  return fromAny({
     entries: computed(() => list),
     state: reactive({
       halted: null,
@@ -86,7 +87,7 @@ function fakeQueue(rows: UploadEntry[], state: Partial<UploadQueue['state']> = {
     })),
     markSeen: vi.fn(),
     setTrackerMounted: vi.fn(),
-  } as unknown as UploadQueue
+  })
 }
 
 let app: App | null = null

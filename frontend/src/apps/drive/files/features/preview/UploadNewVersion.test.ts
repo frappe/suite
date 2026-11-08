@@ -1,13 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, reactive } from 'vue'
 
-import type { UploadEntry } from '../uploads/queue'
 import UploadNewVersion from './UploadNewVersion.vue'
 
-const fake = vi.hoisted(() => ({
-  entry: null as { state: string; offline: boolean } | null,
-  toasts: [] as string[],
-}))
+interface Fake {
+  entry: { state: string; offline: boolean } | null
+  toasts: string[]
+}
+
+const fake = vi.hoisted((): Fake => ({ entry: null, toasts: [] }))
 vi.mock('frappe-ui', () => ({
   Badge: defineComponent({
     props: { label: { type: String, required: true } },
@@ -22,7 +23,7 @@ vi.mock('@/platform/feedback', () => ({
   },
 }))
 vi.mock('../uploads/queue', () => ({
-  uploadQueue: () => ({ replaceFile: () => fake.entry as unknown as UploadEntry }),
+  uploadQueue: () => ({ replaceFile: () => fake.entry }),
 }))
 
 let unmount: (() => void) | null = null

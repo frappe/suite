@@ -1,4 +1,4 @@
-import { fromAny } from '@total-typescript/shoehorn'
+import { fromAny, fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, type PropType, type VNode } from 'vue'
 
@@ -33,7 +33,9 @@ vi.mock('frappe-ui', async () => ({
   Dropdown: defineComponent({
     props: {
       options: {
-        type: Array as PropType<Array<MenuItem | { group: string; options: MenuItem[] }>>,
+        type: fromPartial<PropType<Array<MenuItem | { group: string; options: MenuItem[] }>>>(
+          Array,
+        ),
         default: () => [],
       },
     },
@@ -86,12 +88,9 @@ function server(inherited: GrantList['inherited'] = [], kind = 'file') {
         role,
         notify,
         grant: id,
-      } = (input ?? {}) as {
-        principal?: string
-        role?: number
-        notify?: boolean
-        grant?: string
-      }
+      } = fromAny<{ principal?: string; role?: number; notify?: boolean; grant?: string }, unknown>(
+        input ?? {},
+      )
       if (operation.id === 'node_get')
         return fromAny({ kind, name: 'doc', title: 'Plan', access: { role: 50 } })
       if (operation.id === 'grant_delete' && id) {
@@ -100,12 +99,9 @@ function server(inherited: GrantList['inherited'] = [], kind = 'file') {
         return fromAny({ count: 1 })
       }
       if (operation.id === 'node_put_grant' && principal && typeof role === 'number') {
-        writes.push({
-          id: operation.id,
-          principal,
-          role,
-          ...(notify === undefined ? {} : { notify }),
-        })
+        const write: (typeof writes)[number] = { id: operation.id, principal, role }
+        if (notify !== undefined) write.notify = notify
+        writes.push(write)
         const written = grant(principal === '$LINK' ? '$LINK:new' : principal, role, {
           url: principal === '$LINK' ? '/l/new' : undefined,
         })
@@ -258,7 +254,7 @@ it('says a public folder shows everything in it', async () => {
 })
 
 it('shows the people field and the access list in place while who has access loads', async () => {
-  const known = { kind: 'file', name: 'doc', title: 'Plan', access: { role: 50 } } as never
+  const known = { kind: 'file', name: 'doc', title: 'Plan', access: { role: 50 } }
   let release: (() => void) | undefined
   const { transport } = server()
   const held: Transport = {
@@ -269,7 +265,7 @@ it('shows the people field and the access list in place while who has access loa
           })
         : transport.request(operation, input),
   }
-  const state = useShare('doc', { client: testClient(held), known })
+  const state = useShare('doc', { client: testClient(held), known: fromAny(known) })
   const root = document.createElement('div')
   document.body.append(root)
   const app = createApp({ setup: () => () => h(ShareBody, { state }) })

@@ -15,9 +15,9 @@ vi.mock('frappe-ui', async () => ({
   Dropdown: defineComponent({
     props: {
       options: {
-        type: Array as PropType<
-          Array<{ options: Array<{ label: string; onClick: () => unknown }> }>
-        >,
+        type: fromPartial<
+          PropType<Array<{ options: Array<{ label: string; onClick: () => unknown }> }>>
+        >(Array),
         default: () => [],
       },
     },

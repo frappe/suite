@@ -631,7 +631,7 @@ useResizeObserver(listing, ([entry]) => (listingWidth.value = entry?.contentRect
 const measured = shallowRef<Partial<Record<MeasuredColumn, number>>>({})
 function trackWidth(column: string) {
   if (isMeasuredColumn(column)) return measured.value[column] ?? MEASURED_COLUMNS[column].max
-  return FITTED_WIDTHS[column] ?? 128
+  return FITTED_WIDTHS.get(column) ?? 128
 }
 /**
  * The columns the desktop layout shows. A chosen column the list has no room

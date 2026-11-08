@@ -113,18 +113,21 @@ export function useListingShortcuts(
     description: string,
     pick: Choose,
     { enabled, guarded = false }: { enabled?: () => boolean; guarded?: boolean } = {},
-  ): KeyboardShortcutConfig => ({
-    combo,
-    description,
-    group: __('Files'),
-    ...(enabled ? { enabled } : {}),
-    // A key the listing does not use now keeps its usual meaning, such as Escape closing a menu.
-    preventDefault: false,
-    handler: (event) => {
-      if (guarded && isStray(event)) return
-      handle(pick)(event)
-    },
-  })
+  ): KeyboardShortcutConfig => {
+    const config: KeyboardShortcutConfig = {
+      combo,
+      description,
+      group: __('Files'),
+      // A key the listing does not use now keeps its usual meaning, such as Escape closing a menu.
+      preventDefault: false,
+      handler: (event) => {
+        if (guarded && isStray(event)) return
+        handle(pick)(event)
+      },
+    }
+    if (enabled) config.enabled = enabled
+    return config
+  }
   const letter = (key: Letter, description: string, pick: Choose): KeySequenceShortcut => ({
     keys: [key],
     description,

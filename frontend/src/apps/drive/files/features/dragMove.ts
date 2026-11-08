@@ -72,15 +72,17 @@ export function cancelDrag(state: DragState): DragState {
   return state.phase === 'dragging' ? { phase: 'cancelled' } : state
 }
 
+interface DragRelease {
+  drop: { dragged: DraggedItems; target: DropTarget } | null
+  swallowClick: boolean
+}
+
 /**
  * The button came up. `drop` is set when the pointer is over a target that
  * takes the items. `swallowClick` is set when a drag happened, so the click
  * that follows does not open what is under the pointer.
  */
-export function releaseDrag(state: DragState): {
-  drop: { dragged: DraggedItems; target: DropTarget } | null
-  swallowClick: boolean
-} {
+export function releaseDrag(state: DragState): DragRelease {
   if (state.phase === 'pressed') return { drop: null, swallowClick: false }
   if (state.phase === 'cancelled') return { drop: null, swallowClick: true }
   const accepted = state.target && state.check?.status === 'allowed'

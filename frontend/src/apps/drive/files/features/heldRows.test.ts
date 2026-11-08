@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it, vi } from 'vitest'
 import { nextTick, reactive, ref } from 'vue'
 
@@ -108,7 +109,7 @@ describe('rows this tab created', () => {
     const state = reactive({ status: 'success' as const, rows, hasNext })
     const order = ref<ListingOrder | null>({ place: 'folder-a', sort: 'title', ascending: true })
     const created = withCreatedRows(
-      state as unknown as InfiniteQueryState<DriveNode>,
+      fromPartial<InfiniteQueryState<DriveNode>>(state),
       () => order.value,
     )
     const titles = () => created.listing.rows.map((each) => each.title)

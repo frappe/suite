@@ -3,8 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, reactive, watch } from 'vue'
 
 import type { DriveNode } from '@/apps/drive/client/types'
-import { requireTestElement } from '@/platform/testing/dom'
 import { DOCUMENT_TYPES_KEY, type DocumentTypeDefinition } from '@/platform/contracts'
+import { requireTestElement } from '@/platform/testing/dom'
 
 import FilesListing from './FilesListing.vue'
 import { DEFAULT_PRESENTATION, type PresentationState } from './presentation'
@@ -202,7 +202,10 @@ describe('FilesListing paging', () => {
     await nextTick()
 
     // An uncaught rejection here fails the run.
-    intersect([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver)
+    intersect(
+      [fromPartial<IntersectionObserverEntry>({ isIntersecting: true })],
+      fromPartial<IntersectionObserver>({}),
+    )
     await vi.waitFor(() => expect(fetchNext).toHaveBeenCalledOnce())
     await new Promise((resolve) => setTimeout(resolve))
   })
@@ -318,7 +321,7 @@ describe('FilesListing columns', () => {
       vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
         this: HTMLElement,
       ) {
-        return { width: (this.textContent?.length ?? 0) * 7 } as DOMRect
+        return fromPartial<DOMRect>({ width: (this.textContent?.length ?? 0) * 7 })
       })
     })
     afterEach(() => vi.restoreAllMocks())
@@ -354,8 +357,8 @@ describe('FilesListing columns', () => {
         class {
           constructor(private callback: ResizeObserverCallback) {}
           observe() {
-            const entry = { contentRect: { width: listWidth } } as ResizeObserverEntry
-            this.callback([entry], this as unknown as ResizeObserver)
+            const entry = fromPartial<ResizeObserverEntry>({ contentRect: { width: listWidth } })
+            this.callback([entry], fromPartial<ResizeObserver>(this))
           }
           disconnect() {}
         },
@@ -750,11 +753,12 @@ describe('FilesListing keyboard', () => {
     )
     await nextTick()
   }
-  const focused = () => (document.activeElement as HTMLElement | null)?.dataset.node
+  const focused = () =>
+    document.activeElement instanceof HTMLElement ? document.activeElement.dataset.node : undefined
   const tabbable = (root: HTMLElement) =>
-    [...root.querySelectorAll<HTMLElement>('[data-node]')]
-      .filter((row) => row.tabIndex === 0)
-      .map((row) => row.dataset.node)
+    [...root.querySelectorAll<HTMLElement>('[data-node]')].flatMap((row) =>
+      row.tabIndex === 0 ? [row.dataset.node] : [],
+    )
 
   it('moves focus with the arrow keys and selects a range with Shift, which also shrinks it', async () => {
     const { root, state } = mount({ rows: five })

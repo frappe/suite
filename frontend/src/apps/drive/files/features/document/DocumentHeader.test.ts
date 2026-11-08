@@ -410,7 +410,7 @@ describe('DocumentHeaderSkeleton', () => {
       setup: () => () => [
         h(DocumentHeaderSkeleton, { title: 'Loose file.txt', location: location?.label }),
         h(DocumentHeader, {
-          session: doc as unknown as DocumentSession,
+          session: fromPartial<DocumentSession>(doc),
           titleLabel: 'File name',
           mime: 'text/plain',
           location,

@@ -58,6 +58,11 @@ export interface ListingOrder {
   ascending: boolean
 }
 
+interface ListingWithCreatedRows<Row> {
+  listing: InfiniteQueryState<Row>
+  add(row: Row): void
+}
+
 /**
  * Shows the folders and links this tab created in the open folder at once,
  * where the server will list them, until a read of the listing has them.
@@ -67,7 +72,7 @@ export interface ListingOrder {
 export function withCreatedRows<Row extends DriveNode>(
   source: InfiniteQueryState<Row>,
   order: () => ListingOrder | null,
-): { listing: InfiniteQueryState<Row>; add(row: Row): void } {
+): ListingWithCreatedRows<Row> {
   const created = shallowRef<{ place: string; rows: readonly Row[] }>({ place: '', rows: [] })
   // Once a read has a created row, the read's copy shows.
   watch(
@@ -95,10 +100,10 @@ export function withCreatedRows<Row extends DriveNode>(
     return shown
   })
   return {
-    listing: new Proxy(source, {
-      get(target, key, receiver) {
-        return key === 'rows' ? rows.value : Reflect.get(target, key, receiver)
-      },
+    // Inherited getters and methods keep this listing as their receiver, while
+    // every read still reaches the live source instead of a copied snapshot.
+    listing: Object.create(source, {
+      rows: { enumerable: true, get: () => rows.value },
     }),
     add(row) {
       const current = order()

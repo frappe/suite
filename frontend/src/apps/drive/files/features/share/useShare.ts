@@ -268,15 +268,10 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
       // A plain Remove can be undone. Removing inside asks first instead (§7.4).
       const undoable = !below && row.kind !== 'link' && !row.expired && !row.denied
       if (undoable) {
-        removed.value = {
-          principal,
-          write: {
-            role: row.grant.role,
-            ...keep(row.grant),
-            // Putting someone back is not news to them.
-            ...(row.kind === 'user' ? { notify: false } : {}),
-          },
-        }
+        const write: GrantWrite = { role: row.grant.role, ...keep(row.grant) }
+        // Putting someone back is not news to them.
+        if (row.kind === 'user') write.notify = false
+        removed.value = { principal, write }
       }
       const removedText = undoable ? `${__('Removed {0}.', [label(principal)])} ` : ''
       notice.value = `${removedText}${insideText}${remaining ?? ''}`.trim()

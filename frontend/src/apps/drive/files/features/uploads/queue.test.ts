@@ -26,7 +26,7 @@ import { FolderReadError } from './sources'
 // no later than what the server holds, and finish. With `direct` on, create
 // answers an S3 presigned POST and a fake XHR plays the bucket.
 // The fixture factory runs before static imports, so load its typed builders first.
-const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+const { fromAny, fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
 
 const drive = vi.hoisted(() => {
   const MiB = 1024 * 1024
@@ -1055,10 +1055,10 @@ describe('Leaving and coming back', () => {
   it('Resume all starts readable handles at once and matches picked files to the rest', async () => {
     const records = memoryRecords()
     const handled = file('photo.jpg', 6, 11)
-    const handle = {
+    const handle: FileSystemFileHandle = fromAny({
       queryPermission: async () => 'granted',
       getFile: async () => handled,
-    } as unknown as FileSystemFileHandle
+    })
     drive.state.sessions.set('u-a', session(6))
     drive.state.sessions.set('u-b', session(8))
     await records.save(stored('u-a', 6, { name: 'photo.jpg', lastModified: 11, handle }))

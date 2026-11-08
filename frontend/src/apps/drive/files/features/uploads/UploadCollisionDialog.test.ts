@@ -38,9 +38,9 @@ const radioElements = () => [...dialog().querySelectorAll<HTMLElement>('[role="r
 const radios = () =>
   radioElements().map((radio) => radio.querySelector('[data-slot="label"]')?.textContent?.trim())
 const buttons = () =>
-  [...dialog().querySelectorAll('button:not([role="radio"]):not([role="checkbox"])')]
-    .map((button) => button.textContent?.trim())
-    .filter(Boolean)
+  [...dialog().querySelectorAll('button:not([role="radio"]):not([role="checkbox"])')].flatMap(
+    (button) => button.textContent?.trim() || [],
+  )
 const nameInput = () => dialog().querySelector<HTMLInputElement>('input[type="text"]')
 
 async function pick(label: string) {

@@ -205,7 +205,10 @@ export function preloadPage(path: string): void {
     })
     for (const record of matcher.resolve(path).matched) {
       const component = record.components?.default
-      if (typeof component === 'function') void (component as () => Promise<unknown>)()
+      if (typeof component === 'function') {
+        // SAFETY: area route tables give a page as an object or a `() => import()` loader, never a functional component or class, so a function here is a loader.
+        void (component as () => Promise<unknown>)()
+      }
     }
   })
 }

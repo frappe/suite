@@ -65,7 +65,10 @@ export function useDragMove(options: {
   const state = shallowRef<DragState | null>(null)
   /** Where the pointer is, for the drag image. */
   const pointer = ref<Point>({ x: 0, y: 0 })
-  const review = reactive({ open: false, change: null as MoveAccessChange | null })
+  const review = reactive<{ open: boolean; change: MoveAccessChange | null }>({
+    open: false,
+    change: null,
+  })
   const workspace = useWorkspaceName()
   let scroller: HTMLElement | null = null
   let frame = 0

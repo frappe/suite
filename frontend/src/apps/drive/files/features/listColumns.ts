@@ -5,10 +5,10 @@ export const LIST_COLUMNS = ['access', 'kind', 'owner', 'size', 'modified'] as c
  * Size and Modified fit their longest value, such as "1023.9 KB"
  * and "Sep 28, 2025", and the other columns their widest label (`MEASURED_COLUMNS`).
  */
-export const FITTED_WIDTHS: Record<string, number> = {
-  size: 72,
-  modified: 96,
-}
+export const FITTED_WIDTHS = new Map([
+  ['size', 72],
+  ['modified', 96],
+])
 
 /**
  * The columns sized to their widest label: the room beside the label (an icon

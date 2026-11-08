@@ -16,7 +16,7 @@ import { openingLocation } from '../features/document/openingLocation'
 import { rememberShown } from '../features/preview/lastShown'
 
 // A Drive server that keeps the caller's Recent, stars and one folder's children.
-const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+const { fromAny, fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
 
 const server = vi.hoisted(() => ({
   recents: fromPartial<string[]>([]),
@@ -67,7 +67,7 @@ vi.mock('@/platform/transport', async (original) => {
             }
           case 'node_create.create_document': {
             const created = {
-              ...(server.nodes.get('a') as DriveNode),
+              ...server.nodes.get('a')!,
               name: `doc-${server.nodes.size}`,
               title: String(input.title),
               kind: 'document' as const,
@@ -87,10 +87,10 @@ vi.mock('@/platform/transport', async (original) => {
           case 'node_batch': {
             await server.gate
             if (server.refusal) throw server.refusal
-            const { nodes, patch } = input as {
-              nodes: string[]
-              patch: { state?: 'Active' | 'Trashed'; parent_node?: string }
-            }
+            const { nodes, patch } = fromAny<
+              { nodes: string[]; patch: { state?: 'Active' | 'Trashed'; parent_node?: string } },
+              unknown
+            >(input)
             const changed = nodes.filter((name) => !server.batchFailures.includes(name))
             for (const name of changed) Object.assign(server.nodes.get(name)!, patch)
             return {
@@ -190,7 +190,7 @@ vi.mock('@/platform/feedback', async () => {
   // A menu lists its options beside its trigger, so a test can choose one.
   type Option = { label?: string; onClick?: () => unknown; options?: Option[] }
   const menu = defineComponent({
-    props: { options: { type: Array as PropType<Option[]>, default: () => [] } },
+    props: { options: { type: fromPartial<PropType<Option[]>>(Array), default: () => [] } },
     setup:
       (props, { slots }) =>
       () =>
@@ -292,7 +292,7 @@ interface ShortcutConfig {
   handler: (event: KeyboardEvent) => void
 }
 /** The shortcuts the page registered. */
-const shortcuts = vi.hoisted(() => [] as ShortcutConfig[])
+const shortcuts = vi.hoisted((): ShortcutConfig[] => [])
 /** Presses `combo` as frappe-ui would: the live registration for it runs. */
 function press(combo: string): KeyboardEvent {
   const event = new KeyboardEvent('keydown', { cancelable: true })
@@ -1000,7 +1000,7 @@ describe('A selection', () => {
 
   describe('moved to Trash', () => {
     const trashed = () =>
-      [...server.nodes.values()].filter((row) => row.state === 'Trashed').map((row) => row.name)
+      [...server.nodes.values()].flatMap((row) => (row.state === 'Trashed' ? [row.name] : []))
 
     it('asks first for two or more items, from the bar and from the Delete key', async () => {
       const root = await select('a', 'c')
