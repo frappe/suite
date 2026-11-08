@@ -87,7 +87,11 @@ function workspaceFolder(api: APIRequestContext, root: string): Promise<string> 
 			if (!created) throw error;
 			return created;
 		}
-	})();
+	})().catch((error: unknown) => {
+		// A failed lookup must not stick: the next path asks again.
+		workspace = null;
+		throw error;
+	});
 	return workspace;
 }
 
@@ -178,10 +182,13 @@ export async function openScene(
 			return other.request;
 		},
 		async close() {
-			await Promise.all(others.map((other) => other.close()));
-			await trashNode(api, folder.name);
-			await purgeNode(api, folder.name);
-			await context.close();
+			try {
+				await Promise.all(others.map((other) => other.close()));
+				await trashNode(api, folder.name);
+				await purgeNode(api, folder.name);
+			} finally {
+				await context.close();
+			}
 		},
 	};
 }

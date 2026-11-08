@@ -12,11 +12,12 @@ E2E_BENCH_PATH=/path/to/bench UI_STATES_FLOWS=listing,share \
   flock /tmp/ui-states-capture.lock npx playwright test -c playwright.config.ts
 ```
 
-`BASE_URL` defaults to `http://dev-suite-drive-ui-states.localhost:8021`. Leave `UI_STATES_FLOWS` out to run every flow. Screenshots and one `<flow>.json` per flow land in `out/`. The review canvas is built from `out/` by the `review-ui-states` skill, which owns the page.
+`BASE_URL` defaults to `http://dev-suite-drive-ui-states.localhost:8021`. Leave `UI_STATES_FLOWS` out to run every flow. The dev bench restarts itself after 5000 requests and its port refuses connections meanwhile; `bench.ts` walks a path again when that happens, and any other failure fails the run. Screenshots and one `<flow>.json` per flow land in `out/`. The review canvas is built from `out/` by the `review-ui-states` skill, which owns the page.
 
 ## Files
 
 - `flow.ts`: a flow is an XState machine plus `enter` and one step per event. State `meta.description` is what the canvas shows; `meta.transient` keeps a state in the graph without a screenshot.
+- `bench.ts`: watches the bench's port so a path that failed during a bench restart is walked again.
 - `scene.ts`: one signed-in browser per path, with its own folder under `UI states` in My files (purged on close), `hold()` for mid-flight and failed requests, `as()` for a second user.
 - `content.ts`: fills a folder with the mix a real folder has.
 - `capture.spec.ts`: walks the shortest path to every state, screenshots each state the first time a path reaches it, records parent, event and edges.

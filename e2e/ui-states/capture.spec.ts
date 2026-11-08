@@ -5,6 +5,7 @@ import { createTestModel } from "@xstate/graph";
 import type { EventObject } from "xstate";
 import type { AnyFlow as Flow, StateMeta } from "./flow";
 import { flows } from "./flows";
+import { watchBench } from "./bench";
 import { describeMachine, writeManifest, type EdgeRecord, type FlowManifest } from "./manifest";
 import { OUT_DIR } from "./playwright.config";
 import { openScene, type Scene } from "./scene";
@@ -28,23 +29,30 @@ for (const flow of flows) {
 		};
 		const paths = createTestModel(flow.machine).getShortestPaths();
 		mkdirSync(resolve(OUT_DIR, flow.id), { recursive: true });
-		for (const path of paths) {
-			const scene = await openScene(browser, baseURL, flow.folderTitle ?? flow.title);
-			try {
-				await flow.enter(scene);
-				let previous: string | null = null;
-				for (const step of path.steps) {
-					const state = stateId(step.state.value);
-					if (step.event.type !== "xstate.init") {
-						await runEvent(flow, scene, step.event);
-						recordEdge(manifest.edges, previous as string, step.event.type, state);
+		const bench = watchBench(baseURL);
+		try {
+			for (const path of paths) {
+				await bench.survive(async () => {
+					const scene = await openScene(browser, baseURL, flow.folderTitle ?? flow.title);
+					try {
+						await flow.enter(scene);
+						let previous: string | null = null;
+						for (const step of path.steps) {
+							const state = stateId(step.state.value);
+							if (step.event.type !== "xstate.init") {
+								await runEvent(flow, scene, step.event);
+								recordEdge(manifest.edges, previous as string, step.event.type, state);
+							}
+							await capture(flow, scene, manifest, state, previous, step.event.type);
+							previous = state;
+						}
+					} finally {
+						await scene.close();
 					}
-					await capture(flow, scene, manifest, state, previous, step.event.type);
-					previous = state;
-				}
-			} finally {
-				await scene.close();
+				});
 			}
+		} finally {
+			bench.stop();
 		}
 		writeManifest(OUT_DIR, manifest);
 	});
