@@ -68,7 +68,13 @@ describe('comments not yet posted', () => {
 
     const isFocused = document.activeElement === box
 
-    expect([(box as HTMLTextAreaElement).value, boxes, isFocused, isBoxFirst, rows(host)]).toEqual([
+    expect([
+      requireTestElement(box, HTMLTextAreaElement).value,
+      boxes,
+      isFocused,
+      isBoxFirst,
+      rows(host),
+    ]).toEqual([
       'Still writing',
       1,
       true,
@@ -194,3 +200,11 @@ describe('comments not yet posted', () => {
     ])
   })
 })
+
+function requireTestElement<T extends Element>(
+  value: unknown,
+  constructor: new (...args: never[]) => T,
+): T {
+  if (!(value instanceof constructor)) throw new Error(`Expected ${constructor.name}`)
+  return value
+}

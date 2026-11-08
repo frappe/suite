@@ -221,7 +221,16 @@ export function selectionTarget(editor: Editor): TableTarget | null {
 }
 
 function isSameTarget(a: TableTarget | null, b: TableTarget) {
-  return !!a && (Object.keys(b) as (keyof TableTarget)[]).every((key) => a[key] === b[key])
+  return (
+    !!a &&
+    a.cell === b.cell &&
+    a.row === b.row &&
+    a.column === b.column &&
+    a.kind === b.kind &&
+    a.cellCount === b.cellCount &&
+    a.isMerged === b.isMerged &&
+    a.hasHeaderRow === b.hasHeaderRow
+  )
 }
 
 /** What a target holds about the cell at `$cell`, whatever the selection; null outside a table */

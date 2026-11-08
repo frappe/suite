@@ -8,8 +8,8 @@ Effect plugin are omitted; Suite does not depend on Effect. Keep LICENSE and
 vendor/eslint-stylistic/{LICENSE,UPSTREAM.md} with the source on updates.
 
 Suite owns rule selection in the root `.oxlintrc.json`. Run
-`pnpm lint:anti-slop` to see advisory findings (the normal lint command hides
-warnings). Advisory rules do not create or extend a debt baseline.
+`pnpm lint:anti-slop` to inspect all diagnostics. Every selected anti-slop rule
+is an error in normal lint, pre-commit, and CI, without a debt baseline.
 
 Policy exceptions:
 
@@ -20,9 +20,8 @@ Policy exceptions:
 - Symbol naming follows domain vocabulary, without a blanket ban on "shape".
 - Readable spacing is left to Prettier and code review.
 
-`no-reduce-accumulator-copy` and `no-widen-then-assert` are errors. Other
-selected rules are advisory while existing code is migrated; promote them to
-errors when clean, without introducing a baseline.
+All selected rules are errors. Existing violations have been migrated; future
+violations must be fixed rather than added to a baseline.
 
 Update by reviewing the upstream diff, copying generic source while preserving
 local changes, matching exact oxlint and @oxlint/plugins versions, then running

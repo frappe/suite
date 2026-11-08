@@ -1,4 +1,5 @@
 import type { Response } from "@playwright/test";
+
 import { expect, test } from "../../fixtures/test";
 import {
 	ageCopy,
@@ -8,24 +9,12 @@ import {
 	openForCollab,
 	pastePicture,
 	picturesLoaded,
-	serverBlocks,
 	saveNamedVersion,
+	serverBlocks,
 	typeParagraph,
 } from "../../helpers/collab";
-import {
-	DRIVE,
-	canReadNode,
-	discardNode,
-	getNode,
-	openRowMenu,
-	sidebarLink,
-} from "../../helpers/drive";
-import {
-	createWriterDocument,
-	openWriterDocument,
-	uniqueWriterTitle,
-	writerEditor,
-} from "../../helpers/writer";
+import { canReadNode, discardNode, DRIVE, getNode, openRowMenu, sidebarLink } from "../../helpers/drive";
+import { createWriterDocument, openWriterDocument, uniqueWriterTitle, writerEditor } from "../../helpers/writer";
 
 /** What Drive answers to a copy. */
 interface CopyReply {
@@ -45,10 +34,7 @@ test.describe("Writer collaboration", () => {
 		await discardNode(owner.context.request, node);
 	});
 
-	test("a copy made in Drive keeps the text and its pictures, and takes its own edits", async ({
-		owner,
-		testApi,
-	}) => {
+	test("a copy made in Drive keeps the text and its pictures, and takes its own edits", async ({ owner, testApi }) => {
 		const { page } = owner;
 		await openWriterDocument(page, node);
 		await typeParagraph(page, "Text above the picture");
@@ -73,6 +59,7 @@ test.describe("Writer collaboration", () => {
 			.click();
 		const copied = await copying;
 		expect(copied.ok(), await copied.text()).toBe(true);
+		// SAFETY: the successful Drive copy endpoint returns the newly created node projection, whose title/content are checked by this journey.
 		const copyReply = (await copied.json()) as CopyReply;
 		const copyNode = copyReply.data.name;
 
@@ -108,10 +95,7 @@ test.describe("Writer collaboration", () => {
 		await sidebarLink(page, "Trash").click();
 		menu = await openRowMenu(page, title);
 		await menu.getByRole("menuitem", { name: "Delete forever", exact: true }).click();
-		await page
-			.getByRole("dialog")
-			.getByRole("button", { name: "Delete forever", exact: true })
-			.click();
+		await page.getByRole("dialog").getByRole("button", { name: "Delete forever", exact: true }).click();
 
 		await expect.poll(() => canReadNode(page.request, node)).toBe(false);
 		await expect
@@ -137,9 +121,7 @@ test.describe("Writer collaboration", () => {
 		await expectSaved(owner.page);
 		const unchangedBlocks = await serverBlocks(testApi, node);
 
-		const restoreResponse = await owner.context.request.post(
-			`${DRIVE}/nodes/${node}/versions/${versionSeq}/restore`,
-		);
+		const restoreResponse = await owner.context.request.post(`${DRIVE}/nodes/${node}/versions/${versionSeq}/restore`);
 
 		expect(restoreResponse.status()).toBe(409);
 		expect(await restoreResponse.text()).toContain("Open the document to restore this version");

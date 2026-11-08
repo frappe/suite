@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -153,7 +154,7 @@ describe('getParticipant / getAllParticipants / getParticipantsMap', () => {
     pm.addParticipant(makeParticipantData())
     const map = pm.getParticipantsMap()
     expect(map.size).toBe(1)
-    map.set('p2', {} as never)
+    map.set('p2', fromPartial({}))
     expect(pm.getParticipantCount()).toBe(1)
   })
 })

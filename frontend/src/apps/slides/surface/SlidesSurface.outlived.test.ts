@@ -66,7 +66,7 @@ describe('a copy that outlived its page', () => {
     const [copy] = readRecovery('node-1')
     expect(copy.sticky).toBe(false)
     await saveLanded(1)
-    const { slides: sent } = saves[0] as { slides: Record<string, unknown>[] }
+    const sent = savedSlides(saves[0])
     await closedAndSettled()
     localStorage.clear()
     return { copy, sent }
@@ -157,13 +157,15 @@ describe('a copy that outlived its page', () => {
       }),
     })
     saveFailed.value = false
-    savingFor.value = mounted.docname as never
+    savingFor.value = mounted.docname
     await nextTick()
     savingFor.value = null
     await nextTick()
 
     release()
-    await vi.waitFor(() => expect(thumbnails(mounted?.root as Element)).toHaveLength(2))
+    await vi.waitFor(() =>
+      expect(thumbnails(requireTestElement(mounted?.root, Element))).toHaveLength(2),
+    )
 
     const [held] = readRecovery('node-1')
     expect(held.sticky).toBe(true)
@@ -187,3 +189,33 @@ describe('a copy that outlived its page', () => {
     expect(untouched.sticky).toBe(false)
   })
 })
+
+function requireTestElement<T extends Element>(
+  value: unknown,
+  constructor: new (...args: never[]) => T,
+): T {
+  if (!(value instanceof constructor)) throw new Error(`Expected ${constructor.name}`)
+  return value
+}
+
+function savedSlides(value: unknown) {
+  if (!value || typeof value !== 'object' || !('slides' in value) || !Array.isArray(value.slides))
+    throw new Error('Expected a saved slide array')
+  return value.slides.map((slide: unknown) => {
+    if (!isSavedSlide(slide)) throw new Error('Expected serialized slide elements')
+    return slide
+  })
+}
+
+interface SavedSlidePayload {
+  elements: string
+  [key: string]: unknown
+}
+function isSavedSlide(value: unknown): value is SavedSlidePayload {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    'elements' in value &&
+    typeof value.elements === 'string'
+  )
+}

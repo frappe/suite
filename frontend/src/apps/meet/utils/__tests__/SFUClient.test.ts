@@ -1,3 +1,4 @@
+import { fromAny } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { api, client as apiClient } from '@/api'
@@ -333,7 +334,7 @@ describe('sendChatMessage', () => {
       success: true,
       timestamp: '2026-07-28T12:00:00.000Z',
     })
-    await Reflect.apply(client.sendChatMessage, client, [42, { clientId: 99 }])
+    await client.sendChatMessage(fromAny(42), fromAny({ clientId: 99 }))
     expect(sendRequest).toHaveBeenCalledWith('chat:send', {
       message: '42',
       clientId: '99',
@@ -769,20 +770,8 @@ describe('E2EE signaling payloads', () => {
     client.connected = true
     client.connectionDetails.e2eeRequired = true
 
-    const originalSender = (
-      globalThis as typeof globalThis & {
-        RTCRtpSender?: {
-          prototype?: { createEncodedStreams?: () => void }
-        }
-      }
-    ).RTCRtpSender
-    const originalReceiver = (
-      globalThis as typeof globalThis & {
-        RTCRtpReceiver?: {
-          prototype?: { createEncodedStreams?: () => void }
-        }
-      }
-    ).RTCRtpReceiver
+    const originalSender = globalThis.RTCRtpSender
+    const originalReceiver = globalThis.RTCRtpReceiver
 
     try {
       Reflect.set(globalThis, 'RTCRtpSender', {
@@ -813,20 +802,8 @@ describe('E2EE signaling payloads', () => {
         },
       })
     } finally {
-      ;(
-        globalThis as typeof globalThis & {
-          RTCRtpSender?: {
-            prototype?: { createEncodedStreams?: () => void }
-          }
-        }
-      ).RTCRtpSender = originalSender
-      ;(
-        globalThis as typeof globalThis & {
-          RTCRtpReceiver?: {
-            prototype?: { createEncodedStreams?: () => void }
-          }
-        }
-      ).RTCRtpReceiver = originalReceiver
+      globalThis.RTCRtpSender = originalSender
+      globalThis.RTCRtpReceiver = originalReceiver
     }
   })
 
@@ -862,9 +839,7 @@ describe('E2EE signaling payloads', () => {
 
     const originalSender = globalThis.RTCRtpSender
     const originalReceiver = globalThis.RTCRtpReceiver
-    const originalScriptTransform = (
-      globalThis as typeof globalThis & { RTCRtpScriptTransform?: unknown }
-    ).RTCRtpScriptTransform
+    const originalScriptTransform = globalThis.RTCRtpScriptTransform
 
     try {
       Object.defineProperty(globalThis, 'RTCRtpSender', {
@@ -1212,14 +1187,16 @@ describe('receiver readiness', () => {
     'treats legacy server paused=%s as already running',
     async (paused) => {
       const client = createClient()
-      vi.spyOn(client, 'sendRequest').mockResolvedValue({
+      const response = {
         success: true,
         id: 'legacy',
         producerId: 'camera',
         kind: 'video',
         rtpParameters: {},
-        ...(paused === undefined ? {} : { paused }),
-      })
+      }
+      vi.spyOn(client, 'sendRequest').mockResolvedValue(
+        paused === undefined ? response : { ...response, paused },
+      )
       expect((await client.createConsumer('recv', 'camera', {}, true)).paused).toBe(false)
     },
   )

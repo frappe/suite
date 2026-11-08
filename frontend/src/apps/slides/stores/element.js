@@ -196,9 +196,9 @@ const getInitialTableContent = (cells, columnWidths, cellStyles) => {
       type: 'textStyle',
       attrs: { ...cellStyles, color: getTextColor(style), fontSize: getFontSize(style) },
     },
-    ...['bold', 'italic', 'underline', 'strike']
-      .filter((mark) => style[mark])
-      .map((type) => ({ type })),
+    ...['bold', 'italic', 'underline', 'strike'].flatMap((mark) =>
+      style[mark] ? [{ type: mark }] : [],
+    ),
   ]
 
   const getParagraph = (line, style) => ({

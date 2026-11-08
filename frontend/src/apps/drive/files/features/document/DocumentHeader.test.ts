@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, ref, type VNode } from 'vue'
 
@@ -48,7 +49,7 @@ vi.mock('frappe-ui', async () => {
             value: props.modelValue,
             readOnly: props.readonly,
             onInput: (event: Event) =>
-              emit('update:modelValue', (event.target as HTMLInputElement).value),
+              emit('update:modelValue', requireTestElement(event.target, HTMLInputElement).value),
           })
       },
     }),
@@ -64,7 +65,7 @@ function session(role: number, canShare = true) {
     contentDoctype: 'Sheet',
     contentDocname: 'sheet-1',
     title: ref('Budget'),
-    state: ref('Active'),
+    state: ref<DocumentSession['state']['value']>('Active'),
     access: ref({ role }),
     canShare: ref(canShare),
     editedAt: new Date(Date.now() - 3 * 60 * 60_000).toISOString(),
@@ -102,7 +103,7 @@ function mount(
         DocumentHeader,
         {
           ref: header,
-          session: doc as unknown as DocumentSession,
+          session: fromPartial<DocumentSession>(doc),
           titleLabel: 'Spreadsheet title',
           panels: ['comments', 'versions'],
           panel: panel.value,
@@ -152,7 +153,7 @@ describe('DocumentHeader', () => {
     const app = createApp({
       setup: () => () =>
         h(DocumentHeader, {
-          session: session(40) as unknown as DocumentSession,
+          session: fromPartial<DocumentSession>(session(40)),
           titleLabel: 'Spreadsheet title',
           saveState: saveState.value,
         }),
@@ -379,7 +380,7 @@ describe('DocumentHeader, compact (Sheets)', () => {
         h(
           DocumentHeader,
           {
-            session: session(40) as unknown as DocumentSession,
+            session: fromPartial<DocumentSession>(session(40)),
             titleLabel: 'Spreadsheet title',
             saveState: 'clean',
             panels: ['comments', 'versions'],
@@ -414,3 +415,11 @@ describe('DocumentHeader, compact (Sheets)', () => {
     expect(header.lastElementChild!.contains(edited)).toBe(true)
   })
 })
+
+function requireTestElement<T extends Element>(
+  value: unknown,
+  constructor: new (...args: never[]) => T,
+): T {
+  if (!(value instanceof constructor)) throw new Error(`Expected ${constructor.name}`)
+  return value
+}

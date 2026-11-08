@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, ref, type App } from 'vue'
 
@@ -15,7 +16,7 @@ vi.mock('frappe-ui', async () => {
     Avatar: emptyComponent,
     // Shows the menu's items beside its button, as if it were open
     Dropdown: define({
-      props: { options: Array as () => { label: string; onClick: () => void }[] },
+      props: { options: fromPartial<() => { label: string; onClick: () => void }[]>(Array) },
       setup:
         (props, { slots }) =>
         () =>
@@ -43,7 +44,7 @@ vi.mock('frappe-ui', async () => {
         const input = state<HTMLInputElement | null>(null)
         expose({ focus: () => input.value?.focus() })
         function write(event: Event) {
-          emit('update:modelValue', (event.target as HTMLInputElement).value)
+          emit('update:modelValue', requireTestElement(event.target, HTMLInputElement).value)
         }
 
         return () => render('input', { ref: input, value: props.modelValue, onInput: write })
@@ -74,7 +75,7 @@ interface NamingPanel {
 }
 
 let mounted: App | null = null
-const noDrafts = { drafts: ref([]) } as unknown as ReturnType<typeof useCommentDrafts>
+const noDrafts = fromPartial<ReturnType<typeof useCommentDrafts>>({ drafts: ref([]) })
 
 afterEach(() => {
   mounted?.unmount()
@@ -85,7 +86,7 @@ afterEach(() => {
 async function openVersionsPanel(isRefusingVersions = false) {
   const steps: string[] = []
   const outsideButton = document.createElement('button')
-  const session = {
+  const session = fromPartial<DocumentSession>({
     comments: {},
     versions: {
       list: async () => ({ rows: [], next_cursor: null }),
@@ -100,7 +101,7 @@ async function openVersionsPanel(isRefusingVersions = false) {
         steps.push(`took ${kind} "${label}"`)
       },
     },
-  } as unknown as DocumentSession
+  })
   const panel = ref<NamingPanel | null>(null)
   const viewed = ref<DocumentVersion | null>(null)
   const host = document.createElement('div')
@@ -121,7 +122,7 @@ async function openVersionsPanel(isRefusingVersions = false) {
       threadsReadAt: 1,
       places: null,
       refreshThreads: async () => {},
-      threadActions: {} as ThreadActions,
+      threadActions: fromPartial<ThreadActions>({}),
       drafts: noDrafts,
       saveFirst: async () => {
         steps.push('saved')
@@ -222,7 +223,7 @@ describe('naming a version in the Versions panel', () => {
     const { host, view } = await openVersionsPanel()
 
     await type('   ')
-    await view({ seq: 1, kind: 'auto', label: null } as unknown as DocumentVersion)
+    await view(fromPartial<DocumentVersion>({ seq: 1, kind: 'auto', label: null }))
 
     expect([nameBox(), host.textContent?.includes('Current version')]).toEqual([null, true])
   })
@@ -231,7 +232,7 @@ describe('naming a version in the Versions panel', () => {
     const { view } = await openVersionsPanel()
 
     await type('Before the review')
-    await view({ seq: 1, kind: 'auto', label: null } as unknown as DocumentVersion)
+    await view(fromPartial<DocumentVersion>({ seq: 1, kind: 'auto', label: null }))
 
     expect(nameBox()?.value).toBe('Before the review')
   })
@@ -252,25 +253,23 @@ describe('naming a version in the Versions panel', () => {
 })
 
 describe('renaming a version in the Versions panel', () => {
-  const automatic = {
+  const automatic = fromPartial<DocumentVersion>({
     seq: 2,
     kind: 'auto',
-    label: null,
     pinned: 0,
-    actor: null,
     creation: null,
-  } as unknown as DocumentVersion
+  })
 
   // The panel viewing an automatic version, recording each version it is told to show
   async function openViewingPanel(canSaveVersion: boolean) {
     const shown: (string | null | undefined)[] = []
-    const session = {
+    const session = fromPartial<DocumentSession>({
       comments: {},
       versions: {
         list: async () => ({ rows: [automatic], next_cursor: null }),
         update: async () => {},
       },
-    } as unknown as DocumentSession
+    })
     const host = document.createElement('div')
     document.body.append(host)
     const app = createApp(() =>
@@ -290,7 +289,7 @@ describe('renaming a version in the Versions panel', () => {
         threadsReadAt: 1,
         places: null,
         refreshThreads: async () => {},
-        threadActions: {} as ThreadActions,
+        threadActions: fromPartial<ThreadActions>({}),
         drafts: noDrafts,
         saveFirst: async () => {},
       }),
@@ -333,15 +332,15 @@ function panelWhileVersionsLoad(kind: DocumentPanel) {
   const started: string[] = []
   const shown = ref<DocumentPanel | null>(kind)
   const panel = ref<{ startDocumentComment(): Promise<void>; reloadVersions(): void } | null>(null)
-  const session = {
+  const session = fromPartial<DocumentSession>({
     nodeId: 'doc-1',
     comments: {},
     versions: { list: () => new Promise(() => {}) },
-  } as unknown as DocumentSession
-  const drafts = {
+  })
+  const drafts = fromPartial<ReturnType<typeof useCommentDrafts>>({
     drafts: ref([]),
     start: (anchor: string) => started.push(anchor),
-  } as unknown as ReturnType<typeof useCommentDrafts>
+  })
   const host = document.createElement('div')
   document.body.append(host)
   const app = createApp(() =>
@@ -363,7 +362,7 @@ function panelWhileVersionsLoad(kind: DocumentPanel) {
       threadsReadAt: 1,
       places: null,
       refreshThreads: async () => {},
-      threadActions: {} as ThreadActions,
+      threadActions: fromPartial<ThreadActions>({}),
       drafts,
       saveFirst: async () => {},
     }),
@@ -396,3 +395,11 @@ describe('the Comments panel while versions load', () => {
     ]).toEqual([false, true])
   })
 })
+
+function requireTestElement<T extends Element>(
+  value: unknown,
+  constructor: new (...args: never[]) => T,
+): T {
+  if (!(value instanceof constructor)) throw new Error(`Expected ${constructor.name}`)
+  return value
+}

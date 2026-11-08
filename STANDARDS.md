@@ -380,12 +380,11 @@ frontend/src/
   advisory. ESLint skips every rule oxlint runs (`eslint-plugin-oxlint`), so
   a rule that ESLint enforced must be an error in `.oxlintrc.json`.
 - Dillon Mulroy's anti-slop plugin is vendored under `tools/oxlint/anti-slop/`.
-  Accumulator copies inside reducers and widening followed by an assertion fail
-  lint. `.oxlintrc.json` owns Suite's selection; `pnpm lint:anti-slop` shows advisory
-  findings hidden by the normal quiet lint command. The vendored `UPSTREAM.md`
-  records provenance and exceptions for boundary validation, module mocking,
-  domain names and formatting. Keep `oxlint` and `@oxlint/plugins` pinned to
-  the same exact version when upgrading.
+  Every selected rule is an error in normal lint, pre-commit and CI, with no
+  baseline. `.oxlintrc.json` owns Suite's selection; `pnpm lint:anti-slop` shows
+  all diagnostics. The vendored `UPSTREAM.md` records provenance and exceptions
+  for boundary validation, module mocking, domain names and formatting. Keep
+  `oxlint` and `@oxlint/plugins` pinned to the same exact version when upgrading.
 - ESLint (`eslint.config.js`: `eslint-plugin-vue` recommended,
   `@vue/eslint-config-typescript` recommended, layout rules off) checks
   correctness. `pnpm lint` compares errors to `baselines/eslint.json`, keyed

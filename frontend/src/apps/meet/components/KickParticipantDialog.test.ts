@@ -26,7 +26,7 @@ vi.mock('frappe-ui', async () => {
             type: 'checkbox',
             checked: props.modelValue,
             onChange: (event: Event) =>
-              emit('update:modelValue', (event.target as HTMLInputElement).checked),
+              emit('update:modelValue', requireTestElement(event.target, HTMLInputElement).checked),
           })
       },
     }),
@@ -93,3 +93,11 @@ describe('KickParticipantDialog', () => {
     app.unmount()
   })
 })
+
+function requireTestElement<T extends Element>(
+  value: unknown,
+  constructor: new (...args: never[]) => T,
+): T {
+  if (!(value instanceof constructor)) throw new Error(`Expected ${constructor.name}`)
+  return value
+}

@@ -24,6 +24,9 @@ import {
 // of Drive §8.4 and the framework's chunk rules: sessions, chunks at an offset
 // no later than what the server holds, and finish. With `direct` on, create
 // answers an S3 presigned POST and a fake XHR plays the bucket.
+// The fixture factory runs before static imports, so load its typed builders first.
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const drive = vi.hoisted(() => {
   const MiB = 1024 * 1024
   type Node = { name: string; title: string; kind: string; parent: string | null; size: number }
@@ -43,15 +46,15 @@ const drive = vi.hoisted(() => {
     createLimit: Infinity,
     /** The site's per-file limit, which refuses one file and not the root. */
     fileLimit: Infinity,
-    chunkOffsets: [] as number[],
-    finished: [] as Array<Record<string, unknown>>,
+    chunkOffsets: fromPartial<number[]>([]),
+    finished: fromPartial<Array<Record<string, unknown>>>([]),
     /** Create answers a direct target instead of a chunked session. */
     direct: false,
     /** Each form the bucket received: its field names in order, and the file size. */
-    posts: [] as Array<{ url: string; fields: string[]; size: number }>,
+    posts: fromPartial<Array<{ url: string; fields: string[]; size: number }>>([]),
     creates: 0,
     /** Runs before the server answers, as time passing between requests. */
-    before: null as ((method: string, path: string) => Promise<void> | void) | null,
+    before: fromPartial<((method: string, path: string) => Promise<void> | void) | null>(null),
     nextId: 0,
   }
   const ok = (data: unknown, status = 200) => new Response(JSON.stringify({ data }), { status })
@@ -101,7 +104,8 @@ const drive = vi.hoisted(() => {
     const path = parsed.pathname.replace('/api/suite/drive/', '')
     const method = init.method ?? 'GET'
     await state.before?.(method, path)
-    const json = () => JSON.parse(String(init.body ?? '{}')) as Record<string, string & number>
+    const json = () =>
+      fromPartial<Record<string, string & number>>(JSON.parse(String(init.body ?? '{}')))
     let match: RegExpMatchArray | null
     if (method === 'GET' && (match = path.match(/^roots\/([^/]+)\/usage$/))) {
       return ok({
@@ -112,7 +116,9 @@ const drive = vi.hoisted(() => {
       })
     }
     if (method === 'GET' && (match = path.match(/^nodes\/([^/]+)\/children$/))) {
-      const rows = [...state.nodes.values()].filter((node) => node.parent === match![1]).map(row)
+      const rows = [...state.nodes.values()].flatMap((node) =>
+        node.parent === match![1] ? [row(node)] : [],
+      )
       return ok({ rows, next_cursor: null })
     }
     if (method === 'POST' && path === 'nodes') {
@@ -202,10 +208,11 @@ const drive = vi.hoisted(() => {
   }
 
   // The bucket: a presigned POST with the policy fields first and the file last.
+  type UploadProgressTarget = { onprogress: ((event: { loaded: number }) => void) | null }
   class FakeXHR {
     status = 0
     responseText = ''
-    upload: { onprogress: ((event: { loaded: number }) => void) | null } = { onprogress: null }
+    upload: UploadProgressTarget = { onprogress: null }
     onload: (() => void) | null = null
     onerror: (() => void) | null = null
     onabort: (() => void) | null = null
@@ -216,7 +223,8 @@ const drive = vi.hoisted(() => {
     abort() {}
     send(form: FormData) {
       const names = [...form.keys()]
-      const bytes = form.get('file') as Blob
+      const bytes = form.get('file')
+      if (!(bytes instanceof Blob)) throw new Error('An upload must contain a file blob')
       const id = String(form.get('key')).replace('uploads/', '')
       setTimeout(() => {
         state.posts.push({ url: this.url, fields: names, size: bytes.size })
@@ -229,7 +237,7 @@ const drive = vi.hoisted(() => {
       }, 0)
     }
   }
-  globalThis.XMLHttpRequest = FakeXHR as unknown as typeof XMLHttpRequest
+  globalThis.XMLHttpRequest = fromPartial<typeof XMLHttpRequest>(FakeXHR)
 
   return {
     state,
@@ -257,8 +265,7 @@ const drive = vi.hoisted(() => {
     add,
     titlesIn(parent: string) {
       return [...state.nodes.values()]
-        .filter((node) => node.parent === parent)
-        .map((node) => node.title)
+        .flatMap((node) => (node.parent === parent ? [node.title] : []))
         .sort()
     },
   }

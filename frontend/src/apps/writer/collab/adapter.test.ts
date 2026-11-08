@@ -2,6 +2,7 @@ import { Editor } from '@tiptap/core'
 import Document from '@tiptap/extension-document'
 import Paragraph from '@tiptap/extension-paragraph'
 import Text from '@tiptap/extension-text'
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Awareness } from 'y-protocols/awareness'
 import * as yjs from 'yjs'
@@ -34,12 +35,12 @@ function roomWith(...blocks: yjs.XmlElement[]) {
   const doc = new yjs.Doc()
   doc.getXmlFragment(BODY_FIELD).insert(0, blocks)
   const presence = { awareness: new Awareness(doc), peers: [], onChange: () => () => true }
-  return {
+  return fromPartial<CollabRoom>({
     doc,
     presence,
     status: { restoreRev: 0 },
     onChange: () => () => true,
-  } as unknown as CollabRoom
+  })
 }
 
 function openEditor(room: CollabRoom, onFrozen: () => void) {

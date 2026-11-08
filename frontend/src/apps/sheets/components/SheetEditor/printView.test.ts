@@ -46,7 +46,7 @@ function cells(html: string) {
 
 describe('Sheets: the print view', () => {
   it('shows numbers in their number format, right-aligned', () => {
-    const formats: Record<string, PrintFormat> = { B2: { numberFormat: 'percentage' } }
+    const formats = { B2: { numberFormat: 'percentage' } } satisfies Record<string, PrintFormat>
     const html = printHtml('Budget', [sheet({ format: (id) => formats[id] ?? {} })])
     const change = cells(html)[3]!
     expect(change.textContent).toBe('-24.77%')

@@ -30,7 +30,12 @@ export interface CellInput {
 
 let seq = 0
 /** A command the glue sends IronCalc itself. */
-export function glueCommand(type: NonBatchCommand['type'], payload: object): NonBatchCommand {
+export function glueCommand<Type extends NonBatchCommand['type']>(
+  type: Type,
+  payload: Extract<NonBatchCommand, { type: NoInfer<Type> }>['payload'],
+): NonBatchCommand {
+  // SAFETY: Extract ties payload to this Type discriminator; the workbook client
+  // also validates the correlated command before it crosses the worker boundary.
   return { id: `glue-${seq++}`, actor: 'glue', ts: Date.now(), type, payload } as NonBatchCommand
 }
 
@@ -186,7 +191,7 @@ export async function buildWorkbookFromDoc(
   const nameOf = new Map(sheets.map((s) => [s.id, s.name]))
   for (const [key, input] of roots(doc).inputs.entries()) {
     const k = parseCellKey(key)
-    const sheet = k && nameOf.get(k.sheetId)
+    const sheet = k ? nameOf.get(k.sheetId) : undefined
     if (!k || sheet === undefined || !input) continue
     const row = axis(doc, k.sheetId, 'rows').posOf(k.rowId)
     const col = axis(doc, k.sheetId, 'cols').posOf(k.colId)

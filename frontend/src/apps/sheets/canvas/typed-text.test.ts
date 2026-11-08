@@ -20,7 +20,7 @@ function mount(host = {}) {
   })
   grid.resize(800, 600)
   canvas.focus()
-  const focused = () => document.activeElement as HTMLTextAreaElement
+  const focused = () => requireTestElement(document.activeElement, HTMLTextAreaElement)
   const editorValue = () => (grid.isEditing() ? focused().value : null)
   return { grid, canvas, parent, focused, editorValue }
 }
@@ -96,3 +96,11 @@ describe('keys on the focused grid', () => {
     expect(h.editorValue()).toBe('x')
   })
 })
+
+function requireTestElement<T extends Element>(
+  value: unknown,
+  constructor: new (...args: never[]) => T,
+): T {
+  if (!(value instanceof constructor)) throw new Error(`Expected ${constructor.name}`)
+  return value
+}

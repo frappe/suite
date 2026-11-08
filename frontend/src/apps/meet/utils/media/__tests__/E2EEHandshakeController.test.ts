@@ -1,6 +1,10 @@
+import { fromAny, fromPartial } from '@total-typescript/shoehorn'
+import type { ClientState, MLSMessage, Welcome } from 'ts-mls'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { shallowRef } from 'vue'
 
+import type { SFUClient } from '../../SFUClient'
+import type { SFUMeetingManager } from '../../SFUMeetingManager'
 import { E2EEEpochSignalingController } from '../E2EEEpochSignalingController'
 import { wipeActiveEpochState } from '../E2EEEpochStateStore'
 import { E2EEHandshakeController } from '../E2EEHandshakeController'
@@ -17,13 +21,13 @@ function deferred<T>() {
 }
 
 const track = (kind: 'audio' | 'video', readyState = 'live') =>
-  ({ kind, readyState }) as MediaStreamTrack
+  fromPartial<MediaStreamTrack>({ kind, readyState })
 
 const stream = (tracks: MediaStreamTrack[]) =>
-  ({
+  fromPartial<MediaStream>({
     getAudioTracks: () => tracks.filter((candidate) => candidate.kind === 'audio'),
     getVideoTracks: () => tracks.filter((candidate) => candidate.kind === 'video'),
-  }) as MediaStream
+  })
 
 function createMediaReconfigurationController({
   mediaState,
@@ -55,28 +59,29 @@ function createMediaReconfigurationController({
   )
   const controller = new E2EEHandshakeController({
     meetingId: 'meeting-1',
-    sfuClient: {
+    sfuClient: fromPartial({
       isConnected: vi.fn(() => true),
       setE2EERequired: vi.fn(),
       refreshToken,
       disconnect,
       joinRoom,
-    } as never,
-    sfuManager: shallowRef({
-      reconfigureForE2EE,
-      rejoinParticipantConnection: joinRoom,
-      recoverParticipantConnection,
-      hasLocalMediaPublications: vi.fn(() => true),
-    } as never),
-    currentUser: {
+    }),
+    sfuManager: shallowRef(
+      fromPartial<SFUMeetingManager>({
+        reconfigureForE2EE,
+        rejoinParticipantConnection: joinRoom,
+        recoverParticipantConnection,
+        hasLocalMediaPublications: vi.fn(() => true),
+      }),
+    ),
+    currentUser: fromPartial({
       currentUser: shallowRef({ user_id: 'user-1', full_name: 'User One' }),
-    } as never,
-    mediaState: mediaState as never,
+    }),
+    mediaState: fromPartial(mediaState),
     isCurrentTabHost: shallowRef(false),
     getDeviceIdentity: vi.fn(),
   })
-  const reconfigure = () =>
-    Reflect.get(controller, 'reconfigureMediaForE2EE').call(controller) as Promise<void>
+  const reconfigure = () => controller['reconfigureMediaForE2EE'].call(controller)
   return {
     controller,
     reconfigure,
@@ -87,31 +92,32 @@ function createMediaReconfigurationController({
   }
 }
 
+// Crypto values are opaque identity tokens here; protocol calls are mocked and never decode them.
 function createController() {
   return new E2EEHandshakeController({
     meetingId: 'meeting-1',
-    sfuClient: {
+    sfuClient: fromPartial({
       getOwnSenderId: vi.fn(() => 7),
       setE2EERequired: vi.fn(),
       isConnected: vi.fn(() => false),
       sendE2EEEpochEnvelope: vi.fn(),
-    } as never,
+    }),
     sfuManager: shallowRef(null),
-    currentUser: {
+    currentUser: fromPartial({
       currentUser: shallowRef({ user_id: 'user-1' }),
-    } as never,
-    mediaState: {} as never,
+    }),
+    mediaState: fromPartial({}),
     isCurrentTabHost: shallowRef(false),
     getDeviceIdentity: vi.fn(async () => ({
       deviceId: 'device-1',
       signingPublicKey: 'signing-public-key',
-      signingKeyPair: { privateKey: {} as CryptoKey } as CryptoKeyPair,
+      signingKeyPair: fromPartial<CryptoKeyPair>({ privateKey: fromPartial<CryptoKey>({}) }),
     })),
     epochProtocolProvider: {
       createGenesisEpoch: vi.fn(async () => ({
         epochNumber: 1,
-        state: {} as never,
-        meetingSecret: new Uint8Array(32) as Uint8Array<ArrayBuffer>,
+        state: fromAny<ClientState, unknown>({}),
+        meetingSecret: new Uint8Array(32),
       })),
       generateKeyPackage: vi.fn(),
       encodeKeyPackage: vi.fn(),
@@ -148,9 +154,7 @@ describe('E2EEHandshakeController', () => {
 
     expect(controller.keyVersion).toBe(1)
     expect(installedSecret?.byteLength).toBe(32)
-    expect(
-      Reflect.get(Reflect.get(controller, 'sfuClient'), 'sendE2EEEpochEnvelope'),
-    ).toHaveBeenCalledWith({
+    expect(controller['sfuClient']['sendE2EEEpochEnvelope']).toHaveBeenCalledWith({
       type: 'ack',
       fromParticipantId: 'user-1',
       fromSenderId: 7,
@@ -165,18 +169,18 @@ describe('E2EEHandshakeController', () => {
       { user_id: 'user-2', sender_id: 9, is_host: false },
       { user_id: 'user-3', sender_id: 11, is_host: false },
     ])
-    const sfuClient = {
+    const sfuClient = fromPartial<SFUClient>({
       getOwnSenderId: vi.fn(() => 7),
       setE2EERequired: vi.fn(),
       isConnected: vi.fn(() => false),
       sendE2EEEpochEnvelope,
       getRoomParticipants,
-    } as never
+    })
     const epochProtocolProvider = {
       createGenesisEpoch: vi.fn(async () => ({
         epochNumber: 1,
-        state: { id: 'epoch-1-state' } as never,
-        meetingSecret: new Uint8Array(32) as Uint8Array<ArrayBuffer>,
+        state: fromAny<ClientState, unknown>({ id: 'epoch-1-state' }),
+        meetingSecret: new Uint8Array(32),
       })),
       generateKeyPackage: vi.fn(),
       encodeKeyPackage: vi.fn(),
@@ -187,54 +191,56 @@ describe('E2EEHandshakeController', () => {
       encodeWelcome: vi.fn(() => new Uint8Array([7, 8, 9])),
       decodeWelcome: vi.fn(),
       addMultipleMembers: vi.fn(async (state: unknown) => ({
-        commit: { id: 'commit' } as never,
-        welcome: { id: 'welcome' } as never,
+        commit: fromAny<MLSMessage, unknown>({ id: 'commit' }),
+        welcome: fromAny<Welcome, unknown>({ id: 'welcome' }),
         epoch: {
           epochNumber: 2,
-          state: state as never,
-          meetingSecret: new Uint8Array(32) as Uint8Array<ArrayBuffer>,
+          state: fromAny<ClientState, unknown>(state),
+          meetingSecret: new Uint8Array(32),
         },
       })),
       joinFromWelcome: vi.fn(),
       processCommit: vi.fn(),
       exportMeetingSecret: vi.fn(),
     }
-    const sfuManager = shallowRef({
-      reconfigureForE2EE: vi.fn(async () => ({
-        videoPublished: true,
-        audioPublished: true,
-      })),
-    } as never)
+    const sfuManager = shallowRef(
+      fromPartial<SFUMeetingManager>({
+        reconfigureForE2EE: vi.fn(async () => ({
+          videoPublished: true,
+          audioPublished: true,
+        })),
+      }),
+    )
     const signalingController = new E2EEEpochSignalingController({
       meetingId: 'meeting-1',
       sfuClient,
-      currentUser: {
+      currentUser: fromPartial({
         currentUser: shallowRef({ user_id: 'user-1' }),
-      } as never,
+      }),
       isCurrentTabHost: shallowRef(true),
       getDeviceIdentity: vi.fn(async () => ({
         deviceId: 'device-1',
         signingPublicKey: 'signing-public-key',
-        signingKeyPair: { privateKey: {} as CryptoKey } as CryptoKeyPair,
+        signingKeyPair: fromPartial<CryptoKeyPair>({ privateKey: fromPartial<CryptoKey>({}) }),
       })),
-      epochProtocolProvider: epochProtocolProvider as never,
+      epochProtocolProvider: fromPartial(epochProtocolProvider),
     })
     const controller = new E2EEHandshakeController({
       meetingId: 'meeting-1',
       sfuClient,
       sfuManager,
-      currentUser: {
+      currentUser: fromPartial({
         currentUser: shallowRef({ user_id: 'user-1' }),
-      } as never,
-      mediaState: {} as never,
+      }),
+      mediaState: fromPartial({}),
       isCurrentTabHost: shallowRef(true),
       getDeviceIdentity: vi.fn(async () => ({
         deviceId: 'device-1',
         signingPublicKey: 'signing-public-key',
-        signingKeyPair: { privateKey: {} as CryptoKey } as CryptoKeyPair,
+        signingKeyPair: fromPartial<CryptoKeyPair>({ privateKey: fromPartial<CryptoKey>({}) }),
       })),
       epochSignalingController: signalingController,
-      epochProtocolProvider: epochProtocolProvider as never,
+      epochProtocolProvider: fromPartial(epochProtocolProvider),
       enableCollectionTimeoutMs: 50,
     })
 
@@ -315,7 +321,7 @@ describe('E2EEHandshakeController', () => {
     const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout')
     const controller = new E2EEHandshakeController({
       meetingId: 'meeting-1',
-      sfuClient: {
+      sfuClient: fromPartial({
         getOwnSenderId: vi.fn(() => 7),
         setE2EERequired: vi.fn(),
         isConnected: vi.fn(() => false),
@@ -324,20 +330,20 @@ describe('E2EEHandshakeController', () => {
           { user_id: 'user-1', sender_id: 7, is_host: true },
           { user_id: 'user-2', sender_id: 9, is_host: false },
         ]),
-      } as never,
+      }),
       sfuManager: shallowRef(null),
-      currentUser: {
+      currentUser: fromPartial({
         currentUser: shallowRef({ user_id: 'user-1' }),
-      } as never,
-      mediaState: {} as never,
+      }),
+      mediaState: fromPartial({}),
       isCurrentTabHost: shallowRef(true),
       getDeviceIdentity: vi.fn(),
-      epochSignalingController: {
+      epochSignalingController: fromPartial({
         getReceivedKeyPackagesBySenderId: vi.fn(() => new Map()),
-      } as never,
-      epochProtocolProvider: {
+      }),
+      epochProtocolProvider: fromPartial({
         createGenesisEpoch,
-      } as never,
+      }),
       enableCollectionTimeoutMs: 60_000,
     })
     const onHandshakeComplete = vi.fn()
@@ -369,27 +375,27 @@ describe('E2EEHandshakeController', () => {
 
   it('transient reconnect sends a resync-request without wiping runtime state', async () => {
     const sendE2EEEpochEnvelope = vi.fn()
-    const sfuClient = {
+    const sfuClient = fromPartial<SFUClient>({
       getOwnSenderId: vi.fn(() => 7),
       setE2EERequired: vi.fn(),
       isConnected: vi.fn(() => true),
       sendE2EEEpochEnvelope,
-    } as never
+    })
     const controller = new E2EEHandshakeController({
       meetingId: 'meeting-1',
       sfuClient,
       sfuManager: shallowRef(null),
-      currentUser: {
+      currentUser: fromPartial({
         currentUser: shallowRef({ user_id: 'user-1' }),
-      } as never,
-      mediaState: {} as never,
+      }),
+      mediaState: fromPartial({}),
       isCurrentTabHost: shallowRef(false),
       getDeviceIdentity: vi.fn(async () => ({
         deviceId: 'device-1',
         signingPublicKey: 'signing-public-key',
-        signingKeyPair: { privateKey: {} as CryptoKey } as CryptoKeyPair,
+        signingKeyPair: fromPartial<CryptoKeyPair>({ privateKey: fromPartial<CryptoKey>({}) }),
       })),
-      epochProtocolProvider: {
+      epochProtocolProvider: fromPartial({
         createGenesisEpoch: vi.fn(),
         generateKeyPackage: vi.fn(),
         encodeKeyPackage: vi.fn(),
@@ -402,7 +408,7 @@ describe('E2EEHandshakeController', () => {
         joinFromWelcome: vi.fn(),
         processCommit: vi.fn(),
         exportMeetingSecret: vi.fn(),
-      } as never,
+      }),
     })
     controller.keyVersion = 3
 
@@ -418,38 +424,40 @@ describe('E2EEHandshakeController', () => {
   })
 
   it('non-host E2EE enablement waits for context before reconfiguring media', async () => {
-    const sfuClient = {
+    const sfuClient = fromPartial<SFUClient>({
       getOwnSenderId: vi.fn(() => 9),
       setE2EERequired: vi.fn(),
       isConnected: vi.fn(() => true),
       refreshToken: vi.fn(async () => undefined),
       joinRoom: vi.fn(async () => undefined),
       sendE2EEEpochEnvelope: vi.fn(),
-    } as never
-    const sfuManager = shallowRef({
-      rejoinParticipantConnection: vi.fn(async () => true),
-      reconfigureForE2EE: vi.fn(async () => ({
-        videoPublished: true,
-        audioPublished: true,
-      })),
-      hasLocalMediaPublications: vi.fn(() => true),
-    } as never)
+    })
+    const sfuManager = shallowRef(
+      fromPartial<SFUMeetingManager>({
+        rejoinParticipantConnection: vi.fn(async () => true),
+        reconfigureForE2EE: vi.fn(async () => ({
+          videoPublished: true,
+          audioPublished: true,
+        })),
+        hasLocalMediaPublications: vi.fn(() => true),
+      }),
+    )
     const controller = new E2EEHandshakeController({
       meetingId: 'meeting-1',
       sfuClient,
       sfuManager,
-      currentUser: {
+      currentUser: fromPartial({
         currentUser: shallowRef({ user_id: 'user-2', full_name: 'User Two' }),
-      } as never,
-      mediaState: {
+      }),
+      mediaState: fromPartial({
         isCameraOn: true,
         isMicOn: true,
-        localStream: {} as MediaStream,
+        localStream: fromPartial<MediaStream>({}),
         processedStream: null,
-      } as never,
+      }),
       isCurrentTabHost: shallowRef(false),
       getDeviceIdentity: vi.fn(),
-      epochProtocolProvider: {
+      epochProtocolProvider: fromPartial({
         createGenesisEpoch: vi.fn(),
         generateKeyPackage: vi.fn(),
         encodeKeyPackage: vi.fn(),
@@ -462,7 +470,7 @@ describe('E2EEHandshakeController', () => {
         joinFromWelcome: vi.fn(),
         processCommit: vi.fn(),
         exportMeetingSecret: vi.fn(),
-      } as never,
+      }),
     })
 
     const enablePromise = controller.handleMeetingE2EEEnabled({
@@ -470,7 +478,7 @@ describe('E2EEHandshakeController', () => {
     })
     expect(sfuManager.value.reconfigureForE2EE).not.toHaveBeenCalled()
 
-    E2EEMeeting.instance.setMeetingContext(new Uint8Array(32) as Uint8Array<ArrayBuffer>, 1)
+    E2EEMeeting.instance.setMeetingContext(new Uint8Array(32), 1)
     await enablePromise
 
     expect(sfuClient.setE2EERequired).toHaveBeenCalledWith(true)
@@ -500,7 +508,7 @@ describe('E2EEHandshakeController', () => {
       reconfigurationEntered.resolve()
       return releaseReconfiguration.promise
     })
-    E2EEMeeting.instance.setMeetingContext(new Uint8Array(32) as Uint8Array<ArrayBuffer>, 1)
+    E2EEMeeting.instance.setMeetingContext(new Uint8Array(32), 1)
 
     const handling = controller.handleMeetingE2EEEnabled({
       meeting_id: 'meeting-1',
@@ -511,7 +519,7 @@ describe('E2EEHandshakeController', () => {
     await handling
 
     expect(consoleError).not.toHaveBeenCalled()
-    const signal = reconfigureForE2EE.mock.calls[0][2] as AbortSignal
+    const signal = fromPartial<AbortSignal>(reconfigureForE2EE.mock.calls[0][2])
     expect(signal.aborted).toBe(true)
   })
 
@@ -527,7 +535,7 @@ describe('E2EEHandshakeController', () => {
       },
     })
     reconfigureForE2EE.mockRejectedValue(abortError)
-    E2EEMeeting.instance.setMeetingContext(new Uint8Array(32) as Uint8Array<ArrayBuffer>, 1)
+    E2EEMeeting.instance.setMeetingContext(new Uint8Array(32), 1)
 
     await controller.handleMeetingE2EEEnabled({ meeting_id: 'meeting-1' })
 
@@ -535,7 +543,7 @@ describe('E2EEHandshakeController', () => {
       'Failed to reconfigure participant for E2EE:',
       abortError,
     )
-    const signal = reconfigureForE2EE.mock.calls[0][2] as AbortSignal
+    const signal = fromPartial<AbortSignal>(reconfigureForE2EE.mock.calls[0][2])
     expect(signal.aborted).toBe(false)
   })
 
@@ -551,7 +559,7 @@ describe('E2EEHandshakeController', () => {
       },
     })
     reconfigureForE2EE.mockRejectedValue(failure)
-    E2EEMeeting.instance.setMeetingContext(new Uint8Array(32) as Uint8Array<ArrayBuffer>, 1)
+    E2EEMeeting.instance.setMeetingContext(new Uint8Array(32), 1)
 
     await controller.handleMeetingE2EEEnabled({ meeting_id: 'meeting-1' })
 
@@ -575,7 +583,7 @@ describe('E2EEHandshakeController', () => {
         },
         refreshToken,
       })
-    E2EEMeeting.instance.setMeetingContext(new Uint8Array(32) as Uint8Array<ArrayBuffer>, 1)
+    E2EEMeeting.instance.setMeetingContext(new Uint8Array(32), 1)
 
     await controller.handleMeetingE2EEEnabled({ meeting_id: 'meeting-1' })
 
@@ -611,27 +619,27 @@ describe('E2EEHandshakeController', () => {
 
   it('hard reconnect (legacy) wipes runtime state before sending a resync-request', async () => {
     const sendE2EEEpochEnvelope = vi.fn()
-    const sfuClient = {
+    const sfuClient = fromPartial<SFUClient>({
       getOwnSenderId: vi.fn(() => 7),
       setE2EERequired: vi.fn(),
       isConnected: vi.fn(() => true),
       sendE2EEEpochEnvelope,
-    } as never
+    })
     const controller = new E2EEHandshakeController({
       meetingId: 'meeting-1',
       sfuClient,
       sfuManager: shallowRef(null),
-      currentUser: {
+      currentUser: fromPartial({
         currentUser: shallowRef({ user_id: 'user-1' }),
-      } as never,
-      mediaState: {} as never,
+      }),
+      mediaState: fromPartial({}),
       isCurrentTabHost: shallowRef(false),
       getDeviceIdentity: vi.fn(async () => ({
         deviceId: 'device-1',
         signingPublicKey: 'signing-public-key',
-        signingKeyPair: { privateKey: {} as CryptoKey } as CryptoKeyPair,
+        signingKeyPair: fromPartial<CryptoKeyPair>({ privateKey: fromPartial<CryptoKey>({}) }),
       })),
-      epochProtocolProvider: {
+      epochProtocolProvider: fromPartial({
         createGenesisEpoch: vi.fn(),
         generateKeyPackage: vi.fn(),
         encodeKeyPackage: vi.fn(),
@@ -644,10 +652,10 @@ describe('E2EEHandshakeController', () => {
         joinFromWelcome: vi.fn(),
         processCommit: vi.fn(),
         exportMeetingSecret: vi.fn(),
-      } as never,
+      }),
     })
     controller.keyVersion = 3
-    controller.meetingSecret = new Uint8Array(32) as Uint8Array<ArrayBuffer>
+    controller.meetingSecret = new Uint8Array(32)
 
     controller.handleSFUReconnect()
 
@@ -724,7 +732,7 @@ describe('E2EEHandshakeController', () => {
 
     expect(reconfigureForE2EE).toHaveBeenCalledWith(null, audioStream, expect.any(AbortSignal))
     expect(eventHandler).toHaveBeenCalledOnce()
-    expect((eventHandler.mock.calls[0][0] as CustomEvent).detail).toEqual({
+    expect(fromPartial<CustomEvent>(eventHandler.mock.calls[0][0]).detail).toEqual({
       needsCamera: true,
       needsMicrophone: false,
     })
@@ -758,7 +766,7 @@ describe('E2EEHandshakeController', () => {
     await reconfiguration
 
     expect(reconfigureForE2EE).toHaveBeenCalledWith(null, null, expect.any(AbortSignal))
-    expect((eventHandler.mock.calls[0][0] as CustomEvent).detail).toEqual({
+    expect(fromPartial<CustomEvent>(eventHandler.mock.calls[0][0]).detail).toEqual({
       needsCamera: false,
       needsMicrophone: true,
     })
@@ -796,7 +804,7 @@ describe('E2EEHandshakeController', () => {
     await reconfiguration
 
     expect(eventHandler).toHaveBeenCalledOnce()
-    expect((eventHandler.mock.calls[0][0] as CustomEvent).detail).toEqual({
+    expect(fromPartial<CustomEvent>(eventHandler.mock.calls[0][0]).detail).toEqual({
       needsCamera: false,
       needsMicrophone: true,
     })
@@ -842,7 +850,7 @@ describe('E2EEHandshakeController', () => {
       expect.any(AbortSignal),
     )
     expect(eventHandler).toHaveBeenCalledOnce()
-    expect((eventHandler.mock.calls[0][0] as CustomEvent).detail).toEqual({
+    expect(fromPartial<CustomEvent>(eventHandler.mock.calls[0][0]).detail).toEqual({
       needsCamera: true,
       needsMicrophone: false,
     })

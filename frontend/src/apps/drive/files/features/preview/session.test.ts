@@ -3,9 +3,11 @@ import { describe, expect, it, vi } from 'vitest'
 import type { DriveBreadcrumb } from '@/apps/drive/client/types'
 import type { Operation } from '@/platform/transport'
 
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const server = vi.hoisted(() => ({
-  viaLink: null as string | null,
-  visits: [] as string[],
+  viaLink: fromPartial<string | null>(null),
+  visits: fromPartial<string[]>([]),
   starred: new Set<string>(),
   trashed: new Set<string>(),
   /** The breadcrumbs a node read answers with, root first, down to the parent. */

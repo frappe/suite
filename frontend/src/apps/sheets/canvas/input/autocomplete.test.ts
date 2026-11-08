@@ -24,7 +24,7 @@ function setup(over: Partial<AutocompleteOptions> = {}) {
     acceptSuggestion: vi.fn(),
   }
   const onInput = vi.fn()
-  const cells: Record<string, string> = { '0,0': '10', '1,0': '20' }
+  const cells = { '0,0': '10', '1,0': '20' } satisfies Record<string, string>
   const ac = createAutocomplete({
     parent,
     input,
@@ -46,7 +46,7 @@ function setup(over: Partial<AutocompleteOptions> = {}) {
     const e = new KeyboardEvent('keydown', { key: k, cancelable: true })
     return ac.handleKey(e)
   }
-  const popup = () => parent.querySelector('div') as HTMLDivElement
+  const popup = () => requireTestElement(parent.querySelector('div'), HTMLDivElement)
   return { ac, input, type, key, popup, picker, shown, onInput }
 }
 
@@ -111,3 +111,11 @@ describe('autocomplete', () => {
     expect(popup().style.display).toBe('none')
   })
 })
+
+function requireTestElement<T extends Element>(
+  value: unknown,
+  constructor: new (...args: never[]) => T,
+): T {
+  if (!(value instanceof constructor)) throw new Error(`Expected ${constructor.name}`)
+  return value
+}

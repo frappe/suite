@@ -1,28 +1,35 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it, vi } from 'vitest'
-import { createApp, nextTick, ref } from 'vue'
+import { createApp, ref } from 'vue'
 
 import RecorderRenderer from './RecorderRenderer.vue'
 
-window.matchMedia = vi.fn((query: string) => ({
-  matches: Number(query.match(/\d+/)?.[0] || 0) <= window.innerWidth,
-  media: query,
-  onchange: null,
-  addEventListener: vi.fn(),
-  removeEventListener: vi.fn(),
-  addListener: vi.fn(),
-  removeListener: vi.fn(),
-  dispatchEvent: vi.fn(),
-})) as never
-globalThis.ResizeObserver = class {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
-} as never
-globalThis.IntersectionObserver = class {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
-} as never
+window.matchMedia = fromPartial(
+  vi.fn((query: string) => ({
+    matches: Number(query.match(/\d+/)?.[0] || 0) <= window.innerWidth,
+    media: query,
+    onchange: null,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  })),
+)
+globalThis.ResizeObserver = fromPartial(
+  class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  },
+)
+globalThis.IntersectionObserver = fromPartial(
+  class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  },
+)
 
 describe('RecorderRenderer', () => {
   const meetingContext = () => ({
@@ -142,7 +149,8 @@ describe('RecorderRenderer', () => {
     expect(root.querySelectorAll('[data-testid^="participant-tile-"]')).toHaveLength(1)
     expect(root.querySelector('button')).toBeNull()
     expect(
-      (root.querySelector('[data-testid="participant-tile-alice"]') as HTMLElement).style.width,
+      requireTestElement(root.querySelector('[data-testid="participant-tile-alice"]'), HTMLElement)
+        .style.width,
     ).toContain('100%')
     expect(root.textContent).toContain('A')
     app.unmount()
@@ -189,16 +197,16 @@ describe('RecorderRenderer', () => {
 
   it('attaches each screen-share tile to its own consumer stream', async () => {
     const context = meetingContext()
-    context.gridLayout.displayScreenShares.value = [
+    context.gridLayout.displayScreenShares.value = fromPartial([
       { participantId: 'alice', consumerId: 'screen-1' },
       { participantId: 'bob', consumerId: 'screen-2' },
-    ] as never
-    context.mediaState.activeScreenShareConsumers = [
+    ])
+    context.mediaState.activeScreenShareConsumers = fromPartial([
       { participantId: 'alice', consumerId: 'screen-1', startedAt: 2 },
       { participantId: 'bob', consumerId: 'screen-2', startedAt: 1 },
-    ] as never
-    const first = {} as MediaStream
-    const second = {} as MediaStream
+    ])
+    const first = fromPartial<MediaStream>({})
+    const second = fromPartial<MediaStream>({})
     context.mediaState.screenShareStreams = { 'screen-1': first, 'screen-2': second }
     const attached = vi.fn()
     const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
@@ -213,7 +221,10 @@ describe('RecorderRenderer', () => {
 
     await vi.waitFor(() => expect(attached).toHaveBeenCalledTimes(2))
     const videos = [...root.querySelectorAll('video')]
-    expect(videos.map((video) => video.srcObject).filter(Boolean)).toEqual([first, second])
+    expect(videos.flatMap((video) => (video.srcObject ? [video.srcObject] : []))).toEqual([
+      first,
+      second,
+    ])
     expect(attached.mock.calls.map(([consumerId]) => consumerId)).toEqual(['screen-1', 'screen-2'])
     play.mockRestore()
     app.unmount()
@@ -221,13 +232,13 @@ describe('RecorderRenderer', () => {
 
   it('reports screen attachment play failures', async () => {
     const context = meetingContext()
-    context.gridLayout.displayScreenShares.value = [
+    context.gridLayout.displayScreenShares.value = fromPartial([
       { participantId: 'alice', consumerId: 'screen-1' },
-    ] as never
-    context.mediaState.activeScreenShareConsumers = [
+    ])
+    context.mediaState.activeScreenShareConsumers = fromPartial([
       { participantId: 'alice', consumerId: 'screen-1', startedAt: 1 },
-    ] as never
-    context.mediaState.screenShareStreams = { 'screen-1': {} } as never
+    ])
+    context.mediaState.screenShareStreams = fromPartial({ 'screen-1': {} })
     const failure = vi.fn()
     const attachmentFailure = vi.fn()
     const play = vi
@@ -253,13 +264,13 @@ describe('RecorderRenderer', () => {
 
   it('retries screen playback when a new media load interrupts play', async () => {
     const context = meetingContext()
-    context.gridLayout.displayScreenShares.value = [
+    context.gridLayout.displayScreenShares.value = fromPartial([
       { participantId: 'alice', consumerId: 'screen-1' },
-    ] as never
-    context.mediaState.activeScreenShareConsumers = [
+    ])
+    context.mediaState.activeScreenShareConsumers = fromPartial([
       { participantId: 'alice', consumerId: 'screen-1', startedAt: 1 },
-    ] as never
-    context.mediaState.screenShareStreams = { 'screen-1': {} } as never
+    ])
+    context.mediaState.screenShareStreams = fromPartial({ 'screen-1': {} })
     const failure = vi.fn()
     const attached = vi.fn()
     const play = vi
@@ -284,3 +295,11 @@ describe('RecorderRenderer', () => {
     app.unmount()
   })
 })
+
+function requireTestElement<T extends Element>(
+  value: unknown,
+  constructor: new (...args: never[]) => T,
+): T {
+  if (!(value instanceof constructor)) throw new Error(`Expected ${constructor.name}`)
+  return value
+}

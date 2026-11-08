@@ -266,12 +266,11 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
         const added = await change(
           PICKER,
           { principal, role },
-          () =>
-            grants.put(principal, {
-              role,
-              ...keep(localGrant(principal)),
-              ...(principalKind(principal) === 'user' ? { notify } : {}),
-            }),
+          () => {
+            const write: Parameters<typeof grants.put>[1] = { role, ...keep(localGrant(principal)) }
+            if (principalKind(principal) === 'user') write.notify = notify
+            return grants.put(principal, write)
+          },
           fail(principal),
         )
         if (!added) left.push(principal)

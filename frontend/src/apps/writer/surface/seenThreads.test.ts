@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { effectScope, nextTick, ref, shallowRef } from 'vue'
 
@@ -25,7 +26,7 @@ function thread(
   comments: object[] = [said(`${name}-1`, '2026-10-01 09:00:00')],
   isResolved = false,
 ) {
-  return { name, resolved: isResolved, comments } as unknown as DocumentThread
+  return fromPartial<DocumentThread>({ name, resolved: isResolved, comments })
 }
 
 const FIRST = thread('first')

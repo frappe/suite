@@ -26,7 +26,7 @@ vi.mock('frappe-ui', async () => ({
   Dropdown: defineComponent({
     props: {
       options: {
-        type: Array as PropType<Array<{ label: string; onClick: () => unknown }>>,
+        type: fromPartial<PropType<Array<{ label: string; onClick: () => unknown }>>>(Array),
         default: () => [],
       },
     },
@@ -51,7 +51,7 @@ vi.mock('../document/DocumentHeader.vue', () => ({
   default: defineComponent({
     props: {
       location: {
-        type: Object as PropType<{ label: string; to: RouteLocationRaw } | null>,
+        type: fromPartial<PropType<{ label: string; to: RouteLocationRaw } | null>>(Object),
         default: null,
       },
     },
@@ -101,7 +101,9 @@ function typeOf(row: Row): string {
   return row.mime?.split('/')[0] ?? ''
 }
 
-const requests = vi.hoisted(() => [] as Array<{ id: string; input: unknown }>)
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
+const requests = vi.hoisted(() => fromPartial<Array<{ id: string; input: unknown }>>([]))
 vi.mock('@/platform/transport', async (original) => ({
   ...(await original<typeof import('@/platform/transport')>()),
   transport: {
@@ -142,7 +144,7 @@ function session(
     contentDocname: nodeId,
     mime,
     title: ref(title),
-    state: ref(trashRoot ? 'Trashed' : 'Active'),
+    state: ref<FilePreviewSession['state']['value']>(trashRoot ? 'Trashed' : 'Active'),
     root: 'root',
     trashRoot: ref(trashRoot),
     access: ref({ role }),
@@ -160,7 +162,7 @@ function session(
     setStarred: vi.fn(),
     refreshPreview: async () => {},
   }
-  return fields as unknown as FilePreviewSession
+  return fromPartial<FilePreviewSession>(fields)
 }
 
 let unmount: (() => void) | null = null
@@ -225,7 +227,7 @@ describe('file preview', () => {
       vi.stubGlobal('fetch', async () => new Response('a,b\n1,2\n'))
       // Its own folder, so the answer is not the one another test cached.
       const opened = { ...session('g', 'data.csv', 'text/csv'), parent: ref('folder-3') }
-      const { root } = await mount(opened as FilePreviewSession, '/d/g/data-csv')
+      const { root } = await mount(fromPartial<FilePreviewSession>(opened), '/d/g/data-csv')
 
       await new Promise((resolve) => setTimeout(resolve, 20))
       expect(openAsSheetButton(root)).toBeUndefined()

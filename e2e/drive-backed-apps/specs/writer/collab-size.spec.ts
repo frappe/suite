@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import type { Request, Response, Route } from "@playwright/test";
+
 import { expect, test } from "../../fixtures/test";
 import {
 	bodyLimitProxy,
@@ -42,19 +43,16 @@ test.describe("Writer collaboration", () => {
 		await discardNode(owner.context.request, node);
 	});
 
-	test("an edit that waits for room is saved once a compaction makes it", async ({
-		owner,
-		testApi,
-	}) => {
+	test("an edit that waits for room is saved once a compaction makes it", async ({ owner, testApi }) => {
 		await openWriterDocument(owner.page, node);
 		await typeParagraph(owner.page, "Before the cap");
 		await expectSaved(owner.page);
 		const waitReasons: string[] = [];
 		async function recordWait(response: Response) {
 			const isPush =
-				response.request().method() === "POST" &&
-				/\/api\/suite\/content\/[^/]+\/updates/.test(response.url());
+				response.request().method() === "POST" && /\/api\/suite\/content\/[^/]+\/updates/.test(response.url());
 			if (isPush && response.status() === 423) {
+				// SAFETY: the successful collaboration update endpoint returns the collab protocol verdict that this test asserts.
 				const refusal = (await response.json()) as { collab: string };
 				waitReasons.push(refusal.collab);
 			}
@@ -66,21 +64,12 @@ test.describe("Writer collaboration", () => {
 		await typeParagraph(owner.page, "After the wait");
 
 		await expect.poll(() => waitReasons, { timeout: 15_000 }).toContain("compacting");
-		await expectConverged(
-			testApi,
-			node,
-			[owner.page],
-			["Before the cap", "After the wait"],
-			30_000,
-		);
+		await expectConverged(testApi, node, [owner.page], ["Before the cap", "After the wait"], 30_000);
 		const state = await collabState(testApi, node);
 		expect(state.body_rev).toBeGreaterThan(0);
 	});
 
-	test("a change sent in pieces is saved whole and opens in the editor", async ({
-		owner,
-		testApi,
-	}) => {
+	test("a change sent in pieces is saved whole and opens in the editor", async ({ owner, testApi }) => {
 		const outcome = await pushInPieces(owner.page.request, testApi, node, owner.user.user, 700_000);
 
 		expect(outcome).toEqual({ pieces: 3, status: 200 });
@@ -96,11 +85,7 @@ test.describe("Writer collaboration", () => {
 		expect((await serverBlocks(testApi, node)).at(-1)).toBe("x".repeat(700_000));
 	});
 
-	test("a big paste through a proxy with a 1 MiB body limit is saved whole", async ({
-		owner,
-		testApi,
-		baseURL,
-	}) => {
+	test("a big paste through a proxy with a 1 MiB body limit is saved whole", async ({ owner, testApi, baseURL }) => {
 		const proxy = await bodyLimitProxy(baseURL!);
 		try {
 			await owner.page.goto(`${proxy.origin}/d/${node}`);
@@ -181,20 +166,10 @@ test.describe("Writer collaboration", () => {
 		expect(openMs).toBeLessThan(3000);
 	});
 
-	test("a change over a quarter mebibyte sent whole is refused and saves nothing", async ({
-		owner,
-		testApi,
-	}) => {
+	test("a change over a quarter mebibyte sent whole is refused and saves nothing", async ({ owner, testApi }) => {
 		const unchangedBlocks = await serverBlocks(testApi, node);
 
-		const outcome = await pushInPieces(
-			owner.page.request,
-			testApi,
-			node,
-			owner.user.user,
-			300_000,
-			true,
-		);
+		const outcome = await pushInPieces(owner.page.request, testApi, node, owner.user.user, 300_000, true);
 
 		expect(outcome).toEqual({ pieces: 0, status: 413, collab: "too_large" });
 		expect(await serverBlocks(testApi, node)).toEqual(unchangedBlocks);
@@ -203,8 +178,7 @@ test.describe("Writer collaboration", () => {
 	test("a big paste is saved in pieces and reads back whole", async ({ owner, testApi }) => {
 		const pieces: string[] = [];
 		function recordPiece(request: Request) {
-			const stagesPiece =
-				request.method() === "PUT" && /\/api\/suite\/content\/[^/]+\/stage\//.test(request.url());
+			const stagesPiece = request.method() === "PUT" && /\/api\/suite\/content\/[^/]+\/stage\//.test(request.url());
 			if (stagesPiece) {
 				pieces.push(request.url());
 			}
@@ -223,37 +197,24 @@ test.describe("Writer collaboration", () => {
 		expect(pieces.length).toBeGreaterThanOrEqual(3);
 		const log = await logId(testApi, node);
 		// The readable copy's pieces stay staged until the queued render check installs it
-		await expect
-			.poll(async () => (await logRowCounts(testApi, log)).stage, { timeout: 30_000 })
-			.toBe(0);
+		await expect.poll(async () => (await logRowCounts(testApi, log)).stage, { timeout: 30_000 }).toBe(0);
 	});
 
-	test("a paste too large for one save is refused before it enters the document", async ({
-		owner,
-		testApi,
-	}) => {
+	test("a paste too large for one save is refused before it enters the document", async ({ owner, testApi }) => {
 		await openWriterDocument(owner.page, node);
 		await typeParagraph(owner.page, "Before the huge paste");
 		await expectSaved(owner.page);
 
 		await pasteText(owner.page, "z".repeat(4.5 * 2 ** 20));
 
-		await expect(
-			owner.page.getByText("This is too large to add in one go. Add it in smaller parts."),
-		).toBeVisible();
+		await expect(owner.page.getByText("This is too large to add in one go. Add it in smaller parts.")).toBeVisible();
 		await expect(writerEditor(owner.page)).not.toContainText("zzzz");
 		await expectSaved(owner.page);
 		const saved = (await serverBlocks(testApi, node)).join("");
-		expect([saved.includes("Before the huge paste"), saved.includes("zzzz")]).toEqual([
-			true,
-			false,
-		]);
+		expect([saved.includes("Before the huge paste"), saved.includes("zzzz")]).toEqual([true, false]);
 	});
 
-	test("a .docx too large for one save is refused before it enters the document", async ({
-		owner,
-		testApi,
-	}) => {
+	test("a .docx too large for one save is refused before it enters the document", async ({ owner, testApi }) => {
 		await openWriterDocument(owner.page, node);
 		await typeParagraph(owner.page, "Before the huge import");
 		await expectSaved(owner.page);
@@ -271,10 +232,7 @@ test.describe("Writer collaboration", () => {
 		await expect(writerEditor(owner.page)).not.toContainText("zzzz");
 		await expectSaved(owner.page);
 		const saved = (await serverBlocks(testApi, node)).join("");
-		expect([saved.includes("Before the huge import"), saved.includes("zzzz")]).toEqual([
-			true,
-			false,
-		]);
+		expect([saved.includes("Before the huge import"), saved.includes("zzzz")]).toEqual([true, false]);
 	});
 
 	test("a paste into a full document is kept aside, and deletes save until there is room", async ({
@@ -319,9 +277,7 @@ test.describe("Writer collaboration", () => {
 		}
 
 		await expect(writerEditor(owner.page)).not.toContainText("Delete me");
-		await expect
-			.poll(async () => (await serverBlocks(testApi, node)).join(""))
-			.not.toContain("Delete me");
+		await expect.poll(async () => (await serverBlocks(testApi, node)).join("")).not.toContain("Delete me");
 		await expect(owner.page.getByText(banner)).toBeVisible();
 		// Checked at once, as typing that went in would also leave once its refusal rebuilds the tab
 		await owner.page.keyboard.type("Typed while full");
@@ -334,10 +290,7 @@ test.describe("Writer collaboration", () => {
 		expect((await serverBlocks(testApi, node)).join("")).toContain("Room again");
 	});
 
-	test("a tab opened on a full document takes only deletes until there is room", async ({
-		owner,
-		testApi,
-	}) => {
+	test("a tab opened on a full document takes only deletes until there is room", async ({ owner, testApi }) => {
 		await openWriterDocument(owner.page, node);
 		await typeParagraph(owner.page, "Before the document filled");
 		await typeParagraph(owner.page, "Delete me");
@@ -359,9 +312,7 @@ test.describe("Writer collaboration", () => {
 			await tab.keyboard.press("Backspace");
 		}
 
-		await expect
-			.poll(async () => (await serverBlocks(testApi, node)).join(""))
-			.not.toContain("Delete me");
+		await expect.poll(async () => (await serverBlocks(testApi, node)).join("")).not.toContain("Delete me");
 		// Pushes go out in order, so typing the tab had taken would be saved by now
 		expect((await serverBlocks(testApi, node)).join("")).not.toContain("typed while full");
 
@@ -373,9 +324,7 @@ test.describe("Writer collaboration", () => {
 		await tab.close();
 	});
 
-	test("a change the server finds too large stops saving and says to insert images as files", async ({
-		owner,
-	}) => {
+	test("a change the server finds too large stops saving and says to insert images as files", async ({ owner }) => {
 		// The paste guard keeps real changes under the cap, so the server's answer to a bigger one is played here
 		const tooLarge = {
 			status: 413,
@@ -388,9 +337,7 @@ test.describe("Writer collaboration", () => {
 		await pasteText(owner.page, "w".repeat(700_000));
 
 		await expect(
-			owner.page.getByText(
-				"A change in this tab is too large to save. Insert large images as files.",
-			),
+			owner.page.getByText("A change in this tab is too large to save. Insert large images as files."),
 		).toBeVisible();
 	});
 });

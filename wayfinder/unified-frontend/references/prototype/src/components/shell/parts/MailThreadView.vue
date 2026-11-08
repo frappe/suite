@@ -306,7 +306,7 @@ const moveOptions = MAILBOXES.filter((box) => box.id !== 'starred').map((box) =>
   onClick: () => {},
 }))
 
-const labelOptions = (['Work', 'Support', 'Billing', 'Automated', 'Personal'] as MailLabel[]).map(
+const labelOptions = (['Work', 'Support', 'Billing', 'Automated', 'Personal'] satisfies MailLabel[]).map(
   (label) => ({
     label,
     selected: props.thread.labels.includes(label),

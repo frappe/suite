@@ -15,12 +15,13 @@ import { remapCellKeys } from './ref-remap.js'
 import type { CellPos, IndexMap } from './types.js'
 
 export interface CommentReply {
-  author: string
-  name: string
+  /** Older thread snapshots may keep only text, without author metadata. */
+  author?: string | undefined
+  name?: string | undefined
   text: string
   /** Epoch ms; null for a note migrated from the legacy string form. */
-  ts: number | null
-  mentions?: string[]
+  ts?: number | null | undefined
+  mentions?: string[] | undefined
 }
 
 export interface CommentThread {
@@ -35,14 +36,45 @@ export type StoredComment = CommentThread | string
 export type CommentsSnapshot = Record<string, Record<string, StoredComment>>
 
 export interface ReplyInput {
-  author?: string
-  name?: string
+  author?: string | undefined
+  name?: string | undefined
   text?: string
-  ts?: number | null
-  mentions?: string[]
+  ts?: number | null | undefined
+  mentions?: string[] | undefined
 }
 
 export type CommentsEngine = ReturnType<typeof createCommentsEngine>
+
+function isCommentReply(value: unknown): value is CommentReply {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    'text' in value &&
+    typeof value.text === 'string' &&
+    (!('author' in value) || value.author === undefined || typeof value.author === 'string') &&
+    (!('name' in value) || value.name === undefined || typeof value.name === 'string') &&
+    (!('ts' in value) ||
+      value.ts === undefined ||
+      value.ts === null ||
+      typeof value.ts === 'number') &&
+    (!('mentions' in value) ||
+      value.mentions === undefined ||
+      (Array.isArray(value.mentions) &&
+        value.mentions.every((mention) => typeof mention === 'string')))
+  )
+}
+
+function isCommentThread(value: unknown): value is CommentThread {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    'resolved' in value &&
+    typeof value.resolved === 'boolean' &&
+    'thread' in value &&
+    Array.isArray(value.thread) &&
+    value.thread.every(isCommentReply)
+  )
+}
 
 // Upgrade a legacy string note to a thread; pass a thread object through.
 // Returns null for an empty/blank note (nothing to keep).
@@ -54,7 +86,7 @@ function _migrate(v: unknown): CommentThread | null {
   }
   // Only a well-formed thread object survives; a number / array / corrupt value
   // is dropped rather than crashing hasOpenComment's `.thread.length` later.
-  return v && Array.isArray((v as CommentThread).thread) ? (v as CommentThread) : null
+  return isCommentThread(v) ? v : null
 }
 
 interface CommentEntry {

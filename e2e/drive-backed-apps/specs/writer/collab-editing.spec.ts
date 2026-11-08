@@ -1,4 +1,5 @@
 import type { Page, Request, Route, WebSocket } from "@playwright/test";
+
 import { expect, test } from "../../fixtures/test";
 import {
 	blockRuns,
@@ -16,12 +17,7 @@ import {
 	typeParagraph,
 } from "../../helpers/collab";
 import { discardNode } from "../../helpers/drive";
-import {
-	createWriterDocument,
-	openWriterDocument,
-	uniqueWriterTitle,
-	writerEditor,
-} from "../../helpers/writer";
+import { createWriterDocument, openWriterDocument, uniqueWriterTitle, writerEditor } from "../../helpers/writer";
 
 test.describe("Writer collaboration", () => {
 	let node = "";
@@ -36,11 +32,7 @@ test.describe("Writer collaboration", () => {
 		await discardNode(owner.context.request, node);
 	});
 
-	test("two people typing at once end with the same document", async ({
-		owner,
-		collaborator,
-		testApi,
-	}) => {
+	test("two people typing at once end with the same document", async ({ owner, collaborator, testApi }) => {
 		await openWriterDocument(owner.page, node);
 		await openWriterDocument(collaborator.page, node);
 
@@ -95,12 +87,8 @@ test.describe("Writer collaboration", () => {
 		await expect.poll(() => editorBlocks(owner.page)).toEqual(convergedBlocks);
 	});
 
-	test("bold over a mention shows in the other tab and after a reload", async ({
-		owner,
-		collaborator,
-	}) => {
-		const mentionLine =
-			'<p>a<span class="mention" data-type="mention" data-id="ann" data-label="Ann">@Ann</span>b</p>';
+	test("bold over a mention shows in the other tab and after a reload", async ({ owner, collaborator }) => {
+		const mentionLine = '<p>a<span class="mention" data-type="mention" data-id="ann" data-label="Ann">@Ann</span>b</p>';
 		await openWriterDocument(owner.page, node);
 		await openWriterDocument(collaborator.page, node);
 		await pasteHtml(owner.page, mentionLine);
@@ -117,11 +105,7 @@ test.describe("Writer collaboration", () => {
 		await expect(boldMention(collaborator.page)).toBeVisible();
 	});
 
-	test("undo takes back this tab's typing and leaves the other person's", async ({
-		owner,
-		collaborator,
-		testApi,
-	}) => {
+	test("undo takes back this tab's typing and leaves the other person's", async ({ owner, collaborator, testApi }) => {
 		await openWriterDocument(owner.page, node);
 		await openWriterDocument(collaborator.page, node);
 		await typeParagraph(owner.page, "Owner typed this");
@@ -136,12 +120,7 @@ test.describe("Writer collaboration", () => {
 
 		await owner.page.keyboard.press("ControlOrMeta+z");
 
-		const blocks = await expectConverged(
-			testApi,
-			node,
-			[owner.page, collaborator.page],
-			["Collaborator typed this"],
-		);
+		const blocks = await expectConverged(testApi, node, [owner.page, collaborator.page], ["Collaborator typed this"]);
 		expect(blocks.join("\n")).not.toContain("Owner typed this");
 	});
 
@@ -155,10 +134,7 @@ test.describe("Writer collaboration", () => {
 		expect((await serverBlocks(testApi, node)).join("\n")).toContain("Saved by the shortcut");
 	});
 
-	test("an edit reaches the other tab over the realtime socket, without a poll", async ({
-		owner,
-		collaborator,
-	}) => {
+	test("an edit reaches the other tab over the realtime socket, without a poll", async ({ owner, collaborator }) => {
 		const frames: string[] = [];
 		function recordFrames(socket: WebSocket) {
 			socket.on("framereceived", ({ payload }) => frames.push(String(payload)));
@@ -218,12 +194,8 @@ test.describe("Writer collaboration", () => {
 
 		const collaboratorName = nameOf(collaborator.user);
 		const ownerName = nameOf(owner.user);
-		await expect(
-			owner.page.getByRole("button", { name: `${collaboratorName} is here` }),
-		).toBeVisible();
-		await expect(
-			collaborator.page.getByRole("button", { name: `${ownerName} is here` }),
-		).toBeVisible();
+		await expect(owner.page.getByRole("button", { name: `${collaboratorName} is here` })).toBeVisible();
+		await expect(collaborator.page.getByRole("button", { name: `${ownerName} is here` })).toBeVisible();
 		await expect(caretLabels(owner.page)).toHaveText([firstNameOf(collaborator.user)]);
 		await expect(caretLabels(collaborator.page)).toHaveText([firstNameOf(owner.user)]);
 	});
@@ -269,11 +241,7 @@ test.describe("Writer collaboration", () => {
 		);
 	});
 
-	test("edits made offline reach everyone after reconnecting", async ({
-		owner,
-		collaborator,
-		testApi,
-	}) => {
+	test("edits made offline reach everyone after reconnecting", async ({ owner, collaborator, testApi }) => {
 		// A failed pull retries after up to 30 s, so reconnecting can take that long
 		test.setTimeout(120_000);
 		await openWriterDocument(owner.page, node);
@@ -314,9 +282,7 @@ test.describe("Writer collaboration", () => {
 		await expectSaved(owner.page);
 		const compacted = await compactNow(testApi, node);
 		await trimNow(testApi, node);
-		await expect
-			.poll(() => trimmedRev(testApi, node), { timeout: 30_000 })
-			.toBe(compacted.body_rev - 1);
+		await expect.poll(() => trimmedRev(testApi, node), { timeout: 30_000 }).toBe(compacted.body_rev - 1);
 
 		await collaborator.context.setOffline(false);
 
@@ -349,9 +315,7 @@ test.describe("Writer collaboration", () => {
 			};
 		}
 
-		await expect
-			.poll(compactionStatus, { timeout: 30_000 })
-			.toEqual({ compacted: true, tail_rows: 0 });
+		await expect.poll(compactionStatus, { timeout: 30_000 }).toEqual({ compacted: true, tail_rows: 0 });
 		const stored = await serverBlocks(testApi, node);
 		expect(stored.join("\n")).toContain("Typed just before the last tab closed");
 
@@ -385,9 +349,7 @@ test.describe("Writer collaboration", () => {
 		}
 	});
 
-	test("a second tab says Saving… for the first tab's unsent edit and Saved once it is sent", async ({
-		owner,
-	}) => {
+	test("a second tab says Saving… for the first tab's unsent edit and Saved once it is sent", async ({ owner }) => {
 		// A failed push retries after up to 30 s
 		test.setTimeout(120_000);
 		await owner.page.route(PUSHES, dropPushes);
@@ -406,10 +368,7 @@ test.describe("Writer collaboration", () => {
 		await expectSaved(owner.page);
 	});
 
-	test("an unsent edit left by a closed tab is sent once by the tab still open", async ({
-		owner,
-		testApi,
-	}) => {
+	test("an unsent edit left by a closed tab is sent once by the tab still open", async ({ owner, testApi }) => {
 		await owner.page.route(PUSHES, dropPushes);
 		await openWriterDocument(owner.page, node);
 		await typeParagraph(owner.page, "Left by the closed tab");
@@ -440,6 +399,7 @@ function dropPushes(route: Route) {
 
 // Runs in the page, so it reads nothing from this module
 function editorJson() {
+	// SAFETY: Tiptap attaches its editor to the mounted ProseMirror element; these probes read only Tiptap getJSON/extensionManager members.
 	const root = document.querySelector(".ProseMirror") as { editor?: { getJSON: () => object } } | null;
 	return root?.editor?.getJSON() ?? null;
 }
@@ -449,6 +409,7 @@ function editorKind() {
 	interface Mounted {
 		editor?: { extensionManager: { extensions: { name: string }[] } };
 	}
+	// SAFETY: Tiptap attaches its editor to the mounted ProseMirror element; these probes read only Tiptap getJSON/extensionManager members.
 	const root = document.querySelector(".ProseMirror") as Mounted | null;
 	if (!root?.editor) {
 		return null;

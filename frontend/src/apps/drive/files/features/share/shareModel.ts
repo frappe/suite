@@ -232,14 +232,15 @@ export function sharedWith(list: GrantList, nodeKind: string, now = new Date()):
   const named = [
     ...sections.people.map((row) => row.grant),
     ...sections.inherited.flatMap((part) =>
-      part.rows
-        .filter((row) => row.kind === 'user' || row.kind === 'group')
-        .map((row) => row.entry.grant)
-        .filter((grant) => !local.has(grant.principal)),
+      part.rows.flatMap((row) => {
+        if (row.kind !== 'user' && row.kind !== 'group') return []
+        const grant = row.entry.grant
+        return !local.has(grant.principal) ? [grant] : []
+      }),
     ),
-  ]
-    .filter(gives)
-    .map((grant) => grant.person?.full_name ?? principalLabel(grant.principal))
+  ].flatMap((grant) =>
+    gives(grant) ? [grant.person?.full_name ?? principalLabel(grant.principal)] : [],
+  )
   const open = (access: GeneralAccess | null) =>
     access?.state === 'local' ||
     access?.state === 'inherited' ||

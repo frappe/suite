@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, ref } from 'vue'
 
@@ -78,7 +79,7 @@ describe('commenting on the whole document', () => {
       canComment: true,
       canEditDocument: false,
       canShare: true,
-      actions: { isUnsent: () => false, isNotSent: () => false } as unknown as ThreadActions,
+      actions: fromPartial<ThreadActions>({ isUnsent: () => false, isNotSent: () => false }),
       drafts,
     }
     const app = createApp(() => h(CommentList, props))

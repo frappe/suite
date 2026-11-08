@@ -41,8 +41,8 @@ export function useUploadDrop(
         if (over.value?.key !== found?.key) over.value = found
       },
       onDragleave(event) {
-        const left = event.currentTarget as Node | null
-        const entered = event.relatedTarget as Node | null
+        const left = event.currentTarget instanceof Node ? event.currentTarget : null
+        const entered = event.relatedTarget instanceof Node ? event.relatedTarget : null
         if (left && entered && left.contains(entered)) return
         const found = resolve()
         if (over.value && over.value.key === found?.key) over.value = null

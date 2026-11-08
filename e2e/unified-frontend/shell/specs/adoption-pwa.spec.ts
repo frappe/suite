@@ -26,8 +26,7 @@ async function recordWorkerRegistrations(page: Page) {
 	});
 }
 
-const workerRegistrations = (page: Page) =>
-	page.evaluate(() => (window as unknown as { __workerRegistrations: Array<{ url: string; options: unknown }> }).__workerRegistrations);
+const workerRegistrations = (page: Page) => page.evaluate(() => window.__workerRegistrations);
 
 const MAIL_ACCOUNT = { is_jmap_configured: true, capabilities: { jmap: true, systemManager: true } };
 
@@ -47,9 +46,14 @@ test.describe("one Suite PWA", () => {
 
 	test("every area links the Suite manifest, and Mail and Calendar their own", async ({ page }) => {
 		// Under the app's base: `/` on Vite's dev server, the built assets' prefix otherwise.
-		const manifestOf = (app: string) =>
-			new RegExp(`^(/assets/suite/frontend)?/pwa/${app}/manifest\\.webmanifest$`);
-		const expected = { "/home": "suite", "/drive": "suite", "/meet": "suite", "/mail": "mail", "/calendar": "calendar" };
+		const manifestOf = (app: string) => new RegExp(`^(/assets/suite/frontend)?/pwa/${app}/manifest\\.webmanifest$`);
+		const expected = {
+			"/home": "suite",
+			"/drive": "suite",
+			"/meet": "suite",
+			"/mail": "mail",
+			"/calendar": "calendar",
+		};
 		for (const [path, app] of Object.entries(expected)) {
 			await page.goto(path);
 			await expect(manifestLinks(page)).toHaveCount(1);
@@ -60,6 +64,7 @@ test.describe("one Suite PWA", () => {
 			await page.goto(path);
 			await expect(manifestLinks(page)).toHaveCount(1);
 			const href = (await manifestLinks(page).getAttribute("href"))!;
+			// SAFETY: the fetched link is the manifest selected by this journey; its open JSON fields are compared against the required PWA metadata below.
 			return (await (await page.request.get(href)).json()) as Record<string, unknown>;
 		};
 		const suite = await manifestAt("/home");
@@ -196,3 +201,9 @@ test.describe("phone bottom nav in the shell", () => {
 		await expect(bottomNavItems(page).filter({ hasText: "Home" })).toBeVisible();
 	});
 });
+
+declare global {
+	interface Window {
+		__workerRegistrations: Array<{ url: string; options: unknown }>;
+	}
+}

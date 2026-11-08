@@ -37,9 +37,11 @@ vi.mock('frappe-ui', () => ({
   }),
 }))
 
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const adminScenario = vi.hoisted(() => ({ enabled: false, secondEnabled: false }))
 
-const requests = vi.hoisted(() => [] as string[])
+const requests = vi.hoisted(() => fromPartial<string[]>([]))
 vi.hoisted(() => {
   globalThis.fetch = async (input) => {
     const url = String(input instanceof Request ? input.url : input)

@@ -179,11 +179,12 @@ export const registration: OwnerRegistration = {
                 !Array.isArray(data.accounts)
               )
                 return undefined
+              const changes = input.changes
               return {
                 ...data,
                 accounts: data.accounts.map((account) =>
                   isRecord(account) && account.id === input.account
-                    ? { ...account, ...(input.changes as Record<string, unknown>) }
+                    ? { ...account, ...changes }
                     : account,
                 ),
               }
@@ -267,7 +268,7 @@ export const registration: OwnerRegistration = {
   },
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+function isRecord<Value>(value: Value): value is Value & Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
@@ -387,7 +388,7 @@ function messagePolicy<I, O>(id: string, publicName?: string): Policy<I, O> {
           }
           const field =
             id === 'set_mails_seen' ? 'seen' : id === 'set_flagged' ? 'flagged' : undefined
-          const patch = (row: unknown): unknown => {
+          const patch = <Row>(row: Row): Row | Record<string, unknown> => {
             if (
               !isRecord(row) ||
               (typeof row.account === 'string' &&
@@ -416,13 +417,12 @@ function messagePolicy<I, O>(id: string, publicName?: string): Policy<I, O> {
                     flagged: messages.some((m) => isRecord(m) && copies(m).some(starred)) ? 1 : 0,
                   }
                 : {}
-            return {
-              ...row,
-              ...(messages ? { messages } : {}),
-              ...(duplicates ? { duplicates } : {}),
-              ...(ids.has(row.id) ? { [field]: input[field] ? 1 : 0 } : {}),
-              ...flagged,
-            }
+            const updated = { ...row }
+            if (messages) Object.assign(updated, { messages })
+            if (duplicates) Object.assign(updated, { duplicates })
+            if (ids.has(row.id)) Object.assign(updated, { [field]: input[field] ? 1 : 0 })
+            if ('flagged' in flagged) Object.assign(updated, { flagged: flagged.flagged })
+            return updated
           }
           if (field) {
             if (Array.isArray(data)) return data.map(patch)
@@ -456,7 +456,7 @@ function messagePolicy<I, O>(id: string, publicName?: string): Policy<I, O> {
                         isRecord(m) &&
                         (!!m.flagged ||
                           (Array.isArray(m.duplicates) &&
-                            m.duplicates.some((d) => isRecord(d) && d.flagged))),
+                            m.duplicates.some((d: unknown) => isRecord(d) && d.flagged))),
                     )
                   : !!row.flagged
               return {
@@ -482,16 +482,15 @@ function messagePolicy<I, O>(id: string, publicName?: string): Policy<I, O> {
               row.account !== input.account
             data = {
               ...data,
-              rows: data.rows.map((row) =>
-                isRecord(row) && !elsewhere(row)
-                  ? {
-                      ...(refile(row) as Record<string, unknown>),
-                      ...(Array.isArray(row.messages)
-                        ? { messages: row.messages.map(refile) }
-                        : {}),
-                    }
-                  : row,
-              ),
+              rows: data.rows.map((row) => {
+                if (!isRecord(row) || elsewhere(row)) return row
+                const refiled = refile(row)
+                if (!isRecord(refiled))
+                  throw new TypeError('Refiling must preserve the mail record')
+                const updated = { ...refiled }
+                if (Array.isArray(row.messages)) updated.messages = row.messages.map(refile)
+                return updated
+              }),
             }
             if (!input.leaves) return data
           }
@@ -535,7 +534,9 @@ function messagePolicy<I, O>(id: string, publicName?: string): Policy<I, O> {
               return (
                 !ids.has(row.id) &&
                 (!Array.isArray(row.messages) ||
-                  !row.messages.every((message) => isRecord(message) && ids.has(message.id)))
+                  !row.messages.every(
+                    (message: unknown) => isRecord(message) && ids.has(message.id),
+                  ))
               )
             }),
           }

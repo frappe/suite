@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it } from 'vitest'
 
 import { createAutofit, type MeasureContext } from './autofit.js'
@@ -10,7 +11,9 @@ function measureCtx(): MeasureContext {
     save() {},
     restore() {},
     measureText(text: string) {
-      return { width: text.length * (this.font.includes('bold') ? 12 : 10) } as TextMetrics
+      return fromPartial<TextMetrics>({
+        width: text.length * (this.font.includes('bold') ? 12 : 10),
+      })
     },
   }
 }

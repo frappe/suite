@@ -1,4 +1,5 @@
 import { expect, type APIRequestContext, type Locator, type Page } from "@playwright/test";
+
 import { createDocument, grantAccess, revokeAccess, ROLE, type DriveNode } from "./drive";
 
 /** The Drive content doctype that Writer documents are stored as. */
@@ -14,11 +15,7 @@ export function uniqueWriterTitle(runId: string, scenario: string): string {
 }
 
 /** A Writer document in the caller's Personal root, through Drive's `node_create` union. */
-export function createWriterDocument(
-	request: APIRequestContext,
-	title: string,
-	parent?: string,
-): Promise<DriveNode> {
+export function createWriterDocument(request: APIRequestContext, title: string, parent?: string): Promise<DriveNode> {
 	return createDocument(request, title, WRITER_DOCTYPE, parent);
 }
 
@@ -32,13 +29,7 @@ export async function shareWriterDocument(
 	options: { user?: string; read: boolean; write?: boolean; comment?: boolean },
 ): Promise<void> {
 	const principal = options.user || "$PUBLIC";
-	const role = options.write
-		? ROLE.EDIT
-		: options.comment
-			? ROLE.COMMENT
-			: options.read
-				? ROLE.READ
-				: ROLE.NONE;
+	const role = options.write ? ROLE.EDIT : options.comment ? ROLE.COMMENT : options.read ? ROLE.READ : ROLE.NONE;
 	if (role === ROLE.NONE) await revokeAccess(request, node, principal);
 	else await grantAccess(request, node, principal, role);
 }
@@ -68,6 +59,7 @@ export async function placeCaretIn(page: Page, text: string): Promise<void> {
 
 // Runs in the page, so it reads nothing from this module
 function caretBlockText() {
+	// SAFETY: Tiptap attaches its editor to the mounted ProseMirror element; this probe only reads the selection after the editor is visible.
 	const root = document.querySelector(".ProseMirror") as { editor?: CaretEditor } | null;
 	return root?.editor?.state.selection.$from.parent.textContent;
 }

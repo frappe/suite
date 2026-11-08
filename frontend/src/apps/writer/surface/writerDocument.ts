@@ -40,11 +40,13 @@ function parseSettings(stored: unknown): unknown {
   return stored
 }
 
+function isWriterSettings(value: unknown): value is WriterSettings {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
 function settingsOf(stored: unknown): WriterSettings {
   const settings = parseSettings(stored)
-  if (settings && typeof settings === 'object' && !Array.isArray(settings)) {
-    return settings as WriterSettings
-  }
+  if (isWriterSettings(settings)) return settings
 
   return {}
 }
@@ -63,9 +65,16 @@ export function createWriterDocument(
 ) {
   const context = session.credentials.context
   const name = session.contentDocname
-  const document = reactive({
-    doc: null as WriterDocumentRow | null,
-    readFailure: null as string | null,
+  interface WriterDocumentState {
+    doc: WriterDocumentRow | null
+    readFailure: string | null
+    reload: typeof load
+    setLocked: typeof setLocked
+    read: typeof read
+  }
+  const document = reactive<WriterDocumentState>({
+    doc: null,
+    readFailure: null,
     reload: () => load(),
     setLocked,
     read,

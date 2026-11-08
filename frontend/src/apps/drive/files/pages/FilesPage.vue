@@ -254,7 +254,14 @@ import {
 import { computed, h, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 
-import { api, client, useInfiniteQuery, useMutation, useQuery } from '@/api'
+import {
+  api,
+  client,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  type InfiniteQueryState,
+} from '@/api'
 import { driveNodeRoute, newDocumentRoute, useDriveDialogs } from '@/apps/drive'
 import { openAsSpreadsheet, opensAsSpreadsheet } from '@/apps/drive/client/nodes'
 import type { DriveBatchResult, DriveNode } from '@/apps/drive/client/types'
@@ -490,7 +497,7 @@ const placeLabel = computed(() => {
       starred: 'Starred',
       trash: 'Trash',
       folder: 'Folder',
-    } as Record<Destination, string>
+    } satisfies Record<Destination, string>
   )[props.destination]
 })
 // Search covers the whole Drive, so while it shows, the header names the
@@ -603,13 +610,41 @@ const viewListing = useInfiniteQuery(api.drive.views.list, () => {
   if (view === 'trash' && !root) return false
   return { view, root, type, limit: 60, expand: expansion.value }
 })
-const listingQuery = new Proxy(childListing, {
-  get(_target, key) {
-    const active = isSearching.value || !concreteDestination.value ? viewListing : childListing
-    if (key === 'rows') return active.rows.filter((row): row is DriveNode => 'name' in row)
-    return Reflect.get(active, key)
+const activeListing = computed(() =>
+  isSearching.value || !concreteDestination.value ? viewListing : childListing,
+)
+const listingQuery: InfiniteQueryState<DriveNode> = {
+  get status() {
+    return activeListing.value.status
   },
-})
+  get isFetching() {
+    return activeListing.value.isFetching
+  },
+  get rows() {
+    return activeListing.value.rows.filter((row): row is DriveNode => 'name' in row)
+  },
+  get total() {
+    return activeListing.value.total
+  },
+  get hasNext() {
+    return activeListing.value.hasNext
+  },
+  get isFetchingNext() {
+    return activeListing.value.isFetchingNext
+  },
+  get error() {
+    return activeListing.value.error
+  },
+  refetch() {
+    return activeListing.value.refetch()
+  },
+  fetchNext() {
+    return activeListing.value.fetchNext()
+  },
+  cancel() {
+    activeListing.value.cancel()
+  },
+}
 // A new sort, view or search term keeps the old rows up until the new ones come.
 const listing = heldWhileRearranging(
   recentFiles(listingQuery, () => hidesFolders.value),
@@ -657,7 +692,7 @@ const newUploadTarget = computed(() =>
 )
 const canCreateDocuments = computed(() => linkAccess(detail.data, signedIn.value).documentKinds)
 const selectedRows = computed(() =>
-  (listing.rows as DriveNode[]).filter((row) => selection.value.includes(row.name)),
+  listing.rows.filter((row) => selection.value.includes(row.name)),
 )
 const empty = computed(() =>
   emptyState({
@@ -1118,9 +1153,10 @@ function clearSearch() {
 }
 /** The clear button leaves with the term, so focus stays in the field. */
 function clearSearchAndFocus(event: MouseEvent) {
-  const field = (event.currentTarget as HTMLElement)
-    .closest('.files-search')
-    ?.querySelector('input')
+  const checkedEventTarget = event.currentTarget
+  if (!(checkedEventTarget instanceof HTMLElement)) return
+
+  const field = checkedEventTarget.closest('.files-search')?.querySelector('input')
   clearSearch()
   field?.focus()
 }
@@ -1128,16 +1164,16 @@ function selectNode(row: DriveNode, range: boolean) {
   selectionState.value = toggleSelection(
     selectionState.value,
     row.name,
-    (listing.rows as DriveNode[]).map((item) => item.name),
+    listing.rows.map((item) => item.name),
     range,
   )
 }
 function selectFirst() {
-  const row = (listing.rows as DriveNode[])[0]
+  const row = listing.rows[0]
   if (row) selectNode(row, false)
 }
 function selectAll() {
-  const ids = (listing.rows as DriveNode[]).map((row) => row.name)
+  const ids = listing.rows.map((row) => row.name)
   selectionState.value = { selected: ids, anchor: ids.at(-1) ?? null }
 }
 function clearSelected() {
@@ -1179,7 +1215,10 @@ function typeIcon(value: string | number) {
  * chosen. Remove this once MultiSelect does it itself.
  */
 function enterTypeOptions(event: FocusEvent) {
-  const listbox = (event.currentTarget as HTMLElement).closest<HTMLElement>('[role="listbox"]')
+  const checkedEventTarget = event.currentTarget
+  if (!(checkedEventTarget instanceof HTMLElement)) return
+
+  const listbox = checkedEventTarget.closest<HTMLElement>('[role="listbox"]')
   const from = event.relatedTarget instanceof Node ? event.relatedTarget : null
   if (!listbox || listbox.contains(from)) return
   listbox.querySelector<HTMLElement>('[role="option"][aria-selected="true"]')?.focus()

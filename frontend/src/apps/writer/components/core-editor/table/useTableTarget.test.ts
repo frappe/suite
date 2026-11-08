@@ -1,4 +1,5 @@
 import { Editor } from '@tiptap/core'
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { effectScope, ref, shallowRef, type EffectScope } from 'vue'
 
@@ -9,13 +10,13 @@ import { useTableTarget } from './useTableTarget'
 let editor: Editor | null = null
 let scope: EffectScope | null = null
 
-const RECTS: Record<string, { left: number; top: number; width: number; height: number }> = {
+const RECTS = {
   layer: { left: 20, top: 10, width: 0, height: 0 },
   wrapper: { left: 100, top: 50, width: 400, height: 120 },
   table: { left: 100, top: 50, width: 400, height: 120 },
   row: { left: 100, top: 90, width: 400, height: 40 },
   cell: { left: 200, top: 90, width: 100, height: 40 },
-}
+} satisfies Record<string, { left: number; top: number; width: number; height: number }>
 
 function rectOf(element: Element) {
   const kind = element.matches('[data-layer]')
@@ -33,7 +34,7 @@ function rectOf(element: Element) {
 
 beforeEach(() => {
   vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
-    return rectOf(this) as DOMRect
+    return fromPartial<DOMRect>(rectOf(this))
   })
   vi.spyOn(document.documentElement, 'clientWidth', 'get').mockReturnValue(1000)
   // jsdom has no hit testing; the placeholder's viewport tracking asks for it once rects have a size
@@ -86,7 +87,7 @@ async function settle() {
 describe('table target', () => {
   it('follows the hovered cell, and measures the controls in the layer', async () => {
     const { editor, target, boxes } = setup()
-    const cell = editor.view.nodeDOM(cellPos(editor, 'Dev')) as Element
+    const cell = requireTestElement(editor.view.nodeDOM(cellPos(editor, 'Dev')), Element)
     hover(cell.querySelector('p') ?? cell)
     await settle()
 
@@ -112,7 +113,7 @@ describe('table target', () => {
     const { editor, target } = setup()
     const pos = cellPos(editor, 'Ann')
     editor.commands.setTextSelection(pos + 2)
-    hover(editor.view.nodeDOM(pos) as Element)
+    hover(requireTestElement(editor.view.nodeDOM(pos), Element))
     await settle()
     expect(target.value).toMatchObject({
       cell: pos,
@@ -125,7 +126,7 @@ describe('table target', () => {
 
   it('follows a run of selected cells over the hovered one', async () => {
     const { editor, target, boxes } = setup()
-    hover(editor.view.nodeDOM(cellPos(editor, 'Name')) as Element)
+    hover(requireTestElement(editor.view.nodeDOM(cellPos(editor, 'Name')), Element))
     editor.commands.setCellSelection({
       anchorCell: cellPos(editor, 'Ann'),
       headCell: cellPos(editor, 'Dev'),
@@ -159,14 +160,14 @@ describe('table target', () => {
     })
     editor.commands.mergeCells()
     const pos = cellPos(editor, 'AnnDev')
-    hover(editor.view.nodeDOM(pos) as Element)
+    hover(requireTestElement(editor.view.nodeDOM(pos), Element))
     await settle()
     expect(target.value).toMatchObject({ cell: pos, row: 1, column: 0, isMerged: true })
   })
 
   it('lets go of the cell when the pointer leaves the table, but not when it stays near', async () => {
     const { editor, target } = setup()
-    hover(editor.view.nodeDOM(cellPos(editor, 'Bo')) as Element)
+    hover(requireTestElement(editor.view.nodeDOM(cellPos(editor, 'Bo')), Element))
     await settle()
     expect(target.value?.row).toBe(2)
 
@@ -179,3 +180,11 @@ describe('table target', () => {
     expect(target.value).toBeNull()
   })
 })
+
+function requireTestElement<T extends Element>(
+  value: unknown,
+  constructor: new (...args: never[]) => T,
+): T {
+  if (!(value instanceof constructor)) throw new Error(`Expected ${constructor.name}`)
+  return value
+}

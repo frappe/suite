@@ -19,7 +19,11 @@ afterEach(() => {
   app = editor = undefined
 })
 
-function mount(component: typeof ColorPanel | typeof CellColorSwatches, props: object) {
+function mount(
+  component: typeof ColorPanel | typeof CellColorSwatches,
+  props:
+    InstanceType<typeof ColorPanel>['$props'] | InstanceType<typeof CellColorSwatches>['$props'],
+) {
   const root = document.createElement('div')
   app = createApp({ render: () => h(component, props) })
   app.mount(root)
@@ -37,7 +41,7 @@ function paletteElement() {
 describe('colour swatches', () => {
   it('offers Default and the named palette, drawn from the editor palette variables', () => {
     const root = mount(CellColorSwatches, { editorElement: paletteElement() })
-    const group = root.querySelector('[role="group"]') as HTMLElement
+    const group = requireTestElement(root.querySelector('[role="group"]'), HTMLElement)
     const swatches = [...group.querySelectorAll('button')]
 
     expect(swatches.map((swatch) => swatch.getAttribute('aria-label'))).toEqual([...NAMES, ...LAST])
@@ -58,10 +62,16 @@ describe('colour swatches', () => {
     editor = new Editor({ element, extensions: [StarterKit], content: '<p>Hi</p>' })
     editor.view.dom.style.setProperty('--prose-color-blue', 'rgb(0, 0, 200)')
     const root = mount(ColorPanel, { editor })
-    const panel = root.firstElementChild as HTMLElement
-    const [text, background] = [...panel.children] as HTMLElement[]
-    const textSwatches = [...text.querySelectorAll('.writer-swatch')] as HTMLElement[]
-    const backgroundSwatches = [...background.querySelectorAll('.writer-swatch')] as HTMLElement[]
+    const panel = requireTestElement(root.firstElementChild, HTMLElement)
+    const [text, background] = [...panel.children].map((element) =>
+      requireTestElement(element, HTMLElement),
+    )
+    const textSwatches = [...text.querySelectorAll('.writer-swatch')].map((element) =>
+      requireTestElement(element, HTMLElement),
+    )
+    const backgroundSwatches = [...background.querySelectorAll('.writer-swatch')].map((element) =>
+      requireTestElement(element, HTMLElement),
+    )
 
     expect(panel.style.getPropertyValue('--prose-color-blue')).toBe('rgb(0, 0, 200)')
     expect(text.textContent).toContain('Text color')
@@ -83,3 +93,11 @@ describe('colour swatches', () => {
     ])
   })
 })
+
+function requireTestElement<T extends Element>(
+  value: unknown,
+  constructor: new (...args: never[]) => T,
+): T {
+  if (!(value instanceof constructor)) throw new Error(`Expected ${constructor.name}`)
+  return value
+}

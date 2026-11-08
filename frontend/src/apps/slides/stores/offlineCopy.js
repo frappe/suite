@@ -192,7 +192,7 @@ async function fetchStartup(node, id, pinned, loadOptions, signal) {
   const kept = assets.filter((asset) => pinned.has(asset))
   const requests = [
     ...startupUrls(node, id, loadOptions).map((url) => [url, 'api']),
-    ...assets.filter((asset) => !pinned.has(asset)).map((asset) => [asset, 'asset']),
+    ...assets.flatMap((asset) => (!pinned.has(asset) ? [[asset, 'asset']] : [])),
   ]
   const { responses, missing } = await fetchAllCacheable(requests, signal)
   responses.set(`/d/${node}`, shell)

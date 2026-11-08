@@ -165,7 +165,8 @@ const rootOptions = computed(() =>
   ].filter(
     (option) =>
       !props.root ||
-      discovered.data?.[option.value as 'personal' | 'organization']?.node === props.root,
+      discovered.data?.[option.value === 'organization' ? 'organization' : 'personal']?.node ===
+        props.root,
   ),
 )
 watch(

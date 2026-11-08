@@ -89,7 +89,8 @@ import { useRootStore } from '@/stores/root'
 
 const route = useRoute()
 const router = useRouter()
-const user = inject('$user') as UserResource
+const user = inject<UserResource>('$user')
+if (!user) throw new Error('Missing required user provider')
 const { isMobile } = useScreenSize()
 const { accountId, mailboxes, mailboxIds } = userStore()
 const root = useRootStore()
@@ -99,7 +100,7 @@ const showReadingPane = computed(() => !!user.data?.show_reading_pane)
 const openSearch = () => (root.paletteOpen = true)
 
 // Lower case, as the words read in a sentence — "from: akash@frappe.io" — not as field names.
-const SEARCH_FILTER_LABELS: Record<string, string> = {
+const SEARCH_FILTER_LABELS = {
   inMailbox: __('in'),
   subject: __('subject'),
   from: __('from'),
@@ -109,11 +110,13 @@ const SEARCH_FILTER_LABELS: Record<string, string> = {
   with: __('with'),
   after: __('after'),
   before: __('before'),
-}
+} satisfies Record<string, string>
 const optionLabel = (options: { label: string; value: string }[], value: string) =>
   options.find((o) => o.value === value)?.label ?? value
 
-const searchQuery = computed(() => (route.query.text as string) || '')
+const searchQuery = computed(
+  () => ((Array.isArray(route.query.text) ? route.query.text[0] : route.query.text) ?? '') || '',
+)
 
 const searchFilterChips = computed(() => {
   const query = route.query
@@ -125,7 +128,10 @@ const searchFilterChips = computed(() => {
       key === 'inMailbox'
         ? (mailboxes.data?.find((m: MailboxData) => m.id === value)?._name ?? String(value))
         : String(value)
-    chips.push({ key, label: `${SEARCH_FILTER_LABELS[key]}: ${display}` })
+    chips.push({
+      key,
+      label: `${Object.entries(SEARCH_FILTER_LABELS).find(([name]) => name === key)?.[1] ?? key}: ${display}`,
+    })
   }
   // Attachment/read values ("Without Attachments", "Unread") are self-descriptive — show them on their own.
   if (query.hasAttachment)
@@ -145,7 +151,11 @@ const searchWith = (query: Record<string, string>) => {
   router.push(mailSearchRoute(accountId, query))
 }
 const removeSearchFilter = (key: string) => {
-  const query = { ...route.query } as Record<string, string>
+  const query: Record<string, string> = {}
+  for (const [name, value] of Object.entries(route.query)) {
+    const scalar = Array.isArray(value) ? value[0] : value
+    if (typeof scalar === 'string') query[name] = scalar
+  }
   delete query[key]
   searchWith(query)
 }

@@ -154,7 +154,10 @@ describe('Notifications bell', () => {
   })
   it('does not mark anything read when opened', async () => {
     const root = mount()
-    const bell = root.querySelector('[aria-label="Notifications"]') as HTMLButtonElement
+    const bell = requireTestElement(
+      root.querySelector('[aria-label="Notifications"]'),
+      HTMLButtonElement,
+    )
     bell.click()
     await nextTick()
     expect(state.markRead).not.toHaveBeenCalled()
@@ -384,4 +387,12 @@ function downloadNotification(name: string, status: 'Ready' | 'Failed' | 'Expire
       url: ready ? `/api/suite/drive/downloads/${name}/content` : null,
     },
   }
+}
+
+function requireTestElement<T extends Element>(
+  value: unknown,
+  constructor: new (...args: never[]) => T,
+): T {
+  if (!(value instanceof constructor)) throw new Error(`Expected ${constructor.name}`)
+  return value
 }

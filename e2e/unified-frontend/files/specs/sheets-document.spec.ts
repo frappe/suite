@@ -1,6 +1,5 @@
 import { readFileSync } from "node:fs";
-
-import { type APIRequestContext, type Page, expect, test } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
 import {
 	adminApi,
@@ -60,6 +59,7 @@ type Thread = { anchor: string; comments: Array<{ content: string }> };
 async function threads(): Promise<Thread[]> {
 	const response = await api.get(`${DRIVE}/nodes/${sheet.name}/threads`);
 	expect(response.ok()).toBe(true);
+	// SAFETY: this successful Suite endpoint returns its owned threads/principal projection; subsequent assertions check the expected test fixture.
 	const body = (await response.json()) as { data?: { threads: Thread[] }; message?: { threads: Thread[] } };
 	return (body.data ?? body.message)!.threads;
 }
@@ -83,7 +83,10 @@ test("renames, comments and opens versions without a legacy Drive call", async (
 	]);
 
 	// An edit still waiting to be sent goes into the version first.
-	await page.locator("canvas").first().click({ position: { x: 80, y: 40 } });
+	await page
+		.locator("canvas")
+		.first()
+		.click({ position: { x: 80, y: 40 } });
 	await page.keyboard.type("777");
 	await page.keyboard.press("Enter");
 	await page.getByRole("button", { name: "Versions" }).click();
@@ -95,14 +98,20 @@ test("renames, comments and opens versions without a legacy Drive call", async (
 	await prompt.getByRole("textbox").fill("Journey version");
 	await prompt.getByRole("button", { name: "Save" }).click();
 	await expect(versions.getByText("Journey version")).toBeVisible();
-	const order = seen.requests.filter((line) => PUSH.test(line) || line.includes(`/nodes/${sheet.name}/versions`) && line.startsWith("POST"));
+	const order = seen.requests.filter(
+		(line) => PUSH.test(line) || (line.includes(`/nodes/${sheet.name}/versions`) && line.startsWith("POST")),
+	);
 	expect(order[0]).toMatch(PUSH);
 	expect(order.at(-1)).toContain("/versions");
 
 	// The room keeps the state a restore replaces as a version of its own.
 	const before = versions.getByRole("listitem").filter({ hasText: "Before restoring “Journey version”" });
 	await expect(before).toHaveCount(0);
-	await versions.getByRole("listitem").filter({ hasText: "Journey version" }).getByRole("button", { name: "More version actions" }).click();
+	await versions
+		.getByRole("listitem")
+		.filter({ hasText: "Journey version" })
+		.getByRole("button", { name: "More version actions" })
+		.click();
 	await page.getByRole("menuitem", { name: "Restore this version" }).click();
 	await page.getByRole("dialog", { name: "Restore this version?" }).getByRole("button", { name: "Restore" }).click();
 	await expect(page.getByText("Version restored")).toBeVisible();
@@ -114,11 +123,15 @@ test("renames, comments and opens versions without a legacy Drive call", async (
 	// Share opens the Drive share dialog for a manager (stage 9).
 	await expect(page.getByRole("button", { name: "Share" })).toBeEnabled();
 	expect(seen.requests.filter((line) => line.includes("suite.drive.api"))).toEqual([]);
-	expect(seen.requests.some((line) => line.includes(`POST`) && line.includes(`/api/suite/drive/nodes/${sheet.name}/visit`))).toBe(true);
+	expect(
+		seen.requests.some((line) => line.includes(`POST`) && line.includes(`/api/suite/drive/nodes/${sheet.name}/visit`)),
+	).toBe(true);
 	expect(seen.errors).toEqual([]);
 });
 
-test("losing edit access freezes the sheet, stops sending its edits and offers them as a download", async ({ page }) => {
+test("losing edit access freezes the sheet, stops sending its edits and offers them as a download", async ({
+	page,
+}) => {
 	const seen = watchPage(page);
 	await openSheet(page);
 
@@ -127,7 +140,10 @@ test("losing edit access freezes the sheet, stops sending its edits and offers t
 	await page.route(/\/content\/[^/]+\/updates/, (route) =>
 		route.request().method() === "POST" ? route.abort("failed") : route.continue(),
 	);
-	await page.locator("canvas").first().click({ position: { x: 80, y: 40 } });
+	await page
+		.locator("canvas")
+		.first()
+		.click({ position: { x: 80, y: 40 } });
 	await page.keyboard.type("4242");
 	await page.keyboard.press("Enter");
 	await page.keyboard.type("5150");
@@ -169,7 +185,10 @@ test("text typed without a keydown starts the edit, and grid keys still work", a
 		await nameBox.press("Enter");
 	};
 
-	await page.locator("canvas").first().click({ position: { x: 80, y: 40 } });
+	await page
+		.locator("canvas")
+		.first()
+		.click({ position: { x: 80, y: 40 } });
 	await page.keyboard.insertText("₹250");
 	await page.keyboard.press("Enter");
 	await goTo("A1");
@@ -230,11 +249,14 @@ test("a person who holds only an edit link opens and saves the sheet", async ({ 
 	const response = await api.put(`${DRIVE}/nodes/${sheet.name}/grants/$LINK`, { data: { role: 40 } });
 	expect(response.ok()).toBe(true);
 	// The answer is the grant row itself.
+	// SAFETY: this successful Suite endpoint returns its owned threads/principal projection; subsequent assertions check the expected test fixture.
 	const body = (await response.json()) as { data?: { principal: string }; message?: { principal: string } };
 	const code = (body.data ?? body.message)!.principal.replace("$LINK:", "");
 
 	const visitor = await browser.newContext({ baseURL, storageState: { cookies: [], origins: [] } });
-	const login = await visitor.request.post("/api/method/login", { form: { usr: LINK_ONLY.email, pwd: LINK_ONLY.password } });
+	const login = await visitor.request.post("/api/method/login", {
+		form: { usr: LINK_ONLY.email, pwd: LINK_ONLY.password },
+	});
 	expect(login.ok()).toBe(true);
 	await visitor.addInitScript(
 		([node, link]) => {
@@ -249,7 +271,10 @@ test("a person who holds only an edit link opens and saves the sheet", async ({ 
 	await expect(page.getByText("View only", { exact: true })).toHaveCount(0);
 
 	const saved = page.waitForResponse((answer) => PUSH.test(`${answer.request().method()} ${answer.url()}`));
-	await page.locator("canvas").first().click({ position: { x: 80, y: 40 } });
+	await page
+		.locator("canvas")
+		.first()
+		.click({ position: { x: 80, y: 40 } });
 	await page.keyboard.type("6060");
 	await page.keyboard.press("Enter");
 	const answer = await saved;
@@ -282,9 +307,7 @@ test("the document actions fit on one row of a 320 px screen", async ({ page }) 
 	expect(await bar.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
 });
 
-test("the name box keeps one width, so the formula bar never moves", async ({
-	page,
-}) => {
+test("the name box keeps one width, so the formula bar never moves", async ({ page }) => {
 	await openSheet(page);
 	const nameBox = page.getByRole("textbox", { name: "Name box" });
 	const formulaBar = page.getByRole("textbox", {
@@ -292,21 +315,10 @@ test("the name box keeps one width, so the formula bar never moves", async ({
 	});
 	const left = async () => (await formulaBar.boundingBox())!.x;
 	const width = async () => (await nameBox.boundingBox())!.width;
-	const fits = () =>
-		nameBox.evaluate(
-			(box: HTMLInputElement) => box.scrollWidth <= box.clientWidth,
-		);
+	const fits = () => nameBox.evaluate((box: HTMLInputElement) => box.scrollWidth <= box.clientWidth);
 
 	const start = { left: await left(), width: await width() };
-	for (const reference of [
-		"C5",
-		"D48:J48",
-		"A50:Z50",
-		"50:50",
-		"1:1",
-		"B:Z",
-		"A1",
-	]) {
+	for (const reference of ["C5", "D48:J48", "A50:Z50", "50:50", "1:1", "B:Z", "A1"]) {
 		await nameBox.fill(reference);
 		await nameBox.press("Enter");
 		await expect(nameBox).toHaveValue(reference);
@@ -315,17 +327,11 @@ test("the name box keeps one width, so the formula bar never moves", async ({
 	}
 
 	// A typical range fits in full; a longer one ends in an ellipsis.
-	await nameBox.evaluate(
-		(box: HTMLInputElement) => (box.value = "AA100:AB200"),
-	);
+	await nameBox.evaluate((box: HTMLInputElement) => (box.value = "AA100:AB200"));
 	expect(await fits()).toBe(true);
-	await nameBox.evaluate(
-		(box: HTMLInputElement) => (box.value = "AAA100000:ABC200000"),
-	);
+	await nameBox.evaluate((box: HTMLInputElement) => (box.value = "AAA100000:ABC200000"));
 	expect(await fits()).toBe(false);
-	expect(
-		await nameBox.evaluate((box) => getComputedStyle(box).textOverflow),
-	).toBe("ellipsis");
+	expect(await nameBox.evaluate((box) => getComputedStyle(box).textOverflow)).toBe("ellipsis");
 
 	// Focused, the box shows the whole reference over the formula bar, which stays put.
 	await nameBox.fill("AAA100000:ABC200000");
@@ -352,9 +358,7 @@ test("the name box keeps one width, so the formula bar never moves", async ({
 	}
 });
 
-test("font size steps with − and +, takes a typed size and lists common sizes, one undo each", async ({
-	page,
-}) => {
+test("font size steps with − and +, takes a typed size and lists common sizes, one undo each", async ({ page }) => {
 	await openSheet(page);
 	const size = page.getByRole("spinbutton", { name: "Font size" });
 	const undo = page.getByRole("button", { name: "Undo", exact: true });

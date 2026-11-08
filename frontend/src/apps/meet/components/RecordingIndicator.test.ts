@@ -17,7 +17,7 @@ describe('RecordingIndicator', () => {
     const app = createApp(RecordingIndicator, { recording, canStop: false, onClick: click })
     app.mount(root)
 
-    const button = root.querySelector('button') as HTMLButtonElement
+    const button = requireTestElement(root.querySelector('button'), HTMLButtonElement)
     expect(button.disabled).toBe(true)
     button.click()
     expect(click).not.toHaveBeenCalled()
@@ -30,10 +30,18 @@ describe('RecordingIndicator', () => {
     const app = createApp(RecordingIndicator, { recording, canStop: true, onClick: click })
     app.mount(root)
 
-    const button = root.querySelector('button') as HTMLButtonElement
+    const button = requireTestElement(root.querySelector('button'), HTMLButtonElement)
     expect(button.disabled).toBe(false)
     button.click()
     expect(click).toHaveBeenCalledOnce()
     app.unmount()
   })
 })
+
+function requireTestElement<T extends Element>(
+  value: unknown,
+  constructor: new (...args: never[]) => T,
+): T {
+  if (!(value instanceof constructor)) throw new Error(`Expected ${constructor.name}`)
+  return value
+}

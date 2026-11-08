@@ -15,6 +15,8 @@ import {
   type EditorElement,
 } from './writer-surface-fixtures'
 
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 vi.hoisted(() => {
   vi.stubGlobal('__SUITE_BUILD__', '100')
   vi.stubEnv('DEV', false)
@@ -85,9 +87,17 @@ async function downloadedChanges(afterClose: (root: Element) => unknown = () => 
   await vi.waitFor(() => expect(warning).toHaveBeenCalled())
   await afterClose(root)
   const [, shown] = warning.mock.lastCall!
-  ;(shown!.action as { onClick: () => void }).onClick()
+  const action = shown?.action
+  if (
+    !action ||
+    typeof action !== 'object' ||
+    !('onClick' in action) ||
+    typeof action.onClick !== 'function'
+  )
+    throw new Error('Expected a keep-copy action')
+  action.onClick()
   await vi.waitFor(() => expect(files).toHaveLength(1))
-  return files[0] as File
+  return fromPartial<File>(files[0])
 }
 
 describe('Writer surface', () => {
@@ -204,7 +214,7 @@ describe('Writer surface', () => {
 
   it('tells the room that reading access was lost when the document is refused, before its role drops', async () => {
     const room = liveRoom()
-    const state = ref('Active')
+    const state = ref<'Active' | 'Refused' | 'Trashed'>('Active')
     await openedSurface(undefined, '/d/node-1', undefined, undefined, state)
 
     state.value = 'Refused'

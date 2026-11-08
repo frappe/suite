@@ -424,7 +424,7 @@ export const getElbowPathData = (points, startInset = 0, endInset = 0) => {
 }
 
 export const getBoundTargetIds = (connector) =>
-  [connector?.start, connector?.end].filter(Boolean).map((end) => end.elementId)
+  [connector?.start, connector?.end].flatMap((end) => (end ? [end.elementId] : []))
 
 // a bound end that a gesture carries off its port lets go of its target
 export const detachMovedEnds = (line, box) => {

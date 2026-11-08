@@ -130,7 +130,8 @@ describe('writeStores', () => {
 
   it('shares widths and frozen panes but not zoom', () => {
     const { doc, ids } = sheetDoc('Sheet1')
-    let view: Record<string, unknown> = {
+    type ViewSnapshot = ReturnType<NonNullable<GlueStores['view']>['snapshot']>
+    let view: ViewSnapshot = {
       Sheet1: { colW: { 2: 180 }, freezeRows: 1, hiddenRows: [], zoom: 1.5 },
     }
     const viewStore = { snapshot: () => view, restore: (v: Record<string, unknown>) => (view = v) }

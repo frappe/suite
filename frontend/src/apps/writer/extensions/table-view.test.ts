@@ -26,7 +26,7 @@ function tableWithWidth(width: number | null): PMNode {
 
 it('gives a column its even width back when its width is removed, as after undoing a resize', () => {
   const view = new WriterTableView(tableWithWidth(160), 25)
-  const firstColumn = view.colgroup.firstElementChild as HTMLElement
+  const firstColumn = requireTestElement(view.colgroup.firstElementChild, HTMLElement)
   expect(firstColumn.style.width).toBe('160px')
 
   view.update(tableWithWidth(null))
@@ -40,14 +40,14 @@ it('keeps columns without a width at the default width, so a wide table scrolls'
 
 it('draws a column resized below the default width at that width', () => {
   const view = new WriterTableView(tableWithWidth(70), 25)
-  const firstColumn = view.colgroup.firstElementChild as HTMLElement
+  const firstColumn = requireTestElement(view.colgroup.firstElementChild, HTMLElement)
   expect(firstColumn.style.width).toBe('70px')
   expect(view.table.style.minWidth).toBe(`${70 + DEFAULT_COLUMN_WIDTH}px`)
 })
 
 it('keeps the other columns at the default width while one is being resized', async () => {
   const view = new WriterTableView(tableWithWidth(null), 25)
-  const firstColumn = view.colgroup.firstElementChild as HTMLElement
+  const firstColumn = requireTestElement(view.colgroup.firstElementChild, HTMLElement)
   // What the resize plugin writes during a drag, measuring the other column by its drag limit
   firstColumn.style.width = '70px'
   view.table.style.minWidth = '95px'
@@ -77,3 +77,11 @@ it('fades only the sides that have more to scroll to', () => {
   view.destroy()
   view.dom.remove()
 })
+
+function requireTestElement<T extends Element>(
+  value: unknown,
+  constructor: new (...args: never[]) => T,
+): T {
+  if (!(value instanceof constructor)) throw new Error(`Expected ${constructor.name}`)
+  return value
+}

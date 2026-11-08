@@ -207,9 +207,9 @@ export function usePoll(deps: {
 
   const currentUserId = () => currentUser.currentUser.value?.user_id
   const currentUserName = () =>
-    (currentUser.currentUser.value?.full_name as string) ||
-    (currentUser.currentUser.value?.name as string) ||
-    (currentUser.currentUser.value?.user_id as string) ||
+    currentUser.currentUser.value?.full_name ||
+    currentUser.currentUser.value?.name ||
+    currentUser.currentUser.value?.user_id ||
     ''
 
   const syncEncryptedPolls = async (key: CryptoKey) => {

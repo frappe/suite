@@ -120,26 +120,30 @@ function isRemoteImage(src: string | null): boolean {
   }
 }
 
-const ESCAPES: Record<string, string> = {
-  '&': '&amp;',
-  '<': '&lt;',
-  '>': '&gt;',
-  '"': '&quot;',
-  "'": '&#39;',
-}
+const ESCAPES = new Map<string, string>(
+  Object.entries({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }),
+)
 
 function escapeHtml(text: string): string {
-  return text.replace(/[&<>"']/g, (character) => ESCAPES[character] ?? character)
+  return text.replace(/[&<>"']/g, (character) => ESCAPES.get(character) ?? character)
 }
 
-const UNESCAPES: Record<string, string> = {
-  '&amp;': '&',
-  '&lt;': '<',
-  '&gt;': '>',
-  '&quot;': '"',
-  '&#39;': "'",
-}
+const UNESCAPES = new Map<string, string>(
+  Object.entries({
+    '&amp;': '&',
+    '&lt;': '<',
+    '&gt;': '>',
+    '&quot;': '"',
+    '&#39;': "'",
+  }),
+)
 
 function unescapeHtml(html: string): string {
-  return html.replace(/&(?:amp|lt|gt|quot|#39);/g, (entity) => UNESCAPES[entity] ?? entity)
+  return html.replace(/&(?:amp|lt|gt|quot|#39);/g, (entity) => UNESCAPES.get(entity) ?? entity)
 }

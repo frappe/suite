@@ -95,14 +95,20 @@ function alignChildren(current: Parent, version: Parent) {
 
   const held = new Set(currentIds)
   for (const [index, child] of version.toArray().entries()) {
+    if (!(child instanceof yjs.XmlElement) && !(child instanceof yjs.XmlText))
+      throw new Error('Unsupported version child')
     if (!held.has(versionIds[index])) {
-      current.insert(index, [child.clone() as yjs.XmlElement | yjs.XmlText])
+      current.insert(index, [child.clone()])
     } else if (child instanceof yjs.XmlText) {
-      alignText(current.get(index) as yjs.XmlText, child)
+      const paired = current.get(index)
+      if (!(paired instanceof yjs.XmlText)) throw new Error('Restored text identity changed kind')
+      alignText(paired, child)
     } else {
-      const paired = current.get(index) as yjs.XmlElement
-      alignAttributes(paired, child as yjs.XmlElement)
-      alignChildren(paired, child as yjs.XmlElement)
+      const paired = current.get(index)
+      if (!(paired instanceof yjs.XmlElement))
+        throw new Error('Restored element identity changed kind')
+      alignAttributes(paired, child)
+      alignChildren(paired, child)
     }
   }
 }
@@ -117,6 +123,8 @@ function alignAttributes(current: yjs.XmlElement, version: yjs.XmlElement) {
 
   for (const [key, value] of Object.entries(wanted)) {
     if (!sameValue(current.getAttribute(key), value)) {
+      // SAFETY: Yjs preserves own undefined attribute entries; restoring must keep
+      // both that value and the key, despite XmlElement's default string generic.
       current.setAttribute(key, value as string)
     }
   }
@@ -133,7 +141,12 @@ interface Character {
 function characters(text: yjs.XmlText): Character[] {
   const textChars: Character[] = []
   let index = 0
-  for (const run of text.toDelta() as { insert: string; attributes?: Record<string, unknown> }[]) {
+  interface TextRun {
+    insert: string
+    attributes?: Record<string, unknown>
+  }
+  const runs: TextRun[] = text.toDelta()
+  for (const run of runs) {
     for (const char of run.insert) {
       textChars.push({ id: idAt(text, index), index, text: char, attributes: run.attributes ?? {} })
       index += char.length

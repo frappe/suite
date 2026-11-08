@@ -1,5 +1,5 @@
 /** Drive's transfer protocol: session, resume, bytes, finish, and progress stay together. */
-import { api, client } from '@/api'
+import { api, client, type InputOf } from '@/api'
 import type { TransferContext } from '@/platform/server-state'
 import { transport, TransportError, type Transport } from '@/platform/transport'
 
@@ -75,18 +75,15 @@ export async function transfer(
       progress((offset / input.file.size) * 100)
     }
   }
-  const node = await requester.mutation(
-    api.drive.uploads.finish,
-    {
-      upload_id: session.upload_id,
-      node: input.parent_node,
-      ...(input.replaces
-        ? { replaces: input.replaces }
-        : { parent_node: input.parent_node, title: filename }),
-      ...(input.checksum ? { checksum: input.checksum } : {}),
-    },
-    { signal, silent: true },
-  )
+  const finish: InputOf<typeof api.drive.uploads.finish> = {
+    upload_id: session.upload_id,
+    node: input.parent_node,
+    ...(input.replaces
+      ? { replaces: input.replaces }
+      : { parent_node: input.parent_node, title: filename }),
+  }
+  if (input.checksum) finish.checksum = input.checksum
+  const node = await requester.mutation(api.drive.uploads.finish, finish, { signal, silent: true })
   progress(100)
   return node
 }

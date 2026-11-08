@@ -288,6 +288,8 @@ function updateHex(value: string) {
 }
 
 async function pickScreenColor() {
+  if (!('EyeDropper' in window) || typeof window.EyeDropper !== 'function') return
+  // SAFETY: the browser EyeDropper constructor exposes open() returning sRGBHex; support is checked above.
   const Picker = (
     window as typeof window & {
       EyeDropper?: new () => { open: () => Promise<{ sRGBHex: string }> }

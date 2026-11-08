@@ -152,6 +152,7 @@
     "@tiptap/extension-horizontal-rule": "3.27.1",
     "@tiptap/extension-list": "3.27.1",
     "@tiptap/extension-text": "^3.26.0",
+    "@total-typescript/shoehorn": "^0.1.2",
     "@types/file-saver": "^2.0.7",
     "@types/node": "^26.6.2",
     "@types/turndown": "^5.0.6",

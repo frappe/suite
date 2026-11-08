@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { fromPartial } from '@total-typescript/shoehorn';
 import type {
 	AudioLevelObserver,
 	Router,
@@ -22,20 +23,20 @@ function deferred<T>() {
 }
 
 function router() {
-	return {
+	return fromPartial<Router>({
 		close: vi.fn(),
 		createAudioLevelObserver: vi
 			.fn()
-			.mockResolvedValue(new EventEmitter() as AudioLevelObserver),
-	} as unknown as Router;
+			.mockResolvedValue(fromPartial<AudioLevelObserver>(new EventEmitter())),
+	});
 }
 
 function fixture() {
 	const createRouter = vi.fn<Worker['createRouter']>();
 	vi.spyOn(WorkerManager.prototype, 'getNextWorker').mockReturnValue({
 		id: 1,
-		worker: { createRouter } as unknown as Worker,
-		webRtcServer: {} as WebRtcServer,
+		worker: fromPartial<Worker>({ createRouter }),
+		webRtcServer: fromPartial<WebRtcServer>({}),
 	});
 	const media = new MediasoupManager(
 		loadConfig({ NODE_ENV: 'test', JWT_SECRET: 'test-secret' }).mediasoup,
@@ -70,8 +71,8 @@ it('places the next room on the next worker after concurrent first joins', async
 	createRouter.mockImplementation(async () => router());
 	const workers = [1, 2].map((id) => ({
 		id,
-		worker: { createRouter } as unknown as Worker,
-		webRtcServer: {} as WebRtcServer,
+		worker: fromPartial<Worker>({ createRouter }),
+		webRtcServer: fromPartial<WebRtcServer>({}),
 	}));
 	let nextWorker = 0;
 	vi.mocked(WorkerManager.prototype.getNextWorker).mockImplementation(

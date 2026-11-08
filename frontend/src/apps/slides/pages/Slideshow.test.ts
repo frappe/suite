@@ -74,7 +74,7 @@ describe('presenting', () => {
 
   it('takes the keyboard back when a closing menu drops focus onto the page', async () => {
     await present()
-    const show = document.activeElement as HTMLElement
+    const show = requireTestElement(document.activeElement, HTMLElement)
 
     show.blur()
     show.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: null }))
@@ -97,3 +97,11 @@ describe('presenting', () => {
     )
   })
 })
+
+function requireTestElement<T extends Element>(
+  value: unknown,
+  constructor: new (...args: never[]) => T,
+): T {
+  if (!(value instanceof constructor)) throw new Error(`Expected ${constructor.name}`)
+  return value
+}

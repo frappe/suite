@@ -5,6 +5,7 @@ import Heading from '@tiptap/extension-heading'
 import Paragraph from '@tiptap/extension-paragraph'
 import Text from '@tiptap/extension-text'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
+import { fromAny, fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it } from 'vitest'
 import * as yjs from 'yjs'
 
@@ -54,7 +55,7 @@ function openViewer(state: Uint8Array) {
       Collaboration.configure(collaboration),
       HeadingAnchors.configure({
         onUpdate: (items) => {
-          anchors = items as never
+          anchors = fromPartial(items)
         },
       }),
       ReceivedContentGuard,
@@ -74,7 +75,7 @@ function legacyDoc(...headings: string[]) {
   const ydoc = new yjs.Doc()
   function headingWithBody(text: string) {
     const heading = new yjs.XmlElement('heading')
-    heading.setAttribute('level', 2 as never)
+    heading.setAttribute('level', fromAny(2))
     heading.insert(0, [new yjs.XmlText(text)])
     const paragraph = new yjs.XmlElement('paragraph')
     paragraph.insert(0, [new yjs.XmlText('body')])

@@ -123,7 +123,10 @@ function openLink() {
 // Focus that leaves for somewhere other than the editor ends editing. Checked after the popover
 // re-renders, as a pressed Edit button leaves the page as the input takes focus.
 function onFocusOut(event: FocusEvent) {
-  const popover = event.currentTarget as HTMLElement
+  const checkedEventTarget = event.currentTarget
+  if (!(checkedEventTarget instanceof HTMLElement)) return
+
+  const popover = checkedEventTarget
   setTimeout(() => {
     const focused = document.activeElement
     if (focused && (popover.contains(focused) || props.editor.view.dom.contains(focused))) return

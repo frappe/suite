@@ -165,7 +165,7 @@
                   :open="true"
                   :messages="chatStore.chatMessages"
                   :avatar-by-user="participantAvatars"
-                  :user-id="(currentUser.currentUser.value?.user_id as string) || ''"
+                  :user-id="(currentUser.currentUser.value?.user_id ?? '') || ''"
                   :user-name="
                     (currentUser.currentUser.value?.full_name as string) ||
                     (currentUser.currentUser.value?.name as string) ||
@@ -360,7 +360,11 @@ import type { Participant } from '../utils/media/ParticipantManager'
 // Router
 const route = useRoute()
 const router = useRouter()
-const meetingId = computed(() => route.params.meetingId as string)
+const meetingId = computed(() =>
+  Array.isArray(route.params.meetingId)
+    ? (route.params.meetingId[0] ?? '')
+    : route.params.meetingId,
+)
 function redirectToLogin() {
   const path = window.location.pathname.startsWith('/meet')
     ? window.location.pathname
@@ -500,14 +504,25 @@ const e2eeJoinTitle = computed(() => {
   }
   return 'Joining encrypted meeting'
 })
+interface E2EEJoinDetail {
+  status?: string
+  reason?: string
+  message?: string
+}
+interface E2EERepublishDetail {
+  needsCamera?: boolean
+  needsMicrophone?: boolean
+}
 function handleE2EEJoinStatus(event: Event): void {
-  const detail = (event as CustomEvent).detail as
-    | {
-        status?: string
-        reason?: string
-        message?: string
-      }
-    | undefined
+  if (!(event instanceof CustomEvent)) return
+  const payload: unknown = event.detail
+  const detail: E2EEJoinDetail = {}
+  if (payload && typeof payload === 'object') {
+    if ('status' in payload && typeof payload.status === 'string') detail.status = payload.status
+    if ('reason' in payload && typeof payload.reason === 'string') detail.reason = payload.reason
+    if ('message' in payload && typeof payload.message === 'string')
+      detail.message = payload.message
+  }
   if (detail?.status === 'pending') {
     e2eeJoinStatus.value = 'pending'
     e2eeJoinReason.value = detail.reason || ''
@@ -738,9 +753,10 @@ provide('sfuManager', sfuConnection.sfuManager)
 provide('socket', useSocket())
 provide('isCurrentUserHost', isCurrentUserHost)
 provide('hostControls', {
-  muteParticipant: (...args: unknown[]) => handleMuteParticipant(args[0] as string),
+  muteParticipant: (...args: unknown[]) =>
+    handleMuteParticipant(typeof args[0] === 'string' ? args[0] : ''),
   kickParticipant: (...args: unknown[]) =>
-    handleKickParticipant(args[0] as string, args[1] as boolean),
+    handleKickParticipant(typeof args[0] === 'string' ? args[0] : '', args[1] === true),
 })
 provide(
   'meetingTitle',
@@ -856,7 +872,7 @@ const activePanel = computed(() => {
   return null
 })
 const participantsForPeoplePanel = computed<Record<string, Participant>>(
-  () => participantStore.participants as Record<string, Participant>,
+  () => participantStore.participants,
 )
 const participantAvatars = computed(() =>
   Object.fromEntries(
@@ -873,7 +889,7 @@ const panelWidth = computed(() => {
   return '24rem'
 })
 const isHandRaised = computed(() => {
-  const currentUserId = currentUser.currentUser.value?.user_id as string
+  const currentUserId = currentUser.currentUser.value?.user_id ?? ''
   return currentUserId ? !!raiseHandStore.raisedHands?.[currentUserId] : false
 })
 
@@ -933,11 +949,7 @@ const showMeetingNotification = (notification: {
   fromName: string
   type: 'chat' | 'poll'
 }) => {
-  const participant = participantStore.participants[notification.fromUser] as
-    | {
-        avatar?: string
-      }
-    | undefined
+  const participant = participantStore.participants[notification.fromUser]
   const openChat = () => {
     if (!chatStore.isChatOpen) toggleChat()
   }
@@ -1029,12 +1041,15 @@ const syncFullscreenState = () => {
   isFullscreen.value = !!document.fullscreenElement
 }
 const handleE2EENeedsMediaRepublish = async (event: Event) => {
-  const detail = (event as CustomEvent).detail as
-    | {
-        needsCamera?: boolean
-        needsMicrophone?: boolean
-      }
-    | undefined
+  if (!(event instanceof CustomEvent)) return
+  const payload: unknown = event.detail
+  const detail: E2EERepublishDetail = {}
+  if (payload && typeof payload === 'object') {
+    if ('needsCamera' in payload && typeof payload.needsCamera === 'boolean')
+      detail.needsCamera = payload.needsCamera
+    if ('needsMicrophone' in payload && typeof payload.needsMicrophone === 'boolean')
+      detail.needsMicrophone = payload.needsMicrophone
+  }
   try {
     await mediaControls.republishMediaAfterE2EE(detail)
   } catch (error) {

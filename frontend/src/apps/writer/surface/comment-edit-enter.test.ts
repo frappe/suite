@@ -66,7 +66,7 @@ describe('Enter in the box that edits a comment', () => {
     const edit = [...owner.querySelectorAll('[role="menuitem"]')].find(
       (element) => element.textContent === 'Edit',
     )
-    await click(edit as HTMLElement)
+    await click(requireTestElement(edit, HTMLElement))
     await nextTick()
   }
 
@@ -112,3 +112,11 @@ describe('Enter in the box that edits a comment', () => {
     expect([asked, isKeptOutOfBox, editBox()?.value]).toEqual([[], true, '   '])
   })
 })
+
+function requireTestElement<T extends Element>(
+  value: unknown,
+  constructor: new (...args: never[]) => T,
+): T {
+  if (!(value instanceof constructor)) throw new Error(`Expected ${constructor.name}`)
+  return value
+}

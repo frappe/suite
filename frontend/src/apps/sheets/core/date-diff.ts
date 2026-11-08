@@ -46,8 +46,18 @@ export function isDateDifference(formula: string, numFmtAt: NumFmtAt): boolean {
 function _isDate(side: Token[], numFmtAt: NumFmtAt): boolean {
   const [kind, value] = _kind(side[0])
   if (side.length === 1 && kind === 'Reference') {
-    const ref = value as { sheet?: string; row: number; column: number }
-    return isDateFormat(numFmtAt(ref.sheet ?? null, ref.row, ref.column))
+    if (
+      !value ||
+      typeof value !== 'object' ||
+      !('row' in value) ||
+      typeof value.row !== 'number' ||
+      !('column' in value) ||
+      typeof value.column !== 'number' ||
+      ('sheet' in value && value.sheet !== undefined && typeof value.sheet !== 'string')
+    )
+      return false
+    const sheet = 'sheet' in value && typeof value.sheet === 'string' ? value.sheet : null
+    return isDateFormat(numFmtAt(sheet, value.row, value.column))
   }
   return (
     kind === 'Ident' &&
