@@ -9,7 +9,6 @@ import {
   type TransferRef,
   type Transport,
 } from '@/platform/transport'
-import { isTweakOn } from '@/platform/tweaks'
 
 import { deleteRetiredEntityStore, Entities } from './entities'
 import { recordMutationFailure } from './errors'
@@ -217,7 +216,6 @@ function subscribeDriveChanges(realtime: Realtime, reads: Reads): Array<() => vo
   let pending: ReturnType<typeof setTimeout> | undefined
   let everything = false
   const changed = (all: boolean) => {
-    if (!isTweakOn('t22-coalesce')) return reads.invalidate(all ? isDriveRead : isDriveView)
     everything ||= all
     pending ??= setTimeout(() => {
       const predicate = everything ? isDriveRead : isDriveView
@@ -228,7 +226,7 @@ function subscribeDriveChanges(realtime: Realtime, reads: Reads): Array<() => vo
   }
   return [
     realtime.subscribe('drive:changed', () => changed(true)),
-    realtime.subscribe('drive:recent', () => changed(!isTweakOn('t22-recent-only'))),
+    realtime.subscribe('drive:recent', () => changed(false)),
     () => clearTimeout(pending),
   ]
 }

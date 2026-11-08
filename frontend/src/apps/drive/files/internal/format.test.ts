@@ -1,12 +1,8 @@
-import { afterEach, describe, expect, it } from 'vitest'
-
-import { setTweaks } from '@/platform/tweaks'
+import { describe, expect, it } from 'vitest'
 
 import { formatBytes, formatModified } from './format'
 
 describe('byte counts', () => {
-  afterEach(() => setTweaks(['t6'], true))
-
   it('counts in 1024s, with one decimal below 100 and none when it is whole', () => {
     expect(
       [0, 1023, 1024, 1126, 150 * 1024, 2.4 * 1024 ** 3, 10 * 1024 ** 3].map((bytes) =>
@@ -22,12 +18,6 @@ describe('byte counts', () => {
   it('rounds up for a limit, so a file just over it never reads as the limit', () => {
     expect(formatBytes(1025, { locale: 'en' })).toBe('1 KB')
     expect(formatBytes(1025, { roundUp: true, locale: 'en' })).toBe('1.1 KB')
-  })
-
-  it('counts in 1000s with the tweak off', () => {
-    setTweaks(['t6'], false)
-    expect(formatBytes(10_000_000_000)).toBe('10.0 GB')
-    expect(formatBytes(900_000)).toBe('900 KB')
   })
 })
 

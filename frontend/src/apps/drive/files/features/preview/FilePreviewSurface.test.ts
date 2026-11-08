@@ -12,7 +12,6 @@ import {
 
 import type { DriveNode } from '@/apps/drive/client/types'
 import type { Operation } from '@/platform/transport'
-import { setTweaks } from '@/platform/tweaks'
 
 import type { FilePreviewSession } from './session'
 
@@ -318,8 +317,6 @@ describe('file preview', () => {
   })
 
   describe('pictures', () => {
-    const IMAGE_TWEAKS = ['t27-preview-preload', 't27-image-loading'] as const
-    afterEach(() => setTweaks([...IMAGE_TWEAKS], true))
     const contentOf = (node: string) => `/api/suite/drive/nodes/${node}/content`
 
     it('loads the pictures either side, and a step shows the one already loaded', async () => {
@@ -362,22 +359,10 @@ describe('file preview', () => {
       expect(root.querySelector('img')).toBeNull()
       expect(root.querySelector('a[href*="download=1"]')).not.toBeNull()
     })
-
-    it('with both tweaks off, shows the plain picture in the stage', async () => {
-      setTweaks([...IMAGE_TWEAKS], false)
-      const { root } = await mount(session('c', 'c.png', 'image/png'), '/d/c/c-png')
-      const image = root.querySelector('img')
-      expect(image?.parentElement).toBe(root.querySelector('header + div'))
-      image?.dispatchEvent(new Event('error'))
-      await new Promise((resolve) => setTimeout(resolve, 350))
-      expect(root.querySelector('[role="status"]')).toBeNull()
-      expect(root.textContent).not.toContain('Could not load the preview')
-    })
   })
 
   describe('keys', () => {
     const LISTING = '/drive/f/folder-1/talks'
-    afterEach(() => setTweaks(['t15-escape-closes', 't15-arrow-keys', 't15-return-focus'], true))
 
     it('Escape goes where the way back goes, the listing as it was, which then focuses the last file shown', async () => {
       const opener = `${LISTING}?view=grid&sort=modified&dir=desc`
@@ -412,7 +397,7 @@ describe('file preview', () => {
       expect(router.options.history.state.reveal).toBe('c')
     })
 
-    it('steps with the arrows after a click on Next file, and with t15 off Escape stays', async () => {
+    it('steps with the arrows after a click on Next file', async () => {
       // Focus opens the button's tooltip, which measures itself.
       vi.stubGlobal(
         'ResizeObserver',
@@ -427,13 +412,6 @@ describe('file preview', () => {
       root.querySelector<HTMLButtonElement>('[aria-label="Next file"]')!.focus()
       press('ArrowRight')
       await vi.waitFor(() => expect(router.currentRoute.value.params.node).toBe('d'))
-
-      setTweaks(['t15-escape-closes', 't15-arrow-keys'], false)
-      root.querySelector<HTMLButtonElement>('[aria-label="Next file"]')!.focus()
-      press('ArrowRight')
-      press('Escape')
-      await new Promise((resolve) => setTimeout(resolve, 20))
-      expect(router.currentRoute.value.params.node).toBe('d')
     })
   })
 

@@ -9,7 +9,7 @@
   <div
     ref="listing"
     class="relative pt-3 [overflow-anchor:none]"
-    :tabindex="focus.roving.value ? -1 : undefined"
+    tabindex="-1"
     @focusin="focus.onFocusin"
     @keydown="onKeydown"
     @pointerdown="onPointerdown"
@@ -50,9 +50,10 @@
         :columns="columnTracks"
         :row-height="40"
         class="-mx-3 list-row-px-3"
-        :class="[loading && delayedSkeleton && FADE_IN, defaultColumns && 'md:list-gap-6']"
+        :class="[loading && FADE_IN, 'md:list-gap-6']"
         :aria-busy="loading || undefined"
-        v-bind="gridRoles"
+        role="grid"
+        aria-multiselectable="true"
       >
         <ListHeader>
           <div class="flex min-w-0 items-center">
@@ -120,8 +121,8 @@
             v-for="(row, index) in rows"
             :key="row.name"
             :value="row.name"
-            :tabindex="focus.roving.value ? stopIndex(row) : 0"
-            :aria-selected="focus.roving.value ? isSelected(row) : undefined"
+            :tabindex="stopIndex(row)"
+            :aria-selected="isSelected(row)"
             :data-node="row.name"
             :data-listing-item="row.name"
             :data-drop-target="drag && row.kind === 'folder' ? row.name : undefined"
@@ -140,16 +141,15 @@
             @pointercancel="cancelLongPress"
           >
             <ListCell>
-              <!-- Hovering the icon or the name, not the whole row, shows the checkbox (t37). -->
+              <!-- Hovering the icon or the name, not the whole row, shows the checkbox. -->
               <span class="group/name flex min-w-0 items-center">
-                <!-- Without the hover checkbox, clicks fall through to the row, which toggles in selection mode.
-                     With it, the checkbox takes the icon's place while the row is hovered or focused. -->
+                <!-- The checkbox takes the icon's place while the row is hovered or focused. -->
                 <span
                   v-if="selectionMode || checkboxOnHover"
                   role="checkbox"
                   :aria-checked="isSelected(row)"
                   :aria-label="`Select ${row.title}`"
-                  :tabindex="focus.roving.value || !selectionMode ? -1 : 0"
+                  tabindex="-1"
                   class="mr-2 size-4 shrink-0 items-center rounded-1 focus-visible:focus-ring"
                   :class="
                     selectionMode
@@ -220,11 +220,9 @@
               <span class="truncate text-base text-ink-gray-7">{{ row.owner.full_name }}</span>
             </ListCell>
             <ListCell v-if="shows('size')" class="justify-end" :class="columnClass('size')"
-              ><span
-                class="truncate text-base text-ink-gray-5"
-                :class="defaultColumns && 'tabular-nums'"
-                >{{ rowSize(row) }}</span
-              ></ListCell
+              ><span class="truncate text-base text-ink-gray-5 tabular-nums">{{
+                rowSize(row)
+              }}</span></ListCell
             >
             <ListCell v-if="shows('modified')" class="justify-end" :class="columnClass('modified')"
               ><span class="truncate text-base text-ink-gray-5">{{ rowDate(row) }}</span></ListCell
@@ -235,7 +233,7 @@
                   icon="lucide-ellipsis"
                   variant="ghost"
                   :aria-label="`Actions for ${row.title}`"
-                  :tabindex="focus.roving.value ? stopIndex(row) : undefined"
+                  :tabindex="stopIndex(row)"
                   @click.stop
                 />
               </Dropdown>
@@ -246,7 +244,7 @@
     </template>
 
     <template v-else>
-      <section v-if="loading" aria-busy="true" :class="delayedSkeleton && FADE_IN">
+      <section v-if="loading" aria-busy="true" :class="FADE_IN">
         <div
           class="grid grid-cols-2 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] sm:gap-3"
           aria-hidden="true"
@@ -287,8 +285,8 @@
               :title-link="nameLink(row)"
               :class="drag ? [flashClasses(row), dragClasses(row, DROP_CARD)] : flashClasses(row)"
               :data-drag-handle="drag ? '' : undefined"
-              :data-node="focus.roving.value ? row.name : undefined"
-              :tabindex="focus.roving.value ? stopIndex(row) : undefined"
+              :data-node="row.name"
+              :tabindex="stopIndex(row)"
               @click="onRowClick($event, row)"
               @dblclick="$emit('open', row)"
               @pointerdown="startLongPress($event, row)"
@@ -300,22 +298,12 @@
                 <span class="lucide-folder size-3 shrink-0" aria-hidden="true" />
                 <span class="truncate" :title="breadcrumbText(row)">{{ folderOf(row) }}</span>
               </template>
-              <span v-if="focus.roving.value && isSelected(row)" class="sr-only">{{
-                __('Selected')
-              }}</span>
-              <!-- Inside the card's button, so the corner it covers still toggles. -->
-              <Checkbox
-                v-if="selectionMode && !hoverCheckbox"
-                :model-value="isSelected(row)"
-                tabindex="-1"
-                aria-hidden="true"
-                class="pointer-events-none absolute end-3 top-3"
-              />
+              <span v-if="isSelected(row)" class="sr-only">{{ __('Selected') }}</span>
               <template #actions="{ onImage }">
                 <!-- A control of its own, in the type icon's place, with a wider hit area.
                      A soft shadow keeps it readable on a thumbnail. -->
                 <span
-                  v-if="hoverCheckbox && (selectionMode || checkboxOnHover)"
+                  v-if="selectionMode || checkboxOnHover"
                   role="checkbox"
                   :aria-checked="isSelected(row)"
                   :aria-label="`Select ${row.title}`"
@@ -346,7 +334,7 @@
                     icon="lucide-ellipsis"
                     variant="ghost"
                     :aria-label="`Actions for ${row.title}`"
-                    :tabindex="focus.roving.value ? stopIndex(row) : undefined"
+                    :tabindex="stopIndex(row)"
                     @click.stop
                   />
                 </Dropdown>
@@ -438,15 +426,11 @@ import StarredIcon from '@/apps/drive/files/internal/StarredIcon.vue'
 import { Dropdown } from '@/platform/feedback'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
-import { useTweak } from '@/platform/tweaks'
 
 import DragMoveLayer from './DragMoveLayer.vue'
 import FileCard from './FileCard.vue'
 import {
-  COLUMN_GAP,
-  COLUMN_WIDTHS,
   fitColumns,
-  FITTED_COLUMN_GAP,
   FITTED_WIDTHS,
   isMeasuredColumn,
   LIST_COLUMNS,
@@ -575,48 +559,25 @@ function flashClasses(row: DriveNode) {
   ]
 }
 defineExpose({ focusRow: focus.focusRow, focusedRow: focus.focusedRow, reveal })
-/** A grid lets screen readers hand the arrow keys to the page; a table keeps them for reading. */
-const gridRoles = computed(() =>
-  focus.roving.value ? { role: 'grid', 'aria-multiselectable': 'true' } : {},
-)
-const hoverCheckbox = useTweak('t18-hover-checkbox')
-const finePointer = useMediaQuery('(hover: hover) and (pointer: fine)')
 /** Where a mouse can hover, an item's checkbox shows on hover and the header's always. */
-const checkboxOnHover = computed(() => hoverCheckbox.value && finePointer.value)
-const checkboxNear = useTweak('t37-checkbox-near')
+const checkboxOnHover = useMediaQuery('(hover: hover) and (pointer: fine)')
 /**
- * Where a checkbox shows outside selection mode. With t37 that is while the
- * pointer is over the icon and name (a card's corner and title), or keyboard
- * focus is on the item; without it, while anywhere on the item is hovered.
+ * Where a checkbox shows outside selection mode: while the pointer is over the
+ * icon and name (a card's corner and title), or keyboard focus is on the item.
  * The icon hides with the same rule, so the two never show together.
  */
-const rowCheckboxShows = computed(() =>
-  checkboxNear.value
-    ? 'group-hover/name:flex group-focus-visible/row:flex'
-    : 'group-hover/row:flex group-focus-visible/row:flex',
-)
-const rowIconHides = computed(() =>
-  checkboxNear.value
-    ? 'group-hover/name:hidden group-focus-visible/row:hidden'
-    : 'group-hover/row:hidden group-focus-visible/row:hidden',
-)
-const cardCheckboxShows = computed(() =>
-  checkboxNear.value
-    ? 'opacity-0 hover:opacity-100 group-has-[[data-card-title]:hover]/card:opacity-100 group-has-[:focus-visible]/card:opacity-100'
-    : 'opacity-0 group-focus-within/card:opacity-100 group-hover/card:opacity-100',
-)
+const rowCheckboxShows = 'group-hover/name:flex group-focus-visible/row:flex'
+const rowIconHides = 'group-hover/name:hidden group-focus-visible/row:hidden'
+const cardCheckboxShows =
+  'opacity-0 hover:opacity-100 group-has-[[data-card-title]:hover]/card:opacity-100 group-has-[:focus-visible]/card:opacity-100'
 /** A card's type icon steps aside while its checkbox shows in the icon's place. */
 const cardIconClass = computed(() => {
-  if (!hoverCheckbox.value) return undefined
   if (props.selectionMode) return 'invisible'
   if (!checkboxOnHover.value) return undefined
-  return checkboxNear.value
-    ? 'group-has-[[data-card-checkbox]:hover]/card:invisible group-has-[[data-card-title]:hover]/card:invisible group-has-[:focus-visible]/card:invisible'
-    : 'group-hover/card:invisible group-focus-within/card:invisible'
+  return 'group-has-[[data-card-checkbox]:hover]/card:invisible group-has-[[data-card-title]:hover]/card:invisible group-has-[:focus-visible]/card:invisible'
 })
-/** A click on the checkbox selects without opening. With the tweak off it falls through to the item. */
+/** A click on the checkbox selects without opening. */
 function onCheckboxClick(event: MouseEvent, row: DriveNode) {
-  if (!hoverCheckbox.value) return
   event.stopPropagation()
   emit('select', row, event.shiftKey)
 }
@@ -640,8 +601,7 @@ const SKELETON_CARD_NAMES = [
 ]
 
 const loading = computed(() => props.query.status === 'pending' && !props.query.rows.length)
-const delayedSkeleton = useTweak('t38-delayed-skeleton')
-const isBlank = useSkeletonDelay(loading, () => (delayedSkeleton.value ? 200 : 180))
+const isBlank = useSkeletonDelay(loading, () => 200)
 /** A 150 ms fade as an element appears, none under reduced motion. Placeholders a load soon replaces barely show. */
 const FADE_IN = 'motion-safe:animate-[files-listing-fade-in_150ms_ease-out]'
 /**
@@ -654,7 +614,7 @@ watch(
   loading,
   (isLoading) => {
     clearTimeout(emptyFadeTimer)
-    if (isLoading) emptyFades.value = delayedSkeleton.value
+    if (isLoading) emptyFades.value = true
     else emptyFadeTimer = setTimeout(() => (emptyFades.value = false), 300)
   },
   { immediate: true },
@@ -664,32 +624,23 @@ const rows = computed(() => props.query.rows)
 const columns = computed(() => props.presentation.columns)
 /** The chosen columns in the rows' order, whatever order they were chosen in. */
 const shownColumns = computed(() => LIST_COLUMNS.filter(shows))
-const defaultColumns = useTweak('t35-default-columns')
-const accessColumn = useTweak('t36-access-column')
 /** The listing's width, once the browser has measured it. */
 const listingWidth = shallowRef<number>()
 useResizeObserver(listing, ([entry]) => (listingWidth.value = entry?.contentRect.width))
 /** The measured columns' widths, from their widest labels. */
 const measured = shallowRef<Partial<Record<MeasuredColumn, number>>>({})
-/** Whether a column sizes to its labels: Access always, Type and Owner with t35. */
-function isMeasured(column: string): column is MeasuredColumn {
-  return isMeasuredColumn(column) && (column === 'access' || defaultColumns.value)
-}
 function trackWidth(column: string) {
-  if (isMeasured(column)) return measured.value[column] ?? MEASURED_COLUMNS[column].max
-  return (defaultColumns.value && FITTED_WIDTHS[column]) || (COLUMN_WIDTHS[column] ?? 128)
+  if (isMeasuredColumn(column)) return measured.value[column] ?? MEASURED_COLUMNS[column].max
+  return FITTED_WIDTHS[column] ?? 128
 }
-/** With t35, the desktop list spaces its columns wider. */
-const columnGap = computed(() => (defaultColumns.value ? FITTED_COLUMN_GAP : COLUMN_GAP))
 /**
- * The columns the desktop layout shows. With t35 or t36, a chosen column the
- * list has no room for is hidden until there is room again; it stays chosen.
+ * The columns the desktop layout shows. A chosen column the list has no room
+ * for is hidden until there is room again; it stays chosen.
  */
 const desktopColumns = computed(() => {
   const width = listingWidth.value
-  if (width === undefined || !(defaultColumns.value || accessColumn.value))
-    return shownColumns.value
-  return fitColumns(shownColumns.value, width, trackWidth, columnGap.value)
+  if (width === undefined) return shownColumns.value
+  return fitColumns(shownColumns.value, width, trackWidth)
 })
 /** Each shown measured column's labels in the rows, once each. */
 const rulerLabels = computed(() => {
@@ -701,7 +652,7 @@ const rulerLabels = computed(() => {
       return row.audience ? [audienceLabel(row.audience)] : []
     })
   for (const column of shownColumns.value) {
-    if (isMeasured(column)) labels[column] = [...new Set(labelsOf(column))]
+    if (isMeasuredColumn(column)) labels[column] = [...new Set(labelsOf(column))]
   }
   return labels
 })

@@ -5,7 +5,6 @@ import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 
 import { drivePaletteSearch } from '@/apps/drive'
 import { PALETTE_SEARCH_KEY } from '@/platform/contracts'
-import { setTweaks } from '@/platform/tweaks'
 import SuiteCommandPalette from '@/shell/SuiteCommandPalette.vue'
 
 vi.mock('frappe-ui', async () => ({
@@ -158,11 +157,6 @@ describe('Suite command palette', () => {
   it('does not load the mail account on a Drive page', async () => {
     await mountPalette('/drive/f/plans')
     expect(Object.keys(getActivePinia()!.state.value)).not.toContain('mail-user')
-
-    setTweaks(['t24-palette-no-mail'], false)
-    await mountPalette('/drive/f/plans')
-    expect(Object.keys(getActivePinia()!.state.value)).toContain('mail-user')
-    setTweaks(['t24-palette-no-mail'], true)
   })
 
   it('keeps matching commands above the Drive results', async () => {

@@ -6,7 +6,6 @@ import type { DriveGrant, GrantList } from '@/apps/drive/client/grants'
 import { testClient } from '@/apps/drive/client/testClient'
 import { confirm } from '@/platform/feedback'
 import type { Transport } from '@/platform/transport'
-import { setTweaks } from '@/platform/tweaks'
 
 import ShareBody from './ShareBody.vue'
 import { useShare } from './useShare'
@@ -210,25 +209,6 @@ it('changes the org access from one role menu, with a check on the current role 
   expect(local.has('$GENERAL')).toBe(false)
 })
 
-it('with the access tweaks off, a switch off over a public folder blocks here and on again restores it', async () => {
-  setTweaks(['t4-access-words', 't4-public-off'], false)
-  try {
-    const { local, transport } = server([publicFolder])
-    const { root } = await mount(transport)
-    const toggle = () =>
-      root.querySelector<HTMLButtonElement>('[role="switch"][aria-label="Everyone on the web"]')!
-    expect(toggle().getAttribute('aria-checked')).toBe('true')
-    toggle().click()
-    await vi.waitFor(() => expect(toggle().getAttribute('aria-checked')).toBe('false'))
-    expect(local.get('$PUBLIC')?.role).toBe(0)
-    toggle().click()
-    await vi.waitFor(() => expect(toggle().getAttribute('aria-checked')).toBe('true'))
-    expect(local.has('$PUBLIC')).toBe(false)
-  } finally {
-    setTweaks(['t4-access-words', 't4-public-off'], true)
-  }
-})
-
 it('asks before deleting a live link, and deletes an expired link at once', async () => {
   vi.mocked(confirm).mockResolvedValueOnce(false).mockResolvedValueOnce(true)
   const { local, writes, transport } = server()
@@ -268,33 +248,16 @@ it('offers Undo after Remove, which puts the role back without an email', async 
   await vi.waitFor(() => expect(undo()).toBeUndefined())
 })
 
-it('says a public folder shows everything in it, and with t33 off offers no Undo', async () => {
+it('says a public folder shows everything in it', async () => {
   const { transport } = server([], 'folder')
   const { root, row } = await mount(transport)
   root.querySelector<HTMLButtonElement>('[role="switch"][aria-label="Public on the web"]')!.click()
   await vi.waitFor(() =>
     expect(row('Public on the web').textContent).toContain('Anyone can view everything in it'),
   )
-  cleanup?.()
-
-  setTweaks(['t33-undo-remove'], false)
-  try {
-    const off = server()
-    off.local.set('leo@northwind.test', grant('leo@northwind.test', 20))
-    const mounted = await mount(off.transport)
-    mounted.choose('leo@northwind.test', 'Remove')
-    await vi.waitFor(() => expect(off.local.has('leo@northwind.test')).toBe(false))
-    expect(
-      [...mounted.root.querySelectorAll('button')].some(
-        (item) => item.textContent?.trim() === 'Undo',
-      ),
-    ).toBe(false)
-  } finally {
-    setTweaks(['t33-undo-remove'], true)
-  }
 })
 
-it('with t40-share-open, shows the people field and the access list in place while who has access loads', async () => {
+it('shows the people field and the access list in place while who has access loads', async () => {
   const known = { kind: 'file', name: 'doc', title: 'Plan', access: { role: 50 } } as never
   let release: (() => void) | undefined
   const { transport } = server()

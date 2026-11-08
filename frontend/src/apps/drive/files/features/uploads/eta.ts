@@ -18,7 +18,7 @@ export interface UploadSample {
 }
 
 /**
- * Time left for a run of uploads (t30-time-left): an exponential moving
+ * Time left for a run of uploads: an exponential moving
  * average of the upload rate, fed the run's totals as they change. `update`
  * returns the text to show, or `null` while there is no fair estimate.
  */

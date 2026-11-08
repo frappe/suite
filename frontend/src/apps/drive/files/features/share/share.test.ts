@@ -12,7 +12,6 @@ import { driveLinks } from '@/apps/drive/client/links'
 import { openDriveDocumentSession } from '@/apps/drive/client/session'
 import { testClient } from '@/apps/drive/client/testClient'
 import { TransportError, type Transport } from '@/platform/transport'
-import { setTweaks } from '@/platform/tweaks'
 
 import ShareBody from './ShareBody.vue'
 import { accessLossMessage } from './shareFormat'
@@ -276,57 +275,6 @@ describe('share writes (spec §7.4, §7.7, §7.9)', () => {
       node: 'doc',
       principal: '$PUBLIC',
     })
-  })
-
-  it('with t4-public-off off, disables public access permanently even when the local grant had an expiry', async () => {
-    setTweaks(['t4-public-off'], false)
-    vi.useFakeTimers()
-    vi.setSystemTime(NOW)
-    try {
-      const expiry = endOfDay(2026, 12, 31)
-      let local = grant('$PUBLIC', 10, { expires_on: expiry })
-      const server = fakeServer((call) => {
-        if (call.id === 'node_get') return node('document')
-        if (call.id === 'node_put_grant') {
-          const { role, expires_on } = call.input
-          if (typeof role !== 'number') throw new Error('Missing role')
-          local = grant('$PUBLIC', role, {
-            expires_on: typeof expires_on === 'string' ? expires_on : null,
-          })
-          return local
-        }
-        return {
-          grants: [local],
-          inherited: [
-            {
-              grant: grant('$PUBLIC', 10, { node: 'folder' }),
-              redacted: false,
-              source_node: 'folder',
-              source_title: 'Launch',
-            },
-          ],
-        }
-      })
-      const share = useShare('doc', { client: testClient(server.transport) })
-      await share.load()
-      expect(share.sections.value?.public?.state).toBe('local')
-
-      await share.setPublic(false)
-      expect(share.sections.value?.public?.state).toBe('denied')
-
-      vi.setSystemTime(new Date('2027-01-02T12:00:00Z'))
-      await share.load()
-      expect(share.sections.value?.public?.state).toBe('denied')
-      expect(server.calls.find((call) => call.id === 'node_put_grant')?.input).toEqual({
-        node: 'doc',
-        principal: '$PUBLIC',
-        role: 0,
-        expires_on: null,
-      })
-    } finally {
-      vi.useRealTimers()
-      setTweaks(['t4-public-off'], true)
-    }
   })
 
   it('keeps an existing expiry when enabling local public access', async () => {
@@ -699,20 +647,12 @@ describe('share writes that touch the caller (spec §7.4, §7.9)', () => {
     )
   })
 
-  it("does not ask Drive's own account, which holds every right, and asks it with t1 off", async () => {
+  it("does not ask Drive's own account, which holds every right", async () => {
     const { share, asked } = setup([grant('$GENERAL', 10)], [], 50, 'system')
     await share.load()
 
     await share.setGeneral('$GENERAL', 20)
     expect(asked).toEqual([])
-
-    setTweaks(['t1'], false)
-    try {
-      await share.setGeneral('$GENERAL', 20)
-      expect(asked).toHaveLength(1)
-    } finally {
-      setTweaks(['t1'], true)
-    }
   })
 
   it('does not ask when the caller keeps Manage through their own row', async () => {
@@ -745,7 +685,7 @@ describe('share writes that touch the caller (spec §7.4, §7.9)', () => {
     expect(share.notice.value).toMatch(/^Removed from 2 items inside\./)
   })
 
-  it('drops what the page behind read only when a write takes away the caller’s own access, and after every write with t2 off', async () => {
+  it('drops what the page behind read only when a write takes away the caller’s own access', async () => {
     const invalidate = vi.spyOn(driveLinks, 'invalidateAccess')
     /** Removes the caller's row; `loses` says whether the item is then gone for them. */
     const removeMine = async (loses: boolean) => {
@@ -772,12 +712,7 @@ describe('share writes that touch the caller (spec §7.4, §7.9)', () => {
         'You no longer have access to this item.',
       )
       expect(invalidate).toHaveBeenCalledTimes(1)
-
-      setTweaks(['t2'], false)
-      await removeMine(false)
-      expect(invalidate).toHaveBeenCalledTimes(1)
     } finally {
-      setTweaks(['t2'], true)
       invalidate.mockRestore()
     }
   })
@@ -804,7 +739,7 @@ describe('share writes that touch the caller (spec §7.4, §7.9)', () => {
   })
 })
 
-describe('opening the share dialog fast (t40-share-open)', () => {
+describe('opening the share dialog fast', () => {
   /** A server whose answers wait until the test releases them, to see what is asked in parallel. */
   function heldServer() {
     const asked: string[] = []
@@ -832,24 +767,6 @@ describe('opening the share dialog fast (t40-share-open)', () => {
     server.release.get('node_grants')!()
     await loading
     expect(share.sections.value).not.toBeNull()
-  })
-
-  it('with the switch off, shows nothing until the item answers, then asks who has access', async () => {
-    setTweaks(['t40-share-open'], false)
-    try {
-      const server = heldServer()
-      const share = useShare('doc', { client: server.client, known: node('folder') })
-      expect(share.node.value).toBeNull()
-      const loading = share.load()
-      await vi.waitFor(() => expect(server.asked).toEqual(['node_get']))
-      server.release.get('node_get')!()
-      await vi.waitFor(() => expect(server.asked).toEqual(['node_get', 'node_grants']))
-      server.release.get('node_grants')!()
-      await loading
-      expect(share.sections.value).not.toBeNull()
-    } finally {
-      setTweaks(['t40-share-open'], true)
-    }
   })
 
   it('does not read who has access when the fresh item says the caller can no longer manage it', async () => {

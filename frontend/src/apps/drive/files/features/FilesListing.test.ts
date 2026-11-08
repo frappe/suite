@@ -5,7 +5,6 @@ import { createApp, h, nextTick, reactive, watch } from 'vue'
 import type { DriveNode } from '@/apps/drive/client/types'
 import { requireTestElement } from '@/platform/testing/dom'
 import { DOCUMENT_TYPES_KEY, type DocumentTypeDefinition } from '@/platform/contracts'
-import { setTweaks } from '@/platform/tweaks'
 
 import FilesListing from './FilesListing.vue'
 import { DEFAULT_PRESENTATION, type PresentationState } from './presentation'
@@ -51,7 +50,6 @@ beforeEach(() => {
 afterEach(() => {
   cleanup?.()
   vi.unstubAllGlobals()
-  setTweaks(['t4-type-names', 't13-arrow-keys', 't13-type-ahead'], true)
 })
 
 function file(name: string, title: string, extra: Partial<DriveNode> = {}): DriveNode {
@@ -263,7 +261,6 @@ describe('FilesListing checkboxes with a mouse', () => {
       removeEventListener() {},
     }))
   })
-  afterEach(() => setTweaks(['t18-hover-checkbox'], true))
   const checkbox = (root: HTMLElement, title: string) =>
     root.querySelector<HTMLElement>(`[aria-label="Select ${title}"]`)
 
@@ -301,15 +298,6 @@ describe('FilesListing checkboxes with a mouse', () => {
     expect(typeIcon.classList).toContain('invisible')
     expect(checkbox(root, 'Beta.png')!.className).not.toMatch(/\bbg-|shadow/)
   })
-
-  it('shows no checkbox until selection starts, with the tweak off', async () => {
-    setTweaks(['t18-hover-checkbox'], false)
-    const { root } = mount({ rows })
-    await nextTick()
-
-    expect(checkbox(root, 'Alpha.png')).toBeNull()
-    expect(root.querySelector('[aria-label="Select all"]')).toBeNull()
-  })
 })
 
 describe('FilesListing columns', () => {
@@ -333,10 +321,7 @@ describe('FilesListing columns', () => {
         return { width: (this.textContent?.length ?? 0) * 7 } as DOMRect
       })
     })
-    afterEach(() => {
-      vi.restoreAllMocks()
-      setTweaks(['t35-default-columns'], true)
-    })
+    afterEach(() => vi.restoreAllMocks())
     const labelled = [
       file('a', 'Alpha.png'),
       file('s', 'Plan', {
@@ -358,19 +343,6 @@ describe('FilesListing columns', () => {
       )
       expect(list.classList).toContain('md:list-gap-6')
     })
-
-    it('keeps the fixed widths and the narrow gap with t35 off', async () => {
-      setTweaks(['t35-default-columns'], false)
-      const { root } = mount({ rows: labelled, columns: ['kind', 'owner', 'size', 'modified'] })
-      await nextTick()
-      await nextTick()
-      const list = root.querySelector<HTMLElement>('[style*="--_list-columns-md"]')!
-
-      expect(list.style.getPropertyValue('--_list-columns-md')).toBe(
-        'minmax(0,1fr) 128px 192px 96px 128px 2.5rem',
-      )
-      expect(list.classList).not.toContain('md:list-gap-6')
-    })
   })
 
   describe('in a narrow list', () => {
@@ -389,7 +361,6 @@ describe('FilesListing columns', () => {
         },
       )
     })
-    afterEach(() => setTweaks(['t35-default-columns', 't36-access-column'], true))
     const header = (root: HTMLElement, label: string) =>
       [...root.querySelectorAll('[role="columnheader"]')].find((cell) =>
         cell.textContent?.includes(label),
@@ -409,18 +380,6 @@ describe('FilesListing columns', () => {
       expect(header(root, 'Type')?.classList).not.toContain('md:flex')
       expect(header(root, 'Size')?.classList).toContain('md:hidden')
       expect(header(root, 'Access')?.classList).toContain('md:flex')
-    })
-
-    it('shows every chosen column, as before, with t35 and t36 off', async () => {
-      setTweaks(['t35-default-columns', 't36-access-column'], false)
-      listWidth = 400
-      const { root } = mount({ rows, columns: ['kind', 'owner', 'size', 'modified'] })
-      await nextTick()
-      const list = root.querySelector<HTMLElement>('[style*="--_list-columns-md"]')!
-
-      expect(list.style.getPropertyValue('--_list-columns-md')).toBe(
-        'minmax(0,1fr) 128px 192px 96px 128px 2.5rem',
-      )
     })
   })
 })
@@ -678,18 +637,6 @@ describe('FilesListing type column', () => {
       'Ledger Entry',
     ])
   })
-
-  it('falls back to Drive’s own names with the tweak off, where a drawing is a document', async () => {
-    setTweaks(['t4-type-names'], false)
-    const { root } = mount({ columns: ['kind'], rows: documents })
-    await nextTick()
-
-    expect(['sheet', 'draw', 'odd'].map(typeIn(root))).toEqual([
-      'Spreadsheet',
-      'Document',
-      'Document',
-    ])
-  })
 })
 
 describe('FilesListing size column', () => {
@@ -700,7 +647,7 @@ describe('FilesListing size column', () => {
       rows: [
         file('full', 'Projects', { ...folder, contents_size: 3_451_500 }),
         file('empty', 'Empty', { ...folder, contents_size: 0 }),
-        // A listing that did not ask, such as Trash or the tweak off, has no total.
+        // A listing that did not ask, such as Trash, has no total.
         file('unread', 'Archive', folder),
         file('png', 'Alpha.png', { size: 1_536 }),
       ],
@@ -742,10 +689,7 @@ describe('FilesListing grid previews', () => {
 })
 
 describe('FilesListing loading', () => {
-  afterEach(() => {
-    vi.useRealTimers()
-    setTweaks(['t38-delayed-skeleton'], true)
-  })
+  afterEach(() => vi.useRealTimers())
 
   it('shows placeholders only when a load is slow, then the files in their place', async () => {
     vi.useFakeTimers()
@@ -791,21 +735,6 @@ describe('FilesListing loading', () => {
     const { root } = mount({ rows: [], status: 'success' })
     await nextTick()
 
-    expect(emptyState(root)?.className).not.toContain('animate-')
-  })
-
-  it('shows placeholders after 180 ms and no fade, with the tweak off', async () => {
-    setTweaks(['t38-delayed-skeleton'], false)
-    vi.useFakeTimers()
-    const { root, query } = mount({ rows: [], status: 'pending' })
-    await nextTick()
-
-    vi.advanceTimersByTime(190)
-    await nextTick()
-    expect(placeholders(root)).toBeGreaterThan(0)
-
-    query.status = 'success'
-    await nextTick()
     expect(emptyState(root)?.className).not.toContain('animate-')
   })
 })
@@ -893,19 +822,6 @@ describe('FilesListing keyboard', () => {
 
     expect(state.selection).toEqual(['beta'])
     expect(events.opened).toEqual([])
-  })
-
-  it('keeps every row a Tab stop and the arrow keys still, with the tweaks off', async () => {
-    setTweaks(['t13-arrow-keys', 't13-type-ahead'], false)
-    const { root } = mount({ rows: five })
-    await nextTick()
-    expect(root.querySelector('[role="grid"]')).toBeNull()
-    expect(tabbable(root)).toHaveLength(5)
-
-    root.querySelector<HTMLElement>('[data-node="alpha"]')!.focus()
-    await press('ArrowDown')
-    await press('d')
-    expect(focused()).toBe('alpha')
   })
 })
 

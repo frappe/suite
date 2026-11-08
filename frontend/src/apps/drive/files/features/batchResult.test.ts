@@ -1,8 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, type App } from 'vue'
 
-import { setTweaks } from '@/platform/tweaks'
-
 import BatchOutcome from './BatchOutcome.vue'
 import type { BatchItem } from './batchResult'
 
@@ -45,7 +43,6 @@ function mount(props: Record<string, unknown>) {
 afterEach(() => {
   app?.unmount()
   app = null
-  setTweaks(['t32-readable-failures'], true)
 })
 
 describe('Batch outcome', () => {
@@ -89,17 +86,5 @@ describe('Batch outcome', () => {
     expect(dialog.textContent).toContain('The server said no.')
     expect(dialog.textContent).not.toContain('n1')
     expect(dialog.querySelectorAll('[data-slot="failure-icon"].file-icon-pdf')).toHaveLength(2)
-  })
-
-  it('keeps the old count and node ids with the tweak off', () => {
-    setTweaks(['t32-readable-failures'], false)
-    const root = mount({
-      result: {
-        ok: Array(14).fill('ok'),
-        failed: Array(4).fill({ node: 'x', type: 'DriveConflict', message: 'No' }),
-      },
-      verb: 'moved',
-    })
-    expect(root.textContent).toContain('14 moved · 4 failed')
   })
 })

@@ -1,6 +1,6 @@
 import { computed, reactive, readonly, ref, shallowRef, toValue, type MaybeRefOrGetter } from 'vue'
 
-import { api, client } from '@/api'
+import { client } from '@/api'
 import {
   endOfDayStamp,
   isExpired,
@@ -18,7 +18,6 @@ import { canManage, DRIVE_ROLES, type DriveNode, type DrivePerson } from '@/apps
 import type { ImperativeClient } from '@/platform/server-state/types'
 import { translate as __ } from '@/platform/translation'
 import { TransportError } from '@/platform/transport'
-import { isTweakOn } from '@/platform/tweaks'
 
 import { readShare, takeShareReads } from './opening'
 import {
@@ -54,7 +53,7 @@ export interface ShareOptions {
   workspace?: MaybeRefOrGetter<string | undefined>
   /** The name an ancestor shows under, such as "My files" for the caller's own root. Defaults to its title. */
   placeTitle?: (node: { name: string; title: string }) => string
-  /** The node as the opener last read it, such as a listing row, shown until the fresh read lands (`t40-share-open`). */
+  /** The node as the opener last read it, such as a listing row, shown until the fresh read lands. */
   known?: DriveNode
 }
 
@@ -69,14 +68,13 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
   const placeTitle = options.placeTitle ?? ((node: { title: string }) => node.title)
   const requester = options.client ?? client
   const grants = nodeGrants(nodeId, requester)
-  const fastOpen = isTweakOn('t40-share-open')
-  const node = shallowRef<DriveNode | null>((fastOpen && options.known) || null)
+  const node = shallowRef<DriveNode | null>(options.known ?? null)
   const list = shallowRef<GrantList | null>(null)
   const loadError = ref('')
   const errors = reactive(new Map<RowKey, string>())
   const pending = reactive(new Set<RowKey>())
   const notice = ref('')
-  /** The row the notice's Undo writes back, with `t33-undo-remove`. The next write clears it. */
+  /** The row the notice's Undo writes back. The next write clears it. */
   const removed = shallowRef<{ principal: string; write: GrantWrite } | null>(null)
   /** A write went through since the dialog opened. */
   const changed = ref(false)
@@ -107,14 +105,9 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
 
   /** Both reads, at once where the node already says the caller manages it. */
   async function readBoth(read: number): Promise<[DriveNode, GrantList | null]> {
-    if (fastOpen) {
-      const started = read === 1 && requester === client ? takeShareReads(nodeId) : null
-      const reads = started ?? readShare(nodeId, node.value, requester)
-      return [await reads.node, await reads.list]
-    }
-    const fresh = await requester.query(api.drive.nodes.get, { node: nodeId, expand: 'access' })
-    // Reading grants needs MANAGE (spec §7.2). A caller who gave it away sees why.
-    return [fresh, managesNode(fresh) ? await grants.list() : null]
+    const started = read === 1 && requester === client ? takeShareReads(nodeId) : null
+    const reads = started ?? readShare(nodeId, node.value, requester)
+    return [await reads.node, await reads.list]
   }
 
   let reads = 0
@@ -140,7 +133,7 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
       loadError.value = lostAccess
         ? __('You no longer have access to this item.')
         : messageOf(error, __('Could not load who has access.'))
-      if (lostAccess && isTweakOn('t2')) driveLinks.invalidateAccess()
+      if (lostAccess) driveLinks.invalidateAccess()
     }
   }
 
@@ -188,7 +181,7 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
     const explanation = await grants.explain(me).catch(() => null)
     if (!explanation) return true
     // Drive's own account holds every right, whatever the grants say.
-    if (isTweakOn('t1') && explanation.source === 'system') return true
+    if (explanation.source === 'system') return true
     const after = roleAfter(explanation, nodeId, change, me)
     if (after >= explanation.role) return true
     return confirmLoss({ before: explanation.role, after })
@@ -273,8 +266,7 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
           remainingAccess(label(principal), principal, explanation, titles.value, label)
       }
       // A plain Remove can be undone. Removing inside asks first instead (§7.4).
-      const undoable =
-        isTweakOn('t33-undo-remove') && !below && row.kind !== 'link' && !row.expired && !row.denied
+      const undoable = !below && row.kind !== 'link' && !row.expired && !row.denied
       if (undoable) {
         removed.value = {
           principal,
@@ -306,24 +298,9 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
 
     setGeneral,
 
-    /**
-     * With `t4-public-off`, the switch publishes here or removes the local row,
-     * and never writes a deny (§5.10). Without it, disabling is permanent, and
-     * re-enabling inherited public access removes its deny.
-     */
+    /** The switch publishes here or removes the local row, and never writes a deny (§5.10). */
     setPublic(enabled: boolean) {
-      if (isTweakOn('t4-public-off')) return setGeneral(PUBLIC, enabled ? DRIVE_ROLES.read : null)
-      const inherited = list.value?.inherited.find((entry) => entry.grant.principal === PUBLIC)
-      const restore = enabled && localGrant(PUBLIC)?.role === 0 && (inherited?.grant.role ?? 0) > 0
-      const role = restore ? null : enabled ? DRIVE_ROLES.read : 0
-      return change(PUBLIC, { principal: PUBLIC, role }, async () => {
-        if (role === null) await grants.remove(PUBLIC)
-        else
-          await grants.put(PUBLIC, {
-            role,
-            ...(enabled ? keep(localGrant(PUBLIC)) : { expires_on: null }),
-          })
-      })
+      return setGeneral(PUBLIC, enabled ? DRIVE_ROLES.read : null)
     },
 
     /**
@@ -333,7 +310,7 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
      */
     async add(principals: readonly string[], role: number, notify: boolean): Promise<string[]> {
       // The picker shows before who has access arrives; an existing row's expiry comes from it.
-      if (fastOpen) await reading
+      await reading
       errors.delete(PICKER)
       const lines: string[] = []
       const fail = (principal: string) => (message: string) => {

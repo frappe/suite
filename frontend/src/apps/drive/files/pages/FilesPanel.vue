@@ -35,12 +35,6 @@
       />
     </SidebarSection>
     <AreaSidebarFooter>
-      <SidebarItem
-        :label="__('Tweaks')"
-        icon="lucide-flask-conical"
-        :active="isTweakPanelOpen || undefined"
-        @click="isTweakPanelOpen = !isTweakPanelOpen"
-      />
       <StorageMeter />
     </AreaSidebarFooter>
   </div>
@@ -53,7 +47,6 @@ import { useRoute } from 'vue-router'
 
 import { api, useQuery } from '@/api'
 import StorageMeter from '@/apps/drive/files/features/StorageMeter.vue'
-import { isTweakPanelOpen } from '@/apps/drive/files/features/tweaks/panel'
 import { TRASH_TARGET, type DragMove } from '@/apps/drive/files/features/useDragMove'
 import {
   locationLabel,

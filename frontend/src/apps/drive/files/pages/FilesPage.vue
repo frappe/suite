@@ -82,7 +82,7 @@
         >
           <div class="flex h-7 items-center justify-between gap-2">
             <SelectionBar
-              v-if="selectionMode && countFirstSelectionBar"
+              v-if="selectionMode"
               :count="selection.length"
               :label="selectionLabel"
               :actions="bulkActions"
@@ -90,22 +90,6 @@
               :compact="narrow"
               @done="clearSelected"
             />
-            <template v-else-if="selectionMode">
-              <div class="flex min-w-0 items-center gap-2">
-                <Button
-                  v-for="action in bulkActions"
-                  :key="action.label"
-                  :label="action.label"
-                  :icon-left="action.icon"
-                  :disabled="action.disabled"
-                  @click="action.onClick"
-                />
-                <span class="truncate pl-1 text-base text-ink-gray-7">{{
-                  selectionLabel ?? `${selection.length} selected`
-                }}</span>
-              </div>
-              <Button variant="ghost" label="Done" @click="clearSelected" />
-            </template>
             <template v-else>
               <!-- Each place gets its own field. Pressing a link elsewhere fires the field's
                    change event, whose debounced search would otherwise land on the new place. -->
@@ -260,10 +244,10 @@
             <template v-if="listingTypes.length" #empty-action>
               <Button label="Clear filter" class="mt-2" @click="setTypes([])" />
             </template>
-            <template v-else-if="emptyActions && isSearching" #empty-action>
+            <template v-else-if="isSearching" #empty-action>
               <Button :label="__('Clear search')" class="mt-2" @click="clearSearch()" />
             </template>
-            <template v-else-if="emptyActions && canCreate" #empty-action>
+            <template v-else-if="canCreate" #empty-action>
               <div class="mt-2 flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
                 <Button
                   :label="__('Upload files')"
@@ -346,7 +330,6 @@ import { useSession } from '@/platform/session'
 import { openAreaShortcuts } from '@/platform/shortcuts'
 import { translate as __ } from '@/platform/translation'
 import { TransportError } from '@/platform/transport'
-import { isTweakOn, useTweak } from '@/platform/tweaks'
 
 import { inBatches } from '../features/batches'
 import BatchOutcome from '../features/BatchOutcome.vue'
@@ -362,7 +345,7 @@ import CreateNodeDialog, { type CreateRequest } from '../features/CreateNodeDial
 import { openingLocationState } from '../features/document/openingLocation'
 import { downloadItems } from '../features/downloads'
 import type { DraggedItems } from '../features/dragMove'
-import { emptyState, emptyStateWithActions, type FilesDestination } from '../features/emptyState'
+import { emptyStateWithActions, type FilesDestination } from '../features/emptyState'
 import FilesListing from '../features/FilesListing.vue'
 import FolderPicker from '../features/FolderPicker.vue'
 import { folderTrail, type FolderTrail } from '../features/folderTrail'
@@ -500,14 +483,13 @@ const inOwnSpace = computed(() => {
   const root = trail.value?.[0]?.name
   return !root || root === discovered.data?.personal.node
 })
-const hidesOwnerSort = useTweak('t19-owner-sort')
 /**
  * The sort the folder is read in. Owner orders nothing in the user's own space,
  * so Name stands in there, and the saved Owner stays for a shared folder.
  */
 const listedSort = computed<FilesSort>(() => {
   const { sort } = userPresentation.value
-  return hidesOwnerSort.value && inOwnSpace.value && sort === 'owner' ? 'title' : sort
+  return inOwnSpace.value && sort === 'owner' ? 'title' : sort
 })
 /** What View settings shows: the user's choice, with the sort the folder is read in. */
 const settingsPresentation = computed(() => ({ ...userPresentation.value, sort: listedSort.value }))
@@ -518,8 +500,8 @@ const isSearching = computed(() => !!searchTerm.value)
 const concreteDestination = computed(() =>
   ['personal', 'organization', 'folder'].includes(props.destination),
 )
-// The locations the page loaded with stand in until roots load, so My files reads at once (t24).
-const bootLocations = isTweakOn('t24-boot-roots') ? bootRoots() : null
+// The locations the page loaded with stand in until roots load, so My files reads at once.
+const bootLocations = bootRoots()
 const knownRoots = computed(() => discovered.data ?? bootLocations)
 const rootLocation = computed(() => {
   if (props.destination === 'organization') return knownRoots.value?.organization ?? null
@@ -657,13 +639,12 @@ const presentationQuery = computed(() => ({
   dir: userPresentation.value.dir,
 }))
 // A search result, a shared item and a starred item each show where they live.
-const recentLocation = useTweak('t17-recent-location')
 const showsLocation = computed(
   () =>
     isSearching.value ||
     props.destination === 'shared' ||
     props.destination === 'starred' ||
-    (props.destination === 'recent' && recentLocation.value),
+    props.destination === 'recent',
 )
 const expansion = computed(() => {
   const parts = ['access']
@@ -676,7 +657,6 @@ const expansion = computed(() => {
 /** A folder's total size shows in the list's Size column, except in Trash. */
 const showsFolderSize = computed(
   () =>
-    isTweakOn('t46-folder-size') &&
     props.destination !== 'trash' &&
     presentation.value.view === 'list' &&
     presentation.value.columns.includes('size'),
@@ -773,15 +753,11 @@ const listingQuery: InfiniteQueryState<DriveNode> = {
     activeListing.value.cancel()
   },
 }
-// Folders and links this tab created show at once, where the server will list them (t26).
+// Folders and links this tab created show at once, where the server will list them.
 const createdRows = withCreatedRows(
   recentFiles(listingQuery, () => hidesFolders.value),
   () =>
-    isTweakOn('t26-insert-created') &&
-    !isSearching.value &&
-    concreteDestination.value &&
-    parentId.value &&
-    !listingTypes.value.length
+    !isSearching.value && concreteDestination.value && parentId.value && !listingTypes.value.length
       ? {
           place: parentId.value,
           sort: listedSort.value,
@@ -799,9 +775,8 @@ const listing = heldWhileRearranging(createdRows.listing, () =>
     typeQuery(listingTypes.value),
   ].join('|'),
 )
-const pendingSort = useTweak('t26-pending-sort')
-// The old rows dim while the new order loads (t26).
-const rearranging = computed(() => pendingSort.value && listing.isHeld)
+// The old rows dim while the new order loads.
+const rearranging = computed(() => listing.isHeld)
 const hasRows = computed(() => listing.rows.length > 0)
 const settledEmpty = computed(() => !hasRows.value && listing.status !== 'pending')
 // A trashed folder's own Restore needs its root too, for a restore into a folder the user picks.
@@ -843,34 +818,29 @@ const canCreateDocuments = computed(() => linkAccess(detail.data, signedIn.value
 const selectedRows = computed(() =>
   listing.rows.filter((row) => selection.value.includes(row.name)),
 )
-const countFirstSelectionBar = useTweak('t3-selection-menu')
 /** The selection bar's words when "N selected" would mislead. */
-const loadedLabel = useTweak('t20-loaded-label')
 const selectionLabel = computed(() => {
   const count = selection.value.length
   if (!count) return __('Select items')
   // Select all takes only the loaded pages (spec §5.8), so the count says so.
   const allLoaded = listing.hasNext && selectedRows.value.length === listing.rows.length
-  return loadedLabel.value && allLoaded ? __('{0} loaded items selected', [count]) : undefined
+  return allLoaded ? __('{0} loaded items selected', [count]) : undefined
 })
 /** The selected item, when it is the only one. */
 const onlySelected = computed(() =>
   selectedRows.value.length === 1 ? (selectedRows.value[0] ?? null) : null,
 )
-const emptyActions = useTweak('t12')
 /** Only a fine pointer can drag files in: phones and tablets cannot. */
 const canDropFiles = window.matchMedia('(hover: hover) and (pointer: fine)').matches
 const empty = computed(() => {
-  const input = {
+  return emptyStateWithActions({
     destination: props.destination,
     term: searchTerm.value,
     canCreate: canCreate.value,
     typeNoun: listingTypes.value.length ? typeNouns(listingTypes.value) : undefined,
     inTrash: !!trashedFolder.value,
-  }
-  return emptyActions.value
-    ? emptyStateWithActions({ ...input, canCreateDocuments: canCreateDocuments.value })
-    : emptyState(input)
+    canCreateDocuments: canCreateDocuments.value,
+  })
 })
 const emptyTitle = computed(() => empty.value.title)
 const emptyDescription = computed(() => empty.value.description)
@@ -1005,7 +975,7 @@ function isOfferedColumn(column: string) {
   if (column === 'owner') return !inOwnSpace.value
   if (column === 'access') {
     const inTrash = props.destination === 'trash' && !isSearching.value
-    return isTweakOn('t36-access-column') && !inTrash
+    return !inTrash
   }
   return true
 }
@@ -1015,23 +985,6 @@ const openFolder = computed(() => {
   return props.destination === 'folder' && !isSearching.value && folder?.kind === 'folder'
     ? folder
     : null
-})
-/** The open folder's own actions. */
-const folderActions = computed<DropdownActionOption[]>(() => {
-  const folder = openFolder.value
-  if (!folder) return []
-  const can = nodeActions(folder, signedIn.value)
-  return [
-    ...(can.share
-      ? [{ label: 'Share folder', icon: 'lucide-share-2', onClick: () => shareRow(folder) }]
-      : []),
-    ...(can.copyLink
-      ? [{ label: 'Copy link', icon: 'lucide-link', onClick: () => copyNodeLink(folder) }]
-      : []),
-    ...(can.rename
-      ? [{ label: 'Rename folder', icon: 'lucide-pencil', onClick: () => beginRename(folder) }]
-      : []),
-  ]
 })
 /** The trashed folder's notice. Its trash root offers Restore and Delete forever; a folder inside one points to it. */
 const trashedNotice = computed<{
@@ -1078,26 +1031,18 @@ const trashedNotice = computed<{
     secondary: restore && remove,
   }
 })
-const wholeFolderMenu = useTweak('t3-folder-menu')
 /** The open folder's part of the "…" menu: the actions of its own row menu. */
 const folderGroups = computed<DropdownItem[]>(() => {
-  if (!wholeFolderMenu.value)
-    return folderActions.value.length
-      ? [{ group: 'This folder', options: folderActions.value }]
-      : []
   const folder = openFolder.value
   return folder ? folderMenu(rowMenuOptions(folder), () => trashOpenFolder(folder)) : []
 })
-const emptySelection = useTweak('t18-select-entry')
 const finePointer = useMediaQuery('(hover: hover) and (pointer: fine)')
 /** How a touch device starts selecting. A mouse has the checkbox on hover instead. */
-const selectEntry = computed<DropdownActionOption[]>(() => {
-  if (!emptySelection.value)
-    return [{ label: 'Select rows', icon: 'lucide-square-check', onClick: selectFirst }]
-  return finePointer.value
+const selectEntry = computed<DropdownActionOption[]>(() =>
+  finePointer.value
     ? []
-    : [{ label: __('Select'), icon: 'lucide-square-check', onClick: picked.start }]
-})
+    : [{ label: __('Select'), icon: 'lucide-square-check', onClick: picked.start }],
+)
 const moreOptions = computed<DropdownItem[]>(() => [
   ...folderGroups.value,
   ...(hasRows.value
@@ -1213,7 +1158,6 @@ function typedOption(
     },
   }
 }
-const oneFolderItem = useTweak('t7')
 const newOptions = computed<DropdownItem[]>(() => {
   const target = newUploadTarget.value
   const documents = canCreateDocuments.value ? documentTypes : []
@@ -1264,11 +1208,11 @@ const newOptions = computed<DropdownItem[]>(() => {
           {
             group: 'Upload',
             // The items name the verb themselves, so the heading would repeat it.
-            ...(oneFolderItem.value ? { hideLabel: true } : {}),
+            hideLabel: true,
             options: [
               {
                 key: 'upload-files',
-                label: oneFolderItem.value ? __('Upload files') : 'Files',
+                label: __('Upload files'),
                 icon: 'lucide-upload',
                 onClick: () => pickUpload('files'),
               },
@@ -1278,7 +1222,7 @@ const newOptions = computed<DropdownItem[]>(() => {
                 : [
                     {
                       key: 'upload-folder',
-                      label: oneFolderItem.value ? __('Upload folder') : 'Folder',
+                      label: __('Upload folder'),
                       icon: 'lucide-folder-up',
                       onClick: () => pickUpload('folder'),
                     },
@@ -1291,10 +1235,9 @@ const newOptions = computed<DropdownItem[]>(() => {
 })
 
 const listingView = useTemplateRef<InstanceType<typeof FilesListing>>('listingView')
-const keysOnFocusedRow = useTweak('t14-focused-row')
 /** The row a key acts on when nothing is selected: the one that shows keyboard focus. */
 function focusedTarget(): DriveNode | null {
-  if (!keysOnFocusedRow.value || selectionMode.value) return null
+  if (selectionMode.value) return null
   return listingView.value?.focusedRow() ?? null
 }
 // A shortcut runs the option a menu shows for it, so it is refused where the menu is.
@@ -1333,12 +1276,11 @@ function openParent() {
 // A navigation that should land on an item names it in the history entry.
 // Back from a file preview lands on the last file it showed.
 const revealing = ref<{ id: string; highlight: boolean } | null>(null)
-const returnFocus = useTweak('t15-return-focus')
 watch(
   () => route.fullPath,
   (path) => {
     const { reveal, highlight, forward } = router.options.history.state
-    const shown = typeof forward === 'string' && returnFocus.value ? takeShown(path) : null
+    const shown = typeof forward === 'string' ? takeShown(path) : null
     revealing.value =
       typeof reveal === 'string'
         ? { id: reveal, highlight: highlight === true }
@@ -1359,7 +1301,6 @@ watch([revealing, () => listing.status, listingView], async ([target, status, vi
       : __('Opened {0}. The item is no longer in it.', [placeLabel.value]),
   )
 })
-const showInFolder = useTweak('t17-show-in-folder')
 /** The folder a listed item is in, when its trail shows it. Trash rows have none. */
 function shownParent(row: DriveNode) {
   const parent = row.breadcrumbs?.at(-1)
@@ -1393,18 +1334,9 @@ function setColumn(column: FilesColumn, visible: boolean) {
   writeColumnChoice(userPresentation.value.columns, column, visible)
   presentationVersion.value += 1
 }
-const startsInNaturalOrder = useTweak('t19-sort-direction')
 function changeSort(column: FilesSort) {
   if (!arrangeable.value) return
-  if (startsInNaturalOrder.value) {
-    setPresentation(nextSort(settingsPresentation.value, column))
-    return
-  }
-  const chosen = userPresentation.value
-  setPresentation({
-    sort: column,
-    dir: chosen.sort === column && chosen.dir === 'asc' ? 'desc' : 'asc',
-  })
+  setPresentation(nextSort(settingsPresentation.value, column))
 }
 function updateSearch(value: string | number) {
   const q = String(value).trim() || undefined
@@ -1425,10 +1357,6 @@ function clearSearchAndFocus(event: MouseEvent) {
 }
 function selectNode(row: DriveNode, range: boolean) {
   picked.toggle(row.name, range)
-}
-function selectFirst() {
-  const row = listing.rows[0]
-  if (row) selectNode(row, false)
 }
 function selectAll() {
   picked.selectAll()
@@ -1553,9 +1481,9 @@ function previewLocation(row: DriveNode): string | null {
   const folder = row.breadcrumbs ? folderOf(row) : parent
   return folder ? locationTitle(folder, discovered.data) : null
 }
-/** The address an item's name links to (t39). An external link asks before it opens, so it has none. */
+/** The address an item's name links to. An external link asks before it opens, so it has none. */
 function nodeHref(row: DriveNode): string | undefined {
-  if (!isTweakOn('t39-name-link') || row.kind === 'link') return undefined
+  if (row.kind === 'link') return undefined
   if (!nodeActions(row, signedIn.value).openInNewTab) return undefined
   return router.resolve(openTarget(row)).href
 }
@@ -1645,7 +1573,7 @@ function rowMenuOptions(row: DriveNode): DropdownItem[] {
               },
             ]
           : []),
-        ...(showInFolder.value && shownParent(row)
+        ...(shownParent(row)
           ? [
               {
                 key: 'show-in-folder',
@@ -1809,7 +1737,7 @@ function pickUpload(source: 'files' | 'folder') {
 function rowDrop(row: DriveNode) {
   return concreteDestination.value && !isSearching.value ? rowDropHandlers(drop, row) : null
 }
-/** Drag to move (t16-drag-move), in a folder the user can rearrange. Saved views, search and a trashed folder have none. */
+/** Drag to move, in a folder the user can rearrange. Saved views, search and a trashed folder have none. */
 const dragMove = useDragMove({
   enabled: () =>
     signedIn.value && concreteDestination.value && !isSearching.value && !trashedFolder.value,
@@ -1884,8 +1812,8 @@ async function applyPicker(parent: string, destination: string) {
       ? [{ node: row.name, title: row.title, from: row.parent_node, to: parent }]
       : [],
   )
-  // The moved rows leave the list at once (t26), so the picker closes with them.
-  if (pickerMode.value === 'move' && isTweakOn('t26-optimistic-remove')) pickerOpen.value = false
+  // The moved rows leave the list at once, so the picker closes with them.
+  if (pickerMode.value === 'move') pickerOpen.value = false
   if (pickerBulk.value) {
     const result = await runBatch(
       moving.map((item) => item.node),
@@ -1914,7 +1842,7 @@ async function applyPicker(parent: string, destination: string) {
 }
 async function runBulkTrash() {
   const trashing = selectedRows.value.map(itemOf)
-  if (trashing.length > 1 && isTweakOn('t34-bulk-trash-confirm')) {
+  if (trashing.length > 1) {
     const agreed = await confirm({
       title: __('Move {0} items to trash?', [trashing.length]),
       message: __('You can restore them from Trash.'),
@@ -1937,9 +1865,8 @@ async function runBatch(
   patch: { parent_node?: string; state?: 'Trashed' },
   verb: BatchVerb,
 ): Promise<DriveBatchResult | null> {
-  // The rows leave at once (t26), and the selection with them. A refusal brings both back.
-  const optimistic = isTweakOn('t26-optimistic-remove')
-  if (optimistic) picked.keepOnly([])
+  // The rows leave at once, and the selection with them. A refusal brings both back.
+  picked.keepOnly([])
   try {
     const result = await inBatches(nodes, (chunk) => batchMutation.run({ nodes: chunk, patch }))
 
@@ -1948,7 +1875,7 @@ async function runBatch(
     picked.keepOnly(result.failed.map((failure) => failure.node))
     return result
   } catch {
-    if (optimistic) picked.keepOnly(nodes)
+    picked.keepOnly(nodes)
     return null
   }
 }
@@ -1976,24 +1903,15 @@ async function setStar(row: DriveNode, starred: boolean) {
 async function shareRow(row: DriveNode) {
   if (await dialogs.share(row.name, row)) void listing.refetch()
 }
-const documentOpensAtOnce = useTweak('t8')
 let creatingDocument = false
 function create(kind: CreateRequest['kind'], contentDoctype?: string) {
   if (!parentId.value) return
-  if (kind === 'document' && contentDoctype && documentOpensAtOnce.value) {
+  if (kind === 'document' && contentDoctype) {
     void createAndOpen({ parent: parentId.value, kind, contentDoctype })
     return
   }
-  const definition = documentTypes.find((type) => type.contentDoctype === contentDoctype)
-  createRequest.value = {
-    parent: parentId.value,
-    kind,
-    contentDoctype,
-    typeLabel: definition?.newLabel(),
-  }
+  createRequest.value = { parent: parentId.value, kind }
   createOpen.value = true
-  // Loaded while the name is typed, so the new document takes typing as soon as it opens.
-  void definition?.loadOpeningEditor?.()
 }
 /** Creates a document with its default title and opens it; a second click meanwhile does nothing. */
 async function createAndOpen(request: CreateRequest & { contentDoctype: string }) {

@@ -1,12 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { setTweaks } from '@/platform/tweaks'
-
 import { observePreviewRefresh } from './previewRefresh'
 
 afterEach(() => {
   vi.useRealTimers()
-  setTweaks(['t25-preview-refresh'], true)
 })
 
 const MINUTE = 60_000
@@ -85,16 +82,5 @@ describe('preview refresh', () => {
       close()
       vi.useRealTimers()
     }
-  })
-
-  it('refreshes on every focus with the change switched off', () => {
-    setTweaks(['t25-preview-refresh'], false)
-    vi.useFakeTimers({ now: START })
-    const { rows, refresh } = grid()
-    const close = observePreviewRefresh({ refresh, rows: () => rows })
-
-    focus()
-    expect(refresh).toHaveBeenCalledTimes(1)
-    close()
   })
 })

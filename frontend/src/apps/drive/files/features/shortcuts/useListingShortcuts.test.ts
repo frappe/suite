@@ -1,8 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h } from 'vue'
 
-import { setTweaks } from '@/platform/tweaks'
-
 import { getShortcutGroups } from '../../../../../../../node_modules/frappe-ui/src/composables/useKeyboardShortcut'
 import {
   menuCommand,
@@ -172,10 +170,6 @@ describe('listing shortcuts', () => {
 })
 
 describe('Delete, F2, parent folder and Undo keys', () => {
-  afterEach(() =>
-    setTweaks(['t14-delete-key', 't14-rename-key', 't14-parent-key', 't14-undo-key'], true),
-  )
-
   it('removes with Delete and Mod+Backspace, renames with F2 and opens the parent with Alt+Up', () => {
     const remove = { onClick: vi.fn() }
     const rename = { onClick: vi.fn() }
@@ -224,25 +218,6 @@ describe('Delete, F2, parent folder and Undo keys', () => {
     listing({}, true, true)
     expect(listed()).toContain('Delete selected items forever')
     expect(listed()).not.toContain('Move selected items to Trash')
-  })
-
-  it('switched off, Delete, F2 and Mod+Z do nothing and Mod+Backspace keeps its old name', () => {
-    setTweaks(['t14-delete-key', 't14-rename-key', 't14-parent-key', 't14-undo-key'], false)
-    const remove = { onClick: vi.fn() }
-    const rename = { onClick: vi.fn() }
-    const undo = vi.fn(() => true)
-    listing({ remove, rename, undo })
-
-    press('Delete')
-    press('F2')
-    press('z', { ctrlKey: true })
-    press('Backspace', { ctrlKey: true })
-
-    expect(rename.onClick).not.toHaveBeenCalled()
-    expect(undo).not.toHaveBeenCalled()
-    expect(remove.onClick).toHaveBeenCalledOnce()
-    expect(listed()).toContain('Delete selected items')
-    expect(listed()).not.toContain('Rename')
   })
 })
 

@@ -28,10 +28,7 @@
 
     <ScrollArea ref="home-scroll" class="min-h-0 flex-1">
       <div class="mx-auto flex w-full max-w-4xl flex-col gap-8 px-5 py-6">
-        <section
-          v-if="newCards && createDocumentMutation.canCreate"
-          aria-labelledby="home-new-heading"
-        >
+        <section v-if="createDocumentMutation.canCreate" aria-labelledby="home-new-heading">
           <h2 id="home-new-heading" class="pb-3 text-lg font-medium text-ink-gray-9">
             {{ __('New') }}
           </h2>
@@ -272,7 +269,6 @@ import { Dropdown } from '@/platform/feedback'
 import { useRestoredScroll } from '@/platform/scroll-restoration'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
-import { useTweak } from '@/platform/tweaks'
 import { isMobile } from '@/shell/useIsMobile'
 
 const router = useRouter()
@@ -379,7 +375,6 @@ async function createDocument(contentDoctype: string) {
     await router.push(newDocumentRoute(node))
   }
 }
-const newCards = useTweak('t45-home-new')
 const creatingType = ref<string | null>(null)
 /** A card creates as the New menu does; a second click while one is created does nothing. */
 async function createFromCard(contentDoctype: string) {

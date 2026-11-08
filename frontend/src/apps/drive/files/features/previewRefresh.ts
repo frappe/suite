@@ -1,5 +1,3 @@
-import { isTweakOn } from '@/platform/tweaks'
-
 export const PREVIEW_REFRESH_MS = 10 * 60_000
 // A signed preview URL lasts at least 15 minutes. Near-expiry refreshes come 2 minutes before.
 const PREVIEW_LIFETIME_MS = 15 * 60_000
@@ -25,10 +23,7 @@ export function observePreviewRefresh(options: PreviewRefreshOptions): () => voi
   const targetDocument = options.document ?? document
   const setEvery = options.setInterval ?? globalThis.setInterval
   const clearEvery = options.clearInterval ?? globalThis.clearInterval
-  const due =
-    options.rows && isTweakOn('t25-preview-refresh')
-      ? nearExpiry(options.refresh, options.rows)
-      : null
+  const due = options.rows ? nearExpiry(options.refresh, options.rows) : null
   const refresh = due ? due.refresh : () => void options.refresh()
   const isDue = due ? due.isDue : () => true
   let timer: ReturnType<typeof setInterval> | null = null

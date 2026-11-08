@@ -5,7 +5,6 @@ import type { DriveNode } from '@/apps/drive/client/types'
 import { toast, type ToastId } from '@/platform/feedback'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
-import { isTweakOn } from '@/platform/tweaks'
 
 import { formatBytes } from '../internal/format'
 import { MAX_BATCH_NODES } from './batches'
@@ -74,14 +73,13 @@ export async function downloadItems(
         ? __('The download starts here when the zip is ready. You will also get a notification.')
         : __('The download starts here when the zip is ready.')
     // Keyed by the download, so asking again for the same selection updates
-    // this toast instead of adding one. vue-sonner reads `duration` once, when
-    // a toast mounts, so an infinite one never closes (t31-toast-closes); a
+    // this toast instead of adding one. It sets no `duration`: vue-sonner reads
+    // it once, when a toast mounts, so an infinite one would never close; a
     // loading toast stays without it.
     const showWaiting = (text: string) =>
       toast.loading(__('Preparing {0} for download', [name]), {
         id: asked.name,
         description: text,
-        ...(isTweakOn('t31-toast-closes') ? {} : { duration: Infinity }),
       })
     if (asked.status === 'Preparing') {
       waiting = asked.name
@@ -94,10 +92,7 @@ export async function downloadItems(
     if (settled.url) {
       window.location.assign(settled.url)
       void markDownloadDelivered(settled)
-      const size =
-        isTweakOn('t31-toast-closes') && settled.size !== null
-          ? formatBytes(settled.size)
-          : undefined
+      const size = settled.size !== null ? formatBytes(settled.size) : undefined
       if (waiting !== undefined) settle('success', __('Downloading {0}', [name]), size)
     } else settle('error', __('Could not download {0}', [name]), settled.error ?? undefined)
   } catch (error) {
@@ -109,15 +104,14 @@ export async function downloadItems(
 /**
  * Waits for a Page download, one whose access comes through a share link,
  * until its zip is ready or has failed. No notification brings it, so the
- * page that asked polls for it (Drive spec §11.2). While t31-poll-survives is
- * on, a dropped connection waits and polls again, polls slow down after a
- * minute, sign out stops the wait, and the wait ends when the server gives up.
+ * page that asked polls for it (Drive spec §11.2). A dropped connection waits
+ * and polls again, polls slow down after a minute, sign out stops the wait,
+ * and the wait ends when the server gives up.
  */
 export async function settledDownload(
   download: DriveDownload,
   options: SettleOptions = {},
 ): Promise<DriveDownload> {
-  if (!isTweakOn('t31-poll-survives')) return pollUntilSettled(download)
   const stop = new AbortController()
   const forget = useSession().onLogout(() => stop.abort())
   try {
@@ -125,15 +119,6 @@ export async function settledDownload(
   } finally {
     forget()
   }
-}
-
-async function pollUntilSettled(download: DriveDownload): Promise<DriveDownload> {
-  let current = download
-  while (current.status === 'Preparing') {
-    await new Promise((resolve) => setTimeout(resolve, DOWNLOAD_POLL_MS))
-    current = await client.query(api.drive.downloads.get, { download: current.name })
-  }
-  return current
 }
 
 async function pollPatiently(
@@ -178,12 +163,11 @@ async function pollPatiently(
 
 /**
  * The server notifies the bell when an Inbox zip is ready, also when this tab
- * delivered it. While t31-bell-read is on, that notification is marked read
- * here, so the bell counts only downloads nobody has started. It stays in the
+ * delivered it. That notification is marked read here, so the bell counts only downloads nobody has started. It stays in the
  * bell, as the download's link until it expires.
  */
 export async function markDownloadDelivered(download: DriveDownload): Promise<void> {
-  if (!isTweakOn('t31-bell-read') || download.delivery !== 'Inbox') return
+  if (download.delivery !== 'Inbox') return
   try {
     const unread = await client.query(api.drive.notifications.list, { unread: true, limit: 60 })
     const row = unread.rows.find(

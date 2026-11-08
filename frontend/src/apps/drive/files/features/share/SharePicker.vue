@@ -17,7 +17,7 @@
         :aria-label="fieldLabel"
         @update:open="onOpen"
       />
-      <Dropdown v-if="staged.length && oneRoleMenu" :options="roleChoices" align="end">
+      <Dropdown v-if="staged.length" :options="roleChoices" align="end">
         <Button
           variant="ghost"
           icon-right="lucide-chevron-down"
@@ -28,16 +28,6 @@
           {{ __(roleLabel(role)) }}
         </Button>
       </Dropdown>
-      <Select
-        v-else-if="staged.length"
-        v-model="role"
-        size="sm"
-        variant="outline"
-        :disabled="disabled"
-        class="w-28 shrink-0"
-        :options="roleOptions"
-        :aria-label="__('Access for people you add')"
-      />
     </div>
 
     <!-- People picked wait here, so Notify can be chosen before anyone is added (§7.8). -->
@@ -93,15 +83,14 @@
 
 <script setup lang="ts">
 import { useDebounceFn } from '@vueuse/core'
-import { Button, Checkbox, Combobox, Dropdown, Select } from 'frappe-ui'
+import { Button, Checkbox, Combobox, Dropdown } from 'frappe-ui'
 import { computed, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 
 import { api, client } from '@/api'
-import { groupPrincipal, roleLabel, rolesFor } from '@/apps/drive/client/grants'
+import { groupPrincipal, roleLabel } from '@/apps/drive/client/grants'
 import { DRIVE_ROLES } from '@/apps/drive/client/types'
 import { translate as __ } from '@/platform/translation'
 import type { PeopleGetOutput } from '@/platform/transport/generated'
-import { useTweak } from '@/platform/tweaks'
 
 import { roleMenu } from './shareMenu'
 import type { PickedPerson } from './shareModel'
@@ -129,7 +118,6 @@ const role = ref<number>(DRIVE_ROLES.read)
 // Notify is on by default for people added (§7.8).
 const notify = ref(true)
 const staged = ref<PickedPerson[]>([])
-const oneRoleMenu = useTweak('t5')
 let request = 0
 watch(
   () => staged.value.length,
@@ -139,13 +127,6 @@ onUnmounted(() => {
   request += 1
   picked.value = 0
 })
-
-const roleOptions = computed(() =>
-  rolesFor('user', props.nodeKind).map((option) => ({
-    label: __(option.label),
-    value: option.value,
-  })),
-)
 
 const roleChoices = computed(() => [
   roleMenu('user', props.nodeKind, role.value, (next) => (role.value = next)),

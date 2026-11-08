@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useSession } from '@/platform/session'
 import { transport } from '@/platform/transport'
-import { setTweaks } from '@/platform/tweaks'
 
 import {
   createUploadQueue,
@@ -366,16 +365,6 @@ const settled = (queue: UploadQueue) =>
 beforeEach(() => drive.reset())
 afterEach(() => {
   vi.restoreAllMocks()
-  setTweaks(
-    [
-      't28-cancel-upload',
-      't28-chunk-retry',
-      't30-steady-chunks',
-      't29-leave-warning',
-      't29-reopen-tracker',
-    ],
-    true,
-  )
   useSession().expire()
   document.cookie = 'user_id=Guest; path=/'
 })
@@ -547,17 +536,6 @@ describe('Drive upload queue', () => {
     // Chunks of 2, 4 and 8 MiB, then the rest.
     expect(drive.state.chunkOffsets).toEqual([0, 2, 6, 14].map((mib) => mib * drive.MiB))
     expect(drive.titlesIn('folder')).toEqual(['video.mp4'])
-  })
-
-  it('sends 16 MiB chunks with t30-steady-chunks off', async () => {
-    setTweaks(['t30-steady-chunks'], false)
-    const queue = createUploadQueue({ records: memoryRecords() })
-    queue.setPrompts(prompts())
-
-    await queue.uploadFiles([{ file: file('video.mp4', 16 * drive.MiB + 5) }], target)
-    await settled(queue)
-
-    expect(drive.state.chunkOffsets).toEqual([0, 16 * drive.MiB])
   })
 
   it('halves a chunk a proxy refuses as too large, and the queue goes on', async () => {
@@ -1026,21 +1004,6 @@ describe('Cancel and reconnect', () => {
     await settled(queue)
     expect(queue.entries.value[0]!.state).toBe('done')
   })
-
-  it('fails a file on its first dropped chunk with t28-chunk-retry off', async () => {
-    setTweaks(['t28-chunk-retry'], false)
-    drive.state.drop = (method) => (PUT(method) ? 'network' : null)
-    const queue = createUploadQueue({ records: memoryRecords(), backoff: () => 0 })
-    queue.setPrompts(prompts())
-
-    await queue.uploadFiles([{ file: file('one.bin', 10) }], target)
-    await settled(queue)
-
-    expect(queue.entries.value[0]).toMatchObject({ state: 'failed', retryable: true })
-    expect(queue.entries.value[0]!.error).not.toBe(
-      'Connection lost. Check your connection and retry.',
-    )
-  })
 })
 
 describe('Leaving and coming back', () => {
@@ -1061,26 +1024,18 @@ describe('Leaving and coming back', () => {
 
     await queue.uploadFiles([{ file: file('one.bin', 4) }, { file: file('two.bin', 4) }], target)
     expect(leave()).toBe(true)
-    setTweaks(['t29-leave-warning'], false)
-    expect(leave()).toBe(false)
-    setTweaks(['t29-leave-warning'], true)
 
     release()
     await settled(queue)
     expect(leave()).toBe(false)
   })
 
-  it('opens the tracker when a reload left stopped uploads, and not with the tweak off', async () => {
+  it('opens the tracker when a reload left stopped uploads', async () => {
     const records = memoryRecords()
     await records.save(stored('u-old', 10))
     const queue = createUploadQueue({ records })
     await queue.restore()
     expect(queue.state.trackerOpen).toBe(true)
-
-    setTweaks(['t29-reopen-tracker'], false)
-    const old = createUploadQueue({ records })
-    await old.restore()
-    expect(old.state.trackerOpen).toBe(false)
   })
 
   it('raises the red dot for a failure while the open tracker is not on screen', async () => {

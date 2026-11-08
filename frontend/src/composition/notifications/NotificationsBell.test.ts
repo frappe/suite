@@ -4,7 +4,6 @@ import { createApp, nextTick } from 'vue'
 import NotificationsBell from '@/composition/notifications/NotificationsBell.vue'
 import { requireTestElement } from '@/platform/testing/dom'
 import { TransportError } from '@/platform/transport'
-import { setTweaks } from '@/platform/tweaks'
 
 const state = vi.hoisted(() => ({
   push: vi.fn(),
@@ -217,14 +216,6 @@ describe('Notifications bell', () => {
       button.textContent?.includes('"Talks.zip" is ready to download'),
     )
     expect(row?.textContent).toMatch(/2 KB · Available until \S/)
-  })
-  it('shows no size or expiry with t31-bell-details off', () => {
-    setTweaks(['t31-bell-details'], false)
-    const row = notificationRows(mount()).find((button) =>
-      button.textContent?.includes('"Talks.zip" is ready to download'),
-    )
-    setTweaks(['t31-bell-details'], true)
-    expect(row?.textContent).not.toContain('Available until')
   })
   it('says why a download could not be prepared', () => {
     const row = notificationRows(mount()).find((button) =>

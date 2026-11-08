@@ -1,7 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { setTweaks } from '@/platform/tweaks'
-
 const discovered = {
   personal: { node: 'p-root', title: 'Administrator' },
   organization: { node: 'o-root', title: 'Frappe' },
@@ -16,7 +14,6 @@ async function load(workspaceName: string) {
 
 afterEach(() => {
   delete window.suite_workspace_name
-  setTweaks(['t41-company-files'], true)
 })
 
 describe('locations', () => {
@@ -37,12 +34,6 @@ describe('locations', () => {
       'Northwind Labs files',
     )
     expect(locationLabel('personal')).toBe('My files')
-  })
-
-  it('keeps "Organization files" with the switch off', async () => {
-    setTweaks(['t41-company-files'], false)
-    const { locationLabel } = await load('Northwind Labs')
-    expect(locationLabel('organization')).toBe('Organization files')
   })
 
   it('places a folder by its root', async () => {

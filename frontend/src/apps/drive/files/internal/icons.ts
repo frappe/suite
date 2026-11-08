@@ -2,7 +2,6 @@ import { inject } from 'vue'
 
 import type { DriveNode } from '@/apps/drive/client/types'
 import { DOCUMENT_TYPES_KEY, type DocumentTypeDefinition } from '@/platform/contracts'
-import { useTweak } from '@/platform/tweaks'
 
 import { titleExtension } from './filename'
 import { previewKind, type TextLanguage } from './previewKind'
@@ -176,13 +175,11 @@ export function nodeTypeLabel(
 }
 
 /**
- * `nodeTypeLabel`, naming documents as the New menu does while tweak
- * t4-type-names is on. A dialog mounted outside App.vue passes the types it
+ * `nodeTypeLabel`, naming documents as the New menu does. A dialog mounted outside App.vue passes the types it
  * was given, since it cannot inject them.
  */
 export function useNodeTypeLabel(
   documentTypes: readonly DocumentTypeDefinition[] = inject(DOCUMENT_TYPES_KEY, []),
 ): (node: TypedNode) => string {
-  const newMenuNames = useTweak('t4-type-names')
-  return (node) => nodeTypeLabel(node, newMenuNames.value ? documentTypes : [])
+  return (node) => nodeTypeLabel(node, documentTypes)
 }

@@ -13,16 +13,16 @@ const width = (column: string) => WIDTHS[column] ?? 0
 const ALL = ['access', 'kind', 'owner', 'size', 'modified']
 
 describe('fitColumns', () => {
-  // Name takes 240, the menu 40, and each of the n + 1 gaps between the n + 2 columns 8.
+  // Name takes 240, the menu 40, and each of the n + 1 gaps between the n + 2 columns 24.
   it.each([
-    [1032, ALL],
-    [1031, ['access', 'owner', 'size', 'modified']],
-    [896, ['access', 'owner', 'size', 'modified']],
-    [895, ['access', 'owner', 'modified']],
-    [791, ['access', 'modified']],
-    [591, ['modified']],
-    [424, ['modified']],
-    [423, []],
+    [1128, ALL],
+    [1127, ['access', 'owner', 'size', 'modified']],
+    [976, ['access', 'owner', 'size', 'modified']],
+    [975, ['access', 'owner', 'modified']],
+    [855, ['access', 'modified']],
+    [639, ['modified']],
+    [456, ['modified']],
+    [455, []],
   ])(
     'keeps what fits a %i px list, dropping Type, Size, Owner, Access, then Modified',
     (room, kept) => {
@@ -31,14 +31,9 @@ describe('fitColumns', () => {
   )
 
   it('drops only chosen columns, in the same order', () => {
-    expect(fitColumns(['owner', 'modified'], 624, width)).toEqual(['owner', 'modified'])
-    expect(fitColumns(['owner', 'modified'], 623, width)).toEqual(['modified'])
-  })
-
-  it('counts a wider gap between the columns', () => {
     // 240 + 40 + 192 + 128 and three gaps of 24.
-    expect(fitColumns(['owner', 'modified'], 672, width, 24)).toEqual(['owner', 'modified'])
-    expect(fitColumns(['owner', 'modified'], 671, width, 24)).toEqual(['modified'])
+    expect(fitColumns(['owner', 'modified'], 672, width)).toEqual(['owner', 'modified'])
+    expect(fitColumns(['owner', 'modified'], 671, width)).toEqual(['modified'])
   })
 })
 

@@ -1,7 +1,6 @@
 import { computed, nextTick, ref, watch, type Ref } from 'vue'
 
 import type { DriveNode } from '@/apps/drive/client/types'
-import { useTweak } from '@/platform/tweaks'
 
 import { columnsOf, isMoveKey, isTypeAheadKey, nextIndex, typeAheadMatch } from './listingFocus'
 
@@ -13,11 +12,10 @@ const ITEM_CONTROLS = '[aria-haspopup], [role="checkbox"]'
 const TYPE_AHEAD_PAUSE = 500
 
 /**
- * The listing's keyboard focus (unified frontend spec §5.13). With
- * `t13-arrow-keys` on, the listing is one Tab stop: only the current item is
- * tabbable, the arrow keys, Home and End move focus without selecting, and
- * Shift with them extends the selection. With `t13-type-ahead` on, typing
- * jumps to the next item whose title starts with what was typed.
+ * The listing's keyboard focus (unified frontend spec §5.13). The listing is
+ * one Tab stop: only the current item is tabbable, the arrow keys, Home and
+ * End move focus without selecting, and Shift with them extends the
+ * selection. Typing jumps to the next item whose title starts with what was typed.
  *
  * The current item is the one focused last. The DOM says which element has
  * focus, so this keeps no second copy of it. Call it in a component's setup.
@@ -31,8 +29,6 @@ export function useListingFocus(options: {
   /** Shift moved focus from one item to another. */
   extend: (from: DriveNode, to: DriveNode) => void
 }) {
-  const roving = useTweak('t13-arrow-keys')
-  const typeAhead = useTweak('t13-type-ahead')
   const current = ref<string | null>(null)
   let typed = ''
   let typedAt = 0
@@ -52,7 +48,7 @@ export function useListingFocus(options: {
     () => options.rows().map((row) => row.name),
     (now, before) => {
       const id = current.value
-      if (!roving.value || !id || now.includes(id)) return
+      if (!id || now.includes(id)) return
       const focused = document.activeElement?.closest(`[${ITEM}]`)?.getAttribute(ITEM) === id
       const index = Math.min(Math.max(before.indexOf(id), 0), now.length - 1)
       current.value = now[index] ?? null
@@ -145,11 +141,10 @@ export function useListingFocus(options: {
     const from = itemOf(event.target)
     if (!from) return false
     const index = options.rows().indexOf(from)
-    const used =
-      (roving.value && move(event, from, index)) || (typeAhead.value && jump(event, index))
+    const used = move(event, from, index) || jump(event, index)
     if (used) event.preventDefault()
     return used
   }
 
-  return { roving, tabStop, focusRow, focusedRow, onFocusin, onKeydown }
+  return { tabStop, focusRow, focusedRow, onFocusin, onKeydown }
 }

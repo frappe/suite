@@ -1,16 +1,8 @@
 /** The list's optional columns, in the rows' order. Name comes before them and the menu after. */
 export const LIST_COLUMNS = ['access', 'kind', 'owner', 'size', 'modified'] as const
 
-/** Column widths in pixels before t35. Access sizes to its labels instead (`measuredWidth`). */
-export const COLUMN_WIDTHS: Record<string, number> = {
-  owner: 192,
-  modified: 128,
-  kind: 128,
-  size: 96,
-}
-
 /**
- * With t35, Size and Modified fit their longest value, such as "1023.9 KB"
+ * Size and Modified fit their longest value, such as "1023.9 KB"
  * and "Sep 28, 2025", and the other columns their widest label (`MEASURED_COLUMNS`).
  */
 export const FITTED_WIDTHS: Record<string, number> = {
@@ -22,7 +14,7 @@ export const FITTED_WIDTHS: Record<string, number> = {
  * The columns sized to their widest label: the room beside the label (an icon
  * or an avatar and its gap) and the bounds. The widest is the width before any
  * label shows, and a longer label truncates. Access always sizes this way;
- * Type and Owner do with t35.
+ * Type and Owner too.
  */
 export const MEASURED_COLUMNS = {
   // Room for "Anyone with the link"; a longer workspace name truncates.
@@ -42,9 +34,8 @@ export function isMeasuredColumn(column: string | null): column is MeasuredColum
 /** Columns a phone has no room for. Name takes their width. */
 export const WIDE_ONLY: ReadonlySet<string> = new Set(['access', 'owner', 'modified', 'kind'])
 
-/** The List's gap between columns, and the wider one a desktop list has with t35 (`md:list-gap-6`). */
-export const COLUMN_GAP = 8
-export const FITTED_COLUMN_GAP = 24
+/** The List's gap between columns on a desktop list (`md:list-gap-6`). */
+const COLUMN_GAP = 24
 
 /**
  * The order columns give way in when the list is too narrow, first to go
@@ -65,14 +56,13 @@ export function fitColumns(
   columns: readonly string[],
   room: number,
   widthOf: (column: string) => number,
-  gap = COLUMN_GAP,
 ): string[] {
   let shown = [...columns]
   const needed = () =>
     NAME_MIN_WIDTH +
     MENU_WIDTH +
     shown.reduce((sum, column) => sum + widthOf(column), 0) +
-    (shown.length + 1) * gap
+    (shown.length + 1) * COLUMN_GAP
   for (const column of DROP_ORDER) {
     if (needed() <= room) break
     shown = shown.filter((item) => item !== column)

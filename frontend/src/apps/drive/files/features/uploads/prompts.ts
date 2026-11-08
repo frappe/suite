@@ -3,7 +3,6 @@ import type { AppContext } from 'vue'
 import { confirm, toast } from '@/platform/feedback'
 import { openSettings } from '@/platform/settings'
 import { translate as __ } from '@/platform/translation'
-import { isTweakOn } from '@/platform/tweaks'
 
 import { presentDialog } from '../dialogHost'
 import { formatBytes } from './format'
@@ -46,28 +45,18 @@ export function uploadPrompts(
 }
 
 /**
- * The batch does not fit. With t30-messages on, none fitting is a toast,
- * since there is nothing to choose, and the button says what it uploads.
+ * The batch does not fit. None fitting is a toast, since there is nothing to
+ * choose, and the button says what it uploads.
  */
 async function quota({ total, free, fitting, count }: Parameters<UploadPrompts['quota']>[0]) {
-  const messages = isTweakOn('t30-messages')
   const sizes = [formatBytes(total), formatBytes(free)]
-  if (!fitting && messages) {
+  if (!fitting) {
     toast.error(__('Not enough space to upload'), {
       description:
         count === 1
           ? __('This file needs {0}, and only {1} is free.', sizes)
           : __('These files need {0}, and only {1} is free.', sizes),
       action: { label: __('Manage storage'), onClick: () => openSettings('drive.statistics') },
-    })
-    return 'cancel'
-  }
-  if (!fitting) {
-    await confirm({
-      title: __('Not enough space'),
-      message: __('These files need {0}. Only {1} is free, and none of them fit.', sizes),
-      confirmLabel: __('OK'),
-      cancelLabel: __('Cancel'),
     })
     return 'cancel'
   }
@@ -79,7 +68,7 @@ async function quota({ total, free, fitting, count }: Parameters<UploadPrompts['
       fitting,
       count,
     ]),
-    confirmLabel: messages ? upload : __('Upload what fits'),
+    confirmLabel: upload,
     cancelLabel: __('Cancel'),
   })
   return fit ? 'fit' : 'cancel'

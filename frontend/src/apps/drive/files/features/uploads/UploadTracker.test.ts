@@ -1,8 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { computed, createApp, defineComponent, h, reactive, type App } from 'vue'
 
-import { setTweaks, type TweakId } from '@/platform/tweaks'
-
 import type { UploadEntry, UploadQueue, UploadState } from './queue'
 import UploadTracker from './UploadTracker.vue'
 
@@ -104,18 +102,9 @@ function mount(queue: UploadQueue) {
   }
 }
 
-const SUMMARY: TweakId[] = [
-  't30-overall-progress',
-  't30-time-left',
-  't30-open-finished',
-  't30-messages',
-  't42-upload-panel',
-]
-
 afterEach(() => {
   app?.unmount()
   app = null
-  setTweaks(SUMMARY, true)
 })
 
 describe('Upload tracker header', () => {
@@ -156,28 +145,15 @@ describe('Upload tracker header', () => {
     const shown = mount(fakeQueue(rows, state))
     expect([shown.heading, shown.summary]).toEqual([heading, summary])
   })
-
-  it('keeps the old heading with t30-overall-progress off', () => {
-    setTweaks(['t30-overall-progress'], false)
-    const done = mount(fakeQueue([entry('done')]))
-    expect([done.heading, done.summary]).toEqual(['Uploads', null])
-    app!.unmount()
-    const preparing = mount(fakeQueue([], { preparing: 1 }))
-    expect(preparing.heading).toBe('Preparing upload')
-    expect(preparing.root.textContent).toContain('Creating folders…')
-  })
 })
 
 describe('Upload tracker rows', () => {
-  it('links a finished upload to its file, and not with t30-open-finished off', () => {
+  it('links a finished upload to its file', () => {
     const linked = mount(fakeQueue([entry('done')]))
     expect(linked.root.querySelector('a')?.getAttribute('href')).toBe('/d/n1')
-    app!.unmount()
-    setTweaks(['t30-open-finished'], false)
-    expect(mount(fakeQueue([entry('done')])).root.querySelector('a')).toBeNull()
   })
 
-  it('with t42, closes only once nothing is uploading, and marks a finished upload without a Remove', () => {
+  it('closes only once nothing is uploading, and marks a finished upload without a Remove', () => {
     const close = (shown: ReturnType<typeof mount>) =>
       shown.root.querySelector('header button[aria-label$="uploads"]')
     const removes = (shown: ReturnType<typeof mount>) =>
@@ -194,13 +170,6 @@ describe('Upload tracker rows', () => {
     expect(close(over)?.getAttribute('aria-label')).toBe('Close uploads')
     expect(over.root.querySelectorAll("[data-slot='upload-done']")).toHaveLength(1)
     expect(removes(over)).toEqual(['Remove failed.bin'])
-    app!.unmount()
-
-    setTweaks(['t42-upload-panel'], false)
-    const old = mount(fakeQueue([entry('uploading'), entry('done')]))
-    expect(close(old)?.getAttribute('aria-label')).toBe('Hide uploads')
-    expect(old.root.querySelector("[data-slot='upload-done']")).toBeNull()
-    expect(removes(old)).toEqual(['Remove done.bin'])
   })
 
   it('a full Drive says what to do, without a second Retry all', () => {
@@ -214,13 +183,5 @@ describe('Upload tracker rows', () => {
     expect(
       [...header.querySelectorAll('button')].map((button) => button.textContent),
     ).not.toContain('Retry all')
-
-    app!.unmount()
-    setTweaks(['t30-messages'], false)
-    const old = mount(fakeQueue(rows, { halted: 'This upload exceeds the Drive root quota' }))
-    expect(old.root.querySelector("[data-slot='alert']")!.textContent).toBe(
-      'Storage is fullThis upload exceeds the Drive root quota',
-    )
-    expect(old.root.querySelector('header')!.textContent).toContain('Retry all')
   })
 })

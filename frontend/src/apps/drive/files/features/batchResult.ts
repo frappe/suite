@@ -7,13 +7,9 @@ export type BatchVerb = 'moved' | 'moved to trash' | 'restored' | 'deleted forev
 /** An item a batch named, as the listing showed it. */
 export type BatchItem = Pick<DriveNode, 'name' | 'title' | 'kind' | 'mime' | 'content_doctype'>
 
-export function batchResultText(result: DriveBatchResult, verb: BatchVerb): string {
-  return `${result.ok.length} ${verb} · ${result.failed.length} failed`
-}
-
 /**
- * The outcome's title while t32 is on: one failure names its item, more
- * than one counts them. One key per verb, because word order differs by
+ * The outcome's title: one failure names its item, more than one counts
+ * them. One key per verb, because word order differs by
  * language.
  */
 export function batchFailureTitle(

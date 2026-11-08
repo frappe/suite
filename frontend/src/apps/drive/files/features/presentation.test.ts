@@ -1,7 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { setTweaks } from '@/platform/tweaks'
-
 import {
   nextSort,
   resolvePresentation,
@@ -37,7 +35,6 @@ describe('presentation state', () => {
   describe('columns', () => {
     afterEach(() => {
       localStorage.clear()
-      setTweaks(['t35-default-columns', 't36-access-column'], true)
     })
 
     const shown = () => resolvePresentation({}).columns
@@ -66,20 +63,6 @@ describe('presentation state', () => {
       localStorage.clear()
       writePresentationPreference({ columns: ['modified', 'size'] })
       expect(shown()).toEqual(['access', 'modified', 'size'])
-    })
-
-    it('shows Owner and Modified only, with both tweaks off', () => {
-      setTweaks(['t35-default-columns', 't36-access-column'], false)
-      expect(shown()).toEqual(['owner', 'modified'])
-
-      writeColumnChoice(shown(), 'size', true)
-      expect(shown()).toEqual(['owner', 'modified', 'size'])
-    })
-
-    it('never shows Access with its tweak off, even when chosen', () => {
-      writeColumnChoice(shown(), 'access', true)
-      setTweaks(['t36-access-column'], false)
-      expect(shown()).toEqual(['owner', 'modified', 'kind', 'size'])
     })
   })
 

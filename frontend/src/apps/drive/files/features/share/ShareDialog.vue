@@ -67,7 +67,7 @@
       <ShareBody v-model:picked="picked" :state="state" autofocus-picker />
     </div>
     <template v-if="!picked" #actions>
-      <div v-if="captionedFooter" class="flex items-center justify-between gap-2">
+      <div class="flex items-center justify-between gap-2">
         <div v-if="address" class="min-w-0">
           <Button icon-left="lucide-link" :label="__('Copy link')" @click="copyLink(address)" />
           <p class="mt-1.5 text-p-xs text-ink-gray-5">{{ caption }}</p>
@@ -77,11 +77,6 @@
           <p class="mt-1.5 text-p-xs"><Skeleton class="inline-block h-3 w-32 align-middle" /></p>
         </div>
         <Button class="ml-auto" variant="ghost" :label="__('Done')" @click="open = false" />
-      </div>
-      <div v-else class="flex justify-between gap-2">
-        <div v-if="address" class="min-w-0">
-          <Button icon-left="lucide-link" :label="__('Copy link')" @click="copyLink(address)" />
-        </div>
       </div>
     </template>
   </Dialog>
@@ -98,7 +93,6 @@ import { DRIVE_ROLES, type DriveNode } from '@/apps/drive/client/types'
 import { confirm } from '@/platform/feedback'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
-import { useTweak } from '@/platform/tweaks'
 
 import { nodeIcon, nodeIconTint } from '../../internal/icons'
 import { useLocationTitle } from '../../internal/locations'
@@ -109,14 +103,13 @@ import { useShare } from './useShare'
 
 const props = defineProps<{
   node: string
-  /** The node as the opener last read it, shown at once with `t40-share-open`. */
+  /** The node as the opener last read it, shown at once. */
   known?: DriveNode
 }>()
 const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ 'after-leave': []; changed: [value: boolean] }>()
 
 const isPhone = useMediaQuery('(max-width: 767px)')
-const captionedFooter = useTweak('t10')
 // While people wait to be added, Share is the one solid action.
 const picked = ref(0)
 const session = useSession()
@@ -124,17 +117,9 @@ const session = useSession()
 const site = useQuery(api.suite.site.get, () =>
   window.suite_workspace_name === undefined ? {} : false,
 )
-const accurateWarning = useTweak('t1')
 const state = useShare(props.node, {
   me: session.user.value?.id,
   confirmLoss: ({ after }) => {
-    if (!accurateWarning.value)
-      return confirm({
-        title: 'Change your own access?',
-        message: 'You will no longer be able to share this item.',
-        confirmLabel: 'Change',
-        destructive: true,
-      })
     const suiteAdmin = !!session.capabilities.value.suiteAdmin
     // A Suite Admin who keeps Edit loses nothing: they still share through their admin role.
     if (suiteAdmin && after >= DRIVE_ROLES.edit) return Promise.resolve(true)
@@ -149,9 +134,8 @@ const state = useShare(props.node, {
   placeTitle: useLocationTitle(),
   known: props.known,
 })
-// While the node is unknown, its header and Copy link hold their place (`t40-share-open`).
-const fastOpen = useTweak('t40-share-open')
-const placeholders = computed(() => fastOpen.value && !state.loadError.value)
+// While the node is unknown, its header and Copy link hold their place.
+const placeholders = computed(() => !state.loadError.value)
 
 // People picked but not yet shared are lost on closing, so closing asks first
 async function setOpen(next: boolean) {
@@ -178,10 +162,9 @@ const address = computed(() => {
   const { name, title, kind } = current
   return driveNodeRoute(name, title, kind === 'root' ? 'folder' : kind).path
 })
-const folderWording = useTweak('t33-public-folder-wording')
 /** Who the item's own address opens for. Public viewers open it too, so it is the public link. */
 const caption = computed(() =>
-  folderWording.value && isOpen(state.sections.value?.public ?? null)
+  isOpen(state.sections.value?.public ?? null)
     ? __('Anyone with the link can view')
     : __('For people with access'),
 )

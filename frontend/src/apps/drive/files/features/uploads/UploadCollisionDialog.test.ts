@@ -1,8 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, type App } from 'vue'
 
-import { setTweaks } from '@/platform/tweaks'
-
 import UploadCollisionDialog from './UploadCollisionDialog.vue'
 
 vi.mock('frappe-ui', async () => ({
@@ -57,7 +55,6 @@ afterEach(() => {
   app = null
   document.body.innerHTML = ''
   choose.mockReset()
-  setTweaks(['t11'], true)
 })
 
 describe('Duplicate-name dialog', () => {
@@ -78,13 +75,5 @@ describe('Duplicate-name dialog', () => {
     await pick('Replace')
     expect(nameInput()).toBeNull()
     expect(buttons()).toContain('Replace')
-  })
-
-  it('keeps the old dialog with t11 off', async () => {
-    setTweaks(['t11'], false)
-    await openDialog()
-    expect(radios()).toEqual(['Replace', 'Keep both', 'Rename', 'Skip'])
-    expect(buttons()).toEqual(['Skip', 'Continue'])
-    expect(nameInput()?.disabled).toBe(true)
   })
 })

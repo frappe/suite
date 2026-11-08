@@ -5,7 +5,6 @@ import { api } from '@/api'
 import { driveLinks } from '@/apps/drive/client/links'
 import { createRealtime, type SocketLike } from '@/platform/realtime'
 import { createTransport, TransportError } from '@/platform/transport'
-import { setTweaks } from '@/platform/tweaks'
 
 import { createApiClient } from './index'
 
@@ -526,15 +525,6 @@ describe('Suite API references and shared client', () => {
     expect(await linkReadDuringGrantWrite()).toBe('Budget')
   })
 
-  it('with t2 off, a grant write empties a read through a share link until it refetches', async () => {
-    setTweaks(['t2'], false)
-    try {
-      expect(await linkReadDuringGrantWrite()).toBeUndefined()
-    } finally {
-      setTweaks(['t2'], true)
-    }
-  })
-
   it('pages to exhaustion and resets when domain arguments change', async () => {
     fetcher.mockImplementation(async (url) => {
       const input = new URL(String(url), 'http://suite.test').searchParams
@@ -822,10 +812,7 @@ describe('Drive change events', () => {
       },
     )
   })
-  afterEach(() => {
-    live.dispose()
-    setTweaks(['t22-coalesce', 't22-recent-only'], true)
-  })
+  afterEach(() => live.dispose())
 
   async function observeListings() {
     const list = observe(() => live.useInfiniteQuery(api.drive.nodes.children, { node: 'root' }))
@@ -848,26 +835,12 @@ describe('Drive change events', () => {
     expect(requested).toEqual({ children: 1, recents: 1 })
   })
 
-  it('refreshes at once for every change with t22-coalesce off', async () => {
-    setTweaks(['t22-coalesce'], false)
-    await observeListings()
-
-    socket.send('drive:changed')
-    await vi.waitFor(() => expect(requested).toEqual({ children: 1, recents: 1 }))
-    socket.send('drive:changed')
-    await vi.waitFor(() => expect(requested).toEqual({ children: 2, recents: 2 }))
-  })
-
-  it('refreshes only Recent when a visit is announced, and everything with t22-recent-only off', async () => {
+  it('refreshes only Recent when a visit is announced', async () => {
     await observeListings()
 
     socket.send('drive:recent')
     await vi.waitFor(() => expect(requested.recents).toBe(1))
     await wait(500)
     expect(requested).toEqual({ children: 0, recents: 1 })
-
-    setTweaks(['t22-recent-only'], false)
-    socket.send('drive:recent')
-    await vi.waitFor(() => expect(requested).toEqual({ children: 1, recents: 2 }))
   })
 })

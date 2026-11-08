@@ -27,9 +27,8 @@ import { computed } from 'vue'
 
 import { api, useQuery } from '@/api'
 import { grantListOf } from '@/apps/drive/client/grants'
-import { canManage, type DriveBreadcrumb } from '@/apps/drive/client/types'
+import { canManage } from '@/apps/drive/client/types'
 import type { DocumentTypeDefinition } from '@/platform/contracts'
-import { useTweak } from '@/platform/tweaks'
 
 import { formatBytes, formatDate } from '../internal/format'
 import { useNodeTypeLabel } from '../internal/icons'
@@ -67,10 +66,6 @@ const sharing = computed(() => {
 
 const typeLabel = useNodeTypeLabel(props.documentTypes)
 const locationTitle = useLocationTitle()
-const sidebarRootNames = useTweak('t4-location')
-/** A root crumb takes the sidebar's name, such as "My files", while t4-location is on. */
-const crumbTitle = (crumb: DriveBreadcrumb) =>
-  sidebarRootNames.value ? locationTitle(crumb) : crumb.title
 
 const fields = computed<Array<{ label: string; value: string; wraps?: boolean }>>(() => {
   const row = detail.data
@@ -79,7 +74,10 @@ const fields = computed<Array<{ label: string; value: string; wraps?: boolean }>
     { label: 'Name', value: row.title },
     { label: 'Type', value: typeLabel(row) },
     ...(row.kind === 'file' ? [{ label: 'Size', value: formatBytes(row.size) }] : []),
-    { label: 'Location', value: row.breadcrumbs?.map(crumbTitle).join(' / ') || '—' },
+    {
+      label: 'Location',
+      value: row.breadcrumbs?.map((crumb) => locationTitle(crumb)).join(' / ') || '—',
+    },
     { label: 'Owner', value: row.owner.full_name },
     { label: 'Created', value: formatDate(row.creation) },
     { label: 'Modified', value: formatDate(row.content_modified ?? row.modified) },

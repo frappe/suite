@@ -5,7 +5,6 @@ import { bootRoots } from '@/apps/drive/client/roots'
 import type { DriveBreadcrumb, DriveNode, DriveRoots } from '@/apps/drive/client/types'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
-import { isTweakOn } from '@/platform/tweaks'
 
 /** The sidebar place a folder belongs to. */
 export type FilesLocation = 'personal' | 'organization' | 'shared'
@@ -23,11 +22,10 @@ const workspace = ref(window.suite_workspace_name ?? '')
 let asked = false
 
 /**
- * The company name the Organization root shows under, with `t41-company-files`.
- * Empty with the tweak off or while no name is known. Reactive.
+ * The company name the Organization root shows under. Empty while no name is
+ * known. Reactive.
  */
 export function organizationName(): string {
-  if (!isTweakOn('t41-company-files')) return ''
   if (!asked && window.suite_workspace_name === undefined) {
     asked = true
     client
@@ -98,9 +96,8 @@ export function trashLocation(
 
 /**
  * `locationTitle` bound to the caller's roots, for templates. Call it in a
- * component's setup. With `t24-boot-roots`, the roots the page arrived with
- * name a root until the query answers, so "My files" never shows first as
- * the root's stored title.
+ * component's setup. The roots the page arrived with name a root until the
+ * query answers, so "My files" never shows first as the root's stored title.
  */
 export function useLocationTitle(): (node: Pick<DriveBreadcrumb, 'name' | 'title'>) => string {
   const session = useSession()
@@ -108,6 +105,6 @@ export function useLocationTitle(): (node: Pick<DriveBreadcrumb, 'name' | 'title
   const discovered = useQuery(api.drive.roots.list, () =>
     session.status.value === 'authenticated' ? {} : false,
   )
-  const booted = isTweakOn('t24-boot-roots') ? bootRoots() : null
+  const booted = bootRoots()
   return (node) => locationTitle(node, discovered.data ?? booted)
 }

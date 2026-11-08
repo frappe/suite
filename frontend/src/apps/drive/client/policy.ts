@@ -1,7 +1,6 @@
 /** Drive owns link scope, membership, optimism, and reader effects. */
 import type { Effects, OwnerRegistration, Policy, TransferContext } from '@/platform/server-state'
 import type { Operation, TransferRef } from '@/platform/transport'
-import { isTweakOn } from '@/platform/tweaks'
 
 import { announceAccessChange } from './accessChanges'
 import type { TransferInput } from './api'
@@ -38,9 +37,8 @@ function scopedNodes(input: unknown): string[] {
     (id): id is string => typeof id === 'string' && id !== '',
   )
 }
-/** What a batch changes on each node it names, while it is on its way (t26). */
+/** What a batch changes on each node it names, while it is on its way. */
 function batchPatch(input: unknown): Record<string, unknown> | undefined {
-  if (!isTweakOn('t26-optimistic-remove')) return undefined
   const { state, parent_node } = record(record(input).patch)
   const patch = {
     ...(typeof state === 'string' ? { state } : {}),
@@ -61,9 +59,8 @@ const access: Effects = {
   touches: node,
   invalidates: ACCESS,
   settled(input) {
-    // With t2, reads keep their data while they refetch. The share dialog drops
-    // it when the caller loses access to the item.
-    if (!isTweakOn('t2')) driveLinks.invalidateAccess()
+    // Reads keep their data while they refetch. The share dialog drops it when
+    // the caller loses access to the item.
     for (const id of node(input)) announceAccessChange(id)
   },
 }

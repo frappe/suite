@@ -11,7 +11,6 @@ import {
 import type { DriveNode } from '@/apps/drive/client/types'
 import { DOCUMENT_TYPES_KEY, type DocumentTypeDefinition } from '@/platform/contracts'
 import { TransportError, type Operation } from '@/platform/transport'
-import { setTweaks } from '@/platform/tweaks'
 
 import { openingLocation } from '../features/document/openingLocation'
 import { rememberShown } from '../features/preview/lastShown'
@@ -413,10 +412,6 @@ afterEach(() => {
   dialogs.showDetails.mockClear()
   dialogs.share.mockClear()
   vi.unstubAllGlobals()
-  setTweaks(
-    ['t3-folder-menu', 't3-selection-menu', 't8', 't19-owner-sort', 't31-toast-closes'],
-    true,
-  )
   document.body.innerHTML = ''
 })
 
@@ -497,19 +492,6 @@ describe("The open folder's menu", () => {
     expect(server.nodes.get('folder-7')?.state).toBe('Trashed')
     expect(feedback.toasts.at(-1)?.message).toMatch(/^Moved .*Archive.* to Trash$/)
   })
-
-  it('offers Share, Copy link and Rename folder with the tweak off', async () => {
-    setTweaks(['t3-folder-menu'], false)
-    server.folderRole = 40
-    const { root } = await mount('/drive/f/folder-8/drafts')
-    await vi.waitFor(() => expect(menuOf(root, 'More file actions')).toContain('Rename folder'))
-
-    expect(menuOf(root, 'More file actions')).toEqual([
-      'Copy link',
-      'Rename folder',
-      'Keyboard shortcuts',
-    ])
-  })
 })
 
 describe('New', () => {
@@ -556,19 +538,6 @@ describe('New', () => {
       await vi.waitFor(() => expect(seen()).toEqual(shows ? [true] : []))
     })
   }
-
-  it('asks for a name first with the tweak off', async () => {
-    setTweaks(['t8'], false)
-    server.folderRole = 40
-    const { root, router } = await mount('/drive/f/folder-10/drafts')
-    await vi.waitFor(() => expect(newSpreadsheet(root)).toBeDefined())
-
-    newSpreadsheet(root)?.click()
-    await nextTick()
-
-    expect(server.calls.some((call) => call.id === 'node_create.create_document')).toBe(false)
-    expect(router.currentRoute.value.path).toBe('/drive/f/folder-10/drafts')
-  })
 })
 
 describe('Recent', () => {
@@ -613,7 +582,6 @@ describe('Recent', () => {
 })
 
 describe('Show in folder', () => {
-  afterEach(() => setTweaks(['t17-show-in-folder'], true))
   const inTalks = {
     parent_node: 'folder-1',
     breadcrumbs: [
@@ -661,14 +629,6 @@ describe('Show in folder', () => {
     unmount?.()
     await mount('/drive/f/folder-1/talks')
     await vi.waitFor(() => expect(titles()).toHaveLength(3))
-    expect(menuItem('a', 'Show in folder')).toBeUndefined()
-  })
-
-  it('is not offered with the tweak off', async () => {
-    setTweaks(['t17-show-in-folder'], false)
-    await starred(node('a', 'a.png', inTalks))
-    await vi.waitFor(() => expect(titles()).toEqual(['a.png']))
-
     expect(menuItem('a', 'Show in folder')).toBeUndefined()
   })
 })
@@ -723,18 +683,10 @@ describe('back from a file preview', () => {
     await vi.waitFor(() => expect(titles()).toHaveLength(3))
     await new Promise((resolve) => setTimeout(resolve, 20))
   }
-  afterEach(() => setTweaks(['t15-return-focus'], true))
-
   it('focuses the row of the last file the preview showed, without a highlight', async () => {
     await backFromPreview('c')
     expect(listing.revealed).toEqual(['c'])
     expect(listing.highlighted).toEqual([])
-  })
-
-  it('focuses nothing with t15-return-focus off', async () => {
-    setTweaks(['t15-return-focus'], false)
-    await backFromPreview('c')
-    expect(listing.revealed).toEqual([])
   })
 })
 
@@ -748,50 +700,13 @@ describe('Sort', () => {
 
     expect(orders()).toEqual(['title'])
   })
-
-  it('reads it by owner with the tweak off', async () => {
-    setTweaks(['t19-owner-sort'], false)
-    await mount('/drive/f/folder-1/talks?sort=owner')
-    await vi.waitFor(() => expect(titles()).toHaveLength(3))
-
-    expect(orders()).toEqual(['owner'])
-  })
 })
 
 const expansions = (id: string) =>
   server.calls.filter((call) => call.id === id).map((call) => call.input.expand)
 
 describe('Access column', () => {
-  beforeEach(() => setTweaks(['t46-folder-size'], false))
-  afterEach(() => setTweaks(['t36-access-column', 't46-folder-size'], true))
-
   it('asks for each row’s audience in a folder', async () => {
-    await mount('/drive/f/folder-1/talks')
-    await vi.waitFor(() => expect(titles()).toHaveLength(3))
-
-    expect(expansions('node_children')).toEqual(['access,audience'])
-  })
-
-  it('asks for none in Trash', async () => {
-    await mount('/drive/trash')
-    await vi.waitFor(() => expect(expansions('view_list')).toHaveLength(1))
-
-    expect(expansions('view_list')).toEqual(['access'])
-  })
-
-  it('asks for no audience with the tweak off', async () => {
-    setTweaks(['t36-access-column'], false)
-    await mount('/drive/f/folder-1/talks')
-    await vi.waitFor(() => expect(titles()).toHaveLength(3))
-
-    expect(expansions('node_children')).toEqual(['access'])
-  })
-})
-
-describe('Folder size', () => {
-  afterEach(() => setTweaks(['t46-folder-size'], true))
-
-  it('asks for each folder’s total in a listed folder', async () => {
     await mount('/drive/f/folder-1/talks')
     await vi.waitFor(() => expect(titles()).toHaveLength(3))
 
@@ -804,13 +719,21 @@ describe('Folder size', () => {
 
     expect(expansions('view_list')).toEqual(['access'])
   })
+})
 
-  it('asks for none with the tweak off', async () => {
-    setTweaks(['t46-folder-size'], false)
+describe('Folder size', () => {
+  it('asks for each folder’s total in a listed folder', async () => {
     await mount('/drive/f/folder-1/talks')
     await vi.waitFor(() => expect(titles()).toHaveLength(3))
 
-    expect(expansions('node_children')).toEqual(['access,audience'])
+    expect(expansions('node_children')).toEqual(['access,audience,contents_size'])
+  })
+
+  it('asks for none in Trash', async () => {
+    await mount('/drive/trash')
+    await vi.waitFor(() => expect(expansions('view_list')).toHaveLength(1))
+
+    expect(expansions('view_list')).toEqual(['access'])
   })
 })
 
@@ -960,24 +883,6 @@ describe('Downloading a folder', () => {
     )
   })
 
-  it('keeps the old endless loading toast with t31-toast-closes off', async () => {
-    setTweaks(['t31-toast-closes'], false)
-    server.download = () => preparing
-    server.polls = [{ ...preparing, status: 'Ready', size: 2048, url: '/zip' }]
-    const assign = vi.fn()
-    await mount('/drive/f/folder-5/drafts')
-    await vi.waitFor(() => expect(titles()).toEqual(['Photos']))
-    vi.spyOn(window, 'location', 'get').mockReturnValue({ ...window.location, assign })
-    vi.useFakeTimers({ toFake: ['setTimeout'] })
-
-    const downloading = menuItem('photos', 'Download')?.onClick()
-    await vi.advanceTimersByTimeAsync(2000)
-    await downloading
-
-    expect(feedback.toasts[0]?.options?.duration).toBe(Infinity)
-    expect(feedback.toasts[1]?.options?.description).toBeUndefined()
-  })
-
   it('waits on the page for a zip asked for through a share link, then downloads it', async () => {
     const url = '/api/suite/drive/downloads/download-1/content'
     server.download = () => ({ ...preparing, delivery: 'Page' })
@@ -1077,20 +982,6 @@ describe('A selection', () => {
     expect(menuOf(root, 'More actions')).toEqual([])
   })
 
-  it('keeps the count after the actions, with no "…", with the tweak off', async () => {
-    setTweaks(['t3-selection-menu'], false)
-    const root = await select('a')
-
-    const count = [...root.querySelectorAll('span')].find(
-      (span) => span.textContent === '1 selected',
-    )
-    const move = bulkButton(root, 'Move')
-    expect(count && move && count.compareDocumentPosition(move)).toBe(
-      Node.DOCUMENT_POSITION_PRECEDING,
-    )
-    expect(root.querySelector('[aria-label="More actions"]')).toBeNull()
-  })
-
   it('stars every item, then offers to unstar them all', async () => {
     const root = await select('a', 'c')
 
@@ -1108,7 +999,6 @@ describe('A selection', () => {
   })
 
   describe('moved to Trash', () => {
-    afterEach(() => setTweaks(['t34-bulk-trash-confirm'], true))
     const trashed = () =>
       [...server.nodes.values()].filter((row) => row.state === 'Trashed').map((row) => row.name)
 
@@ -1139,16 +1029,6 @@ describe('A selection', () => {
       await vi.waitFor(() => expect(trashed()).toEqual(['b']))
       expect(feedback.confirm).not.toHaveBeenCalled()
       expect(feedback.toasts.at(-1)?.message).toBe('Moved “b.png” to Trash')
-    })
-
-    it('does not ask with the tweak off', async () => {
-      setTweaks(['t34-bulk-trash-confirm'], false)
-      const root = await select('a', 'c')
-
-      bulkButton(root, 'Move to trash')?.click()
-
-      await vi.waitFor(() => expect(trashed()).toEqual(['a', 'c']))
-      expect(feedback.confirm).not.toHaveBeenCalled()
     })
   })
 })
@@ -1185,7 +1065,7 @@ describe('Keyboard shortcuts', () => {
     await nextTick()
     expect(root.textContent).toContain('3 selected')
 
-    pressNamed('Delete selected items')
+    pressNamed('Move selected items to Trash')
     await vi.waitFor(() =>
       expect(server.calls.find((call) => call.id === 'node_batch')?.input).toEqual({
         nodes: ['x', 'y', 'z'],
@@ -1204,7 +1084,6 @@ describe('Keyboard shortcuts', () => {
 })
 
 describe('Select on a touch screen', () => {
-  afterEach(() => setTweaks(['t18-select-entry'], true))
   const bar = (root: HTMLElement) =>
     [...root.querySelectorAll('span')].find((span) => /select/i.test(span.textContent ?? ''))
       ?.textContent
@@ -1215,6 +1094,7 @@ describe('Select on a touch screen', () => {
 
   it('starts selecting with nothing checked, and the bar waits for a choice', async () => {
     const { root } = await mount('/drive/f/folder-1/talks')
+    await vi.waitFor(() => expect(titles()).toHaveLength(3))
     await vi.waitFor(() => expect(menuOf(root, 'More file actions')).toContain('Select'))
     expect(menuOf(root, 'More file actions')).not.toContain('Select rows')
 
@@ -1229,21 +1109,9 @@ describe('Select on a touch screen', () => {
     await nextTick()
     expect(bar(root)).toBe('1 selected')
   })
-
-  it('checks the first row from "Select rows" with the tweak off', async () => {
-    setTweaks(['t18-select-entry'], false)
-    const { root } = await mount('/drive/f/folder-1/talks')
-    await vi.waitFor(() => expect(menuOf(root, 'More file actions')).toContain('Select rows'))
-
-    choose(root, 'More file actions', 'Select rows')
-    await nextTick()
-
-    expect(bar(root)).toBe('1 selected')
-  })
 })
 
 describe('Select all in a folder with more to load', () => {
-  afterEach(() => setTweaks(['t20-loaded-label'], true))
   const bar = (root: HTMLElement) =>
     [...root.querySelectorAll('span')].find((span) => /selected$/.test(span.textContent ?? ''))
       ?.textContent
@@ -1258,11 +1126,6 @@ describe('Select all in a folder with more to load', () => {
 
   it('says that only the loaded items are selected', async () => {
     expect(bar(await selectAll())).toBe('3 loaded items selected')
-  })
-
-  it('says "3 selected" with the tweak off', async () => {
-    setTweaks(['t20-loaded-label'], false)
-    expect(bar(await selectAll())).toBe('3 selected')
   })
 
   it('refuses to download more than 200 items in one zip', async () => {
@@ -1291,7 +1154,6 @@ describe('Trash and move before Drive answers', () => {
   beforeEach(() => {
     server.gate = new Promise((resolve) => (release = resolve))
   })
-  afterEach(() => setTweaks(['t26-optimistic-remove'], true))
   const refused = () =>
     new TransportError({ type: 'DriveForbidden', status: 403, message: 'Not allowed', details: {} })
 
@@ -1333,25 +1195,9 @@ describe('Trash and move before Drive answers', () => {
     expect(server.nodes.get('a')?.state).toBe('Trashed')
     expect(server.nodes.get('b')?.state).toBe('Active')
   })
-
-  it('waits for Drive with the tweak off', async () => {
-    setTweaks(['t26-optimistic-remove'], false)
-    await mount('/drive/f/folder-1/talks')
-    await vi.waitFor(() => expect(titles()).toHaveLength(3))
-
-    void menuItem('b', 'Move to trash')?.onClick()
-    await vi.waitFor(() => expect(server.calls.at(-1)?.id).toBe('node_patch.trash'))
-    await nextTick()
-
-    expect(titles()).toEqual(['a.png', 'b.png', 'c.png'])
-    release()
-    await vi.waitFor(() => expect(titles()).toEqual(['a.png', 'c.png']))
-  })
 })
 
 describe('Keys', () => {
-  afterEach(() => setTweaks(['t14-focused-row'], true))
-
   it('moves the focused row to Trash with Delete, and Mod+Z brings it back', async () => {
     await mount('/drive/f/folder-1/talks')
     await vi.waitFor(() => expect(titles()).toHaveLength(3))
@@ -1373,17 +1219,5 @@ describe('Keys', () => {
 
     await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/drive'))
     expect(router.options.history.state.reveal).toBe('folder-1')
-  })
-
-  it('acts only on selected rows with the focused-row tweak off', async () => {
-    setTweaks(['t14-focused-row'], false)
-    await mount('/drive/f/folder-1/talks')
-    await vi.waitFor(() => expect(titles()).toHaveLength(3))
-    listing.focused = listing.rows.find((row) => row.name === 'b')!
-
-    press('Delete')
-    await nextTick()
-
-    expect(server.calls.some((call) => call.id === 'node_patch.trash')).toBe(false)
   })
 })

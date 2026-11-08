@@ -32,8 +32,7 @@ interface Gesture {
  * scrolls the container near its edges, and swallows the click that ends it.
  *
  * A drag may start on an item, because list rows fill the listing's width and
- * leave little empty space. With `t16-drag-move` on, a press on an item's drag
- * handle (its name in a list, its card in a grid) moves it instead; the
+ * leave little empty space. A press on an item's drag handle (its name in a list, its card in a grid) moves it instead; the
  * listing hands that press to `useDragMove` and never starts a marquee for it.
  */
 export function useMarquee(options: {

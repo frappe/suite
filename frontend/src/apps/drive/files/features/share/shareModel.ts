@@ -11,7 +11,6 @@ import {
   type PrincipalKind,
 } from '@/apps/drive/client/grants'
 import type { DrivePerson } from '@/apps/drive/client/types'
-import { isTweakOn } from '@/platform/tweaks'
 
 /**
  * What the share dialog shows, derived from one grants read (unified spec §7.3).
@@ -277,12 +276,9 @@ export function sharedWith(
   ]
 }
 
-/**
- * The workspace name the server page boots, with `t4-access-words`; empty
- * without it. The Vite dev page boots none.
- */
+/** The workspace name the server page boots. The Vite dev page boots none. */
 export function bootedWorkspace(): string {
-  return isTweakOn('t4-access-words') ? (window.suite_workspace_name ?? '') : ''
+  return window.suite_workspace_name ?? ''
 }
 
 /** Everyone at the org, named after the workspace when its name is known. */

@@ -1,10 +1,8 @@
-import { isTweakOn } from '@/platform/tweaks'
-
 const UNITS = ['B', 'KB', 'MB', 'GB', 'TB'] as const
 
 /**
- * A byte count as people read it: `0 B`, `12.4 MB`, `10 GB`. While t6 is on it
- * counts in 1024s, as the server words its limits (`_readable_size` in
+ * A byte count as people read it: `0 B`, `12.4 MB`, `10 GB`. It counts in
+ * 1024s, as the server words its limits (`_readable_size` in
  * `suite/drive/_core/upload.py`), with one decimal below 100 and the reader's
  * decimal separator. `roundUp` keeps a file just over a limit from reading as
  * the limit itself.
@@ -14,7 +12,6 @@ export function formatBytes(
   { roundUp = false, locale }: { roundUp?: boolean; locale?: string } = {},
 ): string {
   if (!Number.isFinite(bytes) || bytes < 0) return '—'
-  if (!isTweakOn('t6')) return formatDecimalBytes(bytes)
   let value = bytes
   let unit = 0
   while (value >= 1024 && unit < UNITS.length - 1) {
@@ -25,13 +22,6 @@ export function formatBytes(
   // The epsilon keeps float noise (1.2 * 10 is 12.000000000000002) from rounding up.
   const rounded = (roundUp ? Math.ceil(value * scale - 1e-9) : Math.round(value * scale)) / scale
   return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(rounded)} ${UNITS[unit]}`
-}
-
-function formatDecimalBytes(bytes: number): string {
-  if (bytes < 1_000) return `${bytes} B`
-  if (bytes < 1_000_000) return `${Math.round(bytes / 1_000)} KB`
-  if (bytes < 1_000_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`
-  return `${(bytes / 1_000_000_000).toFixed(1)} GB`
 }
 
 /**

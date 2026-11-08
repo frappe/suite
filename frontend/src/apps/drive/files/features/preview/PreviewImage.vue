@@ -9,16 +9,14 @@ import { holdImages, previewImage } from './imageCache'
 import PreviewFallback from './PreviewFallback.vue'
 
 /**
- * The preview's picture. With `kept`, it shows the element the image cache
- * keeps loaded. With `states`, it fades in, shows a spinner after a short wait,
- * and offers Download when the picture does not load.
+ * The preview's picture: the element the image cache keeps loaded. It fades
+ * in, shows a spinner after a short wait, and offers Download when the
+ * picture does not load.
  */
 const props = defineProps<{
   src: string
   alt: string
   download: string
-  kept: boolean
-  states: boolean
 }>()
 
 const host = useTemplateRef<HTMLElement>('host')
@@ -30,17 +28,15 @@ let shown: HTMLImageElement | null = null
 
 function show(src: string) {
   shown?.remove()
-  const image = props.kept
-    ? previewImage(src)
-    : Object.assign(document.createElement('img'), { decoding: 'async', src })
+  const image = previewImage(src)
   image.alt = props.alt
   image.className = 'm-auto max-h-full min-h-0 max-w-full object-contain p-4'
   shown = image
   const ready = image.complete && image.naturalWidth > 0
   status.value = ready ? 'ready' : 'loading'
   slow.value = false
-  image.style.opacity = !ready && props.states ? '0' : ''
-  image.style.transition = props.states ? 'opacity 150ms ease-out' : ''
+  image.style.opacity = ready ? '' : '0'
+  image.style.transition = 'opacity 150ms ease-out'
   if (!ready) {
     wait.start()
     image.addEventListener('load', () => settle(image, 'ready'), { once: true })
@@ -55,7 +51,7 @@ function settle(image: HTMLImageElement, outcome: 'ready' | 'failed') {
   wait.stop()
   status.value = outcome
   if (outcome === 'ready') image.style.opacity = ''
-  else if (props.states) image.remove()
+  else image.remove()
 }
 
 onMounted(() => show(props.src))
@@ -73,13 +69,13 @@ onBeforeUnmount(() => {
 <template>
   <div ref="host" class="relative flex min-h-0 flex-1">
     <Spinner
-      v-if="states && status === 'loading' && slow"
+      v-if="status === 'loading' && slow"
       size="lg"
       theme="gray"
       class="absolute inset-0 m-auto"
     />
     <PreviewFallback
-      v-if="states && status === 'failed'"
+      v-if="status === 'failed'"
       :title="__('Could not load the preview')"
       :message="__('Download this file to open it.')"
       :download="download"

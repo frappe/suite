@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { effectScope, ref } from 'vue'
 
 import { createTransport, type MutationRef, type PageRef } from '@/platform/transport'
-import { setTweaks } from '@/platform/tweaks'
 
 import { createApiClient } from './index'
 
@@ -200,7 +199,7 @@ describe('shared paging and access contexts', () => {
   })
 })
 
-describe('a write that takes rows out of a paged listing (t26-optimistic-remove)', () => {
+describe('a write that takes rows out of a paged listing', () => {
   type Item = { id: string; gone?: boolean }
   const items: PageRef<{ start?: number }, Item, string, { rows: Item[]; more: boolean }> = {
     kind: 'query',
@@ -279,7 +278,6 @@ describe('a write that takes rows out of a paged listing (t26-optimistic-remove)
     return list
   }
   const ids = (list: { rows: readonly Item[] }) => list.rows.map((row) => row.id)
-  afterEach(() => setTweaks(['t26-optimistic-remove'], true))
 
   it('hides the row before the answer, and a refusal puts it back in its place', async () => {
     const api = engine()
@@ -336,19 +334,6 @@ describe('a write that takes rows out of a paged listing (t26-optimistic-remove)
     await rejection
 
     expect(ids(list)).toEqual(['a', 'b', 'c', 'd'])
-  })
-
-  it('keeps the row until the answer with the tweak off', async () => {
-    setTweaks(['t26-optimistic-remove'], false)
-    const api = engine()
-    const list = await twoPages(api)
-
-    const write = api.client.mutation(remove, { ids: ['b'] }, { silent: true })
-    await vi.waitFor(() => expect(posted).toEqual(['b']))
-    expect(ids(list)).toEqual(['a', 'b', 'c', 'd'])
-    accept()
-    await write
-    expect(ids(list)).toEqual(['a', 'c', 'd'])
   })
 })
 

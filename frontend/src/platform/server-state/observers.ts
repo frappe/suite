@@ -11,7 +11,6 @@ import {
 } from 'vue'
 
 import type { PageCapability, QueryRef } from '@/platform/transport'
-import { isTweakOn } from '@/platform/tweaks'
 
 import { isRecord } from './entities'
 import { asError, canceled, canonical, isAbort, type ReadRecord, type Reads } from './reads'
@@ -160,10 +159,10 @@ export function observe<I, O>(
     },
     get rows() {
       const rows = loadedRows()
-      // A row a pending write took out of the listing hides at once (t26). The pages keep it,
+      // A row a pending write took out of the listing hides at once. The pages keep it,
       // so paging still counts it and a rollback shows it in its place.
       const record = current.value
-      const member = isTweakOn('t26-optimistic-remove') ? record?.policy.member : undefined
+      const member = record?.policy.member
       if (!record || !member) return rows
       return rows.filter((row) => !isRecord(row) || member(row, record.input))
     },

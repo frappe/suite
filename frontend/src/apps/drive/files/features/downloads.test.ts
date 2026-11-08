@@ -3,7 +3,6 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { api, client } from '@/api'
 import { useSession } from '@/platform/session'
 import { TransportError, type Operation } from '@/platform/transport'
-import { setTweaks } from '@/platform/tweaks'
 
 import { settledDownload, type DriveDownload } from './downloads'
 
@@ -52,7 +51,6 @@ beforeEach(() => {
 })
 afterEach(() => {
   vi.useRealTimers()
-  setTweaks(['t31-poll-survives'], true)
 })
 
 describe('Waiting for a zip', () => {
@@ -90,16 +88,5 @@ describe('Waiting for a zip', () => {
 
     await stopped
     expect(server.calls).toBe(1)
-  })
-
-  it('fails on the first dropped poll with the tweak off', async () => {
-    setTweaks(['t31-poll-survives'], false)
-    server.polls = [dropped(), ready]
-
-    const settling = settledDownload(preparing)
-    const failed = expect(settling).rejects.toMatchObject({ status: 0 })
-    await vi.advanceTimersByTimeAsync(2000)
-
-    await failed
   })
 })

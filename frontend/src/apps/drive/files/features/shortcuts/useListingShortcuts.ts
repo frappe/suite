@@ -9,7 +9,6 @@ import { getCurrentInstance } from 'vue'
 
 import { useKeySequences, type KeySequenceShortcut, type Letter } from '@/platform/shortcuts'
 import { translate as __ } from '@/platform/translation'
-import { useTweak } from '@/platform/tweaks'
 
 import { locationLabel, organizationName } from '../../internal/locations'
 
@@ -93,10 +92,6 @@ export function useListingShortcuts(
   place: ListingPlace = { inTrash: () => false },
 ): void {
   const instance = getCurrentInstance()
-  const deleteKey = useTweak('t14-delete-key')
-  const renameKey = useTweak('t14-rename-key')
-  const parentKey = useTweak('t14-parent-key')
-  const undoKey = useTweak('t14-undo-key')
   /** Menus report a rejected action through the app, so a shortcut does too. */
   async function run(command: ListingCommand, event: KeyboardEvent) {
     try {
@@ -152,26 +147,19 @@ export function useListingShortcuts(
     command('Mod+A', __('Select all'), (offered) => offered.selectAll),
     command('Escape', __('Clear selection'), (offered) => offered.clearSelection),
     command('Ctrl+M', __('Move selected items'), (offered) => offered.move),
-    command('Mod+Backspace', __('Delete selected items'), (offered) => offered.remove, {
-      enabled: () => !deleteKey.value,
-    }),
-    ...removeKeys(__('Move selected items to Trash'), () => deleteKey.value && !place.inTrash()),
-    ...removeKeys(__('Delete selected items forever'), () => deleteKey.value && place.inTrash()),
-    command('F2', __('Rename'), (offered) => offered.rename, {
-      enabled: () => renameKey.value,
-      guarded: true,
-    }),
+    ...removeKeys(__('Move selected items to Trash'), () => !place.inTrash()),
+    ...removeKeys(__('Delete selected items forever'), () => place.inTrash()),
+    command('F2', __('Rename'), (offered) => offered.rename, { guarded: true }),
     command(
       isApple() ? 'Mod+ArrowUp' : 'Alt+ArrowUp',
       __('Open parent folder'),
       (offered) => offered.parent,
-      { enabled: () => parentKey.value, guarded: true },
+      { guarded: true },
     ),
     {
       combo: 'Mod+Z',
       description: __('Undo'),
       group: __('Files'),
-      enabled: () => undoKey.value,
       // With nothing to undo, the browser keeps the key, such as Safari reopening a closed tab.
       preventDefault: false,
       handler: (event) => {

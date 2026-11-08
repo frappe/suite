@@ -1,7 +1,7 @@
 <template>
   <!-- What worked is reported in a toast. The alert shows only when some items failed. -->
   <Alert
-    v-if="result?.failed.length && readable"
+    v-if="result?.failed.length"
     v-bind="$attrs"
     :title="batchFailureTitle(result, verb, titleOf)"
     :description="single ? failureReason(single) : undefined"
@@ -10,16 +10,7 @@
     dismissible
     @dismiss="$emit('dismiss')"
   />
-  <Alert
-    v-else-if="result?.failed.length"
-    v-bind="$attrs"
-    :title="batchResultText(result, verb)"
-    theme="amber"
-    :primary-action="detailsAction"
-    dismissible
-    @dismiss="$emit('dismiss')"
-  />
-  <Dialog v-if="readable" v-model:open="details" :title="__('Items that failed')" size="lg">
+  <Dialog v-model:open="details" :title="__('Items that failed')" size="lg">
     <ul class="max-h-[60vh] divide-y divide-outline-gray-1 overflow-y-auto">
       <li v-for="failure in result?.failed" :key="failure.node" class="flex gap-3 py-3">
         <span
@@ -37,14 +28,6 @@
       </li>
     </ul>
   </Dialog>
-  <Dialog v-else v-model:open="details" title="Items that failed" size="lg">
-    <ul class="divide-y divide-outline-gray-1">
-      <li v-for="failure in result?.failed" :key="failure.node" class="py-3">
-        <p class="text-base font-medium text-ink-gray-8">{{ failure.node }}</p>
-        <p class="text-p-sm text-ink-red-7">{{ failure.message }}</p>
-      </li>
-    </ul>
-  </Dialog>
 </template>
 
 <script lang="ts">
@@ -58,15 +41,8 @@ import { computed, ref, watch } from 'vue'
 import type { DriveBatchResult } from '@/apps/drive/client/types'
 import { nodeIcon, nodeIconTint } from '@/apps/drive/files/internal/icons'
 import { translate as __ } from '@/platform/translation'
-import { useTweak } from '@/platform/tweaks'
 
-import {
-  batchFailureTitle,
-  batchResultText,
-  failureReason,
-  type BatchItem,
-  type BatchVerb,
-} from './batchResult'
+import { batchFailureTitle, failureReason, type BatchItem, type BatchVerb } from './batchResult'
 
 /**
  * A batch's failures (spec §6.11). `rows` are the items the page lists; the
@@ -81,7 +57,6 @@ const props = withDefaults(
   { rows: () => [] },
 )
 defineEmits<{ dismiss: [] }>()
-const readable = useTweak('t32-readable-failures')
 const details = ref(false)
 const detailsAction: AlertAction = {
   label: __('Details'),

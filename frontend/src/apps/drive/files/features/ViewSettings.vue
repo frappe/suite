@@ -63,8 +63,6 @@
 import { Button, Popover, Select, TabButtons, type SelectOption } from 'frappe-ui'
 import { computed, useId } from 'vue'
 
-import { useTweak } from '@/platform/tweaks'
-
 import {
   DEFAULT_DIRECTION,
   type FilesColumn,
@@ -87,8 +85,6 @@ const props = defineProps<{
   /** My files and its folders, where every item is the user's own, so Owner is no sort. */
   inOwnSpace?: boolean
 }>()
-const startsInNaturalOrder = useTweak('t19-sort-direction')
-const hidesOwnerSort = useTweak('t19-owner-sort')
 
 const emit = defineEmits<{
   change: [change: PresentationChange]
@@ -151,7 +147,7 @@ function row<T extends string>(
 }
 
 const sortLabels = computed((): Partial<Record<FilesSort, string>> => {
-  if (!(hidesOwnerSort.value && props.inOwnSpace)) return SORT_LABELS
+  if (!props.inOwnSpace) return SORT_LABELS
   const { owner: _owner, ...others } = SORT_LABELS
   return others
 })
@@ -160,10 +156,7 @@ const rows = computed(() => {
   const { sort, dir } = props.presentation
   return [
     row(sortId, 'Sort by', sort, sortLabels.value, (next) =>
-      emit(
-        'change',
-        startsInNaturalOrder.value ? { sort: next, dir: DEFAULT_DIRECTION[next] } : { sort: next },
-      ),
+      emit('change', { sort: next, dir: DEFAULT_DIRECTION[next] }),
     ),
     row(
       orderId,

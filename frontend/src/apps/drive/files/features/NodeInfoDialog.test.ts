@@ -3,7 +3,6 @@ import { createApp, h } from 'vue'
 
 import type { DocumentTypeDefinition } from '@/platform/contracts'
 import type { Operation } from '@/platform/transport'
-import { setTweaks } from '@/platform/tweaks'
 
 import NodeInfoDialog from './NodeInfoDialog.vue'
 
@@ -104,7 +103,6 @@ afterEach(() => {
   server.role = 50
   server.kind = 'file'
   server.contentDoctype = null
-  setTweaks(['t4-location', 't4-access-words', 't4-type-names'], true)
 })
 
 const spreadsheets: DocumentTypeDefinition = {
@@ -143,28 +141,7 @@ describe('Details', () => {
     expect(field(root, 'Owner')).toBe('Mira Shah')
   })
 
-  it('says "Everyone in your organization", without asking the site, with the tweak off', async () => {
-    setTweaks(['t4-access-words'], false)
-    const root = mount('report')
-
-    await vi.waitFor(() =>
-      expect(field(root, 'Shared with')).toBe(
-        'Asha Rao, Design, Everyone in your organization, 1 share link',
-      ),
-    )
-    expect(server.requests).not.toContain('site_get')
-  })
-
   it('names a document type as the New menu does', async () => {
-    server.kind = 'document'
-    server.contentDoctype = 'Sheet'
-    const root = mount('budget')
-
-    await vi.waitFor(() => expect(field(root, 'Type')).toBe('Spreadsheet'))
-  })
-
-  it("falls back to Drive's own name with the tweak off", async () => {
-    setTweaks(['t4-type-names'], false)
     server.kind = 'document'
     server.contentDoctype = 'Sheet'
     const root = mount('budget')
@@ -185,12 +162,5 @@ describe('Details', () => {
     const root = mount('report')
 
     await vi.waitFor(() => expect(field(root, 'Location')).toBe('My files / Reports'))
-  })
-
-  it("shows the root's stored title in Location with the tweak off", async () => {
-    setTweaks(['t4-location'], false)
-    const root = mount('report')
-
-    await vi.waitFor(() => expect(field(root, 'Location')).toBe('Mira Shah / Reports'))
   })
 })

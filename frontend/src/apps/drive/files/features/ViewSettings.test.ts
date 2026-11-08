@@ -2,8 +2,6 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { computed, createApp, defineComponent, h, nextTick, ref } from 'vue'
 import { createMemoryHistory, createRouter, type LocationQueryRaw } from 'vue-router'
 
-import { setTweaks } from '@/platform/tweaks'
-
 import {
   FILES_COLUMNS,
   readPresentationPreference,
@@ -46,7 +44,6 @@ afterEach(() => {
   unmount = undefined
   document.body.innerHTML = ''
   localStorage.clear()
-  setTweaks(['t19-sort-direction', 't35-default-columns'], true)
 })
 
 /**
@@ -202,16 +199,6 @@ describe('View settings panel', () => {
     expect(router.currentRoute.value.query).toMatchObject({ sort: 'title', dir: 'asc' })
   })
 
-  it('keeps the order when the sort changes, with the tweak off', async () => {
-    setTweaks(['t19-sort-direction'], false)
-    const { router } = await mountPanel({ query: { view: 'list', sort: 'title', dir: 'asc' } })
-    await openPanel()
-
-    await pick('Sort by', 'Modified')
-
-    expect(router.currentRoute.value.query).toMatchObject({ sort: 'modified', dir: 'asc' })
-  })
-
   it('offers no Owner sort in the user’s own space', async () => {
     await mountPanel({ query: { view: 'list' }, inOwnSpace: true })
     await openPanel()
@@ -235,15 +222,6 @@ describe('View settings panel', () => {
     pill('Size').click()
     await settle()
     expect(readPresentationPreference()?.columns).toContain('size')
-  })
-
-  it('starts with Modified and Owner only, with the default-columns tweak off', async () => {
-    setTweaks(['t35-default-columns'], false)
-    await mountPanel({ query: { view: 'list' } })
-    await openPanel()
-
-    expect(pill('Owner').getAttribute('aria-pressed')).toBe('true')
-    expect(pill('Size').getAttribute('aria-pressed')).toBe('false')
   })
 
   it('still switches the view when the browser refuses to save it', async () => {

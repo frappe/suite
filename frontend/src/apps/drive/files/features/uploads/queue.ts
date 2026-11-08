@@ -17,7 +17,6 @@ import { readMaxFileSize } from '@/platform/boot'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 import { TransportError, type PlatformError } from '@/platform/transport'
-import { isTweakOn } from '@/platform/tweaks'
 
 import { isTransient, online, pause } from '../network'
 import { sha256 } from './checksum'
@@ -214,7 +213,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     preparing: 0,
     /** The folders those uploads create, and how many are done. */
     folders: { created: 0, total: 0 },
-    /** A dropped folder tree is being walked, after a short wait (t30-reading-folder). */
+    /** A dropped folder tree is being walked, after a short wait. */
     reading: null as { found: number } | null,
     /** The user looked at the tracker since the last failure. */
     seen: true,
@@ -271,9 +270,9 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
   )
 
   // The listener is there only while work is, since Firefox keeps no page
-  // with one in its back-forward cache (t29-leave-warning).
+  // with one in its back-forward cache.
   watch(
-    () => hasUnsavedWork.value && isTweakOn('t29-leave-warning'),
+    hasUnsavedWork,
     (warn) => {
       if (warn) window.addEventListener('beforeunload', warnBeforeLeaving)
       else window.removeEventListener('beforeunload', warnBeforeLeaving)
@@ -413,7 +412,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
   }
 
   /**
-   * Walks a dropped folder tree (t30-reading-folder). The tracker shows the
+   * Walks a dropped folder tree. The tracker shows the
    * files found once the walk takes longer than `READING_DELAY_MS`. A walk
    * the browser refuses leaves a failed row; the drop is gone, so it has no Retry.
    */
@@ -599,12 +598,12 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
   }
 
   /**
-   * After a dropped connection (t28-chunk-retry): waits, then `true` to go on
+   * After a dropped connection: waits, then `true` to go on
    * from what the server holds. Offline it waits for the network without a
    * limit; online it tries for `RETRY_FOR_MS`.
    */
   async function reconnect(job: Job, cause: unknown): Promise<boolean> {
-    if (!isTweakOn('t28-chunk-retry') || job.signal.aborted || !isTransient(cause)) return false
+    if (job.signal.aborted || !isTransient(cause)) return false
     const { entry } = job
     const retries = (job.retries ??= { since: now(), offlineMs: 0, count: 0 })
     if (job.session && entry.sent === entry.size) job.finishLost = true
@@ -640,7 +639,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
       return true
     } catch (cause) {
       const error = platformError(cause)
-      if (isTweakOn('t28-chunk-retry') && isTransient(cause)) throw cause
+      if (isTransient(cause)) throw cause
       if (!isSessionGone(error)) {
         fail(job, error.message)
         return false
@@ -830,7 +829,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
    */
   async function settleRefusal(job: Job, cause: unknown): Promise<boolean> {
     if (job.signal.aborted) return false
-    if (isTweakOn('t28-chunk-retry') && isTransient(cause)) throw cause
+    if (isTransient(cause)) throw cause
     const error = platformError(cause)
     const { entry } = job
     // One file over the site's limit: only it fails, and Retry cannot help it.
@@ -838,7 +837,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
       fail(job, error.message, false)
       return false
     }
-    if (isOverQuota(error)) {
+    if (error.type === 'DriveOverQuota') {
       entry.state = 'held'
       entry.error = error.message
       state.halted = error.message
@@ -899,12 +898,8 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
     job.entry.error = message
     job.entry.retryable = retryable && !!job.file
     // A tracker on screen shows the failure as it happens. It is mounted
-    // only in Drive, so an open one elsewhere shows nothing
-    // (t29-attention-off-screen).
-    const shown = isTweakOn('t29-attention-off-screen')
-      ? state.trackerOpen && state.trackerMounted
-      : state.trackerOpen
-    if (!shown) state.seen = false
+    // only in Drive, so an open one elsewhere shows nothing.
+    if (!(state.trackerOpen && state.trackerMounted)) state.seen = false
   }
 
   async function persist(job: Job) {
@@ -928,7 +923,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
   }
 
   /**
-   * Stops one upload (t28-cancel-upload). The file and session stay, so Retry
+   * Stops one upload. The file and session stay, so Retry
    * continues from the bytes the server holds; the record goes, so a reload
    * does not offer it again.
    */
@@ -1018,7 +1013,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
   }
 
   /**
-   * Resumes every interrupted upload (t29-resume-all). Rows whose handle the
+   * Resumes every interrupted upload. Rows whose handle the
    * browser still lets this page read start at once. The others take files
    * from one picker, matched by name, size and time; a file that matches no
    * row is left alone. `pickFiles` runs now, inside the click.
@@ -1099,7 +1094,7 @@ export function createUploadQueue(options: UploadQueueOptions = {}) {
       }
       if (!found.length) return
       state.seen = false
-      if (isTweakOn('t29-reopen-tracker')) state.trackerOpen = true
+      state.trackerOpen = true
     })()
     return restored
   }
@@ -1217,15 +1212,6 @@ function tooLargeMessage(limit: number, size: number): string {
   ])
 }
 
-/**
- * A full root answers `DriveOverQuota`. A proxy's body cap answers a bare
- * 413, which counts as full only while t28-chunk-retry is off.
- */
-function isOverQuota(error: PlatformError): boolean {
-  if (error.type === 'DriveOverQuota') return true
-  return error.status === 413 && !isTweakOn('t28-chunk-retry')
-}
-
 /** Some upload is reconnecting and none is sending; queued ones wait behind them. */
 function isStalled(active: readonly UploadEntry[]): boolean {
   return (
@@ -1239,13 +1225,11 @@ export function isFinishing(entry: UploadEntry): boolean {
   return entry.state === 'uploading' && entry.size > 0 && entry.sent === entry.size
 }
 
-/** With t28-chunk-retry on, a lost connection and a proxy's refusal read plainly. */
+/** A lost connection and a proxy's refusal read plainly. */
 function failureText(cause: unknown): string {
-  if (isTweakOn('t28-chunk-retry')) {
-    if (isTransient(cause) && cause.status === 0)
-      return __('Connection lost. Check your connection and retry.')
-    if (isProxyRefusal(cause)) return __('The server refused this upload.')
-  }
+  if (isTransient(cause) && cause.status === 0)
+    return __('Connection lost. Check your connection and retry.')
+  if (isProxyRefusal(cause)) return __('The server refused this upload.')
   return platformError(cause).message
 }
 

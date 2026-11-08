@@ -2,7 +2,6 @@ import type { NodeMovePreviewOutput } from '@/apps/drive/client/generated'
 import { groupName, principalKind } from '@/apps/drive/client/grants'
 import { DRIVE_ROLES, type DriveNode, type DriveRoots } from '@/apps/drive/client/types'
 import { translate as __ } from '@/platform/translation'
-import { isTweakOn } from '@/platform/tweaks'
 
 import { bootedWorkspace, organizationLabel } from './share/shareModel'
 
@@ -129,7 +128,7 @@ function gainLabel(principal: string, workspace: string): string {
     case 'general':
       return __(organizationLabel(workspace))
     case 'public':
-      return isTweakOn('t4-access-words') ? __('Public on the web') : __('Everyone on the web')
+      return __('Public on the web')
     case 'link':
       return __('Anyone with a share link')
     case 'user':

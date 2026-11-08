@@ -2,7 +2,6 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { createApp, defineComponent, h, type PropType } from 'vue'
 
 import type { PeopleGetOutput } from '@/platform/transport/generated'
-import { setTweaks } from '@/platform/tweaks'
 
 import type { PickedPerson } from './shareModel'
 import SharePicker from './SharePicker.vue'
@@ -214,19 +213,6 @@ describe('Share picker', () => {
       .click()
 
     await vi.waitFor(() => expect(share).toHaveBeenCalledWith(expect.any(Array), 40, true))
-  })
-  it('with t5 off, offers the access as a select', async () => {
-    setTweaks(['t5'], false)
-    try {
-      const input = mountPicker()
-      clickRow(await type(input, 'ma'), 'Maya Fernandes')
-      await vi.waitFor(() =>
-        expect(document.querySelector('[aria-label="Access for people you add"]')).not.toBeNull(),
-      )
-      expect(document.querySelector('[role="menuitem"]')).toBeNull()
-    } finally {
-      setTweaks(['t5'], true)
-    }
   })
   it('keeps visible results during search and ignores a response after the query changes', async () => {
     let finishOld: ((page: PeopleGetOutput) => void) | undefined

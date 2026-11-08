@@ -1,7 +1,6 @@
 import { DRIVE_ROLES, formatDriveBytes, type DriveNotification } from '@/apps/drive'
 import { userTimeZone } from '@/platform/time-zone'
 import { translate as __ } from '@/platform/translation'
-import { isTweakOn } from '@/platform/tweaks'
 
 /** A notification about somebody's action on an item, as opposed to one about the reader's own download. */
 type ActivityNotification = Extract<DriveNotification, { activity: unknown }>
@@ -72,10 +71,7 @@ export function notificationExcerpt(
   notification: DriveNotification,
   now = new Date(),
 ): string | null {
-  if ('download' in notification) {
-    if (isTweakOn('t31-bell-details')) return downloadDetails(notification.download, now)
-    return notification.download.error
-  }
+  if ('download' in notification) return downloadDetails(notification.download, now)
   if (notification.activity.action !== 'comment') return null
   const excerpt = notification.activity.detail.excerpt
   return typeof excerpt === 'string' && excerpt.trim() ? excerpt : null

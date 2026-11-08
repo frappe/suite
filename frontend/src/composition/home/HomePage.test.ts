@@ -4,7 +4,6 @@ import { createApp, defineComponent, h, nextTick } from 'vue'
 import type { CalendarEvent } from '@/apps/calendar'
 import { findDocumentType } from '@/composition/documentRegistry'
 import HomePage from '@/composition/home/HomePage.vue'
-import { setTweaks } from '@/platform/tweaks'
 
 const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
 
@@ -261,7 +260,6 @@ afterEach(() => {
   state.push.mockReset()
   state.createDocument.mockReset()
   state.canCreate = true
-  setTweaks(['t45-home-new'], true)
   state.recentFails = true
   state.upcomingFails = false
   state.upcomingPending = false
@@ -527,11 +525,6 @@ describe('Home page', () => {
 
     it('is hidden for someone who has no My files to create in', () => {
       state.canCreate = false
-      expect(newSection(mount())).toBeNull()
-    })
-
-    it('is hidden when its tweak is off', () => {
-      setTweaks(['t45-home-new'], false)
       expect(newSection(mount())).toBeNull()
     })
 

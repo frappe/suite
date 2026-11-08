@@ -38,7 +38,7 @@ const DESTINATION_ICONS: Record<FilesDestination, string> = {
 }
 
 /**
- * What an empty listing says when the page offers its actions (tweak t12):
+ * What an empty listing says when the page offers its actions:
  * an icon per view, and copy that matches the Upload files and Clear search buttons.
  */
 export function emptyStateWithActions(

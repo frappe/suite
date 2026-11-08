@@ -1,7 +1,5 @@
 import type { LocationQuery, Router } from 'vue-router'
 
-import { isTweakOn } from '@/platform/tweaks'
-
 export type FilesViewMode = 'list' | 'grid'
 export type FilesSort = 'title' | 'owner' | 'modified' | 'kind' | 'size'
 export type FilesDirection = 'asc' | 'desc'
@@ -71,30 +69,14 @@ export function resolvePresentation(
 }
 
 /**
- * The columns the list shows. A column the user never switched follows its
- * default (t35), so a column added later, such as Access (t36), shows without
- * resetting their choices.
+ * The columns the list shows. Every column is on by default, and a column the
+ * user never switched follows that default, so a column added later, such as
+ * Access, shows without resetting their choices.
  */
 function resolveColumns(saved: Partial<PresentationPreference>): string[] {
-  const columns =
-    isTweakOn('t35-default-columns') || isTweakOn('t36-access-column')
-      ? columnsWithDefaults(saved)
-      : normalizeColumns(saved.columns)
-  return isTweakOn('t36-access-column') ? columns : columns.filter((column) => column !== 'access')
-}
-
-function columnsWithDefaults(saved: Partial<PresentationPreference>): string[] {
   const chosen = normalizeColumns(saved.columns)
   const toggled = toggledColumns(saved)
-  return FILES_COLUMNS.filter((column) =>
-    toggled.includes(column) ? chosen.includes(column) : isDefaultColumn(column),
-  )
-}
-
-function isDefaultColumn(column: FilesColumn): boolean {
-  if (column === 'kind' || column === 'size') return isTweakOn('t35-default-columns')
-  if (column === 'access') return isTweakOn('t36-access-column')
-  return true
+  return FILES_COLUMNS.filter((column) => !toggled.includes(column) || chosen.includes(column))
 }
 
 /**

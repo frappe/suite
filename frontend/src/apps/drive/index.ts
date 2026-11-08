@@ -35,7 +35,6 @@ import { newDocumentState, openingTitleState } from '@/platform/page-meta'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 import { buildUrl } from '@/platform/transport'
-import { isTweakOn } from '@/platform/tweaks'
 
 export type {
   CredentialGroup,
@@ -373,11 +372,6 @@ export const DriveUploadTracker = defineAsyncComponent(
   () => import('@/apps/drive/files/features/uploads/UploadTracker.vue'),
 )
 
-/** Evaluation scaffolding: the panel that switches each Drive UI change on or off. The app root mounts it on Drive routes. */
-export const DriveTweakPanel = defineAsyncComponent(
-  () => import('@/apps/drive/files/features/tweaks/TweakPanel.vue'),
-)
-
 /** The password screen a node route shows in place on `401 DriveLocked` (spec §10.2). Emits `unlocked`. */
 export const DriveUnlockScreen = defineAsyncComponent(
   () => import('@/apps/drive/files/features/UnlockScreen.vue'),
@@ -442,7 +436,7 @@ export function useDriveDialogs(): DriveDialogs {
   if (!context) throw new Error('useDriveDialogs() must be called in a component setup')
   // App.vue provides these to its components, not to the app, so dialogs mounted with the app context get them here.
   const documentTypes = inject(DOCUMENT_TYPES_KEY, [])
-  if (isTweakOn('t40-share-open')) preloadShareDialog()
+  preloadShareDialog()
   return {
     move: (node) =>
       presentDialog<DriveNodeSummary>(
@@ -466,7 +460,7 @@ export function useDriveDialogs(): DriveDialogs {
     },
     share: (node, known) => {
       // The reads start now, so they overlap loading the dialog's code.
-      if (isTweakOn('t40-share-open')) startShareReads(node, known ?? null)
+      startShareReads(node, known ?? null)
       return import('@/apps/drive/files/features/share/present').then((share) =>
         share.presentShareDialog(node, context, known),
       )

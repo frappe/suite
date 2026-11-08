@@ -14,7 +14,6 @@ import { api, client, useQuery } from '@/api'
 import { DRIVE_ROLES, type DriveNode, type DriveRoots } from '@/apps/drive/client/types'
 import { toast } from '@/platform/feedback'
 import { translate as __ } from '@/platform/translation'
-import { isTweakOn } from '@/platform/tweaks'
 
 import { LOCATION_LABELS, locationLabel, locationTitle } from '../internal/locations'
 import {
@@ -43,7 +42,7 @@ const DROP_TARGET = 'data-drop-target'
 const DROP_CRUMBS = 'data-drop-crumbs'
 
 /**
- * Drag to move in a folder listing, with a mouse (`t16-drag-move`). A press on
+ * Drag to move in a folder listing, with a mouse. A press on
  * an item's drag handle that moves past the threshold drags the item, or the
  * selection when the item is in it, onto a folder row or card, a breadcrumb,
  * or a sidebar location. Escape cancels. A drop asks first when the move
@@ -125,7 +124,7 @@ export function useDragMove(options: {
   }
 
   function isOn() {
-    return isTweakOn('t16-drag-move') && finePointer.value && options.enabled()
+    return finePointer.value && options.enabled()
   }
 
   /** A press on an item. Answers whether the drag took it; otherwise the marquee may. */

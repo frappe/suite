@@ -9,7 +9,6 @@ import { driveNodeRoute, useDriveDialogs } from '@/apps/drive'
 import { nodeContentUrl, openAsSpreadsheet, opensAsSpreadsheet } from '@/apps/drive/client/nodes'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
-import { useTweak } from '@/platform/tweaks'
 
 import { trashLocation, useLocationTitle } from '../../internal/locations'
 import { previewKind } from '../../internal/previewKind'
@@ -111,14 +110,13 @@ const types = computed(() => typesFromQuery(route.query.type, offeredTypes({ fol
 const typeFilter = computed(() => ({ type: typeQuery(types.value) }))
 
 const folder = computed(() => file.value.folder.value)
-const escapeCloses = useTweak('t15-escape-closes')
 /**
  * The listing that opened the preview, with its view, sort and filter, when it
- * shows the file's folder. The way back and Escape both return to it (t15).
+ * shows the file's folder. The way back and Escape both return to it.
  */
 function openedFromFolder(folderId: string): RouteLocationPathRaw | null {
   const back = router.options.history.state.back
-  if (!escapeCloses.value || typeof back !== 'string') return null
+  if (typeof back !== 'string') return null
   const opener = router.resolve(back)
   const roots = discovered.data
   const showsFolder =
@@ -187,12 +185,10 @@ watch(
   },
   { immediate: true },
 )
-const arrowsAfterClick = useTweak('t15-arrow-keys')
-const returnFocus = useTweak('t15-return-focus')
 /** Where the way back in the header goes, or back a page when the header has none. */
 function leave() {
-  const state = returnFocus.value ? { reveal: current.value } : undefined
-  if (location.value) return void router.push({ ...location.value.to, state })
+  if (location.value)
+    return void router.push({ ...location.value.to, state: { reveal: current.value } })
   if (typeof router.options.history.state.back === 'string') return router.back()
   void router.push('/drive')
 }
@@ -203,12 +199,11 @@ function leave() {
 useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   if (event.defaultPrevented || event.altKey || event.metaKey || event.ctrlKey || event.shiftKey)
     return
-  if (event.key === 'Escape' && escapeCloses.value) {
+  if (event.key === 'Escape') {
     if (escapeLeaves(event.target instanceof Element ? event.target : null)) leave()
     return
   }
-  const focused = document.activeElement
-  if (arrowsAfterClick.value ? !arrowsStep(focused) : focused && focused !== document.body) return
+  if (!arrowsStep(document.activeElement)) return
   if (event.key === 'ArrowLeft') show(previous.value)
   else if (event.key === 'ArrowRight') show(next.value)
 })
@@ -354,16 +349,12 @@ const source = computed(() =>
   WEB_IMAGES.has(mime.value) || !previewUrl.value ? contentUrl.value : previewUrl.value,
 )
 
-const keptImages = useTweak('t27-preview-preload')
-const loadingStates = useTweak('t27-image-loading')
-const pagerSpace = useTweak('t27-pager-space')
 /** Larger pictures are not loaded before they are asked for. */
 const PRELOAD_LIMIT = 20 * 1024 * 1024
 // The pictures either side of this file load while it shows, so a step shows them at once.
 watch(
-  [keptImages, files, source, preview],
+  [files, source, preview],
   () => {
-    if (!keptImages.value) return
     const own = files.value.findIndex((row) => row.name === props.session.nodeId)
     const beside = own === -1 ? [] : [files.value[own - 1], files.value[own + 1]]
     const neighbours = beside
@@ -376,9 +367,7 @@ watch(
 const videoFailed = ref(false)
 watch(contentUrl, () => (videoFailed.value = false))
 /** While the folder loads, the pager keeps its room, so the header does not shift when it comes. */
-const pagerLoading = computed(
-  () => pagerSpace.value && !!folder.value && siblings.status === 'pending',
-)
+const pagerLoading = computed(() => !!folder.value && siblings.status === 'pending')
 </script>
 
 <template>
@@ -485,18 +474,10 @@ const pagerLoading = computed(
       />
       <PreviewFallback v-else-if="empty" title="Empty file" message="This file has no content." />
       <PreviewImage
-        v-else-if="preview.kind === 'image' && (keptImages || loadingStates)"
-        :src="source"
-        :alt="session.title.value"
-        :download="downloadUrl"
-        :kept="keptImages"
-        :states="loadingStates"
-      />
-      <img
         v-else-if="preview.kind === 'image'"
         :src="source"
         :alt="session.title.value"
-        class="m-auto max-h-full min-h-0 max-w-full object-contain p-4"
+        :download="downloadUrl"
       />
       <PreviewFallback
         v-else-if="preview.kind === 'video' && videoFailed"
@@ -515,7 +496,7 @@ const pagerLoading = computed(
         :src="contentUrl"
         controls
         class="m-auto max-h-full min-h-0 max-w-full"
-        @error="videoFailed = loadingStates"
+        @error="videoFailed = true"
       />
       <PdfPreview
         v-else-if="preview.kind === 'pdf'"

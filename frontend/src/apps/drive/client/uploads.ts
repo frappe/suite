@@ -2,7 +2,6 @@
 import { api, client, type InputOf } from '@/api'
 import type { TransferContext } from '@/platform/server-state'
 import { transport, TransportError, type Transport } from '@/platform/transport'
-import { isTweakOn } from '@/platform/tweaks'
 
 import type { TransferInput } from './api'
 import { driveLinks } from './links'
@@ -11,7 +10,7 @@ import type { DriveNode } from './types'
 const MiB = 1024 * 1024
 export const MAX_CHUNK_BYTES = 16 * MiB
 const MIN_CHUNK_BYTES = MiB
-const STEADY_START_BYTES = 2 * MiB
+const FIRST_CHUNK_BYTES = 2 * MiB
 /** A chunk faster than this doubles the next one; slower than `SLOW_CHUNK_MS` halves it. */
 const FAST_CHUNK_MS = 2000
 const SLOW_CHUNK_MS = 8000
@@ -94,8 +93,8 @@ export async function transfer(
 /**
  * The chunks from `offset` on, one after another. The server takes a chunk
  * again at any offset up to what it holds, so the size may change between
- * chunks. A bare 413 is a proxy's body limit, not a full Drive: with
- * t28-chunk-retry on, the chunk goes again at half the size.
+ * chunks. A bare 413 is a proxy's body limit, not a full Drive: the chunk
+ * goes again at half the size.
  */
 async function sendChunks(
   file: Blob,
@@ -108,7 +107,7 @@ async function sendChunks(
     wire,
   }: { signal: AbortSignal; progress(value: number): void; wire: Transport },
 ) {
-  const size = new ChunkSize(isTweakOn('t30-steady-chunks'))
+  const size = new ChunkSize()
   while (offset < file.size) {
     const started = Date.now()
     let reply: { received: number }
@@ -122,7 +121,7 @@ async function sendChunks(
         wire,
       )
     } catch (cause) {
-      if (isTweakOn('t28-chunk-retry') && isProxyRefusal(cause) && size.shrink()) continue
+      if (isProxyRefusal(cause) && size.shrink()) continue
       throw cause
     }
     signal.throwIfAborted()
@@ -135,22 +134,16 @@ async function sendChunks(
 }
 
 /**
- * The next chunk's size. Steady chunks start small and follow the link's
- * speed, so progress moves on a slow link and a lost chunk costs seconds.
- * Otherwise every chunk is the largest.
+ * The next chunk's size. Chunks start small and follow the link's speed, so
+ * progress moves on a slow link and a lost chunk costs seconds.
  */
 export class ChunkSize {
-  bytes: number
+  bytes = FIRST_CHUNK_BYTES
   /** The largest size the way to the server accepts. */
   private ceiling = MAX_CHUNK_BYTES
 
-  constructor(private readonly steady: boolean) {
-    this.bytes = steady ? STEADY_START_BYTES : MAX_CHUNK_BYTES
-  }
-
   /** After a chunk that took `ms`. */
   took(ms: number) {
-    if (!this.steady) return
     if (ms < FAST_CHUNK_MS) this.bytes = Math.min(this.bytes * 2, this.ceiling)
     else if (ms > SLOW_CHUNK_MS) this.bytes = Math.max(this.bytes / 2, MIN_CHUNK_BYTES)
   }

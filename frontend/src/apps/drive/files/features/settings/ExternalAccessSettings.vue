@@ -41,15 +41,12 @@
             <h3 class="text-base font-semibold text-ink-gray-8">
               {{ __('Client configuration') }}
             </h3>
+            <!-- The DAV mount is the caller's Personal root only (`suite/drive/webdav/pathmap.py`). -->
             <p class="text-base text-ink-gray-6">
               {{
-                companyFiles
-                  ? __('Connect a WebDAV client with these details. It shows My files, not {0}.', [
-                      locationLabel('organization'),
-                    ])
-                  : __(
-                      'Connect a WebDAV client with these details. It shows your Home folder and the shared Everyone folder.',
-                    )
+                __('Connect a WebDAV client with these details. It shows My files, not {0}.', [
+                  locationLabel('organization'),
+                ])
               }}
             </p>
           </div>
@@ -108,14 +105,10 @@ import { computed, ref, watch } from 'vue'
 import { api, useMutation, useQuery } from '@/api'
 import type { WebdavGetOutput } from '@/apps/drive/client/generated'
 import { translate as __ } from '@/platform/translation'
-import { useTweak } from '@/platform/tweaks'
 
 import { locationLabel } from '../../internal/locations'
 import CopyField from './CopyField.vue'
 import SettingsPage from './SettingsPage.vue'
-
-// The DAV mount is the caller's Personal root only (`suite/drive/webdav/pathmap.py`).
-const companyFiles = useTweak('t41-company-files')
 
 type Connection = Extract<WebdavGetOutput, { server_url: string }>
 

@@ -1,27 +1,16 @@
-import { afterEach, describe, expect, it } from 'vitest'
-
-import { setTweaks } from '@/platform/tweaks'
+import { describe, expect, it } from 'vitest'
 
 import { storageMeter } from './storageMeter'
 
 const GB = 1024 ** 3
 
 describe('storage meter', () => {
-  afterEach(() => setTweaks(['t6'], true))
-
   it('reads use against the quota', () => {
     expect(storageMeter({ used_bytes: 2.4 * GB, effective_quota: 10 * GB })).toEqual({
       label: '2.4 GB of 10 GB used',
       percent: 24,
       level: 'ok',
     })
-  })
-
-  it('counts in 1000s, with a trailing ".0", with the tweak off', () => {
-    setTweaks(['t6'], false)
-    expect(storageMeter({ used_bytes: 2.4e9, effective_quota: 10e9 }).label).toBe(
-      '2.4 GB of 10.0 GB used',
-    )
   })
 
   it('warns from 90% and turns full at the quota, without overfilling the bar', () => {
