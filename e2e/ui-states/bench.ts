@@ -18,12 +18,13 @@ export interface BenchWatch {
  * the flow's. Any other failure still fails the run.
  */
 export function watchBench(baseURL: string): BenchWatch {
-	const { hostname, port } = new URL(baseURL);
+	const { hostname, port, protocol } = new URL(baseURL);
+	const listeningPort = Number(port || (protocol === "https:" ? 443 : 80));
 	let refusedAt = 0;
 
 	const isListening = () =>
 		new Promise<boolean>((done) => {
-			const socket = connect({ host: hostname, port: Number(port) });
+			const socket = connect({ host: hostname, port: listeningPort });
 			socket.once("connect", () => {
 				socket.destroy();
 				done(true);

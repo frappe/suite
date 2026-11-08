@@ -10,7 +10,9 @@ import { resolve } from "node:path";
  * port) and `E2E_BENCH_PATH` (the bench that serves the site).
  */
 const baseURL = process.env.BASE_URL ?? "http://dev-suite-drive-ui-states.localhost:8021";
-const testApiUrl = process.env.E2E_TEST_API_URL ?? baseURL.replace(/:\d+$/, ":8095");
+const defaultTestApiUrl = new URL(baseURL);
+defaultTestApiUrl.port = "8095";
+const testApiUrl = process.env.E2E_TEST_API_URL ?? defaultTestApiUrl.origin;
 process.env.E2E_TEST_API_URL = testApiUrl;
 const benchPath = process.env.E2E_BENCH_PATH;
 if (!benchPath) throw new Error("E2E_BENCH_PATH must name the bench that serves BASE_URL");
@@ -39,7 +41,7 @@ export default defineConfig({
 	projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
 	webServer: {
 		url: new URL("/api/method/suite.drive.e2e_api.provision_users", testApiUrl).href,
-		command: `${resolve(benchPath, "env/bin/python")} -m frappe.utils.bench_helper frappe serve --port ${new URL(testApiUrl).port} --noreload`,
+		command: `${resolve(benchPath, "env/bin/python")} -m frappe.utils.bench_helper frappe serve --port ${new URL(testApiUrl).port || "80"} --noreload`,
 		cwd: resolve(benchPath, "sites"),
 		env: { ...process.env, DEV_SERVER: "1" } as Record<string, string>,
 		reuseExistingServer: true,
