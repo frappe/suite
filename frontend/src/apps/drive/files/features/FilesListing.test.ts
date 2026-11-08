@@ -816,6 +816,22 @@ describe('FilesListing keyboard', () => {
     expect(tabbable(root)).toEqual(['delta'])
   })
 
+  it('opens with Enter, and leaves Mod+Enter to the new-tab shortcut', async () => {
+    for (const modifier of [{ metaKey: true }, { ctrlKey: true }]) {
+      const { root, events } = mount({ rows: five })
+      await nextTick()
+      root.querySelector<HTMLElement>('[data-node="beta"]')!.focus()
+
+      await press('Enter', modifier)
+      expect(events.opened).toEqual([])
+
+      await press('Enter')
+      expect(events.opened).toEqual(['beta'])
+      cleanup?.()
+      cleanup = undefined
+    }
+  })
+
   it('selects a card with Space in grid view, without opening it', async () => {
     const { root, state, events } = mount({ rows: five, view: 'grid' })
     await nextTick()

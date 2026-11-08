@@ -960,7 +960,8 @@ function onKeydown(event: KeyboardEvent) {
   if (!node) return
   if (event.key === 'Enter') {
     event.preventDefault()
-    emit('open', node)
+    // Mod+Enter is the shortcut that opens the item in a new tab.
+    if (!event.metaKey && !event.ctrlKey) emit('open', node)
   }
   if (event.key === ' ') {
     event.preventDefault()
