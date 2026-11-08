@@ -37,7 +37,7 @@ export const DEFAULT_PRESENTATION: PresentationState = {
 const LEGACY_DEFAULT_COLUMNS: readonly FilesColumn[] = ['owner', 'modified']
 
 /** The order a field starts in when it is chosen: dates newest first, sizes largest first. */
-export const DEFAULT_DIRECTION: Record<FilesSort, FilesDirection> = {
+const DEFAULT_DIRECTION: Record<FilesSort, FilesDirection> = {
   title: 'asc',
   kind: 'asc',
   owner: 'asc',

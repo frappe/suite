@@ -3,8 +3,9 @@ import { computed, nextTick, ref, watch, type Ref } from 'vue'
 import type { DriveNode } from '@/apps/drive/client/types'
 
 import { columnsOf, isMoveKey, isTypeAheadKey, nextIndex, typeAheadMatch } from './listingFocus'
+import { LISTING_ITEM } from './useMarquee'
 
-/** An item's element carries its node name in this attribute; its wrapper in grid view carries `data-listing-item`. */
+/** An item's element carries its node name in this attribute; its wrapper in grid view carries `LISTING_ITEM`. */
 const ITEM = 'data-node'
 /** Controls inside an item that are not the item itself. */
 const ITEM_CONTROLS = '[aria-haspopup], [role="checkbox"]'
@@ -61,13 +62,11 @@ export function useListingFocus(options: {
     { flush: 'pre' },
   )
 
-  /** The item's own element. A card without `data-node` is the first button in its wrapper. */
-  function elementOf(id: string): HTMLElement | null {
-    const named = (attribute: string) =>
-      [...(options.root.value?.querySelectorAll<HTMLElement>(`[${attribute}]`) ?? [])].find(
-        (element) => element.getAttribute(attribute) === id,
-      )
-    return named(ITEM) ?? named('data-listing-item')?.querySelector('button') ?? null
+  /** The item's own element. */
+  function elementOf(id: string): HTMLElement | undefined {
+    return [...(options.root.value?.querySelectorAll<HTMLElement>(`[${ITEM}]`) ?? [])].find(
+      (element) => element.getAttribute(ITEM) === id,
+    )
   }
 
   /** Focuses the item and scrolls it into view: just enough, or to the middle with `reveal`. */
@@ -84,7 +83,7 @@ export function useListingFocus(options: {
   function itemOf(element: EventTarget | null): DriveNode | null {
     if (!(element instanceof HTMLElement) || !options.root.value?.contains(element)) return null
     if (element.matches(ITEM_CONTROLS)) return null
-    const id = element.closest('[data-listing-item]')?.getAttribute('data-listing-item')
+    const id = element.closest(`[${LISTING_ITEM}]`)?.getAttribute(LISTING_ITEM)
     return options.rows().find((row) => row.name === id) ?? null
   }
 
@@ -102,7 +101,7 @@ export function useListingFocus(options: {
   function columns(): number {
     if (!options.grid()) return 1
     const cards = [
-      ...(options.root.value?.querySelectorAll<HTMLElement>('[data-listing-item]') ?? []),
+      ...(options.root.value?.querySelectorAll<HTMLElement>(`[${LISTING_ITEM}]`) ?? []),
     ]
     return columnsOf(cards)
   }

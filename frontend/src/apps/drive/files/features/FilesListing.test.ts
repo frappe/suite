@@ -414,7 +414,6 @@ describe('FilesListing name links', () => {
         root.querySelector<HTMLAnchorElement>(`[data-listing-item="${name}"] a[href]`)!
 
       // The browser opens the link in a new tab; the listing does nothing.
-      expect(press(link('a'), { metaKey: true }).defaultPrevented).toBe(false)
       expect(press(link('a'), { ctrlKey: true }).defaultPrevented).toBe(false)
       expect(state.selection).toEqual([])
       expect(events.opened).toEqual([])
@@ -441,6 +440,18 @@ describe('FilesListing name links', () => {
       ['Linux x86_64', { key: 'Control', ctrlKey: true }, { key: 'Meta', metaKey: true }],
       ['MacIntel', { key: 'Meta', metaKey: true }, { key: 'Control', ctrlKey: true }],
     ] as const) {
+      it(`leaves a click with ${held.key} to the link, and only that key, on ${platform}`, async () => {
+        vi.spyOn(navigator, 'platform', 'get').mockReturnValue(platform)
+        const { root } = mount({ rows, nodeHref })
+        await nextTick()
+        const link = root.querySelector('[data-listing-item="a"] a[href]')!
+        const pressed = (metaKey: boolean, ctrlKey: boolean) =>
+          press(link, { metaKey, ctrlKey }).defaultPrevented
+
+        expect(pressed(held.key === 'Meta', held.key === 'Control')).toBe(false)
+        expect(pressed(other.key === 'Meta', other.key === 'Control')).toBe(true)
+      })
+
       it(`looks like a link only while the pointer is on it and ${held.key} is held, on ${platform}`, async () => {
         vi.spyOn(navigator, 'platform', 'get').mockReturnValue(platform)
         const { root } = mount({ rows, nodeHref })

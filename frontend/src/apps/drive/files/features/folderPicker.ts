@@ -1,3 +1,4 @@
+import { api, client } from '@/api'
 import type { NodeMovePreviewOutput } from '@/apps/drive/client/generated'
 import { groupName, principalKind } from '@/apps/drive/client/grants'
 import { DRIVE_ROLES, type DriveNode, type DriveRoots } from '@/apps/drive/client/types'
@@ -119,6 +120,20 @@ export function moveAccessChange(
     : null
   if (!gains.size && ownRoleAfter === null) return null
   return { gains: [...gains.values()].sort((a, b) => b.role - a.role), ownRoleAfter }
+}
+
+/** What moving `items` into `folder` would change, or `null` when it asks nothing. */
+export async function previewMoveAccess(
+  items: readonly Pick<DriveNode, 'name'>[],
+  folder: string,
+  workspace: string,
+): Promise<MoveAccessChange | null> {
+  const previews = await Promise.all(
+    items.map((item) =>
+      client.query(api.drive.nodes.previewMove, { node: item.name, parent_node: folder }),
+    ),
+  )
+  return moveAccessChange(previews, workspace)
 }
 
 function gainLabel(principal: string, workspace: string): string {

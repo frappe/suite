@@ -64,7 +64,7 @@ import { Button, Popover, Select, TabButtons, type SelectOption } from 'frappe-u
 import { computed, useId } from 'vue'
 
 import {
-  DEFAULT_DIRECTION,
+  nextSort,
   type FilesColumn,
   type FilesDateColumn,
   type FilesDirection,
@@ -102,6 +102,8 @@ const SORT_LABELS: Record<FilesSort, string> = {
   kind: 'Type',
   size: 'Size',
 }
+/** The Sort by options, in the order the menu offers them. */
+const SORTS: FilesSort[] = ['title', 'modified', 'owner', 'kind', 'size']
 const COLUMN_LABELS: Record<FilesColumn, string> = {
   access: 'Access',
   owner: 'Owner',
@@ -126,19 +128,15 @@ function row<T extends string>(
   id: string,
   label: string,
   value: T,
-  labels: Partial<Record<T, string>>,
+  values: readonly T[],
+  labels: Record<T, string>,
   onPick: (value: T) => void,
 ) {
-  // SAFETY: labels is a local closed Record<T, string>; its own keys are exactly the offered values.
-  const values = Object.keys(labels) as T[]
   return {
     id,
     label,
     value,
-    options: values.map((option): SelectOption => ({
-      value: option,
-      label: labels[option] ?? option,
-    })),
+    options: values.map((option): SelectOption => ({ value: option, label: labels[option] })),
     pick: (next: unknown) => {
       const picked = values.find((option) => option === next)
       if (picked && picked !== value) onPick(picked)
@@ -146,22 +144,21 @@ function row<T extends string>(
   }
 }
 
-const sortLabels = computed((): Partial<Record<FilesSort, string>> => {
-  if (!props.inOwnSpace) return SORT_LABELS
-  const { owner: _owner, ...others } = SORT_LABELS
-  return others
-})
+const sorts = computed((): FilesSort[] =>
+  props.inOwnSpace ? SORTS.filter((sort) => sort !== 'owner') : SORTS,
+)
 
 const rows = computed(() => {
   const { sort, dir } = props.presentation
   return [
-    row(sortId, 'Sort by', sort, sortLabels.value, (next) =>
-      emit('change', { sort: next, dir: DEFAULT_DIRECTION[next] }),
+    row(sortId, 'Sort by', sort, sorts.value, SORT_LABELS, (next) =>
+      emit('change', nextSort(props.presentation, next)),
     ),
     row(
       orderId,
       'Order',
       dir,
+      ['asc', 'desc'],
       { asc: orderLabel(sort, 'asc'), desc: orderLabel(sort, 'desc') },
       (next) => emit('change', { dir: next }),
     ),

@@ -10,7 +10,7 @@ import {
   watch,
 } from 'vue'
 
-import { api, client, useQuery } from '@/api'
+import { api, useQuery } from '@/api'
 import { DRIVE_ROLES, type DriveNode, type DriveRoots } from '@/apps/drive/client/types'
 import { toast } from '@/platform/feedback'
 import { translate as __ } from '@/platform/translation'
@@ -27,7 +27,7 @@ import {
   type DragState,
   type DropTarget,
 } from './dragMove'
-import { moveAccessChange, type MoveAccessChange } from './folderPicker'
+import { previewMoveAccess, type MoveAccessChange } from './folderPicker'
 import type { Point } from './marquee'
 import { scrollNearEdge, scrollParent, swallowNextClick } from './useMarquee'
 import { useWorkspaceName } from './useWorkspaceName'
@@ -212,12 +212,7 @@ export function useDragMove(options: {
   async function dropInto(dragged: DraggedItems, target: DropTarget & { kind: 'folder' }) {
     let change: MoveAccessChange | null
     try {
-      const previews = await Promise.all(
-        dragged.items.map((item) =>
-          client.query(api.drive.nodes.previewMove, { node: item.name, parent_node: target.node }),
-        ),
-      )
-      change = moveAccessChange(previews, workspace.value)
+      change = await previewMoveAccess(dragged.items, target.node, workspace.value)
     } catch {
       toast.error(__('Could not check who would get access. Nothing was moved.'))
       return

@@ -131,7 +131,7 @@
               runClasses(index),
               checkboxOnHover && 'group/row',
               flashClasses(row),
-              drag && dragClasses(row, DROP_ROW),
+              dragClasses(row, DROP_ROW),
             ]"
             v-bind="rowDrop?.(row) ?? {}"
             @click="onRowClick($event, row)"
@@ -283,7 +283,7 @@
               :selected="isHighlighted(row)"
               :icon-class="cardIconClass"
               :title-link="nameLink(row)"
-              :class="drag ? [flashClasses(row), dragClasses(row, DROP_CARD)] : flashClasses(row)"
+              :class="[flashClasses(row), dragClasses(row, DROP_CARD)]"
               :data-drag-handle="drag ? '' : undefined"
               :data-node="row.name"
               :tabindex="stopIndex(row)"
@@ -432,7 +432,7 @@ import type { MeasuredColumn } from './listColumns'
 import { loadUntilVisible } from './listingWindows'
 import { SKELETON_BAR, useSkeletonDelay, type SkeletonCell } from './listSkeleton'
 import ListSkeletonRows from './ListSkeletonRows.vue'
-import { watchNewTabKey } from './newTabKey'
+import { isNewTabKey, watchNewTabKey } from './newTabKey'
 import type { FilesColumn, FilesDateColumn, FilesSort, PresentationState } from './presentation'
 import type { DropHandlers } from './uploads/drop'
 import type { DragMove } from './useDragMove'
@@ -759,7 +759,7 @@ function nameLink(row: DriveNode): NameLink | undefined {
   }
 }
 function onNameClick(event: MouseEvent) {
-  if (event.metaKey || event.ctrlKey) event.stopPropagation()
+  if (isNewTabKey(event)) event.stopPropagation()
   else event.preventDefault()
 }
 /** Whether a click on an item's Access cell is the share dialog's rather than the row's. */

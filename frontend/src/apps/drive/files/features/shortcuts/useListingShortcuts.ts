@@ -7,7 +7,12 @@ import {
 } from 'frappe-ui'
 import { getCurrentInstance } from 'vue'
 
-import { useKeySequences, type KeySequenceShortcut, type Letter } from '@/platform/shortcuts'
+import {
+  isMacPlatform,
+  useKeySequences,
+  type KeySequenceShortcut,
+  type Letter,
+} from '@/platform/shortcuts'
 import { translate as __ } from '@/platform/translation'
 
 import { locationLabel, organizationName } from '../../internal/locations'
@@ -154,7 +159,7 @@ export function useListingShortcuts(
     ...removeKeys(__('Delete selected items forever'), () => place.inTrash()),
     command('F2', __('Rename'), (offered) => offered.rename, { guarded: true }),
     command(
-      isApple() ? 'Mod+ArrowUp' : 'Alt+ArrowUp',
+      isMacPlatform() ? 'Mod+ArrowUp' : 'Alt+ArrowUp',
       __('Open parent folder'),
       (offered) => offered.parent,
       { guarded: true },
@@ -185,11 +190,6 @@ export function useListingShortcuts(
     view('R', __('Recent'), 'recent'),
     view('F', __('Starred'), 'starred'),
   ])
-}
-
-/** A Mac, iPhone or iPad, where Cmd takes the place of Ctrl. */
-export function isApple(): boolean {
-  return /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)
 }
 
 /**

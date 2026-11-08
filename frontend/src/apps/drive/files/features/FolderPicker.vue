@@ -75,7 +75,7 @@
 import { Button, Dialog } from 'frappe-ui'
 import { computed, ref } from 'vue'
 
-import { api, client, useQuery } from '@/api'
+import { api, useQuery } from '@/api'
 import { DRIVE_ROLES } from '@/apps/drive/client/types'
 import { translate as __ } from '@/platform/translation'
 
@@ -85,7 +85,7 @@ import {
   canOpenFolder,
   destination,
   itemsRoot,
-  moveAccessChange,
+  previewMoveAccess,
   startingFolder,
   type MoveAccessChange,
   type PickedItem,
@@ -155,12 +155,7 @@ async function choose() {
 async function previewAccessChange(folder: string): Promise<MoveAccessChange | null> {
   checking.value = true
   try {
-    const previews = await Promise.all(
-      props.items.map((item) =>
-        client.query(api.drive.nodes.previewMove, { node: item.name, parent_node: folder }),
-      ),
-    )
-    return moveAccessChange(previews, workspace.value)
+    return await previewMoveAccess(props.items, folder, workspace.value)
   } finally {
     checking.value = false
   }

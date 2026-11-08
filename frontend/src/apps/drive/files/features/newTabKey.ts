@@ -1,14 +1,14 @@
-import { isApple } from './shortcuts/useListingShortcuts'
+import { isMacPlatform } from '@/platform/shortcuts'
 
 /** The attribute a name link carries while a click on it would open a new tab. */
-export const NEW_TAB_ATTRIBUTE = 'data-new-tab'
+const NEW_TAB_ATTRIBUTE = 'data-new-tab'
 
 /** Stops watching the keys for the name link under the pointer. One link is watched at a time. */
 let stopWatching: (() => void) | undefined
 
 /** Whether the key that makes a click open a new tab is held: Cmd on Apple devices, Ctrl elsewhere. */
 export function isNewTabKey(event: KeyboardEvent | MouseEvent): boolean {
-  return isApple() ? event.metaKey : event.ctrlKey
+  return isMacPlatform() ? event.metaKey : event.ctrlKey
 }
 
 /**
