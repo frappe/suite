@@ -25,6 +25,7 @@ watchBuild()
 installEventReminders({ open: (path) => void router.push(path) })
 
 const app = createApp(App)
+app.use(translationPlugin)
 // Dialogs opened by function call render in the app's context, so this reaches them too.
 app.provide(DOCUMENT_TYPES_KEY, documentTypes)
 
@@ -33,7 +34,8 @@ app.provide(DOCUMENT_TYPES_KEY, documentTypes)
 useSession().onLogout(clearSlidesUserData)
 
 void import('@/shell/ShellLayout.vue')
-preloadPage(window.location.pathname)
+// Some pages call `__` as their module evaluates, so their code waits for the catalog.
+void translationsReady.then(() => preloadPage(window.location.pathname))
 
 // The page arrives in the user's saved theme, so the preference read need not hold the mount.
 void initializeTheme()
@@ -44,7 +46,6 @@ installApiErrorHandler(app)
 
 app.use(createPinia())
 app.use(router)
-app.use(translationPlugin)
 
 // A first navigation that fails still mounts the app: the router has sent it
 // on to the page that says so (`@/platform/load-failure`).
