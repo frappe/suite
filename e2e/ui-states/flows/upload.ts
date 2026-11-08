@@ -14,6 +14,7 @@ type Event =
 	| { type: "PICK_FIVE" }
 	| { type: "FINISHES" }
 	| { type: "CHUNK_FAILS" }
+	| { type: "CHUNK_FAILS_UNSEEN" }
 	| { type: "RETRY" }
 	| { type: "STORAGE_FULL" }
 	| { type: "RETRY_ALL" }
@@ -92,7 +93,7 @@ const machine = setupFlow<Event>().createMachine({
 		},
 		uploadingElsewhere: {
 			meta: { description: "The user went to another area while a file uploads: Drive's tracker is not on screen, and only the orange dot on the Drive rail item shows the work." },
-			on: { CHUNK_FAILS: "failedUnseen", OPEN_FROM_RAIL: "uploadingOne" },
+			on: { CHUNK_FAILS_UNSEEN: "failedUnseen", OPEN_FROM_RAIL: "uploadingOne" },
 		},
 		failedUnseen: {
 			meta: { description: "A chunk failed while the user was in another area: the rail dot turns red and asks for attention." },
@@ -260,10 +261,12 @@ export const upload = defineFlow<Event>({
 			await expect(tracker(scene.page).locator('[data-slot="upload-entry"]:not([data-state="done"])')).toHaveCount(0, TRANSFER);
 		},
 		async CHUNK_FAILS(scene) {
-			const open = await tracker(scene.page).isVisible();
 			await scene.lastHold.abort(500);
-			if (open) await expect(tracker(scene.page).getByRole("button", { name: "Retry", exact: true })).toBeVisible();
-			else await expect(railDot(scene.page)).toHaveAttribute("data-attention", "true");
+			await expect(tracker(scene.page).getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+		},
+		async CHUNK_FAILS_UNSEEN(scene) {
+			await scene.lastHold.abort(500);
+			await expect(railDot(scene.page)).toHaveAttribute("data-attention", "true");
 		},
 		async RETRY(scene) {
 			await rehold(scene);

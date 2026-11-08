@@ -14,6 +14,7 @@ type Event =
 	| { type: "FILTER" }
 	| { type: "FILTER_MISS" }
 	| { type: "CLEAR_FILTER" }
+	| { type: "CLEAR_FILTER_EMPTY" }
 	| { type: "RESORT" }
 	| { type: "SETTLES" }
 	| { type: "OPEN_EMPTY" };
@@ -69,7 +70,7 @@ const machine = setupFlow<Event>().createMachine({
 		},
 		filteredEmpty: {
 			meta: { description: "A type filter nothing here matches, with Clear filter in the empty state." },
-			on: { CLEAR_FILTER: "populated" },
+			on: { CLEAR_FILTER_EMPTY: "populated" },
 		},
 		rearranging: {
 			meta: { description: "The old rows stay while a new sort loads, so the user keeps their place." },
@@ -150,13 +151,13 @@ export const listing = defineFlow<Event>({
 			await expect(scene.page.getByText("No videos here")).toBeVisible();
 		},
 		async CLEAR_FILTER(scene) {
-			const clearFilter = scene.page.getByRole("button", { name: "Clear filter" });
-			if (await clearFilter.isVisible()) await clearFilter.click();
-			else {
-				await typeFilter(scene).click();
-				await scene.page.getByRole("button", { name: "Clear", exact: true }).click();
-				await scene.page.keyboard.press("Escape");
-			}
+			await typeFilter(scene).click();
+			await scene.page.getByRole("button", { name: "Clear", exact: true }).click();
+			await scene.page.keyboard.press("Escape");
+			await expectRows(scene);
+		},
+		async CLEAR_FILTER_EMPTY(scene) {
+			await scene.page.getByRole("button", { name: "Clear filter" }).click();
 			await expectRows(scene);
 		},
 		async RESORT(scene) {

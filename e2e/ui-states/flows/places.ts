@@ -17,10 +17,14 @@ import { perScene, recreateFolder, type Scene } from "../scene";
 type Event =
 	| { type: "GO_ORGANIZATION" }
 	| { type: "GO_SHARED" }
+	| { type: "GO_SHARED_EMPTY" }
 	| { type: "OPEN_SHARED_FOLDER" }
 	| { type: "GO_RECENT" }
+	| { type: "GO_RECENT_EMPTY" }
 	| { type: "GO_STARRED" }
+	| { type: "GO_STARRED_EMPTY" }
 	| { type: "GO_TRASH" }
+	| { type: "GO_TRASH_EMPTY" }
 	| { type: "KEEP_UNSAVED_WORK" }
 	| { type: "REVIEW_RECOVERY" }
 	| { type: "GO_RECOVERY" }
@@ -98,10 +102,10 @@ const machine = setupFlow<Event>().createMachine({
 		myFilesEmpty: {
 			meta: { description: "My files for a new user: nothing yet, with the hint to use New." },
 			on: {
-				GO_SHARED: "sharedEmpty",
-				GO_RECENT: "recentEmpty",
-				GO_STARRED: "starredEmpty",
-				GO_TRASH: "trashEmpty",
+				GO_SHARED_EMPTY: "sharedEmpty",
+				GO_RECENT_EMPTY: "recentEmpty",
+				GO_STARRED_EMPTY: "starredEmpty",
+				GO_TRASH_EMPTY: "trashEmpty",
 				GO_RECOVERY: "recoveryEmpty",
 			},
 		},
@@ -129,8 +133,6 @@ const RECOVERY_KEY = "suite:writer-recovery:";
 
 const content = perScene<FolderContent>("places: content");
 const sharedFolder = perScene<DriveNode>("places: shared folder");
-/** Scenes whose page signed in as `people.fresh` (see `showAs`). */
-const newUsers = new WeakSet<Scene>();
 
 /**
  * Shows the page as `user` while `scene.api` stays the actor's, so the
@@ -156,7 +158,6 @@ async function showAs(scene: Scene, user: Credentials): Promise<void> {
 			await route.fulfill({ response, headers: answered });
 		},
 	);
-	newUsers.add(scene);
 }
 
 async function goPlace(scene: Scene, label: string, title: string): Promise<void> {
@@ -190,12 +191,11 @@ export const places = defineFlow<Event>({
 			await scene.goto("/drive/organization");
 			await expect(scene.page.getByText("Organization files").first()).toBeVisible();
 		},
+		async GO_SHARED_EMPTY(scene) {
+			await goPlace(scene, "Shared with me", "Shared with me");
+			await expectEmpty(scene, "Nothing shared with you yet");
+		},
 		async GO_SHARED(scene) {
-			if (newUsers.has(scene)) {
-				await goPlace(scene, "Shared with me", "Shared with me");
-				await expectEmpty(scene, "Nothing shared with you yet");
-				return;
-			}
 			const peer = await scene.as(scene.people.peer);
 			const folder = await recreateFolder(peer, SHARED_TITLE);
 			await uploadFile(peer, "Colour palette.md", Buffer.from("# Palette\n"), folder.name, "text/markdown");
@@ -208,12 +208,11 @@ export const places = defineFlow<Event>({
 			await row(scene.page, sharedFolder.get(scene).name).click();
 			await expect(scene.page.getByRole("button", { name: "Actions for Colour palette.md" })).toBeVisible();
 		},
+		async GO_RECENT_EMPTY(scene) {
+			await goPlace(scene, "Recent", "Recent");
+			await expectEmpty(scene, "No recent files");
+		},
 		async GO_RECENT(scene) {
-			if (newUsers.has(scene)) {
-				await goPlace(scene, "Recent", "Recent");
-				await expectEmpty(scene, "No recent files");
-				return;
-			}
 			const { document, brief } = content.get(scene);
 			for (const node of [brief, document]) {
 				const visit = await scene.api.post(`${DRIVE}/nodes/${node.name}/visit`, { data: {} });
@@ -222,12 +221,11 @@ export const places = defineFlow<Event>({
 			await goPlace(scene, "Recent", "Recent");
 			await expectItem(scene, document);
 		},
+		async GO_STARRED_EMPTY(scene) {
+			await goPlace(scene, "Starred", "Starred");
+			await expectEmpty(scene, "No starred files");
+		},
 		async GO_STARRED(scene) {
-			if (newUsers.has(scene)) {
-				await goPlace(scene, "Starred", "Starred");
-				await expectEmpty(scene, "No starred files");
-				return;
-			}
 			const { folders, sheet } = content.get(scene);
 			for (const node of [folders[0], sheet]) {
 				if (!node) continue;
@@ -237,12 +235,11 @@ export const places = defineFlow<Event>({
 			await goPlace(scene, "Starred", "Starred");
 			await expectItem(scene, sheet);
 		},
+		async GO_TRASH_EMPTY(scene) {
+			await goPlace(scene, "Trash", "Trash");
+			await expectEmpty(scene, "Trash is empty");
+		},
 		async GO_TRASH(scene) {
-			if (newUsers.has(scene)) {
-				await goPlace(scene, "Trash", "Trash");
-				await expectEmpty(scene, "Trash is empty");
-				return;
-			}
 			const { notes, logo } = content.get(scene);
 			await trashNode(scene.api, notes.name);
 			await trashNode(scene.api, logo.name);
