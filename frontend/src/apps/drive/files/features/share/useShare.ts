@@ -14,12 +14,17 @@ import {
   type GrantWrite,
 } from '@/apps/drive/client/grants'
 import { driveLinks } from '@/apps/drive/client/links'
-import { canManage, DRIVE_ROLES, type DriveNode, type DrivePerson } from '@/apps/drive/client/types'
+import {
+  canManage as canManageNode,
+  DRIVE_ROLES,
+  type DriveNode,
+  type DrivePerson,
+} from '@/apps/drive/client/types'
 import type { ImperativeClient } from '@/platform/server-state/types'
 import { translate as __ } from '@/platform/translation'
 import { TransportError } from '@/platform/transport'
 
-import { readShare, takeShareReads } from './opening'
+import { readShare, type ShareReads } from './opening'
 import {
   organizationLabel,
   principalLabel,
@@ -37,24 +42,20 @@ export const NEW_LINK_ROW: RowKey = 'new-link'
 /** The notice's Undo, which puts back a removed row. */
 export const UNDO_ROW: RowKey = 'undo'
 
-/** A write that lowers the caller's own role from grants: the role they hold, and the one they would keep. */
-export interface AccessLoss {
-  before: number
-  after: number
-}
-
 export interface ShareOptions {
   client?: ImperativeClient
   /** The caller's user id: writes that would lower their own access ask first. */
   me?: string
-  /** Asks the caller to confirm losing their own access. Resolves true to go on. */
-  confirmLoss?: (loss: AccessLoss) => Promise<boolean>
+  /** Asks the caller to confirm a write that lowers their own role to `after`. Resolves true to go on. */
+  confirmLoss?: (after: number) => Promise<boolean>
   /** The workspace name, which names everyone at the org. Empty or `undefined` while unknown. */
   workspace?: MaybeRefOrGetter<string | undefined>
   /** The name an ancestor shows under, such as "My files" for the caller's own root. Defaults to its title. */
   placeTitle?: (node: { name: string; title: string }) => string
   /** The node as the opener last read it, such as a listing row, shown until the fresh read lands. */
   known?: DriveNode
+  /** The reads the opener already started, which stand in for the first read. */
+  reads?: ShareReads
 }
 
 /**
@@ -81,7 +82,7 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
   /** Users' names by id: from the owner and the people the grants name, and from the picker. */
   const names = reactive(new Map<string, string>())
 
-  const canManage = computed(() => managesNode(node.value))
+  const canManage = computed(() => canManageNode(node.value))
   // Ancestors show under their place name, which can change once the caller's roots load.
   const named = computed<GrantList | null>(
     () =>
@@ -105,19 +106,19 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
 
   /** Both reads, at once where the node already says the caller manages it. */
   async function readBoth(read: number): Promise<[DriveNode, GrantList | null]> {
-    const started = read === 1 && requester === client ? takeShareReads(nodeId) : null
-    const reads = started ?? readShare(nodeId, node.value, requester)
-    return [await reads.node, await reads.list]
+    const started =
+      read === 1 && options.reads ? options.reads : readShare(nodeId, node.value, requester)
+    return [await started.node, await started.list]
   }
 
   let reads = 0
   /** The newest read, which a write that keeps a row's expiry waits for. */
   let reading: Promise<void> = Promise.resolve()
   function load(): Promise<void> {
-    reading = run()
+    reading = refresh()
     return reading
   }
-  async function run() {
+  async function refresh() {
     const read = ++reads
     try {
       const [fresh, freshList] = await readBoth(read)
@@ -184,7 +185,7 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
     if (explanation.source === 'system') return true
     const after = roleAfter(explanation, nodeId, change, me)
     if (after >= explanation.role) return true
-    return confirmLoss({ before: explanation.role, after })
+    return confirmLoss(after)
   }
 
   async function change<T>(
@@ -210,10 +211,10 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
   const localGrant = (principal: string) =>
     list.value?.grants.find((grant) => grant.principal === principal)
   /** Rewrites a listed row. A link is addressed by its grant id; every other row by its principal. */
-  const rewrite = (row: LocalRow, write: GrantPatch) =>
+  const rewrite = (row: LocalRow, patch: GrantPatch) =>
     row.kind === 'link' && row.grant.name
-      ? grants.patch(row.grant.name, write)
-      : grants.put(row.grant.principal, write)
+      ? grants.patch(row.grant.name, patch)
+      : grants.put(row.grant.principal, patch)
 
   /** Everyone at the org or Public on the web. `null` removes the local row. Keeps the expiry. */
   const setGeneral = (principal: string, role: number | null) =>
@@ -268,10 +269,10 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
       // A plain Remove can be undone. Removing inside asks first instead (§7.4).
       const undoable = !below && row.kind !== 'link' && !row.expired && !row.denied
       if (undoable) {
-        const write: GrantWrite = { role: row.grant.role, ...keep(row.grant) }
+        const restored: GrantWrite = { role: row.grant.role, ...keep(row.grant) }
         // Putting someone back is not news to them.
-        if (row.kind === 'user') write.notify = false
-        removed.value = { principal, write }
+        if (row.kind === 'user') restored.notify = false
+        removed.value = { principal, write: restored }
       }
       const removedText = undoable ? `${__('Removed {0}.', [label(principal)])} ` : ''
       notice.value = `${removedText}${insideText}${remaining ?? ''}`.trim()
@@ -328,12 +329,12 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
             PICKER,
             { principal, role },
             () => {
-              const write: Parameters<typeof grants.put>[1] = {
+              const body: Parameters<typeof grants.put>[1] = {
                 role,
                 ...keep(localGrant(principal)),
               }
-              if (principalKind(principal) === 'user') write.notify = notify
-              return grants.put(principal, write)
+              if (principalKind(principal) === 'user') body.notify = notify
+              return grants.put(principal, body)
             },
             fail(principal),
           )
@@ -350,8 +351,8 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
       write(PICKER, () => grants.put(NEW_LINK, { role, send_to: email })),
 
     /** Creates a share link with the chosen access and protection (§7.7). Resolves with its URL. */
-    async newLink(options: GrantPatch = { role: DRIVE_ROLES.read }): Promise<string | undefined> {
-      const written = await write(NEW_LINK_ROW, () => grants.put(NEW_LINK, options))
+    async newLink(link: GrantPatch = { role: DRIVE_ROLES.read }): Promise<string | undefined> {
+      const written = await write(NEW_LINK_ROW, () => grants.put(NEW_LINK, link))
       return written?.url
     },
 
@@ -389,10 +390,6 @@ function peopleIn(list: GrantList | null): DrivePerson[] {
     ...(list.owner ? [list.owner] : []),
     ...rows.flatMap((grant) => (grant.person ? [grant.person] : [])),
   ]
-}
-
-function managesNode(node: DriveNode | null): boolean {
-  return canManage(node)
 }
 
 function messageOf(error: unknown, fallback: string): string {

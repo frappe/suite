@@ -633,8 +633,8 @@ describe('share writes that touch the caller (spec §7.4, §7.9)', () => {
     const share = useShare('doc', {
       client: testClient(server.transport),
       me: ME,
-      confirmLoss: async (loss) => {
-        asked.push(loss.after)
+      confirmLoss: async (after) => {
+        asked.push(after)
         return answer
       },
     })

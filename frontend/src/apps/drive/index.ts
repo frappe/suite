@@ -20,7 +20,7 @@ import { announceTrash } from '@/apps/drive/files/features/changeToast'
 import { presentDialog, rememberDialogContext } from '@/apps/drive/files/features/dialogHost'
 import { nodeActions, type ActionNode } from '@/apps/drive/files/features/nodeActions'
 import { observePreviewRefresh } from '@/apps/drive/files/features/previewRefresh'
-import { preloadShareDialog, startShareReads } from '@/apps/drive/files/features/share/opening'
+import { preloadShareDialog, readShare } from '@/apps/drive/files/features/share/opening'
 import { usePaletteSearch } from '@/apps/drive/files/features/usePaletteSearch'
 import { useLocationTitle } from '@/apps/drive/files/internal/locations'
 import { slugify } from '@/apps/drive/files/internal/slugify'
@@ -452,9 +452,9 @@ export function useDriveDialogs(): DriveDialogs {
     },
     share: (node, known) => {
       // The reads start now, so they overlap loading the dialog's code.
-      startShareReads(node, known ?? null)
+      const reads = readShare(node, known ?? null)
       return import('@/apps/drive/files/features/share/present').then((share) =>
-        share.presentShareDialog(node, context, known),
+        share.presentShareDialog(node, context, known, reads),
       )
     },
     pickFile: (options = {}) =>

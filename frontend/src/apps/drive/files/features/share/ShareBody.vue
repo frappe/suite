@@ -367,6 +367,11 @@ function rowDescription(row: UnifiedRow): string {
   return details.join(' · ')
 }
 
+/** The role an open org or public row gives. */
+function generalRole(access: Extract<GeneralAccess, { state: 'local' | 'inherited' }>): number {
+  return access.state === 'local' ? access.row.grant.role : access.entry.grant.role
+}
+
 /** The subtitle of the org and public rows: what the access lets people do. */
 function generalDescription(row: Extract<UnifiedRow, { type: 'general' }>): string {
   const access = row.access
@@ -374,7 +379,7 @@ function generalDescription(row: Extract<UnifiedRow, { type: 'general' }>): stri
   if (access.state === 'denied') return row.kind === 'public' ? __('Not public') : __('Denied here')
   if (access.state === 'expired') return expiredDescription(access)
   if (row.kind === 'public') return publicReach()
-  const role = access.state === 'local' ? access.row.grant.role : access.entry.grant.role
+  const role = generalRole(access)
   if (role === DRIVE_ROLES.read) return __('Can view')
   if (role === DRIVE_ROLES.comment) return __('Can comment')
   if (role === DRIVE_ROLES.upload) return __('Can upload')
@@ -410,13 +415,7 @@ function rowValue(row: UnifiedRow): string {
     if (row.access.state === 'off') return __('No access')
     if (row.access.state === 'denied') return __('Denied')
     if (row.access.state === 'expired') return __('Expired')
-    return row.kind === 'public'
-      ? __('On')
-      : __(
-          roleLabel(
-            row.access.state === 'local' ? row.access.row.grant.role : row.access.entry.grant.role,
-          ),
-        )
+    return row.kind === 'public' ? __('On') : __(roleLabel(generalRole(row.access)))
   }
   if (row.type === 'inherited') return __(roleLabel(row.inherited.entry.grant.role))
   if (row.grantRow.denied) return __('Denied')

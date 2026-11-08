@@ -28,22 +28,6 @@ export function readShare(
   return { node, list }
 }
 
-/** Reads started for a dialog whose code is still loading. Older ones are stale. */
-const started = new Map<string, { reads: ShareReads; at: number }>()
-const FRESH_MS = 10_000
-
-/** Starts the reads for a share dialog about to open, so they overlap loading its code. */
-export function startShareReads(nodeId: string, known: DriveNode | null): void {
-  started.set(nodeId, { reads: readShare(nodeId, known), at: Date.now() })
-}
-
-/** The reads `startShareReads` began for `nodeId`, once, while they are fresh. */
-export function takeShareReads(nodeId: string): ShareReads | null {
-  const entry = started.get(nodeId)
-  started.delete(nodeId)
-  return entry && Date.now() - entry.at < FRESH_MS ? entry.reads : null
-}
-
 let preloaded = false
 
 /** Loads the dialog's code while the page is idle, so Share opens without waiting for it. */
