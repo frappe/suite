@@ -1,14 +1,7 @@
 <template>
   <div class="flex flex-col gap-5 text-base text-ink-gray-8">
     <div
-      v-if="!state.node.value && !state.loadError.value"
-      class="space-y-3"
-      :aria-label="__('Loading who has access')"
-    >
-      <Skeleton v-for="index in 4" :key="index" class="h-8 w-full" />
-    </div>
-    <div
-      v-else-if="state.loadError.value"
+      v-if="state.loadError.value"
       role="alert"
       class="flex flex-col items-center gap-3 py-8 text-center"
     >
@@ -27,7 +20,7 @@
         @click="retry"
       />
     </div>
-    <p v-else-if="!state.canManage.value" class="text-p-base text-ink-gray-7">
+    <p v-else-if="node && !state.canManage.value" class="text-p-base text-ink-gray-7">
       {{
         __('You can no longer share this item. Only people who can manage it see who has access.')
       }}
