@@ -14,7 +14,7 @@ export interface PresentationState {
   view: FilesViewMode
   sort: FilesSort
   dir: FilesDirection
-  columns: string[]
+  columns: FilesColumn[]
 }
 
 /** The saved preference: the presentation, and the columns the user switched themselves. */
@@ -30,8 +30,11 @@ export const DEFAULT_PRESENTATION: PresentationState = {
   view: 'list',
   sort: 'title',
   dir: 'asc',
-  columns: ['owner', 'modified'],
+  columns: [...FILES_COLUMNS],
 }
+
+/** The columns a preference saved before `toggled` existed listed when the user had not chosen any. */
+const LEGACY_DEFAULT_COLUMNS: readonly FilesColumn[] = ['owner', 'modified']
 
 /** The order a field starts in when it is chosen: dates newest first, sizes largest first. */
 export const DEFAULT_DIRECTION: Record<FilesSort, FilesDirection> = {
@@ -73,7 +76,7 @@ export function resolvePresentation(
  * user never switched follows that default, so a column added later, such as
  * Access, shows without resetting their choices.
  */
-function resolveColumns(saved: Partial<PresentationPreference>): string[] {
+function resolveColumns(saved: Partial<PresentationPreference>): FilesColumn[] {
   const chosen = normalizeColumns(saved.columns)
   const toggled = toggledColumns(saved)
   return FILES_COLUMNS.filter((column) => !toggled.includes(column) || chosen.includes(column))
@@ -87,13 +90,14 @@ function toggledColumns(saved: Partial<PresentationPreference>): string[] {
   if (Array.isArray(saved.toggled)) return saved.toggled
   const listed = normalizeColumns(saved.columns)
   const isOldDefault =
-    listed.length === 2 && listed.includes('owner') && listed.includes('modified')
+    listed.length === LEGACY_DEFAULT_COLUMNS.length &&
+    LEGACY_DEFAULT_COLUMNS.every((column) => listed.includes(column))
   return isOldDefault ? [] : ['owner', 'modified', 'kind', 'size']
 }
 
 /** Saves the user's choice to show or hide one column. `shown` is what the list shows now. */
 export function writeColumnChoice(
-  shown: readonly string[],
+  shown: readonly FilesColumn[],
   column: FilesColumn,
   visible: boolean,
 ): void {
@@ -148,8 +152,8 @@ function oneOf<T extends string>(value: unknown, allowed: readonly T[]): T | nul
   return allowed.find((candidate) => candidate === item) ?? null
 }
 
-function normalizeColumns(value: unknown): string[] {
-  if (!Array.isArray(value)) return [...DEFAULT_PRESENTATION.columns]
+function normalizeColumns(value: unknown): FilesColumn[] {
+  if (!Array.isArray(value)) return [...LEGACY_DEFAULT_COLUMNS]
   return value.filter((column): column is FilesColumn =>
     FILES_COLUMNS.some((candidate) => candidate === column),
   )

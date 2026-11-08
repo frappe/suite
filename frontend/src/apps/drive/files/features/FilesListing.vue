@@ -443,7 +443,7 @@ import { loadUntilVisible } from './listingWindows'
 import { SKELETON_BAR, useSkeletonDelay, type SkeletonCell } from './listSkeleton'
 import ListSkeletonRows from './ListSkeletonRows.vue'
 import { watchNewTabKey } from './newTabKey'
-import type { FilesDateColumn, FilesSort, PresentationState } from './presentation'
+import type { FilesColumn, FilesDateColumn, FilesSort, PresentationState } from './presentation'
 import type { DropHandlers } from './uploads/drop'
 import type { DragMove } from './useDragMove'
 import { useListingFocus } from './useListingFocus'
@@ -629,9 +629,9 @@ const listingWidth = shallowRef<number>()
 useResizeObserver(listing, ([entry]) => (listingWidth.value = entry?.contentRect.width))
 /** The measured columns' widths, from their widest labels. */
 const measured = shallowRef<Partial<Record<MeasuredColumn, number>>>({})
-function trackWidth(column: string) {
+function trackWidth(column: FilesColumn) {
   if (isMeasuredColumn(column)) return measured.value[column] ?? MEASURED_COLUMNS[column].max
-  return FITTED_WIDTHS.get(column) ?? 128
+  return FITTED_WIDTHS[column]
 }
 /**
  * The columns the desktop layout shows. A chosen column the list has no room
@@ -663,16 +663,16 @@ onMounted(() => void document.fonts?.ready.then(measureColumns))
 /** Sizes each measured column to its widest label. A label with no width has had no layout, so it says nothing. */
 function measureColumns() {
   const next = { ...measured.value }
-  for (const group of ruler.value?.children ?? []) {
-    const column = group.getAttribute('data-column')
-    if (!isMeasuredColumn(column)) continue
+  for (const column of LIST_COLUMNS.filter(isMeasuredColumn)) {
+    const group = ruler.value?.querySelector(`[data-column="${column}"]`)
+    if (!group) continue
     const widths = [...group.children].map((label) => label.getBoundingClientRect().width)
     if (widths.some(Boolean)) next[column] = measuredWidth(column, widths.filter(Boolean))
   }
   measured.value = next
 }
 const columnTracks = computed(() => {
-  const tracks = (list: string[]) => [
+  const tracks = (list: FilesColumn[]) => [
     'minmax(0,1fr)',
     ...list.map((column) => `${trackWidth(column)}px`),
     '2.5rem',
@@ -710,11 +710,11 @@ onBeforeUnmount(() => {
   cancelLongPress()
 })
 
-function shows(column: string) {
+function shows(column: FilesColumn) {
   return columns.value.includes(column)
 }
 /** Hides a chosen column the phone layout, the desktop layout or both leave out. */
-function columnClass(column: string) {
+function columnClass(column: FilesColumn) {
   const onDesktop = desktopColumns.value.includes(column)
   if (!WIDE_ONLY.has(column)) return onDesktop ? undefined : 'md:hidden'
   return onDesktop ? 'hidden md:flex' : 'hidden'

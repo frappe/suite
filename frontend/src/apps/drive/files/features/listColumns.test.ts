@@ -1,16 +1,17 @@
 import { describe, expect, it } from 'vitest'
 
 import { fitColumns, measuredWidth } from './listColumns'
+import type { FilesColumn } from './presentation'
 
-const WIDTHS = new Map([
+const WIDTHS = new Map<FilesColumn, number>([
   ['access', 160],
   ['kind', 128],
   ['owner', 192],
   ['size', 96],
   ['modified', 128],
 ])
-const width = (column: string) => WIDTHS.get(column) ?? 0
-const ALL = ['access', 'kind', 'owner', 'size', 'modified']
+const width = (column: FilesColumn) => WIDTHS.get(column) ?? 0
+const ALL: FilesColumn[] = ['access', 'kind', 'owner', 'size', 'modified']
 
 describe('fitColumns', () => {
   // Name takes 240, the menu 40, and each of the n + 1 gaps between the n + 2 columns 24.

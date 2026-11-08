@@ -7,7 +7,7 @@ import { DOCUMENT_TYPES_KEY, type DocumentTypeDefinition } from '@/platform/cont
 import { requireTestElement } from '@/platform/testing/dom'
 
 import FilesListing from './FilesListing.vue'
-import { DEFAULT_PRESENTATION, type PresentationState } from './presentation'
+import { DEFAULT_PRESENTATION, type FilesColumn, type PresentationState } from './presentation'
 import { useDragMove } from './useDragMove'
 import { useListingSelection } from './useListingSelection'
 
@@ -78,7 +78,7 @@ function file(name: string, title: string, extra: Partial<DriveNode> = {}): Driv
 function mount(options: {
   rows: DriveNode[]
   view?: PresentationState['view']
-  columns?: string[]
+  columns?: FilesColumn[]
   selection?: string[]
   status?: 'pending' | 'success' | 'error'
   /** Drag to move, as a folder page sets it up. Moves are recorded, not sent. */
@@ -133,7 +133,7 @@ function mount(options: {
           presentation: {
             ...DEFAULT_PRESENTATION,
             view: options.view ?? 'list',
-            columns: options.columns ?? DEFAULT_PRESENTATION.columns,
+            columns: options.columns ?? ['owner', 'modified'],
           },
           selection: picked.selected.value,
           selectionMode: picked.selectionMode.value,
