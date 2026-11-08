@@ -20,7 +20,7 @@
   "frontend/src/apps/mail/components/EmojiPicker.vue": 6,
   "frontend/src/apps/mail/components/MailActions.vue": 3,
   "frontend/src/apps/mail/components/MailDetails.vue": 1,
-  "frontend/src/apps/mail/components/MailListItem.vue": 2,
+  "frontend/src/apps/mail/components/MailListItem.vue": 1,
   "frontend/src/apps/mail/components/MailThread.vue": 20,
   "frontend/src/apps/mail/components/Modals/AddAccountEmailModal.vue": 1,
   "frontend/src/apps/mail/components/Modals/AddAccountGroupsModal.vue": 1,
