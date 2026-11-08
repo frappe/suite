@@ -44,7 +44,7 @@ beforeEach(() => {
   scope = effectScope()
   engine = createApiClient(
     { mail: () => import('@/apps/mail/client/policy').then((module) => module.registration) },
-    { transport: createTransport({ fetch: fetcher, maxRetries: 0 }), persistence: false, feedback },
+    { transport: createTransport({ fetch: fetcher, maxRetries: 0 }), feedback },
   )
   mocks.useMutation.mockImplementation(engine.useMutation)
 })

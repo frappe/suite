@@ -299,13 +299,10 @@ export function sidebarLink(page: Page, label: string): Locator {
 		.getByRole("link", { name: label, exact: true });
 }
 
-/**
- * Choose `item` from the New menu in the page header. The menu lists Create before
- * Upload, and "Folder" appears in both, so the first match is the create action.
- */
+/** Choose `item` from the New menu in the page header. */
 export async function chooseNew(page: Page, item: string): Promise<void> {
 	await page.getByRole("button", { name: "New", exact: true }).click();
-	await page.getByRole("menuitem", { name: item, exact: true }).first().click();
+	await page.getByRole("menuitem", { name: item, exact: true }).click();
 }
 
 /** Move the item titled `title` into `destination` through the row menu and the folder picker. */
@@ -328,9 +325,9 @@ export async function createFolderViaUi(page: Page, title: string): Promise<void
 	await expect(page.getByRole("button", { name: `Actions for ${title}`, exact: true })).toBeVisible();
 }
 
-/** Upload one file through New › Upload › Files and wait for the finish call. */
+/** Upload one file through New › Upload files and wait for the finish call. */
 export async function uploadViaUi(page: Page, file: { name: string; mimeType: string; buffer: Buffer }): Promise<void> {
-	const [chooser] = await Promise.all([page.waitForEvent("filechooser"), chooseNew(page, "Files")]);
+	const [chooser] = await Promise.all([page.waitForEvent("filechooser"), chooseNew(page, "Upload files")]);
 	const finished = page.waitForResponse(
 		(response) =>
 			response.request().method() === "POST" &&

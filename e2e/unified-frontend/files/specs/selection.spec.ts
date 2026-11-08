@@ -111,12 +111,11 @@ test("a mixed bulk move reports both halves and keeps the failures selected", as
 	await dialog.getByRole("button", { name: destination.title }).click();
 	await dialog.getByRole("button", { name: "Move here", exact: true }).click();
 
-	await expect(page.getByText("1 moved · 1 failed")).toBeVisible();
+	// One failure names the item and says why, with no Details.
+	await expect(page.getByText("“row-a” could not be moved")).toBeVisible();
+	await expect(page.getByText("An item with this name is already there.")).toBeVisible();
 	await expect(page.getByText("1 selected")).toBeVisible();
-
-	await page.getByRole("button", { name: "Details" }).click();
-	await expect(page.getByRole("dialog", { name: "Items that failed" })).toBeVisible();
-	await expect(page.getByText(rows[0]!.name, { exact: true })).toBeVisible();
+	await expect(page.getByRole("button", { name: "Details" })).toHaveCount(0);
 
 	expect((await getNode(api, rows[1]!.name)).parent_node).toBe(destination.name);
 	expect((await getNode(api, rows[0]!.name)).parent_node).toBe(home.name);
@@ -131,6 +130,10 @@ test("a clean bulk move to trash empties the selection", async ({ page }) => {
 	await listRows.nth(1).click({ modifiers: ["ControlOrMeta"] });
 
 	await page.getByRole("button", { name: "Move to trash" }).click();
+	await page
+		.getByRole("dialog", { name: "Move 2 items to trash?" })
+		.getByRole("button", { name: "Move to trash" })
+		.click();
 	// Success is a toast; the outcome alert shows only when some items failed.
 	await expect(page.getByText("Moved 2 items to Trash")).toBeVisible();
 	await expect(page.getByText(/moved to trash · \d+ failed/)).toHaveCount(0);

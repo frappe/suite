@@ -55,7 +55,7 @@ beforeEach(() => {
   fetcher.mockReset()
   engine = createApiClient(
     { drive: () => import('@/apps/drive/client/policy').then((module) => module.registration) },
-    { transport: createTransport({ fetch: fetcher }), persistence: false, feedback },
+    { transport: createTransport({ fetch: fetcher }), feedback },
   )
   mocks.useMutation.mockImplementation(engine.useMutation)
   mocks.useInfiniteQuery.mockImplementation(engine.useInfiniteQuery)
@@ -65,7 +65,59 @@ afterEach(() => {
   engine.dispose()
 })
 
+function mountPicker() {
+  const open = ref(true)
+  const created = vi.fn()
+  const root = document.createElement('div')
+  document.body.append(root)
+  const app = createApp({
+    render: () =>
+      h(TemplatePicker, {
+        parent: 'root',
+        open: open.value,
+        'onUpdate:open': (value: boolean) => {
+          open.value = value
+        },
+        onCreated: created,
+      }),
+  })
+  app.provide(DOCUMENT_TYPES_KEY, [
+    {
+      key: 'writer',
+      contentDoctype: 'Writer Document',
+      newLabel: () => 'Document',
+      icon: {},
+      loadSurface: async () => ({}),
+    },
+  ])
+  app.config.errorHandler = diagnostics
+  installApiErrorHandler(app)
+  app.mount(root)
+  unmount = () => {
+    app.unmount()
+    root.remove()
+  }
+  return { open, created }
+}
+
 describe('Template picker', () => {
+  it('with no templates, shows the empty state and no Create button', async () => {
+    fetcher.mockImplementation(
+      async () => new Response(JSON.stringify({ data: { rows: [], next_cursor: null } })),
+    )
+    mountPicker()
+    const dialog = await vi.waitFor(() => {
+      const dialog = document.querySelector<HTMLElement>('[role="dialog"]')
+      expect(dialog?.textContent).toContain('No templates yet')
+      return dialog!
+    })
+    const labels = [...dialog.querySelectorAll('button')].map((button) =>
+      button.textContent?.trim(),
+    )
+    expect(labels).toContain('Cancel')
+    expect(labels).not.toContain('Create')
+  })
+
   it('owns a refused double-click, retains the selection, and closes only after a successful retry', async () => {
     let answer: (response: Response) => void = () => {}
     fetcher.mockImplementation(async (_url, options) => {
@@ -75,37 +127,7 @@ describe('Template picker', () => {
         })
       return new Response(JSON.stringify({ data: { rows: [template], next_cursor: null } }))
     })
-    const open = ref(true)
-    const created = vi.fn()
-    const root = document.createElement('div')
-    document.body.append(root)
-    const app = createApp({
-      render: () =>
-        h(TemplatePicker, {
-          parent: 'root',
-          open: open.value,
-          'onUpdate:open': (value: boolean) => {
-            open.value = value
-          },
-          onCreated: created,
-        }),
-    })
-    app.provide(DOCUMENT_TYPES_KEY, [
-      {
-        key: 'writer',
-        contentDoctype: 'Writer Document',
-        newLabel: () => 'Document',
-        icon: {},
-        loadSurface: async () => ({}),
-      },
-    ])
-    app.config.errorHandler = diagnostics
-    installApiErrorHandler(app)
-    app.mount(root)
-    unmount = () => {
-      app.unmount()
-      root.remove()
-    }
+    const { open, created } = mountPicker()
     const option = await vi.waitFor(() => {
       const option = document.querySelector<HTMLButtonElement>('[role="option"]')
       expect(option?.textContent).toContain('Meeting notes')

@@ -599,6 +599,34 @@ class TestNodeLifecycle(IntegrationTestCase):
         )
         self.assertEqual(frappe.db.get_value("Drive Node", inner_leaf, "state"), "Trashed")
 
+    def test_a_folder_listing_costs_the_same_queries_for_one_row_or_many_owners(self):
+        from suite.drive.http import routes
+
+        third = "drive-lifecycle-third@example.com"
+        ensure_rootless_user(third)
+        owners = [Principals(user, (user,), ("$PUBLIC",)) for user in (USER, OTHER, third)]
+        single = create_folder(owners[0], self.root.name, "One row")
+        create_folder(owners[0], single, "Only child")
+        many = create_folder(owners[0], self.root.name, "Many owners")
+        grant(many, OTHER, EDIT, self.admin)
+        grant(many, third, EDIT, self.admin)
+        for index, owner in enumerate([*owners, owners[1]]):
+            create_folder(owner, many, f"Child {index}")
+
+        def queries(folder: str) -> tuple[int, set[str]]:
+            database = frappe.db.__class__  # frappe.db is a proxy; its __class__ is the real one
+            with patch.object(database, "sql", autospec=True, side_effect=database.sql) as spy:
+                rows = routes.node_children(node=folder, expand="access")["rows"]
+            return spy.call_count, {row["owner"]["id"] for row in rows}
+
+        frappe.set_user(USER)
+        queries(single)  # the first request warms metadata caches
+        single_count, single_owners = queries(single)
+        many_count, many_owners = queries(many)
+
+        self.assertEqual((single_owners, many_owners), ({USER}, {USER, OTHER, third}))
+        self.assertEqual(many_count, single_count)
+
     def test_a_trashed_folder_opens_read_only_on_what_was_trashed_with_it(self):
         # §5.6: a node trashed with its folder is reached by opening the folder.
         # A child trashed earlier on its own stays in Trash, not in the folder.

@@ -7,7 +7,7 @@ import {
   readPresentationPreference,
   replacePresentation,
   resolvePresentation,
-  writePresentationPreference,
+  writeColumnChoice,
   type FilesColumn,
   type FilesDateColumn,
 } from './presentation'
@@ -55,11 +55,13 @@ async function mountPanel({
   arrangeable = true,
   columns = FILES_COLUMNS,
   dateColumn,
+  inOwnSpace,
 }: {
   query?: LocationQueryRaw
   arrangeable?: boolean
   columns?: readonly FilesColumn[]
   dateColumn?: FilesDateColumn
+  inOwnSpace?: boolean
 } = {}) {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -78,16 +80,11 @@ async function mountPanel({
         arrangeable,
         columns,
         dateColumn,
+        inOwnSpace,
         onChange: (change: Parameters<typeof replacePresentation>[2]) =>
           replacePresentation(router, presentation.value, change),
         onToggleColumn: (column: FilesColumn, visible: boolean) => {
-          const chosen = presentation.value
-          writePresentationPreference({
-            ...chosen,
-            columns: visible
-              ? [...chosen.columns, column]
-              : chosen.columns.filter((item) => item !== column),
-          })
+          writeColumnChoice(presentation.value.columns, column, visible)
           saved.value += 1
         },
       }),
@@ -144,8 +141,8 @@ function pills(): string[] {
   )
 }
 
-/** Picks an option from the select labelled `label`, with the keyboard. */
-async function pick(label: string, option: string) {
+/** Opens the select labelled `label`, with the keyboard. */
+async function openSelect(label: string) {
   const field = [...panel()!.querySelectorAll('label')].find(
     (element) => element.textContent?.trim() === label,
   )!
@@ -153,6 +150,17 @@ async function pick(label: string, option: string) {
   trigger.focus()
   trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
   await settle()
+}
+
+function options(): string[] {
+  return [...document.querySelectorAll('[role="option"]')].map((option) =>
+    option.textContent!.trim(),
+  )
+}
+
+/** Picks an option from the select labelled `label`, with the keyboard. */
+async function pick(label: string, option: string) {
+  await openSelect(label)
   byRole('option', option).dispatchEvent(
     new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
   )
@@ -180,29 +188,40 @@ describe('View settings panel', () => {
 
     await pick('Sort by', 'Modified')
 
-    expect(router.currentRoute.value.query.sort).toBe('modified')
+    expect(router.currentRoute.value.query).toMatchObject({ sort: 'modified', dir: 'desc' })
     expect(readPresentationPreference()?.sort).toBe('modified')
     expect(panel()).not.toBeNull()
 
-    await pick('Order', 'Newest first')
-    expect(router.currentRoute.value.query.dir).toBe('desc')
+    await pick('Order', 'Oldest first')
+    expect(router.currentRoute.value.query.dir).toBe('asc')
+
+    await pick('Sort by', 'Name')
+    expect(router.currentRoute.value.query).toMatchObject({ sort: 'title', dir: 'asc' })
+  })
+
+  it('offers no Owner sort in the user’s own space', async () => {
+    await mountPanel({ query: { view: 'list' }, inOwnSpace: true })
+    await openPanel()
+    await openSelect('Sort by')
+
+    expect(options()).toEqual(['Name', 'Modified', 'Type', 'Size'])
   })
 
   it('toggles a column pill and leaves the panel open', async () => {
     await mountPanel({ query: { view: 'list' } })
     await openPanel()
-    expect(pill('Size').getAttribute('aria-pressed')).toBe('false')
-
-    pill('Size').click()
-    await settle()
-
-    expect(readPresentationPreference()?.columns).toContain('size')
-    expect(panel()).not.toBeNull()
     expect(pill('Size').getAttribute('aria-pressed')).toBe('true')
 
     pill('Size').click()
     await settle()
+
     expect(readPresentationPreference()?.columns).not.toContain('size')
+    expect(panel()).not.toBeNull()
+    expect(pill('Size').getAttribute('aria-pressed')).toBe('false')
+
+    pill('Size').click()
+    await settle()
+    expect(readPresentationPreference()?.columns).toContain('size')
   })
 
   it('still switches the view when the browser refuses to save it', async () => {

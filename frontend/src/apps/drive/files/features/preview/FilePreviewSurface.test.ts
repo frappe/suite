@@ -1,8 +1,19 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createApp, defineComponent, h, ref, shallowRef, unref, type PropType, type Ref } from 'vue'
+import {
+  createApp,
+  defineComponent,
+  h,
+  nextTick,
+  ref,
+  shallowRef,
+  unref,
+  type PropType,
+  type Ref,
+} from 'vue'
 import {
   createMemoryHistory,
   createRouter,
+  createWebHistory,
   RouterLink,
   RouterView,
   type RouteLocationRaw,
@@ -10,8 +21,10 @@ import {
 } from 'vue-router'
 
 import type { DriveNode } from '@/apps/drive/client/types'
+import type { SessionStatus } from '@/platform/session'
 import type { Operation } from '@/platform/transport'
 
+import { previewImage } from './imageCache'
 import type { FilePreviewSession } from './session'
 
 vi.mock('frappe-ui', async () => ({
@@ -72,7 +85,7 @@ vi.mock('../document/DocumentHeader.vue', () => ({
 // A folder of mixed files, and a server that keeps the types `?type=` names, as Drive does.
 type Row = Pick<
   DriveNode,
-  'name' | 'title' | 'kind' | 'mime' | 'state' | 'parent_node' | 'modified'
+  'name' | 'title' | 'kind' | 'mime' | 'state' | 'parent_node' | 'modified' | 'size'
 >
 const file = (name: string, title: string, mime: string): Row => ({
   name,
@@ -82,6 +95,7 @@ const file = (name: string, title: string, mime: string): Row => ({
   state: 'Active',
   parent_node: 'folder-1',
   modified: '2026-10-01 10:00:00',
+  size: 100,
 })
 const FOLDER: Row[] = [
   file('a', 'a.png', 'image/png'),
@@ -95,6 +109,8 @@ const FOLDER: Row[] = [
 let folderState = 'Active'
 /** The caller's role on the folder a file sits in. */
 let folderRole = 30
+/** Holds back the folder's answer while a test looks at the page without it. */
+let folderAnswer: Promise<void> | null = null
 function typeOf(row: Row): string {
   if (row.kind === 'folder') return 'folder'
   if (row.mime === 'application/pdf') return 'pdf'
@@ -111,6 +127,7 @@ vi.mock('@/platform/transport', async (original) => ({
       requests.push({ id: operation.id, input })
       if (operation.id === 'node_patch.trash') return { name: input.node, state: 'Trashed' }
       if (operation.id === 'node_get') {
+        await folderAnswer
         return {
           name: input.node,
           kind: 'folder',
@@ -122,11 +139,29 @@ vi.mock('@/platform/transport', async (original) => ({
       if (operation.id !== 'node_children') throw new Error(`Unexpected request ${operation.id}`)
       const types = input.type?.split(',')
       const rows = FOLDER.filter((row) => !types || types.includes(typeOf(row)))
-      const listed = rows.map((row) => ({ ...row, state: folderState }))
+      const trashRoot = folderState === 'Trashed' ? input.node : null
+      const listed = rows.map((row) => ({
+        ...row,
+        parent_node: input.node,
+        state: folderState,
+        trash_root: trashRoot,
+      }))
       return { rows: listed.sort((a, b) => a.title.localeCompare(b.title)), next_cursor: null }
     },
   },
 }))
+
+interface Account {
+  status: SessionStatus
+}
+const account = vi.hoisted((): Account => ({ status: 'guest' }))
+vi.mock('@/platform/session', async (original) => {
+  const actual = await original<typeof import('@/platform/session')>()
+  return {
+    ...actual,
+    useSession: () => ({ ...actual.useSession(), status: ref(account.status) }),
+  }
+})
 
 const { default: FilePreviewSurface } = await import('./FilePreviewSurface.vue')
 
@@ -171,26 +206,42 @@ afterEach(() => {
   unmount = null
   folderState = 'Active'
   folderRole = 30
+  folderAnswer = null
+  account.status = 'guest'
   requests.length = 0
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
   document.body.innerHTML = ''
 })
 
+/**
+ * Mounts the preview at `path`. With `from`, the browser's history opened it from that page, so
+ * it knows its way back. With `keyed`, a new file replaces the preview, as the document host does.
+ */
 async function mount(
   opened: FilePreviewSession | Ref<FilePreviewSession>,
   path: string,
+  from?: string,
+  keyed = false,
 ): Promise<{ root: HTMLElement; router: Router }> {
   const router = createRouter({
-    history: createMemoryHistory(),
+    history: from ? createWebHistory() : createMemoryHistory(),
     routes: [
       {
         path: '/d/:node/:slug?',
-        component: { render: () => h(FilePreviewSurface, { session: unref(opened) }) },
+        component: {
+          render: () =>
+            h(FilePreviewSurface, {
+              session: unref(opened),
+              key: keyed ? unref(opened).nodeId : undefined,
+            }),
+        },
       },
       { path: '/drive/f/:node/:slug?', component: { render: () => null } },
+      { path: '/drive', component: { render: () => null } },
     ],
   })
+  if (from) await router.push(from)
   await router.push(path)
   const root = document.createElement('div')
   document.body.append(root)
@@ -220,6 +271,19 @@ describe('file preview', () => {
       const { root } = await mount(session('g', 'data.csv', 'text/csv'), '/d/g/data-csv')
 
       await vi.waitFor(() => expect(openAsSheetButton(root)).toBeDefined())
+    })
+
+    it('keeps the button out of sight but in its place until the folder answers', async () => {
+      let answer = () => {}
+      folderAnswer = new Promise((resolve) => (answer = resolve))
+      vi.stubGlobal('fetch', async () => new Response('a,b\n1,2\n'))
+      const opened = { ...session('g', 'data.csv', 'text/csv'), parent: ref('folder-4') }
+      const { root } = await mount(fromPartial<FilePreviewSession>(opened), '/d/g/data-csv')
+
+      await vi.waitFor(() => expect(openAsSheetButton(root)?.className).toContain('invisible'))
+
+      answer()
+      await vi.waitFor(() => expect(openAsSheetButton(root)?.className).not.toContain('invisible'))
     })
 
     it('does not offer it to someone who can only read the folder', async () => {
@@ -305,6 +369,220 @@ describe('file preview', () => {
     expect(root.querySelector('.cm-content')).toBeNull()
   })
 
+  describe('pictures', () => {
+    const contentOf = (node: string) => `/api/suite/drive/nodes/${node}/content`
+
+    it('loads the pictures either side, and a step shows the one already loaded', async () => {
+      const created = vi.spyOn(document, 'createElement')
+      const opened = shallowRef(session('c', 'c.png', 'image/png'))
+      const { root } = await mount(opened, '/d/c/c-png?type=image')
+      const made = () =>
+        created.mock.results.flatMap((result) =>
+          result.value instanceof HTMLImageElement ? [result.value] : [],
+        )
+      const ahead = () => made().find((image) => image.getAttribute('src') === contentOf('e'))
+      await vi.waitFor(() => expect(counter(root)).toBe('2 of 3'))
+      // The pictures beside wait for the one on screen, so they do not slow it down.
+      expect(ahead()).toBeUndefined()
+      root.querySelector('img')!.dispatchEvent(new Event('load'))
+      await vi.waitFor(() => expect(ahead()).toBeDefined())
+      expect(made().map((image) => image.getAttribute('src'))).toContain(contentOf('a'))
+
+      opened.value = session('e', 'e.jpg', 'image/jpeg')
+
+      await vi.waitFor(() => expect(root.querySelector('img')).toBe(ahead()))
+    })
+
+    describe('between previews', () => {
+      const imagesOf = (created: { mock: { results: Array<{ value: unknown }> } }) =>
+        created.mock.results.flatMap((result) =>
+          result.value instanceof HTMLImageElement ? [result.value] : [],
+        )
+      const pdf = () => session('b', 'b.pdf', 'application/pdf')
+
+      it('keeps the pictures beside a PDF the step arrives at, so the next step shows one at once', async () => {
+        vi.stubGlobal('fetch', async () => new Response(''))
+        const created = vi.spyOn(document, 'createElement')
+        const opened = shallowRef(session('a', 'a.png', 'image/png'))
+        const { root } = await mount(opened, '/d/a/a-png', undefined, true)
+        await vi.waitFor(() => expect(counter(root)).toBe('1 of 5'))
+
+        opened.value = pdf()
+        const beside = () => imagesOf(created).find((image) => image.src.endsWith(contentOf('c')))
+        await vi.waitFor(() => expect(beside()).toBeDefined())
+        await new Promise((resolve) => setTimeout(resolve, 0))
+
+        opened.value = session('c', 'c.png', 'image/png')
+        await vi.waitFor(() => expect(root.querySelector('img')).toBe(beside()))
+      })
+
+      it('lets the pictures go when a preview that shows none closes', async () => {
+        vi.stubGlobal('fetch', async () => new Response(''))
+        const created = vi.spyOn(document, 'createElement')
+        const { root } = await mount(pdf(), '/d/b/b-pdf')
+        await vi.waitFor(() => expect(counter(root)).toBe('2 of 5'))
+        const beside = () => imagesOf(created).find((image) => image.src.endsWith(contentOf('c')))
+        await vi.waitFor(() => expect(beside()).toBeDefined())
+        const before = beside()
+
+        unmount?.()
+        unmount = null
+        await new Promise((resolve) => setTimeout(resolve, 0))
+
+        expect(previewImage(contentOf('c'))).not.toBe(before)
+      })
+    })
+
+    it('shows a loaded picture at once, even one with no natural size, such as an SVG with only a viewBox', async () => {
+      const created = vi.spyOn(document, 'createElement')
+      const opened = shallowRef(session('c', 'c.png', 'image/png'))
+      const { root } = await mount(opened, '/d/c/c-png?type=image')
+      await vi.waitFor(() => expect(counter(root)).toBe('2 of 3'))
+      root.querySelector('img')!.dispatchEvent(new Event('load'))
+      const beside = () =>
+        created.mock.results
+          .flatMap((result) => (result.value instanceof HTMLImageElement ? [result.value] : []))
+          .find((image) => image.getAttribute('src') === contentOf('e'))
+      await vi.waitFor(() => expect(beside()).toBeDefined())
+      Object.defineProperty(beside(), 'complete', { value: true })
+      expect(beside()?.naturalWidth).toBe(0)
+
+      opened.value = session('e', 'e.svg', 'image/jpeg')
+
+      await vi.waitFor(() => expect(root.querySelector('img')).toBe(beside()))
+      expect(beside()?.style.opacity).toBe('')
+    })
+
+    it('keeps a server preview up while its URL is signed again, until the new one has loaded', async () => {
+      const created = vi.spyOn(document, 'createElement')
+      const preview = ref<{ url: string } | null>({ url: '/preview?signature=one' })
+      const opened = fromPartial<FilePreviewSession>({
+        ...session('h', 'photo.heic', 'image/heic'),
+        preview,
+      })
+      const { root } = await mount(opened, '/d/h/photo-heic')
+      const first = root.querySelector('img')!
+      expect(first.getAttribute('src')).toBe('/preview?signature=one')
+      first.dispatchEvent(new Event('load'))
+      await vi.waitFor(() => expect(first.style.opacity).toBe(''))
+
+      preview.value = { url: '/preview?signature=two' }
+      const second = () =>
+        created.mock.results
+          .flatMap((result) => (result.value instanceof HTMLImageElement ? [result.value] : []))
+          .find((image) => image.getAttribute('src') === '/preview?signature=two')
+      await vi.waitFor(() => expect(second()).toBeDefined())
+      await nextTick()
+      expect([...root.querySelectorAll('img')]).toEqual([first])
+      expect(first.style.opacity).toBe('')
+
+      second()!.dispatchEvent(new Event('load'))
+      await vi.waitFor(() => expect([...root.querySelectorAll('img')]).toEqual([second()]))
+      expect(second()?.style.opacity).toBe('')
+    })
+
+    it('shows a spinner after a short wait, then the picture, or Download when it fails', async () => {
+      const opened = shallowRef(session('c', 'c.png', 'image/png'))
+      const { root } = await mount(opened, '/d/c/c-png')
+      const spinner = () => root.querySelector('[role="status"]')
+      expect(spinner()).toBeNull()
+      await vi.waitFor(() => expect(spinner()).not.toBeNull(), { timeout: 1000 })
+      root.querySelector('img')!.dispatchEvent(new Event('load'))
+      await vi.waitFor(() => expect(spinner()).toBeNull())
+      expect(root.querySelector('img')?.style.opacity).toBe('')
+
+      opened.value = session('a', 'a.png', 'image/png')
+      await vi.waitFor(() =>
+        expect(root.querySelector('img')?.getAttribute('src')).toBe(contentOf('a')),
+      )
+      root.querySelector('img')!.dispatchEvent(new Event('error'))
+      await vi.waitFor(() => expect(root.textContent).toContain('Could not load the preview'))
+      expect(root.querySelector('img')).toBeNull()
+      expect(root.querySelector('a[href*="download=1"]')).not.toBeNull()
+    })
+  })
+
+  describe('keys', () => {
+    const LISTING = '/drive/f/folder-1/talks'
+
+    it('Escape goes where the way back goes, the listing as it was, which then focuses the last file shown', async () => {
+      const opener = `${LISTING}?view=grid&sort=modified&dir=desc`
+      const { root, router } = await mount(session('c', 'c.png', 'image/png'), '/d/c/c-png', opener)
+      await vi.waitFor(() => expect(counter(root)).toBe('3 of 5'))
+      const wayBack = root.querySelector<HTMLAnchorElement>('header a[href^="/drive/f/"]')
+      expect(new URL(wayBack!.href).pathname + new URL(wayBack!.href).search).toBe(opener)
+      press('ArrowRight')
+      await vi.waitFor(() => expect(router.currentRoute.value.params.node).toBe('d'))
+
+      press('Escape')
+
+      await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe(opener))
+      expect(router.options.history.state.reveal).toBe('d')
+    })
+
+    it('Escape does nothing while a menu or dialog is open, but a tooltip does not stop it', async () => {
+      const { router } = await mount(session('c', 'c.png', 'image/png'), '/d/c/c-png')
+      const layer = document.createElement('div')
+      layer.setAttribute('data-dismissable-layer', '')
+      layer.setAttribute('role', 'menu')
+      document.body.append(layer)
+
+      press('Escape')
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(router.currentRoute.value.params.node).toBe('c')
+
+      layer.setAttribute('role', 'tooltip')
+      press('Escape')
+      // Opened straight from its address, so it opens the folder with the file focused.
+      await vi.waitFor(() => expect(router.currentRoute.value.path).toBe(LISTING))
+      expect(router.options.history.state.reveal).toBe('c')
+    })
+
+    describe('with no folder to go back to and no page before it', () => {
+      const shared = () =>
+        fromPartial<FilePreviewSession>({
+          ...session('c', 'c.png', 'image/png'),
+          folder: ref(null),
+          parent: ref(null),
+        })
+
+      it('Escape keeps a guest on the file, since Drive would send them to the login page', async () => {
+        const { router } = await mount(shared(), '/d/c/c-png')
+
+        press('Escape')
+        await new Promise((resolve) => setTimeout(resolve, 20))
+
+        expect(router.currentRoute.value.path).toBe('/d/c/c-png')
+      })
+
+      it('Escape takes a signed-in user to their files', async () => {
+        account.status = 'authenticated'
+        const { router } = await mount(shared(), '/d/c/c-png')
+
+        press('Escape')
+
+        await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/drive'))
+      })
+    })
+
+    it('steps with the arrows after a click on Next file', async () => {
+      // Focus opens the button's tooltip, which measures itself.
+      vi.stubGlobal(
+        'ResizeObserver',
+        class {
+          observe() {}
+          unobserve() {}
+          disconnect() {}
+        },
+      )
+      const { root, router } = await mount(session('c', 'c.png', 'image/png'), '/d/c/c-png')
+      await vi.waitFor(() => expect(counter(root)).toBe('3 of 5'))
+      root.querySelector<HTMLButtonElement>('[aria-label="Next file"]')!.focus()
+      press('ArrowRight')
+      await vi.waitFor(() => expect(router.currentRoute.value.params.node).toBe('d'))
+    })
+  })
+
   describe("the listing's actions", () => {
     it('lets an editor move the file to Trash, and goes back to its folder with Undo', async () => {
       const { toast } = await import('frappe-ui')
@@ -358,7 +636,7 @@ describe('file preview', () => {
         root.querySelector<HTMLButtonElement>('[aria-label="Fullscreen"]')?.click()
 
         expect(requestFullscreen).toHaveBeenCalledOnce()
-        expect(requestFullscreen.mock.contexts[0]).toBe(root.querySelector('img')?.parentElement)
+        expect(requestFullscreen.mock.contexts[0]).toBe(root.querySelector('header + div'))
       } finally {
         Reflect.deleteProperty(document, 'fullscreenEnabled')
         Reflect.deleteProperty(HTMLElement.prototype, 'requestFullscreen')

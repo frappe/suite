@@ -117,6 +117,23 @@ export function shareSections(list: GrantList, nodeKind: string, now = new Date(
   }
 }
 
+/** Whether an ancestor publishes the node: its nearest `$PUBLIC` row above gives access. */
+export function isPublicFromAncestor(sections: ShareSections): boolean {
+  const nearest = sections.inherited
+    .flatMap((part) => part.rows)
+    .find((row) => row.kind === 'public')
+  return (nearest?.entry.grant.role ?? 0) > 0
+}
+
+/** Whether everyone at the org, or the public, can open the node now: here, from a folder, or from a folder while the local row has expired. */
+export function isOpen(access: GeneralAccess | null): boolean {
+  return (
+    access?.state === 'local' ||
+    access?.state === 'inherited' ||
+    (access?.state === 'expired' && access.entry !== null)
+  )
+}
+
 function generalAccess(
   principal: string,
   local: LocalRow[],
@@ -158,7 +175,6 @@ export function roleAfter(
   change: GrantChange,
   me: string,
 ): number {
-  if (explanation.source === 'site admin') return explanation.role
   const rows = explanation.rows
   const nodeDepth =
     rows.find((row) => row.node === node)?.depth ??
@@ -225,7 +241,12 @@ export function remainingAccess(
  * row decides for its principal over an ancestor's, so a deny here hides an
  * inherited grant. Denied and expired rows give nothing and are left out.
  */
-export function sharedWith(list: GrantList, nodeKind: string, now = new Date()): string[] {
+export function sharedWith(
+  list: GrantList,
+  nodeKind: string,
+  workspace: string,
+  now = new Date(),
+): string[] {
   const sections = shareSections(list, nodeKind, now)
   const gives = (grant: DriveGrant) => grant.role > 0 && !isExpired(grant, now)
   const local = new Set(list.grants.map((grant) => grant.principal))
@@ -241,10 +262,6 @@ export function sharedWith(list: GrantList, nodeKind: string, now = new Date()):
   ].flatMap((grant) =>
     gives(grant) ? [grant.person?.full_name ?? principalLabel(grant.principal)] : [],
   )
-  const open = (access: GeneralAccess | null) =>
-    access?.state === 'local' ||
-    access?.state === 'inherited' ||
-    !!(access?.state === 'expired' && access.entry)
   const links = [
     ...(sections.links ?? []).map((row) => row.grant),
     ...list.inherited
@@ -253,8 +270,8 @@ export function sharedWith(list: GrantList, nodeKind: string, now = new Date()):
   ].filter(gives).length
   return [
     ...new Set(named),
-    ...(open(sections.organization) ? [organizationLabel()] : []),
-    ...(open(sections.public) ? [principalLabel(PUBLIC)] : []),
+    ...(isOpen(sections.organization) ? [organizationLabel(workspace)] : []),
+    ...(isOpen(sections.public) ? [principalLabel(PUBLIC)] : []),
     ...(links ? [links === 1 ? '1 share link' : `${links} share links`] : []),
   ]
 }

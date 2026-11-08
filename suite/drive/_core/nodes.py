@@ -2111,7 +2111,7 @@ def root_id(node: dict) -> str:
     return node.get("name") if node.get("kind") == "root" else node.get("root")
 
 
-def child_path(node: dict) -> str:
+def child_path(node: Mapping) -> str:
     """Return the root-relative path assigned to direct children of a node."""
     if node.get("kind") == "root":
         return ""

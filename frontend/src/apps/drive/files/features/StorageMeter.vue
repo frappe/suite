@@ -1,6 +1,6 @@
 <!--
   How much of the personal Drive's quota is used, as a thin bar and one line.
-  Pressing it opens the Statistics tab in Settings. It keeps its space with a
+  Pressing it opens the Storage tab (`drive.statistics`) in Settings. It keeps its space with a
   skeleton while it loads, and shows nothing when the read fails.
 -->
 <template>

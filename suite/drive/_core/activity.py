@@ -160,9 +160,9 @@ def visit(principals: Principals, node: str) -> str:
         if existing is None:
             raise DriveConflict(_("The Drive recent row could not be recorded"))
     frappe.db.set_value("Drive Recent", existing, "opened_at", stamp, update_modified=False)
-    from suite.drive._core.changes import emit_for_users
+    from suite.drive._core.changes import emit_recent_for
 
-    emit_for_users((principals.user,))
+    emit_recent_for(principals.user)
     return existing
 
 

@@ -59,6 +59,8 @@ from suite.drive._core import activity as activity_core
 from suite.drive._core import nodes as node_core
 from suite.drive._core import upload as upload_core
 from suite.drive._core.access import describe
+from suite.drive._core.audience import audiences
+from suite.drive._core.contents import contents_sizes
 from suite.drive._core.errors import (
     DriveConflict,
     DriveError,
@@ -223,6 +225,8 @@ def node_get(node: Given = None, expand: Given = None) -> shapes.NodeShape:
     _mark_favourites(principals, [answer])
     if "access" in asked:
         answer["access"] = describe(row, principals)
+    _add_audiences(asked, [answer], [row])
+    _add_contents_sizes(asked, [answer], [row])
     if "breadcrumbs" in asked:
         answer["breadcrumbs"] = node_core.breadcrumbs(row, principals)
     if "preview" in asked:
@@ -324,11 +328,13 @@ def node_children(
         listing_types=shapes.listing_types(type),
         with_access="access" in asked,
     )
-    rows = [shapes.node_shape(row) for row in result["rows"]]
+    rows = shapes.node_shapes(result["rows"])
     _mark_favourites(principals, rows)
     if "access" in asked:
         for answer, row in zip(rows, result["rows"], strict=True):
             answer["access"] = row.access
+    _add_audiences(asked, rows, result["rows"])
+    _add_contents_sizes(asked, rows, result["rows"])
     if "preview" in asked:
         minted = previews.preview_expansions([row["name"] for row in rows])
         for answer in rows:
@@ -342,6 +348,25 @@ def node_children(
         for answer in rows:
             answer["breadcrumbs"] = list(trail)
     return shapes.page(result, rows)
+
+
+def _add_audiences(asked: frozenset, answers: list[shapes.NodeShape], rows: list) -> None:
+    """Add the `audience` expansion to a page, read once for every row."""
+    if "audience" not in asked:
+        return
+    found = audiences(rows)
+    for answer in answers:
+        answer["audience"] = found[answer["name"]]
+
+
+def _add_contents_sizes(asked: frozenset, answers: list[shapes.NodeShape], rows: list) -> None:
+    """Add the `contents_size` expansion to a page's folders, read once for every folder."""
+    if "contents_size" not in asked:
+        return
+    found = contents_sizes(rows)
+    for answer in answers:
+        if answer["name"] in found:
+            answer["contents_size"] = found[answer["name"]]
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
@@ -961,10 +986,10 @@ def view_list(
     list for every anonymous visitor on the site.
 
     Access and preview expansions are built once for the whole page. Search,
-    shared, and favourites also accept breadcrumbs, whose ancestor titles are
-    fetched as one union: a folder opened from those lists shows its trail at
-    once. Recents hides folders and trash shows the trash root's own trail, so
-    neither takes them.
+    shared, favourites, and recents also accept breadcrumbs, whose ancestor
+    titles are fetched as one union: a row shows the folder it lives in, and a
+    folder opened from those lists shows its trail at once. Trash shows the
+    trash root's own trail, so it does not take them.
 
     `archived-roots` answers root metadata, not nodes (§5.5), so its rows are
     passed through as they are.
@@ -972,8 +997,8 @@ def view_list(
     principals = _principals()
     name = shapes.required_text(view, "view")
     asked = shapes.expansions(expand)
-    supported = {"preview", "access"}
-    if name in ("search", "shared", "favourites"):
+    supported = set(shapes.EXPANSIONS) - {"breadcrumbs"}
+    if name in ("search", "shared", "favourites", "recents"):
         supported.add("breadcrumbs")
     if name == "archived-roots":
         supported = set()
@@ -1003,6 +1028,8 @@ def view_list(
             answer["breadcrumbs"] = row.breadcrumbs
         if name == "recents":
             answer["opened_at"] = shapes.stamp(row.opened_at)
+    _add_audiences(asked, rows, result["rows"])
+    _add_contents_sizes(asked, rows, result["rows"])
     if "preview" in asked:
         minted = previews.preview_expansions([row["name"] for row in rows])
         for answer in rows:

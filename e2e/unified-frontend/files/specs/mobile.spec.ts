@@ -92,6 +92,18 @@ test("a long press on a grid tile enters selection mode", async ({ page }) => {
 	await expect(page.getByText("selected")).toHaveCount(0);
 });
 
+// A tile hides its own "…" while selecting, so the bar offers the item's menu.
+test("one selected grid tile reaches its row menu from the selection bar", async ({ page }) => {
+	await page.goto(`/drive/f/${home.name}?view=grid`);
+	const tile = page.getByRole("listitem").first();
+	await expect(tile).toBeVisible();
+
+	await longPress(tile);
+	await page.getByRole("button", { name: "More actions" }).click();
+	await page.getByRole("menuitem", { name: "Rename", exact: true }).click();
+	await expect(page.getByRole("dialog", { name: "Rename" })).toBeVisible();
+});
+
 // List rows bind the same pointer handlers as grid tiles (fixed here).
 test("a long press on a list row enters selection mode", async ({ page }) => {
 	await page.goto(`/drive/f/${home.name}?view=list`);

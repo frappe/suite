@@ -108,8 +108,8 @@ test("a local grant: pick a person, give Edit, and the server holds it", async (
 	const dialog = await openShare(page, file.name);
 
 	await pickPerson(page, dialog);
-	await dialog.getByRole("combobox", { name: "Access for people you add" }).click();
-	await page.getByRole("option", { name: "Edit", exact: true }).click();
+	await dialog.getByRole("button", { name: "Access for people you add: View" }).click();
+	await page.getByRole("menuitem", { name: "Edit", exact: true }).click();
 	// A pick is not a grant until Share is pressed.
 	expect((await grants(file.name)).some((grant) => grant.principal === PERSON)).toBe(false);
 	await sharePicked(dialog);
@@ -132,14 +132,13 @@ test("a person's access ends on a chosen day, and a role change keeps it", async
 	await expect(row.getByText(/Until/)).toBeVisible();
 
 	await accessButton(row).click();
-	await page.getByRole("menuitem", { name: "Role" }).click();
 	await page.getByRole("menuitem", { name: "Comment", exact: true }).click();
 	await expect(accessButton(row)).toHaveAccessibleName(/: Comment$/);
 	const stored = (await grants(file.name)).find((grant) => grant.principal === PERSON)!;
 	expect(stored).toMatchObject({ role: 20, expires_on: "2031-01-15T18:29:59Z" });
 });
 
-test("removing a person's grant takes them off the list and the server", async ({ page }) => {
+test("removing a person's grant takes them off the list and the server, and Undo puts it back", async ({ page }) => {
 	await putGrant(file.name, PERSON, { role: 10 });
 	const dialog = await openShare(page, file.name);
 
@@ -147,6 +146,10 @@ test("removing a person's grant takes them off the list and the server", async (
 	await page.getByRole("menuitem", { name: "Remove", exact: true }).click();
 	await expect(rowFor(dialog, PERSON)).toHaveCount(0);
 	expect((await grants(file.name)).some((grant) => grant.principal === PERSON)).toBe(false);
+
+	await dialog.getByRole("button", { name: "Undo" }).click();
+	await expect(accessButton(rowFor(dialog, PERSON))).toHaveAccessibleName(/: View$/);
+	expect((await grants(file.name)).find((grant) => grant.principal === PERSON)?.role).toBe(10);
 });
 
 test("an inherited grant shows its source; Deny access here, then Allow again", async ({ page }) => {
@@ -197,10 +200,10 @@ test("an outsider gets a link of their own", async ({ page }) => {
 	expect(sent[0]!.principal).toMatch(/^\$LINK:/);
 });
 
-test("Everyone on the web lets a guest read the item", async ({ page, baseURL }) => {
+test("Public on the web lets a guest read the item, and off removes the grant", async ({ page, baseURL }) => {
 	const dialog = await openShare(page, file.name);
 
-	const toggle = dialog.getByRole("switch", { name: "Everyone on the web" });
+	const toggle = dialog.getByRole("switch", { name: "Public on the web" });
 	await expect(toggle).not.toBeChecked();
 	await toggle.click();
 
@@ -211,6 +214,11 @@ test("Everyone on the web lets a guest read the item", async ({ page, baseURL })
 	const read = await guest.get(`${DRIVE}/nodes/${file.name}`);
 	expect(read.status()).toBe(200);
 	await guest.dispose();
+
+	// Off removes the grant here; it never leaves a deny (§5.10).
+	await toggle.click();
+	await expect(rowFor(dialog, "Not public")).toBeVisible();
+	expect((await grants(file.name)).some((grant) => grant.principal === "$PUBLIC")).toBe(false);
 });
 
 test("a document surface places Share; a new share link is created from the dialog", async ({ page }) => {
@@ -229,9 +237,10 @@ test("a document surface places Share; a new share link is created from the dial
 	await expect(create).toBeHidden();
 
 	await expect(accessButton(rowFor(dialog, "Anyone with this link"))).toHaveAccessibleName(/: View$/);
-	// The footer copies the item's own address.
+	// The footer copies the item's own address, and Done closes the dialog.
 	await expect(dialog.getByRole("button", { name: "Copy link" })).toBeVisible();
-	await page.keyboard.press("Escape");
+	await expect(dialog.getByText("For people with access")).toBeVisible();
+	await dialog.getByRole("button", { name: "Done" }).click();
 	await expect(dialog).toBeHidden();
 });
 
@@ -268,10 +277,9 @@ test("a manager who lowers their own access is asked first, and the row loses Sh
 	const row = rowFor(dialog, PERSON).filter({ hasNotText: "via " });
 	await expect(accessButton(row)).toHaveAccessibleName(/: Manage$/);
 	await accessButton(row).click();
-	await page.getByRole("menuitem", { name: "Role" }).click();
 	await page.getByRole("menuitem", { name: "View", exact: true }).click();
 	const ask = page.getByRole("dialog", { name: "Change your own access?" });
-	await expect(ask.getByText("You will no longer be able to share this item.")).toBeVisible();
+	await expect(ask.getByText("You will only be able to view this folder and the items inside it.")).toBeVisible();
 	await ask.getByRole("button", { name: "Change" }).click();
 
 	// A non-manager sees no list, only why.
@@ -294,7 +302,7 @@ test.describe("on a phone", () => {
 
 	test("the share dialog opens as a bottom sheet with the same list", async ({ page }) => {
 		const sheet = await openShare(page, file.name);
-		await expect(sheet.getByRole("switch", { name: "Everyone on the web" })).toBeVisible();
+		await expect(sheet.getByRole("switch", { name: "Public on the web" })).toBeVisible();
 		await expect(sheet.getByRole("button", { name: "Done" })).toBeVisible();
 		const box = (await sheet.boundingBox())!;
 		expect(box.y + box.height).toBeGreaterThanOrEqual(MOBILE_VIEWPORT.height - 2);

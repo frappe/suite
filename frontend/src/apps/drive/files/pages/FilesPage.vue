@@ -6,13 +6,34 @@
       title="Drive"
       :loading="discovered.status === 'pending' && !discovered.data"
     >
-      <FilesPanel />
+      <FilesPanel :drag="dragOn" />
     </AreaSidebar>
     <PageHeader class="hidden md:flex">
       <div class="flex w-full items-center justify-between gap-3">
-        <Breadcrumbs :items="breadcrumbs" />
-        <Dropdown v-if="canCreate" :options="newOptions" align="end">
-          <Button variant="subtle" label="New" icon-right="lucide-chevron-down" />
+        <!-- While dragging items, each crumb's link carries a marker of its folder; the link lights up while it takes the drop. -->
+        <Breadcrumbs
+          :items="breadcrumbs"
+          :data-drop-crumbs="dragOn ? '' : undefined"
+          :class="
+            dragOn &&
+            '[&_a:has([data-drop-over])]:!bg-surface-blue-2 [&_a:has([data-drop-over])]:ring-1 [&_a:has([data-drop-over])]:ring-inset [&_a:has([data-drop-over])]:ring-outline-blue-3'
+          "
+        >
+          <template v-if="dragOn" #prefix="{ item }">
+            <span
+              v-if="typeof item.node === 'string'"
+              :data-drop-target="item.node"
+              :data-drop-over="dragOn.accepts(item.node) || undefined"
+            />
+          </template>
+        </Breadcrumbs>
+        <Dropdown v-if="canCreate || newPending" :options="newOptions" align="end">
+          <Button
+            variant="subtle"
+            label="New"
+            icon-right="lucide-chevron-down"
+            :class="!canCreate && 'invisible'"
+          />
         </Dropdown>
       </div>
     </PageHeader>
@@ -32,8 +53,13 @@
         destinationLabel
       }}</span>
       <template #suffix>
-        <Dropdown v-if="canCreate" :options="newOptions" align="end">
-          <Button variant="subtle" label="New" icon-right="lucide-chevron-down" />
+        <Dropdown v-if="canCreate || newPending" :options="newOptions" align="end">
+          <Button
+            variant="subtle"
+            label="New"
+            icon-right="lucide-chevron-down"
+            :class="!canCreate && 'invisible'"
+          />
         </Dropdown>
       </template>
     </PageHeaderMobile>
@@ -55,25 +81,21 @@
           @contextmenu="onPaneContextMenu"
         >
           <div class="flex h-7 items-center justify-between gap-2">
-            <template v-if="selectionMode">
-              <div class="flex min-w-0 items-center gap-2">
-                <Button
-                  v-for="action in bulkMenu.options"
-                  :key="action.label"
-                  :label="action.label"
-                  :icon-left="action.icon"
-                  :disabled="action.disabled"
-                  @click="action.onClick"
-                />
-                <span class="truncate pl-1 text-base text-ink-gray-7"
-                  >{{ selection.length }} selected</span
-                >
-              </div>
-              <Button variant="ghost" label="Done" @click="clearSelected" />
-            </template>
+            <SelectionBar
+              v-if="selectionMode"
+              :count="selection.length"
+              :label="selectionLabel"
+              :actions="bulkActions"
+              :menu="onlySelected ? selectionMenu(rowMenuOptions(onlySelected)) : []"
+              :compact="narrow"
+              @done="clearSelected"
+            />
             <template v-else>
+              <!-- Each place gets its own field. Pressing a link elsewhere fires the field's
+                   change event, whose debounced search would otherwise land on the new place. -->
               <TextInput
                 v-if="signedIn"
+                :key="route.path"
                 v-model="searchText"
                 type="search"
                 :debounce="250"
@@ -146,10 +168,11 @@
                      while rows load, so it does not pop in after them. -->
                 <ViewSettings
                   v-if="!settledEmpty"
-                  :presentation="userPresentation"
+                  :presentation="settingsPresentation"
                   :arrangeable="arrangeable"
                   :columns="offeredColumns"
                   :date-column="dateColumn"
+                  :in-own-space="inOwnSpace"
                   @change="setPresentation"
                   @toggle-column="setColumn"
                 />
@@ -163,10 +186,11 @@
           <TabButtons
             v-if="trashTabs"
             class="mt-3 max-w-96"
+            :fluid="!!workspaceName"
             :model-value="route.query.root === 'organization' ? 'organization' : 'personal'"
             :options="[
               { value: 'personal', label: 'My files' },
-              { value: 'organization', label: 'Organization files' },
+              { value: 'organization', label: locationLabel('organization') },
             ]"
             @update:model-value="switchTrashRoot"
           />
@@ -183,32 +207,57 @@
           <BatchOutcome
             :result="trash.outcome.value ?? batchOutcome"
             :verb="trash.outcome.value ? trash.verb.value : batchVerb"
+            :rows="listing.rows"
             class="mt-3"
             @dismiss="dismissOutcome"
           />
           <FilesListing
-            class="flex-1"
+            ref="listingView"
+            class="flex-1 transition-opacity"
+            :class="{ 'opacity-60': listing.isHeld }"
+            :aria-busy="listing.isHeld || undefined"
             :query="listing"
             :presentation="presentation"
             :selection="selection"
             :selection-mode="selectionMode"
             :empty-title="emptyTitle"
             :empty-description="emptyDescription"
+            :empty-icon="empty.icon"
             :show-breadcrumbs="showsLocation"
             :sortable="arrangeable"
             :menu-options="rowMenuOptions"
             :row-drop="rowDrop"
             :menu-target="contextOpen ? contextRow : null"
             :date-column="dateColumn"
-            @update:selection="selection = $event"
+            :drag="dragOn"
+            :can-share="(row) => nodeActions(row, signedIn).share"
+            :node-href="nodeHref"
+            @update:selection="picked.selected.value = $event"
             @sort="changeSort"
             @open="openNode"
             @select="selectNode"
+            @extend="(from, to) => picked.extend(from.name, to.name)"
             @menu="openContextMenu"
             @preview-error="refreshPreviews"
+            @share="shareRow"
           >
             <template v-if="listingTypes.length" #empty-action>
               <Button label="Clear filter" class="mt-2" @click="setTypes([])" />
+            </template>
+            <template v-else-if="isSearching" #empty-action>
+              <Button :label="__('Clear search')" class="mt-2" @click="clearSearch()" />
+            </template>
+            <template v-else-if="canCreate" #empty-action>
+              <div class="mt-2 flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
+                <Button
+                  :label="__('Upload files')"
+                  icon-left="lucide-upload"
+                  @click="pickUpload('files')"
+                />
+                <span v-if="finePointer" class="text-p-sm text-ink-gray-5">{{
+                  __('or drop files here')
+                }}</span>
+              </div>
             </template>
           </FilesListing>
           <DropOverlay :zone="drop.over.value" />
@@ -237,6 +286,7 @@
 </template>
 
 <script setup lang="ts">
+import { useMediaQuery } from '@vueuse/core'
 import {
   Alert,
   Breadcrumbs,
@@ -251,7 +301,7 @@ import {
   type DropdownActionOption,
   type DropdownItem,
 } from 'frappe-ui'
-import { computed, h, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, h, inject, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 
 import {
@@ -263,48 +313,72 @@ import {
   type InfiniteQueryState,
 } from '@/api'
 import { driveNodeRoute, newDocumentRoute, useDriveDialogs } from '@/apps/drive'
-import { openAsSpreadsheet, opensAsSpreadsheet } from '@/apps/drive/client/nodes'
+import {
+  createDocument,
+  folderOf,
+  openAsSpreadsheet,
+  opensAsSpreadsheet,
+} from '@/apps/drive/client/nodes'
+import { bootRoots } from '@/apps/drive/client/roots'
 import type { DriveBatchResult, DriveNode } from '@/apps/drive/client/types'
 import { isDriveLocked } from '@/apps/drive/client/unlock'
 import { AreaSidebar, openAreaSidebar } from '@/platform/area-sidebar'
 import { DOCUMENT_TYPES_KEY, GUEST_FRAME_KEY } from '@/platform/contracts'
-import { confirm, ContextMenu, Dropdown } from '@/platform/feedback'
+import { confirm, ContextMenu, Dropdown, toast } from '@/platform/feedback'
 import { openingTitle, usePageTitle } from '@/platform/page-meta'
 import { useSession } from '@/platform/session'
 import { openAreaShortcuts } from '@/platform/shortcuts'
 import { translate as __ } from '@/platform/translation'
 import { TransportError } from '@/platform/transport'
+import { useWorkspace } from '@/platform/workspace'
 
+import { inBatches } from '../features/batches'
 import BatchOutcome from '../features/BatchOutcome.vue'
-import { announceCopy, announceMove, announceTrash, type MovedItem } from '../features/changeToast'
+import type { BatchVerb } from '../features/batchResult'
+import {
+  announceCopy,
+  announceMove,
+  announceTrash,
+  undoLatest,
+  type MovedItem,
+} from '../features/changeToast'
 import CreateNodeDialog, { type CreateRequest } from '../features/CreateNodeDialog.vue'
+import { openingLocationState } from '../features/document/openingLocation'
 import { downloadItems } from '../features/downloads'
+import type { DraggedItems } from '../features/dragMove'
 import { emptyState, type FilesDestination } from '../features/emptyState'
 import FilesListing from '../features/FilesListing.vue'
 import FolderPicker from '../features/FolderPicker.vue'
 import { folderTrail, type FolderTrail } from '../features/folderTrail'
-import { heldWhileRearranging } from '../features/heldRows'
+import { heldWhileRearranging, withCreatedRows } from '../features/heldRows'
 import { linkAccess } from '../features/linkAccess'
 import { allAllow, nodeActions, type NodeActions } from '../features/nodeActions'
 import {
   FILES_COLUMNS,
+  nextSort,
   readPresentationPreference,
   replacePresentation,
   resolvePresentation,
-  writePresentationPreference,
+  writeColumnChoice,
   type FilesColumn,
   type FilesDateColumn,
   type FilesSort,
   type PresentationChange,
   type PresentationState,
 } from '../features/presentation'
+import { takeShown } from '../features/preview/lastShown'
 import { observePreviewRefresh } from '../features/previewRefresh'
 import { recentFiles } from '../features/recent'
 import RecoveryNotice from '../features/RecoveryNotice.vue'
 import RenameDialog from '../features/RenameDialog.vue'
-import { clearSelection, toggleSelection, type SelectionState } from '../features/selection'
+import { folderMenu, selectionMenu } from '../features/rowMenus'
+import SelectionBar from '../features/SelectionBar.vue'
 import { copyLink } from '../features/share/shareFormat'
-import { useListingShortcuts, type ListingView } from '../features/shortcuts/useListingShortcuts'
+import {
+  menuCommand,
+  useListingShortcuts,
+  type ListingView,
+} from '../features/shortcuts/useListingShortcuts'
 import TemplatePicker from '../features/TemplatePicker.vue'
 import { useTrashActions } from '../features/trash/useTrashActions'
 import {
@@ -320,9 +394,17 @@ import { rowDropHandlers, useUploadDrop } from '../features/uploads/drop'
 import DropOverlay from '../features/uploads/DropOverlay.vue'
 import { uploadTargetOf } from '../features/uploads/queue'
 import { pastedImages } from '../features/uploads/sources'
+import { useDragMove } from '../features/useDragMove'
+import { useListingSelection } from '../features/useListingSelection'
 import ViewSettings from '../features/ViewSettings.vue'
 import { nodeIcon, nodeIconTint } from '../internal/icons'
-import { LOCATION_LABELS, locationTitle, trashLocation } from '../internal/locations'
+import {
+  LOCATION_LABELS,
+  locationLabel,
+  locationTitle,
+  rootPath,
+  trashLocation,
+} from '../internal/locations'
 import { slugify } from '../internal/slugify'
 import FilesPanel from './FilesPanel.vue'
 
@@ -335,12 +417,13 @@ const dialogs = useDriveDialogs()
 const documentTypes = inject(DOCUMENT_TYPES_KEY, [])
 const guestFrame = inject(GUEST_FRAME_KEY, null)
 const session = useSession()
+const { workspaceName } = useWorkspace()
 // A visitor without a session gets no sidebar, search or Star (spec §10.3).
 const signedIn = computed(() => session.status.value === 'authenticated')
 // Roots need a session (spec §10.13). A guest only ever opens a shared folder.
 const discovered = useQuery(api.drive.roots.list, () => (signedIn.value ? {} : false))
 const presentationVersion = ref(0)
-const selectionState = ref<SelectionState>(clearSelection())
+const picked = useListingSelection(() => listing.rows.map((row) => row.name))
 const searchText = ref(String(route.query.q ?? ''))
 const activeNode = ref<DriveNode | null>(null)
 const contextOptions = ref<DropdownItem[]>([])
@@ -359,9 +442,8 @@ const templatesOpen = ref(false)
 const pickerMode = ref<'move' | 'copy'>('move')
 const pickerBulk = ref(false)
 const batchOutcome = ref<DriveBatchResult | null>(null)
-const batchVerb = ref('moved')
-const narrow = ref(false)
-let narrowMedia: MediaQueryList | null = null
+const batchVerb = ref<BatchVerb>('moved')
+const narrow = useMediaQuery('(max-width: 767px)')
 let stopRealtime: (() => void) | null = null
 let stopPreviews: (() => void) | null = null
 let visitedFolder = ''
@@ -380,12 +462,10 @@ const userPresentation = computed(() => {
  * order, so they show it without overwriting the user's choice.
  */
 const presentation = computed<PresentationState>(() => {
-  const chosen = userPresentation.value
+  const chosen = settingsPresentation.value
   // Decided from the place, not the rows, so the loading skeleton and the
   // loaded list have the same columns.
-  const shown = inOwnSpace.value
-    ? { ...chosen, columns: chosen.columns.filter((column) => column !== 'owner') }
-    : chosen
+  const shown = { ...chosen, columns: chosen.columns.filter(isOfferedColumn) }
   if (isSearching.value || !concreteDestination.value) {
     return { ...shown, sort: 'modified', dir: 'desc' }
   }
@@ -404,21 +484,29 @@ const inOwnSpace = computed(() => {
   const root = trail.value?.[0]?.name
   return !root || root === discovered.data?.personal.node
 })
-const selection = computed({
-  get: () => selectionState.value.selected,
-  set: (selected: string[]) => {
-    selectionState.value = { selected, anchor: selected.at(-1) ?? null }
-  },
+/**
+ * The sort the folder is read in. Owner orders nothing in the user's own space,
+ * so Name stands in there, and the saved Owner stays for a shared folder.
+ */
+const listedSort = computed<FilesSort>(() => {
+  const { sort } = userPresentation.value
+  return inOwnSpace.value && sort === 'owner' ? 'title' : sort
 })
-const selectionMode = computed(() => selection.value.length > 0)
+/** What View settings shows: the user's choice, with the sort the folder is read in. */
+const settingsPresentation = computed(() => ({ ...userPresentation.value, sort: listedSort.value }))
+const selection = picked.selected
+const selectionMode = picked.selectionMode
 const searchTerm = computed(() => String(route.query.q ?? '').trim())
 const isSearching = computed(() => !!searchTerm.value)
 const concreteDestination = computed(() =>
   ['personal', 'organization', 'folder'].includes(props.destination),
 )
+// The locations the page loaded with stand in until roots load, so My files reads at once.
+const bootLocations = bootRoots()
+const knownRoots = computed(() => discovered.data ?? bootLocations)
 const rootLocation = computed(() => {
-  if (props.destination === 'organization') return discovered.data?.organization ?? null
-  return discovered.data?.personal ?? null
+  if (props.destination === 'organization') return knownRoots.value?.organization ?? null
+  return knownRoots.value?.personal ?? null
 })
 const parentId = computed(() =>
   props.destination === 'folder'
@@ -491,7 +579,7 @@ const placeLabel = computed(() => {
   return (
     {
       personal: LOCATION_LABELS.personal,
-      organization: LOCATION_LABELS.organization,
+      organization: locationLabel('organization'),
       shared: LOCATION_LABELS.shared,
       recent: 'Recent',
       starred: 'Starred',
@@ -506,7 +594,9 @@ const destinationLabel = computed(() => (isSearching.value ? 'Search results' : 
 const breadcrumbs = computed(() => {
   if (isSearching.value)
     return [{ label: `Search results for “${searchTerm.value}”`, route: route.fullPath }]
-  if (props.destination !== 'folder') return [{ label: placeLabel.value, route: route.path }]
+  // `node` names each crumb's folder, for drag to move.
+  if (props.destination !== 'folder')
+    return [{ label: placeLabel.value, route: route.path, node: parentId.value }]
   const whole = folderTitle.value === null ? null : trail.value
   // Unknown until the details load. The header keeps its height meanwhile.
   if (!whole) return []
@@ -517,9 +607,10 @@ const breadcrumbs = computed(() => {
   const known = from >= 0 ? whole.slice(from) : whole
   const items = known.slice(0, -1).map((crumb) => ({
     label: locationTitle(crumb, discovered.data),
+    node: crumb.name,
     route: {
       path:
-        rootPath(crumb.name) ??
+        rootPath(crumb.name, discovered.data) ??
         `/drive/f/${encodeURIComponent(crumb.name)}/${slugify(crumb.title)}`,
       query: presentationQuery.value,
     },
@@ -527,10 +618,15 @@ const breadcrumbs = computed(() => {
   const trashCrumb = trashedFolder.value
     ? [{ label: 'Trash', route: trashPath(trashedFolder.value) }]
     : []
-  return [...trashCrumb, ...items, { label: placeLabel.value, route: route.fullPath }]
+  return [
+    ...trashCrumb,
+    ...items,
+    { label: placeLabel.value, route: route.fullPath, node: parentId.value },
+  ]
 })
 usePageTitle(() => {
   if (isSearching.value) return `Search results for “${searchTerm.value}”`
+  if (props.destination === 'organization' && workspaceName.value) return placeLabel.value
   return props.destination === 'folder' ? (folderTitle.value ?? '') : ''
 })
 const folderParent = computed<RouteLocationRaw | null>(() => {
@@ -545,14 +641,27 @@ const presentationQuery = computed(() => ({
 }))
 // A search result, a shared item and a starred item each show where they live.
 const showsLocation = computed(
-  () => isSearching.value || props.destination === 'shared' || props.destination === 'starred',
+  () =>
+    isSearching.value ||
+    props.destination === 'shared' ||
+    props.destination === 'starred' ||
+    props.destination === 'recent',
 )
 const expansion = computed(() => {
   const parts = ['access']
   if (showsLocation.value) parts.push('breadcrumbs')
   if (presentation.value.view === 'grid') parts.push('preview')
+  else if (presentation.value.columns.includes('access')) parts.push('audience')
+  if (showsFolderSize.value) parts.push('contents_size')
   return parts.join(',')
 })
+/** A folder's total size shows in the list's Size column, except in Trash. */
+const showsFolderSize = computed(
+  () =>
+    props.destination !== 'trash' &&
+    presentation.value.view === 'list' &&
+    presentation.value.columns.includes('size'),
+)
 // Recent shows the files the user opened, without the folders they passed through.
 const hidesFolders = computed(() => props.destination === 'recent' && !isSearching.value)
 const typeChoices = computed(() => offeredTypes({ folders: !hidesFolders.value }))
@@ -577,8 +686,8 @@ const trashRoot = computed(() => {
   if (props.destination !== 'trash') return null
   return (
     (route.query.root === 'organization'
-      ? discovered.data?.organization?.node
-      : discovered.data?.personal.node) ?? null
+      ? knownRoots.value?.organization?.node
+      : knownRoots.value?.personal.node) ?? null
   )
 })
 const childListing = useInfiniteQuery(api.drive.nodes.children, () =>
@@ -586,7 +695,7 @@ const childListing = useInfiniteQuery(api.drive.nodes.children, () =>
     ? {
         node: parentId.value,
         limit: 60,
-        order_by: userPresentation.value.sort,
+        order_by: listedSort.value,
         ascending: userPresentation.value.dir === 'asc',
         type: listingTypes.value.map((option) => option.value).join(','),
         expand: expansion.value,
@@ -645,17 +754,27 @@ const listingQuery: InfiniteQueryState<DriveNode> = {
     activeListing.value.cancel()
   },
 }
-// A new sort, view or search term keeps the old rows up until the new ones come.
-const listing = heldWhileRearranging(
+// Folders and links this tab created show at once, where the server will list them.
+const createdRows = withCreatedRows(
   recentFiles(listingQuery, () => hidesFolders.value),
   () =>
-    [
-      props.destination,
-      parentId.value,
-      isSearching.value,
-      trashRoot.value,
-      typeQuery(listingTypes.value),
-    ].join('|'),
+    !isSearching.value && concreteDestination.value && parentId.value && !listingTypes.value.length
+      ? {
+          place: parentId.value,
+          sort: listedSort.value,
+          ascending: userPresentation.value.dir === 'asc',
+        }
+      : null,
+)
+// A new sort, view or search term keeps the old rows up until the new ones come.
+const listing = heldWhileRearranging(createdRows.listing, () =>
+  [
+    props.destination,
+    parentId.value,
+    isSearching.value,
+    trashRoot.value,
+    typeQuery(listingTypes.value),
+  ].join('|'),
 )
 const hasRows = computed(() => listing.rows.length > 0)
 const settledEmpty = computed(() => !hasRows.value && listing.status !== 'pending')
@@ -687,6 +806,10 @@ const paneDrop = drop.zone(
 // New stays while a search shows. It adds to the folder the search started from.
 // A trashed folder takes no new items, so it offers no New.
 const canCreate = computed(() => concreteDestination.value && !!uploadTargetOf(detail.data))
+/** Until the folder's details load, New keeps its room unseen, so it does not pop into the header. */
+const newPending = computed(
+  () => concreteDestination.value && !detail.data && detail.status === 'pending',
+)
 const newUploadTarget = computed(() =>
   concreteDestination.value ? uploadTargetOf(detail.data) : null,
 )
@@ -694,15 +817,28 @@ const canCreateDocuments = computed(() => linkAccess(detail.data, signedIn.value
 const selectedRows = computed(() =>
   listing.rows.filter((row) => selection.value.includes(row.name)),
 )
-const empty = computed(() =>
-  emptyState({
+/** The selection bar's words when "N selected" would mislead. */
+const selectionLabel = computed(() => {
+  const count = selection.value.length
+  if (!count) return __('Select items')
+  // Select all takes only the loaded pages (spec §5.8), so the count says so.
+  const allLoaded = listing.hasNext && selectedRows.value.length === listing.rows.length
+  return allLoaded ? __('{0} loaded items selected', [count]) : undefined
+})
+/** The selected item, when it is the only one. */
+const onlySelected = computed(() =>
+  selectedRows.value.length === 1 ? (selectedRows.value[0] ?? null) : null,
+)
+const empty = computed(() => {
+  return emptyState({
     destination: props.destination,
     term: searchTerm.value,
     canCreate: canCreate.value,
     typeNoun: listingTypes.value.length ? typeNouns(listingTypes.value) : undefined,
     inTrash: !!trashedFolder.value,
-  }),
-)
+    canCreateDocuments: canCreateDocuments.value,
+  })
+})
 const emptyTitle = computed(() => empty.value.title)
 const emptyDescription = computed(() => empty.value.description)
 
@@ -716,9 +852,6 @@ const visitMutation = useMutation(api.drive.nodes.visit, { silent: true })
 const clearRecentMutation = useMutation(api.drive.views.clearRecent)
 
 onMounted(() => {
-  narrowMedia = window.matchMedia('(max-width: 767px)')
-  narrow.value = narrowMedia.matches
-  narrowMedia.addEventListener('change', onNarrowChange)
   stopRealtime = () => {}
   syncSavedViewQuery()
   if (presentation.value.view === 'grid') startPreviewObservation()
@@ -726,7 +859,6 @@ onMounted(() => {
   window.addEventListener('paste', onPaste)
 })
 onBeforeUnmount(() => {
-  narrowMedia?.removeEventListener('change', onNarrowChange)
   stopRealtime?.()
   stopPreviews?.()
   window.removeEventListener('popstate', onMobileBack)
@@ -766,7 +898,7 @@ watch(
 watch(
   () => [props.destination, String(route.params.node ?? ''), discovered.data] as const,
   ([destination, id]) => {
-    const root = destination === 'folder' ? rootPath(id) : null
+    const root = destination === 'folder' ? rootPath(id, discovered.data) : null
     if (root) void router.replace({ path: root, query: route.query })
   },
   { immediate: true },
@@ -774,7 +906,7 @@ watch(
 watch(
   () => detail.data,
   (folder) => {
-    if (!folder || props.destination !== 'folder' || rootPath(folder.name)) return
+    if (!folder || props.destination !== 'folder' || rootPath(folder.name, discovered.data)) return
     // The old Drive pages used `/drive/f/<id>` for a file. A non-folder id opens as a document [T020].
     if (folder.kind !== 'folder' && folder.kind !== 'root') {
       void router.replace({
@@ -802,11 +934,7 @@ watch(
 watch(
   () => trash.outcome.value,
   (outcome) => {
-    if (outcome)
-      selectionState.value = {
-        selected: outcome.failed.map((failure) => failure.node),
-        anchor: null,
-      }
+    if (outcome) picked.keepOnly(outcome.failed.map((failure) => failure.node))
   },
 )
 
@@ -831,26 +959,25 @@ const arrangeable = computed(() => concreteDestination.value && !isSearching.val
 const dateColumn = computed<FilesDateColumn>(() =>
   props.destination === 'recent' && !isSearching.value ? 'opened' : 'modified',
 )
-const offeredColumns = computed(() =>
-  inOwnSpace.value ? FILES_COLUMNS.filter((column) => column !== 'owner') : FILES_COLUMNS,
-)
-/** The open folder's own actions. A root is named by the sidebar and offers none. */
-const folderActions = computed<DropdownActionOption[]>(() => {
+const offeredColumns = computed(() => FILES_COLUMNS.filter(isOfferedColumn))
+/**
+ * Owner says nothing in the user's own space, and Access nothing in Trash.
+ * The listing query reads this early, so it reads no later `const`.
+ */
+function isOfferedColumn(column: string) {
+  if (column === 'owner') return !inOwnSpace.value
+  if (column === 'access') {
+    const inTrash = props.destination === 'trash' && !isSearching.value
+    return !inTrash
+  }
+  return true
+}
+/** The open folder, when the page shows it. A root is named by the sidebar and offers no actions. */
+const openFolder = computed(() => {
   const folder = detail.data
-  if (props.destination !== 'folder' || isSearching.value || !folder || folder.kind !== 'folder')
-    return []
-  const can = nodeActions(folder, signedIn.value)
-  return [
-    ...(can.share
-      ? [{ label: 'Share folder', icon: 'lucide-share-2', onClick: () => shareRow(folder) }]
-      : []),
-    ...(can.copyLink
-      ? [{ label: 'Copy link', icon: 'lucide-link', onClick: () => copyNodeLink(folder) }]
-      : []),
-    ...(can.rename
-      ? [{ label: 'Rename folder', icon: 'lucide-pencil', onClick: () => beginRename(folder) }]
-      : []),
-  ]
+  return props.destination === 'folder' && !isSearching.value && folder?.kind === 'folder'
+    ? folder
+    : null
 })
 /** The trashed folder's notice. Its trash root offers Restore and Delete forever; a folder inside one points to it. */
 const trashedNotice = computed<{
@@ -897,32 +1024,34 @@ const trashedNotice = computed<{
     secondary: restore && remove,
   }
 })
-// Options a keyboard shortcut also runs, defined once so the key finds the item its menu shows.
-const selectAllOption: DropdownActionOption = {
-  label: 'Select all',
-  icon: 'lucide-list-checks',
-  onClick: selectAll,
-}
-const newFolderOption = typedOption(
-  'Folder',
-  { kind: 'folder', title: 'Folder', mime: null, content_doctype: null },
-  () => create('folder'),
+/** The open folder's part of the "…" menu: the actions of its own row menu. */
+const folderGroups = computed<DropdownItem[]>(() => {
+  const folder = openFolder.value
+  return folder ? folderMenu(rowMenuOptions(folder), () => trashOpenFolder(folder)) : []
+})
+/** A mouse: it can drag files in, and has the checkbox on hover. Phones and tablets have neither. */
+const finePointer = useMediaQuery('(hover: hover) and (pointer: fine)')
+/** How a touch device starts selecting. A mouse has the checkbox on hover instead. */
+const selectEntry = computed<DropdownActionOption[]>(() =>
+  finePointer.value
+    ? []
+    : [{ label: __('Select'), icon: 'lucide-square-check', onClick: picked.start }],
 )
-const uploadFilesOption: DropdownActionOption = {
-  label: 'Files',
-  icon: 'lucide-upload',
-  onClick: () => pickUpload('files'),
-}
 const moreOptions = computed<DropdownItem[]>(() => [
-  ...(folderActions.value.length ? [{ group: 'This folder', options: folderActions.value }] : []),
+  ...folderGroups.value,
   ...(hasRows.value
     ? [
         {
           group: 'Select',
           hideLabel: true,
           options: [
-            { label: 'Select rows', icon: 'lucide-square-check', onClick: selectFirst },
-            selectAllOption,
+            ...selectEntry.value,
+            {
+              key: 'select-all',
+              label: 'Select all',
+              icon: 'lucide-list-checks',
+              onClick: selectAll,
+            },
           ],
         },
       ]
@@ -940,74 +1069,72 @@ const moreOptions = computed<DropdownItem[]>(() => [
         },
       ]),
 ])
-/**
- * What a selection of several items offers, in the toolbar and on right-click,
- * and the options among them that a keyboard shortcut runs.
- */
+/** What a selection of several items offers, in the toolbar and on right-click. */
 // An action is enabled only when every selected row allows it (spec §5.8).
-const bulkMenu = computed(() => {
+const bulkActions = computed(() => {
   const allow = (action: keyof NodeActions) => allAllow(selectedRows.value, action, signedIn.value)
-  if (trashActions.value) {
-    const restore = {
-      label: 'Restore',
-      icon: 'lucide-undo-2',
-      disabled: trash.pending.value || !allow('restore'),
-      onClick: runRestore,
-    }
-    const remove = {
-      label: 'Delete forever',
-      icon: 'lucide-trash-2',
-      disabled: trash.pending.value || !allow('deleteForever'),
-      onClick: runPurge,
-    }
-    return { options: [restore, remove], commands: { move: undefined, remove } }
-  }
-  const move = {
-    label: 'Move',
-    icon: 'lucide-folder-input',
-    disabled: !allow('move'),
-    onClick: beginBulkMove,
-  }
-  const remove = {
-    label: 'Move to trash',
-    icon: 'lucide-trash-2',
-    disabled: !allow('trash'),
-    onClick: runBulkTrash,
-  }
-  return {
-    options: [
-      move,
-      {
-        label: __('Download'),
-        icon: 'lucide-download',
-        disabled: !allow('download'),
-        onClick: () => downloadItems(selectedRows.value),
-      },
-      // A star is personal, so it needs a session.
-      ...(signedIn.value
-        ? [
-            {
-              label: selectedRows.value.every((row) => row.favourite) ? __('Unstar') : __('Star'),
-              icon: 'lucide-star',
-              disabled: !allow('star'),
-              onClick: () => starRows(selectedRows.value),
-            },
-          ]
-        : []),
-      remove,
-      ...(recentActions.value
-        ? [
-            {
-              label: 'Remove from Recent',
-              icon: 'lucide-list-x',
-              disabled: clearRecentMutation.isPending,
-              onClick: () => removeFromRecent(selectedRows.value),
-            },
-          ]
-        : []),
-    ],
-    commands: { move, remove },
-  }
+  return trashActions.value
+    ? [
+        {
+          label: 'Restore',
+          icon: 'lucide-undo-2',
+          disabled: trash.pending.value || !allow('restore'),
+          onClick: runRestore,
+        },
+        {
+          key: 'delete-forever',
+          label: 'Delete forever',
+          icon: 'lucide-trash-2',
+          disabled: trash.pending.value || !allow('deleteForever'),
+          onClick: runPurge,
+        },
+      ]
+    : [
+        {
+          key: 'move',
+          label: 'Move',
+          icon: 'lucide-folder-input',
+          disabled: !allow('move'),
+          onClick: beginBulkMove,
+        },
+        {
+          label: __('Download'),
+          icon: 'lucide-download',
+          disabled: !allow('download'),
+          onClick: () => downloadItems(selectedRows.value),
+        },
+        // A star is personal, so it needs a session.
+        ...(signedIn.value
+          ? [
+              {
+                label:
+                  selectedRows.value.length && selectedRows.value.every((row) => row.favourite)
+                    ? __('Unstar')
+                    : __('Star'),
+                icon: 'lucide-star',
+                disabled: !allow('star'),
+                onClick: () => starRows(selectedRows.value),
+              },
+            ]
+          : []),
+        {
+          key: 'trash',
+          label: 'Move to trash',
+          icon: 'lucide-trash-2',
+          disabled: !allow('trash'),
+          onClick: runBulkTrash,
+        },
+        ...(recentActions.value
+          ? [
+              {
+                label: 'Remove from Recent',
+                icon: 'lucide-list-x',
+                disabled: clearRecentMutation.isPending || !selectedRows.value.length,
+                onClick: () => removeFromRecent(selectedRows.value),
+              },
+            ]
+          : []),
+      ]
 })
 /** A menu row led by the type icon the listing shows for what it creates. */
 function typedOption(
@@ -1032,7 +1159,14 @@ const newOptions = computed<DropdownItem[]>(() => {
     {
       group: 'Create',
       options: [
-        newFolderOption,
+        {
+          ...typedOption(
+            'Folder',
+            { kind: 'folder', title: 'Folder', mime: null, content_doctype: null },
+            () => create('folder'),
+          ),
+          key: 'create-folder',
+        },
         ...documents.map((definition) =>
           typedOption(
             definition.newLabel(),
@@ -1042,7 +1176,7 @@ const newOptions = computed<DropdownItem[]>(() => {
               mime: null,
               content_doctype: definition.contentDoctype,
             },
-            () => create('document', definition.contentDoctype),
+            () => void createAndOpen(definition.contentDoctype),
           ),
         ),
         typedOption(
@@ -1067,14 +1201,22 @@ const newOptions = computed<DropdownItem[]>(() => {
       ? [
           {
             group: 'Upload',
+            // The items name the verb themselves, so the heading would repeat it.
+            hideLabel: true,
             options: [
-              uploadFilesOption,
+              {
+                key: 'upload-files',
+                label: __('Upload files'),
+                icon: 'lucide-upload',
+                onClick: () => pickUpload('files'),
+              },
               // Phone pickers offer no folders (spec §5.12).
               ...(narrow.value
                 ? []
                 : [
                     {
-                      label: 'Folder',
+                      key: 'upload-folder',
+                      label: __('Upload folder'),
                       icon: 'lucide-folder-up',
                       onClick: () => pickUpload('folder'),
                     },
@@ -1086,32 +1228,87 @@ const newOptions = computed<DropdownItem[]>(() => {
   ]
 })
 
+const listingView = useTemplateRef<InstanceType<typeof FilesListing>>('listingView')
+/** The row a key acts on when nothing is selected: the one that shows keyboard focus. */
+function focusedTarget(): DriveNode | null {
+  if (selectionMode.value) return null
+  return listingView.value?.focusedRow() ?? null
+}
 // A shortcut runs the option a menu shows for it, so it is refused where the menu is.
 useListingShortcuts(
   () => {
-    const [only, ...others] = selectedRows.value
-    const row = only && !others.length ? rowCommands(only) : undefined
-    const selected = selectionMode.value ? bulkMenu.value.commands : undefined
+    const focused = focusedTarget()
+    const [only, ...others] = focused ? [focused] : selectedRows.value
+    const rowMenu = only && !others.length ? rowMenuOptions(only) : []
+    const selected = selectionMode.value ? bulkActions.value : []
     const createMenu = canCreate.value ? newOptions.value : []
+    const removeKey = trashActions.value ? 'delete-forever' : 'trash'
     return {
-      selectAll: shownIn(moreOptions.value, selectAllOption),
+      selectAll: menuCommand(moreOptions.value, 'select-all'),
       clearSelection: selectionMode.value ? { onClick: clearSelected } : undefined,
-      move: selected?.move,
-      remove: selected?.remove,
-      openInNewTab: row?.openInNewTab,
-      share: row?.share,
-      upload: shownIn(createMenu, uploadFilesOption),
-      newFolder: shownIn(createMenu, newFolderOption),
+      move: menuCommand(selected, 'move'),
+      remove: menuCommand(focused ? rowMenu : selected, removeKey),
+      openInNewTab: menuCommand(rowMenu, 'open-in-new-tab'),
+      share: menuCommand(rowMenu, 'share'),
+      upload: menuCommand(createMenu, 'upload-files'),
+      newFolder: menuCommand(createMenu, 'create-folder'),
+      rename: menuCommand(rowMenu, 'rename'),
+      parent: folderParent.value ? { onClick: openParent } : undefined,
+      undo: undoLatest,
     }
   },
   { enabled: () => signedIn.value, open: openView },
+  { inTrash: () => trashActions.value },
 )
-/** `option` when `items` show it, by identity rather than by its translated label. */
-function shownIn(items: readonly DropdownItem[], option: DropdownActionOption) {
-  const shown = items.some((item) =>
-    'group' in item ? item.options.includes(option) : item === option,
+/** Opens the folder above, with the folder the user came from focused. */
+function openParent() {
+  const parent = folderParent.value
+  if (!parent) return
+  const state = { reveal: parentId.value }
+  void router.push(typeof parent === 'string' ? { path: parent, state } : { ...parent, state })
+}
+// A navigation that should land on an item names it in the history entry.
+// Back from a file preview lands on the last file it showed.
+const revealing = ref<{ id: string; highlight: boolean } | null>(null)
+watch(
+  () => route.fullPath,
+  (path) => {
+    const { reveal, highlight, forward } = router.options.history.state
+    const shown = typeof forward === 'string' ? takeShown(path) : null
+    revealing.value =
+      typeof reveal === 'string'
+        ? { id: reveal, highlight: highlight === true }
+        : shown
+          ? { id: shown, highlight: false }
+          : null
+  },
+  { immediate: true },
+)
+watch([revealing, () => listing.status, listingView], async ([target, status, view]) => {
+  if (!target || status === 'pending' || !view) return
+  revealing.value = null
+  const found = await view.reveal(target.id, { highlight: target.highlight })
+  if (found || !target.highlight) return
+  toast.info(
+    listing.hasNext
+      ? __('Opened {0}. The item is further down.', [placeLabel.value])
+      : __('Opened {0}. The item is no longer in it.', [placeLabel.value]),
   )
-  return shown ? option : undefined
+})
+/** The folder a listed item is in, when its trail shows it. Trash rows have none. */
+function shownParent(row: DriveNode) {
+  const parent = row.breadcrumbs?.at(-1)
+  return parent && parent.name === row.parent_node && row.state === 'Active' ? parent : null
+}
+/** Opens the item's folder with the item focused and highlighted. */
+function showRowInFolder(row: DriveNode) {
+  const parent = shownParent(row)
+  if (!parent) return
+  const state = { reveal: row.name, highlight: true }
+  const root = rootPath(parent.name, discovered.data)
+  void router.push(
+    root ? { path: root, query: presentationQuery.value, state } : { ...folderPath(parent), state },
+  )
 }
 function openView(view: ListingView) {
   const name = {
@@ -1128,20 +1325,12 @@ function setPresentation(change: PresentationChange) {
   void replacePresentation(router, userPresentation.value, change)
 }
 function setColumn(column: FilesColumn, visible: boolean) {
-  const chosen = userPresentation.value
-  const columns = visible
-    ? [...new Set([...chosen.columns, column])]
-    : chosen.columns.filter((item) => item !== column)
-  writePresentationPreference({ ...chosen, columns })
+  writeColumnChoice(userPresentation.value.columns, column, visible)
   presentationVersion.value += 1
 }
 function changeSort(column: FilesSort) {
   if (!arrangeable.value) return
-  const chosen = userPresentation.value
-  setPresentation({
-    sort: column,
-    dir: chosen.sort === column && chosen.dir === 'asc' ? 'desc' : 'asc',
-  })
+  setPresentation(nextSort(settingsPresentation.value, column))
 }
 function updateSearch(value: string | number) {
   const q = String(value).trim() || undefined
@@ -1161,23 +1350,13 @@ function clearSearchAndFocus(event: MouseEvent) {
   field?.focus()
 }
 function selectNode(row: DriveNode, range: boolean) {
-  selectionState.value = toggleSelection(
-    selectionState.value,
-    row.name,
-    listing.rows.map((item) => item.name),
-    range,
-  )
-}
-function selectFirst() {
-  const row = listing.rows[0]
-  if (row) selectNode(row, false)
+  picked.toggle(row.name, range)
 }
 function selectAll() {
-  const ids = listing.rows.map((row) => row.name)
-  selectionState.value = { selected: ids, anchor: ids.at(-1) ?? null }
+  picked.selectAll()
 }
 function clearSelected() {
-  selectionState.value = clearSelection()
+  picked.clear()
 }
 /** A pasted image, such as a screenshot, uploads into the open folder as a picked file would. */
 function onPaste(event: ClipboardEvent) {
@@ -1188,20 +1367,11 @@ function onPaste(event: ClipboardEvent) {
   event.preventDefault()
   void uploads.value?.upload({ files, folders: [] }, target)
 }
-function onNarrowChange(event: MediaQueryListEvent) {
-  narrow.value = event.matches
-}
 function onMobileBack() {
   if (selectionMode.value) clearSelected()
 }
 function requestPanel() {
   openAreaSidebar('files')
-}
-function rootPath(id: string): string | null {
-  if (!id) return null
-  if (id === discovered.data?.personal.node) return '/drive'
-  if (id === discovered.data?.organization?.node) return '/drive/organization'
-  return null
 }
 function typeIcon(value: string | number) {
   const option = typeChoices.value.find((choice) => choice.value === value)
@@ -1243,6 +1413,7 @@ function startPreviewObservation() {
     refresh: async () => {
       await listing.refetch()
     },
+    rows: () => listing.rows,
   })
 }
 function refreshPreviews() {
@@ -1268,21 +1439,38 @@ async function openNode(row: DriveNode, newTab = false) {
     window.open(row.url, '_blank', 'noopener,noreferrer')
     return
   }
-  // A folder keeps the user's view settings. A document's history entry
-  // carries its title, so its tab is named before it loads. A file keeps the
-  // type filter, so its preview steps through the files this listing shows.
-  const target: RouteLocationRaw =
-    row.kind === 'folder'
-      ? { path: nodePath(row), query: presentationQuery.value }
-      : row.kind === 'file'
-        ? { ...driveNodeRoute(row), query: { type: typeQuery(listingTypes.value) } }
-        : driveNodeRoute(row)
+  const target = openTarget(row)
   if (newTab) {
     window.open(router.resolve(target).href, '_blank', 'noopener,noreferrer')
     return
   }
   if (row.kind === 'folder') openedTrail.value = trailOf(row)
   await router.push(target)
+}
+/**
+ * Where opening an item goes. A folder keeps the user's view settings. A
+ * document's history entry carries its title, so its tab is named before it
+ * loads. A file keeps the type filter, so its preview steps through the files
+ * this listing shows.
+ */
+function openTarget(row: DriveNode): RouteLocationRaw {
+  if (row.kind === 'folder') return { path: nodePath(row), query: presentationQuery.value }
+  if (row.kind !== 'file') return driveNodeRoute(row)
+  const target = driveNodeRoute(row)
+  const state = { ...target.state, ...openingLocationState(previewLocation(row)) }
+  return { ...target, state, query: { type: typeQuery(listingTypes.value) } }
+}
+/** The folder a file's preview header names, when this listing knows it, so its opening header names it too. */
+function previewLocation(row: DriveNode): string | null {
+  const parent = detail.data?.name === row.parent_node ? detail.data : null
+  const folder = row.breadcrumbs ? folderOf(row) : parent
+  return folder ? locationTitle(folder, discovered.data) : null
+}
+/** The address an item's name links to. An external link asks before it opens, so it has none. */
+function nodeHref(row: DriveNode): string | undefined {
+  if (row.kind === 'link') return undefined
+  if (!nodeActions(row, signedIn.value).openInNewTab) return undefined
+  return router.resolve(openTarget(row)).href
 }
 
 /** Importing beside a file takes UPLOAD on its folder. Outside that folder's listing the role is not known here, and Drive refuses when asked. */
@@ -1346,7 +1534,7 @@ function onPaneContextMenu(event: MouseEvent) {
 function itemContextOptions(row: DriveNode): DropdownItem[] {
   const selected = selection.value
   if (selected.length > 1 && selected.includes(row.name)) {
-    return [{ group: `${selected.length} selected`, options: bulkMenu.value.options }]
+    return [{ group: `${selected.length} selected`, options: bulkActions.value }]
   }
   if (selected.length && !(selected.length === 1 && selected[0] === row.name)) clearSelected()
   return rowMenuOptions(row)
@@ -1354,14 +1542,32 @@ function itemContextOptions(row: DriveNode): DropdownItem[] {
 /** A row's own menu. `nodeActions` decides what it offers, so a trashed row offers only what Trash allows. */
 function rowMenuOptions(row: DriveNode): DropdownItem[] {
   const can = nodeActions(row, signedIn.value)
-  const { openInNewTab, share } = rowCommands(row, can)
   const groups: { group: string; hideLabel: true; options: DropdownActionOption[] }[] = [
     {
       group: 'Open',
       hideLabel: true,
       options: [
-        { label: 'Open', icon: 'lucide-arrow-up-right', onClick: () => openNode(row) },
-        ...(openInNewTab ? [openInNewTab] : []),
+        { key: 'open', label: 'Open', icon: 'lucide-arrow-up-right', onClick: () => openNode(row) },
+        ...(can.openInNewTab
+          ? [
+              {
+                key: 'open-in-new-tab',
+                label: 'Open in new tab',
+                icon: 'lucide-external-link',
+                onClick: () => openNode(row, true),
+              },
+            ]
+          : []),
+        ...(shownParent(row)
+          ? [
+              {
+                key: 'show-in-folder',
+                label: __('Show in folder'),
+                icon: 'lucide-folder-search',
+                onClick: () => showRowInFolder(row),
+              },
+            ]
+          : []),
         ...(can.copy && opensAsSpreadsheet(row) && mayUploadBeside(row)
           ? [
               {
@@ -1371,7 +1577,9 @@ function rowMenuOptions(row: DriveNode): DropdownItem[] {
               },
             ]
           : []),
-        ...(share ? [share] : []),
+        ...(can.share
+          ? [{ key: 'share', label: 'Share', icon: 'lucide-share-2', onClick: () => shareRow(row) }]
+          : []),
         ...(can.copyLink
           ? [{ label: 'Copy link', icon: 'lucide-link', onClick: () => copyNodeLink(row) }]
           : []),
@@ -1386,7 +1594,14 @@ function rowMenuOptions(row: DriveNode): DropdownItem[] {
       hideLabel: true,
       options: [
         ...(can.rename
-          ? [{ label: 'Rename', icon: 'lucide-pencil', onClick: () => beginRename(row) }]
+          ? [
+              {
+                key: 'rename',
+                label: 'Rename',
+                icon: 'lucide-pencil',
+                onClick: () => beginRename(row),
+              },
+            ]
           : []),
         ...(can.move
           ? [
@@ -1415,10 +1630,16 @@ function rowMenuOptions(row: DriveNode): DropdownItem[] {
       group: 'Select',
       hideLabel: true,
       options: [
-        { label: 'Select', icon: 'lucide-square-check', onClick: () => selectNode(row, false) },
+        {
+          key: 'select',
+          label: 'Select',
+          icon: 'lucide-square-check',
+          onClick: () => selectNode(row, false),
+        },
         ...(recentActions.value
           ? [
               {
+                key: 'remove-from-recent',
                 label: 'Remove from Recent',
                 icon: 'lucide-list-x',
                 onClick: () => removeFromRecent([row]),
@@ -1434,6 +1655,7 @@ function rowMenuOptions(row: DriveNode): DropdownItem[] {
         ...(can.trash
           ? [
               {
+                key: 'trash',
                 label: 'Move to trash',
                 icon: 'lucide-trash-2',
                 theme: 'red' as const,
@@ -1444,6 +1666,7 @@ function rowMenuOptions(row: DriveNode): DropdownItem[] {
         ...(can.restore
           ? [
               {
+                key: 'restore',
                 label: 'Restore',
                 icon: 'lucide-undo-2',
                 onClick: () => trash.restore([itemOf(row)]),
@@ -1453,6 +1676,7 @@ function rowMenuOptions(row: DriveNode): DropdownItem[] {
         ...(can.deleteForever
           ? [
               {
+                key: 'delete-forever',
                 label: 'Delete forever',
                 icon: 'lucide-trash-2',
                 theme: 'red' as const,
@@ -1464,21 +1688,6 @@ function rowMenuOptions(row: DriveNode): DropdownItem[] {
     },
   ]
   return groups.filter((group) => group.options.length)
-}
-/** The options of a row's menu that a keyboard shortcut runs, when the row allows them. */
-function rowCommands(row: DriveNode, can = nodeActions(row, signedIn.value)) {
-  return {
-    openInNewTab: can.openInNewTab
-      ? {
-          label: 'Open in new tab',
-          icon: 'lucide-external-link',
-          onClick: () => openNode(row, true),
-        }
-      : undefined,
-    share: can.share
-      ? { label: 'Share', icon: 'lucide-share-2', onClick: () => shareRow(row) }
-      : undefined,
-  }
 }
 /**
  * A row's trail, as far as the page knows it. Search rows carry their path. A
@@ -1513,6 +1722,29 @@ function pickUpload(source: 'files' | 'folder') {
 function rowDrop(row: DriveNode) {
   return concreteDestination.value && !isSearching.value ? rowDropHandlers(drop, row) : null
 }
+/** Drag to move, in a folder the user can rearrange. Saved views, search and a trashed folder have none. */
+const dragMove = useDragMove({
+  enabled: () =>
+    signedIn.value && concreteDestination.value && !isSearching.value && !trashedFolder.value,
+  rows: () => listing.rows,
+  selection: () => selection.value,
+  folder: () => (detail.data?.name === parentId.value ? detail.data : null),
+  roots: () => discovered.data,
+  move: moveDragged,
+  trash: trashDragged,
+})
+const dragOn = computed(() => (dragMove.isOn() ? dragMove : undefined))
+/** A drop moves as the Move dialog does: the selection in a batch, one row on its own. */
+async function moveDragged(
+  { items, fromSelection }: DraggedItems,
+  folder: { node: string; title: string },
+) {
+  await moveItems(items, folder.node, folder.title, { bulk: fromSelection })
+}
+async function trashDragged({ items: [only], fromSelection }: DraggedItems) {
+  if (fromSelection) await runBulkTrash()
+  else if (only) await trashRow(only)
+}
 function itemOf(row: Pick<DriveNode, 'name' | 'title'>) {
   return { node: row.name, title: row.title }
 }
@@ -1524,7 +1756,21 @@ async function runPurge() {
 }
 async function trashRow(row: DriveNode) {
   const item = itemOf(row)
-  if (await trashMutation.run({ node: row.name, state: 'Trashed' })) announceTrash([item])
+  if (!(await trashMutation.run({ node: row.name, state: 'Trashed' }))) return
+  deselect(row)
+  announceTrash([item])
+}
+/** A row that has left the listing leaves the selection too, as a batch's rows do. */
+function deselect(row: DriveNode) {
+  if (selection.value.includes(row.name))
+    picked.keepOnly(selection.value.filter((name) => name !== row.name))
+}
+/** A trashed folder opens read-only, so the page goes up to its parent first. */
+async function trashOpenFolder(folder: DriveNode) {
+  const parent = folderParent.value
+  if (!(await trashMutation.run({ node: folder.name, state: 'Trashed' }))) return
+  if (parent) await router.replace(parent)
+  announceTrash([itemOf(folder)])
 }
 /** A folder deleted forever is gone, so the page goes back to the Trash it was in. */
 async function purgeOpenFolder(item: { node: string; title: string }, folder: DriveNode) {
@@ -1547,22 +1793,39 @@ function beginBulkMove() {
   pickerOpen.value = true
 }
 async function applyPicker(parent: string, destination: string) {
+  const row = activeNode.value
+  if (pickerMode.value === 'copy') {
+    if (!row) return
+    const copy = await copyMutation.run({ node: row.name, parent_node: parent })
+    announceCopy({ node: copy.name, title: copy.title }, destination)
+    pickerOpen.value = false
+    return
+  }
+  // The moved rows leave the list at once, so the picker closes with them.
+  pickerOpen.value = false
+  const rows = pickerBulk.value ? selectedRows.value : row ? [row] : []
+  await moveItems(rows, parent, destination, { bulk: pickerBulk.value })
+}
+/** Moves `rows` to `parent`: together as a batch, or one row on its own. */
+async function moveItems(
+  rows: readonly DriveNode[],
+  parent: string,
+  destination: string,
+  { bulk }: { bulk: boolean },
+) {
   // Read before the move: a move changes each node's parent in place.
-  const moving: MovedItem[] = (
-    pickerBulk.value ? selectedRows.value : activeNode.value ? [activeNode.value] : []
-  ).flatMap((row) =>
+  const moving: MovedItem[] = rows.flatMap((row) =>
     row.parent_node
       ? [{ node: row.name, title: row.title, from: row.parent_node, to: parent }]
       : [],
   )
-  if (pickerBulk.value) {
+  if (bulk) {
     const result = await runBatch(
       moving.map((item) => item.node),
       { parent_node: parent },
       'moved',
     )
     if (!result) return
-    pickerOpen.value = false
     announceMove(
       moving.filter((item) => result.ok.includes(item.node)),
       destination,
@@ -1571,18 +1834,23 @@ async function applyPicker(parent: string, destination: string) {
     if (!result.failed.length) batchOutcome.value = null
     return
   }
-  if (!activeNode.value) return
-  const result =
-    pickerMode.value === 'move'
-      ? await moveMutation.run({ node: activeNode.value.name, parent_node: parent })
-      : await copyMutation.run({ node: activeNode.value.name, parent_node: parent })
-
-  if (pickerMode.value === 'move') announceMove(moving, destination)
-  else announceCopy({ node: result.name, title: result.title }, destination)
-  pickerOpen.value = false
+  const [row] = rows
+  if (!row) return
+  await moveMutation.run({ node: row.name, parent_node: parent })
+  deselect(row)
+  announceMove(moving, destination)
 }
 async function runBulkTrash() {
   const trashing = selectedRows.value.map(itemOf)
+  if (trashing.length > 1) {
+    const agreed = await confirm({
+      title: __('Move {0} items to trash?', [trashing.length]),
+      message: __('You can restore them from Trash.'),
+      confirmLabel: __('Move to trash'),
+      destructive: true,
+    })
+    if (!agreed) return
+  }
   const result = await runBatch(
     trashing.map((item) => item.node),
     { state: 'Trashed' },
@@ -1595,16 +1863,19 @@ async function runBulkTrash() {
 async function runBatch(
   nodes: string[],
   patch: { parent_node?: string; state?: 'Trashed' },
-  verb: string,
+  verb: BatchVerb,
 ): Promise<DriveBatchResult | null> {
+  // The rows leave at once, and the selection with them. A refusal brings both back.
+  picked.keepOnly([])
   try {
-    const result = await batchMutation.run({ nodes, patch })
+    const result = await inBatches(nodes, (chunk) => batchMutation.run({ nodes: chunk, patch }))
 
     batchOutcome.value = result
     batchVerb.value = verb
-    selectionState.value = { selected: result.failed.map((failure) => failure.node), anchor: null }
+    picked.keepOnly(result.failed.map((failure) => failure.node))
     return result
   } catch {
+    picked.keepOnly(nodes)
     return null
   }
 }
@@ -1630,29 +1901,35 @@ async function setStar(row: DriveNode, starred: boolean) {
 }
 /** A share write can change the caller's own access, so the listing is read again. */
 async function shareRow(row: DriveNode) {
-  if (await dialogs.share(row.name)) void listing.refetch()
+  if (await dialogs.share(row.name, row)) void listing.refetch()
 }
-function create(kind: CreateRequest['kind'], contentDoctype?: string) {
+let creatingDocument = false
+function create(kind: CreateRequest['kind']) {
   if (!parentId.value) return
-  const definition = documentTypes.find((type) => type.contentDoctype === contentDoctype)
-  createRequest.value = {
-    parent: parentId.value,
-    kind,
-    contentDoctype,
-    typeLabel: definition?.newLabel(),
-  }
+  createRequest.value = { parent: parentId.value, kind }
   createOpen.value = true
-  // Loaded while the name is typed, so the new document takes typing as soon as it opens.
-  void definition?.loadOpeningEditor?.()
 }
-async function onCreated(created: DriveNode, request: CreateRequest) {
-  if (request.kind === 'document') {
-    // the document's surface may ask what a new one should start as
-    await router.push(newDocumentRoute(created))
-    return
+/** Creates a document with its default title and opens it; a second click meanwhile does nothing. */
+async function createAndOpen(contentDoctype: string) {
+  const parent = parentId.value
+  if (!parent || creatingDocument) return
+  creatingDocument = true
+  try {
+    // createDocument reports its own errors.
+    const created = await createDocument({
+      parent_node: parent,
+      content_doctype: contentDoctype,
+    }).catch(() => null)
+    // The document's surface may ask what a new one should start as.
+    if (created) await router.push(newDocumentRoute(created))
+  } finally {
+    creatingDocument = false
   }
+}
+function onCreated(created: DriveNode) {
   // A search hides what was just added, so the folder shows again.
   if (isSearching.value) clearSearch()
+  else if (created.parent_node === parentId.value) createdRows.add(created)
 }
 function replaceSlug(row: DriveNode) {
   if (props.destination === 'folder' && row.name === route.params.node) {

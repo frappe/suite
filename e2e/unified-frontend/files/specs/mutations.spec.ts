@@ -144,7 +144,8 @@ test("Move to trash removes the row from the folder listing", async ({ page }) =
 	await page.getByRole("menuitem", { name: "Move to trash" }).click();
 
 	await expect(page.getByText(sibling.title, { exact: true })).toHaveCount(0);
-	expect((await getNode(api, sibling.name)).state).toBe("Trashed");
+	// The row leaves before the server answers.
+	await expect.poll(async () => (await getNode(api, sibling.name)).state).toBe("Trashed");
 });
 
 test("Share on a row opens the Drive share dialog", async ({ page }) => {

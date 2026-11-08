@@ -9,10 +9,9 @@ import {
   type Transport,
 } from '@/platform/transport'
 
-import { Entities } from './entities'
+import { deleteRetiredEntityStore, Entities } from './entities'
 import { recordMutationFailure } from './errors'
 import { mutationObserver, observe } from './observers'
-import { identityPartition } from './partition'
 import { Reads } from './reads'
 import type {
   CallArgs,
@@ -44,8 +43,6 @@ export type {
 export interface ClientOptions {
   transport?: Transport
   realtime?: Realtime | false
-  persistence?: boolean
-  identity?: string | null
   feedback?: (error: Error) => void
 }
 
@@ -55,13 +52,9 @@ export function createApiClient(
 ) {
   const feedback = options.feedback ?? reportError
   const transport = options.transport ?? defaultTransport
-  const entities = new Entities(options.persistence ?? true)
-  const reads = new Reads(
-    transport,
-    entities,
-    options.realtime,
-    identityPartition(options.identity),
-  )
+  deleteRetiredEntityStore()
+  const entities = new Entities()
+  const reads = new Reads(transport, entities, options.realtime)
   const writes = new Writes(transport, reads, options.feedback ?? reportError)
   const owners = new Map<string, Promise<OwnerRegistration>>()
   const cleanup: Array<() => void> = []
@@ -179,11 +172,6 @@ export function createApiClient(
         ),
       )
     }
-    cleanup.push(
-      realtime.subscribe('drive:changed', () =>
-        reads.invalidate((reference) => reference.owner === 'drive'),
-      ),
-    )
   }
   return {
     client,
@@ -194,8 +182,7 @@ export function createApiClient(
     onTouch: writes.onTouch.bind(writes),
     onChallenge: writes.onChallenge.bind(writes),
     writesSettled: writes.settled.bind(writes),
-    resetIdentity: (identity?: string | null) =>
-      reads.switchPartition(identityPartition(identity, true)),
+    resetIdentity: () => reads.switchPartition(),
     invalidate: reads.invalidate.bind(reads),
     dispose() {
       for (const stop of cleanup) stop()

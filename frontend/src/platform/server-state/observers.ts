@@ -138,6 +138,15 @@ export function observe<I, O>(
   function materializedPages() {
     return (current.value?.pages ?? []).map((value) => reads.entities.materialize(value))
   }
+  /** Every row the loaded pages hold. Offset paging counts these. */
+  function loadedRows(): unknown[] {
+    const definition = page.page
+    if (!definition) return []
+    return materializedPages().flatMap((value) => {
+      const rows = isRecord(value) ? value[definition.rows] : undefined
+      return Array.isArray(rows) ? rows : []
+    })
+  }
   const infinite: InfiniteQueryState<unknown> = reactive({
     get status() {
       return query.status
@@ -149,12 +158,13 @@ export function observe<I, O>(
       await query.refetch()
     },
     get rows() {
-      const definition = page.page
-      if (!definition) return []
-      return materializedPages().flatMap((value) => {
-        const rows = isRecord(value) ? value[definition.rows] : undefined
-        return Array.isArray(rows) ? rows : []
-      })
+      const rows = loadedRows()
+      // A row a pending write took out of the listing hides at once. The pages keep it,
+      // so paging still counts it and a rollback shows it in its place.
+      const record = current.value
+      const member = record?.policy.member
+      if (!record || !member) return rows
+      return rows.filter((row) => !isRecord(row) || member(row, record.input))
     },
     get hasNext() {
       const last = materializedPages().at(-1)
@@ -168,7 +178,7 @@ export function observe<I, O>(
       return (
         Array.isArray(rows) &&
         rows.length > 0 &&
-        offset + infinite.rows.length < Number(last[page.page.total])
+        offset + loadedRows().length < Number(last[page.page.total])
       )
     },
     get total() {
@@ -199,7 +209,7 @@ export function observe<I, O>(
           ? { ...value, [page.page.cursor]: last[page.page.next] }
           : {
               ...value,
-              [page.page.offset]: Number(value[page.page.offset] ?? 0) + infinite.rows.length,
+              [page.page.offset]: Number(value[page.page.offset] ?? 0) + loadedRows().length,
             }
       await reads.fetch(record, next, { signal: controller?.signal }, true)
       if (run !== generation) return
