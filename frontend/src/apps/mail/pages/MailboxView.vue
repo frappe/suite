@@ -386,7 +386,7 @@
 <script setup lang="ts">
 import { Breadcrumbs, Button, Checkbox, Dialog } from 'frappe-ui'
 import { FolderInput, Folders, LoaderCircle } from 'lucide-vue-next'
-import { computed, h, inject, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
+import { computed, h, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { api, client, useInfiniteQuery, useMutation, type InputOf } from '@/api'
