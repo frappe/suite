@@ -732,6 +732,13 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       return raiseToast(__('Please add at least one recipient.'), 'error')
     showScheduleModal.value = true
   }
+  // Remind me if nobody replies: chosen here, and set by the send itself, so it exists only for mail
+  // that went out (see suite/mail/reminders.py). The server refuses a time before the mail goes out.
+  const remindAt = ref<string>()
+  const setRemindAt = async (at?: string) => {
+    remindAt.value = at
+  }
+
   const scheduleSend = (sendAt: string) => sendMail(sendAt)
 
   // Undo send: Send actually scheduled delivery a few seconds out (a server-side hold), so undoing
@@ -891,6 +898,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       send_at,
       undo_send,
       draft_key: mail.draft_key,
+      remind_at: save_as_draft ? undefined : remindAt.value,
     }
     // Silent: the save state and the send's own report say what happened, once, not each retry.
     const result = await client.mutation(api.mail.messages.create, input, {
@@ -928,6 +936,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       send_at,
       undo_send,
       draft_key: mail.draft_key,
+      remind_at: submit ? remindAt.value : undefined,
     }
     const result = await client.mutation(api.mail.messages.updateDraft, input, {
       ...write,
@@ -1046,6 +1055,8 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     showScheduleModal,
     openScheduleModal,
     scheduleSend,
+    remindAt,
+    setRemindAt,
     openQuotedContent,
     openAttachment,
     mentionExtensions,

@@ -32,7 +32,7 @@ beforeEach(() => {
   fetcher.mockReset()
   engine = createApiClient(
     { drive: () => import('@/apps/drive/client/policy').then((module) => module.registration) },
-    { transport: createTransport({ fetch: fetcher }), persistence: false, feedback },
+    { transport: createTransport({ fetch: fetcher }), feedback },
   )
   mocks.useMutation.mockImplementation(engine.useMutation)
 })

@@ -1,6 +1,6 @@
 import { toast } from 'frappe-ui'
 import { computed, onMounted, onUnmounted, readonly, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter, type LocationQuery } from 'vue-router'
 
 import { api, client } from '@/api'
 import router from '@/apps/mail/router'
@@ -166,6 +166,14 @@ export const mailSearchRoute = (accountId: string, query: Record<string, string>
   },
   query,
 })
+/**
+ * Whether a route query holds a mail search. `all_accounts` is the search's scope, not a
+ * condition: a route carrying only that has no search on it.
+ */
+export function hasMailSearchQuery(query: LocationQuery): boolean {
+  return Object.keys(query).some((key) => key !== 'all_accounts')
+}
+
 export const useMobileSearch = () => {
   const route = useRoute()
   const router = useRouter()
@@ -182,11 +190,7 @@ export const useMobileSearch = () => {
     root.paletteOpen = true
   }
 
-  // `all_accounts` is the search's scope, not a condition: a route carrying only that has no
-  // search on it.
-  const hasSearchQuery = computed(() =>
-    Object.keys(route.query).some((key) => key !== 'all_accounts'),
-  )
+  const hasSearchQuery = computed(() => hasMailSearchQuery(route.query))
 
   // The palette's open state, for the layout that hides the compose button behind it and
   // closes it when the search route is left.

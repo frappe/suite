@@ -9,6 +9,11 @@ export type NodeCreateCreateFolderOutputAccessShape = {
   can_manage?: boolean
 }
 
+export type NodeCreateCreateFolderOutputAudienceShape = {
+  kind: 'public' | 'organization' | 'link' | 'people'
+  people: number
+}
+
 export type NodeCreateCreateFolderOutputBreadcrumbShape = {
   name: string
   title: string
@@ -45,7 +50,9 @@ export type NodeCreateCreateFolderOutput = {
   modified: string | null
   content_modified: string | null
   access?: NodeCreateCreateFolderOutputAccessShape
+  audience?: NodeCreateCreateFolderOutputAudienceShape
   breadcrumbs?: Array<NodeCreateCreateFolderOutputBreadcrumbShape>
+  contents_size?: number
   preview?: NodeCreateCreateFolderOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -78,6 +85,11 @@ export type NodeCreateCreateFileOutputAccessShape = {
   source_node?: string | null
   source_principal?: string | null
   can_manage?: boolean
+}
+
+export type NodeCreateCreateFileOutputAudienceShape = {
+  kind: 'public' | 'organization' | 'link' | 'people'
+  people: number
 }
 
 export type NodeCreateCreateFileOutputBreadcrumbShape = {
@@ -124,7 +136,9 @@ export type NodeCreateCreateFileOutput = {
   modified: string | null
   content_modified: string | null
   access?: NodeCreateCreateFileOutputAccessShape
+  audience?: NodeCreateCreateFileOutputAudienceShape
   breadcrumbs?: Array<NodeCreateCreateFileOutputBreadcrumbShape>
+  contents_size?: number
   preview?: NodeCreateCreateFileOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -157,6 +171,11 @@ export type NodeCreateCreateLinkOutputAccessShape = {
   source_node?: string | null
   source_principal?: string | null
   can_manage?: boolean
+}
+
+export type NodeCreateCreateLinkOutputAudienceShape = {
+  kind: 'public' | 'organization' | 'link' | 'people'
+  people: number
 }
 
 export type NodeCreateCreateLinkOutputBreadcrumbShape = {
@@ -200,7 +219,9 @@ export type NodeCreateCreateLinkOutput = {
   modified: string | null
   content_modified: string | null
   access?: NodeCreateCreateLinkOutputAccessShape
+  audience?: NodeCreateCreateLinkOutputAudienceShape
   breadcrumbs?: Array<NodeCreateCreateLinkOutputBreadcrumbShape>
+  contents_size?: number
   preview?: NodeCreateCreateLinkOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -233,6 +254,11 @@ export type NodeCreateCreateDocumentOutputAccessShape = {
   source_node?: string | null
   source_principal?: string | null
   can_manage?: boolean
+}
+
+export type NodeCreateCreateDocumentOutputAudienceShape = {
+  kind: 'public' | 'organization' | 'link' | 'people'
+  people: number
 }
 
 export type NodeCreateCreateDocumentOutputBreadcrumbShape = {
@@ -279,7 +305,9 @@ export type NodeCreateCreateDocumentOutput = {
   modified: string | null
   content_modified: string | null
   access?: NodeCreateCreateDocumentOutputAccessShape
+  audience?: NodeCreateCreateDocumentOutputAudienceShape
   breadcrumbs?: Array<NodeCreateCreateDocumentOutputBreadcrumbShape>
+  contents_size?: number
   preview?: NodeCreateCreateDocumentOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -375,6 +403,11 @@ export type NodeGetOutputAccessShape = {
   can_manage?: boolean
 }
 
+export type NodeGetOutputAudienceShape = {
+  kind: 'public' | 'organization' | 'link' | 'people'
+  people: number
+}
+
 export type NodeGetOutputBreadcrumbShape = {
   name: string
   title: string
@@ -407,7 +440,9 @@ export type NodeGetOutput = {
   modified: string | null
   content_modified: string | null
   access?: NodeGetOutputAccessShape
+  audience?: NodeGetOutputAudienceShape
   breadcrumbs?: Array<NodeGetOutputBreadcrumbShape>
+  contents_size?: number
   preview?: NodeGetOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -436,6 +471,11 @@ export type NodePatchRenameOutputAccessShape = {
   source_node?: string | null
   source_principal?: string | null
   can_manage?: boolean
+}
+
+export type NodePatchRenameOutputAudienceShape = {
+  kind: 'public' | 'organization' | 'link' | 'people'
+  people: number
 }
 
 export type NodePatchRenameOutputBreadcrumbShape = {
@@ -474,7 +514,9 @@ export type NodePatchRenameOutput = {
   modified: string | null
   content_modified: string | null
   access?: NodePatchRenameOutputAccessShape
+  audience?: NodePatchRenameOutputAudienceShape
   breadcrumbs?: Array<NodePatchRenameOutputBreadcrumbShape>
+  contents_size?: number
   preview?: NodePatchRenameOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -526,6 +568,11 @@ export type NodePatchMoveOutputAccessShape = {
   can_manage?: boolean
 }
 
+export type NodePatchMoveOutputAudienceShape = {
+  kind: 'public' | 'organization' | 'link' | 'people'
+  people: number
+}
+
 export type NodePatchMoveOutputBreadcrumbShape = {
   name: string
   title: string
@@ -558,7 +605,9 @@ export type NodePatchMoveOutput = {
   modified: string | null
   content_modified: string | null
   access?: NodePatchMoveOutputAccessShape
+  audience?: NodePatchMoveOutputAudienceShape
   breadcrumbs?: Array<NodePatchMoveOutputBreadcrumbShape>
+  contents_size?: number
   preview?: NodePatchMoveOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -610,6 +659,11 @@ export type NodePatchTrashOutputAccessShape = {
   can_manage?: boolean
 }
 
+export type NodePatchTrashOutputAudienceShape = {
+  kind: 'public' | 'organization' | 'link' | 'people'
+  people: number
+}
+
 export type NodePatchTrashOutputBreadcrumbShape = {
   name: string
   title: string
@@ -646,7 +700,9 @@ export type NodePatchTrashOutput = {
   modified: string | null
   content_modified: string | null
   access?: NodePatchTrashOutputAccessShape
+  audience?: NodePatchTrashOutputAudienceShape
   breadcrumbs?: Array<NodePatchTrashOutputBreadcrumbShape>
+  contents_size?: number
   preview?: NodePatchTrashOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -698,6 +754,11 @@ export type NodePatchRestoreOutputAccessShape = {
   can_manage?: boolean
 }
 
+export type NodePatchRestoreOutputAudienceShape = {
+  kind: 'public' | 'organization' | 'link' | 'people'
+  people: number
+}
+
 export type NodePatchRestoreOutputBreadcrumbShape = {
   name: string
   title: string
@@ -734,7 +795,9 @@ export type NodePatchRestoreOutput = {
   modified: string | null
   content_modified: string | null
   access?: NodePatchRestoreOutputAccessShape
+  audience?: NodePatchRestoreOutputAudienceShape
   breadcrumbs?: Array<NodePatchRestoreOutputBreadcrumbShape>
+  contents_size?: number
   preview?: NodePatchRestoreOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -786,6 +849,11 @@ export type NodePatchStampOutputAccessShape = {
   can_manage?: boolean
 }
 
+export type NodePatchStampOutputAudienceShape = {
+  kind: 'public' | 'organization' | 'link' | 'people'
+  people: number
+}
+
 export type NodePatchStampOutputBreadcrumbShape = {
   name: string
   title: string
@@ -822,7 +890,9 @@ export type NodePatchStampOutput = {
   modified: string | null
   content_modified: string | null
   access?: NodePatchStampOutputAccessShape
+  audience?: NodePatchStampOutputAudienceShape
   breadcrumbs?: Array<NodePatchStampOutputBreadcrumbShape>
+  contents_size?: number
   preview?: NodePatchStampOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -938,6 +1008,11 @@ export type NodeChildrenOutputAccessShape = {
   can_manage?: boolean
 }
 
+export type NodeChildrenOutputAudienceShape = {
+  kind: 'public' | 'organization' | 'link' | 'people'
+  people: number
+}
+
 export type NodeChildrenOutputBreadcrumbShape = {
   name: string
   title: string
@@ -964,7 +1039,9 @@ export type NodeChildrenOutputNodeShape = {
   modified: string | null
   content_modified: string | null
   access?: NodeChildrenOutputAccessShape
+  audience?: NodeChildrenOutputAudienceShape
   breadcrumbs?: Array<NodeChildrenOutputBreadcrumbShape>
+  contents_size?: number
   preview?: NodeChildrenOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -1021,6 +1098,11 @@ export type NodeCopyOutputAccessShape = {
   can_manage?: boolean
 }
 
+export type NodeCopyOutputAudienceShape = {
+  kind: 'public' | 'organization' | 'link' | 'people'
+  people: number
+}
+
 export type NodeCopyOutputBreadcrumbShape = {
   name: string
   title: string
@@ -1053,7 +1135,9 @@ export type NodeCopyOutput = {
   modified: string | null
   content_modified: string | null
   access?: NodeCopyOutputAccessShape
+  audience?: NodeCopyOutputAudienceShape
   breadcrumbs?: Array<NodeCopyOutputBreadcrumbShape>
+  contents_size?: number
   preview?: NodeCopyOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -1097,6 +1181,11 @@ export type NodePutContentOutputAccessShape = {
   can_manage?: boolean
 }
 
+export type NodePutContentOutputAudienceShape = {
+  kind: 'public' | 'organization' | 'link' | 'people'
+  people: number
+}
+
 export type NodePutContentOutputBreadcrumbShape = {
   name: string
   title: string
@@ -1138,7 +1227,9 @@ export type NodePutContentOutput = {
   modified: string | null
   content_modified: string | null
   access?: NodePutContentOutputAccessShape
+  audience?: NodePutContentOutputAudienceShape
   breadcrumbs?: Array<NodePutContentOutputBreadcrumbShape>
+  contents_size?: number
   preview?: NodePutContentOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -1338,6 +1429,11 @@ export type UploadFinishOutputAccessShape = {
   can_manage?: boolean
 }
 
+export type UploadFinishOutputAudienceShape = {
+  kind: 'public' | 'organization' | 'link' | 'people'
+  people: number
+}
+
 export type UploadFinishOutputBreadcrumbShape = {
   name: string
   title: string
@@ -1377,7 +1473,9 @@ export type UploadFinishOutput = {
   modified: string | null
   content_modified: string | null
   access?: UploadFinishOutputAccessShape
+  audience?: UploadFinishOutputAudienceShape
   breadcrumbs?: Array<UploadFinishOutputBreadcrumbShape>
+  contents_size?: number
   preview?: UploadFinishOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -1835,6 +1933,11 @@ export type ViewListOutputArchivedRootShape = {
   quota_bytes: number
 }
 
+export type ViewListOutputAudienceShape = {
+  kind: 'public' | 'organization' | 'link' | 'people'
+  people: number
+}
+
 export type ViewListOutputBreadcrumbShape = {
   name: string
   title: string
@@ -1861,7 +1964,9 @@ export type ViewListOutputNodeShape = {
   modified: string | null
   content_modified: string | null
   access?: ViewListOutputAccessShape
+  audience?: ViewListOutputAudienceShape
   breadcrumbs?: Array<ViewListOutputBreadcrumbShape>
+  contents_size?: number
   preview?: ViewListOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean

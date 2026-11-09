@@ -907,17 +907,19 @@ class TestViewRoutes(BoundaryCase):
         self.assertEqual(answer["rows"][0]["access"], self.row.access)
         self.assertTrue(self.workflow.call_args.kwargs["with_access"])
 
-    def test_breadcrumbs_are_search_only(self):
+    def test_breadcrumbs_are_for_the_lists_that_show_where_a_row_lives(self):
         with self.assertRaises(DriveError) as caught:
-            routes.view_list(view="recents", expand="breadcrumbs")
+            routes.view_list(view="trash", root="r1", expand="breadcrumbs")
         self.assertEqual(caught.exception.http_status_code, 400)
         self.workflow.assert_not_called()
         self.minted.assert_not_called()
 
         self.row.breadcrumbs = [{"name": "r1", "title": "My files"}]
-        answer = routes.view_list(view="search", term="t", expand="breadcrumbs")
-        self.assertEqual(answer["rows"][0]["breadcrumbs"], self.row.breadcrumbs)
-        self.assertTrue(self.workflow.call_args.kwargs["with_breadcrumbs"])
+        for view, filters in (("search", {"term": "t"}), ("recents", {})):
+            with self.subTest(view=view):
+                answer = routes.view_list(view=view, expand="breadcrumbs", **filters)
+                self.assertEqual(answer["rows"][0]["breadcrumbs"], self.row.breadcrumbs)
+                self.assertTrue(self.workflow.call_args.kwargs["with_breadcrumbs"])
 
     def test_an_unknown_expansion_is_a_bad_request(self):
         with self.assertRaises(DriveError) as caught:

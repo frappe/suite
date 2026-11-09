@@ -118,6 +118,16 @@ describe('Trash actions', () => {
     expect(feedback.toasts).toEqual([{ kind: 'success', message: 'Deleted 2 items forever' }])
   })
 
+  it('deletes 250 items forever in two requests, as the server takes at most 200', async () => {
+    const actions = mountActions()
+    const names = Array.from({ length: 250 }, (_, index) => `item-${index}`)
+
+    await actions.purge(items(...names))
+    expect(net.purges).toBe(2)
+    expect(actions.outcome.value?.ok).toHaveLength(250)
+    expect(feedback.toasts).toEqual([{ kind: 'success', message: 'Deleted 250 items forever' }])
+  })
+
   it('offers Retry when a whole request fails, and Retry sends the same request without asking again', async () => {
     const actions = mountActions()
     net.failNextPurge = true

@@ -1,7 +1,7 @@
 <template>
   <Dialog
     v-model:open="open"
-    :title="__('Create share link')"
+    :title="url ? __('Link created') : __('Create share link')"
     size="md"
     :dismissible="!pending"
     :show-close-button="!pending"
@@ -55,28 +55,33 @@
           :message="state.errors.get(NEW_LINK_ROW)"
         />
       </template>
-      <template v-else>
-        <p role="status" class="text-p-sm text-ink-gray-6">{{ __('Your share link is ready.') }}</p>
-        <TextInput :model-value="absoluteUrl" size="sm" :label="__('Share link')" readonly />
-      </template>
+      <div v-else class="flex items-center gap-2">
+        <p role="status" class="sr-only">{{ __('Your share link is ready.') }}</p>
+        <TextInput
+          class="min-w-0 flex-1"
+          :model-value="absoluteUrl"
+          :aria-label="__('Share link')"
+          readonly
+        />
+        <Button
+          variant="solid"
+          icon-left="lucide-copy"
+          :label="__('Copy link')"
+          @click="copyLink(url)"
+        />
+      </div>
     </form>
-    <template #actions>
+    <template v-if="!url" #actions>
       <div class="flex justify-end gap-2">
-        <template v-if="!url">
-          <Button :label="__('Cancel')" :disabled="pending" @click="open = false" />
-          <Button
-            type="submit"
-            form="create-share-link"
-            variant="solid"
-            :label="__('Create link')"
-            :loading="pending"
-            :disabled="passwordProtected && !password"
-          />
-        </template>
-        <template v-else>
-          <Button icon-left="lucide-copy" :label="__('Copy link')" @click="copyLink(url)" />
-          <Button variant="solid" :label="__('Done')" @click="open = false" />
-        </template>
+        <Button :label="__('Cancel')" :disabled="pending" @click="open = false" />
+        <Button
+          type="submit"
+          form="create-share-link"
+          variant="solid"
+          :label="__('Create link')"
+          :loading="pending"
+          :disabled="passwordProtected && !password"
+        />
       </div>
     </template>
   </Dialog>

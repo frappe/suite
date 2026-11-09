@@ -14,7 +14,6 @@ import { expectRemoteVideoReceiving } from "../helpers/media";
 test.describe("Media fault recovery", () => {
 	test(
 		"recovers an ended camera while healthy media keeps advancing",
-		{ tag: "@meet-group-3" },
 		async ({ hostPage, createMeeting, createParticipant }) => {
 			const meetingId = await createMeeting();
 			const target = await createParticipant();
@@ -47,7 +46,6 @@ test.describe("Media fault recovery", () => {
 
 	test(
 		"recreates only a zero-byte consumer while healthy media keeps advancing",
-		{ tag: "@meet-group-2" },
 		async ({ hostPage, createMeeting, createParticipant }) => {
 			test.setTimeout(120_000);
 			const meetingId = await createMeeting();
@@ -87,7 +85,6 @@ test.describe("Media fault recovery", () => {
 
 	test(
 		"recreates only a decode-stalled consumer",
-		{ tag: "@meet-group-1" },
 		async ({ hostPage, createMeeting, createParticipant }) => {
 			test.setTimeout(120_000);
 			const meetingId = await createMeeting();
@@ -130,7 +127,6 @@ test.describe("Media fault recovery", () => {
 
 	test(
 		"defers media repair while hidden, then recovers only the stalled consumer",
-		{ tag: "@meet-group-2" },
 		async ({ hostPage, createMeeting, createParticipant }) => {
 			test.setTimeout(120_000);
 			const meetingId = await createMeeting();

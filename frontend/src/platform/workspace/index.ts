@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { readonly, ref } from 'vue'
 
 import { api, client } from '@/api'
 
@@ -8,13 +8,13 @@ interface WorkspaceInfo {
 }
 
 // The server page sets the boot globals; the Vite dev page does not.
-const hasServerBoot = typeof window.suite_is_onboarded !== 'undefined'
+const hasServerBoot = window.suite_workspace_name !== undefined
 
-const workspaceName = ref(window.suite_workspace_name ?? '')
+const workspaceName = ref(window.suite_workspace_name?.trim() ?? '')
 const workspaceLogo = ref(window.suite_workspace_logo ?? '')
 
 function setWorkspace(data: WorkspaceInfo) {
-  workspaceName.value = data.workspace_name
+  workspaceName.value = data.workspace_name.trim()
   workspaceLogo.value = data.workspace_logo
 }
 
@@ -32,7 +32,15 @@ function ensureWorkspaceLoaded() {
     })
 }
 
+/**
+ * The workspace's name and logo, the one owner of both. Settings writes them
+ * through `setWorkspace`; every reader updates at once.
+ */
 export function useWorkspace() {
   ensureWorkspaceLoaded()
-  return { workspaceName, workspaceLogo, setWorkspace }
+  return {
+    workspaceName: readonly(workspaceName),
+    workspaceLogo: readonly(workspaceLogo),
+    setWorkspace,
+  }
 }

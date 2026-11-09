@@ -370,11 +370,14 @@
         :in-thread="isInThread"
         class="border-t sm:px-4 sm:pb-2.5"
         :class="{ 'border-transparent': isDragging }"
+        :remind-at="remindAt"
         @select-files="(files: File[]) => uploadFiles(files)"
         @append-emoji="(emoji: string) => appendEmoji(emoji)"
         @discard-mail="discardMail"
         @send-mail="sendMail"
         @schedule-send="openScheduleModal"
+        @remind="setRemindAt"
+        @clear-remind="setRemindAt()"
         @retry-save="retrySave"
       />
     </template>
@@ -526,6 +529,8 @@ const {
   showScheduleModal,
   openScheduleModal,
   scheduleSend,
+  remindAt,
+  setRemindAt,
   openQuotedContent,
   openAttachment,
   mentionExtensions,

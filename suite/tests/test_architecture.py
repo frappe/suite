@@ -767,6 +767,7 @@ class TestArchitecture(unittest.TestCase):
                 "release_storage_reservation",
                 "resolve_share_link",
                 "rollback_savepoint",
+                "root_locations",
                 "set_user_active",
                 "store_file",
                 "take_version",

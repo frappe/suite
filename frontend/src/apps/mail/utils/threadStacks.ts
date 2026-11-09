@@ -66,6 +66,9 @@ const loneSenderOf = (thread: Thread): string | null => {
  * adjacent threads from different days simply get different keys and the run flushes at midnight.
  */
 export const stackKeyOf = (thread: Thread): string | null => {
+  // Pinned or brought back so as to be seen: folding it into a pile would undo that.
+  if (thread.pinned || thread.returned) return null
+
   const sender = loneSenderOf(thread)
   if (!sender) return null
 

@@ -50,11 +50,11 @@ test("From template copies a template and lands on its /d/ route", async ({ page
 
 	await page.goto(`/drive/f/${home.name}?view=list`);
 	await page.getByRole("button", { name: "New", exact: true }).click();
-	// From template closes the Create group, just before the Upload group's Files.
+	// From template closes the Create group, just before Upload files.
 	const fromTemplate = page.getByRole("menuitem", { name: "From template" });
 	await expect(fromTemplate).toBeVisible();
 	const labels = (await page.getByRole("menuitem").allInnerTexts()).map((label) => label.trim());
-	expect(labels.indexOf("From template")).toBe(labels.indexOf("Files") - 1);
+	expect(labels.indexOf("From template")).toBe(labels.indexOf("Upload files") - 1);
 	await fromTemplate.click();
 
 	const dialog = page.getByRole("dialog", { name: "New from template" });

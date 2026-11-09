@@ -71,7 +71,8 @@ test("a reader of a shared folder sees it in Shared with me and opens it read-on
 	await expect(row).toBeVisible();
 	await expect(page.getByRole("button", { name: "New", exact: true })).toHaveCount(0);
 
-	await row.click({ modifiers: ["ControlOrMeta"] });
+	// Ctrl on the name itself opens a new tab; the rest of the row selects.
+	await page.locator(`[data-node='${inside.name}']`).click({ modifiers: ["ControlOrMeta"] });
 	await expect(page.getByRole("button", { name: "Move", exact: true })).toBeDisabled();
 	await expect(page.getByRole("button", { name: "Move to trash" })).toBeDisabled();
 	await context.close();

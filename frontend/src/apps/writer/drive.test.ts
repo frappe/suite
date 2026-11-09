@@ -192,7 +192,10 @@ describe('media upload', () => {
     expect(uploaded.file_url).toBe('/api/method/suite.writer.api.embed.get?id=media1')
     expect(server.created).toMatchObject([{ parent_node: 'doc1', size: 30 * MiB }])
     expect(server.created[0]?.filename).toMatch(/^doc1 embed \S+ -clip\.mp4$/)
-    expect(server.requests.map((request) => request.bytes)).toEqual([16 * MiB, 14 * MiB])
+    // Chunks start small and double while the link is fast.
+    expect(server.requests.map((request) => request.bytes)).toEqual(
+      [2, 4, 8, 16].map((n) => n * MiB),
+    )
     expect(progress.at(-1)).toBe(100)
   })
 
