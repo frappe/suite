@@ -231,10 +231,13 @@ vi.mock('@/apps/slides/components/NavigationPanel.vue', async () => {
 for (const path of [
   '@/apps/slides/components/SlideContainer.vue',
   '@/apps/slides/components/LayoutDialog.vue',
-  './ExportView.vue',
 ]) {
   vi.doMock(path, () => ({ default: { render: () => null } }))
 }
+
+vi.doMock('./ExportView.vue', () => ({
+  default: { render: () => h('div', [h('span', { style: 'font-family: Anton' }, 'Drawn')]) },
+}))
 
 vi.doMock('@/apps/slides/components/Toolbar.vue', () => ({
   default: { render: () => h('div', { 'data-toolbar': '' }) },

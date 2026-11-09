@@ -87,7 +87,7 @@ import {
 import { inSlideShowMode, startSlideShow } from '@/apps/slides/stores/slideshow'
 import { cancelVisit, rememberVisit } from '@/apps/slides/stores/visitedCopies'
 import { stopVisitedMedia, storeVisitedMedia } from '@/apps/slides/stores/visitedMedia'
-import { loadBundledFonts } from '@/apps/slides/utils/bundledFonts'
+import { drawnFontsLoaded } from '@/apps/slides/utils/bundledFonts'
 import { isMediaOwner } from '@/apps/slides/utils/mediaUploads'
 import { postToServiceWorker, registerSlidesWorker } from '@/apps/slides/utils/serviceWorker'
 import { readSavedDocument } from '@/platform/collab'
@@ -182,6 +182,7 @@ const {
 })
 const isSlideInteractionActive = ref(false)
 const previewCapture = useTemplateRef<InstanceType<typeof PreviewCapture>>('previewCapture')
+const exportView = useTemplateRef<InstanceType<typeof ExportView>>('exportView')
 const access = createSlidesAccess(props.session, { narrowed, widened })
 // A restore pauses editing: nothing is written while the server rewrites the deck.
 const restoring = ref(false)
@@ -455,21 +456,29 @@ async function addComment() {
   commentText.value = ''
   await loadComments()
 }
+async function printDrawnPages() {
+  const pages = exportView.value?.$el
+  if (!pages) return
+
+  await drawnFontsLoaded(pages)
+  // left the presentation while a font loaded
+  if (!exportView.value) return
+
+  window.addEventListener(
+    'afterprint',
+    () => {
+      exporting.value = false
+    },
+    {
+      once: true,
+    },
+  )
+  window.print()
+}
 function exportPdf() {
   exporting.value = true
   void nextTick(() => {
-    window.setTimeout(() => {
-      window.addEventListener(
-        'afterprint',
-        () => {
-          exporting.value = false
-        },
-        {
-          once: true,
-        },
-      )
-      window.print()
-    }, 200)
+    window.setTimeout(() => void printDrawnPages(), 200)
   })
 }
 // A source's own link code, so a public combined presentation opens signed out
@@ -772,7 +781,6 @@ watch([slides, () => presentationDoc.value?.modified], () => {
 })
 onMounted(() => {
   void load()
-  void loadBundledFonts().catch(() => {})
   void registerSlidesWorker()
   void postToServiceWorker('slides-entered')
   window.addEventListener('online', setOnline)
@@ -1049,7 +1057,7 @@ onBeforeUnmount(() => {
     />
 
     <teleport to="body">
-      <ExportView v-if="exporting" :slides="slides" />
+      <ExportView v-if="exporting" ref="exportView" :slides="slides" />
       <!-- `restoring` keeps it mounted while a restore pauses editing: it holds what it last sent,
            and it must be there to take the capture the restore asks for. -->
       <PreviewCapture v-if="editing || restoring" ref="previewCapture" :session="session" />

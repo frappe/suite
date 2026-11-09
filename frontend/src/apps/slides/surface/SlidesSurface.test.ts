@@ -732,14 +732,69 @@ describe('the fonts a slide draws with', () => {
     expect(slideStyles.fontsImported).toBe(true)
   })
 
-  it('start loading as soon as a presentation opens', async () => {
+  it('are left for the browser to fetch when a slide uses one, not all asked for on open', async () => {
     const load = vi.fn(async () => [])
     Object.defineProperty(document, 'fonts', { configurable: true, value: { load } })
 
     mounted = await openedSurface()
 
-    expect(load).toHaveBeenCalledWith('400 16px Anton', expect.any(String))
-    expect(load).toHaveBeenCalledWith('400 16px "Courier Prime"', expect.any(String))
+    expect(load).not.toHaveBeenCalled()
+  })
+})
+
+describe('printing a presentation', () => {
+  let print: ReturnType<typeof vi.fn>
+
+  function clickExport() {
+    document.querySelector<HTMLElement>('header [aria-label="Export"]')!.click()
+  }
+
+  beforeEach(() => {
+    print = vi.fn()
+    window.print = print
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    Reflect.deleteProperty(document, 'fonts')
+  })
+
+  it('waits for a font the drawn text uses', async () => {
+    let finishLoading = () => {}
+    const load = vi.fn(
+      () =>
+        new Promise<unknown[]>((resolve) => {
+          finishLoading = () => resolve([])
+        }),
+    )
+    Object.defineProperty(document, 'fonts', { configurable: true, value: { load } })
+    mounted = await openedSurface()
+    vi.useFakeTimers()
+
+    clickExport()
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(load).toHaveBeenCalledWith(expect.stringContaining('Anton'), 'Drawn')
+    expect(load).not.toHaveBeenCalledWith(expect.stringContaining('Courier'), expect.anything())
+    expect(print).not.toHaveBeenCalled()
+
+    finishLoading()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(print).toHaveBeenCalledOnce()
+  })
+
+  it('still prints when a font never arrives', async () => {
+    const load = vi.fn(() => new Promise<unknown[]>(() => {}))
+    Object.defineProperty(document, 'fonts', { configurable: true, value: { load } })
+    mounted = await openedSurface()
+    vi.useFakeTimers()
+
+    clickExport()
+    await vi.advanceTimersByTimeAsync(60_000)
+
+    expect(load).toHaveBeenCalled()
+    expect(print).toHaveBeenCalledOnce()
   })
 })
 
