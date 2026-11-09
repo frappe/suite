@@ -368,7 +368,7 @@ useDocumentLeaveGuard({
       :collab-session="preview ? undefined : session"
       :version="preview?.bytes"
       :open-comments="
-        session.panels.value.includes('comments') ? () => showPanel('comments') : null
+        session.panels.value.includes('comments') ? () => showPanel('comments') : undefined
       "
       @reopen="bodyRevision += 1"
       @notes-opened="panel = null"
