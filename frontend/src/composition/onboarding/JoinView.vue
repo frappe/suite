@@ -9,6 +9,10 @@
   - signed in already (`/suite/welcome`): the password if it is still
     temporary, then the welcome steps.
 
+  A site's first Admin is invited this way too: Suite Cloud invites the person
+  who signed up. Once their account exists they leave for the site wizard
+  (`/suite/setup`), which is their welcome.
+
   The temporary password stays in memory from the sign-in to the password
   step, so changing it needs no other proof. After a reload the password step
   asks for it again.
@@ -17,7 +21,7 @@
 import { Avatar, Button } from 'frappe-ui'
 import { computed, reactive, ref, useTemplateRef, watch } from 'vue'
 
-import { api, useMutation, useQuery } from '@/api'
+import { api, client, useMutation, useQuery } from '@/api'
 import { useSession } from '@/platform/session'
 import SuiteMark from '@/shell/SuiteMark.vue'
 
@@ -130,6 +134,16 @@ const account = reactive({ fullName: '', password: '' })
 const accountStep = useTemplateRef<InstanceType<typeof AccountSetupStep>>('accountStep')
 const setupState = computed(() => accountStep.value?.state ?? 'idle')
 const retrying = computed(() => ['failed', 'signin-failed'].includes(setupState.value))
+
+/** After the account: a site that is not set up yet goes to the wizard, which is the first Admin's welcome. */
+async function onAccountReady(): Promise<void> {
+  const site = await client.query(api.suite.site.get).catch(() => null)
+  if (site?.can_onboard && !site.is_onboarded) {
+    window.location.replace('/suite/setup')
+    return
+  }
+  next()
+}
 
 // Signing in with a temporary password, which stays in memory for the password step
 const signinEmail = ref('')
@@ -394,7 +408,7 @@ const copy = computed(() => {
       :backup-email="invitation?.backup_email ?? ''"
       :inviter="inviter"
       :workspace-name="workspaceName"
-      @done="next"
+      @done="onAccountReady"
     />
 
     <PasswordStep

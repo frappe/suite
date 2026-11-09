@@ -1,9 +1,11 @@
 """A person's first run in Suite: the welcome steps and the starter files in their Drive.
 
 The first Admin walks the site wizard (`/suite/setup`) and finishes it with
-`suite.api.account.mark_onboarded`. Everyone who joins after that, by
-invitation, direct creation or a self-hosted invite, walks the shorter welcome
-(`/suite/welcome`) once: the command menu and a summary.
+`suite.api.account.mark_onboarded`. On Suite Cloud the first Admin is invited
+like anyone else, and goes from their new account straight to the wizard.
+Everyone who joins after that, by invitation, direct creation or a self-hosted
+invite, walks the shorter welcome (`/suite/welcome`) once: the command menu and
+a summary.
 
 Starter files give an empty workspace something to open. The first Admin gets
 one of each kind, and a daily stand-up and a sample event in their calendar.
