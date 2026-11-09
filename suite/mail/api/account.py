@@ -178,8 +178,7 @@ def create_account(
         frappe.throw(_("This invitation link has been replaced"), InvitationClosed)
     if account_request.is_verified:
         frappe.throw(_("This invitation has already been accepted"), InvitationClosed)
-    if account_request.is_expired:
-        frappe.throw(_("This request has expired. Please create a new one."), InvitationClosed)
+    account_request.validate_expired()
     _require_strong_password(password, (first_name, last_name, account_request.account))
     account_request.is_verified = 1
     account_request.save(ignore_permissions=True)

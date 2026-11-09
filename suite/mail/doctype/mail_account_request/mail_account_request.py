@@ -20,7 +20,7 @@ from frappe.utils import (
     validate_email_address,
 )
 
-from suite.mail.account_setup import setup_stage
+from suite.mail.account_setup import InvitationClosed, setup_stage
 from suite.mail.directory import account_exists, create_account, delete_account_by_email, get_domains
 from suite.mail.suite_cloud import SuiteCloudUnavailableError
 from suite.mail.utils import is_jmap_server_configured, log_mail_error
@@ -296,7 +296,7 @@ class MailAccountRequest(Document):
         """Forbids action if the request has expired."""
 
         if self.is_expired:
-            frappe.throw(_("This request has expired. Please create a new one."))
+            frappe.throw(_("This request has expired. Please create a new one."), InvitationClosed)
 
     def set_otp(self) -> None:
         """Generates a fresh signup OTP, caching only its hash (see `verify_otp`).
