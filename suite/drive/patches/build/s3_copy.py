@@ -76,8 +76,8 @@ from suite.drive.patches.build.layout import (
     blob_folder,
     blob_key,
     blob_name,
-    needs_multipart_copy,
     key_of_private_object,
+    needs_multipart_copy,
     private_key,
 )
 from suite.drive.patches.build.legacy import S3_URL_PREFIX, storage_key
