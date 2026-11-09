@@ -33,6 +33,291 @@
       "bytes": false
     },
     {
+      "id": "get_account_request",
+      "kind": "query",
+      "publicName": "public.accountRequest",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "invitations/{request_key}",
+      "pathParams": [
+        "request_key"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "$defs": {
+          "AccountRequest": {
+            "properties": {
+              "backup_email": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Backup Email"
+              },
+              "account": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Account"
+              },
+              "is_verified": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Is Verified",
+                "type": "integer"
+              },
+              "is_expired": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Is Expired",
+                "type": "integer"
+              },
+              "workspace_name": {
+                "title": "Workspace Name",
+                "type": "string"
+              },
+              "workspace_logo": {
+                "title": "Workspace Logo",
+                "type": "string"
+              },
+              "invited_by_name": {
+                "title": "Invited By Name",
+                "type": "string"
+              },
+              "invited_by_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Invited By Image"
+              },
+              "invited_by_email": {
+                "title": "Invited By Email",
+                "type": "string"
+              },
+              "is_admin": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Is Admin",
+                "type": "integer"
+              },
+              "sets_up_site": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Sets Up Site",
+                "type": "integer"
+              },
+              "expires_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Expires At"
+              }
+            },
+            "required": [
+              "backup_email",
+              "account",
+              "is_verified",
+              "is_expired",
+              "workspace_name",
+              "workspace_logo",
+              "invited_by_name",
+              "invited_by_image",
+              "invited_by_email",
+              "is_admin",
+              "sets_up_site",
+              "expires_at"
+            ],
+            "title": "AccountRequest",
+            "type": "object"
+          }
+        },
+        "anyOf": [
+          {
+            "$ref": "#/$defs/AccountRequest"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "errors": [
+        "RateLimitExceededError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "get_account_setup_options",
+      "kind": "query",
+      "publicName": "public.accountOptions",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "invitations/{request_key}/options",
+      "pathParams": [
+        "request_key"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "$defs": {
+          "Option": {
+            "properties": {
+              "value": {
+                "title": "Value",
+                "type": "string"
+              },
+              "label": {
+                "title": "Label",
+                "type": "string"
+              }
+            },
+            "required": [
+              "value",
+              "label"
+            ],
+            "title": "Option",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "locales": {
+            "items": {
+              "$ref": "#/$defs/Option"
+            },
+            "title": "Locales",
+            "type": "array"
+          },
+          "time_zones": {
+            "items": {
+              "$ref": "#/$defs/Option"
+            },
+            "title": "Time Zones",
+            "type": "array"
+          }
+        },
+        "required": [
+          "locales",
+          "time_zones"
+        ],
+        "title": "AccountOptions",
+        "type": "object"
+      },
+      "errors": [
+        "InvitationClosed",
+        "RateLimitExceededError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "create_account",
+      "kind": "mutation",
+      "publicName": "public.createAccount",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "invitations/{request_key}/account",
+      "pathParams": [
+        "request_key"
+      ],
+      "query": null,
+      "body": {
+        "properties": {
+          "first_name": {
+            "title": "First Name",
+            "type": "string"
+          },
+          "last_name": {
+            "title": "Last Name",
+            "type": "string"
+          },
+          "password": {
+            "title": "Password",
+            "type": "string"
+          },
+          "locale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locale"
+          },
+          "time_zone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Zone"
+          }
+        },
+        "required": [
+          "first_name",
+          "last_name",
+          "password"
+        ],
+        "title": "CreateAccount",
+        "type": "object"
+      },
+      "output": {
+        "type": "null"
+      },
+      "errors": [
+        "DoesNotExistError",
+        "InvitationClosed",
+        "WeakPassword",
+        "DriveSetupFailed",
+        "MailboxSetupFailed",
+        "AccountActivationFailed",
+        "RateLimitExceededError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
       "id": "exchange",
       "kind": "query",
       "publicName": "exchanges.get",
@@ -6201,266 +6486,6 @@
       },
       "output": {
         "type": "string"
-      },
-      "errors": [
-        "PermissionError",
-        "AuthenticationError",
-        "ValidationError"
-      ],
-      "entity": null,
-      "nodeParams": [],
-      "stream": false,
-      "bytes": false
-    },
-    {
-      "id": "get_account_request",
-      "kind": "query",
-      "publicName": "public.accountRequest",
-      "page": null,
-      "envelope": "message",
-      "method": "POST",
-      "path": "/api/method/suite.mail.api.account.get_account_request",
-      "pathParams": [],
-      "query": null,
-      "body": {
-        "properties": {
-          "request_key": {
-            "title": "Request Key",
-            "type": "string"
-          }
-        },
-        "required": [
-          "request_key"
-        ],
-        "title": "RequestKey",
-        "type": "object"
-      },
-      "output": {
-        "$defs": {
-          "AccountRequest": {
-            "properties": {
-              "backup_email": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "title": "Backup Email"
-              },
-              "account": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "title": "Account"
-              },
-              "is_verified": {
-                "enum": [
-                  0,
-                  1
-                ],
-                "title": "Is Verified",
-                "type": "integer"
-              },
-              "is_expired": {
-                "enum": [
-                  0,
-                  1
-                ],
-                "title": "Is Expired",
-                "type": "integer"
-              },
-              "workspace_name": {
-                "title": "Workspace Name",
-                "type": "string"
-              },
-              "workspace_logo": {
-                "title": "Workspace Logo",
-                "type": "string"
-              },
-              "invited_by_name": {
-                "title": "Invited By Name",
-                "type": "string"
-              }
-            },
-            "required": [
-              "backup_email",
-              "account",
-              "is_verified",
-              "is_expired",
-              "workspace_name",
-              "workspace_logo",
-              "invited_by_name"
-            ],
-            "title": "AccountRequest",
-            "type": "object"
-          }
-        },
-        "anyOf": [
-          {
-            "$ref": "#/$defs/AccountRequest"
-          },
-          {
-            "type": "null"
-          }
-        ]
-      },
-      "errors": [
-        "PermissionError",
-        "AuthenticationError",
-        "ValidationError"
-      ],
-      "entity": null,
-      "nodeParams": [],
-      "stream": false,
-      "bytes": false
-    },
-    {
-      "id": "get_account_setup_options",
-      "kind": "query",
-      "publicName": "public.accountOptions",
-      "page": null,
-      "envelope": "message",
-      "method": "POST",
-      "path": "/api/method/suite.mail.api.account.get_account_setup_options",
-      "pathParams": [],
-      "query": null,
-      "body": {
-        "properties": {
-          "request_key": {
-            "title": "Request Key",
-            "type": "string"
-          }
-        },
-        "required": [
-          "request_key"
-        ],
-        "title": "RequestKey",
-        "type": "object"
-      },
-      "output": {
-        "$defs": {
-          "Option": {
-            "properties": {
-              "value": {
-                "title": "Value",
-                "type": "string"
-              },
-              "label": {
-                "title": "Label",
-                "type": "string"
-              }
-            },
-            "required": [
-              "value",
-              "label"
-            ],
-            "title": "Option",
-            "type": "object"
-          }
-        },
-        "properties": {
-          "locales": {
-            "items": {
-              "$ref": "#/$defs/Option"
-            },
-            "title": "Locales",
-            "type": "array"
-          },
-          "time_zones": {
-            "items": {
-              "$ref": "#/$defs/Option"
-            },
-            "title": "Time Zones",
-            "type": "array"
-          }
-        },
-        "required": [
-          "locales",
-          "time_zones"
-        ],
-        "title": "AccountOptions",
-        "type": "object"
-      },
-      "errors": [
-        "PermissionError",
-        "AuthenticationError",
-        "ValidationError"
-      ],
-      "entity": null,
-      "nodeParams": [],
-      "stream": false,
-      "bytes": false
-    },
-    {
-      "id": "create_account",
-      "kind": "mutation",
-      "publicName": "public.createAccount",
-      "page": null,
-      "envelope": "message",
-      "method": "POST",
-      "path": "/api/method/suite.mail.api.account.create_account",
-      "pathParams": [],
-      "query": null,
-      "body": {
-        "properties": {
-          "request_key": {
-            "title": "Request Key",
-            "type": "string"
-          },
-          "first_name": {
-            "title": "First Name",
-            "type": "string"
-          },
-          "last_name": {
-            "title": "Last Name",
-            "type": "string"
-          },
-          "password": {
-            "title": "Password",
-            "type": "string"
-          },
-          "locale": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Locale"
-          },
-          "time_zone": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Time Zone"
-          }
-        },
-        "required": [
-          "request_key",
-          "first_name",
-          "last_name",
-          "password"
-        ],
-        "title": "CreateAccount",
-        "type": "object"
-      },
-      "output": {
-        "type": "null"
       },
       "errors": [
         "PermissionError",

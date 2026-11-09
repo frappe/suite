@@ -167,6 +167,7 @@ which is what an offboarded user looks like.
 | `node_url` | one primary-key read of the node's kind |
 | `node_owner` | one primary-key read of the node's owner |
 | `ensure_folder` | one indexed read of the parent's children; on a miss, one folder create under the parent-chain lock |
+| `record_visit` | one READ check and one upsert of the caller's `Drive Recent` row |
 | `store_file` | one pass over the bytes to hash and store them, then one file create under the parent-chain lock |
 
 No workflow scans `Drive Node`. Every one is bounded work per call, so a
@@ -554,6 +555,13 @@ def ensure_folder(parent: str, title: str) -> str:
     return _ensure_folder(_principals(), parent, title)
 
 
+def record_visit(node: str) -> None:
+    """Put `node` at the top of the caller's Recent, as opening it does. Needs READ on `node`."""
+    from suite.drive._core.activity import visit
+
+    visit(_principals(), node)
+
+
 def store_file(
     parent: str,
     title: str,
@@ -655,6 +663,7 @@ __all__ = (
     "push_preview",
     "read_file",
     "read_version",
+    "record_visit",
     "reduce_storage_reservation",
     "refuse_shared_child_rows",
     "refuse_shared_linked_rows",

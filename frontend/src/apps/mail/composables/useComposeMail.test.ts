@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createApp, defineComponent, nextTick, ref } from 'vue'
+import { createApp, defineComponent, nextTick } from 'vue'
 
 import type { ComposeMailData } from '@/apps/mail/types'
 
@@ -40,14 +40,31 @@ vi.mock('@/apps/mail/utils', () => ({
   raiseError: vi.fn(),
   raiseToast: vi.fn(),
 }))
-vi.mock('@/apps/mail/utils/accountScope', () => ({
-  injectAccountScope: () => ({
-    accountId: ref('account'),
-    account: ref({ default_outgoing_email: 'maya@example.com' }),
-    identities: ref({ data: [{ email: 'maya@example.com', _name: 'Maya' }] }),
-    mailboxIds: ref({}),
-  }),
-}))
+interface TestIdentity {
+  email: string
+  _name: string
+}
+const mayaIdentities: TestIdentity[] = [{ email: 'maya@example.com', _name: 'Maya' }]
+// The account's identities as a composer opens (undefined: not loaded yet), and a way to load them.
+const scope = vi.hoisted<{
+  identities?: TestIdentity[]
+  load: (identities: TestIdentity[]) => void
+}>(() => ({ load: () => {} }))
+vi.mock('@/apps/mail/utils/accountScope', async () => {
+  const { ref } = await import('vue')
+  return {
+    injectAccountScope: () => {
+      const identities = ref<{ data?: TestIdentity[] }>({ data: scope.identities })
+      scope.load = (data) => (identities.value = { data })
+      return {
+        accountId: ref('account'),
+        account: ref({ default_outgoing_email: 'maya@example.com' }),
+        identities,
+        mailboxIds: ref({}),
+      }
+    },
+  }
+})
 vi.mock('@/apps/mail/utils/composables', () => ({
   useComposeMail: () => ({ requestCompose }),
   useDiscardingDrafts: () => ({ holdDraft: vi.fn(), releaseDraft: vi.fn(), restoreDraft: vi.fn() }),
@@ -65,7 +82,7 @@ const draft: ComposeMailData = {
 
 let open = true
 const apps: ReturnType<typeof createApp>[] = []
-function compose() {
+function compose(signedInAs = 'maya@example.com') {
   let composer!: ReturnType<typeof useComposeMail>
   const app = createApp(
     defineComponent({
@@ -82,7 +99,7 @@ function compose() {
       },
     }),
   )
-  app.provide('$user', { data: { name: 'maya@example.com' } })
+  app.provide('$user', { data: { name: signedInAs } })
   app.mount(document.createElement('div'))
   apps.push(app)
   return composer
@@ -90,12 +107,25 @@ function compose() {
 
 beforeEach(() => {
   open = true
+  scope.identities = mayaIdentities
   server.updateDraft.mockReset()
   requestCompose.mockReset()
   toastError.mockReset()
 })
 afterEach(() => {
   for (const app of apps.splice(0)) app.unmount()
+})
+
+describe('the From address', () => {
+  it('moves to the mailbox once the identities load, when the composer opened before them', async () => {
+    scope.identities = undefined
+    const composer = compose('maya@personal.example')
+
+    scope.load(mayaIdentities)
+    await nextTick()
+
+    expect(composer.mail.from_email).toBe('maya@example.com')
+  })
 })
 
 describe('saving a draft', () => {
