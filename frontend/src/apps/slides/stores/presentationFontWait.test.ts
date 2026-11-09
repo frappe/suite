@@ -6,8 +6,10 @@ vi.mock('@/apps/slides/stores/slide', () => ({}))
 vi.mock('@/apps/slides/stores/historyMeta', () => ({}))
 vi.mock('@/apps/slides/stores/element', () => ({}))
 vi.mock('@/apps/slides/stores/saving', () => ({}))
+vi.mock('@/apps/slides/pages/Slideshow.vue', () => ({}))
 
 const { transformElements } = await import('./presentation')
+const { warmAssets } = await import('@/apps/slides/utils/startupRequests')
 
 function centredText(id: string) {
   return {
@@ -21,29 +23,63 @@ function centredText(id: string) {
   }
 }
 
+const neverSettles = new Promise<never>(() => {})
+
 describe('measuring centred text', () => {
   afterEach(() => {
     vi.useRealTimers()
+    vi.unstubAllGlobals()
     Reflect.deleteProperty(document, 'fonts')
   })
 
-  it('carries on after one wait when a font never settles, however many elements it measures', async () => {
+  it('is not held up by warming bundled fonts that stall', async () => {
+    // a face loading through document.fonts keeps ready pending, as a browser does
+    let ready: Promise<unknown> = Promise.resolve()
     Object.defineProperty(document, 'fonts', {
       configurable: true,
-      value: { ready: new Promise(() => {}) },
+      value: {
+        get ready() {
+          return ready
+        },
+        load: () => {
+          ready = neverSettles
+          return neverSettles
+        },
+      },
     })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => neverSettles),
+    )
+    let measured: { transform: string }[] | undefined
+
+    void warmAssets()
+    void transformElements([centredText('a')]).then((elements) => {
+      measured = elements
+    })
+
+    await vi.waitFor(() => expect(measured?.[0].transform).toBe('none'))
+  })
+
+  it('waits for a font the text uses, however long it takes', async () => {
+    let finishLoading = (_value: unknown) => {}
+    const ready = new Promise((resolve) => {
+      finishLoading = resolve
+    })
+    Object.defineProperty(document, 'fonts', { configurable: true, value: { ready } })
     vi.useFakeTimers()
     let measured: { transform: string }[] | undefined
 
-    void transformElements(['a', 'b', 'c'].map(centredText)).then((elements) => {
+    void transformElements([centredText('a')]).then((elements) => {
       measured = elements
     })
-    await vi.advanceTimersByTimeAsync(2999)
+    await vi.advanceTimersByTimeAsync(60_000)
 
     expect(measured).toBeUndefined()
 
-    await vi.advanceTimersByTimeAsync(1)
+    finishLoading(undefined)
+    await vi.advanceTimersByTimeAsync(0)
 
-    expect(measured?.map(({ transform }) => transform)).toEqual(['none', 'none', 'none'])
+    expect(measured?.[0].transform).toBe('none')
   })
 })
