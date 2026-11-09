@@ -265,6 +265,7 @@ const unstableFrappeUIDebtGroups = [
       'mail/components/CommandPalette/MailSearchSuggestions.vue|frappe-ui/experimental',
       'mail/components/ComposeMailEditor.vue|frappe-ui/experimental',
       'mail/components/ComposeMailToolbar.vue|frappe-ui/experimental',
+      'mail/components/CustomTimeForm.vue|frappe-ui/experimental',
       'mail/components/IdentitySettingsListView.vue|frappe-ui/experimental',
       'mail/components/Modals/AddAccountEmailModal.vue|frappe-ui/experimental',
       'mail/components/Modals/AddAccountModal.vue|frappe-ui/experimental',
