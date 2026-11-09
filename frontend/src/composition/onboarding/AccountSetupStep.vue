@@ -12,7 +12,7 @@ import { api, useMutation, useQuery } from '@/api'
 import { useSession } from '@/platform/session'
 import { TransportError } from '@/platform/transport'
 
-import { type AccountSetupState, browserAccountDefaults, firstName, splitName } from './onboarding'
+import { browserAccountDefaults, firstName, splitName, type AccountSetupState } from './onboarding'
 
 const { requestKey, email, backupEmail, inviter, workspaceName } = defineProps<{
   requestKey: string

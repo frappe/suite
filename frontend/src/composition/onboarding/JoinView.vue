@@ -36,8 +36,8 @@ import {
 } from './onboarding'
 import OnboardingFrame from './OnboardingFrame.vue'
 import PasswordStep from './PasswordStep.vue'
-import ShortcutStep from './ShortcutStep.vue'
 import SetupView, { type SetupInvitation } from './SetupView.vue'
+import ShortcutStep from './ShortcutStep.vue'
 import SignInStep from './SignInStep.vue'
 import WorkspaceMark from './WorkspaceMark.vue'
 
@@ -315,7 +315,10 @@ const copy = computed(() => {
   <SetupView v-if="step === 'site-setup' && ownerInvitation" :invitation="ownerInvitation" />
 
   <!-- Arrival pages: centred, in the workspace's name. -->
-  <div v-else-if="centred" class="flex h-full flex-col items-center overflow-auto bg-surface-base px-4">
+  <div
+    v-else-if="centred"
+    class="flex h-full flex-col items-center overflow-auto bg-surface-base px-4"
+  >
     <div
       v-if="step !== 'loading'"
       class="flex w-full max-w-xs flex-1 flex-col items-center justify-center py-16"

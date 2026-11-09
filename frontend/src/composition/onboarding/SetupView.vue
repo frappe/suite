@@ -31,11 +31,11 @@ import SuiteMark from '@/shell/SuiteMark.vue'
 import { detectTimezone, useTimezones } from '@/shell/useTimezones'
 import WorkspaceBrandingForm from '@/shell/WorkspaceBrandingForm.vue'
 
+import AccountSetupStep from './AccountSetupStep.vue'
 import AppIconView from './AppIconView.vue'
 import DomainStep from './DomainStep.vue'
 import InvitePeople from './InvitePeople.vue'
 import MailStep from './MailStep.vue'
-import AccountSetupStep from './AccountSetupStep.vue'
 import { accountHeading, MOD_KEY, type DomainState } from './onboarding'
 import OnboardingFrame from './OnboardingFrame.vue'
 import ShortcutStep from './ShortcutStep.vue'
@@ -57,7 +57,8 @@ const mailOnboarding = useQuery(api.suite.site.mailOnboarding, () =>
 // Invitations come from the mail provider, so an invited first Admin is on Suite Cloud.
 const cloud = computed(() => !!invitation || mailOnboarding.data?.cloud === true)
 const order = computed<Step[]>(() => {
-  if (invitation) return ['welcome', 'account', 'workspace', 'domain', 'invite', 'shortcut', 'ready']
+  if (invitation)
+    return ['welcome', 'account', 'workspace', 'domain', 'invite', 'shortcut', 'ready']
   return cloud.value
     ? ['welcome', 'workspace', 'mail', 'domain', 'invite', 'shortcut', 'ready']
     : ['welcome', 'workspace', 'invite', 'shortcut', 'ready']
