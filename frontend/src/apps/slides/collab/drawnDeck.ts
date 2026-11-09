@@ -9,7 +9,7 @@ import { extensions } from '@/apps/slides/stores/tiptapSetup'
 
 import { elementText, readSlides, TYPES_WITH_TEXT, type DeckItem } from './deck'
 
-const schema = getSchema(extensions)
+export const deckSchema = getSchema(extensions)
 
 export interface DrawnSlide extends Record<string, unknown> {
   clientId: string
@@ -24,17 +24,22 @@ function connectorOf({ connectorStart, connectorEnd, route }: DeckItem) {
   return { connector: { start: connectorStart, end: connectorEnd, route } }
 }
 
-function textOf(doc: Y.Doc, { id, type }: DeckItem) {
+function textOf(doc: Y.Doc, { id, type }: DeckItem, htmlById: Map<string, string>) {
   const fragment = elementText(doc, id)
   if (typeof type !== 'string' || !TYPES_WITH_TEXT.has(type) || !fragment) {
     return {}
   }
 
-  const root = yXmlFragmentToProseMirrorRootNode(fragment, schema)
-  return { content: generateHTML(root.toJSON(), extensions) }
+  if (!htmlById.has(id)) {
+    const root = yXmlFragmentToProseMirrorRootNode(fragment, deckSchema)
+    htmlById.set(id, generateHTML(root.toJSON(), extensions))
+  }
+
+  return { content: htmlById.get(id) }
 }
 
-export function drawnSlides(doc: Y.Doc): DrawnSlide[] {
+// `htmlById` keeps each element's HTML between calls; the caller drops the ones that change
+export function drawnSlides(doc: Y.Doc, htmlById = new Map<string, string>()): DrawnSlide[] {
   return readSlides(doc).map(({ id, elements, ...slide }, at) => ({
     ...slide,
     clientId: id,
@@ -52,7 +57,7 @@ export function drawnSlides(doc: Y.Doc): DrawnSlide[] {
         ...fields,
         ...(frame && typeof frame === 'object' ? frame : undefined),
         ...connectorOf(element),
-        ...textOf(doc, element),
+        ...textOf(doc, element, htmlById),
         zIndex: index + 1,
       }
     }),
