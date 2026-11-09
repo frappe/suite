@@ -4,7 +4,7 @@ import { cellAround } from '@tiptap/pm/tables'
 import { Editor } from '@tiptap/vue-3'
 import { nextTick, reactive, ref, watch } from 'vue'
 
-import { isReceivedChange } from '@/apps/slides/collab/liveText'
+import { isCoEditorChange, isReceivedChange } from '@/apps/slides/collab/liveText'
 import { batchCommand, editElementCommand } from '@/apps/slides/stores/commands'
 import {
   activeElement,
@@ -24,6 +24,7 @@ import {
   currentId,
   isLive,
   noteTextEdited,
+  noteTextReceived,
   pushLiveNow,
   unbindLiveText,
 } from '@/apps/slides/stores/liveDeck'
@@ -302,6 +303,10 @@ export const useTextEditor = () => {
     // purposefully using onTransaction + docChanged instead of onUpdate
     // since onUpdate also triggers when activeEditor changes from one text box to another
     // leading to overwriting content for second one with first one's content
+
+    if (isCoEditorChange(transaction)) {
+      noteTextReceived()
+    }
 
     // history and init pushes still change the width, so the baseline follows
     if (suppressRecording || !editorElement || isReceivedChange(transaction)) {

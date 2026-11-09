@@ -30,7 +30,7 @@ import {
   slidesLength,
   transformElements,
 } from '@/apps/slides/stores/presentation'
-import { setSlideIndex, slideIndex, slides } from '@/apps/slides/stores/slide'
+import { currentSlide, setSlideIndex, slideIndex, slides } from '@/apps/slides/stores/slide'
 import {
   isRecoverable,
   openCollabRoom,
@@ -172,6 +172,8 @@ export function useConvertedRoom({
       slides: storeSlides,
       flatten: (element) => flattenNow(element, measured),
       boundElementId,
+      isSelected: (id) =>
+        activeElementIds.value.includes(id) || currentSlide.value?.clientId === id,
       setBoundText,
       canWrite,
       onRenamed: applyRenames,

@@ -47,6 +47,7 @@ CUMULATIVE_FIELDS = frozenset(
         "docshare_rows_dropped",
         "docshare_dropped_by_reason",
         "docshare_rows_deleted",
+        "docshare_batch",
         "removed_file_documents",
         "removed_file_docs",
         "removed_file_documents_purged",
@@ -574,6 +575,9 @@ class ContentConversion:
     # Owned by no phase either. A stop before a template's lowering commits
     # lowers it again on the restart, and this keeps its issue line to one.
     templates_lowered: list[str] = field(default_factory=list)
+    # Owned by no phase either. The counts from before the DocShare batch being
+    # committed, for a restart to go back to if that commit never landed.
+    docshare_batch: dict | None = None
     report_at: str | None = None
     issues: list[ContentIssue] = field(default_factory=list)
     issues_total: int = 0

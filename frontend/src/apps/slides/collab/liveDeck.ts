@@ -55,6 +55,8 @@ export interface LiveDeckHost {
   flatten: (element: StoreItem) => StoreItem
   /** The element whose text a live editor holds. Its text never goes through the store. */
   boundElementId: () => string | null
+  /** Whether this tab has the slide or element selected. It is what a reorder just moved. */
+  isSelected: (id: string) => boolean
   /** Text the store set on that element from outside the editor: a column resize, say. */
   setBoundText: (html: string | null) => void
   canWrite: () => boolean
@@ -191,10 +193,17 @@ function writeOrder(
   wanted: string[],
   current: string[],
   move: (id: string, afterId: string | null) => void,
+  isSelected: (id: string) => boolean,
 ) {
   const inDocument = new Set(current)
   const present = wanted.filter((id) => inDocument.has(id))
-  const staying = alreadyInOrder(present, current)
+  const fewest = alreadyInOrder(present, current)
+  // Orders alone can't tell which of two neighbours moved. The selection can (Q17)
+  const notSelected = alreadyInOrder(
+    present.filter((id) => !isSelected(id)),
+    current,
+  )
+  const staying = notSelected.size === fewest.size ? notSelected : fewest
   let previous: string | null = null
   for (const id of present) {
     if (!staying.has(id)) {
@@ -332,13 +341,14 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
 
   function writeOrders(now: Mirror) {
     if (!sameValue(now.slideOrder, mirror.slideOrder)) {
-      writeOrder(now.slideOrder, slideIds(doc), (id, afterId) => moveSlide(doc, id, afterId))
+      const move = (id: string, afterId: string | null) => moveSlide(doc, id, afterId)
+      writeOrder(now.slideOrder, slideIds(doc), move, host.isSelected)
     }
 
     for (const [slideId, wanted] of now.elementOrders) {
       if (!sameValue(wanted, mirror.elementOrders.get(slideId))) {
         const move = (id: string, afterId: string | null) => moveElement(doc, id, afterId)
-        writeOrder(wanted, elementIds(doc, slideId), move)
+        writeOrder(wanted, elementIds(doc, slideId), move, host.isSelected)
       }
     }
   }

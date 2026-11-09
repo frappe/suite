@@ -25,6 +25,7 @@ const renames = new Map<string, string>()
 let boundId: string | null = null
 let applyBoundText: ((html: string | null) => void) | null = null
 let textEditedHere = false
+let lastTextChangeHere = false
 
 // Before any component draws: a new element takes its final id, so nothing mounts twice
 watch(pushAsked, () => seat?.push(), { flush: 'pre' })
@@ -82,6 +83,7 @@ export function bindLiveText(
   applyBoundText = applyText
   // a shape's first text is written when its editor opens, and counts as this tab's edit
   textEditedHere = seeded
+  lastTextChangeHere = seeded
   return extensions
 }
 
@@ -92,6 +94,14 @@ export function unbindLiveText() {
 
 export const noteTextEdited = () => {
   textEditedHere = true
+  lastTextChangeHere = true
+}
+
+export const noteTextReceived = () => {
+  lastTextChangeHere = false
 }
 
 export const isTextEditedHere = () => textEditedHere
+
+/** False once a co-editor's change is the newest thing in the open editor. */
+export const wasLastTextChangeHere = () => lastTextChangeHere

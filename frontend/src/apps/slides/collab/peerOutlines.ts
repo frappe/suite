@@ -121,8 +121,8 @@ export function usePeopleSelecting(presenceRef: ShallowRef<RoomPresence | null>)
   const lastActed = new Map<number, { cursor: string; at: number }>()
   const namesAsked = new Set<string>()
 
-  function actedAt(pid: number, cursor: unknown) {
-    const seen = JSON.stringify(cursor)
+  function actedAt(pid: number, activity: unknown) {
+    const seen = JSON.stringify(activity)
     const known = lastActed.get(pid)
     if (known?.cursor === seen) {
       return known.at
@@ -155,7 +155,7 @@ export function usePeopleSelecting(presenceRef: ShallowRef<RoomPresence | null>)
         name: shownName(peer),
         colour: colours.get(peer.pid),
         ...selection,
-        actedAt: actedAt(peer.pid, cursor),
+        actedAt: actedAt(peer.pid, [cursor, states.get(peer.pid)?.typed ?? null]),
         isIdle: personIdleSince(presence.peers, peer.pid) !== null,
       }
       const known = byPerson.get(key)

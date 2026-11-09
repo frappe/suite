@@ -7,6 +7,7 @@ import * as Y from 'yjs'
 import { ROOT } from './deck'
 
 const MOST_STEPS = 200
+const MOST_HELD = 2000
 const STEP_PAUSE_MS = 500
 const ITEMS = 'items'
 
@@ -116,11 +117,13 @@ export function openLiveUndo(doc: Y.Doc, trackedOrigins: unknown[]) {
 
       const own = ownValues[kind].get(id)
       if (!isOwn && own) {
-        heldAfterDelete = [...heldAfterDelete, { kind, id, fields: own }].slice(-MOST_STEPS)
+        heldAfterDelete.push({ kind, id, fields: own })
       }
 
       ownValues[kind].delete(id)
     }
+
+    heldAfterDelete.splice(0, heldAfterDelete.length - MOST_HELD)
   }
 
   function noteOwnValues(kind: Kind, events: DeepEvent[], transaction: Y.Transaction) {

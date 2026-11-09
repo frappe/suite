@@ -439,8 +439,10 @@ def _convert_content_shares(env, result, batch_size):
     empty page read.
     """
     target = env.content_target
+    settle_docshare_batch(env, result)
     pending = {}
     removals = []
+    dropped_before = result.docshare_rows_dropped
     after = ""
     while True:
         rows = env.content.content_shares(after, batch_size)
@@ -460,13 +462,30 @@ def _convert_content_shares(env, result, batch_size):
             # came from land in one commit, or a kill between them loses
             # both the grant and the source it was derived from.
             if len(pending) >= batch_size or len(removals) >= batch_size:
-                _flush_grants(env, result, pending, removals)
+                _flush_grants(env, result, pending, removals, dropped_before)
                 pending, removals = {}, []
+                dropped_before = result.docshare_rows_dropped
                 env.state.put_content(result)
         after = rows[-1].name
         if len(rows) < batch_size:
             break
-    _flush_grants(env, result, pending, removals)
+
+    _flush_grants(env, result, pending, removals, dropped_before)
+
+
+def settle_docshare_batch(env, result) -> None:
+    """Undo the counts of a batch whose commit never landed."""
+    batch = result.docshare_batch
+    if not batch:
+        return
+
+    # Rows go in name order, so an uncommitted batch's first row is still the first left
+    rows = env.content.content_shares("", 1)
+    if rows and rows[0].name == batch["first"]:
+        result.docshare_rows_dropped = batch["dropped"]
+        result.docshare_rows_deleted = batch["deleted"]
+
+    result.docshare_batch = None
 
 
 def _stage_content_share(env, result, pending, row, node) -> None:
@@ -482,7 +501,7 @@ def _stage_content_share(env, result, pending, row, node) -> None:
     pending[key] = merged_role(pending.get(key), role)
 
 
-def _flush_grants(env, result, pending, removals):
+def _flush_grants(env, result, pending, removals, dropped_before):
     target = env.content_target
     if not pending and not removals:
         return
@@ -500,7 +519,14 @@ def _flush_grants(env, result, pending, removals):
         if wanted != stored[key]:
             target.set_grant_role(node, principal, wanted)
     target.insert_grants(fresh)
+    result.docshare_batch = {
+        "first": removals[0]["name"],
+        "dropped": dropped_before,
+        "deleted": result.docshare_rows_deleted,
+    }
     _delete_docshares(env, result, removals)
+    # Before the commit: a stop on its far side can't recount rows already gone
+    env.state.put_content(result)
     target.commit()
 
 

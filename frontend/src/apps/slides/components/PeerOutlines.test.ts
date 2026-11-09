@@ -70,6 +70,24 @@ describe('PeerOutlines', () => {
     vi.useRealTimers()
   })
 
+  it('shows the name again when they type with the caret where it was', async () => {
+    const { presence, select } = room([tab(5, 'asha')])
+    const host = await outlines(presence)
+    select(5, ['one'])
+    await nextTick()
+    await nextTick()
+    vi.advanceTimersByTime(3001)
+    await nextTick()
+    expect(host.querySelector('svg')).toBeNull()
+
+    presence.awareness.states.set(5, { cursor: { elements: ['one'], count: 1 }, typed: 1 })
+    presence.awareness.emit('change', [{ added: [], updated: [5], removed: [] }, 'test'])
+    await nextTick()
+    await nextTick()
+
+    expect(host.querySelector('svg')).not.toBeNull()
+  })
+
   it('outlines what a co-editor selects, at that element, under their first name', async () => {
     const { presence, select } = room([tab(5, 'asha')])
     const host = await outlines(presence)

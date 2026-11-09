@@ -47,9 +47,13 @@ function flattenLikeTheEditor(element: StoreItem): StoreItem {
 interface TabOptions {
   canWrite?: boolean
   boundElementId?: string | null
+  selected?: string[]
 }
 
-function tabOn(doc: Y.Doc, { canWrite = true, boundElementId = null }: TabOptions = {}) {
+function tabOn(
+  doc: Y.Doc,
+  { canWrite = true, boundElementId = null, selected = [] }: TabOptions = {},
+) {
   const store = reactive<{ slides: StoreSlide[] }>({ slides: [] })
   const renamed: Map<string, string>[] = []
   const boundText: (string | null)[] = []
@@ -57,6 +61,7 @@ function tabOn(doc: Y.Doc, { canWrite = true, boundElementId = null }: TabOption
     slides: () => store.slides,
     flatten: flattenLikeTheEditor,
     boundElementId: () => boundElementId,
+    isSelected: (id) => selected.includes(id),
     setBoundText: (html) => boundText.push(html),
     canWrite: () => canWrite,
     onRenamed: (renames) => renamed.push(renames),
@@ -197,6 +202,29 @@ describe('pushing the store into the live document', () => {
 
     expect(slideIds(doc)).toEqual(['s2', 's3'])
     expect([...doc.getMap(ROOT.elements).keys()]).toEqual([])
+  })
+
+  it.each([
+    ['b', ['b', 'a', 'c'], { b: 1, a: 2, c: 3 }],
+    ['a', ['b', 'a', 'c'], { b: 1, a: 2, c: 3 }],
+  ])('swapping neighbours writes one order, on %s, the element moved', (moved, final, zIndexes) => {
+    const doc = new Y.Doc()
+    presentation(doc)
+    const tab = tabOn(doc, { selected: [moved] })
+    const orders = () => {
+      const elements = doc.getMap<Y.Map<unknown>>(ROOT.elements)
+      return Object.fromEntries(['a', 'b', 'c'].map((id) => [id, elements.get(id)!.get('order')]))
+    }
+    const before = orders()
+
+    for (const [id, zIndex] of Object.entries(zIndexes)) {
+      tab.element(id).zIndex = zIndex
+    }
+    tab.deck.push()
+
+    const after = orders()
+    expect(elementIds(doc, 's1')).toEqual(final)
+    expect(['a', 'b', 'c'].filter((id) => after[id] !== before[id])).toEqual([moved])
   })
 
   it('moving one element writes an order on that element alone', () => {

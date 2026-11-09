@@ -54,7 +54,8 @@ function tabOn(
   {
     canWrite = true,
     boundElementId = null,
-  }: { canWrite?: boolean; boundElementId?: string | null } = {},
+    selected = [],
+  }: { canWrite?: boolean; boundElementId?: string | null; selected?: string[] } = {},
 ) {
   const store = reactive<{ slides: StoreSlide[] }>({ slides: [] })
   const steps: LiveStep[] = []
@@ -64,6 +65,7 @@ function tabOn(
     slides: () => store.slides,
     flatten: flattenCentred,
     boundElementId: () => boundElementId,
+    isSelected: (id) => selected.includes(id),
     setBoundText: () => {},
     canWrite: () => canWrite,
     onRenamed: () => {},
@@ -183,6 +185,7 @@ describe('undo takes back only what this tab did', () => {
       slides: () => store.slides,
       flatten: flattenCentred,
       boundElementId: () => null,
+      isSelected: () => false,
       setBoundText: () => {},
       canWrite: () => canWrite,
       onRenamed: () => {},
@@ -401,10 +404,10 @@ describe('undo after a delete', () => {
     }
   })
 
-  it('holds the 200 newest deleted items and lets go of older ones', () => {
+  it('holds the 2,000 newest deleted items and lets go of older ones', () => {
     const doc = new Y.Doc()
     const elements = doc.getMap<Y.Map<unknown>>(ROOT.elements)
-    const ids = Array.from({ length: 250 }, (_, at) => `e${at}`)
+    const ids = Array.from({ length: 2050 }, (_, at) => `e${at}`)
     ids.forEach((id) => elements.set(id, new Y.Map()))
     const steps = openLiveUndo(doc, ['mine'])
 
@@ -420,6 +423,47 @@ describe('undo after a delete', () => {
     steps.writeBackOwn()
 
     expect(ids.filter((id) => elements.get(id)!.has('rotation'))).toEqual(ids.slice(50))
+  })
+
+  it('gives back what a co-editor added to 201 elements this tab deleted together', () => {
+    const { one, other, sync } = twoTabsApart()
+    const ids = Array.from({ length: 201 }, (_, at) => `e${at}`)
+    const frame = { left: 1, top: 2, width: 30, height: 40 }
+    writeDeck(one, [{ id: 's1', elements: ids.map((id) => ({ id, type: 'image', frame })) }])
+    sync()
+    const mine = tabOn(one)
+    const theirs = tabOn(other)
+
+    for (const id of ids) {
+      theirs.element(id).rotation = 45
+    }
+    theirs.deck.push()
+    mine.store.slides[0].elements = []
+    mine.deck.push()
+    Y.applyUpdate(other, Y.encodeStateAsUpdate(one), 'wire')
+    Y.applyUpdate(one, Y.encodeStateAsUpdate(other), 'wire')
+
+    mine.deck.undo()
+    sync()
+    sync()
+
+    expect(ids.filter((id) => saved(one, id)?.get('rotation') !== 45)).toEqual([])
+    expect(ids.filter((id) => saved(other, id)?.get('rotation') !== 45)).toEqual([])
+  })
+
+  it('takes back a move of one element past its neighbour', () => {
+    const doc = new Y.Doc()
+    presentation(doc)
+    const mine = tabOn(doc, { selected: ['b'] })
+
+    mine.element('b').zIndex = 1
+    mine.element('a').zIndex = 2
+    mine.deck.push()
+    expect(elementIds(doc, 's1')).toEqual(['b', 'a'])
+
+    mine.deck.undo()
+
+    expect(elementIds(doc, 's1')).toEqual(['a', 'b'])
   })
 
   it('leaves the restored values alone when the co-editor wrote nothing', () => {

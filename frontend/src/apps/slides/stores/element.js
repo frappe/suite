@@ -27,7 +27,7 @@ import { getMinSizeForElement } from '../utils/resize'
 import { shareTableWidth } from '../utils/tableWidths'
 import { getElementDiv } from './elementRegistry'
 import { commandHistory } from './historyMeta'
-import { currentId, isLive, isTextEditedHere } from './liveDeck'
+import { currentId, isLive, isTextEditedHere, wasLastTextChangeHere } from './liveDeck'
 import { presentationId } from './presentation'
 import { markDirty } from './saving'
 import {
@@ -1293,6 +1293,9 @@ const blurAndSaveContent = (element) => {
   if (isLive() && !isTextEditedHere()) return
 
   if (!isEditorEmpty(element)) return updateElementContent(element)
+
+  // text a co-editor just emptied is still theirs, whatever this tab typed before (Q6)
+  if (isLive() && !wasLastTextChangeHere()) return
 
   if (element.type === 'shape') {
     if (element.content) {

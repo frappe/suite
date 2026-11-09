@@ -35,3 +35,8 @@ export function liveTextExtensions(
 export function isReceivedChange(transaction: Transaction) {
   return !!transaction.getMeta(ySyncPluginKey)?.isChangeOrigin
 }
+
+export function isCoEditorChange(transaction: Transaction) {
+  const sync = transaction.getMeta(ySyncPluginKey)
+  return !!sync?.isChangeOrigin && !sync.isUndoRedoOperation
+}

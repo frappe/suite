@@ -105,6 +105,32 @@ class CountingTarget(FakeContentTarget):
             self.written += carried
 
 
+class StopAtShareCommit(FakeContentTarget):
+    """Stop on the commit that deletes the given DocShare, on either side of it."""
+
+    def __init__(self, share, *, committed, **kwargs):
+        super().__init__(**kwargs)
+        self.stop_share = share
+        self.committed_first = committed
+        self.shares_at_last_commit = list(self.content.share_rows)
+
+    def commit(self):
+        reached = self.stop_share in self.docshares_deleted
+        share = self.stop_share
+        if reached:
+            self.stop_share = None
+
+        if reached and not self.committed_first:
+            self.content.share_rows = list(self.shares_at_last_commit)
+            self.docshares_deleted.remove(share)
+            raise InterruptedRun(share)
+
+        super().commit()
+        self.shares_at_last_commit = list(self.content.share_rows)
+        if reached:
+            raise InterruptedRun(share)
+
+
 class CountingGrantReads(FakeContentTarget):
     """Count the grant round trips the share mapper issues."""
 
@@ -954,6 +980,47 @@ class ContentTest(unittest.TestCase):
         self.assertEqual(result.docshare_rows_deleted, 2)
         self.assertEqual(source.share_rows, [])
         self.assertEqual(env.docshare_journal.preimage("share-2"), shares[1].preimage())
+
+    def presentation_shares(self):
+        row = document("Presentation", "deck-1")
+        shares = []
+        for name in ("share-1", "share-2"):
+            shares.append(ContentShareRow(name, row.doctype, row.name, user="reader@example.com", read=1))
+
+        source = FakeContent(
+            documents=[row],
+            files=[file_for(row, "file-1")],
+            shares=shares,
+            users={"reader@example.com": True},
+        )
+        return row, source
+
+    def assert_restart_counts_each_share_once(self, *, stop_share, committed):
+        row, source = self.presentation_shares()
+        target = StopAtShareCommit(stop_share, committed=committed, content=source)
+        env, target = self.environment(source, target)
+        add_document_node(target, "file-1", row)
+
+        with self.assertRaises(InterruptedRun):
+            link_content_documents(env, batch_size=1)
+
+        result = link_content_documents(env, batch_size=1)
+
+        self.assertEqual(source.share_rows, [])
+        self.assertEqual(result.docshare_rows_dropped, 2)
+        self.assertEqual(result.docshare_rows_deleted, 2)
+
+    def test_a_stop_after_the_share_commit_keeps_its_counts(self):
+        self.assert_restart_counts_each_share_once(stop_share="share-1", committed=True)
+
+    def test_a_stop_after_a_later_share_commit_keeps_every_count(self):
+        self.assert_restart_counts_each_share_once(stop_share="share-2", committed=True)
+
+    def test_a_stop_before_the_share_commit_does_not_count_it_twice(self):
+        self.assert_restart_counts_each_share_once(stop_share="share-1", committed=False)
+
+    def test_a_stop_before_a_later_share_commit_does_not_count_it_twice(self):
+        self.assert_restart_counts_each_share_once(stop_share="share-2", committed=False)
 
     def test_a_rerun_keeps_the_count_of_governed_shares_it_deleted(self):
         row = document("Writer Document", "writer-1")
