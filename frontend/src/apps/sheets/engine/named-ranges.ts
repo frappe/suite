@@ -149,8 +149,10 @@ export function createNamedRanges({
     const rangeErr = _validateRange(range)
     if (rangeErr) return { error: rangeErr }
     // Both passed validation, so both are non-empty strings.
-    const n = name as string,
-      rg = range as string
+    if (typeof name !== 'string' || typeof range !== 'string')
+      throw new Error('Named range validation did not produce text')
+    const n = name,
+      rg = range
     const k = _key(n)
     if (_store[k]) return { error: `"${n}" already exists` }
     _store[k] = { name: n.trim(), sheet: sheet || '', range: rg.trim().toUpperCase() }
@@ -219,8 +221,7 @@ export function createNamedRanges({
   function renameSheet(oldName: string, newName: string) {
     if (!oldName || !newName || oldName === newName) return
     let changed = false
-    for (const k of Object.keys(_store)) {
-      const e = _store[k] as NamedRange
+    for (const [k, e] of Object.entries(_store)) {
       if (e.sheet === oldName) {
         _store[k] = { ...e, sheet: newName }
         changed = true
@@ -234,8 +235,7 @@ export function createNamedRanges({
   function deleteSheet(name: string) {
     const lc = String(name || '').toLowerCase()
     let changed = false
-    for (const k of Object.keys(_store)) {
-      const e = _store[k] as NamedRange
+    for (const [k, e] of Object.entries(_store)) {
       if (String(e.sheet || '').toLowerCase() !== lc || e.range === '#REF!') continue
       _store[k] = { ...e, range: '#REF!' }
       changed = true
@@ -248,8 +248,7 @@ export function createNamedRanges({
   function _remap(sheet: string, mapCol: IndexMap | null, mapRow: IndexMap | null) {
     const lc = String(sheet || '').toLowerCase()
     let changed = false
-    for (const k of Object.keys(_store)) {
-      const e = _store[k] as NamedRange
+    for (const [k, e] of Object.entries(_store)) {
       if (String(e.sheet || '').toLowerCase() !== lc) continue
       const next = remapRangeString(e.range, { opSheet: e.sheet, mapCol, mapRow })
       if (next !== e.range) {

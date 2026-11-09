@@ -1,14 +1,16 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 
 const activeElementIds = ref<string[]>([])
 const activeElements = ref<any[]>([])
+const presentationDoc = ref<{ is_converted?: number } | null>(null)
 
 vi.mock('frappe-ui', () => ({
   toast: { success: vi.fn() },
   call: vi.fn(),
 }))
-vi.mock('@/apps/slides/stores/presentation', () => ({ presentationId: ref('p1') }))
+vi.mock('@/apps/slides/stores/presentation', () => ({ presentationId: ref('p1'), presentationDoc }))
 vi.mock('@/apps/slides/stores/slide', () => ({
   slideIndex: ref(0),
   insertSlide: vi.fn(),
@@ -40,20 +42,23 @@ vi.mock('@/apps/slides/utils/mediaUploads', () => ({
   handleUploadedMedia: vi.fn(),
 }))
 
-const { handleCopy, handleCut } = await import('./copyPaste')
+const { handleCopy, handleCut, handlePaste } = await import('./copyPaste')
+const { insertSlide } = await import('@/apps/slides/stores/slide')
 const { toast } = await import('frappe-ui')
 
-const makeCopyEvent = (target: EventTarget | null) => ({
-  target,
-  preventDefault: vi.fn(),
-  clipboardData: { setData: vi.fn(), getData: vi.fn(() => '') },
-})
+const makeCopyEvent = (target: EventTarget | null) =>
+  fromPartial<ClipboardEvent>({
+    target,
+    preventDefault: vi.fn(),
+    clipboardData: { setData: vi.fn(), getData: vi.fn(() => '') },
+  })
 
 beforeEach(() => {
   activeElementIds.value = ['e1']
   activeElements.value = [{ id: 'e1' }]
+  presentationDoc.value = null
   document.body.innerHTML = ''
-  ;(document.activeElement as HTMLElement | null)?.blur?.()
+  if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
 })
 
 afterEach(() => {
@@ -69,7 +74,7 @@ describe('handleCopy from editable targets', () => {
     input.select()
 
     const e = makeCopyEvent(input)
-    handleCopy(e as any)
+    handleCopy(e)
 
     expect(e.preventDefault).not.toHaveBeenCalled()
     expect(e.clipboardData.setData).not.toHaveBeenCalled()
@@ -81,7 +86,7 @@ describe('handleCopy from editable targets', () => {
     textarea.focus()
 
     const e = makeCopyEvent(textarea)
-    handleCopy(e as any)
+    handleCopy(e)
 
     expect(e.preventDefault).not.toHaveBeenCalled()
     expect(e.clipboardData.setData).not.toHaveBeenCalled()
@@ -96,7 +101,7 @@ describe('handleCopy from editable targets', () => {
     vi.spyOn(document, 'activeElement', 'get').mockReturnValue(editor)
 
     const e = makeCopyEvent(editor)
-    handleCopy(e as any)
+    handleCopy(e)
 
     expect(e.preventDefault).not.toHaveBeenCalled()
     expect(e.clipboardData.setData).not.toHaveBeenCalled()
@@ -108,7 +113,7 @@ describe('handleCopy from editable targets', () => {
     vi.spyOn(document, 'activeElement', 'get').mockReturnValue(input)
 
     const e = makeCopyEvent(document.body)
-    handleCopy(e as any)
+    handleCopy(e)
 
     expect(e.preventDefault).not.toHaveBeenCalled()
     expect(e.clipboardData.setData).not.toHaveBeenCalled()
@@ -118,7 +123,7 @@ describe('handleCopy from editable targets', () => {
 describe('handleCopy from the canvas', () => {
   it('still hijacks copy for selected elements', () => {
     const e = makeCopyEvent(document.body)
-    handleCopy(e as any)
+    handleCopy(e)
 
     expect(e.preventDefault).toHaveBeenCalled()
     expect(e.clipboardData.setData).toHaveBeenCalledWith(
@@ -132,7 +137,7 @@ describe('handleCopy from the canvas', () => {
     activeElements.value = []
 
     const e = makeCopyEvent(document.body)
-    handleCopy(e as any)
+    handleCopy(e)
 
     expect(e.preventDefault).toHaveBeenCalled()
     expect(e.clipboardData.setData).toHaveBeenCalledWith('application/json', expect.any(String))
@@ -146,10 +151,40 @@ describe('handleCut', () => {
     activeElements.value = [{ id: 'e1', locked: true }, { id: 'e2' }]
 
     const e = makeCopyEvent(document.body)
-    handleCut(e as any)
+    handleCut(e)
 
     const payload = JSON.parse(e.clipboardData.setData.mock.calls[0][1])
     expect(payload.isCut).toBe(true)
     expect(payload.elements.map((el: any) => el.id)).toEqual(['e2'])
+  })
+})
+
+describe('handlePaste', () => {
+  beforeEach(() => vi.mocked(insertSlide).mockClear())
+
+  const slide = JSON.stringify({ clientId: 's1', parent: 'p1', elements: [] })
+
+  function pasteSlide() {
+    return handlePaste({
+      preventDefault: vi.fn(),
+      clipboardData: {
+        getData: (type: string) => (type === 'application/json' ? slide : ''),
+        items: [],
+      },
+    })
+  }
+
+  it('adds a pasted slide to a presentation', async () => {
+    await pasteSlide()
+
+    expect(insertSlide).toHaveBeenCalledOnce()
+  })
+
+  it('adds nothing to a converted presentation, which is read-only until live editing', async () => {
+    presentationDoc.value = { is_converted: 1 }
+
+    await pasteSlide()
+
+    expect(insertSlide).not.toHaveBeenCalled()
   })
 })

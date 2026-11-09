@@ -277,9 +277,13 @@ function indexOf(list: Y.Array<string>): Index {
 
 const ROOT_TAIL = /^e(\d+)$/
 const SUFFIX_TAIL = /^(.+)\.(\d+)$/
+interface TailStartResult {
+  base: string
+  n: number
+}
 
 /** Where tail ids after `lastId` continue from: e7 → (e, 7); x7p2.3 → (x7p2, 3); x7p2 → (x7p2, 0). */
-function tailStart(lastId: string | undefined): { base: string; n: number } {
+function tailStart(lastId: string | undefined): TailStartResult {
   if (lastId === undefined) return { base: 'e', n: 0 }
   const root = ROOT_TAIL.exec(lastId)
   if (root) return { base: 'e', n: Number(root[1]) }

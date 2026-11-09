@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { Button } from 'frappe-ui'
 
-/** Shown in place of a preview, with the file's download link when it has one. The default slot adds actions before it. */
+/**
+ * Shown in place of a preview, with the file's download link when it has one.
+ * The default slot adds actions before the link.
+ */
 defineProps<{ title: string; message: string; download?: string }>()
 </script>
 

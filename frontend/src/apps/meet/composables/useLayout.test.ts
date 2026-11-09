@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 
@@ -28,8 +29,8 @@ describe('useLayout', () => {
       activeSpeakerIds: ref<string[]>([]),
       stableSpeakerIds: ref<string[]>([]),
     }
-    const normal = useLayout(ref(participants) as never, ref([]), deps, ref(0))
-    const recorder = useLayout(ref(participants) as never, ref([]), deps, ref(0), {
+    const normal = useLayout(fromPartial(ref(participants)), ref([]), deps, ref(0))
+    const recorder = useLayout(fromPartial(ref(participants)), ref([]), deps, ref(0), {
       localTileCount: 0,
     })
 

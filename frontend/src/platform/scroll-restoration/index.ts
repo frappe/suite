@@ -100,17 +100,17 @@ export function installScrollRestoration(router: Router): () => void {
     removeAfterEach()
   }
 }
+interface RestoreResult {
+  target: number
+  cancel: () => void
+}
 
 /**
  * Scrolls to `target` once the page is tall enough to reach it. Cached content
  * is usually there when the page renders, so the first try lands before the
  * first paint; later tries run once a frame until the timeout.
  */
-function restore(
-  router: Router,
-  target: number,
-  done: () => void,
-): { target: number; cancel: () => void } {
+function restore(router: Router, target: number, done: () => void): RestoreResult {
   const deadline = performance.now() + RESTORE_TIMEOUT_MS
   let frame = 0
   let stopped = false

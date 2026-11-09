@@ -5,6 +5,7 @@
         v-if="isMobile"
         icon="lucide-menu"
         variant="ghost"
+        :aria-label="__('Open navigation')"
         @click="openAreaSidebar(sidebarArea)"
       />
       <Breadcrumbs :items="breadcrumbs" class="mx-2" />
@@ -43,6 +44,7 @@ import { useRoute } from 'vue-router'
 
 import { useScreenSize } from '@/composables/useScreenSize'
 import { openAreaSidebar } from '@/platform/area-sidebar'
+import { translate as __ } from '@/platform/translation'
 
 import DashboardListSkeleton from './DashboardListSkeleton.vue'
 

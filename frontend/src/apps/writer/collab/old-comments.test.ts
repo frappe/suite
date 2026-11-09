@@ -1,5 +1,6 @@
 import { getSchema } from '@tiptap/core'
 import { initProseMirrorDoc, relativePositionToAbsolutePosition } from '@tiptap/y-tiptap'
+import { fromAny, fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it } from 'vitest'
 import {
   applyUpdate,
@@ -53,7 +54,7 @@ function yText(content: string, commentId: string) {
 
 function yInline(...children: (XmlText | XmlElement<Record<string, object | string>>)[]) {
   const node = new XmlElement('paragraph')
-  node.insert(0, children as (XmlText | XmlElement)[])
+  node.insert(0, fromPartial<(XmlText | XmlElement)[]>(children))
   return node
 }
 
@@ -73,7 +74,7 @@ function words(text: XmlText) {
 // The text an end sits in and its index there
 function placeOf(doc: Doc, position: RelativePosition) {
   const absolute = createAbsolutePositionFromRelativePosition(position, doc)!
-  return [words(absolute.type as XmlText), absolute.index]
+  return [words(fromPartial<XmlText>(absolute.type)), absolute.index]
 }
 
 function textAnchor(anchor: string) {
@@ -244,7 +245,7 @@ describe('oldCommentAnchors', () => {
 
   it('reads a comment only from text and inline nodes, not from a block holding the key', () => {
     const block = yParagraph(['hello'])
-    block.setAttribute('comment', comment('c1').comment as never)
+    block.setAttribute('comment', fromAny(comment('c1').comment))
 
     expect(oldCommentAnchors(docWith(block).getXmlFragment(BODY_FIELD), schema)).toEqual({
       anchors: {},

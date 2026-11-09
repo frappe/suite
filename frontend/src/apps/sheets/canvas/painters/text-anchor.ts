@@ -1,5 +1,6 @@
 // Vertical centring for text on the grid, shared by the cell and header
-// painters.
+// painters and the in-cell editor (overlay.ts), which lays its text out on
+// the cell painter's lines.
 //
 // Two things pull text off centre if they are ignored:
 // - A gridline is drawn on the *first* pixel row of each cell (grid-painter
@@ -21,6 +22,25 @@ export function cellMidY(y: number, h: number): number {
 /** Alphabetic baseline that centres the cap height on `midY`. */
 export function centredBaseline(midY: number, capHeight: number): number {
   return midY + capHeight / 2
+}
+
+/**
+ * Centre of the first line of a block of `lines` lines, `lineH` apart, in a
+ * cell at `y`, `h` tall: the block sits 2px in from the top or bottom edge,
+ * or a middle-aligned block centres on the cell's white area (as one line
+ * does) without starting above it.
+ */
+export function firstLineMid(
+  y: number,
+  h: number,
+  valign: string | undefined,
+  lines: number,
+  lineH: number,
+): number {
+  const totalH = lines * lineH
+  if (valign === 'top') return y + lineH / 2 + 2
+  if (valign === 'bottom') return y + h - totalH + lineH / 2 - 2
+  return y + 1 + Math.max(lineH / 2, (h - 1 - totalH) / 2 + lineH / 2)
 }
 
 /** Reads the cap height of the context's current font, cached per font string. */

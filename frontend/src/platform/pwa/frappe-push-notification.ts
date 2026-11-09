@@ -221,7 +221,7 @@ class FrappePushNotification {
   }
   registeredApps(): string[] {
     try {
-      const apps = JSON.parse(localStorage.getItem(this.appsKey) ?? '["mail"]') as unknown
+      const apps: unknown = JSON.parse(localStorage.getItem(this.appsKey) ?? '["mail"]')
       return Array.isArray(apps) ? apps.filter((app) => typeof app === 'string') : ['mail']
     } catch {
       return ['mail']
@@ -236,7 +236,12 @@ class FrappePushNotification {
     try {
       const result = await client.mutation(
         api.suite.push.subscribe,
-        { fcm_token: token, apps: apps as ('mail' | 'calendar')[] },
+        {
+          fcm_token: token,
+          apps: apps.filter(
+            (app): app is 'mail' | 'calendar' => app === 'mail' || app === 'calendar',
+          ),
+        },
         { silent: true },
       )
       return result.success
@@ -251,7 +256,12 @@ class FrappePushNotification {
     try {
       const result = await client.mutation(
         api.suite.push.unsubscribe,
-        { fcm_token: token, apps: apps as ('mail' | 'calendar')[] },
+        {
+          fcm_token: token,
+          apps: apps.filter(
+            (app): app is 'mail' | 'calendar' => app === 'mail' || app === 'calendar',
+          ),
+        },
         { silent: true },
       )
       return result.success

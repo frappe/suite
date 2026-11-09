@@ -1,6 +1,5 @@
 import { readFileSync } from "node:fs";
-
-import { type APIRequestContext, type Page, expect, test } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
 import {
 	adminApi,
@@ -60,6 +59,7 @@ type Thread = { anchor: string; comments: Array<{ content: string }> };
 async function threads(): Promise<Thread[]> {
 	const response = await api.get(`${DRIVE}/nodes/${sheet.name}/threads`);
 	expect(response.ok()).toBe(true);
+	// SAFETY: this successful Suite endpoint returns its owned threads/principal projection; subsequent assertions check the expected test fixture.
 	const body = (await response.json()) as { data?: { threads: Thread[] }; message?: { threads: Thread[] } };
 	return (body.data ?? body.message)!.threads;
 }
@@ -72,7 +72,8 @@ test("renames, comments and opens versions without a legacy Drive call", async (
 	await title.press("Enter");
 	await expect.poll(async () => (await getNode(api, sheet.name)).title).toBe("Renamed sheet");
 
-	await page.getByRole("button", { name: "Comments" }).click();
+	await page.getByRole("button", { name: "More document actions" }).click();
+	await page.getByRole("menuitem", { name: "Comments" }).click();
 	const comments = page.getByRole("complementary", { name: "Comments" });
 	await comments.getByRole("textbox", { name: "New comment" }).fill("Check the A1 total");
 	await comments.getByRole("button", { name: "Comment", exact: true }).click();
@@ -86,7 +87,8 @@ test("renames, comments and opens versions without a legacy Drive call", async (
 	await page.locator("canvas").first().click({ position: { x: 80, y: 40 } });
 	await page.keyboard.type("777");
 	await page.keyboard.press("Enter");
-	await page.getByRole("button", { name: "Versions" }).click();
+	await page.getByRole("button", { name: "More document actions" }).click();
+	await page.getByRole("menuitem", { name: "Versions" }).click();
 	const versions = page.getByRole("complementary", { name: "Versions" });
 	await expect(versions.getByRole("heading", { name: "Versions" })).toBeVisible();
 	await expect(comments).toHaveCount(0);
@@ -95,28 +97,36 @@ test("renames, comments and opens versions without a legacy Drive call", async (
 	await prompt.getByRole("textbox").fill("Journey version");
 	await prompt.getByRole("button", { name: "Save" }).click();
 	await expect(versions.getByText("Journey version")).toBeVisible();
-	const order = seen.requests.filter((line) => PUSH.test(line) || line.includes(`/nodes/${sheet.name}/versions`) && line.startsWith("POST"));
+	const order = seen.requests.filter(
+		(line) => PUSH.test(line) || (line.includes(`/nodes/${sheet.name}/versions`) && line.startsWith("POST")),
+	);
 	expect(order[0]).toMatch(PUSH);
 	expect(order.at(-1)).toContain("/versions");
 
 	// The room keeps the state a restore replaces as a version of its own.
-	const before = versions.getByRole("listitem").filter({ hasText: "Before restoring version" });
+	const before = versions.getByRole("listitem").filter({ hasText: "Before restoring “Journey version”" });
 	await expect(before).toHaveCount(0);
-	await versions.getByRole("listitem").filter({ hasText: "Journey version" }).getByRole("button", { name: "Restore" }).click();
+	await versions.getByRole("listitem").filter({ hasText: "Journey version" }).getByRole("button", { name: "More version actions" }).click();
+	await page.getByRole("menuitem", { name: "Restore this version" }).click();
 	await page.getByRole("dialog", { name: "Restore this version?" }).getByRole("button", { name: "Restore" }).click();
 	await expect(page.getByText("Version restored")).toBeVisible();
 	await expect(before).toHaveCount(1);
-	await expect(versions.getByRole("listitem").first()).toContainText("Before restoring version");
+	// The first row is the current version; the newest saved version comes next.
+	await expect(versions.getByRole("listitem").nth(1)).toContainText("Before restoring “Journey version”");
 	await expect(page.getByRole("textbox", { name: "Spreadsheet title" })).toHaveValue("Renamed sheet");
 
 	// Share opens the Drive share dialog for a manager (stage 9).
 	await expect(page.getByRole("button", { name: "Share" })).toBeEnabled();
 	expect(seen.requests.filter((line) => line.includes("suite.drive.api"))).toEqual([]);
-	expect(seen.requests.some((line) => line.includes(`POST`) && line.includes(`/api/suite/drive/nodes/${sheet.name}/visit`))).toBe(true);
+	expect(
+		seen.requests.some((line) => line.includes(`POST`) && line.includes(`/api/suite/drive/nodes/${sheet.name}/visit`)),
+	).toBe(true);
 	expect(seen.errors).toEqual([]);
 });
 
-test("losing edit access freezes the sheet, stops sending its edits and offers them as a download", async ({ page }) => {
+test("losing edit access freezes the sheet, stops sending its edits and offers them as a download", async ({
+	page,
+}) => {
 	const seen = watchPage(page);
 	await openSheet(page);
 
@@ -228,11 +238,14 @@ test("a person who holds only an edit link opens and saves the sheet", async ({ 
 	const response = await api.put(`${DRIVE}/nodes/${sheet.name}/grants/$LINK`, { data: { role: 40 } });
 	expect(response.ok()).toBe(true);
 	// The answer is the grant row itself.
+	// SAFETY: this successful Suite endpoint returns its owned threads/principal projection; subsequent assertions check the expected test fixture.
 	const body = (await response.json()) as { data?: { principal: string }; message?: { principal: string } };
 	const code = (body.data ?? body.message)!.principal.replace("$LINK:", "");
 
 	const visitor = await browser.newContext({ baseURL, storageState: { cookies: [], origins: [] } });
-	const login = await visitor.request.post("/api/method/login", { form: { usr: LINK_ONLY.email, pwd: LINK_ONLY.password } });
+	const login = await visitor.request.post("/api/method/login", {
+		form: { usr: LINK_ONLY.email, pwd: LINK_ONLY.password },
+	});
 	expect(login.ok()).toBe(true);
 	await visitor.addInitScript(
 		([node, link]) => {
@@ -271,8 +284,13 @@ test("the document actions fit on one row of a 320 px screen", async ({ page }) 
 	await openSheet(page);
 	const bar = page.locator(".sheets-header");
 	const edge = (await bar.boundingBox())!;
-	for (const name of ["Menu", "Comments", "Versions", "Share"]) {
-		const box = (await bar.getByRole("button", { name, exact: true }).boundingBox())!;
+	const controls = [
+		["menuitem", "Menu"],
+		["button", "More document actions"],
+		["button", "Share"],
+	] as const;
+	for (const [role, name] of controls) {
+		const box = (await bar.getByRole(role, { name, exact: true }).boundingBox())!;
 		expect(box, name).not.toBeNull();
 		expect(box.x, name).toBeGreaterThanOrEqual(edge.x);
 		expect(box.x + box.width, name).toBeLessThanOrEqual(edge.x + edge.width);
@@ -280,9 +298,7 @@ test("the document actions fit on one row of a 320 px screen", async ({ page }) 
 	expect(await bar.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
 });
 
-test("the name box keeps one width, so the formula bar never moves", async ({
-	page,
-}) => {
+test("the name box keeps one width, so the formula bar never moves", async ({ page }) => {
 	await openSheet(page);
 	const nameBox = page.getByRole("textbox", { name: "Name box" });
 	const formulaBar = page.getByRole("textbox", {
@@ -290,21 +306,10 @@ test("the name box keeps one width, so the formula bar never moves", async ({
 	});
 	const left = async () => (await formulaBar.boundingBox())!.x;
 	const width = async () => (await nameBox.boundingBox())!.width;
-	const fits = () =>
-		nameBox.evaluate(
-			(box: HTMLInputElement) => box.scrollWidth <= box.clientWidth,
-		);
+	const fits = () => nameBox.evaluate((box: HTMLInputElement) => box.scrollWidth <= box.clientWidth);
 
 	const start = { left: await left(), width: await width() };
-	for (const reference of [
-		"C5",
-		"D48:J48",
-		"A50:Z50",
-		"50:50",
-		"1:1",
-		"B:Z",
-		"A1",
-	]) {
+	for (const reference of ["C5", "D48:J48", "A50:Z50", "50:50", "1:1", "B:Z", "A1"]) {
 		await nameBox.fill(reference);
 		await nameBox.press("Enter");
 		await expect(nameBox).toHaveValue(reference);
@@ -313,17 +318,11 @@ test("the name box keeps one width, so the formula bar never moves", async ({
 	}
 
 	// A typical range fits in full; a longer one ends in an ellipsis.
-	await nameBox.evaluate(
-		(box: HTMLInputElement) => (box.value = "AA100:AB200"),
-	);
+	await nameBox.evaluate((box: HTMLInputElement) => (box.value = "AA100:AB200"));
 	expect(await fits()).toBe(true);
-	await nameBox.evaluate(
-		(box: HTMLInputElement) => (box.value = "AAA100000:ABC200000"),
-	);
+	await nameBox.evaluate((box: HTMLInputElement) => (box.value = "AAA100000:ABC200000"));
 	expect(await fits()).toBe(false);
-	expect(
-		await nameBox.evaluate((box) => getComputedStyle(box).textOverflow),
-	).toBe("ellipsis");
+	expect(await nameBox.evaluate((box) => getComputedStyle(box).textOverflow)).toBe("ellipsis");
 
 	// Focused, the box shows the whole reference over the formula bar, which stays put.
 	await nameBox.fill("AAA100000:ABC200000");
@@ -350,9 +349,7 @@ test("the name box keeps one width, so the formula bar never moves", async ({
 	}
 });
 
-test("font size steps with − and +, takes a typed size and lists common sizes, one undo each", async ({
-	page,
-}) => {
+test("font size steps with − and +, takes a typed size and lists common sizes, one undo each", async ({ page }) => {
 	await openSheet(page);
 	const size = page.getByRole("spinbutton", { name: "Font size" });
 	const undo = page.getByRole("button", { name: "Undo", exact: true });
@@ -378,11 +375,11 @@ test("font size steps with − and +, takes a typed size and lists common sizes,
 	await expect(size).toHaveValue("13");
 });
 
-test("every control in both toolbar rows is 28 px tall", async ({ page }) => {
+test("every control in the top rows is 28 px tall", async ({ page }) => {
 	await openSheet(page);
 	const heights = await page
 		.locator(
-			".sheets-header button:visible, .sn-toolbar button:visible, .sn-toolbar input:visible:not(.sn-formula-input), .sn-formula-wrap",
+			".sheets-header button:visible, .sn-toolbar button:visible, .sn-toolbar input:visible, .sn-cell-ref, .sn-formula-wrap",
 		)
 		.evaluateAll((els) =>
 			els

@@ -43,7 +43,7 @@ describe('parseAcToken', () => {
 
 describe('AC_FUN_KEYS', () => {
   it('is pre-sorted and matches AC_FUNS keys', () => {
-    expect(AC_FUN_KEYS).toEqual(Object.keys(AC_FUNS).sort())
+    expect(AC_FUN_KEYS).toEqual([...AC_FUNS.keys()].sort())
   })
 })
 
@@ -168,8 +168,8 @@ describe('commitAc', () => {
 
 describe('AC_FUNS', () => {
   it('exports the full function signature map', () => {
-    expect(AC_FUNS['SUM']).toBe('(number1, ...)')
-    expect(AC_FUNS['IF']).toContain('test')
-    expect(AC_FUNS['VLOOKUP']).toContain('col_index')
+    expect(AC_FUNS.get('SUM')).toBe('(number1, ...)')
+    expect(AC_FUNS.get('IF')).toContain('test')
+    expect(AC_FUNS.get('VLOOKUP')).toContain('col_index')
   })
 })

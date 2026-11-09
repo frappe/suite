@@ -6,6 +6,8 @@ import { translate } from '@/platform/translation'
 
 import InvitesView from './InvitesView.vue'
 
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const server = vi.hoisted(() => {
   const failed = {
     name: 'request-nisha',
@@ -22,7 +24,7 @@ const server = vi.hoisted(() => {
     account: 'sofia@frappe.io',
     status: 'Pending',
   }
-  return { failed, pending, retried: [] as string[], settled: false }
+  return { failed, pending, retried: fromPartial<string[]>([]), settled: false }
 })
 vi.hoisted(() => {
   globalThis.fetch = async (input, init) => {

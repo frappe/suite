@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { useDeviceIdentity } from '../../../composables/useDeviceIdentity'
@@ -59,7 +60,7 @@ function clearLocalStorage(): void {
 }
 
 async function importEd25519PublicKey(raw: Uint8Array): Promise<CryptoKey> {
-  return crypto.subtle.importKey('raw', raw as BufferSource, { name: 'Ed25519' }, true, ['verify'])
+  return crypto.subtle.importKey('raw', new Uint8Array(raw), { name: 'Ed25519' }, true, ['verify'])
 }
 
 async function assertValidEd25519KeyPair(
@@ -67,12 +68,16 @@ async function assertValidEd25519KeyPair(
   publicKey: CryptoKey,
 ): Promise<void> {
   const message = crypto.getRandomValues(new Uint8Array(64))
-  const signature = await crypto.subtle.sign('Ed25519', privateKey, message as BufferSource)
+  const signature = await crypto.subtle.sign(
+    'Ed25519',
+    privateKey,
+    fromPartial<BufferSource>(message),
+  )
   const valid = await crypto.subtle.verify(
     'Ed25519',
     publicKey,
-    signature as BufferSource,
-    message as BufferSource,
+    fromPartial<BufferSource>(signature),
+    fromPartial<BufferSource>(message),
   )
   expect(valid).toBe(true)
 }

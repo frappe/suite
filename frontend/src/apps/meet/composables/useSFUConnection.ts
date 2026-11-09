@@ -442,7 +442,7 @@ export function useSFUConnection(deps: {
               if (signal.aborted) throw error
               console.warn(
                 'Could not determine meeting size; joining muted:',
-                (error as Error).message,
+                error instanceof Error ? error.message : String(error),
               )
             }
             if (shouldMute) {

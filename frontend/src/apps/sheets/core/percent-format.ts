@@ -63,7 +63,18 @@ export function percentFormatFor(formula: string, numFmtAt: NumFmtAt): string | 
       continue
     } else if (kind === 'Reference') {
       if (ref || afterDivide) return null
-      ref = value as RefToken
+      if (
+        !value ||
+        typeof value !== 'object' ||
+        !('row' in value) ||
+        typeof value.row !== 'number' ||
+        !('column' in value) ||
+        typeof value.column !== 'number' ||
+        ('sheet' in value && value.sheet !== undefined && typeof value.sheet !== 'string')
+      )
+        return null
+      ref = { row: value.row, column: value.column }
+      if ('sheet' in value && typeof value.sheet === 'string') ref.sheet = value.sheet
       operandDue = false
     } else {
       return null

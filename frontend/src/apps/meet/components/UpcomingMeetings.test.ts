@@ -13,11 +13,13 @@ interface MeetingEvent {
   participants?: { email: string; _name: string }[]
 }
 
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const state = vi.hoisted(() => ({
   push: vi.fn(),
   request: vi.fn(),
   account: { accountId: 'personal', loadUser: () => Promise.resolve() },
-  events: [] as MeetingEvent[],
+  events: fromPartial<MeetingEvent[]>([]),
 }))
 
 // The window the component last asked the calendar for.
@@ -37,7 +39,7 @@ vi.mock('@/api', async () => {
   const { createApiClient } = await import('@/platform/server-state')
   const engine = createApiClient(
     { calendar: async () => ({ policy: () => ({ staleTime: 0 }) }) },
-    { persistence: false, transport: { request: state.request } },
+    { transport: { request: state.request } },
   )
   return { api, useQuery: engine.useQuery }
 })

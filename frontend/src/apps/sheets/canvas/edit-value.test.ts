@@ -9,8 +9,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createGrid } from './index.js'
 import { createMockCtx } from './painters/test-utils.js'
 
-const inputs: Record<string, string> = { A1: '=AVERAGE(B1:C1)' }
-const displays: Record<string, string> = { A1: '20' }
+const inputs = { A1: '=AVERAGE(B1:C1)' } satisfies Record<string, string>
+const displays = { A1: '20' } satisfies Record<string, string>
 
 function mount({
   onInput,
@@ -21,6 +21,7 @@ function mount({
   vi.spyOn(canvas, 'getContext').mockReturnValue(createMockCtx())
   parent.appendChild(canvas)
   document.body.appendChild(parent)
+  const host = { canEdit: () => true }
   const grid = createGrid(canvas, {
     cells: {
       getStyle: () => ({}),
@@ -28,11 +29,11 @@ function mount({
       getEditValue: (id: string) => inputs[id] ?? '',
       ...cellOpts,
     },
-    host: { canEdit: () => true, ...(onInput ? { onInput } : {}) },
+    host: onInput ? { ...host, onInput } : host,
     lazyValues: true,
   })
   grid.resize(800, 600)
-  const editor = () => parent.querySelector('textarea') as HTMLTextAreaElement | null
+  const editor = () => parent.querySelector('textarea')
   const press = (key: string) => {
     const target = grid.isEditing() ? editor()! : canvas
     target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))

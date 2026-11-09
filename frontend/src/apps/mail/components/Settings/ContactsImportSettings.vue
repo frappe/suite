@@ -76,7 +76,10 @@ const acceptTypes = computed(() => (contactsImport.format === 'vcf' ? '.vcf' : '
 
 // Upload in chunks so large import archives aren't blocked by the web server's request-size limit.
 const onFileSelected = async (event: Event) => {
-  const input = event.target as HTMLInputElement
+  const checkedEventTarget = event.target
+  if (!(checkedEventTarget instanceof HTMLInputElement)) return
+
+  const input = checkedEventTarget
   const file = input.files?.[0]
   input.value = '' // let the same file be re-selected after an error
   if (!file) return

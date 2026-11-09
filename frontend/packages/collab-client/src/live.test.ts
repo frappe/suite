@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { adapterAt, base64, fakeServer, fakeTime, idle, join, text } from './test-support'
-import type { CollabRoom } from './types'
+import type { CollabRoom, OpenOptions } from './types'
 
 describe('collab room live', () => {
   function type(room: CollabRoom, word: string) {
@@ -10,7 +10,11 @@ describe('collab room live', () => {
     return room.flush()
   }
 
-  function row(server: ReturnType<typeof fakeServer>, rev: number, extra: object = {}) {
+  function row(
+    server: ReturnType<typeof fakeServer>,
+    rev: number,
+    extra: { lineage?: string } = {},
+  ) {
     return {
       lineage: 'L',
       rev,
@@ -243,6 +247,62 @@ describe('collab room live', () => {
     window.dispatchEvent(new Event('online'))
 
     expect(socket.connects).toBe(1)
+  })
+
+  describe('the pull after a control message', () => {
+    // Every tab draws the top of its range, so each pull comes as late as it can
+    async function pullsAfterControl(
+      server: ReturnType<typeof fakeServer>,
+      socket: ReturnType<ReturnType<typeof fakeServer>['socket']>,
+      extra: Partial<Pick<OpenOptions, 'expectedUser' | 'signedIn'>>,
+      waits: number[],
+    ) {
+      vi.spyOn(Math, 'random').mockReturnValue(0.99)
+      await join(server.endpoints(), { socket, ...extra })
+      await vi.advanceTimersByTimeAsync(5000)
+      const before = server.pulls.length
+
+      server.threadsChanged()
+      const pulls: number[] = []
+      for (const wait of waits) {
+        await vi.advanceTimersByTimeAsync(wait)
+        pulls.push(server.pulls.length - before)
+      }
+      vi.mocked(Math.random).mockRestore()
+      return pulls
+    }
+
+    it('a signed-out tab, which the server tells no count, spreads over five seconds', async () => {
+      fakeTime()
+      const server = fakeServer()
+      const guest = { expectedUser: 'Guest', signedIn: () => 'Guest' }
+
+      const pulls = await pullsAfterControl(server, server.socket(), guest, [4900, 100])
+
+      expect(pulls).toEqual([0, 1])
+    })
+
+    it('a signed-in tab alone in its room still pulls within 50 ms', async () => {
+      fakeTime()
+      const server = fakeServer()
+
+      const pulls = await pullsAfterControl(server, server.socket(), {}, [45, 5])
+
+      expect(pulls).toEqual([0, 1])
+    })
+
+    it('a signed-in tab in a room of three still pulls within 150 ms', async () => {
+      fakeTime()
+      const server = fakeServer()
+      const socket = server.socket()
+      const emit = socket.emit
+      socket.emit = (event, payload, ack) =>
+        emit(event, payload, (answer) => ack({ ...answer, count: 2 }))
+
+      const pulls = await pullsAfterControl(server, socket, {}, [140, 10])
+
+      expect(pulls).toEqual([0, 1])
+    })
   })
 
   it('a tab moves to the next epoch’s rooms early in it and leaves its rooms when closed', async () => {

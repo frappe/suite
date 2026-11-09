@@ -1,5 +1,9 @@
 import { computed, ref, shallowRef, type Ref } from 'vue'
 
+interface LinkedInstallApp {
+  app: Readonly<Ref<string>>
+}
+
 /**
  * Offering to install an app of its own. Once, quietly: the first time an app's pages open in a
  * phone's browser a banner says it can be installed, and once dismissed it stays dismissed on that
@@ -23,7 +27,7 @@ const prompt = shallowRef<InstallPrompt | null>(null)
 const dismissed = ref(new Set(readList(DISMISSED_KEY)))
 const noteDismissed = ref(read(NOTE_KEY) === '1')
 // The app the page links, as installPwa keeps it.
-const linked: { app: Readonly<Ref<string>> } = { app: ref('suite') }
+const linked: LinkedInstallApp = { app: ref('suite') }
 
 /**
  * Starts listening for the browser's offer, with the app whose manifest the page links: the offer
@@ -94,7 +98,7 @@ export function useInstallOffer(): InstallOffer {
 export function standalone(): boolean {
   return (
     window.matchMedia?.('(display-mode: standalone)').matches ||
-    (navigator as Navigator & { standalone?: boolean }).standalone === true
+    ('standalone' in navigator && navigator.standalone === true)
   )
 }
 
@@ -122,7 +126,7 @@ function write(key: string, value: string, session = false): void {
 }
 function readList(key: string): string[] {
   try {
-    const list = JSON.parse(read(key) ?? '[]') as unknown
+    const list: unknown = JSON.parse(read(key) ?? '[]')
     return Array.isArray(list)
       ? list.filter((item): item is string => typeof item === 'string')
       : []

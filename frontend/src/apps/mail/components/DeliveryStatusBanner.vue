@@ -67,7 +67,8 @@ const { emailId, account, sentMailbox } = defineProps<{
 // part yields no recipients (or can't be fetched), so the original text comes back as fallback.
 const emit = defineEmits<{ loaded: [rendered: boolean] }>()
 
-const dayjs = inject('$dayjs') as any
+const dayjs = inject<typeof import('dayjs')>('$dayjs')
+if (!dayjs) throw new Error('Missing required date formatter provider')
 const router = useRouter()
 
 const details = useQuery(api.mail.messages.deliveryStatus, () => ({ account, id: emailId }))

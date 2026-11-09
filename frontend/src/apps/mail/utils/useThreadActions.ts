@@ -20,6 +20,8 @@ import { folderTicks } from '@/apps/mail/utils/folderTicks'
 import { canMoveToMailbox, commonMailboxIds } from '@/apps/mail/utils/mailboxTargets'
 import { mailCopies, mailCopyIds, mailCopyNames, threadStarIds } from '@/apps/mail/utils/mailCopies'
 import { isReceived } from '@/apps/mail/utils/receivedMail'
+import { resnooze, type Waited } from '@/apps/mail/utils/resnooze'
+import { snoozedMessage } from '@/apps/mail/utils/snoozeTimes'
 
 type SetSeenParams = {
   0?: string[]
@@ -91,7 +93,7 @@ export function useThreadActions(deps: {
   const threadMails = (threadIds: string[]): MailCopy[] => {
     const items = (rows.value ?? []).filter((t: Thread) => threadIds.includes(t.thread_id))
     // In search, each result is itself a mail with no nested conversation.
-    if (mailbox.value === 'search') return items as unknown as MailCopy[]
+    if (mailbox.value === 'search') return items
     return items.flatMap((t: Thread) => (t.messages ?? []).flatMap(mailCopies))
   }
   const allMailIds = (threadIds: string[]): string[] => threadMails(threadIds).map((m) => m.id)
@@ -137,6 +139,8 @@ export function useThreadActions(deps: {
   // filed, your sent mail never leaves Sent but by Trash, and a draft is never filed. `leaves` names
   // the list the conversation leaves, so the client policy takes its rows off at once.
   const fileMails = useMutation(api.mail.messages.file)
+  const snoozeMails = useMutation(api.mail.messages.snooze)
+  const unsnoozeMails = useMutation(api.mail.messages.unsnooze)
   const fileMailsSubmit = (input: Omit<InputOf<typeof api.mail.messages.file>, 'account'>) =>
     fileMails.run({ account: store.accountId, ...input })
 
@@ -608,14 +612,11 @@ export function useThreadActions(deps: {
       })
     const originOf = (tid: string): string | undefined =>
       rows.value?.find((t: Thread) => t.thread_id === tid)?.mailboxes[0]?.mailbox_id
-    const originalState: Record<string, string[]> = selectedThreads.reduce(
-      (acc: Record<string, string[]>, tid: string) => {
-        const key = originOf(tid)
-        if (key) (acc[key] ??= []).push(tid)
-        return acc
-      },
-      {} as Record<string, string[]>,
-    )
+    const originalState: Record<string, string[]> = {}
+    for (const tid of selectedThreads) {
+      const key = originOf(tid)
+      if (key) (originalState[key] ??= []).push(tid)
+    }
     if (JSON.stringify(originalState) === JSON.stringify(threadIDs)) return
     closeComposeWindowHolding(selectedThreads)
     const movesAll = (t: string) => [mailboxIds.junk, mailboxIds.trash].includes(t)
@@ -786,7 +787,7 @@ export function useThreadActions(deps: {
     action: 'archive' | 'unarchive' | 'move',
     threadIds: string[],
     target?: string,
-  ): Record<string, Mailbox[]> => {
+  ) => {
     const entry = (id: string) => mailboxEntry(id)
     const shows: Record<string, Mailbox[]> = {}
     rows.value
@@ -842,10 +843,11 @@ export function useThreadActions(deps: {
   // and Undo puts each message back exactly. `told` is what the toast says: on the click where the
   // outcome is already known, or read off the server's answer where only that can say.
   const fileInPlace = (
-    action: 'archive' | 'unarchive',
+    action: 'archive' | 'unarchive' | 'snooze' | 'wake',
     threadIds: string[],
     leaves: boolean,
     told: string | ((filed: { left_inbox: boolean }) => string),
+    until?: string,
   ) => {
     if (!threadIds.length) return
     const mails = threadMails(threadIds)
@@ -857,13 +859,28 @@ export function useThreadActions(deps: {
     setUndoAction(undefined)
     const removed = leaves ? handleSuccessAndRemoveFromList(threadIds, false) : []
     let forwardOk = false
-    const forward = fileMailsSubmit({
-      ids: mails.map((m) => m.id),
-      action,
-      leaves: leaves ? mailbox.value : null,
-      // Rows that stay show the new folders at once; Search is read again, its rows being matches.
-      shows: leaves || mailbox.value === 'search' ? null : expectedFolders(action, threadIds),
-    }).then(
+    let waited: Waited[] = []
+    const account = store.accountId
+    const ids = mails.map((m) => m.id)
+    const leaving = leaves ? mailbox.value : null
+    const forward = (
+      action === 'snooze'
+        ? snoozeMails.run({ account: store.accountId, ids, until: until!, leaves: leaving })
+        : action === 'wake'
+          ? unsnoozeMails.run({ account, ids, leaves: leaving }).then((answer) => {
+              waited = answer.waited
+              return answer
+            })
+          : fileMailsSubmit({
+              ids,
+              action,
+              leaves: leaving,
+              // Rows that stay show the new folders at once; Search is read again, its rows being
+              // matches.
+              shows:
+                leaves || mailbox.value === 'search' ? null : expectedFolders(action, threadIds),
+            })
+    ).then(
       (filed) => {
         forwardOk = true
         mailboxes.refetch().catch(() => {})
@@ -889,7 +906,12 @@ export function useThreadActions(deps: {
           if (!forwardOk) return
           restoreThreadsToList(removed)
           setUndoAction(undefined)
-          const restore = setMailsMailboxesSubmit({ mails: snapshot }).then(() => {
+          // Unsnoozing ended its wait: only snoozing again has it come back at its time.
+          const restore = (
+            action === 'wake'
+              ? resnooze(account, waited)
+              : setMailsMailboxesSubmit({ mails: snapshot })
+          ).then(() => {
             mailboxes.refetch().catch(() => {})
             if (mailbox.value === 'search') resetThreads()
           })
@@ -930,6 +952,26 @@ export function useThreadActions(deps: {
       threadIds,
       mailbox.value === mailboxIds.archive,
       threadIds.length > 1 ? __('Threads unarchived.') : __('Thread unarchived.'),
+    )
+
+  // A conversation waits in Snoozed until a chosen time (suite/mail/reminders.py). It leaves the Inbox
+  // and Archive lists; in Starred or a folder of yours it stays. Asked of what is already snoozed, this
+  // only changes the time, and the row stays.
+  const snoozeThreads = (threadIds: string[], until: string) =>
+    fileInPlace(
+      'snooze',
+      threadIds,
+      [mailboxIds.inbox, mailboxIds.archive].includes(mailbox.value),
+      snoozedMessage(threadIds.length, until),
+      until,
+    )
+
+  const unsnoozeThreads = (threadIds: string[]) =>
+    fileInPlace(
+      'wake',
+      threadIds,
+      mailbox.value === mailboxIds.snoozed,
+      threadIds.length > 1 ? __('Threads unsnoozed.') : __('Thread unsnoozed.'),
     )
 
   const setSpamStatus = (threadIDs: SetSeenParams) => {
@@ -1213,8 +1255,7 @@ export function useThreadActions(deps: {
   const touchedRows = (threadIds: string[]) =>
     rows.value.filter((t: Thread) => threadIds.includes(t.thread_id))
 
-  const landedOf = (result: unknown) =>
-    result instanceof Promise ? (result as Promise<boolean>) : undefined
+  const landedOf = (result: unknown) => (result instanceof Promise ? result : undefined)
 
   const handleMoveThreads = (threadIDs: Record<string, string[]>) => {
     const touched = touchedRows(Object.values(threadIDs).flat())
@@ -1264,6 +1305,8 @@ export function useThreadActions(deps: {
 
   return {
     // Handlers
+    snoozeThreads,
+    unsnoozeThreads,
     handleSetSeen,
     handleSyncUnseen,
     setFlaggedByThreadIDs,

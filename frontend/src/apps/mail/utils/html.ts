@@ -9,14 +9,14 @@ export const escapeHtml = (s: string) =>
 
 // Only the entities a server escapes a body with. Anything else is left as written,
 // so `AT&T;` and a stray `&#5;` in real prose survive the round trip untouched.
-const NAMED_ENTITIES: Record<string, string> = {
-  amp: '&',
-  lt: '<',
-  gt: '>',
-  quot: '"',
-  apos: "'",
-  nbsp: '\u00a0',
-}
+const NAMED_ENTITIES = new Map<string, string>([
+  ['amp', '&'],
+  ['lt', '<'],
+  ['gt', '>'],
+  ['quot', '"'],
+  ['apos', "'"],
+  ['nbsp', '\u00a0'],
+])
 
 const ENTITY = /&(?:#(\d+)|#[xX]([\da-fA-F]+)|([a-zA-Z]+));/g
 
@@ -30,7 +30,7 @@ const ENTITY = /&(?:#(\d+)|#[xX]([\da-fA-F]+)|([a-zA-Z]+));/g
 // wrote about markup back into markup, which is the bug in the other direction.
 export const decodeHtmlEntities = (s: string) =>
   s.replace(ENTITY, (entity, decimal, hex, name) => {
-    if (name) return NAMED_ENTITIES[name.toLowerCase()] ?? entity
+    if (name) return NAMED_ENTITIES.get(name.toLowerCase()) ?? entity
     const code = Number.parseInt(decimal ?? hex, decimal ? 10 : 16)
     return code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : entity
   })

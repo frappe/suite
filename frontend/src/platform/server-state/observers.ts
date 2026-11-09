@@ -32,6 +32,8 @@ export function observe<I, O>(
   let disposed = false
   let stopped = false
 
+  // SAFETY: useQuery/useInfiniteQuery expose ObserveArgs<I>, which permits omitted
+  // source only when an empty input satisfies I; false is kept as the disabled state.
   const input = () => toValue(source) ?? ({} as I)
   async function refresh(): Promise<unknown> {
     if (disposed || input() === false) return undefined
@@ -110,6 +112,8 @@ export function observe<I, O>(
 
   const query: QueryState<O> = shallowReactive({
     get data() {
+      // SAFETY: this observer attaches only to the read record for reference; its output
+      // validators run in transport before normalization, and materialization reverses normalization.
       return current.value ? (reads.entities.materialize(current.value.value) as O) : undefined
     },
     get status() {
@@ -122,6 +126,7 @@ export function observe<I, O>(
       return error.value ?? current.value?.error ?? null
     },
     async refetch() {
+      // SAFETY: refresh fetches this same reference; transport validates O before caching it.
       return (await refresh()) as O | undefined
     },
     cancel() {
@@ -129,9 +134,18 @@ export function observe<I, O>(
       detach()
     },
   })
-  const page = reference as QueryRef<I, O> & { page: PageCapability }
+  const page: QueryRef<I, O> & { page?: PageCapability } = reference
   function materializedPages() {
     return (current.value?.pages ?? []).map((value) => reads.entities.materialize(value))
+  }
+  /** Every row the loaded pages hold. Offset paging counts these. */
+  function loadedRows(): unknown[] {
+    const definition = page.page
+    if (!definition) return []
+    return materializedPages().flatMap((value) => {
+      const rows = isRecord(value) ? value[definition.rows] : undefined
+      return Array.isArray(rows) ? rows : []
+    })
   }
   const infinite: InfiniteQueryState<unknown> = reactive({
     get status() {
@@ -144,32 +158,34 @@ export function observe<I, O>(
       await query.refetch()
     },
     get rows() {
-      return materializedPages().flatMap((value) =>
-        isRecord(value) && Array.isArray(value[page.page.rows])
-          ? (value[page.page.rows] as unknown[])
-          : [],
-      )
+      const rows = loadedRows()
+      // A row a pending write took out of the listing hides at once. The pages keep it,
+      // so paging still counts it and a rollback shows it in its place.
+      const record = current.value
+      const member = record?.policy.member
+      if (!record || !member) return rows
+      return rows.filter((row) => !isRecord(row) || member(row, record.input))
     },
     get hasNext() {
       const last = materializedPages().at(-1)
-      if (!isRecord(last)) return false
+      if (!page.page || !isRecord(last)) return false
       if ('cursor' in page.page)
         return last[page.page.next] !== null && last[page.page.next] !== undefined
       if ('more' in page.page) return last[page.page.more] === true
-      const offset = isRecord(input())
-        ? Number((input() as Record<string, unknown>)[page.page.offset] ?? 0)
-        : 0
+      const value = input()
+      const offset = isRecord(value) ? Number(value[page.page.offset] ?? 0) : 0
+      const rows = last[page.page.rows]
       return (
-        Array.isArray(last[page.page.rows]) &&
-        (last[page.page.rows] as unknown[]).length > 0 &&
-        offset + infinite.rows.length < Number(last[page.page.total])
+        Array.isArray(rows) &&
+        rows.length > 0 &&
+        offset + loadedRows().length < Number(last[page.page.total])
       )
     },
     get total() {
       const last = materializedPages().at(-1)
-      return 'total' in page.page && isRecord(last) && typeof last[page.page.total] === 'number'
-        ? (last[page.page.total] as number)
-        : undefined
+      const total =
+        page.page && 'total' in page.page && isRecord(last) ? last[page.page.total] : undefined
+      return typeof total === 'number' ? total : undefined
     },
     get isFetchingNext() {
       return current.value?.fetchingNext ?? false
@@ -186,14 +202,14 @@ export function observe<I, O>(
       if (!record || !infinite.hasNext || record.fetchingNext || record.fetching) return
       const last = materializedPages().at(-1)
       const value = input()
-      if (!isRecord(last) || !isRecord(value)) return
+      if (!page.page || !isRecord(last) || !isRecord(value)) return
       const run = generation
       const next =
         'cursor' in page.page
           ? { ...value, [page.page.cursor]: last[page.page.next] }
           : {
               ...value,
-              [page.page.offset]: Number(value[page.page.offset] ?? 0) + infinite.rows.length,
+              [page.page.offset]: Number(value[page.page.offset] ?? 0) + loadedRows().length,
             }
       await reads.fetch(record, next, { signal: controller?.signal }, true)
       if (run !== generation) return
@@ -206,11 +222,12 @@ export function observe<I, O>(
 export function mutationObserver<I, O>(
   execute: (input: I, signal: AbortSignal, progress: (value: number) => void) => Promise<O>,
 ) {
-  const state = reactive({
-    pending: 0,
-    error: null as Error | null,
-    progress: null as number | null,
-  })
+  interface MutationProgress {
+    pending: number
+    error: Error | null
+    progress: number | null
+  }
+  const state = reactive<MutationProgress>({ pending: 0, error: null, progress: null })
   const controllers = new Set<AbortController>()
   let generation = 0
   const result = {
@@ -223,7 +240,12 @@ export function mutationObserver<I, O>(
     get progress() {
       return state.progress
     },
-    async run(input: I = {} as I): Promise<O> {
+    async run(
+      ...args: Record<never, never> extends I ? [input?: NoInfer<I>] : [input: NoInfer<I>]
+    ): Promise<O> {
+      const provided = args[0]
+      // SAFETY: this conditional argument tuple permits omission only when an empty object satisfies I.
+      const input = provided === undefined ? ({} as I) : provided
       const run = ++generation
       const controller = new AbortController()
       controllers.add(controller)

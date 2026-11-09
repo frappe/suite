@@ -126,6 +126,6 @@ export class Outbox {
       sid: this.sid,
       ...entry,
     })
-    return entries.filter((entry) => !entry.restore).map(withSession)
+    return entries.flatMap((entry) => (!entry.restore ? [withSession(entry)] : []))
   }
 }

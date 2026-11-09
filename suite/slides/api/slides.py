@@ -3,6 +3,7 @@ from frappe import _
 from frappe.utils import cstr, get_datetime, now_datetime
 
 from suite import drive
+from suite.slides import drive as slides_drive
 from suite.slides.drive import NODE_FIELD
 
 # the only fields the editor may set; a new Slide field is not client-writable by default
@@ -39,6 +40,9 @@ def save_slides(name: str, slides: list[dict], base_modified: str) -> dict:
     doc.check_permission("write")
     if doc.is_composite:
         frappe.throw(_("Composite presentations have no slides of their own"))
+
+    slides_drive.refuse_row_write(doc.node)
+
     if cstr(doc.modified) != cstr(base_modified):
         frappe.throw(
             _("This presentation was changed elsewhere. Reload to get the latest version."),

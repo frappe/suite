@@ -106,7 +106,8 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   // Sends as the enclosing pane's account (the thread's owning account in All Inboxes, the active
   // one everywhere else): identities, the default outgoing address and every draft call resolve
   // through this scope.
-  const user = inject('$user') as UserResource
+  const user = inject<UserResource>('$user')
+  if (!user) throw new Error('Mail user resource is not provided')
   const scope = injectAccountScope()
   const { accountId: scopeAccountId, identities, mailboxIds } = scope
   const getIdentity = (email: string) =>
@@ -482,6 +483,13 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       return raiseToast(__('Please add at least one recipient.'), 'error')
     showScheduleModal.value = true
   }
+  // Remind me if nobody replies: chosen here, and set by the send itself, so it exists only for mail
+  // that went out (see suite/mail/reminders.py). The server refuses a time before the mail goes out.
+  const remindAt = ref<string>()
+  const setRemindAt = async (at?: string) => {
+    remindAt.value = at
+  }
+
   const scheduleSend = (sendAt: string) => sendMail(sendAt)
 
   // Undo send: Send actually scheduled delivery a few seconds out (a server-side hold), so undoing
@@ -636,6 +644,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       save_as_draft,
       send_at,
       undo_send,
+      remind_at: save_as_draft ? undefined : remindAt.value,
     }
     const result = await createMail.run(input)
     await onMailUpdateSuccess(result)
@@ -665,6 +674,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       submit,
       send_at,
       undo_send,
+      remind_at: submit ? remindAt.value : undefined,
     }
     const result = await updateDraft.run(input)
     await onMailUpdateSuccess(result)
@@ -771,6 +781,8 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     showScheduleModal,
     openScheduleModal,
     scheduleSend,
+    remindAt,
+    setRemindAt,
     openQuotedContent,
     openAttachment,
     mentionExtensions,

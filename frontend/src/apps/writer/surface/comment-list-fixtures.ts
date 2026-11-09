@@ -1,14 +1,15 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach } from 'vitest'
 import { createApp, h, nextTick, ref, type App } from 'vue'
 
-import type { DocumentThread } from '@/apps/drive'
+import type { DocumentSession, DocumentThread } from '@/apps/drive'
 import type { ThreadPlace } from '@/apps/writer/collab/places'
 import { translationPlugin } from '@/platform/translation'
 
-import { confirmed, errors, me, toasts, warnings } from './comment-list-fakes'
+import { access, confirmed, errors, me, toasts, warnings } from './comment-list-fakes'
 import CommentList from './CommentList.vue'
 import type { ShownDraft, useCommentDrafts } from './useCommentDrafts'
-import type { ThreadActions } from './useDocumentPanel'
+import { useThreadChanges } from './useThreadChanges'
 
 export const TODAY = new Date().toISOString()
 
@@ -23,7 +24,7 @@ export function comment(name: string, author: string, content: string) {
   }
 }
 
-export const ON_TEXT = {
+export const ON_TEXT = fromPartial<DocumentThread>({
   name: 'on-text',
   resolved: false,
   comments: [
@@ -31,19 +32,19 @@ export const ON_TEXT = {
     comment('c2', 'Ben Ito', 'Yes'),
     comment('c3', 'Asha Rao', 'Thanks'),
   ],
-} as unknown as DocumentThread
+})
 
-export const WHOLE = {
+export const WHOLE = fromPartial<DocumentThread>({
   name: 'whole',
   resolved: false,
   comments: [comment('c4', 'Ben Ito', 'Looks good overall')],
-} as unknown as DocumentThread
+})
 
-export const DONE = {
+export const DONE = fromPartial<DocumentThread>({
   name: 'done',
   resolved: true,
   comments: [comment('c5', 'Asha Rao', 'Fixed the title'), comment('c6', 'Ben Ito', 'Thanks')],
-} as unknown as DocumentThread
+})
 
 export const PLACES = new Map<string, ThreadPlace>([
   ['on-text', { kind: 'text', from: 5, to: 9, quote: 'the words' }],
@@ -71,6 +72,8 @@ afterEach(() => {
   warnings.length = 0
   errors.length = 0
   me.id = 'Asha Rao'
+  access.locked = []
+  access.blocked = []
 })
 
 // Drafts as useCommentDrafts shows them, each post answered in turn by the thread Drive made or null
@@ -104,26 +107,43 @@ export function fakeDrafts(shown: Partial<ShownDraft>[] = [], answers: (string |
       return answers.shift() ?? null
     },
   }
-  return { posted, list: list as unknown as ReturnType<typeof useCommentDrafts> }
+  return { posted, list: fromPartial<ReturnType<typeof useCommentDrafts>>(list) }
 }
 
 // The list over the three threads, recording each change it asks for and each thread it opens or lights
+interface CommentListOptions {
+  canComment?: boolean
+  threads?: DocumentThread[]
+  openThread?: string | null
+  isRefusingResolve?: boolean
+  isRefusingEdit?: boolean
+  isRefusingRemove?: boolean
+  refusedReplies?: number
+  heldReplies?: Promise<void>
+  canEditDocument?: boolean
+  canShare?: boolean
+  drafts?: ReturnType<typeof fakeDrafts>['list']
+}
+
 export function showList({
   canComment = true,
   threads = [ON_TEXT, WHOLE, DONE],
-  openThread = null as string | null,
+  openThread = null,
   isRefusingResolve = false,
   isRefusingEdit = false,
+  isRefusingRemove = false,
   refusedReplies = 0,
   heldReplies = Promise.resolve(),
   canEditDocument = false,
+  canShare = true,
   drafts = fakeDrafts().list,
-} = {}) {
+}: CommentListOptions = {}) {
   const asked: string[] = []
   const replyIds: string[] = []
   let refusalsLeft = refusedReplies
   const opened: (string | null)[] = []
   const lit: (string | null)[] = []
+  const sent: string[] = []
   const shown = ref(openThread)
   const listed = ref(threads)
   function open(name: string | null) {
@@ -136,50 +156,101 @@ export function showList({
     return Promise.resolve(true)
   }
 
-  const actions: ThreadActions = {
-    reply: async (thread, text, _authorName, clientId) => {
-      replyIds.push(clientId)
+  function changeListed(change: (thread: DocumentThread) => DocumentThread) {
+    listed.value = listed.value.map(change)
+  }
+
+  // Drive as the list reaches it: each change either goes in, read back at once, or is refused
+  const comments = {
+    reply: async (thread: string, text: string, _authorName?: string, clientId?: string) => {
+      replyIds.push(clientId ?? '')
       await record(`reply ${thread} "${text}"`)
       await heldReplies
       refusalsLeft -= 1
-      return refusalsLeft < 0
-    },
-    resolve: async (thread, isResolved) => {
-      await record(`resolve ${thread} ${isResolved}`)
-      if (isRefusingResolve) {
-        return false
+      if (refusalsLeft >= 0) {
+        throw new Error('The reply was refused.')
       }
 
-      // Read again before answering, as the panel's resolve does
-      const changed = [...listed.value]
-      const index = changed.findIndex((listedThread) => listedThread.name === thread)
-      changed[index] = { ...changed[index], resolved: isResolved }
-      listed.value = changed
-      return true
+      changeListed((listedThread) =>
+        listedThread.name === thread
+          ? {
+              ...listedThread,
+              comments: [
+                ...listedThread.comments,
+                fromPartial<DocumentThread['comments'][number]>(
+                  comment(`reply-${replyIds.length}`, me.id, text),
+                ),
+              ],
+            }
+          : listedThread,
+      )
     },
-    editComment: async (name, text) => (await record(`edit ${name} "${text}"`)) && !isRefusingEdit,
-    removeComment: (name) => record(`remove ${name}`),
+    resolve: async (thread: string, isResolved: boolean) => {
+      await record(`resolve ${thread} ${isResolved}`)
+      if (isRefusingResolve) {
+        throw new Error('The thread was not changed.')
+      }
+
+      changeListed((listedThread) =>
+        listedThread.name === thread ? { ...listedThread, resolved: isResolved } : listedThread,
+      )
+    },
+    edit: async (name: string, text: string) => {
+      await record(`edit ${name} "${text}"`)
+      if (isRefusingEdit) {
+        throw new Error('The comment was not saved.')
+      }
+
+      changeListed((listedThread) => ({
+        ...listedThread,
+        comments: listedThread.comments.map((listedComment) =>
+          listedComment.name === name ? { ...listedComment, content: text } : listedComment,
+        ),
+      }))
+    },
+    remove: async (name: string) => {
+      await record(`remove ${name}`)
+      if (isRefusingRemove) {
+        throw new Error('The comment was not deleted.')
+      }
+
+      changeListed((listedThread) => ({
+        ...listedThread,
+        comments: listedThread.comments.filter((listedComment) => listedComment.name !== name),
+      }))
+    },
   }
+  const readAt = ref<number | null>(null)
+  const { threads: shownThreads, actions } = useThreadChanges({
+    session: fromPartial<Pick<DocumentSession, 'comments'>>({ comments }),
+    readThreads: listed,
+    readAt,
+    refresh: async () => {
+      readAt.value = Date.now()
+    },
+  })
   const host = document.createElement('div')
   document.body.append(host)
   const app = createApp(() =>
     h(CommentList, {
-      threads: listed.value,
+      threads: shownThreads.value,
       readAt: 1,
       node: 'doc-1',
       places: PLACES,
       canComment,
       canEditDocument,
+      canShare,
       actions,
       drafts,
       openThread: shown.value,
       'onUpdate:openThread': open,
       'onUpdate:litThread': (name: string | null) => lit.push(name),
+      onSent: () => sent.push('sent'),
     }),
   )
   app.use(translationPlugin).mount(host)
   mounted = app
-  return { host, asked, opened, lit, listed, replyIds }
+  return { host, asked, opened, lit, listed, replyIds, sent }
 }
 
 // Each row's words, one piece of text after another

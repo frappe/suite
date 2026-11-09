@@ -17,16 +17,16 @@
   />
   <div
     v-else
-    v-html="sanitizedContent"
     class="textElement select-none"
     :class="isAutoWidth ? 'text-auto-width' : 'text-fixed-width'"
     :style="elementLineHeightStyle"
     @dblclick="handleDoubleClick"
+    v-html="sanitizedContent"
   ></div>
 </template>
 
 <script setup>
-import { EditorContent, generateHTML } from '@tiptap/vue-3'
+import { EditorContent } from '@tiptap/vue-3'
 import { computed, inject, onBeforeMount, ref } from 'vue'
 
 import SlideshowText from '@/apps/slides/components/SlideshowText.vue'
@@ -38,7 +38,7 @@ import {
   setEditableState,
 } from '@/apps/slides/stores/element'
 import { slideIndex } from '@/apps/slides/stores/slide'
-import { extensions } from '@/apps/slides/stores/tiptapSetup'
+import { oldBodyHTML } from '@/apps/slides/stores/tiptapSetup'
 import { isAffectedByMagicMove } from '@/apps/slides/stores/transition'
 import { sanitizeSlideHTML } from '@/apps/slides/utils/helpers'
 
@@ -112,7 +112,7 @@ const handleDoubleClick = (e) => {
 const normalizeContent = () => {
   const content = element.value.content
   if (content && typeof content == 'object') {
-    element.value.content = generateHTML(content, extensions)
+    element.value.content = oldBodyHTML(content)
   }
 }
 

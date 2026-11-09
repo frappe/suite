@@ -11,8 +11,6 @@ import {
   getE2EETransformCapability,
   ReceiverChainState,
   SenderChainState,
-  type ReceiverWithInsertableStreams,
-  type SenderWithInsertableStreams,
   type TransformableReceiver,
   type TransformableSender,
 } from './e2ee'
@@ -174,7 +172,7 @@ export class E2EEMeeting {
   }
 
   async getE2EEChatKey(): Promise<CryptoKey | null> {
-    if (!this.meetingSecret) return null
+    if (!this.meetingSecret || this.keyVersion === null) return null
     if (this.chatKeyCache && this.chatKeyCache.meetingSecretVersion === this.keyVersion) {
       return this.chatKeyCache.key
     }
@@ -182,11 +180,9 @@ export class E2EEMeeting {
     const ikm = this.meetingSecret
     const salt = new Uint8Array(32)
     const info = encodeInfo(INFO_CHAT)
-    const hkdfKey = await subtle.importKey('raw', ikm as BufferSource, 'HKDF', false, [
-      'deriveBits',
-    ])
+    const hkdfKey = await subtle.importKey('raw', ikm, 'HKDF', false, ['deriveBits'])
     const bits = await subtle.deriveBits(
-      { name: 'HKDF', hash: 'SHA-256', salt, info: info as BufferSource },
+      { name: 'HKDF', hash: 'SHA-256', salt, info },
       hkdfKey,
       256,
     )
@@ -199,7 +195,7 @@ export class E2EEMeeting {
   }
 
   async getE2EEPollKey(): Promise<CryptoKey | null> {
-    if (!this.meetingSecret) return null
+    if (!this.meetingSecret || this.keyVersion === null) return null
     if (this.pollKeyCache && this.pollKeyCache.meetingSecretVersion === this.keyVersion) {
       return this.pollKeyCache.key
     }
@@ -207,11 +203,9 @@ export class E2EEMeeting {
     const ikm = this.meetingSecret
     const salt = new Uint8Array(32)
     const info = encodeInfo(INFO_POLL)
-    const hkdfKey = await subtle.importKey('raw', ikm as BufferSource, 'HKDF', false, [
-      'deriveBits',
-    ])
+    const hkdfKey = await subtle.importKey('raw', ikm, 'HKDF', false, ['deriveBits'])
     const bits = await subtle.deriveBits(
-      { name: 'HKDF', hash: 'SHA-256', salt, info: info as BufferSource },
+      { name: 'HKDF', hash: 'SHA-256', salt, info },
       hkdfKey,
       256,
     )
@@ -265,7 +259,7 @@ export class E2EEMeeting {
     if (this.preCreatedReceiverStreams.has(receiver)) {
       return true
     }
-    const streams = (receiver as ReceiverWithInsertableStreams).createEncodedStreams?.()
+    const streams = receiver.createEncodedStreams?.()
     if (!streams) {
       console.warn('[E2EE] preCreateReceiverStreams: createEncodedStreams returned null')
       return false
@@ -311,7 +305,7 @@ export class E2EEMeeting {
         this.pendingSenders.add({ sender, senderId, mediaType })
         return false
       }
-      const worker = this.installScriptTransform(sender as TransformableSender, {
+      const worker = this.installScriptTransform(sender, {
         direction: 'send',
         meetingSecret: new Uint8Array(this.meetingSecret),
         keyVersion: senderKeyVersion,
@@ -322,7 +316,7 @@ export class E2EEMeeting {
       const installed = worker !== null
       if (installed) {
         this.activeSenderTransforms.add(sender)
-        this.postTransformWorkerPrewarm(worker as Worker, { mediaType })
+        this.postTransformWorkerPrewarm(worker, { mediaType })
       }
       return installed
     }
@@ -331,12 +325,12 @@ export class E2EEMeeting {
       console.warn('[E2EE] setupSenderTransform: chain is null')
       return false
     }
-    const streams = (sender as SenderWithInsertableStreams).createEncodedStreams?.()
+    const streams = sender.createEncodedStreams?.()
     if (!streams) {
       console.warn('[E2EE] setupSenderTransform: createEncodedStreams returned nothing', {
         senderId,
         mediaType,
-        hasProto: typeof (sender as SenderWithInsertableStreams).createEncodedStreams,
+        hasProto: typeof sender.createEncodedStreams,
       })
       return false
     }
@@ -389,7 +383,7 @@ export class E2EEMeeting {
     if (receiverKeyVersion == null) return false
     if (capability === 'rtp-script-transform') {
       if (!this.meetingSecret) return false
-      const worker = this.installScriptTransform(receiver as TransformableReceiver, {
+      const worker = this.installScriptTransform(receiver, {
         direction: 'recv',
         meetingSecret: new Uint8Array(this.meetingSecret),
         keyVersion: receiverKeyVersion,
@@ -400,7 +394,7 @@ export class E2EEMeeting {
       const installed = worker !== null
       if (installed) {
         this.activeReceiverTransforms.add(receiver)
-        this.postTransformWorkerPrewarm(worker as Worker, {
+        this.postTransformWorkerPrewarm(worker, {
           mediaType,
           senderSigningPubs: Array.from(this.senderSigningPubs.entries()),
         })
@@ -419,7 +413,7 @@ export class E2EEMeeting {
       readable = preCreated.readable
       writable = preCreated.writable
     } else {
-      const streams = (receiver as ReceiverWithInsertableStreams).createEncodedStreams?.()
+      const streams = receiver.createEncodedStreams?.()
       if (!streams) {
         console.warn('[E2EE] setupReceiverTransform: createEncodedStreams returned null', {
           senderId,
@@ -518,13 +512,7 @@ export class E2EEMeeting {
   }
 
   private getRTCRtpScriptTransform(): RTCRtpScriptTransformConstructor | null {
-    return (
-      (
-        globalThis as typeof globalThis & {
-          RTCRtpScriptTransform?: RTCRtpScriptTransformConstructor
-        }
-      ).RTCRtpScriptTransform ?? null
-    )
+    return globalThis.RTCRtpScriptTransform ?? null
   }
 }
 

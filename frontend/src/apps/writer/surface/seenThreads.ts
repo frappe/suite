@@ -56,11 +56,11 @@ function parseSeen(value: string | null): SeenMarks | null {
 }
 
 function isSeenMark(value: unknown): value is SeenMark {
-  if (!value || typeof value !== 'object') {
+  if (!value || typeof value !== 'object' || !('mark' in value) || !('at' in value)) {
     return false
   }
 
-  const { mark, at } = value as Partial<SeenMark>
+  const { mark, at } = value
   return typeof mark === 'string' && typeof at === 'number'
 }
 

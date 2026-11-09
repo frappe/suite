@@ -2,6 +2,8 @@
 
 import hashlib
 import io
+import threading
+import time
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -12,6 +14,7 @@ from frappe.storage.blob import sniff_mime
 
 from suite.drive.patches.build import layout, s3_copy
 from suite.drive.patches.build.copy_ledger import CopiedObject, CopyLedger
+from suite.drive.patches.build.environment import DEFAULT_COPY_WORKERS, MAX_COPY_WORKERS, copy_workers
 from suite.drive.patches.build.layout import MULTIPART_COPY_THRESHOLD
 from suite.drive.patches.build.legacy import get_s3_url
 from suite.drive.patches.build.s3_copy import (
@@ -20,6 +23,7 @@ from suite.drive.patches.build.s3_copy import (
     copy_in_bucket,
     copy_legacy_s3_objects,
 )
+from suite.drive.patches.build.state import S3CopyRun, StoragePreparation
 from suite.drive.patches.build.tests.fakes import (
     KEY_PREFIX,
     FakeBucket,
@@ -48,8 +52,10 @@ class S3CopyCase(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.path = Path(self.tmp.name)
 
-    def run_copy(self, *, files, bucket, storage=None, batch_size=1000):
-        env = build_environment(self.path, files=files, bucket=bucket, storage=storage or FakeStorage())
+    def run_copy(self, *, files, bucket, storage=None, batch_size=1000, copy_workers=DEFAULT_COPY_WORKERS):
+        env = build_environment(
+            self.path, files=files, bucket=bucket, storage=storage or FakeStorage(), copy_workers=copy_workers
+        )
         prep = env.state.storage()
         copy_legacy_s3_objects(env, prep, batch_size=batch_size)
         return env, prep
@@ -616,19 +622,25 @@ class TestKeyLayouts(S3CopyCase):
         self.bucket = FakeBucket().put(self.LEADING, BYTES).put(self.BARE, OTHER).put(self.FOLDER, b"n" * 70)
         self.env, self.prep = self.run_copy(files=self.files, bucket=self.bucket)
 
+    def copied_from(self, source):
+        (copy,) = [(kind, destination) for kind, key, destination in self.bucket.copies if key == source]
+        return copy
+
     def test_every_layout_is_read_under_its_own_key(self):
-        self.assertEqual(self.bucket.opened, [self.LEADING, self.BARE, self.FOLDER])
+        self.assertEqual(sorted(self.bucket.opened), sorted([self.LEADING, self.BARE, self.FOLDER]))
         self.assertEqual(self.prep.s3_objects_copied, 3)
         self.assertEqual(self.prep.missing_bytes, [])
 
     def test_the_leading_slash_is_the_copy_source_and_the_destination_is_canonical(self):
-        kind, source, destination = self.bucket.copies[0]
-        self.assertEqual((kind, source), ("copy_object", self.LEADING))
+        kind, destination = self.copied_from(self.LEADING)
+        self.assertEqual(kind, "copy_object")
         self.assertEqual(destination, f"private/{FOLDER}Quarterly report.pdf")
         self.assertEqual(self.bucket.objects[destination], BYTES)
 
     def test_a_bare_root_key_is_copied_as_is(self):
-        self.assertEqual(self.bucket.copies[1][1], self.BARE)
+        self.assertEqual(
+            self.copied_from(self.BARE), ("copy_object", f"private/{OTHER_FOLDER}standalone.pdf")
+        )
         self.assertEqual(self.bucket.objects[f"private/{OTHER_FOLDER}standalone.pdf"], OTHER)
 
     def test_the_legacy_objects_all_stay_in_place(self):
@@ -687,3 +699,244 @@ class TestCopyLedger(S3CopyCase):
 
     def test_a_missing_ledger_reads_as_empty(self):
         self.assertEqual(CopyLedger(self.path / "absent.jsonl").entries(), [])
+
+
+def put_distinct(bucket, specs):
+    """Give every `(name, key, filename)` spec its own content."""
+    for _, key, _ in specs:
+        bucket.put(key, f"body of {key}".encode())
+    return bucket
+
+
+def destination_of(bucket, key, filename):
+    """Where Build puts the object at `key` when its folder starts empty."""
+    checksum = hashlib.sha256(bucket.objects[key]).hexdigest()
+    return f"private/{KEY_PREFIX}{layout.blob_name(checksum)}/{filename}"
+
+
+class TestConcurrentCopy(S3CopyCase):
+    """A page is read and placed by a pool; progress stays behind verification."""
+
+    def test_the_reads_run_at_the_same_time(self):
+        # Each read waits for three others. Reading one object at a time
+        # would break the barrier instead of passing it.
+        barrier = threading.Barrier(4, timeout=5)
+
+        class Meeting(FakeBucket):
+            def open(self, key):
+                barrier.wait()
+                return super().open(key)
+
+        specs = [(f"f{i}", f"team/f{i}", f"{i}.txt") for i in range(4)]
+        files = FakeFiles.with_s3_files(*specs)
+
+        self.run_copy(files=files, bucket=put_distinct(Meeting(), specs), copy_workers=4)
+
+        self.assertTrue(all(files.blob_of(name) for name, _, _ in specs))
+
+    def test_no_more_objects_are_read_at_once_than_the_setting_allows(self):
+        lock = threading.Lock()
+        reading = []
+        peak = []
+
+        class Counting(FakeBucket):
+            def open(self, key):
+                with lock:
+                    reading.append(key)
+                    peak.append(len(reading))
+                time.sleep(0.05)
+                with lock:
+                    reading.remove(key)
+                return super().open(key)
+
+        specs = [(f"f{i}", f"team/f{i}", f"{i}.txt") for i in range(9)]
+        self.run_copy(
+            files=FakeFiles.with_s3_files(*specs), bucket=put_distinct(Counting(), specs), copy_workers=3
+        )
+
+        self.assertEqual(max(peak), 3)
+
+    def test_nothing_is_recorded_before_its_copy_is_verified(self):
+        events = []
+
+        class LoggedBucket(FakeBucket):
+            def size(self, key):
+                found = super().size(key)
+                events.append(("head", key, found))
+                return found
+
+            def _copy(self, kind, source_key, destination_key):
+                events.append(("copy", destination_key))
+                time.sleep(0.002)
+                super()._copy(kind, source_key, destination_key)
+
+        class LoggedFiles(FakeFiles):
+            def link_blob(self, file_name, blob_name):
+                events.append(("link", file_name))
+                super().link_blob(file_name, blob_name)
+
+        specs = [(f"f{i:02d}", f"team/f{i:02d}", f"{i}.txt") for i in range(12)]
+        bucket = put_distinct(LoggedBucket(), specs)
+        # Two rows of one content in one page: one placement, two records.
+        bucket.put("team/f03", bucket.objects["team/f02"])
+        env = build_environment(
+            self.path, files=LoggedFiles.with_s3_files(*specs), bucket=bucket, copy_workers=4
+        )
+        ledger = env.ledger()
+        write = ledger.record
+
+        def record(entry):
+            events.append(("ledger", entry.file, entry.destination, entry.size))
+            write(entry)
+
+        ledger.record = record
+        copy_legacy_s3_objects(env, env.state.storage(), batch_size=5)
+
+        recorded = [(index, event) for index, event in enumerate(events) if event[0] == "ledger"]
+        self.assertEqual(len(recorded), len(specs))
+        for index, (_, file, destination, size) in recorded:
+            before = events[:index]
+            copied = [at for at, event in enumerate(before) if event == ("copy", destination)]
+            verified = [at for at, event in enumerate(before) if event == ("head", destination, size)]
+            self.assertTrue(verified, f"{file} was recorded before {destination} was verified")
+            if copied:
+                self.assertGreater(verified[-1], copied[-1], f"{file} was verified before its copy")
+            linked = events.index(("link", file))
+            self.assertGreater(linked, index, f"{file} was linked before its ledger entry")
+
+
+class TestResumeAfterAKillMidPage(S3CopyCase):
+    """A kill inside a page records nothing of that page, and the rerun copies
+    only the objects that had not landed."""
+
+    def test_the_rerun_copies_only_what_remains(self):
+        specs = [(f"f{i:02d}", f"team/f{i:02d}", f"{i}.txt") for i in range(10)]
+        files = FakeFiles.with_s3_files(*specs)
+        bucket = put_distinct(FakeBucket(), specs)
+        destinations = {name: destination_of(bucket, key, filename) for name, key, filename in specs}
+        # Page one (f00 to f03) commits; page two dies on its second copy.
+        bucket.fail_copy_at = 6
+
+        with self.assertRaises(InterruptedRun):
+            self.run_copy(files=files, bucket=bucket, batch_size=4, copy_workers=4)
+        files.rollback()
+
+        ledger = CopyLedger(self.path / "drive-build-copied-objects.jsonl")
+        self.assertEqual(sorted(entry.file for entry in ledger.entries()), ["f00", "f01", "f02", "f03"])
+        landed = {name for name, destination in destinations.items() if destination in bucket.objects}
+        copies_before = len(bucket.copies)
+        opened_before = len(bucket.opened)
+        bucket.fail_copy_at = None
+
+        _, prep = self.run_copy(files=files, bucket=bucket, batch_size=4, copy_workers=4)
+
+        rerun_copies = {destination for _, _, destination in bucket.copies[copies_before:]}
+        self.assertEqual(rerun_copies, {destinations[name] for name in destinations if name not in landed})
+        self.assertTrue(
+            {"team/f00", "team/f01", "team/f02", "team/f03"}.isdisjoint(bucket.opened[opened_before:])
+        )
+        self.assertTrue(all(files.blob_of(name) for name, _, _ in specs))
+        self.assertEqual(prep.s3_objects_copied, 10)
+        self.assertEqual({entry.file for entry in ledger.entries()}, set(destinations))
+
+
+class TestRowsCleanupDeletes(S3CopyCase):
+    """A Removed row gets no node and Cleanup deletes it, so its object is not copied."""
+
+    def setUp(self):
+        super().setUp()
+        self.files = (
+            FakeFiles()
+            .add("f1", get_s3_url("team/removed"), "gone.txt", status="Removed")
+            .add("f2", get_s3_url("team/trashed"), "bin.txt", status="Trashed")
+            .add("f3", get_s3_url("team/avatar"), "me.png", status="Removed", attached_to_doctype="User")
+            .add("f4", get_s3_url("team/live"), "live.txt", status="Active")
+            .add("f5", get_s3_url("team/purged"), "purged.txt", status="Removed")
+        )
+        self.bucket = FakeBucket()
+        for key in ("team/removed", "team/trashed", "team/avatar", "team/live"):
+            self.bucket.put(key, key.encode())
+        self.env, self.prep = self.run_copy(files=self.files, bucket=self.bucket)
+
+    def test_a_removed_row_is_neither_read_nor_copied_nor_linked(self):
+        self.assertNotIn("team/removed", self.bucket.opened)
+        self.assertNotIn("team/removed", {source for _, source, _ in self.bucket.copies})
+        self.assertIsNone(self.files.blob_of("f1"))
+        self.assertNotIn("team/removed", {entry.legacy_key for entry in self.env.ledger().entries()})
+
+    def test_removed_rows_are_counted_and_not_reported_missing(self):
+        # f5's object is already gone, the way legacy Drive left it.
+        self.assertEqual(self.prep.s3_copy_run.removed_skipped, 2)
+        self.assertEqual(self.prep.s3_rows_seen, 5)
+        self.assertEqual(self.prep.missing_bytes, [])
+
+    def test_a_trashed_row_is_copied_for_the_trash_view(self):
+        self.assertIsNotNone(self.files.blob_of("f2"))
+
+    def test_a_removed_row_a_document_still_names_is_copied(self):
+        # Cleanup keeps a Home copy of a framework attachment, with its blob.
+        self.assertIsNotNone(self.files.blob_of("f3"))
+
+    def test_an_active_row_is_copied(self):
+        self.assertIsNotNone(self.files.blob_of("f4"))
+
+
+class TestTheRunRecord(S3CopyCase):
+    def test_it_counts_this_runs_work(self):
+        files = FakeFiles.with_s3_files(
+            ("f1", "team/f1", "a.txt"), ("f2", "team/f2", "b.txt"), ("f3", "team/f3", "c.txt")
+        ).add("f4", get_s3_url("team/f4"), "d.txt", status="Removed")
+        bucket = FakeBucket().put("team/f1", BYTES).put("team/f2", BYTES).put("team/f3", OTHER)
+
+        _, prep = self.run_copy(files=files, bucket=bucket, copy_workers=3)
+
+        run = prep.s3_copy_run
+        self.assertEqual(
+            (run.workers, run.objects_copied, run.objects_reused, run.removed_skipped), (3, 2, 1, 1)
+        )
+        self.assertEqual(run.bytes_read, 2 * len(BYTES) + len(OTHER))
+        self.assertEqual(run.bytes_copied, len(BYTES) + len(OTHER))
+        self.assertGreater(run.seconds, 0)
+
+    def test_the_record_is_saved_with_the_storage_state(self):
+        files = FakeFiles.with_s3_files(("f1", "team/f1", "a.txt"))
+        env, prep = self.run_copy(files=files, bucket=FakeBucket().put("team/f1", BYTES))
+
+        self.assertEqual(env.state.storage().s3_copy_run, prep.s3_copy_run)
+
+    def test_a_new_run_starts_its_own_record(self):
+        prep = StoragePreparation(s3_objects_copied=5, s3_copy_run=S3CopyRun(workers=8, objects_copied=5))
+        prep.begin_run()
+
+        self.assertEqual(prep.s3_copy_run, S3CopyRun())
+        self.assertEqual(prep.s3_objects_copied, 5)
+
+    def test_the_summary_adds_the_rates(self):
+        run = S3CopyRun(workers=8, seconds=4.0, objects_copied=8, objects_reused=2, bytes_read=4096)
+        summary = run.summary()
+
+        self.assertEqual(summary["workers"], 8)
+        self.assertEqual(summary["objects_per_second"], 2.5)
+        self.assertEqual(summary["bytes_read_per_second"], 1024)
+
+    def test_a_run_that_took_no_time_has_no_rate(self):
+        summary = S3CopyRun().summary()
+        self.assertIsNone(summary["objects_per_second"])
+        self.assertIsNone(summary["bytes_read_per_second"])
+
+
+class TestTheWorkersSetting(unittest.TestCase):
+    def test_unset_is_the_default(self):
+        self.assertEqual(copy_workers(None), DEFAULT_COPY_WORKERS)
+        self.assertEqual(copy_workers(""), DEFAULT_COPY_WORKERS)
+
+    def test_a_whole_number_or_its_spelling_is_taken(self):
+        # `bench set-config` stores a string unless it is told to parse.
+        self.assertEqual(copy_workers(1), 1)
+        self.assertEqual(copy_workers("16"), 16)
+        self.assertEqual(copy_workers(MAX_COPY_WORKERS), MAX_COPY_WORKERS)
+
+    def test_anything_else_stops_the_migrate(self):
+        for value in (0, -1, MAX_COPY_WORKERS + 1, "eight", 2.5, True):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                copy_workers(value)

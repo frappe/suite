@@ -179,11 +179,12 @@ export const registration: OwnerRegistration = {
                 !Array.isArray(data.accounts)
               )
                 return undefined
+              const changes = input.changes
               return {
                 ...data,
                 accounts: data.accounts.map((account) =>
                   isRecord(account) && account.id === input.account
-                    ? { ...account, ...(input.changes as Record<string, unknown>) }
+                    ? { ...account, ...changes }
                     : account,
                 ),
               }
@@ -267,7 +268,7 @@ export const registration: OwnerRegistration = {
   },
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+function isRecord<Value>(value: Value): value is Value & Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
@@ -333,6 +334,9 @@ const peopleReaders = ['get_contacts', 'get_contact_cards', 'get_email_suggestio
 // Mail on its way out: the Outbox, and the mail waiting for its time.
 const outgoingReaders = ['get_submissions', 'get_scheduled_mail'].map((id) => `mail.${id}`)
 
+// What says which list a conversation leaves, rows coming off that list at once.
+const FILINGS = ['file_mails', 'snooze_mails', 'unsnooze_mails']
+
 /**
  * What a write to mail reads again, beyond what its optimistic update already shows. Every write
  * read everything once — the lists page by page, every count, the contacts — and some come with
@@ -351,6 +355,9 @@ function messageInvalidates(id: string, publicName: string | undefined, input: u
   if ((id === 'create_mail' || id === 'update_draft_mail') && !sends)
     return id === 'create_mail' ? ['mail.get_mailboxes'] : []
   const readers = [...messageReaders]
+  // A send can ask for a reminder if nobody replies; these set and end one.
+  if (sends || ['remind_if_no_reply', 'cancel_reply_reminder'].includes(id))
+    readers.push('mail.get_reply_reminder')
   if (sends || publicName?.startsWith('scheduled.')) readers.push(...outgoingReaders)
   if (sends) readers.push(...peopleReaders)
   // A verdict on a sender, given outright or with a junking.
@@ -385,9 +392,55 @@ function messagePolicy<I, O>(id: string, publicName?: string): Policy<I, O> {
             const senders = new Set(input.from_emails)
             return data.filter((row) => !isRecord(row) || !senders.has(row.from_email))
           }
+          // Returned marks cleared: the rows fall back to their dates on the click, as an unpinned
+          // one does (suite/mail/reminders.py). A merged list's rows name their account.
+          if (id === 'dismiss_returned_mail' && Array.isArray(input.thread_ids)) {
+            const cleared = new Set(input.thread_ids)
+            const settle = (row: unknown) =>
+              isRecord(row) &&
+              cleared.has(row.thread_id) &&
+              (typeof row.account !== 'string' || row.account === input.account)
+                ? { ...row, returned: 0, no_reply: 0 }
+                : row
+            if (Array.isArray(data)) return data.map(settle)
+            if (isRecord(data) && Array.isArray(data.rows))
+              return { ...data, rows: data.rows.map(settle) }
+            return undefined
+          }
           const field =
-            id === 'set_mails_seen' ? 'seen' : id === 'set_flagged' ? 'flagged' : undefined
-          const patch = (row: unknown): unknown => {
+            id === 'set_mails_seen'
+              ? 'seen'
+              : id === 'set_flagged'
+                ? 'flagged'
+                : id === 'pin_mails'
+                  ? 'pinned'
+                  : undefined
+          // A pin is one folder's (suite/mail/pins.py): a list of another folder keeps its rows as
+          // they are, and a message is pinned in that folder alone.
+          const pinFolder = typeof input.mailbox === 'string' ? input.mailbox : undefined
+          const listFolder =
+            isRecord(queryInput) && typeof queryInput.mailbox === 'string'
+              ? queryInput.mailbox
+              : undefined
+          const pinnedIn = (m: Record<string, unknown>) => {
+            const folders = (Array.isArray(m.pinned_in) ? m.pinned_in : []).filter(
+              (folder) => folder !== pinFolder,
+            )
+            return input.pinned && pinFolder ? [...folders, pinFolder] : folders
+          }
+          const own = (row: Record<string, unknown>, touched: boolean) => {
+            if (field !== 'pinned')
+              return field && ids.has(row.id) ? { [field]: input[field] ? 1 : 0 } : {}
+            const pins: Record<string, unknown> =
+              ids.has(row.id) && 'pinned_in' in row ? { pinned_in: pinnedIn(row) } : {}
+            // A row is the conversation's, whichever of its messages it stands for.
+            const listed =
+              listFolder ?? (typeof row.view_mailbox === 'string' ? row.view_mailbox : '')
+            if (touched && 'pinned' in row && listed === pinFolder)
+              pins.pinned = input.pinned ? 1 : 0
+            return pins
+          }
+          const patch = <Row>(row: Row): Row | Record<string, unknown> => {
             if (
               !isRecord(row) ||
               (typeof row.account === 'string' &&
@@ -416,13 +469,12 @@ function messagePolicy<I, O>(id: string, publicName?: string): Policy<I, O> {
                     flagged: messages.some((m) => isRecord(m) && copies(m).some(starred)) ? 1 : 0,
                   }
                 : {}
-            return {
-              ...row,
-              ...(messages ? { messages } : {}),
-              ...(duplicates ? { duplicates } : {}),
-              ...(ids.has(row.id) ? { [field]: input[field] ? 1 : 0 } : {}),
-              ...flagged,
-            }
+            const updated = { ...row }
+            if (messages) Object.assign(updated, { messages })
+            if (duplicates) Object.assign(updated, { duplicates })
+            Object.assign(updated, own(row, touched))
+            if ('flagged' in flagged) Object.assign(updated, { flagged: flagged.flagged })
+            return updated
           }
           if (field) {
             if (Array.isArray(data)) return data.map(patch)
@@ -456,7 +508,7 @@ function messagePolicy<I, O>(id: string, publicName?: string): Policy<I, O> {
                         isRecord(m) &&
                         (!!m.flagged ||
                           (Array.isArray(m.duplicates) &&
-                            m.duplicates.some((d) => isRecord(d) && d.flagged))),
+                            m.duplicates.some((d: unknown) => isRecord(d) && d.flagged))),
                     )
                   : !!row.flagged
               return {
@@ -482,16 +534,15 @@ function messagePolicy<I, O>(id: string, publicName?: string): Policy<I, O> {
               row.account !== input.account
             data = {
               ...data,
-              rows: data.rows.map((row) =>
-                isRecord(row) && !elsewhere(row)
-                  ? {
-                      ...(refile(row) as Record<string, unknown>),
-                      ...(Array.isArray(row.messages)
-                        ? { messages: row.messages.map(refile) }
-                        : {}),
-                    }
-                  : row,
-              ),
+              rows: data.rows.map((row) => {
+                if (!isRecord(row) || elsewhere(row)) return row
+                const refiled = refile(row)
+                if (!isRecord(refiled))
+                  throw new TypeError('Refiling must preserve the mail record')
+                const updated = { ...refiled }
+                if (Array.isArray(row.messages)) updated.messages = row.messages.map(refile)
+                return updated
+              }),
             }
             if (!input.leaves) return data
           }
@@ -501,7 +552,7 @@ function messagePolicy<I, O>(id: string, publicName?: string): Policy<I, O> {
             'delete_messages',
             'delete_mail',
             'empty_user_mailbox',
-            'file_mails',
+            ...FILINGS,
           ].includes(id)
           if (
             !removing ||
@@ -510,7 +561,7 @@ function messagePolicy<I, O>(id: string, publicName?: string): Policy<I, O> {
                 (input.mailbox === 'inbox' && queryInput.folder === 'inbox'))) ||
             // A filing says which list the conversation leaves; every other list keeps its rows
             // (an Archive from a folder of yours, a move from Sent) until it is read again.
-            (id === 'file_mails' &&
+            (FILINGS.includes(id) &&
               (!input.leaves ||
                 (input.leaves !== queryInput.mailbox && input.leaves !== queryInput.folder)))
           )
@@ -535,7 +586,9 @@ function messagePolicy<I, O>(id: string, publicName?: string): Policy<I, O> {
               return (
                 !ids.has(row.id) &&
                 (!Array.isArray(row.messages) ||
-                  !row.messages.every((message) => isRecord(message) && ids.has(message.id)))
+                  !row.messages.every(
+                    (message: unknown) => isRecord(message) && ids.has(message.id),
+                  ))
               )
             }),
           }

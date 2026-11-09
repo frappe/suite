@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { createApp, h } from 'vue'
 
@@ -62,7 +63,7 @@ describe('text preview', () => {
       '<h1>Hello</h1><script>window.ran = true</script>',
     )
     expect(root.querySelector('h1, script')).toBeNull()
-    expect((window as { ran?: boolean }).ran).toBeUndefined()
+    expect('ran' in window ? window.ran : undefined).toBeUndefined()
   })
 
   it('shows a Markdown file rendered, or as its source', async () => {
@@ -122,7 +123,7 @@ describe('text preview', () => {
     expect(root.querySelector('script')).toBeNull()
     expect(root.textContent).toContain('<script>window.ran = true</script>')
     expect(root.querySelector('[onerror]')).toBeNull()
-    expect((window as { ran?: boolean }).ran).toBeUndefined()
+    expect('ran' in window ? window.ran : undefined).toBeUndefined()
 
     // The `javascript:` link is left as its text. A link to another page opens
     // in a new tab, and a link to a place in the file stays in this one.
@@ -164,7 +165,7 @@ describe('text preview', () => {
       )
     }
     onTestFinished(() => {
-      delete (Element.prototype as Partial<Element>).scrollIntoView
+      delete fromPartial<Partial<Element>>(Element.prototype).scrollIntoView
     })
     const open = (label: string) => {
       const link = [...root.querySelectorAll('a')].find((anchor) => anchor.textContent === label)!

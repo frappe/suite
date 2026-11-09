@@ -15,7 +15,8 @@ import { E2EEMeeting } from './E2EEMeeting'
 import { bufferToBase64, bytesFromBase64 } from './e2eePrimitives'
 import { TsMlsEpochProtocolProvider, type EpochProtocolProvider } from './EpochProtocolProvider'
 
-const isAbortError = (error: unknown) => (error as { name?: unknown } | null)?.name === 'AbortError'
+const isAbortError = (error: unknown) =>
+  !!error && typeof error === 'object' && 'name' in error && error.name === 'AbortError'
 
 const abortReason = (signal: AbortSignal) =>
   signal.reason ?? new DOMException('E2EE lifecycle ended', 'AbortError')

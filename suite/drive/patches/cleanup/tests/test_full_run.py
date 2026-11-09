@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from suite.drive.patches.cleanup.gate import ReachableNodesGateError
 from suite.drive.patches.cleanup.patch import run_cleanup
 from suite.drive.patches.cleanup.removal import RETAINED_DOCTYPES_STEP_3, RETAINED_DOCTYPES_STEP_4
 from suite.drive.patches.cleanup.tests.fakes import (
@@ -17,7 +18,7 @@ from suite.drive.patches.cleanup.tests.fakes import (
 )
 
 
-def _full_environment(tmp_path):
+def _full_environment(tmp_path, *, accept_skips=False):
     files = (
         FakeFileTable()
         .add("Drive")
@@ -87,6 +88,7 @@ def _full_environment(tmp_path):
         content=content,
         thumbnails=thumbnails,
         backup="s3://backups/2026-09-09",
+        accept_skips=accept_skips,
     )
 
 
@@ -163,6 +165,31 @@ class TestFullOrderedRun(unittest.TestCase):
         self.assertEqual(results["thumbnails"]["sidecars_deleted"], 0)
         # The snapshot the manual delete reads `root_folder` from survives.
         self.assertEqual(env.state.get_settings_snapshot()["root_folder"], "team")
+
+    def test_rows_build_was_allowed_to_skip_do_not_stop_cleanup(self):
+        """§14.9: `drive_build_accept_skips` lets Build finish over a reachable
+        row it could not convert. Cleanup reads the same key, so it runs
+        every phase and deletes that row rather than leaving the site half
+        migrated."""
+        env = _full_environment(self.path, accept_skips=True)
+        env.files.add("deep", folder="a", has_node=False)
+
+        results = run_cleanup(env)
+
+        self.assertTrue(all(phase["completed"] for phase in results.values()))
+        self.assertNotIn("deep", env.files.rows)
+        self.assertIn("deep", env.state.get_census())
+
+    def test_without_the_key_the_same_row_stops_cleanup_before_any_phase(self):
+        env = _full_environment(self.path)
+        env.files.add("deep", folder="a", has_node=False)
+
+        with self.assertRaises(ReachableNodesGateError) as caught:
+            run_cleanup(env)
+
+        self.assertIn("drive_build_accept_skips", str(caught.exception))
+        self.assertIn("deep", env.files.rows)
+        self.assertEqual(env.files.deleted, [])
 
 
 if __name__ == "__main__":

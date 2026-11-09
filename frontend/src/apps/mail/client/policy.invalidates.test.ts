@@ -1,12 +1,19 @@
+import { fromAny, fromPartial } from '@total-typescript/shoehorn'
 import { expect, it } from 'vitest'
+
+import type { Operation } from '@/platform/transport'
 
 import { registration } from './policy'
 
 // What a write to mail has read again once it lands, through the policy every caller gets.
 const readAgainAfter = (id: string, publicName: string, input: Record<string, unknown> = {}) => {
-  const policy = registration.policy({ id, kind: 'mutation', publicName } as never) as {
-    effects: { invalidates: (input: unknown) => readonly string[] }
-  }
+  const policy = registration.policy(fromPartial<Operation>({ id, kind: 'mutation', publicName }))
+  if (
+    !policy.effects ||
+    policy.effects === 'none' ||
+    typeof policy.effects.invalidates !== 'function'
+  )
+    throw new Error('Expected mutation cache effects')
   return policy.effects.invalidates({ account: 'a', ...input })
 }
 
@@ -55,15 +62,15 @@ it('filing reads the lists and counts, and the senders only when it decides on o
 })
 
 it('unstarring in Starred takes a conversation with no star left off the list at once', () => {
-  const policy = registration.policy({
-    id: 'set_flagged',
-    kind: 'mutation',
-    publicName: 'messages.flag',
-  } as never) as {
-    effects: {
-      optimisticReads: { update: (input: unknown, query: unknown, data: unknown) => unknown }
-    }
-  }
+  const policy = registration.policy(
+    fromPartial<Operation>({
+      id: 'set_flagged',
+      kind: 'mutation',
+      publicName: 'messages.flag',
+    }),
+  )
+  if (!policy.effects || policy.effects === 'none' || !policy.effects.optimisticReads)
+    throw new Error('Expected mutation cache effects')
   const update = policy.effects.optimisticReads.update
   const list = {
     rows: [
@@ -86,8 +93,8 @@ it('unstarring in Starred takes a conversation with no star left off the list at
     ],
   }
   const unstar = (ids: string[], mailbox: string) =>
-    (
-      update({ account: 'a', ids, flagged: false }, { account: 'a', mailbox }, list) as typeof list
+    fromAny<typeof list, unknown>(
+      update({ account: 'a', ids, flagged: false }, { account: 'a', mailbox }, list),
     ).rows.map((row) => row.id)
 
   expect(unstar(['q'], 'starred')).toEqual(['s'])
@@ -96,21 +103,21 @@ it('unstarring in Starred takes a conversation with no star left off the list at
   // Anywhere else the row only loses its star.
   expect(unstar(['q'], 'inbox')).toEqual(['q', 's'])
   // A list filtered to starred mail lets it go too, as the Starred folder does.
-  const filtered = (
+  const filtered = fromAny<typeof list, unknown>(
     update(
       { account: 'a', ids: ['q'], flagged: false },
       { account: 'a', mailbox: 'inbox', filter_by: 'starred' },
       list,
-    ) as typeof list
+    ),
   ).rows.map((row) => row.id)
   expect(filtered).toEqual(['s'])
   // Also filtered to unread, it stays until the list changes, as a read one does.
-  const both = (
+  const both = fromAny<typeof list, unknown>(
     update(
       { account: 'a', ids: ['q'], flagged: false },
       { account: 'a', mailbox: 'inbox', filter_by: 'unread,starred' },
       list,
-    ) as typeof list
+    ),
   ).rows.map((row) => row.id)
   expect(both).toEqual(['q', 's'])
   // A hidden copy still starred keeps it, wherever stars are the rule.
@@ -126,26 +133,26 @@ it('unstarring in Starred takes a conversation with no star left off the list at
       },
     ],
   }
-  const kept = (
+  const kept = fromAny<typeof withCopy, unknown>(
     update(
       { account: 'a', ids: ['q'], flagged: false },
       { account: 'a', mailbox: 'inbox', filter_by: 'starred' },
       withCopy,
-    ) as typeof withCopy
+    ),
   ).rows.map((row) => row.id)
   expect(kept).toEqual(['q'])
 })
 
 it('a conversation is starred while any of its messages is, whichever was starred', () => {
-  const policy = registration.policy({
-    id: 'set_flagged',
-    kind: 'mutation',
-    publicName: 'messages.flag',
-  } as never) as {
-    effects: {
-      optimisticReads: { update: (input: unknown, query: unknown, data: unknown) => unknown }
-    }
-  }
+  const policy = registration.policy(
+    fromPartial<Operation>({
+      id: 'set_flagged',
+      kind: 'mutation',
+      publicName: 'messages.flag',
+    }),
+  )
+  if (!policy.effects || policy.effects === 'none' || !policy.effects.optimisticReads)
+    throw new Error('Expected mutation cache effects')
   const update = policy.effects.optimisticReads.update
   // The row stands for its newest message, `n`; `o` is an older one.
   const list = {
@@ -161,12 +168,8 @@ it('a conversation is starred while any of its messages is, whichever was starre
     ],
   }
   const star = (ids: string[], flagged: boolean, data: unknown) =>
-    (
-      update(
-        { account: 'a', ids, flagged },
-        { account: 'a', mailbox: 'inbox' },
-        data,
-      ) as typeof list
+    fromAny<typeof list, unknown>(
+      update({ account: 'a', ids, flagged }, { account: 'a', mailbox: 'inbox' }, data),
     ).rows[0].flagged
 
   expect(star(['o'], true, list)).toBe(1)
@@ -198,15 +201,15 @@ it('a conversation is starred while any of its messages is, whichever was starre
 })
 
 it('a star on one conversation leaves every other conversation’s star alone', () => {
-  const policy = registration.policy({
-    id: 'set_flagged',
-    kind: 'mutation',
-    publicName: 'messages.flag',
-  } as never) as {
-    effects: {
-      optimisticReads: { update: (input: unknown, query: unknown, data: unknown) => unknown }
-    }
-  }
+  const policy = registration.policy(
+    fromPartial<Operation>({
+      id: 'set_flagged',
+      kind: 'mutation',
+      publicName: 'messages.flag',
+    }),
+  )
+  if (!policy.effects || policy.effects === 'none' || !policy.effects.optimisticReads)
+    throw new Error('Expected mutation cache effects')
   // Starred on the server by a hidden copy the list shows no star for.
   const other = {
     id: 'x',
@@ -214,30 +217,29 @@ it('a star on one conversation leaves every other conversation’s star alone', 
     messages: [{ id: 'x', flagged: 0, duplicates: [{ id: 'y', flagged: 1 }] }],
   }
   const list = { rows: [{ id: 'n', flagged: 0, messages: [{ id: 'n', flagged: 0 }] }, other] }
-  const after = policy.effects.optimisticReads.update(
-    { account: 'a', ids: ['n'], flagged: true },
-    { account: 'a', mailbox: 'inbox' },
-    list,
-  ) as typeof list
+  const after = fromAny<typeof list, unknown>(
+    policy.effects.optimisticReads.update(
+      { account: 'a', ids: ['n'], flagged: true },
+      { account: 'a', mailbox: 'inbox' },
+      list,
+    ),
+  )
   expect(after.rows.map((row) => row.flagged)).toEqual([1, 1])
 })
 
 it('a star cleared from every copy stays cleared, however many writes it took', () => {
-  const policy = registration.policy({
-    id: 'set_flagged',
-    kind: 'mutation',
-    publicName: 'messages.flag',
-  } as never) as {
-    effects: {
-      optimisticReads: { update: (input: unknown, query: unknown, data: unknown) => unknown }
-    }
-  }
+  const policy = registration.policy(
+    fromPartial<Operation>({
+      id: 'set_flagged',
+      kind: 'mutation',
+      publicName: 'messages.flag',
+    }),
+  )
+  if (!policy.effects || policy.effects === 'none' || !policy.effects.optimisticReads)
+    throw new Error('Expected mutation cache effects')
+  const update = policy.effects.optimisticReads.update
   const unstar = (ids: string[], data: unknown) =>
-    policy.effects.optimisticReads.update(
-      { account: 'a', ids, flagged: false },
-      { account: 'a', mailbox: 'inbox' },
-      data,
-    )
+    update({ account: 'a', ids, flagged: false }, { account: 'a', mailbox: 'inbox' }, data)
   // `o` is starred, and so is `c`, its copy; `n` too.
   const list = {
     rows: [
@@ -251,6 +253,16 @@ it('a star cleared from every copy stays cleared, however many writes it took', 
       },
     ],
   }
-  const after = unstar(['n'], unstar(['o', 'c'], list)) as typeof list
+  const after = fromAny<typeof list, unknown>(unstar(['n'], unstar(['o', 'c'], list)))
   expect(after.rows[0].flagged).toBe(0)
+})
+
+it('a reminder set, ended or asked for with a send is read again where the thread shows it', () => {
+  for (const read of [
+    readAgainAfter('remind_if_no_reply', 'messages.remindIfNoReply'),
+    readAgainAfter('cancel_reply_reminder', 'messages.cancelReplyReminder'),
+    readAgainAfter('create_mail', 'messages.create'),
+  ])
+    expect(read).toContain('mail.get_reply_reminder')
+  expect(readAgainAfter('pin_mails', 'messages.pin')).not.toContain('mail.get_reply_reminder')
 })

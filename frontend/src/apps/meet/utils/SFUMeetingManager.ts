@@ -33,7 +33,8 @@ import { SFURecoveryManager, type RecoveryResult } from './sfu/SFURecoveryManage
 import type { ProducerCloseMetadata, SFUClient } from './SFUClient'
 import { getClientTelemetry } from './telemetry/ClientTelemetry'
 
-const isAbortError = (error: unknown) => (error as { name?: unknown } | null)?.name === 'AbortError'
+const isAbortError = (error: unknown) =>
+  !!error && typeof error === 'object' && 'name' in error && error.name === 'AbortError'
 
 interface SFUMeetingManagerOptions {
   meetingId: string
@@ -213,20 +214,35 @@ export type RTCStatsSample = Readonly<{
   receiveTransportState: string
 }>
 
-function snapshotRTCStatsReports(stats: unknown): readonly RTCStatsReport[] {
-  if (!stats || typeof stats !== 'object') return Object.freeze([])
-  const values = (stats as { values?: () => IterableIterator<unknown> }).values?.()
-  if (!values) return Object.freeze([])
+function isStatsRecord(
+  value: unknown,
+): value is Partial<Record<keyof RTCStatsReport | 'values', unknown>> {
+  return !!value && typeof value === 'object'
+}
+
+function isStatsIterable(value: unknown): value is Iterable<unknown> {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    Symbol.iterator in value &&
+    typeof value[Symbol.iterator] === 'function'
+  )
+}
+
+export function snapshotRTCStatsReports(stats: unknown): readonly RTCStatsReport[] {
+  if (!isStatsRecord(stats) || typeof stats.values !== 'function') return Object.freeze([])
+  const values: unknown = stats.values()
+  if (!isStatsIterable(values)) return Object.freeze([])
   return Object.freeze(
     Array.from(values).flatMap((report) => {
-      if (!report || typeof report !== 'object') return []
+      if (!isStatsRecord(report)) return []
       const entries = RTC_STATS_REPORT_KEYS.flatMap((key) => {
-        const value = Reflect.get(report, key) as unknown
+        const value = report[key]
         return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
           ? [[key, value] as const]
           : []
       })
-      return [Object.freeze(Object.fromEntries(entries) as RTCStatsReport)]
+      return [Object.freeze(Object.fromEntries(entries))]
     }),
   )
 }
@@ -360,7 +376,7 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
     const participant = this.participantManager.getParticipant(entry.participantId)
     return (
       entry.consumer.paused ||
-      (entry.consumer as typeof entry.consumer & { producerPaused?: boolean }).producerPaused ||
+      ('producerPaused' in entry.consumer && entry.consumer.producerPaused === true) ||
       entry.adaptivelyPaused ||
       (entry.kind === 'audio' && participant?.audio_enabled === false) ||
       (entry.kind === 'video' && !entry.isScreen && participant?.video_enabled === false)
@@ -1113,9 +1129,7 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
           (reports): reports is readonly RTCStatsReport[] => reports !== null,
         ),
       ),
-      streams: Object.freeze(
-        streams.filter((stream): stream is RTCStatsStreamSample => stream !== null),
-      ),
+      streams: Object.freeze(streams.filter((stream) => stream !== null)),
       signalingConnected: this.sfuClient.getConnectionStatus().connected,
       sendTransportState: this.transportManager.sendTransport?.connectionState ?? 'closed',
       receiveTransportState: this.transportManager.recvTransport?.connectionState ?? 'closed',
@@ -1218,7 +1232,7 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
       console.warn(
         'Failed to update consumer preferences',
         consumerId,
-        (error as Error)?.message || error,
+        (error instanceof Error ? error.message : undefined) || error,
       )
       throw error
     } finally {

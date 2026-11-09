@@ -51,6 +51,16 @@ export const operationGetPublicPresentation: Validators<
       value,
       {
         $defs: {
+          ConversionStatus: {
+            properties: {
+              state: { title: 'State', type: 'string' },
+              reason: { title: 'Reason', type: 'string' },
+              rooms: { $ref: '#/$defs/Rooms' },
+            },
+            required: ['state'],
+            title: 'ConversionStatus',
+            type: 'object',
+          },
           ReferenceAnswer: {
             properties: {
               reference: { title: 'Reference', type: 'string' },
@@ -77,6 +87,17 @@ export const operationGetPublicPresentation: Validators<
               'slides',
             ],
             title: 'ReferenceAnswer',
+            type: 'object',
+          },
+          Rooms: {
+            properties: {
+              epoch: { title: 'Epoch', type: 'integer' },
+              keys: { items: { type: 'string' }, title: 'Keys', type: 'array' },
+              epoch_seconds: { title: 'Epoch Seconds', type: 'integer' },
+              server_time: { title: 'Server Time', type: 'number' },
+            },
+            required: ['epoch', 'keys', 'epoch_seconds', 'server_time'],
+            title: 'Rooms',
             type: 'object',
           },
           Slide: {
@@ -129,6 +150,8 @@ export const operationGetPublicPresentation: Validators<
             title: 'References',
             type: 'array',
           },
+          is_converted: { title: 'Is Converted', type: 'boolean' },
+          conversion: { $ref: '#/$defs/ConversionStatus' },
         },
         required: ['name', 'modified', 'modified_by', 'node', 'is_composite', 'theme', 'slides'],
         title: 'Deck',
@@ -161,6 +184,16 @@ export const operationGetCompositePresentation: Validators<
       value,
       {
         $defs: {
+          ConversionStatus: {
+            properties: {
+              state: { title: 'State', type: 'string' },
+              reason: { title: 'Reason', type: 'string' },
+              rooms: { $ref: '#/$defs/Rooms' },
+            },
+            required: ['state'],
+            title: 'ConversionStatus',
+            type: 'object',
+          },
           ReferenceAnswer: {
             properties: {
               reference: { title: 'Reference', type: 'string' },
@@ -187,6 +220,17 @@ export const operationGetCompositePresentation: Validators<
               'slides',
             ],
             title: 'ReferenceAnswer',
+            type: 'object',
+          },
+          Rooms: {
+            properties: {
+              epoch: { title: 'Epoch', type: 'integer' },
+              keys: { items: { type: 'string' }, title: 'Keys', type: 'array' },
+              epoch_seconds: { title: 'Epoch Seconds', type: 'integer' },
+              server_time: { title: 'Server Time', type: 'number' },
+            },
+            required: ['epoch', 'keys', 'epoch_seconds', 'server_time'],
+            title: 'Rooms',
             type: 'object',
           },
           Slide: {
@@ -239,6 +283,8 @@ export const operationGetCompositePresentation: Validators<
             title: 'References',
             type: 'array',
           },
+          is_converted: { title: 'Is Converted', type: 'boolean' },
+          conversion: { $ref: '#/$defs/ConversionStatus' },
         },
         required: ['name', 'modified', 'modified_by', 'node', 'is_composite', 'theme', 'slides'],
         title: 'Deck',

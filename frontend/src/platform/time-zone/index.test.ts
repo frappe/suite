@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import dayjs from 'dayjs/esm'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
@@ -17,7 +18,7 @@ const signedInAs = async (timeZone: string | null) => {
     roles: [],
     is_jmap_configured: true,
   }))
-  const session = createSession({ request } as unknown as Transport)
+  const session = createSession(fromPartial<Transport>({ request }))
   await session.refresh()
   return session
 }

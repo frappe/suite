@@ -3067,7 +3067,8 @@
                       "trash",
                       "junk",
                       "archive",
-                      "important"
+                      "important",
+                      "snoozed"
                     ],
                     "type": "string"
                   },
@@ -15492,6 +15493,13 @@
                 ],
                 "title": "In Reply To"
               },
+              "pinned_in": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Pinned In",
+                "type": "array"
+              },
               "reacts_with": {
                 "items": {
                   "type": "string"
@@ -15888,6 +15896,74 @@
                 },
                 "title": "Unscreened Senders",
                 "type": "array"
+              },
+              "pinned": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Pinned",
+                "type": "integer"
+              },
+              "returned": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Returned",
+                "type": "integer"
+              },
+              "no_reply": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "No Reply",
+                "type": "integer"
+              },
+              "snoozed_until": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Snoozed Until"
+              },
+              "snoozed_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Snoozed At"
+              },
+              "returned_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Returned At"
+              },
+              "remind_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Remind At"
               },
               "subject": {
                 "anyOf": [
@@ -16390,6 +16466,13 @@
                 ],
                 "title": "In Reply To"
               },
+              "pinned_in": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Pinned In",
+                "type": "array"
+              },
               "reacts_with": {
                 "items": {
                   "type": "string"
@@ -16786,6 +16869,74 @@
                 },
                 "title": "Unscreened Senders",
                 "type": "array"
+              },
+              "pinned": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Pinned",
+                "type": "integer"
+              },
+              "returned": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Returned",
+                "type": "integer"
+              },
+              "no_reply": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "No Reply",
+                "type": "integer"
+              },
+              "snoozed_until": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Snoozed Until"
+              },
+              "snoozed_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Snoozed At"
+              },
+              "returned_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Returned At"
+              },
+              "remind_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Remind At"
               },
               "subject": {
                 "anyOf": [
@@ -17560,6 +17711,13 @@
                 ],
                 "title": "In Reply To"
               },
+              "pinned_in": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Pinned In",
+                "type": "array"
+              },
               "reacts_with": {
                 "items": {
                   "type": "string"
@@ -18332,6 +18490,13 @@
                 ],
                 "title": "In Reply To"
               },
+              "pinned_in": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Pinned In",
+                "type": "array"
+              },
               "reacts_with": {
                 "items": {
                   "type": "string"
@@ -18728,6 +18893,74 @@
                 },
                 "title": "Unscreened Senders",
                 "type": "array"
+              },
+              "pinned": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Pinned",
+                "type": "integer"
+              },
+              "returned": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Returned",
+                "type": "integer"
+              },
+              "no_reply": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "No Reply",
+                "type": "integer"
+              },
+              "snoozed_until": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Snoozed Until"
+              },
+              "snoozed_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Snoozed At"
+              },
+              "returned_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Returned At"
+              },
+              "remind_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Remind At"
               },
               "subject": {
                 "anyOf": [
@@ -19402,6 +19635,17 @@
             "title": "Undo Send",
             "type": "boolean"
           },
+          "remind_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remind At"
+          },
           "in_reply_to": {
             "anyOf": [
               {
@@ -19802,6 +20046,17 @@
             "title": "Undo Send",
             "type": "boolean"
           },
+          "remind_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remind At"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -20019,6 +20274,540 @@
         ],
         "title": "FlagResult",
         "type": "object"
+      },
+      "errors": [
+        "PermissionError",
+        "ValidationError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "pin_mails",
+      "kind": "mutation",
+      "publicName": "messages.pin",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.mail.api.mail.pin_mails",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ids",
+            "type": "array"
+          },
+          "pinned": {
+            "title": "Pinned",
+            "type": "boolean"
+          },
+          "mailbox": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mailbox"
+          }
+        },
+        "required": [
+          "account",
+          "ids",
+          "pinned"
+        ],
+        "title": "PinInput",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ids",
+            "type": "array"
+          },
+          "pinned": {
+            "title": "Pinned",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ids",
+          "pinned"
+        ],
+        "title": "PinResult",
+        "type": "object"
+      },
+      "errors": [
+        "PermissionError",
+        "ValidationError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "snooze_mails",
+      "kind": "mutation",
+      "publicName": "messages.snooze",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.mail.api.mail.snooze_mails",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ids",
+            "type": "array"
+          },
+          "until": {
+            "title": "Until",
+            "type": "string"
+          },
+          "leaves": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Leaves"
+          }
+        },
+        "required": [
+          "account",
+          "ids",
+          "until"
+        ],
+        "title": "SnoozeInput",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "updated": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Updated",
+            "type": "array"
+          },
+          "left_inbox": {
+            "title": "Left Inbox",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "updated",
+          "left_inbox"
+        ],
+        "title": "FiledResult",
+        "type": "object"
+      },
+      "errors": [
+        "PermissionError",
+        "ValidationError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "unsnooze_mails",
+      "kind": "mutation",
+      "publicName": "messages.unsnooze",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.mail.api.mail.unsnooze_mails",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ids",
+            "type": "array"
+          },
+          "leaves": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Leaves"
+          }
+        },
+        "required": [
+          "account",
+          "ids"
+        ],
+        "title": "UnsnoozeInput",
+        "type": "object"
+      },
+      "output": {
+        "$defs": {
+          "Waited": {
+            "properties": {
+              "until": {
+                "title": "Until",
+                "type": "string"
+              },
+              "ids": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Ids",
+                "type": "array"
+              }
+            },
+            "required": [
+              "until",
+              "ids"
+            ],
+            "title": "Waited",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "updated": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Updated",
+            "type": "array"
+          },
+          "left_inbox": {
+            "title": "Left Inbox",
+            "type": "boolean"
+          },
+          "waited": {
+            "items": {
+              "$ref": "#/$defs/Waited"
+            },
+            "title": "Waited",
+            "type": "array"
+          }
+        },
+        "required": [
+          "updated",
+          "left_inbox",
+          "waited"
+        ],
+        "title": "UnsnoozedResult",
+        "type": "object"
+      },
+      "errors": [
+        "PermissionError",
+        "ValidationError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "remind_if_no_reply",
+      "kind": "mutation",
+      "publicName": "messages.remindIfNoReply",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.mail.api.mail.remind_if_no_reply",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ids",
+            "type": "array"
+          },
+          "remind_at": {
+            "title": "Remind At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "account",
+          "ids",
+          "remind_at"
+        ],
+        "title": "RemindInput",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "remind_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remind At"
+          }
+        },
+        "required": [
+          "remind_at"
+        ],
+        "title": "ReminderResult",
+        "type": "object"
+      },
+      "errors": [
+        "PermissionError",
+        "ValidationError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "cancel_reply_reminder",
+      "kind": "mutation",
+      "publicName": "messages.cancelReplyReminder",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.mail.api.mail.cancel_reply_reminder",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "thread_id": {
+            "title": "Thread Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "account",
+          "thread_id"
+        ],
+        "title": "ThreadReminderInput",
+        "type": "object"
+      },
+      "output": {
+        "type": "null"
+      },
+      "errors": [
+        "PermissionError",
+        "ValidationError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "get_reply_reminder",
+      "kind": "query",
+      "publicName": "messages.replyReminder",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.mail.api.mail.get_reply_reminder",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "thread_id": {
+            "title": "Thread Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "account",
+          "thread_id"
+        ],
+        "title": "ThreadReminderInput",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "remind_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remind At"
+          }
+        },
+        "required": [
+          "remind_at"
+        ],
+        "title": "ReminderResult",
+        "type": "object"
+      },
+      "errors": [
+        "PermissionError",
+        "ValidationError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "dismiss_returned_mail",
+      "kind": "mutation",
+      "publicName": "messages.dismissReturned",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.mail.api.mail.dismiss_returned_mail",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "thread_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Thread Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "account",
+          "thread_ids"
+        ],
+        "title": "DismissReturnedInput",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ids",
+            "type": "array"
+          },
+          "no_reply_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "No Reply Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ids",
+          "no_reply_ids"
+        ],
+        "title": "ReturnedMarks",
+        "type": "object"
+      },
+      "errors": [
+        "PermissionError",
+        "ValidationError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "restore_returned_mail",
+      "kind": "mutation",
+      "publicName": "messages.restoreReturned",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.mail.api.mail.restore_returned_mail",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ids",
+            "type": "array"
+          },
+          "no_reply_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "No Reply Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "account",
+          "ids",
+          "no_reply_ids"
+        ],
+        "title": "RestoreReturnedInput",
+        "type": "object"
+      },
+      "output": {
+        "type": "null"
       },
       "errors": [
         "PermissionError",

@@ -25,6 +25,21 @@ export function registerAuthHandlers(deps: HandlerDeps) {
 				}
 
 				deps.authManager.updateSocketToken(socket, token);
+				if (
+					socket.scope === 'full' &&
+					socket.hostOnlyChat === true &&
+					socket.roomId &&
+					!deps.registry.isHostOnlyChat(socket.roomId)
+				) {
+					deps.registry.setHostOnlyChat(socket.roomId, true);
+					deps.registry.emitToFullAccessParticipants(
+						socket.roomId,
+						'chat:restriction_updated',
+						{
+							enabled: true,
+						},
+					);
+				}
 				if (socket.e2eeRequired && socket.roomId) {
 					const wasLastSubscriber = deps.sttManager?.removeSubscriber(
 						socket.roomId,
@@ -46,7 +61,9 @@ export function registerAuthHandlers(deps: HandlerDeps) {
 					reason: 'invalid_token',
 					outcome: 'failure',
 				});
-				const message = (error as Error).message || 'Token update failed';
+				const message =
+					(error instanceof Error ? error.message : String(error)) ||
+					'Token update failed';
 				loggers.socketHandler.warn(
 					'auth:update_token failed for socket %s: %s',
 					socket.id,

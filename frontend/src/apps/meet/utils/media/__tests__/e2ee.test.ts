@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import { E2EEMeeting } from '../E2EEMeeting'
@@ -5,8 +6,8 @@ import { decodeFrameHeader, encodeFrameHeader } from '../frameCodec'
 
 beforeAll(() => {
   if (typeof globalThis.RTCRtpSender === 'undefined') {
-    globalThis.RTCRtpSender = class RTCRtpSender {} as never
-    globalThis.RTCRtpReceiver = class RTCRtpReceiver {} as never
+    globalThis.RTCRtpSender = fromPartial(class RTCRtpSender {})
+    globalThis.RTCRtpReceiver = fromPartial(class RTCRtpReceiver {})
   }
 })
 
@@ -207,7 +208,7 @@ describe('Transform streams (T1.5 + T1.6)', () => {
   type FakeFrame = { data: ArrayBuffer }
 
   function makeFakeFrame(bytes: Uint8Array): FakeFrame {
-    return { data: bytes.buffer as ArrayBuffer }
+    return { data: fromPartial<ArrayBuffer>(bytes.buffer) }
   }
 
   async function runEncryptDecrypt(
@@ -533,7 +534,7 @@ describe('ReceiverChainState anti-replay behavior', () => {
       expect('key' in result).toBe(true)
     }
 
-    const seenFrames = Reflect.get(state, 'seenFrames') as Map<string, Set<number>>
+    const seenFrames: Map<string, Set<number>> = state['seenFrames']
     const seen = seenFrames.get('1:video')
     expect(seen ? Array.from(seen).sort((a, b) => a - b) : []).toEqual([97, 98, 99])
     expect(await state.getKeyForFrame(1, 'video', 98)).toEqual({
@@ -715,9 +716,7 @@ describe('E2EE chain registry', () => {
     const kp = await ed25519KeyPair()
     const originalSender = globalThis.RTCRtpSender
     const originalReceiver = globalThis.RTCRtpReceiver
-    const originalScriptTransform = (
-      globalThis as typeof globalThis & { RTCRtpScriptTransform?: unknown }
-    ).RTCRtpScriptTransform
+    const originalScriptTransform = globalThis.RTCRtpScriptTransform
     const originalWorker = globalThis.Worker
 
     try {
@@ -744,7 +743,7 @@ describe('E2EE chain registry', () => {
         },
       })
       meeting.setMeetingContext(secret, 1, kp.privateKey)
-      const sender = {} as RTCRtpSender
+      const sender = fromPartial<RTCRtpSender>({})
 
       expect(await meeting.setupSenderTransform(sender, 5, 'video')).toBe(true)
       expect(await meeting.setupSenderTransform(sender, 5, 'video')).toBe(true)
@@ -780,9 +779,7 @@ describe('E2EE chain registry', () => {
     const kp = await ed25519KeyPair()
     const originalSender = globalThis.RTCRtpSender
     const originalReceiver = globalThis.RTCRtpReceiver
-    const originalScriptTransform = (
-      globalThis as typeof globalThis & { RTCRtpScriptTransform?: unknown }
-    ).RTCRtpScriptTransform
+    const originalScriptTransform = globalThis.RTCRtpScriptTransform
     const originalWorker = globalThis.Worker
 
     const workers: Array<{ messages: unknown[] }> = []
@@ -817,7 +814,9 @@ describe('E2EE chain registry', () => {
       })
 
       meeting.setMeetingContext(firstSecret, 1, kp.privateKey)
-      expect(await meeting.setupSenderTransform({} as RTCRtpSender, 5, 'video')).toBe(true)
+      expect(await meeting.setupSenderTransform(fromPartial<RTCRtpSender>({}), 5, 'video')).toBe(
+        true,
+      )
       expect(workers).toHaveLength(1)
 
       meeting.setMeetingContext(secondSecret, 2, kp.privateKey)
