@@ -25,6 +25,21 @@ export function registerAuthHandlers(deps: HandlerDeps) {
 				}
 
 				deps.authManager.updateSocketToken(socket, token);
+				if (
+					socket.scope === 'full' &&
+					socket.hostOnlyChat === true &&
+					socket.roomId &&
+					!deps.registry.isHostOnlyChat(socket.roomId)
+				) {
+					deps.registry.setHostOnlyChat(socket.roomId, true);
+					deps.registry.emitToFullAccessParticipants(
+						socket.roomId,
+						'chat:restriction_updated',
+						{
+							enabled: true,
+						},
+					);
+				}
 				if (socket.e2eeRequired && socket.roomId) {
 					const wasLastSubscriber = deps.sttManager?.removeSubscriber(
 						socket.roomId,

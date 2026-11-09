@@ -360,6 +360,7 @@ export interface SocketData {
 	isHost: boolean;
 	isGuest?: boolean;
 	guestGeneration?: number;
+	hostOnlyChat?: boolean;
 	roomId?: string;
 	participantId?: string;
 	participantConnectionId?: string;
@@ -550,6 +551,7 @@ export interface JWTPayload {
 	is_cohost?: boolean;
 	is_guest?: boolean;
 	guest_generation?: number;
+	host_only_chat?: boolean;
 	scope?: SFUScope;
 	e2ee_required?: boolean;
 	session_id?: string;
@@ -604,6 +606,7 @@ declare module 'socket.io' {
 		isCohost: boolean;
 		isGuest?: boolean;
 		guestGeneration?: number;
+		hostOnlyChat?: boolean;
 		roomId?: string;
 		participantId?: string;
 		participantConnectionId?: string;

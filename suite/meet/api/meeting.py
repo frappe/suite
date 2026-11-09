@@ -129,6 +129,7 @@ def _build_sfu_connection_details(meeting: MeetRoom, user: str) -> dict:
         is_host=is_host,
         is_cohost=is_cohost,
         e2ee_required=e2ee_required,
+        host_only_chat=bool(meeting.host_only_chat),
     )
 
     return {
@@ -175,6 +176,7 @@ def _build_guest_connection_details(
         is_cohost=False,
         is_guest=True,
         e2ee_required=e2ee_required,
+        host_only_chat=bool(meeting.host_only_chat),
         guest_generation=lease.generation,
     )
     return {
@@ -335,6 +337,7 @@ def refresh_sfu_token(meeting_id: str) -> dict:
         is_host=is_host,
         is_cohost=is_cohost,
         e2ee_required=e2ee_required,
+        host_only_chat=bool(meeting.host_only_chat),
     )
 
     return {
