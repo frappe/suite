@@ -167,11 +167,9 @@ def _join_team_standup(user: str) -> None:
 
 
 def _welcome_document(root: str) -> str:
-    from suite.writer import fill_new_document
+    from suite.writer import create_document
 
-    node = drive.create_document(root, _("Welcome to Frappe Suite"), content_doctype="Writer Document")
-    fill_new_document(node, _welcome_html())
-    return node
+    return create_document(root, _("Welcome to Frappe Suite"), _welcome_html())
 
 
 def _welcome_html() -> str:
@@ -319,16 +317,16 @@ def _board_scene() -> dict:
 
 
 def _kickoff(root: str) -> str:
-    from suite.slides import fill_new_deck
+    from suite.slides import create_deck
 
-    node = drive.create_document(root, _("Company kickoff"), content_doctype="Presentation")
     story = (
         (_("Company kickoff"), _("Where we are and where we are going")),
         (_("This quarter"), _("Three outcomes we commit to")),
         (_("Next steps"), _("Owners and dates")),
     )
-    fill_new_deck(
-        node,
+    return create_deck(
+        root,
+        _("Company kickoff"),
         [
             [
                 _text(f"heading-{number}", heading, top=180, size=48, color="#171717FF"),
@@ -337,7 +335,6 @@ def _kickoff(root: str) -> str:
             for number, (heading, body) in enumerate(story, 1)
         ],
     )
-    return node
 
 
 def _text(identifier: str, text: str, *, top: int, size: int, color: str) -> dict:

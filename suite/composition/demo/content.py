@@ -2,9 +2,6 @@
 
 from html import escape
 
-from suite import drive
-from suite.writer import fill_new_document
-
 ONBOARDING = """
 <h1>Welcome to Northwind Labs</h1>
 <p>We build <strong>Beacon</strong>, a research workspace for small product teams.
@@ -94,13 +91,6 @@ interviews, notes, and feedback into one place your whole team can discuss.</p>
 <h2>Measurement</h2><p>Report qualified replies, first shared collections, and seven-day return rate.
 Email opens are directional only. Spend cap: <strong>$4,500</strong>.</p>
 """
-
-
-def writer(parent: str, title: str, html: str) -> str:
-    """Create a Writer document through Drive and start it from `html`."""
-    node = drive.create_document(parent, title, content_doctype="Writer Document")
-    fill_new_document(node, html)
-    return node
 
 
 def personal_note(first_name: str, team: str) -> str:
