@@ -14,6 +14,7 @@ import {
 import { sharedPresence } from '@/apps/slides/collab/livePresence'
 import { liveTextExtensions } from '@/apps/slides/collab/liveText'
 import { lastSelector, usePeopleSelecting } from '@/apps/slides/collab/peerOutlines'
+import { resetGrowthBaseline } from '@/apps/slides/composables/useTextEditor'
 import { activeElementIds, focusElementId, resetFocus } from '@/apps/slides/stores/element'
 import { jumpToElementsByIds, jumpToSlideByIndex } from '@/apps/slides/stores/historyMeta'
 import {
@@ -96,6 +97,7 @@ export function useConvertedRoom({
       deck?.push()
       isFontPending = false
       deck?.redraw()
+      void resetGrowthBaseline()
     })
   }
 

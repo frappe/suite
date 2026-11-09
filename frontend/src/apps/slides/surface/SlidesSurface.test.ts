@@ -60,6 +60,7 @@ const { changeSlideInSlideshow } = await import('@/apps/slides/stores/slideshow'
 const { router: slidesRouter } = await import('@/apps/slides/router')
 const { focusElementId, setActiveElements } = await import('@/apps/slides/stores/element')
 const { activeEditor } = await import('@/apps/slides/composables/useTextEditor')
+const { registerElementDiv } = await import('@/apps/slides/stores/elementRegistry')
 const { convertLegacy } = await import('@/apps/slides/collab/conversion')
 const { addSlide, deleteSlide, ROOT, setElement } = await import('@/apps/slides/collab/deck')
 
@@ -676,6 +677,45 @@ describe('a deck on the content layer', () => {
       await setOpacity(60)
 
       expect(saved()).toMatchObject({ top: TOP_IN_THE_FONT, transform: 'none' })
+    })
+
+    it('keeps right-aligned text on its edge at the first keystroke after the font arrives', async () => {
+      const room = roomOf('one')
+      collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
+      const id = 'element-one'
+      setElement(room.doc, id, { frame: { left: 500, top: 300, transform: CENTRED } })
+      mounted = await openedSurface({ deck: { is_converted: true } })
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+      await vi.waitFor(() => expect(viewOnly.value).toBe(false))
+      const rendered = { width: 100 }
+      vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(() => rendered.width)
+      registerElementDiv(id, Object.assign(document.createElement('div'), { contains: () => true }))
+      const type = async (text: string, width: number) => {
+        rendered.width = width
+        const editor: Editor = fromAny(activeEditor.value)
+        editor.commands.insertContentAt(editor.state.doc.content.size - 1, text)
+        await nextTick()
+      }
+      const drawnLeft = () =>
+        fromPartial<Array<{ elements: Array<{ left: number }> }>>(editorSlides.value)[0].elements[0]
+          .left
+      const saved = () => room.doc.getMap<Map<string, unknown>>(ROOT.elements).get(id)!.get('frame')
+
+      fontStartsLoading()
+      focusElementId.value = id
+      await vi.waitFor(() => expect(activeEditor.value).toBeTruthy())
+      await nextTick()
+      fromAny<Editor, unknown>(activeEditor.value).commands.setTextAlign('right')
+      await type('x', 120)
+      expect(saved()).toMatchObject({ left: 500, transform: CENTRED })
+
+      rendered.width = 160
+      browser.fontArrives()
+      await vi.waitFor(() => expect(drawnLeft()).toBe(420))
+      await nextTick()
+      await type('y', 180)
+
+      expect(saved()).toMatchObject({ left: 400, transform: 'none' })
     })
   })
 
