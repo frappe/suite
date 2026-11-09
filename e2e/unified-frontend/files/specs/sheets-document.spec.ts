@@ -284,8 +284,13 @@ test("the document actions fit on one row of a 320 px screen", async ({ page }) 
 	await openSheet(page);
 	const bar = page.locator(".sheets-header");
 	const edge = (await bar.boundingBox())!;
-	for (const name of ["Menu", "More document actions", "Share"]) {
-		const box = (await bar.getByRole("button", { name, exact: true }).boundingBox())!;
+	const controls = [
+		["menuitem", "Menu"],
+		["button", "More document actions"],
+		["button", "Share"],
+	] as const;
+	for (const [role, name] of controls) {
+		const box = (await bar.getByRole(role, { name, exact: true }).boundingBox())!;
 		expect(box, name).not.toBeNull();
 		expect(box.x, name).toBeGreaterThanOrEqual(edge.x);
 		expect(box.x + box.width, name).toBeLessThanOrEqual(edge.x + edge.width);
