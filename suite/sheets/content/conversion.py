@@ -15,7 +15,7 @@ from datetime import datetime
 
 import frappe
 
-from suite.content import capacity, compaction, convert, copies, updates
+from suite.content import capacity, checkpoints, compaction, convert, copies, log, updates
 from suite.content.conversions import ConversionRefused
 from suite.sheets import content as sheets_content
 from suite.sheets.doctype.sheet.storage import decode_sheets_data
@@ -108,3 +108,25 @@ def check(node: str, old: OldSheet, converted: convert.Converted) -> CheckedShee
 
 def fix_up(node: str, old: OldSheet, checked: CheckedSheet) -> None:
     """Nothing to move: a sheet's comments are Drive's threads already, and its other stores are in the state."""
+
+
+def seed(node: str, workbook: str) -> None:
+    """Start a new, unopened sheet's log from `workbook`, the old body's JSON, as a conversion would.
+
+    The job `suite.sheets.fill_new_sheet` queues.
+    `replace_start` refuses a log anyone has written to, so an opened sheet keeps its cells.
+    """
+    found = log.find(sheets_content.APP, node)
+    row = old_row(node)
+    html_copy = sheets_content.EDITOR.readable_copy
+    if found is None or row is None or html_copy is None:
+        raise frappe.DoesNotExistError(frappe._("That sheet was not found"))
+
+    legacy = {"sheets_data": workbook, "collab": 0}
+    converted = convert.convert(sheets_content.CONVERTER_BUILD, sheets_content.CONVERTER_VERSION, legacy)
+    if not isinstance(converted, convert.Converted):
+        raise frappe.ValidationError(frappe._("The sheet's cells could not be written"))
+
+    checked = check(node, OldSheet(row.name, legacy, fingerprint_of(row), row.modified), converted)
+    checkpoints.replace_start(sheets_content.APP, found.id, converted.state, sheets_content.SCHEMA.version)
+    copies.replace_copy(sheets_content.APP, found.id, 1, checked.html, html_copy)

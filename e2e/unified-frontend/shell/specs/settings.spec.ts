@@ -94,7 +94,7 @@ test.describe("desktop", () => {
 	test("a system manager's account menu offers Open Desk, and no Settings or Upgrade plan", async ({ page }) => {
 		await patchAccount(page, FULL_ACCOUNT);
 		await page.goto("/home");
-		await page.getByRole("button", { name: "Account" }).click();
+		await page.getByRole("button", { name: "Account", exact: true }).click();
 
 		const menu = page.getByRole("menu");
 		await expect(menu.getByText("Administrator").first()).toBeVisible();
@@ -106,7 +106,7 @@ test.describe("desktop", () => {
 	test("a plain user sees no Workspace group and no Open Desk", async ({ page }) => {
 		await patchAccount(page, PLAIN_ACCOUNT);
 		await page.goto("/home");
-		await page.getByRole("button", { name: "Account" }).click();
+		await page.getByRole("button", { name: "Account", exact: true }).click();
 
 		const menu = page.getByRole("menu");
 		await expect(menu.getByRole("menuitem", { name: "Log out" })).toBeVisible();

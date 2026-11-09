@@ -370,6 +370,18 @@ def docname_for_node(node: str) -> str | None:
     return frappe.db.get_value(DOCTYPE, {NODE_FIELD: node}, "name") or None
 
 
+def typed_workbook(rows: list[list[str | None]], number_formats: dict[str, str]) -> str:
+    """The `sheets_data` JSON for one sub-sheet of typed cells (`suite.sheets.fill_new_sheet`)."""
+    packed = {str(index): list(row) for index, row in enumerate(rows) if any(row)}
+    formats = {DEFAULT_SUB_SHEET: _cell_formats(number_formats)} if number_formats else {}
+    return _workbook_json({DEFAULT_SUB_SHEET: {"rows": packed}}, formats, {})
+
+
+def _cell_formats(number_formats: dict[str, str]) -> dict:
+    cells = {cell: {"numberFormat": number_format} for cell, number_format in number_formats.items()}
+    return {"cells": cells, "cols": {}, "rows": {}}
+
+
 # ── Sheet rows ───────────────────────────────────────────────────────────────
 
 
