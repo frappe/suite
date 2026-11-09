@@ -367,6 +367,9 @@ useDocumentLeaveGuard({
       :request-context="session.credentials.context"
       :collab-session="preview ? undefined : session"
       :version="preview?.bytes"
+      :open-comments="
+        session.panels.value.includes('comments') ? () => showPanel('comments') : null
+      "
       @reopen="bodyRevision += 1"
       @notes-opened="panel = null"
     >
@@ -387,12 +390,7 @@ useDocumentLeaveGuard({
             <component :is="EditorStatus" />
           </template>
           <template #menus>
-            <component
-              :is="EditorMenus"
-              :open-comments="
-                session.panels.value.includes('comments') ? () => showPanel('comments') : null
-              "
-            />
+            <component :is="EditorMenus" />
           </template>
           <template #actions>
             <component :is="EditorActions" />
@@ -469,10 +467,12 @@ useDocumentLeaveGuard({
 }
 /* Hover and "on" fills follow the bar colours, as in row 2; solid buttons
    keep their own. */
-.sheets-header :deep(button:not(:disabled, .bg-surface-gray-10):hover),
+.sheets-header :deep(button:not(:disabled, .bg-surface-gray-10):hover) {
+  background: var(--sn-bar-hover);
+}
 .sheets-header :deep(button[data-state='open']),
 .sheets-header :deep(button[aria-pressed='true']) {
-  background: var(--sn-bar-hover);
+  background: var(--sn-bar-on);
 }
 .sheets-header :deep(button[aria-pressed='true']) {
   box-shadow: inset 0 0 0 1px var(--sn-bar-on-edge);
