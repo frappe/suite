@@ -78,7 +78,7 @@
                 <Button
                   variant="ghost"
                   class="touch-target !bg-transparent"
-                  :aria-label="__('{0} options', [item.label])"
+                  :aria-label="__('{0} options', [item.label ?? ''])"
                   @click.stop
                 >
                   <template #icon>
