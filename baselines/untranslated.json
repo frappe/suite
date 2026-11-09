@@ -85,7 +85,7 @@
   "frontend/src/apps/sheets/components/SheetEditor/SlicerPanel.vue": 5,
   "frontend/src/apps/sheets/components/SheetEditor/SplitTextPopover.vue": 5,
   "frontend/src/apps/sheets/components/SheetEditor/ValidationDialog.vue": 16,
-  "frontend/src/apps/sheets/components/SheetEditor/index.vue": 46,
+  "frontend/src/apps/sheets/components/SheetEditor/index.vue": 41,
   "frontend/src/apps/sheets/surface/SheetCommentsPanel.vue": 14,
   "frontend/src/apps/sheets/surface/SheetsSurface.vue": 1,
   "frontend/src/apps/slides/components/AppearanceSection.vue": 3,

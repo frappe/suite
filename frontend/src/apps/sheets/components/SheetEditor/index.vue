@@ -388,6 +388,7 @@
 
       <!-- Bottom · sheet tabs + selection stats (SheetTabsBar.vue) -->
       <SheetTabsBar
+        ref="tabsBarRef"
         :read-only="readOnly"
         :sheet-names="sheetNames"
         :current-sheet="currentSheet"
@@ -403,7 +404,8 @@
         @tab-drop="onTabDrop"
         @tab-mousedown="onTabMousedown"
         @tab-click="onTabClick"
-        @rename="openRenameDialog"
+        :rename-sheet="renameSheetInPlace"
+        @rename-end="_refocusGridAfterDialog"
         @tab-menu="_onTabMenu"
       />
 
@@ -413,36 +415,11 @@
         :menu="tabMenu"
         :locked="tabMenuSheetLocked()"
         :can-delete="sheetNames.length > 1"
-        @rename="openRenameDialog(tabMenu.name)"
+        @rename="startTabRename(tabMenu.name)"
         @duplicate="doDuplicateSheet(tabMenu.name)"
         @toggle-protect="toggleSheetProtection(tabMenu.name)"
         @delete="doDeleteSheet(tabMenu.name)"
       />
-
-      <!-- Rename sheet dialog -->
-      <Dialog
-        v-model:open="showRenameDialog"
-        title="Rename sheet"
-        size="sm"
-        @after-leave="_refocusGridAfterDialog"
-      >
-        <template #default>
-          <FormControl
-            ref="renameInputRef"
-            v-model="renameValue"
-            label="New name"
-            placeholder="Sheet name"
-            @keydown.enter="confirmRename"
-          />
-          <p v-if="renameError" class="sn-rename-err">{{ renameError }}</p>
-        </template>
-        <template #actions>
-          <div class="flex flex-row-reverse gap-2">
-            <Button variant="solid" @click="confirmRename">Rename</Button>
-            <Button @click="showRenameDialog = false">Cancel</Button>
-          </div>
-        </template>
-      </Dialog>
 
       <!-- Right-click context menu (SheetContextMenu.vue) -->
       <SheetContextMenu
@@ -2368,6 +2345,9 @@ function onTabClick(name) {
       formulaInputRef.value?.focus()
     })
   } else {
+    // Ctrl+click doesn't move focus to the tab, so commit an open cell edit
+    // here: after the switch it would land on the new sheet.
+    document.activeElement?.blur?.()
     switchSheet(name)
   }
 }
@@ -4014,50 +3994,20 @@ function onNameBoxDone() {
   canvasRef.value?.focus()
 }
 
-const showRenameDialog = ref(false)
-const renameValue = ref('')
-const renameError = ref('')
-const renameInputRef = ref(null)
-let _renameTarget = ''
-function openRenameDialog(name) {
-  // Reachable via dbl-click on the tab even when the menu is suppressed — gate
-  // here so rename is denied for viewers regardless of entry point.
-  if (readOnly.value) return
+const tabsBarRef = ref(null)
+function startTabRename(name) {
   tabMenu.open = false
-  _renameTarget = name
-  renameValue.value = name
-  renameError.value = ''
-  showRenameDialog.value = true
-  // Dialog mounts the input asynchronously — focus + select on the next two
-  // ticks so the user can type immediately instead of clicking the field.
-  nextTick(() =>
-    nextTick(() => {
-      const el =
-        renameInputRef.value?.$el?.querySelector?.('input') ??
-        renameInputRef.value?.input ??
-        renameInputRef.value
-      if (el?.focus) {
-        el.focus()
-        el.select?.()
-      }
-    }),
-  )
+  tabsBarRef.value?.startRenaming(name)
 }
-function confirmRename() {
-  const oldName = _renameTarget
-  const newName = renameValue.value
-  const ok = _renameSheet(oldName, newName)
-  if (!ok) {
-    renameError.value = 'Name is empty or already used.'
-    return
-  }
+function renameSheetInPlace(oldName, newName) {
+  if (readOnly.value || !_renameSheet(oldName, newName)) return false
   // Keep named-range bindings pointed at the renamed sheet — without this,
   // `=Revenue` defined on "Sheet1" breaks after renaming Sheet1.
   namedRanges.renameSheet(oldName, newName)
   _syncDefinedNames()
-  showRenameDialog.value = false
   history.push()
   isDirty.value = true
+  return true
 }
 function doDuplicateSheet(name) {
   tabMenu.open = false
