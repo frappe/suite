@@ -1,4 +1,17 @@
 <template>
+  <!-- The desktop filter selector, one template for both places it stands, so the two can't drift;
+       an open menu looks as a hovered one does (reka marks its trigger open). -->
+  <DefineSelector>
+    <Dropdown :options="filterOptions">
+      <button
+        class="text-ink-gray-8 hover:bg-surface-gray-2 data-[state=open]:bg-surface-gray-2 -ml-2 flex min-w-0 items-center gap-1 rounded-4 px-2 py-1"
+      >
+        <ListFilter class="text-ink-gray-6 icon shrink-0" />
+        <span class="truncate">{{ title }}</span>
+        <ChevronDown class="text-ink-gray-5 icon shrink-0" />
+      </button>
+    </Dropdown>
+  </DefineSelector>
   <!-- Mobile: the filter selector alone, in a row the caller places and borders. The
 	     mailbox's row sits inside a header block (title, auto-delete banner, selection
 	     variant) whose border spans all of it; All Inboxes has no such block. So the row
@@ -30,35 +43,16 @@
       <div v-if="chipsFit" ref="chips" class="-my-1 flex w-max shrink-0 items-center py-1">
         <slot name="filter" />
       </div>
-      <Dropdown v-else :options="filterOptions">
-        <button
-          class="text-ink-gray-8 hover:bg-surface-gray-2 -ml-2 flex min-w-0 items-center gap-1 rounded-4 px-2 py-1"
-        >
-          <ListFilter class="text-ink-gray-6 icon shrink-0" />
-          <span class="truncate">{{ title }}</span>
-          <ChevronDown class="text-ink-gray-5 icon shrink-0" />
-        </button>
-      </Dropdown>
+      <ReuseSelector v-else />
     </div>
     <template v-else>
-      <Dropdown v-if="showFilter" :options="filterOptions">
-        <button
-          class="text-ink-gray-8 hover:bg-surface-gray-2 -ml-2 flex min-w-0 items-center gap-1 rounded-4 px-2 py-1"
-        >
-          <ListFilter class="text-ink-gray-6 icon shrink-0" />
-          <span class="truncate">{{ title }}</span>
-          <ChevronDown class="text-ink-gray-5 icon shrink-0" />
-        </button>
-      </Dropdown>
+      <ReuseSelector v-if="showFilter" />
       <!-- Not every title is the filter's: a selection count and a search result count
 		     both land here, and neither opens a menu. -->
       <p v-else class="pb-0.5">{{ title }}</p>
     </template>
 
     <div class="-mr-1.5 ml-auto flex shrink-0 items-center space-x-2 pl-2">
-      <!-- The caller's actions come first, so Refresh keeps the far end whatever they are and
-			     nothing shifts as they come and go (an Inbox tab's own menu, say). -->
-      <slot name="actions" />
       <!-- Hides while rows are selected, where the slot's bulk actions take the
 			     cluster over: refreshing mid-selection would drop the selection. -->
       <template v-if="showActions">
@@ -74,18 +68,26 @@
           </template>
         </Button>
       </template>
+      <!-- Refresh and the list's own menu are two groups, apart as the selection bar's are: the
+			     cluster's space-x-2 stands either side of the line, as their gap-2 does. -->
+      <Divider v-if="showActions && renders($slots.actions?.())" v-bind="GROUP_LINE" />
+      <!-- The caller's actions come last, so a list's ⋯ ends the row as it ends the selection bar
+			     and the thread toolbar. Within a folder nothing shifts: its menu and Refresh both hide
+			     while rows are selected. -->
+      <slot name="actions" />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { useResizeObserver } from '@vueuse/core'
-import { Button, Dropdown } from 'frappe-ui'
+import { createReusableTemplate, useResizeObserver } from '@vueuse/core'
+import { Button, Divider, Dropdown } from 'frappe-ui'
 import { ChevronDown, ListFilter, RefreshCw } from 'lucide-vue-next'
-import { computed, ref } from 'vue'
+import { Comment, computed, Fragment, ref, type VNode } from 'vue'
 
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import type { FilterOption } from '@/apps/mail/utils/listFilter'
+import { GROUP_LINE } from '@/apps/mail/utils/toolbarGroups'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 
 // The row above the list, shared by the mailbox list and the merged All Inboxes list:
@@ -111,6 +113,19 @@ const {
 }>()
 
 const emit = defineEmits<{ refresh: [] }>()
+
+// Whether a slot shows anything: one whose every part is off (`v-if`) renders only placeholders.
+const renders = (nodes: VNode[] = []): boolean =>
+  nodes.some((node) =>
+    node.type === Comment
+      ? false
+      : node.type === Fragment
+        ? // SAFETY: a Fragment's children are always an array of vnodes.
+          renders(node.children as VNode[])
+        : true,
+  )
+
+const [DefineSelector, ReuseSelector] = createReusableTemplate()
 
 const { isMobile } = useScreenSize()
 // Chips while they fit, else the selector. Their natural width is measured while they show and

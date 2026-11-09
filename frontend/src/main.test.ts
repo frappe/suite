@@ -24,6 +24,7 @@ vi.mock('@/App.vue', () => ({
   },
 }))
 vi.mock('@/apps/calendar', () => ({ installEventReminders: boot.installEventReminders }))
+vi.mock('@/apps/mail', () => ({ installMailReminders: vi.fn() }))
 vi.mock('@/apps/slides/utils/serviceWorker', () => ({ clearSlidesUserData: vi.fn() }))
 vi.mock('@/boot/sentry', () => ({ initSentry: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('@/boot/config', () => ({}))

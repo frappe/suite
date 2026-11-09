@@ -40,43 +40,27 @@ body:has(.dialog-overlay) .sn-filter-overlay {
 /* Overlay scrollbars for the canvas grid. The elements are created imperatively
    in canvas/scrollbars.ts (appended to .sn-grid-wrap), so they carry no scoped
    data-attr — these rules must live in the UNSCOPED block to reach them.
-   z-index sits above the filter (14) / pivot (15) range outlines so the opaque
-   track paints over any outline border that reaches the scrollbar gutter, but
-   below the notes drawer (30) and popovers. */
+   z-index sits above the filter (14) / pivot (15) range outlines so the thumb
+   stays on top of any outline that reaches the scrollbar gutter, but below the
+   notes drawer (30) and popovers. */
 .sn-sb {
   position: absolute;
   z-index: 16;
-  background: var(--surface-gray-2, var(--surface-base));
-  border: 0 solid var(--outline-gray-2);
   opacity: 1;
-  transition: opacity 0.2s ease;
+  transition: opacity 0.15s ease;
 }
 /* --sn-sb-thick is published by canvas/scrollbars.ts from SCROLLBAR_THICK, the
-   single source of truth; the 12px fallback only covers the pre-mount frame. */
+   single source of truth; the 12px fallback only covers the pre-mount frame.
+   The track is wider than the thumb so the thumb is easy to grab. */
 .sn-sb-v {
   top: 0;
   right: 0;
   width: var(--sn-sb-thick, 12px);
-  border-left-width: 1px;
 }
 .sn-sb-h {
   left: 0;
   bottom: 0;
   height: var(--sn-sb-thick, 12px);
-  border-top-width: 1px;
-}
-.sn-sb-corner {
-  position: absolute;
-  z-index: 16;
-  right: 0;
-  bottom: 0;
-  width: var(--sn-sb-thick, 12px);
-  height: var(--sn-sb-thick, 12px);
-  background: var(--surface-gray-2, var(--surface-base));
-  border-left: 1px solid var(--outline-gray-2);
-  border-top: 1px solid var(--outline-gray-2);
-  opacity: 1;
-  transition: opacity 0.2s ease;
 }
 /* Auto-hidden state — faded out and click-through so cells under the gutter
    stay reachable. JS (canvas/scrollbars.ts) toggles this on inactivity. */
@@ -86,7 +70,7 @@ body:has(.dialog-overlay) .sn-filter-overlay {
 }
 .sn-sb-thumb {
   position: absolute;
-  border-radius: 6px;
+  border-radius: 3px;
   background: var(--ink-gray-4);
   transition: background 0.12s ease;
   cursor: grab;
@@ -94,13 +78,13 @@ body:has(.dialog-overlay) .sn-filter-overlay {
 }
 .sn-sb-v .sn-sb-thumb {
   top: 0;
-  left: 2px;
   right: 2px;
+  width: 6px;
 }
 .sn-sb-h .sn-sb-thumb {
   left: 0;
-  top: 2px;
   bottom: 2px;
+  height: 6px;
 }
 .sn-sb-thumb:hover {
   background: var(--ink-gray-5);

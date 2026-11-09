@@ -1,5 +1,5 @@
 <template>
-  <Dropdown v-if="!isMobile" :options="options" v-bind="$attrs">
+  <Dropdown v-if="!isMobile" v-model:open="open" :options="options" v-bind="$attrs">
     <slot />
   </Dropdown>
   <template v-else>
@@ -19,8 +19,9 @@
           <button
             v-for="item in group.items"
             :key="item.label"
-            class="active:bg-surface-gray-1 flex w-full items-center gap-3 rounded-6 px-3 py-2.5 text-base"
+            class="active:bg-surface-gray-1 disabled:text-ink-gray-4 flex w-full items-center gap-3 rounded-6 px-3 py-2.5 text-base"
             :class="item.theme === 'red' ? 'text-ink-red-6' : 'text-ink-gray-8'"
+            :disabled="item.disabled"
             @click="run(item)"
           >
             <!-- A row's own prefix (a checkbox, say) stands where its icon would. -->
@@ -32,6 +33,7 @@
               :class="item.theme === 'red' ? 'text-ink-red-6' : 'text-ink-gray-6'"
             />
             <span class="flex-1 truncate text-left">{{ sheetLabel(item.label) }}</span>
+            <component :is="item.slots.suffix" v-if="item.slots?.suffix" />
             <!-- Which one you're already on. Desktop takes this from the Menu's own
 						     selected styling; a sheet row has no such state, so it shows a tick. -->
             <Check v-if="item.selected" class="text-ink-gray-6 h-4 w-4 shrink-0" />
@@ -72,8 +74,10 @@ interface OptionItem {
    */
   selected?: boolean
   theme?: string
-  /** Replaces the icon, as frappe-ui's Menu reads it on desktop. */
-  slots?: { prefix?: () => VNode }
+  /** Shown but not to be tapped, as frappe-ui's Menu greys a disabled row on desktop. */
+  disabled?: boolean
+  /** Replace the icon, and fill the row's far end, as frappe-ui's Menu reads them on desktop. */
+  slots?: { prefix?: () => VNode; suffix?: () => VNode }
   /** Leaves the sheet open after the row is tapped, for rows ticked several in a row. */
   keepOpen?: boolean
 }
@@ -89,7 +93,8 @@ const { options, title } = defineProps<{
 
 const { isMobile } = useScreenSize()
 // Optional v-model:open for programmatic opening (e.g. chained from another
-// sheet); works standalone via defineModel's local fallback otherwise.
+// sheet), and to know when the menu is open on either; works standalone via
+// defineModel's local fallback otherwise.
 const open = defineModel<boolean>('open', { default: false })
 
 const visible = (items: OptionItem[]) =>

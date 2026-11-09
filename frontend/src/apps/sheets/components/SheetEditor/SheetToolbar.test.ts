@@ -51,37 +51,28 @@ function mountRow(props: Record<string, unknown> = {}) {
   document.body.append(root)
   const app = createApp({
     setup: () => () =>
-      h(
-        SheetToolbar,
-        {
-          readOnly: false,
-          activeFormat: {},
-          numberFormatDropdownOptions: [{ label: 'Number', onClick: vi.fn() }],
-          numberFormatLabel: 'General',
-          currencyDropdownOptions: [{ label: 'INR (₹)', onClick: vi.fn() }],
-          activeNumberFormatType: '',
-          activeCurrencySymbol: '₹',
-          alignDropdownOptions: [{ label: 'Left', onClick: vi.fn() }],
-          hAlignIcon: 'lucide-align-left',
-          canUndo: true,
-          canRedo: true,
-          isPaintingFormat: false,
-          showSortFilter: false,
-          textWrapDropdownOptions: [{ label: 'Wrap', onClick: vi.fn() }],
-          textWrapIcon: 'lucide-wrap-text',
-          borderDropdownOptions: [{ label: 'All borders', onClick: vi.fn() }],
-          formatMenuOptions: [{ label: 'Clear formatting', onClick: clearFormatting }],
-          ...handlers,
-          // A ref prop stays live, so a test can change it after mounting.
-          ...Object.fromEntries(Object.entries(props).map(([k, v]) => [k, isRef(v) ? v.value : v])),
-        },
-        {
-          formula: () => [
-            h('input', { 'aria-label': 'Name box' }),
-            h('input', { 'aria-label': 'Cell value or formula' }),
-          ],
-        },
-      ),
+      h(SheetToolbar, {
+        readOnly: false,
+        activeFormat: {},
+        numberFormatDropdownOptions: [{ label: 'Number', onClick: vi.fn() }],
+        numberFormatLabel: 'General',
+        currencyDropdownOptions: [{ label: 'INR (₹)', onClick: vi.fn() }],
+        activeNumberFormatType: '',
+        activeCurrencySymbol: '₹',
+        alignDropdownOptions: [{ label: 'Left', onClick: vi.fn() }],
+        hAlignIcon: 'lucide-align-left',
+        canUndo: true,
+        canRedo: true,
+        isPaintingFormat: false,
+        showSortFilter: false,
+        textWrapDropdownOptions: [{ label: 'Wrap', onClick: vi.fn() }],
+        textWrapIcon: 'lucide-wrap-text',
+        borderDropdownOptions: [{ label: 'All borders', onClick: vi.fn() }],
+        formatMenuOptions: [{ label: 'Clear formatting', onClick: clearFormatting }],
+        ...handlers,
+        // A ref prop stays live, so a test can change it after mounting.
+        ...Object.fromEntries(Object.entries(props).map(([k, v]) => [k, isRef(v) ? v.value : v])),
+      }),
   })
   app.mount(root)
   cleanup = () => {
@@ -99,14 +90,12 @@ const button = (root: HTMLElement, label: string) =>
   root.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!
 
 describe('SheetToolbar (row 2)', () => {
-  it('lays the row out as in B5: undo first, then the formula bar, then the tools', () => {
+  it('holds only the tools, undo first', () => {
     const { root } = mountRow()
     expect(named(root)).toEqual([
       'Undo',
       'Redo',
       'Format painter',
-      'Name box',
-      'Cell value or formula',
       'Number format: General',
       'Currency: ₹',
       'Percent',
@@ -266,14 +255,24 @@ describe('SheetToolbar (row 2)', () => {
     expect(document.querySelector('[role="menu"]')).toBeNull()
   })
 
-  it('leaves the formula bar usable for viewers while the tools go inert', () => {
+  it('makes the tools inert for viewers', () => {
     const { root } = mountRow({ readOnly: true })
-    const inert = [...root.querySelectorAll('.sn-tools--readonly')]
-    expect(inert.length).toBeGreaterThan(0)
-    for (const label of ['Name box', 'Cell value or formula']) {
-      const input = root.querySelector(`input[aria-label="${label}"]`)!
-      expect(input.closest('.sn-tools--readonly')).toBeNull()
-    }
     expect(button(root, 'Bold').closest('.sn-tools--readonly')).not.toBeNull()
+  })
+
+  it('draws the font size with no box at rest', () => {
+    const { root } = mountRow()
+    const field = root.querySelector<HTMLInputElement>('input[aria-label="Font size"]')!
+    expect(field.className).toContain('bg-transparent')
+    expect(field.className).toContain('border-0')
+    expect(field.className).not.toContain('border-outline-gray-2')
+  })
+
+  it('marks the Format button as the one for narrow screens', () => {
+    const { root } = mountRow()
+    const format = [...root.querySelectorAll('button')].find(
+      (b) => b.textContent?.trim() === 'Format',
+    )!
+    expect(format.closest('.sn-format-group')).not.toBeNull()
   })
 })

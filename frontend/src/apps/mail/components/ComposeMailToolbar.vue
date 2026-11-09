@@ -38,7 +38,14 @@
           </Button>
         </Dropdown>
       </div>
-
+      <template v-if="!isMobile">
+        <ComposeReminderButton
+          :remind-at
+          @remind="(at: string) => emit('remind', at)"
+          @clear="emit('clearRemind')"
+        />
+        <div class="h-4 w-[2px] shrink-0 border-l" />
+      </template>
       <!-- Text editor buttons -->
       <div class="flex min-w-0 items-center gap-1 overflow-x-auto" :class="{ 'px-3': isMobile }">
         <TextEditorFixedMenu :buttons class="!bg-inherit" />
@@ -102,14 +109,17 @@ import { TextEditorFixedMenu } from 'frappe-ui/experimental'
 import { CalendarClock, ChevronDown, Laugh, Paperclip } from 'lucide-vue-next'
 import { computed, useTemplateRef } from 'vue'
 
+import ComposeReminderButton from '@/apps/mail/components/ComposeReminderButton.vue'
 import EmojiPicker from '@/apps/mail/components/EmojiPicker.vue'
 import { isMac } from '@/apps/mail/utils'
 import { useScreenSize, useTextEditorButtons } from '@/apps/mail/utils/composables'
 
-const { isRecipientsEmpty, isUploading, saveFailed } = defineProps<{
+const { isRecipientsEmpty, isUploading, saveFailed, remindAt } = defineProps<{
   isRecipientsEmpty: boolean
   isUploading?: boolean
   saveFailed?: boolean
+  // When to be reminded if nobody replies, once asked for (see useComposeMail).
+  remindAt?: string
 }>()
 
 const emit = defineEmits([
@@ -118,6 +128,8 @@ const emit = defineEmits([
   'discardMail',
   'sendMail',
   'scheduleSend',
+  'remind',
+  'clearRemind',
   'retrySave',
 ])
 

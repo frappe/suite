@@ -139,7 +139,7 @@ test("a link row confirms its origin before opening a tab", async ({ page }) => 
 test("a Sheets document carries one share control, the Drive one", async ({ page }) => {
 	const sheet = await createDocument(api, home.name, "header-sheet", "Sheet");
 	await page.goto(`/d/${sheet.name}`);
-	await expect(page.getByRole("button", { name: "File" })).toBeVisible({ timeout: 20_000 });
+	await expect(page.getByRole("menuitem", { name: "File" })).toBeVisible({ timeout: 20_000 });
 	await expect(page.getByRole("button", { name: /Share/ })).toHaveCount(1);
 	await page.getByRole("button", { name: /Share/ }).click();
 	const dialog = page.getByRole("dialog", { name: "Share", exact: true });

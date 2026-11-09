@@ -953,7 +953,8 @@ export type GetMailboxesOutputMailbox = {
   name: string
   id: string
   _name: string
-  role: ('inbox' | 'sent' | 'drafts' | 'trash' | 'junk' | 'archive' | 'important') | null
+  role:
+    ('inbox' | 'sent' | 'drafts' | 'trash' | 'junk' | 'archive' | 'important' | 'snoozed') | null
   total_emails: number
   total_threads: number
   unread_threads: number
@@ -5352,6 +5353,7 @@ export type GetThreadsOutputMessage = {
   unscreened?: 0 | 1
   message_id: string | null
   in_reply_to: string | null
+  pinned_in?: Array<string>
   reacts_with: Array<string>
   reactions?: Array<GetThreadsOutputReaction>
   mailing_list: 0 | 1
@@ -5404,6 +5406,13 @@ export type GetThreadsOutputThread = {
   trash?: string | null
   reaction_only?: 0 | 1
   unscreened_senders?: Array<string>
+  pinned?: 0 | 1
+  returned?: 0 | 1
+  no_reply?: 0 | 1
+  snoozed_until?: string | null
+  snoozed_at?: string | null
+  returned_at?: string | null
+  remind_at?: string | null
   subject: string | null
   preview: string
   recipients: Array<GetThreadsOutputRecipient>
@@ -5501,6 +5510,7 @@ export type GetUnifiedThreadsOutputMessage = {
   unscreened?: 0 | 1
   message_id: string | null
   in_reply_to: string | null
+  pinned_in?: Array<string>
   reacts_with: Array<string>
   reactions?: Array<GetUnifiedThreadsOutputReaction>
   mailing_list: 0 | 1
@@ -5553,6 +5563,13 @@ export type GetUnifiedThreadsOutputThread = {
   trash?: string | null
   reaction_only?: 0 | 1
   unscreened_senders?: Array<string>
+  pinned?: 0 | 1
+  returned?: 0 | 1
+  no_reply?: 0 | 1
+  snoozed_until?: string | null
+  snoozed_at?: string | null
+  returned_at?: string | null
+  remind_at?: string | null
   subject: string | null
   preview: string
   recipients: Array<GetUnifiedThreadsOutputRecipient>
@@ -5743,6 +5760,7 @@ export type GetThreadOutputMessage = {
   unscreened?: 0 | 1
   message_id: string | null
   in_reply_to: string | null
+  pinned_in?: Array<string>
   reacts_with: Array<string>
   reactions?: Array<GetThreadOutputReaction>
   mailing_list: 0 | 1
@@ -5870,6 +5888,7 @@ export type SearchMailsOutputMessage = {
   unscreened?: 0 | 1
   message_id: string | null
   in_reply_to: string | null
+  pinned_in?: Array<string>
   reacts_with: Array<string>
   reactions?: Array<SearchMailsOutputReaction>
   mailing_list: 0 | 1
@@ -5922,6 +5941,13 @@ export type SearchMailsOutputSearchRow = {
   trash?: string | null
   reaction_only?: 0 | 1
   unscreened_senders?: Array<string>
+  pinned?: 0 | 1
+  returned?: 0 | 1
+  no_reply?: 0 | 1
+  snoozed_until?: string | null
+  snoozed_at?: string | null
+  returned_at?: string | null
+  remind_at?: string | null
   subject: string | null
   preview: string
   recipients: Array<SearchMailsOutputRecipient>
@@ -6137,6 +6163,7 @@ export type CreateMailInput = {
   attachments?: Array<CreateMailInputDraftAttachment> | null
   send_at?: string | null
   undo_send?: boolean
+  remind_at?: string | null
   in_reply_to?: string | null
   in_reply_to_id?: string | null
   forwarded_from_id?: string | null
@@ -6218,6 +6245,7 @@ export type UpdateDraftMailInput = {
   attachments?: Array<UpdateDraftMailInputDraftAttachment> | null
   send_at?: string | null
   undo_send?: boolean
+  remind_at?: string | null
   id: string
   submit?: boolean
 }
@@ -6298,6 +6326,228 @@ const operationSetFlagged: MutationRef<SetFlaggedInput, SetFlaggedOutput, SetFla
   entity: null,
   errors: ['PermissionError', 'ValidationError'],
   loadValidators: async () => (await import('./validators')).operationSetFlagged,
+}
+
+export type PinMailsInput = {
+  account: string
+  ids: Array<string>
+  pinned: boolean
+  mailbox?: string | null
+}
+
+export type PinMailsOutput = { ids: Array<string>; pinned: boolean }
+
+export type PinMailsError = 'PermissionError' | 'ValidationError'
+
+const operationPinMails: MutationRef<PinMailsInput, PinMailsOutput, PinMailsError> = {
+  id: 'pin_mails',
+  owner: 'mail',
+  kind: 'mutation',
+  publicName: 'messages.pin',
+  envelope: 'message',
+  method: 'POST',
+  path: '/api/method/suite.mail.api.mail.pin_mails',
+  prefix: '/api/suite/mail/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError', 'ValidationError'],
+  loadValidators: async () => (await import('./validators')).operationPinMails,
+}
+
+export type SnoozeMailsInput = {
+  account: string
+  ids: Array<string>
+  until: string
+  leaves?: string | null
+}
+
+export type SnoozeMailsOutput = { updated: Array<string>; left_inbox: boolean }
+
+export type SnoozeMailsError = 'PermissionError' | 'ValidationError'
+
+const operationSnoozeMails: MutationRef<SnoozeMailsInput, SnoozeMailsOutput, SnoozeMailsError> = {
+  id: 'snooze_mails',
+  owner: 'mail',
+  kind: 'mutation',
+  publicName: 'messages.snooze',
+  envelope: 'message',
+  method: 'POST',
+  path: '/api/method/suite.mail.api.mail.snooze_mails',
+  prefix: '/api/suite/mail/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError', 'ValidationError'],
+  loadValidators: async () => (await import('./validators')).operationSnoozeMails,
+}
+
+export type UnsnoozeMailsOutputWaited = { until: string; ids: Array<string> }
+
+export type UnsnoozeMailsInput = { account: string; ids: Array<string>; leaves?: string | null }
+
+export type UnsnoozeMailsOutput = {
+  updated: Array<string>
+  left_inbox: boolean
+  waited: Array<UnsnoozeMailsOutputWaited>
+}
+
+export type UnsnoozeMailsError = 'PermissionError' | 'ValidationError'
+
+const operationUnsnoozeMails: MutationRef<
+  UnsnoozeMailsInput,
+  UnsnoozeMailsOutput,
+  UnsnoozeMailsError
+> = {
+  id: 'unsnooze_mails',
+  owner: 'mail',
+  kind: 'mutation',
+  publicName: 'messages.unsnooze',
+  envelope: 'message',
+  method: 'POST',
+  path: '/api/method/suite.mail.api.mail.unsnooze_mails',
+  prefix: '/api/suite/mail/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError', 'ValidationError'],
+  loadValidators: async () => (await import('./validators')).operationUnsnoozeMails,
+}
+
+export type RemindIfNoReplyInput = { account: string; ids: Array<string>; remind_at: string }
+
+export type RemindIfNoReplyOutput = { remind_at: string | null }
+
+export type RemindIfNoReplyError = 'PermissionError' | 'ValidationError'
+
+const operationRemindIfNoReply: MutationRef<
+  RemindIfNoReplyInput,
+  RemindIfNoReplyOutput,
+  RemindIfNoReplyError
+> = {
+  id: 'remind_if_no_reply',
+  owner: 'mail',
+  kind: 'mutation',
+  publicName: 'messages.remindIfNoReply',
+  envelope: 'message',
+  method: 'POST',
+  path: '/api/method/suite.mail.api.mail.remind_if_no_reply',
+  prefix: '/api/suite/mail/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError', 'ValidationError'],
+  loadValidators: async () => (await import('./validators')).operationRemindIfNoReply,
+}
+
+export type CancelReplyReminderInput = { account: string; thread_id: string }
+
+export type CancelReplyReminderOutput = null
+
+export type CancelReplyReminderError = 'PermissionError' | 'ValidationError'
+
+const operationCancelReplyReminder: MutationRef<
+  CancelReplyReminderInput,
+  CancelReplyReminderOutput,
+  CancelReplyReminderError
+> = {
+  id: 'cancel_reply_reminder',
+  owner: 'mail',
+  kind: 'mutation',
+  publicName: 'messages.cancelReplyReminder',
+  empty: true,
+  envelope: 'message',
+  method: 'POST',
+  path: '/api/method/suite.mail.api.mail.cancel_reply_reminder',
+  prefix: '/api/suite/mail/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError', 'ValidationError'],
+  loadValidators: async () => (await import('./validators')).operationCancelReplyReminder,
+}
+
+export type GetReplyReminderInput = { account: string; thread_id: string }
+
+export type GetReplyReminderOutput = { remind_at: string | null }
+
+export type GetReplyReminderError = 'PermissionError' | 'ValidationError'
+
+const operationGetReplyReminder: QueryRef<
+  GetReplyReminderInput,
+  GetReplyReminderOutput,
+  GetReplyReminderError
+> = {
+  id: 'get_reply_reminder',
+  owner: 'mail',
+  kind: 'query',
+  publicName: 'messages.replyReminder',
+  envelope: 'message',
+  method: 'POST',
+  path: '/api/method/suite.mail.api.mail.get_reply_reminder',
+  prefix: '/api/suite/mail/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError', 'ValidationError'],
+  loadValidators: async () => (await import('./validators')).operationGetReplyReminder,
+}
+
+export type DismissReturnedMailInput = { account: string; thread_ids: Array<string> }
+
+export type DismissReturnedMailOutput = { ids: Array<string>; no_reply_ids: Array<string> }
+
+export type DismissReturnedMailError = 'PermissionError' | 'ValidationError'
+
+const operationDismissReturnedMail: MutationRef<
+  DismissReturnedMailInput,
+  DismissReturnedMailOutput,
+  DismissReturnedMailError
+> = {
+  id: 'dismiss_returned_mail',
+  owner: 'mail',
+  kind: 'mutation',
+  publicName: 'messages.dismissReturned',
+  envelope: 'message',
+  method: 'POST',
+  path: '/api/method/suite.mail.api.mail.dismiss_returned_mail',
+  prefix: '/api/suite/mail/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError', 'ValidationError'],
+  loadValidators: async () => (await import('./validators')).operationDismissReturnedMail,
+}
+
+export type RestoreReturnedMailInput = {
+  account: string
+  ids: Array<string>
+  no_reply_ids: Array<string>
+}
+
+export type RestoreReturnedMailOutput = null
+
+export type RestoreReturnedMailError = 'PermissionError' | 'ValidationError'
+
+const operationRestoreReturnedMail: MutationRef<
+  RestoreReturnedMailInput,
+  RestoreReturnedMailOutput,
+  RestoreReturnedMailError
+> = {
+  id: 'restore_returned_mail',
+  owner: 'mail',
+  kind: 'mutation',
+  publicName: 'messages.restoreReturned',
+  empty: true,
+  envelope: 'message',
+  method: 'POST',
+  path: '/api/method/suite.mail.api.mail.restore_returned_mail',
+  prefix: '/api/suite/mail/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError', 'ValidationError'],
+  loadValidators: async () => (await import('./validators')).operationRestoreReturnedMail,
 }
 
 export type SetMailsSeenInput = { account: string; ids: Array<string>; seen: boolean }
@@ -7358,6 +7608,14 @@ export const api = {
     updateDraft: operationUpdateDraftMail,
     deleteDraft: operationDeleteMail,
     flag: operationSetFlagged,
+    pin: operationPinMails,
+    snooze: operationSnoozeMails,
+    unsnooze: operationUnsnoozeMails,
+    remindIfNoReply: operationRemindIfNoReply,
+    cancelReplyReminder: operationCancelReplyReminder,
+    replyReminder: operationGetReplyReminder,
+    dismissReturned: operationDismissReturnedMail,
+    restoreReturned: operationRestoreReturnedMail,
     seen: operationSetMailsSeen,
     move: operationMoveMails,
     file: operationFileMails,
