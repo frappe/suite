@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { effectScope, nextTick, ref } from 'vue'
 
@@ -13,14 +14,14 @@ vi.mock('@/apps/mail/utils/composables', () => ({
 }))
 
 const thread = (id: string, sender: string) =>
-  ({
+  fromPartial<Thread>({
     thread_id: id,
     name: id,
     from_email: sender,
     received_at: '2026-11-05T10:00:00Z',
     subject: id,
     messages: [],
-  }) as unknown as Thread
+  })
 
 let scope: ReturnType<typeof effectScope>
 const mountRows = () =>
