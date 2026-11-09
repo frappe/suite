@@ -210,23 +210,21 @@ const { mailboxes, unifiedFolders } = store
 
 // "All accounts": the folder list is every account's, merged (see utils/unifiedFolders).
 const isUnified = computed(() => isUnifiedRoute(route.name))
-// How many sends are waiting to go, which decides where Outbox sits (see sidebarItems). One row is
+// How many sends are waiting, which decides where Outbox sits (see sidebarItems): the scheduled
+// ones and the ones stuck retrying, not a mail held for Undo send or on its way out. One row is
 // enough to be told the total.
 const queuedSends = useQuery(api.mail.scheduled.list, () =>
   store.accountId && !isUnified.value
-    ? { account: store.accountId, undo_status: 'pending', start: 0, page_length: 1 }
+    ? { account: store.accountId, waiting_only: true, start: 0, page_length: 1 }
     : false,
 )
-// A scheduled send goes out on its own, and nothing on this page hears it go: while anything is
-// waiting, the count is asked again every 30 seconds (as the Outbox's own list is), so a sent
-// mail stops being counted and Outbox goes back under More. Nothing waiting, nothing asked.
-const recheckQueued = useIntervalFn(() => void queuedSends.refetch().catch(() => {}), 30_000, {
-  immediate: false,
-})
-watch(
-  () => queuedSends.data?.total ?? 0,
-  (queued) => (queued ? recheckQueued.resume() : recheckQueued.pause()),
-  { immediate: true },
+// Nothing on this page hears a scheduled send go or a delivery get stuck, so the count is asked
+// again: every 30 seconds while anything is waiting (as the Outbox's own list is), so a sent mail
+// stops being counted, and every 2 minutes otherwise, since a mail only reads as stuck minutes
+// after it was sent.
+useIntervalFn(
+  () => void queuedSends.refetch().catch(() => {}),
+  () => (queuedSends.data?.total ? 30_000 : 120_000),
 )
 
 // What an item's `activeFor` is matched against: the open mailbox in an account, the open folder

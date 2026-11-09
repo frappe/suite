@@ -9601,6 +9601,7 @@ export const operationGetSubmissions: Validators<GetSubmissionsInput, GetSubmiss
           thread_id: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Thread Id' },
           before: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Before' },
           after: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'After' },
+          waiting_only: { title: 'Waiting Only', type: 'boolean' },
           start: { title: 'Start', type: 'integer' },
           page_length: { title: 'Page Length', type: 'integer' },
         },
