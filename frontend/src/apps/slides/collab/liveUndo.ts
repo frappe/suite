@@ -15,6 +15,8 @@ type Fields = Record<string, unknown>
 type DeepEvent = Y.YEvent<Y.AbstractType<unknown>>
 /** The ids a step changed, with what this tab last saw of those it could see. */
 type StepItems = Record<Kind, Map<string, Fields | null>>
+/** What this tab wrote last to each item, per key, while nobody has written over it. */
+type OwnValues = Record<Kind, Map<string, Fields>>
 /** The ids a step will bring back, with the item each was when it was deleted. */
 type GoneItems = Map<string, Y.AbstractType<unknown> | null>
 
@@ -46,6 +48,8 @@ export function openLiveUndo(doc: Y.Doc, trackedOrigins: unknown[]) {
   })
   const baseGcFilter = doc.gcFilter
   doc.gcFilter = (item) => !isHeldForUndo(item) && baseGcFilter(item)
+  const ownValues: OwnValues = { slides: new Map(), elements: new Map() }
+  const heldAfterDelete: OwnValues = { slides: new Map(), elements: new Map() }
   let pending = noItems()
   let isTaking = false
   let shouldEndStep = false
@@ -76,10 +80,52 @@ export function openLiveUndo(doc: Y.Doc, trackedOrigins: unknown[]) {
     }
   }
 
-  const observers = {
-    slides: (events: DeepEvent[], tr: Y.Transaction) => noteChanged('slides', events, tr),
-    elements: (events: DeepEvent[], tr: Y.Transaction) => noteChanged('elements', events, tr),
+  function noteFields(kind: Kind, id: string, event: DeepEvent, isOwn: boolean) {
+    const item = roots[kind].get(id)
+    const own = ownValues[kind].get(id) ?? {}
+    for (const [key, { action }] of event.changes.keys) {
+      const value = item?.get(key)
+      if (isOwn && action !== 'delete' && !(value instanceof Y.AbstractType)) {
+        own[key] = value
+      } else {
+        delete own[key]
+      }
+    }
+
+    ownValues[kind].set(id, own)
   }
+
+  // A co-editor's delete can clean these values out of every copy before their undo (Q38)
+  function holdDeleted(kind: Kind, event: DeepEvent, isOwn: boolean) {
+    for (const [id, { action }] of event.changes.keys) {
+      const own = ownValues[kind].get(id)
+      if (action === 'delete' && !isOwn && own) {
+        heldAfterDelete[kind].set(id, own)
+        ownValues[kind].delete(id)
+      }
+    }
+  }
+
+  function noteOwnValues(kind: Kind, events: DeepEvent[], transaction: Y.Transaction) {
+    const isOwn = manager.trackedOrigins.has(transaction.origin)
+    for (const event of events) {
+      const [id] = event.path
+      if (!event.path.length) {
+        holdDeleted(kind, event, isOwn)
+      } else if (event.path.length === 1 && typeof id === 'string') {
+        noteFields(kind, id, event, isOwn)
+      }
+    }
+  }
+
+  function observerOf(kind: Kind) {
+    return (events: DeepEvent[], transaction: Y.Transaction) => {
+      noteChanged(kind, events, transaction)
+      noteOwnValues(kind, events, transaction)
+    }
+  }
+
+  const observers = { slides: observerOf('slides'), elements: observerOf('elements') }
 
   function fileItems({ stackItem }: { stackItem: { meta: Map<unknown, unknown> } }) {
     // SAFETY: only this function writes this key, and always a `StepItems`
@@ -99,11 +145,14 @@ export function openLiveUndo(doc: Y.Doc, trackedOrigins: unknown[]) {
     }
   }
 
-  // Through `clear`, so what the step held in the document is let go as well
+  // `clear` only stops holding what the step deleted, and Yjs cleans up only when told what
   function dropOldestStep() {
-    const kept = manager.undoStack.slice(1)
-    manager.undoStack = manager.undoStack.slice(0, 1)
-    manager.clear(true, false)
+    const [oldest, ...kept] = manager.undoStack
+    manager.undoStack = [oldest]
+    doc.transact(() => {
+      manager.clear(true, false)
+      Y.tryGc(oldest.deletions, doc.store, doc.gcFilter)
+    })
     manager.undoStack = kept
   }
 
@@ -142,6 +191,28 @@ export function openLiveUndo(doc: Y.Doc, trackedOrigins: unknown[]) {
           const whole = { ...fields, ...coEditorValues(wasGone.get(id) ?? null) }
           for (const [key, value] of Object.entries(whole)) {
             if (!item.has(key)) {
+              item.set(key, value)
+            }
+          }
+        })
+      }
+    })
+  }
+
+  /** Puts this tab's values back on items a co-editor deleted and has brought back (Q38). */
+  function writeBackOwn() {
+    // no origin: this is no step of its own
+    doc.transact(() => {
+      for (const kind of ['slides', 'elements'] as const) {
+        heldAfterDelete[kind].forEach((fields, id) => {
+          const item = roots[kind].get(id)
+          if (!item) {
+            return
+          }
+
+          heldAfterDelete[kind].delete(id)
+          for (const [key, value] of Object.entries(fields)) {
+            if (JSON.stringify(item.get(key)) !== JSON.stringify(value)) {
               item.set(key, value)
             }
           }
@@ -230,6 +301,7 @@ export function openLiveUndo(doc: Y.Doc, trackedOrigins: unknown[]) {
     manager,
     keep,
     take,
+    writeBackOwn,
     endStep,
     write,
     stop() {

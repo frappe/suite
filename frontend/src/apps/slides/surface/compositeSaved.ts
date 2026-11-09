@@ -12,8 +12,12 @@ async function savedSlidesOf(
     return answer
   }
 
-  const doc = await read(answer.node)
-  return doc ? { ...answer, slides: drawnSlides(doc) } : answer
+  try {
+    const doc = await read(answer.node)
+    return doc ? { ...answer, slides: drawnSlides(doc) } : answer
+  } catch {
+    return { ...answer, slides: null, savedStateFailed: true }
+  }
 }
 
 // A converted source's rows stopped at its conversion, so its saved state replaces them

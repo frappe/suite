@@ -393,14 +393,15 @@ def hold_template_decks_read_only(
     for row in (row for kind, row in _template_rows(source, batch_size) if kind == "presentation"):
         lowered = lower_to_read(target, row)
         capped = cap_inherited_links(env, row)
-        if lowered:
+        if lowered and row.name not in result.templates_lowered:
             result.record_issue(
                 f"Presentation:{row.name}",
                 f"template Presentation {row.name}: {lowered} grants lowered to read",
                 phase="links",
                 cumulative=True,
             )
-            # first: a stop between the two repeats one issue line, the other order loses it
+            result.templates_lowered.append(row.name)
+            # first: the other order loses the issue line to a stop between the two
             env.state.put_content(result)
 
         if lowered or capped:

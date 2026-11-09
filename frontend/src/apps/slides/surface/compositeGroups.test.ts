@@ -27,6 +27,36 @@ const manifest: CompositeManifest = {
 }
 
 describe('composite group loading', () => {
+  it('fails only the source whose saved state could not be read', async () => {
+    const grouper = {
+      group: vi.fn((ids: readonly string[]) => [
+        { nodeIds: [...ids], fetch: vi.fn(), context: context() },
+      ]),
+      context: context(),
+    }
+    const request = vi.fn(async (references: string[]) => ({
+      references: references.map((reference) => ({
+        reference,
+        index: manifest.references.find((row) => row.reference === reference)!.index,
+        presentation: reference.toUpperCase(),
+        readable: true,
+        node: `node-${reference}`,
+        composite: false,
+        slides: reference === 'a' ? null : [{ name: `slide-${reference}` }],
+        savedStateFailed: reference === 'a' || undefined,
+      })),
+    }))
+    const loader = new CompositeGroupLoader(manifest, grouper, request)
+
+    await loader.load()
+
+    expect(loader.items.map((item) => [item.reference, item.status])).toEqual([
+      ['a', 'failed'],
+      ['b', 'ready'],
+      ['c', 'ready'],
+    ])
+  })
+
   it('keeps manifest order when one group fails and retries only that group', async () => {
     const grouper = {
       group: vi.fn((ids: readonly string[]) => [

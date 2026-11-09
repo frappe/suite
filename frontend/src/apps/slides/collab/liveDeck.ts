@@ -430,7 +430,7 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
   function pull() {
     push()
     merge()
-    // the one write a remote change can cause (Q27)
+    // a write a remote change can cause (Q27), as is `writeBackOwn` (Q38)
     if (host.canWrite()) {
       addBlankIfEmpty(doc)
     }
@@ -453,6 +453,10 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
   function onUpdate(_update: Uint8Array, origin: unknown) {
     if (LOCAL_ORIGINS.has(origin)) {
       return
+    }
+
+    if (host.canWrite()) {
+      steps.writeBackOwn()
     }
 
     if (origin !== steps.manager) {

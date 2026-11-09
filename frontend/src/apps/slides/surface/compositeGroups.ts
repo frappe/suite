@@ -23,6 +23,8 @@ export interface CompositeAnswer extends CompositeReference {
   node: string | null
   composite: boolean | null
   slides: unknown[] | null
+  /** Its saved state could not be read, so its old rows must not stand in. */
+  savedStateFailed?: boolean
 }
 export type CompositeItem = ManifestReference & {
   status: 'loading' | 'ready' | 'unreadable' | 'failed'
@@ -41,6 +43,14 @@ interface LoadGroup {
 
 /** The loader selects codes by node id; it never sends every held code. */
 type Grouper = Pick<CredentialGrouper, 'group' | 'context'>
+function statusOf(answer: CompositeAnswer | undefined): CompositeItem['status'] {
+  if (answer?.savedStateFailed) {
+    return 'failed'
+  }
+
+  return answer?.readable ? 'ready' : 'unreadable'
+}
+
 export class CompositeGroupLoader {
   readonly items: CompositeItem[]
   private groups: LoadGroup[] = []
@@ -120,7 +130,7 @@ export class CompositeGroupLoader {
         const answer = answers.get(reference)
         item.group = groupIndex
         item.answer = answer
-        item.status = answer?.readable ? 'ready' : 'unreadable'
+        item.status = statusOf(answer)
       }
     } catch {
       for (const reference of group.references) {

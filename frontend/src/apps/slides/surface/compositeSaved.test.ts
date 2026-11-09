@@ -47,12 +47,21 @@ describe('a combined presentation', () => {
     expect(shown.slides).toBe(rows)
   })
 
-  it('fails rather than show old rows when the saved state can not be read', async () => {
-    const reading = withSavedSlides([answer()], async () => {
-      throw new Error('offline')
-    })
+  it('marks only the source whose saved state can not be read', async () => {
+    const [broken, fine] = await withSavedSlides(
+      [answer(), answer({ reference: 'r2', node: 'node-2' })],
+      async (node) => {
+        if (node === 'node-1') {
+          throw new Error('offline')
+        }
 
-    await expect(reading).rejects.toThrow('offline')
+        return savedDoc()
+      },
+    )
+
+    expect(broken).toMatchObject({ reference: 'r1', savedStateFailed: true, slides: null })
+    expect(fine.savedStateFailed).toBeUndefined()
+    expect(fine.slides?.[0]).toMatchObject({ background: '#123456' })
   })
 
   it('asks nothing about a source the viewer can not read', async () => {

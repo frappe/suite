@@ -307,6 +307,71 @@ describe('undo after a delete', () => {
     }
   })
 
+  it('brings back what a co-editor wrote when their tab heard of the delete first', () => {
+    const { one, other, sync } = twoTabsApart()
+    presentation(one)
+    sync()
+    const mine = tabOn(one)
+    const theirs = tabOn(other)
+
+    // a new key on purpose: replacing one makes their undo hold the element, which hides this
+    change(theirs, () => (theirs.element('a').rotation = 45))
+    change(mine, () => mine.store.slides[0].elements.shift())
+    // the delete reaches them, and only then does their state reach this tab: cleaned of those values
+    Y.applyUpdate(other, Y.encodeStateAsUpdate(one), 'wire')
+    Y.applyUpdate(one, Y.encodeStateAsUpdate(other), 'wire')
+    mine.deck.undo()
+    sync()
+    sync()
+
+    for (const doc of [one, other]) {
+      expect(saved(doc, 'a')!.get('rotation')).toBe(45)
+    }
+  })
+
+  it('puts back a changed value when only the server was left to carry it, and it had cleaned it', () => {
+    const { one, other, sync } = twoTabsApart()
+    presentation(one)
+    sync()
+    const mine = tabOn(one)
+    const theirs = tabOn(other)
+    const server = new Y.Doc()
+    Y.applyUpdate(server, Y.encodeStateAsUpdate(one), 'wire')
+
+    change(theirs, () => (theirs.element('a').opacity = 25))
+    change(mine, () => mine.store.slides[0].elements.shift())
+    Y.applyUpdate(server, Y.encodeStateAsUpdate(other), 'wire')
+    Y.applyUpdate(server, Y.encodeStateAsUpdate(one), 'wire')
+    Y.applyUpdate(other, Y.encodeStateAsUpdate(server), 'wire')
+    Y.applyUpdate(one, Y.encodeStateAsUpdate(server), 'wire')
+    mine.deck.undo()
+    sync()
+    sync()
+
+    for (const doc of [one, other]) {
+      expect(saved(doc, 'a')!.get('opacity')).toBe(25)
+    }
+  })
+
+  it('leaves the restored values alone when the co-editor wrote nothing', () => {
+    const { one, other, sync } = twoTabsApart()
+    presentation(one)
+    sync()
+    const mine = tabOn(one)
+    tabOn(other)
+    const writes = vi.fn()
+
+    change(mine, () => mine.store.slides[0].elements.shift())
+    sync()
+    mine.deck.undo()
+    other.on('update', (_update, origin) => {
+      if (origin !== 'wire') writes()
+    })
+    sync()
+
+    expect(writes).not.toHaveBeenCalled()
+  })
+
   it('falls back to what the tab last saw when the co-editor value never reached it', () => {
     const { one, other, sync } = twoTabsApart()
     presentation(one)
@@ -439,6 +504,28 @@ describe('what makes one step', () => {
 
     expect(leftOf(one, 'a')).toBe(1004)
     expect(mine.steps).toHaveLength(200)
+  })
+
+  it('retains only what its 200 steps can undo, however many separate moves were made', () => {
+    const { one } = twoTabs()
+    presentation(one)
+    const mine = tabOn(one)
+    for (let left = 1000; left < 3000; left++) {
+      change(mine, () => (mine.element('a').left = left))
+    }
+
+    const frames = [...one.store.clients.values()]
+      .flat()
+      .flatMap((struct) => (struct instanceof Y.Item ? struct.content.getContent() : []))
+      .filter((value) => value?.left !== undefined)
+    // one value replaced per step, and the current frames of the three elements
+    expect(frames).toHaveLength(203)
+
+    for (let press = 0; press < 201; press++) {
+      mine.deck.undo()
+    }
+
+    expect(mine.element('a').left).toBe(2799)
   })
 
   it('lets go of what the oldest step held once it falls off the limit', () => {

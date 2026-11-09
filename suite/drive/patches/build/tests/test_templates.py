@@ -902,6 +902,49 @@ class TemplateTest(unittest.TestCase):
             [issue.reason for issue in env.state.content().issues],
         )
 
+    def lowering_run(self):
+        deck = presentation_template("deck-template")
+        source = FakeContent(
+            documents=[deck],
+            files=[TreeRow("file-1", content_doctype="Presentation", content_docname=deck.name)],
+            users={"Administrator": True, OWNER: True},
+        )
+        env, target = self.environment(source)
+        node = self.tree_node(target, deck.name)
+        target.insert_grants([_grant_row(env, node, "editor@example.com", EDIT)])
+        convert_slides_and_templates(env)
+        return env, target
+
+    def test_a_restart_before_the_commit_counts_the_lowering_once(self):
+        clean_env, _target = self.lowering_run()
+        clean = link_content_documents(clean_env)
+        env, target = self.lowering_run()
+        node = self.tree_node(target, "deck-template")
+        editor = "editor@example.com"
+        commit = target.commit
+
+        def stop_before_commit_once_lowered():
+            if target.grant_roles(node, (editor,)) == {editor: READ}:
+                target.commit = commit
+                target.drive.rollback()
+                raise InterruptedRun
+
+            commit()
+
+        target.commit = stop_before_commit_once_lowered
+        with self.assertRaises(InterruptedRun):
+            link_content_documents(env)
+
+        restarted = link_content_documents(env)
+
+        self.assertEqual(target.grant_roles(node, (editor,)), {editor: READ})
+        self.assertEqual(restarted.issues_total, clean.issues_total)
+        self.assertEqual(restarted.issues_by_phase, clean.issues_by_phase)
+        self.assertEqual(
+            sorted(issue.reason for issue in restarted.issues),
+            sorted(issue.reason for issue in clean.issues),
+        )
+
     def test_rights_on_an_ordinary_deck_are_left_alone(self):
         deck = replace(presentation_template("plain-deck"), is_template=0)
         source = FakeContent(
