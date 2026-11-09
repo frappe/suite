@@ -4,6 +4,7 @@ import * as Y from 'yjs'
 
 import { addSlide, elementIds, elementText, ROOT, setElement, slideIds, writeDeck } from './deck'
 import { openLiveDeck, type LiveStep, type StoreItem, type StoreSlide } from './liveDeck'
+import { openLiveUndo } from './liveUndo'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
 
@@ -329,7 +330,7 @@ describe('undo after a delete', () => {
     }
   })
 
-  it('puts back a changed value when only the server was left to carry it, and it had cleaned it', () => {
+  it('puts back an added key when only the server was left to carry it, and it had cleaned it', () => {
     const { one, other, sync } = twoTabsApart()
     presentation(one)
     sync()
@@ -338,7 +339,7 @@ describe('undo after a delete', () => {
     const server = new Y.Doc()
     Y.applyUpdate(server, Y.encodeStateAsUpdate(one), 'wire')
 
-    change(theirs, () => (theirs.element('a').opacity = 25))
+    change(theirs, () => (theirs.element('a').rotation = 45))
     change(mine, () => mine.store.slides[0].elements.shift())
     Y.applyUpdate(server, Y.encodeStateAsUpdate(other), 'wire')
     Y.applyUpdate(server, Y.encodeStateAsUpdate(one), 'wire')
@@ -349,8 +350,52 @@ describe('undo after a delete', () => {
     sync()
 
     for (const doc of [one, other]) {
-      expect(saved(doc, 'a')!.get('opacity')).toBe(25)
+      expect(saved(doc, 'a')!.get('rotation')).toBe(45)
     }
+  })
+
+  it('never writes a held value over a live edit made after the restore', () => {
+    const { one, other, sync } = twoTabsApart()
+    presentation(one)
+    sync()
+    const mine = tabOn(one)
+    const theirs = tabOn(other)
+    const third = new Y.Doc()
+
+    change(theirs, () => (theirs.element('a').opacity = 25))
+    change(mine, () => mine.store.slides[0].elements.shift())
+    Y.applyUpdate(other, Y.encodeStateAsUpdate(one), 'wire')
+    mine.deck.undo()
+    Y.applyUpdate(third, Y.encodeStateAsUpdate(one), 'wire')
+    saved(third, 'a')!.set('opacity', 70)
+    Y.applyUpdate(other, Y.encodeStateAsUpdate(third), 'wire')
+    sync()
+    sync()
+
+    for (const doc of [one, other]) {
+      expect(saved(doc, 'a')!.get('opacity')).toBe(70)
+    }
+  })
+
+  it('holds the 200 newest deleted items and lets go of older ones', () => {
+    const doc = new Y.Doc()
+    const elements = doc.getMap<Y.Map<unknown>>(ROOT.elements)
+    const ids = Array.from({ length: 250 }, (_, at) => `e${at}`)
+    ids.forEach((id) => elements.set(id, new Y.Map()))
+    const steps = openLiveUndo(doc, ['mine'])
+
+    for (const id of ids) {
+      doc.transact(() => elements.get(id)!.set('rotation', 45), 'mine')
+    }
+
+    for (const id of ids) {
+      doc.transact(() => elements.delete(id), 'wire')
+    }
+
+    doc.transact(() => ids.forEach((id) => elements.set(id, new Y.Map())), 'wire')
+    steps.writeBackOwn()
+
+    expect(ids.filter((id) => elements.get(id)!.has('rotation'))).toEqual(ids.slice(50))
   })
 
   it('leaves the restored values alone when the co-editor wrote nothing', () => {

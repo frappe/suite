@@ -430,7 +430,7 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
   function pull() {
     push()
     merge()
-    // a write a remote change can cause (Q27), as is `writeBackOwn` (Q38)
+    // the one write a remote change can cause (Q27)
     if (host.canWrite()) {
       addBlankIfEmpty(doc)
     }
@@ -455,6 +455,7 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
       return
     }
 
+    // Q38: an item that comes back whole, not a write of the remote change's own
     if (host.canWrite()) {
       steps.writeBackOwn()
     }

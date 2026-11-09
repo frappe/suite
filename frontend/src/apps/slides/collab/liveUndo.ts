@@ -17,6 +17,8 @@ type DeepEvent = Y.YEvent<Y.AbstractType<unknown>>
 type StepItems = Record<Kind, Map<string, Fields | null>>
 /** What this tab wrote last to each item, per key, while nobody has written over it. */
 type OwnValues = Record<Kind, Map<string, Fields>>
+/** What this tab had written to an item a co-editor deleted. */
+type HeldItem = { kind: Kind; id: string; fields: Fields }
 /** The ids a step will bring back, with the item each was when it was deleted. */
 type GoneItems = Map<string, Y.AbstractType<unknown> | null>
 
@@ -29,6 +31,14 @@ function noItems(): StepItems {
 // A nested type, the text, is restored by Yjs along with its item
 function plainFields(item: Y.Map<unknown>) {
   return Object.fromEntries([...item.entries()].filter(([, v]) => !(v instanceof Y.AbstractType)))
+}
+
+function setMissing(item: Y.Map<unknown>, fields: Fields) {
+  for (const [key, value] of Object.entries(fields)) {
+    if (!item.has(key)) {
+      item.set(key, value)
+    }
+  }
 }
 
 // Written under a deleted item an undo may bring back, so it can come back too (Q38)
@@ -49,7 +59,7 @@ export function openLiveUndo(doc: Y.Doc, trackedOrigins: unknown[]) {
   const baseGcFilter = doc.gcFilter
   doc.gcFilter = (item) => !isHeldForUndo(item) && baseGcFilter(item)
   const ownValues: OwnValues = { slides: new Map(), elements: new Map() }
-  const heldAfterDelete: OwnValues = { slides: new Map(), elements: new Map() }
+  let heldAfterDelete: HeldItem[] = []
   let pending = noItems()
   let isTaking = false
   let shouldEndStep = false
@@ -100,7 +110,7 @@ export function openLiveUndo(doc: Y.Doc, trackedOrigins: unknown[]) {
     for (const [id, { action }] of event.changes.keys) {
       const own = ownValues[kind].get(id)
       if (action === 'delete' && !isOwn && own) {
-        heldAfterDelete[kind].set(id, own)
+        heldAfterDelete = [...heldAfterDelete, { kind, id, fields: own }].slice(-MOST_STEPS)
         ownValues[kind].delete(id)
       }
     }
@@ -188,12 +198,7 @@ export function openLiveUndo(doc: Y.Doc, trackedOrigins: unknown[]) {
             return
           }
 
-          const whole = { ...fields, ...coEditorValues(wasGone.get(id) ?? null) }
-          for (const [key, value] of Object.entries(whole)) {
-            if (!item.has(key)) {
-              item.set(key, value)
-            }
-          }
+          setMissing(item, { ...fields, ...coEditorValues(wasGone.get(id) ?? null) })
         })
       }
     })
@@ -201,24 +206,19 @@ export function openLiveUndo(doc: Y.Doc, trackedOrigins: unknown[]) {
 
   /** Puts this tab's values back on items a co-editor deleted and has brought back (Q38). */
   function writeBackOwn() {
+    const stillGone: HeldItem[] = []
     // no origin: this is no step of its own
     doc.transact(() => {
-      for (const kind of ['slides', 'elements'] as const) {
-        heldAfterDelete[kind].forEach((fields, id) => {
-          const item = roots[kind].get(id)
-          if (!item) {
-            return
-          }
-
-          heldAfterDelete[kind].delete(id)
-          for (const [key, value] of Object.entries(fields)) {
-            if (JSON.stringify(item.get(key)) !== JSON.stringify(value)) {
-              item.set(key, value)
-            }
-          }
-        })
+      for (const held of heldAfterDelete) {
+        const item = roots[held.kind].get(held.id)
+        if (item) {
+          setMissing(item, held.fields)
+        } else {
+          stillGone.push(held)
+        }
       }
     })
+    heldAfterDelete = stillGone
   }
 
   /** Takes one step off the stack. Null when there is none to take. */
