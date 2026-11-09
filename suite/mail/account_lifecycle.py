@@ -292,15 +292,26 @@ def onboarding_options() -> dict:
     # Where a forgotten password's reset link goes: the email the Admin signed up with.
     backup_email = get_backup_email(user)
     if not is_suite_cloud_configured():
-        return {"cloud": False, "domains": [], "account": None, "ready": True, "backup_email": backup_email}
+        return {
+            "cloud": False,
+            "domains": [],
+            "supplied_domain": None,
+            "account": None,
+            "ready": True,
+            "backup_email": backup_email,
+        }
     get_client().call("tenant.ping")
+    # Suite Cloud creates the supplied domain with the site, before an Admin can add their own,
+    # so it is the oldest. Ordered by age, the supplied one comes first, as the default.
+    active = [domain for domain in get_domains() if domain.get("enabled") and domain.get("is_verified")]
     domains = [
-        domain["domain"] for domain in get_domains() if domain.get("enabled") and domain.get("is_verified")
+        domain["domain"] for domain in sorted(active, key=lambda domain: domain.get("created_at") or "")
     ]
     account = frappe.db.get_value("User Settings", {"user": user}, "username")
     return {
         "cloud": True,
         "domains": domains,
+        "supplied_domain": domains[0] if domains else None,
         "account": account,
         "backup_email": backup_email,
         "ready": bool(

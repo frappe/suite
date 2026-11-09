@@ -130,6 +130,7 @@ export type OnboardingGetInput = Record<string, never>
 export type OnboardingGetOutput = {
   cloud: boolean
   domains: Array<string>
+  supplied_domain: string | null
   account: string | null
   ready: boolean
   backup_email: string

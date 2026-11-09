@@ -9,19 +9,18 @@ import { Button, Combobox, ErrorMessage, Tooltip } from 'frappe-ui'
 import { computed, onMounted, onUnmounted, ref, useTemplateRef } from 'vue'
 
 import { api, useMutation, useQuery } from '@/api'
-import InviteStep from '@/shell/InviteStep.vue'
 import SuiteMark from '@/shell/SuiteMark.vue'
 import { detectTimezone, useTimezones } from '@/shell/useTimezones'
 import WorkspaceBrandingForm from '@/shell/WorkspaceBrandingForm.vue'
 
 import AppIconView from './AppIconView.vue'
 import DomainStep from './DomainStep.vue'
+import InvitePeople from './InvitePeople.vue'
 import MailStep from './MailStep.vue'
 import { MOD_KEY, type DomainState } from './onboarding'
 import OnboardingFrame from './OnboardingFrame.vue'
 import ShortcutStep from './ShortcutStep.vue'
 import { SUITE_APPS } from './suiteApps'
-import TeamInviteStep from './TeamInviteStep.vue'
 
 type Step = 'welcome' | 'workspace' | 'mail' | 'domain' | 'invite' | 'shortcut' | 'ready'
 
@@ -89,17 +88,6 @@ const mailStep = useTemplateRef<InstanceType<typeof MailStep>>('mailStep')
 const ownDomain = ref('')
 const ownDomainId = ref('')
 const domainState = ref<DomainState>('idle')
-/** The provider's domain: the one that is not the Admin's own. */
-const suppliedDomain = computed(
-  () => mailOnboarding.data?.domains.find((domain) => domain !== ownDomain.value.trim()) ?? '',
-)
-/** Invitation domains, the supplied one first, since it is the default. */
-const inviteDomains = computed(() => {
-  const domains = mailOnboarding.data?.domains ?? []
-  return [...domains].sort(
-    (a, b) => Number(b === suppliedDomain.value) - Number(a === suppliedDomain.value),
-  )
-})
 
 async function onMailReady(): Promise<void> {
   await mailOnboarding.refetch()
@@ -119,34 +107,13 @@ const domainSummary = computed(() => {
 })
 
 // Team
-const teamInvite = useTemplateRef<InstanceType<typeof TeamInviteStep>>('teamInvite')
-const selfHostedInvite = useTemplateRef<InstanceType<typeof InviteStep>>('selfHostedInvite')
-const invitesSent = ref(0)
-const selfHostedSummary = ref('')
-const teamSummary = computed(() => {
-  if (selfHostedSummary.value) return selfHostedSummary.value
-  if (!invitesSent.value) return __('Working solo for now')
-  return invitesSent.value === 1
-    ? __('1 invitation sent')
-    : __('{0} invitations sent', [invitesSent.value])
-})
-const inviting = computed(() => teamInvite.value?.working || selfHostedInvite.value?.loading)
-const canInvite = computed(() =>
-  cloud.value ? teamInvite.value?.canSubmit : selfHostedInvite.value?.canSubmit,
-)
+const invitePeople = useTemplateRef<InstanceType<typeof InvitePeople>>('invitePeople')
+const sentSummary = ref('')
+const teamSummary = computed(() => sentSummary.value || __('Working solo for now'))
+const inviting = computed(() => invitePeople.value?.working)
 
-function sendInvites(): void {
-  if (cloud.value) void teamInvite.value?.submit()
-  else void selfHostedInvite.value?.submit()
-}
-
-function onInvitesSent(count: number): void {
-  invitesSent.value = count
-  next()
-}
-
-function onSelfHostedSent(summary: string): void {
-  selfHostedSummary.value = summary
+function onInvitesSent(summary: string): void {
+  sentSummary.value = summary
   next()
 }
 
@@ -270,23 +237,16 @@ onUnmounted(() => {
       v-model:domain="ownDomain"
       v-model:domain-id="ownDomainId"
       v-model:state="domainState"
-      :supplied-domain="suppliedDomain"
+      :supplied-domain="mailOnboarding.data?.supplied_domain ?? ''"
     />
 
-    <template v-else-if="step === 'invite'">
-      <TeamInviteStep
-        v-if="cloud"
-        ref="teamInvite"
-        :domains="inviteDomains"
-        @sent="onInvitesSent"
-      />
-      <InviteStep
-        v-else
-        ref="selfHostedInvite"
-        :description="__('Separate addresses with commas. Everyone joins as a Normal User.')"
-        @sent="onSelfHostedSent"
-      />
-    </template>
+    <InvitePeople
+      v-else-if="step === 'invite'"
+      ref="invitePeople"
+      :cloud="cloud"
+      :domains="mailOnboarding.data?.domains ?? []"
+      @sent="onInvitesSent"
+    />
 
     <ShortcutStep v-else-if="step === 'shortcut'" v-model:learned="learnedPalette" admin />
 
@@ -372,8 +332,8 @@ onUnmounted(() => {
                 :label="__('Send invites')"
                 icon-right="lucide-chevron-right"
                 :loading="inviting"
-                :disabled="!canInvite"
-                @click="sendInvites"
+                :disabled="!invitePeople?.canSubmit"
+                @click="invitePeople?.submit()"
               />
             </template>
             <Button

@@ -7,7 +7,6 @@ interface Domain {
   id: string
   name: string
   is_verified: boolean
-  created_at: string
 }
 
 interface Person {
@@ -54,6 +53,7 @@ vi.mock('@/api', async () => {
       () => ({
         cloud: server.cloud,
         domains: server.domains.filter((d) => d.is_verified).map((d) => d.name),
+        supplied_domain: server.domains.find((d) => d.is_verified)?.name ?? null,
       }),
     ],
     ['get_domains', () => ({ items: server.domains, total: server.domains.length })],
@@ -122,8 +122,8 @@ afterEach(() => {
 describe('Get started on Home', () => {
   it('gives a Suite Cloud Admin the workspace tasks, ticked from what the workspace has', () => {
     server.domains = [
-      { id: 'd1', name: 'acme.frappe.space', is_verified: true, created_at: '2026-01-01' },
-      { id: 'd2', name: 'acme.com', is_verified: false, created_at: '2026-01-02' },
+      { id: 'd1', name: 'acme.frappe.space', is_verified: true },
+      { id: 'd2', name: 'acme.com', is_verified: false },
     ]
     server.invitations = 2
     server.logo = '/files/logo.png'

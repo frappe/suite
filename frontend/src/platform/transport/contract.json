@@ -341,6 +341,17 @@
             "title": "Domains",
             "type": "array"
           },
+          "supplied_domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supplied Domain"
+          },
           "account": {
             "anyOf": [
               {
@@ -364,6 +375,7 @@
         "required": [
           "cloud",
           "domains",
+          "supplied_domain",
           "account",
           "ready",
           "backup_email"

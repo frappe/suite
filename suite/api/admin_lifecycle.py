@@ -38,6 +38,7 @@ class TemporaryCredential(TypedDict):
 class OnboardingOptions(TypedDict):
     cloud: bool
     domains: list[str]
+    supplied_domain: str | None
     account: str | None
     ready: bool
     backup_email: str

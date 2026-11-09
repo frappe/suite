@@ -881,6 +881,34 @@ class TestAdminLifecycle(IntegrationTestCase):
         self.assertEqual((shown["workspace_name"], shown["account"]), ("Northwind", self.address))
         self.assertTrue(shown["invited_by_name"].startswith("maya-"))
 
+    def test_the_supplied_domain_is_the_oldest_active_one_whatever_order_suite_cloud_lists(self):
+        listed = [
+            {"domain": "acme.com", "enabled": True, "is_verified": True, "created_at": "2026-03-02 09:00:00"},
+            {
+                "domain": "draft.acme.com",
+                "enabled": True,
+                "is_verified": False,
+                "created_at": "2026-01-01 08:00:00",
+            },
+            {
+                "domain": "acme.frappe.space",
+                "enabled": True,
+                "is_verified": True,
+                "created_at": "2026-01-01 09:00:00",
+            },
+        ]
+        call = self.provider.call
+        self.provider.call = lambda method, **args: (
+            listed if method == "mail.domains.list_domains" else call(method, **args)
+        )
+        admin = f"first-admin-{frappe.generate_hash(length=8)}@contact.example.test"
+        ensure_user(admin)
+        frappe.get_doc("User", admin).add_roles("Suite Admin")
+        with self.set_user(admin):
+            options = mail.administer_account("onboarding_options")
+        self.assertEqual(options["supplied_domain"], "acme.frappe.space")
+        self.assertEqual(options["domains"], ["acme.frappe.space", "acme.com"])
+
     def test_supplied_domain_onboarding_requires_no_customer_dns_and_preserves_business_identity(self):
         frappe.db.set_single_value("Suite Settings", "is_onboarded", 0)
         admin = f"first-admin-{frappe.generate_hash(length=8)}@contact.example.test"

@@ -246,11 +246,15 @@ export const operationOnboardingGet: Validators<OnboardingGetInput, OnboardingGe
         properties: {
           cloud: { title: 'Cloud', type: 'boolean' },
           domains: { items: { type: 'string' }, title: 'Domains', type: 'array' },
+          supplied_domain: {
+            anyOf: [{ type: 'string' }, { type: 'null' }],
+            title: 'Supplied Domain',
+          },
           account: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Account' },
           ready: { title: 'Ready', type: 'boolean' },
           backup_email: { title: 'Backup Email', type: 'string' },
         },
-        required: ['cloud', 'domains', 'account', 'ready', 'backup_email'],
+        required: ['cloud', 'domains', 'supplied_domain', 'account', 'ready', 'backup_email'],
         title: 'OnboardingOptions',
         type: 'object',
       },

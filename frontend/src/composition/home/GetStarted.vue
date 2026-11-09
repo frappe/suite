@@ -10,14 +10,13 @@ import { computed, ref, useTemplateRef, watch } from 'vue'
 
 import { api, useMutation, useQuery } from '@/api'
 import DomainStep from '@/composition/onboarding/DomainStep.vue'
+import InvitePeople from '@/composition/onboarding/InvitePeople.vue'
 import { isTeammate, type DomainState } from '@/composition/onboarding/onboarding'
-import TeamInviteStep from '@/composition/onboarding/TeamInviteStep.vue'
 import { toast } from '@/platform/feedback'
 import { useSession } from '@/platform/session'
 import { openSettings } from '@/platform/settings'
 import { translate as __ } from '@/platform/translation'
 import { useWorkspace } from '@/platform/workspace'
-import InviteStep from '@/shell/InviteStep.vue'
 import WorkspaceBrandingForm from '@/shell/WorkspaceBrandingForm.vue'
 
 type TaskId = 'domain' | 'team' | 'import' | 'logo' | 'photo'
@@ -50,21 +49,11 @@ const imports = useQuery(api.mail.exchanges.list, () =>
     : false,
 )
 
-// The provider supplies the first domain; any later one is the business's own.
-const suppliedDomain = computed(() => {
-  const rows = [...(domains.data?.items ?? [])]
-  rows.sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''))
-  return rows[0]?.name ?? ''
-})
+// The provider supplies one domain; any other is the business's own.
+const suppliedDomain = computed(() => onboarding.data?.supplied_domain ?? '')
 const ownDomain = computed(() => {
   const own = (domains.data?.items ?? []).filter((row) => row.name !== suppliedDomain.value)
   return own.find((row) => row.is_verified) ?? own[0]
-})
-const inviteDomains = computed(() => {
-  const verified = (onboarding.data?.domains ?? []).slice()
-  return verified.sort(
-    (a, b) => Number(b === suppliedDomain.value) - Number(a === suppliedDomain.value),
-  )
 })
 const teamDone = computed(() =>
   cloud.value
@@ -190,16 +179,7 @@ watch(active, (task, previous) => {
   domainId.value = row?.id ?? ''
   domainState.value = row ? (row.is_verified ? 'verified' : 'pending') : 'idle'
 })
-const teamInvite = useTemplateRef<InstanceType<typeof TeamInviteStep>>('teamInvite')
-const selfHostedInvite = useTemplateRef<InstanceType<typeof InviteStep>>('selfHostedInvite')
-const inviting = computed(() => teamInvite.value?.working || selfHostedInvite.value?.loading)
-const canInvite = computed(() =>
-  cloud.value ? teamInvite.value?.canSubmit : selfHostedInvite.value?.canSubmit,
-)
-function sendInvites(): void {
-  if (cloud.value) void teamInvite.value?.submit()
-  else void selfHostedInvite.value?.submit()
-}
+const invitePeople = useTemplateRef<InstanceType<typeof InvitePeople>>('invitePeople')
 function onInvited(summary: string): void {
   active.value = null
   toast.success(summary)
@@ -259,23 +239,13 @@ const brandingForm = useTemplateRef<InstanceType<typeof WorkspaceBrandingForm>>(
       v-model:state="domainState"
       :supplied-domain="suppliedDomain"
     />
-    <template v-else-if="active === 'team'">
-      <TeamInviteStep
-        v-if="cloud"
-        ref="teamInvite"
-        :domains="inviteDomains"
-        @sent="
-          (count) =>
-            onInvited(count === 1 ? __('1 invitation sent') : __('{0} invitations sent', [count]))
-        "
-      />
-      <InviteStep
-        v-else
-        ref="selfHostedInvite"
-        :description="__('Separate addresses with commas. Everyone joins as a Normal User.')"
-        @sent="onInvited"
-      />
-    </template>
+    <InvitePeople
+      v-else-if="active === 'team'"
+      ref="invitePeople"
+      :cloud="cloud"
+      :domains="onboarding.data?.domains ?? []"
+      @sent="onInvited"
+    />
     <WorkspaceBrandingForm
       v-else-if="active === 'logo'"
       ref="brandingForm"
@@ -288,9 +258,9 @@ const brandingForm = useTemplateRef<InstanceType<typeof WorkspaceBrandingForm>>(
           <Button
             variant="solid"
             :label="__('Send invites')"
-            :loading="inviting"
-            :disabled="!canInvite"
-            @click="sendInvites"
+            :loading="invitePeople?.working"
+            :disabled="!invitePeople?.canSubmit"
+            @click="invitePeople?.submit()"
           />
         </template>
         <template v-else-if="active === 'logo'">
