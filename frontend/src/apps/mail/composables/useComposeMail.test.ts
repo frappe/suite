@@ -151,3 +151,32 @@ describe('saving a draft', () => {
     )
   })
 })
+
+describe('a reminder if nobody replies', () => {
+  it('goes with the send, and never with a saved draft', async () => {
+    const composer = compose()
+    await composer.setRemindAt('2026-11-10T09:00:00Z')
+
+    server.updateDraft.mockResolvedValueOnce({ id: 'draft-1', status: 'Drafted', error: null })
+    composer.mail.html_body = '<p>Still writing.</p>'
+    await composer.saveDraft()
+    expect(server.updateDraft.mock.calls[0][0].remind_at).toBeUndefined()
+
+    server.updateDraft.mockResolvedValueOnce({ id: 'sent-1', status: 'Submitted', error: null })
+    await composer.sendMail()
+    expect(server.updateDraft.mock.calls.at(-1)![0]).toMatchObject({
+      submit: true,
+      remind_at: '2026-11-10T09:00:00Z',
+    })
+  })
+
+  it('is not asked for once taken back', async () => {
+    const composer = compose()
+    await composer.setRemindAt('2026-11-10T09:00:00Z')
+    await composer.setRemindAt()
+
+    server.updateDraft.mockResolvedValueOnce({ id: 'sent-1', status: 'Submitted', error: null })
+    await composer.sendMail()
+    expect(server.updateDraft.mock.calls.at(-1)![0].remind_at).toBeUndefined()
+  })
+})

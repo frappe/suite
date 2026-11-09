@@ -60,7 +60,7 @@ import {
   Star,
   Trash2,
 } from 'lucide-vue-next'
-import { computed, h, inject } from 'vue'
+import { h, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { api, client, type InputOf } from '@/api'
@@ -136,9 +136,6 @@ const isSenderBlocked = (email: string) =>
   screenedAddresses.value.data?.some(
     (a: ScreenedAddress) => a.action === 'Spam' && matchesScreenedValue(email, a.email),
   )
-// A message alone in its thread has the star beside the subject (MailThread), which stars that same
-// message: a second one a line below would only repeat it.
-const isAlone = computed(() => thread.filter((m) => !m.draft).length <= 1)
 const shown = (mail: Mail) =>
   primaryActions(mail).filter((action) => action.condition !== false && !isCollapsed)
 const primaryActions = (mail: Mail): MailAction[] => [
@@ -150,12 +147,7 @@ const primaryActions = (mail: Mail): MailAction[] => [
       h(Star, {
         style: FLAGGED_STAR_STYLE,
       }),
-    condition:
-      !!mail.flagged &&
-      mailbox !== mailboxIds.value.trash &&
-      !isMobile.value &&
-      !isAlone.value &&
-      !hideStar,
+    condition: !!mail.flagged && mailbox !== mailboxIds.value.trash && !isMobile.value && !hideStar,
   },
   {
     label: __('Star'),
@@ -167,7 +159,6 @@ const primaryActions = (mail: Mail): MailAction[] => [
       !mail.draft &&
       mailbox !== mailboxIds.value.trash &&
       !isMobile.value &&
-      !isAlone.value &&
       !hideStar,
   },
   {

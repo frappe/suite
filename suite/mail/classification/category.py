@@ -3,6 +3,8 @@
 
 from enum import StrEnum
 
+from suite.mail.pins import PINNED_KEYWORD, RETURNED_KEYWORD
+
 
 class Category(StrEnum):
     """The categories mail is sorted into.
@@ -39,12 +41,20 @@ def tab_filter(category: Category, tabs: tuple[Category, ...] = INBOX_TABS) -> d
     """The JMAP filter for the mail a tab of the Inbox lists.
 
     A tab lists the mail carrying its keyword. Primary lists what carries no other tab's keyword: its
-    own mail, mail of a category without a tab, and mail not classified yet.
+    own mail, mail of a category without a tab, and mail not classified yet. It lists pinned mail
+    too, whichever category it is in: a pin says "keep this where I look first", and that is Primary.
     """
 
     if category != Category.PRIMARY:
         return {"hasKeyword": category.keyword}
     return {
-        "operator": "AND",
-        "conditions": [{"notKeyword": tab.keyword} for tab in tabs if tab != Category.PRIMARY],
+        "operator": "OR",
+        "conditions": [
+            {
+                "operator": "AND",
+                "conditions": [{"notKeyword": tab.keyword} for tab in tabs if tab != Category.PRIMARY],
+            },
+            {"hasKeyword": PINNED_KEYWORD},
+            {"hasKeyword": RETURNED_KEYWORD},
+        ],
     }

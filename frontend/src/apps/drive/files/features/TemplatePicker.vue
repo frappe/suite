@@ -77,7 +77,7 @@
           </div>
         </template>
       </div>
-      <FormControl v-model="title" label="Name" required :disabled="!selected" />
+      <FormControl v-model="title" label="Name" required />
       <div class="flex justify-end gap-2">
         <Button label="Cancel" @click="open = false" />
         <Button
@@ -99,6 +99,7 @@ import { Button, Dialog, ErrorMessage, FormControl, Skeleton, TabButtons } from 
 import { computed, inject, reactive, ref, useTemplateRef, watch } from 'vue'
 
 import { api, useInfiniteQuery, useMutation } from '@/api'
+import { defaultDocumentTitle } from '@/apps/drive/client/nodes'
 import type { DriveNode } from '@/apps/drive/client/types'
 import { DOCUMENT_TYPES_KEY } from '@/platform/contracts'
 
@@ -146,13 +147,17 @@ const selected = ref<DriveNode | null>(null)
 const title = ref('')
 const failedPreviews = reactive(new Set<string>())
 const copy = useMutation(api.drive.nodes.copy)
-watch([typeKey, open], () => {
-  selected.value = null
-  title.value = ''
-})
+// Named like any new document. The copy takes the next free "(2)" title if this one is taken.
+watch(
+  [typeKey, open],
+  () => {
+    selected.value = null
+    title.value = defaultDocumentTitle(contentDoctype.value)
+  },
+  { immediate: true },
+)
 function choose(row: DriveNode) {
   selected.value = row
-  title.value = row.title
 }
 function chooseAndCreate(row: DriveNode) {
   choose(row)

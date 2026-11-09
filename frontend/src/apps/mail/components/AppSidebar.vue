@@ -129,7 +129,12 @@ import FolderModal from '@/apps/mail/components/Modals/FolderModal.vue'
 import QuotaBar from '@/apps/mail/components/QuotaBar.vue'
 import { useThreadDrag } from '@/apps/mail/composables/useThreadDrag'
 import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
-import { SECONDARY_MAILBOX_ROLES, userStore, withStarred } from '@/apps/mail/stores/user'
+import {
+  isHiddenFolder,
+  SECONDARY_MAILBOX_ROLES,
+  userStore,
+  withStarred,
+} from '@/apps/mail/stores/user'
 import type { MailboxData, UnifiedFolder } from '@/apps/mail/types'
 import { getIcon, getMailboxName } from '@/apps/mail/utils'
 import { useAccountSwitch, useScreenSize } from '@/apps/mail/utils/composables'
@@ -395,12 +400,12 @@ const dashboardItems = [
 // What's unread, where that means something: the mail you sent is yours, and "unread" there is
 // only a flag left over from somewhere else.
 const unreadSuffix = (role: string | null | undefined, unread?: number | null) =>
-  role !== 'sent' && unread ? String(unread) : ''
+  role !== 'sent' && role !== 'snoozed' && unread ? String(unread) : ''
 
 const mailboxItems = computed(
   () =>
     mailboxes.data
-      ?.filter((mailbox: MailboxData) => mailbox.subscribed)
+      ?.filter((mailbox: MailboxData) => mailbox.subscribed && !isHiddenFolder(mailbox))
       ?.map((mailbox: MailboxData) => {
         return {
           mailboxId: mailbox.id,

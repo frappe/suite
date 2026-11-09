@@ -22,7 +22,7 @@
         :style="{ width: `${meter.percent}%` }"
       />
     </span>
-    <span class="text-xs text-ink-gray-5 tabular-nums">{{ meter.label }}</span>
+    <span class="text-xs text-ink-gray-5">{{ meter.label }}</span>
   </button>
   <div v-else-if="!failed" class="flex flex-col gap-2 px-2 py-2" aria-hidden="true">
     <Skeleton class="h-1 w-full rounded-full" />

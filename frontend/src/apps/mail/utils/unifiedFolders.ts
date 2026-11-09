@@ -1,3 +1,5 @@
+import type { LocationQuery, RouteParamsRaw } from 'vue-router'
+
 import { SECONDARY_MAILBOX_ROLES } from '@/apps/mail/stores/user'
 import type { MailboxData, UnifiedFolder } from '@/apps/mail/types'
 import { getIcon } from '@/apps/mail/utils'
@@ -65,6 +67,25 @@ export const mailboxParam = (mailboxId: string, mailboxes?: MailboxData[] | null
   const slug = mailboxes?.find((m) => m.id === mailboxId)?.slug
   if (!slug) return mailboxId
   return mailboxes!.filter((m) => m.slug === slug).length === 1 ? slug : mailboxId
+}
+
+/**
+ * Where a row (or a pinned card) opens its thread: an account's thread route names the folder it was
+ * listed from, by slug; the merged folder's needs none, since its own folder param says which.
+ */
+export const threadLink = (options: {
+  routeName: string
+  // A route param as it comes, a string or (from a repeated param) a list of them.
+  accountId: string | string[]
+  mailbox: string
+  mailboxes?: MailboxData[] | null
+  threadId: string
+  query: LocationQuery
+}) => {
+  const params: RouteParamsRaw = { accountId: options.accountId, threadID: options.threadId }
+  if (options.routeName !== UNIFIED_THREAD_ROUTE)
+    params.mailbox = mailboxParam(options.mailbox, options.mailboxes)
+  return { name: options.routeName, params, query: options.query }
 }
 
 /**

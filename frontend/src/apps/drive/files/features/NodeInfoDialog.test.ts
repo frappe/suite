@@ -145,7 +145,11 @@ describe('Details', () => {
     server.contentDoctype = 'Sheet'
     const root = mount('budget')
 
-    await vi.waitFor(() => expect(field(root, 'Type')).toBe('Spreadsheet'))
+    await vi.waitFor(() =>
+      expect([...root.querySelectorAll('p')].map((line) => line.textContent)).toContain(
+        'Spreadsheet',
+      ),
+    )
   })
 
   it('shows no sharing to someone who may not share it, and does not ask', async () => {

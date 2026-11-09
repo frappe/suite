@@ -65,6 +65,7 @@ export class AuthManager {
 			socket.tokenExpiresAt = decoded.exp ? decoded.exp * 1000 : undefined;
 			socket.isGuest = decoded.is_guest || false;
 			socket.guestGeneration = decoded.guest_generation;
+			socket.hostOnlyChat = decoded.host_only_chat;
 
 			loggers.authManager.info(
 				'Authenticated user: %s for meeting: %s (site: %s)',
@@ -119,6 +120,7 @@ export class AuthManager {
 		socket.scope = decoded.scope ?? 'presence-preview';
 		socket.isGuest = decoded.is_guest || false;
 		socket.guestGeneration = decoded.guest_generation;
+		socket.hostOnlyChat = decoded.host_only_chat;
 		socket.e2eeRequired = Boolean(decoded.e2ee_required);
 		socket.e2eeReady = socket.e2eeRequired
 			? wasE2EERequired && wasE2EEReady
@@ -190,6 +192,7 @@ export class AuthManager {
 		socket.e2eeReady = undefined;
 		socket.e2eeRequired = undefined;
 		socket.guestGeneration = undefined;
+		socket.hostOnlyChat = undefined;
 	}
 
 	ensurePresenceAccess(socket: Socket): void {
@@ -272,6 +275,7 @@ type ParticipantClaimFields = Partial<
 		| 'is_guest'
 		| 'guest_generation'
 		| 'e2ee_required'
+		| 'host_only_chat'
 		| 'exp'
 		| 'iat',
 		unknown
@@ -308,6 +312,7 @@ function parseParticipantClaims(value: unknown): JWTPayload {
 		throw new Error('Invalid participant claims');
 	}
 	const e2eeRequired = optionalBoolean(value, 'e2ee_required');
+	const hostOnlyChat = optionalBoolean(value, 'host_only_chat');
 	const exp = optionalInteger(value, 'exp');
 	const iat = optionalInteger(value, 'iat');
 	const claims: JWTPayload = {
@@ -323,6 +328,7 @@ function parseParticipantClaims(value: unknown): JWTPayload {
 	if (guestGeneration !== undefined) claims.guest_generation = guestGeneration;
 	if (scope !== undefined) claims.scope = scope;
 	if (e2eeRequired !== undefined) claims.e2ee_required = e2eeRequired;
+	if (hostOnlyChat !== undefined) claims.host_only_chat = hostOnlyChat;
 	if (sessionId !== undefined) claims.session_id = sessionId;
 	if (exp !== undefined) claims.exp = exp;
 	if (iat !== undefined) claims.iat = iat;

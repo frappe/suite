@@ -19,6 +19,7 @@ import { useDocumentLeaveGuard, type DocumentSaveState } from './navigation'
 import type { CellAnchor, SheetVersion } from './records'
 import { clearRecovery, downloadRecovery, keepRecovery, readRecovery } from './recovery'
 import SheetCommentsPanel from './SheetCommentsPanel.vue'
+import SheetDocumentMenu from './SheetDocumentMenu.vue'
 import SheetVersionBar from './SheetVersionBar.vue'
 import SheetVersionsPanel from './SheetVersionsPanel.vue'
 import {
@@ -150,6 +151,9 @@ watch(
 function showPanel(next: DocumentPanel | null) {
   panel.value = next
   if (next) editor.value?.closeNotes()
+}
+function togglePanel(name: DocumentPanel) {
+  showPanel(panel.value === name ? null : name)
 }
 // The list is read each time the panel opens; closing it ends a preview.
 watch(panel, (now) => {
@@ -376,10 +380,7 @@ useDocumentLeaveGuard({
           :save-state="editor?.saveState ?? null"
           :view-only="viewOnly"
           :recoverable="hasRecovery"
-          :panels="session.panels.value"
-          :panel="panel"
-          layout="compact"
-          @update:panel="showPanel"
+          layout="menus"
           @download-changes="downloadChanges"
         >
           <template #status>
@@ -395,6 +396,14 @@ useDocumentLeaveGuard({
           </template>
           <template #actions>
             <component :is="EditorActions" />
+          </template>
+          <template #menu>
+            <SheetDocumentMenu
+              v-if="session.panels.value.length"
+              :panels="session.panels.value"
+              :panel="panel"
+              @toggle-panel="togglePanel"
+            />
           </template>
         </DriveDocumentHeader>
       </template>
@@ -458,8 +467,8 @@ useDocumentLeaveGuard({
   position: relative;
   z-index: 10;
 }
-/* Hover and "on" fills (Comments and Versions open) follow the bar colours,
-   as in row 2; solid buttons such as Share keep their own. */
+/* Hover and "on" fills follow the bar colours, as in row 2; solid buttons
+   keep their own. */
 .sheets-header :deep(button:not(:disabled, .bg-surface-gray-10):hover),
 .sheets-header :deep(button[data-state='open']),
 .sheets-header :deep(button[aria-pressed='true']) {

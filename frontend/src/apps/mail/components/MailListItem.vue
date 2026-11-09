@@ -15,13 +15,14 @@
     :account-label="accountLabel"
     :draggable
     :stacked="stacked || (isSearchRow && tweaks.match !== 'line')"
+    :has-extra="hasExtra(true)"
     @set-selected="(selected: boolean) => emit('setSelected', selected)"
     @drag-start="(e: DragEvent) => emit('dragStart', e)"
     @drag-end="emit('dragEnd')"
   >
     <template #sender><HighlightedText :text="header" :term="markedWords" /></template>
 
-    <template #badges>
+    <template #badges="{ isHovered }">
       <!-- How many messages the thread holds — only worth saying once it holds more than one. -->
       <span
         v-if="messageCount > 1"
@@ -39,6 +40,49 @@
         </span>
       </Tooltip>
       <Badge v-if="mail.draft" size="sm" :label="__('Draft')" theme="red" />
+      <Badge
+        v-if="mail.snoozed_until"
+        size="sm"
+        theme="gray"
+        :label="formatDateTime(mail.snoozed_until, 'ddd, MMM D, h:mm A')"
+      />
+      <!-- Back, and held near the top until the reader removes it: the word why, and the × that
+           takes it off. Gone at rest so it holds no width, only the sender giving way; a screen
+           with no hover keeps it. In the label because Badge's suffix box keeps its width when
+           empty. The before: box is the tap target, so a tap doesn't land on the row: the button is
+           left unpositioned so the sender's line can't clip it, and its flex centres it. -->
+      <Badge v-if="mail.returned" size="sm" theme="amber">
+        {{ returnedLabel }}
+        <Tooltip :text="__('Remove from Reminders')">
+          <button
+            type="button"
+            class="flex shrink-0 cursor-pointer items-center justify-center before:absolute before:size-8"
+            :class="{ 'hidden [@media(hover:none)]:flex': !isHovered }"
+            :aria-label="__('Remove from Reminders')"
+            @click.stop.prevent="clear"
+          >
+            <X class="size-3" />
+          </button>
+        </Tooltip>
+      </Badge>
+      <!-- Sent mail waiting on an answer: the time it comes back if none arrives. -->
+      <Tooltip
+        v-if="mail.remind_at"
+        :text="
+          __('Reminder on {0} if nobody replies', [
+            formatDateTime(mail.remind_at, 'ddd, MMM D, h:mm A'),
+          ])
+        "
+      >
+        <BellRing
+          class="text-ink-gray-5 size-3.5 shrink-0"
+          :aria-label="
+            __('Reminder on {0} if nobody replies', [
+              formatDateTime(mail.remind_at, 'ddd, MMM D, h:mm A'),
+            ])
+          "
+        />
+      </Tooltip>
     </template>
 
     <template #subject>
@@ -64,6 +108,8 @@
         :threads="[mail]"
         :drafts
         :unarchive
+        :pinnable
+        @set-pinned="(pinned: boolean) => emit('setPinned', pinned)"
         @set-seen="(seen: boolean) => emit('setSeen', seen)"
         @archive="emit('archiveThread')"
         @unarchive="emit('unarchiveThread')"
@@ -101,14 +147,10 @@
             : __('Also in {0} earlier messages', [String(earlierMatches)])
         }}
       </p>
+      <!-- One family of chips, an even gap apart: files outlined, folders on the muted surface. -->
       <div
-        v-if="
-          attachments.length ||
-          mail.draft ||
-          ['starred', 'search'].includes(mailbox) ||
-          (isFullWidth && mailboxesToShow.length)
-        "
-        class="flex items-center"
+        v-if="hasExtra(isFullWidth)"
+        class="flex items-center gap-1.5"
         :class="{ 'min-w-fit': isFullWidth }"
       >
         <Tooltip
@@ -121,15 +163,15 @@
             :blob-i-d="attachment.blob_id"
             :type="attachment.type"
             :account="accountId"
-            class="mr-2"
-            :class="isFullWidth ? 'max-w-32' : 'max-w-44 sm:max-w-20'"
+            compact
+            :class="isFullWidth ? 'max-w-36' : 'max-w-44 sm:max-w-20'"
             @click.stop.prevent="openAttachment(idx)"
           />
         </Tooltip>
         <Popover v-if="attachments.length > 2" side="bottom">
           <template #trigger>
             <Tooltip :text="__('View remaining attachments')">
-              <AttachmentCapsule :file-name="`+${String(attachments.length - 2)}`" class="mr-2" />
+              <AttachmentCapsule :file-name="`+${String(attachments.length - 2)}`" compact />
             </Tooltip>
           </template>
           <template #default>
@@ -168,32 +210,39 @@
           </template>
         </Popover>
         <template v-if="isFullWidth && mailboxesToShow.length">
-          <div
+          <Badge
             v-for="m in mailboxesToShow"
             :key="m.mailbox_id"
-            class="bg-surface-gray-3 inline-flex rounded-4 p-1.5 text-xs"
-          >
-            {{ m.mailbox_name }}
-          </div>
-          <div v-if="moreMailboxes" class="bg-surface-gray-3 inline-flex rounded-4 p-1.5 text-xs">
-            +{{ moreMailboxes }}
-          </div>
+            size="lg"
+            variant="subtle"
+            :class="CHIP_CLASS"
+            :label="m.mailbox_name"
+          />
+          <Badge
+            v-if="moreMailboxes"
+            size="lg"
+            variant="subtle"
+            :class="CHIP_CLASS"
+            :label="`+${moreMailboxes}`"
+          />
         </template>
       </div>
       <template v-if="!isFullWidth && mailboxesToShow.length">
-        <div
+        <Badge
           v-for="m in mailboxesToShow"
           :key="m.mailbox_id"
-          class="bg-surface-gray-3 mr-1.5 inline-flex rounded-4 p-1.5 text-xs"
-        >
-          {{ m.mailbox_name }}
-        </div>
-        <div
+          size="lg"
+          variant="subtle"
+          :class="['mr-1.5', CHIP_CLASS]"
+          :label="m.mailbox_name"
+        />
+        <Badge
           v-if="moreMailboxes"
-          class="bg-surface-gray-3 mr-1.5 inline-flex rounded-4 p-1.5 text-xs"
-        >
-          +{{ moreMailboxes }}
-        </div>
+          size="lg"
+          variant="subtle"
+          :class="['mr-1.5', CHIP_CLASS]"
+          :label="`+${moreMailboxes}`"
+        />
       </template>
     </template>
 
@@ -208,15 +257,16 @@
 
 <script setup lang="ts">
 import { Badge, Popover, Tooltip } from 'frappe-ui'
-import { Download, Loader, UserRoundSearch } from 'lucide-vue-next'
+import { BellRing, Download, Loader, UserRoundSearch, X } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
-import { useRoute, type RouteParamsRaw } from 'vue-router'
+import { useRoute } from 'vue-router'
 
 import AttachmentCapsule from '@/apps/mail/components/AttachmentCapsule.vue'
 import AttachmentViewer from '@/apps/mail/components/AttachmentViewer.vue'
 import MailRow from '@/apps/mail/components/MailRow.vue'
 import MailRowActions from '@/apps/mail/components/MailRowActions.vue'
 import SearchMatch from '@/apps/mail/components/SearchMatch.vue'
+import { useClearReturned } from '@/apps/mail/composables/useClearReturned'
 import { useScreener } from '@/apps/mail/composables/useScreener'
 import { useSearchTweaks } from '@/apps/mail/composables/useSearchTweaks'
 import { getAttachmentUrl } from '@/apps/mail/resources'
@@ -224,6 +274,7 @@ import { userStore } from '@/apps/mail/stores/user'
 import type { Attachment, Thread } from '@/apps/mail/types'
 import { downloadUrlAsFile, getFileIcon, getFormattedRecipients } from '@/apps/mail/utils'
 import { useOwnEmails } from '@/apps/mail/utils/composables'
+import { formatDateTime } from '@/apps/mail/utils/datetime'
 import { mailCopies } from '@/apps/mail/utils/mailCopies'
 import {
   threadAvatarLabel,
@@ -232,7 +283,8 @@ import {
 } from '@/apps/mail/utils/participants'
 import { isReceived, receivedFolders, searchFolders } from '@/apps/mail/utils/receivedMail'
 import { searchWords } from '@/apps/mail/utils/searchFilters'
-import { mailboxParam, UNIFIED_THREAD_ROUTE } from '@/apps/mail/utils/unifiedFolders'
+import { returnedReason } from '@/apps/mail/utils/snoozeTimes'
+import { threadLink } from '@/apps/mail/utils/unifiedFolders'
 import HighlightedText from '@/components/HighlightedText.vue'
 
 const {
@@ -251,6 +303,7 @@ const {
   outgoing,
   screened = false,
   stacked = false,
+  pinnable = false,
 } = defineProps<{
   mailbox: string
   mail: Thread
@@ -286,6 +339,8 @@ const {
   screened?: boolean
   // Forwarded to MailRow — see there.
   stacked?: boolean
+  // The list's folder takes pins (see MailRowActions).
+  pinnable?: boolean
 }>()
 
 const emit = defineEmits([
@@ -295,6 +350,7 @@ const emit = defineEmits([
   'trashThread',
   'deleteThread',
   'setFlagged',
+  'setPinned',
   'setSelected',
   'dragStart',
   'dragEnd',
@@ -311,17 +367,23 @@ const unknownSendersLabel = computed(() =>
 )
 const ownEmails = useOwnEmails()
 
+// Why it is back near the top: your own mail nobody answered, or a snooze come due.
+const returnedLabel = computed(() => returnedReason(!!mail.no_reply))
+const { clearReturned } = useClearReturned()
+const clear = () => clearReturned([mail], accountId || String(route.params.accountId))
+
 // An account's thread route names its folder by slug (see utils/unifiedFolders); the merged
 // folder's needs none, since its own folder param already says which one.
-const to = computed(() => {
-  const params: RouteParamsRaw = {
+const to = computed(() =>
+  threadLink({
+    routeName: threadRouteName,
     accountId: accountId || route.params.accountId,
-    threadID: mail.thread_id,
-  }
-  if (threadRouteName !== UNIFIED_THREAD_ROUTE)
-    params.mailbox = mailboxParam(mailbox, mailboxes.data)
-  return { name: threadRouteName, params, query: route.query }
-})
+    mailbox,
+    mailboxes: mailboxes.data,
+    threadId: mail.thread_id,
+    query: route.query,
+  }),
+)
 
 // Where else the conversation is filed. A row stands for one of its messages, which in Sent is your
 // reply — never archived or filed away — so there and in Starred it says where the mail you received
@@ -343,6 +405,12 @@ const allMailboxesToShow = computed(() => {
 })
 // Two at most, the rest counted.
 const mailboxesToShow = computed(() => allMailboxesToShow.value.slice(0, 2))
+// Chips to show under the preview: attachments, and the folders the conversation is filed in (the
+// wide layout only). Nothing else goes there, so a row without either keeps its single line.
+const hasExtra = (isFullWidth: boolean) =>
+  !!attachments.value.length || (isFullWidth && !!mailboxesToShow.value.length)
+// Badge has no 28px size, and a folder chip matches the height of the attachment capsule beside it.
+const CHIP_CLASS = '!h-7 !gap-1.5 !px-2.5'
 const moreMailboxes = computed(() => allMailboxesToShow.value.length - mailboxesToShow.value.length)
 
 const attachments = computed(

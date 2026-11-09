@@ -229,12 +229,13 @@ test("a document surface places Share; a new share link is created from the dial
 	await page.getByRole("menuitem", { name: "Create share link" }).click();
 	const create = page.getByRole("dialog", { name: "Create share link" });
 	await create.getByRole("button", { name: "Create link" }).click();
-	await expect(create.getByRole("status")).toHaveText("Your share link is ready.");
+	const created = page.getByRole("dialog", { name: "Link created" });
+	await expect(created.getByRole("status")).toHaveText("Your share link is ready.");
 	const links = (await grants(deck.name)).filter((grant) => grant.principal.startsWith("$LINK:"));
 	expect(links).toHaveLength(1);
 	expect(links[0]!.role).toBe(10);
-	await create.getByRole("button", { name: "Done" }).click();
-	await expect(create).toBeHidden();
+	await created.getByRole("button", { name: "Close" }).click();
+	await expect(created).toBeHidden();
 
 	await expect(accessButton(rowFor(dialog, "Anyone with this link"))).toHaveAccessibleName(/: View$/);
 	// The footer copies the item's own address, and Done closes the dialog.

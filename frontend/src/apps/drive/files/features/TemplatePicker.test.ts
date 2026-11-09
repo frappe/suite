@@ -156,7 +156,7 @@ describe('Template picker', () => {
     expect(open.value).toBe(true)
     expect(option.getAttribute('aria-selected')).toBe('true')
     expect(document.querySelector<HTMLInputElement>('[role="dialog"] input')?.value).toBe(
-      'Meeting notes',
+      'Untitled document',
     )
     expect(document.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(false)
     expect(created).not.toHaveBeenCalled()

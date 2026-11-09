@@ -66,6 +66,8 @@ class Reaction(TypedDict):
 class Message(Copy):
     message_id: str | None
     in_reply_to: str | None
+    # The folders it is pinned in, by id (see suite.mail.pins).
+    pinned_in: NotRequired[list[str]]
     # What this mail reacts with, when it is a reaction left standing as a message because its target
     # isn't here. A reaction whose target is here shows under the target's `reactions` instead.
     reacts_with: list[str]
@@ -100,6 +102,19 @@ class Thread(Copy, AccountTag):
     reaction_only: NotRequired[Flag]
     # The senders of this thread's unscreened mail, in the order they first wrote.
     unscreened_senders: NotRequired[list[str]]
+    # Held at the top of the folder it is listed from, which takes pins (see suite.mail.pins).
+    pinned: NotRequired[Flag]
+    # Back from waiting, and held near the top of the Inbox until removed (see suite.mail.reminders).
+    returned: NotRequired[Flag]
+    # Of the returned: your own mail nobody answered, back to chase.
+    no_reply: NotRequired[Flag]
+    # On the Snoozed list: when it comes back, a UTC `...Z` time.
+    snoozed_until: NotRequired[str | None]
+    # Of the returned, while its snooze is kept: when it was snoozed and came back, UTC `...Z` times.
+    snoozed_at: NotRequired[str | None]
+    returned_at: NotRequired[str | None]
+    # On the Sent list: when you are reminded if nobody answers, a UTC `...Z` time.
+    remind_at: NotRequired[str | None]
     subject: str | None
     preview: str
     recipients: list[Recipient]
