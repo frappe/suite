@@ -65,10 +65,18 @@ const order = computed<Step[]>(() => {
 const index = computed(() => order.value.indexOf(step.value))
 const centred = computed(() => ['loading', 'invitation', 'expired', 'signin'].includes(step.value))
 
-// Where to start, once the session (and an invitation) has loaded.
+// Where to start, once the session (and an invitation) has loaded. Vue Router keeps this
+// view when the address moves between /join/<key> and /join, so a new key starts over.
+let startedFor = requestKey
 watch(
-  [() => session.status.value, () => invitationQuery.status],
+  [() => requestKey, () => session.status.value, () => invitationQuery.status],
   () => {
+    if (requestKey !== startedFor) {
+      startedFor = requestKey
+      step.value = 'loading'
+      arrival.value = 'signed-in'
+      signin.email = ''
+    }
     if (step.value !== 'loading') return
     if (session.status.value === 'loading') return
     if (session.status.value === 'authenticated') {
