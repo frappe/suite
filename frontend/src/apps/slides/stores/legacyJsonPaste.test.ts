@@ -9,6 +9,7 @@ vi.mock('@/apps/slides/stores/presentation', () => ({
   presentationId: ref('p1'),
   presentationDoc: ref(null),
   contextFor: vi.fn(),
+  inReadonlyMode: ref(false),
 }))
 vi.mock('@/apps/slides/stores/slide', () => ({
   slideIndex: ref(0),
