@@ -143,7 +143,8 @@ function failedStage(type: string): SetupStage | undefined {
   if (type === 'AccountActivationFailed') return 'account'
   return undefined
 }
-const setupState = ref<'idle' | 'working' | 'failed' | 'ready'>('idle')
+/** `signin-failed`: the account exists, but signing in to it did not work, so only that is retried. */
+const setupState = ref<'idle' | 'working' | 'failed' | 'ready' | 'signin-failed'>('idle')
 const rows = reactive<Record<SetupStage, RowState>>({
   drive: 'waiting',
   mailbox: 'waiting',
@@ -153,10 +154,11 @@ const accountError = ref('')
 const createAccount = useMutation(api.mail.public.createAccount, { silent: true })
 // Signing in refetches queries, and the used invitation then reads as expired, so stop once set up.
 const accountOptions = useQuery(api.mail.public.accountOptions, () =>
-  step.value === 'account' && setupState.value !== 'ready' && requestKey
+  step.value === 'account' && ['idle', 'working', 'failed'].includes(setupState.value) && requestKey
     ? { request_key: requestKey }
     : false,
 )
+const retrying = computed(() => ['failed', 'signin-failed'].includes(setupState.value))
 const accountReady = computed(() => !!account.fullName.trim() && account.password.length >= 8)
 let pacing: ReturnType<typeof setTimeout> | undefined
 onBeforeUnmount(() => clearTimeout(pacing))
@@ -212,11 +214,18 @@ async function submitAccount(): Promise<void> {
   }
   clearTimeout(pacing)
   for (const stage of STAGES) rows[stage] = 'done'
+  await signInToAccount()
+}
+
+async function signInToAccount(): Promise<void> {
+  accountError.value = ''
   setupState.value = 'ready'
   try {
-    await session.login(invitation.value.account ?? '', account.password)
+    await session.login(invitation.value?.account ?? '', account.password)
   } catch (error) {
+    // The invitation is used now, so creating the account again would fail: retry the sign-in only.
     accountError.value = error instanceof Error ? error.message : String(error)
+    setupState.value = 'signin-failed'
     return
   }
   account.password = ''
@@ -400,6 +409,10 @@ const copy = computed(() => {
           ]),
         },
         ready: { title: __('Your account is ready'), subtitle: __('One moment.') },
+        'signin-failed': {
+          title: __('Your account is ready'),
+          subtitle: __('Sign in to continue.'),
+        },
       }[setupState.value]
     case 'password':
       return {
@@ -740,11 +753,11 @@ const copy = computed(() => {
             v-if="step === 'account'"
             data-primary
             variant="solid"
-            :label="setupState === 'failed' ? __('Try again') : __('Join {0}', [workspaceName])"
-            :icon-right="setupState === 'failed' ? undefined : 'lucide-chevron-right'"
+            :label="retrying ? __('Try again') : __('Join {0}', [workspaceName])"
+            :icon-right="retrying ? undefined : 'lucide-chevron-right'"
             :loading="setupState === 'working' || setupState === 'ready'"
             :disabled="!accountReady"
-            @click="submitAccount"
+            @click="setupState === 'signin-failed' ? signInToAccount() : submitAccount()"
           />
           <Button
             v-else-if="step === 'password'"
