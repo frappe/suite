@@ -13,8 +13,10 @@ function model(y = 0, x = 0): ScrollModel {
 }
 
 // jsdom has no PointerEvent. The handlers read only the fields MouseEvent has.
-const pointer = (type: string, init: MouseEventInit = {}) =>
-  new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, ...init })
+const pointer = (type: string, init: MouseEventInit = {}, pointerType = 'mouse') =>
+  Object.assign(new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, ...init }), {
+    pointerType,
+  })
 
 describe('overlay scrollbars', () => {
   let host: HTMLDivElement
@@ -58,6 +60,15 @@ describe('overlay scrollbars', () => {
 
   it('does not appear on plain mouse movement over the grid', () => {
     host.dispatchEvent(pointer('pointermove'))
+    expect(isHidden()).toBe(true)
+  })
+
+  it('wakes for a finger on the grid, long enough to reach the thumb', () => {
+    host.dispatchEvent(pointer('pointerdown', {}, 'touch'))
+    expect(isHidden()).toBe(false)
+    vi.advanceTimersByTime(1300)
+    expect(isHidden()).toBe(false)
+    vi.advanceTimersByTime(200)
     expect(isHidden()).toBe(true)
   })
 

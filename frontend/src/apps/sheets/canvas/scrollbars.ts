@@ -15,8 +15,8 @@
 //
 // The bars auto-hide: they fade in on scroll, stay while hovered/dragged, and
 // fade back out soon after scrolling stops. Moving the mouse over the grid does
-// not wake them. When hidden they drop pointer-events so the cells beneath the
-// gutter stay clickable.
+// not wake them, but a finger or pen on the grid does. When hidden they drop
+// pointer-events so the cells beneath the gutter stay clickable.
 
 import { SCROLLBAR_THICK as THICK } from './constants.js'
 import type { ScrollModel } from './viewport.js'
@@ -47,6 +47,9 @@ const MIN_THUMB = 24 // floor on thumb length so it stays grabbable near the end
 // ms after scrolling stops before the fade starts. With the 150ms fade in
 // SheetEditor.global.css, the bars are gone within 800ms.
 const HIDE_DELAY = 600
+// ms the bars stay after a finger or pen touches the grid: long enough to reach
+// the thumb, the only way to scroll by touch.
+const TOUCH_HIDE_DELAY = 1400
 
 export function createScrollbars(
   host: HTMLElement,
@@ -96,20 +99,25 @@ export function createScrollbars(
     if (_hideTimer) clearTimeout(_hideTimer)
     _hideTimer = null
   }
-  function reveal(): void {
+  function reveal(delay = HIDE_DELAY): void {
     for (const p of parts) p.classList.remove('sn-sb--hidden')
     clearHideTimer()
     if (held.hover || held.drag) return
     _hideTimer = setTimeout(() => {
       _hideTimer = null
       for (const p of parts) p.classList.add('sn-sb--hidden')
-    }, HIDE_DELAY)
+    }, delay)
   }
   function hold(what: keyof typeof held, on: boolean): void {
     held[what] = on
     reveal()
   }
 
+  const onHostPointer = (e: PointerEvent): void => {
+    if (e.pointerType === 'touch' || e.pointerType === 'pen') reveal(TOUCH_HIDE_DELAY)
+  }
+  host.addEventListener('pointerdown', onHostPointer, { passive: true })
+  host.addEventListener('pointermove', onHostPointer, { passive: true })
   for (const t of [vTrack, hTrack]) {
     t.addEventListener('pointerenter', () => hold('hover', true))
     t.addEventListener('pointerleave', () => hold('hover', false))
@@ -223,6 +231,8 @@ export function createScrollbars(
 
   function destroy(): void {
     clearHideTimer()
+    host.removeEventListener('pointerdown', onHostPointer)
+    host.removeEventListener('pointermove', onHostPointer)
     host.style.removeProperty('--sn-sb-thick')
     vTrack.remove()
     hTrack.remove()
