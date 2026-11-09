@@ -240,20 +240,25 @@ export class CameraFramingTracker {
   }
 }
 
+declare global {
+  var FaceDetection: typeof import('@mediapipe/face_detection').FaceDetection | undefined
+}
+
 async function createFaceDetector(): Promise<FaceDetectorLike> {
-  const faceDetectionModule =
-    (await import('@mediapipe/face_detection')) as typeof import('@mediapipe/face_detection') & {
-      default?: { FaceDetection?: typeof FaceDetection }
-    }
+  // SAFETY: The pinned MediaPipe UMD bundle exposes the declared constructor through
+  // either its named export or Vite's CommonJS default-export interop.
+  const faceDetectionModule: typeof import('@mediapipe/face_detection') & {
+    default?: { FaceDetection?: typeof FaceDetection }
+  } = await import('@mediapipe/face_detection')
   let namedConstructor: typeof FaceDetection | undefined
   try {
-    namedConstructor = Reflect.get(faceDetectionModule, 'FaceDetection') as
-      typeof FaceDetection | undefined
+    namedConstructor = faceDetectionModule.FaceDetection
   } catch {}
+  const globalConstructor = globalThis.FaceDetection
+  // SAFETY: MediaPipe's pinned UMD bundle also exports this same constructor globally
+  // in browsers whose module wrapper does not expose it through import().
   const FaceDetectionConstructor =
-    faceDetectionModule.default?.FaceDetection ??
-    namedConstructor ??
-    (Reflect.get(globalThis, 'FaceDetection') as typeof FaceDetection | undefined)
+    faceDetectionModule.default?.FaceDetection ?? namedConstructor ?? globalConstructor
   if (!FaceDetectionConstructor) {
     throw new Error('FaceDetection constructor not found')
   }
@@ -275,7 +280,7 @@ export class CameraFramingProcessor {
   private detector: FaceDetectorLike | null = null
   private detectorPromise: Promise<FaceDetectorLike> | null = null
   private detectionPromise: Promise<void> | null = null
-  private detectionError: unknown = null
+  private detectionError: unknown
   private detectionGeneration = 0
   private detections: Detection[] = []
   private nextDetectionAt = 0

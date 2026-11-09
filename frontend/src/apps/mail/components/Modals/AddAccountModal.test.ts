@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, ref } from 'vue'
 
 import { createApiClient } from '@/platform/server-state'
+import { requireTestElement } from '@/platform/testing/dom'
 import { createTransport } from '@/platform/transport'
 
 import AddAccountModal from './AddAccountModal.vue'
@@ -22,9 +23,12 @@ vi.mock('frappe-ui', () => {
                 'aria-label': props.label,
                 value: props.modelValue,
                 onChange: (event: Event) =>
-                  emit('update:modelValue', (event.target as HTMLSelectElement).value),
+                  emit(
+                    'update:modelValue',
+                    requireTestElement(event.target, HTMLSelectElement).value,
+                  ),
               },
-              (props.options as { label: string; value: string }[]).map((option) =>
+              fromPartial<{ label: string; value: string }[]>(props.options).map((option) =>
                 h('option', { value: option.value }, option.label),
               ),
             )
@@ -32,7 +36,7 @@ vi.mock('frappe-ui', () => {
               'aria-label': props.label ?? props.placeholder,
               value: props.modelValue,
               onInput: (event: Event) =>
-                emit('update:modelValue', (event.target as HTMLInputElement).value),
+                emit('update:modelValue', requireTestElement(event.target, HTMLInputElement).value),
             }),
   })
   const toggle = defineComponent({
@@ -46,7 +50,7 @@ vi.mock('frappe-ui', () => {
           'aria-label': props.label,
           checked: props.modelValue,
           onChange: (event: Event) =>
-            emit('update:modelValue', (event.target as HTMLInputElement).checked),
+            emit('update:modelValue', requireTestElement(event.target, HTMLInputElement).checked),
         }),
   })
   const empty = defineComponent({ setup: () => () => null })
@@ -67,8 +71,8 @@ vi.mock('frappe-ui', () => {
           props.open
             ? h('div', { role: 'dialog' }, [
                 slots.default?.(),
-                ...(props.actions as { label: string; onClick: () => void }[]).map((action) =>
-                  h('button', { onClick: action.onClick }, action.label),
+                ...fromPartial<{ label: string; onClick: () => void }[]>(props.actions).map(
+                  (action) => h('button', { onClick: action.onClick }, action.label),
                 ),
               ])
             : null,
@@ -98,13 +102,17 @@ vi.mock('@/apps/mail/composables/useAccountOptions', () => ({
   useAccountOptions: () => ({ localeOptions: [], timeZoneOptions: [] }),
 }))
 
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const engine = vi.hoisted(() => ({
-  current: undefined as ReturnType<typeof createApiClient> | undefined,
+  current: fromPartial<ReturnType<typeof createApiClient> | undefined>(undefined),
 }))
 vi.mock('@/api', async (original) => ({
   ...(await original<typeof import('@/api')>()),
-  useMutation: ((...args: Parameters<typeof import('@/api').useMutation>) =>
-    engine.current!.useMutation(...args)) as typeof import('@/api').useMutation,
+  useMutation: fromPartial<typeof import('@/api').useMutation>(
+    (...args: Parameters<typeof import('@/api').useMutation>) =>
+      engine.current!.useMutation(...args),
+  ),
   useQuery: () => ({ data: { items: [] }, refetch: async () => {} }),
 }))
 
@@ -118,7 +126,7 @@ beforeEach(() => {
   reloads.mockReset()
   engine.current = createApiClient(
     { mail: () => import('@/apps/mail/client/policy').then((module) => module.registration) },
-    { transport: createTransport({ fetch: fetcher }), persistence: false, feedback },
+    { transport: createTransport({ fetch: fetcher }), feedback },
   )
 })
 afterEach(() => {
@@ -166,7 +174,7 @@ function click(root: HTMLElement, label: string) {
 }
 
 const sentBody = () =>
-  JSON.parse(String(fetcher.mock.calls[0]![1]!.body)) as Record<string, unknown>
+  fromPartial<Record<string, unknown>>(JSON.parse(String(fetcher.mock.calls[0]![1]!.body)))
 
 describe('Add user', () => {
   it('sends an invitation for an admin with the fields the server takes', async () => {

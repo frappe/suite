@@ -9,8 +9,13 @@ export type DmarcSummary = OutputOf<typeof api.mail.admin.dmarc.summary>
 export type DmarcPolicy = OutputOf<typeof api.mail.admin.dmarc.get>['policy']
 export type DmarcRecord = OutputOf<typeof api.mail.admin.dmarc.get>['records'][number]
 
+interface DmarcBadge {
+  label: string
+  theme: BadgeTheme
+}
+
 // An aligned DKIM or SPF check as the reporter evaluated it.
-export const resultBadge = (result?: string | null): { label: string; theme: BadgeTheme } => {
+export const resultBadge = (result?: string | null): DmarcBadge => {
   const value = (result || '').toLowerCase()
   if (value === 'pass') return { label: __('Pass'), theme: 'green' }
   if (value === 'fail') return { label: __('Fail'), theme: 'red' }
@@ -19,14 +24,12 @@ export const resultBadge = (result?: string | null): { label: string; theme: Bad
 
 // What the receiver did with the messages once the check was evaluated: delivered is the good
 // outcome, so it reads green; quarantined and rejected escalate through orange to red.
-export const dispositionBadge = (
-  disposition?: string | null,
-): { label: string; theme: BadgeTheme } => {
+export const dispositionBadge = (disposition?: string | null): DmarcBadge => {
   const value = (disposition || '').toLowerCase()
   if (value === 'reject') return { label: __('Rejected'), theme: 'red' }
   if (value === 'quarantine') return { label: __('Quarantined'), theme: 'amber' }
   // Some reporters still write the pre-standard "pass" for a message they delivered.
   if (value === 'none' || value === 'pass' || !value)
     return { label: __('Delivered'), theme: 'green' }
-  return { label: disposition as string, theme: 'gray' }
+  return { label: disposition || __('None'), theme: 'gray' }
 }

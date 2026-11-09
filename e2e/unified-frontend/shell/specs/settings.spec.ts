@@ -1,4 +1,4 @@
-import { type Locator, type Page, expect, test } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { failRequest, MOBILE_VIEWPORT, patchAccount } from "../../helpers/shell";
 
@@ -10,7 +10,7 @@ import { failRequest, MOBILE_VIEWPORT, patchAccount } from "../../helpers/shell"
 
 const FIRST_TABS = [
 	{ heading: "Account", tab: "Profile" },
-	{ heading: "Drive", tab: "Statistics" },
+	{ heading: "Drive", tab: "Storage" },
 	{ heading: "Mail", tab: "Credentials" },
 	{ heading: "Calendar", tab: "Calendars" },
 ];
@@ -76,12 +76,17 @@ test.describe("desktop", () => {
 		const settings = await openSettingsFromRail(page);
 		await expect(settings.getByRole("tabpanel").getByRole("heading", { name: "Profile" })).toBeVisible();
 
-		for (const body of ["PreferencesSettings.vue", "StatisticsSettings.vue", "CredentialsSettings.vue", "CalendarsSettings.vue"]) {
+		for (const body of [
+			"PreferencesSettings.vue",
+			"StatisticsSettings.vue",
+			"CredentialsSettings.vue",
+			"CalendarsSettings.vue",
+		]) {
 			expect(served.has(body), `${body} before its click`).toBe(false);
 		}
 
-		await settings.getByRole("tab", { name: "Statistics" }).click();
-		await expect(settings.getByRole("tabpanel").getByRole("heading", { name: "Statistics" })).toBeVisible();
+		await settings.getByRole("tab", { name: "Storage" }).click();
+		await expect(settings.getByRole("tabpanel").getByRole("heading", { name: "Storage" })).toBeVisible();
 		expect(served.has("StatisticsSettings.vue")).toBe(true);
 		expect(served.has("PreferencesSettings.vue")).toBe(false);
 	});
@@ -127,6 +132,7 @@ async function holdUsage(page: Page, breakdown: Record<string, unknown>) {
 		const url = new URL(route.request().url());
 		expect(url.searchParams.get("expand")).toBe("breakdown");
 		const response = await route.fetch();
+		// SAFETY: the Suite-owned settings endpoint returns the data projection whose saved preferences this journey checks.
 		const body = (await response.json()) as { data: Record<string, unknown> };
 		expect(body.data).toHaveProperty("by_type");
 		expect(body.data).toHaveProperty("largest");
@@ -140,14 +146,15 @@ async function holdUsage(page: Page, breakdown: Record<string, unknown>) {
 	return release;
 }
 
+// Sizes are whole KB in base 1024, as Drive counts them.
 const FILLED = {
 	by_type: [
-		{ type: "PDF", bytes: 900_000 },
-		{ type: "Image", bytes: 500_000 },
+		{ type: "PDF", bytes: 900 * 1024 },
+		{ type: "Image", bytes: 500 * 1024 },
 	],
 	largest: [
-		{ node: "n1", title: "report.pdf", size: 900_000, mime: "application/pdf", kind: "file", type: "PDF" },
-		{ node: "n2", title: "photo.png", size: 500_000, mime: "image/png", kind: "file", type: "Image" },
+		{ node: "n1", title: "report.pdf", size: 900 * 1024, mime: "application/pdf", kind: "file", type: "PDF" },
+		{ node: "n2", title: "photo.png", size: 500 * 1024, mime: "image/png", kind: "file", type: "Image" },
 	],
 };
 
@@ -159,7 +166,7 @@ for (const phone of [false, true]) {
 			await page.goto("/home");
 			if (!phone) {
 				const settings = await openSettingsFromRail(page);
-				await settings.getByRole("tab", { name: "Statistics" }).click();
+				await settings.getByRole("tab", { name: "Storage" }).click();
 				return settings.getByRole("tabpanel");
 			}
 			await page.locator("[data-slot='mobile-nav-item']").filter({ hasText: "Account" }).click();
@@ -167,9 +174,9 @@ for (const phone of [false, true]) {
 			const settings = page.getByRole("dialog", { name: "Settings" });
 			await settings
 				.getByRole("region", { name: "Drive", exact: true })
-				.getByRole("button", { name: "Statistics", exact: true })
+				.getByRole("button", { name: "Storage", exact: true })
 				.click();
-			return settings.getByRole("region", { name: "Statistics", exact: true });
+			return settings.getByRole("region", { name: "Storage", exact: true });
 		}
 
 		async function headingTops(panel: Locator) {

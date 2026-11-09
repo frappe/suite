@@ -141,7 +141,7 @@ function unreadable(row) {
 }
 
 function finalOutcomeDisagreement(finalOutcome, result, job) {
-  const parts = [job.cp, ...job.rows, job.heal].filter(Boolean).map(decodeBase64)
+  const parts = [job.cp, ...job.rows, job.heal].flatMap((bytes) => bytes ? [decodeBase64(bytes)] : [])
   if (finalOutcome === 'compacted') {
     const expected = load(parts)
     const compacted = load([decodeBase64(result.cp)])

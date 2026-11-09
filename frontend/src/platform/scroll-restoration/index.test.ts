@@ -4,7 +4,11 @@ import { createRouter, createWebHistory, type Router } from 'vue-router'
 
 import { installScrollRestoration, useRestoredScroll } from './index'
 
-const shell = vi.hoisted(() => ({ scroller: null as null | { value: HTMLElement | null } }))
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
+const shell = vi.hoisted(() => ({
+  scroller: fromPartial<null | { value: HTMLElement | null }>(null),
+}))
 vi.mock('frappe-ui', async () => {
   const { ref } = await import('vue')
   return { shellScrollContainer: (shell.scroller = ref<HTMLElement | null>(null)) }

@@ -2,7 +2,7 @@
 
 import re
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
@@ -119,7 +119,8 @@ class Conversion[Old: OldBody, Checked: CheckedBody]:
     the node's rows and the converter's input `legacy`, or None once it is gone; `read_fingerprint(node)` answers that `fingerprint` from the row
     alone, with no access check; `check(node, old, converted)` refuses with ConversionRefused
     before anything writes, or answers the copy's `html` and what it `dropped`; `fix_up(node, old, checked)`
-    writes the app's own rows in the conversion's transaction."""
+    writes the app's own rows in the conversion's transaction; `excluded` names the row values of documents
+    that never convert, so they aren't waiting."""
 
     build: Path
     version: str
@@ -127,6 +128,7 @@ class Conversion[Old: OldBody, Checked: CheckedBody]:
     read_fingerprint: Callable[[str], str]
     check: Callable[[str, Old, Converted], Checked]
     fix_up: Callable[[str, Old, Checked], None]
+    excluded: Mapping[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

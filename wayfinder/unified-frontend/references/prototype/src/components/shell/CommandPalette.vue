@@ -79,7 +79,7 @@ const GROUPS: { label: string; items: PaletteItem[] }[] = [
       icon: event.meet ? 'lucide-video' : 'lucide-calendar',
       meta: `${event.day}, ${event.time.split(' – ')[0]}`,
       path: event.meet ? meetTo(event.meet) : undefined,
-      area: event.meet ? undefined : ('calendar' as AreaId),
+      area: event.meet ? undefined : ('calendar' satisfies AreaId),
     })),
   },
   {

@@ -1,14 +1,18 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, reactive } from 'vue'
 
+import { requireTestElement } from '@/platform/testing/dom'
+
 import Account from './Account.vue'
+
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
 
 const state = vi.hoisted(() => ({
   provider: true,
   inputs: new Map<string, () => unknown>(),
   regional: {
     data: { locale: 'en-US', time_zone: 'UTC', locales: [], time_zones: [] },
-    error: null as Error | null,
+    error: fromPartial<Error | null>(null),
   },
   save: vi.fn(),
   toast: vi.fn(),
@@ -35,13 +39,13 @@ vi.mock('@/api', async () => {
     },
     useMutation: (reference: { id: string }) => {
       const result = reactive({
-        error: null as Error | null,
+        error: fromPartial<Error | null>(null),
         isPending: false,
         run: async (input: unknown) => {
           try {
             await state.save(reference.id, input)
           } catch (error) {
-            result.error = error as Error
+            result.error = fromPartial<Error>(error)
             throw error
           }
         },
@@ -62,8 +66,8 @@ vi.mock('frappe-ui', () => ({
         h('input', {
           value: attrs.modelValue,
           onInput: (event: Event) =>
-            (attrs['onUpdate:modelValue'] as (value: string) => void)(
-              (event.target as HTMLInputElement).value,
+            fromPartial<(value: string) => void>(attrs['onUpdate:modelValue'])(
+              requireTestElement(event.target, HTMLInputElement).value,
             ),
         })
     },

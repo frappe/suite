@@ -9,10 +9,16 @@ export type NodeCreateCreateFolderOutputAccessShape = {
   can_manage?: boolean
 }
 
+export type NodeCreateCreateFolderOutputAudienceShape = {
+  kind: 'public' | 'organization' | 'link' | 'people'
+  people: number
+}
+
 export type NodeCreateCreateFolderOutputBreadcrumbShape = {
   name: string
   title: string
   kind: string
+  role: number
 }
 
 export type NodeCreateCreateFolderOutputPerson = {
@@ -44,7 +50,9 @@ export type NodeCreateCreateFolderOutput = {
   modified: string | null
   content_modified: string | null
   access?: NodeCreateCreateFolderOutputAccessShape
+  audience?: NodeCreateCreateFolderOutputAudienceShape
   breadcrumbs?: Array<NodeCreateCreateFolderOutputBreadcrumbShape>
+  contents_size?: number
   preview?: NodeCreateCreateFolderOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -79,10 +87,16 @@ export type NodeCreateCreateFileOutputAccessShape = {
   can_manage?: boolean
 }
 
+export type NodeCreateCreateFileOutputAudienceShape = {
+  kind: 'public' | 'organization' | 'link' | 'people'
+  people: number
+}
+
 export type NodeCreateCreateFileOutputBreadcrumbShape = {
   name: string
   title: string
   kind: string
+  role: number
 }
 
 export type NodeCreateCreateFileOutputPerson = {
@@ -122,7 +136,9 @@ export type NodeCreateCreateFileOutput = {
   modified: string | null
   content_modified: string | null
   access?: NodeCreateCreateFileOutputAccessShape
+  audience?: NodeCreateCreateFileOutputAudienceShape
   breadcrumbs?: Array<NodeCreateCreateFileOutputBreadcrumbShape>
+  contents_size?: number
   preview?: NodeCreateCreateFileOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -157,10 +173,16 @@ export type NodeCreateCreateLinkOutputAccessShape = {
   can_manage?: boolean
 }
 
+export type NodeCreateCreateLinkOutputAudienceShape = {
+  kind: 'public' | 'organization' | 'link' | 'people'
+  people: number
+}
+
 export type NodeCreateCreateLinkOutputBreadcrumbShape = {
   name: string
   title: string
   kind: string
+  role: number
 }
 
 export type NodeCreateCreateLinkOutputPerson = {
@@ -197,7 +219,9 @@ export type NodeCreateCreateLinkOutput = {
   modified: string | null
   content_modified: string | null
   access?: NodeCreateCreateLinkOutputAccessShape
+  audience?: NodeCreateCreateLinkOutputAudienceShape
   breadcrumbs?: Array<NodeCreateCreateLinkOutputBreadcrumbShape>
+  contents_size?: number
   preview?: NodeCreateCreateLinkOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -232,10 +256,16 @@ export type NodeCreateCreateDocumentOutputAccessShape = {
   can_manage?: boolean
 }
 
+export type NodeCreateCreateDocumentOutputAudienceShape = {
+  kind: 'public' | 'organization' | 'link' | 'people'
+  people: number
+}
+
 export type NodeCreateCreateDocumentOutputBreadcrumbShape = {
   name: string
   title: string
   kind: string
+  role: number
 }
 
 export type NodeCreateCreateDocumentOutputPerson = {
@@ -275,7 +305,9 @@ export type NodeCreateCreateDocumentOutput = {
   modified: string | null
   content_modified: string | null
   access?: NodeCreateCreateDocumentOutputAccessShape
+  audience?: NodeCreateCreateDocumentOutputAudienceShape
   breadcrumbs?: Array<NodeCreateCreateDocumentOutputBreadcrumbShape>
+  contents_size?: number
   preview?: NodeCreateCreateDocumentOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -371,7 +403,17 @@ export type NodeGetOutputAccessShape = {
   can_manage?: boolean
 }
 
-export type NodeGetOutputBreadcrumbShape = { name: string; title: string; kind: string }
+export type NodeGetOutputAudienceShape = {
+  kind: 'public' | 'organization' | 'link' | 'people'
+  people: number
+}
+
+export type NodeGetOutputBreadcrumbShape = {
+  name: string
+  title: string
+  kind: string
+  role: number
+}
 
 export type NodeGetOutputPerson = { id: string; full_name: string; user_image: string | null }
 
@@ -398,7 +440,9 @@ export type NodeGetOutput = {
   modified: string | null
   content_modified: string | null
   access?: NodeGetOutputAccessShape
+  audience?: NodeGetOutputAudienceShape
   breadcrumbs?: Array<NodeGetOutputBreadcrumbShape>
+  contents_size?: number
   preview?: NodeGetOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -429,7 +473,17 @@ export type NodePatchRenameOutputAccessShape = {
   can_manage?: boolean
 }
 
-export type NodePatchRenameOutputBreadcrumbShape = { name: string; title: string; kind: string }
+export type NodePatchRenameOutputAudienceShape = {
+  kind: 'public' | 'organization' | 'link' | 'people'
+  people: number
+}
+
+export type NodePatchRenameOutputBreadcrumbShape = {
+  name: string
+  title: string
+  kind: string
+  role: number
+}
 
 export type NodePatchRenameOutputPerson = {
   id: string
@@ -460,7 +514,9 @@ export type NodePatchRenameOutput = {
   modified: string | null
   content_modified: string | null
   access?: NodePatchRenameOutputAccessShape
+  audience?: NodePatchRenameOutputAudienceShape
   breadcrumbs?: Array<NodePatchRenameOutputBreadcrumbShape>
+  contents_size?: number
   preview?: NodePatchRenameOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -512,7 +568,17 @@ export type NodePatchMoveOutputAccessShape = {
   can_manage?: boolean
 }
 
-export type NodePatchMoveOutputBreadcrumbShape = { name: string; title: string; kind: string }
+export type NodePatchMoveOutputAudienceShape = {
+  kind: 'public' | 'organization' | 'link' | 'people'
+  people: number
+}
+
+export type NodePatchMoveOutputBreadcrumbShape = {
+  name: string
+  title: string
+  kind: string
+  role: number
+}
 
 export type NodePatchMoveOutputPerson = { id: string; full_name: string; user_image: string | null }
 
@@ -539,7 +605,9 @@ export type NodePatchMoveOutput = {
   modified: string | null
   content_modified: string | null
   access?: NodePatchMoveOutputAccessShape
+  audience?: NodePatchMoveOutputAudienceShape
   breadcrumbs?: Array<NodePatchMoveOutputBreadcrumbShape>
+  contents_size?: number
   preview?: NodePatchMoveOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -591,7 +659,17 @@ export type NodePatchTrashOutputAccessShape = {
   can_manage?: boolean
 }
 
-export type NodePatchTrashOutputBreadcrumbShape = { name: string; title: string; kind: string }
+export type NodePatchTrashOutputAudienceShape = {
+  kind: 'public' | 'organization' | 'link' | 'people'
+  people: number
+}
+
+export type NodePatchTrashOutputBreadcrumbShape = {
+  name: string
+  title: string
+  kind: string
+  role: number
+}
 
 export type NodePatchTrashOutputPerson = {
   id: string
@@ -622,7 +700,9 @@ export type NodePatchTrashOutput = {
   modified: string | null
   content_modified: string | null
   access?: NodePatchTrashOutputAccessShape
+  audience?: NodePatchTrashOutputAudienceShape
   breadcrumbs?: Array<NodePatchTrashOutputBreadcrumbShape>
+  contents_size?: number
   preview?: NodePatchTrashOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -674,7 +754,17 @@ export type NodePatchRestoreOutputAccessShape = {
   can_manage?: boolean
 }
 
-export type NodePatchRestoreOutputBreadcrumbShape = { name: string; title: string; kind: string }
+export type NodePatchRestoreOutputAudienceShape = {
+  kind: 'public' | 'organization' | 'link' | 'people'
+  people: number
+}
+
+export type NodePatchRestoreOutputBreadcrumbShape = {
+  name: string
+  title: string
+  kind: string
+  role: number
+}
 
 export type NodePatchRestoreOutputPerson = {
   id: string
@@ -705,7 +795,9 @@ export type NodePatchRestoreOutput = {
   modified: string | null
   content_modified: string | null
   access?: NodePatchRestoreOutputAccessShape
+  audience?: NodePatchRestoreOutputAudienceShape
   breadcrumbs?: Array<NodePatchRestoreOutputBreadcrumbShape>
+  contents_size?: number
   preview?: NodePatchRestoreOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -757,7 +849,17 @@ export type NodePatchStampOutputAccessShape = {
   can_manage?: boolean
 }
 
-export type NodePatchStampOutputBreadcrumbShape = { name: string; title: string; kind: string }
+export type NodePatchStampOutputAudienceShape = {
+  kind: 'public' | 'organization' | 'link' | 'people'
+  people: number
+}
+
+export type NodePatchStampOutputBreadcrumbShape = {
+  name: string
+  title: string
+  kind: string
+  role: number
+}
 
 export type NodePatchStampOutputPerson = {
   id: string
@@ -788,7 +890,9 @@ export type NodePatchStampOutput = {
   modified: string | null
   content_modified: string | null
   access?: NodePatchStampOutputAccessShape
+  audience?: NodePatchStampOutputAudienceShape
   breadcrumbs?: Array<NodePatchStampOutputBreadcrumbShape>
+  contents_size?: number
   preview?: NodePatchStampOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -904,7 +1008,17 @@ export type NodeChildrenOutputAccessShape = {
   can_manage?: boolean
 }
 
-export type NodeChildrenOutputBreadcrumbShape = { name: string; title: string; kind: string }
+export type NodeChildrenOutputAudienceShape = {
+  kind: 'public' | 'organization' | 'link' | 'people'
+  people: number
+}
+
+export type NodeChildrenOutputBreadcrumbShape = {
+  name: string
+  title: string
+  kind: string
+  role: number
+}
 
 export type NodeChildrenOutputNodeShape = {
   name: string
@@ -925,7 +1039,9 @@ export type NodeChildrenOutputNodeShape = {
   modified: string | null
   content_modified: string | null
   access?: NodeChildrenOutputAccessShape
+  audience?: NodeChildrenOutputAudienceShape
   breadcrumbs?: Array<NodeChildrenOutputBreadcrumbShape>
+  contents_size?: number
   preview?: NodeChildrenOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -982,7 +1098,17 @@ export type NodeCopyOutputAccessShape = {
   can_manage?: boolean
 }
 
-export type NodeCopyOutputBreadcrumbShape = { name: string; title: string; kind: string }
+export type NodeCopyOutputAudienceShape = {
+  kind: 'public' | 'organization' | 'link' | 'people'
+  people: number
+}
+
+export type NodeCopyOutputBreadcrumbShape = {
+  name: string
+  title: string
+  kind: string
+  role: number
+}
 
 export type NodeCopyOutputPerson = { id: string; full_name: string; user_image: string | null }
 
@@ -1009,7 +1135,9 @@ export type NodeCopyOutput = {
   modified: string | null
   content_modified: string | null
   access?: NodeCopyOutputAccessShape
+  audience?: NodeCopyOutputAudienceShape
   breadcrumbs?: Array<NodeCopyOutputBreadcrumbShape>
+  contents_size?: number
   preview?: NodeCopyOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -1045,95 +1173,6 @@ const operationNodeCopy: MutationRef<NodeCopyInput, NodeCopyOutput, NodeCopyErro
   loadValidators: async () => (await import('./validators')).operationNodeCopy,
 }
 
-export type NodeArchiveStartInput = { node: string }
-
-export type NodeArchiveStartOutput = {
-  status: 'building' | 'ready' | 'failed'
-  file_name: string | null
-  size: number | null
-  error: string | null
-}
-
-export type NodeArchiveStartError =
-  'DriveNotFound' | 'DriveLocked' | 'DriveLinkExpired' | 'DriveConflict'
-
-const operationNodeArchiveStart: MutationRef<
-  NodeArchiveStartInput,
-  NodeArchiveStartOutput,
-  NodeArchiveStartError
-> = {
-  id: 'node_archive_start',
-  owner: 'drive',
-  kind: 'mutation',
-  publicName: 'archives.start',
-  method: 'POST',
-  path: 'nodes/{node}/archive',
-  prefix: '/api/suite/drive/',
-  pathParams: ['node'],
-  nodeParams: ['node'],
-  entity: null,
-  errors: ['DriveNotFound', 'DriveLocked', 'DriveLinkExpired', 'DriveConflict'],
-  loadValidators: async () => (await import('./validators')).operationNodeArchiveStart,
-}
-
-export type NodeArchiveStatusInput = { node: string }
-
-export type NodeArchiveStatusOutput = {
-  status: 'building' | 'ready' | 'failed'
-  file_name: string | null
-  size: number | null
-  error: string | null
-}
-
-export type NodeArchiveStatusError =
-  'DriveNotFound' | 'DriveLocked' | 'DriveLinkExpired' | 'DriveConflict'
-
-const operationNodeArchiveStatus: QueryRef<
-  NodeArchiveStatusInput,
-  NodeArchiveStatusOutput,
-  NodeArchiveStatusError
-> = {
-  id: 'node_archive_status',
-  owner: 'drive',
-  kind: 'query',
-  publicName: 'archives.get',
-  method: 'GET',
-  path: 'nodes/{node}/archive',
-  prefix: '/api/suite/drive/',
-  pathParams: ['node'],
-  nodeParams: ['node'],
-  entity: null,
-  errors: ['DriveNotFound', 'DriveLocked', 'DriveLinkExpired', 'DriveConflict'],
-  loadValidators: async () => (await import('./validators')).operationNodeArchiveStatus,
-}
-
-export type NodeArchiveDownloadInput = { node: string }
-
-export type NodeArchiveDownloadOutput = Blob
-
-export type NodeArchiveDownloadError =
-  'DriveNotFound' | 'DriveLocked' | 'DriveLinkExpired' | 'DriveConflict'
-
-const operationNodeArchiveDownload: QueryRef<
-  NodeArchiveDownloadInput,
-  NodeArchiveDownloadOutput,
-  NodeArchiveDownloadError
-> = {
-  id: 'node_archive_download',
-  owner: 'drive',
-  kind: 'query',
-  publicName: 'archives.download',
-  bytes: true,
-  method: 'GET',
-  path: 'nodes/{node}/archive/download',
-  prefix: '/api/suite/drive/',
-  pathParams: ['node'],
-  nodeParams: ['node'],
-  entity: null,
-  errors: ['DriveNotFound', 'DriveLocked', 'DriveLinkExpired', 'DriveConflict'],
-  loadValidators: async () => (await import('./validators')).operationNodeArchiveDownload,
-}
-
 export type NodePutContentOutputAccessShape = {
   role?: number
   via_link?: string | null
@@ -1142,7 +1181,17 @@ export type NodePutContentOutputAccessShape = {
   can_manage?: boolean
 }
 
-export type NodePutContentOutputBreadcrumbShape = { name: string; title: string; kind: string }
+export type NodePutContentOutputAudienceShape = {
+  kind: 'public' | 'organization' | 'link' | 'people'
+  people: number
+}
+
+export type NodePutContentOutputBreadcrumbShape = {
+  name: string
+  title: string
+  kind: string
+  role: number
+}
 
 export type NodePutContentOutputPerson = {
   id: string
@@ -1178,7 +1227,9 @@ export type NodePutContentOutput = {
   modified: string | null
   content_modified: string | null
   access?: NodePutContentOutputAccessShape
+  audience?: NodePutContentOutputAudienceShape
   breadcrumbs?: Array<NodePutContentOutputBreadcrumbShape>
+  contents_size?: number
   preview?: NodePutContentOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -1378,7 +1429,17 @@ export type UploadFinishOutputAccessShape = {
   can_manage?: boolean
 }
 
-export type UploadFinishOutputBreadcrumbShape = { name: string; title: string; kind: string }
+export type UploadFinishOutputAudienceShape = {
+  kind: 'public' | 'organization' | 'link' | 'people'
+  people: number
+}
+
+export type UploadFinishOutputBreadcrumbShape = {
+  name: string
+  title: string
+  kind: string
+  role: number
+}
 
 export type UploadFinishOutputPerson = { id: string; full_name: string; user_image: string | null }
 
@@ -1412,7 +1473,9 @@ export type UploadFinishOutput = {
   modified: string | null
   content_modified: string | null
   access?: UploadFinishOutputAccessShape
+  audience?: UploadFinishOutputAudienceShape
   breadcrumbs?: Array<UploadFinishOutputBreadcrumbShape>
+  contents_size?: number
   preview?: UploadFinishOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -1870,7 +1933,17 @@ export type ViewListOutputArchivedRootShape = {
   quota_bytes: number
 }
 
-export type ViewListOutputBreadcrumbShape = { name: string; title: string; kind: string }
+export type ViewListOutputAudienceShape = {
+  kind: 'public' | 'organization' | 'link' | 'people'
+  people: number
+}
+
+export type ViewListOutputBreadcrumbShape = {
+  name: string
+  title: string
+  kind: string
+  role: number
+}
 
 export type ViewListOutputNodeShape = {
   name: string
@@ -1891,7 +1964,9 @@ export type ViewListOutputNodeShape = {
   modified: string | null
   content_modified: string | null
   access?: ViewListOutputAccessShape
+  audience?: ViewListOutputAudienceShape
   breadcrumbs?: Array<ViewListOutputBreadcrumbShape>
+  contents_size?: number
   preview?: ViewListOutputPreviewShape | null
   opened_at?: string | null
   favourite?: boolean
@@ -2512,6 +2587,24 @@ export type NotificationsListOutputActivityShape = {
   detail: { [key: string]: unknown }
 }
 
+export type NotificationsListOutputDownloadNotificationShape = {
+  name: string
+  read: number
+  creation: string | null
+  download: NotificationsListOutputDownloadShape
+}
+
+export type NotificationsListOutputDownloadShape = {
+  name: string
+  title: string
+  status: 'Preparing' | 'Ready' | 'Failed' | 'Expired'
+  delivery: 'Inbox' | 'Page'
+  size: number | null
+  expires_at: string | null
+  error: string | null
+  url: string | null
+}
+
 export type NotificationsListOutputNotificationShape = {
   name: string
   read: number
@@ -2531,7 +2624,9 @@ export type NotificationsListOutputPerson = {
 export type NotificationsListInput = { limit?: number; cursor?: string; unread?: boolean }
 
 export type NotificationsListOutput = {
-  rows: Array<NotificationsListOutputNotificationShape>
+  rows: Array<
+    NotificationsListOutputNotificationShape | NotificationsListOutputDownloadNotificationShape
+  >
   next_cursor: string | null
 }
 
@@ -2539,7 +2634,7 @@ export type NotificationsListError = never
 
 const operationNotificationsList: PageRef<
   NotificationsListInput,
-  NotificationsListOutputNotificationShape,
+  NotificationsListOutputNotificationShape | NotificationsListOutputDownloadNotificationShape,
   NotificationsListError,
   NotificationsListOutput
 > = {
@@ -2633,6 +2728,97 @@ const operationNotificationsReadAllNotifications: MutationRef<
   errors: [],
   loadValidators: async () =>
     (await import('./validators')).operationNotificationsReadAllNotifications,
+}
+
+export type DownloadStartInput = { nodes: Array<string> }
+
+export type DownloadStartOutput = {
+  name: string
+  title: string
+  status: 'Preparing' | 'Ready' | 'Failed' | 'Expired'
+  delivery: 'Inbox' | 'Page'
+  size: number | null
+  expires_at: string | null
+  error: string | null
+  url: string | null
+}
+
+export type DownloadStartError =
+  'DriveNotFound' | 'DriveLocked' | 'DriveLinkExpired' | 'DriveConflict'
+
+const operationDownloadStart: MutationRef<
+  DownloadStartInput,
+  DownloadStartOutput,
+  DownloadStartError
+> = {
+  id: 'download_start',
+  owner: 'drive',
+  kind: 'mutation',
+  publicName: 'downloads.start',
+  method: 'POST',
+  path: 'downloads',
+  prefix: '/api/suite/drive/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['DriveNotFound', 'DriveLocked', 'DriveLinkExpired', 'DriveConflict'],
+  loadValidators: async () => (await import('./validators')).operationDownloadStart,
+}
+
+export type DownloadGetInput = { download: string }
+
+export type DownloadGetOutput = {
+  name: string
+  title: string
+  status: 'Preparing' | 'Ready' | 'Failed' | 'Expired'
+  delivery: 'Inbox' | 'Page'
+  size: number | null
+  expires_at: string | null
+  error: string | null
+  url: string | null
+}
+
+export type DownloadGetError = 'DriveNotFound'
+
+const operationDownloadGet: QueryRef<DownloadGetInput, DownloadGetOutput, DownloadGetError> = {
+  id: 'download_get',
+  owner: 'drive',
+  kind: 'query',
+  publicName: 'downloads.get',
+  method: 'GET',
+  path: 'downloads/{download}',
+  prefix: '/api/suite/drive/',
+  pathParams: ['download'],
+  nodeParams: [],
+  entity: null,
+  errors: ['DriveNotFound'],
+  loadValidators: async () => (await import('./validators')).operationDownloadGet,
+}
+
+export type DownloadContentInput = { download: string }
+
+export type DownloadContentOutput = Blob
+
+export type DownloadContentError = 'DriveNotFound'
+
+const operationDownloadContent: QueryRef<
+  DownloadContentInput,
+  DownloadContentOutput,
+  DownloadContentError
+> = {
+  id: 'download_content',
+  owner: 'drive',
+  kind: 'query',
+  publicName: 'downloads.content',
+  bytes: true,
+  method: 'GET',
+  path: 'downloads/{download}/content',
+  prefix: '/api/suite/drive/',
+  pathParams: ['download'],
+  nodeParams: [],
+  entity: null,
+  errors: ['DriveNotFound'],
+  loadValidators: async () => (await import('./validators')).operationDownloadContent,
 }
 
 export type RootsDiscoverOutputRootLocation = { node: string; title: string }
@@ -3002,11 +3188,6 @@ export const api = {
     star: operationNodePutFavourite,
     unstar: operationNodeDeleteFavourite,
   },
-  archives: {
-    start: operationNodeArchiveStart,
-    get: operationNodeArchiveStatus,
-    download: operationNodeArchiveDownload,
-  },
   uploads: {
     create: operationUploadCreate,
     chunk: operationUploadChunk,
@@ -3051,6 +3232,11 @@ export const api = {
     unreadCount: operationNotificationsUnreadCount,
     markRead: operationNotificationsReadNotificationNames,
     markAllRead: operationNotificationsReadAllNotifications,
+  },
+  downloads: {
+    start: operationDownloadStart,
+    get: operationDownloadGet,
+    content: operationDownloadContent,
   },
   roots: {
     list: operationRootsDiscover,

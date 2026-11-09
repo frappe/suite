@@ -83,8 +83,12 @@ export function createAutocomplete(o: AutocompleteOptions): Autocomplete {
   function clearSuggestion(): void {
     if (o.picker.dropSuggestion()) o.render()
   }
+  interface PlaceUnderEditorResult {
+    ox: number
+    oy: number
+  }
 
-  function placeUnderEditor(): { ox: number; oy: number } {
+  function placeUnderEditor(): PlaceUnderEditorResult {
     const ox = parseFloat(o.input.style.left) || 0
     const oy = parseFloat(o.input.style.top) || 0
     const oh = parseFloat(o.input.style.height) || 24
@@ -149,7 +153,7 @@ export function createAutocomplete(o: AutocompleteOptions): Autocomplete {
           ? `<span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-cyan-6, #0891b2);background:var(--surface-cyan-1, #ecfeff);border-radius:3px;padding:1px 5px;">sheet</span>`
           : item.kind === 'range'
             ? `<span style="font-size:11px;color:var(--ink-gray-5, #7c7c7c);">Tab to fill range</span>`
-            : `<span style="font-size:11px;color:var(--ink-gray-5, #7c7c7c);">${AC_FUNS[item.name] ?? ''}</span>`
+            : `<span style="font-size:11px;color:var(--ink-gray-5, #7c7c7c);">${AC_FUNS.get(item.name) ?? ''}</span>`
       row.innerHTML = `<span style="font-weight:600;min-width:80px;color:var(--ink-gray-9, #171717);">${item.name}</span>${right}`
       row.addEventListener('mousedown', (e) => {
         e.preventDefault()
@@ -170,7 +174,7 @@ export function createAutocomplete(o: AutocompleteOptions): Autocomplete {
 
   function highlight(): void {
     Array.from(el.children).forEach((row, i) => {
-      ;(row as HTMLElement).style.background = i === idx ? ACTIVE_BG : ''
+      if (row instanceof HTMLElement) row.style.background = i === idx ? ACTIVE_BG : ''
     })
   }
 

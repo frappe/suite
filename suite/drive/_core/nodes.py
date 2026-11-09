@@ -541,38 +541,47 @@ def _authorized_source_kind(principals: Principals, from_node: str) -> str:
     return source.kind
 
 
-def breadcrumbs(row: frappe._dict, principals: Principals) -> list[dict]:
+def breadcrumbs(row: frappe._dict, principals: Principals, *, inclusive: bool = False) -> list[dict]:
     """Return §11.3's trail from the highest visible ancestor down to the parent.
 
     The chain above a shared folder is not the caller's to see: §5.2 hides an
     unreadable node behind 404 on every surface, and a title is content. The
     trail therefore restarts below the deepest ancestor the caller cannot read,
     which for a caller reading from their own root is the whole chain.
+
+    `inclusive` ends the trail with `row` itself, which the caller has already
+    read and authorized. Each step carries the caller's role there.
     """
     chain = chain_ids(row)[:-1]
-    if not chain:
+    if not chain and not inclusive:
         return []
     roles = chain_roles(row, principals)
-    ancestors = {
-        ancestor.name: ancestor
-        for ancestor in frappe.get_all(
-            "Drive Node",
-            filters={"name": ["in", chain]},
-            fields=["name", "title", "kind"],
-        )
-    }
+    ancestors = (
+        {
+            ancestor.name: ancestor
+            for ancestor in frappe.get_all(
+                "Drive Node",
+                filters={"name": ["in", chain]},
+                fields=["name", "title", "kind"],
+            )
+        }
+        if chain
+        else {}
+    )
     trail: list[dict] = []
     for node_id in chain:
         if roles.get(node_id, 0) < READ or node_id not in ancestors:
             trail = []
             continue
-        trail.append(crumb(ancestors[node_id]))
+        trail.append(crumb(ancestors[node_id], roles[node_id]))
+    if inclusive:
+        trail.append(crumb(row, roles[row.name]))
     return trail
 
 
-def crumb(row: frappe._dict) -> dict:
-    """Return one §11.3 breadcrumb step for an ancestor row."""
-    return {"name": row.name, "title": row.title, "kind": row.kind}
+def crumb(row: frappe._dict, role: int) -> dict:
+    """Return one §11.3 breadcrumb step for an ancestor row and the caller's role there."""
+    return {"name": row.name, "title": row.title, "kind": row.kind, "role": role}
 
 
 def content_url(principals: Principals, node: str, *, expires_in: int = CONTENT_TTL_SECONDS) -> dict:
@@ -2102,7 +2111,7 @@ def root_id(node: dict) -> str:
     return node.get("name") if node.get("kind") == "root" else node.get("root")
 
 
-def child_path(node: dict) -> str:
+def child_path(node: Mapping) -> str:
     """Return the root-relative path assigned to direct children of a node."""
     if node.get("kind") == "root":
         return ""
@@ -2739,7 +2748,7 @@ def _refuse_sibling_collision(
     """
     free = _free_title(parent, title, exclude=exclude, for_update=for_update)
     if free != title:
-        raise DriveConflict(_("An active Drive node with this title already exists"), free_title=free)
+        raise DriveConflict(_("That name is taken in this folder."), free_title=free)
 
 
 # Page size for both blob-source scans below. Storage deduplicates by
@@ -3482,7 +3491,7 @@ def _attach_breadcrumbs_from_union(
             if role < READ or node_id not in ancestors:
                 trail = []
                 continue
-            trail.append(crumb(ancestors[node_id]))
+            trail.append(crumb(ancestors[node_id], role))
         row.breadcrumbs = trail
 
 

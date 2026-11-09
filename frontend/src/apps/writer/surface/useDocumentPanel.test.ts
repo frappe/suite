@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { toast } from 'frappe-ui'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -10,7 +11,7 @@ vi.mock('frappe-ui', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 // A Drive session that records the versions taken
 function versionsSession() {
   const taken: [string | undefined, string | undefined][] = []
-  const session = {
+  const session = fromPartial<Pick<DocumentSession, 'comments' | 'versions'>>({
     comments: { list: vi.fn(), create: vi.fn() },
     versions: {
       list: vi.fn(() => Promise.resolve({ rows: [], next_cursor: null })),
@@ -19,7 +20,7 @@ function versionsSession() {
         return Promise.resolve()
       }),
     },
-  } as unknown as Pick<DocumentSession, 'comments' | 'versions'>
+  })
   return { session, taken }
 }
 
@@ -63,16 +64,16 @@ describe('saving a named version', () => {
 
 // A Drive session listing an automatic and a named version, whose renames go in or are refused
 function renamingSession(refusal?: string) {
-  const sent: [string, object][] = []
+  const sent: [string, Parameters<DocumentSession['versions']['update']>[1]][] = []
   const rows = [
     { seq: 2, kind: 'auto', label: null, pinned: 0 },
     { seq: 3, kind: 'named', label: 'Draft one', pinned: 0 },
   ]
-  const session = {
+  const session = fromPartial<Pick<DocumentSession, 'comments' | 'versions'>>({
     comments: {},
     versions: {
       list: () => Promise.resolve({ rows, next_cursor: null }),
-      update: (seq: string, changes: object) => {
+      update: (seq: string, changes: Parameters<DocumentSession['versions']['update']>[1]) => {
         sent.push([seq, changes])
         if (refusal) {
           return Promise.reject(new Error(refusal))
@@ -81,7 +82,7 @@ function renamingSession(refusal?: string) {
         return Promise.resolve()
       },
     },
-  } as unknown as Pick<DocumentSession, 'comments' | 'versions'>
+  })
   return { session, sent }
 }
 
@@ -140,7 +141,7 @@ describe('renaming a version', () => {
       { seq: 2, kind: 'auto', label: null, pinned: 0 },
       { seq: 3, kind: 'named', label: 'Draft one', pinned: 0 },
     ]
-    const session = {
+    const session = fromPartial<Pick<DocumentSession, 'comments' | 'versions'>>({
       comments: {},
       versions: {
         list: vi
@@ -152,7 +153,7 @@ describe('renaming a version', () => {
             Object.assign(new Error('Drive version 2 was not found'), { type: 'DriveNotFound' }),
           ),
       },
-    } as unknown as Pick<DocumentSession, 'comments' | 'versions'>
+    })
     const panel = useDocumentPanel(session, noRefresh)
     await panel.load('versions')
 

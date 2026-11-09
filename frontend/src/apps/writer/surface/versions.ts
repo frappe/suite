@@ -93,15 +93,14 @@ export async function readVersionBody(bytes: Uint8Array): Promise<VersionBody> {
     return { html: text }
   }
 
-  const version = payload as Record<string, unknown>
+  const version = payload
   const isHtmlVersion = version.schema === 'writer-document/1'
-  const hasContent = typeof version.content === 'string' && version.content !== ''
-  const isKnownCollab = [0, 1, false, true, undefined].includes(
-    version.collab as number | boolean | undefined,
-  )
+  const content = version.content
+  const hasContent = typeof content === 'string' && content !== ''
+  const isKnownCollab = [0, 1, false, true, undefined].some((value) => value === version.collab)
   if (isHtmlVersion && hasContent && typeof version.html === 'string' && isKnownCollab) {
     const legacy = {
-      content: version.content as string,
+      content,
       html: version.html,
       collab: Number(version.collab ?? 1),
       ycomments: null,
@@ -167,7 +166,9 @@ function legacyContent(legacy: LegacyBody): JSONContent | null {
   }
 }
 
-function parsedOrNull(text: string): unknown {
+type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue }
+
+function parsedOrNull(text: string): JsonValue {
   try {
     return JSON.parse(text)
   } catch {

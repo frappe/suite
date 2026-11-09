@@ -63,7 +63,10 @@ export const useListFilter = ({
   const toggle = (key: string) => {
     stored.value = stored.value.includes(key)
       ? stored.value.filter((k) => k !== key)
-      : FILTERS.map((f) => f.key).filter((k) => k === key || stored.value.includes(k))
+      : FILTERS.flatMap((f) => {
+          const mappedValue = f.key
+          return mappedValue === key || stored.value.includes(mappedValue) ? [mappedValue] : []
+        })
     changed.value = true
     onChange()
   }

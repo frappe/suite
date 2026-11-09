@@ -10,7 +10,5 @@ const DEFAULT_UNDO_SEND_PERIOD = 5
  */
 export const undoSendPeriodOf = (user?: { undo_send_period?: string | null } | null): number => {
   const period = Number(user?.undo_send_period)
-  return (UNDO_SEND_PERIODS as readonly number[]).includes(period)
-    ? period
-    : DEFAULT_UNDO_SEND_PERIOD
+  return UNDO_SEND_PERIODS.some((offered) => offered === period) ? period : DEFAULT_UNDO_SEND_PERIOD
 }

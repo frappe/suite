@@ -27,6 +27,7 @@ import {
   DriveDocumentHeaderSkeleton,
   driveNodeRoute,
   DriveUnlockScreen,
+  openingLocation as historyOpeningLocation,
   isDriveLocked,
   isDriveNodeLocked,
   openDocumentSession,
@@ -72,6 +73,10 @@ const nodeId = computed(() => String(route.params.node ?? ''))
 // shows the same name. The entry is current once the route is.
 const openingTitle = computed(() =>
   nodeId.value ? historyOpeningTitle(router.options.history.state) : null,
+)
+// The folder a file's header names, so the skeleton's title sits where the header's will.
+const openingLocation = computed(() =>
+  nodeId.value ? historyOpeningLocation(router.options.history.state) : null,
 )
 
 // A document the opener has just created takes typing in its type's opening
@@ -248,7 +253,10 @@ onBeforeUnmount(() => {
 <template>
   <div class="flex h-full min-h-0 w-full min-w-0 overflow-hidden bg-surface-base text-ink-gray-8">
     <div v-if="loading" class="flex min-w-0 flex-1 flex-col">
-      <DriveDocumentHeaderSkeleton :title="session?.title.value || openingTitle || undefined" />
+      <DriveDocumentHeaderSkeleton
+        :title="session?.title.value || openingTitle || undefined"
+        :location="openingLocation || undefined"
+      />
       <component :is="openingEditor" v-if="openingEditor" :node="nodeId" />
     </div>
 

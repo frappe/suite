@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -66,7 +67,10 @@ beforeEach(() => {
       return {
         match: async (request: Request) => entries.get(request.url),
         put: async (request: Request | string, response: Response) =>
-          entries.set(new URL((request as Request).url ?? request, location.origin).href, response),
+          entries.set(
+            new URL(fromPartial<Request>(request).url ?? request, location.origin).href,
+            response,
+          ),
         keys: async () => [],
         delete: async () => true,
       }
@@ -222,7 +226,7 @@ describe('a pinned presentation offline', () => {
       },
       waitUntil: () => {},
     })
-    return responded as Promise<Response> | null
+    return fromPartial<Promise<Response> | null>(responded)
   }
 
   function navigation(path: string): FakeRequest {
@@ -359,7 +363,7 @@ describe('a presentation opened online, offline', () => {
       },
       waitUntil: () => {},
     })
-    return responded as Promise<Response> | null
+    return fromPartial<Promise<Response> | null>(responded)
   }
 
   function fakeRequest(path: string, mode: RequestMode, headers = new Headers()): FakeRequest {
@@ -667,7 +671,7 @@ describe('what a capture or a pin leaves in the caches', () => {
       },
       waitUntil: (work: Promise<unknown>) => pending.push(work),
     })
-    return { responded: responded as Promise<Response> | null, pending }
+    return { responded: fromPartial<Promise<Response> | null>(responded), pending }
   }
 
   function get(path: string, headers: Record<string, string> = {}) {

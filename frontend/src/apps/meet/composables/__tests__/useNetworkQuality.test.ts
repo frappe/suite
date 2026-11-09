@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, nextTick, ref, type Ref } from 'vue'
 
@@ -23,9 +24,11 @@ describe('useNetworkQuality', () => {
       })
       return stopMonitoring
     })
-    const manager = ref({
-      startMediaHealthMonitoring,
-    }) as unknown as Ref<SFUMeetingManager | null>
+    const manager = fromPartial<Ref<SFUMeetingManager | null>>(
+      ref({
+        startMediaHealthMonitoring,
+      }),
+    )
     let quality: ReturnType<typeof useNetworkQuality> | undefined
     const app = createApp({
       setup() {
@@ -47,12 +50,14 @@ describe('useNetworkQuality', () => {
   it('stops the old monitor and resets state when the manager is removed', async () => {
     let listener!: (state: MediaHealthState) => void
     const stopMonitoring = vi.fn()
-    const manager = ref({
-      startMediaHealthMonitoring: vi.fn((nextListener) => {
-        listener = nextListener
-        return stopMonitoring
+    const manager = fromPartial<Ref<SFUMeetingManager | null>>(
+      ref({
+        startMediaHealthMonitoring: vi.fn((nextListener) => {
+          listener = nextListener
+          return stopMonitoring
+        }),
       }),
-    }) as unknown as Ref<SFUMeetingManager | null>
+    )
     let quality!: ReturnType<typeof useNetworkQuality>
     const app = createApp({
       setup() {
@@ -96,7 +101,7 @@ describe('useNetworkQuality', () => {
         return stopNext
       }),
     }
-    const manager = ref(first) as unknown as Ref<SFUMeetingManager | null>
+    const manager = fromPartial<Ref<SFUMeetingManager | null>>(ref(first))
     let quality!: ReturnType<typeof useNetworkQuality>
     const app = createApp({
       setup() {
@@ -106,7 +111,7 @@ describe('useNetworkQuality', () => {
     })
     app.mount(document.createElement('div'))
 
-    manager.value = second as never
+    manager.value = fromPartial(second)
     await nextTick()
     oldListener({
       networkQuality: 'critical',

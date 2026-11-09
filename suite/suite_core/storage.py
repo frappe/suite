@@ -9,6 +9,10 @@ from frappe import _
 from suite.suite_core.administration import require_admin
 
 
+class StorageUnmeasured(frappe.ValidationError):
+    """Mail usage or the site allowance isn't measured yet; refreshing storage measures it."""
+
+
 def state(*, lock: bool = False):
     if not frappe.db.exists("Suite Storage State", "site"):
         frappe.get_doc(
@@ -117,7 +121,8 @@ def check_addition(
     growth = delta if site_delta is None else site_delta
     if growth > 0 and (site_mail is None or allowance is None):
         frappe.throw(
-            _("Mail usage or the site allowance is unavailable; refresh storage before adding Drive files")
+            _("Mail usage or the site allowance is unavailable; refresh storage before adding Drive files"),
+            StorageUnmeasured,
         )
     # Provider zero preserves its existing unlimited-site semantics, not a zero-byte denial.
     site_limit = effective_limit(allowance) if allowance else None
@@ -127,7 +132,11 @@ def check_addition(
         return
     mail = personal_mail_usage(measurements, user)
     if mail is None:
-        frappe.throw(_("This user's Mail usage is unavailable; refresh storage before adding Drive files"))
+        frappe.throw(
+            _("This user's Mail usage is unavailable; refresh storage before adding Drive files"),
+            StorageUnmeasured,
+        )
+
     cap = effective_limit(policy.get("users", {}).get(user, {}).get("cap"))
     if cap is not None and personal_drive + mail + delta > cap:
         frappe.throw(_("Combined Mail and Drive usage exceeds the user's storage cap"))

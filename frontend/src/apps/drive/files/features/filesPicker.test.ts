@@ -82,10 +82,13 @@ describe('Files picker', () => {
       if (!(found instanceof HTMLButtonElement)) throw new Error(`${title} is not listed`)
       return found
     })
-  const attach = () =>
-    [...document.querySelectorAll('button')].find(
+  const attach = () => {
+    const found = [...document.querySelectorAll('button')].find(
       (candidate) => candidate.textContent?.trim() === 'Attach',
-    ) as HTMLButtonElement
+    )
+    if (!found) throw new Error('Attach is not shown')
+    return found
+  }
 
   it('keeps files picked in one folder while the user picks in another', async () => {
     const onPicked = mount()

@@ -366,9 +366,7 @@ const NativeButton = defineComponent({
 
 const columnTracks = computed(() => [
   'minmax(0,1fr)',
-  ...COLUMN_CHOICES.filter((choice) => columns.value[choice.key]).map(
-    (choice) => choice.track,
-  ),
+  ...COLUMN_CHOICES.flatMap((choice) => (columns.value[choice.key]) ? [choice.track] : []),
 ])
 
 function setColumn(key: ColumnKey, visible: boolean) {
@@ -630,7 +628,7 @@ const displayOrder = computed(() =>
 const anchor = ref<string | null>(null)
 
 function rowIdFromEvent(event: MouseEvent) {
-  const target = event.target as HTMLElement | null
+  const target = (event.target instanceof Element ? event.target : null)
   const tile = target?.closest?.('[data-file-id]')
   if (tile) return tile.getAttribute('data-file-id')
 

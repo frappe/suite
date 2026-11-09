@@ -33,10 +33,15 @@ const handleSetupWizardEscape = () => {
 // that area is first opened.
 const NOT_READY_ROUTE = 'mail-not-ready'
 
+interface DefaultMailRoute {
+  name: string
+  params: Record<string, string>
+}
+
 const buildDefaultRoute = (
   accountId: string,
   mailboxes: { data?: { id: string }[] },
-): { name: string; params: Record<string, string> } => {
+): DefaultMailRoute => {
   const firstMailbox = mailboxes.data?.[0]?.id
   if (firstMailbox) return { name: 'mail-mailbox', params: { accountId, mailbox: firstMailbox } }
 
@@ -110,7 +115,9 @@ export const mailGuard = async (to: RouteLocationNormalized) => {
   // owning account purely to scope the pane (see utils/accountScope) — opening a
   // thread there must not switch the active account out from under the merged list.
   const routeAccountId =
-    to.name === UNIFIED_THREAD_ROUTE ? undefined : (to.params.accountId as string | undefined)
+    to.name !== UNIFIED_THREAD_ROUTE && typeof to.params.accountId === 'string'
+      ? to.params.accountId
+      : undefined
   resolveAccount(user?.accounts, routeAccountId)
   const accountId = userStore().accountId
 
@@ -132,7 +139,8 @@ export const mailGuard = async (to: RouteLocationNormalized) => {
   // utils/unifiedFolders), though an id still opens it — links made before folders were named,
   // and every link built from an id — and is answered with the slug.
   if (to.name === 'mail-mailbox' || to.name === 'mail-mail') {
-    const param = to.params.mailbox as string
+    const param = to.params.mailbox
+    if (typeof param !== 'string') throw new Error('Mailbox route parameter is missing')
     const mailboxId = mailboxIdForParam(param, mailboxes.data)
 
     // With no mailbox list (fetch failed above) the param can't be validated — keep the

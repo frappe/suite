@@ -70,8 +70,8 @@ describe('RateLimiter', () => {
 		expect(stats.totalKeys).toBe(2);
 		expect(stats.activeKeys).toBe(0);
 
-		const cleanupTarget = limiter as unknown as { cleanup(): void };
-		cleanupTarget.cleanup();
+		const cleanupTarget = limiter;
+		cleanupTarget['cleanup']();
 		expect(limiter.getStats().totalKeys).toBe(0);
 	});
 

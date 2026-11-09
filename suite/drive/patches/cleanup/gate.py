@@ -8,7 +8,10 @@ of them trusts a persisted number: gate 1 recomputes reachability live,
 against whatever `env.tree`/`env.drive` answer right now, never against
 `suite.drive.patches.build.state.BuildState` (Build's own report is a
 diary of one run; a stale or tampered copy of it must not be able to wave
-Cleanup through). They raise instead of calling `frappe.throw`, matching
+Cleanup through). The one thing gate 1 takes from outside the live tables
+is the operator's decision to accept reachable rows without a node, and it
+reads that from the same site config key Build reads, so the two patches
+always agree on it. They raise instead of calling `frappe.throw`, matching
 `suite.drive.patches.build.gate`: a migration failure needs the message
 intact in the traceback.
 """
@@ -17,6 +20,8 @@ from __future__ import annotations
 
 import frappe
 
+from suite.drive.patches.build.environment import ACCEPT_SKIPS_CONFIG_KEY
+from suite.drive.patches.build.skips import SKIPPED_FILENAME
 from suite.drive.patches.cleanup.environment import BACKUP_CONFIG_KEY, CLEANUP_BATCH_SIZE
 from suite.drive.patches.cleanup.ports import DRIVE_ROOT_ROW, REMOVED, USERS_ROW
 
@@ -52,14 +57,31 @@ def check_gates(env, *, batch_size: int = CLEANUP_BATCH_SIZE) -> None:
 
 
 def check_gate_reachable_nodes(env, *, batch_size: int = CLEANUP_BATCH_SIZE) -> None:
+    """Refuse while a reachable row has no node, unless an operator accepted the loss.
+
+    `env.accept_skips` is the site config key Build's own refusal names
+    (`build.skips`). With it set, Build finished over these rows, so a refusal
+    here would leave the site half migrated with no way forward. The count is
+    still recomputed live and printed; phase 1 then deletes the rows with the
+    rest of Drive's `File` rows."""
     count, samples = recompute_unmigrated_reachable(env, batch_size=batch_size)
-    if count:
-        shown = ", ".join(samples[:5]) or "none sampled"
-        raise ReachableNodesGateError(
-            f"{count} reachable Drive File row(s) still have no Drive Node (for example: "
-            f"{shown}). Cleanup must not run until Build has migrated every one of them. "
-            "Removed rows and unreachable Home attachments do not count against this gate."
+    if not count:
+        return
+    shown = ", ".join(samples[:5]) or "none sampled"
+    if env.accept_skips:
+        print(
+            f"Drive Cleanup: {count} reachable Drive File row(s) have no Drive Node (for example: "
+            f"{shown}). Site config `{ACCEPT_SKIPS_CONFIG_KEY}` accepts their loss, so Cleanup "
+            f"deletes them with the other legacy Drive rows. Build listed them in {SKIPPED_FILENAME}."
         )
+        return
+    raise ReachableNodesGateError(
+        f"{count} reachable Drive File row(s) still have no Drive Node (for example: "
+        f"{shown}). Cleanup must not run until Build has migrated every one of them, or an "
+        f"operator has accepted their loss with site config `{ACCEPT_SKIPS_CONFIG_KEY}` after "
+        f"reading Build's {SKIPPED_FILENAME}. Removed rows and unreachable Home attachments do "
+        "not count against this gate."
+    )
 
 
 def check_gate_gc_discovery(env) -> None:

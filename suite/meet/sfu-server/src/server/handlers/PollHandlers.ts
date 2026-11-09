@@ -145,7 +145,7 @@ export function registerPollHandlers(deps: HandlerDeps) {
 			} catch (error) {
 				loggers.socketHandler.warn(
 					'poll:create failed: %s',
-					(error as Error).message,
+					error instanceof Error ? error.message : String(error),
 				);
 				if (callback)
 					callback({ success: false, error: 'Internal Server Error' });
@@ -202,10 +202,13 @@ export function registerPollHandlers(deps: HandlerDeps) {
 			} catch (error) {
 				loggers.socketHandler.warn(
 					'poll:vote failed: %s',
-					(error as Error).message,
+					error instanceof Error ? error.message : String(error),
 				);
 				if (callback)
-					callback({ success: false, error: (error as Error).message });
+					callback({
+						success: false,
+						error: error instanceof Error ? error.message : String(error),
+					});
 			}
 		});
 
@@ -294,10 +297,13 @@ export function registerPollHandlers(deps: HandlerDeps) {
 			} catch (error) {
 				loggers.socketHandler.warn(
 					'poll:sync_encrypted failed: %s',
-					(error as Error).message,
+					error instanceof Error ? error.message : String(error),
 				);
 				if (callback)
-					callback({ success: false, error: (error as Error).message });
+					callback({
+						success: false,
+						error: error instanceof Error ? error.message : String(error),
+					});
 			}
 		});
 
@@ -331,7 +337,7 @@ export function registerPollHandlers(deps: HandlerDeps) {
 			} catch (error) {
 				loggers.socketHandler.warn(
 					'get_existing_polls failed: %s',
-					(error as Error).message,
+					error instanceof Error ? error.message : String(error),
 				);
 				if (callback)
 					callback({ success: false, error: 'Internal Server Error' });

@@ -1937,6 +1937,32 @@ class TestConversion(DriveCallbackCase):
 
         self.assertEqual({node: (self.as_before(node), self.records(node)) for node in after}, after)
 
+    def test_a_run_leaves_a_body_whose_storage_is_not_measured_to_the_next_run_and_goes_on(self):
+        waiting, other = self.old_documents(2)
+        real = drive.take_version
+        tries: list[str] = []
+
+        def not_measured_for_waiting(node, **kwargs):
+            if node == waiting:
+                tries.append(node)
+                raise drive.DriveStorageUnmeasured("not measured")
+
+            return real(node, **kwargs)
+
+        before = self.as_before(waiting)
+        with patch.object(drive, "take_version", not_measured_for_waiting):
+            seen = self.run_on([waiting, other])
+
+        self.assertEqual([seen.count(node) for node in (waiting, other)], [1, 1])
+
+        self.assertEqual(tries, [waiting])
+        self.assertEqual((self.as_before(waiting), self.records(waiting)), (before, ()))
+        self.assertIsNotNone(log.find(writer_content.APP, other))
+
+        self.run_on([waiting])
+
+        self.assertIsNotNone(log.find(writer_content.APP, waiting))
+
     def test_a_new_converter_version_tries_a_refused_body_again(self):
         [node] = self.old_documents(1)
         with patch.object(convert, "convert", return_value=convert.Refused("too_large")):

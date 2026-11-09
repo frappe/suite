@@ -104,12 +104,12 @@ function pathOf(body: yjs.XmlFragment, type: yjs.AbstractType<unknown>) {
   const path: number[] = []
   let child: yjs.AbstractType<unknown> | Parent = type
   while (child !== body) {
-    const parent = child.parent as Parent | null
-    if (!parent) {
+    const parent: typeof type.parent = child.parent
+    if (!(parent instanceof yjs.XmlElement) && !(parent instanceof yjs.XmlFragment)) {
       return null
     }
 
-    path.unshift(parent.toArray().indexOf(child as yjs.XmlElement))
+    path.unshift(parent.toArray().findIndex((candidate) => candidate === child))
     child = parent
   }
 
@@ -123,7 +123,9 @@ function typeAt(body: yjs.XmlFragment, path: number[]) {
       return null
     }
 
-    node = node.get(index) as Parent | yjs.XmlText | undefined
+    const child = node.get(index)
+    if (!(child instanceof yjs.XmlFragment) && !(child instanceof yjs.XmlText)) return null
+    node = child
   }
 
   return node ?? null

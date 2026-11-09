@@ -83,9 +83,15 @@ export function useE2EEConnectionHandshake(
   }
   const handleSFUReconnectBound = () => controller.handleTransientReconnect()
   const handleHostE2EEKeySetBound = (event: Event) => {
-    const detail = (event as CustomEvent).detail
-    if (detail?.keyVersion) {
-      void controller.handleHostE2EEKeySet(detail)
+    if (!(event instanceof CustomEvent)) return
+    const detail: unknown = event.detail
+    if (
+      detail &&
+      typeof detail === 'object' &&
+      'keyVersion' in detail &&
+      typeof detail.keyVersion === 'string'
+    ) {
+      void controller.handleHostE2EEKeySet({ keyVersion: detail.keyVersion })
     }
   }
   const handleE2EEResyncBound = () => controller.handleTransientReconnect()

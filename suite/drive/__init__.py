@@ -61,6 +61,7 @@ right status.
 |---|---|
 | `DriveNotFound` | the root, root pair, reservation key, or node does not exist |
 | `DriveOverQuota` | the admission UPDATE would push `used_bytes` past the effective quota |
+| `DriveStorageUnmeasured` | a combined Mail and Drive check can't run yet: Mail usage or the site allowance isn't measured; a `DriveOverQuota` |
 | `DriveForbidden` | the caller's role at the node is below the one the workflow needs |
 | `DriveConflict` | a reservation exists with different values, names another root, or a resize runs in the wrong direction; a content type is unregistered, invalid, or already linked to another node |
 | `DriveLinkExpired` | the share link a caller presents has expired or been revoked |
@@ -156,6 +157,7 @@ which is what an offboarded user looks like.
 | Workflow | Cost |
 |---|---|
 | `personal_root_for` | one indexed read of `Drive Root (kind, user, state)` |
+| `root_locations` | one read of the caller's Active roots joined to their nodes, plus a READ check on each |
 | `ensure_personal_root` | the same read; on a miss, one `User` row lock plus three inserts |
 | `get_storage_usage` | the root-pair read plus one `SUM(reserved_bytes)` on the `root` index |
 | `get_storage_reservation` | one primary-key read, no lock |
@@ -240,6 +242,7 @@ from suite.drive._core.errors import (
     DriveLocked,
     DriveNotFound,
     DriveOverQuota,
+    DriveStorageUnmeasured,
     rollback_savepoint,
 )
 from suite.drive._core.people import IN_DIRECTORY_SQL, MAX_MENTIONS, PersonOnNode
@@ -581,6 +584,21 @@ def store_file(
     )
 
 
+def root_locations() -> dict | None:
+    """Answer the caller's Files locations, as `GET roots` does; `None` when Drive refuses, so the boot goes on.
+
+    A guest, a caller with no Personal root, or a malformed root all refuse. `GET roots` still answers the refusal inside Drive.
+    """
+    import frappe
+
+    from suite.drive._core.roots import discover
+
+    try:
+        return discover(_principals())
+    except frappe.ValidationError:
+        return None
+
+
 def _principals():
     from suite.drive.framework import principals_for_request
 
@@ -604,6 +622,7 @@ __all__ = (
     "DriveLocked",
     "DriveNotFound",
     "DriveOverQuota",
+    "DriveStorageUnmeasured",
     "PersonOnNode",
     "Satellite",
     "administration_usage",
@@ -643,6 +662,7 @@ __all__ = (
     "release_storage_reservation",
     "resolve_share_link",
     "rollback_savepoint",
+    "root_locations",
     "set_user_active",
     "store_file",
     "take_version",

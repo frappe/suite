@@ -53,10 +53,7 @@ export class Reads {
     private readonly transport: Transport,
     readonly entities: Entities,
     private readonly realtime?: Realtime | false,
-    initialPartition?: string,
-  ) {
-    if (initialPartition) this.partition.value = initialPartition
-  }
+  ) {}
 
   retain(record: ReadRecord, observer: () => void, paging: boolean): void {
     const timeout = this.gc.get(record.key)
@@ -146,11 +143,13 @@ export class Reads {
     const key = this.key(reference, input, partition) + (pages ? ':pages' : '')
     let record = this.records.get(key)
     if (!record) {
-      record = reactive({
+      record = reactive<ReadRecord>({
         key,
+        // SAFETY: the heterogeneous cache erases I/O but keeps this operation, canonical input and policy together under one key.
         reference: reference as Operation,
         input: canonical(input),
         partition,
+        // SAFETY: callbacks receive the input retained with this same reference; the cache never pairs a policy with another operation.
         policy: policy as Policy,
         context,
         value: undefined,
@@ -164,7 +163,7 @@ export class Reads {
         updatedAt: 0,
         minRevision: 0,
         observers: new Set<() => void>(),
-      }) as ReadRecord
+      })
       this.records.set(key, record)
     }
     return record
@@ -177,8 +176,6 @@ export class Reads {
     next = false,
     apply = true,
   ): Promise<unknown> {
-    options.signal?.throwIfAborted()
-    await this.entities.hydrate(record.partition)
     options.signal?.throwIfAborted()
     if (record.partition !== this.access(record.policy, record.input, record.context))
       throw abortError()
@@ -270,9 +267,9 @@ export class Reads {
   }
 
   async refreshPages(record: ReadRecord, signal?: AbortSignal): Promise<void> {
-    const reference = record.reference as Operation & {
+    const reference: Operation & {
       page?: import('@/platform/transport').PageCapability
-    }
+    } = record.reference
     const page = reference.page
     if (!page || record.pages.length < 2) {
       await this.fetch(record, record.input, { signal })
@@ -382,7 +379,7 @@ export class Reads {
     }
   }
 
-  switchPartition(partition?: string): void {
+  switchPartition(): void {
     for (const leave of this.rooms.values()) leave()
     for (const timeout of this.gc.values()) clearTimeout(timeout)
     this.rooms.clear()
@@ -394,7 +391,7 @@ export class Reads {
     this.pageRefreshes.clear()
     this.entities.clear()
     this.revision += 1
-    this.partition.value = partition ?? randomId()
+    this.partition.value = randomId()
   }
 
   dispose(): void {

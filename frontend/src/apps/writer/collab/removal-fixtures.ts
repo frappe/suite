@@ -1,4 +1,6 @@
 import { REMOTE } from '@suite/collab-client'
+import type { JSONContent } from '@tiptap/core'
+import { fromPartial } from '@total-typescript/shoehorn'
 import { expect } from 'vitest'
 import * as yjs from 'yjs'
 
@@ -13,6 +15,13 @@ import {
   type Tab,
 } from '@/apps/writer/collab/test-support'
 import type { CollabRoom } from '@/platform/collab'
+
+/** The parent a legacy inline fixture inserted its text into. */
+export function textParent(text: yjs.XmlText): yjs.XmlElement {
+  const parent = text.parent
+  if (!(parent instanceof yjs.XmlElement)) throw new Error('Expected text inside a legacy element')
+  return parent
+}
 
 const QQ_OFFSET = 2
 
@@ -34,7 +43,7 @@ export function makeHeading(tab: Tab, word: string) {
   tab.editor.chain().setTextSelection(inside(tab, word)).setNode('heading', { level: 2 }).run()
 }
 
-export function typeAt(tab: Tab, word: string, offset: number, content: string | object) {
+export function typeAt(tab: Tab, word: string, offset: number, content: string | JSONContent) {
   tab.editor
     .chain()
     .setTextSelection(inside(tab, word, offset))
@@ -97,8 +106,8 @@ export function docOf(update: Uint8Array) {
 }
 
 export function oldBlockText(doc: yjs.Doc) {
-  const block = doc.getXmlFragment(BODY_FIELD).get(1) as yjs.XmlElement
-  return block.get(0) as yjs.XmlText
+  const block = fromPartial<yjs.XmlElement>(doc.getXmlFragment(BODY_FIELD).get(1))
+  return fromPartial<yjs.XmlText>(block.get(0))
 }
 
 export function removeOldBlock(doc: yjs.Doc) {
@@ -137,13 +146,14 @@ export function makeRoomHeading(room: CollabRoom, words: string) {
 }
 
 export function roomText(room: CollabRoom, index: number) {
-  const block = room.doc.getXmlFragment(BODY_FIELD).get(index) as yjs.XmlElement
-  return block.get(0) as yjs.XmlText
+  const block = fromPartial<yjs.XmlElement>(room.doc.getXmlFragment(BODY_FIELD).get(index))
+  return fromPartial<yjs.XmlText>(block.get(0))
 }
 
 export function roomBlocks(room: CollabRoom) {
-  const body = room.doc.getXmlFragment(BODY_FIELD).toArray() as yjs.XmlElement[]
+  const body = room.doc.getXmlFragment(BODY_FIELD).toArray()
   return body.map((block) => {
+    if (!(block instanceof yjs.XmlElement)) throw new Error('Expected a block element')
     const words = block.get(0).toString()
     return `${block.nodeName} ${words}`
   })

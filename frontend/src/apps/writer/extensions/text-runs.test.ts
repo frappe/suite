@@ -6,6 +6,7 @@ import {
   ySyncPluginKey,
   yUndoPluginKey,
 } from '@tiptap/y-tiptap'
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as yjs from 'yjs'
 
@@ -77,14 +78,14 @@ function exchange(...tabs: Tab[]) {
 }
 
 function block(tab: Tab, index = 0) {
-  return tab.ydoc.getXmlFragment(BODY_FIELD).get(index) as yjs.XmlElement
+  return fromPartial<yjs.XmlElement>(tab.ydoc.getXmlFragment(BODY_FIELD).get(index))
 }
 
 // What each Yjs text in the block holds
 function pieces(tab: Tab, index = 0) {
   return block(tab, index)
     .toArray()
-    .map((text) => (text as yjs.XmlText).toString())
+    .map((text) => fromPartial<yjs.XmlText>(text).toString())
 }
 
 function ownClock(tab: Tab) {
@@ -169,7 +170,7 @@ describe('marks across neighbouring texts', () => {
 
     type(tab, 'X', 2)
 
-    const [left, right] = block(tab).toArray() as yjs.XmlText[]
+    const [left, right] = fromPartial<yjs.XmlText[]>(block(tab).toArray())
     expect(left.toDelta()).toEqual([{ insert: 'aXb' }])
     expect(right.toDelta()).toEqual([{ insert: 'cd', attributes: { mystery: { tone: 'warm' } } }])
   })
@@ -183,7 +184,7 @@ describe('marks across neighbouring texts', () => {
 
     tab.editor.chain().setTextSelection({ from: 2, to: 4 }).setBold().run()
 
-    const [left, right] = block(tab).toArray() as yjs.XmlText[]
+    const [left, right] = fromPartial<yjs.XmlText[]>(block(tab).toArray())
     expect(left.toDelta()).toEqual([{ insert: 'a' }, { insert: 'b', attributes: { bold: {} } }])
     expect(right.toDelta()).toEqual([
       { insert: 'c', attributes: { bold: {}, mystery: { tone: 'warm' } } },
@@ -301,7 +302,7 @@ describe('positions in neighbouring texts', () => {
 
   it('place a caret in the second and third texts, and follow an edit before it', () => {
     const tab = open(stored(texts('ab', 'cd', 'ef')))
-    const [, second, third] = block(tab).toArray() as yjs.XmlText[]
+    const [, second, third] = fromPartial<yjs.XmlText[]>(block(tab).toArray())
     const carets = [
       yjs.createRelativePositionFromTypeIndex(second, 1),
       yjs.createRelativePositionFromTypeIndex(third, 1),
@@ -329,13 +330,13 @@ describe('a thread across neighbouring texts', () => {
       },
     })
     const tab = open(stored(texts('ab', 'cd', 'ef')), highlights)
-    const [, second, third] = block(tab).toArray() as yjs.XmlText[]
+    const [, second, third] = fromPartial<yjs.XmlText[]>(block(tab).toArray())
     const anchor = encodeAnchor(
       yjs.createRelativePositionFromTypeIndex(second, 1),
       yjs.createRelativePositionFromTypeIndex(third, 1),
       '',
     )
-    threads.push({ name: 'c1', anchor, resolved: false } as DocumentThread)
+    threads.push(fromPartial<DocumentThread>({ name: 'c1', anchor, resolved: false }))
     redrawThreads(tab.editor.view)
 
     const highlight = tab.editor.view.dom.querySelectorAll('[data-thread="c1"]')

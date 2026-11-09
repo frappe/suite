@@ -1,7 +1,12 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref, type Component } from 'vue'
+import { applyUpdate, Doc } from 'yjs'
+
+import { requireTestElement } from '@/platform/testing/dom'
 
 import {
+  collabRoom,
   fakeServer,
   forgetTemplates,
   openedSurface,
@@ -43,11 +48,12 @@ const { initPresentationDoc, inReadonlyMode, loadTemplates, viewOnly } =
 const { offlineCopyStatus } = await import('@/apps/slides/stores/offlineCopy')
 const { RECORD_PREFIX } = await import('@/apps/slides/utils/slidesCaches')
 const { keepRecovery, readRecovery, removeNewestRecovery } = await import('./recovery')
-const { toast } = await import('frappe-ui')
+const { toast, useKeyboardShortcut } = await import('frappe-ui')
 const { changeSlideInSlideshow } = await import('@/apps/slides/stores/slideshow')
 const { router: slidesRouter } = await import('@/apps/slides/router')
 const { setActiveElements } = await import('@/apps/slides/stores/element')
-const { useKeyboardShortcut } = await import('frappe-ui')
+const { convertLegacy } = await import('@/apps/slides/collab/conversion')
+const { addSlide, deleteSlide } = await import('@/apps/slides/collab/deck')
 
 let mounted: Awaited<ReturnType<typeof openedSurface>> | null = null
 
@@ -70,7 +76,7 @@ describe('Slides autosave', () => {
 
     await vi.waitFor(() => expect(saves).toHaveLength(1), { timeout: 3000 })
     expect(saves[0]).toMatchObject({ name: mounted.docname })
-    expect((saves[0] as { slides: unknown[] }).slides).toHaveLength(3)
+    expect(savedSlides(saves[0])).toHaveLength(3)
   })
 
   it('asks the browser to confirm leaving while an edit is unsaved', async () => {
@@ -87,13 +93,21 @@ describe('Slides autosave', () => {
   })
 })
 
+function mountedDocumentName() {
+  if (!mounted) throw new Error('No presentation is mounted')
+  return mounted.docname
+}
+
 // frappe-ui's dispatcher: a shortcut runs only while it is enabled
 async function press(combo: string) {
-  const [shortcuts] = vi.mocked(useKeyboardShortcut).mock.lastCall as [
-    { combo: string; enabled?: () => boolean; handler: (event: KeyboardEvent) => void }[],
-  ]
-  const shortcut = shortcuts.find((entry) => entry.combo === combo)!
-  if (shortcut.enabled?.() ?? true) shortcut.handler(new KeyboardEvent('keydown'))
+  const config = vi.mocked(useKeyboardShortcut).mock.lastCall?.[0]
+  const shortcuts = Array.isArray(config) ? config : config ? [config] : []
+  const shortcut = shortcuts.find((entry) => entry.combo === combo)
+  if (!shortcut || typeof shortcut.handler !== 'function')
+    throw new Error(`Missing shortcut ${combo}`)
+  const enabled =
+    typeof shortcut.enabled === 'function' ? shortcut.enabled() : (shortcut.enabled ?? true)
+  if (enabled) shortcut.handler(new KeyboardEvent('keydown'))
   await nextTick()
 }
 
@@ -165,14 +179,14 @@ describe('Slides editing a deck another tab holds', () => {
   }
 
   async function storedDraft() {
-    return (await getPresentationFromLocalDB(mounted?.docname)) as {
+    return fromPartial<{
       dirty: boolean
       content: unknown[]
-    } | null
+    } | null>(await getPresentationFromLocalDB(mounted?.docname))
   }
 
   afterEach(() => {
-    delete (navigator as { locks?: unknown }).locks
+    Reflect.deleteProperty(navigator, 'locks')
   })
 
   it('opens read-only while another tab edits the deck, and edits here on request', async () => {
@@ -289,6 +303,26 @@ describe('Slides slideshow route', () => {
     expect(mounted.router.currentRoute.value.query).toEqual({ slide: '1' })
     expect(shown()).toBe(false)
   })
+
+  it('opens a converted deck in its view instead of a show from its rows', async () => {
+    mounted = await openedSurface({ path: '/present?slide=1', deck: { is_converted: true } })
+
+    await vi.waitFor(() => expect(mounted?.router.currentRoute.value.name).toBe('document-host'))
+    expect(mounted.router.currentRoute.value.query).toEqual({ slide: '1' })
+    expect(shown()).toBe(false)
+  })
+
+  it('never mounts the show on a converted deck, even before the redirect lands', async () => {
+    const mountedShows: boolean[] = []
+    const seen = new MutationObserver(() => mountedShows.push(shown()))
+    seen.observe(document.body, { childList: true, subtree: true })
+
+    mounted = await openedSurface({ path: '/present?slide=1', deck: { is_converted: true } })
+    await vi.waitFor(() => expect(mounted?.router.currentRoute.value.name).toBe('document-host'))
+    seen.disconnect()
+
+    expect(mountedShows).not.toContain(true)
+  })
 })
 
 describe('Slides Present button', () => {
@@ -383,6 +417,182 @@ function answersStartupReads() {
   })
 }
 
+describe('a deck on the content layer', () => {
+  function statusOf(root: Element) {
+    return root.querySelector('p[role="status"]')?.textContent
+  }
+
+  it('tells a waiting deck it is being upgraded and keeps it read-only', async () => {
+    mounted = await openedSurface({ deck: { conversion: { state: 'pending' } } })
+
+    expect(statusOf(mounted.root)).toContain('being upgraded')
+    expect(viewOnly.value).toBe(true)
+  })
+
+  it('tells a refused deck it stays read-only and draws its rows', async () => {
+    mounted = await openedSurface({ deck: { conversion: { state: 'refused' } } })
+
+    expect(statusOf(mounted.root)).toContain("couldn't be upgraded, so it stays read-only")
+    expect(statusOf(mounted.root)).not.toContain('Reason')
+    expect(thumbnails(mounted.root)).toHaveLength(served.slides.length)
+    expect(viewOnly.value).toBe(true)
+  })
+
+  it('shows a System Manager the reason the server sent', async () => {
+    mounted = await openedSurface({
+      deck: { conversion: { state: 'refused', reason: 'check: html' } },
+    })
+
+    expect(statusOf(mounted.root)).toContain('Reason: check: html.')
+  })
+
+  it('shows no notice on a combined deck', async () => {
+    mounted = await openedSurface({ composite: {} })
+    await vi.waitFor(() => expect(viewOnly.value).toBe(true))
+
+    expect(statusOf(mounted.root)).toBeUndefined()
+  })
+
+  // the rows hold two slides; the room the server converted them into holds these
+  function roomOf(...texts: string[]) {
+    const answer = convertLegacy(
+      {
+        slides: texts.map((text) => ({
+          id: text,
+          elements: [{ id: `box-${text}`, type: 'text', content: `<p>${text}</p>` }],
+        })),
+      },
+      4 * 1024 * 1024,
+    )
+    if (answer.kind !== 'converted') {
+      throw new Error(JSON.stringify(answer))
+    }
+
+    const doc = new Doc()
+    applyUpdate(doc, answer.state)
+    return { doc, close: vi.fn(async () => {}) }
+  }
+
+  function convertedRoom(...texts: string[]) {
+    const room = roomOf(...texts)
+    collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
+    return room.doc
+  }
+
+  function drawnTexts() {
+    const drawn = fromPartial<Array<{ elements: Array<{ content?: string }> }>>(editorSlides.value)
+    return drawn.map((slide) => slide.elements.map((element) => element.content).join())
+  }
+
+  it('draws a converted presentation in the view-only editor from its room, not its rows', async () => {
+    convertedRoom('one', 'two', 'three')
+    mounted = await openedSurface({ deck: { is_converted: true } })
+
+    await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(3))
+    expect(drawnTexts()).toEqual(
+      ['one', 'two', 'three'].map((text) => expect.stringContaining(`>${text}</p>`)),
+    )
+    expect(viewOnly.value).toBe(true)
+    expect(saves).toEqual([])
+  })
+
+  it('draws a slide the room gains after it opened', async () => {
+    const doc = convertedRoom('one')
+    mounted = await openedSurface({ deck: { is_converted: true } })
+    await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+
+    addSlide(doc)
+
+    await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(2))
+  })
+
+  function shownText() {
+    const texts = drawnTexts()
+    return texts[slideIndex.value ?? 0]
+  }
+
+  it('moves to a slide that is left when the shown one is deleted in the room', async () => {
+    const doc = convertedRoom('one', 'two')
+    mounted = await openedSurface({ deck: { is_converted: true } })
+    await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(2))
+    slideIndex.value = 1
+
+    deleteSlide(doc, 'two')
+
+    await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+    expect(shownText()).toContain('>one</p>')
+  })
+
+  it('keeps showing the same slide when one before it is deleted in the room', async () => {
+    const doc = convertedRoom('one', 'two', 'three')
+    mounted = await openedSurface({ deck: { is_converted: true } })
+    await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(3))
+    slideIndex.value = 1
+
+    deleteSlide(doc, 'one')
+
+    await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(2))
+    expect(shownText()).toContain('>two</p>')
+  })
+
+  it('drops a room that opens after its presentation was left, so the next one keeps its own slides', async () => {
+    let open!: (opened: unknown) => void
+    collabRoom.open.mockReturnValueOnce(
+      new Promise((resolve) => {
+        open = resolve
+      }),
+    )
+    const opens = collabRoom.open.mock.calls.length
+    const left = await openedSurface({ deck: { is_converted: true } })
+    await vi.waitFor(() => expect(collabRoom.open.mock.calls.length).toBeGreaterThan(opens))
+    left.app.unmount()
+    left.root.remove()
+    mounted = await openedSurface()
+    const own = drawnTexts()
+
+    const room = roomOf('one', 'two', 'three')
+    open({ state: 'live', room })
+
+    await vi.waitFor(() => expect(room.close).toHaveBeenCalled())
+    expect(drawnTexts()).toEqual(own)
+    expect(thumbnails(mounted.root)).toHaveLength(served.slides.length)
+  })
+
+  it('starts no slideshow on a converted presentation from Mod+P', async () => {
+    convertedRoom('one')
+    mounted = await openedSurface({ deck: { is_converted: true } })
+    await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+    const fullscreen = vi.fn(async () => {})
+    document.documentElement.requestFullscreen = fullscreen
+    vi.mocked(slidesRouter.replace).mockClear()
+    const shortcuts = vi.mocked(useKeyboardShortcut).mock.calls.at(-1)![0]
+    if (!Array.isArray(shortcuts)) throw new Error('Expected a list of shortcuts')
+
+    const printShortcut = shortcuts.find(({ combo }) => combo === 'Mod+P')
+    if (typeof printShortcut?.handler !== 'function') throw new Error('Missing print shortcut')
+    printShortcut.handler(new KeyboardEvent('keydown', { key: 'p' }))
+
+    expect(fullscreen).not.toHaveBeenCalled()
+    expect(slidesRouter.replace).not.toHaveBeenCalled()
+  })
+
+  it('says a converted presentation could not open when its room does not, and draws no rows', async () => {
+    mounted = await openedSurface({ deck: { is_converted: true } })
+
+    await vi.waitFor(() =>
+      expect(mounted!.root.textContent).toContain('Could not open this presentation.'),
+    )
+    expect(thumbnails(mounted.root)).toHaveLength(0)
+  })
+
+  it('puts the notice in the slide area beside the side panel, not above both', async () => {
+    mounted = await openedSurface({ deck: { conversion: { state: 'refused' } } })
+
+    const notice = mounted.root.querySelector('p[role="status"]')
+    expect(notice?.parentElement?.querySelector(':scope > nav')).not.toBeNull()
+  })
+})
+
 describe('Slides panels', () => {
   it('offers a signed-out reader of a public presentation no comments or versions', async () => {
     mounted = await openedSurface({ panels: [] })
@@ -436,7 +646,7 @@ describe('Slides offline copy', () => {
   })
 
   afterEach(() => {
-    delete (navigator as { serviceWorker?: unknown }).serviceWorker
+    Reflect.deleteProperty(navigator, 'serviceWorker')
     delete window.disable_slides_service_worker
     localStorage.clear()
     vi.unstubAllEnvs()
@@ -491,7 +701,7 @@ describe('Slides offline copy', () => {
   })
 
   it('hides the copy in a browser without service workers', async () => {
-    delete (navigator as { serviceWorker?: unknown }).serviceWorker
+    Reflect.deleteProperty(navigator, 'serviceWorker')
     mounted = await openedSurface()
     await nextTick()
 
@@ -615,7 +825,7 @@ describe('Slides offline copy', () => {
       id: 'media-node-1',
       src: ref(null),
       cacheKey: ref('media-node-1'),
-      status: ref('refused'),
+      status: ref<'refused'>('refused'),
       refresh: async () => {},
     }
 
@@ -627,7 +837,7 @@ describe('Slides offline copy', () => {
           elements: [{ id: 'e1', type: 'image', src: 'media-node-1' }],
         },
       ],
-      media: () => refused as never,
+      media: () => fromPartial(refused),
     })
     await new Promise((resolve) => setTimeout(resolve, 50))
 
@@ -700,7 +910,7 @@ describe('Slides offline copy', () => {
       id: 'media-node-1',
       src: ref(null),
       cacheKey: ref('media-node-1'),
-      status: ref('refused'),
+      status: ref<'refused'>('refused'),
       refresh: async () => {},
     }
     mounted = await openedSurface({
@@ -711,7 +921,7 @@ describe('Slides offline copy', () => {
           elements: [{ id: 'e1', type: 'image', src: 'media-node-1' }],
         },
       ],
-      media: () => refused as never,
+      media: () => fromPartial(refused),
     })
     await vi.waitFor(() => expect(offlineCopyStatus.value).toBe('available'))
 
@@ -724,7 +934,7 @@ describe('Slides offline copy', () => {
       await nextTick()
       expect(offlineCopyStatus.value).toBe('available')
     } finally {
-      delete (navigator as { onLine?: unknown }).onLine
+      Reflect.deleteProperty(navigator, 'onLine')
     }
   })
 
@@ -745,10 +955,6 @@ describe('Slides push refused by the server', () => {
   const REFUSED_UNSTORED =
     'This presentation changed elsewhere. Download your changes before you reload.'
 
-  interface KeptToast {
-    action: { label: string; onClick: (event: Event) => void }
-  }
-
   let files: ReturnType<typeof vi.fn<(file: File) => string>>
 
   startsFromEmptyStore()
@@ -756,14 +962,25 @@ describe('Slides push refused by the server', () => {
   beforeEach(() => {
     files = vi.fn((_file: File) => 'blob:recovery')
 
-    URL.createObjectURL = files as unknown as typeof URL.createObjectURL
+    URL.createObjectURL = fromPartial<typeof URL.createObjectURL>(files)
     URL.revokeObjectURL = () => {}
   })
 
   function keptToast(message: string) {
     const call = vi.mocked(toast.warning).mock.calls.find(([text]) => text === message)
     const [, actions] = call ?? []
-    return actions as unknown as KeptToast | undefined
+    const action = actions?.action
+    if (
+      !action ||
+      typeof action !== 'object' ||
+      !('label' in action) ||
+      typeof action.label !== 'string' ||
+      !('onClick' in action) ||
+      typeof action.onClick !== 'function'
+    )
+      return undefined
+    const { label, onClick } = action
+    return { action: { label, onClick: (event: MouseEvent) => onClick.call(action, event) } }
   }
 
   function heldNotice(message: string) {
@@ -784,7 +1001,9 @@ describe('Slides push refused by the server', () => {
     fakeServer.isRefusing = true
     duplicateSlide()
     await vi.waitFor(() => expect(heldNotice(message)).toBeDefined(), { timeout: 3000 })
-    return heldNotice(message) as NonNullable<ReturnType<typeof heldNotice>>
+    const notice = heldNotice(message)
+    if (!notice) throw new Error('Expected the held-work notice')
+    return notice
   }
 
   function serverMoves() {
@@ -823,8 +1042,9 @@ describe('Slides push refused by the server', () => {
   }
 
   async function downloadedSlides() {
-    const [file] = files.mock.lastCall as [File]
-    return JSON.parse(await file.text()).slides as unknown[]
+    const file = files.mock.lastCall?.[0]
+    if (!(file instanceof File)) throw new Error('Expected a downloaded presentation file')
+    return fromPartial<unknown[]>(JSON.parse(await file.text()).slides)
   }
 
   it('says so in a notice that stays up, and keeps a copy at that moment', async () => {
@@ -898,7 +1118,7 @@ describe('Slides push refused by the server', () => {
     expect(await downloadedSlides()).toHaveLength(3)
 
     serverMoves()
-    const docname = mounted?.docname as string
+    const docname = mountedDocumentName()
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
     menuItem('Discard my changes')?.click()
     expect(confirm).toHaveBeenCalledWith("Discard your kept changes? This can't be undone.")
@@ -908,14 +1128,16 @@ describe('Slides push refused by the server', () => {
     menuItem('Discard my changes')?.click()
     await vi.waitFor(() => expect(saveRefused.value).toBe(false))
     await vi.waitFor(() => expect(editorSlides.value).toHaveLength(2))
-    const draft = (await getPresentationFromLocalDB(docname)) as { dirty: boolean }
+    const draft = await getPresentationFromLocalDB(docname)
+    if (!draft || typeof draft !== 'object' || !('dirty' in draft))
+      throw new Error('Expected a stored draft')
     expect(draft.dirty).toBe(false)
     expect(dirty.value).toBe(false)
   })
 
   describe('leaving', () => {
     async function left() {
-      const docname = mounted?.docname as string
+      const docname = mountedDocumentName()
       mounted?.app.unmount()
       mounted = null
       await new Promise((resolve) => setTimeout(resolve, 50))
@@ -940,7 +1162,7 @@ describe('Slides push refused by the server', () => {
       await left()
 
       expect(saves).toHaveLength(1)
-      expect((saves[0] as { slides: unknown[] }).slides).toHaveLength(served.slides.length + 1)
+      expect(savedSlides(saves[0])).toHaveLength(served.slides.length + 1)
     })
   })
 
@@ -971,7 +1193,7 @@ describe('Slides push refused by the server', () => {
 
     function opacityField(root: Element) {
       const row = [...root.querySelectorAll('span')].find((el) => el.textContent === 'Opacity')
-      return row?.parentElement?.querySelector('input') as HTMLInputElement
+      return requireTestElement(row?.parentElement?.querySelector('input'), HTMLInputElement)
     }
 
     async function left() {
@@ -1005,7 +1227,7 @@ describe('Slides push refused by the server', () => {
       await left()
 
       expect(saves).toHaveLength(1)
-      const [saved] = (saves[0] as { slides: Array<{ elements: string }> }).slides
+      const [saved] = savedSlides(saves[0])
       const pushed: typeof elements = JSON.parse(saved.elements)
       expect(pushed.find((el) => el.id === 'shape')?.opacity).toBe(51)
     })
@@ -1051,9 +1273,9 @@ describe('Slides push refused by the server', () => {
 
   async function draftDirty() {
     await new Promise((resolve) => setTimeout(resolve, 50))
-    const draft = (await getPresentationFromLocalDB(mounted?.docname as string)) as {
-      dirty: boolean
-    }
+    const draft = await getPresentationFromLocalDB(mountedDocumentName())
+    if (!draft || typeof draft !== 'object' || !('dirty' in draft))
+      throw new Error('Expected a stored draft')
     return draft.dirty
   }
 
@@ -1415,7 +1637,7 @@ describe('Slides push refused by the server', () => {
       expect(editorSlides.value).toHaveLength(3)
       expect(downloadButton()).not.toBeNull()
       expect(mounted?.root.querySelector('[aria-label="Opening presentation"]')).toBeNull()
-      expect(thumbnails(mounted?.root as Element)).toHaveLength(3)
+      expect(thumbnails(requireTestElement(mounted?.root, Element))).toHaveLength(3)
 
       widen()
       await nextTick()
@@ -1510,7 +1732,9 @@ describe('Slides push refused by the server', () => {
       mounted.access.value = { role: 10 }
       await vi.waitFor(() => expect(readRecovery('node-1')).toHaveLength(1))
       release()
-      await vi.waitFor(() => expect(thumbnails(mounted?.root as Element)).toHaveLength(2))
+      await vi.waitFor(() =>
+        expect(thumbnails(requireTestElement(mounted?.root, Element))).toHaveLength(2),
+      )
 
       const [copy] = readRecovery('node-1')
       expect(copy.sticky).toBe(true)
@@ -1531,7 +1755,9 @@ describe('Slides push refused by the server', () => {
       await vi.waitFor(() => expect(readRecovery('node-1')).toHaveLength(1))
       release()
       saveFailed.value = false
-      await vi.waitFor(() => expect(thumbnails(mounted?.root as Element)).toHaveLength(2))
+      await vi.waitFor(() =>
+        expect(thumbnails(requireTestElement(mounted?.root, Element))).toHaveLength(2),
+      )
 
       const [copy] = readRecovery('node-1')
       expect(copy.sticky).toBe(true)
@@ -1571,7 +1797,9 @@ describe('Slides push refused by the server', () => {
       mounted.access.value = { role: 10 }
       await new Promise((resolve) => setTimeout(resolve, 50))
       release()
-      await vi.waitFor(() => expect(thumbnails(mounted?.root as Element)).toHaveLength(2))
+      await vi.waitFor(() =>
+        expect(thumbnails(requireTestElement(mounted?.root, Element))).toHaveLength(2),
+      )
 
       expect((await getPresentationFromLocalDB(mounted.docname))?.dirty).toBe(true)
       expect(keptToast(UNREAD)).toBeUndefined()
@@ -1611,7 +1839,7 @@ describe('Slides push refused by the server', () => {
       duplicateSlide()
       await saveLands()
       await vi.waitFor(async () =>
-        expect(await getPresentationFromLocalDB(mounted?.docname as string)).toBeFalsy(),
+        expect(await getPresentationFromLocalDB(mountedDocumentName())).toBeFalsy(),
       )
       writes.mockRestore()
       vi.mocked(toast.warning).mockClear()
@@ -1632,11 +1860,13 @@ describe('Slides push refused by the server', () => {
       mounted.access.value = { role: 10 }
       await vi.waitFor(() => expect(readRecovery('node-1')).toHaveLength(1))
       await vi.waitFor(async () =>
-        expect(await getPresentationFromLocalDB(mounted?.docname as string)).toBeFalsy(),
+        expect(await getPresentationFromLocalDB(mountedDocumentName())).toBeFalsy(),
       )
       writes.mockRestore()
       release()
-      await vi.waitFor(() => expect(thumbnails(mounted?.root as Element)).toHaveLength(2))
+      await vi.waitFor(() =>
+        expect(thumbnails(requireTestElement(mounted?.root, Element))).toHaveLength(2),
+      )
 
       const [copy] = readRecovery('node-1')
       expect(copy.slides).toEqual([{ clientId: 'killed', background: '#00ff00ff', elements: [] }])
@@ -1662,7 +1892,9 @@ describe('Slides push refused by the server', () => {
       expect(copy.slides).toEqual([{ clientId: 'killed', background: '#00ff00ff', elements: [] }])
       expect((await getPresentationFromLocalDB(mounted.docname))?.dirty).toBe(true)
       release()
-      await vi.waitFor(() => expect(thumbnails(mounted?.root as Element)).toHaveLength(2))
+      await vi.waitFor(() =>
+        expect(thumbnails(requireTestElement(mounted?.root, Element))).toHaveLength(2),
+      )
     })
 
     it('stays view only when access returns and the store is still full', async () => {
@@ -1730,7 +1962,7 @@ describe('Slides push refused by the server', () => {
       fail(new Response(JSON.stringify({ exception: 'load gone wrong' }), { status: 404 }))
       await new Promise((resolve) => setTimeout(resolve, 50))
 
-      expect(thumbnails(mounted?.root as Element)).toHaveLength(3)
+      expect(thumbnails(requireTestElement(mounted?.root, Element))).toHaveLength(3)
     })
 
     it('still holds the only copy when access narrows again with the flags clean', async () => {
@@ -1797,7 +2029,9 @@ describe('Slides push refused by the server', () => {
       mounted.access.value = { role: 10 }
       await new Promise((resolve) => setTimeout(resolve, 50))
       release()
-      await vi.waitFor(() => expect(thumbnails(mounted?.root as Element)).toHaveLength(1))
+      await vi.waitFor(() =>
+        expect(thumbnails(requireTestElement(mounted?.root, Element))).toHaveLength(1),
+      )
       vi.mocked(Storage.prototype.setItem).mockRestore()
 
       widen()
@@ -1819,7 +2053,7 @@ describe('Slides push refused by the server', () => {
       })
       mounted.access.value = { role: 10 }
       await vi.waitFor(async () =>
-        expect((await getPresentationFromLocalDB(mounted?.docname as string))?.dirty).toBe(false),
+        expect((await getPresentationFromLocalDB(mountedDocumentName()))?.dirty).toBe(false),
       )
 
       widen()
@@ -2101,3 +2335,25 @@ describe('the Drive preview after a version restore', () => {
     await vi.waitFor(() => expect(previews).toHaveLength(1))
   })
 })
+
+function savedSlides(value: unknown) {
+  if (!value || typeof value !== 'object' || !('slides' in value) || !Array.isArray(value.slides))
+    throw new Error('Expected a saved slide array')
+  return value.slides.map((slide: unknown) => {
+    if (!isSavedSlide(slide)) throw new Error('Expected serialized slide elements')
+    return slide
+  })
+}
+
+interface SavedSlidePayload {
+  elements: string
+  [key: string]: unknown
+}
+function isSavedSlide(value: unknown): value is SavedSlidePayload {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    'elements' in value &&
+    typeof value.elements === 'string'
+  )
+}

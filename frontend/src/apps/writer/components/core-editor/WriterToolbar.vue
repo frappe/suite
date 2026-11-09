@@ -323,7 +323,9 @@ useResizeObserver(rows, layOutRows)
 
 /** Marks the groups that start a row, and makes the hidden rows unreachable. */
 function layOutRows() {
-  const groups = [...(rows.value?.children ?? [])] as HTMLElement[]
+  const groups = [...(rows.value?.children ?? [])].filter(
+    (child): child is HTMLElement => child instanceof HTMLElement,
+  )
   const firstRowTop = groups[0]?.offsetTop ?? 0
   overflows.value = groups.some((group) => group.offsetTop > firstRowTop)
   if (!overflows.value) expanded.value = false

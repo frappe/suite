@@ -54,7 +54,6 @@ beforeEach(() => {
     },
     {
       transport: createTransport({ fetch: fetcher, retryBaseMs: 0 }),
-      persistence: false,
       feedback,
     },
   )
@@ -172,13 +171,18 @@ describe('Suite API references and shared client', () => {
       used_bytes: null,
     }))
     fetcher.mockImplementation(async (_url, options) => {
-      const input = JSON.parse(String(options?.body)) as {
-        search?: string
-        start: number
-        page_length: number
-      }
-      if (input.search === 'slow') return delayed.promise
-      const items = input.search === 'bob' ? members.slice(1, 2) : members
+      const input: unknown = JSON.parse(String(options?.body))
+      if (
+        !input ||
+        typeof input !== 'object' ||
+        !('start' in input) ||
+        typeof input.start !== 'number' ||
+        !('page_length' in input) ||
+        typeof input.page_length !== 'number'
+      )
+        throw new Error('Expected pagination input')
+      if ('search' in input && input.search === 'slow') return delayed.promise
+      const items = 'search' in input && input.search === 'bob' ? members.slice(1, 2) : members
       return new Response(
         JSON.stringify({
           message: {
@@ -325,7 +329,14 @@ describe('Suite API references and shared client', () => {
     let title = 'Budget'
     fetcher.mockImplementation(async (url, init) => {
       if (init?.method === 'PATCH') {
-        const input = JSON.parse(String(init.body)) as { title: string }
+        const input: unknown = JSON.parse(String(init.body))
+        if (
+          !input ||
+          typeof input !== 'object' ||
+          !('title' in input) ||
+          typeof input.title !== 'string'
+        )
+          throw new Error('Expected a rename title')
         if (input.title === 'Forbidden')
           return answer({ type: 'DriveForbidden', message: 'Read only' }, 403)
         title = input.title
@@ -366,7 +377,15 @@ describe('Suite API references and shared client', () => {
     let savedTitle = 'Budget'
     fetcher.mockImplementation(async (_url, init) => {
       if (init?.method !== 'PATCH') return answer(node(savedTitle))
-      const { title } = JSON.parse(String(init.body)) as { title: string }
+      const input: unknown = JSON.parse(String(init.body))
+      if (
+        !input ||
+        typeof input !== 'object' ||
+        !('title' in input) ||
+        typeof input.title !== 'string'
+      )
+        throw new Error('Expected a rename title')
+      const { title } = input
       sent.push(title)
       if (title === 'First') return pending.promise
       savedTitle = title
@@ -395,7 +414,15 @@ describe('Suite API references and shared client', () => {
   it('settles once every write has landed, a write called while waiting included', async () => {
     const pending = deferred<Response>()
     fetcher.mockImplementation(async (_url, init) => {
-      const { title } = JSON.parse(String(init?.body)) as { title: string }
+      const input: unknown = JSON.parse(String(init?.body))
+      if (
+        !input ||
+        typeof input !== 'object' ||
+        !('title' in input) ||
+        typeof input.title !== 'string'
+      )
+        throw new Error('Expected a rename title')
+      const { title } = input
       return title === 'First' ? pending.promise : answer(node(title))
     })
     const landed: string[] = []
@@ -459,6 +486,42 @@ describe('Suite API references and shared client', () => {
     const sent = fetcher.mock.calls.at(-1)?.[1]
     expect(new Headers(sent?.headers).get('X-Drive-Links')).toBe(code)
     expect(JSON.parse(String(sent?.body))).not.toHaveProperty('node')
+  })
+
+  /** What a read through a share link shows while a grant write refetches it. */
+  async function linkReadDuringGrantWrite(): Promise<string | undefined> {
+    const refetch = deferred<Response>()
+    let reads = 0
+    fetcher.mockImplementation(async (_url, init) => {
+      if (init?.method === 'PATCH')
+        return answer({
+          name: 'g',
+          node: 'budget',
+          principal: 'leo@northwind.test',
+          role: 20,
+          expires_on: null,
+          has_password: false,
+          sent_to: null,
+        })
+      return ++reads === 1 ? answer(node('Budget')) : refetch.promise
+    })
+    driveLinks.seed('L000000000000000000001', 'budget')
+    const detail = observe(() => engine.useQuery(api.drive.nodes.get, { node: 'budget' }))
+    await vi.waitFor(() => expect(detail.data?.title).toBe('Budget'))
+    const write = engine.client.mutation(api.drive.grants.update, {
+      node: 'budget',
+      grant: 'g',
+      role: 20,
+    })
+    await vi.waitFor(() => expect(reads).toBe(2))
+    const shown = detail.data?.title
+    refetch.resolve(answer(node('Budget')))
+    await write
+    return shown
+  }
+
+  it('keeps a read through a share link on screen while a grant write refetches it', async () => {
+    expect(await linkReadDuringGrantWrite()).toBe('Budget')
   })
 
   it('pages to exhaustion and resets when domain arguments change', async () => {
@@ -647,10 +710,19 @@ describe('Mail settings through the shared client', () => {
         return answer(settings.get(account))
       }
       if (refuse) return answer({ type: 'PermissionError', message: 'Account is read only' }, 403)
-      const input = JSON.parse(String(options?.body)) as {
-        account: string
-        changes: { enable_screening: 0 | 1 }
-      }
+      const input: unknown = JSON.parse(String(options?.body))
+      if (
+        !input ||
+        typeof input !== 'object' ||
+        !('account' in input) ||
+        typeof input.account !== 'string' ||
+        !('changes' in input) ||
+        !input.changes ||
+        typeof input.changes !== 'object' ||
+        !('enable_screening' in input.changes) ||
+        (input.changes.enable_screening !== 0 && input.changes.enable_screening !== 1)
+      )
+        throw new Error('Expected account screening preferences')
       Object.assign(settings.get(input.account)!, input.changes)
       return answer(null)
     })

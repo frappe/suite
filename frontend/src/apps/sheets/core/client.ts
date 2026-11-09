@@ -22,6 +22,20 @@ import { CommandTypes, validateCommand, type Command } from './commands.js'
 import type { FoundCell, RangeStats } from './workbook.js'
 import type { ApplyResult, CellRead, ReadWhat, WorkerResponse } from './worker.js'
 
+function isWorkerResponse(value: unknown): value is WorkerResponse {
+  if (!value || typeof value !== 'object' || !('reqId' in value) || typeof value.reqId !== 'number')
+    return false
+  if (!('error' in value)) return 'result' in value
+  const error = value.error
+  return (
+    !!error &&
+    typeof error === 'object' &&
+    'message' in error &&
+    typeof error.message === 'string' &&
+    (!('fatal' in error) || error.fatal === undefined || error.fatal === true)
+  )
+}
+
 /** The part of a Worker the client uses. Tests pass a fake. */
 export interface WorkerPort {
   postMessage(message: unknown): void
@@ -188,7 +202,11 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
   }
 
   port.onmessage = (event: MessageEvent) => {
-    const res = event.data as WorkerResponse
+    const res: unknown = event.data
+    if (!isWorkerResponse(res)) {
+      crash('worker sent an invalid response')
+      return
+    }
     const entry = waiting.get(res.reqId)
     // reqId -1 (malformed request) or a stale id: nobody is waiting.
     if (entry) {
@@ -207,6 +225,8 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
       return Promise.reject(new WorkerRequestError(crashReason ?? 'worker terminated'))
     const reqId = nextReqId++
     return new Promise<T>((resolve, reject) => {
+      // SAFETY: waiting is keyed by the unique reqId for this request<T>; only its
+      // matching worker response resolves this callback, with the operation's declared result.
       waiting.set(reqId, { resolve: resolve as (v: unknown) => void, reject })
       port.postMessage({ reqId, type, payload })
     })
@@ -269,7 +289,7 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
   type Job = Command | RestoreJob | SnapshotJob
   const isRestore = (job: Job): job is RestoreJob => 'restore' in job
   const isSnapshot = (job: Job): job is SnapshotJob => 'snapshot' in job
-  const isControl = (job: Job) => isRestore(job) || isSnapshot(job)
+  const isControl = (job: Job): job is RestoreJob | SnapshotJob => isRestore(job) || isSnapshot(job)
 
   const queue: Job[] = []
   // Dispatches and restores so far: a snapshot taken at the same count is
@@ -343,7 +363,9 @@ export async function createWorkbookClient(options: ClientOptions = {}): Promise
     }
     // Commands up to the next restore or snapshot go out together.
     const stop = queue.findIndex(isControl)
-    const batch = queue.splice(0, stop === -1 ? queue.length : stop) as Command[]
+    const batch = queue.splice(0, stop === -1 ? queue.length : stop)
+    if (!batch.every((job): job is Command => !isControl(job)))
+      throw new Error('Worker command batch contains a control job')
     try {
       const res = await request<{
         version: number

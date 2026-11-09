@@ -359,12 +359,15 @@
         :save-failed="isSaveFailed"
         class="border-t sm:px-4 sm:pb-2.5"
         :class="{ 'border-transparent': isDragging }"
+        :remind-at="remindAt"
         @select-files="(files: File[]) => uploadFiles(files)"
         @attach-from-drive="attachFromDrive"
         @append-emoji="(emoji: string) => appendEmoji(emoji)"
         @discard-mail="discardMail"
         @send-mail="sendMail"
         @schedule-send="openScheduleModal"
+        @remind="setRemindAt"
+        @clear-remind="setRemindAt()"
         @retry-save="saveDraft"
       />
     </template>
@@ -460,7 +463,8 @@ const isUploading = computed(
     fileUploads.value.some((upload) => upload.isUploading) ||
     isAttachingFromDrive.value,
 )
-const user = inject('$user') as UserResource
+const user = inject<UserResource>('$user')
+if (!user) throw new Error('Missing required user provider')
 
 // The server refuses a file over the Mail attachment limit (`upload_file`); saying so here
 // spares sending the bytes first.
@@ -516,6 +520,8 @@ const {
   showScheduleModal,
   openScheduleModal,
   scheduleSend,
+  remindAt,
+  setRemindAt,
   openQuotedContent,
   openAttachment,
   attachFromDrive,
@@ -536,9 +542,10 @@ const {
   isUploading: () => isUploading.value,
   // The dialog holds the rest of the page inert, so the mention dropdown has to render inside it
   // rather than at <body>, where it would be unreachable.
-  mentionContainer: () =>
-    (textEditor.value?.$el as HTMLElement | undefined)?.closest<HTMLElement>('[role="dialog"]') ??
-    null,
+  mentionContainer: () => {
+    const element: unknown = textEditor.value?.$el
+    return element instanceof HTMLElement ? element.closest<HTMLElement>('[role="dialog"]') : null
+  },
 })
 
 const identityOptions = computed(() =>
@@ -683,9 +690,9 @@ const TYPE_ICON_MAP = {
 // this the shortcuts went to all of them at once: ⌘D discarded every open draft, ⌘Enter sent them.
 // The one the keystroke belongs to is the one it was typed into.
 const ownsEvent = (e: KeyboardEvent) => {
-  const root = textEditor.value?.$el as HTMLElement | undefined
-  const target = e.target as Node | null
-  return !!root && !!target && root.contains(target)
+  const root: unknown = textEditor.value?.$el
+  const target = e.target instanceof Node ? e.target : null
+  return root instanceof HTMLElement && !!target && root.contains(target)
 }
 const handleKeydown = (e: KeyboardEvent) => {
   if (!show.value || (isInThread && isOverlayPresent())) return
@@ -750,6 +757,7 @@ const uploadFile = async (file: File) => {
     size: file.size,
     ...fileUpload,
   })
+  // SAFETY: this Suite upload endpoint returns a Frappe File document; attachDoc reads its file_name/file_url fields.
   const doc = (await fileUpload.upload(file, {
     private: true,
     folder: 'Home/Frappe Mail',

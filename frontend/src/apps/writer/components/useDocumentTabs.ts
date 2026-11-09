@@ -15,7 +15,16 @@ export function useDocumentTabs(editor: Editor) {
   }
 
   function onTabChanged(event: Event) {
-    activeTabId.value = (event as CustomEvent<{ tabId: string }>).detail.tabId
+    if (!('detail' in event)) return
+    const detail = event.detail
+    if (
+      !detail ||
+      typeof detail !== 'object' ||
+      !('tabId' in detail) ||
+      typeof detail.tabId !== 'string'
+    )
+      return
+    activeTabId.value = detail.tabId
   }
 
   // A caller can unmount after the editor is destroyed, when its view is gone

@@ -253,6 +253,23 @@ BASELINE_DEBT = {
         ),
     ),
     **_debt(
+        "Suite Slides",
+        "Remove when Drive can start a comment thread through its package root.",
+        # The comments case starts a thread on the old presentation to check conversion
+        # keeps it; Drive's package root reads threads but starts none
+        (
+            "suite/slides/content/tests/test_conversion.py|import|suite.drive._core",
+            "suite/slides/content/tests/test_conversion.py|import|suite.drive.framework",
+        ),
+    ),
+    **_debt(
+        "Suite Slides",
+        "Remove when Drive can purge one node for one test.",
+        # The purge case unlinks the presentation from its node first, so the purge
+        # leaves the node behind for the cleanup to delete
+        ("suite/slides/content/tests/test_registration.py|drive-table-write|Drive Node",),
+    ),
+    **_debt(
         "Suite Slides API",
         "Remove when tickets 21 and 22 expose root, grant, and trash workflows over HTTP.",
         (
@@ -710,6 +727,7 @@ class TestArchitecture(unittest.TestCase):
                 "DriveLocked",
                 "DriveNotFound",
                 "DriveOverQuota",
+                "DriveStorageUnmeasured",
                 "PersonOnNode",
                 "Satellite",
                 "administration_usage",
@@ -749,6 +767,7 @@ class TestArchitecture(unittest.TestCase):
                 "release_storage_reservation",
                 "resolve_share_link",
                 "rollback_savepoint",
+                "root_locations",
                 "set_user_active",
                 "store_file",
                 "take_version",

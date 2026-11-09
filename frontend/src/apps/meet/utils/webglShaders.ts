@@ -1,3 +1,21 @@
+interface MaskBlurCache {
+  width: number
+  height: number
+  fboA: WebGLFramebuffer | null
+  textureA: WebGLTexture | null
+  fboB: WebGLFramebuffer | null
+  textureB: WebGLTexture | null
+}
+
+interface FrameTextureCache {
+  width: number
+  height: number
+  image: WebGLTexture | null
+  mask: WebGLTexture | null
+  blur: WebGLTexture | null
+  blurFbo: WebGLFramebuffer | null
+}
+
 // WebGL shader management for background effects
 const SHADERS = {
   vertex: `
@@ -260,14 +278,7 @@ export class WebGLManager {
   private maskBlurMaskLocation: WebGLUniformLocation | null = null
 
   // Cached FBO ping-pong pair for mask blur — reused every frame, recreated on resize
-  private maskBlurCache: {
-    width: number
-    height: number
-    fboA: WebGLFramebuffer | null
-    textureA: WebGLTexture | null
-    fboB: WebGLFramebuffer | null
-    textureB: WebGLTexture | null
-  } = {
+  private maskBlurCache: MaskBlurCache = {
     width: 0,
     height: 0,
     fboA: null,
@@ -275,14 +286,7 @@ export class WebGLManager {
     fboB: null,
     textureB: null,
   }
-  private frameCache: {
-    width: number
-    height: number
-    image: WebGLTexture | null
-    mask: WebGLTexture | null
-    blur: WebGLTexture | null
-    blurFbo: WebGLFramebuffer | null
-  } = {
+  private frameCache: FrameTextureCache = {
     width: 0,
     height: 0,
     image: null,
@@ -295,12 +299,12 @@ export class WebGLManager {
     texture: WebGLTexture
   } | null = null
 
-  constructor(canvas: HTMLCanvasElement) {
+  constructor(private readonly canvas: HTMLCanvasElement) {
     const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl')
-    if (!gl) {
+    if (!gl || !('createShader' in gl)) {
       throw new WebGLError('WebGL not supported')
     }
-    this.gl = gl as WebGLRenderingContext
+    this.gl = gl
   }
 
   initializeShaders(): void {
@@ -490,7 +494,7 @@ export class WebGLManager {
     direction: number[],
     targetFbo: WebGLFramebuffer | null = null,
   ): HTMLCanvasElement {
-    const canvas = this.gl.canvas as HTMLCanvasElement
+    const canvas = this.canvas
     if (canvas.width !== width) canvas.width = width
     if (canvas.height !== height) canvas.height = height
 
@@ -566,10 +570,7 @@ export class WebGLManager {
     this.frameCache = { width, height, image, mask, blur, blurFbo }
   }
 
-  private updateTexture(
-    texture: WebGLTexture,
-    source: ImageData | HTMLCanvasElement | ImageBitmap,
-  ): void {
+  private updateTexture(texture: WebGLTexture, source: TexImageSource): void {
     this.gl.bindTexture(this.gl.TEXTURE_2D, texture)
     this.gl.texSubImage2D(this.gl.TEXTURE_2D, 0, 0, 0, this.gl.RGBA, this.gl.UNSIGNED_BYTE, source)
   }
@@ -771,7 +772,7 @@ export class WebGLManager {
 
   applyBlur(
     source: HTMLCanvasElement,
-    mask: ImageBitmap,
+    mask: TexImageSource,
     width: number,
     height: number,
     sigma: number,
@@ -790,7 +791,7 @@ export class WebGLManager {
   // used to apply the light wrap effect on the source image using the mask and background image
   applyLightWrap(
     source: HTMLCanvasElement,
-    mask: ImageBitmap,
+    mask: TexImageSource,
     backgroundImageData: ImageData,
     width: number,
     height: number,
@@ -829,7 +830,7 @@ export class WebGLManager {
       throw new WebGLError('Failed to create background texture')
     }
 
-    const canvas = this.gl.canvas as HTMLCanvasElement
+    const canvas = this.canvas
     if (canvas.width !== width) canvas.width = width
     if (canvas.height !== height) canvas.height = height
 

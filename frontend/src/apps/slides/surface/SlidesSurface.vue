@@ -33,6 +33,7 @@ import SlideContainer from '@/apps/slides/components/SlideContainer.vue'
 import ThemeDialog from '@/apps/slides/components/ThemeDialog.vue'
 import Toolbar from '@/apps/slides/components/Toolbar.vue'
 import { useCommandHistory } from '@/apps/slides/composables/useCommandHistory'
+import { useNavigationPanel } from '@/apps/slides/composables/useNavigationPanel'
 import { useShortcuts } from '@/apps/slides/composables/useShortcuts'
 import { setDocumentMedia } from '@/apps/slides/stores/documentMedia'
 import { acquireEditLock, lockedElsewhere, releaseEditLock } from '@/apps/slides/stores/editLock'
@@ -100,6 +101,8 @@ import {
   type CompositeItem,
   type MergedCompositeSlide,
 } from './compositeGroups'
+import { conversionNotice, type ConversionStatus } from './conversionNotice'
+import { watchConvertedSlides } from './convertedSlides'
 import ExportView from './ExportView.vue'
 import { resolveDocumentUnload, useDocumentLeaveGuard, type DocumentSaveState } from './navigation'
 import { useNewPresentationTheme } from './newPresentation'
@@ -123,7 +126,11 @@ const route = useRoute()
 const router = useRouter()
 const userSession = useSession()
 const presenting = computed(
-  () => route.name === 'slides-slideshow' && loaded.value && slides.value.length > 0,
+  () =>
+    route.name === 'slides-slideshow' &&
+    loaded.value &&
+    slides.value.length > 0 &&
+    !isConverted.value,
 )
 // `?slide=N`: the slide the show presents, and the one the editor opens on.
 const presentedSlide = computed(() => Math.max(1, Math.trunc(Number(route.query.slide)) || 1))
@@ -169,16 +176,42 @@ const previewCapture = useTemplateRef<InstanceType<typeof PreviewCapture>>('prev
 const access = createSlidesAccess(props.session, { narrowed, widened })
 // A restore pauses editing: nothing is written while the server rewrites the deck.
 const restoring = ref(false)
+// Read-only until live editing, and drawn from its room: its rows no longer change
+const isConverted = ref(false)
+let closeConvertedRoom: (() => void) | null = null
+// A deck still on its rows, waiting for conversion or refused by it, is read-only too
+const conversion = ref<ConversionStatus | null>(null)
+const onLayer = computed(() => isConverted.value || !!conversion.value)
+const notice = computed(() => {
+  if (!conversion.value || !access.readable.value) {
+    return ''
+  }
+
+  return conversionNotice(conversion.value)
+})
 const editable = computed(
-  () => access.writable.value && !composite.value && !restoring.value && !isOnlyCopy.value,
+  () =>
+    access.writable.value &&
+    !composite.value &&
+    !restoring.value &&
+    !isOnlyCopy.value &&
+    !onLayer.value,
 )
 // A composite can restore a version of itself, so this is not `inReadonlyMode`.
 const canRestoreVersions = computed(
-  () => access.writable.value && !restoring.value && !isOnlyCopy.value && !writesBlocked.value,
+  () =>
+    access.writable.value &&
+    !restoring.value &&
+    !isOnlyCopy.value &&
+    !onLayer.value &&
+    !writesBlocked.value,
 )
 // Phones get a viewer: the slide fitted to the screen with previous and next. The
 // editor's panels need a wide screen. Same breakpoint as the shell's phone layout.
 const phone = useMediaQuery('(max-width: 767px)')
+const { isNavigationPanelOpen } = useNavigationPanel()
+// the side panel floats over the slide area, so a notice starts at its edge
+const isNoticeBesidePanel = computed(() => !phone.value && isNavigationPanelOpen.value)
 // What the canvas, panels and shortcuts read: the phone viewer edits nothing. The
 // stores keep their own `inReadonlyMode`, which follows access, the edit lock and a refused save.
 const canvasReadonly = computed(() => inReadonlyMode.value || phone.value)
@@ -289,12 +322,15 @@ watch(
     if (presentationDoc.value) presentationDoc.value.title = title
   },
 )
-// an empty presentation has no show, so its /present opens the editor
-watch([() => route.name, loaded, () => slides.value.length], ([name, done, count]) => {
-  if (name === 'slides-slideshow' && done && !count) {
-    void router.replace({ name: 'document-host', params: route.params, query: route.query })
-  }
-})
+// an empty presentation has no show, and a converted one none from its rows, so /present opens the deck
+watch(
+  [() => route.name, loaded, () => slides.value.length, isConverted],
+  ([name, done, count, converted]) => {
+    if (name === 'slides-slideshow' && done && (!count || converted)) {
+      void router.replace({ name: 'document-host', params: route.params, query: route.query })
+    }
+  },
+)
 watch(
   editable,
   (canEdit) => {
@@ -340,6 +376,7 @@ function showPanel(next: Panel | null) {
 async function loadComments() {
   panelLoading.value = true
   try {
+    // SAFETY: DocumentSession.comments.list calls the Suite threads endpoint, which returns its threads projection.
     const result = (await props.session.comments.list()) as {
       threads?: CommentThread[]
     }
@@ -464,7 +501,7 @@ async function load() {
   loadError.value = ''
   try {
     // Not `editable`: a restore pauses editing, and its reload is still an editor load.
-    const readonly = !access.writable.value || composite.value
+    const readonly = !access.writable.value || composite.value || onLayer.value
     // Refused while another tab holds the deck, which this one then shows read-only.
     // Refused with no holder: the surface closed while the request waited.
     const held =
@@ -483,9 +520,28 @@ async function load() {
     setSlideIndex(presentedSlide.value)
     loadTemplates()
     composite.value = !!doc?.is_composite
+    isConverted.value = !!doc?.is_converted
+    const status = doc?.conversion
+    conversion.value =
+      status && typeof status === 'object' && 'state' in status && typeof status.state === 'string'
+        ? {
+            state: status.state,
+            ...('reason' in status && typeof status.reason === 'string'
+              ? { reason: status.reason }
+              : { reason: undefined }),
+          }
+        : null
+    closeConvertedRoom?.()
+    closeConvertedRoom = null
+    if (isConverted.value) {
+      await showConvertedSlides(run)
+    }
+
+    if (run !== latestLoad) return
+
     if (composite.value) {
       await loadComposite()
-    } else {
+    } else if (!onLayer.value) {
       void offerTheme()
     }
 
@@ -506,6 +562,32 @@ async function load() {
   }
 }
 
+async function showConvertedSlides(run: number) {
+  const close = await watchConvertedSlides(props.session, (drawn) => {
+    if (run !== latestLoad) return
+
+    // a redraw keeps the shown slide, or the one in its place when it was deleted
+    const at = slideIndex.value ?? 0
+    const kept = drawn.findIndex(({ clientId }) => clientId === slides.value[at]?.clientId)
+    slides.value = drawn
+    slidesLength.value = drawn.length
+    if (drawn.length) {
+      setSlideIndex((kept === -1 ? at : kept) + 1)
+    }
+  })
+  if (!close) {
+    throw new Error(translate('Could not open this presentation.'))
+  }
+
+  if (run !== latestLoad) {
+    close()
+    return
+  }
+
+  closeConvertedRoom = close
+  setSlideIndex(presentedSlide.value)
+}
+
 function cancelRunningLoad() {
   latestLoad++
   startLoad()
@@ -513,9 +595,9 @@ function cancelRunningLoad() {
 }
 
 function normalizeCompositeSlide(value: unknown) {
-  const slide: Record<string, unknown> = {
-    ...(value as Record<string, unknown>),
-  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return { elements: [] }
+  const slide: Record<string, unknown> = {}
+  Object.assign(slide, value)
   if (typeof slide.elements === 'string') {
     try {
       slide.elements = JSON.parse(slide.elements)
@@ -616,7 +698,7 @@ function setOffline() {
 }
 
 const deckUnavailable = computed(
-  () => loading.value || !access.readable.value || !slides.value.length,
+  () => loading.value || !access.readable.value || !slides.value.length || isConverted.value,
 )
 const canPin = computed(
   () =>
@@ -624,6 +706,7 @@ const canPin = computed(
     'caches' in window &&
     !window.disable_slides_service_worker &&
     !presentationDoc.value?.is_composite &&
+    !isConverted.value &&
     isMediaOwner(presentationDoc.value?.owner, userSession.user.value?.id),
 )
 const showsOfflineCopy = computed(() => canPin.value || offlineCopyStatus.value === 'unusable')
@@ -654,6 +737,9 @@ onMounted(() => {
   window.addEventListener('beforeunload', warnBeforeUnload)
 })
 onBeforeUnmount(() => {
+  // a load or room still on its way after this finds itself stale and touches nothing
+  latestLoad++
+  closeConvertedRoom?.()
   cancelVisit()
   stopVisitedMedia()
   void postToServiceWorker('slides-left')
@@ -756,53 +842,65 @@ onBeforeUnmount(() => {
       <span class="lucide-lock-keyhole mx-auto block size-6 text-ink-gray-5" aria-hidden="true" />
       <p class="mt-2 text-p-sm text-ink-gray-6">{{ loadError }}</p>
     </div>
-    <div v-else-if="phone" class="flex min-h-0 flex-1 flex-col bg-surface-gray-1">
-      <div class="relative flex min-h-0 flex-1">
-        <SlideContainer
-          v-if="presentationDoc"
-          v-model:has-ongoing-interaction="isSlideInteractionActive"
-          fit
-        />
-      </div>
-      <nav
-        v-if="slidesLength"
-        class="flex shrink-0 items-center justify-center gap-4 border-t border-outline-gray-1 bg-surface-base px-3 py-2"
-        aria-label="Slides"
+    <div v-else class="relative flex min-h-0 flex-1 flex-col bg-surface-gray-1">
+      <p
+        v-if="notice"
+        role="status"
+        class="shrink-0 border-b border-outline-gray-1 bg-surface-amber-1 px-4 py-2 text-sm text-ink-amber-7"
+        :class="{ 'ml-56': isNoticeBesidePanel }"
       >
-        <Button
-          icon="lucide-chevron-left"
-          aria-label="Previous slide"
-          variant="ghost"
-          :disabled="slidePosition <= 1"
-          @click="showSlide(-1)"
-        />
-        <span class="text-sm tabular-nums text-ink-gray-6"
-          >{{ slidePosition }} of {{ slidesLength }}</span
+        {{ notice }}
+      </p>
+      <template v-if="phone">
+        <div class="relative flex min-h-0 flex-1">
+          <SlideContainer
+            v-if="presentationDoc"
+            v-model:has-ongoing-interaction="isSlideInteractionActive"
+            fit
+          />
+        </div>
+        <nav
+          v-if="slidesLength"
+          class="flex shrink-0 items-center justify-center gap-4 border-t border-outline-gray-1 bg-surface-base px-3 py-2"
+          aria-label="Slides"
         >
-        <Button
-          icon="lucide-chevron-right"
-          aria-label="Next slide"
-          variant="ghost"
-          :disabled="slidePosition >= slidesLength"
-          @click="showSlide(1)"
-        />
-      </nav>
-    </div>
-    <div v-else class="relative flex min-h-0 flex-1 bg-surface-gray-1">
-      <SlideContainer
-        v-if="presentationDoc"
-        v-model:has-ongoing-interaction="isSlideInteractionActive"
-      />
-      <NavigationPanel class="absolute inset-y-0 left-0" @change-slide="changeEditorSlide" />
-      <Toolbar v-if="editing && presentationDoc" />
-      <PropertiesPanel v-if="editing" class="absolute inset-y-0 right-0" />
-      <SurfaceNotice
-        v-if="editable && lockedElsewhere && !heldNotice"
-        icon="lucide-lock"
-        :message="__('This presentation is open for editing in another tab.')"
-      >
-        <Button variant="ghost" :label="__('Edit here')" @click="editHere" />
-      </SurfaceNotice>
+          <Button
+            icon="lucide-chevron-left"
+            aria-label="Previous slide"
+            variant="ghost"
+            :disabled="slidePosition <= 1"
+            @click="showSlide(-1)"
+          />
+          <span class="text-sm tabular-nums text-ink-gray-6"
+            >{{ slidePosition }} of {{ slidesLength }}</span
+          >
+          <Button
+            icon="lucide-chevron-right"
+            aria-label="Next slide"
+            variant="ghost"
+            :disabled="slidePosition >= slidesLength"
+            @click="showSlide(1)"
+          />
+        </nav>
+      </template>
+      <template v-else>
+        <div class="relative flex min-h-0 flex-1">
+          <SlideContainer
+            v-if="presentationDoc"
+            v-model:has-ongoing-interaction="isSlideInteractionActive"
+          />
+        </div>
+        <NavigationPanel class="absolute inset-y-0 left-0" @change-slide="changeEditorSlide" />
+        <Toolbar v-if="editing && presentationDoc" />
+        <PropertiesPanel v-if="editing" class="absolute inset-y-0 right-0" />
+        <SurfaceNotice
+          v-if="editable && lockedElsewhere && !heldNotice"
+          icon="lucide-lock"
+          :message="__('This presentation is open for editing in another tab.')"
+        >
+          <Button variant="ghost" :label="__('Edit here')" @click="editHere" />
+        </SurfaceNotice>
+      </template>
     </div>
 
     <SurfaceNotice

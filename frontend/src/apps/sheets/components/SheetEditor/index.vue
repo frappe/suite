@@ -88,8 +88,8 @@
         />
       </DefineTopbarActions>
 
-      <!-- On /d/ the surface draws the Drive document header: title, Comments,
-         Versions and Share. The editor fills its status, menus and actions. -->
+      <!-- On /d/ the surface draws the Drive document header: title and Share.
+         The editor fills its status, menus and actions. -->
       <slot
         name="header"
         :view-only="readOnly"
@@ -98,7 +98,7 @@
         :actions="ReuseTopbarActions"
       />
 
-      <!-- Row 2 · tools around the formula bar (SheetToolbar.vue) -->
+      <!-- Row 2 · the tools (SheetToolbar.vue) -->
       <SheetToolbar
         v-model:show-sort-filter="showSortFilter"
         :read-only="readOnly"
@@ -128,59 +128,60 @@
         @toggle-format-painter="toggleFormatPainter"
         @merge="toggleMerge"
         @sort="openQuickFilterForActive"
-      >
-        <!-- The formula bar: name box, then fx and the cell's value -->
-        <template #formula>
-          <!-- A fixed width; a long reference ends in an ellipsis, and the
-               tooltip and the focused box show all of it. -->
-          <Tooltip :text="__('{0}: type a cell or range, then Enter', [nameBox])">
-            <input
-              class="sn-cell-ref"
-              name="name-box"
-              :aria-label="__('Name box')"
-              :value="nameBoxText"
-              :style="{ '--sn-name-ch': nameBoxText.length + 1 }"
-              spellcheck="false"
-              autocomplete="off"
-              @focus="$event.target.select()"
-              @input="nameBoxTyped = $event.target.value"
-              @keydown.enter.prevent="onNameBoxEnter"
-              @keydown.esc.prevent="onNameBoxDone"
-              @blur="nameBoxTyped = null"
-            />
-          </Tooltip>
-          <div class="sn-formula-wrap">
-            <span class="sn-fx-label" aria-hidden="true">fx</span>
-            <input
-              ref="formulaInputRef"
-              name="formula-bar"
-              aria-label="Cell value or formula"
-              class="sn-formula-input"
-              :value="formulaValue"
-              :readonly="readOnly"
-              :placeholder="readOnly ? '' : 'Enter value or formula'"
-              spellcheck="false"
-              autocomplete="off"
-              @input="onFormulaInput"
-              @keydown="onFormulaKey"
-              @blur="closeAc"
-            />
-            <div v-if="acVisible" class="sn-ac-list" :class="{ 'sn-ac-list--up': acUp }">
-              <div
-                v-for="(item, i) in acItems"
-                :key="item.name + item.kind"
-                class="sn-ac-item"
-                :class="{ active: i === acIdx }"
-                @mousedown.prevent="commitAc(item)"
-              >
-                <span class="sn-ac-name">{{ item.name }}</span>
-                <span v-if="item.kind === 'fn'" class="sn-ac-sig">{{ AC_FUNS[item.name] }}</span>
-                <span v-else class="sn-ac-badge">sheet</span>
-              </div>
+      />
+
+      <!-- Row 3 · the formula bar: name box, a divider, then fx and the cell's value -->
+      <div class="sn-formula-row">
+        <!-- A fixed width; a long reference ends in an ellipsis, and the
+             tooltip and the focused box show all of it. -->
+        <Tooltip :text="__('{0}: type a cell or range, then Enter', [nameBox])">
+          <input
+            class="sn-cell-ref"
+            name="name-box"
+            :aria-label="__('Name box')"
+            :value="nameBoxText"
+            :style="{ '--sn-name-ch': nameBoxText.length + 1 }"
+            spellcheck="false"
+            autocomplete="off"
+            @focus="$event.target.select()"
+            @input="nameBoxTyped = $event.target.value"
+            @keydown.enter.prevent="onNameBoxEnter"
+            @keydown.esc.prevent="onNameBoxDone"
+            @blur="nameBoxTyped = null"
+          />
+        </Tooltip>
+        <span class="sn-formula-divider" aria-hidden="true" />
+        <div class="sn-formula-wrap">
+          <span class="sn-fx-label" aria-hidden="true">fx</span>
+          <input
+            ref="formulaInputRef"
+            name="formula-bar"
+            aria-label="Cell value or formula"
+            class="sn-formula-input"
+            :value="formulaValue"
+            :readonly="readOnly"
+            :placeholder="readOnly ? '' : 'Enter value or formula'"
+            spellcheck="false"
+            autocomplete="off"
+            @input="onFormulaInput"
+            @keydown="onFormulaKey"
+            @blur="closeAc"
+          />
+          <div v-if="acVisible" class="sn-ac-list" :class="{ 'sn-ac-list--up': acUp }">
+            <div
+              v-for="(item, i) in acItems"
+              :key="item.name + item.kind"
+              class="sn-ac-item"
+              :class="{ active: i === acIdx }"
+              @mousedown.prevent="commitAc(item)"
+            >
+              <span class="sn-ac-name">{{ item.name }}</span>
+              <span v-if="item.kind === 'fn'" class="sn-ac-sig">{{ AC_FUNS.get(item.name) }}</span>
+              <span v-else class="sn-ac-badge">sheet</span>
             </div>
           </div>
-        </template>
-      </SheetToolbar>
+        </div>
+      </div>
 
       <!-- Saving, offline, full, lost access (collab/messages.ts), as Writer's strip -->
       <div
@@ -217,6 +218,8 @@
         class="sn-grid-wrap"
         :class="{ 'sn-painting-format': isPaintingFormat }"
         @wheel.capture.passive="linkCard.open = false"
+        @mousemove="remoteCursorNames.trackPointer"
+        @mouseleave="remoteCursorNames.clearPointer"
       >
         <canvas ref="canvasRef" />
 
@@ -314,7 +317,8 @@
           class="sn-remote-cursor sn-peer"
           :class="{
             'sn-remote-cursor--moved': cur.justMoved,
-            'sn-remote-cursor--named': cur.label,
+            'sn-remote-cursor--labelled': cur.label,
+            'sn-remote-cursor--folded': remoteCursorNames.isFolded(cur),
           }"
           :style="cur.style"
         >
@@ -384,6 +388,7 @@
 
       <!-- Bottom · sheet tabs + selection stats (SheetTabsBar.vue) -->
       <SheetTabsBar
+        ref="tabsBarRef"
         :read-only="readOnly"
         :sheet-names="sheetNames"
         :current-sheet="currentSheet"
@@ -399,7 +404,8 @@
         @tab-drop="onTabDrop"
         @tab-mousedown="onTabMousedown"
         @tab-click="onTabClick"
-        @rename="openRenameDialog"
+        :rename-sheet="renameSheetInPlace"
+        @rename-end="_refocusGridAfterDialog"
         @tab-menu="_onTabMenu"
       />
 
@@ -409,36 +415,11 @@
         :menu="tabMenu"
         :locked="tabMenuSheetLocked()"
         :can-delete="sheetNames.length > 1"
-        @rename="openRenameDialog(tabMenu.name)"
+        @rename="startTabRename(tabMenu.name)"
         @duplicate="doDuplicateSheet(tabMenu.name)"
         @toggle-protect="toggleSheetProtection(tabMenu.name)"
         @delete="doDeleteSheet(tabMenu.name)"
       />
-
-      <!-- Rename sheet dialog -->
-      <Dialog
-        v-model:open="showRenameDialog"
-        title="Rename sheet"
-        size="sm"
-        @after-leave="_refocusGridAfterDialog"
-      >
-        <template #default>
-          <FormControl
-            ref="renameInputRef"
-            v-model="renameValue"
-            label="New name"
-            placeholder="Sheet name"
-            @keydown.enter="confirmRename"
-          />
-          <p v-if="renameError" class="sn-rename-err">{{ renameError }}</p>
-        </template>
-        <template #actions>
-          <div class="flex flex-row-reverse gap-2">
-            <Button variant="solid" @click="confirmRename">Rename</Button>
-            <Button @click="showRenameDialog = false">Cancel</Button>
-          </div>
-        </template>
-      </Dialog>
 
       <!-- Right-click context menu (SheetContextMenu.vue) -->
       <SheetContextMenu
@@ -628,10 +609,9 @@
         </template>
       </Dialog>
 
-      <!-- Keyboard shortcut help — frappe-ui's KeyboardShortcutsModal, generated
-         from the shortcut registry populated by useShortcuts.js (via useShortcut),
-         so it can never drift from the handlers. -->
-      <KeyboardShortcutsDialog v-model:open="showShortcutsHelp" title="Keyboard shortcuts" />
+      <!-- Keyboard shortcut help — Suite's list of frappe-ui's shortcut registry,
+         populated by useShortcuts.js, so it can never drift from the handlers. -->
+      <ShortcutsDialog v-model:open="showShortcutsHelp" />
 
       <!-- Slicers — floating value-filter controls (SlicerPanel.vue) -->
       <SlicerPanel
@@ -781,16 +761,7 @@
 
 <script setup>
 import { createReusableTemplate } from '@vueuse/core'
-import {
-  Badge,
-  Button,
-  Dialog,
-  Dropdown,
-  FormControl,
-  KeyboardShortcutsDialog,
-  Spinner,
-  Tooltip,
-} from 'frappe-ui'
+import { Badge, Button, Dialog, Dropdown, FormControl, Spinner, Tooltip } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import * as Y from 'yjs'
@@ -798,6 +769,7 @@ import * as Y from 'yjs'
 import { api, client } from '@/api'
 import { useCurrentUser } from '@/boot/session'
 import { colourStyle } from '@/platform/collab/colours'
+import { ShortcutsDialog } from '@/platform/shortcuts'
 import { translate as __ } from '@/platform/translation'
 
 import { chipColor } from '../../canvas/chip-geometry'
@@ -867,6 +839,7 @@ import { useNotesPanel } from './useNotesPanel.js'
 import { usePersistence } from './usePersistence.js'
 import { usePivotIntegration } from './usePivotIntegration.js'
 import { useProtection } from './useProtection.js'
+import { useRemoteCursorNames } from './useRemoteCursorNames'
 import { useSheetTabs } from './useSheetTabs.js'
 import { useShortcuts } from './useShortcuts.js'
 import { useSlicers } from './useSlicers.js'
@@ -2372,6 +2345,9 @@ function onTabClick(name) {
       formulaInputRef.value?.focus()
     })
   } else {
+    // Ctrl+click doesn't move focus to the tab, so commit an open cell edit
+    // here: after the switch it would land on the new sheet.
+    document.activeElement?.blur?.()
     switchSheet(name)
   }
 }
@@ -2508,36 +2484,39 @@ const visibleRemoteCursors = computed(() => {
   for (const user of _lastRemoteRC.keys()) {
     if (!remoteCursors.value.has(user)) _lastRemoteRC.delete(user)
   }
-  return [...remoteCursors.value.entries()]
-    .filter(([, cursor]) => cursor.subSheet === currentSheet.value)
-    .map(([user, cursor]) => {
-      // Compute a single rect that covers the whole remote range. We pull
-      // the top-left cell rect for x/y and the bottom-right cell rect to
-      // sum the trailing width/height — handles non-uniform column widths
-      // / row heights correctly.
-      const r = cursor.range || {
-        r0: cursor.row,
-        c0: cursor.col,
-        r1: cursor.row,
-        c1: cursor.col,
-      }
-      const tl = grid.getCellRect?.(r.r0, r.c0)
-      const br = grid.getCellRect?.(r.r1, r.c1)
-      if (!tl || !br) return null
-      const width = br.x + br.width - tl.x
-      const height = br.y + br.height - tl.y
-      // Motion detection: the row/col/subSheet stamp is what determines
-      // whether the *peer* moved. If the stamp is unchanged but the pixel
-      // rect differs, that's a local scroll/resize — we leave justMoved
-      // false so the cursor teleports with the viewport rather than
-      // sliding under the user's mouse.
-      const stamp = `${cursor.row}:${cursor.col}:${cursor.subSheet}`
-      const prev = _lastRemoteRC.get(user)
-      const justMoved = prev !== undefined && prev !== stamp
-      _lastRemoteRC.set(user, stamp)
-      return {
+  return [...remoteCursors.value.entries()].flatMap(([user, cursor]) => {
+    if (cursor.subSheet !== currentSheet.value) return []
+    // Compute a single rect that covers the whole remote range. We pull
+    // the top-left cell rect for x/y and the bottom-right cell rect to
+    // sum the trailing width/height — handles non-uniform column widths
+    // / row heights correctly.
+    const r = cursor.range || {
+      r0: cursor.row,
+      c0: cursor.col,
+      r1: cursor.row,
+      c1: cursor.col,
+    }
+    const tl = grid.getCellRect?.(r.r0, r.c0)
+    const br = grid.getCellRect?.(r.r1, r.c1)
+    if (!tl || !br) return []
+    const width = br.x + br.width - tl.x
+    const height = br.y + br.height - tl.y
+    // Motion detection: the row/col/subSheet stamp is what determines
+    // whether the *peer* moved. If the stamp is unchanged but the pixel
+    // rect differs, that's a local scroll/resize — we leave justMoved
+    // false so the cursor teleports with the viewport rather than
+    // sliding under the user's mouse.
+    const stamp = `${cursor.row}:${cursor.col}:${cursor.subSheet}`
+    const prev = _lastRemoteRC.get(user)
+    const justMoved = prev !== undefined && prev !== stamp
+    _lastRemoteRC.set(user, stamp)
+    return [
+      {
         user,
         label: cursor.label,
+        labelPeers: cursor.labelPeers,
+        x: tl.x,
+        y: tl.y,
         justMoved,
         style: {
           left: tl.x + 'px',
@@ -2546,10 +2525,12 @@ const visibleRemoteCursors = computed(() => {
           height: height + 'px',
           ...colourStyle(cursor.colour),
         },
-      }
-    })
-    .filter(Boolean)
+      },
+    ]
+  })
 })
+
+const remoteCursorNames = useRemoteCursorNames(remoteCursors, visibleRemoteCursors)
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
@@ -4013,50 +3994,20 @@ function onNameBoxDone() {
   canvasRef.value?.focus()
 }
 
-const showRenameDialog = ref(false)
-const renameValue = ref('')
-const renameError = ref('')
-const renameInputRef = ref(null)
-let _renameTarget = ''
-function openRenameDialog(name) {
-  // Reachable via dbl-click on the tab even when the menu is suppressed — gate
-  // here so rename is denied for viewers regardless of entry point.
-  if (readOnly.value) return
+const tabsBarRef = ref(null)
+function startTabRename(name) {
   tabMenu.open = false
-  _renameTarget = name
-  renameValue.value = name
-  renameError.value = ''
-  showRenameDialog.value = true
-  // Dialog mounts the input asynchronously — focus + select on the next two
-  // ticks so the user can type immediately instead of clicking the field.
-  nextTick(() =>
-    nextTick(() => {
-      const el =
-        renameInputRef.value?.$el?.querySelector?.('input') ??
-        renameInputRef.value?.input ??
-        renameInputRef.value
-      if (el?.focus) {
-        el.focus()
-        el.select?.()
-      }
-    }),
-  )
+  tabsBarRef.value?.startRenaming(name)
 }
-function confirmRename() {
-  const oldName = _renameTarget
-  const newName = renameValue.value
-  const ok = _renameSheet(oldName, newName)
-  if (!ok) {
-    renameError.value = 'Name is empty or already used.'
-    return
-  }
+function renameSheetInPlace(oldName, newName) {
+  if (readOnly.value || !_renameSheet(oldName, newName)) return false
   // Keep named-range bindings pointed at the renamed sheet — without this,
   // `=Revenue` defined on "Sheet1" breaks after renaming Sheet1.
   namedRanges.renameSheet(oldName, newName)
   _syncDefinedNames()
-  showRenameDialog.value = false
   history.push()
   isDirty.value = true
+  return true
 }
 function doDuplicateSheet(name) {
   tabMenu.open = false

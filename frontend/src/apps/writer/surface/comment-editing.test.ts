@@ -1,7 +1,9 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
 import type { DocumentThread } from '@/apps/drive'
+import { requireTestElement } from '@/platform/testing/dom'
 
 import { confirmed, errors, me, warnings } from './comment-list-fakes'
 import {
@@ -86,7 +88,7 @@ describe('editing and deleting a comment', () => {
     const option = [...owner.querySelectorAll('[role="menuitem"]')].find(
       (element) => element.textContent === item,
     )
-    await click(option as HTMLElement)
+    await click(requireTestElement(option, HTMLElement))
     await nextTick()
   }
 
@@ -134,10 +136,10 @@ describe('editing and deleting a comment', () => {
 
   it('offers a guest no ⋯, even on comments made as a guest', async () => {
     me.id = 'Guest'
-    const byGuest = {
+    const byGuest = fromPartial<DocumentThread>({
       ...WHOLE,
       comments: [comment('c9', 'Guest', 'From a guest')],
-    } as unknown as DocumentThread
+    })
     const { host } = showList({ threads: [byGuest] })
 
     await click(rowButton(host, 'From a guest'))
@@ -219,12 +221,12 @@ describe('editing and deleting a comment', () => {
   })
 
   it('shows the people a comment mentions by name to edit, and saves them as mentions', async () => {
-    const asking = {
+    const asking = fromPartial<DocumentThread>({
       ...WHOLE,
       comments: [
         { ...comment('c8', 'Asha Rao', 'Ask @[ben@x.com] or @[ghost]'), mentions: ['ben@x.com'] },
       ],
-    } as unknown as DocumentThread
+    })
     const { host, asked } = showList({ threads: [asking] })
     await click(rowButton(host, 'Ask'))
 
@@ -240,12 +242,12 @@ describe('editing and deleting a comment', () => {
   })
 
   it('names a mentioned person to edit whatever the case of their mention, and saves the mention as stored', async () => {
-    const asking = {
+    const asking = fromPartial<DocumentThread>({
       ...WHOLE,
       comments: [
         { ...comment('c8', 'Asha Rao', 'Ask @[BEN@x.com] or @[ghost]'), mentions: ['ben@x.com'] },
       ],
-    } as unknown as DocumentThread
+    })
     const { host, asked } = showList({ threads: [asking] })
     await click(rowButton(host, 'Ask'))
 
@@ -341,7 +343,7 @@ describe('an edit while someone else changes the comment', () => {
   async function startEditing(options = {}) {
     const list = showList(options)
     await click(rowButton(list.host, 'Is this right?'))
-    const menu = list.host.querySelector('li [role="menuitem"]') as HTMLElement
+    const menu = requireTestElement(list.host.querySelector('li [role="menuitem"]'), HTMLElement)
     await click(menu)
     editBox()!.value = 'Mine'
     editBox()!.dispatchEvent(new Event('input'))

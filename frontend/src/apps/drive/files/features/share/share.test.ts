@@ -1,3 +1,4 @@
+import { fromAny, fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick } from 'vue'
 
@@ -7,11 +8,13 @@ import {
   type ExplainRow,
   type GrantList,
 } from '@/apps/drive/client/grants'
+import { driveLinks } from '@/apps/drive/client/links'
 import { openDriveDocumentSession } from '@/apps/drive/client/session'
 import { testClient } from '@/apps/drive/client/testClient'
-import type { Transport } from '@/platform/transport'
+import { TransportError, type Transport } from '@/platform/transport'
 
 import ShareBody from './ShareBody.vue'
+import { accessLossMessage } from './shareFormat'
 import { shareSections } from './shareModel'
 import { useShare } from './useShare'
 
@@ -62,11 +65,12 @@ function fakeServer(answer: (call: Call) => unknown) {
   const calls: Call[] = []
   const transport: Transport = {
     request: async (operation, input) => {
-      const call = { id: operation.id, input: input as Record<string, unknown> }
+      if (!input || typeof input !== 'object') throw new Error('Expected a Drive request object')
+      const call = { id: operation.id, input: Object.fromEntries(Object.entries(input)) }
       calls.push(call)
       const result = answer(call)
       if (result instanceof Error) throw result
-      return result as never
+      return fromAny(result)
     },
   }
   return { calls, transport }
@@ -249,53 +253,28 @@ describe('share writes (spec §7.4, §7.7, §7.9)', () => {
     url: '/l/abcdefghijklmnopqrstuv',
   })
 
-  it('disables public access permanently even when the local grant had an expiry', async () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(NOW)
-    try {
-      const expiry = endOfDay(2026, 12, 31)
-      let local = grant('$PUBLIC', 10, { expires_on: expiry })
-      const server = fakeServer((call) => {
-        if (call.id === 'node_get') return node('document')
-        if (call.id === 'node_put_grant') {
-          const { role, expires_on } = call.input
-          if (typeof role !== 'number') throw new Error('Missing role')
-          local = grant('$PUBLIC', role, {
-            expires_on: typeof expires_on === 'string' ? expires_on : null,
-          })
-          return local
-        }
-        return {
-          grants: [local],
-          inherited: [
-            {
-              grant: grant('$PUBLIC', 10, { node: 'folder' }),
-              redacted: false,
-              source_node: 'folder',
-              source_title: 'Launch',
-            },
-          ],
-        }
-      })
-      const share = useShare('doc', { client: testClient(server.transport) })
-      await share.load()
-      expect(share.sections.value?.public?.state).toBe('local')
+  it('switches public access off by removing the local grant, never by a deny (§5.10)', async () => {
+    let local: DriveGrant | null = grant('$PUBLIC', 10)
+    const server = fakeServer((call) => {
+      if (call.id === 'node_get') return node('document')
+      if (call.id === 'node_delete_grant') {
+        local = null
+        return { count: 1 }
+      }
+      return { grants: local ? [local] : [], inherited: [] }
+    })
+    const share = useShare('doc', { client: testClient(server.transport) })
+    await share.load()
+    expect(share.sections.value?.public?.state).toBe('local')
 
-      await share.setPublic(false)
-      expect(share.sections.value?.public?.state).toBe('denied')
+    await share.setPublic(false)
 
-      vi.setSystemTime(new Date('2027-01-02T12:00:00Z'))
-      await share.load()
-      expect(share.sections.value?.public?.state).toBe('denied')
-      expect(server.calls.find((call) => call.id === 'node_put_grant')?.input).toEqual({
-        node: 'doc',
-        principal: '$PUBLIC',
-        role: 0,
-        expires_on: null,
-      })
-    } finally {
-      vi.useRealTimers()
-    }
+    expect(share.sections.value?.public).toEqual({ state: 'off' })
+    expect(server.calls.filter((call) => call.id === 'node_put_grant')).toEqual([])
+    expect(server.calls.find((call) => call.id === 'node_delete_grant')?.input).toMatchObject({
+      node: 'doc',
+      principal: '$PUBLIC',
+    })
   })
 
   it('keeps an existing expiry when enabling local public access', async () => {
@@ -393,7 +372,7 @@ describe('share writes (spec §7.4, §7.7, §7.9)', () => {
     await share.remove(share.sections.value!.people[0]!)
 
     expect(share.sections.value!.people).toEqual([])
-    expect(share.notice.value).toBe('Asha still has access through Design team.')
+    expect(share.notice.value).toBe('Removed Asha. Asha still has access through Design team.')
   })
 
   it('names the owner, the people the grants name, and the organization in its words', async () => {
@@ -500,6 +479,25 @@ describe('share writes (spec §7.4, §7.7, §7.9)', () => {
     expect(share.changed.value).toBe(true)
   })
 
+  it('creates a View link with no expiry or password when given no options', async () => {
+    const server = fakeServer((call) =>
+      call.id === 'node_get'
+        ? node('document')
+        : call.id === 'node_grants'
+          ? { grants: [], inherited: [] }
+          : grant('$LINK:new', 10, { url: '/l/new' }),
+    )
+    const share = useShare('doc', { client: testClient(server.transport) })
+    await share.load()
+
+    expect(await share.newLink()).toBe('/l/new')
+    expect(server.calls.find((call) => call.id === 'node_put_grant')?.input).toEqual({
+      node: 'doc',
+      principal: '$LINK',
+      role: 10,
+    })
+  })
+
   it('sends a link to an outsider and notifies only users', async () => {
     const server = fakeServer((call) =>
       call.id === 'node_get'
@@ -521,6 +519,55 @@ describe('share writes (spec §7.4, §7.7, §7.9)', () => {
       { node: 'doc', principal: 'asha@example.com', role: 40, notify: true },
       { node: 'doc', principal: '$GROUP:Design team', role: 40 },
     ])
+  })
+
+  it('keeps Share busy while it waits for who has access, so a second click cannot mail twice', async () => {
+    let answer = () => {}
+    const reading = new Promise<void>((resolve) => (answer = resolve))
+    const server = fakeServer((call) => {
+      if (call.id === 'node_get') return node('document')
+      if (call.id === 'node_grants') return reading.then(() => ({ grants: [], inherited: [] }))
+      return { grant: grant('asha@example.com', 20) }
+    })
+    const share = useShare('doc', { client: testClient(server.transport) })
+    void share.load()
+
+    const adding = share.add(['asha@example.com'], 20, true)
+    expect(share.isPending('picker')).toBe(true)
+
+    answer()
+    await expect(adding).resolves.toEqual([])
+    expect(share.isPending('picker')).toBe(false)
+    expect(server.calls.filter((call) => call.id === 'node_put_grant')).toHaveLength(1)
+  })
+
+  it('keeps Undo after a failed Undo, so it can be tried again', async () => {
+    let connected = false
+    const server = fakeServer((call) => {
+      if (call.id === 'node_get') return node('document')
+      if (call.id === 'node_grants' && call.input.principal) return new Error('Unknown')
+      if (call.id === 'node_grants')
+        return { grants: [grant('asha@example.com', 20)], inherited: [] }
+      if (call.id === 'node_delete_grant') return { count: 1 }
+      return connected ? { grant: grant('asha@example.com', 20) } : new Error('Connection lost')
+    })
+    const share = useShare('doc', { client: testClient(server.transport) })
+    await share.load()
+    await share.remove(share.sections.value!.people[0]!)
+    const notice = share.notice.value
+    expect(share.canUndo.value).toBe(true)
+
+    await share.undoRemove()
+
+    expect(share.canUndo.value).toBe(true)
+    expect(share.notice.value).toBe(notice)
+    expect(share.errors.get('undo')).toBe('Connection lost')
+
+    connected = true
+    await share.undoRemove()
+
+    expect(share.canUndo.value).toBe(false)
+    expect(share.errors.has('undo')).toBe(false)
   })
 
   it('keeps the error of every person it could not add, and says who each one is about', async () => {
@@ -568,12 +615,15 @@ describe('share writes that touch the caller (spec §7.4, §7.9)', () => {
     winner: false,
   })
 
-  /** A node `doc` under `folder` under `root`, and a caller whose explanation is `rows`. */
-  function setup(local: DriveGrant[], rows: ExplainRow[], role = 50) {
+  /**
+   * A node `doc` under `folder` under `root`, and a caller whose explanation is
+   * `rows`. `asked` records the role each confirm says the caller would keep.
+   */
+  function setup(local: DriveGrant[], rows: ExplainRow[], role = 50, source = 'grant') {
     const server = fakeServer((call) => {
       if (call.id === 'node_get') return node('document')
       if (call.id === 'node_grants' && call.input.principal)
-        return { explain: { role, source: 'grant', rows } }
+        return { explain: { role, source, rows } }
       if (call.id === 'node_grants') return { grants: local, inherited: [] }
       if (call.id === 'node_delete_grant') return { count: 3 }
       return { grant: local[0] }
@@ -583,8 +633,8 @@ describe('share writes that touch the caller (spec §7.4, §7.9)', () => {
     const share = useShare('doc', {
       client: testClient(server.transport),
       me: ME,
-      confirmLoss: async () => {
-        asked.push(1)
+      confirmLoss: async (after) => {
+        asked.push(after)
         return answer
       },
     })
@@ -624,6 +674,36 @@ describe('share writes that touch the caller (spec §7.4, §7.9)', () => {
     expect(writes().map((call) => call.input.principal)).toEqual(['$GROUP:Sales'])
   })
 
+  it('tells the confirm what the caller keeps when the group that gives them Manage goes to View', async () => {
+    const { share, asked, writes } = setup(
+      [grant('$GROUP:Leads', 50)],
+      [row('doc', 2, '$GROUP:Leads', 50)],
+    )
+    await share.load()
+
+    await share.setRole(share.sections.value!.people[0]!, 10)
+
+    expect(asked).toEqual([10])
+    expect(writes()).toEqual([])
+    expect(accessLossMessage(10, 'document', false)).toBe(
+      'You will only be able to view this item.',
+    )
+    expect(accessLossMessage(0, 'folder', false)).toBe(
+      'You will lose access to this folder and the items inside it.',
+    )
+    expect(accessLossMessage(20, 'document', true)).toBe(
+      'You will only be able to comment on this item. As a Suite Admin you can still change its sharing.',
+    )
+  })
+
+  it("does not ask Drive's own account, which holds every right", async () => {
+    const { share, asked } = setup([grant('$GENERAL', 10)], [], 50, 'system')
+    await share.load()
+
+    await share.setGeneral('$GENERAL', 20)
+    expect(asked).toEqual([])
+  })
+
   it('does not ask when the caller keeps Manage through their own row', async () => {
     const { share, asked, writes } = setup(
       [grant(ME, 50), grant('$GROUP:Leads', 50)],
@@ -654,15 +734,49 @@ describe('share writes that touch the caller (spec §7.4, §7.9)', () => {
     expect(share.notice.value).toMatch(/^Removed from 2 items inside\./)
   })
 
+  it('drops what the page behind read only when a write takes away the caller’s own access', async () => {
+    const invalidate = vi.spyOn(driveLinks, 'invalidateAccess')
+    /** Removes the caller's row; `loses` says whether the item is then gone for them. */
+    const removeMine = async (loses: boolean) => {
+      invalidate.mockClear()
+      let removed = false
+      const { transport } = fakeServer((call) => {
+        if (call.id === 'node_get')
+          return removed && loses
+            ? new TransportError({ type: 'DriveNotFound', message: 'Not found', status: 404 })
+            : node('document')
+        if (call.id === 'node_grants') return { grants: [grant(ME, 50)], inherited: [] }
+        removed = true
+        return { count: 1 }
+      })
+      const share = useShare('doc', { client: testClient(transport) })
+      await share.load()
+      await share.remove(share.sections.value!.people[0]!)
+      return share
+    }
+    try {
+      await removeMine(false)
+      expect(invalidate).not.toHaveBeenCalled()
+      expect((await removeMine(true)).loadError.value).toBe(
+        'You no longer have access to this item.',
+      )
+      expect(invalidate).toHaveBeenCalledTimes(1)
+    } finally {
+      invalidate.mockRestore()
+    }
+  })
+
   it('shares concurrent reads while only the newest load publishes', async () => {
     let answer: ((value: unknown) => void) | undefined
     const transport: Transport = {
       request: (operation) =>
         operation.id === 'node_get'
-          ? (new Promise((resolve) => {
-              answer = resolve
-            }) as never)
-          : (Promise.resolve({ grants: [], inherited: [] }) as never),
+          ? fromAny(
+              new Promise<unknown>((resolve) => {
+                answer = resolve
+              }),
+            )
+          : fromAny(Promise.resolve({ grants: [], inherited: [] })),
     }
     const share = useShare('doc', { client: testClient(transport) })
     const first = share.load()
@@ -671,6 +785,81 @@ describe('share writes that touch the caller (spec §7.4, §7.9)', () => {
     answer!({ ...node('document'), title: 'New' })
     await Promise.all([first, second])
     expect(share.node.value?.title).toBe('New')
+  })
+})
+
+describe('opening the share dialog fast', () => {
+  /** A server whose answers wait until the test releases them, to see what is asked in parallel. */
+  function heldServer() {
+    const asked: string[] = []
+    const release = new Map<string, () => void>()
+    const transport: Transport = {
+      request: (operation) => {
+        asked.push(operation.id)
+        const value = operation.id === 'node_get' ? node('folder') : { grants: [], inherited: [] }
+        return new Promise((resolve) => {
+          release.set(operation.id, () => resolve(fromAny(value)))
+        })
+      },
+    }
+    return { asked, release, client: testClient(transport) }
+  }
+
+  it('shows the item the opener knows at once, and asks who has access without waiting for the item', async () => {
+    const server = heldServer()
+    const share = useShare('doc', { client: server.client, known: node('folder') })
+    expect(share.node.value?.title).toBe('Plan')
+    expect(share.canManage.value).toBe(true)
+    const loading = share.load()
+    await vi.waitFor(() => expect(server.asked).toEqual(['node_get', 'node_grants']))
+    server.release.get('node_get')!()
+    server.release.get('node_grants')!()
+    await loading
+    expect(share.sections.value).not.toBeNull()
+  })
+
+  it("takes its first read from the opener's reads, and asks the server after a write", async () => {
+    const server = fakeServer((call) => {
+      if (call.id === 'node_get') return node('folder')
+      if (call.id === 'node_grants')
+        return {
+          grants: [grant('asha@example.com', 20), grant('theo@example.com', 10)],
+          inherited: [],
+        }
+      return grant('asha@example.com', 20)
+    })
+    const share = useShare('doc', {
+      client: testClient(server.transport),
+      reads: {
+        node: Promise.resolve(fromAny(node('folder'))),
+        list: Promise.resolve(
+          fromPartial<GrantList>({ grants: [grant('asha@example.com', 40)], inherited: [] }),
+        ),
+      },
+    })
+    const principals = () => share.sections.value!.people.map((row) => row.grant.principal)
+
+    await share.load()
+    expect(server.calls).toEqual([])
+    expect(principals()).toEqual(['asha@example.com'])
+
+    await share.setRole(share.sections.value!.people[0]!, 20)
+
+    expect(server.calls.map((call) => call.id)).toEqual([
+      'node_put_grant',
+      'node_get',
+      'node_grants',
+    ])
+    expect(principals()).toEqual(['asha@example.com', 'theo@example.com'])
+  })
+
+  it('does not read who has access when the fresh item says the caller can no longer manage it', async () => {
+    const server = fakeServer((call) => (call.id === 'node_get' ? node('folder', 30) : undefined))
+    const share = useShare('doc', { client: testClient(server.transport) })
+    await share.load()
+    expect(server.calls.map((call) => call.id)).toEqual(['node_get'])
+    expect(share.canManage.value).toBe(false)
+    expect(share.loadError.value).toBe('')
   })
 })
 
@@ -687,8 +876,8 @@ describe('document session share (spec §8.6, §8.8)', () => {
     let whileOpen: boolean | undefined
     const session = await openDriveDocumentSession('doc', {
       client: testClient(server.transport),
-      setInterval: vi.fn() as unknown as typeof setInterval,
-      clearInterval: vi.fn() as unknown as typeof clearInterval,
+      setInterval: fromPartial<typeof setInterval>(vi.fn()),
+      clearInterval: fromPartial<typeof clearInterval>(vi.fn()),
       share: async (id) => {
         const share = useShare(id, { client: testClient(server.transport) })
         await share.load()
@@ -708,7 +897,7 @@ describe('document session share (spec §8.6, §8.8)', () => {
 })
 
 describe('share dialog words (spec §7.3)', () => {
-  it('says a document is not published on the web, whether web access was never on or was switched off', async () => {
+  it('says a document is not public, and that a deny blocks public access here', async () => {
     const said = async (grants: DriveGrant[]) => {
       const server = fakeServer((call) => {
         if (call.id === 'node_get') return node('document')
@@ -726,9 +915,9 @@ describe('share dialog words (spec §7.3)', () => {
       return words
     }
 
-    expect(await said([])).toContain('Not published on the web')
-    const switchedOff = await said([grant('$PUBLIC', 0)])
-    expect(switchedOff).toContain('Not published on the web')
-    expect(switchedOff).not.toContain('Denied')
+    expect(await said([])).toContain('Not public')
+    const blocked = await said([grant('$PUBLIC', 0)])
+    expect(blocked).toContain('Public access blocked here')
+    expect(blocked).not.toContain('Denied')
   })
 })

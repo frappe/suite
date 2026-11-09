@@ -3,6 +3,7 @@ import { createRequire } from 'node:module'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { initSync } from '@ironcalc/wasm'
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
 
@@ -52,7 +53,7 @@ async function currentBody(): Promise<string> {
   merge.merge(0, 0, 0, 1, 'Budget')
   const condFormat = createCondFormatEngine()
   condFormat.addRule(
-    { range: 'B1:B2', type: 'greaterThan', value: 500, format: {} } as never,
+    fromPartial({ range: 'B1:B2', type: 'greaterThan', value: 500, format: {} }),
     'Budget',
   )
   const slicers = createSlicerEngine()
@@ -402,7 +403,9 @@ describe('convertSheetsData: a body saved before IronCalc 0.9.0', { timeout: TIM
     // 0.9.0 cannot read 0.8.4's bytes ("bitcode error"). Only this branch's
     // editor saved them, before it moved to 0.9.0; the sheet keeps its body
     // and opens on the error screen that names both versions.
-    const body = JSON.parse(savedBody('saved-body-0.8.4.json')) as { engine_version: string }
+    const body: unknown = JSON.parse(savedBody('saved-body-0.8.4.json'))
+    if (!body || typeof body !== 'object' || !('engine_version' in body))
+      throw new Error('Expected an engine version in the frozen workbook')
     expect(body.engine_version).toBe('0.8.4')
     expect(await convertSheetsData(JSON.stringify(body), MAX_STATE)).toEqual({
       kind: 'failed',

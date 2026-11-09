@@ -22,6 +22,7 @@ import {
   removeOldBlock,
   roomBlocks,
   roomText,
+  textParent,
   threeParagraphs,
 } from '@/apps/writer/collab/removal-fixtures'
 import { watchRemovals, type Removal } from '@/apps/writer/collab/removals'
@@ -166,7 +167,7 @@ describe("work a tab takes on that the doc already held as another tab's (R310)"
   it('keys a lost mention by its own item, alike each time the same work is taken on', () => {
     const writer = docOf(threeParagraphs)
     const base = yjs.encodeStateVector(writer)
-    ;(oldBlockText(writer).parent as yjs.XmlElement).insert(1, [mention()])
+    textParent(oldBlockText(writer)).insert(1, [mention()])
     const typed = yjs.encodeStateAsUpdate(writer, base)
 
     const keys = [typed, typed].map((update) => {
@@ -197,10 +198,7 @@ describe("work a tab takes on that the doc already held as another tab's (R310)"
   })
 
   it('reports a held mention as one lost node', () => {
-    const found = adoptHeld(
-      (old) => (old.parent as yjs.XmlElement).insert(1, [mention()]),
-      applyRestructure,
-    )
+    const found = adoptHeld((old) => textParent(old).insert(1, [mention()]), applyRestructure)
 
     expect(found).toEqual([{ kind: 'node', name: 'mention', attrs: {}, key: expect.any(String) }])
   })

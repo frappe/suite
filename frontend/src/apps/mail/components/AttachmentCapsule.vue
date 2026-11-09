@@ -1,16 +1,14 @@
 <template>
   <div
-    class="group/capsule hover:border-outline-gray-3 flex cursor-pointer items-center space-x-1.5 rounded-full border px-2 py-1"
+    class="group/capsule hover:border-outline-gray-3 flex cursor-pointer items-center rounded-full border"
+    :class="compact ? 'h-7 gap-1.5 px-2.5' : 'space-x-1.5 px-2 py-1'"
   >
     <div class="text-ink-gray-4">
-      <Loader
-        v-if="isDownloading || progress !== undefined"
-        class="h-4 w-4 shrink-0 animate-spin"
-      />
+      <Loader v-if="isDownloading || progress !== undefined" class="size-4 shrink-0 animate-spin" />
       <template v-else>
         <component
           :is="getFileIcon(type)"
-          class="h-4 w-4 shrink-0"
+          class="size-4 shrink-0"
           :class="{ 'sm:group-hover/capsule:hidden': blobID }"
         />
         <button
@@ -18,18 +16,18 @@
           :class="{ 'sm:group-hover/capsule:block': blobID }"
           @click.stop.prevent="downloadAttachment"
         >
-          <Download class="hover:text-ink-gray-8 h-4 w-4 shrink-0" />
+          <Download class="hover:text-ink-gray-8 size-4 shrink-0" />
         </button>
       </template>
     </div>
     <!-- Cut in the middle: the head gives way with an ellipsis at whatever width the pill has,
          and the tail — the extension and a few characters before it — always shows. One span
          around both, so the capsule's spacing doesn't open a gap between the halves. -->
-    <span v-if="nameParts" class="flex min-w-0 text-sm">
+    <span v-if="nameParts" class="flex min-w-0" :class="textSize">
       <span class="truncate">{{ nameParts.head }}</span>
       <span class="shrink-0 whitespace-pre">{{ nameParts.tail }}</span>
     </span>
-    <span v-else class="truncate text-sm">{{ fileName }}</span>
+    <span v-else class="truncate" :class="textSize">{{ fileName }}</span>
     <!-- While uploading, how far along; once attached, how big. -->
     <span v-if="progress !== undefined" class="text-ink-gray-5 shrink-0 text-sm tabular-nums">
       {{ Math.round(progress) }}%
@@ -64,6 +62,7 @@ const {
   progress,
   removable = false,
   truncateMiddle = false,
+  compact = false,
 } = defineProps<{
   fileName: string
   blobID?: string
@@ -77,11 +76,15 @@ const {
   removable?: boolean
   // Cut a long name in the middle on desktop too, as the phone always does, so the extension shows.
   truncateMiddle?: boolean
+  // A mail list row's line of chips: the height, padding and type of the folder Badges beside it.
+  compact?: boolean
 }>()
 
 const emit = defineEmits<{ remove: [] }>()
 
 const { isMobile } = useScreenSize()
+
+const textSize = computed(() => (compact ? 'text-p-sm' : 'text-sm'))
 
 // On mobile (and wherever `truncateMiddle` asks) long names truncate in the middle so the
 // extension survives ("quarterly-rep…-final.pdf", not "quarterly-repo…"). Desktop otherwise keeps

@@ -1,6 +1,11 @@
 import { computed, inject, onUnmounted, ref, watch, type Ref } from 'vue'
 
-import type { RTCStatsReport, RTCStatsSample, SFUMeetingManager } from '../utils/SFUMeetingManager'
+import {
+  snapshotRTCStatsReports,
+  type RTCStatsReport,
+  type RTCStatsSample,
+  type SFUMeetingManager,
+} from '../utils/SFUMeetingManager'
 
 type StatsReport = RTCStatsReport
 
@@ -79,14 +84,8 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === 'string' && value ? value : undefined
 }
 
-function reports(stats: unknown): StatsReport[] {
-  if (!stats || typeof stats !== 'object') return []
-  const values = (stats as { values?: () => IterableIterator<unknown> }).values?.()
-  return values
-    ? Array.from(values).filter(
-        (report): report is StatsReport => !!report && typeof report === 'object',
-      )
-    : []
+function reports(stats: unknown) {
+  return snapshotRTCStatsReports(stats)
 }
 
 export function selectPrimaryRtpReport(
@@ -200,12 +199,11 @@ export function useRTCStats(active: Ref<boolean>) {
       const jitterBufferEmitted = numberValue(primary.jitterBufferEmittedCount)
       const jitterBufferTotal = numberValue(primary.jitterBufferDelay)
 
-      return {
+      const sample: RTCStreamStats = {
         id: options.id,
         direction: options.direction,
         kind: options.kind,
         source: options.source,
-        ...(options.participantId ? { participantId: options.participantId } : {}),
         codec: codecName(codec),
         bitrate: calculateBitrate(previous, currentSample),
         packetLoss: calculatePacketLoss(previous, currentSample),
@@ -238,6 +236,8 @@ export function useRTCStats(active: Ref<boolean>) {
         paused: options.paused,
         muted: options.muted,
       }
+      if (options.participantId) sample.participantId = options.participantId
+      return sample
     } catch {
       return null
     }

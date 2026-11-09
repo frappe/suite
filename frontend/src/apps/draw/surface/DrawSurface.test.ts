@@ -6,8 +6,10 @@ import { railHidden } from '@/platform/rail'
 
 import DrawSurface from './DrawSurface.vue'
 
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const drawing = vi.hoisted(() => ({
-  opened: null as { readable: Ref<boolean>; loadError: Ref<boolean> } | null,
+  opened: fromPartial<{ readable: Ref<boolean>; loadError: Ref<boolean> } | null>(null),
 }))
 
 vi.mock('frappe-ui', () => ({ Button: { render: () => null } }))
@@ -47,7 +49,7 @@ vi.mock('../canvas/persistence', async () => {
 let app: App | null = null
 
 function openDrawing() {
-  app = createApp(DrawSurface, { session: {} as DocumentSession })
+  app = createApp(DrawSurface, { session: fromPartial<DocumentSession>({}) })
   app.mount(document.createElement('div'))
   return drawing.opened!
 }

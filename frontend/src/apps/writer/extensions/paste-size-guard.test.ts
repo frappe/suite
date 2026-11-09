@@ -3,6 +3,7 @@ import Collaboration from '@tiptap/extension-collaboration'
 import Document from '@tiptap/extension-document'
 import Paragraph from '@tiptap/extension-paragraph'
 import Text from '@tiptap/extension-text'
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it } from 'vitest'
 import * as yjs from 'yjs'
 
@@ -22,7 +23,7 @@ const emptyDocLimits: Limits = {
 let editor: Editor | undefined
 // jsdom has no ClipboardEvent, which ProseMirror makes when it is given none
 function paste(view: Editor['view'], text: string) {
-  return view.pasteText(text, new Event('paste') as ClipboardEvent)
+  return view.pasteText(text, fromPartial<ClipboardEvent>(new Event('paste')))
 }
 
 afterEach(() => editor?.destroy())
@@ -226,8 +227,8 @@ describe('a document at its size limit', () => {
     const fullState = yjs.encodeStateAsUpdate(ydoc)
     yjs.applyUpdate(otherDoc, fullState)
     const before = yjs.encodeStateVector(otherDoc)
-    const firstBlock = otherDoc.getXmlFragment('default').get(0) as yjs.XmlElement
-    ;(firstBlock.get(0) as yjs.XmlText).insert(0, 'new ')
+    const firstBlock = fromPartial<yjs.XmlElement>(otherDoc.getXmlFragment('default').get(0))
+    fromPartial<yjs.XmlText>(firstBlock.get(0)).insert(0, 'new ')
 
     const otherChange = yjs.encodeStateAsUpdate(otherDoc, before)
     yjs.applyUpdate(ydoc, otherChange, 'remote')

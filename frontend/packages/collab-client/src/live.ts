@@ -296,9 +296,9 @@ export class Live implements HubMember {
 
   // A quarantine, a hold or its release, or room a compaction freed: the pull says what changed
   private onControl = (heard: unknown) => {
-    if (this.closed || lineageOf(heard) !== this.lineage) return
+    if (this.closed || !controlRecord(heard) || lineageOf(heard) !== this.lineage) return
 
-    this.hooks.controlHeard(heard as Record<string, unknown>)
+    this.hooks.controlHeard(heard)
     this.repair()
   }
 
@@ -368,4 +368,8 @@ export class Live implements HubMember {
     const timer = setTimeout(runOnce, ms)
     this.timers.add(timer)
   }
+}
+
+function controlRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
 }

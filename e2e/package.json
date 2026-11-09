@@ -2,6 +2,7 @@
   "name": "@suite/e2e",
   "version": "0.0.1",
   "private": true,
+  "packageManager": "yarn@1.22.22",
   "scripts": {
     "test": "yarn test:drive-backed-apps",
     "test:drive-backed-apps": "playwright test -c drive-backed-apps/playwright.config.ts",

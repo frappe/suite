@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { effectScope, ref } from 'vue'
 
@@ -20,17 +21,23 @@ function driveThreads() {
   function list() {
     return new Promise<{ threads: DocumentThread[] }>((resolve, reject) => {
       function answer(threadNames: string[]) {
-        resolve({ threads: threadNames.map((name) => ({ name }) as DocumentThread) })
+        resolve({ threads: threadNames.map((name) => fromPartial<DocumentThread>({ name })) })
       }
 
       reads.push({ answer, fail: () => reject(new Error('offline')) })
     })
   }
 
-  return { reads, session: { comments: { list } } as never }
+  return {
+    reads,
+    session: fromPartial<Parameters<typeof useDocumentThreads>[0]>({ comments: { list } }),
+  }
 }
 
-function openThreads(session: never, seesThreads?: () => boolean) {
+function openThreads(
+  session: Parameters<typeof useDocumentThreads>[0],
+  seesThreads?: () => boolean,
+) {
   const scope = effectScope()
   scopes.push(scope)
   return scope.run(() => useDocumentThreads(session, seesThreads))!

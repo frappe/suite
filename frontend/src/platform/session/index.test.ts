@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { Transport } from '@/platform/transport'
@@ -24,7 +25,7 @@ describe('session', () => {
         is_jmap_configured: true,
       }
     })
-    const session = createSession({ request } as Transport)
+    const session = createSession(fromPartial<Transport>({ request }))
     expect(session.user.value?.fullName).toBe('Cookie Name')
     await session.refresh()
     expect(session.status.value).toBe('authenticated')
@@ -43,7 +44,7 @@ describe('session', () => {
     document.cookie = 'system_user=yes; path=/'
     let answer: (account: Record<string, unknown>) => void = () => {}
     const request = vi.fn(() => new Promise((resolve) => (answer = resolve)))
-    const session = createSession({ request } as unknown as Transport)
+    const session = createSession(fromPartial<Transport>({ request }))
     expect(session.capabilities.value).toEqual({ jmap: false, systemManager: false })
     answer({ name: 'user@example.com', roles: [] })
     await session.refresh()
@@ -60,7 +61,7 @@ describe('session', () => {
       name: 'admin@example.com',
       roles: { suite_admin: true, system_manager: false },
     }))
-    const session = createSession({ request } as unknown as Transport)
+    const session = createSession(fromPartial<Transport>({ request }))
     await session.refresh()
     expect(hasCapabilities(['suiteAdmin'], session)).toBe(true)
     expect(hasCapabilities(['systemManager'], session)).toBe(false)
@@ -75,7 +76,7 @@ describe('session', () => {
       if (operation.id === 'frappe.logout') return {}
       return { name: 'new@example.com', full_name: 'New User', roles: [] }
     })
-    const session = createSession({ request } as Transport)
+    const session = createSession(fromPartial<Transport>({ request }))
     await session.login('new@example.com', 'secret')
     expect(session.user.value?.id).toBe('new@example.com')
     await session.logout()
@@ -89,7 +90,7 @@ describe('session', () => {
       order.push('server')
       return {}
     })
-    const session = createSession({ request } as Transport)
+    const session = createSession(fromPartial<Transport>({ request }))
     session.onLogout(() => {
       order.push('failing')
       throw new Error('cache gone')
@@ -117,7 +118,7 @@ describe('session', () => {
     const request = vi.fn(async () => {
       throw new Error('offline')
     })
-    const session = createSession({ request } as Transport)
+    const session = createSession(fromPartial<Transport>({ request }))
     const cleanup = vi.fn()
     session.onLogout(cleanup)
 
@@ -134,7 +135,7 @@ describe('session', () => {
           resolveAccount = resolve
         }),
     )
-    const session = createSession({ request } as Transport)
+    const session = createSession(fromPartial<Transport>({ request }))
     const loading = session.refresh()
     session.expire()
     resolveAccount({
@@ -152,7 +153,7 @@ describe('session', () => {
   it('keeps guests idle until login supplies an identity', async () => {
     document.cookie = 'user_id=Guest; path=/'
     const request = vi.fn(async () => ({ name: 'user@example.com' }))
-    const session = createSession({ request } as Transport)
+    const session = createSession(fromPartial<Transport>({ request }))
     await session.refresh()
     expect(session.status.value).toBe('guest')
     expect(session.user.value).toBeNull()
@@ -164,7 +165,7 @@ describe('session', () => {
     let release!: (account: Record<string, unknown>) => void
     const account = new Promise<Record<string, unknown>>((resolve) => (release = resolve))
     const request = vi.fn(() => account)
-    const session = createSession({ request } as Transport)
+    const session = createSession(fromPartial<Transport>({ request }))
     const first = session.refresh()
     const second = session.refresh()
     expect(request).toHaveBeenCalledOnce()
@@ -177,7 +178,7 @@ describe('session', () => {
   it('clears stale identity and capabilities when the account becomes Guest', async () => {
     document.cookie = 'user_id=user%40example.com; path=/'
     const request = vi.fn(async () => ({ name: 'Guest' }))
-    const session = createSession({ request } as Transport)
+    const session = createSession(fromPartial<Transport>({ request }))
     await session.refresh()
     expect(session.status.value).toBe('guest')
     expect(session.user.value).toBeNull()

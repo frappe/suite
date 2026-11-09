@@ -1,38 +1,41 @@
 <template>
-  <Dialog v-model:open="open" title="A file with this name exists" size="md">
+  <Dialog v-model:open="open" :title="__('A file with this name exists')" size="md">
     <form class="space-y-4" @submit.prevent="submit">
       <p class="text-p-base text-ink-gray-7">
-        This folder already has a file named
-        <span class="font-medium text-ink-gray-8">{{ title }}</span
-        >.
+        {{ __('This folder already has a file named “{0}”.', [title]) }}
       </p>
       <RadioGroup v-model="action" orientation="vertical">
         <Radio
+          value="keep-both"
+          :label="__('Keep both')"
+          :description="__('Upload as {0}.', [freeTitle])"
+        />
+        <Radio
           v-if="canReplace"
           value="replace"
-          label="Replace"
-          description="The current file is not kept."
+          :label="__('Replace')"
+          :description="__('The current file is not kept.')"
         />
-        <Radio value="keep-both" label="Keep both" :description="`Upload as ${freeTitle}.`" />
-        <Radio value="rename" label="Rename" />
-        <Radio value="skip" label="Skip" />
+        <Radio value="rename" :label="__('Rename')" />
       </RadioGroup>
-      <!-- Always rendered, so the dialog keeps its height when Rename is picked. -->
-      <FormControl
-        v-model="renamed"
-        label="New name"
-        :disabled="action !== 'rename'"
-        :required="action === 'rename'"
-      />
+      <div v-if="action === 'rename'" ref="nameField">
+        <FormControl v-model="renamed" :label="__('New name')" required />
+      </div>
       <Checkbox
         v-if="batch"
         v-model="applyToAll"
-        label="Apply to all"
+        :label="__('Apply to all')"
         :disabled="action === 'rename'"
       />
       <div class="flex justify-end gap-2">
-        <Button label="Skip" @click="choose({ action: 'skip' })" />
-        <Button type="submit" variant="solid" theme="gray" label="Continue" :disabled="!valid" />
+        <Button :label="__('Skip')" @click="choose({ action: 'skip' })" />
+        <Button
+          type="submit"
+          variant="solid"
+          :theme="action === 'replace' ? 'red' : 'gray'"
+          :label="submitLabel"
+          :disabled="!valid"
+        />
       </div>
     </form>
   </Dialog>
@@ -40,13 +43,16 @@
 
 <script setup lang="ts">
 import { Button, Checkbox, Dialog, FormControl, Radio, RadioGroup } from 'frappe-ui'
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
+
+import { translate as __ } from '@/platform/translation'
 
 import type { CollisionChoice } from './queue'
 
 /**
  * Asks what to do with a file whose title is taken (spec §6.4). Replace shows
  * only with EDIT on the file there. "Apply to all" does not carry a rename.
+ * Skip is only a button, and the name field shows for Rename.
  */
 const props = defineProps<{
   title: string
@@ -60,10 +66,27 @@ const emit = defineEmits<{ choose: [choice: CollisionChoice & { applyToAll: bool
 const action = ref<CollisionChoice['action']>('keep-both')
 const renamed = ref(props.freeTitle)
 const applyToAll = ref(false)
+const nameField = ref<HTMLElement>()
 const valid = computed(
   () =>
     action.value !== 'rename' || (!!renamed.value.trim() && renamed.value.trim() !== props.title),
 )
+const submitLabel = computed(() => {
+  if (action.value === 'replace') return __('Replace')
+  if (action.value === 'rename') return __('Rename')
+  return __('Keep both')
+})
+
+// The name is ready to type over, its extension kept.
+watch(action, async (next) => {
+  if (next !== 'rename') return
+  await nextTick()
+  const input = nameField.value?.querySelector('input')
+  if (!input) return
+  input.focus()
+  const dot = input.value.lastIndexOf('.')
+  input.setSelectionRange(0, dot > 0 ? dot : input.value.length)
+})
 
 function submit() {
   if (!valid.value) return

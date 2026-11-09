@@ -90,6 +90,8 @@ export interface CfIcon {
 
 /** What a cell's rules add on top of its own format. */
 export interface CfOverride {
+  /** Imported rules may carry additional painter format fields; merging preserves them. */
+  [field: string]: unknown
   backgroundColor?: string
   color?: string
   dataBar?: CfDataBar
@@ -136,7 +138,8 @@ export function createCondFormatEngine() {
     const rules = store[sheet]
     if (!rules) return
     const idx = rules.findIndex((r) => r.id === id)
-    if (idx !== -1) rules[idx] = { ...(rules[idx] as CfRule), ...patch }
+    const current = rules[idx]
+    if (current) rules[idx] = { ...current, ...patch }
   }
 
   function removeRule(id: number, sheet = 'Sheet1') {
@@ -157,7 +160,7 @@ export function createCondFormatEngine() {
     if (cond.type === 'notempty') return rawVal !== '' && rawVal != null
     if (cond.type === 'formula') {
       try {
-        return !!getCellValue?.(cond.value as string)
+        return cond.value !== undefined && !!getCellValue?.(cond.value)
       } catch {
         return false
       }
@@ -198,7 +201,8 @@ export function createCondFormatEngine() {
     getCellValue: CellValueGetter | null | undefined,
   ): RangeStats {
     const key = `${sheet}|${rule.id}`
-    if (_statsCache.has(key)) return _statsCache.get(key) as RangeStats
+    const cached = _statsCache.get(key)
+    if (cached) return cached
     const { r0, c0, r1, c1 } = rule.range
     let min = Infinity,
       max = -Infinity,
@@ -327,19 +331,16 @@ export function createCondFormatEngine() {
         contribution = _formatForDataBar(rule, rawVal, _rangeStats(rule, sheet, getCellValue))
       } else if (rule.kind === 'icon-set') {
         contribution = _formatForIconSet(rule, rawVal, _rangeStats(rule, sheet, getCellValue))
-      } else if (
-        // No kind = a condition rule, which always has a condition.
-        _testCondition(rule.condition as CfCondition, rawVal, getCellValue)
-      ) {
-        contribution = rule.format
+      } else {
+        const condition = rule.condition
+        if (!condition) throw new Error('Conditional format rule has no condition')
+        if (_testCondition(condition, rawVal, getCellValue)) contribution = rule.format
       }
       if (!contribution) continue
       if (!out) out = { ...contribution }
       else {
         // Merge — earlier rules win on shared keys.
-        const merged = out as Record<string, unknown>
-        const add = contribution as Record<string, unknown>
-        for (const k of Object.keys(add)) if (merged[k] == null) merged[k] = add[k]
+        for (const k of Object.keys(contribution)) if (out[k] == null) out[k] = contribution[k]
       }
     }
     return out

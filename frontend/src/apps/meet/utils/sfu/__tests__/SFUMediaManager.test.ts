@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ConsumerManager } from '../../media/ConsumerManager'
@@ -44,7 +45,7 @@ const mediaTrack = (
   id: string,
   kind: 'audio' | 'video',
   readyState: MediaStreamTrackState = 'live',
-) => ({ id, kind, readyState, stop: vi.fn() }) as unknown as MediaStreamTrack
+) => fromPartial<MediaStreamTrack>({ id, kind, readyState, stop: vi.fn() })
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -55,14 +56,7 @@ function deferred<T>() {
   })
   return { promise, reject, resolve }
 }
-
-function createManager(
-  opts: {
-    currentUserId?: string | null
-    hasParticipant?: boolean
-    isScreenPublicationCurrent?: (track: MediaStreamTrack) => boolean
-  } = {},
-): {
+interface CreateManagerResult {
   mediaManager: SFUMediaManager
   transportManager: MockTransportManager
   videoManager: { attachStream: ReturnType<typeof vi.fn> }
@@ -72,7 +66,15 @@ function createManager(
     removeConsumer: ReturnType<typeof vi.fn>
   }
   participantManager: MockParticipantManager
-} {
+}
+
+function createManager(
+  opts: {
+    currentUserId?: string | null
+    hasParticipant?: boolean
+    isScreenPublicationCurrent?: (track: MediaStreamTrack) => boolean
+  } = {},
+): CreateManagerResult {
   const transportManager: MockTransportManager = {
     closeSendTransport: vi.fn(),
     discardProducer: vi.fn(async (producer: { close: () => void }) => {
@@ -115,10 +117,10 @@ function createManager(
 
   const mediaManager = new SFUMediaManager(
     {
-      transportManager: transportManager as never,
-      videoManager: videoManager as never,
-      consumerManager: consumerManager as never,
-      participantManager: participantManager as never,
+      transportManager: fromPartial(transportManager),
+      videoManager: fromPartial(videoManager),
+      consumerManager: fromPartial(consumerManager),
+      participantManager: fromPartial(participantManager),
       isScreenPublicationCurrent: opts.isScreenPublicationCurrent,
     },
     getCurrentUserId,
@@ -326,9 +328,12 @@ describe('SFUMediaManager.attachAudioConsumer', () => {
     videoManager.attachStream.mockRejectedValue(new Error('audio blocked'))
 
     await expect(
-      mediaManager.attachAudioConsumer('remote-1', {
-        track: { kind: 'audio' },
-      } as never),
+      mediaManager.attachAudioConsumer(
+        'remote-1',
+        fromPartial({
+          track: { kind: 'audio' },
+        }),
+      ),
     ).rejects.toThrow('audio blocked')
     vi.unstubAllGlobals()
   })
@@ -338,18 +343,18 @@ describe('SFUMediaManager endpoint media handoff', () => {
   it('reattaches the surviving consumer even when the closed consumer is already gone', async () => {
     const { mediaManager, consumerManager } = createManager()
     vi.stubGlobal('MediaStream', FakeMediaStream)
-    const closed = {
+    const closed = fromPartial<import('../../media/ConsumerManager').ConsumerEntry>({
       producerId: 'producer-1',
       kind: 'video',
       track: mediaTrack('track-1', 'video'),
-    } as never
-    const survivor = {
+    })
+    const survivor = fromPartial<import('../../media/ConsumerManager').ConsumerEntry>({
       producerId: 'producer-2',
       kind: 'video',
       isScreen: false,
       track: mediaTrack('track-2', 'video'),
       consumer: { closed: false },
-    } as never
+    })
     await mediaManager.attachVideoConsumer('remote-1', closed)
     const attach = vi.spyOn(mediaManager, 'attachVideoConsumer')
     consumerManager.getConsumersByParticipant.mockReturnValue([survivor])
@@ -363,11 +368,14 @@ describe('SFUMediaManager endpoint media handoff', () => {
   it('does not replace media when a non-attached endpoint closes', async () => {
     const { mediaManager, consumerManager } = createManager()
     vi.stubGlobal('MediaStream', FakeMediaStream)
-    await mediaManager.attachVideoConsumer('remote-1', {
-      producerId: 'producer-1',
-      kind: 'video',
-      track: mediaTrack('track-1', 'video'),
-    } as never)
+    await mediaManager.attachVideoConsumer(
+      'remote-1',
+      fromPartial({
+        producerId: 'producer-1',
+        kind: 'video',
+        track: mediaTrack('track-1', 'video'),
+      }),
+    )
     const attach = vi.spyOn(mediaManager, 'attachVideoConsumer')
     consumerManager.getConsumersByParticipant.mockReturnValue([])
 
@@ -381,23 +389,23 @@ describe('SFUMediaManager endpoint media handoff', () => {
     const { mediaManager, consumerManager, videoManager } = createManager()
     vi.stubGlobal('MediaStream', FakeMediaStream)
     const firstAttachment = deferred<void>()
-    const closed = {
+    const closed = fromPartial<import('../../media/ConsumerManager').ConsumerEntry>({
       producerId: 'producer-1',
       kind: 'video',
       track: mediaTrack('track-1', 'video'),
-    } as never
-    const survivor = {
+    })
+    const survivor = fromPartial<import('../../media/ConsumerManager').ConsumerEntry>({
       producerId: 'producer-2',
       kind: 'video',
       isScreen: false,
       track: mediaTrack('track-2', 'video'),
       consumer: { closed: false },
-    } as never
-    const newest = {
+    })
+    const newest = fromPartial<import('../../media/ConsumerManager').ConsumerEntry>({
       producerId: 'producer-3',
       kind: 'video',
       track: mediaTrack('track-3', 'video'),
-    } as never
+    })
     await mediaManager.attachVideoConsumer('remote-1', closed)
     videoManager.attachStream.mockClear()
     consumerManager.getConsumersByParticipant.mockReturnValue([survivor])
@@ -413,7 +421,8 @@ describe('SFUMediaManager endpoint media handoff', () => {
 
     expect(videoManager.attachStream).toHaveBeenCalledTimes(2)
     expect(
-      (videoManager.attachStream.mock.calls[1][1] as FakeMediaStream).getVideoTracks()[0]?.id,
+      fromPartial<FakeMediaStream>(videoManager.attachStream.mock.calls[1][1]).getVideoTracks()[0]
+        ?.id,
     ).toBe('track-3')
     vi.unstubAllGlobals()
   })
@@ -421,23 +430,23 @@ describe('SFUMediaManager endpoint media handoff', () => {
   it('retries handoff when a newer endpoint attachment fails', async () => {
     const { mediaManager, consumerManager, videoManager } = createManager()
     vi.stubGlobal('MediaStream', FakeMediaStream)
-    const closed = {
+    const closed = fromPartial<import('../../media/ConsumerManager').ConsumerEntry>({
       producerId: 'producer-1',
       kind: 'video',
       track: mediaTrack('track-1', 'video'),
-    } as never
-    const survivor = {
+    })
+    const survivor = fromPartial<import('../../media/ConsumerManager').ConsumerEntry>({
       producerId: 'producer-2',
       kind: 'video',
       isScreen: false,
       track: mediaTrack('track-2', 'video'),
       consumer: { closed: false },
-    } as never
-    const failed = {
+    })
+    const failed = fromPartial<import('../../media/ConsumerManager').ConsumerEntry>({
       producerId: 'producer-3',
       kind: 'video',
       track: mediaTrack('track-3', 'video'),
-    } as never
+    })
     await mediaManager.attachVideoConsumer('remote-1', closed)
     videoManager.attachStream.mockClear()
     consumerManager.getConsumersByParticipant.mockReturnValue([survivor])
@@ -451,7 +460,8 @@ describe('SFUMediaManager endpoint media handoff', () => {
     await vi.waitFor(() => expect(videoManager.attachStream).toHaveBeenCalledTimes(2))
 
     expect(
-      (videoManager.attachStream.mock.calls[1][1] as FakeMediaStream).getVideoTracks()[0]?.id,
+      fromPartial<FakeMediaStream>(videoManager.attachStream.mock.calls[1][1]).getVideoTracks()[0]
+        ?.id,
     ).toBe('track-2')
     vi.unstubAllGlobals()
   })
@@ -462,13 +472,12 @@ describe('SFUMediaManager.rebuildSendSide', () => {
     const { mediaManager, transportManager } = createManager()
     const videoTrack = { kind: 'video', readyState: 'live' }
     const audioTrack = { kind: 'audio', readyState: 'live' }
-    mediaManager.mediaHandler.localStream = new FakeMediaStream([
-      videoTrack as never,
-      audioTrack as never,
-    ]) as never
+    mediaManager.mediaHandler.localStream = fromPartial(
+      new FakeMediaStream([fromPartial(videoTrack), fromPartial(audioTrack)]),
+    )
     mediaManager.mediaHandler.setProducers({
-      audioProducer: { close: vi.fn() } as never,
-      videoProducer: { close: vi.fn() } as never,
+      audioProducer: fromPartial({ close: vi.fn() }),
+      videoProducer: fromPartial({ close: vi.fn() }),
     })
 
     await mediaManager.rebuildSendSide()
@@ -485,10 +494,10 @@ describe('SFUMediaManager.rebuildSendSide', () => {
 
   it('does not create a send transport without live local tracks', async () => {
     const { mediaManager, transportManager } = createManager()
-    mediaManager.mediaHandler.localStream = {
+    mediaManager.mediaHandler.localStream = fromPartial({
       getAudioTracks: () => [],
       getVideoTracks: () => [{ kind: 'video', readyState: 'ended' }],
-    } as never
+    })
 
     await expect(mediaManager.rebuildSendSide()).resolves.toEqual({})
 
@@ -501,7 +510,7 @@ describe('SFUMediaManager.rebuildSendSide', () => {
     const { mediaManager, transportManager } = createManager()
     const screenTrack = { kind: 'video', readyState: 'live' }
     mediaManager.mediaHandler.setProducers({
-      screenProducer: { track: screenTrack } as never,
+      screenProducer: fromPartial({ track: screenTrack }),
     })
 
     await mediaManager.rebuildSendSide()
@@ -530,7 +539,7 @@ describe('SFUMediaManager.rebuildSendSide', () => {
       close: vi.fn(),
     }
     mediaManager.mediaHandler.setProducers({
-      screenProducer: { track: screenTrack } as never,
+      screenProducer: fromPartial({ track: screenTrack }),
     })
     transportManager.createProducer.mockReturnValue(creation.promise)
 
@@ -558,7 +567,7 @@ describe('SFUMediaManager.rebuildSendSide', () => {
       close: vi.fn(),
     }
     mediaManager.mediaHandler.setProducers({
-      screenProducer: { track: screenTrack } as never,
+      screenProducer: fromPartial({ track: screenTrack }),
     })
     transportManager.createProducer.mockReturnValue(creation.promise)
 
@@ -580,8 +589,8 @@ describe('SFUMediaManager.rebuildSendSide', () => {
     const oldProducer = { id: 'old-producer', track: oldVideo }
     const replacementStarted = deferred<void>()
     const releaseReplacement = deferred<void>()
-    mediaManager.mediaHandler.localStream = new FakeMediaStream([oldVideo]) as never
-    mediaManager.mediaHandler.setProducers({ videoProducer: oldProducer as never })
+    mediaManager.mediaHandler.localStream = fromPartial(new FakeMediaStream([oldVideo]))
+    mediaManager.mediaHandler.setProducers({ videoProducer: fromPartial(oldProducer) })
     const rebuiltProducer = { id: 'rebuilt-producer', track: nextVideo }
     transportManager.createProducer.mockResolvedValue(rebuiltProducer)
 
@@ -623,7 +632,7 @@ describe('SFUMediaManager local recovery tracks', () => {
     const audio = mediaTrack('audio', 'audio')
     const oldVideo = mediaTrack('old-video', 'video')
     const nextVideo = mediaTrack('next-video', 'video')
-    mediaManager.mediaHandler.localStream = new FakeMediaStream([audio, oldVideo]) as never
+    mediaManager.mediaHandler.localStream = fromPartial(new FakeMediaStream([audio, oldVideo]))
 
     mediaManager.setLocalTrack('video', nextVideo)
 
@@ -637,11 +646,9 @@ describe('SFUMediaManager local recovery tracks', () => {
     const audio = mediaTrack('audio', 'audio')
     const firstVideo = mediaTrack('first-video', 'video')
     const secondVideo = mediaTrack('second-video', 'video')
-    mediaManager.mediaHandler.localStream = new FakeMediaStream([
-      audio,
-      firstVideo,
-      secondVideo,
-    ]) as never
+    mediaManager.mediaHandler.localStream = fromPartial(
+      new FakeMediaStream([audio, firstVideo, secondVideo]),
+    )
 
     mediaManager.setLocalTrack('video', null)
 
@@ -656,7 +663,7 @@ describe('SFUMediaManager local recovery tracks', () => {
     const { mediaManager, transportManager } = createManager()
     const oldVideo = mediaTrack('old-video', 'video')
     const nextVideo = mediaTrack('next-video', 'video')
-    mediaManager.mediaHandler.localStream = new FakeMediaStream([oldVideo]) as never
+    mediaManager.mediaHandler.localStream = fromPartial(new FakeMediaStream([oldVideo]))
     mediaManager.setLocalTrack('video', nextVideo)
 
     await mediaManager.rebuildSendSide()
@@ -675,7 +682,7 @@ describe('SFUMediaManager local recovery tracks', () => {
     const synchronize = vi.spyOn(mediaManager, 'setLocalTrack')
     transportManager.createProducer.mockRejectedValueOnce(new Error('producer failed'))
 
-    const result = await mediaManager.publishMedia(input as never, {
+    const result = await mediaManager.publishMedia(fromPartial(input), {
       publishVideo: true,
       publishAudio: false,
     })
@@ -709,10 +716,13 @@ describe('SFUMediaManager local recovery tracks', () => {
       .mockResolvedValueOnce(videoProducer)
       .mockRejectedValueOnce(new Error('audio failed'))
 
-    const result = await mediaManager.publishMedia(new FakeMediaStream([video, audio]) as never, {
-      publishVideo: true,
-      publishAudio: true,
-    })
+    const result = await mediaManager.publishMedia(
+      fromPartial(new FakeMediaStream([video, audio])),
+      {
+        publishVideo: true,
+        publishAudio: true,
+      },
+    )
 
     expect(result.videoProducer).toBe(videoProducer)
     expect(result.videoError).toBeUndefined()
@@ -731,7 +741,7 @@ describe('SFUMediaManager local recovery tracks', () => {
     const ordering: string[] = []
 
     const publication = mediaManager.publishInitialMedia(
-      new FakeMediaStream([video]) as never,
+      fromPartial(new FakeMediaStream([video])),
       { publishVideo: true, publishAudio: false },
       undefined,
       () => {
@@ -768,16 +778,19 @@ describe('SFUMediaManager local recovery tracks', () => {
       return producerCreation.promise
     })
 
-    const publication = mediaManager.publishMedia(new FakeMediaStream([initialTrack]) as never, {
-      publishVideo: true,
-      publishAudio: false,
-    })
+    const publication = mediaManager.publishMedia(
+      fromPartial(new FakeMediaStream([initialTrack])),
+      {
+        publishVideo: true,
+        publishAudio: false,
+      },
+    )
     await producerCreationEntered.promise
     let mutationRan = false
     const mutation = mediaManager.serializeSendMediaMutation(async () => {
       mutationRan = true
       mediaManager.mediaHandler.setProducers({
-        videoProducer: finalProducer as never,
+        videoProducer: fromPartial(finalProducer),
       })
       mediaManager.setLocalTrack('video', finalTrack)
     })
@@ -800,16 +813,15 @@ describe('SFUMediaManager local recovery tracks', () => {
     const videoProducer = { id: 'video-producer', track: currentVideo }
     const audioProducer = { id: 'audio-producer', track: currentAudio }
     mediaManager.mediaHandler.setProducers({
-      videoProducer: videoProducer as never,
-      audioProducer: audioProducer as never,
+      videoProducer: fromPartial(videoProducer),
+      audioProducer: fromPartial(audioProducer),
     })
-    mediaManager.mediaHandler.localStream = new FakeMediaStream([
-      currentVideo,
-      currentAudio,
-    ]) as never
+    mediaManager.mediaHandler.localStream = fromPartial(
+      new FakeMediaStream([currentVideo, currentAudio]),
+    )
 
     await mediaManager.publishMedia(
-      new FakeMediaStream([replacementVideo, replacementAudio]) as never,
+      fromPartial(new FakeMediaStream([replacementVideo, replacementAudio])),
       { publishVideo: true, publishAudio: true },
     )
 
@@ -836,13 +848,13 @@ describe('SFUMediaManager local recovery tracks', () => {
       track: candidate,
       close: vi.fn(),
     }
-    mediaManager.mediaHandler.localStream = new FakeMediaStream([previous]) as never
+    mediaManager.mediaHandler.localStream = fromPartial(new FakeMediaStream([previous]))
     transportManager.createProducer.mockImplementation(() => {
       creationEntered.resolve()
       return releaseCreation.promise
     })
 
-    const publication = mediaManager.publishMedia(new FakeMediaStream([candidate]) as never, {
+    const publication = mediaManager.publishMedia(fromPartial(new FakeMediaStream([candidate])), {
       publishVideo: true,
       publishAudio: false,
     })
@@ -862,10 +874,10 @@ describe('SFUMediaManager local recovery tracks', () => {
     const newerVideo = mediaTrack('newer-video', 'video')
     const producer = { id: 'newer-producer', track: newerVideo }
     const installation = mediaManager.serializeSendMediaMutation(async () => {
-      mediaManager.mediaHandler.setProducers({ videoProducer: producer as never })
+      mediaManager.mediaHandler.setProducers({ videoProducer: fromPartial(producer) })
       mediaManager.setLocalTrack('video', newerVideo)
     })
-    const staleFalsePublication = mediaManager.publishMedia(new FakeMediaStream([]) as never, {
+    const staleFalsePublication = mediaManager.publishMedia(fromPartial(new FakeMediaStream([])), {
       publishVideo: false,
       publishAudio: false,
     })
@@ -875,7 +887,7 @@ describe('SFUMediaManager local recovery tracks', () => {
     expect(mediaManager.mediaHandler.localStream?.getVideoTracks()).toEqual([newerVideo])
 
     await mediaManager.publishMedia(
-      new FakeMediaStream([mediaTrack('ended', 'video', 'ended')]) as never,
+      fromPartial(new FakeMediaStream([mediaTrack('ended', 'video', 'ended')])),
       { publishVideo: true, publishAudio: false },
     )
     expect(mediaManager.mediaHandler.videoProducer).toBe(producer)
@@ -924,7 +936,7 @@ describe('SFUMediaManager cleanup', () => {
       activeStarted.resolve()
       await releaseActive.promise
       mediaManager.mediaHandler.setProducers({
-        videoProducer: activeProducer as never,
+        videoProducer: fromPartial(activeProducer),
       })
     })
     await activeStarted.promise
@@ -1037,13 +1049,15 @@ describe('SFUMediaManager.handleConsumerLost', () => {
 
   it('removes and recreates only the consumer that never started', async () => {
     const { mediaManager, transportManager, consumerManager } = createManager()
-    await mediaManager.recoverConsumer({
-      id: 'stalled-c1',
-      participantId: 'remote-1',
-      producerId: 'producer-1',
-      kind: 'video',
-      isScreen: false,
-    } as never)
+    await mediaManager.recoverConsumer(
+      fromPartial({
+        id: 'stalled-c1',
+        participantId: 'remote-1',
+        producerId: 'producer-1',
+        kind: 'video',
+        isScreen: false,
+      }),
+    )
 
     expect(consumerManager.removeConsumer).toHaveBeenCalledWith('stalled-c1')
     await vi.advanceTimersByTimeAsync(250)
@@ -1149,7 +1163,7 @@ describe('SFUMediaManager.handleScreenShareConsumer', () => {
 
       for (const type of ['camera', 'screen']) {
         consumers.addConsumer(
-          {
+          fromPartial({
             id: type,
             producerId: `producer-${type}`,
             kind: 'video',
@@ -1159,7 +1173,7 @@ describe('SFUMediaManager.handleScreenShareConsumer', () => {
             close: vi.fn(),
             pause: vi.fn(),
             resume: vi.fn(),
-          } as never,
+          }),
           'remote-1',
         )
       }

@@ -3,14 +3,16 @@ import type { RouteLocationNormalized } from 'vue-router'
 
 // The router reads the onboarding state from the server boot when it is present,
 // so no request is needed. The session is a stand-in whose status each test sets.
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const state = vi.hoisted(() => {
   window.suite_is_onboarded = true
   window.suite_can_onboard = false
   return {
-    status: 'authenticated' as 'guest' | 'authenticated',
-    user: null as { setup_required: boolean } | null,
+    status: fromPartial<'guest' | 'authenticated'>('authenticated'),
+    user: fromPartial<{ setup_required: boolean } | null>(null),
     jmap: true,
-    remembered: [] as [token: string, node: string][],
+    remembered: fromPartial<[token: string, node: string][]>([]),
   }
 })
 
@@ -45,7 +47,8 @@ vi.mock('@/apps/drive', async (importOriginal) => ({
   rememberDriveLink: (token: string, node: string) => state.remembered.push([token, node]),
 }))
 
-const { default: router } = await import('./index')
+const { default: router, preloadPage } = await import('./index')
+const { findArea } = await import('@/composition/appRegistry')
 
 /**
  * Where a navigation settles once the router's own guard has passed it. The
@@ -65,6 +68,32 @@ async function settle(path: string): Promise<RouteLocationNormalized | undefined
   }
   return settled
 }
+
+// Before the route-table tests: their navigations register the Drive routes.
+describe('first page preload', () => {
+  it('fetches the code of the page opened, and nothing for a path outside an area', async () => {
+    const recent = vi.fn(async () => ({ default: {} }))
+    const myFiles = vi.fn(async () => ({ default: {} }))
+    const files = findArea('files')!
+    const loadRoutes = vi.spyOn(files, 'loadRoutes').mockResolvedValue(
+      fromPartial<Awaited<ReturnType<typeof files.loadRoutes>>>({
+        routes: [
+          { path: '', component: myFiles },
+          { path: 'recent', component: recent },
+        ],
+      }),
+    )
+
+    preloadPage('/drive/recent')
+    await vi.waitFor(() => expect(recent).toHaveBeenCalled())
+    expect(myFiles).not.toHaveBeenCalled()
+
+    loadRoutes.mockClear()
+    preloadPage('/no/such/page')
+    expect(loadRoutes).not.toHaveBeenCalled()
+    loadRoutes.mockRestore()
+  })
+})
 
 describe('suite route table', () => {
   afterEach(() => {

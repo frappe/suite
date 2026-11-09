@@ -15,7 +15,8 @@ export interface RecoveryCopy {
   savedAt: string
   /** The editor's slides, as it holds them. */
   slides: unknown[]
-  sticky: boolean
+  /** Older device copies predate the sticky marker and behave as non-sticky. */
+  sticky?: boolean | undefined
   downloaded?: boolean
 }
 
@@ -24,13 +25,24 @@ function key(node: string) {
   return `suite:slides-recovery:${user}:${node}`
 }
 
-function isCopy(copy: Partial<RecoveryCopy> | null): copy is RecoveryCopy {
-  return Array.isArray(copy?.slides) && typeof copy.savedAt === 'string'
+function isCopy(copy: unknown): copy is RecoveryCopy {
+  return (
+    !!copy &&
+    typeof copy === 'object' &&
+    'slides' in copy &&
+    Array.isArray(copy.slides) &&
+    'savedAt' in copy &&
+    typeof copy.savedAt === 'string' &&
+    (!('sticky' in copy) || copy.sticky === undefined || typeof copy.sticky === 'boolean') &&
+    (!('downloaded' in copy) ||
+      copy.downloaded === undefined ||
+      typeof copy.downloaded === 'boolean')
+  )
 }
 
 export function readRecovery(node: string): RecoveryCopy[] {
   try {
-    const copies = JSON.parse(localStorage.getItem(key(node)) ?? '[]') as RecoveryCopy[]
+    const copies: unknown = JSON.parse(localStorage.getItem(key(node)) ?? '[]')
     if (!Array.isArray(copies)) {
       return []
     }

@@ -26,6 +26,7 @@ import {
   roomBlocks,
   roomText,
   sendInOrder,
+  textParent,
   threeParagraphs,
   typeQQ,
 } from '@/apps/writer/collab/removal-fixtures'
@@ -220,7 +221,7 @@ describe('a room watching for removals', () => {
     fakeLocks()
     try {
       const { reported } = await reopenAfterRestructure(true, (old) =>
-        (old.parent as yjs.XmlElement).insert(1, [mention()]),
+        textParent(old).insert(1, [mention()]),
       )
 
       expect(reported).toEqual([
@@ -279,7 +280,7 @@ describe('a room watching for removals', () => {
     await first.flush()
     await typing.pull()
     roomText(other, 1).insert(2, 'ZZ')
-    ;(roomText(other, 1).parent as yjs.XmlElement).insert(1, [mention()])
+    textParent(roomText(other, 1)).insert(1, [mention()])
     await other.flush()
     await typing.pull()
 

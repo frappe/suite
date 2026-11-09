@@ -1,8 +1,17 @@
 <template>
   <div class="flex flex-col gap-4">
-    <TabButtons v-if="rootOptions.length > 1" v-model="rootKind" :options="rootOptions" fluid />
+    <TabButtons
+      v-if="rootOptions.length > 1"
+      :key="tabsKey"
+      v-model="rootKind"
+      :options="rootOptions"
+      fluid
+    />
     <div class="overflow-hidden rounded-6 border border-outline-gray-1">
-      <div class="flex h-11 items-center gap-1 border-b border-outline-gray-1 pe-3 ps-1.5">
+      <div
+        class="flex h-11 items-center gap-1 border-b border-outline-gray-1 ps-1.5"
+        :class="canCreateFolder ? 'pe-1.5' : 'pe-3'"
+      >
         <Button
           variant="ghost"
           icon="lucide-arrow-left"
@@ -11,6 +20,15 @@
           @click="openCrumb(trail.length - 2)"
         />
         <Breadcrumbs :items="crumbs" class="min-w-0 flex-1" />
+        <Button
+          v-if="canCreateFolder"
+          variant="ghost"
+          icon="lucide-folder-plus"
+          :tooltip="__('New folder')"
+          :aria-label="__('New folder')"
+          :disabled="newFolderTitle !== null"
+          @click="startNewFolder"
+        />
       </div>
       <div
         ref="listElement"
@@ -18,6 +36,27 @@
         class="h-72 overflow-y-auto overscroll-contain p-1.5 focus-visible:outline-none"
         :aria-busy="rows.status === 'pending'"
       >
+        <form
+          v-if="newFolderTitle !== null"
+          class="flex h-11 items-center gap-2.5 px-2 sm:h-9"
+          @submit.prevent="createFolder"
+        >
+          <span class="size-4 shrink-0" :class="NEW_FOLDER_ICON" aria-hidden="true" />
+          <TextInput
+            ref="newFolderInput"
+            v-model="newFolderTitle"
+            class="min-w-0 flex-1"
+            :aria-label="__('Folder name')"
+            @update:model-value="createFolderMutation.reset()"
+            @keydown.escape.stop.prevent="newFolderTitle = null"
+          />
+          <Button type="submit" :label="__('Create')" :loading="createFolderMutation.isPending" />
+        </form>
+        <ErrorMessage
+          v-if="newFolderTitle !== null && createFolderMutation.error"
+          class="px-2 pb-1.5"
+          :message="createFolderMutation.error.message"
+        />
         <div v-if="rows.status === 'pending'" aria-hidden="true">
           <div
             v-for="width in SKELETON_WIDTHS"
@@ -36,7 +75,7 @@
           <Button :label="__('Retry')" :loading="rows.isFetching" @click="rows.refetch()" />
         </div>
         <p
-          v-else-if="!rows.rows.length"
+          v-else-if="!rows.rows.length && newFolderTitle === null"
           class="flex h-full items-center justify-center px-4 text-center text-p-sm text-ink-gray-5"
         >
           {{ emptyLabel }}
@@ -59,14 +98,16 @@
 </template>
 
 <script setup lang="ts">
-import { Breadcrumbs, Button, ErrorMessage, Skeleton, TabButtons } from 'frappe-ui'
+import { Breadcrumbs, Button, ErrorMessage, Skeleton, TabButtons, TextInput } from 'frappe-ui'
 import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
 
-import { api, useInfiniteQuery, useQuery } from '@/api'
+import { api, useInfiniteQuery, useMutation, useQuery } from '@/api'
 import type { DriveAccess, DriveNode } from '@/apps/drive/client/types'
 import { translate as __ } from '@/platform/translation'
 
-import { locationTitle } from '../internal/locations'
+import { nodeIcon, nodeIconTint } from '../internal/icons'
+import { locationLabel, locationTitle } from '../internal/locations'
+import { useOpenedKey } from '../internal/openedKey'
 import { SKELETON_BAR } from './listSkeleton'
 
 /** The folder a Drive picker shows. `label` is its name as the breadcrumbs show it. */
@@ -96,13 +137,24 @@ const props = withDefaults(
     emptyLabel: string
     /** The list's accessible name, from the folder's label. */
     listLabel: (folder: string) => string
+    /** Offers New folder in the shown folder, which then opens. */
+    canCreateFolder?: boolean
   }>(),
-  { startRoot: null, startFolder: null, type: undefined, canOpen: () => true },
+  {
+    startRoot: null,
+    startFolder: null,
+    type: undefined,
+    canOpen: () => true,
+    canCreateFolder: false,
+  },
 )
 const location = defineModel<BrowserLocation | null>('location', { default: null })
 
 const SKELETON_WIDTHS = ['w-40', 'w-28', 'w-48', 'w-32']
+const FOLDER = { kind: 'folder', title: '', mime: null, content_doctype: null } as const
+const NEW_FOLDER_ICON = [nodeIcon(FOLDER), nodeIconTint(FOLDER)]
 const listElement = useTemplateRef<HTMLElement>('listElement')
+const tabsKey = useOpenedKey(listElement)
 const discovered = useQuery(api.drive.roots.list, {})
 const rootKind = ref<'personal' | 'organization'>('personal')
 const trail = ref<Array<{ node: string; title: string; access?: DriveAccess }>>([])
@@ -110,12 +162,13 @@ const rootOptions = computed(() =>
   [
     { value: 'personal', label: __('My files') },
     ...(discovered.data?.organization
-      ? [{ value: 'organization', label: __('Organization files') }]
+      ? [{ value: 'organization', label: locationLabel('organization') }]
       : []),
   ].filter(
     (option) =>
       !props.root ||
-      discovered.data?.[option.value as 'personal' | 'organization']?.node === props.root,
+      discovered.data?.[option.value === 'organization' ? 'organization' : 'personal']?.node ===
+        props.root,
   ),
 )
 watch(
@@ -201,6 +254,30 @@ const rows = useInfiniteQuery(api.drive.nodes.children, () =>
       }
     : false,
 )
+
+/** The name of the folder being created in the shown folder, or `null` while none is. */
+const newFolderTitle = ref<string | null>(null)
+const newFolderInput = useTemplateRef<{ inputElement: HTMLInputElement | null }>('newFolderInput')
+// A refusal shows under the name, so it needs no toast.
+const createFolderMutation = useMutation(api.drive.nodes.createFolder, { silent: true })
+watch([() => props.active, () => location.value?.node], () => {
+  newFolderTitle.value = null
+  createFolderMutation.reset()
+})
+async function startNewFolder() {
+  newFolderTitle.value = __('Untitled folder')
+  await nextTick()
+  const input = newFolderInput.value?.inputElement
+  input?.focus()
+  input?.select()
+}
+async function createFolder() {
+  const parent = location.value?.node
+  const title = newFolderTitle.value?.trim()
+  if (!parent || !title || createFolderMutation.isPending) return
+  const folder = await createFolderMutation.run({ kind: 'folder', parent_node: parent, title })
+  openFolder(folder)
+}
 
 function openFolder(folder: DriveNode) {
   trail.value.push({ node: folder.name, title: folder.title, access: folder.access })

@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import type { Socket } from 'socket.io-client'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -23,13 +24,13 @@ function createSocket() {
   const emit = vi.fn()
   return {
     listeners,
-    socket: {
+    socket: fromPartial<Socket>({
       on: vi.fn((event: string, listener: (...args: unknown[]) => void) => {
         listeners.set(event, listener)
       }),
       off: vi.fn((event: string) => listeners.delete(event)),
       emit,
-    } as unknown as Socket,
+    }),
     emit,
   }
 }
@@ -109,7 +110,7 @@ describe('guest realtime lifecycle', () => {
       }))
       lifecycle.start()
 
-      const acknowledge = emit.mock.calls[0][2] as (response: unknown) => void
+      const acknowledge = fromPartial<(response: unknown) => void>(emit.mock.calls[0][2])
       acknowledge({ ok: true, status: 'admitted' })
 
       expect(callbacks.onActiveStatus).toHaveBeenCalledWith(
@@ -137,7 +138,7 @@ describe('guest realtime lifecycle', () => {
       const { lifecycle, callbacks } = createLifecycle(socket)
       lifecycle.start()
 
-      const acknowledge = emit.mock.calls[0][2] as (response: unknown) => void
+      const acknowledge = fromPartial<(response: unknown) => void>(emit.mock.calls[0][2])
       acknowledge({ ok: true, status })
 
       expect(callbacks.onActiveStatus).toHaveBeenCalledWith(status, session)
@@ -152,7 +153,7 @@ describe('guest realtime lifecycle', () => {
       const { lifecycle, callbacks } = createLifecycle(socket)
       lifecycle.start()
 
-      const acknowledge = emit.mock.calls[0][2] as (response: unknown) => void
+      const acknowledge = fromPartial<(response: unknown) => void>(emit.mock.calls[0][2])
       acknowledge({ ok: false, error: 'unauthorized', status })
 
       expect(callbacks.onTerminalStatus).toHaveBeenCalledWith(status)
@@ -184,7 +185,7 @@ describe('guest realtime lifecycle', () => {
     const { lifecycle, callbacks } = createLifecycle(socket)
     lifecycle.start()
 
-    const acknowledge = emit.mock.calls[0][2] as (response: unknown) => void
+    const acknowledge = fromPartial<(response: unknown) => void>(emit.mock.calls[0][2])
     acknowledge({ ok: false, error: 'invalid_request' })
 
     expect(callbacks.onError).toHaveBeenCalledWith(
@@ -199,7 +200,7 @@ describe('guest realtime lifecycle', () => {
       const { lifecycle, callbacks } = createLifecycle(socket)
       lifecycle.start()
 
-      const acknowledge = emit.mock.calls[0][2] as (response: unknown) => void
+      const acknowledge = fromPartial<(response: unknown) => void>(emit.mock.calls[0][2])
       acknowledge({ ok: false, error: 'validation_failed' })
 
       expect(callbacks.onError).not.toHaveBeenCalled()
@@ -217,7 +218,7 @@ describe('guest realtime lifecycle', () => {
       const { lifecycle } = createLifecycle(socket)
       lifecycle.start()
 
-      const acknowledge = emit.mock.calls[0][2] as (response: unknown) => void
+      const acknowledge = fromPartial<(response: unknown) => void>(emit.mock.calls[0][2])
       acknowledge({ ok: false, error: 'validation_failed' })
       lifecycle.stop()
       await vi.advanceTimersByTimeAsync(5_000)
@@ -236,11 +237,11 @@ describe('guest realtime lifecycle', () => {
       lifecycle.start()
 
       for (const delay of [5_000, 10_000, 20_000, 40_000]) {
-        const acknowledge = emit.mock.calls.at(-1)?.[2] as (response: unknown) => void
+        const acknowledge = fromPartial<(response: unknown) => void>(emit.mock.calls.at(-1)?.[2])
         acknowledge({ ok: false, error: 'validation_failed' })
         await vi.advanceTimersByTimeAsync(delay)
       }
-      const acknowledge = emit.mock.calls.at(-1)?.[2] as (response: unknown) => void
+      const acknowledge = fromPartial<(response: unknown) => void>(emit.mock.calls.at(-1)?.[2])
       acknowledge({ ok: false, error: 'validation_failed' })
 
       expect(callbacks.onError).toHaveBeenCalledOnce()

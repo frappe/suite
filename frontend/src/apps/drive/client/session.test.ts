@@ -1,3 +1,4 @@
+import { fromAny, fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createTransport, TransportError, type Transport } from '@/platform/transport'
@@ -251,23 +252,27 @@ describe('document session media', () => {
     return { node, url: `/private/files/b7x2k9q4mz/${node}.png`, expires: 1 }
   }
 
-  async function openedWithHeldRead(window?: Window) {
+  async function openedWithHeldRead(
+    window?: Pick<Window, 'addEventListener' | 'removeEventListener'>,
+  ) {
     const answers: Array<(media: unknown[]) => void> = []
     const failures: Array<(error: unknown) => void> = []
     const requester: Transport = {
       request: (operation) => {
         if (operation.id === 'node_get') {
-          return Promise.resolve(documentNode('root')) as never
+          return fromPartial(Promise.resolve(documentNode('root')))
         }
 
         if (operation.id !== 'node_media') {
-          return Promise.resolve({}) as never
+          return fromPartial(Promise.resolve({}))
         }
 
-        return new Promise((resolve, reject) => {
-          answers.push((media) => resolve({ media }))
-          failures.push(reject)
-        }) as never
+        return fromPartial(
+          new Promise((resolve, reject) => {
+            answers.push((media) => resolve({ media }))
+            failures.push(reject)
+          }),
+        )
       },
     }
     const session = await openDriveDocumentSession('root', {
@@ -398,7 +403,7 @@ describe('document session media', () => {
 
     it('reads again when the browser comes back online', async () => {
       const browser = new EventTarget()
-      const { session, answers, failures } = await openedWithHeldRead(browser as Window)
+      const { session, answers, failures } = await openedWithHeldRead(browser)
       const waiting = session.media('waiting')
       await vi.waitFor(() => expect(answers).toHaveLength(1))
       failures[0](new TypeError('Failed to fetch'))
@@ -501,7 +506,14 @@ describe('document session access refresh', () => {
           return Promise.reject(nextFailure)
         }
 
-        return Promise.resolve(documentNode((input as { node: string }).node) as never)
+        if (
+          !input ||
+          typeof input !== 'object' ||
+          !('node' in input) ||
+          typeof input.node !== 'string'
+        )
+          throw new Error('Expected a document node input')
+        return Promise.resolve(fromAny(documentNode(input.node)))
       },
     }
     const dependencies = {
@@ -537,7 +549,14 @@ describe('document session access refresh', () => {
     const requester: Transport = {
       request: (operation, input) => {
         if (operation.id !== 'node_get' || !nextFailure) {
-          return Promise.resolve(documentNode((input as { node: string }).node) as never)
+          if (
+            !input ||
+            typeof input !== 'object' ||
+            !('node' in input) ||
+            typeof input.node !== 'string'
+          )
+            throw new Error('Expected a document node input')
+          return Promise.resolve(fromAny(documentNode(input.node)))
         }
 
         refusedCount += 1
@@ -546,7 +565,7 @@ describe('document session access refresh', () => {
     }
     const dependencies = {
       client: testClient(requester),
-      window: fakeWindow as Window,
+      window: fakeWindow,
       signedIn: () => user,
     }
     const session = await openDriveDocumentSession('root', dependencies)
@@ -585,7 +604,7 @@ describe('document session access', () => {
     })
     const session = await openDriveDocumentSession('deck', {
       client: testClient(requester),
-      window: new EventTarget() as Window,
+      window: new EventTarget(),
     })
     expect(reads).toBe(1)
     expect(session.access.value.role).toBe(40)
@@ -615,7 +634,7 @@ describe('document session access', () => {
     )
     const session = await openDriveDocumentSession('deck', {
       client: testClient(requester),
-      window: new EventTarget() as Window,
+      window: new EventTarget(),
     })
 
     expect(session.access.value.role).toBe(20)
@@ -634,13 +653,13 @@ describe('document session rename', () => {
       free_title: 'Rates (2)',
     })
     const session = await openDriveDocumentSession('sheet', {
-      node: documentNode('sheet') as never,
+      node: fromPartial(documentNode('sheet')),
       client: testClient(
         {
           request: (operation) =>
             operation.id === 'node_patch.rename'
               ? Promise.reject(conflict)
-              : Promise.resolve({} as never),
+              : Promise.resolve(fromAny({})),
         },
         feedback,
       ),

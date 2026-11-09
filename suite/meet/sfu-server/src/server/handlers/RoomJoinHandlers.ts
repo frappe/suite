@@ -89,6 +89,7 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 
 			if (socket.scope === 'full') {
 				deps.registry.joinScope(socket, scopedRoomId, 'full');
+				syncHostOnlyChatFromToken(deps, socket, scopedRoomId);
 				const senderId = deps.registry.assignSenderId(scopedRoomId, peerId);
 				socket.senderId = senderId;
 				if (!socket.e2eeRequired) {
@@ -220,7 +221,7 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 			loggers.socketHandler.error(
 				'Error in handleJoinRoom for user %s: %s',
 				participantId,
-				(error as Error).message,
+				error instanceof Error ? error.message : String(error),
 			);
 			throw error;
 		}
@@ -274,7 +275,9 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 							loggers.socketHandler.warn(
 								'Recorder peer rollback failed for %s: %s',
 								peerId,
-								(cleanupError as Error).message,
+								cleanupError instanceof Error
+									? cleanupError.message
+									: String(cleanupError),
 							);
 						}
 					}
@@ -285,7 +288,9 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 							loggers.socketHandler.warn(
 								'Recorder registry rollback failed for %s: %s',
 								peerId,
-								(cleanupError as Error).message,
+								cleanupError instanceof Error
+									? cleanupError.message
+									: String(cleanupError),
 							);
 						}
 					}
@@ -296,7 +301,9 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 							loggers.socketHandler.warn(
 								'Recorder room rollback failed for %s: %s',
 								peerId,
-								(cleanupError as Error).message,
+								cleanupError instanceof Error
+									? cleanupError.message
+									: String(cleanupError),
 							);
 						}
 					}
@@ -305,7 +312,10 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 					socket.roomId = undefined;
 					socket.participantId = undefined;
 				}
-				callback({ success: false, error: (error as Error).message });
+				callback({
+					success: false,
+					error: error instanceof Error ? error.message : String(error),
+				});
 			}
 		});
 
@@ -346,7 +356,7 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 						'e2ee admission request failed for user %s in room %s: %s',
 						socket.userId,
 						getRoomId(socket),
-						(error as Error).message,
+						error instanceof Error ? error.message : String(error),
 					);
 					socket.emit('e2ee:epoch', {
 						type: 'join-status',
@@ -370,9 +380,12 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 				}
 				loggers.socketHandler.error(
 					'Error joining room: %s',
-					(error as Error).message,
+					error instanceof Error ? error.message : String(error),
 				);
-				callback({ success: false, error: (error as Error).message });
+				callback({
+					success: false,
+					error: error instanceof Error ? error.message : String(error),
+				});
 			}
 		});
 
@@ -414,12 +427,39 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 				} catch (e) {
 					loggers.socketHandler.warn(
 						'leave_room cleanup failed: %s',
-						(e as Error).message,
+						e instanceof Error ? e.message : String(e),
 					);
 				}
 			}
 		});
 	};
+}
+
+function syncHostOnlyChatFromToken(
+	deps: HandlerDeps,
+	socket: Socket,
+	roomId: string,
+): void {
+	if (socket.scope !== 'full') return;
+	// Server-signed room policy from the SFU JWT. A true claim enforces the
+	// restriction; a false/missing claim never clears a live restriction set
+	// by a host toggle, so stale tokens cannot lift it.
+	if (socket.hostOnlyChat === true) {
+		if (!deps.registry.isHostOnlyChat(roomId)) {
+			deps.registry.setHostOnlyChat(roomId, true);
+			deps.registry.emitToFullAccessParticipants(
+				roomId,
+				'chat:restriction_updated',
+				{
+					enabled: true,
+				},
+			);
+		} else {
+			socket.emit('chat:restriction_updated', { enabled: true });
+		}
+	} else if (deps.registry.isHostOnlyChat(roomId)) {
+		socket.emit('chat:restriction_updated', { enabled: true });
+	}
 }
 
 class ParticipantConnectionConflictError extends Error {
@@ -447,11 +487,10 @@ function participantIdsForPeers(
 	const peers = deps.mediasoup.getRoomPeers?.(roomId);
 	return Array.from(
 		new Set(
-			peerIds
-				.map((peerId) => peers?.get(peerId)?.info.userId)
-				.filter((participantId): participantId is string =>
-					Boolean(participantId),
-				),
+			peerIds.flatMap((peerId) => {
+				const participantId = peers?.get(peerId)?.info.userId;
+				return participantId ? [participantId] : [];
+			}),
 		),
 	);
 }

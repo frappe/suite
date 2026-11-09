@@ -21,7 +21,7 @@ vi.mock('@/api', async () => {
     api: { slides },
     ...createApiClient(
       { slides: async () => registration },
-      { persistence: false, transport: createTransport({ fetch: server.fetch }) },
+      { transport: createTransport({ fetch: server.fetch }) },
     ),
   }
 })

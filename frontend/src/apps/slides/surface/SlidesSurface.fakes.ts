@@ -14,6 +14,8 @@ import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import type { DocumentSession } from '@/apps/drive'
 import { translationPlugin } from '@/platform/translation'
 
+const { fromPartial, fromAny } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const server = vi.hoisted(() => ({ fetch: vi.fn() }))
 export const saves: unknown[] = []
 export const previews: unknown[] = []
@@ -27,7 +29,14 @@ const versionsPanel = vi.hoisted(() => ({
 }))
 const themeChange = vi.hoisted(() => ({ update: (_theme: string) => {} }))
 const forgetTemplates = vi.hoisted(() => ({ run: () => {} }))
-const propertiesPanel = vi.hoisted(() => ({ real: null as Component | null }))
+interface PropertiesPanelFixture {
+  real: Component | null
+}
+const propertiesPanel = vi.hoisted((): PropertiesPanelFixture => ({ real: null }))
+// a converted presentation's room; tests hand it a live one
+const collabRoom = vi.hoisted(() => ({
+  open: vi.fn(async (): Promise<unknown> => ({ state: 'failed' })),
+}))
 export const fakeServer = { isRefusing: false, isFailingTemplates: false, opens: 0 }
 
 interface MenuEntry {
@@ -63,7 +72,7 @@ vi.mock('@/api', async () => {
       slides: async () => registration,
       drive: async () => ({ policy: () => ({ effects: 'none' }) }),
     },
-    { persistence: false, transport: createTransport({ fetch: server.fetch }) },
+    { transport: createTransport({ fetch: server.fetch }) },
   )
 
   forgetTemplates.run = () => {
@@ -142,7 +151,7 @@ vi.mock('@/platform/session', async (importOriginal) => {
     }),
   }
 })
-const warms = vi.hoisted(() => [] as Promise<void>[])
+const warms = vi.hoisted((): Promise<void>[] => [])
 vi.mock('@/apps/slides/stores/offlineCopy', async (importOriginal) => {
   const store = await importOriginal<typeof import('@/apps/slides/stores/offlineCopy')>()
   function warmOfflineCopyAssets(id: string) {
@@ -161,6 +170,10 @@ vi.mock('@/apps/slides/stores/visitedCopies', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/apps/slides/stores/visitedCopies')>()),
   rememberVisit: visits.remember,
   cancelVisit: visits.cancel,
+}))
+vi.mock('@/platform/collab', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  openCollabRoom: collabRoom.open,
 }))
 vi.mock('@/apps/slides/router', () => ({
   router: { currentRoute: { value: { params: {}, query: {} } }, replace: vi.fn() },
@@ -282,9 +295,9 @@ function session(
   docname: string,
   access: Ref<{ role: number }>,
   media: DocumentSession['media'],
-  panels: string[],
+  panels: DocumentSession['panels']['value'],
 ): DocumentSession {
-  return {
+  return fromPartial<DocumentSession>({
     nodeId: 'node-1',
     contentDoctype: 'Presentation',
     contentDocname: docname,
@@ -296,7 +309,7 @@ function session(
     credentials: { context: undefined, heldContext: undefined },
     versions: { restore: (seq: string) => versionRestore.run(seq) },
     media,
-  } as unknown as DocumentSession
+  })
 }
 
 export async function openedSurface({
@@ -304,8 +317,10 @@ export async function openedSurface({
   role = 50,
   slides = served.slides,
   firstLoad,
-  media = (() => undefined) as unknown as DocumentSession['media'],
+  // These surface tests have no media handles unless the caller supplies one.
+  media = fromAny<DocumentSession['media'], () => undefined>(() => undefined),
   composite,
+  deck,
   panels = ['comments', 'versions'],
 }: {
   path?: string
@@ -314,7 +329,8 @@ export async function openedSurface({
   firstLoad?: Promise<void | Response>
   media?: DocumentSession['media']
   composite?: Record<string, unknown[] | Error>
-  panels?: string[]
+  deck?: Record<string, unknown>
+  panels?: DocumentSession['panels']['value']
 } = {}) {
   const docname = `p${++fakeServer.opens}`
   const loads: Array<Promise<void | Response>> = []
@@ -404,6 +420,7 @@ export async function openedSurface({
       slides,
       name: docname,
       is_composite: composite ? 1 : 0,
+      ...deck,
     })
   })
   const access = ref({ role })
@@ -429,7 +446,7 @@ export async function openedSurface({
   const root = document.createElement('div')
   document.body.append(root)
   app.mount(root)
-  if (!firstLoad && !composite) {
+  if (!firstLoad && !composite && !deck?.is_converted) {
     await vi.waitFor(() => expect(thumbnails(root)).toHaveLength(slides.length))
   }
 
@@ -467,6 +484,7 @@ export function startsFromEmptyStore() {
 }
 
 export {
+  collabRoom,
   server,
   signedIn,
   versionsPanel,
