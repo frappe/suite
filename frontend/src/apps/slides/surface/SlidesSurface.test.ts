@@ -63,6 +63,13 @@ const { activeEditor } = await import('@/apps/slides/composables/useTextEditor')
 const { convertLegacy } = await import('@/apps/slides/collab/conversion')
 const { addSlide, deleteSlide } = await import('@/apps/slides/collab/deck')
 
+const slideStyles = vi.hoisted(() => ({ fontsImported: false }))
+
+vi.mock('@/apps/slides/styles/fonts.css', () => {
+  slideStyles.fontsImported = true
+  return {}
+})
+
 let mounted: Awaited<ReturnType<typeof openedSurface>> | null = null
 
 afterEach(() => {
@@ -711,6 +718,28 @@ describe('a deck on the content layer', () => {
 
     const notice = mounted.root.querySelector('p[role="status"]')
     expect(notice?.parentElement?.querySelector(':scope > nav')).not.toBeNull()
+  })
+})
+
+describe('the fonts a slide draws with', () => {
+  afterEach(() => {
+    Reflect.deleteProperty(document, 'fonts')
+  })
+
+  it('come with the surface, so every view of a presentation has them', async () => {
+    mounted = await openedSurface()
+
+    expect(slideStyles.fontsImported).toBe(true)
+  })
+
+  it('start loading as soon as a presentation opens', async () => {
+    const load = vi.fn(async () => [])
+    Object.defineProperty(document, 'fonts', { configurable: true, value: { load } })
+
+    mounted = await openedSurface()
+
+    expect(load).toHaveBeenCalledWith('400 16px Anton', expect.any(String))
+    expect(load).toHaveBeenCalledWith('400 16px "Courier Prime"', expect.any(String))
   })
 })
 

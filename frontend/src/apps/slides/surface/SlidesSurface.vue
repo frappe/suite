@@ -14,6 +14,8 @@ import {
 } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
+import '@/apps/slides/styles/fonts.css'
+
 import { api, client } from '@/api'
 import {
   DriveCommentAuthor,
@@ -85,6 +87,7 @@ import {
 import { inSlideShowMode, startSlideShow } from '@/apps/slides/stores/slideshow'
 import { cancelVisit, rememberVisit } from '@/apps/slides/stores/visitedCopies'
 import { stopVisitedMedia, storeVisitedMedia } from '@/apps/slides/stores/visitedMedia'
+import { loadBundledFonts } from '@/apps/slides/utils/bundledFonts'
 import { isMediaOwner } from '@/apps/slides/utils/mediaUploads'
 import { postToServiceWorker, registerSlidesWorker } from '@/apps/slides/utils/serviceWorker'
 import { readSavedDocument } from '@/platform/collab'
@@ -769,6 +772,7 @@ watch([slides, () => presentationDoc.value?.modified], () => {
 })
 onMounted(() => {
   void load()
+  void loadBundledFonts().catch(() => {})
   void registerSlidesWorker()
   void postToServiceWorker('slides-entered')
   window.addEventListener('online', setOnline)
