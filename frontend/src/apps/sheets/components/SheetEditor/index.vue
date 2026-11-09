@@ -88,8 +88,8 @@
         />
       </DefineTopbarActions>
 
-      <!-- On /d/ the surface draws the Drive document header: title, Comments,
-         Versions and Share. The editor fills its status, menus and actions. -->
+      <!-- On /d/ the surface draws the Drive document header: title and Share.
+         The editor fills its status, menus and actions. -->
       <slot
         name="header"
         :view-only="readOnly"
@@ -98,7 +98,7 @@
         :actions="ReuseTopbarActions"
       />
 
-      <!-- Row 2 · tools around the formula bar (SheetToolbar.vue) -->
+      <!-- Row 2 · the tools (SheetToolbar.vue) -->
       <SheetToolbar
         v-model:show-sort-filter="showSortFilter"
         :read-only="readOnly"
@@ -128,61 +128,60 @@
         @toggle-format-painter="toggleFormatPainter"
         @merge="toggleMerge"
         @sort="openQuickFilterForActive"
-      >
-        <!-- The formula bar: name box, then fx and the cell's value -->
-        <template #formula>
-          <!-- A fixed width; a long reference ends in an ellipsis, and the
-               tooltip and the focused box show all of it. -->
-          <Tooltip :text="__('{0}: type a cell or range, then Enter', [nameBox])">
-            <input
-              class="sn-cell-ref"
-              name="name-box"
-              :aria-label="__('Name box')"
-              :value="nameBoxText"
-              :style="{ '--sn-name-ch': nameBoxText.length + 1 }"
-              spellcheck="false"
-              autocomplete="off"
-              @focus="$event.target.select()"
-              @input="nameBoxTyped = $event.target.value"
-              @keydown.enter.prevent="onNameBoxEnter"
-              @keydown.esc.prevent="onNameBoxDone"
-              @blur="nameBoxTyped = null"
-            />
-          </Tooltip>
-          <div class="sn-formula-wrap">
-            <span class="sn-fx-label" aria-hidden="true">fx</span>
-            <input
-              ref="formulaInputRef"
-              name="formula-bar"
-              aria-label="Cell value or formula"
-              class="sn-formula-input"
-              :value="formulaValue"
-              :readonly="readOnly"
-              :placeholder="readOnly ? '' : 'Enter value or formula'"
-              spellcheck="false"
-              autocomplete="off"
-              @input="onFormulaInput"
-              @keydown="onFormulaKey"
-              @blur="closeAc"
-            />
-            <div v-if="acVisible" class="sn-ac-list" :class="{ 'sn-ac-list--up': acUp }">
-              <div
-                v-for="(item, i) in acItems"
-                :key="item.name + item.kind"
-                class="sn-ac-item"
-                :class="{ active: i === acIdx }"
-                @mousedown.prevent="commitAc(item)"
-              >
-                <span class="sn-ac-name">{{ item.name }}</span>
-                <span v-if="item.kind === 'fn'" class="sn-ac-sig">{{
-                  AC_FUNS.get(item.name)
-                }}</span>
-                <span v-else class="sn-ac-badge">sheet</span>
-              </div>
+      />
+
+      <!-- Row 3 · the formula bar: name box, a divider, then fx and the cell's value -->
+      <div class="sn-formula-row">
+        <!-- A fixed width; a long reference ends in an ellipsis, and the
+             tooltip and the focused box show all of it. -->
+        <Tooltip :text="__('{0}: type a cell or range, then Enter', [nameBox])">
+          <input
+            class="sn-cell-ref"
+            name="name-box"
+            :aria-label="__('Name box')"
+            :value="nameBoxText"
+            :style="{ '--sn-name-ch': nameBoxText.length + 1 }"
+            spellcheck="false"
+            autocomplete="off"
+            @focus="$event.target.select()"
+            @input="nameBoxTyped = $event.target.value"
+            @keydown.enter.prevent="onNameBoxEnter"
+            @keydown.esc.prevent="onNameBoxDone"
+            @blur="nameBoxTyped = null"
+          />
+        </Tooltip>
+        <span class="sn-formula-divider" aria-hidden="true" />
+        <div class="sn-formula-wrap">
+          <span class="sn-fx-label" aria-hidden="true">fx</span>
+          <input
+            ref="formulaInputRef"
+            name="formula-bar"
+            aria-label="Cell value or formula"
+            class="sn-formula-input"
+            :value="formulaValue"
+            :readonly="readOnly"
+            :placeholder="readOnly ? '' : 'Enter value or formula'"
+            spellcheck="false"
+            autocomplete="off"
+            @input="onFormulaInput"
+            @keydown="onFormulaKey"
+            @blur="closeAc"
+          />
+          <div v-if="acVisible" class="sn-ac-list" :class="{ 'sn-ac-list--up': acUp }">
+            <div
+              v-for="(item, i) in acItems"
+              :key="item.name + item.kind"
+              class="sn-ac-item"
+              :class="{ active: i === acIdx }"
+              @mousedown.prevent="commitAc(item)"
+            >
+              <span class="sn-ac-name">{{ item.name }}</span>
+              <span v-if="item.kind === 'fn'" class="sn-ac-sig">{{ AC_FUNS.get(item.name) }}</span>
+              <span v-else class="sn-ac-badge">sheet</span>
             </div>
           </div>
-        </template>
-      </SheetToolbar>
+        </div>
+      </div>
 
       <!-- Saving, offline, full, lost access (collab/messages.ts), as Writer's strip -->
       <div

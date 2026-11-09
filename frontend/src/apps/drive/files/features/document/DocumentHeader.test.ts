@@ -92,7 +92,7 @@ function mount(
     saveState?: DocumentSaveState | null
     saveNote?: string
     viewOnly?: boolean
-    layout?: 'default' | 'centered' | 'compact'
+    layout?: 'default' | 'centered' | 'menus'
   } = {},
   slots: Record<string, () => VNode> = {},
 ) {
@@ -451,8 +451,8 @@ describe('DocumentHeaderSkeleton', () => {
   })
 })
 
-describe('DocumentHeader, compact (Sheets)', () => {
-  function mountWithMenus(compact: boolean) {
+describe('DocumentHeader, menus layout (Sheets)', () => {
+  function mountWithMenus(layout: 'default' | 'menus', props: { viewOnly?: boolean } = {}) {
     const root = document.createElement('div')
     document.body.append(root)
     const app = createApp({
@@ -463,10 +463,13 @@ describe('DocumentHeader, compact (Sheets)', () => {
             session: fromPartial<DocumentSession>(session(40)),
             titleLabel: 'Spreadsheet title',
             saveState: 'clean',
-            panels: ['comments', 'versions'],
-            layout: compact ? 'compact' : 'default',
+            layout,
+            ...props,
           },
-          { menus: () => h('nav', { 'aria-label': 'Spreadsheet menus' }, 'File Edit') },
+          {
+            menus: () => h('nav', { 'aria-label': 'Spreadsheet menus' }, 'File Edit'),
+            actions: () => h('span', { 'data-presence': '' }),
+          },
         ),
     })
     app.mount(root)
@@ -478,20 +481,94 @@ describe('DocumentHeader, compact (Sheets)', () => {
     const edited = [...header.querySelectorAll('span')].find(
       (el) => el.textContent?.trim() === 'Edited 3h ago',
     )!
-    return { header, edited, menus: header.querySelector('nav')! }
+    const title = header.querySelector<HTMLInputElement>('input')!
+    return { header, edited, title, menus: header.querySelector('nav')! }
   }
 
-  it('puts the edited time beside the title, then the menus', () => {
-    const { header, edited, menus } = mountWithMenus(true)
-    const left = header.firstElementChild!
-    expect(left.contains(edited)).toBe(true)
-    expect(edited.compareDocumentPosition(menus) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(left.contains(menus)).toBe(true)
+  it('is as tall as the other document headers', () => {
+    expect(mountWithMenus('menus').header.className).toContain('h-12')
   })
 
-  it('puts the edited time on the right for every other app', () => {
-    const { header, edited } = mountWithMenus(false)
-    expect(header.firstElementChild!.contains(edited)).toBe(false)
+  it('puts the title left, the menus in a column of their own, and the rest right', () => {
+    const { header, edited, menus, title } = mountWithMenus('menus')
+    const [left, middle, right] = header.children
+    expect(header.children).toHaveLength(3)
+    expect(left!.contains(title)).toBe(true)
+    expect(left!.contains(edited)).toBe(false)
+    expect(middle!.contains(menus)).toBe(true)
+    expect(right!.contains(edited)).toBe(true)
+  })
+
+  it('keeps Writer’s order on the right: edited, presence, share, link, star', () => {
+    const { header, edited } = mountWithMenus('menus')
+    const order = [
+      edited,
+      header.querySelector('[data-presence]')!,
+      header.querySelector('button[aria-label="Copy link"]')!,
+      header.querySelector('button[aria-label="Star"]')!,
+    ]
+    for (const [at, element] of order.slice(1).entries()) {
+      expect(
+        order[at]!.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
+    }
+  })
+
+  it('holds the badges apart from the title, so a longer title cannot push them', () => {
+    const { header, title } = mountWithMenus('menus', { viewOnly: true })
+    const badge = [...header.querySelectorAll('span')].find(
+      (el) => el.textContent?.trim() === 'View only',
+    )!
+    const spacer = badge.previousElementSibling!
+    expect(spacer.className).toContain('flex-1')
+    expect(spacer.contains(title)).toBe(false)
+  })
+
+  function makeTitleOverflow(title: HTMLInputElement, overflows: boolean) {
+    Object.defineProperty(title, 'clientWidth', { value: 400 })
+    Object.defineProperty(title, 'scrollWidth', { value: overflows ? 900 : 400 })
+  }
+  const fullTitle = (header: HTMLElement) => header.querySelector('.document-full-title')
+
+  it('shows the whole name under a title too long for its field, while it is clicked into', async () => {
+    const { header, title } = mountWithMenus('menus')
+    makeTitleOverflow(title, true)
+
+    title.focus()
+    await nextTick()
+    expect(fullTitle(header)?.textContent).toBe('Budget')
+
+    title.value = 'Budget 2027'
+    title.dispatchEvent(new Event('input', { bubbles: true }))
+    await nextTick()
+    await nextTick()
+    expect(fullTitle(header)?.textContent).toBe('Budget 2027')
+
+    title.blur()
+    await nextTick()
+    expect(fullTitle(header)).toBeNull()
+  })
+
+  it('shows no second copy of a name that fits', async () => {
+    const { header, title } = mountWithMenus('menus')
+    makeTitleOverflow(title, false)
+
+    title.focus()
+    await nextTick()
+    expect(fullTitle(header)).toBeNull()
+  })
+
+  it('leaves every other app’s header as it was', async () => {
+    const { header, edited, menus, title } = mountWithMenus('default')
+    makeTitleOverflow(title, true)
+    expect(header.className).toContain('flex')
+    expect(header.className).not.toContain('grid')
+    expect(header.children).toHaveLength(2)
+    expect(header.firstElementChild!.contains(menus)).toBe(true)
     expect(header.lastElementChild!.contains(edited)).toBe(true)
+
+    title.focus()
+    await nextTick()
+    expect(fullTitle(header)).toBeNull()
   })
 })
