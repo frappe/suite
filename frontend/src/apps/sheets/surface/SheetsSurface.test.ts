@@ -23,10 +23,28 @@ vi.mock('@/apps/drive', () => ({
     setup:
       (props, { slots }) =>
       () =>
-        h('header', [h('output', { 'data-panels': '' }, props.panels.join()), slots.menus?.()]),
+        h('header', [
+          h('output', { 'data-panels': '' }, props.panels.join()),
+          slots.menus?.(),
+          slots.menu?.(),
+        ]),
   }),
 }))
-vi.mock('./SheetCommentsPanel.vue', () => ({ default: { render: () => null } }))
+vi.mock('./SheetDocumentMenu.vue', () => ({
+  default: defineComponent({
+    props: { panels: { type: Array, default: () => [] } },
+    emits: ['togglePanel'],
+    setup: (props, { emit }) => {
+      return () =>
+        props.panels.map((name) =>
+          h('button', { 'data-toggle': name, onClick: () => emit('togglePanel', name) }),
+        )
+    },
+  }),
+}))
+vi.mock('./SheetCommentsPanel.vue', () => ({
+  default: { render: () => h('aside', { 'data-comments': '' }) },
+}))
 vi.mock('./SheetVersionsPanel.vue', () => ({ default: { render: () => null } }))
 vi.mock('./navigation', () => ({ useDocumentLeaveGuard: vi.fn() }))
 
@@ -99,7 +117,7 @@ vi.mock('@/apps/sheets/components/SheetEditor/index.vue', () => ({
         setup: (menu) => () =>
           menu.openComments ? h('button', { 'data-comment-menu': '' }) : null,
       })
-      return () => slots.header?.({ menus })
+      return () => [slots.header?.({ menus }), slots['side-panel']?.()]
     },
   }),
 }))
@@ -183,16 +201,33 @@ it('keeps the rail on the no-permission page', async () => {
 
 it('offers a signed-out reader of a public spreadsheet no comments or versions', async () => {
   const offered = () => ({
-    panels: document.querySelector('[data-panels]')?.textContent,
+    toggles: [...document.querySelectorAll('[data-toggle]')].map((el) =>
+      el.getAttribute('data-toggle'),
+    ),
     hasCommentMenu: document.querySelector('[data-comment-menu]') !== null,
   })
   panels.value = []
   await mountSurface()
-  expect(offered()).toEqual({ panels: '', hasCommentMenu: false })
+  expect(offered()).toEqual({ toggles: [], hasCommentMenu: false })
 
   panels.value = ['comments', 'versions']
   await nextTick()
-  expect(offered()).toEqual({ panels: 'comments,versions', hasCommentMenu: true })
+  expect(offered()).toEqual({ toggles: ['comments', 'versions'], hasCommentMenu: true })
+})
+
+it('keeps Comments and Versions out of the header row, in the ⋯ menu', async () => {
+  await mountSurface()
+
+  expect(document.querySelector('[data-panels]')?.textContent).toBe('')
+
+  const comments = document.querySelector<HTMLElement>('[data-toggle="comments"]')!
+  comments.click()
+  await nextTick()
+  expect(document.querySelector('[data-comments]')).not.toBeNull()
+
+  comments.click()
+  await nextTick()
+  expect(document.querySelector('[data-comments]')).toBeNull()
 })
 
 describe('SheetsSurface losing edit access in the live room', () => {

@@ -141,16 +141,31 @@
   border-radius: 2px;
 }
 
-/* ── Formula bar (inside row 2, SheetToolbar's `formula` slot) ───────────── */
+/* ── Row 3 · the formula bar (32 px) ─────────────────────────────────────── */
+/* Plain text on the bar at rest: no border, no fill. */
+.sn-formula-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--sn-bar-line);
+  background: var(--sn-bar-bg);
+  flex-shrink: 0;
+}
+.sn-formula-divider {
+  width: 1px;
+  height: 16px;
+  background: var(--sn-bar-line);
+  flex-shrink: 0;
+}
 
-/* Name box and value field: white, bordered fields on the bar, so they
-   read as places to type. */
 .sn-cell-ref {
   box-sizing: border-box;
   /* One width for every selection, so the value field beside it never moves
      while you select, drag or scroll (Excel and LibreOffice do the same). It
-     fits AA100:AB200; a longer reference ends in an ellipsis. The phone
-     layout in SheetToolbar.vue sets a narrower --sn-name-w and --sn-name-pad. */
+     fits AA100:AB200; a longer reference ends in an ellipsis. A phone sets a
+     narrower --sn-name-w and --sn-name-pad below. */
   --sn-name-w: calc(12ch + 18px);
   --sn-name-pad: 18px;
   width: var(--sn-name-w);
@@ -163,18 +178,19 @@
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   color: var(--ink-gray-8);
-  background: var(--surface-base);
-  border: 1px solid var(--outline-gray-3);
+  background: transparent;
+  border: 1px solid transparent;
   border-radius: 6px;
   outline: none;
-  transition: border-color 0.12s;
+  transition: background-color 0.12s;
 }
 .sn-cell-ref:hover {
-  border-color: var(--outline-gray-4);
+  background: var(--sn-bar-hover);
 }
 /* Focused, it grows to show the whole reference (--sn-name-ch: its length
-   + 1, set in index.vue) over the value field. The negative margin keeps
-   its place in the row at --sn-name-w, so nothing after it moves. */
+   + 1, set in index.vue) over the value field, so it needs a fill to cover
+   it. The negative margin keeps its place in the row at --sn-name-w, so
+   nothing after it moves. */
 .sn-cell-ref:focus {
   --sn-name-full: min(
     240px,
@@ -184,8 +200,8 @@
   z-index: 2;
   width: var(--sn-name-full);
   margin-right: calc(var(--sn-name-w) - var(--sn-name-full));
-  border-color: var(--outline-gray-5);
-  box-shadow: 0 0 0 2px var(--outline-gray-2);
+  background: var(--surface-base);
+  border-color: var(--outline-gray-4);
 }
 /* The value field: fx, then the cell's input in the UI font. It takes the
    row's spare width and keeps enough to read a formula when the row is tight. */
@@ -197,20 +213,20 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0 10px;
-  border-radius: 8px;
-  background: var(--surface-base);
-  border: 1px solid var(--outline-gray-3);
-  transition:
-    border-color 0.12s,
-    box-shadow 0.12s;
 }
-.sn-formula-wrap:hover {
-  border-color: var(--outline-gray-4);
+.sn-formula-wrap:focus-within .sn-fx-label {
+  color: var(--ink-gray-7);
 }
-.sn-formula-wrap:focus-within {
-  border-color: var(--outline-gray-5);
-  box-shadow: 0 0 0 2px var(--outline-gray-2);
+@media (max-width: 620px) {
+  .sn-formula-wrap {
+    min-width: 96px;
+  }
+  .sn-cell-ref {
+    /* Fits A1:B20; a longer reference ends in an ellipsis. */
+    --sn-name-w: calc(8ch + 14px);
+    --sn-name-pad: 14px;
+    padding: 0 6px;
+  }
 }
 .sn-fx-label {
   flex-shrink: 0;
@@ -218,6 +234,7 @@
   font-style: italic;
   color: var(--ink-gray-4);
   user-select: none;
+  transition: color 0.12s;
 }
 .sn-formula-input {
   flex: 1;
@@ -241,7 +258,8 @@
   top: calc(100% + 4px);
   bottom: auto;
   left: 0;
-  right: 0;
+  /* The value field fills the row; the list stays a readable width. */
+  width: min(100%, 480px);
   background: var(--surface-elevation-2);
   border: 1px solid var(--outline-gray-2);
   border-radius: 8px;

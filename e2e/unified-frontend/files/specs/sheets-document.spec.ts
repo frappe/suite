@@ -72,7 +72,8 @@ test("renames, comments and opens versions without a legacy Drive call", async (
 	await title.press("Enter");
 	await expect.poll(async () => (await getNode(api, sheet.name)).title).toBe("Renamed sheet");
 
-	await page.getByRole("button", { name: "Comments" }).click();
+	await page.getByRole("button", { name: "More document actions" }).click();
+	await page.getByRole("menuitem", { name: "Comments" }).click();
 	const comments = page.getByRole("complementary", { name: "Comments" });
 	await comments.getByRole("textbox", { name: "New comment" }).fill("Check the A1 total");
 	await comments.getByRole("button", { name: "Comment", exact: true }).click();
@@ -86,7 +87,8 @@ test("renames, comments and opens versions without a legacy Drive call", async (
 	await page.locator("canvas").first().click({ position: { x: 80, y: 40 } });
 	await page.keyboard.type("777");
 	await page.keyboard.press("Enter");
-	await page.getByRole("button", { name: "Versions" }).click();
+	await page.getByRole("button", { name: "More document actions" }).click();
+	await page.getByRole("menuitem", { name: "Versions" }).click();
 	const versions = page.getByRole("complementary", { name: "Versions" });
 	await expect(versions.getByRole("heading", { name: "Versions" })).toBeVisible();
 	await expect(comments).toHaveCount(0);
@@ -282,7 +284,7 @@ test("the document actions fit on one row of a 320 px screen", async ({ page }) 
 	await openSheet(page);
 	const bar = page.locator(".sheets-header");
 	const edge = (await bar.boundingBox())!;
-	for (const name of ["Menu", "Comments", "Versions", "Share"]) {
+	for (const name of ["Menu", "More document actions", "Share"]) {
 		const box = (await bar.getByRole("button", { name, exact: true }).boundingBox())!;
 		expect(box, name).not.toBeNull();
 		expect(box.x, name).toBeGreaterThanOrEqual(edge.x);
@@ -368,11 +370,11 @@ test("font size steps with − and +, takes a typed size and lists common sizes,
 	await expect(size).toHaveValue("13");
 });
 
-test("every control in both toolbar rows is 28 px tall", async ({ page }) => {
+test("every control in the top rows is 28 px tall", async ({ page }) => {
 	await openSheet(page);
 	const heights = await page
 		.locator(
-			".sheets-header button:visible, .sn-toolbar button:visible, .sn-toolbar input:visible:not(.sn-formula-input), .sn-formula-wrap",
+			".sheets-header button:visible, .sn-toolbar button:visible, .sn-toolbar input:visible, .sn-cell-ref, .sn-formula-wrap",
 		)
 		.evaluateAll((els) =>
 			els
