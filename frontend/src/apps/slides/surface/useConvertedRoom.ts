@@ -1,22 +1,25 @@
+import { toast } from 'frappe-ui'
 import { computed, nextTick, shallowRef, watch } from 'vue'
 
 import { slidesAdapter } from '@/apps/slides/collab/adapter'
 import { elementText } from '@/apps/slides/collab/deck'
 import { drawnSlides } from '@/apps/slides/collab/drawnDeck'
 import {
-  LIVE_ORIGIN,
   openLiveDeck,
-  writeText,
   type LiveDeck,
+  type LiveStep,
   type StoreItem,
   type StoreSlide,
 } from '@/apps/slides/collab/liveDeck'
 import { sharedPresence } from '@/apps/slides/collab/livePresence'
 import { liveTextExtensions } from '@/apps/slides/collab/liveText'
+import { lastSelector, usePeopleSelecting } from '@/apps/slides/collab/peerOutlines'
 import { activeElementIds, focusElementId, resetFocus } from '@/apps/slides/stores/element'
+import { jumpToElementsByIds, jumpToSlideByIndex } from '@/apps/slides/stores/historyMeta'
 import {
   boundElementId,
   currentId,
+  isTextEditedHere,
   rememberRenames,
   setBoundText,
   setLiveSeat,
@@ -36,6 +39,7 @@ import {
   type RoomPresence,
   type RoomStatus,
 } from '@/platform/collab'
+import { translate } from '@/platform/translation'
 
 interface RoomHost {
   session: CollabSession
@@ -43,6 +47,8 @@ interface RoomHost {
   mayEdit: () => boolean
   /** Keeps the slides in this browser when the room stops holding unsent work. */
   retainRecovery: () => boolean
+  /** Keeps the slides in this browser past any later save. */
+  retainSticky: () => boolean
 }
 
 function allowsEditingIn(status: RoomStatus) {
@@ -58,10 +64,11 @@ function isKeptNowhere(status: RoomStatus, isRecoveryKept: boolean) {
 }
 
 // A converted presentation's live room: open, mirrored into the slide store, closed
-export function useConvertedRoom({ session, mayEdit, retainRecovery }: RoomHost) {
+export function useConvertedRoom({ session, mayEdit, retainRecovery, retainSticky }: RoomHost) {
   const room = shallowRef<CollabRoom | null>(null)
   const status = shallowRef<RoomStatus | null>(null)
   const presence = shallowRef<RoomPresence | null>(null)
+  const selectorOf = lastSelector(usePeopleSelecting(presence))
   let deck: LiveDeck | null = null
   let stopWatching = () => {}
   let isRecoveryKept = false
@@ -117,6 +124,41 @@ export function useConvertedRoom({ session, mayEdit, retainRecovery }: RoomHost)
     }
   }
 
+  function showStep({ direction, isBlocked, slideId, elementIds }: LiveStep) {
+    if (isBlocked) {
+      toast.warning(
+        direction === 'undo'
+          ? translate("Couldn't undo: a co-editor changed this")
+          : translate("Couldn't redo: a co-editor changed this"),
+      )
+    }
+
+    const index = slides.value.findIndex(({ clientId }) => clientId === slideId)
+    if (index !== -1) {
+      jumpToSlideByIndex(index, true)
+    }
+
+    jumpToElementsByIds(elementIds)
+  }
+
+  function keepDeletedText(id: string) {
+    if (!isTextEditedHere()) {
+      return
+    }
+
+    if (!retainSticky()) {
+      toast.error(translate('Your latest changes could not be kept on this device.'))
+      return
+    }
+
+    const name = selectorOf(id)
+    toast.warning(
+      name
+        ? translate('{0} deleted this element. Your text is in a recovery copy.', [name])
+        : translate('A co-editor deleted this element. Your text is in a recovery copy.'),
+    )
+  }
+
   function seat(liveRoom: CollabRoom) {
     const { doc } = liveRoom
     const shared = sharedPresence(liveRoom.presence)
@@ -130,6 +172,8 @@ export function useConvertedRoom({ session, mayEdit, retainRecovery }: RoomHost)
       canWrite,
       onRenamed: applyRenames,
       onMerged: keepShownSlide,
+      onStep: showStep,
+      onBoundDeleted: keepDeletedText,
     })
     const liveDeck = deck
     setLiveSeat({
@@ -138,11 +182,14 @@ export function useConvertedRoom({ session, mayEdit, retainRecovery }: RoomHost)
         liveDeck.push()
         void liveRoom.flush()
       },
+      undo: () => liveDeck.undo(),
+      redo: () => liveDeck.redo(),
+      endStep: () => liveDeck.endStep(),
       bindText(id, seedHtml) {
         const isEmpty = !elementText(doc, id)?.length
         const seeded = isEmpty && !!seedHtml && canWrite()
         if (seeded) {
-          doc.transact(() => writeText(doc, id, seedHtml), LIVE_ORIGIN)
+          liveDeck.seedText(id, seedHtml)
         }
 
         const fragment = elementText(doc, id)
@@ -150,7 +197,10 @@ export function useConvertedRoom({ session, mayEdit, retainRecovery }: RoomHost)
           return { extensions: [], seeded: false }
         }
 
-        return { extensions: liveTextExtensions(fragment, shared.textPresence), seeded }
+        return {
+          extensions: liveTextExtensions(fragment, shared.textPresence, liveDeck.undoManager),
+          seeded,
+        }
       },
     })
     presence.value = liveRoom.presence

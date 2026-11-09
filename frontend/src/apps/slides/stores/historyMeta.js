@@ -152,4 +152,12 @@ const actions = {
   jumpToElements: handleJumpToElements,
 }
 
-export { commandHistory, recentlyRestored, actionOrder, actions, setCommandHistory }
+export {
+  commandHistory,
+  recentlyRestored,
+  actionOrder,
+  actions,
+  setCommandHistory,
+  jumpToSlideByIndex,
+  jumpToElementsByIds,
+}

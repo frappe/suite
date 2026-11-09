@@ -4,7 +4,7 @@ import { cellAround } from '@tiptap/pm/tables'
 import { Editor } from '@tiptap/vue-3'
 import { nextTick, reactive, ref, watch } from 'vue'
 
-import { isRemoteChange } from '@/apps/slides/collab/liveText'
+import { isReceivedChange } from '@/apps/slides/collab/liveText'
 import { batchCommand, editElementCommand } from '@/apps/slides/stores/commands'
 import {
   activeElement,
@@ -304,7 +304,7 @@ export const useTextEditor = () => {
     // leading to overwriting content for second one with first one's content
 
     // history and init pushes still change the width, so the baseline follows
-    if (suppressRecording || !editorElement || isRemoteChange(transaction)) {
+    if (suppressRecording || !editorElement || isReceivedChange(transaction)) {
       lastRenderedWidth = measuredAutoWidth(editor)
       return setEditorStyles(editor)
     }

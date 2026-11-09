@@ -7,6 +7,9 @@ import { ref, watch } from 'vue'
 interface LiveSeat {
   push: () => void
   flush: () => void
+  undo: () => void
+  redo: () => void
+  endStep: () => void
   /** What ties a text editor to this element's live text. `seeded`: its first text was written now. */
   bindText: (id: string, seedHtml: string | null | undefined) => LiveTextBinding
 }
@@ -42,6 +45,13 @@ export function askLivePush() {
 export const pushLiveNow = () => seat?.push()
 
 export const flushLive = () => seat?.flush()
+
+export const undoLive = () => seat?.undo()
+
+export const redoLive = () => seat?.redo()
+
+/** The change just made is one undo step, and nothing after it joins that step. */
+export const endLiveStep = () => seat?.endStep()
 
 export function rememberRenames(renamed: Map<string, string>) {
   for (const [from, to] of renamed) {

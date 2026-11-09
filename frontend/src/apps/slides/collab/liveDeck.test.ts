@@ -61,6 +61,8 @@ function tabOn(doc: Y.Doc, { canWrite = true, boundElementId = null }: TabOption
     canWrite: () => canWrite,
     onRenamed: (renames) => renamed.push(renames),
     onMerged: () => {},
+    onStep: () => {},
+    onBoundDeleted: () => {},
   })
   return {
     store,

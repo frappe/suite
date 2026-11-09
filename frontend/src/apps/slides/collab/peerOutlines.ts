@@ -24,6 +24,9 @@ export interface SelectingPerson {
   isIdle: boolean
 }
 
+// A co-editor's selection clears around the time their delete arrives, in either order
+const NAME_HOLDS_MS = 3000
+
 export interface PeerOutline {
   elementId: string
   person: SelectingPerson
@@ -67,6 +70,40 @@ export function outlinesOn(people: SelectingPerson[], shownIds: Set<string>): Pe
   }
 
   return [...outlines.values()]
+}
+
+/** Answers who has, or just had, an element selected: the best guess at who deleted it. */
+export function lastSelector(people: ShallowRef<SelectingPerson[]>) {
+  const last = new Map<string, { name: string; lostAt: number | null }>()
+
+  function hasExpired(lostAt: number | null) {
+    return lostAt !== null && Date.now() - lostAt > NAME_HOLDS_MS
+  }
+
+  watch(
+    people,
+    (selecting) => {
+      const holders = new Map<string, string>()
+      for (const { name, elements } of [...selecting].sort((a, b) => a.actedAt - b.actedAt)) {
+        elements.forEach((id) => holders.set(id, name))
+      }
+
+      for (const [id, seen] of last) {
+        seen.lostAt ??= Date.now()
+        if (hasExpired(seen.lostAt)) {
+          last.delete(id)
+        }
+      }
+
+      holders.forEach((name, id) => last.set(id, { name, lostAt: null }))
+    },
+    { immediate: true, flush: 'sync' },
+  )
+
+  return (elementId: string) => {
+    const seen = last.get(elementId)
+    return seen && !hasExpired(seen.lostAt) ? seen.name : null
+  }
 }
 
 function shownName(peer: Peer) {

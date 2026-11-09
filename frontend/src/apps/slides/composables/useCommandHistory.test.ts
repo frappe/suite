@@ -291,20 +291,44 @@ describe('record bookkeeping', () => {
 })
 
 describe('on a live presentation', () => {
+  const seat = {
+    push: vi.fn(),
+    flush: vi.fn(),
+    undo: vi.fn(),
+    redo: vi.fn(),
+    endStep: vi.fn(),
+    bindText: () => ({ extensions: [], seeded: false }),
+  }
+
   beforeEach(() => {
-    setLiveSeat({ push() {}, flush() {}, bindText: () => ({ extensions: [], seeded: false }) })
+    vi.clearAllMocks()
+    setLiveSeat(seat)
   })
   afterEach(() => {
     setLiveSeat(null)
   })
 
-  it('offers no undo, so a co-editor change since is never put back', () => {
+  it('leaves undo and redo to the live document, so a co-editor change since is never put back', () => {
     history.execute(contentEdit('a', 'b'))
     state.value[0].elements[0].content = 'from a co-editor'
 
     history.undo()
+    history.redo()
 
-    expect(history.canUndo.value).toBe(false)
+    expect(seat.undo).toHaveBeenCalledTimes(1)
+    expect(seat.redo).toHaveBeenCalledTimes(1)
     expect(state.value[0].elements[0].content).toBe('from a co-editor')
+  })
+
+  it('makes a command with no typing key its own step', () => {
+    history.execute(keylessEdit('a', 'b'))
+
+    expect(seat.endStep).toHaveBeenCalledTimes(1)
+  })
+
+  it('lets typing group by its pauses', () => {
+    history.execute(contentEdit('a', 'b'))
+
+    expect(seat.endStep).not.toHaveBeenCalled()
   })
 })

@@ -164,6 +164,7 @@ const {
   widened,
   keepSticky,
   retainRecovery,
+  retainSticky,
   retainOrWarn,
   reloadAfterAccessBack,
   downloadChanges,
@@ -224,6 +225,7 @@ const convertedRoom = useConvertedRoom({
     !isOnlyCopy.value &&
     !phone.value,
   retainRecovery,
+  retainSticky,
 })
 provide('livePresence', convertedRoom.presence)
 const roomPeople = computed(() => {

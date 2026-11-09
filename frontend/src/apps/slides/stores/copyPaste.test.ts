@@ -197,7 +197,14 @@ describe('handlePaste', () => {
 
   describe('in a live presentation that is offline', () => {
     beforeEach(() => {
-      setLiveSeat({ push() {}, flush() {}, bindText: () => ({ extensions: [], seeded: false }) })
+      setLiveSeat({
+        push() {},
+        flush() {},
+        undo() {},
+        redo() {},
+        endStep() {},
+        bindText: () => ({ extensions: [], seeded: false }),
+      })
       vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
     })
     afterEach(() => {

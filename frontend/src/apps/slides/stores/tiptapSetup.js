@@ -18,7 +18,7 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { StarterKit } from '@tiptap/starter-kit'
 import { Editor } from '@tiptap/vue-3'
 
-import { isRemoteChange } from '@/apps/slides/collab/liveText'
+import { isReceivedChange } from '@/apps/slides/collab/liveText'
 import { scaleAwareColumnResizing } from '@/apps/slides/utils/columnResizing'
 import { getDocFromHTML, hasListMarkup } from '@/apps/slides/utils/helpers'
 
@@ -795,7 +795,7 @@ const styledEmptyLinePlugin = new Plugin({
     decorations: blankLineDecorations,
   },
   appendTransaction: (transactions, oldState, newState) => {
-    if (transactions.every(isRemoteChange)) {
+    if (transactions.every(isReceivedChange)) {
       return null
     }
 
@@ -1080,7 +1080,7 @@ const ColumnWidths = Extension.create({
         appendTransaction: (transactions, oldState, state) => {
           if (!transactions.some((transaction) => transaction.docChanged)) return null
 
-          if (transactions.every(isRemoteChange)) {
+          if (transactions.every(isReceivedChange)) {
             return null
           }
 

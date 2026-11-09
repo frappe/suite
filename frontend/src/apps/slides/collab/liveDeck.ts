@@ -29,10 +29,13 @@ import {
   slideIds,
 } from './deck'
 import { deckSchema, drawnSlides } from './drawnDeck'
+import { openLiveUndo, type StepDirection } from './liveUndo'
 
-export const LIVE_ORIGIN = 'slides-live-store'
+const LIVE_ORIGIN = 'slides-live-store'
+// Opening an editor isn't an edit, so this write is no undo step
+const SEED_ORIGIN = 'slides-live-seed'
 
-const LOCAL_ORIGINS = new Set<unknown>([LIVE_ORIGIN, ySyncPluginKey])
+const LOCAL_ORIGINS = new Set<unknown>([LIVE_ORIGIN, SEED_ORIGIN, ySyncPluginKey])
 const CENTRED = 'translate(-50%, -50%)'
 const FRAME_KEYS = ['left', 'top', 'width', 'height', 'transform', 'transformOrigin']
 const DRAWN_ELEMENT_KEYS = new Set([...ELEMENT_FIELDS, ...FRAME_KEYS, 'connector', 'content'])
@@ -57,6 +60,17 @@ export interface LiveDeckHost {
   canWrite: () => boolean
   onRenamed: (renames: Map<string, string>) => void
   onMerged: (previousSlideIds: string[]) => void
+  onStep: (step: LiveStep) => void
+  /** Someone else deleted the element this tab is typing in. Its text is still in the store. */
+  onBoundDeleted: (id: string) => void
+}
+
+/** What one press of undo or redo did, and where it should land. */
+export interface LiveStep {
+  direction: StepDirection
+  isBlocked: boolean
+  slideId: string | null
+  elementIds: string[]
 }
 
 /** The store as last matched to the document, one JSON string per item. */
@@ -127,7 +141,7 @@ function changedFields(before: StoreItem, now: StoreItem) {
 }
 
 // Diffs into the fragment, so a co-editor's letters in the same element stay (Q21)
-export function writeText(doc: Y.Doc, id: string, html: string | null | undefined) {
+function writeText(doc: Y.Doc, id: string, html: string | null | undefined) {
   const fragment = elementText(doc, id)
   if (!fragment) {
     return
@@ -214,7 +228,9 @@ function replaceIfDifferent<T>(list: T[], next: T[]) {
 
 export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
   const htmlById = new Map<string, string>()
+  const steps = openLiveUndo(doc, [LIVE_ORIGIN, ySyncPluginKey])
   let mirror = mirrorOf(host.slides())
+  let reportedGoneId: string | null = null
 
   function forEachStoreElement(visit: (element: StoreItem) => void) {
     for (const slide of host.slides()) {
@@ -240,17 +256,12 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
   }
 
   function removeGone(now: Mirror) {
-    for (const id of mirror.slides.keys()) {
-      if (!now.slides.has(id)) {
-        deleteSlide(doc, id)
-      }
-    }
-
-    for (const id of mirror.elements.keys()) {
-      if (!now.elements.has(id)) {
-        deleteElement(doc, id)
-      }
-    }
+    const goneSlides = [...mirror.slides.keys()].filter((id) => !now.slides.has(id))
+    const goneElements = [...mirror.elements.keys()].filter((id) => !now.elements.has(id))
+    steps.keep('slides', goneSlides)
+    steps.keep('elements', goneElements)
+    goneSlides.forEach((id) => deleteSlide(doc, id))
+    goneElements.forEach((id) => deleteElement(doc, id))
   }
 
   // A new item is written bare and takes the id the write made. Its fields then
@@ -356,17 +367,19 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
     reflattenBound()
     let now = mirrorOf(host.slides())
     let boundText: { html: string | null } | null = null
-    doc.transact(() => {
-      removeGone(now)
-      const renames = createNew(now)
-      if (renames.size) {
-        renameInStore(renames)
-        now = mirrorOf(host.slides())
-      }
+    steps.write(() => {
+      doc.transact(() => {
+        removeGone(now)
+        const renames = createNew(now)
+        if (renames.size) {
+          renameInStore(renames)
+          now = mirrorOf(host.slides())
+        }
 
-      boundText = writeChanged(now)
-      writeOrders(now)
-    }, LIVE_ORIGIN)
+        boundText = writeChanged(now)
+        writeOrders(now)
+      }, LIVE_ORIGIN)
+    })
     mirror = now
     if (boundText) {
       host.setBoundText(boundText.html)
@@ -414,9 +427,66 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
     }
   }
 
+  // Before the merge takes the element out of the store, along with what was typed in it
+  function reportBoundGone() {
+    const boundId = host.boundElementId()
+    if (boundId && boundId !== reportedGoneId && !elementsRoot.has(boundId)) {
+      reportedGoneId = boundId
+      host.onBoundDeleted(boundId)
+    }
+  }
+
   function onUpdate(_update: Uint8Array, origin: unknown) {
-    if (!LOCAL_ORIGINS.has(origin)) {
-      pull()
+    if (LOCAL_ORIGINS.has(origin)) {
+      return
+    }
+
+    if (origin !== steps.manager) {
+      reportBoundGone()
+    }
+
+    pull()
+  }
+
+  function elementPlaces() {
+    return new Map(
+      host
+        .slides()
+        .flatMap(({ clientId, elements }) => elements.map(({ id }) => [id, clientId] as const)),
+    )
+  }
+
+  function landing(slideIds: string[], elementIds: string[], placesBefore: Map<string, string>) {
+    const shownSlide = slideIds.find((id) => host.slides().some((s) => s.clientId === id))
+    if (shownSlide) {
+      return { slideId: shownSlide, elementIds: [] }
+    }
+
+    const places = elementPlaces()
+    const shown = elementIds.filter((id) => places.has(id))
+    if (shown.length) {
+      const slideId = places.get(shown[0])!
+      return { slideId, elementIds: shown.filter((id) => places.get(id) === slideId) }
+    }
+
+    const removed = elementIds.find((id) => placesBefore.has(id))
+    return { slideId: removed ? placesBefore.get(removed)! : null, elementIds: [] }
+  }
+
+  function takeStep(direction: StepDirection) {
+    if (!host.canWrite()) {
+      return
+    }
+
+    push()
+    const placesBefore = elementPlaces()
+    const step = steps.take(direction)
+    if (step) {
+      host.onStep({
+        direction,
+        isBlocked: step.isBlocked,
+        ...landing(step.slideIds, step.elementIds, placesBefore),
+      })
     }
   }
 
@@ -440,9 +510,19 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
   return {
     /** Sends whatever the store changed since the last push or merge. */
     push,
+    undo: () => takeStep('undo'),
+    redo: () => takeStep('redo'),
+    /** The change just made is one undo step, and nothing after it joins that step. */
+    endStep: steps.endStep,
+    undoManager: steps.manager,
+    /** An element's first text, written when its editor opens. */
+    seedText(id: string, html: string) {
+      doc.transact(() => writeText(doc, id, html), SEED_ORIGIN)
+    },
     stop() {
       doc.off('update', onUpdate)
       elementsRoot.unobserveDeep(forgetChangedText)
+      steps.stop()
     },
   }
 }

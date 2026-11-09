@@ -144,6 +144,16 @@ export function useUnsavedRecovery(
     hasRecovery.value = true
   }
 
+  /** Keeps the slides as they are now, past any later save. */
+  function retainSticky() {
+    try {
+      keepSticky(liveSlides())
+      return true
+    } catch {
+      return false
+    }
+  }
+
   // a draft from a killed tab that the first load had not reached when access narrowed
   function keepUnreadDraft(content: unknown[]) {
     try {
@@ -305,6 +315,7 @@ export function useUnsavedRecovery(
     widened,
     keepSticky,
     retainRecovery,
+    retainSticky,
     retainOrWarn,
     reloadAfterAccessBack,
     downloadChanges,

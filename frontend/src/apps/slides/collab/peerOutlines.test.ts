@@ -1,8 +1,9 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { nextTick, shallowRef } from 'vue'
 
 vi.mock('@/platform/collab/peers', () => ({}))
 
-const { outlinesOn } = await import('./peerOutlines')
+const { lastSelector, outlinesOn } = await import('./peerOutlines')
 
 function person(name: string, elements: string[], actedAt: number, count = elements.length) {
   return { key: name, name, colour: undefined, elements, count, actedAt, isIdle: false }
@@ -71,5 +72,47 @@ describe('outlinesOn', () => {
       ['a', 'Asha', 'Asha & 1 more'],
       ['b', 'Ben', 'Ben'],
     ])
+  })
+})
+
+describe('lastSelector', () => {
+  afterEach(() => vi.useRealTimers())
+
+  function watching(...initial: ReturnType<typeof person>[]) {
+    const people = shallowRef(initial)
+    return { people, nameOn: lastSelector(people) }
+  }
+
+  it('names who has the element selected', () => {
+    const { nameOn } = watching(person('Asha', ['a'], 1))
+
+    expect(nameOn('a')).toBe('Asha')
+    expect(nameOn('b')).toBeNull()
+  })
+
+  it('still names someone whose selection cleared just before the delete arrived', async () => {
+    const { people, nameOn } = watching(person('Asha', ['a'], 1))
+
+    people.value = []
+    await nextTick()
+
+    expect(nameOn('a')).toBe('Asha')
+  })
+
+  it('prefers whoever acted on it last', () => {
+    const { nameOn } = watching(person('Ben', ['a'], 9), person('Asha', ['a'], 1))
+
+    expect(nameOn('a')).toBe('Ben')
+  })
+
+  it('forgets someone who let go a while ago, rather than blame them', async () => {
+    vi.useFakeTimers()
+    const { people, nameOn } = watching(person('Asha', ['a'], 1))
+
+    people.value = []
+    await nextTick()
+    vi.advanceTimersByTime(60_000)
+
+    expect(nameOn('a')).toBeNull()
   })
 })
