@@ -15,6 +15,8 @@ type Fields = Record<string, unknown>
 type DeepEvent = Y.YEvent<Y.AbstractType<unknown>>
 /** The ids a step changed, with what this tab last saw of those it could see. */
 type StepItems = Record<Kind, Map<string, Fields | null>>
+/** The ids a step will bring back, with the item each was when it was deleted. */
+type GoneItems = Map<string, Y.AbstractType<unknown> | null>
 
 export type StepDirection = 'undo' | 'redo'
 
@@ -27,6 +29,12 @@ function plainFields(item: Y.Map<unknown>) {
   return Object.fromEntries([...item.entries()].filter(([, v]) => !(v instanceof Y.AbstractType)))
 }
 
+// Written under a deleted item an undo may bring back, so it can come back too (Q38)
+function isHeldForUndo(item: Y.Item) {
+  const deletedParent = item.parent instanceof Y.AbstractType ? item.parent._item : null
+  return !!deletedParent?.deleted && deletedParent.keep
+}
+
 export function openLiveUndo(doc: Y.Doc, trackedOrigins: unknown[]) {
   const roots: Record<Kind, Y.Map<Y.Map<unknown>>> = {
     slides: doc.getMap(ROOT.slides),
@@ -36,6 +44,8 @@ export function openLiveUndo(doc: Y.Doc, trackedOrigins: unknown[]) {
     trackedOrigins: new Set(trackedOrigins),
     captureTimeout: STEP_PAUSE_MS,
   })
+  const baseGcFilter = doc.gcFilter
+  doc.gcFilter = (item) => !isHeldForUndo(item) && baseGcFilter(item)
   let pending = noItems()
   let isTaking = false
   let shouldEndStep = false
@@ -85,11 +95,41 @@ export function openLiveUndo(doc: Y.Doc, trackedOrigins: unknown[]) {
     stackItem.meta.set(ITEMS, items)
     pending = noItems()
     if (!isTaking && manager.undoStack.length > MOST_STEPS) {
-      manager.undoStack.shift()
+      dropOldestStep()
     }
   }
 
-  function writeBackMissing(items: StepItems, wasGone: Set<string>) {
+  // Through `clear`, so what the step held in the document is let go as well
+  function dropOldestStep() {
+    const kept = manager.undoStack.slice(1)
+    manager.undoStack = manager.undoStack.slice(0, 1)
+    manager.clear(true, false)
+    manager.undoStack = kept
+  }
+
+  /** The item as it was deleted. Null once its content has been cleaned up. */
+  function deletedItem(kind: Kind, id: string) {
+    const content = roots[kind]._map.get(id)?.content
+    return content instanceof Y.ContentType ? content.type : null
+  }
+
+  /** The newest value of each key whose latest write came from someone else. */
+  function coEditorValues(deleted: Y.AbstractType<unknown> | null) {
+    const values: Fields = {}
+    deleted?._map.forEach((item, key) => {
+      const value: unknown = item.content.getContent().at(-1)
+      if (
+        item.id.client !== doc.clientID &&
+        value !== undefined &&
+        !(value instanceof Y.AbstractType)
+      ) {
+        values[key] = value
+      }
+    })
+    return values
+  }
+
+  function writeBackMissing(items: StepItems, wasGone: GoneItems) {
     // no origin: this is no step of its own, and must leave the redo in place (Q38)
     doc.transact(() => {
       for (const kind of ['slides', 'elements'] as const) {
@@ -99,7 +139,8 @@ export function openLiveUndo(doc: Y.Doc, trackedOrigins: unknown[]) {
             return
           }
 
-          for (const [key, value] of Object.entries(fields)) {
+          const whole = { ...fields, ...coEditorValues(wasGone.get(id) ?? null) }
+          for (const [key, value] of Object.entries(whole)) {
             if (!item.has(key)) {
               item.set(key, value)
             }
@@ -122,12 +163,12 @@ export function openLiveUndo(doc: Y.Doc, trackedOrigins: unknown[]) {
 
     // SAFETY: `fileItems` runs for every step that reaches either stack
     const items = top.meta.get(ITEMS) as StepItems
-    const wasGone = new Set<string>()
+    const wasGone: GoneItems = new Map()
     for (const kind of ['slides', 'elements'] as const) {
       keep(kind, items[kind].keys())
       for (const id of items[kind].keys()) {
         if (!roots[kind].has(id)) {
-          wasGone.add(id)
+          wasGone.set(id, deletedItem(kind, id))
         }
       }
     }
@@ -195,6 +236,7 @@ export function openLiveUndo(doc: Y.Doc, trackedOrigins: unknown[]) {
       roots.slides.unobserveDeep(observers.slides)
       roots.elements.unobserveDeep(observers.elements)
       manager.destroy()
+      doc.gcFilter = baseGcFilter
     },
   }
 }

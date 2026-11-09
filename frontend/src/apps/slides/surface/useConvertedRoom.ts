@@ -47,8 +47,8 @@ interface RoomHost {
   mayEdit: () => boolean
   /** Keeps the slides in this browser when the room stops holding unsent work. */
   retainRecovery: () => boolean
-  /** Keeps the slides in this browser past any later save. */
-  retainSticky: () => boolean
+  /** Keeps the slides in this browser past any later save, or offers them as a download. */
+  retainStickyOrOffer: () => boolean
 }
 
 function allowsEditingIn(status: RoomStatus) {
@@ -64,7 +64,12 @@ function isKeptNowhere(status: RoomStatus, isRecoveryKept: boolean) {
 }
 
 // A converted presentation's live room: open, mirrored into the slide store, closed
-export function useConvertedRoom({ session, mayEdit, retainRecovery, retainSticky }: RoomHost) {
+export function useConvertedRoom({
+  session,
+  mayEdit,
+  retainRecovery,
+  retainStickyOrOffer,
+}: RoomHost) {
   const room = shallowRef<CollabRoom | null>(null)
   const status = shallowRef<RoomStatus | null>(null)
   const presence = shallowRef<RoomPresence | null>(null)
@@ -146,8 +151,7 @@ export function useConvertedRoom({ session, mayEdit, retainRecovery, retainStick
       return
     }
 
-    if (!retainSticky()) {
-      toast.error(translate('Your latest changes could not be kept on this device.'))
+    if (!retainStickyOrOffer()) {
       return
     }
 

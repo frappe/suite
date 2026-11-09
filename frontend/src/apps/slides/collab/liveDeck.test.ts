@@ -370,6 +370,24 @@ describe('centred text', () => {
   })
 })
 
+describe('an edit of centred text that does not move it', () => {
+  it('saves top-left too, as the first edit of any kind does', () => {
+    const doc = new Y.Doc()
+    writeDeck(doc, [
+      {
+        id: 's',
+        elements: [{ id: 't', type: 'text', frame: { left: 500, top: 300, transform: CENTRED } }],
+      },
+    ])
+    const tab = tabOn(doc)
+
+    tab.element('t').opacity = 40
+    tab.deck.push()
+
+    expect(savedFrame(doc, 't')).toMatchObject({ left: 450, top: 300, transform: 'none' })
+  })
+})
+
 describe('typing in centred text', () => {
   function typedInto(doc: Y.Doc) {
     writeDeck(doc, [
@@ -384,12 +402,18 @@ describe('typing in centred text', () => {
     return tab
   }
 
-  it('re-measures the top-left in memory and leaves the saved position centred', () => {
+  it('saves the re-measured top-left with the first edit', () => {
     const doc = new Y.Doc()
     const tab = typedInto(doc)
+    const top = 300 - tab.element('t').content.length
 
-    expect(tab.element('t').top).toBe(300 - tab.element('t').content.length)
-    expect(savedFrame(doc, 't')).toMatchObject({ left: 500, top: 300, transform: CENTRED })
+    expect(tab.element('t').top).toBe(top)
+    expect(savedFrame(doc, 't')).toEqual({
+      left: 450,
+      top,
+      transform: 'none',
+      transformOrigin: 'top left',
+    })
   })
 })
 

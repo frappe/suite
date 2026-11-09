@@ -655,8 +655,8 @@ def _list_predicate(node_column: str, user: str | None) -> str:
     repeats `Acc`: the deepest own grant decides, a deny there wins unless
     only `$GENERAL` denies and an open grant is nearer, and an open grant can
     only add. Two simplifications keep it in
-    SQL and both refuse more than the engine, never less: grants at the same
-    depth are not ordered by own tier, and a password-protected link grant is
+    SQL and both refuse more than the engine, never less: the deepest own
+    grants are not ordered by own tier, and a password-protected link grant is
     skipped because a list caller presents no unlock ticket.
     `tests/test_predicate_agreement.py` checks both claims against the engine.
     """
@@ -668,12 +668,7 @@ def _list_predicate(node_column: str, user: str | None) -> str:
 
     own = _nearest_role("drive_own", principals.own, skip_locked=False, deny_wins=True)
     other = _nearest_role("drive_open", principals.open, skip_locked=True, deny_wins=False)
-    named = _nearest_role(
-        "drive_named",
-        tuple(principal for principal in principals.own if own_tier(principal, principals.user) < SITE_TIER),
-        skip_locked=False,
-        deny_wins=True,
-    )
+    named = named_role(principals)
     own_depth = _nearest_depth("drive_own", principals.own, skip_locked=False)
     other_depth = _nearest_depth("drive_open", principals.open, skip_locked=True)
     return (
@@ -703,6 +698,25 @@ def _nearest_role(alias: str, principals: tuple[str, ...], *, skip_locked: bool,
     depth = _depth_expr(alias)
     deepest = _nearest_depth(f"{alias}_deep", principals, skip_locked=skip_locked)
     return f"(SELECT {role} FROM `tabDrive Grant` `{alias}` WHERE {live} AND {depth} = {deepest})"
+
+
+def named_role(principals: Principals) -> str:
+    """Return a scalar subquery giving what the nearest person or group grant decides."""
+    # Unlike the own arm, this repeats the engine's tiers: the person's own grant
+    # speaks for them over a group's beside it, so a `$GENERAL` deny lets a nearer
+    # open grant past exactly when `Acc` does
+    named = tuple(
+        principal for principal in principals.own if own_tier(principal, principals.user) < SITE_TIER
+    )
+    role = _nearest_role("drive_named", named, skip_locked=False, deny_wins=True)
+    if principals.user not in named:
+        return role
+
+    deepest = _nearest_depth("drive_person_deep", named, skip_locked=False)
+    live = _live_grants("drive_person", (principals.user,), skip_locked=False)
+    depth = _depth_expr("drive_person")
+    person = f"(SELECT `drive_person`.`role` FROM `tabDrive Grant` `drive_person` WHERE {live} AND {depth} = {deepest})"
+    return f"COALESCE({person}, {role})"
 
 
 def _nearest_depth(alias: str, principals: tuple[str, ...], *, skip_locked: bool) -> str:

@@ -392,6 +392,7 @@ def hold_template_decks_read_only(
     source, target = _ports(env)
     for row in (row for kind, row in _template_rows(source, batch_size) if kind == "presentation"):
         lowered = lower_to_read(target, row)
+        capped = cap_inherited_links(env, row)
         if lowered:
             result.record_issue(
                 f"Presentation:{row.name}",
@@ -399,6 +400,10 @@ def hold_template_decks_read_only(
                 phase="links",
                 cumulative=True,
             )
+            # first: a stop between the two repeats one issue line, the other order loses it
+            env.state.put_content(result)
+
+        if lowered or capped:
             target.commit()
 
 
@@ -414,6 +419,21 @@ def lower_to_read(target: ContentTarget, row: ContentRow) -> int:
         target.set_grant_role(grant["node"], grant["principal"], READ)
 
     return len(above)
+
+
+def cap_inherited_links(env: BuildEnvironment, row: ContentRow) -> int:
+    """Stop a link on a folder above giving more than read, and answer how many decks needed it."""
+    # The deepest open grant decides the open side, so `$PUBLIC` read on the deck
+    # holds every link above it to read. `$GENERAL` read, already on the deck, does
+    # the same for shares above it
+    target = env.content_target
+    capped = 0
+    for deck in target.content_nodes("Presentation", row.name):
+        if PUBLIC not in target.grant_roles(deck["name"], (PUBLIC,)):
+            target.insert_grants([_grant_row(env, deck["name"], PUBLIC, READ)])
+            capped += 1
+
+    return capped
 
 
 def _valid_owner(env, owner):

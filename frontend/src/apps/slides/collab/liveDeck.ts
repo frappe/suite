@@ -4,7 +4,7 @@
 // on screen keeps its identity and nothing goes back to the document
 //
 // The store holds centred text flattened to top-left, in memory only: the mirror
-// holds that form too, so opening writes nothing and the first move saves top-left
+// holds that form too, so opening writes nothing and the first edit saves top-left
 
 import { createDocument } from '@tiptap/core'
 import { prosemirrorToYXmlFragment, ySyncPluginKey } from '@tiptap/y-tiptap'
@@ -291,6 +291,10 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
     return renames
   }
 
+  function savedFrame(id: string) {
+    return doc.getMap<Y.Map<StoreItem>>(ROOT.elements).get(id)?.get('frame')
+  }
+
   function writeChanged(now: Mirror) {
     for (const [id, json] of now.slides) {
       const before = mirror.slides.get(id)!
@@ -308,7 +312,13 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
       const previous = mirror.elements.get(id)!
       if (json === previous) continue
       const [before, after] = [JSON.parse(previous), JSON.parse(json)]
-      setElement(doc, id, changedFields(elementFields(before), elementFields(after)))
+      const fields = changedFields(elementFields(before), elementFields(after))
+      const isEdited = Object.keys(fields).length > 0 || !sameValue(before.content, after.content)
+      if (isEdited && savedFrame(id)?.transform === CENTRED && after.transform !== CENTRED) {
+        fields.frame = elementFields(after).frame
+      }
+
+      setElement(doc, id, fields)
       if (sameValue(before.content, after.content)) continue
       if (id === host.boundElementId()) {
         boundText = { html: after.content ?? null }
@@ -346,7 +356,7 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
       return
     }
 
-    const frame = doc.getMap<Y.Map<StoreItem>>(ROOT.elements).get(element.id)?.get('frame')
+    const frame = savedFrame(element.id)
     const before = JSON.parse(previous)
     const isHeld = element.left === before.left && element.top === before.top
     if (!isHeld || frame?.transform !== CENTRED) {
@@ -356,7 +366,6 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
     const { left, top } = host.flatten({ ...toRaw(element), ...frame })
     element.left = left
     element.top = top
-    mirror.elements.set(element.id, JSON.stringify({ ...before, left, top }))
   }
 
   function push() {
@@ -430,7 +439,12 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
   // Before the merge takes the element out of the store, along with what was typed in it
   function reportBoundGone() {
     const boundId = host.boundElementId()
-    if (boundId && boundId !== reportedGoneId && !elementsRoot.has(boundId)) {
+    if (!boundId || elementsRoot.has(boundId)) {
+      reportedGoneId = null
+      return
+    }
+
+    if (boundId !== reportedGoneId) {
       reportedGoneId = boundId
       host.onBoundDeleted(boundId)
     }

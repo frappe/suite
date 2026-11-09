@@ -284,9 +284,46 @@ describe('undo after a delete', () => {
       const restored = saved(doc, 'a')!
       expect(restored.get('type')).toBe('image')
       expect(restored.get('frame')).toEqual({ left: 1, top: 2, width: 30, height: 40 })
-      expect(restored.get('opacity')).toBe(100)
+      expect(restored.get('opacity')).toBe(25)
     }
     expect(mine.element('a').left).toBe(1)
+    expect(mine.element('a').opacity).toBe(25)
+  })
+
+  it('brings back a value a co-editor set for the first time while it was being deleted', () => {
+    const { one, other, sync } = twoTabsApart()
+    presentation(one)
+    sync()
+    const mine = tabOn(one)
+
+    change(mine, () => mine.store.slides[0].elements.shift())
+    setElement(other, 'a', { rotation: 45 })
+    sync()
+    mine.deck.undo()
+    sync()
+
+    for (const doc of [one, other]) {
+      expect(saved(doc, 'a')!.get('rotation')).toBe(45)
+    }
+  })
+
+  it('falls back to what the tab last saw when the co-editor value never reached it', () => {
+    const { one, other, sync } = twoTabsApart()
+    presentation(one)
+    sync()
+    const mine = tabOn(one)
+
+    change(mine, () => mine.store.slides[0].elements.shift())
+    setElement(other, 'a', { opacity: 25 })
+    // sent after hearing of the delete, so the value has already been cleaned up there
+    Y.applyUpdate(other, Y.encodeStateAsUpdate(one), 'wire')
+    Y.applyUpdate(one, Y.encodeStateAsUpdate(other), 'wire')
+    mine.deck.undo()
+    sync()
+
+    for (const doc of [one, other]) {
+      expect(saved(doc, 'a')!.get('opacity')).toBe(100)
+    }
   })
 
   it('brings back whole a slide a co-editor changed while it was being deleted', () => {
@@ -303,7 +340,7 @@ describe('undo after a delete', () => {
 
     for (const doc of [one, other]) {
       expect(slideIds(doc)).toEqual(['s1', 's2'])
-      expect(doc.getMap<Y.Map<unknown>>(ROOT.slides).get('s1')!.get('background')).toBe('#111111FF')
+      expect(doc.getMap<Y.Map<unknown>>(ROOT.slides).get('s1')!.get('background')).toBe('#222222FF')
       expect(elementIds(doc, 's1')).toEqual(['a', 'b'])
     }
   })
@@ -402,6 +439,30 @@ describe('what makes one step', () => {
 
     expect(leftOf(one, 'a')).toBe(1004)
     expect(mine.steps).toHaveLength(200)
+  })
+
+  it('lets go of what the oldest step held once it falls off the limit', () => {
+    const { one } = twoTabs()
+    presentation(one)
+    const mine = tabOn(one)
+    const isHeld = (left: number) => {
+      const structs = [...one.store.clients.values()].flat()
+      return structs.some(
+        (struct) =>
+          struct instanceof Y.Item &&
+          struct.keep &&
+          struct.content.getContent().some((value) => value?.left === left),
+      )
+    }
+    // two elements in turn, as Yjs joins repeat writes to one key into a single item
+    for (let left = 1000; left < 1204; left++) {
+      change(mine, () => (mine.element(left % 2 ? 'b' : 'a').left = left))
+    }
+
+    // four steps fell off, and each held the value its write replaced
+    expect(isHeld(1000)).toBe(false)
+    expect(isHeld(1001)).toBe(false)
+    expect(isHeld(1002)).toBe(true)
   })
 
   it('a new change drops what redo held', () => {
@@ -515,6 +576,30 @@ describe('undoing the first edit of centred text', () => {
     expect(saved(one, 't')!.get('frame')).toMatchObject({ left: 480, transform: CENTRED })
     expect(mine.element('t').left).toBe(flatLeft)
   })
+
+  it('puts it back when that first edit was typing', () => {
+    const { one } = twoTabs()
+    writeDeck(one, [
+      {
+        id: 's1',
+        elements: [
+          {
+            id: 't',
+            type: 'text',
+            frame: { left: 480, top: 270, width: 100, height: 40, transform: CENTRED },
+          },
+        ],
+      },
+    ])
+    const mine = tabOn(one, { boundElementId: 't' })
+
+    change(mine, () => (mine.element('t').content = '<p>typed</p>'))
+    expect(saved(one, 't')!.get('frame').transform).not.toBe(CENTRED)
+
+    mine.deck.undo()
+
+    expect(saved(one, 't')!.get('frame')).toMatchObject({ left: 480, transform: CENTRED })
+  })
 })
 
 describe('an element deleted under the person typing in it', () => {
@@ -529,6 +614,22 @@ describe('an element deleted under the person typing in it', () => {
     addSlide(other)
 
     expect(mine.deletedWhileBound).toEqual([{ id: 'a', heldText: '<p>typed here</p>' }])
+  })
+
+  it('reports a second delete of the same element after it came back', () => {
+    const { one, other } = twoTabs()
+    presentation(one)
+    const mine = tabOn(one, { boundElementId: 'a' })
+    const deleter = tabOn(other)
+
+    change(deleter, () => deleter.store.slides[0].elements.shift())
+    deleter.deck.undo()
+    mine.element('a').content = '<p>typed again</p>'
+    mine.deck.push()
+    change(deleter, () => deleter.store.slides[0].elements.shift())
+
+    expect(mine.deletedWhileBound.map(({ id }) => id)).toEqual(['a', 'a'])
+    expect(mine.deletedWhileBound[1].heldText).toBe('<p>typed again</p>')
   })
 
   it('is not reported for a delete the tab caused with its own undo', () => {

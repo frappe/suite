@@ -12,8 +12,7 @@ async function savedSlidesOf(
     return answer
   }
 
-  // A source that won't open still has its rows to show
-  const doc = await read(answer.node).catch(() => null)
+  const doc = await read(answer.node)
   return doc ? { ...answer, slides: drawnSlides(doc) } : answer
 }
 

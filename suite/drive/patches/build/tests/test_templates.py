@@ -3,8 +3,11 @@
 import tempfile
 import unittest
 from dataclasses import replace
+from itertools import product
 from pathlib import Path
 
+from suite.drive._core.access import Acc
+from suite.drive._core.principals import Principals
 from suite.drive._core.roles import COMMENT, EDIT, MANAGE, NONE, READ
 from suite.drive.patches.build.content import BuildContentError, _grant_row, link_content_documents
 from suite.drive.patches.build.content_mapping import InvalidLegacyContent
@@ -822,6 +825,81 @@ class TemplateTest(unittest.TestCase):
         self.assertIn(
             (f"Presentation:{deck.name}", f"template Presentation {deck.name}: 3 grants lowered to read"),
             [(issue.source, issue.reason) for issue in result.issues],
+        )
+
+    def test_a_link_or_share_on_a_folder_above_gives_no_more_than_read(self):
+        deck = presentation_template("deck-template")
+        source = FakeContent(
+            documents=[deck],
+            files=[TreeRow("file-1", content_doctype="Presentation", content_docname=deck.name)],
+            users={"Administrator": True, OWNER: True},
+        )
+        env, target = self.environment(source)
+        node = self.tree_node(target, deck.name)
+        media = self.tree_node(
+            target, deck.name, name="media-1", parent_node=node, content_doctype=None, content_docname=None
+        )
+        link = "$LINK:token"
+        editor = "editor@example.com"
+        target.insert_grants(
+            [_grant_row(env, "old-folder", link, EDIT), _grant_row(env, "old-folder", editor, EDIT)]
+        )
+
+        convert_slides_and_templates(env)
+        link_content_documents(env)
+
+        people = {
+            "link, signed out": Principals("Guest", (), (PUBLIC, link)),
+            "link, signed in": Principals(
+                "someone@example.com", ("someone@example.com", GENERAL), (PUBLIC, link)
+            ),
+            "share on the folder": Principals(editor, (editor, GENERAL), (PUBLIC,)),
+        }
+        places = {"deck": ["old-folder", node], "media": ["old-folder", node, media]}
+        for (label, person), (place, chain) in product(people.items(), places.items()):
+            with self.subTest(label, place=place):
+                self.assertEqual(self.role_down(target, chain, person), READ)
+
+        self.assertEqual(
+            self.role_down(target, ["old-folder", node], Principals(OWNER, (OWNER, GENERAL), (PUBLIC,))),
+            MANAGE,
+        )
+
+    def role_down(self, target, chain, person):
+        acc = Acc()
+        rows = (row for row in target.drive.grant_rows.values() if row["principal"] in person.all())
+        for row in rows:
+            if row["node"] in chain:
+                acc.offer(row["principal"], row["role"], chain.index(row["node"]), person)
+
+        return acc.answer()
+
+    def test_a_stop_just_after_lowering_keeps_the_count(self):
+        deck = presentation_template("deck-template")
+        source = FakeContent(
+            documents=[deck],
+            files=[TreeRow("file-1", content_doctype="Presentation", content_docname=deck.name)],
+            users={"Administrator": True, OWNER: True},
+        )
+        env, target = self.environment(source)
+        node = self.tree_node(target, deck.name)
+        editor = "editor@example.com"
+        target.insert_grants([_grant_row(env, node, editor, EDIT)])
+        convert_slides_and_templates(env)
+        commit = target.commit
+
+        def commit_then_stop_once_lowered():
+            commit()
+            if target.grant_roles(node, (editor,)) == {editor: READ}:
+                raise InterruptedRun
+
+        target.commit = commit_then_stop_once_lowered
+        with self.assertRaises(InterruptedRun):
+            link_content_documents(env)
+
+        self.assertIn(
+            f"template Presentation {deck.name}: 1 grants lowered to read",
+            [issue.reason for issue in env.state.content().issues],
         )
 
     def test_rights_on_an_ordinary_deck_are_left_alone(self):

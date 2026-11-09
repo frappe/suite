@@ -9,7 +9,7 @@ The contract under test, from the predicate's docstring:
 
 1. The SQL never admits a node the engine refuses. Always.
 2. The SQL may refuse more only through its two named simplifications:
-   grants at the same depth are not ordered by own tier, and a password link
+   own-arm grants at the same depth are not ordered by own tier, and a password link
    is skipped because a list caller presents no unlock ticket. Where neither
    applies, the two answers are equal.
 """
@@ -24,7 +24,7 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils import now_datetime
 
 from suite.drive import framework
-from suite.drive._core.access import SITE_TIER, chain_ids, effective_role, own_tier
+from suite.drive._core.access import chain_ids, effective_role, own_tier
 from suite.drive._core.principals import LINK_TOKEN_LENGTH, Principals, make_ticket
 from suite.drive._core.roles import MANAGE, READ, ROLES
 from suite.drive._core.roots import create_root
@@ -213,13 +213,7 @@ class TestPredicateAgreement(IntegrationTestCase):
         if any(row.password_hash and principals.ticket_for(row.principal) for row in live):
             return True
         own = [row for row in live if row.principal in principals.own]
-        if not own:
-            return False
-
-        # The rule that lets a nearer link past a `$GENERAL` deny reads the
-        # nearest named grant too, so the tie can sit at either depth
-        named = [row for row in own if own_tier(row.principal, principals.user) < SITE_TIER]
-        return any(self._tiers_tie(rows, chain, principals) for rows in (own, named) if rows)
+        return bool(own) and self._tiers_tie(own, chain, principals)
 
     def _tiers_tie(self, rows, chain, principals: Principals) -> bool:
         deepest = max(chain.index(row.node) for row in rows)
@@ -313,6 +307,14 @@ class TestPredicateAgreement(IntegrationTestCase):
             "named deny behind the deny": (
                 False,
                 [(root, VIEWER, 0), (far, "$GENERAL", 0), (near, link, READ)],
+            ),
+            "person's read beside a group deny, behind the deny": (
+                True,
+                [(root, VIEWER, READ), (root, GROUP, 0), (far, "$GENERAL", 0), (near, "$PUBLIC", READ)],
+            ),
+            "person's deny beside a group read, behind the deny": (
+                False,
+                [(root, VIEWER, 0), (root, GROUP, READ), (far, "$GENERAL", 0), (near, "$PUBLIC", READ)],
             ),
         }
         nodes = [root.name, far.name, near.name, document.name]

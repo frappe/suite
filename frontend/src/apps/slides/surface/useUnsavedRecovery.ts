@@ -144,12 +144,21 @@ export function useUnsavedRecovery(
     hasRecovery.value = true
   }
 
-  /** Keeps the slides as they are now, past any later save. */
-  function retainSticky() {
+  /** Keeps the slides as they are now, past any later save. With no room, offers them as a download. */
+  function retainStickyOrOffer() {
+    const copy = liveSlides()
     try {
-      keepSticky(liveSlides())
+      keepSticky(copy)
       return true
     } catch {
+      const title = session.title.value
+      toast.error(translate('Your latest changes could not be kept on this device.'), {
+        duration: Number.POSITIVE_INFINITY,
+        action: {
+          label: 'Download my changes',
+          onClick: () => downloadSlides(copy, title),
+        },
+      })
       return false
     }
   }
@@ -315,7 +324,7 @@ export function useUnsavedRecovery(
     widened,
     keepSticky,
     retainRecovery,
-    retainSticky,
+    retainStickyOrOffer,
     retainOrWarn,
     reloadAfterAccessBack,
     downloadChanges,
