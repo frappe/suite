@@ -315,11 +315,15 @@ class MailAccountRequest(Document):
 
     @property
     def invitation(self) -> dict[str, str]:
-        """Who is inviting: the organisation's name and logo (Suite Settings) and the inviter's name."""
+        """Who is inviting: the organisation's name and logo (Suite Settings) and the inviter's name.
+
+        Administrator is a recovery identity, not a person: Suite Cloud invites a new site's first
+        Admin as Administrator. Such an invitation names no inviter.
+        """
 
         from suite.api.account import get_workspace
 
-        inviter = self.invited_by or ""
+        inviter = "" if self.invited_by == "Administrator" else self.invited_by or ""
         return {
             **get_workspace(),
             "invited_by_name": frappe.utils.get_fullname(inviter) if inviter else "",
@@ -373,11 +377,18 @@ class MailAccountRequest(Document):
 
         invitation = self.invitation
         workspace, inviter = invitation["workspace_name"], invitation["invited_by_name"]
-        heading = (
-            _("{0} invited you to join {1} on Suite").format(inviter, workspace)
-            if workspace
-            else _("{0} invited you to join Suite").format(inviter)
-        )
+        if inviter:
+            heading = (
+                _("{0} invited you to join {1} on Suite").format(inviter, workspace)
+                if workspace
+                else _("{0} invited you to join Suite").format(inviter)
+            )
+        else:
+            heading = (
+                _("You are invited to join {0} on Suite").format(workspace)
+                if workspace
+                else _("You are invited to join Suite")
+            )
         link = get_url("/join/" + self.request_key)
         suite_email.send(
             "account-invite",

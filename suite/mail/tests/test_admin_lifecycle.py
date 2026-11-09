@@ -792,13 +792,17 @@ class TestAdminLifecycle(IntegrationTestCase):
     def test_an_invitation_gives_the_provider_the_workspace_and_inviter(self):
         frappe.db.set_single_value("Suite Settings", "workspace_name", "Acme")
         frappe.db.set_single_value("Suite Settings", "workspace_logo", "/files/acme.png")
-        add_member(self.username, "company.frappe.cloud", False, True, "contact@example.test")
+        inviter = f"maya-{frappe.generate_hash(length=8)}@company.frappe.cloud"
+        ensure_user(inviter)
+        frappe.get_doc("User", inviter).add_roles("Suite Admin")
+        with self.set_user(inviter):
+            add_member(self.username, "company.frappe.cloud", False, True, "contact@example.test")
 
         params = self.provider.emails[-1]["params"]
         self.assertEqual(params["workspace_name"], "Acme")
         self.assertTrue(params["workspace_logo"].endswith("/files/acme.png"))
         self.assertTrue(params["workspace_logo"].startswith("http"))
-        self.assertEqual(params["invited_by_name"], frappe.utils.get_fullname(frappe.session.user))
+        self.assertEqual(params["invited_by_name"], frappe.utils.get_fullname(inviter))
 
     def test_the_invitation_email_escapes_workspace_and_inviter_names(self):
         html = frappe.get_template("templates/emails/account_invitation.html").render(
@@ -880,6 +884,24 @@ class TestAdminLifecycle(IntegrationTestCase):
             shown = get_account_request(key)
         self.assertEqual((shown["workspace_name"], shown["account"]), ("Northwind", self.address))
         self.assertTrue(shown["invited_by_name"].startswith("maya-"))
+
+    def test_an_invitation_from_administrator_names_no_inviter(self):
+        # Suite Cloud invites a new site's first Admin as Administrator, which is not a person.
+        frappe.db.set_single_value("Suite Settings", "workspace_name", "Northwind")
+        with (
+            patch("suite.suite_core.suite_email._email_provider", return_value=None),
+            patch("frappe.sendmail") as sendmail,
+            self.set_user("Administrator"),
+        ):
+            result = add_member(self.username, "company.frappe.cloud", True, True, "owner@example.test")
+        self.assertTrue(result["success"])
+        subject = sendmail.call_args.kwargs["subject"]
+        self.assertIn("Northwind", subject)
+        self.assertNotIn("Administrator", subject)
+        key = frappe.db.get_value("Mail Account Request", {"account": self.address}, "request_key")
+        with self.set_user("Guest"):
+            shown = get_account_request(key)
+        self.assertEqual((shown["invited_by_name"], shown["invited_by_email"]), ("", ""))
 
     def test_the_supplied_domain_is_the_oldest_active_one_whatever_order_suite_cloud_lists(self):
         listed = [
