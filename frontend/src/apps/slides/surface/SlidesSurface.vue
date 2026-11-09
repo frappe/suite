@@ -461,11 +461,15 @@ async function printDrawnPages() {
   const pages = exportView.value?.$el
   if (!pages) return
 
-  await drawnFontsLoaded(pages)
+  try {
+    await drawnFontsLoaded(pages)
+  } catch {
+    // a failed wait prints as a stall does
+  }
+
   // left the presentation while a font loaded
   if (!exportView.value) return
 
-  isWaitingToPrint = false
   window.addEventListener(
     'afterprint',
     () => {
@@ -483,7 +487,11 @@ function exportPdf() {
   isWaitingToPrint = true
   exporting.value = true
   void nextTick(() => {
-    window.setTimeout(() => void printDrawnPages(), 200)
+    window.setTimeout(() => {
+      void printDrawnPages().finally(() => {
+        isWaitingToPrint = false
+      })
+    }, 200)
   })
 }
 // A source's own link code, so a public combined presentation opens signed out

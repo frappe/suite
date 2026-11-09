@@ -2,46 +2,36 @@ import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { loadBundledFonts } from './bundledFonts'
+import { warmBundledFonts } from './bundledFonts'
 
 const stylesheet = readFileSync(resolve(__dirname, '../styles/fonts.css'), 'utf8')
 const fontFaces = stylesheet.split('@font-face').slice(1)
 const SITE_ASSETS = resolve(__dirname, '../../../../../suite/public')
 
-function declared(rule: string, property: string) {
-  return new RegExp(`${property}:\\s*'?([^;']+)`).exec(rule)?.[1]
-}
-
-async function facesTheLoaderAsksFor() {
-  const load = vi.fn(async (_face: string, _sample: string) => [])
-  Object.defineProperty(document, 'fonts', { configurable: true, value: { load } })
-  await loadBundledFonts()
-  return load.mock.calls.map(([face]) => face)
-}
-
 describe('the bundled slide fonts', () => {
   afterEach(() => {
+    vi.unstubAllGlobals()
     Reflect.deleteProperty(document, 'fonts')
   })
 
-  // document.fonts.load finds nothing and still resolves for a face no @font-face declares
-  it('has a declared face for every font the loader asks the browser for', async () => {
-    const faces = await facesTheLoaderAsksFor()
+  it('warms every declared file without going through document.fonts', async () => {
+    const load = vi.fn()
+    Object.defineProperty(document, 'fonts', { configurable: true, value: { load } })
+    const fetched: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        fetched.push(url)
+        return new Response('')
+      }),
+    )
 
-    expect(faces.length).toBeGreaterThan(0)
-    for (const face of faces) {
-      const style = face.startsWith('italic') ? 'italic' : 'normal'
-      const weight = /\b(\d00)\b/.exec(face)?.[1]
-      const family = /16px "?([^"]+)"?$/.exec(face)?.[1]
-      const matching = fontFaces.filter(
-        (rule) =>
-          declared(rule, 'font-family') === family &&
-          declared(rule, 'font-weight') === weight &&
-          declared(rule, 'font-style') === style,
-      )
+    await warmBundledFonts()
 
-      expect(matching, face).not.toEqual([])
-    }
+    const declaredFiles = [...stylesheet.matchAll(/url\('([^']+)'\)/g)].map(([, url]) => url)
+    expect(fetched).toHaveLength(fontFaces.length)
+    expect(new Set(fetched)).toEqual(new Set(declaredFiles))
+    expect(load).not.toHaveBeenCalled()
   })
 
   it('points every declared face at a file the site serves', () => {

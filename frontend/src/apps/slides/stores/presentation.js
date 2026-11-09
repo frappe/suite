@@ -3,7 +3,6 @@ import { computed, ref } from 'vue'
 
 import { api, client } from '@/api'
 import { normalizeZIndices } from '@/apps/slides/stores/element'
-import { fontsReadyWithinLimit } from '@/apps/slides/utils/bundledFonts'
 import { normalizeColor } from '@/apps/slides/utils/color'
 import { serverAnswers } from '@/apps/slides/utils/offlineRequests'
 import { migrateShadow } from '@/apps/slides/utils/oldShadow'
@@ -86,7 +85,7 @@ function readMeasured(tempDiv, el) {
 
 async function getElementDimensions(el) {
   const tempDiv = placeForMeasuring(el)
-  await fontsReadyWithinLimit()
+  await document.fonts.ready
   return readMeasured(tempDiv, el)
 }
 

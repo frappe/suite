@@ -811,6 +811,25 @@ describe('printing a presentation', () => {
     expect(print).toHaveBeenCalledTimes(2)
   })
 
+  it('prints anyway when the font wait fails, and a later Export still works', async () => {
+    const load = vi.fn(() => {
+      throw new Error('Unreadable font')
+    })
+    Object.defineProperty(document, 'fonts', { configurable: true, value: { load } })
+    mounted = await openedSurface()
+    vi.useFakeTimers()
+
+    clickExport()
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(print).toHaveBeenCalledOnce()
+
+    clickExport()
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(print).toHaveBeenCalledTimes(2)
+  })
+
   it('still prints when a font never arrives', async () => {
     const load = vi.fn(() => new Promise<unknown[]>(() => {}))
     Object.defineProperty(document, 'fonts', { configurable: true, value: { load } })

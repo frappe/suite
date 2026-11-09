@@ -16,7 +16,7 @@ vi.mock('@/apps/slides/stores/element', () => ({
 }))
 vi.mock('frappe-ui', () => ({ toast: {}, FileUploadHandler: class {} }))
 vi.mock('@/apps/slides/pages/Slideshow.vue', () => ({ default: {} }))
-vi.mock('@/apps/slides/utils/bundledFonts', () => ({ loadBundledFonts: async () => {} }))
+vi.mock('@/apps/slides/utils/bundledFonts', () => ({ warmBundledFonts: async () => {} }))
 vi.mock('@/platform/session', async (importOriginal) => {
   const original = await importOriginal<typeof import('@/platform/session')>()
   return {
