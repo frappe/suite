@@ -916,11 +916,11 @@ def clear_list(
         # A message the clear left where it was is not taken again, so the clearing ends.
         taken: set[str] = set()
         try:
-            account_mailboxes = get_cached_mailboxes(account_id)
-            inbox = next(
-                (m["id"] for m in account_mailboxes if (m.get("role") or "").lower() == "inbox"), None
-            )
-            for mailbox_id in folder_mailboxes(account_mailboxes, folder) if folder else [mailbox]:
+            # Only a move spares the pins, so reading needs no Inbox to tell whose keyword they carry.
+            inbox = None if read else get_mailbox_id_by_role(account_id, "inbox")
+            for mailbox_id in (
+                folder_mailboxes(get_cached_mailboxes(account_id), folder) if folder else [mailbox]
+            ):
                 filter = clearing_filter(mailbox_id, tab, read, filter_by, pin_keyword(mailbox_id, inbox))
                 while ids := [
                     id
