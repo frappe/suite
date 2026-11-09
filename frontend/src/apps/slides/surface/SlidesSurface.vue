@@ -15,6 +15,7 @@ import {
 import { useRoute, useRouter } from 'vue-router'
 
 import '@/apps/slides/styles/fonts.css'
+import '@/apps/slides/styles/scrollbars.css'
 
 import { api, client } from '@/api'
 import {
