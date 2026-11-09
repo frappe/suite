@@ -211,6 +211,22 @@ describe('SheetTabsBar', () => {
     expect(events.drop).toHaveBeenCalledWith(expect.anything(), 'Sheet2')
   })
 
+  it('sends a drop in the gap between tabs to the tab the mark is on, once', async () => {
+    const { root, events } = mountBar({ tabDragOver: 'Sheet2', tabDragName: 'Pivot1' })
+    await settle()
+    root
+      .querySelector('.sn-tabs-track')!
+      .dispatchEvent(new Event('drop', { bubbles: true, cancelable: true }))
+    expect(events.drop).toHaveBeenCalledTimes(1)
+    expect(events.drop).toHaveBeenCalledWith(expect.anything(), 'Sheet2')
+
+    tab(root, 'Sheet1')
+      .closest('[draggable="true"]')!
+      .dispatchEvent(new Event('drop', { bubbles: true, cancelable: true }))
+    expect(events.drop).toHaveBeenCalledTimes(2)
+    expect(events.drop).toHaveBeenLastCalledWith(expect.anything(), 'Sheet1')
+  })
+
   it('shows peer dots inside the tab, and an icon on a pivot sheet', async () => {
     const peers = new Map([['Sheet2', [{ user: 'a', full_name: 'A', colour: PALETTE[0] }]]])
     const { root } = mountBar({ peersBySubSheet: peers })

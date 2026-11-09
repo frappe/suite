@@ -15,7 +15,13 @@
         @click="emit('add-sheet')"
       />
     </div>
-    <div class="sn-tabs-track">
+    <!-- The list has gaps between tabs, and the drop mark is drawn in one, so a
+       drop that lands between tabs goes to the tab the mark is on. -->
+    <div
+      class="sn-tabs-track"
+      @dragover.prevent
+      @drop.prevent="tabDragOver && emit('tab-drop', $event, tabDragOver)"
+    >
       <!-- Sheets switch on click, so Tabs' own update:model-value is left
          unused: it fires on mousedown, before the blur that commits an open
          cell edit, and switchSheet clears the grid. -->
@@ -40,7 +46,7 @@
               @dragstart="emit('drag-start', $event, name)"
               @dragend="emit('drag-end')"
               @dragover.prevent="emit('drag-over', $event, name)"
-              @drop.prevent="emit('tab-drop', $event, name)"
+              @drop.prevent.stop="emit('tab-drop', $event, name)"
             >
               <TabTrigger
                 :value="name"
@@ -335,7 +341,8 @@ function formatStat(n: number) {
   flex-shrink: 0;
   width: 2px;
   height: 16px;
-  margin: 0 -1px;
+  /* Cancels its own width and the extra list gap, so tabs don't shift. */
+  margin: 0 -3px;
   background: var(--ink-gray-9);
 }
 

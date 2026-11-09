@@ -119,6 +119,14 @@ describe('overlay scrollbars', () => {
     expect(scrollTo.mock.lastCall?.[1]).toBeCloseTo((180 / 349) * 3600)
   })
 
+  it('grabs the thumb on a press beside it in the track', () => {
+    scrollDown(0)
+    track('v').dispatchEvent(pointer('pointerdown', { clientY: 10 }))
+    expect(scrollTo).not.toHaveBeenCalled()
+    thumb('v').dispatchEvent(pointer('pointermove', { clientY: 190 }))
+    expect(scrollTo.mock.lastCall?.[1]).toBeCloseTo((180 / 349) * 3600)
+  })
+
   it('pages toward a click on the track', () => {
     scrollDown(0)
     track('v').dispatchEvent(pointer('pointerdown', { clientY: 300 }))

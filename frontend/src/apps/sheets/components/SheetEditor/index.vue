@@ -2345,6 +2345,9 @@ function onTabClick(name) {
       formulaInputRef.value?.focus()
     })
   } else {
+    // Ctrl+click doesn't move focus to the tab, so commit an open cell edit
+    // here: after the switch it would land on the new sheet.
+    document.activeElement?.blur?.()
     switchSheet(name)
   }
 }

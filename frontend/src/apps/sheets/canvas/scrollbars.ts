@@ -199,12 +199,17 @@ export function createScrollbars(
   // Click in the track gutter (not the thumb) pages toward the click by ~90% of
   // a viewport — matching the native page-scroll behaviour. scrollTo clamps, so
   // overshoot at the ends is harmless.
-  function trackClick(axis: Axis, track: HTMLElement, e: PointerEvent): void {
+  function trackClick(axis: Axis, track: HTMLElement, thumb: HTMLElement, e: PointerEvent): void {
     if (e.target !== track) return
     const g = geom[axis]
     if (!g) return
     const rect = track.getBoundingClientRect()
     const click = axis === 'y' ? e.clientY - rect.top : e.clientX - rect.left
+    // The thumb is narrower than the track: a press beside it still grabs it.
+    if (click >= g.offset && click <= g.offset + g.thumbPx) {
+      startDrag(axis, thumb, e)
+      return
+    }
     const m = getModel()
     const page = (axis === 'y' ? m.y.view : m.x.view) * 0.9
     const dir = click < g.offset ? -1 : 1
@@ -213,8 +218,8 @@ export function createScrollbars(
 
   vThumb.addEventListener('pointerdown', (e) => startDrag('y', vThumb, e))
   hThumb.addEventListener('pointerdown', (e) => startDrag('x', hThumb, e))
-  vTrack.addEventListener('pointerdown', (e) => trackClick('y', vTrack, e))
-  hTrack.addEventListener('pointerdown', (e) => trackClick('x', hTrack, e))
+  vTrack.addEventListener('pointerdown', (e) => trackClick('y', vTrack, vThumb, e))
+  hTrack.addEventListener('pointerdown', (e) => trackClick('x', hTrack, hThumb, e))
 
   function destroy(): void {
     clearHideTimer()
