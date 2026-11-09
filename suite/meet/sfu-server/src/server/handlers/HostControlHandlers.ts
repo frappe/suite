@@ -75,6 +75,20 @@ export function registerHostControlHandlers(deps: HandlerDeps) {
 					}
 				}
 
+				if (
+					!socket.isHost &&
+					targetSockets.some((targetSocket) => targetSocket.isHost)
+				) {
+					fail('Only the host can control the host');
+					loggers.socketHandler.warn(
+						'Co-host %s attempted host control on host %s in room %s',
+						socket.participantId,
+						targetParticipantId,
+						roomId,
+					);
+					return;
+				}
+
 				switch (action) {
 					case 'mute_participant':
 						for (const targetSocket of targetSockets) {
