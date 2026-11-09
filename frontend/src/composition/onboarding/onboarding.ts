@@ -23,6 +23,17 @@ export function firstName(fullName: string): string {
   return fullName.trim().split(/\s+/)[0] ?? ''
 }
 
+/**
+ * Whether a people-list row is someone the person works with: a user other than
+ * themselves, and not Administrator, which is the site's recovery account.
+ */
+export function isTeammate<Row extends { kind: string; name: string }>(
+  row: Row,
+  self: string | undefined,
+): row is Extract<Row, { kind: 'user' }> {
+  return row.kind === 'user' && row.name !== self && row.name !== 'Administrator'
+}
+
 export interface AccountName {
   first_name: string
   last_name: string

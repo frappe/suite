@@ -10,7 +10,7 @@ import { computed, ref, useTemplateRef, watch } from 'vue'
 
 import { api, useMutation, useQuery } from '@/api'
 import DomainStep from '@/composition/onboarding/DomainStep.vue'
-import type { DomainState } from '@/composition/onboarding/onboarding'
+import { isTeammate, type DomainState } from '@/composition/onboarding/onboarding'
 import TeamInviteStep from '@/composition/onboarding/TeamInviteStep.vue'
 import { toast } from '@/platform/feedback'
 import { useSession } from '@/platform/session'
@@ -69,13 +69,7 @@ const inviteDomains = computed(() => {
 const teamDone = computed(() =>
   cloud.value
     ? (invites.data?.total ?? 0) > 0
-    : (people.data?.rows ?? []).some(
-        (row) =>
-          row.kind === 'user' &&
-          row.name !== session.user.value?.id &&
-          // Administrator is the site's recovery account, not a teammate.
-          row.name !== 'Administrator',
-      ),
+    : (people.data?.rows ?? []).some((row) => isTeammate(row, session.user.value?.id)),
 )
 
 const importTask = computed<Task[]>(() =>

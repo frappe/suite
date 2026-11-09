@@ -28,6 +28,7 @@ import {
   daysUntil,
   firstName,
   isEmail,
+  isTeammate,
   MOD_KEY,
   splitName,
 } from './onboarding'
@@ -335,11 +336,7 @@ async function openSuite(): Promise<void> {
 
 const people = useQuery(api.suite.people.list, () => (step.value === 'ready' ? {} : false))
 const teammates = computed(() =>
-  (people.data?.rows ?? []).flatMap((row) =>
-    row.kind === 'user' && ![session.user.value?.id, 'Administrator'].includes(row.name)
-      ? [row]
-      : [],
-  ),
+  (people.data?.rows ?? []).filter((row) => isTeammate(row, session.user.value?.id)),
 )
 const teamLabel = computed(() => {
   const [first, ...rest] = teammates.value
