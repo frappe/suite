@@ -7,10 +7,6 @@ import type {
   AccountGetOutput,
   AccountPatchInput,
   AccountPatchOutput,
-  AccountSignInInput,
-  AccountSignInOutput,
-  AccountSignInPostInput,
-  AccountSignInPostOutput,
   AdminHealthGetInput,
   AdminHealthGetOutput,
   ErrorsPostInput,
@@ -1072,47 +1068,6 @@ export const operationAccountPatch: Validators<AccountPatchInput, AccountPatchOu
       },
       'account_patch output',
     )
-  },
-}
-
-export const operationAccountSignIn: Validators<AccountSignInInput, AccountSignInOutput> = {
-  validateInput(value: unknown): asserts value is AccountSignInInput {
-    assertSchema(
-      value,
-      {
-        type: 'object',
-        properties: { key: { title: 'Key', type: 'string' } },
-        required: ['key'],
-        additionalProperties: false,
-        $defs: {},
-      },
-      'account_sign_in input',
-    )
-  },
-  validateOutput(value: unknown): asserts value is AccountSignInOutput {
-    if (!(value instanceof Blob)) throw new TypeError('Expected Blob')
-  },
-}
-
-export const operationAccountSignInPost: Validators<
-  AccountSignInPostInput,
-  AccountSignInPostOutput
-> = {
-  validateInput(value: unknown): asserts value is AccountSignInPostInput {
-    assertSchema(
-      value,
-      {
-        type: 'object',
-        properties: { key: { title: 'Key', type: 'string' } },
-        required: ['key'],
-        additionalProperties: false,
-        $defs: {},
-      },
-      'account_sign_in_post input',
-    )
-  },
-  validateOutput(value: unknown): asserts value is AccountSignInPostOutput {
-    if (!(value instanceof Blob)) throw new TypeError('Expected Blob')
   },
 }
 

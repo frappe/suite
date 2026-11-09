@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import functools
 import json
-from collections.abc import Callable
 from typing import Literal, NotRequired, TypedDict
 
 import frappe
@@ -12,13 +10,7 @@ from frappe import _
 from frappe.auth import LoginManager
 from frappe.core.doctype.user.user import get_timezones, switch_theme, update_password
 from frappe.handler import logout
-from frappe.rate_limiter import rate_limit
 from frappe.translate import get_boot_translations
-from frappe.utils import escape_html
-from frappe.utils.response import build_response
-from frappe.www.login import get_login_with_email_link_ratelimit
-from werkzeug.utils import redirect
-from werkzeug.wrappers import Response
 
 from suite import drive
 from suite.api import account, people
@@ -51,7 +43,6 @@ from suite.api.preferences import (
     update_preferences,
 )
 from suite.composition.http import BadRequest, Route, refusals_as_bad_request
-from suite.composition.sign_in import find_sign_in_user, use_sign_in_key
 from suite.composition.welcome import complete_welcome, get_started_hidden, hide_get_started, needs_welcome
 from suite.suite_core.push import PushResult, subscribe, unsubscribe
 from suite.utils.user import generate_user_keys
@@ -79,10 +70,6 @@ class Account(TypedDict):
     needs_welcome: bool
     # The person hid Home's Get started list.
     get_started_hidden: bool
-
-
-class SignInQuery(TypedDict):
-    key: str
 
 
 class AccountUpdate(TypedDict):
@@ -361,27 +348,6 @@ ROUTES = (
         kind="mutation",
         public_name="account.update",
     ),
-    # A one-time link from suite.composition.sign_in: asks the person to continue, then signs them in.
-    Route(
-        "GET",
-        "account/sign-in",
-        "account_sign_in",
-        allow_guest=True,
-        query=SignInQuery,
-        stream=True,
-        kind="query",
-        public_name="account.signIn.open",
-    ),
-    Route(
-        "POST",
-        "account/sign-in",
-        "account_sign_in_post",
-        allow_guest=True,
-        body=SignInQuery,
-        response_bytes=True,
-        kind="mutation",
-        public_name="account.signIn.confirm",
-    ),
     Route("GET", "site", "site_get", output=Site, kind="query", public_name="site.get"),
     # The name and logo a sign-in or invitation page shows before anyone signs in (§4.1).
     Route(
@@ -516,79 +482,6 @@ def account_patch(welcomed: Given = None, get_started_hidden: Given = None) -> A
     if result is None:
         frappe.throw(_("Sign in to finish the welcome"), BadRequest)
     return result
-
-
-def _page_when_rate_limited[**P](handler: Callable[P, Response]) -> Callable[P, Response]:
-    """Frappe sends a browser that hits a rate limit no response at all, which fails as a 500."""
-
-    @functools.wraps(handler)
-    def wrapper(*args: P.args, **kwargs: P.kwargs) -> Response:
-        try:
-            return handler(*args, **kwargs)
-        except frappe.RateLimitExceededError:
-            frappe.local.message_log = []
-            frappe.respond_as_web_page(
-                _("Too many sign-in attempts"),
-                _("Wait an hour, then open the link again."),
-                http_status_code=429,
-                indicator_color="red",
-            )
-            return build_response("page")
-
-    return wrapper
-
-
-@frappe.whitelist(allow_guest=True, methods=["GET"])
-@_page_when_rate_limited
-@rate_limit(limit=get_login_with_email_link_ratelimit, seconds=60 * 60)
-def account_sign_in(key: Given = None) -> Response:
-    """Ask the person to continue. Only the button spends the key (see suite.composition.sign_in)."""
-
-    user = find_sign_in_user(key) if isinstance(key, str) else None
-    if user is None or user == frappe.session.user:
-        return _signed_in_or_expired()
-    csrf = (
-        f'<input type="hidden" name="csrf_token" value="{escape_html(frappe.sessions.get_csrf_token())}">'
-        if frappe.session.user != "Guest"
-        else ""
-    )
-    workspace = frappe.db.get_single_value("Suite Settings", "workspace_name") or "Suite"
-    name = frappe.utils.get_fullname(user)
-    frappe.respond_as_web_page(
-        _("Sign in to {0}").format(workspace),
-        f"""<form method="post">
-            <input type="hidden" name="key" value="{escape_html(key)}">{csrf}
-            <p>{escape_html(_("You are signing in as {0} ({1}).").format(name, user))}</p>
-            <button type="submit" class="btn btn-primary btn-sm btn-block">{escape_html(_("Continue"))}</button>
-        </form>""",
-        indicator_color="blue",
-        primary_action=None,
-    )
-    return build_response("page")
-
-
-@frappe.whitelist(allow_guest=True, methods=["POST"])
-@_page_when_rate_limited
-@rate_limit(limit=get_login_with_email_link_ratelimit, seconds=60 * 60)
-def account_sign_in_post(key: Given = None) -> Response:
-    user = use_sign_in_key(key) if isinstance(key, str) else None
-    if user is None:
-        return _signed_in_or_expired()
-    frappe.local.login_manager.login_as(user)
-    return redirect("/suite", code=303)
-
-
-def _signed_in_or_expired() -> Response:
-    if frappe.session.user != "Guest":
-        # Opened again after it signed this person in, or by someone already signed in.
-        return redirect("/suite", code=303)
-    frappe.respond_as_web_page(
-        _("This link no longer works"),
-        _("A sign-in link works once and only for a limited time. Ask for a new one."),
-        http_status_code=403,
-        indicator_color="red",
-    )
-    return build_response("page")
 
 
 @frappe.whitelist(methods=["GET"])

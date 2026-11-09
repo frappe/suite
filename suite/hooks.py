@@ -510,7 +510,6 @@ ALLOWED_PATHS = [
     "/dav",
     # Suite-owned resource singletons and collections
     "/api/suite/account",
-    "/api/suite/account/sign-in",
     "/api/suite/site",
     "/api/suite/workspace",
     "/api/suite/users",

@@ -647,58 +647,6 @@ const operationAccountPatch: MutationRef<AccountPatchInput, AccountPatchOutput, 
     loadValidators: async () => (await import('./validators')).operationAccountPatch,
   }
 
-export type AccountSignInInput = { key: string }
-
-export type AccountSignInOutput = Blob
-
-export type AccountSignInError = never
-
-const operationAccountSignIn: QueryRef<
-  AccountSignInInput,
-  AccountSignInOutput,
-  AccountSignInError
-> = {
-  id: 'account_sign_in',
-  owner: 'suite',
-  kind: 'query',
-  publicName: 'account.signIn.open',
-  bytes: true,
-  method: 'GET',
-  path: 'account/sign-in',
-  prefix: '/api/suite/',
-  pathParams: [],
-  nodeParams: [],
-  entity: null,
-  errors: [],
-  loadValidators: async () => (await import('./validators')).operationAccountSignIn,
-}
-
-export type AccountSignInPostInput = { key: string }
-
-export type AccountSignInPostOutput = Blob
-
-export type AccountSignInPostError = never
-
-const operationAccountSignInPost: MutationRef<
-  AccountSignInPostInput,
-  AccountSignInPostOutput,
-  AccountSignInPostError
-> = {
-  id: 'account_sign_in_post',
-  owner: 'suite',
-  kind: 'mutation',
-  publicName: 'account.signIn.confirm',
-  bytes: true,
-  method: 'POST',
-  path: 'account/sign-in',
-  prefix: '/api/suite/',
-  pathParams: [],
-  nodeParams: [],
-  entity: null,
-  errors: [],
-  loadValidators: async () => (await import('./validators')).operationAccountSignInPost,
-}
-
 export type SiteGetInput = Record<string, never>
 
 export type SiteGetOutput = {
@@ -1305,10 +1253,6 @@ export const api = {
   account: {
     get: operationAccountGet,
     update: operationAccountPatch,
-    signIn: {
-      open: operationAccountSignIn,
-      confirm: operationAccountSignInPost,
-    },
     resetPassword: operationFrappeUserResetPassword,
     changePassword: operationFrappeUserUpdatePassword,
     generateKeys: operationSuiteGenerateUserKeys,

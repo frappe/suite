@@ -2199,66 +2199,6 @@
       "bytes": false
     },
     {
-      "id": "account_sign_in",
-      "kind": "query",
-      "publicName": "account.signIn.open",
-      "page": null,
-      "envelope": "data",
-      "method": "GET",
-      "path": "account/sign-in",
-      "pathParams": [],
-      "query": {
-        "properties": {
-          "key": {
-            "title": "Key",
-            "type": "string"
-          }
-        },
-        "required": [
-          "key"
-        ],
-        "title": "SignInQuery",
-        "type": "object"
-      },
-      "body": null,
-      "output": null,
-      "errors": [],
-      "entity": null,
-      "nodeParams": [],
-      "stream": true,
-      "bytes": true
-    },
-    {
-      "id": "account_sign_in_post",
-      "kind": "mutation",
-      "publicName": "account.signIn.confirm",
-      "page": null,
-      "envelope": "data",
-      "method": "POST",
-      "path": "account/sign-in",
-      "pathParams": [],
-      "query": null,
-      "body": {
-        "properties": {
-          "key": {
-            "title": "Key",
-            "type": "string"
-          }
-        },
-        "required": [
-          "key"
-        ],
-        "title": "SignInQuery",
-        "type": "object"
-      },
-      "output": null,
-      "errors": [],
-      "entity": null,
-      "nodeParams": [],
-      "stream": false,
-      "bytes": true
-    },
-    {
       "id": "site_get",
       "kind": "query",
       "publicName": "site.get",
