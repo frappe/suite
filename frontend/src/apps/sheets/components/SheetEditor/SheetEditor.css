@@ -258,7 +258,8 @@
   top: calc(100% + 4px);
   bottom: auto;
   left: 0;
-  right: 0;
+  /* The value field fills the row; the list stays a readable width. */
+  width: min(100%, 480px);
   background: var(--surface-elevation-2);
   border: 1px solid var(--outline-gray-2);
   border-radius: 8px;

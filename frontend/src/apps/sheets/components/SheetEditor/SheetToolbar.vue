@@ -505,7 +505,7 @@ const currencyIcon = computed(
 }
 /* Overflow only when the bar is narrow: the layout tools go first, then
    sort and filter. Nothing is lost, the Format and Data menus hold both. */
-@container sn-toolbar (max-width: 900px) {
+@container sn-toolbar (max-width: 800px) {
   .sn-layout {
     display: none;
   }
@@ -524,7 +524,7 @@ const currencyIcon = computed(
     display: none;
   }
 }
-@container sn-toolbar (max-width: 760px) {
+@container sn-toolbar (max-width: 750px) {
   .sn-data {
     display: none;
   }
