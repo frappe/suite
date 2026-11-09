@@ -1,3 +1,5 @@
+import { setFlagsFromString } from 'node:v8'
+import { runInNewContext } from 'node:vm'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { reactive } from 'vue'
 import * as Y from 'yjs'
@@ -105,6 +107,28 @@ function change(tab: ReturnType<typeof tabOn>, edit: () => void) {
   edit()
   tab.deck.endStep()
   tab.deck.push()
+}
+
+function editAndDeleteMany(tab: ReturnType<typeof tabOn>) {
+  let firstFrame: WeakRef<object> | undefined
+  for (let at = 0; at < 250; at++) {
+    change(tab, () =>
+      tab.store.slides[0].elements.push({ id: `new-${at}`, type: 'image', left: 0 }),
+    )
+    const element = tab.store.slides[0].elements.at(-1)!
+    change(tab, () => (element.left = at + 1))
+    if (!firstFrame) {
+      firstFrame = new WeakRef(savedFrameOf(tab, element.id))
+    }
+
+    change(tab, () => tab.store.slides[0].elements.pop())
+  }
+
+  return firstFrame!
+}
+
+function savedFrameOf(tab: ReturnType<typeof tabOn>, id: string): object {
+  return tab.deck.undoManager.doc.getMap<Y.Map<object>>(ROOT.elements).get(id)!.get('frame')!
 }
 
 describe('undo takes back only what this tab did', () => {
@@ -473,6 +497,26 @@ describe('undo after a delete', () => {
 })
 
 describe('what makes one step', () => {
+  it('releases an edited and deleted element after its undo steps expire', async () => {
+    const doc = new Y.Doc()
+    writeDeck(doc, [{ id: 's1', elements: [] }])
+    const mine = tabOn(doc)
+    const firstFrame = editAndDeleteMany(mine)
+    // Weak references stay alive until this job ends, even after all owners let go
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    setFlagsFromString('--expose_gc')
+    // SAFETY: V8 exposes a callable `gc` in new contexts while this flag is enabled
+    const collect = runInNewContext('gc') as () => void
+    setFlagsFromString('--no-expose_gc')
+    collect()
+
+    expect(firstFrame.deref()).toBeUndefined()
+    mine.deck.undo()
+    expect(mine.store.slides[0].elements).toEqual([
+      expect.objectContaining({ type: 'image', left: 250 }),
+    ])
+  })
+
   it('takes back everything one push wrote in one undo', () => {
     const { one } = twoTabs()
     presentation(one)

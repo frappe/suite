@@ -102,17 +102,24 @@ export function openLiveUndo(doc: Y.Doc, trackedOrigins: unknown[]) {
       }
     }
 
-    ownValues[kind].set(id, own)
+    if (Object.keys(own).length) {
+      ownValues[kind].set(id, own)
+    } else {
+      ownValues[kind].delete(id)
+    }
   }
 
   // A co-editor's delete can clean these values out of every copy before their undo (Q38)
   function holdDeleted(kind: Kind, event: DeepEvent, isOwn: boolean) {
     for (const [id, { action }] of event.changes.keys) {
+      if (action !== 'delete') continue
+
       const own = ownValues[kind].get(id)
-      if (action === 'delete' && !isOwn && own) {
+      if (!isOwn && own) {
         heldAfterDelete = [...heldAfterDelete, { kind, id, fields: own }].slice(-MOST_STEPS)
-        ownValues[kind].delete(id)
       }
+
+      ownValues[kind].delete(id)
     }
   }
 
