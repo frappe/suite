@@ -375,7 +375,7 @@ def _fixture_enabled() -> bool:
     )
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def start(meeting_id: str, request_id: str) -> dict:
     _validate_request_id(request_id)
     room = _get_room(meeting_id)
@@ -619,7 +619,7 @@ def _stop_after_grant_delivery_failure(room, recording, client: RecorderClient |
     return {"name": recording.name, "status": recording.status, "grant_delivered": False}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def stop(meeting_id: str) -> dict | None:
     room = _get_room(meeting_id)
     room.recording_policy_lock()
