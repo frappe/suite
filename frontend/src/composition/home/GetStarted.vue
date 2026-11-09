@@ -45,7 +45,9 @@ const invites = useQuery(api.mail.admin.invites.list, () =>
 // the team counts once someone else has an account.
 const people = useQuery(api.suite.people.list, () => (admin.value && !cloud.value ? {} : false))
 const imports = useQuery(api.mail.exchanges.list, () =>
-  hasMail.value ? { doctype: 'Mail Exchange', operation: 'Import', page_length: 1 } : false,
+  hasMail.value
+    ? { doctype: 'Mail Exchange', operation: 'Import', status: 'Completed', page_length: 1 }
+    : false,
 )
 
 // The provider supplies the first domain; any later one is the business's own.
