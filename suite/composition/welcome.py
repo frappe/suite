@@ -165,9 +165,11 @@ def _join_team_standup(user: str) -> None:
 
 
 def _welcome_document(root: str) -> str:
-    from suite.composition.demo.content import writer
+    from suite.writer import fill_new_document
 
-    return writer(root, _("Welcome to Frappe Suite"), _welcome_html())
+    node = drive.create_document(root, _("Welcome to Frappe Suite"), content_doctype="Writer Document")
+    fill_new_document(node, _welcome_html())
+    return node
 
 
 def _welcome_html() -> str:
@@ -315,30 +317,24 @@ def _board_scene() -> dict:
 
 
 def _kickoff(root: str) -> str:
+    from suite.slides import fill_new_deck
+
     node = drive.create_document(root, _("Company kickoff"), content_doctype="Presentation")
-    deck = frappe.get_doc("Presentation", frappe.db.get_value("Presentation", {"node": node}))
-    deck.slides = []
     story = (
         (_("Company kickoff"), _("Where we are and where we are going")),
         (_("This quarter"), _("Three outcomes we commit to")),
         (_("Next steps"), _("Owners and dates")),
     )
-    for number, (heading, body) in enumerate(story, 1):
-        deck.append(
-            "slides",
-            {
-                "background": "#FFFFFFFF",
-                "elements": json.dumps(
-                    [
-                        _text(f"heading-{number}", heading, top=180, size=48, color="#171717FF"),
-                        _text(f"body-{number}", body, top=280, size=24, color="#7C7C7CFF"),
-                    ]
-                ),
-                "transition": "None",
-                "transition_duration": "0",
-            },
-        )
-    deck.save(ignore_permissions=True)
+    fill_new_deck(
+        node,
+        [
+            [
+                _text(f"heading-{number}", heading, top=180, size=48, color="#171717FF"),
+                _text(f"body-{number}", body, top=280, size=24, color="#7C7C7CFF"),
+            ]
+            for number, (heading, body) in enumerate(story, 1)
+        ],
+    )
     return node
 
 

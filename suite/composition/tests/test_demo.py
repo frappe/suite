@@ -12,6 +12,7 @@ from suite.composition.demo.cast import EVERYONE, PEOPLE
 from suite.content import copies
 from suite.writer.content import DECLARED, EDITOR
 from suite.writer.content.readable_copy import nodes
+from suite.writer.content.seed import body_state
 
 BODIES = {
     "onboarding": content.ONBOARDING,
@@ -34,7 +35,7 @@ class TestDemoData(unittest.TestCase):
     def test_writer_bodies_use_only_what_the_editor_declares(self):
         for name, html in BODIES.items():
             with self.subTest(body=name):
-                fragment = read_body(content.body_state(html))
+                fragment = read_body(body_state(html))
                 self.assertGreater(len(fragment.children), 0)
                 for node in nodes(fragment):
                     if isinstance(node, pycrdt.XmlElement):
@@ -47,7 +48,7 @@ class TestDemoData(unittest.TestCase):
         for name, html in BODIES.items():
             with self.subTest(body=name):
                 clean, text = copies.cleaned(html)
-                self.assertTrue(EDITOR.readable_copy.is_html_complete(content.body_state(html), clean, text))
+                self.assertTrue(EDITOR.readable_copy.is_html_complete(body_state(html), clean, text))
 
     def test_every_brand_image_and_uploaded_file_is_found(self):
         self.assertTrue((assets.BRAND / "northwind-icon.png").is_file())
