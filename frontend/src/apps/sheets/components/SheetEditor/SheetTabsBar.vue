@@ -243,8 +243,8 @@ function formatStat(n: number) {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--rc);
-  box-shadow: 0 0 0 1px var(--surface-base);
+  background: var(--rc-tint);
+  box-shadow: inset 0 0 0 1px var(--rc-ink);
 }
 .sn-tab-peer-more {
   font-size: 9px;
