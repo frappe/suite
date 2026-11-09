@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 
 import { api, client } from '@/api'
 import { normalizeZIndices } from '@/apps/slides/stores/element'
+import { fontsReadyWithinLimit } from '@/apps/slides/utils/bundledFonts'
 import { normalizeColor } from '@/apps/slides/utils/color'
 import { serverAnswers } from '@/apps/slides/utils/offlineRequests'
 import { migrateShadow } from '@/apps/slides/utils/oldShadow'
@@ -74,7 +75,7 @@ const getElementDimensions = async (el) => {
   tempDiv.innerHTML = el.content || ''
   document.body.appendChild(tempDiv)
 
-  await document.fonts.ready
+  await fontsReadyWithinLimit()
 
   width = el.width || tempDiv.offsetWidth
   height = tempDiv.offsetHeight

@@ -429,6 +429,7 @@ async function addComment() {
   commentText.value = ''
   await loadComments()
 }
+let isWaitingToPrint = false
 async function printDrawnPages() {
   const pages = exportView.value?.$el
   if (!pages) return
@@ -437,6 +438,7 @@ async function printDrawnPages() {
   // left the presentation while a font loaded
   if (!exportView.value) return
 
+  isWaitingToPrint = false
   window.addEventListener(
     'afterprint',
     () => {
@@ -449,6 +451,9 @@ async function printDrawnPages() {
   window.print()
 }
 function exportPdf() {
+  if (isWaitingToPrint) return
+
+  isWaitingToPrint = true
   exporting.value = true
   void nextTick(() => {
     window.setTimeout(() => void printDrawnPages(), 200)

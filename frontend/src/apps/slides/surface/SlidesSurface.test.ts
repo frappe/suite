@@ -663,6 +663,33 @@ describe('printing a presentation', () => {
     expect(print).toHaveBeenCalledOnce()
   })
 
+  it('opens one print dialog when Export is clicked again during the wait', async () => {
+    let finishLoading = () => {}
+    const loading = new Promise<unknown[]>((resolve) => {
+      finishLoading = () => resolve([])
+    })
+    Object.defineProperty(document, 'fonts', {
+      configurable: true,
+      value: { load: vi.fn(() => loading) },
+    })
+    mounted = await openedSurface()
+    vi.useFakeTimers()
+
+    clickExport()
+    await vi.advanceTimersByTimeAsync(1000)
+    clickExport()
+    await vi.advanceTimersByTimeAsync(1000)
+    finishLoading()
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(print).toHaveBeenCalledOnce()
+
+    clickExport()
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(print).toHaveBeenCalledTimes(2)
+  })
+
   it('still prints when a font never arrives', async () => {
     const load = vi.fn(() => new Promise<unknown[]>(() => {}))
     Object.defineProperty(document, 'fonts', { configurable: true, value: { load } })
