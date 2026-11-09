@@ -868,8 +868,7 @@ class ContentTest(unittest.TestCase):
         self.assertFalse(env.state.content().links_completed)
         self.assertFalse(env.state.content().completed)
 
-    def test_a_converted_template_validates_and_receives_its_governed_shares(self):
-        """§7 maps a Presentation share onto the template node step 8 wrote."""
+    def test_a_converted_template_validates_and_its_share_gives_no_grant(self):
         deck = document("Presentation", "deck-template", title="Light", is_template=1, node="deck-template")
         share = ContentShareRow("share-1", "Presentation", "deck-template", user="reader@example.com", read=1)
         source = FakeContent(
@@ -882,9 +881,9 @@ class ContentTest(unittest.TestCase):
 
         result = link_content_documents(env)
 
-        self.assertEqual(
-            target.grant_roles("deck-template", ("reader@example.com",))["reader@example.com"], READ
-        )
+        self.assertEqual(target.grant_roles("deck-template", ("reader@example.com",)), {})
+        self.assertEqual(result.docshare_rows_dropped, 1)
+        self.assertEqual(source.share_rows, [])
         self.assertEqual(result.orphan_content_docs_adopted, 0)
         self.assertTrue(result.links_completed)
 
@@ -929,6 +928,32 @@ class ContentTest(unittest.TestCase):
         self.assertEqual(source.share_rows, [])
         self.assertEqual(sorted(target.docshares_deleted), ["share-1", "share-2", "share-3", "share-4"])
         self.assertEqual(env.docshare_journal.preimage("share-4"), shares[3].preimage())
+
+    def test_an_everyone_share_opens_a_writer_document_but_not_a_presentation(self):
+        # The old Presentation check read the File's Drive rights, never DocShare
+        writer = document("Writer Document", "writer-1")
+        deck = document("Presentation", "deck-1")
+        shares = [
+            ContentShareRow("share-1", writer.doctype, writer.name, everyone=1, read=1, write=1, share=1),
+            ContentShareRow("share-2", deck.doctype, deck.name, everyone=1, read=1, write=1, share=1),
+        ]
+        source = FakeContent(
+            documents=[writer, deck],
+            files=[file_for(writer, "file-writer"), file_for(deck, "file-deck")],
+            shares=shares,
+        )
+        env, target = self.environment(source)
+        add_document_node(target, "file-writer", writer)
+        add_document_node(target, "file-deck", deck)
+
+        result = link_content_documents(env)
+
+        self.assertEqual(target.grant_roles("file-writer", (GENERAL,))[GENERAL], MANAGE)
+        self.assertEqual(target.grant_roles("file-deck", (GENERAL,)), {})
+        self.assertEqual(result.docshare_rows_dropped, 1)
+        self.assertEqual(result.docshare_rows_deleted, 2)
+        self.assertEqual(source.share_rows, [])
+        self.assertEqual(env.docshare_journal.preimage("share-2"), shares[1].preimage())
 
     def test_a_rerun_keeps_the_count_of_governed_shares_it_deleted(self):
         row = document("Writer Document", "writer-1")

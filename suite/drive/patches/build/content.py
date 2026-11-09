@@ -448,7 +448,9 @@ def _convert_content_shares(env, result, batch_size):
             break
         for row in rows:
             removals.append(row.preimage())
-            if row.share_doctype not in ("Writer Document", "Presentation"):
+            # A Presentation's DocShare never opened anything: its old check
+            # read the File's Drive rights
+            if row.share_doctype != "Writer Document":
                 result.docshare_rows_dropped += 1
             elif (nodes := target.content_nodes(row.share_doctype, row.share_name)) and len(nodes) == 1:
                 _stage_content_share(env, result, pending, row, nodes[0]["name"])
