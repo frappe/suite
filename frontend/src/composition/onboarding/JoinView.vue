@@ -26,7 +26,7 @@ import { useSession } from '@/platform/session'
 import SuiteMark from '@/shell/SuiteMark.vue'
 
 import AccountSetupStep from './AccountSetupStep.vue'
-import { daysUntil, firstName, isTeammate, MOD_KEY } from './onboarding'
+import { daysUntil, firstName, isTeammate, MOD_KEY, needsSiteSetup } from './onboarding'
 import OnboardingFrame from './OnboardingFrame.vue'
 import PasswordStep from './PasswordStep.vue'
 import ShortcutStep from './ShortcutStep.vue'
@@ -137,8 +137,14 @@ const retrying = computed(() => ['failed', 'signin-failed'].includes(setupState.
 
 /** After the account: a site that is not set up yet goes to the wizard, which is the first Admin's welcome. */
 async function onAccountReady(): Promise<void> {
+  // Asked again now: the page loaded before this person signed in.
   const site = await client.query(api.suite.site.get).catch(() => null)
-  if (site?.can_onboard && !site.is_onboarded) {
+  if (!site) {
+    // Unknown: Home loads afresh, and the router picks the wizard or the welcome.
+    window.location.replace('/home')
+    return
+  }
+  if (needsSiteSetup({ isOnboarded: site.is_onboarded, canOnboard: site.can_onboard })) {
     window.location.replace('/suite/setup')
     return
   }

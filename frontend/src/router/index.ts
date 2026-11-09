@@ -11,6 +11,7 @@ import {
 import { api, client, writesSettled } from '@/api'
 import { areaDefinitions, areaIsAvailable, findArea } from '@/composition/appRegistry'
 import { takeLinkFragment } from '@/composition/linkFragment'
+import { needsSiteSetup } from '@/composition/onboarding/onboarding'
 import { redirectOldPath } from '@/composition/redirects'
 import { areaPlaceholderNames, canonicalRoutes, routes } from '@/composition/routes'
 import { installLoadFailureRecovery } from '@/platform/load-failure'
@@ -151,7 +152,7 @@ router.beforeEach(async (to, from) => {
   if (!to.meta.allowGuest) {
     const onboarding = await ensureOnboardingState()
     const onSetupPage = to.path === '/suite/setup'
-    if (onboarding.canOnboard && !onboarding.isOnboarded) {
+    if (needsSiteSetup(onboarding)) {
       if (session.user.value?.id === 'Administrator' && to.path.startsWith('/admin')) return true
       return onSetupPage ? true : '/suite/setup'
     } else if (onSetupPage) {

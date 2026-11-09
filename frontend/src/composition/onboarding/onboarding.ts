@@ -19,6 +19,11 @@ export function mailboxName(email: string): string {
   return (email.split('@')[0] ?? '').toLowerCase().replace(/[^a-z0-9._-]/g, '')
 }
 
+/** Whether a person walks the site wizard: they may set the site up, and no one has yet. */
+export function needsSiteSetup(site: { isOnboarded: boolean; canOnboard: boolean }): boolean {
+  return site.canOnboard && !site.isOnboarded
+}
+
 export function firstName(fullName: string): string {
   return fullName.trim().split(/\s+/)[0] ?? ''
 }
