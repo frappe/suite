@@ -40,6 +40,13 @@
         />
       </ElementContextMenu>
 
+      <p
+        v-if="currentSlide?.compositePlaceholder === 'failed'"
+        class="pointer-events-none absolute inset-0 flex items-center justify-center text-lg text-ink-gray-5"
+      >
+        {{ translate("Couldn't load this slide. Reload to try again.") }}
+      </p>
+
       <PeerOutlines :scale />
 
       <OverflowContentOverlay />
@@ -134,6 +141,7 @@ import {
   isAspectLocked,
 } from '@/apps/slides/utils/resize'
 import { getMinTableWidth } from '@/apps/slides/utils/tableWidths'
+import { translate } from '@/platform/translation'
 
 const props = defineProps({
   // scale the slide to fit the container, centered, with pan and zoom off (the phone layout)
