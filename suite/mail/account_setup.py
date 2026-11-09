@@ -17,8 +17,22 @@ import frappe
 type SetupStage = Literal["drive", "mailbox", "account"]
 
 
+class InvitationClosed(frappe.ValidationError):
+    """The invitation was replaced, accepted already, or has expired."""
+
+    http_status_code = 410
+
+
+class WeakPassword(frappe.ValidationError):
+    """The chosen password fails the site's policy; nothing was set up."""
+
+    http_status_code = 422
+
+
 class AccountSetupFailed(frappe.ValidationError):
     """Account setup stopped; the subclass names the stage."""
+
+    http_status_code = 400
 
 
 class DriveSetupFailed(AccountSetupFailed):

@@ -170,7 +170,7 @@
         ]
       },
       "errors": [
-        "ValidationError"
+        "RateLimitExceededError"
       ],
       "entity": null,
       "nodeParams": [],
@@ -235,7 +235,8 @@
         "type": "object"
       },
       "errors": [
-        "ValidationError"
+        "InvitationClosed",
+        "RateLimitExceededError"
       ],
       "entity": null,
       "nodeParams": [],
@@ -303,10 +304,13 @@
         "type": "null"
       },
       "errors": [
-        "ValidationError",
+        "DoesNotExistError",
+        "InvitationClosed",
+        "WeakPassword",
         "DriveSetupFailed",
         "MailboxSetupFailed",
-        "AccountActivationFailed"
+        "AccountActivationFailed",
+        "RateLimitExceededError"
       ],
       "entity": null,
       "nodeParams": [],

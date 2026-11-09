@@ -7,6 +7,7 @@ from frappe.utils import cint, get_datetime, get_system_timezone, get_url, now_d
 from frappe.utils.data import sha256_hash
 
 from suite.mail import classification
+from suite.mail.account_setup import InvitationClosed, WeakPassword
 from suite.mail.api.mail import MAX_ATTACHMENT_SIZE, normalize_filter
 from suite.mail.api.utils import get_avatar_url
 from suite.mail.directory import get_domains
@@ -150,7 +151,7 @@ def get_account_setup_options(request_key: str) -> dict:
         or account_request.is_verified
         or (account_request.expires_at and get_datetime(account_request.expires_at) < now_datetime())
     ):
-        frappe.throw(_("This request has expired. Please create a new one."))
+        frappe.throw(_("This request has expired. Please create a new one."), InvitationClosed)
 
     return get_account_metadata()
 
@@ -174,10 +175,11 @@ def create_account(
     frappe.db.get_value("Mail Account Request", account_request.name, "name", for_update=True)
     account_request.reload()
     if account_request.request_key != request_key:
-        frappe.throw(_("This invitation link has been replaced"))
+        frappe.throw(_("This invitation link has been replaced"), InvitationClosed)
     if account_request.is_verified:
-        frappe.throw(_("This invitation has already been accepted"))
-    account_request.validate_expired()
+        frappe.throw(_("This invitation has already been accepted"), InvitationClosed)
+    if account_request.is_expired:
+        frappe.throw(_("This request has expired. Please create a new one."), InvitationClosed)
     _require_strong_password(password, (first_name, last_name, account_request.account))
     account_request.is_verified = 1
     account_request.save(ignore_permissions=True)
@@ -212,7 +214,7 @@ def _require_strong_password(password: str, user_data: tuple) -> None:
         sentences = [
             reason if reason.endswith((".", "!", "?")) else reason + "." for reason in reasons if reason
         ]
-        frappe.throw(" ".join(sentences) or _("Choose a stronger password."))
+        frappe.throw(" ".join(sentences) or _("Choose a stronger password."), WeakPassword)
 
 
 @frappe.whitelist(allow_guest=True)

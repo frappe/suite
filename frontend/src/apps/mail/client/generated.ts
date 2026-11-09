@@ -41,7 +41,7 @@ export type GetAccountRequestInput = { request_key: string }
 
 export type GetAccountRequestOutput = GetAccountRequestOutputAccountRequest | null
 
-export type GetAccountRequestError = 'ValidationError'
+export type GetAccountRequestError = 'RateLimitExceededError'
 
 const operationGetAccountRequest: QueryRef<
   GetAccountRequestInput,
@@ -58,7 +58,7 @@ const operationGetAccountRequest: QueryRef<
   pathParams: ['request_key'],
   nodeParams: [],
   entity: null,
-  errors: ['ValidationError'],
+  errors: ['RateLimitExceededError'],
   loadValidators: async () => (await import('./validators')).operationGetAccountRequest,
 }
 
@@ -71,7 +71,7 @@ export type GetAccountSetupOptionsOutput = {
   time_zones: Array<GetAccountSetupOptionsOutputOption>
 }
 
-export type GetAccountSetupOptionsError = 'ValidationError'
+export type GetAccountSetupOptionsError = 'InvitationClosed' | 'RateLimitExceededError'
 
 const operationGetAccountSetupOptions: QueryRef<
   GetAccountSetupOptionsInput,
@@ -88,7 +88,7 @@ const operationGetAccountSetupOptions: QueryRef<
   pathParams: ['request_key'],
   nodeParams: [],
   entity: null,
-  errors: ['ValidationError'],
+  errors: ['InvitationClosed', 'RateLimitExceededError'],
   loadValidators: async () => (await import('./validators')).operationGetAccountSetupOptions,
 }
 
@@ -104,7 +104,13 @@ export type CreateAccountInput = {
 export type CreateAccountOutput = null
 
 export type CreateAccountError =
-  'ValidationError' | 'DriveSetupFailed' | 'MailboxSetupFailed' | 'AccountActivationFailed'
+  | 'DoesNotExistError'
+  | 'InvitationClosed'
+  | 'WeakPassword'
+  | 'DriveSetupFailed'
+  | 'MailboxSetupFailed'
+  | 'AccountActivationFailed'
+  | 'RateLimitExceededError'
 
 const operationCreateAccount: MutationRef<
   CreateAccountInput,
@@ -122,7 +128,15 @@ const operationCreateAccount: MutationRef<
   pathParams: ['request_key'],
   nodeParams: [],
   entity: null,
-  errors: ['ValidationError', 'DriveSetupFailed', 'MailboxSetupFailed', 'AccountActivationFailed'],
+  errors: [
+    'DoesNotExistError',
+    'InvitationClosed',
+    'WeakPassword',
+    'DriveSetupFailed',
+    'MailboxSetupFailed',
+    'AccountActivationFailed',
+    'RateLimitExceededError',
+  ],
   loadValidators: async () => (await import('./validators')).operationCreateAccount,
 }
 

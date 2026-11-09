@@ -5,7 +5,13 @@ from typing import NotRequired, TypedDict
 import frappe
 
 from suite.composition.http import Route, RouteKind
-from suite.mail.account_setup import AccountActivationFailed, DriveSetupFailed, MailboxSetupFailed
+from suite.mail.account_setup import (
+    AccountActivationFailed,
+    DriveSetupFailed,
+    InvitationClosed,
+    MailboxSetupFailed,
+    WeakPassword,
+)
 from suite.mail.api import get_branding, get_signup_domains, get_signup_settings
 from suite.mail.api.account import (
     create_account,
@@ -193,7 +199,7 @@ ROUTES = (
         public_name="public.accountRequest",
         output=AccountRequest | None,
         allow_guest=True,
-        errors=(frappe.ValidationError,),
+        errors=(frappe.RateLimitExceededError,),
     ),
     Route(
         "GET",
@@ -203,7 +209,7 @@ ROUTES = (
         public_name="public.accountOptions",
         output=AccountOptions,
         allow_guest=True,
-        errors=(frappe.ValidationError,),
+        errors=(InvitationClosed, frappe.RateLimitExceededError),
     ),
     Route(
         "POST",
@@ -216,10 +222,13 @@ ROUTES = (
         allow_guest=True,
         # The invitation page marks the setup row that failed (§4.1).
         errors=(
-            frappe.ValidationError,
+            frappe.DoesNotExistError,
+            InvitationClosed,
+            WeakPassword,
             DriveSetupFailed,
             MailboxSetupFailed,
             AccountActivationFailed,
+            frappe.RateLimitExceededError,
         ),
     ),
 )
