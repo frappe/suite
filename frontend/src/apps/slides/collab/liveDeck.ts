@@ -60,6 +60,8 @@ export interface LiveDeckHost {
   /** Text the store set on that element from outside the editor: a column resize, say. */
   setBoundText: (html: string | null) => void
   canWrite: () => boolean
+  /** A font is still loading, so a top-left `flatten` works out now is only good for drawing. */
+  fontsPending: () => boolean
   onRenamed: (renames: Map<string, string>) => void
   onMerged: (previousSlideIds: string[]) => void
   onStep: (step: LiveStep) => void
@@ -377,7 +379,8 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
       const [before, after] = [JSON.parse(previous), JSON.parse(json)]
       const fields = changedFields(elementFields(before), elementFields(after))
       const isEdited = Object.keys(fields).length > 0 || !sameValue(before.content, after.content)
-      if (isEdited && savedFrame(id)?.transform === CENTRED && after.transform !== CENTRED) {
+      const isFlattened = savedFrame(id)?.transform === CENTRED && after.transform !== CENTRED
+      if (isEdited && isFlattened && !host.fontsPending()) {
         fields.frame = elementFields(after).frame
       }
 
@@ -428,6 +431,10 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
     }
 
     const { left, top } = host.flatten({ ...toRaw(element), ...frame })
+    if (host.fontsPending()) {
+      return
+    }
+
     element.left = left
     element.top = top
   }
@@ -593,6 +600,8 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
   return {
     /** Sends whatever the store changed since the last push or merge. */
     push,
+    /** Draws the document again without writing to it. Send the store's changes first. */
+    redraw: merge,
     undo: () => takeStep('undo'),
     redo: () => takeStep('redo'),
     /** The change just made is one undo step, and nothing after it joins that step. */

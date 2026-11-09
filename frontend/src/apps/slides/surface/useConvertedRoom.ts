@@ -83,6 +83,22 @@ export function useConvertedRoom({
   const saveState = computed(() => status.value?.saveState ?? 'clean')
 
   const sizes = new Map<string, { key: string; size: { width: number; height: number } }>()
+  let isFontPending = false
+
+  // Until the font comes, edits leave the saved centre alone: nothing waits, a save included
+  function redrawWhenFontsLoad() {
+    if (isFontPending) {
+      return
+    }
+
+    isFontPending = true
+    void document.fonts.ready.then(() => {
+      deck?.push()
+      isFontPending = false
+      deck?.redraw()
+    })
+  }
+
   function measured(element: StoreItem) {
     const key = `${element.width}|${element.lineHeight}|${element.content}`
     const known = sizes.get(element.id)
@@ -91,6 +107,11 @@ export function useConvertedRoom({
     }
 
     const size = measureNow(element)
+    if (document.fonts.status === 'loading') {
+      redrawWhenFontsLoad()
+      return size
+    }
+
     sizes.set(element.id, { key, size })
     return size
   }
@@ -176,6 +197,7 @@ export function useConvertedRoom({
         activeElementIds.value.includes(id) || currentSlide.value?.clientId === id,
       setBoundText,
       canWrite,
+      fontsPending: () => isFontPending,
       onRenamed: applyRenames,
       onMerged: keepShownSlide,
       onStep: showStep,

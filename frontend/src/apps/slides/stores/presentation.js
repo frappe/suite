@@ -129,8 +129,8 @@ const transformElements = async (elements) => {
   return newEls
 }
 
-// the same, for a live change that must be drawn at once. The fonts were loaded
-// when the room opened, through `transformElements`
+// the same, for a live change that must be drawn at once. The fonts of text there when
+// the room opened were loaded through `transformElements`, later ones may still be loading
 function flattenNow(el, measure = measureNow) {
   if (el.type !== 'text') {
     return el

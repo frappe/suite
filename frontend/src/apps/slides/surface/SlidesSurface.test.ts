@@ -6,7 +6,7 @@ import { fromAny, fromPartial } from '@total-typescript/shoehorn'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref, type Component } from 'vue'
 import { Awareness } from 'y-protocols/awareness'
-import { applyUpdate, Doc } from 'yjs'
+import { applyUpdate, Doc, UndoManager } from 'yjs'
 
 import type { RoomStatus } from '@/platform/collab'
 import { requireTestElement } from '@/platform/testing/dom'
@@ -61,7 +61,7 @@ const { router: slidesRouter } = await import('@/apps/slides/router')
 const { focusElementId, setActiveElements } = await import('@/apps/slides/stores/element')
 const { activeEditor } = await import('@/apps/slides/composables/useTextEditor')
 const { convertLegacy } = await import('@/apps/slides/collab/conversion')
-const { addSlide, deleteSlide } = await import('@/apps/slides/collab/deck')
+const { addSlide, deleteSlide, ROOT, setElement } = await import('@/apps/slides/collab/deck')
 
 const slideStyles = vi.hoisted(() => ({ fontsImported: false }))
 
@@ -561,6 +561,122 @@ describe('a deck on the content layer', () => {
 
     room.setStatus({ canWrite: true, pauseReason: null })
     await vi.waitFor(() => expect(viewOnly.value).toBe(false))
+  })
+
+  describe('centred text restored while its font is still loading', () => {
+    const CENTRED = 'translate(-50%, -50%)'
+    const SAVED_TOP = 200
+    const FALLBACK_HEIGHT = 40
+    const FONT_HEIGHT = 100
+    const TOP_IN_THE_FONT = SAVED_TOP - FONT_HEIGHT / 2
+    const browser = {
+      status: 'loaded',
+      height: FONT_HEIGHT,
+      ready: Promise.resolve<unknown>(undefined),
+      fontArrives: () => {},
+    }
+
+    beforeEach(() => {
+      Object.assign(browser, { status: 'loaded', height: FONT_HEIGHT, ready: Promise.resolve() })
+      Object.defineProperty(document, 'fonts', { configurable: true, value: browser })
+      vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(
+        () => browser.height,
+      )
+    })
+
+    afterEach(() => {
+      vi.restoreAllMocks()
+      Reflect.deleteProperty(document, 'fonts')
+    })
+
+    function fontStartsLoading() {
+      browser.status = 'loading'
+      browser.height = FALLBACK_HEIGHT
+      browser.ready = new Promise((resolve) => {
+        browser.fontArrives = () => {
+          browser.status = 'loaded'
+          browser.height = FONT_HEIGHT
+          resolve(browser)
+        }
+      })
+    }
+
+    // a co-editor deletes a slide, this tab opens without it, the co-editor undoes that
+    async function openedWithSlideRestored() {
+      const room = roomOf('one', 'two')
+      collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
+      const { doc } = room
+      const [first, second] = drawnSlides(doc)
+      const [element] = second.elements
+      for (const { id } of [...first.elements, element]) {
+        setElement(doc, id, {
+          frame: { left: 100, top: SAVED_TOP, width: 300, transform: CENTRED },
+        })
+      }
+
+      const peer = new UndoManager([doc.getMap(ROOT.slides), doc.getMap(ROOT.elements)], {
+        trackedOrigins: new Set(['peer']),
+      })
+      doc.transact(() => deleteSlide(doc, second.clientId), 'peer')
+      mounted = await openedSurface({ deck: { is_converted: true } })
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+
+      fontStartsLoading()
+      peer.undo()
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(2))
+
+      const saved = () =>
+        doc.getMap<Map<string, unknown>>(ROOT.elements).get(element.id)!.get('frame')
+      return { doc, saved }
+    }
+
+    const restored = () => fromAny(editorSlides.value)[1].elements[0]
+
+    async function setOpacity(opacity: number) {
+      restored().opacity = opacity
+      markDirty()
+      await nextTick()
+    }
+
+    it('saves the position worked out in the font, once it has arrived', async () => {
+      const { saved } = await openedWithSlideRestored()
+
+      browser.fontArrives()
+
+      await vi.waitFor(() => expect(restored().top).toBe(TOP_IN_THE_FONT))
+      expect(saved()).toMatchObject({ top: SAVED_TOP, transform: CENTRED })
+
+      await setOpacity(50)
+
+      expect(saved()).toMatchObject({ top: TOP_IN_THE_FONT, transform: 'none' })
+    })
+
+    it('saves an edit still unsent when the font arrives, and not its measured position', async () => {
+      const { doc, saved } = await openedWithSlideRestored()
+
+      restored().opacity = 50
+      browser.fontArrives()
+
+      await vi.waitFor(() => expect(restored().top).toBe(TOP_IN_THE_FONT))
+      expect(restored().opacity).toBe(50)
+      expect(drawnSlides(doc)[1].elements[0].opacity).toBe(50)
+      expect(saved()).toMatchObject({ top: SAVED_TOP, transform: CENTRED })
+    })
+
+    it('keeps the saved centre through an edit made before the font arrives', async () => {
+      const { doc, saved } = await openedWithSlideRestored()
+
+      await setOpacity(50)
+
+      expect(saved()).toMatchObject({ top: SAVED_TOP, transform: CENTRED })
+      expect(drawnSlides(doc)[1].elements[0].opacity).toBe(50)
+
+      browser.fontArrives()
+      await vi.waitFor(() => expect(restored().top).toBe(TOP_IN_THE_FONT))
+      await setOpacity(60)
+
+      expect(saved()).toMatchObject({ top: TOP_IN_THE_FONT, transform: 'none' })
+    })
   })
 
   describe('with a text editor open when the room stops taking writes', () => {

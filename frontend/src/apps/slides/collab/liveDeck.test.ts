@@ -48,11 +48,12 @@ interface TabOptions {
   canWrite?: boolean
   boundElementId?: string | null
   selected?: string[]
+  fontsPending?: boolean
 }
 
 function tabOn(
   doc: Y.Doc,
-  { canWrite = true, boundElementId = null, selected = [] }: TabOptions = {},
+  { canWrite = true, boundElementId = null, selected = [], fontsPending = false }: TabOptions = {},
 ) {
   const store = reactive<{ slides: StoreSlide[] }>({ slides: [] })
   const renamed: Map<string, string>[] = []
@@ -64,6 +65,7 @@ function tabOn(
     isSelected: (id) => selected.includes(id),
     setBoundText: (html) => boundText.push(html),
     canWrite: () => canWrite,
+    fontsPending: () => fontsPending,
     onRenamed: (renames) => renamed.push(renames),
     onMerged: () => {},
     onStep: () => {},
@@ -585,6 +587,51 @@ describe('typing in centred text', () => {
       top,
       transform: 'none',
       transformOrigin: 'top left',
+    })
+  })
+
+  describe('while a font is still loading', () => {
+    function centredAt500(doc: Y.Doc) {
+      writeDeck(doc, [
+        {
+          id: 's',
+          elements: [{ id: 't', type: 'text', frame: { left: 500, top: 300, transform: CENTRED } }],
+        },
+      ])
+    }
+
+    it('keeps the saved centre when text is typed', () => {
+      const doc = new Y.Doc()
+      centredAt500(doc)
+      const tab = tabOn(doc, { boundElementId: 't', fontsPending: true })
+
+      tab.element('t').content = '<p>a much longer line of text</p>'
+      tab.deck.push()
+
+      expect(savedFrame(doc, 't')).toEqual({ left: 500, top: 300, transform: CENTRED })
+    })
+
+    it('keeps the saved centre through an edit that moves nothing, and saves the edit', () => {
+      const doc = new Y.Doc()
+      centredAt500(doc)
+      const tab = tabOn(doc, { fontsPending: true })
+
+      tab.element('t').opacity = 40
+      tab.deck.push()
+
+      expect(savedFrame(doc, 't')).toEqual({ left: 500, top: 300, transform: CENTRED })
+      expect(drawnSlides(doc)[0].elements[0].opacity).toBe(40)
+    })
+
+    it('still saves where the element was moved by hand', () => {
+      const doc = new Y.Doc()
+      centredAt500(doc)
+      const tab = tabOn(doc, { fontsPending: true })
+
+      tab.element('t').left = 77
+      tab.deck.push()
+
+      expect(savedFrame(doc, 't')).toMatchObject({ left: 77, transform: 'none' })
     })
   })
 })
