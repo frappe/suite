@@ -123,9 +123,6 @@ website_redirects = [
     },
 ]
 
-# Framework File permission logic is fully replaced by Drive's
-ignore_file_permissions = True
-
 # ============================================================================
 # Drive content types (§10.3)
 # ============================================================================
@@ -151,7 +148,11 @@ drive_content_types = [
 ]
 
 # Dotted paths to `suite.content.EditorSpec` objects, one per app whose documents the content layer keeps
-suite_content_editors = ["suite.writer.content.EDITOR", "suite.sheets.content.EDITOR"]
+suite_content_editors = [
+    "suite.writer.content.EDITOR",
+    "suite.sheets.content.EDITOR",
+    "suite.slides.content.EDITOR",
+]
 
 # ============================================================================
 # Permissions — permission_query_conditions (deep-merged union; no key clashes)
@@ -337,12 +338,17 @@ scheduler_events = {
         "suite.mail.doctype.contacts_exchange.contacts_exchange.clean_contacts_import_export_directories",
         "suite.calendar.doctype.calendar_exchange.calendar_exchange.clean_calendar_import_export_directories",
     ],
+    "daily_long": [
+        # mail
+        "suite.mail.reminders.return_unheld",
+    ],
     "hourly": [
         # content
         "suite.content.jobs.trim_logs",
         "suite.composition.admin_jobs.refresh_storage",
         # drive
         "suite.drive.webdav.locks.purge_expired_locks",
+        "suite.drive.jobs.purge_expired_downloads",
         # mail
         "suite.mail.doctype.mail_exchange.mail_exchange.retry_stuck_mail_exchanges",
         "suite.calendar.doctype.calendar_exchange.calendar_exchange.retry_stuck_calendar_exchanges",
@@ -354,6 +360,9 @@ scheduler_events = {
     ],
     "cron": {
         "* * * * *": [
+            # mail
+            "suite.mail.reminders.run_due",
+            # meet
             "suite.meet.api.recording.reconcile_pending_recordings",
             "suite.meet.recording.ingest.reconcile_due_finalizations",
         ],
@@ -432,13 +441,14 @@ ignore_links_on_delete = [
     # attributed record, so the framework's link check must not refuse the User
     # delete over any of them. suite.drive.install.on_user_trash runs first and
     # deletes the private rows (Drive Recent, Drive Favourite, Drive
-    # Notification) so a recreated email inherits none of them.
+    # Notification, Drive Download) so a recreated email inherits none of them.
     "Drive Root",
     "Drive Activity",
     "Drive Node Version",
     "Drive Comment",
     "Drive Comment Thread",
     "Drive Recent",
+    "Drive Download",
     "Drive Storage Reservation",
     # mail
     "Mail Account Request",

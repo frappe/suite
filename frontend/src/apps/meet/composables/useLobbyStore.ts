@@ -8,11 +8,18 @@ interface LobbyUser {
   isGuest?: boolean
 }
 
+interface LobbyState {
+  isWaitingForApproval: boolean
+  isJoinRequestRejected: boolean
+  lobbyUsers: LobbyUser[]
+  isInLobby: boolean
+}
+
 export const useLobbyStore = defineStore('meet-lobby', {
-  state: () => ({
+  state: (): LobbyState => ({
     isWaitingForApproval: false,
     isJoinRequestRejected: false,
-    lobbyUsers: [] as LobbyUser[],
+    lobbyUsers: [],
     isInLobby: false,
   }),
   actions: {

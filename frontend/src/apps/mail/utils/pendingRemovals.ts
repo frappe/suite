@@ -41,17 +41,46 @@ const thisTab = (): string => {
   }
 }
 
+function isPendingRemoval(value: unknown): value is PendingRemoval {
+  if (!value || typeof value !== 'object' || !('kind' in value)) return false
+  if (value.kind === 'messages')
+    return (
+      'names' in value &&
+      Array.isArray(value.names) &&
+      value.names.every((name) => typeof name === 'string')
+    )
+  return (
+    (value.kind === 'draft' || value.kind === 'unsubscribe') &&
+    'account' in value &&
+    typeof value.account === 'string' &&
+    'id' in value &&
+    typeof value.id === 'string'
+  )
+}
+
+function isStoredRemoval(value: unknown): value is Stored[string] {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    'removal' in value &&
+    isPendingRemoval(value.removal) &&
+    'due' in value &&
+    typeof value.due === 'number' &&
+    (!('tab' in value) || value.tab === undefined || typeof value.tab === 'string') &&
+    (!('page' in value) || value.page === undefined || typeof value.page === 'string')
+  )
+}
+
 const read = (): Stored => {
   try {
-    const raw = JSON.parse(localStorage.getItem(KEY) || '{}') as Record<string, unknown>
-    // An entry written before removals carried a due time is the removal itself: long overdue.
+    const raw: unknown = JSON.parse(localStorage.getItem(KEY) || '{}')
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+    // Entries predating due times are removals themselves and already overdue.
     return Object.fromEntries(
-      Object.entries(raw).map(([key, entry]) => [
-        key,
-        entry && typeof entry === 'object' && 'kind' in entry
-          ? { removal: entry as PendingRemoval, due: 0 }
-          : (entry as Stored[string]),
-      ]),
+      Object.entries(raw).flatMap(([key, entry]): [string, Stored[string]][] => {
+        if (isPendingRemoval(entry)) return [[key, { removal: entry, due: 0 }]]
+        return isStoredRemoval(entry) ? [[key, entry]] : []
+      }),
     )
   } catch {
     return {}

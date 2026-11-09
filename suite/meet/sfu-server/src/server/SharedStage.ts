@@ -34,8 +34,11 @@ export class SharedStage {
 
 	snapshotFor(excludedParticipantId?: string): SharedStageState {
 		const slots = this.selfSlots.get(excludedParticipantId ?? '') ?? this.slots;
+		const audience: Pick<SharedStageState, 'excludedParticipantId'> = {};
+		if (excludedParticipantId)
+			audience.excludedParticipantId = excludedParticipantId;
 		return {
-			...(excludedParticipantId ? { excludedParticipantId } : {}),
+			...audience,
 			...this.state,
 			participantIds: [...this.state.participantIds],
 			activeSpeakerIds: [...this.state.activeSpeakerIds],
@@ -118,9 +121,9 @@ export class SharedStage {
 		for (const [id, value] of this.recent)
 			if (value.until <= now) this.recent.delete(id);
 		const active = new Set(
-			[...this.candidates]
-				.filter(([, v]) => now - v.since >= SUSTAIN_MS)
-				.map(([id]) => id),
+			[...this.candidates].flatMap(([id, candidate]) =>
+				now - candidate.since >= SUSTAIN_MS ? [id] : [],
+			),
 		);
 		// A turn is promotion into sustained activity, not accumulated speaking time.
 		const promoted = [...active]
@@ -154,8 +157,8 @@ export class SharedStage {
 			.sort((a, b) => {
 				const difference = priority(a) - priority(b);
 				if (difference) return difference;
-				const left = a.participant_id,
-					right = b.participant_id;
+				const left = a.participant_id;
+				const right = b.participant_id;
 				if (this.hands[left] && this.hands[right]) {
 					const order = compareIds(this.hands[left], this.hands[right]);
 					if (order) return order;
@@ -170,7 +173,8 @@ export class SharedStage {
 		// Keep a canonical presentation for every prefix. A selected survivor stays
 		// in its slot; only vacancies receive entrants. This history belongs to the
 		// room snapshot, never to an endpoint that may have joined late.
-		const rankingChanged = ids.length !== this.state.participantIds.length ||
+		const rankingChanged =
+			ids.length !== this.state.participantIds.length ||
 			ids.some((id, index) => id !== this.state.participantIds[index]);
 		if (rankingChanged) {
 			this.updateSlots(ids, this.slots);

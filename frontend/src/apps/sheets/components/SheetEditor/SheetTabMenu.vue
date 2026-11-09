@@ -1,6 +1,6 @@
 <template>
-  <!-- Sheet-tab menu (rename / duplicate / protect / delete), opened from a
-  tab's chevron or right-click. -->
+  <!-- Sheet-tab menu (rename / duplicate / protect / delete), opened by
+  right-clicking a tab. -->
   <div class="sn-ctx-menu" :style="{ left: menu.x + 'px', bottom: menu.bottom + 'px' }">
     <Button
       variant="ghost"

@@ -19,6 +19,15 @@ export function inkFor(fmt: CellFormat): string {
   return light ? COLORS.inkOnDark : COLORS.inkOnLight
 }
 
+/** How a value with no alignment of its own is drawn: numbers right, text
+ *  left, as in Google Sheets. The cell's type decides (`1,000` and `50%`
+ *  are numbers), given as `isNumber`; until the engine knows it, guess from
+ *  the text. */
+export function autoAlign(s: string, isNumber: boolean | undefined): 'left' | 'right' {
+  if (isNumber !== undefined) return isNumber ? 'right' : 'left'
+  return s !== '' && !isNaN(Number(s)) ? 'right' : 'left'
+}
+
 /** The canvas text alignment for a format's `align`; anything unknown is left. */
 export function textAlignOf(align: string | undefined): CanvasTextAlign {
   return align === 'center' || align === 'right' ? align : 'left'

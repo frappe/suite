@@ -52,7 +52,10 @@ export const calendarGuard = async (to: RouteLocationNormalized) => {
   await store.loadUser()
   const user = store.userResource.data
 
-  store.resolveAccount(user?.accounts, to.params.accountId as string | undefined)
+  store.resolveAccount(
+    user?.accounts,
+    typeof to.params.accountId === 'string' ? to.params.accountId : undefined,
+  )
   const accountId = store.accountId
 
   // Expand shortcut routes to their full account-scoped equivalents. The

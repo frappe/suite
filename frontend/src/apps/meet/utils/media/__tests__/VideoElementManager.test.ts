@@ -1,10 +1,11 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { VideoElementManager } from '../VideoElementManager'
 
 type StreamCtor = new (tracks: MediaStreamTrack[]) => MediaStream
 
-const globalAny = globalThis as typeof globalThis & { MediaStream?: StreamCtor }
+const globalAny: typeof globalThis & { MediaStream?: StreamCtor } = globalThis
 
 beforeEach(() => {
   if (globalAny.MediaStream === undefined) {
@@ -30,25 +31,27 @@ beforeEach(() => {
 })
 
 function makeTrack(id: string): MediaStreamTrack {
-  return Object.assign(Object.create(null), {
-    id,
-    kind: 'video',
-    stop: vi.fn(),
-  }) as MediaStreamTrack
+  return fromPartial<MediaStreamTrack>(
+    Object.assign(Object.create(null), {
+      id,
+      kind: 'video',
+      stop: vi.fn(),
+    }),
+  )
 }
 
 function makeAudioTrack(id: string): MediaStreamTrack {
-  return { ...makeTrack(id), kind: 'audio' } as MediaStreamTrack
+  return fromPartial<MediaStreamTrack>({ ...makeTrack(id), kind: 'audio' })
 }
 
 function makeStream(tracks: MediaStreamTrack[]): MediaStream {
-  const Ctor = globalAny.MediaStream as StreamCtor
+  const Ctor: StreamCtor = globalAny.MediaStream
   return new Ctor(tracks)
 }
 
 function makeVideoElement(): HTMLVideoElement {
   const el = document.createElement('video')
-  el.play = vi.fn().mockResolvedValue(undefined) as never
+  el.play = fromPartial(vi.fn().mockResolvedValue(undefined))
   return el
 }
 
@@ -78,11 +81,11 @@ describe('VideoElementManager.attachStream continuity', () => {
     manager.registerVideoElement('p1', el)
     const track1 = makeTrack('track-1')
     await manager.attachStream('p1', makeStream([track1]), false)
-    expect((el.srcObject as MediaStream).getVideoTracks()[0].id).toBe('track-1')
+    expect(fromPartial<MediaStream>(el.srcObject).getVideoTracks()[0].id).toBe('track-1')
 
     const track2 = makeTrack('track-2')
     await manager.attachStream('p1', makeStream([track2]), false)
-    expect((el.srcObject as MediaStream).getVideoTracks()[0].id).toBe('track-2')
+    expect(fromPartial<MediaStream>(el.srcObject).getVideoTracks()[0].id).toBe('track-2')
   })
 
   it('strict mode waits for a delayed video tile to mount and play', async () => {
@@ -139,7 +142,9 @@ describe('VideoElementManager.attachStream continuity', () => {
     const element = makeVideoElement()
     manager.registerVideoElement('p1', element)
     await current
-    expect((element.srcObject as MediaStream).getVideoTracks()[0]?.id).toBe('track-current')
+    expect(fromPartial<MediaStream>(element.srcObject).getVideoTracks()[0]?.id).toBe(
+      'track-current',
+    )
   })
 
   it('attaches audio and surfaces autoplay failure', async () => {
@@ -147,7 +152,7 @@ describe('VideoElementManager.attachStream continuity', () => {
     const play = vi
       .spyOn(HTMLMediaElement.prototype, 'play')
       .mockRejectedValueOnce(new Error('blocked'))
-    const track = { ...makeTrack('audio-1'), kind: 'audio' } as MediaStreamTrack
+    const track = fromPartial<MediaStreamTrack>({ ...makeTrack('audio-1'), kind: 'audio' })
     await expect(manager.attachStream('p1', makeStream([track]), false)).rejects.toThrow('blocked')
     expect(manager.audioElements.get('p1')?.srcObject).not.toBeNull()
     play.mockRestore()
@@ -158,7 +163,7 @@ describe('VideoElementManager.attachStream continuity', () => {
       .spyOn(HTMLMediaElement.prototype, 'play')
       .mockRejectedValueOnce(new DOMException('blocked', 'NotAllowedError'))
       .mockResolvedValue(undefined)
-    const track = { ...makeTrack('audio-1'), kind: 'audio' } as MediaStreamTrack
+    const track = fromPartial<MediaStreamTrack>({ ...makeTrack('audio-1'), kind: 'audio' })
 
     await expect(manager.attachStream('p1', makeStream([track]), false)).resolves.toBeUndefined()
     document.dispatchEvent(new Event('click'))
@@ -223,7 +228,7 @@ describe('VideoElementManager.attachStream continuity', () => {
     const el2 = makeVideoElement()
     manager.registerVideoElement('p1', el2)
     await manager.attachStream('p1', makeStream([makeTrack('t1')]), false)
-    expect((el2.srcObject as MediaStream).getVideoTracks()[0].id).toBe('t1')
+    expect(fromPartial<MediaStream>(el2.srcObject).getVideoTracks()[0].id).toBe('t1')
   })
 
   it('retries playback for attached video and audio after resume', async () => {
@@ -231,7 +236,9 @@ describe('VideoElementManager.attachStream continuity', () => {
     video.srcObject = makeStream([makeTrack('video-1')])
     manager.registerVideoElement('p1', video)
     const audio = document.createElement('audio')
-    audio.srcObject = makeStream([{ ...makeTrack('audio-1'), kind: 'audio' } as MediaStreamTrack])
+    audio.srcObject = makeStream([
+      fromPartial<MediaStreamTrack>({ ...makeTrack('audio-1'), kind: 'audio' }),
+    ])
     audio.play = vi.fn().mockResolvedValue(undefined)
     manager.audioElements.set('p1', audio)
 
@@ -257,20 +264,20 @@ describe('VideoElementManager.attachAudioStream continuity', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date(1_000_000))
 
-    const createElementSpy = vi.spyOn(document, 'createElement').mockImplementation(((
-      tag: string,
-    ) => {
-      const el = document.createElementNS
-        ? document.createElementNS('http://www.w3.org/1999/xhtml', tag)
-        : ({} as HTMLElement)
-      Object.defineProperty(el, 'play', {
-        value: vi.fn().mockResolvedValue(undefined),
-        writable: true,
-      })
-      return el as HTMLElement
-    }) as never)
+    const createElementSpy = vi.spyOn(document, 'createElement').mockImplementation(
+      fromPartial((tag: string) => {
+        const el = document.createElementNS
+          ? document.createElementNS('http://www.w3.org/1999/xhtml', tag)
+          : fromPartial<HTMLElement>({})
+        Object.defineProperty(el, 'play', {
+          value: vi.fn().mockResolvedValue(undefined),
+          writable: true,
+        })
+        return el
+      }),
+    )
 
-    const track = { id: 'a1', kind: 'audio' } as MediaStreamTrack
+    const track = fromPartial<MediaStreamTrack>({ id: 'a1', kind: 'audio' })
     await manager.attachAudioStream('p1', [track])
     const audioEl = manager.audioElements.get('p1')
     expect(audioEl).toBeDefined()

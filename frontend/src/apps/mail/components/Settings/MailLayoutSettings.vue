@@ -74,7 +74,7 @@
 import { Button, SettingsRow, Switch } from 'frappe-ui'
 import { computed, ref } from 'vue'
 
-import { api, useMutation } from '@/api'
+import { api, useMutation, type InputOf } from '@/api'
 import { useTabChoice, type InboxCategory } from '@/apps/mail/composables/useInboxTabs'
 import { userStore } from '@/apps/mail/stores/user'
 import { raiseToast } from '@/apps/mail/utils'
@@ -117,13 +117,15 @@ const saveSettings = useMutation(api.mail.settings.updatePreferences)
 const saving = computed(() => saveSettings.isPending)
 
 const saveLayout = async () => {
-  await saveSettings.run({
+  const preferences: InputOf<typeof api.mail.settings.updatePreferences> = {
     show_reading_pane: showReadingPane.value ? 1 : 0,
     group_by_date: groupByDate.value ? 1 : 0,
-    ...(tabsOffered.value
-      ? { split_inbox: splitInbox.value ? 1 : 0, inbox_tabs: tabsFor(chosenTabs.value) }
-      : {}),
-  })
+  }
+  if (tabsOffered.value) {
+    preferences.split_inbox = splitInbox.value ? 1 : 0
+    preferences.inbox_tabs = tabsFor(chosenTabs.value)
+  }
+  await saveSettings.run(preferences)
   raiseToast(__('Mail layout updated.'))
 }
 </script>

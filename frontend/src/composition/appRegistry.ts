@@ -32,7 +32,7 @@ export function findArea(id: string): AreaDefinition | undefined {
 
 export interface AppRegistry {
   areas: readonly AreaDefinition[]
-  badges: Readonly<Ref<Readonly<Record<string, number>>>>
+  badges: Readonly<Ref<AreaBadges>>
 }
 
 export function useAppRegistry(session: Session = useSession()): AppRegistry {
@@ -73,10 +73,16 @@ export function useAreaWork(): AreaWork {
   }
 }
 
+interface AreaBadges {
+  readonly mail: number
+  readonly calendar: number
+  readonly [area: string]: number | undefined
+}
+
 export function deriveAreaBadges(
   inbox: { unread: number } | undefined,
   upcoming?: { upcoming: number },
-): Readonly<Record<string, number>> {
+): AreaBadges {
   return {
     mail: Math.max(0, inbox?.unread ?? 0),
     calendar: Math.max(0, upcoming?.upcoming ?? 0),

@@ -1,5 +1,7 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it, vi } from 'vitest'
 
+import type { Format } from '../../engine/formats'
 import { cellId } from '../../utils/cells.js'
 import { useFill } from './useFill.js'
 
@@ -10,12 +12,12 @@ type RowHeightChange = { before: Record<number, number>; after: Record<number, n
 // formats, no validation / merges / conditional-format rules.
 function setup(
   inputs: Record<string, string>,
-  fmts: Record<string, object> = {},
-  refitRowsFor = vi.fn(() => null as RowHeightChange | null),
+  fmts: Record<string, Format> = {},
+  refitRowsFor = vi.fn(() => fromPartial<RowHeightChange | null>(null)),
   engineFmts: Record<string, string> = {},
 ) {
   const cells = { ...inputs }
-  const formatStore: Record<string, object> = { ...fmts }
+  const formatStore = { ...fmts } satisfies Record<string, Format>
   let selection: Rect = { r0: 0, c0: 0, r1: 0, c1: 0 }
   const readRect = (rect: Rect) => {
     const out: Record<string, string> = {}
@@ -30,7 +32,7 @@ function setup(
     currentSheet: { value: 'Sheet1' },
     formats: {
       get: (id: string) => formatStore[id],
-      set: (id: string, f: object) => (formatStore[id] = { ...f }),
+      set: (id: string, f: Format) => (formatStore[id] = { ...f }),
       clear: (id: string) => delete formatStore[id],
     },
     merge: { snapshot: () => ({}), getMasterInfo: () => null, merge: vi.fn() },

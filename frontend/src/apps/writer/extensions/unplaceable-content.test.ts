@@ -10,6 +10,7 @@ import {
   yUndoPluginKey,
   type UnplaceableReason,
 } from '@tiptap/y-tiptap'
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as yjs from 'yjs'
 
@@ -61,8 +62,6 @@ function open(state: Uint8Array, ...more: AnyExtension[]): Tab {
   yjs.applyUpdate(ydoc, state, REMOTE)
   const extensions = writerEditorExtensions({
     isCollaborative: true,
-    mentionItems: () => [],
-    onMentionQuery: () => {},
     onCommentActivated: () => {},
     onAnchors: () => {},
     scrollParent: () => window,
@@ -282,7 +281,7 @@ function shape(tab: Tab, parent: yjs.XmlFragment = tab.ydoc.getXmlFragment(BODY_
       return '-'
     }
 
-    return (child as yjs.XmlElement).nodeName
+    return fromPartial<yjs.XmlElement>(child).nodeName
   }
 
   return parent.toArray().map(nameOf)
@@ -303,7 +302,9 @@ describe('leftovers that hold nothing', () => {
 
   it('leaves a hidden leftover as it is when an edit deletes across it', () => {
     const tab = open(stored(paragraph('before'), leftover(), paragraph('after')))
-    const isLeftoverKept = keep(tab.ydoc.getXmlFragment(BODY_FIELD).get(1) as yjs.XmlElement)
+    const isLeftoverKept = keep(
+      fromPartial<yjs.XmlElement>(tab.ydoc.getXmlFragment(BODY_FIELD).get(1)),
+    )
 
     tab.editor.commands.deleteRange({ from: 3, to: 11 })
 
@@ -316,9 +317,9 @@ describe('leftovers that hold nothing', () => {
     const items = element('bulletList', element('listItem', paragraph('item')))
     const tab = open(stored(paragraph('a'), leftover(), items))
     const fragment = tab.ydoc.getXmlFragment(BODY_FIELD)
-    const sameKind = fragment.get(2) as yjs.XmlElement
+    const sameKind = fromPartial<yjs.XmlElement>(fragment.get(2))
     const item = sameKind.get(0)
-    const isLeftoverKept = keep(fragment.get(1) as yjs.XmlElement)
+    const isLeftoverKept = keep(fromPartial<yjs.XmlElement>(fragment.get(1)))
 
     tab.editor.chain().setTextSelection(10).insertContent('X').splitListItem('listItem').run()
 
@@ -343,9 +344,9 @@ describe('leftovers that hold nothing', () => {
       ['-', 'paragraph', 'paragraph', 'paragraph'],
     ],
   ])('puts a new block %s next to its visible neighbour', (_, blocks, at, expected) => {
-    const tab = open(stored(...(blocks as yjs.XmlElement[])))
+    const tab = open(stored(...blocks))
     const fragment = tab.ydoc.getXmlFragment(BODY_FIELD)
-    const isEveryBlockKept = keep(...(fragment.toArray() as yjs.XmlElement[]))
+    const isEveryBlockKept = keep(...fromPartial<yjs.XmlElement[]>(fragment.toArray()))
     let newAt = 0
     if (at !== 0) {
       newAt = expected.indexOf('paragraph') + 1
@@ -364,10 +365,10 @@ describe('leftovers that hold nothing', () => {
     const tab = open(
       stored(element('bulletList', element('listItem', paragraph('one'), leftover()))),
     )
-    const item = (tab.ydoc.getXmlFragment(BODY_FIELD).get(0) as yjs.XmlElement).get(
-      0,
-    ) as yjs.XmlElement
-    const isLeftoverKept = keep(item.get(1) as yjs.XmlElement)
+    const item = fromPartial<yjs.XmlElement>(
+      fromPartial<yjs.XmlElement>(tab.ydoc.getXmlFragment(BODY_FIELD).get(0)).get(0),
+    )
+    const isLeftoverKept = keep(fromPartial<yjs.XmlElement>(item.get(1)))
 
     tab.editor.commands.insertContentAt(7, paragraphNode('new'))
 
@@ -379,7 +380,9 @@ describe('leftovers that hold nothing', () => {
 
   it('turns a block after a leftover into a heading and keeps the leftover', () => {
     const tab = open(stored(leftover(), paragraph('one'), paragraph('two')))
-    const isLeftoverKept = keep(tab.ydoc.getXmlFragment(BODY_FIELD).get(0) as yjs.XmlElement)
+    const isLeftoverKept = keep(
+      fromPartial<yjs.XmlElement>(tab.ydoc.getXmlFragment(BODY_FIELD).get(0)),
+    )
 
     tab.editor.chain().setTextSelection(2).setNode('heading', { level: 2 }).run()
 
@@ -393,8 +396,8 @@ describe('leftovers that hold nothing', () => {
     )
     const fragment = tab.ydoc.getXmlFragment(BODY_FIELD)
     const isLeftoverKept = keep(
-      fragment.get(1) as yjs.XmlElement,
-      fragment.get(3) as yjs.XmlElement,
+      fromPartial<yjs.XmlElement>(fragment.get(1)),
+      fromPartial<yjs.XmlElement>(fragment.get(3)),
     )
 
     tab.editor.commands.deleteRange({ from: 2, to: tab.editor.state.doc.content.size - 2 })
@@ -468,7 +471,7 @@ function addItem(tab: Tab, text: string) {
 
 function withAttributes(node: yjs.XmlElement, attributes: Record<string, unknown>) {
   for (const [key, value] of Object.entries(attributes)) {
-    node.setAttribute(key, value as string)
+    node.setAttribute(key, fromPartial<string>(value))
   }
 
   return node
@@ -575,8 +578,8 @@ describe('positions around hidden leftovers', () => {
   it('places a caret either side of a leftover, holding left or right', () => {
     const tab = open(stored(paragraph('ab'), leftover(), paragraph('cd')))
     const fragment = tab.ydoc.getXmlFragment(BODY_FIELD)
-    const [ab, cd] = [0, 2].map(
-      (index) => (fragment.get(index) as yjs.XmlElement).get(0) as yjs.XmlText,
+    const [ab, cd] = [0, 2].map((index) =>
+      fromPartial<yjs.XmlText>(fromPartial<yjs.XmlElement>(fragment.get(index)).get(0)),
     )
     function at(parent: yjs.AbstractType<unknown>, index: number, assoc: number) {
       return resolve(tab, yjs.createRelativePositionFromTypeIndex(parent, index, assoc))
@@ -594,9 +597,9 @@ describe('positions around hidden leftovers', () => {
 
   it('places a caret in text that follows a leftover at the start', () => {
     const tab = open(stored(leftover(), paragraph('after')))
-    const text = (tab.ydoc.getXmlFragment(BODY_FIELD).get(1) as yjs.XmlElement).get(
-      0,
-    ) as yjs.XmlText
+    const text = fromPartial<yjs.XmlText>(
+      fromPartial<yjs.XmlElement>(tab.ydoc.getXmlFragment(BODY_FIELD).get(1)).get(0),
+    )
 
     const ends = [0, 5].map((index) =>
       resolve(tab, yjs.createRelativePositionFromTypeIndex(text, index)),
@@ -627,15 +630,15 @@ describe('a thread after a hidden leftover', () => {
       },
     })
     const tab = open(stored(paragraph('ab'), leftover(), paragraph('cdef')), highlights)
-    const text = (tab.ydoc.getXmlFragment(BODY_FIELD).get(2) as yjs.XmlElement).get(
-      0,
-    ) as yjs.XmlText
+    const text = fromPartial<yjs.XmlText>(
+      fromPartial<yjs.XmlElement>(tab.ydoc.getXmlFragment(BODY_FIELD).get(2)).get(0),
+    )
     const anchor = encodeAnchor(
       yjs.createRelativePositionFromTypeIndex(text, 1),
       yjs.createRelativePositionFromTypeIndex(text, 3),
       '',
     )
-    threads.push({ name: 'c1', anchor, resolved: false } as DocumentThread)
+    threads.push(fromPartial<DocumentThread>({ name: 'c1', anchor, resolved: false }))
     redrawThreads(tab.editor.view)
 
     const highlight = tab.editor.view.dom.querySelectorAll('[data-thread="c1"]')
@@ -687,9 +690,9 @@ describe('a frozen tab', () => {
     const base = stored(element('bulletList', element('listItem', paragraph('a'), inner)))
     const [mine, other] = [open(base), open(base)]
     mine.editor.commands.insertContentAt(2, paragraphNode('new'))
-    const otherItem = (other.ydoc.getXmlFragment(BODY_FIELD).get(0) as yjs.XmlElement).get(
-      0,
-    ) as yjs.XmlElement
+    const otherItem = fromPartial<yjs.XmlElement>(
+      fromPartial<yjs.XmlElement>(other.ydoc.getXmlFragment(BODY_FIELD).get(0)).get(0),
+    )
     otherItem.delete(0, 1)
     exchange(mine, other)
 
@@ -734,7 +737,7 @@ describe('building a document from Yjs', () => {
 
   it('keeps a text this tab makes beside another apart from it, as the live editor', () => {
     const tab = open(stored(paragraph('hello')))
-    const block = tab.ydoc.getXmlFragment(BODY_FIELD).get(0) as yjs.XmlElement
+    const block = fromPartial<yjs.XmlElement>(tab.ydoc.getXmlFragment(BODY_FIELD).get(0))
 
     block.insert(1, [new yjs.XmlText(' there')])
 
@@ -755,7 +758,7 @@ describe('two texts side by side in one block', () => {
   }
 
   function texts(tab: Tab) {
-    return (tab.ydoc.getXmlFragment(BODY_FIELD).get(0) as yjs.XmlElement).length
+    return fromPartial<yjs.XmlElement>(tab.ydoc.getXmlFragment(BODY_FIELD).get(0)).length
   }
 
   function ownClocks(...tabs: Tab[]) {
@@ -836,8 +839,8 @@ describe('typing next to many hidden leftovers', () => {
     const shown = source
       .getXmlFragment(BODY_FIELD)
       .toArray()
-      .filter((block) => (block as yjs.XmlElement).nodeName === 'paragraph')
-    const text = (shown[1000] as yjs.XmlElement).get(0) as yjs.XmlText
+      .filter((block) => fromPartial<yjs.XmlElement>(block).nodeName === 'paragraph')
+    const text = fromPartial<yjs.XmlText>(fromPartial<yjs.XmlElement>(shown[1000]).get(0))
     const times = []
     for (let i = 0; i < 15; i++) {
       const before = yjs.encodeStateVector(source)

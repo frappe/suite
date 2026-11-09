@@ -26,27 +26,33 @@ const documentOf = (contentDoctype: string): IconNode => ({
 })
 
 // In menu order. The server decides which nodes each value keeps.
-const OPTIONS: Record<DriveListingType, Omit<TypeFilterOption, 'value'>> = {
-  folder: {
-    label: 'Folders',
-    noun: 'folders',
-    sample: { kind: 'folder', title: 'Folder', mime: null, content_doctype: null },
-  },
-  document: { label: 'Documents', noun: 'documents', sample: documentOf('Writer Document') },
-  spreadsheet: { label: 'Spreadsheets', noun: 'spreadsheets', sample: documentOf('Sheet') },
-  presentation: {
-    label: 'Presentations',
-    noun: 'presentations',
-    sample: documentOf('Presentation'),
-  },
-  pdf: { label: 'PDFs', noun: 'PDFs', sample: fileOf('file.pdf', 'application/pdf') },
-  image: { label: 'Images', noun: 'images', sample: fileOf('image.png', 'image/png') },
-  video: { label: 'Videos', noun: 'videos', sample: fileOf('video.mp4', 'video/mp4') },
-  audio: { label: 'Audio', noun: 'audio files', sample: fileOf('audio.mp3', 'audio/mpeg') },
-}
+const OPTIONS = new Map<DriveListingType, Omit<TypeFilterOption, 'value'>>([
+  [
+    'folder',
+    {
+      label: 'Folders',
+      noun: 'folders',
+      sample: { kind: 'folder', title: 'Folder', mime: null, content_doctype: null },
+    },
+  ],
+  ['document', { label: 'Documents', noun: 'documents', sample: documentOf('Writer Document') }],
+  ['spreadsheet', { label: 'Spreadsheets', noun: 'spreadsheets', sample: documentOf('Sheet') }],
+  [
+    'presentation',
+    {
+      label: 'Presentations',
+      noun: 'presentations',
+      sample: documentOf('Presentation'),
+    },
+  ],
+  ['pdf', { label: 'PDFs', noun: 'PDFs', sample: fileOf('file.pdf', 'application/pdf') }],
+  ['image', { label: 'Images', noun: 'images', sample: fileOf('image.png', 'image/png') }],
+  ['video', { label: 'Videos', noun: 'videos', sample: fileOf('video.mp4', 'video/mp4') }],
+  ['audio', { label: 'Audio', noun: 'audio files', sample: fileOf('audio.mp3', 'audio/mpeg') }],
+])
 
-const ALL = Object.entries(OPTIONS).map(([value, option]) => ({
-  value: value as DriveListingType,
+const ALL = [...OPTIONS].map(([value, option]) => ({
+  value,
   ...option,
 }))
 

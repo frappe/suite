@@ -9,6 +9,7 @@ import type { Page } from "@playwright/test";
 export async function patchAccount(page: Page, patch: Record<string, unknown>): Promise<void> {
 	await page.route("**/api/suite/account", async (route) => {
 		const response = await route.fetch();
+		// SAFETY: the Suite-owned account endpoint returns its data projection; callers patch that same account fixture.
 		const body = (await response.json()) as { data?: Record<string, unknown> };
 		const account = { ...(body.data ?? body), ...patch };
 		await route.fulfill({

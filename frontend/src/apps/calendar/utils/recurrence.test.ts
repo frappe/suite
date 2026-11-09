@@ -6,11 +6,11 @@ import { reanchoredRule } from '@/apps/calendar/utils/recurrence'
 
 const d = (iso: string) => dayjs(iso)
 
-const weekly = (byDay?: { day: string; nthOfPeriod?: number }[]): RecurrenceRule => ({
-  frequency: 'weekly',
-  interval: 1,
-  ...(byDay ? { byDay } : {}),
-})
+const weekly = (byDay?: { day: string; nthOfPeriod?: number }[]): RecurrenceRule => {
+  const rule: RecurrenceRule = { frequency: 'weekly', interval: 1 }
+  if (byDay) rule.byDay = byDay
+  return rule
+}
 
 const monthly = (rest: Partial<RecurrenceRule>): RecurrenceRule => ({
   frequency: 'monthly',

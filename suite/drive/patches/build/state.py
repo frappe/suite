@@ -101,6 +101,33 @@ class MissingBytes:
 
 
 @dataclass
+class S3CopyRun:
+    """What one run of the legacy S3 copy did, and how long it took.
+
+    Per run, so a resumed run reports its own rate rather than a total
+    divided by the time of its last attempt. `seconds` is written with every
+    committed batch, so a killed run's record still says how far it got.
+    """
+
+    workers: int = 0
+    seconds: float = 0.0
+    objects_copied: int = 0
+    objects_reused: int = 0
+    bytes_read: int = 0
+    bytes_copied: int = 0
+    removed_skipped: int = 0
+
+    def summary(self) -> dict:
+        """The record plus the two rates a rehearsal compares across runs."""
+        objects = self.objects_copied + self.objects_reused
+        return {
+            **asdict(self),
+            "objects_per_second": round(objects / self.seconds, 2) if self.seconds else None,
+            "bytes_read_per_second": round(self.bytes_read / self.seconds) if self.seconds else None,
+        }
+
+
+@dataclass
 class StoragePreparation:
     """The result of §14.2 steps 1 to 3."""
 
@@ -114,6 +141,7 @@ class StoragePreparation:
     s3_objects_missing: int = 0
     missing_bytes: list[MissingBytes] = field(default_factory=list)
     missing_bytes_total: int = 0
+    s3_copy_run: S3CopyRun = field(default_factory=S3CopyRun)
 
     def record_missing(self, entry: MissingBytes) -> None:
         """Count every row with no reachable bytes; keep a bounded sample.
@@ -137,13 +165,14 @@ class StoragePreparation:
 
     @classmethod
     def from_dict(cls, data: dict) -> StoragePreparation:
-        known = {f for f in cls.__dataclass_fields__ if f != "missing_bytes"}
+        known = {f for f in cls.__dataclass_fields__ if f not in ("missing_bytes", "s3_copy_run")}
         prep = cls(**{k: v for k, v in data.items() if k in known})
-        prep.missing_bytes = [
-            MissingBytes(**{k: v for k, v in row.items() if k in MissingBytes.__dataclass_fields__})
-            for row in data.get("missing_bytes") or []
-            if isinstance(row, dict)
-        ]
+        prep.missing_bytes = _rebuild(MissingBytes, data.get("missing_bytes"))
+        run = data.get("s3_copy_run")
+        if isinstance(run, dict):
+            prep.s3_copy_run = S3CopyRun(
+                **{k: v for k, v in run.items() if k in S3CopyRun.__dataclass_fields__}
+            )
         return prep
 
 

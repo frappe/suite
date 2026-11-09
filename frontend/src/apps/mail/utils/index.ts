@@ -54,32 +54,21 @@ export const raiseToast = (
   // it is pressed, which suits anything that navigates away.
   secondaryAction?: { label: string; onClick: () => void },
 ) => {
-  if (type === 'success')
-    return toast.success(
-      message,
-      action || duration || secondaryAction
-        ? {
-            action,
-            duration,
-            cancel: secondaryAction,
-            // frappe-ui styles the two slots for being alone: the action carries `ml-auto` to
-            // sit against the right edge, and the cancel — never used until now — never got
-            // the action's shape. With both present that reads as one button by the message
-            // and another across the toast, in two different styles. Overridden per toast
-            // (sonner merges these over the provider's) so the pair sits together, matching:
-            // the cancel takes the auto margin for both, the action gives its up.
-            ...(action && secondaryAction
-              ? {
-                  classes: {
-                    cancelButton:
-                      '!ml-auto mr-1 h-7 shrink-0 rounded-4 bg-transparent !transition-colors',
-                    actionButton: '!ml-0',
-                  },
-                }
-              : {}),
-          }
-        : undefined,
-    )
+  if (type === 'success') {
+    const options: NonNullable<Parameters<typeof toast.success>[1]> = {
+      action,
+      duration,
+      cancel: secondaryAction,
+    }
+    if (action && secondaryAction) {
+      // The cancel slot takes the auto margin when both buttons share a toast.
+      options.classes = {
+        cancelButton: '!ml-auto mr-1 h-7 shrink-0 rounded-4 bg-transparent !transition-colors',
+        actionButton: '!ml-0',
+      }
+    }
+    return toast.success(message, action || duration || secondaryAction ? options : undefined)
+  }
 
   const div = document.createElement('div')
   div.innerHTML = message
@@ -246,9 +235,9 @@ export function getGroupedRecipients(
       .join(', ')
 
   return {
-    to: format(to as Recipient[]),
-    cc: format(cc as Recipient[]),
-    bcc: format(bcc as Recipient[]),
+    to: format(to),
+    cc: format(cc),
+    bcc: format(bcc),
   }
 }
 
@@ -323,9 +312,10 @@ export const shouldIgnoreKeypress = (
 
   if (!allowCtrlAndMeta && (e.ctrlKey || e.metaKey)) return true
 
-  const target = e.target as HTMLElement
+  const target = e.target
+  if (!(target instanceof HTMLElement)) return e.altKey
   return (
-    (target.tagName === 'INPUT' && (target as HTMLInputElement).type !== 'checkbox') ||
+    (target instanceof HTMLInputElement && target.type !== 'checkbox') ||
     target.tagName === 'TEXTAREA' ||
     target.isContentEditable ||
     e.altKey
@@ -367,7 +357,7 @@ const REMOTE_CSS_URL = /url\(\s*['"]?(?:https?:)?\/\//i
 // Inspect the HTML for externally-hosted assets via the DOM (one parse): counts remote <img>, and flags
 // whether any remote asset is present at all — a remote <img>, or a remote url(...) in an inline style or
 // <style> block (background images, fonts). Used to decide the "images blocked" banner and its count.
-export const analyzeRemoteAssets = (html?: string): { images: number; hasRemote: boolean } => {
+export const analyzeRemoteAssets = (html?: string) => {
   if (!html) return { images: 0, hasRemote: false }
 
   const doc = new DOMParser().parseFromString(html, 'text/html')
@@ -508,8 +498,8 @@ export const getIcon = (mailbox: {
 }) => {
   if (mailbox.icon === 'spam') return 'mail-warning'
   if (mailbox.icon) return mailbox.icon
-  if (mailbox.role && mailbox.role in FOLDER_ICON_MAP)
-    return FOLDER_ICON_MAP[mailbox.role as keyof typeof FOLDER_ICON_MAP]
+  const icon = Object.entries(FOLDER_ICON_MAP).find(([role]) => role === mailbox.role)?.[1]
+  if (icon !== undefined) return icon
   return 'folder'
 }
 

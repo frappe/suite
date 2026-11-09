@@ -82,7 +82,10 @@ async function openEditor(scrollTop: number, line = LINE) {
   return { editor, scroller }
 }
 
-function addLineAtTop(editor: Editor, sync: object | null) {
+function addLineAtTop(
+  editor: Editor,
+  sync: { isChangeOrigin: boolean; isUndoRedoOperation?: boolean } | null,
+) {
   const paragraph = editor.schema.nodes.paragraph.create(null, editor.schema.text('new'))
   const transaction = editor.state.tr.insert(0, paragraph)
   if (sync) {

@@ -14,7 +14,9 @@ carries on. Frappe records the patch, so no later migrate retries it: each
 failure lands in the Error Log, and the retry is
 `bench --site <site> execute suite.slides.patches.move_file_media_to_drive.execute`.
 A second run stores nothing twice: all a converted body still names by legacy URL
-is another deck's files and lost bytes, and those stay as they are.
+is another deck's files and lost bytes, and those stay as they are. A deck that went
+to a collab log is skipped: its log is the deck now and its rows aren't this patch's
+to write (issue 1151).
 """
 
 import io
@@ -22,8 +24,10 @@ import io
 import frappe
 
 from suite import drive
+from suite.content import tables
 from suite.slides import drive as slides_drive
 from suite.slides.api.file import get_reference_presentations
+from suite.slides.content import APP
 
 LEGACY_PREFIXES = ("/private/files/", "/files/")
 
@@ -31,7 +35,14 @@ LEGACY_PREFIXES = ("/private/files/", "/files/")
 def execute():
     retry = f"bench --site {frappe.local.site} execute suite.slides.patches.move_file_media_to_drive.execute"
     failed = []
+    # The first migrate reaches this before after_migrate makes the log tables, and then no deck has a log
+    has_logs = tables.table(APP, "doc") in frappe.db.get_tables(cached=False)
     for deck in frappe.get_all("Presentation", filters={"node": ("is", "set")}, fields=["name", "node"]):
+        if has_logs and slides_drive.holds_log(deck.node):
+            # Lets go of the row it locked
+            frappe.db.rollback()
+            continue
+
         try:
             convert_deck(deck.name, deck.node)
             frappe.db.commit()

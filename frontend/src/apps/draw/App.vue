@@ -74,21 +74,23 @@ function onToolShortcut(event: KeyboardEvent) {
   if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return
   const target = event.target instanceof HTMLElement ? event.target : null
   if (target?.closest('input, textarea, select, [contenteditable="true"], [role="dialog"]')) return
-  const shortcuts: Record<string, DrawingTool> = {
-    r: 'rectangle',
-    d: 'diamond',
-    c: 'ellipse',
-    o: 'ellipse',
-    l: 'line',
-    a: 'arrow',
-    t: 'text',
-    i: 'image',
-    k: 'laser',
-    p: 'draw',
-    e: 'eraser',
-    '0': 'eraser',
-  }
-  const tool = shortcuts[event.key.toLowerCase()]
+  const shortcuts = new Map<string, DrawingTool>(
+    Object.entries({
+      r: 'rectangle',
+      d: 'diamond',
+      c: 'ellipse',
+      o: 'ellipse',
+      l: 'line',
+      a: 'arrow',
+      t: 'text',
+      i: 'image',
+      k: 'laser',
+      p: 'draw',
+      e: 'eraser',
+      '0': 'eraser',
+    } satisfies Record<string, DrawingTool>),
+  )
+  const tool = shortcuts.get(event.key.toLowerCase())
   if (tool) {
     event.preventDefault()
     selectTool(tool)

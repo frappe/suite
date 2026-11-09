@@ -18,7 +18,10 @@ export function registerRoomQueryHandlers(deps: HandlerDeps) {
 					snapshot: deps.registry.getRecorderStageSnapshot(roomId),
 				});
 			} catch (error) {
-				callback({ success: false, error: (error as Error).message });
+				callback({
+					success: false,
+					error: error instanceof Error ? error.message : String(error),
+				});
 			}
 		});
 
@@ -39,9 +42,12 @@ export function registerRoomQueryHandlers(deps: HandlerDeps) {
 			} catch (error) {
 				loggers.socketHandler.error(
 					'Error getting RTP capabilities: %s',
-					(error as Error).message,
+					error instanceof Error ? error.message : String(error),
 				);
-				callback({ success: false, error: (error as Error).message });
+				callback({
+					success: false,
+					error: error instanceof Error ? error.message : String(error),
+				});
 			}
 		});
 
@@ -83,9 +89,12 @@ export function registerRoomQueryHandlers(deps: HandlerDeps) {
 			} catch (error) {
 				loggers.socketHandler.error(
 					'Error getting existing producers: %s',
-					(error as Error).message,
+					error instanceof Error ? error.message : String(error),
 				);
-				callback({ success: false, error: (error as Error).message });
+				callback({
+					success: false,
+					error: error instanceof Error ? error.message : String(error),
+				});
 			}
 		});
 
@@ -157,9 +166,12 @@ export function registerRoomQueryHandlers(deps: HandlerDeps) {
 			} catch (error) {
 				loggers.socketHandler.error(
 					'Error getting room participants: %s',
-					(error as Error).message,
+					error instanceof Error ? error.message : String(error),
 				);
-				callback({ success: false, error: (error as Error).message });
+				callback({
+					success: false,
+					error: error instanceof Error ? error.message : String(error),
+				});
 			}
 		});
 	};

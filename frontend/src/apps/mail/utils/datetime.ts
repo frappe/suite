@@ -30,6 +30,10 @@ export const formatDateTime = (value?: string | null, format = 'MMM D YYYY, h:mm
  */
 export const useMinuteClock = createSharedComposable(() => useNow({ interval: 60_000 }))
 
+/** Whether a UTC timestamp falls on today's date in the user's zone. */
+export const isToday = (value: string, now: Date = new Date()): boolean =>
+  inUserTimeZone(value).isSame(dayjs(now).tz(userTimeZone()), 'day')
+
 /**
  * A message's time in a thread, where each row carries its own date: the clock alone for today,
  * then "Yesterday, 4:15 PM", "9 Oct, 1:20 PM", and the year once it is not this one.
@@ -53,6 +57,14 @@ export const formatListTime = (value: string, now: Date = new Date()): string =>
   if (at.isSame(today, 'day')) return at.format('h:mm A')
   if (at.isSame(today.subtract(1, 'day'), 'day')) return __('Yesterday')
   return at.format(at.isSame(today, 'year') ? 'D MMM' : 'D MMM YYYY')
+}
+
+/** When a reminder is set for, said in full: "Reminder at 6:00 PM", or "Reminder on Nov 16, 6:00 PM". */
+export const describeReminderTime = (value: string, now: Date = new Date()): string => {
+  const at = inUserTimeZone(value)
+  return isToday(value, now)
+    ? __('Reminder at {0}', [at.format('h:mm A')])
+    : __('Reminder on {0}', [at.format('MMM D, h:mm A')])
 }
 
 /** The clock alone, for a row under a header that already names its day. */

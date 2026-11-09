@@ -21,7 +21,7 @@ interface WrapFormat {
 export const WRAP_MODES: readonly WrapMode[] = ['overflow', 'clip', 'wrap']
 
 function _isWrapMode(v: unknown): v is WrapMode {
-  return (WRAP_MODES as readonly unknown[]).includes(v)
+  return WRAP_MODES.some((mode) => mode === v)
 }
 
 /** The cell's wrap mode; the legacy `wrapText: true` reads as 'wrap'. */

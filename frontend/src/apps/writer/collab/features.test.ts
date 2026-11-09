@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { getSchema } from '@tiptap/core'
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it } from 'vitest'
 
 import { writerAdapter } from '@/apps/writer/collab/adapter'
@@ -16,7 +17,7 @@ interface Features {
 // The server refuses a row naming anything this file does not declare at or below the row's schema
 const featuresPath = resolve(__dirname, '../../../../../suite/writer/content/schema.json')
 const featuresText = readFileSync(featuresPath, 'utf8')
-const declared = JSON.parse(featuresText) as Features
+const declared = fromPartial<Features>(JSON.parse(featuresText))
 
 // The binding writes kept formatting back as the keys it was read from
 const KEPT_FORMATTING = 'keptFormatting'

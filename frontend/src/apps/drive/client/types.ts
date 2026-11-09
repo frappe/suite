@@ -19,6 +19,9 @@ export const DRIVE_ROLES = {
   manage: 50,
 } as const
 
+/** A side panel a document's header toggles. Each editor renders the panel itself. */
+export type DocumentPanel = 'comments' | 'versions'
+
 export interface DriveAccess {
   role?: number
   via_link?: string | null
@@ -28,11 +31,20 @@ export interface DriveAccess {
   can_manage?: boolean
 }
 
+/** How widely a node is shared: its widest reach, and a head count. It names nobody. */
+export interface DriveAudience {
+  kind: 'public' | 'organization' | 'link' | 'people'
+  /** People who hold a grant, their own or through a group, the owner among them. */
+  people: number
+}
+
 export interface DriveBreadcrumb {
   name: string
   title: string
   /** A file under a content document has the document as its last step, not a folder. */
   kind: string
+  /** The caller's role at this step, one of `DRIVE_ROLES`. */
+  role: number
 }
 
 export interface DrivePreview {
@@ -69,8 +81,11 @@ export interface DriveNode {
   modified: string | null
   content_modified: string | null
   access?: DriveAccess
+  audience?: DriveAudience
   breadcrumbs?: DriveBreadcrumb[]
   preview?: DrivePreview | null
+  /** A folder's files at every depth, trashed ones left out, in bytes. Only folders carry it. */
+  contents_size?: number
   opened_at?: string | null
   favourite?: boolean
 }
@@ -103,4 +118,16 @@ export function hasRole(node: Pick<DriveNode, 'access'> | null | undefined, role
 /** Whether the caller may share, restore what others trashed, and delete for good. Not a content right. */
 export function canManage(node: Pick<DriveNode, 'access'> | null | undefined): boolean {
   return node?.access?.can_manage ?? hasRole(node, DRIVE_ROLES.manage)
+}
+
+/**
+ * The side panels this person can open. As on the server, a Guest needs a comment link to see the
+ * discussion and an edit link to see the version history: a public reader sees the document only.
+ */
+export function documentPanels(access: DriveAccess, isSignedIn: boolean): DocumentPanel[] {
+  const role = access.role ?? 0
+  const panels: DocumentPanel[] = []
+  if (isSignedIn || role >= DRIVE_ROLES.comment) panels.push('comments')
+  if (isSignedIn || role >= DRIVE_ROLES.edit) panels.push('versions')
+  return panels
 }

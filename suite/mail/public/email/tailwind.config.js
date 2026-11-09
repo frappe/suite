@@ -1,4 +1,4 @@
-import config from '../../../frontend/tailwind.config'
+import config from '../../../../tailwind.config.js'
 
 module.exports = {
 	content: ['./templates/emails/*.html'],

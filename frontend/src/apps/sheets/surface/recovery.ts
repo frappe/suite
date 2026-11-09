@@ -19,6 +19,10 @@ type Cells = Record<string, unknown>
 
 const key = (node: string) => `suite:sheets-recovery:${node}`
 
+function isRecoveryRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
 export function keepRecovery(node: string, workbook: string, now = new Date()): RecoveryCopy {
   const copy = { savedAt: now.toISOString(), workbook }
   localStorage.setItem(key(node), JSON.stringify(copy))
@@ -27,10 +31,10 @@ export function keepRecovery(node: string, workbook: string, now = new Date()): 
 
 export function readRecovery(node: string): RecoveryCopy | null {
   try {
-    const copy = JSON.parse(
-      localStorage.getItem(key(node)) ?? 'null',
-    ) as Partial<RecoveryCopy> | null
-    return typeof copy?.workbook === 'string' && typeof copy.savedAt === 'string'
+    const copy: unknown = JSON.parse(localStorage.getItem(key(node)) ?? 'null')
+    return isRecoveryRecord(copy) &&
+      typeof copy.workbook === 'string' &&
+      typeof copy.savedAt === 'string'
       ? { savedAt: copy.savedAt, workbook: copy.workbook }
       : null
   } catch {
@@ -78,10 +82,20 @@ export async function downloadRecovery(node: string, title: string): Promise<boo
 
 async function sheetsOf(workbook: string): Promise<Record<string, Cells>> {
   // Let decoding errors reach the caller so downloadRecovery keeps the local copy.
-  const saved = JSON.parse(workbook) as { sheet?: unknown; engine?: unknown; draft?: unknown }
+  const saved: unknown = JSON.parse(workbook)
+  if (!isRecoveryRecord(saved)) throw new Error('Recovery workbook must be an object')
   if (typeof saved.engine === 'string') return engineSheets(saved.engine, saved.draft)
-  const unpacked = unpackSheet(saved.sheet) as { sheets?: Record<string, Cells> } | null | undefined
-  return unpacked?.sheets ?? {}
+  const unpacked = unpackSheet(saved.sheet)
+  if (unpacked == null) return {}
+  if (!isRecoveryRecord(unpacked)) throw new Error('Recovery sheets must be an object')
+  if (unpacked.sheets === undefined) return {}
+  if (!isRecoveryRecord(unpacked.sheets)) throw new Error('Recovery sheets must be a map')
+  const sheets: Record<string, Cells> = {}
+  for (const [name, cells] of Object.entries(unpacked.sheets)) {
+    if (!isRecoveryRecord(cells)) throw new Error('Recovery cells must be a map')
+    sheets[name] = cells
+  }
+  return sheets
 }
 
 /** One sheet's cells as a SheetJS worksheet. A formula has no cached value: the opening app computes it. */
@@ -138,9 +152,17 @@ async function engineSheets(engine: string, draft: unknown): Promise<Record<stri
     }
     sheets[name] = cells
   }
-  const typed = draft as { sheet?: unknown; cell?: unknown; value?: unknown } | null | undefined
   if (
-    typeof typed?.sheet === 'string' &&
+    !draft ||
+    typeof draft !== 'object' ||
+    !('sheet' in draft) ||
+    !('cell' in draft) ||
+    !('value' in draft)
+  )
+    return sheets
+  const typed = draft
+  if (
+    typeof typed.sheet === 'string' &&
     typeof typed.cell === 'string' &&
     typeof typed.value === 'string'
   ) {

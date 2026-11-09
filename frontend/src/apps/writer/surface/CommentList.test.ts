@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
@@ -47,6 +48,11 @@ vi.mock('@/apps/drive', async () => {
   return fakeDrive()
 })
 
+vi.mock('@/apps/writer/drive', async () => {
+  const { fakeWriterDrive } = await import('./comment-list-fakes')
+  return fakeWriterDrive()
+})
+
 describe('the comments list', () => {
   it('shows each open thread on one row: who, where, when, the first comment and the replies', () => {
     const { host } = showList()
@@ -76,7 +82,7 @@ describe('the comments list', () => {
       [
         expect.stringMatching(/^Ben Ito \S.* Looks good overall$/),
         expect.stringMatching(/^Asha Rao \S.* Is this right\? · 2 replies$/),
-        expect.stringMatching(/^Asha Rao Text deleted \S.* Fixed the title · 1 reply$/),
+        expect.stringMatching(/^Asha Rao \S.* gone Text deleted Fixed the title · 1 reply$/),
       ],
     ])
   })
@@ -274,7 +280,7 @@ describe('threads changed since last opened', () => {
 
   function withReply(thread: DocumentThread) {
     const reply = { ...comment('c9', 'Ben Ito', 'One more'), modified: '2026-10-02 09:00:00' }
-    return { ...thread, comments: [...thread.comments, reply] } as DocumentThread
+    return fromPartial<DocumentThread>({ ...thread, comments: [...thread.comments, reply] })
   }
 
   it('dots a row changed since, open or resolved, and clears it once opened, never dotting drafts', async () => {
@@ -294,7 +300,11 @@ describe('threads changed since last opened', () => {
       [],
       [expect.stringMatching(/^Ben Ito Unread \S.* Looks good overall · 1 reply$/)],
       [],
-      [expect.stringMatching(/^Asha Rao Text deleted Unread \S.* Fixed the title · 2 replies$/)],
+      [
+        expect.stringMatching(
+          /^Asha Rao Unread \S.* gone Text deleted Fixed the title · 2 replies$/,
+        ),
+      ],
     ])
   })
 
@@ -314,12 +324,12 @@ describe('threads changed since last opened', () => {
 })
 
 describe('people a comment mentions', () => {
-  const ASKING = {
+  const ASKING = fromPartial<DocumentThread>({
     ...WHOLE,
     comments: [
       { ...comment('c8', 'Asha Rao', 'Ask @[ben@x.com] or @[ghost]'), mentions: ['ben@x.com'] },
     ],
-  } as unknown as DocumentThread
+  })
 
   it('names the people Drive found mentioned, in the row and the open thread, and leaves the rest as written', async () => {
     const { host } = showList({ threads: [ASKING] })
@@ -336,7 +346,7 @@ describe('people a comment mentions', () => {
   it('names a person Drive found mentioned whatever the case of their token', () => {
     const { host } = showList({
       threads: [
-        {
+        fromPartial<DocumentThread>({
           ...WHOLE,
           comments: [
             {
@@ -344,7 +354,7 @@ describe('people a comment mentions', () => {
               mentions: ['ben@x.com'],
             },
           ],
-        } as unknown as DocumentThread,
+        }),
       ],
     })
 
@@ -357,35 +367,38 @@ describe('people a comment mentions', () => {
       { text: 'Ask @[ben@x.com]', isSent: true },
     ])
     const { host } = showList({ threads: [], drafts: list })
+    const POSTING = expect.stringMatching(/^Asha Rao \S.* Ask @Ben Roy$/)
     const closed = rows(host)
 
     const [, notPosted] = [...host.querySelectorAll('button')].filter(
-      (button) => button.textContent?.trim() === 'You',
+      (button) => button.textContent?.trim() === 'Asha Rao',
     )
     await click(notPosted)
 
     expect([closed, rows(host)]).toEqual([
-      ['You Posting… Ask @Ben Roy', 'You Not posted · Retry Ask @Ben Roy'],
-      ['You Posting… Ask @Ben Roy', 'You Not posted · Retry Ask @Ben Roy Discard'],
+      [POSTING, 'Asha Rao Not posted · Retry Ask @Ben Roy'],
+      [POSTING, 'Asha Rao Not posted · Retry Ask @Ben Roy Discard'],
     ])
   })
 })
 
 describe('a comment kept from the old Drive', () => {
   const PHOTO = { full_name: 'Asha Rao', user_image: '/asha.png' }
-  const KEPT = {
+  const KEPT = fromPartial<DocumentThread>({
     ...WHOLE,
     comments: [
       { ...comment('c9', 'Asha Rao', 'From 2023'), author_name: 'Old Name', person: PHOTO },
       { ...comment('c10', 'Asha Rao', 'Also 2023'), author_name: 'Other Name', person: PHOTO },
     ],
-  } as unknown as DocumentThread
+  })
 
+  // Each person shown, by their photo or, with none, their initials
   function avatars(host: Element) {
-    return [...host.querySelectorAll('[data-avatar]')].map((avatar) => [
-      avatar.getAttribute('data-avatar'),
-      avatar.getAttribute('data-image'),
-    ])
+    return [...host.querySelectorAll('[data-avatar], [data-initials]')].map((avatar) =>
+      avatar.hasAttribute('data-initials')
+        ? ['initials', avatar.getAttribute('data-initials')]
+        : [avatar.getAttribute('data-avatar'), avatar.getAttribute('data-image')],
+    )
   }
 
   it('names the old commenter, with their initials and no photo', async () => {
@@ -397,12 +410,15 @@ describe('a comment kept from the old Drive', () => {
     expect([closed, rows(host), avatars(host)]).toEqual([
       [expect.stringMatching(/^Old Name .*From 2023/)],
       [expect.stringMatching(/^Old Name .*From 2023.*Other Name .*Also 2023/s)],
-      [['Other Name', 'none']],
+      [
+        ['initials', 'ON'],
+        ['initials', 'ON'],
+      ],
     ])
   })
 
   it('names the person and shows their photo when no old name is kept', async () => {
-    const SIGNED = {
+    const SIGNED = fromPartial<DocumentThread>({
       ...WHOLE,
       comments: [
         comment('c11', 'Asha Rao', 'Now'),
@@ -411,19 +427,22 @@ describe('a comment kept from the old Drive', () => {
           person: { full_name: 'Ben Ito', user_image: '/ben.png' },
         },
       ],
-    } as unknown as DocumentThread
+    })
     const { host } = showList({ threads: [SIGNED] })
 
     await click(rowButton(host, 'Now'))
 
     expect([rows(host), avatars(host)]).toEqual([
       [expect.stringMatching(/^Asha Rao .*Now.*Ben Ito .*Later/s)],
-      [['Ben Ito', '/ben.png']],
+      [
+        ['initials', 'AR'],
+        ['Ben Ito', '/ben.png'],
+      ],
     ])
   })
 
   it('names the person and shows their photo when the old name is blank', async () => {
-    const BLANK = {
+    const BLANK = fromPartial<DocumentThread>({
       ...WHOLE,
       comments: [
         { ...comment('c13', 'Asha Rao', 'Then'), author_name: ' ' },
@@ -433,14 +452,17 @@ describe('a comment kept from the old Drive', () => {
           person: { full_name: 'Ben Ito', user_image: '/ben.png' },
         },
       ],
-    } as unknown as DocumentThread
+    })
     const { host } = showList({ threads: [BLANK] })
 
     await click(rowButton(host, 'Then'))
 
     expect([rows(host), avatars(host)]).toEqual([
       [expect.stringMatching(/^Asha Rao .*Then.*Ben Ito .*After/s)],
-      [['Ben Ito', '/ben.png']],
+      [
+        ['initials', 'AR'],
+        ['Ben Ito', '/ben.png'],
+      ],
     ])
   })
 })

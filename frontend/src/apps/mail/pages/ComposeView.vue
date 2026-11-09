@@ -56,6 +56,13 @@
         </template>
       </Button>
     </header>
+    <ReplyReminderStrip
+      v-if="remindAt"
+      class="mt-2 shrink-0"
+      :remind-at="remindAt"
+      @change="setRemindAt"
+      @cancel="setRemindAt()"
+    />
 
     <!-- flex-1 so the body claims the rest of the page: a tap anywhere in the empty space below
 		     the last line lands in the message, which is where someone tapping there meant to type. -->
@@ -270,6 +277,8 @@
     </TextEditor>
 
     <ScheduleSendModal v-model="showScheduleModal" @confirm="scheduleSend" />
+    <!-- Opened from More actions: a phone's sheet, with no button of its own. -->
+    <ReminderMenu v-model:open="remindOpen" :current="remindAt" @pick="setRemindAt" />
   </div>
 </template>
 
@@ -278,6 +287,7 @@ import { EditorContent } from '@tiptap/vue-3'
 import { Button, Combobox } from 'frappe-ui'
 import { Icon as FeatherIcon, TextEditor, TextEditorFixedMenu } from 'frappe-ui/experimental'
 import {
+  BellPlus,
   CalendarClock,
   ChevronDown,
   ChevronUp,
@@ -292,6 +302,8 @@ import { onBeforeRouteLeave, useRouter } from 'vue-router'
 
 import RecipientInput from '@/apps/mail/components/Controls/RecipientInput.vue'
 import ScheduleSendModal from '@/apps/mail/components/Modals/ScheduleSendModal.vue'
+import ReminderMenu from '@/apps/mail/components/ReminderMenu.vue'
+import ReplyReminderStrip from '@/apps/mail/components/ReplyReminderStrip.vue'
 import { takePendingCompose } from '@/apps/mail/composables/composeHandoff'
 import { useComposeMail } from '@/apps/mail/composables/useComposeMail'
 import type { Attachment, Identity } from '@/apps/mail/types'
@@ -356,6 +368,8 @@ const {
   showScheduleModal,
   openScheduleModal,
   scheduleSend,
+  remindAt,
+  setRemindAt,
   openQuotedContent,
   openAttachment,
   mentionExtensions,
@@ -422,9 +436,9 @@ const caretFromPoint = (x: number, y: number) => {
  * scroller, where it costs nothing.
  */
 const focusWithoutReveal = (event: PointerEvent) => {
-  const target = event.target as HTMLElement | null
+  const target = event.target instanceof Element ? event.target : null
   const editor = textEditor.value?.editor
-  const body = editor?.view?.dom as HTMLElement | undefined
+  const body = editor?.view?.dom
 
   // A quote unfolded into the body is an editing host of its own (see QuotedContentExtension), which
   // ProseMirror keeps out of. Its caret is the browser's, so it goes where the tap landed; placed by
@@ -471,8 +485,8 @@ const focusWithoutReveal = (event: PointerEvent) => {
 const isBodyFocused = ref(false)
 
 const onFocusIn = (event: FocusEvent) => {
-  const node = event.target as HTMLElement | null
-  const body = textEditor.value?.editor?.view?.dom as HTMLElement | undefined
+  const node = event.target instanceof Element ? event.target : null
+  const body = textEditor.value?.editor?.view?.dom
 
   if (body && node && body.contains(node)) isBodyFocused.value = true
   else if (node?.closest?.('input, textarea')) isBodyFocused.value = false
@@ -491,7 +505,7 @@ const onFocusIn = (event: FocusEvent) => {
 // as focus arrives, leaves iOS with nothing to reveal and so no reason to pan.
 const revealFocused = (event: FocusEvent) => {
   const box = scroller.value
-  const node = event.target as HTMLElement | null
+  const node = event.target instanceof Element ? event.target : null
   if (!box || !node) return
 
   // The body's element spans the whole composition, so its box says nothing about where the caret
@@ -531,7 +545,10 @@ const removeAttachment = (index: number) => {
 }
 
 const onFilesSelected = async (e: Event) => {
-  const input = e.target as HTMLInputElement
+  const checkedEventTarget = e.target
+  if (!(checkedEventTarget instanceof HTMLInputElement)) return
+
+  const input = checkedEventTarget
   const files = Array.from(input.files ?? [])
   input.value = ''
 
@@ -539,19 +556,28 @@ const onFilesSelected = async (e: Event) => {
     pendingUploads.value++
     try {
       const doc = await uploadFunction(file)
-      mail.attachments.push({ ...doc, disposition: 'attachment' } as Attachment)
+      mail.attachments.push({ ...doc, disposition: 'attachment' })
     } catch (error) {
-      raiseToast((error as Error)?.message ?? __('Could not attach {0}.', [file.name]), 'error')
+      raiseToast(
+        error instanceof Error ? error.message : __('Could not attach {0}.', [file.name]),
+        'error',
+      )
     } finally {
       pendingUploads.value--
     }
   }
 }
 
-const ACTIONS = [
+const remindOpen = ref(false)
+const ACTIONS = computed(() => [
   { label: __('Schedule send'), onClick: () => openScheduleModal(), icon: CalendarClock },
+  {
+    label: remindAt.value ? __('Change reminder') : __('Remind me if no reply'),
+    onClick: () => (remindOpen.value = true),
+    icon: BellPlus,
+  },
   { label: __('Discard'), onClick: () => discardMail(), icon: Trash2, theme: 'red' as const },
-]
+])
 
 // Start where there is still something to write: the body on a reply (recipients and subject came
 // with the thread), the subject when the draft arrived addressed but unnamed (a `mailto:` link, or a

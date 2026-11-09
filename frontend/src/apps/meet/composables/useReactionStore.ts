@@ -6,8 +6,12 @@ interface ReactionEntry {
   timeoutId: number
 }
 
+interface ReactionState {
+  reactions: Record<string, ReactionEntry>
+}
+
 export const useReactionStore = defineStore('meet-reaction', {
-  state: () => ({ reactions: {} as Record<string, ReactionEntry> }),
+  state: (): ReactionState => ({ reactions: {} }),
   actions: {
     showReactionForUser(userId: string, emoji: string, duration = 5000) {
       const expiresAt = Date.now() + duration

@@ -16,7 +16,6 @@ from suite.slides.http.routes import CONTRACT_ROUTES
 
 RETIRED = {
     "create_presentation": "kept until end-of-PR check (Q180)",
-    "save_presentation_thumbnail": "kept until end-of-PR check (Q180)",
     "get_presentations": "kept until end-of-PR check (Q180)",
     "get_media_file": "live: media URLs point at it directly (MEDIA_PROXY_PATH), not through a route",
     "add": "live: the editor uploads to it directly (MEDIA_UPLOAD_ENDPOINT), as multipart, not through a route",

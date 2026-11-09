@@ -4,7 +4,9 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 
 import MailTabBar from '@/apps/mail/components/mobile/MailTabBar.vue'
 
-const calls = vi.hoisted(() => ({ search: 0, folders: [] as string[] }))
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
+const calls = vi.hoisted(() => ({ search: 0, folders: fromPartial<string[]>([]) }))
 
 // Unit tests alias frappe-ui to a stub. The bar and its items are the real
 // components here, so a wrong prop name fails the test.

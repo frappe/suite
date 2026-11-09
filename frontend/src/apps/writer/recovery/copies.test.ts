@@ -260,10 +260,10 @@ describe('Writer recovery copies', () => {
   })
 
   it('a download leaves the copy on the device, and discarding removes only that copy', async () => {
-    const url = URL as {
+    const url: {
       createObjectURL?: (blob: Blob) => string
       revokeObjectURL?: (href: string) => void
-    }
+    } = URL
     url.createObjectURL = () => 'blob:recovery'
     url.revokeObjectURL = () => {}
 
@@ -289,7 +289,8 @@ describe('Writer recovery copies', () => {
   })
 
   it('copying puts the copy on the clipboard, formatted where the browser allows', async () => {
-    let pasted: Record<string, string> = {}
+    type ClipboardFormats = Partial<Record<'text/plain' | 'text/html', string>>
+    let pasted: ClipboardFormats = {}
     const clipboard = {
       async write([item]: { parts: Record<string, Blob> }[]) {
         const parts = Object.entries(item.parts)
@@ -321,7 +322,7 @@ describe('Writer recovery copies', () => {
     expect(pasted).toEqual({ 'text/plain': 'Unsaved work' })
 
     vi.unstubAllGlobals()
-    delete (navigator as { clipboard?: unknown }).clipboard
+    Reflect.deleteProperty(navigator, 'clipboard')
   })
 
   it('offers a copy as a standalone HTML file named after the document', async () => {

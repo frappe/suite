@@ -1,6 +1,7 @@
-import { api, client } from '@/api'
+import { api, client, type InputOf } from '@/api'
 import type { ImperativeClient } from '@/platform/server-state/types'
 
+import type { NodeGrantsOutput } from './generated'
 import { DRIVE_ROLES, type DrivePerson } from './types'
 
 /**
@@ -99,16 +100,18 @@ export interface Role {
   label: string
 }
 
-const ROLE_LABELS: Record<number, string> = {
-  [DRIVE_ROLES.read]: 'View',
-  [DRIVE_ROLES.comment]: 'Comment',
-  [DRIVE_ROLES.upload]: 'Upload',
-  [DRIVE_ROLES.edit]: 'Edit',
-  [DRIVE_ROLES.manage]: 'Manage',
-}
+const ROLE_LABELS = new Map<string, string>(
+  Object.entries({
+    [DRIVE_ROLES.read]: 'View',
+    [DRIVE_ROLES.comment]: 'Comment',
+    [DRIVE_ROLES.upload]: 'Upload',
+    [DRIVE_ROLES.edit]: 'Edit',
+    [DRIVE_ROLES.manage]: 'Manage',
+  }),
+)
 
 export function roleLabel(role: number): string {
-  return ROLE_LABELS[role] ?? (role <= 0 ? 'No access' : `Role ${role}`)
+  return ROLE_LABELS.get(String(role)) ?? (role <= 0 ? 'No access' : `Role ${role}`)
 }
 
 export function principalKind(principal: string): PrincipalKind {
@@ -163,8 +166,13 @@ export function parseStamp(stamp: string): Date {
  * spec §7.9), sent as the UTC instant the server requires (Drive spec §11.3).
  */
 export function endOfDayStamp(date: string): string {
-  const [year, month, day] = date.slice(0, 10).split('-').map(Number) as [number, number, number]
+  const [year = NaN, month = NaN, day = NaN] = date.slice(0, 10).split('-').map(Number)
   return new Date(year, month - 1, day, 23, 59, 59).toISOString().replace('.000Z', 'Z')
+}
+
+/** A `grants.list` answer read with `inherited`, as a `GrantList`. */
+export function grantListOf(answer: NodeGrantsOutput): GrantList {
+  return { grants: answer.grants, inherited: answer.inherited ?? [], owner: answer.owner }
 }
 
 // The grant routes name a grant, not a node, so they carry the node's link codes themselves.
@@ -173,12 +181,7 @@ export function endOfDayStamp(date: string): string {
 export function nodeGrants(node: string, requester: ImperativeClient = client) {
   return {
     async list(): Promise<GrantList> {
-      const answer = await requester.query(api.drive.grants.list, { node, inherited: true })
-      return {
-        grants: 'grants' in answer ? answer.grants : [],
-        inherited: 'inherited' in answer ? (answer.inherited ?? []) : [],
-        owner: 'owner' in answer ? answer.owner : null,
-      }
+      return grantListOf(await requester.query(api.drive.grants.list, { node, inherited: true }))
     },
     async explain(principal: string): Promise<GrantExplanation> {
       const answer = await requester.query(api.drive.grants.list, { node, principal })
@@ -191,11 +194,9 @@ export function nodeGrants(node: string, requester: ImperativeClient = client) {
     },
     /** Removes a principal's local row. `below` also removes it from every item inside; the answer counts them all. */
     async remove(principal: string, below = false): Promise<number> {
-      const answer = await requester.mutation(api.drive.grants.remove, {
-        node,
-        principal,
-        ...(below ? { below: true as const } : {}),
-      })
+      const input: InputOf<typeof api.drive.grants.remove> = { node, principal }
+      if (below) input.below = true
+      const answer = await requester.mutation(api.drive.grants.remove, input)
       return answer.count
     },
     /** Rewrites one existing row by its id: the way to change a link. */

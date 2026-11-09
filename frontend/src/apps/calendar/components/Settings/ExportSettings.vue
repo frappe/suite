@@ -134,8 +134,10 @@ function makeInput(): InputOf<typeof api.mail.calendar.export> {
   )
   // The date pickers give local days; the API listens UTC, so send the day's bounds
   // in the user's zone or the first/last hours of the range get cut off.
-  if (cleanedFilter.after) cleanedFilter.after = utcDayStart(cleanedFilter.after as string)
-  if (cleanedFilter.before) cleanedFilter.before = utcDayEnd(cleanedFilter.before as string)
+  if (typeof cleanedFilter.after === 'string' && cleanedFilter.after)
+    cleanedFilter.after = utcDayStart(cleanedFilter.after)
+  if (typeof cleanedFilter.before === 'string' && cleanedFilter.before)
+    cleanedFilter.before = utcDayEnd(cleanedFilter.before)
   return {
     account: store.accountId,
     ...calendarExport,

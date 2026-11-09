@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { TransportIceRestartResult } from '../../media/TransportManager'
@@ -31,8 +32,8 @@ function createManager(
     setEventHandlers: vi.fn(),
   }
   const manager = new SFURecoveryManager({
-    sfuClient: sfuClient as never,
-    transportManager: transportManager as never,
+    sfuClient: fromPartial(sfuClient),
+    transportManager: fromPartial(transportManager),
     meetingId: () => 'meeting-1',
     onRecovered: opts.onRecovered,
     onFailed: opts.onFailed,

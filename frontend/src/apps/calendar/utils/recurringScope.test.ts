@@ -5,7 +5,7 @@ import { isFirstOccurrence, scopeOptions } from './recurringScope'
 // The app's translation helper is a global installed at boot; the labels are not what is
 // under test here, only which of them the list offers.
 beforeAll(() => {
-  ;(globalThis as any).__ = (text: string) => text
+  window.__ = (text: string) => text
 })
 
 const values = (options: ReturnType<typeof scopeOptions>) => options.map((option) => option.value)

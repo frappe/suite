@@ -17,7 +17,7 @@ Things checked and found equal or better are not listed. These include DOCX and 
 | # | Section | Why |
 |---|---|---|
 | 1 | Bugs that are broken today | Something visible does nothing or does the wrong thing |
-| 2 | Document settings and print | Needed to format and print a document |
+| 2 | Lock | Needed to protect a finished document |
 | 3 | Version history | The Versions panel is always empty |
 | 4 | Templates | "New from template" stays empty |
 | 5 | Document actions inside the editor | Users must leave the document for common actions |
@@ -39,9 +39,9 @@ Things checked and found equal or better are not listed. These include DOCX and 
 
 - **Before:** a locked document was read-only until the user unlocked it.
 - **Now:** `settings.lock` is ignored, so a locked document opens as editable.
-- **Done:** a locked document opens read-only. The user can unlock it for the current session. See also "Lock and Wide view" in section 2.
+- **Done:** a locked document opens read-only. The user can unlock it for the current session.
 - **Where it was:** `fe/writer/pages/Document.vue` (lock buttons)
-- **Done:** `WriterSurface.vue` treats a truthy `settings.lock` as read-only (`isLocked` in `writerDocument.ts`). Unlocking for a session waits for the Settings dialog and the View menu in section 2.
+- **Done:** `WriterSurface.vue` treats a truthy `settings.lock` as read-only (`isLocked` in `writerDocument.ts`). Anyone who can edit locks and unlocks it from the document menu.
 - **Where it goes:** `fe/writer/surface/WriterSurface.vue`
 
 ### 1.3 Mention suggestions are empty for most users (done)
@@ -50,8 +50,8 @@ Things checked and found equal or better are not listed. These include DOCX and 
 - **Now:** the list comes from `GET /api/suite/users`, which answers only a System Manager. Everyone else gets no suggestions.
 - **Done:** any user who can open the document gets suggestions. The list is not limited to System Managers.
 - **Where it was:** `suite.drive.api.product.get_users` (`allUsers`)
-- **Done:** `listUsers` in `fe/writer/drive.ts` reads every page of `GET /api/suite/people`, which any Suite user may call, and keeps the users.
-- **Where it goes:** `fe/writer/drive.ts` (`listUsers`)
+- **Done:** `searchUsers` in `fe/writer/drive.ts` reads the first page of `GET /api/suite/people` that matches the typed text, which any Suite user may call, and keeps the users.
+- **Where it goes:** `fe/writer/drive.ts` (`searchUsers`)
 
 ### 1.4 The title never takes the first line (done)
 
@@ -62,18 +62,14 @@ Things checked and found equal or better are not listed. These include DOCX and 
 - **Done:** `autorename` calls `hasDefaultDocumentTitle` from `fe/drive/client/nodes.ts`, next to the default title it checks.
 - **Where it goes:** same file. The default title is in `fe/drive/client/nodes.ts`.
 
-## 2. Document settings and print
+## 2. Lock
 
 | Gap | Before | Now | Done |
 |---|---|---|---|
-| Document settings dialog | Font family, font size, line spacing, and paragraph spacing above and below could be set for the whole document. The palette had a "Document settings" command. | Missing. The toolbar font, size and spacing controls change the selection only. `WriterDocument.update_settings` has no caller. | The dialog sets these defaults for the document. The palette command is back. |
-| Defaults for new documents | An "Everywhere" tab saved defaults to `Drive Settings.writer_settings`. They applied under each document's own settings. | Missing. `writer_settings` is still on the Drive settings route, but Writer reads only the document's own settings. | New documents start with the user's saved defaults. A document's own settings win. |
-| Print header, footer and page numbers | Header and footer text (left and right), page numbers and separator lines could be set, and printing used them. | Missing. `printDoc` still reads these settings, but nobody can set them. | They can be set in the dialog and appear in the printout. |
-| Lock | A document could be locked. It was read-only until unlocked, and a header button unlocked it temporarily. | Missing. See 1.2. | A View menu item locks and unlocks the document. |
-| Wide view | A View menu item set a 100ch column. | A document that is already wide stays wide. Nobody can change it. | The View menu item is back. |
+| Lock (done) | A document could be locked. It was read-only until unlocked, and a header button unlocked it temporarily. | The document menu has Lock document and Unlock document. There is no temporary unlock. See 1.2. | A menu item locks and unlocks the document. |
 
-- **Where it was:** `fe/writer/components/WriterSettings.vue`, `fe/writer/components/Navbar.vue` (View submenu), `fe/writer/utils/index.js` (`printDoc`), `fe/writer/pages/Document.vue` (`globalSettings`, lock buttons)
-- **Where it goes:** `fe/writer/surface/WriterSurface.vue` (`settings`), `fe/writer/components/CoreEditor.vue` (`gridStyle`)
+- **Where it was:** `fe/writer/components/Navbar.vue` (View submenu), `fe/writer/pages/Document.vue` (lock buttons)
+- **Where it goes:** `fe/writer/surface/WriterDocumentMenu.vue`
 
 ## 3. Version history
 
@@ -127,6 +123,31 @@ The Versions panel says "No versions yet" on a document that has been edited. Ba
 
 - **Where it was:** `fe/writer/pages/Document.vue` (`inIframe`), `fe/writer/components/WriterLayout.vue`
 
+## Comment decisions
+
+- **The owner hears of each new thread.** A new comment thread notifies the document's owner, as well as the people it mentions. The owner gets one notification when the thread also mentions them, and none for their own threads. Replies notify only the people they mention. The bell says `Amira Haddad commented on "Pricing"`, or `mentioned you in` for a person the comment mentions (`suite/drive/_core/comments.py`, `create_thread`).
+- **Mentioning someone gives them access if the author manages the document.** Before a comment, reply or edit is posted, Writer checks the people it newly mentions with `GET /api/suite/people/lookup`, which needs the document and the list of people. Drive enforces the same rules when the comment posts, for every app, so a client cannot skip them (`suite/drive/_core/comments.py`, `reach_mentioned`).
+  - **Author can manage the document:** the person gets Comment access with no dialog, and the author sees a toast such as "Sam can now comment". Someone who already has access keeps their role. No share email goes out, and the person gets one notification.
+  - **Author is signed in and can't manage it:** nobody gets access. The comment posts and the author sees that the person can't open the document until someone who manages it shares it. The person gets the notification. An author who only has View, editing their own older comment, tells only people who already have access.
+  - **Author is a Guest or a share-link commenter:** nobody gets access and a person without access gets no notification, even if the author is signed in but comments only through the link. People who already have access are told as usual. The comment stores only people who can read, so the answer doesn't show whether an account exists. Its text stays as written.
+  - **Only the picker's `@[user]` form reaches someone without access.** `@sam@acme.com` and a literal `data-id="…"` still record the mention and tell people who have access. They never give access or reach anyone else, because the client can only warn about `@[user]`.
+  - **Only people the picker offers count:** enabled users with the Suite User role, and people the document names who can read it. Anyone else is treated like an id that names no one: no mention, access or notification.
+  - **Limits:** a comment that names more than 50 people is refused. An author who can't manage the document tells at most 10 people without access per comment, and each of them once a day per document. The name stays in the comment either way.
+  - **An edit tells only people the comment never named.** Removing a name and putting it back doesn't notify them again.
+  - **Person is blocked (a deny naming them or one of their groups, on the document or inherited, keeping them out):** no access and no notification. A deny on the General group only restricts the document, so that person follows the rules above. An author who can manage the document is told before posting and can pick **Post anyway**, where the mention has no effect, or **Cancel** (`fe/writer/surface/mentionAccess.ts`). Anyone else can't tell a block from any other lack of access: people search and lookup leave `is_blocked` out for them, the comment stores the name the same way, and they see the usual "can't open this document" notice.
+- **A mention reaches the bell without access.** The notification says who mentioned the person and the document's title as it was at the mention, saved on the notification, with no comment text, so it can't show a later rename. It counts in the bell and can be marked read like any other. A notification from when the person could read the document hides once they lose access, and so does an older one with no saved title. If they get access back, every notification shows as usual, with the current title. Opening it shows "You don't have access to this document. Ask {person who mentioned you} to share it." The bell passes the name in the browser's history state, not the URL, so a link can't name anyone. Reaching a document any other way without access shows the first sentence alone. Every refusal looks the same, so the page doesn't say whether the document exists. "Try again" is only for real failures such as a network error. It goes away if the person is blocked or the document leaves Active (`suite/drive/_core/activity.py`, `_visible_notifications`).
+
+## Public web readers
+
+These decisions apply to a signed-out reader of a document shared as "Anyone on the internet can view".
+
+- **The reader sees the document only.** Comments, version history and live presence are hidden. The server enforces this: a Guest needs Comment access to read threads and Edit access to read versions (`suite/drive/_core/comments.py`, `suite/drive/_core/versions.py`). The document payload leaves out comments for such a Guest (`suite/writer/http/routes.py`).
+- **A Guest gets no activity history.** Activity rows hold comment excerpts, mentions and email addresses, so `nodes.activity` refuses a Guest with a Drive 403 (`suite/drive/_core/activity.py`).
+- **Who restored a version stays out of the room.** A public socket hears the same room messages as everyone else, so the `restored` message carries only the restore's number. The name and version come in the next pull, and only for a reader allowed to see versions (`suite/content/restore_notice.py`). A public reader gets no restore notice.
+- **Guests get no presence.** The realtime service sends a Guest the document's changes but no roster, carets or join and leave events. Other people do not see the Guest (`realtime/collab.js`).
+- **Turning web access off stops live updates.** Any grant or link change calls the content type's `access_changed`. Writer then moves the document's rooms to new keys and tells the old room to pull again. A tab that has lost access is refused and stops (`suite/content/live.py`, `close_rooms`).
+- **The page follows the reader's system theme.** A Guest has no saved theme, so the page uses `prefers-color-scheme` and changes when the system theme changes (`suite/www/suite.py`).
+
 ## Changed on purpose
 
 These differ from the old Writer by design. They are not gaps.
@@ -134,6 +155,8 @@ These differ from the old Writer by design. They are not gaps.
 | Old | Now |
 |---|---|
 | `/writer` listed the user's documents, grouped by day, with a New button. | Drive Home, Recents and the type filter replace it. Old paths redirect (`frontend/src/composition/redirects.ts`). |
+| A Settings dialog set the font, size and spacing for a document, defaults for new documents, and print headers and footers. | No dialog. The toolbar formats the selection. A document's saved settings still apply. |
+| A View menu item set a wider text column. | Every document uses the same width, including ones saved as wide. |
 | A `text/markdown` file opened in Writer's rich editor (`fe/writer/components/MarkdownEditor.vue`). | Markdown files open in Drive's Markdown preview. |
 
 ## Search

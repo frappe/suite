@@ -1,4 +1,3 @@
-import type { CameraLayerDemand } from "../../../types/cameraLayers";
 import type {
 	AppData,
 	AudioLevelObserver,
@@ -15,12 +14,10 @@ import type {
 	RtpParameters,
 	WebRtcServer,
 	WebRtcTransport,
-	WorkerLogLevel,
 	WorkerSettings,
 } from 'mediasoup/types';
 import type {
 	ActiveSpeakerEvent,
-	SharedStageState,
 	AuthExpiredEvent,
 	ChatMessage,
 	ChatSendRequest,
@@ -68,16 +65,17 @@ import type {
 	ScreenShareStoppedEvent,
 	SFUErrorEvent,
 	SFUScope,
+	SharedStageState,
 	SttSegmentEvent,
 	SttToggleRequest,
 	TranscriptSegment,
 	UpdateTokenRequest,
 	UserData,
 } from '../../../types';
+import type { CameraLayerDemand } from '../../../types/cameraLayers';
 
 // Types shared with other SFU modules
 export type {
-	SharedStageState,
 	AppData,
 	ChatMessage,
 	Consumer,
@@ -101,22 +99,22 @@ export type {
 	RecorderStageSnapshot,
 	RecordingProofChallenge,
 	RecordingProofRequest,
+	RouterRtpCodecCapability,
 	RtpCapabilities,
 	RtpCodecCapability,
 	RtpParameters,
 	ScreenShareStartedEvent,
 	ScreenShareStoppedEvent,
-	SFUScope,
+	SharedStageState,
 	TranscriptSegment,
 	UserData,
 	WebRtcTransport,
-	WorkerLogLevel,
 	WorkerSettings,
 };
 
 // Socket.IO types
 export interface ServerToClientEvents {
-	"producer:camera_layers": (data: CameraLayerDemand) => void;
+	'producer:camera_layers': (data: CameraLayerDemand) => void;
 	'recording:challenge': (data: RecordingProofChallenge) => void;
 	'recording:projection': (data: RecorderStageProjectionEvent) => void;
 	participant_joined: (data: ParticipantJoinedEvent) => void;
@@ -155,7 +153,11 @@ export interface ServerToClientEvents {
 export interface ClientToServerEvents {
 	'producer:get_camera_layers': (
 		data: { producerId: string },
-		callback: (response: { success: true; demand: CameraLayerDemand | null } | { success: false; error: string }) => void,
+		callback: (
+			response:
+				| { success: true; demand: CameraLayerDemand | null }
+				| { success: false; error: string },
+		) => void,
 	) => void;
 	'recording:proof': (
 		data: RecordingProofRequest,
@@ -360,6 +362,7 @@ export interface SocketData {
 	isHost: boolean;
 	isGuest?: boolean;
 	guestGeneration?: number;
+	hostOnlyChat?: boolean;
 	roomId?: string;
 	participantId?: string;
 	participantConnectionId?: string;
@@ -550,6 +553,7 @@ export interface JWTPayload {
 	is_cohost?: boolean;
 	is_guest?: boolean;
 	guest_generation?: number;
+	host_only_chat?: boolean;
 	scope?: SFUScope;
 	e2ee_required?: boolean;
 	session_id?: string;
@@ -604,6 +608,7 @@ declare module 'socket.io' {
 		isCohost: boolean;
 		isGuest?: boolean;
 		guestGeneration?: number;
+		hostOnlyChat?: boolean;
 		roomId?: string;
 		participantId?: string;
 		participantConnectionId?: string;

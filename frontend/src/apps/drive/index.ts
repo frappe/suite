@@ -15,19 +15,21 @@ import { createGuestCommentName, type GuestCommentName } from '@/apps/drive/clie
 import { driveLinks } from '@/apps/drive/client/links'
 import { createDocument, recordVisit } from '@/apps/drive/client/nodes'
 import { openDriveDocumentSession, type DocumentSession } from '@/apps/drive/client/session'
-import type { DriveBreadcrumb, DriveNode } from '@/apps/drive/client/types'
+import { DRIVE_ROLES, type DriveBreadcrumb, type DriveNode } from '@/apps/drive/client/types'
 import { announceTrash } from '@/apps/drive/files/features/changeToast'
 import { presentDialog, rememberDialogContext } from '@/apps/drive/files/features/dialogHost'
 import { nodeActions, type ActionNode } from '@/apps/drive/files/features/nodeActions'
 import { observePreviewRefresh } from '@/apps/drive/files/features/previewRefresh'
+import { preloadShareDialog, readShare } from '@/apps/drive/files/features/share/opening'
+import { usePaletteSearch } from '@/apps/drive/files/features/usePaletteSearch'
 import { useLocationTitle } from '@/apps/drive/files/internal/locations'
 import { slugify } from '@/apps/drive/files/internal/slugify'
-import type { AreaDefinition } from '@/platform/contracts'
+import { type AreaDefinition, type PaletteSearchSource } from '@/platform/contracts'
 import { toast } from '@/platform/feedback'
-import { openingTitleState } from '@/platform/page-meta'
+import { newDocumentState, openingTitleState } from '@/platform/page-meta'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
-import { buildUrl } from '@/platform/transport'
+import { buildUrl, TransportError } from '@/platform/transport'
 
 export type {
   CredentialGroup,
@@ -40,6 +42,7 @@ export type {
   SessionState,
 } from '@/apps/drive/client/session'
 export { CredentialOverflowError } from '@/apps/drive/client/links'
+export { documentCredentials } from '@/apps/drive/client/session'
 export { hasDefaultDocumentTitle, nodeContentUrl } from '@/apps/drive/client/nodes'
 
 /** Remembers the share link a `#link=` fragment carried, for the node it opened. */
@@ -66,16 +69,20 @@ export { default as DriveFileCard } from '@/apps/drive/files/features/FileCard.v
 
 /**
  * Keeps the signed thumbnail URLs on a card grid fresh while the calling
- * component is mounted: every 10 minutes, and when the tab is shown again.
+ * component is mounted: shortly before the earliest of `rows` expires.
  * Call it in a component's setup.
  */
-export function useDrivePreviewRefresh(refresh: () => unknown): void {
+export function useDrivePreviewRefresh(
+  refresh: () => unknown,
+  rows: () => readonly Pick<DriveNodeSummary, 'preview'>[],
+): void {
   let stop: (() => void) | undefined
   onMounted(() => {
     stop = observePreviewRefresh({
       refresh: async () => {
         await refresh()
       },
+      rows,
     })
   })
   onBeforeUnmount(() => stop?.())
@@ -132,6 +139,8 @@ export const loadDriveSettings = () =>
 
 export interface DriveDocumentCreation {
   readonly isPending: boolean
+  /** False once Drive has said the caller has no My files to create in. */
+  readonly canCreate: boolean
   /** Creates a document of this content doctype in My files. Refusals reject. */
   run(input: { content_doctype: string }): Promise<DriveNodeSummary>
 }
@@ -144,6 +153,10 @@ export function useDriveDocumentCreation(): DriveDocumentCreation {
   return {
     get isPending() {
       return resolving.value || creating.value
+    },
+    get canCreate() {
+      const refusal = discovered.error
+      return !(refusal instanceof TransportError && refusal.type === 'DriveNotFound')
     },
     async run({ content_doctype }) {
       resolving.value = true
@@ -196,6 +209,19 @@ export function driveNodeRoute(
   return { path: `${base}${slug ? `/${slug}` : ''}`, state: openingTitleState(label) }
 }
 
+/** Drive's nodes by name, for the command palette on pages with no search of their own. */
+export const drivePaletteSearch: PaletteSearchSource = {
+  label: () => __('Drive'),
+  use: (term) => usePaletteSearch(term, driveNodeRoute),
+}
+
+/** Opens a document this tab has just created. Its page takes typing before the document loads. */
+export function newDocumentRoute(node: DriveNodeSummary): RouteLocationPathRaw {
+  const route = driveNodeRoute(node)
+  const marked = node.content_doctype ? newDocumentState(node.content_doctype) : {}
+  return { ...route, query: { new: '1' }, state: { ...route.state, ...marked } }
+}
+
 /** A document menu item, in frappe-ui Dropdown's shape. */
 export interface DriveDocumentAction {
   label: string
@@ -206,7 +232,8 @@ export interface DriveDocumentAction {
 /**
  * A document's own Drive actions for its menu: `back` to the folder it is in,
  * and its `node` actions, Duplicate and Delete. Each shows only when the caller
- * may take it. Call it in a component's setup.
+ * may take it: Duplicate copies into the folder, so it needs UPLOAD there.
+ * Call it in a component's setup.
  */
 export function useDriveDocumentActions(
   session: DocumentSession,
@@ -214,12 +241,13 @@ export function useDriveDocumentActions(
   const account = useSession()
   const actions = documentActions(session)
   return computed(() => {
-    const isFiled = session.folder.value !== null
+    const folder = session.folder.value
     const can = nodeActions(actionNodeOf(session), account.status.value === 'authenticated')
+    const canUploadToFolder = folder !== null && folder.role >= DRIVE_ROLES.upload
     return {
-      back: actionsWhere([[isFiled, actions.back]]),
+      back: actionsWhere([[folder !== null, actions.back]]),
       node: actionsWhere([
-        [isFiled && can.copy, actions.duplicate],
+        [canUploadToFolder && can.copy, actions.duplicate],
         [can.trash, actions.delete],
       ]),
     }
@@ -303,7 +331,7 @@ function actionNodeOf(session: DocumentSession): ActionNode {
 }
 
 function actionsWhere(items: [boolean, DriveDocumentAction][]): DriveDocumentAction[] {
-  return items.filter(([isShown]) => isShown).map(([, action]) => action)
+  return items.flatMap(([isShown, action]) => (isShown ? [action] : []))
 }
 
 /** What a document session and a file preview session each need of the node, so one read opens either. */
@@ -366,10 +394,13 @@ export const DriveListSkeletonRows = defineAsyncComponent(
   () => import('@/apps/drive/files/features/ListSkeletonRows.vue'),
 )
 
-/** The document header's shape while a document opens. Shows `title` when one is known. */
+/** The document header's shape while a document opens. Shows `title` and `location` when they are known. */
 export { default as DriveDocumentHeaderSkeleton } from '@/apps/drive/files/features/document/DocumentHeaderSkeleton.vue'
+export { openingLocation } from '@/apps/drive/files/features/document/openingLocation'
 
-export type { DocumentPanel, DocumentSaveState } from '@/apps/drive/files/features/document/header'
+export { PANEL_BUTTONS } from '@/apps/drive/files/features/document/header'
+export type { DocumentPanel } from '@/apps/drive/client/types'
+export type { DocumentSaveState } from '@/apps/drive/files/features/document/header'
 
 export const filePreviewSurface = defineAsyncComponent(
   () => import('@/apps/drive/files/features/preview/FilePreviewSurface.vue'),
@@ -378,16 +409,25 @@ export const filePreviewSurface = defineAsyncComponent(
 export interface DriveDialogs {
   /** Opens the folder picker to move `node`. Resolves with the moved node, or `undefined` when cancelled. */
   move(node: string): Promise<DriveNodeSummary | undefined>
+  /** Opens the folder picker to copy `node`. Resolves with the copy, or `undefined` when cancelled. */
+  copy(node: string): Promise<DriveNodeSummary | undefined>
   /** Shows read-only details of `node`. Resolves when the dialog closes. */
   showDetails(node: string): Promise<void>
-  /** Opens the share dialog for `node`. Resolves when it closes: `true` when a write in it went through. */
-  share(node: string): Promise<boolean>
+  /**
+   * Opens the share dialog for `node`. Resolves when it closes: `true` when a
+   * write in it went through. `known` is the node as the caller last read it,
+   * which the dialog shows until its own read lands.
+   */
+  share(node: string, known?: DriveNode): Promise<boolean>
+  /** Opens the file picker. Resolves with the picked file or document, or `undefined` when cancelled. */
+  pickFile(options?: { title?: string; action?: string }): Promise<DriveNodeSummary | undefined>
 }
 
 /** Drive dialogs, opened by function call. Call it in a component's setup. */
 export function useDriveDialogs(): DriveDialogs {
   const context = getCurrentInstance()?.appContext
   if (!context) throw new Error('useDriveDialogs() must be called in a component setup')
+  preloadShareDialog()
   return {
     move: (node) =>
       presentDialog<DriveNodeSummary>(
@@ -396,14 +436,31 @@ export function useDriveDialogs(): DriveDialogs {
         { node },
         'moved',
       ),
+    copy: (node) =>
+      presentDialog<DriveNodeSummary>(
+        context,
+        () => import('@/apps/drive/files/features/CopyNodeDialog.vue'),
+        { node },
+        'copied',
+      ),
     showDetails: async (node) => {
       await presentDialog(context, () => import('@/apps/drive/files/features/NodeInfoDialog.vue'), {
         node,
       })
     },
-    share: (node) =>
-      import('@/apps/drive/files/features/share/present').then((share) =>
-        share.presentShareDialog(node, context),
+    share: (node, known) => {
+      // The reads start now, so they overlap loading the dialog's code.
+      const reads = readShare(node, known ?? null)
+      return import('@/apps/drive/files/features/share/present').then((share) =>
+        share.presentShareDialog(node, context, known, reads),
+      )
+    },
+    pickFile: (options = {}) =>
+      presentDialog<DriveNodeSummary>(
+        context,
+        () => import('@/apps/drive/files/features/FilePicker.vue'),
+        options,
+        'choose',
       ),
   }
 }

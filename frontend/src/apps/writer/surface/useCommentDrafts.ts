@@ -115,12 +115,13 @@ export function useCommentDrafts({ session, user, room, refreshThreads }: DraftO
     list.send(draft)
     draft.isPosting = true
     const thread = await postOnceSaved(draft, authorName)
-    draft.isPosting = false
+    // Its row stays until the thread is in the list, so the comment never leaves the screen
     if (thread) {
-      list.discard(draft)
       await refreshThreads()
+      list.discard(draft)
     }
 
+    draft.isPosting = false
     return thread
   }
 
@@ -151,7 +152,7 @@ async function sendDraft(session: DraftOptions['session'], draft: ShownDraft, au
     )
     return thread.name
   } catch (error) {
-    if ((error as { type?: unknown } | null)?.type === 'DriveConflict') {
+    if (error && typeof error === 'object' && 'type' in error && error.type === 'DriveConflict') {
       toast.error('This comment was already posted with different words. Discard it to remove it.')
     } else {
       showError(error, 'Could not add the comment.')

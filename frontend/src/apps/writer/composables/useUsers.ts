@@ -5,7 +5,7 @@ import { useSession } from '@/platform/session'
 
 const SEARCH_DELAY_MS = 250
 
-type Search = (query: string) => Promise<WriterUser[]>
+type Search = (query: string, node?: string | null) => Promise<WriterUser[]>
 
 // Everyone seen so far, for avatars and names on mentions, comments and carets
 function createDirectory() {
@@ -71,6 +71,8 @@ interface MenuState {
   /** The answer to the empty query, shown the moment `@` is typed. */
   firstPage: WriterUser[]
   latest: number
+  /** The document the menu ranks people for. */
+  node: string | null
 }
 
 /** False when the search failed. */
@@ -81,7 +83,7 @@ async function runMenuSearch(
   query: string,
 ) {
   const id = ++menu.latest
-  const found = await search(query).catch(() => null)
+  const found = await search(query, menu.node).catch(() => null)
   const isFound = found !== null
   // An answer older than the latest leaves the menu as it was
   if (id !== menu.latest) {
@@ -113,6 +115,20 @@ function showMenuFirstPage(menu: MenuState) {
   return true
 }
 
+/** Ranks for another document from now on; true when it changed, which drops the old answers. */
+function rankMenuFor(menu: MenuState, node: string) {
+  if (node === menu.node) {
+    return false
+  }
+
+  menu.node = node
+  menu.latest++
+  menu.firstPage = []
+  menu.users.value = []
+  menu.answeredQuery.value = null
+  return true
+}
+
 // The people the `@` menu offers, from the latest answer the server gave
 function createMenu(search: Search, remember: (people: WriterUser[]) => void) {
   const menu: MenuState = {
@@ -120,6 +136,7 @@ function createMenu(search: Search, remember: (people: WriterUser[]) => void) {
     answeredQuery: shallowRef<string | null>(null),
     firstPage: [],
     latest: 0,
+    node: null,
   }
 
   return {
@@ -127,6 +144,7 @@ function createMenu(search: Search, remember: (people: WriterUser[]) => void) {
     answeredQuery: menu.answeredQuery,
     run: (query: string) => runMenuSearch(menu, search, remember, query),
     showFirstPage: () => showMenuFirstPage(menu),
+    rankFor: (node: string) => rankMenuFor(menu, node),
   }
 }
 
@@ -157,7 +175,12 @@ function createMentionSearch(menu: ReturnType<typeof createMenu>) {
     timer = setTimeout(() => void ask(query), SEARCH_DELAY_MS)
   }
 
-  return { ask, searchMentions }
+  function forget() {
+    lastQuery = ''
+    clearTimeout(timer)
+  }
+
+  return { ask, searchMentions, forget }
 }
 
 export function createUsers(search: Search = searchUsers) {
@@ -174,6 +197,14 @@ export function createUsers(search: Search = searchUsers) {
     }
   }
 
+  /** Ranks the menu for `node`; another node's menu loads its first page again. */
+  function rankFor(node: string) {
+    if (menu.rankFor(node)) {
+      mentionSearch.forget()
+      isStarted = false
+    }
+  }
+
   const names = createNames(search, directory)
   return {
     ...directory,
@@ -182,6 +213,7 @@ export function createUsers(search: Search = searchUsers) {
     answeredQuery: menu.answeredQuery,
     searchMentions: mentionSearch.searchMentions,
     start,
+    rankFor,
   }
 }
 
@@ -190,14 +222,22 @@ const people = createUsers()
 export const { searchMentions, lookUp, fullName } = people
 
 /**
- * The people for mentions and avatars. The first page loads once per page
- * load; `searchMentions` narrows the menu as the user types after `@`.
- * Components that use `$user(...)` in templates alias `getUser` to `$user`.
+ * Ranks the `@` menu for the document `node` and, for a signed-in user, loads
+ * its first page. Whatever opens a document calls it, before anyone can type
+ * `@` there.
  */
-export function useUsers() {
+export function rankMentionsFor(node: string): void {
+  people.rankFor(node)
   if (useSession().user.value) {
     people.start()
   }
+}
 
+/**
+ * The people for mentions and avatars. `rankMentionsFor` loads the first page
+ * once per document; `searchMentions` narrows the menu as the user types after `@`.
+ * Components that use `$user(...)` in templates alias `getUser` to `$user`.
+ */
+export function useUsers() {
   return { users: people.users, answeredQuery: people.answeredQuery, getUser: people.getUser }
 }

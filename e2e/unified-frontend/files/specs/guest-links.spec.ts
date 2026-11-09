@@ -1,9 +1,17 @@
 import { execFileSync } from "node:child_process";
-
 import { expect, request, test, type APIRequestContext } from "@playwright/test";
 
 import { loginViaApi } from "../../../shared/auth";
-import { DRIVE, adminApi, createDocument, createFolder, purge, roots, runTag, type DriveNode } from "../../helpers/drive";
+import {
+	adminApi,
+	createDocument,
+	createFolder,
+	DRIVE,
+	purge,
+	roots,
+	runTag,
+	type DriveNode,
+} from "../../helpers/drive";
 
 /**
  * Stage 8: guest and link routes (spec §10, ticket 011).
@@ -47,6 +55,7 @@ test.afterAll(async () => {
 async function shareLink(node: string, body: Record<string, unknown> = { role: 10 }): Promise<string> {
 	const response = await api.put(`${DRIVE}/nodes/${node}/grants/${encodeURIComponent("$LINK")}`, { data: body });
 	expect(response.ok(), await response.text()).toBe(true);
+	// SAFETY: the successful Drive link-creation endpoint returns data.url for the node this test just created.
 	const { data } = (await response.json()) as { data: { url: string } };
 	return data.url.split("/").pop()!;
 }
@@ -54,7 +63,11 @@ async function shareLink(node: string, body: Record<string, unknown> = { role: 1
 /** A context on the bench web server, signed in or not. No redirect is followed. */
 async function server(signedIn: boolean): Promise<APIRequestContext> {
 	// The runner applies `use.storageState` (the admin login) to request contexts too.
-	const context = await request.newContext({ baseURL: SERVER, extraHTTPHeaders: { Host: SITE }, storageState: SIGNED_OUT });
+	const context = await request.newContext({
+		baseURL: SERVER,
+		extraHTTPHeaders: { Host: SITE },
+		storageState: SIGNED_OUT,
+	});
 	if (signedIn) await loginViaApi(context);
 	return context;
 }
@@ -112,7 +125,11 @@ test.describe("the server resolves a share link", () => {
 		const missing = await guest.get(`/l/${"A".repeat(22)}`, { maxRedirects: 0 });
 		const gone = await guest.get(`/l/${expired}`, { maxRedirects: 0 });
 		const missingSignedIn = await member.get(`/l/${"A".repeat(22)}`, { maxRedirects: 0 });
-		const [missingPage, gonePage, signedInPage] = await Promise.all([missing.text(), gone.text(), missingSignedIn.text()]);
+		const [missingPage, gonePage, signedInPage] = await Promise.all([
+			missing.text(),
+			gone.text(),
+			missingSignedIn.text(),
+		]);
 
 		expect([missing.status(), gone.status(), missingSignedIn.status()]).toEqual([404, 410, 404]);
 		expect(missing.headers()["cache-control"]).toContain("no-cache");
@@ -123,7 +140,10 @@ test.describe("the server resolves a share link", () => {
 			["gone (410)", gone, gonePage],
 		] as const) {
 			const sent = response.headers()["set-cookie"];
-			expect(page, `${label}: status ${response.status()}, set-cookie ${sent ?? "none"}, guest cookies ${JSON.stringify((await guest.storageState()).cookies.map((c) => c.name))}`).not.toContain("Go to Home");
+			expect(
+				page,
+				`${label}: status ${response.status()}, set-cookie ${sent ?? "none"}, guest cookies ${JSON.stringify((await guest.storageState()).cookies.map((c) => c.name))}`,
+			).not.toContain("Go to Home");
 			expect(page).not.toContain("Sign in");
 			expect(page).not.toContain(doc.title);
 		}
@@ -152,7 +172,9 @@ test.describe("the server resolves a share link", () => {
 test.describe("a visitor without a session", () => {
 	test.use({ storageState: SIGNED_OUT });
 
-	test("a copied URL without the link shows the Sign-in screen and never says whether the item exists", async ({ page }) => {
+	test("a copied URL without the link shows the Sign-in screen and never says whether the item exists", async ({
+		page,
+	}) => {
 		await page.goto(`/d/${doc.name}`);
 		await expect(page.getByRole("heading", { name: "Sign in to open this" })).toBeVisible();
 		await expect(page.getByText("If someone sent you a share link, open that link.")).toBeVisible();
@@ -181,7 +203,9 @@ test.describe("a visitor without a session", () => {
 		await expect(page.locator("header")).toHaveCount(1);
 	});
 
-	test("/l/<token> opens a shared folder at /drive/f/<id> and a document at /d/<id>, with no token in the URL", async ({ page }) => {
+	test("/l/<token> opens a shared folder at /drive/f/<id> and a document at /d/<id>, with no token in the URL", async ({
+		page,
+	}) => {
 		const folderToken = await shareLink(folder.name);
 		await page.goto(`/l/${folderToken}`);
 		await expect(page).toHaveURL(new RegExp(`/drive/f/${folder.name}(/shared-plans)?$`));
@@ -222,12 +246,16 @@ test.describe("a visitor without a session", () => {
 			await password.fill("guess");
 			await page.getByRole("button", { name: "Open" }).click();
 		}
-		await expect(page.getByTestId("drive-unlock-message")).toHaveText(/^Try again in \d+:\d{2}$/);
+		await expect(page.getByTestId("drive-unlock-message")).toHaveText(
+			/^Too many attempts\. Try again in \d+ (minute|second)s?\.$/,
+		);
 		await expect(password).toBeDisabled();
 
 		// The lockout survives a reload of the same node.
 		await page.reload();
-		await expect(page.getByTestId("drive-unlock-message")).toHaveText(/^Try again in \d+:\d{2}$/);
+		await expect(page.getByTestId("drive-unlock-message")).toHaveText(
+			/^Too many attempts\. Try again in \d+ (minute|second)s?\.$/,
+		);
 		await expect(password).toBeDisabled();
 	});
 
@@ -242,7 +270,9 @@ test.describe("a visitor without a session", () => {
 });
 
 test.describe("a signed-in user", () => {
-	test("/l/<token> opens the folder and the document in the full shell, and the URL keeps no token", async ({ page }) => {
+	test("/l/<token> opens the folder and the document in the full shell, and the URL keeps no token", async ({
+		page,
+	}) => {
 		const token = await shareLink(folder.name);
 		await page.goto(`/l/${token}`);
 		await expect(page).toHaveURL(new RegExp(`/drive/f/${folder.name}(/shared-plans)?$`));

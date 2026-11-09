@@ -44,7 +44,27 @@ function waitForEvent(
 	});
 }
 
-function request<T>(socket: Socket, event: string, data: object): Promise<T> {
+interface SfuHealth {
+	rooms: number;
+	peers: number;
+}
+
+async function readSfuHealth(): Promise<SfuHealth> {
+	const health: unknown = await (await fetch(`${sfuOrigin}/health`)).json();
+	if (
+		!health ||
+		typeof health !== 'object' ||
+		!('rooms' in health) ||
+		typeof health.rooms !== 'number' ||
+		!('peers' in health) ||
+		typeof health.peers !== 'number'
+	) {
+		throw new Error('SFU health response has invalid human counts');
+	}
+	return { ...health, rooms: health.rooms, peers: health.peers };
+}
+
+function request<T>(socket: Socket, event: string, data: unknown): Promise<T> {
 	return new Promise((resolve, reject) => {
 		const timeout = setTimeout(
 			() => reject(new Error(`timed out waiting for ${event} acknowledgement`)),
@@ -465,10 +485,7 @@ try {
 	);
 	await waitForEvent(events, 'capture_ready');
 	const captureReadyAt = performance.now();
-	const holdHealth = (await (await fetch(`${sfuOrigin}/health`)).json()) as {
-		rooms: number;
-		peers: number;
-	};
+	const holdHealth = await readSfuHealth();
 	if (holdHealth.rooms !== 1 || holdHealth.peers !== 4)
 		throw new Error(
 			`Recorder Endpoint affected human SFU counts (rooms=${holdHealth.rooms}, peers=${holdHealth.peers})`,
@@ -672,9 +689,7 @@ try {
 	const cleanupStartedAt = performance.now();
 	let cleanupHealth = holdHealth;
 	while (performance.now() - cleanupStartedAt < 65_000) {
-		cleanupHealth = (await (
-			await fetch(`${sfuOrigin}/health`)
-		).json()) as typeof holdHealth;
+		cleanupHealth = await readSfuHealth();
 		if (cleanupHealth.rooms === 0 && cleanupHealth.peers === 0) break;
 		await new Promise((resolve) => setTimeout(resolve, 500));
 	}

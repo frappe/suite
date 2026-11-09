@@ -60,7 +60,7 @@ export async function openNotificationTarget(
   origin: string,
   data: unknown,
 ): Promise<void> {
-  const target = (data as { url?: unknown } | null)?.url
+  const target = data && typeof data === 'object' && 'url' in data ? data.url : undefined
   if (typeof target !== 'string' || !target) return
   const url = new URL(target, origin).href
   const windows = await clients.matchAll({ type: 'window', includeUncontrolled: true })

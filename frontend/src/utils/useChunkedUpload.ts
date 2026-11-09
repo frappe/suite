@@ -12,6 +12,21 @@ interface UploadedFile {
   [key: string]: unknown
 }
 
+function isUploadedFile(value: unknown): value is UploadedFile {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    'name' in value &&
+    typeof value.name === 'string' &&
+    'file_name' in value &&
+    typeof value.file_name === 'string' &&
+    'file_url' in value &&
+    typeof value.file_url === 'string' &&
+    'is_private' in value &&
+    (value.is_private === 0 || value.is_private === 1)
+  )
+}
+
 interface ChunkedUploadOptions {
   private?: boolean
   folder?: string
@@ -78,7 +93,12 @@ export function useChunkedUpload() {
               } catch {
                 r = xhr.responseText
               }
-              resolve((r?.message || r) as UploadedFile)
+              const uploaded: unknown = r?.message || r
+              if (!isUploadedFile(uploaded)) {
+                reject(new Error(__('Upload failed.')))
+                return
+              }
+              resolve(uploaded)
             } else {
               sendChunk(chunkIndex + 1, chunkByteOffset + chunkSize)
                 .then(resolve)

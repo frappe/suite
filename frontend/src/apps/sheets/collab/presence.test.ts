@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
 
@@ -34,7 +35,7 @@ function presenceOf(doc: Y.Doc, peers: Peer[], cursors: Record<number, unknown>)
     peers,
     ownPid: 1,
     ownArrival: 1,
-    awareness: { getStates: () => states } as never,
+    awareness: fromPartial<import('y-protocols/awareness').Awareness>({ getStates: () => states }),
     doc,
   }
 }
@@ -58,6 +59,28 @@ describe('presence', () => {
       expect.objectContaining({ user: 'ann@x', full_name: 'Ann Lee', sub_sheet: 'Sheet1' }),
     ])
     expect(cursors.get('7')!.colour).toBe(users[0]!.colour)
+  })
+
+  describe('what counts as a move', () => {
+    const moveOf = (doc: Y.Doc, cursor: unknown) => {
+      const p = presenceOf(doc, [peer(7, 'ann@x', 2)], { 7: cursor })
+      return readPresence(p, doc, 'me@x', names).cursors.get('7')!.moveKey
+    }
+    const at = { sheet: 'Sheet1', r0: 5, c0: 0, r1: 5, c1: 0 }
+
+    it('stays the same when rows inserted above push the selection down', () => {
+      const doc = sheetDoc()
+      const cursor = selectionToIds(doc, at)
+      const before = moveOf(doc, cursor)
+      axis(doc, doc.getArray<string>('sheets').get(0), 'rows').insert(0, 2)
+      expect(moveOf(doc, cursor)).toBe(before)
+    })
+
+    it('changes when the peer extends their range from the same cell', () => {
+      const doc = sheetDoc()
+      const extended = selectionToIds(doc, { ...at, r1: 7 })
+      expect(moveOf(doc, extended)).not.toBe(moveOf(doc, selectionToIds(doc, at)))
+    })
   })
 
   it('keeps the box on its cells when rows are inserted above it', () => {
@@ -118,7 +141,7 @@ describe('presence', () => {
   it("sends this tab's selection by ids", () => {
     const doc = sheetDoc()
     const setLocalStateField = vi.fn()
-    sendSelection({ awareness: { setLocalStateField } as never }, doc, {
+    sendSelection({ awareness: fromPartial({ setLocalStateField }) }, doc, {
       sheet: 'Sheet2',
       r0: 0,
       c0: 0,
@@ -155,6 +178,16 @@ describe('presence', () => {
       ])
       expect(labels.get('7')).toBe('Asha, Ravi')
       expect(labels.get('8')).toBeNull()
+    })
+
+    it('lets either person on a shared cell bring the shared label back', () => {
+      const doc = sheetDoc()
+      const peers = [peer(7, 'asha@x', 2), peer(8, 'ravi@x', 3)]
+      const cursor = selectionToIds(doc, { sheet: 'Sheet1', r0: 2, c0: 1, r1: 2, c1: 1 })
+      const p = presenceOf(doc, peers, { 7: cursor, 8: cursor })
+      const { cursors } = readPresence(p, doc, 'me@x', names)
+      expect(cursors.get('7')!.labelPeers).toEqual(['7', '8'])
+      expect(cursors.get('8')!.labelPeers).toEqual([])
     })
 
     it('gives everyone their own label on different cells or sheets', () => {

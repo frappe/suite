@@ -120,18 +120,18 @@ function optionalBoolean(value: unknown): boolean | undefined {
 }
 
 function optionalJoinStatus(value: unknown): JoinPayload['status'] {
-  return typeof value === 'string' &&
-    [
-      'waiting_for_approval',
-      'pending',
-      'joined',
-      'admitted',
-      'rejected',
-      'banned',
-      'expired',
-    ].includes(value)
-    ? (value as JoinPayload['status'])
-    : undefined
+  switch (value) {
+    case 'waiting_for_approval':
+    case 'pending':
+    case 'joined':
+    case 'admitted':
+    case 'rejected':
+    case 'banned':
+    case 'expired':
+      return value
+    default:
+      return undefined
+  }
 }
 
 function normalizeJoinUserData(value: unknown): JoinUserData | undefined {
@@ -147,7 +147,7 @@ function normalizeJoinUserData(value: unknown): JoinUserData | undefined {
   }
 }
 
-const RECORDING_STATUSES = new Set<NonNullable<JoinPayload['recording']>['status']>([
+const RECORDING_STATUSES = [
   'Pending',
   'Recording',
   'Interrupted',
@@ -156,7 +156,7 @@ const RECORDING_STATUSES = new Set<NonNullable<JoinPayload['recording']>['status
   'Ready',
   'Partial',
   'Failed',
-])
+] as const
 
 function normalizeRecording(value: unknown): JoinPayload['recording'] | undefined {
   if (value === null) return null
@@ -164,14 +164,15 @@ function normalizeRecording(value: unknown): JoinPayload['recording'] | undefine
     !isUnknownRecord(value) ||
     typeof value.name !== 'string' ||
     typeof value.status !== 'string' ||
-    !RECORDING_STATUSES.has(value.status as NonNullable<JoinPayload['recording']>['status']) ||
     typeof value.state_revision !== 'number'
   ) {
     return undefined
   }
+  const status = RECORDING_STATUSES.find((status) => status === value.status)
+  if (!status) return undefined
   return {
     name: value.name,
-    status: value.status as NonNullable<JoinPayload['recording']>['status'],
+    status,
     started_at: optionalString(value.started_at),
     capture_started_at: optionalString(value.capture_started_at),
     state_revision: value.state_revision,

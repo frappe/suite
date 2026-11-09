@@ -7,14 +7,19 @@ migrate` reaches these two patches the legacy tables and columns are all
 still there: Build reads them, Cleanup drops them, and the site comes out
 the other side with only the new model.
 
-`run_cleanup` refuses in three layers, all before phase 1 mutates anything,
+`run_cleanup` refuses in four layers, all before phase 1 mutates anything,
 each checked once per call:
 
 - `state.CleanupState.refuse_if_corrupt` — an unreadable existing state
   record is quarantined and refused, never treated as a fresh site.
+- `database_marker.refuse_foreign_record` — a state record whose marker
+  this database does not hold describes another database (the one before
+  a database-only restore), and is refused rather than resumed.
 - `gate.check_gate_reachable_nodes` — every reachable Drive `File` has a
   `Drive Node`, recomputed live against the current site, never against
-  Build's own persisted state.
+  Build's own persisted state. Site config `drive_build_accept_skips`, the
+  key that let Build finish over such rows, lets Cleanup through too, and
+  phase 1 deletes those rows.
 - `gate.check_gate_gc_discovery` — `frappe.storage.gc.blob_reference_columns()`
   is callable and names all four of Drive's blob columns (§3.17).
 
@@ -57,8 +62,9 @@ census and disk-settings snapshot every later phase needs (step 1); the
 `File` rows of Presentation pictures Build turned into nodes, unless a slide
 body still names one (also step 1); the
 seven `File` custom fields and three property setters (step 2); every
-legacy Drive doctype and the old notification columns, after which
-`Drive Notification.activity` becomes required (step 3); the verification
+legacy Drive doctype and the old notification columns (step 3). A
+notification points at an activity or at a download, so `activity` stays
+optional. Then come the verification
 that no governed `DocShare` row survived Build, the Writer/Sheet history
 doctypes, and the comment stores Build migrated (step 4); the
 title/trashed/settings columns, all ten of §3.13's `Drive Disk Settings`

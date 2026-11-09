@@ -8,6 +8,7 @@ from frappe.tests import IntegrationTestCase
 
 from suite.suite_core.administration import guard_user_change, list_users, require_admin, update_user
 from suite.suite_core.storage import (
+    StorageUnmeasured,
     check_addition,
     effective_limit,
     forget_users,
@@ -63,8 +64,15 @@ class TestCombinedStorage(TestCase):
         )
 
     def test_missing_measurements_are_not_zero(self):
-        self.assertRaises(frappe.ValidationError, self.check, mail=None)
-        self.assertRaises(frappe.ValidationError, self.check, site=None)
+        self.assertRaises(StorageUnmeasured, self.check, mail=None)
+        self.assertRaises(StorageUnmeasured, self.check, site=None)
+
+    def test_an_overage_is_measured_not_unmeasured(self):
+        for overage in ({"delta": GB + 1}, {"cap": None, "mail": 100 * GB, "drive": 9 * GB, "delta": GB + 1}):
+            with self.assertRaises(frappe.ValidationError) as caught:
+                self.check(**overage)
+
+            self.assertNotIsInstance(caught.exception, StorageUnmeasured)
 
     def test_a_user_without_a_mailbox_has_no_mail_usage(self):
         check_addition(
@@ -77,7 +85,7 @@ class TestCombinedStorage(TestCase):
         )
 
     def test_a_site_never_measured_has_unknown_mail_usage_not_zero(self):
-        with self.assertRaisesRegex(frappe.ValidationError, "Mail usage is unavailable"):
+        with self.assertRaisesRegex(StorageUnmeasured, "Mail usage is unavailable"):
             check_addition(
                 {"users": {"alice": {"cap": 10 * GB}}},
                 {"allowance": 100 * GB, "site_mail": 0},

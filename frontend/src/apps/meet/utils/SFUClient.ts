@@ -13,6 +13,7 @@ import type {
 
 import { api, client } from '@/api'
 
+import type { JoinRoomRequest } from '../../../../../suite/meet/types'
 import { parseCameraLayerDemand } from '../../../../../suite/meet/types/cameraLayers'
 import {
   isUnknownRecord,
@@ -27,6 +28,25 @@ import type { E2eeEpochEnvelope } from './media/E2EEEpochSignaling'
 import { normalizeParticipantData, type ParticipantData } from './media/ParticipantManager'
 import type { SignalChannel } from './media/SignalChannel'
 import type { ClientTelemetryEvent } from './telemetry/ClientTelemetry'
+
+interface MeetingJoinRequest extends Omit<JoinRoomRequest, 'userData' | 'mediaState' | 'e2ee'> {
+  userData: JoinUserData
+  mediaState: JoinRoomMediaState
+  e2ee: {
+    enabled: boolean
+    capability: { supported: boolean; mode: ReturnType<SFUClient['getE2EEMode']> }
+  }
+}
+
+interface OutgoingChatMessage {
+  message: string
+  clientId?: string
+}
+interface OutgoingChatPin {
+  messageId: string
+  action: 'pin' | 'unpin'
+  encryptedMessage?: string
+}
 
 export interface ConnectionDetails {
   authToken: string | null
@@ -242,7 +262,7 @@ function requireString(value: unknown, field: string, context: string): string {
   return value
 }
 
-function requireObject(value: unknown, context: string): Record<string, unknown> {
+function requireObject(value: unknown, context: string) {
   if (!isUnknownRecord(value)) throw new Error(`Invalid ${context} response`)
   return value
 }
@@ -286,7 +306,13 @@ function normalizeRtpCapabilities(value: unknown): RtpCapabilities {
       throw new Error('Invalid router RTP capabilities response: malformed codec')
     }
   }
-  return payload as RtpCapabilities
+  return payload
+}
+
+interface ChatSendResult {
+  success: boolean
+  timestamp: string
+  messageId?: string
 }
 
 function normalizeTransportResponse(value: unknown): SFUWebRtcTransportResponse {
@@ -301,8 +327,10 @@ function normalizeTransportResponse(value: unknown): SFUWebRtcTransportResponse 
   }
   return {
     id: payload.id,
+    // SAFETY: create_webrtc_transport relays mediasoup ICE parameters; this gate checks the object and mediasoup validates nested fields when applying it.
     iceParameters: payload.iceParameters as IceParameters,
-    iceCandidates: payload.iceCandidates as IceCandidate[],
+    iceCandidates: payload.iceCandidates,
+    // SAFETY: the authenticated SFU route relays mediasoup DTLS parameters unchanged; the receiving mediasoup transport validates fingerprints/role.
     dtlsParameters: payload.dtlsParameters as DtlsParameters,
   }
 }
@@ -322,11 +350,16 @@ function normalizeConsumerResponse(value: unknown): SFUConsumerResponse {
     paused: payload.paused === true,
     producerId: payload.producerId,
     kind: payload.kind,
+    // SAFETY: consume relays the mediasoup consumer RTP parameters; transport.consume validates their nested codec/encoding contract.
     rtpParameters: payload.rtpParameters as RtpParameters,
     isScreen: payload.isScreen === true,
     appData: isUnknownRecord(payload.appData) ? payload.appData : undefined,
     senderId: typeof payload.senderId === 'number' ? payload.senderId : undefined,
   }
+}
+interface SFUClientGetSFUEndpointResult {
+  origin: string
+  socketPath: string
 }
 
 export class SFUClient {
@@ -514,7 +547,7 @@ export class SFUClient {
     }
   }
 
-  getSFUEndpoint(): { origin: string; socketPath: string } {
+  getSFUEndpoint(): SFUClientGetSFUEndpointResult {
     const { sfuUrl, sfuPort } = this.connectionDetails
 
     if (!sfuUrl) {
@@ -745,7 +778,7 @@ export class SFUClient {
   // ==================== EVENT HANDLING ====================
 
   setupDefaultHandlers(): void {
-    const defaultHandlers: Record<string, SFUEventHandler> = {
+    const defaultHandlers = {
       connect: () => {
         this.connected = true
       },
@@ -807,7 +840,7 @@ export class SFUClient {
       shared_stage_snapshot: () => {},
       hand_raised: () => {},
       existing_raised_hands: () => {},
-    }
+    } satisfies Record<string, SFUEventHandler>
 
     for (const [event, handler] of Object.entries(defaultHandlers)) {
       this.addEventListener(event, handler)
@@ -824,7 +857,8 @@ export class SFUClient {
     const hadDispatcher = this.eventHandlers.has(event)
     this.addEventListener(event, handler)
     if (this.connected && !hadDispatcher) {
-      this.signalChannel.on(event, this.eventHandlers.get(event) as SFUEventHandler)
+      const dispatcher = this.eventHandlers.get(event)
+      if (dispatcher) this.signalChannel.on(event, dispatcher)
     }
   }
 
@@ -900,6 +934,7 @@ export class SFUClient {
     if (!isUnknownRecord(response.iceParameters)) {
       throw new Error('Invalid ICE restart response')
     }
+    // SAFETY: restart_webrtc_transport_ice relays mediasoup transport.restartIce output; the object gate above rejects absent responses.
     return response.iceParameters as IceParameters
   }
 
@@ -1037,10 +1072,8 @@ export class SFUClient {
   ): Promise<{ success: boolean; senderId?: number }> {
     const e2eeMode = this.getE2EEMode()
     const e2eeShouldBeActive = this.isE2EERequired()
-    const result = await this.sendRequest('join_room', {
+    const request: MeetingJoinRequest = {
       roomId,
-      ...(options.connectionId ? { connectionId: options.connectionId } : {}),
-      ...(options.conflictId ? { conflictId: options.conflictId } : {}),
       userData,
       mediaState,
       e2ee: {
@@ -1050,7 +1083,10 @@ export class SFUClient {
           mode: e2eeMode,
         },
       },
-    })
+    }
+    if (options.connectionId) request.connectionId = options.connectionId
+    if (options.conflictId) request.conflictId = options.conflictId
+    const result = await this.sendRequest('join_room', request)
     const response = requireObject(result, 'join room')
     if (response.success !== true) throw new Error('Invalid join room response')
     const normalized = {
@@ -1128,16 +1164,20 @@ export class SFUClient {
       throw new Error('Not connected to SFU')
     }
 
-    const payload: Record<string, string> = { message: String(message || '') }
+    const payload: OutgoingChatMessage = { message: String(message || '') }
     if (options.clientId) {
       payload.clientId = String(options.clientId)
     }
 
-    return (await this.sendRequest('chat:send', payload)) as {
-      success: boolean
-      timestamp: string
-      messageId?: string
+    const response = requireObject(await this.sendRequest('chat:send', payload), 'chat send')
+    if (typeof response.success !== 'boolean' || typeof response.timestamp !== 'string')
+      throw new Error('Invalid chat send response')
+    const result: ChatSendResult = {
+      success: response.success,
+      timestamp: response.timestamp,
     }
+    if (typeof response.messageId === 'string') result.messageId = response.messageId
+    return result
   }
 
   /** Pin or explicitly unpin a room chat message. */
@@ -1149,7 +1189,7 @@ export class SFUClient {
     if (!this.connected) {
       throw new SFURequestError('DISCONNECTED', 'Not connected to SFU')
     }
-    const payload: Record<string, string> = {
+    const payload: OutgoingChatPin = {
       messageId: String(messageId),
       action,
     }

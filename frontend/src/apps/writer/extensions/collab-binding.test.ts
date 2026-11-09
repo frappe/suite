@@ -13,7 +13,7 @@ import * as yjs from 'yjs'
 const VENDORED_DIR = path.resolve(__dirname, '../../../../packages/collab-prosemirror')
 
 // Published @tiptap/y-tiptap 3.0.5, except where a later commit names its change
-const SHA256: Record<string, string> = {
+const SHA256 = {
   // published 606fedd1...; then every new textblock gets its text node eagerly; then content the editor
   // can't hold freezes the binding, and leftovers holding nothing are hidden and skipped, never deleted;
   // then side-by-side texts are written as one run in place, never folded into one;
@@ -23,8 +23,9 @@ const SHA256: Record<string, string> = {
   // then the caret sent to others is tied to the letter on its right;
   // then marks on inline atoms are kept as element attributes;
   // then a filled element is replaced, not reused for an empty node, when its neighbour node takes its content;
-  // then yCursorPlugin has no default caret or selection look and throws without both builders
-  'dist/y-tiptap.js': 'a025468a9b3303553551adb6079ae6faf25a901f5b3c3f3e5008eee6564dd4be',
+  // then yCursorPlugin has no default caret or selection look and throws without both builders;
+  // then the filler block of an empty body is never written to Yjs as an edit
+  'dist/y-tiptap.js': '657886c8577f4c477514fe7075d30099ca6328eb088c9e6496b159ae25923d5d',
   // published 788e88fe...; then positions skip hidden leftovers; then the side a position is tied to; then initProseMirrorDoc's meta is BindingMetadata
   'dist/src/lib.d.ts': 'f75de6a35b5c903e315fe627cb8252faf66a393885ca5c6d2fb571b8e8bedff2',
   // published 14df8f3b...; then no default builders, and both builders are required
@@ -40,7 +41,7 @@ const SHA256: Record<string, string> = {
   // published 456adef9...; then placeFragment and UnplaceableReason; then builtMarks
   'dist/src/y-tiptap.d.ts': '2bda19fccd0a36eece450691d43f68a2de377a5658aac1798641e6afd9af54e6',
   LICENSE: 'fd69bd7c93b6c32f43c8244c3182029c1af6cc14bb259a0195750f1661e9e304',
-}
+} satisfies Record<string, string>
 
 describe('owned collab binding', () => {
   it('matches the published package plus our recorded changes', () => {

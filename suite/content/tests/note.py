@@ -48,7 +48,8 @@ def read_old(node: str, *, lock: bool = False) -> OldNote | None:
     if row is None:
         return None
 
-    return OldNote(fingerprint_of(row.html), {"html": row.html}, row.modified)
+    # convert.py reads Writer's `collab` flag off every app's input; a note has none
+    return OldNote(fingerprint_of(row.html), {"html": row.html, "collab": 0}, row.modified)
 
 
 def check(node: str, old: OldNote, converted: convert.Converted) -> CheckedNote:

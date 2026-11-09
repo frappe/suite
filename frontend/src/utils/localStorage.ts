@@ -30,7 +30,7 @@ export function writeString(key: string, value: string): void {
 /** Parse a JSON value, returning null for an absent key and propagating parse errors. */
 export function readJSON(key: string): unknown | null {
   const value = localStorage.getItem(key)
-  return value === null ? null : (JSON.parse(value) as unknown)
+  return value === null ? null : JSON.parse(value)
 }
 
 /** Serialize and store a JSON value, propagating serialization errors. */

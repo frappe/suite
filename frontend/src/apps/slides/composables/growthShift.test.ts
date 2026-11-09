@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
@@ -12,7 +13,7 @@ const { fakeDiv, renderedWidth } = vi.hoisted(() => {
     get: () => renderedWidth.measure(),
     set: (width) => (renderedWidth.measure = () => width),
   })
-  fakeDiv.getBoundingClientRect = () => ({ width: renderedWidth.measure() }) as DOMRect
+  fakeDiv.getBoundingClientRect = () => fromPartial<DOMRect>({ width: renderedWidth.measure() })
   return { fakeDiv, renderedWidth }
 })
 vi.mock('@/apps/slides/stores/elementRegistry', () => ({

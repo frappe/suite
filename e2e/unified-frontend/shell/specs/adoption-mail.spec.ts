@@ -80,6 +80,7 @@ test.describe("Mail pages that need no mail account", () => {
 		await patchAccount(page, { is_jmap_configured: false, capabilities: { jmap: false } });
 		await page.route("**/api/method/suite.mail.api.account.get_user_info*", async (route) => {
 			const response = await route.fetch();
+			// SAFETY: this Suite-owned account endpoint returns its message projection; the fixture round-trip checks the changed preferences.
 			const body = (await response.json()) as { message: Record<string, unknown> };
 			const message = { ...body.message, is_jmap_configured: false, accounts: [], ...mailUser };
 			await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ message }) });

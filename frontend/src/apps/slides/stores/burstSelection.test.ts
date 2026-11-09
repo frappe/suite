@@ -14,7 +14,7 @@ const image = (id: number) => ({ id, type: 'image', left: 10, top: 10, width: 10
 
 describe('a held-key run of undos', () => {
   beforeEach(() => {
-    slides.value = [{ clientId: slideId, elements: [] }] as any
+    slides.value = [{ clientId: slideId, elements: [] }]
     slideIndex.value = 0
     activeElementIds.value = []
     focusElementId.value = null
@@ -143,7 +143,7 @@ describe('a held-key run of undos', () => {
 
 describe('a write to the selected element', () => {
   it('fits the box in the tick after the write, without waiting for a frame', async () => {
-    slides.value = [{ clientId: slideId, elements: [] }] as any
+    slides.value = [{ clientId: slideId, elements: [] }]
     slideIndex.value = 0
     activeElementIds.value = []
     const history = useCommandHistory(slides, { actionOrder, actions })
@@ -170,7 +170,7 @@ describe('a write to the selected element', () => {
 
 describe('cropSelectionToFitContent', () => {
   it('ignores an id that is no longer on the slide', () => {
-    slides.value = [{ clientId: slideId, elements: [] }] as any
+    slides.value = [{ clientId: slideId, elements: [] }]
     slideIndex.value = 0
 
     expect(() => cropSelectionToFitContent([99])).not.toThrow()

@@ -9,7 +9,7 @@
 //   f  a formula WITHOUT the leading '=' (Excel convention)
 //   z  a number-format code (Excel's grammar, e.g. '#,##0.00', '0.00%')
 
-import { CURRENCIES, displayNumber, parseNumberFmt, type Currency } from '../utils/format-number.js'
+import { CURRENCIES, displayNumber, parseNumberFmt } from '../utils/format-number.js'
 
 /** A SheetJS cell as this module writes it (see the field list above). */
 export interface XlsxCell {
@@ -53,7 +53,7 @@ const Z_TIME = _invert(TIME_Z)
 // First currency wins a shared symbol (¥ is both JPY and CNY) so reverse
 // mapping is deterministic — a ¥ cell round-trips as JPY.
 const SYMBOL_TO_CODE: Record<string, string> = {}
-for (const [code, c] of Object.entries(CURRENCIES))
+for (const [code, c] of [...CURRENCIES])
   if (!(c.symbol in SYMBOL_TO_CODE)) SYMBOL_TO_CODE[c.symbol] = code
 
 // Fraction-digit suffix: 2 → ".00", 0 → "".
@@ -98,7 +98,8 @@ export function numFmtToZ(fmt: unknown): string | null {
   if (type === 'percentage') return '0' + _dec(decimals ?? 2) + '%'
   if (type === 'currency') {
     // USD is always in CURRENCIES.
-    const cfg = CURRENCIES[variant] || (CURRENCIES.USD as Currency)
+    const cfg = CURRENCIES.get(variant) ?? CURRENCIES.get('USD')
+    if (!cfg) return null
     return `"${cfg.symbol}"#,##0` + _dec(decimals ?? cfg.defaultDecimals)
   }
   if (type === 'date') return DATE_Z[variant] || DATE_Z.ymd
@@ -203,7 +204,7 @@ function _toSerial(v: unknown): number | null {
   if (!s) return null
   const m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?/)
   if (m) {
-    const [y, mo, d, h, mi, sec] = m.slice(1).map((x) => Number(x || 0)) as number[]
+    const [y, mo, d, h, mi, sec] = m.slice(1).map((x) => Number(x || 0))
     return _serial(y!, mo! - 1, d!, h, mi, sec)
   }
   // Any other text a Date can read ("1 Apr 2026") is local time.
@@ -246,7 +247,7 @@ export function toXlsxCell(raw: unknown, computed: unknown, fmt: unknown): XlsxC
   // Filled field by field to keep SheetJS's key order (f, t, v, z); every
   // branch below sets t and v, so the result is a whole XlsxCell.
   const cell: Partial<XlsxCell> = {}
-  if (isFormula) cell.f = (raw as string).slice(1)
+  if (isFormula) cell.f = raw.slice(1)
 
   const { type } = parseNumberFmt(fmt || '')
   // A number under a date format is a day serial, the same number Excel
@@ -271,14 +272,20 @@ export function toXlsxCell(raw: unknown, computed: unknown, fmt: unknown): XlsxC
   // a numeric format code Excel ignores and our renderer would mis-apply (→ 7).
   const numericFmt = type === 'number' || type === 'currency' || type === 'percentage'
   if (z && !(cell.t === 's' && numericFmt)) cell.z = z
+  // SAFETY: each branch above assigns both t and v before this synchronous return;
+  // staging the optional f first preserves SheetJS's f/t/v/z property order.
   return cell as XlsxCell
+}
+interface FromXlsxCellResult {
+  value: string
+  fmt: string
 }
 
 /**
  * Convert a parsed SheetJS cell back into the engine's { value, fmt } shape.
  * `value` is the raw string the engine stores (formulas keep their leading '=').
  */
-export function fromXlsxCell(cell: XlsxCellIn | null | undefined): { value: string; fmt: string } {
+export function fromXlsxCell(cell: XlsxCellIn | null | undefined): FromXlsxCellResult {
   if (!cell) return { value: '', fmt: '' }
   let fmt = cell.z ? zToNumFmt(cell.z) : ''
   // A date code ours has no exact variant for (m/d/yyyy) would paint as

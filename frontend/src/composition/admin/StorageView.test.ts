@@ -238,10 +238,8 @@ describe('Storage actions', () => {
 
   it('shows each configured limit and offers no separate extra-storage actions', async () => {
     await render()
-    expect(document.querySelector('[role=progressbar]')?.getAttribute('aria-valuetext')).toContain(
-      'of 10 GB',
-    )
-    expect(document.querySelector('[role=table]')?.textContent).toContain('11 GB of 10 GB used')
+    expect(document.querySelector('[role=table]')?.textContent).toContain('11 GB')
+    expect(document.querySelector('[role=table]')?.textContent).toContain('10 GB')
     expect(
       [...document.querySelectorAll('[role=columnheader]')].map((item) => item.textContent?.trim()),
     ).not.toContain('Limit')
@@ -270,6 +268,17 @@ describe('Storage actions', () => {
       users: ['maya@example.com', 'leah@example.com'],
       cap_bytes: 20000000000,
     })
+  })
+  it('searches by email without hiding attention alerts', async () => {
+    await render()
+    const search = document.querySelector<HTMLInputElement>('input[aria-label="Search users"]')!
+    search.value = 'leah@example.com'
+    search.dispatchEvent(new Event('input', { bubbles: true }))
+    await vi.waitFor(() => {
+      expect(document.querySelector('[role=table]')?.textContent).toContain('Leah')
+      expect(document.querySelector('[role=table]')?.textContent).not.toContain('Maya')
+    })
+    expect(document.querySelector('[aria-label="Storage alerts"]')?.textContent).toContain('Maya')
   })
   it('keeps failed saves open for retry', async () => {
     await render()

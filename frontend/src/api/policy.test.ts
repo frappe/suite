@@ -14,20 +14,30 @@ import type { OwnerRegistration } from '@/platform/server-state'
 import type { Operation } from '@/platform/transport'
 import { registration as suite } from '@/platform/transport/policy'
 
-const owners: Record<string, OwnerRegistration> = {
-  suite,
-  drive,
-  draw,
-  mail,
-  meet,
-  calendar,
-  writer,
-  sheets,
-  slides,
-}
+const owners = new Map<string, OwnerRegistration>(
+  Object.entries({
+    suite,
+    drive,
+    draw,
+    mail,
+    meet,
+    calendar,
+    writer,
+    sheets,
+    slides,
+  }),
+)
 function operations(value: unknown): Operation[] {
   if (typeof value !== 'object' || value === null) return []
-  if ('kind' in value && 'id' in value) return value.kind === 'transfer' ? [] : [value as Operation]
+  if ('kind' in value && 'id' in value) {
+    if (value.kind === 'transfer') return []
+    if ((value.kind !== 'query' && value.kind !== 'mutation') || typeof value.id !== 'string') {
+      throw new Error('Invalid generated operation reference')
+    }
+    // SAFETY: The only caller walks the generated api registry, whose remaining
+    // descriptor fields are checked by contract generation; kind/id identify its leaves.
+    return [value as Operation]
+  }
   return Object.values(value).flatMap(operations)
 }
 describe('owner registrations', () => {
@@ -37,7 +47,7 @@ describe('owner registrations', () => {
       references.flatMap((ref) => [ref.id, `${ref.owner}.${ref.id}`, ref.entity?.tag]),
     )
     for (const reference of references) {
-      const owner = owners[reference.owner]
+      const owner = owners.get(reference.owner)
       expect(owner, reference.owner).toBeDefined()
       if (!owner) throw new Error(`Missing owner: ${reference.owner}`)
       const policy = owner.policy(reference)

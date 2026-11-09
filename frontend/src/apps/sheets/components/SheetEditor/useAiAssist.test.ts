@@ -3,7 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useAiAssist } from './useAiAssist.js'
 
-const asked = vi.hoisted(() => [] as Array<Record<string, unknown>>)
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
+const asked = vi.hoisted(() => fromPartial<Array<Record<string, unknown>>>([]))
 
 vi.mock('@/api', () => ({
   api: { sheets: { assistant: { ask: { path: 'ask' } } } },
@@ -66,7 +68,11 @@ describe('AI Assist context', () => {
     // say the view is partial
     expect(reads).toEqual([['Data', { r0: 0, c0: 0, r1: 25, c1: 40 }]])
     expect(asked).toHaveLength(1)
-    expect(JSON.parse(asked[0]!.cells as string)).toEqual({ B1: 'Amount', B2: '5', B3: '10' })
+    expect(JSON.parse(fromPartial<string>(asked[0]!.cells))).toEqual({
+      B1: 'Amount',
+      B2: '5',
+      B3: '10',
+    })
     expect(asked[0]).toMatchObject({ name: 'sheet-1', prompt: 'sum' })
   })
 })

@@ -14,6 +14,7 @@ connection's snapshot is dropped, which `reread` does.
 """
 
 import io
+import json
 import time
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
@@ -696,6 +697,21 @@ class TestNodeWorkflows(DriveHTTPCase):
         )
         error = self.refusal(response, 409, "DriveConflict")
         self.assertEqual(error["free_title"], "Folder (2)")
+
+    def test_only_a_document_may_ask_for_a_numbered_title(self):
+        # A folder's title is typed, so a taken one is the user's to change
+        response = self.as_owner(
+            "POST",
+            f"{PREFIX}/nodes",
+            body={
+                "parent_node": self.root.name,
+                "title": "Folder",
+                "kind": "folder",
+                "deduplicate_title": True,
+            },
+        )
+        error = self.refusal(response, 400, "DriveError")
+        self.assertNotIn("exception", error)
 
     def test_a_purge_reports_how_many_nodes_it_removed(self):
         doomed = create_folder(self.owner, self.root.name, "Doomed")
@@ -1797,6 +1813,24 @@ class TestGrantedCollaborator(DriveHTTPCase):
         self.assertEqual(answer["access"]["source_node"], self.folder)
         self.assertEqual(answer["access"]["source_principal"], STRANGER)
 
+    def test_each_breadcrumb_carries_the_callers_role_there(self):
+        # The owner's root is not the editor's to see, so both trails start at the shared folder.
+        node = self.data(
+            self.drive(
+                "GET", f"{PREFIX}/nodes/{self.file}", query={"expand": "breadcrumbs"}, sid=self.stranger_sid
+            )
+        )
+        listed = self.data(
+            self.drive(
+                "GET",
+                f"{PREFIX}/nodes/{self.folder}/children",
+                query={"expand": "breadcrumbs"},
+                sid=self.stranger_sid,
+            )
+        )
+        for trail in (node["breadcrumbs"], listed["rows"][0]["breadcrumbs"]):
+            self.assertEqual([(step["name"], step["role"]) for step in trail], [(self.folder, EDIT)])
+
     def test_a_link_that_ties_an_own_grant_is_not_named_as_the_source(self):
         # §5.1 makes pass 1 the answer when it ties pass 2, and `via_link` says
         # so. The source fields have to agree: naming the deeper link while
@@ -2359,9 +2393,8 @@ class TestViewRoutes(DriveHTTPCase):
         self.assertGreaterEqual(access["rows"][0]["access"]["role"], READ)
 
     def test_breadcrumbs_expand_on_the_lists_a_folder_is_opened_from(self):
-        # B29: Shared and Starred show where an item lives. Recents hides
-        # folders and the trash shows its own root's trail, so neither takes
-        # the expansion.
+        # B29: Shared, Starred and Recent show where an item lives. The trash
+        # shows its own root's trail, so it does not take the expansion.
         self.data(self.as_owner("PUT", f"{PREFIX}/nodes/{self.file}/favourite"))
         starred = self.view("favourites", expand="breadcrumbs")
         self.assertEqual([row["name"] for row in starred["rows"]], [self.file])
@@ -2379,12 +2412,14 @@ class TestViewRoutes(DriveHTTPCase):
         )
         self.assertEqual([row["name"] for row in shared["rows"]], [self.folder])
         self.assertIsInstance(shared["rows"][0]["breadcrumbs"], list)
-        for name, query in (("recents", {}), ("trash", {"root": self.root.name})):
-            with self.subTest(view=name):
-                response = self.as_owner(
-                    "GET", f"{PREFIX}/views/{name}", query={"expand": "breadcrumbs", **query}
-                )
-                self.refusal(response, 400, "DriveError")
+        self.data(self.as_owner("POST", f"{PREFIX}/nodes/{self.file}/visit", body={}))
+        recent = self.view("recents", expand="breadcrumbs")
+        self.assertEqual([row["name"] for row in recent["rows"]], [self.file])
+        self.assertIn(self.folder, [crumb["name"] for crumb in recent["rows"][0]["breadcrumbs"]])
+        response = self.as_owner(
+            "GET", f"{PREFIX}/views/trash", query={"expand": "breadcrumbs", "root": self.root.name}
+        )
+        self.refusal(response, 400, "DriveError")
 
     def test_a_personal_view_is_scoped_to_the_caller(self):
         self.data(self.as_owner("PUT", f"{PREFIX}/nodes/{self.file}/favourite"))
@@ -2411,6 +2446,16 @@ class TestViewRoutes(DriveHTTPCase):
             with self.subTest(type=unknown):
                 answer = self.as_owner("GET", f"{PREFIX}/views/recents", query={"type": unknown})
                 self.refusal(answer, 400, "DriveError")
+
+    def test_named_recents_are_removed_from_the_query_string_and_the_rest_stay(self):
+        self.data(self.as_owner("POST", f"{PREFIX}/nodes/{self.folder}/visit", body={}))
+        self.data(self.as_owner("POST", f"{PREFIX}/nodes/{self.file}/visit", body={}))
+        # The generated client sends a list in a query string as JSON text.
+        answer = self.data(
+            self.as_owner("DELETE", f"{PREFIX}/views/recents", query={"nodes": json.dumps([self.file])})
+        )
+        self.assertEqual(answer, {"count": 1})
+        self.assertEqual([row["name"] for row in self.view("recents")["rows"]], [self.folder])
 
     def test_every_node_view_filters_by_type_and_the_root_views_refuse_it(self):
         # B46: `?type=` means the same on every node view. `templates` lists

@@ -3,7 +3,7 @@ import type { Editor } from '@tiptap/core'
 import { Button, Dropdown, type DropdownOptions } from 'frappe-ui'
 import { computed, ref } from 'vue'
 
-import type { DocumentSession } from '@/apps/drive'
+import { PANEL_BUTTONS, type DocumentPanel, type DocumentSession } from '@/apps/drive'
 import { listTabs } from '@/apps/writer/extensions/tabs'
 import { toast } from '@/platform/feedback'
 import { translate as __ } from '@/platform/translation'
@@ -12,8 +12,8 @@ import { downloadDocx, downloadMarkdown, exportHTML, type ExportScope } from './
 import { waitForFocusBack } from './focusBack'
 
 /**
- * The Writer document's menu in the Drive header: download as DOCX or
- * Markdown, and, with edit access, import a DOCX into the open document. A
+ * The Writer document's menu in the Drive header: the side panels, download as DOCX or
+ * Markdown, and, with edit access, lock the document or import a DOCX into it. A
  * document with tabs asks in a submenu whether to download the open tab or all
  * of them.
  */
@@ -24,9 +24,19 @@ const props = defineProps<{
   /** The person may change the body. Importing needs it. */
   editable: boolean
   canSaveVersion: boolean
+  /** The person could edit the body if it weren't locked. Locking needs it. */
+  canLock: boolean
+  isLocked: boolean
+  /** The side panels this person can open, and the one open now. */
+  panels?: readonly DocumentPanel[]
+  panel?: DocumentPanel | null
 }>()
 
-const emit = defineEmits<{ saveVersion: [] }>()
+const emit = defineEmits<{
+  saveVersion: []
+  setLocked: [lock: boolean]
+  togglePanel: [panel: DocumentPanel]
+}>()
 
 const DOCX_TYPES = '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 
@@ -74,54 +84,52 @@ function saveVersionOnFocusBack() {
   focusBack.focused()
 }
 
-function versionGroups() {
-  if (!props.canSaveVersion) {
-    return []
-  }
+function panelOptions() {
+  return (props.panels ?? []).map((name) => ({
+    label: __(PANEL_BUTTONS[name].label),
+    icon: PANEL_BUTTONS[name].icon,
+    selected: props.panel === name,
+    onClick: () => emit('togglePanel', name),
+  }))
+}
 
+function documentOptions() {
+  const isLocked = props.isLocked
+  const lock = {
+    label: isLocked ? __('Unlock document') : __('Lock document'),
+    icon: isLocked ? 'lucide-lock-open' : 'lucide-lock',
+    onClick: () => emit('setLocked', !isLocked),
+  }
   return [
-    {
-      group: __('Version'),
-      hideLabel: true,
-      options: [
-        {
-          label: __('Save version'),
-          icon: 'lucide-bookmark',
-          onClick: pickVersion,
-        },
-      ],
-    },
+    ...(props.canSaveVersion
+      ? [{ label: __('Save version'), icon: 'lucide-bookmark', onClick: pickVersion }]
+      : []),
+    ...(props.canLock ? [lock] : []),
+  ]
+}
+
+function fileOptions() {
+  const title = props.session.title.value
+  return [
+    downloadOption(__('Download as DOCX'), 'lucide-file-text', (html) =>
+      downloadDocx(html, title, props.settings, props.session.credentials.fetch),
+    ),
+    downloadOption(__('Download as Markdown'), 'lucide-file-code', (html) =>
+      downloadMarkdown(html, title, props.session.credentials.fetch),
+    ),
+    ...(props.editable
+      ? [{ label: __('Import DOCX'), icon: 'lucide-file-up', onClick: pickDocx }]
+      : []),
   ]
 }
 
 const options = computed<DropdownOptions>(() => {
-  const title = props.session.title.value
-  const versions = versionGroups()
-  const downloads = {
-    group: __('Download'),
-    hideLabel: true,
-    options: [
-      downloadOption(__('Download as DOCX'), 'lucide-file-text', (html) =>
-        downloadDocx(html, title, props.settings, props.session.credentials.fetch),
-      ),
-      downloadOption(__('Download as Markdown'), 'lucide-pilcrow', (html) =>
-        downloadMarkdown(html, title, props.session.credentials.fetch),
-      ),
-    ],
-  }
-  if (!props.editable) {
-    return [...versions, downloads]
-  }
-
-  return [
-    ...versions,
-    downloads,
-    {
-      group: __('Import'),
-      hideLabel: true,
-      options: [{ label: __('Import DOCX'), icon: 'lucide-file-up', onClick: pickDocx }],
-    },
+  const groups = [
+    { group: __('Panels'), hideLabel: true, options: panelOptions() },
+    { group: __('Document'), hideLabel: true, options: documentOptions() },
+    { group: __('File'), hideLabel: true, options: fileOptions() },
   ]
+  return groups.filter((group) => group.options.length > 0)
 })
 
 /** The picker input is never in the page, so the header holds one input: the title. */
@@ -155,7 +163,7 @@ async function importFile(file: File) {
       icon="lucide-ellipsis"
       :tooltip="__('More document actions')"
       :aria-label="__('More document actions')"
-      :disabled="!editor"
+      :disabled="!editor && !panels?.length"
       @focus="saveVersionOnFocusBack"
     />
   </Dropdown>
