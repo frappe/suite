@@ -956,6 +956,9 @@ class ContentTarget(Protocol):
 
     def grant_pairs(self, pairs: tuple[tuple[str, str], ...]) -> dict[tuple[str, str], int]: ...
 
+    def grants_above(self, nodes: tuple[str, ...], role: int) -> list[dict]:
+        """Answer the node and principal of each grant above `role` on these nodes."""
+
     def set_grant_role(self, node: str, principal: str, role: int) -> None: ...
 
     def insert_versions(self, rows: list[dict]) -> None: ...
@@ -2079,6 +2082,15 @@ class SiteContentTarget:
                 if key in wanted:
                     found[key] = cint(row.role)
         return found
+
+    def grants_above(self, nodes: tuple[str, ...], role: int) -> list[dict]:
+        """Answer the node and principal of each grant above `role` on these nodes."""
+        rows = frappe.get_all(
+            "Drive Grant",
+            filters=[["node", "in", list(nodes)], ["role", ">", role]],
+            fields=["node", "principal"],
+        )
+        return [dict(row) for row in rows]
 
     def set_grant_role(self, node: str, principal: str, role: int) -> None:
         SiteDrive().raise_grant(node, principal, role)

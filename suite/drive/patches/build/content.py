@@ -148,6 +148,10 @@ def link_content_documents(env, *, batch_size: int = BUILD_BATCH_SIZE):
     # kill inside the mapper leaves a record that claims step 10 finished with
     # no content share mapped, and §14.2 lets a rerun skip a complete record.
     _convert_content_shares(env, result, batch_size)
+
+    from suite.drive.patches.build.templates import hold_template_decks_read_only
+
+    hold_template_decks_read_only(env, result, batch_size)
     result.links_completed = True
     env.state.put_content(result)
 

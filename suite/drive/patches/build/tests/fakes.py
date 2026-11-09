@@ -1090,6 +1090,10 @@ class FakeContentTarget:
                 found[(node, principal)] = role
         return found
 
+    def grants_above(self, nodes, role):
+        rows = self.drive.grant_rows.values()
+        return [dict(row) for row in rows if row["node"] in nodes and row["role"] > role]
+
     def set_grant_role(self, node, principal, role):
         self.drive.raise_grant(node, principal, role)
 

@@ -2,10 +2,11 @@
 
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
-from suite.drive._core.roles import EDIT, MANAGE, NONE, READ
-from suite.drive.patches.build.content import BuildContentError, link_content_documents
+from suite.drive._core.roles import COMMENT, EDIT, MANAGE, NONE, READ
+from suite.drive.patches.build.content import BuildContentError, _grant_row, link_content_documents
 from suite.drive.patches.build.content_mapping import InvalidLegacyContent
 from suite.drive.patches.build.mapping import GENERAL, PUBLIC
 from suite.drive.patches.build.ports import ACTIVE, TRASHED, ContentRow, TreeRow, WriterTemplateRow
@@ -783,6 +784,61 @@ class TemplateTest(unittest.TestCase):
         self.assertTrue(linked.links_completed)
         self.assertEqual(linked.orphan_content_docs_adopted, 0)
         self.assertEqual(source.document_rows[(deck.doctype, deck.name)].node, node)
+
+    def test_only_the_owner_keeps_more_than_read_on_a_template_deck_and_its_media(self):
+        # The old hook answered read for all but the deck's owner, whatever rows it held
+        deck = presentation_template("deck-template")
+        source = FakeContent(
+            documents=[deck],
+            files=[TreeRow("file-1", content_doctype="Presentation", content_docname=deck.name)],
+            users={"Administrator": True, OWNER: True},
+        )
+        env, target = self.environment(source)
+        node = self.tree_node(target, deck.name)
+        media = self.tree_node(
+            target, deck.name, name="media-1", parent_node=node, content_doctype=None, content_docname=None
+        )
+        link = "$LINK:token"
+        editor = "editor@example.com"
+        denied = "denied@example.com"
+        target.insert_grants(
+            [
+                _grant_row(env, node, link, COMMENT),
+                _grant_row(env, node, editor, EDIT),
+                _grant_row(env, node, denied, NONE),
+                _grant_row(env, media, editor, EDIT),
+                _grant_row(env, media, OWNER, MANAGE),
+            ]
+        )
+
+        convert_slides_and_templates(env)
+        result = link_content_documents(env)
+
+        self.assertEqual(
+            target.grant_roles(node, (link, editor, denied, OWNER, GENERAL)),
+            {link: READ, editor: READ, denied: NONE, OWNER: MANAGE, GENERAL: READ},
+        )
+        self.assertEqual(target.grant_roles(media, (editor, OWNER)), {editor: READ, OWNER: MANAGE})
+        self.assertIn(
+            (f"Presentation:{deck.name}", f"template Presentation {deck.name}: 3 grants lowered to read"),
+            [(issue.source, issue.reason) for issue in result.issues],
+        )
+
+    def test_rights_on_an_ordinary_deck_are_left_alone(self):
+        deck = replace(presentation_template("plain-deck"), is_template=0)
+        source = FakeContent(
+            documents=[deck],
+            files=[TreeRow("file-1", content_doctype="Presentation", content_docname=deck.name)],
+            users={"Administrator": True, OWNER: True},
+        )
+        env, target = self.environment(source)
+        node = self.tree_node(target, deck.name)
+        target.insert_grants([_grant_row(env, node, "editor@example.com", EDIT)])
+
+        convert_slides_and_templates(env)
+        link_content_documents(env)
+
+        self.assertEqual(target.grant_roles(node, ("editor@example.com",)), {"editor@example.com": EDIT})
 
     def test_two_nodes_for_one_template_deck_are_refused(self):
         deck = presentation_template("deck-template")
