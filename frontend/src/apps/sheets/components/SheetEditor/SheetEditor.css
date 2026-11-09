@@ -380,21 +380,22 @@
   height: 12px;
 }
 
-/* Remote selection rectangle: a 2px outline in the peer's colour and their
-   selection shade behind the range, so it reads as a region. Colours are
-   Writer's (`.sn-peer` in SheetEditor.global.css picks the theme's shades). */
+/* Remote selection rectangle: a soft 1px outline in the peer's colour and
+   Writer's selection shade behind the range, so it reads as a region without
+   competing with this tab's own selection (`.sn-peer` in
+   SheetEditor.global.css picks the theme's shades). */
 .sn-remote-cursor {
   position: absolute;
   pointer-events: none;
   box-sizing: border-box;
-  border: 2px solid var(--rc);
+  border: 1px solid color-mix(in srgb, var(--rc) 60%, transparent);
   background: var(--rc-selection);
   /* Default: no animation. The class below opts in for one paint cycle
      when the peer actually changes cells (vs. local scroll). */
   transition: none;
 }
 /* The box carrying a cell's shared label draws over the others there. */
-.sn-remote-cursor--named {
+.sn-remote-cursor--labelled {
   z-index: 1;
 }
 .sn-remote-cursor--moved {
@@ -404,24 +405,47 @@
     width 0.12s ease-out,
     height 0.12s ease-out;
 }
-/* The name flag, styled as Writer's caret label: tint behind, ink text,
-   a 1px ring in the solid colour. */
+/* The name flag, as Writer's caret label: tint behind, ink text, a 1px ring
+   in the solid colour. It sits on the box's top edge, and shows at once. */
 .sn-remote-cursor-label {
   position: absolute;
-  top: -18px;
-  left: -2px;
-  background: var(--rc-tint);
+  bottom: 100%;
+  left: -1px;
+  height: 16px;
+  background-color: var(--rc-tint);
   box-shadow: inset 0 0 0 1px var(--rc);
   color: var(--rc-ink);
-  font-size: 10px;
-  font-weight: 600;
-  padding: 1px 5px;
-  border-radius: 3px 3px 3px 0;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 0 6px;
+  border-radius: 6px 6px 6px 1px;
   white-space: nowrap;
   line-height: 16px;
   max-width: 160px;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* Three seconds after its person stops, the flag shrinks to a dot centred on
+   the box's corner. Inert: useRemoteCursorNames finds a hover by position, so
+   the cells under the dot stay clickable. */
+.sn-remote-cursor--folded .sn-remote-cursor-label {
+  bottom: calc(100% - 3px);
+  left: -5px;
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border-radius: 50%;
+  background-color: var(--rc);
+  box-shadow: none;
+  font-size: 0;
+  transition-duration: 0.2s;
+  transition-property: background-color, border-radius, bottom, font-size, height, left, padding;
+  transition-timing-function: ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sn-remote-cursor--folded .sn-remote-cursor-label {
+    transition: none;
+  }
 }
 
 .sn-rename-err {

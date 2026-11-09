@@ -218,6 +218,8 @@
         class="sn-grid-wrap"
         :class="{ 'sn-painting-format': isPaintingFormat }"
         @wheel.capture.passive="linkCard.open = false"
+        @mousemove="remoteCursorNames.trackPointer"
+        @mouseleave="remoteCursorNames.clearPointer"
       >
         <canvas ref="canvasRef" />
 
@@ -315,7 +317,8 @@
           class="sn-remote-cursor sn-peer"
           :class="{
             'sn-remote-cursor--moved': cur.justMoved,
-            'sn-remote-cursor--named': cur.label,
+            'sn-remote-cursor--labelled': cur.label,
+            'sn-remote-cursor--folded': remoteCursorNames.isFolded(cur),
           }"
           :style="cur.style"
         >
@@ -859,6 +862,7 @@ import { useNotesPanel } from './useNotesPanel.js'
 import { usePersistence } from './usePersistence.js'
 import { usePivotIntegration } from './usePivotIntegration.js'
 import { useProtection } from './useProtection.js'
+import { useRemoteCursorNames } from './useRemoteCursorNames'
 import { useSheetTabs } from './useSheetTabs.js'
 import { useShortcuts } from './useShortcuts.js'
 import { useSlicers } from './useSlicers.js'
@@ -2530,6 +2534,9 @@ const visibleRemoteCursors = computed(() => {
       {
         user,
         label: cursor.label,
+        labelPeers: cursor.labelPeers,
+        x: tl.x,
+        y: tl.y,
         justMoved,
         style: {
           left: tl.x + 'px',
@@ -2542,6 +2549,8 @@ const visibleRemoteCursors = computed(() => {
     ]
   })
 })
+
+const remoteCursorNames = useRemoteCursorNames(remoteCursors, visibleRemoteCursors)
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
