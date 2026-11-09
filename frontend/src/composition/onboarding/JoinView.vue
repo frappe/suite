@@ -80,6 +80,13 @@ const order = computed<Step[]>(() => {
 const index = computed(() => order.value.indexOf(step.value))
 const centred = computed(() => ['loading', 'invitation', 'expired', 'signin'].includes(step.value))
 
+// Someone who chose their own password signs in on the usual page; `/join` is for temporary ones.
+const SIGN_IN = '/login'
+
+function openSignIn(): void {
+  window.location.assign(SIGN_IN)
+}
+
 // Where to start, once the session (and an invitation) has loaded. Vue Router keeps this
 // view when the address moves between /join/<key> and /join, so a new key starts over.
 let startedFor = requestKey
@@ -177,13 +184,6 @@ async function onAccountReady(): Promise<void> {
     return
   }
   next()
-}
-
-// Someone who chose their own password signs in on the usual page; `/join` is for temporary ones.
-const SIGN_IN = '/login'
-
-function openSignIn(): void {
-  window.location.assign(SIGN_IN)
 }
 
 // Signing in with a temporary password, which stays in memory for the password step
