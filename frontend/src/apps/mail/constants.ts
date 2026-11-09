@@ -52,6 +52,11 @@ export const FLAGGED_STAR_STYLE =
   'fill: var(--ink-amber-6); color: var(--ink-amber-6); ' +
   'mask-image: none; -webkit-mask-image: none; background-color: transparent'
 
+// A pinned row's pin, filled in blue the same way: on, as a starred row's star is.
+export const PINNED_PIN_STYLE =
+  'fill: var(--ink-blue-6); color: var(--ink-blue-6); ' +
+  'mask-image: none; -webkit-mask-image: none; background-color: transparent'
+
 /**
  * The geometry of a Split View: a list column beside a reading pane.
  *

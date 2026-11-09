@@ -10,10 +10,11 @@ export type MailboxRole =
   'inbox' | 'sent' | 'drafts' | 'trash' | 'junk' | 'archive' | 'important' | 'snoozed'
 
 /** Destinations rather than places mail is read — the folder lists (desktop sidebar,
- * mobile folder sheet) keep these behind their More row, in this order: the mail kept first,
- * the mail thrown out last, Trash at the very end. Typed wide (string) because mailbox data
- * carries role as a string. */
+ * mobile folder sheet) keep these behind their More row, in this order: the mail set aside for
+ * later first, then the mail kept, the mail thrown out last, Trash at the very end. Typed wide
+ * (string) because mailbox data carries role as a string. */
 export const SECONDARY_MAILBOX_ROLES: readonly string[] = [
+  'snoozed',
   'archive',
   'junk',
   'trash',
@@ -32,6 +33,11 @@ export const isHiddenFolder = (folder: {
   role?: string | null
   total_threads?: number | null
 }): boolean => folder.role === 'snoozed' && !folder.total_threads
+
+/** A folder that holds pinned mail at its top: the Inbox, Sent, or one of the user's own (no role).
+ * Each pins by its own keyword (see suite/mail/pins.py). */
+export const takesPins = (folder?: { role?: string | null } | null): boolean =>
+  !!folder && (!folder.role || folder.role === 'inbox' || folder.role === 'sent')
 
 const primaryRank = (role?: string | null) => {
   const rank = PRIMARY_MAILBOX_ROLES.indexOf(role ?? '')

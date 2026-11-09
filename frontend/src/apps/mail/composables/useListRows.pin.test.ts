@@ -61,13 +61,20 @@ describe('a list with pins', () => {
   it('has no pinned group without pins', () => {
     expect(Object.keys(listOf([threads[1]]).groupedThreads.value)).not.toContain('pinned')
   })
+})
 
-  it('heads the group on desktop, not on a phone', () => {
-    const keys = () => listOf(threads).navigableRows.value.map((navRow) => navRow.key)
-    expect(keys()).toContain('group:pinned')
+describe('the pinned section', () => {
+  const threads = [row('pin', '2024-01-01 10:00:00', 1), row('new', '2026-11-04 10:00:00')]
+  const walked = () => listOf(threads).navigableRows.value.map((navRow) => navRow.key)
+
+  it('heads the pins on desktop, as the days are headed', () => {
+    expect(walked().slice(0, 2)).toEqual(['group:pinned', 'pin'])
+  })
+
+  it('leads with the pins as plain rows on a phone, with no header', () => {
     isMobile.value = true
     try {
-      expect(keys()).not.toContain('group:pinned')
+      expect(walked()).toEqual(['pin', 'new'])
     } finally {
       isMobile.value = false
     }

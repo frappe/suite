@@ -41,7 +41,7 @@ from suite.mail.jmap import (
     get_mailbox_id_by_role,
     omit_none,
 )
-from suite.mail.pins import PINNED_KEYWORD
+from suite.mail.pins import pin_keyword, takes_pins
 from suite.mail.store import (
     Entity,
     get_blob_store,
@@ -1322,26 +1322,36 @@ def set_flagged_status(account: str, ids: list[str], flagged: bool = True) -> No
         frappe.throw(_("Failed to set flagged status for mail(s)."))
 
 
-def set_pinned_status(account: str, ids: list[str], pinned: bool = True) -> list[str]:
-    """Pin the conversation these messages are, or unpin it; returns the messages changed.
+def set_pinned_status(
+    account: str, ids: list[str], pinned: bool = True, mailbox: str | None = None
+) -> list[str]:
+    """Pin the conversation these messages are in a folder, or unpin it there; returns the messages
+    changed.
 
-    The pin goes on what they hold in the Inbox, the one list it acts in (see suite.mail.pins); it
-    comes off all of them, wherever each is now.
+    A pin belongs to the folder it is made in, the Inbox unless `mailbox` names another that takes
+    pins (see suite.mail.pins). It goes on what the messages hold in that folder, under the folder's
+    own keyword; it comes off all of them, wherever each is now.
     """
 
     if not account or not ids:
         frappe.throw(_("Account and Mail IDs are required."))
 
+    mailboxes = get_cached_mailboxes(account)
+    inbox = next((m["id"] for m in mailboxes if (m.get("role") or "").lower() == "inbox"), None)
+    folder = mailbox or inbox
+    if not any(m["id"] == folder and takes_pins(m) for m in mailboxes):
+        frappe.throw(_("Mail in this folder can't be pinned."))
+    keyword = pin_keyword(folder, inbox)
+
     if pinned:
-        inbox = get_mailbox_id_by_role(account, "inbox", raise_exception=True)
-        ids = [mail["id"] for mail in get_messages_mailboxes(account, ids) if inbox in mail["mailbox_ids"]]
+        ids = [mail["id"] for mail in get_messages_mailboxes(account, ids) if folder in mail["mailbox_ids"]]
         if not ids:
-            frappe.throw(_("Only mail in the Inbox can be pinned."))
+            frappe.throw(_("Only mail in this folder can be pinned here."))
 
     try:
         # A null patch removes a keyword; JMAP has no false keyword.
         value = True if pinned else None
-        _update_emails(account, [{"id": id, "keywords": {PINNED_KEYWORD: value}} for id in ids])
+        _update_emails(account, [{"id": id, "keywords": {keyword: value}} for id in ids])
     except Exception:
         log_mail_error(_("Failed to change the pin of mail(s)"), frappe.get_traceback(with_context=True))
         frappe.throw(_("Failed to change the pin of mail(s)."))

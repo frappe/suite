@@ -1,6 +1,6 @@
 # Copyright (c) 2026, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
-"""Pinning: a conversation held at the top of the Inbox, by a keyword that only the Inbox reads."""
+"""Pinning: a conversation held at the top of a folder, by a keyword that only that folder reads."""
 
 import unittest
 from unittest import mock
@@ -19,6 +19,8 @@ ACCOUNT = "c9"
 MAILBOXES = [
     {"id": "inbox", "name": "Inbox", "role": "inbox", "isSubscribed": True},
     {"id": "archive", "name": "Archive", "role": "archive", "isSubscribed": True},
+    {"id": "sent", "name": "Sent", "role": "sent", "isSubscribed": True},
+    {"id": "receipts", "name": "Receipts", "role": None, "isSubscribed": True},
 ]
 
 
@@ -59,10 +61,33 @@ class PinnedList(unittest.TestCase):
             ],
         )
 
-    def test_no_other_folder_lists_by_the_pin(self):
+    def test_a_folder_that_takes_no_pins_lists_by_date(self):
         _rows, fetch = self.listing("archive")
 
         self.assertIsNone(fetch.call_args.kwargs["sort"])
+
+    def test_sent_and_a_folder_of_your_own_list_by_their_own_pin_then_by_date(self):
+        for folder in ("sent", "receipts"):
+            _rows, fetch = self.listing(folder)
+
+            self.assertEqual(
+                fetch.call_args.kwargs["sort"],
+                [
+                    {"property": "hasKeyword", "keyword": f"pinned_{folder}", "isAscending": False},
+                    {"property": "receivedAt", "isAscending": False},
+                ],
+            )
+
+    def test_mail_in_the_inbox_and_a_folder_is_pinned_only_where_it_was_pinned(self):
+        both = {
+            "id": "a",
+            "mailboxIds": {"inbox": True, "receipts": True},
+            "keywords": {"pinned_receipts": True},
+            "received_at": "2026-11-01 10:00:00",
+        }
+
+        self.assertEqual(self.listing("receipts", both)[0][0]["pinned"], 1)
+        self.assertEqual(self.listing("inbox", both)[0][0]["pinned"], 0)
 
     def test_a_row_is_pinned_by_the_mail_it_holds_in_the_inbox(self):
         rows, _ = self.listing("inbox", message("a", "inbox", "pinned"))
@@ -149,9 +174,11 @@ class PinnedClearing(unittest.TestCase):
 
 
 class SetPinned(unittest.TestCase):
-    def pin(self, ids: list[str], pinned: bool, mailboxes: dict[str, str]) -> tuple[list[str], list[dict]]:
+    def pin(
+        self, ids: list[str], pinned: bool, mailboxes: dict[str, str], folder: str | None = None
+    ) -> tuple[list[str], list[dict]]:
         with (
-            mock.patch.object(mail_message, "get_mailbox_id_by_role", return_value="inbox"),
+            mock.patch.object(mail_message, "get_cached_mailboxes", return_value=MAILBOXES),
             mock.patch.object(
                 mail_message,
                 "get_messages_mailboxes",
@@ -160,7 +187,7 @@ class SetPinned(unittest.TestCase):
             mock.patch.object(mail_message, "_update_emails") as update,
             mock.patch.object(mail_message, "_remove_cached_messages"),
         ):
-            done = mail_message.set_pinned_status(ACCOUNT, ids, pinned)
+            done = mail_message.set_pinned_status(ACCOUNT, ids, pinned, folder)
         return done, update.call_args.args[1] if update.called else []
 
     def test_pinning_marks_only_what_is_in_the_inbox(self):
@@ -172,6 +199,16 @@ class SetPinned(unittest.TestCase):
     def test_nothing_in_the_inbox_cannot_be_pinned(self):
         with self.assertRaises(frappe.ValidationError):
             self.pin(["a"], True, {"a": "archive"})
+
+    def test_pinning_in_a_folder_marks_what_is_there_with_that_folder_s_own_pin(self):
+        done, patches = self.pin(["a", "b"], True, {"a": "inbox", "b": "receipts"}, "receipts")
+
+        self.assertEqual(done, ["b"])
+        self.assertEqual(patches, [{"id": "b", "keywords": {"pinned_receipts": True}}])
+
+    def test_a_folder_that_takes_no_pins_cannot_be_pinned_in(self):
+        with self.assertRaises(frappe.ValidationError):
+            self.pin(["a"], True, {"a": "archive"}, "archive")
 
     def test_unpinning_clears_every_message_wherever_it_is(self):
         done, patches = self.pin(["a", "b"], False, {"a": "inbox", "b": "archive"})

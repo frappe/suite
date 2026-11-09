@@ -186,11 +186,15 @@ class TestSnooze(UnitTestCase):
             set(apply(archived, plan("snooze", [archived], ROLES)["a"])["mailboxIds"]), {"snoozed"}
         )
 
-    def test_your_sent_mail_stays_in_sent_and_only_leaves_the_inbox(self):
-        filed_in_inbox = email("r", "sent", "inbox")
+    def test_your_mail_waits_only_if_it_was_in_the_inbox_and_keeps_sent(self):
+        # In the Inbox because nobody replied to it (see suite.mail.reminders).
+        chased = email("r", "sent", "inbox", returned=True, noreply=True)
+        update = plan("snooze", [chased], ROLES)["r"]
 
-        self.assertEqual(plan("snooze", [filed_in_inbox], ROLES), {"r": {"mailboxIds/inbox": None}})
-        self.assertEqual(plan("snooze", [REPLY], ROLES), {})
+        self.assertEqual(set(apply(chased, update)["mailboxIds"]), {"sent", "snoozed"})
+        self.assertEqual(update["keywords/returned"], None)
+        self.assertEqual(update["keywords/noreply"], None)
+        self.assertEqual(plan("snooze", [REPLY, email("a", "sent", "archive")], ROLES), {})
 
     def test_what_is_thrown_out_or_filed_elsewhere_stays_where_it_is(self):
         kept = [email("t", "trash"), email("j", "junk"), email("p", "projects")]
@@ -202,14 +206,14 @@ class TestSnooze(UnitTestCase):
 
         self.assertIsNone(plan("snooze", [returned], ROLES)["m"]["keywords/returned"])
 
-    def test_wake_brings_received_mail_to_the_inbox_and_keeps_your_own_out(self):
+    def test_wake_brings_what_waited_back_to_the_inbox(self):
         waiting = email("q", "snoozed", "projects")
         own = email("r", "sent", "snoozed")
-        updates = plan("wake", [waiting, own, DRAFT, email("o", "inbox")], ROLES)
+        updates = plan("wake", [waiting, own, DRAFT, email("o", "inbox"), REPLY], ROLES)
 
         self.assertEqual(set(updates), {"q", "r"})
         self.assertEqual(set(apply(waiting, updates["q"])["mailboxIds"]), {"inbox", "projects"})
-        self.assertEqual(set(apply(own, updates["r"])["mailboxIds"]), {"sent"})
+        self.assertEqual(set(apply(own, updates["r"])["mailboxIds"]), {"sent", "inbox"})
 
     def test_archived_or_trashed_it_is_no_longer_snoozed(self):
         waiting = email("q", "snoozed")
