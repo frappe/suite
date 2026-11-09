@@ -23,7 +23,7 @@ from frappe.utils import now, validate_email_address
 
 from suite.composition.http import HttpOwner
 from suite.drive._core import content
-from suite.drive._core.access import check
+from suite.drive._core.access import SITE_TIER, check, own_tier
 from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFound
 from suite.drive._core.principals import Principals, parse_link_header
 from suite.drive._core.roles import DEFAULT_PTYPE_ROLE, EDIT, PTYPE_ROLE, READ
@@ -652,8 +652,9 @@ def _list_predicate(node_column: str, user: str | None) -> str:
 
     Drive's own account holds every right, so the filter disappears. Anyone
     else, a Suite Admin included, reads what their grants give. The answer
-    repeats `Acc`: the deepest own grant decides, a deny there wins
-    outright, and an open grant can only add. Two simplifications keep it in
+    repeats `Acc`: the deepest own grant decides, a deny there wins unless
+    only `$GENERAL` denies and an open grant is nearer, and an open grant can
+    only add. Two simplifications keep it in
     SQL and both refuse more than the engine, never less: grants at the same
     depth are not ordered by own tier, and a password-protected link grant is
     skipped because a list caller presents no unlock ticket.
@@ -667,11 +668,19 @@ def _list_predicate(node_column: str, user: str | None) -> str:
 
     own = _nearest_role("drive_own", principals.own, skip_locked=False, deny_wins=True)
     other = _nearest_role("drive_open", principals.open, skip_locked=True, deny_wins=False)
+    named = _nearest_role(
+        "drive_named",
+        tuple(principal for principal in principals.own if own_tier(principal, principals.user) < SITE_TIER),
+        skip_locked=False,
+        deny_wins=True,
+    )
+    own_depth = _nearest_depth("drive_own", principals.own, skip_locked=False)
+    other_depth = _nearest_depth("drive_open", principals.open, skip_locked=True)
     return (
         "EXISTS (SELECT 1 FROM `tabDrive Node` `drive_node` "
         f"WHERE `drive_node`.`name` = {node_column} "
         "AND `drive_node`.`kind` = 'document' AND `drive_node`.`state` = 'Active' "
-        f"AND COALESCE({own}, -1) <> 0 "
+        f"AND (COALESCE({own}, -1) <> 0 OR (COALESCE({named}, -1) <> 0 AND {other_depth} > {own_depth})) "
         f"AND GREATEST(COALESCE({own}, 0), COALESCE({other}, 0)) >= {READ})"
     )
 
@@ -686,24 +695,24 @@ def _nearest_role(alias: str, principals: tuple[str, ...], *, skip_locked: bool,
     if not principals:
         return "NULL"
     live = _live_grants(alias, principals, skip_locked=skip_locked)
-    deepest = _live_grants(f"{alias}_deep", principals, skip_locked=skip_locked)
     role = (
-        "CASE WHEN MIN(`{a}`.`role`) = 0 THEN 0 ELSE MAX(`{a}`.`role`) END"
+        f"CASE WHEN MIN(`{alias}`.`role`) = 0 THEN 0 ELSE MAX(`{alias}`.`role`) END"
         if deny_wins
-        else "MAX(`{a}`.`role`)"
+        else f"MAX(`{alias}`.`role`)"
     )
-    return (
-        f"(SELECT {role} "
-        "FROM `tabDrive Grant` `{a}` WHERE {live} AND {depth} = "
-        "(SELECT MAX({deep_depth}) FROM `tabDrive Grant` `{d}` WHERE {deepest}))"
-    ).format(
-        a=alias,
-        d=f"{alias}_deep",
-        live=live,
-        deepest=deepest,
-        depth=_depth_expr(alias),
-        deep_depth=_depth_expr(f"{alias}_deep"),
-    )
+    depth = _depth_expr(alias)
+    deepest = _nearest_depth(f"{alias}_deep", principals, skip_locked=skip_locked)
+    return f"(SELECT {role} FROM `tabDrive Grant` `{alias}` WHERE {live} AND {depth} = {deepest})"
+
+
+def _nearest_depth(alias: str, principals: tuple[str, ...], *, skip_locked: bool) -> str:
+    """Return a scalar subquery giving how deep the nearest of these grants sits."""
+    if not principals:
+        return "NULL"
+
+    live = _live_grants(alias, principals, skip_locked=skip_locked)
+    depth = _depth_expr(alias)
+    return f"(SELECT MAX({depth}) FROM `tabDrive Grant` `{alias}` WHERE {live})"
 
 
 def _live_grants(alias: str, principals: tuple[str, ...], *, skip_locked: bool) -> str:

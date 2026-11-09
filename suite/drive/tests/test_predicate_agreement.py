@@ -24,7 +24,7 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils import now_datetime
 
 from suite.drive import framework
-from suite.drive._core.access import chain_ids, effective_role, own_tier
+from suite.drive._core.access import SITE_TIER, chain_ids, effective_role, own_tier
 from suite.drive._core.principals import LINK_TOKEN_LENGTH, Principals, make_ticket
 from suite.drive._core.roles import MANAGE, READ, ROLES
 from suite.drive._core.roots import create_root
@@ -215,8 +215,15 @@ class TestPredicateAgreement(IntegrationTestCase):
         own = [row for row in live if row.principal in principals.own]
         if not own:
             return False
-        deepest = max(chain.index(row.node) for row in own)
-        tiers = {own_tier(row.principal, principals.user) for row in own if chain.index(row.node) == deepest}
+
+        # The rule that lets a nearer link past a `$GENERAL` deny reads the
+        # nearest named grant too, so the tie can sit at either depth
+        named = [row for row in own if own_tier(row.principal, principals.user) < SITE_TIER]
+        return any(self._tiers_tie(rows, chain, principals) for rows in (own, named) if rows)
+
+    def _tiers_tie(self, rows, chain, principals: Principals) -> bool:
+        deepest = max(chain.index(row.node) for row in rows)
+        tiers = {own_tier(row.principal, principals.user) for row in rows if chain.index(row.node) == deepest}
         return len(tiers) > 1
 
     # tests
@@ -253,6 +260,67 @@ class TestPredicateAgreement(IntegrationTestCase):
         # The run is not vacuous: plenty of nodes were compared and some were readable.
         self.assertGreater(compared, 200)
         self.assertGreater(admitted, 20)
+
+    def _node(self, parent, kind: str) -> frappe._dict:
+        path = ""
+        if parent.kind != "root":
+            parent_path = parent.path or "/"
+            path = f"{parent_path}{parent.name}/"
+
+        row = frappe._dict(
+            title=kind,
+            parent_node=parent.name,
+            root=self.root.node,
+            path=path,
+            kind=kind,
+            state="Active",
+            size=0,
+            is_template=0,
+        )
+        doc = frappe.get_doc({"doctype": "Drive Node", **row})
+        doc.db_insert()
+        row.name = doc.name
+        return row
+
+    def _replace_grants(self, rows, nodes: list[str]) -> None:
+        frappe.db.delete(
+            "Drive Grant",
+            {"node": ["in", nodes], "principal": ["not in", (OWNER,)]},
+        )
+
+        for node, principal, role in rows:
+            frappe.get_doc(
+                {"doctype": "Drive Grant", "node": node.name, "principal": principal, "role": role}
+            ).insert(ignore_permissions=True)
+
+        frappe.db.commit()
+
+    def test_both_sides_let_only_a_nearer_link_past_a_general_deny(self):
+        root = frappe._dict(name=self.root.node, kind="root", root=None, path="")
+        far = self._node(root, "folder")
+        near = self._node(far, "folder")
+        document = self._node(near, "document")
+        token = _token(random.Random(1))
+        link = f"$LINK:{token}"
+        member = Principals(VIEWER, OWN_PRINCIPALS, ("$PUBLIC", link))
+        cases = {
+            "link nearer than the deny": (True, [(far, "$GENERAL", 0), (near, link, READ)]),
+            "publication nearer than the deny": (True, [(far, "$GENERAL", 0), (near, "$PUBLIC", READ)]),
+            "deny nearer than the link": (False, [(near, "$GENERAL", 0), (far, link, READ)]),
+            "deny beside the link": (False, [(near, "$GENERAL", 0), (near, link, READ)]),
+            "deny naming the person": (False, [(far, VIEWER, 0), (near, link, READ)]),
+            "deny naming their group": (False, [(far, GROUP, 0), (near, link, READ)]),
+            "named deny behind the deny": (
+                False,
+                [(root, VIEWER, 0), (far, "$GENERAL", 0), (near, link, READ)],
+            ),
+        }
+        nodes = [root.name, far.name, near.name, document.name]
+        for label, (expected, rows) in cases.items():
+            with self.subTest(label):
+                self._replace_grants(rows, nodes)
+                self.assertEqual(document.name in self._admitted_by_sql(member), expected)
+                self.assertEqual(document.name in self._admitted_by_engine([document], member), expected)
 
     def test_the_system_has_no_filter_and_manage_everywhere(self):
         rng = random.Random(7)
