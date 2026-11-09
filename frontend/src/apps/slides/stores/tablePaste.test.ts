@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
@@ -15,7 +16,8 @@ const table = '<table><tbody><tr><td><p>one</p></td><td><p>two</p></td></tr></tb
 
 // a drop routes through the same clipboard parse, with no event to read plain text off,
 // so this is what a table dragged into an element arrives as
-const paste = (html: string) => activeEditor.value.view.pasteHTML(html, {} as any)
+const paste = (html: string) =>
+  activeEditor.value.view.pasteHTML(html, fromPartial<ClipboardEvent>({}))
 
 afterEach(() => {
   activeEditor.value?.destroy()

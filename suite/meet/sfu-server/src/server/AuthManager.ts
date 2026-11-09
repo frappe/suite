@@ -76,7 +76,7 @@ export class AuthManager {
 		} catch (error) {
 			loggers.authManager.error(
 				'Authentication failed: %s',
-				(error as Error).message,
+				error instanceof Error ? error.message : String(error),
 			);
 			return false;
 		}
@@ -170,7 +170,7 @@ export class AuthManager {
 			loggers.authManager.warn(
 				'Failed to emit auth:expired for socket %s: %s',
 				socket.id,
-				(emitError as Error).message,
+				emitError instanceof Error ? emitError.message : String(emitError),
 			);
 		}
 
@@ -258,8 +258,32 @@ export class AuthManager {
 	}
 }
 
+type ParticipantClaimFields = Partial<
+	Record<
+		| 'user_id'
+		| 'user_name'
+		| 'meeting_id'
+		| 'is_host'
+		| 'scope'
+		| 'site'
+		| 'user_avatar'
+		| 'session_id'
+		| 'is_cohost'
+		| 'is_guest'
+		| 'guest_generation'
+		| 'e2ee_required'
+		| 'exp'
+		| 'iat',
+		unknown
+	>
+>;
+
+function isClaimRecord(value: unknown): value is ParticipantClaimFields {
+	return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
 function parseParticipantClaims(value: unknown): JWTPayload {
-	if (!value || typeof value !== 'object' || Array.isArray(value)) {
+	if (!isClaimRecord(value)) {
 		throw new Error('Invalid participant claims');
 	}
 	const userId = claimString(value, 'user_id');
@@ -286,72 +310,79 @@ function parseParticipantClaims(value: unknown): JWTPayload {
 	const e2eeRequired = optionalBoolean(value, 'e2ee_required');
 	const exp = optionalInteger(value, 'exp');
 	const iat = optionalInteger(value, 'iat');
-	return {
+	const claims: JWTPayload = {
 		user_id: userId,
 		user_name: userName,
 		meeting_id: meetingId,
 		is_host: value.is_host,
-		...(site !== undefined ? { site } : {}),
-		...(userAvatar !== undefined ? { user_avatar: userAvatar } : {}),
-		...(isCohost !== undefined ? { is_cohost: isCohost } : {}),
-		...(isGuest !== undefined ? { is_guest: isGuest } : {}),
-		...(guestGeneration !== undefined
-			? { guest_generation: guestGeneration }
-			: {}),
-		...(scope !== undefined ? { scope } : {}),
-		...(e2eeRequired !== undefined ? { e2ee_required: e2eeRequired } : {}),
-		...(sessionId !== undefined ? { session_id: sessionId } : {}),
-		...(exp !== undefined ? { exp } : {}),
-		...(iat !== undefined ? { iat } : {}),
 	};
+	if (site !== undefined) claims.site = site;
+	if (userAvatar !== undefined) claims.user_avatar = userAvatar;
+	if (isCohost !== undefined) claims.is_cohost = isCohost;
+	if (isGuest !== undefined) claims.is_guest = isGuest;
+	if (guestGeneration !== undefined) claims.guest_generation = guestGeneration;
+	if (scope !== undefined) claims.scope = scope;
+	if (e2eeRequired !== undefined) claims.e2ee_required = e2eeRequired;
+	if (sessionId !== undefined) claims.session_id = sessionId;
+	if (exp !== undefined) claims.exp = exp;
+	if (iat !== undefined) claims.iat = iat;
+	return claims;
 }
 
-function claimString(value: object, key: string): string {
+function claimString(
+	value: ParticipantClaimFields,
+	key: keyof ParticipantClaimFields,
+): string {
 	if (!(key in value)) throw new Error('Invalid participant claims');
-	const claim = value[key as keyof typeof value];
+	const claim = value[key];
 	if (typeof claim !== 'string' || !claim) {
 		throw new Error('Invalid participant claims');
 	}
 	return claim;
 }
 
-function optionalString(value: object, key: string): string | undefined {
-	if (!(key in value) || value[key as keyof typeof value] === undefined) {
+function optionalString(
+	value: ParticipantClaimFields,
+	key: keyof ParticipantClaimFields,
+): string | undefined {
+	if (!(key in value) || value[key] === undefined) {
 		return undefined;
 	}
-	const claim = value[key as keyof typeof value];
+	const claim = value[key];
 	if (typeof claim !== 'string') throw new Error('Invalid participant claims');
 	return claim;
 }
 
 function optionalNullableString(
-	value: object,
-	key: string,
+	value: ParticipantClaimFields,
+	key: keyof ParticipantClaimFields,
 ): string | undefined {
-	if (
-		!(key in value) ||
-		value[key as keyof typeof value] === undefined ||
-		value[key as keyof typeof value] === null
-	) {
+	if (!(key in value) || value[key] === undefined || value[key] === null) {
 		return undefined;
 	}
 	return optionalString(value, key);
 }
 
-function optionalBoolean(value: object, key: string): boolean | undefined {
-	if (!(key in value) || value[key as keyof typeof value] === undefined) {
+function optionalBoolean(
+	value: ParticipantClaimFields,
+	key: keyof ParticipantClaimFields,
+): boolean | undefined {
+	if (!(key in value) || value[key] === undefined) {
 		return undefined;
 	}
-	const claim = value[key as keyof typeof value];
+	const claim = value[key];
 	if (typeof claim !== 'boolean') throw new Error('Invalid participant claims');
 	return claim;
 }
 
-function optionalInteger(value: object, key: string): number | undefined {
-	if (!(key in value) || value[key as keyof typeof value] === undefined) {
+function optionalInteger(
+	value: ParticipantClaimFields,
+	key: keyof ParticipantClaimFields,
+): number | undefined {
+	if (!(key in value) || value[key] === undefined) {
 		return undefined;
 	}
-	const claim = value[key as keyof typeof value];
+	const claim = value[key];
 	if (typeof claim !== 'number' || !Number.isSafeInteger(claim)) {
 		throw new Error('Invalid participant claims');
 	}

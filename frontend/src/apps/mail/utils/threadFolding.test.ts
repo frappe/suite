@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it } from 'vitest'
 
 import type { Mail } from '@/apps/mail/types'
@@ -12,7 +13,7 @@ import {
 
 // Every mail arrives seen, and so collapsed, the way a reloaded thread hands them over.
 const mail = (name: string, overrides: Partial<Mail> = {}) =>
-  ({ name, draft: 0, seen: 1, collapsed: true, ...overrides }) as Mail
+  fromPartial<Mail>({ name, draft: 0, seen: 1, collapsed: true, ...overrides })
 
 const draft = (name: string) => mail(name, { draft: 1 })
 

@@ -92,12 +92,12 @@
        needs a session. -->
   <SuiteCommandPalette v-if="session.status.value === 'authenticated'" :areas="areas" />
   <!-- The shortcuts list for pages whose area draws none of its own. -->
-  <KeyboardShortcutsDialog v-model:open="shellShortcutsOpen" :title="__('Keyboard shortcuts')" />
+  <ShortcutsDialog v-model:open="shellShortcutsOpen" />
 </template>
 
 <script setup lang="ts">
 import { useResizeObserver } from '@vueuse/core'
-import { Button, DesktopShell, KeyboardShortcutsDialog, MobileShell } from 'frappe-ui'
+import { Button, DesktopShell, MobileShell } from 'frappe-ui'
 import { computed, defineAsyncComponent, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
@@ -106,7 +106,7 @@ import type { AreaDefinition, ScrollOwner, ShellFrame } from '@/platform/contrac
 import { shellPhoneChromeRequested } from '@/platform/phone-chrome'
 import { railHidden } from '@/platform/rail'
 import { missingCapabilities, useSession } from '@/platform/session'
-import { shellShortcutsOpen, useShortcutsKey } from '@/platform/shortcuts'
+import { shellShortcutsOpen, ShortcutsDialog, useShortcutsKey } from '@/platform/shortcuts'
 import { translate as __ } from '@/platform/translation'
 import AccountSheet from '@/shell/AccountSheet.vue'
 import { progressDetail, useAreaProgress } from '@/shell/areaProgress'
@@ -187,9 +187,11 @@ const setPhoneNavHeight = (height: number | null) =>
   height === null
     ? document.documentElement.style.removeProperty('--suite-phone-nav-height')
     : document.documentElement.style.setProperty('--suite-phone-nav-height', `${height}px`)
-useResizeObserver(phoneNav, ([entry]) =>
-  setPhoneNavHeight(entry ? (entry.target as HTMLElement).offsetHeight : null),
-)
+useResizeObserver(phoneNav, ([entry]) => {
+  const checkedEventTarget = entry.target
+  if (!(checkedEventTarget instanceof HTMLElement)) return
+  return setPhoneNavHeight(entry ? checkedEventTarget.offsetHeight : null)
+})
 watch(phoneNav, (element) => {
   if (!element) setPhoneNavHeight(null)
 })

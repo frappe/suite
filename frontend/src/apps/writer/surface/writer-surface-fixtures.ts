@@ -1,5 +1,6 @@
 import { fakeSocket } from '@suite/collab-client/test-support'
 import type { Editor as TiptapEditor } from '@tiptap/core'
+import { fromPartial } from '@total-typescript/shoehorn'
 import { expect, vi } from 'vitest'
 import { computed, createApp, defineComponent, h, nextTick, ref, type App, type Ref } from 'vue'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
@@ -28,9 +29,9 @@ function surfaceSession(
   versions: Versions | undefined,
   comments: Comments | undefined,
   access: Ref<{ role: number }>,
-  state: Ref<string>,
+  state: Ref<DocumentSession['state']['value']>,
 ) {
-  return {
+  return fromPartial<DocumentSession>({
     nodeId: 'node-1',
     comments,
     title: ref('Quarterly plan'),
@@ -38,9 +39,9 @@ function surfaceSession(
     access,
     canShare: computed(() => state.value === 'Active' && access.value.role >= 50),
     // What the server answers: Drive's own test holds the session to the same rule
-    panels: computed(() => [
-      ...(signedIn.isOn || access.value.role >= 20 ? ['comments'] : []),
-      ...(signedIn.isOn || access.value.role >= 40 ? ['versions'] : []),
+    panels: computed<DocumentSession['panels']['value']>(() => [
+      ...(signedIn.isOn || access.value.role >= 20 ? ['comments' as const] : []),
+      ...(signedIn.isOn || access.value.role >= 40 ? ['versions' as const] : []),
     ]),
     refreshAccess: async () => {},
     versions,
@@ -51,7 +52,7 @@ function surfaceSession(
       fetchHeld: fetch,
       group: () => [],
     },
-  } as unknown as DocumentSession
+  })
 }
 
 export async function mountedSurface(
@@ -59,7 +60,7 @@ export async function mountedSurface(
   path = '/d/node-1',
   comments?: Comments,
   access = ref({ role: 50 }),
-  state = ref('Active'),
+  state = ref<DocumentSession['state']['value']>('Active'),
 ) {
   const session = surfaceSession(versions, comments, access, state)
   const surface = { render: () => h(WriterSurface, { session }) }
@@ -123,14 +124,14 @@ export function resetSurface() {
 export function liveRoom() {
   const room = {
     doc: new Doc(),
-    status: {
+    status: fromPartial<Record<string, unknown>>({
       canWrite: true,
       blockReason: null,
       pauseReason: null,
       saveState: 'clean',
       unsentCount: 0,
       isKeptOnDevice: true,
-    } as Record<string, unknown>,
+    }),
     onChange: () => () => {},
     flush: async () => {},
     close: vi.fn(async () => {}),
@@ -155,12 +156,12 @@ export async function previewAndReturn(
   await nextTick()
 }
 
-export const oneVersion = {
+export const oneVersion = fromPartial<Versions>({
   list: async () => ({
     rows: [{ seq: 3, kind: 'named', label: 'Before review' }],
     next_cursor: null,
   }),
-} as unknown as Versions
+})
 
 export const STOPPED = 'Saving stopped in this tab. Reload to keep editing.'
 

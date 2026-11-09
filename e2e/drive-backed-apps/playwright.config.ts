@@ -1,5 +1,5 @@
-import { defineConfig, devices } from "@playwright/test";
 import { resolve } from "node:path";
+import { defineConfig, devices } from "@playwright/test";
 
 const baseURL = process.env.BASE_URL ?? "http://drive-layer.localhost:8084";
 const isCI = !!process.env.CI;
@@ -26,7 +26,7 @@ const testApiServer =
 				url: new URL("/api/method/suite.drive.e2e_api.provision_users", testApiUrl).href,
 				command: `${resolve(benchPath, "env/bin/python")} -m frappe.utils.bench_helper frappe serve --port ${new URL(testApiUrl).port || "80"} --noreload`,
 				cwd: resolve(benchPath, "sites"),
-				env: { ...process.env, DEV_SERVER: "1" } as Record<string, string>,
+				env: { ...process.env, DEV_SERVER: "1" },
 				reuseExistingServer: true,
 				timeout: 120_000,
 				gracefulShutdown: { signal: "SIGTERM" as const, timeout: 5_000 },
@@ -45,7 +45,7 @@ function chromeChoice() {
 
 const browser = { ...devices["Desktop Chrome"], ...chromeChoice() };
 
-export default defineConfig({
+const config = defineConfig({
 	testDir: "./specs",
 	fullyParallel: true,
 	forbidOnly: isCI,
@@ -61,10 +61,7 @@ export default defineConfig({
 				["html", { open: "never", outputFolder: resolve(__dirname, "playwright-report") }],
 				["junit", { outputFile: resolve(__dirname, "results.xml") }],
 			]
-		: [
-				["list"],
-				["html", { open: "never", outputFolder: resolve(__dirname, "playwright-report") }],
-			],
+		: [["list"], ["html", { open: "never", outputFolder: resolve(__dirname, "playwright-report") }]],
 	use: {
 		baseURL,
 		trace: "on-first-retry",
@@ -80,7 +77,9 @@ export default defineConfig({
 			use: browser,
 		},
 	],
-	...(testApiServer ? { webServer: testApiServer } : {}),
 	globalSetup: "./global-setup.ts",
 	globalTeardown: "./global-teardown.ts",
 });
+
+if (testApiServer) config.webServer = testApiServer;
+export default config;

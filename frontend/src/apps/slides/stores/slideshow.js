@@ -9,6 +9,7 @@ import {
   slideIndex,
   slides,
 } from '@/apps/slides/stores/slide'
+import { advanceSeconds } from '@/apps/slides/utils/advanceAfter'
 import { getAttachmentUrl } from '@/apps/slides/utils/mediaUploads'
 
 const inSlideShowMode = ref(false)
@@ -236,8 +237,8 @@ const scheduleAdvance = (hasEntrance = true) => {
 
 const startWait = () => {
   cancelAdvance()
-  const seconds = parseFloat(currentSlide.value?.advanceAfter)
-  if (!(seconds > 0)) return
+  const seconds = advanceSeconds(currentSlide.value?.advanceAfter)
+  if (seconds === null) return
   const entranceLeft = Math.max(0, entranceEnds - Date.now())
   advanceTimer = setTimeout(advance, seconds * 1000 + entranceLeft)
   document.addEventListener('ended', restartWait, true)

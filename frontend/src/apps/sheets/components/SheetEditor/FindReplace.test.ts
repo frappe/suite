@@ -13,10 +13,10 @@ afterEach(() => cleanup?.())
 
 function mountPanel() {
   const active = ref('Sheet1')
-  const cells: Record<string, Record<string, string>> = {
+  const cells = {
     Sheet1: { A1: 'apple from first tab' },
     Sheet2: { A1: 'second tab must survive', B2: 'apple from second tab' },
-  }
+  } satisfies Record<string, Record<string, string>>
   const edits: Array<{
     sheet: string
     before: Record<string, string>

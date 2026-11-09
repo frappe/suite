@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 import { Doc, encodeStateAsUpdate, XmlElement, XmlText } from 'yjs'
@@ -280,7 +281,7 @@ describe('Writer surface', () => {
 
   it("lets an editor change someone else's comment while the document awaits conversion", async () => {
     oldDocument('Old text', { state: 'pending' })
-    const thread = {
+    const thread = fromPartial<DocumentThread>({
       name: 'about',
       anchor: 'document',
       resolved: false,
@@ -294,8 +295,8 @@ describe('Writer surface', () => {
           creation: new Date().toISOString(),
         },
       ],
-    } as unknown as DocumentThread
-    const comments = { list: async () => ({ threads: [thread] }) } as unknown as Comments
+    })
+    const comments = fromPartial<Comments>({ list: async () => ({ threads: [thread] }) })
     const root = await openedSurface(undefined, '/d/node-1', comments)
 
     root.querySelector<HTMLElement>('[data-open-comments]')!.click()

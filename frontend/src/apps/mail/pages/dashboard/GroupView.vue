@@ -275,6 +275,7 @@ const memberSearch = ref('')
 const member = useQuery(api.mail.admin.groups.get, () => ({
   group_id: groupId,
 }))
+// SAFETY: suite/mail/api/admin.py::get_group owns this response projection; undefined represents a pending query.
 usePageMeta(() => appPageMeta((member.data as GroupData | undefined)?.email || groupId, 'Mail'))
 watch(
   () => member.error,
@@ -286,6 +287,7 @@ watch(
     })
   },
 )
+// SAFETY: suite/mail/api/admin.py::get_group owns this response projection; undefined represents a pending query.
 const data = computed(() => member.data as GroupData | undefined)
 const currentMemberIds = computed(() => data.value?.members.map((m) => m.id) || [])
 const filteredMembers = computed(() => {

@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createRealtime, resolveSiteName, resolveSocketUrl, type SocketLike } from './index'
@@ -85,28 +86,28 @@ describe('realtime', () => {
   it('discovers production and development socket URLs', () => {
     expect(
       resolveSocketUrl(
-        {
-          location: {
+        fromPartial<Window>({
+          location: fromPartial<Location>({
             origin: 'https://suite.example.com',
             protocol: 'https:',
             hostname: 'suite.example.com',
             port: '',
-          } as Location,
-        } as Window,
+          }),
+        }),
         'suite.example.com',
         9000,
       ),
     ).toBe('https://suite.example.com/suite.example.com')
     expect(
       resolveSocketUrl(
-        {
-          location: {
+        fromPartial<Window>({
+          location: fromPartial<Location>({
             origin: 'https://slides.localhost:8080',
             protocol: 'https:',
             hostname: 'slides.localhost',
             port: '8080',
-          } as Location,
-        } as Window,
+          }),
+        }),
         'slides.localhost',
         9000,
       ),
@@ -116,14 +117,14 @@ describe('realtime', () => {
   it('uses each named browser host as its own socket namespace', () => {
     const urls: string[] = []
     for (const host of ['drive-layer.localhost', 'rehearsal.localhost']) {
-      const targetWindow = {
-        location: {
+      const targetWindow = fromPartial<Window>({
+        location: fromPartial<Location>({
           origin: `http://${host}:8084`,
           protocol: 'http:',
           hostname: host,
           port: '8084',
-        } as Location,
-      } as Window
+        }),
+      })
       createRealtime({
         window: targetWindow,
         io: (url) => {
@@ -141,7 +142,7 @@ describe('realtime', () => {
 
   it('prefers the boot site and falls back to the build site on generic loopback hosts', () => {
     const targetWindow = (hostname: string, siteName?: string) =>
-      ({ location: { hostname } as Location, site_name: siteName }) as Window
+      fromPartial<Window>({ location: fromPartial<Location>({ hostname }), site_name: siteName })
 
     expect(
       resolveSiteName(targetWindow('rehearsal.localhost', 'boot.localhost'), 'demo.localhost'),

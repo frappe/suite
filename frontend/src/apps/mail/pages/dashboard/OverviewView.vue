@@ -239,6 +239,7 @@ const router = useRouter()
 
 const overview = useQuery(api.mail.admin.overview.get, () => ({}))
 
+// SAFETY: suite/mail/api/admin.py::get_overview owns this response projection; undefined represents a pending query.
 const data = computed(() => overview.data as OverviewData | undefined)
 const site = computed(() => data.value?.site || undefined)
 const recentAccounts = computed(() => data.value?.recent_accounts || [])

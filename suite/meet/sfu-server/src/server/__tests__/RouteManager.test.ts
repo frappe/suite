@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn';
 import { describe, expect, it, vi } from 'vitest';
 import { Telemetry } from '../../telemetry/Telemetry';
 import { RouteManager } from '../RouteManager';
@@ -32,8 +33,8 @@ function createHarness(token?: string) {
 	};
 	const telemetry = new Telemetry();
 	new RouteManager(
-		app as never,
-		mediasoup as never,
+		fromPartial(app),
+		fromPartial(mediasoup),
 		telemetry,
 		() => 5,
 		token,
@@ -56,8 +57,8 @@ describe('RouteManager metrics endpoint', () => {
 		const response = createResponse();
 
 		await handlers.get('/metrics')?.(
-			{ headers: { authorization: 'Bearer wrong' } } as never,
-			response as never,
+			{ headers: { authorization: 'Bearer wrong' } },
+			response,
 		);
 
 		expect(response.sendStatus).toHaveBeenCalledWith(401);
@@ -68,8 +69,8 @@ describe('RouteManager metrics endpoint', () => {
 		const response = createResponse();
 
 		await handlers.get('/metrics')?.(
-			{ headers: { authorization: 'Bearer secret' } } as never,
-			response as never,
+			{ headers: { authorization: 'Bearer secret' } },
+			response,
 		);
 
 		expect(response.set).toHaveBeenCalledWith(
@@ -93,7 +94,7 @@ describe('RouteManager metrics endpoint', () => {
 		const { handlers } = createHarness();
 		const response = createResponse();
 
-		handlers.get('/health')?.({} as never, response as never);
+		handlers.get('/health')?.({}, response);
 
 		expect(response.json).toHaveBeenCalledWith(
 			expect.objectContaining({ rooms: 2, peers: 3 }),

@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { computed, effectScope, reactive, ref } from 'vue'
 
@@ -43,7 +44,7 @@ beforeEach(() => {
   scope = effectScope()
   engine = createApiClient(
     { mail: () => import('@/apps/mail/client/policy').then((module) => module.registration) },
-    { transport: createTransport({ fetch: fetcher, maxRetries: 0 }), persistence: false, feedback },
+    { transport: createTransport({ fetch: fetcher, maxRetries: 0 }), feedback },
   )
   mocks.useMutation.mockImplementation(engine.useMutation)
 })
@@ -114,14 +115,16 @@ it('discarding a reply draft from the list holds only the draft, not the mail it
   }
   const actions = scope.run(() =>
     useThreadActions({
-      rows: computed(() => [conversation] as never),
+      rows: computed(() =>
+        fromPartial<Parameters<typeof useThreadActions>[0]['rows']['value']>([conversation]),
+      ),
       mailbox: computed(() => 'drafts'),
       threadID: computed(() => undefined),
       selections: ref([]),
       mailThreadRef: ref(null),
       resetThreads: vi.fn(),
       syncAfterAction: vi.fn(),
-      removeThreadsFromList: () => [conversation] as never,
+      removeThreadsFromList: () => fromPartial([conversation]),
       restoreThreadsToList: vi.fn(),
       refillIfEmpty: vi.fn(),
       goToMailbox: vi.fn(),

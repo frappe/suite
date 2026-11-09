@@ -54,7 +54,8 @@ export class WriterTableView extends TableView {
     if (this.table.style.width) return
     let total = 0
     for (const column of this.colgroup.children) {
-      total += parseFloat((column as HTMLElement).style.width) || DEFAULT_COLUMN_WIDTH
+      total +=
+        (column instanceof HTMLElement && parseFloat(column.style.width)) || DEFAULT_COLUMN_WIDTH
     }
     if (this.table.style.minWidth !== `${total}px`) this.table.style.minWidth = `${total}px`
   }

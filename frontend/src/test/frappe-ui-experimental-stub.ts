@@ -9,3 +9,5 @@ export const TextEditor = stub
 export const TextEditorFixedMenu = stub
 // Built on by mail's image extension (utils/text-editor.ts), which editor tests load for its paragraph.
 export const ImageExtension = { extend: () => ({ configure: () => ({}) }) }
+// The palette family is the real one: a palette test drives its listbox, which a stub cannot.
+export * from '../../../node_modules/frappe-ui/experimental/CommandPalette'

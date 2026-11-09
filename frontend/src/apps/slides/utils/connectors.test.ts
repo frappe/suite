@@ -437,7 +437,7 @@ describe('remapElementIds', () => {
           end: { elementId: 'b', anchor: 'auto' },
         },
       },
-    ] as any)
+    ])
 
     expect(copies[0].id).not.toBe('a')
     expect(copies[1].connector.start).toEqual({ elementId: copies[0].id, anchor: 'right' })
@@ -445,7 +445,7 @@ describe('remapElementIds', () => {
   })
 
   it('gives every element its own id even when the sources share one', () => {
-    const copies = remapElementIds([{ id: 'a' }, { id: 'a' }, {}, {}] as any)
+    const copies = remapElementIds([{ id: 'a' }, { id: 'a' }, {}, {}])
     expect(new Set(copies.map((copy) => copy.id)).size).toBe(4)
   })
 })

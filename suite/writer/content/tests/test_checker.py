@@ -221,8 +221,8 @@ class TestChecker(UnitTestCase):
         self.assertEqual((exposed_globals, verdict_name), ("[]", "clean"))
 
     def test_the_bundle_runs_the_yjs_the_browsers_get(self):
-        lockfile = (Path(__file__).parents[4] / "yarn.lock").read_text()
-        locked = set(re.findall(r'^"?yjs@[^\n]*\n\s+version "([^"]+)"', lockfile, re.M))
+        lockfile = (Path(__file__).parents[4] / "pnpm-lock.yaml").read_text()
+        locked = set(re.findall(r"^  yjs@([^:(]+):", lockfile, re.M))
         completed = subprocess.run(
             checker.node_command(checker.usable_node(), BUNDLE),
             input=checker.framed([b'{"mode": "judge"}', b""]),

@@ -222,7 +222,10 @@ export class Room implements CollabRoom {
     const last = this.lastStatus
     if (
       !last ||
-      (Object.keys(next) as (keyof RoomStatus)[]).some((key) => next[key] !== last[key])
+      Object.entries(next).some(([key, value]) => {
+        // SAFETY: currentStatus constructs every own key from the closed RoomStatus fields; last is a previous snapshot from the same constructor.
+        return value !== last[key as keyof RoomStatus]
+      })
     ) {
       this.lastStatus = Object.freeze(next)
     }

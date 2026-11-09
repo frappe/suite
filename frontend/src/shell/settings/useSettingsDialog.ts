@@ -25,6 +25,11 @@ const resolved = shallowRef<ResolvedList | null>(null)
 // The last group each loader resolved to. A loader that fails on a later
 // open shows this copy again.
 const lastGroups = new Map<SettingsGroupLoader, SettingsGroup>()
+interface UseSettingsGroupsResult {
+  groups: Readonly<Ref<VisibleSettingsGroup[] | null>>
+  failed: Readonly<Ref<number>>
+  load: () => Promise<void>
+}
 
 /**
  * The settings groups the user may see. `load()` resolves every group loader
@@ -34,11 +39,7 @@ const lastGroups = new Map<SettingsGroupLoader, SettingsGroup>()
  */
 export function useSettingsGroups(
   loaders: readonly SettingsGroupLoader[] = inject(SETTINGS_GROUPS_KEY, []),
-): {
-  groups: Readonly<Ref<VisibleSettingsGroup[] | null>>
-  failed: Readonly<Ref<number>>
-  load: () => Promise<void>
-} {
+): UseSettingsGroupsResult {
   const groups = computed(() => resolved.value?.groups ?? null)
   const failed = computed(() => resolved.value?.failed ?? 0)
 

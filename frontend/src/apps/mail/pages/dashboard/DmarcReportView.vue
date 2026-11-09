@@ -193,6 +193,7 @@ watch(
   },
 )
 
+// SAFETY: suite/mail/api/admin.py::get_dmarc_report owns this response projection; undefined represents a pending query.
 const data = computed(() => report.data as ReportData | undefined)
 
 usePageMeta(() =>

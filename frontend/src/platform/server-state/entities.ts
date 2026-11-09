@@ -1,5 +1,5 @@
-/** Partitioned entities reconcile detail and list responses without persisting credentials. */
-import { get, set } from 'idb-keyval'
+/** Partitioned entities reconcile detail and list responses. They live only in memory. */
+import { del } from 'idb-keyval'
 import { reactive } from 'vue'
 
 import type { EntityDeclaration } from '@/platform/transport'
@@ -15,43 +15,24 @@ interface Entity {
 interface EntityReference {
   __suiteEntity: string
 }
-const STORAGE_KEY = 'suite-api-entities-v2'
+/**
+ * Earlier builds saved entities, file titles included, under this IndexedDB key and
+ * never showed them. Delete the leftover copy. Remove this after a few releases.
+ */
+const RETIRED_STORAGE_KEY = 'suite-api-entities-v2'
+export function deleteRetiredEntityStore(): void {
+  if (typeof indexedDB !== 'undefined') void del(RETIRED_STORAGE_KEY).catch(() => {})
+}
 
 export class Entities {
   private readonly records = reactive(new Map<string, Entity>())
-  private readonly confirmed = new Map<string, Entity>()
-  private generation = 0
-  private readonly hydration = new Map<string, Promise<void>>()
 
-  constructor(private readonly persistence = true) {}
-
-  hydrate(partition: string): Promise<void> {
-    if (!this.persistence || typeof indexedDB === 'undefined') return Promise.resolve()
-    let loading = this.hydration.get(partition)
-    if (!loading) {
-      const generation = this.generation
-      loading = get<Entity[]>(STORAGE_KEY)
-        .then((saved) => {
-          if (generation !== this.generation) return
-          for (const entity of saved ?? []) {
-            if (entity.partition !== partition) continue
-            const key = this.key(partition, entity.tag, entity.id)
-            if (!this.records.has(key)) this.records.set(key, { ...entity, revision: 0 })
-            if (!this.confirmed.has(key)) this.confirmed.set(key, { ...entity, revision: 0 })
-          }
-        })
-        .catch(() => {})
-      this.hydration.set(partition, loading)
-    }
-    return loading
-  }
-
-  normalize(
-    value: unknown,
+  normalize<Value>(
+    value: Value,
     declaration: EntityDeclaration | null | undefined,
     partition: string,
     revision: number,
-  ): unknown {
+  ): Value | EntityReference | unknown[] | Record<string, unknown> {
     if (Array.isArray(value))
       return value.map((item) => this.normalize(item, declaration, partition, revision))
     if (!isRecord(value) || value instanceof Blob) return value
@@ -69,8 +50,6 @@ export class Entities {
             : { ...value }
         const entity = { partition, tag: declaration.tag, id, version, data, revision }
         this.records.set(key, entity)
-        this.confirmed.set(key, entity)
-        this.persist()
       }
       return { __suiteEntity: key } satisfies EntityReference
     }
@@ -97,8 +76,8 @@ export class Entities {
     input: I,
     ids: readonly string[],
     update?: (input: I, entity: Record<string, unknown>) => Record<string, unknown> | void,
-  ): () => void {
-    const snapshots: Array<{ key: string; before: Entity; attempt: Entity }> = []
+  ): (only?: readonly string[]) => void {
+    const snapshots: Array<{ id: string; key: string; before: Entity; attempt: Entity }> = []
     if (tag && update) {
       for (const id of ids) {
         const key = this.key(partition, tag, id)
@@ -109,36 +88,24 @@ export class Entities {
         const attempt = { ...before, data: { ...before.data, ...patch } }
         this.records.set(key, attempt)
         const stored = this.records.get(key)
-        if (stored) snapshots.push({ key, before, attempt: stored })
+        if (stored) snapshots.push({ id, key, before, attempt: stored })
       }
     }
-    return () => {
-      for (const { key, before, attempt } of snapshots) {
+    // Undoes every patch, or only those of the ids in `only`.
+    return (only) => {
+      for (const { id, key, before, attempt } of snapshots) {
+        if (only && !only.includes(id)) continue
         if (this.records.get(key) === attempt) this.records.set(key, before)
       }
     }
   }
 
   clear(): void {
-    this.generation += 1
     this.records.clear()
-    this.confirmed.clear()
-    this.hydration.clear()
-    this.persist()
   }
 
   private key(partition: string, tag: string, id: string): string {
     return JSON.stringify([partition, tag.replaceAll(' ', '').toLowerCase(), id])
-  }
-
-  private persist(): void {
-    if (!this.persistence || typeof indexedDB === 'undefined') return
-    // Save committed values, never reactive optimistic overlays or access credentials.
-    const saved = [...this.confirmed.values()].map((entity) => ({
-      ...entity,
-      data: safeData(entity.data),
-    }))
-    void set(STORAGE_KEY, saved).catch(() => {})
   }
 }
 
@@ -148,11 +115,6 @@ function compare(left: string | number | null, right: string | number | null): n
   return String(left).localeCompare(String(right))
 }
 
-export function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord<Value>(value: Value): value is Value & Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function safeData(data: Record<string, unknown>): Record<string, unknown> {
-  const { access: _access, ...publicData } = data
-  return JSON.parse(JSON.stringify(publicData)) as Record<string, unknown>
 }

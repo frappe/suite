@@ -7,6 +7,8 @@ import { railHidden } from '@/platform/rail'
 import { readRecovery } from './recovery'
 import SheetsSurface from './SheetsSurface.vue'
 
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const toast = vi.hoisted(() => ({
   error: vi.fn(),
   warning: vi.fn((_message: string, _options?: { action?: { label: string } }) => 'offer-1'),
@@ -35,10 +37,10 @@ const editor = await vi.hoisted(async () => {
   const { reactive } = await import('vue')
   return reactive({
     // The header's state: another tab's unsent edits make it 'unsaved' too.
-    saveState: 'clean' as 'clean' | 'saving' | 'unsaved' | 'failed',
+    saveState: fromPartial<'clean' | 'saving' | 'unsaved' | 'failed'>('clean'),
     /** This tab's own edits that have not reached the server. */
     unsent: false,
-    draft: null as Draft | null,
+    draft: fromPartial<Draft | null>(null),
     hasLoadError: false,
     loseAccess: vi.fn(),
   })
@@ -83,7 +85,8 @@ vi.mock('@/apps/sheets/components/SheetEditor/index.vue', () => ({
           const draft = editor.draft
           await new Promise((resolve) => setTimeout(resolve, 0))
           if (stopped) throw new Error('worker terminated')
-          return JSON.stringify({ engine: '', ...(draft ? { draft } : {}) })
+          const snapshot = { engine: '' }
+          return JSON.stringify(draft ? { ...snapshot, draft } : snapshot)
         },
         hasDraft: () => editor.draft !== null,
         hasUnsentWork: () => editor.unsent,
@@ -101,10 +104,10 @@ vi.mock('@/apps/sheets/components/SheetEditor/index.vue', () => ({
   }),
 }))
 
-const state = ref('Active')
+const state = ref<DocumentSession['state']['value']>('Active')
 const role = ref(40)
-const panels = ref(['comments', 'versions'])
-const session = {
+const panels = ref<DocumentSession['panels']['value']>(['comments', 'versions'])
+const session = fromPartial<DocumentSession>({
   nodeId: 'node-1',
   contentDocname: 'sheet-1',
   title: ref('Budget'),
@@ -113,7 +116,7 @@ const session = {
   panels,
   credentials: { context: {}, fetch: vi.fn() },
   versions: {},
-} as unknown as DocumentSession
+})
 
 let unmount: (() => void) | undefined
 beforeEach(() => {

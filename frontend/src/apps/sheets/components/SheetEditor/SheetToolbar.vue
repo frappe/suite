@@ -434,15 +434,17 @@ function applyTypedSize() {
 
 // Lucide draws each currency the toolbar offers, so the button keeps the
 // same stroke as its neighbours instead of a text glyph.
-const CURRENCY_ICONS: Record<string, string> = {
-  $: 'lucide-dollar-sign',
-  '€': 'lucide-euro',
-  '£': 'lucide-pound-sterling',
-  '₹': 'lucide-indian-rupee',
-  '¥': 'lucide-japanese-yen',
-}
+const CURRENCY_ICONS = new Map<string, string>(
+  Object.entries({
+    $: 'lucide-dollar-sign',
+    '€': 'lucide-euro',
+    '£': 'lucide-pound-sterling',
+    '₹': 'lucide-indian-rupee',
+    '¥': 'lucide-japanese-yen',
+  }),
+)
 const currencyIcon = computed(
-  () => CURRENCY_ICONS[props.activeCurrencySymbol] ?? 'lucide-dollar-sign',
+  () => CURRENCY_ICONS.get(props.activeCurrencySymbol) ?? 'lucide-dollar-sign',
 )
 </script>
 

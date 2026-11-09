@@ -1,36 +1,43 @@
 <script setup lang="ts">
 import { useEventListener, useMediaQuery } from '@vueuse/core'
 import { Button, Dropdown, TabButtons } from 'frappe-ui'
-import { computed, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
+import { useRoute, useRouter, type RouteLocationPathRaw } from 'vue-router'
 
-import { api, useInfiniteQuery, useQuery } from '@/api'
+import { api, useInfiniteQuery, useMutation, useQuery } from '@/api'
 import { driveNodeRoute, useDriveDialogs } from '@/apps/drive'
 import { nodeContentUrl, openAsSpreadsheet, opensAsSpreadsheet } from '@/apps/drive/client/nodes'
-import type { DocumentSession } from '@/apps/drive/client/session'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 
-import { trashLocation, useLocationTitle } from '../../internal/locations'
+import { rootPath, trashLocation, useLocationTitle } from '../../internal/locations'
 import { previewKind } from '../../internal/previewKind'
+import { announceTrash } from '../changeToast'
 import DocumentHeader from '../document/DocumentHeader.vue'
 import { nodeActions } from '../nodeActions'
 import { readPresentationPreference, resolvePresentation } from '../presentation'
+import { copyLink } from '../share/shareFormat'
 import { useTrashActions } from '../trash/useTrashActions'
 import { offeredTypes, typeQuery, typesFromQuery } from '../typeFilter'
 import { uploadTargetOf } from '../uploads/queue'
+import { keepImages, releaseImages } from './imageCache'
+import { arrowsStep, escapeLeaves } from './keys'
+import { rememberShown } from './lastShown'
+import PdfPreview from './PdfPreview.vue'
+import PreviewFailed from './PreviewFailed.vue'
 import PreviewFallback from './PreviewFallback.vue'
+import PreviewImage from './PreviewImage.vue'
 import type { FilePreviewSession } from './session'
 import { TEXT_PREVIEW_LIMIT } from './textContent'
 import TextPreview from './TextPreview.vue'
 import UploadNewVersion from './UploadNewVersion.vue'
 
-const props = defineProps<{ session: DocumentSession }>()
+const props = defineProps<{ session: FilePreviewSession }>()
 const route = useRoute()
 const router = useRouter()
 const dialogs = useDriveDialogs()
 const locationTitle = useLocationTitle()
-const file = computed(() => props.session as FilePreviewSession)
+const file = computed(() => props.session)
 const mime = computed(() => file.value.mime ?? '')
 const previewUrl = computed(() => file.value.preview.value?.url ?? '')
 /** Bumped after a new version, so the browser fetches the new bytes. */
@@ -74,6 +81,14 @@ const parentFolder = useQuery(api.drive.nodes.get, () =>
 const opensAsSheet = computed(
   () => isSpreadsheetFile.value && can.value.copy && !!uploadTargetOf(parentFolder.data),
 )
+/** While the folder's answer loads, the button keeps its room, so the header does not shift when it comes. */
+const sheetLoading = computed(
+  () =>
+    isSpreadsheetFile.value &&
+    can.value.copy &&
+    !!parent.value &&
+    parentFolder.status === 'pending',
+)
 const openingAsSheet = ref(false)
 async function openAsSheet() {
   if (!parent.value) return
@@ -93,6 +108,7 @@ const inTrashedFolder = computed(
 )
 const trash = useTrashActions(() => (trashed.value ? file.value.root : null))
 const discovered = useQuery(api.drive.roots.list, () => (signedIn.value ? {} : false))
+const trashMutation = useMutation(api.drive.nodes.trash)
 
 const header = ref<{ focusTitle(): void } | null>(null)
 const upload = ref<{ pick(): void } | null>(null)
@@ -103,11 +119,27 @@ const types = computed(() => typesFromQuery(route.query.type, offeredTypes({ fol
 const typeFilter = computed(() => ({ type: typeQuery(types.value) }))
 
 const folder = computed(() => file.value.folder.value)
+/**
+ * The listing that opened the preview, with its view, sort and filter, when it
+ * shows the file's folder. The way back and Escape both return to it.
+ */
+function openedFromFolder(folderId: string): RouteLocationPathRaw | null {
+  const back = router.options.history.state.back
+  if (typeof back !== 'string') return null
+  const opener = router.resolve(back)
+  const showsFolder =
+    opener.params.node === folderId || opener.path === rootPath(folderId, discovered.data)
+  return showsFolder && !opener.query.q ? { path: opener.path, query: opener.query } : null
+}
 const location = computed(() => {
   const crumb = folder.value
   if (!crumb) return null
   const label = locationTitle(crumb)
-  return { label, to: { ...driveNodeRoute(crumb.name, label, 'folder'), query: typeFilter.value } }
+  const to = openedFromFolder(crumb.name) ?? {
+    ...driveNodeRoute(crumb.name, label, 'folder'),
+    query: typeFilter.value,
+  }
+  return { label, to }
 })
 
 // Previous and next walk the folder's files in the order the listing shows them
@@ -148,25 +180,64 @@ function show(row: { name: string; title: string; kind: string } | null) {
   if (row) void router.replace({ ...driveNodeRoute(row), query: typeFilter.value })
 }
 
+// The page that opened the preview focuses the row of the last file shown.
+watch(
+  current,
+  (node) => {
+    const { back } = router.options.history.state
+    // Leaving the preview changes the route too, to a page that is not a file.
+    const isFile = node === props.session.nodeId || files.value.some((row) => row.name === node)
+    if (typeof back === 'string' && isFile) rememberShown(back, node)
+  },
+  { immediate: true },
+)
+/**
+ * Where the way back in the header goes, or back a page when the header has
+ * none. A guest with neither stays: their only way in is the link that opened this file.
+ */
+function leave() {
+  if (location.value)
+    return void router.push({ ...location.value.to, state: { reveal: current.value } })
+  if (typeof router.options.history.state.back === 'string') return router.back()
+  if (signedIn.value) void router.push('/drive')
+}
+
 // Arrow keys step through the folder unless something on the page has focus,
 // such as the title field, a video's controls, or the text of a text file.
-// Escape leaves the text.
+// Escape leaves the text, and then the preview.
 useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   if (event.defaultPrevented || event.altKey || event.metaKey || event.ctrlKey || event.shiftKey)
     return
-  if (document.activeElement && document.activeElement !== document.body) return
+  if (event.key === 'Escape') {
+    if (escapeLeaves(event.target instanceof Element ? event.target : null)) leave()
+    return
+  }
+  if (!arrowsStep(document.activeElement)) return
   if (event.key === 'ArrowLeft') show(previous.value)
   else if (event.key === 'ArrowRight') show(next.value)
 })
 
+// The listing's row menu offers the same actions under the same rules (`nodeActions`).
 const menu = computed(() => [
   ...(opensAsSheet.value
     ? [{ label: __('Open as spreadsheet'), icon: 'lucide-sheet', onClick: openAsSheet }]
+    : []),
+  ...(can.value.copyLink
+    ? [{ label: 'Copy link', icon: 'lucide-link', onClick: copyFileLink }]
     : []),
   ...(can.value.rename
     ? [{ label: 'Rename', icon: 'lucide-pencil', onClick: () => header.value?.focusTitle() }]
     : []),
   ...(can.value.move ? [{ label: 'Move', icon: 'lucide-folder-input', onClick: move }] : []),
+  ...(can.value.copy
+    ? [
+        {
+          label: 'Make a copy',
+          icon: 'lucide-copy',
+          onClick: () => dialogs.copy(props.session.nodeId),
+        },
+      ]
+    : []),
   ...(canReplace.value
     ? [{ label: 'Upload new version', icon: 'lucide-upload', onClick: () => upload.value?.pick() }]
     : []),
@@ -175,6 +246,16 @@ const menu = computed(() => [
     icon: 'lucide-info',
     onClick: () => void dialogs.showDetails(props.session.nodeId),
   },
+  ...(can.value.trash
+    ? [
+        {
+          label: 'Move to trash',
+          icon: 'lucide-trash-2',
+          theme: 'red' as const,
+          onClick: moveToTrash,
+        },
+      ]
+    : []),
   ...(can.value.restore ? [{ label: 'Restore', icon: 'lucide-undo-2', onClick: restore }] : []),
   ...(can.value.deleteForever
     ? [
@@ -189,6 +270,20 @@ const menu = computed(() => [
 ])
 
 const item = computed(() => ({ node: props.session.nodeId, title: props.session.title.value }))
+
+/** The file's own page, as an absolute URL. */
+function copyFileLink() {
+  const page = driveNodeRoute(props.session.nodeId, props.session.title.value, 'file')
+  return copyLink(router.resolve(page).href)
+}
+
+/** The toast's Undo restores the file. The preview goes back to the folder it was in, as a document does. */
+async function moveToTrash() {
+  const trashed = item.value
+  await trashMutation.run({ node: trashed.node, state: 'Trashed' })
+  announceTrash([trashed])
+  await router.push(location.value?.to ?? '/drive')
+}
 
 /** The file comes back in place: the session hears the restore and reads its new state. */
 async function restore() {
@@ -239,6 +334,16 @@ watch(
 function chooseMarkdownView(value: string | number) {
   markdownView.value = value === 'preview' ? 'preview' : 'source'
 }
+/** The file fills the screen, without the header. A browser without the Fullscreen API offers no button. */
+const stage = useTemplateRef<HTMLElement>('stage')
+const canFullscreen = computed(
+  () =>
+    !!document.fullscreenEnabled && !empty.value && !['none', 'audio'].includes(preview.value.kind),
+)
+function enterFullscreen() {
+  // The browser may refuse, such as in a frame without permission; the page stays as it is.
+  void stage.value?.requestFullscreen().catch(() => {})
+}
 /** Image types every browser draws. Others, such as HEIC or TIFF, show the server's preview. */
 const WEB_IMAGES = new Set([
   'image/jpeg',
@@ -252,6 +357,31 @@ const WEB_IMAGES = new Set([
 const source = computed(() =>
   WEB_IMAGES.has(mime.value) || !previewUrl.value ? contentUrl.value : previewUrl.value,
 )
+
+/** Larger pictures are not loaded before they are asked for. */
+const PRELOAD_LIMIT = 20 * 1024 * 1024
+// The pictures either side of this file load while it shows, so a step shows them at once.
+watch(
+  [files, source, preview],
+  () => {
+    const own = files.value.findIndex((row) => row.name === props.session.nodeId)
+    const neighbours = (own === -1 ? [] : files.value)
+      .filter(
+        (row, index) =>
+          Math.abs(index - own) === 1 &&
+          WEB_IMAGES.has(row.mime ?? '') &&
+          row.size <= PRELOAD_LIMIT,
+      )
+      .map((row) => nodeContentUrl(row.name))
+    keepImages(preview.value.kind === 'image' ? source.value : null, neighbours)
+  },
+  { immediate: true },
+)
+onBeforeUnmount(releaseImages)
+const videoFailed = ref(false)
+watch(contentUrl, () => (videoFailed.value = false))
+/** While the folder loads, the pager keeps its room, so the header does not shift when it comes. */
+const pagerLoading = computed(() => !!folder.value && siblings.status === 'pending')
 </script>
 
 <template>
@@ -284,7 +414,12 @@ const source = computed(() =>
           @mousedown.prevent
           @update:model-value="chooseMarkdownView"
         />
-        <template v-if="files.length > 1 && position !== -1">
+        <div
+          v-if="pagerLoading || (files.length > 1 && position !== -1)"
+          class="flex items-center gap-1"
+          :class="pagerLoading && 'invisible'"
+          :aria-hidden="pagerLoading || undefined"
+        >
           <Button
             variant="ghost"
             icon="lucide-chevron-left"
@@ -293,7 +428,8 @@ const source = computed(() =>
             :disabled="!previous"
             @click="show(previous)"
           />
-          <span class="text-sm tabular-nums text-ink-gray-5 max-md:hidden"
+          <!-- The counter's width fits any two-digit count, so the arrows hold still as it changes. -->
+          <span class="min-w-14 text-center text-sm tabular-nums text-ink-gray-5 max-md:hidden"
             >{{ position + 1 }} of {{ files.length }}</span
           >
           <Button
@@ -304,10 +440,11 @@ const source = computed(() =>
             :disabled="!next"
             @click="show(next)"
           />
-        </template>
+        </div>
         <!-- A CSV has a text preview, so the "No preview" page never offers this. -->
         <Button
-          v-if="opensAsSheet && preview.kind === 'text' && !empty"
+          v-if="(opensAsSheet || sheetLoading) && preview.kind === 'text' && !empty"
+          :class="sheetLoading && 'invisible'"
           :label="__('Open as spreadsheet')"
           icon-left="lucide-sheet"
           :loading="openingAsSheet"
@@ -321,6 +458,14 @@ const source = computed(() =>
           aria-label="Download"
           :href="downloadUrl"
         />
+        <Button
+          v-if="canFullscreen"
+          variant="ghost"
+          icon="lucide-maximize"
+          :tooltip="__('Fullscreen')"
+          :aria-label="__('Fullscreen')"
+          @click="enterFullscreen"
+        />
       </template>
       <template #menu>
         <Dropdown :options="menu" align="end">
@@ -333,59 +478,65 @@ const source = computed(() =>
         </Dropdown>
       </template>
     </DocumentHeader>
-    <TextPreview
-      v-if="preview.kind === 'text'"
-      :src="contentUrl"
-      :download="downloadUrl"
-      :size="file.size.value"
-      :language="preview.language"
-      :title="session.title.value"
-      :rendered="markdown && markdownView === 'preview'"
-    />
-    <PreviewFallback v-else-if="empty" title="Empty file" message="This file has no content." />
-    <img
-      v-else-if="preview.kind === 'image'"
-      :src="source"
-      :alt="session.title.value"
-      class="m-auto max-h-full min-h-0 max-w-full object-contain p-4"
-    />
-    <audio
-      v-else-if="preview.kind === 'audio'"
-      :src="contentUrl"
-      controls
-      class="m-auto w-full max-w-xl"
-    />
-    <video
-      v-else-if="preview.kind === 'video'"
-      :src="contentUrl"
-      controls
-      class="m-auto max-h-full min-h-0 max-w-full"
-    />
-    <iframe
-      v-else-if="preview.kind === 'pdf'"
-      :src="contentUrl"
-      :title="session.title.value"
-      class="min-h-0 flex-1 border-0 bg-surface-base"
-    />
-    <PreviewFallback
-      v-else-if="opensAsSheet"
-      :title="__('No preview')"
-      :message="__('Open this file as a spreadsheet to view and edit it. The file stays as it is.')"
-      :download="downloadUrl"
-    >
-      <Button
-        variant="solid"
-        :label="__('Open as spreadsheet')"
-        icon-left="lucide-sheet"
-        :loading="openingAsSheet"
-        @click="openAsSheet"
+    <div ref="stage" class="flex min-h-0 flex-1 flex-col bg-surface-base">
+      <TextPreview
+        v-if="preview.kind === 'text'"
+        :src="contentUrl"
+        :download="downloadUrl"
+        :size="file.size.value"
+        :language="preview.language"
+        :title="session.title.value"
+        :rendered="markdown && markdownView === 'preview'"
       />
-    </PreviewFallback>
-    <PreviewFallback
-      v-else
-      title="No preview"
-      message="Download this file to open it."
-      :download="downloadUrl"
-    />
+      <PreviewFallback v-else-if="empty" title="Empty file" message="This file has no content." />
+      <PreviewImage
+        v-else-if="preview.kind === 'image'"
+        :key="session.nodeId"
+        :src="source"
+        :alt="session.title.value"
+        :download="downloadUrl"
+      />
+      <PreviewFailed v-else-if="preview.kind === 'video' && videoFailed" :download="downloadUrl" />
+      <audio
+        v-else-if="preview.kind === 'audio'"
+        :src="contentUrl"
+        controls
+        class="m-auto w-full max-w-xl"
+      />
+      <video
+        v-else-if="preview.kind === 'video'"
+        :src="contentUrl"
+        controls
+        class="m-auto max-h-full min-h-0 max-w-full"
+        @error="videoFailed = true"
+      />
+      <PdfPreview
+        v-else-if="preview.kind === 'pdf'"
+        :src="contentUrl"
+        :download="downloadUrl"
+        :title="session.title.value"
+      />
+      <PreviewFallback
+        v-else-if="opensAsSheet"
+        :title="__('No preview')"
+        :message="
+          __('Open this file as a spreadsheet to view and edit it. The file stays as it is.')
+        "
+        :download="downloadUrl"
+      >
+        <Button
+          :label="__('Open as spreadsheet')"
+          icon-left="lucide-sheet"
+          :loading="openingAsSheet"
+          @click="openAsSheet"
+        />
+      </PreviewFallback>
+      <PreviewFallback
+        v-else
+        title="No preview"
+        message="Download this file to open it."
+        :download="downloadUrl"
+      />
+    </div>
   </div>
 </template>

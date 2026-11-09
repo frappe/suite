@@ -106,8 +106,12 @@ function typeBackAll(room: Pick<CollabRoom, 'doc'> & WritingStatus, removals: Re
 function unnamedTexts(deleted: yjs.Item[], named: DeleteSet) {
   const texts = new Set<yjs.AbstractType<unknown>>()
   for (const item of deleted) {
-    if (item.content instanceof yjs.ContentString && hasUnnamed(item, named)) {
-      texts.add(item.parent as yjs.AbstractType<unknown>)
+    if (
+      item.content instanceof yjs.ContentString &&
+      item.parent instanceof yjs.AbstractType &&
+      hasUnnamed(item, named)
+    ) {
+      texts.add(item.parent)
     }
   }
 
@@ -391,8 +395,8 @@ function isGoneWithBlock(transaction: yjs.Transaction, id: yjs.ID) {
     return true
   }
 
-  const parent = struct.parent as yjs.AbstractType<unknown>
-  return struct.deleted && !!parent._item?.deleted
+  const parent = struct.parent
+  return struct.deleted && parent instanceof yjs.AbstractType && !!parent._item?.deleted
 }
 
 // Only the rows that deleted the old text wrote its copy; rows pulled with them may write around it

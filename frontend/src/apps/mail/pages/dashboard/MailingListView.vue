@@ -217,6 +217,7 @@ const recipientSearch = ref('')
 const list = useQuery(api.mail.admin.mailingLists.get, () => ({
   list_id: listId,
 }))
+// SAFETY: suite/mail/api/admin.py::get_mailing_list owns this response projection; undefined represents a pending query.
 usePageMeta(() => appPageMeta((list.data as ListData | undefined)?.email || listId, 'Mail'))
 watch(
   () => list.error,
@@ -228,6 +229,7 @@ watch(
     })
   },
 )
+// SAFETY: suite/mail/api/admin.py::get_mailing_list owns this response projection; undefined represents a pending query.
 const data = computed(() => list.data as ListData | undefined)
 
 // Recipients are searched and paged on Suite Cloud: a list can hold thousands, and the detail

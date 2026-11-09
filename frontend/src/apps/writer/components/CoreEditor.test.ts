@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, ref, type App } from 'vue'
 
@@ -109,7 +110,7 @@ function shown(root: Element) {
 }
 
 describe('CoreEditor cover', () => {
-  it.each(Object.keys(COVERS) as Cover[])(
+  it.each(fromPartial<Cover[]>(Object.keys(COVERS)))(
     'hides the editor while a %s preview covers it, and shows it again after',
     async (kind) => {
       const { root, cover } = mountWithCover()

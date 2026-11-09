@@ -25,9 +25,14 @@ function sync(...docs: Y.Doc[]): void {
     }
   }
 }
+interface PairResult {
+  a: Y.Doc
+  b: Y.Doc
+  sid: string
+}
 
 /** Two synced docs sharing one sheet. Fixed client ids, so a test can run both tie-break orders. */
-function pair(idA = 1, idB = 2): { a: Y.Doc; b: Y.Doc; sid: string } {
+function pair(idA = 1, idB = 2): PairResult {
   const a = new Y.Doc()
   const b = new Y.Doc()
   a.clientID = idA
@@ -49,7 +54,7 @@ function write(doc: Y.Doc, sid: string, row: number, value: string): void {
 }
 
 /** value → row position it shows at now (-1 = its row is gone). */
-function where(doc: Y.Doc, sid: string): Record<string, number> {
+function where(doc: Y.Doc, sid: string) {
   const rows = axis(doc, sid, 'rows')
   const out: Record<string, number> = {}
   for (const [key, value] of roots(doc).inputs.entries()) {

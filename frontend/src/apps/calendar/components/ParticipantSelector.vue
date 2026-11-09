@@ -107,7 +107,7 @@ const isAdded = (email: string) =>
 // result being withheld.
 const options = computed<ContactOption[]>(() =>
   searchText.value
-    ? ((contacts.value as ContactOption[] | undefined) || []).filter(
+    ? (contacts.value || []).filter(
         (option) => !normalizedExcludedEmails.value.includes(option.email.toLowerCase()),
       )
     : [],
@@ -174,7 +174,8 @@ const handleParticipantSelect = async (email: string | null) => {
 const handleParticipantEnter = (e?: Event) => {
   if (justSelectedOption.value) return
 
-  const input = e?.target as HTMLInputElement | undefined
+  const target = e?.target
+  const input = target instanceof HTMLInputElement ? target : undefined
   const text = input ? input.value : searchText.value
   text
     .split(',')

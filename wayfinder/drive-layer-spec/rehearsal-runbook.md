@@ -313,6 +313,13 @@ chmod 600 sites/$SITE/private/preflight-run-<n>.txt
 
 The output names real files, so it stays in `private/`.
 
+The preflight also checks the server. MariaDB's global
+`max_allowed_packet` must be at least 64 MiB, and Node 22.13 or newer must
+be on the `PATH` of the bench user. Raise the packet limit before this step,
+as step 14 shows, and keep it raised until after step 14. The bucket names
+must match exactly. The two endpoints can differ only by a trailing slash or
+by the case of the scheme and host.
+
 A defect is `missing` (no object at the key), `size_differs` (the object
 is not the size in `File.file_size`), or `no_object_path` (the URL names no
 key). A defect on a Removed row never blocks. A defect on an Active or
@@ -409,6 +416,26 @@ If Build refuses because of reachable skips, it writes
 other failure, save the traceback and `private/drive-build-state.json`,
 find the cause, and start again from step 6 after a fix.
 
+In production only, Faris can accept the skips with
+`bench --site <site> set-config drive_build_accept_skips 1` and migrate
+again. Accepting means that the listed rows leave Drive: Build gives them no
+node, and Cleanup reads the same key, lets the same rows through its
+reachable-node check, and deletes their `File` rows. After the migrate, the
+backup named in `drive_cleanup_backup` is the only copy of these rows. Keep
+`drive-build-skipped.json` with the migration evidence.
+
+**After a database-only restore.** Build and Cleanup each keep a marker in
+the database that matches their state file. If the database is restored
+without `private/`, for example by Frappe Cloud after a failed migrate, the
+next migrate refuses with "does not belong to this database" and names the
+file. If the restored database is the backup taken before the migrate, move
+every `drive-build-*` and `drive-cleanup-*` file and folder in `private/`
+into a dated folder, and migrate again. Build copies nothing twice and
+records every copy in a new copy ledger. If the restored database is not
+that backup, restore the database and `private/` from the same backup. A
+migrate that continues a matching state file prints
+`Resuming the Drive migration from <file>`.
+
 **Pass:** the runner exits 0 with no changed patch files.
 
 **Record:**
@@ -427,10 +454,38 @@ find the cause, and start again from step 6 after a fix.
   `borrowed_duplicates_collapsed` (B112), `writer_images_wrapped` (B113),
   `writer_media_references_missing`, `media_references_missing_file_rows`
   and `sheet_snapshots_missing`
+- from the report's `evidence.s3_copy` section, the copy timing (see
+  below)
 - from `private/drive-build-skipped.json`: the `missing_bytes` count, and
   that it matches the accepted defects and the unreachable rows from the
   preflight
 - from `private/drive-cleanup-state.json`: that every phase is complete
+
+**Read the copy timing.** `evidence.s3_copy` in
+`private/drive-build-report.json` describes the S3 copy of this run only:
+
+| Field | Meaning |
+|---|---|
+| `workers` | Threads that read and copied objects (`drive_build_copy_workers`, default 8, at most 32). |
+| `seconds` | Wall time of the copy step. |
+| `objects_copied` | Objects copied to a new key. |
+| `objects_reused` | Rows linked to content that was already copied. |
+| `bytes_read` | Bytes Build downloaded to hash. Every object is read once. |
+| `bytes_copied` | Bytes of the new objects. The copy runs inside the bucket, so these bytes do not pass through the bench. |
+| `objects_per_second` | `objects_copied` plus `objects_reused`, divided by `seconds`. |
+| `bytes_read_per_second` | `bytes_read` divided by `seconds`. |
+| `removed_skipped` | Rows with status Removed that no document names. Legacy Drive deleted their objects, Build makes no node for them and Cleanup deletes the rows, so Build does not read or copy them. They are not in `missing_bytes`. |
+
+Use `seconds` to estimate the production downtime of the copy: scale it
+by the production object count and bytes. The read is the main cost. If
+`bytes_read_per_second` is well below the bench's network speed, try more
+workers on the next run, before the migrate:
+
+```bash
+bench --site $SITE set-config drive_build_copy_workers 16
+```
+
+A resumed run reports only the work it did itself.
 
 ### 13. Check the migrated data
 

@@ -35,7 +35,7 @@ export class Writes {
       const optimisticReads = this.reads.optimistic(partition, input, effects.optimisticReads)
       const rollback = this.reads.entities.optimistic(
         partition,
-        reference.entity?.tag,
+        reference.entity?.tag ?? effects.entityTag,
         input,
         touched,
         effects.optimistic,
@@ -54,6 +54,8 @@ export class Writes {
         if (partition !== this.reads.access(policy, input, options.context))
           throw new DOMException('Aborted', 'AbortError')
         optimisticReads.commit()
+        // Before `changed` drops the changed rows from the pages, so the failed ones keep their place.
+        if (effects.failed) rollback(effects.failed(input, output))
         this.reads.commit(output, reference.entity, partition)
         const invalidates =
           typeof effects.invalidates === 'function'
@@ -95,7 +97,10 @@ export class Writes {
             ),
             options.signal,
           )
-          if (output !== undefined) return output as O
+          if (output !== undefined) {
+            // SAFETY: the challenge retries this attempt, whose transport output is validated as O; undefined means the challenge declined.
+            return output as O
+          }
         } catch (error) {
           if (isAbort(error)) throw error
           // A declined challenge keeps the original refusal.

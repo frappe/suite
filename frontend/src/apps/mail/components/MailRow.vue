@@ -199,7 +199,8 @@ const emit = defineEmits<{
   dragEnd: []
 }>()
 
-const user = inject('$user') as UserResource
+const user = inject<UserResource>('$user')
+if (!user) throw new Error('Missing required user provider')
 const { isMobile } = useScreenSize()
 
 const showAvatar = computed(() => !isSelected && (isMobile.value || !selectable) && !hideAvatar)
@@ -226,8 +227,11 @@ const onDragStart = (e: DragEvent) => {
 // RouterLink navigation never fires. Real buttons inside the row (the trailing
 // star) are exempt and keep their own action.
 const onRowClick = (e: MouseEvent) => {
+  const checkedEventTarget = e.target
+  if (!(checkedEventTarget instanceof Element)) return
+
   if (!selectionMode) return
-  if ((e.target as HTMLElement).closest('button')) return
+  if (checkedEventTarget.closest('button')) return
   e.preventDefault()
   e.stopPropagation()
   emit('setSelected', !isSelected)

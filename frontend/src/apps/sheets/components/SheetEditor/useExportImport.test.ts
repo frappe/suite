@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import ExcelJS from 'exceljs'
 import { toast } from 'frappe-ui'
 import JSZip from 'jszip'
@@ -19,7 +20,7 @@ type XCell = { t: string; v: unknown; z?: string; f?: string }
 async function written(build: () => Promise<ArrayBuffer>, sheet = 'Sheet1') {
   const { read } = await import('xlsx')
   const wb = read(await build(), { type: 'array', cellFormula: true, cellNF: true })
-  return wb.Sheets[sheet] as unknown as Record<string, XCell>
+  return fromPartial<Record<string, XCell>>(wb.Sheets[sheet])
 }
 
 function file(buf: ArrayBuffer | Uint8Array, name = 'book.xlsx') {
@@ -350,7 +351,7 @@ describe('xlsx round trip of styling, sizes, freeze, merges and conditional form
   it('gives unsized columns a width that fits a currency, not 8.43', async () => {
     const { buf } = await roundTrip()
     const wb = new ExcelJS.Workbook()
-    await wb.xlsx.load(buf as ArrayBuffer)
+    await wb.xlsx.load(buf)
     const ws = wb.getWorksheet('Sales')!
     expect(ws.properties.defaultColWidth).toBe(16.43)
     expect(ws.getColumn(1).width).toBe(27.86)

@@ -26,9 +26,7 @@
               class="lucide-chevron-right size-4 shrink-0 text-ink-gray-4"
               aria-hidden="true"
             />
-            <span v-else class="shrink-0 text-sm text-ink-gray-5">{{
-              __(nodeTypeLabel(node))
-            }}</span>
+            <span v-else class="shrink-0 text-sm text-ink-gray-5">{{ __(typeLabel(node)) }}</span>
           </button>
         </template>
       </DriveBrowser>
@@ -53,11 +51,12 @@ import { ref, watch } from 'vue'
 import type { DriveNode } from '@/apps/drive/client/types'
 import { translate as __ } from '@/platform/translation'
 
-import { nodeIcon, nodeIconTint, nodeTypeLabel } from '../internal/icons'
+import { nodeIcon, nodeIconTint, useNodeTypeLabel } from '../internal/icons'
 import DriveBrowser from './DriveBrowser.vue'
 
 /** Picks one file or document from the caller's Drive. Folders open; anything else is picked. */
 defineProps<{ title?: string; action?: string }>()
+const typeLabel = useNodeTypeLabel()
 const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ choose: [node: DriveNode] }>()
 const picked = ref<DriveNode | null>(null)

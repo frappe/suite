@@ -4,12 +4,13 @@ import fs from 'node:fs'
 import { createRequire } from 'node:module'
 import os from 'node:os'
 import path from 'node:path'
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterAll, describe, expect, it } from 'vitest'
 
 // The server's Node children, built fresh and run as the server runs them
 // (suite/content/checker.py `node_command`): allowed to read only themselves, so a
 // bundle that splits into chunks or reaches for browser UI fails here first.
-const FRONTEND = path.resolve(__dirname, '../../../..')
+const APP_ROOT = path.resolve(__dirname, '../../../../..')
 const VITE = path.join(
   path.dirname(createRequire(import.meta.url).resolve('vite/package.json')),
   'bin/vite.js',
@@ -39,7 +40,7 @@ function build(mode: 'checker' | 'converter') {
       outDir,
       '--sourcemap',
     ],
-    { cwd: FRONTEND, encoding: 'utf8', timeout: BUILD_LIMIT_MS },
+    { cwd: APP_ROOT, encoding: 'utf8', timeout: BUILD_LIMIT_MS },
   )
   if (child.status !== 0) throw new Error(`build exit ${child.status}: ${child.stderr}`)
   return outDir
@@ -56,20 +57,26 @@ function framed(parts: Uint8Array[]) {
   )
 }
 
-function run(bundle: string, header: object, ...rest: Uint8Array[]) {
+function run(bundle: string, header: unknown, ...rest: Uint8Array[]) {
   const child = spawnSync(
     process.execPath,
     ['--permission', `--allow-fs-read=${bundle}`, '--expose-gc', bundle],
     { input: framed([Buffer.from(JSON.stringify(header)), ...rest]), env: {}, timeout: 60_000 },
   )
   if (child.status !== 0) throw new Error(`exit ${child.status}: ${child.stderr.toString()}`)
-  return JSON.parse(child.stdout.toString()) as Record<string, unknown>
+  return fromPartial<Record<string, unknown>>(JSON.parse(child.stdout.toString()))
 }
 
 function bundledSources(outDir: string, bundle: string) {
-  const map = JSON.parse(fs.readFileSync(path.join(outDir, `${bundle}.map`), 'utf8')) as {
-    sources: string[]
-  }
+  const map: unknown = JSON.parse(fs.readFileSync(path.join(outDir, `${bundle}.map`), 'utf8'))
+  if (
+    !map ||
+    typeof map !== 'object' ||
+    !('sources' in map) ||
+    !Array.isArray(map.sources) ||
+    !map.sources.every((source): source is string => typeof source === 'string')
+  )
+    throw new Error('Expected source-map source paths')
   return map.sources
 }
 

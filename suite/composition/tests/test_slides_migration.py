@@ -1,6 +1,5 @@
 import frappe
 
-from suite.drive.patches.build.slides import convert_slides_and_templates
 from suite.drive.tests.test_build_content import LATER, BuildContentCase
 from suite.slides.api.slides import save_slides
 
@@ -12,7 +11,7 @@ class TestSlideRewriteAndOpenEditors(BuildContentCase):
         old_stamp = frappe.db.get_value("Presentation", deck["docname"], "modified")
         old_elements = frappe.db.get_value("Slide", first, "elements")
 
-        convert_slides_and_templates(self.environment(clock=lambda: LATER))
+        self.convert_all(clock=lambda: LATER)
         rewritten = frappe.db.get_value("Slide", first, "elements")
 
         self.assertNotEqual(rewritten, old_elements)

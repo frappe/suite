@@ -785,9 +785,9 @@ const searchTotal = ref<number | null>(null)
 // The search dialog stores bare `YYYY-MM-DD` days in the route; the API listens UTC, so the
 // day's bounds are resolved in the user's zone here at the request boundary (the URL stays clean).
 const searchFilter = () => {
-  const filter: Record<string, any> = {
+  const filter = {
     ...route.query,
-  }
+  } satisfies Record<string, any>
   if (typeof filter.after === 'string' && filter.after) filter.after = utcDayStart(filter.after)
   if (typeof filter.before === 'string' && filter.before) filter.before = utcDayEnd(filter.before)
   return filter

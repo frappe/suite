@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import type { DropdownOptions } from 'frappe-ui'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -43,17 +44,17 @@ type Item = {
 function outline(options: DropdownOptions): string[] {
   return options.map((option) => {
     if ('group' in option) {
-      const inner = outline(option.options as DropdownOptions).join(', ')
+      const inner = outline(fromPartial<DropdownOptions>(option.options)).join(', ')
       return `[${option.hideLabel ? '' : `${option.group}: `}${inner}]`
     }
-    const item = option as Item
+    const item = fromPartial<Item>(option)
     return item.icon ? `${item.label} (${item.icon})` : `${item.label}`
   })
 }
 
 function click(options: DropdownOptions, label: string) {
   const items = options.flatMap((option) =>
-    'group' in option ? (option.options as Item[]) : [option as Item],
+    'group' in option ? fromPartial<Item[]>(option.options) : [fromPartial<Item>(option)],
   )
   const item = items.find((entry) => entry.label === label)
   if (!item?.onClick) throw new Error(`No item ${label}`)
@@ -65,7 +66,7 @@ const editorElement = document.createElement('div')
 describe('table menus', () => {
   it('lists the row grip menu and runs each item on the row', () => {
     const table = fakeTable()
-    const menu = rowMenu({ table: table as unknown as TableEditing, target, editorElement })
+    const menu = rowMenu({ table: fromPartial<TableEditing>(table), target, editorElement })
     expect(outline(menu)).toEqual([
       'Header row (lucide-panel-top)',
       '[Color: Color]',
@@ -96,7 +97,7 @@ describe('table menus', () => {
 
   it('lists the column grip menu and runs each item on the column', () => {
     const table = fakeTable()
-    const menu = columnMenu({ table: table as unknown as TableEditing, target, editorElement })
+    const menu = columnMenu({ table: fromPartial<TableEditing>(table), target, editorElement })
     expect(outline(menu)).toEqual([
       '[Color: Color]',
       'Insert left (lucide-arrow-left-to-line)',
@@ -122,7 +123,7 @@ describe('table menus', () => {
 
   it('leaves Duplicate out when a copy would not keep the grid square', () => {
     const table = fakeTable(false)
-    const menu = columnMenu({ table: table as unknown as TableEditing, target, editorElement })
+    const menu = columnMenu({ table: fromPartial<TableEditing>(table), target, editorElement })
     expect(outline(menu)).not.toContain('Duplicate (lucide-copy)')
     expect(table.canDuplicateLine).toHaveBeenCalledWith('column', 2)
   })
@@ -130,7 +131,7 @@ describe('table menus', () => {
   it('lists the cell menu for a run of cells and for a merged cell', () => {
     const table = fakeTable()
     const run = { ...target, kind: 'cells' as const, cellCount: 4 }
-    const menu = cellMenu({ table: table as unknown as TableEditing, target: run, editorElement })
+    const menu = cellMenu({ table: fromPartial<TableEditing>(table), target: run, editorElement })
     expect(outline(menu)).toEqual([
       '[Color: Color]',
       'Merge cells (lucide-table-cells-merge)',
@@ -144,7 +145,7 @@ describe('table menus', () => {
 
     const merged = { ...target, kind: 'cells' as const, cellCount: 1, isMerged: true }
     const split = cellMenu({
-      table: table as unknown as TableEditing,
+      table: fromPartial<TableEditing>(table),
       target: merged,
       editorElement,
     })
@@ -153,7 +154,7 @@ describe('table menus', () => {
 
   it('lists the toolbar table menu and runs each insert on the caret line', () => {
     const table = fakeTable()
-    const menu = tableMenu({ table: table as unknown as TableEditing, target })
+    const menu = tableMenu({ table: fromPartial<TableEditing>(table), target })
     expect(outline(menu)).toEqual([
       'Header row (lucide-panel-top)',
       '[Insert row above (lucide-arrow-up-to-line), Insert row below (lucide-arrow-down-to-line), Insert column left (lucide-arrow-left-to-line), Insert column right (lucide-arrow-right-to-line)]',

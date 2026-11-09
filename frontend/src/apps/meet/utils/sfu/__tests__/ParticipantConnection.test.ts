@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ParticipantManager } from '../../media/ParticipantManager'
@@ -61,12 +62,12 @@ function createConnection({ e2eeRequired = false } = {}) {
     reset: vi.fn(),
   }
   const connection = new ParticipantConnection({
-    sfuClient: sfuClient as never,
-    videoManager: {} as never,
+    sfuClient: fromPartial(sfuClient),
+    videoManager: fromPartial({}),
     participantManager,
-    transportManager: transportManager as never,
-    mediaManager: mediaManager as never,
-    recoveryManager: recoveryManager as never,
+    transportManager: fromPartial(transportManager),
+    mediaManager: fromPartial(mediaManager),
+    recoveryManager: fromPartial(recoveryManager),
   })
   vi.spyOn(connection.expectedMedia, 'waitForHealthy').mockResolvedValue()
   connection.initialize('meeting-1', { user_id: 'me' })
@@ -542,13 +543,13 @@ describe('ParticipantConnection lifecycle', () => {
     const addConsumer = vi.fn()
     const mediaManager = new SFUMediaManager(
       {
-        transportManager: transportManager as never,
-        videoManager: {} as never,
-        consumerManager: {
+        transportManager: fromPartial(transportManager),
+        videoManager: fromPartial({}),
+        consumerManager: fromPartial({
           addConsumer,
           getConsumersByParticipant: vi.fn(() => []),
-        } as never,
-        participantManager: {} as never,
+        }),
+        participantManager: fromPartial({}),
       },
       () => 'me',
     )

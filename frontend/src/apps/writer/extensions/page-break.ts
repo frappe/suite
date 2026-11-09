@@ -41,7 +41,7 @@ export const PageBreakExtension = Node.create<PageBreakRuleOptions>({
     return [
       {
         tag: 'div',
-        getAttrs: (node) => (node as HTMLElement).dataset.pageBreak === 'true' && null,
+        getAttrs: (node) => node.dataset.pageBreak === 'true' && null,
       },
     ]
   },

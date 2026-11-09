@@ -1,3 +1,4 @@
+import { fromAny, fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it } from 'vitest'
 import { XmlElement, XmlText } from 'yjs'
 
@@ -46,7 +47,7 @@ describe('convertLegacy', () => {
     const mention = new XmlElement('mention')
     mention.setAttribute('id', 'x')
     mention.setAttribute('label', 'Ann')
-    mention.setAttribute('annotation', { annotationID: 'a1' } as never)
+    mention.setAttribute('annotation', fromAny({ annotationID: 'a1' }))
     const legacy = stored(legacyDoc(yElement('paragraph', new XmlText('hi '), mention)))
 
     expect(convertLegacy(legacy, MAX_STATE)).toEqual({ kind: 'failed', reason: 'check' })
@@ -137,7 +138,7 @@ describe('convertLegacy', () => {
 
   it('anchors an old comment on a mention and takes the mark off the mention', () => {
     const mention = yAtom('mention', { id: 'x', label: 'Ann' })
-    mention.setAttribute('comment', { commentId: 'c1' } as never)
+    mention.setAttribute('comment', fromAny({ commentId: 'c1' }))
     const doc = legacyDoc(yElement('paragraph', new XmlText('hi '), mention))
 
     const result = convert(stored(doc))
@@ -151,8 +152,8 @@ describe('convertLegacy', () => {
     const shownMention = { type: 'mention', attrs: { id: 'x', label: 'Ann' } }
     const body = paragraph({ type: 'text', text: 'hi ' }, shownMention)
     expect(bodyOf(result.state)).toEqual(page(body))
-    const block = opened(result.state).getXmlFragment(BODY_FIELD).get(0) as XmlElement
-    const attributes = (block.get(1) as XmlElement).getAttributes()
+    const block = fromPartial<XmlElement>(opened(result.state).getXmlFragment(BODY_FIELD).get(0))
+    const attributes = fromPartial<XmlElement>(block.get(1)).getAttributes()
     expect([Object.hasOwn(attributes, 'comment'), attributes.id, attributes.label]).toEqual([
       false,
       'x',

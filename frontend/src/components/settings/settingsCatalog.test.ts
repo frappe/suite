@@ -1,9 +1,10 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it } from 'vitest'
 
 import { getVisibleSettingsGroups } from '@/components/settings/settingsCatalog'
 import type { SettingsGroup } from '@/components/settings/types'
 
-const panel = {} as SettingsGroup['items'][number]['component']
+const panel = fromPartial<SettingsGroup['items'][number]['component']>({})
 
 describe('getVisibleSettingsGroups', () => {
   it('filters unavailable groups and tabs without mutating the catalog', () => {

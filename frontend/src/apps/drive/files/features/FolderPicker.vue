@@ -12,6 +12,7 @@
         :can-open="(node) => canOpenFolder(mode, items, node)"
         :empty-label="__('No folders inside')"
         :list-label="(name) => __('Folders in {0}', [name])"
+        :can-create-folder
       >
         <template #row="{ node, openFolder }">
           <button
@@ -74,8 +75,10 @@
 import { Button, Dialog } from 'frappe-ui'
 import { computed, ref } from 'vue'
 
-import { api, client, useQuery } from '@/api'
+import { api, useQuery } from '@/api'
+import { DRIVE_ROLES } from '@/apps/drive/client/types'
 import { translate as __ } from '@/platform/translation'
+import { useWorkspace } from '@/platform/workspace'
 
 import { nodeIcon, nodeIconTint } from '../internal/icons'
 import DriveBrowser, { type BrowserLocation } from './DriveBrowser.vue'
@@ -83,7 +86,7 @@ import {
   canOpenFolder,
   destination,
   itemsRoot,
-  moveAccessChange,
+  previewMoveAccess,
   startingFolder,
   type MoveAccessChange,
   type PickedItem,
@@ -121,20 +124,20 @@ const current = ref<BrowserLocation | null>(null)
 const currentDetail = useQuery(api.drive.nodes.get, () =>
   current.value ? { node: current.value.node, expand: 'access' } : false,
 )
+/** The caller's role on the open folder: its fresh details, else what the listing said. */
+const currentRole = computed(() => currentDetail.data?.access?.role ?? current.value?.access?.role)
 const target = computed(() =>
   current.value
-    ? destination(
-        props.mode,
-        props.items,
-        current.value.node,
-        currentDetail.data?.access?.role ?? current.value.access?.role,
-      )
+    ? destination(props.mode, props.items, current.value.node, currentRole.value)
     : { status: 'unknown' as const },
 )
 
+/** The items can go in a new folder here, which the picker then opens. */
+const canCreateFolder = computed(() => (currentRole.value ?? 0) >= DRIVE_ROLES.upload)
 /** The move preview is loading, before the confirmation or the move. */
 const checking = ref(false)
 const accessChange = ref<MoveAccessChange | null>(null)
+const { workspaceName: workspace } = useWorkspace()
 const reviewingAccess = ref(false)
 let confirmMove = () => {}
 async function choose() {
@@ -152,12 +155,7 @@ async function choose() {
 async function previewAccessChange(folder: string): Promise<MoveAccessChange | null> {
   checking.value = true
   try {
-    const previews = await Promise.all(
-      props.items.map((item) =>
-        client.query(api.drive.nodes.previewMove, { node: item.name, parent_node: folder }),
-      ),
-    )
-    return moveAccessChange(previews)
+    return await previewMoveAccess(props.items, folder, workspace.value)
   } finally {
     checking.value = false
   }

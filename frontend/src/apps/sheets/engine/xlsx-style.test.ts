@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it } from 'vitest'
 
 import { FONT_FAMILY_STACK } from '../utils/font-stacks.js'
@@ -177,14 +178,14 @@ describe('cfToXlsx / cfFromXlsx', () => {
 
   for (const rule of rules) {
     it(`round-trips ${rule.kind || rule.condition?.type}`, () => {
-      const x = cfToXlsx({ ...rule, id: 1 } as never)
+      const x = cfToXlsx(fromPartial({ ...rule, id: 1 }))
       expect(x?.ref).toBe('D2:D6')
       expect(cfFromXlsx(x!)).toEqual([rule])
     })
   }
 
   it('writes a greater-than rule the way Google does', () => {
-    expect(cfToXlsx({ id: 1, ...rules[0] } as never)).toEqual({
+    expect(cfToXlsx(fromPartial({ id: 1, ...rules[0] }))).toEqual({
       ref: 'D2:D6',
       rules: [
         {
@@ -209,7 +210,7 @@ describe('cfToXlsx / cfFromXlsx', () => {
   // also broke its formula.
   it('writes "contains" as the formula Excel uses, with the text quoted', () => {
     const rule = { id: 1, range, condition: { type: 'contains', value: 'say "hi"' }, format: green }
-    const x = cfToXlsx(rule as never)!
+    const x = cfToXlsx(fromPartial(rule))!
     expect(x.rules[0]).toMatchObject({
       type: 'expression',
       formulae: ['NOT(ISERROR(SEARCH("say ""hi""",D2)))'],
@@ -240,7 +241,7 @@ describe('cfToXlsx / cfFromXlsx', () => {
 
   it('writes a kept formula rule back unchanged', () => {
     const rule = { id: 1, range, condition: { type: 'formula', value: '=$C2>100' }, format: green }
-    expect(cfToXlsx(rule as never)!.rules[0]).toMatchObject({
+    expect(cfToXlsx(fromPartial(rule))!.rules[0]).toMatchObject({
       type: 'expression',
       formulae: ['$C2>100'],
     })

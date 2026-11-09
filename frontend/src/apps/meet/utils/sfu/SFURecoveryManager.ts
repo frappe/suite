@@ -140,20 +140,21 @@ export class SFURecoveryManager {
   }
 
   handleTransportConnectionStateChange(direction: string, state: string): void {
+    if (direction !== 'send' && direction !== 'recv') return
     if (state === 'failed' || state === 'closed') {
-      this.disconnectedSince.delete(direction as TransportDirection)
+      this.disconnectedSince.delete(direction)
       this.recoverTransportFailure(`transport_${direction}_${state}`)
       return
     }
 
     if (state === 'disconnected') {
-      if (!this.disconnectedSince.has(direction as TransportDirection)) {
-        this.disconnectedSince.set(direction as TransportDirection, Date.now())
+      if (!this.disconnectedSince.has(direction)) {
+        this.disconnectedSince.set(direction, Date.now())
       }
       return
     }
 
-    this.disconnectedSince.delete(direction as TransportDirection)
+    this.disconnectedSince.delete(direction)
   }
 
   private runWatchdog(): void {

@@ -434,6 +434,7 @@ watch(
     })
   },
 )
+// SAFETY: suite/mail/api/admin.py::get_member owns this response projection; undefined represents a pending query.
 const data = computed(() => member.data as MemberData | undefined)
 const accountAddress = computed(
   () => data.value?.email_addresses.find((entry) => entry.is_primary)?.email || data.value?.name,

@@ -39,6 +39,7 @@ from frappe.utils import get_datetime
 from PIL import Image
 
 from suite import drive
+from suite.content import tables
 from suite.drive._core.access import grant
 from suite.drive._core.content import clear_registry_cache, governs, spec_for
 from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFound
@@ -404,6 +405,34 @@ class TestSlidesInDrive(IntegrationTestCase):
         deck = frappe.get_doc(DOCTYPE, self._docname(node))
         self.assertEqual(len(deck.slides), 1)
         self.assertFalse(deck.slug)
+
+    def test_with_collab_off_every_row_path_makes_no_log(self):
+        log_table = tables.table("slides", "doc")
+        logs = f"SELECT COUNT(*) FROM `{log_table}`"
+        [(before,)] = frappe.db.sql(logs)
+
+        node = self._deck(title="Off")
+        self._write_slide(node, background="#112233")
+        picture = self._media(node, "picture.png", png())
+        self._write_slide(node, elements=elements_naming(picture))
+        self.assertIn(picture, slides.SPEC.used_nodes(self._docname(node)))
+
+        seq = drive.take_version(node)
+        self._write_slide(node, background="#445566")
+        restore_version(self.admin, node, seq)
+        restored, *_ = self._slide_rows(node)
+        self.assertEqual(restored["background"], "#112233")
+
+        copied = drive.copy(node, self.root.node, title="Off copy")
+        copied_slide, *_ = self._slide_rows(copied)
+        self.assertEqual(copied_slide["background"], "#112233")
+
+        update(self.admin, copied, state="Trashed")
+        purge(self.admin, copied)
+        self.assertFalse(frappe.db.exists(DOCTYPE, {"node": copied}))
+
+        [(after,)] = frappe.db.sql(logs)
+        self.assertEqual(after, before)
 
     def test_a_deck_without_a_node_cannot_exist(self):
         with self.assertRaises(DriveConflict):

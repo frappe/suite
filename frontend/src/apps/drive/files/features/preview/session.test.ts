@@ -3,9 +3,11 @@ import { describe, expect, it, vi } from 'vitest'
 import type { DriveBreadcrumb } from '@/apps/drive/client/types'
 import type { Operation } from '@/platform/transport'
 
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const server = vi.hoisted(() => ({
-  viaLink: null as string | null,
-  visits: [] as string[],
+  viaLink: fromPartial<string | null>(null),
+  visits: fromPartial<string[]>([]),
   starred: new Set<string>(),
   trashed: new Set<string>(),
   /** The breadcrumbs a node read answers with, root first, down to the parent. */
@@ -86,9 +88,9 @@ describe('file preview session', () => {
   })
 
   it('names the folder a file is in, and no folder for a picture inside a document', async () => {
-    const root = { name: 'r', title: 'My files', kind: 'root' }
-    const folder = { name: 'talks', title: 'Talks', kind: 'folder' }
-    const deck = { name: 'deck', title: 'Launch', kind: 'document' }
+    const root = { name: 'r', title: 'My files', kind: 'root', role: 50 }
+    const folder = { name: 'talks', title: 'Talks', kind: 'folder', role: 50 }
+    const deck = { name: 'deck', title: 'Launch', kind: 'document', role: 50 }
     server.trails.set('in-folder', [root, folder])
     server.trails.set('in-root', [root])
     // A document is never listed as a folder, so a picture under it has none to step through.
@@ -96,7 +98,7 @@ describe('file preview session', () => {
     server.trails.set('below-deck', [
       root,
       deck,
-      { name: 'assets', title: 'Assets', kind: 'folder' },
+      { name: 'assets', title: 'Assets', kind: 'folder', role: 50 },
     ])
 
     const sessions = await Promise.all(

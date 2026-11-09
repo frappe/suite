@@ -80,7 +80,7 @@ const textColorOf = (cell: HTMLTableCellElement) => hexOf(cell.querySelector('sp
 beforeEach(() => {
   history = useCommandHistory(slides, { actionOrder, actions })
   setCommandHistory(history)
-  slides.value = [{ clientId: 'c1', background: '#ffffff', elements: [] }] as any
+  slides.value = [{ clientId: 'c1', background: '#ffffff', elements: [] }]
   slideIndex.value = 0
   // a pasted text box opens for editing, and a paste then goes into it
   focusElementId.value = null

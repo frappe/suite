@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref } from 'vue'
 
@@ -83,7 +84,7 @@ describe('what a reader sees of a document', () => {
     const reader = await openedSurface(
       oneVersion,
       '/d/node-1',
-      { list } as unknown as Comments,
+      fromPartial<Comments>({ list }),
       ref({ role: 10 }),
     )
 
@@ -95,7 +96,7 @@ describe('what a reader sees of a document', () => {
     const commenter = await openedSurface(
       oneVersion,
       '/d/node-1',
-      { list } as unknown as Comments,
+      fromPartial<Comments>({ list }),
       ref({ role: 20 }),
     )
     expect(commenter.querySelector('[data-open-comments]')).not.toBeNull()

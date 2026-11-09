@@ -1,4 +1,5 @@
 import { generateJSON, type JSONContent } from '@tiptap/core'
+import { fromAny } from '@total-typescript/shoehorn'
 import { describe, expect, it, vi } from 'vitest'
 import { Doc, encodeStateAsUpdate, encodeStateVector, mergeUpdates, XmlElement, XmlText } from 'yjs'
 
@@ -33,7 +34,7 @@ import { convertOldMedia } from '@/apps/writer/collab/old-media'
 
 // The binding never writes a null attribute; this covers hand-written or foreign data, which the
 // inventory reads as unset
-const UNSET = null as unknown as string
+const UNSET = fromAny<string, unknown>(null)
 // Old Drive's page break as its editor wrote it, its data attribute aside
 const DRIVE_PAGE_BREAK =
   'id="page-break-div" style="page-break-after: always; border: 2px dashed lightgray; margin: 25px 0px;"'
@@ -744,7 +745,7 @@ describe('convertLegacy', () => {
 
   it('keeps an old Yjs mention whose bold is stored under an overlap suffix', () => {
     const mention = yAtom('mention', { id: 'x', label: 'A' })
-    mention.setAttribute('bold--abcd1234', {} as never)
+    mention.setAttribute('bold--abcd1234', fromAny({}))
     const legacy = stored(legacyDoc(yElement('paragraph', mention)))
 
     const result = convert(legacy)
@@ -1146,8 +1147,8 @@ describe('convertLegacy', () => {
 
   it('keeps a table whose cell holds its widths and a span at its default', () => {
     const cell = yElement('tableCell', yParagraph('x'))
-    cell.setAttribute('colwidth', [100] as never)
-    cell.setAttribute('colspan', 1 as never)
+    cell.setAttribute('colwidth', fromAny([100]))
+    cell.setAttribute('colspan', fromAny(1))
     const doc = legacyDoc(yElement('table', yElement('tableRow', cell)))
 
     const result = convert(stored(doc))

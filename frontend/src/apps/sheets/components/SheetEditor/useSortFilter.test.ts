@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it, vi } from 'vitest'
 import { nextTick, ref } from 'vue'
 
@@ -6,7 +7,7 @@ import type { Rect } from '../../engine/types'
 import { cellId } from '../../utils/cells'
 import { useSortFilter } from './useSortFilter.js'
 
-const BUDGET: Record<string, string> = {
+const BUDGET = {
   C5: 'Item',
   D5: 'Cost',
   C6: 'Rent',
@@ -15,10 +16,10 @@ const BUDGET: Record<string, string> = {
   D7: '120',
   C8: 'Total',
   D8: '=SUM(D6:D7)',
-}
+} satisfies Record<string, string>
 
 function sheet(selection: Rect, activeCell: string) {
-  const cells: Record<string, string> = { ...BUDGET }
+  const cells = { ...BUDGET } satisfies Record<string, string>
   const read = async (_sheet: string, rect: Rect) => {
     const rows: string[][] = []
     for (let r = rect.r0; r <= rect.r1; r++) {
@@ -31,19 +32,21 @@ function sheet(selection: Rect, activeCell: string) {
   const write = (_sheet: string, changed: Record<string, string>) => Object.assign(cells, changed)
   const sortDialog = { open: vi.fn() }
   const pushEditOp = vi.fn()
-  const sorting = useSortFilter({
-    sortFilter: createSortFilter({ read, write } as never),
-    currentSheet: ref('Sheet1'),
-    activeCell: ref(activeCell),
-    renderVersion: ref(0),
-    gridWrapRef: ref(null),
-    getGrid: () => ({ getSelection: () => selection }),
-    readRect: read,
-    rectBlocked: () => false,
-    pushEditOp,
-    sheetExtent: async () => ({ maxRow: 7, maxCol: 3 }),
-    sortDialog: () => sortDialog,
-  } as never)
+  const sorting = useSortFilter(
+    fromPartial({
+      sortFilter: createSortFilter(fromPartial({ read, write })),
+      currentSheet: ref('Sheet1'),
+      activeCell: ref(activeCell),
+      renderVersion: ref(0),
+      gridWrapRef: ref(null),
+      getGrid: () => ({ getSelection: () => selection }),
+      readRect: read,
+      rectBlocked: () => false,
+      pushEditOp,
+      sheetExtent: async () => ({ maxRow: 7, maxCol: 3 }),
+      sortDialog: () => sortDialog,
+    }),
+  )
   return { cells, sorting, sortDialog, pushEditOp }
 }
 
@@ -97,25 +100,29 @@ describe('sorting from a menu', () => {
 // The active filter is outlined on the canvas, under the selection (#106).
 describe('the filter outline', () => {
   it('hands the active filter range to the grid, and null once it is removed', async () => {
-    const sortFilter = createSortFilter({
-      read: async () => ({ inputs: [], displays: [] }),
-      write: () => {},
-    } as never)
+    const sortFilter = createSortFilter(
+      fromPartial({
+        read: async () => ({ inputs: [], displays: [] }),
+        write: () => {},
+      }),
+    )
     const renderVersion = ref(0)
     const setFilterRange = vi.fn()
-    useSortFilter({
-      sortFilter,
-      currentSheet: ref('Sheet1'),
-      activeCell: ref('A1'),
-      renderVersion,
-      gridWrapRef: ref(null),
-      getGrid: () => ({ setFilterRange }),
-      readRect: async () => ({ inputs: [], displays: [] }),
-      rectBlocked: () => false,
-      pushEditOp: vi.fn(),
-      sheetExtent: async () => ({ maxRow: 0, maxCol: 0 }),
-      sortDialog: () => ({ open: vi.fn() }),
-    } as never)
+    useSortFilter(
+      fromPartial({
+        sortFilter,
+        currentSheet: ref('Sheet1'),
+        activeCell: ref('A1'),
+        renderVersion,
+        gridWrapRef: ref(null),
+        getGrid: () => ({ setFilterRange }),
+        readRect: async () => ({ inputs: [], displays: [] }),
+        rectBlocked: () => false,
+        pushEditOp: vi.fn(),
+        sheetExtent: async () => ({ maxRow: 0, maxCol: 0 }),
+        sortDialog: () => ({ open: vi.fn() }),
+      }),
+    )
     expect(setFilterRange).toHaveBeenLastCalledWith(null)
 
     const range = { r0: 4, c0: 2, r1: 7, c1: 3 }

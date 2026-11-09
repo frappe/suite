@@ -3,8 +3,10 @@ import { createApp, defineComponent, h, nextTick, ref } from 'vue'
 
 import ShareDialog from './ShareDialog.vue'
 
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const state = vi.hoisted(() => ({
-  asked: [] as string[],
+  asked: fromPartial<string[]>([]),
   answer: true,
 }))
 
@@ -13,6 +15,7 @@ vi.mock('frappe-ui', async () => {
   return {
     Button: define({ setup: () => () => render('button') }),
     BottomSheet: define({ setup: () => () => null }),
+    Skeleton: define({ setup: () => () => null }),
     // Esc, the close button and a click outside all reach the dialog's owner as this event
     Dialog: define({
       props: { open: Boolean },
@@ -36,10 +39,8 @@ vi.mock('@vueuse/core', async () => {
   const { ref: state } = await import('vue')
   return { useMediaQuery: () => state(false) }
 })
-vi.mock('@/api', () => ({
-  api: { suite: { site: { get: {} } } },
-  useQuery: () => ({ data: null }),
-}))
+vi.mock('@/api', () => ({ api: {}, client: {} }))
+vi.mock('@/platform/workspace', () => ({ useWorkspace: () => ({ workspaceName: { value: '' } }) }))
 vi.mock('@/apps/drive', () => ({ driveNodeRoute: () => ({ path: '/d/node' }) }))
 vi.mock('@/platform/session', () => ({ useSession: () => ({ user: { value: { id: 'me' } } }) }))
 vi.mock('@/platform/feedback', () => ({
@@ -51,7 +52,12 @@ vi.mock('@/platform/feedback', () => ({
 vi.mock('../../internal/icons', () => ({ nodeIcon: () => '', nodeIconTint: () => '' }))
 vi.mock('../../internal/locations', () => ({ useLocationTitle: () => () => '' }))
 vi.mock('./useShare', () => ({
-  useShare: () => ({ node: { value: null }, load: () => {}, changed: { value: false } }),
+  useShare: () => ({
+    node: { value: null },
+    loadError: { value: null },
+    load: () => {},
+    changed: { value: false },
+  }),
 }))
 // The people picked, as SharePicker reports them
 const picks = ref(0)

@@ -1,4 +1,4 @@
-import { type APIRequestContext, expect, test } from "@playwright/test";
+import { expect, test, type APIRequestContext } from "@playwright/test";
 
 import { adminApi } from "../../helpers/drive";
 
@@ -8,6 +8,7 @@ async function readDeskTheme(api: APIRequestContext): Promise<string> {
 	const response = await api.post("/api/v2/method/frappe.client.get_value", {
 		data: { doctype: "User", fieldname: "desk_theme", filters: "Administrator" },
 	});
+	// SAFETY: the successful Suite preferences endpoint returns the saved desk_theme in its Frappe envelope.
 	const body = (await response.json()) as { data?: { desk_theme?: string }; message?: { desk_theme?: string } };
 	return (body.data ?? body.message)?.desk_theme ?? "";
 }

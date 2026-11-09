@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { adapterAt, base64, fakeServer, fakeTime, idle, join, text } from './test-support'
-import type { CollabRoom } from './types'
+import type { CollabRoom, OpenOptions } from './types'
 
 describe('collab room live', () => {
   function type(room: CollabRoom, word: string) {
@@ -10,7 +10,11 @@ describe('collab room live', () => {
     return room.flush()
   }
 
-  function row(server: ReturnType<typeof fakeServer>, rev: number, extra: object = {}) {
+  function row(
+    server: ReturnType<typeof fakeServer>,
+    rev: number,
+    extra: { lineage?: string } = {},
+  ) {
     return {
       lineage: 'L',
       rev,
@@ -250,7 +254,7 @@ describe('collab room live', () => {
     async function pullsAfterControl(
       server: ReturnType<typeof fakeServer>,
       socket: ReturnType<ReturnType<typeof fakeServer>['socket']>,
-      extra: { expectedUser: string; signedIn: () => string } | object,
+      extra: Partial<Pick<OpenOptions, 'expectedUser' | 'signedIn'>>,
       waits: number[],
     ) {
       vi.spyOn(Math, 'random').mockReturnValue(0.99)

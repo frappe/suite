@@ -174,7 +174,9 @@
                 @mousedown.prevent="commitAc(item)"
               >
                 <span class="sn-ac-name">{{ item.name }}</span>
-                <span v-if="item.kind === 'fn'" class="sn-ac-sig">{{ AC_FUNS[item.name] }}</span>
+                <span v-if="item.kind === 'fn'" class="sn-ac-sig">{{
+                  AC_FUNS.get(item.name)
+                }}</span>
                 <span v-else class="sn-ac-badge">sheet</span>
               </div>
             </div>
@@ -628,10 +630,9 @@
         </template>
       </Dialog>
 
-      <!-- Keyboard shortcut help — frappe-ui's KeyboardShortcutsModal, generated
-         from the shortcut registry populated by useShortcuts.js (via useShortcut),
-         so it can never drift from the handlers. -->
-      <KeyboardShortcutsDialog v-model:open="showShortcutsHelp" title="Keyboard shortcuts" />
+      <!-- Keyboard shortcut help — Suite's list of frappe-ui's shortcut registry,
+         populated by useShortcuts.js, so it can never drift from the handlers. -->
+      <ShortcutsDialog v-model:open="showShortcutsHelp" />
 
       <!-- Slicers — floating value-filter controls (SlicerPanel.vue) -->
       <SlicerPanel
@@ -781,16 +782,7 @@
 
 <script setup>
 import { createReusableTemplate } from '@vueuse/core'
-import {
-  Badge,
-  Button,
-  Dialog,
-  Dropdown,
-  FormControl,
-  KeyboardShortcutsDialog,
-  Spinner,
-  Tooltip,
-} from 'frappe-ui'
+import { Badge, Button, Dialog, Dropdown, FormControl, Spinner, Tooltip } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import * as Y from 'yjs'
@@ -798,6 +790,7 @@ import * as Y from 'yjs'
 import { api, client } from '@/api'
 import { useCurrentUser } from '@/boot/session'
 import { colourStyle } from '@/platform/collab/colours'
+import { ShortcutsDialog } from '@/platform/shortcuts'
 import { translate as __ } from '@/platform/translation'
 
 import { chipColor } from '../../canvas/chip-geometry'
@@ -2508,34 +2501,34 @@ const visibleRemoteCursors = computed(() => {
   for (const user of _lastRemoteRC.keys()) {
     if (!remoteCursors.value.has(user)) _lastRemoteRC.delete(user)
   }
-  return [...remoteCursors.value.entries()]
-    .filter(([, cursor]) => cursor.subSheet === currentSheet.value)
-    .map(([user, cursor]) => {
-      // Compute a single rect that covers the whole remote range. We pull
-      // the top-left cell rect for x/y and the bottom-right cell rect to
-      // sum the trailing width/height — handles non-uniform column widths
-      // / row heights correctly.
-      const r = cursor.range || {
-        r0: cursor.row,
-        c0: cursor.col,
-        r1: cursor.row,
-        c1: cursor.col,
-      }
-      const tl = grid.getCellRect?.(r.r0, r.c0)
-      const br = grid.getCellRect?.(r.r1, r.c1)
-      if (!tl || !br) return null
-      const width = br.x + br.width - tl.x
-      const height = br.y + br.height - tl.y
-      // Motion detection: the row/col/subSheet stamp is what determines
-      // whether the *peer* moved. If the stamp is unchanged but the pixel
-      // rect differs, that's a local scroll/resize — we leave justMoved
-      // false so the cursor teleports with the viewport rather than
-      // sliding under the user's mouse.
-      const stamp = `${cursor.row}:${cursor.col}:${cursor.subSheet}`
-      const prev = _lastRemoteRC.get(user)
-      const justMoved = prev !== undefined && prev !== stamp
-      _lastRemoteRC.set(user, stamp)
-      return {
+  return [...remoteCursors.value.entries()].flatMap(([user, cursor]) => {
+    if (cursor.subSheet !== currentSheet.value) return []
+    // Compute a single rect that covers the whole remote range. We pull
+    // the top-left cell rect for x/y and the bottom-right cell rect to
+    // sum the trailing width/height — handles non-uniform column widths
+    // / row heights correctly.
+    const r = cursor.range || {
+      r0: cursor.row,
+      c0: cursor.col,
+      r1: cursor.row,
+      c1: cursor.col,
+    }
+    const tl = grid.getCellRect?.(r.r0, r.c0)
+    const br = grid.getCellRect?.(r.r1, r.c1)
+    if (!tl || !br) return []
+    const width = br.x + br.width - tl.x
+    const height = br.y + br.height - tl.y
+    // Motion detection: the row/col/subSheet stamp is what determines
+    // whether the *peer* moved. If the stamp is unchanged but the pixel
+    // rect differs, that's a local scroll/resize — we leave justMoved
+    // false so the cursor teleports with the viewport rather than
+    // sliding under the user's mouse.
+    const stamp = `${cursor.row}:${cursor.col}:${cursor.subSheet}`
+    const prev = _lastRemoteRC.get(user)
+    const justMoved = prev !== undefined && prev !== stamp
+    _lastRemoteRC.set(user, stamp)
+    return [
+      {
         user,
         label: cursor.label,
         justMoved,
@@ -2546,9 +2539,9 @@ const visibleRemoteCursors = computed(() => {
           height: height + 'px',
           ...colourStyle(cursor.colour),
         },
-      }
-    })
-    .filter(Boolean)
+      },
+    ]
+  })
 })
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────

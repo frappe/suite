@@ -73,6 +73,10 @@ class ConversionRefused(Exception):
         self.reason = reason
 
 
+class ConversionPostponed(Exception):
+    """Not now: nothing is recorded, and the next run tries again."""
+
+
 def conversion_of(app: str) -> Conversion:
     """Return the app's conversion; only an app with old documents to convert gets here."""
     conversion = spec_of(app).conversion
@@ -177,7 +181,7 @@ def convert_document(app: str, node: str, *, opened: bool = False) -> str | None
             return None
 
         if isinstance(converted, convert.Refused):
-            return refused_outcome(app, node, old.fingerprint, converted.reason, started)
+            return refused_outcome(app, node, old.fingerprint, converted.reason, started, converted.detail)
 
         outcome = install_conversion(app, node, old, converted, started)
         if outcome != CHANGED:
@@ -190,12 +194,14 @@ def convert_document(app: str, node: str, *, opened: bool = False) -> str | None
     return None
 
 
-def refused_outcome(app: str, node: str, fingerprint: str, reason: str, started: datetime) -> str | None:
+def refused_outcome(
+    app: str, node: str, fingerprint: str, reason: str, started: datetime, detail: str | None = None
+) -> str | None:
     """Count a child failure that can clear up by itself; record any other refusal and tell the rooms."""
     if reason in PASSING:
         return count_failure(app, node, fingerprint, reason)
 
-    record(app, node, fingerprint, started, reason)
+    record(app, node, fingerprint, started, reason, detail)
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
     live.publish_conversion(app, node, "refused")
     return reason
@@ -243,10 +249,14 @@ def run_converter(
 
 def install_conversion(
     app: str, node: str, old: OldBody, converted: convert.Converted, started: datetime
-) -> str:
-    """Install `converted` whole or not at all: converted, a refusal, logged, or changed; the last two let the attempt go."""
+) -> str | None:
+    """Install `converted` whole or not at all: converted, a refusal, logged, changed, or None for not now; all but the first two let the attempt go."""
     try:
         dropped = write_conversion(app, node, old, converted)
+    except ConversionPostponed:
+        frappe.db.rollback()
+        drop_attempt(app, node, old.fingerprint)
+        return None
     except ConversionRefused as refused:
         frappe.db.rollback()
         record(app, node, old.fingerprint, started, refused.outcome, refused.reason)
@@ -274,8 +284,6 @@ def write_conversion(app: str, node: str, old: OldBody, converted: convert.Conve
     """Check, then write, `converted` in the caller's transaction; what it dropped, or None if it can't start."""
     spec = spec_of(app)
     conversion = conversion_of(app)
-    # an app with old documents to convert keeps a readable copy of them
-    assert spec.readable_copy is not None
     if conversion.read_old(node, lock=True) != old or log.find(app, node):
         return None
 
@@ -284,13 +292,14 @@ def write_conversion(app: str, node: str, old: OldBody, converted: convert.Conve
     doc_id = log.create(app, node)
     replace_start(app, doc_id, converted.state, spec.schema.version)
     conversion.fix_up(node, old, checked)
-    try:
-        replaced = copies.replace_copy(app, doc_id, 1, checked.html, spec.readable_copy)
-    except copies.CopyMismatch:
-        raise ConversionRefused("check", "copy") from None
+    if spec.readable_copy is not None:
+        try:
+            replaced = copies.replace_copy(app, doc_id, 1, checked.html, spec.readable_copy)
+        except copies.CopyMismatch:
+            raise ConversionRefused("check", "copy") from None
 
-    if replaced is None:
-        raise ConversionRefused("check", "copy")
+        if replaced is None:
+            raise ConversionRefused("check", "copy")
 
     return [*converted.dropped, *checked.dropped]
 
@@ -299,6 +308,8 @@ def keep_old_version(node: str) -> None:
     """Keep the old body as a version before anything writes it."""
     try:
         drive.take_version(node, kind="milestone", label=_("Before collaboration"))
+    except drive.DriveStorageUnmeasured:
+        raise ConversionPostponed from None
     except drive.DriveOverQuota:
         raise ConversionRefused("over_quota") from None
 

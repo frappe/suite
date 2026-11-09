@@ -45,8 +45,8 @@ test("the initial presentation is list, no grouping, Name ascending", async ({ p
 	// Owner is a default column, but a folder in My files leaves it out: every row there is the user's.
 	await expect(page.getByRole("columnheader", { name: "Owner" })).toHaveCount(0);
 	await expect(page.getByRole("columnheader", { name: "Modified" })).toBeVisible();
-	await expect(page.getByRole("columnheader", { name: "Size" })).toHaveCount(0);
-	await expect(page.getByRole("columnheader", { name: "Type" })).toHaveCount(0);
+	await expect(page.getByRole("columnheader", { name: "Size" })).toBeVisible();
+	await expect(page.getByRole("columnheader", { name: "Type" })).toBeVisible();
 
 	expect(requests.some((url) => url.includes("order_by=title") && url.includes("ascending=true"))).toBe(true);
 	expect(requests.some((url) => url.includes("group_by="))).toBe(false);
@@ -85,16 +85,17 @@ test("optional columns are a saved preference, not URL state", async ({ page }) 
 	await page.getByRole("dialog").getByRole("button", { name: "Size", exact: true }).click();
 	await page.keyboard.press("Escape");
 
-	await expect(page.getByRole("columnheader", { name: "Size" })).toBeVisible();
+	await expect(page.getByRole("columnheader", { name: "Size" })).toHaveCount(0);
 	await expect(page).not.toHaveURL(/columns=/);
 
 	await page.reload();
-	await expect(page.getByRole("columnheader", { name: "Size" })).toBeVisible();
+	await expect(page.getByRole("columnheader", { name: "Modified" })).toBeVisible();
+	await expect(page.getByRole("columnheader", { name: "Size" })).toHaveCount(0);
 
 	await page.getByRole("button", { name: "View settings" }).click();
 	await page.getByRole("dialog").getByRole("button", { name: "Size", exact: true }).click();
 	await page.keyboard.press("Escape");
-	await expect(page.getByRole("columnheader", { name: "Size" })).toHaveCount(0);
+	await expect(page.getByRole("columnheader", { name: "Size" })).toBeVisible();
 });
 
 test("a document row opens the canonical /d/ route", async ({ page }) => {

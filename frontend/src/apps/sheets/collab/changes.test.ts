@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
 
@@ -11,7 +12,7 @@ function versionAndNow(cells: Record<string, string>) {
   const sheetId = addSheet(version, 'Sheet1')
   version.transact(() => {
     for (const [at, input] of Object.entries(cells)) {
-      const [row, col] = at.split(',').map(Number) as [number, number]
+      const [row, col] = fromPartial<[number, number]>(at.split(',').map(Number))
       const key = cellKey(
         sheetId,
         axis(version, sheetId, 'rows').ensure(row),

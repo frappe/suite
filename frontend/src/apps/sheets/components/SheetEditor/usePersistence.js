@@ -180,10 +180,9 @@ export function usePersistence({
   // workbook, which is not changed.
   async function workbookJson(draft = null) {
     const bytes = await engine.toBytes()
-    return JSON.stringify({
+    const snapshot = {
       engine: bytesToBase64(bytes),
       engine_version: ENGINE_VERSION,
-      ...(draft ? { draft } : {}),
       formats: formats.snapshot(),
       merge: merge?.snapshot?.() ?? null,
       comments: comments?.snapshot?.() ?? null,
@@ -196,7 +195,9 @@ export function usePersistence({
       charts: charts?.snapshot?.() ?? null,
       namedRanges: namedRanges?.snapshot?.() ?? null,
       view: getViewState?.() ?? null,
-    })
+    }
+    if (draft) snapshot.draft = draft
+    return JSON.stringify(snapshot)
   }
   return {
     loadError,

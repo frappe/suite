@@ -50,7 +50,7 @@ export function useRaiseHand(deps: {
 
   const toggleRaiseHand = async () => {
     try {
-      const currentUserId = currentUser.currentUser.value?.user_id as string
+      const currentUserId = currentUser.currentUser.value?.user_id
       if (!currentUserId) return
 
       const isCurrentlyRaised = !!raiseHandStore.raisedHands?.[currentUserId]

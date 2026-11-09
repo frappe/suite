@@ -14,7 +14,8 @@
   "slides_section",
   "slides",
   "reference_section",
-  "reference_presentations"
+  "reference_presentations",
+  "content"
  ],
  "fields": [
   {
@@ -84,11 +85,18 @@
    "fieldname": "reference_section",
    "fieldtype": "Section Break",
    "label": "Reference"
+  },
+  {
+   "description": "The collab doc's latest checked state, a Yjs update in base64, kept by the content layer.",
+   "fieldname": "content",
+   "fieldtype": "Long Text",
+   "label": "Content",
+   "permlevel": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-03 12:00:00.000000",
+ "modified": "2026-11-05 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Slides",
  "name": "Presentation",

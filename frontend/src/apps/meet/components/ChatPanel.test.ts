@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { createPinia } from 'pinia'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, reactive } from 'vue'
@@ -20,13 +21,15 @@ it.each([false, true])(
     const props = reactive({
       open: initiallyOpen,
       userName: 'Alex',
-      messages: [] as {
-        id: string
-        user_id: string
-        user_name: string
-        message: string
-        timestamp: string
-      }[],
+      messages: fromPartial<
+        {
+          id: string
+          user_id: string
+          user_name: string
+          message: string
+          timestamp: string
+        }[]
+      >([]),
     })
     const root = document.createElement('div')
     const elsewhere = document.createElement('button')

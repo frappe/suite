@@ -6,7 +6,8 @@ import { api, client } from '@/api'
 
 import type { DriveFailure } from '@/apps/drive/client/types'
 import { toast } from '@/platform/feedback'
-import { TransportError } from '@/platform/transport'
+
+import { inBatches, refusal } from './batches'
 
 /** An item a change touched, with the title its toast names. */
 export interface ChangedItem {
@@ -39,6 +40,18 @@ const UNDO_DURATION = 10_000
  */
 const changes = new Map<string, symbol[]>()
 
+/** The Undo of each change toast still on screen, newest last. */
+const pendingUndos: { toast: string | number; run: () => void }[] = []
+
+/** Runs the Undo of the newest change toast still on screen, and closes it. Answers whether one ran. */
+export function undoLatest(): boolean {
+  const latest = pendingUndos.at(-1)
+  if (!latest) return false
+  latest.run()
+  toast.dismiss(latest.toast)
+  return true
+}
+
 /** A change the user can take back from its toast. Messages are limited HTML. */
 interface Undoable<Item extends ChangedItem> {
   /** What the toast says the change did. */
@@ -61,17 +74,23 @@ function announce<Item extends ChangedItem>(items: readonly Item[], change: Undo
   const id = Symbol('change')
   for (const item of items) changes.set(item.node, [...(changes.get(item.node) ?? []), id])
   let undone = false
-  toast.success(change.done, {
+  const forget = () => {
+    const index = pendingUndos.findIndex((pending) => pending.run === run)
+    if (index >= 0) pendingUndos.splice(index, 1)
+  }
+  const run = () => {
+    if (undone) return
+    undone = true
+    forget()
+    void takeBack(id, items, change)
+  }
+  const shown = toast.success(change.done, {
     duration: UNDO_DURATION,
-    action: {
-      label: 'Undo',
-      onClick: () => {
-        if (undone) return
-        undone = true
-        void takeBack(id, items, change)
-      },
-    },
+    onDismiss: forget,
+    onAutoClose: forget,
+    action: { label: 'Undo', onClick: run },
   })
+  pendingUndos.push({ toast: shown, run })
 }
 
 async function takeBack<Item extends ChangedItem>(
@@ -170,11 +189,10 @@ async function moveAllBack(items: readonly MovedItem[]): Promise<DriveFailure[]>
     const first = group[0]
     if (!first) continue
     const nodes = group.map((item) => item.node)
+    const patch = { parent_node: first.from, expect_parent_node: first.to }
     try {
-      const result = await client.mutation(
-        api.drive.nodes.batch,
-        { nodes, patch: { parent_node: first.from, expect_parent_node: first.to } },
-        { silent: true },
+      const result = await inBatches(nodes, (chunk) =>
+        client.mutation(api.drive.nodes.batch, { nodes: chunk, patch }, { silent: true }),
       )
       failed.push(...result.failed)
     } catch (cause) {
@@ -190,19 +208,12 @@ async function setState(
 ): Promise<DriveFailure[]> {
   const nodes = items.map((item) => item.node)
   try {
-    return (
-      await client.mutation(api.drive.nodes.batch, { nodes, patch: { state } }, { silent: true })
-    ).failed
+    const result = await inBatches(nodes, (chunk) =>
+      client.mutation(api.drive.nodes.batch, { nodes: chunk, patch: { state } }, { silent: true }),
+    )
+    return result.failed
   } catch (cause) {
     return nodes.map((node) => refusal(node, cause))
-  }
-}
-
-function refusal(node: string, cause: unknown): DriveFailure {
-  return {
-    node,
-    type: cause instanceof TransportError ? cause.type : 'Error',
-    message: cause instanceof Error ? cause.message : 'The action failed.',
   }
 }
 

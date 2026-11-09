@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, nextTick } from 'vue'
 
 import NotificationsBell from '@/composition/notifications/NotificationsBell.vue'
+import { requireTestElement } from '@/platform/testing/dom'
 import { TransportError } from '@/platform/transport'
 
 const state = vi.hoisted(() => ({
@@ -71,6 +72,7 @@ vi.mock('@/apps/drive', () => ({
     path: `/d/${node.name}/item`,
     state: { openingTitle: 'Title' },
   }),
+  formatDriveBytes: (bytes: number) => `${bytes / 1024} KB`,
   driveNotifications: () => ({
     test: 'feed',
   }),
@@ -102,7 +104,15 @@ vi.mock('@/api', async () => ({
     error: null,
   }),
   useInfiniteQuery: () => ({
-    rows: [shareNotification(), mentionNotification(), commentNotification()],
+    rows: [
+      shareNotification(),
+      mentionNotification(),
+      commentNotification(),
+      downloadNotification('notice-4', 'Ready'),
+      downloadNotification('notice-5', 'Failed'),
+      downloadNotification('notice-6', 'Expired'),
+      expiredSinceLoaded(),
+    ],
     status: 'success',
     error: null,
     hasNext: false,
@@ -123,6 +133,7 @@ afterEach(() => {
   state.markRead.mockReset()
   state.loadNode.mockReset()
   state.toastError.mockReset()
+  vi.restoreAllMocks()
 })
 describe('Notifications bell', () => {
   it('reads each notification as a sentence naming the person and the item', () => {
@@ -146,7 +157,10 @@ describe('Notifications bell', () => {
   })
   it('does not mark anything read when opened', async () => {
     const root = mount()
-    const bell = root.querySelector('[aria-label="Notifications"]') as HTMLButtonElement
+    const bell = requireTestElement(
+      root.querySelector('[aria-label="Notifications"]'),
+      HTMLButtonElement,
+    )
     bell.click()
     await nextTick()
     expect(state.markRead).not.toHaveBeenCalled()
@@ -183,6 +197,64 @@ describe('Notifications bell', () => {
       state.push.mock.invocationCallOrder[0]!,
     )
   })
+  it('tells the reader their zip is ready, and its row downloads the zip', async () => {
+    state.markRead.mockResolvedValue({ read: 1 })
+    const assign = vi.fn()
+    vi.spyOn(window, 'location', 'get').mockReturnValue({ ...window.location, assign })
+    const row = notificationRows(mount()).find((button) =>
+      button.textContent?.includes('"Talks.zip" is ready to download'),
+    )
+
+    row?.click()
+    await vi.waitFor(() => expect(assign).toHaveBeenCalled())
+
+    expect(state.markRead).toHaveBeenCalledWith({ notifications: ['notice-4'] })
+    expect(assign).toHaveBeenCalledWith('/api/suite/drive/downloads/notice-4/content')
+    expect(state.loadNode).not.toHaveBeenCalled()
+  })
+  it("shows a ready zip's size and until when it can be downloaded", () => {
+    const row = notificationRows(mount()).find((button) =>
+      button.textContent?.includes('"Talks.zip" is ready to download'),
+    )
+    expect(row?.textContent).toMatch(/2 KB · Available until \S/)
+  })
+  it('says why a download could not be prepared', () => {
+    const row = notificationRows(mount()).find((button) =>
+      button.textContent?.includes('Could not prepare "Talks.zip"'),
+    )
+    expect(row?.textContent).toContain('An item in folder Talks cannot be read')
+  })
+  it('says an expired zip has expired, and its row opens nothing', async () => {
+    state.markRead.mockResolvedValue({ read: 1 })
+    const assign = vi.fn()
+    vi.spyOn(window, 'location', 'get').mockReturnValue({ ...window.location, assign })
+    const row = notificationRows(mount()).find((button) =>
+      button.textContent?.includes('"Talks.zip" has expired'),
+    )
+
+    row?.click()
+    await vi.waitFor(() =>
+      expect(state.markRead).toHaveBeenCalledWith({ notifications: ['notice-6'] }),
+    )
+
+    expect(assign).not.toHaveBeenCalled()
+  })
+
+  it('a ready zip that expired after the list loaded opens nothing', async () => {
+    state.markRead.mockResolvedValue({ read: 1 })
+    const assign = vi.fn()
+    vi.spyOn(window, 'location', 'get').mockReturnValue({ ...window.location, assign })
+    const row = notificationRows(mount()).at(-1)
+    expect(row?.textContent).toContain('Expired')
+
+    row?.click()
+    await vi.waitFor(() =>
+      expect(state.markRead).toHaveBeenCalledWith({ notifications: ['notice-7'] }),
+    )
+
+    expect(assign).not.toHaveBeenCalled()
+  })
+
   it('still opens a mention of a document the reader has no access to', async () => {
     state.loadNode.mockRejectedValue(
       new TransportError({ type: 'DriveNotFound', message: 'Not found', status: 404 }),
@@ -319,6 +391,28 @@ function notification(
       via_link: null,
       client: null,
       detail,
+    },
+  }
+}
+function expiredSinceLoaded() {
+  const row = downloadNotification('notice-7', 'Ready')
+  return { ...row, download: { ...row.download, expires_at: '2020-01-01T00:00:00Z' } }
+}
+function downloadNotification(name: string, status: 'Ready' | 'Failed' | 'Expired') {
+  const ready = status === 'Ready'
+  return {
+    name,
+    read: 0,
+    creation: new Date().toISOString(),
+    download: {
+      name,
+      title: 'Talks.zip',
+      status,
+      delivery: 'Inbox',
+      size: ready ? 2048 : null,
+      expires_at: new Date(Date.now() + (ready ? 86_400_000 : 0)).toISOString(),
+      error: ready ? null : 'An item in folder Talks cannot be read',
+      url: ready ? `/api/suite/drive/downloads/${name}/content` : null,
     },
   }
 }

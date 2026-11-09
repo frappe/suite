@@ -1,4 +1,5 @@
 import { Editor } from '@tiptap/core'
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { writerSchema } from '@/apps/writer/schema'
@@ -47,7 +48,7 @@ function cellPos(instance: Editor, text: string) {
 
 /** jsdom has no ClipboardEvent */
 function paste(instance: Editor, html: string) {
-  instance.view.pasteHTML(html, new Event('paste') as ClipboardEvent)
+  instance.view.pasteHTML(html, fromPartial<ClipboardEvent>(new Event('paste')))
 }
 
 describe('table paste', () => {

@@ -817,17 +817,18 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
 | Surface | `expand` |
 |---|---|
 | Open folder detail and header | `access,breadcrumbs` |
-| Folder and root list rows | `access` |
+| Folder and root list rows | `access`, plus `audience` when the Access column shows and `contents_size` when the Size column shows |
 | Folder and root grid tiles | `access,preview` |
-| Saved-view list rows | `access` |
-| Saved-view grid tiles | `access,preview` |
-| Search rows | `access,breadcrumbs`, plus `preview` in grid |
+| Saved-view list rows | `access`, plus `audience` and `contents_size` as for folder rows; Shared with me, Starred and Recent add `breadcrumbs` |
+| Saved-view grid tiles | `access,preview`; Shared with me, Starred and Recent add `breadcrumbs` |
+| Search rows | `access,breadcrumbs`, plus `preview` in grid, and `audience` and `contents_size` in list as for folder rows |
 
 [T006, Drive §11.3]
 
+- Trash shows no folder size, so it never asks for `contents_size`.
 - Breadcrumbs describe the open folder once. They are not repeated on each
-  child. Search is the exception: each result shows its path, for example
-  `My files > Finance` [T006].
+  child. Search, Shared with me, Starred and Recent are the exception: each
+  row shows its path, for example `My files > Finance` [T006].
 
 ### 5.5 Grid previews
 
@@ -855,8 +856,10 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
 - Root nodes never appear as ordinary rows [T006].
 - Row menu: Open, Open in new tab, Download, Rename, Move, Make a copy,
   Star/Unstar, Share, Move to trash [T006].
-- Download is unavailable for links. Folder Download shows only when the
-  folder-archive routes exist [T006, Drive §11.2].
+- Download shows to anyone who can read the row. A file or a document
+  downloads at once. A folder or a link downloads in a zip that Drive builds
+  in the background; a link becomes a `.url` shortcut (section 5.8) [T006,
+  Drive §11.2].
 - The `access` expansion hides every action the row's role does not allow
   [T006, Drive §4.2].
 - Share shows only to users with MANAGE (section 7.2) [T006, T008].
@@ -903,12 +906,22 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
   then toggle rows. Back exits selection mode [T006].
 - In selection mode checkboxes appear. The bulk bar replaces the toolbar at
   equal height and does not move the list [T006].
-- The active-node bulk bar holds only **Move** and **Move to trash**. One
-  gesture is one `POST /nodes/batch` request [T006, Drive §11.5].
+- The active-node bulk bar holds **Move**, **Download**, **Star** (or
+  **Unstar** when every selected row is starred) and **Move to trash**.
+  Move and Move to trash are one `POST /nodes/batch` request [T006,
+  Drive §11.5].
+- **Download** sends one `POST /downloads` for the whole selection. A
+  single file downloads at once. Anything else becomes one zip, named after
+  the selection's folder or "Suite download". A toast stays on the page
+  until the zip is ready: the page polls `GET /downloads/<id>` and starts the
+  download itself. When the caller reads every item through their own access,
+  a notification also links the zip, for whoever left the page meanwhile. A
+  zip that is already ready downloads at once [Drive §11.2].
+- **Star** and **Unstar** send one favourite request per row that needs to
+  change. Star shows only to a signed-in person.
 - An action is enabled only when every selected row's access permits it.
   The server rechecks every node [T006].
-- Rename, copy, star, share, download and open stay single-row actions
-  [T006].
+- Rename, copy, share and open stay single-row actions [T006].
 - Trash replaces the bar with Restore and Delete forever (section 6)
   [T006, T007].
 - Batch results follow section 6.11 [T006, T007].
@@ -920,7 +933,10 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
 - After commit, Drive emits one payload-free `drive:changed` event to each
   affected user [T006, Drive §9.5].
 - Observed Drive listing queries debounce the event and refetch their visible
-  listing. The event carries no node or root id [T006].
+  listing. The event carries no node or root id [T006]. The client refreshes
+  once per 400 ms window that starts at the first event, so a long burst still
+  refreshes. A visit sends `drive:recent`, which refreshes only the views
+  [Drive §9.5].
 - Without the event, focus refetch, reconnect refetch, own-write
   normalization and manual refresh stay correct. Remote edits are then not
   live [T006].
@@ -1181,8 +1197,10 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
   forever [T006, T007].
 - Successful ids leave the selection and the affected lists. Failed ids
   stay selected [T006].
-- The result reads, for example, `14 moved · 4 failed`. **Details** shows
-  per-node messages [T006].
+- The result reads, for example, `4 of 18 items could not be moved`, and
+  **Details** lists each item by title and icon with a reason chosen by the
+  error type. One failure names the item, `“Budget.pdf” could not be moved`,
+  with its reason and no Details [T006].
 - The outcome has no Retry button. Running the action again is the retry
   [T007].
 - A whole-request failure (network, 5xx, deadlock) applies nothing. It shows
@@ -2518,7 +2536,7 @@ Where the asks land [T019]:
 | D3 | `kind=folder` filter inside the SQL window on children | T006 | 5.7, 6.9 | shipped (`20befde95`) [T019] | specified [Drive §5.3, §11.2] |
 | D4 | Page-batched `expand=access` on every node-valued view | T006 | 5.4 | shipped (`20befde95`) [T019] | specified [Drive §11.2, §11.3] |
 | D5 | Batched `expand=breadcrumbs` on `views/search` | T006 | 5.4, 5.10 | shipped (`20befde95`) [T019] | specified [Drive §5.7, §11.3] |
-| D6 | Folder archive build, status and download routes | T005, T006 | 5.6 | shipped (`20befde95`) [T019] | specified [Drive §11.2] |
+| D6 | Background zip downloads for a folder or a selection | T005, T006 | 5.6 | shipped (`20befde95`) [T019] | specified [Drive §11.2] |
 | D7 | Payload-free, after-commit `drive:changed` realtime event | T006 | 5.9 | shipped (`20befde95`) [T019] | specified [Drive §9.5] |
 | D7a | Node event with `{node, parent, root, modified, action}` and per-folder rooms | SSC | 5.9 | none | superseded by D7 [T006] |
 | D8 | `opened_at` on `views/recents` rows | T012 | 11.1 | shipped (`20befde95`) [T019] | specified [Drive §9.5, §11.2] |

@@ -4,7 +4,7 @@ import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
 import { CellSelection } from '@tiptap/pm/tables'
 
 // Cell fill anchors from frappe-ui src/molecules/editor/extensions/shared/color-palette.ts (gray left out)
-const FILLS: Record<string, string> = {
+const FILLS = {
   red: '#fecaca',
   orange: '#fed7aa',
   yellow: '#fef08a',
@@ -15,7 +15,7 @@ const FILLS: Record<string, string> = {
   indigo: '#dbd5ff',
   purple: '#e9d5ff',
   pink: '#fbcfe8',
-}
+} satisfies Record<string, string>
 /** Below this spread between the strongest and weakest channel, a fill counts as white or gray */
 const MIN_CHROMA = 10
 

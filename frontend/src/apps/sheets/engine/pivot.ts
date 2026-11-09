@@ -292,7 +292,9 @@ function _accumulate(acc: Accumulator, row: unknown[], plan: PivotPlan) {
       arr = []
       acc.buckets.set(key, arr)
     }
-    const raw = row[(valCols[vi] as ValCol).idx]
+    const column = valCols[vi]
+    if (!column) throw new Error('Pivot value column is missing')
+    const raw = row[column.idx]
     if (raw !== null && raw !== undefined && raw !== '') {
       const n = displayNumber(raw)
       arr.push(isNaN(n) ? raw : n)
@@ -304,7 +306,11 @@ function _finishModel(acc: Accumulator, dataRows: unknown[][], plan: PivotPlan):
   const { headers, rows, rowIdxs, colIdxs, valCols, hasColFields } = plan
   const { buckets, rowKeyList, colKeyList } = acc
   // vi always indexes valCols.
-  const aggOf = (vi: number) => (valCols[vi] as ValCol).agg
+  const aggOf = (vi: number) => {
+    const column = valCols[vi]
+    if (!column) throw new Error('Pivot aggregate column is missing')
+    return column.agg
+  }
 
   const _sortKeys = (list: string[]) =>
     list.sort((a, b) => {
@@ -468,7 +474,8 @@ export function writePivotToSheet(
 ) {
   clearRect(outputSheet, prevExtent)
   for (let r = 0; r < table.length; r++) {
-    const row = table[r] as unknown[]
+    const row = table[r]
+    if (!row) continue
     for (let c = 0; c < row.length; c++) {
       const v = row[c]
       if (v === null || v === undefined || v === '') continue
