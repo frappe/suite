@@ -375,6 +375,20 @@ export function elementIds(doc: Y.Doc, slideId: string) {
   return elementsInOrder(doc, slideId).map(({ id }) => id)
 }
 
+function orderValues(siblings: Sibling[]) {
+  return new Map(siblings.map(({ id, item }) => [id, orderOf(item)]))
+}
+
+// Each slide's saved order value, first slide first
+export function slideOrders(doc: Y.Doc) {
+  return orderValues(slidesInOrder(doc))
+}
+
+// Each element's saved order value, bottom element first
+export function elementOrders(doc: Y.Doc, slideId: string) {
+  return orderValues(elementsInOrder(doc, slideId))
+}
+
 // Reads below fix leftovers of a merge in what they return and never write, so
 // the hidden data comes back with a version restore
 

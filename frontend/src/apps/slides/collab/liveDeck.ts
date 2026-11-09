@@ -18,7 +18,7 @@ import {
   deleteElement,
   deleteSlide,
   ELEMENT_FIELDS,
-  elementIds,
+  elementOrders,
   elementText,
   moveElement,
   moveSlide,
@@ -26,7 +26,7 @@ import {
   setElement,
   setSlide,
   SLIDE_FIELDS,
-  slideIds,
+  slideOrders,
 } from './deck'
 import { deckSchema, drawnSlides } from './drawnDeck'
 import { openLiveUndo, type StepDirection } from './liveUndo'
@@ -189,19 +189,75 @@ function alreadyInOrder(wanted: string[], current: string[]) {
   return staying
 }
 
+function placesAmong(order: string[], others: Set<string>) {
+  const places = new Map<string, number>()
+  let passed = 0
+  for (const id of order) {
+    if (others.has(id)) {
+      passed++
+    } else {
+      places.set(id, passed)
+    }
+  }
+
+  return places
+}
+
+// Orders alone can't tell what moved. While the others keep their order, a selected item
+// moved (Q17) unless it still sits among the same others
+function itemsToKeep(present: string[], current: string[], isSelected: (id: string) => boolean) {
+  const others = present.filter((id) => !isSelected(id))
+  if (alreadyInOrder(others, current).size !== others.length) {
+    return alreadyInOrder(present, current)
+  }
+
+  const notSelected = new Set(others)
+  const placesBefore = placesAmong(current, notSelected)
+  const placesNow = placesAmong(present, notSelected)
+  const settled = present.filter(
+    (id) => notSelected.has(id) || placesBefore.get(id) === placesNow.get(id),
+  )
+
+  return alreadyInOrder(settled, current)
+}
+
+// Nothing fits between two equal orders, so a tie with a moved item inside it can't all stay
+// The longest unbroken run of each value keeps it, which is the fewest extra writes
+function releaseSplitTies(staying: Set<string>, present: string[], orders: Map<string, string>) {
+  const runs = new Map<string, string[][]>()
+  let open: string | null = null
+  for (const id of present) {
+    if (!staying.has(id)) {
+      open = null
+      continue
+    }
+
+    const value = orders.get(id) ?? ''
+    if (value !== open) {
+      runs.set(value, [...(runs.get(value) ?? []), []])
+      open = value
+    }
+
+    runs.get(value)?.at(-1)?.push(id)
+  }
+
+  for (const tied of runs.values()) {
+    const longest = tied.reduce((best, run) => (run.length > best.length ? run : best))
+    for (const id of tied.filter((run) => run !== longest).flat()) {
+      staying.delete(id)
+    }
+  }
+}
+
 function writeOrder(
   wanted: string[],
-  current: string[],
+  orders: Map<string, string>,
   move: (id: string, afterId: string | null) => void,
   isSelected: (id: string) => boolean,
 ) {
-  const inDocument = new Set(current)
-  const present = wanted.filter((id) => inDocument.has(id))
-  const others = present.filter((id) => !isSelected(id))
-  const notSelected = alreadyInOrder(others, current)
-  // Orders alone can't tell what moved. While the others keep their order, the selected did (Q17)
-  const staying =
-    notSelected.size === others.length ? notSelected : alreadyInOrder(present, current)
+  const present = wanted.filter((id) => orders.has(id))
+  const staying = itemsToKeep(present, [...orders.keys()], isSelected)
+  releaseSplitTies(staying, present, orders)
   let previous: string | null = null
   for (const id of present) {
     if (!staying.has(id)) {
@@ -340,13 +396,13 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
   function writeOrders(now: Mirror) {
     if (!sameValue(now.slideOrder, mirror.slideOrder)) {
       const move = (id: string, afterId: string | null) => moveSlide(doc, id, afterId)
-      writeOrder(now.slideOrder, slideIds(doc), move, host.isSelected)
+      writeOrder(now.slideOrder, slideOrders(doc), move, host.isSelected)
     }
 
     for (const [slideId, wanted] of now.elementOrders) {
       if (!sameValue(wanted, mirror.elementOrders.get(slideId))) {
         const move = (id: string, afterId: string | null) => moveElement(doc, id, afterId)
-        writeOrder(wanted, elementIds(doc, slideId), move, host.isSelected)
+        writeOrder(wanted, elementOrders(doc, slideId), move, host.isSelected)
       }
     }
   }

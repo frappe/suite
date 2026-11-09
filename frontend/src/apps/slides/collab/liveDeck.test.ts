@@ -107,6 +107,52 @@ function savedFrame(doc: Y.Doc, id: string) {
   return doc.getMap<Y.Map<unknown>>(ROOT.elements).get(id)!.get('frame')
 }
 
+function presentationOf(doc: Y.Doc, ids: string[]) {
+  writeDeck(doc, [
+    { id: 's1', elements: ids.map((id) => ({ id, type: 'image', frame: { left: 1 } })) },
+  ])
+}
+
+// What two tabs inserting at the same place leave behind once they sync
+function tieOrders(items: Y.Map<Y.Map<unknown>>, ids: string[]) {
+  const shared = items.get(ids[0])!.get('order')
+  for (const id of ids) {
+    items.get(id)!.set('order', shared)
+  }
+}
+
+function tieElements(doc: Y.Doc, ids: string[]) {
+  tieOrders(doc.getMap<Y.Map<unknown>>(ROOT.elements), ids)
+}
+
+function stack(tab: ReturnType<typeof tabOn>, ids: string[]) {
+  ids.forEach((id, at) => {
+    tab.element(id).zIndex = at + 1
+  })
+}
+
+function drawnStack(tab: ReturnType<typeof tabOn>) {
+  return [...tab.store.slides[0].elements]
+    .sort((one, other) => one.zIndex - other.zIndex)
+    .map(({ id }) => id)
+}
+
+// Writes, not value changes: a rewrite can land on the value it replaced and still block an undo
+function ordersWrittenBy(items: Y.Map<Y.Map<unknown>>, act: () => void) {
+  const written = new Set<string>()
+  const listen = (events: Y.YEvent<Y.Map<unknown>>[]) => {
+    for (const { keys, path } of events) {
+      if (keys.has('order')) {
+        written.add(String(path[0]))
+      }
+    }
+  }
+  items.observeDeep(listen)
+  act()
+  items.unobserveDeep(listen)
+  return [...written].sort()
+}
+
 describe('pushing the store into the live document', () => {
   it('a changed field reaches the other tab and leaves their change to another field alone', () => {
     const [one, other] = sharedPair()
@@ -270,6 +316,79 @@ describe('pushing the store into the live document', () => {
 
     expect(elementIds(doc, 's1')).toEqual(['b', 'c', 'a'])
     expect(orders()).toMatchObject({ b: before.b, c: before.c })
+  })
+
+  it('moving an element between tied neighbours saves the order the tab drew', () => {
+    const [one, other] = sharedPair()
+    presentationOf(one, ['a', 'b', 'x'])
+    tieElements(one, ['a', 'b'])
+    const tab = tabOn(one, { selected: ['x'] })
+    const otherTab = tabOn(other)
+
+    stack(tab, ['a', 'x', 'b'])
+    const changed = ordersWrittenBy(one.getMap(ROOT.elements), () => tab.deck.push())
+
+    expect(elementIds(one, 's1')).toEqual(['a', 'x', 'b'])
+    expect(drawnStack(tab)).toEqual(['a', 'x', 'b'])
+    expect(drawnStack(otherTab)).toEqual(['a', 'x', 'b'])
+    expect(changed).toContain('x')
+    expect(changed).toHaveLength(2)
+  })
+
+  it('splitting a tie rewrites the smaller side and keeps the larger', () => {
+    const doc = new Y.Doc()
+    presentationOf(doc, ['a', 'b', 'c', 'x'])
+    tieElements(doc, ['a', 'b', 'c'])
+    const tab = tabOn(doc, { selected: ['x'] })
+
+    stack(tab, ['a', 'x', 'b', 'c'])
+    const changed = ordersWrittenBy(doc.getMap(ROOT.elements), () => tab.deck.push())
+
+    expect(elementIds(doc, 's1')).toEqual(['a', 'x', 'b', 'c'])
+    expect(changed).toEqual(['a', 'x'])
+  })
+
+  it('leaves a tie alone when the move did not land inside it', () => {
+    const doc = new Y.Doc()
+    presentationOf(doc, ['a', 'b', 'x', 'y'])
+    tieElements(doc, ['a', 'b'])
+    const tab = tabOn(doc, { selected: ['y'] })
+
+    stack(tab, ['a', 'b', 'y', 'x'])
+    const changed = ordersWrittenBy(doc.getMap(ROOT.elements), () => tab.deck.push())
+
+    expect(elementIds(doc, 's1')).toEqual(['a', 'b', 'y', 'x'])
+    expect(changed).toEqual(['y'])
+  })
+
+  it('moving a slide between tied neighbours saves the order the tab drew', () => {
+    const doc = new Y.Doc()
+    presentation(doc)
+    const slides = doc.getMap<Y.Map<unknown>>(ROOT.slides)
+    tieOrders(slides, ['s1', 's2'])
+    const tab = tabOn(doc, { selected: ['s3'] })
+
+    tab.store.slides.splice(1, 0, tab.store.slides.pop()!)
+    const changed = ordersWrittenBy(slides, () => tab.deck.push())
+
+    expect(slideIds(doc)).toEqual(['s1', 's3', 's2'])
+    expect(changed).toContain('s3')
+    expect(changed).toHaveLength(2)
+  })
+
+  it('a selected element that kept its place among the others gets no order write', () => {
+    const [one, other] = sharedPair()
+    presentationOf(one, ['a', 'b', 'c', 'd'])
+    const tab = tabOn(one, { selected: ['a', 'c'] })
+    const coEditor = tabOn(other, { selected: ['c'] })
+    stack(coEditor, ['a', 'b', 'd', 'c'])
+    coEditor.deck.push()
+
+    stack(tab, ['b', 'd', 'a', 'c'])
+    const changed = ordersWrittenBy(one.getMap(ROOT.elements), () => tab.deck.push())
+
+    expect(elementIds(one, 's1')).toEqual(['b', 'd', 'a', 'c'])
+    expect(changed).toEqual(['a'])
   })
 
   it('moving a slide reaches the other tab in the new place', () => {

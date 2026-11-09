@@ -446,12 +446,14 @@ describe('a deck on the content layer', () => {
     expect(viewOnly.value).toBe(true)
   })
 
-  it('shows a System Manager the reason the server sent', async () => {
+  it('shows a System Manager the reason in plain words', async () => {
     mounted = await openedSurface({
       deck: { conversion: { state: 'refused', reason: 'check: html' } },
     })
 
-    expect(statusOf(mounted.root)).toContain('Reason: check: html.')
+    expect(statusOf(mounted.root)).toContain(
+      "Reason: the upgraded version didn't match the original.",
+    )
   })
 
   it('shows no notice on a combined deck', async () => {
