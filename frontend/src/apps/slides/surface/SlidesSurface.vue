@@ -85,6 +85,7 @@ import { cancelVisit, rememberVisit } from '@/apps/slides/stores/visitedCopies'
 import { stopVisitedMedia, storeVisitedMedia } from '@/apps/slides/stores/visitedMedia'
 import { isMediaOwner } from '@/apps/slides/utils/mediaUploads'
 import { postToServiceWorker, registerSlidesWorker } from '@/apps/slides/utils/serviceWorker'
+import { readSavedDocument } from '@/platform/collab'
 import { useHideRail } from '@/platform/rail'
 import { getCookieSessionUser, useSession } from '@/platform/session'
 import { openAreaShortcuts } from '@/platform/shortcuts'
@@ -101,6 +102,7 @@ import {
   type CompositeItem,
   type MergedCompositeSlide,
 } from './compositeGroups'
+import { withSavedSlides } from './compositeSaved'
 import { conversionNotice, type ConversionStatus } from './conversionNotice'
 import { watchConvertedSlides } from './convertedSlides'
 import ExportView from './ExportView.vue'
@@ -442,6 +444,11 @@ function exportPdf() {
     }, 200)
   })
 }
+// A source's own link code, so a public combined presentation opens signed out
+async function readSource(nodeId: string) {
+  const credentials = props.session.credentials.group([nodeId])[0]
+  return readSavedDocument({ nodeId, credentials })
+}
 async function loadComposite() {
   // Sent with every held link code: the server names the node of each
   // reference those codes open, and each group then sends only its own codes.
@@ -458,8 +465,8 @@ async function loadComposite() {
   const loader = new CompositeGroupLoader(
     manifest,
     props.session.credentials,
-    (references, context) =>
-      client.query(
+    async (references, context) => {
+      const group = await client.query(
         api.slides.composites.group,
         {
           name: props.session.contentDocname,
@@ -468,7 +475,9 @@ async function loadComposite() {
         {
           context,
         },
-      ),
+      )
+      return { references: await withSavedSlides(group.references, readSource) }
+    },
     (items) => {
       compositeItems.value = items.map((item) => ({
         ...item,
