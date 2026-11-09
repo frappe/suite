@@ -33,6 +33,7 @@ export type GetAccountRequestOutputAccountRequest = {
   invited_by_image: string | null
   invited_by_email: string
   is_admin: 0 | 1
+  sets_up_site: 0 | 1
   expires_at: string | null
 }
 

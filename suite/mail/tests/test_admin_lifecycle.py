@@ -903,6 +903,32 @@ class TestAdminLifecycle(IntegrationTestCase):
             shown = get_account_request(key)
         self.assertEqual((shown["invited_by_name"], shown["invited_by_email"]), ("", ""))
 
+    def test_only_an_admin_invited_before_setup_sets_the_site_up(self):
+        # The site's first Admin opens the setup wizard from their invitation; later Admins join.
+        def invite(username: str, is_admin: bool) -> str:
+            with (
+                patch("suite.suite_core.suite_email._email_provider", return_value=None),
+                patch("frappe.sendmail"),
+                self.set_user("Administrator"),
+            ):
+                self.assertTrue(
+                    add_member(username, "company.frappe.cloud", is_admin, True, "x@example.test")["success"]
+                )
+            return frappe.db.get_value(
+                "Mail Account Request", {"account": f"{username}@company.frappe.cloud"}, "request_key"
+            )
+
+        frappe.db.set_single_value("Suite Settings", "is_onboarded", 0)
+        owner = invite(self.username, True)
+        member = invite(f"{self.username}-m", False)
+        with self.set_user("Guest"):
+            self.assertEqual(get_account_request(owner)["sets_up_site"], 1)
+            self.assertEqual(get_account_request(member)["sets_up_site"], 0)
+
+        frappe.db.set_single_value("Suite Settings", "is_onboarded", 1)
+        with self.set_user("Guest"):
+            self.assertEqual(get_account_request(owner)["sets_up_site"], 0)
+
     def test_the_supplied_domain_is_the_oldest_active_one_whatever_order_suite_cloud_lists(self):
         listed = [
             {"domain": "acme.com", "enabled": True, "is_verified": True, "created_at": "2026-03-02 09:00:00"},

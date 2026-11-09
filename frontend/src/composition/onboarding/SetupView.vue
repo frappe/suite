@@ -3,12 +3,30 @@
   time: workspace, Mail and an own domain (Suite Cloud only), the team,
   the command menu, and a summary. Reaching the summary completes onboarding,
   so closing the tab there does not send the Admin through the wizard again.
+
+  A first Admin who was invited (Suite Cloud invites the person who signed up)
+  opens it from their invitation, signed out. Their account comes right after
+  the welcome, and it creates their mailbox, so the Mail step is left out.
 -->
+<script lang="ts">
+export interface SetupInvitation {
+  requestKey: string
+  /** The work email the account gets. */
+  account: string
+  /** Where the invitation arrived, and where a reset link goes. */
+  backupEmail: string
+  /** The site's name, which a signed-out page has only from the invitation. */
+  workspaceName: string
+}
+</script>
+
 <script setup lang="ts">
 import { Button, Combobox, ErrorMessage, Tooltip } from 'frappe-ui'
-import { computed, onMounted, onUnmounted, ref, useTemplateRef } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, useTemplateRef } from 'vue'
 
-import { api, useMutation, useQuery } from '@/api'
+import { api, client, useMutation, useQuery } from '@/api'
+import { useSession } from '@/platform/session'
+import { useWorkspace } from '@/platform/workspace'
 import SuiteMark from '@/shell/SuiteMark.vue'
 import { detectTimezone, useTimezones } from '@/shell/useTimezones'
 import WorkspaceBrandingForm from '@/shell/WorkspaceBrandingForm.vue'
@@ -17,24 +35,38 @@ import AppIconView from './AppIconView.vue'
 import DomainStep from './DomainStep.vue'
 import InvitePeople from './InvitePeople.vue'
 import MailStep from './MailStep.vue'
-import { MOD_KEY, type DomainState } from './onboarding'
+import AccountSetupStep from './AccountSetupStep.vue'
+import { accountHeading, MOD_KEY, type DomainState } from './onboarding'
 import OnboardingFrame from './OnboardingFrame.vue'
 import ShortcutStep from './ShortcutStep.vue'
 import { SUITE_APPS } from './suiteApps'
 
-type Step = 'welcome' | 'workspace' | 'mail' | 'domain' | 'invite' | 'shortcut' | 'ready'
+type Step =
+  'welcome' | 'account' | 'workspace' | 'mail' | 'domain' | 'invite' | 'shortcut' | 'ready'
 
-const mailOnboarding = useQuery(api.suite.site.mailOnboarding)
-const cloud = computed(() => mailOnboarding.data?.cloud === true)
-const order = computed<Step[]>(() =>
-  cloud.value
-    ? ['welcome', 'workspace', 'mail', 'domain', 'invite', 'shortcut', 'ready']
-    : ['welcome', 'workspace', 'invite', 'shortcut', 'ready'],
+const { invitation } = defineProps<{
+  /** The first Admin's invitation, when they arrive from it and still need an account. */
+  invitation?: SetupInvitation
+}>()
+
+const session = useSession()
+const { workspaceName, setWorkspace } = useWorkspace()
+const mailOnboarding = useQuery(api.suite.site.mailOnboarding, () =>
+  session.status.value === 'authenticated' ? {} : false,
 )
+// Invitations come from the mail provider, so an invited first Admin is on Suite Cloud.
+const cloud = computed(() => !!invitation || mailOnboarding.data?.cloud === true)
+const order = computed<Step[]>(() => {
+  if (invitation) return ['welcome', 'account', 'workspace', 'domain', 'invite', 'shortcut', 'ready']
+  return cloud.value
+    ? ['welcome', 'workspace', 'mail', 'domain', 'invite', 'shortcut', 'ready']
+    : ['welcome', 'workspace', 'invite', 'shortcut', 'ready']
+})
 const step = ref<Step>('welcome')
 const index = computed(() => order.value.indexOf(step.value))
 
 const copy = computed<Record<Step, { title: string; subtitle: string }>>(() => ({
+  account: accountHeading(accountState.value, ''),
   welcome: {
     title: __('Welcome to Frappe Suite'),
     subtitle: __('Files, documents, mail and meetings for your whole team, in one place.'),
@@ -77,9 +109,21 @@ function back(): void {
   if (previous) step.value = previous
 }
 
+// The account, for an invited first Admin
+const account = reactive({ fullName: '', password: '' })
+const accountStep = useTemplateRef<InstanceType<typeof AccountSetupStep>>('accountStep')
+const accountState = computed(() => accountStep.value?.state ?? 'idle')
+const retryingAccount = computed(() => ['failed', 'signin-failed'].includes(accountState.value))
+
+/** Signed in now: the workspace's name and logo, which a signed-out page does not get. */
+async function onAccountReady(): Promise<void> {
+  const site = await client.query(api.suite.site.get).catch(() => null)
+  if (site) setWorkspace(site)
+  next()
+}
+
 // Workspace
 const workspaceForm = useTemplateRef<InstanceType<typeof WorkspaceBrandingForm>>('workspaceForm')
-const workspace = useQuery(api.suite.site.workspace)
 const timezone = ref(detectTimezone())
 const { timezoneOptions } = useTimezones()
 
@@ -204,7 +248,20 @@ onUnmounted(() => {
     :current="index - 1"
     :complete="step === 'ready'"
   >
-    <div v-if="step === 'workspace'" class="flex flex-col gap-4">
+    <AccountSetupStep
+      v-if="step === 'account' && invitation"
+      ref="accountStep"
+      v-model:full-name="account.fullName"
+      v-model:password="account.password"
+      :request-key="invitation.requestKey"
+      :email="invitation.account"
+      :backup-email="invitation.backupEmail"
+      inviter=""
+      :workspace-name="invitation.workspaceName || __('your workspace')"
+      @done="onAccountReady"
+    />
+
+    <div v-else-if="step === 'workspace'" class="flex flex-col gap-4">
       <WorkspaceBrandingForm ref="workspaceForm" @saved="next" />
       <Combobox
         v-model="timezone"
@@ -253,7 +310,7 @@ onUnmounted(() => {
     <dl v-else class="divide-y divide-outline-gray-2 rounded-6 bg-surface-gray-2 px-4">
       <div class="flex justify-between gap-4 py-3">
         <dt class="text-base text-ink-gray-5">{{ __('Workspace') }}</dt>
-        <dd class="truncate text-base text-ink-gray-8">{{ workspace.data?.workspace_name }}</dd>
+        <dd class="truncate text-base text-ink-gray-8">{{ workspaceName }}</dd>
       </div>
       <template v-if="cloud">
         <div class="flex justify-between gap-4 py-3">
@@ -290,11 +347,22 @@ onUnmounted(() => {
             icon-left="lucide-chevron-left"
             :label="__('Back')"
             :disabled="inviting || mailStep?.working || opening"
+            :class="{ invisible: step === 'account' && accountState !== 'idle' }"
             @click="back"
           />
           <div class="flex items-center gap-2">
             <Button
-              v-if="step === 'mail'"
+              v-if="step === 'account'"
+              data-primary
+              variant="solid"
+              :label="retryingAccount ? __('Try again') : __('Create account')"
+              :icon-right="retryingAccount ? undefined : 'lucide-chevron-right'"
+              :loading="accountState === 'working' || accountState === 'ready'"
+              :disabled="!accountStep?.canSubmit"
+              @click="accountStep?.submit()"
+            />
+            <Button
+              v-else-if="step === 'mail'"
               data-primary
               variant="solid"
               :label="mailOnboarding.data?.ready ? __('Continue') : __('Create mailbox')"

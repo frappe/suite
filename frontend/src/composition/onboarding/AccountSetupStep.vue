@@ -1,7 +1,8 @@
 <!--
   The account an invited person creates: their name and password, then one
   request that makes their Drive, their mailbox and their account, and a sign-in.
-  The name and password are models, so going back to the invitation keeps them.
+  The name and password are models, so going back a step keeps them. The join
+  flow and the first Admin's wizard both use it.
 -->
 <script setup lang="ts">
 import { ErrorMessage, FormControl } from 'frappe-ui'
@@ -11,7 +12,7 @@ import { api, useMutation, useQuery } from '@/api'
 import { useSession } from '@/platform/session'
 import { TransportError } from '@/platform/transport'
 
-import { browserAccountDefaults, firstName, splitName } from './onboarding'
+import { type AccountSetupState, browserAccountDefaults, firstName, splitName } from './onboarding'
 
 const { requestKey, email, backupEmail, inviter, workspaceName } = defineProps<{
   requestKey: string
@@ -38,8 +39,7 @@ function failedStage(type: string): SetupStage | undefined {
   if (type === 'AccountActivationFailed') return 'account'
   return undefined
 }
-/** `signin-failed`: the account exists, but signing in to it did not work, so only that is retried. */
-const setupState = ref<'idle' | 'working' | 'failed' | 'ready' | 'signin-failed'>('idle')
+const setupState = ref<AccountSetupState>('idle')
 const rows = reactive<Record<SetupStage, RowState>>({
   drive: 'waiting',
   mailbox: 'waiting',

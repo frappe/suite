@@ -60,6 +60,8 @@ class AccountRequest(TypedDict):
     invited_by_image: str | None
     invited_by_email: str
     is_admin: Flag
+    # The site's first Admin: the invitation opens the site wizard, which creates the account.
+    sets_up_site: Flag
     # UTC, like every other timestamp the client reads.
     expires_at: str | None
 

@@ -471,6 +471,7 @@ export const operationGetAccountRequest: Validators<
               },
               invited_by_email: { title: 'Invited By Email', type: 'string' },
               is_admin: { enum: [0, 1], title: 'Is Admin', type: 'integer' },
+              sets_up_site: { enum: [0, 1], title: 'Sets Up Site', type: 'integer' },
               expires_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Expires At' },
             },
             required: [
@@ -484,6 +485,7 @@ export const operationGetAccountRequest: Validators<
               'invited_by_image',
               'invited_by_email',
               'is_admin',
+              'sets_up_site',
               'expires_at',
             ],
             title: 'AccountRequest',

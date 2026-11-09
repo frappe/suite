@@ -24,6 +24,35 @@ export function needsSiteSetup(site: { isOnboarded: boolean; canOnboard: boolean
   return site.canOnboard && !site.isOnboarded
 }
 
+/** Where creating an account stands. `signin-failed`: it exists, but signing in to it did not work. */
+export type AccountSetupState = 'idle' | 'working' | 'failed' | 'ready' | 'signin-failed'
+
+/** The account step's title and subtitle, which follow the setup. `inviter` is a name, or empty. */
+export function accountHeading(
+  state: AccountSetupState,
+  inviter: string,
+): { title: string; subtitle: string } {
+  switch (state) {
+    case 'idle':
+      return { title: __('Create your account'), subtitle: __('Your name is what teammates see.') }
+    case 'working':
+      return { title: __('Setting up your account'), subtitle: __('This takes a few seconds.') }
+    case 'failed':
+      return {
+        title: __("Setup didn't finish"),
+        subtitle: inviter
+          ? __('Nothing you entered is lost. Try again, or tell {0} if it keeps failing.', [
+              firstName(inviter),
+            ])
+          : __('Nothing you entered is lost. Try again.'),
+      }
+    case 'ready':
+      return { title: __('Your account is ready'), subtitle: __('One moment.') }
+    case 'signin-failed':
+      return { title: __('Your account is ready'), subtitle: __('Sign in to continue.') }
+  }
+}
+
 export function firstName(fullName: string): string {
   return fullName.trim().split(/\s+/)[0] ?? ''
 }

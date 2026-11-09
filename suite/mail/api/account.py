@@ -120,6 +120,9 @@ def get_account_request(request_key: str) -> dict | None:
             "is_verified": doc.is_verified,
             "is_expired": cint(doc.is_expired),
             "is_admin": cint(doc.is_admin),
+            "sets_up_site": cint(
+                doc.is_admin and not frappe.db.get_single_value("Suite Settings", "is_onboarded")
+            ),
             "expires_at": to_utc_z(doc.expires_at),
             **doc.invitation,
         }

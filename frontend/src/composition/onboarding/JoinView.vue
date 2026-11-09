@@ -10,8 +10,8 @@
     temporary, then the welcome steps.
 
   A site's first Admin is invited this way too: Suite Cloud invites the person
-  who signed up. Once their account exists they leave for the site wizard
-  (`/suite/setup`), which is their welcome.
+  who signed up. Their invitation opens the site wizard instead, which creates
+  their account as one of its steps.
 
   The temporary password stays in memory from the sign-in to the password
   step, so changing it needs no other proof. After a reload the password step
@@ -26,15 +26,31 @@ import { useSession } from '@/platform/session'
 import SuiteMark from '@/shell/SuiteMark.vue'
 
 import AccountSetupStep from './AccountSetupStep.vue'
-import { daysUntil, firstName, isTeammate, MOD_KEY, needsSiteSetup } from './onboarding'
+import {
+  accountHeading,
+  daysUntil,
+  firstName,
+  isTeammate,
+  MOD_KEY,
+  needsSiteSetup,
+} from './onboarding'
 import OnboardingFrame from './OnboardingFrame.vue'
 import PasswordStep from './PasswordStep.vue'
 import ShortcutStep from './ShortcutStep.vue'
+import SetupView, { type SetupInvitation } from './SetupView.vue'
 import SignInStep from './SignInStep.vue'
 import WorkspaceMark from './WorkspaceMark.vue'
 
 type Step =
-  'loading' | 'invitation' | 'expired' | 'account' | 'signin' | 'password' | 'shortcut' | 'ready'
+  | 'loading'
+  | 'invitation'
+  | 'expired'
+  | 'account'
+  | 'signin'
+  | 'password'
+  | 'shortcut'
+  | 'ready'
+  | 'site-setup'
 
 const { requestKey } = defineProps<{ requestKey?: string }>()
 
@@ -53,6 +69,7 @@ const workspaceLogo = computed(
 const inviter = computed(() => invitation.value?.invited_by_name || '')
 
 const step = ref<Step>('loading')
+const ownerInvitation = ref<SetupInvitation>()
 /** How this person arrived, which sets the steps the track counts. */
 const arrival = ref<'invitation' | 'temporary-password' | 'signed-in'>('signed-in')
 const order = computed<Step[]>(() => {
@@ -73,6 +90,7 @@ watch(
       startedFor = requestKey
       step.value = 'loading'
       arrival.value = 'signed-in'
+      ownerInvitation.value = undefined
     }
     if (step.value !== 'loading') return
     if (session.status.value === 'loading') return
@@ -93,6 +111,16 @@ watch(
       window.location.replace(SIGN_IN)
     } else if (!data || data.is_expired || !(data.account || data.backup_email)) {
       step.value = 'expired'
+    } else if (data.sets_up_site && requestKey) {
+      // The site's first Admin: the setup wizard, which creates their account as one of its steps.
+      // A copy, because the invitation is asked for only while signed out.
+      ownerInvitation.value = {
+        requestKey,
+        account: data.account ?? '',
+        backupEmail: data.backup_email ?? '',
+        workspaceName: data.workspace_name,
+      }
+      step.value = 'site-setup'
     } else {
       arrival.value = 'invitation'
       step.value = 'invitation'
@@ -132,7 +160,10 @@ const accountStep = useTemplateRef<InstanceType<typeof AccountSetupStep>>('accou
 const setupState = computed(() => accountStep.value?.state ?? 'idle')
 const retrying = computed(() => ['failed', 'signin-failed'].includes(setupState.value))
 
-/** After the account: a site that is not set up yet goes to the wizard, which is the first Admin's welcome. */
+/**
+ * After the account: a site that is not set up yet goes to the wizard. The first Admin's invitation
+ * opens the wizard already; this catches a page that loaded without the site's state (no boot data).
+ */
 async function onAccountReady(): Promise<void> {
   // Asked again now: the page loaded before this person signed in.
   const site = await client.query(api.suite.site.get).catch(() => null)
@@ -255,27 +286,7 @@ const copy = computed(() => {
         subtitle: __('Use your work email and the temporary password your Admin gave you.'),
       }
     case 'account':
-      return {
-        idle: {
-          title: __('Create your account'),
-          subtitle: __('Your name is what teammates see.'),
-        },
-        working: {
-          title: __('Setting up your account'),
-          subtitle: __('This takes a few seconds.'),
-        },
-        failed: {
-          title: __("Setup didn't finish"),
-          subtitle: __('Nothing you entered is lost. Try again, or tell {0} if it keeps failing.', [
-            admin ? firstName(admin) : __('your Admin'),
-          ]),
-        },
-        ready: { title: __('Your account is ready'), subtitle: __('One moment.') },
-        'signin-failed': {
-          title: __('Your account is ready'),
-          subtitle: __('Sign in to continue.'),
-        },
-      }[setupState.value]
+      return accountHeading(setupState.value, admin)
     case 'password':
       return {
         title: __('Choose your own password'),
@@ -301,8 +312,10 @@ const copy = computed(() => {
 </script>
 
 <template>
+  <SetupView v-if="step === 'site-setup' && ownerInvitation" :invitation="ownerInvitation" />
+
   <!-- Arrival pages: centred, in the workspace's name. -->
-  <div v-if="centred" class="flex h-full flex-col items-center overflow-auto bg-surface-base px-4">
+  <div v-else-if="centred" class="flex h-full flex-col items-center overflow-auto bg-surface-base px-4">
     <div
       v-if="step !== 'loading'"
       class="flex w-full max-w-xs flex-1 flex-col items-center justify-center py-16"

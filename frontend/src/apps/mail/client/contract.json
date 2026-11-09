@@ -122,6 +122,14 @@
                 "title": "Is Admin",
                 "type": "integer"
               },
+              "sets_up_site": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "Sets Up Site",
+                "type": "integer"
+              },
               "expires_at": {
                 "anyOf": [
                   {
@@ -145,6 +153,7 @@
               "invited_by_image",
               "invited_by_email",
               "is_admin",
+              "sets_up_site",
               "expires_at"
             ],
             "title": "AccountRequest",
