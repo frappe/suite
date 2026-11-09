@@ -4,6 +4,8 @@ Opening a link only asks the person to continue; the button spends the key. Emai
 previews open links before the person does, and would otherwise use the key up.
 """
 
+import pickle
+
 import frappe
 from frappe import _
 
@@ -30,10 +32,18 @@ def find_sign_in_user(key: str) -> str | None:
 
 
 def use_sign_in_key(key: str) -> str | None:
-    """Spend a key from `sign_in_link`: return its user, as `find_sign_in_user` does, and end the key."""
+    """Spend a key from `sign_in_link`: return its user, as `find_sign_in_user` does, and end the key.
 
-    user = find_sign_in_user(key)
-    frappe.cache.delete_value(_cache_key(key))
+    Reading and deleting the key is one Redis GETDEL, so two requests that spend the same key at
+    once cannot both get its user.
+    """
+
+    redis_key = frappe.cache.make_key(_cache_key(key))
+    frappe.local.cache.pop(redis_key, None)
+    stored = frappe.cache.getdel(redis_key)
+    user = pickle.loads(stored) if stored is not None else None
+    if not user or not frappe.db.exists("User", {"name": user, "enabled": 1}):
+        return None
     return user
 
 
