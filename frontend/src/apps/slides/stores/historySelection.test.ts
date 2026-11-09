@@ -14,7 +14,7 @@ const element = { id: 1, type: 'image', left: 64, top: 378, width: 620, height: 
 
 describe('selection after an element disappears', () => {
   beforeEach(() => {
-    slides.value = [{ clientId: slideId, elements: [] }] as any
+    slides.value = [{ clientId: slideId, elements: [] }]
     slideIndex.value = 0
     activeElementIds.value = []
     focusElementId.value = null

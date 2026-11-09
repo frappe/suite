@@ -182,9 +182,7 @@ export class E2EEEpochRelay {
 		const socketIds = this.fullAccessSockets.get(roomId);
 		if (!socketIds) return;
 		for (const socketId of socketIds) {
-			const socket = this.io.sockets.sockets.get(socketId) as
-				| TypedSocket
-				| undefined;
+			const socket = this.io.sockets.sockets.get(socketId);
 			const peerId = socket?.peerId ?? socket?.participantId;
 			if (!peerId || socket?.senderId === excludedSenderId) continue;
 			this.emitToTarget(roomId, peerId, {
@@ -242,7 +240,7 @@ export class E2EEEpochRelay {
 		void this.persistence.clearRoom(roomId).catch((error: unknown) => {
 			loggers.socketHandler.warn(
 				'e2ee coordinator clear failed: %s',
-				(error as Error).message,
+				error instanceof Error ? error.message : String(error),
 			);
 		});
 	}
@@ -378,7 +376,7 @@ export class E2EEEpochRelay {
 		} catch (error) {
 			loggers.socketHandler.warn(
 				'e2ee:epoch relay failed: %s',
-				(error as Error).message,
+				error instanceof Error ? error.message : String(error),
 			);
 			socket.emit('sfu_error', {
 				error: 'Failed to process encrypted epoch message',
@@ -773,7 +771,7 @@ export class E2EEEpochRelay {
 					loggers.socketHandler.warn(
 						'Batch commit request failed for room %s: %s',
 						roomId,
-						(error as Error).message,
+						error instanceof Error ? error.message : String(error),
 					);
 				});
 			}, COMMIT_REQUEST_BATCH_MS);
@@ -800,7 +798,7 @@ export class E2EEEpochRelay {
 					loggers.socketHandler.warn(
 						'Batch commit request failed for room %s: %s',
 						roomId,
-						(error as Error).message,
+						error instanceof Error ? error.message : String(error),
 					);
 				});
 			}, COMMIT_REQUEST_BATCH_MS),
@@ -1343,7 +1341,7 @@ export class E2EEEpochRelay {
 				loggers.socketHandler.warn(
 					'Failed to remove unreachable roster entry for senderId %d: %s',
 					picked.senderId,
-					(error as Error).message,
+					error instanceof Error ? error.message : String(error),
 				);
 			}
 			excluded.add(picked.senderId);
@@ -1375,9 +1373,7 @@ export class E2EEEpochRelay {
 				this.participantToSender.get(roomId)?.entries() ?? [],
 			),
 			roomSockets: roomSocketIds.map((socketId) => {
-				const socket = this.io.sockets.sockets.get(socketId) as
-					| TypedSocket
-					| undefined;
+				const socket = this.io.sockets.sockets.get(socketId);
 				return {
 					socketId,
 					participantId: socket?.participantId ?? null,

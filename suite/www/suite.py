@@ -3,7 +3,7 @@ import os
 import frappe
 from frappe.core.api.file import get_max_file_size
 
-from suite import __version__
+from suite import __version__, drive
 from suite.api.account import get_onboarding_state, get_workspace
 
 no_cache = 1
@@ -15,7 +15,7 @@ def get_boot_data() -> dict:
     context = frappe._dict()
     get_context(context)
     frappe.local.response_headers["Cache-Control"] = "no-store"
-    return context.boot
+    return {**context.boot, "desk_theme": context.desk_theme}
 
 
 def get_context(context):
@@ -43,7 +43,8 @@ def get_context(context):
 
 def get_desk_theme():
     if frappe.session.user == "Guest":
-        return "Light"
+        # A public reader has no saved preference, so the page follows their system.
+        return "Automatic"
     return frappe.get_cached_value("User", frappe.session.user, "desk_theme") or "Light"
 
 
@@ -57,9 +58,11 @@ def get_boot():
     if frappe.session.user == "Guest":
         onboarding_state = {"is_onboarded": False, "can_onboard": False}
         workspace = {"workspace_name": "", "workspace_logo": ""}
+        drive_roots = None
     else:
         onboarding_state = get_onboarding_state()
         workspace = get_workspace()
+        drive_roots = drive.root_locations()
 
     return frappe._dict(
         {
@@ -86,5 +89,8 @@ def get_boot():
             # refuses a larger file before it opens a session; the server
             # still decides.
             "max_file_size": get_max_file_size(),
+            # The caller's Files locations, as `GET /api/suite/drive/roots` answers them,
+            # so Drive opens My files without waiting for that request.
+            "drive_roots": drive_roots,
         }
     )

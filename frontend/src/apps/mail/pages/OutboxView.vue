@@ -147,10 +147,11 @@ import { appPageMeta } from '@/platform/page-meta'
 usePageMeta(() => appPageMeta(__('Outbox'), 'Mail'))
 const store = userStore()
 const router = useRouter()
-const socket = inject('$socket') as {
+const socket = inject<{
   on: (event: string, handler: () => void) => void
   off: (event: string, handler: () => void) => void
-}
+}>('$socket')
+if (!socket) throw new Error('Missing required socket provider')
 const { isMobile } = useScreenSize()
 const selected = ref<Submission | null>(null)
 const showReschedule = ref(false)

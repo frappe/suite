@@ -8,6 +8,7 @@ and checks access through Drive. The scheduler and the queue run
 `suite.content.jobs`.
 """
 
+from suite.content.compaction import content_json
 from suite.content.copies import readable_copy
 from suite.content.editors import Conversion, EditorSpec, HtmlCopy, MediaReferences
 from suite.content.ingest import EditorSchema
@@ -70,6 +71,7 @@ __all__ = [
     "begin_restore",
     "cancel_restore",
     "claim_session",
+    "content_json",
     "copy",
     "enabled",
     "encode_frame",

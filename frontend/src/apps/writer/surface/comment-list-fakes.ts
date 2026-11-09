@@ -1,6 +1,10 @@
 import { nextTick } from 'vue'
 
-export const confirmed = { asked: [] as string[], answer: true }
+interface ConfirmationFixture {
+  asked: string[]
+  answer: boolean
+}
+export const confirmed: ConfirmationFixture = { asked: [], answer: true }
 
 export interface ShownToast {
   message: string
@@ -12,6 +16,30 @@ export const toasts: ShownToast[] = []
 export const warnings: string[] = []
 export const errors: string[] = []
 export const me = { id: 'Asha Rao' }
+
+// Who can't open the document, and who of them are blocked from it
+interface AccessFixture {
+  locked: string[]
+  blocked: string[]
+}
+export const access: AccessFixture = { locked: [], blocked: [] }
+
+export function fakeWriterDrive() {
+  return {
+    peopleWithoutAccess: async (_node: string, users: string[]) =>
+      users.flatMap((user) =>
+        access.locked.includes(user)
+          ? [
+              {
+                name: user,
+                label: user.split('@')[0],
+                is_blocked: access.blocked.includes(user),
+              },
+            ]
+          : [],
+      ),
+  }
+}
 
 export async function fakeSession() {
   const { computed: derive } = await import('vue')
@@ -27,11 +55,11 @@ export async function fakeSession() {
 
 export async function fakeUsers() {
   const { shallowRef } = await import('vue')
-  const names: Record<string, string> = { 'ben@x.com': 'Ben Roy' }
+  const names = new Map<string, string>(Object.entries({ 'ben@x.com': 'Ben Roy' }))
   return {
     useUsers: () => ({ users: shallowRef([]), answeredQuery: shallowRef('') }),
     searchMentions: () => {},
-    fullName: (user: string) => names[user] ?? user,
+    fullName: (user: string) => names.get(user) ?? user,
     lookUp: async () => {},
   }
 }
@@ -62,7 +90,11 @@ export async function fakeFrappeUi() {
         const field = state<HTMLInputElement | null>(null)
         expose({ focus: () => field.value?.focus() })
         function write(event: Event) {
-          emit('update:modelValue', (event.target as HTMLInputElement).value)
+          if (
+            event.target instanceof HTMLInputElement ||
+            event.target instanceof HTMLTextAreaElement
+          )
+            emit('update:modelValue', event.target.value)
         }
 
         return () => render(tag, { ref: field, value: props.modelValue, onInput: write })
@@ -71,6 +103,7 @@ export async function fakeFrappeUi() {
   }
 
   return {
+    toast: { error: (message: string) => errors.push(message) },
     Avatar: define({
       props: { image: String, label: String },
       setup: (props) => () =>
@@ -89,8 +122,8 @@ export async function fakeFrappeUi() {
           ),
     }),
     // Shows the menu's items beside its button, as if it were open; a pick reports closing a tick later
-    Dropdown: define({
-      props: { options: Array as () => { label: string; onClick: () => void }[] },
+    Dropdown: define<{ options?: { label: string; onClick: () => void }[] }>({
+      props: ['options'],
       emits: ['update:open'],
       setup:
         (props, { emit, slots }) =>

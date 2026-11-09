@@ -174,11 +174,15 @@ export const routes: RouteRecordRaw[] = [
 
 export function areaPlaceholderNames(areaId: string): string[] {
   return canonicalRoutes
-    .map((route) => ({
-      name: String(route.name ?? ''),
-      area: route.meta?.area,
-    }))
-    .filter((route) => route.area === areaId && route.name.startsWith('area-placeholder-'))
+    .flatMap((route) => {
+      const mappedValue = {
+        name: String(route.name ?? ''),
+        area: route.meta?.area,
+      }
+      return mappedValue.area === areaId && mappedValue.name.startsWith('area-placeholder-')
+        ? [mappedValue]
+        : []
+    })
     .map((route) => route.name)
 }
 

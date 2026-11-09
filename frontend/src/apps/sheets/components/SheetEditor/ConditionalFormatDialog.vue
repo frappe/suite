@@ -231,8 +231,8 @@ interface CfRule {
 /** The part of the conditional-format engine the dialog uses. */
 interface CondFormatEngine {
   getRules(sheet: string): CfRule[]
-  addRule(rule: object, sheet: string): unknown
-  updateRule(id: number, rule: object, sheet: string): unknown
+  addRule(rule: Omit<CfRule, 'id'>, sheet: string): unknown
+  updateRule(id: number, rule: Omit<CfRule, 'id'>, sheet: string): unknown
   removeRule(id: number, sheet: string): unknown
 }
 
@@ -249,6 +249,8 @@ const emit = defineEmits<{ 'before-change': []; changed: [] }>()
 
 const cfDialog = reactive({
   open: false,
+  // SAFETY: The empty default is a member of the numeric-id-or-null state;
+  // widening it lets subsequent typed edits select a rule id.
   editId: null as number | null,
   range: {
     r0: 0,
@@ -478,25 +480,13 @@ function _buildCfRule() {
     }
   }
   // Classic single-colour rule.
+  const format: NonNullable<CfRule['format']> = {}
+  if (cfDialog.fmtColor) format.color = cfDialog.fmtColor
+  if (cfDialog.fmtBg && cfDialog.fmtBg !== '#ffffff') format.backgroundColor = cfDialog.fmtBg
   return {
     range,
-    condition: {
-      type: cfDialog.condType,
-      value: cfDialog.condValue,
-      value2: cfDialog.condValue2,
-    },
-    format: {
-      ...(cfDialog.fmtColor
-        ? {
-            color: cfDialog.fmtColor,
-          }
-        : {}),
-      ...(cfDialog.fmtBg && cfDialog.fmtBg !== '#ffffff'
-        ? {
-            backgroundColor: cfDialog.fmtBg,
-          }
-        : {}),
-    },
+    condition: { type: cfDialog.condType, value: cfDialog.condValue, value2: cfDialog.condValue2 },
+    format,
   }
 }
 function saveCfRule() {

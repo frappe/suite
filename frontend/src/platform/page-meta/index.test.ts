@@ -1,11 +1,23 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it, vi } from 'vitest'
 import { effectScope, nextTick, ref } from 'vue'
 
-import { applyRouteMeta, installPageMeta, openingTitleState, usePageTitle } from './index'
+import {
+  applyRouteMeta,
+  installPageMeta,
+  newDocumentState,
+  newDocumentType,
+  openingTitleState,
+  usePageTitle,
+} from './index'
 
 describe('page meta', () => {
   it('arbitrates title overrides and restores the route fallback', () => {
-    applyRouteMeta({ meta: { title: 'Files' } } as any)
+    applyRouteMeta(
+      fromPartial<import('vue-router').RouteLocationNormalizedLoadedGeneric>({
+        meta: { title: 'Files' },
+      }),
+    )
     expect(document.title).toBe('Files')
 
     const releaseFirst = usePageTitle(() => 'Folder')
@@ -18,7 +30,11 @@ describe('page meta', () => {
   })
 
   it('tracks a reactive view title and releases it with its Vue scope', async () => {
-    applyRouteMeta({ meta: { title: 'Files' } } as any)
+    applyRouteMeta(
+      fromPartial<import('vue-router').RouteLocationNormalizedLoadedGeneric>({
+        meta: { title: 'Files' },
+      }),
+    )
     const title = ref('Quarterly plan')
     const scope = effectScope()
     scope.run(() => usePageTitle(() => title.value))
@@ -41,7 +57,7 @@ describe('page meta', () => {
         return remove
       }),
     }
-    const uninstall = installPageMeta(router as any)
+    const uninstall = installPageMeta(fromPartial<Parameters<typeof installPageMeta>[0]>(router))
     expect(document.title).toBe('Home')
     afterEach?.({ meta: { title: 'Ignored' } }, {}, new Error('cancelled'))
     expect(document.title).toBe('Home')
@@ -52,12 +68,31 @@ describe('page meta', () => {
   })
 
   it('names the page from its history entry until the page names itself', () => {
-    applyRouteMeta({ meta: { title: 'Opening…' } } as any, openingTitleState('Q3 plan'))
+    applyRouteMeta(
+      fromPartial<import('vue-router').RouteLocationNormalizedLoadedGeneric>({
+        meta: { title: 'Opening…' },
+      }),
+      openingTitleState('Q3 plan'),
+    )
     expect(document.title).toBe('Q3 plan')
     const release = usePageTitle(() => 'Q3 plan (renamed)')
     expect(document.title).toBe('Q3 plan (renamed)')
     release()
-    applyRouteMeta({ meta: { title: 'Opening…' } } as any, openingTitleState(''))
+    applyRouteMeta(
+      fromPartial<import('vue-router').RouteLocationNormalizedLoadedGeneric>({
+        meta: { title: 'Opening…' },
+      }),
+      openingTitleState(''),
+    )
     expect(document.title).toBe('Opening…')
+  })
+
+  it('marks a document just created for ten seconds only', () => {
+    const state = newDocumentState('Writer Document', 1_000)
+    expect(newDocumentType(state, 1_000)).toBe('Writer Document')
+    expect(newDocumentType(state, 10_999)).toBe('Writer Document')
+    expect(newDocumentType(state, 11_000)).toBeNull()
+    expect(newDocumentType({}, 1_000)).toBeNull()
+    expect(newDocumentType({ newDocument: 'Writer Document' }, 1_000)).toBeNull()
   })
 })

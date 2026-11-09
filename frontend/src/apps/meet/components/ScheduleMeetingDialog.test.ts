@@ -1,6 +1,8 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick } from 'vue'
 
+import { requireTestElement } from '@/platform/testing/dom'
 import { TransportError } from '@/platform/transport'
 
 import ScheduleMeetingDialog from './ScheduleMeetingDialog.vue'
@@ -87,7 +89,7 @@ vi.mock('frappe-ui', () => ({
           value: props.modelValue,
           type: props.type || 'text',
           onInput: (event: Event) =>
-            emit('update:modelValue', (event.target as HTMLInputElement).value),
+            emit('update:modelValue', requireTestElement(event.target, HTMLInputElement).value),
         })
     },
   }),
@@ -114,7 +116,7 @@ async function mount() {
   document.body.append(root)
   const scheduled = vi.fn()
   const app = createApp(ScheduleMeetingDialog, { onScheduled: scheduled })
-  const dialog = app.mount(root) as unknown as { show: () => Promise<void> }
+  const dialog = fromPartial<InstanceType<typeof ScheduleMeetingDialog>>(app.mount(root))
   cleanup = () => {
     app.unmount()
     root.remove()

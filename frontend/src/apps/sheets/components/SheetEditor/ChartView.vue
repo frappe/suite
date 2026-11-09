@@ -70,6 +70,9 @@ const VChart = defineAsyncComponent(() => import('vue-echarts'))
 const props = defineProps({
   config: { type: Object, required: true },
   matrix: { type: Array, default: () => [] },
+  // The cells' number format codes, same shape as `matrix`: a scatter chart
+  // reads dates in its X column with them. Null when not read.
+  numFmts: { type: Array, default: null },
   width: { type: [Number, String], default: 480 },
   height: { type: [Number, String], default: 320 },
 })
@@ -117,11 +120,11 @@ let _rafId = 0
 // effect with zero deps after first run, and option toggles would silently
 // stop propagating to ECharts.
 watch(
-  [() => props.config, () => props.matrix, isDark],
+  [() => props.config, () => props.matrix, () => props.numFmts, isDark],
   () => {
     cancelAnimationFrame(_rafId)
     _rafId = requestAnimationFrame(() => {
-      option.value = buildOption(props.config, props.matrix, isDark.value)
+      option.value = buildOption(props.config, props.matrix, isDark.value, props.numFmts)
     })
   },
   { immediate: true, deep: true },

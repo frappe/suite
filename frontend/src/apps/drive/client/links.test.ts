@@ -13,13 +13,17 @@ function scoped<I, O>(reference: Operation<I, O>, input: I) {
 
 // The Drive server double. Installed before any import, so the platform
 // transport, and the link checks the store sends through it, use it too.
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
+type ServerReply = { status: number; body: unknown }
+
 const net = vi.hoisted(() => {
   const state = {
-    reply: (_path: string, _links: string | null): { status: number; body: unknown } => ({
+    reply: (_path: string, _links: string | null): ServerReply => ({
       status: 200,
       body: {},
     }),
-    sent: [] as Array<{ path: string; links: string | null }>,
+    sent: fromPartial<Array<{ path: string; links: string | null }>>([]),
   }
   globalThis.fetch = async (url: RequestInfo | URL, init?: RequestInit) => {
     const path = String(url).split('?')[0]!
@@ -336,7 +340,7 @@ describe('forgetting Drive link codes', () => {
 
   it('keeps links through sign-in, ignores the guest name while signed in, and clears all on sign out', async () => {
     const { transport, sent } = server()
-    const session = createSession({ request: async () => ({}) } as unknown as Transport)
+    const session = createSession(fromPartial<Transport>({ request: async () => ({}) }))
     const links = createLinkStore({ storage: localStorage, session })
     links.seed(code(1), 'shared')
     links.setGuestName('Ravi (Acme)')
@@ -355,7 +359,7 @@ describe('forgetting Drive link codes', () => {
 })
 
 describe('the stored copy', () => {
-  const session = () => createSession({ request: async () => ({}) } as unknown as Transport)
+  const session = () => createSession(fromPartial<Transport>({ request: async () => ({}) }))
   const headerFor = (links: ReturnType<typeof createLinkStore>, id: string) =>
     links.scope([id]).headers?.['X-Drive-Links'] ?? null
 
@@ -454,6 +458,28 @@ describe('the stored copy', () => {
     links.scope(['folder'], { returnsNodes: true }).settled?.({ ok: true, output: row('folder') })
 
     expect(headerFor(links, 'folder')).toBe(code(1))
+  })
+})
+
+describe('access partitions', () => {
+  const store = () =>
+    createLinkStore({
+      storage: memoryStorage(),
+      session: createSession(fromPartial<Transport>({ request: async () => ({}) })),
+      events: new EventTarget(),
+    })
+  it('keeps a read in its partition until access is invalidated, with or without a link code', () => {
+    const links = store()
+    links.seed(code(1), 'shared')
+    const mine = links.partition(['my-file'])
+    const shared = links.partition(['shared'])
+    expect(links.partition(['my-file'])).toBe(mine)
+    expect(links.partition(['shared'])).toBe(shared)
+
+    links.invalidateAccess()
+
+    expect(links.partition(['my-file'])).not.toBe(mine)
+    expect(links.partition(['shared'])).not.toBe(shared)
   })
 })
 

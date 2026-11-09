@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it, vi } from 'vitest'
 
 import { rowDropHandlers, useUploadDrop } from './drop'
@@ -7,14 +8,14 @@ function fileDrag(type: 'dragover' | 'drop') {
   const file = new File(['x'], 'x.txt')
   const dataTransfer = {
     types: ['Files'],
-    dropEffect: 'copy',
+    dropEffect: 'copy' as const,
     items: [{ kind: 'file', webkitGetAsEntry: () => null, getAsFile: () => file }],
   }
   const event = Object.assign(new Event(type, { bubbles: true, cancelable: true }), {
     dataTransfer,
   })
   const stopped = vi.spyOn(event, 'stopPropagation')
-  return { event: event as unknown as DragEvent, dataTransfer, stopped }
+  return { event: fromPartial<DragEvent>(event), dataTransfer, stopped }
 }
 
 const row = (kind: string, role: number, state = 'Active') => ({

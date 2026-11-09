@@ -41,7 +41,7 @@ export function createRealtime(options: CreateRealtimeOptions = {}): Realtime {
     if (instance) return instance
     const targetWindow = options.window ?? window
     const siteName = options.siteName ?? resolveSiteName(targetWindow)
-    const factory = options.io ?? (io as unknown as CreateRealtimeOptions['io'])!
+    const factory = options.io ?? io
     instance = factory(resolveSocketUrl(targetWindow, siteName, options.socketioPort), {
       withCredentials: true,
       transports: ['websocket', 'polling'],
@@ -60,8 +60,8 @@ export function createRealtime(options: CreateRealtimeOptions = {}): Realtime {
 
   function subscribe<T>(event: string, handler: (payload: T) => void): () => void {
     const active = socket()
-    active.on(event, handler as (...args: any[]) => void)
-    return once(() => active.off(event, handler as (...args: any[]) => void))
+    active.on(event, handler)
+    return once(() => active.off(event, handler))
   }
 
   function onReconnect(handler: () => void): () => void {

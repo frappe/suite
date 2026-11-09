@@ -18,7 +18,6 @@ const METHODS_CALLED = ['success', 'error', 'promise', 'dismiss'] as const
 
 describe('frappe-ui toast', () => {
   it('still has every method the toast helpers call', () => {
-    for (const method of METHODS_CALLED)
-      expect(typeof (toast as unknown as Record<string, unknown>)[method]).toBe('function')
+    for (const method of METHODS_CALLED) expect(typeof toast[method]).toBe('function')
   })
 })

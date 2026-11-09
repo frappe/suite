@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+
 import { expect, test } from "../../fixtures/test";
 import { discardNode, row, uniqueName, uploadViaUi, waitForChild } from "../../helpers/drive";
 
@@ -25,7 +26,8 @@ test("uploads, previews and downloads a text file", async ({ owner, run }) => {
 	// Download is a plain link to the content endpoint, opened in a new tab; fetch what it points at.
 	const href = await page.getByRole("link", { name: "Download", exact: true }).getAttribute("href");
 	expect(href).toContain(`/nodes/${file.name}/content`);
-	const downloaded = await page.request.get(href as string);
+	if (!href) throw new Error("Expected a download URL");
+	const downloaded = await page.request.get(href);
 	expect(downloaded.ok()).toBe(true);
 	expect(downloaded.headers()["content-disposition"]).toContain(fileName);
 	expect((await downloaded.text()).trim()).toBe(fixtureContent);

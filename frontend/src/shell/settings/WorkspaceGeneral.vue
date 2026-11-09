@@ -61,7 +61,7 @@ import { Avatar, Dropdown, ErrorMessage, FileUploader, toast } from 'frappe-ui'
 import { ref, watch } from 'vue'
 
 import { api, useMutation } from '@/api'
-import { useWorkspace } from '@/shell/useWorkspace'
+import { useWorkspace } from '@/platform/workspace'
 
 const AUTOSAVE_TOAST_ID = 'suite-workspace-autosave'
 

@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 // The selection frame, the range outline and the fill handle are all centred
 // on the gridline, which is drawn on the pixel after the integer cell edge
 // (edge + 0.5). The frame is 1.5px, so it reaches past the gridline by the
@@ -143,7 +144,7 @@ describe('range outline', () => {
     }
     const geo = createMockGeo()
     geo.frozenH = vi.fn(() => 24)
-    createRenderer(ctx as never, geo as never).render({
+    createRenderer(fromPartial(ctx), fromPartial(geo)).render({
       cssW: 600,
       cssH: 300,
       getValue: () => '',
@@ -176,7 +177,7 @@ describe('range outline', () => {
     }
     const geo = createMockGeo()
     geo.frozenW = vi.fn(() => frozenCols * 100)
-    createRenderer(ctx as never, geo as never).render({
+    createRenderer(fromPartial(ctx), fromPartial(geo)).render({
       cssW: 600,
       cssH: 300,
       getValue: () => '',
@@ -193,7 +194,7 @@ describe('range outline', () => {
       colDrag: null,
       zoom: 1,
     })
-    return strokes.filter((s) => s.lineWidth === 1).map((s) => s.rect)
+    return strokes.flatMap((s) => (s.lineWidth === 1 ? [s.rect] : []))
   }
 
   it('outlines a whole-row selection across every column', () => {
@@ -274,7 +275,7 @@ describe('selection fill', () => {
         tints.push(rect)
       }
     }
-    createRenderer(ctx as never, createMockGeo() as never).render({
+    createRenderer(fromPartial(ctx), fromPartial(createMockGeo())).render({
       cssW: 600,
       cssH: 300,
       getValue: () => 'x',

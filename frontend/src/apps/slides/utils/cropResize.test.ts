@@ -86,12 +86,12 @@ describe('resizeCrop composed with getResizedBox', () => {
   })
 })
 
-const MIRROR: Record<string, string> = {
+const MIRROR = {
   left: 'right',
   right: 'left',
   top: 'bottom',
   bottom: 'top',
-}
+} satisfies Record<string, string>
 
 const mirrorHandle = (handle: string, config: { invertX: number; invertY: number }) =>
   handle

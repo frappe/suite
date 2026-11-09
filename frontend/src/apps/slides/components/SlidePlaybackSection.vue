@@ -2,11 +2,11 @@
   <Section label="Playback">
     <PropertyRow label="Advance">
       <Select
-        :modelValue="advancesAutomatically ? 'after delay' : 'on click'"
+        :model-value="advanceMode"
         variant="ghost"
         :options="advanceOptions"
         class="-me-1"
-        @update:modelValue="setAdvance"
+        @update:model-value="setAdvance"
       >
         <template #trigger="{ selectedOption }">
           <span :class="selectValueClasses">{{ selectedOption?.label }}</span>
@@ -17,13 +17,13 @@
 
     <NumberControl
       v-if="advancesAutomatically"
-      :modelValue="parseFloat(currentSlide.advanceAfter)"
+      :model-value="advanceSeconds(currentSlide.advanceAfter)"
       :label="waitsForVideo ? 'Delay after video' : 'Delay'"
       suffix="s"
       :min="1"
       :max="3600"
       :max-digits="4"
-      @update:modelValue="delay.set"
+      @update:model-value="delay.set"
       @change-start="delay.begin"
       @change-end="delay.commit"
     />
@@ -46,6 +46,7 @@ import Section from '@/apps/slides/components/controls/Section.vue'
 import { pushSlideCommands, useSlideProperty } from '@/apps/slides/composables/editProperty'
 import { editSlideCommand } from '@/apps/slides/stores/commands'
 import { currentSlide, slides } from '@/apps/slides/stores/slide'
+import { advanceSeconds } from '@/apps/slides/utils/advanceAfter'
 import { chevronClasses, selectValueClasses } from '@/apps/slides/utils/constants'
 
 const DEFAULT_DELAY = 5
@@ -57,7 +58,11 @@ const advanceOptions = [
 
 const delay = useSlideProperty('advanceAfter')
 
-const advancesAutomatically = computed(() => parseFloat(currentSlide.value.advanceAfter) > 0)
+const advancesAutomatically = computed(
+  () => advanceSeconds(currentSlide.value.advanceAfter) !== null,
+)
+
+const advanceMode = computed(() => (advancesAutomatically.value ? 'after delay' : 'on click'))
 
 const waitsForVideo = computed(() =>
   currentSlide.value.elements.some((element) => element.type === 'video' && !element.loop),
@@ -86,7 +91,7 @@ const applyToAllSlides = () => {
 
   pushSlideCommands(commands)
 
-  const seconds = parseFloat(sourceSlide.advanceAfter)
+  const seconds = advanceSeconds(sourceSlide.advanceAfter)
   const timing = advancesAutomatically.value ? `after ${seconds}s` : 'on click'
   toast.success(`All slides advance ${timing}`)
 }

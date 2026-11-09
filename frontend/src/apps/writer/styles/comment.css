@@ -27,8 +27,16 @@ span[data-comment-name] {
   background: rgba(250, 204, 21, 0.25);
 }
 
-span[data-thread] {
+/* A comment being written marks its text as a posted one does. The underline tells a comment
+   from an amber highlight. */
+span[data-thread],
+span[data-comment-draft] {
   background: var(--surface-amber-2);
+  box-shadow: inset 0 -2px var(--ink-amber-5);
+}
+
+:root[data-theme='dark'] :is(span[data-thread], span[data-comment-draft]) {
+  color: var(--ink-gray-9);
 }
 
 span[data-thread].is-lit {
@@ -39,7 +47,8 @@ span[data-thread].is-open {
   background: var(--surface-amber-5);
 }
 
-[data-theme='dark'] span[data-thread].is-open {
+/* In dark mode amber-5 hides the underline and dims the text, so an open comment uses amber-4 */
+:root[data-theme='dark'] span[data-thread].is-open {
   background: var(--surface-amber-4);
 }
 
@@ -61,4 +70,11 @@ span[data-comment-name][data-resolved='true'] {
 span[data-comment-name][data-resolved='true']:hover,
 span[data-comment-name][data-resolved='true'].active {
   background: var(--surface-blue-2);
+}
+
+/* A reader who may not see the discussion sees no sign of it in the text */
+.writer-hides-comments :is(span[data-thread], span[data-comment-name]) {
+  border-bottom: 0;
+  background: none;
+  box-shadow: none;
 }

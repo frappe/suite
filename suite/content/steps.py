@@ -10,7 +10,19 @@ from frappe import _
 from frappe.query_builder import Table
 from frappe.query_builder.functions import Coalesce
 
-from suite.content import copies, jobs, live, log, restores, scheduling, sessions, stage, suspect, touches
+from suite.content import (
+    copies,
+    jobs,
+    live,
+    log,
+    restore_notice,
+    restores,
+    scheduling,
+    sessions,
+    stage,
+    suspect,
+    touches,
+)
 from suite.content.pushes import push, put_piece
 from suite.content.snapshot import read, rows_after, with_tombstones
 from suite.content.tables import table
@@ -31,6 +43,7 @@ def open_document(app: str, node: str, *, can_write: bool) -> bytes:
 
     doc = log.find(app, node)
     if doc is None:
+        jobs.request_conversion(app, node)
         return state_frame("unconverted")
 
     try:
@@ -97,7 +110,8 @@ def pull_rows(app: str, node: str, since_rev: str | None, q_epoch: str | None) -
 
     rows = rows_after(app, doc.id, max(after_rev, 0))
     scheduling.request_if_due(app, doc.id, jobs.COMPACT)
-    return encode_frame(pull_header(app, doc, epoch), rows)
+    notice = restore_notice.for_reader(app, doc.id, node)
+    return encode_frame({**pull_header(app, doc, epoch), **notice}, rows)
 
 
 def push_rows(node: str, body: bytes, authorize: Callable[[object], str]) -> tuple[int, dict]:
@@ -190,19 +204,21 @@ def begin_restore(app: str, node: str, body: dict) -> tuple[int, dict]:
     doc = logged_doc(app, node)
     seen_rev = body.get("seen_rev")
     version = body.get("version")
-    if type(seen_rev) is not int or type(version) is not int:
+    if type(seen_rev) is not int or type(version) is not int or version < 1:
         raise log.Refusal(400, "malformed")
 
+    restored = restore_notice.restored_version(node, version)
     fence = restores.begin(app, doc.id, seen_rev)
+    restore_notice.hold(app, doc.id, fence["token"], restored)
     if not fence["has_milestone"]:
-        take_milestone(app, doc.id, node, version, fence)
+        label = restore_notice.before_restoring_label(restored, version)
+        take_milestone(app, doc.id, node, label, fence)
 
     return 200, {"token": fence["token"], "base_rev": fence["base_rev"], "fence_ms": fence["fence_ms"]}
 
 
-def take_milestone(app: str, doc_id: str, node: str, version: int, fence: dict) -> None:
+def take_milestone(app: str, doc_id: str, node: str, label: str, fence: dict) -> None:
     """Nothing is restored without a version of the head first; a refused one lifts the fence."""
-    label = _("Before restoring version {0}").format(version)
     try:
         touches.version_body(node, "milestone", label)
         restores.milestone_taken(app, doc_id, fence["head_chain"])

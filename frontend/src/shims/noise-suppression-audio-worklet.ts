@@ -67,7 +67,7 @@ function addModuleOnce(context: AudioWorkletCapableContext, moduleUrl: string): 
   let pending = byUrl.get(moduleUrl)
   if (pending) return pending
   // Drop failed loads from the cache so a missing file / transient fetch
-  // error can succeed on a later call (e.g. after prebuild copies the asset).
+  // error can succeed on a later call (e.g. after the build copies the asset).
   pending = context.audioWorklet.addModule(moduleUrl).catch((err) => {
     byUrl.delete(moduleUrl)
     throw err
@@ -87,15 +87,22 @@ function waitForReady(
     }, timeoutMs)
 
     const onMessage = (event: MessageEvent) => {
-      const data = event.data as { type?: string; message?: string }
+      const data: unknown = event.data
+      if (!data || typeof data !== 'object' || !('type' in data)) return
       if (data?.type === 'ready') {
         cleanup()
-        resolve(data as NoiseSuppressionAudioWorkletReadyMessage)
+        resolve({ ...data, type: 'ready' })
         return
       }
       if (data?.type === 'error') {
         cleanup()
-        reject(new Error(data.message || 'Noise suppression worklet error'))
+        reject(
+          new Error(
+            'message' in data && typeof data.message === 'string' && data.message
+              ? data.message
+              : 'Noise suppression worklet error',
+          ),
+        )
       }
     }
 

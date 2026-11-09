@@ -73,3 +73,34 @@ describe('in-cell editor stays pinned to its cell', () => {
     expect(h.editor().style.display).toBe('none')
   })
 })
+
+describe('in-cell editor opens on the box the grid draws the cell in', () => {
+  it('covers a whole merge and keeps a number right-aligned', () => {
+    document.body.innerHTML = ''
+    const parent = document.createElement('div')
+    const canvas = document.createElement('canvas')
+    vi.spyOn(canvas, 'getContext').mockReturnValue(createMockCtx())
+    parent.appendChild(canvas)
+    document.body.appendChild(parent)
+    const grid = createGrid(canvas, {
+      cells: {
+        getStyle: () => ({}),
+        getMergeInfo: (id: string) => (id === 'A1' ? { colSpan: 2, rowSpan: 2 } : null),
+        isNumber: () => true,
+        getCondFormat: () => ({ bold: true }),
+      },
+      host: { canEdit: () => true },
+    })
+    grid.resize(800, 600)
+    grid.setCell('A1', 42)
+    canvas.dispatchEvent(new MouseEvent('dblclick', { clientX: 55, clientY: 30, bubbles: true }))
+    const el = parent.querySelector('textarea')!
+    const a1 = grid.getCellRect(0, 0)
+    const d2 = grid.getCellRect(1, 1)
+    // The border (1.5px) sits on the frame around the merge's outer gridlines.
+    expect(parseFloat(el.style.width)).toBeCloseTo(d2.x + d2.width - a1.x + 1.5, 3)
+    expect(parseFloat(el.style.height)).toBeCloseTo(d2.y + d2.height - a1.y + 1.5, 3)
+    expect(el.style.textAlign).toBe('right')
+    expect(el.style.fontWeight).toBe('bold')
+  })
+})

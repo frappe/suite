@@ -12,6 +12,7 @@ from suite.drive._core.errors import (
     DriveConflict,
     DriveNotFound,
     DriveOverQuota,
+    DriveStorageUnmeasured,
     rollback_savepoint,
 )
 from suite.drive._core.roots import validate_root_pair
@@ -122,7 +123,7 @@ def admit(root: str, delta: int, *, source_root: str | None = None) -> None:
 
 
 def _check_combined(root: str, delta: int, *, lock: bool, source_root: str | None = None) -> None:
-    from suite.suite_core.storage import check_addition, state
+    from suite.suite_core.storage import StorageUnmeasured, check_addition, state
 
     _, policy, measurements = state(lock=lock)
     # Current reads under a site lock prevent separate roots spending the same
@@ -149,6 +150,8 @@ def _check_combined(root: str, delta: int, *, lock: bool, source_root: str | Non
             site_drive=sum(int(row.used_bytes or 0) for row in rows),
             personal_drive=sum(int(row.used_bytes or 0) for row in rows if user and row.user == user),
         )
+    except StorageUnmeasured as exc:
+        raise DriveStorageUnmeasured(str(exc)) from exc
     except frappe.ValidationError as exc:
         raise DriveOverQuota(str(exc)) from exc
 

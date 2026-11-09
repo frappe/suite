@@ -64,6 +64,16 @@ describe('nodeActions', () => {
     ])
   })
 
+  it('offers Download of every Active kind to anyone who can read it, with or without a session', () => {
+    for (const kind of ['file', 'folder', 'document', 'link']) {
+      for (const signedIn of [true, false]) {
+        expect(
+          nodeActions(node(kind, 'Active', DRIVE_ROLES.read, 'token'), signedIn).download,
+        ).toBe(true)
+      }
+    }
+  })
+
   it('offers a commenting Suite Admin sharing, restore and delete forever, but no edits', () => {
     const admin = (state: string): ActionNode => ({
       ...node('file', state, DRIVE_ROLES.comment),

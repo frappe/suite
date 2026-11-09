@@ -55,8 +55,12 @@ class ProtocolError extends Error {
 
 // Requests come through postMessage, so nothing about their shape is
 // guaranteed. These helpers narrow one field at a time.
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
 function field(obj: unknown, key: string): unknown {
-  return typeof obj === 'object' && obj !== null ? Reflect.get(obj, key) : undefined
+  return isRecord(obj) ? obj[key] : undefined
 }
 
 function int(obj: unknown, key: string): number {
@@ -240,6 +244,10 @@ export function createWorkerHost(): WorkerHost {
     return { cells: workbook().findInputs(str(p, 'sheet'), str(p, 'query'), MAX_FIND_RESULTS) }
   }
 
+  function onFormulaCells(p: unknown) {
+    return { cells: workbook().formulaCells(str(p, 'sheet')) }
+  }
+
   function onUsedCells(p: unknown) {
     return { cells: workbook().usedCells(str(p, 'sheet')) }
   }
@@ -284,6 +292,8 @@ export function createWorkerHost(): WorkerHost {
           return { reqId: id, result: onRangeStats(payload) }
         case 'findCells':
           return { reqId: id, result: onFindCells(payload) }
+        case 'formulaCells':
+          return { reqId: id, result: onFormulaCells(payload) }
         case 'toBytes':
           return { reqId: id, result: onToBytes() }
         default:
@@ -316,7 +326,10 @@ if (
         const response = host.handle(event.data)
         // Transfer the snapshot buffer instead of copying it.
         const bytes = 'result' in response ? field(response.result, 'bytes') : undefined
-        scope.postMessage(response, isBytes(bytes) ? [bytes.buffer as ArrayBuffer] : [])
+        scope.postMessage(
+          response,
+          isBytes(bytes) && bytes.buffer instanceof ArrayBuffer ? [bytes.buffer] : [],
+        )
       },
       (e: unknown) => {
         const reqId = field(event.data, 'reqId')

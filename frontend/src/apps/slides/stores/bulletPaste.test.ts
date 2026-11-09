@@ -1,4 +1,5 @@
 import { Editor } from '@tiptap/vue-3'
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
@@ -16,19 +17,19 @@ const mountEditor = (content: string) => {
 
 // drives the editor's real handlePaste chain the way a browser paste does
 const pasteAs = (target: Editor, plain: string, html: string) => {
-  const event = {
+  const event: any = {
     clipboardData: {
       getData: (type: string) => (type === 'text/plain' ? plain : type === 'text/html' ? html : ''),
     },
     preventDefault: () => {},
-  } as any
+  }
   let handled = false
   target.view.someProp('handlePaste', (f: any) => {
     if (handled) return
     if (f(target.view, event)) handled = true
   })
   // unclaimed pastes fall through to prosemirror's default rich paste
-  if (!handled) target.view.pasteHTML(html, {} as any)
+  if (!handled) target.view.pasteHTML(html, fromPartial<ClipboardEvent | undefined>({}))
   return handled
 }
 

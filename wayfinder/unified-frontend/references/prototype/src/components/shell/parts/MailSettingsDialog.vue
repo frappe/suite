@@ -60,13 +60,13 @@ import ComposePanel from './settings/ComposePanel.vue'
 import NotificationsPanel from './settings/NotificationsPanel.vue'
 import PrivacyPanel from './settings/PrivacyPanel.vue'
 
-const PANELS: Record<string, unknown> = {
+const PANELS = {
   account: AccountPanel,
   appearance: AppearancePanel,
   compose: ComposePanel,
   notifications: NotificationsPanel,
   privacy: PrivacyPanel,
-}
+} satisfies Record<string, unknown>
 
 const current = computed(
   () => SETTINGS_TABS.find((tab) => tab.id === settingsTab.value) ?? SETTINGS_TABS[1],

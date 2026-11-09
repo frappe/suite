@@ -38,7 +38,7 @@ export class RoomLifecycleCoordinator {
 					loggers.roomManager.error(
 						'Human-empty cleanup failed for room %s: %s',
 						roomId,
-						(error as Error).message,
+						error instanceof Error ? error.message : String(error),
 					);
 				})
 				.finally(() => {

@@ -68,7 +68,7 @@ const active = ref(0)
 const rowRefs = ref<HTMLElement[]>([])
 
 function setRowRef(el: unknown, index: number) {
-  if (el) rowRefs.value[index] = el as HTMLElement
+  if (el instanceof HTMLElement) rowRefs.value[index] = el
 }
 
 function choose(app: SuiteApp) {

@@ -3,12 +3,19 @@ import { defineStore } from 'pinia'
 import type { Participant, ParticipantUpdate } from '../utils/media/ParticipantManager'
 import type { SharedStageState } from '../utils/sharedStage'
 
+interface ParticipantState {
+  participants: Record<string, Participant>
+  activeSpeakerIds: string[]
+  stableSpeakerIds: string[]
+  sharedStage: SharedStageState | null
+}
+
 export const useParticipantStore = defineStore('meet-participant', {
-  state: () => ({
-    participants: {} as Record<string, Participant>,
-    activeSpeakerIds: [] as string[],
-    stableSpeakerIds: [] as string[],
-    sharedStage: null as SharedStageState | null,
+  state: (): ParticipantState => ({
+    participants: {},
+    activeSpeakerIds: [],
+    stableSpeakerIds: [],
+    sharedStage: null,
   }),
   actions: {
     // Only an authenticated join/rejoin snapshot may establish a new room epoch.

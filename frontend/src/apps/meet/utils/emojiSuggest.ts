@@ -40,8 +40,10 @@ function readRecentStore(): EmojiSuggestion[] {
         (item): item is EmojiSuggestion =>
           !!item &&
           typeof item === 'object' &&
-          typeof (item as EmojiSuggestion).name === 'string' &&
-          typeof (item as EmojiSuggestion).emoji === 'string',
+          'name' in item &&
+          typeof item.name === 'string' &&
+          'emoji' in item &&
+          typeof item.emoji === 'string',
       )
       .slice(0, RECENT_LIMIT)
   } catch {
@@ -105,13 +107,17 @@ export function suggestEmojis(query: string, limit = RECENT_LIMIT): EmojiSuggest
   }
   return filterEmojis(query, limit)
 }
+interface InsertEmojiAtQueryResult {
+  text: string
+  caret: number
+}
 
 export function insertEmojiAtQuery(
   text: string,
   caret: number,
   queryStart: number,
   emoji: string,
-): { text: string; caret: number } {
+): InsertEmojiAtQueryResult {
   const next = text.slice(0, queryStart) + emoji + text.slice(caret)
   const nextCaret = queryStart + emoji.length
   return { text: next, caret: nextCaret }

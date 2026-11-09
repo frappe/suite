@@ -1,5 +1,5 @@
 import { toast } from 'frappe-ui'
-import { computed, readonly, ref, watch } from 'vue'
+import { computed, readonly, ref, shallowRef, watch } from 'vue'
 
 import type { DocumentSession } from '@/apps/drive'
 import { showsSlides, viewOnly } from '@/apps/slides/stores/presentation'
@@ -34,6 +34,12 @@ interface RecoveryHost {
   cancelRunningLoad: () => void
 }
 
+/** The state that holds the surface until the person reloads or downloads. */
+interface HeldNotice {
+  message: string
+  reload?: () => void
+}
+
 /** What happens to unsaved edits when the server refuses them or access changes. */
 export function useUnsavedRecovery(
   session: DocumentSession,
@@ -42,7 +48,9 @@ export function useUnsavedRecovery(
   const hasRecovery = ref(readRecovery(session.nodeId).length > 0)
   // access narrowed and no copy could be stored: the slides on screen are the only copy
   const isOnlyCopy = ref(false)
-  let onlyCopyToast: string | number | undefined
+  const onlyCopyNotice = shallowRef<HeldNotice>()
+  const refusalNotice = shallowRef<HeldNotice>()
+  const heldNotice = computed(() => onlyCopyNotice.value ?? refusalNotice.value)
   // in the hold, or as the only copy, the live slides can go out with nothing stored
   const canDownloadChanges = computed(
     () => hasRecovery.value || saveRefused.value || isOnlyCopy.value,
@@ -102,18 +110,16 @@ export function useUnsavedRecovery(
     syncHasRecovery()
   })
 
-  let refusalToast: string | number | undefined
   watch(saveRefused, (isRefused) => {
     if (isRefused) {
       showRefusal()
-    } else if (refusalToast !== undefined) {
-      toast.dismiss(refusalToast)
-      refusalToast = undefined
+    } else {
+      refusalNotice.value = undefined
     }
   })
   watch(isOnlyCopy, (isOnly) => {
     if (!isOnly) {
-      dismissOnlyCopy()
+      onlyCopyNotice.value = undefined
     }
   })
   function retainRecovery() {
@@ -180,10 +186,10 @@ export function useUnsavedRecovery(
   }
 
   function showAccessBack() {
-    showOnlyCopy(translate('Editing access is back. Download your changes before you reload.'), {
-      label: translate('Reload'),
-      onClick: reloadAfterAccessBack,
-    })
+    showOnlyCopy(
+      translate('Editing access is back. Download your changes before you reload.'),
+      reloadAfterAccessBack,
+    )
   }
 
   function reloadAfterAccessBack() {
@@ -193,8 +199,6 @@ export function useUnsavedRecovery(
         translate('Your latest changes could not be kept on this device. Reload anyway?'),
       )
     if (!isSafe) {
-      // pressing Reload closed the toast, and it is the way back to Reload
-      showAccessBack()
       return
     }
 
@@ -206,7 +210,9 @@ export function useUnsavedRecovery(
   }
 
   function liveSlides() {
-    return JSON.parse(JSON.stringify(slides.value)) as unknown[]
+    const copy: unknown = JSON.parse(JSON.stringify(slides.value))
+    if (!Array.isArray(copy)) throw new Error('Live presentation copy must be an array')
+    return copy
   }
 
   function showRefusal() {
@@ -221,44 +227,13 @@ export function useUnsavedRecovery(
       )
     }
 
-    refusalToast = toast.warning(message, {
-      duration: Number.POSITIVE_INFINITY,
-      action: stayingDownload(),
-      cancel: { label: translate('Reload'), onClick: () => void load() },
-    })
+    refusalNotice.value = { message, reload: () => void load() }
   }
 
-  function stayingDownload() {
-    return {
-      label: translate('Download'),
-      onClick: (event: Event) => {
-        // the toast stays: a download can't be confirmed, and Reload is still the way on
-        event.preventDefault()
-        downloadChanges()
-      },
-    }
-  }
-
-  function dismissOnlyCopy() {
-    if (onlyCopyToast !== undefined) {
-      toast.dismiss(onlyCopyToast)
-      onlyCopyToast = undefined
-    }
-  }
-
-  function showOnlyCopy(message: string, cancel?: { label: string; onClick: () => void }) {
-    dismissOnlyCopy()
+  function showOnlyCopy(message: string, reload?: () => void) {
+    onlyCopyNotice.value = { message, reload }
     // its "kept" and its bare Reload no longer hold
-    if (refusalToast !== undefined) {
-      toast.dismiss(refusalToast)
-      refusalToast = undefined
-    }
-
-    onlyCopyToast = toast.warning(message, {
-      duration: Number.POSITIVE_INFINITY,
-      action: stayingDownload(),
-      cancel,
-    })
+    refusalNotice.value = undefined
   }
 
   function downloadChanges() {
@@ -322,14 +297,6 @@ export function useUnsavedRecovery(
     keepOutlivedRecovery(session.nodeId, showsSlides)
   }
 
-  function dismissToasts() {
-    if (refusalToast !== undefined) {
-      toast.dismiss(refusalToast)
-    }
-
-    dismissOnlyCopy()
-  }
-
   return {
     isOnlyCopy: readonly(isOnlyCopy),
     clearOnlyCopy,
@@ -343,6 +310,6 @@ export function useUnsavedRecovery(
     downloadChanges,
     discardChanges,
     settleCopies,
-    dismissToasts,
+    heldNotice,
   }
 }

@@ -7,38 +7,38 @@
         size="sm"
         align="end"
         :options="textFonts"
-        :modelValue="displayFont"
+        :model-value="displayFont"
         class="-me-1"
-        @update:modelValue="(value) => updateProperty('fontFamily', value)"
+        @update:model-value="(value) => updateProperty('fontFamily', value)"
       />
     </PropertyRow>
     <NumberControl
-      :modelValue="editorStyles.fontSize"
+      :model-value="editorStyles.fontSize"
       label="Size"
       suffix="px"
       :min="5"
       :max="800"
       :max-digits="3"
       :step="1"
-      @update:modelValue="(value) => updateProperty('fontSize', value)"
+      @update:model-value="(value) => updateProperty('fontSize', value)"
     />
     <PropertyRow label="Color">
       <ColorPicker
-        :modelValue="editorStyles.color"
-        @update:modelValue="(value) => updateProperty('color', value)"
+        :model-value="editorStyles.color"
+        @update:model-value="(value) => updateProperty('color', value)"
       />
     </PropertyRow>
     <ToggleGroup
       label="Style"
-      :modelValue="decorValues"
+      :model-value="decorValues"
       :options="decorOptions"
-      @update:modelValue="onDecorToggle"
+      @update:model-value="onDecorToggle"
     />
     <PropertyRow label="Case">
       <TabButtons
-        :modelValue="editorStyles.textTransform"
+        :model-value="editorStyles.textTransform"
         :options="caseOptions"
-        @update:modelValue="(value) => updateProperty('textTransform', value)"
+        @update:model-value="(value) => updateProperty('textTransform', value)"
       />
     </PropertyRow>
   </Section>
@@ -94,7 +94,7 @@ const caseOptions = [
 const displayFont = computed(() => editorStyles.fontFamily?.replace(/['"]/g, ''))
 
 const decorValues = computed(() =>
-  decorOptions.filter((option) => editorStyles[option.value]).map((option) => option.value),
+  decorOptions.flatMap((option) => (editorStyles[option.value] ? [option.value] : [])),
 )
 
 const onDecorToggle = (values) => {

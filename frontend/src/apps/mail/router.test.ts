@@ -4,10 +4,12 @@ import { createMemoryHistory, createRouter, type RouteLocationNormalized } from 
 import { mailGuard } from './router'
 import { routes } from './routes'
 
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const state = vi.hoisted(() => ({
-  user: {} as Record<string, unknown> | undefined,
-  mailboxes: [{ id: 'inbox' }] as { id: string }[] | undefined,
-  fetched: [] as string[],
+  user: fromPartial<Record<string, unknown> | undefined>({}),
+  mailboxes: fromPartial<{ id: string }[] | undefined>([{ id: 'inbox' }]),
+  fetched: fromPartial<string[]>([]),
 }))
 
 vi.mock('@/router', () => ({ default: {} }))
@@ -54,7 +56,7 @@ const to = (
   name: string,
   meta: Record<string, unknown> = {},
   params: Record<string, string> = {},
-) => ({ name, meta, params, query: {} }) as unknown as RouteLocationNormalized
+) => fromPartial<RouteLocationNormalized>({ name, meta, params, query: {} })
 const dashboard = to('mail-domains', { isDashboard: true })
 
 describe('who reaches the Admin Dashboard', () => {

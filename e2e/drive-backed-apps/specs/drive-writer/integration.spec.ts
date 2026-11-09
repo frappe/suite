@@ -27,13 +27,11 @@ test("New › Document creates a Writer document in the open folder and opens it
 }) => {
 	const { page } = owner;
 	const folder = await createFolder(page.request, uniqueName(run.run_id, "new-doc"));
-	const title = uniqueWriterTitle(run.run_id, "new");
+	// The folder is new, so the default title is free.
+	const title = "Untitled document";
 
 	await page.goto(`/drive/f/${folder.name}`);
 	await chooseNew(page, "Document");
-	const dialog = page.getByRole("dialog", { name: "New document" });
-	await dialog.getByRole("textbox", { name: "Name" }).fill(title);
-	await dialog.getByRole("button", { name: "Create", exact: true }).click();
 
 	await expect(page).toHaveURL(/\/d\/[^/]+(?:\/|$)/);
 	await expect(writerEditor(page)).toBeVisible();

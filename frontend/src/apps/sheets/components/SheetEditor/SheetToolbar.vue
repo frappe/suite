@@ -1,10 +1,7 @@
 <template>
-  <!-- Row 2 of the top area: history, the formula bar (the editor's `formula`
-     slot), then the formatting people reach for most. Everything else is in
-     the menus, and the Format button opens the Format menu right here. -->
+  <!-- Row 2 of the top area: history, then the formatting people reach for
+     most. Everything else is in the menus. -->
   <div class="sn-toolbar">
-    <!-- Viewers can still use the name box and read the formula bar; only
-       the tool groups go inert. -->
     <div class="sn-group" :class="tools" :aria-disabled="readOnly || undefined">
       <Button
         :aria-label="__('Undo')"
@@ -39,11 +36,7 @@
 
     <div class="sn-vr" />
 
-    <slot name="formula" />
-
-    <!-- The tools between the formula bar and Format scroll sideways when a
-       narrow bar still can't fit them; the formula bar stays outside the
-       scroll box so its suggestions are never clipped. -->
+    <!-- The tools scroll sideways when a narrow bar still can't fit them. -->
     <div class="sn-tools-scroll">
       <div class="sn-group" :class="tools" :aria-disabled="readOnly || undefined">
         <Dropdown :options="numberFormatDropdownOptions">
@@ -124,7 +117,7 @@
                   <TextInput
                     type="number"
                     size="sm"
-                    variant="outline"
+                    variant="ghost"
                     :aria-label="__('Font size')"
                     :model-value="typedSize ?? fontSize"
                     :min="FONT_MIN"
@@ -320,7 +313,8 @@
       </div>
     </div>
 
-    <div class="sn-group" :class="tools" :aria-disabled="readOnly || undefined">
+    <!-- Shown once a narrow bar has dropped tools: the Format menu holds them. -->
+    <div class="sn-group sn-format-group" :class="tools" :aria-disabled="readOnly || undefined">
       <Dropdown :options="formatMenuOptions" align="end">
         <template #default="{ open }">
           <Button
@@ -434,20 +428,22 @@ function applyTypedSize() {
 
 // Lucide draws each currency the toolbar offers, so the button keeps the
 // same stroke as its neighbours instead of a text glyph.
-const CURRENCY_ICONS: Record<string, string> = {
-  $: 'lucide-dollar-sign',
-  '€': 'lucide-euro',
-  '£': 'lucide-pound-sterling',
-  '₹': 'lucide-indian-rupee',
-  '¥': 'lucide-japanese-yen',
-}
+const CURRENCY_ICONS = new Map<string, string>(
+  Object.entries({
+    $: 'lucide-dollar-sign',
+    '€': 'lucide-euro',
+    '£': 'lucide-pound-sterling',
+    '₹': 'lucide-indian-rupee',
+    '¥': 'lucide-japanese-yen',
+  }),
+)
 const currencyIcon = computed(
-  () => CURRENCY_ICONS[props.activeCurrencySymbol] ?? 'lucide-dollar-sign',
+  () => CURRENCY_ICONS.get(props.activeCurrencySymbol) ?? 'lucide-dollar-sign',
 )
 </script>
 
 <style scoped>
-/* ── Row 2 · tools + formula bar (40 px, B5) ─────────────────────────────── */
+/* ── Row 2 · tools (40 px) ───────────────────────────────────────────────── */
 .sn-toolbar {
   container: sn-toolbar / inline-size;
   display: flex;
@@ -459,8 +455,7 @@ const currencyIcon = computed(
   background: var(--sn-bar-bg);
   flex-shrink: 0;
 }
-/* The middle tools: they shrink after the formula bar has reached its
-   minimum, and scroll instead of clipping. Menus, tooltips and the colour
+/* The tools scroll instead of clipping. Menus, tooltips and the colour
    popovers are portalled, so the scroll box does not clip them. */
 .sn-tools-scroll {
   display: flex;
@@ -489,7 +484,7 @@ const currencyIcon = computed(
   gap: 2px;
   flex-shrink: 0;
 }
-/* Read-only: the tools dim and go inert; the formula bar stays usable. */
+/* Read-only: the tools dim and go inert. */
 .sn-tools--readonly {
   opacity: 0.45;
   pointer-events: none;
@@ -503,34 +498,33 @@ const currencyIcon = computed(
   flex-shrink: 0;
 }
 
+/* Format is for a bar that has dropped tools; a wide one shows them all. */
+.sn-format-group {
+  display: none;
+  margin-left: auto;
+}
 /* Overflow only when the bar is narrow: the layout tools go first, then
-   sort and filter. Nothing is lost, the menus hold both groups. */
-@container sn-toolbar (max-width: 1140px) {
+   sort and filter. Nothing is lost, the Format and Data menus hold both. */
+@container sn-toolbar (max-width: 800px) {
   .sn-layout {
     display: none;
   }
+  .sn-format-group {
+    display: flex;
+  }
 }
-/* A phone keeps undo, the formula bar, a swipeable strip of tools and an
-   icon-only Format; redo and the painter are in the Edit and Format menus. */
+/* A phone keeps undo, a swipeable strip of tools and an icon-only Format;
+   redo and the painter are in the Edit and Format menus. */
 @container sn-toolbar (max-width: 620px) {
   .sn-toolbar :deep(.sn-phone-hide) {
     display: none;
-  }
-  .sn-toolbar :deep(.sn-formula-wrap) {
-    min-width: 96px;
-  }
-  .sn-toolbar :deep(.sn-cell-ref) {
-    /* Fits A1:B20; a longer reference ends in an ellipsis. */
-    --sn-name-w: calc(8ch + 14px);
-    --sn-name-pad: 14px;
-    padding: 0 6px;
   }
   /* Format keeps its icon; the room goes to the tools, which scroll. */
   .sn-toolbar :deep(.sn-format-btn .truncate) {
     display: none;
   }
 }
-@container sn-toolbar (max-width: 980px) {
+@container sn-toolbar (max-width: 750px) {
   .sn-data {
     display: none;
   }
@@ -553,6 +547,13 @@ const currencyIcon = computed(
   text-align: center;
   font-variant-numeric: tabular-nums;
   -moz-appearance: textfield;
+}
+/* No box at rest; it shows the field once it is pointed at or typed in. */
+.sn-font-size :deep(input:hover) {
+  background: var(--sn-bar-hover);
+}
+.sn-font-size :deep(input:focus) {
+  box-shadow: inset 0 0 0 1px var(--outline-gray-4);
 }
 /* The common sizes, under the field. */
 .sn-font-sizes {

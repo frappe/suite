@@ -55,9 +55,13 @@ describe('the names a box shows for the people picked in it', () => {
   })
 
   it('reads the people a stored text mentions, with names that tell them apart', () => {
-    const names: Record<string, string> = { 'ann@x.com': 'Ann Lee', 'ann2@x.com': 'Ann Lee' }
+    const names = new Map<string, string>(
+      Object.entries({ 'ann@x.com': 'Ann Lee', 'ann2@x.com': 'Ann Lee' }),
+    )
 
-    const picked = pickedIn('@[ann@x.com] and @[ann2@x.com], @[ann@x.com]', (user) => names[user]!)
+    const picked = pickedIn('@[ann@x.com] and @[ann2@x.com], @[ann@x.com]', (user) =>
+      names.get(user)!,
+    )
 
     expect(picked).toEqual([ANN, { user: 'ann2@x.com', label: 'ann2@x.com' }, ANN])
   })
@@ -73,9 +77,9 @@ describe('the names a box shows for the people picked in it', () => {
 
   it('names a listed person whatever the case of their mention, and keeps the mention as stored', () => {
     const stored = 'Ask @[BEN@x.com] or @[ghost]'
-    const names: Record<string, string> = { 'ben@x.com': 'Ben Roy' }
+    const names = new Map<string, string>(Object.entries({ 'ben@x.com': 'Ben Roy' }))
 
-    const picked = pickedIn(stored, (user) => names[user] ?? user, ['ben@x.com'])
+    const picked = pickedIn(stored, (user) => names.get(user) ?? user, ['ben@x.com'])
     const shown = fromTokens(stored, picked)
 
     expect([picked, shown, toTokens(shown, picked)]).toEqual([
@@ -115,8 +119,10 @@ describe('turning names into mentions and back', () => {
 
   it('gives back the stored text after showing it and writing it again', () => {
     const stored = 'hi,@[ann@x.com] and @[ann2@x.com]\n(@[anna@x.com]) @[ben@x.com]'
-    const names: Record<string, string> = { 'ann@x.com': 'Ann Lee', 'ann2@x.com': 'Ann Lee' }
-    const again = pickedIn(stored, (user) => names[user] ?? 'Ann')
+    const names = new Map<string, string>(
+      Object.entries({ 'ann@x.com': 'Ann Lee', 'ann2@x.com': 'Ann Lee' }),
+    )
+    const again = pickedIn(stored, (user) => names.get(user) ?? 'Ann')
 
     expect(toTokens(fromTokens(stored, again), again)).toBe(stored)
   })

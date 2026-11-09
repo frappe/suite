@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it, vi } from 'vitest'
 
 import { newItemId, newItemNumber } from './item-id.js'
@@ -7,9 +8,9 @@ import { newItemId, newItemNumber } from './item-id.js'
 // module-level counter starts at the same number in both.
 async function twoTabs<T>(path: string): Promise<[T, T]> {
   vi.resetModules()
-  const a = (await import(path)) as T
+  const a = fromPartial<T>(await import(path))
   vi.resetModules()
-  const b = (await import(path)) as T
+  const b = fromPartial<T>(await import(path))
   return [a, b]
 }
 

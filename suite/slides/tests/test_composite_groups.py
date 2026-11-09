@@ -34,8 +34,6 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase, UnitTestCase
 from frappe.utils.typing_validations import transform_parameter_types
-from werkzeug.test import EnvironBuilder
-from werkzeug.wrappers import Request
 
 from suite import drive
 from suite.drive._core.access import grant, revoke
@@ -44,6 +42,7 @@ from suite.drive._core.principals import LINK_HEADER_LIMIT, Principals
 from suite.drive._core.roots import create_root, purge_root, update_root
 from suite.slides import drive as slides
 from suite.slides.api import composite as api
+from suite.slides.tests.utils import link_header
 from suite.tests.utils import ensure_user
 
 OWNER = "composite-groups-owner@example.com"
@@ -91,7 +90,9 @@ def activated():
 
     def hooks(hook=None, *args, **kwargs):
         if hook == "drive_content_types":
-            return list(ACTIVATION[hook])
+            real = real_get_hooks(hook, *args, **kwargs) or []
+            return list(dict.fromkeys([*real, *ACTIVATION[hook]]))
+
         if hook in ("has_permission", "permission_query_conditions"):
             wired = dict(real_get_hooks(hook, *args, **kwargs) or {})
             wired.update({name: list(paths) for name, paths in ACTIVATION[hook].items()})
@@ -104,26 +105,6 @@ def activated():
             yield
     finally:
         clear_registry_cache()
-
-
-@contextmanager
-def link_header(*tokens: str):
-    """Carry the given codes in `X-Drive-Links` for the block.
-
-    A real `werkzeug` request, not a patched reader: the count the limit acts
-    on is the count of comma-separated items the header actually carries, and a
-    stub that hands over a list would skip the split the limit is written on.
-    """
-    builder = EnvironBuilder(
-        path="/api/method/suite.slides.api.composite.composite_group",
-        headers={"X-Drive-Links": ",".join(tokens)},
-    )
-    previous = getattr(frappe.local, "request", None)
-    frappe.local.request = Request(builder.get_environ())
-    try:
-        yield
-    finally:
-        frappe.local.request = previous
 
 
 class TestCompositeGroupRequest(UnitTestCase):

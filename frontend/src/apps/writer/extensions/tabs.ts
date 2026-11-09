@@ -17,6 +17,15 @@ declare module '@tiptap/core' {
   interface Storage {
     tab: { activeTabId: string | null }
   }
+  interface Commands<ReturnType> {
+    tab: {
+      changeTab: (tabId: string, changed?: boolean) => ReturnType
+      reorderTab: (tabId: string, newIndex: number) => ReturnType
+      renameTab: (tabId: string, newLabel: string, refocus?: boolean) => ReturnType
+      deleteTab: (tabId: string) => ReturnType
+      createTab: (attrs?: { id?: string; label?: string; order?: number }) => ReturnType
+    }
+  }
 }
 
 // Tabs are always direct children of the doc
@@ -37,10 +46,28 @@ export const FIRST_TAB_ID = 'main'
 // HTML is read back as real tabs, so the copy must not claim the first tab's id
 const FIRST_TAB_HTML_ID = 'first-tab'
 const FIRST_TAB_LABEL = 'firstTabLabel'
+// The stored label of a tab nobody has named; it shows a name from its content
+const UNNAMED_TAB = 'Untitled'
+const LONGEST_TAB_NAME = 30
+
+function hasText(block: PMNode, typeName: string) {
+  return block.type.name === typeName && !!block.textContent.trim()
+}
+
+/** The first heading of a tab, or else its first line of text. */
+function nameFromContent(blocks: readonly PMNode[]): string {
+  const block =
+    blocks.find((candidate) => hasText(candidate, 'heading')) ??
+    blocks.find((candidate) => hasText(candidate, 'paragraph'))
+  if (!block) return UNNAMED_TAB
+  const text = block.textContent.trim()
+  return text.length > LONGEST_TAB_NAME ? `${text.slice(0, LONGEST_TAB_NAME).trimEnd()}…` : text
+}
 
 /** The first tab's label a document's Yjs state keeps, if it was renamed. */
 export function storedFirstTabLabel(ydoc: Doc): string | null {
-  return (ydoc.getMap('meta').get(FIRST_TAB_LABEL) as string | undefined) ?? null
+  const label: unknown = ydoc.getMap('meta').get(FIRST_TAB_LABEL)
+  return typeof label === 'string' ? label : null
 }
 
 function firstTabBlocks(doc: PMNode): TabMatch[] {
@@ -103,7 +130,7 @@ export function orderedHTML(doc: PMNode, firstLabel: string | null): string {
   if (hasFirstTab && isOwnTabNeeded) {
     const firstTabAttrs = {
       id: FIRST_TAB_HTML_ID,
-      label: firstLabel ?? 'Untitled',
+      label: firstLabel ?? UNNAMED_TAB,
     }
     const firstTab = doc.type.schema.nodes.tab.create(firstTabAttrs, blocks)
     children.unshift(firstTab)
@@ -226,18 +253,15 @@ export const TabsExtension = TabNode.extend({
       this.storage.stopAnnouncing = () => meta.unobserve(announceRename)
     }
 
-    // Also runs when the active tab disappears, such as the first tab of an
-    // empty editor once a tabbed document loads into it
+    // The tab the URL names wins: a picked tab writes its id there, so they differ only when the
+    // editor chose a default, such as the first tab of an empty editor before its document loads
     const selectFirstTab = () => {
       const tabs = listTabs(this.editor).map((tab) => tab.id)
-      if (tabs.includes(this.storage.activeTabId)) return
-
-      let tabToChange = window.location.hash.slice(1)
-      if (!tabs.includes(tabToChange)) {
-        tabToChange = tabs[0]
-      }
-      if (tabToChange) {
-        this.editor.commands.changeTab(tabToChange, false)
+      const linked = window.location.hash.slice(1)
+      const active = this.storage.activeTabId
+      const wanted = tabs.includes(linked) ? linked : tabs.includes(active) ? active : tabs[0]
+      if (wanted && wanted !== active) {
+        this.editor.commands.changeTab(wanted, false)
       }
     }
 
@@ -393,7 +417,7 @@ export const TabsExtension = TabNode.extend({
         ({ tr, dispatch, state }) => {
           if (dispatch) {
             if (!attrs.id) attrs.id = randomId()
-            if (!attrs.label) attrs.label = 'Untitled'
+            if (!attrs.label) attrs.label = UNNAMED_TAB
             if (attrs.order === undefined) attrs.order = tabsIn(state.doc).length
 
             const paragraphType = this.editor.schema.nodes.paragraph
@@ -444,64 +468,20 @@ export const TabsExtension = TabNode.extend({
         const { $to } = this.editor.state.selection
         if ($to.parent.type.name === 'tab' && $to.parent.content.size == 2) return true
       },
-      Enter: () => {
-        const { state } = this.editor
-        const { selection } = state
-        const { $from } = selection
-
-        // Must be inside a tab
-        let tabNode = null
-        let tabPos = null
-
-        for (let depth = $from.depth; depth > 0; depth--) {
-          if ($from.node(depth).type.name === 'tab') {
-            tabNode = $from.node(depth)
-            tabPos = $from.before(depth)
-            break
-          }
-        }
-
-        if (!tabNode || tabNode.attrs.label !== 'Untitled' || !tabNode.content.firstChild)
-          return false
-
-        const firstChildStart = tabPos + 1
-        if ($from.before($from.depth) !== firstChildStart) return false
-
-        // Let Enter happen first
-        requestAnimationFrame(() => {
-          const updatedTab = this.editor.state.doc.nodeAt(tabPos)
-          const updatedFirst = updatedTab?.content.firstChild
-          if (!updatedFirst) return
-
-          const text = updatedFirst.textContent.trim()
-          if (!text) return
-
-          this.editor.commands.renameTab(tabNode.attrs.id, text, false)
-        })
-
-        return false
-      },
     }
   },
 })
 
 export function listTabs(editor: Editor): { id: string; label: string }[] {
   const { doc } = editor.state
-  function tabEntry({ node }: TabMatch) {
-    return {
-      id: node.attrs.id,
-      label: node.attrs.label,
-    }
-  }
+  const tabs = orderedTabs(doc).map(({ node }) => ({
+    id: node.attrs.id,
+    label:
+      node.attrs.label === UNNAMED_TAB ? nameFromContent(node.content.content) : node.attrs.label,
+  }))
+  const firstBlocks = firstTabBlocks(doc).map(({ node }) => node)
+  if (!firstBlocks.length) return tabs
 
-  const tabs = orderedTabs(doc).map(tabEntry)
-  if (!firstTabBlocks(doc).length) {
-    return tabs
-  }
-
-  const firstTab = {
-    id: FIRST_TAB_ID,
-    label: firstTabLabel(editor.state) ?? 'Untitled',
-  }
-  return [firstTab, ...tabs]
+  const label = firstTabLabel(editor.state) ?? nameFromContent(firstBlocks)
+  return [{ id: FIRST_TAB_ID, label }, ...tabs]
 }

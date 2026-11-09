@@ -3,6 +3,7 @@
 from typing import Literal, NotRequired, TypedDict
 
 from suite.composition.http import Route
+from suite.content.conversions import ConversionStatus
 from suite.slides.api.composite import composite_group, composite_manifest
 from suite.slides.api.slides import save_slides
 from suite.slides.doctype.presentation.presentation import (
@@ -58,6 +59,8 @@ class Deck(TypedDict):
     theme: str | None
     slides: list[Slide]
     references: NotRequired[list[ReferenceAnswer]]
+    is_converted: NotRequired[bool]
+    conversion: NotRequired[ConversionStatus]
 
 
 class SlideChanges(TypedDict, total=False):

@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn';
 import { describe, expect, it } from 'vitest';
 import { E2EEEpochRelay } from '../E2EEEpochRelay';
 import { InMemoryE2eeCoordinatorPersistence } from '../E2eeCoordinatorPersistence';
@@ -15,59 +16,6 @@ type EmittedEnvelope = {
 	reason?: string;
 };
 
-type TestRelay = {
-	requestCommitFromHost: (
-		roomId: string,
-		joiningSenderIds: number[],
-		epochNumber: number,
-	) => Promise<void>;
-	relayCommit: (
-		roomId: string,
-		fromParticipantId: string,
-		fromSenderId: number,
-		payload: {
-			type: 'commit';
-			previousEpochNumber: number;
-			epochNumber: number;
-			membershipDeltaId: string;
-			membershipDeltaHash: string;
-			rosterHash: string;
-			mlsCommit: string;
-		},
-	) => Promise<void>;
-	relayWelcome: (
-		roomId: string,
-		fromParticipantId: string,
-		fromSenderId: number,
-		payload: {
-			type: 'welcome';
-			toSenderId: number;
-			epochNumber: number;
-			mlsWelcome: string;
-		},
-	) => Promise<void>;
-	relayKeyPackage: (
-		roomId: string,
-		fromParticipantId: string,
-		fromSenderId: number,
-		payload: {
-			type: 'key-package';
-			epochNumber: number;
-			keyPackage: string;
-		},
-	) => Promise<void>;
-	replayRetainedMaterial: (
-		roomId: string,
-		fromSenderId: number,
-		payload: { type: 'resync-request'; knownEpochNumber?: number },
-	) => Promise<void>;
-	emitToTarget: (
-		roomId: string,
-		participantId: string,
-		envelope: EmittedEnvelope,
-	) => void;
-};
-
 async function makeRelay(
 	persistence: InMemoryE2eeCoordinatorPersistence,
 	sent: Array<{ participantId: string; envelope: EmittedEnvelope }> = [],
@@ -79,7 +27,7 @@ async function makeRelay(
 			sent.push({ participantId: 'host', envelope });
 		},
 	};
-	const fakeIo = {
+	const fakeIo = fromPartial<ConstructorParameters<typeof E2EEEpochRelay>[0]>({
 		sockets: {
 			adapter: {
 				rooms: new Map<string, Set<string>>([
@@ -88,7 +36,7 @@ async function makeRelay(
 			},
 			sockets: new Map<string, typeof hostSocket>([['socket-1', hostSocket]]),
 		},
-	} as never;
+	});
 	const relay = new E2EEEpochRelay(
 		fakeIo,
 		new Map<string, Set<string>>([['meeting-1', new Set(['socket-1'])]]),
@@ -111,9 +59,9 @@ async function makeRelay(
 		isHost: true,
 		joinedAt: 1,
 	});
-	relay.setRoster(roster);
-	const testRelay = relay as unknown as TestRelay;
-	testRelay.emitToTarget = (
+	relay['setRoster'](roster);
+	const testRelay = relay;
+	testRelay['emitToTarget'] = (
 		_roomId: string,
 		participantId: string,
 		envelope: EmittedEnvelope,
@@ -130,16 +78,13 @@ describe('E2EE coordinator persistence', () => {
 			participantId: string;
 			envelope: EmittedEnvelope;
 		}> = [];
-		const writer = (await makeRelay(
-			persistence,
-			writerSent,
-		)) as unknown as TestRelay;
-		await writer.requestCommitFromHost('meeting-1', [9], 1);
+		const writer = await makeRelay(persistence, writerSent);
+		await writer['requestCommitFromHost']('meeting-1', [9], 1);
 		const request = writerSent.find(
 			(entry) => entry.envelope.type === 'commit-request',
 		)?.envelope;
 		expect(request).toBeDefined();
-		await writer.relayCommit('meeting-1', 'host', 1, {
+		await writer['relayCommit']('meeting-1', 'host', 1, {
 			type: 'commit',
 			previousEpochNumber: request?.epochNumber ?? 1,
 			epochNumber: request?.nextEpochNumber ?? 2,
@@ -148,7 +93,7 @@ describe('E2EE coordinator persistence', () => {
 			rosterHash: request?.rosterHash ?? '',
 			mlsCommit: 'Y29tbWl0',
 		});
-		await writer.relayWelcome('meeting-1', 'host', 1, {
+		await writer['relayWelcome']('meeting-1', 'host', 1, {
 			type: 'welcome',
 			toSenderId: 9,
 			epochNumber: 2,
@@ -157,8 +102,8 @@ describe('E2EE coordinator persistence', () => {
 
 		const sent: Array<{ participantId: string; envelope: EmittedEnvelope }> =
 			[];
-		const reader = (await makeRelay(persistence, sent)) as unknown as TestRelay;
-		await reader.replayRetainedMaterial('meeting-1', 9, {
+		const reader = await makeRelay(persistence, sent);
+		await reader['replayRetainedMaterial']('meeting-1', 9, {
 			type: 'resync-request',
 			knownEpochNumber: 1,
 		});
@@ -185,16 +130,13 @@ describe('E2EE coordinator persistence', () => {
 			participantId: string;
 			envelope: EmittedEnvelope;
 		}> = [];
-		const writer = (await makeRelay(
-			persistence,
-			writerSent,
-		)) as unknown as TestRelay;
-		await writer.requestCommitFromHost('meeting-1', [9], 1);
+		const writer = await makeRelay(persistence, writerSent);
+		await writer['requestCommitFromHost']('meeting-1', [9], 1);
 		const request = writerSent.find(
 			(entry) => entry.envelope.type === 'commit-request',
 		)?.envelope;
 		expect(request).toBeDefined();
-		await writer.relayCommit('meeting-1', 'host', 1, {
+		await writer['relayCommit']('meeting-1', 'host', 1, {
 			type: 'commit',
 			previousEpochNumber: request?.epochNumber ?? 1,
 			epochNumber: request?.nextEpochNumber ?? 2,
@@ -203,7 +145,7 @@ describe('E2EE coordinator persistence', () => {
 			rosterHash: request?.rosterHash ?? '',
 			mlsCommit: 'Y29tbWl0',
 		});
-		await writer.relayWelcome('meeting-1', 'host', 1, {
+		await writer['relayWelcome']('meeting-1', 'host', 1, {
 			type: 'welcome',
 			toSenderId: 9,
 			epochNumber: 2,
@@ -212,8 +154,8 @@ describe('E2EE coordinator persistence', () => {
 
 		const sent: Array<{ participantId: string; envelope: EmittedEnvelope }> =
 			[];
-		const reader = (await makeRelay(persistence, sent)) as unknown as TestRelay;
-		await reader.replayRetainedMaterial('meeting-1', 11, {
+		const reader = await makeRelay(persistence, sent);
+		await reader['replayRetainedMaterial']('meeting-1', 11, {
 			type: 'resync-request',
 			knownEpochNumber: 1,
 		});
@@ -247,8 +189,8 @@ describe('E2EE coordinator persistence', () => {
 
 		const sent: Array<{ participantId: string; envelope: EmittedEnvelope }> =
 			[];
-		const reader = (await makeRelay(persistence, sent)) as unknown as TestRelay;
-		await reader.replayRetainedMaterial('meeting-1', 9, {
+		const reader = await makeRelay(persistence, sent);
+		await reader['replayRetainedMaterial']('meeting-1', 9, {
 			type: 'resync-request',
 			knownEpochNumber: 1,
 		});
@@ -269,8 +211,8 @@ describe('E2EE coordinator persistence', () => {
 		const persistence = new InMemoryE2eeCoordinatorPersistence();
 		const sent: Array<{ participantId: string; envelope: EmittedEnvelope }> =
 			[];
-		const relay = (await makeRelay(persistence, sent)) as unknown as TestRelay;
-		await relay.relayKeyPackage('meeting-1', 'joiner', 9, {
+		const relay = await makeRelay(persistence, sent);
+		await relay['relayKeyPackage']('meeting-1', 'joiner', 9, {
 			type: 'key-package',
 			epochNumber: 1,
 			keyPackage: 'a2V5LXBhY2thZ2U=',
@@ -292,7 +234,7 @@ describe('E2EE coordinator persistence', () => {
 			(entry) => entry.envelope.type === 'commit-request',
 		)?.envelope;
 		expect(request).toBeDefined();
-		await relay.relayCommit('meeting-1', 'host', 1, {
+		await relay['relayCommit']('meeting-1', 'host', 1, {
 			type: 'commit',
 			previousEpochNumber: request?.epochNumber ?? 1,
 			epochNumber: request?.nextEpochNumber ?? 2,

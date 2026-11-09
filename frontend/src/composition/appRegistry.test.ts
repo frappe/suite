@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 
@@ -84,7 +85,7 @@ describe('app registry', () => {
 
   it('lists only areas whose capabilities are present and updates when they change', () => {
     const capabilities = ref({ jmap: false, systemManager: false, suiteAdmin: false })
-    const session = { capabilities } as unknown as Session
+    const session = fromPartial<Session>({ capabilities })
     const registry = useAppRegistry(session)
 
     expect(findArea('mail')?.to).toBe('/mail')
@@ -105,9 +106,9 @@ describe('app registry', () => {
 
   it('shows Admin only to a Suite Admin, not a System Manager alone', () => {
     const capabilities = ref({ jmap: false, systemManager: true, suiteAdmin: false })
-    const session = {
+    const session = fromPartial<Session>({
       capabilities,
-    } as unknown as Session
+    })
     const registry = useAppRegistry(session)
     expect(registry.areas.some((area) => area.id === 'admin')).toBe(false)
     capabilities.value = { jmap: false, systemManager: false, suiteAdmin: true }
@@ -126,9 +127,9 @@ describe('app registry', () => {
   })
 
   it('uses the Mail inbox and Calendar upcoming summaries as the badge sources', () => {
-    const session = {
+    const session = fromPartial<Session>({
       capabilities: ref({ jmap: true, systemManager: false }),
-    } as unknown as Session
+    })
 
     expect(useAppRegistry(session).badges.value).toEqual({ mail: 7, calendar: 2 })
   })

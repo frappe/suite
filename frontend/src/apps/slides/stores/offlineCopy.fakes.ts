@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, vi } from 'vitest'
 import { ref } from 'vue'
 
+interface OfflineCopyFixtureState {
+  shell: () => Response
+  visitedCache: FakeCache | null
+}
+
 export const presentationDoc = ref<Record<string, unknown>>({ is_composite: 0 })
 export const presentationId = ref('p1')
 export const viewOnly = ref(false)
@@ -63,7 +68,7 @@ export class FakeCache {
 export let cache: FakeCache
 export const deletedCaches: string[] = []
 export let responses: Record<string, () => Response | Error>
-export const state: { shell: () => Response; visitedCache: FakeCache | null } = {
+export const state: OfflineCopyFixtureState = {
   shell: () => shellResponse(),
   visitedCache: null,
 }

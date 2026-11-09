@@ -27,7 +27,7 @@ describe('magic move refIds', () => {
     slides.value = [
       { clientId: 'A', transition: 'Magic Move', elements: [element('e1', 'text')] },
       { clientId: 'B', elements: [element('e2', 'text')] },
-    ] as any
+    ]
     slideIndex.value = 1
   })
 

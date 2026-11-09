@@ -86,10 +86,7 @@ const tab = computed({
 })
 const users = useQuery(api.suite.users.list)
 const onlyActiveAdmin = computed(
-  () =>
-    !users.error &&
-    users.data?.filter((user) => user.enabled).length === 1 &&
-    users.data?.some((user) => user.enabled && user.is_admin),
+  () => !users.error && users.data?.filter((user) => user.enabled && user.is_admin).length === 1,
 )
 const failedUsers = computed(() =>
   (users.data ?? []).filter(

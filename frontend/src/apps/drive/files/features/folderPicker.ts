@@ -1,3 +1,4 @@
+import { api, client } from '@/api'
 import type { NodeMovePreviewOutput } from '@/apps/drive/client/generated'
 import { groupName, principalKind } from '@/apps/drive/client/grants'
 import { DRIVE_ROLES, type DriveNode, type DriveRoots } from '@/apps/drive/client/types'
@@ -94,9 +95,13 @@ export interface MoveAccessChange {
   ownRoleAfter: number | null
 }
 
-/** From each item's move preview. `null` when the move goes ahead without asking. */
-export function moveAccessChange(
+/**
+ * From each item's move preview. `null` when the move goes ahead without
+ * asking. `workspace` names everyone at the org.
+ */
+function moveAccessChange(
   previews: readonly NodeMovePreviewOutput[],
+  workspace: string,
 ): MoveAccessChange | null {
   const gains = new Map<string, MoveAccessGain>()
   for (const { principal, role, person } of previews.flatMap((preview) => preview.gains)) {
@@ -106,7 +111,7 @@ export function moveAccessChange(
       principal,
       role,
       person,
-      label: person?.full_name ?? gainLabel(principal),
+      label: person?.full_name ?? gainLabel(principal, workspace),
     })
   }
   const dropped = previews.filter((preview) => preview.role_after < preview.role_now)
@@ -117,14 +122,28 @@ export function moveAccessChange(
   return { gains: [...gains.values()].sort((a, b) => b.role - a.role), ownRoleAfter }
 }
 
-function gainLabel(principal: string): string {
+/** What moving `items` into `folder` would change, or `null` when it asks nothing. */
+export async function previewMoveAccess(
+  items: readonly Pick<DriveNode, 'name'>[],
+  folder: string,
+  workspace: string,
+): Promise<MoveAccessChange | null> {
+  const previews = await Promise.all(
+    items.map((item) =>
+      client.query(api.drive.nodes.previewMove, { node: item.name, parent_node: folder }),
+    ),
+  )
+  return moveAccessChange(previews, workspace)
+}
+
+function gainLabel(principal: string, workspace: string): string {
   switch (principalKind(principal)) {
     case 'group':
       return __('People in {0}', [groupName(principal)])
     case 'general':
-      return __(organizationLabel())
+      return __(organizationLabel(workspace))
     case 'public':
-      return __('Everyone on the web')
+      return __('Public on the web')
     case 'link':
       return __('Anyone with a share link')
     case 'user':

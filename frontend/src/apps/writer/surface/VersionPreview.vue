@@ -1,7 +1,16 @@
 <script setup lang="ts">
 import type { Editor } from '@tiptap/vue-3'
 import { Skeleton } from 'frappe-ui'
-import { inject, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
+import {
+  computed,
+  inject,
+  nextTick,
+  onBeforeUnmount,
+  ref,
+  shallowRef,
+  useTemplateRef,
+  watch,
+} from 'vue'
 
 import type { DocumentSession } from '@/apps/drive'
 import PreviewPane from '@/apps/writer/components/PreviewPane.vue'
@@ -53,6 +62,9 @@ async function showVersion(seq: number) {
 
 watch(() => props.seq, showVersion, { immediate: true })
 
+const pane = useTemplateRef<InstanceType<typeof PreviewPane>>('pane')
+defineExpose({ scroller: computed(() => pane.value?.scroller ?? null) })
+
 onBeforeUnmount(() => {
   latestRequest++
   editor.value?.destroy()
@@ -61,6 +73,7 @@ onBeforeUnmount(() => {
 
 <template>
   <PreviewPane
+    ref="pane"
     :editor="editor"
     :settings="settings"
     :label="__('Version preview')"
@@ -68,7 +81,7 @@ onBeforeUnmount(() => {
     :is-failed="failed"
   >
     <template #loading>
-      <div class="space-y-3 px-5 pt-10">
+      <div class="space-y-3 px-5 pt-6">
         <Skeleton
           v-for="width in ['70%', '92%', '84%', '60%']"
           :key="width"

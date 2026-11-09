@@ -1,21 +1,13 @@
+import type { DocumentPanel } from '@/apps/drive/client/types'
+
 import { nodeIcon, nodeIconTint } from '../../internal/icons'
 
 /** Where a document's edits are. Each editor reports its own. */
 export type DocumentSaveState = 'clean' | 'saving' | 'unsaved' | 'failed'
 
-/** A side panel the header toggles. Each editor renders the panel itself. */
-export type DocumentPanel = 'comments' | 'versions'
-
 export const PANEL_BUTTONS: Record<DocumentPanel, { label: string; icon: string }> = {
   comments: { label: 'Comments', icon: 'lucide-messages-square' },
   versions: { label: 'Versions', icon: 'lucide-history' },
-}
-
-export const SAVE_LABELS: Record<DocumentSaveState, string> = {
-  clean: 'Saved',
-  saving: 'Saving…',
-  unsaved: 'Unsaved',
-  failed: 'Not saved',
 }
 
 /**

@@ -26,7 +26,7 @@ beforeEach(() => {
   vi.stubGlobal('__', translate)
   engine = createApiClient(
     { suite: () => import('@/platform/transport/policy').then((m) => m.registration) },
-    { transport: createTransport({ fetch: fetcher, maxRetries: 0 }), persistence: false, feedback },
+    { transport: createTransport({ fetch: fetcher, maxRetries: 0 }), feedback },
   )
   mocks.useMutation.mockImplementation(engine.useMutation)
 })

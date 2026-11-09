@@ -4,7 +4,7 @@ import {
   FrappeUIProvider,
   type PromptField as FrappePromptField,
 } from 'frappe-ui'
-import { defineComponent, h, type VNodeChild } from 'vue'
+import { defineComponent, h } from 'vue'
 
 import type { PlatformError } from '@/platform/transport'
 
@@ -29,11 +29,12 @@ export interface PromptOptions extends ConfirmOptions {
 export const FeedbackProvider = defineComponent({
   name: 'FeedbackProvider',
   setup(_props, { slots }) {
-    return () => h(FrappeUIProvider, null, { default: () => slots.default?.() as VNodeChild })
+    return () => h(FrappeUIProvider, null, { default: () => slots.default?.() })
   },
 })
 
 export const toast = frappeToast
+export type { ToastId } from 'frappe-ui'
 
 export function confirm(options: ConfirmOptions): Promise<boolean> {
   return new Promise((resolve) => {
@@ -56,12 +57,10 @@ export function confirm(options: ConfirmOptions): Promise<boolean> {
   })
 }
 
-export function prompt<T extends Record<string, unknown> = Record<string, unknown>>(
-  options: PromptOptions,
-): Promise<T | null> {
+export function prompt(options: PromptOptions): Promise<Record<string, unknown> | null> {
   return new Promise((resolve) => {
     let settled = false
-    const finish = (value: T | null) => {
+    const finish = (value: Record<string, unknown> | null) => {
       if (settled) return
       settled = true
       resolve(value)
@@ -73,7 +72,7 @@ export function prompt<T extends Record<string, unknown> = Record<string, unknow
       cancelLabel: options.cancelLabel,
       dismissible: options.dismissible,
       fields: options.fields,
-      onConfirm: ({ values }) => finish(values as T),
+      onConfirm: ({ values }) => finish(values),
       onCancel: () => finish(null),
     })
   })

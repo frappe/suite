@@ -12,7 +12,7 @@
 // column F is now `setCol(F, {bold:true})`, not 100k cell writes that bloat the
 // saved payload to 100MB+ and freeze the main thread.
 
-import { colLabel, parseCellId } from '../utils/cells.js'
+import { cellId, colLabel, parseCellId } from '../utils/cells.js'
 import { deepClone } from '../utils/deep-clone.js'
 import { remapCellKeys, remapIndexKeys } from './ref-remap.js'
 import type { CellPos, IndexMap } from './types.js'
@@ -44,6 +44,14 @@ function _entries(cells: Record<string, Format>, pred: (p: CellPos) => boolean):
     .filter((e): e is FormatEntry => !!e.p && pred(e.p))
 }
 
+function isFormat(value: unknown): value is Format {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function isFormatMap(value: unknown): value is Record<string, Format> {
+  return isFormat(value) && Object.values(value).every(isFormat)
+}
+
 export function createFormatsEngine() {
   const store: FormatsSnapshot = {}
 
@@ -64,7 +72,7 @@ export function createFormatsEngine() {
     return store[sheet]?.rows?.[r] || {}
   }
 
-  function _empty(o: object) {
+  function _empty(o: FormatSheet['cols']) {
     for (const _ in o) return false
     return true
   }
@@ -73,7 +81,7 @@ export function createFormatsEngine() {
   // no column/row formats exist (the overwhelmingly common case) skip the
   // cellId parse and hand back the cell entry directly, exactly as the old
   // per-cell store did — keeps get() cheap on the renderer's hot path.
-  function get(id: string, sheet = 'Sheet1'): Format {
+  function get(id: string, sheet = 'Sheet1') {
     const s = store[sheet]
     if (!s) return {}
     const cell = s.cells[id]
@@ -155,6 +163,32 @@ export function createFormatsEngine() {
     for (const r of rows) setRow(r, format, sheet)
   }
 
+  // Cells in these columns whose `key` beats the column layer: set on the cell
+  // itself, or on its row (row < cell, but col < row). Writing the column alone
+  // leaves these at their old value.
+  function overridesInCols(cols: readonly number[], key: string, sheet = 'Sheet1'): string[] {
+    const s = store[sheet]
+    if (!s) return []
+    const inCols = new Set(cols)
+    const ids = new Set(
+      _entries(s.cells, (p) => inCols.has(p.col))
+        .filter((e) => e.fmt[key] != null)
+        .map((e) => e.id),
+    )
+    for (const [r, fmt] of Object.entries(s.rows))
+      if (fmt[key] != null) for (const c of cols) ids.add(cellId(Number(r), c))
+    return [...ids]
+  }
+  // Cells in these rows whose `key` is set on the cell itself.
+  function overridesInRows(rows: readonly number[], key: string, sheet = 'Sheet1'): string[] {
+    const s = store[sheet]
+    if (!s) return []
+    const inRows = new Set(rows)
+    return _entries(s.cells, (p) => inRows.has(p.row))
+      .filter((e) => e.fmt[key] != null)
+      .map((e) => e.id)
+  }
+
   function toggleColumns(cols: readonly number[], key: string, sheet = 'Sheet1') {
     const allOn = cols.every((c) => !!_col(c, sheet)[key])
     applyToColumns(cols, { [key]: !allOn }, sheet)
@@ -205,7 +239,9 @@ export function createFormatsEngine() {
       .filter((k) => k >= at)
     keys.sort((a, b) => (delta > 0 ? b - a : a - b))
     for (const k of keys) {
-      axis[k + delta] = axis[k] as Format
+      const format = axis[k]
+      if (!format) throw new Error('Axis format is missing')
+      axis[k + delta] = format
       delete axis[k]
     }
   }
@@ -293,11 +329,17 @@ export function createFormatsEngine() {
   }
 
   function _normalizeSheet(v: unknown): FormatSheet {
-    const layered = v as Partial<FormatSheet> | null | undefined
-    if (layered && (layered.cells || layered.cols || layered.rows)) {
-      return { cells: layered.cells || {}, cols: layered.cols || {}, rows: layered.rows || {} }
+    if (isFormat(v) && (v.cells || v.cols || v.rows)) {
+      const cells = v.cells || {}
+      const cols = v.cols || {}
+      const rows = v.rows || {}
+      if (!isFormatMap(cells) || !isFormatMap(cols) || !isFormatMap(rows))
+        throw new Error('Invalid layered formats')
+      return { cells, cols, rows }
     }
-    return { cells: (v as Record<string, Format>) || {}, cols: {}, rows: {} } // legacy flat cell map
+    const cells = v || {}
+    if (!isFormatMap(cells)) throw new Error('Invalid cell formats')
+    return { cells, cols: {}, rows: {} } // legacy flat cell map
   }
 
   // ── Sheet-level operations (rename / duplicate / delete) ──────────────────
@@ -320,7 +362,7 @@ export function createFormatsEngine() {
   function reorderSheets(orderedNames: readonly string[]) {
     const next: FormatsSnapshot = {}
     for (const name of orderedNames) if (store[name]) next[name] = store[name]
-    for (const name of Object.keys(store)) if (!next[name]) next[name] = store[name] as FormatSheet
+    for (const [name, formats] of Object.entries(store)) if (!next[name]) next[name] = formats
     for (const k of Object.keys(store)) delete store[k]
     for (const [k, v] of Object.entries(next)) store[k] = v
   }
@@ -341,6 +383,8 @@ export function createFormatsEngine() {
     replaceRow,
     applyToColumns,
     applyToRows,
+    overridesInCols,
+    overridesInRows,
     toggleColumns,
     toggleRows,
     clearColumns,

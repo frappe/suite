@@ -3,10 +3,12 @@ import { createApp, h, nextTick } from 'vue'
 
 import SheetMenuBar, { type SheetMenu } from './SheetMenuBar.vue'
 
-// The real reka-based Dropdown and Button: opening, closing and focus are theirs.
+// The real Button and portal helper. Opening, closing and focus are reka's. The
+// Dropdown is what Writer's menu uses, so the look can be compared with it.
 vi.mock('frappe-ui', async () => ({
   ...(await import('../../../../../../node_modules/frappe-ui/src/components/Button')),
   ...(await import('../../../../../../node_modules/frappe-ui/src/components/Dropdown')),
+  ...(await import('../../../../../../node_modules/frappe-ui/src/composables/usePortalTarget')),
 }))
 
 // jsdom has none; the menu's positioning watches its size.
@@ -45,11 +47,18 @@ const trigger = (root: HTMLElement, label: string) =>
   root.querySelector<HTMLButtonElement>(`[data-menu="${label.toLowerCase()}"]`)!
 const openMenu = () => document.querySelector('[role="menu"]')
 const menuItem = (label: string) =>
-  [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((el) =>
+  [...document.querySelectorAll<HTMLElement>('[role="menuitem"]:not([data-menu])')].find((el) =>
     el.textContent?.includes(label),
   )
 const press = (el: Element, key: string) =>
   el.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+const pointerDown = (el: Element) =>
+  el.dispatchEvent(new MouseEvent('pointerdown', { button: 0, bubbles: true, cancelable: true }))
+const hover = (el: Element) => el.dispatchEvent(new MouseEvent('pointerenter'))
+const openLabels = () =>
+  [...document.querySelectorAll('[role="menuitem"]:not([data-menu])')].map((el) =>
+    el.textContent?.trim(),
+  )
 
 function menus() {
   const zoomIn = vi.fn()
@@ -71,7 +80,9 @@ function menus() {
 describe('SheetMenuBar', () => {
   it('shows each menu as a labelled button, in order', () => {
     const root = mountBar(menus().list)
-    const names = [...root.querySelectorAll('[data-menu]')].map((b) => b.textContent?.trim())
+    const names = [...root.querySelectorAll('.sn-menubar-wide [data-menu]')].map((b) =>
+      b.textContent?.trim(),
+    )
     expect(names).toEqual(['File', 'Edit', 'View', 'Insert', 'Format', 'Data'])
     expect(root.querySelector('nav')!.getAttribute('aria-label')).toBe('Spreadsheet menus')
   })
@@ -89,20 +100,115 @@ describe('SheetMenuBar', () => {
     expect(openMenu()).toBeNull()
   })
 
-  it('works from the keyboard: arrows between menus, Escape closes back to the button', async () => {
+  it('leaves the page live while a menu is open, so the other labels can be hovered', async () => {
+    const root = mountBar(menus().list)
+    pointerDown(trigger(root, 'File'))
+    await settle()
+    expect(openLabels()).toEqual(['Download as CSV'])
+    expect(document.body.style.pointerEvents).not.toBe('none')
+  })
+
+  it('switches to the hovered label while a menu is open, without a click', async () => {
+    const root = mountBar(menus().list)
+    pointerDown(trigger(root, 'File'))
+    await settle()
+    hover(trigger(root, 'Edit'))
+    await settle()
+    expect(openLabels()).toEqual(['Find and replace'])
+    hover(trigger(root, 'Data'))
+    await settle()
+    expect(openLabels()).toEqual(['Smart Fill'])
+  })
+
+  it('opens nothing on hover while every menu is closed', async () => {
+    const root = mountBar(menus().list)
+    hover(trigger(root, 'Edit'))
+    await settle()
+    expect(openMenu()).toBeNull()
+  })
+
+  it('closes when the open label is pressed again', async () => {
+    const root = mountBar(menus().list)
+    pointerDown(trigger(root, 'File'))
+    await settle()
+    expect(openMenu()).not.toBeNull()
+    pointerDown(trigger(root, 'File'))
+    await settle()
+    expect(openMenu()).toBeNull()
+  })
+
+  it('closes on a press outside the bar', async () => {
+    const root = mountBar(menus().list)
+    pointerDown(trigger(root, 'File'))
+    await settle()
+    pointerDown(document.body)
+    await settle()
+    expect(openMenu()).toBeNull()
+  })
+
+  it('moves between open menus with the left and right arrows, wrapping at the ends', async () => {
+    const root = mountBar(menus().list)
+    press(trigger(root, 'File'), 'Enter')
+    await settle()
+    press(document.activeElement!, 'ArrowRight')
+    await settle()
+    expect(openLabels()).toEqual(['Find and replace'])
+    press(document.activeElement!, 'ArrowLeft')
+    await settle()
+    press(document.activeElement!, 'ArrowLeft')
+    await settle()
+    expect(openLabels()).toEqual(['Smart Fill'])
+  })
+
+  it('draws its items exactly as the Dropdown behind Writer’s menu does', async () => {
+    // Everything an item can show: icon, submenu arrow, disabled, no icon.
+    const options = [
+      {
+        group: 'Edit',
+        hideLabel: true,
+        options: [
+          { label: 'Undo', icon: 'lucide-undo-2', onClick: vi.fn() },
+          { label: 'Redo', icon: 'lucide-redo-2', disabled: true, onClick: vi.fn() },
+          { label: 'Paste', icon: 'lucide-clipboard', submenu: [{ label: 'Values' }] },
+        ],
+      },
+      { group: 'Plain', hideLabel: true, options: [{ label: 'Plain', onClick: vi.fn() }] },
+    ]
+    /** An element's classes and those of everything inside it, ids aside. */
+    const look = () => {
+      const content = document.querySelector('[data-slot="content"]')!
+      return [content, ...content.querySelectorAll('*')].map((el) => el.getAttribute('class'))
+    }
+
+    const root = mountBar([{ key: 'edit', label: 'Edit', options }])
+    press(trigger(root, 'Edit'), 'Enter')
+    await settle()
+    const barLook = look()
+    expect(barLook.length).toBeGreaterThan(8)
+    cleanup?.()
+    await settle()
+
+    const { Dropdown } = await import('frappe-ui')
+    const host = document.createElement('div')
+    document.body.append(host)
+    const writer = createApp({
+      setup: () => () => h(Dropdown, { options, align: 'start', open: true }),
+    })
+    writer.mount(host)
+    cleanup = () => {
+      writer.unmount()
+      host.remove()
+    }
+    await settle()
+    expect(look()).toEqual(barLook)
+  })
+
+  // Left and Right between closed labels is reka's roving focus, which picks no
+  // target under jsdom; the browser check covers it.
+  it('closes on Escape, back to the label, without running anything', async () => {
     const { list, exportCsv } = menus()
     const root = mountBar(list)
     trigger(root, 'File').focus()
-    press(trigger(root, 'File'), 'ArrowRight')
-    expect(document.activeElement).toBe(trigger(root, 'Edit'))
-    press(trigger(root, 'Edit'), 'ArrowLeft')
-    press(trigger(root, 'File'), 'ArrowLeft')
-    expect(document.activeElement).toBe(trigger(root, 'Data'))
-
-    trigger(root, 'Data').focus()
-    press(trigger(root, 'Data'), 'ArrowRight')
-    expect(document.activeElement).toBe(trigger(root, 'File'))
-
     press(trigger(root, 'File'), 'Enter')
     await settle()
     expect(menuItem('Download as CSV')).toBeDefined()
@@ -125,7 +231,9 @@ describe('SheetMenuBar', () => {
   it('gives a viewer with no Insert menu one for Comment, after View', () => {
     const list = menus().list.filter((m) => m.key !== 'insert' && m.key !== 'format')
     const root = mountBar(list, vi.fn())
-    const names = [...root.querySelectorAll('[data-menu]')].map((b) => b.textContent?.trim())
+    const names = [...root.querySelectorAll('.sn-menubar-wide [data-menu]')].map((b) =>
+      b.textContent?.trim(),
+    )
     expect(names).toEqual(['File', 'Edit', 'View', 'Insert', 'Data'])
   })
 
@@ -135,10 +243,7 @@ describe('SheetMenuBar', () => {
     const menu = [...root.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Menu')!
     press(menu, 'Enter')
     await settle()
-    const top = [...document.querySelectorAll('[role="menuitem"]')].map((el) =>
-      el.textContent?.trim(),
-    )
-    expect(top).toEqual(['File', 'Edit', 'View', 'Insert', 'Format', 'Data'])
+    expect(openLabels()).toEqual(['File', 'Edit', 'View', 'Insert', 'Format', 'Data'])
     const view = menuItem('View')!
     view.focus()
     press(view, 'ArrowRight')

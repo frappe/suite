@@ -1,9 +1,20 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 
 import type { Session } from '@/platform/session'
 
-import { createTheme } from './index'
+import { createTheme, cycleThemeAndAnnounce } from './index'
+
+const shownToasts: Array<{ kind: string; message: string; options?: { id?: string } }> = []
+vi.mock('@/platform/feedback', () => ({
+  toast: {
+    success: (message: string, options?: { id?: string }) =>
+      shownToasts.push({ kind: 'success', message, options }),
+    error: (message: string, options?: { id?: string }) =>
+      shownToasts.push({ kind: 'error', message, options }),
+  },
+}))
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -31,13 +42,25 @@ describe('theme', () => {
     expect(theme.savedMode.value).toBe('dark')
   })
 
+  it('announces repeated theme changes in one toast', async () => {
+    document.cookie = 'user_id=Guest; path=/'
+    document.documentElement.setAttribute('data-theme-mode', 'light')
+    shownToasts.length = 0
+    await cycleThemeAndAnnounce()
+    await cycleThemeAndAnnounce()
+    expect(shownToasts.map((shown) => shown.kind)).toEqual(['success', 'success'])
+    expect(shownToasts[0]?.message).not.toBe(shownToasts[1]?.message)
+    expect(shownToasts[0]?.options?.id).toBeTruthy()
+    expect(shownToasts[1]?.options?.id).toBe(shownToasts[0]?.options?.id)
+  })
+
   it('reads and writes the Frappe User desk_theme preference', async () => {
     const request = vi.fn<(operation: any, input: any) => Promise<any>>(async (operation) =>
       operation.id === 'frappe.user.get_theme' ? { desk_theme: 'Automatic' } : undefined,
     )
-    const session = {
+    const session = fromPartial<Session>({
       user: ref({ id: 'user@example.com', fullName: 'User', avatar: null }),
-    } as unknown as Session
+    })
     const theme = createTheme({
       preferences: {
         read: () => request({ id: 'frappe.user.get_theme' }, {}),
@@ -56,20 +79,19 @@ describe('theme', () => {
     let listener: ((event: MediaQueryListEvent) => void) | undefined
     vi.stubGlobal(
       'matchMedia',
-      vi.fn(
-        () =>
-          ({
-            matches: false,
-            addEventListener: (_event: string, handler: EventListenerOrEventListenerObject) => {
-              listener = handler as (event: MediaQueryListEvent) => void
-            },
-          }) as MediaQueryList,
+      vi.fn(() =>
+        fromPartial<MediaQueryList>({
+          matches: false,
+          addEventListener: (_event: string, handler: EventListenerOrEventListenerObject) => {
+            listener = fromPartial<(event: MediaQueryListEvent) => void>(handler)
+          },
+        }),
       ),
     )
     document.documentElement.setAttribute('data-theme-mode', 'automatic')
     const theme = createTheme()
     expect(theme.resolvedMode.value).toBe('light')
-    listener?.({ matches: true } as MediaQueryListEvent)
+    listener?.(fromPartial<MediaQueryListEvent>({ matches: true }))
     expect(theme.resolvedMode.value).toBe('dark')
     expect(document.documentElement.style.colorScheme).toBe('dark')
   })
@@ -90,9 +112,9 @@ describe('theme', () => {
     const request = vi.fn(async (..._args: unknown[]) => {
       throw new Error('offline')
     })
-    const session = {
+    const session = fromPartial<Session>({
       user: ref({ id: 'user@example.com', fullName: 'User', avatar: null }),
-    } as unknown as Session
+    })
     document.documentElement.setAttribute('data-theme-mode', 'light')
     const theme = createTheme({
       preferences: {
@@ -108,9 +130,9 @@ describe('theme', () => {
 
   it('initializes the server preference once', async () => {
     const request = vi.fn(async (..._args: unknown[]) => ({ desk_theme: 'Dark' }))
-    const session = {
+    const session = fromPartial<Session>({
       user: ref({ id: 'user@example.com', fullName: 'User', avatar: null }),
-    } as unknown as Session
+    })
     const theme = createTheme({
       preferences: {
         read: () => request({ id: 'frappe.user.get_theme' }, {}),
