@@ -21700,6 +21700,10 @@
             ],
             "title": "After"
           },
+          "waiting_only": {
+            "title": "Waiting Only",
+            "type": "boolean"
+          },
           "start": {
             "title": "Start",
             "type": "integer"

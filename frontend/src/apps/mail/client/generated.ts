@@ -6986,6 +6986,7 @@ export type GetSubmissionsInput = {
   thread_id?: string | null
   before?: string | null
   after?: string | null
+  waiting_only?: boolean
   start?: number
   page_length?: number
 }
