@@ -21,19 +21,12 @@
 import { Avatar, Button } from 'frappe-ui'
 import { computed, reactive, ref, useTemplateRef, watch } from 'vue'
 
-import { api, client, useMutation, useQuery } from '@/api'
+import { api, useMutation, useQuery } from '@/api'
 import { useSession } from '@/platform/session'
 import SuiteMark from '@/shell/SuiteMark.vue'
 
 import AccountSetupStep from './AccountSetupStep.vue'
-import {
-  accountHeading,
-  daysUntil,
-  firstName,
-  isTeammate,
-  MOD_KEY,
-  needsSiteSetup,
-} from './onboarding'
+import { accountHeading, daysUntil, firstName, isTeammate, MOD_KEY } from './onboarding'
 import OnboardingFrame from './OnboardingFrame.vue'
 import PasswordStep from './PasswordStep.vue'
 import SetupView, { type SetupInvitation } from './SetupView.vue'
@@ -166,25 +159,6 @@ const account = reactive({ fullName: '', password: '' })
 const accountStep = useTemplateRef<InstanceType<typeof AccountSetupStep>>('accountStep')
 const setupState = computed(() => accountStep.value?.state ?? 'idle')
 const retrying = computed(() => ['failed', 'signin-failed'].includes(setupState.value))
-
-/**
- * After the account: a site that is not set up yet goes to the wizard. The first Admin's invitation
- * opens the wizard already; this catches a page that loaded without the site's state (no boot data).
- */
-async function onAccountReady(): Promise<void> {
-  // Asked again now: the page loaded before this person signed in.
-  const site = await client.query(api.suite.site.get).catch(() => null)
-  if (!site) {
-    // Unknown: Home loads afresh, and the router picks the wizard or the welcome.
-    window.location.replace('/home')
-    return
-  }
-  if (needsSiteSetup({ isOnboarded: site.is_onboarded, canOnboard: site.can_onboard })) {
-    window.location.replace('/suite/setup')
-    return
-  }
-  next()
-}
 
 // Signing in with a temporary password, which stays in memory for the password step
 const temporaryPassword = ref('')
@@ -432,7 +406,7 @@ const copy = computed(() => {
       :backup-email="invitation?.backup_email ?? ''"
       :inviter="inviter"
       :workspace-name="workspaceName"
-      @done="onAccountReady"
+      @done="next"
     />
 
     <PasswordStep
