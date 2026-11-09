@@ -2379,6 +2379,115 @@ describe('SocketHandlerManager characterization', () => {
 		);
 	});
 
+	it('join_room with a server-signed host_only_chat claim enforces the restriction without any host toggle', async () => {
+		const harness = createManager();
+
+		const guest = connectFullSocket(harness, {
+			id: 'sock-guest-policy',
+			userId: 'guest-policy-1',
+			userName: 'PolicyGuest',
+			isHost: false,
+			isCohost: false,
+			hostOnlyChat: true,
+		} as never);
+		emitJoin(guest, { userId: 'guest-policy-1', name: 'PolicyGuest' });
+		await new Promise((r) => setImmediate(r));
+
+		expect(guest.emitCalls).toContainEqual({
+			event: 'chat:restriction_updated',
+			data: { enabled: true },
+		});
+
+		guest.emitCalls.length = 0;
+		const sendCallback = vi.fn();
+		guest.fire(
+			'chat:send',
+			{ message: 'should be blocked by room policy' },
+			sendCallback,
+		);
+
+		expect(sendCallback).toHaveBeenCalledWith(
+			expect.objectContaining({ success: false }),
+		);
+		const err = guest.emitCalls.find((c) => c.event === 'sfu_error');
+		expect(err?.data).toEqual(
+			expect.objectContaining({ code: 'HOST_ONLY_CHAT' }),
+		);
+	});
+
+	it('a stale false host_only_chat claim never clears a live host-only restriction', async () => {
+		const harness = createManager();
+
+		const host = connectFullSocket(harness, {
+			id: 'sock-host-stale',
+			userId: 'host-stale-1',
+			userName: 'HostStale',
+			isHost: true,
+			isCohost: false,
+		});
+		emitJoin(host, { userId: 'host-stale-1', name: 'HostStale' });
+		await new Promise((r) => setImmediate(r));
+
+		host.fire('chat:toggle_restriction', { enabled: true });
+		await new Promise((r) => setImmediate(r));
+
+		const lateGuest = connectFullSocket(harness, {
+			id: 'sock-guest-stale',
+			userId: 'guest-stale-1',
+			userName: 'StaleGuest',
+			isHost: false,
+			isCohost: false,
+			hostOnlyChat: false,
+		} as never);
+		emitJoin(lateGuest, { userId: 'guest-stale-1', name: 'StaleGuest' });
+		await new Promise((r) => setImmediate(r));
+
+		// The late joiner is synced to the live restriction ...
+		expect(lateGuest.emitCalls).toContainEqual({
+			event: 'chat:restriction_updated',
+			data: { enabled: true },
+		});
+
+		// ... and the restriction still blocks non-hosts.
+		lateGuest.emitCalls.length = 0;
+		lateGuest.fire('chat:send', { message: 'still blocked' });
+		const err = lateGuest.emitCalls.find((c) => c.event === 'sfu_error');
+		expect(err?.data).toEqual(
+			expect.objectContaining({ code: 'HOST_ONLY_CHAT' }),
+		);
+	});
+
+	it('late joiners without a policy claim are synced to a live host-only restriction', async () => {
+		const harness = createManager();
+
+		const host = connectFullSocket(harness, {
+			id: 'sock-host-sync',
+			userId: 'host-sync-1',
+			userName: 'HostSync',
+			isHost: true,
+			isCohost: false,
+		});
+		emitJoin(host, { userId: 'host-sync-1', name: 'HostSync' });
+		await new Promise((r) => setImmediate(r));
+
+		host.fire('chat:toggle_restriction', { enabled: true });
+		await new Promise((r) => setImmediate(r));
+
+		const lateGuest = connectFullSocket(harness, {
+			id: 'sock-guest-sync',
+			userId: 'guest-sync-1',
+			userName: 'SyncGuest',
+			isHost: false,
+			isCohost: false,
+		});
+		emitJoin(lateGuest, { userId: 'guest-sync-1', name: 'SyncGuest' });
+		await new Promise((r) => setImmediate(r));
+
+		expect(lateGuest.emitCalls).toContainEqual({
+			event: 'chat:restriction_updated',
+			data: { enabled: true },
+		});
+	});
 	it('chat:pin broadcasts pin and explicit unpin actions', async () => {
 		const harness = createManager();
 

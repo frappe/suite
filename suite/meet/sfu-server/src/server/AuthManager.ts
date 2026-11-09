@@ -65,6 +65,7 @@ export class AuthManager {
 			socket.tokenExpiresAt = decoded.exp ? decoded.exp * 1000 : undefined;
 			socket.isGuest = decoded.is_guest || false;
 			socket.guestGeneration = decoded.guest_generation;
+			socket.hostOnlyChat = decoded.host_only_chat;
 
 			loggers.authManager.info(
 				'Authenticated user: %s for meeting: %s (site: %s)',
@@ -119,6 +120,7 @@ export class AuthManager {
 		socket.scope = decoded.scope ?? 'presence-preview';
 		socket.isGuest = decoded.is_guest || false;
 		socket.guestGeneration = decoded.guest_generation;
+		socket.hostOnlyChat = decoded.host_only_chat;
 		socket.e2eeRequired = Boolean(decoded.e2ee_required);
 		socket.e2eeReady = socket.e2eeRequired
 			? wasE2EERequired && wasE2EEReady
@@ -190,6 +192,7 @@ export class AuthManager {
 		socket.e2eeReady = undefined;
 		socket.e2eeRequired = undefined;
 		socket.guestGeneration = undefined;
+		socket.hostOnlyChat = undefined;
 	}
 
 	ensurePresenceAccess(socket: Socket): void {
@@ -284,6 +287,7 @@ function parseParticipantClaims(value: unknown): JWTPayload {
 		throw new Error('Invalid participant claims');
 	}
 	const e2eeRequired = optionalBoolean(value, 'e2ee_required');
+	const hostOnlyChat = optionalBoolean(value, 'host_only_chat');
 	const exp = optionalInteger(value, 'exp');
 	const iat = optionalInteger(value, 'iat');
 	return {
@@ -300,6 +304,7 @@ function parseParticipantClaims(value: unknown): JWTPayload {
 			: {}),
 		...(scope !== undefined ? { scope } : {}),
 		...(e2eeRequired !== undefined ? { e2ee_required: e2eeRequired } : {}),
+		...(hostOnlyChat !== undefined ? { host_only_chat: hostOnlyChat } : {}),
 		...(sessionId !== undefined ? { session_id: sessionId } : {}),
 		...(exp !== undefined ? { exp } : {}),
 		...(iat !== undefined ? { iat } : {}),
