@@ -141,13 +141,13 @@
   border-radius: 2px;
 }
 
-/* ── Row 3 · the formula bar (32 px) ─────────────────────────────────────── */
+/* ── Row 3 · the formula bar (36 px) ─────────────────────────────────────── */
 /* Plain text on the bar at rest: no border, no fill. */
 .sn-formula-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 32px;
+  height: 36px;
   padding: 0 8px;
   border-bottom: 1px solid var(--sn-bar-line);
   background: var(--sn-bar-bg);
@@ -201,7 +201,7 @@
   width: var(--sn-name-full);
   margin-right: calc(var(--sn-name-w) - var(--sn-name-full));
   background: var(--surface-base);
-  border-color: var(--outline-gray-4);
+  box-shadow: none;
 }
 /* The value field: fx, then the cell's input in the UI font. It takes the
    row's spare width and keeps enough to read a formula when the row is tight. */
@@ -247,6 +247,10 @@
   background: transparent;
   border: 0;
   outline: none;
+}
+/* The forms plugin's blue ring on a focused input: here only the caret shows. */
+.sn-formula-input:focus {
+  box-shadow: none;
 }
 .sn-formula-input::placeholder {
   color: var(--ink-gray-4);

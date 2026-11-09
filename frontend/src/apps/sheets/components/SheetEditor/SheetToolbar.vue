@@ -451,7 +451,6 @@ const currencyIcon = computed(
   gap: 8px;
   height: 40px;
   padding: 0 8px;
-  border-bottom: 1px solid var(--outline-gray-2);
   background: var(--sn-bar-bg);
   flex-shrink: 0;
 }
