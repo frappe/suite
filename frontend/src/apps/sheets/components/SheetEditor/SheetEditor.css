@@ -6,7 +6,7 @@
   /* The two top bars' colours, in one place. Both bars and their hover and
      "on" fills read these, so a tint changes here and nowhere else. */
   --sn-bar-bg: var(--surface-base);
-  --sn-bar-line: var(--outline-gray-2);
+  --sn-bar-line: var(--outline-gray-1);
   --sn-bar-hover: var(--surface-gray-2);
   --sn-bar-on: var(--surface-gray-3);
   --sn-bar-on-edge: transparent;

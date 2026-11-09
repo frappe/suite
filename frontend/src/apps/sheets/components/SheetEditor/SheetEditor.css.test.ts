@@ -12,6 +12,20 @@ ${selector} {`)
   return css.slice(at, css.indexOf('}', at))
 }
 
+describe('the bars around the grid', () => {
+  it('draws the line under the formula bar in the lightest outline', () => {
+    expect(rule('.sn-root')).toContain('--sn-bar-line: var(--outline-gray-1)')
+  })
+
+  it('draws the line above the tabs in the lightest outline', () => {
+    const tabs = readFileSync(resolve(__dirname, 'SheetTabsBar.vue'), 'utf8')
+    const bottom = tabs.slice(tabs.indexOf('.sn-bottom {'))
+    expect(bottom.slice(0, bottom.indexOf('}'))).toContain(
+      'border-top: 1px solid var(--outline-gray-1)',
+    )
+  })
+})
+
 describe('the formula bar', () => {
   it('has no line between it and the toolbar', () => {
     const toolbar = readFileSync(resolve(__dirname, 'SheetToolbar.vue'), 'utf8')
