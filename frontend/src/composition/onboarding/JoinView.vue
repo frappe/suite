@@ -521,7 +521,7 @@ const copy = computed(() => {
           variant="solid"
           size="md"
           :label="__('Email {0}', [firstName(inviter)])"
-          :link="`mailto:${invitation.invited_by_email}`"
+          :href="`mailto:${invitation.invited_by_email}`"
         />
         <Button
           class="w-full"
