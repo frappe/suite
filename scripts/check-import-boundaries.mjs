@@ -213,7 +213,6 @@ const moduleGraphDebtGroups = [
       'shell/AppContainer.vue|@/boot/session',
       'shell/AppContainer.vue|@/stores/root',
       'shell/Rail.vue|@/stores/root',
-      'shell/SetupView.vue|@/utils/setupTheme',
       'shell/SuiteCommandPalette.vue|@/apps/calendar/components/CommandPalette/CalendarFilterBadges.vue',
       'shell/SuiteCommandPalette.vue|@/apps/calendar/components/CommandPalette/CalendarFilterPanel.vue',
       'shell/SuiteCommandPalette.vue|@/apps/calendar/components/CommandPalette/CalendarSearchResult.vue',

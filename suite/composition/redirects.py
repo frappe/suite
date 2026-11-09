@@ -116,6 +116,7 @@ ROWS: tuple[Row, ...] = (
     Row("/suite/start", "/home"),
     # Stops: these stay, and `/suite` must not take them as a slug.
     Row("/suite/setup"),
+    Row("/suite/welcome"),
     Row("/suite/load-error"),
 )
 

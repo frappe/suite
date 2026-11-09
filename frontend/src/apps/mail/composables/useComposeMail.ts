@@ -282,6 +282,16 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   // below includes it.
   const prefilledBody = isSavedDraft ? '' : mailDetails?.html_body || ''
 
+  // A fresh compose can open before the identities load, and then starts from the person's
+  // sign-in address, which on Suite Cloud is not a mailbox address. Once they arrive, move off an
+  // address that is not one of them.
+  watch(
+    () => identities.value.data,
+    (loaded) => {
+      if (loaded?.length && !getIdentity(mail.from_email)) mail.from_email = getDefaultFromEmail()
+    },
+  )
+
   // Swap the signature when it changes — a different From identity, or the identities arriving
   // after the composer opened (a fresh compose can open before they have loaded, and then starts
   // from the account's address with no signature to put in) — but only while the body is still the

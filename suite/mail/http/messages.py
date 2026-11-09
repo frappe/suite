@@ -298,6 +298,7 @@ class SubmissionsInput(AccountInput):
     thread_id: NotRequired[str | None]
     before: NotRequired[str | None]
     after: NotRequired[str | None]
+    waiting_only: NotRequired[bool]
     start: NotRequired[int]
     page_length: NotRequired[int]
 

@@ -53,13 +53,27 @@ vi.mock('@/apps/mail/utils', () => ({
   raiseError: vi.fn(),
   raiseToast,
 }))
+interface TestIdentity {
+  email: string
+  _name: string
+}
+const mayaIdentities: TestIdentity[] = [{ email: 'maya@example.com', _name: 'Maya' }]
+// The account's identities as a composer opens (undefined: not loaded yet), and a way to load them.
+const scope = vi.hoisted<{
+  identities?: TestIdentity[]
+  load: (identities: TestIdentity[]) => void
+}>(() => ({ load: () => {} }))
 vi.mock('@/apps/mail/utils/accountScope', () => ({
-  injectAccountScope: () => ({
-    accountId: scopeAccount,
-    account: ref({ default_outgoing_email: 'maya@example.com' }),
-    identities: ref({ data: [{ email: 'maya@example.com', _name: 'Maya' }] }),
-    mailboxIds: ref({}),
-  }),
+  injectAccountScope: () => {
+    const identities = ref<{ data?: TestIdentity[] }>({ data: scope.identities })
+    scope.load = (data) => (identities.value = { data })
+    return {
+      accountId: scopeAccount,
+      account: ref({ default_outgoing_email: 'maya@example.com' }),
+      identities,
+      mailboxIds: ref({}),
+    }
+  },
 }))
 vi.mock('@/apps/mail/utils/composables', () => ({
   useComposeMail: () => ({ requestCompose }),
@@ -136,6 +150,7 @@ function compose(
 beforeEach(() => {
   open = true
   scopeAccount.value = 'account'
+  scope.identities = mayaIdentities
   localStorage.clear()
   server.updateDraft.mockReset()
   server.create.mockReset()
@@ -153,6 +168,18 @@ afterEach(() => {
 })
 
 const tick = () => vi.advanceTimersByTimeAsync(0)
+
+describe('the From address', () => {
+  it('moves to the mailbox once the identities load, when the composer opened before them', async () => {
+    scope.identities = undefined
+    const composer = compose(draft, {}, 'maya@personal.example')
+
+    scope.load(mayaIdentities)
+    await nextTick()
+
+    expect(composer.mail.from_email).toBe('maya@example.com')
+  })
+})
 
 describe('saving a draft', () => {
   it('shows a refused save until a retry lands', async () => {
