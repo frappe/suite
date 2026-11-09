@@ -6,6 +6,7 @@ import { searchUsers, type WriterUser } from '@/apps/writer/drive'
 import { createUsers, rankMentionsFor, useUsers } from './useUsers'
 
 vi.mock('@/apps/writer/drive', () => ({ searchUsers: vi.fn() }))
+vi.mock('@/api', () => ({ client: { query: vi.fn() }, api: { suite: { people: { list: {} } } } }))
 vi.mock('@/platform/session', () => ({ useSession: () => ({ user: { value: 'me@x.test' } }) }))
 
 function person(name: string, full_name = name.toUpperCase()): WriterUser {

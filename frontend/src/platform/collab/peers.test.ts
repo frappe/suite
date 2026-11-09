@@ -1,12 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { Peer } from '@/platform/collab'
+import { assignColours, PALETTE } from '@/platform/collab/colours'
+import { peopleOf, personIdleSince, roomColours } from '@/platform/collab/peers'
 
-import { assignColours, PALETTE } from './colours'
-import { peopleOf, personIdleSince, roomColours } from './peers'
-
-const searchUsers = vi.hoisted(() => vi.fn())
-vi.mock('@/apps/writer/drive', () => ({ searchUsers }))
+const query = vi.hoisted(() => vi.fn())
+vi.mock('@/api', () => ({ client: { query }, api: { suite: { people: { list: {} } } } }))
 
 const PEER_ID = 2 ** 31 + 7
 
@@ -58,7 +57,7 @@ function seenFrom(own: Peer, everyone: Peer[]) {
 
 describe('Writer peers', () => {
   beforeEach(() => {
-    searchUsers.mockResolvedValue([])
+    query.mockResolvedValue({ rows: [] })
   })
 
   it('reads a person as idle only once every tab of theirs is, from the last to go', () => {

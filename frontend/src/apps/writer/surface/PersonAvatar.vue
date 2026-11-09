@@ -13,7 +13,7 @@
 import { Avatar } from 'frappe-ui'
 
 import { colourStyle, personColour } from '@/apps/writer/collab/colours'
-import { initialsOf } from '@/apps/writer/collab/peers'
+import { initialsOf } from '@/platform/collab/peers'
 
 /** A person's photo, or their initials in their own colour, as the people in the header show them. */
 defineProps<{ user: string; name: string; image?: string | null }>()

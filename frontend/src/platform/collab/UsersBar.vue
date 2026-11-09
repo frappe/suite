@@ -51,19 +51,26 @@
     </template>
   </Dropdown>
 </template>
-<script setup>
+<script setup lang="ts">
+import './peers.css'
+
 import { Avatar, Dropdown, Tooltip } from 'frappe-ui'
 import { computed, onBeforeUnmount, ref } from 'vue'
 
-import { colourStyle } from '@/apps/writer/collab/colours'
-import { initialsOf } from '@/apps/writer/collab/peers'
-import { useUsers } from '@/apps/writer/composables/useUsers'
+import { colourStyle, type PeerColour } from '@/platform/collab/colours'
+import { getUser } from '@/platform/collab/names'
+import { initialsOf } from '@/platform/collab/peers'
 
-const props = defineProps({
-  users: Array,
-})
+interface Person {
+  id: string
+  name: string
+  avatar?: string
+  colour?: PeerColour
+  color?: string
+  idleSince: number | null
+}
 
-const { getUser } = useUsers()
+const props = defineProps<{ users: Person[] }>()
 
 const MINUTE_MS = 60_000
 const TICK_MS = 30_000
@@ -97,12 +104,12 @@ const moreUsersLabel = computed(() => {
   return __('{0} more users', [hiddenCount.value])
 })
 
-function isIdle(user) {
-  return user.idleSince != null
+function isIdle(user: Person) {
+  return user.idleSince !== null
 }
 
-function tooltipOf(user) {
-  if (!isIdle(user)) {
+function tooltipOf(user: Person) {
+  if (user.idleSince === null) {
     return user.name
   }
 
@@ -111,14 +118,14 @@ function tooltipOf(user) {
 }
 
 // A second line only when it tells more than the name: a guest has no email, and a user id can equal the name
-function emailOf(user) {
+function emailOf(user: Person) {
   const email = getUser(user.id)?.email
   return email && email !== user.name ? email : ''
 }
 
 // A collaborative document's person has a colour with a dark-mode variant; the older editor's has one colour,
 // which fills its initials in white
-function peerColourStyle(user) {
+function peerColourStyle(user: Person) {
   if (user.colour) {
     return colourStyle(user.colour)
   }
