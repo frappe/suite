@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
 
@@ -42,11 +43,11 @@ function setUpText(doc: Y.Doc, id: string, words: string) {
 }
 
 function textOf(doc: Y.Doc, id: string) {
-  return (boxText(doc, id)!.get(0) as Y.XmlText).toString()
+  return fromPartial<Y.XmlText>(boxText(doc, id)!.get(0)).toString()
 }
 
 function typeAt(doc: Y.Doc, id: string, index: number, words: string) {
-  ;(boxText(doc, id)!.get(0) as Y.XmlText).insert(index, words)
+  fromPartial<Y.XmlText>(boxText(doc, id)!.get(0)).insert(index, words)
 }
 
 function box(doc: Y.Doc, id: string) {
@@ -621,7 +622,7 @@ describe('a read value', () => {
     const id = addBox(doc, slide, { frame: { ...FRAME } })
     const [{ boxes }] = readSlides(doc)
     const [drawn] = boxes
-    ;(drawn.frame as typeof FRAME).left = 999
+    fromPartial<typeof FRAME>(drawn.frame).left = 999
     expect(box(doc, id).get('frame')).toEqual(FRAME)
     const [{ boxes: again }] = readSlides(doc)
     expect(again[0].frame).toEqual(FRAME)

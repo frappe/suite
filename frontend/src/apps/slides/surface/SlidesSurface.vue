@@ -376,6 +376,7 @@ function showPanel(next: Panel | null) {
 async function loadComments() {
   panelLoading.value = true
   try {
+    // SAFETY: DocumentSession.comments.list calls the Suite threads endpoint, which returns its threads projection.
     const result = (await props.session.comments.list()) as {
       threads?: CommentThread[]
     }
@@ -520,7 +521,16 @@ async function load() {
     loadTemplates()
     composite.value = !!doc?.is_composite
     isConverted.value = !!doc?.is_converted
-    conversion.value = (doc?.conversion as ConversionStatus | undefined) ?? null
+    const status = doc?.conversion
+    conversion.value =
+      status && typeof status === 'object' && 'state' in status && typeof status.state === 'string'
+        ? {
+            state: status.state,
+            ...('reason' in status && typeof status.reason === 'string'
+              ? { reason: status.reason }
+              : { reason: undefined }),
+          }
+        : null
     closeConvertedRoom?.()
     closeConvertedRoom = null
     if (isConverted.value) {
@@ -585,9 +595,9 @@ function cancelRunningLoad() {
 }
 
 function normalizeCompositeSlide(value: unknown) {
-  const slide: Record<string, unknown> = {
-    ...(value as Record<string, unknown>),
-  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return { elements: [] }
+  const slide: Record<string, unknown> = {}
+  Object.assign(slide, value)
   if (typeof slide.elements === 'string') {
     try {
       slide.elements = JSON.parse(slide.elements)

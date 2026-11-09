@@ -143,11 +143,18 @@ const STRUCTURAL = new Set([
 // Clears up to this many cells by position; a bigger range scans the sheet's keys instead.
 const CLEAR_BY_POSITION = 4096
 
-// tr.changed is typed by Yjs's internal AbstractType; our typed roots compare by identity.
-const touchedIn = (tr: Y.Transaction, type: object) =>
-  (tr.changed as Map<object, Set<string | null>>).has(type)
-const changedKeys = (tr: Y.Transaction, type: object) =>
-  (tr.changed as Map<object, Set<string | null>>).get(type) ?? []
+type SheetRoot = ReturnType<typeof roots>[keyof ReturnType<typeof roots>]
+
+// Yjs reports typed roots through its common event type; compare their identities
+// without discarding the roots' specific value types.
+const touchedIn = (tr: Y.Transaction, type: SheetRoot) => {
+  for (const changed of tr.changed.keys()) if (changed === type) return true
+  return false
+}
+const changedKeys = (tr: Y.Transaction, type: SheetRoot): Iterable<string | null> => {
+  for (const [changed, keys] of tr.changed) if (changed === type) return keys
+  return []
+}
 
 // A sheet's name while sheets swap names (A ↔ B). No user names a sheet this.
 const renameTmp = (sheetId: string) => `~glue~${sheetId}`
@@ -270,7 +277,7 @@ export function createGlue({ doc, client, stores }: GlueOptions): Glue {
   function createdNames(commands: NonBatchCommand[]): string[] {
     const names: string[] = []
     for (const c of commands) {
-      const p = c.payload as { sheet?: string; name?: string }
+      const p: { sheet?: string; name?: string } = c.payload
       if ((c.type === 'addSheet' || c.type === 'duplicateSheet') && p.name) names.push(p.name)
       if (c.type === 'renameSheet' && p.name) {
         const at = names.indexOf(p.sheet ?? '')
@@ -501,7 +508,7 @@ export function createGlue({ doc, client, stores }: GlueOptions): Glue {
     const nameOf = new Map(after.sheets.map((s) => [s.id, s.name]))
     for (const key of keys) {
       const k = parseCellKey(key)
-      const sheet = k && nameOf.get(k.sheetId)
+      const sheet = k ? nameOf.get(k.sheetId) : undefined
       if (!k || sheet === undefined) continue
       const row = axis(doc, k.sheetId, 'rows').posOf(k.rowId) + 1
       const col = axis(doc, k.sheetId, 'cols').posOf(k.colId) + 1

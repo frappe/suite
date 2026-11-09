@@ -27,7 +27,6 @@ import { applyLegacyPlan, planLegacySheet } from '../utils/legacy-sheet'
 import { unpackSheet } from '../utils/sheet-codec'
 import { docToHtml } from './html'
 import { writeWorkbookToDoc } from './load'
-import type { GlueStores } from './stores'
 
 /** Something the conversion changed or left out, for the conversion's record. */
 type Dropped =
@@ -62,20 +61,25 @@ export type ConverterAnswer =
 /** A workbook whose IronCalc runs in this process, started from `bytes` (or empty). */
 export function inProcessClient(bytes: Uint8Array | null): Promise<WorkbookClient> {
   const host = createWorkerHost()
-  const port = {
-    onmessage: null as ((e: { data: unknown }) => void) | null,
+  interface InProcessPort {
+    onmessage: ((event: { data: unknown }) => void) | null
+    postMessage(message: unknown): void
+  }
+  const port: InProcessPort = {
+    onmessage: null,
     postMessage(message: unknown) {
       setTimeout(() => port.onmessage?.({ data: host.handle(structuredClone(message)) }), 0)
     },
   }
   return createWorkbookClient({ port, snapshotBytes: bytes })
 }
-
-// A store that only keeps a snapshot (the per-sheet view, filters).
-function held(): {
+interface HeldResult {
   snapshot(): Record<string, unknown>
   restore(v: Record<string, unknown>): void
-} {
+}
+
+// A store that only keeps a snapshot (the per-sheet view, filters).
+function held(): HeldResult {
   let value: Record<string, unknown> = {}
   return { snapshot: () => structuredClone(value), restore: (v) => (value = v) }
 }
@@ -103,8 +107,8 @@ type Saved = Record<string, unknown>
 // so a bad body never converts to an empty sheet.
 function isUnreadableDevelop(sheet: unknown): boolean {
   if (sheet == null) return false
-  const snap = unpackSheet(sheet) as { sheets?: unknown } | null
-  return !snap || typeof snap !== 'object' || !snap.sheets || typeof snap.sheets !== 'object'
+  const snap = unpackSheet(sheet)
+  return !isPlainObject(snap) || !snap.sheets || typeof snap.sheets !== 'object'
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -117,9 +121,9 @@ function isFlatView(view: Record<string, unknown>): boolean {
 }
 
 function renameKeys(snap: unknown, renamed: Record<string, string>): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries((snap ?? {}) as Record<string, unknown>).map(([k, v]) => [renamed[k] ?? k, v]),
-  )
+  if (snap == null) return {}
+  if (!isPlainObject(snap)) throw new Error('Saved per-sheet state must be a map')
+  return Object.fromEntries(Object.entries(snap).map(([k, v]) => [renamed[k] ?? k, v]))
 }
 
 /**
@@ -132,7 +136,9 @@ export async function convertSheetsData(
 ): Promise<ConverterAnswer> {
   let saved: Saved
   try {
-    saved = JSON.parse(sheetsData || '{}') as Saved
+    const parsed: unknown = JSON.parse(sheetsData || '{}')
+    if (!isPlainObject(parsed)) return { kind: 'failed', reason: 'check' }
+    saved = parsed
   } catch {
     return { kind: 'failed', reason: 'check' }
   }
@@ -167,7 +173,7 @@ export async function convertSheetsData(
 
     const stores = sideStores()
     // The names root is keyed by the upper-cased name: one that can't be a key is left out.
-    const names = (saved.namedRanges as { entries?: unknown } | null)?.entries
+    const names = isPlainObject(saved.namedRanges) ? saved.namedRanges.entries : undefined
     if (isPlainObject(names)) {
       for (const [key, entry] of Object.entries(names)) {
         if (OPEN_KEY.test(key)) continue
@@ -191,7 +197,11 @@ export async function convertSheetsData(
         ['namedRanges', saved.namedRanges],
       ]
       for (const [name, snap] of restore) {
-        if (snap) (stores[name].restore as (s: unknown) => void)(snap)
+        if (snap) {
+          // SAFETY: this table pairs each saved snapshot key with its matching
+          // engine owner; restore owns decoding, and malformed snapshots are refused below.
+          void (stores[name].restore as (s: unknown) => void)(snap)
+        }
       }
       const view = isPlainObject(saved.view) ? saved.view : {}
       stores.view.restore(
@@ -211,7 +221,7 @@ export async function convertSheetsData(
     }
 
     const doc = new Y.Doc()
-    await writeWorkbookToDoc(doc, client, stores as GlueStores)
+    await writeWorkbookToDoc(doc, client, stores)
     const state = Y.encodeStateAsUpdate(doc)
     if (state.length > maxState) return { kind: 'failed', reason: 'too_large' }
     return {

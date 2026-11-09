@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { CollabSession } from '@/platform/collab'
@@ -18,7 +19,7 @@ vi.mock('@/platform/session', () => ({
 // Real IronCalc workbooks, several round trips each.
 const TIMEOUT = 30_000
 
-const session = { nodeId: 'n1' } as unknown as CollabSession
+const session = fromPartial<CollabSession>({ nodeId: 'n1' })
 
 afterEach(() => {
   toast.info.mockClear()

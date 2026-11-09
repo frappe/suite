@@ -120,8 +120,8 @@ import Users from '~icons/lucide/users'
 import UsersRound from '~icons/lucide/users-round'
 import { Button, Dropdown, SidebarItem, SidebarSection, Tooltip } from 'frappe-ui'
 import { Icon } from 'frappe-ui/experimental'
-import { computed, h, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, h, ref, watch, type Component, type VNode } from 'vue'
+import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 
 import { api, useQuery } from '@/api'
 import DeleteFolderModal from '@/apps/mail/components/Modals/DeleteFolderModal.vue'
@@ -129,7 +129,12 @@ import FolderModal from '@/apps/mail/components/Modals/FolderModal.vue'
 import QuotaBar from '@/apps/mail/components/QuotaBar.vue'
 import { useThreadDrag } from '@/apps/mail/composables/useThreadDrag'
 import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
-import { SECONDARY_MAILBOX_ROLES, userStore, withStarred } from '@/apps/mail/stores/user'
+import {
+  isHiddenFolder,
+  SECONDARY_MAILBOX_ROLES,
+  userStore,
+  withStarred,
+} from '@/apps/mail/stores/user'
 import type { MailboxData, UnifiedFolder } from '@/apps/mail/types'
 import { getIcon, getMailboxName } from '@/apps/mail/utils'
 import { useAccountSwitch, useScreenSize } from '@/apps/mail/utils/composables'
@@ -166,17 +171,32 @@ const isSectionCollapsed = (section: { key?: string }) =>
 // lead folders: a row like theirs that opens in place, rather than a section heading of its own.
 const moreOpen = computed(() => !collapsedSections.value.more)
 // It opens in place, so its icon is the chevron saying which way: down to open, up to fold away.
-const moreToggle = (holds: string[]) => ({
-  label: __('More'),
-  icon: moreOpen.value ? ChevronUp : ChevronDown,
-  to: undefined,
-  onClick: () => setSectionCollapsed('more', moreOpen.value),
-  activeFor: [] as string[],
-  moreToggle: true,
-  // What the folders behind it answer to, so the one open can be found there while they are hidden.
-  holds,
-})
-const isMoreToggle = (item: object) => 'moreToggle' in item
+const moreToggle = (holds: string[]) => {
+  const activeFor: string[] = []
+  return {
+    label: __('More'),
+    icon: moreOpen.value ? ChevronUp : ChevronDown,
+    to: undefined,
+    onClick: () => setSectionCollapsed('more', moreOpen.value),
+    activeFor,
+    moreToggle: true,
+    // What the folders behind it answer to, so the one open can be found there while they are hidden.
+    holds,
+  }
+}
+interface SidebarItem {
+  label?: string
+  mailboxId?: string
+  moreToggle?: boolean
+  icon?: string | Component | VNode
+  to?: RouteLocationRaw
+  onClick?: () => void
+  activeFor?: string[]
+  menuOptions?: InstanceType<typeof Dropdown>['$props']['options']
+  suffix?: string
+  holds?: string[]
+}
+const isMoreToggle = (item: SidebarItem) => 'moreToggle' in item
 const withMore = <T, M extends { activeFor?: string[] }>(items: T[], more: M[]) =>
   more.length
     ? [
@@ -380,12 +400,12 @@ const dashboardItems = [
 // What's unread, where that means something: the mail you sent is yours, and "unread" there is
 // only a flag left over from somewhere else.
 const unreadSuffix = (role: string | null | undefined, unread?: number | null) =>
-  role !== 'sent' && unread ? String(unread) : ''
+  role !== 'sent' && role !== 'snoozed' && unread ? String(unread) : ''
 
 const mailboxItems = computed(
   () =>
     mailboxes.data
-      ?.filter((mailbox: MailboxData) => mailbox.subscribed)
+      ?.filter((mailbox: MailboxData) => mailbox.subscribed && !isHiddenFolder(mailbox))
       ?.map((mailbox: MailboxData) => {
         return {
           mailboxId: mailbox.id,
@@ -468,10 +488,16 @@ const unifiedSidebarItems = computed(() => {
 
 // The one thing a section's heading offers to do, if anything (only the folders' "New Folder").
 type SectionAction = { label: string; onClick: () => void }
-const sectionAction = (section: object): SectionAction | undefined =>
-  'action' in section ? (section.action as SectionAction) : undefined
+interface SidebarSection {
+  key?: string
+  label: string
+  items: readonly SidebarItem[]
+  action?: SectionAction
+  collapsible?: boolean
+}
+const sectionAction = (section: SidebarSection): SectionAction | undefined => section.action
 
-const sidebarItems = computed(() => {
+const sidebarItems = computed<SidebarSection[]>(() => {
   if (isUnified.value) return unifiedSidebarItems.value
 
   if (route.meta.isDashboard) {
@@ -545,20 +571,16 @@ const sidebarItems = computed(() => {
     selectedMailbox.value = undefined
     showFolderModal.value = true
   }
-  const groups = [
-    { label: '', key: 'lead', items: withMore(leadItems, secondaryItems) },
-    // With folders of your own, the heading carries the "+". With none, a heading over nothing read
-    // as a list that had failed to load: a New Folder row sits under it instead, and the heading's
-    // "+" would only repeat it.
-    {
-      label: __('My folders'),
-      key: 'folders',
-      items: yourFolders.length
-        ? yourFolders
-        : [{ label: __('New Folder'), icon: Plus, to: undefined, onClick: newFolder }],
-      ...(yourFolders.length ? { action: { label: __('New Folder'), onClick: newFolder } } : {}),
-    },
-  ]
+  // Only a nonempty folder list offers the heading action; otherwise its row creates a folder.
+  const folders: SidebarSection = {
+    label: __('My folders'),
+    key: 'folders',
+    items: yourFolders.length
+      ? yourFolders
+      : [{ label: __('New Folder'), icon: Plus, to: undefined, onClick: newFolder }],
+  }
+  if (yourFolders.length) folders.action = { label: __('New Folder'), onClick: newFolder }
+  const groups = [{ label: '', key: 'lead', items: withMore(leadItems, secondaryItems) }, folders]
 
   return groups
 })
@@ -568,8 +590,11 @@ const sidebarItems = computed(() => {
 watch(
   () =>
     sidebarItems.value
-      .flatMap((group) => group.items as object[])
-      .some((item) => 'holds' in item && (item.holds as unknown[]).includes(activeKey.value)),
+      .flatMap((group) => group.items)
+      .some(
+        (item) =>
+          'holds' in item && Array.isArray(item.holds) && item.holds.includes(activeKey.value),
+      ),
   (inside) => inside && setSectionCollapsed('more', false),
   { immediate: true },
 )

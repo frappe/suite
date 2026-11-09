@@ -58,6 +58,7 @@ const tracks = computed(() =>
 const placeholders = computed(() =>
   Array.from({ length: skeletonRows }, (_, index) => ({ key: `skeleton-${index}` })),
 )
+// SAFETY: Row is constrained to object; arbitrary cell values stay unknown, including absent keys.
 const field = (row: Row, key: string) => (row as Record<string, unknown>)[key]
 const valueOf = (row: Row) => String(field(row, rowKey))
 // Deterministic pseudo-random widths so the placeholder reads as text of varying length.

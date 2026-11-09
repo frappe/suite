@@ -57,8 +57,9 @@ const show = defineModel<boolean>()
 const store = userStore()
 const router = useRouter()
 
+const initialAddressBookIds: string[] = []
 const defaultContact = {
-  address_book_ids: [] as string[],
+  address_book_ids: initialAddressBookIds,
   full_name: '',
   kind: 'Individual',
 }

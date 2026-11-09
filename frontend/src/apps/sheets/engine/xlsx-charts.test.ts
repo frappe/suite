@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import ExcelJS from 'exceljs'
 import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
@@ -114,7 +115,7 @@ describe('charts through .xlsx', () => {
     expect(await zip.file('xl/worksheets/sheet2.xml')!.async('string')).not.toContain('<drawing')
 
     const wb = new ExcelJS.Workbook()
-    await wb.xlsx.load(bytes.buffer as ArrayBuffer)
+    await wb.xlsx.load(fromPartial<ArrayBuffer>(bytes.buffer))
     expect(wb.getWorksheet('Sales')?.getCell('B2').value).toBe(10)
     const { read } = await import('xlsx')
     expect(read(bytes, { type: 'array' }).SheetNames).toEqual(['Sales', 'Notes'])

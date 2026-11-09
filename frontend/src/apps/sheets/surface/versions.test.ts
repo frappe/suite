@@ -9,6 +9,8 @@ import { addSheet, axis, cellKey, initDoc, roots } from '../collab/schema'
 import type { SheetVersion } from './records'
 import { copyFromVersion, nextStep, readPreview, useVersionList } from './versions'
 
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const api = vi.hoisted(() => ({ mutation: vi.fn(async () => ({})) }))
 vi.mock('@/api', () => ({
   api: { drive: { nodes: { trash: 'drive.nodes.trash' } } },
@@ -32,7 +34,9 @@ function sheetDoc(cells: Record<string, string>) {
   const sheetId = addSheet(doc, 'Sheet1')
   doc.transact(() => {
     for (const [at, input] of Object.entries(cells)) {
-      const [row, col] = at.split(',').map(Number) as [number, number]
+      const [row, col] = at.split(',').map(Number)
+      if (row === undefined || col === undefined)
+        throw new Error('Expected a row,column cell address')
       const key = cellKey(
         sheetId,
         axis(doc, sheetId, 'rows').ensure(row),
@@ -98,12 +102,17 @@ describe('nextStep', () => {
 
 describe('copyFromVersion', () => {
   const copied = { name: 'node-copy', title: 'Budget (Before import)' }
-  const session = (copy = vi.fn(async () => copied)) => ({ copy }) as unknown as DocumentSession
+  const session = (copy = vi.fn(async () => copied)) => fromPartial<DocumentSession>({ copy })
 
   it("copies the sheet into the folder and writes the version into the copy's room", async () => {
     const { doc } = sheetDoc({ '0,0': 'then' })
     const copy = vi.fn(async () => copied)
-    const write = vi.fn(async () => true)
+    const write = vi.fn(
+      async (
+        _target: Parameters<NonNullable<Parameters<typeof copyFromVersion>[4]>>[0],
+        _state: Uint8Array,
+      ) => true,
+    )
 
     const made = await copyFromVersion(
       session(copy),
@@ -115,7 +124,14 @@ describe('copyFromVersion', () => {
 
     expect(made).toEqual(copied)
     expect(copy).toHaveBeenCalledWith('folder-1', copied.title)
-    const [target, state] = write.mock.calls[0] as unknown as [{ nodeId: string }, Uint8Array]
+    const [target, state] = write.mock.calls[0] ?? []
+    if (
+      !target ||
+      typeof target !== 'object' ||
+      !('nodeId' in target) ||
+      !(state instanceof Uint8Array)
+    )
+      throw new Error('Expected a document target and encoded workbook bytes')
     expect(target.nodeId).toBe('node-copy')
     const written = new Y.Doc()
     Y.applyUpdate(written, state)
@@ -125,7 +141,12 @@ describe('copyFromVersion', () => {
 
   it('trashes a copy that could not take the version, so none is left looking like it', async () => {
     const { doc } = sheetDoc({ '0,0': 'then' })
-    const write = vi.fn(async () => false)
+    const write = vi.fn(
+      async (
+        _target: Parameters<NonNullable<Parameters<typeof copyFromVersion>[4]>>[0],
+        _state: Uint8Array,
+      ) => false,
+    )
 
     await expect(
       copyFromVersion(session(), 'folder-1', storedBytes(doc), 'Copy', write),
@@ -153,10 +174,12 @@ describe('useVersionList', () => {
       rows: [{ ...version, seq: 4, pinned: 0 }],
       next_cursor: null,
     }))
-    const versions = useVersionList({
-      versions: { list, update },
-      title: ref('Budget'),
-    } as unknown as DocumentSession)
+    const versions = useVersionList(
+      fromPartial<DocumentSession>({
+        versions: { list, update },
+        title: ref('Budget'),
+      }),
+    )
     await versions.load()
 
     const named = await versions.rename(versions.versions.value[0]!, 'Q3 close')

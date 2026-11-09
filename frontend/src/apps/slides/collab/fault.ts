@@ -15,13 +15,13 @@ import { extensions } from '@/apps/slides/stores/tiptapSetup'
 import { BOX_KEYS, ROOT, SLIDE_KEYS } from './deck'
 
 const schema = getSchema(extensions)
-const KEYS_BY_ROOT: Record<string, Set<string>> = {
-  [ROOT.slides]: new Set(SLIDE_KEYS),
-  [ROOT.boxes]: new Set(BOX_KEYS),
-}
+const KEYS_BY_ROOT = new Map<string, Set<string>>([
+  [ROOT.slides, new Set(SLIDE_KEYS)],
+  [ROOT.boxes, new Set(BOX_KEYS)],
+])
 
 // A fresh doc's roots are untyped until read, so this looks at the raw items
-function holdsListItems(type: Y.AbstractType<unknown>) {
+function holdsListItems(type: Pick<Y.AbstractType<unknown>, '_start'>) {
   for (let item = type._start; item; item = item.right) {
     if (!item.deleted) {
       return true
@@ -58,7 +58,7 @@ function itemFault(name: string, item: unknown) {
   }
 
   for (const [key, value] of item.entries()) {
-    if (!KEYS_BY_ROOT[name].has(key)) {
+    if (!KEYS_BY_ROOT.get(name)?.has(key)) {
       return `schema: ${name} holds an unknown key`
     }
 
@@ -71,8 +71,8 @@ function itemFault(name: string, item: unknown) {
   return null
 }
 
-function rootFault(name: string, type: Y.AbstractType<unknown>) {
-  if (!(name in KEYS_BY_ROOT)) {
+function rootFault(name: string, type: Pick<Y.AbstractType<unknown>, '_start'>) {
+  if (!KEYS_BY_ROOT.has(name)) {
     return 'schema: unknown root'
   }
 
@@ -83,7 +83,7 @@ function rootFault(name: string, type: Y.AbstractType<unknown>) {
   return null
 }
 
-function firstFault(items: Iterable<unknown>, faultOf: (item: unknown) => string | null) {
+function firstFault<Item>(items: Iterable<Item>, faultOf: (item: Item) => string | null) {
   for (const item of items) {
     const fault = faultOf(item)
     if (fault) {
@@ -98,13 +98,13 @@ function firstFault(items: Iterable<unknown>, faultOf: (item: unknown) => string
 export function slidesFault(doc: Y.Doc) {
   return (
     firstFault(doc.share, (entry) => {
-      const [name, type] = entry as [string, Y.AbstractType<unknown>]
+      const [name, type] = entry
 
       return rootFault(name, type)
     }) ??
     firstFault(doc.share.keys(), (name) => {
-      return firstFault(doc.getMap(name as string).values(), (item) => {
-        return itemFault(name as string, item)
+      return firstFault(doc.getMap(name).values(), (item) => {
+        return itemFault(name, item)
       })
     })
   )

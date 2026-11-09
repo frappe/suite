@@ -72,7 +72,7 @@
 
 <script setup lang="ts">
 import { DatePicker, Select } from 'frappe-ui'
-import { computed, nextTick, ref, watch, type Ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 
 import type { CalendarSearchFilter } from '@/apps/calendar/composables/useCalendarSearchFilters'
 import { eventColor } from '@/apps/calendar/utils/color'
@@ -103,21 +103,23 @@ const panel = ref<HTMLElement | null>(null)
  * it stands for. The other two are comboboxes, where typing is the opening and the focus is
  * the whole of it.
  */
-const popovers: Record<string, Ref<boolean>> = {
-  calendar: ref(false),
-  after: ref(false),
-  before: ref(false),
-}
-const calendarOpen = popovers.calendar
-const afterOpen = popovers.after
-const beforeOpen = popovers.before
+const calendarOpen = ref(false)
+const afterOpen = ref(false)
+const beforeOpen = ref(false)
 
 watch(
   () => props.focusField,
   async (field) => {
     if (!field) return
     await nextTick()
-    const popover = popovers[field]
+    const popover =
+      field === 'calendar'
+        ? calendarOpen
+        : field === 'after'
+          ? afterOpen
+          : field === 'before'
+            ? beforeOpen
+            : undefined
     if (popover) {
       popover.value = true
       return

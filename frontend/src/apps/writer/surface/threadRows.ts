@@ -19,7 +19,7 @@ const PLACE_WORDS = {
 
 type PlaceKey = keyof typeof PLACE_WORDS
 
-const PLACE_ORDER = Object.keys(PLACE_WORDS) as PlaceKey[]
+const PLACE_ORDER = Object.keys(PLACE_WORDS)
 
 // Read from Drive but not placed by the editor yet
 const NOT_PLACED: ThreadPlace = { kind: 'arriving', quote: '' }

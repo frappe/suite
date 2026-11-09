@@ -101,7 +101,7 @@ export function installConsoleBuffer(options: InstallConsoleBufferOptions = {}):
 
   const levels: LogLevel[] = ['log', 'info', 'warn', 'error', 'debug']
   for (const level of levels) {
-    const original = console[level].bind(console) as (...args: unknown[]) => void
+    const original: (...args: unknown[]) => void = console[level].bind(console)
     console[level] = (...args: unknown[]) => {
       appendEntry(level, args)
       original(...args)

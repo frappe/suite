@@ -86,7 +86,7 @@ const gPrefix = useGPrefix()
 // already archives a thread, so one letter means archive throughout.
 const mailboxRoute = (mailbox: string) => ({ name: 'mail-mailbox', params: { accountId, mailbox } })
 
-const GO_TO_KEYS: Record<string, () => RouteLocationRaw> = {
+const GO_TO_KEYS = {
   a: () => unifiedFolderRoute(INBOX_FOLDER),
   o: () => ({ name: 'mail-outbox', params: { accountId } }),
   i: () => mailboxRoute(mailboxIds.inbox),
@@ -96,7 +96,7 @@ const GO_TO_KEYS: Record<string, () => RouteLocationRaw> = {
   j: () => mailboxRoute(mailboxIds.junk),
   e: () => mailboxRoute(mailboxIds.archive),
   t: () => mailboxRoute(mailboxIds.trash),
-}
+} satisfies Record<string, () => RouteLocationRaw>
 
 // ⌘Z takes back the last undoable action, wherever it was taken. The slot is app-wide (useUndo),
 // and so is what can fill it: a send is undoable from the composer window, which is open on every
@@ -125,7 +125,7 @@ const handleGlobalShortcuts = (e: KeyboardEvent) => {
   }
 
   if (gPrefix.armed.value) {
-    const destination = GO_TO_KEYS[key]?.()
+    const destination = Object.entries(GO_TO_KEYS).find(([shortcut]) => shortcut === key)?.[1]()
     gPrefix.disarm()
     if (!destination) return
     e.preventDefault()

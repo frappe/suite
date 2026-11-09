@@ -9,11 +9,12 @@ export interface HomeEventGroup<Event = CalendarEvent> {
   day: string
   events: Event[]
 }
-
-export function homeEventWindow(now = new Date()): {
+interface HomeEventWindowResult {
   from: string
   to: string
-} {
+}
+
+export function homeEventWindow(now = new Date()): HomeEventWindowResult {
   const { from, to } = upcomingEventWindow(now)
   return { from: from.toISOString(), to: to.toISOString() }
 }

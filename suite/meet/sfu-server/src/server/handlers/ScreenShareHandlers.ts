@@ -1,4 +1,5 @@
 import type { Socket } from 'socket.io';
+import type { ScreenShareData } from '../../../../types';
 import { loggers } from '../../utils/logger';
 import type { HandlerDeps } from './Handler';
 import { getPeerId } from './utils';
@@ -22,24 +23,22 @@ export function registerScreenShareHandlers(deps: HandlerDeps) {
 						socket.participantId || socket.userId,
 						shareData?.producerId || 'unspecified',
 					);
+					const shared: ScreenShareData = {};
+					if (typeof shareData?.producerId === 'string')
+						shared.producerId = shareData.producerId;
+					if (typeof shareData?.streamId === 'string')
+						shared.streamId = shareData.streamId;
+					if (shareData?.kind === 'video') shared.kind = shareData.kind;
+					if (typeof shareData?.isScreen === 'boolean')
+						shared.isScreen = shareData.isScreen;
+					if (
+						typeof shareData?.startedAt === 'number' &&
+						Number.isFinite(shareData.startedAt)
+					)
+						shared.startedAt = shareData.startedAt;
 					deps.registry.emitScreenShare(roomId, 'screen_share_started', {
 						participantId,
-						shareData: {
-							...(typeof shareData?.producerId === 'string'
-								? { producerId: shareData.producerId }
-								: {}),
-							...(typeof shareData?.streamId === 'string'
-								? { streamId: shareData.streamId }
-								: {}),
-							...(shareData?.kind === 'video' ? { kind: shareData.kind } : {}),
-							...(typeof shareData?.isScreen === 'boolean'
-								? { isScreen: shareData.isScreen }
-								: {}),
-							...(typeof shareData?.startedAt === 'number' &&
-							Number.isFinite(shareData.startedAt)
-								? { startedAt: shareData.startedAt }
-								: {}),
-						},
+						shareData: shared,
 						timestamp: new Date().toISOString(),
 					});
 				} else if (action === 'stop_share') {
@@ -80,9 +79,12 @@ export function registerScreenShareHandlers(deps: HandlerDeps) {
 			} catch (error) {
 				loggers.socketHandler.warn(
 					'screen_share handling failed: %s',
-					(error as Error).message,
+					error instanceof Error ? error.message : String(error),
 				);
-				callback?.({ success: false, error: (error as Error).message });
+				callback?.({
+					success: false,
+					error: error instanceof Error ? error.message : String(error),
+				});
 			}
 		});
 	};

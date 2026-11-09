@@ -38,7 +38,7 @@ export function createGeometry(vm: ViewModel): Geometry {
   const isFilterHidden = (r: number): boolean => vm.filterHiddenRows.has(r)
   // Convert page coordinates into the renderer's *logical* coordinate system.
   // Renderer scales ctx by zoom; mouse coords come in physical CSS pixels.
-  const _logical = (ex: number, ey: number, canvasRect: CanvasRect): { x: number; y: number } => {
+  const _logical = (ex: number, ey: number, canvasRect: CanvasRect) => {
     const z = vm.zoom || 1
     return { x: (ex - canvasRect.left) / z, y: (ey - canvasRect.top) / z }
   }

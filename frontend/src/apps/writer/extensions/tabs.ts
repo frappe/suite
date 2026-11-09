@@ -66,7 +66,8 @@ function nameFromContent(blocks: readonly PMNode[]): string {
 
 /** The first tab's label a document's Yjs state keeps, if it was renamed. */
 export function storedFirstTabLabel(ydoc: Doc): string | null {
-  return (ydoc.getMap('meta').get(FIRST_TAB_LABEL) as string | undefined) ?? null
+  const label: unknown = ydoc.getMap('meta').get(FIRST_TAB_LABEL)
+  return typeof label === 'string' ? label : null
 }
 
 function firstTabBlocks(doc: PMNode): TabMatch[] {

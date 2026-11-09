@@ -1,12 +1,15 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { effectScope } from 'vue'
 
 import { useChangeSync } from '@/apps/mail/composables/useChangeSync'
 
-const server = vi.hoisted(() => ({
-  syncs: 0,
-  found: { new_mail_in: [] as string[], changed: false },
-}))
+const server = vi.hoisted<{ syncs: number; found: { new_mail_in: string[]; changed: boolean } }>(
+  () => ({
+    syncs: 0,
+    found: { new_mail_in: [], changed: false },
+  }),
+)
 
 // The server's side: what a fetch of changes found, and how often it was asked.
 vi.mock('@/api', () => ({
@@ -58,7 +61,7 @@ afterEach(() => {
 
 const start = () => {
   const socket = fakeSocket()
-  scope.run(() => useChangeSync(socket as never))
+  scope.run(() => useChangeSync(fromPartial(socket)))
   return socket
 }
 

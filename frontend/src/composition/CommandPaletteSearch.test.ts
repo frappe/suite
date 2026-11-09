@@ -1,4 +1,4 @@
-import { createPinia } from 'pinia'
+import { createPinia, getActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, type App } from 'vue'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
@@ -152,6 +152,11 @@ describe('Suite command palette', () => {
     await vi.waitFor(() =>
       expect(router.currentRoute.value.path).toBe('/d/plan-doc/quarterly-plan'),
     )
+  })
+
+  it('does not load the mail account on a Drive page', async () => {
+    await mountPalette('/drive/f/plans')
+    expect(Object.keys(getActivePinia()!.state.value)).not.toContain('mail-user')
   })
 
   it('keeps matching commands above the Drive results', async () => {

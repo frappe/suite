@@ -6,23 +6,27 @@ import { useInboxTabs, useTabChoice, type InboxCategory } from './useInboxTabs'
 
 type Counts = { category: InboxCategory; unread_threads: number }[]
 
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
+type InboxTabsStore = {
+  inboxTabs: InboxCategory[]
+  tabCounts: { data: Counts | null }
+  unifiedTabCounts: { data: Counts | null }
+  userResource: {
+    data: { email_classification: boolean; split_inbox: 0 | 1; inbox_tabs: InboxCategory[] }
+  }
+}
+
 const state = vi.hoisted(() => ({
-  route: null as unknown as { query: Record<string, string> },
-  store: null as unknown as {
-    inboxTabs: InboxCategory[]
-    tabCounts: { data: Counts | null }
-    unifiedTabCounts: { data: Counts | null }
-    userResource: {
-      data: { email_classification: boolean; split_inbox: 0 | 1; inbox_tabs: InboxCategory[] }
-    }
-  },
+  route: fromPartial<{ query: Record<string, string> }>({ query: {} }),
+  store: fromPartial<InboxTabsStore>({}),
 }))
 vi.mock('vue-router', () => ({ useRoute: () => state.route }))
 vi.mock('@/apps/mail/stores/user', () => ({ userStore: () => state.store }))
-const saved = vi.hoisted(() => [] as unknown[])
-const toasts = vi.hoisted(() => [] as string[])
+const saved = vi.hoisted(() => fromPartial<unknown[]>([]))
+const toasts = vi.hoisted(() => fromPartial<string[]>([]))
 // Saves resolve at once, unless a test holds them to see what happens while they are pending.
-const held = vi.hoisted(() => ({ on: false, release: [] as (() => void)[] }))
+const held = vi.hoisted(() => ({ on: false, release: fromPartial<(() => void)[]>([]) }))
 // What the server answers a clearing with: what it changed, by account.
 const answers = vi.hoisted(() => new Map<unknown, unknown>())
 const routes = vi.hoisted(() => ({
@@ -54,7 +58,7 @@ vi.mock('@/apps/mail/utils', () => ({
   },
 }))
 // Mail's one undo slot, as the toast's Undo and Cmd/Ctrl+Z both reach it.
-const undoSlot = vi.hoisted(() => ({ action: undefined as (() => unknown) | undefined }))
+const undoSlot = vi.hoisted(() => ({ action: fromPartial<(() => unknown) | undefined>(undefined) }))
 vi.mock('@/apps/mail/utils/composables', () => ({
   useSettings: () => ({ openSettings: () => {} }),
   useUndo: () => ({

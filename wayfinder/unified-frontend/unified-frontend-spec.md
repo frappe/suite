@@ -817,17 +817,18 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
 | Surface | `expand` |
 |---|---|
 | Open folder detail and header | `access,breadcrumbs` |
-| Folder and root list rows | `access` |
+| Folder and root list rows | `access`, plus `audience` when the Access column shows and `contents_size` when the Size column shows |
 | Folder and root grid tiles | `access,preview` |
-| Saved-view list rows | `access` |
-| Saved-view grid tiles | `access,preview` |
-| Search rows | `access,breadcrumbs`, plus `preview` in grid |
+| Saved-view list rows | `access`, plus `audience` and `contents_size` as for folder rows; Shared with me, Starred and Recent add `breadcrumbs` |
+| Saved-view grid tiles | `access,preview`; Shared with me, Starred and Recent add `breadcrumbs` |
+| Search rows | `access,breadcrumbs`, plus `preview` in grid, and `audience` and `contents_size` in list as for folder rows |
 
 [T006, Drive §11.3]
 
+- Trash shows no folder size, so it never asks for `contents_size`.
 - Breadcrumbs describe the open folder once. They are not repeated on each
-  child. Search is the exception: each result shows its path, for example
-  `My files > Finance` [T006].
+  child. Search, Shared with me, Starred and Recent are the exception: each
+  row shows its path, for example `My files > Finance` [T006].
 
 ### 5.5 Grid previews
 
@@ -932,7 +933,10 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
 - After commit, Drive emits one payload-free `drive:changed` event to each
   affected user [T006, Drive §9.5].
 - Observed Drive listing queries debounce the event and refetch their visible
-  listing. The event carries no node or root id [T006].
+  listing. The event carries no node or root id [T006]. The client refreshes
+  once per 400 ms window that starts at the first event, so a long burst still
+  refreshes. A visit sends `drive:recent`, which refreshes only the views
+  [Drive §9.5].
 - Without the event, focus refetch, reconnect refetch, own-write
   normalization and manual refresh stay correct. Remote edits are then not
   live [T006].
@@ -1193,8 +1197,10 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
   forever [T006, T007].
 - Successful ids leave the selection and the affected lists. Failed ids
   stay selected [T006].
-- The result reads, for example, `14 moved · 4 failed`. **Details** shows
-  per-node messages [T006].
+- The result reads, for example, `4 of 18 items could not be moved`, and
+  **Details** lists each item by title and icon with a reason chosen by the
+  error type. One failure names the item, `“Budget.pdf” could not be moved`,
+  with its reason and no Details [T006].
 - The outcome has no Retry button. Running the action again is the retry
   [T007].
 - A whole-request failure (network, 5xx, deadlock) applies nothing. It shows

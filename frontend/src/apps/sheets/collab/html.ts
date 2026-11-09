@@ -18,10 +18,15 @@ import { colLabel } from '../utils/cells'
 import { axis, parseCellKey, roots } from './schema'
 import { docSheets } from './stores'
 
-const ESCAPES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }
+const ESCAPES = new Map<string, string>([
+  ['&', '&amp;'],
+  ['<', '&lt;'],
+  ['>', '&gt;'],
+  ['"', '&quot;'],
+])
 
 function escape(text: string): string {
-  return text.replace(/[&<>"]/g, (c) => ESCAPES[c]!)
+  return text.replace(/[&<>"]/g, (c) => ESCAPES.get(c)!)
 }
 
 /** The doc's readable copy: one HTML table per sheet. */

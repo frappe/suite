@@ -17,7 +17,7 @@ template:
     automountServiceAccountToken: false
     initContainers:
       - name: init-dind-externals
-        image: ghcr.io/frappe/suite-actions-runner:2.336.0
+        image: ghcr.io/frappe/suite-actions-runner:2.338.2
         imagePullPolicy: Always
         command: ["cp", "-r", "/home/runner/externals/.", "/home/runner/tmpDir/"]
         volumeMounts:
@@ -56,7 +56,7 @@ template:
             mountPath: /home/runner/externals
     containers:
       - name: runner
-        image: ghcr.io/frappe/suite-actions-runner:2.336.0
+        image: ghcr.io/frappe/suite-actions-runner:2.338.2
         imagePullPolicy: Always
         command: ["/home/runner/run.sh"]
         env:

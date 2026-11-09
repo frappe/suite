@@ -72,7 +72,7 @@ function shapeBoundary(shape: Shape): Point[] {
       linePointAt(shape, index / LINE_SAMPLES),
     )
   if (isFreeDraw(shape)) return shape.points
-  if ((shape as { kind?: string }).kind === 'ellipse') {
+  if ('kind' in shape && shape.kind === 'ellipse') {
     const center = rectangleCenter(shape)
     return Array.from({ length: ELLIPSE_SAMPLES }, (_, index) => {
       const angle = (index * Math.PI * 2) / ELLIPSE_SAMPLES
@@ -98,7 +98,7 @@ function shapeContainsPoint(shape: Shape, point: Point): boolean {
 }
 
 function isDiamond(shape: Shape): shape is DiamondShape {
-  return (shape as { kind?: string }).kind === 'diamond'
+  return 'kind' in shape && shape.kind === 'diamond'
 }
 
 function diamondBoundary(shape: DiamondShape): Point[] {
@@ -153,10 +153,10 @@ function diamondBoundary(shape: DiamondShape): Point[] {
 
 function edges(points: Point[], closed: boolean): [Point, Point][] {
   const count = closed ? points.length : points.length - 1
-  return Array.from(
-    { length: Math.max(0, count) },
-    (_, index) => [points[index]!, points[(index + 1) % points.length]!] as [Point, Point],
-  )
+  return Array.from({ length: Math.max(0, count) }, (_, index): [Point, Point] => [
+    points[index]!,
+    points[(index + 1) % points.length]!,
+  ])
 }
 
 function segmentsIntersect(a: Point, b: Point, c: Point, d: Point): boolean {

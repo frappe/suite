@@ -46,5 +46,7 @@ const { title, meta = [] } = defineProps<{
 
 const initial = computed(() => title.trim().charAt(0) || '?')
 
-const metaItems = computed(() => meta.filter(Boolean) as string[])
+const metaItems = computed(() =>
+  meta.filter((value): value is string => typeof value === 'string' && value.length > 0),
+)
 </script>

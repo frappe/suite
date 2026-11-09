@@ -7,7 +7,6 @@ import type { WriterUser } from '@/apps/writer/drive'
 import { translate as __ } from '@/platform/translation'
 
 const MAX_SHOWN = 6
-const STEPS: Record<string, number> = { ArrowDown: 1, ArrowUp: -1 }
 
 // The suggestion plugin passes all its props; only these two are the menu's
 defineOptions({ inheritAttrs: false })
@@ -41,7 +40,7 @@ async function move(step: number) {
 /** The editor's keys while the menu is open; true when the key was the menu's. */
 function onKeyDown({ event }: { event: KeyboardEvent }) {
   if (!offered.value.length) return false
-  const step = STEPS[event.key]
+  const step = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0
   if (step) {
     void move(step)
     return true

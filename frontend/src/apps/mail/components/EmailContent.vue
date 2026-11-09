@@ -79,7 +79,7 @@ const handleMessage = (event: MessageEvent) => {
   // can reach us (an attachment rendered in a frame, an embedder), and this one puts
   // a stranger's address and body in front of the user as a ready-to-send draft.
   if (event.data?.type === 'mailto') {
-    if (event.source !== (frame.value?.$el as HTMLIFrameElement | undefined)?.contentWindow) return
+    if (event.source !== frame.value?.$el?.contentWindow) return
 
     const draft = parseMailto(String(event.data.href ?? ''))
     if (draft) requestCompose(draft)
@@ -89,7 +89,7 @@ const handleMessage = (event: MessageEvent) => {
   // handlers (reka's dismissable layers) see it land outside whatever popover is open. As a mouse
   // press: reka waits for a touch's click, and that click stays in the frame.
   if (event.data?.type === 'pointerdown') {
-    const iframe = frame.value?.$el as HTMLIFrameElement | undefined
+    const iframe = frame.value?.$el
     if (!iframe || event.source !== iframe.contentWindow) return
     iframe.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' }))
     return
@@ -163,7 +163,6 @@ const srcdoc = computed(() => {
   collapseQuotes(doc)
   const transformedContent = doc.documentElement.outerHTML
 
-  /* eslint-disable no-useless-escape */
   return `
 		<!DOCTYPE html>
 		<html>

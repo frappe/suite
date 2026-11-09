@@ -17,7 +17,7 @@ import {
   TableMap,
   updateColumnsOnResize,
 } from '@tiptap/pm/tables'
-import type { EditorView } from '@tiptap/pm/view'
+import type { EditorView, ViewMutationRecord } from '@tiptap/pm/view'
 
 import { frameResizeAttribute, stretchColumnsToFrame } from './tableWidths'
 
@@ -25,6 +25,10 @@ interface Dragging {
   startX: number
   startWidth: number
   scale: number
+}
+
+function isScaledDragging(value: { startX: number; startWidth: number }): value is Dragging {
+  return 'scale' in value && typeof value.scale === 'number'
 }
 
 // stock renders the table inside a div.tableWrapper, which frappe-ui's global
@@ -58,7 +62,7 @@ class BareTableView {
 
   // the drag preview writes widths straight to the DOM, and without this the
   // editor reads them back as an edit and redraws over them
-  ignoreMutation(record: MutationRecord) {
+  ignoreMutation(record: ViewMutationRecord) {
     return (
       record.type == 'attributes' &&
       (record.target == this.dom || this.colgroup.contains(record.target))
@@ -69,7 +73,7 @@ class BareTableView {
 // the canvas is CSS-transformed, so a rendered pixel is `scale` layout pixels
 const getRenderedScale = (view: EditorView) => {
   const rendered = view.dom.getBoundingClientRect().width
-  const layout = (view.dom as HTMLElement).offsetWidth
+  const layout = view.dom.offsetWidth
   return rendered && layout ? rendered / layout : 1
 }
 
@@ -91,7 +95,9 @@ const currentColWidth = (
   if (width) return width
 
   const dom = view.domAtPos(cellPos)
-  let domWidth = (dom.node.childNodes[dom.offset] as HTMLElement).offsetWidth
+  const element = dom.node.childNodes[dom.offset]
+  if (!(element instanceof HTMLElement)) return 0
+  let domWidth = element.offsetWidth
   let parts = colspan
   if (colwidth) {
     for (let i = 0; i < colspan; i++)
@@ -143,15 +149,11 @@ const displayColumnWidth = (
   while (dom && dom.nodeName != 'TABLE') dom = dom.parentNode
   if (!dom) return
 
-  const tableDOM = dom as HTMLTableElement
-  updateColumnsOnResize(
-    table,
-    tableDOM.firstChild as HTMLTableColElement,
-    tableDOM,
-    defaultCellMinWidth,
-    col,
-    width,
-  )
+  if (!(dom instanceof HTMLTableElement)) return
+  const tableDOM = dom
+  const colgroup = tableDOM.firstElementChild
+  if (!(colgroup instanceof HTMLTableColElement)) return
+  updateColumnsOnResize(table, colgroup, tableDOM, defaultCellMinWidth, col, width)
 }
 
 // stock's handle width, the distance from a cell edge that counts as a grab
@@ -166,9 +168,9 @@ const setActiveHandle = (view: EditorView, cell: number) =>
   view.dispatch(view.state.tr.setMeta(columnResizingPluginKey, { setHandle: cell }))
 
 const domCellAround = (target: EventTarget | null) => {
-  let node = target as HTMLElement | null
+  let node = target instanceof HTMLElement ? target : null
   while (node && node.nodeName != 'TD' && node.nodeName != 'TH')
-    node = node.classList?.contains('ProseMirror') ? null : (node.parentNode as HTMLElement | null)
+    node = node.classList?.contains('ProseMirror') ? null : node.parentElement
   return node
 }
 
@@ -224,7 +226,10 @@ const buildMouseDown =
     if (!pluginState || pluginState.activeHandle == -1 || pluginState.dragging) return false
 
     const cell = view.state.doc.nodeAt(pluginState.activeHandle)!
-    const width = currentColWidth(view, pluginState.activeHandle, cell.attrs as never)
+    const width = currentColWidth(view, pluginState.activeHandle, {
+      colspan: cell.attrs.colspan,
+      colwidth: cell.attrs.colwidth,
+    })
     const dragging: Dragging = {
       startX: event.clientX,
       startWidth: width,
@@ -237,11 +242,11 @@ const buildMouseDown =
       win.removeEventListener('mousemove', move)
 
       const state = columnResizingPluginKey.getState(view.state)
-      if (state?.dragging) {
+      if (state?.dragging && isScaledDragging(state.dragging)) {
         updateColumnWidth(
           view,
           state.activeHandle,
-          draggedWidth(state.dragging as Dragging, finishEvent.clientX, cellMinWidth),
+          draggedWidth(state.dragging, finishEvent.clientX, cellMinWidth),
         )
         view.dispatch(view.state.tr.setMeta(columnResizingPluginKey, { setDragging: null }))
       }
@@ -251,9 +256,9 @@ const buildMouseDown =
       if (!moveEvent.which) return finish(moveEvent)
 
       const state = columnResizingPluginKey.getState(view.state)
-      if (!state?.dragging) return
+      if (!state?.dragging || !isScaledDragging(state.dragging)) return
 
-      const dragged = draggedWidth(state.dragging as Dragging, moveEvent.clientX, cellMinWidth)
+      const dragged = draggedWidth(state.dragging, moveEvent.clientX, cellMinWidth)
       displayColumnWidth(view, state.activeHandle, dragged, defaultCellMinWidth)
     }
 
@@ -268,7 +273,7 @@ export const scaleAwareColumnResizing = (
   options: { cellMinWidth?: number; defaultCellMinWidth?: number } = {},
 ) => {
   const { cellMinWidth = 25, defaultCellMinWidth = 100 } = options
-  const stock = columnResizing({ ...options, View: BareTableView as never })
+  const stock = columnResizing({ ...options, View: BareTableView })
 
   // the spread copies the reference to stock's `nodeViews` object, and stock's
   // own state.init writes the table node view into that same object. A deep

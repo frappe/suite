@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { getSchema } from '@tiptap/core'
 import { prosemirrorToYXmlFragment } from '@tiptap/y-tiptap'
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
 
@@ -33,7 +34,7 @@ interface Features {
 
 // The server refuses a row naming anything this file does not declare at or below the row's schema
 const FEATURES_PATH = resolve(__dirname, '../../../../../suite/slides/content/schema.json')
-const declared = JSON.parse(readFileSync(FEATURES_PATH, 'utf8')) as Features
+const declared = fromPartial<Features>(JSON.parse(readFileSync(FEATURES_PATH, 'utf8')))
 // Python reads these bytes back and pushes them through the layer's own admission
 const FIXTURE_PATH = resolve(__dirname, '../../../../../suite/slides/content/tests/deck_state.b64')
 

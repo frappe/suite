@@ -7,6 +7,7 @@ import frappe
 from suite.drive._core.access import chain_ids
 
 EVENT = "drive:changed"
+RECENT_EVENT = "drive:recent"
 
 
 def emit_for_node(node: str) -> None:
@@ -78,3 +79,13 @@ def emit_for_principals(principals: Iterable[str]) -> None:
 def emit_for_users(users: Iterable[str]) -> None:
     """Address known personal-record owners without reading the grant graph."""
     emit_for_principals(users)
+
+
+def emit_recent_for(user: str) -> None:
+    """Tell one user's tabs that only their Recent list changed.
+
+    A visit changes no node and nothing another user sees, so it sends this
+    narrower event instead of `drive:changed`, and an open page refreshes only
+    its Recent reads (§9.5).
+    """
+    frappe.publish_realtime(RECENT_EVENT, user=user, after_commit=True)

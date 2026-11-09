@@ -63,6 +63,10 @@ export interface UploadState<I, O> extends MutationState<I, O> {
 export interface Effects<I = unknown> {
   touches?: (input: I) => readonly string[]
   optimistic?: (input: I, entity: Record<string, unknown>) => Record<string, unknown> | void
+  /** The entity `optimistic` patches, for a write that does not answer with that entity, such as a batch. */
+  entityTag?: string
+  /** The touched ids a write that succeeded did not change. Their optimistic patch is undone. */
+  failed?: (input: I, output: unknown) => readonly string[]
   optimisticReads?: {
     references: readonly string[]
     update(input: I, queryInput: unknown, data: unknown): unknown

@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h } from 'vue'
 
@@ -32,8 +33,8 @@ class ShownObserver {
   constructor(private readonly callback: IntersectionObserverCallback) {}
   observe(target: Element) {
     this.callback(
-      [{ target, isIntersecting: true } as unknown as IntersectionObserverEntry],
-      this as unknown as IntersectionObserver,
+      [fromPartial<IntersectionObserverEntry>({ target, isIntersecting: true })],
+      fromPartial<IntersectionObserver>(this),
     )
   }
   unobserve() {}

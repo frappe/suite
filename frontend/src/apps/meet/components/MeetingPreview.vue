@@ -186,7 +186,7 @@ const previewParticipant = computed<Participant>(() => ({
 }))
 
 const previewVideoRef = (el: unknown) => {
-  props.setLocalVideoRef?.(el as HTMLVideoElement | null)
+  props.setLocalVideoRef?.(el instanceof HTMLVideoElement ? el : null)
 }
 
 const {

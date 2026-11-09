@@ -129,5 +129,5 @@ test("the account menu has no Apps submenu and Settings shows the Drive group", 
 	await page.keyboard.press("Escape");
 
 	const settings = await settingsTabs(page);
-	await expect(settings.getByRole("tab", { name: "Statistics" })).toBeVisible();
+	await expect(settings.getByRole("tab", { name: "Storage" })).toBeVisible();
 });

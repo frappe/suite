@@ -41,6 +41,11 @@ import {
   type RendererReasonCode,
 } from './rendererBridge'
 
+interface ParticipantMediaUpdate {
+  audioEnabled?: boolean
+  videoEnabled?: boolean
+}
+
 export type RecorderState = {
   participantAdded?: (participant: Participant) => void
   participantRemoved?: (participantId: string) => void
@@ -676,7 +681,7 @@ export class RecorderSocketController {
     participantId: string,
     action: 'mute' | 'unmute' | 'video_off' | 'video_on',
   ): void {
-    const update: { audioEnabled?: boolean; videoEnabled?: boolean } = {}
+    const update: ParticipantMediaUpdate = {}
     if (action === 'mute' || action === 'unmute') update.audioEnabled = action === 'unmute'
     else update.videoEnabled = action === 'video_on'
     this.deps.participantManager.updateMediaState(participantId, update)
@@ -976,7 +981,7 @@ export function trustedAvatar(value: unknown, frappeOrigin: string): string | nu
   }
 }
 
-const isCanonicalTimestamp = (value: unknown): value is string => {
+const isCanonicalTimestamp = <Value>(value: Value): value is Value & string => {
   if (typeof value !== 'string' || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(value))
     return false
   const parsed = new Date(value)

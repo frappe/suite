@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { expect, it } from 'vitest'
 
 import { copyFreeDraw, moveFreeDraw, type FreeDrawShape } from './scene'
@@ -20,7 +21,7 @@ const legacyStroke = {
 
 it('copies legacy freehand artwork without requiring pressure samples', () => {
   const original = structuredClone(legacyStroke)
-  const copy = copyFreeDraw(legacyStroke as FreeDrawShape)
+  const copy = copyFreeDraw(fromPartial<FreeDrawShape>(legacyStroke))
 
   expect(copy).toEqual({ ...legacyStroke, pressures: [0.5, 0.5] })
   expect(copy.points).not.toBe(legacyStroke.points)

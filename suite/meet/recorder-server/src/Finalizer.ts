@@ -268,7 +268,10 @@ export class Finalizer {
 			concat(list: string, output: string, timeoutMs?: number): Promise<void>;
 		},
 	) {}
-	async finalize(forcePartial = false, reason?: string): Promise<CaptureState> {
+	async finalize(
+		forcePartial = false,
+		reason?: string,
+	): Promise<Extract<CaptureState, 'complete' | 'partial' | 'failed'>> {
 		await this.store.update((m) => {
 			m.state = 'sealing';
 			if (reason) m.reason = reason;

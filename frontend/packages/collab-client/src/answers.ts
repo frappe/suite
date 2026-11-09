@@ -106,8 +106,11 @@ export function toOpenError(answer: Answer, options: OpenOptions) {
 // A `restored` notice's restorer and version; what it lacks or misspells reads as unknown
 export function readRestored(heard: Record<string, unknown>): VersionRestored {
   const by = typeof heard.by === 'string' ? heard.by : null
-  const wire = heard.version as { seq?: unknown; label?: unknown; taken_at?: unknown } | null
-  const { seq, label, taken_at: takenAt } = wire ?? {}
+  const wire = heard.version
+  if (!wire || typeof wire !== 'object') return { by, version: null }
+  const seq = 'seq' in wire ? wire.seq : undefined
+  const label = 'label' in wire ? wire.label : undefined
+  const takenAt = 'taken_at' in wire ? wire.taken_at : undefined
   const isLabel = label === null || typeof label === 'string'
   if (typeof seq !== 'number' || typeof takenAt !== 'string' || !isLabel) {
     return { by, version: null }

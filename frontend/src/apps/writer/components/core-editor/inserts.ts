@@ -1,7 +1,7 @@
 import type { Editor } from '@tiptap/core'
 import { isInTable } from '@tiptap/pm/tables'
 
-import { BLOCK_STYLES, type BlockStyle } from './formatting'
+import { BLOCK_STYLES } from './formatting'
 import { openTableSizePicker } from './table/tableSizePicker'
 
 export interface Insert {
@@ -45,7 +45,8 @@ function command(
 }
 
 function fromStyle(value: string): Insert {
-  const style = BLOCK_STYLES.find((block) => block.value === value) as BlockStyle
+  const style = BLOCK_STYLES.find((block) => block.value === value)
+  if (!style) throw new Error(`Unknown block style: ${value}`)
   return {
     label: style.label,
     icon: style.icon,

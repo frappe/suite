@@ -57,8 +57,12 @@ function time<T>(fn: () => T): [T, number] {
   const out = fn()
   return [out, performance.now() - t]
 }
+interface BuildResult {
+  doc: Y.Doc
+  sid: string
+}
 
-function build(shape: Shape): { doc: Y.Doc; sid: string } {
+function build(shape: Shape): BuildResult {
   const doc = new Y.Doc()
   const sid = addSheet(doc, 'Sheet1')
   const r = roots(doc)

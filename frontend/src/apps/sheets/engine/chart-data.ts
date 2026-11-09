@@ -278,12 +278,13 @@ function _pieOption(
   // a single column (it is the label column), so there is no value column:
   // every slice reads 0 and is filtered out, and the pie shows nothing.
   const valueCol = encoding.y[0]
-  const data = dataRows
-    .map((r) => ({
+  const data = dataRows.flatMap((r) => {
+    const mappedValue = {
       name: _toLabel(r[labelCol]),
       value: _toNum(valueCol === undefined ? undefined : r[valueCol]),
-    }))
-    .filter((d) => d.value !== 0)
+    }
+    return mappedValue.value !== 0 ? [mappedValue] : []
+  })
 
   const pieLabelColor = isDark ? '#f5f5f5' : '#171717'
   const pieBorderColor = isDark ? '#171717' : '#ffffff'
@@ -365,12 +366,14 @@ function _baseOption(config: ChartSpec, isDark = false) {
   }
 }
 
-function _splitHeader<T extends unknown[]>(
-  matrix: T[],
-  hasHeader: boolean,
-): { headerRow: T | null; dataRows: T[] } {
+interface SplitHeader<Row> {
+  headerRow: Row | null
+  dataRows: Row[]
+}
+
+function _splitHeader<T extends unknown[]>(matrix: T[], hasHeader: boolean): SplitHeader<T> {
   if (hasHeader && matrix.length > 1) {
-    return { headerRow: matrix[0] as T, dataRows: matrix.slice(1) }
+    return { headerRow: matrix[0]!, dataRows: matrix.slice(1) }
   }
   return { headerRow: null, dataRows: matrix }
 }
@@ -406,16 +409,16 @@ function _xyPairs(dataRows: Row[], xCol: number, yCol: number): [number, number]
   }
   return out
 }
+interface DatesToSerialsResult {
+  rows: Row[]
+  dateCode?: string | undefined
+}
 
 // A date shows as text (`12/9/2025`); its number format turns it back into
 // the day serial, so a scatter X column of dates plots in date order. Other
 // cells stay as they are. `dateCode` is the first date's format, for the
 // axis labels; undefined when the column holds no date.
-function _datesToSerials(
-  dataRows: Row[],
-  xCol: number,
-  codes: Codes | null,
-): { rows: Row[]; dateCode?: string | undefined } {
+function _datesToSerials(dataRows: Row[], xCol: number, codes: Codes | null): DatesToSerialsResult {
   if (!codes) return { rows: dataRows }
   let dateCode: string | undefined
   const rows = dataRows.map((r, i) => {

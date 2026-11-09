@@ -16,16 +16,18 @@ export function belowMinBuild(product: string) {
 let namedProducts: ReadonlySet<string> | null = null
 
 function productLabel(product: string) {
-  const labelMap: Record<string, string> = {
-    calendar: translate('Calendar'),
-    drive: translate('Drive'),
-    mail: translate('Mail'),
-    meet: translate('Meet'),
-    sheets: translate('Sheets'),
-    slides: translate('Slides'),
-    writer: translate('Writer'),
-  }
-  return labelMap[product] ?? product[0].toUpperCase() + product.slice(1)
+  const labelMap = new Map<string, string>(
+    Object.entries({
+      calendar: translate('Calendar'),
+      drive: translate('Drive'),
+      mail: translate('Mail'),
+      meet: translate('Meet'),
+      sheets: translate('Sheets'),
+      slides: translate('Slides'),
+      writer: translate('Writer'),
+    }),
+  )
+  return labelMap.get(product) ?? product[0].toUpperCase() + product.slice(1)
 }
 
 // Reload stays the person's choice, so a page still served stale can't loop;

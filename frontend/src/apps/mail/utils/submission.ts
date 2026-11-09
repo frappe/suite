@@ -103,8 +103,12 @@ export const statusTheme = (status: SubmissionStatus | string): StatusTheme => {
 
 // The MT-Priority values MailQueue submits with (RFC 6710).
 export const priorityLabel = (priority: number) => {
-  const labels: Record<number, string> = { 4: __('High'), 0: __('Normal'), [-4]: __('Low') }
-  return labels[priority] || String(priority)
+  const labels = new Map([
+    [4, __('High')],
+    [0, __('Normal')],
+    [-4, __('Low')],
+  ])
+  return labels.get(priority) || String(priority)
 }
 
 // Both pages badge the raw JMAP undoStatus as the submission's status; the merged delivery

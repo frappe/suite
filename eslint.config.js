@@ -21,6 +21,7 @@ const config = defineConfigWithVueTs(
       // A vendored build, kept as published
       'frontend/packages/collab-prosemirror/dist/**',
       'node_modules/**',
+      'tools/oxlint/anti-slop/**',
       'frontend/auto-imports.d.ts',
       'frontend/components.d.ts',
       // Generated from contract.json by `pnpm generate:contract`.

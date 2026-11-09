@@ -66,7 +66,7 @@ describe('the deck preview', () => {
     lockedElsewhere.value = false
     clearSaveFailure()
     const id = `deck-${Math.random()}`
-    ;(presentationId as { value: string | null }).value = id
+    presentationId.value = id
     presentationDoc.value = { name: id, modified: 'base' }
     slides.value = [slide('one'), slide('two')]
     slidesLength.value = 2

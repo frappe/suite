@@ -6,7 +6,7 @@
 // A refusal names the rule only, never a key or a value: reasons reach System Managers and server logs,
 // and a key or value can be a person's data
 
-import { getSchema } from '@tiptap/core'
+import { getSchema, type JSONContent } from '@tiptap/core'
 import { DOMSerializer, DOMParser as PMDOMParser, type Node as PMNode } from '@tiptap/pm/model'
 import { prosemirrorToYXmlFragment, yXmlFragmentToProseMirrorRootNode } from '@tiptap/y-tiptap'
 import * as Y from 'yjs'
@@ -115,25 +115,35 @@ function frameOf({ left, top, width, height, transform, transformOrigin, type }:
   return Object.fromEntries(Object.entries(placed).filter(([, value]) => value !== undefined))
 }
 
+function isLegacySettings(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
 function connectorFields(connector: unknown) {
   if (isEmpty(connector)) {
     return {}
   }
 
-  const { start, end, route } = connector as Record<string, unknown>
-  if (Object.keys(connector as object).some((key) => !CONNECTOR_KEYS.has(key))) {
+  if (!isLegacySettings(connector)) throw new Refused('setting')
+  const { start, end, route } = connector
+  if (Object.keys(connector).some((key) => !CONNECTOR_KEYS.has(key))) {
     throw new Refused('setting')
   }
 
   return { connectorStart: start, connectorEnd: end, route }
 }
 
-function lineHeightFields(type: unknown, metadata: unknown) {
+interface LineHeightFields {
+  lineHeight?: unknown
+}
+
+function lineHeightFields(type: unknown, metadata: unknown): LineHeightFields {
   if (isEmpty(metadata)) {
     return {}
   }
 
-  const { lineHeight, ...rest } = metadata as Record<string, unknown>
+  if (!isLegacySettings(metadata)) throw new Refused('setting')
+  const { lineHeight, ...rest } = metadata
   if (type !== 'text' || Object.keys(rest).length) {
     throw new Refused('setting')
   }
@@ -191,7 +201,7 @@ function noteDropped({ type, content, defaultStyle }: OldBox, dropped: Set<Dropp
     dropped.add('default-style')
   }
 
-  if (!TYPES_WITH_TEXT.has(type as string) && !isEmpty(content)) {
+  if (!(typeof type === 'string' && TYPES_WITH_TEXT.has(type)) && !isEmpty(content)) {
     if (type !== 'video') {
       throw new Refused('setting')
     }
@@ -205,7 +215,7 @@ function boxFields(old: OldBox, dropped: Set<DroppedKind>): DeckItem {
   const box = rewritten(old)
   const { id, type, connector, editorMetadata } = box
   const rest = Object.fromEntries(Object.entries(box).filter(([key]) => !REPLACED_KEYS.has(key)))
-  if (!BOX_TYPES.has(type as string)) {
+  if (!(typeof type === 'string' && BOX_TYPES.has(type))) {
     throw new Refused('box_type')
   }
 
@@ -214,14 +224,17 @@ function boxFields(old: OldBox, dropped: Set<DroppedKind>): DeckItem {
   }
 
   noteDropped(box, dropped)
-  return withoutUndefined({
+  return {
+    ...withoutUndefined({
+      id,
+      type,
+      frame: frameOf(old),
+      ...rest,
+      ...connectorFields(connector),
+      ...lineHeightFields(type, editorMetadata),
+    }),
     id,
-    type,
-    frame: frameOf(old),
-    ...rest,
-    ...connectorFields(connector),
-    ...lineHeightFields(type, editorMetadata),
-  }) as DeckItem
+  }
 }
 
 function slideFields(old: OldSlide) {
@@ -246,12 +259,9 @@ function withoutEmptyAttrs(mark: { type: string; attrs?: Record<string, unknown>
 }
 
 // The editor's colour parser answers an empty string for a span with no colour, which no old HTML holds
-function withoutEmptyStyles(json: Record<string, unknown>): Record<string, unknown> {
-  const { content, marks, ...rest } = json as {
-    content?: Record<string, unknown>[]
-    marks?: { type: string; attrs?: Record<string, unknown> }[]
-  }
-  const cleaned: Record<string, unknown> = { ...rest }
+function withoutEmptyStyles(json: JSONContent): JSONContent {
+  const { content, marks, ...rest } = json
+  const cleaned: JSONContent = { ...rest }
   if (content) {
     cleaned.content = content.map(withoutEmptyStyles)
   }
@@ -268,7 +278,7 @@ function rulesOf(box: OldBox): DrawRules {
     return { lineHeight: DEFAULT_LINE_HEIGHT, isWhitespaceKept: false }
   }
 
-  const { lineHeight } = lineHeightFields(box.type, box.editorMetadata) as { lineHeight?: unknown }
+  const { lineHeight } = lineHeightFields(box.type, box.editorMetadata)
   const drawn = lineHeight || box.lineHeight || DEFAULT_LINE_HEIGHT
   return { lineHeight: String(drawn), isWhitespaceKept: true }
 }
@@ -308,7 +318,9 @@ function parsedContent(box: OldBox, rules: DrawRules, dropped: Set<DroppedKind>)
     return null
   }
 
-  const carried = body.cloneNode(true) as HTMLElement
+  const carried = body.cloneNode(true)
+  if (!(carried instanceof HTMLElement))
+    throw new Error('Carried body clone must be an HTML element')
   stateLineHeights(carried, rules)
   carryItemStyles(carried, rules)
   const held = new Set<number>()
@@ -327,7 +339,9 @@ function parsedContent(box: OldBox, rules: DrawRules, dropped: Set<DroppedKind>)
 }
 
 function fillEmptyText(fragment: Y.XmlFragment) {
-  prosemirrorToYXmlFragment(schema.topNodeType.createAndFill() as PMNode, fragment)
+  const empty = schema.topNodeType.createAndFill()
+  if (!empty) throw new Error('Slide text schema has no empty document')
+  prosemirrorToYXmlFragment(empty, fragment)
 }
 
 function filled(box: OldBox, fragment: Y.XmlFragment, rules: DrawRules, dropped: Set<DroppedKind>) {
@@ -352,7 +366,8 @@ function savedBody(read: PMNode, document: Document) {
 }
 
 function fillText(doc: Y.Doc, box: OldBox, id: string, dropped: Set<DroppedKind>) {
-  const fragment = boxText(doc, id) as Y.XmlFragment
+  const fragment = boxText(doc, id)
+  if (!fragment) throw new Error('Slide text box has no fragment')
   if (isEmpty(box.content)) {
     fillEmptyText(fragment)
     return
@@ -391,7 +406,7 @@ function build(legacy: LegacyDeck) {
     ...slideFields(old),
     boxes: stacked(old.elements).map((box) => {
       const fields = boxFields(box, dropped)
-      if (TYPES_WITH_TEXT.has(fields.type as string)) {
+      if (typeof fields.type === 'string' && TYPES_WITH_TEXT.has(fields.type)) {
         contents.push([fields.id, box])
       }
 

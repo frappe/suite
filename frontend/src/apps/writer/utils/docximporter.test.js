@@ -319,9 +319,9 @@ describe('importDocx', () => {
       currentFileId: 'file-1',
     })
 
-    const texts = [...parse(editor.getHTML()).querySelectorAll('p')]
-      .map((p) => p.textContent)
-      .filter(Boolean)
+    const texts = [...parse(editor.getHTML()).querySelectorAll('p')].flatMap((p) =>
+      p.textContent ? [p.textContent] : [],
+    )
     expect(texts).toEqual(['First imported paragraph', 'Second imported paragraph'])
   })
 

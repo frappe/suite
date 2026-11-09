@@ -15,9 +15,9 @@ const { action = false } = defineProps<{ action?: boolean }>()
       <Skeleton v-if="action" class="h-7 w-28 rounded-4" />
     </div>
     <div class="space-y-3">
-      <DashboardSkeletonText class="text-p-sm" width="9rem" />
+      <DashboardSkeletonText class="text-xl" width="14rem" />
       <div class="h-2.5 rounded-full bg-surface-gray-2" />
-      <div class="flex flex-wrap gap-x-6 gap-y-2">
+      <div class="grid grid-cols-2 gap-x-6 gap-y-4 pt-2 sm:flex sm:flex-wrap sm:gap-x-10">
         <DashboardSkeletonText v-for="n in 3" :key="n" class="flex-none text-sm" width="7rem" />
       </div>
     </div>

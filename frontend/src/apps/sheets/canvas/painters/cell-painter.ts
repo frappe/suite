@@ -249,6 +249,10 @@ export function createCellPainter(ctx: CanvasRenderingContext2D, geo: PaintGeome
     if (drawX1 > cellX1)
       _drawCellText(drawX, y, drawW, h, s, unfilled, rightInset, [cellX1, drawX1])
   }
+  interface OverflowExtensionResult {
+    left: number
+    right: number
+  }
 
   // Walk adjacent cells in the alignment direction and return how many CSS
   // pixels of extra room we can use. Stops at the first cell with a value,
@@ -261,7 +265,7 @@ export function createCellPainter(ctx: CanvasRenderingContext2D, geo: PaintGeome
     needed: number,
     getVal: (id: string) => CellValue,
     cells: CellProvider,
-  ): { left: number; right: number } {
+  ): OverflowExtensionResult {
     const out = { left: 0, right: 0 }
     if (align === 'left' || align === 'center') {
       let nc = c + 1
@@ -372,6 +376,12 @@ export function createCellPainter(ctx: CanvasRenderingContext2D, geo: PaintGeome
       _drawTextDecorations(fmt, val, textX, midY)
     ctx.restore()
   }
+  interface ComputeTextAnchorResult {
+    textX: number
+    textY: number
+    baseline: CanvasTextBaseline
+    midY: number
+  }
 
   // Top and bottom keep their 4px inset from the cell edge; middle centres
   // the capitals on the cell's white area (see text-anchor.ts). `midY` is the
@@ -383,7 +393,7 @@ export function createCellPainter(ctx: CanvasRenderingContext2D, geo: PaintGeome
     h: number,
     fmt: CellFormat,
     rightInset = 0,
-  ): { textX: number; textY: number; baseline: CanvasTextBaseline; midY: number } {
+  ): ComputeTextAnchorResult {
     const innerW = w - rightInset
     const textX =
       fmt.align === 'center' ? x + innerW / 2 : fmt.align === 'right' ? x + innerW - 4 : x + 4

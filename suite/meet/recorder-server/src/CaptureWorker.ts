@@ -422,8 +422,12 @@ export class CaptureWorker {
 
 	async recoverStopped(): Promise<Outcome> {
 		let manifest = await this.manifest.initialize();
-		if (['complete', 'partial', 'failed'].includes(manifest.state))
-			return manifest.state as Outcome;
+		if (
+			manifest.state === 'complete' ||
+			manifest.state === 'partial' ||
+			manifest.state === 'failed'
+		)
+			return manifest.state;
 		const allocatedEpoch = manifest.epochs - 1;
 		if (
 			manifest.state === 'capturing' &&
@@ -469,10 +473,10 @@ export class CaptureWorker {
 			).stopAndAdoptFinal();
 			manifest = this.manifest.get();
 		}
-		return (await this.makeFinalizer(this.manifest).finalize(
+		return this.makeFinalizer(this.manifest).finalize(
 			manifest.gaps.length > 0,
 			manifest.reason,
-		)) as Outcome;
+		);
 	}
 
 	captureResult() {
@@ -502,10 +506,10 @@ export class CaptureWorker {
 			if (reason === 'service_shutdown' && !this.interruption)
 				await this.openGap(reason);
 			await this.stopCaptureProcess();
-			outcome = (await this.makeFinalizer(this.manifest).finalize(
+			outcome = await this.makeFinalizer(this.manifest).finalize(
 				this.partial,
 				reason,
-			)) as Outcome;
+			);
 		} finally {
 			await Promise.allSettled(
 				this.services.map((process) =>

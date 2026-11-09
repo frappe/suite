@@ -15,8 +15,8 @@ describe('comment details', () => {
   })
 
   it('names a comment on one line, with its mentions by name, cut when long', () => {
-    const names: Record<string, string> = { 'ann@x.com': 'Ann Lee' }
-    const nameOf = (user: string) => names[user] ?? user
+    const names = new Map<string, string>(Object.entries({ 'ann@x.com': 'Ann Lee' }))
+    const nameOf = (user: string) => names.get(user) ?? user
 
     expect(commentExcerpt('Ask @[ann@x.com]\nabout   this', ['ann@x.com'], nameOf)).toBe(
       'Ask @Ann Lee about this',

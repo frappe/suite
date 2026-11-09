@@ -1,6 +1,7 @@
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fromPartial } from '@total-typescript/shoehorn';
 import type { Browser, Page } from 'puppeteer-core';
 import { describe, expect, it, vi } from 'vitest';
 import {
@@ -8,6 +9,8 @@ import {
 	ChromiumRendererBridge,
 	parseCapturePrepared,
 	parseCaptureStartedAccepted,
+	parseRendererLifecycle,
+	parseRendererPublicKeyReady,
 	TEST_PUBLIC_JWK,
 } from './RendererBridge.js';
 import { COMMAND_AUDIENCE, type CommandClaims } from './types.js';
@@ -39,6 +42,16 @@ const command: CommandClaims = {
 };
 
 describe('ChromiumRendererBridge', () => {
+	it.each([undefined, null, false, 42, 'not a renderer message'])(
+		'ignores non-object renderer acknowledgements: %s',
+		(value) => {
+			expect(parseRendererPublicKeyReady(value)).toBeNull();
+			expect(parseRendererLifecycle(value)).toBeUndefined();
+			expect(parseCapturePrepared(value)).toBeUndefined();
+			expect(parseCaptureStartedAccepted(value)).toBeUndefined();
+		},
+	);
+
 	it('strictly parses capture acknowledgements', () => {
 		expect(
 			parseCapturePrepared({
@@ -104,16 +117,10 @@ describe('ChromiumRendererBridge', () => {
 			publicKey: { ...TEST_PUBLIC_JWK, ext: true },
 		},
 	])('rejects malformed public-key message %#', (message) => {
-		const bridge = new ChromiumRendererBridge({} as never);
+		const bridge = new ChromiumRendererBridge(fromPartial({}));
 		const resolveReady = vi.fn();
 		const rejectReady = vi.fn();
-		const receive = Reflect.get(bridge, 'receive') as (
-			job: string,
-			generation: number,
-			value: unknown,
-			resolve: typeof resolveReady,
-			reject: typeof rejectReady,
-		) => void;
+		const receive = bridge['receive'];
 
 		receive.call(bridge, 'job-1', 0, message, resolveReady, rejectReady);
 
@@ -132,11 +139,11 @@ describe('ChromiumRendererBridge', () => {
 				}),
 		);
 		const close = vi.fn(async () => undefined);
-		const browser = {
+		const browser = fromPartial<Browser>({
 			newPage: vi.fn(),
 			close,
 			on: vi.fn(),
-		} as unknown as Browser;
+		});
 		const bridge = new ChromiumRendererBridge(
 			{
 				executablePath: process.execPath,
@@ -191,10 +198,12 @@ describe('ChromiumRendererBridge', () => {
 
 	it('times out and rejects pending capture handshakes on stop', async () => {
 		const close = vi.fn(async () => undefined);
-		const bridge = new ChromiumRendererBridge({
-			configureTimeoutMs: 10,
-		} as never);
-		const jobs = Reflect.get(bridge, 'jobs') as Map<string, unknown>;
+		const bridge = new ChromiumRendererBridge(
+			fromPartial({
+				configureTimeoutMs: 10,
+			}),
+		);
+		const jobs = bridge['jobs'];
 		jobs.set('job-1', {
 			browser: { close },
 			page: { evaluate: vi.fn(async () => undefined) },
@@ -217,10 +226,10 @@ describe('ChromiumRendererBridge', () => {
 	});
 
 	it('ignores valid stale acknowledgements without rejecting the current epoch', () => {
-		const bridge = new ChromiumRendererBridge({} as never);
+		const bridge = new ChromiumRendererBridge(fromPartial({}));
 		const rejectPrepared = vi.fn();
 		const rejectStarted = vi.fn();
-		const jobs = Reflect.get(bridge, 'jobs') as Map<string, unknown>;
+		const jobs = bridge['jobs'];
 		jobs.set('job-1', {
 			generation: 0,
 			capture: {
@@ -238,9 +247,7 @@ describe('ChromiumRendererBridge', () => {
 				},
 			},
 		});
-		const receive = Reflect.get(bridge, 'receiveCaptureAcknowledgement').bind(
-			bridge,
-		) as (job: string, generation: number, value: object) => void;
+		const receive = bridge['receiveCaptureAcknowledgement'].bind(bridge);
 		receive('job-1', 0, {
 			type: 'suite-recorder:capture-prepared',
 			protocol_version: 1,
@@ -271,13 +278,13 @@ describe('ChromiumRendererBridge', () => {
 	});
 
 	it('allows the next epoch after a capture-start acknowledgement timeout', async () => {
-		const bridge = new ChromiumRendererBridge({
-			configureTimeoutMs: 5,
-		} as never);
-		const jobs = Reflect.get(bridge, 'jobs') as Map<string, unknown>;
-		const receive = Reflect.get(bridge, 'receiveCaptureAcknowledgement').bind(
-			bridge,
-		) as (job: string, generation: number, value: object) => void;
+		const bridge = new ChromiumRendererBridge(
+			fromPartial({
+				configureTimeoutMs: 5,
+			}),
+		);
+		const jobs = bridge['jobs'];
+		const receive = bridge['receiveCaptureAcknowledgement'].bind(bridge);
 		const page = {
 			evaluate: vi.fn(
 				async (_callback, value: { type: string; epoch: number }) => {
@@ -307,13 +314,13 @@ describe('ChromiumRendererBridge', () => {
 	});
 
 	it('allows a newer epoch to supersede an acknowledged prepare with no start', async () => {
-		const bridge = new ChromiumRendererBridge({
-			configureTimeoutMs: 100,
-		} as never);
-		const jobs = Reflect.get(bridge, 'jobs') as Map<string, unknown>;
-		const receive = Reflect.get(bridge, 'receiveCaptureAcknowledgement').bind(
-			bridge,
-		) as (job: string, generation: number, value: object) => void;
+		const bridge = new ChromiumRendererBridge(
+			fromPartial({
+				configureTimeoutMs: 100,
+			}),
+		);
+		const jobs = bridge['jobs'];
+		const receive = bridge['receiveCaptureAcknowledgement'].bind(bridge);
 		const page = {
 			evaluate: vi.fn(async (_callback, value: { epoch: number }) => {
 				receive('job-1', 0, {
@@ -372,13 +379,15 @@ describe('ChromiumRendererBridge', () => {
 					});
 			},
 		);
-		const page = {
+		const page = fromPartial<Page>({
 			setViewport: vi.fn(),
 			setRequestInterception: vi.fn(),
 			on: vi.fn(),
-			exposeFunction: vi.fn(async (_name, callback) => {
-				exposed = callback as (value: unknown) => void;
-			}),
+			exposeFunction: vi.fn(
+				async (_name: string, callback: (value: unknown) => void) => {
+					exposed = callback;
+				},
+			),
 			evaluateOnNewDocument: vi.fn(),
 			goto: vi.fn(async () => {
 				exposed?.({
@@ -390,13 +399,13 @@ describe('ChromiumRendererBridge', () => {
 				return null;
 			}),
 			evaluate,
-		} as unknown as Page;
+		});
 		const close = vi.fn(async () => undefined);
-		const browser = {
+		const browser = fromPartial<Browser>({
 			newPage: vi.fn(async () => page),
 			close,
 			on: vi.fn(),
-		} as unknown as Browser;
+		});
 		const adapter: BrowserAdapter = {
 			launch: vi.fn(async () => browser),
 		};
@@ -425,7 +434,7 @@ describe('ChromiumRendererBridge', () => {
 			height: 1080,
 		});
 		expect(page.evaluateOnNewDocument).toHaveBeenCalledBefore(
-			page.goto as never,
+			fromPartial(page.goto),
 		);
 
 		await bridge.deliverGrant(
@@ -549,15 +558,17 @@ describe('ChromiumRendererBridge', () => {
 		let exposed: ((value: unknown) => void) | undefined;
 		const pageHandlers = new Map<string, () => void>();
 		const browserHandlers = new Map<string, () => void>();
-		const page = {
+		const page = fromPartial<Page>({
 			setViewport: vi.fn(),
 			setRequestInterception: vi.fn(),
 			on: vi.fn((name: string, handler: () => void) =>
 				pageHandlers.set(name, handler),
 			),
-			exposeFunction: vi.fn(async (_name, callback) => {
-				exposed = callback as (value: unknown) => void;
-			}),
+			exposeFunction: vi.fn(
+				async (_name: string, callback: (value: unknown) => void) => {
+					exposed = callback;
+				},
+			),
 			evaluateOnNewDocument: vi.fn(),
 			goto: vi.fn(async () => {
 				exposed?.({
@@ -568,15 +579,15 @@ describe('ChromiumRendererBridge', () => {
 				});
 				return null;
 			}),
-		} as unknown as Page;
+		});
 		const close = vi.fn(async () => undefined);
-		const browser = {
+		const browser = fromPartial<Browser>({
 			newPage: vi.fn(async () => page),
 			close,
 			on: vi.fn((name: string, handler: () => void) =>
 				browserHandlers.set(name, handler),
 			),
-		} as unknown as Browser;
+		});
 		const bridge = new ChromiumRendererBridge(
 			{
 				executablePath: process.execPath,

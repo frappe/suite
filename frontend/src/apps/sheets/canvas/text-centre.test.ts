@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 // Text is centred on what the eye sees: the cell's white area below its
 // gridline (y+1 … y+h), with the capitals' middle on that centre. The
 // painters draw on the alphabetic baseline at centre + capHeight / 2.
@@ -87,7 +88,7 @@ describe('cell text centring', () => {
       0,
       0,
       () => 'Yes',
-      { getStyle: () => ({}), getValidation: () => rule as never },
+      { getStyle: () => ({}), getValidation: () => fromPartial(rule) },
       null,
     )
     const label = draws.find((d) => d.text === 'Yes')!
@@ -149,7 +150,7 @@ describe('cap height cache', () => {
     const { ctx } = recordingCtx()
     let calls = 0
     ctx.measureText = () => ({ width: 0, actualBoundingBoxAscent: ++calls })
-    const capHeight = createCapHeight(ctx as never)
+    const capHeight = createCapHeight(fromPartial(ctx))
     expect([capHeight(), capHeight()]).toEqual([1, 2])
     fonts.status = 'loaded'
     expect([capHeight(), capHeight()]).toEqual([3, 3])

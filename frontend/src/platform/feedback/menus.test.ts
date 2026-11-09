@@ -34,7 +34,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   engine = createApiClient(
     { test: async () => ({ policy: () => ({ effects: 'none' }) }) },
-    { transport: createTransport({ fetch: fetcher, maxRetries: 0 }), persistence: false, feedback },
+    { transport: createTransport({ fetch: fetcher, maxRetries: 0 }), feedback },
   )
 })
 afterEach(() => {

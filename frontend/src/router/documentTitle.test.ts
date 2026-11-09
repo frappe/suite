@@ -1,16 +1,17 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { beforeEach, describe, expect, it } from 'vitest'
-import type { RouteLocationNormalizedLoaded } from 'vue-router'
+import type { RouteLocationNormalizedLoaded, RouteRecordNormalized } from 'vue-router'
 
 import { setDocumentTitle } from './index'
 
 const HOME = { name: 'slides-home' }
 const EDITOR = { name: 'slides-editor' }
 
-const at = (record: object, title = 'Frappe Slides') =>
-  ({
+const at = (record: Partial<RouteRecordNormalized>, title = 'Frappe Slides') =>
+  fromPartial<RouteLocationNormalizedLoaded>({
     matched: [{ name: 'slides-group' }, record],
     meta: { title },
-  }) as RouteLocationNormalizedLoaded
+  })
 
 /** Two records rendering one component, the way the calendar's four views do. */
 const CalendarView = { name: 'CalendarView' }

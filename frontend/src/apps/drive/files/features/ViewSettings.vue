@@ -63,14 +63,15 @@
 import { Button, Popover, Select, TabButtons, type SelectOption } from 'frappe-ui'
 import { computed, useId } from 'vue'
 
-import type {
-  FilesColumn,
-  FilesDateColumn,
-  FilesDirection,
-  FilesSort,
-  FilesViewMode,
-  PresentationChange,
-  PresentationState,
+import {
+  nextSort,
+  type FilesColumn,
+  type FilesDateColumn,
+  type FilesDirection,
+  type FilesSort,
+  type FilesViewMode,
+  type PresentationChange,
+  type PresentationState,
 } from './presentation'
 
 const props = defineProps<{
@@ -81,6 +82,8 @@ const props = defineProps<{
   columns: readonly FilesColumn[]
   /** Names the date column's pill as the list heads it. */
   dateColumn?: FilesDateColumn
+  /** My files and its folders, where every item is the user's own, so Owner is no sort. */
+  inOwnSpace?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -99,7 +102,10 @@ const SORT_LABELS: Record<FilesSort, string> = {
   kind: 'Type',
   size: 'Size',
 }
+/** The Sort by options, in the order the menu offers them. */
+const SORTS: FilesSort[] = ['title', 'modified', 'owner', 'kind', 'size']
 const COLUMN_LABELS: Record<FilesColumn, string> = {
+  access: 'Access',
   owner: 'Owner',
   modified: 'Modified',
   kind: 'Type',
@@ -122,10 +128,10 @@ function row<T extends string>(
   id: string,
   label: string,
   value: T,
+  values: readonly T[],
   labels: Record<T, string>,
   onPick: (value: T) => void,
 ) {
-  const values = Object.keys(labels) as T[]
   return {
     id,
     label,
@@ -138,14 +144,21 @@ function row<T extends string>(
   }
 }
 
+const sorts = computed((): FilesSort[] =>
+  props.inOwnSpace ? SORTS.filter((sort) => sort !== 'owner') : SORTS,
+)
+
 const rows = computed(() => {
   const { sort, dir } = props.presentation
   return [
-    row(sortId, 'Sort by', sort, SORT_LABELS, (next) => emit('change', { sort: next })),
+    row(sortId, 'Sort by', sort, sorts.value, SORT_LABELS, (next) =>
+      emit('change', nextSort(props.presentation, next)),
+    ),
     row(
       orderId,
       'Order',
       dir,
+      ['asc', 'desc'],
       { asc: orderLabel(sort, 'asc'), desc: orderLabel(sort, 'desc') },
       (next) => emit('change', { dir: next }),
     ),

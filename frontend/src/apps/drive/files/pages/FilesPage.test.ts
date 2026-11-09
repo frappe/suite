@@ -1,20 +1,42 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, type PropType } from 'vue'
-import { createMemoryHistory, createRouter, RouterView, type Router } from 'vue-router'
+import {
+  createMemoryHistory,
+  createRouter,
+  createWebHistory,
+  RouterView,
+  type Router,
+} from 'vue-router'
 
 import type { DriveNode } from '@/apps/drive/client/types'
+import { DOCUMENT_TYPES_KEY, type DocumentTypeDefinition } from '@/platform/contracts'
 import { TransportError, type Operation } from '@/platform/transport'
 
+import { openingLocation } from '../features/document/openingLocation'
+import { rememberShown } from '../features/preview/lastShown'
+
 // A Drive server that keeps the caller's Recent, stars and one folder's children.
+const { fromAny, fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const server = vi.hoisted(() => ({
-  recents: [] as string[],
+  recents: fromPartial<string[]>([]),
   nodes: new Map<string, DriveNode>(),
   folderRole: 30,
-  calls: [] as Array<{ id: string; input: Record<string, unknown> }>,
+  calls: fromPartial<Array<{ id: string; input: Record<string, unknown> }>>([]),
   /** The answer to a download request: a Preparing download, or an error to throw. */
-  download: null as null | (() => unknown),
+  download: fromPartial<null | (() => unknown)>(null),
   /** The answers to polling a download, one per poll. */
-  polls: [] as unknown[],
+  polls: fromPartial<unknown[]>([]),
+  /** The cursor a folder listing answers with: set, the folder has more to load. */
+  nextCursor: fromPartial<string | null>(null),
+  /** Set, trash and batch writes wait for it before they answer. */
+  gate: fromPartial<Promise<void> | null>(null),
+  /** Set, a folder's details wait for it before they answer. */
+  detailGate: fromPartial<Promise<void> | null>(null),
+  /** Set, trash and batch writes are refused with it. */
+  refusal: fromPartial<Error | null>(null),
+  /** The nodes a batch answers as failed, and leaves unchanged. */
+  batchFailures: fromPartial<string[]>([]),
 }))
 
 vi.mock('@/platform/transport', async (original) => {
@@ -30,6 +52,7 @@ vi.mock('@/platform/transport', async (original) => {
             return { personal: { node: 'root', title: 'My files' }, organization: null }
           // Any other id is a folder of its own, so no test reads an answer another test cached.
           case 'node_get':
+            await server.detailGate
             return {
               ...(node(input.node) ?? {
                 name: input.node,
@@ -40,16 +63,62 @@ vi.mock('@/platform/transport', async (original) => {
                 state: 'Active',
               }),
               access: { role: server.folderRole },
+              breadcrumbs: [{ name: 'root', title: 'My files' }],
             }
+          case 'node_create.create_document': {
+            const created = {
+              ...server.nodes.get('a')!,
+              name: `doc-${server.nodes.size}`,
+              title: String(input.title),
+              kind: 'document' as const,
+              parent_node: String(input.parent_node),
+              content_doctype: String(input.content_doctype),
+            }
+            server.nodes.set(created.name, created)
+            return created
+          }
+          case 'node_patch.trash': {
+            await server.gate
+            if (server.refusal) throw server.refusal
+            const trashed = node(input.node)
+            if (trashed) trashed.state = 'Trashed'
+            return trashed
+          }
+          case 'node_patch.move': {
+            await server.gate
+            const moved = node(input.node)
+            if (moved) moved.parent_node = String(input.parent_node)
+            return moved
+          }
+          case 'node_batch': {
+            await server.gate
+            if (server.refusal) throw server.refusal
+            const { nodes, patch } = fromAny<
+              { nodes: string[]; patch: { state?: 'Active' | 'Trashed'; parent_node?: string } },
+              unknown
+            >(input)
+            const changed = nodes.filter((name) => !server.batchFailures.includes(name))
+            for (const name of changed) Object.assign(server.nodes.get(name)!, patch)
+            return {
+              ok: changed,
+              failed: nodes
+                .filter((name) => server.batchFailures.includes(name))
+                .map((name) => ({ node: name, type: 'DriveForbidden', message: 'No' })),
+            }
+          }
           case 'node_children':
             return {
-              rows: [...server.nodes.values()].filter((row) => row.parent_node === input.node),
-              next_cursor: null,
+              rows: [...server.nodes.values()].filter(
+                (row) => row.parent_node === input.node && row.state === 'Active',
+              ),
+              next_cursor: server.nextCursor,
             }
           case 'view_list':
             return { rows: server.recents.map((name) => node(name)), next_cursor: null }
           case 'view_clear_recents': {
-            const named = input.nodes as string[]
+            const named = input.nodes
+            if (!Array.isArray(named) || !named.every((node) => typeof node === 'string'))
+              throw new Error('Expected node names')
             const before = server.recents.length
             server.recents = server.recents.filter((name) => !named.includes(name))
             return { count: before - server.recents.length }
@@ -58,6 +127,29 @@ vi.mock('@/platform/transport', async (original) => {
             return server.download?.()
           case 'download_get':
             return server.polls.shift()
+          case 'notifications_list':
+            return {
+              rows: [
+                {
+                  name: 'notice-1',
+                  read: 0,
+                  creation: null,
+                  download: {
+                    name: 'download-1',
+                    title: 'Photos.zip',
+                    status: 'Ready',
+                    delivery: 'Inbox',
+                    size: 2048,
+                    expires_at: null,
+                    error: null,
+                    url: '/api/suite/drive/downloads/download-1/content',
+                  },
+                },
+              ],
+              next_cursor: null,
+            }
+          case 'notifications_read.notification_names':
+            return { count: 1 }
           case 'node_put_favourite':
           case 'node_delete_favourite': {
             const starred = node(input.node)
@@ -84,7 +176,11 @@ interface ShownToast {
   message: string
   options?: { id?: unknown; description?: string; duration?: number }
 }
-const feedback = vi.hoisted(() => ({ toasts: [] as ShownToast[] }))
+const feedback = vi.hoisted(() => ({
+  toasts: fromPartial<ShownToast[]>([]),
+  /** Every confirmation the page asked for, answered yes unless a test says otherwise. */
+  confirm: vi.fn(async (_options: { title: string; destructive?: boolean }) => true),
+}))
 vi.mock('@/platform/feedback', async () => {
   const { defineComponent, h } = await import('vue')
   const slotOnly = defineComponent({
@@ -97,10 +193,26 @@ vi.mock('@/platform/feedback', async () => {
     feedback.toasts.push({ kind, message, options })
     return feedback.toasts.length
   }
+  // A menu lists its options beside its trigger, so a test can choose one.
+  type Option = { label?: string; onClick?: () => unknown; options?: Option[] }
+  const menu = defineComponent({
+    props: { options: { type: fromPartial<PropType<Option[]>>(Array), default: () => [] } },
+    setup:
+      (props, { slots }) =>
+      () =>
+        h('div', { 'data-menu': '' }, [
+          slots.default?.(),
+          ...props.options
+            .flatMap((item) => item.options ?? [item])
+            .map((option) =>
+              h('button', { role: 'menuitem', onClick: () => option.onClick?.() }, option.label),
+            ),
+        ]),
+  })
   return {
     ContextMenu: slotOnly,
-    Dropdown: slotOnly,
-    confirm: async () => true,
+    Dropdown: menu,
+    confirm: feedback.confirm,
     reportMutationError: (error: Error) => show('error')(error.message),
     toast: {
       success: show('success'),
@@ -115,8 +227,15 @@ vi.mock('@/platform/feedback', async () => {
 // The page is under test, not its parts. The listing hands its rows and row
 // menu to the test, and the parts that open their own dialogs stay closed.
 const listing = vi.hoisted(() => ({
-  rows: [] as DriveNode[],
-  menu: null as null | ((row: DriveNode) => MenuGroup[]),
+  rows: fromPartial<DriveNode[]>([]),
+  menu: fromPartial<null | ((row: DriveNode) => MenuGroup[])>(null),
+  /** The row that shows keyboard focus. */
+  focused: fromPartial<DriveNode | null>(null),
+  revealed: fromPartial<string[]>([]),
+  /** The revealed items asked to flash. */
+  highlighted: fromPartial<string[]>([]),
+  /** Set, a reveal does not find its item. */
+  missing: false,
 }))
 interface MenuGroup {
   group: string
@@ -127,10 +246,18 @@ vi.mock('../features/FilesListing.vue', async () => {
   return {
     default: defineComponent({
       props: {
-        query: { type: Object as PropType<{ rows: DriveNode[] }>, required: true },
-        menuOptions: { type: Function as PropType<(row: DriveNode) => MenuGroup[]> },
+        query: { type: fromPartial<PropType<{ rows: DriveNode[] }>>(Object), required: true },
+        menuOptions: { type: fromPartial<PropType<(row: DriveNode) => MenuGroup[]>>(Function) },
       },
-      setup(props) {
+      setup(props, { expose }) {
+        expose({
+          focusedRow: () => listing.focused,
+          reveal: async (id: string, options: { highlight?: boolean } = {}) => {
+            listing.revealed.push(id)
+            if (options.highlight) listing.highlighted.push(id)
+            return !listing.missing
+          },
+        })
         return () => {
           listing.rows = props.query.rows
           listing.menu = props.menuOptions ?? null
@@ -157,17 +284,28 @@ vi.mock('../features/uploads/DriveUploads.vue', async () => {
 })
 const dialogs = vi.hoisted(() => ({
   showDetails: vi.fn(async () => {}),
-  share: vi.fn(async () => false),
+  share: vi.fn(async (_node: string) => false),
 }))
 vi.mock('@/apps/drive', async (original) => ({
   ...(await original<typeof import('@/apps/drive')>()),
   useDriveDialogs: () => ({ ...dialogs, move: vi.fn() }),
 }))
-// The page's keyboard shortcuts, as it registers them.
-const keys = vi.hoisted(() => ({
-  shortcuts: [] as Array<{ description: string; handler: (event: KeyboardEvent) => void }>,
-}))
 
+interface ShortcutConfig {
+  combo: string
+  description: string
+  enabled?: () => boolean
+  handler: (event: KeyboardEvent) => void
+}
+/** The shortcuts the page registered. */
+const shortcuts = vi.hoisted((): ShortcutConfig[] => [])
+/** Presses `combo` as frappe-ui would: the live registration for it runs. */
+function press(combo: string): KeyboardEvent {
+  const event = new KeyboardEvent('keydown', { cancelable: true })
+  const live = shortcuts.find((each) => each.combo === combo && (each.enabled?.() ?? true))
+  live?.handler(event)
+  return event
+}
 const quiet = () =>
   defineComponent({
     setup:
@@ -185,11 +323,29 @@ vi.mock('frappe-ui', () => ({
   PageHeaderMobile: quiet(),
   TabButtons: quiet(),
   TextInput: quiet(),
-  useKeyboardShortcut: (shortcuts: typeof keys.shortcuts) => keys.shortcuts.push(...shortcuts),
+  useKeyboardShortcut: (configs: ShortcutConfig[]) => shortcuts.push(...configs),
+}))
+/** What the page last handed the folder picker. */
+const picker = vi.hoisted(() => ({
+  attrs: fromPartial<{
+    open?: boolean
+    mode?: string
+    onChoose?: (parent: string, destination: string) => unknown
+  }>({}),
+}))
+vi.doMock('../features/FolderPicker.vue', () => ({
+  default: defineComponent({
+    inheritAttrs: false,
+    setup:
+      (_props, { attrs }) =>
+      () => {
+        picker.attrs = fromAny(attrs)
+        return null
+      },
+  }),
 }))
 for (const part of [
   '../features/ViewSettings.vue',
-  '../features/FolderPicker.vue',
   '../features/TemplatePicker.vue',
   '../features/RenameDialog.vue',
   '../features/CreateNodeDialog.vue',
@@ -228,6 +384,14 @@ function node(name: string, title: string, extra: Partial<DriveNode> = {}): Driv
   }
 }
 
+const spreadsheets: DocumentTypeDefinition = {
+  key: 'sheets',
+  contentDoctype: 'Sheet',
+  newLabel: () => 'Spreadsheet',
+  icon: quiet(),
+  loadSurface: async () => quiet(),
+}
+
 let unmount: (() => void) | null = null
 beforeEach(() => {
   vi.stubGlobal('matchMedia', () => ({
@@ -253,28 +417,44 @@ afterEach(() => {
   server.folderRole = 30
   server.download = null
   server.polls = []
+  server.nextCursor = null
+  server.gate = null
+  server.detailGate = null
+  server.refusal = null
+  server.batchFailures = []
   vi.useRealTimers()
   feedback.toasts.length = 0
+  feedback.confirm.mockClear()
   listing.rows = []
   listing.menu = null
+  listing.focused = null
+  listing.revealed = []
+  listing.highlighted = []
+  listing.missing = false
+  shortcuts.length = 0
   uploads.upload.mockReset()
   dialogs.showDetails.mockClear()
   dialogs.share.mockClear()
-  keys.shortcuts = []
   vi.unstubAllGlobals()
   document.body.innerHTML = ''
 })
 
-async function mount(path: string): Promise<{ root: HTMLElement; router: Router }> {
+async function mount(
+  path: string,
+  history = createMemoryHistory(),
+): Promise<{ root: HTMLElement; router: Router }> {
   const router = createRouter({
-    history: createMemoryHistory(),
+    history,
     routes: [
+      { path: '/drive', component: { render: () => null } },
       {
         path: '/drive/recent',
         name: 'files-recent',
         component: FilesPage,
         props: { destination: 'recent' },
       },
+      { path: '/drive/starred', component: FilesPage, props: { destination: 'starred' } },
+      { path: '/drive/trash', component: FilesPage, props: { destination: 'trash' } },
       { path: '/drive/f/:node/:slug?', component: FilesPage, props: { destination: 'folder' } },
       { path: '/d/:node/:slug?', component: { render: () => null } },
     ],
@@ -284,6 +464,7 @@ async function mount(path: string): Promise<{ root: HTMLElement; router: Router 
   document.body.append(root)
   const app = createApp({ render: () => h(RouterView) })
   app.use(router)
+  app.provide(DOCUMENT_TYPES_KEY, [spreadsheets])
   app.mount(root)
   unmount = () => app.unmount()
   return { root, router }
@@ -298,6 +479,90 @@ function menuItem(row: string, label: string) {
     .flatMap((group) => group.options)
     .find((item) => item.label === label)
 }
+
+/** The options of the menu whose trigger is named `trigger`, or none when it is not shown. */
+function menuOf(root: HTMLElement, trigger: string): string[] {
+  const menu = root.querySelector(`[aria-label="${trigger}"]`)?.closest('[data-menu]')
+  return [...(menu?.querySelectorAll(':scope > [role="menuitem"]') ?? [])].map(
+    (item) => item.textContent ?? '',
+  )
+}
+function choose(root: HTMLElement, trigger: string, option: string) {
+  const menu = root.querySelector(`[aria-label="${trigger}"]`)?.closest('[data-menu]')
+  const items = [...(menu?.querySelectorAll<HTMLElement>(':scope > [role="menuitem"]') ?? [])]
+  items.find((item) => item.textContent === option)?.click()
+}
+
+describe("The open folder's menu", () => {
+  it('offers its row actions, and leaves the folder it moves to Trash', async () => {
+    server.folderRole = 40
+    server.nodes.set(
+      'folder-7',
+      node('folder-7', 'Archive', { kind: 'folder', parent_node: 'root', mime: null }),
+    )
+    const { root, router } = await mount('/drive/f/folder-7/archive')
+    await vi.waitFor(() => expect(menuOf(root, 'More file actions')).toContain('Rename'))
+
+    const offered = menuOf(root, 'More file actions')
+    expect(offered).toEqual(
+      expect.arrayContaining(['Details', 'Rename', 'Move', 'Star', 'Move to trash']),
+    )
+    expect(offered).not.toContain('Open')
+    expect(offered).not.toContain('Select')
+
+    choose(root, 'More file actions', 'Move to trash')
+
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/drive'))
+    expect(server.nodes.get('folder-7')?.state).toBe('Trashed')
+    expect(feedback.toasts.at(-1)?.message).toMatch(/^Moved .*Archive.* to Trash$/)
+  })
+})
+
+describe('New', () => {
+  const newSpreadsheet = (root: HTMLElement) =>
+    [...root.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+      (item) => item.textContent === 'Spreadsheet',
+    )
+
+  it('creates one spreadsheet with the default title and opens it, however often it is clicked', async () => {
+    server.folderRole = 40
+    const { root, router } = await mount('/drive/f/folder-9/drafts')
+    await vi.waitFor(() => expect(newSpreadsheet(root)).toBeDefined())
+
+    newSpreadsheet(root)?.click()
+    newSpreadsheet(root)?.click()
+
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toMatch(/^\/d\//))
+    const created = server.calls.filter((call) => call.id === 'node_create.create_document')
+    expect(created).toHaveLength(1)
+    expect(created[0]?.input).toMatchObject({
+      parent_node: 'folder-9',
+      content_doctype: 'Sheet',
+      title: 'Untitled spreadsheet',
+    })
+    expect(router.currentRoute.value.query.new).toBe('1')
+  })
+
+  const newButtons = (root: HTMLElement) => [...root.querySelectorAll('[label="New"]')]
+  for (const [role, shows] of [
+    [30, true],
+    [10, false],
+  ] as const) {
+    it(`keeps its room unseen while the folder loads, then ${shows ? 'shows it' : 'drops it'} for role ${role}`, async () => {
+      let answer = () => {}
+      server.detailGate = new Promise((resolve) => (answer = resolve))
+      server.folderRole = role
+      const { root } = await mount(`/drive/f/loading-${role}/drafts`)
+      await vi.waitFor(() => expect(newButtons(root)).not.toHaveLength(0))
+      expect(newButtons(root).every((button) => button.classList.contains('invisible'))).toBe(true)
+
+      answer()
+
+      const seen = () => newButtons(root).map((button) => !button.classList.contains('invisible'))
+      await vi.waitFor(() => expect(seen()).toEqual(shows ? [true] : []))
+    })
+  }
+})
 
 describe('Recent', () => {
   it('removes an item from Recent from its row menu', async () => {
@@ -337,6 +602,162 @@ describe('Recent', () => {
     await vi.waitFor(() => expect(titles()).toHaveLength(3))
 
     expect(menuItem('a', 'Remove from Recent')).toBeUndefined()
+  })
+})
+
+describe('Show in folder', () => {
+  const inTalks = {
+    parent_node: 'folder-1',
+    breadcrumbs: [
+      { name: 'root', title: 'My files', kind: 'root', role: 50 },
+      { name: 'folder-1', title: 'Talks', kind: 'folder', role: 50 },
+    ],
+  }
+  // The test server answers every saved view with `server.recents`.
+  function starred(...rows: DriveNode[]) {
+    for (const row of rows) server.nodes.set(row.name, row)
+    server.recents = rows.map((row) => row.name)
+    return mount('/drive/starred')
+  }
+
+  it('opens a starred item’s folder with the item focused and highlighted', async () => {
+    const { router } = await starred(node('a', 'a.png', inTalks))
+    await vi.waitFor(() => expect(menuItem('a', 'Show in folder')).toBeDefined())
+
+    menuItem('a', 'Show in folder')?.onClick()
+
+    await vi.waitFor(() => expect(listing.highlighted).toEqual(['a']))
+    expect(router.currentRoute.value.path).toBe('/drive/f/folder-1/talks')
+    expect(feedback.toasts).toEqual([])
+  })
+
+  it('says so when the folder no longer has the item', async () => {
+    listing.missing = true
+    await starred(node('b', 'b.png', inTalks))
+    await vi.waitFor(() => expect(menuItem('b', 'Show in folder')).toBeDefined())
+
+    menuItem('b', 'Show in folder')?.onClick()
+
+    await vi.waitFor(() => expect(feedback.toasts).toHaveLength(1))
+    expect(feedback.toasts[0]).toMatchObject({
+      kind: 'info',
+      message: 'Opened Talks. The item is no longer in it.',
+    })
+  })
+
+  it('is not offered without a trail to the folder, or in the folder itself', async () => {
+    await starred(node('c', 'c.png', { breadcrumbs: [] }))
+    await vi.waitFor(() => expect(titles()).toEqual(['c.png']))
+    expect(menuItem('c', 'Show in folder')).toBeUndefined()
+
+    unmount?.()
+    await mount('/drive/f/folder-1/talks')
+    await vi.waitFor(() => expect(titles()).toHaveLength(3))
+    expect(menuItem('a', 'Show in folder')).toBeUndefined()
+  })
+})
+
+describe('opening a file', () => {
+  /** Opens `row` from its menu and answers the folder name the preview's history entry carries. */
+  async function openedLocation(router: Router, row: string) {
+    await vi.waitFor(() => expect(menuItem(row, 'Open')).toBeDefined())
+    await menuItem(row, 'Open')?.onClick()
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toMatch(/^\/d\//))
+    return openingLocation(router.options.history.state)
+  }
+
+  it('names the open folder for the preview header to show while it loads', async () => {
+    const { router } = await mount('/drive/f/folder-1/talks')
+
+    expect(await openedLocation(router, 'a')).toBe('Talks')
+  })
+
+  it('names the folder from the trail where the list shows locations', async () => {
+    server.nodes.set('r', {
+      ...node('r', 'r.png'),
+      breadcrumbs: [
+        { name: 'root', title: 'My files', kind: 'root', role: 50 },
+        { name: 'folder-1', title: 'Talks', kind: 'folder', role: 50 },
+      ],
+    })
+    server.recents = ['r']
+    const { router } = await mount('/drive/recent')
+
+    expect(await openedLocation(router, 'r')).toBe('Talks')
+  })
+
+  it('names none when the file’s folder is not one the user can open', async () => {
+    server.nodes.set('s', { ...node('s', 's.png', { parent_node: 'hidden' }), breadcrumbs: [] })
+    server.recents = ['s']
+    const { router } = await mount('/drive/starred')
+
+    expect(await openedLocation(router, 's')).toBeNull()
+  })
+})
+
+describe('back from a file preview', () => {
+  /** Opens the Talks folder, previews a file that steps on to `last`, and goes Back. */
+  async function backFromPreview(last: string) {
+    const { router } = await mount('/drive/f/folder-1/talks', createWebHistory())
+    await vi.waitFor(() => expect(titles()).toHaveLength(3))
+    await router.push('/d/a/a-png')
+    rememberShown('/drive/f/folder-1/talks', last)
+    router.back()
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/drive/f/folder-1/talks'))
+    await vi.waitFor(() => expect(titles()).toHaveLength(3))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+  it('focuses the row of the last file the preview showed, without a highlight', async () => {
+    await backFromPreview('c')
+    expect(listing.revealed).toEqual(['c'])
+    expect(listing.highlighted).toEqual([])
+  })
+})
+
+describe('Sort', () => {
+  const orders = () =>
+    server.calls.filter((call) => call.id === 'node_children').map((call) => call.input.order_by)
+
+  it('reads a folder of My files by name when the saved sort is Owner', async () => {
+    await mount('/drive/f/folder-1/talks?sort=owner')
+    await vi.waitFor(() => expect(titles()).toHaveLength(3))
+
+    expect(orders()).toEqual(['title'])
+  })
+})
+
+const expansions = (id: string) =>
+  server.calls.filter((call) => call.id === id).map((call) => call.input.expand)
+
+describe('Access column', () => {
+  it('asks for each row’s audience in a folder', async () => {
+    await mount('/drive/f/folder-1/talks')
+    await vi.waitFor(() => expect(titles()).toHaveLength(3))
+
+    expect(expansions('node_children')).toEqual(['access,audience,contents_size'])
+  })
+
+  it('asks for none in Trash', async () => {
+    await mount('/drive/trash')
+    await vi.waitFor(() => expect(expansions('view_list')).toHaveLength(1))
+
+    expect(expansions('view_list')).toEqual(['access'])
+  })
+})
+
+describe('Folder size', () => {
+  it('asks for each folder’s total in a listed folder', async () => {
+    await mount('/drive/f/folder-1/talks')
+    await vi.waitFor(() => expect(titles()).toHaveLength(3))
+
+    expect(expansions('node_children')).toEqual(['access,audience,contents_size'])
+  })
+
+  it('asks for none in Trash', async () => {
+    await mount('/drive/trash')
+    await vi.waitFor(() => expect(expansions('view_list')).toHaveLength(1))
+
+    expect(expansions('view_list')).toEqual(['access'])
   })
 })
 
@@ -462,8 +883,7 @@ describe('Downloading a folder', () => {
         options: {
           id: 'download-1',
           description:
-            'The download starts here when the zip is ready. A notification will bring it too.',
-          duration: Infinity,
+            'The download starts here when the zip is ready. You will also get a notification.',
         },
       },
     ])
@@ -475,8 +895,16 @@ describe('Downloading a folder', () => {
     expect(feedback.toasts[1]).toEqual({
       kind: 'success',
       message: 'Downloading “Photos”',
-      options: { id: 'download-1', description: undefined, duration: 5000 },
+      options: { id: 'download-1', description: '2 KB', duration: 5000 },
     })
+    // The bell's notification for this zip is read: this tab delivered it.
+    await vi.waitFor(() =>
+      expect(
+        server.calls.filter((call) => call.id === 'notifications_read.notification_names'),
+      ).toEqual([
+        { id: 'notifications_read.notification_names', input: { notifications: ['notice-1'] } },
+      ]),
+    )
   })
 
   it('waits on the page for a zip asked for through a share link, then downloads it', async () => {
@@ -558,6 +986,49 @@ describe('A selection', () => {
     })
   })
 
+  it('leads with the count, and gives one item its row menu without Select', async () => {
+    server.folderRole = 40
+    const root = await select('a')
+
+    const count = [...root.querySelectorAll('span')].find(
+      (span) => span.textContent === '1 selected',
+    )
+    const move = bulkButton(root, 'Move')
+    expect(count && move && count.compareDocumentPosition(move)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    )
+    const offered = menuOf(root, 'More actions')
+    expect(offered).toEqual(expect.arrayContaining(['Rename', 'Details', 'Move to trash']))
+    expect(offered).not.toContain('Select')
+
+    menuItem('c', 'Select')?.onClick()
+    await nextTick()
+    expect(menuOf(root, 'More actions')).toEqual([])
+  })
+
+  it('lets go of a row trashed from its own menu, so the bar does not count what has left', async () => {
+    server.folderRole = 40
+    const root = await select('a')
+
+    choose(root, 'More actions', 'Move to trash')
+
+    await vi.waitFor(() => expect(server.nodes.get('a')?.state).toBe('Trashed'))
+    await vi.waitFor(() => expect(root.textContent).not.toContain('1 selected'))
+  })
+
+  it('lets go of a row moved from its own menu, and keeps the rest of the selection', async () => {
+    server.folderRole = 40
+    const root = await select('a', 'c')
+    expect(root.textContent).toContain('2 selected')
+
+    menuItem('a', 'Move')?.onClick()
+    await nextTick()
+    await picker.attrs.onChoose?.('folder-2', 'Archive')
+
+    await vi.waitFor(() => expect(server.nodes.get('a')?.parent_node).toBe('folder-2'))
+    await vi.waitFor(() => expect(root.textContent).toContain('1 selected'))
+  })
+
   it('stars every item, then offers to unstar them all', async () => {
     const root = await select('a', 'c')
 
@@ -573,11 +1044,45 @@ describe('A selection', () => {
     const unstarred = server.calls.filter((call) => call.id === 'node_delete_favourite')
     expect(unstarred.map((call) => call.input.node).sort()).toEqual(['a', 'c'])
   })
+
+  describe('moved to Trash', () => {
+    const trashed = () =>
+      [...server.nodes.values()].flatMap((row) => (row.state === 'Trashed' ? [row.name] : []))
+
+    it('asks first for two or more items, from the bar and from the Delete key', async () => {
+      const root = await select('a', 'c')
+      feedback.confirm.mockResolvedValueOnce(false)
+
+      bulkButton(root, 'Move to trash')?.click()
+      await vi.waitFor(() => expect(feedback.confirm).toHaveBeenCalledOnce())
+      expect(feedback.confirm.mock.calls[0]?.[0]).toMatchObject({
+        title: 'Move 2 items to trash?',
+        destructive: true,
+      })
+      await nextTick()
+      expect(trashed()).toEqual([])
+
+      press('Delete')
+      await vi.waitFor(() => expect(trashed()).toEqual(['a', 'c']))
+      expect(feedback.confirm).toHaveBeenCalledTimes(2)
+      expect(feedback.toasts.at(-1)?.message).toBe('Moved 2 items to Trash')
+    })
+
+    it('moves one item at once, with Undo', async () => {
+      const root = await select('b')
+
+      bulkButton(root, 'Move to trash')?.click()
+
+      await vi.waitFor(() => expect(trashed()).toEqual(['b']))
+      expect(feedback.confirm).not.toHaveBeenCalled()
+      expect(feedback.toasts.at(-1)?.message).toBe('Moved “b.png” to Trash')
+    })
+  })
 })
 
 describe('Keyboard shortcuts', () => {
-  function press(description: string) {
-    const shortcut = keys.shortcuts.find((candidate) => candidate.description === description)
+  function pressNamed(description: string) {
+    const shortcut = shortcuts.find((candidate) => candidate.description === description)
     shortcut?.handler(new KeyboardEvent('keydown', { cancelable: true }))
   }
   /** Letter keys go through Suite's own listener, not frappe-ui's registry. */
@@ -601,13 +1106,13 @@ describe('Keyboard shortcuts', () => {
     await nextTick()
 
     type('s')
-    expect(dialogs.share).toHaveBeenCalledWith('x')
+    expect(dialogs.share.mock.calls[0]?.[0]).toBe('x')
 
-    press('Select all')
+    pressNamed('Select all')
     await nextTick()
     expect(root.textContent).toContain('3 selected')
 
-    press('Delete selected items')
+    pressNamed('Move selected items to Trash')
     await vi.waitFor(() =>
       expect(server.calls.find((call) => call.id === 'node_batch')?.input).toEqual({
         nodes: ['x', 'y', 'z'],
@@ -622,5 +1127,167 @@ describe('Keyboard shortcuts', () => {
     type('g', 'r')
 
     await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/drive/recent'))
+  })
+})
+
+describe('Select on a touch screen', () => {
+  const bar = (root: HTMLElement) =>
+    [...root.querySelectorAll('span')].find((span) => /select/i.test(span.textContent ?? ''))
+      ?.textContent
+  const button = (root: HTMLElement, label: string) =>
+    [...root.querySelectorAll<HTMLElement>('div')].find(
+      (element) => element.getAttribute('label') === label,
+    )
+
+  it('starts selecting with nothing checked, and the bar waits for a choice', async () => {
+    const { root } = await mount('/drive/f/folder-1/talks')
+    await vi.waitFor(() => expect(titles()).toHaveLength(3))
+    await vi.waitFor(() => expect(menuOf(root, 'More file actions')).toContain('Select'))
+    expect(menuOf(root, 'More file actions')).not.toContain('Select rows')
+
+    choose(root, 'More file actions', 'Select')
+    await nextTick()
+
+    expect(bar(root)).toBe('Select items')
+    expect(button(root, 'Move')?.hasAttribute('disabled')).toBe(true)
+    expect(button(root, 'Move to trash')?.hasAttribute('disabled')).toBe(true)
+
+    menuItem('b', 'Select')?.onClick()
+    await nextTick()
+    expect(bar(root)).toBe('1 selected')
+  })
+})
+
+describe('Select all in a folder with more to load', () => {
+  const bar = (root: HTMLElement) =>
+    [...root.querySelectorAll('span')].find((span) => /selected$/.test(span.textContent ?? ''))
+      ?.textContent
+  async function selectAll(folder = 'folder-1'): Promise<HTMLElement> {
+    server.nextCursor = 'more'
+    const { root } = await mount(`/drive/f/${folder}/talks`)
+    await vi.waitFor(() => expect(menuOf(root, 'More file actions')).toContain('Select all'))
+    choose(root, 'More file actions', 'Select all')
+    await nextTick()
+    return root
+  }
+
+  it('says that only the loaded items are selected', async () => {
+    expect(bar(await selectAll())).toBe('3 loaded items selected')
+  })
+
+  it('refuses to download more than 200 items in one zip', async () => {
+    for (let index = 0; index < 201; index++) {
+      const name = `big-${index}`
+      server.nodes.set(name, node(name, `${name}.png`, { parent_node: 'folder-big' }))
+    }
+    const root = await selectAll('folder-big')
+
+    const download = [...root.querySelectorAll<HTMLElement>('div')].find(
+      (element) => element.getAttribute('label') === 'Download',
+    )
+    download?.click()
+
+    await vi.waitFor(() => expect(feedback.toasts).toHaveLength(1))
+    expect(feedback.toasts[0]).toMatchObject({
+      kind: 'error',
+      message: 'Download up to 200 items at a time.',
+    })
+    expect(server.calls.filter((call) => call.id === 'download_start')).toEqual([])
+  })
+})
+
+describe('Trash and move before Drive answers', () => {
+  let release: () => void = () => {}
+  beforeEach(() => {
+    server.gate = new Promise((resolve) => (release = resolve))
+  })
+  const refused = () =>
+    new TransportError({ type: 'DriveForbidden', status: 403, message: 'Not allowed', details: {} })
+
+  it('takes a trashed row out at once, and puts it back with the error when Drive refuses', async () => {
+    server.refusal = refused()
+    await mount('/drive/f/folder-1/talks')
+    await vi.waitFor(() => expect(titles()).toEqual(['a.png', 'b.png', 'c.png']))
+
+    const trashing = Promise.resolve(menuItem('b', 'Move to trash')?.onClick())
+
+    await vi.waitFor(() => expect(titles()).toEqual(['a.png', 'c.png']))
+    release()
+    await expect(trashing).rejects.toThrow('Not allowed')
+    expect(titles()).toEqual(['a.png', 'b.png', 'c.png'])
+    await vi.waitFor(() =>
+      expect(feedback.toasts).toContainEqual(
+        expect.objectContaining({ kind: 'error', message: 'Not allowed' }),
+      ),
+    )
+  })
+
+  it('leaves a picker opened meanwhile alone, and reports the move it finished', async () => {
+    server.folderRole = 40
+    await mount('/drive/f/folder-1/talks')
+    await vi.waitFor(() => expect(titles()).toHaveLength(3))
+
+    menuItem('a', 'Move')?.onClick()
+    await nextTick()
+    const moving = picker.attrs.onChoose?.('folder-2', 'Archive')
+    await nextTick()
+    expect(picker.attrs.open).toBe(false)
+
+    menuItem('c', 'Make a copy')?.onClick()
+    await nextTick()
+    expect(picker.attrs).toMatchObject({ open: true, mode: 'copy' })
+
+    release()
+    await moving
+    await nextTick()
+
+    expect(picker.attrs).toMatchObject({ open: true, mode: 'copy' })
+    expect(feedback.toasts.at(-1)?.message).toBe('Moved “a.png” to Archive')
+  })
+
+  it('takes a selection out at once, and brings back only the items that failed', async () => {
+    server.nodes.set('d', node('d', 'd.png'))
+    server.nodes.set('e', node('e', 'e.png'))
+    server.batchFailures = ['b', 'd']
+    const { root } = await mount('/drive/f/folder-1/talks')
+    await vi.waitFor(() => expect(titles()).toHaveLength(5))
+    for (const name of ['a', 'b', 'c', 'd', 'e']) menuItem(name, 'Select')?.onClick()
+    await nextTick()
+
+    const trash = [...root.querySelectorAll<HTMLElement>('div')].find(
+      (element) => element.getAttribute('label') === 'Move to trash',
+    )
+    trash?.click()
+
+    await vi.waitFor(() => expect(titles()).toEqual([]))
+    release()
+    await vi.waitFor(() => expect(titles()).toEqual(['b.png', 'd.png']))
+    expect(server.nodes.get('a')?.state).toBe('Trashed')
+    expect(server.nodes.get('b')?.state).toBe('Active')
+  })
+})
+
+describe('Keys', () => {
+  it('moves the focused row to Trash with Delete, and Mod+Z brings it back', async () => {
+    await mount('/drive/f/folder-1/talks')
+    await vi.waitFor(() => expect(titles()).toHaveLength(3))
+    listing.focused = listing.rows.find((row) => row.name === 'b')!
+
+    press('Delete')
+    await vi.waitFor(() => expect(server.nodes.get('b')?.state).toBe('Trashed'))
+    expect(feedback.toasts.at(-1)?.message).toBe('Moved “b.png” to Trash')
+
+    expect(press('Mod+Z').defaultPrevented).toBe(true)
+    await vi.waitFor(() => expect(server.nodes.get('b')?.state).toBe('Active'))
+  })
+
+  it('opens the parent folder with Alt+Up and asks it to show the folder the user left', async () => {
+    const { router } = await mount('/drive/f/folder-1/talks')
+    await vi.waitFor(() => expect(titles()).toHaveLength(3))
+
+    press('Alt+ArrowUp')
+
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/drive'))
+    expect(router.options.history.state.reveal).toBe('folder-1')
   })
 })

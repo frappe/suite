@@ -37,16 +37,12 @@ import type { DriveNode } from '@/apps/drive/client/types'
 
 export interface CreateRequest {
   parent: string
-  kind: 'folder' | 'document' | 'link'
-  /** The document type, for `document`. */
-  contentDoctype?: string
-  /** The type's label, such as `Spreadsheet`, for `document`. */
-  typeLabel?: string
+  kind: 'folder' | 'link'
 }
 
 const props = defineProps<{ request: CreateRequest | null }>()
 const open = defineModel<boolean>('open', { required: true })
-const emit = defineEmits<{ created: [node: DriveNode, request: CreateRequest] }>()
+const emit = defineEmits<{ created: [node: DriveNode] }>()
 
 const form = ref<HTMLFormElement | null>(null)
 const title = ref('')
@@ -56,12 +52,7 @@ const urlError = ref<string>()
 const error = ref<string>()
 const creating = ref(false)
 
-const noun = computed(() => {
-  const request = props.request
-  if (!request) return ''
-  if (request.kind === 'document') return (request.typeLabel ?? 'Document').toLowerCase()
-  return request.kind
-})
+const noun = computed(() => props.request?.kind ?? '')
 const dialogTitle = computed(() => `New ${noun.value}`)
 
 // A fresh request starts from a suggested name. The field opens focused with
@@ -97,7 +88,7 @@ async function submit() {
     const created = await createNode(createInput(request, title.value.trim(), url.value.trim()))
 
     open.value = false
-    emit('created', created, request)
+    emit('created', created)
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : `Could not create this ${noun.value}.`
     return
@@ -108,10 +99,7 @@ async function submit() {
 
 function createInput(request: CreateRequest, title: string, url: string): CreateNodeInput {
   const base = { parent_node: request.parent, title }
-  if (request.kind === 'link') return { ...base, kind: 'link', url }
-  if (request.kind === 'document')
-    return { ...base, kind: 'document', content_doctype: request.contentDoctype ?? '' }
-  return { ...base, kind: 'folder' }
+  return request.kind === 'link' ? { ...base, kind: 'link', url } : { ...base, kind: 'folder' }
 }
 
 function validUrl(value: string): boolean {

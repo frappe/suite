@@ -73,6 +73,8 @@ const rewriteRules = (rules: CSSRuleList): string =>
   Array.from(rules)
     .map((rule) => {
       if (rule.type === STYLE_RULE) {
+        // SAFETY: CSSOM's numeric STYLE_RULE discriminator identifies CSSStyleRule,
+        // including environments that omit its global constructor.
         const styleRule = rule as CSSStyleRule
         const scoped = splitSelectors(styleRule.selectorText).map(scopeSelector).join(', ')
         return `${scoped} { ${styleRule.style.cssText} }`
@@ -80,6 +82,8 @@ const rewriteRules = (rules: CSSRuleList): string =>
       // Any grouping rule — @media, @supports, @layer, @container, … — keeps its
       // prelude and has its contents passed back through this rewrite, so nothing
       // nested escapes scoping or filtering.
+      // SAFETY: native grouping CSSRule variants expose their children as CSSRuleList;
+      // leaf rules have no cssRules member and therefore keep this value undefined.
       const inner = (rule as { cssRules?: CSSRuleList }).cssRules
       if (inner) {
         const brace = rule.cssText.indexOf('{')

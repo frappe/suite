@@ -31,13 +31,15 @@ export interface VersionRestore extends RestoreNotice {
 const RESTORE_EVERY_SECONDS = 60
 
 // Functions, so each message is translated once the catalog has loaded
-const REFUSALS: Record<string, () => string> = {
-  restoring: () => __('Someone else is restoring a version. Try again once it is done.'),
-  behind: () => __('This tab is still catching up. Try again in a moment.'),
-  milestone_failed: () =>
-    __("The document as it is now couldn't be kept as a version first, so nothing was restored."),
-  paused: () => __('Saving is paused, so nothing was restored.'),
-}
+const REFUSALS = new Map<string, () => string>(
+  Object.entries({
+    restoring: () => __('Someone else is restoring a version. Try again once it is done.'),
+    behind: () => __('This tab is still catching up. Try again in a moment.'),
+    milestone_failed: () =>
+      __("The document as it is now couldn't be kept as a version first, so nothing was restored."),
+    paused: () => __('Saving is paused, so nothing was restored.'),
+  }),
+)
 
 /** Restores version `seq` from its stored bytes, after this tab's edits are saved; `convert` upgrades an old one. */
 export async function restoreVersion(
@@ -132,9 +134,8 @@ function noticeFor(result: RestoreResult): RestoreNotice {
   }
 
   const refusal = result.refusal ?? ''
-  if (Object.hasOwn(REFUSALS, refusal)) {
-    return { isRestored: false, message: REFUSALS[refusal]() }
-  }
+  const explain = REFUSALS.get(refusal)
+  if (explain) return { isRestored: false, message: explain() }
 
   return { isRestored: false, message: __('The version was not restored.') }
 }

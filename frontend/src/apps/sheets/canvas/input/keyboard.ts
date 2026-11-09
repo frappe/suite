@@ -69,12 +69,14 @@ export interface Keyboard {
   destroy(): void
 }
 
-const ARROWS: { readonly [key: string]: readonly [number, number] } = {
-  ArrowUp: [-1, 0],
-  ArrowDown: [1, 0],
-  ArrowLeft: [0, -1],
-  ArrowRight: [0, 1],
-}
+const ARROWS = new Map<string, readonly [number, number]>(
+  Object.entries({
+    ArrowUp: [-1, 0],
+    ArrowDown: [1, 0],
+    ArrowLeft: [0, -1],
+    ArrowRight: [0, 1],
+  }),
+)
 
 export function createKeyboard(o: KeyboardOptions): Keyboard {
   const { canvas, picker, sel: S, host } = o
@@ -82,7 +84,7 @@ export function createKeyboard(o: KeyboardOptions): Keyboard {
   let tabAnchorCol: number | null = null
   // The formula bar input whose arrows pick references (after F2), or null:
   // arrows move the caret by default, as in Sheets.
-  let barPicking: EventTarget | null = null
+  let barPicking: HTMLInputElement | null = null
 
   function afterEdit(move: LeaveMove): void {
     const { r, c } = S.anchor
@@ -165,7 +167,7 @@ export function createKeyboard(o: KeyboardOptions): Keyboard {
     const { r, c } = S.anchor
     const { r: er, c: ec } = S.head
     const mod = e.ctrlKey || e.metaKey
-    const arrow = ARROWS[e.key]
+    const arrow = ARROWS.get(e.key)
 
     if (mod && (e.key === 'a' || e.key === 'A')) {
       e.preventDefault()
@@ -299,7 +301,7 @@ export function createKeyboard(o: KeyboardOptions): Keyboard {
     if (!target) return
     // Home/End always move the text caret.
     if (e.key === 'Home' || e.key === 'End') return
-    const arrow = ARROWS[e.key]
+    const arrow = ARROWS.get(e.key)
 
     if (picker.isKeyPicking(target)) {
       if (arrow) {
@@ -333,7 +335,7 @@ export function createKeyboard(o: KeyboardOptions): Keyboard {
   // keeping a reference being picked (as the in-cell editor does).
   function endBarPicking(e: Event): void {
     if (e.target !== barPicking) return
-    if (picker.isKeyPicking(barPicking as HTMLInputElement)) picker.keyCommit()
+    if (barPicking && picker.isKeyPicking(barPicking)) picker.keyCommit()
     barPicking = null
   }
 

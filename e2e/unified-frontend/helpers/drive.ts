@@ -49,8 +49,11 @@ async function data<T>(
 	const response = await send(api, method, path, body);
 	const text = await response.text();
 	if (!response.ok()) throw new Error(`${method.toUpperCase()} ${path} failed with ${response.status()}: ${text}`);
+	// SAFETY: successful Drive responses use the data/message envelope; callers supply the output contract of the requested Drive endpoint.
 	const parsed = JSON.parse(text) as { data?: T; message?: T };
-	return (parsed.data ?? parsed.message) as T;
+	const result = parsed.data ?? parsed.message;
+	if (result === undefined) throw new Error(`${method.toUpperCase()} ${path} contained no data`);
+	return result;
 }
 
 export function roots(api: APIRequestContext): Promise<DriveRoots> {
@@ -101,7 +104,11 @@ export async function uploadFile(
 	return data<DriveNode>(api, "post", `${DRIVE}/uploads/${session.upload_id}/finish`, { parent_node: parent, title });
 }
 
-export function getNode(api: APIRequestContext, node: string, expand?: string): Promise<DriveNode & Record<string, unknown>> {
+export function getNode(
+	api: APIRequestContext,
+	node: string,
+	expand?: string,
+): Promise<DriveNode & Record<string, unknown>> {
 	const query = expand ? `?expand=${encodeURIComponent(expand)}` : "";
 	return data(api, "get", `${DRIVE}/nodes/${node}${query}`);
 }

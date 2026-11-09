@@ -89,7 +89,7 @@ export class Puller {
 
   private updateParts(rows: Row[], opening?: Opening) {
     // An empty row is a quarantined rev: it holds its place in the order and applies nothing
-    const rowParts = rows.filter((row) => row.bytes.length).map((row) => row.bytes)
+    const rowParts = rows.flatMap((row) => (row.bytes.length ? [row.bytes] : []))
     if (!opening?.checkpoint) {
       return rowParts
     }

@@ -98,6 +98,53 @@ class FlagResult(TypedDict):
     flagged: bool
 
 
+class PinInput(IdsInput):
+    pinned: bool
+    # The folder it is pinned from, the Inbox when left out (see suite.mail.pins).
+    mailbox: NotRequired[str | None]
+
+
+class PinResult(TypedDict):
+    ids: list[str]
+    pinned: bool
+
+
+class SnoozeInput(IdsInput):
+    until: str
+    leaves: NotRequired[str | None]
+
+
+class UnsnoozeInput(IdsInput):
+    leaves: NotRequired[str | None]
+
+
+class RemindInput(IdsInput):
+    remind_at: str
+
+
+class ThreadReminderInput(AccountInput):
+    thread_id: str
+
+
+class DismissReturnedInput(AccountInput):
+    thread_ids: list[str]
+
+
+class ReturnedMarks(TypedDict):
+    # The messages that were marked, and those of them back unanswered.
+    ids: list[str]
+    no_reply_ids: list[str]
+
+
+class RestoreReturnedInput(AccountInput):
+    ids: list[str]
+    no_reply_ids: list[str]
+
+
+class ReminderResult(TypedDict):
+    remind_at: str | None
+
+
 class MoveInput(IdsInput):
     mailbox: str
     clear_junk: NotRequired[bool]
@@ -131,6 +178,15 @@ class UnsubscribeInput(AccountInput):
 class FiledResult(TypedDict):
     updated: list[str]
     left_inbox: bool
+
+
+class Waited(TypedDict):
+    until: str
+    ids: list[str]
+
+
+class UnsnoozedResult(FiledResult):
+    waited: list[Waited]
 
 
 class FolderInput(IdsInput):
@@ -213,6 +269,8 @@ class ComposeInput(AccountInput):
     attachments: NotRequired[list[DraftAttachment] | None]
     send_at: NotRequired[str | None]
     undo_send: NotRequired[bool]
+    # Remind me then if nobody has answered: a UTC `...Z` time after the mail goes out.
+    remind_at: NotRequired[str | None]
 
 
 class CreateInput(ComposeInput):
@@ -365,6 +423,35 @@ _OPERATIONS: tuple[
     (mail.update_draft_mail, "mutation", "messages.updateDraft", UpdateInput, DraftResult, None),
     (mail.delete_mail, "mutation", "messages.deleteDraft", IdInput, type(None), None),
     (mail.set_flagged, "mutation", "messages.flag", FlagInput, FlagResult, None),
+    (mail.pin_mails, "mutation", "messages.pin", PinInput, PinResult, None),
+    (mail.snooze_mails, "mutation", "messages.snooze", SnoozeInput, FiledResult, None),
+    (mail.unsnooze_mails, "mutation", "messages.unsnooze", UnsnoozeInput, UnsnoozedResult, None),
+    (mail.remind_if_no_reply, "mutation", "messages.remindIfNoReply", RemindInput, ReminderResult, None),
+    (
+        mail.cancel_reply_reminder,
+        "mutation",
+        "messages.cancelReplyReminder",
+        ThreadReminderInput,
+        type(None),
+        None,
+    ),
+    (mail.get_reply_reminder, "query", "messages.replyReminder", ThreadReminderInput, ReminderResult, None),
+    (
+        mail.dismiss_returned_mail,
+        "mutation",
+        "messages.dismissReturned",
+        DismissReturnedInput,
+        ReturnedMarks,
+        None,
+    ),
+    (
+        mail.restore_returned_mail,
+        "mutation",
+        "messages.restoreReturned",
+        RestoreReturnedInput,
+        type(None),
+        None,
+    ),
     (mail.set_mails_seen, "mutation", "messages.seen", SeenInput, list[str], None),
     (mail.move_mails, "mutation", "messages.move", MoveInput, type(None), None),
     (mail.file_mails, "mutation", "messages.file", FileInput, FiledResult, None),
