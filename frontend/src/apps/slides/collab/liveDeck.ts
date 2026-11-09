@@ -602,6 +602,7 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
     push,
     /** Draws the document again without writing to it. Send the store's changes first. */
     redraw: merge,
+    holdsPosition: (id: string) => savedFrame(id)?.transform === CENTRED && host.fontsPending(),
     undo: () => takeStep('undo'),
     redo: () => takeStep('redo'),
     /** The change just made is one undo step, and nothing after it joins that step. */

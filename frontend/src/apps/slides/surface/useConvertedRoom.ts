@@ -197,7 +197,7 @@ export function useConvertedRoom({
         activeElementIds.value.includes(id) || currentSlide.value?.clientId === id,
       setBoundText,
       canWrite,
-      fontsPending: () => isFontPending,
+      fontsPending: () => isFontPending || document.fonts.status === 'loading',
       onRenamed: applyRenames,
       onMerged: keepShownSlide,
       onStep: showStep,
@@ -213,6 +213,7 @@ export function useConvertedRoom({
       undo: () => liveDeck.undo(),
       redo: () => liveDeck.redo(),
       endStep: () => liveDeck.endStep(),
+      holdsPosition: liveDeck.holdsPosition,
       bindText(id, seedHtml) {
         const isEmpty = !elementText(doc, id)?.length
         const seeded = isEmpty && !!seedHtml && canWrite()

@@ -25,6 +25,7 @@ const seat = {
   undo: () => {},
   redo: () => {},
   endStep: () => {},
+  holdsPosition: () => false,
   bindText: () => ({ extensions: [], seeded: false }),
 }
 

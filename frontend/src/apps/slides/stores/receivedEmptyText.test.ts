@@ -51,6 +51,7 @@ describe('leaving a text element whose text is empty, in a live room', () => {
       undo: () => {},
       redo: () => {},
       endStep: () => {},
+      holdsPosition: () => false,
       bindText: () => ({
         extensions: liveTextExtensions(fragment, presence, undoManager),
         seeded: false,

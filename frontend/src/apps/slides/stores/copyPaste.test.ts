@@ -203,6 +203,7 @@ describe('handlePaste', () => {
         undo() {},
         redo() {},
         endStep() {},
+        holdsPosition: () => false,
         bindText: () => ({ extensions: [], seeded: false }),
       })
       vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)

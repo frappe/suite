@@ -22,6 +22,7 @@ import { commandHistory } from '@/apps/slides/stores/historyMeta'
 import {
   bindLiveText,
   currentId,
+  holdsPosition,
   isLive,
   noteTextEdited,
   noteTextReceived,
@@ -54,7 +55,10 @@ const measuredAutoWidth = (editor) => {
   if (editorElement?.type !== 'text' || editorElement.width) return null
   const div = getElementDiv(editorElement.id)
   if (!div || !editor?.view || !div.contains(editor.view.dom)) return null
-  return div.offsetWidth
+
+  // read first: laying it out is what starts a new font's load
+  const width = div.offsetWidth
+  return holdsPosition(editorElement.id) ? null : width
 }
 
 // a width the panel changed makes the stored baseline a lie, and the next transaction can

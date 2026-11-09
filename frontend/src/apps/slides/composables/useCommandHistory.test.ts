@@ -297,6 +297,7 @@ describe('on a live presentation', () => {
     undo: vi.fn(),
     redo: vi.fn(),
     endStep: vi.fn(),
+    holdsPosition: () => false,
     bindText: () => ({ extensions: [], seeded: false }),
   }
 

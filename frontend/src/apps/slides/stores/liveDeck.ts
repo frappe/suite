@@ -10,6 +10,8 @@ interface LiveSeat {
   undo: () => void
   redo: () => void
   endStep: () => void
+  /** Text whose position waits on a font: typing mustn't work one out from its fallback. */
+  holdsPosition: (id: string) => boolean
   /** What ties a text editor to this element's live text. `seeded`: its first text was written now. */
   bindText: (id: string, seedHtml: string | null | undefined) => LiveTextBinding
 }
@@ -46,6 +48,8 @@ export function askLivePush() {
 export const pushLiveNow = () => seat?.push()
 
 export const flushLive = () => seat?.flush()
+
+export const holdsPosition = (id: string) => seat?.holdsPosition(id) ?? false
 
 export const undoLive = () => seat?.undo()
 

@@ -1,6 +1,7 @@
-import { fromPartial } from '@total-typescript/shoehorn'
+import { fromAny, fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
+import { Doc } from 'yjs'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
 vi.mock('@/apps/slides/router', () => ({ router: { replace: () => Promise.resolve() } }))
@@ -27,6 +28,9 @@ const { activeElementIds, focusElementId, setAutoWidth } =
 const { setCommandHistory } = await import('@/apps/slides/stores/historyMeta')
 const { useCommandHistory } = await import('./useCommandHistory')
 const { useTextEditor } = await import('./useTextEditor')
+const { setLiveSeat } = await import('@/apps/slides/stores/liveDeck')
+const { openLiveDeck } = await import('@/apps/slides/collab/liveDeck')
+const { ROOT, writeDeck } = await import('@/apps/slides/collab/deck')
 
 const { activeEditor } = useTextEditor()
 
@@ -92,6 +96,96 @@ describe('growth right after the panel switches back to auto', () => {
     typeAtEnd('x', 120)
 
     expect(element().left).toBe(490)
+  })
+})
+
+describe('centred auto-width text typed into while its font loads', () => {
+  const CENTRED = 'translate(-50%, -50%)'
+  let stopDeck = () => {}
+
+  afterEach(() => {
+    stopDeck()
+    setLiveSeat(null)
+  })
+
+  async function typingInLiveCentredText() {
+    const room = new Doc()
+    writeDeck(room, [
+      {
+        id: 's1',
+        elements: [{ id: 't1', type: 'text', frame: { left: 500, top: 300, transform: CENTRED } }],
+      },
+    ])
+    const fonts = { pending: false }
+    const deck = openLiveDeck(room, {
+      slides: () => fromAny(slides.value),
+      flatten: (item) =>
+        item.transform === CENTRED
+          ? { ...item, left: item.left - fakeDiv.offsetWidth / 2, transform: 'none' }
+          : item,
+      boundElementId: () => 't1',
+      isSelected: () => false,
+      setBoundText: () => {},
+      canWrite: () => true,
+      fontsPending: () => fonts.pending,
+      onRenamed: () => {},
+      onMerged: () => {},
+      onStep: () => {},
+      onBoundDeleted: () => {},
+    })
+    stopDeck = deck.stop
+    setLiveSeat({
+      push: deck.push,
+      flush: deck.push,
+      undo: deck.undo,
+      redo: deck.redo,
+      endStep: deck.endStep,
+      bindText: () => ({ extensions: [], seeded: false }),
+      holdsPosition: deck.holdsPosition,
+    })
+    fonts.pending = true
+    slideIndex.value = 0
+    focusElementId.value = 't1'
+    await nextTick()
+    await nextTick()
+    await nextTick()
+    // a bound editor's text comes from the room, not from the element
+    activeEditor.value.commands.setContent('<p style="text-align: center">one</p>')
+    deck.push()
+
+    const saved = () => room.getMap<Map<string, unknown>>(ROOT.elements).get('t1')!.get('frame')
+    return { deck, fonts, saved }
+  }
+
+  it('leaves the saved centre alone, then settles it when the font arrives', async () => {
+    const { deck, fonts, saved } = await typingInLiveCentredText()
+
+    typeAtEnd('x', 120)
+    deck.push()
+
+    expect(element().left).toBe(450)
+    expect(saved()).toMatchObject({ left: 500, top: 300, transform: CENTRED })
+
+    fonts.pending = false
+    fakeDiv.offsetWidth = 160
+    deck.redraw()
+
+    expect(element().left).toBe(420)
+    expect(saved()).toMatchObject({ left: 500, transform: CENTRED })
+  })
+
+  it("doesn't pay the font's own width change out of left on the next keystroke", async () => {
+    const { deck, fonts, saved } = await typingInLiveCentredText()
+    typeAtEnd('x', 120)
+    deck.push()
+    fonts.pending = false
+    fakeDiv.offsetWidth = 160
+    deck.redraw()
+
+    typeAtEnd('y', 180)
+    deck.push()
+
+    expect(saved()).toMatchObject({ left: 410, transform: 'none' })
   })
 })
 
