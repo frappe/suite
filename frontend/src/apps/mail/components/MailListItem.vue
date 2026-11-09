@@ -40,6 +40,14 @@
       <Badge v-if="mail.draft" size="sm" :label="__('Draft')" theme="red" />
     </template>
 
+    <template v-if="mail.pinned" #date>
+      <Tooltip :text="__('Pinned')">
+        <span class="flex h-5 shrink-0 items-center outline-none" tabindex="-1">
+          <Pin class="text-ink-gray-5 size-3.5" :aria-label="__('Pinned')" />
+        </span>
+      </Tooltip>
+    </template>
+
     <template #subject>
       <HighlightedText :text="mail.subject || __('[No subject]')" :term="searchTerm" />
     </template>
@@ -53,6 +61,8 @@
         :threads="[mail]"
         :drafts
         :unarchive
+        :pinnable
+        @set-pinned="(pinned: boolean) => emit('setPinned', pinned)"
         @set-seen="(seen: boolean) => emit('setSeen', seen)"
         @archive="emit('archiveThread')"
         @unarchive="emit('unarchiveThread')"
@@ -170,7 +180,7 @@
 
 <script setup lang="ts">
 import { Badge, Popover, Tooltip } from 'frappe-ui'
-import { Download, Loader, UserRoundSearch } from 'lucide-vue-next'
+import { Download, Loader, Pin, UserRoundSearch } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 import { useRoute, type RouteParamsRaw } from 'vue-router'
 
@@ -209,6 +219,7 @@ const {
   hideAvatar = false,
   outgoing,
   screened = false,
+  pinnable = false,
 } = defineProps<{
   mailbox: string
   mail: Thread
@@ -242,6 +253,8 @@ const {
   outgoing?: boolean
   // A screened thread mixed into the inbox: an ordinary row, marked with the New sender icon.
   screened?: boolean
+  // The list is an Inbox, the one place a pin acts (see MailRowActions).
+  pinnable?: boolean
 }>()
 
 const emit = defineEmits([
@@ -251,6 +264,7 @@ const emit = defineEmits([
   'trashThread',
   'deleteThread',
   'setFlagged',
+  'setPinned',
   'setSelected',
   'dragStart',
   'dragEnd',

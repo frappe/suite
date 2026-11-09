@@ -41,6 +41,7 @@ from suite.mail.doctype.mail_message.mail_message import (
     remove_messages_from_mailbox,
     set_flagged_status,
     set_messages_mailboxes,
+    set_pinned_status,
     set_seen_status,
     set_spam_status,
     set_unscreened_status,
@@ -81,6 +82,7 @@ from suite.mail.jmap import (
     get_mailbox_id_by_name,
     get_mailbox_id_by_role,
 )
+from suite.mail.pins import INBOX_SORT, PINNED_KEYWORD, is_pinned
 from suite.mail.utils import get_config, log_mail_error
 from suite.mail.utils.dt import from_utc_z, normalize_utc_z, to_user_timezone, to_utc_z
 from suite.mail.utils.reaction import (
@@ -340,11 +342,15 @@ def get_threads(
     if category:
         conditions.append(tab_filter(validate_tab(category), classification.inbox_tabs()))
 
-    conversations = fetch_threads(account, all_of(conditions), start, limit)
-
     # Four roles are needed below, so they come off one cached mailbox list rather than a lookup each:
     # every `get_mailbox_id_by_role` resolves the account's user and client again on the way in.
     ids_by_role = {(m.get("role") or "").lower(): m["id"] for m in get_cached_mailboxes(account)}
+    in_inbox = mailbox == ids_by_role.get("inbox")
+
+    conversations = fetch_threads(
+        account, all_of(conditions), start, limit, sort=INBOX_SORT if in_inbox else None
+    )
+
     trash_mailbox = ids_by_role.get("trash")
     junk_mailbox = ids_by_role.get("junk")
     # Sent and Drafts are about the message you wrote, so their rows describe the latest message in
@@ -401,6 +407,8 @@ def get_threads(
                     sent_mailbox=ids_by_role.get("sent"),
                 ),
                 "reaction_only": cint(reaction_only),
+                # Only the Inbox has pins to show; asked of the mail it holds, as its sort does.
+                "pinned": cint(in_inbox and any(is_pinned(m) for m in in_mailbox)),
             }
         )
 
@@ -689,7 +697,8 @@ def get_unified_threads(
                 thread["trash"] = ids_by_role.get("trash")
                 merged.append(thread)
 
-    merged.sort(key=lambda thread: thread["received_at"], reverse=True)
+    # Each account pins first (see suite.mail.pins), so the merged list does too.
+    merged.sort(key=lambda thread: (thread["pinned"], thread["received_at"]), reverse=True)
     rows = merged[start : start + limit]
     return {"rows": rows, "has_more": len(rows) == limit and start + limit < ALL_INBOX_MAX_FETCH}
 
@@ -796,8 +805,8 @@ def clearing_filter(mailbox: str, tab: Category | None, read: bool, filter_by: s
         conditions.append(tab_filter(tab, classification.inbox_tabs()))
     if condition := list_filter(filter_by):
         conditions.append(condition)
-    if read:
-        conditions.append({"notKeyword": "$seen"})
+    # Reading a pinned conversation takes nothing away; clearing it away would undo the pin's point.
+    conditions.append({"notKeyword": "$seen"} if read else {"notKeyword": PINNED_KEYWORD})
     return all_of(conditions)
 
 
@@ -1120,6 +1129,7 @@ def serialize_mail(mail: dict) -> dict:
         "reacts_with": read_reactions(mail),
         "mailing_list": cint(mail.get("mailing_list")),
         "unscreened": cint(is_unscreened_message(mail)),
+        "pinned": cint(is_pinned(mail)),
         "attachments": serialize_attachments(mail.get("attachments", [])),
         # The part has no filename, so it never survives `serialize_attachments`: the UI asks for
         # the parsed report by the message's id instead (see DeliveryStatusBanner).
@@ -1596,6 +1606,13 @@ def set_flagged(account: str, ids: list[str], flagged: bool) -> dict:
     set_flagged_status(account, ids, flagged)
 
     return {"ids": ids, "flagged": flagged}
+
+
+@frappe.whitelist()
+def pin_mails(account: str, ids: list[str], pinned: bool) -> dict:
+    """Pins or unpins a conversation, given its messages (see suite.mail.pins)."""
+
+    return {"ids": set_pinned_status(account, ids, pinned), "pinned": pinned}
 
 
 @frappe.whitelist()

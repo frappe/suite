@@ -14,6 +14,9 @@ import dayjs from '@/apps/mail/utils/dayjs'
  */
 const WEEKS = 3
 
+/** The group pinned conversations stand in, ahead of the dates: a pin outranks when it arrived. */
+export const PINNED_GROUP = 'pinned'
+
 const thisWeekOf = (now: Date | string) => dayjs(now).startOf('day').startOf('week')
 
 /** Where the week groups end: everything before it is grouped by month. */
@@ -32,6 +35,7 @@ export const dateGroup = (date: Date | string, now: Date | string = new Date()):
 
 /** What a group's header reads. */
 export const dateGroupLabel = (key: string, now: Date | string = new Date()): string => {
+  if (key === PINNED_GROUP) return __('Pinned')
   const today = dayjs(now).startOf('day')
   if (key.startsWith('day:')) {
     const day = dayjs(key.slice(4))

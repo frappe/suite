@@ -6,6 +6,7 @@
       :thread
       :can-go-next="canGoNext"
       @set-seen="setThreadSeen"
+      @set-pinned="onSetPinned"
       @archive-thread="emit('archiveThread')"
       @unarchive-thread="emit('unarchiveThread')"
       @move-thread="onMoveThread"
@@ -873,6 +874,7 @@ const emit = defineEmits([
   'deleteThread',
   'setSeen',
   'setFlagged',
+  'setPinned',
   'moveThread',
   'addThreadToMailbox',
   'removeThreadFromMailbox',
@@ -1268,6 +1270,7 @@ const syncWithSource = () => {
     mail.unscreened = fresh.unscreened
     // A star set or cleared from the list row, or on another device, reaches the open thread.
     mail.flagged = fresh.flagged
+    mail.pinned = fresh.pinned
     // A reaction landing on a message already open. It comes with the copy actions have to reach.
     mail.reactions = fresh.reactions
     mail.duplicates = fresh.duplicates
@@ -1790,6 +1793,13 @@ const handleKeydown = (e: KeyboardEvent) => {
 }
 onMounted(() => window.addEventListener('keydown', handleKeydown))
 onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
+const onSetPinned = (pinned: boolean) => {
+  const ids = (thread.value ?? []).filter((mail) => mail.id).flatMap(mailCopyIds)
+  thread.value?.forEach((mail: Mail) => {
+    mail.pinned = pinned ? 1 : 0
+  })
+  emit('setPinned', ids, pinned)
+}
 const syncFlagged = (ids: string[], flagged: boolean) =>
   thread.value?.forEach((mail: Mail) => {
     if (ids.includes(mail.id)) mail.flagged = flagged ? 1 : 0

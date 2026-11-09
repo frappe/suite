@@ -98,6 +98,15 @@ class FlagResult(TypedDict):
     flagged: bool
 
 
+class PinInput(IdsInput):
+    pinned: bool
+
+
+class PinResult(TypedDict):
+    ids: list[str]
+    pinned: bool
+
+
 class MoveInput(IdsInput):
     mailbox: str
     clear_junk: NotRequired[bool]
@@ -365,6 +374,7 @@ _OPERATIONS: tuple[
     (mail.update_draft_mail, "mutation", "messages.updateDraft", UpdateInput, DraftResult, None),
     (mail.delete_mail, "mutation", "messages.deleteDraft", IdInput, type(None), None),
     (mail.set_flagged, "mutation", "messages.flag", FlagInput, FlagResult, None),
+    (mail.pin_mails, "mutation", "messages.pin", PinInput, PinResult, None),
     (mail.set_mails_seen, "mutation", "messages.seen", SeenInput, list[str], None),
     (mail.move_mails, "mutation", "messages.move", MoveInput, type(None), None),
     (mail.file_mails, "mutation", "messages.file", FileInput, FiledResult, None),

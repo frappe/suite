@@ -387,7 +387,13 @@ function messagePolicy<I, O>(id: string, publicName?: string): Policy<I, O> {
             return data.filter((row) => !isRecord(row) || !senders.has(row.from_email))
           }
           const field =
-            id === 'set_mails_seen' ? 'seen' : id === 'set_flagged' ? 'flagged' : undefined
+            id === 'set_mails_seen'
+              ? 'seen'
+              : id === 'set_flagged'
+                ? 'flagged'
+                : id === 'pin_mails'
+                  ? 'pinned'
+                  : undefined
           const patch = <Row>(row: Row): Row | Record<string, unknown> => {
             if (
               !isRecord(row) ||
@@ -421,6 +427,8 @@ function messagePolicy<I, O>(id: string, publicName?: string): Policy<I, O> {
             if (messages) Object.assign(updated, { messages })
             if (duplicates) Object.assign(updated, { duplicates })
             if (ids.has(row.id)) Object.assign(updated, { [field]: input[field] ? 1 : 0 })
+            if (field === 'pinned' && touched)
+              Object.assign(updated, { pinned: input.pinned ? 1 : 0 })
             if ('flagged' in flagged) Object.assign(updated, { flagged: flagged.flagged })
             return updated
           }

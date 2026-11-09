@@ -62,6 +62,11 @@ _Avoid_: Spam
 The folder for mail you got rid of, kept for 30 days before it is deleted.
 _Avoid_: Bin, Deleted items
 
+**Pinned**:
+A Conversation held at the top of the Inbox until someone unpins it. It only acts in the Inbox: filed
+elsewhere it is ordinary mail, and brought back it is pinned again.
+_Avoid_: Sticky, important
+
 **Starred**:
 The view of conversations you starred. It is not a folder: starring files
 nothing.

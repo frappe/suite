@@ -178,6 +178,7 @@
                   <StackListItem
                     v-if="row.type === 'stack'"
                     :drafts="folder === 'drafts'"
+                    :trailing-slots="rowSlots"
                     :threads="row.threads"
                     :expanded="row.expanded"
                     :is-selected="isStackSelected(row.threads.map(threadKey))"
@@ -200,12 +201,15 @@
                     v-else
                     :mailbox="row.thread.view_mailbox || ''"
                     :drafts="folder === 'drafts'"
+                    :trailing-slots="rowSlots"
                     :account-id="row.thread.account"
                     :account-label="shortAccountLabel(row.thread.account_name)"
                     :mail="row.thread"
                     :is-selected="selections.includes(threadKey(row.thread))"
                     :selection-mode="mobileSelectionMode"
                     :screened="screener.isScreened(row.thread)"
+                    :pinnable="folder === INBOX_FOLDER"
+                    @set-pinned="(pinned: boolean) => pinThreads([row.thread], pinned)"
                     :outgoing="isOutgoingFolder"
                     :thread-route-name="UNIFIED_THREAD_ROUTE"
                     :hide-avatar="!isMobile"
@@ -258,6 +262,7 @@
           @set-flagged="
             (ids: string[], flagged: boolean) => handleSetFlagged(openRow!, flagged, ids)
           "
+          @set-pinned="(ids: string[], pinned: boolean) => pinMails(openRow!.account!, ids, pinned)"
           @move-thread="(mailboxId: string) => moveOpenThread(mailboxId)"
           @delete-thread="
             isTrashFolder || folder === 'drafts' ? confirmDelete([openRow!]) : handleTrash(openRow!)
@@ -332,6 +337,7 @@ import { useListSelection } from '@/apps/mail/composables/useListSelection'
 import { useMailRemoval } from '@/apps/mail/composables/useMailRemoval'
 import { PAGE_LENGTH, usePaginatedThreads } from '@/apps/mail/composables/usePaginatedThreads'
 import { useScreener } from '@/apps/mail/composables/useScreener'
+import { useThreadPin } from '@/apps/mail/composables/useThreadPin'
 import { userStore } from '@/apps/mail/stores/user'
 import type { Mail, Mailbox, MailboxData, MailCopy, Thread, UnifiedFolder } from '@/apps/mail/types'
 import {
@@ -367,6 +373,7 @@ import {
   isReceived,
   unarchivable,
 } from '@/apps/mail/utils/receivedMail'
+import { rowActionSlots } from '@/apps/mail/utils/rowActionSlots'
 import { selectActions as buildSelectActions } from '@/apps/mail/utils/selectActions'
 import { threadRow } from '@/apps/mail/utils/threadRows'
 import {
@@ -412,6 +419,14 @@ const isJunkFolder = computed(() => folder === 'junk')
 
 // Sent and Drafts are about who the mail is going to, so their rows name the recipients.
 const isOutgoingFolder = computed(() => folder === 'sent' || folder === 'drafts')
+
+const rowSlots = computed(() =>
+  rowActionSlots({
+    drafts: folder === 'drafts',
+    unarchive: true,
+    pinnable: folder === INBOX_FOLDER,
+  }),
+)
 
 // ── Infinite scroll ─────────────────────────────────────────────────────────────────────────────
 // The loaded list (threadRows.value) is the single source of truth; usePaginatedThreads owns everything
@@ -596,6 +611,8 @@ const {
   rowKey: threadKey,
   threadKey,
   stackingEnabled: () => !isOutgoingFolder.value && folder !== STARRED_FOLDER,
+  pinsLead: () => folder === INBOX_FOLDER,
+  hasMore: () => canGoNext.value,
   openThreadID: () => openKey.value,
   onOpenThreadHidden: () => closeThread(),
   container: mailListRef,
@@ -1430,12 +1447,15 @@ const archiveSelected = () => archiveThreads(takeSelected())
 const trashSelected = () => trashThreads(takeSelected())
 const deleteSelected = () => confirmDelete(takeSelected())
 
+const { pinThreads, pinMails } = useThreadPin()
+
 const selectActions = buildSelectActions(
   () => selectedRows.value,
   () => ({
     archive: folder === 'archive',
     trash: isTrashFolder.value,
     drafts: folder === 'drafts',
+    inbox: folder === INBOX_FOLDER,
   }),
   {
     star: () => setThreadsFlagged(takeSelected(), true),
@@ -1448,6 +1468,8 @@ const selectActions = buildSelectActions(
     delete: deleteSelected,
     read: () => setThreadsSeen(takeSelected(), true),
     unread: () => setThreadsSeen(takeSelected(), false),
+    pin: () => pinThreads(takeSelected(), true),
+    unpin: () => pinThreads(takeSelected(), false),
   },
 )
 

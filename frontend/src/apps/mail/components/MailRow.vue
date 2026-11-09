@@ -82,7 +82,12 @@
             <span>{{ __('in {0}', [accountLabel]) }}</span>
           </div>
         </div>
-        <MailDate v-if="!isFullWidth" :datetime format="list" />
+        <!-- A row can show something else where its date goes (a pinned row's pin); hovering shows
+             the date again, and in the wide layout the actions take the place of both. -->
+        <template v-if="!isFullWidth">
+          <slot v-if="$slots.date && !isHovered" name="date" />
+          <MailDate v-else :datetime format="list" />
+        </template>
       </div>
 
       <h4
@@ -116,8 +121,14 @@
       <slot name="extra" :is-full-width="isFullWidth" />
     </div>
 
-    <div v-if="isFullWidth" class="flex w-32 shrink-0 items-center justify-end space-x-4">
-      <MailDate v-if="!isHovered" :datetime format="list" />
+    <div
+      v-if="isFullWidth"
+      class="flex shrink-0 items-center justify-end space-x-4"
+      :class="trailingWidth"
+    >
+      <slot v-if="!isHovered" name="date">
+        <MailDate :datetime format="list" />
+      </slot>
       <slot name="trailing" :is-hovered="isHovered" />
     </div>
 
@@ -156,6 +167,7 @@ const {
   selectionMode = false,
   hideAvatar = false,
   accountLabel,
+  trailingSlots = 4,
 } = defineProps<{
   // Renders the row as a link when set, and as a plain div when not — a thread opens, a stack expands.
   to?: RouteLocationRaw
@@ -180,6 +192,9 @@ const {
   selectionMode?: boolean
   // Which account received the mail (merged lists), shown beside the sender.
   accountLabel?: string
+  // How many hover actions the list's rows can show (rowActionSlots), which the full-width layout keeps
+  // room for beside the date. Every row in a list gets the same, so their columns line up.
+  trailingSlots?: number
   // Whether the row can be dragged onto a folder. Off on touch, where the browser
   // gives HTML5 drag no events at all and a long press already means selection.
   draggable?: boolean
@@ -194,6 +209,11 @@ const emit = defineEmits<{
 const user = inject<UserResource>('$user')
 if (!user) throw new Error('Missing required user provider')
 const { isMobile } = useScreenSize()
+
+// A slot is a 1rem icon and the 1rem gap before it, less the first gap. Never narrower than four
+// slots, which the date needs.
+const TRAILING_WIDTHS = ['w-28', 'w-36', 'w-44', 'w-52']
+const trailingWidth = computed(() => TRAILING_WIDTHS[Math.min(Math.max(trailingSlots, 4), 7) - 4])
 
 const showAvatar = computed(() => !isSelected && (isMobile.value || !selectable) && !hideAvatar)
 // With no checkbox, no check circle and no avatar there is nothing left to reserve space for.
