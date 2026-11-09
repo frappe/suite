@@ -36,7 +36,7 @@ import AppIconView from './AppIconView.vue'
 import DomainStep from './DomainStep.vue'
 import InvitePeople from './InvitePeople.vue'
 import MailStep from './MailStep.vue'
-import { accountHeading, MOD_KEY, type DomainState } from './onboarding'
+import { accountHeading, MOD_KEY, type DomainState, type StepHeading } from './onboarding'
 import OnboardingFrame from './OnboardingFrame.vue'
 import ShortcutStep from './ShortcutStep.vue'
 import { SUITE_APPS } from './suiteApps'
@@ -66,7 +66,7 @@ const order = computed<Step[]>(() => {
 const step = ref<Step>('welcome')
 const index = computed(() => order.value.indexOf(step.value))
 
-const copy = computed<Record<Step, { title: string; subtitle: string }>>(() => ({
+const copy = computed<Record<Step, StepHeading>>(() => ({
   account: accountHeading(accountState.value, ''),
   welcome: {
     title: __('Welcome to Frappe Suite'),

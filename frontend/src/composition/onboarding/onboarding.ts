@@ -27,11 +27,14 @@ export function needsSiteSetup(site: { isOnboarded: boolean; canOnboard: boolean
 /** Where creating an account stands. `signin-failed`: it exists, but signing in to it did not work. */
 export type AccountSetupState = 'idle' | 'working' | 'failed' | 'ready' | 'signin-failed'
 
+/** The title and subtitle above an onboarding step. */
+export interface StepHeading {
+  title: string
+  subtitle: string
+}
+
 /** The account step's title and subtitle, which follow the setup. `inviter` is a name, or empty. */
-export function accountHeading(
-  state: AccountSetupState,
-  inviter: string,
-): { title: string; subtitle: string } {
+export function accountHeading(state: AccountSetupState, inviter: string): StepHeading {
   switch (state) {
     case 'idle':
       return { title: __('Create your account'), subtitle: __('Your name is what teammates see.') }
