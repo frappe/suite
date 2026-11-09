@@ -283,22 +283,26 @@ def forget_local_account(user: str) -> None:
 
 
 def onboarding_options() -> dict:
+    from suite.mail.api.account import get_backup_email
     from suite.mail.directory import get_domains
     from suite.suite_core.utils import is_suite_cloud_configured
 
     require_admin()
+    user = frappe.session.user
+    # Where a forgotten password's reset link goes: the email the Admin signed up with.
+    backup_email = get_backup_email(user)
     if not is_suite_cloud_configured():
-        return {"cloud": False, "domains": [], "account": None, "ready": True}
+        return {"cloud": False, "domains": [], "account": None, "ready": True, "backup_email": backup_email}
     get_client().call("tenant.ping")
     domains = [
         domain["domain"] for domain in get_domains() if domain.get("enabled") and domain.get("is_verified")
     ]
-    user = frappe.session.user
     account = frappe.db.get_value("User Settings", {"user": user}, "username")
     return {
         "cloud": True,
         "domains": domains,
         "account": account,
+        "backup_email": backup_email,
         "ready": bool(
             account
             and domains

@@ -20,6 +20,7 @@ from suite.mail.doctype.user_account.user_account import (
     is_jmap_account_belongs_to_user,
 )
 from suite.mail.utils import get_config, is_jmap_server_configured, log_mail_error
+from suite.mail.utils.dt import to_utc_z
 from suite.mail.utils.logger import log_admin_action
 from suite.mail.utils.user import (
     can_use_mail,
@@ -118,6 +119,8 @@ def get_account_request(request_key: str) -> dict | None:
             "account": doc.account,
             "is_verified": doc.is_verified,
             "is_expired": cint(doc.is_expired),
+            "is_admin": cint(doc.is_admin),
+            "expires_at": to_utc_z(doc.expires_at),
             **doc.invitation,
         }
 
@@ -172,6 +175,7 @@ def create_account(
     if account_request.is_verified:
         frappe.throw(_("This invitation has already been accepted"))
     account_request.validate_expired()
+    _require_strong_password(password, (first_name, last_name, account_request.account))
     account_request.is_verified = 1
     account_request.save(ignore_permissions=True)
 
@@ -189,6 +193,23 @@ def create_account(
         time_zone = time_zone if time_zone in zones else site_zone if site_zone in zones else "UTC"
         with user_context("Administrator"):
             account_request.create_account(first_name, last_name, password, locale, time_zone)
+
+
+def _require_strong_password(password: str, user_data: tuple) -> None:
+    """Refuse a weak password before setup starts, so the form says why.
+
+    Creating the User checks it too, but inside the Drive stage, where a weak password would read
+    as a failed Drive setup (suite.mail.account_setup).
+    """
+    from frappe.core.doctype.user.user import test_password_strength
+
+    feedback = test_password_strength(password, user_data=user_data).get("feedback")
+    if feedback and not feedback.get("password_policy_validation_passed"):
+        reasons = [feedback.get("warning"), *feedback.get("suggestions", [])]
+        sentences = [
+            reason if reason.endswith((".", "!", "?")) else reason + "." for reason in reasons if reason
+        ]
+        frappe.throw(" ".join(sentences) or _("Choose a stronger password."))
 
 
 @frappe.whitelist(allow_guest=True)

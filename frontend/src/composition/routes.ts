@@ -123,11 +123,33 @@ export const canonicalRoutes: RouteRecordRaw[] = [
 
 export const routes: RouteRecordRaw[] = [
   ...canonicalRoutes,
+  // Joining a workspace (spec 001 §4.1): an invitation link, the sign-in for a
+  // temporary password, and, once signed in, the forced password change and
+  // the welcome steps. One view walks them all.
+  {
+    path: '/join/:requestKey?',
+    name: 'suite-join',
+    component: () => import('@/composition/onboarding/JoinView.vue'),
+    props: true,
+    meta: {
+      frame: 'none',
+      scroll: 'content',
+      allowGuest: true,
+      title: 'Join Frappe Suite',
+      onboarding: true,
+    },
+  },
   {
     path: '/suite/change-password',
     name: 'suite-change-password',
-    component: () => import('@/shell/AccountAccessView.vue'),
-    meta: { frame: 'none', scroll: 'content', title: 'Change password' },
+    component: () => import('@/composition/onboarding/JoinView.vue'),
+    meta: { frame: 'none', scroll: 'content', title: 'Choose your own password', onboarding: true },
+  },
+  {
+    path: '/suite/welcome',
+    name: 'suite-welcome',
+    component: () => import('@/composition/onboarding/JoinView.vue'),
+    meta: { frame: 'none', scroll: 'content', title: 'Welcome to Frappe Suite', onboarding: true },
   },
   {
     path: '/draw',
@@ -145,11 +167,12 @@ export const routes: RouteRecordRaw[] = [
   {
     path: '/suite/setup',
     name: 'suite-setup',
-    component: () => import('@/shell/SetupView.vue'),
+    component: () => import('@/composition/onboarding/SetupView.vue'),
     meta: {
       frame: 'none',
       scroll: 'content',
       title: 'Set up Frappe Suite',
+      onboarding: true,
     },
   },
   // Where a page whose code failed to load lands (`@/platform/load-failure`).

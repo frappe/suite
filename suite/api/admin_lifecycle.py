@@ -40,6 +40,7 @@ class OnboardingOptions(TypedDict):
     domains: list[str]
     account: str | None
     ready: bool
+    backup_email: str
 
 
 class OnboardingInput(TypedDict):

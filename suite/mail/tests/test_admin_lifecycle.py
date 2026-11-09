@@ -8,6 +8,7 @@ from uuid import uuid4
 
 import frappe
 from frappe.tests import IntegrationTestCase
+from frappe.tests.utils import change_settings
 from frappe.utils import add_to_date, now_datetime
 from frappe.utils.password import check_password
 
@@ -492,6 +493,23 @@ class TestAdminLifecycle(IntegrationTestCase):
         self.assertEqual(policy["users"][self.address]["cap"], 5_000_000_000)
         self.assertEqual(self.provider.created, 1)
 
+    def test_a_weak_password_is_refused_before_setup_and_leaves_the_invitation_open(self):
+        from suite.mail.account_setup import AccountSetupFailed
+
+        self.enterContext(
+            change_settings("System Settings", enable_password_policy=1, minimum_password_score=2)
+        )
+        add_member(self.username, "company.frappe.cloud", False, True, "contact@example.test")
+        key = frappe.db.get_value("Mail Account Request", {"account": self.address}, "request_key")
+        with self.set_user("Guest"), self.assertRaises(frappe.ValidationError) as refused:
+            accept_invitation(key, "Employee", "", "abcabcabc")
+        # A plain refusal, which the form shows, not a setup stage that failed.
+        self.assertNotIsInstance(refused.exception, AccountSetupFailed)
+        self.assertEqual(self.provider.created, 0)
+        with self.set_user("Guest"):
+            accept_invitation(key, "Employee", "", "Chosen-invite-passphrase-55!")
+        self.assertTrue(frappe.db.exists("User", self.address))
+
     def failed_creation(self):
         frappe.clear_messages()
         self.provider.fail = "mail.accounts.create_account"
@@ -812,7 +830,7 @@ class TestAdminLifecycle(IntegrationTestCase):
         first_email = self.provider.emails[0]
         self.assertEqual(first_email["email_type"], "account-invite")
         self.assertEqual(first_email["recipient"], "contact@example.test")
-        self.assertTrue(first_email["params"]["link"].endswith(f"/mail/signup/{old_key}"))
+        self.assertTrue(first_email["params"]["link"].endswith(f"/join/{old_key}"))
 
         set_default(6_000_000_000)
         self.assertEqual(request.combined_cap_bytes, 4_000_000_000)
@@ -827,7 +845,7 @@ class TestAdminLifecycle(IntegrationTestCase):
         resent_email = self.provider.emails[1]
         self.assertEqual(resent_email["email_type"], "account-invite")
         self.assertEqual(resent_email["recipient"], "contact@example.test")
-        self.assertTrue(resent_email["params"]["link"].endswith(f"/mail/signup/{request.request_key}"))
+        self.assertTrue(resent_email["params"]["link"].endswith(f"/join/{request.request_key}"))
         with self.set_user("Guest"):
             with self.assertRaises(frappe.DoesNotExistError):
                 accept_invitation(old_key, "Employee", "", "Chosen-invite-passphrase-55!")
