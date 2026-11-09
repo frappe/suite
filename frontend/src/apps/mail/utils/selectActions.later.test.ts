@@ -52,3 +52,30 @@ describe('pinning a selection', () => {
     expect(labels).not.toContain('Unpin')
   })
 })
+
+const inList = (rows: Partial<Thread>[], folder: { snoozable?: boolean; snoozed?: boolean }) =>
+  selectActions(
+    () => rows.map((row) => fromPartial<Thread>({ messages: [], mailboxes: [], ...row })),
+    () => ({ archive: false, trash: false, drafts: false, ...folder }),
+    handlers(),
+  )
+    .filter((action) => action.condition())
+    .map((action) => action.shortLabel)
+
+describe('snoozing a selection', () => {
+  it('offers Snooze where it can be snoozed from, and nothing to bring back', () => {
+    const labels = inList([{}], { snoozable: true })
+    expect(labels).toContain('Snooze')
+    expect(labels).not.toContain('Unsnooze')
+  })
+
+  it('offers both in Snoozed: another time, or back now', () => {
+    expect(inList([{}], { snoozed: true })).toEqual(expect.arrayContaining(['Snooze', 'Unsnooze']))
+  })
+
+  it('offers neither in a list it does not act on', () => {
+    const labels = inList([{}], {})
+    expect(labels).not.toContain('Snooze')
+    expect(labels).not.toContain('Unsnooze')
+  })
+})

@@ -338,6 +338,10 @@ scheduler_events = {
         "suite.mail.doctype.contacts_exchange.contacts_exchange.clean_contacts_import_export_directories",
         "suite.calendar.doctype.calendar_exchange.calendar_exchange.clean_calendar_import_export_directories",
     ],
+    "daily_long": [
+        # mail
+        "suite.mail.reminders.return_unheld",
+    ],
     "hourly": [
         # content
         "suite.content.jobs.trim_logs",
@@ -356,6 +360,9 @@ scheduler_events = {
     ],
     "cron": {
         "* * * * *": [
+            # mail
+            "suite.mail.reminders.run_due",
+            # meet
             "suite.meet.api.recording.reconcile_pending_recordings",
             "suite.meet.recording.ingest.reconcile_due_finalizations",
         ],

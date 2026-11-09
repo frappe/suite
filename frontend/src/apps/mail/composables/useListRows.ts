@@ -4,7 +4,7 @@ import { CURSOR_BAR_CLASS, OPEN_BAR_CLASS } from '@/apps/mail/constants'
 import { userStore } from '@/apps/mail/stores/user'
 import type { Thread } from '@/apps/mail/types'
 import { useScreenSize } from '@/apps/mail/utils/composables'
-import { dateGroup, PINNED_GROUP } from '@/apps/mail/utils/dateGroups'
+import { dateGroup, PINNED_GROUP, RETURNED_GROUP } from '@/apps/mail/utils/dateGroups'
 import { buildListRows, type ListRow, type StackRow } from '@/apps/mail/utils/threadStacks'
 
 /**
@@ -38,7 +38,7 @@ interface ListRowsOptions {
   /** The scroll container, so the cursor can bring its row into view. */
   container: Ref<HTMLElement | null>
   /**
-   * The list is an Inbox, which the server orders pins first and then newest first
+   * The list is an Inbox, which the server orders pins first, then mail back from waiting, then newest first
    * (suite.mail.pins). The rows are kept in that order here, not left in the order they loaded in.
    */
   pinsLead?: () => boolean
@@ -93,9 +93,11 @@ export const useListRows = ({
     const loaded = threads()
     if (!pinsLead()) return loaded
     const later = (a: Thread, b: Thread) =>
-      (b.pinned ?? 0) - (a.pinned ?? 0) || (b.received_at ?? '').localeCompare(a.received_at ?? '')
+      (b.pinned ?? 0) - (a.pinned ?? 0) ||
+      (b.returned ?? 0) - (a.returned ?? 0) ||
+      (b.received_at ?? '').localeCompare(a.received_at ?? '')
     const sorted = [...loaded].sort(later)
-    const last = loaded.findLast((thread) => !thread.pinned)
+    const last = loaded.findLast((thread) => !thread.pinned && !thread.returned)
     if (!hasMore() || !last) return sorted
     return sorted.filter((thread) => later(thread, last) <= 0 || thread === last)
   })
@@ -104,16 +106,17 @@ export const useListRows = ({
 
   const groupedThreads = computed<Record<string, Thread[]>>(() => {
     const pinned = ordered.value.filter((thread) => thread.pinned)
-    return ordered.value.reduce(
-      (groups: Record<string, Thread[]>, thread: Thread) => {
-        if (thread.pinned) return groups
-        const date = dateGroup(thread.received_at)
-        if (!groups[date]) groups[date] = []
-        groups[date].push(thread)
-        return groups
-      },
-      pinned.length ? { [PINNED_GROUP]: pinned } : {},
-    )
+    const returned = ordered.value.filter((thread) => !thread.pinned && thread.returned)
+    const leading: Record<string, Thread[]> = {}
+    if (pinned.length) leading[PINNED_GROUP] = pinned
+    if (returned.length) leading[RETURNED_GROUP] = returned
+    return ordered.value.reduce((groups: Record<string, Thread[]>, thread: Thread) => {
+      if (thread.pinned || thread.returned) return groups
+      const date = dateGroup(thread.received_at)
+      if (!groups[date]) groups[date] = []
+      groups[date].push(thread)
+      return groups
+    }, leading)
   })
 
   const getGroupThreads = (group: string) => groupedThreads.value[group]?.map(threadKey)

@@ -38,6 +38,13 @@
         </span>
       </Tooltip>
       <Badge v-if="mail.draft" size="sm" :label="__('Draft')" theme="red" />
+      <Badge
+        v-if="mail.snoozed_until"
+        size="sm"
+        theme="gray"
+        :label="formatDateTime(mail.snoozed_until, 'ddd, MMM D, h:mm A')"
+      />
+      <Badge v-if="mail.returned" size="sm" theme="blue" :label="__('Back')" />
     </template>
 
     <template v-if="mail.pinned" #date>
@@ -194,6 +201,7 @@ import { userStore } from '@/apps/mail/stores/user'
 import type { Attachment, Thread } from '@/apps/mail/types'
 import { downloadUrlAsFile, getFileIcon, getFormattedRecipients } from '@/apps/mail/utils'
 import { useOwnEmails } from '@/apps/mail/utils/composables'
+import { formatDateTime } from '@/apps/mail/utils/datetime'
 import { mailCopies } from '@/apps/mail/utils/mailCopies'
 import {
   threadAvatarLabel,

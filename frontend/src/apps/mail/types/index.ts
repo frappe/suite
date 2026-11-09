@@ -203,6 +203,10 @@ export interface Thread {
   unscreened_senders?: string[]
   /** Held at the top of the Inbox. Only the Inbox has pins to show. */
   pinned?: 0 | 1
+  /** Back from waiting, and held near the top of the Inbox for a day. */
+  returned?: 0 | 1
+  /** On the Snoozed list: when it comes back, a UTC `...Z` time. */
+  snoozed_until?: string | null
   attachments: Attachment[]
   user_image?: string
   messages: Mail[]

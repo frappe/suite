@@ -1,8 +1,10 @@
 import {
+  AlarmClockOff,
   Archive,
   ArchiveRestore,
   CircleAlert,
   CircleCheck,
+  Clock,
   Mail as MailIcon,
   MailOpen,
   Pin,
@@ -11,6 +13,7 @@ import {
   StarOff,
   Trash2,
 } from 'lucide-vue-next'
+import type { Component } from 'vue'
 
 import type { Thread } from '@/apps/mail/types'
 import { archivable, holdsReceivedMail, unarchivable } from '@/apps/mail/utils/receivedMail'
@@ -23,6 +26,9 @@ export interface SelectAction {
   onClick: () => void
   icon: typeof Star
   condition: () => boolean
+  // An action that asks something first (when to snooze until): a menu around its button, which opens
+  // it instead of the click. Not on a phone, whose selection bar asks in a sheet from the click.
+  menu?: Component
 }
 
 /** What a list does to its ticked threads. Each view supplies its own: one account's list acts in
@@ -41,6 +47,10 @@ export interface SelectHandlers {
   unread: () => void
   pin: () => void
   unpin: () => void
+  snooze: () => void
+  // The toolbar's Snooze button opens this menu, asking for the time.
+  snoozeMenu?: Component
+  unsnooze: () => void
 }
 
 /**
@@ -58,6 +68,9 @@ export const selectActions = (
     drafts: boolean
     // The list is an Inbox, the one place a pin acts.
     inbox?: boolean
+    // The list is one a conversation can be snoozed from; or is Snoozed, where it can be brought back.
+    snoozable?: boolean
+    snoozed?: boolean
     sent?: string
     archiveId?: string
     inboxId?: string
@@ -105,6 +118,21 @@ export const selectActions = (
       onClick: run.unpin,
       icon: PinOff,
       condition: () => !!folder().inbox && some((t) => !!t.pinned)(),
+    },
+    {
+      label: __('Snooze'),
+      shortLabel: __('Snooze'),
+      onClick: run.snooze,
+      menu: run.snoozeMenu,
+      icon: Clock,
+      condition: () => !!(folder().snoozable || folder().snoozed) && some(() => true)(),
+    },
+    {
+      label: __('Unsnooze'),
+      shortLabel: __('Unsnooze'),
+      onClick: run.unsnooze,
+      icon: AlarmClockOff,
+      condition: () => !!folder().snoozed && some(() => true)(),
     },
     {
       label: __('Archive (E)'),

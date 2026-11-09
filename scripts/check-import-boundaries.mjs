@@ -139,6 +139,7 @@ const moduleGraphDebtGroups = [
       'mail/components/Settings/VacationResponseSettings.vue|@/components/settings/AppSettingsBody.vue',
       'mail/components/Settings/VacationResponseSettings.vue|@/components/settings/AppSettingsHeader.vue',
       'mail/components/ThreadHeader.vue|@/components/AdaptiveDropdown.vue',
+      'mail/components/TimeMenu.vue|@/components/AdaptiveDropdown.vue',
       'mail/composables/useMailCommandPaletteSearch.ts|@/utils/session',
       'mail/pages/ComposeView.vue|@/components/AdaptiveDropdown.vue',
       'mail/pages/ComposeView.vue|@/composables/useKeyboardInsets',

@@ -256,3 +256,9 @@ describe('a pinned thread', () => {
     expect(stackKeyOf(thread())).not.toBeNull()
   })
 })
+
+describe('a thread back from waiting', () => {
+  it('stands alone: it came back to be seen', () => {
+    expect(stackKeyOf(thread({ returned: 1 }))).toBeNull()
+  })
+})

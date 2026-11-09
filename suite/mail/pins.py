@@ -16,17 +16,32 @@ import json
 
 PINNED_KEYWORD = "pinned"
 
+# Mail that just came back from waiting (see suite.mail.reminders), held under the pins for a day.
+RETURNED_KEYWORD = "returned"
+
 # What the Inbox sorts by. The newest first within each part, as every list is.
 INBOX_SORT = [
     {"property": "hasKeyword", "keyword": PINNED_KEYWORD, "isAscending": False},
+    {"property": "hasKeyword", "keyword": RETURNED_KEYWORD, "isAscending": False},
     {"property": "receivedAt", "isAscending": False},
 ]
 
 
-def is_pinned(message: dict) -> bool:
-    """Whether a message carries the pin, its keywords as JMAP has them or as the cache holds them."""
-
+def _has_keyword(message: dict, keyword: str) -> bool:
+    # Its keywords as JMAP has them, or as the cache holds them.
     keywords = message.get("keywords") or {}
     if isinstance(keywords, str):
         keywords = json.loads(keywords or "{}")
-    return bool(keywords.get(PINNED_KEYWORD))
+    return bool(keywords.get(keyword))
+
+
+def is_pinned(message: dict) -> bool:
+    """Whether a message carries the pin."""
+
+    return _has_keyword(message, PINNED_KEYWORD)
+
+
+def is_returned(message: dict) -> bool:
+    """Whether a message just came back from waiting."""
+
+    return _has_keyword(message, RETURNED_KEYWORD)
