@@ -25,7 +25,6 @@ vi.mock('@/api', async () => {
     createApiClient(
       { mail: async () => registration },
       {
-        persistence: false,
         transport: {
           request: async (reference, input) => {
             if (!reference.path.endsWith('search_mails')) return []

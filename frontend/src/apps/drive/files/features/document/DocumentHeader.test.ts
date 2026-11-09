@@ -1,6 +1,7 @@
 import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, ref, type VNode } from 'vue'
+import { createMemoryHistory, createRouter } from 'vue-router'
 
 import type { DocumentSession } from '@/apps/drive/client/session'
 import { requireTestElement } from '@/platform/testing/dom'
@@ -8,6 +9,7 @@ import { TransportError } from '@/platform/transport'
 
 import type { DocumentPanel } from '../../../client/types'
 import DocumentHeader from './DocumentHeader.vue'
+import DocumentHeaderSkeleton from './DocumentHeaderSkeleton.vue'
 import type { DocumentSaveState } from './header'
 
 // Plain stand-ins: the test frappe-ui build has no TextInput or Badge.
@@ -369,6 +371,83 @@ describe('DocumentHeader', () => {
     const { root } = mount(session(40), {}, { primary: () => h('button', 'Present') })
 
     expect(root.querySelector('header > div:last-child > :last-child')!.textContent).toBe('Present')
+  })
+})
+
+describe('DocumentHeaderSkeleton', () => {
+  // The classes that size or hide what comes before the title, and the text it shows.
+  const BOX = /^(max-md:hidden|md:hidden|max-w-\S+|px-\S+|ps-\S+|size-\S+|text-base|truncate)$/
+  function layout(header: Element, title: Element) {
+    const group = header.firstElementChild!
+    const items = [...group.children].flatMap((child) =>
+      child.classList.contains('contents') ? [...child.children] : [child],
+    )
+    const before = items.slice(0, items.indexOf(title))
+    // frappe-ui draws an icon-only Button 28 px square, which its classes do not say.
+    const classes = (item: Element) =>
+      item.tagName === 'BUTTON' ? [...item.classList, 'size-7'] : [...item.classList]
+    const signature = (item: Element) => [
+      classes(item)
+        .filter((name) => BOX.test(name))
+        .sort(),
+      item.textContent?.trim(),
+    ]
+    return {
+      before: before.map(signature),
+      titleStart: [...title.classList].find((name) => /^p[sx]-/.test(name)),
+    }
+  }
+
+  function mountPair(location: { label: string; to: string } | null) {
+    const root = document.createElement('div')
+    document.body.append(root)
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/:any(.*)', component: { render: () => null } }],
+    })
+    const doc = { ...session(40), contentDoctype: 'Drive File', title: ref('Loose file.txt') }
+    const app = createApp({
+      setup: () => () => [
+        h(DocumentHeaderSkeleton, { title: 'Loose file.txt', location: location?.label }),
+        h(DocumentHeader, {
+          session: fromPartial<DocumentSession>(doc),
+          titleLabel: 'File name',
+          mime: 'text/plain',
+          location,
+        }),
+      ],
+    }).use(router)
+    app.mount(root)
+    cleanup = () => {
+      app.unmount()
+      root.remove()
+    }
+    const [skeleton, loaded] = root.querySelectorAll('header')
+    return {
+      skeleton: layout(skeleton!, skeleton!.querySelector('span.font-medium')!),
+      loaded: layout(loaded!, loaded!.querySelector('.document-title')!),
+      loadedTitle: loaded!.querySelector('.document-title > span')!,
+    }
+  }
+
+  it('lays out the folder, the way back and the icon as the loaded file header does', () => {
+    const { skeleton, loaded, loadedTitle } = mountPair({
+      label: 'Projects',
+      to: '/drive/f/projects',
+    })
+
+    expect(skeleton.before).toEqual(loaded.before)
+    expect(skeleton.before.map(([, text]) => text)).toEqual(['', 'Projects', '/', ''])
+    // Both titles start 8 px in: the skeleton's text, and the copy that sizes the field.
+    expect(skeleton.titleStart).toBe('px-2')
+    expect(loadedTitle.classList).toContain('ps-2')
+  })
+
+  it('shows only the icon before the title when the file has no folder to name', () => {
+    const { skeleton, loaded } = mountPair(null)
+
+    expect(skeleton.before).toEqual(loaded.before)
+    expect(skeleton.before).toHaveLength(1)
   })
 })
 

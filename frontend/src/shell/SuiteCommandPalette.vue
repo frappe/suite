@@ -414,9 +414,9 @@ import {
 } from '@/apps/mail/composables/useMailCommandPaletteSearch'
 import { userStore } from '@/apps/mail/stores/user'
 import {
+  hasMailSearchQuery,
   isUnifiedRoute,
   mailSearchRoute,
-  useMobileSearch,
   useScreenSize,
 } from '@/apps/mail/utils/composables'
 import HighlightedText from '@/components/HighlightedText.vue'
@@ -514,7 +514,8 @@ const root = useRootStore()
 const route = useRoute()
 const router = useRouter()
 const { isMobile } = useScreenSize()
-const { hasSearchQuery: mailHasSearchQuery } = useMobileSearch()
+// Mail's search composable creates the Mail user store, which loads the mail account on any page.
+const mailHasSearchQuery = computed(() => hasMailSearchQuery(route.query))
 const removeMailFilterShortcut = /Mac|iPod|iPhone|iPad/.test(navigator.platform)
   ? '⌘⌫'
   : 'Ctrl+Backspace'

@@ -20,15 +20,16 @@ import { announceTrash } from '@/apps/drive/files/features/changeToast'
 import { presentDialog, rememberDialogContext } from '@/apps/drive/files/features/dialogHost'
 import { nodeActions, type ActionNode } from '@/apps/drive/files/features/nodeActions'
 import { observePreviewRefresh } from '@/apps/drive/files/features/previewRefresh'
+import { preloadShareDialog, readShare } from '@/apps/drive/files/features/share/opening'
 import { usePaletteSearch } from '@/apps/drive/files/features/usePaletteSearch'
 import { useLocationTitle } from '@/apps/drive/files/internal/locations'
 import { slugify } from '@/apps/drive/files/internal/slugify'
-import type { AreaDefinition, PaletteSearchSource } from '@/platform/contracts'
+import { type AreaDefinition, type PaletteSearchSource } from '@/platform/contracts'
 import { toast } from '@/platform/feedback'
 import { newDocumentState, openingTitleState } from '@/platform/page-meta'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
-import { buildUrl } from '@/platform/transport'
+import { buildUrl, TransportError } from '@/platform/transport'
 
 export type {
   CredentialGroup,
@@ -68,16 +69,20 @@ export { default as DriveFileCard } from '@/apps/drive/files/features/FileCard.v
 
 /**
  * Keeps the signed thumbnail URLs on a card grid fresh while the calling
- * component is mounted: every 10 minutes, and when the tab is shown again.
+ * component is mounted: shortly before the earliest of `rows` expires.
  * Call it in a component's setup.
  */
-export function useDrivePreviewRefresh(refresh: () => unknown): void {
+export function useDrivePreviewRefresh(
+  refresh: () => unknown,
+  rows: () => readonly Pick<DriveNodeSummary, 'preview'>[],
+): void {
   let stop: (() => void) | undefined
   onMounted(() => {
     stop = observePreviewRefresh({
       refresh: async () => {
         await refresh()
       },
+      rows,
     })
   })
   onBeforeUnmount(() => stop?.())
@@ -134,6 +139,8 @@ export const loadDriveSettings = () =>
 
 export interface DriveDocumentCreation {
   readonly isPending: boolean
+  /** False once Drive has said the caller has no My files to create in. */
+  readonly canCreate: boolean
   /** Creates a document of this content doctype in My files. Refusals reject. */
   run(input: { content_doctype: string }): Promise<DriveNodeSummary>
 }
@@ -146,6 +153,10 @@ export function useDriveDocumentCreation(): DriveDocumentCreation {
   return {
     get isPending() {
       return resolving.value || creating.value
+    },
+    get canCreate() {
+      const refusal = discovered.error
+      return !(refusal instanceof TransportError && refusal.type === 'DriveNotFound')
     },
     async run({ content_doctype }) {
       resolving.value = true
@@ -383,8 +394,9 @@ export const DriveListSkeletonRows = defineAsyncComponent(
   () => import('@/apps/drive/files/features/ListSkeletonRows.vue'),
 )
 
-/** The document header's shape while a document opens. Shows `title` when one is known. */
+/** The document header's shape while a document opens. Shows `title` and `location` when they are known. */
 export { default as DriveDocumentHeaderSkeleton } from '@/apps/drive/files/features/document/DocumentHeaderSkeleton.vue'
+export { openingLocation } from '@/apps/drive/files/features/document/openingLocation'
 
 export { PANEL_BUTTONS } from '@/apps/drive/files/features/document/header'
 export type { DocumentPanel } from '@/apps/drive/client/types'
@@ -401,8 +413,12 @@ export interface DriveDialogs {
   copy(node: string): Promise<DriveNodeSummary | undefined>
   /** Shows read-only details of `node`. Resolves when the dialog closes. */
   showDetails(node: string): Promise<void>
-  /** Opens the share dialog for `node`. Resolves when it closes: `true` when a write in it went through. */
-  share(node: string): Promise<boolean>
+  /**
+   * Opens the share dialog for `node`. Resolves when it closes: `true` when a
+   * write in it went through. `known` is the node as the caller last read it,
+   * which the dialog shows until its own read lands.
+   */
+  share(node: string, known?: DriveNode): Promise<boolean>
   /** Opens the file picker. Resolves with the picked file or document, or `undefined` when cancelled. */
   pickFile(options?: { title?: string; action?: string }): Promise<DriveNodeSummary | undefined>
 }
@@ -411,6 +427,7 @@ export interface DriveDialogs {
 export function useDriveDialogs(): DriveDialogs {
   const context = getCurrentInstance()?.appContext
   if (!context) throw new Error('useDriveDialogs() must be called in a component setup')
+  preloadShareDialog()
   return {
     move: (node) =>
       presentDialog<DriveNodeSummary>(
@@ -431,10 +448,13 @@ export function useDriveDialogs(): DriveDialogs {
         node,
       })
     },
-    share: (node) =>
-      import('@/apps/drive/files/features/share/present').then((share) =>
-        share.presentShareDialog(node, context),
-      ),
+    share: (node, known) => {
+      // The reads start now, so they overlap loading the dialog's code.
+      const reads = readShare(node, known ?? null)
+      return import('@/apps/drive/files/features/share/present').then((share) =>
+        share.presentShareDialog(node, context, known, reads),
+      )
+    },
     pickFile: (options = {}) =>
       presentDialog<DriveNodeSummary>(
         context,

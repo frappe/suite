@@ -2393,9 +2393,8 @@ class TestViewRoutes(DriveHTTPCase):
         self.assertGreaterEqual(access["rows"][0]["access"]["role"], READ)
 
     def test_breadcrumbs_expand_on_the_lists_a_folder_is_opened_from(self):
-        # B29: Shared and Starred show where an item lives. Recents hides
-        # folders and the trash shows its own root's trail, so neither takes
-        # the expansion.
+        # B29: Shared, Starred and Recent show where an item lives. The trash
+        # shows its own root's trail, so it does not take the expansion.
         self.data(self.as_owner("PUT", f"{PREFIX}/nodes/{self.file}/favourite"))
         starred = self.view("favourites", expand="breadcrumbs")
         self.assertEqual([row["name"] for row in starred["rows"]], [self.file])
@@ -2413,12 +2412,14 @@ class TestViewRoutes(DriveHTTPCase):
         )
         self.assertEqual([row["name"] for row in shared["rows"]], [self.folder])
         self.assertIsInstance(shared["rows"][0]["breadcrumbs"], list)
-        for name, query in (("recents", {}), ("trash", {"root": self.root.name})):
-            with self.subTest(view=name):
-                response = self.as_owner(
-                    "GET", f"{PREFIX}/views/{name}", query={"expand": "breadcrumbs", **query}
-                )
-                self.refusal(response, 400, "DriveError")
+        self.data(self.as_owner("POST", f"{PREFIX}/nodes/{self.file}/visit", body={}))
+        recent = self.view("recents", expand="breadcrumbs")
+        self.assertEqual([row["name"] for row in recent["rows"]], [self.file])
+        self.assertIn(self.folder, [crumb["name"] for crumb in recent["rows"][0]["breadcrumbs"]])
+        response = self.as_owner(
+            "GET", f"{PREFIX}/views/trash", query={"expand": "breadcrumbs", "root": self.root.name}
+        )
+        self.refusal(response, 400, "DriveError")
 
     def test_a_personal_view_is_scoped_to_the_caller(self):
         self.data(self.as_owner("PUT", f"{PREFIX}/nodes/{self.file}/favourite"))

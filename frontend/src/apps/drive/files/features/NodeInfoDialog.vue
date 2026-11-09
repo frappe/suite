@@ -28,9 +28,11 @@ import { computed } from 'vue'
 import { api, useQuery } from '@/api'
 import { grantListOf } from '@/apps/drive/client/grants'
 import { canManage } from '@/apps/drive/client/types'
+import { useWorkspace } from '@/platform/workspace'
 
 import { formatBytes, formatDate } from '../internal/format'
-import { nodeTypeLabel } from '../internal/icons'
+import { useNodeTypeLabel } from '../internal/icons'
+import { useLocationTitle } from '../internal/locations'
 import { sharedWith } from './share/shareModel'
 
 /**
@@ -49,21 +51,28 @@ const grants = useQuery(api.drive.grants.list, () =>
     ? { node: props.node, inherited: true }
     : false,
 )
+const { workspaceName: workspace } = useWorkspace()
 const sharing = computed(() => {
   const row = detail.data
   if (!row || !grants.data) return []
-  const names = sharedWith(grantListOf(grants.data), row.kind)
+  const names = sharedWith(grantListOf(grants.data), row.kind, workspace.value)
   return [{ label: 'Shared with', value: names.join(', ') || 'Not shared', wraps: true }]
 })
+
+const typeLabel = useNodeTypeLabel()
+const locationTitle = useLocationTitle()
 
 const fields = computed<Array<{ label: string; value: string; wraps?: boolean }>>(() => {
   const row = detail.data
   if (!row) return []
   return [
     { label: 'Name', value: row.title },
-    { label: 'Type', value: nodeTypeLabel(row) },
+    { label: 'Type', value: typeLabel(row) },
     ...(row.kind === 'file' ? [{ label: 'Size', value: formatBytes(row.size) }] : []),
-    { label: 'Location', value: row.breadcrumbs?.map((crumb) => crumb.title).join(' / ') || '—' },
+    {
+      label: 'Location',
+      value: row.breadcrumbs?.map((crumb) => locationTitle(crumb)).join(' / ') || '—',
+    },
     { label: 'Owner', value: row.owner.full_name },
     { label: 'Created', value: formatDate(row.creation) },
     { label: 'Modified', value: formatDate(row.content_modified ?? row.modified) },

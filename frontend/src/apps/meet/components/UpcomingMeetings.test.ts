@@ -39,7 +39,7 @@ vi.mock('@/api', async () => {
   const { createApiClient } = await import('@/platform/server-state')
   const engine = createApiClient(
     { calendar: async () => ({ policy: () => ({ staleTime: 0 }) }) },
-    { persistence: false, transport: { request: state.request } },
+    { transport: { request: state.request } },
   )
   return { api, useQuery: engine.useQuery }
 })

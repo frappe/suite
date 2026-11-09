@@ -54,7 +54,6 @@ beforeEach(() => {
     },
     {
       transport: createTransport({ fetch: fetcher, retryBaseMs: 0 }),
-      persistence: false,
       feedback,
     },
   )
@@ -487,6 +486,42 @@ describe('Suite API references and shared client', () => {
     const sent = fetcher.mock.calls.at(-1)?.[1]
     expect(new Headers(sent?.headers).get('X-Drive-Links')).toBe(code)
     expect(JSON.parse(String(sent?.body))).not.toHaveProperty('node')
+  })
+
+  /** What a read through a share link shows while a grant write refetches it. */
+  async function linkReadDuringGrantWrite(): Promise<string | undefined> {
+    const refetch = deferred<Response>()
+    let reads = 0
+    fetcher.mockImplementation(async (_url, init) => {
+      if (init?.method === 'PATCH')
+        return answer({
+          name: 'g',
+          node: 'budget',
+          principal: 'leo@northwind.test',
+          role: 20,
+          expires_on: null,
+          has_password: false,
+          sent_to: null,
+        })
+      return ++reads === 1 ? answer(node('Budget')) : refetch.promise
+    })
+    driveLinks.seed('L000000000000000000001', 'budget')
+    const detail = observe(() => engine.useQuery(api.drive.nodes.get, { node: 'budget' }))
+    await vi.waitFor(() => expect(detail.data?.title).toBe('Budget'))
+    const write = engine.client.mutation(api.drive.grants.update, {
+      node: 'budget',
+      grant: 'g',
+      role: 20,
+    })
+    await vi.waitFor(() => expect(reads).toBe(2))
+    const shown = detail.data?.title
+    refetch.resolve(answer(node('Budget')))
+    await write
+    return shown
+  }
+
+  it('keeps a read through a share link on screen while a grant write refetches it', async () => {
+    expect(await linkReadDuringGrantWrite()).toBe('Budget')
   })
 
   it('pages to exhaustion and resets when domain arguments change', async () => {

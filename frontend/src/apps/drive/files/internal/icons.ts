@@ -1,4 +1,7 @@
+import { inject } from 'vue'
+
 import type { DriveNode } from '@/apps/drive/client/types'
+import { DOCUMENT_TYPES_KEY, type DocumentTypeDefinition } from '@/platform/contracts'
 
 import { titleExtension } from './filename'
 import { previewKind, type TextLanguage } from './previewKind'
@@ -48,13 +51,6 @@ const CONTENT_TYPES = new Map<string, FileType>(
     Drawing: 'draw',
   }),
 )
-
-/** People's names for Drive's own document types, not their DocType names */
-const DOCUMENT_LABELS: Partial<Record<FileType, string>> = {
-  doc: 'Document',
-  sheet: 'Spreadsheet',
-  slides: 'Presentation',
-}
 
 /** Drive's own documents, PDFs and media each have a colour; everything else is gray. */
 const TINTS: Record<FileType, string> = {
@@ -150,9 +146,25 @@ export function documentIcon(contentDoctype: string) {
   return [fileTypeIcon(type), fileTypeTint(type)]
 }
 
-export function nodeTypeLabel(node: TypedNode): string {
+/**
+ * The type's name. A document takes its New menu name, such as "Spreadsheet"
+ * for a Sheet; an unknown doctype keeps its own name.
+ */
+function nodeTypeLabel(node: TypedNode, documentTypes: readonly DocumentTypeDefinition[]): string {
   if (node.kind === 'folder') return 'Folder'
   if (node.kind === 'link') return 'Link'
-  if (node.kind === 'document') return DOCUMENT_LABELS[fileType(node)] ?? 'Document'
+  if (node.kind === 'document') {
+    const type = fileType(node)
+    const definition = documentTypes.find(
+      (candidate) => CONTENT_TYPES.get(candidate.contentDoctype) === type,
+    )
+    return definition?.newLabel() ?? node.content_doctype ?? 'Document'
+  }
   return storedFile(node).label
+}
+
+/** `nodeTypeLabel` with the app's document types. Call it in a component's setup. */
+export function useNodeTypeLabel(): (node: TypedNode) => string {
+  const documentTypes = inject(DOCUMENT_TYPES_KEY, [])
+  return (node) => nodeTypeLabel(node, documentTypes)
 }

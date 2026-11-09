@@ -8,7 +8,7 @@
   <!-- The server folds a document's media into the document, so every listed
        item is one Drive shows. The description says so: those bytes are real. -->
   <SettingsPage
-    :title="__('Statistics')"
+    :title="__('Storage')"
     :description="__('Pictures and videos inside a document count towards that document.')"
   >
     <div class="flex flex-col gap-6">
