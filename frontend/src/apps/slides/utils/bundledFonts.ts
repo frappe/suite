@@ -15,8 +15,10 @@ export const loadBundledFonts = (): Promise<unknown> => {
   return Promise.all(bundledFontFaces.map((face) => document.fonts.load(face, subsetSample)))
 }
 
-// a stalled font mustn't hold up print for good
-const PRINT_FONT_LIMIT = 3000
+// a stalled font mustn't hold up opening or print for good
+const FONT_WAIT_LIMIT = 3000
+
+const fontWaitLimit = () => new Promise((resolve) => setTimeout(resolve, FONT_WAIT_LIMIT))
 
 function drawnFaces(root: Element) {
   const faces = new Map<string, string>()
@@ -41,8 +43,16 @@ export const drawnFontsLoaded = (root: Element): Promise<unknown> => {
     document.fonts.load(face, [...new Set(text)].join('')),
   )
 
-  return Promise.race([
-    Promise.allSettled(loads),
-    new Promise((resolve) => setTimeout(resolve, PRINT_FONT_LIMIT)),
-  ])
+  return Promise.race([Promise.allSettled(loads), fontWaitLimit()])
+}
+
+const limitedReady = new WeakMap<Promise<FontFaceSet>, Promise<unknown>>()
+
+// ready stays one promise while a font is pending, so measuring a whole presentation waits once
+export const fontsReadyWithinLimit = (): Promise<unknown> => {
+  const { ready } = document.fonts
+  const limited = limitedReady.get(ready) ?? Promise.race([ready, fontWaitLimit()])
+  limitedReady.set(ready, limited)
+
+  return limited
 }
