@@ -8,7 +8,7 @@ import * as Y from 'yjs'
 
 import { extensions } from '@/apps/slides/stores/tiptapSetup'
 
-import { addBox, addSlide, boxText, deleteBox, ROOT, setBox } from './deck'
+import { addElement, addSlide, deleteElement, elementText, ROOT, setElement } from './deck'
 import { slidesFault } from './fault'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
@@ -16,22 +16,22 @@ vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' 
 const schema = getSchema(extensions)
 const FRAME = { left: 10, top: 10, width: 100, height: 50 }
 
-// A deck a tab would write: a text box with a marked hard break, an image and a line
+// A deck a tab would write: a text element with a marked hard break, an image and a line
 function goodDeck() {
   const doc = new Y.Doc()
   const slide = addSlide(doc, { background: '#fff' })
-  const textBox = addBox(doc, slide, { type: 'text', frame: FRAME })
-  addBox(doc, slide, { type: 'image', frame: FRAME, src: 'media-1' })
-  addBox(doc, slide, { type: 'line', frame: FRAME, connectorStart: { elementId: textBox } })
+  const textElement = addElement(doc, slide, { type: 'text', frame: FRAME })
+  addElement(doc, slide, { type: 'image', frame: FRAME, src: 'media-1' })
+  addElement(doc, slide, { type: 'line', frame: FRAME, connectorStart: { elementId: textElement } })
   const bold = schema.marks.bold.create()
   const line = schema.nodes.paragraph.create(null, [
     schema.text('one', [bold]),
     schema.nodes.hardBreak.create(null, null, [bold]),
     schema.text('two'),
   ])
-  prosemirrorToYXmlFragment(schema.nodes.doc.create(null, line), boxText(doc, textBox)!)
+  prosemirrorToYXmlFragment(schema.nodes.doc.create(null, line), elementText(doc, textElement)!)
 
-  return { doc, slide, textBox }
+  return { doc, slide, textElement }
 }
 
 // The doc as the server's checker sees it: rebuilt from its update alone
@@ -52,18 +52,18 @@ describe('slidesFault: what the checker refuses', () => {
     expect(slidesFault(new Y.Doc())).toBeNull()
   })
 
-  it('accepts a box undo left without its keys', () => {
-    const { doc, textBox } = goodDeck()
-    const box = doc.getMap<Y.Map<unknown>>(ROOT.boxes).get(textBox)!
-    box.delete('order')
-    box.delete('parent')
+  it('accepts an element undo left without its keys', () => {
+    const { doc, textElement } = goodDeck()
+    const element = doc.getMap<Y.Map<unknown>>(ROOT.elements).get(textElement)!
+    element.delete('order')
+    element.delete('parent')
 
     expect(slidesFault(rebuilt(doc))).toBeNull()
   })
 
-  it('accepts a deck after a box is deleted', () => {
-    const { doc, textBox } = goodDeck()
-    deleteBox(doc, textBox)
+  it('accepts a deck after an element is deleted', () => {
+    const { doc, textElement } = goodDeck()
+    deleteElement(doc, textElement)
 
     expect(slidesFault(rebuilt(doc))).toBeNull()
   })
@@ -84,9 +84,9 @@ describe('slidesFault: what the checker refuses', () => {
 
   it('refuses an item that is not a map', () => {
     const { doc } = goodDeck()
-    doc.getMap(ROOT.boxes).set('flat', 'value')
+    doc.getMap(ROOT.elements).set('flat', 'value')
 
-    expect(slidesFault(rebuilt(doc))).toBe('schema: boxes holds a bad value')
+    expect(slidesFault(rebuilt(doc))).toBe('schema: elements holds a bad value')
   })
 
   it('refuses a key the shape does not declare, without naming it', () => {
@@ -97,25 +97,25 @@ describe('slidesFault: what the checker refuses', () => {
   })
 
   it('refuses a shared type under a plain field', () => {
-    const { doc, textBox } = goodDeck()
-    doc.getMap<Y.Map<unknown>>(ROOT.boxes).get(textBox)!.set('frame', new Y.Map())
+    const { doc, textElement } = goodDeck()
+    doc.getMap<Y.Map<unknown>>(ROOT.elements).get(textElement)!.set('frame', new Y.Map())
 
-    expect(slidesFault(rebuilt(doc))).toBe('schema: boxes holds a bad value')
+    expect(slidesFault(rebuilt(doc))).toBe('schema: elements holds a bad value')
   })
 
   it('refuses text that is not a fragment', () => {
-    const { doc, textBox } = goodDeck()
-    setBox(doc, textBox, { type: 'text' })
-    doc.getMap<Y.Map<unknown>>(ROOT.boxes).get(textBox)!.set('text', 'plain words')
+    const { doc, textElement } = goodDeck()
+    setElement(doc, textElement, { type: 'text' })
+    doc.getMap<Y.Map<unknown>>(ROOT.elements).get(textElement)!.set('text', 'plain words')
 
-    expect(slidesFault(rebuilt(doc))).toBe('schema: boxes holds a bad value')
+    expect(slidesFault(rebuilt(doc))).toBe('schema: elements holds a bad value')
   })
 
   it('refuses text the editor would drop', () => {
-    const { doc, textBox } = goodDeck()
-    boxText(doc, textBox)!.push([new Y.XmlElement('heading')])
+    const { doc, textElement } = goodDeck()
+    elementText(doc, textElement)!.push([new Y.XmlElement('heading')])
 
-    expect(slidesFault(rebuilt(doc))).toBe('schema: boxes holds text the editor cannot place')
+    expect(slidesFault(rebuilt(doc))).toBe('schema: elements holds text the editor cannot place')
   })
 })
 

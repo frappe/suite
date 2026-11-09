@@ -1,5 +1,5 @@
 // The presentation in the form the slide store holds and its components draw: one
-// flat element per box, stacked in `order`, with its rich text as HTML
+// flat old-format element per element, stacked in `order`, with its rich text as HTML
 
 import { generateHTML, getSchema } from '@tiptap/core'
 import { yXmlFragmentToProseMirrorRootNode } from '@tiptap/y-tiptap'
@@ -7,7 +7,7 @@ import type * as Y from 'yjs'
 
 import { extensions } from '@/apps/slides/stores/tiptapSetup'
 
-import { boxText, readSlides, TYPES_WITH_TEXT, type DeckItem } from './deck'
+import { elementText, readSlides, TYPES_WITH_TEXT, type DeckItem } from './deck'
 
 const schema = getSchema(extensions)
 
@@ -25,7 +25,7 @@ function connectorOf({ connectorStart, connectorEnd, route }: DeckItem) {
 }
 
 function textOf(doc: Y.Doc, { id, type }: DeckItem) {
-  const fragment = boxText(doc, id)
+  const fragment = elementText(doc, id)
   if (typeof type !== 'string' || !TYPES_WITH_TEXT.has(type) || !fragment) {
     return {}
   }
@@ -35,18 +35,24 @@ function textOf(doc: Y.Doc, { id, type }: DeckItem) {
 }
 
 export function drawnSlides(doc: Y.Doc): DrawnSlide[] {
-  return readSlides(doc).map(({ id, boxes, ...slide }, at) => ({
+  return readSlides(doc).map(({ id, elements, ...slide }, at) => ({
     ...slide,
     clientId: id,
     // the thumbnail's number, as a row's idx gave it
     idx: at + 1,
-    elements: boxes.map((box, index) => {
-      const { frame, connectorStart: _start, connectorEnd: _end, route: _route, ...fields } = box
+    elements: elements.map((element, index) => {
+      const {
+        frame,
+        connectorStart: _start,
+        connectorEnd: _end,
+        route: _route,
+        ...fields
+      } = element
       return {
         ...fields,
         ...(frame && typeof frame === 'object' ? frame : undefined),
-        ...connectorOf(box),
-        ...textOf(doc, box),
+        ...connectorOf(element),
+        ...textOf(doc, element),
         zIndex: index + 1,
       }
     }),

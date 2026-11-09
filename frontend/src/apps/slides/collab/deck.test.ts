@@ -4,18 +4,18 @@ import * as Y from 'yjs'
 
 import {
   addBlankIfEmpty,
-  addBox,
+  addElement,
   addSlide,
-  boxIds,
-  boxText,
-  deleteBox,
+  deleteElement,
   deleteSlide,
   DRAWN_BLANK,
-  moveBox,
-  moveBoxToSlide,
+  elementIds,
+  elementText,
+  moveElement,
+  moveElementToSlide,
   moveSlide,
   readSlides,
-  setBox,
+  setElement,
   slideIds,
 } from './deck'
 
@@ -39,49 +39,49 @@ function sync(tabA: Y.Doc, tabB: Y.Doc) {
 }
 
 function setUpText(doc: Y.Doc, id: string, words: string) {
-  boxText(doc, id)!.insert(0, [new Y.XmlText(words)])
+  elementText(doc, id)!.insert(0, [new Y.XmlText(words)])
 }
 
 function textOf(doc: Y.Doc, id: string) {
-  return fromPartial<Y.XmlText>(boxText(doc, id)!.get(0)).toString()
+  return fromPartial<Y.XmlText>(elementText(doc, id)!.get(0)).toString()
 }
 
 function typeAt(doc: Y.Doc, id: string, index: number, words: string) {
-  fromPartial<Y.XmlText>(boxText(doc, id)!.get(0)).insert(index, words)
+  fromPartial<Y.XmlText>(elementText(doc, id)!.get(0)).insert(index, words)
 }
 
-function box(doc: Y.Doc, id: string) {
-  return doc.getMap<Y.Map<unknown>>('boxes').get(id)!
+function element(doc: Y.Doc, id: string) {
+  return doc.getMap<Y.Map<unknown>>('elements').get(id)!
 }
 
-// Three slides with two text boxes each, in two tabs that have synced. A is the
+// Three slides with two text elements each, in two tabs that have synced. A is the
 // higher client id, as in the spike
 function twoTabs() {
   const [tabA, tabB] = [tab(100), tab(5)]
   const slides = [addSlide(tabA), addSlide(tabA), addSlide(tabA)]
-  const boxes = slides.flatMap((slide) => [
-    addBox(tabA, slide, { type: 'text', frame: FRAME }),
-    addBox(tabA, slide, { type: 'text', frame: FRAME }),
+  const elements = slides.flatMap((slide) => [
+    addElement(tabA, slide, { type: 'text', frame: FRAME }),
+    addElement(tabA, slide, { type: 'text', frame: FRAME }),
   ])
-  setUpText(tabA, boxes[0], 'Hello')
+  setUpText(tabA, elements[0], 'Hello')
   sync(tabA, tabB)
 
-  return { tabA, tabB, slides, boxes, target: boxes[0] }
+  return { tabA, tabB, slides, elements, target: elements[0] }
 }
 
 describe('the spike merge cases on the keyed layout', () => {
-  it('moving a box while the other tab types keeps both (case 2)', () => {
+  it('moving an element while the other tab types keeps both (case 2)', () => {
     const { tabA, tabB, target } = twoTabs()
-    setBox(tabA, target, { frame: { ...FRAME, left: 111 } })
+    setElement(tabA, target, { frame: { ...FRAME, left: 111 } })
     typeAt(tabB, target, 5, ' world')
     sync(tabA, tabB)
     for (const doc of [tabA, tabB]) {
-      expect(box(doc, target).get('frame')).toMatchObject({ left: 111 })
+      expect(element(doc, target).get('frame')).toMatchObject({ left: 111 })
       expect(textOf(doc, target)).toBe('Hello world')
     }
   })
 
-  it('both tabs typing in one box keep both words (case 3)', () => {
+  it('both tabs typing in one element keep both words (case 3)', () => {
     const { tabA, tabB, target } = twoTabs()
     typeAt(tabA, target, 0, 'A ')
     typeAt(tabB, target, 5, ' B')
@@ -90,14 +90,14 @@ describe('the spike merge cases on the keyed layout', () => {
     expect(textOf(tabB, target)).toBe('A Hello B')
   })
 
-  it('deleting a box while the other tab types drops the edit without error (case 4)', () => {
-    const { tabA, tabB, target, boxes } = twoTabs()
-    deleteBox(tabA, target)
+  it('deleting an element while the other tab types drops the edit without error (case 4)', () => {
+    const { tabA, tabB, target, elements } = twoTabs()
+    deleteElement(tabA, target)
     typeAt(tabB, target, 5, ' lost')
     sync(tabA, tabB)
     for (const doc of [tabA, tabB]) {
-      expect(doc.getMap('boxes').has(target)).toBe(false)
-      expect(doc.getMap('boxes').size).toBe(boxes.length - 1)
+      expect(doc.getMap('elements').has(target)).toBe(false)
+      expect(doc.getMap('elements').size).toBe(elements.length - 1)
     }
   })
 
@@ -119,15 +119,15 @@ describe('the spike merge cases on the keyed layout', () => {
     expect(textOf(tabB, target)).toBe('Hello typed while moving')
   })
 
-  it('moving a box to another slide while the other tab types keeps both (case 7)', () => {
+  it('moving an element to another slide while the other tab types keeps both (case 7)', () => {
     const { tabA, tabB, slides, target } = twoTabs()
-    moveBoxToSlide(tabA, target, slides[1])
+    moveElementToSlide(tabA, target, slides[1])
     typeAt(tabB, target, 5, ' typed')
     sync(tabA, tabB)
     for (const doc of [tabA, tabB]) {
-      expect(box(doc, target).get('parent')).toBe(slides[1])
-      expect(boxIds(doc, slides[1])).toContain(target)
-      expect(boxIds(doc, slides[0])).not.toContain(target)
+      expect(element(doc, target).get('parent')).toBe(slides[1])
+      expect(elementIds(doc, slides[1])).toContain(target)
+      expect(elementIds(doc, slides[0])).not.toContain(target)
       expect(textOf(doc, target)).toBe('Hello typed')
     }
   })
@@ -184,13 +184,13 @@ describe('order', () => {
     expect(slideIds(tabA)).toEqual([slides[1], slides[0], slides[2]])
   })
 
-  it('moving a box writes one order value and leaves the other boxes alone', () => {
+  it('moving an element writes one order value and leaves the other elements alone', () => {
     const { tabA, slides } = twoTabs()
-    const [first, second] = boxIds(tabA, slides[0])
-    expect(keysWritten(tabA, 'boxes', () => moveBox(tabA, first, second))).toEqual([
+    const [first, second] = elementIds(tabA, slides[0])
+    expect(keysWritten(tabA, 'elements', () => moveElement(tabA, first, second))).toEqual([
       `${first}.order`,
     ])
-    expect(boxIds(tabA, slides[0])).toEqual([second, first])
+    expect(elementIds(tabA, slides[0])).toEqual([second, first])
   })
 
   it('moves to the start and end of the deck', () => {
@@ -271,12 +271,12 @@ describe('order', () => {
     expect(slideIds(doc).toSorted()).toEqual(ids.toSorted())
   })
 
-  it('new slides and boxes land last', () => {
+  it('new slides and elements land last', () => {
     const doc = tab(1)
     const ids = Array.from({ length: 200 }, () => addSlide(doc))
     expect(slideIds(doc)).toEqual(ids)
-    const boxes = Array.from({ length: 200 }, () => addBox(doc, ids[0], { type: 'image' }))
-    expect(boxIds(doc, ids[0])).toEqual(boxes)
+    const elements = Array.from({ length: 200 }, () => addElement(doc, ids[0], { type: 'image' }))
+    expect(elementIds(doc, ids[0])).toEqual(elements)
   })
 
   it('a new slide goes right after the one named', () => {
@@ -288,44 +288,54 @@ describe('order', () => {
 })
 
 describe('frame', () => {
-  it('two tabs changing one box never mix position and size', () => {
+  it('two tabs changing one element never mix position and size', () => {
     const { tabA, tabB, target } = twoTabs()
-    setBox(tabA, target, { frame: { left: 111, top: 111, width: 111, height: 111 } })
-    setBox(tabB, target, { frame: { left: 222, top: 222, width: 222, height: 222 } })
+    setElement(tabA, target, { frame: { left: 111, top: 111, width: 111, height: 111 } })
+    setElement(tabB, target, { frame: { left: 222, top: 222, width: 222, height: 222 } })
     sync(tabA, tabB)
     // the higher client id wins a clash on one key (spike case 1)
-    expect(box(tabA, target).get('frame')).toEqual({ left: 111, top: 111, width: 111, height: 111 })
-    expect(box(tabB, target).get('frame')).toEqual({ left: 111, top: 111, width: 111, height: 111 })
+    expect(element(tabA, target).get('frame')).toEqual({
+      left: 111,
+      top: 111,
+      width: 111,
+      height: 111,
+    })
+    expect(element(tabB, target).get('frame')).toEqual({
+      left: 111,
+      top: 111,
+      width: 111,
+      height: 111,
+    })
   })
 
   it('keeps the centred form with the position', () => {
     const { tabA, target } = twoTabs()
     const centred = { left: 480, top: 270, transform: 'translate(-50%, -50%)' }
-    setBox(tabA, target, { frame: centred })
-    expect(box(tabA, target).get('frame')).toEqual(centred)
+    setElement(tabA, target, { frame: centred })
+    expect(element(tabA, target).get('frame')).toEqual(centred)
   })
 })
 
 describe('deleting a slide', () => {
-  it('takes its boxes in one change and leaves other slides alone', () => {
-    const { tabA, tabB, slides, boxes } = twoTabs()
+  it('takes its elements in one change and leaves other slides alone', () => {
+    const { tabA, tabB, slides, elements } = twoTabs()
     const updates = captureUpdates(tabA, () => deleteSlide(tabA, slides[0]))
     expect(updates).toHaveLength(1)
     Y.applyUpdate(tabB, updates[0])
     for (const doc of [tabA, tabB]) {
       expect(slideIds(doc)).toEqual([slides[1], slides[2]])
-      expect(boxIds(doc, slides[0])).toEqual([])
-      expect(boxIds(doc, slides[1])).toEqual(boxes.slice(2, 4))
-      expect(boxIds(doc, slides[2])).toEqual(boxes.slice(4, 6))
+      expect(elementIds(doc, slides[0])).toEqual([])
+      expect(elementIds(doc, slides[1])).toEqual(elements.slice(2, 4))
+      expect(elementIds(doc, slides[2])).toEqual(elements.slice(4, 6))
     }
   })
 
-  it('drops a co-editor typing in one of its boxes without error', () => {
+  it('drops a co-editor typing in one of its elements without error', () => {
     const { tabA, tabB, slides, target } = twoTabs()
     deleteSlide(tabA, slides[0])
     typeAt(tabB, target, 5, ' lost')
     expect(() => sync(tabA, tabB)).not.toThrow()
-    expect(tabB.getMap('boxes').has(target)).toBe(false)
+    expect(tabB.getMap('elements').has(target)).toBe(false)
     expect(slideIds(tabB)).toEqual([slides[1], slides[2]])
   })
 })
@@ -334,45 +344,45 @@ describe('fields', () => {
   it('refuses a name the server would refuse, and writes nothing', () => {
     const doc = tab(1)
     const slide = addSlide(doc)
-    const target = addBox(doc, slide, { type: 'image', src: 'n1' })
-    expect(() => setBox(doc, target, { zIndex: 3 })).toThrow('zIndex')
-    expect(box(doc, target).has('zIndex')).toBe(false)
+    const target = addElement(doc, slide, { type: 'image', src: 'n1' })
+    expect(() => setElement(doc, target, { zIndex: 3 })).toThrow('zIndex')
+    expect(element(doc, target).has('zIndex')).toBe(false)
     expect(() => addSlide(doc, { thumbnail: 'x' })).toThrow('thumbnail')
   })
 
   it('order and parent change only through a move', () => {
     const doc = tab(1)
     const slide = addSlide(doc)
-    const target = addBox(doc, slide, { type: 'image' })
-    expect(() => setBox(doc, target, { order: 'V' })).toThrow('order')
-    expect(() => setBox(doc, target, { parent: 'x' })).toThrow('parent')
+    const target = addElement(doc, slide, { type: 'image' })
+    expect(() => setElement(doc, target, { order: 'V' })).toThrow('order')
+    expect(() => setElement(doc, target, { parent: 'x' })).toThrow('parent')
   })
 
   it('an undefined value clears the key, as unlocking does', () => {
     const doc = tab(1)
     const slide = addSlide(doc)
-    const target = addBox(doc, slide, { type: 'image', locked: true })
-    setBox(doc, target, { locked: undefined })
-    expect(box(doc, target).has('locked')).toBe(false)
+    const target = addElement(doc, slide, { type: 'image', locked: true })
+    setElement(doc, target, { locked: undefined })
+    expect(element(doc, target).has('locked')).toBe(false)
   })
 
-  it('writing to a box another tab deleted does not bring it back', () => {
+  it('writing to an element another tab deleted does not bring it back', () => {
     const { tabA, tabB, target } = twoTabs()
-    deleteBox(tabA, target)
+    deleteElement(tabA, target)
     sync(tabA, tabB)
-    setBox(tabB, target, { rotation: 5 })
-    expect(tabB.getMap('boxes').has(target)).toBe(false)
+    setElement(tabB, target, { rotation: 5 })
+    expect(tabB.getMap('elements').has(target)).toBe(false)
   })
 
   it('gives text, shapes and tables a rich text field, and media none', () => {
     const doc = tab(1)
     const slide = addSlide(doc)
     for (const type of ['text', 'shape', 'table']) {
-      expect(boxText(doc, addBox(doc, slide, { type }))).toBeInstanceOf(Y.XmlFragment)
+      expect(elementText(doc, addElement(doc, slide, { type }))).toBeInstanceOf(Y.XmlFragment)
     }
 
     for (const type of ['image', 'video']) {
-      expect(boxText(doc, addBox(doc, slide, { type }))).toBeUndefined()
+      expect(elementText(doc, addElement(doc, slide, { type }))).toBeUndefined()
     }
   })
 })
@@ -380,14 +390,14 @@ describe('fields', () => {
 describe('what reaches the server', () => {
   it('holds no Y.Array and no Y.Text, only maps and fragments of xml', () => {
     const { tabA, slides, target } = twoTabs()
-    const fragment = boxText(tabA, target)!
+    const fragment = elementText(tabA, target)!
     const paragraph = new Y.XmlElement('paragraph')
     paragraph.setAttribute('textAlign', 'center')
     const words = new Y.XmlText('bold')
     paragraph.insert(0, [words])
     fragment.insert(1, [paragraph])
     words.format(0, 4, { bold: {} })
-    setBox(tabA, target, { points: [{ x: 1, y: 2 }], crop: { x: 0, y: 0 } })
+    setElement(tabA, target, { points: [{ x: 1, y: 2 }], crop: { x: 0, y: 0 } })
     moveSlide(tabA, slides[0], slides[1])
     deleteSlide(tabA, slides[2])
 
@@ -403,7 +413,7 @@ describe('what reaches the server', () => {
     }
 
     expect(tabA.getMap('slides')).toBeInstanceOf(Y.Map)
-    expect(tabA.getMap('boxes')).toBeInstanceOf(Y.Map)
+    expect(tabA.getMap('elements')).toBeInstanceOf(Y.Map)
   })
 })
 
@@ -418,59 +428,59 @@ describe('reading', () => {
     return read
   }
 
-  it('gives slides and boxes in order, with their fields', () => {
+  it('gives slides and elements in order, with their fields', () => {
     const doc = tab(1)
     const [first, second] = [addSlide(doc, { background: 'red' }), addSlide(doc)]
     const [under, over] = [
-      addBox(doc, first, { type: 'image' }),
-      addBox(doc, first, { type: 'text' }),
+      addElement(doc, first, { type: 'image' }),
+      addElement(doc, first, { type: 'text' }),
     ]
     moveSlide(doc, second, null)
-    moveBox(doc, under, over)
+    moveElement(doc, under, over)
 
     const [top, next] = readWritesNothing(doc)
-    expect(top).toEqual({ id: second, boxes: [] })
+    expect(top).toEqual({ id: second, elements: [] })
     expect(next).toEqual({
       id: first,
       background: 'red',
-      boxes: [
+      elements: [
         { id: over, type: 'text' },
         { id: under, type: 'image' },
       ],
     })
   })
 
-  // A merge is the way a box outlives its slide: one tab deletes, one tab adds
-  function boxLeftWithoutSlide() {
+  // A merge is the way an element outlives its slide: one tab deletes, one tab adds
+  function elementLeftWithoutSlide() {
     const { tabA, tabB, slides } = twoTabs()
     deleteSlide(tabA, slides[0])
-    const left = addBox(tabB, slides[0], { type: 'image', frame: FRAME })
+    const left = addElement(tabB, slides[0], { type: 'image', frame: FRAME })
     sync(tabA, tabB)
 
     return { doc: tabA, gone: slides[0], left }
   }
 
-  it('hides a box whose slide is gone, and keeps it in the doc', () => {
-    const { doc, gone, left } = boxLeftWithoutSlide()
-    const drawn = readWritesNothing(doc).flatMap((slide) => slide.boxes.map(({ id }) => id))
+  it('hides an element whose slide is gone, and keeps it in the doc', () => {
+    const { doc, gone, left } = elementLeftWithoutSlide()
+    const drawn = readWritesNothing(doc).flatMap((slide) => slide.elements.map(({ id }) => id))
     expect(drawn).not.toContain(left)
     expect(readWritesNothing(doc).map(({ id }) => id)).not.toContain(gone)
-    expect(doc.getMap('boxes').has(left)).toBe(true)
+    expect(doc.getMap('elements').has(left)).toBe(true)
   })
 
-  it('shows the hidden box again once its slide is back, as a version restore does', () => {
-    const { doc, gone, left } = boxLeftWithoutSlide()
+  it('shows the hidden element again once its slide is back, as a version restore does', () => {
+    const { doc, gone, left } = elementLeftWithoutSlide()
     const slide = new Y.Map()
     doc.getMap('slides').set(gone, slide)
     slide.set('order', 'V')
     const back = readWritesNothing(doc).find(({ id }) => id === gone)
-    expect(back?.boxes.map(({ id }) => id)).toEqual([left])
+    expect(back?.elements.map(({ id }) => id)).toEqual([left])
   })
 
   function connectedLine() {
-    const { tabA, tabB, slides, boxes } = twoTabs()
-    const [start, end] = boxes
-    const line = addBox(tabA, slides[0], {
+    const { tabA, tabB, slides, elements } = twoTabs()
+    const [start, end] = elements
+    const line = addElement(tabA, slides[0], {
       type: 'line',
       connectorStart: { elementId: start, anchor: 'right' },
       connectorEnd: { elementId: end, anchor: 'left' },
@@ -483,22 +493,22 @@ describe('reading', () => {
   function drawnLine(doc: Y.Doc, slide: string, line: string) {
     return readWritesNothing(doc)
       .find(({ id }) => id === slide)!
-      .boxes.find(({ id }) => id === line)!
+      .elements.find(({ id }) => id === line)!
   }
 
   it('draws a connector end free when its target is gone, and stores no change', () => {
     const { tabA, tabB, slides, start, end, line } = connectedLine()
-    deleteBox(tabA, end)
+    deleteElement(tabA, end)
     sync(tabA, tabB)
     const drawn = drawnLine(tabB, slides[0], line)
     expect(drawn.connectorEnd).toBeNull()
     expect(drawn.connectorStart).toEqual({ elementId: start, anchor: 'right' })
-    expect(box(tabB, line).get('connectorEnd')).toEqual({ elementId: end, anchor: 'left' })
+    expect(element(tabB, line).get('connectorEnd')).toEqual({ elementId: end, anchor: 'left' })
   })
 
   it('draws a connector end free when its target moved to another slide', () => {
     const { tabA, slides, end, line } = connectedLine()
-    moveBoxToSlide(tabA, end, slides[1])
+    moveElementToSlide(tabA, end, slides[1])
     expect(drawnLine(tabA, slides[0], line).connectorEnd).toBeNull()
   })
 
@@ -515,7 +525,7 @@ describe('reading', () => {
     deleteSlide(doc, only)
     const drawn = readWritesNothing(doc)
     expect(drawn).toHaveLength(1)
-    expect(drawn.flatMap(({ boxes }) => boxes)).toEqual([])
+    expect(drawn.flatMap(({ elements }) => elements)).toEqual([])
     expect(doc.getMap('slides').size).toBe(0)
   })
 })
@@ -528,13 +538,13 @@ describe('a tab that sees no slides', () => {
     const [slideA] = slideIds(tabA)
     const [slideB] = slideIds(tabB)
     expect(slideA).not.toBe(slideB)
-    const boxA = addBox(tabA, slideA, { type: 'image' })
-    const boxB = addBox(tabB, slideB, { type: 'image' })
+    const elementA = addElement(tabA, slideA, { type: 'image' })
+    const elementB = addElement(tabB, slideB, { type: 'image' })
     sync(tabA, tabB)
     for (const doc of [tabA, tabB]) {
       expect(slideIds(doc).toSorted()).toEqual([slideA, slideB].toSorted())
-      expect(boxIds(doc, slideA)).toEqual([boxA])
-      expect(boxIds(doc, slideB)).toEqual([boxB])
+      expect(elementIds(doc, slideA)).toEqual([elementA])
+      expect(elementIds(doc, slideB)).toEqual([elementB])
     }
   })
 
@@ -561,12 +571,12 @@ describe('a move or add after an id that is not there', () => {
     }
   })
 
-  it('sends a box to the top of its slide', () => {
+  it('sends an element to the top of its slide', () => {
     const doc = tab(1)
     const slide = addSlide(doc)
-    const [under, over] = [addBox(doc, slide, {}), addBox(doc, slide, {})]
-    moveBox(doc, under, 'gone')
-    expect(boxIds(doc, slide)).toEqual([over, under])
+    const [under, over] = [addElement(doc, slide, {}), addElement(doc, slide, {})]
+    moveElement(doc, under, 'gone')
+    expect(elementIds(doc, slide)).toEqual([over, under])
   })
 
   it('adds a slide at the end', () => {
@@ -588,14 +598,18 @@ describe('a move or add after an id that is not there', () => {
     const doc = tab(1)
     const slides = [addSlide(doc), addSlide(doc), addSlide(doc)]
     const [, middle] = slides
-    const boxes = [addBox(doc, middle, {}), addBox(doc, middle, {}), addBox(doc, middle, {})]
+    const elements = [
+      addElement(doc, middle, {}),
+      addElement(doc, middle, {}),
+      addElement(doc, middle, {}),
+    ]
     const updates = captureUpdates(doc, () => {
       moveSlide(doc, middle, middle)
-      moveBox(doc, boxes[1], boxes[1])
+      moveElement(doc, elements[1], elements[1])
     })
     expect(updates).toEqual([])
     expect(slideIds(doc)).toEqual(slides)
-    expect(boxIds(doc, middle)).toEqual(boxes)
+    expect(elementIds(doc, middle)).toEqual(elements)
   })
 })
 
@@ -604,14 +618,14 @@ describe('the drawn blank', () => {
     expect(readSlides(tab(1)).map(({ id }) => id)).toEqual([DRAWN_BLANK])
   })
 
-  it('takes no box, added or moved, and stores nothing', () => {
+  it('takes no element, added or moved, and stores nothing', () => {
     const doc = tab(1)
     const slide = addSlide(doc)
-    const kept = addBox(doc, slide, {})
-    expect(() => addBox(doc, DRAWN_BLANK, {})).toThrow()
-    expect(() => moveBoxToSlide(doc, kept, DRAWN_BLANK)).toThrow()
-    expect(boxIds(doc, slide)).toEqual([kept])
-    expect(doc.getMap('boxes').size).toBe(1)
+    const kept = addElement(doc, slide, {})
+    expect(() => addElement(doc, DRAWN_BLANK, {})).toThrow()
+    expect(() => moveElementToSlide(doc, kept, DRAWN_BLANK)).toThrow()
+    expect(elementIds(doc, slide)).toEqual([kept])
+    expect(doc.getMap('elements').size).toBe(1)
   })
 })
 
@@ -619,12 +633,12 @@ describe('a read value', () => {
   it('is a copy: changing it leaves the stored value alone', () => {
     const doc = tab(1)
     const slide = addSlide(doc)
-    const id = addBox(doc, slide, { frame: { ...FRAME } })
-    const [{ boxes }] = readSlides(doc)
-    const [drawn] = boxes
+    const id = addElement(doc, slide, { frame: { ...FRAME } })
+    const [{ elements }] = readSlides(doc)
+    const [drawn] = elements
     fromPartial<typeof FRAME>(drawn.frame).left = 999
-    expect(box(doc, id).get('frame')).toEqual(FRAME)
-    const [{ boxes: again }] = readSlides(doc)
+    expect(element(doc, id).get('frame')).toEqual(FRAME)
+    const [{ elements: again }] = readSlides(doc)
     expect(again[0].frame).toEqual(FRAME)
   })
 })
@@ -650,66 +664,66 @@ describe('an item undo restored without a key', () => {
     sync(tabA, tabB)
   }
 
-  function deckWithThreeBoxes() {
+  function deckWithThreeElements() {
     const [tabA, tabB] = [keepingTab(100), keepingTab(5)]
     const slide = addSlide(tabA)
-    const boxes = [
-      addBox(tabA, slide, { type: 'text', frame: FRAME }),
-      addBox(tabA, slide, { type: 'text', frame: FRAME }),
-      addBox(tabA, slide, { type: 'text', frame: FRAME }),
+    const elements = [
+      addElement(tabA, slide, { type: 'text', frame: FRAME }),
+      addElement(tabA, slide, { type: 'text', frame: FRAME }),
+      addElement(tabA, slide, { type: 'text', frame: FRAME }),
     ]
     sync(tabA, tabB)
 
-    return { tabA, tabB, slide, boxes }
+    return { tabA, tabB, slide, elements }
   }
 
-  function loseOrder({ tabA, tabB, boxes }: ReturnType<typeof deckWithThreeBoxes>) {
-    undoAcrossChange(tabA, tabB, 'boxes', {
-      remove: () => deleteBox(tabA, boxes[1]),
-      change: () => moveBox(tabB, boxes[1], boxes[2]),
+  function loseOrder({ tabA, tabB, elements }: ReturnType<typeof deckWithThreeElements>) {
+    undoAcrossChange(tabA, tabB, 'elements', {
+      remove: () => deleteElement(tabA, elements[1]),
+      change: () => moveElement(tabB, elements[1], elements[2]),
     })
   }
 
-  it('reads a box with no order the same on every tab and writes nothing', () => {
-    const deck = deckWithThreeBoxes()
-    const { tabA, tabB, slide, boxes } = deck
+  it('reads an element with no order the same on every tab and writes nothing', () => {
+    const deck = deckWithThreeElements()
+    const { tabA, tabB, slide, elements } = deck
     loseOrder(deck)
-    expect(box(tabA, boxes[1]).has('order')).toBe(false)
-    expect(box(tabB, boxes[1]).has('order')).toBe(false)
+    expect(element(tabA, elements[1]).has('order')).toBe(false)
+    expect(element(tabB, elements[1]).has('order')).toBe(false)
 
     const written = captureUpdates(tabA, () => {
-      expect(boxIds(tabA, slide)).toEqual([boxes[1], boxes[0], boxes[2]])
+      expect(elementIds(tabA, slide)).toEqual([elements[1], elements[0], elements[2]])
       const [drawn] = readSlides(tabA)
-      expect(drawn.boxes.map(({ id }) => id)).toEqual(boxIds(tabA, slide))
+      expect(drawn.elements.map(({ id }) => id)).toEqual(elementIds(tabA, slide))
     })
-    expect(boxIds(tabB, slide)).toEqual(boxIds(tabA, slide))
+    expect(elementIds(tabB, slide)).toEqual(elementIds(tabA, slide))
     expect(written).toEqual([])
   })
 
-  it('still places a move after the box with no order, and a new box on top', () => {
-    const deck = deckWithThreeBoxes()
-    const { tabA, slide, boxes } = deck
+  it('still places a move after the element with no order, and a new element on top', () => {
+    const deck = deckWithThreeElements()
+    const { tabA, slide, elements } = deck
     loseOrder(deck)
-    moveBox(tabA, boxes[2], boxes[1])
-    expect(boxIds(tabA, slide)).toEqual([boxes[1], boxes[2], boxes[0]])
-    const added = addBox(tabA, slide, { type: 'text', frame: FRAME })
-    expect(boxIds(tabA, slide).at(-1)).toBe(added)
+    moveElement(tabA, elements[2], elements[1])
+    expect(elementIds(tabA, slide)).toEqual([elements[1], elements[2], elements[0]])
+    const added = addElement(tabA, slide, { type: 'text', frame: FRAME })
+    expect(elementIds(tabA, slide).at(-1)).toBe(added)
   })
 
-  it('hides a box with no parent like any leftover', () => {
-    const { tabA, tabB, slide, boxes } = deckWithThreeBoxes()
+  it('hides an element with no parent like any leftover', () => {
+    const { tabA, tabB, slide, elements } = deckWithThreeElements()
     const other = addSlide(tabB)
-    undoAcrossChange(tabA, tabB, 'boxes', {
-      remove: () => deleteBox(tabA, boxes[1]),
-      change: () => moveBoxToSlide(tabB, boxes[1], other),
+    undoAcrossChange(tabA, tabB, 'elements', {
+      remove: () => deleteElement(tabA, elements[1]),
+      change: () => moveElementToSlide(tabB, elements[1], other),
     })
-    expect(box(tabA, boxes[1]).has('parent')).toBe(false)
+    expect(element(tabA, elements[1]).has('parent')).toBe(false)
 
     const written = captureUpdates(tabA, () => {
       for (const doc of [tabA, tabB]) {
-        expect(boxIds(doc, slide)).toEqual([boxes[0], boxes[2]])
-        const drawn = readSlides(doc).flatMap((read) => read.boxes.map(({ id }) => id))
-        expect(drawn).toEqual([boxes[0], boxes[2]])
+        expect(elementIds(doc, slide)).toEqual([elements[0], elements[2]])
+        const drawn = readSlides(doc).flatMap((read) => read.elements.map(({ id }) => id))
+        expect(drawn).toEqual([elements[0], elements[2]])
       }
     })
     expect(written).toEqual([])

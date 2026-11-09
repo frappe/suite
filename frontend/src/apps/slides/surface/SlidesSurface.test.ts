@@ -459,7 +459,7 @@ describe('a deck on the content layer', () => {
       {
         slides: texts.map((text) => ({
           id: text,
-          elements: [{ id: `box-${text}`, type: 'text', content: `<p>${text}</p>` }],
+          elements: [{ id: `element-${text}`, type: 'text', content: `<p>${text}</p>` }],
         })),
       },
       4 * 1024 * 1024,

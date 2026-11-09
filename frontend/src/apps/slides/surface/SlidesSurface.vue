@@ -344,8 +344,8 @@ watch(
 watch(phone, (isPhone) => {
   if (isPhone) resetFocus()
 })
-// An open text box would keep taking keystrokes that no save carries. Not on every
-// entry to read-only: closing a box marks the deck dirty, which a tab that has just
+// An open text element would keep taking keystrokes that no save carries. Not on every
+// entry to read-only: closing an element marks the deck dirty, which a tab that has just
 // lost access could never clear, and a restore that fails should keep the selection.
 watch(writesBlocked, (blocked) => {
   if (!blocked) return

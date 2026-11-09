@@ -44,7 +44,7 @@ describe.skipIf(!fs.existsSync(CONVERTER))('converter bundle under --permission'
   })
 
   it('converts a deck into a doc the browsers can open', { timeout: 60_000 }, () => {
-    const elements = [{ id: 'box', type: 'text', content: '<p><strong>a</strong><br>b</p>' }]
+    const elements = [{ id: 'element', type: 'text', content: '<p><strong>a</strong><br>b</p>' }]
     const answer = run({
       legacy: { slides: [{ id: 'slide', elements }] },
       maxState: 4 * 1024 * 1024,
@@ -52,13 +52,13 @@ describe.skipIf(!fs.existsSync(CONVERTER))('converter bundle under --permission'
     expect(answer).toMatchObject({ kind: 'converted', version: VERSION, dropped: [] })
     const doc = new Y.Doc()
     Y.applyUpdate(doc, Buffer.from(fromPartial<string>(answer.state), 'base64'))
-    expect(readSlides(doc).map(({ id, boxes }) => [id, boxes.map((box) => box.id)])).toEqual([
-      ['slide', ['box']],
-    ])
+    expect(
+      readSlides(doc).map(({ id, elements }) => [id, elements.map((element) => element.id)]),
+    ).toEqual([['slide', ['element']]])
   })
 
   it('refuses a deck over maxState', { timeout: 60_000 }, () => {
-    const elements = [{ id: 'box', type: 'text', content: '<p>a</p>' }]
+    const elements = [{ id: 'element', type: 'text', content: '<p>a</p>' }]
     expect(run({ legacy: { slides: [{ id: 'slide', elements }] }, maxState: 8 })).toEqual({
       kind: 'failed',
       reason: 'too_large',
