@@ -142,13 +142,19 @@ class FetchChangesRealtime(unittest.TestCase):
             return self._events(created=[message["id"] for message in messages])
 
     def test_new_mail_is_announced_with_its_folder(self):
-        received = {"id": "e1", "draft": 0, "seen": 0, "mailboxes": [{"mailbox_id": "inbox"}]}
+        received = {
+            "id": "e1",
+            "thread_id": "t1",
+            "draft": 0,
+            "seen": 0,
+            "mailboxes": [{"mailbox_id": "inbox"}],
+        }
 
         self.assertEqual(self._created(received), [mock.call("new_mail_created", ["inbox"], user=USER)])
 
     def test_a_reply_sent_from_another_client_is_announced_too(self):
         # Sent mail arrives read; it still belongs on the lists, and in the conversation it answers.
-        sent = {"id": "e2", "draft": 0, "seen": 1, "mailboxes": [{"mailbox_id": "sent"}]}
+        sent = {"id": "e2", "thread_id": "t1", "draft": 0, "seen": 1, "mailboxes": [{"mailbox_id": "sent"}]}
 
         self.assertEqual(self._created(sent), [mock.call("new_mail_created", ["sent"], user=USER)])
 
@@ -158,7 +164,7 @@ class FetchChangesRealtime(unittest.TestCase):
         self.assertEqual(self._created(draft), [mock.call("new_mail_created", ["drafts"], user=USER)])
 
     def test_mail_in_an_unsubscribed_folder_moves_no_list(self):
-        hidden = {"id": "e4", "draft": 0, "seen": 0, "mailboxes": [{"mailbox_id": "old"}]}
+        hidden = {"id": "e4", "thread_id": "t1", "draft": 0, "seen": 0, "mailboxes": [{"mailbox_id": "old"}]}
 
         self.assertEqual(self._created(hidden), [])
 
@@ -169,7 +175,13 @@ class FetchChangesFound(unittest.TestCase):
     def test_returns_the_folders_with_new_mail_and_whether_mail_changed(self):
         server = _server()
         server.respond("Email/changes", _changes(created=["e1"], updated=["e2"]))
-        received = {"id": "e1", "draft": 0, "seen": 0, "mailboxes": [{"mailbox_id": "inbox"}]}
+        received = {
+            "id": "e1",
+            "thread_id": "t1",
+            "draft": 0,
+            "seen": 0,
+            "mailboxes": [{"mailbox_id": "inbox"}],
+        }
 
         with (
             mock.patch.object(mail_message, "get_sync_state", return_value="s1"),
@@ -195,7 +207,13 @@ class FetchChangesFound(unittest.TestCase):
     def test_a_reaction_changes_the_lists_without_being_new_mail(self):
         server = _server()
         server.respond("Email/changes", _changes(created=["e1"]))
-        reaction = {"id": "e1", "draft": 0, "seen": 0, "mailboxes": [{"mailbox_id": "inbox"}]}
+        reaction = {
+            "id": "e1",
+            "thread_id": "t1",
+            "draft": 0,
+            "seen": 0,
+            "mailboxes": [{"mailbox_id": "inbox"}],
+        }
 
         with (
             mock.patch.object(mail_message, "get_sync_state", return_value="s1"),
