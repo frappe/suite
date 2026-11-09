@@ -10,11 +10,10 @@ import { useSession } from '@/platform/session'
 
 import { isEmail } from './onboarding'
 
-const { email = '' } = defineProps<{ email?: string }>()
 const emit = defineEmits<{ 'signed-in': [temporaryPassword: string] }>()
 
 const session = useSession()
-const signin = reactive({ email, password: '' })
+const signin = reactive({ email: '', password: '' })
 const signingIn = ref(false)
 const signinError = ref('')
 
@@ -43,7 +42,7 @@ async function submit(): Promise<void> {
       variant="outline"
       :label="__('Email')"
       autocomplete="username"
-      :autofocus="!signin.email"
+      autofocus
     />
     <FormControl
       v-model="signin.password"
@@ -51,7 +50,6 @@ async function submit(): Promise<void> {
       variant="outline"
       :label="__('Password')"
       autocomplete="current-password"
-      :autofocus="!!signin.email"
     />
     <ErrorMessage :message="signinError" />
     <Button

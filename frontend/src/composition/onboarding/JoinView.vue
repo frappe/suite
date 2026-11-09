@@ -73,7 +73,6 @@ watch(
       startedFor = requestKey
       step.value = 'loading'
       arrival.value = 'signed-in'
-      signinEmail.value = ''
     }
     if (step.value !== 'loading') return
     if (session.status.value === 'loading') return
@@ -90,10 +89,8 @@ watch(
     if (invitationQuery.status !== 'success') return
     const data = invitation.value
     if (data?.is_verified) {
-      // Accepted already: sign in with the business address.
-      signinEmail.value = data.account ?? ''
-      arrival.value = 'temporary-password'
-      step.value = 'signin'
+      // Accepted already, with a password the person chose: the usual sign-in page, which can reset it.
+      window.location.replace(SIGN_IN)
     } else if (!data || data.is_expired || !(data.account || data.backup_email)) {
       step.value = 'expired'
     } else {
@@ -151,8 +148,14 @@ async function onAccountReady(): Promise<void> {
   next()
 }
 
+// Someone who chose their own password signs in on the usual page; `/join` is for temporary ones.
+const SIGN_IN = '/login'
+
+function openSignIn(): void {
+  window.location.assign(SIGN_IN)
+}
+
 // Signing in with a temporary password, which stays in memory for the password step
-const signinEmail = ref('')
 const temporaryPassword = ref('')
 
 function onSignedIn(password: string): void {
@@ -361,7 +364,6 @@ const copy = computed(() => {
         v-else-if="step === 'signin'"
         class="enter mt-8"
         style="--delay: 0.2s"
-        :email="signinEmail"
         @signed-in="onSignedIn"
       />
 
@@ -379,7 +381,7 @@ const copy = computed(() => {
           variant="ghost"
           size="md"
           :label="__('I already joined. Sign in')"
-          route="/join"
+          @click="openSignIn"
         />
       </div>
     </div>
