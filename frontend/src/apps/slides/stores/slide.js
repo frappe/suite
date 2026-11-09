@@ -19,6 +19,7 @@ import { randomId } from '@/platform/random-id'
 import { translate } from '@/platform/translation'
 
 import { addSlideCommand, editSlideCommand, removeSlideCommand } from './commands'
+import { flushLive, isLive } from './liveDeck'
 import { inSlideShowMode } from './slideshow'
 
 /** @type {import('vue').Ref<Record<string, unknown>[]>} */
@@ -143,6 +144,10 @@ const resetAndSave = async () => {
 
 const saveSlide = (e) => {
   e.preventDefault()
+  if (isLive()) {
+    return flushLive()
+  }
+
   resetAndSave()
 }
 

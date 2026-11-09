@@ -7,10 +7,15 @@ const activeElements = ref<any[]>([])
 const presentationDoc = ref<{ is_converted?: number } | null>(null)
 
 vi.mock('frappe-ui', () => ({
-  toast: { success: vi.fn() },
+  toast: { success: vi.fn(), error: vi.fn() },
   call: vi.fn(),
 }))
-vi.mock('@/apps/slides/stores/presentation', () => ({ presentationId: ref('p1'), presentationDoc }))
+const inReadonlyMode = ref(false)
+vi.mock('@/apps/slides/stores/presentation', () => ({
+  presentationId: ref('p1'),
+  presentationDoc,
+  inReadonlyMode,
+}))
 vi.mock('@/apps/slides/stores/slide', () => ({
   slideIndex: ref(0),
   insertSlide: vi.fn(),
@@ -45,6 +50,7 @@ vi.mock('@/apps/slides/utils/mediaUploads', () => ({
 const { handleCopy, handleCut, handlePaste } = await import('./copyPaste')
 const { insertSlide } = await import('@/apps/slides/stores/slide')
 const { toast } = await import('frappe-ui')
+const { setLiveSeat } = await import('@/apps/slides/stores/liveDeck')
 
 const makeCopyEvent = (target: EventTarget | null) =>
   fromPartial<ClipboardEvent>({
@@ -164,11 +170,11 @@ describe('handlePaste', () => {
 
   const slide = JSON.stringify({ clientId: 's1', parent: 'p1', elements: [] })
 
-  function pasteSlide() {
+  function pasteSlide(json = slide) {
     return handlePaste({
       preventDefault: vi.fn(),
       clipboardData: {
-        getData: (type: string) => (type === 'application/json' ? slide : ''),
+        getData: (type: string) => (type === 'application/json' ? json : ''),
         items: [],
       },
     })
@@ -180,11 +186,36 @@ describe('handlePaste', () => {
     expect(insertSlide).toHaveBeenCalledOnce()
   })
 
-  it('adds nothing to a converted presentation, which is read-only until live editing', async () => {
-    presentationDoc.value = { is_converted: 1 }
+  it('adds nothing for someone who can only view', async () => {
+    inReadonlyMode.value = true
 
     await pasteSlide()
+    inReadonlyMode.value = false
 
     expect(insertSlide).not.toHaveBeenCalled()
+  })
+
+  describe('in a live presentation that is offline', () => {
+    beforeEach(() => {
+      setLiveSeat({ push() {}, flush() {}, bindText: () => ({ extensions: [], seeded: false }) })
+      vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+    })
+    afterEach(() => {
+      setLiveSeat(null)
+      vi.restoreAllMocks()
+    })
+
+    it('still pastes a slide copied from the same presentation', async () => {
+      await pasteSlide()
+
+      expect(insertSlide).toHaveBeenCalledOnce()
+    })
+
+    it('says so and adds nothing when the slide is from another presentation', async () => {
+      await pasteSlide(JSON.stringify({ clientId: 's1', parent: 'other', elements: [] }))
+
+      expect(insertSlide).not.toHaveBeenCalled()
+      expect(toast.error).toHaveBeenCalledOnce()
+    })
   })
 })

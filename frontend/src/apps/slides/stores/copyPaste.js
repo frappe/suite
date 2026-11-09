@@ -15,7 +15,8 @@ import {
   resetFocus,
 } from '@/apps/slides/stores/element'
 import { inCropMode } from '@/apps/slides/stores/imageCrop'
-import { contextFor, presentationDoc, presentationId } from '@/apps/slides/stores/presentation'
+import { isLive } from '@/apps/slides/stores/liveDeck'
+import { contextFor, inReadonlyMode, presentationId } from '@/apps/slides/stores/presentation'
 import { getNewSlide, insertSlide, slideIndex } from '@/apps/slides/stores/slide'
 import { oldBodyHTML } from '@/apps/slides/stores/tiptapSetup'
 import { getClipboardTable } from '@/apps/slides/utils/clipboardTable'
@@ -23,6 +24,7 @@ import { remapElementIds } from '@/apps/slides/utils/connectors'
 import { getDocFromHTML, hasListMarkup, sanitizeSlideHTML } from '@/apps/slides/utils/helpers'
 import { handleUploadedMedia } from '@/apps/slides/utils/mediaUploads'
 import { randomId } from '@/platform/random-id'
+import { translate } from '@/platform/translation'
 
 const { activeEditor } = useTextEditor()
 
@@ -72,7 +74,7 @@ const handleCopy = (e) => {
 }
 
 const handleCut = (e) => {
-  if (isInputElement(e.target) || inCropMode.value) return
+  if (isInputElement(e.target) || inCropMode.value || inReadonlyMode.value) return
   if (!activeElementIds.value.length || isSelectionLocked.value) return
 
   e.preventDefault()
@@ -134,6 +136,8 @@ const handlePastedJSON = async ({ srcPresentation, srcSlide, isCut, elements }) 
 
   let json = pastedArray
   if (srcPresentation !== presentationId.value) {
+    if (cannotFetchPictures()) return
+
     // if pasted elements are from a different presentation
     // add file attachments correctly to current presentation + update docnames in json
     json = await client.mutation(
@@ -151,6 +155,16 @@ const handlePastedJSON = async ({ srcPresentation, srcSlide, isCut, elements }) 
   duplicateElements(null, json, sameSource ? srcSlide : null, sameSource && !isCut)
 }
 
+// a live presentation keeps working offline, but another presentation's pictures can't be copied in
+function cannotFetchPictures() {
+  if (!isLive() || navigator.onLine) {
+    return false
+  }
+
+  toast.error(translate('Connect to the internet to paste from another presentation.'))
+  return true
+}
+
 const handleSvgText = (svgText) => {
   const svgBlob = new Blob([svgText], { type: 'image/svg+xml' })
   const svgFile = new File([svgBlob], 'pasted-image.svg', { type: 'image/svg+xml' })
@@ -161,6 +175,8 @@ const handlePastedSlideJSON = async (slideJSON) => {
   const index = slideIndex.value
 
   if (slideJSON.parent != presentationId.value) {
+    if (cannotFetchPictures()) return
+
     // if pasted slide is from a different presentation
     // add file attachments correctly to current presentation + update docnames in json
     slideJSON = await client.mutation(
@@ -242,14 +258,13 @@ const handleClipboardTextHTML = (imgSrc) => {
 }
 
 const handlePaste = (e) => {
-  // a converted presentation is read-only until live editing
-  if (presentationDoc.value?.is_converted) return
-
   // do not override paste event if current element is input or content editable
   if (isInputElement()) return
 
   // a paste would steal the selection from the crop session mid-interaction
   if (inCropMode.value) return
+
+  if (inReadonlyMode.value) return
 
   e.preventDefault()
 

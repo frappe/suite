@@ -18,6 +18,7 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { StarterKit } from '@tiptap/starter-kit'
 import { Editor } from '@tiptap/vue-3'
 
+import { isRemoteChange } from '@/apps/slides/collab/liveText'
 import { scaleAwareColumnResizing } from '@/apps/slides/utils/columnResizing'
 import { getDocFromHTML, hasListMarkup } from '@/apps/slides/utils/helpers'
 
@@ -793,7 +794,13 @@ const styledEmptyLinePlugin = new Plugin({
     handleTextInput,
     decorations: blankLineDecorations,
   },
-  appendTransaction: (transactions, oldState, newState) => inheritMarksOnBlankLine(newState),
+  appendTransaction: (transactions, oldState, newState) => {
+    if (transactions.every(isRemoteChange)) {
+      return null
+    }
+
+    return inheritMarksOnBlankLine(newState)
+  },
 })
 
 const StyledEmptyLine = Extension.create({
@@ -1072,6 +1079,11 @@ const ColumnWidths = Extension.create({
       new Plugin({
         appendTransaction: (transactions, oldState, state) => {
           if (!transactions.some((transaction) => transaction.docChanged)) return null
+
+          if (transactions.every(isRemoteChange)) {
+            return null
+          }
+
           // a table that stated no widths lays itself out inside its frame, and a
           // drag on one of its columns must not hand that width to all the others
           if (hasBareCell(oldState.doc)) return null

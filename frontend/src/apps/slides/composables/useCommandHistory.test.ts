@@ -9,6 +9,7 @@ vi.mock('@/apps/slides/utils/helpers', () => ({
 
 const { useCommandHistory } = await import('./useCommandHistory')
 const { batchCommand, editElementCommand } = await import('@/apps/slides/stores/commands')
+const { setLiveSeat } = await import('@/apps/slides/stores/liveDeck')
 
 const COALESCE_WINDOW = 500
 
@@ -286,5 +287,24 @@ describe('record bookkeeping', () => {
 
     expect(history.canUndo.value).toBe(false)
     expect(state.value[0].elements[0].content).toBe('v5')
+  })
+})
+
+describe('on a live presentation', () => {
+  beforeEach(() => {
+    setLiveSeat({ push() {}, flush() {}, bindText: () => ({ extensions: [], seeded: false }) })
+  })
+  afterEach(() => {
+    setLiveSeat(null)
+  })
+
+  it('offers no undo, so a co-editor change since is never put back', () => {
+    history.execute(contentEdit('a', 'b'))
+    state.value[0].elements[0].content = 'from a co-editor'
+
+    history.undo()
+
+    expect(history.canUndo.value).toBe(false)
+    expect(state.value[0].elements[0].content).toBe('from a co-editor')
   })
 })

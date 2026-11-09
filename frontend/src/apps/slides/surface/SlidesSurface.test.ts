@@ -1,8 +1,10 @@
-import { fromPartial } from '@total-typescript/shoehorn'
+import { fromAny, fromPartial } from '@total-typescript/shoehorn'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref, type Component } from 'vue'
+import { Awareness } from 'y-protocols/awareness'
 import { applyUpdate, Doc } from 'yjs'
 
+import type { RoomStatus } from '@/platform/collab'
 import { requireTestElement } from '@/platform/testing/dom'
 
 import {
@@ -45,6 +47,7 @@ const {
 } = await import('@/apps/slides/stores/saving')
 const { initPresentationDoc, inReadonlyMode, loadTemplates, viewOnly } =
   await import('@/apps/slides/stores/presentation')
+const { drawnSlides } = await import('@/apps/slides/collab/drawnDeck')
 const { offlineCopyStatus } = await import('@/apps/slides/stores/offlineCopy')
 const { RECORD_PREFIX } = await import('@/apps/slides/utils/slidesCaches')
 const { keepRecovery, readRecovery, removeNewestRecovery } = await import('./recovery')
@@ -470,7 +473,29 @@ describe('a deck on the content layer', () => {
 
     const doc = new Doc()
     applyUpdate(doc, answer.state)
-    return { doc, close: vi.fn(async () => {}) }
+    const changes = new Set<() => void>()
+    const room = {
+      doc,
+      close: vi.fn(async () => {}),
+      flush: vi.fn(async () => {}),
+      status: { canWrite: true, saveState: 'clean', unsentCount: 0 },
+      presence: {
+        awareness: new Awareness(doc),
+        peers: [],
+        ownPid: 1,
+        ownArrival: 1,
+        onChange: () => () => {},
+      },
+      onChange(listener: () => void) {
+        changes.add(listener)
+        return () => changes.delete(listener)
+      },
+      setStatus(next: Partial<RoomStatus>) {
+        room.status = { ...room.status, ...next }
+        changes.forEach((listener) => listener())
+      },
+    }
+    return room
   }
 
   function convertedRoom(...texts: string[]) {
@@ -484,7 +509,7 @@ describe('a deck on the content layer', () => {
     return drawn.map((slide) => slide.elements.map((element) => element.content).join())
   }
 
-  it('draws a converted presentation in the view-only editor from its room, not its rows', async () => {
+  it('draws a converted presentation from its room, not its rows, and lets it be edited', async () => {
     convertedRoom('one', 'two', 'three')
     mounted = await openedSurface({ deck: { is_converted: true } })
 
@@ -492,8 +517,51 @@ describe('a deck on the content layer', () => {
     expect(drawnTexts()).toEqual(
       ['one', 'two', 'three'].map((text) => expect.stringContaining(`>${text}</p>`)),
     )
-    expect(viewOnly.value).toBe(true)
+    expect(viewOnly.value).toBe(false)
     expect(saves).toEqual([])
+  })
+
+  it('sends a change to the room and never saves the rows', async () => {
+    const doc = convertedRoom('one')
+    mounted = await openedSurface({ deck: { is_converted: true } })
+    await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+
+    fromAny(editorSlides.value)[0].background = '#123456'
+    markDirty()
+    await nextTick()
+
+    const [slide] = drawnSlides(doc)
+    expect(slide.background).toBe('#123456')
+    expect(saves).toEqual([])
+    expect(dirty.value).toBe(false)
+  })
+
+  it('stops editing while the room cannot write and starts again when it can', async () => {
+    const room = roomOf('one')
+    collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
+    mounted = await openedSurface({ deck: { is_converted: true } })
+    await vi.waitFor(() => expect(viewOnly.value).toBe(false))
+
+    room.setStatus({ canWrite: false, pauseReason: 'server' })
+    await vi.waitFor(() => expect(viewOnly.value).toBe(true))
+
+    room.setStatus({ canWrite: true, pauseReason: null })
+    await vi.waitFor(() => expect(viewOnly.value).toBe(false))
+  })
+
+  it('edits a converted presentation that another tab has open, with no lock between them', async () => {
+    // ifAvailable with another tab holding the lock: granted nothing
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      locks: {
+        request: async (_: string, __: LockOptions, hold: (lock: null) => unknown) => hold(null),
+      },
+    })
+    convertedRoom('one')
+    mounted = await openedSurface({ deck: { is_converted: true } })
+    await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+
+    expect(inReadonlyMode.value).toBe(false)
   })
 
   it('draws a slide the room gains after it opened', async () => {

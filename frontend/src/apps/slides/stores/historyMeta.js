@@ -8,6 +8,7 @@ import {
   selectableIds,
   setActiveElements,
 } from '@/apps/slides/stores/element'
+import { currentId } from '@/apps/slides/stores/liveDeck'
 import { changeEditorSlide, slideIndex, slides } from '@/apps/slides/stores/slide'
 
 let commandHistory = null
@@ -73,7 +74,8 @@ const jumpToElementsByIds = (jumpToIds, focusOnId) => {
     // the box is measured off the DOM, so it is fitted once the change is patched in
     nextTick(() => {
       if (jump !== latestJump) return
-      cropSelectionToFitContent(targetIds)
+
+      cropSelectionToFitContent(targetIds.map(currentId))
     })
     return
   }
@@ -82,18 +84,26 @@ const jumpToElementsByIds = (jumpToIds, focusOnId) => {
     // a whole run of undos lands in one tick, so by now a later one may have
     // decided the selection, or removed the elements this call named
     if (jump !== latestJump) return
-    if (!targetIds.every((id) => findSlideElement(id))) return
+
+    // a live write gives a new element its final id before this runs
+    const finalIds = targetIds.map(currentId)
+    if (!finalIds.every((id) => findSlideElement(id))) {
+      return
+    }
 
     // setActiveElements early-returns when the one surviving id is already
     // selected, which would leave the locked ones in the selection
-    if (targetIds.length < jumpToIds.length) {
-      activeElementIds.value = targetIds
+    if (finalIds.length < jumpToIds.length) {
+      activeElementIds.value = finalIds
       focusElementId.value = null
     } else {
-      setActiveElements(targetIds)
+      setActiveElements(finalIds)
     }
 
-    if (focusOnId && !findSlideElement(focusOnId)?.locked) focusElementId.value = focusOnId
+    const finalFocus = focusOnId && currentId(focusOnId)
+    if (finalFocus && !findSlideElement(finalFocus)?.locked) {
+      focusElementId.value = finalFocus
+    }
   })
 }
 

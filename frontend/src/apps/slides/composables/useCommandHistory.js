@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 
 import { isBlockedByLock } from '@/apps/slides/stores/commands'
+import { isLive } from '@/apps/slides/stores/liveDeck'
 import { markDirty } from '@/apps/slides/stores/saving'
 
 // prosemirror-history's newGroupDelay
@@ -57,6 +58,12 @@ export const useCommandHistory = (state, historyMeta = {}) => {
 
   // files a command whose change is already applied
   const record = (command, { forceCoalesce } = {}) => {
+    // a converted presentation has no undo until it has its own (Q12): a step here
+    // would put back what a co-editor changed since
+    if (isLive()) {
+      return markDirty()
+    }
+
     const top = prevCommands.value.at(-1)
 
     if (canCoalesce(command, top, forceCoalesce)) {

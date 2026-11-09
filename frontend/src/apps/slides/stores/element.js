@@ -1,4 +1,5 @@
 import { generateHTML } from '@tiptap/core'
+import { toast } from 'frappe-ui'
 import { computed, nextTick, ref, watch } from 'vue'
 
 import { resetGrowthBaseline, useTextEditor } from '@/apps/slides/composables/useTextEditor'
@@ -15,6 +16,7 @@ import {
   patchEmptyParagraphs,
   ZWSP,
 } from '@/apps/slides/stores/tiptapSetup'
+import { translate } from '@/platform/translation'
 
 import { guessShapeColorsFromBackground, guessTextColorFromBackground } from '../utils/color'
 import { getBoundTargetIds, getLineBox, remapElementIds } from '../utils/connectors'
@@ -25,6 +27,7 @@ import { getMinSizeForElement } from '../utils/resize'
 import { shareTableWidth } from '../utils/tableWidths'
 import { getElementDiv } from './elementRegistry'
 import { commandHistory } from './historyMeta'
+import { currentId, isLive, isTextEditedHere } from './liveDeck'
 import { presentationId } from './presentation'
 import { markDirty } from './saving'
 import {
@@ -94,7 +97,8 @@ const isTextSelection = computed(
   () => isMultiSelection.value && activeElements.value.every(hasTextContent),
 )
 
-const setActiveElements = (ids) => {
+function setActiveElements(given) {
+  const ids = given.map(currentId)
   if (ids.length == 1 && activeElementIds.value.includes(ids[0])) return
   activeElementIds.value = ids
   focusElementId.value = null
@@ -737,6 +741,12 @@ const addMediaElement = async (file, type, targetSlide, localFile) => {
 
   // a slow upload can outlive a slide switch, so the element goes back to the
   // slide it was started from, not to whatever is on screen now
+  // a co-editor may have deleted that slide while the upload ran
+  if (isLive() && !slides.value.includes(targetSlide)) {
+    targetSlide = currentSlide.value
+    toast.info(translate('The slide this was added to was deleted, so it is on this slide.'))
+  }
+
   const slideIdx = slides.value.indexOf(targetSlide)
   if (slideIdx === -1) return
 
@@ -1278,6 +1288,9 @@ const blurAndSaveContent = (element) => {
   activeEditor.value.setEditable(false)
   // blur() drops the window selection, including one this editor never held
   if (activeEditor.value.isFocused) activeEditor.value.commands.blur()
+
+  // a co-editor's change never comes back as this tab's write, and emptying it is theirs (Q6)
+  if (isLive() && !isTextEditedHere()) return
 
   if (!isEditorEmpty(element)) return updateElementContent(element)
 

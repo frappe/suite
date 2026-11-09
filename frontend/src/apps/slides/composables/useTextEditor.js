@@ -4,6 +4,7 @@ import { cellAround } from '@tiptap/pm/tables'
 import { Editor } from '@tiptap/vue-3'
 import { nextTick, reactive, ref, watch } from 'vue'
 
+import { isRemoteChange } from '@/apps/slides/collab/liveText'
 import { batchCommand, editElementCommand } from '@/apps/slides/stores/commands'
 import {
   activeElement,
@@ -18,6 +19,14 @@ import {
 } from '@/apps/slides/stores/element'
 import { getElementDiv } from '@/apps/slides/stores/elementRegistry'
 import { commandHistory } from '@/apps/slides/stores/historyMeta'
+import {
+  bindLiveText,
+  currentId,
+  isLive,
+  noteTextEdited,
+  pushLiveNow,
+  unbindLiveText,
+} from '@/apps/slides/stores/liveDeck'
 import { markDirty } from '@/apps/slides/stores/saving'
 import { currentSlide } from '@/apps/slides/stores/slide'
 import { extensions, patchEmptyParagraphs } from '@/apps/slides/stores/tiptapSetup'
@@ -295,10 +304,12 @@ export const useTextEditor = () => {
     // leading to overwriting content for second one with first one's content
 
     // history and init pushes still change the width, so the baseline follows
-    if (suppressRecording || !editorElement) {
+    if (suppressRecording || !editorElement || isRemoteChange(transaction)) {
       lastRenderedWidth = measuredAutoWidth(editor)
       return setEditorStyles(editor)
     }
+
+    noteTextEdited()
 
     const oldValue = patchedHTML(editorElement.content)
 
@@ -612,7 +623,63 @@ export const useTextEditor = () => {
     editSelectedText((editor) => editor.chain().selectAll()[command](property).run())
   }
 
-  const initTextEditor = (id, content, isEditable = false, initialLineHeight = null) => {
+  function liveExtensionsFor(id, content) {
+    if (!isLive()) {
+      return null
+    }
+
+    return bindLiveText(id, content, reconcileEditorContent)
+  }
+
+  function watchStoredContent(isBound) {
+    stopContentWatch?.()
+    stopContentWatch = null
+    if (!isBound) {
+      stopContentWatch = watch(() => activeElement.value?.content, reconcileEditorContent)
+    }
+  }
+
+  // a live editor's text comes from the live document
+  function textSource(content, liveExtensions) {
+    if (liveExtensions) {
+      return { extensions: [...extensions, ...liveExtensions] }
+    }
+
+    return { extensions, content }
+  }
+
+  function autofocusOn(element) {
+    return element?.type === 'table' ? 'start' : 'all'
+  }
+
+  function createEditor(content, isEditable, liveExtensions) {
+    activeEditor.value = new Editor({
+      ...textSource(content, liveExtensions),
+      editable: isEditable,
+      parseOptions,
+      // focus only lands once EditorContent has adopted the view, so tiptap
+      // has to do it itself after mounting. 'all' inside a table would
+      // select every cell, so tables start with a cursor in the first one
+      autofocus: isEditable && autofocusOn(editorElement),
+      // to update styles in sidebar based on cursor position
+      onSelectionUpdate: ({ editor }) => setEditorStyles(editor),
+      // to update element content on every change
+      onTransaction: ({ editor, transaction }) => handleOnTransaction(editor, transaction),
+    })
+
+    if (liveExtensions) {
+      activeEditor.value.on('destroy', unbindLiveText)
+    }
+  }
+
+  function initTextEditor(givenId, content, isEditable = false, initialLineHeight = null) {
+    // what the element's text binds to has to exist before the editor does
+    if (isLive()) {
+      pushLiveNow()
+      activeEditor.value?.destroy()
+    }
+
+    const id = currentId(givenId)
     editorElement = findSlideElement(id)
     editorSlideId = currentSlide.value?.clientId
     lastCompositionId = null
@@ -620,27 +687,14 @@ export const useTextEditor = () => {
     lastRenderedWidth = null
     nextTick(() => nextTick(() => (lastRenderedWidth ??= measuredAutoWidth(activeEditor.value))))
 
-    stopContentWatch?.()
-    stopContentWatch = watch(() => activeElement.value?.content, reconcileEditorContent)
+    const liveExtensions = liveExtensionsFor(id, content)
+    watchStoredContent(!!liveExtensions)
 
     withRecordingSuppressed(() => {
-      activeEditor.value = new Editor({
-        extensions: extensions,
-        editable: isEditable,
-        content: content,
-        parseOptions,
-        // focus only lands once EditorContent has adopted the view, so tiptap
-        // has to do it itself after mounting. 'all' inside a table would
-        // select every cell, so tables start with a cursor in the first one
-        autofocus: isEditable ? (editorElement?.type === 'table' ? 'start' : 'all') : false,
-        // to update styles in sidebar based on cursor position
-        onSelectionUpdate: ({ editor }) => setEditorStyles(editor),
-        // to update element content on every change
-        onTransaction: ({ editor, transaction }) => handleOnTransaction(editor, transaction),
-      })
+      createEditor(content, isEditable, liveExtensions)
 
       // If there is a legacy lineHeight to migrate for display, apply it in-memory
-      if (initialLineHeight != null) {
+      if (initialLineHeight != null && !liveExtensions) {
         activeEditor.value.commands.setGlobalLineHeight(initialLineHeight)
         delete editorElement?.editorMetadata
       }

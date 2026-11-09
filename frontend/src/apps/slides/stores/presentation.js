@@ -52,10 +52,10 @@ function setDocumentContext(id, context, onRefused, keepDiscarded) {
 }
 const contextFor = (id) => documentContexts.get(id)?.context
 
-const getElementDimensions = async (el) => {
-  let width = 0,
-    height = 0
+const HALF = 0.5
 
+// appended before the fonts are awaited: laying it out is what starts their download
+function placeForMeasuring(el) {
   //render outside dom to get width
   const tempDiv = document.createElement('div')
   tempDiv.style.position = 'absolute'
@@ -73,15 +73,42 @@ const getElementDimensions = async (el) => {
 
   tempDiv.innerHTML = el.content || ''
   document.body.appendChild(tempDiv)
+  return tempDiv
+}
 
-  await document.fonts.ready
-
-  width = el.width || tempDiv.offsetWidth
-  height = tempDiv.offsetHeight
-
+function readMeasured(tempDiv, el) {
+  const width = el.width || tempDiv.offsetWidth
+  const height = tempDiv.offsetHeight
   document.body.removeChild(tempDiv)
-
   return { width, height }
+}
+
+async function getElementDimensions(el) {
+  const tempDiv = placeForMeasuring(el)
+  await document.fonts.ready
+  return readMeasured(tempDiv, el)
+}
+
+function measureNow(el) {
+  return readMeasured(placeForMeasuring(el), el)
+}
+
+function isCentred(el) {
+  return el.transform === 'translate(-50%, -50%)'
+}
+
+function toTopLeft(el, { width, height }) {
+  return {
+    ...el,
+    transform: 'none',
+    transformOrigin: 'top left',
+    left: el.left - width * HALF,
+    top: el.top - height * HALF,
+  }
+}
+
+function withoutTransform(el) {
+  return { ...el, transform: 'none', transformOrigin: 'top left' }
 }
 
 const transformElements = async (elements) => {
@@ -90,31 +117,34 @@ const transformElements = async (elements) => {
   for (const el of elements) {
     if (el.type !== 'text') {
       newEls.push(el)
-      continue
-    }
-
-    if (el.transform === 'translate(-50%, -50%)') {
-      const { width, height } = await getElementDimensions(el)
-
-      newEls.push({
-        ...el,
-        transform: 'none',
-        transformOrigin: 'top left',
-        left: el.left - width / 2,
-        top: el.top - height / 2,
-      })
+    } else if (isCentred(el)) {
+      newEls.push(toTopLeft(el, await getElementDimensions(el)))
     } else if (!('transform' in el)) {
-      newEls.push({
-        ...el,
-        transform: 'none',
-        transformOrigin: 'top left',
-      })
+      newEls.push(withoutTransform(el))
     } else {
       newEls.push(el)
     }
   }
 
   return newEls
+}
+
+// the same, for a live change that must be drawn at once. The fonts were loaded
+// when the room opened, through `transformElements`
+function flattenNow(el, measure = measureNow) {
+  if (el.type !== 'text') {
+    return el
+  }
+
+  if (isCentred(el)) {
+    return toTopLeft(el, measure(el))
+  }
+
+  if ('transform' in el) {
+    return el
+  }
+
+  return withoutTransform(el)
 }
 
 const parseElements = (value, slide) => {
@@ -489,6 +519,8 @@ export {
   templateList,
   loadTemplates,
   presentationTheme,
+  flattenNow,
+  measureNow,
   viewOnly,
   inReadonlyMode,
   writesBlocked,
