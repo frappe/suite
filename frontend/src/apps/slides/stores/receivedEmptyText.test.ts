@@ -1,3 +1,4 @@
+import { ySyncPluginKey } from '@tiptap/y-tiptap'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 import { Awareness } from 'y-protocols/awareness'
@@ -26,13 +27,17 @@ const clearFragment = (fragment: Y.XmlFragment) => fragment.delete(0, fragment.l
 
 describe('leaving a text element whose text is empty, in a live room', () => {
   let fragment: Y.XmlFragment
+  let undoManager: Y.UndoManager
 
   const elementsLeft = () => slides.value[0].elements.map(({ id }: { id: string }) => id)
 
   beforeEach(async () => {
     const doc = new Y.Doc()
     fragment = doc.getXmlFragment('text')
-    const undoManager = new Y.UndoManager(fragment)
+    undoManager = new Y.UndoManager(fragment, {
+      trackedOrigins: new Set([ySyncPluginKey]),
+      captureTimeout: 500,
+    })
     const presence = {
       awareness: new Awareness(doc),
       peers: [],
@@ -79,6 +84,16 @@ describe('leaving a text element whose text is empty, in a live room', () => {
   it("keeps the element when a co-editor cleared this tab's typing", () => {
     activeEditor.value.commands.insertContent('mine')
     clearFragment(fragment)
+    expect(activeEditor.value.getText()).toBe('')
+
+    flushPendingBlur()
+
+    expect(elementsLeft()).toEqual(['t1'])
+  })
+
+  it("keeps the element when this tab's own undo emptied it", () => {
+    activeEditor.value.commands.insertContent('mine')
+    undoManager.undo()
     expect(activeEditor.value.getText()).toBe('')
 
     flushPendingBlur()

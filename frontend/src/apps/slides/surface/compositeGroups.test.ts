@@ -57,16 +57,15 @@ describe('composite group loading', () => {
     ])
   })
 
-  it('keeps manifest order when one group fails and retries only that group', async () => {
+  it('keeps manifest order when one group fails', async () => {
     const grouper = {
       group: vi.fn((ids: readonly string[]) => [
         { nodeIds: [...ids], fetch: vi.fn(), context: context() },
       ]),
       context: context(),
     }
-    let fail = true
     const request = vi.fn(async (references: string[]) => {
-      if (references.includes('c') && fail) throw new Error('offline')
+      if (references.includes('c')) throw new Error('offline')
       return {
         references: references.map((reference) => ({
           reference,
@@ -94,14 +93,6 @@ describe('composite group loading', () => {
         ['c', 'failed'],
       ],
     )
-
-    fail = false
-    await loader.retry(1)
-    expect(loader.items.map((item) => [item.reference, item.status])).toEqual([
-      ['a', 'ready'],
-      ['b', 'unreadable'],
-      ['c', 'ready'],
-    ])
   })
 
   it("selects link codes by each reference's node and asks for the references themselves", async () => {

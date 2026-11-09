@@ -4,7 +4,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { reactive } from 'vue'
 import * as Y from 'yjs'
 
-import { addSlide, elementIds, elementText, ROOT, setElement, slideIds, writeDeck } from './deck'
+import {
+  addElement,
+  addSlide,
+  elementIds,
+  elementText,
+  ROOT,
+  setElement,
+  slideIds,
+  writeDeck,
+} from './deck'
 import { openLiveDeck, type LiveStep, type StoreItem, type StoreSlide } from './liveDeck'
 import { openLiveUndo } from './liveUndo'
 
@@ -767,6 +776,73 @@ describe('where undo and redo land', () => {
     mine.deck.undo()
 
     expect(mine.steps[0]).toMatchObject({ slideId: 's2', elementIds: [] })
+  })
+})
+
+describe('undoing an insertion a co-editor has since built on', () => {
+  function addedElement(tab: ReturnType<typeof tabOn>) {
+    change(tab, () => tab.store.slides[1].elements.push({ id: 'new', type: 'image', left: 1 }))
+    // The push gives a new element the id it is saved under
+    return tab.store.slides[1].elements.at(-1)!.id
+  }
+
+  it('blocks the undo of an element a co-editor changed, and keeps their change', () => {
+    const { one, other } = twoTabs()
+    presentation(one)
+    const mine = tabOn(one)
+    const added = addedElement(mine)
+    setElement(other, added, { rotation: 45 })
+
+    mine.deck.undo()
+
+    expect(mine.steps[0]).toMatchObject({ isBlocked: true, slideId: 's2' })
+    expect(saved(one, added)!.get('rotation')).toBe(45)
+    expect(saved(other, added)!.get('rotation')).toBe(45)
+  })
+
+  it('goes to the step before on the next undo', () => {
+    const { one, other } = twoTabs()
+    presentation(one)
+    const mine = tabOn(one)
+    change(mine, () => (mine.element('a').left = 300))
+    const added = addedElement(mine)
+    setElement(other, added, { rotation: 45 })
+
+    mine.deck.undo()
+    mine.deck.undo()
+
+    expect(mine.steps.map((step) => step.isBlocked)).toEqual([true, false])
+    expect(leftOf(one, 'a')).toBe(1)
+    expect(saved(one, added)!.get('rotation')).toBe(45)
+  })
+
+  it('blocks the undo of a slide a co-editor added an element to', () => {
+    const { one, other } = twoTabs()
+    presentation(one)
+    const mine = tabOn(one)
+    change(mine, () =>
+      mine.store.slides.push({ clientId: 'made', background: '#222222FF', elements: [] }),
+    )
+    const madeId = mine.store.slides.at(-1)!.clientId
+    const theirs = addElement(other, madeId, { type: 'image' })
+
+    mine.deck.undo()
+
+    expect(mine.steps[0]).toMatchObject({ isBlocked: true, slideId: madeId })
+    expect(slideIds(one)).toContain(madeId)
+    expect(elementIds(one, madeId)).toEqual([theirs])
+  })
+
+  it('still undoes an insertion nobody else touched', () => {
+    const { one } = twoTabs()
+    presentation(one)
+    const mine = tabOn(one)
+    addedElement(mine)
+
+    mine.deck.undo()
+
+    expect(mine.steps[0]).toMatchObject({ isBlocked: false })
+    expect(elementIds(one, 's2')).toEqual(['c'])
   })
 })
 

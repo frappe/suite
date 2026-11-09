@@ -1,3 +1,7 @@
+import { Editor } from '@tiptap/core'
+import { Document } from '@tiptap/extension-document'
+import { Paragraph } from '@tiptap/extension-paragraph'
+import { Text } from '@tiptap/extension-text'
 import { fromAny, fromPartial } from '@total-typescript/shoehorn'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref, type Component } from 'vue'
@@ -54,7 +58,8 @@ const { keepRecovery, readRecovery, removeNewestRecovery } = await import('./rec
 const { toast, useKeyboardShortcut } = await import('frappe-ui')
 const { changeSlideInSlideshow } = await import('@/apps/slides/stores/slideshow')
 const { router: slidesRouter } = await import('@/apps/slides/router')
-const { setActiveElements } = await import('@/apps/slides/stores/element')
+const { focusElementId, setActiveElements } = await import('@/apps/slides/stores/element')
+const { activeEditor } = await import('@/apps/slides/composables/useTextEditor')
 const { convertLegacy } = await import('@/apps/slides/collab/conversion')
 const { addSlide, deleteSlide } = await import('@/apps/slides/collab/deck')
 
@@ -549,6 +554,52 @@ describe('a deck on the content layer', () => {
     await vi.waitFor(() => expect(viewOnly.value).toBe(false))
   })
 
+  describe('with a text editor open when the room stops taking writes', () => {
+    let editor: Editor
+
+    async function openedWithEditor(focusedId: string | null) {
+      const room = roomOf('one')
+      collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
+      mounted = await openedSurface({ deck: { is_converted: true } })
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+      await vi.waitFor(() => expect(viewOnly.value).toBe(false))
+      editor = new Editor({ extensions: [Document, Paragraph, Text] })
+      activeEditor.value = editor
+      focusElementId.value = focusedId
+      return room
+    }
+
+    afterEach(() => {
+      focusElementId.value = null
+      activeEditor.value = null
+      editor.destroy()
+    })
+
+    it('stops the editor taking typing, and lets it type again afterwards', async () => {
+      const room = await openedWithEditor('e1')
+
+      room.setStatus({ canWrite: false, pauseReason: 'server' })
+      await vi.waitFor(() => expect(viewOnly.value).toBe(true))
+      expect(editor.isEditable).toBe(false)
+
+      room.setStatus({ canWrite: true, pauseReason: null })
+      await vi.waitFor(() => expect(viewOnly.value).toBe(false))
+      expect(editor.isEditable).toBe(true)
+    })
+
+    it('leaves an element that was only selected out of text editing afterwards', async () => {
+      const room = await openedWithEditor(null)
+      editor.setEditable(false)
+
+      room.setStatus({ canWrite: false, pauseReason: 'server' })
+      await vi.waitFor(() => expect(viewOnly.value).toBe(true))
+      room.setStatus({ canWrite: true, pauseReason: null })
+      await vi.waitFor(() => expect(viewOnly.value).toBe(false))
+
+      expect(editor.isEditable).toBe(false)
+    })
+  })
+
   it('edits a converted presentation that another tab has open, with no lock between them', async () => {
     // ifAvailable with another tab holding the lock: granted nothing
     vi.stubGlobal('navigator', {
@@ -735,8 +786,7 @@ describe('Slides offline copy', () => {
 
     async function openedComposite() {
       mounted = await openedSurface({ composite: groups })
-      const root = mounted.root
-      await vi.waitFor(() => expect(root.textContent).toContain('1 · ready'))
+      await vi.waitFor(() => expect(fromAny(editorSlides.value)[0]?.name).toBe('a1'))
       await nextTick()
     }
 
@@ -946,8 +996,10 @@ describe('Slides offline copy', () => {
       })
 
       mounted = await opening
-      const root = mounted.root
-      await vi.waitFor(() => expect(root.textContent).toContain('2 · failed'), { timeout: 5000 })
+      await vi.waitFor(
+        () => expect(fromAny(editorSlides.value)[1]?.compositePlaceholder).toBe('failed'),
+        { timeout: 5000 },
+      )
       await new Promise((resolve) => setTimeout(resolve, 50))
 
       expect(deleted).toEqual([])

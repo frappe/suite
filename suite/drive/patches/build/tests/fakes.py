@@ -942,6 +942,8 @@ class FakeContentTarget:
         self.locked_content_roots = []
         self.docshares_deleted = []
         self.purged_documents = []
+        self.unsaved_share_counts = None
+        self.saved_share_counts = None
 
     def nodes(self, names):
         return {name: dict(self.node_rows[name]) for name in names if name in self.node_rows}
@@ -1229,9 +1231,16 @@ class FakeContentTarget:
     def versions_to_thin(self, report_at):
         return self.thin_count
 
+    def save_docshare_counts(self, dropped, deleted):
+        self.unsaved_share_counts = (dropped, deleted)
+
+    def docshare_counts(self):
+        return self.saved_share_counts
+
     def commit(self):
         self.commits += 1
         self.drive.commit()
+        self.saved_share_counts = self.unsaved_share_counts
 
     def _insert_unique(self, destination, rows, label, *, unique=()):
         for row in rows:

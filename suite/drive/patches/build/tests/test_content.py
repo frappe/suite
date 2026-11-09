@@ -123,6 +123,7 @@ class StopAtShareCommit(FakeContentTarget):
         if reached and not self.committed_first:
             self.content.share_rows = list(self.shares_at_last_commit)
             self.docshares_deleted.remove(share)
+            self.unsaved_share_counts = self.saved_share_counts
             raise InterruptedRun(share)
 
         super().commit()
@@ -1009,6 +1010,23 @@ class ContentTest(unittest.TestCase):
         self.assertEqual(source.share_rows, [])
         self.assertEqual(result.docshare_rows_dropped, 2)
         self.assertEqual(result.docshare_rows_deleted, 2)
+
+    def test_a_row_recreated_after_a_committed_batch_adds_to_its_counts(self):
+        row, source = self.presentation_shares()
+        first_share = source.share_rows[0]
+        target = StopAtShareCommit("share-1", committed=True, content=source)
+        env, target = self.environment(source, target)
+        add_document_node(target, "file-1", row)
+
+        with self.assertRaises(InterruptedRun):
+            link_content_documents(env, batch_size=2)
+
+        source.share_rows.insert(0, first_share)
+        result = link_content_documents(env, batch_size=2)
+
+        self.assertEqual(source.share_rows, [])
+        self.assertEqual(result.docshare_rows_dropped, 3)
+        self.assertEqual(result.docshare_rows_deleted, 3)
 
     def test_a_stop_after_the_share_commit_keeps_its_counts(self):
         self.assert_restart_counts_each_share_once(stop_share="share-1", committed=True)

@@ -29,7 +29,6 @@ export interface CompositeAnswer extends CompositeReference {
 export type CompositeItem = ManifestReference & {
   status: 'loading' | 'ready' | 'unreadable' | 'failed'
   answer?: CompositeAnswer
-  group?: number
 }
 interface CompositeGroupResponse {
   references: CompositeAnswer[]
@@ -53,7 +52,6 @@ function statusOf(answer: CompositeAnswer | undefined): CompositeItem['status'] 
 
 export class CompositeGroupLoader {
   readonly items: CompositeItem[]
-  private groups: LoadGroup[] = []
   constructor(
     private readonly manifest: CompositeManifest,
     private readonly grouper: Grouper,
@@ -71,19 +69,12 @@ export class CompositeGroupLoader {
       }))
   }
   async load(): Promise<readonly CompositeItem[]> {
-    this.groups = []
+    const groups: LoadGroup[] = []
     for (let start = 0; start < this.items.length; start += this.manifest.group_limit) {
-      this.groups.push(...this.split(this.items.slice(start, start + this.manifest.group_limit)))
+      groups.push(...this.split(this.items.slice(start, start + this.manifest.group_limit)))
     }
-    await Promise.all(this.groups.map((_group, index) => this.loadGroup(index)))
+    await Promise.all(groups.map((group) => this.loadGroup(group)))
     return this.items
-  }
-  async retry(group: number): Promise<void> {
-    for (const item of this.items) {
-      if (item.group === group) item.status = 'loading'
-    }
-    this.changed(this.items)
-    await this.loadGroup(group)
   }
 
   /**
@@ -118,9 +109,7 @@ export class CompositeGroupLoader {
     }
     return groups
   }
-  private async loadGroup(groupIndex: number): Promise<void> {
-    const group = this.groups[groupIndex]
-    if (!group) return
+  private async loadGroup(group: LoadGroup): Promise<void> {
     try {
       const response = await this.request(group.references, group.context)
       const answers = new Map(response.references.map((row) => [row.reference, row]))
@@ -128,7 +117,6 @@ export class CompositeGroupLoader {
         const item = this.items.find((candidate) => candidate.reference === reference)
         if (!item) continue
         const answer = answers.get(reference)
-        item.group = groupIndex
         item.answer = answer
         item.status = statusOf(answer)
       }
@@ -136,7 +124,6 @@ export class CompositeGroupLoader {
       for (const reference of group.references) {
         const item = this.items.find((candidate) => candidate.reference === reference)
         if (!item) continue
-        item.group = groupIndex
         item.status = 'failed'
       }
     }

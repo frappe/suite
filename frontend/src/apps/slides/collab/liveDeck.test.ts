@@ -227,6 +227,31 @@ describe('pushing the store into the live document', () => {
     expect(['a', 'b', 'c'].filter((id) => after[id] !== before[id])).toEqual([moved])
   })
 
+  it('bringing two selected elements forward writes orders on those two alone', () => {
+    const doc = new Y.Doc()
+    writeDeck(doc, [
+      {
+        id: 's1',
+        elements: ['a', 'b', 'c'].map((id) => ({ id, type: 'image', frame: { left: 1 } })),
+      },
+    ])
+    const tab = tabOn(doc, { selected: ['a', 'b'] })
+    const orders = () => {
+      const elements = doc.getMap<Y.Map<unknown>>(ROOT.elements)
+      return Object.fromEntries(['a', 'b', 'c'].map((id) => [id, elements.get(id)!.get('order')]))
+    }
+    const before = orders()
+
+    for (const [id, zIndex] of Object.entries({ c: 1, a: 2, b: 3 })) {
+      tab.element(id).zIndex = zIndex
+    }
+    tab.deck.push()
+
+    const after = orders()
+    expect(elementIds(doc, 's1')).toEqual(['c', 'a', 'b'])
+    expect(['a', 'b', 'c'].filter((id) => after[id] !== before[id])).toEqual(['a', 'b'])
+  })
+
   it('moving one element writes an order on that element alone', () => {
     const doc = new Y.Doc()
     presentation(doc)

@@ -132,12 +132,12 @@ describe('Writer surface', () => {
   })
 
   it('names the reason a document was refused when the server gives one', async () => {
-    oldDocument('Old text', { state: 'refused', reason: 'unknown_node: mystery' })
+    oldDocument('Old text', { state: 'refused', reason: 'check: copy' })
     const root = await openedSurface()
 
     await vi.waitFor(() =>
       expect(stripTexts(root)).toEqual([
-        "This document couldn't be upgraded, so it stays read-only. Reason: unknown_node: mystery.",
+        "This document couldn't be upgraded, so it stays read-only. Reason: the upgraded version didn't match the original.",
       ]),
     )
   })

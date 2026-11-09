@@ -23,6 +23,8 @@ type HeldItem = { kind: Kind; id: string; fields: Fields }
 /** The ids a step will bring back, with the item each was when it was deleted. */
 type GoneItems = Map<string, Y.AbstractType<unknown> | null>
 
+type Step = Y.UndoManager['undoStack'][number]
+
 export type StepDirection = 'undo' | 'redo'
 
 function noItems(): StepItems {
@@ -46,6 +48,30 @@ function setMissing(item: Y.Map<unknown>, fields: Fields) {
 function isHeldForUndo(item: Y.Item) {
   const deletedParent = item.parent instanceof Y.AbstractType ? item.parent._item : null
   return !!deletedParent?.deleted && deletedParent.keep
+}
+
+// What another tab has written, at any depth, and not since removed
+function holdsOthersWork(type: Y.AbstractType<unknown>, ownClient: number): boolean {
+  const entries = [...type._map.values()]
+  for (let item = type._start; item; item = item.right) {
+    entries.push(item)
+  }
+
+  for (const item of entries) {
+    if (item.deleted) {
+      continue
+    }
+
+    if (item.id.client !== ownClient) {
+      return true
+    }
+
+    if (item.content instanceof Y.ContentType && holdsOthersWork(item.content.type, ownClient)) {
+      return true
+    }
+  }
+
+  return false
 }
 
 export function openLiveUndo(doc: Y.Doc, trackedOrigins: unknown[]) {
@@ -231,6 +257,43 @@ export function openLiveUndo(doc: Y.Doc, trackedOrigins: unknown[]) {
     heldAfterDelete = stillGone
   }
 
+  function slideHoldsOthersWork(slideId: string) {
+    for (const [id, element] of roots.elements) {
+      if (element.get('parent') !== slideId) {
+        continue
+      }
+
+      const entry = roots.elements._map.get(id)
+      if (entry?.id.client !== doc.clientID || holdsOthersWork(element, doc.clientID)) {
+        return true
+      }
+    }
+
+    return false
+  }
+
+  /** Running this step would remove something it inserted that a co-editor has since built on (Q36). */
+  function wouldRemoveOthersWork(step: Step, items: StepItems) {
+    for (const kind of ['slides', 'elements'] as const) {
+      for (const id of items[kind].keys()) {
+        const entry = roots[kind]._map.get(id)
+        const item = roots[kind].get(id)
+        if (!entry || !item || !Y.isDeleted(step.insertions, entry.id)) {
+          continue
+        }
+
+        if (
+          holdsOthersWork(item, doc.clientID) ||
+          (kind === 'slides' && slideHoldsOthersWork(id))
+        ) {
+          return true
+        }
+      }
+    }
+
+    return false
+  }
+
   /** Takes one step off the stack. Null when there is none to take. */
   function take(direction: StepDirection) {
     const [from, to] =
@@ -244,6 +307,15 @@ export function openLiveUndo(doc: Y.Doc, trackedOrigins: unknown[]) {
 
     // SAFETY: `fileItems` runs for every step that reaches either stack
     const items = top.meta.get(ITEMS) as StepItems
+    if (wouldRemoveOthersWork(top, items)) {
+      manager[from] = manager[from].slice(0, -1)
+      return {
+        isBlocked: true,
+        slideIds: [...items.slides.keys()],
+        elementIds: [...items.elements.keys()],
+      }
+    }
+
     const wasGone: GoneItems = new Map()
     for (const kind of ['slides', 'elements'] as const) {
       keep(kind, items[kind].keys())

@@ -35,9 +35,10 @@ import Toolbar from '@/apps/slides/components/Toolbar.vue'
 import { useCommandHistory } from '@/apps/slides/composables/useCommandHistory'
 import { useNavigationPanel } from '@/apps/slides/composables/useNavigationPanel'
 import { useShortcuts } from '@/apps/slides/composables/useShortcuts'
+import { activeEditor } from '@/apps/slides/composables/useTextEditor'
 import { setDocumentMedia } from '@/apps/slides/stores/documentMedia'
 import { acquireEditLock, lockedElsewhere, releaseEditLock } from '@/apps/slides/stores/editLock'
-import { flushPendingBlur, resetFocus } from '@/apps/slides/stores/element'
+import { flushPendingBlur, focusElementId, resetFocus } from '@/apps/slides/stores/element'
 import {
   actionOrder as historyMetaActionOrder,
   actions as historyMetaActions,
@@ -142,7 +143,6 @@ const presentedSlide = computed(() => Math.max(1, Math.trunc(Number(route.query.
 const online = ref(typeof navigator === 'undefined' ? true : navigator.onLine)
 const composite = ref(false)
 const compositeItems = ref<CompositeItem[]>([])
-const compositeLoader = ref<CompositeGroupLoader | null>(null)
 const panel = ref<Panel | null>(null)
 const threads = ref<CommentThread[]>([])
 const panelLoading = ref(false)
@@ -358,6 +358,10 @@ watch(
   editable,
   (canEdit) => {
     viewOnly.value = !canEdit
+    // Only an element being typed in was editable, so only that one becomes so again
+    if (!canEdit || focusElementId.value) {
+      activeEditor.value?.setEditable(canEdit)
+    }
   },
   {
     immediate: true,
@@ -514,7 +518,6 @@ async function loadComposite() {
       if (merged.length) setSlideIndex((place ? indexOfPlace(shown, place) : 0) + 1)
     },
   )
-  compositeLoader.value = loader
   compositeItems.value = loader.items.map((item) => ({
     ...item,
   }))
@@ -955,29 +958,6 @@ onBeforeUnmount(() => {
         @click="heldNotice.reload"
       />
     </SurfaceNotice>
-
-    <div
-      v-if="compositeItems.length && access.readable.value"
-      class="absolute bottom-3 left-1/2 z-20 flex max-w-[70%] -translate-x-1/2 gap-1 rounded-6 border border-outline-gray-1 bg-surface-elevation-2 p-2 shadow-2xl"
-    >
-      <button
-        v-for="item in compositeItems"
-        :key="item.reference"
-        type="button"
-        class="rounded-4 px-2 py-1 text-xs leading-tighter"
-        :class="
-          item.status === 'ready'
-            ? 'bg-surface-green-2 text-ink-green-7'
-            : item.status === 'loading'
-              ? 'bg-surface-gray-2 text-ink-gray-6'
-              : 'bg-surface-amber-2 text-ink-amber-7'
-        "
-        :disabled="item.status !== 'failed'"
-        @click="item.group !== undefined && compositeLoader?.retry(item.group)"
-      >
-        {{ item.index }} · {{ item.status }}
-      </button>
-    </div>
 
     <aside
       v-if="panel === 'comments'"

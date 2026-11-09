@@ -980,6 +980,12 @@ class ContentTarget(Protocol):
         10 owns the rows on the content doctypes and their history tables,
         step 6 owns the Sheet rows."""
 
+    def save_docshare_counts(self, dropped: int, deleted: int) -> None:
+        """Hold step 10's DocShare totals in the open transaction, to land with its batch."""
+
+    def docshare_counts(self) -> tuple[int, int] | None:
+        """Read the dropped and deleted totals of the last committed batch, if one was."""
+
     def purge_content_document(self, doctype: str, docname: str) -> None:
         """Purge one content document through the app's registered `on_purge`.
 
@@ -1873,8 +1879,29 @@ WRITER_DOCUMENT_COLUMNS = (
 )
 
 
+# In `tabSingles` because it has to land in the commit of the rows it counts. No DocType owns it
+DOCSHARE_COUNTS = ("Drive Build State", "docshare_counts")
+
+
 class SiteContentTarget:
     """`ContentTarget` over the real target and content tables."""
+
+    def save_docshare_counts(self, dropped: int, deleted: int) -> None:
+        doctype, field = DOCSHARE_COUNTS
+        key = {"doctype": doctype, "field": field}
+        frappe.db.sql("DELETE FROM `tabSingles` WHERE `doctype` = %(doctype)s AND `field` = %(field)s", key)
+        frappe.db.sql(
+            "INSERT INTO `tabSingles` (`doctype`, `field`, `value`) VALUES (%(doctype)s, %(field)s, %(value)s)",
+            {**key, "value": f"{dropped},{deleted}"},
+        )
+
+    def docshare_counts(self) -> tuple[int, int] | None:
+        saved = legacy_single_value(*DOCSHARE_COUNTS)
+        if saved is None:
+            return None
+
+        dropped, deleted = saved.split(",")
+        return int(dropped), int(deleted)
 
     def nodes(self, names: tuple[str, ...]) -> dict[str, dict]:
         if not names:

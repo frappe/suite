@@ -10,7 +10,7 @@ import * as Y from 'yjs'
 
 import type { RoomPresence } from '@/platform/collab'
 
-import { isCoEditorChange, isReceivedChange, liveTextExtensions } from './liveText'
+import { isReceivedChange, liveTextExtensions } from './liveText'
 
 function boundEditor(fragment: Y.XmlFragment, seen: Transaction[]) {
   const sync: AnyExtension = Document.extend({
@@ -114,33 +114,5 @@ describe('isReceivedChange', () => {
     const changes = seen.filter((transaction) => transaction.docChanged)
     expect(changes.length).toBeGreaterThan(0)
     expect(changes.some(isReceivedChange)).toBe(false)
-  })
-})
-
-describe('isCoEditorChange', () => {
-  const changesIn = (seen: Transaction[]) => seen.filter((transaction) => transaction.docChanged)
-
-  it('is true for what arrives from someone else', () => {
-    const doc = new Y.Doc()
-    const seen: Transaction[] = []
-    editorWithUndo(doc, seen)
-    seen.length = 0
-
-    typeIn(doc.getXmlFragment('text'), 'from a co-editor')
-
-    expect(changesIn(seen).length).toBeGreaterThan(0)
-    expect(changesIn(seen).every(isCoEditorChange)).toBe(true)
-  })
-
-  it("is false for this tab's own undo, which also comes through the live document", () => {
-    const seen: Transaction[] = []
-    const { undoManager, editor } = editorWithUndo(new Y.Doc(), seen)
-    editor.commands.insertContent('mine')
-    seen.length = 0
-
-    undoManager.undo()
-
-    expect(changesIn(seen).length).toBeGreaterThan(0)
-    expect(changesIn(seen).some(isCoEditorChange)).toBe(false)
   })
 })

@@ -197,13 +197,11 @@ function writeOrder(
 ) {
   const inDocument = new Set(current)
   const present = wanted.filter((id) => inDocument.has(id))
-  const fewest = alreadyInOrder(present, current)
-  // Orders alone can't tell which of two neighbours moved. The selection can (Q17)
-  const notSelected = alreadyInOrder(
-    present.filter((id) => !isSelected(id)),
-    current,
-  )
-  const staying = notSelected.size === fewest.size ? notSelected : fewest
+  const others = present.filter((id) => !isSelected(id))
+  const notSelected = alreadyInOrder(others, current)
+  // Orders alone can't tell what moved. While the others keep their order, the selected did (Q17)
+  const staying =
+    notSelected.size === others.length ? notSelected : alreadyInOrder(present, current)
   let previous: string | null = null
   for (const id of present) {
     if (!staying.has(id)) {

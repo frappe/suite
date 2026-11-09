@@ -103,5 +103,5 @@ export const noteTextReceived = () => {
 
 export const isTextEditedHere = () => textEditedHere
 
-/** False once a co-editor's change is the newest thing in the open editor. */
+/** False once a co-editor's change or this tab's own undo is the newest thing in the open editor. */
 export const wasLastTextChangeHere = () => lastTextChangeHere
