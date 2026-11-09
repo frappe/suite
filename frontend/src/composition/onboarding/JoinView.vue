@@ -14,26 +14,19 @@
   asks for it again.
 -->
 <script setup lang="ts">
-import { Avatar, Button, ErrorMessage, FormControl } from 'frappe-ui'
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { Avatar, Button } from 'frappe-ui'
+import { computed, reactive, ref, useTemplateRef, watch } from 'vue'
 
-import { api, client, useMutation, useQuery } from '@/api'
-import { toast } from '@/platform/feedback'
+import { api, useMutation, useQuery } from '@/api'
 import { useSession } from '@/platform/session'
-import { TransportError } from '@/platform/transport'
 import SuiteMark from '@/shell/SuiteMark.vue'
 
-import {
-  browserAccountDefaults,
-  daysUntil,
-  firstName,
-  isEmail,
-  isTeammate,
-  MOD_KEY,
-  splitName,
-} from './onboarding'
+import AccountSetupStep from './AccountSetupStep.vue'
+import { daysUntil, firstName, isTeammate, MOD_KEY } from './onboarding'
 import OnboardingFrame from './OnboardingFrame.vue'
+import PasswordStep from './PasswordStep.vue'
 import ShortcutStep from './ShortcutStep.vue'
+import SignInStep from './SignInStep.vue'
 import WorkspaceMark from './WorkspaceMark.vue'
 
 type Step =
@@ -76,7 +69,7 @@ watch(
       startedFor = requestKey
       step.value = 'loading'
       arrival.value = 'signed-in'
-      signin.email = ''
+      signinEmail.value = ''
     }
     if (step.value !== 'loading') return
     if (session.status.value === 'loading') return
@@ -94,7 +87,7 @@ watch(
     const data = invitation.value
     if (data?.is_verified) {
       // Accepted already: sign in with the business address.
-      signin.email = data.account ?? ''
+      signinEmail.value = data.account ?? ''
       arrival.value = 'temporary-password'
       step.value = 'signin'
     } else if (!data || data.is_expired || !(data.account || data.backup_email)) {
@@ -110,7 +103,7 @@ watch(
 function startSignedIn(): void {
   const user = session.user.value
   if (user?.must_change_password === true) {
-    // After a reload: the sign-in is behind them, so the track counts from the password.
+    // Also after a reload, when the sign-in is behind them: the track counts from the password.
     arrival.value = 'temporary-password'
     step.value = 'password'
   } else if (user?.needs_welcome === true) {
@@ -134,175 +127,24 @@ function back(): void {
 
 // The account, from an invitation
 const account = reactive({ fullName: '', password: '' })
-type SetupStage = 'drive' | 'mailbox' | 'account'
-type RowState = 'waiting' | 'working' | 'done' | 'failed'
-const STAGES: readonly SetupStage[] = ['drive', 'mailbox', 'account']
-/** The stage a setup error names, or nothing for an error before setup began. */
-function failedStage(type: string): SetupStage | undefined {
-  if (type === 'DriveSetupFailed') return 'drive'
-  if (type === 'MailboxSetupFailed') return 'mailbox'
-  if (type === 'AccountActivationFailed') return 'account'
-  return undefined
-}
-/** `signin-failed`: the account exists, but signing in to it did not work, so only that is retried. */
-const setupState = ref<'idle' | 'working' | 'failed' | 'ready' | 'signin-failed'>('idle')
-const rows = reactive<Record<SetupStage, RowState>>({
-  drive: 'waiting',
-  mailbox: 'waiting',
-  account: 'waiting',
-})
-const accountError = ref('')
-const createAccount = useMutation(api.mail.public.createAccount, { silent: true })
-// Signing in refetches queries, and the used invitation then reads as expired, so stop once set up.
-const accountOptions = useQuery(api.mail.public.accountOptions, () =>
-  step.value === 'account' && ['idle', 'working', 'failed'].includes(setupState.value) && requestKey
-    ? { request_key: requestKey }
-    : false,
-)
+const accountStep = useTemplateRef<InstanceType<typeof AccountSetupStep>>('accountStep')
+const setupState = computed(() => accountStep.value?.state ?? 'idle')
 const retrying = computed(() => ['failed', 'signin-failed'].includes(setupState.value))
-const accountReady = computed(() => !!account.fullName.trim() && account.password.length >= 8)
-let pacing: ReturnType<typeof setTimeout> | undefined
-onBeforeUnmount(() => clearTimeout(pacing))
 
-/**
- * The whole setup is one request, so the rows advance on a timer while it runs.
- * The last row waits for the answer, and a failure marks the stage that failed.
- */
-function paceRows(from: number): void {
-  STAGES.forEach((stage, position) => {
-    if (position >= from) rows[stage] = position === from ? 'working' : 'waiting'
-  })
-  if (from >= STAGES.length - 1) return
-  pacing = setTimeout(() => {
-    if (setupState.value !== 'working') return
-    rows[STAGES[from]!] = 'done'
-    paceRows(from + 1)
-  }, 800)
-}
+// Signing in with a temporary password, which stays in memory for the password step
+const signinEmail = ref('')
+const temporaryPassword = ref('')
 
-async function submitAccount(): Promise<void> {
-  if (!requestKey || !invitation.value) return
-  accountError.value = ''
-  setupState.value = 'working'
-  const resumeAt = Math.max(
-    0,
-    STAGES.findIndex((stage) => rows[stage] !== 'done'),
-  )
-  paceRows(resumeAt)
-  try {
-    await createAccount.run({
-      request_key: requestKey,
-      ...splitName(account.fullName),
-      password: account.password,
-      ...browserAccountDefaults(accountOptions.data),
-    })
-  } catch (error) {
-    clearTimeout(pacing)
-    const failed = error instanceof TransportError ? failedStage(error.type) : undefined
-    if (!failed) {
-      // A refusal of what was typed, such as a weak password: back to the form.
-      setupState.value = 'idle'
-      for (const stage of STAGES) rows[stage] = 'waiting'
-      accountError.value = error instanceof Error ? error.message : String(error)
-      return
-    }
-    const failedAt = STAGES.indexOf(failed)
-    STAGES.forEach((stage, position) => {
-      rows[stage] = position < failedAt ? 'done' : position === failedAt ? 'failed' : 'waiting'
-    })
-    setupState.value = 'failed'
-    return
-  }
-  clearTimeout(pacing)
-  for (const stage of STAGES) rows[stage] = 'done'
-  await signInToAccount()
-}
-
-async function signInToAccount(): Promise<void> {
-  accountError.value = ''
-  setupState.value = 'ready'
-  try {
-    await session.login(invitation.value?.account ?? '', account.password)
-  } catch (error) {
-    // The invitation is used now, so creating the account again would fail: retry the sign-in only.
-    accountError.value = error instanceof Error ? error.message : String(error)
-    setupState.value = 'signin-failed'
-    return
-  }
-  account.password = ''
-  next()
-}
-
-const rowLabels = computed<Record<SetupStage, { label: string; detail: string }>>(() => ({
-  drive: { label: __('Drive'), detail: __('Your personal files') },
-  mailbox: { label: __('Mailbox'), detail: invitation.value?.account ?? '' },
-  account: { label: __('Account'), detail: __('Joining {0}', [workspaceName.value]) },
-}))
-const ROW_ICONS: Readonly<Record<RowState, string>> = {
-  waiting: 'lucide-circle text-ink-gray-3',
-  working: 'lucide-loader-circle animate-spin text-ink-gray-6',
-  done: 'lucide-circle-check text-ink-green-5',
-  failed: 'lucide-circle-x text-ink-red-4',
-}
-
-// Signing in with a temporary password
-const signin = reactive({ email: '', password: '' })
-const signingIn = ref(false)
-const signinError = ref('')
-let temporaryPassword = ''
-
-async function submitSignin(): Promise<void> {
-  signingIn.value = true
-  signinError.value = ''
-  try {
-    await session.login(signin.email.trim(), signin.password)
-  } catch (error) {
-    signinError.value = error instanceof Error ? error.message : String(error)
-    return
-  } finally {
-    signingIn.value = false
-  }
-  temporaryPassword = signin.password
-  signin.password = ''
-  const user = session.user.value
-  if (user?.must_change_password === true) {
-    step.value = 'password'
-  } else if (user?.needs_welcome === true) {
-    step.value = 'shortcut'
-  } else {
-    window.location.replace('/home')
-  }
+function onSignedIn(password: string): void {
+  temporaryPassword.value = password
+  startSignedIn()
 }
 
 // Choosing their own password
-const passwordForm = reactive({ temporary: '', password: '', backupEmail: '' })
-const needsTemporary = computed(() => step.value === 'password' && !temporaryPassword)
-const passwordReady = computed(
-  () =>
-    passwordForm.password.length >= 8 &&
-    (!needsTemporary.value || !!passwordForm.temporary) &&
-    (!passwordForm.backupEmail.trim() || isEmail(passwordForm.backupEmail)),
-)
-const changePassword = useMutation(api.suite.account.changePassword, { silent: true })
-const saveCredentials = useMutation(api.mail.settings.updateCredentials, { silent: true })
+const passwordStep = useTemplateRef<InstanceType<typeof PasswordStep>>('passwordStep')
 
-async function submitPassword(): Promise<void> {
-  await changePassword.run({
-    old_password: temporaryPassword || passwordForm.temporary,
-    new_password: passwordForm.password,
-  })
-  temporaryPassword = ''
-  passwordForm.temporary = passwordForm.password = ''
-  await session.refresh()
-  const backupEmail = passwordForm.backupEmail.trim()
-  if (backupEmail) {
-    try {
-      const credentials = await client.query(api.mail.settings.credentials)
-      await saveCredentials.run({ username: credentials.username, backup_email: backupEmail })
-    } catch {
-      toast.error(__('Your password is saved, but the backup email is not. Add it in Settings.'))
-    }
-  }
+function onPasswordSaved(): void {
+  temporaryPassword.value = ''
   next()
 }
 
@@ -495,42 +337,13 @@ const copy = computed(() => {
         </p>
       </template>
 
-      <form
+      <SignInStep
         v-else-if="step === 'signin'"
-        class="enter mt-8 flex w-full flex-col gap-4"
+        class="enter mt-8"
         style="--delay: 0.2s"
-        @submit.prevent="submitSignin"
-      >
-        <FormControl
-          v-model="signin.email"
-          type="email"
-          variant="outline"
-          :label="__('Email')"
-          autocomplete="username"
-          :autofocus="!signin.email"
-        />
-        <FormControl
-          v-model="signin.password"
-          type="password"
-          variant="outline"
-          :label="__('Password')"
-          autocomplete="current-password"
-          :autofocus="!!signin.email"
-        />
-        <ErrorMessage :message="signinError" />
-        <Button
-          class="mt-2 w-full"
-          type="submit"
-          variant="solid"
-          size="md"
-          :label="__('Sign in')"
-          :loading="signingIn"
-          :disabled="!isEmail(signin.email) || !signin.password"
-        />
-        <p class="text-center text-sm text-ink-gray-5">
-          {{ __('Lost it? Ask your Admin for a new temporary password.') }}
-        </p>
-      </form>
+        :email="signinEmail"
+        @signed-in="onSignedIn"
+      />
 
       <div v-else class="enter mt-8 flex w-full flex-col gap-2" style="--delay: 0.2s">
         <Button
@@ -571,120 +384,25 @@ const copy = computed(() => {
       <WorkspaceMark :name="workspaceName" :logo="workspaceLogo" />
     </template>
 
-    <template v-if="step === 'account'">
-      <form
-        v-if="setupState === 'idle'"
-        class="flex flex-col gap-4"
-        @submit.prevent="accountReady && submitAccount()"
-      >
-        <div class="flex items-center gap-3 rounded-5 bg-surface-gray-2 px-3 py-2.5">
-          <span class="lucide-at-sign size-4 shrink-0 text-ink-gray-5" aria-hidden="true" />
-          <div class="min-w-0 flex-1">
-            <p class="truncate text-base text-ink-gray-8">{{ invitation?.account }}</p>
-            <p class="text-sm text-ink-gray-5">
-              {{
-                inviter
-                  ? __('Your work email, chosen by {0}', [firstName(inviter)])
-                  : __('Your work email')
-              }}
-            </p>
-          </div>
-        </div>
-        <FormControl
-          v-model="account.fullName"
-          type="text"
-          variant="outline"
-          :label="__('Your name')"
-          autocomplete="name"
-        />
-        <FormControl
-          v-model="account.password"
-          type="password"
-          variant="outline"
-          :label="__('Password')"
-          autocomplete="new-password"
-          :description="__('At least 8 characters. You sign in to Suite and mail apps with it.')"
-        />
-        <div class="flex items-start gap-2 rounded-4 bg-surface-gray-2 px-3 py-2.5">
-          <span
-            class="lucide-life-buoy mt-0.5 size-4 shrink-0 text-ink-gray-5"
-            aria-hidden="true"
-          />
-          <p class="text-p-sm text-ink-gray-6">
-            {{
-              __('Forgot it? We send a reset link to {0}, where your invitation arrived.', [
-                invitation?.backup_email ?? '',
-              ])
-            }}
-          </p>
-        </div>
-        <ErrorMessage :message="accountError" />
-        <button type="submit" class="hidden" tabindex="-1" aria-hidden="true" />
-      </form>
-      <div v-else class="flex flex-col gap-3">
-        <ul
-          class="divide-y divide-outline-gray-2 rounded-6 bg-surface-gray-2 px-4"
-          aria-live="polite"
-        >
-          <li v-for="stage in STAGES" :key="stage" class="flex items-center gap-3 py-3">
-            <span class="size-4 shrink-0" :class="ROW_ICONS[rows[stage]]" aria-hidden="true" />
-            <span class="w-16 shrink-0 text-base text-ink-gray-5">
-              {{ rowLabels[stage].label }}
-            </span>
-            <span
-              class="min-w-0 flex-1 truncate text-right text-base"
-              :class="
-                rows[stage] === 'failed'
-                  ? 'text-ink-red-4'
-                  : rows[stage] === 'waiting'
-                    ? 'text-ink-gray-5'
-                    : 'text-ink-gray-8'
-              "
-            >
-              {{ rows[stage] === 'failed' ? __("Couldn't create it") : rowLabels[stage].detail }}
-            </span>
-          </li>
-        </ul>
-        <ErrorMessage :message="accountError" />
-      </div>
-    </template>
+    <AccountSetupStep
+      v-if="step === 'account' && requestKey"
+      ref="accountStep"
+      v-model:full-name="account.fullName"
+      v-model:password="account.password"
+      :request-key="requestKey"
+      :email="invitation?.account ?? ''"
+      :backup-email="invitation?.backup_email ?? ''"
+      :inviter="inviter"
+      :workspace-name="workspaceName"
+      @done="next"
+    />
 
-    <form
+    <PasswordStep
       v-else-if="step === 'password'"
-      class="flex flex-col gap-4"
-      @submit.prevent="passwordReady && submitPassword()"
-    >
-      <FormControl
-        v-if="needsTemporary"
-        v-model="passwordForm.temporary"
-        type="password"
-        variant="outline"
-        :label="__('Temporary password')"
-        autocomplete="current-password"
-      />
-      <FormControl
-        v-model="passwordForm.password"
-        type="password"
-        variant="outline"
-        :label="__('New password')"
-        autocomplete="new-password"
-        :description="__('At least 8 characters. Your temporary password stops working.')"
-      />
-      <FormControl
-        v-model="passwordForm.backupEmail"
-        type="email"
-        variant="outline"
-        :label="__('Backup email (optional)')"
-        :placeholder="'you@gmail.com'"
-        :description="
-          __(
-            'Where we send a reset link if you forget it. Without one, your Admin has to reset it for you.',
-          )
-        "
-      />
-      <ErrorMessage :message="changePassword.error?.message" />
-      <button type="submit" class="hidden" tabindex="-1" aria-hidden="true" />
-    </form>
+      ref="passwordStep"
+      :temporary-password="temporaryPassword"
+      @saved="onPasswordSaved"
+    />
 
     <ShortcutStep
       v-else-if="step === 'shortcut'"
@@ -726,7 +444,7 @@ const copy = computed(() => {
           v-if="step === 'password'"
           variant="ghost"
           :label="__('Sign out')"
-          :disabled="changePassword.isPending"
+          :disabled="passwordStep?.changing"
           @click="signOut"
         />
         <Button
@@ -753,8 +471,8 @@ const copy = computed(() => {
             :label="retrying ? __('Try again') : __('Join {0}', [workspaceName])"
             :icon-right="retrying ? undefined : 'lucide-chevron-right'"
             :loading="setupState === 'working' || setupState === 'ready'"
-            :disabled="!accountReady"
-            @click="setupState === 'signin-failed' ? signInToAccount() : submitAccount()"
+            :disabled="!accountStep?.canSubmit"
+            @click="accountStep?.submit()"
           />
           <Button
             v-else-if="step === 'password'"
@@ -762,9 +480,9 @@ const copy = computed(() => {
             variant="solid"
             :label="__('Save password')"
             icon-right="lucide-chevron-right"
-            :loading="changePassword.isPending || saveCredentials.isPending"
-            :disabled="!passwordReady"
-            @click="submitPassword"
+            :loading="passwordStep?.working"
+            :disabled="!passwordStep?.canSubmit"
+            @click="passwordStep?.submit()"
           />
           <Button
             v-else-if="step === 'shortcut'"
