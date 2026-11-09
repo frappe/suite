@@ -448,13 +448,6 @@
   }
 }
 
-.sn-rename-err {
-  margin: 6px 0 0;
-  font-size: 12px;
-  color: var(--ink-red-6);
-  letter-spacing: 0.02em;
-}
-
 /* Add-more-rows strip — sits between the canvas and the bottom bar. */
 .sn-addrows {
   display: flex;

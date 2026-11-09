@@ -1,14 +1,9 @@
 <template>
-  <!-- Bottom bar: add sheet, the sheet tabs (drag to reorder, chevron for the
-  tab menu, peer dots) and the selection's Count / Sum / Avg. -->
+  <!-- Bottom bar: add sheet, the sheet tabs (right-click for the tab menu, drag to
+  reorder, double-click to rename, peer dots) and the selection's Count / Sum / Avg. -->
   <div class="sn-bottom">
-    <!-- Pinned outside the scroll track so it stays reachable no matter
-       how many tabs there are. The wrapper owns the divider + margins so
-       the Button itself stays a clean square pill (frappe-ui puts our
-       `class` on the <button> root, so any spacing/border set on it would
-       become part of the button's own hover box). -->
-    <!-- Add-sheet is a mutation, so viewers don't get it — hide the whole
-       wrapper (button + its divider) rather than leave a dead, greyed pill. -->
+    <!-- Pinned outside the scroll track so it stays reachable no matter how
+       many tabs there are. Add-sheet is a mutation, so viewers don't get it. -->
     <div v-if="!readOnly" class="sn-tab-add-wrap">
       <Button
         aria-label="Add sheet"
@@ -21,65 +16,81 @@
       />
     </div>
     <div class="sn-tabs-track">
-      <div
-        v-for="name in sheetNames"
-        :key="name"
-        class="sn-tab"
-        :class="{
-          'sn-tab--active': name === currentSheet,
-          'sn-tab--pivot': isPivotSheet(name),
-          'sn-tab-drag-over': tabDragOver === name && tabDragName !== name,
-          'sn-tab--static': readOnly,
-        }"
-        :draggable="!readOnly"
-        @dragstart="emit('drag-start', $event, name)"
-        @dragend="emit('drag-end')"
-        @dragover.prevent="emit('drag-over', $event, name)"
-        @drop.prevent="emit('tab-drop', $event, name)"
-      >
-        <!-- One visual unit: label + chevron share a single pill background
-           so they read as one button. The chevron — the tab-menu affordance
-           — renders only when editable; a viewer has no tab actions, so it
-           would be a dead button. Clicking the label switches sheets. -->
-        <Button
-          variant="ghost"
-          size="sm"
-          :icon-left="isPivotSheet(name) ? 'lucide-layout' : undefined"
-          :label="name"
-          class="sn-tab-btn"
-          @mousedown="emit('tab-mousedown', $event, name)"
-          @click="emit('tab-click', name)"
-          @dblclick="emit('rename', name)"
-          @contextmenu.prevent="emit('tab-menu', $event, name)"
-        />
-        <Button
-          v-if="!readOnly"
-          variant="ghost"
-          size="sm"
-          icon="lucide-chevron-down"
-          class="sn-tab-chevron"
-          :aria-label="`${name} options`"
-          @click.stop="emit('tab-menu', $event, name)"
-        />
-        <!-- Peer dots — one colored circle per peer currently on this
-           tab. Capped at 3 + a "+N" overflow so a busy tab doesn't
-           blow out the tab's width. -->
-        <span v-if="peersBySubSheet.get(name)?.length" class="sn-tab-peers">
-          <span
-            v-for="p in peersBySubSheet.get(name)!.slice(0, 3)"
-            :key="p.user"
-            class="sn-tab-peer-dot sn-peer"
-            :style="colourStyle(p.colour)"
-            :title="p.full_name"
-          />
-          <span
-            v-if="peersBySubSheet.get(name)!.length > 3"
-            class="sn-tab-peer-more"
-            :title="`${peersBySubSheet.get(name)!.length - 3} more`"
-            >+{{ peersBySubSheet.get(name)!.length - 3 }}</span
-          >
-        </span>
-      </div>
+      <!-- Sheets switch on click, so Tabs' own update:model-value is left
+         unused: it fires on mousedown, before the blur that commits an open
+         cell edit, and switchSheet clears the grid. -->
+      <Tabs :key="orderVersion" :model-value="currentSheet">
+        <TabList variant="ghost" size="sm">
+          <template v-for="name in sheetNames" :key="name">
+            <span
+              v-if="tabDragOver === name && tabDragName !== name"
+              class="sn-tab-drop-mark"
+              aria-hidden="true"
+            />
+            <!-- One cell: the trigger sizes it to the name, and the field lies
+               exactly over the trigger. No position of its own, as the sliding
+               highlight measures tabs against the list. -->
+            <span
+              class="sn-tab-cell"
+              :class="{
+                'sn-tab-cell--dragged': tabDragName === name,
+                'sn-tab-cell--pivot': isPivotSheet(name),
+              }"
+              :draggable="!readOnly && !isRenaming(name)"
+              @dragstart="emit('drag-start', $event, name)"
+              @dragend="emit('drag-end')"
+              @dragover.prevent="emit('drag-over', $event, name)"
+              @drop.prevent="emit('tab-drop', $event, name)"
+            >
+              <TabTrigger
+                :value="name"
+                :label="isRenaming(name) ? renamedLabel : name"
+                :icon-left="isPivotSheet(name) ? 'lucide-layout' : undefined"
+                class="sn-tab-trigger"
+                :class="{ 'sn-tab-trigger--renaming': isRenaming(name) }"
+                @mousedown="emit('tab-mousedown', $event, name)"
+                @click="emit('tab-click', name)"
+                @dblclick="!readOnly && startRenaming(name)"
+                @contextmenu.prevent="emit('tab-menu', $event, name)"
+              >
+                <!-- Peer dots — one colored circle per peer currently on this
+                   tab. Capped at 3 + a "+N" overflow so a busy tab doesn't
+                   blow out the tab's width. -->
+                <template v-if="peersBySubSheet.get(name)?.length" #suffix>
+                  <span class="sn-tab-peers">
+                    <span
+                      v-for="p in peersBySubSheet.get(name)!.slice(0, 3)"
+                      :key="p.user"
+                      class="sn-tab-peer-dot sn-peer"
+                      :style="colourStyle(p.colour)"
+                      :title="p.full_name"
+                    />
+                    <span
+                      v-if="peersBySubSheet.get(name)!.length > 3"
+                      class="sn-tab-peer-more"
+                      :title="`${peersBySubSheet.get(name)!.length - 3} more`"
+                      >+{{ peersBySubSheet.get(name)!.length - 3 }}</span
+                    >
+                  </span>
+                </template>
+              </TabTrigger>
+              <input
+                v-if="isRenaming(name)"
+                v-model="renamedLabel"
+                v-on-outside-click="leaveRename"
+                v-select-on-mount
+                class="sn-tab-name-field"
+                :class="{ 'sn-tab-name-field--rejected': renameRejected }"
+                :aria-label="__('Sheet name')"
+                :aria-invalid="renameRejected"
+                @input="renameRejected = false"
+                @keydown.enter="submitRename"
+                @keydown.esc="stopRenaming(true)"
+              />
+            </span>
+          </template>
+        </TabList>
+      </Tabs>
     </div>
 
     <div v-if="selectionStats" class="sn-stats">
@@ -93,15 +104,17 @@
 <script setup lang="ts">
 // The bottom bar, extracted from SheetEditor/index.vue. Tab switching,
 // renaming, reordering and the tab menu stay in the editor; this renders the
-// tabs and reports pointer events back.
-import { Button } from 'frappe-ui'
+// tabs, runs the rename field and reports pointer events back.
+import { Button, TabList, Tabs, TabTrigger, toast, vOnOutsideClick } from 'frappe-ui'
+import { nextTick, ref, watch } from 'vue'
 
 import { colourStyle, type PeerColour } from '@/platform/collab/colours'
+import { translate as __ } from '@/platform/translation'
 
 type Peer = { user: string; full_name: string; colour: PeerColour }
 type SelectionStats = { count: number; sum: number | null; avg: number | null }
 
-defineProps<{
+const props = defineProps<{
   readOnly: boolean
   sheetNames: string[]
   currentSheet: string
@@ -110,6 +123,8 @@ defineProps<{
   tabDragName: string | null
   peersBySubSheet: Map<string, Peer[]>
   selectionStats: SelectionStats | null
+  /** Applies a rename; false when the name can't be used. */
+  renameSheet: (from: string, to: string) => boolean
 }>()
 const emit = defineEmits<{
   'add-sheet': []
@@ -119,9 +134,88 @@ const emit = defineEmits<{
   'tab-drop': [e: DragEvent, name: string]
   'tab-mousedown': [e: MouseEvent, name: string]
   'tab-click': [name: string]
-  rename: [name: string]
+  'rename-end': []
   'tab-menu': [e: MouseEvent, name: string]
 }>()
+
+// The sliding highlight re-measures on a new selection or a size change, and a
+// reorder is neither. Remounting the tabs puts it back on the active sheet.
+const orderVersion = ref(0)
+watch(
+  () => props.sheetNames,
+  (next, prev) => {
+    const reordered =
+      next.length === prev.length &&
+      next.every((name) => prev.includes(name)) &&
+      next.some((name, i) => name !== prev[i])
+    if (reordered) orderVersion.value++
+  },
+)
+
+const renamingName = ref<string | null>(null)
+const renamedLabel = ref('')
+const renameRejected = ref(false)
+// The field waits for the closing menu, whose click would otherwise count as a
+// click outside it.
+const isRenameReady = ref(false)
+
+function isRenaming(name: string) {
+  return renamingName.value === name && isRenameReady.value
+}
+
+const vSelectOnMount = {
+  mounted(input: HTMLInputElement) {
+    input.focus()
+    input.select()
+  },
+}
+
+async function startRenaming(name: string) {
+  if (props.readOnly) return
+  renamingName.value = name
+  renamedLabel.value = name
+  renameRejected.value = false
+  await nextTick()
+  setTimeout(() => (isRenameReady.value = true), 50)
+}
+
+function stopRenaming(refocus: boolean) {
+  renamingName.value = null
+  renamedLabel.value = ''
+  isRenameReady.value = false
+  renameRejected.value = false
+  if (refocus) emit('rename-end')
+}
+
+// False only when the editor turns the name down; a blank or unchanged name
+// simply keeps the old one.
+function applyRename() {
+  const from = renamingName.value
+  const to = renamedLabel.value.trim()
+  return !from || !to || to === from || props.renameSheet(from, to)
+}
+
+// Enter on a taken name leaves the field open, so the name can be fixed.
+function submitRename() {
+  if (applyRename()) {
+    stopRenaming(true)
+    return
+  }
+  renameRejected.value = true
+  toast.error(__('A sheet with this name already exists'))
+}
+
+// Clicking away or changing sheet ends the rename either way. The grid is not
+// refocused: the click may have been on the formula bar or another field.
+function leaveRename() {
+  if (!renamingName.value) return
+  applyRename()
+  stopRenaming(false)
+}
+
+watch(() => props.currentSheet, leaveRename)
+
+defineExpose({ startRenaming })
 
 function formatStat(n: number) {
   return Number.isInteger(n) ? n.toLocaleString() : parseFloat(n.toFixed(4)).toLocaleString()
@@ -135,16 +229,16 @@ function formatStat(n: number) {
   align-items: stretch;
   height: 36px;
   border-top: 1px solid var(--outline-gray-2);
-  background: var(--surface-sidebar);
+  background: var(--surface-base);
   flex-shrink: 0;
   overflow: hidden;
 }
 
 .sn-tabs-track {
   display: flex;
-  align-items: stretch;
+  align-items: center;
   flex: 1;
-  gap: 0;
+  min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
@@ -154,89 +248,56 @@ function formatStat(n: number) {
   display: none;
 }
 
-.sn-tab {
-  display: inline-flex;
-  align-items: center;
+/* The trigger and the rename field share one grid area. */
+.sn-tab-cell {
+  display: grid;
   flex-shrink: 0;
-  position: relative;
-  cursor: grab;
-  /* The tab itself owns the pill background so label + chevron merge
-     into a single visual unit — no inter-button seam, no double-pill
-     look. The inner Buttons are transparent and rely on this wrapper
-     for their background. */
-  border-radius: 6px;
-  transition: background-color 0.12s;
+  min-width: 40px;
+  max-width: 240px;
 }
-.sn-tab:active {
-  cursor: grabbing;
+.sn-tab-cell > * {
+  grid-area: 1 / 1;
 }
-.sn-tab:hover {
-  background: var(--surface-gray-2);
+.sn-tab-cell--dragged {
+  opacity: 0.4;
 }
-.sn-tab--active,
-.sn-tab--active:hover {
-  background: var(--surface-gray-3);
+.sn-tab-trigger {
+  min-width: 0;
+  max-width: 100%;
 }
-
-/* Active indicator: 2px line at the bottom */
-.sn-tab--active::after {
-  content: '';
-  position: absolute;
-  bottom: -2px;
-  left: 6px;
-  right: 6px;
-  height: 2px;
-  background: var(--ink-gray-9);
-  border-radius: 1px 1px 0 0;
+.sn-tab-trigger > :deep(*) {
+  max-width: 100%;
 }
-.sn-tab--pivot.sn-tab--active::after {
-  background: var(--ink-cyan-7, #0e7490);
+.sn-tab-trigger--renaming {
+  opacity: 0;
+}
+.sn-tab-trigger--renaming :deep(span) {
+  white-space: pre;
 }
 
-/* Main label Button — transparent so the wrapper's pill shows through, with
-   no internal hover/active background of its own; that lives on `.sn-tab`.
-   frappe-ui forwards our `class` onto the <button> root itself (there is no
-   inner button), so we style `.sn-tab-btn` directly — a `:deep(button)`
-   descendant selector matches nothing and leaves the native ghost hover pill
-   showing through, which is what made the label and chevron highlight as two
-   separate pills. `background` is forced so it beats the native
-   `hover:/active:` background utilities at equal specificity. */
-.sn-tab-btn {
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--ink-gray-7);
-  /* Tight right padding so the label flows directly into the chevron and
-     the pair reads as one pill on every tab. */
-  padding: 0 2px 0 8px !important;
-  height: 28px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 148px;
-  border-radius: 0 !important;
-  background: transparent !important;
+/* Text sits exactly where the tab's own label sits, and the field adds no width
+   of its own, so renaming starts in place. */
+.sn-tab-name-field,
+.sn-tab-name-field:focus {
+  @apply w-0 min-w-full rounded-[7px] border-0 bg-transparent px-2 py-0 text-base leading-tighter text-ink-gray-8 shadow-none outline-none ring-1 ring-inset ring-outline-gray-3;
 }
-.sn-tab--active .sn-tab-btn {
-  font-weight: 600;
-  color: var(--ink-gray-9);
+.sn-tab-name-field--rejected,
+.sn-tab-name-field--rejected:focus {
+  @apply ring-outline-red-3;
 }
-
-/* Pivot icon tint */
-.sn-tab--pivot .sn-tab-btn :deep(.icon) {
-  color: var(--ink-cyan-7, #0e7490);
+/* A pivot tab's label starts after its icon. */
+.sn-tab-cell--pivot .sn-tab-name-field {
+  padding-left: 32px;
 }
 
 /* ── Per-tab peer dots ──────────────────────────────────────────────────
    One coloured circle per remote user currently looking at this tab.
-   Sits in the tab's right edge, before the chevron when the tab is
-   active. Capped to 3 visible + "+N" overflow so a popular tab can't
-   blow out the tabs track. */
+   Capped to 3 visible + "+N" overflow so a popular tab can't blow out
+   the tabs track. */
 .sn-tab-peers {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  margin-right: 6px;
-  pointer-events: auto;
 }
 .sn-tab-peer-dot {
   display: inline-block;
@@ -254,40 +315,12 @@ function formatStat(n: number) {
   line-height: 1;
 }
 
-/* Chevron — sits flush against the label inside the same pill so the two read
-   as one button. Styled directly on the <button> (same reason as `.sn-tab-btn`
-   above), transparent so it shares the wrapper's pill instead of drawing its
-   own. `width:auto` overrides frappe-ui's fixed-square `w-7` so the chevron
-   hugs the label rather than reserving a full 28px cell. Slightly muted on
-   inactive tabs, full ink on the active one (matches the label's color). */
-.sn-tab-chevron {
-  padding: 0 6px 0 0 !important;
-  width: auto !important;
-  height: 28px;
-  border-radius: 0 !important;
-  background: transparent !important;
-  color: var(--ink-gray-5);
-}
-.sn-tab-chevron:hover {
-  color: var(--ink-gray-9);
-}
-.sn-tab--active .sn-tab-chevron {
-  color: var(--ink-gray-8);
-}
-
-/* Add-sheet button — the wrapper carries the divider + margins so the Button
-   itself stays a clean square pill with its own contained hover box (any
-   border/padding set on `.sn-tab-add` would land on the <button> root and
-   distend its hover fill). Full-height flex box keeps the 28px button
-   optically centered against the tab labels. */
 .sn-tab-add-wrap {
   flex-shrink: 0;
   display: flex;
   align-items: center;
   align-self: center;
-  margin: 0 8px 0 12px;
-  padding-right: 8px;
-  border-right: 1px solid var(--outline-gray-2);
+  margin-left: 8px;
 }
 /* Feather `plus` sits ~1px high inside its box; pull the glyph down so it
    lands on the same optical row as the tab labels' text. */
@@ -297,15 +330,13 @@ function formatStat(n: number) {
   top: 1px;
 }
 
-.sn-tab-drag-over::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 6px;
-  bottom: 6px;
+/* No position of its own: the sliding highlight measures tabs against the list. */
+.sn-tab-drop-mark {
+  flex-shrink: 0;
   width: 2px;
+  height: 16px;
+  margin: 0 -1px;
   background: var(--ink-gray-9);
-  border-radius: 1px;
 }
 
 .sn-stats {
@@ -320,37 +351,5 @@ function formatStat(n: number) {
   white-space: nowrap;
   border-left: 1px solid var(--outline-gray-2);
   height: 100%;
-}
-
-/* Sheet-tab drag visual — Espresso ink-gray-9 left edge on the drop target. */
-.sn-tab {
-  cursor: grab;
-}
-.sn-tab:active {
-  cursor: grabbing;
-}
-
-/* Viewer tabs — no chevron, no drag. The `.sn-tab-btn` right padding is only
-   2px because it normally butts against the chevron; with the chevron gone the
-   label needs its own symmetric breathing room. And a grab cursor lies about a
-   tab that can't be dragged — clicking still switches sheets, so use pointer.
-   Placed after the base `.sn-tab` cursor rules to win on equal specificity. */
-.sn-tab--static,
-.sn-tab--static:active {
-  cursor: pointer;
-}
-.sn-tab--static .sn-tab-btn {
-  padding-right: 8px !important;
-}
-
-.sn-tab-drag-over::before {
-  content: '';
-  position: absolute;
-  left: -1px;
-  top: 4px;
-  bottom: 4px;
-  width: 2px;
-  background: var(--ink-gray-9);
-  border-radius: 1px;
 }
 </style>
