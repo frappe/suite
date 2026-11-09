@@ -171,11 +171,6 @@
       "lookup": null
     },
     {
-      "old": "/suite/change-password",
-      "new": null,
-      "lookup": null
-    },
-    {
       "old": "/suite/load-error",
       "new": null,
       "lookup": null

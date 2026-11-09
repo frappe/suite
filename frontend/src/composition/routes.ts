@@ -124,8 +124,8 @@ export const canonicalRoutes: RouteRecordRaw[] = [
 export const routes: RouteRecordRaw[] = [
   ...canonicalRoutes,
   // Joining a workspace (spec 001 §4.1): an invitation link, the sign-in for a
-  // temporary password, and, once signed in, the forced password change and
-  // the welcome steps. One view walks them all.
+  // temporary password, and, once signed in, the welcome, which starts with the
+  // forced password change. One view walks them all.
   {
     path: '/join/:requestKey?',
     name: 'suite-join',
@@ -138,12 +138,6 @@ export const routes: RouteRecordRaw[] = [
       title: 'Join Frappe Suite',
       onboarding: true,
     },
-  },
-  {
-    path: '/suite/change-password',
-    name: 'suite-change-password',
-    component: () => import('@/composition/onboarding/JoinView.vue'),
-    meta: { frame: 'none', scroll: 'content', title: 'Choose your own password', onboarding: true },
   },
   {
     path: '/suite/welcome',

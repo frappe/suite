@@ -166,7 +166,6 @@ class TestRedirectTable(DriveHTTPCase):
             f"/drive/f/{self.folder}",
             "/suite/setup",
             "/suite/welcome",
-            "/suite/change-password",
             "/suite/load-error",
             "/mail",
         ):

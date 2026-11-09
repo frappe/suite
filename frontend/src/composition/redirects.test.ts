@@ -109,7 +109,6 @@ describe('old links clicked inside the app', () => {
   it.each([
     '/suite/setup',
     '/suite/welcome',
-    '/suite/change-password',
     '/suite/load-error',
     '/drive',
     '/drive/trash',

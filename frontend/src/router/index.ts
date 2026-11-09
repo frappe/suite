@@ -138,12 +138,12 @@ router.beforeEach(async (to, from) => {
 
   if (to.path.startsWith('/admin') && !session.capabilities.value.suiteAdmin) return '/home'
   // A temporary password is replaced before anything else, then a person added
-  // after setup walks the welcome once (spec 001 §4.1). `/join` walks both itself.
+  // after setup walks the welcome once (spec 001 §4.1). The welcome page asks
+  // for the password first; `/join` walks both itself.
   const joining = to.name === 'suite-join'
   if (session.user.value?.must_change_password === true) {
-    return to.path === '/suite/change-password' || joining ? true : '/suite/change-password'
+    return to.path === '/suite/welcome' || joining ? true : '/suite/welcome'
   }
-  if (to.path === '/suite/change-password') return '/home'
 
   // A shared item opens on a site that is not set up yet. Area routes still
   // go to setup (spec §10.10, ask S3). Setup is the first Admin's welcome, so

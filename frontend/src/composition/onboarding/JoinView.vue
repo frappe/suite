@@ -6,8 +6,8 @@
   People arrive one of three ways, and each starts at its own step:
   - an invitation link (`/join/<key>`): the invitation, then the account;
   - a temporary password (`/join`): sign in, then their own password;
-  - signed in already (`/suite/welcome`, `/suite/change-password`): the
-    password if it is still temporary, then the welcome steps.
+  - signed in already (`/suite/welcome`): the password if it is still
+    temporary, then the welcome steps.
 
   The temporary password stays in memory from the sign-in to the password
   step, so changing it needs no other proof. After a reload the password step
