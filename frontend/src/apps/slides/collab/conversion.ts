@@ -193,6 +193,11 @@ function rewritten(old: OldElement) {
     element.shapeType = 'oval'
   }
 
+  // an old video saved its poster as the object that captured it
+  if (isLegacySettings(element.poster) && typeof element.poster.posterURL === 'string') {
+    element.poster = element.poster.posterURL
+  }
+
   migrateShadow(element)
   return element
 }
