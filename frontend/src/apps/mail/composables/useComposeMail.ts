@@ -23,10 +23,10 @@ import {
 } from '@/apps/mail/utils/recipientFields'
 import { undoSendPeriodOf } from '@/apps/mail/utils/undoSend'
 
-/** The mounted TextEditor instance, as far as this composable cares about it. */
+/** The mounted editor, as far as this composable cares about it. */
 interface EditorHost {
-  $el?: HTMLElement
   editor?: {
+    getHTML: () => string
     commands: {
       insertContent: (content: string) => void
       focus: () => void
@@ -38,7 +38,7 @@ interface EditorHost {
       }
       selection: { from: number; to: number }
     }
-  }
+  } | null
 }
 interface ComposeMailOptions {
   /** A draft being resumed, or the reply/forward this composition starts from. */
@@ -59,15 +59,10 @@ interface ComposeMailOptions {
    * so anything keyed on the composer being open takes the draft back for the moment in between.
    */
   onDiscardStarted?: () => void
-  /** The mounted TextEditor, for mention bookkeeping and emoji insertion. */
+  /** The mounted editor, for mention bookkeeping and emoji insertion. */
   host: () => EditorHost | null | undefined
   /** Whether a file is still being attached. Sending must wait until it is part of the draft. */
   isUploading?: () => boolean
-  /**
-   * Where the mention dropdown should render. The dialog on desktop, which holds the rest of the
-   * page inert; null anywhere `<body>` will do.
-   */
-  mentionContainer?: () => HTMLElement | null
 }
 
 /**
@@ -750,7 +745,6 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     createMentionSuggestion({
       account: () => scopeAccountId.value,
       onSelect: addMentionedRecipient,
-      container: () => options.mentionContainer?.() ?? null,
     }),
   ]
   const appendEmoji = (emoji: string) => {
@@ -761,10 +755,26 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 
   const editorBody = createEditorBody()
   const editorContent = computed(() => editorBody.toEditor(mail.html_body))
-  const onEditorChange = (value: string) => {
-    mail.html_body = editorBody.fromEditor(value)
+  let lastFromEditor = ''
+  const onEditorChange = (value: unknown) => {
+    if (typeof value !== 'string') return
+    lastFromEditor = editorBody.fromEditor(value)
+    mail.html_body = lastFromEditor
     dropUnmentionedRecipients()
   }
+  // A body set from here — a quote unfolded, a signature swapped in — goes into the editor without
+  // the editor reporting back. What it made of it is what the mail has to carry, or the draft would
+  // save and send the raw string until the next keystroke.
+  watch(
+    () => mail.html_body,
+    (body) => {
+      if (body === lastFromEditor) return
+      void nextTick(() => {
+        const editor = host()?.editor
+        if (editor) onEditorChange(editor.getHTML())
+      })
+    },
+  )
   return {
     mail,
     scope,

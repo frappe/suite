@@ -10,6 +10,8 @@ const requestCompose = vi.hoisted(() => vi.fn())
 const toastError = vi.hoisted(() => vi.fn())
 
 vi.stubGlobal('__', (text: string) => text)
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: vi.fn(), currentRoute: { value: { fullPath: '/' } } }),
   useRoute: () => ({ params: {} }),
@@ -80,9 +82,14 @@ const draft: ComposeMailData = {
   attachments: [],
 }
 
+type ComposerHost = Parameters<typeof useComposeMail>[0]['host'] extends () => infer H ? H : never
+
 let open = true
 const apps: ReturnType<typeof createApp>[] = []
-function compose(signedInAs = 'maya@example.com') {
+function compose({
+  signedInAs = 'maya@example.com',
+  host = () => null,
+}: { signedInAs?: string; host?: () => ComposerHost } = {}) {
   let composer!: ReturnType<typeof useComposeMail>
   const app = createApp(
     defineComponent({
@@ -92,7 +99,7 @@ function compose(signedInAs = 'maya@example.com') {
           reloadMails: vi.fn(),
           close: () => (open = false),
           isOpen: () => open,
-          host: () => null,
+          host,
         })
         composer.onOpened()
         return () => null
@@ -119,12 +126,56 @@ afterEach(() => {
 describe('the From address', () => {
   it('moves to the mailbox once the identities load, when the composer opened before them', async () => {
     scope.identities = undefined
-    const composer = compose('maya@personal.example')
+    const composer = compose({ signedInAs: 'maya@personal.example' })
 
     scope.load(mayaIdentities)
     await nextTick()
 
     expect(composer.mail.from_email).toBe('maya@example.com')
+  })
+})
+
+describe('the body and the editor', () => {
+  const editorHolding = (getHTML: () => string) =>
+    fromPartial<ComposerHost>({
+      editor: {
+        getHTML,
+        commands: { setTextSelection: vi.fn() },
+        state: { selection: { from: 1, to: 1 } },
+      },
+    })
+
+  it('carries what the editor made of an unfolded quote', async () => {
+    const normalised = '<div>See the brief.</div><div class="frappe_mail_quote">old</div>'
+    const host = editorHolding(() => normalised)
+    const composer = compose({ host: () => host })
+    composer.mail.quoted_content = '<div class="frappe_mail_quote">old</div>'
+
+    composer.openQuotedContent()
+    await nextTick()
+    await nextTick()
+
+    expect(composer.mail.html_body).toBe(normalised)
+    expect(composer.mail.quoted_content).toBe('')
+  })
+
+  it('does not read the editor back for what the editor itself just said', async () => {
+    const getHTML = vi.fn(() => '<div>typed</div>')
+    const host = editorHolding(getHTML)
+    const composer = compose({ host: () => host })
+
+    composer.onEditorChange('<div>typed</div>')
+    await nextTick()
+    await nextTick()
+
+    expect(getHTML).not.toHaveBeenCalled()
+    expect(composer.mail.html_body).toBe('<div>typed</div>')
+  })
+
+  it('writes a blank line in the form mail clients keep', () => {
+    const composer = compose()
+    composer.onEditorChange('<div>a</div><div></div><div>b</div>')
+    expect(composer.mail.html_body).toBe('<div>a</div><div><br></div><div>b</div>')
   })
 })
 

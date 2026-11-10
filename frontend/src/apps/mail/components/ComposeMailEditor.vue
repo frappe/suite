@@ -9,202 +9,85 @@
 	     list visible; the panel's own max-h still clips it on a short viewport. In a thread the
 	     height is the thread's — unless the draft is the whole thread, when the card it sits in
 	     is stretched to the pane and the composer fills that (`fillsHost`). -->
-  <TextEditor
-    ref="textEditor"
-    editor-class="prose-sm max-w-none [&_ol]:ps-7 [&_ul]:ps-7 [&_[contenteditable=true]]:outline-none"
-    :extensions="[
-      imageExtension,
-      CustomParagraphExtension,
-      QuotedContentExtension,
-      ...mentionExtensions,
-    ]"
-    :content="editorContent"
-    :upload-function="uploadInlineImage"
-    class="flex flex-col"
+  <div
+    ref="composerRoot"
+    class="relative flex w-full flex-col"
     :class="[
       { 'pointer-events-none opacity-50': !show },
       fillsHost || windowed ? 'sm:min-h-0 sm:flex-1' : '',
     ]"
-    @change="onEditorChange"
     @dragenter.prevent="handleDragEnter"
     @dragover.prevent="handleDragOver"
     @dragleave.prevent="handleDragLeave"
     @drop.prevent="handleDrop"
   >
-    <template #top>
-      <!-- Desktop, in the composer window and in a thread alike: one row per field, each led by its
+    <Editor
+      ref="textEditor"
+      :model-value="editorContent"
+      :extensions="editorExtensions"
+      :upload-function="uploadInlineImage"
+      @change="onEditorChange"
+    >
+      <template #default="{ editor }">
+        <!-- Desktop, in the composer window and in a thread alike: one row per field, each led by its
            name in a column of its own, so the values line up down the page; neither host pads the
            composer, so every row carries its own inset. A reply in a thread leaves From and
            Subject out — the conversation around it says both — and switches between reply, reply
            all and forward from the To row. -->
-      <template v-if="!isMobile">
-        <!-- Scrolls rather than pushing the window's header off screen when enough recipients
+        <template v-if="!isMobile">
+          <!-- Scrolls rather than pushing the window's header off screen when enough recipients
              wrap that the fields outgrow a capped window. -->
-        <div class="max-h-[40vh] min-h-0 shrink-0 overflow-y-auto">
-          <div
-            v-if="showsFromAndSubject"
-            class="flex items-center gap-2 border-b px-4 py-2"
-            :class="{ 'border-transparent': isDragging }"
-          >
-            <span class="text-ink-gray-5 flex h-7 w-10 shrink-0 items-center text-base">
-              {{ __('From') }}
-            </span>
-            <!-- Button mode, so the trigger takes the width of the identity it shows rather than
+          <div class="max-h-[40vh] min-h-0 shrink-0 overflow-y-auto">
+            <div
+              v-if="showsFromAndSubject"
+              class="flex items-center gap-2 border-b px-4 py-2"
+              :class="{ 'border-transparent': isDragging }"
+            >
+              <span class="text-ink-gray-5 flex h-7 w-10 shrink-0 items-center text-base">
+                {{ __('From') }}
+              </span>
+              <!-- Button mode, so the trigger takes the width of the identity it shows rather than
                  cutting a long address off mid-domain; the list is searched from the popover.
                  Pulled left by its padding and border (8px + 1px), so the address starts where the
                  recipient chips below do. -->
-            <Combobox
-              v-model="mail.from_email"
-              :options="identityOptions"
-              trigger="button"
-              variant="ghost"
-              class="-ml-[9px] min-w-0 max-w-full !text-ink-gray-8"
-            />
-            <!-- Unsaved text is no reason to withhold this: the draft is handed to the window as
+              <Combobox
+                v-model="mail.from_email"
+                :options="identityOptions"
+                trigger="button"
+                variant="ghost"
+                class="-ml-[9px] min-w-0 max-w-full !text-ink-gray-8"
+              />
+              <!-- Unsaved text is no reason to withhold this: the draft is handed to the window as
                  it stands, in memory, rather than fetched back from the server. Only a save
                  actually in flight holds it up — see popOut. -->
-            <Button
-              v-if="isInThread"
-              variant="ghost"
-              class="ml-auto shrink-0"
-              :tooltip="__('Open in a window')"
-              :disabled="isLoading"
-              @click="popOut()"
-            >
-              <template #icon>
-                <component :is="ExternalLink" class="text-ink-gray-5 h-4 w-4" />
-              </template>
-            </Button>
-          </div>
-          <div
-            class="flex items-start gap-2 border-b px-4 py-2"
-            :class="{ 'border-transparent': isDragging }"
-          >
-            <Dropdown v-if="isInThread && mailDetails?.type" :options="localDraftActions">
-              <Button variant="ghost" class="-ml-1.5" :icon="TYPE_ICON_MAP[mailDetails.type]" />
-            </Dropdown>
-            <Tooltip :text="__('Select from contacts')">
-              <button
-                type="button"
-                class="text-ink-gray-5 hover:text-ink-gray-8 flex h-7 w-10 shrink-0 items-center text-base"
-                @click="insertContacts('to')"
+              <Button
+                v-if="isInThread"
+                variant="ghost"
+                class="ml-auto shrink-0"
+                :tooltip="__('Open in a window')"
+                :disabled="isLoading"
+                @click="popOut()"
               >
-                {{ __('To') }}
-              </button>
-            </Tooltip>
-            <RecipientInput
-              ref="toInput"
-              v-model="mail.to"
-              field="to"
-              @move="moveRecipient"
-              @show-cc-bcc="showCcBcc = true"
-            />
-            <Button
-              v-if="!(mail.cc?.length || mail.bcc?.length)"
-              variant="ghost"
-              :aria-label="showCcBcc ? __('Hide Cc and Bcc') : __('Show Cc and Bcc')"
-              :tooltip="__('Cc and Bcc')"
-              @click="toggleCcBcc"
-            >
-              <template #icon>
-                <component
-                  :is="showCcBcc ? ChevronUp : ChevronDown"
-                  class="text-ink-gray-5 h-4 w-4"
-                />
-              </template>
-            </Button>
-          </div>
-          <template v-if="showCcBcc">
-            <div
-              class="flex items-start gap-2 border-b px-4 py-2"
-              :class="{ 'border-transparent': isDragging }"
-            >
-              <Tooltip :text="__('Select from contacts')">
-                <button
-                  type="button"
-                  class="text-ink-gray-5 hover:text-ink-gray-8 flex h-7 w-10 shrink-0 items-center text-base"
-                  @click="insertContacts('cc')"
-                >
-                  {{ __('Cc') }}
-                </button>
-              </Tooltip>
-              <RecipientInput ref="ccInput" v-model="mail.cc" field="cc" @move="moveRecipient" />
+                <template #icon>
+                  <component :is="ExternalLink" class="text-ink-gray-5 h-4 w-4" />
+                </template>
+              </Button>
             </div>
             <div
               class="flex items-start gap-2 border-b px-4 py-2"
               :class="{ 'border-transparent': isDragging }"
             >
+              <Dropdown v-if="isInThread && mailDetails?.type" :options="localDraftActions">
+                <Button variant="ghost" class="-ml-1.5" :icon="TYPE_ICON_MAP[mailDetails.type]" />
+              </Dropdown>
               <Tooltip :text="__('Select from contacts')">
                 <button
                   type="button"
                   class="text-ink-gray-5 hover:text-ink-gray-8 flex h-7 w-10 shrink-0 items-center text-base"
-                  @click="insertContacts('bcc')"
-                >
-                  {{ __('Bcc') }}
-                </button>
-              </Tooltip>
-              <RecipientInput v-model="mail.bcc" field="bcc" @move="moveRecipient" />
-            </div>
-          </template>
-        </div>
-        <input
-          v-if="showsFromAndSubject"
-          ref="subjectInput"
-          v-model="mail.subject"
-          :placeholder="__('Subject')"
-          :aria-label="__('Subject')"
-          class="border-outline-gray-1 text-ink-gray-9 placeholder:text-ink-gray-4 focus:border-outline-gray-1 h-11 w-full shrink-0 border-0 border-b bg-transparent px-4 text-base focus:ring-0"
-          :class="{ 'border-transparent': isDragging }"
-        />
-      </template>
-      <div
-        v-else
-        class="flex flex-col gap-2.5 border-b px-3 py-2.5"
-        :class="{ 'border-transparent': isDragging }"
-      >
-        <!-- A reply inside a thread leaves From and Subject out: the conversation around it
-				     says both. Detached into a window there is no conversation around it, so a
-				     popped-out reply shows them like any other composer. -->
-        <div
-          v-if="!isInThread || !mailDetails?.type || isMobile"
-          class="flex justify-between gap-2"
-        >
-          <div class="flex items-center gap-2">
-            <span class="text-ink-gray-4 text-sm">{{ __('From') }}</span>
-            <!-- Button mode, like the phone composer's: the trigger takes the width of the
-						     identity it is showing. As an input it was a box of a fixed 16rem with the
-						     name and address inside it, and anything longer than that — which is most
-						     addresses once the display name is in front of them — was cut off mid-domain.
-						     The list is filtered from the popover's own search box instead. -->
-            <Combobox
-              v-model="mail.from_email"
-              :options="identityOptions"
-              trigger="button"
-              class="min-w-0 max-w-full !text-ink-gray-8"
-            />
-          </div>
-          <!-- Unsaved text is no reason to withhold this: the draft is handed to the window as
-					     it stands, in memory, rather than fetched back from the server. Only a save
-					     actually in flight holds it up — see popOut. -->
-          <Button v-if="isInThread" variant="ghost" :disabled="isLoading" @click="popOut()">
-            <template #icon>
-              <component :is="ExternalLink" class="text-ink-gray-5 h-4 w-4" />
-            </template>
-          </Button>
-        </div>
-        <div class="flex items-start gap-2">
-          <Dropdown v-if="isInThread && mailDetails?.type" :options="localDraftActions">
-            <Button variant="ghost" :icon="TYPE_ICON_MAP[mailDetails.type]"> </Button>
-          </Dropdown>
-          <div class="flex flex-1 flex-col gap-2.5">
-            <div class="flex gap-2">
-              <Tooltip :text="__('Select from contacts')">
-                <span
-                  class="text-ink-gray-4 cursor-pointer text-sm leading-7 hover:underline"
                   @click="insertContacts('to')"
                 >
                   {{ __('To') }}
-                </span>
+                </button>
               </Tooltip>
               <RecipientInput
                 ref="toInput"
@@ -213,164 +96,285 @@
                 @move="moveRecipient"
                 @show-cc-bcc="showCcBcc = true"
               />
-              <div class="flex gap-1.5">
-                <Button
-                  v-if="!(mail.cc?.length || mail.bcc?.length)"
-                  variant="ghost"
-                  @click="toggleCcBcc"
-                >
-                  <template #icon>
-                    <component
-                      :is="showCcBcc ? ChevronUp : ChevronDown"
-                      class="text-ink-gray-5 h-4 w-4"
-                    />
-                  </template>
-                </Button>
-              </div>
+              <Button
+                v-if="!(mail.cc?.length || mail.bcc?.length)"
+                variant="ghost"
+                :aria-label="showCcBcc ? __('Hide Cc and Bcc') : __('Show Cc and Bcc')"
+                :tooltip="__('Cc and Bcc')"
+                @click="toggleCcBcc"
+              >
+                <template #icon>
+                  <component
+                    :is="showCcBcc ? ChevronUp : ChevronDown"
+                    class="text-ink-gray-5 h-4 w-4"
+                  />
+                </template>
+              </Button>
             </div>
             <template v-if="showCcBcc">
-              <div class="flex gap-2">
+              <div
+                class="flex items-start gap-2 border-b px-4 py-2"
+                :class="{ 'border-transparent': isDragging }"
+              >
                 <Tooltip :text="__('Select from contacts')">
-                  <span
-                    class="text-ink-gray-4 cursor-pointer text-sm leading-7 hover:underline"
+                  <button
+                    type="button"
+                    class="text-ink-gray-5 hover:text-ink-gray-8 flex h-7 w-10 shrink-0 items-center text-base"
                     @click="insertContacts('cc')"
                   >
                     {{ __('Cc') }}
-                  </span>
+                  </button>
                 </Tooltip>
                 <RecipientInput ref="ccInput" v-model="mail.cc" field="cc" @move="moveRecipient" />
               </div>
-              <div class="flex gap-2">
+              <div
+                class="flex items-start gap-2 border-b px-4 py-2"
+                :class="{ 'border-transparent': isDragging }"
+              >
                 <Tooltip :text="__('Select from contacts')">
-                  <span
-                    class="text-ink-gray-4 cursor-pointer text-sm leading-7 hover:underline"
+                  <button
+                    type="button"
+                    class="text-ink-gray-5 hover:text-ink-gray-8 flex h-7 w-10 shrink-0 items-center text-base"
                     @click="insertContacts('bcc')"
                   >
                     {{ __('Bcc') }}
-                  </span>
+                  </button>
                 </Tooltip>
                 <RecipientInput v-model="mail.bcc" field="bcc" @move="moveRecipient" />
               </div>
             </template>
           </div>
-        </div>
-        <label
-          v-if="!isInThread || !mailDetails?.type || isMobile"
-          class="flex cursor-text items-center gap-2"
-        >
-          <span class="text-ink-gray-4 text-sm">{{ __('Subject') }}</span>
           <input
+            v-if="showsFromAndSubject"
             ref="subjectInput"
             v-model="mail.subject"
-            class="flex-1 cursor-text border-none bg-inherit text-base focus-visible:!ring-0"
+            :placeholder="__('Subject')"
+            :aria-label="__('Subject')"
+            class="border-outline-gray-1 text-ink-gray-9 placeholder:text-ink-gray-4 focus:border-outline-gray-1 h-11 w-full shrink-0 border-0 border-b bg-transparent px-4 text-base focus:ring-0"
+            :class="{ 'border-transparent': isDragging }"
           />
-        </label>
-      </div>
-    </template>
-    <template #editor="{ editor }">
-      <!-- In a thread the body scrolls on its own past 24rem, so a long reply does not push
+        </template>
+        <div
+          v-else
+          class="flex flex-col gap-2.5 border-b px-3 py-2.5"
+          :class="{ 'border-transparent': isDragging }"
+        >
+          <!-- A reply inside a thread leaves From and Subject out: the conversation around it
+				     says both. Detached into a window there is no conversation around it, so a
+				     popped-out reply shows them like any other composer. -->
+          <div
+            v-if="!isInThread || !mailDetails?.type || isMobile"
+            class="flex justify-between gap-2"
+          >
+            <div class="flex items-center gap-2">
+              <span class="text-ink-gray-4 text-sm">{{ __('From') }}</span>
+              <!-- Button mode, like the phone composer's: the trigger takes the width of the
+						     identity it is showing. As an input it was a box of a fixed 16rem with the
+						     name and address inside it, and anything longer than that — which is most
+						     addresses once the display name is in front of them — was cut off mid-domain.
+						     The list is filtered from the popover's own search box instead. -->
+              <Combobox
+                v-model="mail.from_email"
+                :options="identityOptions"
+                trigger="button"
+                class="min-w-0 max-w-full !text-ink-gray-8"
+              />
+            </div>
+            <!-- Unsaved text is no reason to withhold this: the draft is handed to the window as
+					     it stands, in memory, rather than fetched back from the server. Only a save
+					     actually in flight holds it up — see popOut. -->
+            <Button v-if="isInThread" variant="ghost" :disabled="isLoading" @click="popOut()">
+              <template #icon>
+                <component :is="ExternalLink" class="text-ink-gray-5 h-4 w-4" />
+              </template>
+            </Button>
+          </div>
+          <div class="flex items-start gap-2">
+            <Dropdown v-if="isInThread && mailDetails?.type" :options="localDraftActions">
+              <Button variant="ghost" :icon="TYPE_ICON_MAP[mailDetails.type]"> </Button>
+            </Dropdown>
+            <div class="flex flex-1 flex-col gap-2.5">
+              <div class="flex gap-2">
+                <Tooltip :text="__('Select from contacts')">
+                  <span
+                    class="text-ink-gray-4 cursor-pointer text-sm leading-7 hover:underline"
+                    @click="insertContacts('to')"
+                  >
+                    {{ __('To') }}
+                  </span>
+                </Tooltip>
+                <RecipientInput
+                  ref="toInput"
+                  v-model="mail.to"
+                  field="to"
+                  @move="moveRecipient"
+                  @show-cc-bcc="showCcBcc = true"
+                />
+                <div class="flex gap-1.5">
+                  <Button
+                    v-if="!(mail.cc?.length || mail.bcc?.length)"
+                    variant="ghost"
+                    @click="toggleCcBcc"
+                  >
+                    <template #icon>
+                      <component
+                        :is="showCcBcc ? ChevronUp : ChevronDown"
+                        class="text-ink-gray-5 h-4 w-4"
+                      />
+                    </template>
+                  </Button>
+                </div>
+              </div>
+              <template v-if="showCcBcc">
+                <div class="flex gap-2">
+                  <Tooltip :text="__('Select from contacts')">
+                    <span
+                      class="text-ink-gray-4 cursor-pointer text-sm leading-7 hover:underline"
+                      @click="insertContacts('cc')"
+                    >
+                      {{ __('Cc') }}
+                    </span>
+                  </Tooltip>
+                  <RecipientInput
+                    ref="ccInput"
+                    v-model="mail.cc"
+                    field="cc"
+                    @move="moveRecipient"
+                  />
+                </div>
+                <div class="flex gap-2">
+                  <Tooltip :text="__('Select from contacts')">
+                    <span
+                      class="text-ink-gray-4 cursor-pointer text-sm leading-7 hover:underline"
+                      @click="insertContacts('bcc')"
+                    >
+                      {{ __('Bcc') }}
+                    </span>
+                  </Tooltip>
+                  <RecipientInput v-model="mail.bcc" field="bcc" @move="moveRecipient" />
+                </div>
+              </template>
+            </div>
+          </div>
+          <label
+            v-if="!isInThread || !mailDetails?.type || isMobile"
+            class="flex cursor-text items-center gap-2"
+          >
+            <span class="text-ink-gray-4 text-sm">{{ __('Subject') }}</span>
+            <input
+              ref="subjectInput"
+              v-model="mail.subject"
+              class="flex-1 cursor-text border-none bg-inherit text-base focus-visible:!ring-0"
+            />
+          </label>
+        </div>
+        <!-- In a thread the body scrolls on its own past 24rem, so a long reply does not push
 			     the conversation up out of view. Given the pane to itself it has no conversation
 			     to protect and takes whatever height the fields and toolbar leave. -->
-      <div
-        class="relative flex cursor-text flex-col border-2 border-transparent px-3 py-2.5 text-sm sm:overflow-y-auto sm:px-4 sm:py-3"
-        :class="{
-          // Docked, the body is its own height and gives way only at the window's cap; anywhere
-          // else it fills what the fields and toolbar leave.
-          'flex-1': !windowed || expanded,
-          // Docked, the window is as tall as its fields and a fixed page; expanded, the page
-          // takes whatever the window's fixed height leaves.
-          // Shrinks (and scrolls) when the window meets its height cap on a short screen.
-          'h-72 min-h-16 shrink': windowed && !expanded,
-          'min-h-0': windowed && expanded,
-          'max-h-96 min-h-32': isInThread && !fillsHost,
-          'sm:min-h-0': fillsHost,
-          '!border-outline-gray-3 rounded-4 border-dashed': isDragging,
-        }"
-        @click="editor.commands.focus('end')"
-      >
         <div
-          v-if="isDragging"
-          class="bg-surface-gray-1/90 text-ink-gray-3 absolute inset-0 z-50 flex flex-col items-center justify-center space-y-1 rounded-4"
+          class="relative flex cursor-text flex-col border-2 border-transparent px-3 py-2.5 text-sm sm:overflow-y-auto sm:px-4 sm:py-3"
+          :class="{
+            // Docked, the body is its own height and gives way only at the window's cap; anywhere
+            // else it fills what the fields and toolbar leave.
+            'flex-1': !windowed || expanded,
+            // Docked, the window is as tall as its fields and a fixed page; expanded, the page
+            // takes whatever the window's fixed height leaves.
+            // Shrinks (and scrolls) when the window meets its height cap on a short screen.
+            'h-72 min-h-16 shrink': windowed && !expanded,
+            'min-h-0': windowed && expanded,
+            'max-h-96 min-h-32': isInThread && !fillsHost,
+            'sm:min-h-0': fillsHost,
+            '!border-outline-gray-3 rounded-4 border-dashed': isDragging,
+          }"
+          @click="editor?.commands.focus('end')"
         >
-          <UploadCloud class="stroke-1.5 h-12 w-12" />
-          <p class="text-lg-semibold">{{ __('Drop files to upload') }}</p>
-        </div>
+          <div
+            v-if="isDragging"
+            class="bg-surface-gray-1/90 text-ink-gray-3 absolute inset-0 z-50 flex flex-col items-center justify-center space-y-1 rounded-4"
+          >
+            <UploadCloud class="stroke-1.5 h-12 w-12" />
+            <p class="text-lg-semibold">{{ __('Drop files to upload') }}</p>
+          </div>
 
-        <EditorContent :editor :class="{ 'opacity-30': isDragging }" @click.stop />
-
-        <div
-          class="mt-auto cursor-default space-y-2.5 pt-2.5"
-          :class="{ 'opacity-30': isDragging }"
-          @click.stop
-        >
-          <!-- Show quoted content -->
-          <Button
-            v-if="mail?.quoted_content"
-            label="&middot;&middot;&middot;"
-            class="max-h-4 w-fit"
-            @click="openQuotedContent"
+          <EditorContent
+            :editor
+            class="prose-sm max-w-none [&_ol]:ps-7 [&_ul]:ps-7 [&_[contenteditable=true]]:outline-none"
+            :class="{ 'opacity-30': isDragging }"
+            @click.stop
           />
 
-          <!-- Attachments, as the pills the list shows them with: a row that wraps, each one
+          <div
+            class="mt-auto cursor-default space-y-2.5 pt-2.5"
+            :class="{ 'opacity-30': isDragging }"
+            @click.stop
+          >
+            <!-- Show quoted content -->
+            <Button
+              v-if="mail?.quoted_content"
+              label="&middot;&middot;&middot;"
+              class="max-h-4 w-fit"
+              @click="openQuotedContent"
+            />
+
+            <!-- Attachments, as the pills the list shows them with: a row that wraps, each one
                opening on a click and leaving the mail on its ✕. Files still uploading join the
                row with their progress in place of a size. -->
-          <div v-if="attachedFiles.length || uploadingFiles.length" class="flex flex-wrap gap-2">
-            <Tooltip
-              v-for="file in attachedFiles"
-              :key="`${file.blob_id}:${file.file_url}`"
-              :text="nameOf(file)"
-            >
-              <AttachmentCapsule
-                :file-name="nameOf(file)"
-                :type="file.type"
-                :size="sizeOf(file)"
-                removable
-                truncate-middle
-                class="max-w-64"
-                @click="openFile(file)"
-                @remove="mail.attachments.splice(mail.attachments.indexOf(file), 1)"
-              />
-            </Tooltip>
-            <Tooltip
-              v-for="(upload, id) in uploadingFiles"
-              :key="`upload-${id}`"
-              :text="upload.name"
-            >
-              <AttachmentCapsule
-                :file-name="upload.name"
-                :progress="upload.progress"
-                truncate-middle
-                class="max-w-64 !cursor-default"
-              />
-            </Tooltip>
+            <div v-if="attachedFiles.length || uploadingFiles.length" class="flex flex-wrap gap-2">
+              <Tooltip
+                v-for="file in attachedFiles"
+                :key="`${file.blob_id}:${file.file_url}`"
+                :text="nameOf(file)"
+              >
+                <AttachmentCapsule
+                  :file-name="nameOf(file)"
+                  :type="file.type"
+                  :size="sizeOf(file)"
+                  removable
+                  truncate-middle
+                  class="max-w-64"
+                  @click="openFile(file)"
+                  @remove="mail.attachments.splice(mail.attachments.indexOf(file), 1)"
+                />
+              </Tooltip>
+              <Tooltip
+                v-for="(upload, id) in uploadingFiles"
+                :key="`upload-${id}`"
+                :text="upload.name"
+              >
+                <AttachmentCapsule
+                  :file-name="upload.name"
+                  :progress="upload.progress"
+                  truncate-middle
+                  class="max-w-64 !cursor-default"
+                />
+              </Tooltip>
+            </div>
           </div>
         </div>
-      </div>
-    </template>
-    <!-- Last child of the scroller, so `sticky bottom-0` (mobile, in the toolbar itself) pins it to
+        <!-- Last child of the scroller, so `sticky bottom-0` (mobile, in the toolbar itself) pins it to
 		     the bottom of the scrollport while the fields and body scroll under it. The sheet ends where
 		     the keyboard begins, so that bottom edge is the top of the keyboard. -->
-    <!-- Neither the window nor a thread's draft card pads the composer, so the fields, the body
+        <!-- Neither the window nor a thread's draft card pads the composer, so the fields, the body
          and the bar each carry their own inset. The phone's sticky bar insets itself. -->
-    <template #bottom>
-      <ComposeMailToolbar
-        :is-recipients-empty
-        :is-uploading
-        :save-failed="isSaveFailed"
-        class="border-t sm:px-4 sm:pb-2.5"
-        :class="{ 'border-transparent': isDragging }"
-        :remind-at="remindAt"
-        @select-files="(files: File[]) => uploadFiles(files)"
-        @append-emoji="(emoji: string) => appendEmoji(emoji)"
-        @discard-mail="discardMail"
-        @send-mail="sendMail"
-        @schedule-send="openScheduleModal"
-        @remind="setRemindAt"
-        @clear-remind="setRemindAt()"
-        @retry-save="saveDraft"
-      />
-    </template>
-  </TextEditor>
+        <ComposeMailToolbar
+          :is-recipients-empty
+          :is-uploading
+          :save-failed="isSaveFailed"
+          class="border-t sm:px-4 sm:pb-2.5"
+          :class="{ 'border-transparent': isDragging }"
+          :remind-at="remindAt"
+          @select-files="(files: File[]) => uploadFiles(files)"
+          @append-emoji="(emoji: string) => appendEmoji(emoji)"
+          @discard-mail="discardMail"
+          @send-mail="sendMail"
+          @schedule-send="openScheduleModal"
+          @remind="setRemindAt"
+          @clear-remind="setRemindAt()"
+          @retry-save="saveDraft"
+        />
+      </template>
+    </Editor>
+  </div>
 
   <ContactsModal
     v-model="showContactsModal"
@@ -380,9 +384,8 @@
 </template>
 
 <script setup lang="ts">
-import { EditorContent } from '@tiptap/vue-3'
 import { Button, Combobox, Dropdown, Tooltip, UploadError, useFileUpload } from 'frappe-ui'
-import { TextEditor } from 'frappe-ui/experimental'
+import { Editor, EditorContent } from 'frappe-ui/editor'
 import {
   ChevronDown,
   ChevronUp,
@@ -407,11 +410,7 @@ import type {
 import { formatBytes, isOverlayPresent, raiseToast } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { QuotedContentExtension } from '@/apps/mail/utils/quotedContentExtension'
-import {
-  CustomImageExtension,
-  CustomParagraphExtension,
-  uploadFunction,
-} from '@/apps/mail/utils/text-editor'
+import { CustomImageExtension, mailEditorKit, uploadFunction } from '@/apps/mail/utils/text-editor'
 
 import RecipientInput from './Controls/RecipientInput.vue'
 import ContactsModal from './Modals/ContactsModal.vue'
@@ -448,6 +447,7 @@ const { isMobile } = useScreenSize()
 const windowed = computed(() => !isInThread && !isMobile.value)
 // A reply in a thread has the conversation around it to say who it is from and what it is about.
 const showsFromAndSubject = computed(() => !isInThread || !mailDetails?.type)
+const composerRoot = useTemplateRef<HTMLElement>('composerRoot')
 const textEditor = useTemplateRef('textEditor')
 const toInput = useTemplateRef('toInput')
 const ccInput = useTemplateRef('ccInput')
@@ -534,13 +534,12 @@ const {
   onDiscardStarted: () => emit('discardStarted'),
   host: () => textEditor.value,
   isUploading: () => isUploading.value,
-  // The dialog holds the rest of the page inert, so the mention dropdown has to render inside it
-  // rather than at <body>, where it would be unreachable.
-  mentionContainer: () => {
-    const element: unknown = textEditor.value?.$el
-    return element instanceof HTMLElement ? element.closest<HTMLElement>('[role="dialog"]') : null
-  },
 })
+const editorExtensions = [
+  ...mailEditorKit({ image: imageExtension }),
+  QuotedContentExtension,
+  ...mentionExtensions,
+]
 
 const identityOptions = computed(() =>
   (identities.value.data ?? []).map((i: Identity) => ({
@@ -586,10 +585,8 @@ const toggleCcBcc = () => {
 // during its transition doesn't take.
 onMounted(() => {
   onOpened()
-  if (mailDetails?.in_reply_to) return textEditor.value.editor.commands.focus()
+  if (mailDetails?.in_reply_to) return textEditor.value?.editor?.commands.focus()
 
-  // Deferred, and the choice made from inside: TextEditor renders nothing until it has built its
-  // editor on its own mounted hook, so neither field exists yet at this point.
   setTimeout(() => {
     if (!isRecipientsEmpty.value && !mail.subject && subjectInput.value) subjectInput.value.focus()
     else toInput.value?.setFocus()
@@ -684,9 +681,8 @@ const TYPE_ICON_MAP = {
 // this the shortcuts went to all of them at once: ⌘D discarded every open draft, ⌘Enter sent them.
 // The one the keystroke belongs to is the one it was typed into.
 const ownsEvent = (e: KeyboardEvent) => {
-  const root: unknown = textEditor.value?.$el
   const target = e.target instanceof Node ? e.target : null
-  return root instanceof HTMLElement && !!target && root.contains(target)
+  return !!target && !!composerRoot.value?.contains(target)
 }
 const handleKeydown = (e: KeyboardEvent) => {
   if (!show.value || (isInThread && isOverlayPresent())) return

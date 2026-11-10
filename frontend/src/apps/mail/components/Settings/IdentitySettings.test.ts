@@ -104,8 +104,8 @@ vi.mock('@/api', async () => {
     },
   }
 })
-vi.mock('frappe-ui/experimental', () => ({
-  TextEditor: defineComponent({ render: () => h('div') }),
+vi.mock('@/apps/mail/components/Controls/MailRichTextField.vue', () => ({
+  default: defineComponent({ render: () => h('div') }),
 }))
 vi.mock('@/components/settings/AppSettingsHeader.vue', () => ({
   default: defineComponent({
@@ -130,10 +130,8 @@ vi.mock('@/apps/mail/utils/composables', async () => {
   const { ref } = await import('vue')
   return {
     useScreenSize: () => ({ isMobile: ref(false) }),
-    useTextEditorButtons: () => ({ buttons: [] }),
   }
 })
-vi.mock('@/apps/mail/utils/text-editor', () => ({ CustomParagraphExtension: {} }))
 vi.mock('@/apps/mail/stores/user', () => ({ userStore: () => state.store }))
 
 const DELETE_URL = 'suite.mail.doctype.identity.identity.bulk_delete'

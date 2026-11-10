@@ -66,215 +66,212 @@
 
     <!-- flex-1 so the body claims the rest of the page: a tap anywhere in the empty space below
 		     the last line lands in the message, which is where someone tapping there meant to type. -->
-    <TextEditor
-      ref="textEditor"
-      editor-class="prose-sm max-w-none [&_ol]:ps-7 [&_ul]:ps-7 [&_[contenteditable=true]]:outline-none"
-      :extensions="[
-        imageExtension,
-        CustomParagraphExtension,
-        QuotedContentExtension,
-        ...mentionExtensions,
-      ]"
-      :content="editorContent"
-      :upload-function="uploadInlineImage"
-      class="flex min-h-0 flex-1 flex-col"
-      @change="onEditorChange"
-    >
-      <!--
+    <div class="relative flex min-h-0 w-full flex-1 flex-col">
+      <Editor
+        ref="textEditor"
+        :model-value="editorContent"
+        :extensions="editorExtensions"
+        :upload-function="uploadInlineImage"
+        @change="onEditorChange"
+      >
+        <template #default="{ editor }">
+          <!--
 			  The one scrolling region: fields and body as a single column, so they move together and
 			  the recipients scroll away to make room once you're writing. It runs to the bottom of the
 			  page, which is the top of the keyboard.
 			-->
-      <template #editor="{ editor }">
-        <div
-          ref="scroller"
-          class="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain"
-          @pointerdown="focusWithoutReveal"
-          @focusin="onFocusIn"
-        >
-          <!-- Each row is a label + control on one line, tap target spanning the full width —
+          <div
+            ref="scroller"
+            class="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain"
+            @pointerdown="focusWithoutReveal"
+            @focusin="onFocusIn"
+          >
+            <!-- Each row is a label + control on one line, tap target spanning the full width —
 					     on a phone the label is a hit area, not decoration. Stopped, so tapping a field
 					     doesn't also run the body's focus-at-end below. -->
-          <!-- `border-b` as well as `divide-y`: divide-y only draws between the rows, leaving
+            <!-- `border-b` as well as `divide-y`: divide-y only draws between the rows, leaving
 					     the subject running straight into the message with no line between them. -->
-          <div class="flex flex-col divide-y border-b" @click.stop>
-            <div class="flex min-h-13 items-center gap-2 px-4 py-2">
-              <span class="text-ink-gray-4 shrink-0 text-sm">{{ __('From') }}</span>
-              <!-- Button trigger, not the default input one: you pick an identity here, you don't
+            <div class="flex flex-col divide-y border-b" @click.stop>
+              <div class="flex min-h-13 items-center gap-2 px-4 py-2">
+                <span class="text-ink-gray-4 shrink-0 text-sm">{{ __('From') }}</span>
+                <!-- Button trigger, not the default input one: you pick an identity here, you don't
 							     type one. It also makes the control content-sized — a text input carries a
 							     fixed intrinsic width of its own, so sizing to content around one cut the
 							     address off rather than fitting it. min-w-0 keeps a long address shrinking
 							     inside the row instead of pushing it wide. -->
-              <!-- Ink to match the recipient chips below: frappe-ui's button trigger carries
+                <!-- Ink to match the recipient chips below: frappe-ui's button trigger carries
 							     text-ink-gray-7, a shade softer than a field's value (its own inputs use
 							     gray-8), and From reads as one of the addresses on the mail, not as chrome. -->
-              <Combobox
-                v-model="mail.from_email"
-                :options="identityOptions"
-                trigger="button"
-                class="min-w-0 !text-ink-gray-8"
-              />
-            </div>
+                <Combobox
+                  v-model="mail.from_email"
+                  :options="identityOptions"
+                  trigger="button"
+                  class="min-w-0 !text-ink-gray-8"
+                />
+              </div>
 
-            <!-- Each recipient row is a column: the field on top, and under it the target the
+              <!-- Each recipient row is a column: the field on top, and under it the target the
 						     input teleports its suggestions into. That target spans the row rather than
 						     the field, which is what lets the list reach both edges of the page. -->
-            <div class="flex flex-col">
-              <!-- items-start, so a wrapped recipient list grows downwards past a label that
+              <div class="flex flex-col">
+                <!-- items-start, so a wrapped recipient list grows downwards past a label that
 							     stays on the first line. py-3 rather than the other rows' py-2 keeps the
 							     single-line height at min-h-13 without centring doing it. The label centres
 							     itself against a chip's height, not its own line box. -->
-              <div class="flex min-h-13 items-start gap-2 px-4 py-3">
-                <span class="text-ink-gray-4 flex min-h-7 shrink-0 items-center text-sm">{{
-                  __('To')
-                }}</span>
-                <RecipientInput
-                  ref="toInput"
-                  v-model="mail.to"
-                  field="to"
-                  :suggestions-to="toSuggestions"
-                  class="min-w-0 flex-1"
-                  @move="moveRecipient"
-                  @show-cc-bcc="showCcBcc = true"
-                />
-                <Button variant="ghost" :label="__('Cc and Bcc')" @click="showCcBcc = !showCcBcc">
-                  <template #icon>
-                    <component
-                      :is="showCcBcc ? ChevronUp : ChevronDown"
-                      class="text-ink-gray-5 h-4 w-4"
-                    />
-                  </template>
-                </Button>
+                <div class="flex min-h-13 items-start gap-2 px-4 py-3">
+                  <span class="text-ink-gray-4 flex min-h-7 shrink-0 items-center text-sm">{{
+                    __('To')
+                  }}</span>
+                  <RecipientInput
+                    ref="toInput"
+                    v-model="mail.to"
+                    field="to"
+                    :suggestions-to="toSuggestions"
+                    class="min-w-0 flex-1"
+                    @move="moveRecipient"
+                    @show-cc-bcc="showCcBcc = true"
+                  />
+                  <Button variant="ghost" :label="__('Cc and Bcc')" @click="showCcBcc = !showCcBcc">
+                    <template #icon>
+                      <component
+                        :is="showCcBcc ? ChevronUp : ChevronDown"
+                        class="text-ink-gray-5 h-4 w-4"
+                      />
+                    </template>
+                  </Button>
+                </div>
+                <div ref="toSuggestions" />
               </div>
-              <div ref="toSuggestions" />
+
+              <template v-if="showCcBcc">
+                <div class="flex flex-col">
+                  <div class="flex min-h-13 items-start gap-2 px-4 py-3">
+                    <span class="text-ink-gray-4 flex min-h-7 shrink-0 items-center text-sm">{{
+                      __('Cc')
+                    }}</span>
+                    <RecipientInput
+                      ref="ccInput"
+                      v-model="mail.cc"
+                      field="cc"
+                      :suggestions-to="ccSuggestions"
+                      class="min-w-0 flex-1"
+                      @move="moveRecipient"
+                      @show-cc-bcc="showCcBcc = true"
+                    />
+                  </div>
+                  <div ref="ccSuggestions" />
+                </div>
+                <div class="flex flex-col">
+                  <div class="flex min-h-13 items-start gap-2 px-4 py-3">
+                    <span class="text-ink-gray-4 flex min-h-7 shrink-0 items-center text-sm">{{
+                      __('Bcc')
+                    }}</span>
+                    <RecipientInput
+                      v-model="mail.bcc"
+                      field="bcc"
+                      :suggestions-to="bccSuggestions"
+                      class="min-w-0 flex-1"
+                      @move="moveRecipient"
+                      @show-cc-bcc="showCcBcc = true"
+                    />
+                  </div>
+                  <div ref="bccSuggestions" />
+                </div>
+              </template>
+
+              <label class="flex min-h-13 cursor-text items-center gap-2 px-4 py-2">
+                <span class="text-ink-gray-4 shrink-0 text-sm">{{ __('Subject') }}</span>
+                <input
+                  ref="subjectInput"
+                  v-model="mail.subject"
+                  class="text-ink-gray-8 min-w-0 flex-1 border-none bg-inherit p-0 text-base focus-visible:!ring-0"
+                />
+              </label>
             </div>
 
-            <template v-if="showCcBcc">
-              <div class="flex flex-col">
-                <div class="flex min-h-13 items-start gap-2 px-4 py-3">
-                  <span class="text-ink-gray-4 flex min-h-7 shrink-0 items-center text-sm">{{
-                    __('Cc')
-                  }}</span>
-                  <RecipientInput
-                    ref="ccInput"
-                    v-model="mail.cc"
-                    field="cc"
-                    :suggestions-to="ccSuggestions"
-                    class="min-w-0 flex-1"
-                    @move="moveRecipient"
-                    @show-cc-bcc="showCcBcc = true"
-                  />
-                </div>
-                <div ref="ccSuggestions" />
-              </div>
-              <div class="flex flex-col">
-                <div class="flex min-h-13 items-start gap-2 px-4 py-3">
-                  <span class="text-ink-gray-4 flex min-h-7 shrink-0 items-center text-sm">{{
-                    __('Bcc')
-                  }}</span>
-                  <RecipientInput
-                    v-model="mail.bcc"
-                    field="bcc"
-                    :suggestions-to="bccSuggestions"
-                    class="min-w-0 flex-1"
-                    @move="moveRecipient"
-                    @show-cc-bcc="showCcBcc = true"
-                  />
-                </div>
-                <div ref="bccSuggestions" />
-              </div>
-            </template>
-
-            <label class="flex min-h-13 cursor-text items-center gap-2 px-4 py-2">
-              <span class="text-ink-gray-4 shrink-0 text-sm">{{ __('Subject') }}</span>
-              <input
-                ref="subjectInput"
-                v-model="mail.subject"
-                class="text-ink-gray-8 min-w-0 flex-1 border-none bg-inherit p-0 text-base focus-visible:!ring-0"
-              />
-            </label>
-          </div>
-
-          <!-- flex-1 so the body claims the rest of the scroller: a tap anywhere in the empty
+            <!-- flex-1 so the body claims the rest of the scroller: a tap anywhere in the empty
 					     space below the last line lands in the message. -->
-          <div
-            class="flex flex-1 cursor-text flex-col px-4 py-3 text-sm"
-            @click="editor.commands.focus('end')"
-          >
-            <!-- Stopped here, or the wrapper's focus('end') would fire for taps on the text
+            <div
+              class="flex flex-1 cursor-text flex-col px-4 py-3 text-sm"
+              @click="editor?.commands.focus('end')"
+            >
+              <!-- Stopped here, or the wrapper's focus('end') would fire for taps on the text
 						     as well and yank the caret to the last line every time. Only taps on the
 						     empty space around the message mean "start typing at the end". -->
-            <EditorContent :editor @click.stop />
-
-            <div class="mt-auto cursor-default space-y-2.5 pt-2.5" @click.stop>
-              <Button
-                v-if="mail.quoted_content"
-                label="&middot;&middot;&middot;"
-                class="max-h-4 w-fit"
-                @click="openQuotedContent"
+              <EditorContent
+                :editor
+                class="prose-sm max-w-none [&_ol]:ps-7 [&_ul]:ps-7 [&_[contenteditable=true]]:outline-none"
+                @click.stop
               />
 
-              <a
-                v-for="(file, index) in attachments"
-                :key="index"
-                class="bg-surface-gray-2 text-ink-gray-6 flex cursor-pointer items-center rounded-4 p-2.5"
-                :href="file.file_url"
-                target="_blank"
-                @click="openAttachment(file.blob_id, file.type)"
-              >
-                <span class="mr-1 truncate font-medium">
-                  {{ file.file_name || file.filename || file.name }}
-                </span>
-                <span class="mr-1 shrink-0 font-extralight">
-                  ({{ formatBytes(file.file_size || file.size) }})
-                </span>
-                <FeatherIcon
-                  class="ml-auto h-3.5 w-3.5 shrink-0"
-                  name="x"
-                  @click.stop.prevent="removeAttachment(index)"
+              <div class="mt-auto cursor-default space-y-2.5 pt-2.5" @click.stop>
+                <Button
+                  v-if="mail.quoted_content"
+                  label="&middot;&middot;&middot;"
+                  class="max-h-4 w-fit"
+                  @click="openQuotedContent"
                 />
-              </a>
+
+                <a
+                  v-for="(file, index) in attachments"
+                  :key="index"
+                  class="bg-surface-gray-2 text-ink-gray-6 flex cursor-pointer items-center rounded-4 p-2.5"
+                  :href="file.file_url"
+                  target="_blank"
+                  @click="openAttachment(file.blob_id, file.type)"
+                >
+                  <span class="mr-1 truncate font-medium">
+                    {{ file.file_name || file.filename || file.name }}
+                  </span>
+                  <span class="mr-1 shrink-0 font-extralight">
+                    ({{ formatBytes(file.file_size || file.size) }})
+                  </span>
+                  <FeatherIcon
+                    class="ml-auto h-3.5 w-3.5 shrink-0"
+                    name="x"
+                    @click.stop.prevent="removeAttachment(index)"
+                  />
+                </a>
+              </div>
             </div>
           </div>
-        </div>
-      </template>
-      <!--
+          <!--
 			  The formatting toolbar, last in the column and `shrink-0`, so it sits on the page's bottom
 			  edge — and that edge is the top of the keyboard, since the page is sized to the visible
 			  area. No sticky, no fixed, no measuring: it is simply the last thing in the box.
 
-			  It lives in #bottom because TextEditorFixedMenu reaches for the editor its parent
-			  TextEditor provides, and outside the scroller above so the scrollbar stops at it rather
-			  than running on underneath.
+			  It sits outside the scroller above so the scrollbar stops at it rather than running on
+			  underneath.
 			-->
-      <template #bottom>
-        <div
-          v-if="isBodyFocused"
-          class="bg-surface-base z-20 shrink-0 border-t pb-[env(safe-area-inset-bottom)]"
-        >
-          <!-- The formatting buttons come from frappe-ui's TextEditorMenu at desktop scale: a
-					     16px icon in 4px of padding, a 24px target for a thumb. Sized up from here with
-					     arbitrary variants, the markup being the menu's rather than ours — and on this
-					     row only, so the same menu keeps its desktop size in the composer dialog.
-
-					     `items-center` is not optional once the buttons are taller than their contents:
-					     the menu's buttons are `flex` with no cross-axis alignment, so the default
-					     stretch left everything sitting at the top of the new height. It showed worst on
-					     H₂, which is text rather than an icon and so a different height again. -->
           <div
-            class="flex items-center gap-1 overflow-x-auto px-2 py-1 [&_button]:min-h-9 [&_button]:min-w-9 [&_button]:items-center [&_button]:justify-center [&_svg]:size-4"
+            v-if="isBodyFocused"
+            class="bg-surface-base z-20 shrink-0 border-t pb-[env(safe-area-inset-bottom)]"
           >
-            <TextEditorFixedMenu :buttons class="!bg-inherit" />
-            <Button variant="ghost" :label="__('Attach files')" @click="fileInput?.click()">
-              <template #icon>
-                <Paperclip class="icon" />
-              </template>
-            </Button>
-            <input ref="fileInput" type="file" class="hidden" multiple @change="onFilesSelected" />
+            <!-- The formatting buttons come from frappe-ui's menu at desktop scale, a 24px target for
+					     a thumb. Sized up from here with arbitrary variants, the markup being the menu's
+					     rather than ours — and on this row only, so the same menu keeps its desktop size
+					     in the composer window. -->
+            <div
+              class="flex items-center gap-1 overflow-x-auto px-2 py-1 [&_button]:min-h-9 [&_button]:min-w-9 [&_button]:items-center [&_button]:justify-center [&_svg]:size-4"
+            >
+              <EditorFixedMenu :items="menu" class="shrink-0" />
+              <Button variant="ghost" :label="__('Attach files')" @click="fileInput?.click()">
+                <template #icon>
+                  <Paperclip class="icon" />
+                </template>
+              </Button>
+              <input
+                ref="fileInput"
+                type="file"
+                class="hidden"
+                multiple
+                @change="onFilesSelected"
+              />
+            </div>
           </div>
-        </div>
-      </template>
-    </TextEditor>
+        </template>
+      </Editor>
+    </div>
 
     <ScheduleSendModal v-model="showScheduleModal" @confirm="scheduleSend" />
     <!-- Opened from More actions: a phone's sheet, with no button of its own. -->
@@ -283,9 +280,9 @@
 </template>
 
 <script setup lang="ts">
-import { EditorContent } from '@tiptap/vue-3'
 import { Button, Combobox } from 'frappe-ui'
-import { Icon as FeatherIcon, TextEditor, TextEditorFixedMenu } from 'frappe-ui/experimental'
+import { Editor, EditorContent, EditorFixedMenu } from 'frappe-ui/editor'
+import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import {
   BellPlus,
   CalendarClock,
@@ -308,19 +305,15 @@ import { takePendingCompose } from '@/apps/mail/composables/composeHandoff'
 import { useComposeMail } from '@/apps/mail/composables/useComposeMail'
 import type { Attachment, Identity } from '@/apps/mail/types'
 import { formatBytes, raiseToast } from '@/apps/mail/utils'
-import { useTextEditorButtons } from '@/apps/mail/utils/composables'
+import { useEditorMenu } from '@/apps/mail/utils/editorMenu'
 import { QuotedContentExtension } from '@/apps/mail/utils/quotedContentExtension'
-import {
-  CustomImageExtension,
-  CustomParagraphExtension,
-  uploadFunction,
-} from '@/apps/mail/utils/text-editor'
+import { CustomImageExtension, mailEditorKit, uploadFunction } from '@/apps/mail/utils/text-editor'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import { useKeyboardInsets } from '@/composables/useKeyboardInsets'
 
 const router = useRouter()
 
-const textEditor = useTemplateRef<{ $el?: HTMLElement; editor?: any }>('textEditor')
+const textEditor = useTemplateRef('textEditor')
 const toInput = useTemplateRef<{ setFocus: () => void }>('toInput')
 const ccInput = useTemplateRef<{ setFocus: () => void }>('ccInput')
 const subjectInput = useTemplateRef<HTMLInputElement>('subjectInput')
@@ -385,6 +378,11 @@ const {
   host: () => textEditor.value,
   isUploading: () => isUploading.value,
 })
+const editorExtensions = [
+  ...mailEditorKit({ image: imageExtension }),
+  QuotedContentExtension,
+  ...mentionExtensions,
+]
 
 const { height: viewportHeight, top: keyboardTop } = useKeyboardInsets()
 
@@ -522,7 +520,7 @@ const revealFocused = (event: FocusEvent) => {
   if (rect.bottom > view.bottom - margin) box.scrollTop += rect.bottom - view.bottom + margin
   else if (rect.top < view.top + margin) box.scrollTop -= view.top + margin - rect.top
 }
-const { buttons } = useTextEditorButtons()
+const menu = useEditorMenu()
 
 const identityOptions = computed(
   () =>
@@ -585,13 +583,9 @@ const ACTIONS = computed(() => [
 onMounted(() => {
   onOpened()
 
-  // Deferred: TextEditor renders nothing until it has built its editor on its own mounted hook, so
-  // none of these exist yet at this point.
-  nextTick(() => {
-    if (mailDetails?.in_reply_to) textEditor.value?.editor?.commands.focus()
-    else if (!isRecipientsEmpty.value && !mail.subject) subjectInput.value?.focus()
-    else toInput.value?.setFocus()
-  })
+  if (mailDetails?.in_reply_to) textEditor.value?.editor?.commands.focus()
+  else if (!isRecipientsEmpty.value && !mail.subject) subjectInput.value?.focus()
+  else toInput.value?.setFocus()
 })
 
 // Navigating away is the only way off this page, so this is where an unsent message gets kept.

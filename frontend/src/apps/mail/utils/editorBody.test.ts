@@ -9,7 +9,7 @@ import { CustomParagraphExtension } from './text-editor'
 vi.mock('frappe-ui', () => ({ useFileUpload: () => ({}), toast: { error: vi.fn() } }))
 
 // The composer as wired: the body goes in as the editor's `content`, each change comes back out
-// through `fromEditor`, and frappe-ui's TextEditor resets itself whenever `content` differs from
+// through `fromEditor`, and frappe-ui's editor resets itself whenever `content` differs from
 // what it holds.
 const composer = (body: string) => {
   const editorBody = createEditorBody()
