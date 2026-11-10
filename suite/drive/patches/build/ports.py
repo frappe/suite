@@ -1888,11 +1888,18 @@ class SiteContentTarget:
 
     def save_docshare_counts(self, dropped: int, deleted: int) -> None:
         doctype, field = DOCSHARE_COUNTS
-        key = {"doctype": doctype, "field": field}
-        frappe.db.sql("DELETE FROM `tabSingles` WHERE `doctype` = %(doctype)s AND `field` = %(field)s", key)
+        values = {"doctype": doctype, "field": field, "value": f"{dropped},{deleted}"}
+        # Build removes no rows but DocShares, so a later batch's totals overwrite the saved ones
+        if legacy_single_value(doctype, field) is None:
+            frappe.db.sql(
+                "INSERT INTO `tabSingles` (`doctype`, `field`, `value`) VALUES (%(doctype)s, %(field)s, %(value)s)",
+                values,
+            )
+            return
+
         frappe.db.sql(
-            "INSERT INTO `tabSingles` (`doctype`, `field`, `value`) VALUES (%(doctype)s, %(field)s, %(value)s)",
-            {**key, "value": f"{dropped},{deleted}"},
+            "UPDATE `tabSingles` SET `value` = %(value)s WHERE `doctype` = %(doctype)s AND `field` = %(field)s",
+            values,
         )
 
     def docshare_counts(self) -> tuple[int, int] | None:
