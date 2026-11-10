@@ -244,8 +244,16 @@ test("a composite sends the link code of a deck that is shared on its own", asyn
 	expect(answer.status()).toBe(200);
 	const sent = (await answer.request().headerValue("x-drive-links")) ?? "";
 	expect(sent.split(",").sort()).toEqual([deckCode, partCode].sort());
-	await expect(page.getByRole("button", { name: "1 · ready" })).toBeVisible();
-	await expect(page.getByRole("button", { name: "2 · unreadable" })).toBeVisible();
+	// Only the deck shared on its own reads; the private one stays a blank slide, not a failed load
+	const parts = await frappeData<{ references: Array<{ index: number; readable: boolean }> }>(answer);
+	const read = parts.references
+		.map(({ index, readable }) => [index, readable])
+		.sort(([left], [right]) => Number(left) - Number(right));
+	expect(read).toEqual([
+		[1, true],
+		[2, false],
+	]);
+	await expect(page.getByText("Couldn't load this slide. Reload to try again.")).toHaveCount(0);
 	await visitor.close();
 });
 
