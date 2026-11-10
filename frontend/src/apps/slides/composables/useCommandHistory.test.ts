@@ -21,14 +21,14 @@ const actionOrder = {
 const makeState = (overrides = {}) => [
   {
     clientId: 'c1',
-    elements: [{ id: 1, type: 'text', content: 'a', locked: false, ...overrides }],
+    elements: [{ id: '1', type: 'text', content: 'a', locked: false, ...overrides }],
   },
 ]
 
 const contentEdit = (oldValue: string, newValue: string, coalesceKey = 'content:c1:1') =>
   editElementCommand({
     slideId: 'c1',
-    elementIds: [1],
+    elementIds: ['1'],
     property: 'content',
     oldValue,
     newValue,
@@ -38,7 +38,7 @@ const contentEdit = (oldValue: string, newValue: string, coalesceKey = 'content:
 const keylessEdit = (oldValue: string, newValue: string) =>
   editElementCommand({
     slideId: 'c1',
-    elementIds: [1],
+    elementIds: ['1'],
     property: 'content',
     oldValue,
     newValue,
@@ -47,12 +47,12 @@ const keylessEdit = (oldValue: string, newValue: string) =>
 const batchEdit = (edits: [string, string][]) =>
   batchCommand({
     slideId: 'c1',
-    elementIds: [1, 2],
+    elementIds: ['1', '2'],
     coalesceKey: 'content:c1:1,2',
     commands: edits.map(([oldValue, newValue], i) =>
       editElementCommand({
         slideId: 'c1',
-        elementIds: [i + 1],
+        elementIds: [String(i + 1)],
         property: 'content',
         oldValue,
         newValue,
@@ -138,7 +138,7 @@ describe('record coalescing', () => {
   })
 
   it('keeps a batch whose lead lands back while another element changed', async () => {
-    state.value[0].elements.push({ id: 2, type: 'text', content: 'x', locked: false })
+    state.value[0].elements.push({ id: '2', type: 'text', content: 'x', locked: false })
     history.record(
       batchEdit([
         ['a', 'ab'],
@@ -177,7 +177,7 @@ describe('record coalescing', () => {
   })
 
   it('starts a new entry when the next batch has fewer boxes', async () => {
-    state.value[0].elements.push({ id: 2, type: 'text', content: 'x', locked: false })
+    state.value[0].elements.push({ id: '2', type: 'text', content: 'x', locked: false })
     history.record(
       batchEdit([
         ['a', 'ab'],
