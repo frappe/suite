@@ -249,6 +249,16 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   // below includes it.
   const prefilledBody = isSavedDraft ? '' : mailDetails?.html_body || ''
 
+  // A fresh compose can open before the identities load, and then starts from the person's
+  // sign-in address, which on Suite Cloud is not a mailbox address. Once they arrive, move off an
+  // address that is not one of them.
+  watch(
+    () => identities.value.data,
+    (loaded) => {
+      if (loaded?.length && !getIdentity(mail.from_email)) mail.from_email = getDefaultFromEmail()
+    },
+  )
+
   // Swap the signature when it changes — a different From identity, or the identities arriving
   // after the composer opened (a fresh compose can open before they have loaded, and then starts
   // from the account's address with no signature to put in) — but only while the body is still the
@@ -483,6 +493,13 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       return raiseToast(__('Please add at least one recipient.'), 'error')
     showScheduleModal.value = true
   }
+  // Remind me if nobody replies: chosen here, and set by the send itself, so it exists only for mail
+  // that went out (see suite/mail/reminders.py). The server refuses a time before the mail goes out.
+  const remindAt = ref<string>()
+  const setRemindAt = async (at?: string) => {
+    remindAt.value = at
+  }
+
   const scheduleSend = (sendAt: string) => sendMail(sendAt)
 
   // Undo send: Send actually scheduled delivery a few seconds out (a server-side hold), so undoing
@@ -637,6 +654,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       save_as_draft,
       send_at,
       undo_send,
+      remind_at: save_as_draft ? undefined : remindAt.value,
     }
     const result = await createMail.run(input)
     await onMailUpdateSuccess(result)
@@ -666,6 +684,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       submit,
       send_at,
       undo_send,
+      remind_at: submit ? remindAt.value : undefined,
     }
     const result = await updateDraft.run(input)
     await onMailUpdateSuccess(result)
@@ -772,6 +791,8 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     showScheduleModal,
     openScheduleModal,
     scheduleSend,
+    remindAt,
+    setRemindAt,
     openQuotedContent,
     openAttachment,
     mentionExtensions,

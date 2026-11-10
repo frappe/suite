@@ -86,6 +86,17 @@ class TestActivityAndPersonalRecords(IntegrationTestCase):
         self.assertFalse(frappe.db.exists("Drive Recent", {"user": OWNER, "node": self.node}))
         self.assertTrue(frappe.db.exists("Drive Favourite", {"user": OWNER, "node": self.node}))
 
+    def test_a_visit_tells_only_the_visitor_that_recent_changed_and_a_star_tells_of_a_change(self):
+        def events(action):
+            with patch("frappe.publish_realtime") as publish:
+                action()
+            sent = [(call.args[0], call.kwargs.get("user")) for call in publish.call_args_list]
+            return [(event, user) for event, user in sent if event.startswith("drive:")]
+
+        self.assertEqual(events(lambda: visit(self.other, self.node)), [("drive:recent", OTHER)])
+        self.assertEqual(events(lambda: set_favourite(self.other, self.node)), [("drive:changed", OTHER)])
+        self.assertEqual(events(lambda: set_favourite(self.other, self.node)), [])
+
     def test_personal_rows_and_mark_read_are_isolated_by_caller(self):
         visit(self.owner, self.node)
         visit(self.other, self.node)

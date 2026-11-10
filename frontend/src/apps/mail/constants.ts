@@ -18,6 +18,7 @@ export const FOLDER_ICON_MAP = {
   drafts: 'pencil-line',
   archive: 'archive',
   important: 'bookmark',
+  snoozed: 'clock',
 }
 
 export const FOLDER_ICON_COLOR_MAP = {
@@ -49,6 +50,11 @@ export const FOLDER_COLOR_MAP = {
 // and the background has to go with it, or it would paint the whole icon box amber.
 export const FLAGGED_STAR_STYLE =
   'fill: var(--ink-amber-6); color: var(--ink-amber-6); ' +
+  'mask-image: none; -webkit-mask-image: none; background-color: transparent'
+
+// A pinned row's pin, filled in blue the same way: on, as a starred row's star is.
+export const PINNED_PIN_STYLE =
+  'fill: var(--ink-blue-6); color: var(--ink-blue-6); ' +
   'mask-image: none; -webkit-mask-image: none; background-color: transparent'
 
 /**

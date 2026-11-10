@@ -7,14 +7,8 @@ import { registration } from './policy'
 
 // How a filing changes a cached list before the server answers: the conversation's rows leave the
 // list it names as left, and every other list keeps them until it is read again.
-const updateOf = () => {
-  const policy = registration.policy(
-    fromPartial<Operation>({
-      id: 'file_mails',
-      kind: 'mutation',
-      publicName: 'messages.file',
-    }),
-  )
+const updateOf = (id = 'file_mails', publicName = 'messages.file') => {
+  const policy = registration.policy(fromPartial<Operation>({ id, kind: 'mutation', publicName }))
   if (!policy.effects || policy.effects === 'none' || !policy.effects.optimisticReads)
     throw new Error('Expected mutation cache effects')
   return policy.effects.optimisticReads.update
@@ -48,4 +42,23 @@ it('shows a conversation that stays on the list in the folders it is filed into'
       { id: 'other' },
     ],
   })
+})
+
+const snoozeUpdate = () => updateOf('snooze_mails', 'messages.snooze')
+
+it('takes a snoozed conversation off the list it left, and no other', () => {
+  const update = snoozeUpdate()
+  const snoozed = { account: 'a', ids: ['q', 'r'], until: '2026-11-06T09:00:00Z', leaves: 'inbox' }
+
+  expect(update(snoozed, { account: 'a', mailbox: 'inbox' }, list)).toEqual({
+    rows: [{ id: 'other' }],
+  })
+  expect(update(snoozed, { account: 'a', mailbox: 'projects' }, list)).toBeUndefined()
+})
+
+it('keeps the row when only the time changes, in Snoozed', () => {
+  const update = snoozeUpdate()
+  const again = { account: 'a', ids: ['q'], until: '2026-11-06T09:00:00Z', leaves: null }
+
+  expect(update(again, { account: 'a', mailbox: 'snoozed' }, list)).toBeUndefined()
 })

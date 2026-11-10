@@ -8,6 +8,7 @@ from frappe.tests import UnitTestCase
 from suite.mail.filing import left_inbox, plan
 
 ROLES = {
+    "snoozed": "snoozed",
     "inbox": "inbox",
     "archive": "archive",
     "sent": "sent",
@@ -170,3 +171,54 @@ class TestTrash(UnitTestCase):
             plan("trash", [junked], ROLES),
             {"j": {"mailboxIds": {"trash": True}, "keywords/$junk": None}},
         )
+
+
+class TestSnooze(UnitTestCase):
+    def test_received_mail_leaves_the_inbox_and_keeps_its_other_folders(self):
+        updates = plan("snooze", CONVERSATION, ROLES)
+
+        self.assertEqual(set(updates), {"q"})
+        self.assertEqual(set(apply(QUESTION, updates["q"])["mailboxIds"]), {"snoozed", "projects"})
+
+    def test_archived_mail_leaves_archive_too(self):
+        archived = email("a", "archive")
+        self.assertEqual(
+            set(apply(archived, plan("snooze", [archived], ROLES)["a"])["mailboxIds"]), {"snoozed"}
+        )
+
+    def test_your_mail_waits_only_if_it_was_in_the_inbox_and_keeps_sent(self):
+        # In the Inbox because nobody replied to it (see suite.mail.reminders).
+        chased = email("r", "sent", "inbox", returned=True, noreply=True)
+        update = plan("snooze", [chased], ROLES)["r"]
+
+        self.assertEqual(set(apply(chased, update)["mailboxIds"]), {"sent", "snoozed"})
+        self.assertEqual(update["keywords/returned"], None)
+        self.assertEqual(update["keywords/noreply"], None)
+        self.assertEqual(plan("snooze", [REPLY, email("a", "sent", "archive")], ROLES), {})
+
+    def test_what_is_thrown_out_or_filed_elsewhere_stays_where_it_is(self):
+        kept = [email("t", "trash"), email("j", "junk"), email("p", "projects")]
+
+        self.assertEqual(plan("snooze", kept, ROLES), {})
+
+    def test_it_loses_the_mark_of_an_earlier_return(self):
+        returned = email("m", "inbox", returned=True)
+
+        self.assertIsNone(plan("snooze", [returned], ROLES)["m"]["keywords/returned"])
+
+    def test_wake_brings_what_waited_back_to_the_inbox(self):
+        waiting = email("q", "snoozed", "projects")
+        own = email("r", "sent", "snoozed")
+        updates = plan("wake", [waiting, own, DRAFT, email("o", "inbox"), REPLY], ROLES)
+
+        self.assertEqual(set(updates), {"q", "r"})
+        self.assertEqual(set(apply(waiting, updates["q"])["mailboxIds"]), {"inbox", "projects"})
+        self.assertEqual(set(apply(own, updates["r"])["mailboxIds"]), {"sent", "inbox"})
+
+    def test_archived_or_trashed_it_is_no_longer_snoozed(self):
+        waiting = email("q", "snoozed")
+
+        self.assertEqual(
+            set(apply(waiting, plan("archive", [waiting], ROLES)["q"])["mailboxIds"]), {"archive"}
+        )
+        self.assertEqual(plan("trash", [waiting], ROLES)["q"], {"mailboxIds": {"trash": True}})

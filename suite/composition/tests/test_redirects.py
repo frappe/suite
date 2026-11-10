@@ -165,6 +165,7 @@ class TestRedirectTable(DriveHTTPCase):
             "/drive/trash",
             f"/drive/f/{self.folder}",
             "/suite/setup",
+            "/suite/welcome",
             "/suite/load-error",
             "/mail",
         ):

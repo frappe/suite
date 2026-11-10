@@ -59,7 +59,7 @@ jobs:
           file: .github/arc/runner/Dockerfile
           platforms: linux/amd64
           push: false
-          tags: ghcr.io/frappe/suite-actions-runner:2.336.0
+          tags: ghcr.io/frappe/suite-actions-runner:2.338.2
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -92,6 +92,6 @@ jobs:
           file: .github/arc/runner/Dockerfile
           platforms: linux/amd64
           push: true
-          tags: ${{ inputs.benchmark && format('ghcr.io/frappe/suite-actions-runner:benchmark-{0}', github.sha) || 'ghcr.io/frappe/suite-actions-runner:2.336.0' }}
+          tags: ${{ inputs.benchmark && format('ghcr.io/frappe/suite-actions-runner:benchmark-{0}', github.sha) || 'ghcr.io/frappe/suite-actions-runner:2.338.2' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

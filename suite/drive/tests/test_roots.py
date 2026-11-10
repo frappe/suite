@@ -75,6 +75,25 @@ class TestRootDiscovery(UnitTestCase):
         self.assertEqual(answer["organization"], {"node": "shared", "title": "Organization files"})
         self.assertEqual(require.call_count, 2)
 
+    @patch("suite.drive._core.access.require")
+    @patch("suite.drive._core.roots.validate_root_pair")
+    @patch("suite.drive._core.roots.frappe.db.sql")
+    def test_the_boot_reads_the_same_locations_and_none_without_a_root(self, sql, pair, _require):
+        from suite import drive
+
+        sql.return_value = [frappe._dict(node="personal", kind="Personal", title="My files")]
+        pair.return_value = frappe._dict(node=frappe._dict(name="personal"))
+        guest = Principals("Guest", ("Guest",), ("$PUBLIC",))
+        with patch("suite.drive._principals", return_value=self.principals):
+            self.assertEqual(drive.root_locations(), discover(self.principals))
+            pair.side_effect = frappe.ValidationError("A malformed root")
+            self.assertIsNone(drive.root_locations())
+            pair.side_effect = None
+            sql.return_value = []
+            self.assertIsNone(drive.root_locations())
+        with patch("suite.drive._principals", return_value=guest):
+            self.assertIsNone(drive.root_locations())
+
 
 class TestRootLifecycle(IntegrationTestCase):
     user = "drive-root-lifecycle@example.com"

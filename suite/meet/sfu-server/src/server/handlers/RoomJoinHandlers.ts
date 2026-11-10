@@ -89,6 +89,7 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 
 			if (socket.scope === 'full') {
 				deps.registry.joinScope(socket, scopedRoomId, 'full');
+				syncHostOnlyChatFromToken(deps, socket, scopedRoomId);
 				const senderId = deps.registry.assignSenderId(scopedRoomId, peerId);
 				socket.senderId = senderId;
 				if (!socket.e2eeRequired) {
@@ -432,6 +433,33 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 			}
 		});
 	};
+}
+
+function syncHostOnlyChatFromToken(
+	deps: HandlerDeps,
+	socket: Socket,
+	roomId: string,
+): void {
+	if (socket.scope !== 'full') return;
+	// Server-signed room policy from the SFU JWT. A true claim enforces the
+	// restriction; a false/missing claim never clears a live restriction set
+	// by a host toggle, so stale tokens cannot lift it.
+	if (socket.hostOnlyChat === true) {
+		if (!deps.registry.isHostOnlyChat(roomId)) {
+			deps.registry.setHostOnlyChat(roomId, true);
+			deps.registry.emitToFullAccessParticipants(
+				roomId,
+				'chat:restriction_updated',
+				{
+					enabled: true,
+				},
+			);
+		} else {
+			socket.emit('chat:restriction_updated', { enabled: true });
+		}
+	} else if (deps.registry.isHostOnlyChat(roomId)) {
+		socket.emit('chat:restriction_updated', { enabled: true });
+	}
 }
 
 class ParticipantConnectionConflictError extends Error {

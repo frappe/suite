@@ -20,7 +20,7 @@ vi.mock('./navigation', () => ({ useDocumentLeaveGuard: vi.fn() }))
 type Emit = (event: string, ...args: unknown[]) => void
 /** What the mocked children last rendered with, so a test can act as the person would. */
 const seen = vi.hoisted(() => ({
-  header: fromPartial<Emit | null>(null),
+  menu: fromPartial<{ emit: Emit; props: Record<string, unknown> } | null>(null),
   panel: fromPartial<{ emit: Emit; props: Record<string, unknown> } | null>(null),
   bar: fromPartial<{ emit: Emit; props: Record<string, unknown> } | null>(null),
   editors: fromPartial<
@@ -32,15 +32,14 @@ vi.mock('@/apps/drive', async () => {
   return {
     driveNodeRoute: (node: string) => ({ path: `/d/${node}` }),
     DriveDocumentHeader: defineComponent({
-      emits: ['update:panel'],
-      setup: (_props, { emit }) => {
-        seen.header = fromPartial<Emit>(emit)
-        return () => null
-      },
+      setup:
+        (_props, { slots }) =>
+        () =>
+          slots.menu?.(),
     }),
   }
 })
-function capture(key: 'panel' | 'bar') {
+function capture(key: 'menu' | 'panel' | 'bar') {
   return {
     default: defineComponent({
       inheritAttrs: false,
@@ -58,6 +57,7 @@ function capture(key: 'panel' | 'bar') {
     }),
   }
 }
+vi.mock('./SheetDocumentMenu.vue', () => capture('menu'))
 vi.mock('./SheetVersionsPanel.vue', () => capture('panel'))
 vi.mock('./SheetVersionBar.vue', () => capture('bar'))
 vi.mock('./SheetCommentsPanel.vue', () => ({ default: { render: () => null } }))
@@ -193,7 +193,7 @@ async function openVersions() {
     root.remove()
   }
   await settle()
-  seen.header!('update:panel', 'versions')
+  seen.menu!.emit('togglePanel', 'versions')
   await settle()
 }
 const lastEditor = () => seen.editors.at(-1)!

@@ -94,11 +94,13 @@ from suite.mail.api.mail import (
     add_mails_to_mailbox,
     allow_screening_senders,
     block_senders,
+    cancel_reply_reminder,
     clear_list,
     create_mail,
     create_mailbox,
     delete_mail,
     delete_mailbox,
+    dismiss_returned_mail,
     empty_user_mailbox,
     fetch_attachment,
     fetch_attachments_as_zip,
@@ -111,6 +113,7 @@ from suite.mail.api.mail import (
     get_mailboxes,
     get_mime_message,
     get_recent_threads_from,
+    get_reply_reminder,
     get_screened_addresses,
     get_tab_counts,
     get_thread,
@@ -121,8 +124,11 @@ from suite.mail.api.mail import (
     get_unsubscribe_options,
     junk_senders_inbox_mail,
     move_mails,
+    pin_mails,
     react,
+    remind_if_no_reply,
     remove_mails_from_mailbox,
+    restore_returned_mail,
     screen_email_address,
     screen_email_addresses,
     screen_out_senders,
@@ -131,8 +137,10 @@ from suite.mail.api.mail import (
     set_mails_mailboxes,
     set_mails_seen,
     set_mails_spam_status,
+    snooze_mails,
     undo_screening_verdict,
     unscreen_email_addresses,
+    unsnooze_mails,
     unsubscribe_mail,
     update_draft_mail,
     update_mailbox,
@@ -168,6 +176,7 @@ from suite.mail.doctype.vacation_response.vacation_response import (
 from suite.mail.http.admin import CONTRACT_ROUTES as ADMIN_CONTRACT_ROUTES
 from suite.mail.http.admin_actions import CONTRACT_ROUTES as ADMIN_ACTION_CONTRACT_ROUTES
 from suite.mail.http.auth import CONTRACT_ROUTES as AUTH_CONTRACT_ROUTES
+from suite.mail.http.auth import ROUTES as AUTH_ROUTES
 from suite.mail.http.auth import (
     create_account,
     get_account_request,
@@ -500,6 +509,7 @@ CONTRACT_ROUTES += (
 
 CONTRACT_ROUTES += CALENDAR_CONTRACT_ROUTES
 
+ROUTES += AUTH_ROUTES
 CONTRACT_ROUTES += AUTH_CONTRACT_ROUTES
 
 CONTRACT_ROUTES += (

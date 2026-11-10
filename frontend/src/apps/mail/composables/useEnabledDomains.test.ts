@@ -7,7 +7,7 @@ vi.mock('@/api', async () => {
   const { createApiClient } = await import('@/platform/server-state')
   const engine = createApiClient(
     { mail: async () => ({ policy: () => ({ staleTime: 0 }) }) },
-    { persistence: false, transport: { request: boundary.fetch } },
+    { transport: { request: boundary.fetch } },
   )
   return { api: { mail }, useQuery: engine.useQuery }
 })

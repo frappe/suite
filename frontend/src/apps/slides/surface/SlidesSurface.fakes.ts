@@ -72,7 +72,7 @@ vi.mock('@/api', async () => {
       slides: async () => registration,
       drive: async () => ({ policy: () => ({ effects: 'none' }) }),
     },
-    { persistence: false, transport: createTransport({ fetch: server.fetch }) },
+    { transport: createTransport({ fetch: server.fetch }) },
   )
 
   forgetTemplates.run = () => {

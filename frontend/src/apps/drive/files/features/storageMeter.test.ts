@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest'
 
 import { storageMeter } from './storageMeter'
 
-const GB = 1_000_000_000
+const GB = 1024 ** 3
 
 describe('storage meter', () => {
   it('reads use against the quota', () => {
     expect(storageMeter({ used_bytes: 2.4 * GB, effective_quota: 10 * GB })).toEqual({
-      label: '2.4 GB of 10.0 GB used',
+      label: '2.4 GB of 10 GB used',
       percent: 24,
       level: 'ok',
     })

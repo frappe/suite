@@ -33,8 +33,7 @@ test.afterEach(async () => {
 
 async function useNewMenu(page: import("@playwright/test").Page, item: string) {
 	await page.getByRole("button", { name: "New", exact: true }).click();
-	// The Upload group repeats "Folder"; the Create group comes first.
-	await page.getByRole("menuitem", { name: item, exact: true }).first().click();
+	await page.getByRole("menuitem", { name: item, exact: true }).click();
 }
 
 test("New Folder creates a folder in the open destination", async ({ page }) => {
@@ -50,16 +49,14 @@ test("New Folder creates a folder in the open destination", async ({ page }) => 
 	expect((await children(api, home.name)).rows.map((row) => row.title)).toContain("made-in-the-browser");
 });
 
+// A new document takes the default title and opens at once, with no name dialog.
 test("New Writer document creates the node and lands on /d/", async ({ page }) => {
 	await page.goto(`/drive/f/${home.name}?view=list`);
 	await useNewMenu(page, "Document");
 
-	const dialog = page.getByRole("dialog");
-	await dialog.getByRole("textbox").fill("browser-writer");
-	await dialog.getByRole("button", { name: "Create" }).click();
-
-	await expect(page).toHaveURL(/\/d\/[a-z0-9]+\/browser-writer/);
-	const created = (await children(api, home.name)).rows.find((row) => row.title === "browser-writer");
+	await expect(page).toHaveURL(/\/d\/[a-z0-9]+\/untitled-document/);
+	await expect(page.getByRole("dialog", { name: "New document" })).toHaveCount(0);
+	const created = (await children(api, home.name)).rows.find((row) => row.title === "Untitled document");
 	expect(created?.content_doctype).toBe("Writer Document");
 	expect(created?.content_docname).toBeTruthy();
 });
@@ -70,12 +67,8 @@ test("New Spreadsheet creates a Sheet and lands on /d/", async ({ page }) => {
 	await page.goto(`/drive/f/${home.name}?view=list`);
 	await useNewMenu(page, "Spreadsheet");
 
-	const dialog = page.getByRole("dialog");
-	await dialog.getByRole("textbox").fill("browser-sheet");
-	await dialog.getByRole("button", { name: "Create" }).click();
-
-	await expect(page).toHaveURL(/\/d\/[a-z0-9]+\/browser-sheet/);
-	const created = (await children(api, home.name)).rows.find((row) => row.title === "browser-sheet");
+	await expect(page).toHaveURL(/\/d\/[a-z0-9]+\/untitled-spreadsheet/);
+	const created = (await children(api, home.name)).rows.find((row) => row.title === "Untitled spreadsheet");
 	expect(created?.content_doctype).toBe("Sheet");
 });
 
@@ -83,24 +76,22 @@ test("New Presentation creates the node and lands on /d/", async ({ page }) => {
 	await page.goto(`/drive/f/${home.name}?view=list`);
 	await useNewMenu(page, "Presentation");
 
-	const dialog = page.getByRole("dialog");
-	await dialog.getByRole("textbox").fill("browser-deck");
-	await dialog.getByRole("button", { name: "Create" }).click();
-
-	await expect(page).toHaveURL(/\/d\/[a-z0-9]+\/browser-deck/);
-	const created = (await children(api, home.name)).rows.find((row) => row.title === "browser-deck");
+	await expect(page).toHaveURL(/\/d\/[a-z0-9]+\/untitled-presentation/);
+	const created = (await children(api, home.name)).rows.find((row) => row.title === "Untitled presentation");
 	expect(created?.content_doctype).toBe("Presentation");
 });
 
-test("New offers Files and then Folder under Upload", async ({ page }) => {
+test("New ends with Upload files and Upload folder, so only Create says Folder", async ({ page }) => {
 	await page.goto(`/drive/f/${home.name}?view=list`);
 	await page.getByRole("button", { name: "New", exact: true }).click();
 	const menu = page.getByRole("menu", { name: "New" });
-	await expect(menu.getByText("Upload", { exact: true })).toBeVisible();
+	await expect(menu.getByRole("menuitem", { name: "Upload files" })).toBeVisible();
+	// The items name the verb, so the Upload heading is not shown.
+	await expect(menu.getByText("Upload", { exact: true })).toBeHidden();
 	const labels = (await menu.getByRole("menuitem").allInnerTexts()).map((label) => label.trim());
-	// Create starts with Folder; the Upload group closes the menu with Files, then Folder.
 	expect(labels[0]).toBe("Folder");
-	expect(labels.slice(-2)).toEqual(["Files", "Folder"]);
+	expect(labels.filter((label) => label === "Folder")).toHaveLength(1);
+	expect(labels.slice(-2)).toEqual(["Upload files", "Upload folder"]);
 });
 
 test("each registered document type opens its own surface", async ({ page }) => {
@@ -148,7 +139,7 @@ test("a link row confirms its origin before opening a tab", async ({ page }) => 
 test("a Sheets document carries one share control, the Drive one", async ({ page }) => {
 	const sheet = await createDocument(api, home.name, "header-sheet", "Sheet");
 	await page.goto(`/d/${sheet.name}`);
-	await expect(page.getByRole("button", { name: "File" })).toBeVisible({ timeout: 20_000 });
+	await expect(page.getByRole("menuitem", { name: "File" })).toBeVisible({ timeout: 20_000 });
 	await expect(page.getByRole("button", { name: /Share/ })).toHaveCount(1);
 	await page.getByRole("button", { name: /Share/ }).click();
 	const dialog = page.getByRole("dialog", { name: "Share", exact: true });
