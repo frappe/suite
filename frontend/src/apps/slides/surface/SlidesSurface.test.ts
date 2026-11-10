@@ -622,14 +622,14 @@ describe('the fonts a slide draws with', () => {
 })
 
 describe('printing a presentation', () => {
-  let print: ReturnType<typeof vi.fn>
+  let print: ReturnType<typeof vi.fn<() => void>>
 
   function clickExport() {
     document.querySelector<HTMLElement>('header [aria-label="Export"]')!.click()
   }
 
   beforeEach(() => {
-    print = vi.fn()
+    print = vi.fn<() => void>()
     window.print = print
   })
 
