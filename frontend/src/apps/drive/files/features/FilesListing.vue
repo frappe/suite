@@ -5,9 +5,12 @@
        A new sort reorders the rows in place. The browser's scroll anchoring
        would follow the top row to its new place and move the page, so no row
        is an anchor. -->
+  <!-- With one Tab stop, the listing itself takes focus when its last item leaves. -->
   <div
     ref="listing"
     class="relative pt-3 [overflow-anchor:none]"
+    tabindex="-1"
+    @focusin="focus.onFocusin"
     @keydown="onKeydown"
     @pointerdown="onPointerdown"
     @contextmenu="onContextMenu"
@@ -26,8 +29,12 @@
     <div
       v-else-if="!loading && !query.rows.length"
       class="flex flex-col items-center justify-center gap-2 py-16 text-center"
+      :class="emptyFades && FADE_IN"
     >
-      <span class="lucide-folder-open size-6 text-ink-gray-4" aria-hidden="true" />
+      <span
+        :class="[emptyIcon ?? 'lucide-folder-open', 'size-6 text-ink-gray-4']"
+        aria-hidden="true"
+      />
       <p class="text-base text-ink-gray-5">{{ emptyTitle }}</p>
       <p class="text-p-sm text-ink-gray-5">{{ emptyDescription }}</p>
       <slot name="empty-action" />
@@ -43,12 +50,15 @@
         :columns="columnTracks"
         :row-height="40"
         class="-mx-3 list-row-px-3"
+        :class="[loading && FADE_IN, 'md:list-gap-6']"
         :aria-busy="loading || undefined"
+        role="grid"
+        aria-multiselectable="true"
       >
         <ListHeader>
           <div class="flex min-w-0 items-center">
             <span
-              v-if="selectionMode"
+              v-if="selectionMode || checkboxOnHover"
               role="checkbox"
               :aria-checked="allSelected ? 'true' : someSelected ? 'mixed' : 'false'"
               aria-label="Select all"
@@ -63,36 +73,43 @@
                 :indeterminate="someSelected"
                 tabindex="-1"
                 aria-hidden="true"
-                class="pointer-events-none"
+                class="pointer-events-none [&_input]:mt-0"
               />
             </span>
             <component :is="headerCell" v-bind="headerProps('title')">Name</component>
           </div>
+          <!-- Access orders nothing, so its header only labels. -->
+          <ListHeaderCell
+            v-if="shows('access')"
+            class="text-sm-medium text-ink-gray-5"
+            :class="columnClass('access')"
+            >{{ __('Access') }}</ListHeaderCell
+          >
           <component
             :is="headerCell"
             v-if="shows('kind')"
-            :class="wideOnly('kind')"
+            :class="columnClass('kind')"
             v-bind="headerProps('kind')"
             >Type</component
           >
           <component
             :is="headerCell"
             v-if="shows('owner')"
-            :class="wideOnly('owner')"
+            :class="columnClass('owner')"
             v-bind="headerProps('owner')"
             >Owner</component
           >
           <component
             :is="headerCell"
             v-if="shows('size')"
-            :class="wideOnly('size')"
+            :class="columnClass('size')"
             v-bind="headerProps('size', 'end')"
             >Size</component
           >
           <component
             :is="headerCell"
             v-if="shows('modified')"
-            :class="wideOnly('modified')"
+            :class="columnClass('modified')"
             v-bind="headerProps('modified', 'end')"
             >{{ byOpened ? 'Opened' : 'Modified' }}</component
           >
@@ -104,10 +121,19 @@
             v-for="(row, index) in rows"
             :key="row.name"
             :value="row.name"
-            tabindex="0"
+            :tabindex="stopIndex(row)"
+            :aria-selected="isSelected(row)"
             :data-node="row.name"
             :data-listing-item="row.name"
-            :class="['select-none', runClasses(index)]"
+            :data-drop-target="drag && row.kind === 'folder' ? row.name : undefined"
+            :class="[
+              'select-none',
+              FOCUS_RING_INSIDE_ROW,
+              runClasses(index),
+              checkboxOnHover && 'group/row',
+              flashClasses(row),
+              dragClasses(row, DROP_ROW),
+            ]"
             v-bind="rowDrop?.(row) ?? {}"
             @click="onRowClick($event, row)"
             @dblclick="$emit('open', row)"
@@ -116,44 +142,76 @@
             @pointercancel="cancelLongPress"
           >
             <ListCell>
-              <!-- Clicks fall through to the row, which toggles in selection mode. -->
-              <span
-                v-if="selectionMode"
-                role="checkbox"
-                :aria-checked="isSelected(row)"
-                :aria-label="`Select ${row.title}`"
-                tabindex="0"
-                class="mr-2 flex size-4 shrink-0 items-center rounded-1 focus-visible:focus-ring"
-                @keydown.enter.prevent.stop="$emit('select', row, $event.shiftKey)"
-                @keydown.space.prevent.stop="$emit('select', row, $event.shiftKey)"
-              >
-                <Checkbox
-                  :model-value="isSelected(row)"
+              <!-- Hovering the icon or the name, not the whole row, shows the checkbox. -->
+              <span class="group/name flex min-w-0 items-center">
+                <!-- The checkbox takes the icon's place while the row is hovered or focused. -->
+                <span
+                  v-if="selectionMode || checkboxOnHover"
+                  role="checkbox"
+                  :aria-checked="isSelected(row)"
+                  :aria-label="`Select ${row.title}`"
                   tabindex="-1"
+                  class="mr-2 size-4 shrink-0 items-center rounded-1 focus-visible:focus-ring"
+                  :class="
+                    selectionMode
+                      ? 'flex'
+                      : ['relative hidden before:absolute before:-inset-2', rowCheckboxShows]
+                  "
+                  @click="onCheckboxClick($event, row)"
+                  @keydown.enter.prevent.stop="$emit('select', row, $event.shiftKey)"
+                  @keydown.space.prevent.stop="$emit('select', row, $event.shiftKey)"
+                >
+                  <Checkbox
+                    :model-value="isSelected(row)"
+                    tabindex="-1"
+                    aria-hidden="true"
+                    class="pointer-events-none [&_input]:mt-0"
+                  />
+                </span>
+                <span
+                  v-if="!selectionMode"
+                  class="mr-2 size-4 shrink-0"
+                  :class="[nodeIcon(row), nodeIconTint(row), checkboxOnHover && rowIconHides]"
+                  :data-drag-handle="drag ? '' : undefined"
                   aria-hidden="true"
-                  class="pointer-events-none"
                 />
+                <!-- With drag to move, the icon and name are the row's drag handle; the rest of the row draws the marquee. -->
+                <component
+                  :is="nameLink(row) ? 'a' : 'span'"
+                  class="min-w-0 truncate text-base text-ink-gray-8"
+                  :title="row.title"
+                  :data-drag-handle="drag ? '' : undefined"
+                  v-bind="nameLink(row)"
+                  >{{ row.title }}</component
+                >
               </span>
-              <span
-                v-else
-                class="mr-2 size-4 shrink-0"
-                :class="[nodeIcon(row), nodeIconTint(row)]"
-                aria-hidden="true"
-              />
-              <span class="min-w-0 truncate text-base text-ink-gray-8" :title="row.title">{{
-                row.title
-              }}</span>
               <StarredIcon v-if="row.favourite" class="ml-1.5 size-3.5 shrink-0" />
               <span v-if="showBreadcrumbs" class="ml-2 truncate text-p-sm text-ink-gray-5">{{
                 breadcrumbText(row)
               }}</span>
             </ListCell>
-            <ListCell v-if="shows('kind')" :class="wideOnly('kind')"
+            <ListCell v-if="shows('access')" :class="columnClass('access')">
+              <!-- A click opens the share dialog where the user may share; elsewhere it is the row's. -->
+              <span
+                v-if="row.audience"
+                class="flex min-w-0 items-center gap-1.5 text-base text-ink-gray-7"
+                :class="canShare?.(row) && !selectionMode && 'cursor-pointer hover:text-ink-gray-9'"
+                @click="onAccessClick($event, row)"
+                @dblclick="onAccessDblclick($event, row)"
+              >
+                <span
+                  :class="[audienceIcon(row.audience), 'size-4 shrink-0 text-ink-gray-5']"
+                  aria-hidden="true"
+                />
+                <span class="truncate">{{ audienceLabel(row.audience) }}</span>
+              </span>
+            </ListCell>
+            <ListCell v-if="shows('kind')" :class="columnClass('kind')"
               ><span class="truncate text-base text-ink-gray-7">{{
-                nodeTypeLabel(row)
+                typeLabel(row)
               }}</span></ListCell
             >
-            <ListCell v-if="shows('owner')" :class="wideOnly('owner')">
+            <ListCell v-if="shows('owner')" :class="columnClass('owner')">
               <Avatar
                 size="xs"
                 :image="row.owner.user_image ?? undefined"
@@ -162,12 +220,12 @@
               />
               <span class="truncate text-base text-ink-gray-7">{{ row.owner.full_name }}</span>
             </ListCell>
-            <ListCell v-if="shows('size')" class="justify-end" :class="wideOnly('size')"
-              ><span class="truncate text-base text-ink-gray-5">{{
-                row.size ? formatBytes(row.size) : ''
+            <ListCell v-if="shows('size')" class="justify-end" :class="columnClass('size')"
+              ><span class="truncate text-base text-ink-gray-5 tabular-nums">{{
+                rowSize(row)
               }}</span></ListCell
             >
-            <ListCell v-if="shows('modified')" class="justify-end" :class="wideOnly('modified')"
+            <ListCell v-if="shows('modified')" class="justify-end" :class="columnClass('modified')"
               ><span class="truncate text-base text-ink-gray-5">{{ rowDate(row) }}</span></ListCell
             >
             <ListCell class="justify-end">
@@ -176,6 +234,7 @@
                   icon="lucide-ellipsis"
                   variant="ghost"
                   :aria-label="`Actions for ${row.title}`"
+                  :tabindex="stopIndex(row)"
                   @click.stop
                 />
               </Dropdown>
@@ -186,7 +245,7 @@
     </template>
 
     <template v-else>
-      <section v-if="loading" aria-busy="true">
+      <section v-if="loading" aria-busy="true" :class="FADE_IN">
         <div
           class="grid grid-cols-2 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] sm:gap-3"
           aria-hidden="true"
@@ -215,12 +274,20 @@
             role="listitem"
             class="flex min-w-0"
             :data-listing-item="row.name"
+            :data-drop-target="drag && row.kind === 'folder' ? row.name : undefined"
             v-bind="rowDrop?.(row) ?? {}"
           >
+            <!-- With drag to move, the whole card is its drag handle. -->
             <FileCard
               :node="row"
               :meta="cardMeta(row)"
               :selected="isHighlighted(row)"
+              :icon-class="cardIconClass"
+              :title-link="nameLink(row)"
+              :class="[flashClasses(row), dragClasses(row, DROP_CARD)]"
+              :data-drag-handle="drag ? '' : undefined"
+              :data-node="row.name"
+              :tabindex="stopIndex(row)"
               @click="onRowClick($event, row)"
               @dblclick="$emit('open', row)"
               @pointerdown="startLongPress($event, row)"
@@ -232,15 +299,31 @@
                 <span class="lucide-folder size-3 shrink-0" aria-hidden="true" />
                 <span class="truncate" :title="breadcrumbText(row)">{{ folderOf(row) }}</span>
               </template>
-              <!-- Inside the card's button, so the corner it covers still toggles. -->
-              <Checkbox
-                v-if="selectionMode"
-                :model-value="isSelected(row)"
-                tabindex="-1"
-                aria-hidden="true"
-                class="pointer-events-none absolute end-3 top-3"
-              />
+              <span v-if="isSelected(row)" class="sr-only">{{ __('Selected') }}</span>
               <template #actions="{ onImage }">
+                <!-- A control of its own, in the type icon's place, with a wider hit area.
+                     A soft shadow keeps it readable on a thumbnail. -->
+                <span
+                  v-if="selectionMode || checkboxOnHover"
+                  role="checkbox"
+                  :aria-checked="isSelected(row)"
+                  :aria-label="`Select ${row.title}`"
+                  tabindex="-1"
+                  data-card-checkbox
+                  class="absolute start-3 top-3 flex size-5 cursor-pointer items-center justify-center before:absolute before:-inset-2"
+                  :class="[
+                    !selectionMode && cardCheckboxShows,
+                    onImage && 'drop-shadow-[0_1px_2px_rgb(0_0_0/0.4)]',
+                  ]"
+                  @click="onCheckboxClick($event, row)"
+                >
+                  <Checkbox
+                    :model-value="isSelected(row)"
+                    tabindex="-1"
+                    aria-hidden="true"
+                    class="pointer-events-none [&_input]:mt-0"
+                  />
+                </span>
                 <Dropdown v-if="!selectionMode" :options="menuOptions(row)" align="end">
                   <!-- Over a thumbnail the button gets a dark backdrop, so it reads on any image. -->
                   <Button
@@ -252,6 +335,7 @@
                     icon="lucide-ellipsis"
                     variant="ghost"
                     :aria-label="`Actions for ${row.title}`"
+                    :tabindex="stopIndex(row)"
                     @click.stop
                   />
                 </Dropdown>
@@ -288,10 +372,22 @@
       }"
       aria-hidden="true"
     />
+    <!-- The measured columns' labels, unseen, so each column sizes to its widest even while it is hidden. -->
+    <div
+      ref="ruler"
+      class="pointer-events-none invisible absolute left-0 top-0 text-base"
+      aria-hidden="true"
+    >
+      <div v-for="(labels, column) in rulerLabels" :key="column" :data-column="column">
+        <span v-for="label in labels" :key="label" class="block w-max">{{ label }}</span>
+      </div>
+    </div>
+    <DragMoveLayer v-if="drag" :drag="drag" />
   </div>
 </template>
 
 <script setup lang="ts">
+import { useMediaQuery } from '@vueuse/core'
 import {
   Alert,
   Avatar,
@@ -310,23 +406,40 @@ import {
   ListHeaderCellSort,
   ListRow,
 } from 'frappe-ui/list'
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  shallowRef,
+  watch,
+  type AnchorHTMLAttributes,
+} from 'vue'
 
 import type { InfiniteQueryState } from '@/api'
-import type { DriveNode } from '@/apps/drive/client/types'
+import type { DriveAudience, DriveNode } from '@/apps/drive/client/types'
 import { formatBytes, formatModified } from '@/apps/drive/files/internal/format'
-import { nodeIcon, nodeIconTint, nodeTypeLabel } from '@/apps/drive/files/internal/icons'
+import { nodeIcon, nodeIconTint, useNodeTypeLabel } from '@/apps/drive/files/internal/icons'
 import { useLocationTitle } from '@/apps/drive/files/internal/locations'
 import StarredIcon from '@/apps/drive/files/internal/StarredIcon.vue'
 import { Dropdown } from '@/platform/feedback'
 import { useSession } from '@/platform/session'
+import { translate as __ } from '@/platform/translation'
+import { useWorkspace } from '@/platform/workspace'
 
+import DragMoveLayer from './DragMoveLayer.vue'
 import FileCard from './FileCard.vue'
+import type { MeasuredColumn } from './listColumns'
 import { loadUntilVisible } from './listingWindows'
 import { SKELETON_BAR, useSkeletonDelay, type SkeletonCell } from './listSkeleton'
 import ListSkeletonRows from './ListSkeletonRows.vue'
-import type { FilesDateColumn, FilesSort, PresentationState } from './presentation'
+import { isNewTabKey, watchNewTabKey } from './newTabKey'
+import type { FilesColumn, FilesDateColumn, FilesSort, PresentationState } from './presentation'
 import type { DropHandlers } from './uploads/drop'
+import type { DragMove } from './useDragMove'
+import { useListColumns } from './useListColumns'
+import { useListingFocus } from './useListingFocus'
 import { LISTING_ITEM, useMarquee } from './useMarquee'
 
 const props = defineProps<{
@@ -336,6 +449,8 @@ const props = defineProps<{
   selectionMode: boolean
   emptyTitle: string
   emptyDescription: string
+  /** The empty state's icon class; an open folder when not given. */
+  emptyIcon?: string
   showBreadcrumbs?: boolean
   /** False where the server fixes the order (search, Recent, Starred…): headers then only label. */
   sortable?: boolean
@@ -345,6 +460,12 @@ const props = defineProps<{
   /** The item whose right-click menu is open. It looks selected while the menu shows. */
   menuTarget?: string | null
   dateColumn?: FilesDateColumn
+  /** Drag to move, where the page allows it. Without it a press on an item draws the marquee. */
+  drag?: DragMove
+  /** Whether a click on an item's Access cell opens its share dialog. */
+  canShare?: (node: DriveNode) => boolean
+  /** The address an item's name links to, for Cmd/Ctrl-click and middle-click. None keeps plain text. */
+  nodeHref?: (node: DriveNode) => string | undefined
 }>()
 const emit = defineEmits<{
   'update:selection': [value: string[]]
@@ -357,6 +478,9 @@ const emit = defineEmits<{
    */
   menu: [node: DriveNode | null, event: MouseEvent]
   'preview-error': [node: DriveNode]
+  /** Shift and an arrow key moved focus from one item to another, which grows or shrinks the range. */
+  extend: [from: DriveNode, to: DriveNode]
+  share: [node: DriveNode]
 }>()
 const listing = ref<HTMLElement | null>(null)
 const sentinel = ref<HTMLElement | null>(null)
@@ -367,7 +491,9 @@ let longPressFired = false
 /** The last press came from touch or a pen, not a mouse. */
 let touchPress = false
 const session = useSession()
+const { workspaceName } = useWorkspace()
 const locationTitle = useLocationTitle()
+const typeLabel = useNodeTypeLabel()
 const { box: marqueeBox, onPointerdown: startMarquee } = useMarquee({
   area: listing,
   selection: () => props.selection,
@@ -381,6 +507,76 @@ const { box: marqueeBox, onPointerdown: startMarquee } = useMarquee({
     if (props.selection.length) emit('update:selection', [])
   },
 })
+const focus = useListingFocus({
+  root: listing,
+  rows: () => props.query.rows,
+  selection: () => props.selection,
+  grid: () => props.presentation.view === 'grid',
+  extend: (from, to) => emit('extend', from, to),
+})
+/**
+ * Loads windows until the item is in the listing, ten at most, then focuses it.
+ * With `highlight`, its background flashes. Answers whether it could.
+ */
+async function reveal(id: string, { highlight = false } = {}): Promise<boolean> {
+  const has = () => props.query.rows.some((row) => row.name === id)
+  for (let windows = 0; !has() && props.query.hasNext && windows < 10; windows++) {
+    await props.query.fetchNext()
+    if (props.query.error) break
+  }
+  await nextTick()
+  const found = focus.focusRow(id, { reveal: true })
+  if (found && highlight) startFlash(id)
+  return found
+}
+const FLASH_MS = 1500
+const FLASH_FADE_MS = 700
+/** The item a reveal highlights, and whether its highlight is fading out. */
+const flash = ref<{ id: string; fading: boolean } | null>(null)
+let flashTimer: ReturnType<typeof setTimeout> | undefined
+function startFlash(id: string) {
+  clearTimeout(flashTimer)
+  flash.value = { id, fading: false }
+  flashTimer = setTimeout(() => {
+    flash.value = { id, fading: true }
+    flashTimer = setTimeout(() => (flash.value = null), FLASH_FADE_MS)
+  }, FLASH_MS)
+}
+onBeforeUnmount(() => clearTimeout(flashTimer))
+function flashClasses(row: DriveNode) {
+  if (flash.value?.id !== row.name) return undefined
+  return [
+    'transition-colors duration-700 motion-reduce:transition-none',
+    !flash.value.fading && '!bg-surface-blue-1',
+  ]
+}
+defineExpose({ focusRow: focus.focusRow, focusedRow: focus.focusedRow, reveal })
+/** Where a mouse can hover, an item's checkbox shows on hover and the header's always. */
+const checkboxOnHover = useMediaQuery('(hover: hover) and (pointer: fine)')
+/**
+ * Where a checkbox shows outside selection mode: while the pointer is over the
+ * icon and name (a card's corner and title), or keyboard focus is on the item.
+ * The icon hides with the same rule, so the two never show together.
+ */
+const rowCheckboxShows = 'group-hover/name:flex group-focus-visible/row:flex'
+const rowIconHides = 'group-hover/name:hidden group-focus-visible/row:hidden'
+const cardCheckboxShows =
+  'opacity-0 hover:opacity-100 group-has-[[data-card-title]:hover]/card:opacity-100 group-has-[:focus-visible]/card:opacity-100'
+/** A card's type icon steps aside while its checkbox shows in the icon's place. */
+const cardIconClass = computed(() => {
+  if (props.selectionMode) return 'invisible'
+  if (!checkboxOnHover.value) return undefined
+  return 'group-has-[[data-card-checkbox]:hover]/card:invisible group-has-[[data-card-title]:hover]/card:invisible group-has-[:focus-visible]/card:invisible'
+})
+/** A click on the checkbox selects without opening. */
+function onCheckboxClick(event: MouseEvent, row: DriveNode) {
+  event.stopPropagation()
+  emit('select', row, event.shiftKey)
+}
+/** Only the item that holds the Tab stop is tabbable, with its menu button. */
+function stopIndex(row: DriveNode) {
+  return row.name === focus.tabStop.value ? 0 : -1
+}
 
 /** Cards are narrow on a phone, so their bars are a share of the card. */
 const SKELETON_CARD_NAMES = [
@@ -397,32 +593,44 @@ const SKELETON_CARD_NAMES = [
 ]
 
 const loading = computed(() => props.query.status === 'pending' && !props.query.rows.length)
-const isBlank = useSkeletonDelay(loading)
-const rows = computed(() => props.query.rows)
-const COLUMN_TRACKS = new Map<string, string>(
-  Object.entries({
-    owner: '12rem',
-    modified: '8rem',
-    kind: '8rem',
-    size: '6rem',
-  }),
+const isBlank = useSkeletonDelay(loading, 200)
+/** A 150 ms fade as an element appears, none under reduced motion. Placeholders a load soon replaces barely show. */
+const FADE_IN = 'motion-safe:animate-[files-listing-fade-in_150ms_ease-out]'
+/**
+ * The empty state fades in when a load ends in it, so it does not snap in after
+ * the blank or the placeholders. One the cache already knew shows at once.
+ */
+const emptyFades = shallowRef(false)
+let emptyFadeTimer: ReturnType<typeof setTimeout> | undefined
+watch(
+  loading,
+  (isLoading) => {
+    clearTimeout(emptyFadeTimer)
+    if (isLoading) emptyFades.value = true
+    else emptyFadeTimer = setTimeout(() => (emptyFades.value = false), 300)
+  },
+  { immediate: true },
 )
-/** Columns a phone has no room for. Name takes their width. */
-const WIDE_ONLY = new Set(['owner', 'modified', 'kind'])
-// The columns before the date, in the rows' order
-const SIDE_COLUMNS = ['kind', 'owner', 'size']
-const columns = computed(() => props.presentation.columns)
-const columnTracks = computed(() => {
-  const tracks = (list: string[]) => [
-    'minmax(0,1fr)',
-    ...list.map((column) => COLUMN_TRACKS.get(column) ?? '8rem'),
-    '2.5rem',
-  ]
-  return {
-    base: tracks(columns.value.filter((column) => !WIDE_ONLY.has(column))),
-    md: tracks(columns.value),
-  }
+onBeforeUnmount(() => clearTimeout(emptyFadeTimer))
+const rows = computed(() => props.query.rows)
+const {
+  shownColumns,
+  tracks: columnTracks,
+  columnClass,
+  rulerLabels,
+  ruler,
+} = useListColumns({
+  listing,
+  chosen: () => props.presentation.columns,
+  rows: () => rows.value,
+  labelOf: rulerLabel,
 })
+/** What a row's measured column says. */
+function rulerLabel(column: MeasuredColumn, row: DriveNode) {
+  if (column === 'kind') return typeLabel(row)
+  if (column === 'owner') return row.owner.full_name
+  return row.audience ? audienceLabel(row.audience) : null
+}
 const byOpened = computed(() => props.dateColumn === 'opened')
 const headerCell = computed(() => (props.sortable === false ? ListHeaderCell : ListHeaderCellSort))
 const allSelected = computed(() => rows.value.length > 0 && rows.value.every(isSelected))
@@ -451,22 +659,16 @@ onBeforeUnmount(() => {
   cancelLongPress()
 })
 
-function shows(column: string) {
-  return columns.value.includes(column)
-}
-function wideOnly(column: string) {
-  return WIDE_ONLY.has(column) ? 'hidden md:flex' : undefined
+function shows(column: FilesColumn) {
+  return props.presentation.columns.includes(column)
 }
 
 function skeletonCells() {
-  const cells: SkeletonCell[] = SIDE_COLUMNS.flatMap((column) =>
-    shows(column) ? [{ class: wideOnly(column) }] : [],
+  return shownColumns.value.map((column): SkeletonCell =>
+    column === 'modified'
+      ? { class: ['justify-end', columnClass(column)], hasDate: true }
+      : { class: columnClass(column) },
   )
-  if (shows('modified')) {
-    cells.push({ class: ['justify-end', wideOnly('modified')], hasDate: true })
-  }
-
-  return cells
 }
 function isSelected(row: DriveNode) {
   return props.selection.includes(row.name)
@@ -476,6 +678,15 @@ function isHighlighted(row: DriveNode) {
 }
 /** Hides the divider a list row draws along its top edge. */
 const NO_DIVIDER = '[&_[data-slot=list-divider]]:!opacity-0'
+/**
+ * Draws the focus ring inside the row, like a tree row's, so it stays within the
+ * pane's gutter. Like hover, it hides the dividers on both edges.
+ */
+const FOCUS_RING_INSIDE_ROW = [
+  'focus-visible:[outline-offset:-2px]',
+  'focus-visible:[&_[data-slot=list-divider]]:!opacity-0',
+  '[&:focus-visible+*_[data-slot=list-divider]]:!opacity-0',
+]
 /**
  * Consecutive highlighted rows read as one block: only the block's outer
  * corners are rounded, and no divider shows inside it or along its edges. A
@@ -515,8 +726,72 @@ function headerProps(column: FilesSort, align?: 'end') {
     onClick: () => emit('sort', column),
   }
 }
+const AUDIENCE_ICONS: Record<DriveAudience['kind'], string> = {
+  public: 'lucide-globe',
+  organization: 'lucide-building-2',
+  link: 'lucide-link',
+  people: 'lucide-users',
+}
+function audienceIcon(audience: DriveAudience) {
+  return audience.kind === 'people' && audience.people <= 1
+    ? 'lucide-lock'
+    : AUDIENCE_ICONS[audience.kind]
+}
+/** How widely an item is shared, in a few words. */
+function audienceLabel(audience: DriveAudience) {
+  if (audience.kind === 'public') return __('Public')
+  if (audience.kind === 'organization') return workspaceName.value || __('Your organization')
+  if (audience.kind === 'link') return __('Anyone with the link')
+  return audience.people <= 1 ? __('Only you') : __('{0} people', [audience.people])
+}
+type NameLink = AnchorHTMLAttributes & {
+  onClick: (event: MouseEvent) => void
+  onPointerenter: (event: PointerEvent) => void
+}
+/**
+ * An item's name as a link: no Tab stop of its own and no native drag. It
+ * looks like a link, underlined in its own colour, only while the pointer is
+ * on it and Cmd/Ctrl is held. Cmd/Ctrl-click opens it in a new tab and leaves
+ * the selection alone; middle-click opens one natively. Any other click is the
+ * item's, as before, and does not follow the link.
+ */
+function nameLink(row: DriveNode): NameLink | undefined {
+  const href = props.nodeHref?.(row)
+  if (!href) return undefined
+  return {
+    href,
+    tabindex: -1,
+    draggable: false,
+    class: 'underline-offset-2 data-[new-tab]:underline [-webkit-touch-callout:none]',
+    onClick: onNameClick,
+    onPointerenter: watchNewTabKey,
+  }
+}
+function onNameClick(event: MouseEvent) {
+  if (isNewTabKey(event)) event.stopPropagation()
+  else event.preventDefault()
+}
+/** Whether a click on an item's Access cell is the share dialog's rather than the row's. */
+function sharesOnClick(event: MouseEvent, row: DriveNode) {
+  if (props.selectionMode || event.metaKey || event.ctrlKey || event.shiftKey) return false
+  return !!props.canShare?.(row)
+}
+function onAccessClick(event: MouseEvent, row: DriveNode) {
+  if (!sharesOnClick(event, row)) return
+  event.stopPropagation()
+  emit('share', row)
+}
+/** A double click there opens Share once, not the item as well. */
+function onAccessDblclick(event: MouseEvent, row: DriveNode) {
+  if (sharesOnClick(event, row)) event.stopPropagation()
+}
 function rowDate(row: DriveNode) {
   return formatModified(byOpened.value ? (row.opened_at ?? null) : row.modified)
+}
+/** A folder shows the total of its files when the listing read it, and nothing when it holds none. */
+function rowSize(row: DriveNode) {
+  const bytes = row.kind === 'folder' ? row.contents_size : row.size
+  return bytes ? formatBytes(bytes) : ''
 }
 function folderOf(row: DriveNode) {
   const parent = row.breadcrumbs?.at(-1)
@@ -542,7 +817,19 @@ function onPointerdown(event: PointerEvent) {
   // On touch a long press selects (see `startLongPress`). Marking the press
   // handled keeps the page's context menu from opening on its own long press.
   if (touchPress) event.preventDefault()
-  else startMarquee(event)
+  else if (!startDrag(event)) startMarquee(event)
+}
+/** A press on an item's drag handle that the drag takes. */
+function startDrag(event: PointerEvent) {
+  const row = props.drag && itemAt(event.target)
+  return !!row && !!props.drag?.press(event, row)
+}
+/** A dragged item fades; a folder under the pointer that takes the drop lights up. */
+const DROP_ROW = '!bg-surface-blue-2 ring-1 ring-inset ring-outline-blue-3'
+const DROP_CARD = '!border-outline-blue-3 !bg-surface-blue-2'
+function dragClasses(row: DriveNode, accepting: string) {
+  if (props.drag?.isDragged(row.name)) return 'opacity-50'
+  return props.drag?.accepts(row.name) ? accepting : undefined
 }
 function onContextMenu(event: MouseEvent) {
   // A phone sends `contextmenu` after a long press, which already selected.
@@ -564,19 +851,24 @@ async function loadMore() {
   // cursor forever and the inline retry control never appears. The flag is
   // local, so pressing Retry starts a fresh walk.
   let failed = false
-  await loadUntilVisible({
-    get rows() {
-      return props.query.rows
-    },
-    get hasNext() {
-      return props.query.hasNext && !props.query.isFetching && !failed
-    },
-    async fetchNext() {
-      await props.query.fetchNext()
-      failed = Boolean(props.query.error)
-      return this
-    },
-  })
+  try {
+    await loadUntilVisible({
+      get rows() {
+        return props.query.rows
+      },
+      get hasNext() {
+        return props.query.hasNext && !props.query.isFetching && !failed
+      },
+      async fetchNext() {
+        await props.query.fetchNext()
+        failed = Boolean(props.query.error)
+        return this
+      },
+    })
+  } catch (error) {
+    // A new search or place cancels the window being loaded, which ends the walk.
+    if (!(error instanceof DOMException && error.name === 'AbortError')) throw error
+  }
 }
 function startLongPress(event: PointerEvent, row: DriveNode) {
   const checkedEventTarget = event.target
@@ -608,6 +900,7 @@ function cancelLongPress() {
   longPress = null
 }
 function onKeydown(event: KeyboardEvent) {
+  if (focus.onKeydown(event)) return
   const checkedEventTarget = event.target
   if (!(checkedEventTarget instanceof HTMLElement)) return
 
@@ -618,7 +911,8 @@ function onKeydown(event: KeyboardEvent) {
   if (!node) return
   if (event.key === 'Enter') {
     event.preventDefault()
-    emit('open', node)
+    // Mod+Enter is the shortcut that opens the item in a new tab.
+    if (!isNewTabKey(event)) emit('open', node)
   }
   if (event.key === ' ') {
     event.preventDefault()
@@ -626,3 +920,12 @@ function onKeydown(event: KeyboardEvent) {
   }
 }
 </script>
+
+<style>
+/* Not scoped: a scoped name would not match the Tailwind class that uses it. */
+@keyframes files-listing-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+</style>

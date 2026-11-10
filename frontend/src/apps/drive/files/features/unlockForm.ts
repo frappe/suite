@@ -1,6 +1,7 @@
 import { computed, getCurrentScope, onScopeDispose, ref, watch } from 'vue'
 
 import { unlockNode, type UnlockOutcome } from '@/apps/drive/client/unlock'
+import { translate as __ } from '@/platform/translation'
 
 /**
  * The unlock screen's state (spec §10.2): a password, an inline error, and a
@@ -18,11 +19,12 @@ export interface UnlockFormOptions {
 
 const LOCKOUT_KEY = 'suite:drive-unlock-lockout:'
 
-/** "14:32" for fourteen minutes and 32 seconds. Rounds up, so the form never opens early. */
+/** "15 minutes" for 14:32, "40 seconds" under a minute. Rounds up, so the form never opens early. */
 export function formatWait(ms: number): string {
   const seconds = Math.max(0, Math.ceil(ms / 1000))
-  const minutes = Math.floor(seconds / 60)
-  return `${minutes}:${String(seconds % 60).padStart(2, '0')}`
+  if (seconds < 60) return seconds === 1 ? __('1 second') : __('{0} seconds', [seconds])
+  const minutes = Math.ceil(seconds / 60)
+  return minutes === 1 ? __('1 minute') : __('{0} minutes', [minutes])
 }
 
 export function useUnlockForm(node: () => string, options: UnlockFormOptions = {}) {
@@ -39,7 +41,9 @@ export function useUnlockForm(node: () => string, options: UnlockFormOptions = {
   const waitMs = computed(() => Math.max(0, lockedUntil.value - clock.value))
   const disabled = computed(() => pending.value || waitMs.value > 0)
   const message = computed(() =>
-    waitMs.value > 0 ? `Try again in ${formatWait(waitMs.value)}` : error.value,
+    waitMs.value > 0
+      ? __('Too many attempts. Try again in {0}.', [formatWait(waitMs.value)])
+      : error.value,
   )
 
   function stopTimer() {

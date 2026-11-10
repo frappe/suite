@@ -1,41 +1,70 @@
 <template>
   <!-- File, Edit, View, Insert, Format, Data: every action that has no button
-  in the toolbar, labelled in words. Left and Right move between the menus. -->
-  <nav class="sn-menubar" :aria-label="__('Spreadsheet menus')" @keydown="moveBetweenMenus">
-    <Dropdown v-for="menu in shown" :key="menu.key" :options="menu.options" align="start">
-      <template #default>
-        <Button
-          class="sn-menubar-trigger sn-menubar-wide"
-          variant="ghost"
-          size="sm"
-          :label="menu.label"
-          :data-menu="menu.key"
-        />
-      </template>
-    </Dropdown>
-    <!-- A narrow header folds the six into one menu, each a submenu. A
-       container query on the header swaps the two, so nothing moves on load. -->
-    <Dropdown :options="folded" align="start">
-      <template #default>
-        <Button
-          class="sn-menubar-trigger sn-menubar-narrow"
-          variant="ghost"
-          size="sm"
-          icon-left="lucide-menu"
-          :label="__('Menu')"
-        />
-      </template>
-    </Dropdown>
+  in the toolbar, labelled in words. -->
+  <nav class="sn-menubar" :aria-label="__('Spreadsheet menus')">
+    <!-- A narrow header folds the six into one menu, each a submenu. A container
+    query on the header swaps the two bars, so nothing moves on load. They are
+    separate bars so the arrow keys never land on the hidden one. -->
+    <MenubarRoot v-for="bar in bars" :key="bar.class" v-model="openMenu" loop :class="bar.class">
+      <MenubarMenu v-for="menu in bar.menus" :key="menu.key" :value="menu.key">
+        <MenubarTrigger as-child>
+          <Button
+            class="sn-menubar-trigger"
+            variant="ghost"
+            size="sm"
+            :icon-left="menu.icon"
+            :label="menu.label"
+            :data-menu="menu.key"
+          />
+        </MenubarTrigger>
+        <MenubarPortal :to="portalTarget">
+          <MenubarContent
+            data-slot="content"
+            data-motion="instant"
+            :class="menuClasses.content"
+            align="start"
+            :side-offset="4"
+            :collision-padding="WINDOW_MARGIN"
+          >
+            <Menu
+              :groups="normalizeMenuOptions(menu.options)"
+              :close="closeMenu"
+              :primitives="primitives"
+            />
+          </MenubarContent>
+        </MenubarPortal>
+      </MenubarMenu>
+    </MenubarRoot>
   </nav>
 </template>
 
 <script setup lang="ts">
-import { Button, Dropdown, type DropdownOptions } from 'frappe-ui'
-import { computed } from 'vue'
+import { Button, usePortalTarget, type DropdownOptions } from 'frappe-ui'
+import {
+  MenubarContent,
+  MenubarItem,
+  MenubarLabel,
+  MenubarMenu,
+  MenubarPortal,
+  MenubarRoot,
+  MenubarSub,
+  MenubarSubContent,
+  MenubarSubTrigger,
+  MenubarTrigger,
+} from 'reka-ui'
+import { computed, h, ref, type FunctionalComponent } from 'vue'
 
 import { translate as __ } from '@/platform/translation'
 
-export type SheetMenu = { key: string; label: string; options: DropdownOptions }
+// The rows of every frappe-ui Dropdown, Writer's included. frappe-ui does not
+// export them, and a copy of them would drift from Dropdown's look.
+import Menu from '../../../../../../node_modules/frappe-ui/src/components/Menu/Menu.vue'
+import {
+  menuClasses,
+  normalizeMenuOptions,
+} from '../../../../../../node_modules/frappe-ui/src/components/Menu/utils'
+
+export type SheetMenu = { key: string; label: string; icon?: string; options: DropdownOptions }
 
 const props = defineProps<{
   menus: SheetMenu[]
@@ -67,40 +96,56 @@ const folded = computed<DropdownOptions>(() =>
   shown.value.map((m) => ({ label: m.label, submenu: m.options })),
 )
 
-function moveBetweenMenus(event: KeyboardEvent) {
-  const checkedEventTarget = event.currentTarget
-  if (!(checkedEventTarget instanceof HTMLElement)) return
-  const checkedEventTarget1 = event.target
-  if (!(checkedEventTarget1 instanceof HTMLElement)) return
+/** Each menu by its key; empty while they are all closed. One bar, one open menu. */
+const openMenu = ref('')
+const closeMenu = () => {
+  openMenu.value = ''
+}
 
-  if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
-  const nav = checkedEventTarget
-  const triggers = [...nav.querySelectorAll<HTMLElement>('[data-menu]')]
-  const at = triggers.indexOf(checkedEventTarget1)
-  if (at < 0) return
-  event.preventDefault()
-  const step = event.key === 'ArrowRight' ? 1 : -1
-  triggers[(at + step + triggers.length) % triggers.length].focus()
+const bars = computed(() => [
+  { class: 'sn-menubar-wide', menus: shown.value },
+  {
+    class: 'sn-menubar-narrow',
+    menus: [{ key: 'menu', label: __('Menu'), icon: 'lucide-menu', options: folded.value }],
+  },
+])
+
+const portalTarget = usePortalTarget()
+
+/** The room a panel leaves between itself and the edge of the window. */
+const WINDOW_MARGIN = 8
+
+// A panel's rows sit 6px inside it (p-1.5) and a submenu is placed from its row. So
+// it moves up 6px to start level with that row, and out 8px to clear the panel by 2.
+const SubContent: FunctionalComponent = (_, { attrs, slots }) =>
+  h(
+    MenubarSubContent,
+    { ...attrs, 'side-offset': 8, alignOffset: -6, collisionPadding: WINDOW_MARGIN },
+    slots,
+  )
+
+const primitives = {
+  Item: MenubarItem,
+  Label: MenubarLabel,
+  Portal: MenubarPortal,
+  Sub: MenubarSub,
+  SubContent,
+  SubTrigger: MenubarSubTrigger,
 }
 </script>
 
 <style scoped>
 .sn-menubar {
+  flex-shrink: 0;
+}
+.sn-menubar-wide,
+.sn-menubar-narrow {
   display: flex;
   align-items: center;
   gap: 2px;
-  flex-shrink: 0;
 }
 .sn-menubar-trigger {
   padding-inline: 10px;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--ink-gray-9);
-}
-/* A hovered or open menu takes the bar's hover fill. */
-.sn-menubar-trigger:hover,
-.sn-menubar-trigger[data-state='open'] {
-  background: var(--sn-bar-hover);
 }
 .sn-menubar-narrow {
   display: none;
@@ -111,7 +156,7 @@ function moveBetweenMenus(event: KeyboardEvent) {
     display: none;
   }
   .sn-menubar-narrow {
-    display: inline-flex;
+    display: flex;
   }
 }
 </style>

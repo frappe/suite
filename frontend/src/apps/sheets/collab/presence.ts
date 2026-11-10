@@ -1,6 +1,7 @@
 // Who else has the spreadsheet open, as the editor draws them (like Google
 // Sheets): an avatar each in the header, and each editor's selected range
-// outlined in their colour on the sheet they are on, with their name on it.
+// outlined in their colour on the sheet they are on, with their name on it
+// while they move (useRemoteCursorNames).
 // Colours are Writer's (platform/collab/colours), so a person has one colour
 // across Suite.
 // Viewers get an avatar but no box: the room sends a tab's selection only
@@ -42,6 +43,13 @@ export interface RemoteCursor {
    * null, so labels never stack.
    */
   label: string | null
+  /** Who the label names, by peer id, so a move by any of them brings it back; empty without a label. */
+  labelPeers: string[]
+  /**
+   * Changes when the peer moves their selection. Made from row/col ids, so
+   * rows inserted above them don't count as a move.
+   */
+  moveKey: string
 }
 
 /** A person's name and picture; their user id until it is known. */
@@ -102,7 +110,10 @@ export function readPresence(
   const cursors = new Map<string, RemoteCursor>()
   // Each cell with a label on it: the cursor that carries it, and the name of
   // each person there (a person with two tabs there is named once).
-  const cells = new Map<string, { labelled: RemoteCursor; names: Map<string, string> }>()
+  const cells = new Map<
+    string,
+    { labelled: RemoteCursor; names: Map<string, string>; peers: string[] }
+  >()
   const seen = new Set<string>()
   for (const peer of presence.peers) {
     if (peer.user === me && me !== GUEST_USER) continue // this person's other tabs
@@ -111,8 +122,10 @@ export function readPresence(
     const initials = initialsOf(fullName)
     const colour = colours.get(peer.pid)!
     const key = personKey(peer.user, peer.pid)
-    const sel = selectionFromIds(doc, readSavedSelection(states.get(peer.pid)?.cursor))
+    const saved = readSavedSelection(states.get(peer.pid)?.cursor)
+    const sel = selectionFromIds(doc, saved)
     if (sel) {
+      const pid = String(peer.pid)
       const cursor: RemoteCursor = {
         row: sel.r0,
         col: sel.c0,
@@ -120,14 +133,20 @@ export function readPresence(
         subSheet: sel.sheet,
         colour,
         label: null,
+        labelPeers: [],
+        moveKey: JSON.stringify(saved),
       }
-      cursors.set(String(peer.pid), cursor)
+      cursors.set(pid, cursor)
       // Guests all share the first name "Guest": name them by their tag.
       const name = peer.user === GUEST_USER ? fullName : first
       const cell = JSON.stringify([sel.sheet, sel.r0, sel.c0])
       const onCell = cells.get(cell)
-      if (!onCell) cells.set(cell, { labelled: cursor, names: new Map([[key, name]]) })
-      else if (!onCell.names.has(key)) onCell.names.set(key, name)
+      if (!onCell) {
+        cells.set(cell, { labelled: cursor, names: new Map([[key, name]]), peers: [pid] })
+      } else {
+        onCell.peers.push(pid)
+        if (!onCell.names.has(key)) onCell.names.set(key, name)
+      }
     }
     if (seen.has(key)) continue
     seen.add(key)
@@ -141,7 +160,10 @@ export function readPresence(
       sub_sheet: sel?.sheet ?? null,
     })
   }
-  for (const { labelled, names } of cells.values()) labelled.label = labelText([...names.values()])
+  for (const { labelled, names, peers } of cells.values()) {
+    labelled.label = labelText([...names.values()])
+    labelled.labelPeers = peers
+  }
   return { users, cursors }
 }
 

@@ -16,7 +16,12 @@ import {
 } from '@/apps/slides/stores/element'
 import { inCropMode } from '@/apps/slides/stores/imageCrop'
 import { isLive } from '@/apps/slides/stores/liveDeck'
-import { contextFor, inReadonlyMode, presentationId } from '@/apps/slides/stores/presentation'
+import {
+  contextFor,
+  inReadonlyMode,
+  isOpen,
+  presentationId,
+} from '@/apps/slides/stores/presentation'
 import { getNewSlide, insertSlide, slideIndex } from '@/apps/slides/stores/slide'
 import { oldBodyHTML } from '@/apps/slides/stores/tiptapSetup'
 import { getClipboardTable } from '@/apps/slides/utils/clipboardTable'
@@ -134,8 +139,9 @@ const handlePastedJSON = async ({ srcPresentation, srcSlide, isCut, elements }) 
     return
   }
 
+  const id = presentationId.value
   let json = pastedArray
-  if (srcPresentation !== presentationId.value) {
+  if (srcPresentation !== id) {
     if (cannotFetchPictures()) return
 
     // if pasted elements are from a different presentation
@@ -143,15 +149,18 @@ const handlePastedJSON = async ({ srcPresentation, srcSlide, isCut, elements }) 
     json = await client.mutation(
       api.slides.media.adoptElements,
       {
-        presentation: presentationId.value,
+        presentation: id,
         elements: pastedArray,
       },
-      { context: contextFor(presentationId.value) },
+      { context: contextFor(id) },
     )
+    if (!isOpen(id)) {
+      return
+    }
   }
 
   // a foreign slide index means nothing here, and there is no original to displace from
-  const sameSource = srcPresentation === presentationId.value
+  const sameSource = srcPresentation === id
   duplicateElements(null, json, sameSource ? srcSlide : null, sameSource && !isCut)
 }
 
@@ -173,8 +182,9 @@ const handleSvgText = (svgText) => {
 
 const handlePastedSlideJSON = async (slideJSON) => {
   const index = slideIndex.value
+  const id = presentationId.value
 
-  if (slideJSON.parent != presentationId.value) {
+  if (slideJSON.parent != id) {
     if (cannotFetchPictures()) return
 
     // if pasted slide is from a different presentation
@@ -182,11 +192,14 @@ const handlePastedSlideJSON = async (slideJSON) => {
     slideJSON = await client.mutation(
       api.slides.media.adoptSlide,
       {
-        parent: presentationId.value,
+        parent: id,
         slide: slideJSON,
       },
-      { context: contextFor(presentationId.value) },
+      { context: contextFor(id) },
     )
+    if (!isOpen(id)) {
+      return
+    }
     if (typeof slideJSON.elements === 'string') {
       slideJSON.elements = JSON.parse(slideJSON.elements)
     }

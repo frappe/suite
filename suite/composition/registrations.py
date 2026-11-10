@@ -8,6 +8,7 @@ SUITE_TABLE = "suite.api.framework.HTTP"
 SUITE_RESOURCES = (
     "account",
     "site",
+    "workspace",
     "users",
     "invitations",
     "people",

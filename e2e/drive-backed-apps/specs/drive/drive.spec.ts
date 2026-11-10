@@ -119,8 +119,8 @@ test("a shared folder opens read-only for a collaborator and for the public", as
 	await collaborator.page.getByRole("button", { name: "More file actions" }).click();
 	const folderMenu = collaborator.page.getByRole("menu");
 	await expect(folderMenu).toBeVisible();
-	await expect(folderMenu.getByRole("menuitem", { name: "Rename folder" })).toHaveCount(0);
-	await expect(folderMenu.getByRole("menuitem", { name: "Share folder" })).toHaveCount(0);
+	await expect(folderMenu.getByRole("menuitem", { name: "Rename", exact: true })).toHaveCount(0);
+	await expect(folderMenu.getByRole("menuitem", { name: "Share", exact: true })).toHaveCount(0);
 	await collaborator.page.keyboard.press("Escape");
 	await expect(collaborator.page.getByRole("button", { name: "New", exact: true })).toHaveCount(0);
 

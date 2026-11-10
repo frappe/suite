@@ -1,8 +1,8 @@
 <template>
   <header
     ref="headerElement"
-    class="relative flex shrink-0 items-center gap-2 border-b border-outline-gray-1 bg-surface-base"
-    :class="sizeClass"
+    class="relative h-12 shrink-0 items-center gap-2 border-b border-outline-gray-1 bg-surface-base px-3 sm:px-4"
+    :class="columns"
     :data-save-state="saveState"
   >
     <!-- A centered title lifts the title group into the header, between two
@@ -63,6 +63,8 @@
       >
         {{ titleError }}
       </span>
+      <!-- Takes up what the title leaves, so a longer title moves no badge. -->
+      <span v-if="hasCenteredMenus" class="flex-1" aria-hidden="true" />
       <Badge v-if="trashed" label="Trashed" theme="red" variant="subtle" class="shrink-0">
         <template #prefix><span class="lucide-trash-2 size-2.5" aria-hidden="true" /></template>
       </Badge>
@@ -98,14 +100,19 @@
           @click="emit('downloadChanges')"
         />
       </template>
-      <!-- A compact header says it beside the title, before its menus. -->
-      <DocumentEditedNote v-if="isCompact && shownNote" class="ms-1 me-2" v-bind="note" />
       <slot name="status" />
+      <slot v-if="!hasCenteredMenus" name="menus" />
+    </div>
+
+    <div v-if="hasCenteredMenus" class="flex items-center">
       <slot name="menus" />
     </div>
 
-    <div class="flex shrink-0 items-center gap-1" :class="centering.end">
-      <DocumentEditedNote v-if="!isCompact && shownNote" class="mr-1" v-bind="note" />
+    <div
+      class="flex items-center gap-1"
+      :class="[centering.end, hasCenteredMenus ? 'min-w-0 justify-end' : 'shrink-0']"
+    >
+      <DocumentEditedNote v-if="shownNote" class="mr-1" v-bind="note" />
       <slot name="actions" />
       <Button
         v-for="name in panels"
@@ -211,11 +218,11 @@ const props = withDefaults(
     /** A file's MIME type picks its icon. Documents have none. */
     mime?: string | null
     /**
-     * `centered` centers the title across the header on wide screens. `compact`
-     * is a 40-px header for a surface that adds its own menu bar (the `menus`
-     * slot): when it was edited moves beside the title, ahead of the menus.
+     * `centered` centers the title across the header on wide screens. `menus`
+     * is for a surface with its own menu bar (the `menus` slot): the menus sit
+     * in the middle of the header, and a long title can move nothing else.
      */
-    layout?: 'default' | 'centered' | 'compact'
+    layout?: 'default' | 'centered' | 'menus'
   }>(),
   {
     saveState: null,
@@ -244,8 +251,13 @@ const CENTERED = {
   end: 'md:flex-1 md:justify-end',
 }
 const UNCENTERED = { title: '', start: '', end: '' }
-const isCompact = computed(() => props.layout === 'compact')
-const sizeClass = computed(() => (isCompact.value ? 'h-10 px-3' : 'h-12 px-3 sm:px-4'))
+const hasCenteredMenus = computed(() => props.layout === 'menus')
+// Two sides of one width keep the menus centered; below `lg` they cannot both fit.
+const columns = computed(() =>
+  hasCenteredMenus.value
+    ? 'grid grid-cols-[minmax(0,1fr)_auto_auto] lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]'
+    : 'flex',
+)
 // Starts from the server, then follows this tab's edits. Someone else's show at the next open.
 const editedHere = shallowRef<Date | null>(null)
 watch(
@@ -271,7 +283,12 @@ const noteDetails = computed(() => {
 })
 // A note about saving shows on every width and is announced; the time edited shows on wide screens only
 const note = computed(() => ({
-  class: ['whitespace-nowrap text-sm text-ink-gray-5', props.saveNote ? '' : 'max-md:hidden'],
+  class: [
+    'whitespace-nowrap text-sm text-ink-gray-5',
+    props.saveNote ? '' : 'max-md:hidden',
+    // Beside centered menus it gives up its room first, so the buttons stay whole.
+    hasCenteredMenus.value ? 'min-w-0 truncate' : '',
+  ],
   'aria-live': props.saveNote ? 'polite' : 'off',
   text: shownNote.value,
   details: noteDetails.value,
@@ -361,8 +378,8 @@ async function rename(): Promise<string | null> {
     if (!(error instanceof TransportError)) {
       return error instanceof Error ? error.message : __('Could not rename this file.')
     }
-    // Drive names a free title only when the title is taken. Its own message
-    // for that is written for developers.
+    // Drive names a free title only when the title is taken, so the message
+    // can offer it.
     const free = error.details.free_title
     if (error.type === 'DriveConflict' && typeof free === 'string') {
       return __('That name is taken in this folder. Try “{0}”.', [free])

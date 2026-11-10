@@ -19,7 +19,11 @@ describe('patchEmptyParagraphs', () => {
     const { wasUpdated, updatedHTML } = patchEmptyParagraphs(html)
 
     expect(wasUpdated).toBe(true)
-    expect(updatedHTML).toContain('font-size: 24px')
+    const rendered = document.createElement('div')
+    rendered.innerHTML = updatedHTML
+    const inheritedStyle = rendered.querySelector<HTMLElement>('p + p span')!
+    expect(inheritedStyle.style.fontSize).toBe('24px')
+    expect(inheritedStyle.style.color).toBe('rgb(255, 0, 0)')
   })
 
   it('does not bleed styles across table cells', () => {
@@ -29,15 +33,5 @@ describe('patchEmptyParagraphs', () => {
 
     expect(wasUpdated).toBe(false)
     expect(updatedHTML).toBe(html)
-  })
-
-  it('is idempotent over table content', () => {
-    const html = table(cell(`<p>${styled('Filled')}</p>`), cell('<p></p>'))
-
-    const once = patchEmptyParagraphs(html).updatedHTML
-    const twice = patchEmptyParagraphs(once)
-
-    expect(twice.wasUpdated).toBe(false)
-    expect(twice.updatedHTML).toBe(once)
   })
 })

@@ -50,7 +50,7 @@ test("a rename conflict keeps the dialog open with the server message", async ({
 	await dialog.getByRole("button", { name: "Rename" }).click();
 
 	await expect(dialog).toBeVisible();
-	await expect(dialog.getByText(/already|exists|conflict/i)).toBeVisible();
+	await expect(dialog.getByText("That name is taken in this folder.")).toBeVisible();
 	await expect(dialog.getByRole("textbox")).toHaveValue(sibling.title);
 
 	const stored = await getNode(api, target.name);
@@ -144,7 +144,8 @@ test("Move to trash removes the row from the folder listing", async ({ page }) =
 	await page.getByRole("menuitem", { name: "Move to trash" }).click();
 
 	await expect(page.getByText(sibling.title, { exact: true })).toHaveCount(0);
-	expect((await getNode(api, sibling.name)).state).toBe("Trashed");
+	// The row leaves before the server answers.
+	await expect.poll(async () => (await getNode(api, sibling.name)).state).toBe("Trashed");
 });
 
 test("Share on a row opens the Drive share dialog", async ({ page }) => {

@@ -6,6 +6,7 @@ import { flushPendingBlur, resetFocus } from '@/apps/slides/stores/element'
 import { commandHistory } from '@/apps/slides/stores/historyMeta'
 import {
   inReadonlyMode,
+  isOpen,
   presentationId,
   presentationTheme,
   slidesLength,
@@ -203,7 +204,13 @@ const insertDuplicateSlide = async (index, layoutObj, toDuplicate) => {
   const source = slides.value[index]
   const newSlide = getNewSlide(toDuplicate, layoutObj, source)
 
-  if (!toDuplicate) newSlide.elements = await transformElements(newSlide.elements)
+  if (!toDuplicate) {
+    const id = presentationId.value
+    newSlide.elements = await transformElements(newSlide.elements)
+    if (!isOpen(id)) {
+      return
+    }
+  }
 
   insertSlide(newSlide, index)
 }

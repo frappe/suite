@@ -31,9 +31,10 @@ from pydantic import with_config
 
 from suite.drive._core import nodes, times
 from suite.drive._core.activity import ActivityAction
+from suite.drive._core.audience import AudienceKind
 from suite.drive._core.people import Person, people
 
-EXPANSIONS = ("access", "breadcrumbs", "preview")
+EXPANSIONS = ("access", "audience", "breadcrumbs", "contents_size", "preview")
 USAGE_EXPANSIONS = ("breakdown",)
 
 # §11.5 gives no bound of its own. One gesture is one request, and a page is
@@ -52,6 +53,15 @@ class AccessShape(TypedDict, total=False):
     source_principal: str | None
     # Manage checks pass: `role` is MANAGE, or a Suite Admin's override (ADR 0001).
     can_manage: bool
+
+
+class AudienceShape(TypedDict):
+    """How widely a node is shared. It names nobody, so any reader may see it."""
+
+    # The widest reach: public on the web, the organization, a share link, or people.
+    kind: AudienceKind
+    # The people who hold a grant, their own or through a group, owner included.
+    people: int
 
 
 class BreadcrumbShape(TypedDict):
@@ -92,7 +102,10 @@ class NodeShape(TypedDict):
     modified: str | None
     content_modified: str | None
     access: NotRequired[AccessShape]
+    audience: NotRequired[AudienceShape]
     breadcrumbs: NotRequired[list[BreadcrumbShape]]
+    # A folder's files at every depth, trashed ones left out, in bytes. Only folders carry it.
+    contents_size: NotRequired[int]
     preview: NotRequired[PreviewShape | None]
     opened_at: NotRequired[str | None]
     # The caller's own star. Reads (a detail, a children page, a view) carry
@@ -1187,7 +1200,7 @@ def flag(value, name: str, default: bool) -> bool:
 
 
 def expansions(value, name: str = "expand", allowed: tuple[str, ...] = EXPANSIONS) -> frozenset:
-    """Accept a comma-separated subset of `allowed`, §11.3's three by default."""
+    """Accept a comma-separated subset of `allowed`, the node expansions by default."""
     if value is None or value == "":
         return frozenset()
     if not isinstance(value, str):

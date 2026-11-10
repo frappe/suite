@@ -8,6 +8,9 @@ const passthrough = (tag = 'div') =>
     },
   })
 
+/** The Mod combos' registry. Letter shortcuts go through Suite's own listener. */
+export const useKeyboardShortcut = () => {}
+
 export const Button = passthrough('button')
 export const Dialog = passthrough()
 export const FormControl = passthrough('input')

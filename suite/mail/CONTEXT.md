@@ -62,6 +62,24 @@ _Avoid_: Spam
 The folder for mail you got rid of, kept for 30 days before it is deleted.
 _Avoid_: Bin, Deleted items
 
+**Pinned**:
+A Conversation held at the top of the Inbox, Sent or one of your own folders until someone unpins it. It
+only acts in the folder it was pinned in: filed elsewhere it is ordinary mail, and brought back it is
+pinned again.
+_Avoid_: Sticky, important
+
+**Snoozed**:
+A Conversation put away until a chosen time, waiting in the Snoozed folder. At that time, or sooner if
+a reply reaches the Inbox, it is back in the Inbox; a timed return is unread and stays near the top until
+you remove it. Archiving, trashing or moving it ends the snooze.
+_Avoid_: Deferred, remind me later
+
+**Reply reminder**:
+A date set on a message you sent: if nobody has answered the Conversation by then, your message is
+back in the Inbox, unread and marked "No reply yet". An answer from anyone else, a reaction included,
+ends it quietly; an out-of-office, a bounce or your own follow-up doesn't.
+_Avoid_: Follow-up, nudge
+
 **Starred**:
 The view of conversations you starred. It is not a folder: starring files
 nothing.

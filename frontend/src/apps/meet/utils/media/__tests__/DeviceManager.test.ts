@@ -77,17 +77,6 @@ describe('isDeviceAvailable', () => {
   })
 })
 
-describe('getCameras / getMicrophones / getSpeakers', () => {
-  it('returns current lists', () => {
-    deviceManager.cameras = [{ deviceId: 'cam1', label: 'C1', groupId: 'g1' }]
-    deviceManager.microphones = [{ deviceId: 'mic1', label: 'M1', groupId: 'g1' }]
-    deviceManager.speakers = [{ deviceId: 'spk1', label: 'S1', groupId: 'g1' }]
-    expect(deviceManager.getCameras()).toHaveLength(1)
-    expect(deviceManager.getMicrophones()).toHaveLength(1)
-    expect(deviceManager.getSpeakers()).toHaveLength(1)
-  })
-})
-
 describe('enumerateDevices', () => {
   it('lists devices without requesting media permission', async () => {
     const getUserMedia = vi.fn()
@@ -104,28 +93,40 @@ describe('enumerateDevices', () => {
     await deviceManager.enumerateDevices()
 
     expect(getUserMedia).not.toHaveBeenCalled()
-    expect(deviceManager.getCameras()).toHaveLength(1)
-    expect(deviceManager.getMicrophones()).toHaveLength(1)
-    expect(deviceManager.getSpeakers()).toHaveLength(1)
+    expect(deviceManager.getCameras().map((device) => device.deviceId)).toEqual(['cam1'])
+    expect(deviceManager.getMicrophones().map((device) => device.deviceId)).toEqual(['mic1'])
+    expect(deviceManager.getSpeakers().map((device) => device.deviceId)).toEqual(['spk1'])
   })
 })
 
-describe('addDeviceChangeListener / removeDeviceChangeListener', () => {
-  it('adds and invokes listener', () => {
-    const listener = vi.fn()
-    deviceManager.addDeviceChangeListener(listener)
-    expect(deviceManager.deviceChangeListeners).toHaveLength(1)
-  })
-
-  it('removes listener', () => {
-    const listener = vi.fn()
-    deviceManager.addDeviceChangeListener(listener)
-    deviceManager.removeDeviceChangeListener(listener)
-    expect(deviceManager.deviceChangeListeners).toHaveLength(0)
-  })
-
-  it('removeDeviceChangeListener does nothing for unknown listener', () => {
+describe('device change subscriptions', () => {
+  it('notifies only active listeners after refreshing the device lists', async () => {
+    let deviceChanged!: () => Promise<void>
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: {
+        enumerateDevices: vi
+          .fn()
+          .mockResolvedValue([
+            { kind: 'videoinput', deviceId: 'cam-new', label: 'New camera', groupId: 'g1' },
+          ]),
+        addEventListener: (_event: string, listener: () => Promise<void>) => {
+          deviceChanged = listener
+        },
+      },
+    })
+    deviceManager.setupDeviceChangeListener()
+    const removed = vi.fn()
+    const active = vi.fn(() => deviceManager.getCameras().map((device) => device.deviceId))
+    deviceManager.addDeviceChangeListener(removed)
+    deviceManager.addDeviceChangeListener(active)
+    deviceManager.removeDeviceChangeListener(removed)
     deviceManager.removeDeviceChangeListener(vi.fn())
-    expect(deviceManager.deviceChangeListeners).toHaveLength(0)
+
+    await deviceChanged()
+
+    expect(active).toHaveBeenCalledExactlyOnceWith()
+    expect(active).toHaveReturnedWith(['cam-new'])
+    expect(removed).not.toHaveBeenCalled()
   })
 })

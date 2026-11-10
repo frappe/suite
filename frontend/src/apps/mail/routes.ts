@@ -75,11 +75,11 @@ export const routes: RouteRecordRaw[] = [
         meta: { isLogin: true, allowGuest: true },
       },
       {
+        // Invitation links moved to `/join/<key>`; links in email sent earlier still land here.
         path: 'signup/:requestKey',
         name: 'mail-invite-setup',
-        component: () => import('@/apps/mail/pages/InviteSetupView.vue'),
-        props: true,
-        meta: { isLogin: true, allowGuest: true },
+        redirect: (to) => `/join/${String(to.params.requestKey)}`,
+        meta: { allowGuest: true },
       },
       {
         path: 'login',

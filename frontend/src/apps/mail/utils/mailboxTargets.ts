@@ -4,6 +4,7 @@ interface Filed {
 }
 
 interface MailboxIds {
+  snoozed?: string
   sent?: string
   drafts?: string
   screener?: string
@@ -44,4 +45,4 @@ export const canMoveToMailbox = (
 ): boolean =>
   !!mailboxId &&
   !filedIn.includes(mailboxId) &&
-  ![mailboxIds.sent, mailboxIds.drafts].includes(mailboxId)
+  ![mailboxIds.sent, mailboxIds.drafts, mailboxIds.snoozed].includes(mailboxId)
