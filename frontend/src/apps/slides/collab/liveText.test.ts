@@ -10,7 +10,8 @@ import * as Y from 'yjs'
 
 import type { RoomPresence } from '@/platform/collab'
 
-import { isReceivedChange, liveTextExtensions } from './liveText'
+import { liveTextExtensions } from './liveText'
+import { isReceivedChange } from './receivedChange'
 
 function boundEditor(fragment: Y.XmlFragment, seen: Transaction[]) {
   const sync: AnyExtension = Document.extend({

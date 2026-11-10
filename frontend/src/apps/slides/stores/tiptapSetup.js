@@ -18,7 +18,7 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { StarterKit } from '@tiptap/starter-kit'
 import { Editor } from '@tiptap/vue-3'
 
-import { isReceivedChange } from '@/apps/slides/collab/liveText'
+import { isReceivedChange } from '@/apps/slides/collab/receivedChange'
 import { scaleAwareColumnResizing } from '@/apps/slides/utils/columnResizing'
 import { getDocFromHTML, hasListMarkup } from '@/apps/slides/utils/helpers'
 

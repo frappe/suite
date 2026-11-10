@@ -4,7 +4,7 @@ import { cellAround } from '@tiptap/pm/tables'
 import { Editor } from '@tiptap/vue-3'
 import { nextTick, reactive, ref, watch } from 'vue'
 
-import { isReceivedChange } from '@/apps/slides/collab/liveText'
+import { isReceivedChange } from '@/apps/slides/collab/receivedChange'
 import { batchCommand, editElementCommand } from '@/apps/slides/stores/commands'
 import {
   activeElement,

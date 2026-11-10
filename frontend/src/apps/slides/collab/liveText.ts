@@ -1,6 +1,6 @@
 import { Extension, type AnyExtension } from '@tiptap/core'
-import { Plugin, type Transaction } from '@tiptap/pm/state'
-import { ySyncPlugin, ySyncPluginKey, yUndoPluginKey } from '@tiptap/y-tiptap'
+import { Plugin } from '@tiptap/pm/state'
+import { ySyncPlugin, yUndoPluginKey } from '@tiptap/y-tiptap'
 import type * as Y from 'yjs'
 
 import type { RoomPresence } from '@/platform/collab'
@@ -28,10 +28,4 @@ export function liveTextExtensions(
     addProseMirrorPlugins: () => [ySyncPlugin(fragment), sharedUndoStack(undoManager)],
   })
   return [sync, Carets.configure({ presence }), UndoSteps]
-}
-
-// A change that came in from the live document, a co-editor's or this tab's own undo,
-// so nothing may be written back for it (Q6). A write here would also empty the redo
-export function isReceivedChange(transaction: Transaction) {
-  return !!transaction.getMeta(ySyncPluginKey)?.isChangeOrigin
 }
