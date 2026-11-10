@@ -136,6 +136,17 @@ describe('old forms', () => {
     const old = { id: 'box', type: 'image', src: '/private/files/old.png' }
     expect(boxOf(converted([old]).doc, 'box').src).toBe('/private/files/old.png')
   })
+
+  it('keeps only the url of a video poster saved as an object, so the video still loads', () => {
+    const poster = { posterURL: '/private/files/poster.webp', aspectRatio: 1.6 }
+    const old = { id: 'box', type: 'video', src: '/x.mp4', poster }
+    expect(boxOf(converted([old]).doc, 'box').poster).toBe('/private/files/poster.webp')
+  })
+
+  it('carries a video poster url as it stands', () => {
+    const old = { id: 'box', type: 'video', src: '/x.mp4', poster: '/private/files/poster.webp' }
+    expect(boxOf(converted([old]).doc, 'box').poster).toBe('/private/files/poster.webp')
+  })
 })
 
 describe('where a box sits', () => {
