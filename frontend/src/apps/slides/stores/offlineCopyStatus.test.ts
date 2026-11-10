@@ -4,6 +4,7 @@ import { ref } from 'vue'
 
 import {
   cache,
+  DECLARED_FONTS,
   ENTRY_ASSETS,
   image,
   LAZY_CHUNK,
@@ -284,6 +285,7 @@ describe('the start-up copy', () => {
       ...STARTUP_API,
       ...ENTRY_ASSETS,
       LAZY_CHUNK,
+      ...DECLARED_FONTS,
       '/private/files/a.png',
       '/private/files/b.png',
     ]

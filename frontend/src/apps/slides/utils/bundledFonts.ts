@@ -1,5 +1,5 @@
 // every file styles/fonts.css declares
-const bundledFontFiles = [
+export const bundledFontFiles = [
   'Anton/Anton-Regular-latin',
   'Anton/Anton-Regular-latin-ext',
   'Anton/Anton-Regular-vietnamese',

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { afterEach, beforeEach, vi } from 'vitest'
 import { ref } from 'vue'
 
@@ -105,6 +107,10 @@ export const ENTRY_ASSETS = [
   '/assets/suite/frontend/assets/index-c3.css',
 ]
 export const LAZY_CHUNK = '/assets/suite/frontend/assets/SlidesSurface-d4.js'
+// read from the stylesheet, so a font added there is one a pin must store
+export const DECLARED_FONTS = [
+  ...readFileSync(resolve(__dirname, '../styles/fonts.css'), 'utf8').matchAll(/url\('([^']+)'\)/g),
+].map(([, url]) => url)
 
 export const image = (bytes = 10) =>
   new Response(new Uint8Array(bytes), {
