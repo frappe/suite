@@ -8,8 +8,8 @@ interface OfflineCopyFixtureState {
   visitedCache: FakeCache | null
 }
 
-export const presentationDoc = ref<Record<string, unknown>>({ is_composite: 0 })
-export const presentationId = ref('p1')
+export const presentationDoc = ref<Record<string, unknown> | null>({ is_composite: 0 })
+export const presentationId = ref<string | null>('p1')
 export const viewOnly = ref(false)
 export const slides = ref<unknown[]>([])
 const loadedChunks: string[] = []
