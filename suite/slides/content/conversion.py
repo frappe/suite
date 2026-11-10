@@ -20,7 +20,7 @@ from datetime import datetime
 
 import frappe
 
-from suite.content import capacity, compaction, convert, updates
+from suite.content import capacity, checkpoints, compaction, convert, log, updates
 from suite.content.conversions import ConversionRefused
 from suite.slides import content as slides_content
 
@@ -109,6 +109,24 @@ def read_old(node: str, *, lock: bool = False) -> OldDeck | None:
     # convert.py reads Writer's `collab` flag off every app's input; a deck has none
     legacy = {**legacy_deck(row.name, slide_rows(row.name)), "collab": 0}
     return OldDeck(row.name, legacy, fingerprint_of(row), newest)
+
+
+def seed(node: str, slides: list[dict]) -> None:
+    """Start a new deck's log from `slides`' row values, as a conversion would; `create_deck` queues it."""
+    # replace_start refuses a log anyone has written to, so an opened deck keeps its slides
+    found = log.find(slides_content.APP, node)
+    row = old_row(node)
+    if found is None or row is None:
+        raise frappe.DoesNotExistError(frappe._("That presentation was not found"))
+
+    rows = [frappe._dict({"client_id": None, **dict.fromkeys(SLIDE_COLUMNS), **slide}) for slide in slides]
+    legacy = {**legacy_deck(row.name, rows), "collab": 0}
+    converted = convert.convert(slides_content.CONVERTER_BUILD, slides_content.CONVERTER_VERSION, legacy)
+    if not isinstance(converted, convert.Converted):
+        raise frappe.ValidationError(frappe._("The presentation's slides could not be written"))
+
+    check(node, OldDeck(row.name, legacy, fingerprint_of(row), row.modified), converted)
+    checkpoints.replace_start(slides_content.APP, found.id, converted.state, slides_content.SCHEMA.version)
 
 
 def legacy_deck(docname: str, rows: list[frappe._dict]) -> dict:

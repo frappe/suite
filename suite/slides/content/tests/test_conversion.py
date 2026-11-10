@@ -1,6 +1,7 @@
 """Converting an old deck through the layer: the Slide rows it leaves and the deck it writes (ticket 51)."""
 
 import json
+import uuid
 from unittest.mock import patch
 
 import frappe
@@ -9,6 +10,7 @@ import pycrdt
 from frappe.model.document import Document
 
 from suite import content, drive
+from suite.composition.welcome import _kickoff
 from suite.content import compaction, conversions, convert, log
 from suite.drive._core import comments
 from suite.drive.framework import principals_for
@@ -16,7 +18,7 @@ from suite.slides import content as slides_content
 from suite.slides import drive as slides_drive
 from suite.slides.api.slides import save_slides
 from suite.slides.content import APP, CONVERTER_BUILD
-from suite.slides.content.tests.support import OWNER, LoggedDeckCase, delete_log, opened
+from suite.slides.content.tests.support import OWNER, LoggedDeckCase, delete_log, opened, owner_folder
 from suite.slides.doctype.presentation.presentation import apply_theme, get_public_presentation
 from suite.slides.patches import move_file_media_to_drive
 
@@ -753,3 +755,37 @@ class TestDeckRoute(ConversionCase):
 
         self.assertNotIn("conversion", answer)
         self.assertNotIn("is_converted", answer)
+
+
+class TestStarterPresentation(ConversionCase):
+    def test_the_kickoff_starter_opens_with_its_three_slides_while_collaboration_is_on(self):
+        held: list[tuple[str, dict]] = []
+        with patch("frappe.enqueue", lambda method, **kwargs: held.append((method, kwargs))):
+            node = _kickoff(drive.ensure_folder(owner_folder(), f"Starters {uuid.uuid4().hex[:8]}"))
+
+        frappe.db.commit()
+        self.addCleanup(delete_log, node)
+        for method, kwargs in held:
+            frappe.get_attr(method)(node=kwargs["node"], slides=kwargs["slides"])
+
+        doc = converted_deck(node)
+        slides = doc.get("slides", type=pycrdt.Map)
+        elements = doc.get("elements", type=pycrdt.Map)
+        order = sorted(slides.keys(), key=lambda key: slides[key]["order"])
+        drawn = {slide: list[str]() for slide in order}
+        for key in sorted(elements.keys()):
+            drawn[elements[key]["parent"]].append(str(elements[key]["text"]))
+
+        self.assertEqual(len(drawn), 3)
+        for texts, (heading, body) in zip(
+            drawn.values(),
+            [
+                ("Company kickoff", "Where we are and where we are going"),
+                ("This quarter", "Three outcomes we commit to"),
+                ("Next steps", "Owners and dates"),
+            ],
+            strict=True,
+        ):
+            self.assertEqual(len(texts), 2)
+            self.assertIn(body, texts[0])
+            self.assertIn(heading, texts[1])
