@@ -1,5 +1,5 @@
 import { toast } from 'frappe-ui'
-import { computed, nextTick, shallowRef, watch } from 'vue'
+import { computed, nextTick, shallowRef, watch, type Ref } from 'vue'
 
 import { slidesAdapter } from '@/apps/slides/collab/adapter'
 import { elementText } from '@/apps/slides/collab/deck'
@@ -15,7 +15,11 @@ import { sharedPresence } from '@/apps/slides/collab/livePresence'
 import { liveTextExtensions } from '@/apps/slides/collab/liveText'
 import { lastSelector, usePeopleSelecting } from '@/apps/slides/collab/peerOutlines'
 import { resetGrowthBaseline } from '@/apps/slides/composables/useTextEditor'
-import { activeElementIds, focusElementId, resetFocus } from '@/apps/slides/stores/element'
+import {
+  resetFocus,
+  activeElementIds as storeActiveIds,
+  focusElementId as storeFocusId,
+} from '@/apps/slides/stores/element'
 import { jumpToElementsByIds, jumpToSlideByIndex } from '@/apps/slides/stores/historyMeta'
 import {
   boundElementId,
@@ -41,6 +45,13 @@ import {
   type RoomStatus,
 } from '@/platform/collab'
 import { translate } from '@/platform/translation'
+
+// SAFETY: the untyped element store holds the selected element ids
+const activeElementIds = storeActiveIds as Ref<string[]>
+// SAFETY: the untyped element store holds the id of the element being typed in, or null
+const focusElementId = storeFocusId as Ref<string | null>
+// SAFETY: the slide store holds what `drawnSlides` and the editor put there, each with a clientId and elements
+const storeSlides = () => slides.value as StoreSlide[]
 
 interface RoomHost {
   session: CollabSession
@@ -134,7 +145,11 @@ export function useConvertedRoom({
       }
     }
 
-    const present = new Set(slides.value.flatMap(({ elements }) => elements).map(({ id }) => id))
+    const present = new Set(
+      storeSlides()
+        .flatMap(({ elements }) => elements)
+        .map(({ id }) => id),
+    )
     if (activeElementIds.value.some((id: string) => !present.has(id))) {
       activeElementIds.value = activeElementIds.value.filter((id: string) => present.has(id))
     }
@@ -188,9 +203,8 @@ export function useConvertedRoom({
 
   function seat(liveRoom: CollabRoom) {
     const { doc } = liveRoom
-    const shared = sharedPresence(liveRoom.presence)
-    // SAFETY: the slide store holds what `drawnSlides` and the editor put there, each with a clientId and elements
-    const storeSlides = () => slides.value as StoreSlide[]
+    // a room opened with the realtime socket, as `openCollabRoom` always does, has presence
+    const shared = sharedPresence(liveRoom.presence!)
     deck = openLiveDeck(doc, {
       slides: storeSlides,
       flatten: (element) => flattenNow(element, measured),

@@ -4,10 +4,11 @@ import { Paragraph } from '@tiptap/extension-paragraph'
 import { Text } from '@tiptap/extension-text'
 import { fromAny, fromPartial } from '@total-typescript/shoehorn'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { nextTick, ref, type Component } from 'vue'
+import { nextTick, ref, type Component, type Ref } from 'vue'
 import { Awareness } from 'y-protocols/awareness'
 import { applyUpdate, Doc, UndoManager } from 'yjs'
 
+import type { StoreSlide } from '@/apps/slides/collab/liveDeck'
 import type { RoomStatus } from '@/platform/collab'
 import { requireTestElement } from '@/platform/testing/dom'
 
@@ -58,8 +59,12 @@ const { keepRecovery, readRecovery, removeNewestRecovery } = await import('./rec
 const { toast, useKeyboardShortcut } = await import('frappe-ui')
 const { changeSlideInSlideshow } = await import('@/apps/slides/stores/slideshow')
 const { router: slidesRouter } = await import('@/apps/slides/router')
-const { focusElementId, setActiveElements } = await import('@/apps/slides/stores/element')
-const { activeEditor } = await import('@/apps/slides/composables/useTextEditor')
+const elementStore = await import('@/apps/slides/stores/element')
+const { setActiveElements } = elementStore
+const editorStore = await import('@/apps/slides/composables/useTextEditor')
+// the old stores are untyped; the tests set them as the surface reads them
+const focusElementId = fromAny<Ref<string | null>, unknown>(elementStore.focusElementId)
+const activeEditor = fromAny<Ref<Editor | null>, unknown>(editorStore.activeEditor)
 const { registerElementDiv } = await import('@/apps/slides/stores/elementRegistry')
 const { convertLegacy } = await import('@/apps/slides/collab/conversion')
 const { addSlide, deleteSlide, ROOT, setElement } = await import('@/apps/slides/collab/deck')
@@ -541,7 +546,7 @@ describe('a deck on the content layer', () => {
     mounted = await openedSurface({ deck: { is_converted: true } })
     await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
 
-    fromAny(editorSlides.value)[0].background = '#123456'
+    fromAny<StoreSlide[], unknown>(editorSlides.value)[0].background = '#123456'
     markDirty()
     await nextTick()
 
@@ -631,7 +636,7 @@ describe('a deck on the content layer', () => {
       return { doc, saved }
     }
 
-    const restored = () => fromAny(editorSlides.value)[1].elements[0]
+    const restored = () => fromAny<StoreSlide[], unknown>(editorSlides.value)[1].elements[0]
 
     async function setOpacity(opacity: number) {
       restored().opacity = opacity
@@ -1074,7 +1079,9 @@ describe('Slides offline copy', () => {
 
     async function openedComposite() {
       mounted = await openedSurface({ composite: groups })
-      await vi.waitFor(() => expect(fromAny(editorSlides.value)[0]?.name).toBe('a1'))
+      await vi.waitFor(() =>
+        expect(fromAny<StoreSlide[], unknown>(editorSlides.value)[0]?.name).toBe('a1'),
+      )
       await nextTick()
     }
 
@@ -1285,7 +1292,10 @@ describe('Slides offline copy', () => {
 
       mounted = await opening
       await vi.waitFor(
-        () => expect(fromAny(editorSlides.value)[1]?.compositePlaceholder).toBe('failed'),
+        () =>
+          expect(fromAny<StoreSlide[], unknown>(editorSlides.value)[1]?.compositePlaceholder).toBe(
+            'failed',
+          ),
         { timeout: 5000 },
       )
       await new Promise((resolve) => setTimeout(resolve, 50))

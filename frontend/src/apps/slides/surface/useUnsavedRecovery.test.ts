@@ -1,4 +1,4 @@
-import { fromPartial } from '@total-typescript/shoehorn'
+import { fromAny, fromPartial } from '@total-typescript/shoehorn'
 import { toast } from 'frappe-ui'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
@@ -76,7 +76,9 @@ describe('keeping the text of a deleted element', () => {
 
     expect(recovery().retainStickyOrOffer()).toBe(false)
     slides.value = [{ clientId: 's', elements: [] }]
-    const [, options] = vi.mocked(toast.error).mock.calls[0]
+    const options = fromAny<{ action: { onClick: () => void }; duration: number }, unknown>(
+      vi.mocked(toast.error).mock.calls[0][1],
+    )
     options.action.onClick()
 
     expect(options.duration).toBe(Number.POSITIVE_INFINITY)

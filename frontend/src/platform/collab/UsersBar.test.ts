@@ -47,7 +47,7 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-function mount(users: object[]) {
+function mount(users: InstanceType<typeof UsersBar>['$props']['users']) {
   const root = document.createElement('div')
   document.body.appendChild(root)
   const app = createApp({ setup: () => () => h(UsersBar, { users }) })

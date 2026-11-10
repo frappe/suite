@@ -13,7 +13,11 @@ export const deckSchema = getSchema(extensions)
 
 export interface DrawnSlide extends Record<string, unknown> {
   clientId: string
-  elements: Record<string, unknown>[]
+  elements: DrawnElement[]
+}
+
+export interface DrawnElement extends Record<string, unknown> {
+  id: string
 }
 
 function connectorOf({ connectorStart, connectorEnd, route }: DeckItem) {

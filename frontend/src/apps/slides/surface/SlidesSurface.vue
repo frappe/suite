@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { Editor } from '@tiptap/core'
 import { useMediaQuery } from '@vueuse/core'
 import { Avatar, Button, Dropdown, Skeleton, TextInput, toast } from 'frappe-ui'
 import {
@@ -365,7 +366,9 @@ watch(
     viewOnly.value = !canEdit
     // Only an element being typed in was editable, so only that one becomes so again
     if (!canEdit || focusElementId.value) {
-      activeEditor.value?.setEditable(canEdit)
+      // SAFETY: the untyped text editor store holds the open element's editor, or null
+      const editor = activeEditor.value as Editor | null
+      editor?.setEditable(canEdit)
     }
   },
   {

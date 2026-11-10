@@ -1,5 +1,5 @@
 <template>
-  <Dropdown align="end" :options="users">
+  <Dropdown align="end" :options="menuItems">
     <template #default>
       <button
         type="button"
@@ -34,18 +34,25 @@
       <div
         class="flex items-center gap-2 py-1.5 px-2 rounded-4 cursor-pointer hover:bg-surface-gray-1 focus:outline-none"
       >
-        <Avatar v-if="item.avatar" :size="'md'" :image="item.avatar" :label="item.name" />
+        <Avatar
+          v-if="item.person.avatar"
+          :size="'md'"
+          :image="item.person.avatar"
+          :label="item.person.name"
+        />
         <span
           v-else
           class="peer-colour peer-chip peer-chip-md peer-initials"
-          :style="peerColourStyle(item)"
+          :style="peerColourStyle(item.person)"
           aria-hidden="true"
         >
-          {{ initialsOf(item.name) }}
+          {{ initialsOf(item.person.name) }}
         </span>
         <div class="text-sm text-ink-gray-8 mr-4 flex flex-col gap-0.5">
-          <span>{{ item.name }}</span>
-          <span v-if="emailOf(item)" class="text-xs text-ink-gray-5">{{ emailOf(item) }}</span>
+          <span>{{ item.person.name }}</span>
+          <span v-if="emailOf(item.person)" class="text-xs text-ink-gray-5">{{
+            emailOf(item.person)
+          }}</span>
         </div>
       </div>
     </template>
@@ -92,6 +99,10 @@ const buttonLabel = computed(() => {
   return __('{0} other people here', [props.users.length])
 })
 
+// frappe-ui's menu takes items with a label; each carries its person, and the id keeps rows apart
+const menuItems = computed(() =>
+  props.users.map((user) => ({ label: user.name, value: user.id, person: user })),
+)
 const shownUsers = computed(() => props.users.slice(0, SHOWN_USERS))
 const hiddenCount = computed(() => props.users.length - SHOWN_USERS)
 const hasHiddenUsers = computed(() => hiddenCount.value > 0)
