@@ -223,6 +223,8 @@ class TestStarterRefusesWhatTheKickoffDoesNotHold(UnitTestCase):
             {"editorMetadata": {"lineHeight": 1.3, "shadow": 1}},
             {"id": "title-1"},
             {"id": "heading-0"},
+            {"id": "heading-1000"},
+            {"id": "heading-" + "1" * 122},
             {"id": "body-1"},
             {"type": "shape"},
         )

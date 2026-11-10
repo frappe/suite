@@ -39,7 +39,8 @@ class Form(NamedTuple):
 
 # Each kickoff form, by its id's prefix
 FORMS = {"heading": Form(180, 48, "#171717FF"), "body": Form(280, 24, "#7C7C7CFF")}
-ID = re.compile(r"(heading|body)-[1-9][0-9]*")
+# 1 to 999 with no leading zero, so an id stays well under the schema's 128-character key limit
+ID = re.compile(r"(heading|body)-[1-9][0-9]{0,2}")
 # Words of anything but whitespace, markup and control characters, or html.escape's entities, one space apart
 WORD = r"(?:[^\s<>&\"'\x00-\x1f\x7f]|&amp;|&lt;|&gt;|&quot;|&#x27;)+"
 TEXT = re.compile(rf"{WORD}(?: {WORD})*")
