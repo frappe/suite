@@ -446,7 +446,8 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
 
     reflattenBound()
     let now = mirrorOf(host.slides())
-    let boundText: { html: string | null } | null = null
+    // SAFETY: only widens null; the write below sets it, and TypeScript doesn't follow into it
+    let boundText = null as { html: string | null } | null
     steps.write(() => {
       doc.transact(() => {
         removeGone(now)

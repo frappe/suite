@@ -51,7 +51,10 @@ function isHeldForUndo(item: Y.Item) {
 }
 
 // What another tab has written, at any depth, and not since removed
-function holdsOthersWork(type: Y.AbstractType<unknown>, ownClient: number): boolean {
+function holdsOthersWork(
+  type: Pick<Y.AbstractType<unknown>, '_map' | '_start'>,
+  ownClient: number,
+): boolean {
   const entries = [...type._map.values()]
   for (let item = type._start; item; item = item.right) {
     entries.push(item)

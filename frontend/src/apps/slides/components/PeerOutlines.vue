@@ -58,9 +58,9 @@ const TAB_FONT = '500 11px ui-sans-serif, -apple-system, sans-serif'
 const props = defineProps<{ scale: number }>()
 
 const people = usePeopleSelecting(inject('livePresence', shallowRef<RoomPresence | null>(null)))
-const shownIds = computed(
-  () => new Set<string>((currentSlide.value?.elements ?? []).map(({ id }: { id: string }) => id)),
-)
+// SAFETY: the untyped slide store's slides hold their elements, each with an id
+const shownElements = () => (currentSlide.value?.elements ?? []) as { id: string }[]
+const shownIds = computed(() => new Set(shownElements().map(({ id }) => id)))
 const outlines = computed(() => outlinesOn(people.value, shownIds.value))
 
 const hoveredId = ref<string | null>(null)
