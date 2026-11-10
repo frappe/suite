@@ -9,7 +9,7 @@ import pycrdt
 from frappe.tests import UnitTestCase
 
 from suite import content, drive
-from suite.composition.welcome import _kickoff
+from suite.composition.welcome import _kickoff, _text
 from suite.content import checker, convert
 from suite.slides import slide_row
 from suite.slides.content import APP, CHECKER_BUILD, CONVERTER_BUILD, CONVERTER_VERSION
@@ -120,7 +120,17 @@ class TestStarterMatchesTheConverter(LoggedDeckCase):
         self.assertEqual(verdict, checker.Verdict(None))
 
     def test_the_encoded_kickoff_reads_as_the_converter_writes_its_rows(self):
+        self.assert_reads_as_converted(kickoff_slides())
+
+    def test_escaped_text_and_any_id_number_read_as_the_converter_writes_them(self):
         slides = kickoff_slides()
+        slides[0][0] = _text(
+            "heading-17", "R&D <team> \"q\" 'ok' · Ünïcode", top=180, size=48, color="#171717FF"
+        )
+
+        self.assert_reads_as_converted(slides)
+
+    def assert_reads_as_converted(self, slides: list[list[dict]]) -> None:
         rows: list[frappe._dict] = []
         for elements in slides:
             rows.append(
@@ -134,10 +144,46 @@ class TestStarterMatchesTheConverter(LoggedDeckCase):
         self.assertEqual(deck_as_read(deck_state(slides)), deck_as_read(converted.state))
 
 
+HEADING = '<p><span style="font-family: Inter; font-size: 48px; color: #171717FF;">Company kickoff</span></p>'
+# Each a heading's content outside the one grammar a starter's text may take
+UNSUPPORTED_CONTENT = (
+    HEADING.replace(';">', '; opacity: 0.5;">'),
+    HEADING.replace(';">', '; line-height: 2;">'),
+    HEADING.replace(';">', '; font-weight: 700;">'),
+    HEADING.replace("Inter", "Georgia"),
+    HEADING.replace("48px", "24px"),
+    HEADING.replace("#171717FF", "#7C7C7CFF"),
+    HEADING.replace("#171717FF;", "#171717FF"),
+    HEADING.replace("font-family: Inter; font-size: 48px", "font-size: 48px; font-family: Inter"),
+    HEADING.replace("<span ", '<span class="lead" '),
+    HEADING.replace("<p>", '<p class="lead">'),
+    HEADING.replace("kickoff", "<strong>kickoff</strong>"),
+    HEADING.replace("</span>", "</span> "),
+    HEADING.replace("<p>", "<p> "),
+    HEADING.replace("</span>", '</span><span style="font-family: Inter;">!</span>'),
+    HEADING + HEADING,
+    HEADING.replace("Company", " Company"),
+    HEADING.replace("kickoff", "kickoff "),
+    HEADING.replace(" kickoff", "  kickoff"),
+    HEADING.replace(" kickoff", "\nkickoff"),
+    HEADING.replace(" kickoff", "\tkickoff"),
+    HEADING.replace(" kickoff", "&nbsp;kickoff"),
+    HEADING.replace(" kickoff", "&#32;kickoff"),
+    HEADING.replace(" kickoff", " & kickoff"),
+    HEADING.replace("kickoff", "kickoff<!-- note -->"),
+    HEADING.replace("Company kickoff", ""),
+)
+
+
 class TestStarterRefusesWhatTheKickoffDoesNotHold(UnitTestCase):
     def assert_refused(self, slides: list[list[dict]]) -> None:
         with self.assertRaises(ValueError):
             deck_state(slides)
+
+    def changed_heading(self, **changed) -> list[list[dict]]:
+        slides = kickoff_slides()
+        slides[0][0] = {**slides[0][0], **changed}
+        return slides
 
     def test_a_duplicate_element_id_raises(self):
         slides = kickoff_slides()
@@ -145,28 +191,52 @@ class TestStarterRefusesWhatTheKickoffDoesNotHold(UnitTestCase):
 
         self.assert_refused(slides)
 
-    def test_a_span_style_the_kickoff_does_not_use_raises(self):
-        for style in ("opacity: 0.5", "line-height: 2", "font-weight: 700"):
-            with self.subTest(style=style):
-                slides = kickoff_slides()
-                element = slides[0][0]
-                slides[0][0] = {**element, "content": element["content"].replace('">', f'; {style};">', 1)}
-                self.assert_refused(slides)
+    def test_a_paragraph_with_attributes_raises(self):
+        [[heading, _body], *_rest] = kickoff_slides()
+        self.assertEqual(heading["content"], HEADING)
 
-    def test_a_span_style_value_the_kickoff_does_not_use_raises(self):
-        for used, other in (("Inter", "Georgia"), ("48px", "3em"), ("#171717FF", "red")):
-            with self.subTest(other=other):
-                slides = kickoff_slides()
-                element = slides[0][0]
-                slides[0][0] = {**element, "content": element["content"].replace(used, other)}
-                self.assert_refused(slides)
+        self.assert_refused(
+            self.changed_heading(content=HEADING.replace("<p>", '<p style="text-align: right">'))
+        )
 
-    def test_an_element_field_the_kickoff_does_not_use_raises(self):
-        for changed in ({"opacity": 50}, {"rotation": 15}, {"transform": "rotate(1deg)"}, {"zIndex": 2}):
+    def test_a_line_height_other_than_the_kickoffs_raises(self):
+        for line_height in (0, 1.5, "1.3", None):
+            with self.subTest(line_height=line_height):
+                self.assert_refused(self.changed_heading(editorMetadata={"lineHeight": line_height}))
+
+    def test_content_outside_the_starter_grammar_raises(self):
+        for html in UNSUPPORTED_CONTENT:
+            with self.subTest(html=html):
+                self.assert_refused(self.changed_heading(content=html))
+
+    def test_a_field_outside_the_kickoffs_two_forms_raises(self):
+        changes = (
+            {"opacity": 50},
+            {"rotation": 15},
+            {"rotation": False},
+            {"left": 81},
+            {"left": 80.0},
+            {"top": 280},
+            {"width": 799},
+            {"transform": "rotate(1deg)"},
+            {"zIndex": 2},
+            {"editorMetadata": {"lineHeight": 1.3, "shadow": 1}},
+            {"id": "title-1"},
+            {"id": "heading-0"},
+            {"id": "body-1"},
+            {"type": "shape"},
+        )
+        for changed in changes:
             with self.subTest(changed=changed):
-                slides = kickoff_slides()
-                slides[0][0] = {**slides[0][0], **changed}
-                self.assert_refused(slides)
+                self.assert_refused(self.changed_heading(**changed))
+
+    def test_a_starter_text_is_plain_text_escaped_as_the_kickoff_escapes_it(self):
+        shown = "R&D <team> \"q\" 'ok' · Ünïcode 2026"
+        slides = kickoff_slides()
+        slides[0][0] = _text("heading-1", shown, top=180, size=48, color="#171717FF")
+
+        [[heading, _body], *_rest] = texts_by_slide(deck_state(slides))
+        self.assertEqual(heading, shown)
 
     def test_the_kickoff_itself_encodes(self):
         self.assertEqual(texts_by_slide(deck_state(kickoff_slides())), KICKOFF)
