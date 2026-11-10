@@ -11,13 +11,13 @@ def create_deck(parent: str, title: str, slides: list[list[dict]]) -> str:
 
     Each slide is its list of elements, as the editor stores them. The session
     user must be able to add to `parent`. With Slides collaboration on, the
-    converter writes the slides in a background job once this transaction
-    commits, and a deck someone edits before then keeps only their edits.
+    deck starts from `slides` in this transaction, so they must be starter
+    text elements (`suite.slides.content.starter`).
     """
     # Local: Slides' own DocTypes import this package, so it loads nothing from Drive up front.
     from suite import content, drive
-    from suite.content import scheduling
-    from suite.slides.content import APP
+    from suite.content import checkpoints
+    from suite.slides.content import APP, SCHEMA, starter
     from suite.slides.drive import DOCTYPE, docname_for_node
 
     node = drive.create_document(parent, title, content_doctype=DOCTYPE)
@@ -25,19 +25,16 @@ def create_deck(parent: str, title: str, slides: list[list[dict]]) -> str:
     if not docname:
         raise drive.DriveNotFound(_("That presentation was not found"))
 
-    rows = [slide_row(elements) for elements in slides]
-    # The log is the deck once it has one, so the rows would never be read
-    if content.find(APP, node):
-        seed = "suite.slides.content.conversion.seed"
-        scheduling.enqueue(
-            seed, f"suite-slides-seed-{node}", node=node, slides=rows, enqueue_after_commit=True
-        )
+    # The log is the deck once it has one, so rows would never be read
+    found = content.find(APP, node)
+    if found:
+        checkpoints.replace_start(APP, found.id, starter.deck_state(slides), SCHEMA.version)
         return node
 
     deck = frappe.get_doc(DOCTYPE, docname)
     deck.slides = []
-    for row in rows:
-        deck.append("slides", row)
+    for elements in slides:
+        deck.append("slides", slide_row(elements))
 
     deck.save(ignore_permissions=True)
     return node
