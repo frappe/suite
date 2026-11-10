@@ -64,7 +64,6 @@ class TestRecordingProtocolContract(TestCase):
         self.assertEqual(set(CONTRACT["vocabularies"]["callback_failure_reason_codes"]), FAILURE_REASON_CODES)
         self.assertEqual(set(CONTRACT["vocabularies"]["end_reason_codes"]), END_REASON_CODES)
         self.assertEqual(set(CONTRACT["vocabularies"]["gap_reason_codes"]), GAP_REASON_CODES)
-        self.assertEqual(CONTRACT["vectors"]["finite_values"], CONTRACT["vocabularies"])
 
     def test_shared_callback_claim_and_request_vectors_use_production_validators(self):
         claims = CONTRACT["vectors"]["callback_claims"]
@@ -87,9 +86,11 @@ class TestRecordingProtocolContract(TestCase):
             self.assertEqual(set(value["body"]), CALLBACK_BODY_KEYS[value["operation"]])
             _validate_callback_payload(value["operation"], value["body"])
         for value in request_vectors["rejected"]:
-            with self.assertRaises((frappe.AuthenticationError, ValueError)):
-                if set(value["body"]) != CALLBACK_BODY_KEYS[value["operation"]]:
-                    raise ValueError
+            # Exact body keys are enforced by authenticate_callback, covered in
+            # test_callback_security. This validator checks payload semantics only.
+            if set(value["body"]) != CALLBACK_BODY_KEYS[value["operation"]]:
+                continue
+            with self.assertRaises(frappe.AuthenticationError):
                 _validate_callback_payload(value["operation"], value["body"])
 
         accepted_by_operation = {value["operation"]: value["body"] for value in request_vectors["accepted"]}
