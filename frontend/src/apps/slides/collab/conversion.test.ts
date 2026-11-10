@@ -143,6 +143,25 @@ describe('old forms', () => {
     expect(boxOf(converted([old]).doc, 'box').poster).toBe('/private/files/poster.webp')
   })
 
+  it.each([
+    ['no url', { aspectRatio: 1.6 }],
+    ['a url that is not text', { posterURL: 5, aspectRatio: 1.6 }],
+  ])('refuses a video poster saved as an object with %s, which no video can load', (_n, poster) => {
+    expect(refusal({ type: 'video', content: '', src: '/x.mp4', poster })).toEqual({
+      kind: 'failed',
+      reason: 'check',
+      detail: 'setting',
+    })
+  })
+
+  it.each([
+    ['no poster', {}],
+    ['a null poster', { poster: null }],
+  ])('converts a video with %s', (_n, fields) => {
+    const old = { id: 'box', type: 'video', src: '/x.mp4', ...fields }
+    expect(boxOf(converted([old]).doc, 'box').src).toBe('/x.mp4')
+  })
+
   it('carries a video poster url as it stands', () => {
     const old = { id: 'box', type: 'video', src: '/x.mp4', poster: '/private/files/poster.webp' }
     expect(boxOf(converted([old]).doc, 'box').poster).toBe('/private/files/poster.webp')
