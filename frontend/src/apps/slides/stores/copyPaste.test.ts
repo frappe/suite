@@ -12,6 +12,7 @@ vi.mock('frappe-ui', () => ({
 }))
 const inReadonlyMode = ref(false)
 const presentationId = ref<string | null>('p1')
+let opening = 0
 // a foreign paste waits on the server to take its pictures over
 const adoption = vi.hoisted(() => ({ answer: Promise.resolve<unknown>(null) }))
 
@@ -24,7 +25,10 @@ vi.mock('@/apps/slides/stores/presentation', () => ({
   presentationDoc,
   inReadonlyMode,
   contextFor: () => ({}),
-  isOpen: (id: string) => presentationId.value === id,
+  currentOpening: () => {
+    const [id, at] = [presentationId.value, opening]
+    return () => presentationId.value === id && opening === at
+  },
 }))
 vi.mock('@/apps/slides/stores/slide', () => ({
   slideIndex: ref(0),
@@ -256,13 +260,19 @@ describe('a paste from another presentation', () => {
     })
   }
 
-  async function leftWhileAdopting(json: unknown, adopted: unknown) {
+  async function leftWhileAdopting(json: unknown, adopted: unknown, reopen = false) {
     const answer = Promise.withResolvers<unknown>()
     adoption.answer = answer.promise
     const pasting = pasted(json)
-    presentationId.value = 'p2'
+    open('p2')
+    if (reopen) open('p1')
     answer.resolve(adopted)
     await pasting
+  }
+
+  function open(id: string) {
+    presentationId.value = id
+    opening++
   }
 
   it('adds no slide to the presentation opened while its pictures were taken over', async () => {
@@ -279,6 +289,22 @@ describe('a paste from another presentation', () => {
     await leftWhileAdopting({ srcPresentation: 'other', srcSlide: 0, elements }, elements)
 
     expect(duplicateElements).not.toHaveBeenCalled()
+  })
+
+  it('adds no elements once the presentation was left and opened again', async () => {
+    const elements = [{ id: 'e1', type: 'image' }]
+
+    await leftWhileAdopting({ srcPresentation: 'other', srcSlide: 0, elements }, elements, true)
+
+    expect(duplicateElements).not.toHaveBeenCalled()
+  })
+
+  it('adds no slide once the presentation was left and opened again', async () => {
+    const slide = { clientId: 's1', parent: 'other', elements: [] }
+
+    await leftWhileAdopting(slide, slide, true)
+
+    expect(insertSlide).not.toHaveBeenCalled()
   })
 
   it('adds the slide once its pictures are taken over in the same presentation', async () => {

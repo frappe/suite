@@ -227,9 +227,14 @@ const startLoad = () => ++latestLoad
 
 const isLatestLoad = (load) => load === latestLoad
 
-// work that waited may land only in the presentation it started in
-function isOpen(id) {
-  return id != null && presentationId.value === id
+// bumped each time a presentation opens, so reopening one is a new opening
+let opening = 0
+
+// work that waited may land only in the opening it started in
+function currentOpening() {
+  const id = presentationId.value
+  const at = opening
+  return () => id != null && presentationId.value === id && opening === at
 }
 
 // an offline copy warms exactly this url and param order (utils/pinTargets.ts).
@@ -330,6 +335,10 @@ const fetchPresentation = async (name, load) => {
 }
 
 const showPresentation = (id, { doc, content, dirty }) => {
+  // a refused tab reloading in place stays in the same opening
+  if (presentationId.value !== id) {
+    opening++
+  }
   presentationId.value = id
   presentationDoc.value = doc
   slides.value = content
@@ -531,7 +540,7 @@ export {
   writesBlocked,
   savePresentationDoc,
   initPresentationDoc,
-  isOpen,
+  currentOpening,
   showsSlides,
   startLoad,
   resetEditorState,

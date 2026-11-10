@@ -54,6 +54,7 @@ vi.mock('@/apps/slides/stores/saving', () => ({
 const { lockedElsewhere } = await import('./editLock')
 const {
   initPresentationDoc,
+  currentOpening,
   startLoad,
   presentationId,
   presentationDoc,
@@ -591,5 +592,30 @@ describe('overlapping loads', () => {
     expect(slides.value).toHaveLength(0)
     expect(markClean).not.toHaveBeenCalled()
     expect(markDirty).not.toHaveBeenCalled()
+  })
+})
+
+describe('work that waited on a presentation', () => {
+  beforeEach(() => {
+    local = null
+    served = { modified: 'M1', slides: [] }
+    holds.clear()
+  })
+
+  it('lands nowhere once the presentation was left and opened again', async () => {
+    await initPresentationDoc('p1')
+    const stillOpen = currentOpening()
+
+    await initPresentationDoc('p2')
+    await initPresentationDoc('p1')
+
+    expect(stillOpen()).toBe(false)
+  })
+
+  it('still lands while the presentation it started in stays open', async () => {
+    await initPresentationDoc('p1')
+    const stillOpen = currentOpening()
+
+    expect(stillOpen()).toBe(true)
   })
 })

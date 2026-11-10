@@ -18,8 +18,8 @@ import { inCropMode } from '@/apps/slides/stores/imageCrop'
 import { isLive } from '@/apps/slides/stores/liveDeck'
 import {
   contextFor,
+  currentOpening,
   inReadonlyMode,
-  isOpen,
   presentationId,
 } from '@/apps/slides/stores/presentation'
 import { getNewSlide, insertSlide, slideIndex } from '@/apps/slides/stores/slide'
@@ -140,6 +140,7 @@ const handlePastedJSON = async ({ srcPresentation, srcSlide, isCut, elements }) 
   }
 
   const id = presentationId.value
+  const stillOpen = currentOpening()
   let json = pastedArray
   if (srcPresentation !== id) {
     if (cannotFetchPictures()) return
@@ -154,7 +155,7 @@ const handlePastedJSON = async ({ srcPresentation, srcSlide, isCut, elements }) 
       },
       { context: contextFor(id) },
     )
-    if (!isOpen(id)) {
+    if (!stillOpen()) {
       return
     }
   }
@@ -183,6 +184,7 @@ const handleSvgText = (svgText) => {
 const handlePastedSlideJSON = async (slideJSON) => {
   const index = slideIndex.value
   const id = presentationId.value
+  const stillOpen = currentOpening()
 
   if (slideJSON.parent != id) {
     if (cannotFetchPictures()) return
@@ -197,7 +199,7 @@ const handlePastedSlideJSON = async (slideJSON) => {
       },
       { context: contextFor(id) },
     )
-    if (!isOpen(id)) {
+    if (!stillOpen()) {
       return
     }
     if (typeof slideJSON.elements === 'string') {

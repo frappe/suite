@@ -5,8 +5,8 @@ import { router } from '@/apps/slides/router'
 import { flushPendingBlur, resetFocus } from '@/apps/slides/stores/element'
 import { commandHistory } from '@/apps/slides/stores/historyMeta'
 import {
+  currentOpening,
   inReadonlyMode,
-  isOpen,
   presentationId,
   presentationTheme,
   slidesLength,
@@ -205,9 +205,9 @@ const insertDuplicateSlide = async (index, layoutObj, toDuplicate) => {
   const newSlide = getNewSlide(toDuplicate, layoutObj, source)
 
   if (!toDuplicate) {
-    const id = presentationId.value
+    const stillOpen = currentOpening()
     newSlide.elements = await transformElements(newSlide.elements)
-    if (!isOpen(id)) {
+    if (!stillOpen()) {
       return
     }
   }
