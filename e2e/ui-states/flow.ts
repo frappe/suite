@@ -1,9 +1,9 @@
-import type { Locator } from "@playwright/test";
+import type { Browser, Locator } from "@playwright/test";
 import { setup, type AnyEventObject, type AnyStateMachine, type EventObject } from "xstate";
-import type { Scene } from "./scene";
+import type { BaseScene, Scene } from "./scene";
 
 /**
- * One Drive flow as an explicit state machine, plus the browser steps that
+ * One flow as an explicit state machine, plus the browser steps that
  * realise it. The machine says which screens exist and how they connect; the
  * capture run walks every path and screenshots each state once.
  *
@@ -11,21 +11,27 @@ import type { Scene } from "./scene";
  * a state in the graph without a screenshot, for a state too brief to
  * screenshot reliably or one that this site cannot reach.
  */
-export interface Flow<TEvent extends EventObject = EventObject> {
+export interface Flow<TEvent extends EventObject = EventObject, TScene extends BaseScene = Scene> {
 	id: string;
 	title: string;
 	/** Where the machine lives in the code today, explicit or implied. */
 	source: string;
 	machine: AnyStateMachine;
-	/** What each path's own folder is called, as the breadcrumbs show it. Defaults to the title. */
+	/**
+	 * Opens each path's scene. Leave it out for a Drive flow: the provisioned
+	 * actor on the Drive site, with a folder of the path's own. Other apps use
+	 * `openDemoScene` or `openSetupScene` from `demo.ts`.
+	 */
+	open?(browser: Browser): Promise<TScene>;
+	/** What each Drive path's own folder is called, as the breadcrumbs show it. Defaults to the title. */
 	folderTitle?: string;
 	/** Brings a fresh, signed-in page to the machine's initial state. */
-	enter(scene: Scene): Promise<void>;
-	events: Record<TEvent["type"], (scene: Scene) => Promise<void>>;
+	enter(scene: TScene): Promise<void>;
+	events: Record<TEvent["type"], (scene: TScene) => Promise<void>>;
 	/** Waits for a state to be fully on screen before its screenshot. */
-	settle?: Partial<Record<string, (scene: Scene) => Promise<void>>>;
+	settle?: Partial<Record<string, (scene: TScene) => Promise<void>>>;
 	/** For a state shown in a different page than the scene's own: that page's `body`, screenshotted instead. */
-	frame?(scene: Scene, state: string): Locator | null;
+	frame?(scene: TScene, state: string): Locator | null;
 }
 
 export interface StateMeta {
@@ -33,11 +39,14 @@ export interface StateMeta {
 	transient?: boolean;
 }
 
-/** A flow with its event types erased, as the capture run and the registry see it. */
-export type AnyFlow = Flow<EventObject>;
+/** A flow with its event and scene types erased, as the capture run and the registry see it. */
+export type AnyFlow = Flow<EventObject, BaseScene>;
 
-export function defineFlow<TEvent extends EventObject>(flow: Flow<TEvent>): AnyFlow {
-	return flow;
+export function defineFlow<TEvent extends EventObject, TScene extends BaseScene = Scene>(
+	flow: Flow<TEvent, TScene>,
+): AnyFlow {
+	// SAFETY: a flow only ever receives the scene its own `open` made, or the Drive scene when it has no `open`.
+	return flow as unknown as AnyFlow;
 }
 
 /** XState's `setup`, with the machine's events typed as `TEvent`. */

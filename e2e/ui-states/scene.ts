@@ -28,21 +28,13 @@ export interface People {
 	fresh: Credentials;
 }
 
-/**
- * One browser session in one capture path: signed in as the actor, with a
- * folder of its own under `UI states` in My files, so paths never see each
- * other's rows.
- */
-export interface Scene {
+/** One signed-in browser session in one capture path, on any Suite site. */
+export interface BaseScene {
 	page: Page;
 	context: BrowserContext;
+	/** The signed-in user's requests, sharing the page's cookies. */
 	api: APIRequestContext;
 	baseURL: string;
-	people: People;
-	/** The actor's Personal root. */
-	root: string;
-	/** This path's own folder, purged when the scene closes. Empty until the flow fills it. */
-	folder: DriveNode;
 	/** A name unique to this path. */
 	name(label: string): string;
 	goto(path: string): Promise<void>;
@@ -60,19 +52,33 @@ export interface Scene {
 	dialog(name: string): Locator;
 	/** The first text on the page matching a toast's message. */
 	toast(text: string | RegExp): Locator;
+	/** Runs `cleanup` when the scene closes, last registered first. Use it to remove what a path created. */
+	defer(cleanup: () => Promise<unknown>): void;
+	close(): Promise<void>;
+}
+
+/**
+ * A Drive capture path: signed in as the provisioned actor, with a folder of
+ * its own under `UI states` in My files, so paths never see each other's rows.
+ */
+export interface Scene extends BaseScene {
+	people: People;
+	/** The actor's Personal root. */
+	root: string;
+	/** This path's own folder, purged when the scene closes. Empty until the flow fills it. */
+	folder: DriveNode;
 	/** Picks `action` from the row menu of the item called `title`. */
 	rowAction(title: string, action: string): Promise<void>;
-	close(): Promise<void>;
 }
 
 /** A value a flow keeps per scene, set in `enter` or a step. `get` throws when it was never set. */
 export function perScene<T>(label: string) {
-	const values = new WeakMap<Scene, T>();
+	const values = new WeakMap<BaseScene, T>();
 	return {
-		set(scene: Scene, value: T): void {
+		set(scene: BaseScene, value: T): void {
 			values.set(scene, value);
 		},
-		get(scene: Scene): T {
+		get(scene: BaseScene): T {
 			const value = values.get(scene);
 			if (value === undefined) throw new Error(`${label} was never set on this scene`);
 			return value;
@@ -124,28 +130,22 @@ export async function recreateFolder(api: APIRequestContext, title: string, pare
 	return createFolder(api, title, under);
 }
 
-export async function openScene(
-	browser: Browser,
-	baseURL: string,
-	folderTitle: string,
-): Promise<Scene> {
-	const who = people();
+/** A page signed in as `user` on `baseURL`, with nothing created for it. */
+export async function openBrowserScene(browser: Browser, baseURL: string, user?: Credentials): Promise<BaseScene> {
 	const contextOptions = { baseURL, viewport: VIEWPORT, colorScheme: "light" } as const;
 	const context = await browser.newContext(contextOptions);
 	const api = context.request;
-	await loginViaApi(api, who.actor);
-	const root = await personalRoot(api);
-	const parent = await workspaceFolder(api, root);
-	const stamp = Date.now().toString(36);
-	const folder = await recreateFolder(api, folderTitle, parent);
+	await loginViaApi(api, user);
 	const page = await context.newPage();
+	const stamp = Date.now().toString(36);
 	const others: BrowserContext[] = [];
+	const cleanups: (() => Promise<unknown>)[] = [];
 	let latestHold: Hold | null = null;
-	const signInElsewhere = async (user: Credentials): Promise<BrowserContext> => {
-		const other = await browser.newContext(contextOptions);
-		others.push(other);
-		await loginViaApi(other.request, user);
-		return other;
+	const signInElsewhere = async (other: Credentials): Promise<BrowserContext> => {
+		const second = await browser.newContext(contextOptions);
+		others.push(second);
+		await loginViaApi(second.request, other);
+		return second;
 	};
 
 	return {
@@ -153,9 +153,6 @@ export async function openScene(
 		context,
 		api,
 		baseURL,
-		people: who,
-		root,
-		folder,
 		name: (label) => `${label} ${stamp}`,
 		async goto(path) {
 			await page.goto(path);
@@ -197,26 +194,46 @@ export async function openScene(
 		async settle() {
 			await page.waitForTimeout(SETTLE_MS);
 		},
-		async as(user) {
-			return (await signInElsewhere(user)).request;
+		async as(other) {
+			return (await signInElsewhere(other)).request;
 		},
-		async pageAs(user) {
-			return (await signInElsewhere(user)).newPage();
+		async pageAs(other) {
+			return (await signInElsewhere(other)).newPage();
 		},
 		dialog: (name) => page.getByRole("dialog", { name }),
 		toast: (text) => page.getByText(text).first(),
-		async rowAction(title, action) {
-			const menu = await openRowMenu(page, title);
-			await menu.getByRole("menuitem", { name: action, exact: true }).click();
+		defer(cleanup) {
+			cleanups.push(cleanup);
 		},
 		async close() {
 			try {
+				for (const cleanup of cleanups.reverse()) await cleanup();
 				await Promise.all(others.map((other) => other.close()));
-				await trashNode(api, folder.name);
-				await purgeNode(api, folder.name);
 			} finally {
 				await context.close();
 			}
 		},
 	};
+}
+
+/** The Drive scene: the provisioned actor, with this path's own folder under `UI states`. */
+export async function openScene(browser: Browser, baseURL: string, folderTitle: string): Promise<Scene> {
+	const who = people();
+	const base = await openBrowserScene(browser, baseURL, who.actor);
+	const root = await personalRoot(base.api);
+	const parent = await workspaceFolder(base.api, root);
+	const folder = await recreateFolder(base.api, folderTitle, parent);
+	base.defer(async () => {
+		await trashNode(base.api, folder.name);
+		await purgeNode(base.api, folder.name);
+	});
+	return Object.assign(base, {
+		people: who,
+		root,
+		folder,
+		async rowAction(title: string, action: string) {
+			const menu = await openRowMenu(base.page, title);
+			await menu.getByRole("menuitem", { name: action, exact: true }).click();
+		},
+	});
 }

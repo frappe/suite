@@ -7,7 +7,7 @@ import { flows } from "./flows";
 import { watchBench } from "./bench";
 import { describeMachine, writeManifest, type EdgeRecord, type FlowManifest } from "./manifest";
 import { OUT_DIR } from "./playwright.config";
-import { openScene, type Scene } from "./scene";
+import { openScene, type BaseScene } from "./scene";
 
 const only = process.env.UI_STATES_FLOWS?.split(",").filter(Boolean);
 
@@ -32,7 +32,7 @@ for (const flow of flows) {
 		try {
 			for (const path of paths) {
 				await bench.survive(async () => {
-					const scene = await openScene(browser, baseURL, flow.folderTitle ?? flow.title);
+					const scene = flow.open ? await flow.open(browser) : await openScene(browser, baseURL, flow.folderTitle ?? flow.title);
 					try {
 						await flow.enter(scene);
 						let previous: string | null = null;
@@ -66,7 +66,7 @@ function recordEdge(edges: EdgeRecord[], from: string, event: string, to: string
 /** Screenshots a state the first time a path reaches it. */
 async function capture(
 	flow: AnyFlow,
-	scene: Scene,
+	scene: BaseScene,
 	manifest: FlowManifest,
 	state: string,
 	parent: string | null,

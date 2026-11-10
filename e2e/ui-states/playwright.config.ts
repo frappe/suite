@@ -1,9 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
 import { resolve } from "node:path";
+import { DEMO_URL, SETUP_URL } from "./demo";
 import { VIEWPORT } from "./scene";
 
 /**
- * Captures every Drive UI state as a screenshot, walking the machines under
+ * Captures every Suite UI state as a screenshot, walking the machines under
  * `flows/`. Not a test suite: one run per flow, no retries, one browser.
  *
  * Needs the same `suite.drive.e2e_api` server as `drive-backed-apps`: set
@@ -37,7 +38,7 @@ export default defineConfig({
 		viewport: VIEWPORT,
 		actionTimeout: 15_000,
 		navigationTimeout: 30_000,
-		launchOptions: { args: ["--unsafely-treat-insecure-origin-as-secure=" + baseURL] },
+		launchOptions: { args: [`--unsafely-treat-insecure-origin-as-secure=${[baseURL, DEMO_URL, SETUP_URL].join(",")}`] },
 	},
 	projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
 	webServer: {
