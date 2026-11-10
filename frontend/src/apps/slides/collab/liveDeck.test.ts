@@ -429,7 +429,9 @@ describe('pushing the store into the live document', () => {
     tab.deck.push()
     const other = new Y.Doc()
     Y.applyUpdate(other, Y.encodeStateAsUpdate(one))
-    const typed = elementText(other, 't')!.get(0).get(0)
+    const paragraph = elementText(other, 't')!.get(0)
+    if (!(paragraph instanceof Y.XmlElement)) throw new Error('expected a paragraph')
+    const typed = paragraph.get(0)
     if (!(typed instanceof Y.XmlText)) throw new Error('expected text')
 
     typed.insert(typed.length, ' typed')

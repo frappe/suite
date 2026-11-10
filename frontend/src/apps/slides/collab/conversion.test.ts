@@ -540,7 +540,8 @@ describe('what the deck draws, against the old view', () => {
   function contentOf(doc: Y.Doc) {
     const [slide] = drawnSlides(doc)
     const [element] = slide.elements
-    return fromPartial<string>(element.content)
+    if (typeof element.content !== 'string') throw new Error('expected text content')
+    return element.content
   }
 
   function drawnParts(html: string) {

@@ -636,7 +636,8 @@ describe('a read value', () => {
     const id = addElement(doc, slide, { frame: { ...FRAME } })
     const [{ elements }] = readSlides(doc)
     const [drawn] = elements
-    fromPartial<typeof FRAME>(drawn.frame).left = 999
+    if (typeof drawn.frame !== 'object' || !drawn.frame) throw new Error('expected a frame')
+    Reflect.set(drawn.frame, 'left', 999)
     expect(element(doc, id).get('frame')).toEqual(FRAME)
     const [{ elements: again }] = readSlides(doc)
     expect(again[0].frame).toEqual(FRAME)
