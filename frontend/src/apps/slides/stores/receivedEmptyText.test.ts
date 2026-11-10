@@ -1,6 +1,7 @@
 import { ySyncPluginKey } from '@tiptap/y-tiptap'
+import { fromAny } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { nextTick } from 'vue'
+import { nextTick, type Ref } from 'vue'
 import { Awareness } from 'y-protocols/awareness'
 import * as Y from 'yjs'
 
@@ -8,7 +9,9 @@ vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' 
 vi.mock('@/apps/slides/router', () => ({ router: { replace: () => Promise.resolve() } }))
 
 const { activeElementIds, flushPendingBlur } = await import('./element')
-const { slides, slideIndex } = await import('./slide')
+const { slides: storeSlides, slideIndex } = await import('./slide')
+// the store types each slide's fields as unknown, and these tests read them
+const slides = fromAny<Ref<any[]>, unknown>(storeSlides)
 const { slidesLength } = await import('./presentation')
 const { setCommandHistory } = await import('./historyMeta')
 const { setLiveSeat } = await import('./liveDeck')
@@ -83,9 +86,9 @@ describe('leaving a text element whose text is empty, in a live room', () => {
   })
 
   it("keeps the element when a co-editor cleared this tab's typing", () => {
-    activeEditor.value.commands.insertContent('mine')
+    activeEditor.value!.commands.insertContent('mine')
     clearFragment(fragment)
-    expect(activeEditor.value.getText()).toBe('')
+    expect(activeEditor.value!.getText()).toBe('')
 
     flushPendingBlur()
 
@@ -93,9 +96,9 @@ describe('leaving a text element whose text is empty, in a live room', () => {
   })
 
   it("keeps the element when this tab's own undo emptied it", () => {
-    activeEditor.value.commands.insertContent('mine')
+    activeEditor.value!.commands.insertContent('mine')
     undoManager.undo()
-    expect(activeEditor.value.getText()).toBe('')
+    expect(activeEditor.value!.getText()).toBe('')
 
     flushPendingBlur()
 
@@ -104,8 +107,8 @@ describe('leaving a text element whose text is empty, in a live room', () => {
 
   it('deletes the element when this tab cleared what a co-editor typed', () => {
     typeInFragment(fragment, 'theirs')
-    activeEditor.value.commands.clearContent(true)
-    expect(activeEditor.value.getText()).toBe('')
+    activeEditor.value!.commands.clearContent(true)
+    expect(activeEditor.value!.getText()).toBe('')
 
     flushPendingBlur()
 
