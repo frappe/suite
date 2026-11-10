@@ -1105,6 +1105,25 @@ describe('Slides offline copy', () => {
     })
   })
 
+  it('fetches each bundled font once through the worker, so it is there offline', async () => {
+    const fonts: { url: string; isMarked: boolean }[] = []
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      if (url.includes('/slides/fonts/')) {
+        fonts.push({ url, isMarked: new Headers(init?.headers).has('x-slides-pin') })
+      }
+
+      return new Response('', { status: 404 })
+    })
+
+    mounted = await openedSurface()
+
+    await vi.waitFor(() => expect(fonts.length).toBeGreaterThan(0))
+    const urls = fonts.map(({ url }) => url)
+    expect(urls).toContain('/assets/suite/slides/fonts/Anton/Anton-Regular-latin.woff2')
+    expect(new Set(urls).size).toBe(urls.length)
+    expect(fonts.some(({ isMarked }) => isMarked)).toBe(false)
+  })
+
   it('hides the copy from someone who is not the owner', async () => {
     signedIn.user = 'someone@example.com'
     mounted = await openedSurface()

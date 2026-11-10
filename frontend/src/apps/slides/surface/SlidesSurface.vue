@@ -89,9 +89,10 @@ import {
 import { inSlideShowMode, startSlideShow } from '@/apps/slides/stores/slideshow'
 import { cancelVisit, rememberVisit } from '@/apps/slides/stores/visitedCopies'
 import { stopVisitedMedia, storeVisitedMedia } from '@/apps/slides/stores/visitedMedia'
-import { drawnFontsLoaded } from '@/apps/slides/utils/bundledFonts'
+import { drawnFontsLoaded, warmBundledFonts } from '@/apps/slides/utils/bundledFonts'
 import { isMediaOwner } from '@/apps/slides/utils/mediaUploads'
 import { postToServiceWorker, registerSlidesWorker } from '@/apps/slides/utils/serviceWorker'
+import { waitForController } from '@/apps/slides/utils/startupRequests'
 import { readSavedDocument } from '@/platform/collab'
 import { peopleOf, presenceColours } from '@/platform/collab/peers'
 import UsersBar from '@/platform/collab/UsersBar.vue'
@@ -800,6 +801,10 @@ onMounted(() => {
   void load()
   void registerSlidesWorker()
   void postToServiceWorker('slides-entered')
+  // outside any visit or pin, which mark what they fetch so the worker keeps out
+  void waitForController()
+    .then((isControlled) => isControlled && warmBundledFonts())
+    .catch(() => {})
   window.addEventListener('online', setOnline)
   window.addEventListener('offline', setOffline)
   window.addEventListener('beforeunload', warnBeforeUnload)

@@ -6,10 +6,9 @@ vi.mock('@/apps/slides/stores/slide', () => ({}))
 vi.mock('@/apps/slides/stores/historyMeta', () => ({}))
 vi.mock('@/apps/slides/stores/element', () => ({}))
 vi.mock('@/apps/slides/stores/saving', () => ({}))
-vi.mock('@/apps/slides/pages/Slideshow.vue', () => ({}))
 
 const { transformElements } = await import('./presentation')
-const { warmAssets } = await import('@/apps/slides/utils/startupRequests')
+const { warmBundledFonts } = await import('@/apps/slides/utils/bundledFonts')
 
 function centredText(id: string) {
   return {
@@ -53,7 +52,7 @@ describe('measuring centred text', () => {
     )
     let measured: { transform: string }[] | undefined
 
-    void warmAssets()
+    void warmBundledFonts()
     void transformElements([centredText('a')]).then((elements) => {
       measured = elements
     })
