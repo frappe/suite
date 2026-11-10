@@ -1609,3 +1609,36 @@ class TestDocShareCounts(IntegrationTestCase):
         )
         self.assertEqual(target.docshare_counts(), (3, 4))
         self.assertEqual(len(rows), 1)
+
+    def test_totals_saved_as_anything_but_one_valid_row_refuse_a_save_and_a_read(self):
+        # tabSingles has no unique key, so nothing stops a second row
+        starts = {"a null row": [None], "two rows": ["1,2", "5,6"], "an unparseable row": ["1;2"]}
+        for start, values in starts.items():
+            with self.subTest(start=start):
+                self.assert_refused_over(values)
+
+    def assert_refused_over(self, values: list[str | None]) -> None:
+        target = SiteContentTarget()
+        self.seed_totals(values)
+
+        with self.assertRaises(ValueError):
+            target.save_docshare_counts(3, 4)
+
+        with self.assertRaises(ValueError):
+            target.docshare_counts()
+
+        self.assertCountEqual(self.saved_totals(), values)
+
+    def seed_totals(self, values: list[str | None]) -> None:
+        doctype, field = DOCSHARE_COUNTS
+        frappe.db.sql("DELETE FROM `tabSingles` WHERE `doctype` = %s AND `field` = %s", DOCSHARE_COUNTS)
+        for value in values:
+            frappe.db.sql(
+                "INSERT INTO `tabSingles` (`doctype`, `field`, `value`) VALUES (%s, %s, %s)",
+                (doctype, field, value),
+            )
+
+    def saved_totals(self) -> list[str | None]:
+        return frappe.db.sql_list(
+            "SELECT `value` FROM `tabSingles` WHERE `doctype` = %s AND `field` = %s", DOCSHARE_COUNTS
+        )

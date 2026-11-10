@@ -11,6 +11,7 @@ to 3, then `LegacyTree` for everything Build reads out of the legacy tables
 and `DriveTarget` for everything it writes into Drive's own.
 """
 
+import re
 from collections import defaultdict
 from dataclasses import dataclass, replace
 from typing import IO, Protocol
@@ -1883,6 +1884,26 @@ WRITER_DOCUMENT_COLUMNS = (
 DOCSHARE_COUNTS = ("Drive Build State", "docshare_counts")
 
 
+def saved_docshare_counts() -> tuple[int, int] | None:
+    """Read the one saved totals row, or None when there is none; any other row raises."""
+    # tabSingles has no unique key, so a second row can't be ruled out by the table
+    rows = frappe.db.sql_list(
+        "SELECT `value` FROM `tabSingles` WHERE `doctype` = %s AND `field` = %s", DOCSHARE_COUNTS
+    )
+    if not rows:
+        return None
+
+    count = len(rows)
+    if count > 1:
+        raise ValueError(f"{count} DocShare totals rows are saved, so which one holds is unknown")
+
+    matched = re.fullmatch(r"([0-9]+),([0-9]+)", rows[0] or "")
+    if not matched:
+        raise ValueError(f"the saved DocShare totals {rows[0]!r} don't read as two counts")
+
+    return int(matched[1]), int(matched[2])
+
+
 class SiteContentTarget:
     """`ContentTarget` over the real target and content tables."""
 
@@ -1890,7 +1911,7 @@ class SiteContentTarget:
         doctype, field = DOCSHARE_COUNTS
         values = {"doctype": doctype, "field": field, "value": f"{dropped},{deleted}"}
         # Build removes no rows but DocShares, so a later batch's totals overwrite the saved ones
-        if legacy_single_value(doctype, field) is None:
+        if saved_docshare_counts() is None:
             frappe.db.sql(
                 "INSERT INTO `tabSingles` (`doctype`, `field`, `value`) VALUES (%(doctype)s, %(field)s, %(value)s)",
                 values,
@@ -1903,12 +1924,7 @@ class SiteContentTarget:
         )
 
     def docshare_counts(self) -> tuple[int, int] | None:
-        saved = legacy_single_value(*DOCSHARE_COUNTS)
-        if saved is None:
-            return None
-
-        dropped, deleted = saved.split(",")
-        return int(dropped), int(deleted)
+        return saved_docshare_counts()
 
     def nodes(self, names: tuple[str, ...]) -> dict[str, dict]:
         if not names:
