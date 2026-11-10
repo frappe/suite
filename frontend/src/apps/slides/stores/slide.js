@@ -25,6 +25,7 @@ import { inSlideShowMode } from './slideshow'
 /** @type {import('vue').Ref<Record<string, unknown>[]>} */
 const slides = ref([])
 
+/** @type {import('vue').Ref<number>} */
 const slideIndex = ref()
 const focusedSlide = ref(null)
 
@@ -37,6 +38,7 @@ const selectionBounds = reactive({
   height: 0,
 })
 
+/** @type {{ left?: number, top?: number, width?: number, height?: number, scale?: number }} */
 const slideBounds = reactive({})
 
 // an element measures zero in one axis while its text editor is swapped out, and

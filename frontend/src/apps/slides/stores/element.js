@@ -42,7 +42,9 @@ import { getCommandsToInitElementRefId, getCommandsToUpdateElementRefId } from '
 
 const findSlideElement = (id) => currentSlide.value?.elements.find((el) => el.id === id)
 
+/** @type {import('vue').Ref<string[]>} */
 const activeElementIds = ref([])
+/** @type {import('vue').Ref<string | null>} */
 const focusElementId = ref(null)
 const pairElementId = ref(null)
 const pendingShapeType = ref(null)

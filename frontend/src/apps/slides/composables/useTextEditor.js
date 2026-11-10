@@ -34,6 +34,7 @@ import { currentSlide } from '@/apps/slides/stores/slide'
 import { extensions, patchEmptyParagraphs } from '@/apps/slides/stores/tiptapSetup'
 import { throttleToFrame } from '@/apps/slides/utils/helpers'
 
+/** @type {import('vue').Ref<Editor | null>} */
 export const activeEditor = ref(null)
 
 // the default parse drops a line's leading spaces, so indentation lasts only until the

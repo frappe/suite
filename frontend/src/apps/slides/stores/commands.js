@@ -72,6 +72,10 @@ const editElements = (state, slideId, elementIds, property, value) => {
   })
 }
 
+/**
+ * @param {{ slideId: string, elementIds: string[], property: string, oldValue: unknown, newValue: unknown,
+ *   skipJumpOnExecute?: boolean, coalesceKey?: string, bypassLock?: boolean }} edit
+ */
 const editElementCommand = ({
   slideId,
   elementIds,
@@ -195,6 +199,10 @@ const reorderSlidesCommand = ({ oldIndex, newIndex }) => ({
   },
 })
 
+/**
+ * @param {{ slideId: string, elementIds: string[], commands: object[], focusElementId?: string,
+ *   skipJumpOnExecute?: boolean, coalesceKey?: string }} batch
+ */
 const batchCommand = ({
   slideId,
   elementIds,
