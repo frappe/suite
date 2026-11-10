@@ -11,7 +11,8 @@ vi.mock('@/apps/slides/utils/helpers', () => ({
 
 const { removeSlideCommand } = await import('./commands')
 
-const makeSlide = (clientId: string) => ({ clientId, elements: [] })
+// a stale `idx`, which the command must renumber
+const makeSlide = (clientId: string) => ({ clientId, elements: [], idx: 0 })
 
 describe('removeSlideCommand', () => {
   it('keeps the restored slide at its original index', () => {

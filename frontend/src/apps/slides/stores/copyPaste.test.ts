@@ -52,10 +52,9 @@ const { insertSlide } = await import('@/apps/slides/stores/slide')
 const { toast } = await import('frappe-ui')
 const { setLiveSeat } = await import('@/apps/slides/stores/liveDeck')
 
+// assigned after, so the tests read clipboardData as the mocks, not a nullable DataTransfer
 const makeCopyEvent = (target: EventTarget | null) =>
-  fromPartial<ClipboardEvent>({
-    target,
-    preventDefault: vi.fn(),
+  Object.assign(fromPartial<ClipboardEvent>({ target, preventDefault: vi.fn() }), {
     clipboardData: { setData: vi.fn(), getData: vi.fn(() => '') },
   })
 

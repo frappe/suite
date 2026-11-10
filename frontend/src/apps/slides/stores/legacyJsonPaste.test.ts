@@ -62,7 +62,7 @@ describe('pasting a copied text box into a focused editor', () => {
 
     await pasteBox({ type: 'doc', content: [paragraph] })
 
-    const html = activeEditor.value.getHTML()
+    const html = activeEditor.value!.getHTML()
     expect(html).toContain('A')
     expect(html).not.toContain('font-weight')
   })
@@ -72,6 +72,6 @@ describe('pasting a copied text box into a focused editor', () => {
 
     await pasteBox('<p><span style="font-weight: 600">A</span></p>')
 
-    expect(activeEditor.value.getHTML()).toContain('font-weight: 600')
+    expect(activeEditor.value!.getHTML()).toContain('font-weight: 600')
   })
 })

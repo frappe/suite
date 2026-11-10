@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 
+import type { MediaStatus } from '@/apps/drive'
+
 const slides = ref<unknown[]>([])
 const presentationDoc = ref<Record<string, unknown>>({})
 const presentationId = ref('p1')
@@ -164,7 +166,7 @@ describe('pictures of a presentation opened online', () => {
       id: 'node1234',
       src,
       cacheKey: ref('drive-media:node1234'),
-      status: ref('ready'),
+      status: ref<MediaStatus>('ready'),
       refresh: async () => {},
     }
     const release = setDocumentMedia(() => fromPartial(handle))
