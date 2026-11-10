@@ -85,9 +85,10 @@ import {
 import { inSlideShowMode, startSlideShow } from '@/apps/slides/stores/slideshow'
 import { cancelVisit, rememberVisit } from '@/apps/slides/stores/visitedCopies'
 import { stopVisitedMedia, storeVisitedMedia } from '@/apps/slides/stores/visitedMedia'
-import { drawnFontsLoaded } from '@/apps/slides/utils/bundledFonts'
+import { drawnFontsLoaded, warmBundledFonts } from '@/apps/slides/utils/bundledFonts'
 import { isMediaOwner } from '@/apps/slides/utils/mediaUploads'
 import { postToServiceWorker, registerSlidesWorker } from '@/apps/slides/utils/serviceWorker'
+import { waitForController } from '@/apps/slides/utils/startupRequests'
 import { useHideRail } from '@/platform/rail'
 import { getCookieSessionUser, useSession } from '@/platform/session'
 import { openAreaShortcuts } from '@/platform/shortcuts'
@@ -757,6 +758,10 @@ onMounted(() => {
   void load()
   void registerSlidesWorker()
   void postToServiceWorker('slides-entered')
+  // outside any visit or pin, which mark what they fetch so the worker keeps out
+  void waitForController()
+    .then((isControlled) => isControlled && warmBundledFonts())
+    .catch(() => {})
   window.addEventListener('online', setOnline)
   window.addEventListener('offline', setOffline)
   window.addEventListener('beforeunload', warnBeforeUnload)

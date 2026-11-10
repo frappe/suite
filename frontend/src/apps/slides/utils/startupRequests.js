@@ -1,5 +1,4 @@
 import { api } from '@/apps/slides/client/api'
-import { warmBundledFonts } from '@/apps/slides/utils/bundledFonts'
 import { fetchPinned } from '@/apps/slides/utils/offlineRequests'
 import { API_CACHE_NAME } from '@/apps/slides/utils/slidesCaches'
 import { isCacheable } from '@/apps/slides/utils/slidesRequests'
@@ -68,11 +67,10 @@ async function warmTemplates() {
   }
 }
 
-// the slideshow chunk and the fonts load lazily
+// the slideshow chunk loads lazily
 export function warmAssets() {
   return Promise.all([
     import('@/apps/slides/pages/Slideshow.vue').catch(() => {}),
-    warmBundledFonts().catch(() => {}),
     warmTemplates().catch(() => {}),
   ])
 }
