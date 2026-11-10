@@ -16,7 +16,7 @@ export interface DrawnSlide extends Record<string, unknown> {
   elements: DrawnElement[]
 }
 
-export interface DrawnElement extends Record<string, unknown> {
+interface DrawnElement extends Record<string, unknown> {
   id: string
 }
 

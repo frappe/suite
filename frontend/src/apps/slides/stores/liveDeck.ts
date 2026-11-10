@@ -16,7 +16,7 @@ interface LiveSeat {
   bindText: (id: string, seedHtml: string | null | undefined) => LiveTextBinding
 }
 
-export interface LiveTextBinding {
+interface LiveTextBinding {
   extensions: AnyExtension[]
   seeded: boolean
 }
