@@ -194,7 +194,11 @@ function rewritten(old: OldElement) {
   }
 
   // an old video saved its poster as the object that captured it
-  if (isLegacySettings(element.poster) && typeof element.poster.posterURL === 'string') {
+  if (isLegacySettings(element.poster)) {
+    if (typeof element.poster.posterURL !== 'string') {
+      throw new Refused('setting')
+    }
+
     element.poster = element.poster.posterURL
   }
 
