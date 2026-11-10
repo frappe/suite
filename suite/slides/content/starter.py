@@ -6,6 +6,7 @@ hold: white slides with no transition, and text elements of one styled paragraph
 else raises. test_starter checks the result against the converter's answer and the checker.
 """
 
+import re
 from xml.etree import ElementTree as ET
 
 import frappe
@@ -16,16 +17,18 @@ from suite.slides.content.conversion import NEW_ID_LENGTH
 # The order a tab appending each item to its list writes (deck.ts's orderPast); a longer list raises
 ORDERS = "VWXYZabcdefghijklmnopqrstuvwxyz"
 SLIDE = {"background": "#FFFFFFFF", "transition": "None", "transitionDuration": "0"}
-# The editor's textStyle mark carries every one of its attributes, an unset one as null
-TEXT_STYLE = {
-    "font-family": "fontFamily",
-    "font-size": "fontSize",
-    "color": "color",
-    "font-weight": "fontWeight",
-    "letter-spacing": "letterSpacing",
-    "text-transform": "textTransform",
-    "opacity": "opacity",
+# Exactly the fields a starter text element holds (welcome.py's _text)
+FIELDS = {"id", "type", "left", "top", "width", "content", "opacity", "rotation", "editorMetadata"}
+# A starter text element's opacity, in the old rows' percent
+OPAQUE = 100
+# Each span style a starter uses, the values it may take, and the textStyle mark key it becomes
+STYLES = {
+    "font-family": (re.compile(r"Inter"), "fontFamily"),
+    "font-size": (re.compile(r"\d+px"), "fontSize"),
+    "color": (re.compile(r"#[0-9A-F]{8}"), "color"),
 }
+# The editor's textStyle mark carries every one of its attributes, an unset one as null
+UNSET = ("fontWeight", "letterSpacing", "textTransform", "opacity")
 
 
 def deck_state(slides: list[list[dict]]) -> bytes:
@@ -33,6 +36,13 @@ def deck_state(slides: list[list[dict]]) -> bytes:
     doc: pycrdt.Doc = pycrdt.Doc()
     slide_map = doc.get("slides", type=pycrdt.Map)
     element_map = doc.get("elements", type=pycrdt.Map)
+    ids: list[str] = []
+    for elements in slides:
+        ids.extend(element["id"] for element in elements)
+
+    if len(set(ids)) != len(ids):
+        raise ValueError("a starter's element ids must differ")
+
     with doc.transaction():
         for at, elements in enumerate(slides):
             slide_id = frappe.generate_hash(length=NEW_ID_LENGTH)
@@ -74,8 +84,16 @@ def add_text(elements: pycrdt.Map, element: dict, parent: str, order: str) -> No
 
 def styled_span(element: dict) -> ET.Element:
     """Find the one styled span a starter text element's paragraph holds."""
-    if element.get("type") != "text" or element.get("transform"):
-        raise ValueError("a starter holds only text elements")
+    if element.keys() != FIELDS or element["type"] != "text":
+        raise ValueError("a starter holds only text elements with a starter's fields")
+
+    line_height = element["editorMetadata"]
+    numbers = [element["left"], element["top"], element["width"], line_height.get("lineHeight")]
+    if line_height.keys() != {"lineHeight"} or not all(map(is_number, numbers)):
+        raise ValueError("a starter text element is placed by numbers")
+
+    if element["opacity"] != OPAQUE or element["rotation"] != 0:
+        raise ValueError("a starter text element is opaque and upright")
 
     paragraph = ET.fromstring(element["content"])
     spans = list(paragraph)
@@ -88,11 +106,23 @@ def styled_span(element: dict) -> ET.Element:
     return spans[0]
 
 
+def is_number(value: object) -> bool:
+    """Whether `value` is a plain int or float, not a bool."""
+    return isinstance(value, int | float) and not isinstance(value, bool)
+
+
 def text_style(style: str) -> dict:
     """Read a span's inline `style` into the textStyle mark the editor writes."""
     declared = [part.split(":", 1) for part in style.split(";") if part.strip()]
     named = {name.strip(): value.strip() for name, value in declared}
-    if not named.keys() <= TEXT_STYLE.keys():
-        raise ValueError("a starter's text uses a style the encoder doesn't know")
+    if named.keys() != STYLES.keys():
+        raise ValueError("a starter's text sets exactly a font, a size and a colour")
 
-    return {key: named.get(css) for css, key in TEXT_STYLE.items()}
+    mark: dict = dict.fromkeys(UNSET)
+    for css, (allowed, key) in STYLES.items():
+        if not allowed.fullmatch(named[css]):
+            raise ValueError("a starter's text uses a style value the encoder doesn't know")
+
+        mark[key] = named[css]
+
+    return mark

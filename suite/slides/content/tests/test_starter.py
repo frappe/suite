@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import frappe
 import pycrdt
+from frappe.tests import UnitTestCase
 
 from suite import content, drive
 from suite.composition.welcome import _kickoff
@@ -131,6 +132,44 @@ class TestStarterMatchesTheConverter(LoggedDeckCase):
 
         self.assertIsInstance(converted, convert.Converted)
         self.assertEqual(deck_as_read(deck_state(slides)), deck_as_read(converted.state))
+
+
+class TestStarterRefusesWhatTheKickoffDoesNotHold(UnitTestCase):
+    def assert_refused(self, slides: list[list[dict]]) -> None:
+        with self.assertRaises(ValueError):
+            deck_state(slides)
+
+    def test_a_duplicate_element_id_raises(self):
+        slides = kickoff_slides()
+        slides[1][0] = {**slides[1][0], "id": slides[0][0]["id"]}
+
+        self.assert_refused(slides)
+
+    def test_a_span_style_the_kickoff_does_not_use_raises(self):
+        for style in ("opacity: 0.5", "line-height: 2", "font-weight: 700"):
+            with self.subTest(style=style):
+                slides = kickoff_slides()
+                element = slides[0][0]
+                slides[0][0] = {**element, "content": element["content"].replace('">', f'; {style};">', 1)}
+                self.assert_refused(slides)
+
+    def test_a_span_style_value_the_kickoff_does_not_use_raises(self):
+        for used, other in (("Inter", "Georgia"), ("48px", "3em"), ("#171717FF", "red")):
+            with self.subTest(other=other):
+                slides = kickoff_slides()
+                element = slides[0][0]
+                slides[0][0] = {**element, "content": element["content"].replace(used, other)}
+                self.assert_refused(slides)
+
+    def test_an_element_field_the_kickoff_does_not_use_raises(self):
+        for changed in ({"opacity": 50}, {"rotation": 15}, {"transform": "rotate(1deg)"}, {"zIndex": 2}):
+            with self.subTest(changed=changed):
+                slides = kickoff_slides()
+                slides[0][0] = {**slides[0][0], **changed}
+                self.assert_refused(slides)
+
+    def test_the_kickoff_itself_encodes(self):
+        self.assertEqual(texts_by_slide(deck_state(kickoff_slides())), KICKOFF)
 
 
 class TestStarterWhileCollaborationIsOff(LoggedDeckCase):
