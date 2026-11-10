@@ -92,7 +92,6 @@ import { stopVisitedMedia, storeVisitedMedia } from '@/apps/slides/stores/visite
 import { drawnFontsLoaded, warmBundledFonts } from '@/apps/slides/utils/bundledFonts'
 import { isMediaOwner } from '@/apps/slides/utils/mediaUploads'
 import { postToServiceWorker, registerSlidesWorker } from '@/apps/slides/utils/serviceWorker'
-import { waitForController } from '@/apps/slides/utils/startupRequests'
 import { readSavedDocument } from '@/platform/collab'
 import { peopleOf, presenceColours } from '@/platform/collab/peers'
 import UsersBar from '@/platform/collab/UsersBar.vue'
@@ -797,14 +796,18 @@ watch([slides, () => presentationDoc.value?.modified], () => {
     void storeVisitedMedia(presentationId.value)
   }
 })
+// outside any visit or pin, which mark what they fetch so the worker keeps out
+const warmFonts = () => void warmBundledFonts().catch(() => {})
 onMounted(() => {
   void load()
   void registerSlidesWorker()
   void postToServiceWorker('slides-entered')
-  // outside any visit or pin, which mark what they fetch so the worker keeps out
-  void waitForController()
-    .then((isControlled) => isControlled && warmBundledFonts())
-    .catch(() => {})
+  // a first visit's worker can take control long after the page opened
+  if (navigator.serviceWorker?.controller) {
+    warmFonts()
+  } else {
+    navigator.serviceWorker?.addEventListener('controllerchange', warmFonts, { once: true })
+  }
   window.addEventListener('online', setOnline)
   window.addEventListener('offline', setOffline)
   window.addEventListener('beforeunload', warnBeforeUnload)
@@ -817,6 +820,7 @@ onBeforeUnmount(() => {
   cancelVisit()
   stopVisitedMedia()
   void postToServiceWorker('slides-left')
+  navigator.serviceWorker?.removeEventListener('controllerchange', warmFonts)
   window.removeEventListener('online', setOnline)
   window.removeEventListener('offline', setOffline)
   window.removeEventListener('beforeunload', warnBeforeUnload)

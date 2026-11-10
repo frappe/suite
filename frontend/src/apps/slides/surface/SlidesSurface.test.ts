@@ -1047,6 +1047,7 @@ describe('Slides offline copy', () => {
         register,
         getRegistration: async () => ({ unregister }),
         addEventListener: () => {},
+        removeEventListener: () => {},
         controller: {
           postMessage: (message: string, [port]: MessagePort[]) => {
             posted.push(message)
@@ -1122,6 +1123,34 @@ describe('Slides offline copy', () => {
     expect(urls).toContain('/assets/suite/slides/fonts/Anton/Anton-Regular-latin.woff2')
     expect(new Set(urls).size).toBe(urls.length)
     expect(fonts.some(({ isMarked }) => isMarked)).toBe(false)
+  })
+
+  it('fetches the fonts once a worker takes control, however late', async () => {
+    const worker: EventTarget & { controller: object | null } = Object.assign(new EventTarget(), {
+      register,
+      controller: null,
+    })
+    Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: worker })
+    const fonts: string[] = []
+    vi.stubGlobal('fetch', async (url: string) => {
+      if (url.includes('/slides/fonts/')) {
+        fonts.push(url)
+      }
+
+      return new Response('', { status: 404 })
+    })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+
+    mounted = await openedSurface()
+    await vi.advanceTimersByTimeAsync(10_000)
+    vi.useRealTimers()
+    expect(fonts).toEqual([])
+    worker.controller = { postMessage: () => {} }
+    worker.dispatchEvent(new Event('controllerchange'))
+
+    await vi.waitFor(() =>
+      expect(fonts).toContain('/assets/suite/slides/fonts/Anton/Anton-Regular-latin.woff2'),
+    )
   })
 
   it('hides the copy from someone who is not the owner', async () => {
