@@ -48,7 +48,7 @@ async function openDeck(page: Page, node = deck.name) {
 	await page.goto(`/d/${node}`);
 	const title = page.getByRole("textbox", { name: "Presentation title" });
 	await expect(title).toBeVisible({ timeout: 20_000 });
-	await expect(page.getByText("Opening presentation…")).toHaveCount(0, { timeout: 20_000 });
+	await expect(page.getByRole("status", { name: "Opening presentation" })).toHaveCount(0, { timeout: 20_000 });
 	return title;
 }
 
@@ -253,6 +253,20 @@ test("a composite sends the link code of a deck that is shared on its own", asyn
 		[1, true],
 		[2, false],
 	]);
+	// The private part is the last slide: step there as a viewer does, and it is blank
+	const position = page.getByText(/^1 of \d+$/);
+	await expect(position).toBeVisible();
+	const [, total] = (await position.innerText()).split(" of ");
+	const count = Number(total);
+	for (let step = 1; step < count; step++) {
+		await page.keyboard.press("ArrowDown");
+	}
+
+	await expect(page.getByText(`${count} of ${count}`, { exact: true })).toBeVisible();
+	// The canvas is the one 960px slide; thumbnails carry the same element marks at their own size
+	const canvas = page.locator(".w-\\[960px\\]");
+	await expect(canvas).toBeVisible();
+	await expect(canvas.locator("[data-index]")).toHaveCount(0);
 	await expect(page.getByText("Couldn't load this slide. Reload to try again.")).toHaveCount(0);
 	await visitor.close();
 });
