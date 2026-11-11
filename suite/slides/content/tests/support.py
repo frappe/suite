@@ -68,6 +68,12 @@ def delete_log(node: str) -> None:
     frappe.db.commit()
 
 
+def trash_template(node: str) -> None:
+    # every reader of templates takes Active nodes only, so a trashed one is offered nowhere
+    frappe.db.set_value("Drive Node", node, "state", "Trashed")
+    frappe.db.commit()
+
+
 def owner_folder() -> str:
     root = drive.ensure_personal_root(OWNER)
     return frappe.db.get_value("Drive Root", root, "node")

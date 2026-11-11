@@ -18,7 +18,13 @@ from suite.drive import EDIT
 from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFound
 from suite.slides import drive as slides_drive
 from suite.slides.content import APP
-from suite.slides.content.tests.support import LoggedDeckCase, delete_log, opened, owner_folder
+from suite.slides.content.tests.support import (
+    LoggedDeckCase,
+    delete_log,
+    opened,
+    owner_folder,
+    trash_template,
+)
 from suite.slides.doctype.presentation import presentation as presentation_module
 from suite.slides.doctype.presentation.presentation import (
     apply_theme,
@@ -558,6 +564,7 @@ class TestTemplatesOnTheLayer(LoggedDeckCase):
         node = drive.create_document(
             parent or owner_folder(), title, content_doctype="Presentation", is_template=True
         )
+        self.addCleanup(trash_template, node)
         self.addCleanup(delete_log, node)
         return slides_drive.docname_for_node(node)
 
