@@ -120,6 +120,21 @@ describe('naming someone who can’t open the document', () => {
     ])
   })
 
+  it('names the presentation when the comments are on one', async () => {
+    access.locked = ['arjun@x.com', 'ben@x.com']
+    access.blocked = ['arjun@x.com']
+    const { host } = showList({ canShare: false, noun: 'presentation' })
+    await click(rowButton(host, 'Is this right?'))
+    await write('Reply', 'Over to @[arjun@x.com] and @[ben@x.com]')
+
+    await send('Reply')
+
+    expect([confirmed.asked, warnings]).toEqual([
+      ['arjun has been blocked from this presentation'],
+      ['ben can’t open this presentation until someone who manages it shares it'],
+    ])
+  })
+
   it('says nothing when everyone named can open the document', async () => {
     const { host, asked } = showList()
     await click(rowButton(host, 'Is this right?'))

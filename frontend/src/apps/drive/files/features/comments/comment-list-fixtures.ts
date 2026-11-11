@@ -7,7 +7,7 @@ import { translationPlugin } from '@/platform/translation'
 
 import { access, confirmed, errors, me, toasts, warnings } from './comment-list-fakes'
 import CommentList from './CommentList.vue'
-import type { ThreadPlace } from './places'
+import type { FileNoun, ThreadPlace } from './places'
 import type { ShownDraft, useCommentDrafts } from './useCommentDrafts'
 import { useThreadChanges } from './useThreadChanges'
 
@@ -112,6 +112,7 @@ export function fakeDrafts(
       return answers.shift() ?? null
     },
     quoteOf: (anchor: string) => quotes[anchor] ?? '',
+    isWholeDocumentOnly: false,
   }
   return { posted, list: fromPartial<ReturnType<typeof useCommentDrafts>>(list) }
 }
@@ -129,6 +130,7 @@ interface CommentListOptions {
   canEditDocument?: boolean
   canShare?: boolean
   drafts?: ReturnType<typeof fakeDrafts>['list']
+  noun?: FileNoun
 }
 
 export function showList({
@@ -143,6 +145,7 @@ export function showList({
   canEditDocument = false,
   canShare = true,
   drafts = fakeDrafts().list,
+  noun = 'document',
 }: CommentListOptions = {}) {
   const asked: string[] = []
   const replyIds: string[] = []
@@ -248,6 +251,7 @@ export function showList({
       canShare,
       actions,
       drafts,
+      noun,
       openThread: shown.value,
       'onUpdate:openThread': open,
       'onUpdate:litThread': (name: string | null) => lit.push(name),

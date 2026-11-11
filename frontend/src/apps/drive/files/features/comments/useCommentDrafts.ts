@@ -145,7 +145,7 @@ export function useCommentDrafts({
     return sendDraft(session, draft, authorName)
   }
 
-  return { ...list, post, quoteOf: anchors.quote }
+  return { ...list, post, quoteOf: anchors.quote, isWholeDocumentOnly: anchors === WHOLE_DOCUMENT }
 }
 
 // The thread Drive made or answered; a resend with the same client id never posts twice

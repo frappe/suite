@@ -61,6 +61,8 @@ interface RoomHost {
   retainRecovery: () => boolean
   /** Keeps the slides in this browser past any later save, or offers them as a download. */
   retainStickyOrOffer: () => boolean
+  /** Told when the presentation's comment threads may have changed. */
+  onThreadsChanged: () => void
 }
 
 function allowsEditingIn(status: RoomStatus) {
@@ -81,6 +83,7 @@ export function useConvertedRoom({
   mayEdit,
   retainRecovery,
   retainStickyOrOffer,
+  onThreadsChanged,
 }: RoomHost) {
   const room = shallowRef<CollabRoom | null>(null)
   const status = shallowRef<RoomStatus | null>(null)
@@ -293,7 +296,7 @@ export function useConvertedRoom({
   }
 
   async function openRoom(isStale: () => boolean) {
-    const opened = await openCollabRoom({ session, adapter: slidesAdapter })
+    const opened = await openCollabRoom({ session, adapter: slidesAdapter, onThreadsChanged })
     if (opened.state !== 'live') {
       return false
     }

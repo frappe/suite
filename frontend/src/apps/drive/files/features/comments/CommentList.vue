@@ -19,7 +19,7 @@ import { useDriveGuestName } from './guestName'
 import { confirmMentionAccess } from './mentionAccess'
 import MentionTextarea from './MentionTextarea.vue'
 import PersonAvatar from './PersonAvatar.vue'
-import { DOCUMENT_ANCHOR, type ThreadPlaces } from './places'
+import { DOCUMENT_ANCHOR, type FileNoun, type ThreadPlaces } from './places'
 import { useSeenThreads } from './seenThreads'
 import { threadRows, type ThreadRow } from './threadRows'
 import type { ShownDraft, useCommentDrafts } from './useCommentDrafts'
@@ -60,6 +60,7 @@ const props = defineProps<{
   actions: ThreadActions
   /** Comments not posted yet, on text or on the whole document. */
   drafts: ReturnType<typeof useCommentDrafts>
+  noun: FileNoun
 }>()
 
 /** The thread shown open; its text in the editor stays lit. */
@@ -134,6 +135,10 @@ const isEmpty = computed(() => !openRows.value.length && !hasShownDrafts.value)
 const emptyText = computed(() => {
   if (!props.canComment) {
     return 'No open comments.'
+  }
+
+  if (props.drafts.isWholeDocumentOnly) {
+    return 'No open comments. Add one above.'
   }
 
   return 'No open comments. Select text and press Comment, or add one above.'
@@ -333,7 +338,11 @@ async function discardSentDraft(draft: ShownDraft) {
 
 // Null when the writer stops to reconsider; otherwise says, once posted, what the post did for them
 function mayMention(text: string, mentionedBefore?: string[]) {
-  return confirmMentionAccess(props.node, text, { canShare: props.canShare, mentionedBefore })
+  return confirmMentionAccess(props.node, text, {
+    canShare: props.canShare,
+    mentionedBefore,
+    noun: props.noun,
+  })
 }
 
 // What was typed after the sent words; all of it when the sent words themselves changed

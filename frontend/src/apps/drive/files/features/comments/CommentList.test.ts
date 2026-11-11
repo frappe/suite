@@ -228,6 +228,13 @@ describe('an empty list and a reader who can’t comment', () => {
     ])
   })
 
+  it('says only to add one above when the comments can’t be on text', () => {
+    const drafts = { ...fakeDrafts().list, isWholeDocumentOnly: true }
+    const { host } = showList({ threads: [DONE], drafts })
+
+    expect(host.textContent).toContain('No open comments. Add one above.')
+  })
+
   it('shows No open comments, then Resolved · n, when every thread is resolved', () => {
     const { host } = showList({ threads: [DONE] })
 

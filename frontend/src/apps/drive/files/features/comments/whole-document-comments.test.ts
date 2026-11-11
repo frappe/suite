@@ -85,6 +85,7 @@ describe('commenting on the whole document', () => {
       canShare: true,
       actions: fromPartial<ThreadActions>({ isUnsent: () => false, isNotSent: () => false }),
       drafts,
+      noun: 'document' as const,
     }
     const app = createApp(() => h(CommentList, props))
     app.use(translationPlugin).mount(host)

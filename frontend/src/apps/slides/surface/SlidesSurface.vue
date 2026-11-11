@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Editor } from '@tiptap/core'
 import { useMediaQuery } from '@vueuse/core'
-import { Avatar, Button, Dropdown, Skeleton, TextInput, toast } from 'frappe-ui'
+import { Button, Dropdown, Skeleton, toast } from 'frappe-ui'
 import {
   computed,
   defineAsyncComponent,
@@ -20,11 +20,13 @@ import '@/apps/slides/styles/scrollbars.css'
 
 import { api, client } from '@/api'
 import {
-  DriveCommentAuthor,
+  DriveCommentList,
   DriveDocumentHeader,
-  GUEST_NAME_LIMIT,
+  rankMentionsFor,
+  useCommentDrafts,
+  useDocumentThreads,
   useDriveDocumentActions,
-  useDriveGuestName,
+  useThreadChanges,
   type DocumentPanel,
   type DocumentSession,
 } from '@/apps/drive'
@@ -102,7 +104,6 @@ import { translate } from '@/platform/translation'
 
 import { createSlidesAccess } from './access'
 import { useAutosave } from './autosave'
-import { authorLabel, commentTime, type CommentThread } from './comments'
 import {
   CompositeGroupLoader,
   indexOfPlace,
@@ -149,17 +150,25 @@ const online = ref(typeof navigator === 'undefined' ? true : navigator.onLine)
 const composite = ref(false)
 const compositeItems = ref<CompositeItem[]>([])
 const panel = ref<Panel | null>(null)
-const threads = ref<CommentThread[]>([])
-const panelLoading = ref(false)
-const commentText = ref('')
-// Guests may sign their comments. Signed-in users never see the field (spec §10.5).
 const {
-  shown: showGuestName,
-  text: guestName,
-  atLimit: guestNameAtLimit,
-  maxLength: guestNameMaxLength,
-  take: takeGuestName,
-} = useDriveGuestName()
+  threads: readThreads,
+  readAt: threadsReadAt,
+  refresh: refreshThreads,
+} = useDocumentThreads(props.session, () => panel.value === 'comments')
+const { threads, actions: threadActions } = useThreadChanges({
+  session: props.session,
+  readThreads,
+  readAt: threadsReadAt,
+  refresh: refreshThreads,
+})
+// Comments are on the whole presentation, so a draft waits on no text in the room
+const commentDrafts = useCommentDrafts({
+  session: props.session,
+  user: userSession.user.value?.id ?? 'Guest',
+  room: () => null,
+  refreshThreads,
+})
+rankMentionsFor(props.session.nodeId)
 const exporting = ref(false)
 const {
   isOnlyCopy,
@@ -232,6 +241,7 @@ const convertedRoom = useConvertedRoom({
     !phone.value,
   retainRecovery,
   retainStickyOrOffer,
+  onThreadsChanged: () => void refreshThreads(),
 })
 provide('livePresence', convertedRoom.presence)
 const roomPeople = computed(() => {
@@ -406,21 +416,6 @@ function showSlide(step: number) {
 
 function showPanel(next: Panel | null) {
   panel.value = next
-  if (next === 'comments') void loadComments()
-}
-async function loadComments() {
-  panelLoading.value = true
-  try {
-    // SAFETY: DocumentSession.comments.list calls the Suite threads endpoint, which returns its threads projection.
-    const result = (await props.session.comments.list()) as {
-      threads?: CommentThread[]
-    }
-    threads.value = result.threads ?? []
-  } catch (error) {
-    toast.error(error instanceof Error ? error.message : 'Could not load the comments.')
-  } finally {
-    panelLoading.value = false
-  }
 }
 
 /** Save pending edits, or refuse: a version holds only the saved state. */
@@ -447,18 +442,6 @@ async function restoreVersion(seq: string) {
   } finally {
     restoring.value = false
   }
-}
-async function addComment() {
-  const text = commentText.value.trim()
-  if (!text || !access.canComment.value) return
-  try {
-    await props.session.comments.create('document', text, takeGuestName())
-  } catch (error) {
-    toast.error(error instanceof Error ? error.message : 'Could not add the comment.')
-    return
-  }
-  commentText.value = ''
-  await loadComments()
 }
 let isWaitingToPrint = false
 async function printDrawnPages() {
@@ -1020,60 +1003,19 @@ onBeforeUnmount(() => {
         <h2 class="text-lg-semibold">Comments</h2>
         <Button icon="lucide-x" aria-label="Close panel" variant="ghost" @click="panel = null" />
       </div>
-      <div class="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
-        <p v-if="panelLoading" class="text-sm text-ink-gray-5">Loading…</p>
-        <template v-else>
-          <form v-if="access.canComment.value" class="space-y-2" @submit.prevent="addComment">
-            <TextInput
-              v-if="showGuestName"
-              v-model="guestName"
-              label="Your name"
-              placeholder="Guest"
-              autocomplete="name"
-              :maxlength="guestNameMaxLength"
-              :description="
-                guestNameAtLimit
-                  ? `Names can have up to ${GUEST_NAME_LIMIT} characters.`
-                  : 'Optional. Shown with your comments.'
-              "
-              @keydown.stop
-            />
-            <div class="flex gap-2">
-              <TextInput
-                v-model="commentText"
-                class="flex-1"
-                placeholder="Add a comment"
-                aria-label="New comment"
-                @keydown.stop
-              />
-              <Button type="submit" label="Add" :disabled="!commentText.trim()" />
-            </div>
-          </form>
-          <article
-            v-for="thread in threads"
-            :key="thread.name"
-            class="space-y-2 rounded-4 bg-surface-gray-1 p-3"
-            :class="thread.resolved && 'opacity-60'"
-          >
-            <div v-for="comment in thread.comments" :key="comment.name" class="space-y-1">
-              <p class="flex items-center gap-2 text-sm-medium text-ink-gray-8">
-                <Avatar
-                  v-if="comment.person"
-                  :image="comment.person.user_image ?? undefined"
-                  :label="comment.person.full_name"
-                  size="sm"
-                  shape="circle"
-                />
-                <DriveCommentAuthor :author="comment.author" :author-name="comment.author_name">{{
-                  authorLabel(comment)
-                }}</DriveCommentAuthor>
-                <span class="flex-1 text-xs text-ink-gray-5">{{ commentTime(comment) }}</span>
-              </p>
-              <p class="whitespace-pre-wrap text-p-sm text-ink-gray-7">{{ comment.content }}</p>
-            </div>
-          </article>
-          <p v-if="!threads.length" class="text-sm text-ink-gray-5">No comments yet.</p>
-        </template>
+      <div class="min-h-0 flex-1 overflow-y-auto p-4">
+        <DriveCommentList
+          :threads
+          :read-at="threadsReadAt"
+          :node="session.nodeId"
+          :places="null"
+          :can-comment="access.canComment.value"
+          :can-edit-document="access.writable.value"
+          :can-share="session.canShare.value"
+          :actions="threadActions"
+          :drafts="commentDrafts"
+          noun="presentation"
+        />
       </div>
     </aside>
     <SlidesVersionsPanel

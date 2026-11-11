@@ -8,12 +8,15 @@ import { nextTick, ref, type Component, type Ref } from 'vue'
 import { Awareness } from 'y-protocols/awareness'
 import { applyUpdate, Doc, UndoManager } from 'yjs'
 
+import type { useCommentDrafts } from '@/apps/drive'
 import type { StoreSlide } from '@/apps/slides/collab/liveDeck'
 import type { RoomStatus } from '@/platform/collab'
 import { requireTestElement } from '@/platform/testing/dom'
 
 import {
   collabRoom,
+  commentPanel,
+  driveComments,
   fakeServer,
   forgetTemplates,
   openedSurface,
@@ -85,6 +88,9 @@ afterEach(() => {
   mounted = null
   saves.length = 0
   server.fetch.mockReset()
+  driveComments.threads = []
+  driveComments.reads = 0
+  driveComments.sent = []
 })
 
 describe('Slides autosave', () => {
@@ -540,6 +546,21 @@ describe('a deck on the content layer', () => {
     )
     expect(viewOnly.value).toBe(false)
     expect(saves).toEqual([])
+  })
+
+  it('reads the comment threads again when the room says they changed', async () => {
+    convertedRoom('one')
+    mounted = await openedSurface({ deck: { is_converted: true } })
+    await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+    requireTestElement(mounted.root.querySelector('[data-comments]'), HTMLButtonElement).click()
+    await vi.waitFor(() => expect(driveComments.reads).toBe(1))
+
+    const [{ onThreadsChanged }] = fromAny<[{ onThreadsChanged: () => void }], unknown>(
+      collabRoom.open.mock.lastCall,
+    )
+    onThreadsChanged()
+
+    await vi.waitFor(() => expect(driveComments.reads).toBe(2))
   })
 
   it('sends a change to the room and never saves the rows', async () => {
@@ -1019,6 +1040,47 @@ describe('Slides panels', () => {
     await nextTick()
 
     expect(mounted.root.querySelector('[data-panels]')?.textContent).toBe('comments,versions')
+  })
+
+  function openComments() {
+    requireTestElement(mounted!.root.querySelector('[data-comments]'), HTMLButtonElement).click()
+  }
+
+  it('shows the presentation’s threads in the shared comment panel, named as a presentation', async () => {
+    driveComments.threads = [
+      { name: 'thread-1', anchor: 'document', resolved: false, comments: [] },
+    ]
+    mounted = await openedSurface({ role: 20 })
+
+    openComments()
+
+    await vi.waitFor(() => expect(commentPanel.attrs.threads).toHaveLength(1))
+    const { threads, noun, places } = commentPanel.attrs
+    const [thread] = fromAny<{ name: string }[], unknown>(threads)
+    const flags = [commentPanel.attrs['can-comment'], commentPanel.attrs['can-edit-document']]
+    expect([thread.name, noun, places, flags]).toEqual([
+      'thread-1',
+      'presentation',
+      null,
+      [true, false],
+    ])
+  })
+
+  it('posts a comment on the whole presentation, with no text in the room to wait for', async () => {
+    mounted = await openedSurface({ role: 20 })
+    openComments()
+    await vi.waitFor(() => expect(driveComments.reads).toBe(1))
+    const drafts = fromAny<ReturnType<typeof useCommentDrafts>, unknown>(commentPanel.attrs.drafts)
+
+    drafts.start('document')
+    const [draft] = drafts.drafts.value
+    drafts.write(draft, 'Looks good')
+    await drafts.post(draft)
+
+    expect([driveComments.sent, driveComments.reads]).toEqual([
+      [['document', 'Looks good', undefined, draft.clientId]],
+      2,
+    ])
   })
 })
 

@@ -212,6 +212,7 @@ defineExpose({ reloadVersions: () => load('versions'), startNamingVersion, start
             :can-share
             :actions="threadActions"
             :drafts
+            noun="document"
             @sent="emit('commentSent')"
           />
           <p v-else-if="lists.isLoading" class="px-2 text-sm text-ink-gray-5">

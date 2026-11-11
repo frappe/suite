@@ -29,6 +29,17 @@ const versionsPanel = vi.hoisted(() => ({
 }))
 const themeChange = vi.hoisted(() => ({ update: (_theme: string) => {} }))
 const forgetTemplates = vi.hoisted(() => ({ run: () => {} }))
+// what the presentation's comment threads read, and what the comment panel was handed
+interface DriveComments {
+  threads: unknown[]
+  reads: number
+  sent: unknown[][]
+}
+export const driveComments: DriveComments = { threads: [], reads: 0, sent: [] }
+interface CommentPanelFixture {
+  attrs: Record<string, unknown>
+}
+const commentPanel = vi.hoisted((): CommentPanelFixture => ({ attrs: {} }))
 interface PropertiesPanelFixture {
   real: Component | null
 }
@@ -178,9 +189,9 @@ vi.mock('@/platform/collab', async (importOriginal) => ({
 vi.mock('@/apps/slides/router', () => ({
   router: { currentRoute: { value: { params: {}, query: {} } }, replace: vi.fn() },
 }))
-vi.mock('@/apps/drive', () => ({
+vi.mock('@/apps/drive', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   documentSessionUrls: () => [],
-  GUEST_NAME_LIMIT: 50,
   DriveDocumentHeader: {
     props: { recoverable: Boolean, panels: { type: Array, default: () => [] } },
     emits: ['download-changes', 'update:panel'],
@@ -198,17 +209,17 @@ vi.mock('@/apps/drive', () => ({
             onClick: () => emit('download-changes'),
           }),
           h('button', { 'data-versions': '', onClick: () => emit('update:panel', 'versions') }),
+          h('button', { 'data-comments': '', onClick: () => emit('update:panel', 'comments') }),
         ]),
   },
-  DriveCommentAuthor: { render: () => null },
+  DriveCommentList: {
+    inheritAttrs: false,
+    setup: (_props: unknown, { attrs }: SetupContext) => {
+      commentPanel.attrs = attrs
+      return () => h('section', { 'data-comment-list': '' })
+    },
+  },
   useDriveDocumentActions: () => computed(() => ({ back: [], node: [] })),
-  useDriveGuestName: () => ({
-    shown: ref(false),
-    text: ref(''),
-    atLimit: ref(false),
-    maxLength: 50,
-    take: () => undefined,
-  }),
 }))
 // a thumbnail that isn't the current slide asks the surface to change to it
 vi.mock('@/apps/slides/components/NavigationPanel.vue', async () => {
@@ -311,6 +322,17 @@ function session(
     refreshAccess: async () => {},
     credentials: { context: undefined, heldContext: undefined },
     versions: { restore: (seq: string) => versionRestore.run(seq) },
+    canShare: ref(false),
+    comments: {
+      list: async () => {
+        driveComments.reads += 1
+        return { threads: driveComments.threads }
+      },
+      create: async (...sent: unknown[]) => {
+        driveComments.sent.push(sent)
+        return { name: 'thread-new' }
+      },
+    },
     media,
   })
 }
@@ -489,6 +511,7 @@ export function startsFromEmptyStore() {
 
 export {
   collabRoom,
+  commentPanel,
   server,
   signedIn,
   versionsPanel,
