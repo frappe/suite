@@ -69,6 +69,7 @@ import {
   loadTemplates,
   presentationDoc,
   presentationId,
+  presentationTheme,
   resetEditorState,
   rowSlides,
   setDocumentContext,
@@ -96,6 +97,11 @@ import {
   slides,
 } from '@/apps/slides/stores/slide'
 import { inSlideShowMode, startSlideShow } from '@/apps/slides/stores/slideshow'
+import {
+  drawTemplateLayouts,
+  firstLayout,
+  setTemplateReader,
+} from '@/apps/slides/stores/templateLayouts'
 import { cancelVisit, rememberVisit } from '@/apps/slides/stores/visitedCopies'
 import { stopVisitedMedia, storeVisitedMedia } from '@/apps/slides/stores/visitedMedia'
 import { drawnFontsLoaded, warmBundledFonts } from '@/apps/slides/utils/bundledFonts'
@@ -128,7 +134,7 @@ import { withSavedSlides } from './compositeSaved'
 import { conversionNotice, type ConversionStatus } from './conversionNotice'
 import ExportView from './ExportView.vue'
 import { resolveDocumentUnload, useDocumentLeaveGuard, type DocumentSaveState } from './navigation'
-import { firstLayout, useNewPresentationTheme } from './newPresentation'
+import { useNewPresentationTheme } from './newPresentation'
 import PreviewCapture from './PreviewCapture.vue'
 import { fileTitle, saveThroughBrowser } from './recovery'
 import SlidesVersionPreview from './SlidesVersionPreview.vue'
@@ -312,6 +318,7 @@ const releaseContext = setDocumentContext(
 )
 // A migrated deck names its pictures by node id; the session signs their urls.
 const releaseMedia = setDocumentMedia((id) => props.session.media(id))
+const releaseTemplateReader = setTemplateReader(readSource)
 const history = useCommandHistory(slides, {
   actions: historyMetaActions,
   actionOrder: historyMetaActionOrder,
@@ -328,6 +335,7 @@ const insertIndex = ref(0)
 provide('openLayoutDialog', (index: number) => {
   insertIndex.value = index
   showLayoutDialog.value = true
+  void drawTemplateLayouts([presentationTheme.value])
 })
 function insertLayout(layout: unknown) {
   handleInsertSlide(insertIndex.value, layout)
@@ -370,14 +378,24 @@ async function fillTheme(theme: string) {
     return
   }
 
+  await drawTemplateLayouts([theme])
+  const layout = firstLayout(template)
+  if (!layout) {
+    toast.error(translate('This theme has no slides to start from'))
+    return
+  }
+
   try {
     // the layout's pictures belong to the template: this presentation takes its own
     const adopted = await client.mutation(
       api.slides.media.adoptSlide,
-      { parent: props.session.contentDocname, slide: firstLayout(template) },
+      { parent: props.session.contentDocname, slide: layout },
       { context: contextFor(props.session.contentDocname) },
     )
-    const [slide] = rowSlides([adopted])
+    // a converted template's layouts are already drawn, and only their elements come back as text
+    const [slide] = template.is_converted
+      ? [{ ...adopted, elements: JSON.parse(String(adopted.elements)) }]
+      : rowSlides([adopted])
     if (!convertedRoom.fillBlank(slide)) {
       toast.error(translate('Only a new, empty presentation can take a theme'))
       return
@@ -392,6 +410,12 @@ async function fillTheme(theme: string) {
 }
 
 const showThemeChange = ref(false)
+// a theme picker shows every template's layouts
+watch([showThemeDialog, showThemeChange], (opened) => {
+  if (opened.some(Boolean)) {
+    void drawTemplateLayouts()
+  }
+})
 const driveActions = useDriveDocumentActions(props.session)
 const presentationMenu = computed(() => [
   { group: '', options: driveActions.value.back },
@@ -1008,6 +1032,7 @@ onBeforeUnmount(() => {
   void saveChanges().finally(() => {
     releaseContext()
     releaseMedia()
+    releaseTemplateReader()
     resumeWrites(props.session.contentDocname)
   })
   releaseEditLock()

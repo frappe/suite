@@ -23,6 +23,7 @@ import {
   openedSurface,
   previews,
   propertiesPanel,
+  savedTemplates,
   saves,
   served,
   server,
@@ -42,6 +43,7 @@ import {
 } from './SlidesSurface.fakes'
 
 const {
+  addEmptySlide,
   duplicateSlide,
   handleInsertSlide,
   saveSlide,
@@ -1172,6 +1174,9 @@ describe('a deck on the content layer', () => {
         slug: name,
         creation: '2026-11-01',
         is_template: 1,
+        node: `${name}-node`,
+        is_converted: false,
+        thumbnails: [],
         layouts: layouts.map((layout, at) => ({
           name: `${name}-row-${at + 1}`,
           idx: at + 1,
@@ -1332,6 +1337,135 @@ describe('a deck on the content layer', () => {
       await vi.waitFor(() => expect(calls('apply_theme')).toHaveLength(1))
       expect(bodyOf('apply_theme')).toMatchObject({ theme: 'dark-template' })
       expect(calls('update_slide_attachments')).toEqual([])
+    })
+
+    describe('templates on the content layer', () => {
+      const DARK_PICTURES = [1, 2, 3].map((idx) => `/pictures/dark/thumbnail-${idx}.webp`)
+
+      afterEach(() => {
+        savedTemplates.byNode.clear()
+        savedTemplates.reads = []
+      })
+
+      // the server sends a converted template's node and pictures, never its rows
+      function savedTemplate(
+        name: string,
+        title: string,
+        texts: string[],
+        thumbnails: string[] = [],
+      ) {
+        savedTemplates.byNode.set(`${name}-node`, roomOf(...texts).doc)
+        return {
+          name,
+          title,
+          slug: name,
+          creation: '2026-11-01',
+          is_template: 1,
+          node: `${name}-node`,
+          is_converted: true,
+          thumbnails,
+          layouts: [],
+        }
+      }
+
+      function layoutsOf(name: string) {
+        return templateList.value.find((template) => template.name === name)?.layouts ?? []
+      }
+
+      async function opened(list: unknown[], path = '?new=1', deck = {}) {
+        templates.list = list
+        mounted = await openedSurface({ path, deck: { is_converted: true, ...deck } })
+        await vi.waitFor(() => expect(templateList.value).toHaveLength(list.length))
+      }
+
+      it("fills the blank slide from a converted template's saved first slide", async () => {
+        const doc = blankRoom()
+        await opened([savedTemplate('brand', 'Brand', ['Brand first', 'Brand second'])])
+
+        themeChange.create('brand')
+
+        await vi.waitFor(() => expect(calls('update_theme')).toHaveLength(1))
+        expect(shownTexts(doc)).toEqual([[expect.stringContaining('Brand first')]])
+        expect(slideIds(doc)).toHaveLength(1)
+      })
+
+      it('reads no saved template when the editor opens', async () => {
+        collabRoom.open.mockResolvedValueOnce({ state: 'live', room: roomOf('one') })
+        await opened([savedTemplate('brand', 'Brand', ['Brand first'])], '')
+        await new Promise((resolve) => setTimeout(resolve))
+
+        expect(savedTemplates.reads).toEqual([])
+      })
+
+      it("reads each template's saved state once", async () => {
+        blankRoom()
+        await opened([savedTemplate('brand', 'Brand', ['Brand first'])])
+        await vi.waitFor(() => expect(layoutsOf('brand')).toHaveLength(1))
+
+        themeChange.create('brand')
+
+        await vi.waitFor(() => expect(calls('update_theme')).toHaveLength(1))
+        expect(savedTemplates.reads).toEqual(['brand-node'])
+      })
+
+      it("shows a system template's pictures and draws a user template", async () => {
+        blankRoom()
+        await opened([
+          savedTemplate('dark', 'Dark', ['Dark one', 'Dark two', 'Dark three'], DARK_PICTURES),
+          savedTemplate('brand', 'Brand', ['Brand first']),
+        ])
+
+        await vi.waitFor(() => expect(layoutsOf('brand')).toHaveLength(1))
+        await vi.waitFor(() => expect(layoutsOf('dark')).toHaveLength(3))
+        expect(layoutsOf('dark').map(({ thumbnail }) => thumbnail)).toEqual(DARK_PICTURES)
+        expect(layoutsOf('brand')).toMatchObject([{ thumbnail: '', elements: [{ type: 'text' }] }])
+      })
+
+      it('draws a system template whose saved slides no longer match its pictures', async () => {
+        blankRoom()
+        const texts = ['Dark one', 'Dark new', 'Dark two', 'Dark three']
+        await opened([savedTemplate('dark', 'Dark', texts, DARK_PICTURES)])
+
+        await vi.waitFor(() => expect(layoutsOf('dark')).toHaveLength(4))
+        expect(layoutsOf('dark').map(({ thumbnail }) => thumbnail)).toEqual(['', '', '', ''])
+      })
+
+      it('fills from the rows of a template not converted yet, reading no saved state', async () => {
+        const doc = blankRoom()
+        await opened([team])
+
+        themeChange.create('team-template')
+
+        await vi.waitFor(() => expect(calls('update_theme')).toHaveLength(1))
+        expect(shownTexts(doc)).toEqual([[expect.stringContaining('Team first')]])
+        expect(savedTemplates.reads).toEqual([])
+      })
+
+      it('leaves the slide blank when the saved template cannot be read', async () => {
+        const doc = blankRoom()
+        const brand = savedTemplate('brand', 'Brand', ['Brand first'])
+        savedTemplates.byNode.set('brand-node', new TypeError('Failed to fetch'))
+        await opened([brand])
+
+        themeChange.create('brand')
+
+        await vi.waitFor(() =>
+          expect(toast.error).toHaveBeenCalledWith('This theme has no slides to start from'),
+        )
+        expect(shownTexts(doc)).toEqual([[]])
+        expect(calls('update_theme')).toEqual([])
+      })
+
+      it("adds a slide from the presentation's converted theme", async () => {
+        const room = roomOf('one')
+        collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
+        await opened([savedTemplate('brand', 'Brand', ['Brand first'])], '', { theme: 'brand' })
+
+        addEmptySlide()
+
+        await vi.waitFor(() => expect(slideIds(room.doc)).toHaveLength(2))
+        expect(shownTexts(room.doc)[1]).toEqual([expect.stringContaining('Brand first')])
+      })
     })
   })
 })

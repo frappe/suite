@@ -1146,6 +1146,10 @@
                 "title": "Name",
                 "type": "string"
               },
+              "node": {
+                "title": "Node",
+                "type": "string"
+              },
               "title": {
                 "title": "Title",
                 "type": "string"
@@ -1163,6 +1167,17 @@
                 "title": "Is Template",
                 "type": "integer"
               },
+              "is_converted": {
+                "title": "Is Converted",
+                "type": "boolean"
+              },
+              "thumbnails": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Thumbnails",
+                "type": "array"
+              },
               "layouts": {
                 "items": {
                   "$ref": "#/$defs/Slide"
@@ -1173,10 +1188,13 @@
             },
             "required": [
               "name",
+              "node",
               "title",
               "slug",
               "creation",
               "is_template",
+              "is_converted",
+              "thumbnails",
               "layouts"
             ],
             "title": "Template",

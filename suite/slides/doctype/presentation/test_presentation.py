@@ -13,9 +13,11 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils import cstr
 
 from suite import drive
+from suite.content import log
 from suite.drive import EDIT
 from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFound
 from suite.slides import drive as slides_drive
+from suite.slides.content import APP
 from suite.slides.content.tests.support import LoggedDeckCase, delete_log, opened, owner_folder
 from suite.slides.doctype.presentation import presentation as presentation_module
 from suite.slides.doctype.presentation.presentation import (
@@ -547,6 +549,62 @@ class TestThemeOfAConvertedDeck(LoggedDeckCase):
         self.assertEqual(frappe.db.get_value("Presentation", self.deck, "theme"), theme_before)
         _header, after = opened(self.node)
         self.assertEqual(after, before)
+
+
+class TestTemplatesOnTheLayer(LoggedDeckCase):
+    """A converted template's layouts are its saved slides, which the tab reads itself (Q2)."""
+
+    def new_template(self, title: str, parent: str | None = None) -> str:
+        node = drive.create_document(
+            parent or owner_folder(), title, content_doctype="Presentation", is_template=True
+        )
+        self.addCleanup(delete_log, node)
+        return slides_drive.docname_for_node(node)
+
+    def offered(self) -> dict:
+        return {row["name"]: row for row in get_templates()}
+
+    def test_a_converted_template_names_its_node_and_sends_no_rows(self):
+        suffix = frappe.generate_hash(6)
+        template = self.new_template(f"Brand {suffix}")
+
+        row = self.offered()[template]
+
+        self.assertEqual(row["node"], node_of(template))
+        self.assertTrue(row["is_converted"])
+        self.assertEqual(row["layouts"], [])
+
+    def test_a_template_still_on_its_rows_sends_them(self):
+        owner = frappe.session.user
+        self.turn_off()
+        frappe.set_user(owner)
+        suffix = frappe.generate_hash(6)
+        template = self.new_template(f"Old brand {suffix}")
+        frappe.set_user("Administrator")
+        log.set_mode(APP, "on")
+        frappe.db.commit()
+        frappe.set_user(owner)
+
+        row = self.offered()[template]
+
+        self.assertFalse(row["is_converted"])
+        self.assertEqual(len(row["layouts"]), 1)
+
+    def test_only_a_system_template_names_its_pictures(self):
+        # a system template is known by its title, which a folder holds once
+        suffix = frappe.generate_hash(6)
+        light = self.new_template("Light", drive.ensure_folder(owner_folder(), f"System {suffix}"))
+        brand = self.new_template(f"Brand {suffix}")
+
+        rows = self.offered()
+
+        # the seven pictures shipped under public/slides/frontend/images/layouts/light
+        pictures: list[str] = []
+        for number in range(1, 8):
+            pictures.append(f"/assets/suite/slides/frontend/images/layouts/light/thumbnail-{number}.webp")
+
+        self.assertEqual(rows[light]["thumbnails"], pictures)
+        self.assertEqual(rows[brand]["thumbnails"], [])
 
 
 class TestDeckList(IntegrationTestCase):

@@ -10,6 +10,7 @@ import {
   type SetupContext,
 } from 'vue'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
+import type { Doc } from 'yjs'
 
 import type { DocumentSession } from '@/apps/drive'
 import type { ConvertVersionOutput } from '@/apps/slides/client/generated'
@@ -89,6 +90,12 @@ const propertiesPanel = vi.hoisted((): PropertiesPanelFixture => ({ real: null }
 const collabRoom = vi.hoisted(() => ({
   open: vi.fn(async (): Promise<unknown> => ({ state: 'failed' })),
 }))
+// converted templates' saved states by node, and the nodes read; any other node reads for real
+interface SavedTemplatesFixture {
+  byNode: Map<string, Doc | Error>
+  reads: string[]
+}
+const savedTemplates = vi.hoisted((): SavedTemplatesFixture => ({ byNode: new Map(), reads: [] }))
 export const fakeServer = { isRefusing: false, isFailingTemplates: false, opens: 0 }
 
 interface MenuEntry {
@@ -223,10 +230,26 @@ vi.mock('@/apps/slides/stores/visitedCopies', async (importOriginal) => ({
   rememberVisit: visits.remember,
   cancelVisit: visits.cancel,
 }))
-vi.mock('@/platform/collab', async (importOriginal) => ({
-  ...(await importOriginal<object>()),
-  openCollabRoom: collabRoom.open,
-}))
+vi.mock('@/platform/collab', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/platform/collab')>()
+  return {
+    ...real,
+    openCollabRoom: collabRoom.open,
+    readSavedDocument: async (options: Parameters<typeof real.readSavedDocument>[0]) => {
+      const saved = savedTemplates.byNode.get(options.nodeId)
+      if (!saved) {
+        return real.readSavedDocument(options)
+      }
+
+      savedTemplates.reads.push(options.nodeId)
+      if (saved instanceof Error) {
+        throw saved
+      }
+
+      return saved
+    },
+  }
+})
 vi.mock('@/apps/slides/router', () => ({
   router: { currentRoute: { value: { params: {}, query: {} } }, replace: vi.fn() },
 }))
@@ -395,6 +418,9 @@ function session(
       context: undefined,
       heldContext: undefined,
       fetch: async () => new Response(versionBytes.current),
+      group: (nodeIds: readonly string[]) => [
+        { context: undefined, nodeIds: [...nodeIds], fetch: server.fetch },
+      ],
     },
     versions: {
       restore: (seq: string) => versionRestore.run(seq),
@@ -478,7 +504,8 @@ export async function openedSurface({
     if (url.includes('update_slide_attachments')) {
       const { slide } = JSON.parse(String(init?.body))
       await slideAdoption.held
-      const elements = JSON.parse(slide.elements).map((element: { src?: string }) =>
+      const sent = typeof slide.elements === 'string' ? JSON.parse(slide.elements) : slide.elements
+      const elements = sent.map((element: { src?: string }) =>
         element.src ? { ...element, src: `adopted:${element.src}` } : element,
       )
       return answer({ ...slide, elements: JSON.stringify(elements) })
@@ -606,6 +633,7 @@ export function startsFromEmptyStore() {
 
 export {
   collabRoom,
+  savedTemplates,
   commentPanel,
   server,
   signedIn,

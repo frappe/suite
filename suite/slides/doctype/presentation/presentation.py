@@ -1,7 +1,9 @@
 # Copyright (c) 2024, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
 
+import glob
 import json
+import os
 import random
 import re
 import string
@@ -225,6 +227,18 @@ def get_template_thumbnail(template_title: str, index: int) -> str:
     return f"/assets/suite/slides/frontend/images/layouts/{template_title}/thumbnail-{index}.webp"
 
 
+def system_template_pictures(template_title: str) -> list[str]:
+    """Answer the pictures a system template's layouts show, in slide order, and none for another template."""
+    if not is_system_template(template_title):
+        return []
+
+    folder = frappe.get_app_path(
+        "suite", "public", "slides", "frontend", "images", "layouts", template_title.lower()
+    )
+    count = len(glob.glob(os.path.join(folder, "thumbnail-*.webp")))
+    return [get_template_thumbnail(template_title, index) for index in range(1, count + 1)]
+
+
 def deck_answer(deck: Presentation) -> dict:
     """Answer a deck for a route, without the stored Yjs state `as_dict` would keep."""
     answer = deck.as_dict()
@@ -426,11 +440,23 @@ def get_templates():
     may use it is the grant on that node, so the list is scoped by READ.
     """
     templates = _readable_templates()
+    # a converted template's rows stopped at its conversion: the tab reads its saved slides
+    is_on = log.enabled(APP)
+    for template in templates:
+        template["is_converted"] = bool(is_on and log.find(APP, template["node"]))
+        template["thumbnails"] = system_template_pictures(template["title"])
 
+    attach_row_layouts(templates)
+    return templates
+
+
+def attach_row_layouts(templates: list[dict]) -> None:
+    """Give each template still on its rows those rows as its layouts, and a converted one none."""
+    on_rows = [template["name"] for template in templates if not template["is_converted"]]
     slides = frappe.get_all(
         "Slide",
         filters={
-            "parent": ["in", [t["name"] for t in templates]],
+            "parent": ["in", on_rows],
             "parenttype": "Presentation",
             "parentfield": "slides",
         },
@@ -451,8 +477,6 @@ def get_templates():
                 if is_system_template(template["title"])
                 else ""
             )
-
-    return templates
 
 
 def _readable_templates() -> list[dict]:
@@ -476,6 +500,7 @@ def _readable_templates() -> list[dict]:
     return [
         {
             "name": node["content_docname"],
+            "node": node["name"],
             "title": node["title"],
             "slug": slug(node["title"] or ""),
             "creation": node["creation"],

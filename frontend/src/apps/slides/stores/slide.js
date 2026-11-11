@@ -22,6 +22,7 @@ import { translate } from '@/platform/translation'
 import { addSlideCommand, editSlideCommand, removeSlideCommand } from './commands'
 import { flushLive, isLive } from './liveDeck'
 import { inSlideShowMode } from './slideshow'
+import { drawTemplateLayouts } from './templateLayouts'
 
 /** @type {import('vue').Ref<Record<string, unknown>[]>} */
 const slides = ref([])
@@ -219,11 +220,15 @@ const duplicateSlide = (index = slideIndex.value) => {
   insertDuplicateSlide(index, null, true)
 }
 
-const addEmptySlide = (e, index) => {
-  e?.preventDefault()
-  const layout = templateList.value.find((template) => template.name === presentationTheme.value)
-    ?.layouts[0]
-  if (layout) handleInsertSlide(index, cloneObj(layout))
+const addEmptySlide = async (event, index) => {
+  event?.preventDefault()
+  const theme = presentationTheme.value
+  const stillOpen = currentOpening()
+  await drawTemplateLayouts([theme])
+  const layout = templateList.value.find((template) => template.name === theme)?.layouts[0]
+  if (layout && stillOpen()) {
+    handleInsertSlide(index, cloneObj(layout))
+  }
 }
 
 const handleInsertSlide = (index, layoutObj) => {

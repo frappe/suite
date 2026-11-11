@@ -271,10 +271,13 @@ export type GetTemplatesOutputSlide = {
 
 export type GetTemplatesOutputTemplate = {
   name: string
+  node: string
   title: string
   slug: string
   creation: string
   is_template: 1
+  is_converted: boolean
+  thumbnails: Array<string>
   layouts: Array<GetTemplatesOutputSlide>
 }
 

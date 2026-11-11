@@ -94,10 +94,13 @@ class ThemedDeck(TypedDict):
 
 class Template(TypedDict):
     name: str
+    node: str
     title: str
     slug: str
     creation: str
     is_template: Literal[1]
+    is_converted: bool
+    thumbnails: list[str]
     layouts: list[Slide]
 
 
