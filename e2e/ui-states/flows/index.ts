@@ -11,6 +11,7 @@ import { sheets } from "./sheets";
 import { slides } from "./slides";
 import { draw } from "./draw";
 import { mail } from "./mail";
+import { mailViews } from "./mailViews";
 import { compose } from "./compose";
 import { mailAccount } from "./mailAccount";
 import { calendar } from "./calendar";
@@ -51,6 +52,7 @@ export const flows: readonly AnyFlow[] = [
 	slides,
 	draw,
 	mail,
+	mailViews,
 	compose,
 	mailAccount,
 	calendar,
