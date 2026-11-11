@@ -434,6 +434,14 @@ export { openingLocation } from '@/apps/drive/files/features/document/openingLoc
 export { PANEL_BUTTONS } from '@/apps/drive/files/features/document/header'
 export type { DocumentPanel } from '@/apps/drive/client/types'
 export type { DocumentSaveState } from '@/apps/drive/files/features/document/header'
+/** A version's images that are binned or deleted: which ones, how to bring them back, and what to say. */
+export {
+  imagesNotice,
+  missingImages,
+  restoreImages,
+  type MissingImage,
+  type VersionImage,
+} from '@/apps/drive/files/features/document/versionImages'
 
 export const filePreviewSurface = defineAsyncComponent(
   () => import('@/apps/drive/files/features/preview/FilePreviewSurface.vue'),

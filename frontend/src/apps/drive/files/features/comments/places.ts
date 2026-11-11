@@ -31,5 +31,4 @@ export interface CommentAnchors {
 /** Comments on the whole document only. */
 export const WHOLE_DOCUMENT: CommentAnchors = { quote: () => '', ends: () => [] }
 
-/** What an app calls the file its comments are on, in the panel's messages. */
-export type FileNoun = 'document' | 'presentation'
+export type { FileNoun } from '@/platform/collab/restoreNotices'
