@@ -17,17 +17,21 @@ import { useRoute, useRouter } from 'vue-router'
 import {
   DRIVE_ROLES,
   DriveDocumentHeader,
+  rankMentionsFor,
+  useCommentDrafts,
+  useDocumentThreads,
+  useThreadChanges,
   type DocumentPanel,
   type DocumentSession,
   type DocumentThread,
   type DocumentVersion,
 } from '@/apps/drive'
+import { anchorEnds, anchorQuote } from '@/apps/writer/collab/anchors'
 import type { ThreadPlaces } from '@/apps/writer/collab/highlights'
 import { withinTenSeconds } from '@/apps/writer/collab/timeout'
 import CollabTextEditor from '@/apps/writer/components/CollabTextEditor.vue'
 import DocumentStrip from '@/apps/writer/components/DocumentStrip.vue'
 import ReadOnlyEditor from '@/apps/writer/components/ReadOnlyEditor.vue'
-import { rankMentionsFor } from '@/apps/writer/composables/useUsers'
 import { DOCUMENT_MEDIA } from '@/apps/writer/extensions/drive-media'
 import DocumentSkeleton from '@/apps/writer/opening/DocumentSkeleton.vue'
 import { isOpening } from '@/apps/writer/opening/openingEditor'
@@ -48,6 +52,7 @@ import { belowMinBuild } from '@/platform/build'
 import { watchConversion, type CollabRoom, type VersionRestored } from '@/platform/collab'
 import type { peopleOf } from '@/platform/collab/peers'
 import UsersBar from '@/platform/collab/UsersBar.vue'
+import { versionTitle } from '@/platform/collab/versionDates'
 import { useHideRail } from '@/platform/rail'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
@@ -69,12 +74,8 @@ import {
   type VersionRestore,
 } from './restoreVersion'
 import { saveFirst } from './saveFirst'
-import { useCommentDrafts } from './useCommentDrafts'
 import { showError } from './useDocumentPanel'
-import { useDocumentThreads } from './useDocumentThreads'
-import { useThreadChanges } from './useThreadChanges'
 import { useWriterCollab } from './useWriterCollab'
-import { versionTitle } from './versionDates'
 import {
   imagesNotice,
   missingImages,
@@ -238,6 +239,7 @@ const commentDrafts = useCommentDrafts({
   user: useSession().user.value?.id ?? 'Guest',
   room: () => room.value,
   refreshThreads,
+  anchors: { quote: anchorQuote, ends: anchorEnds },
 })
 
 function refusesComment() {

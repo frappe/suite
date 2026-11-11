@@ -21,7 +21,7 @@ import type { ConvertedVersion } from './versions'
 
 const NAMES = new Map<string, string>(Object.entries({ 'amira@northwind.test': 'Amira Haddad' }))
 
-vi.mock('@/apps/writer/composables/useUsers', () => ({
+vi.mock('@/platform/collab/names', () => ({
   lookUp: () => Promise.resolve(),
   fullName: (user: string) => NAMES.get(user) ?? user,
 }))

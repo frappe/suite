@@ -2,11 +2,11 @@ import { anchorEnds } from '@/apps/writer/collab/anchors'
 import { restoreEdit } from '@/apps/writer/collab/restore'
 import { restoredAnchors, type AnchoredThread } from '@/apps/writer/collab/restoredAnchors'
 import { withinTenSeconds } from '@/apps/writer/collab/timeout'
-import { fullName, lookUp } from '@/apps/writer/composables/useUsers'
 import type { CollabRoom, RestoreResult, VersionRestored } from '@/platform/collab'
+import { fullName, lookUp } from '@/platform/collab/names'
+import { dayOrTime, versionTime } from '@/platform/collab/versionDates'
 import { translate as __ } from '@/platform/translation'
 
-import { dayOrTime, versionTime } from './versionDates'
 import { readVersionBody, type ConvertedVersion, type VersionBody } from './versions'
 
 type RestoringRoom = Pick<

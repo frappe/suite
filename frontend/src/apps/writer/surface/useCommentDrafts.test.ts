@@ -10,12 +10,14 @@ import {
   type ID,
 } from 'yjs'
 
-import type { DocumentSession } from '@/apps/drive'
-import { anchorEnds, DOCUMENT_ANCHOR, encodeAnchor } from '@/apps/writer/collab/anchors'
-import { readDrafts } from '@/apps/writer/recovery/commentDrafts'
+import { readCommentDrafts, useCommentDrafts, type DocumentSession } from '@/apps/drive'
+import {
+  anchorEnds,
+  anchorQuote,
+  DOCUMENT_ANCHOR,
+  encodeAnchor,
+} from '@/apps/writer/collab/anchors'
 import type { CollabRoom } from '@/platform/collab'
-
-import { useCommentDrafts } from './useCommentDrafts'
 
 vi.mock('frappe-ui', () => ({ toast: { error: vi.fn() } }))
 
@@ -98,7 +100,13 @@ function driveComments(answers: (() => Promise<unknown>)[] = []) {
 
 function openDrafts(session: ReturnType<typeof driveComments>['session'], room: CollabRoom | null) {
   const refreshThreads = vi.fn(async () => {})
-  const drafts = useCommentDrafts({ session, user: 'ann', room: () => room, refreshThreads })
+  const drafts = useCommentDrafts({
+    session,
+    user: 'ann',
+    room: () => room,
+    refreshThreads,
+    anchors: { quote: anchorQuote, ends: anchorEnds },
+  })
   return { ...drafts, refreshThreads }
 }
 
@@ -126,11 +134,11 @@ describe('posting a comment on text', () => {
       [0, true],
       [[anchor, 'Check this', undefined, draft.clientId]],
     ])
-    expect([drafts.value, readDrafts('ann', 'doc-1'), refreshThreads.mock.calls.length]).toEqual([
-      [],
-      [],
-      1,
-    ])
+    expect([
+      drafts.value,
+      readCommentDrafts('ann', 'doc-1'),
+      refreshThreads.mock.calls.length,
+    ]).toEqual([[], [], 1])
   })
 
   it('posts nothing and keeps the draft when its text can no longer be saved', async () => {
@@ -144,7 +152,7 @@ describe('posting a comment on text', () => {
     stop()
 
     expect([await posting, posts, drafts.value[0].isPosting]).toEqual([null, [], false])
-    expect(readDrafts('ann', 'doc-1').map((draft) => draft.text)).toEqual(['Kept'])
+    expect(readCommentDrafts('ann', 'doc-1').map((draft) => draft.text)).toEqual(['Kept'])
     expect(vi.mocked(toast.error)).toHaveBeenCalledOnce()
   })
 
@@ -158,7 +166,7 @@ describe('posting a comment on text', () => {
     write(drafts.value[0], 'Again')
     const [draft] = drafts.value
 
-    const results = [await post(draft), readDrafts('ann', 'doc-1').length, await post(draft)]
+    const results = [await post(draft), readCommentDrafts('ann', 'doc-1').length, await post(draft)]
 
     expect([results, posts.map((input) => input[3])]).toEqual([
       [null, 1, 'thread-1'],
@@ -191,7 +199,7 @@ describe('posting a comment on text', () => {
     discard(draft)
     save(anchor)
 
-    expect([await posting, posts, readDrafts('ann', 'doc-1')]).toEqual([null, [], []])
+    expect([await posting, posts, readCommentDrafts('ann', 'doc-1')]).toEqual([null, [], []])
   })
 
   it('keeps the draft as sent while its text saves, so the device brings it back as sent', async () => {
@@ -218,11 +226,9 @@ describe('posting a comment on text', () => {
 
     const thread = await post(drafts.value[0])
 
-    expect([thread, posts, readDrafts('ann', 'doc-1').map((draft) => draft.isSent)]).toEqual([
-      null,
-      [],
-      [true],
-    ])
+    expect([thread, posts, readCommentDrafts('ann', 'doc-1').map((draft) => draft.isSent)]).toEqual(
+      [null, [], [true]],
+    )
     expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
       "The text this comment is on wasn't saved, so it wasn't posted.",
     )
@@ -422,7 +428,7 @@ describe('drafts in two tabs of the document', () => {
     expect([
       texts(second.drafts.value),
       texts(first.drafts.value),
-      texts(readDrafts('ann', 'doc-1')),
+      texts(readCommentDrafts('ann', 'doc-1')),
     ]).toEqual([[], ['Started here'], ['Started here']])
   })
 
