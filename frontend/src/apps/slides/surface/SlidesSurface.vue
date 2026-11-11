@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Editor } from '@tiptap/core'
 import { useMediaQuery } from '@vueuse/core'
-import { Button, Dropdown, Skeleton, toast } from 'frappe-ui'
+import { Button, dialog, Dropdown, Skeleton, toast } from 'frappe-ui'
 import {
   computed,
   defineAsyncComponent,
@@ -22,13 +22,17 @@ import { api, client } from '@/api'
 import {
   DriveCommentList,
   DriveDocumentHeader,
+  imagesNotice,
+  missingImages,
   rankMentionsFor,
+  restoreImages,
   useCommentDrafts,
   useDocumentThreads,
   useDriveDocumentActions,
   useThreadChanges,
   type DocumentPanel,
   type DocumentSession,
+  type MissingImage,
 } from '@/apps/drive'
 import LayoutDialog from '@/apps/slides/components/LayoutDialog.vue'
 import NavigationPanel from '@/apps/slides/components/NavigationPanel.vue'
@@ -94,8 +98,9 @@ import { stopVisitedMedia, storeVisitedMedia } from '@/apps/slides/stores/visite
 import { drawnFontsLoaded, warmBundledFonts } from '@/apps/slides/utils/bundledFonts'
 import { isMediaOwner } from '@/apps/slides/utils/mediaUploads'
 import { postToServiceWorker, registerSlidesWorker } from '@/apps/slides/utils/serviceWorker'
-import { readSavedDocument } from '@/platform/collab'
+import { readSavedDocument, type VersionRestored } from '@/platform/collab'
 import { peopleOf, presenceColours } from '@/platform/collab/peers'
+import { othersPresentWarning, restoredByOther } from '@/platform/collab/restoreNotices'
 import UsersBar from '@/platform/collab/UsersBar.vue'
 import { useHideRail } from '@/platform/rail'
 import { getCookieSessionUser, useSession } from '@/platform/session'
@@ -122,6 +127,7 @@ import SlidesVersionsPanel from './SlidesVersionsPanel.vue'
 import SurfaceNotice from './SurfaceNotice.vue'
 import { useConvertedRoom } from './useConvertedRoom'
 import { useUnsavedRecovery } from './useUnsavedRecovery'
+import { fetchVersion, readVersionBody, versionImages } from './versions'
 
 type Panel = DocumentPanel
 
@@ -194,6 +200,7 @@ const {
 const isSlideInteractionActive = ref(false)
 const previewCapture = useTemplateRef<InstanceType<typeof PreviewCapture>>('previewCapture')
 const exportView = useTemplateRef<InstanceType<typeof ExportView>>('exportView')
+const versionsPanel = useTemplateRef<InstanceType<typeof SlidesVersionsPanel>>('versionsPanel')
 const access = createSlidesAccess(props.session, { narrowed, widened })
 // A restore pauses editing: nothing is written while the server rewrites the deck.
 const restoring = ref(false)
@@ -224,9 +231,11 @@ const canRestoreVersions = computed(
     access.writable.value &&
     !restoring.value &&
     !isOnlyCopy.value &&
-    !onLayer.value &&
+    (!onLayer.value || (isConverted.value && convertedRoom.allowsEditing.value)) &&
     !writesBlocked.value,
 )
+// A converted presentation asks and restores itself. A row presentation leaves both to the panel
+const liveRestore = computed(() => (isConverted.value ? confirmLiveRestore : undefined))
 // Phones get a viewer: the slide fitted to the screen with previous and next. The
 // editor's panels need a wide screen. Same breakpoint as the shell's phone layout.
 const phone = useMediaQuery('(max-width: 767px)')
@@ -242,6 +251,7 @@ const convertedRoom = useConvertedRoom({
   retainRecovery,
   retainStickyOrOffer,
   onThreadsChanged: () => void refreshThreads(),
+  onVersionRestored: (restored) => void tellRestoredByOther(restored),
 })
 provide('livePresence', convertedRoom.presence)
 const roomPeople = computed(() => {
@@ -442,6 +452,67 @@ async function restoreVersion(seq: string) {
   } finally {
     restoring.value = false
   }
+}
+
+// The pictures version `bytes` shows that are binned or deleted now. An old row version has none to check
+async function versionMissingImages(bytes: Uint8Array): Promise<MissingImage[]> {
+  const body = await readVersionBody(bytes)
+  if (!('state' in body)) {
+    return []
+  }
+
+  return missingImages(props.session, versionImages(body.state))
+}
+
+// A converted presentation restores in the editor, for everyone at once (Q5)
+async function confirmLiveRestore(seq: string) {
+  let bytes: Uint8Array
+  let images: MissingImage[]
+  try {
+    bytes = await fetchVersion(props.session, Number(seq))
+    images = await versionMissingImages(bytes)
+  } catch (error) {
+    console.error(error)
+    toast.error(translate("This version's images couldn't be checked, so nothing was restored."))
+    return
+  }
+
+  const message = [
+    translate(
+      'The presentation goes back to this version for everyone. Its current state is kept as a version first.',
+    ),
+    othersPresentWarning(roomPeople.value, userSession.user.value?.id ?? '', 'presentation'),
+    imagesNotice(images),
+  ]
+  dialog.confirm({
+    title: translate('Restore this version?'),
+    message: message.filter(Boolean).join(' '),
+    confirmLabel: translate('Restore'),
+    onConfirm: () => restoreLive(seq, bytes, images),
+  })
+}
+
+async function restoreLive(seq: string, bytes: Uint8Array, images: MissingImage[]) {
+  try {
+    await restoreImages(props.session, images)
+    const restored = await convertedRoom.restore(Number(seq), bytes)
+    if (!restored.isRestored) {
+      toast.error(restored.message)
+      return
+    }
+
+    toast.success(restored.message)
+    void versionsPanel.value?.reload()
+    previewCapture.value?.captureAfterPause()
+  } catch (error) {
+    console.error(error)
+    toast.error(translate('The version was not restored.'))
+  }
+}
+
+async function tellRestoredByOther(restored: VersionRestored) {
+  void versionsPanel.value?.reload()
+  toast.info(await restoredByOther(restored, 'presentation'))
 }
 let isWaitingToPrint = false
 async function printDrawnPages() {
@@ -1020,10 +1091,12 @@ onBeforeUnmount(() => {
     </aside>
     <SlidesVersionsPanel
       v-else-if="panel === 'versions'"
+      ref="versionsPanel"
       :session="session"
       :writable="canRestoreVersions"
       :flush="flushEdits"
       :restore="restoreVersion"
+      :confirm-restore="liveRestore"
       @close="panel = null"
     />
 

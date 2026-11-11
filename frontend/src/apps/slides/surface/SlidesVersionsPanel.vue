@@ -13,6 +13,8 @@ const props = defineProps<{
   flush: () => Promise<void>
   /** Saves pending edits, pauses editing, restores the version and reloads the presentation. */
   restore: (seq: string) => Promise<void>
+  /** Asks about and runs the restore itself, in place of `restore`: a converted presentation's. */
+  confirmRestore?: (seq: string) => void
 }>()
 const emit = defineEmits<{ close: [] }>()
 
@@ -72,7 +74,12 @@ function saveVersion() {
   })
 }
 
-function confirmRestore(version: SlidesVersion) {
+function askToRestore(version: SlidesVersion) {
+  if (props.confirmRestore) {
+    props.confirmRestore(version.seq)
+    return
+  }
+
   dialog.confirm({
     title: 'Restore this version?',
     message:
@@ -95,6 +102,8 @@ function message(error: unknown, fallback: string): string {
 }
 
 onMounted(() => load())
+
+defineExpose({ reload: () => load() })
 </script>
 
 <template>
@@ -160,7 +169,7 @@ onMounted(() => load())
             size="sm"
             variant="ghost"
             label="Restore"
-            @click="confirmRestore(version)"
+            @click="askToRestore(version)"
           />
         </li>
       </ul>

@@ -65,6 +65,7 @@ function tabOn(
     isSelected: (id) => selected.includes(id),
     setBoundText: (html) => boundText.push(html),
     canWrite: () => canWrite,
+    restoreRev: () => 0,
     fontsPending: () => fontsPending,
     onRenamed: (renames) => renamed.push(renames),
     onMerged: () => {},

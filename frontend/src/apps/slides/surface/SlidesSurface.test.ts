@@ -6,7 +6,7 @@ import { fromAny, fromPartial } from '@total-typescript/shoehorn'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref, type Component, type Ref } from 'vue'
 import { Awareness } from 'y-protocols/awareness'
-import { applyUpdate, Doc, UndoManager } from 'yjs'
+import { applyUpdate, Doc, encodeStateAsUpdate, UndoManager } from 'yjs'
 
 import type { useCommentDrafts } from '@/apps/drive'
 import type { StoreSlide } from '@/apps/slides/collab/liveDeck'
@@ -30,6 +30,7 @@ import {
   startsFromEmptyStore,
   themeChange,
   thumbnails,
+  versionBytes,
   versionRestore,
   versionsPanel,
   visits,
@@ -60,7 +61,7 @@ const { drawnSlides } = await import('@/apps/slides/collab/drawnDeck')
 const { offlineCopyStatus } = await import('@/apps/slides/stores/offlineCopy')
 const { RECORD_PREFIX } = await import('@/apps/slides/utils/slidesCaches')
 const { keepRecovery, readRecovery, removeNewestRecovery } = await import('./recovery')
-const { toast, useKeyboardShortcut } = await import('frappe-ui')
+const { dialog, toast, useKeyboardShortcut } = await import('frappe-ui')
 const { changeSlideInSlideshow } = await import('@/apps/slides/stores/slideshow')
 const { router: slidesRouter } = await import('@/apps/slides/router')
 const elementStore = await import('@/apps/slides/stores/element')
@@ -505,7 +506,12 @@ describe('a deck on the content layer', () => {
       doc,
       close: vi.fn(async () => {}),
       flush: vi.fn(async () => {}),
-      status: { canWrite: true, saveState: 'clean', unsentCount: 0 },
+      // the server takes every restore
+      restoreVersion: vi.fn(async (_seq: number, edit: () => void) => {
+        edit()
+        return { outcome: 'landed' }
+      }),
+      status: { canWrite: true, saveState: 'clean', unsentCount: 0, restoreRev: 0 },
       presence: {
         awareness: new Awareness(doc),
         peers: [],
@@ -589,6 +595,84 @@ describe('a deck on the content layer', () => {
 
     room.setStatus({ canWrite: true, pauseReason: null })
     await vi.waitFor(() => expect(viewOnly.value).toBe(false))
+  })
+
+  describe('restoring a version', () => {
+    beforeEach(() => {
+      versionsPanel.confirmRestore = null
+    })
+
+    // a version as the server stores one: the Yjs state gzipped, then base64, in a JSON record
+    async function storedVersion(doc: Doc) {
+      const stream = new Response(new Uint8Array(encodeStateAsUpdate(doc))).body!.pipeThrough(
+        new CompressionStream('gzip'),
+      )
+      const compressed = new Uint8Array(await new Response(stream).arrayBuffer())
+      const state = btoa(String.fromCharCode(...compressed))
+      const record = { schema: 'slides-document/2', codec: 'yjs1', lineage: 'l1', state }
+      return new TextEncoder().encode(JSON.stringify(record))
+    }
+
+    async function openVersions() {
+      requireTestElement(mounted!.root.querySelector('[data-versions]'), HTMLElement).click()
+      await vi.waitFor(() => expect(versionsPanel.confirmRestore).not.toBeNull())
+    }
+
+    it('asks first, then restores it in the editor for everyone and lists the versions again', async () => {
+      const room = roomOf('now')
+      collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
+      versionBytes.current = await storedVersion(roomOf('then').doc)
+      mounted = await openedSurface({ deck: { is_converted: true } })
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+      await openVersions()
+      const reloads = versionsPanel.reloads
+
+      versionsPanel.confirmRestore!('3')
+      await vi.waitFor(() => expect(dialog.confirm).toHaveBeenCalled())
+      const [asked] = fromAny<[{ message: string; onConfirm: () => Promise<void> }], unknown>(
+        vi.mocked(dialog.confirm).mock.lastCall,
+      )
+      expect(versionsPanel.writable).toBe(true)
+      expect(asked.message).toBe(
+        'The presentation goes back to this version for everyone. Its current state is kept as a version first.',
+      )
+      await asked.onConfirm()
+
+      expect(room.restoreVersion).toHaveBeenCalledWith(3, expect.any(Function))
+      await vi.waitFor(() => expect(drawnTexts()).toEqual([expect.stringContaining('>then</p>')]))
+      expect(toast.success).toHaveBeenCalledWith('Version restored')
+      expect(versionsPanel.reloads).toBe(reloads + 1)
+      expect(saves).toEqual([])
+    })
+
+    it('leaves a presentation on its rows to the panel and the server', async () => {
+      mounted = await openedSurface()
+      requireTestElement(mounted.root.querySelector('[data-versions]'), HTMLElement).click()
+      await vi.waitFor(() => expect(versionsPanel.writable).toBe(true))
+
+      expect(versionsPanel.confirmRestore).toBeNull()
+    })
+
+    it('tells this tab when someone else restored a version, and lists the versions again', async () => {
+      convertedRoom('one')
+      mounted = await openedSurface({ deck: { is_converted: true } })
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+      await openVersions()
+      const reloads = versionsPanel.reloads
+
+      const [{ onVersionRestored }] = fromAny<
+        [{ onVersionRestored: (restored: unknown) => void }],
+        unknown
+      >(collabRoom.open.mock.lastCall)
+      onVersionRestored({ by: null, version: null })
+
+      await vi.waitFor(() =>
+        expect(toast.info).toHaveBeenCalledWith(
+          'Someone restored an earlier version of this presentation.',
+        ),
+      )
+      expect(versionsPanel.reloads).toBe(reloads + 1)
+    })
   })
 
   describe('centred text restored while its font is still loading', () => {

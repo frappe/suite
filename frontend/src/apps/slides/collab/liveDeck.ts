@@ -60,6 +60,8 @@ export interface LiveDeckHost {
   /** Text the store set on that element from outside the editor: a column resize, say. */
   setBoundText: (html: string | null) => void
   canWrite: () => boolean
+  /** The room's count of restores so far. It moves before the restore's rows arrive. */
+  restoreRev: () => number
   /** A font is still loading, so a top-left `flatten` works out now is only good for drawing. */
   fontsPending: () => boolean
   onRenamed: (renames: Map<string, string>) => void
@@ -296,6 +298,7 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
   const steps = openLiveUndo(doc, [LIVE_ORIGIN, ySyncPluginKey])
   let mirror = mirrorOf(host.slides())
   let reportedGoneId: string | null = null
+  let restoreRev = host.restoreRev()
 
   function forEachStoreElement(visit: (element: StoreItem) => void) {
     for (const slide of host.slides()) {
@@ -522,7 +525,17 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
     }
   }
 
+  // Undo never reaches past a restore (Q5). Checked as its rows arrive, before anything held goes back
+  function forgetPastRestore() {
+    const rev = host.restoreRev()
+    if (rev !== restoreRev) {
+      restoreRev = rev
+      steps.forget()
+    }
+  }
+
   function onUpdate(_update: Uint8Array, origin: unknown) {
+    forgetPastRestore()
     if (LOCAL_ORIGINS.has(origin)) {
       return
     }
@@ -608,6 +621,10 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
     redo: () => takeStep('redo'),
     /** The change just made is one undo step, and nothing after it joins that step. */
     endStep: steps.endStep,
+    /** Forgets every undo step: the restoring tab's, before its restore writes. */
+    forgetSteps: steps.forget,
+    /** Forgets every undo step once a restore has landed, which a restore that changed nothing here needs. */
+    followRestore: forgetPastRestore,
     undoManager: steps.manager,
     /** An element's first text, written when its editor opens. */
     seedText(id: string, html: string) {

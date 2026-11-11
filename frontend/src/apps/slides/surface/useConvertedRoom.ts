@@ -43,8 +43,12 @@ import {
   type CollabSession,
   type RoomPresence,
   type RoomStatus,
+  type VersionRestored,
 } from '@/platform/collab'
+import type { RestoreNotice } from '@/platform/collab/restoreNotices'
 import { translate } from '@/platform/translation'
+
+import { restoreVersion } from './restoreVersion'
 
 // SAFETY: the untyped element store holds the selected element ids
 const activeElementIds = storeActiveIds as Ref<string[]>
@@ -63,6 +67,8 @@ interface RoomHost {
   retainStickyOrOffer: () => boolean
   /** Told when the presentation's comment threads may have changed. */
   onThreadsChanged: () => void
+  /** Told when another tab's restore lands. */
+  onVersionRestored: (restored: VersionRestored) => void
 }
 
 function allowsEditingIn(status: RoomStatus) {
@@ -84,6 +90,7 @@ export function useConvertedRoom({
   retainRecovery,
   retainStickyOrOffer,
   onThreadsChanged,
+  onVersionRestored,
 }: RoomHost) {
   const room = shallowRef<CollabRoom | null>(null)
   const status = shallowRef<RoomStatus | null>(null)
@@ -216,6 +223,7 @@ export function useConvertedRoom({
         activeElementIds.value.includes(id) || currentSlide.value?.clientId === id,
       setBoundText,
       canWrite,
+      restoreRev: () => liveRoom.status.restoreRev,
       fontsPending: () => isFontPending || document.fonts.status === 'loading',
       onRenamed: applyRenames,
       onMerged: keepShownSlide,
@@ -252,6 +260,7 @@ export function useConvertedRoom({
       },
     })
     presence.value = liveRoom.presence
+    const stopRestores = liveRoom.onChange(() => liveDeck.followRestore())
     const stopSelection = watch(
       activeElementIds,
       (ids: string[]) => {
@@ -262,6 +271,7 @@ export function useConvertedRoom({
       { immediate: true },
     )
     return () => {
+      stopRestores()
       stopSelection()
       liveDeck.stop()
       setLiveSeat(null)
@@ -296,7 +306,12 @@ export function useConvertedRoom({
   }
 
   async function openRoom(isStale: () => boolean) {
-    const opened = await openCollabRoom({ session, adapter: slidesAdapter, onThreadsChanged })
+    const opened = await openCollabRoom({
+      session,
+      adapter: slidesAdapter,
+      onThreadsChanged,
+      onVersionRestored,
+    })
     if (opened.state !== 'live') {
       return false
     }
@@ -357,5 +372,18 @@ export function useConvertedRoom({
     void leave()?.close()
   }
 
-  return { allowsEditing, saveState, presence, open, close }
+  /** Restores version `seq` from its stored bytes, once this tab's edits are sent (Q5). */
+  async function restore(seq: number, bytes: Uint8Array): Promise<RestoreNotice> {
+    const liveRoom = room.value
+    const liveDeck = deck
+    if (!liveRoom || !liveDeck) {
+      return { isRestored: false, message: translate('The version was not restored.') }
+    }
+
+    liveDeck.push()
+    // Nothing this tab did or held before the restore may come back over it
+    return restoreVersion(liveRoom, seq, bytes, liveDeck.forgetSteps)
+  }
+
+  return { allowsEditing, saveState, presence, open, close, restore }
 }

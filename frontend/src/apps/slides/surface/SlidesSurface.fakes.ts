@@ -21,11 +21,22 @@ export const saves: unknown[] = []
 export const previews: unknown[] = []
 // what Drive's restore route does; a test swaps it to change the deck or to fail
 export const versionRestore = { run: async (_seq: string) => {} }
+// the stored bytes every version's content URL answers with
+export const versionBytes = { current: new Uint8Array() }
 const signedIn = vi.hoisted(() => ({ user: 'me@example.com' }))
-const versionsPanel = vi.hoisted(() => ({
+interface VersionsPanelFixture {
+  flush: () => Promise<void>
+  restore: (seq: string) => Promise<void>
+  confirmRestore: ((seq: string) => void) | null
+  writable: boolean
+  reloads: number
+}
+const versionsPanel = vi.hoisted((): VersionsPanelFixture => ({
   flush: async () => {},
-  restore: async (_seq: string) => {},
+  restore: async () => {},
+  confirmRestore: null,
   writable: false,
+  reloads: 0,
 }))
 const themeChange = vi.hoisted(() => ({ update: (_theme: string) => {} }))
 const forgetTemplates = vi.hoisted(() => ({ run: () => {} }))
@@ -136,7 +147,7 @@ vi.mock('frappe-ui', () => {
           ]),
     },
     FileUploadHandler: class {},
-    dialog: vi.fn(),
+    dialog: Object.assign(vi.fn(), { confirm: vi.fn() }),
     toast: {
       error: vi.fn(),
       warning: vi.fn(),
@@ -273,16 +284,27 @@ vi.doMock('./SlidesVersionsPanel.vue', () => ({
     props: {
       flush: { type: Function, default: null },
       restore: { type: Function, default: null },
+      confirmRestore: { type: Function, default: null },
       writable: Boolean,
     },
-    setup(props: {
-      flush: () => Promise<void>
-      restore: (seq: string) => Promise<void>
-      writable: boolean
-    }) {
+    setup(
+      props: {
+        flush: () => Promise<void>
+        restore: (seq: string) => Promise<void>
+        confirmRestore: ((seq: string) => void) | null
+        writable: boolean
+      },
+      { expose }: SetupContext,
+    ) {
       versionsPanel.flush = props.flush
       versionsPanel.restore = props.restore
+      expose({
+        reload: async () => {
+          versionsPanel.reloads += 1
+        },
+      })
       return () => {
+        versionsPanel.confirmRestore = props.confirmRestore
         versionsPanel.writable = props.writable
         return null
       }
@@ -320,8 +342,15 @@ function session(
     access,
     panels: ref(panels),
     refreshAccess: async () => {},
-    credentials: { context: undefined, heldContext: undefined },
-    versions: { restore: (seq: string) => versionRestore.run(seq) },
+    credentials: {
+      context: undefined,
+      heldContext: undefined,
+      fetch: async () => new Response(versionBytes.current),
+    },
+    versions: {
+      restore: (seq: string) => versionRestore.run(seq),
+      contentUrl: (seq: string) => `/versions/${seq}`,
+    },
     canShare: ref(false),
     comments: {
       list: async () => {
