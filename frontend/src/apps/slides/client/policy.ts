@@ -19,6 +19,7 @@ const effects = {
   },
   get_updated_json: 'none',
   update_slide_attachments: 'none',
+  convert_version: 'none',
 } as const
 
 export const registration: OwnerRegistration = {

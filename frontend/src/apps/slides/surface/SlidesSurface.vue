@@ -123,11 +123,12 @@ import ExportView from './ExportView.vue'
 import { resolveDocumentUnload, useDocumentLeaveGuard, type DocumentSaveState } from './navigation'
 import { useNewPresentationTheme } from './newPresentation'
 import PreviewCapture from './PreviewCapture.vue'
+import { fileTitle, saveThroughBrowser } from './recovery'
 import SlidesVersionsPanel from './SlidesVersionsPanel.vue'
 import SurfaceNotice from './SurfaceNotice.vue'
 import { useConvertedRoom } from './useConvertedRoom'
 import { useUnsavedRecovery } from './useUnsavedRecovery'
-import { fetchVersion, readVersionBody, versionImages } from './versions'
+import { convertedVersion, fetchVersion, readVersionBody, versionImages } from './versions'
 
 type Panel = DocumentPanel
 
@@ -454,29 +455,46 @@ async function restoreVersion(seq: string) {
   }
 }
 
-// The pictures version `bytes` shows that are binned or deleted now. An old row version has none to check
-async function versionMissingImages(bytes: Uint8Array): Promise<MissingImage[]> {
-  const body = await readVersionBody(bytes)
-  if (!('state' in body)) {
-    return []
-  }
+// Bytes no preview can draw: the person keeps them as the stored file
+function offerStoredFile(seq: string, bytes: Uint8Array) {
+  const title = fileTitle(props.session.title.value)
+  const file = new File([new Uint8Array(bytes)], `${title} (v${seq}).json`, {
+    type: 'application/json',
+  })
+  toast.error(
+    translate("This version can't be read, so it can't be restored. You can download it."),
+    {
+      action: { label: translate('Download'), onClick: () => saveThroughBrowser(file) },
+    },
+  )
+}
 
-  return missingImages(props.session, versionImages(body.state))
+// Version `seq`'s bytes and its pictures binned or deleted now; null once the person is told why not
+async function versionToRestore(seq: string) {
+  try {
+    const bytes = await fetchVersion(props.session, Number(seq))
+    const body = await readVersionBody(bytes).catch(() => null)
+    if (!body) {
+      offerStoredFile(seq, bytes)
+      return null
+    }
+
+    return { bytes, images: await missingImages(props.session, versionImages(body)) }
+  } catch (error) {
+    console.error(error)
+    toast.error(translate("This version's images couldn't be checked, so nothing was restored."))
+    return null
+  }
 }
 
 // A converted presentation restores in the editor, for everyone at once (Q5)
 async function confirmLiveRestore(seq: string) {
-  let bytes: Uint8Array
-  let images: MissingImage[]
-  try {
-    bytes = await fetchVersion(props.session, Number(seq))
-    images = await versionMissingImages(bytes)
-  } catch (error) {
-    console.error(error)
-    toast.error(translate("This version's images couldn't be checked, so nothing was restored."))
+  const version = await versionToRestore(seq)
+  if (!version) {
     return
   }
 
+  const { bytes, images } = version
   const message = [
     translate(
       'The presentation goes back to this version for everyone. Its current state is kept as a version first.',
@@ -495,7 +513,9 @@ async function confirmLiveRestore(seq: string) {
 async function restoreLive(seq: string, bytes: Uint8Array, images: MissingImage[]) {
   try {
     await restoreImages(props.session, images)
-    const restored = await convertedRoom.restore(Number(seq), bytes)
+    const restored = await convertedRoom.restore(Number(seq), bytes, () =>
+      convertedVersion(props.session, Number(seq)),
+    )
     if (!restored.isRestored) {
       toast.error(restored.message)
       return

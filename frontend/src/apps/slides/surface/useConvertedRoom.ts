@@ -49,6 +49,7 @@ import type { RestoreNotice } from '@/platform/collab/restoreNotices'
 import { translate } from '@/platform/translation'
 
 import { restoreVersion } from './restoreVersion'
+import type { ConvertedVersion } from './versions'
 
 // SAFETY: the untyped element store holds the selected element ids
 const activeElementIds = storeActiveIds as Ref<string[]>
@@ -372,8 +373,12 @@ export function useConvertedRoom({
     void leave()?.close()
   }
 
-  /** Restores version `seq` from its stored bytes, once this tab's edits are sent (Q5). */
-  async function restore(seq: number, bytes: Uint8Array): Promise<RestoreNotice> {
+  /** Restores version `seq` from its stored bytes, once this tab's edits are sent (Q5); `convert` upgrades an old one. */
+  async function restore(
+    seq: number,
+    bytes: Uint8Array,
+    convert: () => Promise<ConvertedVersion>,
+  ): Promise<RestoreNotice> {
     const liveRoom = room.value
     const liveDeck = deck
     if (!liveRoom || !liveDeck) {
@@ -382,7 +387,7 @@ export function useConvertedRoom({
 
     liveDeck.push()
     // Nothing this tab did or held before the restore may come back over it
-    return restoreVersion(liveRoom, seq, bytes, liveDeck.forgetSteps)
+    return restoreVersion(liveRoom, seq, bytes, liveDeck.forgetSteps, convert)
   }
 
   return { allowsEditing, saveState, presence, open, close, restore }

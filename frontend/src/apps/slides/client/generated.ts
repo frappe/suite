@@ -478,6 +478,32 @@ const operationGetEditorAccess: QueryRef<
   loadValidators: async () => (await import('./validators')).operationGetEditorAccess,
 }
 
+export type ConvertVersionInput = { node: string; seq: number }
+
+export type ConvertVersionOutput = { state?: string; reason?: string; pending?: boolean }
+
+export type ConvertVersionError = never
+
+const operationConvertVersion: MutationRef<
+  ConvertVersionInput,
+  ConvertVersionOutput,
+  ConvertVersionError
+> = {
+  id: 'convert_version',
+  owner: 'slides',
+  kind: 'mutation',
+  publicName: 'versions.convert',
+  envelope: 'message',
+  method: 'POST',
+  path: '/api/method/suite.slides.api.versions.convert_version',
+  prefix: '/api/suite/slides/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: [],
+  loadValidators: async () => (await import('./validators')).operationConvertVersion,
+}
+
 export const api = {
   documents: {
     get: operationGetPublicPresentation,
@@ -498,5 +524,8 @@ export const api = {
   composites: {
     manifest: operationCompositeManifest,
     group: operationCompositeGroup,
+  },
+  versions: {
+    convert: operationConvertVersion,
   },
 } as const

@@ -9,6 +9,8 @@ import type {
   CompositeGroupOutput,
   CompositeManifestInput,
   CompositeManifestOutput,
+  ConvertVersionInput,
+  ConvertVersionOutput,
   GetCompositePresentationInput,
   GetCompositePresentationOutput,
   GetEditorAccessInput,
@@ -759,6 +761,40 @@ export const operationGetEditorAccess: Validators<GetEditorAccessInput, GetEdito
       value,
       { enum: ['edit', 'view', 'none'], type: 'string' },
       'get_editor_access output',
+    )
+  },
+}
+
+export const operationConvertVersion: Validators<ConvertVersionInput, ConvertVersionOutput> = {
+  validateInput(value: unknown): asserts value is ConvertVersionInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          node: { title: 'Node', type: 'string' },
+          seq: { title: 'Seq', type: 'integer' },
+        },
+        required: ['node', 'seq'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'convert_version input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is ConvertVersionOutput {
+    assertSchema(
+      value,
+      {
+        properties: {
+          state: { title: 'State', type: 'string' },
+          reason: { title: 'Reason', type: 'string' },
+          pending: { title: 'Pending', type: 'boolean' },
+        },
+        title: 'VersionConversion',
+        type: 'object',
+      },
+      'convert_version output',
     )
   },
 }

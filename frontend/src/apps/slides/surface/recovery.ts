@@ -123,14 +123,19 @@ export function forgetRecovery(node: string, slides: readonly unknown[]): void {
   )
 }
 
+/** The title as a file name: the characters no file system takes dropped. */
+export function fileTitle(title: string): string {
+  return title.replace(/[<>:"/\\|?*]/g, '').trim() || 'Presentation'
+}
+
 /** The copy as a JSON file, named after the presentation title. */
 export function recoveryFile(copy: RecoveryCopy, title: string): File {
-  const name = title.replace(/[<>:"/\\|?*]/g, '').trim() || 'Presentation'
+  const name = fileTitle(title)
   const body = JSON.stringify({ title, recoveredAt: copy.savedAt, slides: copy.slides }, null, 2)
   return new File([body], `${name} (recovered).json`, { type: 'application/json' })
 }
 
-function saveThroughBrowser(file: File) {
+export function saveThroughBrowser(file: File) {
   const url = URL.createObjectURL(file)
   const link = document.createElement('a')
   link.href = url

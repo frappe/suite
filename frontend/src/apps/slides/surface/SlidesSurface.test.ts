@@ -645,6 +645,36 @@ describe('a deck on the content layer', () => {
       expect(saves).toEqual([])
     })
 
+    it('offers the stored file of a version it cannot read, and neither asks nor restores', async () => {
+      const room = roomOf('now')
+      collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
+      versionBytes.current = new TextEncoder().encode('not a version')
+      const files = vi.fn((_file: File) => 'blob:version')
+      URL.createObjectURL = fromPartial<typeof URL.createObjectURL>(files)
+      URL.revokeObjectURL = () => {}
+
+      vi.mocked(dialog.confirm).mockClear()
+      mounted = await openedSurface({ deck: { is_converted: true } })
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+      await openVersions()
+
+      versionsPanel.confirmRestore!('3')
+      const message = "This version can't be read, so it can't be restored. You can download it."
+      await vi.waitFor(() => expect(toast.error).toHaveBeenCalledWith(message, expect.anything()))
+      const [, options] = fromAny<
+        [string, { action: { label: string; onClick: () => void } }],
+        unknown
+      >(vi.mocked(toast.error).mock.calls.find(([text]) => text === message))
+      expect(options.action.label).toBe('Download')
+      options.action.onClick()
+
+      const [[file]] = files.mock.calls
+      expect(file.name).toBe('Quarterly plan (v3).json')
+      expect(await file.text()).toBe('not a version')
+      expect(dialog.confirm).not.toHaveBeenCalled()
+      expect(room.restoreVersion).not.toHaveBeenCalled()
+    })
+
     it('leaves a presentation on its rows to the panel and the server', async () => {
       mounted = await openedSurface()
       requireTestElement(mounted.root.querySelector('[data-versions]'), HTMLElement).click()

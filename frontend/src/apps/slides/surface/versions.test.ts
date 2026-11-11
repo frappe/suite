@@ -1,12 +1,19 @@
-import { describe, expect, it, vi } from 'vitest'
+import { fromPartial } from '@total-typescript/shoehorn'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
 
+import { client } from '@/api'
+import type { DocumentSession } from '@/apps/drive'
 import { writeDeck } from '@/apps/slides/collab/deck'
 import { drawnSlides } from '@/apps/slides/collab/drawnDeck'
 
-import { readVersionBody, readVersions, versionImages } from './versions'
+import { convertedVersion, readVersionBody, readVersions, versionImages } from './versions'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
+vi.mock('@/api', () => ({
+  api: { slides: { versions: { convert: 'versions.convert' } } },
+  client: { mutation: vi.fn() },
+}))
 
 const FRAME = { left: 10, top: 10, width: 100, height: 50 }
 
@@ -68,10 +75,18 @@ describe('reading a stored version', () => {
     expect(drawnSlides(read)).toEqual(drawnSlides(doc))
   })
 
-  it('tells an old row version apart', async () => {
-    const body = await readVersionBody(json({ schema: 'presentation/1', slides: [] }))
+  it('gives the slides of an old row version', async () => {
+    const slides = [{ client_id: 'one', elements: '[]' }]
 
-    expect(body).toEqual({ isLegacy: true })
+    const body = await readVersionBody(json({ schema: 'presentation/1', slides }))
+
+    expect(body).toEqual({ legacySlides: slides })
+  })
+
+  it('refuses an old row version with no slides list', async () => {
+    const broken = json({ schema: 'presentation/1', slides: 'x' })
+
+    await expect(readVersionBody(broken)).rejects.toThrow('This version cannot be read.')
   })
 
   it('refuses a version of another app', async () => {
@@ -98,7 +113,7 @@ describe('the pictures a version shows', () => {
       { id: 'two', background: '#ffffffFF', elements: [] },
     ])
 
-    const images = versionImages(Y.encodeStateAsUpdate(doc))
+    const images = versionImages({ state: Y.encodeStateAsUpdate(doc) })
 
     expect(images).toEqual(
       expect.arrayContaining([
@@ -109,5 +124,70 @@ describe('the pictures a version shows', () => {
       ]),
     )
     expect(images).toHaveLength(4)
+  })
+
+  it('lists the pictures of an old row version from its rows, skipping rows that do not parse', () => {
+    const elements = [
+      { id: 'photo', type: 'image', src: 'media-1', attachmentName: 'beach.png' },
+      { id: 'clip', type: 'video', src: 'media-2', poster: 'media-3' },
+      { id: 'old', type: 'image', src: '/files/old.png' },
+    ]
+    const legacySlides = [
+      { background: 'media-bg', elements: JSON.stringify(elements) },
+      { background: '#ffffffFF', elements: 'not json' },
+    ]
+
+    const images = versionImages({ legacySlides })
+
+    expect(images).toEqual(
+      expect.arrayContaining([
+        { id: 'media-1', alt: 'beach.png' },
+        { id: 'media-2', alt: '' },
+        { id: 'media-3', alt: '' },
+        { id: 'media-bg', alt: '' },
+      ]),
+    )
+    expect(images).toHaveLength(4)
+  })
+})
+
+describe('upgrading an old row version on the server', () => {
+  const session = fromPartial<DocumentSession>({ nodeId: 'node-1', credentials: { context: {} } })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.mocked(client.mutation).mockReset()
+  })
+
+  it('asks again while the server is still upgrading it, then gives the upgraded state', async () => {
+    vi.useFakeTimers()
+    vi.mocked(client.mutation)
+      .mockResolvedValueOnce({ pending: true })
+      .mockResolvedValueOnce({ state: btoa('\x01\x02') })
+
+    const converted = convertedVersion(session, 7)
+    await vi.advanceTimersByTimeAsync(2000)
+
+    await expect(converted).resolves.toEqual({ state: new Uint8Array([1, 2]) })
+    expect(client.mutation).toHaveBeenCalledTimes(2)
+  })
+
+  it('stops asking after two and a half minutes and says it is still being upgraded', async () => {
+    vi.useFakeTimers()
+    vi.mocked(client.mutation).mockResolvedValue({ pending: true })
+
+    const converted = convertedVersion(session, 7)
+    await vi.advanceTimersByTimeAsync(150_000)
+
+    await expect(converted).resolves.toEqual({ isPending: true })
+  })
+
+  it('gives a refusal with the reason the server names, and none when it names none', async () => {
+    vi.mocked(client.mutation)
+      .mockResolvedValueOnce({ reason: 'combined' })
+      .mockResolvedValueOnce({})
+
+    expect(await convertedVersion(session, 7)).toEqual({ refused: 'combined' })
+    expect(await convertedVersion(session, 7)).toEqual({ refused: null })
   })
 })

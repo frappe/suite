@@ -1,9 +1,10 @@
 import { restoreEdit } from '@/apps/slides/collab/restore'
 import type { CollabRoom } from '@/platform/collab'
-import { noticeFor, type RestoreNotice } from '@/platform/collab/restoreNotices'
+import { noticeFor, refusedNotice, type RestoreNotice } from '@/platform/collab/restoreNotices'
 import { translate as __ } from '@/platform/translation'
 
-import { readVersionBody, type VersionBody } from './versions'
+import { refusalReason } from './conversionNotice'
+import { readVersionBody, type ConvertedVersion, type VersionBody } from './versions'
 
 type RestoringRoom = Pick<CollabRoom, 'doc' | 'flush' | 'restoreVersion'>
 
@@ -11,14 +12,15 @@ type RestoringRoom = Pick<CollabRoom, 'doc' | 'flush' | 'restoreVersion'>
 const FLUSH_WAIT_MS = 10_000
 
 /**
- * Restores version `seq` from its stored bytes, after this tab's edits are saved. `beforeEdit` runs
- * just before the restore writes, inside its change.
+ * Restores version `seq` from its stored bytes, after this tab's edits are saved; `convert` upgrades an
+ * old row version first (Q6). `beforeEdit` runs just before the restore writes, inside its change.
  */
 export async function restoreVersion(
   room: RestoringRoom,
   seq: number,
   bytes: Uint8Array,
   beforeEdit: () => void,
+  convert: () => Promise<ConvertedVersion>,
 ): Promise<RestoreNotice> {
   let body: VersionBody
   try {
@@ -28,7 +30,19 @@ export async function restoreVersion(
   }
 
   if (!('state' in body)) {
-    return { isRestored: false, message: __("This version can't be restored.") }
+    const converted = await convert()
+    if ('isPending' in converted) {
+      return {
+        isRestored: false,
+        message: __('This version is still being upgraded. Try restoring it again in a minute.'),
+      }
+    }
+
+    if ('refused' in converted) {
+      return refusedNotice(refusalReason(converted.refused))
+    }
+
+    body = converted
   }
 
   const { state } = body

@@ -23,8 +23,20 @@ const REFUSAL_REASONS = new Map<string, () => string>(
     child_timeout: () => translate('the upgrade took too long'),
     child_crash: () => translate('the upgrade stopped unexpectedly'),
     bad_answer: () => translate('the upgrade gave an unreadable answer'),
+    combined: () => translate('it is a combined presentation, with no slides of its own'),
   }),
 )
+
+/** Why the converter refused, in words, or null for a reason it doesn't name. `code` or `code: detail` */
+export function refusalReason(reason: string | null | undefined): string | null {
+  const [code] = (reason ?? '').split(':')
+  const explain = REFUSAL_REASONS.get(code)
+  if (!explain) {
+    return null
+  }
+
+  return explain()
+}
 
 function reasonLine(reason: string) {
   return translate('Reason: {0}.', [reason])
@@ -41,12 +53,12 @@ function waitReason(reason: string) {
 export function conversionNotice({ state, reason }: ConversionStatus) {
   if (state === 'refused') {
     const refused = translate("This presentation couldn't be upgraded, so it stays read-only.")
-    const explain = REFUSAL_REASONS.get(reason?.split(':')[0] ?? '')
-    if (!explain) {
+    const explained = refusalReason(reason)
+    if (!explained) {
       return refused
     }
 
-    const line = reasonLine(explain())
+    const line = reasonLine(explained)
 
     return `${refused} ${line}`
   }

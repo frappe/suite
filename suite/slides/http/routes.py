@@ -6,6 +6,7 @@ from suite.composition.http import Route
 from suite.content.conversions import ConversionStatus
 from suite.slides.api.composite import composite_group, composite_manifest
 from suite.slides.api.slides import save_slides
+from suite.slides.api.versions import VersionConversion, convert_version
 from suite.slides.doctype.presentation.presentation import (
     apply_theme,
     get_composite_presentation,
@@ -133,6 +134,11 @@ class AccessInput(TypedDict):
     presentation_id: str
 
 
+class ConvertVersion(TypedDict):
+    node: str
+    seq: int
+
+
 CONTRACT_ROUTES = (
     Route(
         "GET",
@@ -257,6 +263,17 @@ CONTRACT_ROUTES = (
         output=Literal["edit", "view", "none"],
         kind="query",
         public_name="documents.access",
+        allow_guest=True,
+        envelope="message",
+    ),
+    Route(
+        "POST",
+        "/api/method/suite.slides.api.versions.convert_version",
+        "convert_version",
+        body=ConvertVersion,
+        output=VersionConversion,
+        kind="mutation",
+        public_name="versions.convert",
         allow_guest=True,
         envelope="message",
     ),
