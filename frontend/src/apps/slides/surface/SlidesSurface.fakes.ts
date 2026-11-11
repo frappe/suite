@@ -90,12 +90,12 @@ const propertiesPanel = vi.hoisted((): PropertiesPanelFixture => ({ real: null }
 const collabRoom = vi.hoisted(() => ({
   open: vi.fn(async (): Promise<unknown> => ({ state: 'failed' })),
 }))
-// converted templates' saved states by node, and the nodes read; any other node reads for real
-interface SavedTemplatesFixture {
+// converted templates' and sources' saved states by node, and the nodes read; any other node reads for real
+interface SavedStatesFixture {
   byNode: Map<string, Doc | Error>
   reads: string[]
 }
-const savedTemplates = vi.hoisted((): SavedTemplatesFixture => ({ byNode: new Map(), reads: [] }))
+const savedStates = vi.hoisted((): SavedStatesFixture => ({ byNode: new Map(), reads: [] }))
 export const fakeServer = { isRefusing: false, isFailingTemplates: false, opens: 0 }
 
 interface MenuEntry {
@@ -236,12 +236,12 @@ vi.mock('@/platform/collab', async (importOriginal) => {
     ...real,
     openCollabRoom: collabRoom.open,
     readSavedDocument: async (options: Parameters<typeof real.readSavedDocument>[0]) => {
-      const saved = savedTemplates.byNode.get(options.nodeId)
+      const saved = savedStates.byNode.get(options.nodeId)
       if (!saved) {
         return real.readSavedDocument(options)
       }
 
-      savedTemplates.reads.push(options.nodeId)
+      savedStates.reads.push(options.nodeId)
       if (saved instanceof Error) {
         throw saved
       }
@@ -457,7 +457,8 @@ export async function openedSurface({
   slides?: unknown[]
   firstLoad?: Promise<void | Response>
   media?: DocumentSession['media']
-  composite?: Record<string, unknown[] | Error | Promise<unknown[]>>
+  // a reference's rows, or the node of a converted source whose saved state `savedStates` holds
+  composite?: Record<string, unknown[] | Error | Promise<unknown[]> | { node: string }>
   deck?: Record<string, unknown>
   panels?: DocumentSession['panels']['value']
 } = {}) {
@@ -512,11 +513,11 @@ export async function openedSurface({
     }
 
     if (composite && url.includes('composite_manifest')) {
-      const references = Object.keys(composite).map((reference, index) => ({
+      const references = Object.entries(composite).map(([reference, group], index) => ({
         reference,
         index: index + 1,
         presentation: reference,
-        node: null,
+        node: sourceNode(group),
       }))
 
       return answer({
@@ -546,9 +547,9 @@ export async function openedSurface({
             index: 1,
             presentation: reference,
             readable: true,
-            node: null,
+            node: sourceNode(group),
             composite: false,
-            slides: group,
+            slides: sourceNode(group) ? null : group,
           },
         ],
       })
@@ -602,6 +603,10 @@ export function shown() {
   return document.querySelector('[data-show]') !== null
 }
 
+function sourceNode(group: unknown) {
+  return group && typeof group === 'object' && 'node' in group ? String(group.node) : null
+}
+
 export function thumbnails(root: Element) {
   return [...root.querySelectorAll<HTMLButtonElement>('nav button')]
 }
@@ -633,7 +638,7 @@ export function startsFromEmptyStore() {
 
 export {
   collabRoom,
-  savedTemplates,
+  savedStates,
   commentPanel,
   server,
   signedIn,

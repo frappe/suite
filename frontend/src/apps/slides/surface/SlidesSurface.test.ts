@@ -1,3 +1,5 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import { Editor } from '@tiptap/core'
 import { Document } from '@tiptap/extension-document'
 import { Paragraph } from '@tiptap/extension-paragraph'
@@ -23,7 +25,7 @@ import {
   openedSurface,
   previews,
   propertiesPanel,
-  savedTemplates,
+  savedStates,
   saves,
   served,
   server,
@@ -85,8 +87,17 @@ const focusElementId = fromAny<Ref<string | null>, unknown>(elementStore.focusEl
 const activeEditor = fromAny<Ref<Editor | null>, unknown>(editorStore.activeEditor)
 const { registerElementDiv } = await import('@/apps/slides/stores/elementRegistry')
 const { convertLegacy } = await import('@/apps/slides/collab/conversion')
-const { addElement, addSlide, deleteElement, deleteSlide, ROOT, setElement, slideIds } =
-  await import('@/apps/slides/collab/deck')
+const {
+  addElement,
+  addSlide,
+  deleteElement,
+  deleteSlide,
+  elementIds,
+  ROOT,
+  setElement,
+  setSlide,
+  slideIds,
+} = await import('@/apps/slides/collab/deck')
 
 const slideStyles = vi.hoisted(() => ({ fontsImported: false }))
 
@@ -461,6 +472,11 @@ function answersStartupReads() {
 }
 
 describe('a deck on the content layer', () => {
+  // a test may stand in for another tab's lock, which would lock every later presentation
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
   function statusOf(root: Element) {
     return root.querySelector('p[role="status"]')?.textContent
   }
@@ -609,6 +625,79 @@ describe('a deck on the content layer', () => {
 
     room.setStatus({ canWrite: true, pauseReason: null })
     await vi.waitFor(() => expect(viewOnly.value).toBe(false))
+  })
+
+  describe('a combined presentation of converted sources', () => {
+    afterEach(() => {
+      savedStates.byNode.clear()
+      savedStates.reads = []
+    })
+
+    function slideBackgrounds() {
+      return fromAny<StoreSlide[], unknown>(editorSlides.value).map((slide) => slide.background)
+    }
+
+    function elementIdsOf(doc: Doc) {
+      return slideIds(doc).flatMap((slide) => elementIds(doc, slide))
+    }
+
+    it('draws a source and its copy, which keeps every slide and element id', async () => {
+      const source = roomOf('one', 'two').doc
+      // a server copy starts from the source's state, so its ids are the same
+      const copy = new Doc()
+      applyUpdate(copy, encodeStateAsUpdate(source))
+      setSlide(copy, 'one', { background: '#123456FF' })
+      savedStates.byNode.set('source-node', source)
+      savedStates.byNode.set('copy-node', copy)
+      expect(elementIdsOf(copy)).toEqual(elementIdsOf(source))
+
+      mounted = await openedSurface({
+        composite: { source: { node: 'source-node' }, copy: { node: 'copy-node' } },
+      })
+
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(4))
+      expect(drawnTexts()).toEqual(
+        ['one', 'two', 'one', 'two'].map((text) => expect.stringContaining(`>${text}</p>`)),
+      )
+      expect(slideBackgrounds()[0]).not.toBe('#123456FF')
+      expect(slideBackgrounds()[2]).toBe('#123456FF')
+    })
+
+    it('draws all fourteen slides of the shipped Light and Dark templates', async () => {
+      const file = path.resolve(
+        __dirname,
+        '../../../../../suite/slides/templates/system_templates.json',
+      )
+      const shipped: Array<{ title: string; state: string }> = JSON.parse(
+        fs.readFileSync(file, 'utf8'),
+      )
+      const docs = new Map<string, Doc>()
+      for (const { title, state } of shipped) {
+        const doc = new Doc()
+        applyUpdate(doc, Buffer.from(state, 'base64'))
+        docs.set(title, doc)
+        savedStates.byNode.set(`${title}-node`, doc)
+      }
+      const lightIds = new Set(elementIdsOf(docs.get('Light')!))
+      expect(elementIdsOf(docs.get('Dark')!).some((id) => lightIds.has(id))).toBe(true)
+
+      mounted = await openedSurface({
+        composite: { light: { node: 'Light-node' }, dark: { node: 'Dark-node' } },
+      })
+
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(14))
+      expect(slideBackgrounds()).toEqual([
+        ...Array(7).fill('#FFFFFFFF'),
+        ...Array(7).fill('#000000FF'),
+      ])
+      // the seven layouts: blank, title, title and subtitle, title, title and subtitle,
+      // title and points, title and picture
+      const counts = [0, 1, 2, 1, 2, 2, 2]
+      const drawn = fromAny<StoreSlide[], unknown>(editorSlides.value)
+      expect(drawn.map((slide) => slide.elements.length)).toEqual([...counts, ...counts])
+      expect(drawnTexts()[5]).toContain('Insert second point here')
+      expect(drawnTexts()[12]).toContain('Insert second point here')
+    })
   })
 
   describe('restoring a version', () => {
@@ -1206,6 +1295,12 @@ describe('a deck on the content layer', () => {
       { elements: [{ id: 'team-third', type: 'text', content: '<p>Team third</p>' }] },
     ])
 
+    // an earlier test may have left its templates listed and read
+    beforeEach(() => {
+      templateList.value = []
+      forgetTemplates.run()
+    })
+
     afterEach(() => {
       templateList.value = []
       forgetTemplates.run()
@@ -1343,8 +1438,8 @@ describe('a deck on the content layer', () => {
       const DARK_PICTURES = [1, 2, 3].map((idx) => `/pictures/dark/thumbnail-${idx}.webp`)
 
       afterEach(() => {
-        savedTemplates.byNode.clear()
-        savedTemplates.reads = []
+        savedStates.byNode.clear()
+        savedStates.reads = []
       })
 
       // the server sends a converted template's node and pictures, never its rows
@@ -1354,7 +1449,7 @@ describe('a deck on the content layer', () => {
         texts: string[],
         thumbnails: string[] = [],
       ) {
-        savedTemplates.byNode.set(`${name}-node`, roomOf(...texts).doc)
+        savedStates.byNode.set(`${name}-node`, roomOf(...texts).doc)
         return {
           name,
           title,
@@ -1394,7 +1489,7 @@ describe('a deck on the content layer', () => {
         await opened([savedTemplate('brand', 'Brand', ['Brand first'])], '')
         await new Promise((resolve) => setTimeout(resolve))
 
-        expect(savedTemplates.reads).toEqual([])
+        expect(savedStates.reads).toEqual([])
       })
 
       it("reads each template's saved state once", async () => {
@@ -1405,7 +1500,7 @@ describe('a deck on the content layer', () => {
         themeChange.create('brand')
 
         await vi.waitFor(() => expect(calls('update_theme')).toHaveLength(1))
-        expect(savedTemplates.reads).toEqual(['brand-node'])
+        expect(savedStates.reads).toEqual(['brand-node'])
       })
 
       it("shows a system template's pictures and draws a user template", async () => {
@@ -1438,13 +1533,13 @@ describe('a deck on the content layer', () => {
 
         await vi.waitFor(() => expect(calls('update_theme')).toHaveLength(1))
         expect(shownTexts(doc)).toEqual([[expect.stringContaining('Team first')]])
-        expect(savedTemplates.reads).toEqual([])
+        expect(savedStates.reads).toEqual([])
       })
 
       it('leaves the slide blank when the saved template cannot be read', async () => {
         const doc = blankRoom()
         const brand = savedTemplate('brand', 'Brand', ['Brand first'])
-        savedTemplates.byNode.set('brand-node', new TypeError('Failed to fetch'))
+        savedStates.byNode.set('brand-node', new TypeError('Failed to fetch'))
         await opened([brand])
 
         themeChange.create('brand')
@@ -2345,6 +2440,8 @@ describe('Slides push refused by the server', () => {
 
   describe('templates that fail to load', () => {
     beforeEach(() => {
+      // a theme pick's surface may still list the templates it read
+      templateList.value = []
       forgetTemplates.run()
       fakeServer.isFailingTemplates = true
     })
