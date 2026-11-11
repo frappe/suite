@@ -43,13 +43,14 @@ describe("capture output selection", () => {
 	});
 
 	it("shows a start rejection and lets the host change selection and retry", async () => {
-		const confirm = vi.fn(async () => undefined).mockRejectedValueOnce(new Error("Transcription capacity is currently unavailable"));
+		const confirm = vi.fn(async () => undefined).mockRejectedValueOnce(Object.assign(new Error("ValidationError: Transcription capacity is currently unavailable"), { messages: ["Transcription capacity is currently unavailable"] }));
 		const view = setup(confirm);
 		await view.toggle(1);
 		await view.toggle(0);
 		view.root.querySelector("button")?.click();
 		await settle();
 		expect(view.root.textContent).toContain("Transcription capacity is currently unavailable");
+		expect(view.root.textContent).not.toContain("ValidationError");
 		expect(view.root.querySelector("button")?.disabled).toBe(false);
 		await view.toggle(0);
 		await view.toggle(1);

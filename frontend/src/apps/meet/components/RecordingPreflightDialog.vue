@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Alert, Dialog, Switch } from "frappe-ui";
 import { computed, ref, watch } from "vue";
+import { getErrorMessage } from "../utils/error";
 import { captureLabel, defaultCaptureOptions, type CaptureOptions } from "../utils/capturePresentation";
 
 const props = defineProps<{
@@ -34,7 +35,7 @@ const actions = computed(() => [
 				if (result && typeof result === "object" && "status" in result && result.status === "Rejected") return;
 				close();
 			} catch (error) {
-				startError.value = error instanceof Error ? error.message : "Could not start capture";
+				startError.value = getErrorMessage(error) || "Could not start capture";
 			} finally {
 				starting.value = false;
 			}
