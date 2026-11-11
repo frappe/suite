@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Editor } from '@tiptap/core'
-import { useMediaQuery } from '@vueuse/core'
+import { onKeyStroke, useMediaQuery } from '@vueuse/core'
 import { Button, dialog, Dropdown, Skeleton, toast } from 'frappe-ui'
 import {
   computed,
@@ -10,6 +10,7 @@ import {
   onMounted,
   provide,
   ref,
+  shallowRef,
   useTemplateRef,
   watch,
 } from 'vue'
@@ -100,7 +101,11 @@ import { isMediaOwner } from '@/apps/slides/utils/mediaUploads'
 import { postToServiceWorker, registerSlidesWorker } from '@/apps/slides/utils/serviceWorker'
 import { readSavedDocument, type VersionRestored } from '@/platform/collab'
 import { peopleOf, presenceColours } from '@/platform/collab/peers'
-import { othersPresentWarning, restoredByOther } from '@/platform/collab/restoreNotices'
+import {
+  othersPresentWarning,
+  restoredByOther,
+  type RestoreNotice,
+} from '@/platform/collab/restoreNotices'
 import UsersBar from '@/platform/collab/UsersBar.vue'
 import { useHideRail } from '@/platform/rail'
 import { getCookieSessionUser, useSession } from '@/platform/session'
@@ -124,11 +129,13 @@ import { resolveDocumentUnload, useDocumentLeaveGuard, type DocumentSaveState } 
 import { useNewPresentationTheme } from './newPresentation'
 import PreviewCapture from './PreviewCapture.vue'
 import { fileTitle, saveThroughBrowser } from './recovery'
+import SlidesVersionPreview from './SlidesVersionPreview.vue'
 import SlidesVersionsPanel from './SlidesVersionsPanel.vue'
 import SurfaceNotice from './SurfaceNotice.vue'
 import { useConvertedRoom } from './useConvertedRoom'
 import { useUnsavedRecovery } from './useUnsavedRecovery'
 import { convertedVersion, fetchVersion, readVersionBody, versionImages } from './versions'
+import { versionSlides } from './versionSlides'
 
 type Panel = DocumentPanel
 
@@ -157,6 +164,24 @@ const online = ref(typeof navigator === 'undefined' ? true : navigator.onLine)
 const composite = ref(false)
 const compositeItems = ref<CompositeItem[]>([])
 const panel = ref<Panel | null>(null)
+// The version shown read-only in the canvas's place (Q7); it shows only beside the versions panel
+const previewed = ref<string | null>(null)
+watch(panel, (shown) => {
+  if (shown !== 'versions') {
+    previewed.value = null
+  }
+})
+// Escape goes back to the presentation, unless a dialog or menu over the preview takes the key
+onKeyStroke(
+  'Escape',
+  (event) => {
+    const isOverlayOpen = document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')
+    if (!event.defaultPrevented && previewed.value && !isOverlayOpen) {
+      previewed.value = null
+    }
+  },
+  { target: document },
+)
 const {
   threads: readThreads,
   readAt: threadsReadAt,
@@ -177,6 +202,9 @@ const commentDrafts = useCommentDrafts({
 })
 rankMentionsFor(props.session.nodeId)
 const exporting = ref(false)
+// A version's slides to print in place of the presentation's, for a version that can't be restored
+const printedSlides = shallowRef<Record<string, unknown>[] | null>(null)
+const exportedSlides = computed(() => printedSlides.value ?? slides.value)
 const {
   isOnlyCopy,
   clearOnlyCopy,
@@ -447,6 +475,7 @@ async function restoreVersion(seq: string) {
   restoring.value = true
   try {
     await props.session.versions.restore(seq)
+    previewed.value = null
     await load()
     // A reload that failed leaves the old slides in place, and they are not the restored version.
     if (!loadError.value) previewCapture.value?.captureAfterPause()
@@ -455,12 +484,14 @@ async function restoreVersion(seq: string) {
   }
 }
 
+function storedFile(seq: string, bytes: Uint8Array) {
+  const title = fileTitle(props.session.title.value)
+  return new File([new Uint8Array(bytes)], `${title} (v${seq}).json`, { type: 'application/json' })
+}
+
 // Bytes no preview can draw: the person keeps them as the stored file
 function offerStoredFile(seq: string, bytes: Uint8Array) {
-  const title = fileTitle(props.session.title.value)
-  const file = new File([new Uint8Array(bytes)], `${title} (v${seq}).json`, {
-    type: 'application/json',
-  })
+  const file = storedFile(seq, bytes)
   toast.error(
     translate("This version can't be read, so it can't be restored. You can download it."),
     {
@@ -517,17 +548,45 @@ async function restoreLive(seq: string, bytes: Uint8Array, images: MissingImage[
       convertedVersion(props.session, Number(seq)),
     )
     if (!restored.isRestored) {
-      toast.error(restored.message)
+      tellNotRestored(seq, bytes, restored)
       return
     }
 
     toast.success(restored.message)
+    previewed.value = null
     void versionsPanel.value?.reload()
     previewCapture.value?.captureAfterPause()
   } catch (error) {
     console.error(error)
     toast.error(translate('The version was not restored.'))
   }
+}
+
+function tellNotRestored(seq: string, bytes: Uint8Array, refused: RestoreNotice) {
+  if (!refused.canDownload) {
+    toast.error(refused.message)
+    return
+  }
+
+  toast.error(refused.message, {
+    action: { label: translate('Download'), onClick: () => void downloadVersion(seq, bytes) },
+  })
+}
+
+// A version that can be drawn shows in the preview and prints as a PDF; one that can't goes out as stored
+async function downloadVersion(seq: string, bytes: Uint8Array) {
+  let shown: Record<string, unknown>[]
+  try {
+    shown = versionSlides(await readVersionBody(bytes))
+  } catch {
+    saveThroughBrowser(storedFile(seq, bytes))
+    return
+  }
+
+  panel.value = 'versions'
+  previewed.value = seq
+  printedSlides.value = shown
+  exportPdf()
 }
 
 async function tellRestoredByOther(restored: VersionRestored) {
@@ -552,6 +611,7 @@ async function printDrawnPages() {
     'afterprint',
     () => {
       exporting.value = false
+      printedSlides.value = null
     },
     {
       once: true,
@@ -1018,7 +1078,8 @@ onBeforeUnmount(() => {
       >
         {{ notice }}
       </p>
-      <template v-if="phone">
+      <SlidesVersionPreview v-if="previewed" :session="session" :seq="previewed" />
+      <template v-else-if="phone">
         <div class="relative flex min-h-0 flex-1">
           <SlideContainer
             v-if="presentationDoc"
@@ -1112,6 +1173,7 @@ onBeforeUnmount(() => {
     <SlidesVersionsPanel
       v-else-if="panel === 'versions'"
       ref="versionsPanel"
+      v-model:previewed="previewed"
       :session="session"
       :writable="canRestoreVersions"
       :flush="flushEdits"
@@ -1132,7 +1194,7 @@ onBeforeUnmount(() => {
     />
 
     <teleport to="body">
-      <ExportView v-if="exporting" ref="exportView" :slides="slides" />
+      <ExportView v-if="exporting" ref="exportView" :slides="exportedSlides" />
       <!-- `restoring` keeps it mounted while a restore pauses editing: it holds what it last sent,
            and it must be there to take the capture the restore asks for. -->
       <PreviewCapture v-if="editing || restoring" ref="previewCapture" :session="session" />

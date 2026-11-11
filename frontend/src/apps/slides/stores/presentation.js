@@ -218,6 +218,13 @@ const normalizeSlideDoc = (doc) => {
   return ensureUniqueClientIds(doc.slides || [])
 }
 
+/** Stored slide rows as the store draws them, as a presentation on its rows opens. Leaves `rows` alone. */
+export function rowSlides(rows) {
+  const doc = { slides: JSON.parse(JSON.stringify(rows)) }
+  normalizeSlideDoc(doc)
+  return doc.slides
+}
+
 const slidesLength = ref(0)
 
 // only the latest load may commit; an older one lands on the presentation now open

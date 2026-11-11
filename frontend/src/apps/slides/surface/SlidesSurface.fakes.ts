@@ -12,6 +12,7 @@ import {
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 
 import type { DocumentSession } from '@/apps/drive'
+import type { ConvertVersionOutput } from '@/apps/slides/client/generated'
 import { translationPlugin } from '@/platform/translation'
 
 const { fromPartial, fromAny } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
@@ -23,6 +24,16 @@ export const previews: unknown[] = []
 export const versionRestore = { run: async (_seq: string) => {} }
 // the stored bytes every version's content URL answers with
 export const versionBytes = { current: new Uint8Array() }
+// what the server's upgrade of an old version answers
+interface VersionConversionFixture {
+  answer: ConvertVersionOutput
+}
+export const versionConversion: VersionConversionFixture = { answer: {} }
+// the slides the print view was last handed
+interface ExportedFixture {
+  slides: unknown[]
+}
+const exported = vi.hoisted((): ExportedFixture => ({ slides: [] }))
 const signedIn = vi.hoisted(() => ({ user: 'me@example.com' }))
 interface VersionsPanelFixture {
   flush: () => Promise<void>
@@ -30,6 +41,9 @@ interface VersionsPanelFixture {
   confirmRestore: ((seq: string) => void) | null
   writable: boolean
   reloads: number
+  // the version shown in the canvas's place, and how the panel picks one
+  previewed: string | null
+  preview: (seq: string | null) => void
 }
 const versionsPanel = vi.hoisted((): VersionsPanelFixture => ({
   flush: async () => {},
@@ -37,6 +51,8 @@ const versionsPanel = vi.hoisted((): VersionsPanelFixture => ({
   confirmRestore: null,
   writable: false,
   reloads: 0,
+  previewed: null,
+  preview: () => {},
 }))
 const themeChange = vi.hoisted(() => ({ update: (_theme: string) => {} }))
 const forgetTemplates = vi.hoisted(() => ({ run: () => {} }))
@@ -258,7 +274,15 @@ for (const path of [
 }
 
 vi.doMock('./ExportView.vue', () => ({
-  default: { render: () => h('div', [h('span', { style: 'font-family: Anton' }, 'Drawn')]) },
+  default: {
+    props: { slides: { type: Array, default: () => [] } },
+    setup(props: { slides: unknown[] }) {
+      return () => {
+        exported.slides = props.slides
+        return h('div', [h('span', { style: 'font-family: Anton' }, 'Drawn')])
+      }
+    },
+  },
 }))
 
 vi.doMock('@/apps/slides/components/Toolbar.vue', () => ({
@@ -286,16 +310,20 @@ vi.doMock('./SlidesVersionsPanel.vue', () => ({
       restore: { type: Function, default: null },
       confirmRestore: { type: Function, default: null },
       writable: Boolean,
+      previewed: { type: String, default: null },
     },
+    emits: ['update:previewed'],
     setup(
       props: {
         flush: () => Promise<void>
         restore: (seq: string) => Promise<void>
         confirmRestore: ((seq: string) => void) | null
         writable: boolean
+        previewed: string | null
       },
-      { expose }: SetupContext,
+      { emit, expose }: SetupContext,
     ) {
+      versionsPanel.preview = (seq) => emit('update:previewed', seq)
       versionsPanel.flush = props.flush
       versionsPanel.restore = props.restore
       expose({
@@ -306,6 +334,7 @@ vi.doMock('./SlidesVersionsPanel.vue', () => ({
       return () => {
         versionsPanel.confirmRestore = props.confirmRestore
         versionsPanel.writable = props.writable
+        versionsPanel.previewed = props.previewed
         return null
       }
     },
@@ -411,6 +440,10 @@ export async function openedSurface({
 
       const version = saves.length + 1
       return answer({ modified: `M${version}` })
+    }
+
+    if (url.includes('convert_version')) {
+      return answer(versionConversion.answer)
     }
 
     if (url.includes('get_templates')) {
@@ -532,6 +565,7 @@ export function startsFromEmptyStore() {
   afterEach(() => {
     fakeServer.isRefusing = false
     fakeServer.isFailingTemplates = false
+    versionConversion.answer = {}
     served.modified = 'M1'
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
@@ -544,6 +578,7 @@ export {
   server,
   signedIn,
   versionsPanel,
+  exported,
   themeChange,
   forgetTemplates,
   propertiesPanel,

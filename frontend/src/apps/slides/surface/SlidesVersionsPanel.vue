@@ -15,8 +15,10 @@ const props = defineProps<{
   restore: (seq: string) => Promise<void>
   /** Asks about and runs the restore itself, in place of `restore`: a converted presentation's. */
   confirmRestore?: (seq: string) => void
+  /** The version shown read-only in the canvas's place, if any (Q7). */
+  previewed?: string | null
 }>()
-const emit = defineEmits<{ close: [] }>()
+const emit = defineEmits<{ close: []; 'update:previewed': [seq: string | null] }>()
 
 const versions = ref<SlidesVersion[]>([])
 const nextCursor = ref<string | null>(null)
@@ -93,6 +95,20 @@ function askToRestore(version: SlidesVersion) {
   })
 }
 
+function isPreviewed(version: SlidesVersion) {
+  return props.previewed === version.seq
+}
+
+// Showing the version already shown goes back to the presentation
+function togglePreview(version: SlidesVersion) {
+  if (isPreviewed(version)) {
+    emit('update:previewed', null)
+    return
+  }
+
+  emit('update:previewed', version.seq)
+}
+
 function versionLabel(version: SlidesVersion): string {
   return version.label || KIND_LABELS.get(version.kind) || 'Version'
 }
@@ -154,8 +170,14 @@ defineExpose({ reload: () => load() })
           v-for="version in versions"
           :key="version.seq"
           class="flex items-center gap-3 px-4 py-3"
+          :class="{ 'bg-surface-gray-2': isPreviewed(version) }"
         >
-          <div class="min-w-0 flex-1">
+          <button
+            type="button"
+            class="min-w-0 flex-1 text-left"
+            :aria-pressed="isPreviewed(version)"
+            @click="togglePreview(version)"
+          >
             <div class="flex items-center gap-2">
               <span class="truncate text-base text-ink-gray-8">{{ versionLabel(version) }}</span>
               <Badge v-if="version.pinned" label="Pinned" theme="gray" variant="subtle" size="sm" />
@@ -163,7 +185,7 @@ defineExpose({ reload: () => load() })
             <p class="mt-1.5 truncate text-sm text-ink-gray-5">
               {{ [stampLabel(version.creation), version.actor].filter(Boolean).join(' · ') }}
             </p>
-          </div>
+          </button>
           <Button
             v-if="writable"
             size="sm"

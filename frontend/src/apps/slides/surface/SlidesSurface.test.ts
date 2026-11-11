@@ -17,6 +17,7 @@ import {
   collabRoom,
   commentPanel,
   driveComments,
+  exported,
   fakeServer,
   forgetTemplates,
   openedSurface,
@@ -31,6 +32,7 @@ import {
   themeChange,
   thumbnails,
   versionBytes,
+  versionConversion,
   versionRestore,
   versionsPanel,
   visits,
@@ -672,6 +674,136 @@ describe('a deck on the content layer', () => {
       expect(file.name).toBe('Quarterly plan (v3).json')
       expect(await file.text()).toBe('not a version')
       expect(dialog.confirm).not.toHaveBeenCalled()
+      expect(room.restoreVersion).not.toHaveBeenCalled()
+    })
+
+    function previewOf(root: Element) {
+      return root.querySelector('[aria-label="Version preview"]')
+    }
+
+    it('shows a version read-only in the canvas place, steps through its slides, and Escape goes back', async () => {
+      const live = convertedRoom('now')
+      versionBytes.current = await storedVersion(roomOf('first', 'second').doc)
+      mounted = await openedSurface({ deck: { is_converted: true } })
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+      await openVersions()
+      const before = Array.from(encodeStateAsUpdate(live))
+      const writes = vi.fn()
+      live.on('update', writes)
+
+      versionsPanel.preview('3')
+      await vi.waitFor(() => expect(previewOf(mounted!.root)?.textContent).toContain('first'))
+      const preview = requireTestElement(previewOf(mounted.root), HTMLElement)
+      expect(preview.textContent).toContain('1 of 2')
+      expect(mounted.root.querySelector('[data-toolbar]')).toBeNull()
+      expect(versionsPanel.previewed).toBe('3')
+
+      requireTestElement(preview.querySelector('[aria-label="Next slide"]'), HTMLElement).click()
+      await vi.waitFor(() => expect(preview.textContent).toContain('second'))
+      expect(preview.textContent).toContain('2 of 2')
+
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+      await vi.waitFor(() => expect(previewOf(mounted!.root)).toBeNull())
+      expect(versionsPanel.previewed).toBeNull()
+      expect(mounted.root.querySelector('[data-toolbar]')).not.toBeNull()
+      expect(drawnTexts()).toEqual([expect.stringContaining('>now</p>')])
+      // showing a version never writes to the live presentation
+      expect(writes).not.toHaveBeenCalled()
+      expect(Array.from(encodeStateAsUpdate(live))).toEqual(before)
+      expect(saves).toEqual([])
+    })
+
+    it('shows an old version from its rows', async () => {
+      convertedRoom('now')
+      const elements = [{ id: 'element-old', type: 'text', content: '<p>before collaboration</p>' }]
+      const record = { schema: 'presentation/1', slides: [{ elements: JSON.stringify(elements) }] }
+      versionBytes.current = new TextEncoder().encode(JSON.stringify(record))
+      mounted = await openedSurface({ deck: { is_converted: true } })
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+      await openVersions()
+
+      versionsPanel.preview('1')
+
+      await vi.waitFor(() =>
+        expect(previewOf(mounted!.root)?.textContent).toContain('before collaboration'),
+      )
+      expect(previewOf(mounted.root)?.textContent).toContain('1 of 1')
+    })
+
+    // an old version the server's upgrade refuses: the restore is asked for, then refused with a Download
+    async function refusedDownload(slides: unknown[]) {
+      const record = { schema: 'presentation/1', slides }
+      versionBytes.current = new TextEncoder().encode(JSON.stringify(record))
+      versionConversion.answer = { reason: 'check' }
+      vi.mocked(dialog.confirm).mockClear()
+      vi.mocked(toast.error).mockClear()
+      mounted = await openedSurface({ deck: { is_converted: true } })
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+      await openVersions()
+
+      versionsPanel.confirmRestore!('1')
+      await vi.waitFor(() => expect(dialog.confirm).toHaveBeenCalled())
+      const [asked] = fromAny<[{ onConfirm: () => Promise<void> }], unknown>(
+        vi.mocked(dialog.confirm).mock.lastCall,
+      )
+      await asked.onConfirm()
+      const message =
+        "This version couldn't be upgraded, so it can't be restored. You can download it. Reason: the upgraded version didn't match the original."
+      const [, options] = fromAny<
+        [string, { action: { label: string; onClick: () => void } }],
+        unknown
+      >(vi.mocked(toast.error).mock.calls.find(([text]) => text === message))
+      expect(options.action.label).toBe('Download')
+      options.action.onClick()
+    }
+
+    // an old slide row, its elements kept as JSON text
+    function oldSlide(text: string) {
+      const content = `<p>${text}</p>`
+      return { elements: JSON.stringify([{ id: `element-${text}`, type: 'text', content }]) }
+    }
+
+    it('prints a refused old version it can draw, from the preview, and restores nothing', async () => {
+      const room = roomOf('now')
+      collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
+      const before = Array.from(encodeStateAsUpdate(room.doc))
+      const print = vi.fn()
+      window.print = print
+
+      await refusedDownload([oldSlide('old one'), oldSlide('old two')])
+
+      await vi.waitFor(() => expect(print).toHaveBeenCalledOnce())
+      const printed = fromAny<Array<{ elements: Array<{ content: string }> }>, unknown>(
+        exported.slides,
+      )
+      expect(printed.map((slide) => slide.elements[0].content)).toEqual([
+        '<p>old one</p>',
+        '<p>old two</p>',
+      ])
+      expect(previewOf(mounted!.root)?.textContent).toContain('old one')
+      expect(versionsPanel.previewed).toBe('1')
+      expect(room.restoreVersion).not.toHaveBeenCalled()
+      expect(Array.from(encodeStateAsUpdate(room.doc))).toEqual(before)
+    })
+
+    it('downloads the stored file of a refused old version it cannot draw', async () => {
+      const room = roomOf('now')
+      collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
+      const files = vi.fn((_file: File) => 'blob:version')
+      const print = vi.fn()
+
+      window.print = print
+      URL.createObjectURL = fromPartial<typeof URL.createObjectURL>(files)
+      URL.revokeObjectURL = () => {}
+
+      await refusedDownload([null])
+
+      await vi.waitFor(() => expect(files).toHaveBeenCalledOnce())
+      const [[file]] = files.mock.calls
+      expect(file.name).toBe('Quarterly plan (v1).json')
+      expect(JSON.parse(await file.text())).toEqual({ schema: 'presentation/1', slides: [null] })
+      expect(print).not.toHaveBeenCalled()
+      expect(previewOf(mounted!.root)).toBeNull()
       expect(room.restoreVersion).not.toHaveBeenCalled()
     })
 
