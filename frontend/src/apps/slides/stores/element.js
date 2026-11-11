@@ -920,6 +920,9 @@ const duplicateElements = async (e, elements, srcSlide, toDisplace = true) => {
   let newSelection = []
 
   const baseZIndex = currentSlide.value.elements.length
+  // the show keys elements by refId, so no two on one slide share one. A cut's
+  // source is gone, so its paste keeps the pairing
+  const slideRefIds = new Set(currentSlide.value.elements.map(({ refId }) => refId).filter(Boolean))
   const sortedElements = [...elements].sort((a, b) => (a.zIndex || 1) - (b.zIndex || 1))
   const copies = remapElementIds(
     sortedElements.map((element) => JSON.parse(JSON.stringify(element))),
@@ -928,6 +931,10 @@ const duplicateElements = async (e, elements, srcSlide, toDisplace = true) => {
   sortedElements.forEach((element, index) => {
     const newElement = copies[index]
     delete newElement.locked
+    if (slideRefIds.has(newElement.refId)) {
+      delete newElement.refId
+    }
+
     newElement.zIndex = baseZIndex + index + 1
     newElement.top += displaceByPx
     newElement.left += displaceByPx
