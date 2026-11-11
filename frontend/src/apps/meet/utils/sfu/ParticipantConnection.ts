@@ -227,6 +227,11 @@ export class ParticipantConnection {
 	private lifecycleGeneration = 0;
 	private lifecycleTail: Promise<void> = Promise.resolve();
 	private lifecycleAbortController = new AbortController();
+	private pendingNetworkQuality = new Map<
+		string,
+		{ quality: string; observedAt: number }
+	>();
+	private networkQualityFlush: ReturnType<typeof setTimeout> | null = null;
 	private snapshotRetry: Promise<void> | null = null;
 	private e2eeReadyForLifecycle = false;
 	private lastAuthToken: string | null = null;
@@ -802,7 +807,7 @@ export class ParticipantConnection {
 				generation === this.lifecycleGeneration &&
 				!this.lifecycleAbortController.signal.aborted
 			) {
-				this.setState(result === "failed" ? "degraded" : "ready");
+				this.setState(result === "failed" ? "degraded" : result === "skipped" ? "ready" : "recovering");
 			}
 			return result;
 		});
@@ -827,6 +832,17 @@ export class ParticipantConnection {
 		if (failed?.status === "rejected") {
 			throw failed.reason;
 		}
+	}
+
+	completeTransportRecovery(reason: string): void {
+		if (
+			this.lifecycleAbortController.signal.aborted ||
+			this._state === "stopped" ||
+			this._state === "failed"
+		)
+			return;
+		this.reportRecoveryState("healthy", reason);
+		if (this._state === "recovering") this.setState("ready");
 	}
 
 	reportRecoveryState(
@@ -971,6 +987,17 @@ export class ParticipantConnection {
 			(c) =>
 				!c.consumer.closed &&
 				(c.producerId === producerId || c.consumer.producerId === producerId),
+		);
+	}
+
+	hasMissingExpectedReceiveMedia(): boolean {
+		return Array.from(this.reconciliation.producers.values()).some(
+			(producer) =>
+				this.isRemoteProducerDesired(producer) &&
+				!this.hasConsumerForProducer(
+					producer.participantId,
+					producer.producerId,
+				),
 		);
 	}
 
@@ -1700,13 +1727,7 @@ export class ParticipantConnection {
 				typeof value.participantId === "string" &&
 				typeof value.quality === "string"
 			) {
-				this.eventHandlers.onNetworkQualityUpdated?.(
-					value.participantId,
-					value.quality,
-				);
-				this.participantManager.updateParticipant(value.participantId, {
-					networkQuality: value.quality,
-				});
+				this.queueNetworkQuality(value.participantId, value.quality);
 			}
 		});
 
@@ -1803,6 +1824,39 @@ export class ParticipantConnection {
 				this.eventHandlers.onActiveSpeakerChanged(d.participantIds);
 			}
 		});
+	}
+
+	private queueNetworkQuality(participantId: string, quality: string): void {
+		const signal = this.lifecycleAbortController.signal;
+		if (signal.aborted) return;
+		this.pendingNetworkQuality.set(participantId, {
+			quality,
+			observedAt: Date.now(),
+		});
+		if (this.networkQualityFlush !== null) return;
+
+		const cancel = () => {
+			if (this.networkQualityFlush !== null)
+				clearTimeout(this.networkQualityFlush);
+			this.networkQualityFlush = null;
+			this.pendingNetworkQuality.clear();
+		};
+		signal.addEventListener("abort", cancel, { once: true });
+		// Room-wide refreshes arrive as separate messages. Apply one short burst in
+		// one task so reactive views do not render the entire grid for every peer.
+		this.networkQualityFlush = setTimeout(() => {
+			signal.removeEventListener("abort", cancel);
+			this.networkQualityFlush = null;
+			const updates = [...this.pendingNetworkQuality];
+			this.pendingNetworkQuality.clear();
+			for (const [id, { quality, observedAt }] of updates) {
+				this.eventHandlers.onNetworkQualityUpdated?.(id, quality);
+				this.participantManager.updateParticipant(id, {
+					networkQuality: quality,
+					networkQualityUpdatedAt: observedAt,
+				});
+			}
+		}, 16);
 	}
 
 	private ensureRef(obj: User | { value: User | null } | null): {

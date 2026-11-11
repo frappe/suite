@@ -442,7 +442,7 @@ def _fixture_enabled() -> bool:
     )
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def start(
     meeting_id: str,
     request_id: str,
@@ -733,7 +733,7 @@ def _stop_after_grant_delivery_failure(room, recording, client: RecorderClient |
     )
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def stop(meeting_id: str) -> dict | None:
     room = _get_room(meeting_id)
     room.recording_policy_lock()
@@ -1073,17 +1073,17 @@ def recorder_replacement_ready(
         operation="replacement_ready",
         operation_id=str(event_sequence),
     )
-    return _callback_response(
-        _apply_replacement_ready(
-            recording_id,
-            event_sequence,
-            interruption_id,
-            endpoint_generation,
-            public_jwk,
-            ready_at,
-            _client(),
-        )
+    result = _apply_replacement_ready(
+        recording_id,
+        event_sequence,
+        interruption_id,
+        endpoint_generation,
+        public_jwk,
+        ready_at,
+        _client(),
     )
+    # Protocol v1 status responses exclude internal grant-delivery metadata.
+    return _callback_response({"status": result["status"]})
 
 
 def _apply_replacement_ready(

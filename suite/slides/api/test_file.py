@@ -1,14 +1,17 @@
 # Copyright (c) 2024, Frappe Technologies Pvt. Ltd. and Contributors
 # See license.txt
 
+import os
 from contextlib import contextmanager
 
 import frappe
 from frappe.tests import IntegrationTestCase
+from frappe.utils import get_url
 from werkzeug.exceptions import Forbidden, NotFound, RequestedRangeNotSatisfiable
 from werkzeug.test import EnvironBuilder
 from werkzeug.wrappers import Request
 
+from suite.drive.api.files import create_link
 from suite.drive.overrides.file import File as DriveFile
 from suite.slides.api.file import get_media_response, get_reference_presentations, validate_media_file
 from suite.slides.tests.utils import (
@@ -178,10 +181,141 @@ class TestMediaFileAccess(IntegrationTestCase):
             with self.assertRaises(Forbidden):
                 validate_media_file(file.file_url, composite.name)
 
+    def test_a_template_file_cannot_take_another_users_file_url(self):
+        # templates serve their media to guests, so a File row on one must never take
+        # the url of a private file its owner cannot already read
+        with self.set_user(OTHER_USER):
+            template = frappe.get_doc(
+                {
+                    "doctype": "Presentation",
+                    "title": "Repoint",
+                    "is_template": 1,
+                    "slides": [{"elements": "[]"}],
+                }
+            ).insert()
+            own = make_private_image(template.name)
+
+            # the same blob under another spelling, which a plain url match would miss
+            victim_urls = (self.file.file_url, self.file.file_url.replace("/files/", "/files/./"))
+            repoints = [
+                (victim_urls[0], own.file_type),
+                (victim_urls[1], own.file_type),
+                (victim_urls[0], "Link"),
+            ]
+            for url, file_type in repoints:
+                with self.subTest("repoint", url=url, file_type=file_type):
+                    file = frappe.get_doc("File", own.name)
+                    file.file_type = file_type
+                    file.file_url = url
+                    with self.assertRaises(frappe.ValidationError):
+                        file.save()
+
+            for url in victim_urls:
+                with self.subTest("insert", url=url):
+                    with self.assertRaises(frappe.PermissionError):
+                        frappe.get_doc(
+                            {
+                                "doctype": "File",
+                                "file_url": url,
+                                "is_private": 1,
+                                "attached_to_doctype": "Presentation",
+                                "attached_to_name": template.name,
+                            }
+                        ).insert()
+
+            frappe.delete_doc("File", own.name)
+
+        with self.set_user("Guest"):
+            with self.assertRaises(Forbidden):
+                validate_media_file(self.file.file_url, template.name)
+
+        self.assertTrue(os.path.exists(frappe.get_doc("File", self.file.name).get_full_path()))
+
+    def test_a_link_cannot_expose_another_users_file_through_a_template(self):
+        with self.set_user(OTHER_USER):
+            template = frappe.get_doc(
+                {
+                    "doctype": "Presentation",
+                    "title": "Linked Template",
+                    "is_template": 1,
+                    "slides": [{"elements": "[]"}],
+                }
+            ).insert()
+            for link in (self.file.file_url, get_url() + self.file.file_url):
+                with (
+                    self.subTest(link=link),
+                    self.assertRaises((frappe.ValidationError, frappe.PermissionError)),
+                ):
+                    create_link(frappe.generate_hash(8), link)
+
+            # a row already holding a local url, which create_link refuses: it names a
+            # web address, so it must not unlock the stored file at that address
+            link_row = frappe.get_doc(
+                {
+                    "doctype": "File",
+                    "file_name": frappe.generate_hash(8),
+                    "file_url": self.file.file_url,
+                    "file_type": "Link",
+                    "is_private": 1,
+                    "attached_to_doctype": "Presentation",
+                    "attached_to_name": template.name,
+                }
+            )
+            link_row.flags.file_created = True
+            link_row.insert()
+
+        with self.set_user("Guest"), self.assertRaises(Forbidden):
+            validate_media_file(self.file.file_url, template.name)
+
     def test_unknown_url_not_found(self):
         with self.set_user(OWNER):
             with self.assertRaises(NotFound):
                 validate_media_file("/private/files/no-such-file.png")
+
+    def make_lookalikes(self, attacker_presentation):
+        """The victim's private image, and the attacker's at a name the file_url column
+        treats as equal. The disk does not, so they are different files."""
+        tag = frappe.generate_hash(length=8)
+        for theirs, mine in (
+            (f"Salary{tag}.png", f"salary{tag}.png"),
+            (f"résumé{tag}.png", f"resume{tag}.png"),
+        ):
+            with self.set_user(OWNER):
+                secret = make_private_image(self.presentation.name, file_name=theirs)
+            with self.set_user(OTHER_USER):
+                own = make_private_image(attacker_presentation, file_name=mine)
+            self.assertNotEqual(own.file_url, secret.file_url)
+            yield secret, own
+
+    def test_a_lookalike_name_on_my_presentation_grants_nothing(self):
+        with self.set_user(OTHER_USER):
+            mine = make_presentation("Lookalike")
+        for secret, own in self.make_lookalikes(mine.name):
+            with self.set_user(OTHER_USER), self.subTest(url=secret.file_url):
+                self.assertIsNone(validate_media_file(own.file_url, mine.name))
+                with self.assertRaises(Forbidden):
+                    validate_media_file(secret.file_url, mine.name)
+
+    def test_a_lookalike_name_on_a_template_grants_nothing(self):
+        with self.set_user(OTHER_USER):
+            mine = make_presentation("Lookalike Viewer")
+            template = frappe.get_doc(
+                {
+                    "doctype": "Presentation",
+                    "title": "Lookalike",
+                    "is_template": 1,
+                    "slides": [{"elements": "[]"}],
+                }
+            ).insert()
+        for secret, _own in self.make_lookalikes(template.name):
+            with self.set_user(OTHER_USER), self.subTest(url=secret.file_url):
+                with self.assertRaises(Forbidden):
+                    validate_media_file(secret.file_url, mine.name)
+
+    def test_a_lookalike_of_a_held_url_is_not_found(self):
+        with self.set_user(OWNER):
+            with self.assertRaises(NotFound):
+                validate_media_file(self.file.file_url.upper())
 
     def make_template(self, title):
         """Inserted as a template, so `after_insert` skips `create_drive_file`: the

@@ -75,7 +75,7 @@ import {
   dynamicList,
   isManaged,
   isAttachmentRef,
-  isVirtual,
+  isDownloadable,
   openEntity,
 } from '@/apps/drive/utils/files'
 import { getFileLink } from '@/apps/drive/ui/drive/js/utils'
@@ -224,9 +224,7 @@ const defaultActions = computed(() => {
         {
           label: __('Download'),
           icon: LucideDownload,
-          isEnabled: () =>
-            !isVirtual(rootEntity.value) &&
-            !['Link', 'Presentation', 'Document'].includes(rootEntity.value.file_type),
+          isEnabled: () => isDownloadable(rootEntity.value),
           onClick: () => entitiesDownload([rootEntity.value]),
         },
         {

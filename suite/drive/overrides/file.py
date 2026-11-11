@@ -32,7 +32,14 @@ from suite.drive.utils import (
     update_file_size,
     validate_filename,
 )
-from suite.drive.utils.files import S3_URL_PREFIX, FileManager, get_s3_url, storage_key
+from suite.drive.utils.files import (
+    S3_URL_PREFIX,
+    FileManager,
+    files_using_stored_file,
+    get_s3_url,
+    storage_key,
+    stored_file_in_use,
+)
 
 
 class File(FrappeFile):
@@ -46,13 +53,8 @@ class File(FrappeFile):
         self._validate_content_link()
         if self.is_new() and not self.flags.file_created:
             return super().validate()
-        if (
-            not self.is_new()
-            and not self.flags.file_created
-            and self.has_value_changed("file_url")
-            and not self._not_in_disk()
-        ):
-            self.manager.get_local_path(self.file_url)
+        if not self.is_new():
+            self._validate_storage_fields()
         # Blob-backed Drive files must be private: they're served only through
         # Drive's permission layer, never the public /files/ path. Folders, links
         # and content-doctype files have no on-disk blob, and adopted framework
@@ -64,8 +66,22 @@ class File(FrappeFile):
             and not self.is_private
         ):
             frappe.throw("Drive files must be private.", frappe.ValidationError)
+
+    def _validate_storage_fields(self):
+        """Fields of an existing row that only Drive's storage flows may change."""
+        if self.has_value_changed("file_url"):
+            # A File row grants read access to whatever its file_url names, so only
+            # Drive's storage flows may repoint it.
+            if not (self.flags.file_created or self.flags.drive_disk_rename):
+                frappe.throw("Only Drive can change the URL of a file.", frappe.ValidationError)
+            if not self.flags.file_created and not self._not_in_disk():
+                self.manager.get_local_path(self.file_url)
+        # A Link row's url is a web address that no storage check has seen. Served as a
+        # file, it would read whatever that address resolves to on the site.
+        if self._link_type_changed():
+            frappe.throw("A file cannot become a link, or a link a file.", frappe.ValidationError)
         # file_name is coupled to the blob path; only rename()/move() may change it.
-        if not self.is_new() and self.has_value_changed("file_name") and not self.flags.drive_disk_rename:
+        if self.has_value_changed("file_name") and not self.flags.drive_disk_rename:
             frappe.throw(
                 "Rename Drive files from the Drive interface, not the File form.",
                 frappe.ValidationError,
@@ -83,6 +99,36 @@ class File(FrappeFile):
             frappe.throw(
                 "Generated Meet transcripts are read-only. Download a copy to edit.", frappe.PermissionError
             )
+    def validate_private_file_access(self):
+        """Run before a new File takes an existing file_url: the user must already be
+        able to read a private file at that url, however the url is spelled. The
+        framework's version asks its own File permission, which
+        `ignore_file_permissions` turns into a yes for everyone, so this asks Drive's."""
+        if not self.file_url:
+            return
+        holders = files_using_stored_file(self.file_url, is_private=1)
+        if holders and not any(user_has_permission(name, "read") for name in holders):
+            frappe.throw("You do not have permission to access this file", frappe.PermissionError)
+
+        # The framework treats `/api/method/` and http(s) urls as remote and skips its url
+        # checks, but `get_local_path` resolves any url against the site folder, so `..`
+        # reaches a file no holder lookup can find. storage_key undoes a second layer of
+        # quoting, and the framework strips the site url after this check.
+        url = self.file_url[len(self.get_site_url_prefix()) :]
+        if ".." in storage_key(url).split("/"):
+            frappe.throw("The File URL you've entered is incorrect", frappe.ValidationError)
+        # Drive's uploads skip this method. A fetch url that no row holds names a bucket
+        # object nobody granted. Migrations run as Administrator and insert the first row.
+        if (
+            url.startswith(S3_URL_PREFIX)
+            and frappe.session.user != "Administrator"
+            and not files_using_stored_file(url)
+        ):
+            frappe.throw("You do not have permission to access this file", frappe.PermissionError)
+
+    def _link_type_changed(self) -> bool:
+        before = self.get_doc_before_save()
+        return bool(before) and (before.file_type == "Link") != (self.file_type == "Link")
 
     def _validate_content_link(self):
         """`content_doctype`/`content_docname` are the sole permission delegation
@@ -422,12 +468,17 @@ class File(FrappeFile):
             self._delete_blob_after_commit(blob_is_trashed)
 
     def _delete_blob_after_commit(self, blob_is_trashed: bool):
-        entity = frappe._dict(name=self.name, file_url=self.file_url)
+        # frappe stores identical uploads once, so other rows can hold this blob; a
+        # trashed blob sits at a trash path named after this row alone
+        in_use = not blob_is_trashed and stored_file_in_use(self.file_url, other_than=self.name)
+        entity = frappe._dict(name=self.name, file_url=self.file_url, is_folder=self.is_folder)
 
         def delete_blob():
             try:
                 if blob_is_trashed:
                     self.manager.delete_from_trash(entity)
+                elif in_use:
+                    self.manager.delete_thumbnail(entity.name)
                 else:
                     self.manager.delete_file(entity)
             except Exception:
@@ -437,6 +488,16 @@ class File(FrappeFile):
                 )
 
         frappe.db.after_commit.add(delete_blob)
+
+    def _delete_file_on_disk(self):
+        # Run when a row is purged. The framework only spares a row with this exact
+        # url and content hash, which misses a live row under another spelling.
+        if stored_file_in_use(self.file_url, other_than=self.name):
+            # FileV1 only: FileV2 has no such method, and leaves a shared file's thumbnail
+            if hasattr(self, "delete_file_data_content"):
+                self.delete_file_data_content(only_thumbnail=True)
+            return
+        return super()._delete_file_on_disk()
 
     # Utils
     @property
@@ -452,7 +513,8 @@ class File(FrappeFile):
         copied across itself, or the whole subtree becomes unreadable.
         """
         if new:
-            self.file_url = new
+            self.file_url = str(new)
+            self.flags.drive_disk_rename = True
         manager = self.manager
         for child in self.get_children():
             if child._not_in_disk():

@@ -1,13 +1,35 @@
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, PropertyMock, patch
 
 import frappe
+from frappe.core.doctype.file.file_v2 import FileV2
+from frappe.tests import IntegrationTestCase
 
 from suite.drive.overrides.file import File
 from suite.drive.utils import WRITER_CONTENT_DOCTYPE
-from suite.drive.utils.files import FileManager, get_s3_key, get_s3_url, storage_key
+from suite.drive.utils.files import S3_URL_PREFIX, FileManager, get_s3_key, get_s3_url, storage_key
+from suite.tests.utils import ensure_user
+
+OWNER = "drive-blob-owner@example.com"
+OTHER_USER = "drive-blob-other@example.com"
+
+
+@contextmanager
+def after_commit_replayed():
+    """Run the callbacks queued for after commit once the block ends, as a commit would."""
+    with patch.object(frappe.db, "after_commit", Mock()) as after_commit:
+        yield
+    for call in after_commit.add.call_args_list:
+        call.args[0]()
+
+
+def make_stored_file(content, file_name="stored.txt"):
+    return frappe.get_doc(
+        {"doctype": "File", "file_name": file_name, "content": content, "is_private": 1}
+    ).insert()
 
 
 class TestStorageHelpers(unittest.TestCase):
@@ -16,9 +38,8 @@ class TestStorageHelpers(unittest.TestCase):
             with self.subTest(blob_is_trashed=blob_is_trashed):
                 manager = Mock()
                 entity = frappe._dict(name="file-id", file_url="private/files/file-id", manager=manager)
-                with patch.object(frappe.db, "after_commit", Mock()) as after_commit:
+                with after_commit_replayed():
                     File._delete_blob_after_commit(entity, blob_is_trashed)
-                after_commit.add.call_args.args[0]()
 
                 if blob_is_trashed:
                     manager.delete_from_trash.assert_called_once()
@@ -168,3 +189,178 @@ class TestStorageHelpers(unittest.TestCase):
             with manager.open_file("private/files/video.mp4") as file:
                 self.assertEqual(file.read(), b"video")
             manager.conn.get_object.assert_not_called()
+
+    def test_deleting_a_disk_file_on_an_s3_site_removes_it_from_disk(self):
+        with TemporaryDirectory() as site_folder:
+            manager = object.__new__(FileManager)
+            manager.s3_enabled = True
+            manager.bucket = "bucket"
+            manager.conn = Mock()
+            manager.site_folder = Path(site_folder)
+            manager.settings = frappe._dict(thumbnail_prefix=".thumbnails")
+            file_path = manager.site_folder / "private/files/framework-upload.txt"
+            file_path.parent.mkdir(parents=True)
+            file_path.write_bytes(b"framework upload")
+
+            with patch(
+                "suite.drive.utils.files.get_root_folder",
+                return_value={"file_url": get_s3_url("prefix")},
+            ):
+                manager.delete_file(
+                    frappe._dict(name="file-id", file_url="/private/files/framework-upload.txt")
+                )
+
+            self.assertFalse(file_path.exists())
+            manager.conn.delete_object.assert_called_once_with(
+                Bucket="bucket", Key="prefix/.thumbnails/file-id.thumbnail"
+            )
+
+    def test_a_file_row_never_removes_a_directory(self):
+        for s3_enabled in (False, True):
+            with self.subTest(s3_enabled=s3_enabled), TemporaryDirectory() as site_folder:
+                manager = object.__new__(FileManager)
+                manager.s3_enabled = s3_enabled
+                manager.flat = True
+                manager.bucket = "bucket"
+                manager.conn = Mock()
+                manager.site_folder = Path(site_folder)
+                manager.settings = frappe._dict(thumbnail_prefix=".thumbnails")
+                folder = manager.site_folder / "private/files/folder"
+                folder.mkdir(parents=True)
+                (manager.site_folder / "public/files").mkdir(parents=True)
+
+                def delete(file_url, is_folder=0):
+                    entity = frappe._dict(name="file-id", file_url=file_url, is_folder=is_folder)
+                    manager.delete_file(entity)
+
+                with patch(
+                    "suite.drive.utils.files.get_root_folder",
+                    return_value={"file_url": "/private/files/prefix"},
+                ):
+                    delete(S3_URL_PREFIX + "private/files/")
+                    delete(S3_URL_PREFIX + "private/files/.")
+                    delete(S3_URL_PREFIX + "private/files/folder")
+                    delete("/private/files/folder/")
+                    delete("/private/files/", is_folder=1)
+                    delete("public/files/")
+                    self.assertTrue(folder.is_dir())
+                    self.assertTrue((manager.site_folder / "public/files").is_dir())
+
+                    delete("/private/files/folder/", is_folder=1)
+                    self.assertFalse(folder.exists())
+
+
+class TestPermanentDeleteOfASharedBlob(IntegrationTestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        ensure_user(OWNER)
+        ensure_user(OTHER_USER)
+
+    def make_twins(self):
+        """Two users' rows holding one stored file: frappe stores identical uploads once."""
+        content = frappe.generate_hash().encode()
+        with self.set_user(OWNER):
+            kept = make_stored_file(content)
+        with self.set_user(OTHER_USER):
+            deleted = make_stored_file(content)
+        self.assertEqual(deleted.file_url, kept.file_url)
+        return kept, deleted
+
+    def permanently_delete(self, name, user):
+        with self.set_user(user), after_commit_replayed():
+            frappe.get_doc("File", name).permanent_delete()
+
+    def stored_file(self, file):
+        return Path(frappe.get_doc("File", file.name).get_full_path())
+
+    def test_deleting_the_last_file_removes_the_blob(self):
+        kept, deleted = self.make_twins()
+        stored = self.stored_file(kept)
+
+        self.permanently_delete(deleted.name, OTHER_USER)
+        self.assertTrue(stored.exists())
+
+        self.permanently_delete(kept.name, OWNER)
+        self.assertFalse(stored.exists())
+
+    def test_a_live_file_under_another_spelling_keeps_the_blob(self):
+        for spell in (lambda url: url.lstrip("/"), lambda url: get_s3_url(url.lstrip("/"))):
+            kept, deleted = self.make_twins()
+            stored = self.stored_file(deleted)
+            kept.db_set("file_url", spell(kept.file_url))
+
+            self.permanently_delete(deleted.name, OTHER_USER)
+            self.assertTrue(stored.exists(), kept.file_url)
+            stored.unlink()
+
+    def test_a_file_differing_by_case_does_not_keep_the_blob(self):
+        # the file_url column treats these names as equal, the disk does not
+        tag = frappe.generate_hash(length=8)
+        with self.set_user(OWNER):
+            kept = make_stored_file(frappe.generate_hash().encode(), f"Report{tag}.txt")
+        with self.set_user(OTHER_USER):
+            deleted = make_stored_file(frappe.generate_hash().encode(), f"report{tag}.txt")
+        stored = self.stored_file(deleted)
+
+        self.permanently_delete(deleted.name, OTHER_USER)
+        self.assertFalse(stored.exists())
+        self.assertTrue(self.stored_file(kept).exists())
+
+    def test_purging_a_removed_file_keeps_a_blob_a_live_file_still_uses(self):
+        kept, deleted = self.make_twins()
+        kept.db_set("file_url", kept.file_url.lstrip("/"))
+        stored = self.stored_file(deleted)
+        self.permanently_delete(deleted.name, OTHER_USER)
+
+        # the nightly sweep of removed rows, as `clear_deleted_files` runs it
+        with after_commit_replayed():
+            frappe.get_doc("File", deleted.name).delete(ignore_permissions=True)
+
+        self.assertTrue(stored.exists())
+
+    def test_purging_on_storage_v2_keeps_a_blob_a_live_file_still_uses(self):
+        kept, deleted = self.make_twins()
+        kept.db_set("file_url", kept.file_url.lstrip("/"))
+        stored = self.stored_file(deleted)
+
+        file_v2 = type("DriveFileV2", (File, FileV2), {})
+        file_v2(frappe.get_doc("File", deleted.name).as_dict())._delete_file_on_disk()
+
+        self.assertTrue(stored.exists())
+
+    def test_a_kept_blob_still_loses_the_deleted_files_thumbnail(self):
+        kept, deleted = self.make_twins()
+        manager = FileManager()
+        thumbnail = manager.site_folder / manager.get_thumbnail_path(deleted.name)
+        thumbnail.parent.mkdir(parents=True, exist_ok=True)
+        thumbnail.write_bytes(b"thumbnail")
+
+        self.permanently_delete(deleted.name, OTHER_USER)
+
+        self.assertFalse(thumbnail.exists())
+        self.assertTrue(self.stored_file(kept).exists())
+
+    def test_on_s3_only_the_last_delete_removes_the_object(self):
+        kept, deleted = self.make_twins()
+        key = f"prefix/{frappe.generate_hash(8)} file.png"
+        kept.db_set("file_url", get_s3_url(key))
+        # unquoted, the way the framework stores a new row's url
+        deleted.db_set("file_url", S3_URL_PREFIX + key)
+
+        manager = object.__new__(FileManager)
+        manager.s3_enabled = True
+        manager.flat = True
+        manager.bucket = "bucket"
+        manager.conn = Mock()
+        manager.settings = frappe._dict(thumbnail_prefix=".thumbnails")
+
+        def deleted_keys():
+            return [call.kwargs["Key"] for call in manager.conn.delete_object.call_args_list]
+
+        with patch.object(File, "manager", PropertyMock(return_value=manager)):
+            self.permanently_delete(deleted.name, OTHER_USER)
+            self.assertNotIn(key, deleted_keys())
+
+            self.permanently_delete(kept.name, OWNER)
+            self.assertIn(key, deleted_keys())

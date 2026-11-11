@@ -293,6 +293,9 @@ const selectedBackgroundOption = computed({
 			selectedBackgroundImageLocal.value = value;
 			setSelectedBackgroundImage(value);
 			handleBackgroundImageToggle(true);
+			if (customBackgroundImages.value.some((image) => image.name === value)) {
+				toast.info("Your background looks mirrored to you, but others see it correctly.");
+			}
 		}
 	},
 });

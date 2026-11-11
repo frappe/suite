@@ -176,10 +176,13 @@ function createMockMediasoupManager(): MediasoupManager {
 		| Parameters<MediasoupManager['onProducerClosed']>[0]
 		| undefined;
 	return {
+		onCameraLayerDemand: vi.fn(),
+		getCameraLayerDemand: vi.fn().mockReturnValue(null),
 		onNetworkQualityUpdate: vi.fn().mockReturnValue(() => {}),
 		onProducerClosed: vi.fn((listener) => {
 			producerClosedListener = listener;
 		}),
+		pinRoomSpeechHints: vi.fn(),
 		createRoom: vi.fn().mockResolvedValue({
 			peers: new Map(),
 			activeSpeakerObserver: null,

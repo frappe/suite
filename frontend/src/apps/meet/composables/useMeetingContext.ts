@@ -1,3 +1,4 @@
+import type { MediaHealthState } from "../utils/media/MediaHealthMonitor";
 import type { InjectionKey, Ref } from "vue";
 import { inject, provide } from "vue";
 import type { SFUMeetingManager } from "../utils/SFUMeetingManager";
@@ -26,6 +27,7 @@ interface MeetingContext {
 	onBackgroundEffectsChanged: () => void;
 	networkQuality: Ref<NetworkQuality>;
 	localNetworkQuality: Ref<string>;
+	networkHealth?: Ref<MediaHealthState>;
 }
 
 const MEETING_CONTEXT_KEY: InjectionKey<MeetingContext> =

@@ -184,11 +184,16 @@ jobs:
           rm -rf apps/suite sites/drive-writer.test sites/assets/suite
           git clone "$GITHUB_WORKSPACE" apps/suite
           uv pip install --quiet -e "$PWD/apps/suite" --python "$PWD/env/bin/python"
-          cache_key=$(cd apps/suite && { node --version; yarn --version; sha256sum package.json yarn.lock frontend/package.json; } | sha256sum | cut -d ' ' -f 1)
-          if [ -f /var/cache/suite-node-modules/key ] && [ "$cache_key" = "$(cat /var/cache/suite-node-modules/key)" ]; then
-            tar -xzf /var/cache/suite-node-modules/node_modules.tar.gz -C apps/suite
+          # This workflow runs from develop, but a pull request can already use pnpm.
+          if [ -f apps/suite/pnpm-lock.yaml ]; then
+            (cd apps/suite && corepack pnpm install --frozen-lockfile)
           else
-            yarn --cwd apps/suite install --check-files
+            cache_key=$(cd apps/suite && { node --version; yarn --version; sha256sum package.json yarn.lock frontend/package.json; } | sha256sum | cut -d ' ' -f 1)
+            if [ -f /var/cache/suite-node-modules/key ] && [ "$cache_key" = "$(cat /var/cache/suite-node-modules/key)" ]; then
+              tar -xzf /var/cache/suite-node-modules/node_modules.tar.gz -C apps/suite
+            else
+              yarn --cwd apps/suite install --check-files
+            fi
           fi
           python -c 'from bench.bench import Bench; Bench(".").apps.sync(app_name="suite", app_dir="suite")'
           bench build --app suite

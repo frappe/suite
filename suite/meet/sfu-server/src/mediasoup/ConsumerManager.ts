@@ -279,18 +279,16 @@ export class ConsumerManager {
 
 		const { consumer } = consumerData;
 
-		const currentPreferred = consumer.preferredLayers || null;
-		const temporalValue =
-			temporalLayer || (currentPreferred?.temporalLayer ?? 2);
-
+		// An omitted temporal cap means the highest available frame rate. Keeping
+		// the previous cap here can leave a downscaled camera unnecessarily choppy.
 		await consumer.setPreferredLayers({
 			spatialLayer,
-			temporalLayer: temporalValue,
+			...(temporalLayer == null ? {} : { temporalLayer }),
 		});
-
 		return {
-			spatialLayer,
-			temporalLayer: temporalValue,
+			spatialLayer: consumer.preferredLayers?.spatialLayer ?? spatialLayer,
+			temporalLayer:
+				consumer.preferredLayers?.temporalLayer ?? temporalLayer ?? 0,
 		};
 	}
 

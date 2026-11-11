@@ -6,6 +6,8 @@ from werkzeug.exceptions import Forbidden, NotFound
 from werkzeug.utils import send_file
 from werkzeug.wrappers import Response
 
+from suite.drive.utils.files import files_at_exact_url
+
 
 def get_file_metadata(src: str) -> tuple[str, str]:
     """
@@ -47,42 +49,35 @@ def get_reference_presentations(name: str) -> set[str]:
 
 
 def get_attached_presentations(src: str, names: set[str]) -> set[str]:
-    """Which of `names` hold `src`, deduped: one url collects a File row per upload."""
+    """Which of `names` hold `src`, deduped: one url collects a File row per upload. A Link
+    row names a web address, not a stored file, so it holds nothing."""
     if not names:
         return set()
 
-    return set(
-        frappe.get_all(
-            "File",
-            filters={
-                "file_url": src,
-                "attached_to_doctype": "Presentation",
-                "attached_to_name": ("in", list(names)),
-            },
-            pluck="attached_to_name",
-            distinct=True,
-            order_by=None,
-        )
+    rows = files_at_exact_url(
+        [src],
+        ["attached_to_name"],
+        file_type=("!=", "Link"),
+        attached_to_doctype="Presentation",
+        attached_to_name=("in", list(names)),
     )
+    return {row.attached_to_name for row in rows}
 
 
 def is_template_media(src: str) -> bool:
     """Layouts are copied into a presentation wholesale, so it shows the file urls of
     every template it ever drew a slide from without holding a File row for any."""
-    holders = frappe.get_all(
-        "File",
-        filters={"file_url": src, "attached_to_doctype": "Presentation"},
-        pluck="attached_to_name",
-        distinct=True,
-        order_by=None,
+    rows = files_at_exact_url(
+        [src], ["attached_to_name"], file_type=("!=", "Link"), attached_to_doctype="Presentation"
     )
+    holders = {row.attached_to_name for row in rows}
     if not holders:
         return False
 
     return bool(
         frappe.get_all(
             "Presentation",
-            filters={"name": ("in", holders), "is_template": 1},
+            filters={"name": ("in", list(holders)), "is_template": 1},
             limit=1,
             order_by=None,
         )
@@ -101,7 +96,7 @@ def validate_media_file(src: str, presentation: str | None = None) -> None:
         if frappe.has_permission("Presentation", "read", presentation) and is_template_media(src):
             return
 
-    if not frappe.db.exists("File", {"file_url": src}):
+    if not files_at_exact_url([src], ["name"]):
         raise NotFound
 
     raise Forbidden(_("You don't have permission to access this file"))

@@ -1,3 +1,4 @@
+import type { CameraLayerDemand } from "../../../types/cameraLayers";
 import type {
 	AppData,
 	AudioLevelObserver,
@@ -115,6 +116,7 @@ export type {
 
 // Socket.IO types
 export interface ServerToClientEvents {
+	"producer:camera_layers": (data: CameraLayerDemand) => void;
 	'recording:challenge': (data: RecordingProofChallenge) => void;
 	'recording:projection': (data: RecorderStageProjectionEvent) => void;
 	participant_joined: (data: ParticipantJoinedEvent) => void;
@@ -151,6 +153,10 @@ export interface ServerToClientEvents {
 }
 
 export interface ClientToServerEvents {
+	'producer:get_camera_layers': (
+		data: { producerId: string },
+		callback: (response: { success: true; demand: CameraLayerDemand | null } | { success: false; error: string }) => void,
+	) => void;
 	'recording:proof': (
 		data: RecordingProofRequest,
 		callback: (response: RecordingProofResponse) => void,
@@ -355,6 +361,7 @@ export interface SocketData {
 	isHost: boolean;
 	isGuest?: boolean;
 	guestGeneration?: number;
+	hostOnlyChat?: boolean;
 	roomId?: string;
 	participantId?: string;
 	participantConnectionId?: string;
@@ -419,6 +426,7 @@ interface ProducerInfo {
 export interface ProducerAppData extends AppData {
 	type?: 'screen';
 	e2eeStartPaused?: boolean;
+	cameraLayerDemand?: boolean;
 	senderId?: number;
 }
 
@@ -546,6 +554,7 @@ export interface JWTPayload {
 	is_cohost?: boolean;
 	is_guest?: boolean;
 	guest_generation?: number;
+	host_only_chat?: boolean;
 	scope?: SFUScope;
 	e2ee_required?: boolean;
 	session_id?: string;
@@ -601,6 +610,7 @@ declare module 'socket.io' {
 		isCohost: boolean;
 		isGuest?: boolean;
 		guestGeneration?: number;
+		hostOnlyChat?: boolean;
 		roomId?: string;
 		participantId?: string;
 		participantConnectionId?: string;

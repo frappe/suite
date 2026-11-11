@@ -151,6 +151,7 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
                 "is_cohost",
                 "e2ee_required",
                 "speech_context",
+                "host_only_chat",
             },
         )
         self.assertEqual(decoded["site"], frappe.local.site)

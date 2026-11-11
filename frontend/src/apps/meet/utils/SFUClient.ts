@@ -22,6 +22,7 @@ import {
 	type ParticipantData,
 } from "./media/ParticipantManager";
 import { normalizeCodecStrategy } from "./media/codecStrategy";
+import { parseCameraLayerDemand } from "../../../../../suite/meet/types/cameraLayers";
 import type { E2eeEpochEnvelope } from "./media/E2EEEpochSignaling";
 import { getE2EETransformCapability } from "./media/e2ee";
 import type { SignalChannel } from "./media/SignalChannel";
@@ -941,6 +942,11 @@ export class SFUClient {
 		return { id: requireString(response.id, "id", "producer") };
 	}
 
+	async getCameraLayerDemand(producerId: string) {
+		const response = requireObject(await this.sendRequest("producer:get_camera_layers", { producerId }), "camera layer demand");
+		return parseCameraLayerDemand(response.demand);
+	}
+
 	async createConsumer(
 		transportId: string,
 		producerId: string,
@@ -1254,7 +1260,8 @@ export class SFUClient {
 								response.code,
 								response.details,
 							);
-							console.error(`SFU request failed (${event}):`, response.error);
+							const log = event === "create_consumer" ? console.debug : console.error;
+							log(`SFU request failed (${event}):`, response.error);
 							reject(error);
 						}
 					});

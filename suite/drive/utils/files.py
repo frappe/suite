@@ -1,4 +1,5 @@
 import os
+import posixpath
 import shutil
 import unicodedata
 from contextlib import contextmanager
@@ -11,12 +12,13 @@ import frappe
 import mimemapper
 from botocore.config import Config
 from botocore.exceptions import ClientError
+from frappe.utils import get_url
 from PIL import Image, ImageOps
 from werkzeug.http import dump_options_header
 
 from suite.drive.locks.distributed_lock import DistributedLock
 
-from . import STATUS_ACTIVE, get_root_folder
+from . import STATUS_ACTIVE, STATUS_REMOVED, get_root_folder
 
 S3_URL_PREFIX = "/api/method/suite.drive.api.s3.fetch?path="
 # Sidecar directories under the Drive root, beside the mirrored tree.
@@ -205,13 +207,15 @@ class FileManager:
 
     def get_local_path(self, file_url):
         path = (self.site_folder / storage_key(file_url)).resolve()
-        roots = [
+        if not any(path.is_relative_to(root) for root in self._local_roots()):
+            frappe.throw("The File URL you've entered is incorrect", frappe.ValidationError)
+        return path
+
+    def _local_roots(self):
+        return [
             (self.site_folder / "private" / "files").resolve(),
             (self.site_folder / "public" / "files").resolve(),
         ]
-        if not any(path.is_relative_to(root) for root in roots):
-            frappe.throw("The File URL you've entered is incorrect", frappe.ValidationError)
-        return path
 
     def presigned_url(self, key, download_name, mime_type=None, expires=3600):
         """Short-lived S3 GET URL, range-capable, served straight to the client."""
@@ -506,27 +510,32 @@ class FileManager:
             pass
 
     def delete_file(self, entity):
-        thumbnail_path = self.get_thumbnail_path(entity.name)
-
-        if self.s3_enabled:
-            bucket = self.bucket
+        if self.s3_enabled and not stored_on_disk(entity.file_url):
             try:
-                self.conn.delete_object(Bucket=bucket, Key=storage_key(entity.file_url))
-                if thumbnail_path:
-                    self.conn.delete_object(Bucket=bucket, Key=str(thumbnail_path))
+                self.conn.delete_object(Bucket=self.bucket, Key=storage_key(entity.file_url))
             except Exception:
                 pass
         else:
             try:
                 path = self.get_local_path(entity.file_url)
-                if path.is_dir():
-                    shutil.rmtree(path)
-                else:
+                if not path.is_dir():
                     path.unlink()
-                if thumbnail_path:
-                    (self.site_folder / thumbnail_path).unlink()
+                # A directory belongs to its folder row, and a storage root to no row.
+                elif entity.get("is_folder") and path not in self._local_roots():
+                    shutil.rmtree(path)
             except FileNotFoundError:
                 pass
+        self.delete_thumbnail(entity.name)
+
+    def delete_thumbnail(self, name):
+        thumbnail_path = self.get_thumbnail_path(name)
+        if self.s3_enabled:
+            try:
+                self.conn.delete_object(Bucket=self.bucket, Key=str(thumbnail_path))
+            except Exception:
+                pass
+        else:
+            (self.site_folder / thumbnail_path).unlink(missing_ok=True)
 
     def delete_from_trash(self, entity):
         trash_path = self.__get_trash_path(entity)
@@ -560,6 +569,57 @@ def storage_key(file_url):
     if file_url.startswith(S3_URL_PREFIX):
         return unquote(file_url[len(S3_URL_PREFIX) :])
     return file_url.lstrip("/")
+
+
+def file_url_spellings(file_url) -> list[str]:
+    """Every file_url that reaches the same stored file as `file_url`.
+
+    Rows store one file under several forms: `/private/files/x`, the bare key
+    `private/files/x`, and the S3 fetch url of its key, quoted or not, because the
+    framework unquotes a new row's url. A client can also send the site's full url,
+    or a path with `.` and `//` segments that resolves to the same file on disk. A new
+    row cannot use `..` (see `File.validate_private_file_access`), so `normpath` is enough.
+    The raw key stays beside the normalised one: on S3 `a//b` and `a/b` are distinct.
+    """
+    url = str(file_url or "")
+    site_url = get_url()
+    if url.startswith(site_url + "/"):
+        url = url[len(site_url) :]
+
+    key = storage_key(url)
+    bare_key = key.lstrip("/")
+    if not bare_key:
+        return []
+
+    keys = {key, bare_key, posixpath.normpath(bare_key)}
+    keys |= {"/" + k for k in keys}
+    return sorted({spelling for k in keys for spelling in (k, S3_URL_PREFIX + k, get_s3_url(k))})
+
+
+def files_at_exact_url(urls, fields: list[str], **filters) -> list[frappe._dict]:
+    """File rows whose file_url is exactly one of `urls`.
+
+    The Python check is not redundant. MariaDB's collation on file_url ignores case and
+    accents and pads trailing spaces, while disk and S3 paths are exact: `Salary.pdf` and
+    `salary.pdf` are different files, and a row at one must grant nothing at the other."""
+    filters = {"file_url": ("in", list(urls)), **filters}
+    rows = frappe.get_all("File", filters=filters, fields=["file_url", *fields], order_by=None)
+    return [row for row in rows if row.file_url in urls]
+
+
+def files_using_stored_file(file_url, **filters) -> list[str]:
+    """Names of the File rows whose file_url reaches the same stored file as `file_url`.
+    A Link row names a web address, not a stored file, and many users can link one page."""
+    spellings = file_url_spellings(file_url)
+    if not spellings:
+        return []
+    rows = files_at_exact_url(spellings, ["name"], file_type=("!=", "Link"), **filters)
+    return [row.name for row in rows]
+
+
+def stored_file_in_use(file_url, other_than: str) -> bool:
+    """Whether a row other than `other_than`, not yet permanently deleted, uses this file."""
+    return bool(files_using_stored_file(file_url, status=("!=", STATUS_REMOVED), name=("!=", other_than)))
 
 
 def stored_on_disk(file_url):

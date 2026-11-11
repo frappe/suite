@@ -271,11 +271,13 @@ export function useLayout(
 				personalOverflowSlot = vacancy < 0 ? personalSlots.length : vacancy;
 				if (vacancy < 0) personalSlots.push(undefined);
 			}
-			while (
-				personalSlots.length > 0 &&
-				personalSlots[personalSlots.length - 1] === undefined &&
-				personalSlots.length - 1 !== personalOverflowSlot
-			) personalSlots.pop();
+			for (let index = personalSlots.length - 1; index >= 0; index--) {
+				if (personalSlots[index] !== undefined || index === personalOverflowSlot)
+					continue;
+				personalSlots.splice(index, 1);
+				if (personalOverflowSlot !== undefined && personalOverflowSlot > index)
+					personalOverflowSlot--;
+			}
 			personalSlots.forEach((id, index) => {
 				if (id) stripSlots.set(id, index);
 				else if (index !== personalOverflowSlot) vacancies.push(index);
