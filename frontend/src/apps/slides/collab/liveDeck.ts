@@ -18,6 +18,7 @@ import {
   deleteElement,
   deleteSlide,
   ELEMENT_FIELDS,
+  elementIds,
   elementOrders,
   elementText,
   moveElement,
@@ -26,6 +27,7 @@ import {
   setElement,
   setSlide,
   SLIDE_FIELDS,
+  slideIds,
   slideOrders,
 } from './deck'
 import { deckSchema, drawnSlides } from './drawnDeck'
@@ -606,6 +608,32 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
     }
   }
 
+  // Checked and written in one transaction, so a co-editor's element can't land between them
+  function fillBlank(layout: StoreSlide) {
+    if (!host.canWrite()) {
+      return false
+    }
+
+    push()
+    let isFilled = false
+    doc.transact(() => {
+      const [slideId, ...others] = slideIds(doc)
+      const slide = host.slides().find(({ clientId }) => clientId === slideId)
+      if (!slide || others.length || elementIds(doc, slideId).length) {
+        return
+      }
+
+      Object.assign(slide, slideFields(layout))
+      slide.elements.splice(0, slide.elements.length, ...layout.elements)
+      push()
+      isFilled = true
+    }, LIVE_ORIGIN)
+    merge()
+    // the theme pick is how the presentation starts, not an edit to undo
+    steps.forget()
+    return isFilled
+  }
+
   const elementsRoot = doc.getMap(ROOT.elements)
   elementsRoot.observeDeep(forgetChangedText)
   doc.on('update', onUpdate)
@@ -616,6 +644,8 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
     push,
     /** Draws the document again without writing to it. Send the store's changes first. */
     redraw: merge,
+    /** Puts the layout on the presentation's one blank slide. False if it isn't blank any more. */
+    fillBlank,
     holdsPosition: (id: string) => savedFrame(id)?.transform === CENTRED && host.fontsPending(),
     undo: () => takeStep('undo'),
     redo: () => takeStep('redo'),

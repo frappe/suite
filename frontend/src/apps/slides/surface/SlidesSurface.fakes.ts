@@ -54,7 +54,21 @@ const versionsPanel = vi.hoisted((): VersionsPanelFixture => ({
   previewed: null,
   preview: () => {},
 }))
-const themeChange = vi.hoisted(() => ({ update: (_theme: string) => {} }))
+// the two theme dialogs: the new presentation's pick, and a change of theme
+const themeChange = vi.hoisted(() => ({
+  create: (_theme: string) => {},
+  update: (_theme: string) => {},
+}))
+// the templates the picker lists
+interface TemplatesFixture {
+  list: unknown[]
+}
+export const templates: TemplatesFixture = { list: [] }
+// a pasted slide's pictures, adopted: a test can hold the answer back
+interface SlideAdoptionFixture {
+  held: Promise<void> | null
+}
+export const slideAdoption: SlideAdoptionFixture = { held: null }
 const forgetTemplates = vi.hoisted(() => ({ run: () => {} }))
 // what the presentation's comment threads read, and what the comment panel was handed
 interface DriveComments {
@@ -295,10 +309,16 @@ vi.doMock('@/apps/slides/components/PropertiesPanel.vue', () => ({
 
 vi.doMock('@/apps/slides/components/ThemeDialog.vue', () => ({
   default: {
-    emits: ['update'],
-    setup(_: unknown, { emit }: SetupContext) {
-      themeChange.update = (theme) => emit('update', theme)
-      return () => null
+    props: { update: Boolean, open: Boolean },
+    emits: ['create', 'update'],
+    setup(props: { update: boolean; open: boolean }, { emit }: SetupContext) {
+      if (props.update) {
+        themeChange.update = (theme) => emit('update', theme)
+      } else {
+        themeChange.create = (theme) => emit('create', theme)
+      }
+
+      return () => (props.open && !props.update ? h('div', { 'data-theme-pick': '' }) : null)
     },
   },
 }))
@@ -451,7 +471,17 @@ export async function openedSurface({
         throw new TypeError('Failed to fetch')
       }
 
-      return answer([])
+      return answer(templates.list)
+    }
+
+    // as the server adopts a pasted slide's pictures: each one becomes this presentation's own
+    if (url.includes('update_slide_attachments')) {
+      const { slide } = JSON.parse(String(init?.body))
+      await slideAdoption.held
+      const elements = JSON.parse(slide.elements).map((element: { src?: string }) =>
+        element.src ? { ...element, src: `adopted:${element.src}` } : element,
+      )
+      return answer({ ...slide, elements: JSON.stringify(elements) })
     }
 
     if (composite && url.includes('composite_manifest')) {
@@ -566,6 +596,8 @@ export function startsFromEmptyStore() {
     fakeServer.isRefusing = false
     fakeServer.isFailingTemplates = false
     versionConversion.answer = {}
+    templates.list = []
+    slideAdoption.held = null
     served.modified = 'M1'
     vi.unstubAllGlobals()
     vi.restoreAllMocks()

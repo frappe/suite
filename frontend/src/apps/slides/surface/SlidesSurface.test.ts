@@ -28,7 +28,9 @@ import {
   server,
   shown,
   signedIn,
+  slideAdoption,
   startsFromEmptyStore,
+  templates,
   themeChange,
   thumbnails,
   versionBytes,
@@ -57,9 +59,16 @@ const {
   savingFor,
   writeDraft,
 } = await import('@/apps/slides/stores/saving')
-const { initPresentationDoc, inReadonlyMode, loadTemplates, presentationId, viewOnly } =
-  await import('@/apps/slides/stores/presentation')
+const {
+  initPresentationDoc,
+  inReadonlyMode,
+  loadTemplates,
+  presentationId,
+  templateList,
+  viewOnly,
+} = await import('@/apps/slides/stores/presentation')
 const { drawnSlides } = await import('@/apps/slides/collab/drawnDeck')
+const { undoLive } = await import('@/apps/slides/stores/liveDeck')
 const { offlineCopyStatus } = await import('@/apps/slides/stores/offlineCopy')
 const { RECORD_PREFIX } = await import('@/apps/slides/utils/slidesCaches')
 const { keepRecovery, readRecovery, removeNewestRecovery } = await import('./recovery')
@@ -74,7 +83,8 @@ const focusElementId = fromAny<Ref<string | null>, unknown>(elementStore.focusEl
 const activeEditor = fromAny<Ref<Editor | null>, unknown>(editorStore.activeEditor)
 const { registerElementDiv } = await import('@/apps/slides/stores/elementRegistry')
 const { convertLegacy } = await import('@/apps/slides/collab/conversion')
-const { addSlide, deleteSlide, ROOT, setElement } = await import('@/apps/slides/collab/deck')
+const { addElement, addSlide, deleteElement, deleteSlide, ROOT, setElement, slideIds } =
+  await import('@/apps/slides/collab/deck')
 
 const slideStyles = vi.hoisted(() => ({ fontsImported: false }))
 
@@ -1147,6 +1157,182 @@ describe('a deck on the content layer', () => {
 
     const notice = mounted.root.querySelector('p[role="status"]')
     expect(notice?.parentElement?.querySelector(':scope > nav')).not.toBeNull()
+  })
+
+  describe("a new presentation's theme pick", () => {
+    interface LayoutFixture {
+      background?: string
+      elements: Array<{ id: string; type: string; content?: string; src?: string }>
+    }
+
+    function template(name: string, title: string, layouts: LayoutFixture[]) {
+      return {
+        name,
+        title,
+        slug: name,
+        creation: '2026-11-01',
+        is_template: 1,
+        layouts: layouts.map((layout, at) => ({
+          name: `${name}-row-${at + 1}`,
+          idx: at + 1,
+          parent: name,
+          client_id: `${name}-slide-${at + 1}`,
+          transition: 'None',
+          ...layout,
+          elements: JSON.stringify(layout.elements),
+        })),
+      }
+    }
+
+    const dark = template('dark-template', 'Dark', [
+      { elements: [{ id: 'dark-cover', type: 'text', content: '<p>Dark cover</p>' }] },
+      { elements: [{ id: 'dark-cover-2', type: 'text', content: '<p>Dark second cover</p>' }] },
+      {
+        background: '#111111',
+        elements: [
+          { id: 'dark-title', type: 'text', content: '<p>Dark title</p>' },
+          { id: 'dark-photo', type: 'image', src: '/files/dark-photo.png' },
+        ],
+      },
+    ])
+    const team = template('team-template', 'Team', [
+      { elements: [{ id: 'team-first', type: 'text', content: '<p>Team first</p>' }] },
+      { elements: [{ id: 'team-second', type: 'text', content: '<p>Team second</p>' }] },
+      { elements: [{ id: 'team-third', type: 'text', content: '<p>Team third</p>' }] },
+    ])
+
+    afterEach(() => {
+      templateList.value = []
+      forgetTemplates.run()
+    })
+
+    // a presentation Drive just made with Slides collaboration on: one blank slide in its room
+    function blankRoom() {
+      const room = roomOf('one')
+      deleteElement(room.doc, 'element-one')
+      collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
+      return room.doc
+    }
+
+    async function openedNew(deck: Record<string, unknown> = { is_converted: true }) {
+      templates.list = [dark, team]
+      mounted = await openedSurface({ path: '?new=1', deck })
+      await vi.waitFor(() => expect(templateList.value).toHaveLength(2))
+    }
+
+    function calls(method: string) {
+      return server.fetch.mock.calls.filter(([url]) => String(url).includes(method))
+    }
+
+    function bodyOf(method: string) {
+      const [[, init]] = calls(method)
+      return JSON.parse(String(init?.body))
+    }
+
+    function shownTexts(doc: Doc) {
+      return drawnSlides(doc).map(({ elements }) =>
+        elements.map((element) => element.content ?? element.src),
+      )
+    }
+
+    function themePick() {
+      return mounted!.root.querySelector('[data-theme-pick]')
+    }
+
+    it('is offered on a presentation in its room', async () => {
+      blankRoom()
+      await openedNew()
+
+      await vi.waitFor(() => expect(themePick()).not.toBeNull())
+    })
+
+    it.each(['pending', 'refused'])('is not offered on a %s presentation', async (state) => {
+      await openedNew({ conversion: { state } })
+      await new Promise((resolve) => setTimeout(resolve))
+      await nextTick()
+
+      expect(themePick()).toBeNull()
+    })
+
+    it("fills the blank slide with a system theme's cover layout in the live presentation", async () => {
+      const doc = blankRoom()
+      const [blankId] = slideIds(doc)
+      await openedNew()
+
+      themeChange.create('dark-template')
+
+      await vi.waitFor(() => expect(calls('update_theme')).toHaveLength(1))
+      expect(bodyOf('update_theme')).toMatchObject({ theme: 'dark-template' })
+      expect(bodyOf('update_slide_attachments')).toMatchObject({ parent: mounted!.docname })
+      expect(calls('apply_theme')).toEqual([])
+      const [slide] = drawnSlides(doc)
+      expect(drawnSlides(doc)).toHaveLength(1)
+      expect(slide.clientId).toBe(blankId)
+      expect(slide.background).toBe('#111111')
+      expect(shownTexts(doc)).toEqual([
+        [expect.stringContaining('Dark title'), 'adopted:/files/dark-photo.png'],
+      ])
+      const ids = slide.elements.map((element) => element.id)
+      expect(ids).not.toContain('dark-title')
+      expect(ids).not.toContain('dark-photo')
+      expect(saves).toEqual([])
+    })
+
+    it("fills it with another template's first layout", async () => {
+      const doc = blankRoom()
+      await openedNew()
+
+      themeChange.create('team-template')
+
+      await vi.waitFor(() => expect(calls('update_theme')).toHaveLength(1))
+      expect(shownTexts(doc)).toEqual([[expect.stringContaining('Team first')]])
+    })
+
+    it('writes nothing when a co-editor adds an element while the pictures are adopted', async () => {
+      const doc = blankRoom()
+      const [blankId] = slideIds(doc)
+      let release = () => {}
+      slideAdoption.held = new Promise((resolve) => (release = resolve))
+      await openedNew()
+
+      themeChange.create('dark-template')
+      await vi.waitFor(() => expect(calls('update_slide_attachments')).toHaveLength(1))
+      doc.transact(
+        () => addElement(doc, blankId, { type: 'image', src: 'theirs.png' }),
+        'co-editor',
+      )
+      release()
+
+      await vi.waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith('Only a new, empty presentation can take a theme'),
+      )
+      expect(shownTexts(doc)).toEqual([['theirs.png']])
+      expect(calls('update_theme')).toEqual([])
+    })
+
+    it('keeps the filled slide through an undo', async () => {
+      const doc = blankRoom()
+      await openedNew()
+      themeChange.create('dark-template')
+      await vi.waitFor(() => expect(calls('update_theme')).toHaveLength(1))
+
+      undoLive()
+      await nextTick()
+
+      expect(shownTexts(doc)).toEqual([
+        [expect.stringContaining('Dark title'), 'adopted:/files/dark-photo.png'],
+      ])
+    })
+
+    it('leaves a presentation on its rows to the server', async () => {
+      await openedNew({})
+
+      themeChange.create('dark-template')
+
+      await vi.waitFor(() => expect(calls('apply_theme')).toHaveLength(1))
+      expect(bodyOf('apply_theme')).toMatchObject({ theme: 'dark-template' })
+      expect(calls('update_slide_attachments')).toEqual([])
+    })
   })
 })
 

@@ -70,9 +70,11 @@ import {
   presentationDoc,
   presentationId,
   resetEditorState,
+  rowSlides,
   setDocumentContext,
   slidesLength,
   startLoad,
+  templateList,
   viewOnly,
   writesBlocked,
 } from '@/apps/slides/stores/presentation'
@@ -126,7 +128,7 @@ import { withSavedSlides } from './compositeSaved'
 import { conversionNotice, type ConversionStatus } from './conversionNotice'
 import ExportView from './ExportView.vue'
 import { resolveDocumentUnload, useDocumentLeaveGuard, type DocumentSaveState } from './navigation'
-import { useNewPresentationTheme } from './newPresentation'
+import { firstLayout, useNewPresentationTheme } from './newPresentation'
 import PreviewCapture from './PreviewCapture.vue'
 import { fileTitle, saveThroughBrowser } from './recovery'
 import SlidesVersionPreview from './SlidesVersionPreview.vue'
@@ -358,6 +360,35 @@ async function writeTheme(
   } finally {
     restoring.value = false
   }
+}
+
+/** A converted presentation takes its theme in its room, then the row records which theme it was. */
+async function fillTheme(theme: string) {
+  showThemeDialog.value = false
+  const template = templateList.value.find(({ name }) => name === theme)
+  if (inReadonlyMode.value || !template) {
+    return
+  }
+
+  try {
+    // the layout's pictures belong to the template: this presentation takes its own
+    const adopted = await client.mutation(
+      api.slides.media.adoptSlide,
+      { parent: props.session.contentDocname, slide: firstLayout(template) },
+      { context: contextFor(props.session.contentDocname) },
+    )
+    const [slide] = rowSlides([adopted])
+    if (!convertedRoom.fillBlank(slide)) {
+      toast.error(translate('Only a new, empty presentation can take a theme'))
+      return
+    }
+  } catch (error) {
+    const message = error instanceof Error && error.message
+    toast.error(message || translate('Could not change the theme.'))
+    return
+  }
+
+  await writeTheme(api.slides.documents.updateTheme, theme)
 }
 
 const showThemeChange = ref(false)
@@ -751,7 +782,7 @@ async function load() {
 
     if (composite.value) {
       await loadComposite(run)
-    } else if (!onLayer.value) {
+    } else if (!conversion.value) {
       void offerTheme()
     }
 
@@ -1185,7 +1216,9 @@ onBeforeUnmount(() => {
     <LayoutDialog v-model:open="showLayoutDialog" @insert="insertLayout" />
     <ThemeDialog
       v-model:open="showThemeDialog"
-      @create="writeTheme(api.slides.documents.applyTheme, $event)"
+      @create="
+        isConverted ? fillTheme($event) : writeTheme(api.slides.documents.applyTheme, $event)
+      "
     />
     <ThemeDialog
       v-model:open="showThemeChange"

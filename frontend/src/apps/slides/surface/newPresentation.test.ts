@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, ref } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
-import { useNewPresentationTheme } from './newPresentation'
+import { firstLayout, useNewPresentationTheme } from './newPresentation'
 
 const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
 
@@ -79,5 +79,22 @@ describe('a new presentation', () => {
     const { isShown } = await open('/d/node-1?new=1', { docname: 'dark' })
 
     expect(isShown).toBe(false)
+  })
+})
+
+describe('the layout a new presentation starts from', () => {
+  const layouts = (count: number) => Array.from({ length: count }, (_, at) => ({ idx: at + 1 }))
+
+  it("is a shipped theme's third, after its two covers", () => {
+    expect(firstLayout({ title: 'Dark', layouts: layouts(4) })).toEqual({ idx: 3 })
+    expect(firstLayout({ title: 'Light', layouts: layouts(3) })).toEqual({ idx: 3 })
+  })
+
+  it('is the first of a shipped theme too short to have its usual one', () => {
+    expect(firstLayout({ title: 'Dark', layouts: layouts(2) })).toEqual({ idx: 1 })
+  })
+
+  it("is any other template's first", () => {
+    expect(firstLayout({ title: 'Team', layouts: layouts(4) })).toEqual({ idx: 1 })
   })
 })

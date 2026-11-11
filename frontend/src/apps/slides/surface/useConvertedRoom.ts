@@ -390,5 +390,10 @@ export function useConvertedRoom({
     return restoreVersion(liveRoom, seq, bytes, liveDeck.forgetSteps, convert)
   }
 
-  return { allowsEditing, saveState, presence, open, close, restore }
+  /** Puts the layout on a new presentation's one blank slide. False if it isn't blank any more. */
+  function fillBlank(layout: StoreSlide) {
+    return deck?.fillBlank(layout) ?? false
+  }
+
+  return { allowsEditing, saveState, presence, open, close, restore, fillBlank }
 }

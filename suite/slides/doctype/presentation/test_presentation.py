@@ -14,7 +14,9 @@ from frappe.utils import cstr
 
 from suite import drive
 from suite.drive import EDIT
-from suite.drive._core.errors import DriveForbidden, DriveNotFound
+from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFound
+from suite.slides import drive as slides_drive
+from suite.slides.content.tests.support import LoggedDeckCase, delete_log, opened, owner_folder
 from suite.slides.doctype.presentation import presentation as presentation_module
 from suite.slides.doctype.presentation.presentation import (
     apply_theme,
@@ -510,6 +512,41 @@ class TestApplyTheme(IntegrationTestCase):
             apply_theme(self.deck, self.dark)
 
         self.assertEqual(self.body_of_deck(), before)
+
+
+class TestThemeOfAConvertedDeck(LoggedDeckCase):
+    """A converted deck's theme pick: the tab fills its live slide, the row only names the theme (Q1)."""
+
+    def setUp(self):
+        super().setUp()
+        self.node = self.new_deck()
+        self.deck = slides_drive.docname_for_node(self.node)
+        suffix = frappe.generate_hash(6)
+        theme_node = drive.create_document(
+            owner_folder(), f"Theme {suffix}", content_doctype="Presentation", is_template=True
+        )
+        self.addCleanup(delete_log, theme_node)
+        self.theme = slides_drive.docname_for_node(theme_node)
+
+    def test_the_row_takes_the_theme_and_the_live_deck_is_left_alone(self):
+        _header, before = opened(self.node)
+
+        update_theme(self.deck, self.theme)
+
+        self.assertEqual(frappe.db.get_value("Presentation", self.deck, "theme"), self.theme)
+        _header, after = opened(self.node)
+        self.assertEqual(after, before)
+
+    def test_the_server_never_fills_its_slide(self):
+        _header, before = opened(self.node)
+        theme_before = frappe.db.get_value("Presentation", self.deck, "theme")
+
+        with self.assertRaises(DriveConflict):
+            apply_theme(self.deck, self.theme)
+
+        self.assertEqual(frappe.db.get_value("Presentation", self.deck, "theme"), theme_before)
+        _header, after = opened(self.node)
+        self.assertEqual(after, before)
 
 
 class TestDeckList(IntegrationTestCase):
