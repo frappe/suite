@@ -851,6 +851,53 @@ describe('a deck on the content layer', () => {
     })
   })
 
+  describe('naming a version', () => {
+    async function openedLive() {
+      const room = roomOf('one')
+      collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
+      mounted = await openedSurface({ deck: { is_converted: true } })
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+      requireTestElement(mounted.root.querySelector('[data-versions]'), HTMLElement).click()
+      await vi.waitFor(() => expect(versionsPanel.confirmRestore).not.toBeNull())
+      return room
+    }
+
+    afterEach(() => {
+      vi.useRealTimers()
+      versionsPanel.confirmRestore = null
+    })
+
+    it('goes ahead once the edits are saved, sending them first', async () => {
+      const room = await openedLive()
+
+      await versionsPanel.flush()
+
+      expect(room.flush).toHaveBeenCalled()
+    })
+
+    it('refuses while the edits could not be saved', async () => {
+      const room = await openedLive()
+      room.setStatus({ saveState: 'failed', unsentCount: 1 })
+
+      await expect(versionsPanel.flush()).rejects.toThrow(
+        'No version was taken: your changes could not be saved.',
+      )
+    })
+
+    it('refuses once ten seconds pass with the edits still held', async () => {
+      const room = await openedLive()
+      room.setStatus({ saveState: 'unsaved', unsentCount: 1 })
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+
+      const naming = expect(versionsPanel.flush()).rejects.toThrow(
+        'No version was taken: your changes are still saving. Try again in a moment.',
+      )
+      await vi.advanceTimersByTimeAsync(10_000)
+
+      await naming
+    })
+  })
+
   describe('restoring a version', () => {
     beforeEach(() => {
       versionsPanel.confirmRestore = null

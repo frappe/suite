@@ -49,6 +49,7 @@ import type { RestoreNotice } from '@/platform/collab/restoreNotices'
 import { translate } from '@/platform/translation'
 
 import { restoreVersion } from './restoreVersion'
+import { saveFirst } from './saveFirst'
 import type { ConvertedVersion } from './versions'
 
 // SAFETY: the untyped element store holds the selected element ids
@@ -342,6 +343,14 @@ export function useConvertedRoom({
     return true
   }
 
+  // A named version holds only saved edits: this tab's go in first, and it throws why they couldn't
+  async function saveBeforeVersion() {
+    deck?.push()
+    if (room.value) {
+      await saveFirst(room.value)
+    }
+  }
+
   // The editor goes before the old room, so nothing typed lands in a room that no longer sends
   function leave() {
     resetFocus()
@@ -399,5 +408,14 @@ export function useConvertedRoom({
     return deck?.fillBlank(layout) ?? false
   }
 
-  return { allowsEditing, saveState, presence, open, close, restore, fillBlank }
+  return {
+    allowsEditing,
+    saveState,
+    presence,
+    open,
+    close,
+    restore,
+    fillBlank,
+    saveBeforeVersion,
+  }
 }

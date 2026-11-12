@@ -1153,7 +1153,7 @@ onBeforeUnmount(() => {
       v-model:previewed="previewed"
       :session="session"
       :writable="canRestoreVersions"
-      :flush="flush"
+      :flush="convertedRoom.saveBeforeVersion"
       :restore="restoreVersion"
       :confirm-restore="liveRestore"
       @close="panel = null"
