@@ -1583,7 +1583,9 @@ describe('a deck on the content layer', () => {
     mounted.root.querySelector<HTMLElement>('header [aria-label="Export"]')!.click()
 
     await vi.waitFor(() => expect(window.print).toHaveBeenCalledOnce())
-    const printed = fromPartial<Array<{ elements: Array<{ content?: string }> }>>(exported.slides)
+    const printed = fromAny<Array<{ elements: Array<{ content?: string }> }>, unknown>(
+      exported.slides,
+    )
     expect(printed).toHaveLength(1)
     expect(printed[0].elements[0].content).toContain('one more')
   })

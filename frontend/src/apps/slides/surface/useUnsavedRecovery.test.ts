@@ -26,7 +26,13 @@ vi.mock('./recovery', () => ({
 function recovery() {
   return useUnsavedRecovery(
     fromPartial<DocumentSession>({ nodeId: 'n', contentDocname: 'd', title: ref('Talk') }),
-    { isWritable: () => true, load: async () => {} },
+    {
+      isWritable: () => true,
+      isReadable: () => true,
+      load: async () => {},
+      loseAccess: async () => false,
+      regainAccess: async () => 'editing',
+    },
   )
 }
 
