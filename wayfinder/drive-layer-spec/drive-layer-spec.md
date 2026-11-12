@@ -822,12 +822,14 @@ The rule [008 §4]:
 1. Own principals (email, `$GROUP:*`, `$GENERAL`). Nearest wins. A tie
    at the same depth goes email > group > `$GENERAL`. Within the winning
    depth and tier, any deny wins; otherwise take the highest role.
-   A deny here is final: the answer is 0 and pass 2 does not run.
+   A deny here is final: the answer is 0 and pass 2 does not count. The one
+   exception is a `$GENERAL` deny with a pass 2 grant nearer the node and no
+   deny naming the person or a group behind it: pass 2 then counts.
 2. Otherwise `$PUBLIC` and every valid `$LINK:*` resolve together.
    Nearest wins. A tie at the same depth takes the highest role.
 3. The answer is the higher of pass 1 and pass 2.
 
-A link never lowers anyone. A deny naming a person or a group beats a link anywhere below it. A `$PUBLIC` deny nearer the node cuts link holders of a folder above, because nearest wins inside pass 2.
+A link never lowers anyone. A deny naming a person or a group beats a link anywhere below it. A `$GENERAL` deny only beats a link it is nearer than or beside. A `$PUBLIC` deny nearer the node cuts link holders of a folder above, because nearest wins inside pass 2.
 
 Rejected: one pass over all principals. Presenting a link then lowers the
 visitor, and one file has two answers depending on the header. Rejected:
@@ -889,7 +891,8 @@ class Acc:
 			self.open = role                  # ties take the highest role
 
 	def answer(self) -> int:
-		if self.own == 0:
+		# `named` is `own` over the email and group rows alone, kept the same way.
+		if self.own == 0 and (self.named == 0 or self.open_depth <= self.own_depth):
 			return 0                          # a deny on you is final
 		return max(self.own or 0, self.open or 0)
 ```

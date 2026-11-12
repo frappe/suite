@@ -111,6 +111,25 @@ describe('Writer server bundles under --permission', () => {
     },
   )
 
+  // Opening a table builds its node view, which a paragraph never does
+  it('the converter converts an old document holding a table', { timeout: BUILD_LIMIT_MS }, () => {
+    const bundle = path.join(build('converter'), 'converter.cjs')
+
+    const answer = run(bundle, {
+      legacy: {
+        content: null,
+        html: '<table><tr><td><p>Cell</p></td></tr></table>',
+        collab: 0,
+        ycomments: null,
+      },
+      maxState: 10_000_000,
+    })
+
+    expect(answer).toMatchObject({ kind: 'converted' })
+    expect(answer.html).toContain('<table')
+    expect(answer.html).toContain('Cell')
+  })
+
   it('the checker is one file with no Drive UI, and judges', { timeout: BUILD_LIMIT_MS }, () => {
     const outDir = build('checker')
     const bundle = path.join(outDir, 'checker.cjs')

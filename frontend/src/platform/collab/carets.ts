@@ -12,8 +12,8 @@ import type { Awareness } from 'y-protocols/awareness'
 import * as yjs from 'yjs'
 
 import type { RoomPresence } from '@/platform/collab'
+import { colourStyle, type PeerColour } from '@/platform/collab/colours'
 
-import { colourStyle, type PeerColour } from './colours'
 import { GUEST_USER, peerName, personIdleSince, presenceColours, whenNamed } from './peers'
 
 interface CaretUser {

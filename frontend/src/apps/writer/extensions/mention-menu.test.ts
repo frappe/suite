@@ -15,6 +15,8 @@ const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehor
 
 const asked = vi.hoisted(() => fromPartial<string[]>([]))
 
+vi.mock('@/api', () => ({ client: { query: vi.fn() }, api: { suite: { people: { list: {} } } } }))
+
 vi.mock('@/platform/session', async () => {
   const { ref } = await import('vue')
   return { useSession: () => ({ user: ref('owner@suite.test') }) }

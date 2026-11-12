@@ -10,7 +10,7 @@ const { activeElementIds, focusElementId } = await import('./element')
 const { slides, slideIndex } = await import('./slide')
 
 const slideId = 'c1'
-const element = { id: 1, type: 'image', left: 64, top: 378, width: 620, height: 132 }
+const element = { id: '1', type: 'image', left: 64, top: 378, width: 620, height: 132 }
 
 describe('selection after an element disappears', () => {
   beforeEach(() => {
@@ -26,10 +26,10 @@ describe('selection after an element disappears', () => {
     await history.execute(addElementCommand({ slideId, element }))
     await nextTick()
 
-    expect(activeElementIds.value).toEqual([1])
+    expect(activeElementIds.value).toEqual(['1'])
 
     // adding a text element focuses it, which its own editor teardown covers
-    focusElementId.value = 1
+    focusElementId.value = '1'
 
     await history.undo()
     await nextTick()

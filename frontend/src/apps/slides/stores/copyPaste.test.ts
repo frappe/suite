@@ -7,10 +7,29 @@ const activeElements = ref<any[]>([])
 const presentationDoc = ref<{ is_converted?: number } | null>(null)
 
 vi.mock('frappe-ui', () => ({
-  toast: { success: vi.fn() },
+  toast: { success: vi.fn(), error: vi.fn() },
   call: vi.fn(),
 }))
-vi.mock('@/apps/slides/stores/presentation', () => ({ presentationId: ref('p1'), presentationDoc }))
+const inReadonlyMode = ref(false)
+const presentationId = ref<string | null>('p1')
+let opening = 0
+// a foreign paste waits on the server to take its pictures over
+const adoption = vi.hoisted(() => ({ answer: Promise.resolve<unknown>(null) }))
+
+vi.mock('@/api', () => ({
+  api: { slides: { media: { adoptElements: 'adoptElements', adoptSlide: 'adoptSlide' } } },
+  client: { mutation: () => adoption.answer },
+}))
+vi.mock('@/apps/slides/stores/presentation', () => ({
+  presentationId,
+  presentationDoc,
+  inReadonlyMode,
+  contextFor: () => ({}),
+  currentOpening: () => {
+    const [id, at] = [presentationId.value, opening]
+    return () => presentationId.value === id && opening === at
+  },
+}))
 vi.mock('@/apps/slides/stores/slide', () => ({
   slideIndex: ref(0),
   insertSlide: vi.fn(),
@@ -44,12 +63,13 @@ vi.mock('@/apps/slides/utils/mediaUploads', () => ({
 
 const { handleCopy, handleCut, handlePaste } = await import('./copyPaste')
 const { insertSlide } = await import('@/apps/slides/stores/slide')
+const { duplicateElements } = await import('@/apps/slides/stores/element')
 const { toast } = await import('frappe-ui')
+const { setLiveSeat } = await import('@/apps/slides/stores/liveDeck')
 
+// assigned after, so the tests read clipboardData as the mocks, not a nullable DataTransfer
 const makeCopyEvent = (target: EventTarget | null) =>
-  fromPartial<ClipboardEvent>({
-    target,
-    preventDefault: vi.fn(),
+  Object.assign(fromPartial<ClipboardEvent>({ target, preventDefault: vi.fn() }), {
     clipboardData: { setData: vi.fn(), getData: vi.fn(() => '') },
   })
 
@@ -57,6 +77,7 @@ beforeEach(() => {
   activeElementIds.value = ['e1']
   activeElements.value = [{ id: 'e1' }]
   presentationDoc.value = null
+  presentationId.value = 'p1'
   document.body.innerHTML = ''
   if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
 })
@@ -164,11 +185,11 @@ describe('handlePaste', () => {
 
   const slide = JSON.stringify({ clientId: 's1', parent: 'p1', elements: [] })
 
-  function pasteSlide() {
+  function pasteSlide(json = slide) {
     return handlePaste({
       preventDefault: vi.fn(),
       clipboardData: {
-        getData: (type: string) => (type === 'application/json' ? slide : ''),
+        getData: (type: string) => (type === 'application/json' ? json : ''),
         items: [],
       },
     })
@@ -180,11 +201,118 @@ describe('handlePaste', () => {
     expect(insertSlide).toHaveBeenCalledOnce()
   })
 
-  it('adds nothing to a converted presentation, which is read-only until live editing', async () => {
-    presentationDoc.value = { is_converted: 1 }
+  it('adds nothing for someone who can only view', async () => {
+    inReadonlyMode.value = true
 
     await pasteSlide()
+    inReadonlyMode.value = false
 
     expect(insertSlide).not.toHaveBeenCalled()
+  })
+
+  describe('in a live presentation that is offline', () => {
+    beforeEach(() => {
+      setLiveSeat({
+        push() {},
+        flush() {},
+        undo() {},
+        redo() {},
+        endStep() {},
+        holdsPosition: () => false,
+        bindText: () => ({ extensions: [], seeded: false }),
+      })
+      vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+    })
+    afterEach(() => {
+      setLiveSeat(null)
+      vi.restoreAllMocks()
+    })
+
+    it('still pastes a slide copied from the same presentation', async () => {
+      await pasteSlide()
+
+      expect(insertSlide).toHaveBeenCalledOnce()
+    })
+
+    it('says so and adds nothing when the slide is from another presentation', async () => {
+      await pasteSlide(JSON.stringify({ clientId: 's1', parent: 'other', elements: [] }))
+
+      expect(insertSlide).not.toHaveBeenCalled()
+      expect(toast.error).toHaveBeenCalledOnce()
+    })
+  })
+})
+
+describe('a paste from another presentation', () => {
+  beforeEach(() => {
+    vi.mocked(insertSlide).mockClear()
+    vi.mocked(duplicateElements).mockClear()
+  })
+
+  function pasted(json: unknown) {
+    const text = JSON.stringify(json)
+    return handlePaste({
+      preventDefault: vi.fn(),
+      clipboardData: {
+        getData: (type: string) => (type === 'application/json' ? text : ''),
+        items: [],
+      },
+    })
+  }
+
+  async function leftWhileAdopting(json: unknown, adopted: unknown, reopen = false) {
+    const answer = Promise.withResolvers<unknown>()
+    adoption.answer = answer.promise
+    const pasting = pasted(json)
+    open('p2')
+    if (reopen) open('p1')
+    answer.resolve(adopted)
+    await pasting
+  }
+
+  function open(id: string) {
+    presentationId.value = id
+    opening++
+  }
+
+  it('adds no slide to the presentation opened while its pictures were taken over', async () => {
+    const slide = { clientId: 's1', parent: 'other', elements: [] }
+
+    await leftWhileAdopting(slide, slide)
+
+    expect(insertSlide).not.toHaveBeenCalled()
+  })
+
+  it('adds no elements to the presentation opened while their pictures were taken over', async () => {
+    const elements = [{ id: 'e1', type: 'image' }]
+
+    await leftWhileAdopting({ srcPresentation: 'other', srcSlide: 0, elements }, elements)
+
+    expect(duplicateElements).not.toHaveBeenCalled()
+  })
+
+  it('adds no elements once the presentation was left and opened again', async () => {
+    const elements = [{ id: 'e1', type: 'image' }]
+
+    await leftWhileAdopting({ srcPresentation: 'other', srcSlide: 0, elements }, elements, true)
+
+    expect(duplicateElements).not.toHaveBeenCalled()
+  })
+
+  it('adds no slide once the presentation was left and opened again', async () => {
+    const slide = { clientId: 's1', parent: 'other', elements: [] }
+
+    await leftWhileAdopting(slide, slide, true)
+
+    expect(insertSlide).not.toHaveBeenCalled()
+  })
+
+  it('adds the slide once its pictures are taken over in the same presentation', async () => {
+    const slide = { clientId: 's1', parent: 'other', elements: [] }
+    adoption.answer = Promise.resolve(slide)
+
+    await pasted(slide)
+
+    expect(insertSlide).toHaveBeenCalledOnce()
   })
 })

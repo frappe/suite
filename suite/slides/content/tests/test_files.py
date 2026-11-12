@@ -9,16 +9,16 @@ PICTURES = {"image-src", "video-poster", "slide-background", "nested-poster", "a
 COPIES = {name: f"copy-of-{name}" for name in PICTURES}
 
 
-def box_on_slide(boxes: pycrdt.Map, box_id: str) -> pycrdt.Map:
-    box = pycrdt.Map()
-    boxes[box_id] = box
-    box["parent"] = "slide1"
-    return box
+def element_on_slide(elements: pycrdt.Map, element_id: str) -> pycrdt.Map:
+    element = pycrdt.Map()
+    elements[element_id] = element
+    element["parent"] = "slide1"
+    return element
 
 
-def shape_with_body(boxes: pycrdt.Map) -> None:
+def shape_with_body(elements: pycrdt.Map) -> None:
     body = pycrdt.XmlFragment()
-    box_on_slide(boxes, "shape1")["text"] = body
+    element_on_slide(elements, "shape1")["text"] = body
     paragraph = body.children.append(pycrdt.XmlElement("paragraph"))
     paragraph.children.append(pycrdt.XmlElement("image", {"src": "attribute-src"}))
     words = paragraph.children.append(pycrdt.XmlText())
@@ -28,19 +28,19 @@ def shape_with_body(boxes: pycrdt.Map) -> None:
 def deck_with_pictures() -> bytes:
     doc: pycrdt.Doc = pycrdt.Doc()
     doc["slides"] = pycrdt.Map({"slide1": pycrdt.Map({"background": "slide-background"})})
-    boxes = pycrdt.Map()
-    doc["boxes"] = boxes
-    box_on_slide(boxes, "image1")["src"] = "image-src"
-    video = box_on_slide(boxes, "video1")
+    elements = pycrdt.Map()
+    doc["elements"] = elements
+    element_on_slide(elements, "image1")["src"] = "image-src"
+    video = element_on_slide(elements, "video1")
     video["poster"] = "video-poster"
     video["crop"] = {"deeper": [{"poster": "nested-poster"}]}
-    shape_with_body(boxes)
+    shape_with_body(elements)
     return doc.get_update()
 
 
 def text_of(state: bytes) -> str:
     doc = compaction.load_doc([state])
-    return str(doc.get("boxes", type=pycrdt.Map)["shape1"]["text"])
+    return str(doc.get("elements", type=pycrdt.Map)["shape1"]["text"])
 
 
 class TestDeckPictures(UnitTestCase):
@@ -50,7 +50,7 @@ class TestDeckPictures(UnitTestCase):
     def test_item_keys_and_values_that_cannot_be_ids_are_not_counted(self):
         doc: pycrdt.Doc = pycrdt.Doc()
         doc["slides"] = pycrdt.Map({"slide1": pycrdt.Map({"background": "#ffffff"})})
-        doc["boxes"] = pycrdt.Map()
+        doc["elements"] = pycrdt.Map()
         self.assertEqual(MEDIA.node_ids(doc.get_update()), set())
 
     def test_a_copy_renames_each_picture_wherever_it_is_held(self):
@@ -62,7 +62,7 @@ class TestDeckPictures(UnitTestCase):
     def test_text_equal_to_an_id_is_neither_counted_nor_renamed(self):
         doc: pycrdt.Doc = pycrdt.Doc()
         body = pycrdt.XmlFragment()
-        doc["boxes"] = pycrdt.Map({"shape1": pycrdt.Map({"text": body})})
+        doc["elements"] = pycrdt.Map({"shape1": pycrdt.Map({"text": body})})
         paragraph = body.children.append(pycrdt.XmlElement("paragraph"))
         words = paragraph.children.append(pycrdt.XmlText())
         words += "image-src"
