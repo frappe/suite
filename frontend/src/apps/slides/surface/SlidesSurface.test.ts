@@ -737,61 +737,19 @@ describe('a deck on the content layer', () => {
       localStorage.removeItem(key)
     }
 
-    // what the room draws for one slide, read from an open that is then closed
-    async function drawnOnce() {
-      convertedRoom('one')
-      mounted = await openedSurface({ deck: { is_converted: true } })
-      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
-      const drawn: unknown[] = JSON.parse(JSON.stringify(editorSlides.value))
-      mounted.app.unmount()
-      mounted.root.remove()
-      mounted = null
-      localStorage.clear()
-      return drawn
-    }
-
-    it('turns sticky on open when it differs, and outlives a later copy', async () => {
+    it('stays as it was past a later copy this page keeps', async () => {
       keptByEarlierPage(EARLIER)
       const room = roomOf('one')
       collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
       mounted = await openedSurface({ deck: { is_converted: true } })
-      await vi.waitFor(() => expect(readRecovery('node-1')[0]?.sticky).toBe(true))
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
 
       room.setStatus({ saveState: 'failed', unsentCount: 1 })
 
-      expect(readRecovery('node-1').map((copy) => copy.slides)).toEqual([
-        EARLIER,
-        editorSlides.value,
+      expect(readRecovery('node-1')).toEqual([
+        expect.objectContaining({ slides: EARLIER, sticky: false }),
+        expect.objectContaining({ slides: editorSlides.value }),
       ])
-    })
-
-    it('goes when it holds what the room draws, as there is nothing in it to recover', async () => {
-      const drawn = await drawnOnce()
-      keptByEarlierPage(drawn)
-      const room = roomOf('one')
-      collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
-      mounted = await openedSurface({ deck: { is_converted: true } })
-      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
-
-      expect(readRecovery('node-1')).toEqual([])
-    })
-
-    it('is left alone when the surface goes before its room opens', async () => {
-      keptByEarlierPage(EARLIER)
-      const opening = Promise.withResolvers<unknown>()
-      collabRoom.open.mockReturnValueOnce(opening.promise)
-      const opens = collabRoom.open.mock.calls.length
-      mounted = await openedSurface({ deck: { is_converted: true } })
-      await vi.waitFor(() => expect(collabRoom.open.mock.calls.length).toBeGreaterThan(opens))
-
-      mounted.app.unmount()
-      mounted.root.remove()
-      mounted = null
-      const room = roomOf('one')
-      opening.resolve({ state: 'live', room })
-      await vi.waitFor(() => expect(room.close).toHaveBeenCalled())
-
-      expect(readRecovery('node-1')[0]?.sticky).toBe(false)
     })
   })
 

@@ -6,9 +6,9 @@ import { drawnSlides } from '@/apps/slides/collab/drawnDeck'
 import {
   discardRecovery,
   readRecovery,
+  recoveryEntries,
   recoveryFile,
   recoveryNodes,
-  recoveryRecords,
   saveThroughBrowser,
 } from '@/apps/slides/surface/recovery'
 import {
@@ -122,7 +122,7 @@ function storeCopy(record: RecoveryRecord): RecoveryCopy[] {
 
 function pageCopies(names: Map<string, RecoveryName>): RecoveryCopy[] {
   return recoveryNodes().flatMap((node) =>
-    recoveryRecords(node).map(({ id, copy }) => ({
+    recoveryEntries(node).map(({ id, copy }) => ({
       key: `${PAGE_PREFIX}${node}:${id}`,
       node: names.get(node)?.node ?? null,
       title: names.get(node)?.title ?? '',
@@ -211,7 +211,7 @@ export async function discardCopy(copy: Pick<RecoveryCopy, 'key' | 'savedAt' | '
   // a node id holds no colon
   const place = copy.key.slice(PAGE_PREFIX.length)
   const [node, id] = [place.slice(0, place.indexOf(':')), place.slice(place.indexOf(':') + 1)]
-  discardRecovery(node, id, { savedAt: copy.savedAt.toISOString(), slides: copy.slides })
+  discardRecovery(node, id, { slides: copy.slides })
 }
 
 /** Saves the copy through the browser as JSON. The copy stays on the device. */

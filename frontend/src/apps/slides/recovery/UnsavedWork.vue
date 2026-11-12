@@ -15,7 +15,7 @@ import {
   type DriveSkeletonCell,
 } from '@/apps/drive'
 import { slidesDocument } from '@/apps/slides'
-import { confirm, Dropdown } from '@/platform/feedback'
+import { confirm, Dropdown, toast } from '@/platform/feedback'
 
 import { discardCopy, downloadCopy, listCopies, savedAtLabel, type RecoveryCopy } from './copies'
 
@@ -70,7 +70,11 @@ async function discard(copy: RecoveryCopy) {
     return
   }
 
-  await discardCopy(copy)
+  try {
+    await discardCopy(copy)
+  } catch {
+    toast.error("Couldn't discard the copy. It's still kept on this device.")
+  }
   await refresh()
 }
 

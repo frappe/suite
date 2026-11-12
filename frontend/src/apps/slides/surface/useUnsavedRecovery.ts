@@ -11,7 +11,6 @@ import {
   discardRecovery,
   downloadRecovery,
   downloadSlides,
-  keepOutlivedRecovery,
   keepRecovery,
   newestRecovery,
   readRecovery,
@@ -39,7 +38,6 @@ export function useUnsavedRecovery(
 ) {
   const hasRecovery = ref(readRecovery(session.nodeId).length > 0)
   const canDownloadChanges = computed(() => hasRecovery.value)
-  let hasSettledCopies = false
 
   async function narrowed() {
     viewOnly.value = true
@@ -120,16 +118,6 @@ export function useUnsavedRecovery(
     return isKept
   }
 
-  /** Once, as the open first draws the presentation: an earlier page's different copy stays. */
-  function settleCopies() {
-    if (hasSettledCopies) {
-      return
-    }
-
-    hasSettledCopies = true
-    keepOutlivedRecovery(session.nodeId, liveSlides())
-  }
-
   function syncHasRecovery() {
     hasRecovery.value = readRecovery(session.nodeId).length > 0
   }
@@ -141,9 +129,12 @@ export function useUnsavedRecovery(
   }
 
   function downloadChanges() {
-    if (!downloadRecovery(session.nodeId, session.title.value)) {
+    const downloaded = downloadRecovery(session.nodeId, session.title.value)
+    if (downloaded === 'none') {
       syncHasRecovery()
       toast.error('No recovery copy is kept for this presentation.')
+    } else if (downloaded === 'unmarked') {
+      toast.warning(translate('This device is too full to note that the copy was downloaded.'))
     }
   }
 
@@ -154,9 +145,15 @@ export function useUnsavedRecovery(
       return
     }
 
-    if (shown) {
-      discardRecovery(session.nodeId, shown.id, shown.copy)
+    try {
+      if (shown) {
+        discardRecovery(session.nodeId, shown.id, shown.copy)
+      }
+    } catch {
+      toast.error(translate("Couldn't discard the copy. It's still kept on this device."))
+      return
     }
+
     syncHasRecovery()
     // the edits on screen would go into a copy again on leaving
     if (!isWritable()) {
@@ -171,7 +168,6 @@ export function useUnsavedRecovery(
     retainRecovery,
     retainStickyOrOffer,
     retainOrWarn,
-    settleCopies,
     downloadChanges,
     discardChanges,
   }

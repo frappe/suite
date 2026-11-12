@@ -72,8 +72,6 @@ interface RoomHost {
   retainRecovery: (options?: RetainOptions) => boolean
   /** Keeps the slides in this browser past any later save, or offers them as a download. */
   retainStickyOrOffer: () => boolean
-  /** Told once the room's slides are first drawn, before any copy of them is kept. */
-  settleCopies: () => void
   /** Told when the presentation's comment threads may have changed. */
   onThreadsChanged: () => void
   /** Told when another tab's restore lands. */
@@ -99,7 +97,6 @@ export function useConvertedRoom({
   isPresenting,
   retainRecovery,
   retainStickyOrOffer,
-  settleCopies,
   onThreadsChanged,
   onVersionRestored,
 }: RoomHost) {
@@ -359,7 +356,6 @@ export function useConvertedRoom({
     isRecoveryKept = false
     status.value = liveRoom.status
     const leaveSeat = seat(liveRoom)
-    settleCopies()
     const stopStatus = liveRoom.onChange(() => syncStatus(liveRoom))
     stopWatching = () => {
       stopStatus()

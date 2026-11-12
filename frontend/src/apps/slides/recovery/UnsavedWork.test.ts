@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createApp, h } from 'vue'
+import { createApp, defineComponent, h, type PropType } from 'vue'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 
 import { keepRecovery } from '@/apps/slides/surface/recovery'
@@ -16,6 +16,22 @@ vi.mock('@/apps/drive', async (original) => ({
 }))
 vi.mock('@/apps/slides', () => ({ slidesDocument: { contentDoctype: 'Presentation' } }))
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
+// the menu's choices as plain buttons, and every confirm agreed to
+const toastError = vi.hoisted(() => vi.fn())
+vi.mock('@/platform/feedback', async (original) => ({
+  ...(await original<typeof import('@/platform/feedback')>()),
+  confirm: async () => true,
+  toast: { error: toastError },
+  Dropdown: defineComponent({
+    // SAFETY: the page hands the menu only labelled choices with a click handler
+    props: { options: { type: Array as PropType<{ label: string; onClick: () => void }[]> } },
+    setup: (props) => () =>
+      h(
+        'div',
+        props.options?.map((option) => h('button', { onClick: option.onClick }, option.label)),
+      ),
+  }),
+}))
 
 const query = vi.hoisted(() => vi.fn())
 vi.mock('@/api', () => ({
@@ -83,6 +99,29 @@ describe("Slides' recovery copies on Drive's page", () => {
     requireTestElement(rows(root)[0], HTMLElement).click()
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(router.currentRoute.value.path).toBe('/drive/recovery')
+  })
+
+  it("says a copy couldn't be discarded when the device is too full to mark it, and lists it still", async () => {
+    query.mockResolvedValue([])
+    document.cookie = 'user_id=me%40example.com'
+    // a copy in the older single list, which only a mark can hide
+    localStorage.setItem(
+      'suite:slides-recovery:me@example.com:node-plan',
+      JSON.stringify([{ savedAt: '2026-09-30T10:00:00.000Z', slides: [{ name: 'row-1' }] }]),
+    )
+    const { root } = await openedPage((page) => rows(page).length)
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('full', 'QuotaExceededError')
+    })
+
+    const discard = [...rows(root)[0]!.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Discard',
+    )
+    requireTestElement(discard, HTMLElement).click()
+
+    await vi.waitFor(() => expect(toastError).toHaveBeenCalled())
+    vi.restoreAllMocks()
+    expect(await listCopies()).toHaveLength(1)
   })
 
   it('says so when the device keeps no copies', async () => {

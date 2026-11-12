@@ -1,10 +1,10 @@
 /**
  * Slides' local recovery copies: the presentation's slides kept on this device,
  * per person, when unsaved work cannot reach the server. They are never replayed
- * automatically. The person takes one out as a JSON file, which removes nothing
- * since a browser save can't be confirmed, or dismisses it. A newer copy replaces an
- * older one, except a sticky copy, kept once edit access had gone: it may hold edits
- * that are nowhere else.
+ * automatically, and stay until the person discards one. Taking one out as a JSON
+ * file removes nothing, since a browser save can't be confirmed. Each page load keeps
+ * its unsent copy under a key of its own and writes no other tab's; a sticky copy,
+ * kept once edit access had gone, gets a key of its own and is written once.
  */
 import { randomId } from '@/platform/random-id'
 import { getCookieSessionUser } from '@/platform/session'
@@ -23,8 +23,7 @@ function keyPrefix() {
   return `suite:slides-recovery:${user}:`
 }
 
-// The older single list of a presentation's copies. Each copy now has its own key below it, so
-// a tab writes or removes only the copy it means and never rewrites another tab's
+// The older single list of a presentation's copies, only ever read: no tab rewrites or removes it
 function listKey(node: string) {
   return `${keyPrefix()}${node}`
 }
@@ -33,7 +32,13 @@ function recordKey(node: string, id: string) {
   return `${listKey(node)}:${id}`
 }
 
-// This tab's own unsent copy is rewritten under this id; every sticky copy gets an id of its own
+// A write-once mark that a copy was downloaded, or dismissed where no tab may remove it. It holds
+// the copy's date and slides, so a newer copy its tab writes under the same key shows as new
+function markKey(node: string, kind: 'downloaded' | 'dismissed', id: string, copy: RecoveryCopy) {
+  return `${listKey(node)}:${kind}:${id}:${hashOf(copy)}`
+}
+
+// This page load's unsent copy, the one key this page ever rewrites
 const PAGE_LOAD = randomId()
 // The order this tab writes its copies in
 let writes = 0
@@ -84,8 +89,8 @@ function parsed(value: string | null) {
   }
 }
 
-// An older list's copy keeps one id however many tabs split it, so none is kept twice
-function listedId(copy: RecoveryCopy) {
+// The copy's date and slides, hashed
+function hashOf(copy: RecoveryCopy) {
   const text = JSON.stringify([copy.savedAt, copy.slides])
   let [first, second] = [0xdeadbeef, 0x41c6ce57]
   for (let at = 0; at < text.length; at++) {
@@ -97,87 +102,90 @@ function listedId(copy: RecoveryCopy) {
     Math.imul(first ^ (first >>> 16), 2246822507) ^ Math.imul(second ^ (second >>> 13), 3266489909)
   second =
     Math.imul(second ^ (second >>> 16), 2246822507) ^ Math.imul(first ^ (first >>> 13), 3266489909)
-  return `listed-${(second >>> 0).toString(36)}${(first >>> 0).toString(36)}`
+  return `${(second >>> 0).toString(36)}${(first >>> 0).toString(36)}`
 }
 
-// Moves an older list's copies to keys of their own, then removes the list if no tab changed it;
-// a full store leaves the list, read as it is
-function splitList(node: string) {
-  const list = localStorage.getItem(listKey(node))
-  const copies = parsed(list)
-  if (list === null || !Array.isArray(copies)) {
-    return
-  }
-
-  try {
-    for (const copy of copies.filter(isCopy)) {
-      const key = recordKey(node, listedId(copy))
-      if (localStorage.getItem(key) === null) {
-        localStorage.setItem(key, JSON.stringify(copy))
-      }
-    }
-  } catch {
-    return
-  }
-
-  if (localStorage.getItem(listKey(node)) === list) {
-    localStorage.removeItem(listKey(node))
-  }
-}
-
-export interface RecoveryRecord {
+interface StoredRecord {
   id: string
   copy: RecoveryCopy
   // The order a tab kept its copies in, where two share a date
   seq: number
+  // In the older list, which has no key of its own per copy
+  isListed: boolean
 }
 
-/** Each copy kept of the presentation with its id, oldest first. */
-export function recoveryRecords(node: string): RecoveryRecord[] {
-  try {
-    splitList(node)
-    const prefix = `${listKey(node)}:`
-    const records = Object.keys(localStorage).flatMap((stored) => {
-      const value = parsed(stored.startsWith(prefix) ? localStorage.getItem(stored) : null)
-      if (!isStored(value)) {
-        return []
-      }
+// Each copy the device holds of the presentation, less those dismissed, with its download marked
+function storedRecords(node: string): StoredRecord[] {
+  const prefix = `${listKey(node)}:`
+  const records = Object.keys(localStorage).flatMap((stored) => {
+    const id = stored.slice(prefix.length)
+    const value =
+      stored.startsWith(prefix) && !id.includes(':') ? localStorage.getItem(stored) : null
+    const read = parsed(value)
+    if (!isStored(read)) {
+      return []
+    }
 
-      const { seq = 0, ...copy } = value
-      return [{ id: stored.slice(prefix.length), copy, seq }]
-    })
-    // a list a full store kept from splitting, less the copies already on their own
-    const listed = parsed(localStorage.getItem(listKey(node)))
-    const unsplit = (Array.isArray(listed) ? listed.filter(isCopy) : [])
-      .map((copy) => ({ id: listedId(copy), copy, seq: 0 }))
-      .filter(({ id }) => !records.some((record) => record.id === id))
-    return [...records, ...unsplit].sort(
+    const { seq = 0, ...copy } = read
+    return [{ id, copy, seq, isListed: false }]
+  })
+  const list = parsed(localStorage.getItem(listKey(node)))
+  const listed = (Array.isArray(list) ? list.filter(isCopy) : []).map((copy) => ({
+    id: `listed-${hashOf(copy)}`,
+    copy,
+    seq: 0,
+    isListed: true,
+  }))
+  return [...records, ...listed].flatMap((record) => {
+    if (localStorage.getItem(markKey(node, 'dismissed', record.id, record.copy)) !== null) {
+      return []
+    }
+
+    const isMarked = localStorage.getItem(markKey(node, 'downloaded', record.id, record.copy))
+    return [isMarked === null ? record : { ...record, copy: { ...record.copy, downloaded: true } }]
+  })
+}
+
+/** A copy as the person sees it: the keys holding the same slides shown as one. */
+export interface RecoveryEntry {
+  id: string
+  copy: RecoveryCopy
+}
+
+/** Each copy kept of the presentation, oldest first. */
+export function recoveryEntries(node: string): RecoveryEntry[] {
+  try {
+    const records = storedRecords(node).sort(
       (first, second) =>
         first.copy.savedAt.localeCompare(second.copy.savedAt) || first.seq - second.seq,
     )
+    // by slides, so the newest of a kind comes last in the order it was kept
+    const entries = new Map<string, { ids: string[]; copy: RecoveryCopy }>()
+    for (const record of records) {
+      const slides = JSON.stringify(record.copy.slides)
+      const same = entries.get(slides)
+      entries.delete(slides)
+      // the newest copy's date, sticky or downloaded if any of them is
+      const sticky = same?.copy.sticky || record.copy.sticky
+      const downloaded = same?.copy.downloaded || record.copy.downloaded ? { downloaded: true } : {}
+      entries.set(slides, {
+        ids: [...(same?.ids ?? []), record.id],
+        copy: { ...record.copy, sticky, ...downloaded },
+      })
+    }
+
+    return [...entries.values()].map(({ ids, copy }) => ({ id: ids.join(','), copy }))
   } catch {
     return []
   }
 }
 
 export function readRecovery(node: string): RecoveryCopy[] {
-  return recoveryRecords(node).map(({ copy }) => copy)
-}
-
-// A mark keeps the copy's place among those of its date; a keep puts it last
-function writeRecord(node: string, id: string, copy: RecoveryCopy, seq = ++writes) {
-  localStorage.setItem(recordKey(node, id), JSON.stringify({ ...copy, seq }))
+  return recoveryEntries(node).map(({ copy }) => copy)
 }
 
 function holds(copy: RecoveryCopy, slides: readonly unknown[]) {
   return JSON.stringify(copy.slides) === JSON.stringify(slides)
-}
-
-// the copies a full store kept from being marked sticky, which stay sticky for the page
-const unmarkedSticky = new Set<string>()
-
-function isSticky(node: string, { id, copy }: RecoveryRecord) {
-  return !!copy.sticky || unmarkedSticky.has(recordKey(node, id))
 }
 
 /** Throws when the browser's store is full. */
@@ -186,88 +194,60 @@ export function keepRecovery(
   slides: readonly unknown[],
   { sticky = false, now = new Date() } = {},
 ): void {
-  const savedAt = now.toISOString()
-  const same = recoveryRecords(node).find(({ copy }) => holds(copy, slides))
-  if (same) {
-    const moved = { ...same.copy, savedAt, sticky: sticky || isSticky(node, same) }
-    // a copy turning sticky leaves this page's id, which the next unsent copy takes
-    if (moved.sticky && same.id === PAGE_LOAD) {
-      writeRecord(node, randomId(), moved)
-      localStorage.removeItem(recordKey(node, PAGE_LOAD))
-      return
+  const own = recordKey(node, PAGE_LOAD)
+  const records = storedRecords(node)
+  const ownCopy = records.find(({ id }) => id === PAGE_LOAD)?.copy
+  const isOwnSame = !!ownCopy && holds(ownCopy, slides)
+  // a sticky copy holds these slides past any later copy already
+  if (records.some(({ copy }) => copy.sticky && holds(copy, slides))) {
+    if (!sticky || isOwnSame) {
+      localStorage.removeItem(own)
     }
 
-    writeRecord(node, same.id, moved)
     return
   }
 
-  // a sticky copy is added; an unsent one takes the place of this tab's last
-  const id = sticky ? randomId() : PAGE_LOAD
-  writeRecord(node, id, { savedAt, slides: [...slides], sticky })
+  // this page's download of the same slides still counts for its sticky copy
+  const downloaded = sticky && isOwnSame && ownCopy.downloaded ? { downloaded: true } : {}
+  const copy = { savedAt: now.toISOString(), slides: [...slides], sticky, ...downloaded }
+  localStorage.setItem(recordKey(node, sticky ? randomId() : PAGE_LOAD), stored(copy))
+  // this page's unsent copy of the same slides is kept sticky now
+  if (sticky && isOwnSame) {
+    localStorage.removeItem(own)
+  }
+}
+
+function stored(copy: RecoveryCopy) {
+  return JSON.stringify({ ...copy, seq: ++writes })
 }
 
 /**
- * Run once the open first draws the presentation, before it keeps a copy of its own. Another
- * page load's unsent copy that differs from what is shown may hold edits that are nowhere else,
- * so it turns sticky; one that holds what is shown has nothing to recover, and goes.
- * On a full store the copy stays as it was, and sticky for the page.
+ * Discards the copy as shown, under each key that still holds its slides. This page's own copy
+ * and a sticky one, written once, are removed. Another page load's unsent copy, or one in the
+ * older list, is marked dismissed instead, as its tab may still write a newer one there.
+ * Throws when the browser's store is too full for the mark.
  */
-export function keepOutlivedRecovery(node: string, shown: readonly unknown[]): void {
-  for (const record of recoveryRecords(node)) {
-    if (record.id === PAGE_LOAD || isSticky(node, record)) {
-      continue
-    }
-
-    const key = recordKey(node, record.id)
-    if (holds(record.copy, shown)) {
-      removeUnchanged(key, record)
-      continue
-    }
-
-    try {
-      writeRecord(node, record.id, { ...record.copy, sticky: true }, record.seq)
-    } catch {
-      unmarkedSticky.add(key)
-    }
-  }
-}
-
-// Read again just before the remove, so a copy its tab wrote since stays. The two calls run
-// back to back in one task: only that copy's own tab writes its key, and it keeps an unsent copy
-// only while it can still send to the room, so a write landing between them holds edits the
-// room gets too
-function removeUnchanged(key: string, { copy, seq }: RecoveryRecord) {
-  const stored = parsed(localStorage.getItem(key))
-  if (!isStored(stored)) {
-    return
-  }
-
-  const { seq: storedSeq = 0, ...storedCopy } = stored
-  if (storedSeq === seq && JSON.stringify(storedCopy) === JSON.stringify(copy)) {
-    localStorage.removeItem(key)
-  }
-}
-
-/** Discards the copy with this id while it holds what was shown; one its tab rewrote since stays. */
 export function discardRecovery(
   node: string,
   id: string,
-  shown: Pick<RecoveryCopy, 'savedAt' | 'slides'>,
+  shown: Pick<RecoveryCopy, 'slides'>,
 ): void {
-  splitList(node)
-  const key = recordKey(node, id)
-  const stored = parsed(localStorage.getItem(key))
-  if (
-    isCopy(stored) &&
-    Date.parse(stored.savedAt) === Date.parse(shown.savedAt) &&
-    holds(stored, shown.slides)
-  ) {
-    localStorage.removeItem(key)
+  const ids = new Set(id.split(','))
+  for (const record of storedRecords(node)) {
+    if (!ids.has(record.id) || !holds(record.copy, shown.slides)) {
+      continue
+    }
+
+    if (record.isListed || (record.id !== PAGE_LOAD && !record.copy.sticky)) {
+      localStorage.setItem(markKey(node, 'dismissed', record.id, record.copy), '1')
+    } else {
+      localStorage.removeItem(recordKey(node, record.id))
+    }
   }
 }
 
-export function newestRecovery(node: string): RecoveryRecord | undefined {
-  return recoveryRecords(node).at(-1)
+export function newestRecovery(node: string): RecoveryEntry | undefined {
+  return recoveryEntries(node).at(-1)
 }
 
 /** The title as a file name: the characters no file system takes dropped. */
@@ -293,28 +273,28 @@ export function saveThroughBrowser(file: File) {
 
 /**
  * Save the newest copy not yet downloaded through the browser, or the newest once all are.
- * Removes nothing. False when none is kept.
+ * Removes nothing. `unmarked` when the file went out but the store was too full to note it.
  */
-export function downloadRecovery(node: string, title: string): boolean {
-  const records = recoveryRecords(node)
-  const record = records.findLast(({ copy }) => !copy.downloaded) ?? records.at(-1)
-  if (!record) {
-    return false
+export function downloadRecovery(node: string, title: string): 'none' | 'downloaded' | 'unmarked' {
+  const entries = recoveryEntries(node)
+  const entry = entries.findLast(({ copy }) => !copy.downloaded) ?? entries.at(-1)
+  if (!entry) {
+    return 'none'
   }
 
-  saveThroughBrowser(recoveryFile(record.copy, title))
-  // marks the copy only while it is still kept, so a discard from another tab stays
-  if (localStorage.getItem(recordKey(node, record.id)) === null) {
-    return true
-  }
-
+  saveThroughBrowser(recoveryFile(entry.copy, title))
+  const ids = new Set(entry.id.split(','))
   try {
-    writeRecord(node, record.id, { ...record.copy, downloaded: true }, record.seq)
+    for (const record of storedRecords(node)) {
+      if (ids.has(record.id) && holds(record.copy, entry.copy.slides)) {
+        localStorage.setItem(markKey(node, 'downloaded', record.id, record.copy), '1')
+      }
+    }
   } catch {
-    // the file has already gone out
+    return 'unmarked'
   }
 
-  return true
+  return 'downloaded'
 }
 
 /** Save the slides on screen through the browser, whatever the copies hold. */

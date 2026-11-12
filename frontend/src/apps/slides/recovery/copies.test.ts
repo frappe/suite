@@ -409,24 +409,24 @@ describe('page copies kept by several tabs', () => {
   }
 
   it('lists on Drive exactly the copies the banner keeps, before and after a discard', async () => {
-    const { keepOutlivedRecovery, readRecovery } = await import('@/apps/slides/surface/recovery')
+    const { readRecovery } = await import('@/apps/slides/surface/recovery')
     localStorage.setItem(
       'suite:slides-recovery:me@example.com:node-plan',
       JSON.stringify([{ savedAt: at(0).now.toISOString(), slides: [{ words: 'older list' }] }]),
     )
     const [tabB, tabC] = [await otherTab(), await otherTab()]
-    tabB.keepRecovery('node-plan', [{ words: 'as shown' }], at(1))
+    tabB.keepRecovery('node-plan', [{ words: 'unsent' }], at(1))
     tabC.keepRecovery('node-plan', [{ words: 'sticky' }], { sticky: true, ...at(2) })
-    keepOutlivedRecovery('node-plan', [{ words: 'as shown' }])
 
     const listed = await listCopies()
-    expect(words(listed)).toEqual(['sticky', 'older list'])
-    expect(words(readRecovery('node-plan'))).toEqual(['older list', 'sticky'])
+    expect(words(listed)).toEqual(['sticky', 'unsent', 'older list'])
+    expect(words(readRecovery('node-plan'))).toEqual(['older list', 'unsent', 'sticky'])
 
     await discardCopy(listed[0]!)
+    await discardCopy(listed[2]!)
 
-    expect(words(await listCopies())).toEqual(['older list'])
-    expect(words(readRecovery('node-plan'))).toEqual(['older list'])
+    expect(words(await listCopies())).toEqual(['unsent'])
+    expect(words(readRecovery('node-plan'))).toEqual(['unsent'])
   })
 
   it('discarding on Drive keeps a copy its tab wrote again since it was listed', async () => {

@@ -4,12 +4,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   discardRecovery,
   downloadRecovery,
-  keepOutlivedRecovery,
   keepRecovery,
   newestRecovery,
   readRecovery,
+  recoveryEntries,
   recoveryFile,
-  recoveryRecords,
 } from './recovery'
 
 const PREFIX = 'suite:slides-recovery:me@example.com:'
@@ -26,7 +25,7 @@ function clientIds(node = 'node-1') {
 }
 
 function recordKey(node: string, clientId: string) {
-  const record = recoveryRecords(node).find(
+  const record = recoveryEntries(node).find(
     // SAFETY: each copy these tests keep starts with a slide that has a clientId
     ({ copy }) => (copy.slides[0] as { clientId: string }).clientId === clientId,
   )
@@ -157,23 +156,6 @@ describe('Slides recovery copy', () => {
     expect(kept()).toEqual([['older', true]])
   })
 
-  it('keeps an earlier page copy past every later copy when the store was too full to mark it', () => {
-    // a copy from before the sticky marker, and a store too full to add it
-    localStorage.setItem(
-      'suite:slides-recovery:me@example.com:node-full',
-      JSON.stringify([{ savedAt: '2026-09-30T10:00:00.000Z', slides: [{ clientId: 'unsent' }] }]),
-    )
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementationOnce(() => {
-      throw new DOMException('full', 'QuotaExceededError')
-    })
-    keepOutlivedRecovery('node-full', [{ clientId: 'shown' }])
-
-    keepRecovery('node-full', [{ clientId: 'later' }])
-    keepRecovery('node-full', [{ clientId: 'latest' }])
-
-    expect(kept('node-full').map(([clientId]) => clientId)).toEqual(['unsent', 'latest'])
-  })
-
   it('offers a copy as a JSON file named after the presentation', async () => {
     const file = recoveryFile(
       {
@@ -198,7 +180,7 @@ describe('Slides recovery copy', () => {
     keepRecovery('node-1', [{ clientId: 'newer' }], { sticky: true })
 
     async function downloaded() {
-      expect(downloadRecovery('node-1', 'Plan')).toBe(true)
+      expect(downloadRecovery('node-1', 'Plan')).toBe('downloaded')
       const file = files.mock.lastCall?.[0]
       if (!(file instanceof File)) throw new Error('Expected a downloaded recovery file')
       return JSON.parse(await file.text()).slides
@@ -215,23 +197,23 @@ describe('Slides recovery copy', () => {
   })
 
   it('has nothing to download with no copy kept', () => {
-    expect(downloadRecovery('node-1', 'Plan')).toBe(false)
+    expect(downloadRecovery('node-1', 'Plan')).toBe('none')
   })
 
-  it('counts the download when the store is too full to mark it', () => {
+  it('says the download went unnoted when the store is too full to mark it', () => {
     const files = downloadedFiles()
     keepRecovery('node-1', [{ clientId: 'kept' }], { sticky: true })
     vi.spyOn(Storage.prototype, 'setItem').mockImplementationOnce(() => {
       throw new DOMException('full', 'QuotaExceededError')
     })
 
-    expect(downloadRecovery('node-1', 'Plan')).toBe(true)
+    expect(downloadRecovery('node-1', 'Plan')).toBe('unmarked')
 
     expect(files).toHaveBeenCalledTimes(1)
-    expect(kept()).toEqual([['kept', true]])
+    expect(readRecovery('node-1')).toEqual([expect.not.objectContaining({ downloaded: true })])
   })
 
-  it('moves an identical copy to the end, newly dated, with its download remembered', () => {
+  it('keeps an identical copy sticky at the end, newly dated, with its download remembered', () => {
     downloadedFiles()
     keepRecovery('node-1', [{ clientId: 'same' }], { now: new Date('2026-09-30T10:00:00Z') })
     downloadRecovery('node-1', 'Plan')
@@ -281,7 +263,7 @@ describe('Slides recovery copies across tabs', () => {
     expect(clientIds()).toEqual(['b sticky', 'b unsent', 'a sticky', 'a unsent again'])
   })
 
-  it('reads an older single list as its copies, then keeps each on its own', () => {
+  it('reads an older single list as its copies, and hides one discarded there', () => {
     localStorage.setItem(
       `${PREFIX}node-1`,
       JSON.stringify([
@@ -294,84 +276,157 @@ describe('Slides recovery copies across tabs', () => {
       ['old', undefined],
       ['old sticky', true],
     ])
-    expect(localStorage.getItem(`${PREFIX}node-1`)).toBeNull()
 
-    const old = recoveryRecords('node-1').find(({ copy }) => !copy.sticky)!
+    const old = recoveryEntries('node-1').find(({ copy }) => !copy.sticky)!
     discardRecovery('node-1', old.id, old.copy)
     expect(kept()).toEqual([['old sticky', true]])
   })
 
-  it('reads an older list written again after it was split as the same copies, once', () => {
+  it('writes nothing to an older list, whatever is kept, downloaded or discarded', () => {
+    downloadedFiles()
+    const list = JSON.stringify([
+      { savedAt: '2026-09-30T10:00:00.000Z', slides: [{ clientId: 'old' }] },
+      { savedAt: '2026-09-30T10:05:00.000Z', slides: [{ clientId: 'old sticky' }], sticky: true },
+    ])
+    localStorage.setItem(`${PREFIX}node-1`, list)
+
+    const touched = touchedKeys(() => {
+      keepRecovery('node-1', [{ clientId: 'old sticky' }])
+      keepRecovery('node-1', [{ clientId: 'new' }], { sticky: true })
+      downloadRecovery('node-1', 'Plan')
+      downloadRecovery('node-1', 'Plan')
+      for (const { id, copy } of recoveryEntries('node-1')) discardRecovery('node-1', id, copy)
+    })
+
+    expect(touched.filter((key) => key.endsWith(`${PREFIX}node-1`))).toEqual([])
+    expect(localStorage.getItem(`${PREFIX}node-1`)).toBe(list)
+    expect(readRecovery('node-1')).toEqual([])
+  })
+
+  it('keeps a discarded older copy hidden when a tab on the older code writes the list again', () => {
     const list = JSON.stringify([
       { savedAt: '2026-09-30T10:00:00.000Z', slides: [{ clientId: 'old' }], sticky: true },
     ])
     localStorage.setItem(`${PREFIX}node-1`, list)
-    readRecovery('node-1')
+    const [old] = recoveryEntries('node-1')
+    discardRecovery('node-1', old!.id, old!.copy)
 
-    // a tab still on the older code writes its list again
     localStorage.setItem(`${PREFIX}node-1`, list)
 
-    expect(clientIds()).toEqual(['old'])
+    expect(readRecovery('node-1')).toEqual([])
   })
 
-  it('reads an older list a tab added to after it was split, when the store is too full to split it again', () => {
+  it('reads a copy a tab on the older code adds to the list', () => {
     const old = { savedAt: '2026-09-30T10:00:00.000Z', slides: [{ clientId: 'old' }], sticky: true }
     localStorage.setItem(`${PREFIX}node-1`, JSON.stringify([old]))
     readRecovery('node-1')
     const added = { savedAt: '2026-09-30T10:05:00.000Z', slides: [{ clientId: 'added' }] }
     localStorage.setItem(`${PREFIX}node-1`, JSON.stringify([old, added]))
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
-      throw new DOMException('full', 'QuotaExceededError')
-    })
 
     expect(clientIds()).toEqual(['old', 'added'])
   })
 
-  it('reads an older list as is when the store is too full to split it', () => {
-    const list = JSON.stringify([
-      { savedAt: '2026-09-30T10:00:00.000Z', slides: [{ clientId: 'old' }], sticky: true },
-    ])
-    localStorage.setItem(`${PREFIX}node-1`, list)
+  it('throws and keeps an older copy listed when the store is too full to mark it discarded', () => {
+    localStorage.setItem(
+      `${PREFIX}node-1`,
+      JSON.stringify([{ savedAt: '2026-09-30T10:00:00.000Z', slides: [{ clientId: 'old' }] }]),
+    )
+    const [old] = recoveryEntries('node-1')
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new DOMException('full', 'QuotaExceededError')
     })
 
-    expect(clientIds()).toEqual(['old'])
+    expect(() => discardRecovery('node-1', old!.id, old!.copy)).toThrow()
+
     vi.restoreAllMocks()
-    expect(localStorage.getItem(`${PREFIX}node-1`)).toBe(list)
+    expect(clientIds()).toEqual(['old'])
   })
 
-  it("on opening, keeps another page load's different copy as sticky and removes one the room holds", async () => {
+  it("keeps a tab's sticky copy when the tab that kept the same slides unsent keeps newer ones", async () => {
     const tabB = await otherTab()
-    tabB.keepRecovery('node-1', [{ clientId: 'shown' }], at(1))
-    const tabC = await otherTab()
-    tabC.keepRecovery('node-1', [{ clientId: 'unsent' }], at(2))
-    const [same, different] = [recordKey('node-1', 'shown'), recordKey('node-1', 'unsent')]
+    tabB.keepRecovery('node-1', [{ clientId: 'x' }], at(1))
+    keepRecovery('node-1', [{ clientId: 'x' }], { sticky: true, ...at(2) })
 
-    const touched = touchedKeys(() => keepOutlivedRecovery('node-1', [{ clientId: 'shown' }]))
+    tabB.keepRecovery('node-1', [{ clientId: 'y' }], at(3))
 
-    expect(kept()).toEqual([['unsent', true]])
-    expect(touched.sort()).toEqual([`remove ${same}`, `set ${different}`])
+    expect(kept()).toEqual([
+      ['x', true],
+      ['y', false],
+    ])
   })
 
-  it('on opening, keeps a copy its tab wrote again between the read and the remove', async () => {
+  it('shows the same slides kept by two tabs as one copy, at the newer place, and discards both', async () => {
+    const tabB = await otherTab()
+    tabB.keepRecovery('node-1', [{ clientId: 'x' }], at(1))
+    keepRecovery('node-1', [{ clientId: 'y' }], { sticky: true, ...at(2) })
+    keepRecovery('node-1', [{ clientId: 'x' }], { sticky: true, ...at(3) })
+
+    expect(kept()).toEqual([
+      ['y', true],
+      ['x', true],
+    ])
+
+    const shown = newestRecovery('node-1')!
+    discardRecovery('node-1', shown.id, shown.copy)
+    expect(kept()).toEqual([['y', true]])
+  })
+
+  it('marks no download on a copy its tab wrote again while the file went out', async () => {
+    const tabB = await otherTab()
+    tabB.keepRecovery('node-1', [{ clientId: 'x' }], at(1))
+    downloadedFiles()
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {
+      tabB.keepRecovery('node-1', [{ clientId: 'y' }], at(2))
+    })
+
+    expect(downloadRecovery('node-1', 'Plan')).toBe('downloaded')
+
+    expect(readRecovery('node-1')).toEqual([
+      { savedAt: at(2).now.toISOString(), slides: [{ clientId: 'y' }], sticky: false },
+    ])
+  })
+
+  it("dismisses another page load's unsent copy without removing its key", async () => {
     const tabB = await otherTab()
     tabB.keepRecovery('node-1', [{ clientId: 'shown' }], at(1))
     const key = recordKey('node-1', 'shown')
-    const rewritten = JSON.stringify({
-      savedAt: at(2).now.toISOString(),
-      slides: [{ clientId: 'newer' }],
-    })
-    // the first read sees the copy the room holds; tab B writes newer work straight after it
-    const { getItem, setItem } = Storage.prototype
-    let reads = 0
+    const [shown] = recoveryEntries('node-1')
+
+    const touched = touchedKeys(() => discardRecovery('node-1', shown!.id, shown!.copy))
+
+    expect(touched).toEqual([expect.stringMatching(`^set ${PREFIX}node-1:dismissed:`)])
+    expect(localStorage.getItem(key)).not.toBeNull()
+    expect(readRecovery('node-1')).toEqual([])
+  })
+
+  it('lists again a newer copy the tab writes under a key its earlier copy was dismissed from', async () => {
+    const tabB = await otherTab()
+    tabB.keepRecovery('node-1', [{ clientId: 'shown' }], at(1))
+    const [shown] = recoveryEntries('node-1')
+    discardRecovery('node-1', shown!.id, shown!.copy)
+
+    tabB.keepRecovery('node-1', [{ clientId: 'shown' }], at(2))
+
+    expect(clientIds()).toEqual(['shown'])
+  })
+
+  it('keeps listing a copy its tab wrote again between the check and the dismissal', async () => {
+    const tabB = await otherTab()
+    tabB.keepRecovery('node-1', [{ clientId: 'shown' }], at(1))
+    const key = recordKey('node-1', 'shown')
+    const [shown] = recoveryEntries('node-1')
+    // the discard's read sees the copy as shown; tab B writes newer work straight after it
+    const { getItem } = Storage.prototype
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(function (this: Storage, read) {
       const value = getItem.call(this, read)
-      if (read === key && reads++ === 0) setItem.call(this, key, rewritten)
+      if (read === key) {
+        vi.restoreAllMocks()
+        tabB.keepRecovery('node-1', [{ clientId: 'newer' }], at(2))
+      }
       return value
     })
 
-    keepOutlivedRecovery('node-1', [{ clientId: 'shown' }])
+    discardRecovery('node-1', shown!.id, shown!.copy)
     vi.restoreAllMocks()
 
     expect(clientIds()).toEqual(['newer'])
@@ -383,9 +438,12 @@ describe('Slides recovery copies across tabs', () => {
     keepRecovery('node-1', [{ clientId: 'newer' }], { sticky: true, ...at(2) })
     const [older, newer] = [recordKey('node-1', 'older'), recordKey('node-1', 'newer')]
 
-    expect(touchedKeys(() => downloadRecovery('node-1', 'Plan'))).toEqual([`set ${newer}`])
+    const newerId = newer.slice(`${PREFIX}node-1:`.length)
+    expect(touchedKeys(() => downloadRecovery('node-1', 'Plan'))).toEqual([
+      expect.stringMatching(`^set ${PREFIX}node-1:downloaded:${newerId}:`),
+    ])
     const id = older.slice(`${PREFIX}node-1:`.length)
-    const shown = { savedAt: at(1).now.toISOString(), slides: [{ clientId: 'older' }] }
+    const shown = { slides: [{ clientId: 'older' }] }
     expect(touchedKeys(() => discardRecovery('node-1', id, shown))).toEqual([`remove ${older}`])
     expect(kept()).toEqual([['newer', true]])
   })
@@ -404,7 +462,7 @@ describe('Slides recovery copies across tabs', () => {
   it('discarding keeps a copy its tab wrote again since it was shown', async () => {
     const tabB = await otherTab()
     tabB.keepRecovery('node-1', [{ clientId: 'shown' }], at(1))
-    const [shown] = recoveryRecords('node-1')
+    const [shown] = recoveryEntries('node-1')
     tabB.keepRecovery('node-1', [{ clientId: 'newer' }], at(2))
 
     discardRecovery('node-1', shown!.id, shown!.copy)

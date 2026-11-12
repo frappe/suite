@@ -207,7 +207,6 @@ const {
   retainRecovery,
   retainStickyOrOffer,
   retainOrWarn,
-  settleCopies,
   downloadChanges,
   discardChanges,
 } = useUnsavedRecovery(props.session, {
@@ -273,7 +272,6 @@ const convertedRoom = useConvertedRoom({
   isPresenting: () => route.name === 'slides-slideshow',
   retainRecovery,
   retainStickyOrOffer,
-  settleCopies,
   onThreadsChanged: () => void refreshThreads(),
   onVersionRestored: (restored) => void tellRestoredByOther(restored),
 })
