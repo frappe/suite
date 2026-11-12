@@ -2,12 +2,9 @@
  * Slides' local recovery copies: the presentation's slides kept on this device,
  * per person, when unsaved work cannot reach the server. They are never replayed
  * automatically. The person takes one out as a JSON file, which removes nothing
- * since a browser save can't be confirmed, or dismisses it. A copy the unload guard
- * keeps in a writable tab is also removed once the same page saves again with edit
- * access: that save holds the edits, so it is then stale. A sticky copy, kept when the
- * server refused, a draft was discarded or writes had stopped, is not: it may hold edits
- * that are nowhere else. Nor is a copy that outlived its page and differs from what the
- * next open showed, since the unload guard writes no draft: it turns sticky then.
+ * since a browser save can't be confirmed, or dismisses it. A newer copy replaces an
+ * older one, except a sticky copy, kept once edit access had gone: it may hold edits
+ * that are nowhere else.
  */
 import { getCookieSessionUser } from '@/platform/session'
 
@@ -99,35 +96,6 @@ export function keepRecovery(
   writeCopies(node, [...copies.filter((kept) => sticky || kept.sticky), copy])
 }
 
-/** A save landed: only a sticky copy outlives it. */
-export function clearStaleRecovery(node: string): void {
-  const copies = readRecovery(node)
-  const sticky = copies.filter((copy) => copy.sticky)
-  if (sticky.length < copies.length) {
-    writeCopies(node, sticky)
-  }
-}
-
-function differs(copy: RecoveryCopy, isShown: (slides: unknown[]) => boolean) {
-  try {
-    return !isShown(copy.slides)
-  } catch (err) {
-    console.warn('Could not compare a recovery copy: ', err)
-    return true
-  }
-}
-
-/** Run before the open's first save can land; on a full store the copy just stays as it was. */
-export function keepOutlivedRecovery(node: string, isShown: (slides: unknown[]) => boolean): void {
-  const copies = readRecovery(node)
-  const kept = copies.map((copy) => ({ ...copy, sticky: copy.sticky || differs(copy, isShown) }))
-  try {
-    writeCopies(node, kept)
-  } catch {
-    // removed by the next landed save, as it would have been
-  }
-}
-
 export function discardRecovery(node: string, savedAt: string): void {
   writeCopies(
     node,
@@ -137,13 +105,6 @@ export function discardRecovery(node: string, savedAt: string): void {
 
 export function removeNewestRecovery(node: string): void {
   writeCopies(node, readRecovery(node).slice(0, -1))
-}
-
-export function forgetRecovery(node: string, slides: readonly unknown[]): void {
-  writeCopies(
-    node,
-    readRecovery(node).filter((copy) => !holds(copy, slides)),
-  )
 }
 
 /** The title as a file name: the characters no file system takes dropped. */

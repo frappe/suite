@@ -49,7 +49,7 @@ import { useShortcuts } from '@/apps/slides/composables/useShortcuts'
 import { activeEditor } from '@/apps/slides/composables/useTextEditor'
 import { useOldDraft } from '@/apps/slides/recovery/useOldDraft'
 import { setDocumentMedia } from '@/apps/slides/stores/documentMedia'
-import { flushPendingBlur, focusElementId, resetFocus } from '@/apps/slides/stores/element'
+import { focusElementId, resetFocus } from '@/apps/slides/stores/element'
 import {
   actionOrder as historyMetaActionOrder,
   actions as historyMetaActions,
@@ -74,20 +74,9 @@ import {
   rowSlides,
   setDocumentContext,
   slidesLength,
-  startLoad,
   templateList,
   viewOnly,
-  writesBlocked,
 } from '@/apps/slides/stores/presentation'
-import {
-  dirty,
-  isSaving,
-  resumeWrites,
-  saveChanges,
-  saveFailed,
-  saveRefused,
-  savingFor,
-} from '@/apps/slides/stores/saving'
 import {
   changeEditorSlide,
   handleInsertSlide,
@@ -106,7 +95,7 @@ import { stopVisitedMedia, storeVisitedMedia } from '@/apps/slides/stores/visite
 import { drawnFontsLoaded, warmBundledFonts } from '@/apps/slides/utils/bundledFonts'
 import { isMediaOwner } from '@/apps/slides/utils/mediaUploads'
 import { postToServiceWorker, registerSlidesWorker } from '@/apps/slides/utils/serviceWorker'
-import { readSavedDocument, type VersionRestored } from '@/platform/collab'
+import { readSavedDocument, watchConversion, type VersionRestored } from '@/platform/collab'
 import { peopleOf, presenceColours } from '@/platform/collab/peers'
 import {
   othersPresentWarning,
@@ -120,7 +109,6 @@ import { openAreaShortcuts } from '@/platform/shortcuts'
 import { translate } from '@/platform/translation'
 
 import { createSlidesAccess } from './access'
-import { useAutosave } from './autosave'
 import {
   CompositeGroupLoader,
   indexOfPlace,
@@ -145,6 +133,8 @@ import { convertedVersion, fetchVersion, readVersionBody, versionImages } from '
 import { versionSlides } from './versionSlides'
 
 type Panel = DocumentPanel
+
+const CONVERSION_POLL_MS = 15_000
 
 const Slideshow = defineAsyncComponent(() => import('@/apps/slides/pages/Slideshow.vue'))
 
@@ -213,30 +203,24 @@ const exporting = ref(false)
 const printedSlides = shallowRef<Record<string, unknown>[] | null>(null)
 const exportedSlides = computed(() => printedSlides.value ?? slides.value)
 const {
-  isOnlyCopy,
-  clearOnlyCopy,
   canDownloadChanges,
   narrowed,
   widened,
-  keepSticky,
   retainRecovery,
   retainStickyOrOffer,
   retainOrWarn,
-  reloadAfterAccessBack,
   downloadChanges,
   discardChanges,
-  settleCopies,
-  heldNotice,
 } = useUnsavedRecovery(props.session, {
   isWritable: () => access.writable.value,
-  isEditable: () => editable.value,
   load,
-  cancelRunningLoad,
 })
 const { oldDraftNotice, settleOldDraft, downloadOldDraft, dismissOldDraft } = useOldDraft(
   props.session,
+  {
+    isEditor: () => !viewOnly.value,
+  },
 )
-const isSlideInteractionActive = ref(false)
 const previewCapture = useTemplateRef<InstanceType<typeof PreviewCapture>>('previewCapture')
 const exportView = useTemplateRef<InstanceType<typeof ExportView>>('exportView')
 const versionsPanel = useTemplateRef<InstanceType<typeof SlidesVersionsPanel>>('versionsPanel')
@@ -260,7 +244,6 @@ const editable = computed(
     access.writable.value &&
     !composite.value &&
     !restoring.value &&
-    !isOnlyCopy.value &&
     !conversion.value &&
     (!isConverted.value || convertedRoom.allowsEditing.value),
 )
@@ -269,9 +252,7 @@ const canRestoreVersions = computed(
   () =>
     access.writable.value &&
     !restoring.value &&
-    !isOnlyCopy.value &&
-    (!onLayer.value || (isConverted.value && convertedRoom.allowsEditing.value)) &&
-    !writesBlocked.value,
+    (!onLayer.value || (isConverted.value && convertedRoom.allowsEditing.value)),
 )
 // A converted presentation asks and restores itself. A row presentation leaves both to the panel
 const liveRestore = computed(() => (isConverted.value ? confirmLiveRestore : undefined))
@@ -281,12 +262,7 @@ const phone = useMediaQuery('(max-width: 767px)')
 const convertedRoom = useConvertedRoom({
   session: props.session,
   // Not `editable`, which asks the room back
-  mayEdit: () =>
-    access.writable.value &&
-    !composite.value &&
-    !restoring.value &&
-    !isOnlyCopy.value &&
-    !phone.value,
+  mayEdit: () => access.writable.value && !composite.value && !restoring.value && !phone.value,
   retainRecovery,
   retainStickyOrOffer,
   onThreadsChanged: () => void refreshThreads(),
@@ -311,12 +287,9 @@ const { open: showThemeDialog, offer: offerTheme } = useNewPresentationTheme(
 useHideRail()
 
 // Body requests go through the session, with this document's link credentials.
-// A refused write is a verdict: access narrows until the presentation opens again.
 const releaseContext = setDocumentContext(
   props.session.contentDocname,
   props.session.credentials.context,
-  () => access.refuse(),
-  keepSticky,
 )
 // A migrated deck names its pictures by node id; the session signs their urls.
 const releaseMedia = setDocumentMedia((id) => props.session.media(id))
@@ -360,7 +333,6 @@ async function writeTheme(
   }
 
   try {
-    await flushEdits()
     restoring.value = true
     await client.mutation(
       endpoint,
@@ -443,12 +415,6 @@ const presentationMenu = computed(() => [
         condition: () => canDownloadChanges.value,
         onClick: discardChanges,
       },
-      {
-        label: translate('Reload'),
-        icon: 'lucide-refresh-cw',
-        condition: () => isOnlyCopy.value && access.writable.value,
-        onClick: reloadAfterAccessBack,
-      },
     ],
   },
   { group: '', options: driveActions.value.node },
@@ -489,14 +455,6 @@ watch(
 watch(phone, (isPhone) => {
   if (isPhone) resetFocus()
 })
-// An open text element would keep taking keystrokes that no save carries. Not on every
-// entry to read-only: closing an element marks the deck dirty, which a tab that has just
-// lost access could never clear, and a restore that fails should keep the selection.
-watch(writesBlocked, (blocked) => {
-  if (!blocked) return
-  flushPendingBlur()
-  resetFocus()
-})
 const slidePosition = computed(() => (slideIndex.value ?? 0) + 1)
 function showSlide(step: number) {
   changeEditorSlide((slideIndex.value ?? 0) + step, false)
@@ -506,21 +464,7 @@ function showPanel(next: Panel | null) {
   panel.value = next
 }
 
-/** Save pending edits, or refuse: a version holds only the saved state. */
-async function flushEdits() {
-  await saveChanges()
-  if (saveRefused.value) {
-    throw new Error(translate('This presentation changed elsewhere. Reload before you do this.'))
-  }
-
-  if (dirty.value || isSaving.value || saveFailed.value) {
-    throw new Error(
-      'Your latest changes are not saved yet. Try again when the presentation is saved.',
-    )
-  }
-}
 async function restoreVersion(seq: string) {
-  await flushEdits()
   restoring.value = true
   try {
     await props.session.versions.restore(seq)
@@ -762,11 +706,6 @@ async function load() {
     const doc = await initPresentationDoc(props.session.contentDocname, readonly)
     if (!isCurrent(run)) return
 
-    clearOnlyCopy()
-    if (doc) {
-      settleCopies()
-    }
-
     if (presentationDoc.value) presentationDoc.value.title = props.session.title.value
 
     setSlideIndex(presentedSlide.value)
@@ -783,6 +722,7 @@ async function load() {
               : { reason: undefined }),
           }
         : null
+    conversionKeys = roomKeys(status)
     if (isConverted.value) {
       await showConvertedSlides(run)
       // a draft from before the live room holds edits it never sent, so it stays as a copy
@@ -816,6 +756,63 @@ async function load() {
   }
 }
 
+// The keys of the rooms that tell a waiting presentation its conversion's outcome
+function roomKeys(status: unknown): string[] {
+  if (!status || typeof status !== 'object' || !('rooms' in status)) {
+    return []
+  }
+
+  const { rooms } = status
+  return rooms && typeof rooms === 'object' && 'keys' in rooms && Array.isArray(rooms.keys)
+    ? rooms.keys
+    : []
+}
+
+// A presentation still on its rows waits for its conversion, then opens live by itself
+// A refused one stays refused while it is open, so its poll stops
+// The conversion's rooms tell the tab its outcome sooner; the poll also moves it to each epoch's rooms
+let conversionKeys: string[] = []
+let conversionPoll: ReturnType<typeof setInterval> | undefined
+let conversionWatch: ReturnType<typeof watchConversion> | null = null
+
+function stopWaiting() {
+  clearInterval(conversionPoll)
+  conversionWatch?.stop()
+  conversionWatch = null
+}
+
+async function checkConversion() {
+  const name = props.session.contentDocname
+  let doc
+  try {
+    doc = await client.query(api.slides.documents.get, { name }, { context: contextFor(name) })
+  } catch {
+    return
+  }
+
+  if (isLeft) return
+
+  if (doc.is_converted || doc.conversion?.state === 'refused') {
+    stopWaiting()
+    void load()
+  } else {
+    conversionWatch?.setKeys(doc.conversion?.rooms?.keys ?? [])
+  }
+}
+
+watch(
+  () => conversion.value?.state,
+  (state) => {
+    stopWaiting()
+    if (!state || state === 'refused') {
+      return
+    }
+
+    conversionPoll = setInterval(checkConversion, CONVERSION_POLL_MS)
+    conversionWatch = watchConversion(conversionKeys, () => void checkConversion())
+  },
+)
+
 async function showConvertedSlides(run: number) {
   const isOpen = await convertedRoom.open(() => !isCurrent(run))
   if (!isOpen) {
@@ -825,12 +822,6 @@ async function showConvertedSlides(run: number) {
   if (isCurrent(run)) {
     setSlideIndex(presentedSlide.value)
   }
-}
-
-function cancelRunningLoad() {
-  latestLoad++
-  startLoad()
-  loading.value = false
 }
 
 function normalizeCompositeSlide(value: unknown) {
@@ -863,38 +854,17 @@ function placeholderSlide(entry: { reference: string; index: number; status: str
     compositePlaceholder: entry.status,
   }
 }
-const saveState = computed<DocumentSaveState>(() => {
-  if (isConverted.value) {
-    return convertedRoom.saveState.value
-  }
-
-  if (isSaving.value) {
-    return 'saving'
-  }
-
-  if (saveFailed.value) {
-    return 'failed'
-  }
-
-  // only the screen holds the slides, whatever the save flags say
-  return dirty.value || isOnlyCopy.value ? 'unsaved' : 'clean'
-})
+// Only a converted presentation is edited, so only its room has anything to send
+const saveState = computed<DocumentSaveState>(() =>
+  isConverted.value ? convertedRoom.saveState.value : 'clean',
+)
 async function flush() {
-  if (isConverted.value) {
-    flushLive()
-    return
-  }
-
-  await saveChanges()
+  flushLive()
 }
 useDocumentLeaveGuard({
   state: () => saveState.value,
   flush,
   retainRecovery,
-})
-useAutosave({
-  editable: computed(() => editable.value && !isConverted.value),
-  interacting: isSlideInteractionActive,
 })
 // The card picture follows the room: once everything reached the server (Q2)
 watch(convertedRoom.saveState, (state) => {
@@ -928,22 +898,8 @@ watch(
   },
   { flush: 'post' },
 )
-// closing the tab ends a push of the presentation left behind too
-function unloadState(): DocumentSaveState {
-  if (savingFor.value) {
-    return 'saving'
-  }
-
-  return saveState.value
-}
-
-// the warning is for the other push; a clean presentation has nothing of its own to keep
-function retainUnlessClean() {
-  return saveState.value === 'clean' || retainOrWarn()
-}
-
 function warnBeforeUnload(event: Event) {
-  resolveDocumentUnload({ state: unloadState, retainRecovery: retainUnlessClean }, event)
+  resolveDocumentUnload({ state: () => saveState.value, retainRecovery: retainOrWarn }, event)
 }
 
 // what a refused picture means for the copy depends on which of these it is
@@ -1005,6 +961,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   // a load or room still on its way after this finds itself stale and touches nothing
   isLeft = true
+  stopWaiting()
   resetFocus()
   convertedRoom.close()
   cancelVisit()
@@ -1015,13 +972,9 @@ onBeforeUnmount(() => {
   window.removeEventListener('offline', setOffline)
   window.removeEventListener('beforeunload', warnBeforeUnload)
   resetFocus()
-  // A deck whose writes stopped sends nothing here; the next open starts afresh.
-  void saveChanges().finally(() => {
-    releaseContext()
-    releaseMedia()
-    releaseTemplateReader()
-    resumeWrites(props.session.contentDocname)
-  })
+  releaseContext()
+  releaseMedia()
+  releaseTemplateReader()
   resetEditorState()
 })
 </script>
@@ -1123,11 +1076,7 @@ onBeforeUnmount(() => {
       <SlidesVersionPreview v-if="previewed" :session="session" :seq="previewed" />
       <template v-else-if="phone">
         <div class="relative flex min-h-0 flex-1">
-          <SlideContainer
-            v-if="presentationDoc"
-            v-model:has-ongoing-interaction="isSlideInteractionActive"
-            fit
-          />
+          <SlideContainer v-if="presentationDoc" fit />
         </div>
         <nav
           v-if="slidesLength"
@@ -1155,10 +1104,7 @@ onBeforeUnmount(() => {
       </template>
       <template v-else>
         <div class="relative flex min-h-0 flex-1">
-          <SlideContainer
-            v-if="presentationDoc"
-            v-model:has-ongoing-interaction="isSlideInteractionActive"
-          />
+          <SlideContainer v-if="presentationDoc" />
         </div>
         <NavigationPanel class="absolute inset-y-0 left-0" @change-slide="changeEditorSlide" />
         <Toolbar v-if="editing && presentationDoc" />
@@ -1167,27 +1113,12 @@ onBeforeUnmount(() => {
     </div>
 
     <SurfaceNotice
-      v-if="oldDraftNotice && !heldNotice && !loading"
+      v-if="oldDraftNotice && !loading"
       icon="lucide-history"
       :message="oldDraftNotice"
     >
       <Button variant="ghost" :label="__('Download')" @click="downloadOldDraft" />
       <Button variant="ghost" :label="__('Dismiss')" @click="dismissOldDraft" />
-    </SurfaceNotice>
-
-    <SurfaceNotice
-      v-if="heldNotice && !loading"
-      icon="lucide-triangle-alert"
-      icon-class="text-ink-amber-6"
-      :message="heldNotice.message"
-    >
-      <Button variant="ghost" :label="__('Download')" @click="downloadChanges" />
-      <Button
-        v-if="heldNotice.reload"
-        variant="ghost"
-        :label="__('Reload')"
-        @click="heldNotice.reload"
-      />
     </SurfaceNotice>
 
     <aside
@@ -1220,7 +1151,7 @@ onBeforeUnmount(() => {
       v-model:previewed="previewed"
       :session="session"
       :writable="canRestoreVersions"
-      :flush="flushEdits"
+      :flush="flush"
       :restore="restoreVersion"
       :confirm-restore="liveRestore"
       @close="panel = null"

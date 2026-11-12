@@ -52,6 +52,11 @@ async function openDeck(page: Page, node = deck.name) {
 	return title;
 }
 
+/** A push of the room's work. */
+function isPush(url: string) {
+	return new URL(url).pathname.endsWith("/updates");
+}
+
 /** Add a rectangle to the open slide, as a person does: press R, then draw it on the slide. */
 async function addRectangle(page: Page) {
 	await page.locator("body").click({ position: { x: 600, y: 400 } });
@@ -104,20 +109,31 @@ test("renames, exports and comments without a legacy Drive call", async ({ page 
 test("losing edit access freezes the deck, sends no write and offers the changes", async ({ page }) => {
 	const seen = watchPage(page);
 	await openDeck(page);
-	// Every save fails, so the edit below stays unsaved.
-	await page.route("**/suite.slides.api.slides.save_slides", (route) => route.abort());
+	// Every push fails, so the edit below stays unsent
+	await page.route(/\/content\/[^/]+\/updates/, (route) => {
+		if (route.request().method() === "POST") {
+			return route.abort("failed");
+		}
 
+		return route.continue();
+	});
+
+	const pushed = page.waitForRequest((request) => request.method() === "POST" && isPush(request.url()));
 	await addRectangle(page);
-	await expect(page.getByText("Not saved", { exact: true })).toBeVisible();
+	await pushed;
 	await patchNode(api, deck.name, { state: "Trashed" });
 	await page.evaluate(() => window.dispatchEvent(new Event("focus")));
 
 	// A trashed item is read-only; its Trashed badge takes the place of View only.
 	await expect(page.getByText("Trashed", { exact: true })).toBeVisible();
-	await expect(page.getByText("Editing access changed. Your unsaved changes are kept on this device.")).toBeVisible();
+	await expect(page.getByText("Editing access changed. This presentation is now view only.")).toBeVisible();
 	const frozenAt = seen.requests.length;
 	await page.waitForTimeout(3_000);
-	expect(seen.requests.slice(frozenAt).filter((line) => line.includes("save_slides"))).toEqual([]);
+	// The room may still send its unsent work once, within a short bound; this test's route aborts it
+	const writes = seen.requests
+		.slice(frozenAt)
+		.filter((line) => line.startsWith("POST") && line.includes("suite.slides"));
+	expect(writes).toEqual([]);
 
 	const user = (await page.context().cookies()).find((cookie) => cookie.name === "user_id");
 	expect(user).toBeDefined();
@@ -196,7 +212,7 @@ test("a person who holds only an edit link opens and saves the deck", async ({ b
 	await openDeck(page);
 	await expect(page.getByText("View only", { exact: true })).toHaveCount(0);
 
-	const saved = page.waitForResponse((answer) => answer.url().includes("suite.slides.api.slides.save_slides"));
+	const saved = page.waitForResponse((answer) => answer.request().method() === "POST" && isPush(answer.url()));
 	await addRectangle(page);
 	const answer = await saved;
 	expect(answer.status()).toBe(200);

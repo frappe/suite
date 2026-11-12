@@ -4,19 +4,17 @@
  * A few seconds after the last save lands, or after a version restore has
  * reloaded the deck, the tab that writes the deck draws the first slide and
  * sends it to Drive's preview route. Drive stores it without stamping the deck,
- * so a capture is not an edit. A tab that does not write the deck sends nothing:
- * view only, or refused by the server. A reload
+ * so a capture is not an edit. A view-only tab sends nothing. A reload
  * that fails cancels the capture, as the slides may no longer be what the deck holds.
  *
  * The first capture of a session is sent even if the first slide did not change,
  * because that is how an older deck gets a preview. After that, a first slide
  * that is as it was last sent sends nothing. Opening a deck sends nothing.
  */
-import { onScopeDispose, watch, type ShallowRef } from 'vue'
+import { onScopeDispose, type ShallowRef } from 'vue'
 
 import { api, client } from '@/api'
 import { inReadonlyMode } from '@/apps/slides/stores/presentation'
-import { dirty, isSaving, saveFailed } from '@/apps/slides/stores/saving'
 import { slides } from '@/apps/slides/stores/slide'
 import type { RequestContext } from '@/platform/transport'
 
@@ -43,8 +41,7 @@ export function usePreviewCapture(options: PreviewCaptureOptions) {
   let timer: number | undefined
   let cancels = 0
 
-  const writes = () => !inReadonlyMode.value && !saveFailed.value
-  const settled = () => writes() && !dirty.value && !isSaving.value
+  const writes = () => !inReadonlyMode.value
 
   /** The tab may not be writing yet or any more, so `capture` checks when the pause ends. */
   function captureAfterPause() {
@@ -58,15 +55,12 @@ export function usePreviewCapture(options: PreviewCaptureOptions) {
     cancels++
   }
 
-  watch(isSaving, (saving, wasSaving) => {
-    if (!saving && wasSaving && settled()) captureAfterPause()
-  })
   onScopeDispose(() => window.clearTimeout(timer))
 
   async function capture() {
     const slide = firstSlide()
     const element = options.target.value
-    if (capturing || !slide || slide === sentSlide || !element?.isConnected || !settled()) return
+    if (capturing || !slide || slide === sentSlide || !element?.isConnected || !writes()) return
     capturing = true
     const cancelsAtStart = cancels
     try {

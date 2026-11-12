@@ -7,7 +7,7 @@ import { translate } from '@/platform/translation'
 import { discardCopy, downloadCopy, oldDraftCopy, savedAtLabel, type RecoveryCopy } from './copies'
 
 /** A converted presentation's old draft on this device, shown until the person dismisses it (Q16). */
-export function useOldDraft(session: DocumentSession) {
+export function useOldDraft(session: DocumentSession, { isEditor }: { isEditor: () => boolean }) {
   const copy = shallowRef<RecoveryCopy | null>(null)
   const oldDraftNotice = computed(
     () =>
@@ -15,7 +15,9 @@ export function useOldDraft(session: DocumentSession) {
   )
 
   async function settleOldDraft() {
-    copy.value = await oldDraftCopy(session.contentDocname, session.nodeId, session.title.value)
+    copy.value = await oldDraftCopy(session.contentDocname, session.nodeId, session.title.value, {
+      isEditor: isEditor(),
+    })
   }
 
   function downloadOldDraft() {

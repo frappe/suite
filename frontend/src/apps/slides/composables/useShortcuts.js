@@ -22,6 +22,7 @@ import {
 import { commandHistory } from '@/apps/slides/stores/historyMeta'
 import { cancelCrop, commitCrop, inCropMode } from '@/apps/slides/stores/imageCrop'
 import { commitInteraction, interactionOffset } from '@/apps/slides/stores/interaction'
+import { flushLive } from '@/apps/slides/stores/liveDeck'
 import { presentationDoc } from '@/apps/slides/stores/presentation'
 import {
   addEmptySlide,
@@ -29,7 +30,6 @@ import {
   changeSlide,
   deleteSlide,
   duplicateSlide,
-  saveSlide,
   selectionBounds,
   slideIndex,
   updateSelectionBounds,
@@ -237,7 +237,10 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
       description: 'Save',
       group: 'General',
       enabled: inEditMode,
-      handler: (e) => saveSlide(e),
+      handler: (e) => {
+        e.preventDefault()
+        flushLive()
+      },
     },
     {
       combo: 'Mod+Z',

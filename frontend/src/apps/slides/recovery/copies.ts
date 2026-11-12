@@ -10,7 +10,7 @@ import {
   recoveryNodes,
   saveThroughBrowser,
 } from '@/apps/slides/surface/recovery'
-import { deleteDraft, settleDrafts } from '@/apps/slides/utils/drafts'
+import { deleteDraft, settleDrafts, takeUnownedDraft } from '@/apps/slides/utils/drafts'
 import { openSignedInDeviceStore, type RecoveryRecord } from '@/platform/collab'
 import { getCookieSessionUser } from '@/platform/session'
 
@@ -49,8 +49,20 @@ function oldDrafts(id?: string): Promise<OldDraft[]> {
   return settleDrafts(getCookieSessionUser(), id).catch(() => [])
 }
 
-/** The old draft of one presentation, once its clean draft is gone; null when none is dirty. */
-export async function oldDraftCopy(presentation: string, node: string, title: string) {
+/**
+ * The old draft of one presentation, once its clean draft is gone; null when none is dirty.
+ * An editor first takes a draft the shared store kept for no one, as the row save did.
+ */
+export async function oldDraftCopy(
+  presentation: string,
+  node: string,
+  title: string,
+  { isEditor }: { isEditor: boolean },
+) {
+  if (isEditor) {
+    await takeUnownedDraft(presentation, getCookieSessionUser() || 'Guest').catch(() => null)
+  }
+
   const [draft] = await oldDrafts(presentation)
   if (!draft) {
     return null

@@ -2,9 +2,7 @@ import { fromPartial } from '@total-typescript/shoehorn'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
-  clearStaleRecovery,
   downloadRecovery,
-  forgetRecovery,
   keepRecovery,
   readRecovery,
   recoveryFile,
@@ -94,27 +92,6 @@ describe('Slides recovery copy', () => {
     expect(kept()).toEqual([['same', true]])
   })
 
-  it('removes only the unsticky copy once a save lands', () => {
-    keepRecovery('node-1', [{ clientId: 'discarded' }], { sticky: true })
-    keepRecovery('node-1', [{ clientId: 'unload' }])
-
-    clearStaleRecovery('node-1')
-
-    expect(kept()).toEqual([['discarded', true]])
-  })
-
-  it('writes nothing once a save lands if only sticky copies are kept', () => {
-    keepRecovery('node-1', [{ clientId: 'sticky' }], { sticky: true })
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
-      throw new DOMException('full', 'QuotaExceededError')
-    })
-
-    expect(() => clearStaleRecovery('node-1')).not.toThrow()
-    vi.restoreAllMocks()
-
-    expect(kept()).toEqual([['sticky', true]])
-  })
-
   it('shows one person nothing another kept in the same browser', () => {
     keepRecovery('node-1', [{ clientId: 'mine' }], { sticky: true })
 
@@ -195,18 +172,6 @@ describe('Slides recovery copy', () => {
     expect(kept()).toEqual([['kept', true]])
   })
 
-  it('lets a landed save remove only the unsticky copy, downloaded or not', () => {
-    downloadedFiles()
-    keepRecovery('node-1', [{ clientId: 'sticky' }], { sticky: true })
-    downloadRecovery('node-1', 'Plan')
-    keepRecovery('node-1', [{ clientId: 'unsticky' }])
-    downloadRecovery('node-1', 'Plan')
-
-    clearStaleRecovery('node-1')
-
-    expect(kept()).toEqual([['sticky', true]])
-  })
-
   it('moves an identical copy to the end, newly dated, with its download remembered', () => {
     downloadedFiles()
     keepRecovery('node-1', [{ clientId: 'same' }], { now: new Date('2026-09-30T10:00:00Z') })
@@ -236,15 +201,6 @@ describe('Slides recovery copy', () => {
     keepRecovery('node-1', [{ clientId: 'newer' }], { sticky: true })
 
     removeNewestRecovery('node-1')
-
-    expect(kept()).toEqual([['older', true]])
-  })
-
-  it('forgets the copy holding exactly these slides', () => {
-    keepRecovery('node-1', [{ clientId: 'older' }], { sticky: true })
-    keepRecovery('node-1', [{ clientId: 'held' }], { sticky: true })
-
-    forgetRecovery('node-1', [{ clientId: 'held' }])
 
     expect(kept()).toEqual([['older', true]])
   })

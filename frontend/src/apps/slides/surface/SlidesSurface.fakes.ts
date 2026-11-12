@@ -1,14 +1,5 @@
 import { afterEach, beforeEach, expect, vi } from 'vitest'
-import {
-  computed,
-  createApp,
-  defineComponent,
-  h,
-  ref,
-  type Component,
-  type Ref,
-  type SetupContext,
-} from 'vue'
+import { computed, createApp, defineComponent, h, ref, type Ref, type SetupContext } from 'vue'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import type { Doc } from 'yjs'
 
@@ -19,10 +10,6 @@ import { translationPlugin } from '@/platform/translation'
 const { fromPartial, fromAny } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
 
 const server = vi.hoisted(() => ({ fetch: vi.fn() }))
-export const saves: unknown[] = []
-export const previews: unknown[] = []
-// what Drive's restore route does; a test swaps it to change the deck or to fail
-export const versionRestore = { run: async (_seq: string) => {} }
 // the stored bytes every version's content URL answers with
 export const versionBytes = { current: new Uint8Array() }
 // what the server's upgrade of an old version answers
@@ -82,10 +69,6 @@ interface CommentPanelFixture {
   attrs: Record<string, unknown>
 }
 const commentPanel = vi.hoisted((): CommentPanelFixture => ({ attrs: {} }))
-interface PropertiesPanelFixture {
-  real: Component | null
-}
-const propertiesPanel = vi.hoisted((): PropertiesPanelFixture => ({ real: null }))
 // a converted presentation's room; tests hand it a live one
 const collabRoom = vi.hoisted(() => ({
   open: vi.fn(async (): Promise<unknown> => ({ state: 'failed' })),
@@ -96,7 +79,12 @@ interface SavedStatesFixture {
   reads: string[]
 }
 const savedStates = vi.hoisted((): SavedStatesFixture => ({ byNode: new Map(), reads: [] }))
-export const fakeServer = { isRefusing: false, isFailingTemplates: false, opens: 0 }
+// The realtime socket a presentation waiting for its conversion listens on
+const realtime = await vi.hoisted(async () => {
+  const { fakeSocket } = await import('@suite/collab-client/test-support')
+  return { socket: fakeSocket({ answers: true }) }
+})
+export const fakeServer = { isFailingTemplates: false, opens: 0 }
 
 interface MenuEntry {
   label: string
@@ -232,9 +220,12 @@ vi.mock('@/apps/slides/stores/visitedCopies', async (importOriginal) => ({
 }))
 vi.mock('@/platform/collab', async (importOriginal) => {
   const real = await importOriginal<typeof import('@/platform/collab')>()
+  const { watchRooms } = await import('@suite/collab-client')
   return {
     ...real,
     openCollabRoom: collabRoom.open,
+    watchConversion: (keys: string[], onTold: () => void) =>
+      watchRooms(realtime.socket, keys, 'suite_collab_converted', onTold),
     readSavedDocument: async (options: Parameters<typeof real.readSavedDocument>[0]) => {
       const saved = savedStates.byNode.get(options.nodeId)
       if (!saved) {
@@ -327,7 +318,7 @@ vi.doMock('@/apps/slides/components/Toolbar.vue', () => ({
 }))
 
 vi.doMock('@/apps/slides/components/PropertiesPanel.vue', () => ({
-  default: { render: () => propertiesPanel.real && h(propertiesPanel.real) },
+  default: { render: () => null },
 }))
 
 vi.doMock('@/apps/slides/components/ThemeDialog.vue', () => ({
@@ -423,7 +414,7 @@ function session(
       ],
     },
     versions: {
-      restore: (seq: string) => versionRestore.run(seq),
+      restore: async () => {},
       contentUrl: (seq: string) => `/versions/${seq}`,
     },
     canShare: ref(false),
@@ -470,23 +461,7 @@ export async function openedSurface({
 
   server.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
     if (url.includes('/preview')) {
-      previews.push(JSON.parse(String(init?.body)))
       return new Response(JSON.stringify({ preview: null }), { status: 200 })
-    }
-
-    if (url.includes('save_slides')) {
-      if (fakeServer.isRefusing) {
-        return new Response(JSON.stringify({ exc_type: 'TimestampMismatchError' }), { status: 417 })
-      }
-
-      const body = JSON.parse(String(init?.body))
-      // an earlier open's leaving push can land here
-      if (body.name === docname) {
-        saves.push(body)
-      }
-
-      const version = saves.length + 1
-      return answer({ modified: `M${version}` })
     }
 
     if (url.includes('convert_version')) {
@@ -622,7 +597,6 @@ export function startsFromEmptyStore() {
   })
 
   afterEach(() => {
-    fakeServer.isRefusing = false
     fakeServer.isFailingTemplates = false
     versionConversion.answer = {}
     templates.list = []
@@ -635,6 +609,7 @@ export function startsFromEmptyStore() {
 
 export {
   collabRoom,
+  realtime,
   savedStates,
   commentPanel,
   server,
@@ -643,7 +618,6 @@ export {
   exported,
   themeChange,
   forgetTemplates,
-  propertiesPanel,
   warms,
   visits,
 }

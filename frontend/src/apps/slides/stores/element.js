@@ -27,9 +27,8 @@ import { getMinSizeForElement } from '../utils/resize'
 import { shareTableWidth } from '../utils/tableWidths'
 import { getElementDiv } from './elementRegistry'
 import { commandHistory } from './historyMeta'
-import { currentId, isLive, isTextEditedHere, wasLastTextChangeHere } from './liveDeck'
+import { askLivePush, currentId, isLive, isTextEditedHere, wasLastTextChangeHere } from './liveDeck'
 import { presentationId } from './presentation'
-import { markDirty } from './saving'
 import {
   currentSlide,
   selectionBounds,
@@ -1170,7 +1169,7 @@ const addFixedWidthToElement = () => {
 
   markTurnedFixed(activeElement.value.id)
   activeElement.value.width = width
-  markDirty()
+  askLivePush()
 }
 
 // only centered and right-aligned text pays a width change out of its left
@@ -1245,7 +1244,7 @@ const setAutoWidth = async () => {
   await resetGrowthBaseline()
 }
 
-// the stored number equals what auto-height already renders, so no markDirty
+// the stored number equals what auto-height already renders, so no push
 const ensureExplicitHeight = (element) => {
   if (!element || !['image', 'video'].includes(element.type)) return
   if (element.height) return
@@ -1287,7 +1286,7 @@ const updateElementContent = (element) => {
   element.content = updatedHTML
   editorOldText = currentText
 
-  markDirty()
+  askLivePush()
 }
 
 // empty cells are still a table, only a deleted one leaves nothing to edit
@@ -1315,7 +1314,7 @@ const blurAndSaveContent = (element) => {
   if (element.type === 'shape') {
     if (element.content) {
       element.content = null
-      markDirty()
+      askLivePush()
     }
   } else {
     deleteElements(null, [element.id])

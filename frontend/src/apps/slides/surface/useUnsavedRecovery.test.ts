@@ -10,33 +10,14 @@ import { downloadSlides, keepRecovery } from './recovery'
 import { useUnsavedRecovery } from './useUnsavedRecovery'
 
 vi.mock('frappe-ui', () => ({ toast: { error: vi.fn(), warning: vi.fn(), info: vi.fn() } }))
-vi.mock('@/apps/slides/stores/presentation', () => ({
-  showsSlides: vi.fn(),
-  viewOnly: { value: false },
-}))
-vi.mock('@/apps/slides/stores/saving', async () => {
-  const { ref } = await import('vue')
-  return {
-    dirty: ref(false),
-    isSaving: ref(false),
-    resumeWrites: vi.fn(),
-    retireDraft: vi.fn(),
-    saveFailed: ref(false),
-    saveRefused: ref(false),
-    savingFor: ref(null),
-    stopWrites: vi.fn(),
-  }
-})
+vi.mock('@/apps/slides/stores/presentation', () => ({ viewOnly: { value: false } }))
 vi.mock('@/apps/slides/stores/slide', async () => {
   const { ref } = await import('vue')
   return { slides: ref([]) }
 })
 vi.mock('./recovery', () => ({
-  clearStaleRecovery: vi.fn(),
   downloadRecovery: vi.fn(),
   downloadSlides: vi.fn(),
-  forgetRecovery: vi.fn(),
-  keepOutlivedRecovery: vi.fn(),
   keepRecovery: vi.fn(),
   readRecovery: () => [],
   removeNewestRecovery: vi.fn(),
@@ -45,12 +26,7 @@ vi.mock('./recovery', () => ({
 function recovery() {
   return useUnsavedRecovery(
     fromPartial<DocumentSession>({ nodeId: 'n', contentDocname: 'd', title: ref('Talk') }),
-    {
-      isWritable: () => true,
-      isEditable: () => true,
-      load: async () => {},
-      cancelRunningLoad: () => {},
-    },
+    { isWritable: () => true, load: async () => {} },
   )
 }
 

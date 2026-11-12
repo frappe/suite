@@ -148,9 +148,9 @@ describe('old drafts as recovery copies (Q16)', () => {
     await putDraft(draft('deck-plan'))
     await putDraft(draft('deck-saved', { dirty: false }))
 
-    const copy = await oldDraftCopy('deck-plan', 'node-plan', 'Quarterly Plan')
+    const copy = await oldDraftCopy('deck-plan', 'node-plan', 'Quarterly Plan', { isEditor: false })
     expect(copy?.slides).toEqual(SLIDES)
-    expect(await oldDraftCopy('deck-saved', 'node-saved', 'Saved')).toBeNull()
+    expect(await oldDraftCopy('deck-saved', 'node-saved', 'Saved', { isEditor: false })).toBeNull()
     expect(await draftIds()).toEqual(['deck-plan'])
   })
 
