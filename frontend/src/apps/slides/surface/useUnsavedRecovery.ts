@@ -16,6 +16,11 @@ import {
   removeNewestRecovery,
 } from './recovery'
 
+export interface RetainOptions {
+  /** Past any later copy. By default only once edit access has gone. */
+  sticky?: boolean
+}
+
 interface RecoveryHost {
   isWritable: () => boolean
   isReadable: () => boolean
@@ -67,13 +72,13 @@ export function useUnsavedRecovery(
     }
   }
 
-  function retainRecovery() {
+  function retainRecovery({ sticky = !isWritable() }: RetainOptions = {}) {
     if (!slides.value?.length) {
       return true
     }
 
     try {
-      keepRecovery(session.nodeId, liveSlides(), { sticky: !isWritable() })
+      keepRecovery(session.nodeId, liveSlides(), { sticky })
       hasRecovery.value = true
       return true
     } catch {

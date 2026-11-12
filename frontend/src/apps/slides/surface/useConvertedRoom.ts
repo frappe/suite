@@ -52,6 +52,7 @@ import { translate } from '@/platform/translation'
 
 import { restoreVersion } from './restoreVersion'
 import { saveFirst } from './saveFirst'
+import type { RetainOptions } from './useUnsavedRecovery'
 import type { ConvertedVersion } from './versions'
 
 // SAFETY: the untyped element store holds the selected element ids
@@ -68,7 +69,7 @@ interface RoomHost {
   /** Whether the slideshow is up. */
   isPresenting: () => boolean
   /** Keeps the slides in this browser when the room stops holding unsent work. */
-  retainRecovery: () => boolean
+  retainRecovery: (options?: RetainOptions) => boolean
   /** Keeps the slides in this browser past any later save, or offers them as a download. */
   retainStickyOrOffer: () => boolean
   /** Told once the room's slides are first drawn, before any copy of them is kept. */
@@ -297,12 +298,17 @@ export function useConvertedRoom({
     }
   }
 
+  // the room is given up for this copy, so no later copy replaces it, whatever the access is by then
+  function retainStopped() {
+    return retainRecovery({ sticky: true })
+  }
+
   // Mirrors the room's state, or rebuilds the room once it asks for that
   function syncStatus(liveRoom: CollabRoom) {
     const liveStatus = liveRoom.status
     if (liveStatus.isReopenNeeded) {
       if (isKeptNowhere(liveStatus, isRecoveryKept)) {
-        isRecoveryKept = retainRecovery()
+        isRecoveryKept = retainStopped()
       }
 
       // Unsent work held nowhere else stays on screen in the old room until it is sent
@@ -316,7 +322,7 @@ export function useConvertedRoom({
     const hasStopped =
       liveStatus.saveState === 'failed' || (blockReason && !isRecoverable(blockReason))
     if (hasStopped && liveStatus.unsentCount && !isRecoveryKept) {
-      isRecoveryKept = retainRecovery()
+      isRecoveryKept = retainStopped()
     }
 
     status.value = liveStatus

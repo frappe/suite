@@ -2922,6 +2922,64 @@ describe('edit access changing on a converted presentation', () => {
     expect(viewOnly.value).toBe(true)
   })
 
+  it('keeps the unsent edits of a room that failed as edit access came back past later copies', async () => {
+    const room = await editing()
+    room.setStatus({ unsentCount: 1, saveState: 'unsaved', isKeptOnDevice: false })
+    let fail = () => {}
+    const flushing = new Promise<void>((resolve) => {
+      fail = resolve
+    })
+    room.loseAccess.mockImplementation(async () => {
+      room.setStatus({ canWrite: false })
+      await flushing
+      room.setStatus({ saveState: 'failed' })
+    })
+    room.regainAccess.mockImplementation(async (mayEdit) => {
+      await flushing
+      if (mayEdit()) {
+        room.setStatus({ canWrite: true })
+      }
+    })
+    const next = liveRoom()
+    mounted!.access.value = { role: 10 }
+    await nextTick()
+    mounted!.access.value = { role: 50 }
+    fail()
+    await vi.waitFor(() => expect(room.close).toHaveBeenCalled())
+    await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+
+    // the next room's own edits, kept as an ordinary copy as the tab closes
+    const paragraph = fromPartial<XmlElement>(elementText(next.doc, 'e1')!.get(0))
+    fromPartial<XmlText>(paragraph.get(0)).insert(3, ' more')
+    next.setStatus({ unsentCount: 1, saveState: 'unsaved' })
+    window.dispatchEvent(new Event('beforeunload', { cancelable: true }))
+
+    await vi.waitFor(() => expect(readRecovery('node-1')).toHaveLength(2))
+    expect(JSON.stringify(readRecovery('node-1')[0]!.slides)).not.toContain('one more')
+  })
+
+  it('keeps the unsent edits of a room given up for a new one past later copies', async () => {
+    const room = await editing()
+    const next = liveRoom()
+    room.setStatus({
+      unsentCount: 1,
+      saveState: 'unsaved',
+      isKeptOnDevice: false,
+      isReopenNeeded: true,
+    })
+    await vi.waitFor(() => expect(room.close).toHaveBeenCalled())
+    await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+
+    // the next room's own edits, kept as an ordinary copy as the tab closes
+    const paragraph = fromPartial<XmlElement>(elementText(next.doc, 'e1')!.get(0))
+    fromPartial<XmlText>(paragraph.get(0)).insert(3, ' more')
+    next.setStatus({ unsentCount: 1, saveState: 'unsaved' })
+    window.dispatchEvent(new Event('beforeunload', { cancelable: true }))
+
+    await vi.waitFor(() => expect(readRecovery('node-1')).toHaveLength(2))
+    expect(JSON.stringify(readRecovery('node-1')[0]!.slides)).not.toContain('one more')
+  })
+
   it('says nothing turned view only when edit access comes back while the room shuts', async () => {
     const room = await editing()
     let shut = () => {}
