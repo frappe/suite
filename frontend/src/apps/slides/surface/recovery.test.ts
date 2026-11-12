@@ -30,7 +30,7 @@ function recordKey(node: string, clientId: string) {
     ({ copy }) => (copy.slides[0] as { clientId: string }).clientId === clientId,
   )
   if (!record) throw new Error(`no record holds ${clientId}`)
-  return `${PREFIX}${node}:${record.id}`
+  return `${PREFIX}${node}:${record.id.split('@')[0]}`
 }
 
 // What an action writes or removes, by key
@@ -371,6 +371,41 @@ describe('Slides recovery copies across tabs', () => {
     expect(kept()).toEqual([['y', true]])
   })
 
+  it("keeps a tab's sticky copy of slides another tab holds sticky, when that tab discards its own", async () => {
+    const tabB = await otherTab()
+    tabB.keepRecovery('node-1', [{ clientId: 'x' }], { sticky: true, ...at(1) })
+    const shown = tabB.newestRecovery('node-1')!
+
+    keepRecovery('node-1', [{ clientId: 'x' }], { sticky: true, ...at(2) })
+    tabB.discardRecovery('node-1', shown.id, shown.copy)
+
+    expect(kept()).toEqual([['x', true]])
+  })
+
+  it("keeps a tab's unsent copy of slides another tab holds sticky, when that tab discards its own", async () => {
+    const tabB = await otherTab()
+    tabB.keepRecovery('node-1', [{ clientId: 'x' }], { sticky: true, ...at(1) })
+    const shown = tabB.newestRecovery('node-1')!
+
+    keepRecovery('node-1', [{ clientId: 'x' }], at(2))
+    tabB.discardRecovery('node-1', shown.id, shown.copy)
+
+    expect(kept()).toEqual([['x', false]])
+  })
+
+  it('keeps a copy its tab wrote again with the same slides since it was shown', async () => {
+    const tabB = await otherTab()
+    tabB.keepRecovery('node-1', [{ clientId: 'x' }], at(1))
+    const shown = newestRecovery('node-1')!
+
+    tabB.keepRecovery('node-1', [{ clientId: 'x' }], at(2))
+    discardRecovery('node-1', shown.id, shown.copy)
+
+    expect(readRecovery('node-1')).toEqual([
+      { savedAt: at(2).now.toISOString(), slides: [{ clientId: 'x' }], sticky: false },
+    ])
+  })
+
   it('marks no download on a copy its tab wrote again while the file went out', async () => {
     const tabB = await otherTab()
     tabB.keepRecovery('node-1', [{ clientId: 'x' }], at(1))
@@ -442,9 +477,10 @@ describe('Slides recovery copies across tabs', () => {
     expect(touchedKeys(() => downloadRecovery('node-1', 'Plan'))).toEqual([
       expect.stringMatching(`^set ${PREFIX}node-1:downloaded:${newerId}:`),
     ])
-    const id = older.slice(`${PREFIX}node-1:`.length)
-    const shown = { slides: [{ clientId: 'older' }] }
-    expect(touchedKeys(() => discardRecovery('node-1', id, shown))).toEqual([`remove ${older}`])
+    const [shown] = recoveryEntries('node-1')
+    expect(touchedKeys(() => discardRecovery('node-1', shown!.id, shown!.copy))).toEqual([
+      `remove ${older}`,
+    ])
     expect(kept()).toEqual([['newer', true]])
   })
 

@@ -148,6 +148,7 @@ function storedRecords(node: string): StoredRecord[] {
 
 /** A copy as the person sees it: the keys holding the same slides shown as one. */
 export interface RecoveryEntry {
+  /** Each record shown, as `<record id>@<date>`, joined by commas. */
   id: string
   copy: RecoveryCopy
 }
@@ -169,7 +170,7 @@ export function recoveryEntries(node: string): RecoveryEntry[] {
       const sticky = same?.copy.sticky || record.copy.sticky
       const downloaded = same?.copy.downloaded || record.copy.downloaded ? { downloaded: true } : {}
       entries.set(slides, {
-        ids: [...(same?.ids ?? []), record.id],
+        ids: [...(same?.ids ?? []), `${record.id}@${record.copy.savedAt}`],
         copy: { ...record.copy, sticky, ...downloaded },
       })
     }
@@ -178,6 +179,12 @@ export function recoveryEntries(node: string): RecoveryEntry[] {
   } catch {
     return []
   }
+}
+
+// Whether the record is one the entry showed, as it was when shown
+function isShown(entry: string, record: StoredRecord, slides: readonly unknown[]) {
+  const shown = entry.split(',')
+  return shown.includes(`${record.id}@${record.copy.savedAt}`) && holds(record.copy, slides)
 }
 
 export function readRecovery(node: string): RecoveryCopy[] {
@@ -195,18 +202,8 @@ export function keepRecovery(
   { sticky = false, now = new Date() } = {},
 ): void {
   const own = recordKey(node, PAGE_LOAD)
-  const records = storedRecords(node)
-  const ownCopy = records.find(({ id }) => id === PAGE_LOAD)?.copy
+  const ownCopy = storedRecords(node).find(({ id }) => id === PAGE_LOAD)?.copy
   const isOwnSame = !!ownCopy && holds(ownCopy, slides)
-  // a sticky copy holds these slides past any later copy already
-  if (records.some(({ copy }) => copy.sticky && holds(copy, slides))) {
-    if (!sticky || isOwnSame) {
-      localStorage.removeItem(own)
-    }
-
-    return
-  }
-
   // this page's download of the same slides still counts for its sticky copy
   const downloaded = sticky && isOwnSame && ownCopy.downloaded ? { downloaded: true } : {}
   const copy = { savedAt: now.toISOString(), slides: [...slides], sticky, ...downloaded }
@@ -222,7 +219,7 @@ function stored(copy: RecoveryCopy) {
 }
 
 /**
- * Discards the copy as shown, under each key that still holds its slides. This page's own copy
+ * Discards the copy as shown, under each key that still holds its date and slides. This page's own copy
  * and a sticky one, written once, are removed. Another page load's unsent copy, or one in the
  * older list, is marked dismissed instead, as its tab may still write a newer one there.
  * Throws when the browser's store is too full for the mark.
@@ -232,9 +229,8 @@ export function discardRecovery(
   id: string,
   shown: Pick<RecoveryCopy, 'slides'>,
 ): void {
-  const ids = new Set(id.split(','))
   for (const record of storedRecords(node)) {
-    if (!ids.has(record.id) || !holds(record.copy, shown.slides)) {
+    if (!isShown(id, record, shown.slides)) {
       continue
     }
 
@@ -283,10 +279,9 @@ export function downloadRecovery(node: string, title: string): 'none' | 'downloa
   }
 
   saveThroughBrowser(recoveryFile(entry.copy, title))
-  const ids = new Set(entry.id.split(','))
   try {
     for (const record of storedRecords(node)) {
-      if (ids.has(record.id) && holds(record.copy, entry.copy.slides)) {
+      if (isShown(entry.id, record, entry.copy.slides)) {
         localStorage.setItem(markKey(node, 'downloaded', record.id, record.copy), '1')
       }
     }
