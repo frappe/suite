@@ -41,7 +41,8 @@ export function useOldDraft(session: DocumentSession) {
     }
 
     await discardCopy(kept)
-    copy.value = null
+    // a newer draft another tab wrote meanwhile stays, and shows in its place
+    await settleOldDraft()
   }
 
   return { oldDraftNotice, settleOldDraft, downloadOldDraft, dismissOldDraft }

@@ -546,6 +546,34 @@ describe('a deck on the content layer', () => {
       expect(await drafts()).toEqual([])
     })
 
+    it('keeps a newer draft another tab wrote while Dismiss was asked, and shows that one', async () => {
+      await keepDraft({ dirty: true })
+      convertedRoom('one')
+      mounted = await openedSurface({ deck: { is_converted: true } })
+      await vi.waitFor(() => expect(oldDraftNotice()).toBeDefined())
+      const shownText = oldDraftNotice()!.textContent
+      await drafts((store) =>
+        store.put({
+          id: mounted!.docname,
+          user: 'me@example.com',
+          content: KEPT,
+          updatedAt: 1_800_000_000_000,
+          dirty: true,
+        }),
+      )
+
+      press('Dismiss')
+      await vi.waitFor(() => expect(dialog.danger).toHaveBeenCalledTimes(1))
+      const [confirmed] = fromAny<[{ onConfirm: () => void }], unknown>(
+        vi.mocked(dialog.danger).mock.lastCall,
+      )
+      confirmed.onConfirm()
+
+      await vi.waitFor(() => expect(oldDraftNotice()?.textContent).not.toBe(shownText))
+      expect(oldDraftNotice()).toBeDefined()
+      expect(await drafts()).toEqual([mounted.docname])
+    })
+
     it("downloads the draft's slides under the presentation's title, and keeps it", async () => {
       await keepDraft({ dirty: true })
       convertedRoom('one')

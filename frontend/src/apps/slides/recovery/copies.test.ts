@@ -154,6 +154,18 @@ describe('old drafts as recovery copies (Q16)', () => {
     expect(await draftIds()).toEqual(['deck-plan'])
   })
 
+  it('dismissing a copy keeps a newer draft another tab wrote since, and lists that one', async () => {
+    await putDraft(draft('deck-plan'))
+    const [shown] = await listCopies()
+    const NEWER = [{ name: 'row-1', elements: [{ type: 'text', content: 'Newer words' }] }]
+    await putDraft(draft('deck-plan', { content: NEWER, updatedAt: 1_700_000_005_000 }))
+
+    await discardCopy(shown!)
+
+    expect(await draftIds()).toEqual(['deck-plan'])
+    expect((await listCopies()).map((copy) => copy.slides)).toEqual([NEWER])
+  })
+
   it('dismissing the copy deletes the draft', async () => {
     await putDraft(draft('deck-plan'))
     const [copy] = await listCopies()
@@ -199,6 +211,52 @@ describe("the live room's and the page's copies", () => {
 
     const left = await listCopies()
     expect(left.map((copy) => copy.key)).toEqual([copies[3]!.key])
+  })
+})
+
+describe('naming many copies', () => {
+  const ids = Array.from({ length: 250 }, (_, index) => `deck-${index}`)
+  const named = (presentations: string[]) =>
+    presentations.map((presentation) => ({
+      presentation,
+      node: `node-${presentation}`,
+      title: `Title ${presentation}`,
+    }))
+
+  beforeEach(async () => {
+    for (const id of ids) await putDraft(draft(id))
+  })
+
+  // the server refuses a read of more than 200 names
+  it('names every copy past 200, a read of at most 200 at a time', async () => {
+    query.mockImplementation(async (_route, { presentations, nodes }) => {
+      if (presentations.length + nodes.length > 200) throw new Error('Too many presentations')
+      return named(presentations)
+    })
+
+    const copies = await listCopies()
+
+    expect(copies).toHaveLength(250)
+    expect(copies.filter((copy) => !copy.title)).toEqual([])
+  })
+
+  it('keeps the names one read gave when another read fails', async () => {
+    query.mockImplementation(async (_route, { presentations }) => {
+      if (presentations.includes('deck-249')) throw new Error('offline')
+      return named(presentations)
+    })
+
+    const copies = await listCopies()
+
+    const reads: string[][] = query.mock.calls.map((call) => call[1].presentations)
+    const [failed, answered] = [
+      reads.filter((read) => read.includes('deck-249')),
+      reads.filter((read) => !read.includes('deck-249')),
+    ]
+    const titleOf = (id: string) => copies.find((copy) => copy.key === `draft:${id}`)!.title
+    expect(answered.flat().length).toBeGreaterThan(0)
+    expect(answered.flat().map(titleOf)).toEqual(answered.flat().map((id) => `Title ${id}`))
+    expect(failed.flat().map(titleOf).filter(Boolean)).toEqual([])
   })
 })
 

@@ -135,10 +135,23 @@ function settleDraft(cursor, user, kept) {
   }
 }
 
-export async function deleteDraft(user, id) {
+// Deletes the draft saved at `updatedAt`. A newer one another tab wrote since stays, as the
+// check and the delete share one transaction
+export async function deleteDraft(user, id, updatedAt) {
   const db = await openDraftsDb(draftsDbName(user || 'Guest'))
   try {
-    await requestResult(draftsStore(db, 'readwrite').delete(id))
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, 'readwrite')
+      const request = tx.objectStore(STORE).get(id)
+      request.onsuccess = () => {
+        if (request.result?.updatedAt === updatedAt) {
+          tx.objectStore(STORE).delete(id)
+        }
+      }
+
+      tx.oncomplete = () => resolve()
+      tx.onabort = () => reject(tx.error)
+    })
   } finally {
     db.close()
   }

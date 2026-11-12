@@ -109,13 +109,26 @@ function pageCopies(names: Map<string, RecoveryName>): RecoveryCopy[] {
   )
 }
 
-// One read for every copy that carries no title; a presentation the person can't read answers none
-async function recoveryNames(presentations: string[], nodes: string[]) {
-  if (!presentations.length && !nodes.length) {
-    return []
-  }
+// The most names the server reads at once
+const NAMES_LIMIT = 200
 
-  return client.query(api.slides.recovery.names, { presentations, nodes }).catch(() => [])
+// Names for the copies that carry no title, in reads of at most NAMES_LIMIT; a read that
+// fails names none of its own. A presentation the person can't read answers none
+async function recoveryNames(presentations: string[], nodes: string[]) {
+  const reads = [
+    ...batches(presentations).map((batch) => ({ presentations: batch, nodes: [] })),
+    ...batches(nodes).map((batch) => ({ presentations: [], nodes: batch })),
+  ]
+  const names = await Promise.all(
+    reads.map((read) => client.query(api.slides.recovery.names, read).catch(() => [])),
+  )
+  return names.flat()
+}
+
+function batches(names: string[]) {
+  return Array.from({ length: Math.ceil(names.length / NAMES_LIMIT) }, (_, index) =>
+    names.slice(index * NAMES_LIMIT, (index + 1) * NAMES_LIMIT),
+  )
 }
 
 /** This device's copies, newest first. */
@@ -145,9 +158,11 @@ export async function copyEntries() {
   )
 }
 
-export async function discardCopy(copy: Pick<RecoveryCopy, 'key'>) {
+/** Discards the copy as it was shown; a newer draft another tab wrote since stays. */
+export async function discardCopy(copy: Pick<RecoveryCopy, 'key' | 'savedAt'>) {
   if (copy.key.startsWith(DRAFT_PREFIX)) {
-    await deleteDraft(getCookieSessionUser(), copy.key.slice(DRAFT_PREFIX.length))
+    const id = copy.key.slice(DRAFT_PREFIX.length)
+    await deleteDraft(getCookieSessionUser(), id, copy.savedAt.getTime())
     return
   }
 

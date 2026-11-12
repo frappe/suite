@@ -10,7 +10,7 @@ from frappe import _
 
 from suite.slides import drive as slides_drive
 
-# Far more copies than one device keeps, so the page's one read stays small
+# The most names one read takes; the page reads in batches of this size
 NAMES_LIMIT = 200
 
 
