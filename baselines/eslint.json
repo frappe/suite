@@ -162,7 +162,6 @@
   "frontend/src/apps/slides/stores/commands.test.ts|@typescript-eslint/no-explicit-any": 1,
   "frontend/src/apps/slides/stores/connectorFollow.test.ts|@typescript-eslint/no-explicit-any": 4,
   "frontend/src/apps/slides/stores/copyPaste.test.ts|@typescript-eslint/no-explicit-any": 3,
-  "frontend/src/apps/slides/stores/editLock.test.ts|@typescript-eslint/no-explicit-any": 3,
   "frontend/src/apps/slides/stores/element.js|@typescript-eslint/no-unused-vars": 1,
   "frontend/src/apps/slides/stores/lock.test.ts|@typescript-eslint/no-explicit-any": 3,
   "frontend/src/apps/slides/stores/plainTextPaste.test.ts|@typescript-eslint/no-explicit-any": 2,

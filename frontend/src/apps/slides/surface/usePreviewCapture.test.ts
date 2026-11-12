@@ -32,7 +32,6 @@ vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' 
 
 const { presentationDoc, presentationId, slidesLength, viewOnly } =
   await import('@/apps/slides/stores/presentation')
-const { lockedElsewhere } = await import('@/apps/slides/stores/editLock')
 const { slides } = await import('@/apps/slides/stores/slide')
 const { clearSaveFailure, markClean, markDirty, saveChanges } =
   await import('@/apps/slides/stores/saving')
@@ -63,7 +62,6 @@ describe('the deck preview', () => {
     drawings.finish = Promise.resolve()
     serverRefusesSaves = false
     viewOnly.value = false
-    lockedElsewhere.value = false
     clearSaveFailure()
     const id = `deck-${Math.random()}`
     presentationId.value = id
@@ -137,15 +135,6 @@ describe('the deck preview', () => {
     await editAndSave()
     await waitOutThePause()
     await vi.waitFor(() => expect(pushedPreviews).toHaveLength(1))
-  })
-
-  it('sends nothing from a tab another tab took the deck from', async () => {
-    await editAndSave()
-    lockedElsewhere.value = true
-    await waitOutThePause()
-
-    expect(drawings.count).toBe(0)
-    expect(pushedPreviews).toHaveLength(0)
   })
 
   it('sends nothing from a view only tab', async () => {

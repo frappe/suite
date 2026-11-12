@@ -51,7 +51,6 @@ vi.mock('@/apps/slides/stores/saving', () => ({
   },
 }))
 
-const { lockedElsewhere } = await import('./editLock')
 const {
   initPresentationDoc,
   currentOpening,
@@ -72,7 +71,6 @@ describe('loading a presentation', () => {
     vi.clearAllMocks()
     keepDiscarded.mockReset()
     releaseContext = setDocumentContext('p1', undefined, undefined, keepDiscarded)
-    lockedElsewhere.value = false
     saveRefused.value = false
     slides.value = []
     local = null
@@ -202,14 +200,6 @@ describe('loading a presentation', () => {
       expect(doc?.modified).toBe('M1')
       expect(slides.value[0].background).toBe('#00ff00ff')
       expect(writeDraft).not.toHaveBeenCalled()
-    })
-
-    it('makes no copy in a tab another one holds the lock over', async () => {
-      lockedElsewhere.value = true
-
-      await initPresentationDoc('p1')
-
-      expect(keepDiscarded).not.toHaveBeenCalled()
     })
 
     it('makes no copy of a push that landed', async () => {
@@ -440,18 +430,6 @@ describe('loading a presentation', () => {
       expect(fetch).not.toHaveBeenCalled()
     })
 
-    it('stays untouched by a tab another one holds the lock over, offline', async () => {
-      vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
-      lockedElsewhere.value = true
-
-      const doc = await initPresentationDoc('p1')
-
-      expect(doc?.modified).toBe('M1')
-      expect(slides.value[0].background).toBe('#00ff00ff')
-      expect(warning).not.toHaveBeenCalled()
-      expect(writeDraft).not.toHaveBeenCalled()
-    })
-
     it('is not read by a read-only load, offline', async () => {
       vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
 
@@ -526,18 +504,6 @@ describe('loading a presentation', () => {
     await reload
     expect(inReadonlyMode.value).toBe(false)
   })
-
-  it('leaves the draft and the discard notice to the tab that holds the lock', async () => {
-    lockedElsewhere.value = true
-    local = { dirty: true, baseModified: 'M1', content: [slide('#00ff00ff')] }
-    served = { modified: 'M2', slides: [slide('#ff0000ff')] }
-
-    await initPresentationDoc('p1')
-
-    expect(slides.value[0].background).toBe('#ff0000ff')
-    expect(warning).not.toHaveBeenCalled()
-    expect(writeDraft).not.toHaveBeenCalled()
-  })
 })
 
 describe('overlapping loads', () => {
@@ -545,7 +511,6 @@ describe('overlapping loads', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    lockedElsewhere.value = false
     saveRefused.value = false
     slides.value = []
     local = null

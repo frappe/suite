@@ -48,7 +48,6 @@ import { useNavigationPanel } from '@/apps/slides/composables/useNavigationPanel
 import { useShortcuts } from '@/apps/slides/composables/useShortcuts'
 import { activeEditor } from '@/apps/slides/composables/useTextEditor'
 import { setDocumentMedia } from '@/apps/slides/stores/documentMedia'
-import { acquireEditLock, lockedElsewhere, releaseEditLock } from '@/apps/slides/stores/editLock'
 import { flushPendingBlur, focusElementId, resetFocus } from '@/apps/slides/stores/element'
 import {
   actionOrder as historyMetaActionOrder,
@@ -82,7 +81,6 @@ import {
 import {
   dirty,
   isSaving,
-  keepDraftAsClean,
   resumeWrites,
   saveChanges,
   saveFailed,
@@ -299,7 +297,7 @@ const { isNavigationPanelOpen } = useNavigationPanel()
 // the side panel floats over the slide area, so a notice starts at its edge
 const isNoticeBesidePanel = computed(() => !phone.value && isNavigationPanelOpen.value)
 // What the canvas, panels and shortcuts read: the phone viewer edits nothing. The
-// stores keep their own `inReadonlyMode`, which follows access, the edit lock and a refused save.
+// stores keep their own `inReadonlyMode`, which follows access and a refused save
 const canvasReadonly = computed(() => inReadonlyMode.value || phone.value)
 const editing = computed(() => !canvasReadonly.value)
 const { open: showThemeDialog, offer: offerTheme } = useNewPresentationTheme(
@@ -495,18 +493,6 @@ watch(writesBlocked, (blocked) => {
   flushPendingBlur()
   resetFocus()
 })
-// The lock has already gone: this runs when the steal rejects this tab's request, and
-// nothing waits for the write, so the tab that took over can read the draft before it lands.
-function keepDraftForTakeover() {
-  flushPendingBlur()
-  void keepDraftAsClean()
-}
-async function editHere() {
-  await acquireEditLock(props.session.contentDocname, keepDraftForTakeover, { steal: true })
-  await load()
-  // The loaded deck can hold another tab's edits, which this tab's undo steps know nothing about.
-  history.clearHistory()
-}
 const slidePosition = computed(() => (slideIndex.value ?? 0) + 1)
 function showSlide(step: number) {
   changeEditorSlide((slideIndex.value ?? 0) + step, false)
@@ -769,13 +755,6 @@ async function load() {
   try {
     // Not `editable`: a restore pauses editing, and its reload is still an editor load.
     const readonly = !access.writable.value || composite.value || !!conversion.value
-    // Refused while another tab holds the deck, which this one then shows read-only.
-    // Refused with no holder: the surface closed while the request waited.
-    const held =
-      readonly ||
-      isConverted.value ||
-      (await acquireEditLock(props.session.contentDocname, keepDraftForTakeover))
-    if (!isCurrent(run) || (!held && !lockedElsewhere.value)) return
     const doc = await initPresentationDoc(props.session.contentDocname, readonly)
     if (!isCurrent(run)) return
 
@@ -801,8 +780,6 @@ async function load() {
           }
         : null
     if (isConverted.value) {
-      // the first open had to ask before it knew; two tabs of a converted presentation are two editors
-      releaseEditLock()
       await showConvertedSlides(run)
     }
 
@@ -1039,7 +1016,6 @@ onBeforeUnmount(() => {
     releaseTemplateReader()
     resumeWrites(props.session.contentDocname)
   })
-  releaseEditLock()
   resetEditorState()
 })
 </script>
@@ -1181,13 +1157,6 @@ onBeforeUnmount(() => {
         <NavigationPanel class="absolute inset-y-0 left-0" @change-slide="changeEditorSlide" />
         <Toolbar v-if="editing && presentationDoc" />
         <PropertiesPanel v-if="editing" class="absolute inset-y-0 right-0" />
-        <SurfaceNotice
-          v-if="editable && lockedElsewhere && !heldNotice"
-          icon="lucide-lock"
-          :message="__('This presentation is open for editing in another tab.')"
-        >
-          <Button variant="ghost" :label="__('Edit here')" @click="editHere" />
-        </SurfaceNotice>
       </template>
     </div>
 

@@ -5,7 +5,7 @@
  * reloaded the deck, the tab that writes the deck draws the first slide and
  * sends it to Drive's preview route. Drive stores it without stamping the deck,
  * so a capture is not an edit. A tab that does not write the deck sends nothing:
- * view only, open for editing in another tab, or refused by the server. A reload
+ * view only, or refused by the server. A reload
  * that fails cancels the capture, as the slides may no longer be what the deck holds.
  *
  * The first capture of a session is sent even if the first slide did not change,

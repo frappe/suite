@@ -13,7 +13,6 @@ import { translate } from '@/platform/translation'
 
 import { draftOutcome, needsServerCheck } from './draftOutcome'
 import { recordVisit } from './driveVisit'
-import { lockedElsewhere } from './editLock'
 import { commandHistory } from './historyMeta'
 import {
   clearSaveFailure,
@@ -33,9 +32,8 @@ const presentationId = ref(null)
 // the user may not write this presentation at all
 const viewOnly = ref(false)
 
-// Another tab of this browser edits the presentation, or the server refused this
-// tab's version. Only the refusal needs a reload.
-const writesBlocked = computed(() => lockedElsewhere.value || saveRefused.value)
+// the server refused this tab's version, which only a reload clears
+const writesBlocked = computed(() => saveRefused.value)
 // That, or the user has no write access.
 const inReadonlyMode = computed(() => viewOnly.value || writesBlocked.value)
 
@@ -299,7 +297,7 @@ const fetchPresentation = async (name, load) => {
   const isOnServedBase = outcome === 'restore'
   // the draft belongs to the tab that can write, on the presentation it is still opening;
   // this one neither rewrites nor reports it
-  const isOwnDraft = local?.dirty && isLatestLoad(load) && !viewOnly.value && !lockedElsewhere.value
+  const isOwnDraft = local?.dirty && isLatestLoad(load) && !viewOnly.value
   const isUncopied =
     outcome === 'discard' && isOwnDraft && !landed && !copyDiscarded(name, local.content)
 
