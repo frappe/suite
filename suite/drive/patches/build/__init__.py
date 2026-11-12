@@ -16,6 +16,8 @@ The phases cover §14.2 steps 1 to 13:
 - `gate.check_gate` — the two refusals Build makes before it mutates.
 - `legacy_bytes.prepare_legacy_bytes` — the framework local backfill and
   the legacy S3 copy, resumable, with the durable result the report reads.
+  The copy reads and places objects on `drive_build_copy_workers` threads
+  (site config, 1 to 32, default 8).
 - `root_pairs.convert_root_pairs` — step 4: the root node and metadata
   pairs, written as one unit, repaired or refused on a mismatch.
 - `tree.convert_trees` — step 5: the reachable trees, walked by depth,

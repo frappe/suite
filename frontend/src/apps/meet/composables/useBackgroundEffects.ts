@@ -1,4 +1,7 @@
-import type { SelfieSegmentation } from '@mediapipe/selfie_segmentation'
+import type {
+  SelfieSegmentation,
+  Results as SelfieSegmentationResults,
+} from '@mediapipe/selfie_segmentation'
 import { toast } from 'frappe-ui'
 import { onUnmounted, ref, type Ref } from 'vue'
 
@@ -12,6 +15,14 @@ import {
 } from '../utils/compositing'
 import { VideoElementManager, type MediaAttachmentFacade } from '../utils/media/VideoElementManager'
 import { WebGLManager } from '../utils/webglShaders'
+
+declare global {
+  interface MediaStreamTrackProcessorInit {
+    track?: MediaStreamTrack
+  }
+  var SelfieSegmentation:
+    typeof import('@mediapipe/selfie_segmentation').SelfieSegmentation | undefined
+}
 
 // Types and interfaces
 export interface BackgroundEffectOptions {
@@ -41,11 +52,6 @@ interface BackgroundEffectsResult {
   stream: MediaStream
   cleanup: () => void
   updateOptions: (options: BackgroundEffectOptions) => Promise<void>
-}
-
-interface SelfieSegmentationResults {
-  segmentationMask: ImageBitmap
-  image?: unknown
 }
 
 interface UseBackgroundEffectsReturn {
@@ -92,13 +98,7 @@ async function getSelfieSegmentationCtor() {
   // @mediapipe/selfie_segmentation ships a UMD bundle that exposes a global.
   await import('@mediapipe/selfie_segmentation')
 
-  const ctor = (
-    globalThis as typeof globalThis & {
-      SelfieSegmentation?: new (options: {
-        locateFile: (file: string) => string
-      }) => SelfieSegmentation
-    }
-  ).SelfieSegmentation
+  const ctor = globalThis.SelfieSegmentation
 
   if (!ctor) {
     throw new Error('SelfieSegmentation constructor not found on globalThis')
@@ -237,7 +237,7 @@ export function useBackgroundEffects({
             })
 
             instance.onResults((results) => {
-              latestResults = results as SelfieSegmentationResults
+              latestResults = results
             })
 
             try {
@@ -515,13 +515,7 @@ export function useBackgroundEffects({
       }
 
       if ('MediaStreamTrackProcessor' in window) {
-        const MediaStreamTrackProcessor = (
-          window as typeof window & {
-            MediaStreamTrackProcessor: new (init: { track: MediaStreamTrack }) => {
-              readable: ReadableStream<VideoFrame>
-            }
-          }
-        ).MediaStreamTrackProcessor
+        const MediaStreamTrackProcessor = window.MediaStreamTrackProcessor
         const processor = new MediaStreamTrackProcessor({ track: videoTrack })
         trackProcessor = processor.readable.getReader()
       } else {
@@ -628,7 +622,7 @@ export function useBackgroundEffects({
       }
 
       // Helper to apply background effects (blur or virtual background)
-      const applyEffectsToFrame = async (maskBitmap?: ImageBitmap) => {
+      const applyEffectsToFrame = async (maskBitmap?: TexImageSource) => {
         if (settings.backgroundBlurEnabled && maskBitmap) {
           if (webglManager) {
             try {
@@ -898,18 +892,21 @@ export function useBackgroundEffects({
 
       let outputStream: MediaStream
       if (useOffscreenCanvas) {
+        // SAFETY: useOffscreenCanvas is selected only when the browser advertises this native constructor.
         const MediaStreamTrackGenerator = (
           window as typeof window & {
-            MediaStreamTrackGenerator: new (init: { kind: string }) => MediaStreamTrack & {
-              writable: WritableStream
-            }
+            MediaStreamTrackGenerator: new (init: {
+              kind: string
+            }) => MediaStreamTrack & { writable: WritableStream }
           }
         ).MediaStreamTrackGenerator
         trackGenerator = new MediaStreamTrackGenerator({ kind: 'video' })
         trackWriter = trackGenerator.writable.getWriter()
         outputStream = new MediaStream([trackGenerator])
       } else {
-        outputStream = (outputCanvas as HTMLCanvasElement).captureStream(30) // 30 FPS
+        if (!(outputCanvas instanceof HTMLCanvasElement))
+          throw new Error('Canvas capture requires an HTML canvas')
+        outputStream = outputCanvas.captureStream(30) // 30 FPS
       }
 
       // Replace video track
@@ -1051,7 +1048,7 @@ export function useBackgroundEffects({
     }
 
     latestResults = null
-    const resetFn = Reflect.get(model, 'reset') as (() => void) | undefined
+    const resetFn = model.reset
     if (typeof resetFn === 'function') {
       try {
         resetFn.call(model)

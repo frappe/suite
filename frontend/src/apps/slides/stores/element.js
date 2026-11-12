@@ -1,4 +1,5 @@
 import { generateHTML } from '@tiptap/core'
+import { toast } from 'frappe-ui'
 import { computed, nextTick, ref, watch } from 'vue'
 
 import { resetGrowthBaseline, useTextEditor } from '@/apps/slides/composables/useTextEditor'
@@ -15,6 +16,7 @@ import {
   patchEmptyParagraphs,
   ZWSP,
 } from '@/apps/slides/stores/tiptapSetup'
+import { translate } from '@/platform/translation'
 
 import { guessShapeColorsFromBackground, guessTextColorFromBackground } from '../utils/color'
 import { getBoundTargetIds, getLineBox, remapElementIds } from '../utils/connectors'
@@ -25,6 +27,7 @@ import { getMinSizeForElement } from '../utils/resize'
 import { shareTableWidth } from '../utils/tableWidths'
 import { getElementDiv } from './elementRegistry'
 import { commandHistory } from './historyMeta'
+import { currentId, isLive, isTextEditedHere, wasLastTextChangeHere } from './liveDeck'
 import { presentationId } from './presentation'
 import { markDirty } from './saving'
 import {
@@ -39,7 +42,9 @@ import { getCommandsToInitElementRefId, getCommandsToUpdateElementRefId } from '
 
 const findSlideElement = (id) => currentSlide.value?.elements.find((el) => el.id === id)
 
+/** @type {import('vue').Ref<string[]>} */
 const activeElementIds = ref([])
+/** @type {import('vue').Ref<string | null>} */
 const focusElementId = ref(null)
 const pairElementId = ref(null)
 const pendingShapeType = ref(null)
@@ -77,6 +82,7 @@ const activeElement = computed(() => {
   } else if (activeElementIds.value.length == 1) {
     return activeElements.value[0]
   }
+  return undefined
 })
 
 const isMultiSelection = computed(() => activeElementIds.value.length > 1)
@@ -93,7 +99,8 @@ const isTextSelection = computed(
   () => isMultiSelection.value && activeElements.value.every(hasTextContent),
 )
 
-const setActiveElements = (ids) => {
+function setActiveElements(given) {
+  const ids = given.map(currentId)
   if (ids.length == 1 && activeElementIds.value.includes(ids[0])) return
   activeElementIds.value = ids
   focusElementId.value = null
@@ -195,9 +202,9 @@ const getInitialTableContent = (cells, columnWidths, cellStyles) => {
       type: 'textStyle',
       attrs: { ...cellStyles, color: getTextColor(style), fontSize: getFontSize(style) },
     },
-    ...['bold', 'italic', 'underline', 'strike']
-      .filter((mark) => style[mark])
-      .map((type) => ({ type })),
+    ...['bold', 'italic', 'underline', 'strike'].flatMap((mark) =>
+      style[mark] ? [{ type: mark }] : [],
+    ),
   ]
 
   const getParagraph = (line, style) => ({
@@ -736,6 +743,12 @@ const addMediaElement = async (file, type, targetSlide, localFile) => {
 
   // a slow upload can outlive a slide switch, so the element goes back to the
   // slide it was started from, not to whatever is on screen now
+  // a co-editor may have deleted that slide while the upload ran
+  if (isLive() && !slides.value.includes(targetSlide)) {
+    targetSlide = currentSlide.value
+    toast.info(translate('The slide this was added to was deleted, so it is on this slide.'))
+  }
+
   const slideIdx = slides.value.indexOf(targetSlide)
   if (slideIdx === -1) return
 
@@ -1278,7 +1291,13 @@ const blurAndSaveContent = (element) => {
   // blur() drops the window selection, including one this editor never held
   if (activeEditor.value.isFocused) activeEditor.value.commands.blur()
 
+  // a co-editor's change never comes back as this tab's write, and emptying it is theirs (Q6)
+  if (isLive() && !isTextEditedHere()) return
+
   if (!isEditorEmpty(element)) return updateElementContent(element)
+
+  // text a co-editor just emptied is still theirs, whatever this tab typed before (Q6)
+  if (isLive() && !wasLastTextChangeHere()) return
 
   if (element.type === 'shape') {
     if (element.content) {

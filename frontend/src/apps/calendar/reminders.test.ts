@@ -6,12 +6,15 @@ import { createRealtime, type SocketLike } from '@/platform/realtime'
 import { createSession } from '@/platform/session'
 import type { Transport } from '@/platform/transport'
 
-const shown = vi.hoisted(
-  () =>
-    [] as {
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
+const shown = vi.hoisted(() =>
+  fromPartial<
+    {
       title: string
       options: { description?: string; action?: { label: string; onClick: () => void } }
-    }[],
+    }[]
+  >([]),
 )
 
 vi.mock('frappe-ui', async (importOriginal) => ({
@@ -50,7 +53,7 @@ const reminder = {
 /** A signed-in reader, with or without Calendar (the `jmap` capability). */
 async function signIn(hasCalendar: boolean) {
   const account = { id: 'ann@example.com', capabilities: { jmap: hasCalendar } }
-  const session = createSession({ request: async () => account } as unknown as Transport)
+  const session = createSession(fromPartial<Transport>({ request: async () => account }))
   await session.login('ann@example.com', 'secret')
   return session
 }

@@ -16,20 +16,20 @@
           </div>
           <List
             selectable
-            class="pointer-events-none -mx-3 list-row-px-3 list-gap-6"
+            class="pointer-events-none -mx-3 list-row-px-3 list-gap-2 sm:list-gap-6"
             :columns="{
-              base: ['minmax(0,1fr)', '7rem', '2rem'],
-              sm: ['minmax(0,1fr)', '10rem', '2rem'],
+              base: ['minmax(0,1fr)', '2rem'],
+              sm: ['minmax(0,1fr)', '16rem', '2rem'],
             }"
             :row-height="64"
           >
             <ListHeader>
               <ListHeaderCell>{{ __('User') }}</ListHeaderCell>
-              <ListHeaderCell>{{ __('Usage') }}</ListHeaderCell>
+              <ListHeaderCell class="max-sm:hidden">{{ __('Usage') }}</ListHeaderCell>
               <ListHeaderCell />
             </ListHeader>
             <ListRows v-slot="{ item }" :items="SKELETON_ROWS" row-key="id">
-              <ListRow :value="item.id">
+              <ListRow :value="item.id" class="h-auto gap-y-2 py-3 sm:h-16 sm:py-0">
                 <ListCell>
                   <Skeleton class="size-6 shrink-0 rounded-full" />
                   <div class="ml-3 min-w-0 flex-1">
@@ -37,13 +37,13 @@
                     <DashboardSkeletonText class="text-p-sm" width="50%" />
                   </div>
                 </ListCell>
-                <ListCell>
+                <ListCell class="max-sm:col-start-1 max-sm:row-start-2">
                   <div class="min-w-0 flex-1">
                     <DashboardSkeletonText class="text-base" width="60%" />
                     <DashboardSkeletonText class="text-p-sm" width="45%" />
                   </div>
                 </ListCell>
-                <ListCell>
+                <ListCell class="max-sm:col-start-2 max-sm:row-span-2 max-sm:row-start-1">
                   <Skeleton class="size-7 rounded-4" />
                 </ListCell>
               </ListRow>
@@ -55,67 +55,112 @@
     <ErrorMessage :message="report.error?.message" />
 
     <div v-if="report.data" class="mx-auto w-full max-w-5xl space-y-6 pb-10">
-      <SiteStorageSummary :report="report.data" />
+      <SiteStorageSummary :report="report.data" compact />
 
       <template v-if="report.data.cloud">
+        <section v-if="attentionUsers.length" class="space-y-3" :aria-label="__('Storage alerts')">
+          <h2 class="text-lg-medium text-ink-gray-9">{{ __('Needs attention') }}</h2>
+          <div class="grid gap-3 lg:grid-cols-2">
+            <div
+              v-for="user in attentionUsers"
+              :key="user.name"
+              class="space-y-3 rounded-5 border border-outline-gray-2 p-4"
+            >
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <div class="min-w-0">
+                  <p class="text-base-medium text-ink-gray-9">{{ user.full_name }}</p>
+                  <p class="break-all text-p-sm text-ink-gray-5">{{ user.email }}</p>
+                </div>
+                <Badge
+                  :theme="
+                    user.combined_bytes !== null &&
+                    user.combined_bytes > (user.effective_cap_bytes ?? user.cap_bytes ?? Infinity)
+                      ? 'red'
+                      : 'amber'
+                  "
+                  >{{ capNote(user) }}</Badge
+                >
+              </div>
+              <StorageUsage :user="user" />
+              <div class="flex items-center justify-between gap-3">
+                <p class="text-p-sm text-ink-gray-5">{{ __('Mail keeps working') }}</p>
+                <Button :label="__('Review limit')" @click="editCap(user)" />
+              </div>
+            </div>
+          </div>
+        </section>
         <section class="space-y-4">
           <div class="flex flex-wrap items-center justify-between gap-3">
-            <h2 class="text-lg font-medium text-ink-gray-9">{{ __('User storage limits') }}</h2>
+            <h2 class="text-lg-medium text-ink-gray-9">{{ __('User storage limits') }}</h2>
             <div class="flex flex-wrap items-center gap-2">
               <span v-if="selected.length" class="text-p-sm text-ink-gray-5">{{
                 __('{0} selected', [selected.length])
               }}</span>
-              <Button variant="subtle" :label="__('Default storage')" @click="openDefaultStorage" />
+              <Button variant="ghost" :label="__('Default storage')" @click="openDefaultStorage" />
               <Button
-                variant="subtle"
+                v-if="selected.length"
+                variant="solid"
                 :label="__('Set limits')"
-                :disabled="!selected.length"
                 @click="editing = true"
               />
             </div>
           </div>
-
+          <div class="flex items-center justify-between gap-2">
+            <FormControl
+              v-model="search"
+              :aria-label="__('Search users')"
+              :placeholder="__('Search users')"
+              class="min-w-0 flex-1 sm:max-w-64"
+            />
+            <div class="flex shrink-0 gap-2">
+              <FormControl
+                v-model="filter"
+                class="w-28 sm:w-auto"
+                type="select"
+                :aria-label="__('Filter users')"
+                :options="[
+                  { label: __('All users'), value: 'all' },
+                  { label: __('Needs attention'), value: 'attention' },
+                ]"
+              />
+              <Button
+                icon="lucide-arrow-down-up"
+                :label="descending ? __('Most used first') : __('Least used first')"
+                @click="descending = !descending"
+              />
+            </div>
+          </div>
           <List
             v-model:selection="selected"
             selectable
-            class="-mx-3 list-row-px-3 list-gap-6"
+            class="storage-users -mx-3 list-row-px-3 list-gap-3 sm:list-gap-6"
             :columns="{
-              base: ['minmax(0,1fr)', '7rem', '2rem'],
-              sm: ['minmax(0,1fr)', '10rem', '2rem'],
+              base: ['minmax(0,1fr)', '2rem'],
+              sm: ['minmax(0,1fr)', '16rem', '2rem'],
             }"
-            :row-height="64"
+            :row-height="72"
           >
             <ListHeader>
               <ListHeaderCell>{{ __('User') }}</ListHeaderCell>
-              <ListHeaderCell>{{ __('Usage') }}</ListHeaderCell>
+              <ListHeaderCell class="max-sm:hidden">{{ __('Used') }}</ListHeaderCell>
               <ListHeaderCell />
             </ListHeader>
-            <ListRows v-slot="{ item: user, value }" :items="report.data.users">
-              <ListRow :value="value">
+            <ListRows v-slot="{ item: user, value }" :items="visibleUsers">
+              <ListRow :value="value" class="h-auto gap-y-3 py-4 sm:h-[72px] sm:py-0">
                 <ListCell>
-                  <Avatar :label="user.full_name" size="sm" />
-                  <div class="ml-3 min-w-0">
-                    <p class="truncate text-base text-ink-gray-8">{{ user.full_name }}</p>
-                    <p class="truncate text-p-sm text-ink-gray-5">{{ user.email }}</p>
-                  </div>
-                </ListCell>
-                <ListCell>
-                  <div class="min-w-0 flex-1 space-y-1">
-                    <StorageUsage :user="user" />
-                    <p
-                      v-if="capNote(user)"
-                      class="flex min-w-0 items-center gap-1 text-p-sm text-ink-gray-6"
-                      :title="capNote(user)"
-                    >
-                      <span
-                        class="lucide-triangle-alert size-3 shrink-0 text-ink-amber-6"
-                        aria-hidden="true"
-                      />
-                      <span class="truncate">{{ capNote(user) }}</span>
+                  <div class="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 sm:block">
+                    <p class="break-words text-base text-ink-gray-8 sm:truncate">
+                      {{ user.full_name }}
+                    </p>
+                    <p class="min-w-0 break-words text-p-sm text-ink-gray-5 sm:truncate">
+                      {{ user.email }}
                     </p>
                   </div>
                 </ListCell>
-                <ListCell>
+                <ListCell class="max-sm:col-span-2 max-sm:col-start-1 max-sm:row-start-2">
+                  <StorageUsage :user="user" />
+                </ListCell>
+                <ListCell class="max-sm:col-start-2 max-sm:row-start-1 max-sm:self-start">
                   <Button
                     variant="ghost"
                     icon="lucide-pencil"
@@ -126,6 +171,9 @@
               </ListRow>
             </ListRows>
           </List>
+          <p v-if="!visibleUsers.length" class="py-6 text-center text-p-sm text-ink-gray-5">
+            {{ __('No users found') }}
+          </p>
         </section>
       </template>
 
@@ -262,7 +310,7 @@
 </template>
 
 <script setup lang="ts">
-import { Avatar, Button, Dialog, ErrorMessage, FormControl, Skeleton } from 'frappe-ui'
+import { Badge, Button, Dialog, ErrorMessage, FormControl, Skeleton } from 'frappe-ui'
 import { List, ListCell, ListHeader, ListHeaderCell, ListRow, ListRows } from 'frappe-ui/list'
 import { computed, defineAsyncComponent, ref, watch } from 'vue'
 
@@ -273,7 +321,7 @@ import { translate as __ } from '@/platform/translation'
 
 import SiteStorageSummary from './SiteStorageSummary.vue'
 import SiteStorageSummarySkeleton from './SiteStorageSummarySkeleton.vue'
-import { formatStorage } from './storageFormat'
+import { formatStorage, storageUsed } from './storageFormat'
 import StorageUsage from './StorageUsage.vue'
 
 type StorageUser = OutputOf<typeof api.suite.storage.get>['users'][number]
@@ -320,6 +368,21 @@ async function applyDefaultStorage() {
 // — personal caps —
 const selected = ref<string[]>([])
 const editing = ref(false)
+const search = ref('')
+const filter = ref('all')
+const descending = ref(true)
+const attentionUsers = computed(() => (report.data?.users ?? []).filter((user) => capNote(user)))
+const visibleUsers = computed(() => {
+  const query = search.value.trim().toLocaleLowerCase()
+  return (report.data?.users ?? [])
+    .filter(
+      (user) =>
+        (!query || `${user.full_name} ${user.email}`.toLocaleLowerCase().includes(query)) &&
+        (filter.value !== 'attention' || capNote(user)),
+    )
+    .slice()
+    .sort((a, b) => (storageUsed(a) - storageUsed(b)) * (descending.value ? -1 : 1))
+})
 
 function editCap(user: StorageUser) {
   selected.value = [user.name]
@@ -368,3 +431,13 @@ function cap(value: string): number | null {
   return amount
 }
 </script>
+
+<style scoped>
+@media (max-width: 639px) {
+  .storage-users :deep([data-slot='list-row-checkbox']) {
+    top: 8px;
+    bottom: auto;
+    height: 44px;
+  }
+}
+</style>

@@ -341,6 +341,17 @@
             "title": "Domains",
             "type": "array"
           },
+          "supplied_domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supplied Domain"
+          },
           "account": {
             "anyOf": [
               {
@@ -355,13 +366,19 @@
           "ready": {
             "title": "Ready",
             "type": "boolean"
+          },
+          "backup_email": {
+            "title": "Backup Email",
+            "type": "string"
           }
         },
         "required": [
           "cloud",
           "domains",
+          "supplied_domain",
           "account",
-          "ready"
+          "ready",
+          "backup_email"
         ],
         "title": "OnboardingOptions",
         "type": "object"
@@ -1986,6 +2003,14 @@
               "setup_required": {
                 "title": "Setup Required",
                 "type": "boolean"
+              },
+              "needs_welcome": {
+                "title": "Needs Welcome",
+                "type": "boolean"
+              },
+              "get_started_hidden": {
+                "title": "Get Started Hidden",
+                "type": "boolean"
               }
             },
             "required": [
@@ -1998,7 +2023,9 @@
               "is_jmap_configured",
               "is_mail_server_configured",
               "must_change_password",
-              "setup_required"
+              "setup_required",
+              "needs_welcome",
+              "get_started_hidden"
             ],
             "title": "Account",
             "type": "object"
@@ -2032,6 +2059,140 @@
         ]
       },
       "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "account_patch",
+      "kind": "mutation",
+      "publicName": "account.update",
+      "page": null,
+      "envelope": "data",
+      "method": "PATCH",
+      "path": "account",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "welcomed": {
+            "const": true,
+            "title": "Welcomed",
+            "type": "boolean"
+          },
+          "get_started_hidden": {
+            "title": "Get Started Hidden",
+            "type": "boolean"
+          }
+        },
+        "title": "AccountUpdate",
+        "type": "object"
+      },
+      "output": {
+        "$defs": {
+          "AccountRoles": {
+            "properties": {
+              "system_manager": {
+                "title": "System Manager",
+                "type": "boolean"
+              },
+              "suite_admin": {
+                "title": "Suite Admin",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "system_manager",
+              "suite_admin"
+            ],
+            "title": "AccountRoles",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "full_name": {
+            "title": "Full Name",
+            "type": "string"
+          },
+          "avatar": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar"
+          },
+          "time_zone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Zone"
+          },
+          "roles": {
+            "$ref": "#/$defs/AccountRoles"
+          },
+          "is_jmap_configured": {
+            "title": "Is Jmap Configured",
+            "type": "boolean"
+          },
+          "is_mail_server_configured": {
+            "title": "Is Mail Server Configured",
+            "type": "boolean"
+          },
+          "must_change_password": {
+            "title": "Must Change Password",
+            "type": "boolean"
+          },
+          "setup_required": {
+            "title": "Setup Required",
+            "type": "boolean"
+          },
+          "needs_welcome": {
+            "title": "Needs Welcome",
+            "type": "boolean"
+          },
+          "get_started_hidden": {
+            "title": "Get Started Hidden",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "email",
+          "full_name",
+          "avatar",
+          "time_zone",
+          "roles",
+          "is_jmap_configured",
+          "is_mail_server_configured",
+          "must_change_password",
+          "setup_required",
+          "needs_welcome",
+          "get_started_hidden"
+        ],
+        "title": "Account",
+        "type": "object"
+      },
+      "errors": [
+        "BadRequest"
+      ],
       "entity": null,
       "nodeParams": [],
       "stream": false,
@@ -2074,6 +2235,41 @@
           "workspace_logo"
         ],
         "title": "Site",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "workspace_get",
+      "kind": "query",
+      "publicName": "site.workspace",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "workspace",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "properties": {
+          "workspace_name": {
+            "title": "Workspace Name",
+            "type": "string"
+          },
+          "workspace_logo": {
+            "title": "Workspace Logo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace_name",
+          "workspace_logo"
+        ],
+        "title": "Workspace",
         "type": "object"
       },
       "errors": [],
@@ -2586,6 +2782,10 @@
           "cursor": {
             "title": "Cursor",
             "type": "string"
+          },
+          "node": {
+            "title": "Node",
+            "type": "string"
           }
         },
         "title": "PeopleQuery",
@@ -2654,6 +2854,14 @@
                   }
                 ],
                 "title": "User Image"
+              },
+              "has_access": {
+                "title": "Has Access",
+                "type": "boolean"
+              },
+              "is_blocked": {
+                "title": "Is Blocked",
+                "type": "boolean"
               }
             },
             "required": [
@@ -2704,7 +2912,116 @@
       "errors": [
         "BadRequest",
         "BadCursor",
-        "PermissionError"
+        "PermissionError",
+        "DriveForbidden",
+        "DriveNotFound"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "people_lookup",
+      "kind": "query",
+      "publicName": "people.lookup",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "people/lookup",
+      "pathParams": [],
+      "query": {
+        "properties": {
+          "node": {
+            "title": "Node",
+            "type": "string"
+          },
+          "users": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Users",
+            "type": "array"
+          }
+        },
+        "required": [
+          "node",
+          "users"
+        ],
+        "title": "PeopleLookupQuery",
+        "type": "object"
+      },
+      "body": null,
+      "output": {
+        "$defs": {
+          "PersonUser": {
+            "properties": {
+              "kind": {
+                "const": "user",
+                "title": "Kind",
+                "type": "string"
+              },
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "email": {
+                "title": "Email",
+                "type": "string"
+              },
+              "full_name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Full Name"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              },
+              "has_access": {
+                "title": "Has Access",
+                "type": "boolean"
+              },
+              "is_blocked": {
+                "title": "Is Blocked",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "kind",
+              "name",
+              "email",
+              "full_name",
+              "user_image"
+            ],
+            "title": "PersonUser",
+            "type": "object"
+          }
+        },
+        "items": {
+          "$ref": "#/$defs/PersonUser"
+        },
+        "type": "array"
+      },
+      "errors": [
+        "BadRequest",
+        "BadLookup",
+        "PermissionError",
+        "DriveForbidden",
+        "DriveNotFound"
       ],
       "entity": null,
       "nodeParams": [],
@@ -2716,9 +3033,9 @@
       "kind": "mutation",
       "publicName": "auth.login",
       "page": null,
-      "envelope": "data",
+      "envelope": "message",
       "method": "POST",
-      "path": "/api/v2/method/login",
+      "path": "/api/method/login",
       "pathParams": [],
       "query": null,
       "body": {
@@ -2740,7 +3057,9 @@
         "type": "object"
       },
       "output": {},
-      "errors": [],
+      "errors": [
+        "AuthenticationError"
+      ],
       "entity": null,
       "nodeParams": [],
       "stream": false,

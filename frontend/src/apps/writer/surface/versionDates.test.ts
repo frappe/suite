@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it } from 'vitest'
 
 import type { DocumentVersion } from '@/apps/drive'
@@ -7,7 +8,7 @@ import { dayOrTime, versionDays, versionTitle } from './versionDates'
 const NOW = new Date(2026, 9, 15, 18, 0)
 
 function version(seq: number, takenAt: Date, label: string | null = null) {
-  return { seq, label, creation: takenAt.toISOString() } as unknown as DocumentVersion
+  return fromPartial<DocumentVersion>({ seq, label, creation: takenAt.toISOString() })
 }
 
 function daysOf(versions: DocumentVersion[], now = NOW) {

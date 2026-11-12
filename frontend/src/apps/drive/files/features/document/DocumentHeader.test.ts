@@ -1,11 +1,16 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, ref, type VNode } from 'vue'
+import { createMemoryHistory, createRouter } from 'vue-router'
 
 import type { DocumentSession } from '@/apps/drive/client/session'
+import { requireTestElement } from '@/platform/testing/dom'
 import { TransportError } from '@/platform/transport'
 
+import type { DocumentPanel } from '../../../client/types'
 import DocumentHeader from './DocumentHeader.vue'
-import type { DocumentPanel, DocumentSaveState } from './header'
+import DocumentHeaderSkeleton from './DocumentHeaderSkeleton.vue'
+import type { DocumentSaveState } from './header'
 
 // Plain stand-ins: the test frappe-ui build has no TextInput or Badge.
 vi.mock('frappe-ui', async () => {
@@ -16,9 +21,18 @@ vi.mock('frappe-ui', async () => {
       inheritAttrs: false,
       props: { label: String },
       setup:
-        (props, { attrs }) =>
+        (props, { attrs, slots }) =>
         () =>
-          render('button', attrs, props.label),
+          render('button', attrs, props.label ?? slots.icon?.() ?? slots.default?.()),
+    }),
+    Tooltip: define({
+      props: { disabled: Boolean },
+      setup:
+        (props, { slots }) =>
+        () => [
+          slots.default?.(),
+          props.disabled ? null : render('div', { role: 'tooltip' }, slots.content?.()),
+        ],
     }),
     Badge: define({
       props: { label: String },
@@ -38,7 +52,7 @@ vi.mock('frappe-ui', async () => {
             value: props.modelValue,
             readOnly: props.readonly,
             onInput: (event: Event) =>
-              emit('update:modelValue', (event.target as HTMLInputElement).value),
+              emit('update:modelValue', requireTestElement(event.target, HTMLInputElement).value),
           })
       },
     }),
@@ -54,9 +68,17 @@ function session(role: number, canShare = true) {
     contentDoctype: 'Sheet',
     contentDocname: 'sheet-1',
     title: ref('Budget'),
-    state: ref('Active'),
+    state: ref<DocumentSession['state']['value']>('Active'),
     access: ref({ role }),
     canShare: ref(canShare),
+    editedAt: new Date(Date.now() - 3 * 60 * 60_000).toISOString(),
+    createdAt: '2026-03-02T16:05:00Z',
+    createdBy: 'Asha Rao',
+    isStarred: ref(false),
+    canStar: ref(true),
+    setStarred: vi.fn(async function (this: { isStarred: { value: boolean } }, next: boolean) {
+      this.isStarred.value = next
+    }),
     rename: vi.fn(async function (this: { title: { value: string } }, title: string) {
       this.title.value = title
     }),
@@ -67,9 +89,10 @@ function session(role: number, canShare = true) {
 function mount(
   doc: ReturnType<typeof session>,
   props: {
-    saveState?: DocumentSaveState
+    saveState?: DocumentSaveState | null
+    saveNote?: string
     viewOnly?: boolean
-    layout?: 'default' | 'centered' | 'compact'
+    layout?: 'default' | 'centered' | 'menus'
   } = {},
   slots: Record<string, () => VNode> = {},
 ) {
@@ -83,7 +106,7 @@ function mount(
         DocumentHeader,
         {
           ref: header,
-          session: doc as unknown as DocumentSession,
+          session: fromPartial<DocumentSession>(doc),
           titleLabel: 'Spreadsheet title',
           panels: ['comments', 'versions'],
           panel: panel.value,
@@ -112,11 +135,86 @@ function titleGroup(root: HTMLElement) {
 }
 
 describe('DocumentHeader', () => {
-  it('shows the spreadsheet icon, the title and the save status', () => {
+  it('shows a failed save as a badge', () => {
+    const { root } = mount(session(40), { saveState: 'failed' })
+    expect(root.textContent).toContain('Not saved')
+    expect(root.textContent).not.toContain('Saved')
+  })
+
+  it('shows the spreadsheet icon, the title and when it was last edited', () => {
     const { root, title } = mount(session(40), { saveState: 'clean' })
     expect(root.querySelector('.file-icon-sheet.text-ink-green-6')).not.toBeNull()
     expect(title.value).toBe('Budget')
-    expect(root.textContent).toContain('Saved')
+    expect(root.textContent).toContain('Edited 3h ago')
+    expect(root.textContent).not.toContain('Saved')
+  })
+
+  it('says just now once this tab edits the document', async () => {
+    const saveState = ref<DocumentSaveState>('clean')
+    const root = document.createElement('div')
+    document.body.append(root)
+    const app = createApp({
+      setup: () => () =>
+        h(DocumentHeader, {
+          session: fromPartial<DocumentSession>(session(40)),
+          titleLabel: 'Spreadsheet title',
+          saveState: saveState.value,
+        }),
+    })
+    app.mount(root)
+    cleanup = () => {
+      app.unmount()
+      root.remove()
+    }
+
+    saveState.value = 'saving'
+    await nextTick()
+    saveState.value = 'clean'
+    await nextTick()
+
+    expect(root.textContent).toContain('Edited just now')
+  })
+
+  it('gives the exact times and the creator on hovering the edited time', () => {
+    const { root } = mount(session(40), { saveState: 'clean' })
+    const details = root.querySelector('[role="tooltip"]')!.textContent
+    expect(details).toMatch(/Edited .*\d{4}/)
+    expect(details).toMatch(/Created .*2026.* by Asha Rao/)
+  })
+
+  it('says why saving is held up in place of the edited time', () => {
+    const { root } = mount(session(40), { saveState: 'unsaved', saveNote: 'Changes will sync' })
+    expect(root.textContent).toContain('Changes will sync')
+    expect(root.textContent).not.toContain('Edited')
+  })
+
+  it('says nothing about edits for content with no save state', () => {
+    const { root } = mount(session(40), { saveState: null })
+    expect(root.textContent).not.toContain('Edited')
+  })
+
+  it('stars and unstars, and offers no star to someone who cannot keep one', async () => {
+    const doc = session(40)
+    const { button } = mount(doc)
+    button('Star')!.click()
+    expect(doc.setStarred).toHaveBeenCalledWith(true)
+    await nextTick()
+    expect(button('Unstar')!.getAttribute('aria-pressed')).toBe('true')
+    expect(button('Unstar')!.querySelector('.fill-current')).toBeTruthy()
+    expect(button('Unstar')!.querySelector('.lucide-star')).toBeNull()
+    cleanup?.()
+
+    const linkOnly = session(40)
+    linkOnly.canStar.value = false
+    expect(mount(linkOnly).button('Star')).toBeNull()
+  })
+
+  it('copies the address of the page', async () => {
+    const writeText = vi.fn(async () => {})
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    const { button } = mount(session(40))
+    button('Copy link')!.click()
+    await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith(window.location.href))
   })
 
   it('renames on blur, and Escape puts the old title back', async () => {
@@ -239,24 +337,34 @@ describe('DocumentHeader', () => {
   })
 
   it.each([
-    ['solid, with its label', {}, true],
+    ['with its label', {}, true],
     [
-      'an icon on every width, after a primary action',
+      'as an icon on every width, after a primary action',
       { primary: () => h('button', 'Present') },
       false,
     ],
-  ])('shows Share %s', (_label, slots, isSolid) => {
+  ])('shows Share %s', (_label, slots, hasLabel) => {
     const sharer = session(40)
     const { root, button } = mount(sharer, {}, slots)
-    const solid = [...root.querySelectorAll('button')].find(
-      (el) => el.textContent === 'Share' && el.getAttribute('variant') === 'solid',
-    )
+    const labelled = [...root.querySelectorAll('button')].find((el) => el.textContent === 'Share')
 
-    expect(!!solid).toBe(isSolid)
-    expect(button('Share')!.classList.contains('md:hidden')).toBe(isSolid)
-    solid?.click()
+    expect(!!labelled).toBe(hasLabel)
+    expect(button('Share')!.classList.contains('md:hidden')).toBe(hasLabel)
+    labelled?.click()
     button('Share')!.click()
-    expect(sharer.share).toHaveBeenCalledTimes(isSolid ? 2 : 1)
+    expect(sharer.share).toHaveBeenCalledTimes(hasLabel ? 2 : 1)
+  })
+
+  it('puts the menu after Star and before the primary action', () => {
+    const { root } = mount(
+      session(40),
+      {},
+      { menu: () => h('button', 'Menu'), primary: () => h('button', 'Present') },
+    )
+    const labels = [...root.querySelectorAll('header > div:last-child button')].map(
+      (el) => el.getAttribute('aria-label') ?? el.textContent,
+    )
+    expect(labels.slice(-4)).toEqual(['Copy link', 'Star', 'Menu', 'Present'])
   })
 
   it('puts the primary action last', () => {
@@ -266,8 +374,85 @@ describe('DocumentHeader', () => {
   })
 })
 
-describe('DocumentHeader, compact (Sheets)', () => {
-  function mountWithMenus(compact: boolean) {
+describe('DocumentHeaderSkeleton', () => {
+  // The classes that size or hide what comes before the title, and the text it shows.
+  const BOX = /^(max-md:hidden|md:hidden|max-w-\S+|px-\S+|ps-\S+|size-\S+|text-base|truncate)$/
+  function layout(header: Element, title: Element) {
+    const group = header.firstElementChild!
+    const items = [...group.children].flatMap((child) =>
+      child.classList.contains('contents') ? [...child.children] : [child],
+    )
+    const before = items.slice(0, items.indexOf(title))
+    // frappe-ui draws an icon-only Button 28 px square, which its classes do not say.
+    const classes = (item: Element) =>
+      item.tagName === 'BUTTON' ? [...item.classList, 'size-7'] : [...item.classList]
+    const signature = (item: Element) => [
+      classes(item)
+        .filter((name) => BOX.test(name))
+        .sort(),
+      item.textContent?.trim(),
+    ]
+    return {
+      before: before.map(signature),
+      titleStart: [...title.classList].find((name) => /^p[sx]-/.test(name)),
+    }
+  }
+
+  function mountPair(location: { label: string; to: string } | null) {
+    const root = document.createElement('div')
+    document.body.append(root)
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/:any(.*)', component: { render: () => null } }],
+    })
+    const doc = { ...session(40), contentDoctype: 'Drive File', title: ref('Loose file.txt') }
+    const app = createApp({
+      setup: () => () => [
+        h(DocumentHeaderSkeleton, { title: 'Loose file.txt', location: location?.label }),
+        h(DocumentHeader, {
+          session: fromPartial<DocumentSession>(doc),
+          titleLabel: 'File name',
+          mime: 'text/plain',
+          location,
+        }),
+      ],
+    }).use(router)
+    app.mount(root)
+    cleanup = () => {
+      app.unmount()
+      root.remove()
+    }
+    const [skeleton, loaded] = root.querySelectorAll('header')
+    return {
+      skeleton: layout(skeleton!, skeleton!.querySelector('span.font-medium')!),
+      loaded: layout(loaded!, loaded!.querySelector('.document-title')!),
+      loadedTitle: loaded!.querySelector('.document-title > span')!,
+    }
+  }
+
+  it('lays out the folder, the way back and the icon as the loaded file header does', () => {
+    const { skeleton, loaded, loadedTitle } = mountPair({
+      label: 'Projects',
+      to: '/drive/f/projects',
+    })
+
+    expect(skeleton.before).toEqual(loaded.before)
+    expect(skeleton.before.map(([, text]) => text)).toEqual(['', 'Projects', '/', ''])
+    // Both titles start 8 px in: the skeleton's text, and the copy that sizes the field.
+    expect(skeleton.titleStart).toBe('px-2')
+    expect(loadedTitle.classList).toContain('ps-2')
+  })
+
+  it('shows only the icon before the title when the file has no folder to name', () => {
+    const { skeleton, loaded } = mountPair(null)
+
+    expect(skeleton.before).toEqual(loaded.before)
+    expect(skeleton.before).toHaveLength(1)
+  })
+})
+
+describe('DocumentHeader, menus layout (Sheets)', () => {
+  function mountWithMenus(layout: 'default' | 'menus', props: { viewOnly?: boolean } = {}) {
     const root = document.createElement('div')
     document.body.append(root)
     const app = createApp({
@@ -275,13 +460,16 @@ describe('DocumentHeader, compact (Sheets)', () => {
         h(
           DocumentHeader,
           {
-            session: session(40) as unknown as DocumentSession,
+            session: fromPartial<DocumentSession>(session(40)),
             titleLabel: 'Spreadsheet title',
             saveState: 'clean',
-            panels: ['comments', 'versions'],
-            layout: compact ? 'compact' : 'default',
+            layout,
+            ...props,
           },
-          { menus: () => h('nav', { 'aria-label': 'Spreadsheet menus' }, 'File Edit') },
+          {
+            menus: () => h('nav', { 'aria-label': 'Spreadsheet menus' }, 'File Edit'),
+            actions: () => h('span', { 'data-presence': '' }),
+          },
         ),
     })
     app.mount(root)
@@ -290,24 +478,84 @@ describe('DocumentHeader, compact (Sheets)', () => {
       root.remove()
     }
     const header = root.querySelector('header')!
-    const saved = [...header.querySelectorAll('span')].find(
-      (el) => el.textContent?.trim() === 'Saved',
+    const edited = [...header.querySelectorAll('span')].find(
+      (el) => el.textContent?.trim() === 'Edited 3h ago',
     )!
-    return { header, saved, menus: header.querySelector('nav')! }
+    const title = header.querySelector<HTMLInputElement>('input')!
+    return { header, edited, title, menus: header.querySelector('nav')! }
   }
 
-  it('puts Saved beside the title, then the menus', () => {
-    const { header, saved, menus } = mountWithMenus(true)
-    const left = header.firstElementChild!
-    expect(left.contains(saved)).toBe(true)
-    expect(saved.compareDocumentPosition(menus) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(left.contains(menus)).toBe(true)
+  it('is as tall as the other document headers', () => {
+    expect(mountWithMenus('menus').header.className).toContain('h-12')
   })
 
-  it('stays as it was for every other app', () => {
-    const { header, saved } = mountWithMenus(false)
-    // The save status sits on the right, before the panel toggles.
-    expect(header.firstElementChild!.contains(saved)).toBe(false)
-    expect(header.lastElementChild!.contains(saved)).toBe(true)
+  it('puts the title left, the menus in a column of their own, and the rest right', () => {
+    const { header, edited, menus, title } = mountWithMenus('menus')
+    const [left, middle, right] = header.children
+    expect(header.children).toHaveLength(3)
+    expect(left!.contains(title)).toBe(true)
+    expect(left!.contains(edited)).toBe(false)
+    expect(middle!.contains(menus)).toBe(true)
+    expect(right!.contains(edited)).toBe(true)
+  })
+
+  it('keeps Writer’s order on the right: edited, presence, share, link, star', () => {
+    const { header, edited } = mountWithMenus('menus')
+    const order = [
+      edited,
+      header.querySelector('[data-presence]')!,
+      header.querySelector('button[aria-label="Copy link"]')!,
+      header.querySelector('button[aria-label="Star"]')!,
+    ]
+    for (const [at, element] of order.slice(1).entries()) {
+      expect(
+        order[at]!.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
+    }
+  })
+
+  it('holds the badges apart from the title, so a longer title cannot push them', () => {
+    const { header, title } = mountWithMenus('menus', { viewOnly: true })
+    const badge = [...header.querySelectorAll('span')].find(
+      (el) => el.textContent?.trim() === 'View only',
+    )!
+    const spacer = badge.previousElementSibling!
+    expect(spacer.className).toContain('flex-1')
+    expect(spacer.contains(title)).toBe(false)
+  })
+
+  function makeTitleOverflow(title: HTMLInputElement, overflows: boolean) {
+    Object.defineProperty(title, 'clientWidth', { value: 400 })
+    Object.defineProperty(title, 'scrollWidth', { value: overflows ? 900 : 400 })
+  }
+  const fullTitle = (header: HTMLElement) => header.querySelector('.document-full-title')
+
+  it('shows no box with the whole name when a long title is clicked into', async () => {
+    const { header, title } = mountWithMenus('menus')
+    makeTitleOverflow(title, true)
+
+    title.focus()
+    await nextTick()
+    expect(fullTitle(header)).toBeNull()
+
+    title.value = 'Budget 2027'
+    title.dispatchEvent(new Event('input', { bubbles: true }))
+    await nextTick()
+    await nextTick()
+    expect(fullTitle(header)).toBeNull()
+  })
+
+  it('leaves every other app’s header as it was', async () => {
+    const { header, edited, menus, title } = mountWithMenus('default')
+    makeTitleOverflow(title, true)
+    expect(header.className).toContain('flex')
+    expect(header.className).not.toContain('grid')
+    expect(header.children).toHaveLength(2)
+    expect(header.firstElementChild!.contains(menus)).toBe(true)
+    expect(header.lastElementChild!.contains(edited)).toBe(true)
+
+    title.focus()
+    await nextTick()
+    expect(fullTitle(header)).toBeNull()
   })
 })

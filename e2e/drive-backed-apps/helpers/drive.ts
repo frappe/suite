@@ -1,10 +1,5 @@
-import {
-	expect,
-	type APIRequestContext,
-	type APIResponse,
-	type Locator,
-	type Page,
-} from "@playwright/test";
+import { expect, type APIRequestContext, type APIResponse, type Locator, type Page } from "@playwright/test";
+
 import type {
 	NodeChildrenOutput,
 	NodeCreateCreateDocumentInput,
@@ -13,7 +8,6 @@ import type {
 	NodeGetOutput,
 	NodeMediaOutput,
 	NodePatchMoveInput,
-	NodePatchRenameInput,
 	NodePatchRestoreInput,
 	NodePatchTrashInput,
 	NodePurgeOutput,
@@ -44,6 +38,8 @@ export const ROLE = {
 export type DriveNode = NodeGetOutput;
 export type DriveGrant = NodePutGrantOutput;
 export type DriveNotification = NotificationsListOutput["rows"][number];
+/** A notification about something done to a node, as opposed to a background download. */
+export type ActivityNotification = Extract<DriveNotification, { activity: unknown }>;
 
 type Method = "get" | "post" | "patch" | "put" | "delete";
 
@@ -55,8 +51,11 @@ async function unwrap<T>(response: APIResponse, what: string): Promise<T> {
 	if (!response.ok()) {
 		throw new Error(`${what} failed with ${response.status()}: ${text}`);
 	}
+	// SAFETY: successful Drive responses use the data/message envelope; callers use generated Drive endpoint output types.
 	const parsed = JSON.parse(text) as { data?: T; message?: T };
-	return (parsed.data ?? parsed.message) as T;
+	const result = parsed.data ?? parsed.message;
+	if (result === undefined) throw new Error(`${what} contained no data`);
+	return result;
 }
 
 /**
@@ -66,12 +65,7 @@ async function unwrap<T>(response: APIResponse, what: string): Promise<T> {
  * Frappe reports as 508 without retrying (tracker B86). The call is repeated once
  * so that product issue does not fail an unrelated test; the warning keeps it visible.
  */
-async function driveRequest<T>(
-	request: APIRequestContext,
-	method: Method,
-	path: string,
-	body?: unknown,
-): Promise<T> {
+async function driveRequest<T>(request: APIRequestContext, method: Method, path: string, body?: unknown): Promise<T> {
 	const send = () =>
 		request[method](`${DRIVE}/${path}`, body === undefined ? undefined : { data: body });
 	let response = await send();
@@ -96,11 +90,7 @@ export function uniqueName(runId: string, label: string, extension = ""): string
 // ---------------------------------------------------------------------------
 // Nodes
 
-export async function createFolder(
-	request: APIRequestContext,
-	title: string,
-	parent?: string,
-): Promise<DriveNode> {
+export async function createFolder(request: APIRequestContext, title: string, parent?: string): Promise<DriveNode> {
 	const body: NodeCreateCreateFolderInput = {
 		kind: "folder",
 		parent_node: parent ?? (await personalRoot(request)),
@@ -150,20 +140,11 @@ export async function uploadFile(
 	});
 	await unwrap(chunk, `PUT ${DRIVE}/uploads/${upload.upload_id}/chunk`);
 	const finish: Body<UploadFinishInput, "upload_id"> = { parent_node: parentNode, title };
-	return driveRequest<UploadFinishOutput>(
-		request,
-		"post",
-		`uploads/${upload.upload_id}/finish`,
-		finish,
-	);
+	return driveRequest<UploadFinishOutput>(request, "post", `uploads/${upload.upload_id}/finish`, finish);
 }
 
 /** One node with the caller's effective role; Drive answers 404 for a node it withholds (§5.4). */
-export async function getNode(
-	request: APIRequestContext,
-	node: string,
-	expand = "access",
-): Promise<DriveNode> {
+export async function getNode(request: APIRequestContext, node: string, expand = "access"): Promise<DriveNode> {
 	return driveRequest<DriveNode>(request, "get", `nodes/${node}?expand=${expand}`);
 }
 
@@ -183,6 +164,7 @@ export async function canReadNode(request: APIRequestContext, node: string): Pro
 export async function roleOn(request: APIRequestContext, node: string): Promise<number> {
 	const response = await request.get(`${DRIVE}/nodes/${node}?expand=access`);
 	if (!response.ok()) return ROLE.NONE;
+	// SAFETY: successful Drive responses use the data/message envelope; callers use generated Drive endpoint output types.
 	const parsed = (await response.json()) as { data?: DriveNode; message?: DriveNode };
 	return (parsed.data ?? parsed.message)?.access?.role ?? ROLE.NONE;
 }
@@ -195,11 +177,7 @@ async function children(request: APIRequestContext, parent?: string): Promise<Dr
 }
 
 /** Poll until a child titled `title` is listed in `parent`; returns it. */
-export async function waitForChild(
-	request: APIRequestContext,
-	title: string,
-	parent?: string,
-): Promise<DriveNode> {
+export async function waitForChild(request: APIRequestContext, title: string, parent?: string): Promise<DriveNode> {
 	let found: DriveNode | undefined;
 	await expect
 		.poll(async () => {
@@ -207,7 +185,8 @@ export async function waitForChild(
 			return found?.name;
 		})
 		.toBeTruthy();
-	return found as DriveNode;
+	if (!found) throw new Error("Expected a matching child after polling");
+	return found;
 }
 
 export async function moveNode(request: APIRequestContext, node: string, parent: string): Promise<void> {
@@ -249,11 +228,7 @@ export async function view(
 	query: Record<string, string> = {},
 ): Promise<DriveNode[]> {
 	const search = new URLSearchParams(query).toString();
-	const page = await driveRequest<ViewListOutput>(
-		request,
-		"get",
-		`views/${name}${search ? `?${search}` : ""}`,
-	);
+	const page = await driveRequest<ViewListOutput>(request, "get", `views/${name}${search ? `?${search}` : ""}`);
 	return page.rows.filter((item): item is DriveNode => "name" in item);
 }
 
@@ -274,20 +249,11 @@ export async function grantAccess(
 	options: Partial<Body<NodePutGrantInput, "node" | "principal" | "role">> = {},
 ): Promise<DriveGrant> {
 	const body: Body<NodePutGrantInput, "node" | "principal"> = { role, ...options };
-	return driveRequest<DriveGrant>(
-		request,
-		"put",
-		`nodes/${node}/grants/${encodeURIComponent(principal)}`,
-		body,
-	);
+	return driveRequest<DriveGrant>(request, "put", `nodes/${node}/grants/${encodeURIComponent(principal)}`, body);
 }
 
 /** Remove one principal's local grant. Access inherited from an ancestor survives (§5.10). */
-export async function revokeAccess(
-	request: APIRequestContext,
-	node: string,
-	principal: string,
-): Promise<number> {
+export async function revokeAccess(request: APIRequestContext, node: string, principal: string): Promise<number> {
 	const answer = await driveRequest<NodeDeleteGrantOutput>(
 		request,
 		"delete",
@@ -333,13 +299,10 @@ export function sidebarLink(page: Page, label: string): Locator {
 		.getByRole("link", { name: label, exact: true });
 }
 
-/**
- * Choose `item` from the New menu in the page header. The menu lists Create before
- * Upload, and "Folder" appears in both, so the first match is the create action.
- */
+/** Choose `item` from the New menu in the page header. */
 export async function chooseNew(page: Page, item: string): Promise<void> {
 	await page.getByRole("button", { name: "New", exact: true }).click();
-	await page.getByRole("menuitem", { name: item, exact: true }).first().click();
+	await page.getByRole("menuitem", { name: item, exact: true }).click();
 }
 
 /** Move the item titled `title` into `destination` through the row menu and the folder picker. */
@@ -362,15 +325,9 @@ export async function createFolderViaUi(page: Page, title: string): Promise<void
 	await expect(page.getByRole("button", { name: `Actions for ${title}`, exact: true })).toBeVisible();
 }
 
-/** Upload one file through New › Upload › Files and wait for the finish call. */
-export async function uploadViaUi(
-	page: Page,
-	file: { name: string; mimeType: string; buffer: Buffer },
-): Promise<void> {
-	const [chooser] = await Promise.all([
-		page.waitForEvent("filechooser"),
-		chooseNew(page, "Files"),
-	]);
+/** Upload one file through New › Upload files and wait for the finish call. */
+export async function uploadViaUi(page: Page, file: { name: string; mimeType: string; buffer: Buffer }): Promise<void> {
+	const [chooser] = await Promise.all([page.waitForEvent("filechooser"), chooseNew(page, "Upload files")]);
 	const finished = page.waitForResponse(
 		(response) =>
 			response.request().method() === "POST" &&

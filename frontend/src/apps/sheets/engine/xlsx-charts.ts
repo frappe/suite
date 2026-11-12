@@ -186,7 +186,7 @@ interface Rect {
 }
 
 // `A1:C5` (or `$a$1`) as a rect; null for anything else, as the chart
-// overlay reads it (useChartIntegration's getMatrix).
+// overlay reads it (useChartIntegration's getSource).
 function _rect(range: string | undefined): Rect | null {
   const [start = '', end = start] = String(range || '')
     .replace(/\$/g, '')
@@ -234,11 +234,10 @@ const _flag = (name: string, on: boolean) => `<c:${name} val="${on ? 1 : 0}"/>`
 export function chartXml(spec: ChartSpec, sheet: string): string | null {
   const rect = _rect(spec.sourceRange)
   if (!rect) return null
-  const type: ChartType = (['line', 'pie', 'area', 'scatter'] as const).includes(
-    spec.chartType as never,
-  )
-    ? (spec.chartType as ChartType)
-    : 'bar'
+  const type: ChartType =
+    (['line', 'pie', 'area', 'scatter'] satisfies ChartType[]).find(
+      (type) => type === spec.chartType,
+    ) ?? 'bar'
   const header = spec.hasHeader !== false
   const d0 = rect.r0 + (header ? 1 : 0)
   const width = rect.c1 - rect.c0 + 1
@@ -428,18 +427,20 @@ function _relative(from: string, to: string) {
 
 // ── import ──────────────────────────────────────────────────────────────────
 
-const TYPES: Record<string, ChartType> = {
-  barChart: 'bar',
-  bar3DChart: 'bar',
-  lineChart: 'line',
-  line3DChart: 'line',
-  areaChart: 'area',
-  area3DChart: 'area',
-  pieChart: 'pie',
-  pie3DChart: 'pie',
-  doughnutChart: 'pie',
-  scatterChart: 'scatter',
-}
+const TYPES = new Map<string, ChartType>(
+  Object.entries({
+    barChart: 'bar',
+    bar3DChart: 'bar',
+    lineChart: 'line',
+    line3DChart: 'line',
+    areaChart: 'area',
+    area3DChart: 'area',
+    pieChart: 'pie',
+    pie3DChart: 'pie',
+    doughnutChart: 'pie',
+    scatterChart: 'scatter',
+  }),
+)
 
 function _f(el: Element | null) {
   for (const kind of ['strRef', 'numRef', 'multiLvlStrRef'])
@@ -472,7 +473,7 @@ export function chartFromXml(xml: string): ChartSpec | null {
   // One chart per plot area: a combo (bars + line) is not one of ours.
   if (groups.length !== 1) return null
   const group = groups[0]!
-  const chartType = TYPES[group.localName]
+  const chartType = TYPES.get(group.localName)
   if (!chartType) return null
 
   const sers = _kids(group, 'ser').map((ser) => ({

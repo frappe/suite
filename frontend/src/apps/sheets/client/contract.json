@@ -85,6 +85,61 @@
       "bytes": false
     },
     {
+      "id": "get_conversion",
+      "kind": "query",
+      "publicName": "documents.conversion",
+      "page": null,
+      "envelope": "message",
+      "method": "GET",
+      "path": "/api/method/suite.sheets.api.get_conversion",
+      "pathParams": [],
+      "query": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "SheetDocument",
+        "type": "object"
+      },
+      "body": null,
+      "output": {
+        "properties": {
+          "state": {
+            "enum": [
+              "converted",
+              "pending",
+              "refused"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "outcome": {
+            "title": "Outcome",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "SheetConversion",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
       "id": "get_ai_settings",
       "kind": "query",
       "publicName": "assistant.settings",

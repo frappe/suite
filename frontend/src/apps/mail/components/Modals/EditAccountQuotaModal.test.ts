@@ -23,12 +23,14 @@ vi.mock('frappe-ui', async () => ({
 vi.mock('@/apps/mail/utils', () => ({ raiseToast: vi.fn() }))
 vi.mock('@/platform/area-sidebar', () => ({ openAreaSidebar: vi.fn() }))
 
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const server = vi.hoisted(() => {
   const state = {
     fail: true,
     bulk: false,
     cap: 20e9,
-    writes: [] as Record<string, unknown>[],
+    writes: fromPartial<Record<string, unknown>[]>([]),
   }
   globalThis.fetch = async (url: RequestInfo | URL, init: RequestInit = {}) => {
     const path = new URL(String(url), 'http://suite.test').pathname

@@ -1,5 +1,6 @@
 import { nextTick } from 'vue'
 import {
+  createMemoryHistory,
   createRouter,
   createWebHistory,
   START_LOCATION,
@@ -10,6 +11,7 @@ import {
 import { api, client, writesSettled } from '@/api'
 import { areaDefinitions, areaIsAvailable, findArea } from '@/composition/appRegistry'
 import { takeLinkFragment } from '@/composition/linkFragment'
+import { needsSiteSetup } from '@/composition/onboarding/onboarding'
 import { redirectOldPath } from '@/composition/redirects'
 import { areaPlaceholderNames, canonicalRoutes, routes } from '@/composition/routes'
 import { installLoadFailureRecovery } from '@/platform/load-failure'
@@ -136,22 +138,32 @@ router.beforeEach(async (to, from) => {
   }
 
   if (to.path.startsWith('/admin') && !session.capabilities.value.suiteAdmin) return '/home'
+  // A temporary password is replaced before anything else, then a person added
+  // after setup walks the welcome once (spec 001 §4.1). The welcome page asks
+  // for the password first; `/join` walks both itself.
+  const joining = to.name === 'suite-join'
   if (session.user.value?.must_change_password === true) {
-    return to.path === '/suite/change-password' ? true : '/suite/change-password'
+    return to.path === '/suite/welcome' || joining ? true : '/suite/welcome'
   }
-  if (to.path === '/suite/change-password') return '/home'
 
   // A shared item opens on a site that is not set up yet. Area routes still
-  // go to setup (spec §10.10, ask S3).
+  // go to setup (spec §10.10, ask S3). Setup is the first Admin's welcome, so
+  // it comes before the welcome below.
   if (!to.meta.allowGuest) {
     const onboarding = await ensureOnboardingState()
     const onSetupPage = to.path === '/suite/setup'
-    if (onboarding.canOnboard && !onboarding.isOnboarded) {
+    if (needsSiteSetup(onboarding)) {
       if (session.user.value?.id === 'Administrator' && to.path.startsWith('/admin')) return true
-      if (!onSetupPage) return '/suite/setup'
+      return onSetupPage ? true : '/suite/setup'
     } else if (onSetupPage) {
       return startPath
     }
+  }
+
+  if (session.user.value?.needs_welcome === true) {
+    if (to.path !== '/suite/welcome' && !joining && !to.meta.allowGuest) return '/suite/welcome'
+  } else if (to.path === '/suite/welcome') {
+    return '/home'
   }
 
   const areaId = areaPlaceholderId(to)
@@ -189,7 +201,30 @@ router.afterEach(async (to, from, failure) => {
   window.location.reload()
 })
 
-function areaPlaceholderId(to: RouteLocationNormalizedLoaded): string | null {
+/**
+ * Starts fetching the code of the page at `path` while the boot requests run, so the first
+ * navigation does not wait for them before it asks for its area's routes and page.
+ */
+export function preloadPage(path: string): void {
+  void import('@/shell/AppContainer.vue')
+  const area = findArea(areaPlaceholderId(router.resolve(path)) ?? '')
+  if (!area) return
+  void area.loadRoutes().then(({ routes: children }) => {
+    const matcher = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: area.to, children }],
+    })
+    for (const record of matcher.resolve(path).matched) {
+      const component = record.components?.default
+      if (typeof component === 'function') {
+        // SAFETY: area route tables give a page as an object or a `() => import()` loader, never a functional component or class, so a function here is a loader.
+        void (component as () => Promise<unknown>)()
+      }
+    }
+  })
+}
+
+function areaPlaceholderId(to: Pick<RouteLocationNormalizedLoaded, 'matched'>): string | null {
   const matched = to.matched.find((record) =>
     String(record.name ?? '').startsWith('area-placeholder-'),
   )

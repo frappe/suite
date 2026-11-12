@@ -141,8 +141,10 @@ async function createMailExportSubmit() {
       .map(([k, v]) => [k, typeof v === 'string' ? v.trim() : v])
       .filter(([, v]) => Boolean(v)),
   )
-  if (cleanedFilter.after) cleanedFilter.after = utcDayStart(cleanedFilter.after as string)
-  if (cleanedFilter.before) cleanedFilter.before = utcDayEnd(cleanedFilter.before as string)
+  if (typeof cleanedFilter.after === 'string' && cleanedFilter.after)
+    cleanedFilter.after = utcDayStart(cleanedFilter.after)
+  if (typeof cleanedFilter.before === 'string' && cleanedFilter.before)
+    cleanedFilter.before = utcDayEnd(cleanedFilter.before)
   const input: InputOf<typeof api.mail.exchanges.exportMail> = {
     account: store.accountId,
     ...mailExport,

@@ -1,3 +1,4 @@
+import { fromAny } from '@total-typescript/shoehorn'
 import { describe, expect, it, vi } from 'vitest'
 
 import { adapterAt, BIG, browser, fakeServer, join, joinMidPace, reply, text } from './test-support'
@@ -513,7 +514,7 @@ describe('collab room', () => {
       document.dispatchEvent(new Event('visibilitychange'))
       await vi.waitFor(() => expect(room.status.unsentCount).toBe(0))
     } finally {
-      delete (document as { visibilityState?: string }).visibilityState
+      Reflect.deleteProperty(document, 'visibilityState')
     }
 
     expect(sent).toEqual([true])
@@ -905,7 +906,7 @@ describe('collab room', () => {
   it('a pace that is not a number falls back to half a second', async () => {
     vi.useFakeTimers()
     const server = fakeServer()
-    server.pace.ms = 'soon' as unknown as number
+    server.pace.ms = fromAny<number, unknown>('soon')
     const endpoints = server.endpoints()
     const room = await join(endpoints)
     const startedAt = Date.now()

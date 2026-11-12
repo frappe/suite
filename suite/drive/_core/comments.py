@@ -14,27 +14,40 @@ from frappe.model.document import Document
 from frappe.utils import get_system_timezone, now_datetime, strip_html_tags
 
 from suite.drive._core import content
-from suite.drive._core.access import effective_role, require
-from suite.drive._core.activity import notify_users, record
+from suite.drive._core.access import (
+    _principal_kind,
+    _tree,
+    check,
+    effective_role,
+    grant,
+    is_blocked,
+    mentionable_on,
+    require,
+)
+from suite.drive._core.activity import has_told_without_access, notify_users, record
 from suite.drive._core.errors import (
     DriveConflict,
+    DriveError,
     DriveForbidden,
     DriveNotFound,
     rollback_savepoint,
 )
 from suite.drive._core.nodes import MAX_PAGE_SIZE, node_owner
-from suite.drive._core.people import people
+from suite.drive._core.people import MAX_MENTIONS, people
 from suite.drive._core.principals import Principals
-from suite.drive._core.roles import COMMENT, EDIT, READ
+from suite.drive._core.roles import COMMENT, EDIT, MANAGE, READ
+from suite.drive._core.roots import lock_trees
 
 _BRACKET_MENTION = re.compile(r"@\[([^\]\r\n]{1,140})\]")
 _EMAIL_MENTION = re.compile(r"(?<![\w@])@([A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})")
 _DATA_MENTION = re.compile(r"data-(?:id|user)=[\"']([^\"'\r\n]{1,140})[\"']")
 _CLIENT_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
+_LIST_START = re.compile(r"[\t\n\f\r ]*([-+]?)0*([0-9]{1,10})(?![0-9])")
 # The most a comment holds, in UTF-8 bytes, as the old Text column did
 MAX_COMMENT_BYTES = 65_535
 # The characters of a comment its activity keeps, for the notification to quote
 EXCERPT_LENGTH = 140
+MAX_OUTSIDERS_TOLD = 10
 # The most an old Drive commenter's name holds, as the old Data column did
 MAX_AUTHOR_NAME_CHARS = 140
 
@@ -64,17 +77,15 @@ def insert_thread(
             "client_id": client_id,
         }
     ).insert(ignore_permissions=True)
-    comment, mentions = _insert_comment(
-        principals, thread.name, node_row.name, text, author_name=author_name, client_id=None
+    comment, mentions, reached = _insert_comment(
+        principals, thread.name, node_row, text, via_link, author_name=author_name, client_id=None
     )
-    activity = record(
-        principals,
-        node_row.name,
-        "comment",
-        detail={"thread": thread.name, "comment": comment, "resolved": False, "excerpt": excerpt(text)},
-        via_link=via_link,
+    activity = record_comment(
+        principals, node_row.name, thread.name, comment, False, text, mentions, via_link
     )
-    notify_users(activity, mentions)
+    # The owner hears of every new thread on their item, except their own
+    owner = [node_row.owner] if node_row.owner != principals.user else []
+    notify_users(activity, [*reached, *owner], reached)
     return thread.name
 
 
@@ -102,6 +113,7 @@ def create_thread(
     savepoint = f"drive_comment_thread_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
     try:
+        lock_tree_to_share(principals, node, text)
         node_row = _comment_node(node, for_update=True)
         via_link = require(node_row, COMMENT, principals)
         _require_document(node_row)
@@ -132,28 +144,42 @@ def insert_reply(
     client_id: str | None,
 ) -> str:
     """Insert a reply into a thread and record it; answer the comment."""
-    comment, mentions = _insert_comment(
+    comment, mentions, reached = _insert_comment(
         principals,
         thread_row.name,
-        node.name,
+        node,
         text,
+        via_link,
         author_name=author_name,
         client_id=client_id,
     )
-    activity = record(
-        principals,
-        node.name,
-        "comment",
-        detail={
-            "thread": thread_row.name,
-            "comment": comment,
-            "resolved": bool(thread_row.resolved),
-            "excerpt": excerpt(text),
-        },
-        via_link=via_link,
+    resolved = bool(thread_row.resolved)
+    activity = record_comment(
+        principals, node.name, thread_row.name, comment, resolved, text, mentions, via_link
     )
-    notify_users(activity, mentions)
+    notify_users(activity, reached, reached)
     return comment
+
+
+def record_comment(
+    principals: Principals,
+    node: str,
+    thread: str,
+    comment: str,
+    resolved: bool,
+    text: str,
+    mentions: list[str],
+    via_link: str | None,
+) -> str:
+    """Record a comment's activity, quoting it and naming whom it mentions; answer the activity."""
+    detail = {
+        "thread": thread,
+        "comment": comment,
+        "resolved": resolved,
+        "excerpt": excerpt(text, mentions),
+        "mentions": mentions,
+    }
+    return record(principals, node, "comment", detail=detail, via_link=via_link)
 
 
 def reply(
@@ -170,6 +196,7 @@ def reply(
     savepoint = f"drive_comment_reply_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
     try:
+        lock_tree_to_share(principals, _thread(thread).node, text)
         thread_row, node = _locked_thread(thread)
         via_link = require(node, COMMENT, principals)
         _require_document(node)
@@ -418,7 +445,7 @@ def site_time(value: object, timezone: str) -> str:
 
     try:
         converted = datetime.fromtimestamp(value / 1000, UTC).astimezone(ZoneInfo(timezone))
-    except (OSError, OverflowError, ValueError):
+    except OSError, OverflowError, ValueError:
         frappe.throw(_("An old Drive comment time is outside the datetime range"), frappe.ValidationError)
 
     return converted.replace(tzinfo=None).strftime("%Y-%m-%d %H:%M:%S.%f")
@@ -442,27 +469,21 @@ def write_comment_edit(
     text: str,
     via_link: str | None,
 ) -> None:
-    """Rewrite a comment's text and record it, telling only the people it newly mentions."""
-    mentions = _mentions(text)
+    """Rewrite a comment's text and record it, telling only the people it never named before."""
+    before = _json_value(comment_row.mentions, [])
+    mentions, picked = _mentions_by(principals, node, text, via_link)
+    added = reach_mentioned(principals, node, [user for user in mentions if user not in before], picked)
+    named_earlier = _named_earlier(comment_row) if added else set()
     frappe.db.set_value(
         "Drive Comment",
         comment_row.name,
         {"content": text, "mentions": frappe.as_json(mentions)},
     )
-    thread = _thread(comment_row.thread)
-    activity = record(
-        principals,
-        node.name,
-        "comment",
-        detail={
-            "thread": comment_row.thread,
-            "comment": comment_row.name,
-            "resolved": bool(thread.resolved),
-            "excerpt": excerpt(text),
-        },
-        via_link=via_link,
+    resolved = bool(_thread(comment_row.thread).resolved)
+    activity = record_comment(
+        principals, node.name, comment_row.thread, comment_row.name, resolved, text, mentions, via_link
     )
-    notify_users(activity, set(mentions) - set(_json_value(comment_row.mentions, [])))
+    notify_users(activity, [user for user in added if user not in named_earlier], added)
 
 
 def edit_comment(principals: Principals, comment: str, text: str) -> frappe._dict:
@@ -471,6 +492,7 @@ def edit_comment(principals: Principals, comment: str, text: str) -> frappe._dic
     savepoint = f"drive_comment_edit_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
     try:
+        lock_tree_to_share(principals, _comment(comment).node, text)
         comment_row, node = _locked_comment(comment)
         via_link = require(node, READ, principals)
         _require_document(node)
@@ -547,7 +569,8 @@ def threads(
     if resolved is not None and type(resolved) is not bool:
         frappe.throw(_("Drive comment resolution filter must be a boolean"), frappe.ValidationError)
     node_row = _comment_node(node)
-    require(node_row, READ, principals)
+    # A public reader sees the document, not its discussion; a Guest needs a comment link
+    require(node_row, COMMENT if principals.user == "Guest" else READ, principals)
     _require_document(node_row)
     filters = {"node": node_row.name}
     if resolved is not None:
@@ -632,7 +655,7 @@ def _comment_node(node: str, *, for_update: bool = False) -> frappe._dict:
     row = frappe.db.get_value(
         "Drive Node",
         node,
-        ["name", "parent_node", "root", "path", "kind", "state", "content_doctype"],
+        ["name", "parent_node", "root", "path", "title", "kind", "state", "content_doctype", "owner"],
         as_dict=True,
         for_update=for_update,
     )
@@ -690,23 +713,77 @@ def _locked_comment(comment: str) -> tuple[frappe._dict, frappe._dict]:
     return locked, node
 
 
+def lock_tree_to_share(principals: Principals, node: str, text: str) -> None:
+    """A manager's `@[…]` may grant, and a grant takes the tree lock before any row of the tree."""
+    row = _comment_node(node)
+    if _BRACKET_MENTION.search(text) and check(row, MANAGE, principals):
+        lock_trees(_tree(row))
+
+
+def reach_mentioned(
+    principals: Principals, node: frappe._dict, users: list[str], picked: set[str]
+) -> dict[str, str | None]:
+    """The people among `users` a comment notifies, shared with at Comment if the author manages the node.
+
+    Someone with access always is. Someone without is only when the author comments on their own
+    access (not as a Guest or by link), picked them with `@[…]`, and no block stands. Nobody's role
+    is lowered. Each maps to the node's title while they can't read it, all their bell may name.
+    A non-manager tells at most `MAX_OUTSIDERS_TOLD` people per comment, each once a day per node;
+    the name stays in the comment either way.
+    """
+    from suite.drive.framework import principals_for
+
+    may_reach_outsiders = bool(users) and has_own_comment_access(node, principals)
+    manages = may_reach_outsiders and check(node, MANAGE, principals)
+    reached: dict[str, str | None] = {}
+    told = 0
+    for user in users:
+        person = principals_for(user)
+        title = None
+        if not check(node, READ, person):
+            if not may_reach_outsiders or user not in picked or is_blocked(node, person):
+                continue
+            if manages and _principal_kind(user) == "user":
+                grant(node.name, user, COMMENT, principals, notify=False, tell_target=False)
+            elif not manages and (
+                told >= MAX_OUTSIDERS_TOLD or has_told_without_access(node.name, principals.user, user)
+            ):
+                continue
+            else:
+                title = node["title"]
+                told += 1
+        reached[user] = title
+    return reached
+
+
+def has_own_comment_access(node: frappe._dict, principals: Principals) -> bool:
+    """Whether the caller's own grants, not a share link, let them comment on the node."""
+    try:
+        return require(node, COMMENT, principals) is None
+    except DriveError:
+        return False
+
+
 def _insert_comment(
     principals: Principals,
     thread: str,
-    node: str,
+    node: frappe._dict,
     text: str,
+    via_link: str | None,
     *,
     author_name: str | None,
     client_id: str | None,
-) -> tuple[str, list[str]]:
+) -> tuple[str, list[str], dict[str, str | None]]:
+    """Insert a comment; answer it, the people it names and the ones to notify."""
     guest_name = _guest_name(principals, author_name)
-    mentions = _mentions(text)
+    mentions, picked = _mentions_by(principals, node, text, via_link)
+    reached = reach_mentioned(principals, node, mentions, picked)
     # Frappe counts words made only of tags as missing; _validate_text already refuses blank words
     row = frappe.get_doc(
         {
             "doctype": "Drive Comment",
             "thread": thread,
-            "node": node,
+            "node": node.name,
             "content": text,
             "author": principals.user,
             "author_name": guest_name,
@@ -714,7 +791,7 @@ def _insert_comment(
             "client_id": client_id,
         }
     ).insert(ignore_permissions=True, ignore_mandatory=True)
-    return row.name, mentions
+    return row.name, mentions, reached
 
 
 def first_send(doctype: str, node: str, client_id: str | None, text: str) -> frappe._dict | None:
@@ -742,15 +819,7 @@ def announce_threads(node: frappe._dict) -> None:
     """Call the node's `threads_changed` callback once this write commits."""
     spec = content.registry().get(node.content_doctype)
     if spec and spec.threads_changed:
-        frappe.db.after_commit.add(lambda: send_threads_changed(spec.threads_changed, node.name))
-
-
-def send_threads_changed(callback: Callable[[str], None], node: str) -> None:
-    try:
-        content.call_app(callback, node)
-    except Exception:
-        # A file log: an Error Log row written after the request's commit would never be committed
-        frappe.logger("suite.drive").exception("Drive: could not announce the threads of %s", node)
+        content.call_app_after_commit(spec.threads_changed, node.name, "threads")
 
 
 def _require_editor_or_author(
@@ -843,8 +912,15 @@ def is_mention(tag: Tag) -> bool:
     return tag.name == "span" and marked and bool(tag.get("data-id"))
 
 
+def list_start(tag: Tag) -> int:
+    """Answer the number a list starts at, read as a browser reads `start`: 1 for no number or one past 32 bits."""
+    found = _LIST_START.match(text_attribute(tag, "start") or "")
+    start = int(found[1] + found[2]) if found else 1
+    return start if -(2**31) <= start < 2**31 else 1
+
+
 def append_list_items(tag: Tag, parts: list[str], mentions: list[str]) -> None:
-    for number, item in enumerate(tag.find_all("li", recursive=False), 1):
+    for number, item in enumerate(tag.find_all("li", recursive=False), list_start(tag)):
         marker = "- "
         if tag.name == "ol":
             marker = f"{number}. "
@@ -870,26 +946,63 @@ def mentioned_users(ids: list[str], user_name: Callable[[str], str | None]) -> l
     return list(dict.fromkeys(filter(None, map(user_name, ids))))
 
 
-def excerpt(text: str) -> str:
-    """Answer a comment as one short line of plain text, each mention by name."""
+def excerpt(text: str, mentions: list[str]) -> str:
+    """Answer a comment as one short line of plain text, naming only the people it `mentions`.
+
+    Any other id stays as it was typed, so typing one can't reveal whose it is.
+    """
     plain = html.unescape(strip_html_tags(text))
-    named = people(_BRACKET_MENTION.findall(plain) + _EMAIL_MENTION.findall(plain))
+    named = {user.casefold(): person for user, person in people(mentions).items()}
+
+    def name_of(match: re.Match[str]) -> str:
+        person = named.get(match.group(1).casefold())
+        return f"@{person['full_name']}" if person else match.group(0)
+
     for pattern in (_BRACKET_MENTION, _EMAIL_MENTION):
-        plain = pattern.sub(lambda match: f"@{named[match.group(1)]['full_name']}", plain)
+        plain = pattern.sub(name_of, plain)
     words = " ".join(plain.split())
     if len(words) <= EXCERPT_LENGTH:
         return words
     return words[: EXCERPT_LENGTH - 1].rstrip() + "…"
 
 
-def _mentions(text: str) -> list[str]:
-    candidates = []
-    for pattern in (_BRACKET_MENTION, _EMAIL_MENTION, _DATA_MENTION):
-        candidates.extend(pattern.findall(text))
+def _written_mentions(text: str) -> list[str]:
+    return [*_BRACKET_MENTION.findall(text), *_EMAIL_MENTION.findall(text), *_DATA_MENTION.findall(text)]
 
-    return list(
-        dict.fromkeys(filter(None, (frappe.db.get_value("User", user, "name") for user in candidates)))
+
+def _mentions_by(
+    principals: Principals, node: frappe._dict, text: str, via_link: str | None
+) -> tuple[list[str], set[str]]:
+    """Who this author's comment names, each once in written order, and which of them by an `@[…]` token.
+
+    Only the people a picker on this node offers count; any other id names no one, so a disabled
+    account reads the same as one that doesn't exist. From a Guest or a link only people who can
+    read count, so no kept name tells an outsider an account exists. A signed-in author keeps every
+    name, so a block looks like any other lack of access. The comment's text stays.
+    """
+    from suite.drive.framework import principals_for
+
+    written = _written_mentions(text)
+    known = {user.casefold(): user for user in mentionable_on(node, written)}
+    named = list(dict.fromkeys(filter(None, (known.get(user.casefold()) for user in written))))
+    picked = {known[user.casefold()] for user in _BRACKET_MENTION.findall(text) if user.casefold() in known}
+    if via_link is not None or principals.user == "Guest":
+        named = [user for user in named if check(node, READ, principals_for(user))]
+    return named, picked
+
+
+def _named_earlier(comment: frappe._dict) -> set[str]:
+    """Everyone this comment's records have named; a name removed and put back is no news to them."""
+    rows = frappe.get_all(
+        "Drive Activity", filters={"node": comment.node, "action": "comment"}, fields=["detail"]
     )
+    details = [_json_value(row.detail, {}) for row in rows]
+    return {
+        user
+        for detail in details
+        if detail.get("comment") == comment.name
+        for user in detail.get("mentions") or ()
+    }
 
 
 def _validate_anchor(anchor: str) -> None:
@@ -928,6 +1041,11 @@ def _validate_text(text: object) -> None:
 
     if len(text.encode("utf-8")) > MAX_COMMENT_BYTES:
         frappe.throw(_("Drive comment text must be at most 64 KB"), frappe.ValidationError)
+
+    if len({user.casefold() for user in _written_mentions(text)}) > MAX_MENTIONS:
+        frappe.throw(
+            _("A comment can mention at most {0} people").format(MAX_MENTIONS), frappe.ValidationError
+        )
 
 
 def _guest_name(principals: Principals, author_name: str | None) -> str | None:

@@ -51,8 +51,8 @@ describe('the unlock form', () => {
     await state.submit()
     vi.advanceTimersByTime(812_000)
 
-    expect(locked).toEqual([true, 'Try again in 14:32'])
-    expect(later).toBe('Try again in 13:32')
+    expect(locked).toEqual([true, 'Too many attempts. Try again in 15 minutes.'])
+    expect(later).toBe('Too many attempts. Try again in 14 minutes.')
     expect(unlock).toHaveBeenCalledOnce()
     expect([state.disabled.value, state.message.value]).toEqual([false, ''])
     scope.stop()
@@ -71,7 +71,7 @@ describe('the unlock form', () => {
 
     expect([reloaded.state.disabled.value, reloaded.state.message.value]).toEqual([
       true,
-      'Try again in 8:20',
+      'Too many attempts. Try again in 9 minutes.',
     ])
     expect(other.state.disabled.value).toBe(false)
     expect(JSON.stringify({ ...sessionStorage })).not.toContain('guess')
@@ -82,12 +82,15 @@ describe('the unlock form', () => {
     other.scope.stop()
   })
 
-  it('formats a wait as minutes and seconds, rounding up', () => {
-    expect([formatWait(65_000), formatWait(900_000), formatWait(1), formatWait(-5)]).toEqual([
-      '1:05',
-      '15:00',
-      '0:01',
-      '0:00',
+  it('formats a wait in whole minutes, or seconds under a minute, rounding up', () => {
+    expect([65_000, 900_000, 60_000, 59_001, 40_000, 1, -5].map((ms) => formatWait(ms))).toEqual([
+      '2 minutes',
+      '15 minutes',
+      '1 minute',
+      '1 minute',
+      '40 seconds',
+      '1 second',
+      '0 seconds',
     ])
   })
 })

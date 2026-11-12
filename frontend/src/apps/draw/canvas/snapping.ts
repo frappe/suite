@@ -83,7 +83,9 @@ export function snapResizeHandlePoint(
   shapes: RectangleShape[],
   scale: number,
 ): ResizeSnap {
-  const references = shapes.filter((candidate) => candidate.id !== shape.id).map(visualBounds)
+  const references = shapes.flatMap((candidate) =>
+    candidate.id !== shape.id ? [visualBounds(candidate)] : [],
+  )
   const tolerance = ALIGNMENT_SNAP_SCREEN_DISTANCE / scale
   if (isCornerHandle(handle)) {
     const xCandidate = bestPointAlignment('x', point, references, tolerance)

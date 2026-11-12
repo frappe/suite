@@ -181,10 +181,10 @@ import { useScreenSize } from '@/apps/mail/utils/composables'
 
 // pdf.js is megabytes — keep it lazy/code-split so it does not bloat the MailboxView route chunk
 // (only loaded when a PDF attachment is opened). The "essential" entry is the build that imports
-// pdf.js rather than inlining its own copy, which is what lets @/utils/pdfjs point the worker at an
+// pdf.js rather than inlining its own copy, which is what lets @/platform/pdf point the worker at an
 // asset the bundle actually emits; without that the render fails and the viewer shows a black box.
 const VuePdfEmbed = defineAsyncComponent(async () => {
-  await import('@/utils/pdfjs')
+  await import('@/platform/pdf')
   return import('vue-pdf-embed/dist/index.essential.mjs')
 })
 

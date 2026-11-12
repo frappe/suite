@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { ref } from 'vue'
 import * as yjs from 'yjs'
@@ -18,11 +19,11 @@ vi.mock('@/platform/collab', async (importOriginal) => {
 const NODE = 'drive-file-1'
 const PAGE_PREFIX = 'suite:writer-recovery:'
 
-const session = {
+const session = fromPartial<DocumentSession>({
   nodeId: NODE,
   title: ref('Plans'),
   credentials: { context: {} },
-} as unknown as DocumentSession
+})
 
 const row = { content: null, html: '<p>saved</p>', content_modified: null, conversion: 'done' }
 
@@ -166,7 +167,7 @@ describe('keeping the old editor work on this device', () => {
     await writeOldYjsStore(NODE, 'typed offline')
     const refusing = { recover: vi.fn().mockRejectedValue(new Error('quota')) }
     vi.mocked(openSignedInDeviceStore).mockResolvedValueOnce(
-      refusing as unknown as Awaited<ReturnType<typeof openSignedInDeviceStore>>,
+      fromPartial<Awaited<ReturnType<typeof openSignedInDeviceStore>>>(refusing),
     )
 
     await keepDeviceCopies(session, row)

@@ -3,6 +3,8 @@ import { computed } from 'vue'
 import type { InfiniteQueryState } from '@/api'
 import type { DriveNode } from '@/apps/drive/client/types'
 
+import { withRows } from './heldRows'
+
 /**
  * Recent as Drive shows it: the files the user opened, without the folders
  * they passed through. The `recents` view also records folder visits, and
@@ -19,9 +21,5 @@ export function recentFiles<Row extends DriveNode>(
     const all = source.rows
     return applies() ? all.filter((row) => row.kind !== 'folder') : all
   })
-  return new Proxy(source, {
-    get(target, key, receiver) {
-      return key === 'rows' ? rows.value : Reflect.get(target, key, receiver)
-    },
-  })
+  return withRows(source, () => rows.value)
 }

@@ -71,14 +71,28 @@ const showMore = ref(false)
 const chained = ref<{ title: string; options: MenuOption[] } | null>(null)
 
 const visible = computed(() => actions.filter((a) => a.condition()))
-const moreOptions = computed(() => [
-  ...visible.value.slice(4).map((a) => ({ label: a.label, icon: a.icon, onClick: a.onClick })),
-  ...extraOptions.map((option) => ({
+// The toolbar's order (see selectActions): the extra options, where they are filed, after what is
+// done to them.
+const moreOptions = computed(() => {
+  const rest = visible.value.slice(4).map((a) => ({
+    label: a.label,
+    icon: a.icon,
+    onClick: a.onClick,
+    group: a.group,
+  }))
+  const later = rest.findIndex((a) => a.group !== 'act')
+  const at = later < 0 ? rest.length : later
+  const extras = extraOptions.map((option) => ({
     label: option.label,
     icon: option.icon,
     onClick: option.options
       ? () => (chained.value = { title: option.label, options: option.options! })
       : option.onClick,
-  })),
-])
+  }))
+  return [...rest.slice(0, at), ...extras, ...rest.slice(at)].map(({ label, icon, onClick }) => ({
+    label,
+    icon,
+    onClick,
+  }))
+})
 </script>

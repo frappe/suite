@@ -90,13 +90,10 @@
               <label class="text-ink-gray-5 block text-xs">
                 {{ __('Default Signature') }}
               </label>
-              <TextEditor
-                editor-class="prose-sm min-h-[8rem] border rounded-b-6 border-t-0 p-2 max-w-none border-outline-gray-2"
-                :extensions="[CustomParagraphExtension]"
-                :fixed-menu="buttons"
+              <MailRichTextField
+                :model-value="draft.html_signature"
                 :placeholder="__('Write your signature here')"
-                :content="draft.html_signature"
-                @change="setSignature"
+                @update:model-value="setSignature"
               />
             </div>
 
@@ -205,22 +202,20 @@
 
 <script setup lang="ts">
 import { Button, Dialog, FormControl } from 'frappe-ui'
-import { TextEditor } from 'frappe-ui/experimental'
 import { computed, ref, watch } from 'vue'
 
 import { api, useMutation, useQuery, type InputOf } from '@/api'
+import MailRichTextField from '@/apps/mail/components/Controls/MailRichTextField.vue'
 import IdentitySettingsListView from '@/apps/mail/components/IdentitySettingsListView.vue'
 import { userStore } from '@/apps/mail/stores/user'
 import type { Identity } from '@/apps/mail/types'
 import { raiseToast } from '@/apps/mail/utils'
-import { useScreenSize, useTextEditorButtons } from '@/apps/mail/utils/composables'
-import { CustomParagraphExtension } from '@/apps/mail/utils/text-editor'
+import { useScreenSize } from '@/apps/mail/utils/composables'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 
 const store = userStore()
 const { identities } = store
-const { buttons } = useTextEditorButtons()
 const { isMobile } = useScreenSize()
 const signatures = useQuery(api.mail.signatures.list)
 const identityName = ref(identities.data?.[0]?.name ?? '')

@@ -1,6 +1,6 @@
 import { api, client } from '@/api'
 import type { ImperativeClient } from '@/platform/server-state/types'
-import { TransportError, type PlatformError } from '@/platform/transport'
+import { TransportError } from '@/platform/transport'
 
 import { driveLinks, type LinkStore } from './links'
 
@@ -101,7 +101,8 @@ export async function isDriveNodeLocked(node: string): Promise<boolean> {
  * stored `PlatformError` alike.
  */
 export function isDriveLocked(error: unknown): boolean {
-  if (typeof error !== 'object' || error === null) return false
-  const { status, type } = error as Partial<PlatformError>
+  if (typeof error !== 'object' || error === null || !('status' in error) || !('type' in error))
+    return false
+  const { status, type } = error
   return status === 401 && type === 'DriveLocked'
 }

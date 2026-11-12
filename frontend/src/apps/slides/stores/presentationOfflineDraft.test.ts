@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 
@@ -20,7 +21,7 @@ const warning = vi.fn()
 const server = {
   modified: 'M2',
   background: '#ff0000ff',
-  pushes: [] as { base_modified: string }[],
+  pushes: fromPartial<{ base_modified: string }[]>([]),
 }
 
 function serverRow() {
@@ -92,7 +93,7 @@ function setNetwork({ isOnline, isReachable }: { isOnline: boolean; isReachable:
 }
 
 async function storedDraft() {
-  return (await getPresentationFromLocalDB('p1')) as Draft
+  return fromPartial<Draft>(await getPresentationFromLocalDB('p1'))
 }
 
 async function reopen() {
@@ -157,7 +158,7 @@ describe('a draft kept against a newer stored document', () => {
     await reopen()
     const doc = await reopen()
 
-    expect(doc.modified).toBe('M1')
+    expect(doc?.modified).toBe('M1')
     expect(slides.value[0].background).toBe(MINE)
     expect(warning).not.toHaveBeenCalled()
     const local = await storedDraft()
@@ -177,7 +178,7 @@ describe('a draft kept against a newer stored document', () => {
     setNetwork({ isOnline: true, isReachable: false })
     const doc = await reopen()
 
-    expect(doc.modified).toBe('M1')
+    expect(doc?.modified).toBe('M1')
     expect(slides.value[0].background).toBe(MINE)
     expect(warning).not.toHaveBeenCalled()
     const local = await storedDraft()

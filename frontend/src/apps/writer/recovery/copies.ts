@@ -146,6 +146,8 @@ function blocksOf(removal: Removal) {
 
   const element = new yjs.XmlElement(removal.name)
   for (const [key, value] of Object.entries(removal.attrs)) {
+    // SAFETY: removed ProseMirror leaves keep structured/numeric Yjs attributes;
+    // Yjs preserves them unchanged despite XmlElement's default string generic.
     element.setAttribute(key, value as string)
   }
 

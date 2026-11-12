@@ -1,10 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const server = vi.hoisted(() => ({
-  answer: null as
+  answer: fromPartial<
     | ((options: { url: string; params: Record<string, unknown>; signal?: AbortSignal }) => unknown)
-    | null,
+    | null
+  >(null),
 }))
 
 vi.mock('@/api', async () => {
@@ -110,7 +113,7 @@ describe('savePresentationDoc', () => {
     presentationDoc.value = { name: 'p1', modified: 'M1' }
     let sent: any[] = []
     server.answer = (options) => {
-      sent = options.params.slides
+      if (Array.isArray(options.params.slides)) sent = options.params.slides
       return { modified: 'M2' }
     }
 

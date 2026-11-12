@@ -64,14 +64,16 @@ export function selectionFromIds(
   return sel.r0 < 0 || sel.c0 < 0 || sel.r1 < 0 || sel.c1 < 0 ? null : sel
 }
 
-const isEnd = (v: unknown): v is End =>
+const isEnd = <Value>(v: Value): v is Value & End =>
   (typeof v === 'string' && v.length > 0 && v.length <= 64) ||
   (typeof v === 'number' && Number.isInteger(v) && v >= 0)
 
 /** Whether `raw` (another tab's presence, untrusted) is a selection by ids; keeps only its fields. */
 export function readSavedSelection(raw: unknown): SavedSelection | null {
   if (typeof raw !== 'object' || raw === null) return null
-  const { sheetId, r0, c0, r1, c1 } = raw as Record<string, unknown>
+  if (!('sheetId' in raw) || !('r0' in raw) || !('c0' in raw) || !('r1' in raw) || !('c1' in raw))
+    return null
+  const { sheetId, r0, c0, r1, c1 } = raw
   if (typeof sheetId !== 'string' || !sheetId || sheetId.length > 64) return null
   if (!isEnd(r0) || !isEnd(c0) || !isEnd(r1) || !isEnd(c1)) return null
   return { sheetId, r0, c0, r1, c1 }

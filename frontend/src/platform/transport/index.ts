@@ -153,19 +153,12 @@ export interface CreateTransportOptions {
   onSessionExpired?: (error: PlatformError<'SessionExpired'>) => void
 }
 
-type ErrorEnvelope = {
-  errors?: Array<{ type?: unknown; message?: unknown; [key: string]: unknown }>
-  error?: { type?: unknown; message?: unknown; [key: string]: unknown }
-  message?: unknown
-  exc_type?: unknown
-  _server_messages?: unknown
-}
-
 const DEFAULT_RETRIES = 2
 const DEFAULT_RETRY_BASE_MS = 100
 const RETRY_BACKOFF_FACTOR = 2
 const REQUEST_TIMEOUT_STATUS = 408
 const TOO_MANY_REQUESTS_STATUS = 429
+const MIN_CLIENT_ERROR_STATUS = 400
 export const MIN_SERVER_ERROR_STATUS = 500
 
 export interface BytesTransport extends Transport {
@@ -195,6 +188,20 @@ interface PreparedRequest {
 
 export function isTransientStatus(status: number): boolean {
   return status === REQUEST_TIMEOUT_STATUS || status === TOO_MANY_REQUESTS_STATUS
+}
+
+/** The server turned the request away, unlike a network or server failure that passes. */
+export function isRefusal(error: unknown): boolean {
+  if (!(error instanceof TransportError)) {
+    return false
+  }
+
+  const { status } = error
+  return (
+    status >= MIN_CLIENT_ERROR_STATUS &&
+    status < MIN_SERVER_ERROR_STATUS &&
+    !isTransientStatus(status)
+  )
 }
 
 export function createTransport(options: CreateTransportOptions = {}): BytesTransport {
@@ -253,6 +260,7 @@ async function sendRequest<Input, Output, ErrorType extends string>(
   const init = buildRequestInit(operation, pathInput, rawBody, headers, requestOptions)
   const prepared: PreparedRequest = { operation, url, init, scope, validators, signal }
   const output = await sendWithRetries(settings, prepared)
+  // SAFETY: sendWithRetries applies this operation's output validator (or its explicit raw-response contract) before resolving.
   return output as Output
 }
 
@@ -382,7 +390,7 @@ function acceptOutput(prepared: PreparedRequest, body: unknown): unknown {
   return output
 }
 
-function decodeOutput(operation: Operation, body: unknown): unknown {
+function decodeOutput(operation: Operation, body: unknown) {
   const isEmpty =
     operation.empty &&
     isRecord(body) &&
@@ -414,6 +422,7 @@ function decodeFailure(
   }
 
   if (error.type === 'SessionExpired') {
+    // SAFETY: the branch above checks the exact error.type discriminant; generic PlatformError cannot express that narrowing automatically.
     settings.onSessionExpired?.(error as PlatformError<'SessionExpired'>)
   }
 
@@ -572,6 +581,7 @@ function asRecord(input: unknown): Record<string, unknown> {
   if (input === undefined || input === null) return {}
   if (typeof input !== 'object' || Array.isArray(input))
     throw new TypeError('Operation input must be an object')
+  // SAFETY: input is a non-null, non-array object; arbitrary property values intentionally remain unknown, including absent keys.
   return input as Record<string, unknown>
 }
 
@@ -582,7 +592,7 @@ function decodeSuccess(body: unknown, envelope?: 'message'): unknown {
 }
 
 function decodeError(body: unknown, status: number, fallback: string): PlatformError {
-  const envelope = isRecord(body) ? (body as ErrorEnvelope) : {}
+  const envelope = isRecord(body) ? body : {}
   const first = Array.isArray(envelope.errors) ? envelope.errors[0] : envelope.error
   const type = stringValue(first?.type) ?? stringValue(envelope.exc_type) ?? 'RequestError'
   const message =
@@ -591,7 +601,8 @@ function decodeError(body: unknown, status: number, fallback: string): PlatformE
     (typeof envelope.message === 'string' ? envelope.message : null) ??
     stringValue(fallback) ??
     'Request failed'
-  return { ...(isRecord(first) ? first : {}), type, message, status }
+  if (isRecord(first)) return { ...first, type, message, status }
+  return { type, message, status }
 }
 
 function serverMessage(encoded: unknown): string | null {

@@ -3,21 +3,27 @@ import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref } from 'vue'
 
-import { openNotificationTarget, pushNotification } from '@/platform/pwa/notification'
+import {
+  openNotificationTarget,
+  pushNotification,
+  type PushPayload,
+} from '@/platform/pwa/notification'
 import type { SessionStatus } from '@/platform/session'
 
 // The FCM client talks to the relay, to Firebase and to Frappe. The fake keeps
 // what the platform asks of it. Its token lives in localStorage, as the real
 // client's does.
 const TOKEN_KEY = 'firebase_token_mail'
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const fcm = vi.hoisted(() => ({
-  config: { projectId: 'suite-push', appId: '1:2:web:3' } as object | Error,
-  initialized: [] as unknown[],
-  handlers: [] as Array<(payload: object) => void>,
-  calls: [] as string[],
-  relayRequests: [] as string[],
+  config: fromPartial<object | Error>({ projectId: 'suite-push', appId: '1:2:web:3' }),
+  initialized: fromPartial<unknown[]>([]),
+  handlers: fromPartial<Array<(payload: PushPayload) => void>>([]),
+  calls: fromPartial<string[]>([]),
+  relayRequests: fromPartial<string[]>([]),
   // The apps each client was made for, and the subscriptions it made for them.
-  apps: [] as string[][],
+  apps: fromPartial<string[][]>([]),
 }))
 vi.mock('@/platform/pwa/frappe-push-notification', () => ({
   default: class {
@@ -37,7 +43,7 @@ vi.mock('@/platform/pwa/frappe-push-notification', () => ({
       if (fcm.config instanceof Error) throw fcm.config
       return fcm.config
     }
-    onMessage(handler: (payload: object) => void) {
+    onMessage(handler: (payload: PushPayload) => void) {
       fcm.handlers.push(handler)
     }
     async initialize(registration: unknown) {
@@ -255,7 +261,7 @@ describe('Suite PWA', () => {
 
     expect(showNotification).toHaveBeenCalledTimes(2)
     const tags = showNotification.mock.calls.map(
-      ([, options]) => (options as NotificationOptions).tag,
+      ([, options]) => fromPartial<NotificationOptions>(options).tag,
     )
     // The same tag: the second notification replaces the first.
     expect(tags).toEqual(['msg-1', 'msg-1'])
@@ -381,9 +387,11 @@ describe('Suite PWA', () => {
     ['calendar', 'Frappe Calendar'],
   ])('ships %s a manifest of its own, kept to its own pages', (app, name) => {
     const dir = resolve(__dirname, `../../../public/pwa/${app}`)
-    const manifest = JSON.parse(readFileSync(`${dir}/manifest.webmanifest`, 'utf8')) as {
-      icons: Array<{ src: string }>
-    } & Record<string, unknown>
+    const manifest = fromPartial<
+      {
+        icons: Array<{ src: string }>
+      } & Record<string, unknown>
+    >(JSON.parse(readFileSync(`${dir}/manifest.webmanifest`, 'utf8')))
 
     expect(manifest).toMatchObject({
       id: `/${app}`,
@@ -398,9 +406,11 @@ describe('Suite PWA', () => {
   })
 
   it('ships a manifest with the id /suite and the same start URL and scope', () => {
-    const manifest = JSON.parse(
-      readFileSync(resolve(__dirname, '../../../public/pwa/suite/manifest.webmanifest'), 'utf8'),
-    ) as Record<string, unknown>
+    const manifest = fromPartial<Record<string, unknown>>(
+      JSON.parse(
+        readFileSync(resolve(__dirname, '../../../public/pwa/suite/manifest.webmanifest'), 'utf8'),
+      ),
+    )
 
     expect(manifest).toMatchObject({
       id: '/suite',

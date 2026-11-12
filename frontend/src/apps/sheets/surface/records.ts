@@ -38,6 +38,8 @@ export interface SheetVersion {
   label: string | null
   pinned: boolean
   actor: string | null
+  /** Who took it, as Drive names them. */
+  person: CommentPerson | null
   creation: string | null
 }
 
@@ -150,15 +152,14 @@ function readVersion(row: unknown): SheetVersion[] {
       label: text(field(row, 'label')) || null,
       pinned: Boolean(field(row, 'pinned')),
       actor: text(field(row, 'actor')),
+      person: readPerson(field(row, 'person')),
       creation: text(field(row, 'creation')),
     },
   ]
 }
 
 function field(value: unknown, key: string): unknown {
-  return typeof value === 'object' && value !== null
-    ? (value as Record<string, unknown>)[key]
-    : undefined
+  return isFieldRecord(value) && key in value ? value[key] : undefined
 }
 
 function text(value: unknown): string | null {
@@ -171,4 +172,8 @@ export function stampLabel(stamp: string | null): string {
   const when = new Date(stamp.replace(' ', 'T'))
   if (Number.isNaN(when.getTime())) return stamp
   return when.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+}
+
+function isFieldRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
 }

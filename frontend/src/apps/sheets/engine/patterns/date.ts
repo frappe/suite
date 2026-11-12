@@ -121,7 +121,8 @@ function _toUTC(d: ParsedDate): number {
 
 function _classifyStep(dates: readonly ParsedDate[]): { kind: StepKind; step: number } | null {
   if (dates.length < 2) return null
-  const first = dates[0] as ParsedDate
+  const first = dates[0]
+  if (!first) return null
 
   // When all source dates share the same day-of-month, prefer month/year
   // step over day-step.  Otherwise "01-Jan, 01-Feb" parses as a 31-day
@@ -130,8 +131,9 @@ function _classifyStep(dates: readonly ParsedDate[]): { kind: StepKind; step: nu
   if (sameDay) {
     const monthDiffs: number[] = []
     for (let i = 1; i < dates.length; i++) {
-      const cur = dates[i] as ParsedDate
-      const prev = dates[i - 1] as ParsedDate
+      const cur = dates[i]
+      const prev = dates[i - 1]
+      if (!cur || !prev) return null
       monthDiffs.push((cur.y - prev.y) * 12 + (cur.m - prev.m))
     }
     const stepM = monthDiffs[0] ?? 0
@@ -143,7 +145,10 @@ function _classifyStep(dates: readonly ParsedDate[]): { kind: StepKind; step: nu
 
   const dayDiffs: number[] = []
   for (let i = 1; i < dates.length; i++) {
-    dayDiffs.push((_toUTC(dates[i] as ParsedDate) - _toUTC(dates[i - 1] as ParsedDate)) / DAY_MS)
+    const current = dates[i]
+    const previous = dates[i - 1]
+    if (!current || !previous) return null
+    dayDiffs.push((_toUTC(current) - _toUTC(previous)) / DAY_MS)
   }
   const stepD = dayDiffs[0] ?? 0
   if (!dayDiffs.every((d) => d === stepD)) return null
@@ -187,7 +192,8 @@ export const dateDetector: Detector = {
       if (!step) {
         // Single-cell date → daily step of 1 (matches Google Sheets).
         if (dates.length === 1) {
-          const only = dates[0] as ParsedDate
+          const only = dates[0]
+          if (!only) return null
           return {
             kind: 'date',
             confidence: 0.9,
@@ -199,8 +205,9 @@ export const dateDetector: Detector = {
         }
         return null
       }
-      const anchorFwd = dates[dates.length - 1] as ParsedDate
-      const anchorBack = dates[0] as ParsedDate
+      const anchorFwd = dates[dates.length - 1]
+      const anchorBack = dates[0]
+      if (!anchorFwd || !anchorBack) return null
       const sign = step.step >= 0 ? 1 : -1
       return {
         kind: 'date',

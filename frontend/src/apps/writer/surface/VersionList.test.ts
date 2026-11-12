@@ -1,7 +1,9 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, ref, type App } from 'vue'
 
 import type { DocumentVersion } from '@/apps/drive'
+import { requireTestElement } from '@/platform/testing/dom'
 import { translationPlugin } from '@/platform/translation'
 
 import VersionList from './VersionList.vue'
@@ -11,7 +13,7 @@ vi.mock('frappe-ui', async () => {
   return {
     // Shows the menu's items beside its button, as if it were open
     Dropdown: define({
-      props: { options: Array as () => { label: string; onClick: () => void }[] },
+      props: { options: fromPartial<() => { label: string; onClick: () => void }[]>(Array) },
       setup:
         (props, { slots }) =>
         () =>
@@ -29,17 +31,18 @@ vi.mock('frappe-ui', async () => {
         const input = state<HTMLInputElement | null>(null)
         expose({ focus: () => input.value?.focus() })
         function write(event: Event) {
-          emit('update:modelValue', (event.target as HTMLInputElement).value)
+          emit('update:modelValue', requireTestElement(event.target, HTMLInputElement).value)
         }
 
         return () => render('input', { ref: input, value: props.modelValue, onInput: write })
       },
     }),
-    Tooltip: define({
+    Button: define({
+      inheritAttrs: false,
       setup:
-        (_, { slots }) =>
+        (_, { attrs }) =>
         () =>
-          slots.default?.(),
+          render('button', { type: 'button', ...attrs }),
     }),
   }
 })
@@ -72,7 +75,7 @@ afterEach(() => {
 function version(seq: number, label: string | null, takenAt: Date) {
   const kind = label ? 'named' : 'auto'
   const shape = { seq, kind, label, actor: 'ana@example.com', creation: takenAt.toISOString() }
-  return shape as unknown as DocumentVersion
+  return fromPartial<DocumentVersion>(shape)
 }
 
 function milestone(seq: number, takenAt: Date) {

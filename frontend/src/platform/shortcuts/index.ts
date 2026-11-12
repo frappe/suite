@@ -3,6 +3,10 @@ import { computed, onScopeDispose, ref, shallowRef } from 'vue'
 
 import { translate as __ } from '@/platform/translation'
 
+export { useKeySequences, type KeySequenceShortcut, type Letter } from './keySequences'
+export { default as ShortcutsDialog } from './ShortcutsDialog.vue'
+export { isMacPlatform } from './keycaps'
+
 /**
  * The keyboard shortcuts list of the page on screen. An area that draws its own
  * dialog registers how to open it while mounted; everywhere else the shell's

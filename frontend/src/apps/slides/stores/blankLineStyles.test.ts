@@ -24,7 +24,8 @@ const cursorInBlankParagraph = (editor: Editor) => {
 
 const type = (editor: Editor, text: string) => {
   const { from, to } = editor.state.selection
-  editor.view.someProp('handleTextInput', (f) => f(editor.view, from, to, text))
+  const insert = () => editor.state.tr.insertText(text, from, to)
+  editor.view.someProp('handleTextInput', (f) => f(editor.view, from, to, text, insert))
 }
 
 afterEach(() => {

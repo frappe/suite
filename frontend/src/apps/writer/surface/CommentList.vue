@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Avatar, Button, Dropdown, TextInput, type DropdownOptions } from 'frappe-ui'
+import { Button, Dropdown, TextInput, type DropdownOptions } from 'frappe-ui'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
 import {
@@ -10,19 +10,23 @@ import {
 } from '@/apps/drive'
 import { DOCUMENT_ANCHOR } from '@/apps/writer/collab/anchors'
 import type { ThreadPlaces } from '@/apps/writer/collab/highlights'
+import { fullName } from '@/apps/writer/composables/useUsers'
 import { confirm, toast } from '@/platform/feedback'
-import { randomId } from '@/platform/random-id'
 import { useSession } from '@/platform/session'
+import { translate as __ } from '@/platform/translation'
 
+import { commentExcerpt, isEdited } from './commentDetails'
 import CommentDraftCard from './CommentDraftCard.vue'
 import CommentDraftRow from './CommentDraftRow.vue'
-import { isComposing } from './commentMentions'
+import { submitOnEnter } from './commentMentions'
 import CommentText from './CommentText.vue'
+import { confirmMentionAccess } from './mentionAccess'
 import MentionTextarea from './MentionTextarea.vue'
+import PersonAvatar from './PersonAvatar.vue'
 import { useSeenThreads } from './seenThreads'
 import { threadRows, type ThreadRow } from './threadRows'
 import type { ShownDraft, useCommentDrafts } from './useCommentDrafts'
-import type { ThreadActions } from './useDocumentPanel'
+import type { ThreadActions } from './useThreadChanges'
 import { dayOrTime } from './versionDates'
 
 type ThreadComment = DocumentThread['comments'][number]
@@ -54,6 +58,8 @@ const props = defineProps<{
   canComment: boolean
   /** Whether the person can edit the document, which lets them change anyone's comment. */
   canEditDocument: boolean
+  /** Whether the person can share the document, to offer it to people a comment names. */
+  canShare: boolean
   actions: ThreadActions
   /** Comments not posted yet, on text or on the whole document. */
   drafts: ReturnType<typeof useCommentDrafts>
@@ -63,6 +69,8 @@ const props = defineProps<{
 const openThread = defineModel<string | null>('openThread', { default: null })
 /** The closed thread whose row is pointed at, whose text lights faintly. */
 const litThread = defineModel<string | null>('litThread', { default: null })
+/** A new comment was sent, so the writer can go back to the text. */
+const emit = defineEmits<{ sent: [] }>()
 
 const isResolvedShown = ref(false)
 const rowItems = ref<HTMLElement[]>([])
@@ -70,10 +78,8 @@ const documentCard = ref<{ focus(): void } | null>(null)
 const replyBoxes = ref<{ focus(): void }[]>([])
 /** A reply typed into each thread, kept while another is open. */
 const replyTexts = ref<Record<string, string>>({})
-/** The replies sent to each thread that Drive hasn't confirmed, by words, with the client id each went under. */
-const unsentReplies = new Map<string, Map<string, string>>()
-/** Threads being resolved or reopened, faded until they leave their part of the list. */
-const leavingThreads = ref(new Set<string>())
+/** Threads whose resolve or reopen Drive hasn't answered. */
+const changingThreads = new Set<string>()
 let isSendingReply = false
 const editingComment = ref<string | null>(null)
 const editText = ref('')
@@ -282,15 +288,31 @@ function fitsInComment(text: string) {
   return isFitting
 }
 
-// Sending again is a retry: the same words under the same client id
-async function postDraft(draft: ShownDraft) {
-  if (!fitsInComment(draft.text.trim())) {
-    return
-  }
-
-  const thread = await props.drafts.post(draft, takeGuestName())
+// Opens the new thread unless the writer has opened another since
+async function sendDraft(draft: ShownDraft, announce: () => void, afterSend = () => {}) {
+  const posting = props.drafts.post(draft, takeGuestName())
+  afterSend()
+  const thread = await posting
   if (thread) {
-    openThread.value = thread
+    openThread.value ??= thread
+    announce()
+  }
+}
+
+// The writer goes back to the text at once, with the comment already in the list
+async function postDraft(draft: ShownDraft) {
+  const text = draft.text.trim()
+  const announce = fitsInComment(text) ? await mayMention(text) : null
+  if (announce) {
+    await sendDraft(draft, announce, () => emit('sent'))
+  }
+}
+
+// Sending again is a retry: the same words under the same client id
+async function retryDraft(draft: ShownDraft) {
+  const announce = await mayMention(draft.text.trim())
+  if (announce) {
+    await sendDraft(draft, announce)
   }
 }
 
@@ -312,13 +334,9 @@ async function discardSentDraft(draft: ShownDraft) {
   }
 }
 
-// Sending the same words again reuses their client id, so Drive posts them once
-function replyClientId(thread: string, text: string) {
-  const unsent = unsentReplies.get(thread) ?? new Map<string, string>()
-  const clientId = unsent.get(text) ?? randomId()
-  unsent.set(text, clientId)
-  unsentReplies.set(thread, unsent)
-  return clientId
+// Null when the writer stops to reconsider; otherwise says, once posted, what the post did for them
+function mayMention(text: string, mentionedBefore?: string[]) {
+  return confirmMentionAccess(props.node, text, { canShare: props.canShare, mentionedBefore })
 }
 
 // What was typed after the sent words; all of it when the sent words themselves changed
@@ -338,25 +356,16 @@ async function submitReply(thread: DocumentThread) {
   }
 
   isSendingReply = true
-  try {
-    const clientId = replyClientId(thread.name, text)
-    if (await props.actions.reply(thread.name, text, takeGuestName(), clientId)) {
-      replyTexts.value[thread.name] = typedSince(replyTexts.value[thread.name] ?? '', typed)
-      unsentReplies.delete(thread.name)
-    }
-  } finally {
-    isSendingReply = false
-  }
-}
-
-// Shift+Enter and a word still being composed stay in the box
-function sendOnEnter(event: KeyboardEvent, thread: DocumentThread) {
-  if (event.shiftKey || isComposing(event)) {
+  const announce = await mayMention(text)
+  isSendingReply = false
+  if (!announce) {
     return
   }
 
-  event.preventDefault()
-  void submitReply(thread)
+  replyTexts.value[thread.name] = typedSince(replyTexts.value[thread.name] ?? '', typed)
+  if (await props.actions.reply(thread.name, text, takeGuestName())) {
+    announce()
+  }
 }
 
 function offerUndoResolve(thread: DocumentThread) {
@@ -377,18 +386,21 @@ async function setResolved(thread: string, isResolved: boolean) {
   return isChanged
 }
 
-// A thread leaves its part of the list, so it closes and fades until it has gone
+// The thread leaves its part of the list at once, and comes back open if Drive refuses
 async function toggleResolved(thread: DocumentThread) {
-  if (leavingThreads.value.has(thread.name)) {
+  if (changingThreads.has(thread.name)) {
     return
   }
 
   const isResolving = !thread.resolved
-  leavingThreads.value.add(thread.name)
+  const wasOpen = isOpen(thread)
+  changingThreads.add(thread.name)
   const isChanged = await setResolved(thread.name, isResolving)
-  leavingThreads.value.delete(thread.name)
+  changingThreads.delete(thread.name)
   if (isChanged && isResolving) {
     offerUndoResolve(thread)
+  } else if (!isChanged && wasOpen) {
+    openThread.value ??= thread.name
   }
 }
 
@@ -425,23 +437,22 @@ function commentTextClass(thread: DocumentThread, comment: ThreadComment) {
   return 'text-sm'
 }
 
-function actionsClass(thread: DocumentThread) {
-  if (isOpen(thread)) {
-    return ''
-  }
-
-  return 'invisible group-hover:visible group-focus-within:visible'
-}
-
 async function deleteComment(comment: ThreadComment) {
+  const excerpt = commentExcerpt(comment.content, comment.mentions, fullName)
   const isConfirmed = await confirm({
-    title: 'Delete this comment?',
-    message: "It can't be brought back.",
+    title: __('Delete this comment?'),
+    message: __('“{0}” will be deleted. It can’t be brought back.', [excerpt]),
     confirmLabel: 'Delete',
     destructive: true,
   })
-  if (isConfirmed) {
-    await props.actions.removeComment(comment.name)
+  if (!isConfirmed) {
+    return
+  }
+
+  const wasOpen = openThread.value
+  const isRemoved = await props.actions.removeComment(comment.name)
+  if (!isRemoved) {
+    openThread.value ??= wasOpen
   }
 }
 
@@ -463,7 +474,7 @@ function isEditing(comment: ThreadComment) {
 }
 
 function hasMenu(comment: ThreadComment) {
-  return canChange(comment) && !isEditing(comment)
+  return canChange(comment) && !isEditing(comment) && !props.actions.isUnsent(comment.name)
 }
 
 function menuClass(comment: ThreadComment) {
@@ -503,7 +514,7 @@ function stopEdit() {
   editText.value = ''
 }
 
-// An unchanged text sends nothing; a refused one keeps the box and the words
+// An unchanged text sends nothing; a refused one comes back to the box with its words
 async function saveEdit(comment: ThreadComment) {
   const text = editText.value.trim()
   if (text === comment.content) {
@@ -511,12 +522,19 @@ async function saveEdit(comment: ThreadComment) {
     return
   }
 
-  if (!fitsInComment(text)) {
+  const announce = fitsInComment(text) ? await mayMention(text, comment.mentions) : null
+  if (!announce) {
     return
   }
 
+  stopEdit()
   if (await props.actions.editComment(comment.name, text)) {
-    stopEdit()
+    announce()
+  } else if (!editingComment.value) {
+    editingComment.value = comment.name
+    editText.value = text
+    await nextTick()
+    editBoxes.value[0]?.focus()
   }
 }
 
@@ -545,12 +563,26 @@ function authorImage(comment: ThreadComment) {
   return comment.person?.user_image ?? undefined
 }
 
+// The first comment's ⋯ shows in the header, beside Resolve, while its thread is open
+function hasHeaderMenu(thread: DocumentThread) {
+  return isOpen(thread) && hasMenu(firstComment(thread))
+}
+
 function authorLabel(comment: ThreadComment) {
   return comment.author_name?.trim() || comment.person?.full_name || comment.author || 'Someone'
 }
 
 function firstComment(thread: DocumentThread) {
   return thread.comments[0]
+}
+
+function resolvedLabel(thread: DocumentThread) {
+  if (!thread.resolved_by) {
+    return __('Resolved')
+  }
+
+  const when = thread.resolved_at ? ` · ${dayOrTime({ creation: thread.resolved_at })}` : ''
+  return __('Resolved by {0}', [fullName(thread.resolved_by)]) + when
 }
 
 function isReply(thread: DocumentThread, comment: ThreadComment) {
@@ -573,15 +605,7 @@ function repliesLabel(thread: DocumentThread) {
 defineExpose({ startDocumentComment })
 
 function rowClass(thread: DocumentThread) {
-  if (leavingThreads.value.has(thread.name)) {
-    return 'pointer-events-none opacity-0'
-  }
-
-  if (isOpen(thread)) {
-    return 'bg-surface-elevation-3 shadow-sm'
-  }
-
-  return 'hover:bg-surface-gray-2'
+  return isOpen(thread) ? 'bg-surface-gray-1' : 'hover:bg-surface-gray-1'
 }
 </script>
 
@@ -629,7 +653,7 @@ function rowClass(thread: DocumentThread) {
         v-for="draft in sentDrafts"
         :key="draft.clientId"
         :draft
-        @retry="postDraft(draft)"
+        @retry="retryDraft(draft)"
         @discard="discardSentDraft(draft)"
       />
       <template v-for="{ key, row } in shownItems" :key>
@@ -637,7 +661,7 @@ function rowClass(thread: DocumentThread) {
           v-if="row"
           ref="rowItems"
           :data-thread="row.thread.name"
-          class="group relative rounded-4 transition-opacity duration-200"
+          class="group relative rounded-4"
           :class="rowClass(row.thread)"
           @mouseenter="lightThread(row.thread)"
           @mouseleave="dimThread"
@@ -649,24 +673,37 @@ function rowClass(thread: DocumentThread) {
             :aria-expanded="isOpen(row.thread)"
             @click="toggleThread(row.thread)"
           >
-            <span class="flex items-baseline gap-1.5 pr-8 text-xs text-ink-gray-5">
-              <span class="min-w-0 text-sm-medium text-ink-gray-7">
+            <span
+              class="flex items-center gap-1.5 text-xs text-ink-gray-5"
+              :class="hasHeaderMenu(row.thread) ? 'pr-16' : 'pr-8'"
+            >
+              <PersonAvatar
+                :user="firstComment(row.thread).author"
+                :name="authorLabel(firstComment(row.thread))"
+                :image="authorImage(firstComment(row.thread))"
+              />
+              <span class="min-w-0 truncate text-sm-medium text-ink-gray-7">
                 <DriveCommentAuthor
                   :author="firstComment(row.thread).author"
                   :author-name="firstComment(row.thread).author_name"
                   >{{ authorLabel(firstComment(row.thread)) }}</DriveCommentAuthor
                 >
               </span>
-              <span v-if="row.where" class="shrink-0">{{ row.where }}</span>
-              <span v-if="isUnread(row.thread)" class="flex shrink-0 items-center self-center">
+              <span v-if="isUnread(row.thread)" class="flex shrink-0 items-center">
                 <span class="size-1.5 rounded-full bg-surface-amber-7" aria-hidden="true" />
                 <span class="sr-only">{{ __('Unread') }}</span>
               </span>
               <span class="shrink-0">{{ dayOrTime(firstComment(row.thread)) }}</span>
+              <span v-if="isEdited(firstComment(row.thread))" class="shrink-0">
+                {{ __('(edited)') }}
+              </span>
             </span>
-            <span v-if="row.quote" class="block py-0.5">
-              <span class="block truncate border-l-2 pl-2 text-sm text-ink-gray-5">
-                {{ row.quote }}
+            <span v-if="row.quote || row.where" class="block py-0.5">
+              <span
+                class="flex gap-1.5 border-l-2 border-outline-gray-3 pl-2 text-sm text-ink-gray-5"
+              >
+                <span class="truncate">{{ row.quote }}</span>
+                <span v-if="row.where" class="shrink-0 text-xs leading-5">{{ row.where }}</span>
               </span>
             </span>
             <span v-if="isClosed(row.thread)" class="flex gap-1 text-sm">
@@ -683,14 +720,27 @@ function rowClass(thread: DocumentThread) {
           </button>
           <div
             v-if="canComment"
-            class="absolute right-2 top-[3px] flex items-center"
-            :class="actionsClass(row.thread)"
+            class="invisible absolute right-2 top-[3px] flex items-center group-focus-within:visible group-hover:visible"
+            :class="isOpen(row.thread) && '[@media(hover:none)]:visible'"
           >
+            <Dropdown
+              v-if="hasHeaderMenu(row.thread)"
+              :options="commentActions(firstComment(row.thread))"
+              align="end"
+            >
+              <Button
+                size="sm"
+                variant="ghost"
+                icon="lucide-ellipsis"
+                :aria-label="__('More comment actions')"
+              />
+            </Dropdown>
             <Button
               size="sm"
               variant="ghost"
               :icon="resolveIcon(row.thread)"
               :aria-label="resolveLabel(row.thread)"
+              :tooltip="resolveLabel(row.thread)"
               @click="toggleResolved(row.thread)"
             />
           </div>
@@ -703,14 +753,12 @@ function rowClass(thread: DocumentThread) {
               >
                 <p
                   v-if="isReply(row.thread, comment)"
-                  class="flex items-center gap-2 pr-8 text-sm-medium text-ink-gray-7"
+                  class="flex items-center gap-1.5 pr-8 text-sm-medium text-ink-gray-7"
                 >
-                  <Avatar
-                    v-if="comment.person"
+                  <PersonAvatar
+                    :user="comment.author"
+                    :name="authorLabel(comment)"
                     :image="authorImage(comment)"
-                    :label="authorLabel(comment)"
-                    size="sm"
-                    shape="circle"
                   />
                   <span class="flex min-w-0 flex-1 items-baseline gap-2">
                     <DriveCommentAuthor
@@ -718,7 +766,10 @@ function rowClass(thread: DocumentThread) {
                       :author-name="comment.author_name"
                       >{{ authorLabel(comment) }}</DriveCommentAuthor
                     >
-                    <span class="flex-1 text-xs text-ink-gray-5">{{ dayOrTime(comment) }}</span>
+                    <span class="flex-1 whitespace-nowrap text-xs text-ink-gray-5">
+                      {{ dayOrTime(comment) }}
+                      <template v-if="isEdited(comment)">{{ __('(edited)') }}</template>
+                    </span>
                   </span>
                 </p>
                 <form
@@ -733,6 +784,7 @@ function rowClass(thread: DocumentThread) {
                     :rows="2"
                     :aria-label="__('Edit comment')"
                     @keydown.esc.stop.prevent="stopEdit"
+                    @keydown.enter="submitOnEnter($event, () => isEditBlank || saveEdit(comment))"
                   />
                   <div class="flex justify-end gap-1">
                     <Button size="sm" variant="ghost" :label="__('Cancel')" @click="stopEdit" />
@@ -752,8 +804,28 @@ function rowClass(thread: DocumentThread) {
                 >
                   <CommentText :content="comment.content" :mentions="comment.mentions" />
                 </p>
+                <p
+                  v-if="actions.isNotSent(comment.name)"
+                  class="flex items-center gap-1.5 text-xs text-ink-gray-5"
+                >
+                  {{ __('Not sent') }}
+                  <button
+                    type="button"
+                    class="text-ink-gray-8 hover:underline"
+                    @click="actions.retryReply(comment.name)"
+                  >
+                    {{ __('Retry') }}
+                  </button>
+                  <button
+                    type="button"
+                    class="text-ink-gray-8 hover:underline"
+                    @click="actions.discardReply(comment.name)"
+                  >
+                    {{ __('Discard') }}
+                  </button>
+                </p>
                 <div
-                  v-if="hasMenu(comment)"
+                  v-if="isReply(row.thread, comment) && hasMenu(comment)"
                   class="absolute -top-1 right-0"
                   :class="menuClass(comment)"
                 >
@@ -762,16 +834,18 @@ function rowClass(thread: DocumentThread) {
                     align="end"
                     @update:open="noteMenu(comment, $event)"
                   >
-                    <button
-                      type="button"
-                      class="flex size-7 items-center justify-center text-ink-gray-5 hover:text-ink-gray-8"
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      icon="lucide-ellipsis"
                       :aria-label="__('More comment actions')"
-                    >
-                      <span class="lucide-ellipsis size-4" aria-hidden="true" />
-                    </button>
+                    />
                   </Dropdown>
                 </div>
               </div>
+              <p v-if="row.thread.resolved" class="text-xs text-ink-gray-5">
+                {{ resolvedLabel(row.thread) }}
+              </p>
               <form v-if="canReply(row.thread)" @submit.prevent="submitReply(row.thread)">
                 <div class="relative">
                   <MentionTextarea
@@ -781,7 +855,7 @@ function rowClass(thread: DocumentThread) {
                     class="pr-8"
                     :placeholder="__('Reply')"
                     :aria-label="__('Reply')"
-                    @keydown.enter="sendOnEnter($event, row.thread)"
+                    @keydown.enter="submitOnEnter($event, () => submitReply(row.thread))"
                   />
                   <!-- 3px puts the glyph at the textarea's 9px text inset, border included -->
                   <Button

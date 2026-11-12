@@ -73,24 +73,28 @@ const USD: Currency = { symbol: '$', locale: 'en-US', defaultDecimals: 2 }
 // and decimal separator. `defaultDecimals` matters for JPY (whole yen) — the
 // rest are 2 by default. Keep this list short on purpose; "More currencies"
 // can be a follow-up.
-export const CURRENCIES: Record<string, Currency> = {
-  USD,
-  EUR: { symbol: '€', locale: 'de-DE', defaultDecimals: 2 },
-  GBP: { symbol: '£', locale: 'en-GB', defaultDecimals: 2 },
-  INR: { symbol: '₹', locale: 'en-IN', defaultDecimals: 2 },
-  JPY: { symbol: '¥', locale: 'ja-JP', defaultDecimals: 0 },
-  CAD: { symbol: 'C$', locale: 'en-CA', defaultDecimals: 2 },
-  AUD: { symbol: 'A$', locale: 'en-AU', defaultDecimals: 2 },
-  CNY: { symbol: '¥', locale: 'zh-CN', defaultDecimals: 2 },
-}
+export const CURRENCIES = new Map<string, Currency>(
+  Object.entries({
+    USD,
+    EUR: { symbol: '€', locale: 'de-DE', defaultDecimals: 2 },
+    GBP: { symbol: '£', locale: 'en-GB', defaultDecimals: 2 },
+    INR: { symbol: '₹', locale: 'en-IN', defaultDecimals: 2 },
+    JPY: { symbol: '¥', locale: 'ja-JP', defaultDecimals: 0 },
+    CAD: { symbol: 'C$', locale: 'en-CA', defaultDecimals: 2 },
+    AUD: { symbol: 'A$', locale: 'en-AU', defaultDecimals: 2 },
+    CNY: { symbol: '¥', locale: 'zh-CN', defaultDecimals: 2 },
+  }),
+)
 
 // Number variant → locale used by Intl.NumberFormat. 'in' gives the Indian
 // lakhs/crores grouping (12,34,56,789). '' means user-default locale.
-const NUMBER_LOCALES: Record<string, string | undefined> = {
-  '': undefined,
-  us: 'en-US',
-  in: 'en-IN',
-}
+const NUMBER_LOCALES = new Map<string, string | undefined>(
+  Object.entries({
+    '': undefined,
+    us: 'en-US',
+    in: 'en-IN',
+  }),
+)
 
 type DateTimeFormatters = Record<string, [locale: string, opts: Intl.DateTimeFormatOptions]>
 
@@ -98,45 +102,46 @@ type DateTimeFormatters = Record<string, [locale: string, opts: Intl.DateTimeFor
 // '' is the legacy behaviour — defer to the user's locale's toLocaleDateString.
 // Locales are pinned so the *shape* is stable across machines; users who want
 // browser-locale output can stay on the default.
-const DATE_FORMATTERS: DateTimeFormatters = {
+const DATE_FORMATTERS = {
   dmy: ['en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }], // 15/01/2025
   mdy: ['en-US', { day: '2-digit', month: '2-digit', year: 'numeric' }], // 01/15/2025
   ymd: ['en-CA', { day: '2-digit', month: '2-digit', year: 'numeric' }], // 2025-01-15
   long: ['en-GB', { day: 'numeric', month: 'short', year: 'numeric' }], // 15 Jan 2025
   full: ['en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }], // Mon, 15 Jan 2025
-}
+} satisfies DateTimeFormatters
 
 // Time variants. `12` suffix flips to 12-hour clock with AM/PM.
-const TIME_FORMATTERS: DateTimeFormatters = {
+const TIME_FORMATTERS = {
   hm: ['en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }], // 15:30
   hms: ['en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }], // 15:30:45
   hm12: ['en-US', { hour: 'numeric', minute: '2-digit', hour12: true }], // 3:30 PM
   hms12: ['en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true }], // 3:30:45 PM
-}
+} satisfies DateTimeFormatters
 
 // Intl formatters are *expensive* to construct (~1 ms each on V8) and a
 // sheet typically uses only a handful of unique format configurations
 // across thousands of cells. Cache instances by a string key so we build
 // each formatter once and reuse it on every cell.
-const _intlCache = new Map<string, Intl.NumberFormat | Intl.DateTimeFormat>()
+const _numberCache = new Map<string, Intl.NumberFormat>()
+const _dateTimeCache = new Map<string, Intl.DateTimeFormat>()
 
 function _numFmt(locale: string | undefined, decimals: number | null): Intl.NumberFormat {
   const key = `n|${locale ?? '_'}|${decimals ?? '_'}`
-  let f = _intlCache.get(key) as Intl.NumberFormat | undefined
+  let f = _numberCache.get(key)
   if (!f) {
     const opts =
       decimals == null
         ? undefined
         : { minimumFractionDigits: decimals, maximumFractionDigits: decimals }
     f = new Intl.NumberFormat(locale, opts)
-    _intlCache.set(key, f)
+    _numberCache.set(key, f)
   }
   return f
 }
 
 function _curFmt(locale: string, currency: string, decimals: number): Intl.NumberFormat {
   const key = `c|${locale}|${currency}|${decimals}`
-  let f = _intlCache.get(key) as Intl.NumberFormat | undefined
+  let f = _numberCache.get(key)
   if (!f) {
     f = new Intl.NumberFormat(locale, {
       style: 'currency',
@@ -144,7 +149,7 @@ function _curFmt(locale: string, currency: string, decimals: number): Intl.Numbe
       minimumFractionDigits: decimals,
       maximumFractionDigits: decimals,
     })
-    _intlCache.set(key, f)
+    _numberCache.set(key, f)
   }
   return f
 }
@@ -153,10 +158,10 @@ function _dtFmt(locale: string, opts: Intl.DateTimeFormatOptions): Intl.DateTime
   // Options are small objects with a stable key set — JSON.stringify is fine
   // (and the cost is paid once per unique format string).
   const key = `d|${locale}|${JSON.stringify(opts)}`
-  let f = _intlCache.get(key) as Intl.DateTimeFormat | undefined
+  let f = _dateTimeCache.get(key)
   if (!f) {
     f = new Intl.DateTimeFormat(locale, opts)
-    _intlCache.set(key, f)
+    _dateTimeCache.set(key, f)
   }
   return f
 }
@@ -244,6 +249,39 @@ export function dateSerialFromShown(shown: unknown, code: string | null | undefi
   return Date.UTC(y, mo - 1, day) / 86400000 + 25569 + secs / 86400
 }
 
+// The other way round: a day serial shown with the date part of an
+// Excel-style code (`m/d/yyyy` → `12/9/2025`, `dd/mm/yyyy` → `09/12/2025`).
+// The time part, `[$-409]`-style locale tags and any `;` sections after the
+// first are left out. Charts label a date axis with it.
+export function dateShownFromSerial(serial: number, code: string | null | undefined): string {
+  const d = new Date(Math.round((Math.floor(serial) - 25569) * 86400000))
+  if (isNaN(d.getTime())) return String(serial)
+  const datePart =
+    String(code ?? '')
+      .replace(/"[^"]*"/g, '')
+      .split(';')[0]
+      ?.replace(/\[[^\]]*\]/g, '')
+      .split(/\s*h/i)[0] ?? ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const name = (opts: Intl.DateTimeFormatOptions) =>
+    d.toLocaleString('en', { ...opts, timeZone: 'UTC' })
+  const tokens = new Map<string, () => string>(
+    Object.entries({
+      yyyy: () => String(d.getUTCFullYear()),
+      yy: () => pad(d.getUTCFullYear() % 100),
+      mmmm: () => name({ month: 'long' }),
+      mmm: () => name({ month: 'short' }),
+      mm: () => pad(d.getUTCMonth() + 1),
+      m: () => String(d.getUTCMonth() + 1),
+      dddd: () => name({ weekday: 'long' }),
+      ddd: () => name({ weekday: 'short' }),
+      dd: () => pad(d.getUTCDate()),
+      d: () => String(d.getUTCDate()),
+    }),
+  )
+  return datePart.replace(/yyyy|yy|m{1,4}|d{1,4}/gi, (t) => tokens.get(t.toLowerCase())?.() ?? t)
+}
+
 // Types whose value is a date, not a plain number to round/group.
 const DATE_LIKE = new Set(['date', 'time', 'datetime'])
 
@@ -260,11 +298,11 @@ export function applyNumberFmt<T>(value: T, format: unknown): T | string {
   const n = displayNumber(value)
   if (isNaN(n) && !DATE_LIKE.has(type)) return value
   if (type === 'number') {
-    const loc = NUMBER_LOCALES[variant] !== undefined ? NUMBER_LOCALES[variant] : undefined
+    const loc = NUMBER_LOCALES.get(variant) !== undefined ? NUMBER_LOCALES.get(variant) : undefined
     return _numFmt(loc, decimals).format(n)
   }
   if (type === 'currency') {
-    const known = CURRENCIES[variant]
+    const known = CURRENCIES.get(variant)
     const code = known ? variant : 'USD'
     const cfg = known ?? USD
     const d = decimals ?? cfg.defaultDecimals
@@ -316,16 +354,17 @@ function applyCustomFmt<T>(value: T, pattern: string): T | string {
   const sign = scaled < 0 && /[1-9]/.test(body) ? '-' : ''
   return sign + prefix + body + suffix
 }
-
-// Split a pattern into its literal prefix/suffix and the single numeric run,
-// counting '%' signs (each scales the value by 100). Quotes and `\` escape
-// literals so a stray '0' or '#' inside text isn't treated as a placeholder.
-function _parseCustomPattern(pattern: string): {
+interface ParseCustomPatternResult {
   prefix: string
   numSpec: string
   suffix: string
   percent: number
-} {
+}
+
+// Split a pattern into its literal prefix/suffix and the single numeric run,
+// counting '%' signs (each scales the value by 100). Quotes and `\` escape
+// literals so a stray '0' or '#' inside text isn't treated as a placeholder.
+function _parseCustomPattern(pattern: string): ParseCustomPatternResult {
   let prefix = '',
     numSpec = '',
     suffix = '',

@@ -51,7 +51,7 @@ export function fakeServer(start?: Y.Doc) {
     })
     const listeners = new Set<() => void>()
     let status = CLEAN
-    const room = {
+    const room: FakeRoom = {
       doc,
       outbox,
       lineage: 'test',
@@ -79,7 +79,7 @@ export function fakeServer(start?: Y.Doc) {
       regainAccess: vi.fn(async () => {}),
       isCommitted: () => true,
     }
-    return room as unknown as FakeRoom
+    return room
   }
 
   function open(): Promise<Opened> {

@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it, vi } from 'vitest'
 
 import { CameraLayerController } from '../CameraLayerController'
@@ -10,7 +11,7 @@ function setup() {
     getCameraLayerDemand: vi.fn().mockResolvedValue(null),
   }
   const controller = new CameraLayerController()
-  controller.initialize(client as never)
+  controller.initialize(fromPartial(client))
   const producer = {
     id: 'camera',
     kind: 'video',
@@ -38,7 +39,7 @@ describe('camera publisher quality control', () => {
     producer.setMaxSpatialLayer.mockImplementationOnce(
       () => new Promise<void>((r) => (complete = r)),
     )
-    controller.addProducer(producer as never)
+    controller.addProducer(fromPartial(producer))
     command(0, 2)
     command(2, 3)
     expect(producer.setMaxSpatialLayer.mock.calls).toEqual([[0]])
@@ -48,7 +49,7 @@ describe('camera publisher quality control', () => {
   })
   it('rejects old versions, malformed layers, and unrelated publication commands', async () => {
     const { controller, producer, command, handlers } = setup()
-    controller.addProducer(producer as never)
+    controller.addProducer(fromPartial(producer))
     command(1, 4)
     await flush()
     command(0, 3)
@@ -66,7 +67,7 @@ describe('camera publisher quality control', () => {
     const { controller, client, producer, command, handlers } = setup()
     let resolve!: (value: unknown) => void
     client.getCameraLayerDemand.mockImplementationOnce(() => new Promise((r) => (resolve = r)))
-    controller.addProducer(producer as never)
+    controller.addProducer(fromPartial(producer))
     command(1, 4)
     await flush()
     resolve({ producerId: 'camera', version: 2, maxSpatialLayer: 0 })
@@ -83,7 +84,7 @@ describe('camera publisher quality control', () => {
   })
   it('restores full quality and disables optimisation after a sender failure', async () => {
     const { controller, producer, command } = setup()
-    controller.addProducer(producer as never)
+    controller.addProducer(fromPartial(producer))
     command(0, 2)
     await flush()
     producer.setMaxSpatialLayer.mockRejectedValueOnce(new Error('busy'))
@@ -100,20 +101,22 @@ describe('camera publisher quality control', () => {
     let active = [true, true, true],
       cached: number | undefined,
       failUpgrade = true
-    controller.addProducer({
-      ...producer,
-      get maxSpatialLayer() {
-        return cached
-      },
-      rtpSender: { getParameters: () => ({ encodings: active.map((active) => ({ active })) }) },
-      setMaxSpatialLayer: async (layer: number) => {
-        cached = layer
-        if (layer === 0) active = [true, false, false]
-        else if (failUpgrade)
-          failUpgrade = false // Browser ignored the upgrade.
-        else active = [true, true, true]
-      },
-    } as never)
+    controller.addProducer(
+      fromPartial({
+        ...producer,
+        get maxSpatialLayer() {
+          return cached
+        },
+        rtpSender: { getParameters: () => ({ encodings: active.map((active) => ({ active })) }) },
+        setMaxSpatialLayer: async (layer: number) => {
+          cached = layer
+          if (layer === 0) active = [true, false, false]
+          else if (failUpgrade)
+            failUpgrade = false // Browser ignored the upgrade.
+          else active = [true, true, true]
+        },
+      }),
+    )
     command(0, 2)
     await flush()
     expect(active).toEqual([true, false, false])
@@ -129,7 +132,7 @@ describe('camera publisher quality control', () => {
     const { controller, client, producer } = setup()
     let resolve!: (value: unknown) => void
     client.getCameraLayerDemand.mockImplementation(() => new Promise((r) => (resolve = r)))
-    controller.addProducer(producer as never)
+    controller.addProducer(fromPartial(producer))
     controller.cleanup()
     resolve({ producerId: 'camera', version: 2, maxSpatialLayer: 0 })
     await flush()
@@ -141,7 +144,7 @@ describe('camera publisher quality control', () => {
     { rtpParameters: { encodings: [{ scalabilityMode: 'L3T1' }] } },
   ])('does not modify unsupported publication %j', async (overrides) => {
     const { controller, producer, command, client } = setup()
-    controller.addProducer({ ...producer, ...overrides } as never)
+    controller.addProducer(fromPartial({ ...producer, ...overrides }))
     command(0, 2)
     await flush()
     expect(producer.setMaxSpatialLayer).not.toHaveBeenCalled()

@@ -41,26 +41,28 @@ export type ValidationEngine = ReturnType<typeof createValidationEngine>
 // `min`/`max` can be missing (the dialog saves an empty value as undefined).
 // A comparison with undefined is false, so gt/gte/lt/lte/eq then reject every
 // value and not_between/neq accept every value; only 'between' treats a
-// missing bound as open. The casts keep that behaviour as it is.
+// missing bound as open. Number(undefined) keeps the other comparisons false.
 function _checkNumOp(
   n: number,
   op: RuleOperator | undefined,
   min: number | undefined,
   max: number | undefined,
 ) {
+  const lower = Number(min)
+  const upper = Number(max)
   switch (op || 'between') {
     case 'between':
       return (min == null || n >= min) && (max == null || n <= max)
     case 'not_between':
-      return !(n >= (min as number) && n <= (max as number))
+      return !(n >= lower && n <= upper)
     case 'gt':
-      return n > (min as number)
+      return n > lower
     case 'gte':
-      return n >= (min as number)
+      return n >= lower
     case 'lt':
-      return n < (min as number)
+      return n < lower
     case 'lte':
-      return n <= (min as number)
+      return n <= lower
     case 'eq':
       return n === min
     case 'neq':
@@ -95,7 +97,7 @@ function _evalRule(rule: ValidationRule, value: unknown): RuleResult {
 
   if (rule.type === 'number') {
     // parseFloat stringifies whatever it's given.
-    const n = parseFloat(value as string)
+    const n = parseFloat(`${value}`)
     if (isNaN(n)) return { valid: false, message: rule.message || 'Value must be a number' }
     const ok = _checkNumOp(n, rule.operator, rule.min, rule.max)
     return { valid: ok, message: ok ? null : rule.message || 'Value out of allowed range' }

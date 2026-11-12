@@ -162,7 +162,7 @@ export function useDevicePush() {
 const asked = ref<string[]>(readAsked())
 function readAsked(): string[] {
   try {
-    const list = JSON.parse(localStorage.getItem(NOTIFY_ASKED_KEY) ?? '[]') as unknown
+    const list: unknown = JSON.parse(localStorage.getItem(NOTIFY_ASKED_KEY) ?? '[]')
     return Array.isArray(list) ? list.filter((app): app is string => typeof app === 'string') : []
   } catch {
     return []
@@ -250,7 +250,7 @@ async function registerPushServiceWorker(
     const client = new FrappePushNotification(PUSH_PROJECT, relayURL, apps)
 
     let url = PUSH_SERVICE_WORKER_URL
-    let config: unknown = ''
+    let config: unknown
     try {
       config = await client.fetchWebConfig()
       url = `${url}?config=${encodeURIComponent(JSON.stringify(config))}`

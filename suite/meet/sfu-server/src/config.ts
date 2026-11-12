@@ -4,7 +4,6 @@ import type {
 	MediasoupConfig,
 	WebRTCServerOptions,
 	WebRTCTransportOptions,
-	WorkerLogLevel,
 	WorkerSettings,
 } from './types';
 
@@ -155,11 +154,12 @@ function choice<T extends string>(
 ): T {
 	const raw = optional(env, name)?.toLowerCase();
 	if (raw === undefined) return fallback;
-	if (!values.includes(raw as T)) {
+	const selected = values.find((value) => value === raw);
+	if (selected === undefined) {
 		issues.push(`${name} must be one of: ${values.join(', ')}`);
 		return fallback;
 	}
-	return raw as T;
+	return selected;
 }
 
 function boolean(
@@ -275,7 +275,7 @@ export function loadConfig(
 		WORKER_LOG_LEVELS,
 		'warn',
 		issues,
-	) as WorkerLogLevel;
+	);
 	const logLevel = choice(env, 'SFU_LOG_LEVEL', SFU_LOG_LEVELS, 'info', issues);
 	const ci = boolean(env, 'CI', issues);
 	const githubActions = boolean(env, 'GITHUB_ACTIONS', issues);

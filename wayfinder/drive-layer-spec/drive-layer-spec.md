@@ -822,12 +822,14 @@ The rule [008 §4]:
 1. Own principals (email, `$GROUP:*`, `$GENERAL`). Nearest wins. A tie
    at the same depth goes email > group > `$GENERAL`. Within the winning
    depth and tier, any deny wins; otherwise take the highest role.
-   A deny here is final: the answer is 0 and pass 2 does not run.
+   A deny here is final: the answer is 0 and pass 2 does not count. The one
+   exception is a `$GENERAL` deny with a pass 2 grant nearer the node and no
+   deny naming the person or a group behind it: pass 2 then counts.
 2. Otherwise `$PUBLIC` and every valid `$LINK:*` resolve together.
    Nearest wins. A tie at the same depth takes the highest role.
 3. The answer is the higher of pass 1 and pass 2.
 
-A link never lowers anyone. A deny naming a person or a group beats a link anywhere below it. A `$PUBLIC` deny nearer the node cuts link holders of a folder above, because nearest wins inside pass 2.
+A link never lowers anyone. A deny naming a person or a group beats a link anywhere below it. A `$GENERAL` deny only beats a link it is nearer than or beside. A `$PUBLIC` deny nearer the node cuts link holders of a folder above, because nearest wins inside pass 2.
 
 Rejected: one pass over all principals. Presenting a link then lowers the
 visitor, and one file has two answers depending on the header. Rejected:
@@ -889,7 +891,8 @@ class Acc:
 			self.open = role                  # ties take the highest role
 
 	def answer(self) -> int:
-		if self.own == 0:
+		# `named` is `own` over the email and group rows alone, kept the same way.
+		if self.own == 0 and (self.named == 0 or self.open_depth <= self.own_depth):
 			return 0                          # a deny on you is final
 		return max(self.own or 0, self.open or 0)
 ```
@@ -1413,6 +1416,12 @@ passlib hash, and returns `{"ticket": make_ticket(...), "expires": exp}`,
 valid 30 days; `expires` is the ticket's Unix expiry. It writes no row anywhere. Rate limit in §6.3. It raises
 `DriveLinkExpired` when the grant is past `expires_on`, and
 `DriveNotFound` when the token names no grant.
+
+After a `grant`, a `revoke` that removed a row, a `revoke_below` or a
+`rotate_link`, each document at or below the node calls its content type's
+`access_changed(node)` (§10.1) once the request commits. The app uses it to
+make open tabs check their access again. A failing callback is logged and
+never undoes the write.
 
 ### 5.12 The activity row a grant write produces
 
@@ -2061,6 +2070,9 @@ editor's save over WebDAV.
   instead of refusing: `copy`, restore, and the Build patch. The rule is
   `get_new_file_name`'s: the oldest keeps the plain title, later ones get
   ` (2)`, ` (3)` (`suite/drive/utils/__init__.py:644`).
+- A document created under a title nobody typed, such as "Untitled
+  document", deduplicates too: `POST /nodes` takes `deduplicate_title:
+  true` for a document and writes the free title instead of refusing.
 - A file keeps its extension. A rename that removes or changes it is
   refused with `ValidationError` ("Keep the .pdf extension."). Letter case
   does not count, so `.PDF` may become `.pdf`. The extension is the text
@@ -2389,6 +2401,10 @@ def delete_version(p: Principals, node: str, seq: int) -> None: ...
 def thin(ladder: dict | None = None) -> dict: ...
 ```
 
+Reading the version list or a version needs READ, except for a Guest, who
+needs EDIT. A public reader sees the document but not its history.
+Comments follow the same rule with COMMENT (§9.3).
+
 Who writes a version.
 
 | Trigger | Kind | Role |
@@ -2565,11 +2581,19 @@ def reanchor_threads(p: Principals, node: str, anchors: dict[str, str]) -> list[
 - Adding a comment or resolving a thread needs COMMENT. Editing or deleting
   one needs EDIT, or being its author [005 defaults].
 - A trashed node refuses new comments and edits [005 defaults].
+- Reading threads needs READ, except for a Guest, who needs COMMENT.
 - A guest's comment carries `owner = "Guest"` plus the `author_name` the
   visitor typed. The server sets the author; the client never does
   [008 §6].
-- Mentions go into the comment's `mentions` field and produce one
-  `Drive Notification` each.
+- Mentions go into the comment's `mentions` field, each person once. Only
+  people a picker on that node offers count: enabled users with the Suite User
+  role, and those the node names who can read it. A Guest's or a share link
+  author's comment stores only people who can read. A mention produces one
+  `Drive Notification` for someone with access. Someone without one only gets
+  it from a signed-in author who holds COMMENT on their own access and wrote
+  `@[user]`, and never if a **Deny** naming them or their group keeps them out;
+  an author who holds MANAGE also gives them COMMENT. An edit tells only people
+  the comment's records never named.
 - A create or a reply may carry a `client_id` (1 to 64 letters, digits,
   `-` or `_`), unique per node. A resend with the same id, after its answer
   was lost, writes nothing and answers the thread or comment the first send
@@ -2665,6 +2689,10 @@ changed tree. Grant replacement also includes the displaced direct holder.
 Frappe deduplicates identical user/event publications in one transaction.
 Rollback publishes nothing. The event carries no node or root id.
 
+A visit is the exception. It changes only the visitor's Recent list, so it
+publishes the payload-free `drive:recent` to the visitor's room instead, and
+an open page refreshes only its Recent reads.
+
 ---
 
 ## 10. Content app contract
@@ -2739,6 +2767,9 @@ class ContentTypeSpec:
 	# (§9.3). The app tells the document's open tabs to read the threads
 	# again; a failure is logged and never undoes the write.
 	threads_changed: Callable[[str], None] | None = None
+	# Called after a grant or link change at or above the node commits (§5.11).
+	# The app makes the document's open tabs check their access again.
+	access_changed: Callable[[str], None] | None = None
 ```
 
 Every callable takes and returns names, never documents. `create_empty`,
@@ -3150,21 +3181,18 @@ page (§11.4).
 | Method | Path | R | Body | `data` | Extra errors |
 |---|---|---|---|---|---|
 | POST | `/nodes` | UPLOAD on `parent_node` | one body per kind: `{kind: "folder", parent_node, title}` \| `{kind: "file", parent_node, title, blob, size, mime, content_modified?}` \| `{kind: "link", parent_node, title, url}` \| `{kind: "document", parent_node, title, content_doctype, from_node?, is_template?}` | node shape | 403, 409, 413 |
-| GET | `/nodes/<id>` | READ on node | `?expand=access,breadcrumbs,preview` | node shape | none |
+| GET | `/nodes/<id>` | READ on node | `?expand=access,audience,breadcrumbs,contents_size,preview` | node shape | none |
 | PATCH | `/nodes/<id>` | see §8.2 | `{title}` \| `{parent_node, expect_parent_node?}` \| `{state}` \| `{parent_node, state: "Active"}` for restore \| `{content_modified}` | node shape | 403, 409 (`DriveMoved` when `expect_parent_node` no longer holds), 413 |
 | DELETE | `/nodes/<id>` | MANAGE on node | none | `{count}` | 403, 409 when the node is not a trash root |
-| GET | `/nodes/<id>/children` | READ on node | `?limit=&cursor=&order_by=&ascending=&type=folder,document,spreadsheet,presentation,pdf,image,video,audio&expand=access,breadcrumbs,preview` | cursor page of node shapes | 409 on a document node |
+| GET | `/nodes/<id>/children` | READ on node | `?limit=&cursor=&order_by=&ascending=&type=folder,document,spreadsheet,presentation,pdf,image,video,audio&expand=access,audience,breadcrumbs,contents_size,preview` | cursor page of node shapes | 409 on a document node |
 | POST | `/nodes/<id>/copy` | READ on node, UPLOAD on `parent_node` | `{parent_node, title?}` | node shape | 403, 409, 413 |
-| POST | `/nodes/<id>/archive` | READ on every included node | none | `{status, file_name, size, error}` | 409 above the synchronous cap |
-| GET | `/nodes/<id>/archive` | READ on folder | none | `{status, file_name, size, error}` | none |
-| GET | `/nodes/<id>/archive/download` | READ on folder and every archived node | none | streamed ZIP when ready | none |
 | POST | `/nodes/batch` | per node | `{nodes: [...], patch: {...}}` | batch shape | none |
 | POST | `/nodes/batch/purge` | MANAGE on each node | `{nodes: [...]}` | batch shape | none |
 | PUT | `/nodes/<id>/content` | EDIT on node | `{upload_id, checksum?, content_modified?}` | node shape | 403, 413 |
 | GET | `/nodes/<id>/content` | READ on node | `?format=` for documents; `?download=1` saves a file instead of showing it | 302 to a signed `/f/` URL, or the streamed export | 403 |
 | GET | `/nodes/<id>/media` | READ on node | none | `{media: [{node, title, mime, size, url, expires}]}` | 403 |
 | POST | `/nodes/<id>/preview` | EDIT on node | `{image: <base64>, mime}` | `{preview: {...}}` | 403 |
-| GET | `/nodes/<id>/activity` | READ on node | `?limit=&cursor=` | cursor page of activity rows | none |
+| GET | `/nodes/<id>/activity` | READ on node; `share_*` rows need MANAGE | `?limit=&cursor=` | cursor page of activity rows | none |
 | POST | `/nodes/<id>/visit` | READ on node | none | `{count}` | none |
 | PUT | `/nodes/<id>/favourite` | READ on node | none | `{count}` | 403 on a trashed node |
 | DELETE | `/nodes/<id>/favourite` | READ on node | none | `{count}` | none |
@@ -3194,18 +3222,66 @@ each route takes one body shape.
 the document, then mints a signed `/f/` URL per child node with a 15-minute
 TTL. The page calls it again at 10 minutes [012 §2, §3, 014].
 
-Folder archives build synchronously. The server caps total uncompressed file
-and document bytes at 512 MiB, spools the ZIP, and stores it as a private blob
-for one hour. The build checks READ on the folder and on every included active
-node before writing bytes. One unreadable descendant refuses the whole build.
-The download route rechecks READ on every node recorded in the build before
-streaming the ready blob through the active storage driver. It checks those
-original members even if they have moved out of the folder. A missing,
-trashed, or unreadable member refuses the download; rebuild the archive to
-update its contents. Cached builds without a member list must be rebuilt.
-The legacy `_build_zip` helper is coupled to legacy `File` rows and
-`FileManager.iter_blocks()`. The workflow does not import that layer. It keeps
-the same `ZIP_STORED` streaming shape over `File Blob` storage drivers.
+**Downloads**
+
+| Method | Path | R | Body | `data` | Errors |
+|---|---|---|---|---|---|
+| POST | `/downloads` | READ on every selected node | `{nodes: [...]}` | download shape | 404, 409 |
+| GET | `/downloads/<id>` | the requester | none | download shape | 404 |
+| GET | `/downloads/<id>/content` | the requester; READ on every member | none | streamed ZIP | 404, as an HTML page |
+
+A download is one person's zip of one or more nodes. Its name is 128 random
+bits. `POST /downloads` records a `Drive Download` row in `Preparing` and
+queues a job on the long queue after commit. The download shape is `{name,
+title, status, delivery, size, expires_at, error, url}`. `status` is
+`Preparing`, `Ready`, `Failed`, or `Expired` once a ready zip's day is over;
+`url` is set only while it is `Ready`. One node names the zip after itself.
+Several nodes under one readable folder name it after that folder. Anything
+else is "Suite download.zip".
+
+Asking again for the same nodes with the same links answers the caller's
+`Preparing` or `Ready` row instead of building a second zip; a ready zip whose
+member the caller can no longer read is not reused. A caller may have three
+downloads `Preparing` at once, and a fourth is refused with `DriveConflict`.
+Every Guest is one requester, so Guests are counted per set of links.
+
+`delivery` says how the zip reaches the caller. A signed-in caller who reads
+every selected node through their own principals gets an `Inbox` download:
+the job is built with those principals alone, and a `Drive Notification` that
+points at the download, not at an activity row, links the zip; the page that
+asked polls as well, so the download also starts there while it stays open. A
+Guest, or a caller who reads a selected node only through a share link, gets
+a `Page` download: the row keeps the request's link credentials, there is no
+notification, and the page that asked polls `GET /downloads/<id>` and opens
+`url` itself. A browser navigation carries no `X-Drive-Links` header, so the
+content route adds the recorded links to the caller's own principals.
+
+The job checks READ on every selected node and every active descendant before
+it writes bytes. One unreadable member fails the whole zip. It caps
+uncompressed bytes at 4 GiB and writes `ZIP_STORED` entries, as Zip64 so a
+file over 2 GiB fits, into a spooled file. `put_blob` then copies that file
+into the active storage driver as a private `File Blob`, so the worker needs
+free temporary disk of about twice the zip's size, up to 8 GiB. The job then
+marks the row `Ready` or `Failed`, and an `Inbox` download notifies its
+requester and emits `drive:changed`.
+
+The content route rechecks READ on every recorded member, even one that has
+moved out of the folder, before it streams the blob through the active
+storage driver. A missing, trashed or unreadable member, a revoked or expired
+link, or an expired zip refuses it. A browser opens this route itself, so a
+refusal answers 404 as an HTML page that says why, not as a JSON envelope. A
+download is visible only to its requester.
+
+A zip expires 24 hours after it is ready. A download still `Preparing` an hour
+and a quarter after it was asked for, which is the job timeout and a margin,
+has stalled: `GET /downloads/<id>` answers it `Failed` at once, so a waiting
+page stops, asking again neither reuses it nor counts it among the three, and
+a job that only starts then builds nothing.
+An hourly job then records it `Failed` and notifies an `Inbox` requester. A
+download whose job
+cannot be queued fails at once. The same job deletes expired downloads and
+their notifications. The storage collector then frees the blob, because
+`Drive Download.blob` is its only reference.
 
 **Uploads**
 
@@ -3354,10 +3430,10 @@ points, not general node views. No view returns the children of a document node
 [012 §1, 014].
 
 Every node-valued view accepts `expand=access`; the workflow resolves roles
-with one grant union for the page. `search`, `shared` and `favourites` also
-accept `expand=breadcrumbs`, because their rows come from anywhere in the
+with one grant union for the page. `search`, `shared`, `favourites` and
+`recents` also accept `expand=breadcrumbs`, because their rows come from anywhere in the
 tree and the page shows where each one lives; the ancestor titles come from
-one union for the page. There is no per-row access or breadcrumb query.
+one union for the page. There is no per-row access or breadcrumb query. Every node-valued view also accepts `audience` and `contents_size` (§11.3).
 
 **Versions, comments**
 
@@ -3386,7 +3462,7 @@ node, content, author, author_name, mentions, creation, modified}`.
 
 | Method | Path | R | Body | `data` |
 |---|---|---|---|---|
-| GET | `/notifications` | own | `?limit=&cursor=&unread=` | cursor page of `{activity, read, ...}` |
+| GET | `/notifications` | own | `?limit=&cursor=&unread=` | cursor page of `{activity, read, ...}` or `{download, read, ...}` |
 | GET | `/notifications/unread-count` | own | none | `{unread: <n>}` |
 | POST | `/notifications/read` | own | `{notifications: [...]}` or `{all: true}` | `{count}` |
 | GET | `/roots` | signed-in caller | none | `{personal: {node, title}, organization: {node, title} \| null}` |
@@ -3498,7 +3574,7 @@ root, the trash root's `name` on a node trashed with it, and `null` while
 Active. A client uses it to tell the node it may restore from the nodes
 inside it, and to name and link that node from a trashed folder (§5.6).
 
-Three expansions, each costing its queries only when named in `?expand=`:
+Five expansions, each costing its queries only when named in `?expand=`:
 
 In responses, `root` is the effective root node id (§3.1), including the
 node's own id when `kind=root`. The root node's stored `root` field remains
@@ -3508,13 +3584,15 @@ copy archive state or quota counters into the node's stored fields.
 | Name | Adds |
 |---|---|
 | `access` | `{"role": 40, "via_link": "$LINK:...", "source_node": "...", "source_principal": "..."}` |
+| `audience` | `{"kind": "public" \| "organization" \| "link" \| "people", "people": 3}`: how wide the node's sharing is and how many named people can open it, resolved by the same nearest-grant rule as access (§5). It names nobody |
 | `breadcrumbs` | `[{"name", "title", "kind"}]` from the root down to the parent. `kind` tells a folder from a content document, which a client never lists as one (§8.10) |
+| `contents_size` | Integer. The bytes of the files in a folder at every depth, trashed files left out. Folders only; other rows omit it |
 | `preview` | `{"url": "/f/<blob>/<file>?e=&s=", "expires": <epoch>}` |
 
 `access` is available on every node-valued detail, children page, and frozen
 view. It is resolved in one batch per page. `breadcrumbs` is available on a
-node detail and children page, and on the `search`, `shared` and
-`favourites` views with one ancestor-title union per page. A `recents` row additionally carries `opened_at`; this is a view field,
+node detail and children page, and on the `search`, `shared`,
+`favourites` and `recents` views with one ancestor-title union per page. `audience` and `contents_size` are available on a node detail, a children page and every node-valued view: `audience` costs two queries per page whatever its size (the live grants and the group members), and `contents_size` one query per page, none on a page with no folder. A `recents` row additionally carries `opened_at`; this is a view field,
 not a stored node field.
 
 Every node-valued detail, children page, and node view also carries
@@ -3612,7 +3690,7 @@ title §8.6's dedupe rule would give:
 
 ```json
 { "errors": [ { "type": "DriveConflict",
-                "message": "An active Drive node with this title already exists",
+                "message": "That name is taken in this folder.",
                 "free_title": "report (2).pdf" } ] }
 ```
 
@@ -3650,9 +3728,9 @@ an old client or an old bug report can find the new call.
 | `get_file_content` | `GET /nodes/<id>/content` |
 | `stream_file_content` | `GET /nodes/<id>/content` |
 | `get_thumbnail` | `GET /nodes/<id>?expand=preview` |
-| `download_folder` | `POST /nodes/<id>/archive` |
-| `download_status` | `GET /nodes/<id>/archive` |
-| `download_archive` | `GET /nodes/<id>/archive/download` |
+| `download_folder` | `POST /downloads` |
+| `download_status` | the download's notification, or the `POST /downloads` result |
+| `download_archive` | `GET /downloads/<id>/content` |
 | `create_auth_token` | dropped; `/f/` signatures replace it [008] |
 | `does_entity_exist` | `GET /nodes/<id>` |
 | `get_new_title` | dropped; `DriveConflict` replaces it (§8.6) |
@@ -4327,9 +4405,20 @@ Drive patch at all is a fresh install and passes.
 
 Two read-only checks run before the migrate, by hand:
 `bench --site X execute suite.drive.patches.build.preflight.check` (GO /
-NO-GO on storage config, bucket reach, the floor and the legacy objects)
-and `bench --site X execute suite.drive.patches.build.dry_run.run` (the
-census of rows Build would write and skip). Neither writes.
+NO-GO on storage config, bucket reach, the floor, the legacy objects and
+the server) and `bench --site X execute suite.drive.patches.build.dry_run.run`
+(the census of rows Build would write and skip). Neither writes.
+
+The storage check compares the two bucket names exactly. It compares the two
+endpoints after it removes a trailing slash and puts the scheme and host in
+lower case, so a different host, port or path is still a different bucket.
+
+**Preflight: the server.** MariaDB's global `max_allowed_packet` must be at
+least 64 MiB: Build inserts rows larger than the default limit, Writer
+bodies among them. Node 22.13 or newer must be on the bench user's `PATH`:
+after the migration, the converter that makes legacy documents
+collaborative runs on it. Either one missing is NO-GO, with the fix in the
+message.
 
 **Preflight: legacy objects.** The preflight groups every blobless S3
 `File` row by key layout and heads 25 objects per layout, chosen the same
@@ -4730,14 +4819,28 @@ convert, with its id and reason, plus every file whose bytes were missing
 `roots_skipped`, `unmigrated_reachable`). While any is present Build raises
 after writing the file, so the migrate stops with the converted rows
 committed and the operator either fixes the rows and migrates again or sets
-site config `drive_build_accept_skips` to accept the loss. Removed rows,
-broken chains, missing bytes and dropped grants and shares are reported but
-do not refuse.
+site config `drive_build_accept_skips` to accept the loss. Cleanup reads the
+same key: its reachable-node check (§14.10) prints the rows and lets them
+through, and its first step deletes their `File` rows with the rest of
+Drive's legacy rows. After the migrate, the backup named in
+`drive_cleanup_backup` is the only copy of them. Removed rows, broken
+chains, missing bytes and dropped grants and shares are reported but do not
+refuse.
 
 **Restored database.** The record lives in `private/`, not the database. A
-database restored without its `private/` directory would meet a record that
-says the tree is done and a `Drive Root` table that is empty; Build refuses
-that pair instead of reporting a finished migration over nothing.
+database restored without its `private/` directory (Frappe Cloud restores
+only the database after a failed migrate) would meet a record that claims
+steps the database never saw, and a rerun would skip them. So Build and
+Cleanup each stamp their record with a random marker, and keep the same
+marker in the database (`tabDefaultValue`, keyed by the record's file name)
+before the record claims any work. A record that claims work under a marker
+the database does not hold, or under no marker, is refused before any step
+reads it, and the refusal names the file. The fix is to move every
+`drive-build-*` and `drive-cleanup-*` file and folder in `private/` aside
+and migrate again, or to restore the database and `private/` from the same
+backup. A record that matches is resumed, and the migration log says so.
+Build also still refuses a record that says the tree is done over a
+`Drive Root` table that is empty.
 
 **Copied objects.** Every legacy S3 object the copy step placed is appended
 to `private/drive-build-copied-objects.jsonl` by key, before the `File.blob`
@@ -4765,7 +4868,8 @@ hold:
    `<backup>` is free text naming the backup (a path, an S3 URL, an id). The
    value is written into Cleanup's state record.
 2. Every reachable Drive `File` row has a node, checked live against the
-   site, not against Build's state.
+   site, not against Build's state. With `drive_build_accept_skips` set,
+   the rows without a node are printed and do not refuse (§14.9).
 3. `frappe.storage.gc.blob_reference_columns()` exists and names all four of
    Drive's blob columns, so deleting File rows does not orphan every blob
    under the framework GC [003].

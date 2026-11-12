@@ -15,7 +15,7 @@ describe('cropSelectionToFitContent during a live gesture', () => {
         clientId: 'c1',
         elements: [{ id: 1, type: 'text', left: 100, top: 50, width: 200, height: 40 }],
       },
-    ] as any
+    ]
     slideIndex.value = 0
     resetInteractionOffset()
     updateSelectionBounds({ left: 100, top: 50, width: 200, height: 40 })

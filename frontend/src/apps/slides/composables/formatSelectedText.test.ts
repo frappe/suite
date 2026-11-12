@@ -1,12 +1,15 @@
+import { fromAny, fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { nextTick } from 'vue'
+import { nextTick, type Ref } from 'vue'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
 vi.mock('@/apps/slides/router', () => ({ router: { replace: () => Promise.resolve() } }))
 
 const { DOMParser } = await import('@tiptap/pm/model')
 const { Editor: HeadlessEditor } = await import('@tiptap/core')
-const { slides, slideIndex } = await import('@/apps/slides/stores/slide')
+const { slides: storeSlides, slideIndex } = await import('@/apps/slides/stores/slide')
+// the store types each slide's fields as unknown, and these tests read them
+const slides = fromAny<Ref<any[]>, unknown>(storeSlides)
 const { activeElementIds, focusElementId } = await import('@/apps/slides/stores/element')
 const historyMeta = await import('@/apps/slides/stores/historyMeta')
 const { setCommandHistory } = historyMeta
@@ -29,7 +32,7 @@ const nextFrame = () => frames.splice(0).forEach((frame) => frame())
 // jsdom lays nothing out, so a measuring div is as wide as its font size times its text
 const measuredWidth = function (this: HTMLElement) {
   const fontSize = Number(this.innerHTML.match(/font-size: (\d+)px/)?.[1] ?? 10)
-  return { width: fontSize * (this.textContent?.length ?? 0), height: 0 } as DOMRect
+  return fromPartial<DOMRect>({ width: fontSize * (this.textContent?.length ?? 0), height: 0 })
 }
 
 const element = (id: string) => slides.value[0].elements.find((el: any) => el.id === id)

@@ -74,8 +74,10 @@ import type { PushSubscription } from '@/apps/mail/types'
 import { raiseError, raiseToast } from '@/apps/mail/utils'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 
-const user = inject('$user')
-const dayjs = inject('$dayjs')
+const user = inject<import('@/apps/mail/types').UserResource>('$user')
+if (!user) throw new Error('Missing Mail user resource')
+const dayjs = inject<typeof import('dayjs')>('$dayjs')
+if (!dayjs) throw new Error('Missing Mail date formatter')
 const listViewRef = useTemplateRef('listView')
 const showAddModal = ref(false)
 const showDeleteModal = ref(false)
@@ -107,7 +109,10 @@ const rows = computed(() =>
     expires: sub.expires ? dayjs(sub.expires).format('D MMM YYYY, h:mm A') : '—',
   })),
 )
-const selectedNames = () => Array.from(listViewRef.value?.selections ?? []) as string[]
+const selectedNames = () =>
+  Array.from(listViewRef.value?.selections ?? []).filter(
+    (value): value is string => typeof value === 'string',
+  )
 const selectedRows = () => {
   const names = new Set(selectedNames())
   return (pushSubscriptions.data ?? []).filter((s: PushSubscription) => names.has(s.name))
@@ -129,11 +134,7 @@ const renewSelected = async () => {
     raiseToast(__('Selected subscriptions renewed.'))
     listViewRef.value?.toggleAllRows()
   } catch (error) {
-    const err = error as {
-      messages?: string[]
-      message?: string
-    }
-    raiseError(err)
+    raiseError(error)
   } finally {
     // Reload after any outcome: a mid-loop failure still leaves earlier subscriptions renewed with
     // updated expiry, so the table must reflect current server state without a manual refresh.

@@ -18,17 +18,19 @@ export function deriveMobileNav(
   activeArea: string | undefined,
   hasSidebar: (area: string) => boolean,
 ): MobileNavItemDefinition[] {
-  return areas
-    .filter((area) => area.placement !== 'workspace')
-    .map(({ id, label, icon, to }) => {
-      const active = id === activeArea
-      return {
+  return areas.flatMap((area) => {
+    if (area.placement === 'workspace') return []
+    const { id, label, icon, to } = area
+    const active = id === activeArea
+    return [
+      {
         id,
         label: label(),
         icon,
         to,
         active,
         opensSidebar: active && hasSidebar(id),
-      }
-    })
+      },
+    ]
+  })
 }

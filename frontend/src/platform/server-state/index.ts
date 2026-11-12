@@ -9,10 +9,9 @@ import {
   type Transport,
 } from '@/platform/transport'
 
-import { Entities } from './entities'
+import { deleteRetiredEntityStore, Entities } from './entities'
 import { recordMutationFailure } from './errors'
 import { mutationObserver, observe } from './observers'
-import { identityPartition } from './partition'
 import { Reads } from './reads'
 import type {
   CallArgs,
@@ -44,8 +43,6 @@ export type {
 export interface ClientOptions {
   transport?: Transport
   realtime?: Realtime | false
-  persistence?: boolean
-  identity?: string | null
   feedback?: (error: Error) => void
 }
 
@@ -55,13 +52,9 @@ export function createApiClient(
 ) {
   const feedback = options.feedback ?? reportError
   const transport = options.transport ?? defaultTransport
-  const entities = new Entities(options.persistence ?? true)
-  const reads = new Reads(
-    transport,
-    entities,
-    options.realtime,
-    identityPartition(options.identity),
-  )
+  deleteRetiredEntityStore()
+  const entities = new Entities()
+  const reads = new Reads(transport, entities, options.realtime)
   const writes = new Writes(transport, reads, options.feedback ?? reportError)
   const owners = new Map<string, Promise<OwnerRegistration>>()
   const cleanup: Array<() => void> = []
@@ -78,6 +71,7 @@ export function createApiClient(
   const client = {
     async query<I, O>(reference: QueryRef<I, O>, ...args: CallArgs<I, ReadOptions>): Promise<O> {
       if (reference.kind !== 'query') throw new TypeError('Expected a query reference')
+      // SAFETY: CallArgs<I> allows omission only when {} satisfies I; otherwise its first argument is required.
       const input = (args[0] ?? {}) as I
       const request = args[1] ?? {}
       request.signal?.throwIfAborted()
@@ -89,11 +83,13 @@ export function createApiClient(
         false,
         request.context,
       )
+      // SAFETY: this record belongs to reference, and transport validates its output before the read cache stores it.
       return (await reads.fetch(record, input, request)) as O
     },
     mutation<I, O>(reference: MutationRef<I, O>, ...args: CallArgs<I, WriteOptions>): Promise<O> {
       if (reference.kind !== 'mutation')
         return Promise.reject(new TypeError('Expected a mutation reference'))
+      // SAFETY: CallArgs<I> allows omission only for an input compatible with {}; explicit arguments retain I.
       return writes.run(reference, (args[0] ?? {}) as I, owner(reference.owner), args[1])
     },
   }
@@ -107,6 +103,7 @@ export function createApiClient(
   ): InfiniteQueryState<Row> {
     if (reference.kind !== 'query' || !reference.page)
       throw new TypeError('Expected a page reference')
+    // SAFETY: PageRef declares the rows field as Row[]; observe reads that field only from validated cached output for this reference.
     return observe(reads, owner(reference.owner), reference, args[0], true)
       .infinite as InfiniteQueryState<Row>
   }
@@ -116,7 +113,7 @@ export function createApiClient(
   ): MutationState<I, O> {
     return mutationObserver((input: I, signal) =>
       writes.run(reference, input, owner(reference.owner), { ...options, signal }),
-    ) as MutationState<I, O>
+    )
   }
   function useUpload<I, O>(
     reference: TransferRef<I, O>,
@@ -139,7 +136,7 @@ export function createApiClient(
         if (!signal.aborted && !options.silent && cause instanceof Error) feedback(cause)
         throw cause
       }
-    }) as UploadState<I, O>
+    })
   }
   if (typeof window !== 'undefined') {
     // Back on the page after a while away, every read is fetched again: realtime keeps an open page
@@ -175,11 +172,6 @@ export function createApiClient(
         ),
       )
     }
-    cleanup.push(
-      realtime.subscribe('drive:changed', () =>
-        reads.invalidate((reference) => reference.owner === 'drive'),
-      ),
-    )
   }
   return {
     client,
@@ -190,8 +182,7 @@ export function createApiClient(
     onTouch: writes.onTouch.bind(writes),
     onChallenge: writes.onChallenge.bind(writes),
     writesSettled: writes.settled.bind(writes),
-    resetIdentity: (identity?: string | null) =>
-      reads.switchPartition(identityPartition(identity, true)),
+    resetIdentity: () => reads.switchPartition(),
     invalidate: reads.invalidate.bind(reads),
     dispose() {
       for (const stop of cleanup) stop()

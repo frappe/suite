@@ -11,7 +11,7 @@ const REFUSALS = new Set(['PermissionError', 'DriveForbidden', 'DriveNotFound'])
 export interface DocumentWrite {
   readonly isPending: boolean
   readonly error: unknown
-  run(params: object): Promise<unknown>
+  run(params: unknown): Promise<unknown>
 }
 
 export interface WriteGate {
@@ -26,7 +26,10 @@ export interface WriteGate {
    * debounced autosave, the save on unmount, the automatic version and a
    * settings change that were pending when access narrowed are cancelled.
    */
-  guard<D extends object>(document: D, writes: readonly (keyof D & string)[]): D
+  guard<Key extends string, D extends Record<Key, DocumentWrite>>(
+    document: D,
+    writes: readonly Key[],
+  ): D
 }
 
 /**
@@ -92,9 +95,14 @@ export function createWriteGate(
     }
   }
 
-  function guard<D extends object>(document: D, writes: readonly (keyof D & string)[]): D {
+  function guard<Key extends string, D extends Record<Key, DocumentWrite>>(
+    document: D,
+    writes: readonly Key[],
+  ): D {
     const replaced: Partial<Record<string, DocumentWrite>> = {}
-    for (const key of writes) replaced[key] = gated(document[key] as DocumentWrite)
+    for (const key of writes) replaced[key] = gated(document[key])
+    // SAFETY: selected keys are constrained to DocumentWrite; gated preserves
+    // that public surface and forwards run results. Vue unwraps the refs to all other D fields.
     return reactive({ ...toRefs(document), ...replaced }) as D
   }
 
@@ -103,6 +111,7 @@ export function createWriteGate(
 
 function isRefusal(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) return false
-  const { type, status } = error as { type?: unknown; status?: unknown }
+  const type = 'type' in error ? error.type : undefined
+  const status = 'status' in error ? error.status : undefined
   return (typeof type === 'string' && REFUSALS.has(type)) || status === 401 || status === 403
 }

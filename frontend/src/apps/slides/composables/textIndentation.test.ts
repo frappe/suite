@@ -1,10 +1,16 @@
+import { fromAny } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { nextTick } from 'vue'
+import { nextTick, type Ref } from 'vue'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
 vi.mock('@/apps/slides/router', () => ({ router: { replace: () => Promise.resolve() } }))
 
-const { slides, slideIndex } = await import('@/apps/slides/stores/slide')
+const { slides: storeSlides, slideIndex } = await import('@/apps/slides/stores/slide')
+// the store types each slide's fields as unknown, and these tests read them
+const slides = fromAny<
+  Ref<(Record<string, unknown> & { elements: Record<string, unknown>[] })[]>,
+  unknown
+>(storeSlides)
 const { focusElementId } = await import('@/apps/slides/stores/element')
 const { useTextEditor } = await import('./useTextEditor')
 
@@ -23,7 +29,7 @@ const editText = async (content: string) => {
 
 const lines = () => {
   const texts: string[] = []
-  activeEditor.value.state.doc.descendants((node) => {
+  activeEditor.value!.state.doc.descendants((node) => {
     if (node.type.name === 'paragraph') texts.push(node.textContent)
   })
   return texts
@@ -57,7 +63,7 @@ describe('indentation through a parse', () => {
   it('writes them back out to the stored content', async () => {
     await editText(indented)
 
-    expect(activeEditor.value.getHTML()).toContain('    return 1')
+    expect(activeEditor.value!.getHTML()).toContain('    return 1')
   })
 
   // a line left holding only its indent reads as empty to patchEmptyParagraphs, and
@@ -65,11 +71,11 @@ describe('indentation through a parse', () => {
   it('holds the caret where it was when a line is erased down to its indent', async () => {
     await editText('<p><span style="font-size: 20px">a</span></p>' + indentedLine)
 
-    activeEditor.value.commands.setTextSelection({ from: 8, to: 9 })
-    activeEditor.value.commands.deleteSelection()
+    activeEditor.value!.commands.setTextSelection({ from: 8, to: 9 })
+    activeEditor.value!.commands.deleteSelection()
     await nextTick()
 
-    expect(activeEditor.value.state.selection.from).toBe(8)
+    expect(activeEditor.value!.state.selection.from).toBe(8)
     expect(slides.value[0].elements[0].content).toContain('<span style="font-size: 20px;">')
   })
 
@@ -87,7 +93,7 @@ describe('indentation through a parse', () => {
           },
         ],
       },
-    ] as any
+    ]
     slideIndex.value = 0
     focusElementId.value = 't1'
     await nextTick()

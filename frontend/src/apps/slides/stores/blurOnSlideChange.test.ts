@@ -1,5 +1,6 @@
+import { fromAny } from '@total-typescript/shoehorn'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { nextTick } from 'vue'
+import { nextTick, type Ref } from 'vue'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
 vi.mock('@/apps/slides/router', () => ({ router: { replace: () => Promise.resolve() } }))
@@ -28,7 +29,12 @@ vi.mock('@/apps/slides/composables/useTextEditor', async () => {
 })
 
 const { activeElementIds, focusElementId } = await import('./element')
-const { slides, slideIndex, changeEditorSlide } = await import('./slide')
+const { slides: storeSlides, slideIndex, changeEditorSlide } = await import('./slide')
+// the store types each slide's fields as unknown, and these tests read them
+const slides = fromAny<
+  Ref<(Record<string, unknown> & { elements: Record<string, unknown>[] })[]>,
+  unknown
+>(storeSlides)
 const { slidesLength } = await import('./presentation')
 const { setCommandHistory } = await import('./historyMeta')
 
@@ -44,12 +50,12 @@ describe('leaving a slide while a text element is focused', () => {
         command.execute(slides.value)
         recorded.push(command)
       },
-    } as any)
+    })
 
     slides.value = [
       { clientId: 'A', elements: [text('t1')] },
       { clientId: 'B', elements: [text('t2')] },
-    ] as any
+    ]
     slidesLength.value = 2
     slideIndex.value = 0
     activeElementIds.value = []

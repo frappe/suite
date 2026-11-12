@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, nextTick, type App } from 'vue'
 
+import { requireTestElement } from '@/platform/testing/dom'
+
 vi.mock('frappe-ui', async (original) => ({
   ...(await original<Record<string, unknown>>()),
   usePageMeta: () => undefined,
@@ -63,6 +65,17 @@ afterEach(() => {
 })
 
 describe('presenting', () => {
+  it('hides toasts only while the slideshow is up', async () => {
+    await present()
+
+    expect(document.body.classList.contains('slides-presenting')).toBe(true)
+
+    app!.unmount()
+    app = null
+
+    expect(document.body.classList.contains('slides-presenting')).toBe(false)
+  })
+
   it('takes the keyboard from the control that started it', async () => {
     const trigger = await present()
 
@@ -74,7 +87,7 @@ describe('presenting', () => {
 
   it('takes the keyboard back when a closing menu drops focus onto the page', async () => {
     await present()
-    const show = document.activeElement as HTMLElement
+    const show = requireTestElement(document.activeElement, HTMLElement)
 
     show.blur()
     show.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: null }))

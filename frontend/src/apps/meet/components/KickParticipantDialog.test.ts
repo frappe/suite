@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, ref } from 'vue'
 
+import { requireTestElement } from '@/platform/testing/dom'
+
 import KickParticipantDialog from './KickParticipantDialog.vue'
 
 vi.mock('frappe-ui', async () => {
@@ -26,7 +28,7 @@ vi.mock('frappe-ui', async () => {
             type: 'checkbox',
             checked: props.modelValue,
             onChange: (event: Event) =>
-              emit('update:modelValue', (event.target as HTMLInputElement).checked),
+              emit('update:modelValue', requireTestElement(event.target, HTMLInputElement).checked),
           })
       },
     }),

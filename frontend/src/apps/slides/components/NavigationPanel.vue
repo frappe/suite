@@ -17,12 +17,12 @@
             :class="getRowClasses(orderedSlides[virtualRow.index])"
             :style="getRowStyles(virtualRow)"
             @click="handleSlideClick(orderedSlides[virtualRow.index])"
-            @mousedown="slideSort.handleSortStart($event, virtualRow.index)"
+            @mousedown="startSort($event, virtualRow.index)"
             @contextmenu="handleSlideContextMenu(virtualRow.index)"
           >
             <ThumbnailContainer
               :slide="orderedSlides[virtualRow.index]"
-              :isActive="isSlideActive(orderedSlides[virtualRow.index])"
+              :is-active="isSlideActive(orderedSlides[virtualRow.index])"
               :scale="thumbnailScale"
               :height="thumbnailHeight"
             />
@@ -107,6 +107,10 @@ const handleSortEnd = (sortChange) => {
 }
 
 const slideSort = useDragSort(scrollableArea, slidesLength, rowSize, handleSortEnd)
+
+function startSort(event, index) {
+  slideSort.handleSortStart(event, index)
+}
 
 const insertButtonClasses =
   'mb-10 flex aspect-video w-full cursor-pointer items-center justify-center gap-2 rounded-6 bg-surface-gray-2 text-ink-gray-5 hover:bg-surface-gray-3'

@@ -1,9 +1,11 @@
 import { getGroupMembers } from 'ts-mls/clientState.js'
 import { decodeMlsMessage } from 'ts-mls/message.js'
 import { getCredentialFromLeafIndex } from 'ts-mls/ratchetTree.js'
+import { toLeafIndex } from 'ts-mls/treemath.js'
 import type { Ref } from 'vue'
 
 import type { CurrentUser } from '../../composables/useCurrentUser'
+import { isUnknownRecord } from '../../types'
 import type { SFUClient } from '../SFUClient'
 import type { E2eeEpochEnvelope } from './E2EEEpochSignaling'
 import { getActiveEpochState, installActiveEpochState } from './E2EEEpochStateStore'
@@ -364,7 +366,7 @@ export class E2EEEpochSignalingController {
     for (let leafIndex = 0; leafIndex * 2 + 1 < tree.length; leafIndex += 1) {
       const node = tree[leafIndex * 2]
       if (!node) continue
-      const credential = getCredentialFromLeafIndex(tree as never, leafIndex as never)
+      const credential = getCredentialFromLeafIndex(tree, toLeafIndex(leafIndex))
       if (credential.credentialType !== 'basic') continue
       const identity = this.parseCredentialIdentity(new TextDecoder().decode(credential.identity))
       if (identity && typeof identity.senderId === 'number') {
@@ -546,13 +548,7 @@ export class E2EEEpochSignalingController {
       )
         continue
       const rawKey = bytesFromBase64(identity.signingPubKey)
-      const cryptoKey = await crypto.subtle.importKey(
-        'raw',
-        rawKey as BufferSource,
-        'Ed25519',
-        true,
-        ['verify'],
-      )
+      const cryptoKey = await crypto.subtle.importKey('raw', rawKey, 'Ed25519', true, ['verify'])
       E2EEMeeting.instance.setSenderSigningPub(identity.senderId, cryptoKey)
     }
   }
@@ -581,10 +577,10 @@ export class E2EEEpochSignalingController {
   }
 
   private isEpochEnvelope(value: unknown): value is E2eeEpochEnvelope {
-    if (typeof value !== 'object' || value === null || !('type' in value)) {
+    if (!isUnknownRecord(value) || !('type' in value)) {
       return false
     }
-    const envelope = value as Record<string, unknown>
+    const envelope = value
     switch (envelope.type) {
       case 'key-package-request':
         return (
@@ -704,7 +700,7 @@ export class E2EEEpochSignalingController {
     encoded: string,
   ): { senderId?: unknown; signingPubKey?: unknown } | null {
     try {
-      const parsed = JSON.parse(encoded) as unknown
+      const parsed: unknown = JSON.parse(encoded)
       return typeof parsed === 'object' && parsed !== null ? parsed : null
     } catch {
       return null

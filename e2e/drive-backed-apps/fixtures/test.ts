@@ -1,14 +1,15 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import {
+	test as base,
 	expect,
 	request,
-	test as base,
 	type APIRequestContext,
 	type Browser,
 	type BrowserContext,
 	type Page,
 } from "@playwright/test";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+
 import { loginViaApi, type Credentials } from "../../shared/auth";
 import { testApiUrl } from "../global-setup";
 
@@ -58,6 +59,7 @@ async function authenticatedPage(
 export const test = base.extend<Fixtures, WorkerFixtures>({
 	run: [
 		async ({}, use) => {
+			// SAFETY: global-setup writes this ProvisionedRun fixture, and this reader uses the same statePath for that test run.
 			const run = JSON.parse(readFileSync(statePath, "utf8")) as ProvisionedRun;
 			await use(run);
 		},
@@ -65,21 +67,13 @@ export const test = base.extend<Fixtures, WorkerFixtures>({
 	],
 	owner: async ({ browser, run }, use, workerInfo) => {
 		const userIndex = workerInfo.parallelIndex * 2;
-		const authenticated = await authenticatedPage(
-			browser,
-			run.users[userIndex],
-			userStatePath(userIndex),
-		);
+		const authenticated = await authenticatedPage(browser, run.users[userIndex], userStatePath(userIndex));
 		await use(authenticated);
 		await authenticated.context.close();
 	},
 	collaborator: async ({ browser, run }, use, workerInfo) => {
 		const userIndex = workerInfo.parallelIndex * 2 + 1;
-		const authenticated = await authenticatedPage(
-			browser,
-			run.users[userIndex],
-			userStatePath(userIndex),
-		);
+		const authenticated = await authenticatedPage(browser, run.users[userIndex], userStatePath(userIndex));
 		await use(authenticated);
 		await authenticated.context.close();
 	},

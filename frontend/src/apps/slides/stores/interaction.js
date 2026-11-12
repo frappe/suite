@@ -24,6 +24,7 @@ const rotationDelta = ref(0)
 const bindPreview = ref(null)
 
 // the connector object an endpoint drag commits, in place of the detach rule
+/** @type {import('vue').Ref<{ route: string, start: { elementId: string, anchor: string } | null, end: { elementId: string, anchor: string } | null } | null>} */
 const pendingConnector = ref(null)
 
 // the routed points an elbow end drag commits; a box offset can't carry them
@@ -75,6 +76,7 @@ const hasLiveGesture = () =>
 
 // live geometry per following connector; one selected with all its targets moves rigidly instead
 const followerGeometry = computed(() => {
+  /** @type {Record<string, object>} */
   const geometry = {}
   if (!hasLiveGesture()) return geometry
 

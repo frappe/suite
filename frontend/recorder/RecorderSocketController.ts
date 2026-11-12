@@ -41,6 +41,11 @@ import {
   type RendererReasonCode,
 } from './rendererBridge'
 
+interface ParticipantMediaUpdate {
+  audioEnabled?: boolean
+  videoEnabled?: boolean
+}
+
 export type RecorderState = {
   participantAdded?: (participant: Participant) => void
   participantRemoved?: (participantId: string) => void
@@ -676,7 +681,7 @@ export class RecorderSocketController {
     participantId: string,
     action: 'mute' | 'unmute' | 'video_off' | 'video_on',
   ): void {
-    const update: { audioEnabled?: boolean; videoEnabled?: boolean } = {}
+    const update: ParticipantMediaUpdate = {}
     if (action === 'mute' || action === 'unmute') update.audioEnabled = action === 'unmute'
     else update.videoEnabled = action === 'video_on'
     this.deps.participantManager.updateMediaState(participantId, update)
@@ -921,7 +926,8 @@ export class RecorderSocketController {
     return new Promise((resolve, reject) =>
       this.channel.emit(event, data, (value) => {
         const response = parseRequestResponse(value)
-        response?.success ? resolve() : reject(new Error(response?.error || `${event} failed`))
+        if (response?.success) resolve()
+        else reject(new Error(response?.error || `${event} failed`))
       }),
     )
   }
@@ -941,7 +947,8 @@ export class RecorderSocketController {
           reject(this.failProjection('Invalid recorder projection snapshot'))
           return
         }
-        response.success ? resolve(response.snapshot) : reject(new Error(response.error))
+        if (response.success) resolve(response.snapshot)
+        else reject(new Error(response.error))
       }),
     )
   }
@@ -949,9 +956,8 @@ export class RecorderSocketController {
     return new Promise((resolve, reject) =>
       this.channel.emit('recording:proof', { protocol_version: 1, signature }, (value) => {
         const response = parseRecordingProofResponse(value)
-        response?.success
-          ? resolve()
-          : reject(new Error(response?.diagnostic || 'recording:proof failed'))
+        if (response?.success) resolve()
+        else reject(new Error(response?.diagnostic || 'recording:proof failed'))
       }),
     )
   }
@@ -975,7 +981,7 @@ export function trustedAvatar(value: unknown, frappeOrigin: string): string | nu
   }
 }
 
-const isCanonicalTimestamp = (value: unknown): value is string => {
+const isCanonicalTimestamp = <Value>(value: Value): value is Value & string => {
   if (typeof value !== 'string' || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(value))
     return false
   const parsed = new Date(value)

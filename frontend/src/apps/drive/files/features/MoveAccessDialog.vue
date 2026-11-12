@@ -20,7 +20,7 @@
           <span class="min-w-0 flex-1 truncate text-base text-ink-gray-8" :title="gain.label">
             {{ gain.label }}
           </span>
-          <span class="shrink-0 text-base text-ink-gray-5">{{ __(roleLabel(gain.role)) }}</span>
+          <span class="shrink-0 text-base text-ink-gray-5">{{ abilityLabel(gain.role) }}</span>
         </li>
       </ul>
       <p v-if="ownAccess" class="text-p-base text-ink-gray-7">{{ ownAccess }}</p>
@@ -42,6 +42,7 @@ import { principalKind, roleLabel } from '@/apps/drive/client/grants'
 import { translate as __ } from '@/platform/translation'
 
 import type { MoveAccessChange } from './folderPicker'
+import { abilityLabel } from './share/shareModel'
 
 const GAIN_ICONS: Record<ReturnType<typeof principalKind>, string> = {
   user: 'lucide-user',

@@ -12,10 +12,21 @@ import { usePersistence } from './usePersistence.js'
 
 const nodeRequire = createRequire(import.meta.url)
 
-const server = vi.hoisted(() => ({
-  calls: [] as Array<{ method: string; args: Record<string, unknown>; context?: unknown }>,
-  answer: (_method: string): unknown => ({}),
-}))
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
+interface SheetServer {
+  calls: Array<{ method: string; args: Record<string, unknown>; context?: unknown }>
+  answer(method: string): unknown
+}
+const server = vi.hoisted(() => {
+  const state: SheetServer = {
+    calls: fromPartial<Array<{ method: string; args: Record<string, unknown>; context?: unknown }>>(
+      [],
+    ),
+    answer: (_method: string) => ({}),
+  }
+  return state
+})
 
 vi.mock('@/api', async () => {
   const { api: sheetsAPI } = await import('@/apps/sheets/client/generated')
@@ -240,7 +251,7 @@ function developSheet(overrides: Record<string, unknown> = {}) {
 function fakePort() {
   const host = createWorkerHost()
   const port = {
-    onmessage: null as ((e: { data: unknown }) => void) | null,
+    onmessage: fromPartial<((e: { data: unknown }) => void) | null>(null),
     postMessage(message: unknown) {
       setTimeout(() => port.onmessage?.({ data: host.handle(structuredClone(message)) }), 0)
     },

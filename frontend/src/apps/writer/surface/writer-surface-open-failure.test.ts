@@ -36,7 +36,7 @@ vi.mock('@/apps/writer/components/CollabTextEditor.vue', async (importOriginal) 
     await importOriginal<typeof import('@/apps/writer/components/CollabTextEditor.vue')>()
   return fakeCollabTextEditor(real)
 })
-vi.mock('@/apps/writer/components/UsersBar.vue', () => ({ default: { render: () => null } }))
+vi.mock('@/platform/collab/UsersBar.vue', () => ({ default: { render: () => null } }))
 vi.mock('./WriterDocumentMenu.vue', async () =>
   (await import('./writer-surface-fakes')).fakeDocumentMenu(),
 )
@@ -61,8 +61,10 @@ function serverError() {
 }
 
 function headerOf(root: Element) {
-  const header = root.querySelector<HTMLElement>('[data-header]')!
-  return { saveState: header.dataset.saveState, viewOnly: header.dataset.viewOnly }
+  return {
+    saveState: root.querySelector('[data-save-state]')!.textContent || undefined,
+    viewOnly: String(!!root.querySelector('[data-view-only]')),
+  }
 }
 
 let rowReads = 0
@@ -105,6 +107,25 @@ describe('Writer surface failing to open', () => {
     expect(railHidden.value).toBe(true)
     expect(rowReads).toBe(2)
     expect(rooms.opens).toBe(1)
+  })
+
+  it('offers the document menu only once the document has opened', async () => {
+    liveRoom()
+    let isFailing = true
+    readsRow(() => isFailing)
+    const root = await mountedSurface()
+
+    await vi.waitFor(() => expect(root.textContent).toContain(SERVER_FAILURE))
+    expect(root.querySelector('[data-open-comments], [data-open-versions]')).toBeNull()
+    expect(root.querySelector('[data-download]')).toBeNull()
+
+    isFailing = false
+    buttonLabelled(root, 'Try again')!.click()
+
+    await vi.waitFor(() => expect(root.querySelector('[data-editor]')).not.toBeNull())
+    expect(root.querySelector('[data-open-comments]')).not.toBeNull()
+    expect(root.querySelector('[data-open-versions]')).not.toBeNull()
+    expect(root.querySelector('[data-download]')).not.toBeNull()
   })
 
   it('goes back to the failed page when trying again fails too', async () => {

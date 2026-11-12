@@ -32,7 +32,8 @@ vi.mock('@/apps/mail/utils', () => ({
     return shown.length
   }),
 }))
-const undoSlot: { action?: () => void } = {}
+type UndoSlot = { action?: () => void }
+const undoSlot: UndoSlot = {}
 vi.mock('@/apps/mail/utils/composables', () => ({
   useUndo: () => ({
     setUndoAction: (action?: () => void) => (undoSlot.action = action),

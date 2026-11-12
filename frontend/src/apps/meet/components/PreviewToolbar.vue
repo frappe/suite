@@ -1,49 +1,38 @@
 <template>
-  <Transition
-    enter-active-class="transition-all duration-300 ease-out"
-    enter-from-class="opacity-0 transform translate-y-4"
-    enter-to-class="opacity-100 transform translate-y-0"
-    leave-active-class="transition-all duration-300 ease-in"
-    leave-from-class="opacity-100 transform translate-y-0"
-    leave-to-class="opacity-0 transform translate-y-4"
+  <div
+    class="pointer-events-none absolute inset-x-0 bottom-3 z-10 flex justify-center px-4 md:px-0"
   >
-    <div
-      class="pointer-events-none absolute inset-x-0 bottom-3 z-10 flex justify-center px-4 md:px-0"
-    >
-      <div
-        class="pointer-events-auto mx-auto flex items-center gap-1.5 transition-all duration-300"
+    <div class="pointer-events-auto mx-auto flex items-center gap-1.5 transition-all duration-300">
+      <!-- Microphone -->
+      <ToolbarButton
+        :variant="isMicOn ? 'default' : 'muted'"
+        :title="`Toggle Audio (${$platform === 'mac' ? '⌘+D' : 'Ctrl+D'})`"
+        @click="$emit('toggle-microphone')"
       >
-        <!-- Microphone -->
-        <ToolbarButton
-          :variant="isMicOn ? 'default' : 'muted'"
-          :title="`Toggle Audio (${$platform === 'mac' ? '⌘+D' : 'Ctrl+D'})`"
-          @click="$emit('toggle-microphone')"
-        >
-          <MeetMicIcon v-if="isMicOn" />
-          <MeetMicOffIcon v-else />
-        </ToolbarButton>
+        <MeetMicIcon v-if="isMicOn" />
+        <MeetMicOffIcon v-else />
+      </ToolbarButton>
 
-        <!-- Camera -->
-        <ToolbarButton
-          :variant="isCameraOn ? 'default' : 'muted'"
-          :title="`Toggle Video (${$platform === 'mac' ? '⌘+E' : 'Ctrl+E'})`"
-          @click="$emit('toggle-camera')"
-        >
-          <MeetCameraIcon v-if="isCameraOn" />
-          <MeetCameraOffIcon v-else />
-        </ToolbarButton>
+      <!-- Camera -->
+      <ToolbarButton
+        :variant="isCameraOn ? 'default' : 'muted'"
+        :title="`Toggle Video (${$platform === 'mac' ? '⌘+E' : 'Ctrl+E'})`"
+        @click="$emit('toggle-camera')"
+      >
+        <MeetCameraIcon v-if="isCameraOn" />
+        <MeetCameraOffIcon v-else />
+      </ToolbarButton>
 
-        <!-- Settings -->
-        <ToolbarButton
-          v-if="cameraPermissionGranted || microphonePermissionGranted"
-          title="Settings"
-          @click="showSettingsDialog = true"
-        >
-          <MeetSettingsIcon />
-        </ToolbarButton>
-      </div>
+      <!-- Settings -->
+      <ToolbarButton
+        v-if="cameraPermissionGranted || microphonePermissionGranted"
+        title="Settings"
+        @click="showSettingsDialog = true"
+      >
+        <MeetSettingsIcon />
+      </ToolbarButton>
     </div>
-  </Transition>
+  </div>
 
   <SettingsDialog
     v-model:open="showSettingsDialog"

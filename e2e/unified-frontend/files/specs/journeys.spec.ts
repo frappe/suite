@@ -139,7 +139,8 @@ test("a file moves from My files to Organization files and back through the pick
 		await widening.getByRole("button", { name: "Move", exact: true }).click();
 		await expect(dialog).toBeHidden();
 		await expect(page.locator(`[data-node='${file.name}']`)).toHaveCount(0);
-		expect((await getNode(api, file.name)).parent_node).toBe(shared.name);
+		// The row leaves before the server answers.
+		await expect.poll(async () => (await getNode(api, file.name)).parent_node).toBe(shared.name);
 		await page.goto(`/drive/f/${shared.name}?view=list`);
 		await expect(page.locator(`[data-node='${file.name}']`)).toContainText(file.title);
 
@@ -227,6 +228,8 @@ test("another user's rename refreshes an open shared folder without navigation",
 		await observer.goto(`/drive/f/${home.name}?view=list`);
 		const socket = await connected;
 		await expect(observer.getByText(file.title, { exact: true })).toBeVisible();
+		// The folder's name joins the URL once the folder loads, which can follow the listing.
+		await expect(observer).toHaveURL(new RegExp(`/drive/f/${home.name}/[^/?]+\\?view=list$`));
 		const originalURL = observer.url();
 		let navigations = 0;
 		observer.on("framenavigated", (frame) => {

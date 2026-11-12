@@ -1,8 +1,15 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { afterEach, beforeEach, vi } from 'vitest'
 import { ref } from 'vue'
 
-export const presentationDoc = ref<Record<string, unknown>>({ is_composite: 0 })
-export const presentationId = ref('p1')
+interface OfflineCopyFixtureState {
+  shell: () => Response
+  visitedCache: FakeCache | null
+}
+
+export const presentationDoc = ref<Record<string, unknown> | null>({ is_composite: 0 })
+export const presentationId = ref<string | null>('p1')
 export const viewOnly = ref(false)
 export const slides = ref<unknown[]>([])
 const loadedChunks: string[] = []
@@ -63,7 +70,7 @@ export class FakeCache {
 export let cache: FakeCache
 export const deletedCaches: string[] = []
 export let responses: Record<string, () => Response | Error>
-export const state: { shell: () => Response; visitedCache: FakeCache | null } = {
+export const state: OfflineCopyFixtureState = {
   shell: () => shellResponse(),
   visitedCache: null,
 }
@@ -100,6 +107,10 @@ export const ENTRY_ASSETS = [
   '/assets/suite/frontend/assets/index-c3.css',
 ]
 export const LAZY_CHUNK = '/assets/suite/frontend/assets/SlidesSurface-d4.js'
+// read from the stylesheet, so a font added there is one a pin must store
+export const DECLARED_FONTS = [
+  ...readFileSync(resolve(__dirname, '../styles/fonts.css'), 'utf8').matchAll(/url\('([^']+)'\)/g),
+].map(([, url]) => url)
 
 export const image = (bytes = 10) =>
   new Response(new Uint8Array(bytes), {

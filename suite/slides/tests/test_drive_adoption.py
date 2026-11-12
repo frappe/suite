@@ -25,7 +25,6 @@ imports are recorded as owned debt in `suite/tests/test_architecture.py` and go
 when tickets 21 and 22 put those workflows behind HTTP.
 """
 
-import base64
 import dataclasses
 import io
 import json
@@ -40,6 +39,7 @@ from frappe.utils import get_datetime
 from PIL import Image
 
 from suite import drive
+from suite.content import tables
 from suite.drive._core.access import grant
 from suite.drive._core.content import clear_registry_cache, governs, spec_for
 from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFound
@@ -100,11 +100,11 @@ def png(color: str = "red") -> bytes:
     return output.getvalue()
 
 
-def webp_capture(color: str = "blue") -> str:
-    """One browser capture, in the only shape `save_presentation_thumbnail` takes."""
+def webp_capture(color: str = "blue") -> bytes:
+    """One browser capture of a deck's first slide."""
     output = io.BytesIO()
     Image.new("RGB", (8, 8), color).save(output, format="WEBP")
-    return "data:image/webp;base64," + base64.b64encode(output.getvalue()).decode("ascii")
+    return output.getvalue()
 
 
 def elements_naming(*ids: str) -> str:
@@ -405,6 +405,34 @@ class TestSlidesInDrive(IntegrationTestCase):
         deck = frappe.get_doc(DOCTYPE, self._docname(node))
         self.assertEqual(len(deck.slides), 1)
         self.assertFalse(deck.slug)
+
+    def test_with_collab_off_every_row_path_makes_no_log(self):
+        log_table = tables.table("slides", "doc")
+        logs = f"SELECT COUNT(*) FROM `{log_table}`"
+        [(before,)] = frappe.db.sql(logs)
+
+        node = self._deck(title="Off")
+        self._write_slide(node, background="#112233")
+        picture = self._media(node, "picture.png", png())
+        self._write_slide(node, elements=elements_naming(picture))
+        self.assertIn(picture, slides.SPEC.used_nodes(self._docname(node)))
+
+        seq = drive.take_version(node)
+        self._write_slide(node, background="#445566")
+        restore_version(self.admin, node, seq)
+        restored, *_ = self._slide_rows(node)
+        self.assertEqual(restored["background"], "#112233")
+
+        copied = drive.copy(node, self.root.node, title="Off copy")
+        copied_slide, *_ = self._slide_rows(copied)
+        self.assertEqual(copied_slide["background"], "#112233")
+
+        update(self.admin, copied, state="Trashed")
+        purge(self.admin, copied)
+        self.assertFalse(frappe.db.exists(DOCTYPE, {"node": copied}))
+
+        [(after,)] = frappe.db.sql(logs)
+        self.assertEqual(after, before)
 
     def test_a_deck_without_a_node_cannot_exist(self):
         with self.assertRaises(DriveConflict):
@@ -849,10 +877,9 @@ class TestSlidesInDrive(IntegrationTestCase):
         docname = self._docname(node)
         before = frappe.db.get_value("Drive Node", node, ("modified", "content_modified"), as_dict=True)
 
-        answered = api.save_presentation_thumbnail(docname, webp_capture())
+        drive.push_preview(node, webp_capture(), "image/webp")
 
         row = frappe.db.get_value("Drive Node Preview", {"node": node}, ["source_blob", "blob"], as_dict=True)
-        self.assertEqual(answered, "")
         self.assertIsNone(row.source_blob, "a pushed preview has no source blob")
         self.assertTrue(row.blob)
         self.assertFalse(frappe.db.get_value(DOCTYPE, docname, "thumbnail"), "no legacy thumbnail column")
@@ -867,11 +894,11 @@ class TestSlidesInDrive(IntegrationTestCase):
         grant(node, OTHER, drive.READ, self.admin)
         self._as(OTHER)
         with self.assertRaises(DriveForbidden):
-            api.save_presentation_thumbnail(self._docname(node), webp_capture())
+            drive.push_preview(node, webp_capture(), "image/webp")
 
     def test_a_copy_carries_the_preview_so_it_looks_right_at_once(self):
         node = self._deck(title="Previewed")
-        api.save_presentation_thumbnail(self._docname(node), webp_capture())
+        drive.push_preview(node, webp_capture(), "image/webp")
         copied = drive.copy(node, self.root.node, title="Previewed copy")
         self.assertTrue(frappe.db.exists("Drive Node Preview", {"node": copied}))
 
@@ -1099,7 +1126,7 @@ class TestSlidesInDrive(IntegrationTestCase):
         with self.assertRaises(DriveForbidden):
             drive.adopt_media(node, [picture])
         with self.assertRaises(DriveForbidden):
-            api.save_presentation_thumbnail(self._docname(node), webp_capture())
+            drive.push_preview(node, webp_capture(), "image/webp")
 
     def test_a_trashed_deck_refuses_a_paste_that_names_no_picture_at_all(self):
         """§8.8: the bin opens read-only. The trash refusal used to sit after

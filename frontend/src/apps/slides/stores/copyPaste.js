@@ -15,13 +15,21 @@ import {
   resetFocus,
 } from '@/apps/slides/stores/element'
 import { inCropMode } from '@/apps/slides/stores/imageCrop'
-import { contextFor, presentationId } from '@/apps/slides/stores/presentation'
+import { isLive } from '@/apps/slides/stores/liveDeck'
+import {
+  contextFor,
+  currentOpening,
+  inReadonlyMode,
+  presentationId,
+} from '@/apps/slides/stores/presentation'
 import { getNewSlide, insertSlide, slideIndex } from '@/apps/slides/stores/slide'
+import { oldBodyHTML } from '@/apps/slides/stores/tiptapSetup'
 import { getClipboardTable } from '@/apps/slides/utils/clipboardTable'
 import { remapElementIds } from '@/apps/slides/utils/connectors'
 import { getDocFromHTML, hasListMarkup, sanitizeSlideHTML } from '@/apps/slides/utils/helpers'
 import { handleUploadedMedia } from '@/apps/slides/utils/mediaUploads'
 import { randomId } from '@/platform/random-id'
+import { translate } from '@/platform/translation'
 
 const { activeEditor } = useTextEditor()
 
@@ -71,7 +79,7 @@ const handleCopy = (e) => {
 }
 
 const handleCut = (e) => {
-  if (isInputElement(e.target) || inCropMode.value) return
+  if (isInputElement(e.target) || inCropMode.value || inReadonlyMode.value) return
   if (!activeElementIds.value.length || isSelectionLocked.value) return
 
   e.preventDefault()
@@ -121,27 +129,50 @@ const handlePastedJSON = async ({ srcPresentation, srcSlide, isCut, elements }) 
     focusElementId.value &&
     focusElementId.value != pastedArray[0].id
   ) {
-    activeEditor.value.commands.insertContent(pastedArray[0].content)
+    // a body saved as a document is read the way the old view drew it
+    let { content } = pastedArray[0]
+    if (content && typeof content == 'object') {
+      content = oldBodyHTML(content)
+    }
+
+    activeEditor.value.commands.insertContent(content)
     return
   }
 
+  const id = presentationId.value
+  const stillOpen = currentOpening()
   let json = pastedArray
-  if (srcPresentation !== presentationId.value) {
+  if (srcPresentation !== id) {
+    if (cannotFetchPictures()) return
+
     // if pasted elements are from a different presentation
     // add file attachments correctly to current presentation + update docnames in json
     json = await client.mutation(
       api.slides.media.adoptElements,
       {
-        presentation: presentationId.value,
+        presentation: id,
         elements: pastedArray,
       },
-      { context: contextFor(presentationId.value) },
+      { context: contextFor(id) },
     )
+    if (!stillOpen()) {
+      return
+    }
   }
 
   // a foreign slide index means nothing here, and there is no original to displace from
-  const sameSource = srcPresentation === presentationId.value
+  const sameSource = srcPresentation === id
   duplicateElements(null, json, sameSource ? srcSlide : null, sameSource && !isCut)
+}
+
+// a live presentation keeps working offline, but another presentation's pictures can't be copied in
+function cannotFetchPictures() {
+  if (!isLive() || navigator.onLine) {
+    return false
+  }
+
+  toast.error(translate('Connect to the internet to paste from another presentation.'))
+  return true
 }
 
 const handleSvgText = (svgText) => {
@@ -152,18 +183,25 @@ const handleSvgText = (svgText) => {
 
 const handlePastedSlideJSON = async (slideJSON) => {
   const index = slideIndex.value
+  const id = presentationId.value
+  const stillOpen = currentOpening()
 
-  if (slideJSON.parent != presentationId.value) {
+  if (slideJSON.parent != id) {
+    if (cannotFetchPictures()) return
+
     // if pasted slide is from a different presentation
     // add file attachments correctly to current presentation + update docnames in json
     slideJSON = await client.mutation(
       api.slides.media.adoptSlide,
       {
-        parent: presentationId.value,
+        parent: id,
         slide: slideJSON,
       },
-      { context: contextFor(presentationId.value) },
+      { context: contextFor(id) },
     )
+    if (!stillOpen()) {
+      return
+    }
     if (typeof slideJSON.elements === 'string') {
       slideJSON.elements = JSON.parse(slideJSON.elements)
     }
@@ -240,6 +278,8 @@ const handlePaste = (e) => {
 
   // a paste would steal the selection from the crop session mid-interaction
   if (inCropMode.value) return
+
+  if (inReadonlyMode.value) return
 
   e.preventDefault()
 

@@ -17,17 +17,17 @@ import MailImportSettings from '@/apps/mail/components/Settings/MailImportSettin
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 
-const activeType = ref('mail')
+const activeType = ref<'mail' | 'contacts'>('mail')
 
 const typeButtons = [
   { label: __('Mail'), value: 'mail' },
   { label: __('Contacts'), value: 'contacts' },
 ]
 
-const components: Record<string, Component> = {
+const components = {
   mail: markRaw(MailImportSettings),
   contacts: markRaw(ContactsImportSettings),
-}
+} satisfies Record<string, Component>
 
 const activeComponent = computed(() => components[activeType.value])
 </script>

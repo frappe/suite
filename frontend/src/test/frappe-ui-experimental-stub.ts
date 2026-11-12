@@ -1,11 +1,5 @@
 // The `frappe-ui` alias in vitest.config.ts also matches `frappe-ui/experimental`, which would
 // resolve to a path under the recorder stub. Tests that mount components importing from it
 // get this instead, and vi.mock('frappe-ui/experimental', ...) replaces it as needed.
-import { defineComponent, h } from 'vue'
-
-const stub = defineComponent({ render: () => h('div') })
-
-export const TextEditor = stub
-export const TextEditorFixedMenu = stub
-// Built on by mail's image extension (utils/text-editor.ts), which editor tests load for its paragraph.
-export const ImageExtension = { extend: () => ({ configure: () => ({}) }) }
+// The palette family is the real one: a palette test drives its listbox, which a stub cannot.
+export * from '../../../node_modules/frappe-ui/experimental/CommandPalette'
