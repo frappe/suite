@@ -21,28 +21,28 @@ from suite.slides.doctype.presentation.presentation import apply_theme, get_publ
 from suite.slides.patches import move_file_media_to_drive
 
 
-def text_box(box_id, **fields) -> dict:
-    return {"id": box_id, "type": "text", "content": "<p>a</p>", "left": 10, "top": 20, **fields}
+def text_element(element_id, **fields) -> dict:
+    return {"id": element_id, "type": "text", "content": "<p>a</p>", "left": 10, "top": 20, **fields}
 
 
-def table_box(box_id) -> dict:
+def table_element(element_id) -> dict:
     # As the editor saves a one-cell table
     cell = '<td colspan="1" rowspan="1"><p>a</p></td>'
     body = f'<colgroup><col style="min-width: 25px"></colgroup><tbody><tr>{cell}</tr></tbody>'
-    return {"id": box_id, "type": "table", "content": f'<table style="min-width: 25px">{body}</table>'}
+    return {"id": element_id, "type": "table", "content": f'<table style="min-width: 25px">{body}</table>'}
 
 
-def left_of(box: pycrdt.Map) -> int | None:
-    return box["frame"].get("left")
+def left_of(element: pycrdt.Map) -> int | None:
+    return element["frame"].get("left")
 
 
-def boxes_by_left(boxes: pycrdt.Map) -> dict:
-    return {left_of(boxes[key]): boxes[key] for key in boxes.keys()}
+def elements_by_left(elements: pycrdt.Map) -> dict:
+    return {left_of(elements[key]): elements[key] for key in elements.keys()}
 
 
-def magic_move_keys(boxes: pycrdt.Map) -> dict:
-    # What the old view pairs boxes across slides on, by each box's place
-    return {left_of(boxes[key]): boxes[key].get("refId") or key for key in boxes.keys()}
+def magic_move_keys(elements: pycrdt.Map) -> dict:
+    # What the old view pairs elements across slides on, by each element's place
+    return {left_of(elements[key]): elements[key].get("refId") or key for key in elements.keys()}
 
 
 def converted_deck(node: str) -> pycrdt.Doc:
@@ -102,7 +102,9 @@ class ConversionCase(LoggedDeckCase):
 
 class TestConversion(ConversionCase):
     def test_a_list_item_colour_converts_where_the_old_view_inherited_it(self):
-        node = self.old_deck([text_box("box", content='<ul><li style="color: red"><p>a</p></li></ul>')])
+        node = self.old_deck(
+            [text_element("element", content='<ul><li style="color: red"><p>a</p></li></ul>')]
+        )
 
         self.assertEqual(self.convert(node), "converted")
 
@@ -116,14 +118,14 @@ class TestConversion(ConversionCase):
         }
         for name, html in lists.items():
             with self.subTest(name):
-                node = self.old_deck([text_box("box", content=html)])
+                node = self.old_deck([text_element("element", content=html)])
 
                 self.assertEqual(self.convert(node), "converted")
 
     def test_a_converted_deck_keeps_its_comments(self):
-        node = self.old_deck([text_box("one")])
+        node = self.old_deck([text_element("one")])
         reader = principals_for(OWNER)
-        comments.create_thread(reader, node, "box", "Move this up")
+        comments.create_thread(reader, node, "element", "Move this up")
         before = comments.threads(reader, node)
 
         self.assertEqual(self.convert(node), "converted")
@@ -133,7 +135,7 @@ class TestConversion(ConversionCase):
         self.assertEqual(after[0].comments[0].content, "Move this up")
 
     def test_a_deck_converts_keeping_its_rows_and_the_old_deck_as_a_version(self):
-        node = self.old_deck([text_box("one")], [text_box("two")])
+        node = self.old_deck([text_element("one")], [text_element("two")])
         before = self.rows(node)
 
         self.assertEqual(self.convert(node), "converted")
@@ -143,121 +145,132 @@ class TestConversion(ConversionCase):
         kept = next(row for row in versions if row.label == "Before collaboration")
         payload = json.loads(drive.read_version(node, kept.seq).read())
         held = [json.loads(slide["elements"]) for slide in payload["slides"]]
-        self.assertEqual([[box["id"] for box in boxes] for boxes in held], [["one"], ["two"]])
+        self.assertEqual([[element["id"] for element in elements] for elements in held], [["one"], ["two"]])
 
-    def test_the_deck_holds_every_slide_and_box_in_order_and_an_old_file_url(self):
+    def test_a_converted_deck_keeps_its_old_version_with_no_edit_in_its_activity(self):
+        node = self.old_deck([text_element("one")])
+
+        self.assertEqual(self.convert(node), "converted")
+
+        labels = [row.label for row in drive.list_versions(node)["rows"]]
+        self.assertIn("Before collaboration", labels)
+        self.assertFalse(frappe.db.exists("Drive Activity", {"node": node, "action": "edit"}))
+
+    def test_the_deck_holds_every_slide_and_element_in_order_and_an_old_file_url(self):
         url = "/private/files/old-picture.png"
-        node = self.old_deck([text_box("one"), {"id": "pic", "type": "image", "src": url}], [text_box("two")])
+        node = self.old_deck(
+            [text_element("one"), {"id": "pic", "type": "image", "src": url}], [text_element("two")]
+        )
         self.assertEqual(self.convert(node), "converted")
 
         doc = converted_deck(node)
         slides = doc.get("slides", type=pycrdt.Map)
-        boxes = doc.get("boxes", type=pycrdt.Map)
+        elements = doc.get("elements", type=pycrdt.Map)
         self.assertEqual(set(slides.keys()), {"slide-0", "slide-1"})
-        self.assertEqual(boxes["one"]["parent"], "slide-0")
-        self.assertEqual(boxes["two"]["parent"], "slide-1")
-        self.assertEqual(boxes["pic"]["src"], url)
+        self.assertEqual(elements["one"]["parent"], "slide-0")
+        self.assertEqual(elements["two"]["parent"], "slide-1")
+        self.assertEqual(elements["pic"]["src"], url)
         self.assertLess(slides["slide-0"]["order"], slides["slide-1"]["order"])
 
     def test_a_repeated_id_is_repaired_and_a_connector_on_its_slide_follows(self):
         ends = {"start": {"elementId": "same"}, "end": {"elementId": "first"}}
         node = self.old_deck(
-            [text_box("same"), text_box("first")],
-            [text_box("same"), {"id": "line", "type": "shape", "connector": ends}],
+            [text_element("same"), text_element("first")],
+            [text_element("same"), {"id": "line", "type": "shape", "connector": ends}],
             client_ids=["slide", "slide"],
         )
         self.assertEqual(self.convert(node), "converted")
 
         doc = converted_deck(node)
         slides = doc.get("slides", type=pycrdt.Map)
-        boxes = doc.get("boxes", type=pycrdt.Map)
+        elements = doc.get("elements", type=pycrdt.Map)
         self.assertEqual(len(slides), 2)
-        self.assertEqual(len(boxes), 4)
-        self.assertEqual(boxes["same"]["parent"], "slide")
-        line = boxes["line"]
+        self.assertEqual(len(elements), 4)
+        self.assertEqual(elements["same"]["parent"], "slide")
+        line = elements["line"]
         other_slide = line["parent"]
         self.assertNotEqual(other_slide, "slide")
         start = line["connectorStart"]["elementId"]
         self.assertNotEqual(start, "same")
-        self.assertEqual(boxes[start]["parent"], other_slide)
-        # The end names a box on the first slide, whose id never changed
+        self.assertEqual(elements[start]["parent"], other_slide)
+        # The end names an element on the first slide, whose id never changed
         self.assertEqual(line["connectorEnd"]["elementId"], "first")
 
     def test_a_magic_move_link_is_left_alone_when_an_id_is_repaired(self):
         node = self.old_deck(
-            [text_box("same", refId="link")], [text_box("same", refId="link")], client_ids=["a", "b"]
+            [text_element("same", refId="link")], [text_element("same", refId="link")], client_ids=["a", "b"]
         )
         self.assertEqual(self.convert(node), "converted")
 
-        boxes = converted_deck(node).get("boxes", type=pycrdt.Map)
-        self.assertEqual({boxes[key]["refId"] for key in boxes.keys()}, {"link"})
+        elements = converted_deck(node).get("elements", type=pycrdt.Map)
+        self.assertEqual({elements[key]["refId"] for key in elements.keys()}, {"link"})
 
-    def test_a_connector_stays_on_the_box_the_old_view_drew_it_to(self):
-        # The old view takes the first box on the slide holding the id
+    def test_a_connector_stays_on_the_element_the_old_view_drew_it_to(self):
+        # The old view takes the first element on the slide holding the id
         line = {"id": "line", "type": "shape", "connector": {"start": {"elementId": "dup"}, "end": None}}
         other = {**line, "id": "other", "connector": {"start": {"elementId": "twice"}, "end": None}}
         node = self.old_deck(
-            [text_box("dup", left=1), text_box("dup", left=2), line],
-            [text_box("twice", left=1)],
-            [text_box("twice", left=3), text_box("twice", left=4), other],
+            [text_element("dup", left=1), text_element("dup", left=2), line],
+            [text_element("twice", left=1)],
+            [text_element("twice", left=3), text_element("twice", left=4), other],
         )
         self.assertEqual(self.convert(node), "converted")
 
-        boxes = converted_deck(node).get("boxes", type=pycrdt.Map)
-        self.assertEqual(left_of(boxes[boxes["line"]["connectorStart"]["elementId"]]), 1)
-        self.assertEqual(left_of(boxes[boxes["other"]["connectorStart"]["elementId"]]), 3)
+        elements = converted_deck(node).get("elements", type=pycrdt.Map)
+        self.assertEqual(left_of(elements[elements["line"]["connectorStart"]["elementId"]]), 1)
+        self.assertEqual(left_of(elements[elements["other"]["connectorStart"]["elementId"]]), 3)
 
     def test_a_magic_move_pair_made_by_id_alone_still_pairs(self):
-        # Magic Move pairs boxes across slides on `refId || id`
+        # Magic Move pairs elements across slides on `refId || id`
         node = self.old_deck(
-            [text_box("same", refId="same", left=1)],
-            [text_box("same", left=2)],
-            [text_box("alone", left=3), text_box("same", left=4)],
+            [text_element("same", refId="same", left=1)],
+            [text_element("same", left=2)],
+            [text_element("alone", left=3), text_element("same", left=4)],
         )
         self.assertEqual(self.convert(node), "converted")
 
-        boxes = converted_deck(node).get("boxes", type=pycrdt.Map)
-        keys = magic_move_keys(boxes)
+        elements = converted_deck(node).get("elements", type=pycrdt.Map)
+        keys = magic_move_keys(elements)
         self.assertEqual(keys[1], keys[2])
         self.assertEqual(keys[2], keys[4])
 
-    def test_a_repaired_box_gets_no_pair_it_did_not_have(self):
-        # Two boxes on one slide can't both be the box a pair tweens to
-        node = self.old_deck([text_box("dup", left=1), text_box("dup", left=2)])
+    def test_a_repaired_element_gets_no_pair_it_did_not_have(self):
+        # Two elements on one slide can't both be the element a pair tweens to
+        node = self.old_deck([text_element("dup", left=1), text_element("dup", left=2)])
         self.assertEqual(self.convert(node), "converted")
 
-        boxes = converted_deck(node).get("boxes", type=pycrdt.Map)
-        keys = magic_move_keys(boxes)
+        elements = converted_deck(node).get("elements", type=pycrdt.Map)
+        keys = magic_move_keys(elements)
         self.assertNotEqual(keys[1], keys[2])
 
-    def test_an_explicit_ref_id_on_a_repaired_box_stays(self):
-        node = self.old_deck([text_box("same", left=1)], [text_box("same", refId="link", left=2)])
+    def test_an_explicit_ref_id_on_a_repaired_element_stays(self):
+        node = self.old_deck([text_element("same", left=1)], [text_element("same", refId="link", left=2)])
         self.assertEqual(self.convert(node), "converted")
 
-        boxes = converted_deck(node).get("boxes", type=pycrdt.Map)
-        by_left = boxes_by_left(boxes)
+        elements = converted_deck(node).get("elements", type=pycrdt.Map)
+        by_left = elements_by_left(elements)
         self.assertEqual(by_left[2]["refId"], "link")
         self.assertNotIn("refId", by_left[1])
 
     def test_a_malformed_id_is_repaired_rather_than_leaving_the_deck_pending(self):
         bad_end = {"id": "line", "type": "shape", "connector": {"start": {"elementId": []}, "end": None}}
         node = self.old_deck(
-            [text_box([], left=1), text_box({"a": 1}, left=2), text_box(None, left=3), bad_end]
+            [text_element([], left=1), text_element({"a": 1}, left=2), text_element(None, left=3), bad_end]
         )
         self.assertEqual(self.convert(node), "converted")
 
-        boxes = converted_deck(node).get("boxes", type=pycrdt.Map)
-        self.assertEqual(len(boxes), 4)
-        self.assertTrue(all(isinstance(key, str) and key for key in boxes.keys()))
-        self.assertEqual(boxes["line"]["connectorStart"]["elementId"], [])
+        elements = converted_deck(node).get("elements", type=pycrdt.Map)
+        self.assertEqual(len(elements), 4)
+        self.assertTrue(all(isinstance(key, str) and key for key in elements.keys()))
+        self.assertEqual(elements["line"]["connectorStart"]["elementId"], [])
 
-    def test_a_connector_follows_a_box_with_a_number_for_an_id(self):
+    def test_a_connector_follows_an_element_with_a_number_for_an_id(self):
         line = {"id": "line", "type": "shape", "connector": {"start": {"elementId": 7}, "end": None}}
-        node = self.old_deck([text_box(7, left=1), line])
+        node = self.old_deck([text_element(7, left=1), line])
         self.assertEqual(self.convert(node), "converted")
 
-        boxes = converted_deck(node).get("boxes", type=pycrdt.Map)
-        self.assertEqual(left_of(boxes[boxes["line"]["connectorStart"]["elementId"]]), 1)
+        elements = converted_deck(node).get("elements", type=pycrdt.Map)
+        self.assertEqual(left_of(elements[elements["line"]["connectorStart"]["elementId"]]), 1)
 
     def test_a_deck_with_no_slides_converts(self):
         node = self.old_deck()
@@ -266,9 +279,9 @@ class TestConversion(ConversionCase):
 
     def test_a_refusal_leaves_the_rows_and_shows_its_reason_to_a_system_manager_only(self):
         for name, slides, detail in (
-            ("html", [[text_box("box", content="<h1>a</h1>")]], "html"),
-            ("box type", [[{"id": "box", "type": "chart"}]], "box_type"),
-            ("setting", [[text_box("box", sparkle=True)]], "setting"),
+            ("html", [[text_element("element", content="<h1>a</h1>")]], "html"),
+            ("element type", [[{"id": "element", "type": "chart"}]], "element_type"),
+            ("setting", [[text_element("element", sparkle=True)]], "setting"),
         ):
             with self.subTest(name):
                 node = self.old_deck(*slides)
@@ -287,7 +300,7 @@ class TestConversion(ConversionCase):
 
     def test_a_table_that_would_lose_its_magic_move_key_is_refused(self):
         # A table pairs on its id alone, so giving this one a new id would break the pair
-        table = table_box("same")
+        table = table_element("same")
         node = self.old_deck([table], [table])
 
         self.assertEqual(self.convert(node), "check")
@@ -295,13 +308,13 @@ class TestConversion(ConversionCase):
         self.assertIsNone(content.find(APP, node))
 
     def test_a_table_with_an_id_of_its_own_still_converts(self):
-        table = table_box("only")
-        node = self.old_deck([table], [text_box("box")])
+        table = table_element("only")
+        node = self.old_deck([table], [text_element("element")])
 
         self.assertEqual(self.convert(node), "converted")
 
     def test_rows_that_do_not_parse_are_refused(self):
-        node = self.old_deck([text_box("box")])
+        node = self.old_deck([text_element("element")])
         frappe.db.set_value(
             "Slide", {"parent": slides_drive.docname_for_node(node)}, "elements", '"not a list"'
         )
@@ -311,7 +324,7 @@ class TestConversion(ConversionCase):
         self.assertIn("elements", conversions.conversion_status(APP, node)["reason"])
 
     def test_a_combined_deck_never_waits_to_convert(self):
-        node = self.old_deck([text_box("box")])
+        node = self.old_deck([text_element("element")])
         docname = slides_drive.docname_for_node(node)
         frappe.db.set_value("Presentation", docname, "is_composite", 1)
         frappe.db.commit()
@@ -344,7 +357,7 @@ class TestOldPathsOnAConvertedDeck(ConversionCase):
         return frappe.get_doc("Slide", name)
 
     def test_a_slide_row_saved_on_its_own_is_refused_and_writes_nothing(self):
-        node = self.old_deck([text_box("box")])
+        node = self.old_deck([text_element("element")])
         self.convert(node)
         before = self.rows(node)
         row = self.owned_row(node)
@@ -357,10 +370,10 @@ class TestOldPathsOnAConvertedDeck(ConversionCase):
         self.assertEqual(self.rows(node), before)
 
     def test_a_converted_decks_row_saved_into_a_plain_deck_is_refused_and_moves_nothing(self):
-        node = self.old_deck([text_box("box")])
+        node = self.old_deck([text_element("element")])
         self.convert(node)
         before = self.rows(node)
-        plain = self.old_deck([text_box("other")])
+        plain = self.old_deck([text_element("other")])
         row = self.owned_row(node)
         deck = frappe.get_doc("Presentation", slides_drive.docname_for_node(plain))
         deck.append("slides", row.as_dict())
@@ -372,9 +385,9 @@ class TestOldPathsOnAConvertedDeck(ConversionCase):
         self.assertEqual(self.rows(node), before)
 
     def test_a_plain_decks_row_saved_into_another_plain_deck_is_refused_and_moves_nothing(self):
-        node = self.old_deck([text_box("box")])
+        node = self.old_deck([text_element("element")])
         before = self.rows(node)
-        plain = self.old_deck([text_box("other")])
+        plain = self.old_deck([text_element("other")])
         row = self.owned_row(node)
         deck = frappe.get_doc("Presentation", slides_drive.docname_for_node(plain))
         deck.append("slides", row.as_dict())
@@ -386,7 +399,7 @@ class TestOldPathsOnAConvertedDeck(ConversionCase):
         self.assertEqual(self.rows(node), before)
 
     def test_a_plain_deck_still_saves_its_own_rows_and_a_new_one(self):
-        node = self.old_deck([text_box("box")])
+        node = self.old_deck([text_element("element")])
         name = slides_drive.docname_for_node(node)
         own = frappe.db.get_value("Slide", {"parent": name}, "name")
         frappe.set_user(OWNER)
@@ -407,7 +420,7 @@ class TestOldPathsOnAConvertedDeck(ConversionCase):
         )
 
     def test_a_converted_decks_row_renamed_is_refused_and_keeps_its_name(self):
-        node = self.old_deck([text_box("box")])
+        node = self.old_deck([text_element("element")])
         self.convert(node)
         before = self.named_rows(node)
         row = self.owned_row(node)
@@ -419,10 +432,10 @@ class TestOldPathsOnAConvertedDeck(ConversionCase):
         self.assertEqual(self.named_rows(node), before)
 
     def test_a_plain_decks_row_merged_into_a_converted_decks_row_is_refused(self):
-        node = self.old_deck([text_box("box")])
+        node = self.old_deck([text_element("element")])
         self.convert(node)
         before = self.named_rows(node)
-        plain = self.old_deck([text_box("other")])
+        plain = self.old_deck([text_element("other")])
         plain_rows = self.named_rows(plain)
         frappe.set_user(OWNER)
 
@@ -433,7 +446,7 @@ class TestOldPathsOnAConvertedDeck(ConversionCase):
         self.assertEqual((self.named_rows(node), self.named_rows(plain)), (before, plain_rows))
 
     def test_a_parent_save_that_names_a_row_anew_is_refused_and_deletes_nothing(self):
-        node = self.old_deck([text_box("box")])
+        node = self.old_deck([text_element("element")])
         self.convert(node)
         before = self.named_rows(node)
         frappe.set_user(OWNER)
@@ -447,7 +460,7 @@ class TestOldPathsOnAConvertedDeck(ConversionCase):
         self.assertEqual(self.named_rows(node), before)
 
     def test_an_old_tab_saving_a_theme_after_its_row_was_renamed_deletes_nothing(self):
-        node = self.old_deck([text_box("box")])
+        node = self.old_deck([text_element("element")])
         self.convert(node)
         before = self.named_rows(node)
         frappe.set_user(OWNER)
@@ -463,7 +476,7 @@ class TestOldPathsOnAConvertedDeck(ConversionCase):
         self.assertEqual(self.named_rows(node), renamed)
 
     def test_a_plain_decks_row_still_renames(self):
-        node = self.old_deck([text_box("box")])
+        node = self.old_deck([text_element("element")])
         [own] = self.named_rows(node)
         frappe.set_user(OWNER)
 
@@ -472,7 +485,7 @@ class TestOldPathsOnAConvertedDeck(ConversionCase):
         self.assertEqual(self.named_rows(node), [f"{own}-renamed"])
 
     def test_a_parent_save_that_reorders_a_converted_decks_rows_is_refused(self):
-        node = self.old_deck([text_box("first")], [text_box("second")])
+        node = self.old_deck([text_element("first")], [text_element("second")])
         self.convert(node)
         before = self.named_rows(node)
         frappe.set_user(OWNER)
@@ -486,7 +499,7 @@ class TestOldPathsOnAConvertedDeck(ConversionCase):
         self.assertEqual(self.named_rows(node), before)
 
     def test_a_plain_deck_still_reorders_its_rows(self):
-        node = self.old_deck([text_box("first")], [text_box("second")])
+        node = self.old_deck([text_element("first")], [text_element("second")])
         first, second = self.named_rows(node)
         frappe.set_user(OWNER)
         deck = frappe.get_doc("Presentation", slides_drive.docname_for_node(node))
@@ -497,7 +510,7 @@ class TestOldPathsOnAConvertedDeck(ConversionCase):
         self.assertEqual(self.named_rows(node), [second, first])
 
     def test_a_new_slide_row_is_refused_and_writes_nothing(self):
-        node = self.old_deck([text_box("box")])
+        node = self.old_deck([text_element("element")])
         self.convert(node)
         before = self.rows(node)
         row = self.owned_row(node)
@@ -517,7 +530,7 @@ class TestOldPathsOnAConvertedDeck(ConversionCase):
         self.assertEqual(self.rows(node), before)
 
     def test_a_slide_row_deleted_on_its_own_is_refused_and_writes_nothing(self):
-        node = self.old_deck([text_box("box")])
+        node = self.old_deck([text_element("element")])
         self.convert(node)
         before = self.rows(node)
         row = self.owned_row(node)
@@ -529,7 +542,7 @@ class TestOldPathsOnAConvertedDeck(ConversionCase):
         self.assertEqual(self.rows(node), before)
 
     def test_the_client_delete_of_a_slide_row_is_refused_and_writes_nothing(self):
-        node = self.old_deck([text_box("box")])
+        node = self.old_deck([text_element("element")])
         self.convert(node)
         before = self.rows(node)
         row = self.owned_row(node)
@@ -541,8 +554,8 @@ class TestOldPathsOnAConvertedDeck(ConversionCase):
         self.assertEqual(self.rows(node), before)
 
     def test_a_row_moved_off_or_onto_a_converted_deck_is_refused(self):
-        waiting = self.old_deck([text_box("waiting")])
-        done = self.old_deck([text_box("done")])
+        waiting = self.old_deck([text_element("waiting")])
+        done = self.old_deck([text_element("done")])
         self.convert(done)
         before = self.rows(waiting), self.rows(done)
 
@@ -558,7 +571,7 @@ class TestOldPathsOnAConvertedDeck(ConversionCase):
         self.assertEqual((self.rows(waiting), self.rows(done)), before)
 
     def test_a_row_of_a_deck_not_converted_still_saves_on_its_own(self):
-        node = self.old_deck([text_box("box")])
+        node = self.old_deck([text_element("element")])
         row = self.owned_row(node)
         row.elements = "[]"
 
@@ -568,7 +581,7 @@ class TestOldPathsOnAConvertedDeck(ConversionCase):
         self.assertEqual(saved.elements, "[]")
 
     def test_save_slides_is_refused_and_writes_nothing(self):
-        node = self.old_deck([text_box("box")])
+        node = self.old_deck([text_element("element")])
         self.convert(node)
         docname = slides_drive.docname_for_node(node)
         before = self.rows(node)
@@ -582,11 +595,11 @@ class TestOldPathsOnAConvertedDeck(ConversionCase):
     def test_a_retry_of_the_media_patch_leaves_a_converted_decks_rows(self):
         converted_node = self.old_deck([{"id": "pic", "type": "image", "src": "/private/files/old.png"}])
         self.convert(converted_node)
-        waiting = self.old_deck([text_box("box")])
+        waiting = self.old_deck([text_element("element")])
         moved: list[str] = []
 
         with patch.object(
-            move_file_media_to_drive, "convert_deck", lambda docname, node: moved.append(node) or {}
+            move_file_media_to_drive, "convert_deck", lambda docname, node, _: moved.append(node) or {}
         ):
             move_file_media_to_drive.execute()
 
@@ -594,7 +607,7 @@ class TestOldPathsOnAConvertedDeck(ConversionCase):
         self.assertNotIn(converted_node, moved)
 
     def test_a_save_that_changes_a_slide_is_refused_and_writes_nothing(self):
-        node = self.old_deck([text_box("box")])
+        node = self.old_deck([text_element("element")])
         self.convert(node)
         before = self.rows(node)
         deck = frappe.get_doc("Presentation", slides_drive.docname_for_node(node))
@@ -606,7 +619,7 @@ class TestOldPathsOnAConvertedDeck(ConversionCase):
         self.assertEqual(self.rows(node), before)
 
     def test_turning_a_converted_deck_composite_is_refused(self):
-        node = self.old_deck([text_box("box")])
+        node = self.old_deck([text_element("element")])
         self.convert(node)
         deck = frappe.get_doc("Presentation", slides_drive.docname_for_node(node))
         deck.is_composite = 1
@@ -625,7 +638,7 @@ class TestOldPathsOnAConvertedDeck(ConversionCase):
         self.assertEqual(self.rows(node), before)
 
     def test_a_theme_alone_still_saves_on_a_converted_deck(self):
-        node = self.old_deck([text_box("box")])
+        node = self.old_deck([text_element("element")])
         self.convert(node)
         deck = frappe.get_doc("Presentation", slides_drive.docname_for_node(node))
         deck.theme = None
@@ -633,8 +646,8 @@ class TestOldPathsOnAConvertedDeck(ConversionCase):
         deck.save()
 
     def test_a_write_decides_on_the_log_it_reads_under_the_lock(self):
-        node = self.old_deck([text_box("box")])
-        waiting = self.old_deck([text_box("box")])
+        node = self.old_deck([text_element("element")])
+        waiting = self.old_deck([text_element("element")])
         self.convert(node)
         docname = slides_drive.docname_for_node(node)
         before = self.rows(node)
@@ -645,7 +658,7 @@ class TestOldPathsOnAConvertedDeck(ConversionCase):
         with (
             patch.object(content, "find", seen_only_by_a_locking_read(content.find)),
             patch.object(
-                move_file_media_to_drive, "convert_deck", lambda docname, node: moved.append(node) or {}
+                move_file_media_to_drive, "convert_deck", lambda docname, node, _: moved.append(node) or {}
             ),
         ):
             with self.assertRaises(drive.DriveConflict):
@@ -660,7 +673,7 @@ class TestOldPathsOnAConvertedDeck(ConversionCase):
 
 class TestVersionsOfADeck(ConversionCase):
     def test_a_version_keeps_how_long_a_slide_waits(self):
-        node = self.old_deck([text_box("box")])
+        node = self.old_deck([text_element("element")])
         docname = slides_drive.docname_for_node(node)
         frappe.db.set_value("Slide", {"parent": docname}, "advance_after", 5)
         stored, _mime = slides_drive.version_bytes(docname)
@@ -673,7 +686,7 @@ class TestVersionsOfADeck(ConversionCase):
 
 class TestDeckRoute(ConversionCase):
     def test_a_waiting_deck_says_it_waits(self):
-        node = self.old_deck([text_box("box")])
+        node = self.old_deck([text_element("element")])
 
         answer = get_public_presentation(slides_drive.docname_for_node(node))
 
@@ -681,7 +694,7 @@ class TestDeckRoute(ConversionCase):
         self.assertNotIn("is_converted", answer)
 
     def test_a_converted_deck_says_so(self):
-        node = self.old_deck([text_box("box")])
+        node = self.old_deck([text_element("element")])
         self.convert(node)
 
         answer = get_public_presentation(slides_drive.docname_for_node(node))
@@ -704,7 +717,7 @@ class TestDeckRoute(ConversionCase):
         )
         for name, patched in (("fallback", not_integrated), ("unreadable", failed), ("schema", unknown)):
             with self.subTest(name), patched:
-                node = self.old_deck([text_box("box")])
+                node = self.old_deck([text_element("element")])
 
                 self.assertEqual(self.convert(node), "check")
 
@@ -714,15 +727,15 @@ class TestDeckRoute(ConversionCase):
         paragraph = {"type": "paragraph", "content": [{"type": "text", "text": "A  B"}]}
         node = self.old_deck(
             [
-                text_box("doc", content={"type": "doc", "content": [paragraph]}),
-                text_box("html", content="<p>A  B</p><hr>"),
+                text_element("doc", content={"type": "doc", "content": [paragraph]}),
+                text_element("html", content="<p>A  B</p><hr>"),
             ]
         )
 
         self.assertEqual(self.convert(node), "converted")
 
     def test_only_a_system_manager_gets_the_reason_for_a_refusal(self):
-        node = self.old_deck([text_box("box", content="<h1>a</h1>")])
+        node = self.old_deck([text_element("element", content="<h1>a</h1>")])
         self.convert(node)
         docname = slides_drive.docname_for_node(node)
 
@@ -732,7 +745,7 @@ class TestDeckRoute(ConversionCase):
         self.assertEqual(get_public_presentation(docname)["conversion"], {"state": "refused"})
 
     def test_a_combined_deck_never_waits(self):
-        node = self.old_deck([text_box("box")])
+        node = self.old_deck([text_element("element")])
         docname = slides_drive.docname_for_node(node)
         frappe.db.set_value("Presentation", docname, "is_composite", 1)
 

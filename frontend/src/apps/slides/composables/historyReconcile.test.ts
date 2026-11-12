@@ -1,10 +1,16 @@
+import { fromAny } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { nextTick } from 'vue'
+import { nextTick, type Ref } from 'vue'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
 vi.mock('@/apps/slides/router', () => ({ router: { replace: () => Promise.resolve() } }))
 
-const { slides, slideIndex } = await import('@/apps/slides/stores/slide')
+const { slides: storeSlides, slideIndex } = await import('@/apps/slides/stores/slide')
+// the store types each slide's fields as unknown, and these tests read them
+const slides = fromAny<
+  Ref<(Record<string, unknown> & { elements: Record<string, unknown>[] })[]>,
+  unknown
+>(storeSlides)
 const { focusElementId } = await import('@/apps/slides/stores/element')
 const { useTextEditor } = await import('./useTextEditor')
 
@@ -29,7 +35,7 @@ const rewriteContent = async (html: string) => {
 }
 
 const caret = () => {
-  const { $from } = activeEditor.value.state.selection
+  const { $from } = activeEditor.value!.state.selection
   return { text: $from.parent.textContent, offset: $from.parentOffset }
 }
 
@@ -45,7 +51,7 @@ afterEach(() => {
 describe('the caret when history rewrites the content underneath the editor', () => {
   it('leaves a caret before the change where it was', async () => {
     await editText()
-    activeEditor.value.commands.setTextSelection(2)
+    activeEditor.value!.commands.setTextSelection(2)
 
     await rewriteContent('<p>one</p><p>twoAB</p>')
 
@@ -54,7 +60,7 @@ describe('the caret when history rewrites the content underneath the editor', ()
 
   it('moves a caret after the change by what the change added', async () => {
     await editText()
-    activeEditor.value.commands.setTextSelection(7)
+    activeEditor.value!.commands.setTextSelection(7)
 
     await rewriteContent('<p>oneAB</p><p>two</p>')
 
@@ -63,7 +69,7 @@ describe('the caret when history rewrites the content underneath the editor', ()
 
   it('carries a caret at the change over what the change added', async () => {
     await editText()
-    activeEditor.value.commands.setTextSelection(4)
+    activeEditor.value!.commands.setTextSelection(4)
 
     await rewriteContent('<p>oneAB</p><p>two</p>')
 
@@ -72,7 +78,7 @@ describe('the caret when history rewrites the content underneath the editor', ()
 
   it('pulls a caret inside the change back to the start of it', async () => {
     await editText()
-    activeEditor.value.commands.setTextSelection(3)
+    activeEditor.value!.commands.setTextSelection(3)
 
     await rewriteContent('<p>xyz</p><p>two</p>')
 

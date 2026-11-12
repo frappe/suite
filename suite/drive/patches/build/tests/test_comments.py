@@ -73,7 +73,9 @@ class CommentTest(unittest.TestCase):
             modified=STAMP,
             modified_by=OWNER,
         )
-        source = FakeContent(documents=[document], users={"a@example.com": True}, timezone="UTC")
+        source = FakeContent(
+            documents=[document], users={"a@example.com": True, "reply@example.com": True}, timezone="UTC"
+        )
         env, target = self.environment(source)
 
         count = convert_document_comments(env, self.record, document, "node-1", batch_size=1)
@@ -172,6 +174,69 @@ class CommentTest(unittest.TestCase):
         self.assertEqual(comment["author"], "Guest")
         self.assertEqual(comment["creation"], STAMP)
 
+    def test_a_writer_author_with_no_user_is_a_guest_named_by_the_email(self):
+        ycomments = writer_update(
+            {
+                "top": {
+                    "id": "top",
+                    "text": "First",
+                    "owner": "gone@example.com",
+                    "creation": 1_000,
+                    "resolved": True,
+                }
+            }
+        )
+        document = ContentRow(
+            "Writer Document", "writer-1", ycomments=ycomments, modified=STAMP, modified_by=OWNER
+        )
+        env, target = self.environment(FakeContent(documents=[document], users={OWNER: True}, timezone="UTC"))
+
+        convert_document_comments(env, self.record, document, "node-1", batch_size=100)
+
+        comment = target.comment_rows["top"]
+        self.assertEqual((comment["author"], comment["author_name"]), ("Guest", "gone@example.com"))
+        self.assertEqual(target.thread_rows["top"]["resolved_by"], "Guest")
+
+    def test_a_sheet_author_with_no_user_is_a_guest_keeping_the_name_it_was_saved_with(self):
+        thread = {
+            "thread": [{"text": "note", "author": "gone@example.com", "name": "Gone Person", "ts": 1_000}]
+        }
+        workbook = {"comments": {"Sheet 1": {"A1": thread}}}
+        document = ContentRow(
+            "Sheet",
+            "sheet-1",
+            sheets_data=json.dumps(workbook),
+            head_seq=1,
+            modified=STAMP,
+            modified_by=OWNER,
+        )
+        env, target = self.environment(FakeContent(documents=[document], timezone="UTC"))
+
+        convert_document_comments(env, self.record, document, "node-1", batch_size=100)
+
+        comment = next(iter(target.comment_rows.values()))
+        self.assertEqual((comment["author"], comment["author_name"]), ("Guest", "Gone Person"))
+
+    def test_a_resolver_from_the_head_operation_with_no_user_is_a_guest(self):
+        workbook = {
+            "comments": {"Sheet 1": {"A1": {"resolved": True, "thread": [{"text": "note", "ts": None}]}}}
+        }
+        document = ContentRow(
+            "Sheet",
+            "sheet-1",
+            sheets_data=json.dumps(workbook),
+            head_seq=8,
+            modified=STAMP,
+            modified_by=OWNER,
+        )
+        source = FakeContent(documents=[document], users={OWNER: True})
+        source.op_stamps[("sheet-1", 8)] = ("gone@example.com", "2024-03-01 00:00:00")
+        env, target = self.environment(source)
+
+        convert_document_comments(env, self.record, document, "node-1", batch_size=100)
+
+        self.assertEqual(next(iter(target.thread_rows.values()))["resolved_by"], "Guest")
+
     def test_sheet_anchor_and_ids_follow_the_frozen_codecs(self):
         workbook = {
             "comments": {
@@ -248,7 +313,7 @@ class CommentTest(unittest.TestCase):
             modified=STAMP,
             modified_by=OWNER,
         )
-        source = FakeContent(documents=[document])
+        source = FakeContent(documents=[document], users={"operator@example.com": True})
         source.op_stamps[("sheet-1", 8)] = ("operator@example.com", "2024-03-01 00:00:00")
         env, target = self.environment(source)
 
@@ -419,7 +484,12 @@ class CommentTest(unittest.TestCase):
             modified=STAMP,
             modified_by=OWNER,
         )
-        users = {"zed@example.com": True, "amy@example.com": True}
+        users = {
+            "zed@example.com": True,
+            "amy@example.com": True,
+            "first@example.com": True,
+            "last@example.com": True,
+        }
         source = FakeContent(documents=[document], users=users, timezone="UTC")
         env, target = self.environment(source)
 
@@ -535,7 +605,7 @@ class CommentTest(unittest.TestCase):
         document = ContentRow(
             "Writer Document", "writer-1", ycomments=ycomments, modified=None, modified_by=None
         )
-        source = FakeContent(documents=[document], timezone="UTC")
+        source = FakeContent(documents=[document], users={"a@example.com": True}, timezone="UTC")
         env, target = self.environment(source)
 
         self.assertEqual(convert_document_comments(env, self.record, document, "node-1", batch_size=10), 1)
@@ -607,7 +677,9 @@ class LegacyCommentTest(unittest.TestCase):
     def test_a_legacy_row_under_a_planned_id_is_completed_in_place(self):
         document = self.writer()
         name = "78033a50-d0c3-47e0-9c84-a15ff667ea29"
-        env, target = self.environment(FakeContent(documents=[document], timezone="UTC"))
+        env, target = self.environment(
+            FakeContent(documents=[document], users={"a@example.com": True}, timezone="UTC")
+        )
         self.legacy_row(target, name)
 
         count = convert_document_comments(env, self.record, document, "node-1", batch_size=10)
@@ -669,7 +741,7 @@ class LegacyCommentTest(unittest.TestCase):
         self.assertEqual(target.comment_rows[name]["content"], "one")
 
     def test_a_row_no_entry_claims_becomes_its_own_thread(self):
-        env, target = self.environment(FakeContent(timezone="UTC"))
+        env, target = self.environment(FakeContent(users={"old@example.com": True}, timezone="UTC"))
         target.node_rows["file-1"] = {"name": "file-1", "kind": "document"}
         self.legacy_row(target, "orphan-1", resolved=1)
 
@@ -683,6 +755,17 @@ class LegacyCommentTest(unittest.TestCase):
         self.assertEqual((row["thread"], row["node"]), ("orphan-1", "file-1"))
         self.assertEqual((row["content"], row["author"]), ("old", "old@example.com"))
         self.assertEqual(row["creation"], LEGACY_STAMP)
+
+    def test_a_row_whose_owner_has_no_user_is_a_guest_named_by_the_email(self):
+        env, target = self.environment(FakeContent(timezone="UTC"))
+        target.node_rows["file-1"] = {"name": "file-1", "kind": "document"}
+        self.legacy_row(target, "orphan-1", resolved=1)
+
+        port_legacy_comments(env, self.record, batch_size=10)
+
+        row = target.comment_rows["orphan-1"]
+        self.assertEqual((row["author"], row["author_name"]), ("Guest", "old@example.com"))
+        self.assertEqual(target.thread_rows["orphan-1"]["resolved_by"], "Guest")
 
     def test_a_row_whose_file_has_no_node_is_counted_and_kept(self):
         env, target = self.environment(FakeContent(timezone="UTC"))

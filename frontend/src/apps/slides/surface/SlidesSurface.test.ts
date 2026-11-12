@@ -1,8 +1,15 @@
-import { fromPartial } from '@total-typescript/shoehorn'
+import { Editor } from '@tiptap/core'
+import { Document } from '@tiptap/extension-document'
+import { Paragraph } from '@tiptap/extension-paragraph'
+import { Text } from '@tiptap/extension-text'
+import { fromAny, fromPartial } from '@total-typescript/shoehorn'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { nextTick, ref, type Component } from 'vue'
-import { applyUpdate, Doc } from 'yjs'
+import { nextTick, ref, type Component, type Ref } from 'vue'
+import { Awareness } from 'y-protocols/awareness'
+import { applyUpdate, Doc, UndoManager } from 'yjs'
 
+import type { StoreSlide } from '@/apps/slides/collab/liveDeck'
+import type { RoomStatus } from '@/platform/collab'
 import { requireTestElement } from '@/platform/testing/dom'
 
 import {
@@ -28,6 +35,7 @@ import {
 
 const {
   duplicateSlide,
+  handleInsertSlide,
   saveSlide,
   slideIndex,
   slides: editorSlides,
@@ -43,17 +51,31 @@ const {
   savingFor,
   writeDraft,
 } = await import('@/apps/slides/stores/saving')
-const { initPresentationDoc, inReadonlyMode, loadTemplates, viewOnly } =
+const { initPresentationDoc, inReadonlyMode, loadTemplates, presentationId, viewOnly } =
   await import('@/apps/slides/stores/presentation')
+const { drawnSlides } = await import('@/apps/slides/collab/drawnDeck')
 const { offlineCopyStatus } = await import('@/apps/slides/stores/offlineCopy')
 const { RECORD_PREFIX } = await import('@/apps/slides/utils/slidesCaches')
 const { keepRecovery, readRecovery, removeNewestRecovery } = await import('./recovery')
 const { toast, useKeyboardShortcut } = await import('frappe-ui')
 const { changeSlideInSlideshow } = await import('@/apps/slides/stores/slideshow')
 const { router: slidesRouter } = await import('@/apps/slides/router')
-const { setActiveElements } = await import('@/apps/slides/stores/element')
+const elementStore = await import('@/apps/slides/stores/element')
+const { setActiveElements } = elementStore
+const editorStore = await import('@/apps/slides/composables/useTextEditor')
+// the old stores are untyped; the tests set them as the surface reads them
+const focusElementId = fromAny<Ref<string | null>, unknown>(elementStore.focusElementId)
+const activeEditor = fromAny<Ref<Editor | null>, unknown>(editorStore.activeEditor)
+const { registerElementDiv } = await import('@/apps/slides/stores/elementRegistry')
 const { convertLegacy } = await import('@/apps/slides/collab/conversion')
-const { addSlide, deleteSlide } = await import('@/apps/slides/collab/deck')
+const { addSlide, deleteSlide, ROOT, setElement } = await import('@/apps/slides/collab/deck')
+
+const slideStyles = vi.hoisted(() => ({ fontsImported: false }))
+
+vi.mock('@/apps/slides/styles/fonts.css', () => {
+  slideStyles.fontsImported = true
+  return {}
+})
 
 let mounted: Awaited<ReturnType<typeof openedSurface>> | null = null
 
@@ -438,12 +460,14 @@ describe('a deck on the content layer', () => {
     expect(viewOnly.value).toBe(true)
   })
 
-  it('shows a System Manager the reason the server sent', async () => {
+  it('shows a System Manager the reason in plain words', async () => {
     mounted = await openedSurface({
       deck: { conversion: { state: 'refused', reason: 'check: html' } },
     })
 
-    expect(statusOf(mounted.root)).toContain('Reason: check: html.')
+    expect(statusOf(mounted.root)).toContain(
+      "Reason: the upgraded version didn't match the original.",
+    )
   })
 
   it('shows no notice on a combined deck', async () => {
@@ -459,7 +483,7 @@ describe('a deck on the content layer', () => {
       {
         slides: texts.map((text) => ({
           id: text,
-          elements: [{ id: `box-${text}`, type: 'text', content: `<p>${text}</p>` }],
+          elements: [{ id: `element-${text}`, type: 'text', content: `<p>${text}</p>` }],
         })),
       },
       4 * 1024 * 1024,
@@ -470,7 +494,29 @@ describe('a deck on the content layer', () => {
 
     const doc = new Doc()
     applyUpdate(doc, answer.state)
-    return { doc, close: vi.fn(async () => {}) }
+    const changes = new Set<() => void>()
+    const room = {
+      doc,
+      close: vi.fn(async () => {}),
+      flush: vi.fn(async () => {}),
+      status: { canWrite: true, saveState: 'clean', unsentCount: 0 },
+      presence: {
+        awareness: new Awareness(doc),
+        peers: [],
+        ownPid: 1,
+        ownArrival: 1,
+        onChange: () => () => {},
+      },
+      onChange(listener: () => void) {
+        changes.add(listener)
+        return () => changes.delete(listener)
+      },
+      setStatus(next: Partial<RoomStatus>) {
+        room.status = { ...room.status, ...next }
+        changes.forEach((listener) => listener())
+      },
+    }
+    return room
   }
 
   function convertedRoom(...texts: string[]) {
@@ -484,7 +530,7 @@ describe('a deck on the content layer', () => {
     return drawn.map((slide) => slide.elements.map((element) => element.content).join())
   }
 
-  it('draws a converted presentation in the view-only editor from its room, not its rows', async () => {
+  it('draws a converted presentation from its room, not its rows, and lets it be edited', async () => {
     convertedRoom('one', 'two', 'three')
     mounted = await openedSurface({ deck: { is_converted: true } })
 
@@ -492,8 +538,252 @@ describe('a deck on the content layer', () => {
     expect(drawnTexts()).toEqual(
       ['one', 'two', 'three'].map((text) => expect.stringContaining(`>${text}</p>`)),
     )
-    expect(viewOnly.value).toBe(true)
+    expect(viewOnly.value).toBe(false)
     expect(saves).toEqual([])
+  })
+
+  it('sends a change to the room and never saves the rows', async () => {
+    const doc = convertedRoom('one')
+    mounted = await openedSurface({ deck: { is_converted: true } })
+    await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+
+    fromAny<StoreSlide[], unknown>(editorSlides.value)[0].background = '#123456'
+    markDirty()
+    await nextTick()
+
+    const [slide] = drawnSlides(doc)
+    expect(slide.background).toBe('#123456')
+    expect(saves).toEqual([])
+    expect(dirty.value).toBe(false)
+  })
+
+  it('stops editing while the room cannot write and starts again when it can', async () => {
+    const room = roomOf('one')
+    collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
+    mounted = await openedSurface({ deck: { is_converted: true } })
+    await vi.waitFor(() => expect(viewOnly.value).toBe(false))
+
+    room.setStatus({ canWrite: false, pauseReason: 'server' })
+    await vi.waitFor(() => expect(viewOnly.value).toBe(true))
+
+    room.setStatus({ canWrite: true, pauseReason: null })
+    await vi.waitFor(() => expect(viewOnly.value).toBe(false))
+  })
+
+  describe('centred text restored while its font is still loading', () => {
+    const CENTRED = 'translate(-50%, -50%)'
+    const SAVED_TOP = 200
+    const FALLBACK_HEIGHT = 40
+    const FONT_HEIGHT = 100
+    const TOP_IN_THE_FONT = SAVED_TOP - FONT_HEIGHT / 2
+    const browser = {
+      status: 'loaded',
+      height: FONT_HEIGHT,
+      ready: Promise.resolve<unknown>(undefined),
+      fontArrives: () => {},
+    }
+
+    beforeEach(() => {
+      Object.assign(browser, { status: 'loaded', height: FONT_HEIGHT, ready: Promise.resolve() })
+      Object.defineProperty(document, 'fonts', { configurable: true, value: browser })
+      vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(
+        () => browser.height,
+      )
+    })
+
+    afterEach(() => {
+      vi.restoreAllMocks()
+      Reflect.deleteProperty(document, 'fonts')
+    })
+
+    function fontStartsLoading() {
+      browser.status = 'loading'
+      browser.height = FALLBACK_HEIGHT
+      browser.ready = new Promise((resolve) => {
+        browser.fontArrives = () => {
+          browser.status = 'loaded'
+          browser.height = FONT_HEIGHT
+          resolve(browser)
+        }
+      })
+    }
+
+    // a co-editor deletes a slide, this tab opens without it, the co-editor undoes that
+    async function openedWithSlideRestored() {
+      const room = roomOf('one', 'two')
+      collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
+      const { doc } = room
+      const [first, second] = drawnSlides(doc)
+      const [element] = second.elements
+      for (const { id } of [...first.elements, element]) {
+        setElement(doc, id, {
+          frame: { left: 100, top: SAVED_TOP, width: 300, transform: CENTRED },
+        })
+      }
+
+      const peer = new UndoManager([doc.getMap(ROOT.slides), doc.getMap(ROOT.elements)], {
+        trackedOrigins: new Set(['peer']),
+      })
+      doc.transact(() => deleteSlide(doc, second.clientId), 'peer')
+      mounted = await openedSurface({ deck: { is_converted: true } })
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+
+      fontStartsLoading()
+      peer.undo()
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(2))
+
+      const saved = () =>
+        doc.getMap<Map<string, unknown>>(ROOT.elements).get(element.id)!.get('frame')
+      return { doc, saved }
+    }
+
+    const restored = () => fromAny<StoreSlide[], unknown>(editorSlides.value)[1].elements[0]
+
+    async function setOpacity(opacity: number) {
+      restored().opacity = opacity
+      markDirty()
+      await nextTick()
+    }
+
+    it('saves the position worked out in the font, once it has arrived', async () => {
+      const { saved } = await openedWithSlideRestored()
+
+      browser.fontArrives()
+
+      await vi.waitFor(() => expect(restored().top).toBe(TOP_IN_THE_FONT))
+      expect(saved()).toMatchObject({ top: SAVED_TOP, transform: CENTRED })
+
+      await setOpacity(50)
+
+      expect(saved()).toMatchObject({ top: TOP_IN_THE_FONT, transform: 'none' })
+    })
+
+    it('saves an edit still unsent when the font arrives, and not its measured position', async () => {
+      const { doc, saved } = await openedWithSlideRestored()
+
+      restored().opacity = 50
+      browser.fontArrives()
+
+      await vi.waitFor(() => expect(restored().top).toBe(TOP_IN_THE_FONT))
+      expect(restored().opacity).toBe(50)
+      expect(drawnSlides(doc)[1].elements[0].opacity).toBe(50)
+      expect(saved()).toMatchObject({ top: SAVED_TOP, transform: CENTRED })
+    })
+
+    it('keeps the saved centre through an edit made before the font arrives', async () => {
+      const { doc, saved } = await openedWithSlideRestored()
+
+      await setOpacity(50)
+
+      expect(saved()).toMatchObject({ top: SAVED_TOP, transform: CENTRED })
+      expect(drawnSlides(doc)[1].elements[0].opacity).toBe(50)
+
+      browser.fontArrives()
+      await vi.waitFor(() => expect(restored().top).toBe(TOP_IN_THE_FONT))
+      await setOpacity(60)
+
+      expect(saved()).toMatchObject({ top: TOP_IN_THE_FONT, transform: 'none' })
+    })
+
+    it('keeps right-aligned text on its edge at the first keystroke after the font arrives', async () => {
+      const room = roomOf('one')
+      collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
+      const id = 'element-one'
+      setElement(room.doc, id, { frame: { left: 500, top: 300, transform: CENTRED } })
+      mounted = await openedSurface({ deck: { is_converted: true } })
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+      await vi.waitFor(() => expect(viewOnly.value).toBe(false))
+      const rendered = { width: 100 }
+      vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(() => rendered.width)
+      registerElementDiv(id, Object.assign(document.createElement('div'), { contains: () => true }))
+      const type = async (text: string, width: number) => {
+        rendered.width = width
+        const editor: Editor = fromAny(activeEditor.value)
+        editor.commands.insertContentAt(editor.state.doc.content.size - 1, text)
+        await nextTick()
+      }
+      const drawnLeft = () =>
+        fromPartial<Array<{ elements: Array<{ left: number }> }>>(editorSlides.value)[0].elements[0]
+          .left
+      const saved = () => room.doc.getMap<Map<string, unknown>>(ROOT.elements).get(id)!.get('frame')
+
+      fontStartsLoading()
+      focusElementId.value = id
+      await vi.waitFor(() => expect(activeEditor.value).toBeTruthy())
+      await nextTick()
+      fromAny<Editor, unknown>(activeEditor.value).commands.setTextAlign('right')
+      await type('x', 120)
+      expect(saved()).toMatchObject({ left: 500, transform: CENTRED })
+
+      rendered.width = 160
+      browser.fontArrives()
+      await vi.waitFor(() => expect(drawnLeft()).toBe(420))
+      await nextTick()
+      await type('y', 180)
+
+      expect(saved()).toMatchObject({ left: 400, transform: 'none' })
+    })
+  })
+
+  describe('with a text editor open when the room stops taking writes', () => {
+    let editor: Editor
+
+    async function openedWithEditor(focusedId: string | null) {
+      const room = roomOf('one')
+      collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
+      mounted = await openedSurface({ deck: { is_converted: true } })
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+      await vi.waitFor(() => expect(viewOnly.value).toBe(false))
+      editor = new Editor({ extensions: [Document, Paragraph, Text] })
+      activeEditor.value = editor
+      focusElementId.value = focusedId
+      return room
+    }
+
+    afterEach(() => {
+      focusElementId.value = null
+      activeEditor.value = null
+      editor.destroy()
+    })
+
+    it('stops the editor taking typing, and lets it type again afterwards', async () => {
+      const room = await openedWithEditor('e1')
+
+      room.setStatus({ canWrite: false, pauseReason: 'server' })
+      await vi.waitFor(() => expect(viewOnly.value).toBe(true))
+      expect(editor.isEditable).toBe(false)
+
+      room.setStatus({ canWrite: true, pauseReason: null })
+      await vi.waitFor(() => expect(viewOnly.value).toBe(false))
+      expect(editor.isEditable).toBe(true)
+    })
+
+    it('leaves an element that was only selected out of text editing afterwards', async () => {
+      const room = await openedWithEditor(null)
+      editor.setEditable(false)
+
+      room.setStatus({ canWrite: false, pauseReason: 'server' })
+      await vi.waitFor(() => expect(viewOnly.value).toBe(true))
+      room.setStatus({ canWrite: true, pauseReason: null })
+      await vi.waitFor(() => expect(viewOnly.value).toBe(false))
+
+      expect(editor.isEditable).toBe(false)
+    })
+  })
+
+  it('edits a converted presentation that another tab has open, with no lock between them', async () => {
+    // ifAvailable with another tab holding the lock: granted nothing
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      locks: {
+        request: async (_: string, __: LockOptions, hold: (lock: null) => unknown) => hold(null),
+      },
+    })
+    convertedRoom('one')
+    mounted = await openedSurface({ deck: { is_converted: true } })
+    await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+
+    expect(inReadonlyMode.value).toBe(false)
   })
 
   it('draws a slide the room gains after it opened', async () => {
@@ -593,6 +883,129 @@ describe('a deck on the content layer', () => {
   })
 })
 
+describe('the fonts a slide draws with', () => {
+  afterEach(() => {
+    Reflect.deleteProperty(document, 'fonts')
+  })
+
+  it('come with the surface, so every view of a presentation has them', async () => {
+    mounted = await openedSurface()
+
+    expect(slideStyles.fontsImported).toBe(true)
+  })
+
+  it('are left for the browser to fetch when a slide uses one, not all asked for on open', async () => {
+    const load = vi.fn(async () => [])
+    Object.defineProperty(document, 'fonts', { configurable: true, value: { load } })
+
+    mounted = await openedSurface()
+
+    expect(load).not.toHaveBeenCalled()
+  })
+})
+
+describe('printing a presentation', () => {
+  let print: ReturnType<typeof vi.fn<() => void>>
+
+  function clickExport() {
+    document.querySelector<HTMLElement>('header [aria-label="Export"]')!.click()
+  }
+
+  beforeEach(() => {
+    print = vi.fn<() => void>()
+    window.print = print
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    Reflect.deleteProperty(document, 'fonts')
+  })
+
+  it('waits for a font the drawn text uses', async () => {
+    let finishLoading = () => {}
+    const load = vi.fn(
+      () =>
+        new Promise<unknown[]>((resolve) => {
+          finishLoading = () => resolve([])
+        }),
+    )
+    Object.defineProperty(document, 'fonts', { configurable: true, value: { load } })
+    mounted = await openedSurface()
+    vi.useFakeTimers()
+
+    clickExport()
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(load).toHaveBeenCalledWith(expect.stringContaining('Anton'), 'Drawn')
+    expect(load).not.toHaveBeenCalledWith(expect.stringContaining('Courier'), expect.anything())
+    expect(print).not.toHaveBeenCalled()
+
+    finishLoading()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(print).toHaveBeenCalledOnce()
+  })
+
+  it('opens one print dialog when Export is clicked again during the wait', async () => {
+    let finishLoading = () => {}
+    const loading = new Promise<unknown[]>((resolve) => {
+      finishLoading = () => resolve([])
+    })
+    Object.defineProperty(document, 'fonts', {
+      configurable: true,
+      value: { load: vi.fn(() => loading) },
+    })
+    mounted = await openedSurface()
+    vi.useFakeTimers()
+
+    clickExport()
+    await vi.advanceTimersByTimeAsync(1000)
+    clickExport()
+    await vi.advanceTimersByTimeAsync(1000)
+    finishLoading()
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(print).toHaveBeenCalledOnce()
+
+    clickExport()
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(print).toHaveBeenCalledTimes(2)
+  })
+
+  it('prints anyway when the font wait fails, and a later Export still works', async () => {
+    const load = vi.fn(() => {
+      throw new Error('Unreadable font')
+    })
+    Object.defineProperty(document, 'fonts', { configurable: true, value: { load } })
+    mounted = await openedSurface()
+    vi.useFakeTimers()
+
+    clickExport()
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(print).toHaveBeenCalledOnce()
+
+    clickExport()
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(print).toHaveBeenCalledTimes(2)
+  })
+
+  it('still prints when a font never arrives', async () => {
+    const load = vi.fn(() => new Promise<unknown[]>(() => {}))
+    Object.defineProperty(document, 'fonts', { configurable: true, value: { load } })
+    mounted = await openedSurface()
+    vi.useFakeTimers()
+
+    clickExport()
+    await vi.advanceTimersByTimeAsync(60_000)
+
+    expect(load).toHaveBeenCalled()
+    expect(print).toHaveBeenCalledOnce()
+  })
+})
+
 describe('Slides panels', () => {
   it('offers a signed-out reader of a public presentation no comments or versions', async () => {
     mounted = await openedSurface({ panels: [] })
@@ -635,6 +1048,7 @@ describe('Slides offline copy', () => {
         register,
         getRegistration: async () => ({ unregister }),
         addEventListener: () => {},
+        removeEventListener: () => {},
         controller: {
           postMessage: (message: string, [port]: MessagePort[]) => {
             posted.push(message)
@@ -667,8 +1081,9 @@ describe('Slides offline copy', () => {
 
     async function openedComposite() {
       mounted = await openedSurface({ composite: groups })
-      const root = mounted.root
-      await vi.waitFor(() => expect(root.textContent).toContain('1 · ready'))
+      await vi.waitFor(() =>
+        expect(fromAny<StoreSlide[], unknown>(editorSlides.value)[0]?.name).toBe('a1'),
+      )
       await nextTick()
     }
 
@@ -690,6 +1105,53 @@ describe('Slides offline copy', () => {
 
       expect(offlineCopyButton()).not.toBeNull()
     })
+  })
+
+  it('fetches each bundled font once through the worker, so it is there offline', async () => {
+    const fonts: { url: string; isMarked: boolean }[] = []
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      if (url.includes('/slides/fonts/')) {
+        fonts.push({ url, isMarked: new Headers(init?.headers).has('x-slides-pin') })
+      }
+
+      return new Response('', { status: 404 })
+    })
+
+    mounted = await openedSurface()
+
+    await vi.waitFor(() => expect(fonts.length).toBeGreaterThan(0))
+    const urls = fonts.map(({ url }) => url)
+    expect(urls).toContain('/assets/suite/slides/fonts/Anton/Anton-Regular-latin.woff2')
+    expect(new Set(urls).size).toBe(urls.length)
+    expect(fonts.some(({ isMarked }) => isMarked)).toBe(false)
+  })
+
+  it('fetches the fonts once a worker takes control, however late', async () => {
+    const worker: EventTarget & { controller: object | null } = Object.assign(new EventTarget(), {
+      register,
+      controller: null,
+    })
+    Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: worker })
+    const fonts: string[] = []
+    vi.stubGlobal('fetch', async (url: string) => {
+      if (url.includes('/slides/fonts/')) {
+        fonts.push(url)
+      }
+
+      return new Response('', { status: 404 })
+    })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+
+    mounted = await openedSurface()
+    await vi.advanceTimersByTimeAsync(10_000)
+    vi.useRealTimers()
+    expect(fonts).toEqual([])
+    worker.controller = { postMessage: () => {} }
+    worker.dispatchEvent(new Event('controllerchange'))
+
+    await vi.waitFor(() =>
+      expect(fonts).toContain('/assets/suite/slides/fonts/Anton/Anton-Regular-latin.woff2'),
+    )
   })
 
   it('hides the copy from someone who is not the owner', async () => {
@@ -878,8 +1340,13 @@ describe('Slides offline copy', () => {
       })
 
       mounted = await opening
-      const root = mounted.root
-      await vi.waitFor(() => expect(root.textContent).toContain('2 · failed'), { timeout: 5000 })
+      await vi.waitFor(
+        () =>
+          expect(fromAny<StoreSlide[], unknown>(editorSlides.value)[1]?.compositePlaceholder).toBe(
+            'failed',
+          ),
+        { timeout: 5000 },
+      )
       await new Promise((resolve) => setTimeout(resolve, 50))
 
       expect(deleted).toEqual([])
@@ -2357,3 +2824,97 @@ function isSavedSlide(value: unknown): value is SavedSlidePayload {
     typeof value.elements === 'string'
   )
 }
+
+describe('a presentation left while a request is out', () => {
+  // only the next presentation has a black slide
+  const slideB = { clientId: 'b1', background: '#000000ff', elements: [] }
+
+  function shownBackgrounds() {
+    return editorSlides.value.map((slide) => slide.background)
+  }
+
+  function leave() {
+    mounted?.app.unmount()
+    mounted?.root.remove()
+  }
+
+  it('keeps the next presentation when a group of the left one arrives', async () => {
+    const group = Promise.withResolvers<unknown[]>()
+    mounted = await openedSurface({ composite: { a: group.promise } })
+    await vi.waitFor(() =>
+      expect(server.fetch.mock.calls.some(([url]) => String(url).includes('composite_group'))).toBe(
+        true,
+      ),
+    )
+
+    leave()
+    mounted = await openedSurface({ slides: [slideB] })
+    group.resolve([{ name: 'a1', idx: 1, parent: 'a', background: '#ffffffff', elements: [] }])
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    expect(presentationId.value).toBe(mounted.docname)
+    expect(shownBackgrounds()).toEqual(['#000000ff'])
+  })
+
+  it('keeps the next presentation when a theme change of the left one finishes', async () => {
+    mounted = await openedSurface()
+    const presentationA = mounted.docname
+    const readA = server.fetch.getMockImplementation()!
+    const write = Promise.withResolvers<void>()
+    server.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url.includes('theme')) {
+        await write.promise
+        return new Response(JSON.stringify({ message: { modified: 'M2', base_modified: 'M1' } }), {
+          status: 200,
+        })
+      }
+
+      return readA(url, init)
+    })
+    themeChange.update('Dark')
+    await vi.waitFor(() =>
+      expect(server.fetch.mock.calls.some(([url]) => String(url).includes('theme'))).toBe(true),
+    )
+
+    leave()
+    mounted = await openedSurface({ slides: [slideB] })
+    const readB = server.fetch.getMockImplementation()!
+    // the left presentation's own read still answers with its own slides
+    server.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (String(init?.body).includes(presentationA)) {
+        return readA(url, init)
+      }
+
+      return readB(url, init)
+    })
+    write.resolve()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    expect(presentationId.value).toBe(mounted.docname)
+    expect(shownBackgrounds()).toEqual(['#000000ff'])
+  })
+  it('keeps the next presentation when a layout slide of the left one is measured', async () => {
+    mounted = await openedSurface()
+    const fonts = Promise.withResolvers<void>()
+    Object.defineProperty(document, 'fonts', {
+      configurable: true,
+      value: { ready: fonts.promise },
+    })
+    const centred = {
+      type: 'text',
+      content: 'Title',
+      left: 480,
+      top: 270,
+      transform: 'translate(-50%, -50%)',
+    }
+    handleInsertSlide(0, { elements: [centred] })
+
+    leave()
+    mounted = await openedSurface({ slides: [slideB] })
+    fonts.resolve()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    Reflect.deleteProperty(document, 'fonts')
+
+    expect(shownBackgrounds()).toEqual(['#000000ff'])
+  })
+})

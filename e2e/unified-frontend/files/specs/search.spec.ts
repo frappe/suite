@@ -46,6 +46,17 @@ test("clearing the term restores the listing at the current route", async ({ pag
 	await expect(page.getByText(`${term}-nested`, { exact: true })).toBeVisible();
 });
 
+test("an empty search names its term and offers Clear search", async ({ page }) => {
+	const missing = `${term}-nothing-matches`;
+	await page.goto(`/drive/f/${home.name}?q=${missing}`);
+	await expect(page.getByText(`No results for “${missing}”`, { exact: true })).toBeVisible();
+
+	// The field's own × button has the same name, but no text.
+	await page.getByRole("button", { name: "Clear search", exact: true }).filter({ hasText: "Clear search" }).click();
+	await expect(page).not.toHaveURL(/q=/);
+	await expect(page.getByText(`${term}-nested`, { exact: true })).toBeVisible();
+});
+
 test("New stays during a search and adds to the folder the search started from", async ({ page }) => {
 	await page.goto(`/drive/f/${home.name}`);
 	await expect(page.getByRole("button", { name: "New", exact: true })).toBeVisible();

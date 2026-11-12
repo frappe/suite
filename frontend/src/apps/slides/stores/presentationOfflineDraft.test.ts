@@ -158,7 +158,7 @@ describe('a draft kept against a newer stored document', () => {
     await reopen()
     const doc = await reopen()
 
-    expect(doc.modified).toBe('M1')
+    expect(doc?.modified).toBe('M1')
     expect(slides.value[0].background).toBe(MINE)
     expect(warning).not.toHaveBeenCalled()
     const local = await storedDraft()
@@ -178,7 +178,7 @@ describe('a draft kept against a newer stored document', () => {
     setNetwork({ isOnline: true, isReachable: false })
     const doc = await reopen()
 
-    expect(doc.modified).toBe('M1')
+    expect(doc?.modified).toBe('M1')
     expect(slides.value[0].background).toBe(MINE)
     expect(warning).not.toHaveBeenCalled()
     const local = await storedDraft()

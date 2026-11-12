@@ -82,7 +82,7 @@ test("renaming and moving a folder update its trail", async ({ owner, run }) => 
 	// The open folder renames from its own menu.
 	const renamed = `${original}-renamed`;
 	await page.getByRole("button", { name: "More file actions" }).click();
-	await page.getByRole("menuitem", { name: "Rename folder" }).click();
+	await page.getByRole("menuitem", { name: "Rename", exact: true }).click();
 	const dialog = page.getByRole("dialog", { name: "Rename" });
 	await dialog.getByRole("textbox", { name: "Name" }).fill(renamed);
 	await dialog.getByRole("button", { name: "Rename", exact: true }).click();

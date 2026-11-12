@@ -72,7 +72,7 @@ vi.mock('@/api', async () => {
       slides: async () => registration,
       drive: async () => ({ policy: () => ({ effects: 'none' }) }),
     },
-    { persistence: false, transport: createTransport({ fetch: server.fetch }) },
+    { transport: createTransport({ fetch: server.fetch }) },
   )
 
   forgetTemplates.run = () => {
@@ -231,10 +231,13 @@ vi.mock('@/apps/slides/components/NavigationPanel.vue', async () => {
 for (const path of [
   '@/apps/slides/components/SlideContainer.vue',
   '@/apps/slides/components/LayoutDialog.vue',
-  './ExportView.vue',
 ]) {
   vi.doMock(path, () => ({ default: { render: () => null } }))
 }
+
+vi.doMock('./ExportView.vue', () => ({
+  default: { render: () => h('div', [h('span', { style: 'font-family: Anton' }, 'Drawn')]) },
+}))
 
 vi.doMock('@/apps/slides/components/Toolbar.vue', () => ({
   default: { render: () => h('div', { 'data-toolbar': '' }) },
@@ -328,7 +331,7 @@ export async function openedSurface({
   slides?: unknown[]
   firstLoad?: Promise<void | Response>
   media?: DocumentSession['media']
-  composite?: Record<string, unknown[] | Error>
+  composite?: Record<string, unknown[] | Error | Promise<unknown[]>>
   deck?: Record<string, unknown>
   panels?: DocumentSession['panels']['value']
 } = {}) {
@@ -387,7 +390,8 @@ export async function openedSurface({
 
     if (composite && url.includes('composite_group')) {
       const [reference] = JSON.parse(String(init?.body)).references
-      const group = composite[reference]
+      // a test can hold a group back
+      const group = await composite[reference]
       if (group instanceof Error) {
         throw group
       }

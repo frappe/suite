@@ -6,8 +6,9 @@
   /* The two top bars' colours, in one place. Both bars and their hover and
      "on" fills read these, so a tint changes here and nowhere else. */
   --sn-bar-bg: var(--surface-base);
-  --sn-bar-line: var(--outline-gray-2);
-  --sn-bar-hover: var(--surface-gray-3);
+  --sn-bar-line: var(--outline-gray-1);
+  --sn-bar-hover: var(--surface-gray-2);
+  --sn-bar-on: var(--surface-gray-3);
   --sn-bar-on-edge: transparent;
   --sn-bar-muted: var(--ink-gray-5);
   display: flex;
@@ -141,16 +142,31 @@
   border-radius: 2px;
 }
 
-/* ── Formula bar (inside row 2, SheetToolbar's `formula` slot) ───────────── */
+/* ── Row 3 · the formula bar (36 px) ─────────────────────────────────────── */
+/* Plain text on the bar at rest: no border, no fill. */
+.sn-formula-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--sn-bar-line);
+  background: var(--sn-bar-bg);
+  flex-shrink: 0;
+}
+.sn-formula-divider {
+  width: 1px;
+  height: 16px;
+  background: var(--sn-bar-line);
+  flex-shrink: 0;
+}
 
-/* Name box and value field: white, bordered fields on the bar, so they
-   read as places to type. */
 .sn-cell-ref {
   box-sizing: border-box;
   /* One width for every selection, so the value field beside it never moves
      while you select, drag or scroll (Excel and LibreOffice do the same). It
-     fits AA100:AB200; a longer reference ends in an ellipsis. The phone
-     layout in SheetToolbar.vue sets a narrower --sn-name-w and --sn-name-pad. */
+     fits AA100:AB200; a longer reference ends in an ellipsis. A phone sets a
+     narrower --sn-name-w and --sn-name-pad below. */
   --sn-name-w: calc(12ch + 18px);
   --sn-name-pad: 18px;
   width: var(--sn-name-w);
@@ -163,18 +179,19 @@
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   color: var(--ink-gray-8);
-  background: var(--surface-base);
-  border: 1px solid var(--outline-gray-3);
+  background: transparent;
+  border: 1px solid transparent;
   border-radius: 6px;
   outline: none;
-  transition: border-color 0.12s;
+  transition: background-color 0.12s;
 }
 .sn-cell-ref:hover {
-  border-color: var(--outline-gray-4);
+  background: var(--sn-bar-hover);
 }
 /* Focused, it grows to show the whole reference (--sn-name-ch: its length
-   + 1, set in index.vue) over the value field. The negative margin keeps
-   its place in the row at --sn-name-w, so nothing after it moves. */
+   + 1, set in index.vue) over the value field, so it needs a fill to cover
+   it. The negative margin keeps its place in the row at --sn-name-w, so
+   nothing after it moves. */
 .sn-cell-ref:focus {
   --sn-name-full: min(
     240px,
@@ -184,8 +201,8 @@
   z-index: 2;
   width: var(--sn-name-full);
   margin-right: calc(var(--sn-name-w) - var(--sn-name-full));
-  border-color: var(--outline-gray-5);
-  box-shadow: 0 0 0 2px var(--outline-gray-2);
+  background: var(--surface-base);
+  box-shadow: none;
 }
 /* The value field: fx, then the cell's input in the UI font. It takes the
    row's spare width and keeps enough to read a formula when the row is tight. */
@@ -197,20 +214,20 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0 10px;
-  border-radius: 8px;
-  background: var(--surface-base);
-  border: 1px solid var(--outline-gray-3);
-  transition:
-    border-color 0.12s,
-    box-shadow 0.12s;
 }
-.sn-formula-wrap:hover {
-  border-color: var(--outline-gray-4);
+.sn-formula-wrap:focus-within .sn-fx-label {
+  color: var(--ink-gray-7);
 }
-.sn-formula-wrap:focus-within {
-  border-color: var(--outline-gray-5);
-  box-shadow: 0 0 0 2px var(--outline-gray-2);
+@media (max-width: 620px) {
+  .sn-formula-wrap {
+    min-width: 96px;
+  }
+  .sn-cell-ref {
+    /* Fits A1:B20; a longer reference ends in an ellipsis. */
+    --sn-name-w: calc(8ch + 14px);
+    --sn-name-pad: 14px;
+    padding: 0 6px;
+  }
 }
 .sn-fx-label {
   flex-shrink: 0;
@@ -218,6 +235,7 @@
   font-style: italic;
   color: var(--ink-gray-4);
   user-select: none;
+  transition: color 0.12s;
 }
 .sn-formula-input {
   flex: 1;
@@ -231,6 +249,10 @@
   border: 0;
   outline: none;
 }
+/* The forms plugin's blue ring on a focused input: here only the caret shows. */
+.sn-formula-input:focus {
+  box-shadow: none;
+}
 .sn-formula-input::placeholder {
   color: var(--ink-gray-4);
 }
@@ -241,7 +263,8 @@
   top: calc(100% + 4px);
   bottom: auto;
   left: 0;
-  right: 0;
+  /* The value field fills the row; the list stays a readable width. */
+  width: min(100%, 480px);
   background: var(--surface-elevation-2);
   border: 1px solid var(--outline-gray-2);
   border-radius: 8px;
@@ -362,21 +385,22 @@
   height: 12px;
 }
 
-/* Remote selection rectangle: a 2px outline in the peer's colour and their
-   selection shade behind the range, so it reads as a region. Colours are
-   Writer's (`.sn-peer` in SheetEditor.global.css picks the theme's shades). */
+/* Remote selection rectangle: a soft 1px outline in the peer's colour and
+   Writer's selection shade behind the range, so it reads as a region without
+   competing with this tab's own selection (`.sn-peer` in
+   SheetEditor.global.css picks the theme's shades). */
 .sn-remote-cursor {
   position: absolute;
   pointer-events: none;
   box-sizing: border-box;
-  border: 2px solid var(--rc);
+  border: 1px solid color-mix(in srgb, var(--rc) 60%, transparent);
   background: var(--rc-selection);
   /* Default: no animation. The class below opts in for one paint cycle
      when the peer actually changes cells (vs. local scroll). */
   transition: none;
 }
 /* The box carrying a cell's shared label draws over the others there. */
-.sn-remote-cursor--named {
+.sn-remote-cursor--labelled {
   z-index: 1;
 }
 .sn-remote-cursor--moved {
@@ -386,31 +410,47 @@
     width 0.12s ease-out,
     height 0.12s ease-out;
 }
-/* The name flag, styled as Writer's caret label: tint behind, ink text,
-   a 1px ring in the solid colour. */
+/* The name flag, as Writer's caret label: tint behind, ink text, a 1px ring
+   in the solid colour. It sits on the box's top edge, and shows at once. */
 .sn-remote-cursor-label {
   position: absolute;
-  top: -18px;
-  left: -2px;
-  background: var(--rc-tint);
+  bottom: 100%;
+  left: -1px;
+  height: 16px;
+  background-color: var(--rc-tint);
   box-shadow: inset 0 0 0 1px var(--rc);
   color: var(--rc-ink);
-  font-size: 10px;
-  font-weight: 600;
-  padding: 1px 5px;
-  border-radius: 3px 3px 3px 0;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 0 6px;
+  border-radius: 6px 6px 6px 1px;
   white-space: nowrap;
   line-height: 16px;
   max-width: 160px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
-.sn-rename-err {
-  margin: 6px 0 0;
-  font-size: 12px;
-  color: var(--ink-red-6);
-  letter-spacing: 0.02em;
+/* Three seconds after its person stops, the flag shrinks to a dot centred on
+   the box's corner. Inert: useRemoteCursorNames finds a hover by position, so
+   the cells under the dot stay clickable. */
+.sn-remote-cursor--folded .sn-remote-cursor-label {
+  bottom: calc(100% - 3px);
+  left: -5px;
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border-radius: 50%;
+  background-color: var(--rc);
+  box-shadow: none;
+  font-size: 0;
+  transition-duration: 0.2s;
+  transition-property: background-color, border-radius, bottom, font-size, height, left, padding;
+  transition-timing-function: ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sn-remote-cursor--folded .sn-remote-cursor-label {
+    transition: none;
+  }
 }
 
 /* Add-more-rows strip — sits between the canvas and the bottom bar. */

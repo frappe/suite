@@ -1,7 +1,8 @@
-import { Node } from '@tiptap/core'
+import { Node, type AnyExtension } from '@tiptap/core'
+import { TextStyleKit } from '@tiptap/extension-text-style'
 import { Fragment } from '@tiptap/pm/model'
 import { useFileUpload } from 'frappe-ui'
-import { ImageExtension } from 'frappe-ui/experimental'
+import { Heading, Image, ImageGroup, ImageViewer, RichTextKit } from 'frappe-ui/editor'
 
 import { randomString } from '@/apps/mail/utils'
 
@@ -36,7 +37,7 @@ export const uploadFunction = async (file: File) =>
  * Images carry a `data-cid` so the send path can turn them into inline attachments — stamped here,
  * on the way into the document, for any image that came from our own uploads.
  */
-export const CustomImageExtension = ImageExtension.extend({
+export const CustomImageExtension = Image.extend({
   addAttributes() {
     return {
       ...this.parent?.(),
@@ -59,3 +60,36 @@ export const CustomImageExtension = ImageExtension.extend({
   HTMLAttributes: { width: '600', style: 'max-width:100%; height:auto' },
   uploadFunction,
 })
+
+// Signature and vacation images, which have no mail to be attached to.
+export const uploadPrivateFile = (file: File) => useFileUpload().upload(file, { private: true })
+
+/**
+ * The extensions every Mail editor is built from. `divParagraphs` is the mail-body form, a line as
+ * `<div>`; the vacation message has always been kept as `<p>`.
+ */
+export const mailEditorKit = ({
+  image = Image,
+  divParagraphs = true,
+}: { image?: AnyExtension; divParagraphs?: boolean } = {}): AnyExtension[] => [
+  RichTextKit.configure({
+    starterKit: divParagraphs ? { paragraph: false } : {},
+    // The kit's heading stamps table-of-contents ids that would go out in the mail; the plain one
+    // is added back below.
+    heading: false,
+    // Mail's image takes the kit's group and viewer down with it, so those are added back below.
+    image: false,
+    // A mail's files sit beside its body as attachments, never inside it.
+    attachment: false,
+    // The composer brings its own `@`, searching the account's contacts.
+    mention: false,
+    tag: false,
+  }),
+  Heading,
+  image,
+  ImageGroup,
+  ImageViewer,
+  // A signature's or a pasted paragraph's font, which the kit's own text style would drop.
+  TextStyleKit.configure({ textStyle: false, backgroundColor: false, color: false }),
+  ...(divParagraphs ? [CustomParagraphExtension] : []),
+]

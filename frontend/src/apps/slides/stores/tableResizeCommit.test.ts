@@ -25,7 +25,7 @@ describe('committing a table frame resize', () => {
         clientId: 'c1',
         elements: [
           {
-            id: 1,
+            id: '1',
             type: 'table',
             left: 100,
             top: 50,
@@ -42,7 +42,7 @@ describe('committing a table frame resize', () => {
       },
     ]
     slideIndex.value = 0
-    activeElementIds.value = [1]
+    activeElementIds.value = ['1']
     resetInteractionOffset()
     updateSelectionBounds({ left: 100, top: 50, width: element().width, height: 80 })
 

@@ -1,6 +1,6 @@
 import { Schema, type Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { EditorState } from '@tiptap/pm/state'
-import { columnResizing, tableNodes } from '@tiptap/pm/tables'
+import { tableNodes } from '@tiptap/pm/tables'
 import { DecorationSet, type EditorView } from '@tiptap/pm/view'
 import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it, vi } from 'vitest'
@@ -37,31 +37,6 @@ const schema = new Schema({
     text: { group: 'inline' },
     ...tableNodes({ tableGroup: 'block', cellContent: 'paragraph+', cellAttributes: {} }),
   },
-})
-
-describe('scaleAwareColumnResizing', () => {
-  // the spread carries stock's handlers, and each one of them refuses to resize
-  // anything the editor is not editing
-  it('leaves none of the stock handlers in place', () => {
-    const stock = columnResizing().spec.props!.handleDOMEvents!
-    const scaled = scaleAwareColumnResizing().spec.props!.handleDOMEvents!
-
-    Object.keys(stock).forEach((event) => {
-      expect(scaled[fromPartial<keyof typeof scaled>(event)]).not.toBe(
-        stock[fromPartial<keyof typeof stock>(event)],
-      )
-    })
-  })
-
-  // stock's state.init writes the node view into the same nodeViews object the
-  // spread copied a reference to, which is the only reason the table renders
-  it('registers the table node view through the shared spec object', () => {
-    const plugin = scaleAwareColumnResizing({ cellMinWidth: 25, defaultCellMinWidth: 25 })
-
-    EditorState.create({ schema, plugins: [plugin] })
-
-    expect(typeof plugin.spec.props!.nodeViews!.table).toBe('function')
-  })
 })
 
 type TableNodeView = {

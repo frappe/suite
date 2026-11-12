@@ -86,12 +86,12 @@ import {
 
 import type { AreaDefinition } from '@/platform/contracts'
 import { openAreaShortcuts } from '@/platform/shortcuts'
+import { useWorkspace } from '@/platform/workspace'
 import AccountMenu from '@/shell/AccountMenu.vue'
 import { useAreaProgress } from '@/shell/areaProgress'
 import RailItem from '@/shell/RailItem.vue'
 import SearchIcon from '@/shell/SearchIcon.vue'
 import { openSettings } from '@/shell/settings/useSettingsDialog'
-import { useWorkspace } from '@/shell/useWorkspace'
 import WorkspaceMenu from '@/shell/WorkspaceMenu.vue'
 import { useRootStore } from '@/stores/root'
 

@@ -40,12 +40,10 @@
       />
       <div class="space-y-1.5">
         <label class="text-ink-gray-5 block text-xs">{{ __('Message') }}</label>
-        <TextEditor
-          editor-class="prose-sm min-h-[8rem] border rounded-b-6 border-t-0 p-2 max-w-none border-outline-gray-2"
+        <MailRichTextField
+          v-model="draft.html_body"
           :placeholder="__('Type something...')"
-          :fixed-menu="buttons"
-          :content="draft.html_body"
-          @change="(val: string) => (draft.html_body = val)"
+          :div-paragraphs="false"
         />
       </div>
       <SetSieveScriptStateModal
@@ -59,20 +57,19 @@
 
 <script setup lang="ts">
 import { Button, FormControl, SettingsRow, Switch } from 'frappe-ui'
-import { TextEditor } from 'frappe-ui/experimental'
 import { computed, reactive, ref, watch } from 'vue'
 
 import { api, useMutation, useQuery, type InputOf } from '@/api'
+import MailRichTextField from '@/apps/mail/components/Controls/MailRichTextField.vue'
 import SetSieveScriptStateModal from '@/apps/mail/components/Modals/SetSieveScriptStateModal.vue'
 import { userStore } from '@/apps/mail/stores/user'
 import { raiseToast } from '@/apps/mail/utils'
-import { useScreenSize, useTextEditorButtons } from '@/apps/mail/utils/composables'
+import { useScreenSize } from '@/apps/mail/utils/composables'
 import { fromLocalInput, toLocalInput } from '@/apps/mail/utils/datetime'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 
 const store = userStore()
-const { buttons } = useTextEditorButtons()
 const { isMobile } = useScreenSize()
 const showConfirmDialog = ref(false)
 const activeSieveScript = computed(

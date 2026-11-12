@@ -49,7 +49,7 @@ vi.mock('@/apps/writer/components/CollabTextEditor.vue', async (importOriginal) 
     await importOriginal<typeof import('@/apps/writer/components/CollabTextEditor.vue')>()
   return fakeCollabTextEditor(real)
 })
-vi.mock('@/apps/writer/components/UsersBar.vue', () => ({ default: { render: () => null } }))
+vi.mock('@/platform/collab/UsersBar.vue', () => ({ default: { render: () => null } }))
 vi.mock('./WriterDocumentMenu.vue', async () =>
   (await import('./writer-surface-fakes')).fakeDocumentMenu(),
 )

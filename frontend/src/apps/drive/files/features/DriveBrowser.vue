@@ -1,6 +1,12 @@
 <template>
   <div class="flex flex-col gap-4">
-    <TabButtons v-if="rootOptions.length > 1" v-model="rootKind" :options="rootOptions" fluid />
+    <TabButtons
+      v-if="rootOptions.length > 1"
+      :key="tabsKey"
+      v-model="rootKind"
+      :options="rootOptions"
+      fluid
+    />
     <div class="overflow-hidden rounded-6 border border-outline-gray-1">
       <div
         class="flex h-11 items-center gap-1 border-b border-outline-gray-1 ps-1.5"
@@ -44,13 +50,7 @@
             @update:model-value="createFolderMutation.reset()"
             @keydown.escape.stop.prevent="newFolderTitle = null"
           />
-          <Button
-            type="submit"
-            variant="solid"
-            theme="gray"
-            :label="__('Create')"
-            :loading="createFolderMutation.isPending"
-          />
+          <Button type="submit" :label="__('Create')" :loading="createFolderMutation.isPending" />
         </form>
         <ErrorMessage
           v-if="newFolderTitle !== null && createFolderMutation.error"
@@ -106,7 +106,8 @@ import type { DriveAccess, DriveNode } from '@/apps/drive/client/types'
 import { translate as __ } from '@/platform/translation'
 
 import { nodeIcon, nodeIconTint } from '../internal/icons'
-import { locationTitle } from '../internal/locations'
+import { locationLabel, locationTitle } from '../internal/locations'
+import { useOpenedKey } from '../internal/openedKey'
 import { SKELETON_BAR } from './listSkeleton'
 
 /** The folder a Drive picker shows. `label` is its name as the breadcrumbs show it. */
@@ -153,6 +154,7 @@ const SKELETON_WIDTHS = ['w-40', 'w-28', 'w-48', 'w-32']
 const FOLDER = { kind: 'folder', title: '', mime: null, content_doctype: null } as const
 const NEW_FOLDER_ICON = [nodeIcon(FOLDER), nodeIconTint(FOLDER)]
 const listElement = useTemplateRef<HTMLElement>('listElement')
+const tabsKey = useOpenedKey(listElement)
 const discovered = useQuery(api.drive.roots.list, {})
 const rootKind = ref<'personal' | 'organization'>('personal')
 const trail = ref<Array<{ node: string; title: string; access?: DriveAccess }>>([])
@@ -160,7 +162,7 @@ const rootOptions = computed(() =>
   [
     { value: 'personal', label: __('My files') },
     ...(discovered.data?.organization
-      ? [{ value: 'organization', label: __('Organization files') }]
+      ? [{ value: 'organization', label: locationLabel('organization') }]
       : []),
   ].filter(
     (option) =>

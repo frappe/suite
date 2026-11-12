@@ -375,13 +375,25 @@ export function upgradingBanner(reason: string | null, isUnreadable: boolean): B
   return { text: `${text}${unreadable}` }
 }
 
+// Why the converter refused a document; the server sends `code` or `code: detail`
+const REFUSAL_REASONS = {
+  check: () => __("the upgraded version didn't match the original"),
+  too_large: () => __('it is too large to edit together'),
+  'unreadable-yjs': () => __("its saved changes couldn't be read"),
+  over_quota: () => __('there is no storage space left'),
+  child_timeout: () => __('the upgrade took too long'),
+  child_crash: () => __('the upgrade stopped unexpectedly'),
+  bad_answer: () => __('the upgrade gave an unreadable answer'),
+} satisfies Record<string, () => string>
+
 // An old document the converter refused; `reason` only reaches System Managers
 export function notUpgradedBanner(reason: string | null, isUnreadable: boolean): Banner {
   const lastCopy = unreadableLine()
   const unreadable = isUnreadable ? lastCopy : ''
   let text = __("This document couldn't be upgraded, so it stays read-only.")
-  if (reason) {
-    text += ' ' + __('Reason: {0}.', [reason])
+  const shown = messageFor(REFUSAL_REASONS, reason?.split(':')[0] ?? null)
+  if (shown) {
+    text += ' ' + __('Reason: {0}.', [shown])
   }
 
   return { text: `${text}${unreadable}` }

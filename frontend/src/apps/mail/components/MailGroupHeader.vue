@@ -1,44 +1,50 @@
 <template>
-  <!-- The tooltip names the fold, since the chevron alone doesn't say which way it goes. It is
-	     empty — and so not shown — on the last group, which never folds. -->
-  <Tooltip :text="collapsible ? __(collapsed ? 'Expand' : 'Collapse') : ''">
-    <!-- A quiet label: a short tinted row, the date, with the day's checkbox and the fold's
-         chevron. -->
-    <div
-      class="text-ink-gray-5 group flex h-9 items-center border-b bg-surface-gray-1 px-3.5 text-xs-semibold sm:px-5"
-      :class="{
-        'sm:hover:bg-surface-gray-1': collapsible,
-        '!bg-surface-gray-1': selected,
-        [CURSOR_BAR_CLASS]: focused,
-      }"
-      :data-row-key="`group:${dateKey}`"
-      @click="emit('toggle')"
-    >
-      <!-- The mailbox list puts its "select the whole day" checkbox here: centred in the row
-           whatever its height, and a click on it selects the day without folding it. -->
-      <div v-if="$slots.lead" class="flex items-center self-stretch" @click.stop>
-        <slot name="lead" />
-      </div>
-
-      <span class="select-none pt-[2px]">
-        {{ dateGroupLabel(dateKey) }}
-      </span>
-
-      <component
-        :is="collapsed ? ChevronRight : ChevronDown"
-        v-if="collapsible"
-        class="icon ml-auto"
-      />
+  <!-- A quiet label: a short tinted row, the date, with the day's checkbox and the fold's
+       chevron. -->
+  <div
+    class="text-ink-gray-5 group flex h-9 items-center border-b bg-surface-gray-1 px-3.5 text-xs-semibold sm:px-5"
+    :class="{
+      'sm:hover:bg-surface-gray-1': collapsible,
+      '!bg-surface-gray-1': selected,
+      [CURSOR_BAR_CLASS]: focused,
+    }"
+    :data-row-key="`group:${dateKey}`"
+    @click="emit('toggle')"
+  >
+    <!-- The mailbox list puts its "select the whole day" checkbox here: centred in the row
+         whatever its height, and a click on it selects the day without folding it. -->
+    <div v-if="$slots.lead" class="flex items-center self-stretch" @click.stop>
+      <slot name="lead" />
     </div>
-  </Tooltip>
+
+    <span class="select-none pt-[2px]">
+      {{ dateGroupLabel(dateKey) }}
+    </span>
+
+    <!-- For every row in the Reminders section, on hover and always where there is none. A click
+         on it clears without folding. -->
+    <button
+      v-if="dateKey === RETURNED_GROUP"
+      type="button"
+      class="ml-auto mr-2 opacity-0 hover:underline focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
+      @click.stop="emit('clear')"
+    >
+      {{ __('Remove all') }}
+    </button>
+    <component
+      :is="collapsed ? ChevronRight : ChevronDown"
+      v-if="collapsible"
+      class="icon"
+      :class="{ 'ml-auto': dateKey !== RETURNED_GROUP }"
+    />
+  </div>
 </template>
 
 <script setup lang="ts">
-import { Tooltip } from 'frappe-ui'
 import { ChevronDown, ChevronRight } from 'lucide-vue-next'
 
 import { CURSOR_BAR_CLASS } from '@/apps/mail/constants'
-import { dateGroupLabel } from '@/apps/mail/utils/dateGroups'
+import { dateGroupLabel, RETURNED_GROUP } from '@/apps/mail/utils/dateGroups'
 
 /**
  * A date header in a thread list: the day (or month) it covers, a chevron that folds it, and whatever
@@ -64,5 +70,5 @@ defineProps<{
   selected?: boolean
 }>()
 
-const emit = defineEmits<{ toggle: [] }>()
+const emit = defineEmits<{ toggle: []; clear: [] }>()
 </script>

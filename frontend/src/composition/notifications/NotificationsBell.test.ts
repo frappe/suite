@@ -72,6 +72,7 @@ vi.mock('@/apps/drive', () => ({
     path: `/d/${node.name}/item`,
     state: { openingTitle: 'Title' },
   }),
+  formatDriveBytes: (bytes: number) => `${bytes / 1024} KB`,
   driveNotifications: () => ({
     test: 'feed',
   }),
@@ -110,6 +111,7 @@ vi.mock('@/api', async () => ({
       downloadNotification('notice-4', 'Ready'),
       downloadNotification('notice-5', 'Failed'),
       downloadNotification('notice-6', 'Expired'),
+      expiredSinceLoaded(),
     ],
     status: 'success',
     error: null,
@@ -210,6 +212,12 @@ describe('Notifications bell', () => {
     expect(assign).toHaveBeenCalledWith('/api/suite/drive/downloads/notice-4/content')
     expect(state.loadNode).not.toHaveBeenCalled()
   })
+  it("shows a ready zip's size and until when it can be downloaded", () => {
+    const row = notificationRows(mount()).find((button) =>
+      button.textContent?.includes('"Talks.zip" is ready to download'),
+    )
+    expect(row?.textContent).toMatch(/2 KB · Available until \S/)
+  })
   it('says why a download could not be prepared', () => {
     const row = notificationRows(mount()).find((button) =>
       button.textContent?.includes('Could not prepare "Talks.zip"'),
@@ -227,6 +235,21 @@ describe('Notifications bell', () => {
     row?.click()
     await vi.waitFor(() =>
       expect(state.markRead).toHaveBeenCalledWith({ notifications: ['notice-6'] }),
+    )
+
+    expect(assign).not.toHaveBeenCalled()
+  })
+
+  it('a ready zip that expired after the list loaded opens nothing', async () => {
+    state.markRead.mockResolvedValue({ read: 1 })
+    const assign = vi.fn()
+    vi.spyOn(window, 'location', 'get').mockReturnValue({ ...window.location, assign })
+    const row = notificationRows(mount()).at(-1)
+    expect(row?.textContent).toContain('Expired')
+
+    row?.click()
+    await vi.waitFor(() =>
+      expect(state.markRead).toHaveBeenCalledWith({ notifications: ['notice-7'] }),
     )
 
     expect(assign).not.toHaveBeenCalled()
@@ -371,6 +394,10 @@ function notification(
     },
   }
 }
+function expiredSinceLoaded() {
+  const row = downloadNotification('notice-7', 'Ready')
+  return { ...row, download: { ...row.download, expires_at: '2020-01-01T00:00:00Z' } }
+}
 function downloadNotification(name: string, status: 'Ready' | 'Failed' | 'Expired') {
   const ready = status === 'Ready'
   return {
@@ -383,7 +410,7 @@ function downloadNotification(name: string, status: 'Ready' | 'Failed' | 'Expire
       status,
       delivery: 'Inbox',
       size: ready ? 2048 : null,
-      expires_at: new Date().toISOString(),
+      expires_at: new Date(Date.now() + (ready ? 86_400_000 : 0)).toISOString(),
       error: ready ? null : 'An item in folder Talks cannot be read',
       url: ready ? `/api/suite/drive/downloads/${name}/content` : null,
     },

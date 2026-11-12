@@ -461,6 +461,28 @@ describe('the stored copy', () => {
   })
 })
 
+describe('access partitions', () => {
+  const store = () =>
+    createLinkStore({
+      storage: memoryStorage(),
+      session: createSession(fromPartial<Transport>({ request: async () => ({}) })),
+      events: new EventTarget(),
+    })
+  it('keeps a read in its partition until access is invalidated, with or without a link code', () => {
+    const links = store()
+    links.seed(code(1), 'shared')
+    const mine = links.partition(['my-file'])
+    const shared = links.partition(['shared'])
+    expect(links.partition(['my-file'])).toBe(mine)
+    expect(links.partition(['shared'])).toBe(shared)
+
+    links.invalidateAccess()
+
+    expect(links.partition(['my-file'])).not.toBe(mine)
+    expect(links.partition(['shared'])).not.toBe(shared)
+  })
+})
+
 function memoryStorage(): Storage {
   const values = new Map<string, string>()
   return {

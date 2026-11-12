@@ -1,6 +1,9 @@
 import { api, useQuery } from '@/api'
+import { bootRoots } from '@/apps/drive/client/roots'
 import type { DriveBreadcrumb, DriveNode, DriveRoots } from '@/apps/drive/client/types'
 import { useSession } from '@/platform/session'
+import { translate as __ } from '@/platform/translation'
+import { useWorkspace } from '@/platform/workspace'
 
 /** The sidebar place a folder belongs to. */
 export type FilesLocation = 'personal' | 'organization' | 'shared'
@@ -9,6 +12,19 @@ export const LOCATION_LABELS: Record<FilesLocation, string> = {
   personal: 'My files',
   organization: 'Organization files',
   shared: 'Shared with me',
+}
+
+/** The name of a sidebar place. The Organization root is "<company> files" once the company is known. */
+export function locationLabel(location: FilesLocation): string {
+  const name = location === 'organization' ? useWorkspace().workspaceName.value : ''
+  return name ? __('{0} files', [name]) : LOCATION_LABELS[location]
+}
+
+/** The path of one of the caller's own roots, which have their own pages. Any other node has none. */
+export function rootPath(node: string, discovered: DriveRoots | null | undefined): string | null {
+  if (node === discovered?.personal.node) return '/drive'
+  if (node === discovered?.organization?.node) return '/drive/organization'
+  return null
 }
 
 /**
@@ -22,7 +38,7 @@ export function locationTitle(
 ): string {
   if (discovered && node.name === discovered.personal.node) return LOCATION_LABELS.personal
   if (discovered?.organization && node.name === discovered.organization.node)
-    return LOCATION_LABELS.organization
+    return locationLabel('organization')
   return node.title
 }
 
@@ -59,12 +75,17 @@ export function trashLocation(
   }
 }
 
-/** `locationTitle` bound to the caller's roots, for templates. Call it in a component's setup. */
+/**
+ * `locationTitle` bound to the caller's roots, for templates. Call it in a
+ * component's setup. The roots the page arrived with name a root until the
+ * query answers, so "My files" never shows first as the root's stored title.
+ */
 export function useLocationTitle(): (node: Pick<DriveBreadcrumb, 'name' | 'title'>) => string {
   const session = useSession()
   // A guest has no roots to discover (spec §10.13).
   const discovered = useQuery(api.drive.roots.list, () =>
     session.status.value === 'authenticated' ? {} : false,
   )
-  return (node) => locationTitle(node, discovered.data)
+  const booted = bootRoots()
+  return (node) => locationTitle(node, discovered.data ?? booted)
 }
