@@ -151,4 +151,22 @@ describe('a copy of an element that pairs with the next slide', () => {
 
     expect(keys(2)).toEqual(keys(1))
   })
+
+  it('never shares a key with an element whose own id is that key', async () => {
+    slides.value[2].elements = [image('pair', '/files/paired.webp')]
+    slideIndex.value = 2
+
+    await duplicateElements(null, [source()], null)
+
+    expect(new Set(keys(2)).size).toBe(2)
+  })
+
+  it('keeps one pairing when two pasted elements carry it', async () => {
+    slideIndex.value = 2
+
+    await duplicateElements(null, [source(), source()], null)
+
+    expect(new Set(keys(2)).size).toBe(2)
+    expect(keys(2)).toContain('pair')
+  })
 })
