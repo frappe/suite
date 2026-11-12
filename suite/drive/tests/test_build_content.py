@@ -56,6 +56,15 @@ from suite.drive.patches.build.tests import legacy_schema
 from suite.drive.patches.cleanup.ports import SiteContentRows
 from suite.drive.patches.cleanup.removal import RETAINED_DOCTYPES_STEP_4, phase_content_history
 from suite.drive.patches.cleanup.tests.fakes import FakeSchema, cleanup_environment
+from suite.slides.doctype.presentation.patches.cleanup_unused_thumbnail_files import (
+    execute as cleanup_unused_thumbnail_files,
+)
+from suite.slides.doctype.presentation.patches.clear_missing_presentation_thumbnails import (
+    execute as clear_missing_presentation_thumbnails,
+)
+from suite.slides.doctype.presentation.patches.move_slide_thumbnail_to_presentation import (
+    execute as move_slide_thumbnail_to_presentation,
+)
 
 # One fixed stamp for every source row and for `env.now()`. A fixture with a
 # clock has no exact expected value for the rows Build authors itself.
@@ -1339,14 +1348,79 @@ class TestSlideMedia(BuildContentCase):
     def test_a_deck_is_read_on_a_site_that_never_had_the_thumbnail_column(self):
         # a site installed after Presentation's field left has no column for Build to read (Q19')
         deck = self.deck_fixture()
-        frappe.db.sql_ddl("ALTER TABLE `tabPresentation` DROP COLUMN `thumbnail`")
-        self.addCleanup(frappe.client_cache.delete_value, "table_columns::tabPresentation")
-        self.addCleanup(frappe.db.sql_ddl, "ALTER TABLE `tabPresentation` ADD COLUMN `thumbnail` text")
-        frappe.client_cache.delete_value("table_columns::tabPresentation")
+        self.enterContext(legacy_schema.column_hidden("Presentation", "thumbnail"))
 
         rows = SiteContentSource(self.prefix).documents("Presentation", "", 10)
 
         self.assertEqual([(row.name, row.thumbnail) for row in rows], [(deck["docname"], None)])
+
+    def test_hiding_the_thumbnail_column_keeps_its_values(self):
+        deck = self.deck_fixture()
+        # the DDL commits this test's rows, so tearDown's sweep has to commit too
+        self.addCleanup(frappe.db.commit)
+
+        with legacy_schema.column_hidden("Presentation", "thumbnail"):
+            self.assertFalse(frappe.db.has_column("Presentation", "thumbnail"))
+
+        with self.assertRaises(SimulatedCrash), legacy_schema.column_hidden("Presentation", "thumbnail"):
+            raise SimulatedCrash
+
+        self.assertEqual(self.deck_thumbnail(deck["docname"]), f"/files/{self.prefix}thumb.png")
+
+    def test_the_old_thumbnail_patches_then_build_keep_every_preview_with_the_field_gone(self):
+        # Q19': the field left the meta, and its column keeps the values migration reads
+        self.assertFalse(frappe.get_meta("Presentation").has_field("thumbnail"))
+        deck = self.deck_fixture()
+        # move_slide_thumbnail_to_presentation lifts this deck's first slide thumbnail onto it
+        lifted = self.prefix + "deck2"
+        lifted_node = self.content_pair(lifted, "Presentation", title="Lifted")
+        self.insert("Presentation", lifted, title="Lifted", is_template=0, is_composite=0)
+        slide_thumb = self.blob(png_bytes((600, 300), self.prefix + "slide"), "slide.png")
+        slide_thumb_url = f"/files/{self.prefix}slide.png"
+        self.legacy_file(
+            self.prefix + "m4",
+            file_name="slide.png",
+            file_url=slide_thumb_url,
+            blob=slide_thumb.name,
+            attached_to_doctype="Presentation",
+            attached_to_name=lifted,
+            file_modified=STAMP,
+        )
+        self.insert(
+            "Slide",
+            self.prefix + "s3",
+            parent=lifted,
+            parenttype="Presentation",
+            parentfield="slides",
+            idx=1,
+            elements=json.dumps([{"type": "text", "text": "hi"}]),
+            thumbnail=slide_thumb_url,
+        )
+
+        for _ in range(2):
+            move_slide_thumbnail_to_presentation()
+            cleanup_unused_thumbnail_files()
+            clear_missing_presentation_thumbnails()
+            convert_slides_and_templates(self.environment())
+
+            self.assertEqual(self.deck_thumbnail(deck["docname"]), f"/files/{self.prefix}thumb.png")
+            self.assertEqual(self.deck_thumbnail(lifted), slide_thumb_url)
+            self.assertEqual(self.previews(deck["node"]), [deck["thumbnail"]])
+            self.assertEqual(self.previews(lifted_node), [self.prefix + "m4"])
+            self.assertEqual(
+                [(row["name"], row["blob"]) for row in self.media_children(deck["node"])],
+                [(deck["keeper"], deck["media_blob"])],
+            )
+            self.assertEqual(self.media_children(lifted_node), [])
+
+    def deck_thumbnail(self, docname):
+        ((thumbnail,),) = frappe.db.sql(
+            "SELECT `thumbnail` FROM `tabPresentation` WHERE `name` = %s", docname
+        )
+        return thumbnail
+
+    def previews(self, node):
+        return frappe.get_all("Drive Node Preview", filters={"node": node}, pluck="name")
 
     def test_a_thumbnail_a_slide_uses_is_also_a_media_child(self):
         """§14.7: one File can be both the deck preview and a slide picture."""

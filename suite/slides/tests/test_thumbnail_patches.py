@@ -7,6 +7,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.utils import get_files_path
 
+from suite.drive.patches.build.tests import legacy_schema
 from suite.slides.doctype.presentation.patches.cleanup_unused_thumbnail_files import (
     execute as cleanup_unused_thumbnail_files,
 )
@@ -37,28 +38,26 @@ def set_thumbnail(presentation_name, file_url):
 
 
 class ThumbnailColumnCase(IntegrationTestCase):
-    """Gives the class the old `thumbnail` column, or takes it away, and puts back what it found."""
+    """Gives the class the old `thumbnail` column, or hides it, and puts back what it found."""
 
     column_present: bool
 
     @classmethod
     def setUpClass(cls):
+        # Before the base class's rollback, so these run after it: DDL commits what it finds open
         found = frappe.db.has_column("Presentation", "thumbnail")
-        if found != cls.column_present:
-            cls.set_column(cls.column_present)
-            # before the base class's rollback, so it runs after it: DDL commits what it finds open
-            cls.addClassCleanup(cls.set_column, found)
+        if found and not cls.column_present:
+            cls.enterClassContext(legacy_schema.column_hidden("Presentation", "thumbnail"))
+        elif cls.column_present and not found:
+            cls.alter_column("ADD COLUMN `thumbnail` text")
+            cls.addClassCleanup(cls.alter_column, "DROP COLUMN `thumbnail`")
 
         super().setUpClass()
 
     @staticmethod
-    def set_column(present):
-        if present:
-            frappe.db.sql_ddl("ALTER TABLE `tabPresentation` ADD COLUMN `thumbnail` text")
-        else:
-            frappe.db.sql_ddl("ALTER TABLE `tabPresentation` DROP COLUMN `thumbnail`")
-
-        # the column list is cached per table and DDL does not refresh it
+    def alter_column(change):
+        frappe.db.sql_ddl(f"ALTER TABLE `tabPresentation` {change}")
+        # The column list is cached per table and DDL does not refresh it
         frappe.client_cache.delete_value("table_columns::tabPresentation")
 
     def make_legacy_thumbnail_file(self, presentation_name):
