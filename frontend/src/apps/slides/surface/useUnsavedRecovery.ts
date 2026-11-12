@@ -4,6 +4,7 @@ import { computed, ref } from 'vue'
 import type { DocumentSession } from '@/apps/drive'
 import { viewOnly } from '@/apps/slides/stores/presentation'
 import { slides } from '@/apps/slides/stores/slide'
+import type { LostAccess } from '@/platform/collab'
 import { translate } from '@/platform/translation'
 
 import {
@@ -17,23 +18,53 @@ import {
 
 interface RecoveryHost {
   isWritable: () => boolean
+  isReadable: () => boolean
   load: () => Promise<void>
+  /** Shuts the live room for the lost right. True if it still holds unsent work. */
+  loseAccess: (lost: LostAccess) => Promise<boolean>
+  /** Asks the live room to take edits again: `held` when reloading would drop unsent work. */
+  regainAccess: () => Promise<'editing' | 'reload' | 'held'>
 }
 
 /** What happens to unsent edits when access changes or the page goes away. */
-export function useUnsavedRecovery(session: DocumentSession, { isWritable, load }: RecoveryHost) {
+export function useUnsavedRecovery(
+  session: DocumentSession,
+  { isWritable, isReadable, load, loseAccess, regainAccess }: RecoveryHost,
+) {
   const hasRecovery = ref(readRecovery(session.nodeId).length > 0)
   const canDownloadChanges = computed(() => hasRecovery.value)
   let hasSettledCopies = false
 
-  function narrowed() {
+  async function narrowed() {
     viewOnly.value = true
-    toast.warning('Editing access changed. This presentation is now view only.')
+    const shown = liveSlides()
+    const title = session.title.value
+    const isUnsent = await loseAccess(isReadable() ? 'lost_edit' : 'lost_read')
+    if (!isUnsent) {
+      // Access came back within the bound, so nothing turned view only
+      if (!isWritable()) {
+        toast.warning('Editing access changed. This presentation is now view only.')
+      }
+
+      return
+    }
+
+    toast.warning('Editing access changed. Your unsaved changes are kept on this device.', {
+      duration: Number.POSITIVE_INFINITY,
+      action: { label: 'Download my changes', onClick: () => downloadSlides(shown, title) },
+    })
   }
 
-  function widened() {
+  async function widened() {
+    const regained = await regainAccess()
+    if (regained === 'held') {
+      return
+    }
+
     toast.info('You can edit this presentation again.')
-    void load()
+    if (regained === 'reload') {
+      void load()
+    }
   }
 
   function retainRecovery() {

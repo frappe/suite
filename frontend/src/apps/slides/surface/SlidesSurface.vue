@@ -214,7 +214,10 @@ const {
   discardChanges,
 } = useUnsavedRecovery(props.session, {
   isWritable: () => access.writable.value,
+  isReadable: () => access.readable.value,
   load,
+  loseAccess: (lost) => convertedRoom.loseAccess(lost),
+  regainAccess: () => convertedRoom.regainAccess(),
 })
 const { oldDraftNotice, settleOldDraft, downloadOldDraft, dismissOldDraft } = useOldDraft(
   props.session,
@@ -225,7 +228,10 @@ const { oldDraftNotice, settleOldDraft, downloadOldDraft, dismissOldDraft } = us
 const previewCapture = useTemplateRef<InstanceType<typeof PreviewCapture>>('previewCapture')
 const exportView = useTemplateRef<InstanceType<typeof ExportView>>('exportView')
 const versionsPanel = useTemplateRef<InstanceType<typeof SlidesVersionsPanel>>('versionsPanel')
-const access = createSlidesAccess(props.session, { narrowed, widened })
+const access = createSlidesAccess(props.session, {
+  narrowed: () => void narrowed(),
+  widened: () => void widened(),
+})
 // A restore pauses editing: nothing is written while the server rewrites the deck.
 const restoring = ref(false)
 // Edited through its room: its rows no longer change

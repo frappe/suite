@@ -41,6 +41,7 @@ import {
   openCollabRoom,
   type CollabRoom,
   type CollabSession,
+  type LostAccess,
   type RoomPresence,
   type RoomStatus,
   type VersionRestored,
@@ -350,6 +351,35 @@ export function useConvertedRoom({
     }
   }
 
+  /** Shuts the room for a lost right; what it can't send within the bound stays a recovery copy. True if work is left unsent. */
+  async function loseAccess(lost: LostAccess) {
+    try {
+      await room.value?.loseAccess(lost)
+    } catch (error) {
+      console.error(error)
+    }
+
+    return !!room.value?.status.unsentCount
+  }
+
+  /**
+   * Opens the room to edits again once access comes back. `reload` when the room stays shut: a new
+   * open takes edits. `held` when that open would drop unsent work kept nowhere else.
+   */
+  async function regainAccess() {
+    const liveRoom = room.value
+    if (!liveRoom) {
+      return 'reload'
+    }
+
+    await liveRoom.regainAccess(mayEdit)
+    if (allowsEditing.value) {
+      return 'editing'
+    }
+
+    return isKeptNowhere(liveRoom.status, isRecoveryKept) ? 'held' : 'reload'
+  }
+
   // The editor goes before the old room, so nothing typed lands in a room that no longer sends
   function leave() {
     resetFocus()
@@ -416,5 +446,7 @@ export function useConvertedRoom({
     restore,
     fillBlank,
     saveBeforeVersion,
+    loseAccess,
+    regainAccess,
   }
 }

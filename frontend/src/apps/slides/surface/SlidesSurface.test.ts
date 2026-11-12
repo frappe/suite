@@ -12,7 +12,7 @@ import { applyUpdate, Doc, encodeStateAsUpdate, UndoManager } from 'yjs'
 
 import type { useCommentDrafts } from '@/apps/drive'
 import type { StoreSlide } from '@/apps/slides/collab/liveDeck'
-import type { RoomStatus } from '@/platform/collab'
+import type { LostAccess, RoomStatus } from '@/platform/collab'
 import { requireTestElement } from '@/platform/testing/dom'
 
 import {
@@ -2390,12 +2390,19 @@ describe('edit access changing on a converted presentation', () => {
 
     const doc = new Doc()
     applyUpdate(doc, answer.state)
+    const status: Partial<RoomStatus> = {
+      canWrite: true,
+      saveState: 'clean',
+      unsentCount: 0,
+      restoreRev: 0,
+      isKeptOnDevice: true,
+    }
     const room = {
       doc,
       close: vi.fn(async () => {}),
       flush: vi.fn(async () => {}),
       restoreVersion: vi.fn(),
-      status: { canWrite: true, saveState: 'clean', unsentCount: 0, restoreRev: 0 },
+      status,
       presence: {
         awareness: new Awareness(doc),
         peers: [],
@@ -2403,13 +2410,50 @@ describe('edit access changing on a converted presentation', () => {
         ownArrival: 1,
         onChange: () => () => {},
       },
-      onChange: () => () => {},
+      onChange(listener: () => void) {
+        changes.add(listener)
+        return () => changes.delete(listener)
+      },
+      setStatus(next: Partial<RoomStatus>) {
+        room.status = { ...room.status, ...next }
+        changes.forEach((listener) => listener())
+      },
+      // As the client does: shut at once, and blocked for the lost right if work is still unsent
+      loseAccess: vi.fn(async (lost: LostAccess) => {
+        room.setStatus({ canWrite: false })
+        if (room.status.unsentCount) {
+          room.setStatus({ blockReason: lost })
+        }
+      }),
+      // As the client does: a room shut with nothing kept takes edits again
+      regainAccess: vi.fn(async (mayEdit: () => boolean) => {
+        if (mayEdit() && !room.status.blockReason) {
+          room.setStatus({ canWrite: true })
+        }
+      }),
     }
+    const changes = new Set<() => void>()
     collabRoom.open.mockResolvedValue({ state: 'live', room })
+    return room
   }
+
+  // The room and the surface, drawn and editing
+  async function editing() {
+    const room = liveRoom()
+    mounted = await openedSurface({ deck: { is_converted: true } })
+    await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+    return room
+  }
+
+  beforeEach(() => {
+    vi.mocked(toast.warning).mockClear()
+    vi.mocked(toast.info).mockClear()
+  })
 
   afterEach(() => {
     collabRoom.open.mockReset()
+    localStorage.clear()
+    vi.restoreAllMocks()
   })
 
   it('turns view only and says so when edit access goes', async () => {
@@ -2418,12 +2462,144 @@ describe('edit access changing on a converted presentation', () => {
     await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
 
     mounted.access.value = { role: 10 }
-    await nextTick()
 
+    await vi.waitFor(() =>
+      expect(toast.warning).toHaveBeenCalledWith(
+        'Editing access changed. This presentation is now view only.',
+      ),
+    )
     expect(viewOnly.value).toBe(true)
-    expect(toast.warning).toHaveBeenCalledWith(
+  })
+
+  it('keeps unsent edits on this device when edit access goes, and offers them as a download', async () => {
+    const room = await editing()
+    room.setStatus({ unsentCount: 1, saveState: 'unsaved' })
+    const files: File[] = []
+    vi.spyOn(URL, 'createObjectURL').mockImplementation((file) => {
+      if (file instanceof File) {
+        files.push(file)
+      }
+
+      return 'blob:changes'
+    })
+
+    mounted!.access.value = { role: 10 }
+
+    await vi.waitFor(() =>
+      expect(toast.warning).toHaveBeenCalledWith(
+        'Editing access changed. Your unsaved changes are kept on this device.',
+        expect.anything(),
+      ),
+    )
+    expect(room.loseAccess).toHaveBeenCalledWith('lost_edit')
+    expect(readRecovery('node-1')).toMatchObject([{ sticky: true }])
+    expect(toast.warning).not.toHaveBeenCalledWith(
       'Editing access changed. This presentation is now view only.',
     )
+    const [, options] = fromAny<
+      [string, { action: { label: string; onClick: () => void } }],
+      unknown
+    >(vi.mocked(toast.warning).mock.lastCall)
+    expect(options.action.label).toBe('Download my changes')
+    options.action.onClick()
+    const downloaded = JSON.parse(await files[0]!.text())
+    expect(JSON.stringify(downloaded.slides)).toContain('one')
+  })
+
+  it('shuts the room for reading when read access goes', async () => {
+    const room = await editing()
+
+    mounted!.access.value = { role: 0 }
+
+    await vi.waitFor(() => expect(room.loseAccess).toHaveBeenCalledWith('lost_read'))
+  })
+
+  it('takes edits again in the same room when edit access comes back before the edits are sent', async () => {
+    const room = await editing()
+    room.setStatus({ unsentCount: 1, saveState: 'unsaved' })
+    let send = () => {}
+    const sending = new Promise<void>((resolve) => {
+      send = resolve
+    })
+    room.loseAccess.mockImplementation(async () => {
+      room.setStatus({ canWrite: false })
+      await sending
+    })
+    room.regainAccess.mockImplementation(async (mayEdit) => {
+      await sending
+      if (mayEdit()) {
+        room.setStatus({ canWrite: true })
+      }
+    })
+    const opens = collabRoom.open.mock.calls.length
+    mounted!.access.value = { role: 10 }
+    await nextTick()
+
+    mounted!.access.value = { role: 50 }
+    send()
+
+    await vi.waitFor(() =>
+      expect(toast.info).toHaveBeenCalledWith('You can edit this presentation again.'),
+    )
+    // a load would close this room on its way to opening another
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(viewOnly.value).toBe(false)
+    expect(room.close).not.toHaveBeenCalled()
+    expect(collabRoom.open.mock.calls.length).toBe(opens)
+  })
+
+  it('stays on the shut room when its unsent edits are kept nowhere else', async () => {
+    const room = await editing()
+    room.setStatus({ unsentCount: 1, saveState: 'unsaved', isKeptOnDevice: false })
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('QuotaExceededError')
+    })
+    mounted!.access.value = { role: 10 }
+    await vi.waitFor(() => expect(room.status.blockReason).toBe('lost_edit'))
+
+    mounted!.access.value = { role: 50 }
+    await vi.waitFor(() => expect(room.regainAccess).toHaveBeenCalled())
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(room.close).not.toHaveBeenCalled()
+    expect(viewOnly.value).toBe(true)
+  })
+
+  it('says nothing turned view only when edit access comes back while the room shuts', async () => {
+    const room = await editing()
+    let shut = () => {}
+    room.loseAccess.mockImplementation(async () => {
+      room.setStatus({ canWrite: false })
+      await new Promise<void>((resolve) => {
+        shut = resolve
+      })
+    })
+    mounted!.access.value = { role: 10 }
+    await nextTick()
+
+    mounted!.access.value = { role: 50 }
+    shut()
+
+    await vi.waitFor(() =>
+      expect(toast.info).toHaveBeenCalledWith('You can edit this presentation again.'),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(toast.warning).not.toHaveBeenCalled()
+  })
+
+  it('still turns view only and says so when the room fails to shut', async () => {
+    const room = await editing()
+    room.loseAccess.mockRejectedValue(new Error('socket gone'))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    mounted!.access.value = { role: 10 }
+
+    await vi.waitFor(() =>
+      expect(toast.warning).toHaveBeenCalledWith(
+        'Editing access changed. This presentation is now view only.',
+      ),
+    )
+    expect(viewOnly.value).toBe(true)
   })
 
   it('opens again to edit, and says so, when edit access comes back', async () => {
@@ -2435,8 +2611,10 @@ describe('edit access changing on a converted presentation', () => {
 
     mounted.access.value = { role: 50 }
 
-    await vi.waitFor(() => expect(viewOnly.value).toBe(false))
-    expect(toast.info).toHaveBeenCalledWith('You can edit this presentation again.')
+    await vi.waitFor(() =>
+      expect(toast.info).toHaveBeenCalledWith('You can edit this presentation again.'),
+    )
+    expect(viewOnly.value).toBe(false)
   })
 })
 
