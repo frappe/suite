@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref } from 'vue'
 
@@ -40,7 +41,7 @@ vi.mock('@/apps/writer/components/CollabTextEditor.vue', async (importOriginal) 
     await importOriginal<typeof import('@/apps/writer/components/CollabTextEditor.vue')>()
   return fakeCollabTextEditor(real)
 })
-vi.mock('@/apps/writer/components/UsersBar.vue', () => ({ default: { render: () => null } }))
+vi.mock('@/platform/collab/UsersBar.vue', () => ({ default: { render: () => null } }))
 vi.mock('./WriterDocumentMenu.vue', async () =>
   (await import('./writer-surface-fakes')).fakeDocumentMenu(),
 )
@@ -83,7 +84,7 @@ describe('what a reader sees of a document', () => {
     const reader = await openedSurface(
       oneVersion,
       '/d/node-1',
-      { list } as unknown as Comments,
+      fromPartial<Comments>({ list }),
       ref({ role: 10 }),
     )
 
@@ -95,7 +96,7 @@ describe('what a reader sees of a document', () => {
     const commenter = await openedSurface(
       oneVersion,
       '/d/node-1',
-      { list } as unknown as Comments,
+      fromPartial<Comments>({ list }),
       ref({ role: 20 }),
     )
     expect(commenter.querySelector('[data-open-comments]')).not.toBeNull()

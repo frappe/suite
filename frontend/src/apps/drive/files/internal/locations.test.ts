@@ -1,11 +1,18 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 
-import { locationOf, locationTitle, trashLocation } from './locations'
+import { useWorkspace } from '@/platform/workspace'
+
+import { locationLabel, locationOf, locationTitle, trashLocation } from './locations'
 
 const discovered = {
   personal: { node: 'p-root', title: 'Administrator' },
   organization: { node: 'o-root', title: 'Frappe' },
 }
+
+const nameWorkspace = (workspace_name: string) =>
+  useWorkspace().setWorkspace({ workspace_name, workspace_logo: '' })
+
+beforeEach(() => nameWorkspace(''))
 
 describe('locations', () => {
   it('names the caller’s own roots by their place, and other nodes by title', () => {
@@ -15,6 +22,24 @@ describe('locations', () => {
     )
     expect(locationTitle({ name: 'other-root', title: 'Jane Doe' }, discovered)).toBe('Jane Doe')
     expect(locationTitle({ name: 'p-root', title: 'Administrator' }, null)).toBe('Administrator')
+  })
+
+  it('names the organization root after the company the site was set up for', () => {
+    nameWorkspace('Northwind Labs')
+    expect(locationLabel('organization')).toBe('Northwind Labs files')
+    expect(locationTitle({ name: 'o-root', title: 'Frappe' }, discovered)).toBe(
+      'Northwind Labs files',
+    )
+    expect(locationLabel('personal')).toBe('My files')
+  })
+
+  it('follows a rename at once', () => {
+    nameWorkspace('Northwind Labs')
+    expect(locationLabel('organization')).toBe('Northwind Labs files')
+
+    nameWorkspace('Acme')
+
+    expect(locationLabel('organization')).toBe('Acme files')
   })
 
   it('places a folder by its root', () => {

@@ -36,8 +36,9 @@ function _tokenize(s: string): Token[] {
 function _skeletonMatches(a: readonly Token[], b: readonly Token[]): boolean {
   if (a.length !== b.length) return false
   for (let i = 0; i < a.length; i++) {
-    const ta = a[i] as Token
-    const tb = b[i] as Token
+    const ta = a[i]
+    const tb = b[i]
+    if (!ta || !tb) return false
     if (ta.kind !== tb.kind) return false
     if (ta.kind === 'lit' && ta.value !== tb.value) return false
   }
@@ -57,7 +58,8 @@ export const textNumberDetector: Detector = {
   detect(values) {
     if (values.length === 0) return null
     const tokens = values.map(_tokenize)
-    const head = tokens[0] as Token[]
+    const head = tokens[0]
+    if (!head) return null
     // Must have BOTH a literal and an integer to qualify as "text+number".
     // Pure-number strings fall through to numeric; pure-text falls through
     // to alphabetic / copy.
@@ -65,7 +67,8 @@ export const textNumberDetector: Detector = {
     const hasLit = head.some((t) => t.kind === 'lit')
     if (!hasNum || !hasLit) return null
     for (let i = 1; i < tokens.length; i++) {
-      if (!_skeletonMatches(head, tokens[i] as Token[])) return null
+      const candidate = tokens[i]
+      if (!candidate || !_skeletonMatches(head, candidate)) return null
     }
     // Compute a step for each numeric slot — if any slot is non-arithmetic
     // we reject so the user doesn't get garbage at the tail.
@@ -75,7 +78,11 @@ export const textNumberDetector: Detector = {
     const stepsBySlot: number[] = []
     for (const i of numIdx) {
       // Every skeleton matched, so slot i is a number token in every cell.
-      const colVals = tokens.map((t) => (t[i] as Extract<Token, { kind: 'num' }>).value)
+      const colVals = tokens.map((t) => {
+        const token = t[i]
+        if (token?.kind !== 'num') throw new Error('Numeric pattern slot is missing')
+        return token.value
+      })
       const step = _stepFor(colVals)
       if (step === null) return null
       stepsBySlot.push(step)
@@ -84,7 +91,8 @@ export const textNumberDetector: Detector = {
     // cells were identical — copy mode is the better default.
     if (stepsBySlot.every((s) => s === 0)) return null
 
-    const anchorFwd = tokens[tokens.length - 1] as Token[]
+    const anchorFwd = tokens[tokens.length - 1]
+    if (!anchorFwd) return null
     const anchorBack = head
 
     return {

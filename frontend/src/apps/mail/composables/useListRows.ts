@@ -4,7 +4,7 @@ import { CURSOR_BAR_CLASS, OPEN_BAR_CLASS } from '@/apps/mail/constants'
 import { userStore } from '@/apps/mail/stores/user'
 import type { Thread } from '@/apps/mail/types'
 import { useScreenSize } from '@/apps/mail/utils/composables'
-import { dateGroup } from '@/apps/mail/utils/dateGroups'
+import { dateGroup, PINNED_GROUP, RETURNED_GROUP } from '@/apps/mail/utils/dateGroups'
 import { buildListRows, type ListRow, type StackRow } from '@/apps/mail/utils/threadStacks'
 
 /**
@@ -37,6 +37,13 @@ interface ListRowsOptions {
   onOpenThreadHidden: () => void
   /** The scroll container, so the cursor can bring its row into view. */
   container: Ref<HTMLElement | null>
+  /**
+   * The list is an Inbox, which the server orders pins first, then mail back from waiting, then newest first
+   * (suite.mail.pins). The rows are kept in that order here, not left in the order they loaded in.
+   */
+  pinsLead?: () => boolean
+  /** More of the list is still to load. */
+  hasMore?: () => boolean
 }
 
 /**
@@ -59,6 +66,8 @@ export const useListRows = ({
   rowKey,
   threadKey = (thread: Thread) => thread.thread_id,
   stackingEnabled = () => true,
+  pinsLead = () => false,
+  hasMore = () => false,
   openThreadID,
   onOpenThreadHidden,
   container,
@@ -73,16 +82,42 @@ export const useListRows = ({
   // collapse state is gated on the same thing, because only a header's own click can fill it.
   const headersVisible = computed(() => groupedByDate.value && !isMobile.value)
 
+  // ── Order ───────────────────────────────────────────────────────────────────────────────────────
+
+  // A pin or unpin changes the cached row on the click but not where the cache keeps it. Left there,
+  // an unpinned row would head the wrong day until the list was read again, and then jump. So an
+  // Inbox is put in the server's order here, and the reread finds nothing to move. A row that now
+  // sorts below the last one loaded leaves the list until its page loads: only the server knows
+  // what lies between.
+  const ordered = computed(() => {
+    const loaded = threads()
+    if (!pinsLead()) return loaded
+    const later = (a: Thread, b: Thread) =>
+      (b.pinned ?? 0) - (a.pinned ?? 0) ||
+      (b.returned ?? 0) - (a.returned ?? 0) ||
+      (b.received_at ?? '').localeCompare(a.received_at ?? '')
+    const sorted = [...loaded].sort(later)
+    const last = loaded.findLast((thread) => !thread.pinned && !thread.returned)
+    if (!hasMore() || !last) return sorted
+    return sorted.filter((thread) => later(thread, last) <= 0 || thread === last)
+  })
+
   // ── Date groups ─────────────────────────────────────────────────────────────────────────────────
 
-  const groupedThreads = computed<Record<string, Thread[]>>(() =>
-    threads().reduce((groups: Record<string, Thread[]>, thread: Thread) => {
+  const groupedThreads = computed<Record<string, Thread[]>>(() => {
+    const pinned = ordered.value.filter((thread) => thread.pinned)
+    const returned = ordered.value.filter((thread) => !thread.pinned && thread.returned)
+    const leading: Record<string, Thread[]> = {}
+    if (pinned.length) leading[PINNED_GROUP] = pinned
+    if (returned.length) leading[RETURNED_GROUP] = returned
+    return ordered.value.reduce((groups: Record<string, Thread[]>, thread: Thread) => {
+      if (thread.pinned || thread.returned) return groups
       const date = dateGroup(thread.received_at)
       if (!groups[date]) groups[date] = []
       groups[date].push(thread)
       return groups
-    }, {}),
-  )
+    }, leading)
+  })
 
   const getGroupThreads = (group: string) => groupedThreads.value[group]?.map(threadKey)
 
@@ -200,8 +235,8 @@ export const useListRows = ({
    * focuses the row it opens, and the open row is marked already.
    */
   const onListFocusIn = (event: FocusEvent) => {
-    const target = event.target as HTMLElement | null
-    if (!target?.matches(':focus-visible')) return
+    const target = event.target
+    if (!(target instanceof HTMLElement) || !target.matches(':focus-visible')) return
     const key = target.closest<HTMLElement>('[data-row-key]')?.dataset.rowKey
     if (key) focusedRowKey.value = key
   }

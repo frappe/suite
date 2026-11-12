@@ -157,7 +157,7 @@ interface SessionDependencies {
   /** The node, when the caller has read it with `access` expanded. The session then opens without reading it again. */
   node?: DriveNode
   share?: ShareOpener
-  window?: Window
+  window?: Pick<Window, 'addEventListener' | 'removeEventListener'>
   signedIn?: () => string | null
   setInterval?: typeof globalThis.setInterval
   clearInterval?: typeof globalThis.clearInterval
@@ -640,13 +640,12 @@ async function responseError(response: Response): Promise<TransportError> {
     .clone()
     .json()
     .catch(() => null)
-  const record = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {}
-  const first = Array.isArray(record.errors)
-    ? (record.errors[0] as Record<string, unknown> | undefined)
-    : undefined
-  const type = [first?.type, record.exc_type].find(
-    (value): value is string => typeof value === 'string',
-  )
+  const errors = body && typeof body === 'object' && 'errors' in body ? body.errors : undefined
+  const first: unknown = Array.isArray(errors) ? errors[0] : undefined
+  const firstType = first && typeof first === 'object' && 'type' in first ? first.type : undefined
+  const legacyType =
+    body && typeof body === 'object' && 'exc_type' in body ? body.exc_type : undefined
+  const type = [firstType, legacyType].find((value): value is string => typeof value === 'string')
   return new TransportError({
     type: type ?? 'RequestError',
     message: response.statusText,

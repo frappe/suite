@@ -186,11 +186,13 @@ const pendingLine = ref<LineShape>()
 const pendingText = ref<RectangleShape>()
 const pendingDraw = ref<FreeDrawShape>()
 const erasedShapeIds = ref<string[]>([])
-const drawStyle = reactive({
-  stroke: '#171717' as string | null,
+const drawStyle = reactive<
+  Required<Pick<RectangleShape, 'stroke' | 'fill' | 'strokeWidth' | 'strokeStyle' | 'opacity'>>
+>({
+  stroke: '#171717',
   fill: 'none',
   strokeWidth: 3,
-  strokeStyle: 'solid' as const,
+  strokeStyle: 'solid',
   opacity: 1,
 })
 const croppingImageId = ref<string>()
@@ -261,7 +263,7 @@ const selectedShapes = computed(() =>
   allShapes.value.filter((s) => selectedShapeIds.value.includes(s.id)),
 )
 const selectedTextShapes = computed(() =>
-  selectedShapes.value.every(isText) ? (selectedShapes.value as TextShape[]) : [],
+  selectedShapes.value.every(isText) ? selectedShapes.value : [],
 )
 const selectedLabel = computed(() => {
   if (selectedShapeIds.value.length !== 1 || selectedLabelId.value !== selectedShapeIds.value[0])
@@ -529,6 +531,7 @@ const rotationCursorAngle = computed<number | undefined>(() => {
   const handle = hoveredSelectionHandle.value
   const rectangle = selectionFrame.value
   if (!isRotateHandle(handle) || !rectangle) return undefined
+  // SAFETY: isRotateHandle restricts handle to rotate or rotate-${Corner}; stripping that prefix preserves a Corner.
   const corner = (handle === 'rotate' ? 'northeast' : handle.slice('rotate-'.length)) as Corner
   const angle = ROTATION_CURSOR_ANGLES[corner] + rectangle.rotation
   return ((angle % 360) + 360) % 360
@@ -1083,7 +1086,7 @@ function finishCrop(event: PointerEvent): boolean {
         width: (frame.width / bounds.width) * image.naturalWidth!,
         height: (frame.height / bounds.height) * image.naturalHeight!,
       },
-    } as ImageShape)
+    })
     commitScene()
   }
   cropGesture = undefined
@@ -1157,7 +1160,10 @@ async function flush() {
 }
 defineExpose({ openImagePicker, flush })
 function onImageInput(event: Event) {
-  const input = event.target as HTMLInputElement
+  const checkedEventTarget = event.target
+  if (!(checkedEventTarget instanceof HTMLInputElement)) return
+
+  const input = checkedEventTarget
   if (input.files) void insertImages(input.files, imageInsertPoint)
   imageInsertPoint = undefined
   input.value = ''
@@ -1177,8 +1183,7 @@ function onClipboard(event: ClipboardEvent) {
   if (drawingLoading.value || editableTarget(event.target)) return
   if (event.type === 'paste') {
     const imageFiles = [...(event.clipboardData?.items ?? [])]
-      .filter((item) => IMAGE_TYPES.has(item.type))
-      .map((item) => item.getAsFile())
+      .flatMap((item) => (IMAGE_TYPES.has(item.type) ? [item.getAsFile()] : []))
       .filter((file): file is File => Boolean(file))
     if (imageFiles.length) {
       event.preventDefault()
@@ -1552,8 +1557,11 @@ function editLabel(shape: RectangleShape) {
 }
 
 function updateTextEditor(event: Event) {
+  const checkedEventTarget = event.target
+  if (!(checkedEventTarget instanceof HTMLTextAreaElement)) return
+
   const editor = textEditor.value
-  const input = event.target as HTMLTextAreaElement
+  const input = checkedEventTarget
   if (!editor) return
   editor.text = input.value
   if (editor.kind === 'label' && editor.shapeId) {
@@ -1594,19 +1602,15 @@ function updatePropertyTextStyle(patch: TextStylePatch) {
       const shape = selectedLabel.value
       rectangles.value = rectangles.value.map((candidate) => {
         if (candidate.id !== shape.id) return candidate
-        const styled = {
-          ...candidate,
-          ...('backgroundColor' in patch ? { fill: patch.backgroundColor } : {}),
-          ...('fill' in patch ? { labelFill: patch.fill } : {}),
-          ...(patch.fontFamily !== undefined ? { labelFontFamily: patch.fontFamily } : {}),
-          ...(patch.fontSize !== undefined ? { labelFontSize: patch.fontSize } : {}),
-          ...(patch.fontWeight !== undefined ? { labelFontWeight: patch.fontWeight } : {}),
-          ...(patch.fontStyle !== undefined ? { labelFontStyle: patch.fontStyle } : {}),
-          ...(patch.textDecoration !== undefined
-            ? { labelTextDecoration: patch.textDecoration }
-            : {}),
-          ...(patch.textAlign !== undefined ? { labelTextAlign: patch.textAlign } : {}),
-        }
+        const styled: typeof candidate = { ...candidate }
+        if ('backgroundColor' in patch) styled.fill = patch.backgroundColor
+        if ('fill' in patch) styled.labelFill = patch.fill
+        if (patch.fontFamily !== undefined) styled.labelFontFamily = patch.fontFamily
+        if (patch.fontSize !== undefined) styled.labelFontSize = patch.fontSize
+        if (patch.fontWeight !== undefined) styled.labelFontWeight = patch.fontWeight
+        if (patch.fontStyle !== undefined) styled.labelFontStyle = patch.fontStyle
+        if (patch.textDecoration !== undefined) styled.labelTextDecoration = patch.textDecoration
+        if (patch.textAlign !== undefined) styled.labelTextAlign = patch.textAlign
         return fitLabel(styled, styled.label ?? '', styled.labelFontSize, styled.labelFontFamily, {
           fontWeight: styled.labelFontWeight,
           fontStyle: styled.labelFontStyle,
@@ -1622,10 +1626,8 @@ function updatePropertyTextStyle(patch: TextStylePatch) {
   if (editor.kind === 'label' && editor.shapeId) {
     const shape = rectangles.value.find((candidate) => candidate.id === editor.shapeId)
     if (!shape || isText(shape)) return
-    const styledShape = {
-      ...shape,
-      ...('backgroundColor' in patch ? { fill: patch.backgroundColor } : {}),
-    }
+    const styledShape = { ...shape }
+    if ('backgroundColor' in patch) styledShape.fill = patch.backgroundColor
     const fitted = fitLabel(styledShape, editor.text, editor.fontSize, editor.fontFamily, editor)
     replaceRectangle({
       ...fitted.shape,
@@ -2292,12 +2294,14 @@ function selectionHandleAt(point: Point): SelectionHandle | undefined {
     isTextSelected.value && frame
       ? Math.min(8, (frame.height * viewport.scale) / 4, (frame.width * viewport.scale) / 4)
       : HANDLE_HIT_RADIUS
+  // SAFETY: the geometry constructor creates only the declared corner/edge keys with their Point values.
   const corner = (Object.entries(selectionCorners.value) as [Corner, Point][]).find(
     ([, cornerPoint]) =>
       distance(point, worldToScreen(cornerPoint, latestViewport())) <= cornerRadius,
   )?.[0]
   if (corner) return corner
   if (showCurveControls.value && visibleCurveHandles.value) {
+    // SAFETY: the geometry constructor creates only the declared corner/edge keys with their Point values.
     const curve = (Object.entries(visibleCurveHandles.value) as [Corner, Point][]).find(
       ([, curvePoint]) =>
         distance(point, worldToScreen(curvePoint, latestViewport())) <= HANDLE_HIT_RADIUS,
@@ -2316,7 +2320,7 @@ function selectionHandleAt(point: Point): SelectionHandle | undefined {
   return edgeAtPoint(point, edgeHitRadius)
 }
 
-function replaceRectangle(next: RectangleShape) {
+function replaceRectangle<T extends RectangleShape>(next: T) {
   const index = rectangles.value.findIndex((rectangle) => rectangle.id === next.id)
   if (index >= 0) rectangles.value.splice(index, 1, next)
 }
@@ -2424,11 +2428,12 @@ function applySolidColor(color: string) {
     if (!selected.has(shape.id)) return shape
     return isFreeDraw(shape) ? { ...shape, stroke: color } : { ...shape, fill: color }
   })
-  lines.value = lines.value.map((shape) =>
-    selected.has(shape.id)
-      ? { ...shape, stroke: color, ...(shape.kind === 'arrow' ? { arrowHeadFill: color } : {}) }
-      : shape,
-  )
+  lines.value = lines.value.map((shape) => {
+    if (!selected.has(shape.id)) return shape
+    const colored = { ...shape, stroke: color }
+    if (shape.kind === 'arrow') colored.arrowHeadFill = color
+    return colored
+  })
   commitScene()
 }
 
@@ -2632,6 +2637,7 @@ function rotationCursorUrl(angle: number): string {
 function rotationHandleAt(point: Point): RotationHandle | undefined {
   const handles = rotationHandles.value
   if (!handles) return undefined
+  // SAFETY: the geometry constructor creates only the declared corner/edge keys with their Point values.
   const corner = (Object.entries(handles) as [Corner, Point][]).find(
     ([, handle]) => distance(point, handle) <= ROTATION_HIT_RADIUS,
   )?.[0]
@@ -2679,6 +2685,7 @@ function edgeAtPoint(point: Point, hitRadius: number): Edge | undefined {
     delete edges.north
     delete edges.south
   }
+  // SAFETY: the geometry constructor creates only the declared corner/edge keys with their Point values.
   return (Object.entries(edges) as [Edge, [Point, Point]][]).find(
     ([, [start, end]]) =>
       distanceToSegment(
@@ -2741,6 +2748,7 @@ function isCorner(handle: ResizeHandle): handle is Corner {
 }
 
 function curveCorner(handle: CurveHandle): Corner {
+  // SAFETY: CurveHandle is exactly the template literal curve-${Corner}; only its fixed prefix is removed.
   return handle.slice('curve-'.length) as Corner
 }
 
@@ -2753,19 +2761,19 @@ function isRotateHandle(handle: SelectionHandle | undefined): handle is Rotation
 }
 
 function isEllipse(shape: Shape): boolean {
-  return (shape as { kind?: string }).kind === 'ellipse'
+  return 'kind' in shape && shape.kind === 'ellipse'
 }
 
 function isDiamond(shape: Shape): boolean {
-  return (shape as { kind?: string }).kind === 'diamond'
+  return 'kind' in shape && shape.kind === 'diamond'
 }
 
 function isText(shape: Shape): shape is TextShape {
-  return (shape as { kind?: string }).kind === 'text'
+  return 'kind' in shape && shape.kind === 'text'
 }
 
 function isImage(shape: Shape): shape is ImageShape {
-  return (shape as { kind?: string }).kind === 'image'
+  return 'kind' in shape && shape.kind === 'image'
 }
 
 function resizeText(original: TextShape, next: RectangleShape, scaleFont: boolean): TextShape {
@@ -3130,11 +3138,10 @@ function cursorForAngle(angle: number): 'ns' | 'ew' | 'nwse' | 'nesw' {
 }
 
 function onPointerDown(event: PointerEvent) {
-  if (
-    drawingLoading.value ||
-    editableTarget(event.target) ||
-    (event.target as Element).closest('button')
-  )
+  const checkedEventTarget = event.target
+  if (!(checkedEventTarget instanceof Element)) return
+
+  if (drawingLoading.value || editableTarget(event.target) || checkedEventTarget.closest('button'))
     return
   root.value?.focus({ preventScroll: true })
   isShiftPressed.value = event.shiftKey
@@ -3630,9 +3637,11 @@ function editableTarget(target: EventTarget | null): boolean {
 }
 
 function onKeyDown(event: KeyboardEvent) {
+  const checkedEventTarget = event.target
+  if (!(checkedEventTarget instanceof Element)) return
+
   if (!editable.value) return
-  if ((event.target as Element)?.closest('button, a') && [' ', 'Enter', 'Tab'].includes(event.key))
-    return
+  if (checkedEventTarget?.closest('button, a') && [' ', 'Enter', 'Tab'].includes(event.key)) return
   if (
     drawingLoading.value ||
     editableTarget(event.target) ||
@@ -3712,13 +3721,15 @@ function onKeyDown(event: KeyboardEvent) {
     event.preventDefault()
     return
   }
-  const nudges: Record<string, Point> = {
-    ArrowUp: { x: 0, y: -1 },
-    ArrowDown: { x: 0, y: 1 },
-    ArrowLeft: { x: -1, y: 0 },
-    ArrowRight: { x: 1, y: 0 },
-  }
-  const nudge = nudges[event.key]
+  const nudges = new Map<string, Point>(
+    Object.entries({
+      ArrowUp: { x: 0, y: -1 },
+      ArrowDown: { x: 0, y: 1 },
+      ArrowLeft: { x: -1, y: 0 },
+      ArrowRight: { x: 1, y: 0 },
+    } satisfies Record<string, Point>),
+  )
+  const nudge = nudges.get(event.key)
   const distance = event.shiftKey ? 10 : 1
   if (nudge && moveSelectedShape(nudge.x * distance, nudge.y * distance)) {
     event.preventDefault()

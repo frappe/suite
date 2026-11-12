@@ -22,7 +22,7 @@ DECK_STATE = base64.b64decode(Path(__file__).with_name("deck_state.b64").read_te
 # The attributes R1014 names as what a list written by hand would miss, plus the deck's own shape
 NAMES_A_DECK_WRITES = {
     "slides",
-    "boxes",
+    "elements",
     "parent",
     "order",
     "frame",
@@ -64,11 +64,11 @@ def unique_deck():
     return make_presentation(f"Saved {suffix}")
 
 
-def box_update(box: object, key: str = "box1", root: str = "boxes") -> bytes:
+def element_update(element: object, key: str = "element1", root: str = "elements") -> bytes:
     doc: pycrdt.Doc = pycrdt.Doc(client_id=CLIENT)
     entries = pycrdt.Map()
     doc[root] = entries
-    entries[key] = box
+    entries[key] = element
     return doc.get_update()
 
 
@@ -84,7 +84,7 @@ class TestDeclaration(IntegrationTestCase):
         self.assertIs(editors.for_type("Presentation"), EDITOR)
         self.assertEqual(editors.wrong_declarations(EDITOR), [])
 
-    def test_a_real_deck_with_every_box_type_and_mark_is_admitted(self):
+    def test_a_real_deck_with_every_element_type_and_mark_is_admitted(self):
         admitted(DECK_STATE)
 
         names: set[str] = set()
@@ -93,27 +93,29 @@ class TestDeclaration(IntegrationTestCase):
 
         self.assertLessEqual(NAMES_A_DECK_WRITES, names)
 
-    def test_a_plain_box_is_admitted(self):
+    def test_a_plain_element_is_admitted(self):
         # The control for the refusals below: each differs from this by one thing
-        admitted(box_update(pycrdt.Map({"order": "V"})))
+        admitted(element_update(pycrdt.Map({"order": "V"})))
 
     def test_a_key_outside_the_open_key_alphabet_is_refused(self):
-        self.assert_poison(box_update(pycrdt.Map({"order": "V"}), key="GRÖSSE"))
+        self.assert_poison(element_update(pycrdt.Map({"order": "V"}), key="GRÖSSE"))
 
-    def test_an_undeclared_field_on_a_box_is_refused(self):
-        self.assert_poison(box_update(pycrdt.Map({"nonsense": "V"})))
+    def test_an_undeclared_field_on_an_element_is_refused(self):
+        self.assert_poison(element_update(pycrdt.Map({"nonsense": "V"})))
 
     def test_a_root_the_deck_does_not_have_is_refused(self):
-        self.assert_poison(box_update(pycrdt.Map({"order": "V"}), root="stray"))
+        self.assert_poison(element_update(pycrdt.Map({"order": "V"}), root="stray"))
 
-    def test_an_array_or_plain_text_under_a_box_is_refused(self):
-        self.assert_poison(box_update(pycrdt.Map({"points": pycrdt.Array([1, 2])})))
-        self.assert_poison(box_update(pycrdt.Map({"text": pycrdt.Text("typed")})))
+    def test_an_array_or_plain_text_under_an_element_is_refused(self):
+        self.assert_poison(element_update(pycrdt.Map({"points": pycrdt.Array([1, 2])})))
+        self.assert_poison(element_update(pycrdt.Map({"text": pycrdt.Text("typed")})))
 
     def test_json_content_is_refused(self):
         # A ContentJSON struct, ref 2, which only a client written by hand sends
         struct_info = bytes([1, 1]) + encoded_uint(CLIENT) + bytes([0, 2, 1])
-        payload = struct_info + encoded_string("boxes") + encoded_uint(1) + encoded_string('"x"') + bytes([0])
+        payload = (
+            struct_info + encoded_string("elements") + encoded_uint(1) + encoded_string('"x"') + bytes([0])
+        )
         with self.assertRaises(log.Refusal) as refused:
             admitted(payload)
 
@@ -129,12 +131,12 @@ class TestLoggedDeck(LoggedDeckCase):
         )
         frappe.db.commit()
 
-        def add_a_box(doc: pycrdt.Doc) -> None:
-            boxes = pycrdt.Map()
-            doc["boxes"] = boxes
-            boxes["box1"] = pycrdt.Map({"order": "V"})
+        def add_an_element(doc: pycrdt.Doc) -> None:
+            elements = pycrdt.Map()
+            doc["elements"] = elements
+            elements["element1"] = pycrdt.Map({"order": "V"})
 
-        self.assertEqual(self.push(node, add_a_box), (423, {"collab": "doc_full", "retry_ms": 300_000}))
+        self.assertEqual(self.push(node, add_an_element), (423, {"collab": "doc_full", "retry_ms": 300_000}))
 
     def test_a_save_changing_the_body_of_a_logged_deck_is_refused(self):
         node = self.new_deck()

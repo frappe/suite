@@ -24,7 +24,7 @@ const effects = {
 export const registration: OwnerRegistration = {
   policy(reference) {
     if (reference.kind === 'query') return {}
-    const effect = effects[reference.id as keyof typeof effects]
+    const effect = Object.entries(effects).find(([id]) => id === reference.id)?.[1]
     if (!effect) throw new TypeError(`Missing slides effects: ${reference.id}`)
     return { effects: effect }
   },

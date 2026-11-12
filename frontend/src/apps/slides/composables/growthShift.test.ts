@@ -1,5 +1,7 @@
+import { fromAny, fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { nextTick } from 'vue'
+import { nextTick, type Ref } from 'vue'
+import { Doc } from 'yjs'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
 vi.mock('@/apps/slides/router', () => ({ router: { replace: () => Promise.resolve() } }))
@@ -12,7 +14,7 @@ const { fakeDiv, renderedWidth } = vi.hoisted(() => {
     get: () => renderedWidth.measure(),
     set: (width) => (renderedWidth.measure = () => width),
   })
-  fakeDiv.getBoundingClientRect = () => ({ width: renderedWidth.measure() }) as DOMRect
+  fakeDiv.getBoundingClientRect = () => fromPartial<DOMRect>({ width: renderedWidth.measure() })
   return { fakeDiv, renderedWidth }
 })
 vi.mock('@/apps/slides/stores/elementRegistry', () => ({
@@ -20,12 +22,17 @@ vi.mock('@/apps/slides/stores/elementRegistry', () => ({
   getElementDiv: () => fakeDiv,
 }))
 
-const { slides, slideIndex, slideBounds } = await import('@/apps/slides/stores/slide')
+const { slides: storeSlides, slideIndex, slideBounds } = await import('@/apps/slides/stores/slide')
+// the store types each slide's fields as unknown, and these tests read them
+const slides = fromAny<Ref<any[]>, unknown>(storeSlides)
 const { activeElementIds, focusElementId, setAutoWidth } =
   await import('@/apps/slides/stores/element')
 const { setCommandHistory } = await import('@/apps/slides/stores/historyMeta')
 const { useCommandHistory } = await import('./useCommandHistory')
 const { useTextEditor } = await import('./useTextEditor')
+const { setLiveSeat } = await import('@/apps/slides/stores/liveDeck')
+const { openLiveDeck } = await import('@/apps/slides/collab/liveDeck')
+const { ROOT, writeDeck } = await import('@/apps/slides/collab/deck')
 
 const { activeEditor } = useTextEditor()
 
@@ -52,14 +59,14 @@ const editText = async (content: string, overrides = {}) => {
 }
 
 const typeAtEnd = (text: string, renderedWidth: number) => {
-  fakeDiv.offsetWidth = renderedWidth
-  const editor = activeEditor.value
+  Reflect.set(fakeDiv, 'offsetWidth', renderedWidth)
+  const editor = activeEditor.value!
   editor.commands.insertContentAt(editor.state.doc.content.size - 1, text)
 }
 
 beforeEach(() => {
   slideBounds.scale = 1
-  fakeDiv.offsetWidth = 100
+  Reflect.set(fakeDiv, 'offsetWidth', 100)
   fakeDiv.contains = () => true
   history = useCommandHistory(slides, { actionOrder, actions: {} })
   setCommandHistory(history)
@@ -94,6 +101,96 @@ describe('growth right after the panel switches back to auto', () => {
   })
 })
 
+describe('centred auto-width text typed into while its font loads', () => {
+  const CENTRED = 'translate(-50%, -50%)'
+  let stopDeck = () => {}
+
+  afterEach(() => {
+    stopDeck()
+    setLiveSeat(null)
+  })
+
+  async function typingInLiveCentredText() {
+    const room = new Doc()
+    writeDeck(room, [
+      {
+        id: 's1',
+        elements: [{ id: 't1', type: 'text', frame: { left: 500, top: 300, transform: CENTRED } }],
+      },
+    ])
+    const fonts = { pending: false }
+    const deck = openLiveDeck(room, {
+      slides: () => fromAny(slides.value),
+      flatten: (item) =>
+        item.transform === CENTRED
+          ? { ...item, left: item.left - fakeDiv.offsetWidth / 2, transform: 'none' }
+          : item,
+      boundElementId: () => 't1',
+      isSelected: () => false,
+      setBoundText: () => {},
+      canWrite: () => true,
+      fontsPending: () => fonts.pending,
+      onRenamed: () => {},
+      onMerged: () => {},
+      onStep: () => {},
+      onBoundDeleted: () => {},
+    })
+    stopDeck = deck.stop
+    setLiveSeat({
+      push: deck.push,
+      flush: deck.push,
+      undo: deck.undo,
+      redo: deck.redo,
+      endStep: deck.endStep,
+      bindText: () => ({ extensions: [], seeded: false }),
+      holdsPosition: deck.holdsPosition,
+    })
+    fonts.pending = true
+    slideIndex.value = 0
+    focusElementId.value = 't1'
+    await nextTick()
+    await nextTick()
+    await nextTick()
+    // a bound editor's text comes from the room, not from the element
+    activeEditor.value!.commands.setContent('<p style="text-align: center">one</p>')
+    deck.push()
+
+    const saved = () => room.getMap<Map<string, unknown>>(ROOT.elements).get('t1')!.get('frame')
+    return { deck, fonts, saved }
+  }
+
+  it('leaves the saved centre alone, then settles it when the font arrives', async () => {
+    const { deck, fonts, saved } = await typingInLiveCentredText()
+
+    typeAtEnd('x', 120)
+    deck.push()
+
+    expect(element().left).toBe(450)
+    expect(saved()).toMatchObject({ left: 500, top: 300, transform: CENTRED })
+
+    fonts.pending = false
+    Reflect.set(fakeDiv, 'offsetWidth', 160)
+    deck.redraw()
+
+    expect(element().left).toBe(420)
+    expect(saved()).toMatchObject({ left: 500, transform: CENTRED })
+  })
+
+  it("doesn't pay the font's own width change out of left on the next keystroke", async () => {
+    const { deck, fonts, saved } = await typingInLiveCentredText()
+    typeAtEnd('x', 120)
+    deck.push()
+    fonts.pending = false
+    Reflect.set(fakeDiv, 'offsetWidth', 160)
+    deck.redraw()
+
+    typeAtEnd('y', 180)
+    deck.push()
+
+    expect(saved()).toMatchObject({ left: 410, transform: 'none' })
+  })
+})
+
 describe('alignment-anchored growth of auto-width text', () => {
   it('keeps left-aligned text anchored at its left edge', async () => {
     await editText('<p>one</p>')
@@ -122,8 +219,8 @@ describe('alignment-anchored growth of auto-width text', () => {
   it('shrinks centered text back toward its anchor on deletion', async () => {
     await editText('<p style="text-align: center">one</p>')
 
-    fakeDiv.offsetWidth = 80
-    activeEditor.value.commands.deleteRange({ from: 1, to: 2 })
+    Reflect.set(fakeDiv, 'offsetWidth', 80)
+    activeEditor.value!.commands.deleteRange({ from: 1, to: 2 })
 
     expect(element().left).toBe(410)
   })
@@ -168,11 +265,11 @@ describe('history of the growth shift', () => {
     typeAtEnd('x', 120)
     await nextTick()
 
-    fakeDiv.offsetWidth = 100
+    Reflect.set(fakeDiv, 'offsetWidth', 100)
     history.undo()
     await nextTick()
 
-    fakeDiv.offsetWidth = 120
+    Reflect.set(fakeDiv, 'offsetWidth', 120)
     history.redo()
     await nextTick()
 
@@ -186,8 +283,8 @@ describe('history of the growth shift', () => {
 
     typeAtEnd('x', 120)
     await nextTick()
-    fakeDiv.offsetWidth = 100
-    activeEditor.value.commands.deleteRange({ from: 4, to: 5 })
+    Reflect.set(fakeDiv, 'offsetWidth', 100)
+    activeEditor.value!.commands.deleteRange({ from: 4, to: 5 })
     await nextTick()
 
     expect(element().left).toBe(400)
@@ -213,13 +310,13 @@ describe('history of the growth shift', () => {
   it('seeds the growth baseline from the mounted editor, not the empty shell', async () => {
     // the element div is an empty shell until EditorContent adopts the view
     fakeDiv.contains = () => false
-    fakeDiv.offsetWidth = 2
+    Reflect.set(fakeDiv, 'offsetWidth', 2)
     await editText('<p style="text-align: center">one</p>')
 
     // the view lands in the div and the user clicks a caret in
     fakeDiv.contains = () => true
-    fakeDiv.offsetWidth = 100
-    activeEditor.value.commands.setTextSelection(1)
+    Reflect.set(fakeDiv, 'offsetWidth', 100)
+    activeEditor.value!.commands.setTextSelection(1)
 
     typeAtEnd('x', 120)
 
@@ -233,7 +330,7 @@ describe('history of the growth shift', () => {
     await nextTick()
 
     // the rewrite lands with the width the undone content renders at
-    fakeDiv.offsetWidth = 100
+    Reflect.set(fakeDiv, 'offsetWidth', 100)
     history.undo()
     await nextTick()
 

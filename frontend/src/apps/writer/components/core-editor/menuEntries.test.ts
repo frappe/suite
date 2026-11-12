@@ -1,4 +1,5 @@
 import { Editor } from '@tiptap/core'
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { writerSchema } from '@/apps/writer/schema'
@@ -79,25 +80,22 @@ describe('marks', () => {
 /** An editor that records the chained commands it is asked to run. */
 function recordingEditor(commands: string[]) {
   const calls: string[] = []
-  const chain: Record<string, () => unknown> = new Proxy(
-    {},
-    {
-      get: (_target, name: string) => () => {
-        calls.push(name)
-        return chain
-      },
+  const chain = new Proxy(fromPartial<ReturnType<Editor['chain']>>({}), {
+    get: (_target, name: string) => () => {
+      calls.push(name)
+      return chain
     },
-  )
+  })
   const fake = {
     commands: Object.fromEntries(commands.map((name) => [name, () => true])),
     chain: () => chain,
     can: () => ({ insertFromDrive: () => true }),
     state: {},
   }
-  return { editor: fake as unknown as Editor, calls }
+  return { editor: fromPartial<Editor>(fake), calls }
 }
 
-const COMMANDS: Record<string, string> = {
+const COMMANDS = {
   Image: 'selectAndUploadImage',
   Video: 'selectAndUploadVideo',
   Attachment: 'selectAndUploadFile',
@@ -105,7 +103,7 @@ const COMMANDS: Record<string, string> = {
   Divider: 'setHorizontalRule',
   'Page break': 'setPageBreak',
   Tab: 'createTab',
-}
+} satisfies Record<string, string>
 
 describe('inserts', () => {
   it('names each insert with its icon and menu section, in menu order', () => {

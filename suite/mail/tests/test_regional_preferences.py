@@ -37,7 +37,9 @@ class TestRegionalPreferences(IntegrationTestCase):
             ({"locale": "fr-FR", "time_zone": "UTC"}, "Europe/Paris", ("fr-FR", "UTC")),
         ]:
             with self.subTest(supplied=supplied):
-                request = Mock(request_key="key", is_verified=False, account="person@example.test")
+                request = Mock(
+                    request_key="key", is_verified=False, is_expired=False, account="person@example.test"
+                )
                 with (
                     patch("frappe.get_last_doc", return_value=request),
                     patch("frappe.db", new=Mock()),
@@ -46,8 +48,10 @@ class TestRegionalPreferences(IntegrationTestCase):
                     patch("suite.mail.directory.get_account_metadata", return_value=OPTIONS),
                     patch("suite.mail.api.account.get_system_timezone", return_value=site_zone),
                 ):
-                    create_account("key", "Person", "", "password", **supplied)
-                request.create_account.assert_called_once_with("Person", "", "password", *expected)
+                    create_account("key", "Person", "", "Regional-defaults-2026!", **supplied)
+                request.create_account.assert_called_once_with(
+                    "Person", "", "Regional-defaults-2026!", *expected
+                )
 
     def test_provider_contract_uses_patch_and_reads_an_independent_response(self) -> None:
         import json

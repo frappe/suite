@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 // An active filter outlines its range in green (Google-Sheets-style). It is
 // drawn on the canvas, under the selection, so the selection outline and the
 // active frame always show over it where they meet (ISSUES #106).
@@ -20,7 +21,7 @@ function render(filterRect: CellBlock | null) {
   ctx.strokeRect = (...rect: Rect) => {
     if (!strip) strokes.push({ rect, colour: String(ctx.strokeStyle), lineWidth: ctx.lineWidth })
   }
-  createRenderer(ctx as never, createMockGeo() as never).render({
+  createRenderer(fromPartial(ctx), fromPartial(createMockGeo())).render({
     cssW: 600,
     cssH: 300,
     getValue: () => '',
@@ -83,7 +84,7 @@ describe('outlines on the sheet’s top and left edge', () => {
         rect,
       })
     ctx.rect = (...rect: Rect) => void out.push({ kind: 'clip', rect })
-    createRenderer(ctx as never, createMockGeo() as never).render({
+    createRenderer(fromPartial(ctx), fromPartial(createMockGeo())).render({
       cssW: 600,
       cssH: 300,
       getValue: () => '',
@@ -132,14 +133,17 @@ describe('outlines on the sheet’s top and left edge', () => {
 describe('setting the filter range', () => {
   function grid() {
     const canvas = document.createElement('canvas')
-    vi.spyOn(canvas, 'getContext').mockReturnValue(createMockCtx() as never)
+    vi.spyOn(canvas, 'getContext').mockReturnValue(fromPartial(createMockCtx()))
     document.body.appendChild(canvas)
     const frames: FrameRequestCallback[] = []
     vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => frames.push(cb))
-    const g = createGrid(canvas, {
-      cells: { getStyle: () => ({}) },
-      host: { canEdit: () => true },
-    } as never)
+    const g = createGrid(
+      canvas,
+      fromPartial({
+        cells: { getStyle: () => ({}) },
+        host: { canEdit: () => true },
+      }),
+    )
     g.resize(800, 600)
     frames.splice(0).forEach((cb) => cb(0))
     return { g, frames }

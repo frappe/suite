@@ -75,9 +75,10 @@
 import { Button, Dialog } from 'frappe-ui'
 import { computed, ref } from 'vue'
 
-import { api, client, useQuery } from '@/api'
+import { api, useQuery } from '@/api'
 import { DRIVE_ROLES } from '@/apps/drive/client/types'
 import { translate as __ } from '@/platform/translation'
+import { useWorkspace } from '@/platform/workspace'
 
 import { nodeIcon, nodeIconTint } from '../internal/icons'
 import DriveBrowser, { type BrowserLocation } from './DriveBrowser.vue'
@@ -85,7 +86,7 @@ import {
   canOpenFolder,
   destination,
   itemsRoot,
-  moveAccessChange,
+  previewMoveAccess,
   startingFolder,
   type MoveAccessChange,
   type PickedItem,
@@ -136,6 +137,7 @@ const canCreateFolder = computed(() => (currentRole.value ?? 0) >= DRIVE_ROLES.u
 /** The move preview is loading, before the confirmation or the move. */
 const checking = ref(false)
 const accessChange = ref<MoveAccessChange | null>(null)
+const { workspaceName: workspace } = useWorkspace()
 const reviewingAccess = ref(false)
 let confirmMove = () => {}
 async function choose() {
@@ -153,12 +155,7 @@ async function choose() {
 async function previewAccessChange(folder: string): Promise<MoveAccessChange | null> {
   checking.value = true
   try {
-    const previews = await Promise.all(
-      props.items.map((item) =>
-        client.query(api.drive.nodes.previewMove, { node: item.name, parent_node: folder }),
-      ),
-    )
-    return moveAccessChange(previews)
+    return await previewMoveAccess(props.items, folder, workspace.value)
   } finally {
     checking.value = false
   }

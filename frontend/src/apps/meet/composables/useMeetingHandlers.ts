@@ -90,7 +90,7 @@ export function useMeetingHandlers(deps: MeetingHandlersDeps) {
       deps.connectionState.connectionError = 'Invalid guest join response'
       return
     }
-    const guestId = normalizedJoinResult.guest_id || (deps.connectionState.guestId as string)
+    const guestId = normalizedJoinResult.guest_id || deps.connectionState.guestId
     const resolvedGuestName = guestName || readGuestSession(deps.meetingId)?.guestName
 
     if (guestId && resolvedGuestName) {

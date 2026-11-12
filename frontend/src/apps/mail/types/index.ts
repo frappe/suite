@@ -72,6 +72,9 @@ export interface Mail {
   junk: 0 | 1
   /** From a sender nobody has allowed or denied yet: waiting in the Inbox, marked new. */
   unscreened?: 0 | 1
+  /** The folders it is pinned in, by id: each holds the conversation at its top while it is in
+   * there (see suite/mail/pins.py). */
+  pinned_in?: string[]
   mailboxes: Mailbox[]
   recipients: Recipient[]
   groupedRecipients?: {
@@ -190,6 +193,20 @@ export interface Thread {
   unscreened?: 0 | 1
   /** The senders of the thread's unscreened mail, in the order they first wrote. */
   unscreened_senders?: string[]
+  /** Held at the top of the folder it is listed from, which takes pins (see takesPins). */
+  pinned?: 0 | 1
+  /** Back from waiting, and held near the top of the Inbox until removed. */
+  returned?: 0 | 1
+  /** Of the returned: your own mail nobody answered, back to chase. */
+  no_reply?: 0 | 1
+  /** On the Snoozed list: when it comes back, a UTC `...Z` time. */
+  snoozed_until?: string | null
+  /** Of the returned, while its snooze is kept: when it was snoozed, a UTC `...Z` time. */
+  snoozed_at?: string | null
+  /** And when it came back. */
+  returned_at?: string | null
+  /** On the Sent list: when you are reminded if nobody answers, a UTC `...Z` time. */
+  remind_at?: string | null
   attachments: Attachment[]
   user_image?: string
   messages: Mail[]

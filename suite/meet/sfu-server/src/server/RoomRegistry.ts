@@ -313,9 +313,10 @@ export class RoomRegistry {
 	}
 
 	getRecorderSockets(roomId: string): Socket[] {
-		return [...(this.recorderSockets.get(roomId) ?? [])]
-			.map((socketId) => this.io.sockets.sockets.get(socketId))
-			.filter((socket): socket is Socket => Boolean(socket));
+		return [...(this.recorderSockets.get(roomId) ?? [])].flatMap((socketId) => {
+			const mappedValue = this.io.sockets.sockets.get(socketId);
+			return mappedValue ? [mappedValue] : [];
+		});
 	}
 
 	setRaisedHand(roomId: string, peerId: string, isoTimestamp: string): void {
@@ -645,9 +646,15 @@ export class RoomRegistry {
 		let stage = this.sharedStages.get(roomId);
 		if (!stage) {
 			stage = new SharedStage((snapshot) => {
-				for (const socketId of this.io.sockets.adapter.rooms.get(fullRoom(roomId)) ?? []) {
+				for (const socketId of this.io.sockets.adapter.rooms.get(
+					fullRoom(roomId),
+				) ?? []) {
 					const socket = this.io.sockets.sockets.get(socketId);
-					if (socket) socket.emit('shared_stage', stage!.snapshotFor(socket.participantId));
+					if (socket)
+						socket.emit(
+							'shared_stage',
+							stage!.snapshotFor(socket.participantId),
+						);
 				}
 				const state = this.getRecorderProjectionState(roomId);
 				this.emitProjection(roomId, state, this.observeProjectionAt(state), {
@@ -832,12 +839,15 @@ export class RoomRegistry {
 
 		if (event === 'participant_joined' && userData) {
 			const avatar = userData.avatar || undefined;
+			const identity: Pick<RecorderStageParticipant, 'name' | 'avatar'> = {
+				name: userData.name,
+			};
+			if (avatar) identity.avatar = avatar;
 			this.emitToRecorders(roomId, event, {
 				roomId,
 				participantId,
 				userData: {
-					name: userData.name,
-					...(avatar ? { avatar } : {}),
+					...identity,
 					audio_enabled: userData.audio_enabled,
 					video_enabled: userData.video_enabled,
 				},
@@ -849,10 +859,13 @@ export class RoomRegistry {
 		const state = this.getRecorderProjectionState(roomId);
 		const observedAt = this.observeProjectionAt(state);
 		if (event === 'participant_joined' && userData) {
+			const identity: Pick<
+				RecorderStageParticipant,
+				'participant_id' | 'name' | 'avatar'
+			> = { participant_id: participantId, name: userData.name };
+			if (userData.avatar) identity.avatar = userData.avatar;
 			const participant: RecorderStageParticipant = {
-				participant_id: participantId,
-				name: userData.name,
-				...(userData.avatar ? { avatar: userData.avatar } : {}),
+				...identity,
 				audio_enabled: userData.audio_enabled,
 				video_enabled: userData.video_enabled,
 			};
@@ -912,10 +925,13 @@ export class RoomRegistry {
 		const state = this.getRecorderProjectionState(roomId);
 		if (!state.participants.has(participantId)) return;
 		const observedAt = this.observeProjectionAt(state);
+		const identity: Pick<
+			RecorderStageParticipant,
+			'participant_id' | 'name' | 'avatar'
+		> = { participant_id: participantId, name: userData.name };
+		if (userData.avatar) identity.avatar = userData.avatar;
 		const participant: RecorderStageParticipant = {
-			participant_id: participantId,
-			name: userData.name,
-			...(userData.avatar ? { avatar: userData.avatar } : {}),
+			...identity,
 			audio_enabled: userData.audio_enabled,
 			video_enabled: userData.video_enabled,
 		};

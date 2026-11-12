@@ -83,14 +83,17 @@
   <!-- Settings and its Cmd+Shift+, shortcut are for signed-in people only: a
        guest has no account or workspace to set. -->
   <SuiteSettingsDialog
-    v-if="session.status.value === 'authenticated'"
+    v-if="session.status.value === 'authenticated' && !route.meta.onboarding"
     v-model:open="showSettings"
     v-model:tab="settingsTab"
   />
   <!-- Search, commands and app switching (Cmd+K, then `>`), over every frame,
        with the suite's theme shortcut. Signed in only: every search it runs
        needs a session. -->
-  <SuiteCommandPalette v-if="session.status.value === 'authenticated'" :areas="areas" />
+  <SuiteCommandPalette
+    v-if="session.status.value === 'authenticated' && !route.meta.onboarding"
+    :areas="areas"
+  />
   <!-- The shortcuts list for pages whose area draws none of its own. -->
   <ShortcutsDialog v-model:open="shellShortcutsOpen" />
 </template>
@@ -187,9 +190,11 @@ const setPhoneNavHeight = (height: number | null) =>
   height === null
     ? document.documentElement.style.removeProperty('--suite-phone-nav-height')
     : document.documentElement.style.setProperty('--suite-phone-nav-height', `${height}px`)
-useResizeObserver(phoneNav, ([entry]) =>
-  setPhoneNavHeight(entry ? (entry.target as HTMLElement).offsetHeight : null),
-)
+useResizeObserver(phoneNav, ([entry]) => {
+  const checkedEventTarget = entry.target
+  if (!(checkedEventTarget instanceof HTMLElement)) return
+  return setPhoneNavHeight(entry ? checkedEventTarget.offsetHeight : null)
+})
 watch(phoneNav, (element) => {
   if (!element) setPhoneNavHeight(null)
 })

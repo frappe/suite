@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it, vi } from 'vitest'
 import { nextTick, ref } from 'vue'
 
@@ -17,7 +18,7 @@ describe('useScreenShareTiles', () => {
       currentUser: ref(null),
       gridLayout: {
         pinnedTiles,
-        displayScreenShares: displayScreenShares as never,
+        displayScreenShares: fromPartial(displayScreenShares),
         pinTile,
         unpinTile,
         resetGridLayout: vi.fn(),

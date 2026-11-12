@@ -157,6 +157,7 @@ which is what an offboarded user looks like.
 | Workflow | Cost |
 |---|---|
 | `personal_root_for` | one indexed read of `Drive Root (kind, user, state)` |
+| `root_locations` | one read of the caller's Active roots joined to their nodes, plus a READ check on each |
 | `ensure_personal_root` | the same read; on a miss, one `User` row lock plus three inserts |
 | `get_storage_usage` | the root-pair read plus one `SUM(reserved_bytes)` on the `root` index |
 | `get_storage_reservation` | one primary-key read, no lock |
@@ -166,6 +167,7 @@ which is what an offboarded user looks like.
 | `node_url` | one primary-key read of the node's kind |
 | `node_owner` | one primary-key read of the node's owner |
 | `ensure_folder` | one indexed read of the parent's children; on a miss, one folder create under the parent-chain lock |
+| `record_visit` | one READ check and one upsert of the caller's `Drive Recent` row |
 | `store_file` | one pass over the bytes to hash and store them, then one file create under the parent-chain lock |
 
 No workflow scans `Drive Node`. Every one is bounded work per call, so a
@@ -508,14 +510,22 @@ def people_on(node: str, users: Iterable[str] = ()) -> dict[str, PersonOnNode]:
     return _people_on(node, _principals(), users)
 
 
-def take_version(node: str, *, kind: str = "auto", label: str | None = None, actor: str | None = None) -> int:
+def take_version(
+    node: str,
+    *,
+    kind: str = "auto",
+    label: str | None = None,
+    actor: str | None = None,
+    activity: bool = True,
+) -> int:
     """Store a node's current bytes as an immutable version and return its seq; needs EDIT.
 
     `actor` credits someone other than the caller, as a sweep versioning other people's edits does.
+    `activity=False` records no edit, for a version the system keeps that nobody's edit made.
     """
     from suite.drive._core.versions import take_version as _take_version
 
-    return _take_version(_principals(), node, kind=kind, label=label, actor=actor)
+    return _take_version(_principals(), node, kind=kind, label=label, actor=actor, activity=activity)
 
 
 def check_history_reader(node: str) -> None:
@@ -553,6 +563,13 @@ def ensure_folder(parent: str, title: str) -> str:
     return _ensure_folder(_principals(), parent, title)
 
 
+def record_visit(node: str) -> None:
+    """Put `node` at the top of the caller's Recent, as opening it does. Needs READ on `node`."""
+    from suite.drive._core.activity import visit
+
+    visit(_principals(), node)
+
+
 def store_file(
     parent: str,
     title: str,
@@ -581,6 +598,21 @@ def store_file(
         content_modified=content_modified,
         reservation=reservation,
     )
+
+
+def root_locations() -> dict | None:
+    """Answer the caller's Files locations, as `GET roots` does; `None` when Drive refuses, so the boot goes on.
+
+    A guest, a caller with no Personal root, or a malformed root all refuse. `GET roots` still answers the refusal inside Drive.
+    """
+    import frappe
+
+    from suite.drive._core.roots import discover
+
+    try:
+        return discover(_principals())
+    except frappe.ValidationError:
+        return None
 
 
 def _principals():
@@ -639,6 +671,7 @@ __all__ = (
     "push_preview",
     "read_file",
     "read_version",
+    "record_visit",
     "reduce_storage_reservation",
     "refuse_shared_child_rows",
     "refuse_shared_linked_rows",
@@ -646,6 +679,7 @@ __all__ = (
     "release_storage_reservation",
     "resolve_share_link",
     "rollback_savepoint",
+    "root_locations",
     "set_user_active",
     "store_file",
     "take_version",

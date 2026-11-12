@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h } from 'vue'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
@@ -26,7 +27,7 @@ async function openedNotice() {
   const root = document.createElement('div')
   document.body.append(root)
   createApp({ render: () => h(RouterView) })
-    .provide(DOCUMENT_TYPES_KEY, [writer] as never)
+    .provide(DOCUMENT_TYPES_KEY, fromPartial([writer]))
     .use(router)
     .mount(root)
   for (let tick = 0; tick < 5; tick++) {

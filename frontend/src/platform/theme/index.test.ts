@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 
@@ -57,9 +58,9 @@ describe('theme', () => {
     const request = vi.fn<(operation: any, input: any) => Promise<any>>(async (operation) =>
       operation.id === 'frappe.user.get_theme' ? { desk_theme: 'Automatic' } : undefined,
     )
-    const session = {
+    const session = fromPartial<Session>({
       user: ref({ id: 'user@example.com', fullName: 'User', avatar: null }),
-    } as unknown as Session
+    })
     const theme = createTheme({
       preferences: {
         read: () => request({ id: 'frappe.user.get_theme' }, {}),
@@ -78,20 +79,19 @@ describe('theme', () => {
     let listener: ((event: MediaQueryListEvent) => void) | undefined
     vi.stubGlobal(
       'matchMedia',
-      vi.fn(
-        () =>
-          ({
-            matches: false,
-            addEventListener: (_event: string, handler: EventListenerOrEventListenerObject) => {
-              listener = handler as (event: MediaQueryListEvent) => void
-            },
-          }) as MediaQueryList,
+      vi.fn(() =>
+        fromPartial<MediaQueryList>({
+          matches: false,
+          addEventListener: (_event: string, handler: EventListenerOrEventListenerObject) => {
+            listener = fromPartial<(event: MediaQueryListEvent) => void>(handler)
+          },
+        }),
       ),
     )
     document.documentElement.setAttribute('data-theme-mode', 'automatic')
     const theme = createTheme()
     expect(theme.resolvedMode.value).toBe('light')
-    listener?.({ matches: true } as MediaQueryListEvent)
+    listener?.(fromPartial<MediaQueryListEvent>({ matches: true }))
     expect(theme.resolvedMode.value).toBe('dark')
     expect(document.documentElement.style.colorScheme).toBe('dark')
   })
@@ -112,9 +112,9 @@ describe('theme', () => {
     const request = vi.fn(async (..._args: unknown[]) => {
       throw new Error('offline')
     })
-    const session = {
+    const session = fromPartial<Session>({
       user: ref({ id: 'user@example.com', fullName: 'User', avatar: null }),
-    } as unknown as Session
+    })
     document.documentElement.setAttribute('data-theme-mode', 'light')
     const theme = createTheme({
       preferences: {
@@ -130,9 +130,9 @@ describe('theme', () => {
 
   it('initializes the server preference once', async () => {
     const request = vi.fn(async (..._args: unknown[]) => ({ desk_theme: 'Dark' }))
-    const session = {
+    const session = fromPartial<Session>({
       user: ref({ id: 'user@example.com', fullName: 'User', avatar: null }),
-    } as unknown as Session
+    })
     const theme = createTheme({
       preferences: {
         read: () => request({ id: 'frappe.user.get_theme' }, {}),

@@ -89,7 +89,8 @@ export class RecorderStageProjection {
     event: RecorderStageProjectionEvent,
   ): RecorderStageProjectionEvent[] {
     this.assertRoom(event.room_id)
-    const cursor = this.cursor as number
+    const cursor = this.cursor
+    if (cursor === null) throw new Error('Projection event arrived before its initial snapshot')
     if (event.cursor < cursor)
       throw new Error(`Projection cursor regressed: ${event.cursor} after ${cursor}`)
     if (event.cursor === cursor) {

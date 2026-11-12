@@ -46,37 +46,61 @@ export function foldersFromInput(files: readonly File[]): FolderUpload[] {
     files: tree.files,
   }))
 }
+export interface CapturedDrop {
+  hasFiles: boolean
+  /** The names of the dropped folders. */
+  folders: string[]
+  /** Walks the dropped folders; `onFound` runs once per file found in them. */
+  read(onFound?: () => void): Promise<UploadSelection>
+}
+
+/** A dropped folder whose tree the browser would not read. */
+export class FolderReadError extends Error {
+  constructor(
+    readonly folder: string,
+    options?: ErrorOptions,
+  ) {
+    super(`Could not read ${folder}`, options)
+  }
+}
 
 /**
  * What a drop carries, read while the drop event is live. The browser empties
  * `DataTransfer` once the handler returns, so call this synchronously and
  * await `read()` afterwards.
  */
-export function captureDrop(transfer: DataTransfer): {
-  hasFiles: boolean
-  read(): Promise<UploadSelection>
-} {
-  const captured = [...transfer.items]
-    .filter((item) => item.kind === 'file')
-    .map((item) => ({
-      entry: item.webkitGetAsEntry?.() ?? null,
-      file: item.getAsFile(),
-      handle: (item as HandleItem).getAsFileSystemHandle?.() ?? null,
-    }))
+export function captureDrop(transfer: DataTransfer): CapturedDrop {
+  const captured = [...transfer.items].flatMap((item: HandleItem) =>
+    item.kind === 'file'
+      ? [
+          {
+            entry: item.webkitGetAsEntry?.() ?? null,
+            file: item.getAsFile(),
+            handle: item.getAsFileSystemHandle?.() ?? null,
+          },
+        ]
+      : [],
+  )
   return {
     hasFiles: captured.length > 0,
-    async read() {
+    folders: captured.flatMap((item) => (item.entry?.isDirectory ? [item.entry.name] : [])),
+    async read(onFound) {
       const selection: UploadSelection = { files: [], folders: [] }
       for (const item of captured) {
-        if (item.entry?.isDirectory) {
-          selection.folders.push(await readDirectory(item.entry as FileSystemDirectoryEntry))
+        if (item.entry && isDirectory(item.entry)) {
+          const root = item.entry
+          selection.folders.push(
+            await readDirectory(root, onFound).catch((cause: unknown) => {
+              throw new FolderReadError(root.name, { cause })
+            }),
+          )
           continue
         }
         if (!item.file) continue
         const handle = await item.handle?.catch(() => null)
         selection.files.push({
           file: item.file,
-          handle: handle?.kind === 'file' ? (handle as FileSystemFileHandle) : undefined,
+          handle: handle && isFileHandle(handle) ? handle : undefined,
         })
       }
       return selection
@@ -88,7 +112,7 @@ export function captureDrop(transfer: DataTransfer): {
 export function pastedImages(transfer: DataTransfer | null): PickedFile[] {
   return [...(transfer?.items ?? [])]
     .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
-    .flatMap((item) => {
+    .flatMap((item: HandleItem) => {
       const file = item.getAsFile()
       return file ? [{ file }] : []
     })
@@ -103,17 +127,33 @@ type HandleItem = DataTransferItem & {
   getAsFileSystemHandle?: () => Promise<FileSystemHandle | null>
 }
 
-async function readDirectory(root: FileSystemDirectoryEntry): Promise<FolderUpload> {
+function isDirectory(entry: FileSystemEntry): entry is FileSystemDirectoryEntry {
+  return entry.isDirectory
+}
+
+function isFile(entry: FileSystemEntry): entry is FileSystemFileEntry {
+  return entry.isFile
+}
+
+function isFileHandle(handle: FileSystemHandle): handle is FileSystemFileHandle {
+  return handle.kind === 'file'
+}
+
+async function readDirectory(
+  root: FileSystemDirectoryEntry,
+  onFound?: () => void,
+): Promise<FolderUpload> {
   const folders = new Set<string>()
   const files: Array<{ folder: string; file: File }> = []
   async function walk(directory: FileSystemDirectoryEntry, path: string) {
     for (const entry of await readEntries(directory)) {
-      if (entry.isDirectory) {
+      if (isDirectory(entry)) {
         const child = path ? `${path}/${entry.name}` : entry.name
         folders.add(child)
-        await walk(entry as FileSystemDirectoryEntry, child)
-      } else if (entry.isFile) {
-        files.push({ folder: path, file: await readFile(entry as FileSystemFileEntry) })
+        await walk(entry, child)
+      } else if (isFile(entry)) {
+        files.push({ folder: path, file: await readFile(entry) })
+        onFound?.()
       }
     }
   }

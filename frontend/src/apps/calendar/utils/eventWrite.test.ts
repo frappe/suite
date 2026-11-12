@@ -10,9 +10,14 @@ vi.mock('@/platform/session', () => ({
 
 /** Sends `input` through the generated contract check every request passes before it leaves. */
 async function send(reference: { loadValidators?: () => Promise<unknown> }, input: unknown) {
-  const validators = (await reference.loadValidators!()) as {
-    validateInput(input: unknown): void
-  }
+  const validators = await reference.loadValidators!()
+  if (
+    !validators ||
+    typeof validators !== 'object' ||
+    !('validateInput' in validators) ||
+    typeof validators.validateInput !== 'function'
+  )
+    throw new Error('Expected input validators')
   validators.validateInput(input)
   return input
 }

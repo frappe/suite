@@ -14,37 +14,37 @@ import type { CheerioAPI } from 'cheerio'
 // Baking dark colours into the wire format would defeat that and reach the recipient wrong.
 //
 // The values are frappe-ui's own — `textColorHexMap` and `highlightColorHexMap` in
-// TextEditor/extensions/shared/color-utils.ts. They are copied rather than imported because that
+// molecules/editor/extensions/shared/color-utils.ts. They are copied rather than imported because that
 // module isn't in frappe-ui's package exports. They double as the extension's own legacy parse
 // map, so a body written this way still reads back as a named colour when a draft is reopened.
-const TEXT_COLORS: Record<string, string> = {
-  black: '#000000',
-  red: '#dc2626',
-  blue: '#1579D0',
-  green: '#16a34a',
-  yellow: '#ca8a04',
-  orange: '#ea580c',
-  purple: '#9333ea',
-  pink: '#db2777',
-  gray: '#6b7280',
-  indigo: '#4f46e5',
-  teal: '#0d9488',
-  cyan: '#06b6d4',
-}
+const TEXT_COLORS = new Map<string, string>([
+  ['black', '#000000'],
+  ['red', '#dc2626'],
+  ['blue', '#1579D0'],
+  ['green', '#16a34a'],
+  ['yellow', '#ca8a04'],
+  ['orange', '#ea580c'],
+  ['purple', '#9333ea'],
+  ['pink', '#db2777'],
+  ['gray', '#6b7280'],
+  ['indigo', '#4f46e5'],
+  ['teal', '#0d9488'],
+  ['cyan', '#06b6d4'],
+])
 
-const HIGHLIGHT_COLORS: Record<string, string> = {
-  red: '#fecaca',
-  blue: '#bfdbfe',
-  green: '#bbf7d0',
-  yellow: '#fef08a',
-  orange: '#fed7aa',
-  purple: '#e9d5ff',
-  pink: '#fbcfe8',
-  gray: '#e5e7eb',
-  indigo: '#c7d2fe',
-  teal: '#99f6e4',
-  cyan: '#a5f3fc',
-}
+const HIGHLIGHT_COLORS = new Map<string, string>([
+  ['red', '#fecaca'],
+  ['blue', '#bfdbfe'],
+  ['green', '#bbf7d0'],
+  ['yellow', '#fef08a'],
+  ['orange', '#fed7aa'],
+  ['purple', '#e9d5ff'],
+  ['pink', '#fbcfe8'],
+  ['gray', '#e5e7eb'],
+  ['indigo', '#c7d2fe'],
+  ['teal', '#99f6e4'],
+  ['cyan', '#a5f3fc'],
+])
 
 const PROSE_COLOR_VAR = /var\(--prose-(color|highlight)-([a-z]+)\)/g
 
@@ -54,7 +54,7 @@ const PROSE_COLOR_VAR = /var\(--prose-(color|highlight)-([a-z]+)\)/g
 const resolveColorVariables = (style: string) =>
   style.replace(PROSE_COLOR_VAR, (variable, kind: string, name: string) => {
     const palette = kind === 'color' ? TEXT_COLORS : HIGHLIGHT_COLORS
-    return palette[name] ?? variable
+    return palette.get(name) ?? variable
   })
 
 // Text colour and highlight are separate marks, so colouring a highlighted run nests them:

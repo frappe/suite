@@ -59,38 +59,27 @@ def get_attached_presentations(src: str, names: set[str]) -> set[str]:
     if not names:
         return set()
 
-    return set(
-        frappe.get_all(
-            "File",
-            filters={
-                "file_url": src,
-                "attached_to_doctype": "Presentation",
-                "attached_to_name": ("in", list(names)),
-            },
-            pluck="attached_to_name",
-            distinct=True,
-            order_by=None,
-        )
+    rows = _files_at_exact_url(
+        [src],
+        ["attached_to_name"],
+        attached_to_doctype="Presentation",
+        attached_to_name=("in", list(names)),
     )
+    return {row.attached_to_name for row in rows}
 
 
 def is_template_media(src: str) -> bool:
     """Layouts are copied into a presentation wholesale, so it shows the file urls of
     every template it ever drew a slide from without holding a File row for any."""
-    holders = frappe.get_all(
-        "File",
-        filters={"file_url": src, "attached_to_doctype": "Presentation"},
-        pluck="attached_to_name",
-        distinct=True,
-        order_by=None,
-    )
+    rows = _files_at_exact_url([src], ["attached_to_name"], attached_to_doctype="Presentation")
+    holders = {row.attached_to_name for row in rows}
     if not holders:
         return False
 
     return bool(
         frappe.get_all(
             "Presentation",
-            filters={"name": ("in", holders), "is_template": 1},
+            filters={"name": ("in", list(holders)), "is_template": 1},
             limit=1,
             order_by=None,
         )
@@ -109,7 +98,7 @@ def validate_media_file(src: str, presentation: str | None = None) -> None:
         if frappe.has_permission("Presentation", "read", presentation) and is_template_media(src):
             return
 
-    if not frappe.db.exists("File", {"file_url": src}):
+    if not _files_at_exact_url([src], ["name"]):
         raise NotFound
 
     raise Forbidden(_("You don't have permission to access this file"))
@@ -128,3 +117,13 @@ def get_media_file(src: str, public: str | None = None, presentation: str | None
     validate_media_file(src, presentation)
 
     return get_media_response(src)
+
+
+def _files_at_exact_url(urls, fields: list[str], **filters) -> list[frappe._dict]:
+    rows = frappe.get_all(
+        "File",
+        filters={"file_url": ("in", list(urls)), **filters},
+        fields=["file_url", *fields],
+        order_by=None,
+    )
+    return [row for row in rows if row.file_url in urls]

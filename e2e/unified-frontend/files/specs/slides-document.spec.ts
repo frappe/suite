@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
-
-import { type APIRequestContext, type Browser, type Page, expect, test } from "@playwright/test";
+import { frappeData } from "../../../shared/frappe";
+import { expect, test, type APIRequestContext, type Browser, type Page } from "@playwright/test";
 
 import {
 	adminApi,
@@ -66,9 +66,7 @@ async function addRectangle(page: Page) {
 test("renames, exports and comments without a legacy Drive call", async ({ page }) => {
 	await page.addInitScript(() => {
 		window.print = () => {
-			(window as unknown as { printedPages: number }).printedPages = document.querySelectorAll(
-				".slides-container .slide-page",
-			).length;
+			window.printedPages = document.querySelectorAll(".slides-container .slide-page").length;
 			window.dispatchEvent(new Event("afterprint"));
 		};
 	});
@@ -81,9 +79,7 @@ test("renames, exports and comments without a legacy Drive call", async ({ page 
 
 	// Export prints one page per slide, then takes the print view away again.
 	await page.getByRole("button", { name: "Export", exact: true }).click();
-	await expect
-		.poll(() => page.evaluate(() => (window as unknown as { printedPages?: number }).printedPages))
-		.toBe(1);
+	await expect.poll(() => page.evaluate(() => window.printedPages)).toBe(1);
 	await expect(page.locator(".slides-container")).toHaveCount(0);
 
 	await page.getByRole("button", { name: "Comments" }).click();
@@ -169,9 +165,8 @@ async function ensureLinkOnlyUser(): Promise<void> {
 async function shareByLink(node: string, role: number): Promise<string> {
 	const response = await api.put(`${DRIVE}/nodes/${node}/grants/$LINK`, { data: { role } });
 	expect(response.ok()).toBe(true);
-	// The answer is the grant row itself.
-	const body = (await response.json()) as { data?: { principal: string }; message?: { principal: string } };
-	return (body.data ?? body.message)!.principal.replace("$LINK:", "");
+	const grant = await frappeData<{ principal: string }>(response);
+	return grant.principal.replace("$LINK:", "");
 }
 
 /** A browser signed in as the link-only person, holding these links. */
@@ -218,10 +213,7 @@ test("a composite sends the link code of a deck that is shared on its own", asyn
 	const updated = await api.put(`/api/resource/Presentation/${encodeURIComponent(deck.content_docname!)}`, {
 		data: {
 			is_composite: 1,
-			reference_presentations: [
-				{ presentation: part.content_docname },
-				{ presentation: hidden.content_docname },
-			],
+			reference_presentations: [{ presentation: part.content_docname }, { presentation: hidden.content_docname }],
 		},
 	});
 	expect(updated.ok()).toBe(true);
@@ -236,15 +228,16 @@ test("a composite sends the link code of a deck that is shared on its own", asyn
 	const group = page.waitForResponse((answer) => answer.url().includes("composite.composite_group"));
 	await openDeck(page);
 	// A response the typed client refuses ends the load before the manifest is asked for.
-	await expect(page.getByText(/^get_composite_presentation /), "the composite answer passes its contract").toHaveCount(0);
+	await expect(page.getByText(/^get_composite_presentation /), "the composite answer passes its contract").toHaveCount(
+		0,
+	);
 
 	// The manifest carries every held code, and names only the decks they open.
 	const listed = await manifest;
 	expect(((await listed.request().headerValue("x-drive-links")) ?? "").split(",").sort()).toEqual(
 		[deckCode, partCode].sort(),
 	);
-	const references = ((await listed.json()) as { message: { references: Array<{ node: string | null }> } })
-		.message.references;
+	const { references } = await frappeData<{ references: Array<{ node: string | null }> }>(listed);
 	expect(references.map((row) => row.node)).toEqual([part.name, null]);
 
 	const answer = await group;
@@ -288,7 +281,16 @@ const SHAPE_RECT = 'svg rect[stroke-width$="px"]';
 /** How many rectangles the server copy of a presentation holds. */
 async function rectangles(client: APIRequestContext, docname: string): Promise<number> {
 	const response = await client.get(`/api/resource/Presentation/${encodeURIComponent(docname)}`);
-	const doc = ((await response.json()) as { data: { slides: Array<{ elements: string }> } }).data;
-	return doc.slides.flatMap((slide) => JSON.parse(slide.elements || "[]") as Array<{ shapeType?: string }>)
-		.filter((element) => element.shapeType === "rectangle").length;
+	const doc = await frappeData<{ slides: Array<{ elements: string }> }>(response);
+	return doc.slides.flatMap((slide) => {
+		const elements: unknown = JSON.parse(slide.elements || "[]");
+		if (!Array.isArray(elements)) throw new Error("Expected slide elements to be an array");
+		return elements.filter((element) => element?.shapeType === "rectangle");
+	}).length;
+}
+
+declare global {
+	interface Window {
+		printedPages?: number;
+	}
 }

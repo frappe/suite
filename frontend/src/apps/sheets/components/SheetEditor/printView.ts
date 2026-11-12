@@ -125,7 +125,7 @@ function withShortGaps(indexes: Set<number>) {
 
 /** The page to print: one table per sheet, each starting on a new page. */
 export function printHtml(title: string, sheets: PrintableSheet[]) {
-  const body = sheets.filter((sheet) => sheet.rows.length).map(sheetHtml)
+  const body = sheets.flatMap((sheet) => (sheet.rows.length ? [sheetHtml(sheet)] : []))
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <title>${escape(title)}</title>
 <style>

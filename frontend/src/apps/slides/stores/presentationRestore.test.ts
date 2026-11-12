@@ -17,7 +17,10 @@ const servedFor = (name: string) => docs.get(name) ?? served
 
 vi.mock('@/api', async () => {
   const { api: slidesAPI } = await import('@/apps/slides/client/generated')
-  const send = async (reference: { path: string }, params: Record<string, unknown>) => {
+  const send = async (
+    reference: { path: string; method?: string },
+    params: Record<string, unknown>,
+  ) => {
     const url = reference.path.replace('/api/method/', '')
     requests.push({ url, method: reference.method, params })
     if (!url.endsWith('get_public_presentation')) return {}
@@ -51,6 +54,7 @@ vi.mock('@/apps/slides/stores/saving', () => ({
 const { lockedElsewhere } = await import('./editLock')
 const {
   initPresentationDoc,
+  currentOpening,
   startLoad,
   presentationId,
   presentationDoc,
@@ -101,7 +105,7 @@ describe('loading a presentation', () => {
     const doc = await initPresentationDoc('p1')
 
     expect(slides.value[0].background).toBe('#00ff00ff')
-    expect(doc.modified).toBe('M2')
+    expect(doc?.modified).toBe('M2')
     expect(markClean).toHaveBeenCalled()
     expect(markDirty).not.toHaveBeenCalled()
   })
@@ -183,7 +187,7 @@ describe('loading a presentation', () => {
 
       const doc = await initPresentationDoc('p1')
 
-      expect(doc.modified).toBe('M1')
+      expect(doc?.modified).toBe('M1')
       expect(slides.value[0].background).toBe('#00ff00ff')
       expect(markDirty).toHaveBeenCalled()
       expect(writeDraft).not.toHaveBeenCalled()
@@ -195,7 +199,7 @@ describe('loading a presentation', () => {
 
       const doc = await initPresentationDoc('p1')
 
-      expect(doc.modified).toBe('M1')
+      expect(doc?.modified).toBe('M1')
       expect(slides.value[0].background).toBe('#00ff00ff')
       expect(writeDraft).not.toHaveBeenCalled()
     })
@@ -235,7 +239,7 @@ describe('loading a presentation', () => {
       const doc = await initPresentationDoc('p1')
 
       expect(keepDiscarded).toHaveBeenCalledWith(local.content)
-      expect(doc.modified).toBe('M2')
+      expect(doc?.modified).toBe('M2')
     })
 
     it('with no base and no room for a copy, stays on a base the server refuses', async () => {
@@ -246,7 +250,7 @@ describe('loading a presentation', () => {
 
       const doc = await initPresentationDoc('p1')
 
-      expect(doc.modified).toBe('')
+      expect(doc?.modified).toBe('')
       expect(slides.value[0].background).toBe('#00ff00ff')
       expect(markDirty).toHaveBeenCalled()
     })
@@ -297,7 +301,7 @@ describe('loading a presentation', () => {
 
       const doc = await initPresentationDoc('p1')
 
-      expect(doc.modified).toBe('M1')
+      expect(doc?.modified).toBe('M1')
       expect(markDirty).toHaveBeenCalled()
       expect(slides.value[0].background).toBe(oldLink)
       expect(writeDraft).not.toHaveBeenCalled()
@@ -306,9 +310,9 @@ describe('loading a presentation', () => {
   })
 
   describe('a dirty draft on an older base than the served document', () => {
-    function expectDraftKept(doc: { modified: string }) {
+    function expectDraftKept(doc: Record<string, unknown> | null) {
       expect(slides.value[0].background).toBe('#00ff00ff')
-      expect(doc.modified).toBe('M1')
+      expect(doc?.modified).toBe('M1')
       expect(markDirty).toHaveBeenCalled()
       expect(warning).not.toHaveBeenCalled()
       expect(writeDraft).not.toHaveBeenCalled()
@@ -368,7 +372,7 @@ describe('loading a presentation', () => {
 
       const doc = await initPresentationDoc('p1')
 
-      expect(doc.modified).toBe('M1')
+      expect(doc?.modified).toBe('M1')
       expect(slides.value[0].background).toBe('#00ff00ff')
       expect(writeDraft).not.toHaveBeenCalled()
     })
@@ -417,7 +421,7 @@ describe('loading a presentation', () => {
 
       const doc = await initPresentationDoc('p1')
 
-      expect(doc.modified).toBe('M2')
+      expect(doc?.modified).toBe('M2')
       expect(warning).not.toHaveBeenCalled()
       expect(writeDraft).toHaveBeenCalledWith(
         expect.objectContaining({ dirty: false, baseModified: 'M2' }),
@@ -431,7 +435,7 @@ describe('loading a presentation', () => {
 
       const doc = await initPresentationDoc('p1')
 
-      expect(doc.modified).toBe('M2')
+      expect(doc?.modified).toBe('M2')
       expect(slides.value[0].background).toBe('#ff0000ff')
       expect(fetch).not.toHaveBeenCalled()
     })
@@ -442,7 +446,7 @@ describe('loading a presentation', () => {
 
       const doc = await initPresentationDoc('p1')
 
-      expect(doc.modified).toBe('M1')
+      expect(doc?.modified).toBe('M1')
       expect(slides.value[0].background).toBe('#00ff00ff')
       expect(warning).not.toHaveBeenCalled()
       expect(writeDraft).not.toHaveBeenCalled()
@@ -453,7 +457,7 @@ describe('loading a presentation', () => {
 
       const doc = await initPresentationDoc('p1', true)
 
-      expect(doc.modified).toBe('M2')
+      expect(doc?.modified).toBe('M2')
       expect(slides.value[0].background).toBe('#ff0000ff')
       expect(writeDraft).not.toHaveBeenCalled()
     })
@@ -466,7 +470,7 @@ describe('loading a presentation', () => {
 
     const doc = await initPresentationDoc('p1')
 
-    expect(doc.modified).toBe('M2')
+    expect(doc?.modified).toBe('M2')
     expect(slides.value[0].background).toBe('#ff0000ff')
     expect(markDirty).not.toHaveBeenCalled()
   })
@@ -560,7 +564,7 @@ describe('overlapping loads', () => {
     releaseSlow()
 
     expect(await slow).toBe(null)
-    expect(fast.name).toBe('fast')
+    expect(fast?.name).toBe('fast')
     expect(presentationId.value).toBe('fast')
     expect(presentationDoc.value.name).toBe('fast')
     expect(slides.value[0].background).toBe('#00ff00ff')
@@ -588,5 +592,30 @@ describe('overlapping loads', () => {
     expect(slides.value).toHaveLength(0)
     expect(markClean).not.toHaveBeenCalled()
     expect(markDirty).not.toHaveBeenCalled()
+  })
+})
+
+describe('work that waited on a presentation', () => {
+  beforeEach(() => {
+    local = null
+    served = { modified: 'M1', slides: [] }
+    holds.clear()
+  })
+
+  it('lands nowhere once the presentation was left and opened again', async () => {
+    await initPresentationDoc('p1')
+    const stillOpen = currentOpening()
+
+    await initPresentationDoc('p2')
+    await initPresentationDoc('p1')
+
+    expect(stillOpen()).toBe(false)
+  })
+
+  it('still lands while the presentation it started in stays open', async () => {
+    await initPresentationDoc('p1')
+    const stillOpen = currentOpening()
+
+    expect(stillOpen()).toBe(true)
   })
 })

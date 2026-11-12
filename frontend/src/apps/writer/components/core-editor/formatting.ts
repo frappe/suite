@@ -77,7 +77,12 @@ export const MARKS = [
   { name: 'strike', label: 'Strikethrough', icon: 'lucide-strikethrough', shortcut: 'Mod-Shift-s' },
 ] as const
 
-const APPLE_KEYS: Record<string, string> = { Mod: '⌘', Shift: '⇧', Alt: '⌥', Ctrl: '⌃' }
+const APPLE_KEYS = new Map<string, string>([
+  ['Mod', '⌘'],
+  ['Shift', '⇧'],
+  ['Alt', '⌥'],
+  ['Ctrl', '⌃'],
+])
 
 /**
  * Writes a Tiptap key binding such as `Mod-Shift-s` the way the platform shows it:
@@ -85,7 +90,7 @@ const APPLE_KEYS: Record<string, string> = { Mod: '⌘', Shift: '⇧', Alt: '⌥
  */
 export function formatShortcut(keys: string, isApple = isApplePlatform()): string {
   const parts = keys.split('-').map((key) => (key.length === 1 ? key.toUpperCase() : key))
-  if (isApple) return parts.map((key) => APPLE_KEYS[key] ?? key).join('')
+  if (isApple) return parts.map((key) => APPLE_KEYS.get(key) ?? key).join('')
   return parts.map((key) => (key === 'Mod' ? 'Ctrl' : key)).join('+')
 }
 

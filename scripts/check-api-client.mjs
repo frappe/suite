@@ -20,6 +20,8 @@ const protocols = new Set([
   'apps/slides/service-worker.js',
   'apps/slides/stores/element.js',
   'apps/slides/utils/offlineRequests.js',
+  // static font files, not an API
+  'apps/slides/utils/bundledFonts.ts',
 ])
 const resources = new Set([
   'createResource',

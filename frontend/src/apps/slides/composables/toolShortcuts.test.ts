@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, ref, type App } from 'vue'
 
@@ -31,7 +32,7 @@ const type = (text: string) => [...text].forEach((key) => press(key))
 describe('tool letters on the slide canvas', () => {
   beforeEach(() => {
     clock = 10_000
-    slides.value = [{ clientId: 'c1', background: '#ffffffff', elements: [] }] as never
+    slides.value = fromPartial([{ clientId: 'c1', background: '#ffffffff', elements: [] }])
     slideIndex.value = 0
     activeElementIds.value = []
     focusElementId.value = null

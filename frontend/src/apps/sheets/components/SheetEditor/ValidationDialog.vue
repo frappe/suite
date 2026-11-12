@@ -163,6 +163,7 @@ interface ListItem {
 const emit = defineEmits<{ apply: [rule: ValidationRule]; remove: [] }>()
 
 const vdListEl = ref<HTMLElement | null>(null)
+const initialListItems: ListItem[] = []
 const validationDialog = reactive({
   open: false,
   type: 'list',
@@ -171,7 +172,7 @@ const validationDialog = reactive({
   // 'between' | 'not_between' | 'gt' | 'gte' | 'lt' | 'lte' | 'eq' | 'neq'
   val1: '',
   val2: '',
-  listItems: [] as ListItem[],
+  listItems: initialListItems,
   // [{ label, color }] — color '' means auto (palette by position)
   message: '',
   severity: 'reject', // 'reject' blocks the edit; 'warn' allows it but flags the cell

@@ -3,7 +3,7 @@ import { createApp, nextTick } from 'vue'
 
 import VacationResponseSettings from './VacationResponseSettings.vue'
 
-const saved = vi.hoisted(() => ({ value: null as Record<string, unknown> | null }))
+const saved = vi.hoisted<{ value: Record<string, unknown> | null }>(() => ({ value: null }))
 
 vi.mock('frappe-ui', async () => {
   const { defineComponent, h } = await import('vue')
@@ -44,8 +44,17 @@ vi.mock('@/apps/mail/stores/user', () => ({
 vi.mock('@/apps/mail/utils', () => ({ raiseToast: vi.fn() }))
 vi.mock('@/apps/mail/utils/composables', () => ({
   useScreenSize: () => ({ isMobile: { value: false } }),
-  useTextEditorButtons: () => ({ buttons: [] }),
 }))
+// The message box shows only whether it can be edited.
+vi.mock('@/apps/mail/components/Controls/MailRichTextField.vue', async () => {
+  const { defineComponent, h } = await import('vue')
+  return {
+    default: defineComponent({
+      props: { editable: { type: Boolean, default: true } },
+      setup: (props) => () => h('div', { 'data-editable': String(props.editable) }),
+    }),
+  }
+})
 vi.mock('@/apps/mail/components/Modals/SetSieveScriptStateModal.vue', () => ({
   default: { render: () => null },
 }))
@@ -67,7 +76,7 @@ const mount = async (enabled: 0 | 1, dates: { from: string; to: string }) => {
   app.mount(root)
   await nextTick()
   const field = (label: string) => root.querySelector<HTMLInputElement>(`[data-label="${label}"]`)!
-  return { field, editor: root.querySelector('[editable]')! }
+  return { field, editor: root.querySelector('[data-editable]')! }
 }
 
 beforeEach(() => {
@@ -96,9 +105,9 @@ it('lets nothing be edited while the responder is off', async () => {
   const off = await mount(0, AHEAD)
   expect(off.field('Subject').disabled).toBe(true)
   expect(off.field('To Date').disabled).toBe(true)
-  expect(off.editor.getAttribute('editable')).toBe('false')
+  expect(off.editor.getAttribute('data-editable')).toBe('false')
 
   const on = await mount(1, AHEAD)
   expect(on.field('Subject').disabled).toBe(false)
-  expect(on.editor.getAttribute('editable')).toBe('true')
+  expect(on.editor.getAttribute('data-editable')).toBe('true')
 })

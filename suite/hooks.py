@@ -70,6 +70,10 @@ website_route_rules = [
     {"from_route": "/people/<path:app_path>", "to_route": "suite"},
     {"from_route": "/admin", "to_route": "suite"},
     {"from_route": "/admin/<path:app_path>", "to_route": "suite"},
+    # Joining a workspace: an invitation link (`/join/<key>`) and the sign-in for
+    # a person an Admin created with a temporary password (`/join`).
+    {"from_route": "/join", "to_route": "suite"},
+    {"from_route": "/join/<path:app_path>", "to_route": "suite"},
 ]
 
 home_page = "suite"
@@ -267,6 +271,7 @@ doc_events = {
         # "No Roles Specified" warning.
         "before_insert": [
             "suite.utils.user.assign_suite_role",
+            "suite.composition.users.before_insert",
         ],
         "before_validate": ["suite.mail.events.keep_new_password"],
         "after_insert": [
@@ -338,6 +343,10 @@ scheduler_events = {
         "suite.mail.doctype.contacts_exchange.contacts_exchange.clean_contacts_import_export_directories",
         "suite.calendar.doctype.calendar_exchange.calendar_exchange.clean_calendar_import_export_directories",
     ],
+    "daily_long": [
+        # mail
+        "suite.mail.reminders.return_unheld",
+    ],
     "hourly": [
         # content
         "suite.content.jobs.trim_logs",
@@ -356,6 +365,9 @@ scheduler_events = {
     ],
     "cron": {
         "* * * * *": [
+            # mail
+            "suite.mail.reminders.run_due",
+            # meet
             "suite.meet.api.recording.reconcile_pending_recordings",
             "suite.meet.recording.ingest.reconcile_due_finalizations",
         ],
@@ -499,6 +511,7 @@ ALLOWED_PATHS = [
     # Suite-owned resource singletons and collections
     "/api/suite/account",
     "/api/suite/site",
+    "/api/suite/workspace",
     "/api/suite/users",
     "/api/suite/invitations",
 ]

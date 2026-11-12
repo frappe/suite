@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { ConsumerEntry } from '../ConsumerManager'
@@ -86,9 +87,9 @@ function makeConsumer(
     kind: 'video',
     isScreen: false,
     adaptivelyPaused: false,
-    track: { muted: false } as MediaStreamTrack,
+    track: fromPartial<MediaStreamTrack>({ muted: false }),
     createdAt: environment.nowValue - 60_000,
-    consumer: {
+    consumer: fromPartial<ConsumerEntry['consumer']>({
       paused: false,
       producerPaused: false,
       getStats: vi.fn().mockImplementation(
@@ -105,7 +106,7 @@ function makeConsumer(
             ],
           ]),
       ),
-    } as unknown as ConsumerEntry['consumer'],
+    }),
     ...entry,
   }
 }
@@ -149,11 +150,7 @@ function makeManager(
       }
       return Boolean(
         entry.consumer.paused ||
-        (
-          entry.consumer as typeof entry.consumer & {
-            producerPaused?: boolean
-          }
-        ).producerPaused ||
+        entry.consumer.producerPaused ||
         entry.adaptivelyPaused ||
         (entry.kind === 'audio' && participant.audio_enabled === false) ||
         (entry.kind === 'video' && !entry.isScreen && participant.video_enabled === false),

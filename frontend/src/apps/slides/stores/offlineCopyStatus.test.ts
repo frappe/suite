@@ -3,6 +3,7 @@ import { ref } from 'vue'
 
 import {
   cache,
+  DECLARED_FONTS,
   ENTRY_ASSETS,
   image,
   LAZY_CHUNK,
@@ -255,7 +256,7 @@ describe('the start-up copy', () => {
       const running = runIt(id)
       await new Promise((resolve) => setTimeout(resolve, 0))
       presentationDoc.value = null
-      presentationId.value = null as never
+      presentationId.value = null
       viewOnly.value = false
       answer()
       await running
@@ -283,6 +284,7 @@ describe('the start-up copy', () => {
       ...STARTUP_API,
       ...ENTRY_ASSETS,
       LAZY_CHUNK,
+      ...DECLARED_FONTS,
       '/private/files/a.png',
       '/private/files/b.png',
     ]
@@ -322,7 +324,7 @@ describe('the start-up copy', () => {
       const next = globalThis.fetch
       vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
         if (url === failing) {
-          return json(500)
+          return new Response('', { status: 500 })
         }
 
         return next(url, init)

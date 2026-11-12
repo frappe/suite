@@ -45,6 +45,8 @@ import type {
   BlockSendersOutput,
   BookInput,
   BookOutput,
+  CancelReplyReminderInput,
+  CancelReplyReminderOutput,
   CancelScheduledMailInput,
   CancelScheduledMailOutput,
   ChangeMemberPasswordInput,
@@ -117,6 +119,8 @@ import type {
   DisableMembersOutput,
   DismissFailedMailInput,
   DismissFailedMailOutput,
+  DismissReturnedMailInput,
+  DismissReturnedMailOutput,
   EmptyUserMailboxInput,
   EmptyUserMailboxOutput,
   EnableMembersInput,
@@ -217,6 +221,8 @@ import type {
   GetQuotaOutput,
   GetRecentThreadsFromInput,
   GetRecentThreadsFromOutput,
+  GetReplyReminderInput,
+  GetReplyReminderOutput,
   GetScheduledMailInput,
   GetScheduledMailOutput,
   GetScreenedAddressesInput,
@@ -267,12 +273,16 @@ import type {
   OngoingCalendarExchangeOutput,
   OngoingExchangeInput,
   OngoingExchangeOutput,
+  PinMailsInput,
+  PinMailsOutput,
   ReactInput,
   ReactOutput,
   RebuildAutomationScriptForAccountInput,
   RebuildAutomationScriptForAccountOutput,
   RegionalPreferencesInput,
   RegionalPreferencesOutput,
+  RemindIfNoReplyInput,
+  RemindIfNoReplyOutput,
   RemoveFailedCreationInput,
   RemoveFailedCreationOutput,
   RemoveGroupEmailInput,
@@ -297,6 +307,8 @@ import type {
   RescheduleMailOutput,
   ResendOtpInput,
   ResendOtpOutput,
+  RestoreReturnedMailInput,
+  RestoreReturnedMailOutput,
   RetryAccountCreationInput,
   RetryAccountCreationOutput,
   RetryFailedMailInput,
@@ -343,12 +355,16 @@ import type {
   SignaturesOutput,
   SignupInput,
   SignupOutput,
+  SnoozeMailsInput,
+  SnoozeMailsOutput,
   SubscribeMailboxInput,
   SubscribeMailboxOutput,
   UndoScreeningVerdictInput,
   UndoScreeningVerdictOutput,
   UnscreenEmailAddressesInput,
   UnscreenEmailAddressesOutput,
+  UnsnoozeMailsInput,
+  UnsnoozeMailsOutput,
   UnsubscribeMailInput,
   UnsubscribeMailOutput,
   UpdateAccountPreferencesInput,
@@ -412,6 +428,145 @@ export const operationInboxSummary: Validators<InboxSummaryInput, InboxSummaryOu
       },
       'inbox_summary output',
     )
+  },
+}
+
+export const operationGetAccountRequest: Validators<
+  GetAccountRequestInput,
+  GetAccountRequestOutput
+> = {
+  validateInput(value: unknown): asserts value is GetAccountRequestInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: { request_key: { type: 'string' } },
+        required: ['request_key'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'get_account_request input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is GetAccountRequestOutput {
+    assertSchema(
+      value,
+      {
+        $defs: {
+          AccountRequest: {
+            properties: {
+              backup_email: {
+                anyOf: [{ type: 'string' }, { type: 'null' }],
+                title: 'Backup Email',
+              },
+              account: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Account' },
+              is_verified: { enum: [0, 1], title: 'Is Verified', type: 'integer' },
+              is_expired: { enum: [0, 1], title: 'Is Expired', type: 'integer' },
+              workspace_name: { title: 'Workspace Name', type: 'string' },
+              workspace_logo: { title: 'Workspace Logo', type: 'string' },
+              invited_by_name: { title: 'Invited By Name', type: 'string' },
+              invited_by_image: {
+                anyOf: [{ type: 'string' }, { type: 'null' }],
+                title: 'Invited By Image',
+              },
+              invited_by_email: { title: 'Invited By Email', type: 'string' },
+              is_admin: { enum: [0, 1], title: 'Is Admin', type: 'integer' },
+              sets_up_site: { enum: [0, 1], title: 'Sets Up Site', type: 'integer' },
+              expires_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Expires At' },
+            },
+            required: [
+              'backup_email',
+              'account',
+              'is_verified',
+              'is_expired',
+              'workspace_name',
+              'workspace_logo',
+              'invited_by_name',
+              'invited_by_image',
+              'invited_by_email',
+              'is_admin',
+              'sets_up_site',
+              'expires_at',
+            ],
+            title: 'AccountRequest',
+            type: 'object',
+          },
+        },
+        anyOf: [{ $ref: '#/$defs/AccountRequest' }, { type: 'null' }],
+      },
+      'get_account_request output',
+    )
+  },
+}
+
+export const operationGetAccountSetupOptions: Validators<
+  GetAccountSetupOptionsInput,
+  GetAccountSetupOptionsOutput
+> = {
+  validateInput(value: unknown): asserts value is GetAccountSetupOptionsInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: { request_key: { type: 'string' } },
+        required: ['request_key'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'get_account_setup_options input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is GetAccountSetupOptionsOutput {
+    assertSchema(
+      value,
+      {
+        $defs: {
+          Option: {
+            properties: {
+              value: { title: 'Value', type: 'string' },
+              label: { title: 'Label', type: 'string' },
+            },
+            required: ['value', 'label'],
+            title: 'Option',
+            type: 'object',
+          },
+        },
+        properties: {
+          locales: { items: { $ref: '#/$defs/Option' }, title: 'Locales', type: 'array' },
+          time_zones: { items: { $ref: '#/$defs/Option' }, title: 'Time Zones', type: 'array' },
+        },
+        required: ['locales', 'time_zones'],
+        title: 'AccountOptions',
+        type: 'object',
+      },
+      'get_account_setup_options output',
+    )
+  },
+}
+
+export const operationCreateAccount: Validators<CreateAccountInput, CreateAccountOutput> = {
+  validateInput(value: unknown): asserts value is CreateAccountInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          first_name: { title: 'First Name', type: 'string' },
+          last_name: { title: 'Last Name', type: 'string' },
+          password: { title: 'Password', type: 'string' },
+          locale: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Locale' },
+          time_zone: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Time Zone' },
+          request_key: { type: 'string' },
+        },
+        required: ['first_name', 'last_name', 'password', 'request_key'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'create_account input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is CreateAccountOutput {
+    assertSchema(value, { type: 'null' }, 'create_account output')
   },
 }
 
@@ -1712,7 +1867,16 @@ export const operationGetMailboxes: Validators<GetMailboxesInput, GetMailboxesOu
               role: {
                 anyOf: [
                   {
-                    enum: ['inbox', 'sent', 'drafts', 'trash', 'junk', 'archive', 'important'],
+                    enum: [
+                      'inbox',
+                      'sent',
+                      'drafts',
+                      'trash',
+                      'junk',
+                      'archive',
+                      'important',
+                      'snoozed',
+                    ],
                     type: 'string',
                   },
                   { type: 'null' },
@@ -3193,132 +3357,6 @@ export const operationVerifyOtp: Validators<VerifyOtpInput, VerifyOtpOutput> = {
   },
   validateOutput(value: unknown): asserts value is VerifyOtpOutput {
     assertSchema(value, { type: 'string' }, 'verify_otp output')
-  },
-}
-
-export const operationGetAccountRequest: Validators<
-  GetAccountRequestInput,
-  GetAccountRequestOutput
-> = {
-  validateInput(value: unknown): asserts value is GetAccountRequestInput {
-    assertSchema(
-      value,
-      {
-        type: 'object',
-        properties: { request_key: { title: 'Request Key', type: 'string' } },
-        required: ['request_key'],
-        additionalProperties: false,
-        $defs: {},
-      },
-      'get_account_request input',
-    )
-  },
-  validateOutput(value: unknown): asserts value is GetAccountRequestOutput {
-    assertSchema(
-      value,
-      {
-        $defs: {
-          AccountRequest: {
-            properties: {
-              backup_email: {
-                anyOf: [{ type: 'string' }, { type: 'null' }],
-                title: 'Backup Email',
-              },
-              account: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Account' },
-              is_verified: { enum: [0, 1], title: 'Is Verified', type: 'integer' },
-              is_expired: { enum: [0, 1], title: 'Is Expired', type: 'integer' },
-              workspace_name: { title: 'Workspace Name', type: 'string' },
-              workspace_logo: { title: 'Workspace Logo', type: 'string' },
-              invited_by_name: { title: 'Invited By Name', type: 'string' },
-            },
-            required: [
-              'backup_email',
-              'account',
-              'is_verified',
-              'is_expired',
-              'workspace_name',
-              'workspace_logo',
-              'invited_by_name',
-            ],
-            title: 'AccountRequest',
-            type: 'object',
-          },
-        },
-        anyOf: [{ $ref: '#/$defs/AccountRequest' }, { type: 'null' }],
-      },
-      'get_account_request output',
-    )
-  },
-}
-
-export const operationGetAccountSetupOptions: Validators<
-  GetAccountSetupOptionsInput,
-  GetAccountSetupOptionsOutput
-> = {
-  validateInput(value: unknown): asserts value is GetAccountSetupOptionsInput {
-    assertSchema(
-      value,
-      {
-        type: 'object',
-        properties: { request_key: { title: 'Request Key', type: 'string' } },
-        required: ['request_key'],
-        additionalProperties: false,
-        $defs: {},
-      },
-      'get_account_setup_options input',
-    )
-  },
-  validateOutput(value: unknown): asserts value is GetAccountSetupOptionsOutput {
-    assertSchema(
-      value,
-      {
-        $defs: {
-          Option: {
-            properties: {
-              value: { title: 'Value', type: 'string' },
-              label: { title: 'Label', type: 'string' },
-            },
-            required: ['value', 'label'],
-            title: 'Option',
-            type: 'object',
-          },
-        },
-        properties: {
-          locales: { items: { $ref: '#/$defs/Option' }, title: 'Locales', type: 'array' },
-          time_zones: { items: { $ref: '#/$defs/Option' }, title: 'Time Zones', type: 'array' },
-        },
-        required: ['locales', 'time_zones'],
-        title: 'AccountOptions',
-        type: 'object',
-      },
-      'get_account_setup_options output',
-    )
-  },
-}
-
-export const operationCreateAccount: Validators<CreateAccountInput, CreateAccountOutput> = {
-  validateInput(value: unknown): asserts value is CreateAccountInput {
-    assertSchema(
-      value,
-      {
-        type: 'object',
-        properties: {
-          request_key: { title: 'Request Key', type: 'string' },
-          first_name: { title: 'First Name', type: 'string' },
-          last_name: { title: 'Last Name', type: 'string' },
-          password: { title: 'Password', type: 'string' },
-          locale: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Locale' },
-          time_zone: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Time Zone' },
-        },
-        required: ['request_key', 'first_name', 'last_name', 'password'],
-        additionalProperties: false,
-        $defs: {},
-      },
-      'create_account input',
-    )
-  },
-  validateOutput(value: unknown): asserts value is CreateAccountOutput {
-    assertSchema(value, { type: 'null' }, 'create_account output')
   },
 }
 
@@ -7207,6 +7245,7 @@ export const operationGetThreads: Validators<GetThreadsInput, GetThreadsOutput> 
               unscreened: { enum: [0, 1], title: 'Unscreened', type: 'integer' },
               message_id: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Message Id' },
               in_reply_to: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'In Reply To' },
+              pinned_in: { items: { type: 'string' }, title: 'Pinned In', type: 'array' },
               reacts_with: { items: { type: 'string' }, title: 'Reacts With', type: 'array' },
               reactions: { items: { $ref: '#/$defs/Reaction' }, title: 'Reactions', type: 'array' },
               mailing_list: { enum: [0, 1], title: 'Mailing List', type: 'integer' },
@@ -7331,6 +7370,16 @@ export const operationGetThreads: Validators<GetThreadsInput, GetThreadsOutput> 
                 title: 'Unscreened Senders',
                 type: 'array',
               },
+              pinned: { enum: [0, 1], title: 'Pinned', type: 'integer' },
+              returned: { enum: [0, 1], title: 'Returned', type: 'integer' },
+              no_reply: { enum: [0, 1], title: 'No Reply', type: 'integer' },
+              snoozed_until: {
+                anyOf: [{ type: 'string' }, { type: 'null' }],
+                title: 'Snoozed Until',
+              },
+              snoozed_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Snoozed At' },
+              returned_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Returned At' },
+              remind_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Remind At' },
               subject: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Subject' },
               preview: { title: 'Preview', type: 'string' },
               recipients: {
@@ -7496,6 +7545,7 @@ export const operationGetUnifiedThreads: Validators<
               unscreened: { enum: [0, 1], title: 'Unscreened', type: 'integer' },
               message_id: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Message Id' },
               in_reply_to: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'In Reply To' },
+              pinned_in: { items: { type: 'string' }, title: 'Pinned In', type: 'array' },
               reacts_with: { items: { type: 'string' }, title: 'Reacts With', type: 'array' },
               reactions: { items: { $ref: '#/$defs/Reaction' }, title: 'Reactions', type: 'array' },
               mailing_list: { enum: [0, 1], title: 'Mailing List', type: 'integer' },
@@ -7620,6 +7670,16 @@ export const operationGetUnifiedThreads: Validators<
                 title: 'Unscreened Senders',
                 type: 'array',
               },
+              pinned: { enum: [0, 1], title: 'Pinned', type: 'integer' },
+              returned: { enum: [0, 1], title: 'Returned', type: 'integer' },
+              no_reply: { enum: [0, 1], title: 'No Reply', type: 'integer' },
+              snoozed_until: {
+                anyOf: [{ type: 'string' }, { type: 'null' }],
+                title: 'Snoozed Until',
+              },
+              snoozed_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Snoozed At' },
+              returned_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Returned At' },
+              remind_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Remind At' },
               subject: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Subject' },
               preview: { title: 'Preview', type: 'string' },
               recipients: {
@@ -7926,6 +7986,7 @@ export const operationGetThread: Validators<GetThreadInput, GetThreadOutput> = {
               unscreened: { enum: [0, 1], title: 'Unscreened', type: 'integer' },
               message_id: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Message Id' },
               in_reply_to: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'In Reply To' },
+              pinned_in: { items: { type: 'string' }, title: 'Pinned In', type: 'array' },
               reacts_with: { items: { type: 'string' }, title: 'Reacts With', type: 'array' },
               reactions: { items: { $ref: '#/$defs/Reaction' }, title: 'Reactions', type: 'array' },
               mailing_list: { enum: [0, 1], title: 'Mailing List', type: 'integer' },
@@ -8182,6 +8243,7 @@ export const operationSearchMails: Validators<SearchMailsInput, SearchMailsOutpu
               unscreened: { enum: [0, 1], title: 'Unscreened', type: 'integer' },
               message_id: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Message Id' },
               in_reply_to: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'In Reply To' },
+              pinned_in: { items: { type: 'string' }, title: 'Pinned In', type: 'array' },
               reacts_with: { items: { type: 'string' }, title: 'Reacts With', type: 'array' },
               reactions: { items: { $ref: '#/$defs/Reaction' }, title: 'Reactions', type: 'array' },
               mailing_list: { enum: [0, 1], title: 'Mailing List', type: 'integer' },
@@ -8306,6 +8368,16 @@ export const operationSearchMails: Validators<SearchMailsInput, SearchMailsOutpu
                 title: 'Unscreened Senders',
                 type: 'array',
               },
+              pinned: { enum: [0, 1], title: 'Pinned', type: 'integer' },
+              returned: { enum: [0, 1], title: 'Returned', type: 'integer' },
+              no_reply: { enum: [0, 1], title: 'No Reply', type: 'integer' },
+              snoozed_until: {
+                anyOf: [{ type: 'string' }, { type: 'null' }],
+                title: 'Snoozed Until',
+              },
+              snoozed_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Snoozed At' },
+              returned_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Returned At' },
+              remind_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Remind At' },
               subject: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Subject' },
               preview: { title: 'Preview', type: 'string' },
               recipients: {
@@ -8584,6 +8656,7 @@ export const operationCreateMail: Validators<CreateMailInput, CreateMailOutput> 
           },
           send_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Send At' },
           undo_send: { title: 'Undo Send', type: 'boolean' },
+          remind_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Remind At' },
           in_reply_to: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'In Reply To' },
           in_reply_to_id: {
             anyOf: [{ type: 'string' }, { type: 'null' }],
@@ -8722,6 +8795,7 @@ export const operationUpdateDraftMail: Validators<UpdateDraftMailInput, UpdateDr
           },
           send_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Send At' },
           undo_send: { title: 'Undo Send', type: 'boolean' },
+          remind_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Remind At' },
           id: { title: 'Id', type: 'string' },
           submit: { title: 'Submit', type: 'boolean' },
         },
@@ -8847,6 +8921,281 @@ export const operationSetFlagged: Validators<SetFlaggedInput, SetFlaggedOutput> 
       },
       'set_flagged output',
     )
+  },
+}
+
+export const operationPinMails: Validators<PinMailsInput, PinMailsOutput> = {
+  validateInput(value: unknown): asserts value is PinMailsInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          account: { title: 'Account', type: 'string' },
+          ids: { items: { type: 'string' }, title: 'Ids', type: 'array' },
+          pinned: { title: 'Pinned', type: 'boolean' },
+          mailbox: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Mailbox' },
+        },
+        required: ['account', 'ids', 'pinned'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'pin_mails input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is PinMailsOutput {
+    assertSchema(
+      value,
+      {
+        properties: {
+          ids: { items: { type: 'string' }, title: 'Ids', type: 'array' },
+          pinned: { title: 'Pinned', type: 'boolean' },
+        },
+        required: ['ids', 'pinned'],
+        title: 'PinResult',
+        type: 'object',
+      },
+      'pin_mails output',
+    )
+  },
+}
+
+export const operationSnoozeMails: Validators<SnoozeMailsInput, SnoozeMailsOutput> = {
+  validateInput(value: unknown): asserts value is SnoozeMailsInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          account: { title: 'Account', type: 'string' },
+          ids: { items: { type: 'string' }, title: 'Ids', type: 'array' },
+          until: { title: 'Until', type: 'string' },
+          leaves: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Leaves' },
+        },
+        required: ['account', 'ids', 'until'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'snooze_mails input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is SnoozeMailsOutput {
+    assertSchema(
+      value,
+      {
+        properties: {
+          updated: { items: { type: 'string' }, title: 'Updated', type: 'array' },
+          left_inbox: { title: 'Left Inbox', type: 'boolean' },
+        },
+        required: ['updated', 'left_inbox'],
+        title: 'FiledResult',
+        type: 'object',
+      },
+      'snooze_mails output',
+    )
+  },
+}
+
+export const operationUnsnoozeMails: Validators<UnsnoozeMailsInput, UnsnoozeMailsOutput> = {
+  validateInput(value: unknown): asserts value is UnsnoozeMailsInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          account: { title: 'Account', type: 'string' },
+          ids: { items: { type: 'string' }, title: 'Ids', type: 'array' },
+          leaves: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Leaves' },
+        },
+        required: ['account', 'ids'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'unsnooze_mails input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is UnsnoozeMailsOutput {
+    assertSchema(
+      value,
+      {
+        $defs: {
+          Waited: {
+            properties: {
+              until: { title: 'Until', type: 'string' },
+              ids: { items: { type: 'string' }, title: 'Ids', type: 'array' },
+            },
+            required: ['until', 'ids'],
+            title: 'Waited',
+            type: 'object',
+          },
+        },
+        properties: {
+          updated: { items: { type: 'string' }, title: 'Updated', type: 'array' },
+          left_inbox: { title: 'Left Inbox', type: 'boolean' },
+          waited: { items: { $ref: '#/$defs/Waited' }, title: 'Waited', type: 'array' },
+        },
+        required: ['updated', 'left_inbox', 'waited'],
+        title: 'UnsnoozedResult',
+        type: 'object',
+      },
+      'unsnooze_mails output',
+    )
+  },
+}
+
+export const operationRemindIfNoReply: Validators<RemindIfNoReplyInput, RemindIfNoReplyOutput> = {
+  validateInput(value: unknown): asserts value is RemindIfNoReplyInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          account: { title: 'Account', type: 'string' },
+          ids: { items: { type: 'string' }, title: 'Ids', type: 'array' },
+          remind_at: { title: 'Remind At', type: 'string' },
+        },
+        required: ['account', 'ids', 'remind_at'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'remind_if_no_reply input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is RemindIfNoReplyOutput {
+    assertSchema(
+      value,
+      {
+        properties: {
+          remind_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Remind At' },
+        },
+        required: ['remind_at'],
+        title: 'ReminderResult',
+        type: 'object',
+      },
+      'remind_if_no_reply output',
+    )
+  },
+}
+
+export const operationCancelReplyReminder: Validators<
+  CancelReplyReminderInput,
+  CancelReplyReminderOutput
+> = {
+  validateInput(value: unknown): asserts value is CancelReplyReminderInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          account: { title: 'Account', type: 'string' },
+          thread_id: { title: 'Thread Id', type: 'string' },
+        },
+        required: ['account', 'thread_id'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'cancel_reply_reminder input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is CancelReplyReminderOutput {
+    assertSchema(value, { type: 'null' }, 'cancel_reply_reminder output')
+  },
+}
+
+export const operationGetReplyReminder: Validators<GetReplyReminderInput, GetReplyReminderOutput> =
+  {
+    validateInput(value: unknown): asserts value is GetReplyReminderInput {
+      assertSchema(
+        value,
+        {
+          type: 'object',
+          properties: {
+            account: { title: 'Account', type: 'string' },
+            thread_id: { title: 'Thread Id', type: 'string' },
+          },
+          required: ['account', 'thread_id'],
+          additionalProperties: false,
+          $defs: {},
+        },
+        'get_reply_reminder input',
+      )
+    },
+    validateOutput(value: unknown): asserts value is GetReplyReminderOutput {
+      assertSchema(
+        value,
+        {
+          properties: {
+            remind_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Remind At' },
+          },
+          required: ['remind_at'],
+          title: 'ReminderResult',
+          type: 'object',
+        },
+        'get_reply_reminder output',
+      )
+    },
+  }
+
+export const operationDismissReturnedMail: Validators<
+  DismissReturnedMailInput,
+  DismissReturnedMailOutput
+> = {
+  validateInput(value: unknown): asserts value is DismissReturnedMailInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          account: { title: 'Account', type: 'string' },
+          thread_ids: { items: { type: 'string' }, title: 'Thread Ids', type: 'array' },
+        },
+        required: ['account', 'thread_ids'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'dismiss_returned_mail input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is DismissReturnedMailOutput {
+    assertSchema(
+      value,
+      {
+        properties: {
+          ids: { items: { type: 'string' }, title: 'Ids', type: 'array' },
+          no_reply_ids: { items: { type: 'string' }, title: 'No Reply Ids', type: 'array' },
+        },
+        required: ['ids', 'no_reply_ids'],
+        title: 'ReturnedMarks',
+        type: 'object',
+      },
+      'dismiss_returned_mail output',
+    )
+  },
+}
+
+export const operationRestoreReturnedMail: Validators<
+  RestoreReturnedMailInput,
+  RestoreReturnedMailOutput
+> = {
+  validateInput(value: unknown): asserts value is RestoreReturnedMailInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          account: { title: 'Account', type: 'string' },
+          ids: { items: { type: 'string' }, title: 'Ids', type: 'array' },
+          no_reply_ids: { items: { type: 'string' }, title: 'No Reply Ids', type: 'array' },
+        },
+        required: ['account', 'ids', 'no_reply_ids'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'restore_returned_mail input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is RestoreReturnedMailOutput {
+    assertSchema(value, { type: 'null' }, 'restore_returned_mail output')
   },
 }
 
@@ -9265,6 +9614,7 @@ export const operationGetSubmissions: Validators<GetSubmissionsInput, GetSubmiss
           thread_id: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Thread Id' },
           before: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Before' },
           after: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'After' },
+          waiting_only: { title: 'Waiting Only', type: 'boolean' },
           start: { title: 'Start', type: 'integer' },
           page_length: { title: 'Page Length', type: 'integer' },
         },

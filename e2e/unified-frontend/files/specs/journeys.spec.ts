@@ -139,7 +139,8 @@ test("a file moves from My files to Organization files and back through the pick
 		await widening.getByRole("button", { name: "Move", exact: true }).click();
 		await expect(dialog).toBeHidden();
 		await expect(page.locator(`[data-node='${file.name}']`)).toHaveCount(0);
-		expect((await getNode(api, file.name)).parent_node).toBe(shared.name);
+		// The row leaves before the server answers.
+		await expect.poll(async () => (await getNode(api, file.name)).parent_node).toBe(shared.name);
 		await page.goto(`/drive/f/${shared.name}?view=list`);
 		await expect(page.locator(`[data-node='${file.name}']`)).toContainText(file.title);
 

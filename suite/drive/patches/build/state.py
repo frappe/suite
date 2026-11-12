@@ -571,6 +571,9 @@ class ContentConversion:
     # above, and `begin_phase` must not reset it.
     media_nodes_relocated: int = 0
     relocated_media_nodes: list[RelocatedMediaNode] = field(default_factory=list)
+    # Owned by no phase either. A stop before a template's lowering commits
+    # lowers it again on the restart, and this keeps its issue line to one.
+    templates_lowered: list[str] = field(default_factory=list)
     report_at: str | None = None
     issues: list[ContentIssue] = field(default_factory=list)
     issues_total: int = 0

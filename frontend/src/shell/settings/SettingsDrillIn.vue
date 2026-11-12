@@ -131,7 +131,11 @@ function push(state: EntryState) {
   // Keep the router's own state, so vue-router sees the same position and
   // treats a pop between these entries as a no-op.
   history.pushState(
-    { ...(history.state as object | null), ...state, suiteSettingsOpen: openId },
+    {
+      ...(history.state && typeof history.state === 'object' ? history.state : null),
+      ...state,
+      suiteSettingsOpen: openId,
+    },
     '',
   )
   depth += 1
@@ -156,11 +160,23 @@ function back() {
 
 function onPopState(event: PopStateEvent) {
   if (!open.value) return
-  const state = (event.state ?? {}) as EntryState
-  if (state.suiteSettingsOpen === openId && state.suiteSettings === 'tab') {
+  const state: unknown = event.state
+  if (!state || typeof state !== 'object') {
+    depth = 0
+    page.value = null
+    open.value = false
+    return
+  }
+  const suiteSettingsOpen = 'suiteSettingsOpen' in state ? state.suiteSettingsOpen : undefined
+  const suiteSettings = 'suiteSettings' in state ? state.suiteSettings : undefined
+  const suiteSettingsTab =
+    'suiteSettingsTab' in state && typeof state.suiteSettingsTab === 'string'
+      ? state.suiteSettingsTab
+      : undefined
+  if (suiteSettingsOpen === openId && suiteSettings === 'tab') {
     depth = 2
-    page.value = findTab(state.suiteSettingsTab) ?? null
-  } else if (state.suiteSettingsOpen === openId && state.suiteSettings === 'list') {
+    page.value = findTab(suiteSettingsTab) ?? null
+  } else if (suiteSettingsOpen === openId && suiteSettings === 'list') {
     depth = 1
     page.value = null
     // Closing drops the list's own entry, as a close from outside does.

@@ -12,15 +12,12 @@
     "typescript/unbound-method": "off",
     "vitest/require-mock-type-parameters": "off",
     "vitest/valid-expect": "off",
-
     "no-dupe-keys": "error",
     "no-unsafe-finally": "error",
     "no-unsafe-optional-chaining": "error",
     "promise/no-multiple-resolved": "error",
-
     "no-unused-vars": "off",
     "@typescript-eslint/no-this-alias": "off",
-
     "typescript/no-duplicate-enum-values": "error",
     "typescript/no-extra-non-null-assertion": "error",
     "typescript/no-misused-new": "error",
@@ -59,7 +56,58 @@
     "vue/valid-define-emits": "error",
     "vue/valid-define-options": "error",
     "vue/valid-define-props": "error",
-    "vue/valid-next-tick": "error"
+    "vue/valid-next-tick": "error",
+    "anti-slop/no-array-filter-map": "error",
+    "anti-slop/no-reduce-accumulator-copy": "error",
+    "anti-slop/no-chained-type-assertions": "error",
+    "anti-slop/no-conditional-empty-object-spread": "error",
+    "anti-slop/no-known-value-widening": "error",
+    "anti-slop/no-module-mocking": "off",
+    "anti-slop/no-object-parameters": "error",
+    "anti-slop/no-reflect-apply": "error",
+    "anti-slop/no-reflect-get": "error",
+    "anti-slop/no-runtime-typeof": "off",
+    "anti-slop/no-unsafe-dictionary-type": "off",
+    "anti-slop/no-shape-in-symbol-names": "off",
+    "anti-slop/no-unknown-parameters": "off",
+    "anti-slop/no-unknown-returns": "off",
+    "anti-slop/no-unknown-type-aliases": "off",
+    "anti-slop/no-widen-then-assert": "error",
+    "anti-slop/require-readable-spacing": "off",
+    "anti-slop/require-safety-comment-for-type-assertion": "error"
   },
-  "ignorePatterns": ["frontend/src/**/generated.ts"]
+  "ignorePatterns": [
+    "frontend/src/**/generated.ts",
+    "tools/oxlint/anti-slop/**",
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/coverage/**",
+    "frappe-ui/**",
+    "frontend/public/**",
+    "frontend/packages/collab-prosemirror/**",
+    "frontend/auto-imports.d.ts",
+    "frontend/components.d.ts",
+    ".scratch/**",
+    "output/**"
+  ],
+  "jsPlugins": [
+    {
+      "name": "anti-slop",
+      "specifier": "./tools/oxlint/anti-slop/index.ts"
+    }
+  ],
+  "overrides": [
+    {
+      "files": ["suite/meet/recorder-server/src/integration/RecorderSharedStage.integration.ts"],
+      "rules": {
+        "promise/no-multiple-resolved": "warn"
+      }
+    },
+    {
+      "files": ["e2e/meet/load/run.mjs"],
+      "rules": {
+        "no-unsafe-finally": "warn"
+      }
+    }
+  ]
 }

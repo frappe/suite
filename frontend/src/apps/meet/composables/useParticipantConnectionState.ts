@@ -32,10 +32,9 @@ export const useParticipantConnectionState = defineStore('meet-participant-conne
   }
 
   function recordRecovery(state: MeetingRecoveryState, detail?: string) {
-    recoveryTimeline.value = [
-      ...recoveryTimeline.value,
-      { at: new Date().toISOString(), state, ...(detail ? { detail } : {}) },
-    ].slice(-RECOVERY_TIMELINE_LIMIT)
+    const entry: RecoveryTimelineEntry = { at: new Date().toISOString(), state }
+    if (detail) entry.detail = detail
+    recoveryTimeline.value = [...recoveryTimeline.value, entry].slice(-RECOVERY_TIMELINE_LIMIT)
   }
 
   function $reset() {

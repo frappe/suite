@@ -2,6 +2,7 @@
 
 import hashlib
 
+from suite.drive.patches.build.comments import user_or_guest
 from suite.drive.patches.build.content_mapping import (
     MAX_VERSION_SEQ,
     InvalidLegacyContent,
@@ -287,7 +288,7 @@ def _version_row(env, row, *, node, seq, kind, label, pinned, actor, raw, filena
         "kind": kind,
         "label": label,
         "pinned": pinned,
-        "actor": actor,
+        "actor": user_or_guest(actor, env.content.user_name),
         "size": len(raw),
         "blob": blob_name,
         **standard_fields(row),

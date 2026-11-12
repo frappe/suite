@@ -1,4 +1,3 @@
-import { CameraLayerDemand } from './CameraLayerDemand';
 import type { CameraLayerDemand as CameraLayerInstruction } from '../../../types/cameraLayers';
 import type { SttManager } from '../stt/SttManager';
 import type {
@@ -19,12 +18,12 @@ import type {
 	ProducerCloseSource,
 	Room,
 	RtpCapabilities,
-	RtpCodecCapability,
 	RtpParameters,
 	TransportData,
 	WebRtcTransportData,
 } from '../types';
 import { loggers } from '../utils/logger';
+import { CameraLayerDemand } from './CameraLayerDemand';
 import { ConsumerManager } from './ConsumerManager';
 import { ProducerManager } from './ProducerManager';
 import { RoomManager } from './RoomManager';
@@ -56,19 +55,27 @@ export class MediasoupManager {
 	private producerManager = new ProducerManager();
 	consumerManager = new ConsumerManager();
 	private sttManager: SttManager | null = null;
-	private cameraLayerListeners: Array<(roomId: string, peerId: string, demand: CameraLayerInstruction) => void> = [];
+	private cameraLayerListeners: Array<
+		(roomId: string, peerId: string, demand: CameraLayerInstruction) => void
+	> = [];
 	private cameraLayers = new CameraLayerDemand((roomId, peerId, demand) => {
-		for (const listener of this.cameraLayerListeners) listener(roomId, peerId, demand);
+		for (const listener of this.cameraLayerListeners)
+			listener(roomId, peerId, demand);
 	});
 
-	onCameraLayerDemand(listener: (roomId: string, peerId: string, demand: CameraLayerInstruction) => void): void {
+	onCameraLayerDemand(
+		listener: (
+			roomId: string,
+			peerId: string,
+			demand: CameraLayerInstruction,
+		) => void,
+	): void {
 		this.cameraLayerListeners.push(listener);
 	}
 
 	getCameraLayerDemand(producerId: string): CameraLayerInstruction | null {
 		return this.cameraLayers.get(producerId);
 	}
-
 
 	private networkQualityListeners: Array<
 		(
@@ -137,7 +144,7 @@ export class MediasoupManager {
 						.catch((error) => {
 							loggers.mediasoupManager.warn(
 								'STT stop error on producer close: %s',
-								(error as Error).message,
+								error instanceof Error ? error.message : String(error),
 							);
 						});
 				}
@@ -327,7 +334,7 @@ export class MediasoupManager {
 			id,
 			worker,
 			webRtcServer,
-			this.config.router.mediaCodecs as RtpCodecCapability[],
+			this.config.router.mediaCodecs,
 			(activeRoomId, peerIds) => {
 				const previous = this.activeSpeakerPeers.get(activeRoomId);
 				const next = new Set(peerIds);
@@ -592,7 +599,7 @@ export class MediasoupManager {
 				.catch((error) => {
 					loggers.mediasoupManager.warn(
 						'STT start error: %s',
-						(error as Error).message,
+						error instanceof Error ? error.message : String(error),
 					);
 				});
 		}
@@ -673,7 +680,9 @@ export class MediasoupManager {
 		} finally {
 			this.creatingConsumers.delete(consumerKey);
 		}
-		const createdConsumer = this.consumerManager.getConsumerData(result.id)?.consumer;
+		const createdConsumer = this.consumerManager.getConsumerData(
+			result.id,
+		)?.consumer;
 		if (createdConsumer) this.cameraLayers.addConsumer(createdConsumer);
 		if (existingConsumer) {
 			this.consumerManager.closeConsumer(existingConsumer.consumer.id);
@@ -750,7 +759,7 @@ export class MediasoupManager {
 				loggers.mediasoupManager.warn(
 					'Error while closing consumer %s: %s',
 					consumerData.consumer.id,
-					(e as Error).message,
+					e instanceof Error ? e.message : String(e),
 				);
 			}
 		}
@@ -773,7 +782,7 @@ export class MediasoupManager {
 				loggers.mediasoupManager.warn(
 					'Producer close listener failed for %s: %s',
 					producerId,
-					(error as Error).message,
+					error instanceof Error ? error.message : String(error),
 				);
 			}
 		}
@@ -994,7 +1003,7 @@ export class MediasoupManager {
 				loggers.mediasoupManager.warn(
 					'Failed to request key frame for consumer %s: %s',
 					consumer.id,
-					(error as Error).message,
+					error instanceof Error ? error.message : String(error),
 				);
 			}
 		}
@@ -1250,7 +1259,7 @@ export class MediasoupManager {
 						'Failed to start STT for existing producer %s in room %s: %s',
 						producer.id,
 						roomId,
-						(error as Error).message,
+						error instanceof Error ? error.message : String(error),
 					);
 				}
 			}
@@ -1276,7 +1285,7 @@ export class MediasoupManager {
 		return this.roomManager;
 	}
 
-	getResourceCounts(): Record<string, number> {
+	getResourceCounts() {
 		return {
 			...this.sttManager?.getResourceCounts(),
 			rooms: this.roomManager.getRoomCount(),
@@ -1388,7 +1397,7 @@ export class MediasoupManager {
 						loggers.mediasoupManager.warn(
 							'Failed to prioritize camera %s: %s',
 							consumer.id,
-							(error as Error).message,
+							error instanceof Error ? error.message : String(error),
 						);
 				}
 			})

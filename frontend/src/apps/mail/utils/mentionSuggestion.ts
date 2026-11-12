@@ -1,12 +1,10 @@
-import { PluginKey } from '@tiptap/pm/state'
-import { type BaseSuggestionItem } from 'frappe-ui'
-import { createSuggestionExtension } from 'frappe-ui/experimental'
+import { SuggestionExtension } from 'frappe-ui/editor'
 
 import { api, client, type OutputOf } from '@/api'
 import MentionList from '@/apps/mail/components/Controls/MentionList.vue'
 
 // Same shape as a draft recipient, so a picked mention can be added to To as-is.
-export interface MentionCandidate extends BaseSuggestionItem {
+export interface MentionCandidate {
   email: string
   display_name?: string
   image?: string
@@ -60,47 +58,33 @@ const createContactSearch = (account: () => string) => {
 export const createMentionSuggestion = ({
   account,
   onSelect,
-  container,
 }: {
   account: () => string
   onSelect: (contact: MentionCandidate) => void
-  container?: () => HTMLElement | null
 }) => {
   const search = createContactSearch(account)
 
-  return createSuggestionExtension<MentionCandidate>({
+  return SuggestionExtension.configure<MentionCandidate>({
     name: 'mailMentionSuggestion',
-    char: '@',
-    pluginKey: new PluginKey('mailMentionSuggestion'),
-    component: MentionList,
-    items: ({ query }) => search(query),
-    command: ({ editor, range, props }) => {
+    trigger: '@',
+    listComponent: MentionList,
+    items: search,
+    command: ({ editor, range, item }) => {
       editor
         .chain()
         .focus()
         .insertContentAt(range, [
           {
             type: 'mention',
-            attrs: { id: props.email, label: props.display_name || props.email },
+            attrs: { id: item.email, label: item.display_name || item.email },
           },
           { type: 'text', text: ' ' },
         ])
         .run()
 
-      onSelect(props)
+      onSelect(item)
     },
     allowSpaces: false,
-    decorationTag: 'span',
-    decorationClass: 'mention-suggestion-active',
-    tippyOptions: {
-      placement: 'bottom-start',
-      offset: [0, 8],
-      // The popup defaults into <body>, which is where a modal composer's dialog
-      // parks `pointer-events: none` on everything but itself: the list renders and
-      // highlights on hover, but the press lands on the layer underneath, moves the
-      // selection off the `@`, and the suggester tears the list down. Rendering it
-      // inside the dialog keeps it in the interactive layer.
-      appendTo: () => container?.() ?? document.body,
-    },
+    floatingOptions: { placement: 'bottom-start', offset: [0, 8] },
   })
 }

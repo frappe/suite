@@ -6,7 +6,7 @@
 // A refusal names the rule only, never a key or a value: reasons reach System Managers and server logs,
 // and a key or value can be a person's data
 
-import { getSchema } from '@tiptap/core'
+import { getSchema, type JSONContent } from '@tiptap/core'
 import { DOMSerializer, DOMParser as PMDOMParser, type Node as PMNode } from '@tiptap/pm/model'
 import { prosemirrorToYXmlFragment, yXmlFragmentToProseMirrorRootNode } from '@tiptap/y-tiptap'
 import * as Y from 'yjs'
@@ -16,9 +16,9 @@ import { normalizeColor } from '@/apps/slides/utils/color'
 import { migrateShadow } from '@/apps/slides/utils/oldShadow'
 
 import {
-  BOX_FIELDS,
-  BOX_TYPES,
-  boxText,
+  ELEMENT_FIELDS,
+  ELEMENT_TYPES,
+  elementText,
   SLIDE_FIELDS,
   TYPES_WITH_TEXT,
   writeDeck,
@@ -36,7 +36,8 @@ import {
   type DrawRules,
 } from './oldBody'
 
-export type RefusalDetail = 'box_type' | 'elements' | 'fault' | 'html' | 'magic_move' | 'setting'
+export type RefusalDetail =
+  'element_type' | 'elements' | 'fault' | 'html' | 'magic_move' | 'setting'
 
 type DroppedKind = 'default-style' | 'horizontal-rule' | 'list-marker-style' | 'video-content'
 interface Dropped {
@@ -45,11 +46,11 @@ interface Dropped {
 
 export interface OldSlide {
   id: string
-  elements: OldBox[]
+  elements: OldElement[]
   [field: string]: unknown
 }
 
-export interface OldBox {
+export interface OldElement {
   id: string
   [key: string]: unknown
 }
@@ -94,19 +95,19 @@ function isEmpty(value: unknown) {
   return value === null || value === undefined || value === ''
 }
 
-function layerOf(box: OldBox) {
-  return Number(box.zIndex) || 1
+function layerOf(element: OldElement) {
+  return Number(element.zIndex) || 1
 }
 
 // As normalizeZIndices: no zIndex or a zero counts as 1, and ties keep their place in the array
-function stacked(boxes: OldBox[]) {
-  return [...boxes].sort((one, other) => layerOf(one) - layerOf(other))
+function stacked(elements: OldElement[]) {
+  return [...elements].sort((one, other) => layerOf(one) - layerOf(other))
 }
 
-function frameOf({ left, top, width, height, transform, transformOrigin, type }: OldBox) {
+function frameOf({ left, top, width, height, transform, transformOrigin, type }: OldElement) {
   const placed = { left, top, width, height, transform, transformOrigin }
-  // A centred text box is copied as it is. No transform is the form transformElements gives an
-  // uncentred one, which only text boxes draw from
+  // A centred text element is copied as it is. No transform is the form transformElements gives an
+  // uncentred one, which only text elements draw from
   if (type === 'text' && transform === undefined) {
     placed.transform = 'none'
     placed.transformOrigin = 'top left'
@@ -115,25 +116,35 @@ function frameOf({ left, top, width, height, transform, transformOrigin, type }:
   return Object.fromEntries(Object.entries(placed).filter(([, value]) => value !== undefined))
 }
 
+function isLegacySettings(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
 function connectorFields(connector: unknown) {
   if (isEmpty(connector)) {
     return {}
   }
 
-  const { start, end, route } = connector as Record<string, unknown>
-  if (Object.keys(connector as object).some((key) => !CONNECTOR_KEYS.has(key))) {
+  if (!isLegacySettings(connector)) throw new Refused('setting')
+  const { start, end, route } = connector
+  if (Object.keys(connector).some((key) => !CONNECTOR_KEYS.has(key))) {
     throw new Refused('setting')
   }
 
   return { connectorStart: start, connectorEnd: end, route }
 }
 
-function lineHeightFields(type: unknown, metadata: unknown) {
+interface LineHeightFields {
+  lineHeight?: unknown
+}
+
+function lineHeightFields(type: unknown, metadata: unknown): LineHeightFields {
   if (isEmpty(metadata)) {
     return {}
   }
 
-  const { lineHeight, ...rest } = metadata as Record<string, unknown>
+  if (!isLegacySettings(metadata)) throw new Refused('setting')
+  const { lineHeight, ...rest } = metadata
   if (type !== 'text' || Object.keys(rest).length) {
     throw new Refused('setting')
   }
@@ -169,29 +180,38 @@ function withoutUndefined(fields: Record<string, unknown>) {
   return Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined))
 }
 
-// The old forms of a box's own settings, rewritten
-function rewritten(old: OldBox) {
-  const box = { ...old }
+// The old forms of an element's own settings, rewritten
+function rewritten(old: OldElement) {
+  const element = { ...old }
   for (const key of COLOUR_KEYS) {
-    if (box[key]) {
-      box[key] = normalizeColor(box[key])
+    if (element[key]) {
+      element[key] = normalizeColor(element[key])
     }
   }
 
-  if (box.type === 'shape' && box.shapeType === 'circle') {
-    box.shapeType = 'oval'
+  if (element.type === 'shape' && element.shapeType === 'circle') {
+    element.shapeType = 'oval'
   }
 
-  migrateShadow(box)
-  return box
+  // an old video saved its poster as the object that captured it
+  if (isLegacySettings(element.poster)) {
+    if (typeof element.poster.posterURL !== 'string') {
+      throw new Refused('setting')
+    }
+
+    element.poster = element.poster.posterURL
+  }
+
+  migrateShadow(element)
+  return element
 }
 
-function noteDropped({ type, content, defaultStyle }: OldBox, dropped: Set<DroppedKind>) {
+function noteDropped({ type, content, defaultStyle }: OldElement, dropped: Set<DroppedKind>) {
   if (defaultStyle !== undefined) {
     dropped.add('default-style')
   }
 
-  if (!TYPES_WITH_TEXT.has(type as string) && !isEmpty(content)) {
+  if (!(typeof type === 'string' && TYPES_WITH_TEXT.has(type)) && !isEmpty(content)) {
     if (type !== 'video') {
       throw new Refused('setting')
     }
@@ -200,28 +220,33 @@ function noteDropped({ type, content, defaultStyle }: OldBox, dropped: Set<Dropp
   }
 }
 
-// A box's fields in the deck's form, with what it dropped
-function boxFields(old: OldBox, dropped: Set<DroppedKind>): DeckItem {
-  const box = rewritten(old)
-  const { id, type, connector, editorMetadata } = box
-  const rest = Object.fromEntries(Object.entries(box).filter(([key]) => !REPLACED_KEYS.has(key)))
-  if (!BOX_TYPES.has(type as string)) {
-    throw new Refused('box_type')
+// An element's fields in the deck's form, with what it dropped
+function elementFields(old: OldElement, dropped: Set<DroppedKind>): DeckItem {
+  const element = rewritten(old)
+  const { id, type, connector, editorMetadata } = element
+  const rest = Object.fromEntries(
+    Object.entries(element).filter(([key]) => !REPLACED_KEYS.has(key)),
+  )
+  if (!(typeof type === 'string' && ELEMENT_TYPES.has(type))) {
+    throw new Refused('element_type')
   }
 
-  if (Object.keys(rest).some((key) => !BOX_FIELDS.has(key))) {
+  if (Object.keys(rest).some((key) => !ELEMENT_FIELDS.has(key))) {
     throw new Refused('setting')
   }
 
-  noteDropped(box, dropped)
-  return withoutUndefined({
+  noteDropped(element, dropped)
+  return {
+    ...withoutUndefined({
+      id,
+      type,
+      frame: frameOf(old),
+      ...rest,
+      ...connectorFields(connector),
+      ...lineHeightFields(type, editorMetadata),
+    }),
     id,
-    type,
-    frame: frameOf(old),
-    ...rest,
-    ...connectorFields(connector),
-    ...lineHeightFields(type, editorMetadata),
-  }) as DeckItem
+  }
 }
 
 function slideFields(old: OldSlide) {
@@ -246,12 +271,9 @@ function withoutEmptyAttrs(mark: { type: string; attrs?: Record<string, unknown>
 }
 
 // The editor's colour parser answers an empty string for a span with no colour, which no old HTML holds
-function withoutEmptyStyles(json: Record<string, unknown>): Record<string, unknown> {
-  const { content, marks, ...rest } = json as {
-    content?: Record<string, unknown>[]
-    marks?: { type: string; attrs?: Record<string, unknown> }[]
-  }
-  const cleaned: Record<string, unknown> = { ...rest }
+function withoutEmptyStyles(json: JSONContent): JSONContent {
+  const { content, marks, ...rest } = json
+  const cleaned: JSONContent = { ...rest }
   if (content) {
     cleaned.content = content.map(withoutEmptyStyles)
   }
@@ -263,17 +285,17 @@ function withoutEmptyStyles(json: Record<string, unknown>): Record<string, unkno
   return cleaned
 }
 
-function rulesOf(box: OldBox): DrawRules {
-  if (box.type === 'table') {
+function rulesOf(element: OldElement): DrawRules {
+  if (element.type === 'table') {
     return { lineHeight: DEFAULT_LINE_HEIGHT, isWhitespaceKept: false }
   }
 
-  const { lineHeight } = lineHeightFields(box.type, box.editorMetadata) as { lineHeight?: unknown }
-  const drawn = lineHeight || box.lineHeight || DEFAULT_LINE_HEIGHT
+  const { lineHeight } = lineHeightFields(element.type, element.editorMetadata)
+  const drawn = lineHeight || element.lineHeight || DEFAULT_LINE_HEIGHT
   return { lineHeight: String(drawn), isWhitespaceKept: true }
 }
 
-// An editor can save a box's body as the document itself; the old view turned it into HTML to draw it
+// An editor can save an element's body as the document itself; the old view turned it into HTML to draw it
 function oldHtml(content: unknown) {
   if (typeof content === 'object') {
     return oldBodyHTML(content)
@@ -289,9 +311,9 @@ function parsedNode(html: HTMLElement, rules: DrawRules) {
   return schema.nodeFromJSON(withoutEmptyStyles(parsed.toJSON()))
 }
 
-function parsedContent(box: OldBox, rules: DrawRules, dropped: Set<DroppedKind>) {
+function parsedContent(element: OldElement, rules: DrawRules, dropped: Set<DroppedKind>) {
   // The old view sets this as a `div`'s HTML; alone, the parser would drop leading whitespace it draws
-  const html = oldHtml(box.content)
+  const html = oldHtml(element.content)
   const { body } = new DOMParser().parseFromString(`<body>${html}`, 'text/html')
   // No screen draws one: the old view's sanitizer removes it and the schema has no place for it
   for (const rule of body.querySelectorAll('hr')) {
@@ -303,12 +325,14 @@ function parsedContent(box: OldBox, rules: DrawRules, dropped: Set<DroppedKind>)
     dropped.add('horizontal-rule')
   }
 
-  // Rules were all it held, so the old view draws an empty box
+  // Rules were all it held, so the old view draws an empty element
   if (!body.hasChildNodes()) {
     return null
   }
 
-  const carried = body.cloneNode(true) as HTMLElement
+  const carried = body.cloneNode(true)
+  if (!(carried instanceof HTMLElement))
+    throw new Error('Carried body clone must be an HTML element')
   stateLineHeights(carried, rules)
   carryItemStyles(carried, rules)
   const held = new Set<number>()
@@ -327,12 +351,19 @@ function parsedContent(box: OldBox, rules: DrawRules, dropped: Set<DroppedKind>)
 }
 
 function fillEmptyText(fragment: Y.XmlFragment) {
-  prosemirrorToYXmlFragment(schema.topNodeType.createAndFill() as PMNode, fragment)
+  const empty = schema.topNodeType.createAndFill()
+  if (!empty) throw new Error('Slide text schema has no empty document')
+  prosemirrorToYXmlFragment(empty, fragment)
 }
 
-function filled(box: OldBox, fragment: Y.XmlFragment, rules: DrawRules, dropped: Set<DroppedKind>) {
+function filled(
+  element: OldElement,
+  fragment: Y.XmlFragment,
+  rules: DrawRules,
+  dropped: Set<DroppedKind>,
+) {
   try {
-    const parsed = parsedContent(box, rules, dropped)
+    const parsed = parsedContent(element, rules, dropped)
     if (parsed) {
       prosemirrorToYXmlFragment(parsed.node, fragment)
     }
@@ -351,15 +382,16 @@ function savedBody(read: PMNode, document: Document) {
   return saved
 }
 
-function fillText(doc: Y.Doc, box: OldBox, id: string, dropped: Set<DroppedKind>) {
-  const fragment = boxText(doc, id) as Y.XmlFragment
-  if (isEmpty(box.content)) {
+function fillText(doc: Y.Doc, element: OldElement, id: string, dropped: Set<DroppedKind>) {
+  const fragment = elementText(doc, id)
+  if (!fragment) throw new Error('Slide text element has no fragment')
+  if (isEmpty(element.content)) {
     fillEmptyText(fragment)
     return
   }
 
-  const rules = rulesOf(box)
-  const parsed = filled(box, fragment, rules, dropped)
+  const rules = rulesOf(element)
+  const parsed = filled(element, fragment, rules, dropped)
   if (!parsed) {
     fillEmptyText(fragment)
     return
@@ -385,22 +417,22 @@ function fillText(doc: Y.Doc, box: OldBox, id: string, dropped: Set<DroppedKind>
 function build(legacy: LegacyDeck) {
   const dropped = new Set<DroppedKind>()
   const doc = new Y.Doc()
-  const contents: [string, OldBox][] = []
+  const contents: [string, OldElement][] = []
   const slides: DeckSlide[] = legacy.slides.map((old) => ({
     id: old.id,
     ...slideFields(old),
-    boxes: stacked(old.elements).map((box) => {
-      const fields = boxFields(box, dropped)
-      if (TYPES_WITH_TEXT.has(fields.type as string)) {
-        contents.push([fields.id, box])
+    elements: stacked(old.elements).map((element) => {
+      const fields = elementFields(element, dropped)
+      if (typeof fields.type === 'string' && TYPES_WITH_TEXT.has(fields.type)) {
+        contents.push([fields.id, element])
       }
 
       return fields
     }),
   }))
   writeDeck(doc, slides)
-  for (const [id, box] of contents) {
-    fillText(doc, box, id, dropped)
+  for (const [id, element] of contents) {
+    fillText(doc, element, id, dropped)
   }
 
   if (slidesFault(doc)) {

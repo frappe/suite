@@ -11,7 +11,11 @@ import type { WriterUser } from '@/apps/writer/drive'
 
 import { mentionMenuExtension } from './mention-menu'
 
-const asked = vi.hoisted(() => [] as string[])
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
+const asked = vi.hoisted(() => fromPartial<string[]>([]))
+
+vi.mock('@/api', () => ({ client: { query: vi.fn() }, api: { suite: { people: { list: {} } } } }))
 
 vi.mock('@/platform/session', async () => {
   const { ref } = await import('vue')
@@ -41,7 +45,7 @@ vi.mock('@/apps/writer/drive', () => {
 })
 
 // jsdom measures no text; the editor scrolls to the caret and the menu places itself at it
-Range.prototype.getClientRects = () => ({ length: 0, item: () => null }) as unknown as DOMRectList
+Range.prototype.getClientRects = () => fromPartial<DOMRectList>({ length: 0, item: () => null })
 Range.prototype.getBoundingClientRect = () => new DOMRect()
 
 let editor: Editor | undefined

@@ -38,8 +38,9 @@ export const mutationEffects = {
   'frappe.user.switch_theme': { invalidates: ['get_preferences'] },
   'frappe.user.reset_password': 'none',
   'frappe.user.update_password': 'none',
-  'site_patch.complete_onboarding': { invalidates: ['site_get', 'account_get'] },
-  'site_patch.update_site_settings': { invalidates: ['site_get'] },
+  'site_patch.complete_onboarding': { invalidates: ['site_get', 'account_get', 'drive.view_list'] },
+  'site_patch.update_site_settings': { invalidates: ['site_get', 'workspace_get'] },
+  account_patch: { invalidates: ['account_get', 'drive.view_list'] },
   'suite.generate_user_keys': { invalidates: ['drive.webdav_get'] },
   invitations_post: {
     invalidates: ['invitations_get', 'users_get', 'people_get', 'people_lookup'],
@@ -49,7 +50,7 @@ export const mutationEffects = {
 export const registration: OwnerRegistration = {
   policy<I, O>(reference: Operation<I, O>) {
     if (reference.kind === 'query') return {}
-    const effect = mutationEffects[reference.id as keyof typeof mutationEffects]
+    const effect = Object.entries(mutationEffects).find(([id]) => id === reference.id)?.[1]
     if (!effect) throw new TypeError(`Missing Suite effects: ${reference.id}`)
     return { effects: effect }
   },

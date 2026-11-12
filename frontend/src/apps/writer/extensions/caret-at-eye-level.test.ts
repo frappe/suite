@@ -1,4 +1,5 @@
 import type { EditorView } from '@tiptap/pm/view'
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it } from 'vitest'
 
 import { holdCaretAtEyeLevel } from './caret-at-eye-level'
@@ -6,14 +7,14 @@ import { holdCaretAtEyeLevel } from './caret-at-eye-level'
 function page({ caretBottom, isRange = false }: { caretBottom: number; isRange?: boolean }) {
   const scroller = document.createElement('div')
   scroller.id = 'editor-scroll-container'
-  scroller.getBoundingClientRect = () => ({ top: 100, height: 1000 }) as DOMRect
+  scroller.getBoundingClientRect = () => fromPartial<DOMRect>({ top: 100, height: 1000 })
   scroller.scrollTop = 50
   const dom = scroller.appendChild(document.createElement('div'))
-  const view = {
+  const view = fromPartial<EditorView>({
     dom,
     state: { selection: { empty: !isRange, head: 1 } },
     coordsAtPos: () => ({ bottom: caretBottom }),
-  } as unknown as EditorView
+  })
   return { scroller, view }
 }
 

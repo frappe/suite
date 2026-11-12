@@ -181,7 +181,10 @@ const TABS = [
 const DEFAULT_FOLDER = {
   id: '',
   name: '',
+  // SAFETY: These empty defaults are valid nullable mailbox role/id values;
+  // the unions retain the types of later edits rather than the literal null.
   role: null as string | null,
+  // SAFETY: A folder starts without a parent, then accepts a mailbox id or null.
   parent: null as string | null,
   icon: 'folder',
   color: 'Gray',

@@ -10,7 +10,8 @@ const drive = {
   tabs: [
     {
       id: 'drive.statistics',
-      label: () => __('Statistics'),
+      // The id stays, so saved links to the tab still open it.
+      label: () => __('Storage'),
       icon: 'lucide-chart-pie',
       body: () => import('./StatisticsSettings.vue'),
     },

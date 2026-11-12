@@ -37,7 +37,7 @@ const VIEWS: Record<
   agenda: { mode: 'Agenda', route: 'calendar-agenda', icon: Rows3, label: () => __('Agenda') },
 }
 
-export const MOBILE_VIEWS = Object.keys(VIEWS) as MobileView[]
+export const MOBILE_VIEWS = ['day', 'week', 'month', 'agenda'] satisfies MobileView[]
 
 export const viewIcon = (view: MobileView) => VIEWS[view].icon
 export const viewLabel = (view: MobileView) => VIEWS[view].label()

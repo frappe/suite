@@ -14,6 +14,8 @@ import { clearVisitedCopies } from '@/apps/slides/utils/serviceWorker'
 import { draftsDbName, isOutOfSpace } from '@/apps/slides/utils/slidesCaches'
 import { getCookieSessionUser } from '@/platform/session'
 
+import { askLivePush, isLive } from './liveDeck'
+
 const STORE = 'presentations'
 
 let db = null
@@ -162,6 +164,7 @@ const getPresentationFromLocalDB = async (id) => {
 const dirty = ref(false)
 
 // whose push is running; there is one at a time, whichever presentation is open
+/** @type {import('vue').Ref<string | null>} */
 const savingFor = ref(null)
 
 const isSaving = computed(() => !!savingFor.value && savingFor.value === presentationId.value)
@@ -176,6 +179,11 @@ const dirtyGenerations = new Map()
 const generationFor = (id) => dirtyGenerations.get(id) ?? 0
 
 const markDirty = () => {
+  // a converted presentation's changes go to its room; its rows are never saved
+  if (isLive()) {
+    return askLivePush()
+  }
+
   dirty.value = true
   const id = presentationId.value
   if (id) dirtyGenerations.set(id, generationFor(id) + 1)

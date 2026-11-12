@@ -2,12 +2,13 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { getSchema } from '@tiptap/core'
 import { prosemirrorToYXmlFragment } from '@tiptap/y-tiptap'
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
 
 import { extensions } from '@/apps/slides/stores/tiptapSetup'
 
-import { addBox, addSlide, BOX_KEYS, boxText, ROOT, SLIDE_KEYS } from './deck'
+import { addElement, addSlide, ELEMENT_KEYS, elementText, ROOT, SLIDE_KEYS } from './deck'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
 
@@ -33,7 +34,7 @@ interface Features {
 
 // The server refuses a row naming anything this file does not declare at or below the row's schema
 const FEATURES_PATH = resolve(__dirname, '../../../../../suite/slides/content/schema.json')
-const declared = JSON.parse(readFileSync(FEATURES_PATH, 'utf8')) as Features
+const declared = fromPartial<Features>(JSON.parse(readFileSync(FEATURES_PATH, 'utf8')))
 // Python reads these bytes back and pushes them through the layer's own admission
 const FIXTURE_PATH = resolve(__dirname, '../../../../../suite/slides/content/tests/deck_state.b64')
 
@@ -120,12 +121,12 @@ const TABLE_BODY = {
   ],
 }
 
-function writeBody(doc: Y.Doc, boxId: string, body: Record<string, unknown>) {
+function writeBody(doc: Y.Doc, elementId: string, body: Record<string, unknown>) {
   const node = getSchema(extensions).nodeFromJSON(body)
-  prosemirrorToYXmlFragment(node, boxText(doc, boxId)!)
+  prosemirrorToYXmlFragment(node, elementText(doc, elementId)!)
 }
 
-// One of every box type, holding every field the deck keeps and every name the editor can write
+// One of every element type, holding every field the deck keeps and every name the editor can write
 function fullDeck() {
   const doc = new Y.Doc()
   doc.clientID = 7
@@ -145,14 +146,14 @@ function fullDeck() {
     shadowOffset: 2,
     shadowAngle: 90,
   }
-  const textBox = addBox(doc, slide, {
+  const textElement = addElement(doc, slide, {
     ...shared,
     ...shadow,
     type: 'text',
     lineHeight: 1.5,
     color: '#111111',
   })
-  const shape = addBox(doc, slide, {
+  const shape = addElement(doc, slide, {
     ...shared,
     ...border,
     type: 'shape',
@@ -162,7 +163,7 @@ function fullDeck() {
     strokeWidth: 2,
     strokeStyle: 'dashed',
   })
-  const table = addBox(doc, slide, {
+  const table = addElement(doc, slide, {
     ...shared,
     type: 'table',
     bandColor: '#444444',
@@ -170,7 +171,7 @@ function fullDeck() {
     gridColor: '#555555',
     gridWidth: 1,
   })
-  addBox(doc, slide, {
+  addElement(doc, slide, {
     ...shared,
     type: 'image',
     src: 'image-node',
@@ -180,7 +181,7 @@ function fullDeck() {
     invertX: false,
     invertY: true,
   })
-  addBox(doc, slide, {
+  addElement(doc, slide, {
     ...shared,
     type: 'video',
     src: 'video-node',
@@ -189,7 +190,7 @@ function fullDeck() {
     loop: false,
     playbackRate: 1,
   })
-  addBox(doc, slide, {
+  addElement(doc, slide, {
     ...shared,
     type: 'line',
     points: [
@@ -198,11 +199,11 @@ function fullDeck() {
     ],
     markerStart: 'none',
     markerEnd: 'arrow',
-    connectorStart: { elementId: textBox, anchor: 'right' },
+    connectorStart: { elementId: textElement, anchor: 'right' },
     connectorEnd: { elementId: shape, anchor: 'left' },
     route: 'straight',
   })
-  writeBody(doc, textBox, TEXT_BODY)
+  writeBody(doc, textElement, TEXT_BODY)
   writeBody(doc, shape, TEXT_BODY)
   writeBody(doc, table, TABLE_BODY)
 
@@ -227,7 +228,12 @@ function editorNames() {
 
 describe('slides collab features', () => {
   it('declares exactly the deck keys and the names the editor can write', () => {
-    const expected = new Set([...Object.values(ROOT), ...SLIDE_KEYS, ...BOX_KEYS, ...editorNames()])
+    const expected = new Set([
+      ...Object.values(ROOT),
+      ...SLIDE_KEYS,
+      ...ELEMENT_KEYS,
+      ...editorNames(),
+    ])
     expect(Object.keys(declared.features).sort()).toEqual([...expected].sort())
   })
 

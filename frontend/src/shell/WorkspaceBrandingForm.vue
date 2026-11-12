@@ -23,7 +23,7 @@ import { ErrorMessage, FormControl } from 'frappe-ui'
 import { computed, ref } from 'vue'
 
 import { api, useMutation } from '@/api'
-import { useWorkspace } from '@/shell/useWorkspace'
+import { useWorkspace } from '@/platform/workspace'
 import WorkspaceLogoUploader from '@/shell/WorkspaceLogoUploader.vue'
 
 const emit = defineEmits<{ saved: [] }>()

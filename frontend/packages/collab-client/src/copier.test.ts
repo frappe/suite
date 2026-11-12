@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it, vi } from 'vitest'
 import type * as yjs from 'yjs'
 
@@ -7,7 +8,7 @@ import { fakeServer, fakeTime, idle, join } from './test-support'
 const rendering = {
   app: 'test',
   schemaVersion: 1,
-  toPeerPosition: (raw: unknown) => raw as object,
+  toPeerPosition: (raw: unknown) => fromPartial<object>(raw),
   toHtml: (doc: yjs.Doc) => {
     const content = doc.getText('t').toString()
     return `<p>${content}</p>`
@@ -182,6 +183,6 @@ async function hidePage() {
   try {
     document.dispatchEvent(new Event('visibilitychange'))
   } finally {
-    delete (document as { visibilityState?: string }).visibilityState
+    Reflect.deleteProperty(document, 'visibilityState')
   }
 }

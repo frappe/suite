@@ -9,6 +9,7 @@ import { api as meet } from '@/apps/meet/client/api'
 import { api as sheets } from '@/apps/sheets/client/api'
 import { api as slides } from '@/apps/slides/client/api'
 import { api as writer } from '@/apps/writer/client/api'
+import { subscribeDriveChanges } from '@/composition/driveChanges'
 import { realtime } from '@/platform/realtime'
 import { createApiClient } from '@/platform/server-state'
 import { registerAccountReader, useSession } from '@/platform/session'
@@ -30,17 +31,18 @@ export const engine = createApiClient(
   },
   {
     realtime: import.meta.env.MODE === 'test' ? false : realtime,
-    identity: useSession().user.value?.id ?? null,
   },
 )
+
+if (import.meta.env.MODE !== 'test') subscribeDriveChanges(realtime, engine.invalidate)
 
 const session = useSession()
 watch(
   () => session.user.value?.id ?? null,
-  (identity) => engine.resetIdentity(identity),
+  () => engine.resetIdentity(),
   { flush: 'sync' },
 )
-session.onLogout(() => engine.resetIdentity(null))
+session.onLogout(() => engine.resetIdentity())
 
 registerAccountReader(() => engine.client.query(api.suite.account.get))
 

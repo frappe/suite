@@ -60,7 +60,7 @@ function isWaiting(handle: MediaHandle) {
 }
 
 function waitingIds(handles: MediaHandle[]) {
-  return handles.filter(isWaiting).map((handle) => handle.id)
+  return handles.flatMap((handle) => (isWaiting(handle) ? [handle.id] : []))
 }
 
 /** Resolves with the media nodes still waiting once Drive has answered for every one, on abort, or after 30s. */

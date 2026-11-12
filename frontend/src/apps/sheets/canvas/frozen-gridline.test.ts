@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 // Gridlines in a frozen pane stay put while the sheet scrolls under it. The
 // frozen pane's closing line sits on the last frozen row's bottom (or the last
 // frozen column's right) edge, never at the first scrolled row or column's
@@ -27,7 +28,7 @@ function geometryWith(freeze: { rows: number; cols: number }, scroll: { x: numbe
     rowHeight: () => ROW_H,
     colWidth: () => COL_W,
   }
-  return createGeometry(vm as never)
+  return createGeometry(fromPartial(vm))
 }
 
 // Draws the grid lines for one region and returns the y of every horizontal
@@ -45,7 +46,7 @@ function gridLines(
     else if (y === COL_HEADER_H) xs.push(x)
   })
   const geo = geometryWith(freeze, scroll)
-  const gp = createGridPainter(ctx as never, geo)
+  const gp = createGridPainter(fromPartial(ctx), geo)
   gp.drawGridLines(...region, CSS_W, CSS_H)
   return { ys, xs, geo }
 }

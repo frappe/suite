@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 // Regression harness for "colour formatting removes the grid lines".
 //
 // The canvas paints grid lines first and cell backgrounds on top, so a cell
@@ -15,7 +16,7 @@ import { cellId } from '../utils/cells.js'
 import { COL_HEADER_H, ROW_HEADER_W } from './constants.js'
 import { createRenderer } from './renderer.js'
 
-const GRID_LINE = '#E2E2E2' // COLORS.gridLine's fallback, with no theme set
+const GRID_LINE = '#EDEDED' // COLORS.gridLine's fallback, with no theme set
 const FILL = '#92b9c6'
 const OTHER_FILL = '#f6c343'
 
@@ -116,12 +117,12 @@ function createRasterCtx(width: number, height: number) {
     },
     strokeRect(x: number, y: number, w: number, h: number) {
       const lw = ctx.lineWidth
-      for (const s of [
+      for (const s of fromPartial<Segment[]>([
         [x, y, x + w, y],
         [x, y + h, x + w, y + h],
         [x, y, x, y + h],
         [x + w, y, x + w, y + h],
-      ] as Segment[])
+      ]))
         paintSegment(s, ctx.strokeStyle, lw)
     },
     fillRect: (x: number, y: number, w: number, h: number) => paintRect(x, y, w, h, ctx.fillStyle),
@@ -167,7 +168,7 @@ function createGeometry() {
 function paint(fills: Record<string, string>) {
   const ctx = createRasterCtx(CANVAS_W, CANVAS_H)
   const geo = createGeometry()
-  const renderer = createRenderer(ctx as never, geo)
+  const renderer = createRenderer(fromPartial(ctx), geo)
   const byId = new Map<string, { backgroundColor: string }>()
   for (const [key, colour] of Object.entries(fills)) {
     const [r, c] = key.split(',').map(Number)

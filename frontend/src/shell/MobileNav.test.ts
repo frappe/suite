@@ -88,7 +88,7 @@ async function mountAt(path: string, progress?: AreaProgressSource) {
       h(RouterView),
       h(MobileNav, {
         areas,
-        activeArea: router.currentRoute.value.meta.area as string | undefined,
+        activeArea: router.currentRoute.value.meta.area,
       }),
     ],
   })

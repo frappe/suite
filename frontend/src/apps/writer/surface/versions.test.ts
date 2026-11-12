@@ -1,5 +1,6 @@
 import { getSchema } from '@tiptap/core'
 import { prosemirrorJSONToYDoc } from '@tiptap/y-tiptap'
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Doc, encodeStateAsUpdate, XmlElement, XmlText } from 'yjs'
 
@@ -12,7 +13,7 @@ import { convertedVersion, readVersion, storedVersionHTML } from './versions'
 
 const schema = getSchema(writerSchema())
 
-function encode(value: string | object) {
+function encode(value: unknown) {
   if (typeof value === 'string') {
     return new TextEncoder().encode(value)
   }
@@ -222,13 +223,13 @@ function oldImageVersion() {
 }
 
 function serving(response: () => Response) {
-  return {
+  return fromPartial<DocumentSession>({
     versions: { contentUrl: (seq: string) => `/versions/${seq}` },
     credentials: { fetch: async () => response() },
-  } as unknown as DocumentSession
+  })
 }
 
-function servingVersion(stored: object) {
+function servingVersion(stored: unknown) {
   return serving(() => new Response(JSON.stringify(stored)))
 }
 
@@ -284,7 +285,7 @@ function converting(...answers: object[]) {
     .mockImplementation(async () => answers.shift() ?? { pending: true })
 }
 
-const asking = { nodeId: 'n1', credentials: { context: {} } } as unknown as DocumentSession
+const asking = fromPartial<DocumentSession>({ nodeId: 'n1', credentials: { context: {} } })
 
 describe('convertedVersion', () => {
   afterEach(() => {
