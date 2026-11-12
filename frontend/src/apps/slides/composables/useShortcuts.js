@@ -23,7 +23,6 @@ import { commandHistory } from '@/apps/slides/stores/historyMeta'
 import { cancelCrop, commitCrop, inCropMode } from '@/apps/slides/stores/imageCrop'
 import { commitInteraction, interactionOffset } from '@/apps/slides/stores/interaction'
 import { flushLive } from '@/apps/slides/stores/liveDeck'
-import { presentationDoc } from '@/apps/slides/stores/presentation'
 import {
   addEmptySlide,
   changeEditorSlide,
@@ -483,9 +482,6 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
       description: 'Start',
       group: 'Slideshow',
       handler: () => {
-        // a converted presentation plays no slideshow until live editing
-        if (presentationDoc.value?.is_converted) return
-
         if (inEditMode() || inReadonly()) startSlideShow()
       },
     },

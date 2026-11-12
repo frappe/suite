@@ -72,7 +72,8 @@ export interface LiveDeckHost {
   /** A font is still loading, so a top-left `flatten` works out now is only good for drawing. */
   fontsPending: () => boolean
   onRenamed: (renames: Map<string, string>) => void
-  onMerged: (previousSlideIds: string[]) => void
+  /** The store took the room's slides; these were its slides before. */
+  onMerged: (previousSlides: StoreSlide[]) => void
   onStep: (step: LiveStep) => void
   /** Someone else deleted the element this tab is typing in. Its text is still in the store. */
   onBoundDeleted: (id: string) => void
@@ -485,7 +486,7 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
 
   function merge() {
     const store = host.slides()
-    const previousIds = store.map(({ clientId }) => clientId)
+    const previous = [...store]
     const slideById = new Map(store.map((slide) => [slide.clientId, slide]))
     const next = drawnSlides(doc, htmlById).map((drawn) => {
       const flat = drawn.elements.map(host.flatten)
@@ -512,7 +513,7 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
 
     replaceIfDifferent<StoreSlide>(store, next)
     mirror = mirrorOf(store)
-    host.onMerged(previousIds)
+    host.onMerged(previous)
   }
 
   // Q1: of two tabs filling the blank slide at once, one slide map wins. The other tab takes back

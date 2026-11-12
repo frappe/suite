@@ -8,7 +8,14 @@ import { fromAny, fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref, type Ref } from 'vue'
 import { Awareness } from 'y-protocols/awareness'
-import { applyUpdate, Doc, encodeStateAsUpdate, UndoManager } from 'yjs'
+import {
+  applyUpdate,
+  Doc,
+  encodeStateAsUpdate,
+  UndoManager,
+  type XmlElement,
+  type XmlText,
+} from 'yjs'
 
 import type { useCommentDrafts } from '@/apps/drive'
 import type { StoreSlide } from '@/apps/slides/collab/liveDeck'
@@ -57,7 +64,8 @@ const { draftsDbName, DRAFTS_DB_NAME, RECORD_PREFIX } =
 const { openDraftsDb } = await import('@/apps/slides/utils/drafts')
 const { keepRecovery, readRecovery } = await import('./recovery')
 const { dialog, toast, useKeyboardShortcut } = await import('frappe-ui')
-const { changeSlideInSlideshow } = await import('@/apps/slides/stores/slideshow')
+const { changeSlideInSlideshow, showSlideshowEndScreen, shownSlide } =
+  await import('@/apps/slides/stores/slideshow')
 const { router: slidesRouter } = await import('@/apps/slides/router')
 const elementStore = await import('@/apps/slides/stores/element')
 const editorStore = await import('@/apps/slides/composables/useTextEditor')
@@ -72,6 +80,7 @@ const {
   deleteElement,
   deleteSlide,
   elementIds,
+  elementText,
   ROOT,
   setElement,
   setSlide,
@@ -139,7 +148,7 @@ describe('Slides slideshow route', () => {
     expect(shown()).toBe(false)
   })
 
-  it('opens a converted deck in its view instead of a show from its rows', async () => {
+  it('opens a converted deck whose room does not open in its view, not a show from its rows', async () => {
     mounted = await openedSurface({ path: '/present?slide=1', deck: { is_converted: true } })
 
     await vi.waitFor(() => expect(mounted?.router.currentRoute.value.name).toBe('document-host'))
@@ -147,7 +156,7 @@ describe('Slides slideshow route', () => {
     expect(shown()).toBe(false)
   })
 
-  it('never mounts the show on a converted deck, even before the redirect lands', async () => {
+  it('never mounts a show from rows on a converted deck whose room does not open', async () => {
     const mountedShows: boolean[] = []
     const seen = new MutationObserver(() => mountedShows.push(shown()))
     seen.observe(document.body, { childList: true, subtree: true })
@@ -1429,22 +1438,212 @@ describe('a deck on the content layer', () => {
     expect(thumbnails(mounted.root)).toHaveLength(served.slides.length)
   })
 
-  it('starts no slideshow on a converted presentation from Mod+P', async () => {
-    convertedRoom('one')
-    mounted = await openedSurface({ deck: { is_converted: true } })
-    await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
-    const fullscreen = vi.fn(async () => {})
-    document.documentElement.requestFullscreen = fullscreen
-    vi.mocked(slidesRouter.replace).mockClear()
-    const shortcuts = vi.mocked(useKeyboardShortcut).mock.calls.at(-1)![0]
-    if (!Array.isArray(shortcuts)) throw new Error('Expected a list of shortcuts')
+  describe('presenting it (Q12, Q175)', () => {
+    const unwired = slidesRouter.currentRoute
 
-    const printShortcut = shortcuts.find(({ combo }) => combo === 'Mod+P')
-    if (typeof printShortcut?.handler !== 'function') throw new Error('Missing print shortcut')
-    printShortcut.handler(new KeyboardEvent('keydown', { key: 'p' }))
+    afterEach(() => {
+      Object.assign(slidesRouter, { currentRoute: unwired })
+      vi.mocked(slidesRouter.replace).mockReset()
+    })
 
-    expect(fullscreen).not.toHaveBeenCalled()
-    expect(slidesRouter.replace).not.toHaveBeenCalled()
+    // the show on its slide, its moves going through this surface's router
+    async function presented(slide: number, ...texts: string[]) {
+      const doc = convertedRoom(...texts)
+      mounted = await openedSurface({
+        path: `/present?slide=${slide}`,
+        deck: { is_converted: true },
+      })
+      const { router } = mounted
+      Object.assign(slidesRouter, { currentRoute: router.currentRoute })
+      vi.mocked(slidesRouter.replace).mockImplementation((to) => router.replace(to))
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(texts.length))
+      return doc
+    }
+
+    // what the running show draws
+    function presentedText() {
+      const drawn = fromPartial<{ elements: Array<{ content?: string }> } | undefined>(
+        shownSlide.value,
+      )
+      return drawn?.elements.map((element) => element.content).join()
+    }
+
+    async function settle() {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    }
+
+    it('presents a converted presentation from its live room', async () => {
+      await presented(2, 'one', 'two')
+      await settle()
+
+      expect(mounted!.router.currentRoute.value.name).toBe('slides-slideshow')
+      expect(shown()).toBe(true)
+      expect(presentedText()).toContain('>two</p>')
+    })
+
+    it('redraws the shown slide when a co-editor changes its text', async () => {
+      const doc = await presented(1, 'one')
+      const [element] = drawnSlides(doc)[0].elements
+      const paragraph = fromPartial<XmlElement>(elementText(doc, element.id)!.get(0))
+
+      fromPartial<XmlText>(paragraph.get(0)).insert(3, ' more')
+
+      await vi.waitFor(() => expect(presentedText()).toContain('one more'))
+    })
+
+    it('keeps the shown slide up when a co-editor deletes it, and Next shows the one after it', async () => {
+      const doc = await presented(2, 'one', 'two', 'three')
+
+      deleteSlide(doc, 'two')
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(2))
+      expect(presentedText()).toContain('>two</p>')
+
+      changeSlideInSlideshow(slideIndex.value + 1)
+      await settle()
+
+      expect(presentedText()).toContain('>three</p>')
+      expect(mounted!.router.currentRoute.value.query.slide).toBe('2')
+    })
+
+    it('keeps holding the shown slide when the one that took its place is deleted too', async () => {
+      const doc = await presented(2, 'one', 'two', 'three', 'four')
+      deleteSlide(doc, 'two')
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(3))
+
+      deleteSlide(doc, 'three')
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(2))
+      expect(presentedText()).toContain('>two</p>')
+
+      changeSlideInSlideshow(slideIndex.value + 1)
+      await settle()
+      expect(presentedText()).toContain('>four</p>')
+    })
+
+    it('goes from a held slide back to the one before it', async () => {
+      const doc = await presented(2, 'one', 'two', 'three')
+      deleteSlide(doc, 'two')
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(2))
+
+      changeSlideInSlideshow(slideIndex.value - 1)
+
+      await vi.waitFor(() => expect(mounted!.router.currentRoute.value.query.slide).toBe('1'))
+      expect(presentedText()).not.toContain('>two</p>')
+    })
+
+    it('ends the show on Next from a held last slide', async () => {
+      const doc = await presented(2, 'one', 'two')
+      deleteSlide(doc, 'two')
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+      expect(presentedText()).toContain('>two</p>')
+      expect(showSlideshowEndScreen.value).toBe(false)
+
+      changeSlideInSlideshow(slideIndex.value + 1)
+      await settle()
+
+      expect(showSlideshowEndScreen.value).toBe(true)
+    })
+
+    it('starts the slideshow from Mod+P', async () => {
+      convertedRoom('one')
+      mounted = await openedSurface({ deck: { is_converted: true } })
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+      document.documentElement.requestFullscreen = vi.fn(async () => {})
+
+      await press('Mod+P')
+
+      expect(slidesRouter.replace).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'slides-slideshow' }),
+      )
+    })
+
+    it('turns Present on and keeps Export off until printing reads the room', async () => {
+      convertedRoom('one')
+      mounted = await openedSurface({ deck: { is_converted: true } })
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+
+      const present = mounted.root.querySelector('header [aria-label="Present"]')
+      const exportButton = mounted.root.querySelector('header [aria-label="Export"]')
+      // the stand-ins are divs, which keep the value as written
+      expect(present?.getAttribute('disabled')).toBe('false')
+      expect(exportButton?.getAttribute('disabled')).toBe('true')
+    })
+  })
+
+  describe('read by everyone through its room (Q11, Q138)', () => {
+    afterEach(() => {
+      signedIn.user = 'me@example.com'
+      vi.unstubAllGlobals()
+    })
+
+    // a room the server opened for someone it takes no edits from
+    function readOnlyRoom(...texts: string[]) {
+      const room = roomOf(...texts)
+      room.status.canWrite = false
+      collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
+      return room.doc
+    }
+
+    function signInLink() {
+      return [...document.querySelectorAll('a')].find(
+        (link) => link.textContent === 'Sign in to edit',
+      )
+    }
+
+    it("shows a guest the room's slides, and a co-editor's new one", async () => {
+      signedIn.user = null
+      const doc = readOnlyRoom('one')
+      mounted = await openedSurface({ role: 10, deck: { is_converted: true } })
+      await vi.waitFor(() => expect(drawnTexts()).toHaveLength(1))
+      expect(drawnTexts()[0]).toContain('>one</p>')
+
+      addSlide(doc)
+
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(2))
+      expect(viewOnly.value).toBe(true)
+    })
+
+    it('asks a guest whose link lets them edit to sign in, back to this page', async () => {
+      signedIn.user = null
+      readOnlyRoom('one')
+      mounted = await openedSurface({ role: 50, deck: { is_converted: true } })
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+
+      await vi.waitFor(() => expect(signInLink()).toBeDefined())
+      expect(signInLink()!.getAttribute('href')).toBe(
+        `/login?redirect-to=${encodeURIComponent(location.pathname)}`,
+      )
+      expect(viewOnly.value).toBe(true)
+    })
+
+    it.each([
+      ['a guest whose link only reads', null, 10],
+      ['a signed-in editor', 'me@example.com', 50],
+    ])('asks %s for no sign-in', async (_label, user, role) => {
+      signedIn.user = user
+      readOnlyRoom('one')
+      mounted = await openedSurface({ role, deck: { is_converted: true } })
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+      await new Promise((resolve) => setTimeout(resolve, 20))
+
+      expect(signInLink()).toBeUndefined()
+    })
+
+    it("shows a phone the room's slides, and a co-editor's new one", async () => {
+      vi.stubGlobal('matchMedia', (query: string) => ({
+        matches: query === '(max-width: 767px)',
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }))
+      const doc = convertedRoom('one')
+      mounted = await openedSurface({ role: 10, deck: { is_converted: true } })
+      await vi.waitFor(() => expect(drawnTexts()).toHaveLength(1))
+      expect(drawnTexts()[0]).toContain('>one</p>')
+
+      addSlide(doc)
+
+      await vi.waitFor(() => expect(drawnTexts()).toHaveLength(2))
+    })
   })
 
   it('says a converted presentation could not open when its room does not, and draws no rows', async () => {

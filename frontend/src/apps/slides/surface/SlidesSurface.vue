@@ -149,11 +149,7 @@ const route = useRoute()
 const router = useRouter()
 const userSession = useSession()
 const presenting = computed(
-  () =>
-    route.name === 'slides-slideshow' &&
-    loaded.value &&
-    slides.value.length > 0 &&
-    !isConverted.value,
+  () => route.name === 'slides-slideshow' && loaded.value && slides.value.length > 0,
 )
 // `?slide=N`: the slide the show presents, and the one the editor opens on.
 const presentedSlide = computed(() => Math.max(1, Math.trunc(Number(route.query.slide)) || 1))
@@ -270,6 +266,7 @@ const convertedRoom = useConvertedRoom({
   session: props.session,
   // Not `editable`, which asks the room back
   mayEdit: () => access.writable.value && !composite.value && !restoring.value && !phone.value,
+  isPresenting: () => presenting.value,
   retainRecovery,
   retainStickyOrOffer,
   settleCopies,
@@ -435,15 +432,12 @@ watch(
     if (presentationDoc.value) presentationDoc.value.title = title
   },
 )
-// an empty presentation has no show, and a converted one none from its rows, so /present opens the deck
-watch(
-  [() => route.name, loaded, () => slides.value.length, isConverted],
-  ([name, done, count, converted]) => {
-    if (name === 'slides-slideshow' && done && (!count || converted)) {
-      void router.replace({ name: 'document-host', params: route.params, query: route.query })
-    }
-  },
-)
+// an empty presentation has no show, so /present opens the deck
+watch([() => route.name, loaded, () => slides.value.length], ([name, done, count]) => {
+  if (name === 'slides-slideshow' && done && !count) {
+    void router.replace({ name: 'document-host', params: route.params, query: route.query })
+  }
+})
 watch(
   editable,
   (canEdit) => {
@@ -920,8 +914,18 @@ function setOffline() {
 }
 
 const deckUnavailable = computed(
-  () => loading.value || !access.readable.value || !slides.value.length || isConverted.value,
+  () => loading.value || !access.readable.value || !slides.value.length,
 )
+// Q138: the room takes no edits from a guest, so an edit link's guest is asked to sign in
+const asksGuestToSignIn = computed(
+  () => isConverted.value && !userSession.user.value && access.writable.value,
+)
+// as Writer's signed-out banner: back to this page once signed in
+function signInHref() {
+  return `/login?redirect-to=${encodeURIComponent(location.pathname)}`
+}
+// printing a converted presentation draws its rows until it reads the room (Q13)
+const exportUnavailable = computed(() => deckUnavailable.value || isConverted.value)
 const canPin = computed(
   () =>
     'serviceWorker' in navigator &&
@@ -1024,7 +1028,7 @@ onBeforeUnmount(() => {
           aria-label="Export"
           variant="ghost"
           class="max-md:hidden"
-          :disabled="deckUnavailable"
+          :disabled="exportUnavailable"
           @click="exportPdf"
         />
       </template>
@@ -1120,6 +1124,18 @@ onBeforeUnmount(() => {
       </template>
     </div>
 
+    <SurfaceNotice
+      v-if="asksGuestToSignIn && !loading"
+      icon="lucide-log-in"
+      :message="__('Guests can\'t edit this presentation yet.')"
+    >
+      <a
+        class="rounded px-2 py-1 text-base font-medium text-ink-gray-8 hover:bg-surface-gray-2"
+        :href="signInHref()"
+      >
+        {{ __('Sign in to edit') }}
+      </a>
+    </SurfaceNotice>
     <SurfaceNotice
       v-if="oldDraftNotice && !loading"
       icon="lucide-history"

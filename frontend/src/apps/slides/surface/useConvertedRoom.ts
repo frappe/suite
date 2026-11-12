@@ -36,6 +36,7 @@ import {
   transformElements,
 } from '@/apps/slides/stores/presentation'
 import { currentSlide, setSlideIndex, slideIndex, slides } from '@/apps/slides/stores/slide'
+import { holdShownSlide } from '@/apps/slides/stores/slideshow'
 import {
   isRecoverable,
   openCollabRoom,
@@ -64,6 +65,8 @@ interface RoomHost {
   session: CollabSession
   /** Whether this tab may change the presentation, the room aside. */
   mayEdit: () => boolean
+  /** Whether the slideshow is up. */
+  isPresenting: () => boolean
   /** Keeps the slides in this browser when the room stops holding unsent work. */
   retainRecovery: () => boolean
   /** Keeps the slides in this browser past any later save, or offers them as a download. */
@@ -92,6 +95,7 @@ function isKeptNowhere(status: RoomStatus, isRecoveryKept: boolean) {
 export function useConvertedRoom({
   session,
   mayEdit,
+  isPresenting,
   retainRecovery,
   retainStickyOrOffer,
   settleCopies,
@@ -149,13 +153,20 @@ export function useConvertedRoom({
     return mayEdit() && allowsEditing.value
   }
 
-  function keepShownSlide(previousIds: string[]) {
+  function keepShownSlide(previous: StoreSlide[]) {
     const total = slides.value.length
     slidesLength.value = total
     if (total) {
       const at = slideIndex.value ?? 0
-      const kept = slides.value.findIndex(({ clientId }) => clientId === previousIds[at])
-      const next = kept === -1 ? Math.min(at, total - 1) : kept
+      const shown = previous[at]
+      const kept = slides.value.findIndex(({ clientId }) => clientId === shown?.clientId)
+      // Q175: the show keeps a deleted shown slide up, and its end screen stays a place to be
+      if (kept === -1 && shown && isPresenting()) {
+        holdShownSlide(shown)
+      }
+
+      const last = isPresenting() ? total : total - 1
+      const next = kept === -1 ? Math.min(at, last) : kept
       if (next !== at) {
         setSlideIndex(next + 1)
       }

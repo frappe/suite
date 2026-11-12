@@ -22,7 +22,11 @@ interface ExportedFixture {
   slides: unknown[]
 }
 const exported = vi.hoisted((): ExportedFixture => ({ slides: [] }))
-const signedIn = vi.hoisted(() => ({ user: 'me@example.com' }))
+// a guest has no user
+interface SignedIn {
+  user: string | null
+}
+const signedIn = vi.hoisted((): SignedIn => ({ user: 'me@example.com' }))
 interface VersionsPanelFixture {
   flush: () => Promise<void>
   restore: (seq: string) => Promise<void>
@@ -192,7 +196,7 @@ vi.mock('@/platform/session', async (importOriginal) => {
       ...original.useSession(),
       user: {
         get value() {
-          return { id: signedIn.user }
+          return signedIn.user ? { id: signedIn.user } : null
         },
       },
     }),
