@@ -336,6 +336,13 @@ export function elementState(doc: Y.Doc, id: string) {
   return JSON.stringify(elementsOf(doc).get(id)?.toJSON() ?? null)
 }
 
+// Magic Move pairs elements across slides by this key, as the show's `getTransitionKey` does
+export function transitionKey(doc: Y.Doc, id: string) {
+  const element = elementsOf(doc).get(id)
+  const refId = element?.get('refId')
+  return element?.get('type') !== 'table' && typeof refId === 'string' && refId ? refId : id
+}
+
 export function elementText(doc: Y.Doc, id: string): Y.XmlFragment | undefined {
   const text = elementsOf(doc).get(id)?.get('text')
   return text instanceof Y.XmlFragment ? text : undefined

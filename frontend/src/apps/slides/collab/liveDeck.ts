@@ -31,6 +31,7 @@ import {
   SLIDE_FIELDS,
   slideIds,
   slideOrders,
+  transitionKey,
 } from './deck'
 import { deckSchema, drawnSlides } from './drawnDeck'
 import { openLiveUndo, type StepDirection } from './liveUndo'
@@ -306,8 +307,11 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
   let reportedGoneId: string | null = null
   let restoreRev = host.restoreRev()
   // this tab's fill of the blank slide, and its elements as written
-  let heldFill: { status: ReturnType<typeof replaceSlide>; elements: Map<string, string> } | null =
-    null
+  let heldFill: {
+    slideId: string
+    status: ReturnType<typeof replaceSlide>
+    elements: Map<string, string>
+  } | null = null
 
   function forEachStoreElement(visit: (element: StoreItem) => void) {
     for (const slide of host.slides()) {
@@ -512,16 +516,17 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
   }
 
   // Q1: of two tabs filling the blank slide at once, one slide map wins. The other tab takes back
-  // its fill's elements, all but any its user changed since
+  // its fill's elements, all but any its user changed since, and those drop a pairing the slide
+  // already holds (Q4). A tab that can't write leaves its document as the room has it
   function giveWayIfBeaten() {
     const status = heldFill?.status()
     if (!heldFill || status === 'held') {
       return
     }
 
-    const { elements } = heldFill
+    const { slideId, elements } = heldFill
     heldFill = null
-    if (status === 'gone') {
+    if (status === 'gone' || !host.canWrite()) {
       return
     }
 
@@ -530,6 +535,19 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
         if (elementState(doc, id) === state) {
           deleteElement(doc, id)
         }
+      }
+
+      const onSlide = elementIds(doc, slideId)
+      const kept = onSlide.filter((id) => elements.has(id))
+      const keys = new Set(
+        onSlide.filter((id) => !elements.has(id)).map((id) => transitionKey(doc, id)),
+      )
+      for (const id of kept) {
+        if (keys.has(transitionKey(doc, id))) {
+          setElement(doc, id, { refId: undefined })
+        }
+
+        keys.add(transitionKey(doc, id))
       }
     }, GIVE_WAY_ORIGIN)
   }
@@ -662,7 +680,7 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
       slide.elements.splice(0, slide.elements.length, ...layout.elements)
       push()
       const elements = elementIds(doc, slideId).map((id) => [id, elementState(doc, id)] as const)
-      heldFill = { status, elements: new Map(elements) }
+      heldFill = { slideId, status, elements: new Map(elements) }
       isFilled = true
     }, LIVE_ORIGIN)
     merge()

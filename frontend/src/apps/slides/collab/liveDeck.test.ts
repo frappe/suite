@@ -78,6 +78,10 @@ function tabOn(
     renamed,
     boundText,
     element: (id: string) => store.slides.flatMap((s) => s.elements).find((e) => e.id === id)!,
+    // the tab lost edit, as a role change or a lock does
+    stopWriting: () => {
+      canWrite = false
+    },
   }
 }
 
@@ -692,6 +696,9 @@ describe("filling a new presentation's blank slide", () => {
   }
 
   const refIds = (doc: Y.Doc) => readSlides(doc)[0].elements.map(({ refId }) => refId)
+  // Magic Move pairs elements across slides by this key, so one slide never holds it twice
+  const transitionKeys = (doc: Y.Doc) =>
+    readSlides(doc)[0].elements.map(({ id, type, refId }) => (type === 'table' ? id : refId || id))
 
   it('ends on one layout in both tabs when two tabs pick different themes at once', () => {
     const [one, other] = apart()
@@ -767,6 +774,39 @@ describe("filling a new presentation's blank slide", () => {
     )
     expect(frames).toHaveLength(3)
     expect(moved).toHaveLength(2)
+    expect(readSlides(other)).toEqual(readSlides(one))
+  })
+
+  it('leaves no transition key twice when an element the tab moved stays', () => {
+    const [one, other] = apart()
+    const [tabA, tabB] = [tabOn(one), tabOn(other)]
+
+    tabA.deck.fillBlank(light())
+    tabB.deck.fillBlank(light())
+    for (const tab of [tabA, tabB]) {
+      tab.store.slides[0].elements[0].left = 99
+      tab.deck.push()
+    }
+    connect(one, other)
+
+    for (const doc of [one, other]) {
+      expect(new Set(transitionKeys(doc)).size).toBe(readSlides(doc)[0].elements.length)
+    }
+  })
+
+  it('leaves its document alone when the tab whose fill gave way can no longer write', () => {
+    const [one, other] = apart()
+    const [tabA, tabB] = [tabOn(one), tabOn(other)]
+
+    tabA.deck.fillBlank(light())
+    tabB.deck.fillBlank(dark())
+    tabA.stopWriting()
+    tabB.stopWriting()
+    // the room saves nothing from a tab that can't write, so each hears only the other's fill
+    const [fromOne, fromOther] = [Y.encodeStateAsUpdate(one), Y.encodeStateAsUpdate(other)]
+    Y.applyUpdate(other, fromOne, 'wire')
+    Y.applyUpdate(one, fromOther, 'wire')
+
     expect(readSlides(other)).toEqual(readSlides(one))
   })
 
