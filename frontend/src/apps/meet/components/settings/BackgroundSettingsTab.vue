@@ -22,6 +22,12 @@
 								Loading preview...
 							</p>
 						</div>
+						<div v-else-if="previewError" class="px-4 text-center space-y-3">
+							<p role="alert" class="text-sm text-white">{{ previewError }}</p>
+							<Button variant="solid" theme="gray" @click="startVideoPreview(selectedCameraId)">
+								Enable camera preview
+							</Button>
+						</div>
 					</div>
 					<div
 						class="absolute inset-x-0 bottom-0 flex items-end justify-end bg-gradient-to-t from-black/70 via-black/30 to-transparent p-3 pt-8"
@@ -214,6 +220,7 @@ const onBackgroundEffectsChanged = meetingContext?.onBackgroundEffectsChanged;
 const videoPreviewRef = ref<HTMLVideoElement | null>(null);
 const previewStream = ref<MediaStream | null>(null);
 const isLoadingPreview = ref(false);
+const previewError = ref("");
 const pendingPreviewRefresh = ref(false);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 let previewSession: {
@@ -345,10 +352,16 @@ async function startVideoPreview(deviceId: string) {
 	let rawStream: MediaStream | null = null;
 	try {
 		isLoadingPreview.value = true;
+		previewError.value = "";
 
 		// If in a meeting, don't create a new stream
 		// Reuse processedStream to avoid breaking
-		if (isInMeeting.value && processedStream.value) {
+		if (
+			isInMeeting.value &&
+			processedStream.value?.getVideoTracks().some(
+				(track) => track.readyState === "live" && track.enabled,
+			)
+		) {
 			previewStream.value = processedStream.value;
 			if (videoPreviewRef.value) {
 				videoPreviewRef.value.srcObject = previewStream.value;
@@ -417,6 +430,9 @@ async function startVideoPreview(deviceId: string) {
 	} catch (error) {
 		if (controller.signal.aborted || requestId !== previewRequestId) return;
 		console.error("Failed to start video preview:", error);
+		previewError.value = error instanceof DOMException && error.name === "NotAllowedError"
+			? "Allow camera access to preview effects. If blocked, enable it in site permissions."
+			: "Camera preview is unavailable. Check that your camera is connected and available, then try again.";
 		previewStream.value = null;
 		previewSession = null;
 		if (previewInputStream) {
@@ -473,9 +489,7 @@ async function applyPreviewOptions() {
 	}
 
 	if (!previewSession || typeof previewSession.updateOptions !== "function") {
-		if (selectedCameraId.value) {
-			await startVideoPreview(selectedCameraId.value);
-		}
+		await startVideoPreview(selectedCameraId.value);
 		return;
 	}
 
@@ -490,9 +504,7 @@ async function applyPreviewOptions() {
 		});
 	} catch (error) {
 		console.error("Failed to update preview background options:", error);
-		if (selectedCameraId.value) {
-			await startVideoPreview(selectedCameraId.value);
-		}
+		await startVideoPreview(selectedCameraId.value);
 	}
 }
 
@@ -636,7 +648,7 @@ watch(selectedBackgroundImageLocal, (imageValue) => {
 
 onMounted(() => {
 	isMounted = true;
-	if (props.isVisible && selectedCameraId.value) {
+	if (props.isVisible) {
 		void startVideoPreview(selectedCameraId.value);
 	}
 });
@@ -651,7 +663,7 @@ watch(
 	[() => props.isVisible, selectedCameraId, processedStream],
 	([isVisible, deviceId]) => {
 		if (!isMounted) return;
-		if (!isVisible || !deviceId) {
+		if (!isVisible) {
 			stopVideoPreview();
 			return;
 		}
