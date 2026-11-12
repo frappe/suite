@@ -266,8 +266,13 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       if (
         isBodyEmpty.value ||
         bodyText(mail.html_body) === bodyText((previous ?? '') + prefilledBody)
-      )
+      ) {
         mail.html_body = signature + prefilledBody
+        // The editor takes the new body as a reset, which leaves the caret at its end: below the
+        // signature, where a reply opened before the identities arrived was then typed. Nothing
+        // has been written yet, so the place to write is still the top.
+        void nextTick(() => host()?.editor?.commands.setTextSelection({ from: 0, to: 0 }))
+      }
     },
     {
       immediate: true,

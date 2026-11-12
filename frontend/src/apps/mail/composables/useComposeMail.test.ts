@@ -1,7 +1,9 @@
+import { Editor, EditorContent } from 'frappe-ui/editor'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createApp, defineComponent, nextTick } from 'vue'
+import { createApp, defineComponent, h, nextTick, onMounted, useTemplateRef } from 'vue'
 
 import type { ComposeMailData } from '@/apps/mail/types'
+import { mailEditorKit } from '@/apps/mail/utils/text-editor'
 
 import { useComposeMail } from './useComposeMail'
 
@@ -17,7 +19,10 @@ vi.mock('vue-router', () => ({
   useRoute: () => ({ params: {} }),
 }))
 vi.mock('frappe-ui', () => ({ toast: { error: toastError, success: vi.fn(), dismiss: vi.fn() } }))
-vi.mock('frappe-ui/editor', () => ({ Mention: { extend: () => ({ configure: () => ({}) }) } }))
+vi.mock('frappe-ui/editor', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('frappe-ui/editor')>()),
+  Mention: { extend: () => ({ configure: () => ({}) }) },
+}))
 vi.mock('@/apps/mail/utils/mentionSuggestion', () => ({ createMentionSuggestion: () => ({}) }))
 vi.mock('@/apps/mail/resources', () => ({ getAttachmentUrl: vi.fn() }))
 vi.mock('@/api', () => ({
@@ -45,6 +50,7 @@ vi.mock('@/apps/mail/utils', () => ({
 interface TestIdentity {
   email: string
   _name: string
+  html_signature?: string
 }
 const mayaIdentities: TestIdentity[] = [{ email: 'maya@example.com', _name: 'Maya' }]
 // The account's identities as a composer opens (undefined: not loaded yet), and a way to load them.
@@ -170,6 +176,52 @@ describe('the body and the editor', () => {
 
     expect(getHTML).not.toHaveBeenCalled()
     expect(composer.mail.html_body).toBe('<div>typed</div>')
+  })
+
+  it('starts a reply above a signature that arrives after it opened', async () => {
+    scope.identities = undefined
+    let body!: ComposerHost
+    const app = createApp(
+      defineComponent({
+        setup() {
+          const editor = useTemplateRef<NonNullable<ComposerHost>>('editor')
+          const composer = useComposeMail({
+            mailDetails: { ...draft, id: undefined, html_body: '', in_reply_to: '<m1@x.example>' },
+            reloadMails: vi.fn(),
+            close: vi.fn(),
+            isOpen: () => true,
+            host: () => editor.value,
+          })
+          onMounted(() => {
+            composer.onOpened()
+            body = editor.value
+            body?.editor?.commands.focus()
+          })
+          return () =>
+            h(
+              Editor,
+              {
+                ref: 'editor',
+                modelValue: composer.editorContent.value,
+                extensions: mailEditorKit(),
+                onChange: composer.onEditorChange,
+              },
+              { default: ({ editor }: { editor: never }) => h(EditorContent, { editor }) },
+            )
+        },
+      }),
+    )
+    app.provide('$user', { data: { name: 'maya@example.com' } })
+    app.mount(document.body.appendChild(document.createElement('div')))
+    apps.push(app)
+    await nextTick()
+
+    scope.load([{ ...mayaIdentities[0], html_signature: '<div>Maya</div>' }])
+    await nextTick()
+    await nextTick()
+    body?.editor?.commands.insertContent('Thanks')
+
+    expect(body?.editor?.getHTML()).toMatch(/^<div>Thanks<\/div>.*Maya/)
   })
 
   it('writes a blank line in the form mail clients keep', () => {
