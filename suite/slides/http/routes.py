@@ -58,7 +58,8 @@ class Deck(TypedDict):
     node: str
     is_composite: bool | Literal[0, 1]
     theme: str | None
-    slides: list[Slide]
+    # a converted deck's answer has none: its rows aren't its slides (Q20')
+    slides: NotRequired[list[Slide]]
     references: NotRequired[list[ReferenceAnswer]]
     is_converted: NotRequired[bool]
     conversion: NotRequired[ConversionStatus]

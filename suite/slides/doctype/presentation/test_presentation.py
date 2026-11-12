@@ -734,6 +734,48 @@ class TestCreateIsAtomic(IntegrationTestCase):
         self.assertEqual(self._decks(), before)
 
 
+class TestConvertedRowsAreNotSlides(LoggedDeckCase):
+    """A converted deck's rows stopped at its conversion, so no reader gets them as its slides (Q20')."""
+
+    def setUp(self):
+        super().setUp()
+        self.node = self.new_deck()
+        self.deck = slides_drive.docname_for_node(self.node)
+        self.theme = frappe.db.get_value("Presentation", self.deck, "theme")
+        # the rows are still there to leak
+        self.assertTrue(frappe.get_all("Slide", filters={"parent": self.deck}))
+
+    def test_a_desk_or_rest_read_carries_no_slides(self):
+        from frappe.desk.form.load import getdoc
+
+        getdoc("Presentation", self.deck)
+        reads = {"desk": frappe.response.docs[0], "rest": client_get("Presentation", self.deck)}
+        for route, answer in reads.items():
+            with self.subTest(route):
+                self.assertFalse(answer.get("slides"))
+                self.assertEqual(answer.get("theme"), self.theme)
+
+    def test_the_opening_answer_carries_no_slides_and_still_names_the_deck(self):
+        answer = get_public_presentation(self.deck)
+
+        self.assertNotIn("slides", answer)
+        self.assertTrue(answer["is_converted"])
+        self.assertEqual(answer["theme"], self.theme)
+        self.assertEqual(answer["node"], self.node)
+
+    def test_the_converted_deck_still_opens(self):
+        header, state = opened(self.node)
+
+        self.assertTrue(header["lineage"])
+        self.assertTrue(state)
+
+    def test_a_deck_still_on_its_rows_keeps_them(self):
+        delete_log(self.node)
+
+        self.assertEqual(len(get_public_presentation(self.deck)["slides"]), 1)
+        self.assertEqual(len(client_get("Presentation", self.deck)["slides"]), 1)
+
+
 class TestDeckBodyStaysServerSide(IntegrationTestCase):
     """The stored Yjs state reaches no reader and takes no generic write (R1011)."""
 

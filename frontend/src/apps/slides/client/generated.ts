@@ -47,7 +47,7 @@ export type GetPublicPresentationOutput = {
   node: string
   is_composite: boolean | (0 | 1)
   theme: string | null
-  slides: Array<GetPublicPresentationOutputSlide>
+  slides?: Array<GetPublicPresentationOutputSlide>
   references?: Array<GetPublicPresentationOutputReferenceAnswer>
   is_converted?: boolean
   conversion?: GetPublicPresentationOutputConversionStatus
@@ -121,7 +121,7 @@ export type GetCompositePresentationOutput = {
   node: string
   is_composite: boolean | (0 | 1)
   theme: string | null
-  slides: Array<GetCompositePresentationOutputSlide>
+  slides?: Array<GetCompositePresentationOutputSlide>
   references?: Array<GetCompositePresentationOutputReferenceAnswer>
   is_converted?: boolean
   conversion?: GetCompositePresentationOutputConversionStatus

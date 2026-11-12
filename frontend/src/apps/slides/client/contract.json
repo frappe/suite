@@ -347,8 +347,7 @@
           "modified_by",
           "node",
           "is_composite",
-          "theme",
-          "slides"
+          "theme"
         ],
         "title": "Deck",
         "type": "object"
@@ -704,8 +703,7 @@
           "modified_by",
           "node",
           "is_composite",
-          "theme",
-          "slides"
+          "theme"
         ],
         "title": "Deck",
         "type": "object"

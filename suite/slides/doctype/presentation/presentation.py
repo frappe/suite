@@ -96,6 +96,12 @@ class Presentation(drive.DriveContent, Document):
                     )
                 )
 
+    def apply_fieldlevel_read_permissions(self) -> None:
+        """Hide a converted deck's rows: they stopped at its conversion, so they aren't its slides (Q20')."""
+        super().apply_fieldlevel_read_permissions()
+        if log.find(APP, self.node):
+            self.set("slides", [])
+
     def on_update(self):
         if self.flags.in_insert:
             # `create_document` stamps the new node itself. Touching here
@@ -426,6 +432,8 @@ def get_public_presentation(name: str):
     if deck.node and not deck.is_composite and log.enabled(APP):
         if log.find(APP, deck.node):
             answer["is_converted"] = True
+            # every tab opens through here, so the rows must not read as the deck's slides (Q20')
+            answer.pop("slides")
         else:
             answer["conversion"] = conversion_status(APP, deck.node)
 

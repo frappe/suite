@@ -561,13 +561,16 @@ export async function openedSurface({
       return heldAnswer
     }
 
-    return answer({
+    const opening = {
       ...structuredClone(served),
       slides,
       name: docname,
       is_composite: composite ? 1 : 0,
       ...deck,
-    })
+    }
+    // the server sends a converted deck's opening with no rows (Q20')
+    if (opening.is_converted) delete opening.slides
+    return answer(opening)
   })
   const access = ref({ role })
   const opened = session(docname, access, media, panels)
