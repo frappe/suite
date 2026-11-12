@@ -20,9 +20,11 @@ import {
   ELEMENT_FIELDS,
   elementIds,
   elementOrders,
+  elementState,
   elementText,
   moveElement,
   moveSlide,
+  replaceSlide,
   ROOT,
   setElement,
   setSlide,
@@ -36,8 +38,10 @@ import { openLiveUndo, type StepDirection } from './liveUndo'
 const LIVE_ORIGIN = 'slides-live-store'
 // Opening an editor isn't an edit, so this write is no undo step
 const SEED_ORIGIN = 'slides-live-seed'
+// Taking back a fill another tab's fill beat isn't an edit either
+const GIVE_WAY_ORIGIN = 'slides-live-give-way'
 
-const LOCAL_ORIGINS = new Set<unknown>([LIVE_ORIGIN, SEED_ORIGIN, ySyncPluginKey])
+const LOCAL_ORIGINS = new Set<unknown>([LIVE_ORIGIN, SEED_ORIGIN, GIVE_WAY_ORIGIN, ySyncPluginKey])
 const CENTRED = 'translate(-50%, -50%)'
 const FRAME_KEYS = ['left', 'top', 'width', 'height', 'transform', 'transformOrigin']
 const DRAWN_ELEMENT_KEYS = new Set([...ELEMENT_FIELDS, ...FRAME_KEYS, 'connector', 'content'])
@@ -301,6 +305,9 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
   let mirror = mirrorOf(host.slides())
   let reportedGoneId: string | null = null
   let restoreRev = host.restoreRev()
+  // this tab's fill of the blank slide, and its elements as written
+  let heldFill: { status: ReturnType<typeof replaceSlide>; elements: Map<string, string> } | null =
+    null
 
   function forEachStoreElement(visit: (element: StoreItem) => void) {
     for (const slide of host.slides()) {
@@ -504,8 +511,32 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
     host.onMerged(previousIds)
   }
 
+  // Q1: of two tabs filling the blank slide at once, one slide map wins. The other tab takes back
+  // its fill's elements, all but any its user changed since
+  function giveWayIfBeaten() {
+    const status = heldFill?.status()
+    if (!heldFill || status === 'held') {
+      return
+    }
+
+    const { elements } = heldFill
+    heldFill = null
+    if (status === 'gone') {
+      return
+    }
+
+    doc.transact(() => {
+      for (const [id, state] of elements) {
+        if (elementState(doc, id) === state) {
+          deleteElement(doc, id)
+        }
+      }
+    }, GIVE_WAY_ORIGIN)
+  }
+
   function pull() {
     push()
+    giveWayIfBeaten()
     merge()
     // the one write a remote change can cause (Q27)
     if (host.canWrite()) {
@@ -532,6 +563,7 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
     const rev = host.restoreRev()
     if (rev !== restoreRev) {
       restoreRev = rev
+      heldFill = null
       steps.forget()
     }
   }
@@ -608,7 +640,8 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
     }
   }
 
-  // Checked and written in one transaction, so a co-editor's element can't land between them
+  // Checked and written in one transaction, so a co-editor's element can't land between them. The
+  // fields go in a new slide map: the store's push writes only what differs from the mirror
   function fillBlank(layout: StoreSlide) {
     if (!host.canWrite()) {
       return false
@@ -623,14 +656,21 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
         return
       }
 
-      Object.assign(slide, slideFields(layout))
+      const fields = slideFields(layout)
+      const status = replaceSlide(doc, slideId, fields)
+      Object.assign(slide, fields)
       slide.elements.splice(0, slide.elements.length, ...layout.elements)
       push()
+      const elements = elementIds(doc, slideId).map((id) => [id, elementState(doc, id)] as const)
+      heldFill = { status, elements: new Map(elements) }
       isFilled = true
     }, LIVE_ORIGIN)
     merge()
-    // the theme pick is how the presentation starts, not an edit to undo
-    steps.forget()
+    if (isFilled) {
+      // the theme pick is how the presentation starts, not an edit to undo
+      steps.forget()
+    }
+
     return isFilled
   }
 

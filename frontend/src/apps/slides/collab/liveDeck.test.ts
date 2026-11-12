@@ -649,3 +649,138 @@ describe('a presentation with no slides', () => {
     expect(slideIds(doc)).toHaveLength(1)
   })
 })
+
+describe("filling a new presentation's blank slide", () => {
+  const picture = (id: string, refId: string) => ({
+    id,
+    type: 'image',
+    left: 1,
+    top: 2,
+    width: 30,
+    height: 40,
+    refId,
+  })
+  const light = (): StoreSlide => ({
+    clientId: 'light',
+    background: '#FFFFFFFF',
+    elements: [picture('l1', 'title'), picture('l2', 'body')],
+  })
+  const dark = (): StoreSlide => ({
+    clientId: 'dark',
+    background: '#000000FF',
+    elements: [picture('d1', 'title'), picture('d2', 'body'), picture('d3', 'footer')],
+  })
+
+  // Two tabs on one blank presentation that have not heard from each other yet
+  function apart() {
+    const [one, other] = [new Y.Doc(), new Y.Doc()]
+    writeDeck(one, [{ id: 's1', elements: [] }])
+    Y.applyUpdate(other, Y.encodeStateAsUpdate(one))
+    return [one, other]
+  }
+
+  // The two tabs hear from each other from now on
+  function connect(one: Y.Doc, other: Y.Doc) {
+    one.on('update', (update, origin) => {
+      if (origin !== 'wire') Y.applyUpdate(other, update, 'wire')
+    })
+    other.on('update', (update, origin) => {
+      if (origin !== 'wire') Y.applyUpdate(one, update, 'wire')
+    })
+    Y.applyUpdate(other, Y.encodeStateAsUpdate(one, Y.encodeStateVector(other)), 'wire')
+    Y.applyUpdate(one, Y.encodeStateAsUpdate(other, Y.encodeStateVector(one)), 'wire')
+  }
+
+  const refIds = (doc: Y.Doc) => readSlides(doc)[0].elements.map(({ refId }) => refId)
+
+  it('ends on one layout in both tabs when two tabs pick different themes at once', () => {
+    const [one, other] = apart()
+    const [tabA, tabB] = [tabOn(one), tabOn(other)]
+
+    expect(tabA.deck.fillBlank(light())).toBe(true)
+    expect(tabB.deck.fillBlank(dark())).toBe(true)
+    connect(one, other)
+
+    const [slide] = readSlides(one)
+    expect(readSlides(other)).toEqual(readSlides(one))
+    expect(slide.elements).toHaveLength(slide.background === '#FFFFFFFF' ? 2 : 3)
+    expect(new Set(refIds(one)).size).toBe(slide.elements.length)
+  })
+
+  it('ends on one copy of the layout when two tabs pick the same theme at once', () => {
+    const [one, other] = apart()
+    const [tabA, tabB] = [tabOn(one), tabOn(other)]
+
+    tabA.deck.fillBlank(light())
+    tabB.deck.fillBlank(light())
+    connect(one, other)
+
+    expect(refIds(one)).toEqual(['title', 'body'])
+    expect(refIds(other)).toEqual(['title', 'body'])
+  })
+
+  it('draws the theme that stayed in the tab whose fill gave way, not its own', () => {
+    const [one, other] = apart()
+    const [tabA, tabB] = [tabOn(one), tabOn(other)]
+
+    tabA.deck.fillBlank(light())
+    tabB.deck.fillBlank(dark())
+    connect(one, other)
+
+    const kept = readSlides(one)[0].background
+    for (const tab of [tabA, tabB]) {
+      expect(tab.store.slides).toHaveLength(1)
+      expect(tab.store.slides[0].background).toBe(kept)
+      expect(tab.store.slides[0].elements).toHaveLength(kept === '#FFFFFFFF' ? 2 : 3)
+    }
+  })
+
+  it('keeps an element a co-editor added to the blank slide at the same moment', () => {
+    const [one, other] = apart()
+    const tabA = tabOn(one)
+    tabOn(other)
+
+    tabA.deck.fillBlank(light())
+    addElement(other, 's1', { type: 'image', frame: { left: 7 } })
+    connect(one, other)
+
+    expect(readSlides(one)[0].elements).toHaveLength(3)
+    expect(readSlides(other)).toEqual(readSlides(one))
+  })
+
+  it('keeps an element of its own fill that the tab moved before the other fill arrived', () => {
+    const [one, other] = apart()
+    const [tabA, tabB] = [tabOn(one), tabOn(other)]
+
+    tabA.deck.fillBlank(light())
+    tabB.deck.fillBlank(light())
+    for (const tab of [tabA, tabB]) {
+      tab.store.slides[0].elements[0].left = 99
+      tab.deck.push()
+    }
+    connect(one, other)
+
+    // the winner's whole fill, and the one element the other tab moved
+    const frames = readSlides(one)[0].elements.map(({ frame }) => frame)
+    const moved = frames.filter((frame) =>
+      expect.objectContaining({ left: 99 }).asymmetricMatch(frame),
+    )
+    expect(frames).toHaveLength(3)
+    expect(moved).toHaveLength(2)
+    expect(readSlides(other)).toEqual(readSlides(one))
+  })
+
+  it('leaves the undo steps alone when the slide is no longer blank', () => {
+    const doc = new Y.Doc()
+    presentation(doc)
+    const tab = tabOn(doc)
+    tab.element('a').opacity = 50
+    tab.deck.push()
+    tab.deck.endStep()
+
+    expect(tab.deck.fillBlank(light())).toBe(false)
+    tab.deck.undo()
+
+    expect(tab.element('a').opacity).toBe(100)
+  })
+})
