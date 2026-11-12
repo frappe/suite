@@ -11,12 +11,13 @@ from werkzeug.test import EnvironBuilder
 from werkzeug.wrappers import Request
 
 from suite import drive
+from suite.content import log, tables
 from suite.drive._core.access import grant, revoke
 from suite.drive._core.nodes import update
 from suite.drive._core.principals import Principals
 from suite.drive._core.roles import READ
 from suite.slides import drive as slides_drive
-from suite.slides.content.tests.support import drop_log
+from suite.slides.content import APP
 from suite.tests.utils import ensure_user
 
 # Ticket 29 registered `Presentation` in `drive_content_types`, so a deck with
@@ -103,6 +104,24 @@ def make_presentation(title, parent=None, **fields):
             deck.update(fields)
             deck.save()
     return deck
+
+
+LOG_KINDS = ("update", "session", "stage", "checkpoint", "copy", "recovery", "projection")
+
+
+# Removes `node`'s log in the caller's transaction, leaving the deck as it was before it converted
+def drop_log(node: str) -> None:
+    doc = log.find(APP, node)
+    if doc:
+        for kind in LOG_KINDS:
+            kind_table = tables.table(APP, kind)
+            frappe.db.sql(f"DELETE FROM `{kind_table}` WHERE `doc_id` = %s", doc.id)
+
+        doc_table = tables.table(APP, "doc")
+        frappe.db.sql(f"DELETE FROM `{doc_table}` WHERE `id` = %s", doc.id)
+
+    conversion_table = tables.table(APP, "conversion")
+    frappe.db.sql(f"DELETE FROM `{conversion_table}` WHERE `node` = %s", node)
 
 
 def node_of(presentation_name):

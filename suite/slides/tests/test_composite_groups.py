@@ -42,8 +42,7 @@ from suite.drive._core.principals import LINK_HEADER_LIMIT, Principals
 from suite.drive._core.roots import create_root, purge_root, update_root
 from suite.slides import drive as slides
 from suite.slides.api import composite as api
-from suite.slides.content.tests.support import drop_log
-from suite.slides.tests.utils import link_header
+from suite.slides.tests.utils import drop_log, link_header
 from suite.tests.utils import ensure_user
 
 OWNER = "composite-groups-owner@example.com"

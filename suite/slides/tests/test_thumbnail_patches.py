@@ -7,7 +7,6 @@ import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.utils import get_files_path
 
-from suite.drive.patches.build.tests import legacy_schema
 from suite.slides.doctype.presentation.patches.cleanup_unused_thumbnail_files import (
     execute as cleanup_unused_thumbnail_files,
 )
@@ -21,6 +20,7 @@ from suite.slides.doctype.presentation.patches.move_slide_thumbnail_to_presentat
     execute as move_slide_thumbnail_to_presentation,
 )
 from suite.slides.tests.utils import PNG_1PX, make_presentation, unique_bytes
+from suite.tests.utils import column_hidden
 
 
 def thumbnail_of(presentation_name):
@@ -47,7 +47,7 @@ class ThumbnailColumnCase(IntegrationTestCase):
         # Before the base class's rollback, so these run after it: DDL commits what it finds open
         found = frappe.db.has_column("Presentation", "thumbnail")
         if found and not cls.column_present:
-            cls.enterClassContext(legacy_schema.column_hidden("Presentation", "thumbnail"))
+            cls.enterClassContext(column_hidden("Presentation", "thumbnail"))
         elif cls.column_present and not found:
             cls.alter_column("ADD COLUMN `thumbnail` text")
             cls.addClassCleanup(cls.alter_column, "DROP COLUMN `thumbnail`")

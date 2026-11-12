@@ -16,10 +16,11 @@ from suite import drive
 from suite.content import log, logged, tables
 from suite.content.http import routes
 from suite.slides.content import APP, SCHEMA, turn_on
+from suite.slides.drive import docname_for_node
+from suite.slides.tests.utils import drop_log, trash
 from suite.tests.utils import ensure_user
 
 OWNER = "slides-collab-owner@example.com"
-LOG_KINDS = ("update", "session", "stage", "checkpoint", "copy", "recovery", "projection")
 
 
 def call_route(handler: Callable, node: str, body: bytes = b""):
@@ -58,24 +59,9 @@ def delete_log(node: str) -> None:
     frappe.db.commit()
 
 
-# Removes `node`'s log in the caller's transaction, leaving the deck as it was before it converted
-def drop_log(node: str) -> None:
-    doc = log.find(APP, node)
-    if doc:
-        for kind in LOG_KINDS:
-            kind_table = tables.table(APP, kind)
-            frappe.db.sql(f"DELETE FROM `{kind_table}` WHERE `doc_id` = %s", doc.id)
-
-        doc_table = tables.table(APP, "doc")
-        frappe.db.sql(f"DELETE FROM `{doc_table}` WHERE `id` = %s", doc.id)
-
-    conversion_table = tables.table(APP, "conversion")
-    frappe.db.sql(f"DELETE FROM `{conversion_table}` WHERE `node` = %s", node)
-
-
 def trash_template(node: str) -> None:
     # every reader of templates takes Active nodes only, so a trashed one is offered nowhere
-    frappe.db.set_value("Drive Node", node, "state", "Trashed")
+    trash(docname_for_node(node))
     frappe.db.commit()
 
 

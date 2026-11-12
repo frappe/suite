@@ -53,10 +53,9 @@ from suite.drive.framework import (
     satellite_query_conditions,
 )
 from suite.slides import drive as slides
-from suite.slides.content.tests.support import drop_log
 from suite.slides.doctype.presentation import presentation as api
 from suite.slides.doctype.presentation.presentation import Presentation
-from suite.slides.tests.utils import make_presentation
+from suite.slides.tests.utils import drop_log, make_presentation
 from suite.tests.utils import ensure_user
 
 USER = "slides-adoption-user@example.com"
