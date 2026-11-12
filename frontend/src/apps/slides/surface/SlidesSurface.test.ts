@@ -1556,7 +1556,7 @@ describe('a deck on the content layer', () => {
       )
     })
 
-    it('turns Present on and keeps Export off until printing reads the room', async () => {
+    it('turns Present and Export on', async () => {
       convertedRoom('one')
       mounted = await openedSurface({ deck: { is_converted: true } })
       await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
@@ -1565,8 +1565,27 @@ describe('a deck on the content layer', () => {
       const exportButton = mounted.root.querySelector('header [aria-label="Export"]')
       // the stand-ins are divs, which keep the value as written
       expect(present?.getAttribute('disabled')).toBe('false')
-      expect(exportButton?.getAttribute('disabled')).toBe('true')
+      expect(exportButton?.getAttribute('disabled')).toBe('false')
     })
+  })
+
+  // Q13
+  it("prints the tab's live slides, with a co-editor's change since it opened", async () => {
+    window.print = vi.fn()
+    const doc = convertedRoom('one')
+    mounted = await openedSurface({ deck: { is_converted: true } })
+    await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+    const [element] = drawnSlides(doc)[0].elements
+    const paragraph = fromPartial<XmlElement>(elementText(doc, element.id)!.get(0))
+    fromPartial<XmlText>(paragraph.get(0)).insert(3, ' more')
+    await vi.waitFor(() => expect(drawnTexts()[0]).toContain('one more'))
+
+    mounted.root.querySelector<HTMLElement>('header [aria-label="Export"]')!.click()
+
+    await vi.waitFor(() => expect(window.print).toHaveBeenCalledOnce())
+    const printed = fromPartial<Array<{ elements: Array<{ content?: string }> }>>(exported.slides)
+    expect(printed).toHaveLength(1)
+    expect(printed[0].elements[0].content).toContain('one more')
   })
 
   describe('read by everyone through its room (Q11, Q138)', () => {

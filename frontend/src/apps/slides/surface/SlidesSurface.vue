@@ -924,8 +924,6 @@ const asksGuestToSignIn = computed(
 function signInHref() {
   return `/login?redirect-to=${encodeURIComponent(location.pathname)}`
 }
-// printing a converted presentation draws its rows until it reads the room (Q13)
-const exportUnavailable = computed(() => deckUnavailable.value || isConverted.value)
 const canPin = computed(
   () =>
     'serviceWorker' in navigator &&
@@ -1028,7 +1026,7 @@ onBeforeUnmount(() => {
           aria-label="Export"
           variant="ghost"
           class="max-md:hidden"
-          :disabled="exportUnavailable"
+          :disabled="deckUnavailable"
           @click="exportPdf"
         />
       </template>
