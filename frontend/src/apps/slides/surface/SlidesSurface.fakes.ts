@@ -184,7 +184,7 @@ vi.mock('frappe-ui', () => {
           ]),
     },
     FileUploadHandler: class {},
-    dialog: Object.assign(vi.fn(), { confirm: vi.fn() }),
+    dialog: Object.assign(vi.fn(), { confirm: vi.fn(), danger: vi.fn() }),
     toast: {
       error: vi.fn(),
       warning: vi.fn(),

@@ -1772,6 +1772,77 @@
       "nodeParams": [],
       "stream": false,
       "bytes": false
+    },
+    {
+      "id": "recovery_names",
+      "kind": "query",
+      "publicName": "recovery.names",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.slides.api.recovery.recovery_names",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "presentations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Presentations",
+            "type": "array"
+          },
+          "nodes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Nodes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "presentations",
+          "nodes"
+        ],
+        "title": "RecoveryNamesInput",
+        "type": "object"
+      },
+      "output": {
+        "$defs": {
+          "RecoveryName": {
+            "properties": {
+              "presentation": {
+                "title": "Presentation",
+                "type": "string"
+              },
+              "node": {
+                "title": "Node",
+                "type": "string"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              }
+            },
+            "required": [
+              "presentation",
+              "node",
+              "title"
+            ],
+            "title": "RecoveryName",
+            "type": "object"
+          }
+        },
+        "items": {
+          "$ref": "#/$defs/RecoveryName"
+        },
+        "type": "array"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
     }
   ]
 }

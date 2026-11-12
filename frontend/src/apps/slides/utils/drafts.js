@@ -97,3 +97,49 @@ export async function takeUnownedDraft(id, user) {
     legacyDb.close()
   }
 }
+
+// Old drafts from before every presentation edited in its live room (Q16): a clean one is
+// deleted, and a dirty one stays where it is as a recovery copy. The check and the delete
+// share one transaction, so a dirty write between them can't be lost. `user` is null for a
+// guest, and a draft that names no one is theirs as the editor reads it
+export async function settleDrafts(user, id) {
+  const db = await openDraftsDb(draftsDbName(user || 'Guest'))
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, 'readwrite')
+      const kept = []
+      // No id opens every draft
+      const request = tx.objectStore(STORE).openCursor(id)
+      request.onsuccess = () => {
+        const cursor = request.result
+        if (!cursor) return
+
+        settleDraft(cursor, user, kept)
+        cursor.continue()
+      }
+
+      tx.oncomplete = () => resolve(kept)
+      tx.onabort = () => reject(tx.error)
+    })
+  } finally {
+    db.close()
+  }
+}
+
+function settleDraft(cursor, user, kept) {
+  const draft = cursor.value
+  if (!draft.dirty) {
+    cursor.delete()
+  } else if (!draft.user || draft.user === user) {
+    kept.push(draft)
+  }
+}
+
+export async function deleteDraft(user, id) {
+  const db = await openDraftsDb(draftsDbName(user || 'Guest'))
+  try {
+    await requestResult(draftsStore(db, 'readwrite').delete(id))
+  } finally {
+    db.close()
+  }
+}

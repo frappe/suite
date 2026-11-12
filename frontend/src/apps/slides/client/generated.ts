@@ -507,6 +507,34 @@ const operationConvertVersion: MutationRef<
   loadValidators: async () => (await import('./validators')).operationConvertVersion,
 }
 
+export type RecoveryNamesOutputRecoveryName = { presentation: string; node: string; title: string }
+
+export type RecoveryNamesInput = { presentations: Array<string>; nodes: Array<string> }
+
+export type RecoveryNamesOutput = Array<RecoveryNamesOutputRecoveryName>
+
+export type RecoveryNamesError = never
+
+const operationRecoveryNames: QueryRef<
+  RecoveryNamesInput,
+  RecoveryNamesOutput,
+  RecoveryNamesError
+> = {
+  id: 'recovery_names',
+  owner: 'slides',
+  kind: 'query',
+  publicName: 'recovery.names',
+  envelope: 'message',
+  method: 'POST',
+  path: '/api/method/suite.slides.api.recovery.recovery_names',
+  prefix: '/api/suite/slides/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: [],
+  loadValidators: async () => (await import('./validators')).operationRecoveryNames,
+}
+
 export const api = {
   documents: {
     get: operationGetPublicPresentation,
@@ -530,5 +558,8 @@ export const api = {
   },
   versions: {
     convert: operationConvertVersion,
+  },
+  recovery: {
+    names: operationRecoveryNames,
   },
 } as const

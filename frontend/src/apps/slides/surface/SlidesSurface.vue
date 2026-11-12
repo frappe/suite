@@ -47,6 +47,7 @@ import { useCommandHistory } from '@/apps/slides/composables/useCommandHistory'
 import { useNavigationPanel } from '@/apps/slides/composables/useNavigationPanel'
 import { useShortcuts } from '@/apps/slides/composables/useShortcuts'
 import { activeEditor } from '@/apps/slides/composables/useTextEditor'
+import { useOldDraft } from '@/apps/slides/recovery/useOldDraft'
 import { setDocumentMedia } from '@/apps/slides/stores/documentMedia'
 import { flushPendingBlur, focusElementId, resetFocus } from '@/apps/slides/stores/element'
 import {
@@ -232,6 +233,9 @@ const {
   load,
   cancelRunningLoad,
 })
+const { oldDraftNotice, settleOldDraft, downloadOldDraft, dismissOldDraft } = useOldDraft(
+  props.session,
+)
 const isSlideInteractionActive = ref(false)
 const previewCapture = useTemplateRef<InstanceType<typeof PreviewCapture>>('previewCapture')
 const exportView = useTemplateRef<InstanceType<typeof ExportView>>('exportView')
@@ -781,6 +785,8 @@ async function load() {
         : null
     if (isConverted.value) {
       await showConvertedSlides(run)
+      // a draft from before the live room holds edits it never sent, so it stays as a copy
+      void settleOldDraft()
     }
 
     if (!isCurrent(run)) return
@@ -1159,6 +1165,15 @@ onBeforeUnmount(() => {
         <PropertiesPanel v-if="editing" class="absolute inset-y-0 right-0" />
       </template>
     </div>
+
+    <SurfaceNotice
+      v-if="oldDraftNotice && !heldNotice && !loading"
+      icon="lucide-history"
+      :message="oldDraftNotice"
+    >
+      <Button variant="ghost" :label="__('Download')" @click="downloadOldDraft" />
+      <Button variant="ghost" :label="__('Dismiss')" @click="dismissOldDraft" />
+    </SurfaceNotice>
 
     <SurfaceNotice
       v-if="heldNotice && !loading"

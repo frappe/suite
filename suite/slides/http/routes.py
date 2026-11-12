@@ -5,6 +5,7 @@ from typing import Literal, NotRequired, TypedDict
 from suite.composition.http import Route
 from suite.content.conversions import ConversionStatus
 from suite.slides.api.composite import composite_group, composite_manifest
+from suite.slides.api.recovery import recovery_names
 from suite.slides.api.slides import save_slides
 from suite.slides.api.versions import VersionConversion, convert_version
 from suite.slides.doctype.presentation.presentation import (
@@ -136,6 +137,17 @@ class GroupResult(TypedDict):
 
 class AccessInput(TypedDict):
     presentation_id: str
+
+
+class RecoveryNamesInput(TypedDict):
+    presentations: list[str]
+    nodes: list[str]
+
+
+class RecoveryName(TypedDict):
+    presentation: str
+    node: str
+    title: str
 
 
 class ConvertVersion(TypedDict):
@@ -279,6 +291,16 @@ CONTRACT_ROUTES = (
         kind="mutation",
         public_name="versions.convert",
         allow_guest=True,
+        envelope="message",
+    ),
+    Route(
+        "POST",
+        "/api/method/suite.slides.api.recovery.recovery_names",
+        "recovery_names",
+        body=RecoveryNamesInput,
+        output=list[RecoveryName],
+        kind="query",
+        public_name="recovery.names",
         envelope="message",
     ),
 )

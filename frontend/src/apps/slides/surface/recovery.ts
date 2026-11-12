@@ -20,9 +20,25 @@ export interface RecoveryCopy {
   downloaded?: boolean
 }
 
-function key(node: string) {
+function keyPrefix() {
   const user = getCookieSessionUser() ?? 'Guest'
-  return `suite:slides-recovery:${user}:${node}`
+  return `suite:slides-recovery:${user}:`
+}
+
+function key(node: string) {
+  return `${keyPrefix()}${node}`
+}
+
+/** The presentations this person keeps copies of on this device; none where the browser blocks site data. */
+export function recoveryNodes(): string[] {
+  try {
+    const prefix = keyPrefix()
+    return Object.keys(localStorage).flatMap((stored) =>
+      stored.startsWith(prefix) ? [stored.slice(prefix.length)] : [],
+    )
+  } catch {
+    return []
+  }
 }
 
 function isCopy(copy: unknown): copy is RecoveryCopy {
@@ -110,6 +126,13 @@ export function keepOutlivedRecovery(node: string, isShown: (slides: unknown[]) 
   } catch {
     // removed by the next landed save, as it would have been
   }
+}
+
+export function discardRecovery(node: string, savedAt: string): void {
+  writeCopies(
+    node,
+    readRecovery(node).filter((copy) => copy.savedAt !== savedAt),
+  )
 }
 
 export function removeNewestRecovery(node: string): void {

@@ -74,7 +74,8 @@ const {
 const { drawnSlides } = await import('@/apps/slides/collab/drawnDeck')
 const { undoLive } = await import('@/apps/slides/stores/liveDeck')
 const { offlineCopyStatus } = await import('@/apps/slides/stores/offlineCopy')
-const { RECORD_PREFIX } = await import('@/apps/slides/utils/slidesCaches')
+const { draftsDbName, RECORD_PREFIX } = await import('@/apps/slides/utils/slidesCaches')
+const { openDraftsDb } = await import('@/apps/slides/utils/drafts')
 const { keepRecovery, readRecovery, removeNewestRecovery } = await import('./recovery')
 const { dialog, toast, useKeyboardShortcut } = await import('frappe-ui')
 const { changeSlideInSlideshow } = await import('@/apps/slides/stores/slideshow')
@@ -465,6 +466,113 @@ describe('a deck on the content layer', () => {
 
     room.setStatus({ canWrite: true, pauseReason: null })
     await vi.waitFor(() => expect(viewOnly.value).toBe(false))
+  })
+
+  describe('a draft this device kept from before the live room', () => {
+    const KEPT = [{ name: 'row-1', elements: [{ type: 'text', content: 'Unsent words' }] }]
+
+    function requestResult<T>(request: IDBRequest<T>) {
+      return new Promise<T>((resolve, reject) => {
+        request.onsuccess = () => resolve(request.result)
+        request.onerror = () => reject(request.error)
+      })
+    }
+
+    async function drafts(change?: (store: IDBObjectStore) => IDBRequest) {
+      const db = await openDraftsDb(draftsDbName('me@example.com'))
+      const store = db.transaction('presentations', 'readwrite').objectStore('presentations')
+      if (change) await requestResult(change(store))
+      const ids = await requestResult(store.getAllKeys())
+      db.close()
+      return ids
+    }
+
+    // the next open's docname, so the draft is this presentation's
+    function keepDraft(fields: Record<string, unknown>) {
+      const record = {
+        id: `p${fakeServer.opens + 1}`,
+        user: 'me@example.com',
+        content: KEPT,
+        updatedAt: 1_700_000_000_000,
+        ...fields,
+      }
+      return drafts((store) => store.put(record))
+    }
+
+    function oldDraftNotice() {
+      const notices = Array.from(mounted?.root.querySelectorAll('[role="alert"]') ?? [])
+      return notices.find((element) =>
+        element.textContent?.includes('This device has unsaved work from'),
+      )
+    }
+
+    function press(label: string) {
+      oldDraftNotice()!.querySelector<HTMLElement>(`[label="${label}"]`)!.click()
+    }
+
+    beforeEach(() => {
+      document.cookie = 'user_id=me@example.com'
+      vi.mocked(dialog.danger).mockReset()
+    })
+
+    afterEach(async () => {
+      document.cookie = 'user_id=; expires=Thu, 01 Jan 1970 00:00:00 GMT'
+      await drafts((store) => store.clear())
+    })
+
+    it('shows its unsent edits as a recovery copy, and deletes it only once Dismiss is confirmed', async () => {
+      await keepDraft({ dirty: true })
+      convertedRoom('one')
+      mounted = await openedSurface({ deck: { is_converted: true } })
+      await vi.waitFor(() => expect(oldDraftNotice()).toBeDefined())
+
+      press('Dismiss')
+      await vi.waitFor(() => expect(dialog.danger).toHaveBeenCalledTimes(1))
+      const [asked] = fromAny<[{ onCancel: () => void }], unknown>(
+        vi.mocked(dialog.danger).mock.lastCall,
+      )
+      asked.onCancel()
+      await nextTick()
+      expect(oldDraftNotice()).toBeDefined()
+      expect(await drafts()).toEqual([mounted.docname])
+
+      press('Dismiss')
+      await vi.waitFor(() => expect(dialog.danger).toHaveBeenCalledTimes(2))
+      const [confirmed] = fromAny<[{ onConfirm: () => void }], unknown>(
+        vi.mocked(dialog.danger).mock.lastCall,
+      )
+      confirmed.onConfirm()
+      await vi.waitFor(() => expect(oldDraftNotice()).toBeUndefined())
+      expect(await drafts()).toEqual([])
+    })
+
+    it("downloads the draft's slides under the presentation's title, and keeps it", async () => {
+      await keepDraft({ dirty: true })
+      convertedRoom('one')
+      mounted = await openedSurface({ deck: { is_converted: true } })
+      await vi.waitFor(() => expect(oldDraftNotice()).toBeDefined())
+      const files: File[] = []
+      vi.spyOn(URL, 'createObjectURL').mockImplementation((file) => {
+        if (file instanceof File) files.push(file)
+        return 'blob:copy'
+      })
+      vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+
+      press('Download')
+
+      expect(files[0]!.name).toBe(`${served.title} (recovered).json`)
+      expect(JSON.parse(await files[0]!.text()).slides).toEqual(KEPT)
+      expect(await drafts()).toEqual([mounted.docname])
+    })
+
+    it('deletes a clean draft on open, and shows no notice', async () => {
+      await keepDraft({ dirty: false })
+      convertedRoom('one')
+      mounted = await openedSurface({ deck: { is_converted: true } })
+      await vi.waitFor(async () => expect(await drafts()).toEqual([]))
+
+      expect(oldDraftNotice()).toBeUndefined()
+    })
   })
 
   describe('a combined presentation of converted sources', () => {

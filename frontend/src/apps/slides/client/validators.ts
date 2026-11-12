@@ -23,6 +23,8 @@ import type {
   GetUpdatedJsonOutput,
   IsCompositePresentationInput,
   IsCompositePresentationOutput,
+  RecoveryNamesInput,
+  RecoveryNamesOutput,
   SaveSlidesInput,
   SaveSlidesOutput,
   UpdateSlideAttachmentsInput,
@@ -808,6 +810,47 @@ export const operationConvertVersion: Validators<ConvertVersionInput, ConvertVer
         type: 'object',
       },
       'convert_version output',
+    )
+  },
+}
+
+export const operationRecoveryNames: Validators<RecoveryNamesInput, RecoveryNamesOutput> = {
+  validateInput(value: unknown): asserts value is RecoveryNamesInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          presentations: { items: { type: 'string' }, title: 'Presentations', type: 'array' },
+          nodes: { items: { type: 'string' }, title: 'Nodes', type: 'array' },
+        },
+        required: ['presentations', 'nodes'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'recovery_names input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is RecoveryNamesOutput {
+    assertSchema(
+      value,
+      {
+        $defs: {
+          RecoveryName: {
+            properties: {
+              presentation: { title: 'Presentation', type: 'string' },
+              node: { title: 'Node', type: 'string' },
+              title: { title: 'Title', type: 'string' },
+            },
+            required: ['presentation', 'node', 'title'],
+            title: 'RecoveryName',
+            type: 'object',
+          },
+        },
+        items: { $ref: '#/$defs/RecoveryName' },
+        type: 'array',
+      },
+      'recovery_names output',
     )
   },
 }
