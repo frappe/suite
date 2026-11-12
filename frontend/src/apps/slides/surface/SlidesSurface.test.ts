@@ -1543,6 +1543,38 @@ describe('a deck on the content layer', () => {
       expect(showSlideshowEndScreen.value).toBe(true)
     })
 
+    // Q178′: the show draws a blank slide on zero slides without writing, as a viewer does
+    it('writes no blank slide when a co-editor empties the presentation it shows', async () => {
+      const doc = await presented(1, 'one')
+      const written = vi.fn()
+      doc.on('update', written)
+
+      deleteSlide(doc, 'one')
+      await settle()
+
+      expect(slideIds(doc)).toEqual([])
+      expect(written).toHaveBeenCalledOnce()
+
+      // past the held slide, the blank it draws in its place
+      changeSlideInSlideshow(slideIndex.value + 1)
+      await settle()
+      expect(mounted!.router.currentRoute.value.name).toBe('slides-slideshow')
+      expect(presentedText()).toBe('')
+      expect(slideIds(doc)).toEqual([])
+    })
+
+    it('writes no blank slide into an empty presentation the show opens on', async () => {
+      const doc = convertedRoom()
+      const written = vi.fn()
+      doc.on('update', written)
+      mounted = await openedSurface({ path: '/present?slide=1', deck: { is_converted: true } })
+      await settle()
+
+      expect(mounted.router.currentRoute.value.name).toBe('slides-slideshow')
+      expect(slideIds(doc)).toEqual([])
+      expect(written).not.toHaveBeenCalled()
+    })
+
     it('starts the slideshow from Mod+P', async () => {
       convertedRoom('one')
       mounted = await openedSurface({ deck: { is_converted: true } })

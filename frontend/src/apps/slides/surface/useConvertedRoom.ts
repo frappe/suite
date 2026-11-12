@@ -66,7 +66,7 @@ interface RoomHost {
   session: CollabSession
   /** Whether this tab may change the presentation, the room aside. */
   mayEdit: () => boolean
-  /** Whether the slideshow is up. */
+  /** Whether the slideshow route is open, from before its slides have loaded. */
   isPresenting: () => boolean
   /** Keeps the slides in this browser when the room stops holding unsent work. */
   retainRecovery: (options?: RetainOptions) => boolean
@@ -150,8 +150,9 @@ export function useConvertedRoom({
     return size
   }
 
+  // the show writes nothing, a repair of an emptied presentation included (Q175, Q178′)
   function canWrite() {
-    return mayEdit() && allowsEditing.value
+    return mayEdit() && allowsEditing.value && !isPresenting()
   }
 
   function keepShownSlide(previous: StoreSlide[]) {

@@ -268,7 +268,7 @@ const convertedRoom = useConvertedRoom({
   session: props.session,
   // Not `editable`, which asks the room back
   mayEdit: () => access.writable.value && !composite.value && !restoring.value && !phone.value,
-  isPresenting: () => presenting.value,
+  isPresenting: () => route.name === 'slides-slideshow',
   retainRecovery,
   retainStickyOrOffer,
   settleCopies,
