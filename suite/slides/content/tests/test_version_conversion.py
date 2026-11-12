@@ -171,7 +171,7 @@ class TestVersionConversion(ConversionCase):
             ):
                 self.ask(node, seq)
 
-    def test_a_combined_version_is_refused_with_its_reason_to_a_system_manager_only(self):
+    def test_a_combined_version_is_refused_with_a_reason_the_owner_can_read(self):
         node = self.old_deck([text_element("one")])
         docname = slides_drive.docname_for_node(node)
         frappe.db.set_value("Presentation", docname, "is_composite", 1)
@@ -181,13 +181,14 @@ class TestVersionConversion(ConversionCase):
         self.assertEqual(self.convert(node), "converted")
 
         answer, queued = self.ask(node, seq)
-        self.assertEqual((answer, queued), ({}, []))
+        reason = "it was saved while this was a combined presentation, which has no slides of its own"
+        self.assertEqual((answer, queued), ({"reason": reason}, []))
 
         frappe.set_user("Administrator")
         with patch.object(frappe.local, "job", None), patch.object(scheduling, "enqueue"):
-            self.assertEqual(versions.convert_version(node, seq), {"reason": "combined"})
+            self.assertEqual(versions.convert_version(node, seq), {"reason": f"{reason} (combined)"})
 
-    def test_a_version_whose_rows_do_not_parse_is_refused_with_its_reason_to_a_system_manager_only(self):
+    def test_a_version_whose_rows_do_not_parse_is_refused_with_a_reason_that_names_no_check(self):
         node = self.old_deck([text_element("one")])
         rows = {"parent": slides_drive.docname_for_node(node)}
         frappe.db.set_value("Slide", rows, "elements", '"not a list"')
@@ -196,10 +197,11 @@ class TestVersionConversion(ConversionCase):
         frappe.db.commit()
         self.assertEqual(self.convert(node), "converted")
 
-        self.assertEqual(self.poll(node, seq), {})
+        reason = "some of its content can't be upgraded"
+        self.assertEqual(self.poll(node, seq), {"reason": reason})
 
         frappe.set_user("Administrator")
-        self.assertEqual(versions.convert_version(node, seq), {"reason": "check: elements"})
+        self.assertEqual(versions.convert_version(node, seq), {"reason": f"{reason} (check: elements)"})
 
     def test_a_crashed_job_answers_crashed_and_leaves_no_input(self):
         node, seq = self.converted_with_version([text_element("one")])
@@ -209,5 +211,7 @@ class TestVersionConversion(ConversionCase):
             versions.run_version_conversion(node=node, seq=seq)
 
         self.assertIsNone(frappe.cache.get_value(versions.version_key("input", node, seq)))
+        reason = "the upgrade stopped before it finished"
+        self.assertEqual(self.ask(node, seq), ({"reason": reason}, []))
         frappe.set_user("Administrator")
-        self.assertEqual(versions.convert_version(node, seq), {"reason": "crashed"})
+        self.assertEqual(versions.convert_version(node, seq), {"reason": f"{reason} (crashed)"})

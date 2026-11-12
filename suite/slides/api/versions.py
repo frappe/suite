@@ -28,6 +28,8 @@ ANSWER_KEPT = 60
 # Past this a stored version is refused unread; the rows of a deck the layer can hold are far smaller
 MAX_VERSION_BYTES = 64 * 1024 * 1024
 VERSION_SLOT = "suite-slides-version-slot"
+# Refusals where the upgrade never got to the version's content
+STOPPED = {"crashed", "unavailable", "converter_changed", "bad_answer", "child_timeout", "child_crash"}
 
 
 class VersionConversion(TypedDict):
@@ -56,12 +58,19 @@ def convert_version(node: str, seq: int) -> VersionConversion:
 
 
 def refusal_for(reason: str) -> VersionConversion:
-    """Refuse, naming the reason to a System Manager only."""
-    refusal: VersionConversion = {}
-    if "System Manager" in frappe.get_roles():
-        refusal["reason"] = reason
+    """Refuse with a reason anyone can read; a System Manager also gets the code behind it."""
+    code, _colon, _detail = reason.partition(":")
+    if code == "combined":
+        readable = _("it was saved while this was a combined presentation, which has no slides of its own")
+    elif code in STOPPED:
+        readable = _("the upgrade stopped before it finished")
+    else:
+        readable = _("some of its content can't be upgraded")
 
-    return refusal
+    if "System Manager" in frappe.get_roles():
+        return {"reason": f"{readable} ({reason})"}
+
+    return {"reason": readable}
 
 
 def queue_conversion(node: str, seq: int) -> VersionConversion:
