@@ -261,6 +261,59 @@ function answersStartupReads() {
   })
 }
 
+// the rows hold two slides; the room the server converted them into holds these
+function roomOf(...texts: string[]) {
+  const answer = convertLegacy(
+    {
+      slides: texts.map((text) => ({
+        id: text,
+        elements: [{ id: `element-${text}`, type: 'text', content: `<p>${text}</p>` }],
+      })),
+    },
+    4 * 1024 * 1024,
+  )
+  if (answer.kind !== 'converted') {
+    throw new Error(JSON.stringify(answer))
+  }
+
+  const doc = new Doc()
+  applyUpdate(doc, answer.state)
+  const changes = new Set<() => void>()
+  const room = {
+    doc,
+    close: vi.fn(async () => {}),
+    flush: vi.fn(async () => {}),
+    // the server takes every restore
+    restoreVersion: vi.fn(async (_seq: number, edit: () => void) => {
+      edit()
+      return { outcome: 'landed' }
+    }),
+    status: { canWrite: true, saveState: 'clean', unsentCount: 0, restoreRev: 0 },
+    presence: {
+      awareness: new Awareness(doc),
+      peers: [],
+      ownPid: 1,
+      ownArrival: 1,
+      onChange: () => () => {},
+    },
+    onChange(listener: () => void) {
+      changes.add(listener)
+      return () => changes.delete(listener)
+    },
+    setStatus(next: Partial<RoomStatus>) {
+      room.status = { ...room.status, ...next }
+      changes.forEach((listener) => listener())
+    },
+  }
+  return room
+}
+
+function convertedRoom(...texts: string[]) {
+  const room = roomOf(...texts)
+  collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
+  return room.doc
+}
+
 describe('a deck on the content layer', () => {
   // a test may stand in for another tab's lock, which would lock every later presentation
   afterEach(() => {
@@ -303,59 +356,6 @@ describe('a deck on the content layer', () => {
 
     expect(statusOf(mounted.root)).toBeUndefined()
   })
-
-  // the rows hold two slides; the room the server converted them into holds these
-  function roomOf(...texts: string[]) {
-    const answer = convertLegacy(
-      {
-        slides: texts.map((text) => ({
-          id: text,
-          elements: [{ id: `element-${text}`, type: 'text', content: `<p>${text}</p>` }],
-        })),
-      },
-      4 * 1024 * 1024,
-    )
-    if (answer.kind !== 'converted') {
-      throw new Error(JSON.stringify(answer))
-    }
-
-    const doc = new Doc()
-    applyUpdate(doc, answer.state)
-    const changes = new Set<() => void>()
-    const room = {
-      doc,
-      close: vi.fn(async () => {}),
-      flush: vi.fn(async () => {}),
-      // the server takes every restore
-      restoreVersion: vi.fn(async (_seq: number, edit: () => void) => {
-        edit()
-        return { outcome: 'landed' }
-      }),
-      status: { canWrite: true, saveState: 'clean', unsentCount: 0, restoreRev: 0 },
-      presence: {
-        awareness: new Awareness(doc),
-        peers: [],
-        ownPid: 1,
-        ownArrival: 1,
-        onChange: () => () => {},
-      },
-      onChange(listener: () => void) {
-        changes.add(listener)
-        return () => changes.delete(listener)
-      },
-      setStatus(next: Partial<RoomStatus>) {
-        room.status = { ...room.status, ...next }
-        changes.forEach((listener) => listener())
-      },
-    }
-    return room
-  }
-
-  function convertedRoom(...texts: string[]) {
-    const room = roomOf(...texts)
-    collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
-    return room.doc
-  }
 
   function drawnTexts() {
     const drawn = fromPartial<Array<{ elements: Array<{ content?: string }> }>>(editorSlides.value)
@@ -2364,6 +2364,137 @@ describe('Slides offline copy', () => {
     expect(fetched.filter((url) => url.startsWith('/d/'))).toEqual(refreshed)
   })
 
+  // Q18′: the copy holds no rows, as the server sends a live presentation's opening without them
+  describe('on a presentation that went live', () => {
+    function openedLive() {
+      convertedRoom('one')
+      return openedSurface({ deck: { is_converted: true } })
+    }
+
+    it('offers the copy to the owner', async () => {
+      mounted = await openedLive()
+
+      await vi.waitFor(() => expect(offlineCopyButton()).not.toBeNull())
+    })
+
+    it('hides the copy from someone who is not the owner', async () => {
+      signedIn.user = 'someone@example.com'
+      mounted = await openedLive()
+      await vi.waitFor(() => expect(editorSlides.value).toHaveLength(1))
+
+      expect(offlineCopyButton()).toBeNull()
+    })
+
+    it("refreshes the owner's copy saved before it went live", async () => {
+      const fetched: string[] = []
+      vi.stubGlobal('fetch', async (url: string) => {
+        fetched.push(url)
+        return new Response('', { status: 404 })
+      })
+      const next = fakeServer.opens + 1
+      localStorage.setItem(`${RECORD_PREFIX}p${next}`, JSON.stringify({ node: 'node-1', keys: [] }))
+      warms.length = 0
+
+      mounted = await openedLive()
+      await vi.waitFor(() => expect(warms).toHaveLength(1))
+      await Promise.allSettled(warms)
+
+      expect(fetched).toContain('/d/node-1')
+    })
+
+    // the worker answers the start-up reads from the copy, and the room opens from the device
+    it.each([
+      ['an editor', 50, false],
+      ['a viewer', 10, true],
+    ])('opened offline, lets %s edit as they could online', async (_who, role, isViewOnly) => {
+      const offline = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+      fakeServer.isFailingTemplates = true
+      try {
+        convertedRoom('one')
+        mounted = await openedSurface({ role, deck: { is_converted: true } })
+
+        await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+        expect(viewOnly.value).toBe(isViewOnly)
+      } finally {
+        offline.mockRestore()
+      }
+    })
+
+    // its slides change in place, so only the pictures they name may bring a refresh
+    it('refreshes for a new picture, and not for a text edit', async () => {
+      vi.stubGlobal('fetch', async () => new Response('', { status: 404 }))
+      const doc = convertedRoom('one')
+      const next = fakeServer.opens + 1
+      localStorage.setItem(`${RECORD_PREFIX}p${next}`, JSON.stringify({ node: 'node-1', keys: [] }))
+      warms.length = 0
+      mounted = await openedSurface({ deck: { is_converted: true } })
+      await vi.waitFor(() => expect(warms).toHaveLength(1))
+
+      const [slide] = drawnSlides(doc)
+      const paragraph = fromPartial<XmlElement>(elementText(doc, slide.elements[0].id)!.get(0))
+      fromPartial<XmlText>(paragraph.get(0)).insert(3, ' more')
+      await vi.waitFor(() => expect(JSON.stringify(editorSlides.value)).toContain('one more'))
+      await nextTick()
+      expect(warms).toHaveLength(1)
+
+      doc.transact(() => addElement(doc, slide.clientId, { type: 'image', src: '/files/new.png' }))
+      await vi.waitFor(() => expect(warms).toHaveLength(2))
+    })
+
+    describe('held by someone who is not the owner', () => {
+      const looked: string[] = []
+
+      function pinned(opening: Record<string, unknown>) {
+        looked.length = 0
+        vi.stubGlobal('caches', {
+          open: async () => ({
+            keys: async () => [],
+            match: async (key: string) => {
+              looked.push(key)
+              return new Response(JSON.stringify({ message: opening }))
+            },
+            delete: async () => true,
+          }),
+          match: async () => undefined,
+          delete: async () => true,
+        })
+        signedIn.user = 'someone@example.com'
+        const record = `${RECORD_PREFIX}p${fakeServer.opens + 1}`
+        // not node-1: a removed copy's node stays forgotten for the page, and later tests save node-1
+        localStorage.setItem(record, JSON.stringify({ node: 'node-gone', keys: [] }))
+        return record
+      }
+
+      it('removes a copy that holds the rows', async () => {
+        const record = pinned({ name: 'p', slides: [{ name: 's1' }] })
+
+        mounted = await openedLive()
+
+        await vi.waitFor(() => expect(localStorage.getItem(record)).toBeNull())
+      })
+
+      it('keeps a copy that holds no rows', async () => {
+        const record = pinned({ name: 'p', is_converted: true })
+
+        mounted = await openedLive()
+        await vi.waitFor(() => expect(looked).toHaveLength(1))
+        await new Promise((resolve) => setTimeout(resolve, 0))
+
+        expect(localStorage.getItem(record)).not.toBeNull()
+      })
+
+      it('keeps the copy of a presentation still on its rows', async () => {
+        const record = pinned({ name: 'p', slides: [{ name: 's1' }] })
+
+        mounted = await openedSurface()
+        await nextTick()
+
+        expect(looked).toEqual([])
+        expect(localStorage.getItem(record)).not.toBeNull()
+      })
+    })
+  })
+
   describe('a presentation opened online', () => {
     function signOut() {
       document.cookie = 'user_id=; expires=Thu, 01 Jan 1970 00:00:00 GMT'
@@ -2386,6 +2517,14 @@ describe('Slides offline copy', () => {
       const next = fakeServer.opens + 1
       const docname = `p${next}`
       mounted = await openedSurface({ role })
+
+      await vi.waitFor(() => expect(visits.remember).toHaveBeenCalledWith(docname))
+    })
+
+    it('is remembered for a presentation that went live', async () => {
+      convertedRoom('one')
+      const docname = `p${fakeServer.opens + 1}`
+      mounted = await openedSurface({ deck: { is_converted: true } })
 
       await vi.waitFor(() => expect(visits.remember).toHaveBeenCalledWith(docname))
     })

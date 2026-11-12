@@ -60,6 +60,7 @@ import {
   offlineCopyStatus,
   pruneOfflineCopy,
   refreshOfflineStatus,
+  removeRowedOfflineCopy,
   warmOfflineCopyAssets,
 } from '@/apps/slides/stores/offlineCopy'
 import {
@@ -94,6 +95,7 @@ import { cancelVisit, rememberVisit } from '@/apps/slides/stores/visitedCopies'
 import { stopVisitedMedia, storeVisitedMedia } from '@/apps/slides/stores/visitedMedia'
 import { drawnFontsLoaded, warmBundledFonts } from '@/apps/slides/utils/bundledFonts'
 import { isMediaOwner } from '@/apps/slides/utils/mediaUploads'
+import { collectMediaSources } from '@/apps/slides/utils/pinTargets'
 import { postToServiceWorker, registerSlidesWorker } from '@/apps/slides/utils/serviceWorker'
 import { readSavedDocument, watchConversion, type VersionRestored } from '@/platform/collab'
 import { peopleOf, presenceColours } from '@/platform/collab/peers'
@@ -729,6 +731,10 @@ async function load() {
       await showConvertedSlides(run)
       // a draft from before the live room holds edits it never sent, so it stays as a copy
       void settleOldDraft()
+      // the owner's visit refreshes their copy
+      if (!canPin.value) {
+        removeRowedOfflineCopy(presentationId.value).catch(() => {})
+      }
     }
 
     if (!isCurrent(run)) return
@@ -930,11 +936,15 @@ const canPin = computed(
     'caches' in window &&
     !window.disable_slides_service_worker &&
     !presentationDoc.value?.is_composite &&
-    !isConverted.value &&
     isMediaOwner(presentationDoc.value?.owner, userSession.user.value?.id),
 )
 const showsOfflineCopy = computed(() => canPin.value || offlineCopyStatus.value === 'unusable')
-watch([slides, () => presentationDoc.value?.modified], () => {
+// a live presentation fills and changes its slides in place: their count and the pictures
+// they name stand in for a save, so a text edit runs nothing here
+const slidesAndPictures = computed(() =>
+  [slides.value.length, ...collectMediaSources(slides.value).map(({ src }) => src)].join(' '),
+)
+watch([slides, slidesAndPictures, () => presentationDoc.value?.modified], () => {
   if (!slides.value.length) {
     refreshOfflineStatus(null)
     return
