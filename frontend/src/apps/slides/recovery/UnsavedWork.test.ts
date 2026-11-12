@@ -15,6 +15,7 @@ vi.mock('@/apps/drive', async (original) => ({
   driveNodeRoute: (node: { name: string }) => ({ path: `/d/${node.name}/plan` }),
 }))
 vi.mock('@/apps/slides', () => ({ slidesDocument: { contentDoctype: 'Presentation' } }))
+vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
 
 const query = vi.hoisted(() => vi.fn())
 vi.mock('@/api', () => ({
