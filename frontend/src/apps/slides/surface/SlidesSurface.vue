@@ -330,10 +330,7 @@ function insertLayout(layout: unknown) {
 }
 
 /** A theme write rewrites the deck on the server, so it pauses editing like a restore. */
-async function writeTheme(
-  endpoint: typeof api.slides.documents.applyTheme | typeof api.slides.documents.updateTheme,
-  theme: string,
-) {
+async function writeTheme(theme: string) {
   showThemeDialog.value = false
   showThemeChange.value = false
   // a dialog stays open through a change of access, or of the edit lock
@@ -344,7 +341,7 @@ async function writeTheme(
   try {
     restoring.value = true
     await client.mutation(
-      endpoint,
+      api.slides.documents.updateTheme,
       { name: props.session.contentDocname, theme },
       { context: contextFor(props.session.contentDocname) },
     )
@@ -393,7 +390,7 @@ async function fillTheme(theme: string) {
     return
   }
 
-  await writeTheme(api.slides.documents.updateTheme, theme)
+  await writeTheme(theme)
 }
 
 const showThemeChange = ref(false)
@@ -1197,17 +1194,8 @@ onBeforeUnmount(() => {
     />
 
     <LayoutDialog v-model:open="showLayoutDialog" @insert="insertLayout" />
-    <ThemeDialog
-      v-model:open="showThemeDialog"
-      @create="
-        isConverted ? fillTheme($event) : writeTheme(api.slides.documents.applyTheme, $event)
-      "
-    />
-    <ThemeDialog
-      v-model:open="showThemeChange"
-      update
-      @update="writeTheme(api.slides.documents.updateTheme, $event)"
-    />
+    <ThemeDialog v-model:open="showThemeDialog" @create="fillTheme($event)" />
+    <ThemeDialog v-model:open="showThemeChange" update @update="writeTheme($event)" />
 
     <teleport to="body">
       <ExportView v-if="exporting" ref="exportView" :slides="exportedSlides" />
