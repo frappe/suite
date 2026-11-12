@@ -1336,11 +1336,26 @@ class TestSlideMedia(BuildContentCase):
             [deck["thumbnail"]],
         )
 
+    def test_a_deck_is_read_on_a_site_that_never_had_the_thumbnail_column(self):
+        # a site installed after Presentation's field left has no column for Build to read (Q19')
+        deck = self.deck_fixture()
+        frappe.db.sql_ddl("ALTER TABLE `tabPresentation` DROP COLUMN `thumbnail`")
+        self.addCleanup(frappe.client_cache.delete_value, "table_columns::tabPresentation")
+        self.addCleanup(frappe.db.sql_ddl, "ALTER TABLE `tabPresentation` ADD COLUMN `thumbnail` text")
+        frappe.client_cache.delete_value("table_columns::tabPresentation")
+
+        rows = SiteContentSource(self.prefix).documents("Presentation", "", 10)
+
+        self.assertEqual([(row.name, row.thumbnail) for row in rows], [(deck["docname"], None)])
+
     def test_a_thumbnail_a_slide_uses_is_also_a_media_child(self):
         """§14.7: one File can be both the deck preview and a slide picture."""
         thumb_url = f"/files/{self.prefix}thumb.png"
         deck = self.deck_fixture(elements=[{"type": "image", "src": thumb_url}])
-        self.assertEqual(frappe.db.get_value("Presentation", deck["docname"], "thumbnail"), thumb_url)
+        ((thumbnail,),) = frappe.db.sql(
+            "SELECT `thumbnail` FROM `tabPresentation` WHERE `name` = %s", deck["docname"]
+        )
+        self.assertEqual(thumbnail, thumb_url)
 
         report = convert_slides_and_templates(self.environment())
 

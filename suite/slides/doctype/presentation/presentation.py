@@ -127,9 +127,8 @@ def get_presentations() -> list[dict]:
     node is read for those three answers: a trashed deck and a template are
     left out, and the title is the node's.
 
-    LIMITATION: `thumbnail` is empty. A deck's preview is a `Drive Node
-    Preview` served over §6.8's signed byte path, which this payload has no
-    field for.
+    LIMITATION: no preview. A deck's preview is a `Drive Node Preview`
+    served over §6.8's signed byte path, which this payload has no field for.
     """
     presentations = frappe.get_list(
         "Presentation",
@@ -167,7 +166,6 @@ def _published_decks(rows: list[dict]) -> list[dict]:
             # Trashed, or a template. Either way Drive hides it here.
             continue
         row["title"] = listed["title"]
-        row["thumbnail"] = ""
         kept.append(row)
     return kept
 

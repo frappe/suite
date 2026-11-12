@@ -882,7 +882,6 @@ class TestSlidesInDrive(IntegrationTestCase):
         row = frappe.db.get_value("Drive Node Preview", {"node": node}, ["source_blob", "blob"], as_dict=True)
         self.assertIsNone(row.source_blob, "a pushed preview has no source blob")
         self.assertTrue(row.blob)
-        self.assertFalse(frappe.db.get_value(DOCTYPE, docname, "thumbnail"), "no legacy thumbnail column")
         self.assertFalse(
             frappe.db.exists("File", {"attached_to_doctype": DOCTYPE, "attached_to_name": docname})
         )

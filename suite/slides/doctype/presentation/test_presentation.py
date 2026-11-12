@@ -188,14 +188,13 @@ class TestPresentationSecurity(IntegrationTestCase):
         that it was attached to the `thumbnail` field, that resaving the deck
         did not clone it, and what a duplicate inherited. A linked deck pushes
         the browser capture through Drive instead, which replaces one
-        `Drive Node Preview` row without stamping the deck ([012 §8]), and the
-        column it used to write stays empty for good.
+        `Drive Node Preview` row without stamping the deck ([012 §8]). The
+        `thumbnail` field itself left the DocType (Q19').
         """
         with self.set_user(OWNER):
             presentation = make_presentation("Linked Thumbnail")
             push_capture(presentation.name)
 
-        self.assertEqual(frappe.db.get_value("Presentation", presentation.name, "thumbnail"), None)
         self.assertTrue(frappe.db.exists("Drive Node Preview", {"node": node_of(presentation.name)}))
         self.assertFalse(
             frappe.db.exists(
@@ -219,7 +218,6 @@ class TestPresentationSecurity(IntegrationTestCase):
             push_capture(source.name)
             copy = create_presentation(duplicate_from=source.name)
 
-        self.assertEqual(copy.thumbnail, None, "the legacy column is frozen for a linked deck")
         self.assertTrue(frappe.db.exists("Drive Node Preview", {"node": node_of(copy.name)}))
 
     def test_composite_excludes_reference_made_private_later(self):
@@ -643,10 +641,9 @@ class TestDeckList(IntegrationTestCase):
 
     def test_a_linked_deck_publishes_no_thumbnail_here(self):
         """Its preview is a `Drive Node Preview` on §6.8's signed byte path,
-        which this payload has no field for. Blank, never a stale legacy
-        path."""
+        which this payload has no field for. No legacy path either (Q19')."""
         push_capture(self.deck.name)
-        self.assertEqual(self._rows()[self.deck.name]["thumbnail"], "")
+        self.assertNotIn("thumbnail", self._rows()[self.deck.name])
 
     def test_a_trashed_deck_leaves_the_list(self):
         trash(self.deck.name)
