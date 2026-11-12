@@ -343,9 +343,8 @@ export function useConvertedRoom({
     return true
   }
 
-  // A named version holds only saved edits: this tab's go in first, and it throws why they couldn't
+  // A named version holds only saved edits; it throws why they couldn't be
   async function saveBeforeVersion() {
-    deck?.push()
     if (room.value) {
       await saveFirst(room.value)
     }
