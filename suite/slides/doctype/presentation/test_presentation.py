@@ -882,3 +882,22 @@ class TestUnconvertedFixture(IntegrationTestCase):
         drop_log(node)
 
         self.assert_never_converted(deck)
+
+
+class TestRowsOfAnUnconvertedDeck(IntegrationTestCase):
+    """A deck still on its rows checks each slide it saves."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        ensure_user(OWNER)
+
+    def test_advance_after_out_of_range_is_refused(self):
+        frappe.set_user(OWNER)
+        self.addCleanup(frappe.set_user, "Administrator")
+        suffix = frappe.generate_hash(6)
+        deck = frappe.get_doc("Presentation", make_presentation(f"Waits {suffix}").name)
+        for value in ("soon", 0, 3601, "1,000", "١٢"):
+            deck.slides[0].advance_after = value
+            with self.subTest(value=value), self.assertRaises(frappe.ValidationError):
+                deck.save()

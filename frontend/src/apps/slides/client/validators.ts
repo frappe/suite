@@ -25,8 +25,6 @@ import type {
   IsCompositePresentationOutput,
   RecoveryNamesInput,
   RecoveryNamesOutput,
-  SaveSlidesInput,
-  SaveSlidesOutput,
   UpdateSlideAttachmentsInput,
   UpdateSlideAttachmentsOutput,
   UpdateThemeInput,
@@ -318,68 +316,6 @@ export const operationIsCompositePresentation: Validators<
   },
   validateOutput(value: unknown): asserts value is IsCompositePresentationOutput {
     assertSchema(value, { type: 'boolean' }, 'is_composite_presentation output')
-  },
-}
-
-export const operationSaveSlides: Validators<SaveSlidesInput, SaveSlidesOutput> = {
-  validateInput(value: unknown): asserts value is SaveSlidesInput {
-    assertSchema(
-      value,
-      {
-        type: 'object',
-        properties: {
-          name: { title: 'Name', type: 'string' },
-          slides: { items: { $ref: '#/$defs/SlideChanges' }, title: 'Slides', type: 'array' },
-          base_modified: { title: 'Base Modified', type: 'string' },
-        },
-        required: ['name', 'slides', 'base_modified'],
-        additionalProperties: false,
-        $defs: {
-          SlideChanges: {
-            properties: {
-              client_id: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Client Id' },
-              background: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Background' },
-              elements: {
-                anyOf: [
-                  { type: 'string' },
-                  { items: { additionalProperties: true, type: 'object' }, type: 'array' },
-                  { type: 'null' },
-                ],
-                title: 'Elements',
-              },
-              transition: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Transition' },
-              transition_duration: {
-                anyOf: [{ type: 'string' }, { type: 'number' }, { type: 'null' }],
-                title: 'Transition Duration',
-              },
-              fade_unmatched_elements: {
-                anyOf: [{ type: 'boolean' }, { enum: [0, 1], type: 'integer' }],
-                title: 'Fade Unmatched Elements',
-              },
-              advance_after: {
-                anyOf: [{ type: 'string' }, { type: 'number' }, { type: 'null' }],
-                title: 'Advance After',
-              },
-            },
-            title: 'SlideChanges',
-            type: 'object',
-          },
-        },
-      },
-      'save_slides input',
-    )
-  },
-  validateOutput(value: unknown): asserts value is SaveSlidesOutput {
-    assertSchema(
-      value,
-      {
-        properties: { modified: { title: 'Modified', type: 'string' } },
-        required: ['modified'],
-        title: 'SavedDeck',
-        type: 'object',
-      },
-      'save_slides output',
-    )
   },
 }
 

@@ -1,16 +1,6 @@
 import type { OwnerRegistration } from '@/platform/server-state'
 
 const effects = {
-  save_slides: {
-    invalidates: [
-      'get_public_presentation',
-      'get_composite_presentation',
-      'composite_manifest',
-      'composite_group',
-      'drive.node_versions',
-      'drive.view_list',
-    ],
-  },
   apply_theme: {
     invalidates: ['get_public_presentation', 'drive.node_versions', 'drive.view_list'],
   },

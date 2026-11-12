@@ -6,7 +6,6 @@ from suite.composition.http import Route
 from suite.content.conversions import ConversionStatus
 from suite.slides.api.composite import composite_group, composite_manifest
 from suite.slides.api.recovery import recovery_names
-from suite.slides.api.slides import save_slides
 from suite.slides.api.versions import VersionConversion, convert_version
 from suite.slides.doctype.presentation.presentation import (
     apply_theme,
@@ -64,21 +63,6 @@ class Deck(TypedDict):
     references: NotRequired[list[ReferenceAnswer]]
     is_converted: NotRequired[bool]
     conversion: NotRequired[ConversionStatus]
-
-
-class SlideChanges(TypedDict, total=False):
-    client_id: str | None
-    background: str | None
-    elements: str | list[dict[str, object]] | None
-    transition: str | None
-    transition_duration: str | float | None
-    fade_unmatched_elements: bool | Literal[0, 1]
-    advance_after: str | float | None
-
-
-class SaveDeck(DeckInput):
-    slides: list[SlideChanges]
-    base_modified: str
 
 
 class SavedDeck(TypedDict):
@@ -186,17 +170,6 @@ CONTRACT_ROUTES = (
         output=bool,
         kind="query",
         public_name="documents.isComposite",
-        allow_guest=True,
-        envelope="message",
-    ),
-    Route(
-        "POST",
-        "/api/method/suite.slides.api.slides.save_slides",
-        "save_slides",
-        body=SaveDeck,
-        output=SavedDeck,
-        kind="mutation",
-        public_name="documents.save",
         allow_guest=True,
         envelope="message",
     ),

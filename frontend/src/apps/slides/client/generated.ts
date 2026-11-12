@@ -175,42 +175,6 @@ const operationIsCompositePresentation: QueryRef<
   loadValidators: async () => (await import('./validators')).operationIsCompositePresentation,
 }
 
-export type SaveSlidesInputSlideChanges = {
-  client_id?: string | null
-  background?: string | null
-  elements?: string | Array<{ [key: string]: unknown }> | null
-  transition?: string | null
-  transition_duration?: string | number | null
-  fade_unmatched_elements?: boolean | (0 | 1)
-  advance_after?: string | number | null
-}
-
-export type SaveSlidesInput = {
-  name: string
-  slides: Array<SaveSlidesInputSlideChanges>
-  base_modified: string
-}
-
-export type SaveSlidesOutput = { modified: string }
-
-export type SaveSlidesError = never
-
-const operationSaveSlides: MutationRef<SaveSlidesInput, SaveSlidesOutput, SaveSlidesError> = {
-  id: 'save_slides',
-  owner: 'slides',
-  kind: 'mutation',
-  publicName: 'documents.save',
-  envelope: 'message',
-  method: 'POST',
-  path: '/api/method/suite.slides.api.slides.save_slides',
-  prefix: '/api/suite/slides/',
-  pathParams: [],
-  nodeParams: [],
-  entity: null,
-  errors: [],
-  loadValidators: async () => (await import('./validators')).operationSaveSlides,
-}
-
 export type ApplyThemeInput = { name: string; theme: string }
 
 export type ApplyThemeOutput = { modified: string }
@@ -540,7 +504,6 @@ export const api = {
     get: operationGetPublicPresentation,
     composite: operationGetCompositePresentation,
     isComposite: operationIsCompositePresentation,
-    save: operationSaveSlides,
     applyTheme: operationApplyTheme,
     updateTheme: operationUpdateTheme,
     access: operationGetEditorAccess,

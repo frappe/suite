@@ -727,15 +727,14 @@ class TestSlidesInDrive(IntegrationTestCase):
             drive.adopt_media(target, [picture])
 
     def test_a_reader_cannot_save_a_deck_and_a_trashed_deck_refuses_an_editor(self):
-        from suite.slides.api.slides import save_slides
-
         node = self._deck(title="Save rights")
         docname = self._docname(node)
         before = [row["name"] for row in self._slide_rows(node)]
 
         def save():
-            modified = str(frappe.db.get_value(DOCTYPE, docname, "modified"))
-            save_slides(docname, [{"client_id": "x", "background": "#000000ff", "elements": "[]"}], modified)
+            deck = frappe.get_doc(DOCTYPE, docname)
+            deck.slides[0].background = "#000000ff"
+            deck.save()
 
         grant(node, OTHER, drive.READ, self.admin)
         self._as(OTHER)
