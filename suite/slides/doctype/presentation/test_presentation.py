@@ -13,9 +13,11 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils import cstr
 
 from suite import drive
+from suite.content import log, tables
 from suite.drive import EDIT
 from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFound
 from suite.slides import drive as slides_drive
+from suite.slides.content import APP
 from suite.slides.content.tests.support import (
     LoggedDeckCase,
     delete_log,
@@ -37,6 +39,7 @@ from suite.slides.doctype.presentation.presentation import (
 )
 from suite.slides.tests.utils import (
     PNG_1PX,
+    drop_log,
     make_presentation,
     make_private,
     make_private_image,
@@ -841,3 +844,41 @@ class TestDeckBodyStaysServerSide(IntegrationTestCase):
                 pass
 
         self.assertEqual(self.stored(), self.BODY)
+
+
+class TestUnconvertedFixture(IntegrationTestCase):
+    """The fixture that stands for an old site's deck that never converted: its rows, and nothing of the layer."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        ensure_user(OWNER)
+
+    def assert_never_converted(self, deck: str):
+        node = node_of(deck)
+        conversion_table = tables.table(APP, "conversion")
+        conversions = frappe.db.sql(f"SELECT COUNT(*) FROM `{conversion_table}` WHERE `node` = %s", node)
+
+        self.assertEqual(len(frappe.get_doc("Presentation", deck).slides), 1)
+        self.assertFalse(frappe.db.get_value("Presentation", deck, "content"))
+        self.assertFalse(frappe.get_cached_doc("Presentation", deck).content)
+        self.assertIsNone(log.find(APP, node))
+        self.assertEqual(conversions[0][0], 0)
+
+    def test_a_made_presentation_has_its_rows_and_no_body_log_or_conversion(self):
+        suffix = frappe.generate_hash(6)
+        with self.set_user(OWNER):
+            deck = make_presentation(f"Made {suffix}").name
+
+        self.assert_never_converted(deck)
+
+    def test_dropping_a_logged_decks_log_also_drops_its_cached_body(self):
+        suffix = frappe.generate_hash(6)
+        title = f"Logged {suffix}"
+        node = drive.create_document(owner_folder(), title, content_doctype="Presentation")
+        deck = slides_drive.docname_for_node(node)
+        self.assertTrue(frappe.get_cached_doc("Presentation", deck).content)
+
+        drop_log(node)
+
+        self.assert_never_converted(deck)

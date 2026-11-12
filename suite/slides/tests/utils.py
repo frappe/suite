@@ -109,7 +109,7 @@ def make_presentation(title, parent=None, **fields):
 LOG_KINDS = ("update", "session", "stage", "checkpoint", "copy", "recovery", "projection")
 
 
-# Removes `node`'s log in the caller's transaction, leaving the deck as it was before it converted
+# Removes `node`'s log and body in the caller's transaction, leaving the deck as it was before it converted
 def drop_log(node: str) -> None:
     doc = log.find(APP, node)
     if doc:
@@ -122,6 +122,10 @@ def drop_log(node: str) -> None:
 
     conversion_table = tables.table(APP, "conversion")
     frappe.db.sql(f"DELETE FROM `{conversion_table}` WHERE `node` = %s", node)
+
+    docname = slides_drive.docname_for_node(node)
+    frappe.db.set_value(slides_drive.DOCTYPE, docname, "content", None, update_modified=False)
+    frappe.clear_document_cache(slides_drive.DOCTYPE, docname)
 
 
 def node_of(presentation_name):

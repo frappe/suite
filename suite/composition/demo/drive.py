@@ -291,9 +291,8 @@ def _organization_content(folders: dict[str, str], uploaded: dict[str, bytes]) -
         reference = drive.ensure_folder(handbook, "Policies and reference")
         for title in uploaded:
             _store(reference, title, uploaded)
-        result["review"] = assets.presentation(
-            folders["Company"], "Q3 review and Q4 priorities", assets.REVIEW
-        )
+
+        result["review"] = assets.presentation(folders["Company"], "Q3 review and Q4 priorities")
         frappe.db.commit()
         project = drive.ensure_folder(drive.ensure_folder(folders["Product"], "Beacon"), "Collections beta")
         result["spec"] = create_document(project, "Collections product specification", content.PRODUCT_SPEC)
@@ -320,7 +319,8 @@ def _organization_content(folders: dict[str, str], uploaded: dict[str, bytes]) -
             _grant(brief, "$PUBLIC", drive.READ)
             _grant(brief, "$GENERAL", drive.READ)
             _grant(brief, f"$GROUP:{PREFIX}Marketing", drive.MANAGE)
-        result["launch deck"] = assets.presentation(launch, "Beacon collections launch", assets.LAUNCH)
+
+        result["launch deck"] = assets.presentation(launch, "Beacon collections launch")
         imports = drive.ensure_folder(folders["Marketing"], "Imports")
         result["pipeline"] = assets.spreadsheet(
             folders["Marketing"], imports, "November sales pipeline", assets.PIPELINE
