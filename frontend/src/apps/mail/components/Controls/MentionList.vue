@@ -3,9 +3,11 @@
 	     query (or a search that came back with nothing) must render nothing at all
 	     rather than an empty panel hanging off the caret. -->
   <div>
+    <!-- Capped at the viewport, less the 8px the popup keeps from either edge: nothing else bounds
+	       it, so a long address would push it off a phone's screen instead of truncating. -->
     <div
       v-if="items.length"
-      class="bg-surface-base max-h-64 min-w-56 overflow-y-auto rounded-6 p-1 shadow-lg"
+      class="bg-surface-base max-h-64 max-w-[calc(100vw-1rem)] min-w-56 overflow-y-auto rounded-6 p-1 shadow-lg"
     >
       <!-- Picks on mousedown, default prevented: letting the press land would pull
 			     focus out of the editor, and the suggester drops the popup the moment the
