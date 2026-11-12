@@ -23,8 +23,8 @@ from suite.slides.content.conversion import (
 )
 
 APP = "slides"
-# `slides` and `boxes` hold one fixed-shape Y.Map per item, keyed by the item's id
-PART_MAP = {"slides": pycrdt.Map, "boxes": pycrdt.Map}
+# `slides` and `elements` hold one fixed-shape Y.Map per item, keyed by the item's id
+PART_MAP = {"slides": pycrdt.Map, "elements": pycrdt.Map}
 # The Node checker `bench build` makes, which judges suspect documents with the browsers' Yjs and deck.ts
 CHECKER_BUILD = Path(__file__).with_name("dist") / "checker.cjs"
 # The Node converter `bench build` makes, which turns an old deck into a collaborative one
@@ -36,7 +36,7 @@ DECLARED = json.loads(Path(__file__).with_name("schema.json").read_text())
 # items' fields and the editor's names. Both roots are open: their keys are the items' random ids, each
 # fitting `suite.content.ingest.OPEN_KEY`
 # Opening a root loosens the push key check, so a new root is opened here by name, never by default
-OPEN_ROOTS = frozenset({"slides", "boxes"})
+OPEN_ROOTS = frozenset({"slides", "elements"})
 SCHEMA = content.EditorSchema(
     DECLARED["schema"],
     DECLARED["features"],
@@ -57,7 +57,7 @@ def blank_state() -> bytes:
     slide = pycrdt.Map()
     slides = pycrdt.Map()
     doc["slides"] = slides
-    doc["boxes"] = pycrdt.Map()
+    doc["elements"] = pycrdt.Map()
     slides[str(uuid.uuid4())] = slide
     slide["order"] = FIRST_ORDER
     return doc.get_update()

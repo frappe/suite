@@ -18,16 +18,22 @@ import {
 } from '@/apps/mail/utils/composables'
 import { createEditorBody } from '@/apps/mail/utils/editorBody'
 import { createMentionSuggestion, type MentionCandidate } from '@/apps/mail/utils/mentionSuggestion'
+import { QuotedContentExtension } from '@/apps/mail/utils/quotedContentExtension'
 import {
   moveRecipient as moveRecipientBetweenFields,
   type RecipientField,
 } from '@/apps/mail/utils/recipientFields'
+import {
+  CustomImageExtension,
+  mailEditorKit,
+  type uploadFunction,
+} from '@/apps/mail/utils/text-editor'
 import { undoSendPeriodOf } from '@/apps/mail/utils/undoSend'
 
-/** The mounted TextEditor instance, as far as this composable cares about it. */
+/** The mounted editor, as far as this composable cares about it. */
 interface EditorHost {
-  $el?: HTMLElement
   editor?: {
+    getHTML: () => string
     commands: {
       insertContent: (content: string) => void
       focus: () => void
@@ -39,7 +45,7 @@ interface EditorHost {
       }
       selection: { from: number; to: number }
     }
-  }
+  } | null
 }
 interface ComposeMailOptions {
   /** A draft being resumed, or the reply/forward this composition starts from. */
@@ -60,15 +66,12 @@ interface ComposeMailOptions {
    * so anything keyed on the composer being open takes the draft back for the moment in between.
    */
   onDiscardStarted?: () => void
-  /** The mounted TextEditor, for mention bookkeeping and emoji insertion. */
+  /** The mounted editor, for mention bookkeeping and emoji insertion. */
   host: () => EditorHost | null | undefined
   /** Whether a file is still being attached. Sending must wait until it is part of the draft. */
   isUploading?: () => boolean
-  /**
-   * Where the mention dropdown should render. The dialog on desktop, which holds the rest of the
-   * page inert; null anywhere `<body>` will do.
-   */
-  mentionContainer?: () => HTMLElement | null
+  /** How the host uploads an image dropped or pasted into the body, with its own size checks. */
+  uploadInlineImage: typeof uploadFunction
 }
 
 /**
@@ -272,8 +275,13 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       if (
         isBodyEmpty.value ||
         bodyText(mail.html_body) === bodyText((previous ?? '') + prefilledBody)
-      )
+      ) {
         mail.html_body = signature + prefilledBody
+        // The editor takes the new body as a reset, which leaves the caret at its end: below the
+        // signature, where a reply opened before the identities arrived was then typed. Nothing
+        // has been written yet, so the place to write is still the top.
+        void nextTick(() => host()?.editor?.commands.setTextSelection({ from: 0, to: 0 }))
+      }
     },
     {
       immediate: true,
@@ -781,14 +789,18 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       mentionedRecipients.delete(email)
     }
   }
-  const mentionExtensions = [
+  // One body for both composers, so the window and the phone parse and send it alike.
+  const editorExtensions = [
+    ...mailEditorKit({
+      image: CustomImageExtension.configure({ uploadFunction: options.uploadInlineImage }),
+    }),
+    QuotedContentExtension,
     // The inline node. Its own `@` suggester stays inert with no item source of its own — the
     // search below is the one wired up.
     Mention,
     createMentionSuggestion({
       account: () => scopeAccountId.value,
       onSelect: addMentionedRecipient,
-      container: () => options.mentionContainer?.() ?? null,
     }),
   ]
   const appendEmoji = (emoji: string) => {
@@ -799,10 +811,26 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 
   const editorBody = createEditorBody()
   const editorContent = computed(() => editorBody.toEditor(mail.html_body))
-  const onEditorChange = (value: string) => {
-    mail.html_body = editorBody.fromEditor(value)
+  let lastFromEditor = ''
+  const onEditorChange = (value: unknown) => {
+    if (typeof value !== 'string') return
+    lastFromEditor = editorBody.fromEditor(value)
+    mail.html_body = lastFromEditor
     dropUnmentionedRecipients()
   }
+  // A body set from here — a quote unfolded, a signature swapped in — goes into the editor without
+  // the editor reporting back. What it made of it is what the mail has to carry, or the draft would
+  // save and send the raw string until the next keystroke.
+  watch(
+    () => mail.html_body,
+    (body) => {
+      if (body === lastFromEditor) return
+      void nextTick(() => {
+        const editor = host()?.editor
+        if (editor) onEditorChange(editor.getHTML())
+      })
+    },
+  )
   return {
     mail,
     scope,
@@ -835,7 +863,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     openAttachment,
     attachFromDrive,
     isAttachingFromDrive: computed(() => attachingFromDrive.value > 0),
-    mentionExtensions,
+    editorExtensions,
     appendEmoji,
     editorContent,
     onEditorChange,

@@ -1,6 +1,6 @@
-import { GUEST_USER, personKey, roomColours, type PeerColour } from '@/apps/writer/collab/colours'
-import { fullName, lookUp } from '@/apps/writer/composables/useUsers'
 import type { Peer, RoomPresence } from '@/platform/collab'
+import { GUEST_USER, personKey, roomColours, type PeerColour } from '@/platform/collab/colours'
+import { fullName, lookUp } from '@/platform/collab/names'
 import { useSession } from '@/platform/session'
 
 export { GUEST_USER, personKey, roomColours }

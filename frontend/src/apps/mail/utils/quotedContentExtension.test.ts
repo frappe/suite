@@ -8,11 +8,6 @@ import { findQuoteRoots } from './quotedContent'
 import { QuotedContentExtension } from './quotedContentExtension'
 import { CustomParagraphExtension } from './text-editor'
 
-// text-editor.ts also builds the image extension on frappe-ui's, which doesn't resolve under
-// vitest; only its paragraph node (whose bare `div` rule this node has to beat) is wanted here.
-vi.mock('frappe-ui/experimental', () => ({
-  ImageExtension: { extend: () => ({ configure: () => ({}) }) },
-}))
 vi.mock('frappe-ui', () => ({ useFileUpload: () => ({}), toast: { error: vi.fn() } }))
 
 const roundTrip = (html: string) => {

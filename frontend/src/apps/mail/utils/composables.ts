@@ -217,35 +217,6 @@ export const useMobileSelection = () => {
   }
 }
 
-/**
- * `dropAlignment` is the mail composer, which does without the alignment group: it was the widest
- * thing in a toolbar that has to fit a narrow docked panel, alignment in an email body is rare,
- * and mobile had already dropped it — so the composer's toolbar no longer changes shape with the
- * window it is in. The signature and vacation editors keep it, where centring a logo or a footer
- * is the point. A getter, so a caller can make it conditional.
- */
-export const useTextEditorButtons = (dropAlignment: () => boolean = () => false) => {
-  const { isMobile } = useScreenSize()
-  const alignButtons = ['Separator', 'Align Left', 'Align Center', 'Align Right']
-  const buttons = computed(() => [
-    'Paragraph',
-    ['Heading 2', 'Heading 3', 'Heading 4', 'Heading 5', 'Heading 6'],
-    'Separator',
-    'Bold',
-    'Italic',
-    'FontColor',
-    ...(isMobile.value || dropAlignment() ? [] : alignButtons),
-    'Separator',
-    'Bullet List',
-    'Numbered List',
-    'Separator',
-    'Image',
-    'Link',
-  ])
-  return {
-    buttons,
-  }
-}
 const keyboardOpen = ref(false)
 let watchingFocus = false
 
