@@ -166,6 +166,19 @@ describe('old drafts as recovery copies (Q16)', () => {
     expect((await listCopies()).map((copy) => copy.slides)).toEqual([NEWER])
   })
 
+  // a stamp is the clock's millisecond, so two tabs can write the same one
+  it('dismissing a copy keeps a draft another tab wrote at the same moment with other slides', async () => {
+    await putDraft(draft('deck-plan'))
+    const [shown] = await listCopies()
+    const OTHER = [{ name: 'row-1', elements: [{ type: 'text', content: 'Other words' }] }]
+    await putDraft(draft('deck-plan', { content: OTHER }))
+
+    await discardCopy(shown!)
+
+    expect(await draftIds()).toEqual(['deck-plan'])
+    expect((await listCopies()).map((copy) => copy.slides)).toEqual([OTHER])
+  })
+
   it('dismissing the copy deletes the draft', async () => {
     await putDraft(draft('deck-plan'))
     const [copy] = await listCopies()
@@ -214,6 +227,17 @@ describe("the live room's and the page's copies", () => {
   })
 })
 
+describe('naming a few copies', () => {
+  it('names a draft and a page copy in one read', async () => {
+    await putDraft(draft('deck-plan'))
+    keepRecovery('node-page', SLIDES, { sticky: true })
+
+    await listCopies()
+
+    expect(query).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('naming many copies', () => {
   const ids = Array.from({ length: 250 }, (_, index) => `deck-${index}`)
   const named = (presentations: string[]) =>
@@ -238,6 +262,25 @@ describe('naming many copies', () => {
 
     expect(copies).toHaveLength(250)
     expect(copies.filter((copy) => !copy.title)).toEqual([])
+  })
+
+  it('names the page copies past 200 too, in the same reads as the drafts', async () => {
+    keepRecovery('node-page', SLIDES, { sticky: true })
+    query.mockImplementation(async (_route, { presentations, nodes }) => {
+      if (presentations.length + nodes.length > 200) throw new Error('Too many presentations')
+      const pages = nodes.map((node: string) => ({
+        presentation: 'deck-page',
+        node,
+        title: 'Page',
+      }))
+      return [...named(presentations), ...pages]
+    })
+
+    const copies = await listCopies()
+
+    expect(copies).toHaveLength(251)
+    expect(copies.filter((copy) => !copy.title)).toEqual([])
+    expect(query).toHaveBeenCalledTimes(2)
   })
 
   it('keeps the names one read gave when another read fails', async () => {

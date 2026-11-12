@@ -112,23 +112,23 @@ function pageCopies(names: Map<string, RecoveryName>): RecoveryCopy[] {
 // The most names the server reads at once
 const NAMES_LIMIT = 200
 
-// Names for the copies that carry no title, in reads of at most NAMES_LIMIT; a read that
-// fails names none of its own. A presentation the person can't read answers none
+// Names for the copies that carry no title, in reads of at most NAMES_LIMIT names of either
+// kind; a read that fails names none of its own. A presentation the person can't read answers none
 async function recoveryNames(presentations: string[], nodes: string[]) {
-  const reads = [
-    ...batches(presentations).map((batch) => ({ presentations: batch, nodes: [] })),
-    ...batches(nodes).map((batch) => ({ presentations: [], nodes: batch })),
-  ]
+  const total = presentations.length + nodes.length
+  // Read `index` takes the names at [start, end) of the presentations followed by the nodes
+  const reads = Array.from({ length: Math.ceil(total / NAMES_LIMIT) }, (_, index) => {
+    const [start, end] = [index * NAMES_LIMIT, (index + 1) * NAMES_LIMIT]
+    const [nodeStart, nodeEnd] = [start, end].map((at) => Math.max(0, at - presentations.length))
+    return {
+      presentations: presentations.slice(start, end),
+      nodes: nodes.slice(nodeStart, nodeEnd),
+    }
+  })
   const names = await Promise.all(
     reads.map((read) => client.query(api.slides.recovery.names, read).catch(() => [])),
   )
   return names.flat()
-}
-
-function batches(names: string[]) {
-  return Array.from({ length: Math.ceil(names.length / NAMES_LIMIT) }, (_, index) =>
-    names.slice(index * NAMES_LIMIT, (index + 1) * NAMES_LIMIT),
-  )
 }
 
 /** This device's copies, newest first. */
@@ -159,10 +159,11 @@ export async function copyEntries() {
 }
 
 /** Discards the copy as it was shown; a newer draft another tab wrote since stays. */
-export async function discardCopy(copy: Pick<RecoveryCopy, 'key' | 'savedAt'>) {
+export async function discardCopy(copy: Pick<RecoveryCopy, 'key' | 'savedAt' | 'slides'>) {
   if (copy.key.startsWith(DRAFT_PREFIX)) {
     const id = copy.key.slice(DRAFT_PREFIX.length)
-    await deleteDraft(getCookieSessionUser(), id, copy.savedAt.getTime())
+    const shown = { id, updatedAt: copy.savedAt.getTime(), content: JSON.stringify(copy.slides) }
+    await deleteDraft(getCookieSessionUser(), shown)
     return
   }
 
