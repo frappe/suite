@@ -396,6 +396,51 @@ describe('two page copies with the same date', () => {
   })
 })
 
+describe('page copies kept by several tabs', () => {
+  const words = (copies: { slides: unknown[] }[]) =>
+    // SAFETY: each copy these tests keep starts with a slide that has words
+    copies.map((copy) => (copy.slides[0] as { words: string }).words)
+  const at = (minute: number) => ({ now: new Date(Date.UTC(2026, 10, 12, 10, minute)) })
+
+  // Another tab of this browser: the same storage, its own page load
+  async function otherTab() {
+    vi.resetModules()
+    return import('@/apps/slides/surface/recovery')
+  }
+
+  it('lists on Drive exactly the copies the banner keeps, before and after a discard', async () => {
+    const { keepOutlivedRecovery, readRecovery } = await import('@/apps/slides/surface/recovery')
+    localStorage.setItem(
+      'suite:slides-recovery:me@example.com:node-plan',
+      JSON.stringify([{ savedAt: at(0).now.toISOString(), slides: [{ words: 'older list' }] }]),
+    )
+    const [tabB, tabC] = [await otherTab(), await otherTab()]
+    tabB.keepRecovery('node-plan', [{ words: 'as shown' }], at(1))
+    tabC.keepRecovery('node-plan', [{ words: 'sticky' }], { sticky: true, ...at(2) })
+    keepOutlivedRecovery('node-plan', [{ words: 'as shown' }])
+
+    const listed = await listCopies()
+    expect(words(listed)).toEqual(['sticky', 'older list'])
+    expect(words(readRecovery('node-plan'))).toEqual(['older list', 'sticky'])
+
+    await discardCopy(listed[0]!)
+
+    expect(words(await listCopies())).toEqual(['older list'])
+    expect(words(readRecovery('node-plan'))).toEqual(['older list'])
+  })
+
+  it('discarding on Drive keeps a copy its tab wrote again since it was listed', async () => {
+    const tabB = await otherTab()
+    tabB.keepRecovery('node-plan', [{ words: 'listed' }], at(1))
+    const [listed] = await listCopies()
+    tabB.keepRecovery('node-plan', [{ words: 'newer' }], at(2))
+
+    await discardCopy(listed!)
+
+    expect(words(await listCopies())).toEqual(['newer'])
+  })
+})
+
 describe('naming a few copies', () => {
   it('names a draft and a page copy in one read', async () => {
     await putDraft(draft('deck-plan'))

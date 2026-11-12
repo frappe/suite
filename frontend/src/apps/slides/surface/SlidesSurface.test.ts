@@ -726,6 +726,17 @@ describe('a deck on the content layer', () => {
 
     afterEach(() => localStorage.clear())
 
+    // as an earlier page load leaves its unsent copy: under an id of its own, not this page's
+    function keptByEarlierPage(slides: unknown[]) {
+      keepRecovery('node-1', slides)
+      const key = Object.keys(localStorage).find((stored) => stored.includes(':node-1:'))!
+      localStorage.setItem(
+        `${key.slice(0, key.lastIndexOf(':'))}:earlier`,
+        localStorage.getItem(key)!,
+      )
+      localStorage.removeItem(key)
+    }
+
     // what the room draws for one slide, read from an open that is then closed
     async function drawnOnce() {
       convertedRoom('one')
@@ -740,7 +751,7 @@ describe('a deck on the content layer', () => {
     }
 
     it('turns sticky on open when it differs, and outlives a later copy', async () => {
-      keepRecovery('node-1', EARLIER)
+      keptByEarlierPage(EARLIER)
       const room = roomOf('one')
       collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
       mounted = await openedSurface({ deck: { is_converted: true } })
@@ -754,22 +765,19 @@ describe('a deck on the content layer', () => {
       ])
     })
 
-    it('stays as it was when it holds what the room draws, so a later copy replaces it', async () => {
+    it('goes when it holds what the room draws, as there is nothing in it to recover', async () => {
       const drawn = await drawnOnce()
-      keepRecovery('node-1', drawn)
+      keptByEarlierPage(drawn)
       const room = roomOf('one')
       collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
       mounted = await openedSurface({ deck: { is_converted: true } })
       await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
-      expect(readRecovery('node-1')[0]?.sticky).toBe(false)
 
-      keepRecovery('node-1', [{ clientId: 'later', elements: [] }])
-
-      expect(readRecovery('node-1')).toHaveLength(1)
+      expect(readRecovery('node-1')).toEqual([])
     })
 
     it('is left alone when the surface goes before its room opens', async () => {
-      keepRecovery('node-1', EARLIER)
+      keptByEarlierPage(EARLIER)
       const opening = Promise.withResolvers<unknown>()
       collabRoom.open.mockReturnValueOnce(opening.promise)
       const opens = collabRoom.open.mock.calls.length

@@ -2,13 +2,54 @@ import { fromPartial } from '@total-typescript/shoehorn'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  discardRecovery,
   downloadRecovery,
   keepOutlivedRecovery,
   keepRecovery,
   readRecovery,
   recoveryFile,
+  recoveryRecords,
   removeNewestRecovery,
 } from './recovery'
+
+const PREFIX = 'suite:slides-recovery:me@example.com:'
+
+// Another tab of this browser: the same storage, its own page load
+async function otherTab() {
+  vi.resetModules()
+  return import('./recovery')
+}
+
+function clientIds(node = 'node-1') {
+  // SAFETY: each copy these tests keep starts with a slide that has a clientId
+  return readRecovery(node).map((copy) => (copy.slides[0] as { clientId: string }).clientId)
+}
+
+function recordKey(node: string, clientId: string) {
+  const record = recoveryRecords(node).find(
+    // SAFETY: each copy these tests keep starts with a slide that has a clientId
+    ({ copy }) => (copy.slides[0] as { clientId: string }).clientId === clientId,
+  )
+  if (!record) throw new Error(`no record holds ${clientId}`)
+  return `${PREFIX}${node}:${record.id}`
+}
+
+// What an action writes or removes, by key
+function touchedKeys(run: () => void) {
+  const touched: string[] = []
+  const { setItem, removeItem } = Storage.prototype
+  vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+    touched.push(`set ${key}`)
+    setItem.call(this, key, value)
+  })
+  vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(function (this: Storage, key) {
+    touched.push(`remove ${key}`)
+    removeItem.call(this, key)
+  })
+  run()
+  vi.restoreAllMocks()
+  return touched
+}
 
 function signIn(user: string) {
   const id = encodeURIComponent(user)
@@ -221,5 +262,152 @@ describe('Slides recovery copy', () => {
     removeNewestRecovery('node-1')
 
     expect(kept()).toEqual([['older', true]])
+  })
+})
+
+describe('Slides recovery copies across tabs', () => {
+  const at = (minute: number) => ({ now: new Date(Date.UTC(2026, 10, 12, 10, minute)) })
+
+  it('drops no copy another tab kept, whatever order the tabs keep in', async () => {
+    const tabB = await otherTab()
+
+    tabB.keepRecovery('node-1', [{ clientId: 'b sticky' }], { sticky: true, ...at(1) })
+    keepRecovery('node-1', [{ clientId: 'a unsent' }], at(2))
+    tabB.keepRecovery('node-1', [{ clientId: 'b unsent' }], at(3))
+    keepRecovery('node-1', [{ clientId: 'a sticky' }], { sticky: true, ...at(4) })
+    keepRecovery('node-1', [{ clientId: 'a unsent again' }], at(5))
+
+    expect(clientIds()).toEqual(['b sticky', 'b unsent', 'a sticky', 'a unsent again'])
+  })
+
+  it('reads an older single list as its copies, then keeps each on its own', () => {
+    localStorage.setItem(
+      `${PREFIX}node-1`,
+      JSON.stringify([
+        { savedAt: '2026-09-30T10:00:00.000Z', slides: [{ clientId: 'old' }] },
+        { savedAt: '2026-09-30T10:05:00.000Z', slides: [{ clientId: 'old sticky' }], sticky: true },
+      ]),
+    )
+
+    expect(kept()).toEqual([
+      ['old', undefined],
+      ['old sticky', true],
+    ])
+    expect(localStorage.getItem(`${PREFIX}node-1`)).toBeNull()
+
+    const old = recoveryRecords('node-1').find(({ copy }) => !copy.sticky)!
+    discardRecovery('node-1', old.id, old.copy)
+    expect(kept()).toEqual([['old sticky', true]])
+  })
+
+  it('reads an older list written again after it was split as the same copies, once', () => {
+    const list = JSON.stringify([
+      { savedAt: '2026-09-30T10:00:00.000Z', slides: [{ clientId: 'old' }], sticky: true },
+    ])
+    localStorage.setItem(`${PREFIX}node-1`, list)
+    readRecovery('node-1')
+
+    // a tab still on the older code writes its list again
+    localStorage.setItem(`${PREFIX}node-1`, list)
+
+    expect(clientIds()).toEqual(['old'])
+  })
+
+  it('reads an older list a tab added to after it was split, when the store is too full to split it again', () => {
+    const old = { savedAt: '2026-09-30T10:00:00.000Z', slides: [{ clientId: 'old' }], sticky: true }
+    localStorage.setItem(`${PREFIX}node-1`, JSON.stringify([old]))
+    readRecovery('node-1')
+    const added = { savedAt: '2026-09-30T10:05:00.000Z', slides: [{ clientId: 'added' }] }
+    localStorage.setItem(`${PREFIX}node-1`, JSON.stringify([old, added]))
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('full', 'QuotaExceededError')
+    })
+
+    expect(clientIds()).toEqual(['old', 'added'])
+  })
+
+  it('reads an older list as is when the store is too full to split it', () => {
+    const list = JSON.stringify([
+      { savedAt: '2026-09-30T10:00:00.000Z', slides: [{ clientId: 'old' }], sticky: true },
+    ])
+    localStorage.setItem(`${PREFIX}node-1`, list)
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('full', 'QuotaExceededError')
+    })
+
+    expect(clientIds()).toEqual(['old'])
+    vi.restoreAllMocks()
+    expect(localStorage.getItem(`${PREFIX}node-1`)).toBe(list)
+  })
+
+  it("on opening, keeps another page load's different copy as sticky and removes one the room holds", async () => {
+    const tabB = await otherTab()
+    tabB.keepRecovery('node-1', [{ clientId: 'shown' }], at(1))
+    const tabC = await otherTab()
+    tabC.keepRecovery('node-1', [{ clientId: 'unsent' }], at(2))
+    const [same, different] = [recordKey('node-1', 'shown'), recordKey('node-1', 'unsent')]
+
+    const touched = touchedKeys(() => keepOutlivedRecovery('node-1', [{ clientId: 'shown' }]))
+
+    expect(kept()).toEqual([['unsent', true]])
+    expect(touched.sort()).toEqual([`remove ${same}`, `set ${different}`])
+  })
+
+  it('on opening, keeps a copy its tab wrote again between the read and the remove', async () => {
+    const tabB = await otherTab()
+    tabB.keepRecovery('node-1', [{ clientId: 'shown' }], at(1))
+    const key = recordKey('node-1', 'shown')
+    const rewritten = JSON.stringify({
+      savedAt: at(2).now.toISOString(),
+      slides: [{ clientId: 'newer' }],
+    })
+    // the first read sees the copy the room holds; tab B writes newer work straight after it
+    const { getItem, setItem } = Storage.prototype
+    let reads = 0
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(function (this: Storage, read) {
+      const value = getItem.call(this, read)
+      if (read === key && reads++ === 0) setItem.call(this, key, rewritten)
+      return value
+    })
+
+    keepOutlivedRecovery('node-1', [{ clientId: 'shown' }])
+    vi.restoreAllMocks()
+
+    expect(clientIds()).toEqual(['newer'])
+  })
+
+  it('discards and marks a download on that one copy alone', () => {
+    downloadedFiles()
+    keepRecovery('node-1', [{ clientId: 'older' }], { sticky: true, ...at(1) })
+    keepRecovery('node-1', [{ clientId: 'newer' }], { sticky: true, ...at(2) })
+    const [older, newer] = [recordKey('node-1', 'older'), recordKey('node-1', 'newer')]
+
+    expect(touchedKeys(() => downloadRecovery('node-1', 'Plan'))).toEqual([`set ${newer}`])
+    const id = older.slice(`${PREFIX}node-1:`.length)
+    const shown = { savedAt: at(1).now.toISOString(), slides: [{ clientId: 'older' }] }
+    expect(touchedKeys(() => discardRecovery('node-1', id, shown))).toEqual([`remove ${older}`])
+    expect(kept()).toEqual([['newer', true]])
+  })
+
+  it('keeps a copy made sticky by keeping it again, past the next unsent one', () => {
+    keepRecovery('node-1', [{ clientId: 'unsent' }], at(1))
+    keepRecovery('node-1', [{ clientId: 'unsent' }], { sticky: true, ...at(2) })
+    keepRecovery('node-1', [{ clientId: 'later' }], at(3))
+
+    expect(kept()).toEqual([
+      ['unsent', true],
+      ['later', false],
+    ])
+  })
+
+  it('discarding keeps a copy its tab wrote again since it was shown', async () => {
+    const tabB = await otherTab()
+    tabB.keepRecovery('node-1', [{ clientId: 'shown' }], at(1))
+    const [shown] = recoveryRecords('node-1')
+    tabB.keepRecovery('node-1', [{ clientId: 'newer' }], at(2))
+
+    discardRecovery('node-1', shown!.id, shown!.copy)
+
+    expect(clientIds()).toEqual(['newer'])
   })
 })

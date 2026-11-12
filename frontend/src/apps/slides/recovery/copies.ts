@@ -8,6 +8,7 @@ import {
   readRecovery,
   recoveryFile,
   recoveryNodes,
+  recoveryRecords,
   saveThroughBrowser,
 } from '@/apps/slides/surface/recovery'
 import {
@@ -121,9 +122,8 @@ function storeCopy(record: RecoveryRecord): RecoveryCopy[] {
 
 function pageCopies(names: Map<string, RecoveryName>): RecoveryCopy[] {
   return recoveryNodes().flatMap((node) =>
-    readRecovery(node).map((copy, index) => ({
-      // two copies can share a date, so the place keeps the key apart
-      key: `${PAGE_PREFIX}${node}:${index}:${copy.savedAt}`,
+    recoveryRecords(node).map(({ id, copy }) => ({
+      key: `${PAGE_PREFIX}${node}:${id}`,
       node: names.get(node)?.node ?? null,
       title: names.get(node)?.title ?? '',
       savedAt: new Date(copy.savedAt),
@@ -208,14 +208,10 @@ export async function discardCopy(copy: Pick<RecoveryCopy, 'key' | 'savedAt' | '
     return
   }
 
-  const [node, place] = splitOnce(copy.key.slice(PAGE_PREFIX.length))
-  discardRecovery(node, splitOnce(place)[1], copy.slides)
-}
-
-// A node id and a place hold no colon, and a saved time does
-function splitOnce(value: string): [string, string] {
-  const at = value.indexOf(':')
-  return [value.slice(0, at), value.slice(at + 1)]
+  // a node id holds no colon
+  const place = copy.key.slice(PAGE_PREFIX.length)
+  const [node, id] = [place.slice(0, place.indexOf(':')), place.slice(place.indexOf(':') + 1)]
+  discardRecovery(node, id, { savedAt: copy.savedAt.toISOString(), slides: copy.slides })
 }
 
 /** Saves the copy through the browser as JSON. The copy stays on the device. */
