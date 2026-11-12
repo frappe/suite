@@ -1665,12 +1665,17 @@
               "title": {
                 "title": "Title",
                 "type": "string"
+              },
+              "can_edit": {
+                "title": "Can Edit",
+                "type": "boolean"
               }
             },
             "required": [
               "presentation",
               "node",
-              "title"
+              "title",
+              "can_edit"
             ],
             "title": "RecoveryName",
             "type": "object"

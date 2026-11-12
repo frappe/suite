@@ -669,13 +669,33 @@ describe('a deck on the content layer', () => {
 
       afterEach(() => sharedDrafts((store) => store.clear()))
 
-      it('an editor opening the presentation takes it, and sees it as a recovery copy', async () => {
+      it('an editor sees it as a recovery copy, and it stays where it is', async () => {
         convertedRoom('one')
         mounted = await openedSurface({ deck: { is_converted: true } })
 
         await vi.waitFor(() => expect(oldDraftNotice()).toBeDefined())
-        expect(await drafts()).toEqual([mounted.docname])
-        expect(await sharedDrafts()).toEqual([])
+        expect(await drafts()).toEqual([])
+        expect(await sharedDrafts()).toEqual([mounted.docname])
+      })
+
+      it('an editor dismissing their own newer draft is shown the shared one next', async () => {
+        await keepDraft({ dirty: true, updatedAt: 1_800_000_000_000 })
+        convertedRoom('one')
+        mounted = await openedSurface({ deck: { is_converted: true } })
+        await vi.waitFor(() => expect(oldDraftNotice()).toBeDefined())
+        const ownText = oldDraftNotice()!.textContent
+
+        press('Dismiss')
+        await vi.waitFor(() => expect(dialog.danger).toHaveBeenCalledTimes(1))
+        const [confirmed] = fromAny<[{ onConfirm: () => void }], unknown>(
+          vi.mocked(dialog.danger).mock.lastCall,
+        )
+        confirmed.onConfirm()
+
+        await vi.waitFor(() => expect(oldDraftNotice()?.textContent).not.toBe(ownText))
+        expect(oldDraftNotice()).toBeDefined()
+        expect(await drafts()).toEqual([])
+        expect(await sharedDrafts()).toEqual([mounted.docname])
       })
 
       it('a viewer leaves it where it is, and sees no copy', async () => {

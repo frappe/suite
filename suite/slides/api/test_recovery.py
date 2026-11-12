@@ -33,6 +33,7 @@ class TestRecoveryNames(IntegrationTestCase):
                     "presentation": self.shared.name,
                     "node": node_of(self.shared.name),
                     "title": "Quarterly Plan",
+                    "can_edit": False,
                 }
             ],
         )
@@ -55,9 +56,16 @@ class TestRecoveryNames(IntegrationTestCase):
                     "presentation": self.shared.name,
                     "node": node_of(self.shared.name),
                     "title": "Quarterly Plan",
+                    "can_edit": False,
                 }
             ],
         )
+
+    def test_an_editor_is_told_they_can_edit(self):
+        with self.set_user(OWNER):
+            names = recovery_names([self.shared.name], [node_of(self.private.name)])
+
+        self.assertEqual([name["can_edit"] for name in names], [True, True])
 
     def test_a_missing_presentation_answers_nothing(self):
         with self.set_user(OWNER):

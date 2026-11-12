@@ -4,9 +4,18 @@ import type { DocumentSession } from '@/apps/drive'
 import { confirm } from '@/platform/feedback'
 import { translate } from '@/platform/translation'
 
-import { discardCopy, downloadCopy, oldDraftCopy, savedAtLabel, type RecoveryCopy } from './copies'
+import {
+  discardCopy,
+  downloadCopy,
+  oldDraftCopies,
+  savedAtLabel,
+  type RecoveryCopy,
+} from './copies'
 
-/** A converted presentation's old draft on this device, shown until the person dismisses it (Q16). */
+/**
+ * A converted presentation's old drafts on this device, the newest shown until the person
+ * dismisses it, then the next (Q16).
+ */
 export function useOldDraft(session: DocumentSession, { isEditor }: { isEditor: () => boolean }) {
   const copy = shallowRef<RecoveryCopy | null>(null)
   const oldDraftNotice = computed(
@@ -15,9 +24,13 @@ export function useOldDraft(session: DocumentSession, { isEditor }: { isEditor: 
   )
 
   async function settleOldDraft() {
-    copy.value = await oldDraftCopy(session.contentDocname, session.nodeId, session.title.value, {
-      isEditor: isEditor(),
-    })
+    const copies = await oldDraftCopies(
+      session.contentDocname,
+      session.nodeId,
+      session.title.value,
+      { isEditor: isEditor() },
+    )
+    copy.value = copies[0] ?? null
   }
 
   function downloadOldDraft() {

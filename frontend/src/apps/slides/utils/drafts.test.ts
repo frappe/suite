@@ -64,25 +64,22 @@ describe('drafts per user', () => {
     expect(dbNames).not.toContain('slides-db')
   })
 
-  it('keeps a draft with no known owner until someone takes it', async () => {
+  it('keeps a draft with no known owner where it is, and gives it as one', async () => {
     await putDrafts('slides-db', [draft('p1')])
 
     await signIn('b@x.com')
 
+    const { unownedDrafts } = await import('./drafts')
+    expect(await unownedDrafts('p1')).toMatchObject([{ id: 'p1' }])
     expect(await draftIds('slides-db')).toEqual(['p1'])
-    const { takeUnownedDraft } = await import('./drafts')
-    expect(await takeUnownedDraft('p1', 'b@x.com')).toMatchObject({ id: 'p1', user: 'b@x.com' })
-    expect(await draftIds('slides-db:b@x.com')).toEqual(['p1'])
+    expect(await draftIds('slides-db:b@x.com')).toEqual([])
   })
 
-  it('keeps the shared draft another tab rewrote while it was being taken', async () => {
-    await putDrafts('slides-db', [draft('p1')])
-    await putDrafts('slides-db:b@x.com', [{ ...draft('p1', 'b@x.com'), content: [{ id: 'own' }] }])
-    const rewritten = { ...draft('p1'), content: [{ id: 'rewritten' }], updatedAt: 2 }
+  it('reading drafts with no known owner never creates the shared database', async () => {
+    const { unownedDrafts } = await import('./drafts')
 
-    const { takeUnownedDraft } = await import('./drafts')
-    await takeUnownedDraft('p1', 'b@x.com', () => putDrafts('slides-db', [rewritten]))
-
-    expect(await draftIds('slides-db')).toEqual(['p1'])
+    expect(await unownedDrafts('p1')).toEqual([])
+    const dbNames = (await indexedDB.databases()).map((db) => db.name)
+    expect(dbNames).not.toContain('slides-db')
   })
 })

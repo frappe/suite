@@ -78,55 +78,49 @@ export async function adoptLegacyDrafts(previousUser) {
   legacyDbDeleted = true
 }
 
-// The shared database's draft for `id` that names no one goes to `user`. Where `user` already
-// holds a different dirty draft, `keepApart` keeps the shared one as its own copy first; the
-// shared one is deleted only after that, and only while it is still as read
-export async function takeUnownedDraft(id, user, keepApart) {
+// Opens the shared database only if it is there, so a read never creates it again
+function openLegacyDb() {
   if (legacyDbDeleted) {
-    return null
+    return Promise.resolve(null)
   }
 
-  const legacyDb = await openDraftsDb(DRAFTS_DB_NAME)
+  const request = indexedDB.open(DRAFTS_DB_NAME)
+  request.onupgradeneeded = () => request.transaction.abort()
+  return requestResult(request).catch(() => null)
+}
+
+// The shared database's dirty drafts that name no one, where they are; only an editor of the
+// presentation is shown one. No id reads every presentation's
+export async function unownedDrafts(id) {
+  const legacyDb = await openLegacyDb()
+  if (!legacyDb) {
+    return []
+  }
+
   try {
-    const record = await requestResult(draftsStore(legacyDb, 'readonly').get(id))
-    if (!record || record.user) {
-      return null
+    if (!legacyDb.objectStoreNames.contains(STORE)) {
+      return []
     }
 
-    const owned = await placeUnlessDirty(user, { ...record, user })
-    if (owned && record.dirty && JSON.stringify(owned.content) !== JSON.stringify(record.content)) {
-      await keepApart(record)
-    }
-
-    await deleteIfUnchanged(legacyDb, { ...record, content: JSON.stringify(record.content) })
-    return { ...record, user }
+    // An undefined id is no query, so it reads them all
+    const records = await requestResult(draftsStore(legacyDb, 'readonly').getAll(id))
+    return records.filter((record) => record.dirty && !record.user)
   } finally {
     legacyDb.close()
   }
 }
 
-// Puts the record unless `user` holds a dirty draft of it, which it gives back instead;
-// the check and the put share one transaction, so another tab's dirty write between them stays
-async function placeUnlessDirty(user, record) {
-  const db = await openDraftsDb(draftsDbName(user))
-  try {
-    return await new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE, 'readwrite')
-      let owned = null
-      const request = tx.objectStore(STORE).get(record.id)
-      request.onsuccess = () => {
-        if (request.result?.dirty) {
-          owned = request.result
-        } else {
-          tx.objectStore(STORE).put(record)
-        }
-      }
+// Deletes the shared draft only while it is still `shown`, as deleteDraft does
+export async function deleteUnownedDraft(shown) {
+  const legacyDb = await openLegacyDb()
+  if (!legacyDb) {
+    return
+  }
 
-      tx.oncomplete = () => resolve(owned)
-      tx.onabort = () => reject(tx.error)
-    })
+  try {
+    await deleteIfUnchanged(legacyDb, shown)
   } finally {
-    db.close()
+    legacyDb.close()
   }
 }
 

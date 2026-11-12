@@ -471,7 +471,12 @@ const operationConvertVersion: MutationRef<
   loadValidators: async () => (await import('./validators')).operationConvertVersion,
 }
 
-export type RecoveryNamesOutputRecoveryName = { presentation: string; node: string; title: string }
+export type RecoveryNamesOutputRecoveryName = {
+  presentation: string
+  node: string
+  title: string
+  can_edit: boolean
+}
 
 export type RecoveryNamesInput = { presentations: Array<string>; nodes: Array<string> }
 

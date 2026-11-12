@@ -5,13 +5,17 @@ import { slidesAdapter } from '@/apps/slides/collab/adapter'
 import { readSlides } from '@/apps/slides/collab/deck'
 import {
   discardRecovery,
-  keepRecovery,
   readRecovery,
   recoveryFile,
   recoveryNodes,
   saveThroughBrowser,
 } from '@/apps/slides/surface/recovery'
-import { deleteDraft, settleDrafts, takeUnownedDraft } from '@/apps/slides/utils/drafts'
+import {
+  deleteDraft,
+  deleteUnownedDraft,
+  settleDrafts,
+  unownedDrafts,
+} from '@/apps/slides/utils/drafts'
 import { openSignedInDeviceStore, type RecoveryRecord } from '@/platform/collab'
 import { getCookieSessionUser } from '@/platform/session'
 
@@ -39,9 +43,10 @@ interface OldDraft {
   updatedAt: number
 }
 
-type RecoveryName = { presentation: string; node: string; title: string }
+type RecoveryName = { presentation: string; node: string; title: string; can_edit: boolean }
 
 const DRAFT_PREFIX = 'draft:'
+const SHARED_PREFIX = 'shared:'
 const STORE_PREFIX = 'store:'
 const PAGE_PREFIX = 'page:'
 
@@ -50,39 +55,38 @@ function oldDrafts(id?: string): Promise<OldDraft[]> {
   return settleDrafts(getCookieSessionUser(), id).catch(() => [])
 }
 
+// A browser without IndexedDB keeps none
+function sharedDrafts(id?: string): Promise<OldDraft[]> {
+  return unownedDrafts(id).catch(() => [])
+}
+
 /**
- * The old draft of one presentation, once its clean draft is gone; null when none is dirty.
- * An editor first takes a draft the shared store kept for no one, as the row save did. Where
- * the editor's own draft differs, the shared one is kept apart as a page copy of its own.
+ * The old drafts of one presentation, newest first, once its clean draft is gone. An editor
+ * is also shown a draft the shared store kept for no one, where it is, as its own copy.
  */
-export async function oldDraftCopy(
+export async function oldDraftCopies(
   presentation: string,
   node: string,
   title: string,
   { isEditor }: { isEditor: boolean },
 ) {
-  if (isEditor) {
-    const keepApart = (shared: OldDraft) =>
-      keepRecovery(node, shared.content, { sticky: true, now: new Date(shared.updatedAt) })
-    await takeUnownedDraft(presentation, getCookieSessionUser() || 'Guest', keepApart).catch(
-      () => null,
-    )
-  }
-
-  const [draft] = await oldDrafts(presentation)
-  if (!draft) {
-    return null
-  }
-
-  return draftCopy(draft, { presentation, node, title })
+  const name = { presentation, node, title, can_edit: isEditor }
+  const [drafts, shared] = await Promise.all([
+    oldDrafts(presentation),
+    isEditor ? sharedDrafts(presentation) : [],
+  ])
+  return newestFirst([
+    ...drafts.map((draft) => draftCopy(draft, name)),
+    ...shared.map((draft) => draftCopy(draft, name, SHARED_PREFIX)),
+  ])
 }
 
-function draftCopy(draft: OldDraft, name?: RecoveryName): RecoveryCopy {
+function draftCopy(draft: OldDraft, name?: RecoveryName, prefix = DRAFT_PREFIX): RecoveryCopy {
   const slides = draft.content
   const fields = { node: name?.node ?? null, title: name?.title ?? '', slides }
   return {
     ...fields,
-    key: `${DRAFT_PREFIX}${draft.id}`,
+    key: `${prefix}${draft.id}`,
     savedAt: new Date(draft.updatedAt),
     size: sizeOf(slides),
   }
@@ -151,23 +155,30 @@ async function recoveryNames(presentations: string[], nodes: string[]) {
 
 /** This device's copies, newest first. */
 export async function listCopies(): Promise<RecoveryCopy[]> {
-  const [drafts, records] = await Promise.all([oldDrafts(), storeRecords()])
+  const [drafts, shared, records] = await Promise.all([oldDrafts(), sharedDrafts(), storeRecords()])
   const nodes = recoveryNodes()
-  const names = await recoveryNames(
-    drafts.map((draft) => draft.id),
-    nodes,
-  )
+  const presentations = new Set([...drafts, ...shared].map((draft) => draft.id))
+  const names = await recoveryNames([...presentations], nodes)
   const byPresentation = new Map(names.map((name) => [name.presentation, name]))
   const byNode = new Map(names.map((name) => [name.node, name]))
-  const copies = [
+  // A shared draft shows only to an editor of its presentation
+  const editable = shared.filter((draft) => byPresentation.get(draft.id)?.can_edit)
+  return newestFirst([
     ...drafts.map((draft) => draftCopy(draft, byPresentation.get(draft.id))),
+    ...editable.map((draft) => draftCopy(draft, byPresentation.get(draft.id), SHARED_PREFIX)),
     ...records.flatMap(storeCopy),
     ...pageCopies(byNode),
-  ]
+  ])
+}
+
+function newestFirst(copies: RecoveryCopy[]) {
   return copies.sort((first, second) => second.savedAt.getTime() - first.savedAt.getTime())
 }
 
-/** Each copy's presentation, read with no server call: a draft names its presentation, the rest their node. */
+/**
+ * Each copy's presentation, read with no server call: a draft names its presentation, the rest
+ * their node. A shared draft isn't counted, as only the server knows who may edit it.
+ */
 export async function copyEntries() {
   const [drafts, records] = await Promise.all([oldDrafts(), storeRecords()])
   const pages = recoveryNodes().flatMap((node) => readRecovery(node).map(() => node))
@@ -178,10 +189,14 @@ export async function copyEntries() {
 
 /** Discards the copy as it was shown; a newer draft another tab wrote since stays. */
 export async function discardCopy(copy: Pick<RecoveryCopy, 'key' | 'savedAt' | 'slides'>) {
+  const shown = { updatedAt: copy.savedAt.getTime(), content: JSON.stringify(copy.slides) }
   if (copy.key.startsWith(DRAFT_PREFIX)) {
-    const id = copy.key.slice(DRAFT_PREFIX.length)
-    const shown = { id, updatedAt: copy.savedAt.getTime(), content: JSON.stringify(copy.slides) }
-    await deleteDraft(getCookieSessionUser(), shown)
+    await deleteDraft(getCookieSessionUser(), { ...shown, id: copy.key.slice(DRAFT_PREFIX.length) })
+    return
+  }
+
+  if (copy.key.startsWith(SHARED_PREFIX)) {
+    await deleteUnownedDraft({ ...shown, id: copy.key.slice(SHARED_PREFIX.length) })
     return
   }
 

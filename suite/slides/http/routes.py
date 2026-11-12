@@ -132,6 +132,7 @@ class RecoveryName(TypedDict):
     presentation: str
     node: str
     title: str
+    can_edit: bool
 
 
 class ConvertVersion(TypedDict):
