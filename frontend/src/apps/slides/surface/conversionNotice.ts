@@ -23,7 +23,6 @@ const REFUSAL_REASONS = new Map<string, () => string>(
     child_timeout: () => translate('the upgrade took too long'),
     child_crash: () => translate('the upgrade stopped unexpectedly'),
     bad_answer: () => translate('the upgrade gave an unreadable answer'),
-    combined: () => translate('it is a combined presentation, with no slides of its own'),
   }),
 )
 

@@ -853,7 +853,7 @@ describe('a deck on the content layer', () => {
     async function refusedDownload(slides: unknown[]) {
       const record = { schema: 'presentation/1', slides }
       versionBytes.current = new TextEncoder().encode(JSON.stringify(record))
-      versionConversion.answer = { reason: 'check' }
+      versionConversion.answer = { reason: "some of its content can't be upgraded" }
       vi.mocked(dialog.confirm).mockClear()
       vi.mocked(toast.error).mockClear()
       mounted = await openedSurface({ deck: { is_converted: true } })
@@ -867,7 +867,7 @@ describe('a deck on the content layer', () => {
       )
       await asked.onConfirm()
       const message =
-        "This version couldn't be upgraded, so it can't be restored. You can download it. Reason: the upgraded version didn't match the original."
+        "This version couldn't be upgraded, so it can't be restored. You can download it. Reason: some of its content can't be upgraded."
       const [, options] = fromAny<
         [string, { action: { label: string; onClick: () => void } }],
         unknown

@@ -3,7 +3,6 @@ import type { CollabRoom } from '@/platform/collab'
 import { noticeFor, refusedNotice, type RestoreNotice } from '@/platform/collab/restoreNotices'
 import { translate as __ } from '@/platform/translation'
 
-import { refusalReason } from './conversionNotice'
 import { readVersionBody, type ConvertedVersion, type VersionBody } from './versions'
 
 type RestoringRoom = Pick<CollabRoom, 'doc' | 'flush' | 'restoreVersion'>
@@ -39,7 +38,8 @@ export async function restoreVersion(
     }
 
     if ('refused' in converted) {
-      return refusedNotice(refusalReason(converted.refused))
+      // the server words the reason for whoever asked
+      return refusedNotice(converted.refused)
     }
 
     body = converted
