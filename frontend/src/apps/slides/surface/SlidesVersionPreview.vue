@@ -104,9 +104,9 @@ const slideWidth = computed(() => {
         :disabled="isFirst"
         @click="previous"
       />
-      <span class="text-sm tabular-nums text-ink-gray-6"
-        >{{ position }} of {{ slides.length }}</span
-      >
+      <span class="text-sm tabular-nums text-ink-gray-6">{{
+        __('{0} of {1}', [String(position), String(slides.length)])
+      }}</span>
       <Button
         icon="lucide-chevron-right"
         :aria-label="__('Next slide')"

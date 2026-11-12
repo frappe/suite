@@ -112,7 +112,7 @@
   "frontend/src/apps/slides/components/controls/ArrowheadSelect.vue": 2,
   "frontend/src/apps/slides/components/controls/ColorPicker.vue": 3,
   "frontend/src/apps/slides/components/controls/LineStyleSelect.vue": 2,
-  "frontend/src/apps/slides/surface/SlidesSurface.vue": 18,
+  "frontend/src/apps/slides/surface/SlidesSurface.vue": 11,
   "frontend/src/apps/slides/surface/SlidesVersionsPanel.vue": 11,
   "frontend/src/apps/writer/components/DocumentList.vue": 3,
   "frontend/src/apps/writer/surface/WriterSurface.vue": 8,
