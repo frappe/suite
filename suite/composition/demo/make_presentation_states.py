@@ -17,8 +17,18 @@ from suite.slides.content.conversion import SLIDE_COLUMNS, legacy_deck
 
 
 def write() -> None:
-    """Convert each demo presentation's rows and write their states, refusing any the converter changes."""
+    """Write each demo presentation's state, as `converted_states` makes it."""
     states: dict[str, str] = {}
+    for title, state in converted_states().items():
+        states[title] = base64.b64encode(state).decode()
+        print(title, len(state), "bytes")
+
+    assets.PRESENTATION_STATES.write_text(json.dumps(states, indent=2) + "\n", encoding="utf-8")
+
+
+def converted_states() -> dict[str, bytes]:
+    """Convert each demo presentation's rows, by title, refusing any the converter changes."""
+    states: dict[str, bytes] = {}
     for title, story in assets.PRESENTATIONS.items():
         rows: list[frappe._dict] = []
         for row in assets.slide_rows(story):
@@ -36,7 +46,6 @@ def write() -> None:
         if converted.dropped:
             raise RuntimeError(f"The converter dropped parts of {title!r}: {converted.dropped}")
 
-        states[title] = base64.b64encode(converted.state).decode()
-        print(title, len(converted.state), "bytes")
+        states[title] = converted.state
 
-    assets.PRESENTATION_STATES.write_text(json.dumps(states, indent=2) + "\n", encoding="utf-8")
+    return states

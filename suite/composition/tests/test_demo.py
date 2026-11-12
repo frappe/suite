@@ -13,8 +13,9 @@ import pycrdt
 from suite.composition.demo import assets, content, mail
 from suite.composition.demo.agenda import EVENTS
 from suite.composition.demo.cast import EVERYONE, PEOPLE
+from suite.composition.demo.make_presentation_states import converted_states
 from suite.content import checker, copies
-from suite.slides.content import CHECKER_BUILD
+from suite.slides.content import CHECKER_BUILD, CONVERTER_BUILD
 from suite.slides.content.conversion import check_state
 from suite.slides.tests.test_system_templates import lines_of, read_deck
 from suite.writer.content import DECLARED, EDITOR
@@ -87,6 +88,48 @@ def stored_presentations() -> dict[str, bytes]:
     return {title: base64.b64decode(state) for title, state in found.items()}
 
 
+# Every field a state draws, with its CRDT identities taken out: a slide's key, and the slide an element names
+def rendered(state: bytes) -> dict:
+    doc: pycrdt.Doc = pycrdt.Doc()
+    doc.apply_update(state)
+    slides = doc.get("slides", type=pycrdt.Map)
+    elements = doc.get("elements", type=pycrdt.Map)
+    ordered = sorted(elements.values(), key=lambda element: element["order"])
+    drawn: list[dict] = []
+    for key in sorted(slides.keys(), key=lambda key: slides[key]["order"]):
+        on_slide = [plain(element) for element in ordered if element["parent"] == key]
+        drawn.append({**plain(slides[key]), "elements": on_slide})
+
+    return {"roots": sorted(doc.keys()), "slides": drawn, "element_ids": sorted(elements.keys())}
+
+
+# One slide or element's fields as plain values, its own place and parent left out
+def plain(entry: pycrdt.Map) -> dict:
+    fields: dict = {}
+    for name, value in entry.items():
+        if name in {"order", "parent"}:
+            continue
+
+        if isinstance(value, pycrdt.XmlFragment):
+            value = xml_tree(value)
+
+        fields[name] = value
+
+    return fields
+
+
+# Rich text as its tags, attributes, runs and marks, since its markup lists attributes in no set order
+def xml_tree(node: pycrdt.XmlFragment | pycrdt.XmlElement | pycrdt.XmlText):
+    if isinstance(node, pycrdt.XmlText):
+        return node.diff()
+
+    children = [xml_tree(child) for child in node.children]
+    if isinstance(node, pycrdt.XmlElement):
+        return {"tag": node.tag, "attributes": dict(node.attributes), "children": children}
+
+    return children
+
+
 # Each slide's elements, as their kinds and the lines they show
 def shown_slides(state: bytes) -> list[list[tuple[str, list[str]]]]:
     shown: list[list[tuple[str, list[str]]]] = []
@@ -132,6 +175,16 @@ class TestDemoPresentations(unittest.TestCase):
             with self.subTest(presentation=title):
                 self.assertEqual(checker.judge(CHECKER_BUILD, state, []), checker.Verdict(None))
                 check_state(state)
+
+    def test_each_stored_presentation_is_what_its_rows_convert_to_today(self):
+        if not CONVERTER_BUILD.is_file():
+            self.skipTest("needs the built converter bundle")
+
+        self.maxDiff = None
+        fresh = converted_states()
+        for title, state in stored_presentations().items():
+            with self.subTest(presentation=title):
+                self.assertEqual(rendered(state), rendered(fresh[title]))
 
     def test_each_stored_presentation_shows_its_story_slide_by_slide(self):
         stories = {"Q3 review and Q4 priorities": assets.REVIEW, "Beacon collections launch": assets.LAUNCH}
