@@ -20,7 +20,7 @@ export function firstLayout<Layout>(template: { title: string; layouts: Layout[]
 type ReadSaved = (nodeId: string) => Promise<Y.Doc | null>
 
 let readSaved: ReadSaved | null = null
-// one read per listed template; a failed one is forgotten, so the next need tries again
+// one read per listed template; a failed or empty one is forgotten, so the next need tries again
 const drawings = new WeakMap<GetTemplatesOutputTemplate, Promise<void>>()
 
 /** The surface hands over how to read a saved presentation, since the stores hold no credentials. */
@@ -52,9 +52,16 @@ function drawOnce(template: GetTemplatesOutputTemplate) {
   if (!drawing) {
     drawing = read(template.node)
       .then((doc) => {
-        const slides = doc ? drawnSlides(doc) : []
+        if (!doc) {
+          drawings.delete(listed)
+          return
+        }
+
         // SAFETY: a drawn slide carries a row's fields under their row names, its elements as a list
-        template.layouts = withPictures(slides, template.thumbnails) as typeof template.layouts
+        template.layouts = withPictures(
+          drawnSlides(doc),
+          template.thumbnails,
+        ) as typeof template.layouts
       })
       .catch(() => {
         drawings.delete(listed)
