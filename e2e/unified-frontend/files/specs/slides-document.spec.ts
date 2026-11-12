@@ -126,7 +126,8 @@ test("losing edit access freezes the deck, sends no write and offers the changes
 
 	// A trashed item is read-only; its Trashed badge takes the place of View only.
 	await expect(page.getByText("Trashed", { exact: true })).toBeVisible();
-	await expect(page.getByText("Editing access changed. This presentation is now view only.")).toBeVisible();
+	// The edit is still unsent, so the toast says it is kept, not only that the deck is view only
+	await expect(page.getByText("Editing access changed. Your unsaved changes are kept on this device.")).toBeVisible();
 	const frozenAt = seen.requests.length;
 	await page.waitForTimeout(3_000);
 	// The room may still send its unsent work once, within a short bound; this test's route aborts it
@@ -137,8 +138,20 @@ test("losing edit access freezes the deck, sends no write and offers the changes
 
 	const user = (await page.context().cookies()).find((cookie) => cookie.name === "user_id");
 	expect(user).toBeDefined();
-	const recoveryKey = `suite:slides-recovery:${decodeURIComponent(user!.value)}:${deck.name}`;
-	const recovery = () => page.evaluate((key) => localStorage.getItem(key), recoveryKey);
+	// Each copy has a key of its own under the presentation's
+	const person = decodeURIComponent(user!.value);
+	const recoveryKey = `suite:slides-recovery:${person}:${deck.name}:`;
+	function recovery() {
+		return page.evaluate(
+			(prefix) =>
+				JSON.stringify(
+					Object.keys(localStorage)
+						.filter((key) => key.startsWith(prefix))
+						.map((key) => JSON.parse(localStorage.getItem(key)!)),
+				),
+			recoveryKey,
+		);
+	}
 	expect(await recovery()).toContain("rectangle");
 
 	const download = page.waitForEvent("download");
@@ -148,8 +161,8 @@ test("losing edit access freezes the deck, sends no write and offers the changes
 	expect(JSON.parse(readFileSync((await file.path())!, "utf8")).slides[0].elements).toEqual(
 		expect.arrayContaining([expect.objectContaining({ shapeType: "rectangle" })]),
 	);
-	// A browser save can't be confirmed, so the download marks the copy and keeps it.
-	expect(JSON.parse((await recovery())!)).toEqual(
+	// The toast saves the slides on screen, so the kept copy stays as it was, not marked downloaded
+	expect(JSON.parse(await recovery())).not.toEqual(
 		expect.arrayContaining([expect.objectContaining({ downloaded: true })]),
 	);
 	expect(await recovery()).toContain("rectangle");
