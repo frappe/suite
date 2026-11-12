@@ -1575,6 +1575,25 @@ describe('a deck on the content layer', () => {
       expect(written).not.toHaveBeenCalled()
     })
 
+    it('adds a real blank slide to an empty presentation once the show is left for the editor', async () => {
+      const doc = convertedRoom()
+      mounted = await openedSurface({ path: '/present?slide=1', deck: { is_converted: true } })
+      await settle()
+
+      const { params } = mounted.router.currentRoute.value
+      await mounted.router.replace({ name: 'document-host', params })
+      await settle()
+
+      const [blank] = slideIds(doc)
+      expect(slideIds(doc)).toHaveLength(1)
+      expect(
+        fromAny<StoreSlide[], unknown>(editorSlides.value).map(({ clientId }) => clientId),
+      ).toEqual([blank])
+      await elementStore.addShapeElement('rectangle')
+      await settle()
+      expect(elementIds(doc, blank)).toHaveLength(1)
+    })
+
     it('starts the slideshow from Mod+P', async () => {
       convertedRoom('one')
       mounted = await openedSurface({ deck: { is_converted: true } })

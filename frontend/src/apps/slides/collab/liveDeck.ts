@@ -703,6 +703,8 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
     push,
     /** Draws the document again without writing to it. Send the store's changes first. */
     redraw: merge,
+    /** Sends the store's changes, then draws the document with the blank an emptied one needs. */
+    pull,
     /** Puts the layout on the presentation's one blank slide. False if it isn't blank any more. */
     fillBlank,
     holdsPosition: (id: string) => savedFrame(id)?.transform === CENTRED && host.fontsPending(),

@@ -280,6 +280,12 @@ export function useConvertedRoom({
     })
     presence.value = liveRoom.presence
     const stopRestores = liveRoom.onChange(() => liveDeck.followRestore())
+    // leaving the show runs the repair a writable open runs, so an emptied presentation gets its blank
+    const stopRepair = watch(canWrite, (writable) => {
+      if (writable) {
+        liveDeck.pull()
+      }
+    })
     const stopSelection = watch(
       activeElementIds,
       (ids: string[]) => {
@@ -291,6 +297,7 @@ export function useConvertedRoom({
     )
     return () => {
       stopRestores()
+      stopRepair()
       stopSelection()
       liveDeck.stop()
       setLiveSeat(null)
