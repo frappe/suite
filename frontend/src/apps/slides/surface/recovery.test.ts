@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   downloadRecovery,
+  keepOutlivedRecovery,
   keepRecovery,
   readRecovery,
   recoveryFile,
@@ -113,6 +114,23 @@ describe('Slides recovery copy', () => {
 
     full.mockRestore()
     expect(kept()).toEqual([['older', true]])
+  })
+
+  it('keeps an earlier page copy past every later copy when the store was too full to mark it', () => {
+    // a copy from before the sticky marker, and a store too full to add it
+    localStorage.setItem(
+      'suite:slides-recovery:me@example.com:node-full',
+      JSON.stringify([{ savedAt: '2026-09-30T10:00:00.000Z', slides: [{ clientId: 'unsent' }] }]),
+    )
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementationOnce(() => {
+      throw new DOMException('full', 'QuotaExceededError')
+    })
+    keepOutlivedRecovery('node-full', [{ clientId: 'shown' }])
+
+    keepRecovery('node-full', [{ clientId: 'later' }])
+    keepRecovery('node-full', [{ clientId: 'latest' }])
+
+    expect(kept('node-full').map(([clientId]) => clientId)).toEqual(['unsent', 'latest'])
   })
 
   it('offers a copy as a JSON file named after the presentation', async () => {

@@ -78,6 +78,17 @@ function holds(copy: RecoveryCopy, slides: readonly unknown[]) {
   return JSON.stringify(copy.slides) === JSON.stringify(slides)
 }
 
+// the copies a full store kept from being marked sticky, which stay sticky for the page
+const unmarkedSticky = new Set<string>()
+
+function stickyKey(node: string, copy: RecoveryCopy) {
+  return JSON.stringify([key(node), copy.savedAt, copy.slides])
+}
+
+function isSticky(node: string, copy: RecoveryCopy) {
+  return !!copy.sticky || unmarkedSticky.has(stickyKey(node, copy))
+}
+
 /** Throws when the browser's store is full. */
 export function keepRecovery(
   node: string,
@@ -88,18 +99,18 @@ export function keepRecovery(
   const copy = { savedAt: now.toISOString(), slides: [...slides], sticky }
   const same = copies.find((kept) => holds(kept, slides))
   if (same) {
-    const moved = { ...same, savedAt: copy.savedAt, sticky: sticky || same.sticky }
+    const moved = { ...same, savedAt: copy.savedAt, sticky: sticky || isSticky(node, same) }
     writeCopies(node, [...copies.filter((kept) => kept !== same), moved])
     return
   }
 
-  writeCopies(node, [...copies.filter((kept) => sticky || kept.sticky), copy])
+  writeCopies(node, [...copies.filter((kept) => sticky || isSticky(node, kept)), copy])
 }
 
 /**
  * Run once the open first draws the presentation, before it keeps a copy of its own: a copy that
  * differs from what is shown may hold edits that are nowhere else, so no later copy replaces it.
- * On a full store the copy just stays as it was.
+ * On a full store the copy stays as it was, and sticky for the page.
  */
 export function keepOutlivedRecovery(node: string, shown: readonly unknown[]): void {
   const copies = readRecovery(node)
@@ -107,7 +118,11 @@ export function keepOutlivedRecovery(node: string, shown: readonly unknown[]): v
   try {
     writeCopies(node, kept)
   } catch {
-    // a later copy may replace it, as before
+    for (const copy of kept) {
+      if (copy.sticky) {
+        unmarkedSticky.add(stickyKey(node, copy))
+      }
+    }
   }
 }
 
