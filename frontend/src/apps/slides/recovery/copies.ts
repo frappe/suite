@@ -5,6 +5,7 @@ import { slidesAdapter } from '@/apps/slides/collab/adapter'
 import { readSlides } from '@/apps/slides/collab/deck'
 import {
   discardRecovery,
+  keepRecovery,
   readRecovery,
   recoveryFile,
   recoveryNodes,
@@ -51,7 +52,8 @@ function oldDrafts(id?: string): Promise<OldDraft[]> {
 
 /**
  * The old draft of one presentation, once its clean draft is gone; null when none is dirty.
- * An editor first takes a draft the shared store kept for no one, as the row save did.
+ * An editor first takes a draft the shared store kept for no one, as the row save did. Where
+ * the editor's own draft differs, the shared one is kept apart as a page copy of its own.
  */
 export async function oldDraftCopy(
   presentation: string,
@@ -60,7 +62,11 @@ export async function oldDraftCopy(
   { isEditor }: { isEditor: boolean },
 ) {
   if (isEditor) {
-    await takeUnownedDraft(presentation, getCookieSessionUser() || 'Guest').catch(() => null)
+    const keepApart = (shared: OldDraft) =>
+      keepRecovery(node, shared.content, { sticky: true, now: new Date(shared.updatedAt) })
+    await takeUnownedDraft(presentation, getCookieSessionUser() || 'Guest', keepApart).catch(
+      () => null,
+    )
   }
 
   const [draft] = await oldDrafts(presentation)

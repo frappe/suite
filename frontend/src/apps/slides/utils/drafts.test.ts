@@ -74,4 +74,15 @@ describe('drafts per user', () => {
     expect(await takeUnownedDraft('p1', 'b@x.com')).toMatchObject({ id: 'p1', user: 'b@x.com' })
     expect(await draftIds('slides-db:b@x.com')).toEqual(['p1'])
   })
+
+  it('keeps the shared draft another tab rewrote while it was being taken', async () => {
+    await putDrafts('slides-db', [draft('p1')])
+    await putDrafts('slides-db:b@x.com', [{ ...draft('p1', 'b@x.com'), content: [{ id: 'own' }] }])
+    const rewritten = { ...draft('p1'), content: [{ id: 'rewritten' }], updatedAt: 2 }
+
+    const { takeUnownedDraft } = await import('./drafts')
+    await takeUnownedDraft('p1', 'b@x.com', () => putDrafts('slides-db', [rewritten]))
+
+    expect(await draftIds('slides-db')).toEqual(['p1'])
+  })
 })

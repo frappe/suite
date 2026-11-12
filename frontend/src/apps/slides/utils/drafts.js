@@ -78,7 +78,10 @@ export async function adoptLegacyDrafts(previousUser) {
   legacyDbDeleted = true
 }
 
-export async function takeUnownedDraft(id, user) {
+// The shared database's draft for `id` that names no one goes to `user`. Where `user` already
+// holds a different dirty draft, `keepApart` keeps the shared one as its own copy first; the
+// shared one is deleted only after that, and only while it is still as read
+export async function takeUnownedDraft(id, user, keepApart) {
   if (legacyDbDeleted) {
     return null
   }
@@ -90,11 +93,40 @@ export async function takeUnownedDraft(id, user) {
       return null
     }
 
-    await moveDraftTo(user, record)
-    await requestResult(draftsStore(legacyDb, 'readwrite').delete(id))
+    const owned = await placeUnlessDirty(user, { ...record, user })
+    if (owned && record.dirty && JSON.stringify(owned.content) !== JSON.stringify(record.content)) {
+      await keepApart(record)
+    }
+
+    await deleteIfUnchanged(legacyDb, { ...record, content: JSON.stringify(record.content) })
     return { ...record, user }
   } finally {
     legacyDb.close()
+  }
+}
+
+// Puts the record unless `user` holds a dirty draft of it, which it gives back instead;
+// the check and the put share one transaction, so another tab's dirty write between them stays
+async function placeUnlessDirty(user, record) {
+  const db = await openDraftsDb(draftsDbName(user))
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, 'readwrite')
+      let owned = null
+      const request = tx.objectStore(STORE).get(record.id)
+      request.onsuccess = () => {
+        if (request.result?.dirty) {
+          owned = request.result
+        } else {
+          tx.objectStore(STORE).put(record)
+        }
+      }
+
+      tx.oncomplete = () => resolve(owned)
+      tx.onabort = () => reject(tx.error)
+    })
+  } finally {
+    db.close()
   }
 }
 
@@ -138,23 +170,27 @@ function settleDraft(cursor, user, kept) {
 // Deletes the draft only while it is still `shown`, by its stamp and its slides. One another
 // tab wrote since stays, as the check and the delete share one transaction
 export async function deleteDraft(user, shown) {
-  const { id, updatedAt, content } = shown
   const db = await openDraftsDb(draftsDbName(user || 'Guest'))
   try {
-    await new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE, 'readwrite')
-      const request = tx.objectStore(STORE).get(id)
-      request.onsuccess = () => {
-        const stored = request.result
-        if (stored?.updatedAt === updatedAt && JSON.stringify(stored.content) === content) {
-          tx.objectStore(STORE).delete(id)
-        }
-      }
-
-      tx.oncomplete = () => resolve()
-      tx.onabort = () => reject(tx.error)
-    })
+    await deleteIfUnchanged(db, shown)
   } finally {
     db.close()
   }
+}
+
+// `content` is the slides as JSON
+function deleteIfUnchanged(db, { id, updatedAt, content }) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readwrite')
+    const request = tx.objectStore(STORE).get(id)
+    request.onsuccess = () => {
+      const stored = request.result
+      if (stored?.updatedAt === updatedAt && JSON.stringify(stored.content) === content) {
+        tx.objectStore(STORE).delete(id)
+      }
+    }
+
+    tx.oncomplete = () => resolve()
+    tx.onabort = () => reject(tx.error)
+  })
 }

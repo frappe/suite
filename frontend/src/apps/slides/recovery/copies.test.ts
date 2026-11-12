@@ -4,7 +4,7 @@ import * as Y from 'yjs'
 import { writeDeck } from '@/apps/slides/collab/deck'
 import { keepRecovery } from '@/apps/slides/surface/recovery'
 import { openDraftsDb } from '@/apps/slides/utils/drafts'
-import { draftsDbName } from '@/apps/slides/utils/slidesCaches'
+import { DRAFTS_DB_NAME, draftsDbName } from '@/apps/slides/utils/slidesCaches'
 import { openSignedInDeviceStore } from '@/platform/collab'
 
 import { copyEntries, discardCopy, downloadCopy, listCopies, oldDraftCopy } from './copies'
@@ -186,6 +186,72 @@ describe('old drafts as recovery copies (Q16)', () => {
     await discardCopy(copy!)
 
     expect(await draftIds()).toEqual([])
+  })
+})
+
+describe('a draft the shared store kept for no one', () => {
+  const SHARED = [{ name: 'row-1', elements: [{ type: 'text', content: 'Shared words' }] }]
+
+  async function sharedDrafts(change?: (store: IDBObjectStore) => IDBRequest) {
+    const db = await openDraftsDb(DRAFTS_DB_NAME)
+    const store = db.transaction('presentations', 'readwrite').objectStore('presentations')
+    if (change) await requestResult(change(store))
+    const ids = await requestResult(store.getAllKeys())
+    db.close()
+    return ids
+  }
+
+  function putShared(fields: Record<string, unknown>) {
+    return sharedDrafts((store) => store.put(draft('deck-plan', { user: undefined, ...fields })))
+  }
+
+  afterEach(() => sharedDrafts((store) => store.clear()))
+
+  it.each([
+    ['older', 100, 200],
+    ['newer', 300, 200],
+  ])("an editor keeps both when it's %s than their own and differs", async (_, sharedAt, ownAt) => {
+    await putShared({ content: SHARED, updatedAt: sharedAt })
+    await putDraft(draft('deck-plan', { updatedAt: ownAt }))
+
+    const copy = await oldDraftCopy('deck-plan', 'node-plan', 'Quarterly Plan', {
+      isEditor: true,
+    })
+
+    expect(copy?.slides).toEqual(SLIDES)
+    const copies = await listCopies()
+    expect(copies.map((kept) => [kept.slides, kept.savedAt.getTime()])).toEqual(
+      expect.arrayContaining([
+        [SLIDES, ownAt],
+        [SHARED, sharedAt],
+      ]),
+    )
+    expect(copies).toHaveLength(2)
+    expect(await sharedDrafts()).toEqual([])
+  })
+
+  it('an editor whose own draft holds the same slides keeps one copy', async () => {
+    await putShared({ updatedAt: 100 })
+    await putDraft(draft('deck-plan', { updatedAt: 200 }))
+
+    await oldDraftCopy('deck-plan', 'node-plan', 'Quarterly Plan', { isEditor: true })
+
+    expect((await listCopies()).map((kept) => kept.slides)).toEqual([SLIDES])
+    expect(await sharedDrafts()).toEqual([])
+  })
+
+  it("stays in the shared store when its copy can't be written", async () => {
+    await putShared({ content: SHARED, updatedAt: 100 })
+    await putDraft(draft('deck-plan', { updatedAt: 200 }))
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('full', 'QuotaExceededError')
+    })
+
+    await oldDraftCopy('deck-plan', 'node-plan', 'Quarterly Plan', { isEditor: true })
+    vi.restoreAllMocks()
+
+    expect(await sharedDrafts()).toEqual(['deck-plan'])
+    expect((await listCopies()).map((kept) => kept.slides)).toEqual([SLIDES])
   })
 })
 
