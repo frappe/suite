@@ -814,6 +814,24 @@ describe('a deck on the content layer', () => {
       expect(saves).toEqual([])
     })
 
+    it('leaves the live presentation alone when edit shortcuts are pressed over a version', async () => {
+      const live = convertedRoom('now')
+      versionBytes.current = await storedVersion(roomOf('first').doc)
+      mounted = await openedSurface({ deck: { is_converted: true } })
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+      await openVersions()
+      versionsPanel.preview('3')
+      await vi.waitFor(() => expect(previewOf(mounted!.root)?.textContent).toContain('first'))
+      const before = Array.from(encodeStateAsUpdate(live))
+
+      for (const combo of ['Mod+A', 'Delete', 'Backspace', 'Mod+D', 'Enter', 'Mod+Z', 'Mod+Y']) {
+        await press(combo)
+      }
+
+      expect(Array.from(encodeStateAsUpdate(live))).toEqual(before)
+      expect(saves).toEqual([])
+    })
+
     it('shows an old version from its rows', async () => {
       convertedRoom('now')
       const elements = [{ id: 'element-old', type: 'text', content: '<p>before collaboration</p>' }]

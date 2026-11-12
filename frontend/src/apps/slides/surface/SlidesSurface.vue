@@ -324,7 +324,11 @@ const history = useCommandHistory(slides, {
   actionOrder: historyMetaActionOrder,
 })
 setCommandHistory(history)
-useShortcuts(canvasReadonly, inSlideShowMode)
+// a previewed version hides the live presentation, so no shortcut may change it
+useShortcuts(
+  computed(() => canvasReadonly.value || !!previewed.value),
+  inSlideShowMode,
+)
 provide('inReadonlyMode', canvasReadonly)
 provide('inSlideShowMode', inSlideShowMode)
 provide('isOnline', online)
