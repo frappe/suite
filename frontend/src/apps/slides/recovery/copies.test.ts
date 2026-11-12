@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
 
-import { writeDeck } from '@/apps/slides/collab/deck'
+import { elementText, writeDeck } from '@/apps/slides/collab/deck'
 import { keepRecovery } from '@/apps/slides/surface/recovery'
 import { openDraftsDb } from '@/apps/slides/utils/drafts'
 import { DRAFTS_DB_NAME, draftsDbName } from '@/apps/slides/utils/slidesCaches'
@@ -14,6 +14,8 @@ vi.mock('@/api', () => ({
   api: { slides: { recovery: { names: 'recovery.names' } } },
   client: { query },
 }))
+
+vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
 
 let sessionUser: string | null = 'me@example.com'
 vi.mock('@/platform/session', async (importOriginal) => ({
@@ -64,10 +66,15 @@ function draft(id: string, fields: Record<string, unknown> = {}) {
   }
 }
 
-async function keepInRoomStore(node: string, title: string) {
+async function keepInRoomStore(node: string, title: string, words?: string) {
   const store = (await openSignedInDeviceStore('slides'))!
   const doc = new Y.Doc()
   writeDeck(doc, [{ id: 'one', elements: [{ id: 'title', type: 'text' }] }])
+  if (words) {
+    const paragraph = new Y.XmlElement('paragraph')
+    paragraph.insert(0, [new Y.XmlText(words)])
+    elementText(doc, 'title')!.insert(0, [paragraph])
+  }
   const state = Y.encodeStateAsUpdate(doc)
   await store.saveSession({ doc: node, sid: 's', lineage: 'L', cid: 1, bound: true })
   const entry = { doc: node, sid: 's', seq: 1, bytes: state, sha: '' }
@@ -337,7 +344,9 @@ describe("the live room's and the page's copies", () => {
     const [copy] = await listCopies()
 
     expect([copy!.node, copy!.title]).toEqual(['node-room', 'Room Deck'])
-    expect(copy!.slides).toMatchObject([{ id: 'one', elements: [{ id: 'title', type: 'text' }] }])
+    expect(copy!.slides).toMatchObject([
+      { clientId: 'one', elements: [{ id: 'title', type: 'text' }] },
+    ])
   })
 
   it("lists a page copy under its presentation's title", async () => {
@@ -497,5 +506,22 @@ describe('downloading a copy', () => {
     expect(saved[0]!.name).toBe('Quarterly Plan (recovered).json')
     expect(JSON.parse(await saved[0]!.text()).slides).toEqual(SLIDES)
     expect(await draftIds()).toEqual(['deck-plan'])
+  })
+
+  it("saves the words of what the live room kept, in the element's text", async () => {
+    await keepInRoomStore('node-room', 'Room Deck', 'ONLY UNSENT WORDS')
+    const [copy] = await listCopies()
+    const saved: File[] = []
+    vi.spyOn(URL, 'createObjectURL').mockImplementation((file) => {
+      if (file instanceof File) saved.push(file)
+      return 'blob:copy'
+    })
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+
+    downloadCopy(copy!)
+
+    const [slide] = JSON.parse(await saved[0]!.text()).slides
+    expect(slide.elements).toHaveLength(1)
+    expect(slide.elements[0].content).toContain('ONLY UNSENT WORDS')
   })
 })

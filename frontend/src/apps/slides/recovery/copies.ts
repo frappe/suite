@@ -2,7 +2,7 @@ import * as Y from 'yjs'
 
 import { api, client } from '@/api'
 import { slidesAdapter } from '@/apps/slides/collab/adapter'
-import { readSlides } from '@/apps/slides/collab/deck'
+import { drawnSlides } from '@/apps/slides/collab/drawnDeck'
 import {
   discardRecovery,
   readRecovery,
@@ -106,7 +106,8 @@ function storeCopy(record: RecoveryRecord): RecoveryCopy[] {
     return []
   }
 
-  const slides = readSlides(doc)
+  // the drawn form, as a page copy holds it, so each element keeps its words
+  const slides = drawnSlides(doc)
   const fields = { node: record.doc, title: record.title ?? '', slides }
   return [
     {
