@@ -88,19 +88,21 @@ def stored_presentations() -> dict[str, bytes]:
     return {title: base64.b64decode(state) for title, state in found.items()}
 
 
-# Every field a state draws, with its CRDT identities taken out: a slide's key, and the slide an element names
+# Every field a state draws, each element under its own id, with a slide's key and the slide an element names taken out
 def rendered(state: bytes) -> dict:
     doc: pycrdt.Doc = pycrdt.Doc()
     doc.apply_update(state)
     slides = doc.get("slides", type=pycrdt.Map)
     elements = doc.get("elements", type=pycrdt.Map)
-    ordered = sorted(elements.values(), key=lambda element: element["order"])
+    on_slide: dict[str, list[dict]] = {}
+    for element_id, element in sorted(elements.items(), key=lambda item: item[1]["order"]):
+        on_slide.setdefault(element["parent"], []).append({"id": element_id, **plain(element)})
+
     drawn: list[dict] = []
     for key in sorted(slides.keys(), key=lambda key: slides[key]["order"]):
-        on_slide = [plain(element) for element in ordered if element["parent"] == key]
-        drawn.append({**plain(slides[key]), "elements": on_slide})
+        drawn.append({**plain(slides[key]), "elements": on_slide.get(key, [])})
 
-    return {"roots": sorted(doc.keys()), "slides": drawn, "element_ids": sorted(elements.keys())}
+    return {"roots": sorted(doc.keys()), "slides": drawn}
 
 
 # One slide or element's fields as plain values, its own place and parent left out
