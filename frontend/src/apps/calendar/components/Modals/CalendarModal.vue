@@ -38,7 +38,7 @@
 import { computed, reactive, watch } from 'vue'
 import { Dialog, FormControl, createResource } from 'frappe-ui'
 
-import { raiseToast } from '@/apps/calendar/utils'
+import { raiseToast, toastError } from '@/apps/calendar/utils'
 import { CALENDAR_COLORS } from '@/apps/calendar/utils/calendars'
 import { eventColor } from '@/apps/calendar/utils/color'
 import { userStore } from '@/apps/calendar/stores/user'
@@ -99,7 +99,7 @@ const onSaved = (message: string) => {
 	show.value = false
 	store.calendars.reload()
 }
-const onError = (error) => raiseToast(error.messages?.[0] || error.message, 'error')
+const onError = toastError
 
 const createCalendar = createResource({
 	url: 'suite.calendar.api.create_calendar',
