@@ -106,6 +106,7 @@ function compose({
           close: () => (open = false),
           isOpen: () => open,
           host,
+          uploadInlineImage: vi.fn(),
         })
         composer.onOpened()
         return () => null
@@ -165,16 +166,14 @@ describe('the body and the editor', () => {
     expect(composer.mail.quoted_content).toBe('')
   })
 
-  it('does not read the editor back for what the editor itself just said', async () => {
-    const getHTML = vi.fn(() => '<div>typed</div>')
-    const host = editorHolding(getHTML)
+  it('keeps what was typed, even where the editor has yet to catch up', async () => {
+    const host = editorHolding(() => '<div>typ</div>')
     const composer = compose({ host: () => host })
 
     composer.onEditorChange('<div>typed</div>')
     await nextTick()
     await nextTick()
 
-    expect(getHTML).not.toHaveBeenCalled()
     expect(composer.mail.html_body).toBe('<div>typed</div>')
   })
 
@@ -191,6 +190,7 @@ describe('the body and the editor', () => {
             close: vi.fn(),
             isOpen: () => true,
             host: () => editor.value,
+            uploadInlineImage: vi.fn(),
           })
           onMounted(() => {
             composer.onOpened()

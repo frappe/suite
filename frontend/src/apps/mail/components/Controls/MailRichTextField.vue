@@ -15,7 +15,7 @@
         <EditorFixedMenu :items="menu" />
       </div>
       <EditorContent
-        class="prose-sm border-outline-gray-2 min-h-[8rem] max-w-none border p-2"
+        class="prose-sm border-outline-gray-2 min-h-32 max-w-none border p-2"
         :class="editable ? 'rounded-b-6 border-t-0' : 'rounded-4'"
       />
     </Editor>

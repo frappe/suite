@@ -409,8 +409,7 @@ import type {
 } from '@/apps/mail/types'
 import { formatBytes, isOverlayPresent, raiseToast } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
-import { QuotedContentExtension } from '@/apps/mail/utils/quotedContentExtension'
-import { CustomImageExtension, mailEditorKit, uploadFunction } from '@/apps/mail/utils/text-editor'
+import { uploadFunction } from '@/apps/mail/utils/text-editor'
 
 import RecipientInput from './Controls/RecipientInput.vue'
 import ContactsModal from './Modals/ContactsModal.vue'
@@ -492,9 +491,6 @@ const uploadInlineImage = async (file: File) => {
     pendingInlineUploads.value--
   }
 }
-const imageExtension = CustomImageExtension.configure({
-  uploadFunction: uploadInlineImage,
-})
 
 // What the composition *is* — draft state, autosave, send, schedule, discard, attachments, mentions
 // — lives in the composable, shared with the phone composer (ComposeView). Only what is particular
@@ -520,7 +516,7 @@ const {
   setRemindAt,
   openQuotedContent,
   openAttachment,
-  mentionExtensions,
+  editorExtensions,
   appendEmoji,
   editorContent,
   onEditorChange,
@@ -534,12 +530,8 @@ const {
   onDiscardStarted: () => emit('discardStarted'),
   host: () => textEditor.value,
   isUploading: () => isUploading.value,
+  uploadInlineImage,
 })
-const editorExtensions = [
-  ...mailEditorKit({ image: imageExtension }),
-  QuotedContentExtension,
-  ...mentionExtensions,
-]
 
 const identityOptions = computed(() =>
   (identities.value.data ?? []).map((i: Identity) => ({

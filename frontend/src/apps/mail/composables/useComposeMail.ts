@@ -17,10 +17,16 @@ import {
 } from '@/apps/mail/utils/composables'
 import { createEditorBody } from '@/apps/mail/utils/editorBody'
 import { createMentionSuggestion, type MentionCandidate } from '@/apps/mail/utils/mentionSuggestion'
+import { QuotedContentExtension } from '@/apps/mail/utils/quotedContentExtension'
 import {
   moveRecipient as moveRecipientBetweenFields,
   type RecipientField,
 } from '@/apps/mail/utils/recipientFields'
+import {
+  CustomImageExtension,
+  mailEditorKit,
+  type uploadFunction,
+} from '@/apps/mail/utils/text-editor'
 import { undoSendPeriodOf } from '@/apps/mail/utils/undoSend'
 
 /** The mounted editor, as far as this composable cares about it. */
@@ -63,6 +69,8 @@ interface ComposeMailOptions {
   host: () => EditorHost | null | undefined
   /** Whether a file is still being attached. Sending must wait until it is part of the draft. */
   isUploading?: () => boolean
+  /** How the host uploads an image dropped or pasted into the body, with its own size checks. */
+  uploadInlineImage: typeof uploadFunction
 }
 
 /**
@@ -743,7 +751,12 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       mentionedRecipients.delete(email)
     }
   }
-  const mentionExtensions = [
+  // One body for both composers, so the window and the phone parse and send it alike.
+  const editorExtensions = [
+    ...mailEditorKit({
+      image: CustomImageExtension.configure({ uploadFunction: options.uploadInlineImage }),
+    }),
+    QuotedContentExtension,
     // The inline node. Its own `@` suggester stays inert with no item source of its own — the
     // search below is the one wired up.
     Mention,
@@ -810,7 +823,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     setRemindAt,
     openQuotedContent,
     openAttachment,
-    mentionExtensions,
+    editorExtensions,
     appendEmoji,
     editorContent,
     onEditorChange,

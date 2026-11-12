@@ -276,7 +276,6 @@ const unstableFrappeUIDebtGroups = [
       'mail/components/Settings/ScreenedEmailAddressSettings.vue|frappe-ui/experimental',
       'mail/components/ThreadHeader.vue|frappe-ui/experimental',
       'mail/pages/CalendarExchangesView.vue|frappe-ui/experimental',
-      'mail/pages/ComposeView.vue|frappe-ui/experimental',
       'mail/pages/ContactsExchangesView.vue|frappe-ui/experimental',
       'mail/pages/MailExchangesView.vue|frappe-ui/experimental',
       'mail/pages/OutboxView.vue|frappe-ui/experimental',

@@ -226,9 +226,9 @@
                   <span class="mr-1 shrink-0 font-extralight">
                     ({{ formatBytes(file.file_size || file.size) }})
                   </span>
-                  <FeatherIcon
-                    class="ml-auto h-3.5 w-3.5 shrink-0"
-                    name="x"
+                  <X
+                    class="ml-auto size-3.5 shrink-0"
+                    :aria-label="__('Remove')"
                     @click.stop.prevent="removeAttachment(index)"
                   />
                 </a>
@@ -282,7 +282,6 @@
 <script setup lang="ts">
 import { Button, Combobox } from 'frappe-ui'
 import { Editor, EditorContent, EditorFixedMenu } from 'frappe-ui/editor'
-import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import {
   BellPlus,
   CalendarClock,
@@ -306,8 +305,7 @@ import { useComposeMail } from '@/apps/mail/composables/useComposeMail'
 import type { Attachment, Identity } from '@/apps/mail/types'
 import { formatBytes, raiseToast } from '@/apps/mail/utils'
 import { useEditorMenu } from '@/apps/mail/utils/editorMenu'
-import { QuotedContentExtension } from '@/apps/mail/utils/quotedContentExtension'
-import { CustomImageExtension, mailEditorKit, uploadFunction } from '@/apps/mail/utils/text-editor'
+import { uploadFunction } from '@/apps/mail/utils/text-editor'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import { useKeyboardInsets } from '@/composables/useKeyboardInsets'
 
@@ -330,7 +328,6 @@ const uploadInlineImage = async (file: File) => {
     pendingUploads.value--
   }
 }
-const imageExtension = CustomImageExtension.configure({ uploadFunction: uploadInlineImage })
 
 // Where each recipient input teleports its suggestion list, so the list spans the page rather than
 // the field's own column.
@@ -365,7 +362,7 @@ const {
   setRemindAt,
   openQuotedContent,
   openAttachment,
-  mentionExtensions,
+  editorExtensions,
   editorContent,
   onEditorChange,
   onOpened,
@@ -377,12 +374,8 @@ const {
   isOpen: () => !leaving,
   host: () => textEditor.value,
   isUploading: () => isUploading.value,
+  uploadInlineImage,
 })
-const editorExtensions = [
-  ...mailEditorKit({ image: imageExtension }),
-  QuotedContentExtension,
-  ...mentionExtensions,
-]
 
 const { height: viewportHeight, top: keyboardTop } = useKeyboardInsets()
 
