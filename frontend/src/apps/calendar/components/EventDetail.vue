@@ -564,11 +564,12 @@ const openUrl = (location: string) => {
 					     this side puts the actions on the edge whatever it decides. -->
 					<div class="ml-auto flex shrink-0 items-center gap-1">
 						<Dropdown v-if="canEdit" :options="dropdownOptions">
-							<Button
-								variant="ghost"
-								:disabled="isDeleting"
-							>
-								<MoreHorizontal class="icon size-3.5 text-ink-gray-7" />
+							<!-- In the icon slot, not the label's: that is what makes the button a
+							     square, and its label one a screen reader hears rather than one drawn. -->
+							<Button variant="ghost" :label="__('Event options')" :disabled="isDeleting">
+								<template #icon>
+									<MoreHorizontal class="icon size-3.5 text-ink-gray-7" />
+								</template>
 							</Button>
 						</Dropdown>
 						<!-- A sheet is dismissed by dragging it down or tapping outside, so a
@@ -577,10 +578,13 @@ const openUrl = (location: string) => {
 						<Button
 							v-if="variant !== 'sheet'"
 							variant="ghost"
+							:label="__('Close')"
 							:tooltip="__('Close')"
 							@click="emit('close')"
 						>
-							<X class="icon size-3.5 text-ink-gray-7" />
+							<template #icon>
+								<X class="icon size-3.5 text-ink-gray-7" />
+							</template>
 						</Button>
 					</div>
 				</div>
@@ -647,10 +651,13 @@ const openUrl = (location: string) => {
 								<Button
 									variant="ghost"
 									class="-my-1.5 shrink-0"
+									:label="__('Copy Frappe Meet link')"
 									:tooltip="__('Copy Frappe Meet link')"
 									@click="copyMeetLink"
 								>
-									<Copy class="icon text-ink-gray-7 size-4" />
+									<template #icon>
+										<Copy class="icon text-ink-gray-7 size-4" />
+									</template>
 								</Button>
 							</div>
 							<!-- The subtle Button, as the participants page's email action is, so
@@ -803,10 +810,13 @@ const openUrl = (location: string) => {
 									v-if="participantEmails.length"
 									variant="ghost"
 									class="-my-1.5 shrink-0"
+									:label="__('Email participants')"
 									:tooltip="__('Email participants')"
 									@click="emit('emailParticipants', participantEmails)"
 								>
-									<Mail class="icon text-ink-gray-7 size-4" />
+									<template #icon>
+										<Mail class="icon text-ink-gray-7 size-4" />
+									</template>
 								</Button>
 							</div>
 							<!-- Indented to the header row's text axis (gutter + icon + gap): the
@@ -892,8 +902,10 @@ const openUrl = (location: string) => {
 				class="flex min-h-0 flex-1 flex-col pb-[calc(env(safe-area-inset-bottom)+0.5rem)]"
 			>
 				<div class="flex h-12 shrink-0 items-center gap-2 px-3">
-					<Button variant="ghost" :tooltip="__('Back')" @click="backToEvent">
-						<ChevronLeft class="icon size-3.5 text-ink-gray-7" />
+					<Button variant="ghost" :label="__('Back')" :tooltip="__('Back')" @click="backToEvent">
+						<template #icon>
+							<ChevronLeft class="icon size-3.5 text-ink-gray-7" />
+						</template>
 					</Button>
 					<h3 class="text-ink-gray-8 min-w-0 truncate text-md font-semibold">
 						{{ __('Participants') }}

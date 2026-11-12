@@ -1458,10 +1458,15 @@ async function selectItem(item: PaletteItem, event: CommandPaletteSelectEvent) {
 				params: {
 					// The reader's own account, not the event's: a hit on a shared calendar
 					// belongs to whoever owns it, and routing there would switch the calendar
-					// to an account nobody thinks of as theirs. The grid shows the shared
-					// event inside the reader's view, and so does the link to it — which is
-					// what `account` is for, ids being unique only within an account.
-					accountId: route.params.accountId || item.account,
+					// to an account nobody thinks of as theirs — and a hit on a calendar the
+					// site keeps belongs to no account at all. The grid shows either inside
+					// the reader's view, and so does the link to it — which is what `account`
+					// is for, ids being unique only within an account. From outside the
+					// calendar, the account it was last on; the event's only as a last resort.
+					accountId:
+						route.params.accountId ||
+						(calendarUser ??= calendarUserStore()).accountId ||
+						item.account,
 					year: start.year(),
 					month: start.month() + 1,
 					day: start.date(),
