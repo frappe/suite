@@ -205,6 +205,14 @@ class TestConversion(DriveCallbackCase):
             [(reason, bytes(payload)) for reason, payload in kept], [("copy_first", b"<p>Hello world</p>")]
         )
 
+    def test_keeps_the_old_body_as_a_version_with_no_edit_in_its_activity(self):
+        node = self.old_document("<p>Hello world</p>")
+
+        self.assertEqual(conversions.convert_document(writer_content.APP, node), "converted")
+
+        self.assertEqual(self.before_collaboration(node)["html"], "<p>Hello world</p>")
+        self.assertFalse(frappe.db.exists("Drive Activity", {"node": node, "action": "edit"}))
+
     def test_converts_an_empty_document_into_an_empty_copy(self):
         node = self.old_document(None)
 
@@ -235,13 +243,26 @@ class TestConversion(DriveCallbackCase):
         )
         self.assertEqual(copy.find("img")["src"], PNG_SOURCE)
 
+    def test_keeps_an_old_frame_of_a_site_video_as_that_video_in_the_copy(self):
+        node = self.old_yjs_document(
+            pycrdt.XmlElement("paragraph", None, [pycrdt.XmlText("Watch this")]),
+            pycrdt.XmlElement("iframe", {"src": "/files/talk.mp4"}),
+        )
+
+        self.assertEqual(conversions.convert_document(writer_content.APP, node), "converted")
+
+        copy = BeautifulSoup(
+            frappe.db.get_value("Writer Document", self.docname_of(node), "html"), "html.parser"
+        )
+        self.assertEqual((copy.find("video")["src"], copy.find("iframe")), ("/files/talk.mp4", None))
+
     def test_refuses_a_body_whose_embed_or_picture_the_copy_cannot_keep(self):
         for name, tag, src in (
             # nh3 strips this scheme before kept_value sees it
             ("javascript iframe", "iframe", "javascript:alert(1)"),
             ("html data iframe", "iframe", "data:text/html,<p>Hi</p>"),
             ("http iframe", "iframe", "http://www.youtube.com/embed/abc"),
-            ("relative iframe", "iframe", "/files/talk.mp4"),
+            ("relative iframe", "iframe", "/files/notes.pdf"),
             ("svg data picture", "image", "data:image/svg+xml;base64,PHN2Zy8+"),
             ("html data picture", "image", "data:text/html,<p>Hi</p>"),
             ("upper case html data picture", "image", "DATA:text/html,<p>Hi</p>"),
@@ -1896,13 +1917,13 @@ class TestConversion(DriveCallbackCase):
         real = conversions.convert_document
         seen = []
 
-        def only_mine(app, node):
+        def only_mine(app, node, *, opened=False):
             seen.append(node)
             if each is not None:
                 each(node)
 
             if node in mine:
-                return real(app, node)
+                return real(app, node, opened=opened)
 
         with patch.object(conversions, "convert_document", only_mine):
             conversions.run_pending(writer_content.APP, writer)
@@ -1936,6 +1957,32 @@ class TestConversion(DriveCallbackCase):
         self.run_on([good, other, refused])
 
         self.assertEqual({node: (self.as_before(node), self.records(node)) for node in after}, after)
+
+    def test_a_run_leaves_a_body_whose_storage_is_not_measured_to_the_next_run_and_goes_on(self):
+        waiting, other = self.old_documents(2)
+        real = drive.take_version
+        tries: list[str] = []
+
+        def not_measured_for_waiting(node, **kwargs):
+            if node == waiting:
+                tries.append(node)
+                raise drive.DriveStorageUnmeasured("not measured")
+
+            return real(node, **kwargs)
+
+        before = self.as_before(waiting)
+        with patch.object(drive, "take_version", not_measured_for_waiting):
+            seen = self.run_on([waiting, other])
+
+        self.assertEqual([seen.count(node) for node in (waiting, other)], [1, 1])
+
+        self.assertEqual(tries, [waiting])
+        self.assertEqual((self.as_before(waiting), self.records(waiting)), (before, ()))
+        self.assertIsNotNone(log.find(writer_content.APP, other))
+
+        self.run_on([waiting])
+
+        self.assertIsNotNone(log.find(writer_content.APP, waiting))
 
     def test_a_new_converter_version_tries_a_refused_body_again(self):
         [node] = self.old_documents(1)

@@ -24,14 +24,15 @@ vi.mock('frappe-ui', async () => ({
 }))
 
 const server = vi.hoisted(() => {
-  const state: {
+  type AdminServerState = {
     status: string
     account: string
     writes: unknown[]
     bulk: boolean
     failLeah: boolean
     blocker: 'personal_limit' | 'unknown_usage' | 'drive_limit' | null
-  } = {
+  }
+  const state: AdminServerState = {
     status: 'Setup failed',
     account: 'leah@example.com',
     writes: [],
@@ -68,17 +69,17 @@ const server = vi.hoisted(() => {
       return json([])
     }
     if (init.method === 'POST' || init.method === 'DELETE') {
-      state.writes.push({
-        path,
-        body: init.body ? JSON.parse(String(init.body)) : undefined,
-        ...(init.method === 'DELETE'
+      const write = { path, body: init.body ? JSON.parse(String(init.body)) : undefined }
+      state.writes.push(
+        init.method === 'DELETE'
           ? {
+              ...write,
               confirmation: new URL(String(url), 'http://suite.test').searchParams.get(
                 'confirmation',
               ),
             }
-          : {}),
-      })
+          : write,
+      )
       if (path.endsWith('/drive-transfer'))
         return json({
           complete: false,

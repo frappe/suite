@@ -136,8 +136,14 @@ export function useTileAdaptiveStreaming() {
     const manager = getManager()
     if (!manager) return
     controller.stopListeningForConsumer = manager.onRemoteConsumerReady((event: Event) => {
-      const customEvent = event as CustomEvent
-      if (customEvent.detail?.participantId === controller.participantId) {
+      if (!(event instanceof CustomEvent)) return
+      const detail: unknown = event.detail
+      if (
+        detail &&
+        typeof detail === 'object' &&
+        'participantId' in detail &&
+        detail.participantId === controller.participantId
+      ) {
         scheduleRefresh(controller)
       }
     })

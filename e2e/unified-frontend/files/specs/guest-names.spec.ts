@@ -1,6 +1,15 @@
 import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 
-import { DRIVE, adminApi, createDocument, createFolder, purge, roots, runTag, type DriveNode } from "../../helpers/drive";
+import {
+	adminApi,
+	createDocument,
+	createFolder,
+	DRIVE,
+	purge,
+	roots,
+	runTag,
+	type DriveNode,
+} from "../../helpers/drive";
 
 /**
  * Stage 11 follow-up: guests sign their comments (spec §10.5, ticket 011).
@@ -35,7 +44,6 @@ const PRODUCTS: Product[] = [
 	{ label: "Slides", doctype: "Presentation", title: "Guest names deck", post: "Add", boxLabel: "New comment" },
 ];
 
-
 let api: APIRequestContext;
 let home: DriveNode;
 const docs = new Map<string, DriveNode>();
@@ -54,8 +62,11 @@ test.afterAll(async () => {
 
 /** Makes a comment link on a node and answers its token. */
 async function commentLink(node: string): Promise<string> {
-	const response = await api.put(`${DRIVE}/nodes/${node}/grants/${encodeURIComponent("$LINK")}`, { data: { role: 20 } });
+	const response = await api.put(`${DRIVE}/nodes/${node}/grants/${encodeURIComponent("$LINK")}`, {
+		data: { role: 20 },
+	});
 	expect(response.ok(), await response.text()).toBe(true);
+	// SAFETY: these Suite-owned link/thread endpoints return the data projections checked against this test guest and document.
 	const { data } = (await response.json()) as { data: { url: string } };
 	return data.url.split("/").pop()!;
 }
@@ -64,6 +75,7 @@ async function commentLink(node: string): Promise<string> {
 async function storedAuthors(node: string): Promise<Array<{ author: string; author_name: string | null }>> {
 	const response = await api.get(`${DRIVE}/nodes/${node}/threads`);
 	expect(response.ok()).toBe(true);
+	// SAFETY: these Suite-owned link/thread endpoints return the data projections checked against this test guest and document.
 	const { data } = (await response.json()) as {
 		data: { threads: Array<{ comments: Array<{ author: string; author_name: string | null }> }> };
 	};
@@ -71,8 +83,13 @@ async function storedAuthors(node: string): Promise<Array<{ author: string; auth
 }
 
 async function openComments(page: Page, product: Product): Promise<Locator> {
-	// The product's own title bar holds the Comments button. The body may still load behind it.
-	await page.getByRole("button", { name: "Comments" }).click({ timeout: 20_000 });
+	// The product's own title bar holds the way to Comments. The body may still load behind it.
+	if (product.label === "Writer" || product.label === "Sheets") {
+		await page.getByRole("button", { name: "More document actions" }).click({ timeout: 20_000 });
+		await page.getByRole("menuitem", { name: "Comments" }).click();
+	} else {
+		await page.getByRole("button", { name: "Comments" }).click({ timeout: 20_000 });
+	}
 	const panel = page.getByRole("complementary", { name: "Comments" });
 	if (product.start) {
 		await panel.getByRole("button", { name: product.start }).click();
@@ -117,7 +134,9 @@ test.describe("a guest with a comment link", () => {
 	}
 
 	for (const product of PRODUCTS) {
-		test(`${product.label}: on a phone, a long name with a bidi override keeps the Guest marker in view`, async ({ page }) => {
+		test(`${product.label}: on a phone, a long name with a bidi override keeps the Guest marker in view`, async ({
+			page,
+		}) => {
 			await page.setViewportSize(PHONE);
 			const doc = await createDocument(api, home.name, `${product.title} on a phone`, product.doctype);
 			await page.goto(`/l/${await commentLink(doc.name)}`);
@@ -131,7 +150,11 @@ test.describe("a guest with a comment link", () => {
 			const marker = panel.locator('[data-part="marker"]');
 			await expect(marker).toHaveText("· Guest");
 			await expect(marker).toBeInViewport({ ratio: 1 });
-			const [nameBox, markerBox, panelBox] = await Promise.all([name.boundingBox(), marker.boundingBox(), panel.boundingBox()]);
+			const [nameBox, markerBox, panelBox] = await Promise.all([
+				name.boundingBox(),
+				marker.boundingBox(),
+				panel.boundingBox(),
+			]);
 			// The override stays inside the name: the marker follows it and stays in the panel.
 			expect(nameBox!.x + nameBox!.width).toBeLessThanOrEqual(markerBox!.x);
 			expect(markerBox!.x + markerBox!.width).toBeLessThanOrEqual(panelBox!.x + panelBox!.width);

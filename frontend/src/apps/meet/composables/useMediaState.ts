@@ -28,11 +28,15 @@ export function findActiveScreenShare(
     ? current
     : null
 }
+interface ReplaceActiveScreenShareResult {
+  shares: RemoteScreenShare[]
+  replaced: RemoteScreenShare[]
+}
 
 export function replaceActiveScreenShare(
   shares: RemoteScreenShare[],
   next: RemoteScreenShare,
-): { shares: RemoteScreenShare[]; replaced: RemoteScreenShare[] } {
+): ReplaceActiveScreenShareResult {
   const replaced = shares.filter(
     (share) => share.participantId === next.participantId && share.consumerId !== next.consumerId,
   )
@@ -42,20 +46,35 @@ export function replaceActiveScreenShare(
   }
 }
 
+interface MediaStoreState {
+  isMicOn: boolean
+  isCameraOn: boolean
+  isScreenSharing: boolean
+  localStream: MediaStream | null
+  processedStream: MediaStream | null
+  cameraPermissionGranted: boolean
+  microphonePermissionGranted: boolean
+  screenShareStream: MediaStream | null
+  localScreenShareStartedAt: number
+  activeScreenShareConsumers: RemoteScreenShare[]
+  screenShareStreams: Record<string, MediaStream>
+  localVideo: HTMLVideoElement | null
+}
+
 export const useMediaState = defineStore('meet-media', {
-  state: () => ({
+  state: (): MediaStoreState => ({
     isMicOn: false,
     isCameraOn: false,
     isScreenSharing: false,
-    localStream: null as MediaStream | null,
-    processedStream: null as MediaStream | null,
+    localStream: null,
+    processedStream: null,
     cameraPermissionGranted: false,
     microphonePermissionGranted: false,
-    screenShareStream: null as MediaStream | null,
+    screenShareStream: null,
     localScreenShareStartedAt: 0,
-    activeScreenShareConsumers: [] as RemoteScreenShare[],
-    screenShareStreams: {} as Record<string, MediaStream>,
-    localVideo: null as HTMLElement | null,
+    activeScreenShareConsumers: [],
+    screenShareStreams: {},
+    localVideo: null,
   }),
   actions: {
     setMedia(mic: boolean, camera: boolean) {

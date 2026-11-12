@@ -1,7 +1,6 @@
 # Copyright (c) 2024, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
 
-import base64
 import json
 import random
 import re
@@ -14,13 +13,26 @@ from frappe.query_builder.functions import Count
 from frappe.utils import cstr, flt
 
 from suite import drive
+from suite.content import log
+from suite.content.conversions import conversion_status
 from suite.slides import drive as slides_drive
+from suite.slides.content import APP
 
 SYSTEM_TEMPLATE_TITLES = {"Light", "Dark"}
 SYSTEM_TEMPLATE_FIRST_LAYOUT = 2
-MAX_THUMBNAIL_BYTES = 6 * 1024 * 1024
 
 NODE_FIELD = slides_drive.NODE_FIELD
+LOGGED_FIELDS = ("content",)
+
+
+def body_of(deck: Document) -> str:
+    """Write out what a converted deck's rows must keep, to compare: its slides, by row and order, and what makes it a composite."""
+    slides = [
+        [slide.name, slide.idx, *(slide.get(field) for field in slides_drive.SLIDE_BODY_FIELDS)]
+        for slide in deck.slides
+    ]
+    references = [reference.presentation for reference in deck.reference_presentations]
+    return json.dumps([slides, references, deck.is_composite], default=str)
 
 
 class Presentation(drive.DriveContent, Document):
@@ -34,6 +46,10 @@ class Presentation(drive.DriveContent, Document):
     """
 
     def validate(self):
+        if not self.is_new() and self.body_changed():
+            slides_drive.refuse_row_write(self.node)
+
+        self.refuse_another_decks_rows()
         self.validate_advance_after()
 
         if not self.is_composite:
@@ -43,6 +59,26 @@ class Presentation(drive.DriveContent, Document):
         # §6.6: you may reference what you can read. Nothing is copied and
         # nothing is forced public.
         slides_drive.refuse_unreadable_references(self)
+
+    def body_changed(self) -> bool:
+        """Whether this save writes the deck's body; the theme and Drive's fields aren't part of it."""
+        if body_of(self) != body_of(self.get_doc_before_save()):
+            return True
+
+        return any(self.has_value_changed(field) for field in LOGGED_FIELDS)
+
+    def refuse_another_decks_rows(self) -> None:
+        """Refuse a row that belongs to another deck: a parent save writes it here without `Slide.save`'s fence."""
+        names = [row.name for row in self.slides if row.name]
+        rows = frappe.db.get_values(
+            "Slide",
+            {"name": ("in", names)},
+            ["parent", "parenttype"],
+            order_by="name",
+            for_update=True,
+        )
+        if any(row != (self.name, self.doctype) for row in map(tuple, rows)):
+            raise drive.DriveConflict(_("This slide belongs to another presentation"))
 
     def validate_advance_after(self):
         for row in self.slides:
@@ -69,40 +105,6 @@ class Presentation(drive.DriveContent, Document):
         # (§8.11). It is the deck's only stamp and the daily media sweep's
         # cursor. Debounced to one write per request by the mixin.
         self.drive_touch()
-
-
-def get_thumbnail_content(base64_data: str) -> tuple[bytes, str]:
-    match = re.match(r"^data:(image/[^;]+);base64,(.+)$", base64_data or "", re.DOTALL)
-    if not match:
-        frappe.throw("Invalid thumbnail data")
-
-    mime_type, encoded_content = match.groups()
-    if mime_type != "image/webp":
-        frappe.throw("Unsupported thumbnail image type")
-
-    try:
-        content = base64.b64decode(encoded_content, validate=True)
-    except Exception:
-        frappe.throw("Invalid thumbnail image data")
-
-    if len(content) > MAX_THUMBNAIL_BYTES:
-        frappe.throw("Thumbnail image is too large")
-
-    return content, "webp"
-
-
-@frappe.whitelist()
-def save_presentation_thumbnail(presentation_name: str, base64_data: str) -> str:
-    """Store the browser's deck capture.
-
-    Drive checks EDIT at the node and replaces the `Drive Node Preview` row
-    without stamping the deck ([012 §8]). Conversion to webp already happened
-    in the browser [012 §9]. Nothing is minted on the deck itself, so the
-    answer is empty.
-    """
-    content, _ext = get_thumbnail_content(base64_data)
-    slides_drive.push_deck_preview(presentation_name, content)
-    return ""
 
 
 def slug(text: str) -> str:
@@ -223,6 +225,13 @@ def get_template_thumbnail(template_title: str, index: int) -> str:
     return f"/assets/suite/slides/frontend/images/layouts/{template_title}/thumbnail-{index}.webp"
 
 
+def deck_answer(deck: Presentation) -> dict:
+    """Answer a deck for a route, without the stored Yjs state `as_dict` would keep."""
+    answer = deck.as_dict()
+    answer.pop("content", None)
+    return answer
+
+
 @frappe.whitelist()
 def create_presentation(
     template: str | None = None, duplicate_from: str | None = None, parent: str | None = None
@@ -292,7 +301,7 @@ def create_presentation(
 
     presentation = frappe.get_doc("Presentation", docname)
     # Drive owns the title (§10.2); it rides along for the response only.
-    answer = presentation.as_dict()
+    answer = deck_answer(presentation)
     answer["title"] = presentation.node_title
     return answer
 
@@ -332,11 +341,24 @@ def update_theme(name: str, theme: str):
     return {"modified": presentation.modified, "base_modified": base_modified}
 
 
+def first_layout(layouts: list, theme_node: str) -> dict:
+    """Copy the layout a new deck starts from: a system template's first two are its covers."""
+    is_system = is_system_template(slides_drive.node_title_of(theme_node))
+    first = SYSTEM_TEMPLATE_FIRST_LAYOUT if is_system and len(layouts) > SYSTEM_TEMPLATE_FIRST_LAYOUT else 0
+    slide: dict = {}
+    for field in slides_drive.SLIDE_BODY_FIELDS:
+        if field != "thumbnail":
+            slide[field] = layouts[first].get(field)
+
+    return slide
+
+
 @frappe.whitelist(methods=["POST"])
 def apply_theme(name: str, theme: str) -> dict:
     """Turn a new deck's blank slide into the theme's first layout; any other deck is refused."""
     deck_node = slides_drive.node_of(name)
     drive.check(deck_node, drive.EDIT)
+    slides_drive.refuse_row_write(deck_node)
     if slides_drive.node_is_template(deck_node):
         frappe.throw(_("A template cannot take a theme"), frappe.ValidationError)
 
@@ -349,12 +371,7 @@ def apply_theme(name: str, theme: str) -> dict:
     if not layouts:
         frappe.throw(_("This theme has no slides to start from"), frappe.ValidationError)
 
-    is_system = is_system_template(slides_drive.node_title_of(theme_node))
-    first = SYSTEM_TEMPLATE_FIRST_LAYOUT if is_system and len(layouts) > SYSTEM_TEMPLATE_FIRST_LAYOUT else 0
-    slide: dict = {}
-    for field in slides_drive.SLIDE_BODY_FIELDS:
-        if field != "thumbnail":
-            slide[field] = layouts[first].get(field)
+    slide = first_layout(layouts, theme_node)
 
     elements = slides_drive.elements_of(slide)
     remap_element_ids(elements)
@@ -389,7 +406,16 @@ def get_public_presentation(name: str):
     if not frappe.has_permission("Presentation", "read", name):
         frappe.throw("You cannot access this presentation", frappe.PermissionError)
 
-    return frappe.get_doc("Presentation", name).as_dict()
+    deck = frappe.get_doc("Presentation", name)
+    answer = deck_answer(deck)
+    # A combined deck never converts, and with collaboration off every deck stays on its rows
+    if deck.node and not deck.is_composite and log.enabled(APP):
+        if log.find(APP, deck.node):
+            answer["is_converted"] = True
+        else:
+            answer["conversion"] = conversion_status(APP, deck.node)
+
+    return answer
 
 
 @frappe.whitelist()
@@ -483,7 +509,7 @@ def get_composite_presentation(name: str):
             continue
         composite_slides.extend(frappe.get_cached_doc("Presentation", reference["presentation"]).slides)
     doc.slides = composite_slides
-    answer = doc.as_dict()
+    answer = deck_answer(doc)
     answer["references"] = references
     return answer
 

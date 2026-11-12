@@ -7,6 +7,7 @@ import type { Editor } from '@tiptap/core'
 import type TurndownService from 'turndown'
 
 import type { DocumentSession } from '@/apps/drive'
+import { embedUrl } from '@/apps/writer/drive'
 import { mediaNodeId } from '@/apps/writer/extensions/drive-media'
 import { currentTabHTML } from '@/apps/writer/extensions/tabs'
 import type { PictureFetch } from '@/apps/writer/utils/docxexporter'
@@ -16,15 +17,17 @@ type MediaFetch = DocumentSession['credentials']['fetch']
 /** Which part of a document a download takes. */
 export type ExportScope = 'document' | 'tab'
 
-const MEDIA_EXTENSIONS: Record<string, string> = {
-  'image/png': 'png',
-  'image/jpeg': 'jpg',
-  'image/gif': 'gif',
-  'image/webp': 'webp',
-  'image/svg+xml': 'svg',
-  'image/bmp': 'bmp',
-  'image/tiff': 'tiff',
-}
+const MEDIA_EXTENSIONS = new Map<string, string>(
+  Object.entries({
+    'image/png': 'png',
+    'image/jpeg': 'jpg',
+    'image/gif': 'gif',
+    'image/webp': 'webp',
+    'image/svg+xml': 'svg',
+    'image/bmp': 'bmp',
+    'image/tiff': 'tiff',
+  }),
+)
 
 export interface MarkdownExport {
   markdown: string
@@ -58,7 +61,7 @@ function pictureFetch(fetchMedia: MediaFetch): PictureFetch {
     const src = image.getAttribute('src') ?? ''
     const id = mediaNodeId(src, image.getAttribute('data-node'))
     if (!id) return fetch(src)
-    return fetchMedia(`/api/method/suite.writer.api.embed.get?id=${encodeURIComponent(id)}`)
+    return fetchMedia(embedUrl(id))
   }
 }
 
@@ -82,7 +85,8 @@ function tableRule(turndown: TurndownService): void {
   turndown.addRule('table', {
     filter: 'table',
     replacement: (_content, node) => {
-      const rows = [...(node as HTMLTableElement).rows].map(cells)
+      if (!(node instanceof HTMLTableElement)) return _content
+      const rows = [...node.rows].map(cells)
       const heading = rows.shift()
       if (!heading) return ''
       const divider = heading.map(() => '---')
@@ -111,7 +115,7 @@ export async function toMarkdown(html: string, fetchMedia: MediaFetch): Promise<
     const response = await fetchPicture(image).catch(() => null)
     if (!response?.ok) continue
     const blob = await response.blob()
-    const path = `images/${media.length + 1}.${MEDIA_EXTENSIONS[blob.type] ?? 'png'}`
+    const path = `images/${media.length + 1}.${MEDIA_EXTENSIONS.get(blob.type) ?? 'png'}`
     image.setAttribute('src', path)
     media.push({ path, blob })
   }

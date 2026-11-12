@@ -4,15 +4,18 @@ import { createApp } from 'vue'
 
 import { useRecording, type RecordingState } from '../useRecording'
 
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const mocks = vi.hoisted(() => ({
-  startParams: [] as Array<{ meeting_id: string; request_id: string }>,
+  startParams: fromPartial<Array<{ meeting_id: string; request_id: string }>>([]),
   startCount: 0,
-  startResults: [] as Array<RecordingState | { status: 'Rejected' }>,
+  startResults: fromPartial<Array<RecordingState | { status: 'Rejected' }>>([]),
   getStateCount: 0,
   getStateCompleted: 0,
-  getStateResults: [] as Array<RecordingState | null | Promise<RecordingState | null>>,
-  socketHandler: null as
-    ((event: { meeting_id: string; recording: RecordingState | null }) => void) | null,
+  getStateResults: fromPartial<Array<RecordingState | null | Promise<RecordingState | null>>>([]),
+  socketHandler: fromPartial<
+    ((event: { meeting_id: string; recording: RecordingState | null }) => void) | null
+  >(null),
   stopped: false,
 }))
 
@@ -26,7 +29,9 @@ vi.mock('@/api', async (original) => {
     const url = (reference.prefix ?? '') + reference.path
     return (async (params: { meeting_id: string; request_id?: string }) => {
       if (url.endsWith('/recordings/starts')) {
-        mocks.startParams.push(params as { meeting_id: string; request_id: string })
+        if (typeof params.request_id !== 'string')
+          throw new Error('Recording starts require a request ID')
+        mocks.startParams.push({ meeting_id: params.meeting_id, request_id: params.request_id })
         mocks.startCount += 1
         if (mocks.startResults.length) return mocks.startResults.shift()
         return {

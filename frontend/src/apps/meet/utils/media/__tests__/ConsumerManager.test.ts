@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ConsumerManager, type ConsumerEntry } from '../ConsumerManager'
@@ -27,7 +28,7 @@ function mockConsumer(overrides: MockConsumerOverrides = {}) {
     id: 'c1',
     producerId: 'producer-1',
     kind: 'video',
-    track: { kind: 'video' } as MediaStreamTrack,
+    track: fromPartial<MediaStreamTrack>({ kind: 'video' }),
     appData: { userId: 'p1', type: 'camera' },
     close: vi.fn(),
     pause: vi.fn(),
@@ -35,7 +36,7 @@ function mockConsumer(overrides: MockConsumerOverrides = {}) {
     once: vi.fn(),
     ...overrides,
   }
-  return consumer as never
+  return fromPartial<Parameters<ConsumerManager['addConsumer']>[0]>(consumer)
 }
 
 function assertEntry(
@@ -56,7 +57,7 @@ describe('addConsumer', () => {
 
   it('returns false for invalid consumer', () => {
     const cm = createManager()
-    expect(cm.addConsumer(null as never)).toBe(false)
+    expect(cm.addConsumer(fromPartial(null))).toBe(false)
   })
 
   it('uses participantIdOverride when provided', () => {
@@ -208,12 +209,16 @@ describe('clear', () => {
 })
 
 describe('consumer @close handling', () => {
-  function setupMockConsumerWithClose(overrides: MockConsumerOverrides = {}): {
+  interface SetupMockConsumerWithCloseResult {
     consumer: ReturnType<typeof mockConsumer> & {
       once: ReturnType<typeof vi.fn>
     }
     fire: (event: string) => void
-  } {
+  }
+
+  function setupMockConsumerWithClose(
+    overrides: MockConsumerOverrides = {},
+  ): SetupMockConsumerWithCloseResult {
     const handlers = new Map<string, () => void>()
     const once = vi.fn((event: string, handler: () => void) => {
       handlers.set(event, handler)

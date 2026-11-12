@@ -36,7 +36,8 @@ function entriesOf(attributes: Record<string, unknown> = {}): Entry[] {
 }
 
 function addText(text: XmlText, found: Inventory) {
-  for (const { insert, attributes } of text.toDelta() as Insert[]) {
+  const inserts: Insert[] = text.toDelta()
+  for (const { insert, attributes } of inserts) {
     const entries = entriesOf(attributes)
     if (typeof insert !== 'string') {
       found.elements.push({ name: '#embed', entries })
@@ -157,7 +158,8 @@ function withPriority(value: string, priority: string) {
 }
 
 function styleOf(element: Element) {
-  const { style } = element as HTMLElement
+  if (!(element instanceof HTMLElement) && !(element instanceof SVGElement)) return {}
+  const { style } = element
   const found: Record<string, unknown> = {}
   for (const property of style) {
     let value = style.getPropertyValue(property)
@@ -184,9 +186,9 @@ function classOf(element: Element) {
 
 function attributesOf(element: Element): Entry[] {
   const flag = BOOLEAN_ATTRIBUTES.get(element.localName)
-  const entries = [...element.attributes]
-    .filter(({ name }) => !UNCOMPARED_ATTRIBUTES.has(name) && name !== flag)
-    .map(({ name, value }): Entry => [name, value])
+  const entries = [...element.attributes].flatMap<Entry>(({ name, value }) =>
+    !UNCOMPARED_ATTRIBUTES.has(name) && name !== flag ? [[name, value]] : [],
+  )
   if (flag) {
     entries.push([flag, element.hasAttribute(flag)])
   }
@@ -203,19 +205,21 @@ function attributesOf(element: Element): Entry[] {
   return entries
 }
 
-function withFormat(formats: Entry[], element: Element) {
+function withFormat(formats: FormatEntry[], element: Element): FormatEntry[] {
   if (element.localName === 'span') {
     return withSpan(formats, element)
   }
 
   const name = DRAWN_AS.get(element.localName) ?? element.localName
-  return [...formats, [name, Object.fromEntries(attributesOf(element))] as Entry]
+  return [...formats, [name, Object.fromEntries(attributesOf(element))]]
 }
 
 // The editor draws a span's background as the highlight, a mark of its own, and nested spans as one
-function withSpan(formats: Entry[], element: Element) {
+function withSpan(formats: FormatEntry[], element: Element) {
   const { 'background-color': background, ...style } = styleOf(element)
-  const span = Object.fromEntries(attributesOf(element).filter(([name]) => name !== 'style'))
+  const span: DomAttributes = Object.fromEntries(
+    attributesOf(element).filter(([name]) => name !== 'style'),
+  )
   if (Object.keys(style).length) {
     span.style = style
   }
@@ -228,22 +232,26 @@ function withSpan(formats: Entry[], element: Element) {
   return withFolded(lit, span)
 }
 
-function withHighlight(formats: Entry[], background: unknown) {
+function withHighlight(formats: FormatEntry[], background: unknown): FormatEntry[] {
   if (background === undefined) {
     return formats
   }
 
-  return [...formats, ['mark', { style: { 'background-color': background } }] as Entry]
+  return [...formats, ['mark', { style: { 'background-color': background } }]]
 }
 
 type Attributes = Record<string, unknown>
+interface DomAttributes extends Attributes {
+  style?: Attributes
+}
+type FormatEntry = [name: string, attributes: DomAttributes]
 
 // Nested spans fold unless they name the same attribute, both set a colour, which counts by being
 // there, the inner size is relative to the outer, or the inner resets an outer size, font or line
 // height, which the editor would reset to the paragraph's
-function isFoldable(outer: Attributes, inner: Attributes) {
-  const outerStyle = (outer.style ?? {}) as Attributes
-  const innerStyle = (inner.style ?? {}) as Attributes
+function isFoldable(outer: DomAttributes, inner: DomAttributes) {
+  const outerStyle = outer.style ?? {}
+  const innerStyle = inner.style ?? {}
   const isShared = Object.keys(inner).some((name) => name !== 'style' && name in outer)
   const isRecoloured = Object.keys(innerStyle).some(
     (name) => COLOUR_PROPS.has(name) && name in outerStyle,
@@ -257,16 +265,16 @@ function isFoldable(outer: Attributes, inner: Attributes) {
 }
 
 // A span inside another folds into it, the inner span winning each style property
-function withFolded(formats: Entry[], span: Attributes) {
+function withFolded(formats: FormatEntry[], span: DomAttributes): FormatEntry[] {
   const at = formats.map(([name]) => name).lastIndexOf('span')
-  const outer = formats[at]?.[1] as Attributes | undefined
+  const outer = formats[at]?.[1]
   if (!outer || !isFoldable(outer, span)) {
-    return [...formats, ['span', span] as Entry]
+    return [...formats, ['span', span]]
   }
 
   const folded = { ...outer, ...span }
   if (outer.style && span.style) {
-    folded.style = { ...(outer.style as Attributes), ...(span.style as Attributes) }
+    folded.style = { ...outer.style, ...span.style }
   }
 
   const result = [...formats]
@@ -275,7 +283,7 @@ function withFolded(formats: Entry[], span: Attributes) {
 }
 
 // The parser folds ASCII whitespace, so it isn't compared; a non-breaking space is kept
-function addDomText(text: string, formats: Entry[], found: Inventory) {
+function addDomText(text: string, formats: FormatEntry[], found: Inventory) {
   for (const char of text) {
     if (!/[ \t\n\r\f]/.test(char)) {
       found.characters.push({ char, entries: formats })
@@ -284,7 +292,12 @@ function addDomText(text: string, formats: Entry[], found: Inventory) {
 }
 
 // An atom counts by its name, its attributes and the words it holds, such as a mention's label
-function addElement(element: Element, formats: Entry[], atomName: AtomName, found: Inventory) {
+function addElement(
+  element: Element,
+  formats: FormatEntry[],
+  atomName: AtomName,
+  found: Inventory,
+) {
   const name = atomName(element)
   let inner = formats
   if (name) {
@@ -300,11 +313,11 @@ function addElement(element: Element, formats: Entry[], atomName: AtomName, foun
   }
 }
 
-function addDomNode(node: Node, formats: Entry[], atomName: AtomName, found: Inventory) {
+function addDomNode(node: Node, formats: FormatEntry[], atomName: AtomName, found: Inventory) {
   if (node.nodeType === Node.TEXT_NODE) {
     addDomText(node.textContent ?? '', formats, found)
-  } else if (node.nodeType === Node.ELEMENT_NODE) {
-    addElement(node as Element, formats, atomName, found)
+  } else if (node instanceof Element) {
+    addElement(node, formats, atomName, found)
   }
 }
 
@@ -414,9 +427,10 @@ function checkedStyle(element: HTMLElement) {
 export function rawStyles(root: ParentNode) {
   const checked = [...root.querySelectorAll<HTMLElement>('[style]')].map(checkedStyle)
   const lost = checked.flatMap((style) => style.lost)
-  const noise = lost
-    .map(propertyOf)
-    .filter((name): name is string => name !== null && NOISE_STYLE.test(name))
+  const noise = lost.flatMap((entry) => {
+    const name = propertyOf(entry)
+    return name !== null && NOISE_STYLE.test(name) ? [name] : []
+  })
   return {
     isKept: noise.length === lost.length && checked.every((style) => style.isRebuilt),
     noise: [...new Set(noise)],

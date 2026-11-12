@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 // Regression harness for "conditional formatting in dark mode".
 //
 // A colour-scale rule interpolates literal hex stops, so its fills stay pale
@@ -35,8 +36,8 @@ function setTheme(tokens: Record<string, string>) {
 // Paints one cell and reports the fill style in force when its text was drawn.
 function inkPaintedFor({
   value = '42',
-  fmt = {} as CellFormat,
-  condFmt = null as null | CondFormat,
+  fmt = fromPartial<CellFormat>({}),
+  condFmt = fromPartial<null | CondFormat>(null),
 }) {
   const ctx = createMockCtx()
   const painted: string[] = []

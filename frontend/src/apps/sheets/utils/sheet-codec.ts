@@ -38,7 +38,7 @@ interface PackedSheets {
 // Unpack the compact wire shape back to `{ sheets, current }`. Anything that
 // isn't a version-2 envelope (legacy snapshots, the empty-default fallback) is
 // returned unchanged, which is why the result is `unknown`.
-export function unpackSheet(data: unknown): unknown {
+export function unpackSheet<Input>(data: Input): Input | SheetSnapshot {
   if (!_isPacked(data)) return data
   const sheets: Record<string, Cells> = {}
   const packed = data.sheets || {}
@@ -47,8 +47,8 @@ export function unpackSheet(data: unknown): unknown {
 }
 
 // A version-2 envelope; its fields are still checked where they're read.
-function _isPacked(data: unknown): data is Partial<PackedSheets> {
-  return !!data && typeof data === 'object' && (data as { v?: unknown }).v === PACK_VERSION
+function _isPacked<Value>(data: Value): data is Value & Partial<PackedSheets> {
+  return !!data && typeof data === 'object' && 'v' in data && data.v === PACK_VERSION
 }
 
 // Column labels are stable, so cache them module-wide and grow on demand —
@@ -59,7 +59,7 @@ function _label(c: number): string {
   return _labelCache[c] ?? ''
 }
 
-function _unpackRows(rows: PackedRows | undefined): Cells {
+function _unpackRows(rows: PackedRows | undefined) {
   const cells: Cells = {}
   if (!rows) return cells
   for (const r in rows) {

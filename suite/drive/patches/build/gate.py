@@ -17,6 +17,8 @@ migration failure needs the message intact in the traceback, and
 `frappe.throw` rewrites it depending on whether stdin is a terminal.
 """
 
+from urllib.parse import urlsplit, urlunsplit
+
 import frappe
 
 # A key no blob can occupy: blob keys are `private/<site prefix>/<blob>/<filename>`.
@@ -133,5 +135,13 @@ def _probe_bucket(env, bucket: str) -> None:
 
 
 def _endpoint(value) -> str:
-    """One spelling for an endpoint, so a trailing slash is not a mismatch."""
-    return (value or "").rstrip("/")
+    """One spelling for an endpoint: no trailing slash, scheme and host in lower case.
+
+    Both are case-insensitive in a URL, so `HTTPS://MinIO.internal/` and
+    `https://minio.internal` name one endpoint. A different host, port or
+    path still differs."""
+    text = (value or "").strip().rstrip("/")
+    if not text:
+        return ""
+    parts = urlsplit(text)
+    return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), parts.path, parts.query, parts.fragment))

@@ -38,6 +38,13 @@ export const rowMailIds = (thread: Thread): string[] => {
 }
 
 /**
+ * The mail ids pinning or unpinning a conversation carries: all of them, since the pin is the
+ * conversation's. The server keeps to those in the Inbox when pinning (see suite/mail/pins.py).
+ */
+export const threadPinIds = (thread: Thread): string[] =>
+  thread.messages?.length ? thread.messages.flatMap(mailCopyIds) : [thread.id]
+
+/**
  * The mail ids starring or unstarring a whole thread carries. A thread is starred while any message
  * in it is (as the Starred folder reads it), so unstarring clears every starred message — clearing
  * only the row's own left the thread in Starred, starred by an older message. Starring marks the

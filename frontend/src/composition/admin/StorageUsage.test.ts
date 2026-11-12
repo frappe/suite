@@ -4,7 +4,6 @@ import { createApp } from 'vue'
 import StorageUsage from './StorageUsage.vue'
 
 vi.mock('frappe-ui', async () => ({
-  ...(await import('../../../../node_modules/frappe-ui/src/components/Progress')),
   ...(await import('../../../../node_modules/frappe-ui/src/components/Tooltip')),
 }))
 
@@ -29,48 +28,25 @@ function render(drive: number, mail: number | null, cap: number | null) {
 }
 
 it.each([
-  [2e9, 3e9, 10e9, '50'],
-  [0, 0, 10e9, '0'],
-  [12e9, 3e9, 10e9, '100'],
-  [-1e9, 0, 10e9, '0'],
-])(
-  'exposes bounded storage usage for %s Drive bytes and %s Mail bytes',
-  (drive, mail, cap, value) => {
-    const root = render(drive, mail, cap)
-    const bar = root.querySelector('[role="progressbar"]:not([aria-hidden])')
-    expect(bar?.getAttribute('aria-label')).toBe('Storage usage')
-    expect(bar?.getAttribute('aria-valuenow')).toBe(value)
-    expect(bar?.getAttribute('aria-valuemin')).toBe('0')
-    expect(bar?.getAttribute('aria-valuemax')).toBe('100')
-  },
-)
-
-it('keeps actual usage and limit readable above the cap', () => {
-  const root = render(12e9, 3e9, 10e9)
-  expect(root.textContent).toContain('15 GB of 10 GB used')
-  expect(root.querySelector('[role="progressbar"]')?.getAttribute('aria-valuetext')).toBe(
-    '15 GB of 10 GB used',
-  )
+  [400e6, 0, null, '400 MB'],
+  [400e6, 0, 1e9, '400 MB / 1 GB'],
+  [12e9, 3e9, 10e9, '15 GB / 10 GB'],
+  [0, 0, 10e9, '0 MB / 10 GB'],
+  [2e9, null, 10e9, '2 GB / 10 GB'],
+])('shows usage and only a configured limit', (drive, mail, cap, expected) => {
+  const root = render(drive, mail, cap)
+  expect(root.textContent?.trim()).toBe(expected)
+  expect(root.querySelector('[role="progressbar"]')).toBeNull()
+  expect(root.querySelector('.lucide-info') !== null).toBe(mail === null)
 })
 
-it.each([null, 0, -1, Number.NaN, Number.POSITIVE_INFINITY])(
-  'does not show a quota bar for an unusable limit of %s',
+it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])(
+  'keeps an invalid limit distinct from unlimited',
   (cap) => {
     const root = render(2e9, 3e9, cap)
-    expect(root.querySelector('[role="progressbar"]')).toBeNull()
-    expect(root.textContent).toContain('5 GB')
-    expect(root.textContent).toContain(cap === null ? 'No limit' : 'Limit unavailable')
+    expect(root.textContent).toContain('5 GB / Limit unavailable')
   },
 )
-
-it('does not present incomplete Mail usage as a complete percentage', () => {
-  const root = render(2e9, null, 10e9)
-  expect(root.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('20')
-  expect(root.querySelector('[role="progressbar"]')?.getAttribute('aria-valuetext')).toBe(
-    'At least 2 GB of 10 GB used. Partial usage: Mail unavailable; total may be higher.',
-  )
-  expect(root.textContent).toContain('At least 2 GB of 10 GB used')
-})
 
 it('keeps app names out of the row and reveals their measurements on keyboard focus', async () => {
   vi.stubGlobal(
@@ -98,10 +74,8 @@ it('keeps app names out of the row and reveals their measurements on keyboard fo
 
 it('keeps a zero known lower bound visible without inventing Mail usage', () => {
   const root = render(0, null, 100e9)
-  const bar = root.querySelector('[role="progressbar"]')
-  expect(bar?.getAttribute('aria-valuenow')).toBe('0')
-  expect(bar?.getAttribute('aria-valuetext')).toContain('total may be higher')
-  expect(root.textContent).toContain('At least 0 MB of 100 GB used')
+  expect(root.textContent).toContain('0 MB')
+  expect(root.textContent).toContain('/ 100 GB')
 })
 
 it('does not invent usage when the Drive measurement is unavailable', () => {

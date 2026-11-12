@@ -134,9 +134,11 @@ def _legacy_plan(node: str, row: dict, user_name: Callable[[str], str | None]) -
     if not text.strip():
         raise InvalidLegacyContent("legacy comment text is blank")
 
-    author = row.get("owner") or "Guest"
-    if len(author) > 140:
+    owner = row.get("owner") or "Guest"
+    if len(owner) > MAX_LINK_CHARS:
         raise InvalidLegacyContent("legacy comment author exceeds the target Link column")
+
+    author = user_or_guest(owner, user_name)
     stamp = str(row.get("creation") or "")
     if not stamp:
         raise InvalidLegacyContent("legacy comment has no creation stamp")
@@ -144,7 +146,7 @@ def _legacy_plan(node: str, row: dict, user_name: Callable[[str], str | None]) -
         "id": row["name"],
         "text": text,
         "author": author,
-        "author_name": None,
+        "author_name": owner if author != owner else None,
         "stamp": stamp,
         "mentions": mentioned_users(span_ids, user_name),
         "source_complete": True,
@@ -170,7 +172,7 @@ def _writer_threads(env, document, node: str) -> list[tuple[dict, list[dict]]]:
     # Lazy: a document whose entries all carry a complete author and stamp
     # never needs a fallback, and refusing it for an incomplete container
     # stamp it never reads would drop comments the source can express.
-    fallback = _lazy(lambda: _container_fallback(document))
+    fallback = _lazy(lambda: known_fallback(_container_fallback(document), env.content.user_name))
     timezone = env.content.site_timezone()
     # `to_py()` hands back the yrs map order, and yrs hashes with a seed
     # that changes per process. Sorted keys give one thread order, so an
@@ -227,7 +229,7 @@ def _sheet_threads(env, document, node: str) -> list[tuple[dict, list[dict]]]:
         return []
     if not isinstance(raw, dict):
         raise InvalidLegacyContent("Sheet comments root is not an object")
-    fallback = _lazy(lambda: _sheet_fallback(env, document))
+    fallback = _lazy(lambda: known_fallback(_sheet_fallback(env, document), env.content.user_name))
     timezone = env.content.site_timezone()
     plans = []
     for sheet_name, cells in raw.items():
@@ -312,6 +314,14 @@ def entry_author(value: dict, source_author: object, name_key: str | None) -> tu
     return author, author_name
 
 
+def user_or_guest(user: str, user_name: Callable[[str], str | None]) -> str:
+    """Answer `user` when a User row holds it, else Guest, as a Link to User takes no one without a row."""
+    if user == "Guest" or user_name(user):
+        return user
+
+    return "Guest"
+
+
 def entry_mentions(value: dict) -> list[str]:
     """Answer the ids a comment entry mentions, each a mention's `id` or a bare string."""
     mentions = value.get("mentions") or []
@@ -353,6 +363,10 @@ def comment_entry(
 
     source_author = value.get(owner_key)
     author, author_name = entry_author(value, source_author, name_key)
+    if user_or_guest(author, user_name) != author:
+        author_name = author_name or author
+        author = "Guest"
+
     source_complete = isinstance(source_author, str) and bool(source_author)
     try:
         stamp = epoch_millis(value.get(time_key), timezone)
@@ -587,6 +601,12 @@ def _container_fallback(document) -> tuple[str, str]:
     if not document.modified_by or not document.modified:
         raise InvalidLegacyContent("document has no complete comment timestamp fallback")
     return document.modified_by, str(document.modified)
+
+
+def known_fallback(found: tuple[str, str], user_name: Callable[[str], str | None]) -> tuple[str, str]:
+    """Answer a fallback's user and stamp, the user Guest when no User row holds it."""
+    user, stamp = found
+    return user_or_guest(user, user_name), stamp
 
 
 def _sheet_fallback(env, document) -> tuple[str, str]:

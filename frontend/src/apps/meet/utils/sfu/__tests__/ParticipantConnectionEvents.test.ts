@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, reactive, watchEffect } from 'vue'
 
@@ -52,12 +53,12 @@ function createManager({ e2eeRequired = false } = {}) {
     reset: vi.fn(),
   }
   const manager = new ParticipantConnection({
-    sfuClient: sfuClient as never,
-    videoManager: {} as never,
+    sfuClient: fromPartial(sfuClient),
+    videoManager: fromPartial({}),
     participantManager,
-    transportManager: transportManager as never,
-    mediaManager: mediaManager as never,
-    recoveryManager: recoveryManager as never,
+    transportManager: fromPartial(transportManager),
+    mediaManager: fromPartial(mediaManager),
+    recoveryManager: fromPartial(recoveryManager),
   })
   vi.spyOn(manager.expectedMedia, 'waitForHealthy').mockResolvedValue()
   manager.currentUser = { value: { user_id: 'me' } }
@@ -150,9 +151,11 @@ describe('ParticipantConnection', () => {
     })
     await manager.connect('token')
     await manager.setVisibleCameraParticipants(['remote-1'])
-    sfuClient.getRoomParticipants.mockResolvedValueOnce([
-      { participantId: 'remote-1', userData: { name: 'Remote', video_enabled: true } },
-    ] as never)
+    sfuClient.getRoomParticipants.mockResolvedValueOnce(
+      fromPartial([
+        { participantId: 'remote-1', userData: { name: 'Remote', video_enabled: true } },
+      ]),
+    )
     sfuClient.joinRoom.mockImplementationOnce(async () => {
       // Rejoin removes the old server transports before its acknowledgement.
       await handlers.get('producer_created')?.({
@@ -335,7 +338,7 @@ describe('ParticipantConnection', () => {
       getAudioTracks: () => [{ readyState: 'live' }],
       getVideoTracks: () => [],
     }
-    mediaManager.mediaHandler = {
+    mediaManager.mediaHandler = fromPartial({
       localStream,
       audioProducer: {
         closed: true,
@@ -343,7 +346,7 @@ describe('ParticipantConnection', () => {
       },
       videoProducer: null,
       screenProducer: null,
-    } as never
+    })
 
     await manager.reconcileExpectedMedia()
 
@@ -355,7 +358,7 @@ describe('ParticipantConnection', () => {
   it('verifies local health only when outbound RTP advances', async () => {
     const { manager, mediaManager } = createManager()
     let bytesSent = 100
-    mediaManager.mediaHandler = {
+    mediaManager.mediaHandler = fromPartial({
       localStream: {
         getAudioTracks: () => [{ readyState: 'live' }],
         getVideoTracks: () => [],
@@ -367,7 +370,7 @@ describe('ParticipantConnection', () => {
       },
       videoProducer: null,
       screenProducer: null,
-    } as never
+    })
 
     await manager.reconcileExpectedMedia()
     expect(manager.expectedMedia.get('local:microphone')?.healthySamples).toBe(1)
@@ -386,7 +389,7 @@ describe('ParticipantConnection', () => {
       participantId: 'remote-1',
       userData: { name: 'Remote', video_enabled: true },
     })
-    mediaManager.mediaHandler = {
+    mediaManager.mediaHandler = fromPartial({
       localStream: {
         getAudioTracks: () => [{ readyState: 'live', enabled: false }],
         getVideoTracks: () => [],
@@ -399,7 +402,7 @@ describe('ParticipantConnection', () => {
       },
       videoProducer: null,
       screenProducer: null,
-    } as never
+    })
     mediaManager.consumerManager.getConsumersByParticipant.mockReturnValue([
       {
         producerId: 'producer-1',
@@ -575,7 +578,7 @@ describe('ParticipantConnection', () => {
     await Promise.resolve()
     expect(mediaManager.subscribeToRemoteProducer).not.toHaveBeenCalled()
 
-    E2EEMeeting.instance.setMeetingContext(new Uint8Array(32) as Uint8Array<ArrayBuffer>, 1)
+    E2EEMeeting.instance.setMeetingContext(new Uint8Array(32), 1)
     await producerPromise
 
     expect(mediaManager.subscribeToRemoteProducer).toHaveBeenCalledWith({
@@ -598,7 +601,7 @@ describe('ParticipantConnection', () => {
 
     const first = handlers.get('producer_created')?.(event)
     const duplicate = handlers.get('producer_created')?.(event)
-    E2EEMeeting.instance.setMeetingContext(new Uint8Array(32) as Uint8Array<ArrayBuffer>, 1)
+    E2EEMeeting.instance.setMeetingContext(new Uint8Array(32), 1)
     await Promise.all([first, duplicate])
 
     expect(mediaManager.subscribeToRemoteProducer).toHaveBeenCalledOnce()

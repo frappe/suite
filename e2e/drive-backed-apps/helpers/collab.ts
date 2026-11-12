@@ -6,12 +6,25 @@ import {
 	type RequestOptions,
 	type ServerResponse,
 } from "node:http";
-import type { AddressInfo } from "node:net";
 import { expect, type APIRequestContext, type Page } from "@playwright/test";
+
 import { frappeData } from "../../shared/frappe";
 import { shareWriterDocument, writerEditor } from "./writer";
 
 /** Where a document's collab log stands, from `suite.writer.content.e2e_api.state`. */
+interface PushHeader {
+	lineage: string;
+	expected_user: string;
+	sid: string;
+	from: number;
+	to: number;
+	cid: number;
+	seen_rev: number;
+	schema: number;
+	shas: string[];
+	stage_id?: string;
+}
+
 export interface CollabState {
 	body_rev: number;
 	head_rev: number;
@@ -96,11 +109,7 @@ export function trimmedRev(testApi: APIRequestContext, node: string) {
 }
 
 /** Hold a document for an admin; `why` is the judge's cause, and `bad_checkpoint` puts the whole document in question. */
-export async function holdDocument(
-	testApi: APIRequestContext,
-	node: string,
-	why: string,
-): Promise<CollabState> {
+export async function holdDocument(testApi: APIRequestContext, node: string, why: string): Promise<CollabState> {
 	const response = await testApi.post("/api/method/suite.writer.content.e2e_api.hold", {
 		form: { node, why },
 	});
@@ -113,11 +122,7 @@ export function releaseDocument(testApi: APIRequestContext, node: string) {
 }
 
 /** Quarantine a document's last row, as a judge that finds it bad does. */
-export async function quarantineLast(
-	testApi: APIRequestContext,
-	node: string,
-	why: string,
-): Promise<CollabState> {
+export async function quarantineLast(testApi: APIRequestContext, node: string, why: string): Promise<CollabState> {
 	const response = await testApi.post("/api/method/suite.writer.content.e2e_api.quarantine_last", {
 		form: { node, why },
 	});
@@ -153,10 +158,7 @@ export function convertNow(testApi: APIRequestContext, node: string) {
 }
 
 /** How many rows each collab table holds for a log, keyed by table kind. */
-export async function logRowCounts(
-	testApi: APIRequestContext,
-	log: string,
-): Promise<Record<string, number>> {
+export async function logRowCounts(testApi: APIRequestContext, log: string): Promise<Record<string, number>> {
 	const response = await testApi.post("/api/method/suite.writer.content.e2e_api.log_rows", {
 		form: { log },
 	});
@@ -186,7 +188,8 @@ export function editorBlocks(page: Page): Promise<string[]> {
 // Runs in the page, so it reads nothing from this module
 function blockTexts(editor: Element): string[] {
 	function textWithoutCarets(block: Element) {
-		const copy = block.cloneNode(true) as Element;
+		const copy = block.cloneNode(true);
+		if (!(copy instanceof Element)) throw new Error("Expected a cloned editor block");
 		for (const caret of copy.querySelectorAll(".collaboration-carets__caret")) {
 			caret.remove();
 		}
@@ -198,7 +201,7 @@ function blockTexts(editor: Element): string[] {
 }
 
 export async function expectSaved(page: Page): Promise<void> {
-	await expect(page.getByText("Saved", { exact: true })).toBeVisible();
+	await expect(page.locator('[data-save-state="clean"]')).toBeVisible();
 }
 
 /** Type at the end of the document, in a paragraph of its own. */
@@ -234,11 +237,7 @@ export async function expectConverged(
 }
 
 /** Store the document's current bytes as a named version, through Drive's versions route; answers its seq. */
-export async function saveNamedVersion(
-	request: APIRequestContext,
-	node: string,
-	label: string,
-): Promise<string> {
+export async function saveNamedVersion(request: APIRequestContext, node: string, label: string): Promise<string> {
 	const version = {
 		kind: "named",
 		label,
@@ -249,6 +248,7 @@ export async function saveNamedVersion(
 	});
 	expect(response.ok(), await response.text()).toBe(true);
 
+	// SAFETY: the local collaboration endpoint owns this response contract (version/session/update); the request status is checked before its fields are used.
 	const reply = (await response.json()) as VersionReply;
 	return reply.data.seq;
 }
@@ -313,11 +313,11 @@ export function picturesLoaded(page: Page): Promise<boolean[]> {
 	return writerEditor(page)
 		.locator("img[src]")
 		.evaluateAll((images) =>
-			(images as HTMLImageElement[]).map((image) => image.complete && image.naturalWidth > 0),
+			images.map((image) => image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0),
 		);
 }
 
-function buildFrame(header: object, bytes: Buffer): Buffer {
+function buildFrame(header: unknown, bytes: Buffer): Buffer {
 	const headerJson = Buffer.from(JSON.stringify(header));
 	const headerLength = Buffer.alloc(4);
 	headerLength.writeUInt32BE(headerJson.length);
@@ -347,6 +347,7 @@ export async function pushInPieces(
 		data: Buffer.from(sessionJson),
 	});
 	expect(sessionResponse.ok(), await sessionResponse.text()).toBe(true);
+	// SAFETY: the local collaboration endpoint owns this response contract (version/session/update); the request status is checked before its fields are used.
 	const sessionReply = (await sessionResponse.json()) as { client_id: number };
 	const clientId = sessionReply.client_id;
 
@@ -355,12 +356,9 @@ export async function pushInPieces(
 		client_id: String(clientId),
 		length: String(length),
 	};
-	const changeResponse = await testApi.post(
-		"/api/method/suite.writer.content.e2e_api.paragraph_change",
-		{
-			form: paragraphForm,
-		},
-	);
+	const changeResponse = await testApi.post("/api/method/suite.writer.content.e2e_api.paragraph_change", {
+		form: paragraphForm,
+	});
 	const paragraphChange = await frappeData<ParagraphChange>(changeResponse);
 
 	const changeBytes = Buffer.from(paragraphChange.change, "hex");
@@ -390,7 +388,7 @@ export async function pushInPieces(
 		expect(stageResponse.status(), await stageResponse.text()).toBe(200);
 	}
 
-	const pushHeader: Record<string, unknown> = {
+	const pushHeader: PushHeader = {
 		lineage: paragraphChange.lineage,
 		expected_user: user,
 		sid: sessionId,
@@ -417,6 +415,7 @@ export async function pushInPieces(
 		return { pieces, status };
 	}
 
+	// SAFETY: the local collaboration endpoint owns this response contract (version/session/update); the request status is checked before its fields are used.
 	const refusal = (await pushResponse.json()) as { collab: string };
 	return {
 		pieces,
@@ -478,7 +477,9 @@ export async function bodyLimitProxy(target: string, limit = 2 ** 20, bareRefusa
 
 	const server = createServer(relay);
 	await new Promise<void>((listening) => server.listen(0, listening));
-	const { port } = server.address() as AddressInfo;
+	const address = server.address();
+	if (!address || typeof address === "string") throw new Error("Expected a TCP relay address");
+	const { port } = address;
 
 	function liftLimit() {
 		limit = Infinity;

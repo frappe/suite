@@ -17,7 +17,8 @@ const OPERATOR_CONTEXT = {
 export function getMailSearchOperatorContext(query: string) {
   const match = query.match(/(?:^|\s)(in|from|to|cc|bcc|with|subject|after|before|has|is):\s*$/i)
   if (!match) return null
-  return OPERATOR_CONTEXT[match[1].toLowerCase() as keyof typeof OPERATOR_CONTEXT]
+  const operator = match[1].toLowerCase()
+  return Object.entries(OPERATOR_CONTEXT).find(([key]) => key === operator)?.[1]
 }
 
 export function getMailContactOperator(query: string) {
@@ -32,7 +33,7 @@ export function getMailChoiceOperator(query: string) {
   return { key: match[1].toLowerCase(), partial: match[2] }
 }
 
-export function parseMailSearchQuery(query: string): Record<string, string> {
+export function parseMailSearchQuery(query: string) {
   const filter: Record<string, string> = {}
   const text: string[] = []
   const tokens = query.match(/[a-z]+:(?:"[^"]*"|\S+)|"[^"]*"|\S+/gi) ?? []

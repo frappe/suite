@@ -6,13 +6,15 @@ import router from '@/apps/mail/router'
 import type { UserAccount } from '@/apps/mail/types'
 import { useSession } from '@/platform/session'
 
-export type MailboxRole = 'inbox' | 'sent' | 'drafts' | 'trash' | 'junk' | 'archive' | 'important'
+export type MailboxRole =
+  'inbox' | 'sent' | 'drafts' | 'trash' | 'junk' | 'archive' | 'important' | 'snoozed'
 
 /** Destinations rather than places mail is read — the folder lists (desktop sidebar,
- * mobile folder sheet) keep these behind their More row, in this order: the mail kept first,
- * the mail thrown out last, Trash at the very end. Typed wide (string) because mailbox data
- * carries role as a string. */
+ * mobile folder sheet) keep these behind their More row, in this order: the mail set aside for
+ * later first, then the mail kept, the mail thrown out last, Trash at the very end. Typed wide
+ * (string) because mailbox data carries role as a string. */
 export const SECONDARY_MAILBOX_ROLES: readonly string[] = [
+  'snoozed',
   'archive',
   'junk',
   'trash',
@@ -26,6 +28,17 @@ export const PRIMARY_MAILBOX_ROLES: readonly string[] = [
   'sent',
 ] satisfies readonly MailboxRole[]
 
+/** Snoozed shows only while it holds something: most people never have mail waiting there. */
+export const isHiddenFolder = (folder: {
+  role?: string | null
+  total_threads?: number | null
+}): boolean => folder.role === 'snoozed' && !folder.total_threads
+
+/** A folder that holds pinned mail at its top: the Inbox, Sent, or one of the user's own (no role).
+ * Each pins by its own keyword (see suite/mail/pins.py). */
+export const takesPins = (folder?: { role?: string | null } | null): boolean =>
+  !!folder && (!folder.role || folder.role === 'inbox' || folder.role === 'sent')
+
 const primaryRank = (role?: string | null) => {
   const rank = PRIMARY_MAILBOX_ROLES.indexOf(role ?? '')
   return rank === -1 ? PRIMARY_MAILBOX_ROLES.length : rank
@@ -37,12 +50,11 @@ export const withStarred = <T, S>(
   roleOf: (folder: T) => string | null | undefined,
   starred: S,
 ): (T | S)[] => {
-  const sorted: (T | S)[] = [...folders].sort(
-    (a, b) => primaryRank(roleOf(a)) - primaryRank(roleOf(b)),
-  )
-  const afterInbox = folders.length ? sorted.findIndex((f) => roleOf(f as T) === 'inbox') + 1 : 0
-  sorted.splice(afterInbox, 0, starred)
-  return sorted
+  const sorted = [...folders].sort((a, b) => primaryRank(roleOf(a)) - primaryRank(roleOf(b)))
+  const afterInbox = folders.length ? sorted.findIndex((f) => roleOf(f) === 'inbox') + 1 : 0
+  const withStar: (T | S)[] = sorted
+  withStar.splice(afterInbox, 0, starred)
+  return withStar
 }
 
 /** Role → mailbox id map for a mailbox list. Shared with utils/accountScope, which derives the
@@ -58,6 +70,7 @@ export const deriveMailboxIds = (
     junk: '',
     archive: '',
     important: '',
+    snoozed: '',
   }
   mailboxes?.forEach((m) => {
     if (m.role) ids[m.role] = m.id

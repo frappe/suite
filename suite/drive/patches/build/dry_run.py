@@ -48,6 +48,7 @@ from suite.drive.patches.build.preflight import (
     NO_GO,
     DiskSettings,
     PreflightReport,
+    ServerFacts,
     accepted_defects_path,
     legacy_schema_present,
     preflight,
@@ -77,13 +78,14 @@ RESULT_PREFIX = "drive-build-dry-run"
 ROWS_LISTED = 50
 
 # What Build does with a `DocShare` row, by `share_doctype`. Sheet rows are
-# step 6 (`grants`); the two content doctypes are step 10
+# step 6 (`grants`); Writer Document rows are step 10
 # (`content._convert_content_shares`), which drops every other governed
-# doctype because history and child rows carry no node.
+# doctype because history and child rows carry no node and a Presentation's
+# DocShare never opened anything
 DOCSHARE_FATES = {
     "Sheet": "rewritten as grants on the sheet's node (step 6)",
     "Writer Document": "rewritten as grants on the document's node (step 10)",
-    "Presentation": "rewritten as grants on the deck's node (step 10)",
+    "Presentation": "dropped (step 10): the old check read the File's rights, never DocShare",
 }
 DOCSHARE_DROPPED = "dropped (step 10): history or a child row, which has no node"
 
@@ -204,10 +206,13 @@ def dry_run(
     disk: DiskSettings | None = None,
     batch_size: int = BUILD_BATCH_SIZE,
     accepted_defects: Path | None = None,
+    server: ServerFacts,
 ) -> DryRun:
     """Preflight, census, one JSON file."""
     disk = disk or DiskSettings()
-    flight = preflight(env, disk=disk, batch_size=batch_size, accepted_defects=accepted_defects)
+    flight = preflight(
+        env, disk=disk, batch_size=batch_size, accepted_defects=accepted_defects, server=server
+    )
     census = take_census(env, root_folder=disk.root_folder, batch_size=batch_size)
     report = {
         "generated_at": env.now(),
@@ -233,6 +238,7 @@ def run() -> None:
         disk=DiskSettings.for_site(),
         directory=Path(frappe.get_site_path("private")),
         accepted_defects=accepted_defects_path(),
+        server=ServerFacts.for_site(),
     )
     print(result.render())
     print(f"\nSaved as JSON: {result.path}")

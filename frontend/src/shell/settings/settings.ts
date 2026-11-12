@@ -58,11 +58,16 @@ export interface VisibleSettingsGroup {
 /** Drops hidden groups, hidden tabs, and groups left with no tab. Keeps order. */
 export function visibleSettingsGroups(groups: readonly SettingsGroup[]): VisibleSettingsGroup[] {
   return groups
-    .filter((group) => group.condition?.() ?? true)
-    .map((group) => ({
-      label: group.label(),
-      tabs: group.tabs.filter((tab) => tab.condition?.() ?? true),
-    }))
+    .flatMap((group) =>
+      (group.condition?.() ?? true)
+        ? [
+            {
+              label: group.label(),
+              tabs: group.tabs.filter((tab) => tab.condition?.() ?? true),
+            },
+          ]
+        : [],
+    )
     .filter((group) => group.tabs.length > 0)
 }
 

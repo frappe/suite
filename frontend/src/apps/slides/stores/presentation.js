@@ -1,11 +1,11 @@
 import { toast } from 'frappe-ui'
-import tinycolor from 'tinycolor2'
 import { computed, ref } from 'vue'
 
 import { api, client } from '@/api'
 import { normalizeZIndices } from '@/apps/slides/stores/element'
 import { normalizeColor } from '@/apps/slides/utils/color'
 import { serverAnswers } from '@/apps/slides/utils/offlineRequests'
+import { migrateShadow } from '@/apps/slides/utils/oldShadow'
 import { appDocumentTitle } from '@/platform/page-meta'
 import { randomId } from '@/platform/random-id'
 import { getCookieSessionUser } from '@/platform/session'
@@ -27,14 +27,17 @@ import { slides } from './slide'
 
 const presentationDoc = ref()
 
+/** @type {import('vue').Ref<string | null>} */
 const presentationId = ref(null)
 
 // the user may not write this presentation at all
 const viewOnly = ref(false)
 
-// no write access, another tab of this browser holds the edit lock, or the server
-// refused this tab's version; a reload is the only way on from the last one
-const inReadonlyMode = computed(() => viewOnly.value || lockedElsewhere.value || saveRefused.value)
+// Another tab of this browser edits the presentation, or the server refused this
+// tab's version. Only the refusal needs a reload.
+const writesBlocked = computed(() => lockedElsewhere.value || saveRefused.value)
+// That, or the user has no write access.
+const inReadonlyMode = computed(() => viewOnly.value || writesBlocked.value)
 
 const applyReverseTransition = ref(false)
 
@@ -49,10 +52,10 @@ function setDocumentContext(id, context, onRefused, keepDiscarded) {
 }
 const contextFor = (id) => documentContexts.get(id)?.context
 
-const getElementDimensions = async (el) => {
-  let width = 0,
-    height = 0
+const HALF = 0.5
 
+// appended before the fonts are awaited: laying it out is what starts their download
+function placeForMeasuring(el) {
   //render outside dom to get width
   const tempDiv = document.createElement('div')
   tempDiv.style.position = 'absolute'
@@ -70,15 +73,42 @@ const getElementDimensions = async (el) => {
 
   tempDiv.innerHTML = el.content || ''
   document.body.appendChild(tempDiv)
+  return tempDiv
+}
 
-  await document.fonts.ready
-
-  width = el.width || tempDiv.offsetWidth
-  height = tempDiv.offsetHeight
-
+function readMeasured(tempDiv, el) {
+  const width = el.width || tempDiv.offsetWidth
+  const height = tempDiv.offsetHeight
   document.body.removeChild(tempDiv)
-
   return { width, height }
+}
+
+async function getElementDimensions(el) {
+  const tempDiv = placeForMeasuring(el)
+  await document.fonts.ready
+  return readMeasured(tempDiv, el)
+}
+
+function measureNow(el) {
+  return readMeasured(placeForMeasuring(el), el)
+}
+
+function isCentred(el) {
+  return el.transform === 'translate(-50%, -50%)'
+}
+
+function toTopLeft(el, { width, height }) {
+  return {
+    ...el,
+    transform: 'none',
+    transformOrigin: 'top left',
+    left: el.left - width * HALF,
+    top: el.top - height * HALF,
+  }
+}
+
+function withoutTransform(el) {
+  return { ...el, transform: 'none', transformOrigin: 'top left' }
 }
 
 const transformElements = async (elements) => {
@@ -87,25 +117,10 @@ const transformElements = async (elements) => {
   for (const el of elements) {
     if (el.type !== 'text') {
       newEls.push(el)
-      continue
-    }
-
-    if (el.transform === 'translate(-50%, -50%)') {
-      const { width, height } = await getElementDimensions(el)
-
-      newEls.push({
-        ...el,
-        transform: 'none',
-        transformOrigin: 'top left',
-        left: el.left - width / 2,
-        top: el.top - height / 2,
-      })
+    } else if (isCentred(el)) {
+      newEls.push(toTopLeft(el, await getElementDimensions(el)))
     } else if (!('transform' in el)) {
-      newEls.push({
-        ...el,
-        transform: 'none',
-        transformOrigin: 'top left',
-      })
+      newEls.push(withoutTransform(el))
     } else {
       newEls.push(el)
     }
@@ -114,27 +129,22 @@ const transformElements = async (elements) => {
   return newEls
 }
 
-const migrateShadow = (el) => {
-  // legacy px shadow (shadowSpread/shadowOffsetX/shadowOffsetY) -> size-relative model
-  if (el.shadowOffset != null) return
-  const hasLegacyShadow =
-    el.shadowSpread != null || el.shadowOffsetX != null || el.shadowOffsetY != null
-  if (!hasLegacyShadow) return
+// the same, for a live change that must be drawn at once. The fonts of text there when
+// the room opened were loaded through `transformElements`, later ones may still be loading
+function flattenNow(el, measure = measureNow) {
+  if (el.type !== 'text') {
+    return el
+  }
 
-  const refSize = Number(el.width) || 1
-  const offsetX = Number(el.shadowOffsetX || 0)
-  const offsetY = Number(el.shadowOffsetY || 0)
-  const toRelativeSize = (px) => Math.round((px / refSize) * 1000) / 10
-  const offsetAngle = ((Math.atan2(offsetY, offsetX) * 180) / Math.PI + 360) % 360
+  if (isCentred(el)) {
+    return toTopLeft(el, measure(el))
+  }
 
-  el.shadowBlur = toRelativeSize(Number(el.shadowSpread || 0))
-  el.shadowOffset = toRelativeSize(Math.hypot(offsetX, offsetY))
-  el.shadowAngle = offsetX || offsetY ? Math.round(offsetAngle) : 45
-  el.shadowOpacity = Math.round(tinycolor(el.shadowColor || '#000000ff').getAlpha() * 100)
+  if ('transform' in el) {
+    return el
+  }
 
-  delete el.shadowSpread
-  delete el.shadowOffsetX
-  delete el.shadowOffsetY
+  return withoutTransform(el)
 }
 
 const parseElements = (value, slide) => {
@@ -217,6 +227,16 @@ const startLoad = () => ++latestLoad
 
 const isLatestLoad = (load) => load === latestLoad
 
+// bumped each time a presentation opens, so reopening one is a new opening
+let opening = 0
+
+// work that waited may land only in the opening it started in
+function currentOpening() {
+  const id = presentationId.value
+  const at = opening
+  return () => id != null && presentationId.value === id && opening === at
+}
+
 // an offline copy warms exactly this url and param order (utils/pinTargets.ts).
 // Guest-reachable, so a share link's holder loads the deck to edit it too.
 const fetchDoc = (name) =>
@@ -258,6 +278,12 @@ const fetchPresentation = async (name, load) => {
   const clientIdsRepaired = normalizeSlideDoc(doc)
   for (const slide of doc.slides || []) {
     slide.elements = await transformElements(slide.elements)
+  }
+
+  // the rows of a deck the layer holds or is about to take are only there to read,
+  // so a draft stays on the device, unrestored
+  if (doc.is_converted || doc.conversion) {
+    return { doc, content: JSON.parse(JSON.stringify(doc.slides || [])), dirty: false }
   }
 
   const hasServerAnswered = needsServerCheck(local, doc.modified, landed) && (await serverAnswers())
@@ -309,6 +335,10 @@ const fetchPresentation = async (name, load) => {
 }
 
 const showPresentation = (id, { doc, content, dirty }) => {
+  // a refused tab reloading in place stays in the same opening
+  if (presentationId.value !== id) {
+    opening++
+  }
   presentationId.value = id
   presentationDoc.value = doc
   slides.value = content
@@ -503,10 +533,14 @@ export {
   templateList,
   loadTemplates,
   presentationTheme,
+  flattenNow,
+  measureNow,
   viewOnly,
   inReadonlyMode,
+  writesBlocked,
   savePresentationDoc,
   initPresentationDoc,
+  currentOpening,
   showsSlides,
   startLoad,
   resetEditorState,

@@ -1,5 +1,9 @@
+interface UpcomingEventWindowResult {
+  from: Date
+  to: Date
+}
 /** Local calendar days through the next weekday, including intervening weekend events. */
-export function upcomingEventWindow(now = new Date()): { from: Date; to: Date } {
+export function upcomingEventWindow(now = new Date()): UpcomingEventWindowResult {
   const from = new Date(now.getFullYear(), now.getMonth(), now.getDate())
   const to = new Date(from)
   do {

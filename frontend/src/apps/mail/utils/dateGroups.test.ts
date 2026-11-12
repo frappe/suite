@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { dateGroup, dateGroupLabel } from './dateGroups'
+import { dateGroup, dateGroupLabel, PINNED_GROUP, RETURNED_GROUP } from './dateGroups'
 
 // A Wednesday. Weeks start on Sunday, so this week began on 11 October.
 const WEDNESDAY = '2026-10-14T12:00:00'
@@ -110,5 +110,12 @@ describe('dateGroupLabel', () => {
     // A Saturday the 28th: this week began on the 22nd and the weeks end on 1 November, so they
     // hold all of November and none of October.
     expect(dateGroupLabel('2026-10', '2026-11-28T12:00:00')).toBe('October')
+  })
+})
+
+describe('the groups ahead of the dates', () => {
+  it('are named for what they hold, not a date', () => {
+    expect(dateGroupLabel(PINNED_GROUP)).toBe('Pinned')
+    expect(dateGroupLabel(RETURNED_GROUP)).toBe('Reminders')
   })
 })

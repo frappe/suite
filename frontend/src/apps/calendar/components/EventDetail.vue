@@ -194,9 +194,7 @@ const eventCalendar = computed(
  * Mail opens this card on events it never transformed, which have no palette
  * colour of their own; those still fall back to the calendar's own.
  */
-const dotColor = computed(() =>
-  eventColor((calendarEvent.color as string) || eventCalendar.value?.color),
-)
+const dotColor = computed(() => eventColor(calendarEvent.color || eventCalendar.value?.color))
 
 // Whose event it is: its organizer. An event nobody organizes — a holiday on a shared calendar,
 // say — has no one to name and no one invited, so it names the calendar it is on instead.

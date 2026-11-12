@@ -16,6 +16,12 @@ export interface TransferInput {
   start?: { session: UploadSession; offset: number }
 }
 
+const uploadTransfer: TransferRef<TransferInput, DriveNode> = {
+  kind: 'transfer',
+  owner: 'drive',
+  id: 'uploads.transfer',
+}
+
 export const api = {
   ...references,
   grants: {
@@ -33,9 +39,6 @@ export const api = {
   uploads: {
     ...references.uploads,
     finish: coveredMutation(references.uploads.finish),
-    transfer: { kind: 'transfer', owner: 'drive', id: 'uploads.transfer' } as TransferRef<
-      TransferInput,
-      DriveNode
-    >,
+    transfer: uploadTransfer,
   },
 } as const

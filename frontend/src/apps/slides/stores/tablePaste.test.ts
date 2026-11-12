@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
@@ -15,7 +16,8 @@ const table = '<table><tbody><tr><td><p>one</p></td><td><p>two</p></td></tr></tb
 
 // a drop routes through the same clipboard parse, with no event to read plain text off,
 // so this is what a table dragged into an element arrives as
-const paste = (html: string) => activeEditor.value.view.pasteHTML(html, {} as any)
+const paste = (html: string) =>
+  activeEditor.value!.view.pasteHTML(html, fromPartial<ClipboardEvent>({}))
 
 afterEach(() => {
   activeEditor.value?.destroy()
@@ -28,9 +30,9 @@ describe('a table pasted into an element that is not one', () => {
 
     paste(table)
 
-    expect(hasTableNode(activeEditor.value.state.doc)).toBe(false)
-    expect(activeEditor.value.state.doc.textContent).toContain('one')
-    expect(activeEditor.value.state.doc.textContent).toContain('two')
+    expect(hasTableNode(activeEditor.value!.state.doc)).toBe(false)
+    expect(activeEditor.value!.state.doc.textContent).toContain('one')
+    expect(activeEditor.value!.state.doc.textContent).toContain('two')
   })
 
   it('keeps the text around it', () => {
@@ -38,9 +40,9 @@ describe('a table pasted into an element that is not one', () => {
 
     paste(`<p>above</p>${table}<p>below</p>`)
 
-    expect(hasTableNode(activeEditor.value.state.doc)).toBe(false)
-    expect(activeEditor.value.state.doc.textContent).toContain('above')
-    expect(activeEditor.value.state.doc.textContent).toContain('below')
+    expect(hasTableNode(activeEditor.value!.state.doc)).toBe(false)
+    expect(activeEditor.value!.state.doc.textContent).toContain('above')
+    expect(activeEditor.value!.state.doc.textContent).toContain('below')
   })
 
   it('lands whole in a table element', () => {
@@ -48,6 +50,6 @@ describe('a table pasted into an element that is not one', () => {
 
     paste(table)
 
-    expect(hasTableNode(activeEditor.value.state.doc)).toBe(true)
+    expect(hasTableNode(activeEditor.value!.state.doc)).toBe(true)
   })
 })

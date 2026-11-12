@@ -112,10 +112,10 @@ describe('Sheets recovery copy', () => {
   it('hands the copy over once, then removes it', async () => {
     const saved: string[] = []
     // jsdom has no object URLs.
-    const url = URL as {
+    const url: {
       createObjectURL?: (blob: Blob) => string
       revokeObjectURL?: (href: string) => void
-    }
+    } = URL
     url.createObjectURL = () => 'blob:recovery'
     url.revokeObjectURL = () => {}
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (

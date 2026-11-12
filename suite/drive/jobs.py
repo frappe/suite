@@ -1,8 +1,9 @@
 """Frappe scheduler adapters for Drive-owned lifecycle work.
 
 Five daily jobs and no sixth: recompute root usage, purge expired trash,
-thin version history, sweep missing previews, and sweep unused media. There
-is deliberately no expired-grant cleanup. Every expired grant, including a
+thin version history, sweep missing previews, and sweep unused media. One
+hourly job deletes expired downloads. There is deliberately no expired-grant
+cleanup. Every expired grant, including a
 share-link grant, is kept and is inert on every read, so nothing may delete
 one on a schedule (spec §6.4, accepted decisions).
 """
@@ -12,6 +13,7 @@ from datetime import timedelta
 import frappe
 from frappe.utils import now_datetime
 
+from suite.drive._core import downloads
 from suite.drive._core.content import sweep_unused_media
 from suite.drive._core.nodes import purge_expired_trash_root
 from suite.drive._core.previews import sweep_missing
@@ -85,3 +87,10 @@ def thin_versions() -> dict:
 def sweep_unused_document_media() -> dict:
     """Trash media no content document has named for seven days."""
     return sweep_unused_media()
+
+
+def purge_expired_downloads() -> dict:
+    """Delete every download past its expiry, with its notification."""
+    purged = downloads.purge_expired()
+    frappe.db.commit()
+    return {"downloads": purged}

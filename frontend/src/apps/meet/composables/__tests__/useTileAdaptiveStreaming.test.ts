@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, nextTick, ref } from 'vue'
 
@@ -36,8 +37,13 @@ class IntersectionObserverStub {
       thresholds.some((threshold) => previous >= threshold !== ratio >= threshold)
     ) {
       this.callback(
-        [{ isIntersecting: ratio > 0, intersectionRatio: ratio } as IntersectionObserverEntry],
-        this as unknown as IntersectionObserver,
+        [
+          fromPartial<IntersectionObserverEntry>({
+            isIntersecting: ratio > 0,
+            intersectionRatio: ratio,
+          }),
+        ],
+        fromPartial<IntersectionObserver>(this),
       )
     }
   }

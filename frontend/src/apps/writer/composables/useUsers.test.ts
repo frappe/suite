@@ -1,9 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { computed } from 'vue'
 
-import type { WriterUser } from '@/apps/writer/drive'
+import { searchUsers, type WriterUser } from '@/apps/writer/drive'
 
-import { createUsers } from './useUsers'
+import { createUsers, rankMentionsFor, useUsers } from './useUsers'
+
+vi.mock('@/apps/writer/drive', () => ({ searchUsers: vi.fn() }))
+vi.mock('@/api', () => ({ client: { query: vi.fn() }, api: { suite: { people: { list: {} } } } }))
+vi.mock('@/platform/session', () => ({ useSession: () => ({ user: { value: 'me@x.test' } }) }))
 
 function person(name: string, full_name = name.toUpperCase()): WriterUser {
   return {
@@ -18,10 +22,15 @@ function person(name: string, full_name = name.toUpperCase()): WriterUser {
 
 // A server whose answers arrive only when the test releases them
 function heldServer() {
-  const asked: { query: string; answer: (people: WriterUser[]) => void; fail: () => void }[] = []
-  function search(query: string) {
+  const asked: {
+    query: string
+    node?: string | null
+    answer: (people: WriterUser[]) => void
+    fail: () => void
+  }[] = []
+  function search(query: string, node?: string | null) {
     return new Promise<WriterUser[]>((resolve, reject) => {
-      asked.push({ query, answer: resolve, fail: () => reject(new Error('offline')) })
+      asked.push({ query, node, answer: resolve, fail: () => reject(new Error('offline')) })
     })
   }
 
@@ -153,5 +162,52 @@ describe('people for mentions and names', () => {
     await vi.waitFor(() => expect(people.users.value).toHaveLength(1))
 
     expect([people.fullName('bob'), server.asked.length]).toEqual(['Bob Roy', 1])
+  })
+
+  it("asks for a document's people, and drops another document's when it opens", async () => {
+    vi.useFakeTimers()
+    const server = heldServer()
+    const people = createUsers(server.search)
+    people.rankFor('doc-1')
+    people.start()
+    server.asked[0].answer([person('ann')])
+    await vi.advanceTimersByTimeAsync(0)
+    const first = people.users.value.map((user) => user.name)
+
+    people.rankFor('doc-2')
+    const switched = people.users.value
+    people.start()
+    people.searchMentions('')
+
+    expect([first, switched, server.asked.map((asked) => [asked.query, asked.node])]).toEqual([
+      ['ann'],
+      [],
+      [
+        ['', 'doc-1'],
+        ['', 'doc-2'],
+      ],
+    ])
+  })
+
+  it("a document opened after another offers its own people, not the other's", async () => {
+    vi.mocked(searchUsers).mockImplementation(async (_query, node) =>
+      node === 'doc-a'
+        ? [{ ...person('ann'), has_access: false }]
+        : [{ ...person('bob'), has_access: true }],
+    )
+    rankMentionsFor('doc-a')
+    const { users } = useUsers()
+    await vi.waitFor(() => expect(users.value.map((user) => user.name)).toEqual(['ann']))
+
+    rankMentionsFor('doc-b')
+    // A menu opened now waits for this document's answer; it never shows the last one's markers
+    const whileAsking = users.value
+    await vi.waitFor(() => expect(users.value.map((user) => user.name)).toEqual(['bob']))
+
+    expect(whileAsking).toEqual([])
+    expect(vi.mocked(searchUsers).mock.calls).toEqual([
+      ['', 'doc-a'],
+      ['', 'doc-b'],
+    ])
   })
 })

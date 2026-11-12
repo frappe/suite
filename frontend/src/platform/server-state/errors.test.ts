@@ -40,7 +40,7 @@ beforeEach(() => {
         },
       }),
     },
-    { transport: createTransport({ fetch: fetcher, maxRetries: 0 }), persistence: false, feedback },
+    { transport: createTransport({ fetch: fetcher, maxRetries: 0 }), feedback },
   )
 })
 afterEach(() => {

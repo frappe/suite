@@ -1,6 +1,12 @@
 // Generated from src/apps/slides/client/contract.json. Do not edit.
 import type { MutationRef, PageRef, QueryRef } from '@/platform/transport'
 
+export type GetPublicPresentationOutputConversionStatus = {
+  state: string
+  reason?: string
+  rooms?: GetPublicPresentationOutputRooms
+}
+
 export type GetPublicPresentationOutputReferenceAnswer = {
   reference: string
   index: number
@@ -9,6 +15,13 @@ export type GetPublicPresentationOutputReferenceAnswer = {
   readable: boolean
   composite: boolean | null
   slides: Array<GetPublicPresentationOutputSlide> | null
+}
+
+export type GetPublicPresentationOutputRooms = {
+  epoch: number
+  keys: Array<string>
+  epoch_seconds: number
+  server_time: number
 }
 
 export type GetPublicPresentationOutputSlide = {
@@ -36,6 +49,8 @@ export type GetPublicPresentationOutput = {
   theme: string | null
   slides: Array<GetPublicPresentationOutputSlide>
   references?: Array<GetPublicPresentationOutputReferenceAnswer>
+  is_converted?: boolean
+  conversion?: GetPublicPresentationOutputConversionStatus
 }
 
 export type GetPublicPresentationError = never
@@ -60,6 +75,12 @@ const operationGetPublicPresentation: QueryRef<
   loadValidators: async () => (await import('./validators')).operationGetPublicPresentation,
 }
 
+export type GetCompositePresentationOutputConversionStatus = {
+  state: string
+  reason?: string
+  rooms?: GetCompositePresentationOutputRooms
+}
+
 export type GetCompositePresentationOutputReferenceAnswer = {
   reference: string
   index: number
@@ -68,6 +89,13 @@ export type GetCompositePresentationOutputReferenceAnswer = {
   readable: boolean
   composite: boolean | null
   slides: Array<GetCompositePresentationOutputSlide> | null
+}
+
+export type GetCompositePresentationOutputRooms = {
+  epoch: number
+  keys: Array<string>
+  epoch_seconds: number
+  server_time: number
 }
 
 export type GetCompositePresentationOutputSlide = {
@@ -95,6 +123,8 @@ export type GetCompositePresentationOutput = {
   theme: string | null
   slides: Array<GetCompositePresentationOutputSlide>
   references?: Array<GetCompositePresentationOutputReferenceAnswer>
+  is_converted?: boolean
+  conversion?: GetCompositePresentationOutputConversionStatus
 }
 
 export type GetCompositePresentationError = never

@@ -49,8 +49,8 @@ function openDB(): Promise<IDBDatabase> {
     const request = indexedDB.open(DB_NAME, DB_VERSION)
     request.onerror = () => reject(request.error)
     request.onsuccess = () => resolve(request.result)
-    request.onupgradeneeded = (event) => {
-      const db = (event.target as IDBOpenDBRequest).result
+    request.onupgradeneeded = () => {
+      const db = request.result
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME)
       }
@@ -67,7 +67,18 @@ async function idbGet(key: string): Promise<StoredIdentityKey | null> {
     const store = tx.objectStore(STORE_NAME)
     const req = store.get(key)
     req.onerror = () => reject(req.error)
-    req.onsuccess = () => resolve((req.result as StoredIdentityKey) ?? null)
+    req.onsuccess = () => {
+      const value: unknown = req.result
+      if (typeof CryptoKey !== 'undefined' && value instanceof CryptoKey) resolve(value)
+      else if (
+        value &&
+        typeof value === 'object' &&
+        'kty' in value &&
+        typeof value.kty === 'string'
+      )
+        resolve({ ...value, kty: value.kty })
+      else resolve(null)
+    }
     tx.oncomplete = () => db.close()
   })
 }

@@ -12,6 +12,7 @@ import {
   syncAll,
   type Tab,
 } from '@/apps/writer/collab/test-support'
+import { BLOCK_STYLES } from '@/apps/writer/components/core-editor/formatting'
 
 vi.mock('@/apps/writer/utils', () => ({ insertTemplate: () => {} }))
 vi.mock('@/apps/writer/resources', () => ({ getTemplates: {} }))
@@ -69,7 +70,7 @@ function deleteParagraph(tab: Tab) {
   tab.editor.commands.deleteRange({ from: position - 1, to: position + 6 })
 }
 
-const RESTRUCTURES: Record<string, (tab: Tab) => void> = {
+const RESTRUCTURES = {
   join: (tab) => at(tab, 0).joinBackward().run(),
   heading: (tab) => at(tab).setNode('heading', { level: 2 }).run(),
   codeBlock: (tab) => at(tab).setNode('codeBlock').run(),
@@ -79,9 +80,9 @@ const RESTRUCTURES: Record<string, (tab: Tab) => void> = {
   split: (tab) => at(tab, 4).splitBlock().run(),
   deleteParagraph,
   blockMove: (tab) => moveBlockAfterNext(tab.editor, inside(tab, 'defgh')),
-}
+} satisfies Record<string, (tab: Tab) => void>
 
-const ADDITIONS: Record<string, (tab: Tab) => Token> = {
+const ADDITIONS = {
   text: (tab) => typeIn(tab, 'QQ'),
   image: (tab) => {
     at(tab, 2)
@@ -95,7 +96,7 @@ const ADDITIONS: Record<string, (tab: Tab) => Token> = {
       .run()
     return { kind: 'mention', key: 'qq@x.com' }
   },
-}
+} satisfies Record<string, (tab: Tab) => Token>
 
 function typeIn(tab: Tab, key: string, word = 'defgh', offset = 2): Token {
   tab.editor
@@ -347,4 +348,17 @@ describe('binding fidelity: random restructures against typing', () => {
       .replace(/<\d+\.\d+>/g, '')
     expect(text.split('sentence')).toHaveLength(WORDS.length + 1)
   })
+})
+
+// The toolbar's own command; a change with no typing must still reach the tab's outbox
+it('sends a list made from the toolbar to another tab', async () => {
+  const tabs = await openTabs(stored({ type: 'paragraph' }), 2)
+  const [first, second] = tabs
+  const bulleted = BLOCK_STYLES.find((style) => style.value === 'bulletList')!
+
+  bulleted.apply(first.editor.chain().focus()).run()
+  expect(first.outbox.length).toBeGreaterThan(0)
+  await syncAll(tabs)
+
+  expect(second.editor.getHTML()).toContain('<ul')
 })

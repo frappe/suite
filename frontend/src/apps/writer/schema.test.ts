@@ -14,8 +14,6 @@ function buildEditorSchema(isCollaborative: boolean) {
   const ydoc = new yjs.Doc()
   const options: WriterEditorOptions = {
     isCollaborative,
-    mentionItems: () => [],
-    onMentionQuery: () => {},
     onCommentActivated: () => {},
     onAnchors: () => {},
     scrollParent: () => null,

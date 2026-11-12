@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it } from 'vitest'
 
 import { createSession } from '@/platform/session'
@@ -26,7 +27,14 @@ function unlockServer(
   const sent: Array<{ url: string; body: unknown }> = []
   const transport = createTransport({
     fetch: async (url, init) => {
-      const body = JSON.parse(String(init?.body ?? '{}')) as { password: string }
+      const body: unknown = JSON.parse(String(init?.body ?? '{}'))
+      if (
+        !body ||
+        typeof body !== 'object' ||
+        !('password' in body) ||
+        typeof body.password !== 'string'
+      )
+        throw new Error('Expected an unlock password')
       sent.push({ url: String(url), body })
       const reply = answer(body.password)
       return new Response(JSON.stringify(reply.body), {
@@ -41,7 +49,7 @@ function unlockServer(
 function heldLink() {
   const links = createLinkStore({
     storage: memoryStorage(),
-    session: createSession({ request: async () => ({}) } as unknown as Transport),
+    session: createSession(fromPartial<Transport>({ request: async () => ({}) })),
   })
   links.seed(CODE, 'locked-folder')
   return links

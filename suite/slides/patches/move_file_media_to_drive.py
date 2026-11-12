@@ -14,7 +14,10 @@ carries on. Frappe records the patch, so no later migrate retries it: each
 failure lands in the Error Log, and the retry is
 `bench --site <site> execute suite.slides.patches.move_file_media_to_drive.execute`.
 A second run stores nothing twice: all a converted body still names by legacy URL
-is another deck's files and lost bytes, and those stay as they are.
+is another deck's files and lost bytes, and those stay as they are. Lost bytes
+are not a failure, so the run only prints how many URLs it could not read. A deck
+that went to a collab log is skipped: its log is the deck now and its rows aren't
+this patch's to write (issue 1151).
 """
 
 import io
@@ -22,8 +25,10 @@ import io
 import frappe
 
 from suite import drive
+from suite.content import tables
 from suite.slides import drive as slides_drive
 from suite.slides.api.file import get_reference_presentations
+from suite.slides.content import APP
 
 LEGACY_PREFIXES = ("/private/files/", "/files/")
 
@@ -31,9 +36,17 @@ LEGACY_PREFIXES = ("/private/files/", "/files/")
 def execute():
     retry = f"bench --site {frappe.local.site} execute suite.slides.patches.move_file_media_to_drive.execute"
     failed = []
+    lost_urls: set[str] = set()
+    # The first migrate reaches this before after_migrate makes the log tables, and then no deck has a log
+    has_logs = tables.table(APP, "doc") in frappe.db.get_tables(cached=False)
     for deck in frappe.get_all("Presentation", filters={"node": ("is", "set")}, fields=["name", "node"]):
+        if has_logs and slides_drive.holds_log(deck.node):
+            # Lets go of the row it locked
+            frappe.db.rollback()
+            continue
+
         try:
-            convert_deck(deck.name, deck.node)
+            convert_deck(deck.name, deck.node, lost_urls)
             frappe.db.commit()
         except Exception as error:
             frappe.db.rollback()
@@ -48,12 +61,22 @@ def execute():
         names = ", ".join(failed)
         print(f"Slides: could not move the media of {names} to Drive. See the Error Log. Retry with: {retry}")
 
+    if lost_urls:
+        count = len(lost_urls)
+        print(f"Slides: media URLs left unread: {count}. Retry with: {retry}")
 
-def convert_deck(docname: str, node: str) -> dict[str, str]:
+
+def convert_deck(docname: str, node: str, lost_urls: set[str]) -> dict[str, str]:
     """Give every legacy URL the deck names its own media node, and repoint the body."""
     mapping = {}
     for url in sorted(legacy_urls(docname)):
-        content, title = file_content(url, docname)
+        try:
+            content, title = file_content(url, docname)
+        except FileNotFoundError:
+            # the row outlived its bytes; the body keeps the URL it had
+            lost_urls.add(url)
+            continue
+
         if content is not None:
             mapping[url] = drive.store_file(node, title, io.BytesIO(content))
     slides_drive.remap_media(docname, mapping)
@@ -88,11 +111,7 @@ def file_content(url: str, docname: str) -> tuple[bytes | None, str]:
         if not name:
             continue
         file = frappe.get_doc("File", name)
-        try:
-            content = file.get_content()
-        except FileNotFoundError:
-            # the row outlived its bytes; the body keeps the URL it had
-            return None, ""
+        content = file.get_content()
         return (content.encode() if isinstance(content, str) else content), file.file_name
     return None, ""
 

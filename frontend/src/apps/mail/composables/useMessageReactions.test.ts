@@ -4,6 +4,8 @@ import { computed, createApp, reactive } from 'vue'
 import { useMessageReactions } from '@/apps/mail/composables/useMessageReactions'
 import type { Mail } from '@/apps/mail/types'
 
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const mocks = vi.hoisted(() => ({
   send: vi.fn(),
   raiseToast: vi.fn(() => 'toast-id'),
@@ -23,7 +25,8 @@ vi.mock('@/apps/mail/utils/composables', () => ({
 
 const UNDO_SECONDS = 10
 
-const mail = (reactions: Mail['reactions'] = []) => reactive({ id: 'm1', reactions }) as Mail
+const mail = (reactions: Mail['reactions'] = []) =>
+  fromPartial<Mail>(reactive({ id: 'm1', reactions }))
 
 const setup = () => {
   const reload = vi.fn()
@@ -81,7 +84,7 @@ describe('useMessageReactions', () => {
     const { react, reactionsOn } = setup()
     const message = mail()
     react(message, '🎉')
-    const undoNow = mocks.setUndoAction.mock.calls[0][0] as () => void
+    const undoNow = fromPartial<() => void>(mocks.setUndoAction.mock.calls[0][0])
     undoNow()
     expect(reactionsOn(message)).toEqual([])
     await windowCloses()
@@ -145,7 +148,7 @@ describe('useMessageReactions', () => {
 
   it('offers nothing on a message that cannot be reacted to, and says why', async () => {
     const { react, reactionsOn } = setup()
-    const message = reactive({ id: 'm1', cannot_react: 'A list.' }) as unknown as Mail
+    const message = fromPartial<Mail>(reactive({ id: 'm1', cannot_react: 'A list.' }))
     react(message, '🎉')
     await windowCloses()
     expect(mocks.send).not.toHaveBeenCalled()
@@ -155,7 +158,7 @@ describe('useMessageReactions', () => {
 
   it('keeps a reaction on the message it was made on', () => {
     const { react, reactionsOn } = setup()
-    const other = reactive({ id: 'm2', reactions: [] }) as unknown as Mail
+    const other = fromPartial<Mail>(reactive({ id: 'm2', reactions: [] }))
     react(mail(), '🎉')
     expect(reactionsOn(other)).toEqual([])
   })

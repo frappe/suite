@@ -12,9 +12,11 @@ because the E2E workflows require MariaDB and Redis service containers.
   `pull_request_target` events whose head repository is `frappe/suite`.
   Fork pull requests run on GitHub-hosted runners instead; fork code
   never reaches these scale sets.
-- The Yarn Classic cache is baked into the runner image. Each runner receives a
-  private writable copy-on-write view, so cache misses and dependency changes
-  remain pod-local and are discarded with the runner.
+- The Yarn Classic cache for `e2e/` and the SFU server is baked into the runner
+  image. Each runner receives a private writable copy-on-write view, so cache
+  misses and dependency changes remain pod-local and are discarded with the
+  runner. The root workspace uses pnpm, and jobs install it from
+  `pnpm-lock.yaml` on each run.
 - Python, Node, Yarn, and `frappe-bench` are baked into the runner image. Jobs
   still initialize a fresh framework Bench, install the checked-out Suite
   commit, and create a fresh site in their private container layer.
@@ -33,7 +35,7 @@ because the E2E workflows require MariaDB and Redis service containers.
 | --- | --- |
 | k3s | `v1.36.3+k3s1` |
 | ARC charts | `0.14.2` |
-| Actions Runner | `2.336.0` |
+| Actions Runner | `2.338.2` |
 | Python | `3.14.7` |
 | Node | `24.12.0` |
 | Yarn | `1.22.22` |
@@ -65,7 +67,7 @@ sudo shred -u /root/github-app.private-key.pem
 ## Build the runner image
 
 Run the `Build ARC Runner Image` workflow once from the protected default branch.
-It publishes `ghcr.io/frappe/suite-actions-runner:2.336.0`. Set the resulting GHCR
+It publishes `ghcr.io/frappe/suite-actions-runner:2.338.2`. Set the resulting GHCR
 package visibility to public so the cluster can pull it without registry
 credentials.
 
@@ -107,7 +109,7 @@ sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml helm upgrade suite-e2e-drive \
 ```
 
 Restore the runner limits with the bootstrap script. The split reserves two Drive
-slots while all three Meet shards run concurrently.
+slots while three Meet runs proceed concurrently.
 
 When migrating from the legacy `suite-e2e` scale set, run the bootstrap script
 before merging the workflow label changes. After no queued or running job uses

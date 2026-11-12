@@ -848,12 +848,14 @@ export function parseFinalizationResponse(value: unknown): FinalizationAction {
 		value.action === 'delete_local' &&
 		exactKeys(value, ['action', 'protocol_version', 'terminal_result']) &&
 		'terminal_result' in value &&
-		['Ready', 'Partial', 'Failed'].includes(String(value.terminal_result))
+		(value.terminal_result === 'Ready' ||
+			value.terminal_result === 'Partial' ||
+			value.terminal_result === 'Failed')
 	)
 		return {
 			protocol_version: 1,
 			action: 'delete_local',
-			terminal_result: value.terminal_result as 'Ready' | 'Partial' | 'Failed',
+			terminal_result: value.terminal_result,
 		};
 	throw new Error('invalid Frappe finalization response');
 }

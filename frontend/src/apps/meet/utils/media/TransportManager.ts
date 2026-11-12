@@ -557,8 +557,8 @@ export class TransportManager {
         producerId: rawConsumerParams.producerId,
         kind: rawConsumerParams.kind,
         rtpParameters: rawConsumerParams.rtpParameters,
-        ...(isScreen ? { appData: { type: 'screen' } } : {}),
       }
+      if (isScreen) consumeArgs.appData = { type: 'screen' }
       if (e2eeWanted) {
         consumeArgs.onRtpReceiver = (receiver: RTCRtpReceiver) => {
           console.log('[E2EE] onRtpReceiver callback fired', {

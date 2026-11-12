@@ -1,4 +1,6 @@
+import { fromAny } from '@total-typescript/shoehorn'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { Ref } from 'vue'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: (url: string) => url }))
 vi.mock('@/apps/slides/router', () => ({ router: { replace: () => Promise.resolve() } }))
@@ -19,7 +21,12 @@ class StubImage {
 }
 vi.stubGlobal('Image', StubImage)
 
-const { slides, slideIndex, getNewSlide } = await import('./slide')
+const { slides: storeSlides, slideIndex, getNewSlide } = await import('./slide')
+// the store types each slide's fields as unknown, and these tests read them
+const slides = fromAny<
+  Ref<(Record<string, unknown> & { elements: Record<string, unknown>[] })[]>,
+  unknown
+>(storeSlides)
 const { replaceMediaElement } = await import('./element')
 const { resetImageCrop } = await import('./imageCrop')
 const { setCommandHistory } = await import('./historyMeta')
@@ -45,7 +52,7 @@ const seedSharedId = (overrides = {}) => {
   slides.value = [
     { clientId: 'c1', elements: [image('shared', '/files/first.webp', overrides)] },
     { clientId: 'c2', elements: [image('shared', '/files/second.webp', overrides)] },
-  ] as any
+  ]
   slideIndex.value = 1
   setCommandHistory(useCommandHistory(slides, { actionOrder, actions: {} }))
 }
@@ -72,7 +79,7 @@ describe('a duplicated slide', () => {
       fadeUnmatchedElements: 0,
     }
 
-    const copy = getNewSlide(true, null, source as any)
+    const copy = getNewSlide(true, null, source)
 
     expect(copy.transition).toBe('Magic Move')
     expect(copy.transitionDuration).toBe(2)

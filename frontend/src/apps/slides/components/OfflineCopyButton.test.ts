@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, ref, type App, type PropType } from 'vue'
@@ -40,7 +41,7 @@ vi.mock('frappe-ui', () => ({
       open: Boolean,
       title: String,
       message: String,
-      actions: { type: Array as PropType<DialogAction[]>, default: () => [] },
+      actions: { type: fromPartial<PropType<DialogAction[]>>(Array), default: () => [] },
     },
     setup: (props) => () => {
       if (!props.open) {

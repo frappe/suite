@@ -53,7 +53,8 @@ function imagesInState(state: Uint8Array): VersionImage[] {
       .getXmlFragment(BODY_FIELD)
       .createTreeWalker((node) => node instanceof XmlElement)
     return [...elements].flatMap((element) => {
-      const attributes = (element as XmlElement).getAttributes() as Record<string, unknown>
+      if (!(element instanceof XmlElement)) return []
+      const attributes: Record<string, unknown> = element.getAttributes()
       const id = mediaNodeId(textOf(attributes.src), textOf(attributes['data-node']))
       return imageOrNone(id, textOf(attributes.alt))
     })
@@ -87,7 +88,7 @@ export async function missingImages(
   const { media } = await client.query(api.drive.nodes.media, { node: session.nodeId }, { context })
   const present = new Set(media.map((row) => row.node))
   const states = await Promise.all(
-    images.filter((image) => !present.has(image.id)).map((image) => imageState(image, context)),
+    images.flatMap((image) => (!present.has(image.id) ? [imageState(image, context)] : [])),
   )
   return states.filter((state) => state !== null)
 }
@@ -110,7 +111,12 @@ async function imageState(
     const canRestore = node.trash_root === node.name && (node.access?.role ?? 0) >= MANAGE
     return { id: image.id, name: node.title, isBinned: true, canRestore }
   } catch (error) {
-    if ((error as { type?: unknown } | null)?.type !== 'DriveNotFound') {
+    if (!(
+      error &&
+      typeof error === 'object' &&
+      'type' in error &&
+      error.type === 'DriveNotFound'
+    )) {
       throw error
     }
 
@@ -123,7 +129,7 @@ export async function restoreImages(
   session: DocumentSession,
   images: MissingImage[],
 ): Promise<void> {
-  const nodes = images.filter((image) => image.canRestore).map((image) => image.id)
+  const nodes = images.flatMap((image) => (image.canRestore ? [image.id] : []))
   if (!nodes.length) {
     return
   }
@@ -139,8 +145,8 @@ export async function restoreImages(
 
 /** What the restore dialog says about the version's missing images. */
 export function imagesNotice(images: MissingImage[]): string {
-  const back = images.filter((image) => image.canRestore).map(nameOf)
-  const broken = images.filter((image) => !image.canRestore).map(brokenName)
+  const back = images.flatMap((image) => (image.canRestore ? [nameOf(image)] : []))
+  const broken = images.flatMap((image) => (!image.canRestore ? [brokenName(image)] : []))
   const lines = []
   if (back.length) {
     lines.push('These images are in the bin and come back with it: ' + back.join(', ') + '.')

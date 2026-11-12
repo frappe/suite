@@ -13,6 +13,7 @@ import {
   XmlElement,
   XmlFragment,
   XmlText,
+  Map as YMap,
   type RelativePosition,
   type XmlHook,
 } from 'yjs'
@@ -94,7 +95,8 @@ function addMarkEntries(
   entries: [string, unknown][],
 ) {
   if (type instanceof XmlText) {
-    for (const op of type.toDelta() as Insert[]) {
+    const ops: Insert[] = type.toDelta()
+    for (const op of ops) {
       entries.push(...Object.entries(op.attributes ?? {}))
     }
 
@@ -114,16 +116,38 @@ function addMarkEntries(
   }
 }
 
-/** The old comment marks and annotations in `old` that no thread can be made from yet */
+/** The old comment marks in `old` that no thread can be made from yet */
 export function unreadableThreads(old: Doc) {
   const entries: [string, unknown][] = []
   addMarkEntries(old.getXmlFragment(BODY_FIELD), entries)
-  const found = entries.filter(isUnreadableMark).map(([key]) => key)
-  if (old.share.has(ANNOTATIONS_ROOT) && old.getArray(ANNOTATIONS_ROOT).length) {
-    found.push(ANNOTATIONS_ROOT)
+  return entries.flatMap((entry) => (isUnreadableMark(entry) ? [entry[0]] : []))
+}
+
+function annotationId(entry: unknown): unknown {
+  if (entry instanceof YMap) {
+    return entry.get('id')
   }
 
-  return found
+  if (isPlainObject(entry)) {
+    return entry.id
+  }
+
+  return undefined
+}
+
+/** The ids in `old`'s annotations list, or null when a comment mark doesn't carry one of them */
+export function oldAnnotationIds(old: Doc, schema: Schema) {
+  if (!old.share.has(ANNOTATIONS_ROOT)) {
+    return []
+  }
+
+  const marked = markedIds(old.getXmlFragment(BODY_FIELD), schema)
+  const ids = old.getArray(ANNOTATIONS_ROOT).toArray().map(annotationId)
+  if (!ids.every((id): id is string => typeof id === 'string' && marked.has(id))) {
+    return null
+  }
+
+  return ids
 }
 
 type IdOf = (attrs: unknown) => string | undefined
@@ -131,7 +155,8 @@ type IdOf = (attrs: unknown) => string | undefined
 function textRuns(text: XmlText, idOf: IdOf) {
   const runs: [string, Run][] = []
   let from = 0
-  for (const { insert, attributes } of text.toDelta() as Insert[]) {
+  const ops: Insert[] = text.toDelta()
+  for (const { insert, attributes } of ops) {
     const to = from + insert.length
     const id = idOf(attributes?.[COMMENT_KEY])
     if (id !== undefined) {
@@ -210,6 +235,8 @@ export function markOldThreads(body: XmlFragment, schema: Schema) {
   for (const [text, { type, from, to, atom }] of runs) {
     const mark = { commentId: read.keyOf.get(text) }
     if (atom) {
+      // SAFETY: this comment mark is the binding's structured commentId attribute;
+      // Yjs stores the object unchanged despite XmlElement's default string generic.
       atom.setAttribute(COMMENT_KEY, mark as never)
     } else if (type instanceof XmlText) {
       type.format(from, to - from, { [COMMENT_KEY]: mark })
@@ -351,7 +378,7 @@ export function listedComments(stored: string | null): ListedComment[] | null {
       return null
     }
 
-    listed.push(entry as ListedComment)
+    listed.push({ ...entry, id: key })
   }
 
   return listed
@@ -362,7 +389,7 @@ type Holder = XmlElement | XmlFragment | XmlText
 interface Units {
   tokens: string[]
   places: { type: Holder; index: number }[]
-  spans: Map<object, { start: number; end: number }>
+  spans: Map<Holder, { start: number; end: number }>
 }
 
 // A text's characters one to a unit; an embed, which the binding never writes, is one unit too
@@ -388,7 +415,8 @@ function isUnitAtom(child: unknown, schema: Schema): child is XmlElement {
 
 function addTextUnits(text: XmlText, units: Units) {
   const start = units.tokens.length
-  for (const { insert } of text.toDelta() as { insert: unknown }[]) {
+  const ops: { insert: unknown }[] = text.toDelta()
+  for (const { insert } of ops) {
     addTokens(units.tokens, insert)
   }
 
@@ -437,7 +465,7 @@ export function bodyUnits(body: XmlFragment, schema: Schema) {
 }
 
 // The unit a place in `type` comes before, or null when the walk never reached `type`
-function unitAt(units: Units, type: object, index: number) {
+function unitAt(units: Units, type: Holder, index: number) {
   const span = units.spans.get(type)
   if (!span) {
     return null
@@ -447,7 +475,7 @@ function unitAt(units: Units, type: object, index: number) {
     return span.start + index
   }
 
-  const child = (type as XmlElement | XmlFragment).get(index)
+  const child = type.get(index)
   if (child === undefined) {
     return span.end
   }
@@ -479,7 +507,11 @@ function oldEnd(old: Doc, units: Units, end: unknown) {
     return null
   }
 
-  return unitAt(units, absolute.type, absolute.index) ?? UNREADABLE
+  const type = absolute.type
+  if (!(type instanceof XmlElement || type instanceof XmlFragment || type instanceof XmlText)) {
+    return UNREADABLE
+  }
+  return unitAt(units, type, absolute.index) ?? UNREADABLE
 }
 
 /**
@@ -693,12 +725,12 @@ export function wordAnchors(body: XmlFragment, schema: Schema, comments: ListedC
   const deleted: string[] = []
   for (const { id, anchorText } of comments) {
     const place = onlyPlaceOf(words, anchorText)
-    if (!place) {
+    if (!place || typeof anchorText !== 'string') {
       deleted.push(id)
       continue
     }
 
-    const anchor = wordAnchor(body, built, place, anchorText as string)
+    const anchor = wordAnchor(body, built, place, anchorText)
     if (!anchor) {
       return null
     }

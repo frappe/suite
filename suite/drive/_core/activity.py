@@ -1,12 +1,12 @@
 """Drive activity, recents, favourites, and notification workflows."""
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Any, Literal, get_args
 from uuid import uuid4
 
 import frappe
 from frappe import _
-from frappe.utils import escape_html, get_fullname, get_url, now_datetime
+from frappe.utils import add_to_date, escape_html, get_fullname, get_url, now_datetime
 
 from suite.drive._core.errors import (
     DriveConflict,
@@ -33,6 +33,7 @@ ActivityAction = Literal[
     "share_remove",
 ]
 ACTIVITY_ACTIONS: tuple[ActivityAction, ...] = get_args(ActivityAction)
+SHARE_ACTIONS: tuple[ActivityAction, ...] = ("share_add", "share_edit", "share_remove")
 # §11.4 fixes one page size for the whole HTTP surface. A record listing is
 # paged by the same helper as a folder page, so it keeps the same default and
 # the same cap rather than a second pair that could drift.
@@ -103,27 +104,36 @@ def history(
     cursor: str | None = None,
     limit: int = DEFAULT_RECORD_LIMIT,
 ) -> dict:
-    """Page a newest-first node history after checking current Read access.
+    """Page a newest-first node history for a signed-in caller with current Read access.
 
     §11.4's page, the one every Drive listing answers with. Nothing is dropped
     after the SQL window here - the READ check is on the node, once - so the
-    window size and the row count always agree.
+    window size and the row count always agree. Sharing rows name who holds what,
+    blocks included, so like the share dialog they are for MANAGE.
     """
+    from suite.drive._core.access import check
     from suite.drive._core.nodes import decode_cursor, page_limit, page_of
 
-    _authorized_node(principals, node)
+    # It quotes comments and names people and whom a node is shared with; a signed-out caller gets none of it
+    if principals.user == "Guest":
+        raise DriveForbidden(_("Sign in to see this item's history"))
+
+    row = _authorized_node(principals, node)
+    filters: dict[str, str | list] = {"node": node}
+    if not check(row, MANAGE, principals):
+        filters["action"] = ["not in", SHARE_ACTIONS]
     window = page_limit(limit)
     offset = decode_cursor(cursor)
     rows = frappe.get_all(
         "Drive Activity",
-        filters={"node": node},
+        filters=filters,
         fields=["name", "node", "action", "actor", "at", "via_link", "client", "detail"],
         order_by="at desc, creation desc",
         limit=window,
         start=offset,
     )
-    for row in rows:
-        row.detail = _json_value(row.detail, {})
+    for activity in rows:
+        activity.detail = _json_value(activity.detail, {})
     _quote_comments_as_they_are(rows)
     return page_of(rows, offset, len(rows), window)
 
@@ -150,9 +160,9 @@ def visit(principals: Principals, node: str) -> str:
         if existing is None:
             raise DriveConflict(_("The Drive recent row could not be recorded"))
     frappe.db.set_value("Drive Recent", existing, "opened_at", stamp, update_modified=False)
-    from suite.drive._core.changes import emit_for_users
+    from suite.drive._core.changes import emit_recent_for
 
-    emit_for_users((principals.user,))
+    emit_recent_for(principals.user)
     return existing
 
 
@@ -375,8 +385,15 @@ def personal_marks(principals: Principals, nodes: Iterable[str]) -> dict[str, di
     return marks
 
 
-def notify_users(activity: str, users: Iterable[str]) -> int:
-    """Create one notification pointer for each distinct existing target user."""
+def notify_users(
+    activity: str, users: Iterable[str], titles_without_access: Mapping[str, str | None] | None = None
+) -> int:
+    """Create one notification pointer for each distinct existing target user.
+
+    `titles_without_access` names the node for the people who can't read it, so
+    their notification never shows a later rename.
+    """
+    titles = titles_without_access or {}
     created = 0
     for user in dict.fromkeys(users):
         if not isinstance(user, str) or not user or not frappe.db.exists("User", user):
@@ -386,7 +403,13 @@ def notify_users(activity: str, users: Iterable[str]) -> int:
         # `notif_activity_user` keeps one row per person per activity even when
         # a concurrent writer inserts the same pair between the check and here.
         _, inserted = _insert_unique(
-            {"doctype": "Drive Notification", "activity": activity, "to_user": user, "read": 0},
+            {
+                "doctype": "Drive Notification",
+                "activity": activity,
+                "to_user": user,
+                "read": 0,
+                "title_without_access": titles.get(user),
+            },
             lambda: frappe.db.get_value(
                 "Drive Notification", {"activity": activity, "to_user": user}, "name"
             ),
@@ -397,6 +420,26 @@ def notify_users(activity: str, users: Iterable[str]) -> int:
 
             emit_for_users((user,))
     return created
+
+
+def has_told_without_access(node: str, author: str, user: str) -> bool:
+    """Whether `author` already sent `user`, who couldn't read `node`, a notification today."""
+    return bool(
+        frappe.db.sql(
+            """
+            SELECT 1
+            FROM `tabDrive Notification` notification
+            JOIN `tabDrive Activity` activity ON activity.name = notification.activity
+            WHERE notification.to_user = %(user)s
+                AND notification.title_without_access IS NOT NULL
+                AND notification.creation > %(since)s
+                AND activity.node = %(node)s
+                AND activity.actor = %(author)s
+            LIMIT 1
+            """,
+            {"user": user, "node": node, "author": author, "since": add_to_date(now_datetime(), days=-1)},
+        )
+    )
 
 
 # What a share email tells the recipient they may do. A deny shares nothing,
@@ -464,25 +507,29 @@ def notifications(
     """Page the caller's notification pointers with authorized activity data.
 
     A pointer whose activity is gone, or whose node the caller can no longer
-    read, is dropped after the SQL window, so a full page can answer short.
-    `next_cursor` still advances by the window (§11.4).
+    read, is dropped after the SQL window, so a full page can answer short. A
+    mention made while the person had no Read stays, stripped to who and where,
+    unless a deny blocks them. `next_cursor` still advances by the window (§11.4).
 
     Each row carries its node's current `node_title` and `node_kind`, read for
-    the whole page in one query. They are joined here, not stored: a
-    notification renders from its activity and its node as they are (§9.5).
+    the whole page in one query, so a notification renders from its activity
+    and its node as they are (§9.5). A caller without Read gets the title saved
+    when they were mentioned, so an old row doesn't tell them of a rename.
     """
     from suite.drive._core.nodes import decode_cursor, page_limit, page_of
 
     window = page_limit(limit)
     offset = decode_cursor(cursor)
     rows, seen = _visible_notifications(principals, only_unread=only_unread, limit=window, offset=offset)
-    wanted = list({row.activity.node for row in rows})
+    on_nodes = [row for row in rows if row.activity]
+    wanted = list({row.activity.node for row in on_nodes})
     fields = ["name", "title", "kind"]
     found = frappe.get_all("Drive Node", filters={"name": ["in", wanted]}, fields=fields) if wanted else []
     nodes = {node.name: node for node in found}
-    for row in rows:
+    for row in on_nodes:
         node = nodes[row.activity.node]
-        row.node_title, row.node_kind = node.title, node.kind
+        row.setdefault("node_title", node.title)
+        row.node_kind = node.kind
     return page_of(rows, offset, seen, window)
 
 
@@ -493,17 +540,23 @@ def _visible_notifications(
     limit: int | None,
     offset: int = 0,
 ) -> tuple[list[dict], int]:
-    """Return the visible pointers, and how many rows the SQL window held."""
+    """Return the visible pointers, and how many rows the SQL window held.
+
+    A pointer names an activity on a node, or one of the caller's own downloads.
+    """
+    from suite.drive._core import downloads
+
     _require_person(principals)
-    # §14.6 drops the legacy inbox: those rows carry no activity pointer, so
-    # the inbox starts empty after Build. Saying so in SQL is what keeps
-    # `unread_count` from reading every one of them to reach the same answer.
-    filters: dict[str, Any] = {"to_user": principals.user, "activity": ["is", "set"]}
+    # §14.6 drops the legacy inbox: those rows point at nothing, so the inbox
+    # starts empty after Build. Saying so in SQL is what keeps `unread_count`
+    # from reading every one of them to reach the same answer.
+    filters: dict[str, Any] = {"to_user": principals.user}
     if only_unread:
         filters["read"] = 0
     options = {
         "filters": filters,
-        "fields": ["name", "activity", "to_user", "read", "creation"],
+        "or_filters": {"activity": ["is", "set"], "download": ["is", "set"]},
+        "fields": ["name", "activity", "download", "to_user", "read", "creation", "title_without_access"],
         "order_by": "creation desc",
     }
     if limit is not None:
@@ -512,19 +565,44 @@ def _visible_notifications(
     rows = frappe.get_all("Drive Notification", **options)
     visible = []
     for row in rows:
+        saved_title = row.pop("title_without_access")
+        if row.download:
+            try:
+                row.download = downloads.get(principals, row.download)
+            except DriveNotFound:
+                continue
+            visible.append(row)
+            continue
         activity = frappe.db.get_value(
             "Drive Activity",
             row.activity,
             ["name", "node", "action", "actor", "at", "via_link", "client", "detail"],
             as_dict=True,
         )
-        if not activity or not _can_read(principals, activity.node):
+        if not activity:
             continue
         activity.detail = _json_value(activity.detail, {})
+        if not _can_read(principals, activity.node):
+            if not saved_title or not _is_mentioned_without_access(principals, activity):
+                continue
+            # They may hear who mentioned them and where, not what was said
+            activity.update(detail={"mentions": [principals.user]}, client=None, via_link=None)
+            row.node_title = saved_title
         row.activity = activity
         visible.append(row)
-    _quote_comments_as_they_are([row.activity for row in visible])
+    _quote_comments_as_they_are([row.activity for row in visible if row.activity])
     return visible, len(rows)
+
+
+def _is_mentioned_without_access(principals: Principals, activity: frappe._dict) -> bool:
+    """A comment still tells the person it mentions who can't read its node, unless a deny blocks them."""
+    from suite.drive._core.access import is_blocked
+    from suite.drive._core.nodes import NODE_FIELD_NAMES
+
+    if activity.action != "comment" or principals.user not in activity.detail.get("mentions", []):
+        return False
+    node = frappe.db.get_value("Drive Node", activity.node, NODE_FIELD_NAMES, as_dict=True)
+    return bool(node) and node.state == "Active" and not is_blocked(node, principals)
 
 
 def _quote_comments_as_they_are(activities: Sequence[frappe._dict]) -> None:
@@ -535,14 +613,16 @@ def _quote_comments_as_they_are(activities: Sequence[frappe._dict]) -> None:
     if not quoting:
         return
     wanted = [activity.detail.get("comment") for activity in quoting]
-    found = frappe.get_all("Drive Comment", filters={"name": ["in", wanted]}, fields=["name", "content"])
-    contents = {comment.name: comment.content for comment in found}
+    found = frappe.get_all(
+        "Drive Comment", filters={"name": ["in", wanted]}, fields=["name", "content", "mentions"]
+    )
+    comments = {comment.name: comment for comment in found}
     for activity in quoting:
-        text = contents.get(activity.detail.get("comment"))
-        if text is None:
+        comment = comments.get(activity.detail.get("comment"))
+        if comment is None:
             del activity.detail["excerpt"]
         else:
-            activity.detail["excerpt"] = excerpt(text)
+            activity.detail["excerpt"] = excerpt(comment.content, frappe.parse_json(comment.mentions) or [])
 
 
 def unread_count(principals: Principals) -> int:
@@ -587,10 +667,10 @@ def mark_read(principals: Principals, notifications: Iterable[str] | str | None 
 def discard_personal_records(user: str) -> dict[str, int]:
     """Delete one person's private Drive records during offboarding.
 
-    Recents, favourites, and the notification inbox are keyed by email, not by
-    a root id. Archiving the Personal Root leaves them behind, so a User row
-    recreated on the same address would read the previous person's open
-    history, stars, and inbox. Grants, comments, activity, and versions are
+    Recents, favourites, downloads, and the notification inbox are keyed by
+    email, not by a root id. Archiving the Personal Root leaves them behind, so
+    a User row recreated on the same address would read the previous person's
+    open history, stars, zips, and inbox. Grants, comments, activity, and versions are
     deliberately kept: they are attributed history and specified access that
     the archived tree still needs (spec sections 3.2 and 9.5).
 
@@ -604,6 +684,7 @@ def discard_personal_records(user: str) -> dict[str, int]:
         ("Drive Recent", "user"),
         ("Drive Favourite", "user"),
         ("Drive Notification", "to_user"),
+        ("Drive Download", "requester"),
     ):
         removed[doctype] = _delete_personal_rows(doctype, fieldname, user)
     return removed

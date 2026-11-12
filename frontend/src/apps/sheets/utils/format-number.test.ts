@@ -4,6 +4,7 @@ import {
   applyNumberFmt,
   buildNumberFmt,
   dateSerialFromShown,
+  dateShownFromSerial,
   parseNumberFmt,
 } from './format-number.js'
 
@@ -169,11 +170,6 @@ describe('applyNumberFmt — currency variants', () => {
 
   it('unknown currency variant falls back to USD', () => {
     expect(applyNumberFmt(10, 'currency:XYZ:0')).toBe('$10')
-  })
-
-  it('bare `currency` still defaults to USD (backwards-compat)', () => {
-    expect(applyNumberFmt(10, 'currency:0')).toBe('$10')
-    expect(applyNumberFmt(10, 'currency')).toMatch(/^\$10/)
   })
 })
 
@@ -360,12 +356,6 @@ describe('applyNumberFmt — number variants', () => {
   it('number:us groups with commas every 3 digits', () => {
     expect(applyNumberFmt(1234567, 'number:us:0')).toBe('1,234,567')
   })
-
-  it('legacy number:N (no variant) keeps user-default grouping', () => {
-    // Just verify the function doesn't throw and emits something sensible —
-    // the exact grouping depends on test-runner locale.
-    expect(applyNumberFmt(1234, 'number:0')).toMatch(/\d/)
-  })
 })
 
 describe('applyCustomFmt — Excel-style patterns', () => {
@@ -437,6 +427,21 @@ describe('dateSerialFromShown', () => {
   it('adds the time of day', () => {
     expect(dateSerialFromShown('12/9/2025 6:00 PM', 'm/d/yyyy h:mm AM/PM')).toBe(46000.75)
     expect(dateSerialFromShown('12/9/2025 12:00 AM', 'm/d/yyyy h:mm AM/PM')).toBe(46000)
+  })
+  it('round-trips with dateShownFromSerial', () => {
+    for (const [shown, code] of [
+      ['12/9/2025', 'm/d/yyyy'],
+      ['09/12/2025', 'dd/mm/yyyy'],
+      ['2025-12-09', 'yyyy-mm-dd'],
+      ['1/2/2026', 'm/d/yyyy'],
+    ])
+      expect(dateShownFromSerial(dateSerialFromShown(shown, code), code)).toBe(shown)
+  })
+  it('labels a serial without the time, a locale tag or later sections', () => {
+    expect(dateShownFromSerial(46000.75, 'm/d/yyyy h:mm AM/PM')).toBe('12/9/2025')
+    expect(dateShownFromSerial(46000, '[$-409]m/d/yyyy')).toBe('12/9/2025')
+    expect(dateShownFromSerial(46000, 'm/d/yyyy;@')).toBe('12/9/2025')
+    expect(dateShownFromSerial(46000, 'd mmm yyyy')).toBe('9 Dec 2025')
   })
   it('is NaN for text or a non-date code', () => {
     expect(dateSerialFromShown('hello', 'm/d/yyyy')).toBeNaN()

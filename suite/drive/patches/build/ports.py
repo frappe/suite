@@ -11,6 +11,7 @@ to 3, then `LegacyTree` for everything Build reads out of the legacy tables
 and `DriveTarget` for everything it writes into Drive's own.
 """
 
+import re
 from collections import defaultdict
 from dataclasses import dataclass, replace
 from typing import IO, Protocol
@@ -35,6 +36,9 @@ class LegacyRow:
     # truncated object is measured against. Build's writing steps ignore them.
     status: str | None = None
     file_size: int | None = None
+    # A Removed row is copied anyway while a document still names it: see
+    # `s3_copy.is_removed_for_good`.
+    attached_to_doctype: str | None = None
 
 
 @dataclass(frozen=True)
@@ -225,7 +229,15 @@ class SiteFiles:
                 *filters,
                 *self.filters,
             ],
-            fields=["name", "file_url", "file_name", "file_type", "file_size", *status],
+            fields=[
+                "name",
+                "file_url",
+                "file_name",
+                "file_type",
+                "file_size",
+                "attached_to_doctype",
+                *status,
+            ],
             order_by="name asc",
             limit=limit,
         )
@@ -237,6 +249,7 @@ class SiteFiles:
                 r.file_type,
                 status=r.get("status"),
                 file_size=r.file_size,
+                attached_to_doctype=r.attached_to_doctype,
             )
             for r in rows
         ]
@@ -266,6 +279,30 @@ class SiteFiles:
             frappe.db.commit()  # batched migration: a stopped run resumes here  # nosemgrep
 
 
+# botocore's default `max_pool_connections`.
+BOTOCORE_POOL_CONNECTIONS = 10
+
+# `storage_driver_config` keys, and the boto3 client argument each one sets,
+# exactly as `frappe.storage.s3_driver.S3Driver` reads them.
+DRIVER_CLIENT_ARGUMENTS = (
+    ("region", "region_name"),
+    ("endpoint_url", "endpoint_url"),
+    ("access_key_id", "aws_access_key_id"),
+    ("secret_access_key", "aws_secret_access_key"),
+)
+
+
+def _s3_client(client, connections: int):
+    """A second client for the driver's bucket, with a larger connection pool."""
+    import boto3
+    from botocore.config import Config
+
+    config = frappe.conf.storage_driver_config or {}
+    arguments = {argument: config[key] for key, argument in DRIVER_CLIENT_ARGUMENTS if config.get(key)}
+    pool = Config(max_pool_connections=connections)
+    return boto3.client("s3", config=client.meta.config.merge(pool), **arguments)
+
+
 class BotoBucket:
     """`S3Bucket` over the framework S3 driver's own client and bucket.
 
@@ -274,16 +311,25 @@ class BotoBucket:
     needs both keys reachable from one set of credentials.
     """
 
-    def __init__(self, driver):
+    def __init__(self, driver, client=None):
         self.driver = driver
         self.bucket = driver.bucket
-        self.client = driver.client
+        self.client = client or driver.client
 
     @classmethod
-    def from_site(cls) -> BotoBucket:
+    def from_site(cls, connections: int | None = None) -> BotoBucket:
+        """The site's S3 driver, with room for `connections` concurrent requests.
+
+        botocore keeps `BOTOCORE_POOL_CONNECTIONS` connections per client and
+        drops any extra one after each request, so a copy with more threads
+        than that gets its own client, built the way the driver builds its own.
+        """
         from frappe.storage.driver import get_driver
 
-        return cls(get_driver("s3"))
+        driver = get_driver("s3")
+        if not connections or connections <= BOTOCORE_POOL_CONNECTIONS:
+            return cls(driver)
+        return cls(driver, _s3_client(driver.client, connections))
 
     def open(self, key: str) -> IO[bytes]:
         try:
@@ -911,6 +957,9 @@ class ContentTarget(Protocol):
 
     def grant_pairs(self, pairs: tuple[tuple[str, str], ...]) -> dict[tuple[str, str], int]: ...
 
+    def grants_above(self, nodes: tuple[str, ...], role: int) -> list[dict]:
+        """Answer the node and principal of each grant above `role` on these nodes."""
+
     def set_grant_role(self, node: str, principal: str, role: int) -> None: ...
 
     def insert_versions(self, rows: list[dict]) -> None: ...
@@ -931,6 +980,12 @@ class ContentTarget(Protocol):
         Same rule and same raw write as `DriveTarget.delete_docshare`; step
         10 owns the rows on the content doctypes and their history tables,
         step 6 owns the Sheet rows."""
+
+    def save_docshare_counts(self, dropped: int, deleted: int) -> None:
+        """Hold step 10's DocShare totals in the open transaction, to land with its batch."""
+
+    def docshare_counts(self) -> tuple[int, int] | None:
+        """Read the dropped and deleted totals of the last committed batch, if one was."""
 
     def purge_content_document(self, doctype: str, docname: str) -> None:
         """Purge one content document through the app's registered `on_purge`.
@@ -1220,7 +1275,7 @@ class SiteTree:
             DocShareRow(
                 name=row.name,
                 share_name=row.share_name,
-                user=row.user or "",
+                user=row.user,
                 read=cint(row.read),
                 write=cint(row.write),
                 everyone=cint(row.everyone),
@@ -1825,8 +1880,51 @@ WRITER_DOCUMENT_COLUMNS = (
 )
 
 
+# In `tabSingles` because it has to land in the commit of the rows it counts. No DocType owns it
+DOCSHARE_COUNTS = ("Drive Build State", "docshare_counts")
+
+
+def saved_docshare_counts() -> tuple[int, int] | None:
+    """Read the one saved totals row, or None when there is none; any other row raises."""
+    # tabSingles has no unique key, so a second row can't be ruled out by the table
+    rows = frappe.db.sql_list(
+        "SELECT `value` FROM `tabSingles` WHERE `doctype` = %s AND `field` = %s", DOCSHARE_COUNTS
+    )
+    if not rows:
+        return None
+
+    count = len(rows)
+    if count > 1:
+        raise ValueError(f"{count} DocShare totals rows are saved, so which one holds is unknown")
+
+    matched = re.fullmatch(r"([0-9]+),([0-9]+)", rows[0] or "")
+    if not matched:
+        raise ValueError(f"the saved DocShare totals {rows[0]!r} don't read as two counts")
+
+    return int(matched[1]), int(matched[2])
+
+
 class SiteContentTarget:
     """`ContentTarget` over the real target and content tables."""
+
+    def save_docshare_counts(self, dropped: int, deleted: int) -> None:
+        doctype, field = DOCSHARE_COUNTS
+        values = {"doctype": doctype, "field": field, "value": f"{dropped},{deleted}"}
+        # Build removes no rows but DocShares, so a later batch's totals overwrite the saved ones
+        if saved_docshare_counts() is None:
+            frappe.db.sql(
+                "INSERT INTO `tabSingles` (`doctype`, `field`, `value`) VALUES (%(doctype)s, %(field)s, %(value)s)",
+                values,
+            )
+            return
+
+        frappe.db.sql(
+            "UPDATE `tabSingles` SET `value` = %(value)s WHERE `doctype` = %(doctype)s AND `field` = %(field)s",
+            values,
+        )
+
+    def docshare_counts(self) -> tuple[int, int] | None:
+        return saved_docshare_counts()
 
     def nodes(self, names: tuple[str, ...]) -> dict[str, dict]:
         if not names:
@@ -2034,6 +2132,15 @@ class SiteContentTarget:
                 if key in wanted:
                     found[key] = cint(row.role)
         return found
+
+    def grants_above(self, nodes: tuple[str, ...], role: int) -> list[dict]:
+        """Answer the node and principal of each grant above `role` on these nodes."""
+        rows = frappe.get_all(
+            "Drive Grant",
+            filters=[["node", "in", list(nodes)], ["role", ">", role]],
+            fields=["node", "principal"],
+        )
+        return [dict(row) for row in rows]
 
     def set_grant_role(self, node: str, principal: str, role: int) -> None:
         SiteDrive().raise_grant(node, principal, role)

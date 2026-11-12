@@ -1,4 +1,6 @@
 import io
+import json
+import struct
 import uuid
 from unittest.mock import patch
 
@@ -8,10 +10,13 @@ import pycrdt
 from bs4 import BeautifulSoup
 from frappe.tests import IntegrationTestCase
 
-from suite import drive
+from suite import content, drive
 from suite.content import capacity, conversions, convert, log, logged, scheduling, tables
 from suite.content.conversions import ConversionRefused
+from suite.drive._core.access import grant
+from suite.drive.framework import principals_for
 from suite.sheets import content as sheets_content
+from suite.sheets.api import get_conversion
 from suite.sheets.content import conversion
 from suite.sheets.content.tests.support import (
     CURRENT_BODY,
@@ -25,6 +30,8 @@ from suite.sheets.doctype.sheet.storage import encode_sheets_data
 from suite.tests.utils import ensure_user
 
 OWNER = "sheets-collab-owner@example.com"
+READER = "sheets-collab-reader@example.com"
+SHEETS_ROW = {"parent": "Suite Collab Settings", "parentfield": "apps", "app": sheets_content.APP}
 # The job an import queues, by the path the queue names it by
 CONVERT_ONE = "suite.content.jobs.convert_one"
 
@@ -41,6 +48,18 @@ def xlsx_bytes() -> bytes:
     stream = io.BytesIO()
     book.save(stream)
     return stream.getvalue()
+
+
+def opened_state(frame: bytes) -> str:
+    """Read the state an open frame's header gives."""
+    (length,) = struct.unpack(">I", frame[:4])
+    return json.loads(frame[4 : 4 + length])["state"]
+
+
+def pause_sheets(paused: int) -> None:
+    frappe.db.set_value("Suite Collab App", SHEETS_ROW, "conversion_paused", paused)
+    frappe.clear_document_cache("Suite Collab Settings", "Suite Collab Settings")
+    frappe.db.commit()
 
 
 class TestConverter(IntegrationTestCase):
@@ -146,6 +165,7 @@ class TestConvertDocument(IntegrationTestCase):
     def setUpClass(cls):
         super().setUpClass()
         ensure_user(OWNER)
+        ensure_user(READER)
         logged.ensure_tables()
         frappe.db.commit()
 
@@ -206,6 +226,27 @@ class TestConvertDocument(IntegrationTestCase):
         self.assertEqual(frappe.db.get_value("Sheet", docname, "sheets_data"), stored)
         self.assertEqual(self.records(node), (("converted", None),))
 
+    def test_a_sheet_a_reader_opens_converts_while_paused(self):
+        node = self.old_sheet(CURRENT_BODY)
+        grant(node, READER, drive.READ, principals_for())
+        frappe.db.commit()
+        self.addCleanup(
+            pause_sheets, frappe.db.get_value("Suite Collab App", SHEETS_ROW, "conversion_paused")
+        )
+        pause_sheets(1)
+        frappe.set_user(READER)
+
+        with patch.object(frappe, "enqueue") as enqueue:
+            first = opened_state(content.open_document(sheets_content.APP, node, can_write=False))
+
+        [queued] = enqueue.call_args_list
+        frappe.get_attr(queued.args[0])(app=queued.kwargs["app"], node=queued.kwargs["node"])
+        frappe.set_user(READER)
+
+        then = opened_state(content.open_document(sheets_content.APP, node, can_write=False))
+        self.assertEqual((first, then), ("unconverted", "live"))
+        self.assertEqual(self.records(node), (("converted", None),))
+
     def test_converts_a_develop_sheet(self):
         node = self.old_sheet(DEVELOP_BODY)
 
@@ -224,6 +265,34 @@ class TestConvertDocument(IntegrationTestCase):
         self.assertIsNone(log.find(sheets_content.APP, node))
         self.assertEqual(self.records(node), (("check", None),))
         self.assertTrue(frappe.db.get_value("Sheet", docname, "sheets_data"))
+
+    def test_a_page_reading_a_sheet_learns_it_waits_was_refused_or_is_converted(self):
+        waiting = self.old_sheet(CURRENT_BODY)
+        refused = self.old_sheet("not json")
+        done = self.old_sheet(CURRENT_BODY)
+        self.assertEqual(conversions.convert_document(sheets_content.APP, refused), "check")
+        self.assertEqual(conversions.convert_document(sheets_content.APP, done), "converted")
+
+        def status(node: str) -> dict:
+            return get_conversion(frappe.db.get_value("Drive Node", node, "content_docname"))
+
+        self.assertEqual(
+            [status(node) for node in (waiting, refused, done)],
+            [{"state": "pending"}, {"state": "refused", "outcome": "check"}, {"state": "converted"}],
+        )
+        frappe.set_user("Administrator")
+        self.assertEqual(status(refused), {"state": "refused", "outcome": "check", "reason": "check"})
+
+    def test_a_reader_learns_a_sheet_was_refused_as_too_large(self):
+        node = self.old_sheet(CURRENT_BODY)
+        with patch.object(capacity, "STATE_MAX", 1):
+            self.assertEqual(conversions.convert_document(sheets_content.APP, node), "too_large")
+
+        grant(node, READER, drive.READ, principals_for())
+        frappe.db.commit()
+        frappe.set_user(READER)
+        docname = frappe.db.get_value("Drive Node", node, "content_docname")
+        self.assertEqual(get_conversion(docname), {"state": "refused", "outcome": "too_large"})
 
     def test_a_changed_body_fingerprints_again(self):
         node = self.old_sheet(CURRENT_BODY)

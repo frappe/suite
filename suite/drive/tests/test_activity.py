@@ -86,6 +86,17 @@ class TestActivityAndPersonalRecords(IntegrationTestCase):
         self.assertFalse(frappe.db.exists("Drive Recent", {"user": OWNER, "node": self.node}))
         self.assertTrue(frappe.db.exists("Drive Favourite", {"user": OWNER, "node": self.node}))
 
+    def test_a_visit_tells_only_the_visitor_that_recent_changed_and_a_star_tells_of_a_change(self):
+        def events(action):
+            with patch("frappe.publish_realtime") as publish:
+                action()
+            sent = [(call.args[0], call.kwargs.get("user")) for call in publish.call_args_list]
+            return [(event, user) for event, user in sent if event.startswith("drive:")]
+
+        self.assertEqual(events(lambda: visit(self.other, self.node)), [("drive:recent", OTHER)])
+        self.assertEqual(events(lambda: set_favourite(self.other, self.node)), [("drive:changed", OTHER)])
+        self.assertEqual(events(lambda: set_favourite(self.other, self.node)), [])
+
     def test_personal_rows_and_mark_read_are_isolated_by_caller(self):
         visit(self.owner, self.node)
         visit(self.other, self.node)
@@ -143,6 +154,59 @@ class TestActivityAndPersonalRecords(IntegrationTestCase):
         self.assertEqual(len(notifications(self.owner)["rows"]), 1)
         self.assertEqual(notifications(self.outsider)["rows"], [])
         self.assertEqual(unread_count(self.outsider), 0)
+
+    def test_only_a_manager_sees_sharing_rows_in_history(self):
+        grant(self.node, OUTSIDER, NONE, self.owner)
+        record(self.owner, self.node, "edit", detail={"blob": "sha"})
+
+        def actions(principals: Principals) -> set[str]:
+            return {row.action for row in history(principals, self.node)["rows"]}
+
+        self.assertIn("share_add", actions(self.owner))
+        self.assertIn("edit", actions(self.other))
+        self.assertFalse({action for action in actions(self.other) if action.startswith("share_")})
+        self.assertNotIn(OUTSIDER, frappe.as_json(history(self.other, self.node)))
+
+    def test_history_pages_stay_full_when_sharing_rows_are_left_out(self):
+        grant(self.node, OUTSIDER, READ, self.admin)
+        record(self.owner, self.node, "edit", detail={"blob": "1"})
+        grant(self.node, OUTSIDER, EDIT, self.admin)
+        record(self.owner, self.node, "edit", detail={"blob": "2"})
+        revoke(self.node, OUTSIDER, self.admin)
+        record(self.owner, self.node, "edit", detail={"blob": "3"})
+
+        first = history(self.other, self.node, limit=2)
+        second = history(self.other, self.node, limit=2, cursor=first["next_cursor"])
+
+        self.assertEqual([row.detail["blob"] for row in first["rows"]], ["3", "2"])
+        self.assertEqual(second["rows"][0].detail["blob"], "1")
+
+    def test_a_guest_gets_no_history_of_a_public_node(self):
+        from suite.drive.http import routes
+
+        grant(self.node, "$PUBLIC", READ, self.admin)
+        record(
+            self.owner,
+            self.node,
+            "comment",
+            detail={"excerpt": "Secret words", "mentions": [OTHER]},
+        )
+        guest = Principals("Guest", ("Guest",), ("$PUBLIC",))
+
+        with self.assertRaises(DriveForbidden):
+            history(guest, self.node)
+
+        frappe.set_user("Guest")
+        with self.assertRaises(DriveForbidden) as refused:
+            routes.node_activity(node=self.node)
+        frappe.set_user(OTHER)
+        shown = routes.node_activity(node=self.node)["rows"]
+
+        self.assertNotIn("Secret words", str(refused.exception))
+        self.assertNotIn(OWNER, str(refused.exception))
+        self.assertEqual(
+            next(row["detail"] for row in shown if row["action"] == "comment")["mentions"], [OTHER]
+        )
 
     def test_a_notification_names_the_node_and_the_person_who_shared_it(self):
         from suite.drive.http import routes

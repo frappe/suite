@@ -85,6 +85,31 @@
             "title": "AccessShape",
             "type": "object"
           },
+          "AudienceShape": {
+            "description": "How widely a node is shared. It names nobody, so any reader may see it.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "public",
+                  "organization",
+                  "link",
+                  "people"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "people": {
+                "title": "People",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "people"
+            ],
+            "title": "AudienceShape",
+            "type": "object"
+          },
           "BreadcrumbShape": {
             "properties": {
               "name": {
@@ -98,12 +123,17 @@
               "kind": {
                 "title": "Kind",
                 "type": "string"
+              },
+              "role": {
+                "title": "Role",
+                "type": "integer"
               }
             },
             "required": [
               "name",
               "title",
-              "kind"
+              "kind",
+              "role"
             ],
             "title": "BreadcrumbShape",
             "type": "object"
@@ -291,12 +321,19 @@
           "access": {
             "$ref": "#/$defs/AccessShape"
           },
+          "audience": {
+            "$ref": "#/$defs/AudienceShape"
+          },
           "breadcrumbs": {
             "items": {
               "$ref": "#/$defs/BreadcrumbShape"
             },
             "title": "Breadcrumbs",
             "type": "array"
+          },
+          "contents_size": {
+            "title": "Contents Size",
+            "type": "integer"
           },
           "preview": {
             "anyOf": [
@@ -463,6 +500,31 @@
             "title": "AccessShape",
             "type": "object"
           },
+          "AudienceShape": {
+            "description": "How widely a node is shared. It names nobody, so any reader may see it.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "public",
+                  "organization",
+                  "link",
+                  "people"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "people": {
+                "title": "People",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "people"
+            ],
+            "title": "AudienceShape",
+            "type": "object"
+          },
           "BreadcrumbShape": {
             "properties": {
               "name": {
@@ -476,12 +538,17 @@
               "kind": {
                 "title": "Kind",
                 "type": "string"
+              },
+              "role": {
+                "title": "Role",
+                "type": "integer"
               }
             },
             "required": [
               "name",
               "title",
-              "kind"
+              "kind",
+              "role"
             ],
             "title": "BreadcrumbShape",
             "type": "object"
@@ -669,12 +736,19 @@
           "access": {
             "$ref": "#/$defs/AccessShape"
           },
+          "audience": {
+            "$ref": "#/$defs/AudienceShape"
+          },
           "breadcrumbs": {
             "items": {
               "$ref": "#/$defs/BreadcrumbShape"
             },
             "title": "Breadcrumbs",
             "type": "array"
+          },
+          "contents_size": {
+            "title": "Contents Size",
+            "type": "integer"
           },
           "preview": {
             "anyOf": [
@@ -826,6 +900,31 @@
             "title": "AccessShape",
             "type": "object"
           },
+          "AudienceShape": {
+            "description": "How widely a node is shared. It names nobody, so any reader may see it.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "public",
+                  "organization",
+                  "link",
+                  "people"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "people": {
+                "title": "People",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "people"
+            ],
+            "title": "AudienceShape",
+            "type": "object"
+          },
           "BreadcrumbShape": {
             "properties": {
               "name": {
@@ -839,12 +938,17 @@
               "kind": {
                 "title": "Kind",
                 "type": "string"
+              },
+              "role": {
+                "title": "Role",
+                "type": "integer"
               }
             },
             "required": [
               "name",
               "title",
-              "kind"
+              "kind",
+              "role"
             ],
             "title": "BreadcrumbShape",
             "type": "object"
@@ -1032,12 +1136,19 @@
           "access": {
             "$ref": "#/$defs/AccessShape"
           },
+          "audience": {
+            "$ref": "#/$defs/AudienceShape"
+          },
           "breadcrumbs": {
             "items": {
               "$ref": "#/$defs/BreadcrumbShape"
             },
             "title": "Breadcrumbs",
             "type": "array"
+          },
+          "contents_size": {
+            "title": "Contents Size",
+            "type": "integer"
           },
           "preview": {
             "anyOf": [
@@ -1138,6 +1249,10 @@
           "is_template": {
             "title": "Is Template",
             "type": "boolean"
+          },
+          "deduplicate_title": {
+            "title": "Deduplicate Title",
+            "type": "boolean"
           }
         },
         "required": [
@@ -1198,6 +1313,31 @@
             "title": "AccessShape",
             "type": "object"
           },
+          "AudienceShape": {
+            "description": "How widely a node is shared. It names nobody, so any reader may see it.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "public",
+                  "organization",
+                  "link",
+                  "people"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "people": {
+                "title": "People",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "people"
+            ],
+            "title": "AudienceShape",
+            "type": "object"
+          },
           "BreadcrumbShape": {
             "properties": {
               "name": {
@@ -1211,12 +1351,17 @@
               "kind": {
                 "title": "Kind",
                 "type": "string"
+              },
+              "role": {
+                "title": "Role",
+                "type": "integer"
               }
             },
             "required": [
               "name",
               "title",
-              "kind"
+              "kind",
+              "role"
             ],
             "title": "BreadcrumbShape",
             "type": "object"
@@ -1404,12 +1549,19 @@
           "access": {
             "$ref": "#/$defs/AccessShape"
           },
+          "audience": {
+            "$ref": "#/$defs/AudienceShape"
+          },
           "breadcrumbs": {
             "items": {
               "$ref": "#/$defs/BreadcrumbShape"
             },
             "title": "Breadcrumbs",
             "type": "array"
+          },
+          "contents_size": {
+            "title": "Contents Size",
+            "type": "integer"
           },
           "preview": {
             "anyOf": [
@@ -1742,6 +1894,31 @@
             "title": "AccessShape",
             "type": "object"
           },
+          "AudienceShape": {
+            "description": "How widely a node is shared. It names nobody, so any reader may see it.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "public",
+                  "organization",
+                  "link",
+                  "people"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "people": {
+                "title": "People",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "people"
+            ],
+            "title": "AudienceShape",
+            "type": "object"
+          },
           "BreadcrumbShape": {
             "properties": {
               "name": {
@@ -1755,12 +1932,17 @@
               "kind": {
                 "title": "Kind",
                 "type": "string"
+              },
+              "role": {
+                "title": "Role",
+                "type": "integer"
               }
             },
             "required": [
               "name",
               "title",
-              "kind"
+              "kind",
+              "role"
             ],
             "title": "BreadcrumbShape",
             "type": "object"
@@ -1948,12 +2130,19 @@
           "access": {
             "$ref": "#/$defs/AccessShape"
           },
+          "audience": {
+            "$ref": "#/$defs/AudienceShape"
+          },
           "breadcrumbs": {
             "items": {
               "$ref": "#/$defs/BreadcrumbShape"
             },
             "title": "Breadcrumbs",
             "type": "array"
+          },
+          "contents_size": {
+            "title": "Contents Size",
+            "type": "integer"
           },
           "preview": {
             "anyOf": [
@@ -2093,6 +2282,31 @@
             "title": "AccessShape",
             "type": "object"
           },
+          "AudienceShape": {
+            "description": "How widely a node is shared. It names nobody, so any reader may see it.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "public",
+                  "organization",
+                  "link",
+                  "people"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "people": {
+                "title": "People",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "people"
+            ],
+            "title": "AudienceShape",
+            "type": "object"
+          },
           "BreadcrumbShape": {
             "properties": {
               "name": {
@@ -2106,12 +2320,17 @@
               "kind": {
                 "title": "Kind",
                 "type": "string"
+              },
+              "role": {
+                "title": "Role",
+                "type": "integer"
               }
             },
             "required": [
               "name",
               "title",
-              "kind"
+              "kind",
+              "role"
             ],
             "title": "BreadcrumbShape",
             "type": "object"
@@ -2299,12 +2518,19 @@
           "access": {
             "$ref": "#/$defs/AccessShape"
           },
+          "audience": {
+            "$ref": "#/$defs/AudienceShape"
+          },
           "breadcrumbs": {
             "items": {
               "$ref": "#/$defs/BreadcrumbShape"
             },
             "title": "Breadcrumbs",
             "type": "array"
+          },
+          "contents_size": {
+            "title": "Contents Size",
+            "type": "integer"
           },
           "preview": {
             "anyOf": [
@@ -2453,6 +2679,31 @@
             "title": "AccessShape",
             "type": "object"
           },
+          "AudienceShape": {
+            "description": "How widely a node is shared. It names nobody, so any reader may see it.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "public",
+                  "organization",
+                  "link",
+                  "people"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "people": {
+                "title": "People",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "people"
+            ],
+            "title": "AudienceShape",
+            "type": "object"
+          },
           "BreadcrumbShape": {
             "properties": {
               "name": {
@@ -2466,12 +2717,17 @@
               "kind": {
                 "title": "Kind",
                 "type": "string"
+              },
+              "role": {
+                "title": "Role",
+                "type": "integer"
               }
             },
             "required": [
               "name",
               "title",
-              "kind"
+              "kind",
+              "role"
             ],
             "title": "BreadcrumbShape",
             "type": "object"
@@ -2659,12 +2915,19 @@
           "access": {
             "$ref": "#/$defs/AccessShape"
           },
+          "audience": {
+            "$ref": "#/$defs/AudienceShape"
+          },
           "breadcrumbs": {
             "items": {
               "$ref": "#/$defs/BreadcrumbShape"
             },
             "title": "Breadcrumbs",
             "type": "array"
+          },
+          "contents_size": {
+            "title": "Contents Size",
+            "type": "integer"
           },
           "preview": {
             "anyOf": [
@@ -2810,6 +3073,31 @@
             "title": "AccessShape",
             "type": "object"
           },
+          "AudienceShape": {
+            "description": "How widely a node is shared. It names nobody, so any reader may see it.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "public",
+                  "organization",
+                  "link",
+                  "people"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "people": {
+                "title": "People",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "people"
+            ],
+            "title": "AudienceShape",
+            "type": "object"
+          },
           "BreadcrumbShape": {
             "properties": {
               "name": {
@@ -2823,12 +3111,17 @@
               "kind": {
                 "title": "Kind",
                 "type": "string"
+              },
+              "role": {
+                "title": "Role",
+                "type": "integer"
               }
             },
             "required": [
               "name",
               "title",
-              "kind"
+              "kind",
+              "role"
             ],
             "title": "BreadcrumbShape",
             "type": "object"
@@ -3016,12 +3309,19 @@
           "access": {
             "$ref": "#/$defs/AccessShape"
           },
+          "audience": {
+            "$ref": "#/$defs/AudienceShape"
+          },
           "breadcrumbs": {
             "items": {
               "$ref": "#/$defs/BreadcrumbShape"
             },
             "title": "Breadcrumbs",
             "type": "array"
+          },
+          "contents_size": {
+            "title": "Contents Size",
+            "type": "integer"
           },
           "preview": {
             "anyOf": [
@@ -3171,6 +3471,31 @@
             "title": "AccessShape",
             "type": "object"
           },
+          "AudienceShape": {
+            "description": "How widely a node is shared. It names nobody, so any reader may see it.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "public",
+                  "organization",
+                  "link",
+                  "people"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "people": {
+                "title": "People",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "people"
+            ],
+            "title": "AudienceShape",
+            "type": "object"
+          },
           "BreadcrumbShape": {
             "properties": {
               "name": {
@@ -3184,12 +3509,17 @@
               "kind": {
                 "title": "Kind",
                 "type": "string"
+              },
+              "role": {
+                "title": "Role",
+                "type": "integer"
               }
             },
             "required": [
               "name",
               "title",
-              "kind"
+              "kind",
+              "role"
             ],
             "title": "BreadcrumbShape",
             "type": "object"
@@ -3377,12 +3707,19 @@
           "access": {
             "$ref": "#/$defs/AccessShape"
           },
+          "audience": {
+            "$ref": "#/$defs/AudienceShape"
+          },
           "breadcrumbs": {
             "items": {
               "$ref": "#/$defs/BreadcrumbShape"
             },
             "title": "Breadcrumbs",
             "type": "array"
+          },
+          "contents_size": {
+            "title": "Contents Size",
+            "type": "integer"
           },
           "preview": {
             "anyOf": [
@@ -3527,6 +3864,31 @@
             "title": "AccessShape",
             "type": "object"
           },
+          "AudienceShape": {
+            "description": "How widely a node is shared. It names nobody, so any reader may see it.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "public",
+                  "organization",
+                  "link",
+                  "people"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "people": {
+                "title": "People",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "people"
+            ],
+            "title": "AudienceShape",
+            "type": "object"
+          },
           "BreadcrumbShape": {
             "properties": {
               "name": {
@@ -3540,12 +3902,17 @@
               "kind": {
                 "title": "Kind",
                 "type": "string"
+              },
+              "role": {
+                "title": "Role",
+                "type": "integer"
               }
             },
             "required": [
               "name",
               "title",
-              "kind"
+              "kind",
+              "role"
             ],
             "title": "BreadcrumbShape",
             "type": "object"
@@ -3733,12 +4100,19 @@
           "access": {
             "$ref": "#/$defs/AccessShape"
           },
+          "audience": {
+            "$ref": "#/$defs/AudienceShape"
+          },
           "breadcrumbs": {
             "items": {
               "$ref": "#/$defs/BreadcrumbShape"
             },
             "title": "Breadcrumbs",
             "type": "array"
+          },
+          "contents_size": {
+            "title": "Contents Size",
+            "type": "integer"
           },
           "preview": {
             "anyOf": [
@@ -4063,6 +4437,31 @@
             "title": "AccessShape",
             "type": "object"
           },
+          "AudienceShape": {
+            "description": "How widely a node is shared. It names nobody, so any reader may see it.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "public",
+                  "organization",
+                  "link",
+                  "people"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "people": {
+                "title": "People",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "people"
+            ],
+            "title": "AudienceShape",
+            "type": "object"
+          },
           "BreadcrumbShape": {
             "properties": {
               "name": {
@@ -4076,12 +4475,17 @@
               "kind": {
                 "title": "Kind",
                 "type": "string"
+              },
+              "role": {
+                "title": "Role",
+                "type": "integer"
               }
             },
             "required": [
               "name",
               "title",
-              "kind"
+              "kind",
+              "role"
             ],
             "title": "BreadcrumbShape",
             "type": "object"
@@ -4221,12 +4625,19 @@
               "access": {
                 "$ref": "#/$defs/AccessShape"
               },
+              "audience": {
+                "$ref": "#/$defs/AudienceShape"
+              },
               "breadcrumbs": {
                 "items": {
                   "$ref": "#/$defs/BreadcrumbShape"
                 },
                 "title": "Breadcrumbs",
                 "type": "array"
+              },
+              "contents_size": {
+                "title": "Contents Size",
+                "type": "integer"
               },
               "preview": {
                 "anyOf": [
@@ -4447,6 +4858,31 @@
             "title": "AccessShape",
             "type": "object"
           },
+          "AudienceShape": {
+            "description": "How widely a node is shared. It names nobody, so any reader may see it.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "public",
+                  "organization",
+                  "link",
+                  "people"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "people": {
+                "title": "People",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "people"
+            ],
+            "title": "AudienceShape",
+            "type": "object"
+          },
           "BreadcrumbShape": {
             "properties": {
               "name": {
@@ -4460,12 +4896,17 @@
               "kind": {
                 "title": "Kind",
                 "type": "string"
+              },
+              "role": {
+                "title": "Role",
+                "type": "integer"
               }
             },
             "required": [
               "name",
               "title",
-              "kind"
+              "kind",
+              "role"
             ],
             "title": "BreadcrumbShape",
             "type": "object"
@@ -4653,12 +5094,19 @@
           "access": {
             "$ref": "#/$defs/AccessShape"
           },
+          "audience": {
+            "$ref": "#/$defs/AudienceShape"
+          },
           "breadcrumbs": {
             "items": {
               "$ref": "#/$defs/BreadcrumbShape"
             },
             "title": "Breadcrumbs",
             "type": "array"
+          },
+          "contents_size": {
+            "title": "Contents Size",
+            "type": "integer"
           },
           "preview": {
             "anyOf": [
@@ -4726,199 +5174,6 @@
       ],
       "stream": false,
       "bytes": false
-    },
-    {
-      "id": "node_archive_start",
-      "kind": "mutation",
-      "publicName": "archives.start",
-      "page": null,
-      "envelope": "data",
-      "method": "POST",
-      "path": "nodes/{node}/archive",
-      "pathParams": [
-        "node"
-      ],
-      "query": null,
-      "body": {
-        "additionalProperties": false,
-        "description": "The body of a write that takes nothing but its path: `{}`.",
-        "properties": {},
-        "title": "Empty",
-        "type": "object"
-      },
-      "output": {
-        "properties": {
-          "status": {
-            "enum": [
-              "building",
-              "ready",
-              "failed"
-            ],
-            "title": "Status",
-            "type": "string"
-          },
-          "file_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "File Name"
-          },
-          "size": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Size"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Error"
-          }
-        },
-        "required": [
-          "status",
-          "file_name",
-          "size",
-          "error"
-        ],
-        "title": "ArchiveStatus",
-        "type": "object"
-      },
-      "errors": [
-        "DriveNotFound",
-        "DriveLocked",
-        "DriveLinkExpired",
-        "DriveConflict"
-      ],
-      "entity": null,
-      "nodeParams": [
-        "node"
-      ],
-      "stream": false,
-      "bytes": false
-    },
-    {
-      "id": "node_archive_status",
-      "kind": "query",
-      "publicName": "archives.get",
-      "page": null,
-      "envelope": "data",
-      "method": "GET",
-      "path": "nodes/{node}/archive",
-      "pathParams": [
-        "node"
-      ],
-      "query": null,
-      "body": null,
-      "output": {
-        "properties": {
-          "status": {
-            "enum": [
-              "building",
-              "ready",
-              "failed"
-            ],
-            "title": "Status",
-            "type": "string"
-          },
-          "file_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "File Name"
-          },
-          "size": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Size"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Error"
-          }
-        },
-        "required": [
-          "status",
-          "file_name",
-          "size",
-          "error"
-        ],
-        "title": "ArchiveStatus",
-        "type": "object"
-      },
-      "errors": [
-        "DriveNotFound",
-        "DriveLocked",
-        "DriveLinkExpired",
-        "DriveConflict"
-      ],
-      "entity": null,
-      "nodeParams": [
-        "node"
-      ],
-      "stream": false,
-      "bytes": false
-    },
-    {
-      "id": "node_archive_download",
-      "kind": "query",
-      "publicName": "archives.download",
-      "page": null,
-      "envelope": "data",
-      "method": "GET",
-      "path": "nodes/{node}/archive/download",
-      "pathParams": [
-        "node"
-      ],
-      "query": null,
-      "body": null,
-      "output": null,
-      "errors": [
-        "DriveNotFound",
-        "DriveLocked",
-        "DriveLinkExpired",
-        "DriveConflict"
-      ],
-      "entity": null,
-      "nodeParams": [
-        "node"
-      ],
-      "stream": true,
-      "bytes": true
     },
     {
       "id": "node_put_content",
@@ -5003,6 +5258,31 @@
             "title": "AccessShape",
             "type": "object"
           },
+          "AudienceShape": {
+            "description": "How widely a node is shared. It names nobody, so any reader may see it.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "public",
+                  "organization",
+                  "link",
+                  "people"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "people": {
+                "title": "People",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "people"
+            ],
+            "title": "AudienceShape",
+            "type": "object"
+          },
           "BreadcrumbShape": {
             "properties": {
               "name": {
@@ -5016,12 +5296,17 @@
               "kind": {
                 "title": "Kind",
                 "type": "string"
+              },
+              "role": {
+                "title": "Role",
+                "type": "integer"
               }
             },
             "required": [
               "name",
               "title",
-              "kind"
+              "kind",
+              "role"
             ],
             "title": "BreadcrumbShape",
             "type": "object"
@@ -5209,12 +5494,19 @@
           "access": {
             "$ref": "#/$defs/AccessShape"
           },
+          "audience": {
+            "$ref": "#/$defs/AudienceShape"
+          },
           "breadcrumbs": {
             "items": {
               "$ref": "#/$defs/BreadcrumbShape"
             },
             "title": "Breadcrumbs",
             "type": "array"
+          },
+          "contents_size": {
+            "title": "Contents Size",
+            "type": "integer"
           },
           "preview": {
             "anyOf": [
@@ -5757,6 +6049,31 @@
             "title": "AccessShape",
             "type": "object"
           },
+          "AudienceShape": {
+            "description": "How widely a node is shared. It names nobody, so any reader may see it.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "public",
+                  "organization",
+                  "link",
+                  "people"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "people": {
+                "title": "People",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "people"
+            ],
+            "title": "AudienceShape",
+            "type": "object"
+          },
           "BreadcrumbShape": {
             "properties": {
               "name": {
@@ -5770,12 +6087,17 @@
               "kind": {
                 "title": "Kind",
                 "type": "string"
+              },
+              "role": {
+                "title": "Role",
+                "type": "integer"
               }
             },
             "required": [
               "name",
               "title",
-              "kind"
+              "kind",
+              "role"
             ],
             "title": "BreadcrumbShape",
             "type": "object"
@@ -5963,12 +6285,19 @@
           "access": {
             "$ref": "#/$defs/AccessShape"
           },
+          "audience": {
+            "$ref": "#/$defs/AudienceShape"
+          },
           "breadcrumbs": {
             "items": {
               "$ref": "#/$defs/BreadcrumbShape"
             },
             "title": "Breadcrumbs",
             "type": "array"
+          },
+          "contents_size": {
+            "title": "Contents Size",
+            "type": "integer"
           },
           "preview": {
             "anyOf": [
@@ -7417,6 +7746,31 @@
             "title": "ArchivedRootShape",
             "type": "object"
           },
+          "AudienceShape": {
+            "description": "How widely a node is shared. It names nobody, so any reader may see it.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "public",
+                  "organization",
+                  "link",
+                  "people"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "people": {
+                "title": "People",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "people"
+            ],
+            "title": "AudienceShape",
+            "type": "object"
+          },
           "BreadcrumbShape": {
             "properties": {
               "name": {
@@ -7430,12 +7784,17 @@
               "kind": {
                 "title": "Kind",
                 "type": "string"
+              },
+              "role": {
+                "title": "Role",
+                "type": "integer"
               }
             },
             "required": [
               "name",
               "title",
-              "kind"
+              "kind",
+              "role"
             ],
             "title": "BreadcrumbShape",
             "type": "object"
@@ -7575,12 +7934,19 @@
               "access": {
                 "$ref": "#/$defs/AccessShape"
               },
+              "audience": {
+                "$ref": "#/$defs/AudienceShape"
+              },
               "breadcrumbs": {
                 "items": {
                   "$ref": "#/$defs/BreadcrumbShape"
                 },
                 "title": "Breadcrumbs",
                 "type": "array"
+              },
+              "contents_size": {
+                "title": "Contents Size",
+                "type": "integer"
               },
               "preview": {
                 "anyOf": [
@@ -9800,6 +10166,127 @@
             "title": "ActivityShape",
             "type": "object"
           },
+          "DownloadNotificationShape": {
+            "description": "A notification that the caller's own download is ready, or that it failed.",
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "read": {
+                "title": "Read",
+                "type": "integer"
+              },
+              "creation": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Creation"
+              },
+              "download": {
+                "$ref": "#/$defs/DownloadShape"
+              }
+            },
+            "required": [
+              "name",
+              "read",
+              "creation",
+              "download"
+            ],
+            "title": "DownloadNotificationShape",
+            "type": "object"
+          },
+          "DownloadShape": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "Preparing",
+                  "Ready",
+                  "Failed",
+                  "Expired"
+                ],
+                "title": "Status",
+                "type": "string"
+              },
+              "delivery": {
+                "enum": [
+                  "Inbox",
+                  "Page"
+                ],
+                "title": "Delivery",
+                "type": "string"
+              },
+              "size": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Size"
+              },
+              "expires_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Expires At"
+              },
+              "error": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Error"
+              },
+              "url": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Url"
+              }
+            },
+            "required": [
+              "name",
+              "title",
+              "status",
+              "delivery",
+              "size",
+              "expires_at",
+              "error",
+              "url"
+            ],
+            "title": "DownloadShape",
+            "type": "object"
+          },
           "NotificationShape": {
             "properties": {
               "name": {
@@ -9882,7 +10369,14 @@
         "properties": {
           "rows": {
             "items": {
-              "$ref": "#/$defs/NotificationShape"
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/NotificationShape"
+                },
+                {
+                  "$ref": "#/$defs/DownloadNotificationShape"
+                }
+              ]
             },
             "title": "Rows",
             "type": "array"
@@ -10031,6 +10525,258 @@
       "nodeParams": [],
       "stream": false,
       "bytes": false
+    },
+    {
+      "id": "download_start",
+      "kind": "mutation",
+      "publicName": "downloads.start",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "downloads",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "nodes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Nodes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "nodes"
+        ],
+        "title": "StartDownload",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "Preparing",
+              "Ready",
+              "Failed",
+              "Expired"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "delivery": {
+            "enum": [
+              "Inbox",
+              "Page"
+            ],
+            "title": "Delivery",
+            "type": "string"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "status",
+          "delivery",
+          "size",
+          "expires_at",
+          "error",
+          "url"
+        ],
+        "title": "DownloadShape",
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveLocked",
+        "DriveLinkExpired",
+        "DriveConflict"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "download_get",
+      "kind": "query",
+      "publicName": "downloads.get",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "downloads/{download}",
+      "pathParams": [
+        "download"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "Preparing",
+              "Ready",
+              "Failed",
+              "Expired"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "delivery": {
+            "enum": [
+              "Inbox",
+              "Page"
+            ],
+            "title": "Delivery",
+            "type": "string"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "status",
+          "delivery",
+          "size",
+          "expires_at",
+          "error",
+          "url"
+        ],
+        "title": "DownloadShape",
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "download_content",
+      "kind": "query",
+      "publicName": "downloads.content",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "downloads/{download}/content",
+      "pathParams": [
+        "download"
+      ],
+      "query": null,
+      "body": null,
+      "output": null,
+      "errors": [
+        "DriveNotFound"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": true,
+      "bytes": true
     },
     {
       "id": "roots_discover",

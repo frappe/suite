@@ -1,5 +1,5 @@
 <template>
-  <div class="space-y-3">
+  <div class="flex flex-col gap-3">
     <div class="flex items-start gap-2">
       <Combobox
         ref="combobox"
@@ -12,25 +12,33 @@
         :loading="loading && !rows.length"
         :filterable="false"
         :disabled="disabled"
-        :placeholder="__('Add people or groups')"
+        :placeholder="fieldLabel"
         :empty-text="__('No people or groups found')"
-        :aria-label="__('Add people, groups or emails')"
+        :aria-label="fieldLabel"
         @update:open="onOpen"
-      />
-      <Select
-        v-if="staged.length"
-        v-model="role"
-        size="sm"
-        variant="outline"
-        :disabled="disabled"
-        class="w-28 shrink-0"
-        :options="roleOptions"
-        :aria-label="__('Access for people you add')"
-      />
+      >
+        <template #item-person="{ item }">
+          <div class="flex min-w-0 items-baseline gap-3">
+            <span class="truncate">{{ item.label }}</span>
+            <span class="ml-auto truncate text-sm text-ink-gray-5">{{ item.description }}</span>
+          </div>
+        </template>
+      </Combobox>
+      <Dropdown v-if="staged.length" :options="roleChoices" align="end">
+        <Button
+          variant="ghost"
+          icon-right="lucide-chevron-down"
+          class="shrink-0"
+          :disabled="disabled"
+          :aria-label="__('Access for people you add: {0}', [__(roleLabel(role))])"
+        >
+          {{ __(roleLabel(role)) }}
+        </Button>
+      </Dropdown>
     </div>
 
     <!-- People picked wait here, so Notify can be chosen before anyone is added (§7.8). -->
-    <div v-if="staged.length" class="space-y-3">
+    <div v-if="staged.length" class="flex flex-1 flex-col gap-3">
       <ul :aria-label="__('People to add')">
         <li
           v-for="person in staged"
@@ -64,7 +72,7 @@
         </li>
       </ul>
       <div
-        class="flex flex-wrap items-center justify-end gap-2 border-t border-outline-gray-1 pt-4"
+        class="mt-auto flex flex-wrap items-center justify-end gap-2 border-t border-outline-gray-1 pt-4"
       >
         <Checkbox
           v-if="staged.some((person) => person.kind === 'user')"
@@ -82,15 +90,16 @@
 
 <script setup lang="ts">
 import { useDebounceFn } from '@vueuse/core'
-import { Button, Checkbox, Combobox, Select } from 'frappe-ui'
+import { Button, Checkbox, Combobox, Dropdown } from 'frappe-ui'
 import { computed, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 
 import { api, client } from '@/api'
-import { groupPrincipal, rolesFor } from '@/apps/drive/client/grants'
+import { groupPrincipal, roleLabel } from '@/apps/drive/client/grants'
 import { DRIVE_ROLES } from '@/apps/drive/client/types'
 import { translate as __ } from '@/platform/translation'
 import type { PeopleGetOutput } from '@/platform/transport/generated'
 
+import { roleMenu } from './shareMenu'
 import type { PickedPerson } from './shareModel'
 
 type Person = PeopleGetOutput['rows'][number]
@@ -105,8 +114,8 @@ const props = defineProps<{
   share: (people: PickedPerson[], role: number, notify: boolean) => Promise<PickedPerson[]>
 }>()
 const emit = defineEmits<{ sendLink: [email: string, role: number] }>()
-/** Whether anyone waits to be added, so the dialog can step its own actions back. */
-const picking = defineModel<boolean>('picking', { default: false })
+/** How many people wait to be added, so the dialog can step its own actions back. */
+const picked = defineModel<number>('picked', { default: 0 })
 
 const combobox = useTemplateRef<{ focus: (options?: FocusOptions) => void }>('combobox')
 const query = ref('')
@@ -118,22 +127,23 @@ const notify = ref(true)
 const staged = ref<PickedPerson[]>([])
 let request = 0
 watch(
-  () => staged.value.length > 0,
-  (pending) => (picking.value = pending),
+  () => staged.value.length,
+  (count) => (picked.value = count),
 )
 onUnmounted(() => {
   request += 1
-  picking.value = false
+  picked.value = 0
 })
 
-const roleOptions = computed(() =>
-  rolesFor('user', props.nodeKind).map((option) => ({
-    label: __(option.label),
-    value: option.value,
-  })),
-)
+const roleChoices = computed(() => [
+  roleMenu('user', props.nodeKind, role.value, (next) => (role.value = next)),
+])
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+// An email address of someone not listed gets a share link, which a root cannot hold.
+const fieldLabel = computed(() =>
+  props.nodeKind === 'root' ? __('Add people or groups') : __('Add people, groups or emails'),
+)
 
 const options = computed(() => [
   ...rows.value
@@ -148,6 +158,8 @@ const options = computed(() => [
     .map((person) => ({
       type: 'custom' as const,
       key: person.kind === 'user' ? `user:${person.email}` : `group:${person.name}`,
+      // Name and email or member count share one line (`#item-person`).
+      slot: 'person',
       label: person.kind === 'user' ? person.full_name || person.email : person.name,
       description:
         person.kind === 'user'
@@ -156,7 +168,6 @@ const options = computed(() => [
             ? __('1 member')
             : __('{0} members', [person.member_count]),
       icon: person.kind === 'user' ? 'lucide-user' : 'lucide-users',
-      keepOpen: true,
       onClick: () => pick(person.kind === 'user' ? `user:${person.email}` : `group:${person.name}`),
     })),
   {
@@ -227,7 +238,7 @@ function pick(value: string | number | null | undefined) {
       : { principal: groupPrincipal(id), kind: 'group', label: id, name: null }
   if (!staged.value.some((entry) => entry.principal === picked.principal))
     staged.value = [...staged.value, picked]
-  // Pointer selection moves focus to the option; return it to the open search.
+  // The list closes so the person picked shows; focus returns to the search for the next one.
   void nextTick(() => {
     query.value = ''
     combobox.value?.focus()

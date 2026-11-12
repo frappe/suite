@@ -9,6 +9,10 @@ const schema = getSchema(writerSchema())
 const OLD_MEDIA = 'resizableMedia'
 // Drive's earlier image was a block, which this editor holds only among text
 const OLD_IMAGE = 'image'
+const OLD_FRAME = 'iframe'
+const SITE_VIDEO = /^\/files\/[^?#]+\.(?:mp4|webm|ogg|mov)$/i
+// What an old frame and a video both hold
+const FRAME_VIDEO_KEYS = ['src', 'width', 'height', 'align', 'title']
 const ALIGNMENTS = ['left', 'center', 'right']
 const FLOATS = ['left', 'right']
 // All the old editor's resizable media ever declared
@@ -60,21 +64,22 @@ function pixels(value: unknown) {
 
 /** Whether old media's layout is one the old editor wrote, each name unset or among its values. */
 export function isOldLayout(dataAlign: unknown, dataFloat: unknown) {
-  const isAlignment = dataAlign == null || ALIGNMENTS.includes(dataAlign as string)
-  return isAlignment && (dataFloat == null || FLOATS.includes(dataFloat as string))
+  const isAlignment = dataAlign == null || ALIGNMENTS.some((alignment) => alignment === dataAlign)
+  return isAlignment && (dataFloat == null || FLOATS.some((placement) => placement === dataFloat))
+}
+interface OldLayoutResult {
+  align: string
+  float?: string
 }
 
 /** Old media laid out as the old editor showed it: alignment over float, neither means left. */
-export function oldLayout(
-  dataAlign: unknown,
-  dataFloat: unknown,
-): { align: string; float?: string } {
-  if (ALIGNMENTS.includes(dataAlign as string)) {
-    return { align: dataAlign as string }
+export function oldLayout(dataAlign: unknown, dataFloat: unknown): OldLayoutResult {
+  if (ALIGNMENTS.some((alignment) => alignment === dataAlign)) {
+    return { align: String(dataAlign) }
   }
 
-  if (FLOATS.includes(dataFloat as string)) {
-    return { align: 'left', float: dataFloat as string }
+  if (FLOATS.some((placement) => placement === dataFloat)) {
+    return { align: 'left', float: String(dataFloat) }
   }
 
   return { align: 'left' }
@@ -83,9 +88,16 @@ export function oldLayout(
 // A size in percent or 'auto' has no pixel form, so the editor measures the media instead. The old
 // editor stored an image's resized height as a number that isn't finite, so a pixel width stands on
 // its own
+interface LegacyMediaAttributes {
+  align: string
+  width?: number
+  height?: number
+  [attribute: string]: unknown
+}
+
 function mediaAttributes(old: XmlElement) {
-  const stored = old.getAttributes() as Record<string, unknown>
-  const attributes: Record<string, unknown> = { align: 'left' }
+  const stored: Record<string, unknown> = old.getAttributes()
+  const attributes: LegacyMediaAttributes = { align: 'left' }
   for (const key of ['src', 'alt', 'title']) {
     if (stored[key] != null) {
       attributes[key] = stored[key]
@@ -118,12 +130,12 @@ function isOldSize({ width, height }: Record<string, unknown>) {
 }
 
 function isMappable(old: XmlElement) {
-  const stored = old.getAttributes() as Record<string, unknown>
+  const stored: Record<string, unknown> = old.getAttributes()
   const keys = Object.keys(stored).filter((key) => stored[key] != null)
   const kind = stored['media-type']
   return (
     keys.every((key) => OLD_MEDIA_KEYS.has(key)) &&
-    (kind == null || OLD_MEDIA_KINDS.includes(kind as string)) &&
+    (kind == null || OLD_MEDIA_KINDS.some((mediaKind) => mediaKind === kind)) &&
     isOldLayout(stored.dataAlign, stored.dataFloat) &&
     isOldSize(stored)
   )
@@ -133,7 +145,7 @@ function resizableMedia(body: XmlFragment) {
   const olds = body.createTreeWalker(
     (type) => type instanceof XmlElement && type.nodeName === OLD_MEDIA,
   )
-  return [...olds] as XmlElement[]
+  return [...olds].filter((node) => node instanceof XmlElement)
 }
 
 /** Whether all old resizable media under `body` holds only what the old editor wrote. */
@@ -151,7 +163,8 @@ export function isFloatDropped(body: XmlFragment) {
 function element(name: string, attributes: Record<string, unknown>, children: XmlElement[] = []) {
   const node = new XmlElement(name)
   for (const [key, value] of Object.entries(attributes)) {
-    // Yjs types an element's attributes as strings by default, but stores any value as given
+    // SAFETY: these media attributes include numeric dimensions, which Yjs preserves
+    // unchanged even though XmlElement's default attribute generic describes strings.
     node.setAttribute(key, value as string)
   }
 
@@ -161,7 +174,7 @@ function element(name: string, attributes: Record<string, unknown>, children: Xm
 
 // Drive's block image keeps all it stored; with no alignment it's at the left, as old media is
 function keptImage(old: XmlElement) {
-  const stored = old.getAttributes() as Record<string, unknown>
+  const stored: Record<string, unknown> = old.getAttributes()
   return element('image', { ...stored, align: stored.align ?? 'left' })
 }
 
@@ -185,11 +198,54 @@ function converted(old: XmlElement, parent: Parent, index: number) {
   return [element('paragraph', {}), video]
 }
 
+// Whether an old frame only plays a video file on this site: anything else it sets beyond what a
+// video holds is the frame's own default, or a sandbox granting no more than the default does
+function isSiteVideoFrame(frame: XmlElement) {
+  // SAFETY: an old frame holds numbers and booleans too, which Yjs keeps unchanged even though
+  // XmlElement's default attribute generic describes strings
+  const { src, sandbox, ...stored } = frame.getAttributes() as Record<string, unknown>
+  const defaults = schema.nodes.iframe.spec.attrs ?? {}
+  const allowed = String(defaults.sandbox.default).split(' ')
+  return (
+    frame.length === 0 &&
+    typeof src === 'string' &&
+    SITE_VIDEO.test(src) &&
+    (sandbox == null ||
+      String(sandbox)
+        .split(' ')
+        .every((token) => allowed.includes(token))) &&
+    Object.entries(stored).every(
+      ([key, value]) =>
+        FRAME_VIDEO_KEYS.includes(key) || value == null || value === defaults[key]?.default,
+    )
+  )
+}
+
+function videoOfFrame(frame: XmlElement) {
+  const entries = Object.entries(frame.getAttributes()).filter(([key]) =>
+    FRAME_VIDEO_KEYS.includes(key),
+  )
+  return element('video', Object.fromEntries(entries))
+}
+
+/** Reads each top-level old frame of a video on this site as that video, which the copy can keep. */
+export function readSiteVideoFrames(body: XmlFragment) {
+  for (const [index, block] of body.toArray().entries()) {
+    if (block instanceof XmlElement && block.nodeName === OLD_FRAME && isSiteVideoFrame(block)) {
+      const video = videoOfFrame(block)
+      body.delete(index, 1)
+      body.insert(index, [video])
+    }
+  }
+}
+
 // Each old image becomes an image in its own paragraph, and each old video a video
 export function convertOldMedia(body: XmlFragment) {
-  const olds = [...body.createTreeWalker(isOldMedia)] as XmlElement[]
+  const olds = [...body.createTreeWalker(isOldMedia)].filter((node) => node instanceof XmlElement)
   for (const old of olds) {
-    const parent = old.parent as Parent
+    const parent = old.parent
+    if (!(parent instanceof XmlElement) && !(parent instanceof XmlFragment))
+      throw new Error('Legacy media has no fragment parent')
     const index = parent.toArray().indexOf(old)
     const replacement = converted(old, parent, index)
     parent.delete(index, 1)

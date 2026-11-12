@@ -1,12 +1,14 @@
 import {
   openDeviceStore,
   openRoom,
+  readSavedState,
   watchRooms,
   type CollabAdapter,
   type CollabEndpoints,
   type CollabRoom,
   type DeviceStore,
   type Opened,
+  type VersionRestored,
 } from '@suite/collab-client'
 
 import { getRealtimeSocket } from '@/platform/realtime'
@@ -38,6 +40,7 @@ export {
   type RestoreResult,
   type RoomPresence,
   type RoomStatus,
+  type VersionRestored,
 } from '@suite/collab-client'
 
 // The open document a room is for, as the app's file session gives it
@@ -71,7 +74,18 @@ const STAGE: Operation = {
   pathParams: ['node', 'stage_id', 'piece_index'],
 }
 
-function jsonBody(value: object) {
+type SessionRequest = {
+  sid: string
+  claim?: NonNullable<Parameters<CollabEndpoints['session']>[1]>
+}
+type ContentRequest =
+  | { stage_id: string }
+  | SessionRequest
+  | { rev: number }
+  | { seen_rev: number; version: number }
+  | { token: string }
+
+function jsonBody(value: ContentRequest) {
   return new TextEncoder().encode(JSON.stringify(value))
 }
 
@@ -129,7 +143,7 @@ function sessionEndpoints(
 ): Pick<CollabEndpoints, 'session' | 'suspect'> {
   return {
     session: (sessionId, claim) => {
-      const sessionClaim: Record<string, unknown> = { sid: sessionId }
+      const sessionClaim: SessionRequest = { sid: sessionId }
       if (claim) {
         sessionClaim.claim = claim
       }
@@ -162,7 +176,10 @@ function restoreEndpoints(
 }
 
 // Every request names who the tab expects to be, so the server can tell a lapsed sign-in from lost access
-function contentEndpoints(session: CollabSession, expectedUser: string): CollabEndpoints {
+function contentEndpoints(
+  session: Pick<CollabSession, 'nodeId' | 'credentials'>,
+  expectedUser: string,
+): CollabEndpoints {
   const transport = createTransport({
     fetch: (url, init) => session.credentials.fetch(String(url), init),
   })
@@ -216,17 +233,24 @@ export function watchConversion(keys: string[], onTold: () => void) {
   return watchRooms(getRealtimeSocket(), keys, 'suite_collab_converted', onTold)
 }
 
+// A document's saved state with no room, for a screen that only shows it: null when it isn't collaborative
+export function readSavedDocument(document: Pick<CollabSession, 'nodeId' | 'credentials'>) {
+  return readSavedState(contentEndpoints(document, signedIn()).open)
+}
+
 // `onThreadsChanged` is told when the document's comment threads may have changed;
-// `watch` gets the room before it applies anything
+// `onVersionRestored` when another tab's restore lands; `watch` gets the room before it applies anything
 export async function openCollabRoom({
   session,
   adapter,
   onThreadsChanged,
+  onVersionRestored,
   watch,
 }: {
   session: CollabSession
   adapter: CollabAdapter
   onThreadsChanged?: () => void
+  onVersionRestored?: (restored: VersionRestored) => void
   watch?: (room: CollabRoom) => void
 }): Promise<Opened> {
   const expectedUser = signedIn()
@@ -239,6 +263,7 @@ export async function openCollabRoom({
     device,
     socket: getRealtimeSocket(),
     threadsChanged: onThreadsChanged,
+    versionRestored: onVersionRestored,
     watch,
   })
 }

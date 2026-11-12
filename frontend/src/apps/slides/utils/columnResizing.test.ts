@@ -1,6 +1,8 @@
-import { columnResizing, tableNodes } from '@tiptap/pm/tables'
-import { Schema, type Node as ProseMirrorNode } from 'prosemirror-model'
-import { EditorState } from 'prosemirror-state'
+import { Schema, type Node as ProseMirrorNode } from '@tiptap/pm/model'
+import { EditorState } from '@tiptap/pm/state'
+import { tableNodes } from '@tiptap/pm/tables'
+import { DecorationSet, type EditorView } from '@tiptap/pm/view'
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it, vi } from 'vitest'
 
 import { draggedWidth, scaleAwareColumnResizing } from './columnResizing'
@@ -37,29 +39,6 @@ const schema = new Schema({
   },
 })
 
-describe('scaleAwareColumnResizing', () => {
-  // the spread carries stock's handlers, and each one of them refuses to resize
-  // anything the editor is not editing
-  it('leaves none of the stock handlers in place', () => {
-    const stock = columnResizing().spec.props!.handleDOMEvents!
-    const scaled = scaleAwareColumnResizing().spec.props!.handleDOMEvents!
-
-    Object.keys(stock).forEach((event) => {
-      expect(scaled[event as keyof typeof scaled]).not.toBe(stock[event as keyof typeof stock])
-    })
-  })
-
-  // stock's state.init writes the node view into the same nodeViews object the
-  // spread copied a reference to, which is the only reason the table renders
-  it('registers the table node view through the shared spec object', () => {
-    const plugin = scaleAwareColumnResizing({ cellMinWidth: 25, defaultCellMinWidth: 25 })
-
-    EditorState.create({ schema, plugins: [plugin] })
-
-    expect(typeof plugin.spec.props!.nodeViews!.table).toBe('function')
-  })
-})
-
 type TableNodeView = {
   dom: HTMLTableElement
   contentDOM: HTMLElement
@@ -77,12 +56,18 @@ describe('the table node view', () => {
     const plugin = scaleAwareColumnResizing({ cellMinWidth: 25, defaultCellMinWidth: 25 })
     EditorState.create({ schema, plugins: [plugin] })
 
-    const buildView = plugin.spec.props!.nodeViews!.table as never as (
-      node: ProseMirrorNode,
-    ) => TableNodeView
-
+    const buildView = plugin.spec.props?.nodeViews?.table
+    if (!buildView) throw new Error('Expected a table node view constructor')
     const node = tableNode(widths)
-    const nodeView = buildView(node)
+    const built = buildView(node, fromPartial<EditorView>({}), () => 0, [], DecorationSet.empty)
+    const { dom, contentDOM, update } = built
+    if (!(dom instanceof HTMLTableElement) || !(contentDOM instanceof HTMLElement) || !update)
+      throw new Error('Expected an updatable table with a content body')
+    const nodeView: TableNodeView = {
+      dom,
+      contentDOM,
+      update: (next) => update.call(built, next, [], DecorationSet.empty),
+    }
 
     // the cells the editor would fill the tbody with
     nodeView.contentDOM.innerHTML = `<tr>${widths

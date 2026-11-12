@@ -20,11 +20,9 @@ from datetime import UTC, date, datetime, timedelta
 from email.message import EmailMessage
 from email.utils import format_datetime, formataddr
 from html import unescape
-from typing import Self
 from zoneinfo import ZoneInfo
 
 import frappe
-import httpx
 from frappe.utils import get_system_timezone, get_url
 
 from suite import mail as mail_product
@@ -39,16 +37,13 @@ from suite.composition.demo.cast import (
     acting_as,
     email_of,
 )
+from suite.mail.dev_stalwart import MAIL, Stalwart
 
 LISTS = {
     "team": ("Northwind team", EVERYONE),
     "product": ("Northwind Product", ("maya", "leo")),
     "engineering": ("Northwind Engineering", ("arjun", "nisha")),
 }
-CORE = "urn:ietf:params:jmap:core"
-MAIL = "urn:ietf:params:jmap:mail"
-CALENDARS = "urn:ietf:params:jmap:calendars"
-MANAGEMENT = "urn:stalwart:jmap"
 
 
 def seed() -> None:
@@ -58,7 +53,7 @@ def seed() -> None:
         if missing:
             frappe.throw(f"Run suite.composition.demo.drive.seed first. Missing users: {', '.join(missing)}")
         with Stalwart() as stalwart:
-            stalwart.provision()
+            provision(stalwart)
             for person in PEOPLE:
                 link(stalwart, person.email)
                 frappe.db.commit()
@@ -78,104 +73,37 @@ def reset() -> None:
         for person in PEOPLE:
             mail_product.forget_local_account(person.email)
         frappe.db.commit()
-        stalwart.remove()
+        remove(stalwart)
         print("Removed the Northwind mail accounts, lists and domain.")
         print("If a reseed reuses a removed account id, restart the web process to drop its old cache.")
 
 
-class Stalwart:
-    """Stalwart's management API as the configured admin, and each account's JMAP through it."""
+def provision(stalwart: Stalwart) -> None:
+    domain = stalwart.get_domain_id(DOMAIN) or stalwart.create("Domain", {"name": DOMAIN})
+    accounts = {row.get("emailAddress") for row in stalwart.get_all("Account")}
+    for person in PEOPLE:
+        if person.email not in accounts:
+            stalwart.create("Account", account_payload(person, domain))
+    lists = {row.get("emailAddress") for row in stalwart.get_all("MailingList")}
+    for name, (description, members) in LISTS.items():
+        if f"{name}@{DOMAIN}" not in lists:
+            recipients = {email_of(key): True for key in members}
+            payload = {"name": name, "domainId": domain, "description": description}
+            stalwart.create("MailingList", {**payload, "recipients": recipients})
 
-    def __init__(self) -> None:
-        conf = frappe.conf.mail or {}
-        if not (conf.get("server_url") and conf.get("username") and conf.get("password")):
-            frappe.throw("The `mail` site config needs server_url, username and password for Stalwart.")
-        self.url = conf["server_url"].rstrip("/")
-        self.admin = conf["username"]
-        self.password = conf["password"]
-        self.http = httpx.Client(timeout=60, verify=bool(conf.get("verify_ssl")), follow_redirects=True)
-        self.account = self.get_session(self.admin)["primaryAccounts"][MANAGEMENT]
 
-    def __enter__(self) -> Self:
-        return self
-
-    def __exit__(self, *_exception: object) -> None:
-        self.http.close()
-
-    def get_session(self, login: str) -> dict:
-        response = self.http.get(f"{self.url}/.well-known/jmap", auth=(login, self.password))
-        response.raise_for_status()
-        return response.json()
-
-    def call(self, login: str, method: str, arguments: dict) -> dict:
-        using = [CORE, MANAGEMENT] if method.startswith("x:") else [CORE, MAIL, CALENDARS]
-        body = {"using": using, "methodCalls": [[method, arguments, "0"]]}
-        response = self.http.post(f"{self.url}/jmap/", json=body, auth=(login, self.password))
-        response.raise_for_status()
-        name, result, _call = response.json()["methodResponses"][0]
-        if name == "error":
-            raise RuntimeError(f"{method} failed: {result}")
-        failures = {
-            key: result[key] for key in ("notCreated", "notUpdated", "notDestroyed") if result.get(key)
-        }
-        if failures:
-            raise RuntimeError(f"{method} failed: {failures}")
-        return result
-
-    def manage(self, object_type: str, action: str, **arguments) -> dict:
-        return self.call(self.admin, f"x:{object_type}/{action}", {"accountId": self.account, **arguments})
-
-    def get_all(self, object_type: str) -> list[dict]:
-        return self.manage(object_type, "get")["list"]
-
-    def mailbox(self, email: str) -> Mailbox:
-        return Mailbox(self, email)
-
-    def provision(self) -> None:
-        domain = self.get_domain_id() or self.create("Domain", {"name": DOMAIN})
-        accounts = {row.get("emailAddress") for row in self.get_all("Account")}
-        for person in PEOPLE:
-            if person.email not in accounts:
-                self.create("Account", account_payload(person, domain))
-        lists = {row.get("emailAddress") for row in self.get_all("MailingList")}
-        for name, (description, members) in LISTS.items():
-            if f"{name}@{DOMAIN}" not in lists:
-                recipients = {email_of(key): True for key in members}
-                payload = {"name": name, "domainId": domain, "description": description}
-                self.create("MailingList", {**payload, "recipients": recipients})
-
-    def get_domain_id(self) -> str | None:
-        return next((row["id"] for row in self.get_all("Domain") if row["name"] == DOMAIN), None)
-
-    def create(self, object_type: str, payload: dict) -> str:
-        return self.manage(object_type, "set", create={"new": payload})["created"]["new"]["id"]
-
-    def create_app_password(self, email: str) -> str:
-        login = self.as_account(email)
-        account = self.get_session(login)["primaryAccounts"][MANAGEMENT]
-        payload = {
-            "description": f"Northwind demo on {frappe.local.site}",
-            "permissions": {"@type": "Inherit"},
-        }
-        result = self.call(login, "x:AppPassword/set", {"accountId": account, "create": {"new": payload}})
-        return result["created"]["new"]["secret"]
-
-    def as_account(self, email: str) -> str:
-        """The master-user login: the admin acting as `email`."""
-        return f"{email}%{self.admin}"
-
-    def remove(self) -> None:
-        domain = self.get_domain_id()
-        if not domain:
-            return
-        for object_type in ("MailingList", "Account"):
-            ids = [row["id"] for row in self.get_all(object_type) if row.get("domainId") == domain]
-            if ids:
-                self.manage(object_type, "set", destroy=ids)
-        signatures = [row["id"] for row in self.get_all("DkimSignature") if row.get("domainId") == domain]
-        if signatures:
-            self.manage("DkimSignature", "set", destroy=signatures)
-        self.manage("Domain", "set", destroy=[domain])
+def remove(stalwart: Stalwart) -> None:
+    domain = stalwart.get_domain_id(DOMAIN)
+    if not domain:
+        return
+    for object_type in ("MailingList", "Account"):
+        ids = [row["id"] for row in stalwart.get_all(object_type) if row.get("domainId") == domain]
+        if ids:
+            stalwart.manage(object_type, "set", destroy=ids)
+    signatures = [row["id"] for row in stalwart.get_all("DkimSignature") if row.get("domainId") == domain]
+    if signatures:
+        stalwart.manage("DkimSignature", "set", destroy=signatures)
+    stalwart.manage("Domain", "set", destroy=[domain])
 
 
 class Mailbox:
@@ -236,7 +164,7 @@ def link(stalwart: Stalwart, email: str) -> None:
         return
     settings = frappe.get_doc("User Settings", name)
     settings.username = email
-    settings.app_password = stalwart.create_app_password(email)
+    settings.app_password = stalwart.create_app_password(email, f"Northwind demo on {frappe.local.site}")
     settings.save(ignore_permissions=True)
 
 
@@ -282,7 +210,7 @@ def deliver(stalwart: Stalwart, all_letters: list[Letter]) -> int:
     for person in PEOPLE:
         key = person.key
         mine = [letter for letter in all_letters if key == letter.sender or key in letter.recipients]
-        mailbox = stalwart.mailbox(person.email)
+        mailbox = Mailbox(stalwart, person.email)
         existing = mailbox.get_message_ids()
         roles = mailbox.get_mailbox_ids()
         emails = {}
@@ -390,7 +318,7 @@ def schedule(stalwart: Stalwart, now: datetime) -> int:
         ics = calendar_file(event, monday, now, method="REQUEST" if event.attendees else "PUBLISH")
         for key in event.participants:
             email = email_of(key)
-            blob = stalwart.mailbox(email).upload(ics, "text/calendar")
+            blob = Mailbox(stalwart, email).upload(ics, "text/calendar")
             with acting_as(email):
                 add_invite_to_calendar(personal_account(email), blob)
             count += 1

@@ -5,7 +5,7 @@
  * 010 (the frame set: in the shell or outside it).
  */
 import type { Component, InjectionKey } from 'vue'
-import type { RouteRecordRaw } from 'vue-router'
+import type { RouteLocationRaw, RouteRecordRaw } from 'vue-router'
 
 export type PlatformCapability = 'jmap' | 'systemManager' | 'suiteAdmin'
 
@@ -35,6 +35,11 @@ declare module 'vue-router' {
     phoneChrome?: PhoneChromeOwner
     allowGuest?: boolean
     title?: string
+    /**
+     * Onboarding: the page runs its own steps, so the suite's command menu and
+     * Settings stay closed. Its Cmd+K step opens a practice menu instead.
+     */
+    onboarding?: boolean
   }
 }
 
@@ -74,6 +79,12 @@ export interface DocumentTypeDefinition {
   icon: Component
   /** Lazy document surface. It receives the prop `session: DocumentSession`. */
   loadSurface: () => Promise<Component>
+  /**
+   * Lazy editor the host shows while a document just created opens, so typing
+   * starts at once. It receives the prop `node`; the surface takes over what
+   * was typed in it.
+   */
+  loadOpeningEditor?: () => Promise<Component>
   /** Lazy list of this type's work kept on this device that never reached the server. */
   loadUnsavedWork?: () => Promise<Component>
   /** Each such copy this device keeps, without loading the list. */
@@ -107,3 +118,39 @@ export interface GuestFrame {
 }
 
 export const GUEST_FRAME_KEY: InjectionKey<GuestFrame> = Symbol('suite:guest-frame')
+
+/** One item a palette search found. */
+export interface PaletteSearchResult {
+  /** Unique among one search's results. */
+  id: string
+  title: string
+  /** Icon classes for the row: the item's type icon and its ink. */
+  icon: string
+  /** Where the item is, such as its parent folder. */
+  location?: string
+  /** Where Enter opens the item. */
+  to: RouteLocationRaw
+}
+
+/** A running palette search, as `PaletteSearchSource.use` returns it. */
+export interface PaletteSearch {
+  readonly results: readonly PaletteSearchResult[]
+  readonly isFetching: boolean
+  cancel(): void
+}
+
+/**
+ * What the command palette searches on pages whose area has no search of its
+ * own. Composition provides it at the app root; a product implements it.
+ */
+export interface PaletteSearchSource {
+  /** Translated group label, evaluated at render time. */
+  label: () => string
+  /**
+   * Call in the palette's setup. Searches while `term` returns a string and
+   * stops while it returns `false`. The palette debounces the term.
+   */
+  use(term: () => string | false): PaletteSearch
+}
+
+export const PALETTE_SEARCH_KEY: InjectionKey<PaletteSearchSource> = Symbol('suite:palette-search')

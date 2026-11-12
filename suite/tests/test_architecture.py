@@ -39,9 +39,25 @@ def _debt(owner, removal, entries):
 
 BASELINE_DEBT = {
     **_debt(
+        "Suite Drive and Slides",
+        "Set the root quota through a Drive test helper instead of writing Drive Root directly.",
+        (
+            "suite/slides/patches/test_move_file_media_to_drive.py|drive-table-write|Drive Root",
+            "suite/slides/patches/test_move_file_media_to_drive.py|drive-table-write|Drive Root#2",
+        ),
+    ),
+    **_debt(
         "Suite Drive and Meet",
         "Replace with the Suite Admin root-administration route once HTTP root workflows land (21).",
         ("suite/meet/api/test/test_recording.py|drive-table-write|Drive Root",),
+    ),
+    **_debt(
+        "Suite Drive and Slides",
+        "Replace with the Suite Admin root-administration route once HTTP root workflows land (21).",
+        (
+            "suite/slides/patches/test_move_file_media_to_drive.py|drive-table-write|Drive Root",
+            "suite/slides/patches/test_move_file_media_to_drive.py|drive-table-write|Drive Root#2",
+        ),
     ),
     **_debt(
         "Drive and adopting product owners",
@@ -237,6 +253,23 @@ BASELINE_DEBT = {
         ),
     ),
     **_debt(
+        "Suite Slides",
+        "Remove when Drive can start a comment thread through its package root.",
+        # The comments case starts a thread on the old presentation to check conversion
+        # keeps it; Drive's package root reads threads but starts none
+        (
+            "suite/slides/content/tests/test_conversion.py|import|suite.drive._core",
+            "suite/slides/content/tests/test_conversion.py|import|suite.drive.framework",
+        ),
+    ),
+    **_debt(
+        "Suite Slides",
+        "Remove when Drive can purge one node for one test.",
+        # The purge case unlinks the presentation from its node first, so the purge
+        # leaves the node behind for the cleanup to delete
+        ("suite/slides/content/tests/test_registration.py|drive-table-write|Drive Node",),
+    ),
+    **_debt(
         "Suite Slides API",
         "Remove when tickets 21 and 22 expose root, grant, and trash workflows over HTTP.",
         (
@@ -254,6 +287,8 @@ BASELINE_DEBT = {
         "Suite Sheets",
         "Remove when tickets 21 and 22 expose root, trash, media, and version workflows over HTTP.",
         (
+            "suite/sheets/content/tests/test_conversion.py|import|suite.drive._core.access",
+            "suite/sheets/content/tests/test_conversion.py|import|suite.drive.framework",
             "suite/sheets/tests/test_drive_adoption.py|dotted-string|suite.drive._core.previews.enqueue_render",
             "suite/sheets/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.doc_has_permission",
             "suite/sheets/tests/test_drive_adoption.py|dotted-string|suite.drive.framework.doc_query_conditions",
@@ -278,6 +313,11 @@ BASELINE_DEBT = {
         "Mail and Calendar owners",
         "Replace the existing Mail/Calendar cycle with declared package interfaces after the Drive rewrite.",
         (
+            "suite/calendar/__init__.py|import|suite.mail.doctype.user_account.user_account",
+            "suite/calendar/__init__.py|import|suite.mail.doctype.user_account.user_account#2",
+            "suite/calendar/__init__.py|import|suite.mail.jmap",
+            "suite/calendar/__init__.py|import|suite.mail.jmap#2",
+            "suite/calendar/__init__.py|import|suite.mail.jmap#3",
             "suite/calendar/api/__init__.py|import|suite.mail.jmap",
             "suite/calendar/api/__init__.py|import|suite.mail.utils.dt",
             "suite/calendar/api/invites.py|import|suite.mail.jmap",
@@ -303,6 +343,8 @@ BASELINE_DEBT = {
             "suite/calendar/doctype/event_notification/event_notification.py|import|suite.mail.doctype.user_account.user_account",
             "suite/calendar/doctype/event_notification/event_notification.py|import|suite.mail.jmap",
             "suite/calendar/doctype/event_notification/event_notification.py|import|suite.mail.utils.dt",
+            "suite/calendar/tests/test_add_attendee.py|import|suite.mail.jmap",
+            "suite/calendar/tests/test_add_attendee.py|import|suite.mail.tests.base",
             "suite/calendar/tests/test_calendar_calendars.py|import|suite.mail.tests.base",
             "suite/calendar/tests/test_calendar_events.py|import|suite.mail.tests.base",
             "suite/calendar/tests/test_calendar_exchange_and_notifications.py|import|suite.mail.api.account",
@@ -678,7 +720,9 @@ class TestArchitecture(unittest.TestCase):
             (
                 "COMMENT",
                 "EDIT",
+                "IN_DIRECTORY_SQL",
                 "MANAGE",
+                "MAX_MENTIONS",
                 "READ",
                 "UPLOAD",
                 "ContentTypeSpec",
@@ -690,6 +734,8 @@ class TestArchitecture(unittest.TestCase):
                 "DriveLocked",
                 "DriveNotFound",
                 "DriveOverQuota",
+                "DriveStorageUnmeasured",
+                "PersonOnNode",
                 "Satellite",
                 "administration_usage",
                 "adopt_media",
@@ -704,6 +750,7 @@ class TestArchitecture(unittest.TestCase):
                 "ensure_personal_root",
                 "get_storage_reservation",
                 "get_storage_usage",
+                "get_version",
                 "grow_storage_reservation",
                 "has_blank_old_comment",
                 "import_document",
@@ -714,11 +761,13 @@ class TestArchitecture(unittest.TestCase):
                 "node_owner",
                 "node_title",
                 "node_url",
+                "people_on",
                 "personal_root_for",
                 "preview_user_transfer",
                 "push_preview",
                 "read_file",
                 "read_version",
+                "record_visit",
                 "reduce_storage_reservation",
                 "refuse_shared_child_rows",
                 "refuse_shared_linked_rows",
@@ -726,6 +775,7 @@ class TestArchitecture(unittest.TestCase):
                 "release_storage_reservation",
                 "resolve_share_link",
                 "rollback_savepoint",
+                "root_locations",
                 "set_user_active",
                 "store_file",
                 "take_version",

@@ -1,16 +1,22 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it } from 'vitest'
+
+import type { Operation } from '@/platform/transport'
 
 import { registration } from './policy'
 
 // The effects a mail mutation has on cached reads, as the shared client applies them.
 const effectsOf = (publicName: string) => {
-  const policy = registration.policy({
-    id: 'clear_list',
-    kind: 'mutation',
-    publicName,
-  } as never)
-  return (policy as { effects: { matches: (input: unknown, queryInput: unknown) => boolean } })
-    .effects
+  const policy = registration.policy(
+    fromPartial<Operation>({
+      id: 'clear_list',
+      kind: 'mutation',
+      publicName,
+    }),
+  )
+  if (!policy.effects || policy.effects === 'none' || typeof policy.effects.matches !== 'function')
+    throw new Error('Expected cache matching effects')
+  return { matches: policy.effects.matches }
 }
 
 describe('mail cache policy', () => {

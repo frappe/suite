@@ -124,7 +124,7 @@ const VIEW_OPTIONS = [
   { label: 'Year', value: 'Year' },
 ]
 
-const SHORTCUT: Record<string, string> = { Week: 'W', Month: 'M', Year: 'Y' }
+const SHORTCUT = { Week: 'W', Month: 'M', Year: 'Y' } satisfies Record<string, string>
 
 // Day is dropped: the shell already gives every screen a wide content area, so
 // a single column has nothing to add over Week.
@@ -156,19 +156,19 @@ function openWeekOn(date: string) {
 }
 
 // ── Keyboard ──
-const KEYS: Record<string, () => void> = {
+const KEYS = {
   w: () => (view.value = 'Week'),
   m: () => (view.value = 'Month'),
   y: () => (view.value = 'Year'),
   t: () => (cursor.value = today()),
   arrowleft: () => step(-1),
   arrowright: () => step(1),
-}
+} satisfies Record<string, () => void>
 
 function onKeydown(event: KeyboardEvent) {
   if (event.metaKey || event.ctrlKey || event.altKey) return
 
-  const target = event.target as HTMLElement | null
+  const target = (event.target instanceof Element ? event.target : null)
   if (target?.isContentEditable) return
   if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return
 

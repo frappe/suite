@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { resolveCodecStrategy } from '../codecStrategy'
@@ -44,8 +45,8 @@ function mockSfuClient(getCodecStrategy?: () => string) {
 describe('getVideoEncodingDecision', () => {
   it('returns resolveCodecStrategy result using sfuClient pref', () => {
     const manager = createManager()
-    manager.sfuClient = mockSfuClient(() => 'simulcast') as never
-    manager.device = { rtpCapabilities: { codecs: [] } } as never
+    manager.sfuClient = fromPartial(mockSfuClient(() => 'simulcast'))
+    manager.device = fromPartial({ rtpCapabilities: { codecs: [] } })
     manager.routerRtpCapabilities = { codecs: [] }
 
     vi.mocked(resolveCodecStrategy).mockReturnValue({
@@ -66,9 +67,9 @@ describe('getVideoEncodingDecision', () => {
 
   it('falls back to svc when sfuClient has no getCodecStrategy', () => {
     const manager = createManager()
-    manager.sfuClient = mockSfuClient() as never
+    manager.sfuClient = fromPartial(mockSfuClient())
     Reflect.set(manager.sfuClient, 'getCodecStrategy', undefined)
-    manager.device = { rtpCapabilities: { codecs: [] } } as never
+    manager.device = fromPartial({ rtpCapabilities: { codecs: [] } })
     manager.routerRtpCapabilities = { codecs: [] }
 
     vi.mocked(resolveCodecStrategy).mockReturnValue({
@@ -89,8 +90,8 @@ describe('getVideoEncodingDecision', () => {
 describe('getVideoEncodingConfig', () => {
   it('returns svc encoding template for svc strategy camera source', () => {
     const manager = createManager()
-    manager.sfuClient = mockSfuClient() as never
-    manager.device = { rtpCapabilities: { codecs: [] } } as never
+    manager.sfuClient = fromPartial(mockSfuClient())
+    manager.device = fromPartial({ rtpCapabilities: { codecs: [] } })
     manager.routerRtpCapabilities = { codecs: [] }
 
     vi.mocked(resolveCodecStrategy).mockReturnValue({
@@ -113,8 +114,8 @@ describe('getVideoEncodingConfig', () => {
 
   it('returns videoEncodings for simulcast camera source', () => {
     const manager = createManager()
-    manager.sfuClient = mockSfuClient() as never
-    manager.device = { rtpCapabilities: { codecs: [] } } as never
+    manager.sfuClient = fromPartial(mockSfuClient())
+    manager.device = fromPartial({ rtpCapabilities: { codecs: [] } })
     manager.routerRtpCapabilities = { codecs: [] }
 
     vi.mocked(resolveCodecStrategy).mockReturnValue({
@@ -137,8 +138,8 @@ describe('getVideoEncodingConfig', () => {
 
   it('returns screenEncodings for screen source regardless of strategy', () => {
     const manager = createManager()
-    manager.sfuClient = mockSfuClient() as never
-    manager.device = { rtpCapabilities: { codecs: [] } } as never
+    manager.sfuClient = fromPartial(mockSfuClient())
+    manager.device = fromPartial({ rtpCapabilities: { codecs: [] } })
     manager.routerRtpCapabilities = { codecs: [] }
 
     vi.mocked(resolveCodecStrategy).mockReturnValue({
@@ -158,50 +159,56 @@ describe('getVideoEncodingConfig', () => {
 
 describe('E2EE transport options', () => {
   it('enables legacy encodedInsertableStreams only for legacy mode', () => {
-    E2EEMeeting.instance.setMeetingContext(new Uint8Array(32) as Uint8Array<ArrayBuffer>, 1)
-    const policy = new DefaultE2EETransformPolicy({
-      ...mockSfuClient(),
-      isE2EERequired: vi.fn(() => true),
-      getE2EEMode: vi.fn(() => 'insertable-streams'),
-    } as never)
+    E2EEMeeting.instance.setMeetingContext(new Uint8Array(32), 1)
+    const policy = new DefaultE2EETransformPolicy(
+      fromPartial({
+        ...mockSfuClient(),
+        isE2EERequired: vi.fn(() => true),
+        getE2EEMode: vi.fn(() => 'insertable-streams'),
+      }),
+    )
     const manager = new TransportManager(policy)
 
     expect(manager.e2eePolicy.legacyInsertableStreamsEnabled).toBe(true)
   })
 
   it('does not enable legacy encodedInsertableStreams for RTCRtpScriptTransform', () => {
-    E2EEMeeting.instance.setMeetingContext(new Uint8Array(32) as Uint8Array<ArrayBuffer>, 1)
-    const policy = new DefaultE2EETransformPolicy({
-      ...mockSfuClient(),
-      isE2EERequired: vi.fn(() => true),
-      getE2EEMode: vi.fn(() => 'rtp-script-transform'),
-    } as never)
+    E2EEMeeting.instance.setMeetingContext(new Uint8Array(32), 1)
+    const policy = new DefaultE2EETransformPolicy(
+      fromPartial({
+        ...mockSfuClient(),
+        isE2EERequired: vi.fn(() => true),
+        getE2EEMode: vi.fn(() => 'rtp-script-transform'),
+      }),
+    )
     const manager = new TransportManager(policy)
 
     expect(manager.e2eePolicy.legacyInsertableStreamsEnabled).toBe(false)
   })
 
   it('passes sender transform setup through onRtpSender before produce resolves', async () => {
-    E2EEMeeting.instance.setMeetingContext(new Uint8Array(32) as Uint8Array<ArrayBuffer>, 1)
+    E2EEMeeting.instance.setMeetingContext(new Uint8Array(32), 1)
     const client = {
       ...mockSfuClient(),
       isE2EERequired: vi.fn(() => true),
       getE2EEMode: vi.fn(() => 'rtp-script-transform'),
       getOwnSenderId: vi.fn(() => 7),
     }
-    const policy = new DefaultE2EETransformPolicy(client as never)
+    const policy = new DefaultE2EETransformPolicy(fromPartial(client))
     vi.spyOn(policy, 'setupSenderTransform').mockResolvedValue(true)
     const manager = new TransportManager(policy)
-    manager.initialize(client as never)
-    manager.device = { canProduce: vi.fn(() => true) } as never
+    manager.initialize(fromPartial(client))
+    manager.device = fromPartial({ canProduce: vi.fn(() => true) })
     const produce = vi.fn(async () => ({ id: 'producer-1', rtpSender: {} }))
-    manager.sendTransport = { produce } as never
+    manager.sendTransport = fromPartial({ produce })
 
-    await manager.createProducer({
-      id: 'track-1',
-      kind: 'audio',
-      readyState: 'live',
-    } as MediaStreamTrack)
+    await manager.createProducer(
+      fromPartial<MediaStreamTrack>({
+        id: 'track-1',
+        kind: 'audio',
+        readyState: 'live',
+      }),
+    )
 
     expect(produce).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -251,14 +258,14 @@ describe('E2EE transport options', () => {
         close,
       }
       const manager = new TransportManager(policy)
-      manager.initialize(client as never)
-      manager.device = {
+      manager.initialize(fromPartial(client))
+      manager.device = fromPartial({
         canProduce: vi.fn(() => true),
         rtpCapabilities: { codecs: [] },
-      } as never
-      manager.sendTransport = {
+      })
+      manager.sendTransport = fromPartial({
         produce: vi.fn().mockResolvedValue(producer),
-      } as never
+      })
       vi.mocked(resolveCodecStrategy).mockReturnValue({
         strategy: 'simulcast',
         scalabilityMode: null,
@@ -268,7 +275,7 @@ describe('E2EE transport options', () => {
 
       await expect(
         manager.createProducer(
-          { id: `${type}-track`, kind, readyState: 'live' } as MediaStreamTrack,
+          fromPartial<MediaStreamTrack>({ id: `${type}-track`, kind, readyState: 'live' }),
           { type },
         ),
       ).rejects.toThrow()
@@ -299,18 +306,20 @@ describe('E2EE transport options', () => {
       close: vi.fn(),
     }
     const manager = new TransportManager(policy)
-    manager.initialize(client as never)
-    manager.device = { canProduce: vi.fn(() => true) } as never
-    manager.sendTransport = {
+    manager.initialize(fromPartial(client))
+    manager.device = fromPartial({ canProduce: vi.fn(() => true) })
+    manager.sendTransport = fromPartial({
       produce: vi.fn().mockResolvedValue(producer),
-    } as never
+    })
 
     await expect(
-      manager.createProducer({
-        id: 'microphone-track',
-        kind: 'audio',
-        readyState: 'live',
-      } as MediaStreamTrack),
+      manager.createProducer(
+        fromPartial<MediaStreamTrack>({
+          id: 'microphone-track',
+          kind: 'audio',
+          readyState: 'live',
+        }),
+      ),
     ).rejects.toThrow('resume failed')
 
     expect(producer.close).toHaveBeenCalledOnce()
@@ -344,16 +353,16 @@ describe('E2EE transport options', () => {
       close: vi.fn(),
     }
     const manager = new TransportManager(policy)
-    manager.initialize(client as never)
-    manager.device = { canProduce: vi.fn(() => true) } as never
-    manager.sendTransport = {
+    manager.initialize(fromPartial(client))
+    manager.device = fromPartial({ canProduce: vi.fn(() => true) })
+    manager.sendTransport = fromPartial({
       produce: vi.fn().mockResolvedValueOnce(failedProducer).mockResolvedValueOnce(retriedProducer),
-    } as never
-    const track = {
+    })
+    const track = fromPartial<MediaStreamTrack>({
       id: 'microphone-track',
       kind: 'audio',
       readyState: 'live',
-    } as MediaStreamTrack
+    })
 
     await expect(manager.createProducer(track)).rejects.toThrow('Failed to resume E2EE producer')
     await expect(manager.createProducer(track)).resolves.toBe(retriedProducer)
@@ -391,16 +400,16 @@ describe('E2EE transport options', () => {
       close: vi.fn(),
     }
     const manager = new TransportManager(policy)
-    manager.initialize(client as never)
-    manager.device = { canProduce: vi.fn(() => true) } as never
-    manager.sendTransport = {
+    manager.initialize(fromPartial(client))
+    manager.device = fromPartial({ canProduce: vi.fn(() => true) })
+    manager.sendTransport = fromPartial({
       produce: vi.fn().mockResolvedValueOnce(failedProducer).mockResolvedValueOnce(retriedProducer),
-    } as never
-    const track = {
+    })
+    const track = fromPartial<MediaStreamTrack>({
       id: 'microphone-track',
       kind: 'audio',
       readyState: 'live',
-    } as MediaStreamTrack
+    })
 
     await expect(manager.createProducer(track)).rejects.toThrow(
       'Failed to install E2EE sender transform',
@@ -463,15 +472,15 @@ describe('transport creation', () => {
       iceCandidates: [],
       dtlsParameters: {},
     })
-    const transport = {
+    const transport = fromPartial<import('mediasoup-client/types').Transport>({
       id: 'recv-tp',
       on: vi.fn(),
       close: vi.fn(),
-    } as never
-    manager.sfuClient = client as never
-    manager.device = {
+    })
+    manager.sfuClient = fromPartial(client)
+    manager.device = fromPartial({
       createRecvTransport: vi.fn(() => transport),
-    } as never
+    })
 
     const [first, second] = await Promise.all([
       manager.createReceiveTransport(),
@@ -497,15 +506,15 @@ describe('transport creation', () => {
         resolveTransport = resolve
       }),
     )
-    const transport = {
+    const transport = fromPartial<import('mediasoup-client/types').Transport>({
       id: 'stale-recv-tp',
       on: vi.fn(),
       close: vi.fn(),
-    } as never
-    manager.sfuClient = client as never
-    manager.device = {
+    })
+    manager.sfuClient = fromPartial(client)
+    manager.device = fromPartial({
       createRecvTransport: vi.fn(() => transport),
-    } as never
+    })
 
     const creation = manager.createReceiveTransport()
     manager.closeReceiveTransport()
@@ -525,30 +534,30 @@ describe('transport creation', () => {
 describe('restartAllTransportIce', () => {
   it('reports a restarted send transport and no receive transport', async () => {
     const manager = createManager()
-    manager.sfuClient = mockSfuClient() as never
+    manager.sfuClient = fromPartial(mockSfuClient())
     const restartIce = vi.fn()
-    manager.sendTransport = {
+    manager.sendTransport = fromPartial({
       id: 'send-tp',
       connectionState: 'connected',
       restartIce,
       close: vi.fn(),
       getStats: vi.fn(),
-    } as never
-    mockedIceRestart(manager).mockResolvedValue({ iceParams: true } as never)
+    })
+    mockedIceRestart(manager).mockResolvedValue(fromPartial({ iceParams: true }))
     const result = await manager.restartAllTransportIce()
     expect(result).toEqual({ send: 'restarted', recv: 'not-needed' })
   })
 
   it('reports a failed transport restart', async () => {
     const manager = createManager()
-    manager.sfuClient = mockSfuClient() as never
-    manager.sendTransport = {
+    manager.sfuClient = fromPartial(mockSfuClient())
+    manager.sendTransport = fromPartial({
       id: 'send-tp',
       connectionState: 'connected',
       restartIce: vi.fn(),
       close: vi.fn(),
       getStats: vi.fn(),
-    } as never
+    })
     mockedIceRestart(manager).mockRejectedValue(new Error('fail'))
     const result = await manager.restartAllTransportIce()
     expect(result).toEqual({ send: 'failed', recv: 'not-needed' })
@@ -556,21 +565,21 @@ describe('restartAllTransportIce', () => {
 
   it('reports send success and receive failure independently', async () => {
     const manager = createManager()
-    manager.sfuClient = mockSfuClient() as never
-    manager.sendTransport = {
+    manager.sfuClient = fromPartial(mockSfuClient())
+    manager.sendTransport = fromPartial({
       id: 'send-tp',
       connectionState: 'connected',
       restartIce: vi.fn(),
       close: vi.fn(),
       getStats: vi.fn(),
-    } as never
-    manager.recvTransport = {
+    })
+    manager.recvTransport = fromPartial({
       id: 'recv-tp',
       connectionState: 'connected',
       restartIce: vi.fn(),
       close: vi.fn(),
       getStats: vi.fn(),
-    } as never
+    })
     mockedIceRestart(manager).mockImplementation((transportId: string) => {
       return transportId === 'send-tp'
         ? Promise.resolve({ usernameFragment: 'u', password: 'p' })
@@ -585,22 +594,22 @@ describe('restartAllTransportIce', () => {
 
   it('reports both active directions as restarted', async () => {
     const manager = createManager()
-    manager.sfuClient = mockSfuClient() as never
-    manager.sendTransport = {
+    manager.sfuClient = fromPartial(mockSfuClient())
+    manager.sendTransport = fromPartial({
       id: 'send-tp',
       connectionState: 'connected',
       restartIce: vi.fn(),
       close: vi.fn(),
       getStats: vi.fn(),
-    } as never
-    manager.recvTransport = {
+    })
+    manager.recvTransport = fromPartial({
       id: 'recv-tp',
       connectionState: 'connected',
       restartIce: vi.fn(),
       close: vi.fn(),
       getStats: vi.fn(),
-    } as never
-    mockedIceRestart(manager).mockResolvedValue({ iceParams: true } as never)
+    })
+    mockedIceRestart(manager).mockResolvedValue(fromPartial({ iceParams: true }))
 
     await expect(manager.restartAllTransportIce()).resolves.toEqual({
       send: 'restarted',
@@ -610,21 +619,21 @@ describe('restartAllTransportIce', () => {
 
   it('reports send failure and receive success independently', async () => {
     const manager = createManager()
-    manager.sfuClient = mockSfuClient() as never
-    manager.sendTransport = {
+    manager.sfuClient = fromPartial(mockSfuClient())
+    manager.sendTransport = fromPartial({
       id: 'send-tp',
       connectionState: 'connected',
       restartIce: vi.fn(),
       close: vi.fn(),
       getStats: vi.fn(),
-    } as never
-    manager.recvTransport = {
+    })
+    manager.recvTransport = fromPartial({
       id: 'recv-tp',
       connectionState: 'connected',
       restartIce: vi.fn(),
       close: vi.fn(),
       getStats: vi.fn(),
-    } as never
+    })
     mockedIceRestart(manager).mockImplementation((transportId: string) => {
       return transportId === 'send-tp'
         ? Promise.reject(new Error('send failed'))
@@ -639,21 +648,21 @@ describe('restartAllTransportIce', () => {
 
   it('reports both active directions as failed when neither can restart', async () => {
     const manager = createManager()
-    manager.sfuClient = mockSfuClient() as never
-    manager.sendTransport = {
+    manager.sfuClient = fromPartial(mockSfuClient())
+    manager.sendTransport = fromPartial({
       id: 'send-tp',
       connectionState: 'connected',
       restartIce: vi.fn(),
       close: vi.fn(),
       getStats: vi.fn(),
-    } as never
-    manager.recvTransport = {
+    })
+    manager.recvTransport = fromPartial({
       id: 'recv-tp',
       connectionState: 'connected',
       restartIce: vi.fn(),
       close: vi.fn(),
       getStats: vi.fn(),
-    } as never
+    })
     mockedIceRestart(manager).mockRejectedValue(new Error('restart failed'))
 
     await expect(manager.restartAllTransportIce()).resolves.toEqual({
@@ -666,9 +675,9 @@ describe('restartAllTransportIce', () => {
 describe('cleanup', () => {
   it('resets transports and device to null', () => {
     const manager = createManager()
-    manager.sendTransport = { close: vi.fn() } as never
-    manager.recvTransport = { close: vi.fn() } as never
-    manager.device = {} as never
+    manager.sendTransport = fromPartial({ close: vi.fn() })
+    manager.recvTransport = fromPartial({ close: vi.fn() })
+    manager.device = fromPartial({})
     manager.cleanup()
     expect(manager.sendTransport).toBeNull()
     expect(manager.recvTransport).toBeNull()
@@ -687,7 +696,7 @@ describe('getNetworkStats', () => {
 
   it('aggregates RTT from candidate-pair stats', async () => {
     const manager = createManager()
-    manager.sendTransport = {
+    manager.sendTransport = fromPartial({
       id: 's',
       connectionState: 'connected',
       getStats: vi.fn().mockResolvedValue(
@@ -703,7 +712,7 @@ describe('getNetworkStats', () => {
           ],
         ]),
       ),
-    } as never
+    })
     manager.recvTransport = null
     const stats = await manager.getNetworkStats()
     expect(stats.rtt).toBe(50)
@@ -713,7 +722,7 @@ describe('getNetworkStats', () => {
 
   it('keeps loss unknown until two inbound samples establish a recent interval', async () => {
     const manager = createManager()
-    manager.recvTransport = {
+    manager.recvTransport = fromPartial({
       id: 'r',
       connectionState: 'connected',
       getStats: vi.fn().mockResolvedValue(
@@ -728,7 +737,7 @@ describe('getNetworkStats', () => {
           ],
         ]),
       ),
-    } as never
+    })
     manager.sendTransport = null
     const stats = await manager.getNetworkStats()
     expect(stats.downlink?.packetLoss).toBeNull()
@@ -739,7 +748,7 @@ describe('getNetworkStats', () => {
     const manager = createManager()
     let received = 900,
       lost = 100
-    manager.sendTransport = {
+    manager.sendTransport = fromPartial({
       id: 'send',
       connectionState: 'connected',
       getStats: async () =>
@@ -754,8 +763,8 @@ describe('getNetworkStats', () => {
             },
           ],
         ]),
-    } as never
-    manager.recvTransport = {
+    })
+    manager.recvTransport = fromPartial({
       id: 'recv',
       connectionState: 'connected',
       getStats: async () =>
@@ -771,7 +780,7 @@ describe('getNetworkStats', () => {
             },
           ],
         ]),
-    } as never
+    })
     const first = await manager.getNetworkStats()
     expect(first.uplink?.packetLoss).toBe(25)
     expect(first.downlink?.packetLoss).toBeNull()
@@ -792,7 +801,7 @@ describe('getNetworkStats', () => {
   it('ignores retransmission-stream jitter and loss after media recovers', async () => {
     const manager = createManager()
     let received = 100
-    manager.recvTransport = {
+    manager.recvTransport = fromPartial({
       id: 'recv',
       connectionState: 'connected',
       getStats: async () =>
@@ -822,7 +831,7 @@ describe('getNetworkStats', () => {
             },
           ],
         ]),
-    } as never
+    })
     await manager.getNetworkStats()
     received += 100
     const stats = await manager.getNetworkStats()
@@ -833,7 +842,7 @@ describe('getNetworkStats', () => {
   it('excludes unbound probation SSRCs from quality measurements', async () => {
     const manager = createManager()
     let received = 100
-    manager.recvTransport = {
+    manager.recvTransport = fromPartial({
       id: 'recv',
       connectionState: 'connected',
       getStats: async () =>
@@ -861,7 +870,7 @@ describe('getNetworkStats', () => {
             },
           ],
         ]),
-    } as never
+    })
     await manager.getNetworkStats()
     received += 100
     const stats = await manager.getNetworkStats()
@@ -871,7 +880,7 @@ describe('getNetworkStats', () => {
 
   it('includes remote-inbound-rtp RTT in average', async () => {
     const manager = createManager()
-    manager.sendTransport = {
+    manager.sendTransport = fromPartial({
       id: 's',
       connectionState: 'connected',
       getStats: vi.fn().mockResolvedValue(
@@ -885,7 +894,7 @@ describe('getNetworkStats', () => {
           ],
         ]),
       ),
-    } as never
+    })
     manager.recvTransport = null
     const stats = await manager.getNetworkStats()
     expect(stats.rtt).toBe(100)
@@ -894,7 +903,7 @@ describe('getNetworkStats', () => {
 
   it('averages RTT across multiple reports', async () => {
     const manager = createManager()
-    manager.sendTransport = {
+    manager.sendTransport = fromPartial({
       id: 's',
       connectionState: 'connected',
       getStats: vi.fn().mockResolvedValue(
@@ -917,7 +926,7 @@ describe('getNetworkStats', () => {
           ],
         ]),
       ),
-    } as never
+    })
     manager.recvTransport = null
     const stats = await manager.getNetworkStats()
     expect(stats.rtt).toBe(40)
@@ -926,18 +935,18 @@ describe('getNetworkStats', () => {
   it('skips disconnected transports', async () => {
     const manager = createManager()
     const getStats = vi.fn()
-    manager.sendTransport = {
+    manager.sendTransport = fromPartial({
       id: 's',
       connectionState: 'disconnected',
       getStats,
-    } as never
+    })
     await manager.getNetworkStats()
     expect(getStats).not.toHaveBeenCalled()
   })
 
   it('does not double-count RTT from candidate-pair and remote-inbound-rtp on the same transport', async () => {
     const manager = createManager()
-    manager.sendTransport = {
+    manager.sendTransport = fromPartial({
       id: 's',
       connectionState: 'connected',
       getStats: vi.fn().mockResolvedValue(
@@ -955,7 +964,7 @@ describe('getNetworkStats', () => {
           ['remote3', { type: 'remote-inbound-rtp', roundTripTime: 0.1 }],
         ]),
       ),
-    } as never
+    })
     manager.recvTransport = null
     const stats = await manager.getNetworkStats()
     expect(stats.rtt).toBe(100)
@@ -964,7 +973,7 @@ describe('getNetworkStats', () => {
 
   it('falls back to candidate-pair RTT when remote-inbound-rtp is unavailable on the send transport', async () => {
     const manager = createManager()
-    manager.sendTransport = {
+    manager.sendTransport = fromPartial({
       id: 's',
       connectionState: 'connected',
       getStats: vi.fn().mockResolvedValue(
@@ -979,7 +988,7 @@ describe('getNetworkStats', () => {
           ],
         ]),
       ),
-    } as never
+    })
     manager.recvTransport = null
     const stats = await manager.getNetworkStats()
     expect(stats.rtt).toBe(150)
@@ -989,11 +998,11 @@ describe('getNetworkStats', () => {
 
 function senderPolicyFixture(kind: string, setParameters = vi.fn().mockResolvedValue(undefined)) {
   const manager = createManager()
-  manager.initialize(mockSfuClient() as never)
-  manager.device = {
+  manager.initialize(fromPartial(mockSfuClient()))
+  manager.device = fromPartial({
     canProduce: () => true,
     rtpCapabilities: { codecs: [] },
-  } as never
+  })
   vi.mocked(resolveCodecStrategy).mockReturnValue({
     strategy: 'simulcast',
     scalabilityMode: null,
@@ -1006,7 +1015,7 @@ function senderPolicyFixture(kind: string, setParameters = vi.fn().mockResolvedV
       { rid: 'large', maxBitrate: 920000 },
     ],
   }
-  manager.sendTransport = {
+  manager.sendTransport = fromPartial({
     produce: vi.fn().mockResolvedValue({
       id: 'p',
       rtpSender: {
@@ -1017,12 +1026,12 @@ function senderPolicyFixture(kind: string, setParameters = vi.fn().mockResolvedV
         setParameters,
       },
     }),
-  } as never
-  const track = {
+  })
+  const track = fromPartial<MediaStreamTrack>({
     kind,
     contentHint: '',
     readyState: 'live',
-  } as MediaStreamTrack
+  })
   return { manager, track, setParameters }
 }
 
@@ -1055,9 +1064,8 @@ describe('congested media sender policy', () => {
       const { manager, track, setParameters } = senderPolicyFixture(kind)
       await manager.createProducer(track, { type })
       expect(track.contentHint).toBe(hint)
-      expect(setParameters).toHaveBeenCalledWith({
+      const expected = {
         transactionId: '0',
-        ...(degradation ? { degradationPreference: degradation } : {}),
         encodings: [
           {
             rid: 'tiny',
@@ -1072,7 +1080,10 @@ describe('congested media sender policy', () => {
             networkPriority: priority,
           },
         ],
-      })
+      }
+      expect(setParameters).toHaveBeenCalledWith(
+        degradation ? { ...expected, degradationPreference: degradation } : expected,
+      )
     },
   )
 
@@ -1109,7 +1120,7 @@ describe('consumer creation disposal', () => {
       const manager = createManager()
       const closeConsumer = vi.fn().mockResolvedValue(undefined)
       const localClose = vi.fn()
-      manager.sfuClient = {
+      manager.sfuClient = fromPartial({
         ...mockSfuClient(),
         createConsumer: vi.fn().mockResolvedValue({
           id: 'server-consumer',
@@ -1117,16 +1128,16 @@ describe('consumer creation disposal', () => {
           producerId: 'camera',
         }),
         closeConsumer,
-      } as never
-      manager.device = { rtpCapabilities: {} } as never
-      manager.recvTransport = {
+      })
+      manager.device = fromPartial({ rtpCapabilities: {} })
+      manager.recvTransport = fromPartial({
         id: 'recv',
         consume: vi.fn(async () => {
           if (!stale) throw new Error('consume failed')
           manager.recvTransport = null
           return { id: 'server-consumer', close: localClose }
         }),
-      } as never
+      })
       await expect(manager.createConsumer('camera')).rejects.toThrow(
         stale ? 'replaced' : 'consume failed',
       )
@@ -1158,25 +1169,26 @@ describe('receiver-ready video handshake', () => {
       closeConsumer: vi.fn().mockResolvedValue(undefined),
       requestConsumerKeyFrame: vi.fn().mockResolvedValue({}),
     }
-    manager.sfuClient = client as never
-    manager.device = { rtpCapabilities: {} } as never
-    manager.recvTransport = {
+    manager.sfuClient = fromPartial(client)
+    manager.device = fromPartial({ rtpCapabilities: {} })
+    manager.recvTransport = fromPartial({
       id: 'recv',
       closed: false,
       close: vi.fn(),
       consume: vi.fn().mockResolvedValue(consumer),
-    } as never
+    })
     return { manager, consumer, client }
   }
 
   it('keeps the server paused until consume finishes', async () => {
     const { manager, consumer, client } = setup()
     let finishConsume!: (consumer: unknown) => void
-    vi.mocked(manager.recvTransport!.consume).mockImplementation(
-      () =>
+    vi.mocked(manager.recvTransport!.consume).mockImplementation(() =>
+      fromPartial(
         new Promise((resolve) => {
           finishConsume = resolve
-        }) as never,
+        }),
+      ),
     )
     const creation = manager.createConsumer('camera')
     await vi.waitFor(() => expect(finishConsume).toBeTypeOf('function'))

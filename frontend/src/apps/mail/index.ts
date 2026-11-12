@@ -1,8 +1,12 @@
-import { defineAsyncComponent } from 'vue'
+import { defineAsyncComponent, watch } from 'vue'
 
 import { api, useQuery } from '@/api'
 import MailIcon from '@/apps/mail/AreaIcon.vue'
+import { showMailReminder } from '@/apps/mail/reminders'
 import type { AreaDefinition } from '@/platform/contracts'
+import { realtime } from '@/platform/realtime'
+import type { Reminder } from '@/platform/reminders'
+import { hasCapabilities, useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 
 export const mailArea: AreaDefinition = {
@@ -18,6 +22,31 @@ export const mailArea: AreaDefinition = {
 }
 
 export type { MailSettingsTabId } from '@/apps/mail/utils/composables'
+
+/**
+ * Shows each reminder the server sends (`mail_reminder`) on every page, for a signed-in reader who
+ * has Mail, on the shell's one realtime connection. Call it once at boot.
+ */
+export function installMailReminders({ open }: { open: (path: string) => void }): () => void {
+  const session = useSession()
+  let stopListening: (() => void) | undefined
+  const stopWatching = watch(
+    () => session.status.value === 'authenticated' && hasCapabilities(mailArea.requires, session),
+    (hasMail) => {
+      stopListening?.()
+      stopListening = hasMail
+        ? realtime.subscribe<Reminder>('mail_reminder', (reminder) => {
+            void showMailReminder(reminder, open)
+          })
+        : undefined
+    },
+    { immediate: true },
+  )
+  return () => {
+    stopWatching()
+    stopListening?.()
+  }
+}
 
 /** Mail's Settings group. Loads when Settings opens. */
 export const loadMailSettings = () =>

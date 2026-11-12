@@ -71,11 +71,16 @@ interface FramingCropSnapshot {
 
 function readFramingCrop(): FramingCropSnapshot | null {
   try {
-    const parsed = readJSON('backgroundEffects.framingCrop') as Partial<FramingCropSnapshot> | null
+    const parsed: unknown = readJSON('backgroundEffects.framingCrop')
     if (
-      typeof parsed?.x !== 'number' ||
-      typeof parsed?.y !== 'number' ||
-      typeof parsed?.size !== 'number' ||
+      !parsed ||
+      typeof parsed !== 'object' ||
+      !('x' in parsed) ||
+      !('y' in parsed) ||
+      !('size' in parsed) ||
+      typeof parsed.x !== 'number' ||
+      typeof parsed.y !== 'number' ||
+      typeof parsed.size !== 'number' ||
       !Number.isFinite(parsed.x) ||
       !Number.isFinite(parsed.y) ||
       !Number.isFinite(parsed.size)
@@ -271,7 +276,13 @@ export async function removeCustomBackgroundImage(imageId: string): Promise<void
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as string)
+    reader.onload = () => {
+      if (typeof reader.result !== 'string') {
+        reject(new Error('Expected a data URL from FileReader'))
+        return
+      }
+      resolve(reader.result)
+    }
     reader.onerror = reject
     reader.readAsDataURL(file)
   })
