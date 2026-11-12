@@ -533,6 +533,7 @@ class TestThemeOfAConvertedDeck(LoggedDeckCase):
         theme_node = drive.create_document(
             owner_folder(), f"Theme {suffix}", content_doctype="Presentation", is_template=True
         )
+        self.addCleanup(trash_template, theme_node)
         self.addCleanup(delete_log, theme_node)
         self.theme = slides_drive.docname_for_node(theme_node)
 
