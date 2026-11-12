@@ -3126,3 +3126,79 @@ describe('a presentation left while a request is out', () => {
     expect(shownBackgrounds()).toEqual(['#000000ff'])
   })
 })
+
+// Q17: copy out of a presentation still on its rows works, and nothing pastes into it
+// The stand-in SlideContainer binds no clipboard events, so these call the handlers it binds
+const clipboard = await import('@/apps/slides/stores/copyPaste')
+
+describe('a slide copied from a presentation waiting for its upgrade', () => {
+  const picture = { id: 'photo', type: 'image', src: '/files/waiting-photo.png' }
+  const waitingSlides = [{ clientId: 'w1', background: '#ffffffff', elements: [picture] }]
+
+  function copied() {
+    let json = ''
+    clipboard.handleCopy({
+      target: document.body,
+      preventDefault() {},
+      clipboardData: { setData: (_type: string, data: string) => (json = data) },
+    })
+    return json
+  }
+
+  function paste(json: string) {
+    return clipboard.handlePaste({
+      preventDefault() {},
+      clipboardData: {
+        getData: (type: string) => (type === 'application/json' ? json : ''),
+        items: [],
+      },
+    })
+  }
+
+  function adoptions() {
+    return server.fetch.mock.calls.filter(([url]) =>
+      String(url).includes('update_slide_attachments'),
+    )
+  }
+
+  function openedWaiting() {
+    return openedSurface({ deck: { conversion: { state: 'pending' } }, slides: waitingSlides })
+  }
+
+  it('lands in a converted presentation with its picture its own, with fresh ids each paste', async () => {
+    mounted = await openedWaiting()
+    const json = copied()
+    expect(JSON.parse(json)).toMatchObject({
+      parent: mounted.docname,
+      elements: [{ src: picture.src }],
+    })
+    mounted.app.unmount()
+    mounted.root.remove()
+
+    const doc = convertedRoom('one')
+    mounted = await openedSurface({ deck: { is_converted: true } })
+    await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+    await paste(json)
+    await paste(json)
+
+    await vi.waitFor(() => expect(drawnSlides(doc)).toHaveLength(3))
+    const pastedPictures = drawnSlides(doc).flatMap(({ elements }) =>
+      elements.filter(({ type }) => type === 'image'),
+    )
+    expect(pastedPictures.map(({ src }) => src)).toEqual([
+      `adopted:${picture.src}`,
+      `adopted:${picture.src}`,
+    ])
+    const ids = pastedPictures.map(({ id }) => id)
+    expect(new Set([...ids, picture.id]).size).toBe(3)
+  })
+
+  it('takes no paste itself', async () => {
+    mounted = await openedWaiting()
+
+    await paste(JSON.stringify({ clientId: 'x1', parent: 'another', elements: [picture] }))
+
+    expect(adoptions()).toEqual([])
+    expect(thumbnails(mounted.root)).toHaveLength(1)
+  })
+})
