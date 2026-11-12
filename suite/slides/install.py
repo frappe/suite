@@ -8,9 +8,8 @@ system template by its node title and draws the shipped layout thumbnails for
 it, so the titles here are the ones `SYSTEM_TEMPLATE_TITLES` names.
 
 Each ships as a ready-made presentation in `templates/system_templates.json`,
-the state the converter made once from `templates/presentation_templates.json`.
-With Slides collaboration on, that state is the new deck's start; with it off,
-the deck takes the rows `presentation_templates.json` holds. A template's
+the state the converter made once from the old rows file, and that state is
+the new deck's start. A template's
 `theme` is empty by rule (a deck made from a template names the template in
 `theme`; the template itself names nothing), so neither file carries one.
 
@@ -37,7 +36,6 @@ from suite.slides.content import APP, SCHEMA
 
 ADMINISTRATOR = "Administrator"
 TEMPLATES_FOLDER = "Templates"
-TEMPLATES_FILE = Path(__file__).with_name("templates") / "presentation_templates.json"
 SHIPPED_FILE = Path(__file__).with_name("templates") / "system_templates.json"
 
 
@@ -93,27 +91,14 @@ def _administrator_root() -> str:
 
 def _seed(folder: str, title: str) -> str:
     node = drive.create_document(folder, title, content_doctype=slides_drive.DOCTYPE, is_template=True)
-    # The log is the deck once it has one, so rows would never be read
     found = content.find(APP, node)
-    if found:
-        state = next(template["state"] for template in shipped_templates() if template["title"] == title)
-        checkpoints.replace_start(APP, found.id, base64.b64decode(state), SCHEMA.version)
-    else:
-        seed_rows(node, title)
+    if found is None:
+        raise RuntimeError(f"Slides collaboration must be on to seed {title!r}")
 
+    state = next(template["state"] for template in shipped_templates() if template["title"] == title)
+    checkpoints.replace_start(APP, found.id, base64.b64decode(state), SCHEMA.version)
     _grant_general_read(node)
     return node
-
-
-def seed_rows(node: str, title: str) -> None:
-    """Give the deck at `node` the rows of the shipped template `title`, for a site with Slides collaboration off."""
-    templates = json.loads(TEMPLATES_FILE.read_text(encoding="utf-8"))
-    deck = frappe.get_doc(slides_drive.DOCTYPE, slides_drive.docname_for_node(node))
-    # `create_empty` gave the deck one blank slide; the template body replaces it.
-    deck.slides = []
-    for slide in next(template["slides"] for template in templates if template["title"] == title):
-        deck.append("slides", slide)
-    deck.save(ignore_permissions=True)
 
 
 def _grant_general_read(node: str) -> None:

@@ -53,6 +53,7 @@ from suite.drive.framework import (
     satellite_query_conditions,
 )
 from suite.slides import drive as slides
+from suite.slides.content.tests.support import drop_log
 from suite.slides.doctype.presentation import presentation as api
 from suite.slides.doctype.presentation.presentation import Presentation
 from suite.slides.tests.utils import make_presentation
@@ -352,7 +353,10 @@ class TestSlidesInDrive(IntegrationTestCase):
     # helpers
 
     def _deck(self, title="Deck", parent=None, **kwargs) -> str:
-        return drive.create_document(parent or self.root.node, title, content_doctype=DOCTYPE, **kwargs)
+        # Unconverted, as an old site's deck whose rows are its slides
+        node = drive.create_document(parent or self.root.node, title, content_doctype=DOCTYPE, **kwargs)
+        drop_log(node)
+        return node
 
     def _docname(self, node: str) -> str:
         return frappe.db.get_value("Drive Node", node, "content_docname")

@@ -16,6 +16,7 @@ from suite.drive._core.nodes import update
 from suite.drive._core.principals import Principals
 from suite.drive._core.roles import READ
 from suite.slides import drive as slides_drive
+from suite.slides.content.tests.support import drop_log
 from suite.tests.utils import ensure_user
 
 # Ticket 29 registered `Presentation` in `drive_content_types`, so a deck with
@@ -84,6 +85,10 @@ def make_presentation(title, parent=None, **fields):
 
     `fields` are extra legacy body columns a case needs (`is_composite`,
     `reference_presentations`), written after the deck exists.
+
+    Slides is always on, so a new deck starts with a log. The log is dropped,
+    which leaves the deck an old site's unconverted one whose rows are its
+    slides; `LoggedDeckCase.new_deck` makes a converted one.
     """
     with _deck_owner() as owner:
         node = drive.create_document(
@@ -92,6 +97,7 @@ def make_presentation(title, parent=None, **fields):
             content_doctype=slides_drive.DOCTYPE,
             is_template=bool(fields.pop("is_template", False)),
         )
+        drop_log(node)
         deck = frappe.get_doc(slides_drive.DOCTYPE, slides_drive.docname_for_node(node))
         if fields:
             deck.update(fields)

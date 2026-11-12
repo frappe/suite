@@ -15,7 +15,7 @@ from werkzeug.wrappers import Request
 from suite import drive
 from suite.content import log, logged, tables
 from suite.content.http import routes
-from suite.slides.content import APP, SCHEMA
+from suite.slides.content import APP, SCHEMA, turn_on
 from suite.tests.utils import ensure_user
 
 OWNER = "slides-collab-owner@example.com"
@@ -54,6 +54,12 @@ def opened(node: str) -> tuple[dict, bytes]:
 
 
 def delete_log(node: str) -> None:
+    drop_log(node)
+    frappe.db.commit()
+
+
+# Removes `node`'s log in the caller's transaction, leaving the deck as it was before it converted
+def drop_log(node: str) -> None:
     doc = log.find(APP, node)
     if doc:
         for kind in LOG_KINDS:
@@ -65,7 +71,6 @@ def delete_log(node: str) -> None:
 
     conversion_table = tables.table(APP, "conversion")
     frappe.db.sql(f"DELETE FROM `{conversion_table}` WHERE `node` = %s", node)
-    frappe.db.commit()
 
 
 def trash_template(node: str) -> None:
@@ -80,7 +85,7 @@ def owner_folder() -> str:
 
 
 class LoggedDeckCase(IntegrationTestCase):
-    """Turns Slides on for one test and back to the mode it found after it, once its logs are gone."""
+    """Makes sure Slides is on, as install and migrate leave it, for a test of logged decks."""
 
     @classmethod
     def setUpClass(cls):
@@ -92,23 +97,10 @@ class LoggedDeckCase(IntegrationTestCase):
     def setUp(self):
         super().setUp()
         frappe.set_user("Administrator")
-        found = log.mode(APP)
-        log.set_mode(APP, "on")
+        turn_on()
         frappe.db.commit()
-        self.addCleanup(self.restore_mode, found)
         frappe.set_user(OWNER)
         self.addCleanup(frappe.set_user, "Administrator")
-
-    def turn_off(self) -> None:
-        frappe.set_user("Administrator")
-        log.set_mode(APP, "off")
-        frappe.db.commit()
-
-    def restore_mode(self, found: str) -> None:
-        # A site whose Slides has logs can't turn it off, so only undo what setUp changed
-        frappe.set_user("Administrator")
-        log.set_mode(APP, found)
-        frappe.db.commit()
 
     def new_deck(self) -> str:
         node = drive.create_document(

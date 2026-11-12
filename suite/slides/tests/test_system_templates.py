@@ -1,7 +1,7 @@
 """The shipped Light and Dark template decks (§8.10).
 
 `seed_system_templates` runs from `after_install` and `after_migrate`, so the
-site it runs on may already hold the decks. The seeded rows are left in place:
+site it runs on may already hold the decks. The seeded decks are left in place:
 they are what every installed site has, not a fixture.
 """
 
@@ -15,9 +15,9 @@ import frappe
 import pycrdt
 from frappe.tests import IntegrationTestCase, UnitTestCase
 
-from suite import content, drive
+from suite import drive
 from suite.content import checker
-from suite.slides.content import APP, CHECKER_BUILD
+from suite.slides.content import CHECKER_BUILD
 from suite.slides.content.conversion import check_state
 from suite.slides.content.tests.support import (
     LoggedDeckCase,
@@ -214,21 +214,3 @@ class TestSeedingWhileCollaborationIsOn(LoggedDeckCase):
 
         self.assertEqual(layouts_of(state), LAYOUTS)
         self.assertIn(TITLE_COLOR["Dark"], title_markup(read_deck(state)))
-
-
-class TestSeedingWhileCollaborationIsOff(LoggedDeckCase):
-    def test_a_seeded_template_starts_from_its_rows(self):
-        owner = frappe.session.user
-        self.turn_off()
-        frappe.set_user(owner)
-        suffix = frappe.generate_hash(6)
-        folder = drive.ensure_folder(owner_folder(), f"Seeded {suffix}")
-
-        node = _seed(folder, "Light")
-        frappe.db.commit()
-        self.addCleanup(trash_template, node)
-
-        deck = frappe.get_doc("Presentation", {"node": node})
-        self.assertIsNone(content.find(APP, node))
-        self.assertEqual([slide.background for slide in deck.slides], ["#FFFFFFFF"] * 7)
-        self.assertIn("Insert second point here", deck.slides[5].elements)

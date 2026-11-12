@@ -13,11 +13,9 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils import cstr
 
 from suite import drive
-from suite.content import log
 from suite.drive import EDIT
 from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFound
 from suite.slides import drive as slides_drive
-from suite.slides.content import APP
 from suite.slides.content.tests.support import (
     LoggedDeckCase,
     delete_log,
@@ -581,15 +579,10 @@ class TestTemplatesOnTheLayer(LoggedDeckCase):
         self.assertEqual(row["layouts"], [])
 
     def test_a_template_still_on_its_rows_sends_them(self):
-        owner = frappe.session.user
-        self.turn_off()
-        frappe.set_user(owner)
         suffix = frappe.generate_hash(6)
         template = self.new_template(f"Old brand {suffix}")
-        frappe.set_user("Administrator")
-        log.set_mode(APP, "on")
-        frappe.db.commit()
-        frappe.set_user(owner)
+        # An old site's template that never converted has its rows and no log
+        delete_log(node_of(template))
 
         row = self.offered()[template]
 
