@@ -9,6 +9,7 @@ import { translate } from '@/platform/translation'
 import {
   downloadRecovery,
   downloadSlides,
+  keepOutlivedRecovery,
   keepRecovery,
   readRecovery,
   removeNewestRecovery,
@@ -23,6 +24,7 @@ interface RecoveryHost {
 export function useUnsavedRecovery(session: DocumentSession, { isWritable, load }: RecoveryHost) {
   const hasRecovery = ref(readRecovery(session.nodeId).length > 0)
   const canDownloadChanges = computed(() => hasRecovery.value)
+  let hasSettledCopies = false
 
   function narrowed() {
     viewOnly.value = true
@@ -81,6 +83,16 @@ export function useUnsavedRecovery(session: DocumentSession, { isWritable, load 
     return isKept
   }
 
+  /** Once, as the open first draws the presentation: an earlier page's different copy stays. */
+  function settleCopies() {
+    if (hasSettledCopies) {
+      return
+    }
+
+    hasSettledCopies = true
+    keepOutlivedRecovery(session.nodeId, liveSlides())
+  }
+
   function syncHasRecovery() {
     hasRecovery.value = readRecovery(session.nodeId).length > 0
   }
@@ -118,6 +130,7 @@ export function useUnsavedRecovery(session: DocumentSession, { isWritable, load 
     retainRecovery,
     retainStickyOrOffer,
     retainOrWarn,
+    settleCopies,
     downloadChanges,
     discardChanges,
   }

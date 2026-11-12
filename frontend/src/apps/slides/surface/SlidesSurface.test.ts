@@ -55,6 +55,7 @@ const { offlineCopyStatus } = await import('@/apps/slides/stores/offlineCopy')
 const { draftsDbName, DRAFTS_DB_NAME, RECORD_PREFIX } =
   await import('@/apps/slides/utils/slidesCaches')
 const { openDraftsDb } = await import('@/apps/slides/utils/drafts')
+const { keepRecovery, readRecovery } = await import('./recovery')
 const { dialog, toast, useKeyboardShortcut } = await import('frappe-ui')
 const { changeSlideInSlideshow } = await import('@/apps/slides/stores/slideshow')
 const { router: slidesRouter } = await import('@/apps/slides/router')
@@ -708,6 +709,72 @@ describe('a deck on the content layer', () => {
         expect(oldDraftNotice()).toBeUndefined()
         expect(await sharedDrafts()).toEqual([mounted.docname])
       })
+    })
+  })
+
+  describe('a page copy an earlier page kept', () => {
+    const EARLIER = [{ clientId: 'gone', background: '#000000ff', elements: [] }]
+
+    afterEach(() => localStorage.clear())
+
+    // what the room draws for one slide, read from an open that is then closed
+    async function drawnOnce() {
+      convertedRoom('one')
+      mounted = await openedSurface({ deck: { is_converted: true } })
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+      const drawn: unknown[] = JSON.parse(JSON.stringify(editorSlides.value))
+      mounted.app.unmount()
+      mounted.root.remove()
+      mounted = null
+      localStorage.clear()
+      return drawn
+    }
+
+    it('turns sticky on open when it differs, and outlives a later copy', async () => {
+      keepRecovery('node-1', EARLIER)
+      const room = roomOf('one')
+      collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
+      mounted = await openedSurface({ deck: { is_converted: true } })
+      await vi.waitFor(() => expect(readRecovery('node-1')[0]?.sticky).toBe(true))
+
+      room.setStatus({ saveState: 'failed', unsentCount: 1 })
+
+      expect(readRecovery('node-1').map((copy) => copy.slides)).toEqual([
+        EARLIER,
+        editorSlides.value,
+      ])
+    })
+
+    it('stays as it was when it holds what the room draws, so a later copy replaces it', async () => {
+      const drawn = await drawnOnce()
+      keepRecovery('node-1', drawn)
+      const room = roomOf('one')
+      collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
+      mounted = await openedSurface({ deck: { is_converted: true } })
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+      expect(readRecovery('node-1')[0]?.sticky).toBe(false)
+
+      keepRecovery('node-1', [{ clientId: 'later', elements: [] }])
+
+      expect(readRecovery('node-1')).toHaveLength(1)
+    })
+
+    it('is left alone when the surface goes before its room opens', async () => {
+      keepRecovery('node-1', EARLIER)
+      const opening = Promise.withResolvers<unknown>()
+      collabRoom.open.mockReturnValueOnce(opening.promise)
+      const opens = collabRoom.open.mock.calls.length
+      mounted = await openedSurface({ deck: { is_converted: true } })
+      await vi.waitFor(() => expect(collabRoom.open.mock.calls.length).toBeGreaterThan(opens))
+
+      mounted.app.unmount()
+      mounted.root.remove()
+      mounted = null
+      const room = roomOf('one')
+      opening.resolve({ state: 'live', room })
+      await vi.waitFor(() => expect(room.close).toHaveBeenCalled())
+
+      expect(readRecovery('node-1')[0]?.sticky).toBe(false)
     })
   })
 

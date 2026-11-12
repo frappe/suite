@@ -209,6 +209,7 @@ const {
   retainRecovery,
   retainStickyOrOffer,
   retainOrWarn,
+  settleCopies,
   downloadChanges,
   discardChanges,
 } = useUnsavedRecovery(props.session, {
@@ -265,6 +266,7 @@ const convertedRoom = useConvertedRoom({
   mayEdit: () => access.writable.value && !composite.value && !restoring.value && !phone.value,
   retainRecovery,
   retainStickyOrOffer,
+  settleCopies,
   onThreadsChanged: () => void refreshThreads(),
   onVersionRestored: (restored) => void tellRestoredByOther(restored),
 })

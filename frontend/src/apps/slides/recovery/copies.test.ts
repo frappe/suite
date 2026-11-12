@@ -368,6 +368,25 @@ describe("the live room's and the page's copies", () => {
   })
 })
 
+describe('two page copies with the same date', () => {
+  const OTHER = [{ name: 'row-1', elements: [{ type: 'text', content: 'Other words' }] }]
+  const now = new Date('2026-01-01T00:00:00Z')
+
+  it('each lists apart, and dismissing one keeps the other', async () => {
+    query.mockResolvedValue([{ ...PLAN, node: 'node-plan' }])
+    keepRecovery('node-plan', SLIDES, { sticky: true, now })
+    keepRecovery('node-plan', OTHER, { sticky: true, now })
+    const copies = await listCopies()
+    expect(new Set(copies.map((copy) => copy.key)).size).toBe(2)
+
+    await discardCopy(
+      copies.find((copy) => JSON.stringify(copy.slides) === JSON.stringify(SLIDES))!,
+    )
+
+    expect((await listCopies()).map((copy) => copy.slides)).toEqual([OTHER])
+  })
+})
+
 describe('naming a few copies', () => {
   it('names a draft and a page copy in one read', async () => {
     await putDraft(draft('deck-plan'))

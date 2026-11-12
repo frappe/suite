@@ -96,10 +96,26 @@ export function keepRecovery(
   writeCopies(node, [...copies.filter((kept) => sticky || kept.sticky), copy])
 }
 
-export function discardRecovery(node: string, savedAt: string): void {
+/**
+ * Run once the open first draws the presentation, before it keeps a copy of its own: a copy that
+ * differs from what is shown may hold edits that are nowhere else, so no later copy replaces it.
+ * On a full store the copy just stays as it was.
+ */
+export function keepOutlivedRecovery(node: string, shown: readonly unknown[]): void {
+  const copies = readRecovery(node)
+  const kept = copies.map((copy) => ({ ...copy, sticky: copy.sticky || !holds(copy, shown) }))
+  try {
+    writeCopies(node, kept)
+  } catch {
+    // a later copy may replace it, as before
+  }
+}
+
+/** Discards the copy as shown: two copies can share a date, so its slides tell them apart. */
+export function discardRecovery(node: string, savedAt: string, slides: readonly unknown[]): void {
   writeCopies(
     node,
-    readRecovery(node).filter((copy) => copy.savedAt !== savedAt),
+    readRecovery(node).filter((copy) => copy.savedAt !== savedAt || !holds(copy, slides)),
   )
 }
 

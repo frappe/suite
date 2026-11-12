@@ -120,8 +120,9 @@ function storeCopy(record: RecoveryRecord): RecoveryCopy[] {
 
 function pageCopies(names: Map<string, RecoveryName>): RecoveryCopy[] {
   return recoveryNodes().flatMap((node) =>
-    readRecovery(node).map((copy) => ({
-      key: `${PAGE_PREFIX}${node}:${copy.savedAt}`,
+    readRecovery(node).map((copy, index) => ({
+      // two copies can share a date, so the place keeps the key apart
+      key: `${PAGE_PREFIX}${node}:${index}:${copy.savedAt}`,
       node: names.get(node)?.node ?? null,
       title: names.get(node)?.title ?? '',
       savedAt: new Date(copy.savedAt),
@@ -206,11 +207,11 @@ export async function discardCopy(copy: Pick<RecoveryCopy, 'key' | 'savedAt' | '
     return
   }
 
-  const [node, savedAt] = splitOnce(copy.key.slice(PAGE_PREFIX.length))
-  discardRecovery(node, savedAt)
+  const [node, place] = splitOnce(copy.key.slice(PAGE_PREFIX.length))
+  discardRecovery(node, splitOnce(place)[1], copy.slides)
 }
 
-// A node id holds no colon, and a saved time does
+// A node id and a place hold no colon, and a saved time does
 function splitOnce(value: string): [string, string] {
   const at = value.indexOf(':')
   return [value.slice(0, at), value.slice(at + 1)]
