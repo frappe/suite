@@ -1779,9 +1779,9 @@ describe('a deck on the content layer', () => {
       return room.doc
     }
 
-    async function openedNew(deck: Record<string, unknown> = { is_converted: true }) {
+    async function openedNew() {
       templates.list = [dark, team]
-      mounted = await openedSurface({ path: '?new=1', deck })
+      mounted = await openedSurface({ path: '?new=1', deck: { is_converted: true } })
       await vi.waitFor(() => expect(templateList.value).toHaveLength(2))
     }
 
@@ -1811,8 +1811,15 @@ describe('a deck on the content layer', () => {
       await vi.waitFor(() => expect(themePick()).not.toBeNull())
     })
 
-    it.each(['pending', 'refused'])('is not offered on a %s presentation', async (state) => {
-      await openedNew({ conversion: { state } })
+    // a presentation with no room is read-only, so it lists no templates to wait on
+    it.each([
+      ['a pending', { conversion: { state: 'pending' } }],
+      ['a refused', { conversion: { state: 'refused' } }],
+      ['a row-only', {}],
+    ])('is not offered on %s presentation', async (_state, deck) => {
+      templates.list = [dark, team]
+      mounted = await openedSurface({ path: '?new=1', deck })
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(served.slides.length))
       await new Promise((resolve) => setTimeout(resolve))
       await nextTick()
 
@@ -1886,16 +1893,6 @@ describe('a deck on the content layer', () => {
       expect(shownTexts(doc)).toEqual([
         [expect.stringContaining('Dark title'), 'adopted:/files/dark-photo.png'],
       ])
-    })
-
-    it('leaves a presentation on its rows to the server', async () => {
-      await openedNew({})
-
-      themeChange.create('dark-template')
-
-      await vi.waitFor(() => expect(calls('apply_theme')).toHaveLength(1))
-      expect(bodyOf('apply_theme')).toMatchObject({ theme: 'dark-template' })
-      expect(calls('update_slide_attachments')).toEqual([])
     })
 
     describe('templates on the content layer', () => {
@@ -2454,6 +2451,20 @@ describe('Slides offline copy', () => {
       }
     })
 
+    // a copy pinned before the upgrade answers with its rows, and only a live room takes edits
+    it('opened offline from a copy that holds the rows, lets an editor edit nothing', async () => {
+      const offline = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+      fakeServer.isFailingTemplates = true
+      try {
+        mounted = await openedSurface({ role: 50 })
+
+        await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(served.slides.length))
+        expect(viewOnly.value).toBe(true)
+      } finally {
+        offline.mockRestore()
+      }
+    })
+
     // its slides change in place, so only the pictures they name may bring a refresh
     it('refreshes for a new picture, and not for a text edit', async () => {
       vi.stubGlobal('fetch', async () => new Response('', { status: 404 }))
@@ -2514,6 +2525,31 @@ describe('Slides offline copy', () => {
         await vi.waitFor(() => expect(looked).toHaveLength(1))
         await new Promise((resolve) => setTimeout(resolve, 0))
 
+        expect(localStorage.getItem(record)).not.toBeNull()
+      })
+
+      it("keeps the next presentation's copy when a left one's room opens late", async () => {
+        signedIn.user = 'someone@example.com'
+        let open!: (opened: unknown) => void
+        collabRoom.open.mockReturnValueOnce(
+          new Promise((resolve) => {
+            open = resolve
+          }),
+        )
+        const opens = collabRoom.open.mock.calls.length
+        const left = await openedSurface({ deck: { is_converted: true } })
+        await vi.waitFor(() => expect(collabRoom.open.mock.calls.length).toBeGreaterThan(opens))
+        left.app.unmount()
+        left.root.remove()
+        const record = pinned({ name: 'p', slides: [{ name: 's1' }] })
+        mounted = await openedSurface()
+
+        const room = roomOf('one')
+        open({ state: 'live', room })
+        await vi.waitFor(() => expect(room.close).toHaveBeenCalled())
+        await new Promise((resolve) => setTimeout(resolve, 20))
+
+        expect(looked).toEqual([])
         expect(localStorage.getItem(record)).not.toBeNull()
       })
 
@@ -2753,17 +2789,24 @@ describe('templates that fail to load', () => {
     fakeServer.isFailingTemplates = true
   })
 
+  // only an editor reads the templates, and only a live room takes edits
+  async function openedEditor() {
+    convertedRoom('one')
+    mounted = await openedSurface({ deck: { is_converted: true } })
+    await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+  }
+
   it('shows no toast offline', async () => {
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
 
-    mounted = await openedSurface()
+    await openedEditor()
     await loadTemplates()
 
     expect(toast.error).not.toHaveBeenCalled()
   })
 
   it('still says so online', async () => {
-    mounted = await openedSurface()
+    await openedEditor()
     await loadTemplates()
 
     expect(toast.error).toHaveBeenCalledWith('Failed to fetch')
@@ -3099,7 +3142,10 @@ describe('a presentation left while a request is out', () => {
   })
 
   it('keeps the next presentation when a theme change of the left one finishes', async () => {
-    mounted = await openedSurface()
+    // only a live room takes a theme change
+    convertedRoom('one')
+    mounted = await openedSurface({ deck: { is_converted: true } })
+    await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
     const presentationA = mounted.docname
     const readA = server.fetch.getMockImplementation()!
     const write = Promise.withResolvers<void>()

@@ -244,13 +244,15 @@ const notice = computed(() => {
 
   return conversionNotice(conversion.value)
 })
+// Only a live room takes edits: an opening with rows, a copy pinned before the upgrade
+// included, is read-only (Q15′)
 const editable = computed(
   () =>
     access.writable.value &&
     !composite.value &&
     !restoring.value &&
-    !conversion.value &&
-    (!isConverted.value || convertedRoom.allowsEditing.value),
+    isConverted.value &&
+    convertedRoom.allowsEditing.value,
 )
 // A composite can restore a version of itself, so this is not `inReadonlyMode`.
 const canRestoreVersions = computed(
@@ -444,6 +446,8 @@ watch(
   editable,
   (canEdit) => {
     viewOnly.value = !canEdit
+    // only an editor adds slides from the theme, so the templates wait for the room to take edits
+    if (canEdit) void loadTemplates()
     // Only an element being typed in was editable, so only that one becomes so again
     if (!canEdit || focusElementId.value) {
       // SAFETY: the untyped text editor store holds the open element's editor, or null
@@ -702,6 +706,7 @@ async function load() {
   if (isLeft) return
 
   const run = ++latestLoad
+  const name = props.session.contentDocname
   loading.value = true
   loadError.value = ''
   try {
@@ -713,7 +718,6 @@ async function load() {
     if (presentationDoc.value) presentationDoc.value.title = props.session.title.value
 
     setSlideIndex(presentedSlide.value)
-    loadTemplates()
     composite.value = !!doc?.is_composite
     isConverted.value = !!doc?.is_converted
     const status = doc?.conversion
@@ -729,11 +733,14 @@ async function load() {
     conversionKeys = roomKeys(status)
     if (isConverted.value) {
       await showConvertedSlides(run)
+      // a left room's open still lands here, after the next presentation took the store
+      if (!isCurrent(run)) return
+
       // a draft from before the live room holds edits it never sent, so it stays as a copy
       void settleOldDraft()
       // the owner's visit refreshes their copy
       if (!canPin.value) {
-        removeRowedOfflineCopy(presentationId.value).catch(() => {})
+        removeRowedOfflineCopy(name).catch(() => {})
       }
     }
 
