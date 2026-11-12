@@ -61,7 +61,9 @@ export function registerAuthHandlers(deps: HandlerDeps) {
 					reason: 'invalid_token',
 					outcome: 'failure',
 				});
-				const message = (error as Error).message || 'Token update failed';
+				const message =
+					(error instanceof Error ? error.message : String(error)) ||
+					'Token update failed';
 				loggers.socketHandler.warn(
 					'auth:update_token failed for socket %s: %s',
 					socket.id,

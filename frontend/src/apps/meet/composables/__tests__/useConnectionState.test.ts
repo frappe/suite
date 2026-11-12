@@ -1,22 +1,23 @@
-import { beforeEach, describe, expect, it } from "vitest";
-import { createPinia, setActivePinia } from "pinia";
-import { useConnectionState } from "../useConnectionState";
+import { createPinia, setActivePinia } from 'pinia'
+import { beforeEach, describe, expect, it } from 'vitest'
 
-describe("useConnectionState", () => {
-	beforeEach(() => {
-		setActivePinia(createPinia());
-	});
+import { useConnectionState } from '../useConnectionState'
 
-	it("resets preview, guest connection details, and page errors", () => {
-		const connectionState = useConnectionState();
-		connectionState.connectionError = "failed";
-		connectionState.isInPreview = false;
-		connectionState.guestAuthToken = "token";
+describe('useConnectionState', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
 
-		connectionState.$reset();
+  it('resets preview, guest connection details, and page errors', () => {
+    const connectionState = useConnectionState()
+    connectionState.connectionError = 'failed'
+    connectionState.isInPreview = false
+    connectionState.guestAuthToken = 'token'
 
-		expect(connectionState.connectionError).toBeNull();
-		expect(connectionState.isInPreview).toBe(true);
-		expect(connectionState.guestAuthToken).toBeNull();
-	});
-});
+    connectionState.$reset()
+
+    expect(connectionState.connectionError).toBeNull()
+    expect(connectionState.isInPreview).toBe(true)
+    expect(connectionState.guestAuthToken).toBeNull()
+  })
+})

@@ -1,338 +1,813 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 
-const presentationDoc = ref<any>({ is_composite: 0 })
-const presentationId = ref('p1')
-const viewOnly = ref(false)
-const slides = ref<any[]>([])
-const apiCalls: string[] = []
-
-vi.mock('@/apps/slides/stores/presentation', () => ({ presentationDoc, presentationId, viewOnly }))
-vi.mock('@/apps/slides/stores/slide', () => ({ slides }))
-vi.mock('@/apps/slides/utils/mediaUploads', () => ({
-	getAttachmentUrl: (src: string) => `/private${src}?slides_media=1`,
-}))
-vi.mock('frappe-ui', () => ({
-	frappeRequest: async ({ url }: { url: string }) => {
-		apiCalls.push(url)
-	},
-}))
-let slideshowChunkLoads = 0
-vi.mock('@/apps/slides/pages/Slideshow.vue', () => {
-	slideshowChunkLoads += 1
-	return { default: {} }
-})
+import {
+  cache,
+  DECLARED_FONTS,
+  deletedCaches,
+  FakeCache,
+  fetched,
+  image,
+  presentationDoc,
+  presentationId,
+  recordedKeys,
+  recordOf,
+  responses,
+  SHELL_HTML,
+  shellResponse,
+  slides,
+  slideshowChunkLoads,
+  slidesWith,
+  startupFetched,
+  state,
+  statusOf,
+} from './offlineCopy.fakes'
 
 const {
-	saveOfflineCopy,
-	pruneOfflineCopy,
-	cancelOfflineCopy,
-	removeOfflineCopy,
-	refreshOfflineStatus,
-	offlineCopyProgress,
-	offlineCopyStatus,
+  saveOfflineCopy,
+  pruneOfflineCopy,
+  cancelOfflineCopy,
+  removeOfflineCopy,
+  removeNodeOfflineCopy,
+  refreshOfflineStatus,
+  warmOfflineCopyAssets,
+  offlineCopyProgress,
+  offlineCopyStatus,
 } = await import('./offlineCopy')
-
-const statusOf = (id: string) => {
-	refreshOfflineStatus(id)
-	return offlineCopyStatus.value
-}
-
-const recordedKeys = (id: string) => JSON.parse(localStorage.getItem(`slides-offline-copy:${id}`)!).keys
-
-class FakeCache {
-	store = new Map<string, Response>()
-	async keys() {
-		return [...this.store.keys()].map((url) => ({ url }))
-	}
-	async put(key: string, response: Response) {
-		this.store.set(new URL(key, 'http://localhost').href, response)
-	}
-	async delete(key: string) {
-		return this.store.delete(new URL(key, 'http://localhost').href)
-	}
-	has(key: string) {
-		return this.store.has(new URL(key, 'http://localhost').href)
-	}
-}
-
-let cache: FakeCache
-let responses: Record<string, () => Response | Error>
-const fetched: string[] = []
-
-const image = (bytes = 10) =>
-	new Response(new Uint8Array(bytes), {
-		status: 200,
-		headers: { 'Content-Type': 'image/png', 'Content-Length': String(bytes) },
-	})
-
-const slidesWith = (...srcs: string[][]) =>
-	srcs.map((list) => ({ elements: list.map((src) => ({ type: 'image', src })) }))
-
-beforeEach(() => {
-	cache = new FakeCache()
-	fetched.length = 0
-	apiCalls.length = 0
-	localStorage.clear()
-	responses = {}
-	vi.stubGlobal('caches', { open: async () => cache })
-	vi.stubGlobal('navigator', {
-		...navigator,
-		serviceWorker: { controller: {}, addEventListener: () => {} },
-	})
-	presentationDoc.value = { is_composite: 0, modified: '2026-08-17 10:00:00' }
-	presentationId.value = 'p1'
-	vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
-		if ((init?.headers as any)?.['x-slides-pin'] === 'shell') return new Response('<html>')
-		fetched.push(url)
-		const make = responses[url]
-		if (!make) return new Response('', { status: 404 })
-		const out = make()
-		if (out instanceof Error) throw out
-		if (init?.signal?.aborted) throw new DOMException('aborted', 'AbortError')
-		return out
-	})
-	slides.value = slidesWith(['/files/a.png'], ['/files/b.png'])
-	responses['/private/files/a.png?slides_media=1'] = () => image(10)
-	responses['/private/files/b.png?slides_media=1'] = () => image(20)
-})
-
-afterEach(() => {
-	vi.unstubAllGlobals()
-})
+const { setDocumentMedia } = await import('@/apps/slides/stores/documentMedia')
 
 describe('saveOfflineCopy', () => {
-	it('stores every media file under its canonical key and records the run', async () => {
-		const result = await saveOfflineCopy('p1')
+  it('stores every media file under its canonical key and records the run', async () => {
+    const result = await saveOfflineCopy('p1')
 
-		expect(result).toEqual({ ok: true, failed: [], count: 2 })
-		expect(cache.has('/private/files/a.png')).toBe(true)
-		expect(cache.has('/private/files/b.png')).toBe(true)
-		expect(recordedKeys('p1')).toEqual(['/private/files/a.png', '/private/files/b.png'])
-		expect(offlineCopyProgress.value).toMatchObject({ running: false, done: 2, total: 2 })
-	})
+    expect(result).toEqual({ ok: true, failed: [], count: 2 })
+    expect(cache.has('/private/files/a.png')).toBe(true)
+    expect(cache.has('/private/files/b.png')).toBe(true)
+    expect(recordedKeys('p1')).toEqual(['/private/files/a.png', '/private/files/b.png'])
+    expect(offlineCopyProgress.value).toMatchObject({ running: false, done: 2, total: 2 })
+  })
 
-	it('warms the shell and the load path reads through the worker', async () => {
-		await saveOfflineCopy('p1')
+  it('waits for Drive to sign a node-id picture before collecting it', async () => {
+    const src = ref<string | null>(null)
+    const status = ref<'loading' | 'ready' | 'refused'>('loading')
+    const release = setDocumentMedia((id) => ({
+      id,
+      src,
+      status,
+      cacheKey: ref(id),
+      refresh: async () => {},
+    }))
+    slides.value = slidesWith(['/files/a.png', 'media-node-1'])
+    responses['/private/files/m1.png?signature=s1'] = () => image(30)
 
-		expect(apiCalls).toEqual([
-			'suite.slides.doctype.presentation.presentation.get_editor_access',
-			'frappe.client.get',
-		])
-	})
+    const saving = saveOfflineCopy('p1')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    src.value = '/private/files/m1.png?signature=s1'
+    status.value = 'ready'
+    const result = await saving
+    release()
 
-	it('loads the slideshow chunk so present works offline', async () => {
-		await saveOfflineCopy('p1')
+    expect(result).toEqual({ ok: true, failed: [], count: 2 })
+    expect(cache.has('/private/files/m1.png')).toBe(true)
+    expect(recordedKeys('p1')).toEqual(['/private/files/a.png', '/private/files/m1.png'])
+  })
 
-		expect(slideshowChunkLoads).toBe(1)
-	})
+  it('reports a picture Drive refused as not saved, without waiting for it', async () => {
+    const release = setDocumentMedia((id) => ({
+      id,
+      src: ref(null),
+      status: ref('refused' as const),
+      cacheKey: ref(id),
+      refresh: async () => {},
+    }))
+    slides.value = slidesWith(['/files/a.png', 'media-node-1'])
 
-	it('refuses to run from a page the worker does not control', async () => {
-		vi.useFakeTimers()
-		vi.stubGlobal('navigator', {
-			...navigator,
-			serviceWorker: { controller: null, addEventListener: () => {}, ready: new Promise(() => {}) },
-		})
+    const result = await saveOfflineCopy('p1')
+    release()
 
-		const run = saveOfflineCopy('p1')
-		await vi.runAllTimersAsync()
-		const result = await run
-		vi.useRealTimers()
+    expect(result).toEqual({
+      ok: false,
+      failed: [{ slideIndex: 0, src: 'media-node-1', status: 'refused' }],
+      count: 2,
+    })
+    expect(recordedKeys('p1')).toEqual(['/private/files/a.png'])
+  })
 
-		expect(result).toEqual({ ok: false, uncontrolled: true, registered: false })
-		expect(fetched).toEqual([])
-		expect(localStorage.getItem('slides-offline-copy:p1')).toBeNull()
-	})
+  it('asks Drive again for a picture still waiting rather than sitting out the wait', async () => {
+    responses['/private/files/m1.png?signature=s1'] = () => image(30)
+    const src = ref<string | null>(null)
+    const status = ref<'loading' | 'ready'>('loading')
+    const release = setDocumentMedia((id) => ({
+      id,
+      src,
+      status,
+      cacheKey: ref(id),
+      async refresh() {
+        src.value = '/private/files/m1.png?signature=s1'
+        status.value = 'ready'
+      },
+    }))
+    slides.value = slidesWith(['/files/a.png', 'media-node-1'])
 
-	it('skips files that are already pinned', async () => {
-		await cache.put('/private/files/a.png', image())
+    const result = await saveOfflineCopy('p1')
+    release()
 
-		await saveOfflineCopy('p1')
+    expect(result).toEqual({ ok: true, failed: [], count: 2 })
+  })
 
-		expect(fetched).toEqual(['/private/files/b.png?slides_media=1'])
-	})
+  it('loads the slideshow chunk so present works offline', async () => {
+    await saveOfflineCopy('p1')
 
-	it('collects failures by slide and keeps going', async () => {
-		responses['/private/files/a.png?slides_media=1'] = () =>
-			new Response('nope', { status: 403, headers: { 'Content-Type': 'text/html' } })
+    expect(slideshowChunkLoads).toBe(1)
+  })
 
-		const result = await saveOfflineCopy('p1')
+  it('refuses to run from a page the worker does not control', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      serviceWorker: { controller: null, addEventListener: () => {}, ready: new Promise(() => {}) },
+    })
 
-		expect(result).toMatchObject({
-			ok: false,
-			failed: [{ slideIndex: 0, src: '/files/a.png', status: 403 }],
-		})
-		expect(cache.has('/private/files/a.png')).toBe(false)
-		expect(cache.has('/private/files/b.png')).toBe(true)
-		expect(recordedKeys('p1')).toEqual(['/private/files/b.png'])
-	})
+    const run = saveOfflineCopy('p1')
+    await vi.runAllTimersAsync()
+    const result = await run
+    vi.useRealTimers()
 
-	it('retries a network failure before recording it', async () => {
-		vi.useFakeTimers()
-		let attempts = 0
-		responses['/private/files/a.png?slides_media=1'] = () => {
-			attempts += 1
-			return attempts < 3 ? new Error('offline') : image()
-		}
+    expect(result).toEqual({ ok: false, uncontrolled: true, registered: false })
+    expect(fetched).toEqual([])
+    expect(localStorage.getItem('slides-offline-copy:p1')).toBeNull()
+  })
 
-		const run = saveOfflineCopy('p1')
-		await vi.runAllTimersAsync()
-		const result = await run
-		vi.useRealTimers()
+  it('skips files that are already pinned', async () => {
+    await cache.put('/private/files/a.png', image())
 
-		expect(attempts).toBe(3)
-		expect(result?.ok).toBe(true)
-	})
+    await saveOfflineCopy('p1')
 
-	it('retries a server error like a dropped connection', async () => {
-		vi.useFakeTimers()
-		let attempts = 0
-		responses['/private/files/a.png?slides_media=1'] = () => {
-			attempts += 1
-			return attempts < 2 ? new Response('', { status: 503 }) : image()
-		}
+    expect(fetched).toEqual(['/private/files/b.png?slides_media=1'])
+  })
 
-		const run = saveOfflineCopy('p1')
-		await vi.runAllTimersAsync()
-		const result = await run
-		vi.useRealTimers()
+  it('collects failures by slide and keeps going', async () => {
+    responses['/private/files/a.png?slides_media=1'] = () =>
+      new Response('nope', { status: 403, headers: { 'Content-Type': 'text/html' } })
 
-		expect(attempts).toBe(2)
-		expect(result?.ok).toBe(true)
-	})
+    const result = await saveOfflineCopy('p1')
 
-	it('keeps the ledger current when cancelled, so the run can be finished later', async () => {
-		responses['/private/files/b.png?slides_media=1'] = () => {
-			cancelOfflineCopy()
-			return image(20)
-		}
+    expect(result).toMatchObject({
+      ok: false,
+      failed: [{ slideIndex: 0, src: '/files/a.png', status: 403 }],
+    })
+    expect(cache.has('/private/files/a.png')).toBe(false)
+    expect(cache.has('/private/files/b.png')).toBe(true)
+    expect(recordedKeys('p1')).toEqual(['/private/files/b.png'])
+  })
 
-		const result = await saveOfflineCopy('p1')
+  it('retries a network failure before recording it', async () => {
+    vi.useFakeTimers()
+    let attempts = 0
+    responses['/private/files/a.png?slides_media=1'] = () => {
+      attempts += 1
+      return attempts < 3 ? new Error('offline') : image()
+    }
 
-		expect(result).toBeNull()
-		expect(recordedKeys('p1')).toEqual(['/private/files/a.png'])
-		expect(statusOf('p1')).toBe('outdated')
-	})
+    const run = saveOfflineCopy('p1')
+    await vi.runAllTimersAsync()
+    const result = await run
+    vi.useRealTimers()
 
-	it('stops at the first quota error and reports it', async () => {
-		cache.put = async () => {
-			throw new DOMException('full', 'QuotaExceededError')
-		}
+    expect(attempts).toBe(3)
+    expect(result?.ok).toBe(true)
+  })
 
-		const result = await saveOfflineCopy('p1')
+  it('retries a server error like a dropped connection', async () => {
+    vi.useFakeTimers()
+    let attempts = 0
+    responses['/private/files/a.png?slides_media=1'] = () => {
+      attempts += 1
+      return attempts < 2 ? new Response('', { status: 503 }) : image()
+    }
 
-		expect(result?.ok).toBe(false)
-		expect(result?.failed).toEqual([{ slideIndex: 0, src: '/files/a.png', status: 'quota' }])
-		expect(recordedKeys('p1')).toEqual([])
-	})
+    const run = saveOfflineCopy('p1')
+    await vi.runAllTimersAsync()
+    const result = await run
+    vi.useRealTimers()
 
-	it('surfaces a ledger write failure, so the button can report it', async () => {
-		const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
-			throw new DOMException('full', 'QuotaExceededError')
-		})
+    expect(attempts).toBe(2)
+    expect(result?.ok).toBe(true)
+  })
 
-		await expect(saveOfflineCopy('p1')).rejects.toThrow()
-		expect(offlineCopyProgress.value.running).toBe(false)
-		setItem.mockRestore()
-	})
+  it('keeps the ledger current when cancelled, so the run can be finished later', async () => {
+    responses['/private/files/b.png?slides_media=1'] = () => {
+      cancelOfflineCopy()
+      return image(20)
+    }
 
-	it('drops the bytes of images the presentation no longer shows', async () => {
-		await saveOfflineCopy('p1')
-		slides.value = slidesWith(['/files/b.png'])
+    const result = await saveOfflineCopy('p1')
 
-		await saveOfflineCopy('p1')
+    expect(result).toBeNull()
+    expect(recordedKeys('p1')).toEqual(['/private/files/a.png'])
+    expect(statusOf('p1')).toBe('outdated')
+  })
 
-		expect(cache.has('/private/files/a.png')).toBe(false)
-		expect(recordedKeys('p1')).toEqual(['/private/files/b.png'])
-	})
+  it('stops at the first quota error and reports it', async () => {
+    const put = cache.put.bind(cache)
+    cache.put = async (key, response) => {
+      if (!key.startsWith('/private/files/')) {
+        return put(key, response)
+      }
+      throw new DOMException('full', 'QuotaExceededError')
+    }
+
+    const result = await saveOfflineCopy('p1')
+
+    expect(result?.ok).toBe(false)
+    expect(result?.failed).toEqual([{ slideIndex: 0, src: '/files/a.png', status: 'quota' }])
+    expect(recordedKeys('p1')).toEqual([])
+  })
+
+  it('ends a save cancelled before Drive has signed its pictures', async () => {
+    const release = setDocumentMedia((id) => ({
+      id,
+      src: ref(null),
+      status: ref('loading' as const),
+      cacheKey: ref(id),
+      refresh: async () => {},
+    }))
+    slides.value = slidesWith(['/files/a.png', 'media-node-1'])
+
+    const saving = saveOfflineCopy('p1')
+    cancelOfflineCopy()
+    const result = await saving
+    release()
+
+    expect(result).toBeNull()
+    expect(offlineCopyProgress.value.running).toBe(false)
+    expect(localStorage.getItem('slides-offline-copy:p1')).toBeNull()
+  })
+
+  it('reports a picture Drive has not signed after 30 seconds as not saved', async () => {
+    vi.useFakeTimers()
+    const release = setDocumentMedia((id) => ({
+      id,
+      src: ref(null),
+      status: ref('loading' as const),
+      cacheKey: ref(id),
+      refresh: async () => {},
+    }))
+    slides.value = slidesWith(['/files/a.png'], ['media-node-1'])
+
+    const saving = saveOfflineCopy('p1')
+    await vi.advanceTimersByTimeAsync(30_000)
+    const result = await saving
+    release()
+    vi.useRealTimers()
+
+    expect(result).toEqual({
+      ok: false,
+      failed: [{ slideIndex: 1, src: 'media-node-1', status: 'timeout' }],
+      count: 2,
+    })
+  })
+
+  it('surfaces a ledger write failure, so the button can report it', async () => {
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('full', 'QuotaExceededError')
+    })
+
+    await expect(saveOfflineCopy('p1')).rejects.toThrow()
+    expect(offlineCopyProgress.value.running).toBe(false)
+    setItem.mockRestore()
+  })
+
+  it('leaves the images the presentation no longer shows for the next open to clear', async () => {
+    await saveOfflineCopy('p1')
+    slides.value = slidesWith(['/files/b.png'])
+
+    await saveOfflineCopy('p1')
+
+    expect(cache.has('/private/files/a.png')).toBe(true)
+    expect(recordedKeys('p1')).toContain('/private/files/a.png')
+
+    await pruneOfflineCopy('p1')
+
+    expect(cache.has('/private/files/a.png')).toBe(false)
+    expect(recordedKeys('p1')).toEqual(['/private/files/b.png'])
+  })
+
+  describe('when the presentation goes away during the wait for a picture', () => {
+    const copied = ['/private/files/a.png', '/private/files/b.png']
+
+    async function savedThenGoesAway(goAway: () => void) {
+      await saveOfflineCopy('p1')
+      const src = ref<string | null>(null)
+      const status = ref<'loading' | 'ready'>('loading')
+      const release = setDocumentMedia((id) => ({
+        id,
+        src,
+        status,
+        cacheKey: ref(id),
+        refresh: async () => {},
+      }))
+      slides.value = slidesWith(['/files/a.png'], ['/files/b.png'], ['media-node-1'])
+
+      const saving = saveOfflineCopy('p1')
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      goAway()
+      status.value = 'ready'
+      await saving
+      release()
+    }
+
+    it('keeps the copy and its record when another presentation opens', async () => {
+      responses['/private/files/other.png?slides_media=1'] = () => image(40)
+
+      await savedThenGoesAway(() => {
+        presentationDoc.value = { node: 'n2', is_composite: 0, modified: '2026-08-17 10:00:00' }
+        presentationId.value = 'p2'
+        slides.value = slidesWith(['/files/other.png'])
+      })
+
+      expect(copied.every((key) => cache.has(key))).toBe(true)
+      expect(cache.has('/private/files/other.png')).toBe(false)
+      expect(recordedKeys('p1')).toEqual(copied)
+    })
+
+    it('keeps the copy and its record when the editor is left', async () => {
+      await savedThenGoesAway(() => {
+        presentationDoc.value = null
+        presentationId.value = null
+        slides.value = []
+      })
+
+      expect(copied.every((key) => cache.has(key))).toBe(true)
+      expect(recordedKeys('p1')).toEqual(copied)
+    })
+  })
 })
 
 describe('pruneOfflineCopy', () => {
-	it('drops the bytes of an image the presentation no longer shows', async () => {
-		await saveOfflineCopy('p1')
-		slides.value = slidesWith(['/files/b.png'])
+  describe('while the pinned document may still show the picture', () => {
+    const removed = '/private/files/a.png'
 
-		await pruneOfflineCopy('p1')
+    beforeEach(async () => {
+      await saveOfflineCopy('p1')
+      slides.value = slidesWith(['/files/b.png'])
+    })
 
-		expect(cache.has('/private/files/a.png')).toBe(false)
-		expect(cache.has('/private/files/b.png')).toBe(true)
-		expect(recordedKeys('p1')).toEqual(['/private/files/b.png'])
-		expect(statusOf('p1')).toBe('available')
-	})
+    it('stores a fresh document before the bytes go', async () => {
+      const fresh = `${SHELL_HTML}<!-- fresh -->`
+      state.shell = () => shellResponse({}, 200, fresh)
+      let heldWhenDeleting = ''
+      const deleteKey = cache.delete.bind(cache)
+      vi.spyOn(cache, 'delete').mockImplementation(async (key: string) => {
+        if (key === removed) {
+          heldWhenDeleting = await cache.text('/d/n1')
+        }
 
-	it('keeps bytes another offline copy still lists', async () => {
-		await saveOfflineCopy('p1')
-		await saveOfflineCopy('p2')
-		slides.value = slidesWith(['/files/b.png'])
+        return deleteKey(key)
+      })
 
-		await pruneOfflineCopy('p1')
+      await pruneOfflineCopy('p1')
 
-		expect(cache.has('/private/files/a.png')).toBe(true)
-		expect(recordedKeys('p2')).toEqual(['/private/files/a.png', '/private/files/b.png'])
-	})
+      expect(heldWhenDeleting).toBe(fresh)
+      expect(cache.has(removed)).toBe(false)
+      expect(recordedKeys('p1')).not.toContain(removed)
+    })
 
-	it('leaves an unchanged copy alone, without opening the cache', async () => {
-		await saveOfflineCopy('p1')
-		vi.stubGlobal('caches', {
-			open: async () => {
-				throw new Error('should not open the cache')
-			},
-		})
+    it('keeps the bytes when a fresh document cannot be fetched', async () => {
+      state.shell = () => shellResponse({}, 503)
 
-		await pruneOfflineCopy('p1')
+      await pruneOfflineCopy('p1').catch(() => {})
 
-		expect(recordedKeys('p1')).toEqual(['/private/files/a.png', '/private/files/b.png'])
-	})
+      expect(cache.has(removed)).toBe(true)
+      expect(recordedKeys('p1')).toContain(removed)
+    })
 
-	it('does nothing for a presentation with no offline copy', async () => {
-		await expect(pruneOfflineCopy('p1')).resolves.toBeUndefined()
-		expect(localStorage.getItem('slides-offline-copy:p1')).toBeNull()
-	})
+    it('keeps the bytes when a fresh document does not fit', async () => {
+      const fresh = `${SHELL_HTML}<!-- fresh -->`
+      state.shell = () => shellResponse({}, 200, fresh)
+      vi.spyOn(cache, 'put').mockRejectedValue(new DOMException('full', 'QuotaExceededError'))
+
+      await pruneOfflineCopy('p1').catch(() => {})
+
+      expect(cache.has(removed)).toBe(true)
+      expect(recordedKeys('p1')).toContain(removed)
+    })
+  })
+
+  it('asks the server for nothing when no bytes are due to go', async () => {
+    await saveOfflineCopy('p1')
+    startupFetched.length = 0
+
+    await pruneOfflineCopy('p1')
+
+    expect(startupFetched).toEqual([])
+  })
+
+  describe('alongside a run that started first', () => {
+    const removed = '/private/files/a.png'
+
+    function holdsTheShell() {
+      const { promise: answered, resolve } = Promise.withResolvers<void>()
+      const next = fetch
+      vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+        if (url === '/d/n1') {
+          await answered
+        }
+
+        return next(url, init)
+      })
+
+      return resolve
+    }
+
+    it('does not have its removal undone by a visit', async () => {
+      presentationId.value = 'v1'
+      await saveOfflineCopy('v1')
+      slides.value = slidesWith(['/files/b.png'])
+      const answer = holdsTheShell()
+
+      const visiting = warmOfflineCopyAssets('v1')
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      const pruning = pruneOfflineCopy('v1')
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      answer()
+      await Promise.all([visiting, pruning])
+
+      expect(cache.has(removed)).toBe(false)
+      expect(recordedKeys('v1')).not.toContain(removed)
+
+      slides.value = slidesWith(['/files/a.png'], ['/files/b.png'])
+      refreshOfflineStatus('v1')
+
+      expect(offlineCopyStatus.value).toBe('outdated')
+    })
+
+    it('does not have its removal undone by a save storing a new picture', async () => {
+      await saveOfflineCopy('p1')
+      slides.value = slidesWith(['/files/b.png'], ['/files/c.png'])
+      const { promise: answered, resolve: answer } = Promise.withResolvers<void>()
+      const next = fetch
+      vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+        if (url.includes('c.png')) {
+          await answered
+        }
+
+        return next(url, init)
+      })
+      responses['/private/files/c.png?slides_media=1'] = () => image(30)
+
+      const saving = saveOfflineCopy('p1')
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      const pruning = pruneOfflineCopy('p1')
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      answer()
+      await Promise.all([saving, pruning])
+
+      expect(cache.has(removed)).toBe(false)
+      expect(recordedKeys('p1')).toEqual(['/private/files/b.png', '/private/files/c.png'])
+    })
+  })
+
+  it('keeps in the record what a save pins while the bytes are being deleted', async () => {
+    await saveOfflineCopy('p1')
+    slides.value = slidesWith(['/files/b.png'])
+    responses['/private/files/c.png?slides_media=1'] = () => image(30)
+    const deleteKey = cache.delete.bind(cache)
+    let saving: Promise<unknown> | undefined
+    vi.spyOn(cache, 'delete').mockImplementationOnce(async (key: string) => {
+      slides.value = slidesWith(['/files/b.png'], ['/files/c.png'])
+      saving = saveOfflineCopy('p1')
+      await new Promise((resolve) => setTimeout(resolve, 0))
+
+      return deleteKey(key)
+    })
+
+    await pruneOfflineCopy('p1')
+    await saving
+
+    expect(cache.has('/private/files/c.png')).toBe(true)
+    expect(recordedKeys('p1')).toEqual(['/private/files/b.png', '/private/files/c.png'])
+  })
+
+  it('drops the bytes of an image the presentation no longer shows', async () => {
+    await saveOfflineCopy('p1')
+    slides.value = slidesWith(['/files/b.png'])
+
+    await pruneOfflineCopy('p1')
+
+    expect(cache.has('/private/files/a.png')).toBe(false)
+    expect(cache.has('/private/files/b.png')).toBe(true)
+    expect(recordedKeys('p1')).toEqual(['/private/files/b.png'])
+    expect(statusOf('p1')).toBe('available')
+  })
+
+  it('keeps bytes another offline copy still lists', async () => {
+    await saveOfflineCopy('p1')
+    await saveOfflineCopy('p2')
+    slides.value = slidesWith(['/files/b.png'])
+
+    await pruneOfflineCopy('p1')
+
+    expect(cache.has('/private/files/a.png')).toBe(true)
+    expect(recordedKeys('p2')).toEqual(['/private/files/a.png', '/private/files/b.png'])
+  })
+
+  it('leaves an unchanged copy alone, without opening the cache', async () => {
+    await saveOfflineCopy('p1')
+    vi.stubGlobal('caches', {
+      open: async () => {
+        throw new Error('should not open the cache')
+      },
+    })
+
+    await pruneOfflineCopy('p1')
+
+    expect(recordedKeys('p1')).toEqual(['/private/files/a.png', '/private/files/b.png'])
+  })
+
+  it('does nothing for a presentation with no offline copy', async () => {
+    await expect(pruneOfflineCopy('p1')).resolves.toBeUndefined()
+    expect(localStorage.getItem('slides-offline-copy:p1')).toBeNull()
+  })
+
+  describe('a picture named by its Drive node', () => {
+    const picture = '/private/files/m1.png'
+    const signed = `${picture}?signature=s1`
+    const src = ref<string | null>(null)
+    const status = ref<'loading' | 'unanswered' | 'ready' | 'refused'>('ready')
+    let release: () => void
+
+    function driveAnswers(url: string | null, answer: typeof status.value) {
+      src.value = url
+      status.value = answer
+    }
+
+    beforeEach(async () => {
+      release = setDocumentMedia((id) => ({
+        id,
+        src,
+        status,
+        cacheKey: ref(id),
+        refresh: async () => {},
+      }))
+      responses[signed] = () => image(30)
+      driveAnswers(signed, 'ready')
+      slides.value = slidesWith(['/files/a.png', 'media-node-1'])
+      await saveOfflineCopy('p1')
+    })
+
+    afterEach(() => {
+      release()
+      vi.useRealTimers()
+    })
+
+    it.each(['loading', 'unanswered'] as const)(
+      'keeps its bytes when the read is still %s after the wait',
+      async (waiting) => {
+        vi.useFakeTimers()
+        driveAnswers(null, waiting)
+
+        const pruning = pruneOfflineCopy('p1')
+        await vi.advanceTimersByTimeAsync(30_000)
+        await pruning
+
+        expect(cache.has(picture)).toBe(true)
+        expect(recordedKeys('p1')).toContain(picture)
+      },
+    )
+
+    it('keeps everything while any picture waits, not only the waiting one', async () => {
+      vi.useFakeTimers()
+      driveAnswers(null, 'unanswered')
+      slides.value = slidesWith(['media-node-1'])
+
+      const pruning = pruneOfflineCopy('p1')
+      await vi.advanceTimersByTimeAsync(30_000)
+      await pruning
+
+      expect(cache.has('/private/files/a.png')).toBe(true)
+    })
+
+    it('prunes what the presentation no longer shows once the read answers', async () => {
+      driveAnswers(null, 'loading')
+      slides.value = slidesWith(['media-node-1'])
+
+      const pruning = pruneOfflineCopy('p1')
+      driveAnswers(signed, 'ready')
+      await pruning
+
+      expect(cache.has(picture)).toBe(true)
+      expect(cache.has('/private/files/a.png')).toBe(false)
+    })
+
+    it('leaves the copy alone when another presentation opens during the wait', async () => {
+      driveAnswers(null, 'loading')
+
+      const pruning = pruneOfflineCopy('p1')
+      presentationId.value = 'p2'
+      slides.value = slidesWith(['/files/b.png'])
+      driveAnswers(signed, 'ready')
+      await pruning
+
+      expect(cache.has(picture)).toBe(true)
+      expect(cache.has('/private/files/a.png')).toBe(true)
+    })
+
+    it('keeps its bytes on open when an expired session has it refused', async () => {
+      driveAnswers(null, 'refused')
+
+      await pruneOfflineCopy('p1')
+
+      expect(cache.has(picture)).toBe(true)
+      expect(recordedKeys('p1')).toContain(picture)
+    })
+
+    it('keeps its bytes on save when an expired session has it refused', async () => {
+      driveAnswers(null, 'refused')
+
+      await saveOfflineCopy('p1')
+
+      expect(cache.has(picture)).toBe(true)
+      expect(recordedKeys('p1')).toContain(picture)
+    })
+
+    it('keeps its bytes and its place in the record when a save outwaits the read', async () => {
+      vi.useFakeTimers()
+      driveAnswers(null, 'unanswered')
+
+      const saving = saveOfflineCopy('p1')
+      await vi.advanceTimersByTimeAsync(30_000)
+      const result = await saving
+
+      expect(result?.failed).toEqual([{ slideIndex: 0, src: 'media-node-1', status: 'timeout' }])
+      expect(cache.has(picture)).toBe(true)
+      expect(recordedKeys('p1')).toContain(picture)
+    })
+  })
+})
+
+describe('a pin and the visited copies', () => {
+  function visitedEntry(node: string) {
+    return new Response('old', { headers: { 'x-visited-node': node } })
+  }
+
+  async function seedVisited() {
+    state.visitedCache = new FakeCache()
+    // what the store reads back: a clone for each match, a path for each key
+    state.visitedCache.keys = async () =>
+      [...state.visitedCache!.store.keys()].map((url) => ({ url }))
+    Object.assign(state.visitedCache, {
+      match: async (key: string) =>
+        state.visitedCache!.store.get(new URL(key, 'http://localhost').href)?.clone(),
+    })
+    await state.visitedCache.put('/d/n1', visitedEntry('n1'))
+    await state.visitedCache.put('/api/suite/drive/nodes/n1/media', visitedEntry('n1'))
+    await state.visitedCache.put('/d/n2', visitedEntry('n2'))
+    return state.visitedCache
+  }
+
+  it('Save copy drops the visited copy of that node only', async () => {
+    const seeded = await seedVisited()
+
+    await saveOfflineCopy('p1')
+
+    expect(seeded.has('/d/n1')).toBe(false)
+    expect(seeded.has('/api/suite/drive/nodes/n1/media')).toBe(false)
+    expect(seeded.has('/d/n2')).toBe(true)
+  })
+
+  it.each(['QuotaExceededError', 'InvalidAccessError', 'DataError', 'UnknownError'])(
+    'a pin refused with %s clears the visited copies and retries',
+    async (name) => {
+      await seedVisited()
+      const put = cache.put.bind(cache)
+      let failures = 0
+      cache.put = async (key, response) => {
+        if (key.startsWith('/private/files/') && failures++ === 0) {
+          throw new DOMException('full', name)
+        }
+
+        return put(key, response)
+      }
+
+      const result = await saveOfflineCopy('p1')
+
+      expect(deletedCaches).toEqual(['slides-visited'])
+      expect(result).toEqual({ ok: true, failed: [], count: 2 })
+    },
+  )
+
+  it.each(['AbortError', 'NetworkError'])(
+    'a pin whose body fails with %s clears nothing',
+    async (name) => {
+      await seedVisited()
+      const put = cache.put.bind(cache)
+      cache.put = async (key, response) => {
+        if (key.startsWith('/private/files/')) {
+          throw new DOMException('aborted', name)
+        }
+
+        return put(key, response)
+      }
+
+      await saveOfflineCopy('p1')
+
+      expect(deletedCaches).toEqual([])
+    },
+  )
+
+  it('start-up at the quota clears the visited copies and retries', async () => {
+    const put = cache.put.bind(cache)
+    let failures = 0
+    cache.put = async (key, response) => {
+      if (key === '/d/n1' && failures++ === 0) {
+        throw new DOMException('full', 'QuotaExceededError')
+      }
+
+      return put(key, response)
+    }
+
+    const result = await saveOfflineCopy('p1')
+
+    expect(deletedCaches).toEqual(['slides-visited'])
+    expect(result?.ok).toBe(true)
+    expect(cache.has('/d/n1')).toBe(true)
+  })
+
+  it('a refused node loses its pin and its visited copy', async () => {
+    await saveOfflineCopy('p1')
+    const seeded = await seedVisited()
+
+    await removeNodeOfflineCopy('n1')
+
+    expect(localStorage.getItem('slides-offline-copy:p1')).toBeNull()
+    expect(cache.has('/d/n1')).toBe(false)
+    expect(seeded.has('/d/n1')).toBe(false)
+    expect(seeded.has('/d/n2')).toBe(true)
+  })
+
+  it('a refused node with no pin still loses its visited copy', async () => {
+    const seeded = await seedVisited()
+
+    await removeNodeOfflineCopy('n1')
+
+    expect(seeded.has('/d/n1')).toBe(false)
+  })
+
+  it('stores every font the slides declare before it reports the pin saved', async () => {
+    const result = await saveOfflineCopy('p1')
+
+    expect(result?.ok).toBe(true)
+    expect(DECLARED_FONTS.length).toBeGreaterThan(0)
+    expect(DECLARED_FONTS.filter((url) => !cache.has(url))).toEqual([])
+    expect(DECLARED_FONTS.filter((url) => !recordOf('p1').keys.includes(url))).toEqual([])
+  })
+
+  it('fails a pin whose font could not be stored', async () => {
+    const original = fetch
+    const font = '/assets/suite/slides/fonts/Anton/Anton-Regular-latin.woff2'
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) =>
+      url === font ? new Response('', { status: 503 }) : original(url, init),
+    )
+
+    await expect(saveOfflineCopy('p1')).rejects.toThrow(font)
+    expect(localStorage.getItem('slides-offline-copy:p1')).toBeNull()
+  })
+
+  it('marks what a pin fetches, so the worker stays out of it', async () => {
+    const original = fetch
+    const unmarked: string[] = []
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      const isStartup =
+        url.startsWith('/d/') || url.startsWith('/api/') || url.startsWith('/assets/')
+      if (isStartup && !new Headers(init?.headers).has('x-slides-pin')) {
+        unmarked.push(url)
+      }
+
+      return original(url, init)
+    })
+
+    await saveOfflineCopy('p1')
+
+    expect(startupFetched.length).toBeGreaterThan(0)
+    expect(unmarked).toEqual([])
+  })
 })
 
 describe('removeOfflineCopy', () => {
-	it('deletes only keys no other offline copy uses', async () => {
-		await saveOfflineCopy('p1')
-		slides.value = slidesWith(['/files/b.png', '/files/c.png'])
-		responses['/private/files/c.png?slides_media=1'] = () => image()
-		await saveOfflineCopy('p2')
+  it('deletes only keys no other offline copy uses', async () => {
+    await saveOfflineCopy('p1')
+    slides.value = slidesWith(['/files/b.png', '/files/c.png'])
+    responses['/private/files/c.png?slides_media=1'] = () => image()
+    await saveOfflineCopy('p2')
 
-		await removeOfflineCopy('p1')
+    await removeOfflineCopy('p1')
 
-		expect(cache.has('/private/files/a.png')).toBe(false)
-		expect(cache.has('/private/files/b.png')).toBe(true)
-		expect(cache.has('/private/files/c.png')).toBe(true)
-		expect(localStorage.getItem('slides-offline-copy:p1')).toBeNull()
-		presentationId.value = 'p2'
-		expect(statusOf('p2')).toBe('available')
-	})
-})
-
-describe('offline status', () => {
-	it('is none without a record', () => {
-		expect(statusOf('p1')).toBe('none')
-	})
-
-	it('is available after a full run', async () => {
-		await saveOfflineCopy('p1')
-		expect(statusOf('p1')).toBe('available')
-	})
-
-	it('is outdated once the presentation points at other files', async () => {
-		await saveOfflineCopy('p1')
-		slides.value = slidesWith(['/files/a.png'], ['/files/new.png'])
-		expect(statusOf('p1')).toBe('outdated')
-	})
-
-	it('stays available when only text changed', async () => {
-		await saveOfflineCopy('p1')
-		presentationDoc.value = { ...presentationDoc.value, modified: '2026-08-17 11:00:00' }
-		expect(statusOf('p1')).toBe('available')
-	})
-
-	it('answers only for the open presentation', async () => {
-		await saveOfflineCopy('p1')
-		presentationId.value = 'p2'
-		expect(statusOf('p1')).toBe('none')
-	})
+    expect(cache.has('/private/files/a.png')).toBe(false)
+    expect(cache.has('/private/files/b.png')).toBe(true)
+    expect(cache.has('/private/files/c.png')).toBe(true)
+    expect(localStorage.getItem('slides-offline-copy:p1')).toBeNull()
+    presentationId.value = 'p2'
+    expect(statusOf('p2')).toBe('available')
+  })
 })

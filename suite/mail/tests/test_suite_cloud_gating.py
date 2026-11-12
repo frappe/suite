@@ -121,10 +121,7 @@ class TestAdminDashboardNeedsSuiteCloud(SiteConnectionTestCase):
         with fake_suite_cloud() as fake:
             fake.domains__create_domain("acme.test", description="Acme")
             fake.domains["acme.test"]["is_verified"] = 1
-            self.assertRaisesRegex(
-                frappe.ValidationError,
-                "JMAP server is not configured",
-                admin.add_member,
+            result = admin.add_member(
                 "heidi",
                 "acme.test",
                 is_admin=False,
@@ -133,6 +130,7 @@ class TestAdminDashboardNeedsSuiteCloud(SiteConnectionTestCase):
                 first_name="Heidi",
                 password="a-strong-password-9",
             )
+            self.assertEqual((result["success"], result["status"]), (False, "Setup failed"))
             # Refused before Suite Cloud was asked: nothing to create, nothing to clean up.
             self.assertNotIn("heidi@acme.test", fake.accounts)
             self.assertEqual([c for c in fake.calls if c[0] == "mail.accounts.create_account"], [])

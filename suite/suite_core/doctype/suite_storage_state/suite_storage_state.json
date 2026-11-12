@@ -1,0 +1,16 @@
+{
+ "doctype": "DocType",
+ "name": "Suite Storage State",
+ "module": "Suite Core",
+ "autoname": "field:site_key",
+ "field_order": ["site_key", "policy", "measurements"],
+ "fields": [
+  {"fieldname": "site_key", "fieldtype": "Data", "label": "Site key", "unique": 1, "reqd": 1},
+  {"fieldname": "policy", "fieldtype": "Long Text", "label": "Storage policy"},
+  {"fieldname": "measurements", "fieldtype": "Long Text", "label": "Mail measurements"}
+ ],
+ "permissions": [{"role": "System Manager", "read": 1}],
+ "engine": "InnoDB",
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

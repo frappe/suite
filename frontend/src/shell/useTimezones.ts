@@ -1,38 +1,29 @@
-import { computed, ref } from 'vue'
-import { createResource } from 'frappe-ui'
+import { computed } from 'vue'
 
-const timezones = ref<string[]>([])
-
-let fetched = false
+import { api, useQuery } from '@/api'
 
 export function useTimezones() {
-  if (!fetched) {
-    fetched = true
-    createResource({
-      url: 'frappe.core.doctype.user.user.get_timezones',
-      auto: true,
-      onSuccess: (data: { timezones: string[] }) => (timezones.value = data.timezones),
-    })
-  }
-
-  const timezoneOptions = computed(() => timezones.value.map((tz) => ({ label: tz, value: tz })))
-
+  const query = useQuery(api.suite.locales.timezones)
+  const timezones = computed(() => query.data?.timezones ?? [])
+  const timezoneOptions = computed(() => timezones.value.map((value) => ({ label: value, value })))
   return { timezones, timezoneOptions }
 }
 
 // Browsers report legacy CLDR zone names; the framework list carries the renamed IDs.
-const RENAMED_ZONES: Record<string, string> = {
-  'Asia/Calcutta': 'Asia/Kolkata',
-  'Asia/Katmandu': 'Asia/Kathmandu',
-  'Asia/Rangoon': 'Asia/Yangon',
-  'Asia/Saigon': 'Asia/Ho_Chi_Minh',
-  'America/Godthab': 'America/Nuuk',
-  'Atlantic/Faeroe': 'Atlantic/Faroe',
-  'Europe/Kiev': 'Europe/Kyiv',
-}
+const RENAMED_ZONES = new Map<string, string>(
+  Object.entries({
+    'Asia/Calcutta': 'Asia/Kolkata',
+    'Asia/Katmandu': 'Asia/Kathmandu',
+    'Asia/Rangoon': 'Asia/Yangon',
+    'Asia/Saigon': 'Asia/Ho_Chi_Minh',
+    'America/Godthab': 'America/Nuuk',
+    'Atlantic/Faeroe': 'Atlantic/Faroe',
+    'Europe/Kiev': 'Europe/Kyiv',
+  }),
+)
 
 export function normalizeTimezone(zone: string): string {
-  return RENAMED_ZONES[zone] ?? zone
+  return RENAMED_ZONES.get(zone) ?? zone
 }
 
 export function detectTimezone(): string {

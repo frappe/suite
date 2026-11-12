@@ -1,0 +1,314 @@
+import {
+  GENERAL,
+  groupName,
+  isExpired,
+  principalKind,
+  PUBLIC,
+  roleLabel,
+  type DriveGrant,
+  type GrantExplanation,
+  type GrantList,
+  type InheritedGrant,
+  type PrincipalKind,
+} from '@/apps/drive/client/grants'
+import { DRIVE_ROLES, type DrivePerson } from '@/apps/drive/client/types'
+import { translate as __ } from '@/platform/translation'
+
+/**
+ * What the share dialog shows, derived from one grants read (unified spec §7.3).
+ * The dialog renders this and never decides access itself.
+ */
+
+export interface LocalRow {
+  grant: DriveGrant
+  kind: PrincipalKind
+  expired: boolean
+  /** An explicit deny: "Denied here" with Allow again. */
+  denied: boolean
+}
+
+export interface InheritedRow {
+  entry: InheritedGrant
+  kind: PrincipalKind
+  /**
+   * "Deny access here" applies: the row gives access, no local row exists for
+   * its principal yet, and a redacted link names no principal to deny.
+   */
+  deniable: boolean
+}
+
+export interface InheritedPart {
+  node: string
+  title: string
+  rows: InheritedRow[]
+}
+
+/** Someone picked in the people picker and not yet added. `name` is a user's full name, which grant rows do not carry. */
+export interface PickedPerson {
+  principal: string
+  kind: 'user' | 'group'
+  label: string
+  name: string | null
+}
+
+/** The effective state of everyone at the org, or of Public on the web (§7.6). */
+export type GeneralAccess =
+  | { state: 'off' }
+  | { state: 'local'; row: LocalRow }
+  | { state: 'denied'; row: LocalRow }
+  | { state: 'inherited'; entry: InheritedGrant }
+  /** An expired local row stays listed, greyed, with Remove (§7.9). `entry` is what applies meanwhile. */
+  | { state: 'expired'; row: LocalRow; entry: InheritedGrant | null }
+
+export interface ShareSections {
+  /**
+   * The user whose Personal root holds the node, listed first in People with
+   * no actions: they cannot be denied. Their own grant rows are left out of
+   * People and the folded parts. `null` in the Shared root.
+   */
+  owner: DrivePerson | null
+  people: LocalRow[]
+  organization: GeneralAccess
+  /** `null` on a root: a root cannot be public (Drive spec §6.5). */
+  public: GeneralAccess | null
+  /** `null` on a root: a root has no share links (Drive spec §4.9). */
+  links: LocalRow[] | null
+  inherited: InheritedPart[]
+}
+
+export function shareSections(list: GrantList, nodeKind: string, now = new Date()): ShareSections {
+  const isRoot = nodeKind === 'root'
+  const owner = list.owner?.id ?? null
+  const local = list.grants.map((grant): LocalRow => ({
+    grant,
+    kind: principalKind(grant.principal),
+    expired: isExpired(grant, now),
+    denied: grant.role <= 0,
+  }))
+  const localPrincipals = new Set(list.grants.map((grant) => grant.principal))
+
+  const parts = new Map<string, InheritedPart>()
+  for (const entry of list.inherited) {
+    if (entry.grant.principal === owner) continue
+    const kind = principalKind(entry.grant.principal)
+    // A deny needs no deny. A redacted link hides its principal, and a root has
+    // no public access to deny.
+    const deniable =
+      entry.grant.role > 0 &&
+      !entry.redacted &&
+      !(isRoot && kind === 'public') &&
+      !localPrincipals.has(entry.grant.principal)
+    const part = parts.get(entry.source_node) ?? {
+      node: entry.source_node,
+      title: entry.source_title,
+      rows: [],
+    }
+    part.rows.push({ entry, kind, deniable })
+    parts.set(entry.source_node, part)
+  }
+
+  return {
+    owner: list.owner,
+    people: local.filter(
+      (row) => (row.kind === 'user' || row.kind === 'group') && row.grant.principal !== owner,
+    ),
+    organization: generalAccess(GENERAL, local, list.inherited),
+    public: isRoot ? null : generalAccess(PUBLIC, local, list.inherited),
+    links: isRoot ? null : local.filter((row) => row.kind === 'link'),
+    inherited: [...parts.values()],
+  }
+}
+
+/** Whether an ancestor publishes the node: its nearest `$PUBLIC` row above gives access. */
+export function isPublicFromAncestor(sections: ShareSections): boolean {
+  const nearest = sections.inherited
+    .flatMap((part) => part.rows)
+    .find((row) => row.kind === 'public')
+  return (nearest?.entry.grant.role ?? 0) > 0
+}
+
+/** Whether everyone at the org, or the public, can open the node now: here, from a folder, or from a folder while the local row has expired. */
+export function isOpen(access: GeneralAccess | null): boolean {
+  return (
+    access?.state === 'local' ||
+    access?.state === 'inherited' ||
+    (access?.state === 'expired' && access.entry !== null)
+  )
+}
+
+function generalAccess(
+  principal: string,
+  local: LocalRow[],
+  inherited: InheritedGrant[],
+): GeneralAccess {
+  const row = local.find((candidate) => candidate.grant.principal === principal)
+  // `inherited` is nearest first, and the nearest live row decides.
+  const nearest = inherited.find((entry) => entry.grant.principal === principal)
+  const applies = nearest && nearest.grant.role > 0 ? nearest : null
+  if (row?.expired) return { state: 'expired', row, entry: applies }
+  if (row?.denied) return { state: 'denied', row }
+  if (row) return { state: 'local', row }
+  return applies ? { state: 'inherited', entry: applies } : { state: 'off' }
+}
+
+/** One write to the node's own rows. `role: null` removes the principal's row. */
+export interface GrantChange {
+  principal: string
+  role: number | null
+}
+
+/**
+ * The role `me` would hold on `node` after `change`, worked out from the
+ * explanation of `me` (Drive spec §5.3, §5.8). The share dialog asks before a
+ * write that lowers the caller's own access (§7.4).
+ *
+ * The rules match the server's resolver. Own principals (the user, then
+ * groups, then everyone at the org) resolve nearest first. At one depth the
+ * user beats a group, and a group beats the org. Among equals a deny wins,
+ * else the highest role. Open principals (public, links) take the nearest
+ * row. An own deny wins outright, else the higher of the two.
+ *
+ * Group membership is known only for groups that already hold a row on the
+ * chain: the explanation marks those `held`.
+ */
+export function roleAfter(
+  explanation: GrantExplanation,
+  node: string,
+  change: GrantChange,
+  me: string,
+): number {
+  const rows = explanation.rows
+  const nodeDepth =
+    rows.find((row) => row.node === node)?.depth ??
+    Math.max(-1, ...rows.map((row) => row.depth)) + 1
+  const held = (principal: string) =>
+    principal === me ||
+    principal === GENERAL ||
+    principal === PUBLIC ||
+    rows.some((row) => row.principal === principal && row.held)
+  const after = rows
+    .filter((row) => row.held && !(row.node === node && row.principal === change.principal))
+    .map(({ principal, role, depth }) => ({ principal, role, depth }))
+  if (change.role !== null && held(change.principal)) {
+    after.push({ principal: change.principal, role: change.role, depth: nodeDepth })
+  }
+  return resolveRole(after)
+}
+
+const OWN_TIER: Partial<Record<PrincipalKind, number>> = { user: 0, group: 1, general: 2 }
+
+function resolveRole(rows: { principal: string; role: number; depth: number }[]): number {
+  let own: number | null = null
+  let ownDepth = -1
+  let ownTier = 9
+  let open: number | null = null
+  let openDepth = -1
+  for (const { principal, role, depth } of rows) {
+    const tier = OWN_TIER[principalKind(principal)]
+    if (tier === undefined) {
+      if (depth > openDepth) [open, openDepth] = [role, depth]
+      else if (depth === openDepth && role > (open ?? 0)) open = role
+    } else if (depth > ownDepth || (depth === ownDepth && tier < ownTier)) {
+      ;[own, ownDepth, ownTier] = [role, depth, tier]
+    } else if (depth === ownDepth && tier === ownTier) {
+      own = own === 0 || role === 0 ? 0 : Math.max(own ?? 0, role)
+    }
+  }
+  return own === 0 ? 0 : Math.max(own ?? 0, open ?? 0)
+}
+
+/**
+ * Why a principal still has access after its local row went (§7.4), or
+ * `null` when it has none. `titles` names the ancestors the dialog knows.
+ */
+export function remainingAccess(
+  who: string,
+  principal: string,
+  explanation: GrantExplanation,
+  titles: ReadonlyMap<string, string>,
+  labelOf: (principal: string) => string,
+): string | null {
+  if (explanation.role <= 0) return null
+  const winner = explanation.rows.find((row) => row.winner)
+  if (!winner) return `${who} still has access.`
+  if (winner.principal !== principal)
+    return `${who} still has access through ${labelOf(winner.principal)}.`
+  const title = titles.get(winner.node)
+  return title ? `${who} still has access from “${title}”.` : `${who} still has access.`
+}
+
+/**
+ * Who besides the owner can open the node, for its details: people and groups
+ * by name, then the org, the public and the number of share links. A local
+ * row decides for its principal over an ancestor's, so a deny here hides an
+ * inherited grant. Denied and expired rows give nothing and are left out.
+ */
+export function sharedWith(
+  list: GrantList,
+  nodeKind: string,
+  workspace: string,
+  now = new Date(),
+): string[] {
+  const sections = shareSections(list, nodeKind, now)
+  const gives = (grant: DriveGrant) => grant.role > 0 && !isExpired(grant, now)
+  const local = new Set(list.grants.map((grant) => grant.principal))
+  const named = [
+    ...sections.people.map((row) => row.grant),
+    ...sections.inherited.flatMap((part) =>
+      part.rows.flatMap((row) => {
+        if (row.kind !== 'user' && row.kind !== 'group') return []
+        const grant = row.entry.grant
+        return !local.has(grant.principal) ? [grant] : []
+      }),
+    ),
+  ].flatMap((grant) =>
+    gives(grant) ? [grant.person?.full_name ?? principalLabel(grant.principal)] : [],
+  )
+  const links = [
+    ...(sections.links ?? []).map((row) => row.grant),
+    ...list.inherited
+      .map((entry) => entry.grant)
+      .filter((grant) => principalKind(grant.principal) === 'link'),
+  ].filter(gives).length
+  return [
+    ...new Set(named),
+    ...(isOpen(sections.organization) ? [organizationLabel(workspace)] : []),
+    ...(isOpen(sections.public) ? [principalLabel(PUBLIC)] : []),
+    ...(links ? [links === 1 ? '1 share link' : `${links} share links`] : []),
+  ]
+}
+
+/** What a role lets someone do: "Can view", "Can edit". */
+export function abilityLabel(role: number): string {
+  if (role === DRIVE_ROLES.read) return __('Can view')
+  if (role === DRIVE_ROLES.comment) return __('Can comment')
+  if (role === DRIVE_ROLES.upload) return __('Can upload')
+  if (role === DRIVE_ROLES.edit) return __('Can edit')
+  if (role === DRIVE_ROLES.manage) return __('Can manage')
+  return __(roleLabel(role))
+}
+
+/** Everyone at the org, named after the workspace when its name is known. */
+export function organizationLabel(workspace = ''): string {
+  return workspace ? `Everyone at ${workspace}` : 'Everyone in your organization'
+}
+
+/** The words for a principal nobody named: groups, the org, the public. */
+export function principalLabel(
+  principal: string,
+  users: ReadonlyMap<string, string> = new Map(),
+  workspace = '',
+): string {
+  switch (principalKind(principal)) {
+    case 'general':
+      return organizationLabel(workspace)
+    case 'public':
+      return 'Public on the web'
+    case 'group':
+      return groupName(principal)
+    case 'link':
+      return 'Share link'
+    case 'user':
+      return users.get(principal) ?? principal
+  }
+}

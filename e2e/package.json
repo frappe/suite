@@ -2,6 +2,7 @@
   "name": "@suite/e2e",
   "version": "0.0.1",
   "private": true,
+  "packageManager": "yarn@1.22.22",
   "scripts": {
     "test": "yarn test:drive-backed-apps",
     "test:drive-backed-apps": "playwright test -c drive-backed-apps/playwright.config.ts",
@@ -11,6 +12,9 @@
     "test:meet-captions-unit": "node --test meet/captions/*.test.mjs",
     "test:meet-captions-smoke": "playwright test -c meet/captions/smoke.config.ts",
     "load:meet": "node meet/load/run.mjs",
+    "test:unified-shell": "playwright test -c unified-frontend/shell/playwright.config.ts",
+    "test:unified-files": "playwright test -c unified-frontend/files/playwright.config.ts",
+    "test:unified-home": "playwright test -c unified-frontend/home/playwright.config.ts",
     "test:headed": "yarn test:drive-backed-apps --headed",
     "test:debug": "yarn test:drive-backed-apps --debug",
     "test:ui": "yarn test:drive-backed-apps --ui",

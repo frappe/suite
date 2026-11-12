@@ -1,6 +1,10 @@
 import frappe
 from frappe import _
-from frappe.utils import cstr
+from frappe.utils import cstr, get_datetime, now_datetime
+
+from suite import drive
+from suite.slides import drive as slides_drive
+from suite.slides.drive import NODE_FIELD
 
 # the only fields the editor may set; a new Slide field is not client-writable by default
 SLIDE_FIELDS = frozenset(
@@ -14,10 +18,14 @@ SLIDE_FIELDS = frozenset(
         "advance_after",
     }
 )
+# autosaves this close together share one automatic version, as in Sheets
+AUTO_VERSION_SECS = 30
 
 
-# a save over GET would report success and then be rolled back after responding
-@frappe.whitelist(methods=["POST"])
+# a save over GET would report success and then be rolled back after responding;
+# Guest is admitted because a share link's holder has no session, and the write
+# check below answers for the link the request carries
+@frappe.whitelist(methods=["POST"], allow_guest=True)
 def save_slides(name: str, slides: list[dict], base_modified: str) -> dict:
     """Replace a presentation's slides with the editor's list.
 
@@ -25,12 +33,16 @@ def save_slides(name: str, slides: list[dict], base_modified: str) -> dict:
     created keeps one row across autosaves instead of being re-inserted each time.
     `base_modified` is the version the editor built on: anything older than the
     server's is a stale snapshot that would wipe another editor's rows, so it is
-    refused rather than merged.
+    refused rather than merged. The save takes a throttled automatic version, so
+    the deck's history holds more than the versions saved by hand.
     """
     doc = frappe.get_doc("Presentation", name)
     doc.check_permission("write")
     if doc.is_composite:
         frappe.throw(_("Composite presentations have no slides of their own"))
+
+    slides_drive.refuse_row_write(doc.node)
+
     if cstr(doc.modified) != cstr(base_modified):
         frappe.throw(
             _("This presentation was changed elsewhere. Reload to get the latest version."),
@@ -39,7 +51,27 @@ def save_slides(name: str, slides: list[dict], base_modified: str) -> dict:
 
     doc.set("slides", merge_rows(doc.slides, slides))
     doc.save()
+    try:
+        take_auto_version(doc.get(NODE_FIELD))
+    except Exception:
+        # the slides are saved; a missed version must not fail the save
+        frappe.log_error(title="slides: automatic version failed", message=frappe.get_traceback())
     return {"modified": doc.modified}
+
+
+def take_auto_version(node: str | None) -> None:
+    """Take an automatic version unless the newest one is under `AUTO_VERSION_SECS` old.
+
+    A deck not in Drive yet has no history to add to.
+    """
+    if not node:
+        return
+    newest = drive.list_versions(node, limit=1)["rows"]
+    if newest:
+        age = (now_datetime() - get_datetime(newest[0]["creation"])).total_seconds()
+        if age < AUTO_VERSION_SECS:
+            return
+    drive.take_version(node, kind="auto")
 
 
 def merge_rows(existing_rows, incoming):

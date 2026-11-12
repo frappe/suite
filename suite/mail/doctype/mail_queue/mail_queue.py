@@ -99,6 +99,7 @@ class MailQueue(OwnerFromUser, Document):
         priority: DF.Literal["", "Low", "Normal", "High"]
         queued_at: DF.Datetime | None
         raw_message: DF.Code | None
+        reaction: DF.Data | None
         recipients: DF.JSON | None
         reply_to: DF.JSON | None
         retries: DF.Int
@@ -187,6 +188,7 @@ class MailQueue(OwnerFromUser, Document):
         doc.text_body = (
             to_flowed(kwargs.text_body) if kwargs.text_body else html_to_text(kwargs.html_body, flowed=True)
         ) or None
+        doc.reaction = kwargs.reaction
         doc.forwarded_from_id = kwargs.forwarded_from_id
         doc.message_id = kwargs.message_id
         doc.id = kwargs.id
@@ -641,9 +643,10 @@ class MailQueue(OwnerFromUser, Document):
             self.in_reply_to = self.in_reply_to.strip("<>")
 
     def validate_in_reply_to_id(self) -> None:
-        """Validates the In Reply To ID."""
+        """Validates the In Reply To ID, the message marked answered once this one is sent. A
+        reaction leaves it unset: it answers nothing."""
 
-        if self.in_reply_to and not self.in_reply_to_id:
+        if self.in_reply_to and not self.in_reply_to_id and not self.reaction:
             try:
                 client = get_account_client(self.account)
                 with client.batch() as b:
@@ -709,6 +712,21 @@ class MailQueue(OwnerFromUser, Document):
         from suite.mail.doctype.mail_message.mail_message import fetch_blob
 
         return fetch_blob(self.account, self.blob_id).decode("utf-8")
+
+    def _destroy_replaced_draft(self, client) -> None:
+        """Destroys the draft this row replaces, once the replacement exists.
+
+        Asked in the same call, the server destroyed it even when it refused the replacement, and
+        the user's draft was gone. A copy a failed destroy leaves behind is only logged.
+        """
+
+        try:
+            with client.batch() as b:
+                destroyed = b.mail.email.set(destroy=[self.id])
+            if self.id in destroyed.result.not_destroyed:
+                raise ValueError(destroyed.result.not_destroyed[self.id])
+        except Exception:
+            log_mail_error(f"Mail Queue: could not destroy replaced draft {self.id}", frappe.get_traceback())
 
     def _process(self) -> None:
         """Create, Update or Submit the Email."""
@@ -776,8 +794,6 @@ class MailQueue(OwnerFromUser, Document):
                             }
                         }
                     )
-                    if self.id:
-                        b.mail.email.set(destroy=[self.id])
                 else:
                     draft = build_email_draft(
                         from_email=self.from_email,
@@ -794,11 +810,9 @@ class MailQueue(OwnerFromUser, Document):
                         text_body=self.text_body,
                         html_body=self.html_body,
                         attachments=attachments,
+                        reaction=self.reaction,
                     )
-                    if self.id:
-                        draft_h = b.mail.email.set(create={draft_ref: draft}, destroy=[self.id])
-                    else:
-                        draft_h = b.mail.email.set(create={draft_ref: draft})
+                    draft_h = b.mail.email.set(create={draft_ref: draft})
 
                 submit_h = None
                 if not self.save_as_draft:
@@ -947,6 +961,9 @@ class MailQueue(OwnerFromUser, Document):
                 # an earlier attempt. A submission the server confirms is sent, whatever became
                 # of the draft's answer.
                 kwargs.update({"status": "Failed", "retries": cint(self.retries), "next_retry_after": None})
+
+            if self.id and draft_created:
+                self._destroy_replaced_draft(client)
         except Exception as e:
             kwargs.update({"status": "Failed", "error_log": frappe.get_traceback(with_context=True)})
             if answered:

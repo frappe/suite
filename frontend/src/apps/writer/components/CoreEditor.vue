@@ -1,205 +1,170 @@
 <template>
-  <div class="flex flex-col w-full bg-surface-base" @keydown.capture="openCommandPalette">
-    <TextEditorFixedMenu v-if="editable"
-      class="w-full max-w-[100vw] py-1.5 !px-4 md:px-0 overflow-x-auto flex shrink-0 border-b border-outline-elevation-2"
-      :editor="editor" :items="menuButtons" />
-    <div class="relative flex flex-1 overflow-hidden">
-      <ToC v-if="editor" :editor :anchors />
-      <div id="editor-scroll-container"
-        class="relative flex-1 min-w-0 overflow-y-auto overflow-x-hidden md:border-l border-outline-gray-2">
-        <div class="min-h-full flex flex-col md:grid md:grid-rows-[1fr]" :style="gridStyle" @click="onBackgroundClick">
-          <div class="hidden md:block" />
-          <div class="flex flex-col grow min-w-0">
-            <FTextEditor ref="textEditor" :upload-function="uploadFunction"
-              :autofocus="true" v-model="localContent" placeholder="Start thinking..." :extensions="editorExtensions"
-              :editable @change="handleEditorChange">
-              <template #default="{ editor }">
-                <EditorBubbleMenu :editor :items="bubbleMenuButtons" :options="bubbleMenuOpts" />
-                <EditorTableMenu :editor />
-                <EditorDropZone :editor :disabled="!editable" class="grow flex flex-col">
-                  <EditorContent
-                    :editor
-                    role="textbox"
-                    aria-label="Document editor"
-                    aria-multiline="true"
-                    class="grow w-full bg-surface-base overflow-x-auto pt-10 pb-24 px-5 prose prose-sm prose-v3 prose-table:table-fixed prose-td:p-2 prose-th:p-2 prose-td:border prose-th:border prose-td:relative prose-th:relative prose-th:bg-surface-gray-2"
-                    :class="isPainting && 'cursor-crosshair'" :style="editorStyle" />
-                </EditorDropZone>
-              </template>
-            </FTextEditor>
+  <div class="flex flex-col w-full bg-surface-base">
+    <slot name="toolbar">
+      <WriterToolbar v-if="editable && editor" :editor :settings :is-painting />
+    </slot>
+    <div class="flex flex-1 overflow-hidden">
+      <div class="flex flex-1 min-w-0 flex-col">
+        <DocumentTabs v-if="editor && !hasCover()" :editor :editable="!!editable" />
+        <div class="relative flex flex-1 min-h-0 min-w-0">
+          <div
+            v-show="!hasCover()"
+            id="editor-scroll-container"
+            class="relative flex-1 min-w-0 overflow-y-auto overflow-x-hidden"
+          >
+            <div
+              class="min-h-full flex flex-col md:grid md:grid-rows-[1fr]"
+              :style="gridStyle"
+              @click="onBackgroundClick"
+            >
+              <div class="hidden md:block [container-type:inline-size]">
+                <DocumentOutline v-if="editor" :editor :anchors />
+              </div>
+              <div class="flex flex-col grow min-w-0">
+                <FTextEditor
+                  ref="textEditor"
+                  v-model="localContent"
+                  :upload-function="uploadFunction"
+                  :autofocus="true"
+                  :placeholder="__('Type / for blocks, @ to mention…')"
+                  :extensions="editorExtensions"
+                  :editable
+                  @change="handleEditorChange"
+                >
+                  <template #default="{ editor }">
+                    <WriterBubbleMenu v-if="editor" :editor @comment="addComment" />
+                    <!-- Stays mounted: BubbleMenu detaches its root, which Vue cannot then remove or patch beside -->
+                    <LinkPopover v-if="editor" :editor />
+                    <TableControls v-if="editor && editable" :editor />
+                    <EditorDropZone :editor :disabled="isReadOnly" class="grow flex flex-col">
+                      <EditorContent
+                        :editor
+                        role="textbox"
+                        :aria-label="__('Document editor')"
+                        aria-multiline="true"
+                        :class="editorClass"
+                        :style="editorStyle"
+                      />
+                    </EditorDropZone>
+                  </template>
+                </FTextEditor>
+              </div>
+              <div class="hidden md:block" />
+            </div>
           </div>
-          <div class="relative hidden md:block min-w-0">
-            <FloatingComments v-if="commentsPainted" v-model:active-comment="activeComment" :y-comments="comments"
-              :file :show-comments :show-resolved :show-unanchored :editor @save="saveComments" />
-          </div>
+          <slot name="cover" />
         </div>
       </div>
-      <div v-if="commentsPainted && comments._map.size" class="hidden md:block absolute top-4 right-4">
-        <Dropdown :options="commentFilterOptions" align="end">
-          <Button :icon="LucideMessageSquareQuote" variant="outline" />
-        </Dropdown>
-      </div>
+      <slot name="aside" />
     </div>
-    <ToCMobile v-if="editor" :editor />
+    <ToCMobile v-if="editor && !hasCover()" :editor />
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
+import type { AnyExtension, Content } from '@tiptap/core'
+import { onKeyDown } from '@vueuse/core'
+import { toast } from 'frappe-ui'
+import { EditorContent, EditorDropZone, Editor as FTextEditor } from 'frappe-ui/editor'
 import {
   computed,
-  nextTick,
+  inject,
   onBeforeUnmount,
   provide,
   ref,
+  useSlots,
+  useTemplateRef,
   watch,
 } from 'vue'
-import { TextSelection } from '@tiptap/pm/state'
-import { CharacterCount, Selection } from '@tiptap/extensions'
-import {
-  default as TableOfContents,
-  getHierarchicalIndexes,
-} from '@tiptap/extension-table-of-contents'
-import {
-  Editor as FTextEditor,
-  EditorFixedMenu as TextEditorFixedMenu,
-  EditorBubbleMenu,
-  EditorTableMenu,
-  EditorDropZone,
-  EditorContent,
-  RichTextKit,
-} from 'frappe-ui/editor'
-import { Button, toast, useFileUpload, Dropdown } from 'frappe-ui'
-import { rename, allUsers } from '@/apps/drive/sdk'
-import { onKeyDown } from '@vueuse/core'
-import { v4 as uuidv4 } from 'uuid'
 
-import FloatingComments from './FloatingComments.vue'
-import ToC from './ToC.vue'
-import ToCMobile from './ToCMobile.vue'
-import { buildMenuButtons } from './core-editor/menu-buttons'
-import { bubbleMenuOptions } from './core-editor/bubble-menu'
-
-import { CoreEditorExtension } from '@/apps/writer/extensions/core-editor'
-import { PageBreakExtension } from '@/apps/writer/extensions/page-break'
-import CleanStyles from '@/apps/writer/extensions/clean-styles'
-import { cssLineHeight } from '@/apps/writer/utils/typography'
-import MediaDownload from '@/apps/writer/extensions/media-download'
-import OldCommentExtension from '@/apps/writer/extensions/old-comment'
-import { TabsExtension } from '@/apps/writer/extensions/tabs'
-import TabTrailingNode from '@/apps/writer/extensions/tab-trailing-node'
-import { JoinAdjacentLists } from '@/apps/writer/extensions/join-adjacent-lists'
-import { CommentExtension, rebuild } from '@/apps/writer/extensions/comments'
-
-
-import { useSessionStore } from '@/boot/session'
+import { hasDefaultDocumentTitle, useDriveDialogs } from '@/apps/drive'
+import { uploadMedia } from '@/apps/writer/drive'
+import { writerEditorExtensions } from '@/apps/writer/editor-extensions'
 import emitter from '@/apps/writer/emitter'
-import { useRootStore } from '@/stores/root'
+import { DOCUMENT_MEDIA } from '@/apps/writer/extensions/drive-media'
+import { currentTabHTML } from '@/apps/writer/extensions/tabs'
+import { RENAME_DOCUMENT } from '@/apps/writer/renameDocument'
+import type {
+  EditorFile,
+  WriterDocument,
+  WriterSettings,
+} from '@/apps/writer/surface/writerDocument'
+import { isModKey, printDoc } from '@/apps/writer/utils'
 import {
-  COMMON_EXTENSIONS,
-  isModKey,
-  printDoc,
-  updateURLSlug,
-} from '@/apps/writer/utils'
+  EDITOR_TEXT_CLASS,
+  editorColumns,
+  editorTextStyle,
+} from '@/apps/writer/utils/editor-layout'
 
-import LucideMessageSquareQuote from '~icons/lucide/message-square-quote'
+import { driveFileContent } from './core-editor/driveFileContent'
+import LinkPopover from './core-editor/LinkPopover.vue'
+import TableControls from './core-editor/table/TableControls.vue'
+import { useLiveEditorState } from './core-editor/useEditorVersion'
+import WriterBubbleMenu from './core-editor/WriterBubbleMenu.vue'
+import WriterToolbar from './core-editor/WriterToolbar.vue'
+import DocumentOutline from './DocumentOutline.vue'
+import DocumentTabs from './DocumentTabs.vue'
+import MentionMenu from './MentionMenu.vue'
+import ToCMobile from './ToCMobile.vue'
 
-const AUTOVERSION_INTERVAL_MS = 10 * 60 * 1000
+const props = withDefaults(
+  defineProps<{
+    file: EditorFile
+    document: WriterDocument
+    settings: WriterSettings
+    editable?: boolean
+    collaborative?: boolean
+    extensions?: AnyExtension[]
+    rawContent?: string
+    // Takes over the bubble menu's Comment, for editors that comment through Drive
+    commentOnSelection?: (() => void) | null
+  }>(),
+  { extensions: () => [], commentOnSelection: null },
+)
 
-const props = defineProps({
-  file: Object,
-  document: Object,
-  settings: Object,
-  editable: Boolean,
-  yjsDoc: { required: false, default: null },
-  extensions: { type: Array, default: () => [] },
-  comments: Object,
-  newComment: Function,
-  saveComments: Function,
-  rawContent: String,
-})
-const emit = defineEmits(['save', 'editor-change', 'cleanup'])
+const emit = defineEmits<{
+  save: [manual: boolean, html: string | null, done?: () => void]
+  'editor-change': [value: Content]
+  cleanup: []
+}>()
 
-const showSettings = defineModel('showSettings')
-const edited = defineModel('edited')
-const root = useRootStore()
+const edited = defineModel<boolean>('edited')
+const slots = useSlots()
+
+function hasCover() {
+  return !!slots.cover
+}
 
 const localContent = ref(props.rawContent ?? '')
+
 watch(
   () => props.rawContent,
-  (val) => { if (val) localContent.value = val },
+  (val) => {
+    if (val) localContent.value = val
+  },
   { once: true },
 )
 
-const textEditor = ref(null)
+const textEditor = useTemplateRef('textEditor')
 const editor = computed(() => textEditor.value?.editor)
 provide('editor', editor)
 defineExpose({ editor })
 
-const anchors = ref([])
-const activeComment = ref(null)
-const commentsPainted = ref(false)
-const showComments = ref(
-  JSON.parse(localStorage.getItem('show-comments') || 'false'),
-)
-const showResolved = ref(false)
-const showUnanchored = ref(false)
+const anchors = ref<unknown[]>([])
 
-watch(activeComment, () => rebuild(editor.value))
-watch(showComments, (val) => localStorage.setItem('show-comments', val))
+const scrollParent = computed(() => document.querySelector<HTMLElement>('#editor-scroll-container'))
 
-const scrollParent = computed(() =>
-  document.querySelector('#editor-scroll-container'),
-)
+// The format painter keeps its flag in plain editor storage, which Vue does not track
+const { live } = useLiveEditorState(editor)
+const isPainting = live(() => !!editor.value?.storage.styleClipboard?.painting)
+const editorClass = computed(() => [EDITOR_TEXT_CLASS, isPainting.value && 'cursor-crosshair'])
+const isReadOnly = computed(() => !props.editable)
 
-const isPainting = computed(
-  () => !!editor.value?.storage.styleClipboard.styleClipboard,
-)
-
-const showUnanchoredButton = computed(() => {
-  if (!commentsPainted.value) return false
-  return Array.from(props.comments._map).some(
-    ([, value]) =>
-      !document.querySelector(
-        `[data-comment-name='${value.content?.arr?.[0].id}']`,
-      ),
-  )
-})
-
-const commentFilterOptions = computed(() => {
-  const hasResolved = Array.from(props.comments._map).some(
-    ([, value]) => value.content?.arr?.[0].resolved,
-  )
-  return [
-    {
-      label: 'Comments',
-      switch: true,
-      switchValue: showComments.value,
-      onClick: () => (showComments.value = !showComments.value),
-    },
-    hasResolved &&
-    showComments.value && {
-      label: 'Resolved',
-      switch: true,
-      switchValue: showResolved.value,
-      onClick: () => (showResolved.value = !showResolved.value),
-    },
-    showUnanchoredButton.value &&
-    showComments.value && {
-      label: 'Outdated',
-      switch: true,
-      switchValue: showUnanchored.value,
-      onClick: () => (showUnanchored.value = !showUnanchored.value),
-    },
-  ].filter(Boolean)
-})
-
-const onCommentActivated = (id) => {
+function onCommentActivated(id: string) {
   if (!id) return
-  activeComment.value = id
-  showComments.value = true
   const commentEl =
-    document.querySelector(`span[data-comment-name="${id}"]`) ||
-    document.querySelector(`span[data-comment-id="${id}"]`)
+    document.querySelector<HTMLElement>(`span[data-comment-name="${id}"]`) ||
+    document.querySelector<HTMLElement>(`span[data-comment-id="${id}"]`)
   if (commentEl && !commentEl.offsetParent) {
     commentEl.scrollIntoView({
       behavior: 'smooth',
@@ -209,198 +174,80 @@ const onCommentActivated = (id) => {
   }
 }
 
-const hasCollaboration = props.extensions?.some((ext) => ext?.name === 'collaboration')
+const renameDocument = inject(RENAME_DOCUMENT, null)
 
-const editorExtensions = [
-  RichTextKit.configure({
-    starterKit: {
-      trailingNode: { node: 'paragraph', notAfter: 'tab' },
-      paragraph: false,
-      gapcursor: false,
-      ...(hasCollaboration && { undoRedo: false }),
-    },
-    mention: { items: () => allUsers.data ?? [] },
-  }),
-  ...COMMON_EXTENSIONS,
-  CoreEditorExtension,
-  PageBreakExtension,
-  CharacterCount,
-  Selection,
-  CleanStyles.configure({
-    allowProperty: (_prop, value) => value !== '',
-    validators: {
-      lineHeight: (value) => !value.endsWith('%'),
-      fontFamily: (value) => value.trim() !== '""',
-    },
-  }),
-  TabsExtension,
-  TabTrailingNode,
-  JoinAdjacentLists,
-  OldCommentExtension.configure({ onCommentActivated }),
-  TableOfContents.configure({
-    onUpdate: (val) => (anchors.value = val),
-    getIndex: getHierarchicalIndexes,
-    scrollParent: () => scrollParent.value,
-  }),
-  MediaDownload,
-  CommentExtension.configure({
-    comments: props.comments,
-    doc: props.yjsDoc,
-    activeComment,
-    showComments,
-    showResolved,
-    edited,
-    onActivated: onCommentActivated,
-    onDecorationsPainted: () => (commentsPainted.value = true),
-  }),
-  ...props.extensions,
-]
-
-const menuButtons = computed(() =>
-  buildMenuButtons({
-    editor,
-    settings: props.settings,
-    isPainting,
-    openSettings: () => (showSettings.value = true),
-  }),
-)
-
-const bubbleMenuButtons = [
-  {
-    label: 'Comment',
-    icon: 'lucide-message-square-plus',
-    action: () => addComment(),
+const driveDialogs = useDriveDialogs()
+const writerEditorOptions = {
+  isCollaborative: props.collaborative,
+  onCommentActivated,
+  onAnchors: (found: unknown[]) => {
+    anchors.value = found
   },
-]
-
-const bubbleMenuOpts = computed(() =>
-  bubbleMenuOptions({ editor, comments: props.comments }),
-)
-
-const gridStyle = computed(() => ({
-  gridTemplateColumns: `minmax(0, 1fr) minmax(0, ${
-    props.settings?.wide ? '100ch' : '48rem'
-  }) minmax(0, 1fr)`,
-}))
-
-const editorStyle = computed(() => ({
-  fontFamily:
-    props.settings?.font_family && `var(--font-${props.settings.font_family})`,
-  '--editor-font-size': `${props.settings?.font_size || 15}px`,
-  '--editor-line-height': cssLineHeight(props.settings?.line_height),
-  '--paragraph-spacing-before': `${props.settings?.paragraph_spacing_before || 0}px`,
-  '--paragraph-spacing-after': `${props.settings?.paragraph_spacing_after || 0}px`,
-}))
-
-const uploadFunction = (file) => {
-  const fileUpload = useFileUpload()
-  return fileUpload.upload(file, {
-    private: false,
-    params: { file_id: props.file.doc.name },
-    upload_endpoint: `/api/method/suite.writer.api.embed.add`,
-  })
+  scrollParent: () => scrollParent.value!,
+  media: inject(DOCUMENT_MEDIA, null),
+  mentionMenu: MentionMenu,
+  pickDriveFile: async () => {
+    const file = await driveDialogs.pickFile({
+      title: __('Insert from Drive'),
+      action: __('Insert'),
+    })
+    return file && driveFileContent(file)
+  },
 }
 
-const onBackgroundClick = (e) => {
-  if (e.target.tagName === 'DIV') {
+const editorExtensions = [...writerEditorExtensions(writerEditorOptions), ...props.extensions]
+
+const gridStyle = computed(() => editorColumns())
+
+const editorStyle = computed(() => editorTextStyle(props.settings))
+
+function uploadFunction(file: File, options?: Parameters<typeof uploadMedia>[2]) {
+  return uploadMedia(props.file.doc.name, file, options)
+}
+
+function onBackgroundClick(event: MouseEvent) {
+  if (event.target instanceof HTMLElement && event.target.tagName === 'DIV') {
     textEditor.value?.editor?.chain?.().focus?.().run?.()
   }
 }
 
-const handleEditorChange = async (value) => {
+// The owner of `edited` decides what counts as a change. This event also fires
+// when the stored body is first put into the editor, so it marks nothing.
+function handleEditorChange(value: Content) {
   emit('editor-change', value)
-  if (!props.editable || edited.value) return
-  edited.value = true
-  await nextTick()
-  autoversion()
 }
 
-const autoversion = async () => {
-  if (!edited.value) return
-  const html = editor.value.getHTML()?.trim()
-  if (!html || html === '<p></p>') return
-  await props.document.newVersion.submit({ data: html })
-  const err = props.document.newVersion.error
-  if (err && err !== 'Client is offline') {
-    toast.error('Something has gone wrong - please contact support.')
-  }
-}
-const autoversionInterval = setInterval(autoversion, AUTOVERSION_INTERVAL_MS)
+function autorename() {
+  const instance = editor.value
+  if (!instance) return
 
-const autorename = () => {
-  const { $anchor } = editor.value.view.state.selection
+  const { $anchor } = instance.view.state.selection
   const inFirstBlock = $anchor.index(0) === 1 && $anchor.depth === 1
-  if (!inFirstBlock) {
-    const inLastLine =
-      $anchor.depth === 1 &&
-      editor.value.state.doc.childCount - 1 === $anchor.index(0)
-    if (inLastLine) {
-      scrollParent.value.scroll(0, scrollParent.value.scrollHeight)
-    }
-    return
-  }
-  if (!props.file.doc.file_name.startsWith('Untitled Document')) return
+  if (!inFirstBlock) return
+  if (!hasDefaultDocumentTitle(props.file.doc.file_name)) return
 
-  const implicitTitle = editor.value.state.doc.firstChild.textContent
-    .replaceAll('#', '')
+  const implicitTitle = instance.state.doc
+    .firstChild!.textContent.replaceAll('#', '')
     .replaceAll('@', '')
     .slice(0, 30)
     .trim()
   if (!implicitTitle.length) return
 
-  rename.submit(
-    {
-      entity_name: props.file.doc.name,
-      new_title: implicitTitle.slice(0, 100),
-    },
-    {
-      onSuccess: () => {
-        props.file.doc.file_name = rename.params.new_title
-        const crumbs = props.file.doc.breadcrumbs
-        crumbs[crumbs.length - 1].file_name = rename.params.new_title
-        updateURLSlug(rename.params.new_title)
-      },
-    },
-  )
+  renameDocument?.(implicitTitle.slice(0, 100)).catch((error) => {
+    toast.error(error?.message || __('Could not rename this file.'))
+  })
 }
 
-const addComment = () => {
-  if (!props.yjsDoc) {
-    return toast.warning("New comments aren't supported on this doc.", {
-      duration: 1,
-    })
+function addComment() {
+  if (props.commentOnSelection) {
+    return props.commentOnSelection()
   }
-  showComments.value = true
-  const { state } = editor.value
-  const { from, to } = state.selection
-  if (from === to) return
 
-  const id = uuidv4()
-  props.newComment(
-    id,
-    from,
-    to,
-    useSessionStore().user,
-    state.doc.textBetween(from, to, ' '),
-  )
-  activeComment.value = id
-  const tr = state.tr.setSelection(TextSelection.create(state.doc, from))
-  editor.value.view.dispatch(tr)
+  toast.warning(__("New comments aren't supported on this doc."), { duration: 1 })
 }
 
-const manualSave = (func) => emit('save', true, null, func)
-
-const openCommandPalette = (event) => {
-  if (
-    !props.editable ||
-    (!event.metaKey && !event.ctrlKey) ||
-    event.shiftKey ||
-    event.altKey ||
-    event.key.toLowerCase() !== 'k'
-  ) return
-  event.preventDefault()
-  event.stopPropagation()
-  root.paletteOpen = true
+function manualSave(func?: () => void) {
+  emit('save', true, null, func)
 }
 
 onKeyDown('p', (e) => {
@@ -412,25 +259,23 @@ onKeyDown('p', (e) => {
 onKeyDown('s', (e) => {
   if (!props.editable || !isModKey(e) || e.shiftKey) return
   e.preventDefault()
-  manualSave(() => toast.success('Saved document'))
+  manualSave(() => toast.success(__('Saved document')))
 })
 
 onKeyDown('Enter', autorename)
 
 emitter.on('print-file', () => {
   if (editor.value) {
-    printDoc(editor.value.commands.getCurrentTabHTML(), props.settings)
+    printDoc(currentTabHTML(editor.value), props.settings)
   }
 })
-emitter.on('manual-save', manualSave)
 
 onBeforeUnmount(() => {
-  if (edited.value) {
-    emit('save', false, editor.value.getHTML())
+  const instance = editor.value
+  if (edited.value && instance) {
+    emit('save', false, instance.getHTML())
   }
-  clearInterval(autoversionInterval)
   emitter.off('print-file')
-  emitter.off('manual-save')
   emit('cleanup')
 })
 </script>

@@ -1,9 +1,10 @@
-import { describe, it, expect } from 'vitest'
+import { describe, expect, it } from 'vitest'
+
 import { chipColor, chipPaletteColor } from './chip-geometry.js'
 
 describe('chipPaletteColor', () => {
   it('cycles the palette by position', () => {
-    expect(chipPaletteColor(0)).toBe(chipPaletteColor(8))   // 8-colour palette wraps
+    expect(chipPaletteColor(0)).toBe(chipPaletteColor(8)) // 8-colour palette wraps
     expect(chipPaletteColor(0)).not.toBe(chipPaletteColor(1))
   })
 
@@ -15,11 +16,11 @@ describe('chipPaletteColor', () => {
 describe('chipColor', () => {
   const rule = { type: 'list', options: ['Yes', 'No', 'Maybe'], colors: { Yes: '#22c55e' } }
 
-  it('uses the rule\'s custom colour when the option has one', () => {
+  it("uses the rule's custom colour when the option has one", () => {
     expect(chipColor('Yes', rule)).toBe('#22c55e')
   })
 
-  it('falls back to the palette slot for the option\'s position', () => {
+  it("falls back to the palette slot for the option's position", () => {
     expect(chipColor('No', rule)).toBe(chipPaletteColor(1))
     expect(chipColor('Maybe', rule)).toBe(chipPaletteColor(2))
   })

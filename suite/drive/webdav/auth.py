@@ -17,7 +17,7 @@ import hmac
 import secrets
 
 import frappe
-from frappe.auth import LoginAttemptTracker
+from frappe.auth import LoginAttemptTracker, validate_ip_address
 from frappe.utils import cint
 from frappe.utils.password import check_password, get_decrypted_password, passlibctx
 from werkzeug.wrappers import Request
@@ -60,6 +60,7 @@ def authenticate(request: Request) -> str:
         # API credentials are their own factor: the 2FA and
         # disable_user_pass_login gates below govern password logins only
         if _api_secret_valid(api_user.name, password) and cint(api_user.enabled):
+            _validate_ip_policy(api_user.name)
             for tracker in trackers:
                 tracker.add_success_attempt()
             return api_user.name
@@ -70,6 +71,10 @@ def authenticate(request: Request) -> str:
 
     if frappe.get_system_settings("disable_user_pass_login"):
         raise Forbidden("Password login is disabled on this site, so WebDAV is unavailable.")
+
+    from suite import mail
+
+    user = mail.resolve_business_user(user) or user
 
     canonical = _verify_cached(user, password)
     verified_now = False
@@ -103,12 +108,23 @@ def authenticate(request: Request) -> str:
         _delete_cache(user)
         raise _challenge("Incorrect user or password.")
 
+    _validate_ip_policy(canonical)
+
     # only cache credentials that are actually allowed to authenticate
     if verified_now:
         _store_cache(user, password, canonical)
     for tracker in trackers:
         tracker.add_success_attempt()
     return canonical
+
+
+def _validate_ip_policy(user: str) -> None:
+    # DAV returns before frappe.validate_auth, so enforce its policy here,
+    # before accepting identity or resetting counters, including on cache hits.
+    try:
+        validate_ip_address(user)
+    except frappe.AuthenticationError:
+        raise _challenge("Incorrect user or password.") from None
 
 
 def _parse_basic(header: str | None) -> tuple[str, str] | None:
@@ -119,7 +135,7 @@ def _parse_basic(header: str | None) -> tuple[str, str] | None:
         return None
     try:
         raw = base64.b64decode(token.strip())
-    except (binascii.Error, ValueError):
+    except binascii.Error, ValueError:
         return None
     try:
         decoded = raw.decode("utf-8")
@@ -230,7 +246,7 @@ def _verify_cached(user: str, password: str) -> str | None:
     try:
         salt_hex, digest_hex, fingerprint, canonical = payload.split(":", 3)
         digest = hmac.new(bytes.fromhex(salt_hex), password.encode("utf-8"), hashlib.sha256)
-    except (ValueError, AttributeError):
+    except ValueError, AttributeError:
         return None
     if not hmac.compare_digest(digest.hexdigest(), digest_hex):
         return None

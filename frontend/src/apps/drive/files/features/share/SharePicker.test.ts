@@ -1,0 +1,252 @@
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createApp, defineComponent, h, type PropType } from 'vue'
+
+import type { PeopleGetOutput } from '@/platform/transport/generated'
+
+import type { PickedPerson } from './shareModel'
+import SharePicker from './SharePicker.vue'
+
+vi.mock('frappe-ui', async () => ({
+  ...(await import('../../../../../../../node_modules/frappe-ui/src/components/Button')),
+  ...(await import('../../../../../../../node_modules/frappe-ui/src/components/Checkbox')),
+  ...(await import('../../../../../../../node_modules/frappe-ui/src/components/Combobox')),
+  ...(await import('../../../../../../../node_modules/frappe-ui/src/components/Select')),
+  // The menu's items show beside its trigger, so a test can choose one.
+  Dropdown: defineComponent({
+    props: {
+      options: {
+        type: fromPartial<
+          PropType<Array<{ options: Array<{ label: string; onClick: () => unknown }> }>>
+        >(Array),
+        default: () => [],
+      },
+    },
+    setup:
+      (props, { slots }) =>
+      () =>
+        h('div', [
+          slots.default?.(),
+          h(
+            'menu',
+            props.options
+              .flatMap((group) => group.options)
+              .map((item) => h('button', { role: 'menuitem', onClick: item.onClick }, item.label)),
+          ),
+        ]),
+  }),
+}))
+
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
+const directoryRequest = vi.hoisted(() =>
+  vi
+    .fn<(operation: unknown, input?: { q?: string }) => Promise<PeopleGetOutput>>()
+    .mockResolvedValue({ rows: [], next_cursor: null }),
+)
+vi.mock('@/platform/transport', async (actual) => ({
+  ...(await actual<typeof import('@/platform/transport')>()),
+  transport: { request: directoryRequest },
+}))
+
+const directory: PeopleGetOutput = {
+  rows: [
+    {
+      kind: 'user',
+      name: 'maya@example.com',
+      email: 'maya@example.com',
+      full_name: 'Maya Fernandes',
+      user_image: null,
+    },
+    {
+      kind: 'user',
+      name: 'leah@example.com',
+      email: 'leah@example.com',
+      full_name: 'Leah Thomas',
+      user_image: null,
+    },
+  ],
+  next_cursor: null,
+}
+beforeEach(() => directoryRequest.mockReset().mockResolvedValue(directory))
+
+let cleanup: (() => void) | undefined
+afterEach(() => cleanup?.())
+// jsdom has no scrolling; the list scrolls the highlighted row into view.
+beforeAll(() => {
+  Element.prototype.scrollIntoView = () => {}
+  return () => delete fromPartial<Partial<Element>>(Element.prototype).scrollIntoView
+})
+
+function mountPicker(
+  share: (
+    people: PickedPerson[],
+    role: number,
+    notify: boolean,
+  ) => Promise<PickedPerson[]> = async () => [],
+  nodeKind = 'file',
+) {
+  const root = document.createElement('div')
+  document.body.append(root)
+  const app = createApp({
+    setup: () => () => h(SharePicker, { nodeKind, share }),
+  })
+  app.mount(root)
+  cleanup = () => {
+    app.unmount()
+    root.remove()
+  }
+  return root.querySelector<HTMLInputElement>('input[aria-label^="Add people"]')!
+}
+
+async function type(input: HTMLInputElement, text: string) {
+  input.focus()
+  input.value = text
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+  return vi.waitFor(() => {
+    const options = [...document.querySelectorAll<HTMLElement>('[role="option"]')]
+    expect(options.length).toBeGreaterThan(0)
+    return options
+  })
+}
+
+/** A pointer pick: the browser moves focus to the row before the click lands. */
+function clickRow(options: HTMLElement[], label: string) {
+  const row = options.find((option) => option.textContent?.includes(label))!
+  row.tabIndex = -1
+  row.focus()
+  row.click()
+}
+
+const staged = () =>
+  [...document.querySelectorAll('[aria-label="People to add"] li')].map((item) =>
+    item.querySelector('p')?.textContent?.trim(),
+  )
+
+describe('Share picker', () => {
+  it('says the same on screen and to a screen reader: emails too, except on a root, which holds no links', async () => {
+    const offersLink = (options: HTMLElement[]) =>
+      options.some((option) => option.textContent?.includes('Send a link to new@example.com'))
+
+    const field = mountPicker()
+    expect(field.placeholder).toBe('Add people, groups or emails')
+    expect(field.getAttribute('aria-label')).toBe('Add people, groups or emails')
+    expect(offersLink(await type(field, 'new@example.com'))).toBe(true)
+    cleanup?.()
+
+    const rootField = mountPicker(undefined, 'root')
+    expect(rootField.placeholder).toBe('Add people or groups')
+    expect(rootField.getAttribute('aria-label')).toBe('Add people or groups')
+    expect(offersLink(await type(rootField, 'new@example.com'))).toBe(false)
+  })
+
+  it('closes suggestions after a pick so the person shows, keeping search focused for the next pick', async () => {
+    const input = mountPicker()
+
+    expect(document.querySelector('[aria-label^="Access for people you add"]')).toBeNull()
+    clickRow(await type(input, 'ma'), 'Maya Fernandes')
+    await vi.waitFor(() => {
+      expect(staged()).toEqual(['Maya Fernandes'])
+      expect(document.activeElement).toBe(input)
+      expect(input.value).toBe('')
+      expect(input.getAttribute('aria-expanded')).toBe('false')
+      expect(document.querySelector('[aria-label^="Access for people you add"]')).not.toBeNull()
+    })
+
+    clickRow(await type(input, 'le'), 'Leah Thomas')
+    await vi.waitFor(() => expect(staged()).toEqual(['Maya Fernandes', 'Leah Thomas']))
+    expect(document.activeElement).toBe(input)
+  })
+  it('shares selected recipients with notification off, retaining only failed recipients', async () => {
+    const share = vi.fn(async (people: PickedPerson[]) =>
+      people.filter((person) => person.principal === 'leah@example.com'),
+    )
+    const input = mountPicker(share)
+    clickRow(await type(input, 'ma'), 'Maya Fernandes')
+    await vi.waitFor(() => expect(staged()).toEqual(['Maya Fernandes']))
+    clickRow(await type(input, 'le'), 'Leah Thomas')
+    await vi.waitFor(() => expect(staged()).toEqual(['Maya Fernandes', 'Leah Thomas']))
+
+    const notify = document.querySelector<HTMLInputElement>('input[type="checkbox"]')!
+    expect(notify.checked).toBe(true)
+    notify.click()
+    const submit = [...document.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent?.trim() === 'Share',
+    )!
+    submit.click()
+
+    await vi.waitFor(() => expect(staged()).toEqual(['Leah Thomas']))
+    expect(share).toHaveBeenCalledWith(
+      [
+        {
+          principal: 'maya@example.com',
+          kind: 'user',
+          label: 'Maya Fernandes',
+          name: 'Maya Fernandes',
+        },
+        { principal: 'leah@example.com', kind: 'user', label: 'Leah Thomas', name: 'Leah Thomas' },
+      ],
+      10,
+      false,
+    )
+    document.querySelector<HTMLButtonElement>('[aria-label="Remove Leah Thomas"]')!.click()
+    await vi.waitFor(() => expect(staged()).toEqual([]))
+    expect(document.querySelector('input[type="checkbox"]')).toBeNull()
+    expect(document.querySelector('[aria-label^="Access for people you add"]')).toBeNull()
+  })
+  it('shares with the role chosen from the access menu, which names the current role', async () => {
+    const share = vi.fn(async () => [])
+    const input = mountPicker(share)
+    clickRow(await type(input, 'ma'), 'Maya Fernandes')
+    await vi.waitFor(() => expect(staged()).toEqual(['Maya Fernandes']))
+    const access = () =>
+      document.querySelector<HTMLButtonElement>('[aria-label^="Access for people you add"]')!
+    expect(access().getAttribute('aria-label')).toBe('Access for people you add: View')
+
+    const menu = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+    expect(menu.map((item) => item.textContent)).toEqual(['View', 'Comment', 'Edit', 'Manage'])
+    menu.find((item) => item.textContent === 'Edit')!.click()
+    await vi.waitFor(() =>
+      expect(access().getAttribute('aria-label')).toBe('Access for people you add: Edit'),
+    )
+    ;[...document.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent?.trim() === 'Share')!
+      .click()
+
+    await vi.waitFor(() => expect(share).toHaveBeenCalledWith(expect.any(Array), 40, true))
+  })
+  it('keeps visible results during search and ignores a response after the query changes', async () => {
+    let finishOld: ((page: PeopleGetOutput) => void) | undefined
+    let finishLatest: ((page: PeopleGetOutput) => void) | undefined
+    directoryRequest.mockImplementation(async (_operation, input) => {
+      if (input?.q === 'older')
+        return new Promise((resolve) => {
+          finishOld = resolve
+        })
+      if (input?.q === 'latest')
+        return new Promise((resolve) => {
+          finishLatest = resolve
+        })
+      return directory
+    })
+    const input = mountPicker()
+    await type(input, 'ma')
+    await vi.waitFor(() => expect(document.querySelectorAll('[role="option"]')).toHaveLength(2))
+    await type(input, 'older')
+    await vi.waitFor(() => expect(finishOld).toBeDefined())
+    expect(document.querySelectorAll('[role="option"]')).toHaveLength(2)
+
+    // Resolve the old request before the next debounced request starts.
+    await type(input, 'latest')
+    finishOld?.({ rows: [], next_cursor: null })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(document.querySelectorAll('[role="option"]')).toHaveLength(2)
+    await vi.waitFor(() => expect(finishLatest).toBeDefined())
+    expect(document.querySelectorAll('[role="option"]')).toHaveLength(2)
+    finishLatest?.({ rows: directory.rows.slice(1), next_cursor: null })
+    await vi.waitFor(() => {
+      const options = document.querySelectorAll('[role="option"]')
+      expect(options).toHaveLength(1)
+      expect(options[0]?.textContent).toContain('Leah Thomas')
+    })
+  })
+})

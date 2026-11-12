@@ -1,10 +1,14 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { fromAny } from '@total-typescript/shoehorn'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { Ref } from 'vue'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
 vi.mock('@/apps/slides/router', () => ({ router: { replace: () => Promise.resolve() } }))
 
 const { addTableElement, getEmptyTableCells } = await import('./element')
-const { slides, slideIndex, slideBounds } = await import('./slide')
+const { slides: storeSlides, slideIndex, slideBounds } = await import('./slide')
+// the store types each slide's fields as unknown, and these tests read them
+const slides = fromAny<Ref<any[]>, unknown>(storeSlides)
 const { useCommandHistory } = await import('@/apps/slides/composables/useCommandHistory')
 const { actionOrder, actions, setCommandHistory } = await import('./historyMeta')
 const { getTableWidth } = await import('@/apps/slides/utils/tableWidths')
@@ -12,34 +16,34 @@ const { getTableWidth } = await import('@/apps/slides/utils/tableWidths')
 const inserted = () => slides.value[0].elements[0]
 
 beforeEach(() => {
-	setCommandHistory(useCommandHistory(slides, { actionOrder, actions }))
-	slides.value = [{ clientId: 'c1', background: '#ffffff', elements: [] }] as any
-	slideIndex.value = 0
-	Object.assign(slideBounds, { width: 960, height: 540, scale: 1 })
+  setCommandHistory(useCommandHistory(slides, { actionOrder, actions }))
+  slides.value = [{ clientId: 'c1', background: '#ffffff', elements: [] }]
+  slideIndex.value = 0
+  Object.assign(slideBounds, { width: 960, height: 540, scale: 1 })
 })
 
 describe('addTableElement', () => {
-	it('keeps a column at its default width while the table fits', async () => {
-		await addTableElement(getEmptyTableCells(3, 3))
+  it('keeps a column at its default width while the table fits', async () => {
+    await addTableElement(getEmptyTableCells(3, 3))
 
-		expect(inserted().width).toBe(450)
-		expect(getTableWidth(inserted().content)).toBe(450)
-	})
+    expect(inserted().width).toBe(450)
+    expect(getTableWidth(inserted().content)).toBe(450)
+  })
 
-	// the widest the size picker offers, which at the default column width would be
-	// centred at left: -120 and hang off both edges of the slide
-	it('narrows the columns of a table that would not fit', async () => {
-		await addTableElement(getEmptyTableCells(3, 8))
+  // the widest the size picker offers, which at the default column width would be
+  // centred at left: -120 and hang off both edges of the slide
+  it('narrows the columns of a table that would not fit', async () => {
+    await addTableElement(getEmptyTableCells(3, 8))
 
-		expect(inserted().width).toBe(960)
-		expect(inserted().left).toBe(0)
-		expect(getTableWidth(inserted().content)).toBe(960)
-	})
+    expect(inserted().width).toBe(960)
+    expect(inserted().left).toBe(0)
+    expect(getTableWidth(inserted().content)).toBe(960)
+  })
 
-	it('narrows them by whole pixels, so the frame lands on the columns', async () => {
-		await addTableElement(getEmptyTableCells(3, 7))
+  it('narrows them by whole pixels, so the frame lands on the columns', async () => {
+    await addTableElement(getEmptyTableCells(3, 7))
 
-		expect(inserted().width).toBe(getTableWidth(inserted().content))
-		expect(inserted().left).toBeGreaterThanOrEqual(0)
-	})
+    expect(inserted().width).toBe(getTableWidth(inserted().content))
+    expect(inserted().left).toBeGreaterThanOrEqual(0)
+  })
 })

@@ -1,21 +1,22 @@
-import { describe, it, expect, afterEach, vi } from 'vitest'
 import { AlignmentType, LevelFormat } from 'docx'
-import { pxToTwips, toDocxLine } from '@/apps/writer/utils/typography'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
 import {
-  cssColorToDocx,
-  cssBackgroundToDocx,
-  cssFontToDocx,
-  pxToDocxSize,
-  cssFontWeightToBold,
-  resolveAlignment,
-  clampSpan,
-  resolveHref,
-  fitImageSize,
-  paragraphSpacing,
   buildListLevels,
-  randomId,
-  countCols,
+  clampSpan,
   computeColumnWidths,
+  countCols,
+  cssBackgroundToDocx,
+  cssColorToDocx,
+  cssFontToDocx,
+  cssFontWeightToBold,
+  fitImageSize,
+  imageType,
+  paragraphSpacing,
+  pxToDocxSize,
+  randomId,
+  resolveAlignment,
+  resolveHref,
 } from './docxexporter.js'
 
 // Tiny duck-typed stand-ins for the DOM elements these helpers read from —
@@ -249,17 +250,17 @@ describe('paragraphSpacing — paragraph-level style overrides document defaults
   })
   it('marginTop overrides "before"; marginBottom and line are untouched', () => {
     const result = paragraphSpacing({ style: { marginTop: '10px' } }, defaults)
-    expect(result.before).toBe(pxToTwips('10px'))
+    expect(result.before).toBe(150)
     expect(result.after).toBe(defaults.after)
     expect(result.line).toBe(defaults.line)
   })
   it('marginBottom overrides "after"', () => {
     const result = paragraphSpacing({ style: { marginBottom: '5px' } }, defaults)
-    expect(result.after).toBe(pxToTwips('5px'))
+    expect(result.after).toBe(75)
   })
   it('lineHeight overrides "line"', () => {
     const result = paragraphSpacing({ style: { lineHeight: '1.5' } }, defaults)
-    expect(result.line).toBe(toDocxLine('1.5'))
+    expect(result.line).toBe(300)
   })
   it('lineRule is always "auto", regardless of overrides', () => {
     expect(paragraphSpacing({ style: { marginTop: '1px' } }, defaults).lineRule).toBe('auto')
@@ -302,7 +303,7 @@ describe('buildListLevels — numbering definition for a <ul>/<ol>', () => {
       expect(l.style.run.size).toBe(28)
     }
   })
-  it('carries the given font into every level\'s run style', () => {
+  it("carries the given font into every level's run style", () => {
     const { levels } = buildListLevels('r', 'bullets', 'Comic Sans MS')
     expect(levels.every((l) => l.style.run.font === 'Comic Sans MS')).toBe(true)
   })
@@ -397,7 +398,7 @@ describe('computeColumnWidths — resized colwidth attrs → proportional dxa wi
     ]
     expect(computeColumnWidths(trs, 4, 10000)).toEqual([1000, 2000, 3000, 4000])
   })
-  it('the first row to report a column\'s width wins — a later row reporting a different width for the same column is ignored, not overwritten', () => {
+  it("the first row to report a column's width wins — a later row reporting a different width for the same column is ignored, not overwritten", () => {
     const trs = [
       fakeRow([fakeEl({ colwidth: '100' }), fakeEl({ colwidth: '200' })]),
       fakeRow([fakeEl({ colwidth: '999' })]),
@@ -418,5 +419,21 @@ describe('computeColumnWidths — resized colwidth attrs → proportional dxa wi
       fakeRow([fakeEl({ colspan: '2', colwidth: '300,abc' }), fakeEl({ colwidth: '100' })]),
     ]
     expect(computeColumnWidths(trs, 3, 7500)).toEqual([3214, 3214, 1071])
+  })
+})
+
+describe('imageType — the format Word is told, read from the file itself', () => {
+  it('names the formats Word embeds by their leading bytes', () => {
+    expect(imageType(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))).toBe('png')
+    expect(imageType(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]))).toBe('jpg')
+    expect(imageType(new TextEncoder().encode('GIF89a'))).toBe('gif')
+    expect(imageType(new TextEncoder().encode('BM6'))).toBe('bmp')
+  })
+
+  it('names nothing for a format Word cannot embed', () => {
+    expect(imageType(new TextEncoder().encode('RIFF\0\0\0\0WEBP'))).toBeNull()
+    expect(
+      imageType(new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"/>')),
+    ).toBeNull()
   })
 })

@@ -196,7 +196,7 @@ def get_mailbox(account: str, id: str, raise_exception: bool = False) -> dict | 
     if raise_exception:
         frappe.throw(
             _("Mailbox with ID {0} not found in account {1}.").format(frappe.bold(id), frappe.bold(account)),
-            title=_("Mailbox Not Found"),
+            title=_("Folder Not Found"),
         )
 
 
@@ -214,7 +214,7 @@ def update_mailbox(
 
     title = _("Mailbox Update Error")
     if parent and id == parent:
-        frappe.throw(_("Mailbox cannot be a parent of itself."), title=title)
+        frappe.throw(_("A folder cannot be inside itself."), title=title)
 
     mailbox = {
         "name": name,

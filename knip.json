@@ -3,42 +3,67 @@
   "ignore": [
     "frappe-ui/**"
   ],
+  "ignoreIssues": {
+    "e2e/meet/network/run.mjs": ["unlisted"]
+  },
   "tags": [
     "-lintignore"
   ],
   "workspaces": {
     ".": {
-      "entry": ["realtime/handlers.js", "suite/public/js/ff_integration.bundle.js", "suite/public/js/file.js"],
-      "project": ["realtime/**/*.js", "suite/public/js/**/*.{js,ts,vue}", "suite/meet/type-policy/**/*.mjs"],
-      "github-actions": false
-    },
-    "frontend": {
       "entry": [
-        "recorder/main.ts",
-        "recorder/frappeUi.ts",
-        "src/apps/mail/sw.ts",
-        "src/apps/sheets/engine/difftest/compare-engines.js",
-        "src/apps/sheets/engine/difftest/run.js",
+        "realtime/handlers.js",
+        "suite/public/js/ff_integration.bundle.js",
+        "suite/public/js/file.js",
+        "frontend/recorder/main.ts",
+        "frontend/recorder/frappeUi.ts",
+        "frontend/src/apps/mail/sw.ts",
+        "frontend/src/apps/writer/collab/checker-entry.ts",
+        "frontend/src/apps/sheets/collab/checker-entry.ts",
+        "frontend/src/apps/sheets/collab/converter-entry.ts",
+        "frontend/src/apps/sheets/engine/difftest/compare-engines.js",
+        "frontend/src/apps/sheets/engine/difftest/run.js",
         "scripts/generate-pwa-assets.mjs"
       ],
-      "project": ["src/**/*.{js,ts,tsx,vue}", "recorder/**/*.{js,ts,tsx,vue}", "scripts/**/*.{js,mjs,cjs,ts}", "*.{js,mjs,cjs,ts}"],
+      "project": [
+        "realtime/**/*.js",
+        "suite/public/js/**/*.{js,ts,vue}",
+        "suite/meet/type-policy/**/*.mjs",
+        "frontend/src/**/*.{js,ts,tsx,vue}",
+        "frontend/recorder/**/*.{js,ts,tsx,vue}",
+        "scripts/**/*.{js,mjs,cjs,ts}",
+        "*.{js,mjs,cjs,ts}"
+      ],
       "ignoreDependencies": ["@workadventure/noise-suppression", "@noble/hashes", "hyperformula"],
-      "ignoreUnresolved": ["~icons/lucide/*", "unplugin-icons/types/vue"]
+      "ignoreUnresolved": ["~icons/lucide/*", "unplugin-icons/types/vue"],
+      "github-actions": false
     },
     "e2e": {
       "entry": [
         "drive-backed-apps/global-setup.ts",
         "drive-backed-apps/global-teardown.ts",
         "meet/global-setup.ts",
+        "meet/captions/global-setup.ts",
         "meet/load/client.ts",
-        "meet/load/*.test.mjs"
+        "meet/load/*.test.mjs",
+        "meet/network/run.mjs",
+        "meet/network/*.test.mjs",
+        "meet/network/compare.mjs",
+        "meet/network/frappeUi.ts",
+        "unified-frontend/global-setup.ts"
       ],
       "project": [
         "shared/**/*.ts",
         "drive-backed-apps/**/*.ts",
-        "meet/**/*.{ts,mjs}"
+        "meet/**/*.{ts,mjs}",
+        "unified-frontend/**/*.ts"
       ],
-      "playwright": {"config": ["{drive-backed-apps,meet}/playwright.config.ts"]}
+      "playwright": {
+        "config": [
+          "{drive-backed-apps,meet}/playwright.config.ts",
+          "unified-frontend/{shell,files}/playwright.config.ts"
+        ]
+      }
     },
     "suite/meet/sfu-server": {
       "entry": ["src/server/RecordingGrantPersistenceFile.ts"],
@@ -48,9 +73,6 @@
     "suite/meet/recorder-server": {
       "entry": ["src/integration/*.integration.ts"],
       "project": ["src/**/*.ts"]
-    },
-    "suite/sheets/collab-server": {
-      "project": ["*.js", "test/**/*.js"]
     }
   }
 }

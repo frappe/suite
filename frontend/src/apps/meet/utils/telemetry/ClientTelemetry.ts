@@ -1,178 +1,178 @@
-import type { MeetingRecoveryState } from "../../composables/useParticipantConnectionState";
-import type { MediaRepairTelemetry } from "../sfu/ExpectedMediaReconciler";
+import type { MeetingRecoveryState } from '../../composables/useParticipantConnectionState'
+import type { MediaRepairTelemetry } from '../sfu/ExpectedMediaReconciler'
 
 export type ClientTelemetryEvent =
-	| {
-			event: "first_remote_media";
-			media: "audio" | "video";
-			durationMs: number;
-	  }
-	| { event: "media_stall"; media: "audio" | "video" }
-	| {
-			event: "recovery";
-			direction: "send" | "recv" | "both";
-			trigger: "signaling" | "ice" | "stall";
-			outcome: "success" | "failure";
-			durationMs: number;
-	  }
-	| {
-			event: "recovery_exhausted";
-			subsystem: "signaling" | "transport" | "consumer";
-			direction: "send" | "recv" | "both";
-			reason: "retry_limit" | "restart_failed" | "rebuild_failed";
-	  }
-	| {
-			event: "network_quality";
-			rttMs: number;
-			packetLossPercent: number;
-			availableOutgoingBitrate: number;
-	  }
-	| ({ event: "media_repair" } & MediaRepairTelemetry);
+  | {
+      event: 'first_remote_media'
+      media: 'audio' | 'video'
+      durationMs: number
+    }
+  | { event: 'media_stall'; media: 'audio' | 'video' }
+  | {
+      event: 'recovery'
+      direction: 'send' | 'recv' | 'both'
+      trigger: 'signaling' | 'ice' | 'stall'
+      outcome: 'success' | 'failure'
+      durationMs: number
+    }
+  | {
+      event: 'recovery_exhausted'
+      subsystem: 'signaling' | 'transport' | 'consumer'
+      direction: 'send' | 'recv' | 'both'
+      reason: 'retry_limit' | 'restart_failed' | 'rebuild_failed'
+    }
+  | {
+      event: 'network_quality'
+      rttMs: number
+      packetLossPercent: number
+      availableOutgoingBitrate: number
+    }
+  | ({ event: 'media_repair' } & MediaRepairTelemetry)
 
 type TelemetryClient = {
-	sendClientTelemetry(event: ClientTelemetryEvent): void;
-};
+  sendClientTelemetry(event: ClientTelemetryEvent): void
+}
 
-const SAMPLE_RATE = 0.05;
-const reporters = new WeakMap<object, ClientTelemetry>();
+const SAMPLE_RATE = 0.05
+const reporters = new WeakMap<object, ClientTelemetry>()
 
 export class ClientTelemetry {
-	private startedAt: number;
-	private recoveryStartedAt: number | null = null;
-	private recoveryDirections = new Set<"send" | "recv">();
-	private recoveryTrigger: "signaling" | "ice" | "stall" = "ice";
-	private firstMedia = new Set<"audio" | "video">();
-	private lastNetworkReportAt = Number.NEGATIVE_INFINITY;
+  private startedAt: number
+  private recoveryStartedAt: number | null = null
+  private recoveryDirections = new Set<'send' | 'recv'>()
+  private recoveryTrigger: 'signaling' | 'ice' | 'stall' = 'ice'
+  private firstMedia = new Set<'audio' | 'video'>()
+  private lastNetworkReportAt = Number.NEGATIVE_INFINITY
 
-	constructor(
-		private client: TelemetryClient,
-		private sampled = Math.random() < SAMPLE_RATE,
-		private now: () => number = () => performance.now(),
-	) {
-		this.startedAt = this.now();
-	}
+  constructor(
+    private client: TelemetryClient,
+    private sampled = Math.random() < SAMPLE_RATE,
+    private now: () => number = () => performance.now(),
+  ) {
+    this.startedAt = this.now()
+  }
 
-	startSession(): void {
-		this.startedAt = this.now();
-		this.firstMedia.clear();
-		this.recoveryStartedAt = null;
-		this.recoveryDirections.clear();
-		this.recoveryTrigger = "ice";
-	}
+  startSession(): void {
+    this.startedAt = this.now()
+    this.firstMedia.clear()
+    this.recoveryStartedAt = null
+    this.recoveryDirections.clear()
+    this.recoveryTrigger = 'ice'
+  }
 
-	markFirstRemoteMedia(media: "audio" | "video"): void {
-		if (this.firstMedia.has(media)) return;
-		this.firstMedia.add(media);
-		this.send({
-			event: "first_remote_media",
-			media,
-			durationMs: this.elapsed(this.startedAt),
-		});
-	}
+  markFirstRemoteMedia(media: 'audio' | 'video'): void {
+    if (this.firstMedia.has(media)) return
+    this.firstMedia.add(media)
+    this.send({
+      event: 'first_remote_media',
+      media,
+      durationMs: this.elapsed(this.startedAt),
+    })
+  }
 
-	reportMediaStalls(media: Iterable<"audio" | "video">): void {
-		for (const kind of new Set(media)) {
-			this.send({ event: "media_stall", media: kind });
-		}
-	}
+  reportMediaStalls(media: Iterable<'audio' | 'video'>): void {
+    for (const kind of new Set(media)) {
+      this.send({ event: 'media_stall', media: kind })
+    }
+  }
 
-	reportRecoveryExhausted(event: Omit<Extract<ClientTelemetryEvent, {
-		event: "recovery_exhausted";
-	}>, "event">): void {
-		this.send({ event: "recovery_exhausted", ...event });
-	}
+  reportRecoveryExhausted(
+    event: Omit<
+      Extract<
+        ClientTelemetryEvent,
+        {
+          event: 'recovery_exhausted'
+        }
+      >,
+      'event'
+    >,
+  ): void {
+    this.send({ event: 'recovery_exhausted', ...event })
+  }
 
-	reportMediaRepair(event: MediaRepairTelemetry): void {
-		this.send({ event: "media_repair", ...event });
-	}
+  reportMediaRepair(event: MediaRepairTelemetry): void {
+    this.send({ event: 'media_repair', ...event })
+  }
 
-	reportNetworkQuality(stats: {
-		rtt: number;
-		packetLoss: number;
-		availableOutgoingBitrate: number;
-	}): void {
-		const now = this.now();
-		if (now - this.lastNetworkReportAt < 15_000) return;
-		this.lastNetworkReportAt = now;
-		this.send({
-			event: "network_quality",
-			rttMs: this.bounded(stats.rtt, 60_000),
-			packetLossPercent: this.bounded(stats.packetLoss, 100),
-			availableOutgoingBitrate: this.bounded(
-				stats.availableOutgoingBitrate,
-				100_000_000,
-			),
-		});
-	}
+  reportNetworkQuality(stats: {
+    rtt: number
+    packetLoss: number
+    availableOutgoingBitrate: number
+  }): void {
+    const now = this.now()
+    if (now - this.lastNetworkReportAt < 15_000) return
+    this.lastNetworkReportAt = now
+    this.send({
+      event: 'network_quality',
+      rttMs: this.bounded(stats.rtt, 60_000),
+      packetLossPercent: this.bounded(stats.packetLoss, 100),
+      availableOutgoingBitrate: this.bounded(stats.availableOutgoingBitrate, 100_000_000),
+    })
+  }
 
-	recordRecoveryState(
-		state: MeetingRecoveryState,
-		detail?: string,
-	): void {
-		if (state === "healthy" || state === "failed") {
-			if (this.recoveryStartedAt === null) return;
-			this.send({
-				event: "recovery",
-				direction: this.recoveryDirection(),
-				trigger: this.recoveryTrigger,
-				outcome: state === "healthy" ? "success" : "failure",
-				durationMs: this.elapsed(this.recoveryStartedAt),
-			});
-			if (state === "failed") {
-				this.reportRecoveryExhausted({
-					subsystem:
-						this.recoveryTrigger === "signaling" ? "signaling" : "transport",
-					direction: this.recoveryDirection(),
-					reason:
-						this.recoveryTrigger === "signaling" ? "retry_limit" : "rebuild_failed",
-				});
-			}
-			this.recoveryStartedAt = null;
-			this.recoveryDirections.clear();
-			this.recoveryTrigger = "ice";
-			return;
-		}
+  recordRecoveryState(state: MeetingRecoveryState, detail?: string): void {
+    if (state === 'healthy' || state === 'failed') {
+      if (this.recoveryStartedAt === null) return
+      this.send({
+        event: 'recovery',
+        direction: this.recoveryDirection(),
+        trigger: this.recoveryTrigger,
+        outcome: state === 'healthy' ? 'success' : 'failure',
+        durationMs: this.elapsed(this.recoveryStartedAt),
+      })
+      if (state === 'failed') {
+        this.reportRecoveryExhausted({
+          subsystem: this.recoveryTrigger === 'signaling' ? 'signaling' : 'transport',
+          direction: this.recoveryDirection(),
+          reason: this.recoveryTrigger === 'signaling' ? 'retry_limit' : 'rebuild_failed',
+        })
+      }
+      this.recoveryStartedAt = null
+      this.recoveryDirections.clear()
+      this.recoveryTrigger = 'ice'
+      return
+    }
 
-		this.recoveryStartedAt ??= this.now();
-		if (state === "recovering_send") this.recoveryDirections.add("send");
-		if (state === "recovering_receive") this.recoveryDirections.add("recv");
-		if (state === "reconnecting" || state === "rejoining") {
-			this.recoveryDirections.add("send");
-			this.recoveryDirections.add("recv");
-			this.recoveryTrigger = "signaling";
-		} else if (detail?.startsWith("consumer_stall_")) {
-			this.recoveryTrigger = "stall";
-		}
-	}
+    this.recoveryStartedAt ??= this.now()
+    if (state === 'recovering_send') this.recoveryDirections.add('send')
+    if (state === 'recovering_receive') this.recoveryDirections.add('recv')
+    if (state === 'reconnecting' || state === 'rejoining') {
+      this.recoveryDirections.add('send')
+      this.recoveryDirections.add('recv')
+      this.recoveryTrigger = 'signaling'
+    } else if (detail?.startsWith('consumer_stall_')) {
+      this.recoveryTrigger = 'stall'
+    }
+  }
 
-	private recoveryDirection(): "send" | "recv" | "both" {
-		if (this.recoveryDirections.size !== 1) return "both";
-		return this.recoveryDirections.has("send") ? "send" : "recv";
-	}
+  private recoveryDirection(): 'send' | 'recv' | 'both' {
+    if (this.recoveryDirections.size !== 1) return 'both'
+    return this.recoveryDirections.has('send') ? 'send' : 'recv'
+  }
 
-	private elapsed(startedAt: number): number {
-		return Math.max(0, Math.min(300_000, Math.round(this.now() - startedAt)));
-	}
+  private elapsed(startedAt: number): number {
+    return Math.max(0, Math.min(300_000, Math.round(this.now() - startedAt)))
+  }
 
-	private bounded(value: number, maximum: number): number {
-		return Number.isFinite(value) ? Math.max(0, Math.min(maximum, value)) : 0;
-	}
+  private bounded(value: number, maximum: number): number {
+    return Number.isFinite(value) ? Math.max(0, Math.min(maximum, value)) : 0
+  }
 
-	private send(event: ClientTelemetryEvent): void {
-		if (!this.sampled) return;
-		try {
-			this.client.sendClientTelemetry(event);
-		} catch {
-			// Telemetry must never affect the meeting.
-		}
-	}
+  private send(event: ClientTelemetryEvent): void {
+    if (!this.sampled) return
+    try {
+      this.client.sendClientTelemetry(event)
+    } catch {
+      // Telemetry must never affect the meeting.
+    }
+  }
 }
 
 export function getClientTelemetry(client: TelemetryClient & object): ClientTelemetry {
-	let reporter = reporters.get(client);
-	if (!reporter) {
-		reporter = new ClientTelemetry(client);
-		reporters.set(client, reporter);
-	}
-	return reporter;
+  let reporter = reporters.get(client)
+  if (!reporter) {
+    reporter = new ClientTelemetry(client)
+    reporters.set(client, reporter)
+  }
+  return reporter
 }

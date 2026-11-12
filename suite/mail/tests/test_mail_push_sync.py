@@ -126,6 +126,74 @@ class FetchChangesRealtime(unittest.TestCase):
         self.assertEqual(self._events(), [])
 
 
+class FetchChangesReactions(unittest.TestCase):
+    """``fetch_changes`` — a reaction is a mark on a message, not mail to read."""
+
+    def _arrive(self, message: dict) -> tuple[mock.Mock, mock.Mock, mock.Mock]:
+        server = _server()
+        server.respond("Email/changes", _changes(created=[message["id"]]))
+        pn = mock.Mock()
+        pn.return_value.is_enabled.return_value = True
+
+        with (
+            mock.patch.object(mail_message, "get_sync_state", return_value="s1"),
+            mock.patch.object(mail_message, "update_sync_state"),
+            mock.patch.object(mail_message, "get_jmap_client", return_value=_client(server)),
+            mock.patch.object(mail_message, "get_messages", return_value=[message]),
+            mock.patch.object(
+                mail_message,
+                "get_cached_mailboxes",
+                return_value=[{"id": "inbox", "isSubscribed": True, "role": "inbox"}],
+            ),
+            mock.patch.object(mail_message.frappe.db, "get_all", return_value=[]),
+            mock.patch.object(mail_message.frappe.utils, "get_url", return_value="https://x"),
+            mock.patch.object(mail_message, "get_config", return_value=5),
+            mock.patch.object(mail_message, "PushNotification", pn),
+            mock.patch.object(mail_message, "try_set_seen") as try_set_seen,
+            mock.patch.object(mail_message.frappe, "publish_realtime") as publish_realtime,
+            mock.patch.object(mail_message, "log_mail_error") as log_mail_error,
+        ):
+            mail_message.fetch_changes(USER, ACCOUNT, email_state="s2")
+
+        log_mail_error.assert_not_called()
+        return pn.return_value.send_notification_to_user, try_set_seen, publish_realtime
+
+    def _message(self, **fields) -> dict:
+        return {
+            "id": "e1",
+            "draft": 0,
+            "seen": 0,
+            "keywords": "{}",
+            "mailboxes": [{"mailbox_id": "inbox"}],
+            "from_name": "Ana",
+            "from_email": "ana@example.com",
+            "subject": "Plans",
+            "thread_id": "t1",
+            "in_reply_to": "original@example.com",
+            "text_body": "\U0001f602\n\nAna reacted via Gmail\n",
+            "_text_body": [{"type": "text/plain", "disposition": None}],
+            "attachments": [],
+            **fields,
+        }
+
+    def test_a_reaction_sends_no_push_and_is_read_as_it_lands(self):
+        reaction = self._message(
+            attachments=[{"filename": None, "type": "text/vnd.google.email-reaction+json"}]
+        )
+        push, try_set_seen, publish_realtime = self._arrive(reaction)
+        push.assert_not_called()
+        try_set_seen.assert_called_once_with(ACCOUNT, ["e1"], True)
+        self.assertEqual(publish_realtime.call_args_list, [mock.call("mail_changed", user=USER)])
+
+    def test_a_lone_emoji_reply_is_mail_like_any_other(self):
+        push, try_set_seen, publish_realtime = self._arrive(self._message())
+        push.assert_called_once()
+        try_set_seen.assert_not_called()
+        self.assertEqual(
+            publish_realtime.call_args_list, [mock.call("new_mail_created", ["inbox"], user=USER)]
+        )
+
+
 class FetchChangesInit(unittest.TestCase):
     """``fetch_changes`` with no stored sync state — how the state gets seeded.
 

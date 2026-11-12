@@ -4,7 +4,7 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "title",
+  "node",
   "slug",
   "is_composite",
   "column_break_axws",
@@ -14,21 +14,24 @@
   "slides_section",
   "slides",
   "reference_section",
-  "reference_presentations"
+  "reference_presentations",
+  "content"
  ],
  "fields": [
+  {
+   "description": "The Drive node that owns this deck's title, place, grants, lifecycle, and previews.",
+   "fieldname": "node",
+   "fieldtype": "Link",
+   "label": "Node",
+   "options": "Drive Node",
+   "read_only": 1,
+   "search_index": 1
+  },
   {
    "fieldname": "slides",
    "fieldtype": "Table",
    "label": "Slides",
    "options": "Slide"
-  },
-  {
-   "fieldname": "title",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Title",
-   "reqd": 1
   },
   {
    "fieldname": "slug",
@@ -82,11 +85,18 @@
    "fieldname": "reference_section",
    "fieldtype": "Section Break",
    "label": "Reference"
+  },
+  {
+   "description": "The collab doc's latest checked state, a Yjs update in base64, kept by the content layer.",
+   "fieldname": "content",
+   "fieldtype": "Long Text",
+   "label": "Content",
+   "permlevel": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-06 12:00:00.000000",
+ "modified": "2026-11-05 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Slides",
  "name": "Presentation",
@@ -114,12 +124,12 @@
   },
   {
    "read": 1,
-   "role": "Guest"
+   "role": "Guest",
+   "write": 1
   }
  ],
  "row_format": "Dynamic",
  "sort_field": "creation",
  "sort_order": "DESC",
- "states": [],
- "title_field": "title"
+ "states": []
 }

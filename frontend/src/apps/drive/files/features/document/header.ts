@@ -1,0 +1,28 @@
+import type { DocumentPanel } from '@/apps/drive/client/types'
+
+import { nodeIcon, nodeIconTint } from '../../internal/icons'
+
+/** Where a document's edits are. Each editor reports its own. */
+export type DocumentSaveState = 'clean' | 'saving' | 'unsaved' | 'failed'
+
+export const PANEL_BUTTONS: Record<DocumentPanel, { label: string; icon: string }> = {
+  comments: { label: 'Comments', icon: 'lucide-messages-square' },
+  versions: { label: 'Versions', icon: 'lucide-history' },
+}
+
+/**
+ * The Drive file-type icon and tint, the same ones the listing shows. A file's
+ * title counts, because its extension can say more than its MIME type.
+ */
+export function documentTypeIcon(
+  contentDoctype: string,
+  title: string,
+  mime: string | null = null,
+): string[] {
+  // A file preview session names the `File` doctype; every other session is a document.
+  const node =
+    contentDoctype === 'File'
+      ? { kind: 'file', title, mime, content_doctype: null }
+      : { kind: 'document', title, mime: null, content_doctype: contentDoctype }
+  return [nodeIcon(node), nodeIconTint(node)]
+}

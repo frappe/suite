@@ -1,25 +1,44 @@
-import { describe, expect, it } from 'vitest'
 import { Editor } from '@tiptap/core'
+import Collaboration from '@tiptap/extension-collaboration'
 import Document from '@tiptap/extension-document'
+import Heading from '@tiptap/extension-heading'
 import Paragraph from '@tiptap/extension-paragraph'
 import Text from '@tiptap/extension-text'
-import { TabsExtension, orderedTabs, tabsIn } from './tabs'
+import { afterEach, describe, expect, it } from 'vitest'
+import * as yjs from 'yjs'
 
-const makeEditor = (labels: string[]) => {
-  const editor = new Editor({
+import { listTabs, orderedTabs, TabsExtension, tabsIn } from './tabs'
+
+function waitForUpdates() {
+  return new Promise((resolve) => setTimeout(resolve, 20))
+}
+
+const editors: Editor[] = []
+afterEach(async () => {
+  await waitForUpdates()
+  for (const editor of editors.splice(0)) {
+    editor.destroy()
+  }
+})
+
+function tabHTML(label: string, index: number) {
+  return `<div data-tab-id="tab-${label}" data-tab-label="${label}" data-tab-order="${index}"><p>${label}</p></div>`
+}
+
+function makeEditor(labels: string[]) {
+  const editorOptions = {
     extensions: [Document, Paragraph, Text, TabsExtension],
-    content: '<p>first</p>',
-  })
-  editor.commands.wrapInTab({ label: labels[0] })
-  labels.slice(1).forEach((label) => editor.commands.createTab({ label }))
+    content: labels.map(tabHTML).join(''),
+  }
+  const editor = new Editor(editorOptions)
+  editors.push(editor)
   return editor
 }
 
 const labelsOf = (editor: Editor) =>
   orderedTabs(editor.state.doc).map(({ node }) => node.attrs.label)
 
-const idsOf = (editor: Editor) =>
-  tabsIn(editor.state.doc).map(({ node }) => node.attrs.id)
+const idsOf = (editor: Editor) => tabsIn(editor.state.doc).map(({ node }) => node.attrs.id)
 
 describe('tab reordering', () => {
   it('reorders without moving nodes', () => {
@@ -41,9 +60,7 @@ describe('tab reordering', () => {
 
     expect(idsOf(editor).sort()).toEqual([...ids].sort())
     expect(labelsOf(editor).sort()).toEqual(['a', 'b', 'c', 'd'])
-    expect(
-      orderedTabs(editor.state.doc).map(({ node }) => node.attrs.order),
-    ).toEqual([0, 1, 2, 3])
+    expect(orderedTabs(editor.state.doc).map(({ node }) => node.attrs.order)).toEqual([0, 1, 2, 3])
   })
 
   it('rejects out-of-range and no-op moves', () => {
@@ -75,10 +92,7 @@ describe('tab id integrity', () => {
 
     tr.insert(
       editor.state.doc.content.size,
-      editor.schema.nodes.tab.create(
-        first.node.attrs,
-        editor.schema.nodes.paragraph.create(),
-      ),
+      editor.schema.nodes.tab.create(first.node.attrs, editor.schema.nodes.paragraph.create()),
     )
     editor.view.dispatch(tr)
 
@@ -102,6 +116,194 @@ describe('ordered serialisation', () => {
       extensions: [Document, Paragraph, Text, TabsExtension],
       content: '<p>plain</p>',
     })
+    editors.push(editor)
     expect(editor.getHTML()).toBe('<p>plain</p>')
+  })
+})
+
+function openPeer(ydoc = new yjs.Doc()) {
+  const element = document.createElement('div')
+  document.body.append(element)
+  const collaboration = {
+    document: ydoc,
+    field: 'default',
+  }
+  const editorOptions = {
+    element,
+    extensions: [Document, Paragraph, Text, TabsExtension, Collaboration.configure(collaboration)],
+  }
+  const editor = new Editor(editorOptions)
+  editors.push(editor)
+  return { ydoc, editor }
+}
+
+function syncDocs(first: yjs.Doc, second: yjs.Doc) {
+  const missingInFirst = yjs.encodeStateAsUpdate(second, yjs.encodeStateVector(first))
+  yjs.applyUpdate(first, missingInFirst, 'remote')
+  const missingInSecond = yjs.encodeStateAsUpdate(first, yjs.encodeStateVector(second))
+  yjs.applyUpdate(second, missingInSecond, 'remote')
+}
+
+function textOf(editor: Editor) {
+  return editor.state.doc.textBetween(0, editor.state.doc.content.size, '|')
+}
+
+function untabbedPeer() {
+  const author = openPeer()
+  author.editor.commands.setContent('<p>Hello</p>')
+  return author
+}
+
+describe('the first tab', () => {
+  it('adding a tab keeps what someone else is typing', async () => {
+    const peerA = untabbedPeer()
+    const peerB = openPeer()
+    syncDocs(peerA.ydoc, peerB.ydoc)
+    await waitForUpdates()
+
+    peerA.editor.commands.createTab({ label: 'Second' })
+    peerB.editor.commands.insertContentAt(6, ' world')
+    syncDocs(peerA.ydoc, peerB.ydoc)
+    await waitForUpdates()
+
+    expect(textOf(peerA.editor)).toBe('Hello world|')
+    expect(textOf(peerB.editor)).toBe('Hello world|')
+    expect(peerA.editor.state.doc.firstChild!.type.name).toBe('paragraph')
+  })
+
+  it('shows an untabbed document as one tab whose label other editors see', async () => {
+    const peerA = untabbedPeer()
+    const peerB = openPeer()
+    syncDocs(peerA.ydoc, peerB.ydoc)
+    await waitForUpdates()
+    expect(listTabs(peerA.editor)).toEqual([{ id: 'main', label: 'Hello' }])
+
+    peerA.editor.commands.renameTab('main', 'Notes', false)
+    syncDocs(peerA.ydoc, peerB.ydoc)
+
+    expect(listTabs(peerB.editor)).toEqual([{ id: 'main', label: 'Notes' }])
+    expect(tabsIn(peerB.editor.state.doc)).toHaveLength(0)
+  })
+
+  it('hides its content while another tab is open', async () => {
+    const { editor } = untabbedPeer()
+    editor.commands.createTab({ id: 'second', label: 'Second' })
+    editor.commands.changeTab('second', false)
+
+    expect(editor.view.dom.querySelector('p')!.style.display).toBe('none')
+    editor.commands.changeTab('main', false)
+    expect(editor.view.dom.querySelector('p')!.style.display).toBe('')
+  })
+
+  it('getHTML writes it as a tab of its own next to other tabs', () => {
+    const { editor } = untabbedPeer()
+    editor.commands.renameTab('main', 'Notes', false)
+    editor.commands.createTab({ id: 'second', label: 'Second' })
+
+    const html = editor.getHTML()
+    expect(html).toMatch(
+      /^<div data-tab-id="first-tab" data-tab-label="Notes"><p>Hello<\/p><\/div>/,
+    )
+    expect(html).toContain('data-tab-id="second"')
+
+    const reloaded = makeEditor([])
+    reloaded.commands.setContent(html)
+    expect(listTabs(reloaded).map((tab) => tab.label)).toEqual(['Notes', 'Second'])
+    const [firstTab] = listTabs(reloaded)
+    expect(reloaded.commands.deleteTab(firstTab.id)).toBe(true)
+    expect(listTabs(reloaded).map((tab) => tab.label)).toEqual(['Second'])
+  })
+
+  it('stays first when other tabs are reordered', () => {
+    const { editor } = untabbedPeer()
+    editor.commands.createTab({ id: 'b', label: 'b' })
+    editor.commands.createTab({ id: 'c', label: 'c' })
+
+    expect(editor.commands.reorderTab('c', 1)).toBe(true)
+    expect(listTabs(editor).map((tab) => tab.id)).toEqual(['main', 'c', 'b'])
+    expect(editor.commands.reorderTab('b', 0)).toBe(false)
+  })
+
+  it('opens the first saved tab once a tabbed document loads', async () => {
+    const saved = makeEditor(['a', 'b'])
+    const stored = new yjs.Doc()
+    const author = openPeer(stored)
+    author.editor.commands.setContent(saved.getHTML())
+    const viewer = openPeer()
+    await waitForUpdates()
+    expect(viewer.editor.storage.tab.activeTabId).toBe('main')
+
+    syncDocs(stored, viewer.ydoc)
+    await waitForUpdates()
+
+    expect(viewer.editor.storage.tab.activeTabId).toBe('tab-a')
+  })
+
+  it('opens the tab the address names once a tabbed document loads, as after a remount', async () => {
+    const stored = new yjs.Doc()
+    const author = openPeer(stored).editor
+    author.commands.setContent('<p>first</p>')
+    author.commands.createTab({ id: 'tab-b', label: 'b' })
+    window.history.replaceState(null, '', '#tab-b')
+    try {
+      const viewer = openPeer()
+      await waitForUpdates()
+      syncDocs(stored, viewer.ydoc)
+      await waitForUpdates()
+
+      expect(viewer.editor.storage.tab.activeTabId).toBe('tab-b')
+      expect(window.location.hash).toBe('#tab-b')
+    } finally {
+      window.history.replaceState(null, '', '#')
+    }
+  })
+})
+
+describe('tab names', () => {
+  function names(content: string) {
+    const editor = new Editor({
+      extensions: [Document, Paragraph, Text, Heading, TabsExtension],
+      content,
+    })
+    editors.push(editor)
+    return listTabs(editor).map((tab) => tab.label)
+  }
+  const tab = (id: string, label: string, body: string) =>
+    `<div data-tab-id="${id}" data-tab-label="${label}">${body}</div>`
+
+  it('names an unnamed tab after its first heading, even below other text', () => {
+    expect(names(tab('a', 'Untitled', '<p>Intro</p><h2>Budget</h2><h1>Later</h1>'))).toEqual([
+      'Budget',
+    ])
+  })
+
+  it('falls back to the first line of text, then to Untitled', () => {
+    expect(names(tab('a', 'Untitled', '<p></p><p>Some notes</p>'))).toEqual(['Some notes'])
+    expect(names(tab('a', 'Untitled', '<p></p>'))).toEqual(['Untitled'])
+  })
+
+  it('keeps a name someone gave the tab', () => {
+    expect(names(tab('a', 'Plan', '<h1>Budget</h1>'))).toEqual(['Plan'])
+  })
+
+  it('names the first tab the same way', () => {
+    expect(names(`<h1>Overview</h1>${tab('a', 'Plan', '<p>x</p>')}`)).toEqual(['Overview', 'Plan'])
+  })
+
+  it('shortens a long line', () => {
+    const line = 'A first line that goes on for much longer than a tab should be'
+    expect(names(tab('a', 'Untitled', `<p>${line}</p>`))).toEqual([
+      'A first line that goes on for…',
+    ])
+  })
+
+  it('follows the heading as it changes', () => {
+    const editor = new Editor({
+      extensions: [Document, Paragraph, Text, Heading, TabsExtension],
+      content: tab('a', 'Untitled', '<h1>Budget</h1>'),
+    })
+    editors.push(editor)
+    editor.commands.insertContentAt(2, 'Q3 ')
+    expect(listTabs(editor).map((entry) => entry.label)).toEqual(['Q3 Budget'])
   })
 })

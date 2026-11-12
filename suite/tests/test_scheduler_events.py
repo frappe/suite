@@ -26,3 +26,37 @@ class TestSchedulerEvents(unittest.TestCase):
             self.assertRaisesRegex(RuntimeError, SCHEDULER_SMOKE_METHOD),
         ):
             _scheduler_smoke_job_name()
+
+    def test_exactly_five_drive_daily_jobs_are_wired(self):
+        """§2.2: `suite/drive/jobs.py` is the sole scheduler adapter."""
+        from suite.drive import jobs
+
+        drive_package = jobs.__name__.rsplit(".", 1)[0] + "."
+        daily_drive_jobs = [
+            method for method in hooks.scheduler_events["daily"] if method.startswith(drive_package)
+        ]
+        expected_targets = {
+            name
+            for name, value in vars(jobs).items()
+            if callable(value) and getattr(value, "__module__", None) == jobs.__name__
+        }
+        self.assertEqual(len(daily_drive_jobs), 5)
+        for method in daily_drive_jobs:
+            module_name, _, attr = method.rpartition(".")
+            with self.subTest(method=method):
+                self.assertEqual(module_name, jobs.__name__)
+                self.assertIn(attr, expected_targets)
+        # Every target in `jobs.py` is wired daily, except the hourly purge of
+        # expired downloads, and nothing else of Drive's runs on another schedule.
+        other_drive_jobs = [
+            method
+            for event, entries in hooks.scheduler_events.items()
+            if event not in ("daily", "cron")
+            for method in entries
+            if method.startswith(jobs.__name__)
+        ]
+        purge_expired_downloads = f"{jobs.__name__}.purge_expired_downloads"
+        self.assertEqual(other_drive_jobs, [purge_expired_downloads])
+        self.assertIn(purge_expired_downloads, hooks.scheduler_events["hourly"])
+        wired = {method.rpartition(".")[2] for method in daily_drive_jobs}
+        self.assertEqual(wired | {"purge_expired_downloads"}, expected_targets)

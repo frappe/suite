@@ -1,6 +1,6 @@
 <script setup>
-import { NodeViewWrapper, NodeViewContent } from '@tiptap/vue-3'
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { NodeViewContent, NodeViewWrapper } from '@tiptap/vue-3'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 
 const props = defineProps({
   node: Object,

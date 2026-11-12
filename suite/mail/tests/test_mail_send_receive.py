@@ -12,12 +12,12 @@ from suite.mail.api.mail import (
     fetch_attachment,
     fetch_attachments_as_zip,
     fetch_mail_as_eml,
-    get_all_inbox_threads,
-    get_all_inbox_unread_count,
     get_mailboxes,
     get_mime_message,
     get_thread,
     get_threads,
+    get_unified_folders,
+    get_unified_threads,
     update_draft_mail,
 )
 from suite.mail.tests.base import StalwartIntegrationTestCase, unique_name
@@ -65,10 +65,12 @@ class TestMailSendReceive(StalwartIntegrationTestCase):
         self.assertIn(("Cc", self.sender.email), recipients)
         self.assertFalse(thread["seen"])
 
-        # The unread badge across all accounts counts it.
+        # The unified Inbox across all accounts lists it and counts it unread.
         with self.set_user(self.receiver.email):
-            self.assertGreaterEqual(get_all_inbox_unread_count(), 1)
-            merged = get_all_inbox_threads(limit=10)
+            inbox = next(f for f in get_unified_folders() if f["slug"] == "inbox")
+            self.assertGreaterEqual(inbox["unread_threads"], 1)
+            self.assertIn(self.receiver_account, inbox["accounts"])
+            merged = get_unified_threads("inbox", limit=10)["rows"]
             self.assertIn(subject, [t["subject"] for t in merged])
             self.assertEqual(merged[0]["account"], self.receiver_account)
 
@@ -136,8 +138,8 @@ class TestMailSendReceive(StalwartIntegrationTestCase):
             self.assertNotEqual(draft["status"], "Submitted")
 
             drafts_id = self._mailbox_id(self.sender, self.sender_account, "drafts")
-            threads, _ = self.wait_until(
-                lambda: get_threads(self.sender_account, drafts_id, limit=20),
+            threads = self.wait_until(
+                lambda: get_threads(self.sender_account, drafts_id, limit=20)["rows"],
                 message="Draft did not appear in the Drafts mailbox.",
             )
             row = next(t for t in threads if t["subject"] == subject)
@@ -161,7 +163,7 @@ class TestMailSendReceive(StalwartIntegrationTestCase):
                 lambda: next(
                     (
                         t
-                        for t in get_threads(self.sender_account, drafts_id, limit=20)[0]
+                        for t in get_threads(self.sender_account, drafts_id, limit=20)["rows"]
                         if t["subject"] == edited_subject
                     ),
                     None,
@@ -231,21 +233,76 @@ class TestMailSendReceive(StalwartIntegrationTestCase):
         self.assertEqual([a["filename"] for a in attachments], ["note.txt"])
 
         with self.set_user(self.receiver.email):
-            fetched = fetch_attachment(self.receiver_account, attachments[0]["blob_id"])
+            fetched = fetch_attachment(self.receiver_account, attachments[0]["blob_id"]).get_data()
             self.assertEqual(bytes(fetched), content)
 
-            archive = fetch_attachments_as_zip(self.receiver_account, attachments + attachments)
+            archive = fetch_attachments_as_zip(self.receiver_account, attachments + attachments).get_data()
             with zipfile.ZipFile(io.BytesIO(archive)) as zf:
                 # The duplicate filename gets a counter suffix.
                 self.assertEqual(sorted(zf.namelist()), ["note (1).txt", "note.txt"])
 
             eml = fetch_mail_as_eml(message["name"])
-            self.assertIn(subject.encode(), bytes(eml))
+            self.assertIn(subject.encode(), bytes(eml.get_data()))
 
             mime = get_mime_message(message["name"])
             self.assertIn(subject, mime["subject"]["value"])
             self.assertIn(self.sender.email, mime["from"]["value"])
             self.assertIn(self.receiver.email, mime["to"]["value"])
+
+            # Forwarding keeps the attachment by its blob, through draft saves and the final send,
+            # even when the row also carries the attachment's download link.
+            forwarded = {
+                "blob_id": attachments[0]["blob_id"],
+                "file_url": f"/api/method/suite.mail.api.mail.fetch_attachment?blob_id={attachments[0]['blob_id']}",
+                "filename": "note.txt",
+                "type": "text/plain",
+                "size": len(content),
+                "disposition": "attachment",
+            }
+            draft = create_mail(
+                account=self.receiver_account,
+                from_email=self.receiver.email,
+                to=[{"email": self.sender.email}],
+                cc=[],
+                bcc=[],
+                subject=f"Fwd: {subject}",
+                html_body="<p>Forwarding.</p>",
+                attachments=[forwarded],
+                save_as_draft=True,
+            )
+            # Reopened, the draft shows its own copy of the attachment. Each save replaces the
+            # draft, so the composer's copy names bytes an earlier version held.
+            [reopened] = [
+                m for m in get_thread(self.receiver_account, draft["thread_id"]) if m["id"] == draft["id"]
+            ]
+            [own] = reopened["attachments"]
+            compose = {
+                "account": self.receiver_account,
+                "from_email": self.receiver.email,
+                "to": [{"email": self.sender.email}],
+                "cc": [],
+                "bcc": [],
+                "subject": f"Fwd: {subject}",
+                "attachments": [own],
+            }
+            saved = update_draft_mail(id=draft["id"], html_body="<p>Forwarding, edited.</p>", **compose)
+            self.assertEqual(saved["status"], "Drafted", saved.get("error"))
+            sent = update_draft_mail(id=saved["id"], html_body="<p>Forwarding.</p>", submit=True, **compose)
+        self.assertEqual(sent["status"], "Submitted", sent.get("error"))
+
+        arrived = self.wait_until(
+            lambda: next(
+                (t for t in self.get_inbox_threads(self.sender) if t["subject"] == f"Fwd: {subject}"), None
+            ),
+            timeout=60,
+            message="The forwarded attachment did not arrive.",
+        )
+        returned = arrived["messages"][-1]["attachments"]
+        self.assertEqual([a["filename"] for a in returned], ["note.txt"])
+        with self.set_user(self.sender.email):
+            self.assertEqual(
+                bytes(fetch_attachment(self.sender_account, returned[0]["blob_id"]).get_data()), content
+            )
 
     def test_reply_factories_and_delete(self):
         thread = self.deliver_mail(self.sender, self.receiver)

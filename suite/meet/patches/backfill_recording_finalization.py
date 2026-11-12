@@ -1,3 +1,9 @@
+"""Backfill durable finalization state on old and current recording schemas.
+
+Publication now commits atomically with the artifact, so do not read or write
+the obsolete publication key: new sites need not have its database column.
+"""
+
 import frappe
 from frappe.utils import add_to_date, cint, now_datetime
 
@@ -23,7 +29,6 @@ def execute():
             "upload_completed_at",
             "finalization_deadline",
             "finalization_next_retry_at",
-            "publication_key",
         ],
     ):
         accepted_at = recording.metadata_accepted_at or recording.modified or migration_time
@@ -39,7 +44,6 @@ def execute():
                 "metadata_accepted_at": accepted_at,
                 "finalization_deadline": recording.finalization_deadline
                 or add_to_date(accepted_at, hours=24),
-                "publication_key": recording.publication_key or f"meet-recording-{recording.name}",
                 "finalization_stage": (
                     "Pending" if upload_complete else recording.finalization_stage or "Awaiting Upload"
                 ),

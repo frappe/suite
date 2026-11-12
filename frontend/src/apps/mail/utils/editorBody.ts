@@ -9,12 +9,12 @@
  * below the quote.
  */
 export const createEditorBody = () => {
-	let last = { value: '', body: '' }
-	return {
-		toEditor: (body: string) => (body === last.body ? last.value : body),
-		fromEditor: (value: string) => {
-			last = { value, body: value.replaceAll('<div></div>', '<div><br></div>') }
-			return last.body
-		},
-	}
+  let last = { value: '', body: '' }
+  return {
+    toEditor: (body: string) => (body === last.body ? last.value : body),
+    fromEditor: (value: string) => {
+      last = { value, body: value.replaceAll('<div></div>', '<div><br></div>') }
+      return last.body
+    },
+  }
 }

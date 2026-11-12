@@ -2,11 +2,11 @@ import mimetypes
 
 import frappe
 from frappe import _
+from frappe.storage.serve import find_blob, stream_blob
+from frappe.storage.url import PRIVATE_PREFIX
 from werkzeug.exceptions import Forbidden, NotFound
 from werkzeug.utils import send_file
 from werkzeug.wrappers import Response
-
-from suite.drive.utils.files import files_at_exact_url
 
 
 def get_file_metadata(src: str) -> tuple[str, str]:
@@ -23,14 +23,20 @@ def get_file_metadata(src: str) -> tuple[str, str]:
 
 def get_media_response(src: str) -> Response:
     """Streams the file, honouring the Range header (206 / 416) as a browser expects."""
-    file_path, mimetype = get_file_metadata(src)
-
-    response = send_file(
-        file_path,
-        environ=frappe.local.request.environ,
-        conditional=True,
-        mimetype=mimetype,
-    )
+    if blob := find_blob(src, is_private=src.startswith(PRIVATE_PREFIX)):
+        # A Storage v2 url names a blob, not a path on disk. The caller has
+        # already authorized the read, which is what `stream_blob` expects.
+        # No native redirect: a video keeps ranging against the redirected
+        # URL, so seeking fails once the short-lived signed URL expires.
+        response = stream_blob(*blob)
+    else:
+        file_path, mimetype = get_file_metadata(src)
+        response = send_file(
+            file_path,
+            environ=frappe.local.request.environ,
+            conditional=True,
+            mimetype=mimetype,
+        )
     # werkzeug advertises ranges only on a 206; a player decides from the 200
     response.headers["Accept-Ranges"] = "bytes"
     return response
@@ -49,15 +55,13 @@ def get_reference_presentations(name: str) -> set[str]:
 
 
 def get_attached_presentations(src: str, names: set[str]) -> set[str]:
-    """Which of `names` hold `src`, deduped: one url collects a File row per upload. A Link
-    row names a web address, not a stored file, so it holds nothing."""
+    """Which of `names` hold `src`, deduped: one url collects a File row per upload."""
     if not names:
         return set()
 
-    rows = files_at_exact_url(
+    rows = _files_at_exact_url(
         [src],
         ["attached_to_name"],
-        file_type=("!=", "Link"),
         attached_to_doctype="Presentation",
         attached_to_name=("in", list(names)),
     )
@@ -67,9 +71,7 @@ def get_attached_presentations(src: str, names: set[str]) -> set[str]:
 def is_template_media(src: str) -> bool:
     """Layouts are copied into a presentation wholesale, so it shows the file urls of
     every template it ever drew a slide from without holding a File row for any."""
-    rows = files_at_exact_url(
-        [src], ["attached_to_name"], file_type=("!=", "Link"), attached_to_doctype="Presentation"
-    )
+    rows = _files_at_exact_url([src], ["attached_to_name"], attached_to_doctype="Presentation")
     holders = {row.attached_to_name for row in rows}
     if not holders:
         return False
@@ -96,7 +98,7 @@ def validate_media_file(src: str, presentation: str | None = None) -> None:
         if frappe.has_permission("Presentation", "read", presentation) and is_template_media(src):
             return
 
-    if not files_at_exact_url([src], ["name"]):
+    if not _files_at_exact_url([src], ["name"]):
         raise NotFound
 
     raise Forbidden(_("You don't have permission to access this file"))
@@ -115,3 +117,13 @@ def get_media_file(src: str, public: str | None = None, presentation: str | None
     validate_media_file(src, presentation)
 
     return get_media_response(src)
+
+
+def _files_at_exact_url(urls, fields: list[str], **filters) -> list[frappe._dict]:
+    rows = frappe.get_all(
+        "File",
+        filters={"file_url": ("in", list(urls)), **filters},
+        fields=["file_url", *fields],
+        order_by=None,
+    )
+    return [row for row in rows if row.file_url in urls]

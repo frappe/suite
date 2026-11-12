@@ -13,6 +13,7 @@ class SuiteBoot(unittest.TestCase):
         self.frappe.conf.get.side_effect = lambda key, default=None: default
         self.frappe.conf.developer_mode = 0
         self.frappe._dict.side_effect = lambda d: d
+        self.enterContext(mock.patch("suite.www.suite.get_max_file_size", return_value=1024 * 1024 * 1024))
 
         self.get_onboarding_state = self.enterContext(
             mock.patch(
@@ -26,6 +27,10 @@ class SuiteBoot(unittest.TestCase):
                 return_value={"workspace_name": "Acme", "workspace_logo": "/files/logo.png"},
             )
         )
+        self.roots = {"personal": {"node": "root-1", "title": "My files"}, "organization": None}
+        self.root_locations = self.enterContext(
+            mock.patch("suite.www.suite.drive.root_locations", return_value=self.roots)
+        )
 
     def test_logged_in_boot_shape(self):
         boot = www.get_boot()
@@ -35,6 +40,10 @@ class SuiteBoot(unittest.TestCase):
         self.assertEqual(boot["socketio_port"], 9000)
         self.assertEqual(boot["push_relay_server_url"], "")
         self.assertIs(boot["disable_slides_service_worker"], False)
+        self.assertEqual(boot["max_file_size"], 1024 * 1024 * 1024)
+        self.assertEqual(boot["drive_roots"], self.roots)
+        self.assertNotIn("suite_flip_shell", boot)
+        self.assertNotIn("suite_flip_files", boot)
 
     def test_kill_switch_reaches_the_boot(self):
         self.frappe.conf.get.side_effect = lambda key, default=None: (
@@ -49,5 +58,11 @@ class SuiteBoot(unittest.TestCase):
         self.assertIs(boot["suite_can_onboard"], False)
         self.assertEqual(boot["suite_workspace_name"], "")
         self.assertEqual(boot["suite_workspace_logo"], "")
+        self.assertIsNone(boot["drive_roots"])
         self.get_onboarding_state.assert_not_called()
         self.get_workspace.assert_not_called()
+        self.root_locations.assert_not_called()
+
+    def test_a_guest_page_follows_the_readers_system_theme(self):
+        self.frappe.session.user = "Guest"
+        self.assertEqual(www.get_desk_theme(), "Automatic")

@@ -1,49 +1,51 @@
-"""Suite's own emails, such as invites and password resets.
+"""Send Suite-owned notifications through the configured email provider.
 
-A site connected to Suite Cloud names the email and its parameters, and Suite Cloud sends it from
-its own template. Any other site renders it here with ``frappe.sendmail`` and sends it through its
-own Email Account: ``local`` holds those arguments. Other mail of the site is not Suite's and
-always goes through the site's Email Account.
+The optional suite_email_provider Frappe hook is the composition seam for provider-specific
+delivery. With no configured provider, Core renders and sends through the site's Email Account.
+The provider owns its transport; this module owns first-party notification routing and retries.
 """
 
-import frappe
-from frappe import _
+from collections.abc import Mapping
+from importlib import import_module
+from typing import Any, Protocol
 
-from suite.suite_core.utils import is_suite_cloud_configured
+import frappe
+
+
+class EmailProvider(Protocol):
+    """The provider contract wired by suite_email_provider."""
+
+    def is_configured(self) -> bool: ...
+
+    def send_email(
+        self, email_type: str, recipient: str, params: Mapping[str, Any], request_key: str
+    ) -> None: ...
+
+
+class EmailDeliveryUnavailableError(frappe.ValidationError):
+    """A configured email provider is temporarily unavailable."""
 
 
 class EmailNotSentError(frappe.ValidationError):
-    """Suite Cloud's mail server did not take the email."""
+    """The configured provider did not take the email."""
 
 
 def send(email_type: str, recipient: str, params: dict, local: dict, request_key: str | None = None) -> None:
     """Sends now and raises when the email did not go, so the caller can tell whoever waits."""
 
-    if not is_suite_cloud_configured():
+    provider = _email_provider()
+    if provider and provider.is_configured():
+        provider.send_email(email_type, recipient, params, request_key or frappe.generate_hash())
+    else:
         frappe.sendmail(recipients=[recipient], **{"now": True, **local})
-        return
-
-    from suite.mail import suite_cloud
-
-    result = suite_cloud.get_client().call(
-        "email.send_email",
-        email_type=email_type,
-        recipient=recipient,
-        params=params,
-        request_key=request_key or frappe.generate_hash(),
-    )
-    if result["status"] != "Sent":
-        frappe.throw(
-            _("The email to {0} was not sent: {1}").format(recipient, result.get("error")), EmailNotSentError
-        )
 
 
 def enqueue(email_type: str, recipient: str, params: dict, local: dict) -> None:
-    """For a notice nobody waits on: sent once the request commits, and tried again when Suite
-    Cloud or its mail server fails or throttles the site. One key for every try, so it is sent
-    once."""
+    """For a notice nobody waits on: sent once the request commits, and tried again when the provider
+    or its mail server fails or throttles the site. One key for every try, so it is sent once."""
 
-    if not is_suite_cloud_configured():
+    provider = _email_provider()
+    if not provider or not provider.is_configured():
         frappe.sendmail(recipients=[recipient], **local)  # Email Queue sends and retries it
         return
     frappe.enqueue(
@@ -58,9 +60,16 @@ def enqueue(email_type: str, recipient: str, params: dict, local: dict) -> None:
 
 
 def send_in_background(**kwargs) -> None:
-    from suite.mail.suite_cloud import SuiteCloudUnavailableError
-
     try:
         send(**kwargs)
-    except (EmailNotSentError, SuiteCloudUnavailableError, frappe.TooManyRequestsError) as e:
+    except (EmailNotSentError, EmailDeliveryUnavailableError, frappe.TooManyRequestsError) as e:
         raise frappe.RetryBackgroundJobError(str(e)) from e
+
+
+def _email_provider() -> EmailProvider | None:
+    """Resolve the single provider that Suite composition declares."""
+
+    providers = frappe.get_hooks("suite_email_provider", app_name="suite")
+    if len(providers) > 1:
+        raise RuntimeError("Suite email supports at most one provider hook")
+    return import_module(providers[0]) if providers else None

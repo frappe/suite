@@ -1,0 +1,133 @@
+export const DRIVE_NODE_TAG = 'DriveNode'
+
+/** A `?type=` value that keeps one type of node in a listing (`nodes.LISTING_TYPES`). */
+export type DriveListingType =
+  'folder' | 'document' | 'spreadsheet' | 'presentation' | 'pdf' | 'image' | 'video' | 'audio'
+
+/** The `?type=` argument for a listing that keeps any of `types`: a comma-separated list, or none. */
+export function listingTypesParam(
+  types: readonly DriveListingType[] | undefined,
+): string | undefined {
+  return types?.length ? types.join(',') : undefined
+}
+
+export const DRIVE_ROLES = {
+  read: 10,
+  comment: 20,
+  upload: 30,
+  edit: 40,
+  manage: 50,
+} as const
+
+/** A side panel a document's header toggles. Each editor renders the panel itself. */
+export type DocumentPanel = 'comments' | 'versions'
+
+export interface DriveAccess {
+  role?: number
+  via_link?: string | null
+  source_node?: string | null
+  source_principal?: string | null
+  /** Manage checks pass here: the role is MANAGE, or the caller is a Suite Admin (Drive ADR 0001). */
+  can_manage?: boolean
+}
+
+/** How widely a node is shared: its widest reach, and a head count. It names nobody. */
+export interface DriveAudience {
+  kind: 'public' | 'organization' | 'link' | 'people'
+  /** People who hold a grant, their own or through a group, the owner among them. */
+  people: number
+}
+
+export interface DriveBreadcrumb {
+  name: string
+  title: string
+  /** A file under a content document has the document as its last step, not a folder. */
+  kind: string
+  /** The caller's role at this step, one of `DRIVE_ROLES`. */
+  role: number
+}
+
+export interface DrivePreview {
+  url: string
+  expires: number
+}
+
+/** A user as Drive publishes them wherever a row names one (Drive spec §11.3). */
+export interface DrivePerson {
+  /** The `User` id, the value a grant principal carries. */
+  id: string
+  /** The id itself when the user is gone. */
+  full_name: string
+  user_image: string | null
+}
+
+export interface DriveNode {
+  name: string
+  title: string
+  kind: string
+  parent_node: string | null
+  root: string
+  state: string
+  /** The node whose trashing trashed this one: its own name on a trash root, null while Active. */
+  trash_root: string | null
+  size: number
+  mime: string | null
+  url: string | null
+  content_doctype: string | null
+  content_docname: string | null
+  is_template: number
+  owner: DrivePerson
+  creation: string | null
+  modified: string | null
+  content_modified: string | null
+  access?: DriveAccess
+  audience?: DriveAudience
+  breadcrumbs?: DriveBreadcrumb[]
+  preview?: DrivePreview | null
+  /** A folder's files at every depth, trashed ones left out, in bytes. Only folders carry it. */
+  contents_size?: number
+  opened_at?: string | null
+  favourite?: boolean
+}
+
+export interface DrivePage<Row = DriveNode> {
+  rows: Row[]
+  next_cursor: string | null
+}
+
+export interface DriveFailure {
+  node: string
+  type: string
+  message: string
+}
+
+export interface DriveBatchResult {
+  ok: string[]
+  failed: DriveFailure[]
+}
+
+export interface DriveRoots {
+  personal: { node: string; title: string }
+  organization: { node: string; title: string } | null
+}
+
+export function hasRole(node: Pick<DriveNode, 'access'> | null | undefined, role: number): boolean {
+  return (node?.access?.role ?? 0) >= role
+}
+
+/** Whether the caller may share, restore what others trashed, and delete for good. Not a content right. */
+export function canManage(node: Pick<DriveNode, 'access'> | null | undefined): boolean {
+  return node?.access?.can_manage ?? hasRole(node, DRIVE_ROLES.manage)
+}
+
+/**
+ * The side panels this person can open. As on the server, a Guest needs a comment link to see the
+ * discussion and an edit link to see the version history: a public reader sees the document only.
+ */
+export function documentPanels(access: DriveAccess, isSignedIn: boolean): DocumentPanel[] {
+  const role = access.role ?? 0
+  const panels: DocumentPanel[] = []
+  if (isSignedIn || role >= DRIVE_ROLES.comment) panels.push('comments')
+  if (isSignedIn || role >= DRIVE_ROLES.edit) panels.push('versions')
+  return panels
+}

@@ -51,7 +51,7 @@ window.cameraCheck={
    provideMeetingContext({participantStore:{participants,activeSpeakerIds:[],stableSpeakerIds:[]},currentUser:{currentUser:ref({user_id:config.id})},mediaState:{isCameraOn:false,isMicOn:false},gridLayout,raiseHandStore:{raisedHands:{}},reactionStore:{reactions:{}}});
    // Negative control drops only layout demand calls; the manager still connects.
    const injected=new URLSearchParams(location.search).has('disableDemand')
-    ? new Proxy(manager,{get(target,key){return key==='setVisibleRemoteVideoParticipants'?async()=>{}:Reflect.get(target,key)}}):manager;
+    ? new Proxy(manager,{get(target,key){return key==='setVisibleRemoteVideoParticipants'?async()=>{}:target[key]}}):manager;
    provide('sfuManager',shallowRef(injected));
    provide('setRemoteVideoRef',(id,el)=>manager.registerRemoteVideoElement(id,el));
    provide('setScreenShareVideoRef',(id,el)=>manager.registerScreenSharePreview(id,el));

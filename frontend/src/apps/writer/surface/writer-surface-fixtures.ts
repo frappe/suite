@@ -1,0 +1,193 @@
+import { fakeSocket } from '@suite/collab-client/test-support'
+import type { Editor as TiptapEditor } from '@tiptap/core'
+import { fromPartial } from '@total-typescript/shoehorn'
+import { expect, vi } from 'vitest'
+import { computed, createApp, defineComponent, h, nextTick, ref, type App, type Ref } from 'vue'
+import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
+import { Doc } from 'yjs'
+
+import type { DocumentSession } from '@/apps/drive'
+import { translationPlugin } from '@/platform/translation'
+
+import { downloaded, realEditors, realtime, rooms, signedIn, stored } from './writer-surface-fakes'
+
+export type Versions = DocumentSession['versions']
+export type Comments = DocumentSession['comments']
+
+// The editor element's tiptap editor, as tiptap hangs it on the element
+export type EditorElement = HTMLElement & { editor: TiptapEditor }
+
+// jsdom lays nothing out, so has nothing to scroll
+Element.prototype.scrollIntoView = () => {}
+
+const { default: WriterSurface } = await import('./WriterSurface.vue')
+const { discardCopy, listCopies } = await import('@/apps/writer/recovery/copies')
+
+let openedApp: App | null = null
+
+function surfaceSession(
+  versions: Versions | undefined,
+  comments: Comments | undefined,
+  access: Ref<{ role: number }>,
+  state: Ref<DocumentSession['state']['value']>,
+) {
+  return fromPartial<DocumentSession>({
+    nodeId: 'node-1',
+    comments,
+    title: ref('Quarterly plan'),
+    state,
+    access,
+    canShare: computed(() => state.value === 'Active' && access.value.role >= 50),
+    // What the server answers: Drive's own test holds the session to the same rule
+    panels: computed<DocumentSession['panels']['value']>(() => [
+      ...(signedIn.isOn || access.value.role >= 20 ? ['comments' as const] : []),
+      ...(signedIn.isOn || access.value.role >= 40 ? ['versions' as const] : []),
+    ]),
+    refreshAccess: async () => {},
+    versions,
+    credentials: {
+      context: {},
+      heldContext: {},
+      fetch,
+      fetchHeld: fetch,
+      group: () => [],
+    },
+  })
+}
+
+export async function mountedSurface(
+  versions?: Versions,
+  path = '/d/node-1',
+  comments?: Comments,
+  access = ref({ role: 50 }),
+  state = ref<DocumentSession['state']['value']>('Active'),
+) {
+  const session = surfaceSession(versions, comments, access, state)
+  const surface = { render: () => h(WriterSurface, { session }) }
+  const routes = [{ path: '/d/:node', component: surface }]
+  const history = createMemoryHistory()
+  const router = createRouter({ history, routes })
+  await router.push(path)
+  await router.isReady()
+
+  const root = document.createElement('div')
+  document.body.append(root)
+  const shell = defineComponent({ setup: () => () => h(RouterView) })
+  openedApp = createApp(shell).use(router).use(translationPlugin)
+  openedApp.mount(root)
+  return root
+}
+
+export function navigateTo(path: string) {
+  return openedApp!.config.globalProperties.$router.push(path)
+}
+
+export async function openedSurface(...args: Parameters<typeof mountedSurface>) {
+  const root = await mountedSurface(...args)
+  await vi.waitFor(() => expect(root.querySelector('[data-editor]')).not.toBeNull())
+  await nextTick()
+  return root
+}
+
+export function buttonLabelled(root: Element, label: string) {
+  return [...root.querySelectorAll('button')].find(
+    (button) => button.textContent === label || button.getAttribute('aria-label') === label,
+  )
+}
+
+// The row in the versions list whose text starts with `label`
+export function versionRow(root: Element, label: string) {
+  const rows = [...root.querySelectorAll<HTMLElement>('aside button')]
+  return rows.find((button) => button.textContent?.trim().startsWith(label))!
+}
+
+export function resetSurface() {
+  openedApp?.unmount()
+  openedApp = null
+  document.body.innerHTML = ''
+  rooms.next = null
+  rooms.held = null
+  rooms.openFailure = null
+  rooms.opens = 0
+  stored.html = ''
+  stored.collab = 0
+  realEditors.isOn = false
+  stored.content = ''
+  stored.conversion = null
+  stored.reloads = 0
+  realtime.socket = fakeSocket({ answers: true })
+  downloaded.html = null
+  signedIn.isOn = true
+  vi.restoreAllMocks()
+}
+
+export function liveRoom() {
+  const room = {
+    doc: new Doc(),
+    status: fromPartial<Record<string, unknown>>({
+      canWrite: true,
+      blockReason: null,
+      pauseReason: null,
+      saveState: 'clean',
+      unsentCount: 0,
+      isKeptOnDevice: true,
+    }),
+    onChange: () => () => {},
+    flush: async () => {},
+    close: vi.fn(async () => {}),
+    loseAccess: vi.fn(async () => {}),
+    regainAccess: vi.fn(async () => {}),
+  }
+  rooms.next = room
+  return room
+}
+
+export async function previewAndReturn(
+  root: Element,
+  during: () => void | Promise<void> = () => {},
+) {
+  root.querySelector<HTMLElement>('[data-open-versions]')!.click()
+  await vi.waitFor(() => expect(root.textContent).toContain('Before review'))
+  versionRow(root, 'Before review').click()
+  await nextTick()
+  expect(root.querySelector('[data-preview]')).not.toBeNull()
+  await during()
+  versionRow(root, 'Current version').click()
+  await nextTick()
+}
+
+export const oneVersion = fromPartial<Versions>({
+  list: async () => ({
+    rows: [{ seq: 3, kind: 'named', label: 'Before review' }],
+    next_cursor: null,
+  }),
+})
+
+export const STOPPED = 'Saving stopped in this tab. Reload to keep editing.'
+
+// A live room whose saving failed for good, which the page shows as the stop strip
+export function stoppedRoom() {
+  const room = liveRoom()
+  room.status = { ...room.status, saveState: 'failed', unsentCount: 1 }
+  return room
+}
+
+// Each shown strip's message, without its buttons
+export function stripTexts(root: Element) {
+  const strips = [...root.querySelectorAll('[role="status"]')]
+  return strips.map((strip) => strip.querySelector('p')?.textContent?.trim() ?? '')
+}
+
+const RECOVERY_READ_MS = 50
+
+// Lets the recovery strip finish reading the device's copies
+export async function settled() {
+  await new Promise((resolve) => setTimeout(resolve, RECOVERY_READ_MS))
+  await nextTick()
+}
+
+export async function discardCopies() {
+  for (const copy of await listCopies('node-1')) {
+    await discardCopy(copy)
+  }
+}

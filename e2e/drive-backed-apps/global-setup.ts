@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { request, type APIRequestContext, type FullConfig } from "@playwright/test";
+
 import { loginViaApi, type Credentials } from "../shared/auth";
 import { frappeData } from "../shared/frappe";
 
@@ -12,8 +13,19 @@ const admin: Credentials = {
 	password: process.env.E2E_ADMIN_PASSWORD ?? "admin",
 };
 
+/**
+ * Where `suite.drive.e2e_api` is called. Those endpoints are `whitelist_for_tests`,
+ * so Frappe only serves them from a dev server started with `DEV_SERVER=1` and
+ * `allow_tests` in the site config. When the site under test runs without that
+ * flag, point this at a second `frappe serve` on the same site that has it.
+ */
+export function testApiUrl(baseURL: string): string {
+	return process.env.E2E_TEST_API_URL ?? baseURL;
+}
+
 async function cleanupPreviousRun(api: APIRequestContext): Promise<void> {
 	try {
+		// SAFETY: the state file is produced by this setup workflow; the saved run_id identifies the prior provisioned fixture.
 		const { run_id } = JSON.parse(readFileSync(statePath, "utf8")) as {
 			run_id: string;
 		};
@@ -44,21 +56,18 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
 	}
 	if (!ready) throw new Error(`Frappe did not become ready at ${baseURL}`);
 
-	const api = await request.newContext({ baseURL });
+	const api = await request.newContext({ baseURL: testApiUrl(baseURL) });
 	await loginViaApi(api, admin);
 	await cleanupPreviousRun(api);
 	const runId = `${Date.now().toString(36)}-${process.pid}`;
 	const userCount = Math.max(1, config.workers) * 2;
-	const response = await api.post(
-		"/api/method/suite.drive.e2e_api.provision_users",
-		{
-			form: {
-				run_id: runId,
-				password: process.env.E2E_USER_PASSWORD ?? "DriveWriterE2E!2026",
-				user_count: userCount,
-			},
+	const response = await api.post("/api/method/suite.drive.e2e_api.provision_users", {
+		form: {
+			run_id: runId,
+			password: process.env.E2E_USER_PASSWORD ?? "DriveWriterE2E!2026",
+			user_count: userCount,
 		},
-	);
+	});
 	const run = await frappeData<{
 		run_id: string;
 		users: Credentials[];

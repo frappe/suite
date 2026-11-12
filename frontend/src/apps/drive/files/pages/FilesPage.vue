@@ -1,0 +1,1961 @@
+<template>
+  <div class="flex min-w-0 flex-1 flex-col text-ink-gray-8">
+    <AreaSidebar
+      v-if="signedIn"
+      area="files"
+      title="Drive"
+      :loading="discovered.status === 'pending' && !discovered.data"
+    >
+      <FilesPanel :drag="dragOn" />
+    </AreaSidebar>
+    <PageHeader class="hidden md:flex">
+      <div class="flex w-full items-center justify-between gap-3">
+        <!-- While dragging items, each crumb's link carries a marker of its folder; the link lights up while it takes the drop. -->
+        <Breadcrumbs
+          :items="breadcrumbs"
+          :data-drop-crumbs="dragOn ? '' : undefined"
+          :class="
+            dragOn &&
+            '[&_a:has([data-drop-over])]:!bg-surface-blue-2 [&_a:has([data-drop-over])]:ring-1 [&_a:has([data-drop-over])]:ring-inset [&_a:has([data-drop-over])]:ring-outline-blue-3'
+          "
+        >
+          <template v-if="dragOn" #prefix="{ item }">
+            <span
+              v-if="typeof item.node === 'string'"
+              :data-drop-target="item.node"
+              :data-drop-over="dragOn.accepts(item.node) || undefined"
+            />
+          </template>
+        </Breadcrumbs>
+        <Dropdown v-if="canCreate || newPending" :options="newOptions" align="end">
+          <Button
+            variant="subtle"
+            label="New"
+            icon-right="lucide-chevron-down"
+            :class="!canCreate && 'invisible'"
+          />
+        </Dropdown>
+      </div>
+    </PageHeader>
+    <PageHeaderMobile class="md:hidden">
+      <template #prefix>
+        <PageHeaderBackButton v-if="folderParent" :route="folderParent" />
+      </template>
+      <Button
+        v-if="signedIn"
+        variant="ghost"
+        :label="destinationLabel"
+        icon-right="lucide-chevron-down"
+        class="min-w-0 max-w-full text-lg font-medium"
+        @click="requestPanel"
+      />
+      <span v-else class="block truncate text-lg font-medium text-ink-gray-9">{{
+        destinationLabel
+      }}</span>
+      <template #suffix>
+        <Dropdown v-if="canCreate || newPending" :options="newOptions" align="end">
+          <Button
+            variant="subtle"
+            label="New"
+            icon-right="lucide-chevron-down"
+            :class="!canCreate && 'invisible'"
+          />
+        </Dropdown>
+      </template>
+    </PageHeaderMobile>
+
+    <UnlockScreen v-if="locked" :node="parentId" @unlocked="reload" />
+    <!-- The wrapper is the menu's trigger, so a right-click anywhere in the
+         pane below the header opens it. The pane picks the options on each
+         right-click, or stops the event to leave the browser's own menu.
+         The trigger sets an inline `pointer-events: auto` so a right-click
+         can move the open menu. While its menu is closed, the class gives
+         that back to the page, so another overlay that blocks the page,
+         such as a select open in View settings, blocks the pane too. -->
+    <ContextMenu v-else v-model:open="contextOpen" :options="contextOptions">
+      <div class="flex flex-1 flex-col data-[state=closed]:![pointer-events:inherit]">
+        <div
+          class="relative flex flex-1 flex-col px-5 py-4"
+          v-bind="paneDrop"
+          @pointerdown="onPanePointerdown"
+          @contextmenu="onPaneContextMenu"
+        >
+          <div class="flex h-7 items-center justify-between gap-2">
+            <SelectionBar
+              v-if="selectionMode"
+              :count="selection.length"
+              :label="selectionLabel"
+              :actions="bulkActions"
+              :menu="onlySelected ? selectionMenu(rowMenuOptions(onlySelected)) : []"
+              :compact="narrow"
+              @done="clearSelected"
+            />
+            <template v-else>
+              <!-- Each place gets its own field. Pressing a link elsewhere fires the field's
+                   change event, whose debounced search would otherwise land on the new place. -->
+              <TextInput
+                v-if="signedIn"
+                :key="route.path"
+                v-model="searchText"
+                type="search"
+                :debounce="250"
+                placeholder="Search all files"
+                aria-label="Search all files"
+                class="files-search w-full max-w-64"
+                @update:model-value="updateSearch"
+                @keydown.escape="clearSearch"
+              >
+                <template #prefix
+                  ><span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true"
+                /></template>
+                <template v-if="searchText" #suffix>
+                  <button
+                    type="button"
+                    aria-label="Clear search"
+                    class="flex size-4 items-center justify-center rounded-full text-ink-gray-5 hover:text-ink-gray-7 focus-visible:focus-ring"
+                    @click="clearSearchAndFocus"
+                  >
+                    <span class="lucide-x size-3.5" aria-hidden="true" />
+                  </button>
+                </template>
+              </TextInput>
+              <!-- A set filter stays, so an empty result can still change or clear it.
+                   The wrapper keeps the filter its width, since MultiSelect's own root takes no class. -->
+              <div v-if="listingTypes.length || !settledEmpty" class="shrink-0">
+                <MultiSelect
+                  :model-value="listingTypes.map((option) => option.value)"
+                  :options="typeOptions"
+                  placeholder="Type"
+                  hide-search
+                  class="max-w-40"
+                  @update:model-value="setTypes"
+                >
+                  <template #item-prefix="{ item }">
+                    <span :class="['size-4 shrink-0', typeIcon(item.value)]" aria-hidden="true" />
+                  </template>
+                  <!-- A phone shows one type by its icon only, so the search field keeps its room.
+                       The hidden words tell this trigger apart from the Type column's header,
+                       and keep the visible text in its name. -->
+                  <template #summary="{ summary }">
+                    <span class="sr-only">{{
+                      listingTypes.length ? 'Filter by type: ' : 'Filter by '
+                    }}</span>
+                    <span :class="listingTypes.length === 1 && 'max-md:sr-only'">{{
+                      typeSummary(listingTypes) ?? summary
+                    }}</span>
+                  </template>
+                  <!-- Clear only. Every type at once would still hide links and other files, so there is no Select all. -->
+                  <template #footer="{ clear }">
+                    <div
+                      v-if="listingTypes.length"
+                      class="border-t border-outline-gray-1 px-2 py-1.5"
+                      @focusin="enterTypeOptions"
+                    >
+                      <Button variant="ghost" label="Clear" @click="clear" />
+                    </div>
+                  </template>
+                </MultiSelect>
+              </div>
+              <div class="ml-auto flex items-center gap-2">
+                <Button
+                  v-if="trashActions && trash.canEmptyTrash.value"
+                  label="Empty trash"
+                  icon-left="lucide-trash-2"
+                  :disabled="!listing.rows.length || trash.pending.value"
+                  @click="trash.emptyTrash()"
+                />
+                <!-- An empty view has nothing to arrange or select. The control stays
+                     while rows load, so it does not pop in after them. -->
+                <ViewSettings
+                  v-if="!settledEmpty"
+                  :presentation="settingsPresentation"
+                  :arrangeable="arrangeable"
+                  :columns="offeredColumns"
+                  :date-column="dateColumn"
+                  :in-own-space="inOwnSpace"
+                  @change="setPresentation"
+                  @toggle-column="setColumn"
+                />
+                <Dropdown v-if="moreOptions.length" :options="moreOptions" align="end">
+                  <Button icon="lucide-ellipsis" aria-label="More file actions" />
+                </Dropdown>
+              </div>
+            </template>
+          </div>
+
+          <TabButtons
+            v-if="trashTabs"
+            class="mt-3 max-w-96"
+            :fluid="!!workspaceName"
+            :model-value="route.query.root === 'organization' ? 'organization' : 'personal'"
+            :options="[
+              { value: 'personal', label: 'My files' },
+              { value: 'organization', label: locationLabel('organization') },
+            ]"
+            @update:model-value="switchTrashRoot"
+          />
+
+          <RecoveryNotice v-if="isMyFiles" class="mt-3" />
+          <Alert
+            v-if="trashedFolder && !isSearching"
+            class="mt-3"
+            title="This folder is in Trash"
+            :description="trashedNotice.description"
+            :primary-action="trashedNotice.primary"
+            :secondary-action="trashedNotice.secondary"
+          />
+          <BatchOutcome
+            :result="trash.outcome.value ?? batchOutcome"
+            :verb="trash.outcome.value ? trash.verb.value : batchVerb"
+            :rows="listing.rows"
+            class="mt-3"
+            @dismiss="dismissOutcome"
+          />
+          <FilesListing
+            ref="listingView"
+            class="flex-1 transition-opacity"
+            :class="{ 'opacity-60': listing.isHeld }"
+            :aria-busy="listing.isHeld || undefined"
+            :query="listing"
+            :presentation="presentation"
+            :selection="selection"
+            :selection-mode="selectionMode"
+            :empty-title="emptyTitle"
+            :empty-description="emptyDescription"
+            :empty-icon="empty.icon"
+            :show-breadcrumbs="showsLocation"
+            :sortable="arrangeable"
+            :menu-options="rowMenuOptions"
+            :row-drop="rowDrop"
+            :menu-target="contextOpen ? contextRow : null"
+            :date-column="dateColumn"
+            :drag="dragOn"
+            :can-share="(row) => nodeActions(row, signedIn).share"
+            :node-href="nodeHref"
+            @update:selection="picked.selected.value = $event"
+            @sort="changeSort"
+            @open="openNode"
+            @select="selectNode"
+            @extend="(from, to) => picked.extend(from.name, to.name)"
+            @menu="openContextMenu"
+            @preview-error="refreshPreviews"
+            @share="shareRow"
+          >
+            <template v-if="listingTypes.length" #empty-action>
+              <Button label="Clear filter" class="mt-2" @click="setTypes([])" />
+            </template>
+            <template v-else-if="isSearching" #empty-action>
+              <Button :label="__('Clear search')" class="mt-2" @click="clearSearch()" />
+            </template>
+            <template v-else-if="canCreate" #empty-action>
+              <div class="mt-2 flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
+                <Button
+                  :label="__('Upload files')"
+                  icon-left="lucide-upload"
+                  @click="pickUpload('files')"
+                />
+                <span v-if="finePointer" class="text-p-sm text-ink-gray-5">{{
+                  __('or drop files here')
+                }}</span>
+              </div>
+            </template>
+          </FilesListing>
+          <DropOverlay :zone="drop.over.value" />
+        </div>
+      </div>
+    </ContextMenu>
+
+    <RenameDialog v-model:open="renameOpen" :node="activeNode" @renamed="replaceSlug" />
+    <CreateNodeDialog v-model:open="createOpen" :request="createRequest" @created="onCreated" />
+    <FolderPicker
+      v-model:open="pickerOpen"
+      :mode="pickerMode"
+      :items="pickerBulk ? selectedRows : activeNode ? [activeNode] : []"
+      :folder="concreteDestination ? parentId : undefined"
+      :busy="moveMutation.isPending || copyMutation.isPending || batchMutation.isPending"
+      @choose="applyPicker"
+    />
+    <TemplatePicker
+      v-if="parentId"
+      v-model:open="templatesOpen"
+      :parent="parentId"
+      @created="openNode"
+    />
+    <DriveUploads ref="uploads" />
+  </div>
+</template>
+
+<script setup lang="ts">
+import { useMediaQuery } from '@vueuse/core'
+import {
+  Alert,
+  Breadcrumbs,
+  Button,
+  MultiSelect,
+  PageHeader,
+  PageHeaderBackButton,
+  PageHeaderMobile,
+  TabButtons,
+  TextInput,
+  type AlertAction,
+  type DropdownActionOption,
+  type DropdownItem,
+} from 'frappe-ui'
+import { computed, h, inject, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
+import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
+
+import {
+  api,
+  client,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  type InfiniteQueryState,
+} from '@/api'
+import { driveNodeRoute, newDocumentRoute, useDriveDialogs } from '@/apps/drive'
+import {
+  createDocument,
+  folderOf,
+  openAsSpreadsheet,
+  opensAsSpreadsheet,
+} from '@/apps/drive/client/nodes'
+import { bootRoots } from '@/apps/drive/client/roots'
+import type { DriveBatchResult, DriveNode } from '@/apps/drive/client/types'
+import { isDriveLocked } from '@/apps/drive/client/unlock'
+import { AreaSidebar, openAreaSidebar } from '@/platform/area-sidebar'
+import { DOCUMENT_TYPES_KEY, GUEST_FRAME_KEY } from '@/platform/contracts'
+import { confirm, ContextMenu, Dropdown, toast } from '@/platform/feedback'
+import { openingTitle, usePageTitle } from '@/platform/page-meta'
+import { useSession } from '@/platform/session'
+import { openAreaShortcuts } from '@/platform/shortcuts'
+import { translate as __ } from '@/platform/translation'
+import { TransportError } from '@/platform/transport'
+import { useWorkspace } from '@/platform/workspace'
+
+import { inBatches } from '../features/batches'
+import BatchOutcome from '../features/BatchOutcome.vue'
+import type { BatchVerb } from '../features/batchResult'
+import {
+  announceCopy,
+  announceMove,
+  announceTrash,
+  undoLatest,
+  type MovedItem,
+} from '../features/changeToast'
+import CreateNodeDialog, { type CreateRequest } from '../features/CreateNodeDialog.vue'
+import { openingLocationState } from '../features/document/openingLocation'
+import { downloadItems } from '../features/downloads'
+import type { DraggedItems } from '../features/dragMove'
+import { emptyState, type FilesDestination } from '../features/emptyState'
+import FilesListing from '../features/FilesListing.vue'
+import FolderPicker from '../features/FolderPicker.vue'
+import { folderTrail, type FolderTrail } from '../features/folderTrail'
+import { heldWhileRearranging, withCreatedRows } from '../features/heldRows'
+import { linkAccess } from '../features/linkAccess'
+import { allAllow, nodeActions, type NodeActions } from '../features/nodeActions'
+import {
+  FILES_COLUMNS,
+  nextSort,
+  readPresentationPreference,
+  replacePresentation,
+  resolvePresentation,
+  writeColumnChoice,
+  type FilesColumn,
+  type FilesDateColumn,
+  type FilesSort,
+  type PresentationChange,
+  type PresentationState,
+} from '../features/presentation'
+import { takeShown } from '../features/preview/lastShown'
+import { observePreviewRefresh } from '../features/previewRefresh'
+import { recentFiles } from '../features/recent'
+import RecoveryNotice from '../features/RecoveryNotice.vue'
+import RenameDialog from '../features/RenameDialog.vue'
+import { folderMenu, selectionMenu } from '../features/rowMenus'
+import SelectionBar from '../features/SelectionBar.vue'
+import { copyLink } from '../features/share/shareFormat'
+import {
+  menuCommand,
+  useListingShortcuts,
+  type ListingView,
+} from '../features/shortcuts/useListingShortcuts'
+import TemplatePicker from '../features/TemplatePicker.vue'
+import { useTrashActions } from '../features/trash/useTrashActions'
+import {
+  offeredTypes,
+  typeNouns,
+  typeQuery,
+  typesFromQuery,
+  typeSummary,
+} from '../features/typeFilter'
+import UnlockScreen from '../features/UnlockScreen.vue'
+import DriveUploads from '../features/uploads/DriveUploads.vue'
+import { rowDropHandlers, useUploadDrop } from '../features/uploads/drop'
+import DropOverlay from '../features/uploads/DropOverlay.vue'
+import { uploadTargetOf } from '../features/uploads/queue'
+import { pastedImages } from '../features/uploads/sources'
+import { useDragMove } from '../features/useDragMove'
+import { useListingSelection } from '../features/useListingSelection'
+import ViewSettings from '../features/ViewSettings.vue'
+import { nodeIcon, nodeIconTint } from '../internal/icons'
+import {
+  LOCATION_LABELS,
+  locationLabel,
+  locationTitle,
+  rootPath,
+  trashLocation,
+} from '../internal/locations'
+import { slugify } from '../internal/slugify'
+import FilesPanel from './FilesPanel.vue'
+
+type Destination = FilesDestination
+
+const props = defineProps<{ destination: Destination }>()
+const route = useRoute()
+const router = useRouter()
+const dialogs = useDriveDialogs()
+const documentTypes = inject(DOCUMENT_TYPES_KEY, [])
+const guestFrame = inject(GUEST_FRAME_KEY, null)
+const session = useSession()
+const { workspaceName } = useWorkspace()
+// A visitor without a session gets no sidebar, search or Star (spec §10.3).
+const signedIn = computed(() => session.status.value === 'authenticated')
+// Roots need a session (spec §10.13). A guest only ever opens a shared folder.
+const discovered = useQuery(api.drive.roots.list, () => (signedIn.value ? {} : false))
+const presentationVersion = ref(0)
+const picked = useListingSelection(() => listing.rows.map((row) => row.name))
+const searchText = ref(String(route.query.q ?? ''))
+const activeNode = ref<DriveNode | null>(null)
+const contextOptions = ref<DropdownItem[]>([])
+const contextOpen = ref(false)
+/** The item the open menu is for, or `null` for the pane's own menu. */
+const contextRow = ref<string | null>(null)
+/** The last right-click the listing handled, so the pane does not handle it again. */
+let listingMenuEvent: MouseEvent | null = null
+/** Whether the last press in the pane was touch, where a long press selects instead. */
+let paneTouch = false
+const renameOpen = ref(false)
+const createOpen = ref(false)
+const createRequest = ref<CreateRequest | null>(null)
+const pickerOpen = ref(false)
+const templatesOpen = ref(false)
+const pickerMode = ref<'move' | 'copy'>('move')
+const pickerBulk = ref(false)
+const batchOutcome = ref<DriveBatchResult | null>(null)
+const batchVerb = ref<BatchVerb>('moved')
+const narrow = useMediaQuery('(max-width: 767px)')
+let stopRealtime: (() => void) | null = null
+let stopPreviews: (() => void) | null = null
+let visitedFolder = ''
+
+/** The user's choice, from the URL or their saved preference. Menus and folder links carry it. */
+const userPresentation = computed(() => {
+  void presentationVersion.value
+  return resolvePresentation(
+    route.query,
+    readPresentationPreference(),
+    narrow.value ? 'grid' : null,
+  )
+})
+/**
+ * What the listing shows. Search and the saved views come in the server's own
+ * order, so they show it without overwriting the user's choice.
+ */
+const presentation = computed<PresentationState>(() => {
+  const chosen = settingsPresentation.value
+  // Decided from the place, not the rows, so the loading skeleton and the
+  // loaded list have the same columns.
+  const shown = { ...chosen, columns: chosen.columns.filter(isOfferedColumn) }
+  if (isSearching.value || !concreteDestination.value) {
+    return { ...shown, sort: 'modified', dir: 'desc' }
+  }
+  return shown
+})
+const isMyFiles = computed(() => props.destination === 'personal')
+/**
+ * My files and its folders, where every row names the user as owner, so the
+ * Owner column says nothing. A folder whose trail has not loaded counts as the
+ * user's own; a folder shared from elsewhere has another root.
+ */
+const inOwnSpace = computed(() => {
+  if (isSearching.value) return false
+  if (props.destination === 'personal') return true
+  if (props.destination !== 'folder') return false
+  const root = trail.value?.[0]?.name
+  return !root || root === discovered.data?.personal.node
+})
+/**
+ * The sort the folder is read in. Owner orders nothing in the user's own space,
+ * so Name stands in there, and the saved Owner stays for a shared folder.
+ */
+const listedSort = computed<FilesSort>(() => {
+  const { sort } = userPresentation.value
+  return inOwnSpace.value && sort === 'owner' ? 'title' : sort
+})
+/** What View settings shows: the user's choice, with the sort the folder is read in. */
+const settingsPresentation = computed(() => ({ ...userPresentation.value, sort: listedSort.value }))
+const selection = picked.selected
+const selectionMode = picked.selectionMode
+const searchTerm = computed(() => String(route.query.q ?? '').trim())
+const isSearching = computed(() => !!searchTerm.value)
+const concreteDestination = computed(() =>
+  ['personal', 'organization', 'folder'].includes(props.destination),
+)
+// The locations the page loaded with stand in until roots load, so My files reads at once.
+const bootLocations = bootRoots()
+const knownRoots = computed(() => discovered.data ?? bootLocations)
+const rootLocation = computed(() => {
+  if (props.destination === 'organization') return knownRoots.value?.organization ?? null
+  return knownRoots.value?.personal ?? null
+})
+const parentId = computed(() =>
+  props.destination === 'folder'
+    ? String(route.params.node ?? '')
+    : (rootLocation.value?.node ?? ''),
+)
+const detail = useQuery(api.drive.nodes.get, () =>
+  parentId.value && concreteDestination.value
+    ? { node: parentId.value, expand: 'access,breadcrumbs' }
+    : false,
+)
+// A password link shows the unlock screen in place of the folder (spec §10.2),
+// also when its ticket expires and the next listing refresh is refused.
+const locked = computed(
+  () => isDriveLocked(detail.error) || (concreteDestination.value && isDriveLocked(listing.error)),
+)
+/**
+ * The open folder, when it is in Trash. It opens read-only, listing what was
+ * trashed with it, and only its trash root can be restored (spec §5.6, §8.8).
+ */
+const trashedFolder = computed(() => {
+  const folder = detail.data
+  return props.destination === 'folder' &&
+    folder?.name === parentId.value &&
+    folder.state === 'Trashed'
+    ? folder
+    : null
+})
+/** The node the user trashed: the open folder itself, or the ancestor whose trashing took it to Trash. */
+const trashedRoot = computed(() => {
+  const folder = trashedFolder.value
+  if (!folder?.trash_root) return null
+  if (folder.trash_root === folder.name) return { name: folder.name, title: folder.title }
+  return folder.breadcrumbs?.find((crumb) => crumb.name === folder.trash_root) ?? null
+})
+/** Set when a folder row opens, so the header can name it before its details load. */
+const openedTrail = ref<FolderTrail | null>(null)
+/**
+ * The folder shown and its ancestors. It holds across route changes: the new
+ * folder's details load after the route changes, and the header keeps what it
+ * already knows instead of going blank (see `folderTrail`).
+ */
+const trail = computed<FolderTrail | null>((shown) => {
+  const id = parentId.value
+  if (!id || !concreteDestination.value) return shown ?? null
+  if (props.destination !== 'folder') {
+    const root = rootLocation.value
+    return root ? [{ name: root.node, title: root.title }] : (shown ?? null)
+  }
+  // A node the listing already holds can show before its details arrive, and
+  // then has no `breadcrumbs`. Only the details give the trail, but the cached
+  // node, like a link that names its folder, gives the title.
+  const folder = detail.data?.name === id ? detail.data : undefined
+  return folderTrail(id, {
+    loaded: folder?.breadcrumbs
+      ? [...folder.breadcrumbs, { name: folder.name, title: folder.title }]
+      : null,
+    shown: shown ?? null,
+    opened: openedTrail.value,
+    title: folder?.title || openingTitle(router.options.history.state),
+  })
+})
+/** The folder's title, while its trail is known. */
+const folderTitle = computed(() => {
+  const last = trail.value?.at(-1)
+  return last?.name === parentId.value ? last.title : null
+})
+const placeLabel = computed(() => {
+  if (props.destination === 'folder') return folderTitle.value ?? ''
+  return (
+    {
+      personal: LOCATION_LABELS.personal,
+      organization: locationLabel('organization'),
+      shared: LOCATION_LABELS.shared,
+      recent: 'Recent',
+      starred: 'Starred',
+      trash: 'Trash',
+      folder: 'Folder',
+    } satisfies Record<Destination, string>
+  )[props.destination]
+})
+// Search covers the whole Drive, so while it shows, the header names the
+// search and not the folder it started from.
+const destinationLabel = computed(() => (isSearching.value ? 'Search results' : placeLabel.value))
+const breadcrumbs = computed(() => {
+  if (isSearching.value)
+    return [{ label: `Search results for “${searchTerm.value}”`, route: route.fullPath }]
+  // `node` names each crumb's folder, for drag to move.
+  if (props.destination !== 'folder')
+    return [{ label: placeLabel.value, route: route.path, node: parentId.value }]
+  const whole = folderTitle.value === null ? null : trail.value
+  // Unknown until the details load. The header keeps its height meanwhile.
+  if (!whole) return []
+  // A trashed folder is reached from Trash, so its trail starts there, at the node the user trashed.
+  const from = trashedRoot.value
+    ? whole.findIndex((crumb) => crumb.name === trashedRoot.value?.name)
+    : -1
+  const known = from >= 0 ? whole.slice(from) : whole
+  const items = known.slice(0, -1).map((crumb) => ({
+    label: locationTitle(crumb, discovered.data),
+    node: crumb.name,
+    route: {
+      path:
+        rootPath(crumb.name, discovered.data) ??
+        `/drive/f/${encodeURIComponent(crumb.name)}/${slugify(crumb.title)}`,
+      query: presentationQuery.value,
+    },
+  }))
+  const trashCrumb = trashedFolder.value
+    ? [{ label: 'Trash', route: trashPath(trashedFolder.value) }]
+    : []
+  return [
+    ...trashCrumb,
+    ...items,
+    { label: placeLabel.value, route: route.fullPath, node: parentId.value },
+  ]
+})
+usePageTitle(() => {
+  if (isSearching.value) return `Search results for “${searchTerm.value}”`
+  if (props.destination === 'organization' && workspaceName.value) return placeLabel.value
+  return props.destination === 'folder' ? (folderTitle.value ?? '') : ''
+})
+const folderParent = computed<RouteLocationRaw | null>(() => {
+  if (isSearching.value) return null
+  const previous = breadcrumbs.value.at(-2)
+  return previous?.route ?? null
+})
+const presentationQuery = computed(() => ({
+  view: userPresentation.value.view,
+  sort: userPresentation.value.sort,
+  dir: userPresentation.value.dir,
+}))
+// A search result, a shared item and a starred item each show where they live.
+const showsLocation = computed(
+  () =>
+    isSearching.value ||
+    props.destination === 'shared' ||
+    props.destination === 'starred' ||
+    props.destination === 'recent',
+)
+const expansion = computed(() => {
+  const parts = ['access']
+  if (showsLocation.value) parts.push('breadcrumbs')
+  if (presentation.value.view === 'grid') parts.push('preview')
+  else if (presentation.value.columns.includes('access')) parts.push('audience')
+  if (showsFolderSize.value) parts.push('contents_size')
+  return parts.join(',')
+})
+/** A folder's total size shows in the list's Size column, except in Trash. */
+const showsFolderSize = computed(
+  () =>
+    props.destination !== 'trash' &&
+    presentation.value.view === 'list' &&
+    presentation.value.columns.includes('size'),
+)
+// Recent shows the files the user opened, without the folders they passed through.
+const hidesFolders = computed(() => props.destination === 'recent' && !isSearching.value)
+const typeChoices = computed(() => offeredTypes({ folders: !hidesFolders.value }))
+// `?type=` keeps items of any of the chosen types. It is filter state, not a
+// preference, so folder links and breadcrumbs leave it behind, as they leave the search.
+const listingTypes = computed(() => typesFromQuery(route.query.type, typeChoices.value))
+const typeOptions = computed(() =>
+  typeChoices.value.map((option) => ({ label: option.label, value: option.value })),
+)
+/**
+ * Trash has a tab per root. The tabs show from the first frame, before the
+ * roots load, so the list below them never moves down. They go only when the
+ * roots arrive without an Organization root, which a site rarely lacks.
+ */
+const trashTabs = computed(() => {
+  if (props.destination !== 'trash') return false
+  const known = discovered.data
+  return known ? !!known.organization : !discovered.error
+})
+// The root whose Trash shows, from its tab.
+const trashRoot = computed(() => {
+  if (props.destination !== 'trash') return null
+  return (
+    (route.query.root === 'organization'
+      ? knownRoots.value?.organization?.node
+      : knownRoots.value?.personal.node) ?? null
+  )
+})
+const childListing = useInfiniteQuery(api.drive.nodes.children, () =>
+  !isSearching.value && concreteDestination.value && parentId.value
+    ? {
+        node: parentId.value,
+        limit: 60,
+        order_by: listedSort.value,
+        ascending: userPresentation.value.dir === 'asc',
+        type: listingTypes.value.map((option) => option.value).join(','),
+        expand: expansion.value,
+      }
+    : false,
+)
+const viewListing = useInfiniteQuery(api.drive.views.list, () => {
+  const type = listingTypes.value.map((option) => option.value).join(',')
+  if (isSearching.value)
+    return { view: 'search', term: searchTerm.value, type, limit: 60, expand: expansion.value }
+  if (concreteDestination.value) return false
+  const view =
+    props.destination === 'shared'
+      ? 'shared'
+      : props.destination === 'recent'
+        ? 'recents'
+        : props.destination === 'starred'
+          ? 'favourites'
+          : 'trash'
+  const root = trashRoot.value ?? undefined
+  if (view === 'trash' && !root) return false
+  return { view, root, type, limit: 60, expand: expansion.value }
+})
+const activeListing = computed(() =>
+  isSearching.value || !concreteDestination.value ? viewListing : childListing,
+)
+const listingQuery: InfiniteQueryState<DriveNode> = {
+  get status() {
+    return activeListing.value.status
+  },
+  get isFetching() {
+    return activeListing.value.isFetching
+  },
+  get rows() {
+    return activeListing.value.rows.filter((row): row is DriveNode => 'name' in row)
+  },
+  get total() {
+    return activeListing.value.total
+  },
+  get hasNext() {
+    return activeListing.value.hasNext
+  },
+  get isFetchingNext() {
+    return activeListing.value.isFetchingNext
+  },
+  get error() {
+    return activeListing.value.error
+  },
+  refetch() {
+    return activeListing.value.refetch()
+  },
+  fetchNext() {
+    return activeListing.value.fetchNext()
+  },
+  cancel() {
+    activeListing.value.cancel()
+  },
+}
+// Folders and links this tab created show at once, where the server will list them.
+const createdRows = withCreatedRows(
+  recentFiles(listingQuery, () => hidesFolders.value),
+  () =>
+    !isSearching.value && concreteDestination.value && parentId.value && !listingTypes.value.length
+      ? {
+          place: parentId.value,
+          sort: listedSort.value,
+          ascending: userPresentation.value.dir === 'asc',
+        }
+      : null,
+)
+// A new sort, view or search term keeps the old rows up until the new ones come.
+const listing = heldWhileRearranging(createdRows.listing, () =>
+  [
+    props.destination,
+    parentId.value,
+    isSearching.value,
+    trashRoot.value,
+    typeQuery(listingTypes.value),
+  ].join('|'),
+)
+const hasRows = computed(() => listing.rows.length > 0)
+const settledEmpty = computed(() => !hasRows.value && listing.status !== 'pending')
+// A trashed folder's own Restore needs its root too, for a restore into a folder the user picks.
+const trash = useTrashActions(() => trashRoot.value ?? trashedFolder.value?.root ?? null)
+
+function dismissOutcome() {
+  trash.dismissOutcome()
+  batchOutcome.value = null
+}
+// Search replaces the Trash listing, so its rows get no Trash actions.
+const trashActions = computed(() => props.destination === 'trash' && !isSearching.value)
+// The same holds for Recent: a search result can only leave Recent from Recent.
+const recentActions = computed(() => props.destination === 'recent' && !isSearching.value)
+const uploads = ref<InstanceType<typeof DriveUploads> | null>(null)
+// Uploads follow the server's UPLOAD role on the open folder (spec §6.7, §10.13). Saved views and search take none.
+const uploadTarget = computed(() =>
+  concreteDestination.value && !isSearching.value ? uploadTargetOf(detail.data) : null,
+)
+const drop = useUploadDrop((selection, target) => uploads.value?.upload(selection, target))
+const paneDrop = drop.zone(
+  () =>
+    uploadTarget.value && {
+      key: uploadTarget.value.parent,
+      label: placeLabel.value,
+      target: uploadTarget.value,
+    },
+)
+// New stays while a search shows. It adds to the folder the search started from.
+// A trashed folder takes no new items, so it offers no New.
+const canCreate = computed(() => concreteDestination.value && !!uploadTargetOf(detail.data))
+/** Until the folder's details load, New keeps its room unseen, so it does not pop into the header. */
+const newPending = computed(
+  () => concreteDestination.value && !detail.data && detail.status === 'pending',
+)
+const newUploadTarget = computed(() =>
+  concreteDestination.value ? uploadTargetOf(detail.data) : null,
+)
+const canCreateDocuments = computed(() => linkAccess(detail.data, signedIn.value).documentKinds)
+const selectedRows = computed(() =>
+  listing.rows.filter((row) => selection.value.includes(row.name)),
+)
+/** The selection bar's words when "N selected" would mislead. */
+const selectionLabel = computed(() => {
+  const count = selection.value.length
+  if (!count) return __('Select items')
+  // Select all takes only the loaded pages (spec §5.8), so the count says so.
+  const allLoaded = listing.hasNext && selectedRows.value.length === listing.rows.length
+  return allLoaded ? __('{0} loaded items selected', [count]) : undefined
+})
+/** The selected item, when it is the only one. */
+const onlySelected = computed(() =>
+  selectedRows.value.length === 1 ? (selectedRows.value[0] ?? null) : null,
+)
+const empty = computed(() => {
+  return emptyState({
+    destination: props.destination,
+    term: searchTerm.value,
+    canCreate: canCreate.value,
+    typeNoun: listingTypes.value.length ? typeNouns(listingTypes.value) : undefined,
+    inTrash: !!trashedFolder.value,
+    canCreateDocuments: canCreateDocuments.value,
+  })
+})
+const emptyTitle = computed(() => empty.value.title)
+const emptyDescription = computed(() => empty.value.description)
+
+const batchMutation = useMutation(api.drive.nodes.batch)
+const moveMutation = useMutation(api.drive.nodes.move)
+const copyMutation = useMutation(api.drive.nodes.copy)
+const trashMutation = useMutation(api.drive.nodes.trash)
+const starMutation = useMutation(api.drive.nodes.star)
+const unstarMutation = useMutation(api.drive.nodes.unstar)
+const visitMutation = useMutation(api.drive.nodes.visit, { silent: true })
+const clearRecentMutation = useMutation(api.drive.views.clearRecent)
+
+onMounted(() => {
+  stopRealtime = () => {}
+  syncSavedViewQuery()
+  if (presentation.value.view === 'grid') startPreviewObservation()
+  window.addEventListener('popstate', onMobileBack)
+  window.addEventListener('paste', onPaste)
+})
+onBeforeUnmount(() => {
+  stopRealtime?.()
+  stopPreviews?.()
+  window.removeEventListener('popstate', onMobileBack)
+  window.removeEventListener('paste', onPaste)
+})
+
+watch(
+  () => presentation.value.view,
+  (mode) => {
+    if (mode === 'grid') startPreviewObservation()
+    else {
+      stopPreviews?.()
+      stopPreviews = null
+    }
+  },
+)
+// A type this listing does not offer is dropped without a history entry, and so
+// is `group`, which an older listing put in the URL.
+watch(
+  () => [route.query.type, typeQuery(listingTypes.value), route.query.group] as const,
+  ([raw, kept, group]) => {
+    if ((raw === undefined || raw === kept) && group === undefined) return
+    const { type: _type, group: _group, ...query } = route.query
+    const type = raw === undefined ? undefined : kept
+    void router.replace({ query: type ? { ...query, type } : query })
+  },
+  { immediate: true },
+)
+watch(
+  () => route.fullPath,
+  () => {
+    searchText.value = String(route.query.q ?? '')
+    clearSelected()
+  },
+)
+// A root never shows as a folder route. Its own route replaces it [T001, T015].
+watch(
+  () => [props.destination, String(route.params.node ?? ''), discovered.data] as const,
+  ([destination, id]) => {
+    const root = destination === 'folder' ? rootPath(id, discovered.data) : null
+    if (root) void router.replace({ path: root, query: route.query })
+  },
+  { immediate: true },
+)
+watch(
+  () => detail.data,
+  (folder) => {
+    if (!folder || props.destination !== 'folder' || rootPath(folder.name, discovered.data)) return
+    // The old Drive pages used `/drive/f/<id>` for a file. A non-folder id opens as a document [T020].
+    if (folder.kind !== 'folder' && folder.kind !== 'root') {
+      void router.replace({
+        path: `/d/${encodeURIComponent(folder.name)}`,
+        query: route.query,
+        hash: route.hash,
+      })
+      return
+    }
+    const expected = slugify(folder.title)
+    if (String(route.params.slug ?? '') !== expected) {
+      void router.replace({
+        path: `/drive/f/${encodeURIComponent(folder.name)}${expected ? `/${expected}` : ''}`,
+        query: route.query,
+      })
+    }
+    if (visitedFolder !== folder.name && linkAccess(folder, signedIn.value).visit) {
+      visitedFolder = folder.name
+      void visitMutation.run({ node: folder.name }).catch(() => {})
+    }
+  },
+)
+
+// Failed items stay selected after each Trash outcome, also one a Retry settles (spec §6.11).
+watch(
+  () => trash.outcome.value,
+  (outcome) => {
+    if (outcome) picked.keepOnly(outcome.failed.map((failure) => failure.node))
+  },
+)
+
+// A guest is never told whether the folder exists (spec §10.8).
+watch(
+  () => [detail.error, listing.error] as const,
+  (errors) => {
+    const refused = errors.some(
+      (error) =>
+        error instanceof TransportError &&
+        !isDriveLocked(error) &&
+        [401, 403, 404, 410].includes(error.status),
+    )
+    if (guestFrame && refused) guestFrame.requireSignIn()
+  },
+)
+
+// Sort reorders a folder on the server. Search and the saved views come in
+// their own order, so they offer no sort.
+const arrangeable = computed(() => concreteDestination.value && !isSearching.value)
+/** The listing hides Owner in the user's own space, so View settings does not offer it there. */
+const dateColumn = computed<FilesDateColumn>(() =>
+  props.destination === 'recent' && !isSearching.value ? 'opened' : 'modified',
+)
+const offeredColumns = computed(() => FILES_COLUMNS.filter(isOfferedColumn))
+/**
+ * Owner says nothing in the user's own space, and Access nothing in Trash.
+ * The listing query reads this early, so it reads no later `const`.
+ */
+function isOfferedColumn(column: string) {
+  if (column === 'owner') return !inOwnSpace.value
+  if (column === 'access') {
+    const inTrash = props.destination === 'trash' && !isSearching.value
+    return !inTrash
+  }
+  return true
+}
+/** The open folder, when the page shows it. A root is named by the sidebar and offers no actions. */
+const openFolder = computed(() => {
+  const folder = detail.data
+  return props.destination === 'folder' && !isSearching.value && folder?.kind === 'folder'
+    ? folder
+    : null
+})
+/** The trashed folder's notice. Its trash root offers Restore and Delete forever; a folder inside one points to it. */
+const trashedNotice = computed<{
+  description: string
+  primary?: AlertAction
+  secondary?: AlertAction
+}>(() => {
+  const folder = trashedFolder.value
+  const root = trashedRoot.value
+  if (!folder) return { description: '' }
+  if (!root) return { description: 'Restore the folder it is in to use its contents.' }
+  if (root.name !== folder.name) {
+    return {
+      description: `Restore “${root.title}” to use its contents.`,
+      primary: {
+        label: `Open “${root.title}”`,
+        onClick: () => {
+          void router.push(folderPath(root))
+        },
+      },
+    }
+  }
+  const can = nodeActions(folder, signedIn.value)
+  const item = { node: folder.name, title: folder.title }
+  const restore: AlertAction | undefined = can.restore
+    ? {
+        label: 'Restore',
+        disabled: trash.pending.value,
+        onClick: async () => {
+          await trash.restore([item])
+        },
+      }
+    : undefined
+  const remove: AlertAction | undefined = can.deleteForever
+    ? {
+        label: 'Delete forever',
+        disabled: trash.pending.value,
+        onClick: () => purgeOpenFolder(item, folder),
+      }
+    : undefined
+  return {
+    description: 'Restore it to use its contents.',
+    primary: restore ?? remove,
+    secondary: restore && remove,
+  }
+})
+/** The open folder's part of the "…" menu: the actions of its own row menu. */
+const folderGroups = computed<DropdownItem[]>(() => {
+  const folder = openFolder.value
+  return folder ? folderMenu(rowMenuOptions(folder), () => trashOpenFolder(folder)) : []
+})
+/** A mouse: it can drag files in, and has the checkbox on hover. Phones and tablets have neither. */
+const finePointer = useMediaQuery('(hover: hover) and (pointer: fine)')
+/** How a touch device starts selecting. A mouse has the checkbox on hover instead. */
+const selectEntry = computed<DropdownActionOption[]>(() =>
+  finePointer.value
+    ? []
+    : [{ label: __('Select'), icon: 'lucide-square-check', onClick: picked.start }],
+)
+const moreOptions = computed<DropdownItem[]>(() => [
+  ...folderGroups.value,
+  ...(hasRows.value
+    ? [
+        {
+          group: 'Select',
+          hideLabel: true,
+          options: [
+            ...selectEntry.value,
+            {
+              key: 'select-all',
+              label: 'Select all',
+              icon: 'lucide-list-checks',
+              onClick: selectAll,
+            },
+          ],
+        },
+      ]
+    : []),
+  // A phone has no keyboard to list.
+  ...(narrow.value
+    ? []
+    : [
+        {
+          group: 'Help',
+          hideLabel: true,
+          options: [
+            { label: 'Keyboard shortcuts', icon: 'lucide-keyboard', onClick: openAreaShortcuts },
+          ],
+        },
+      ]),
+])
+/** What a selection of several items offers, in the toolbar and on right-click. */
+// An action is enabled only when every selected row allows it (spec §5.8).
+const bulkActions = computed(() => {
+  const allow = (action: keyof NodeActions) => allAllow(selectedRows.value, action, signedIn.value)
+  return trashActions.value
+    ? [
+        {
+          label: 'Restore',
+          icon: 'lucide-undo-2',
+          disabled: trash.pending.value || !allow('restore'),
+          onClick: runRestore,
+        },
+        {
+          key: 'delete-forever',
+          label: 'Delete forever',
+          icon: 'lucide-trash-2',
+          disabled: trash.pending.value || !allow('deleteForever'),
+          onClick: runPurge,
+        },
+      ]
+    : [
+        {
+          key: 'move',
+          label: 'Move',
+          icon: 'lucide-folder-input',
+          disabled: !allow('move'),
+          onClick: beginBulkMove,
+        },
+        {
+          label: __('Download'),
+          icon: 'lucide-download',
+          disabled: !allow('download'),
+          onClick: () => downloadItems(selectedRows.value),
+        },
+        // A star is personal, so it needs a session.
+        ...(signedIn.value
+          ? [
+              {
+                label:
+                  selectedRows.value.length && selectedRows.value.every((row) => row.favourite)
+                    ? __('Unstar')
+                    : __('Star'),
+                icon: 'lucide-star',
+                disabled: !allow('star'),
+                onClick: () => starRows(selectedRows.value),
+              },
+            ]
+          : []),
+        {
+          key: 'trash',
+          label: 'Move to trash',
+          icon: 'lucide-trash-2',
+          disabled: !allow('trash'),
+          onClick: runBulkTrash,
+        },
+        ...(recentActions.value
+          ? [
+              {
+                label: 'Remove from Recent',
+                icon: 'lucide-list-x',
+                disabled: clearRecentMutation.isPending || !selectedRows.value.length,
+                onClick: () => removeFromRecent(selectedRows.value),
+              },
+            ]
+          : []),
+      ]
+})
+/** A menu row led by the type icon the listing shows for what it creates. */
+function typedOption(
+  label: string,
+  kind: Pick<DriveNode, 'kind' | 'title' | 'mime' | 'content_doctype'>,
+  onClick: () => void,
+  icon = nodeIcon(kind),
+): DropdownActionOption {
+  return {
+    label,
+    onClick,
+    slots: {
+      prefix: () =>
+        h('span', { class: ['size-4 shrink-0', icon, nodeIconTint(kind)], 'aria-hidden': 'true' }),
+    },
+  }
+}
+const newOptions = computed<DropdownItem[]>(() => {
+  const target = newUploadTarget.value
+  const documents = canCreateDocuments.value ? documentTypes : []
+  return [
+    {
+      group: 'Create',
+      options: [
+        {
+          ...typedOption(
+            'Folder',
+            { kind: 'folder', title: 'Folder', mime: null, content_doctype: null },
+            () => create('folder'),
+          ),
+          key: 'create-folder',
+        },
+        ...documents.map((definition) =>
+          typedOption(
+            definition.newLabel(),
+            {
+              kind: 'document',
+              title: definition.newLabel(),
+              mime: null,
+              content_doctype: definition.contentDoctype,
+            },
+            () => void createAndOpen(definition.contentDoctype),
+          ),
+        ),
+        typedOption(
+          'Link',
+          { kind: 'link', title: 'Link', mime: null, content_doctype: null },
+          () => create('link'),
+        ),
+        ...(documents.length
+          ? [
+              {
+                label: 'From template',
+                icon: 'lucide-layout-template',
+                onClick: () => {
+                  templatesOpen.value = true
+                },
+              },
+            ]
+          : []),
+      ],
+    },
+    ...(target
+      ? [
+          {
+            group: 'Upload',
+            // The items name the verb themselves, so the heading would repeat it.
+            hideLabel: true,
+            options: [
+              {
+                key: 'upload-files',
+                label: __('Upload files'),
+                icon: 'lucide-upload',
+                onClick: () => pickUpload('files'),
+              },
+              // Phone pickers offer no folders (spec §5.12).
+              ...(narrow.value
+                ? []
+                : [
+                    {
+                      key: 'upload-folder',
+                      label: __('Upload folder'),
+                      icon: 'lucide-folder-up',
+                      onClick: () => pickUpload('folder'),
+                    },
+                  ]),
+            ],
+          },
+        ]
+      : []),
+  ]
+})
+
+const listingView = useTemplateRef<InstanceType<typeof FilesListing>>('listingView')
+/** The row a key acts on when nothing is selected: the one that shows keyboard focus. */
+function focusedTarget(): DriveNode | null {
+  if (selectionMode.value) return null
+  return listingView.value?.focusedRow() ?? null
+}
+// A shortcut runs the option a menu shows for it, so it is refused where the menu is.
+useListingShortcuts(
+  () => {
+    const focused = focusedTarget()
+    const [only, ...others] = focused ? [focused] : selectedRows.value
+    const rowMenu = only && !others.length ? rowMenuOptions(only) : []
+    const selected = selectionMode.value ? bulkActions.value : []
+    const createMenu = canCreate.value ? newOptions.value : []
+    const removeKey = trashActions.value ? 'delete-forever' : 'trash'
+    return {
+      selectAll: menuCommand(moreOptions.value, 'select-all'),
+      clearSelection: selectionMode.value ? { onClick: clearSelected } : undefined,
+      move: menuCommand(selected, 'move'),
+      remove: menuCommand(focused ? rowMenu : selected, removeKey),
+      openInNewTab: menuCommand(rowMenu, 'open-in-new-tab'),
+      share: menuCommand(rowMenu, 'share'),
+      upload: menuCommand(createMenu, 'upload-files'),
+      newFolder: menuCommand(createMenu, 'create-folder'),
+      rename: menuCommand(rowMenu, 'rename'),
+      parent: folderParent.value ? { onClick: openParent } : undefined,
+      undo: undoLatest,
+    }
+  },
+  { enabled: () => signedIn.value, open: openView },
+  { inTrash: () => trashActions.value },
+)
+/** Opens the folder above, with the folder the user came from focused. */
+function openParent() {
+  const parent = folderParent.value
+  if (!parent) return
+  const state = { reveal: parentId.value }
+  void router.push(typeof parent === 'string' ? { path: parent, state } : { ...parent, state })
+}
+// A navigation that should land on an item names it in the history entry.
+// Back from a file preview lands on the last file it showed.
+const revealing = ref<{ id: string; highlight: boolean } | null>(null)
+watch(
+  () => route.fullPath,
+  (path) => {
+    const { reveal, highlight, forward } = router.options.history.state
+    const shown = typeof forward === 'string' ? takeShown(path) : null
+    revealing.value =
+      typeof reveal === 'string'
+        ? { id: reveal, highlight: highlight === true }
+        : shown
+          ? { id: shown, highlight: false }
+          : null
+  },
+  { immediate: true },
+)
+watch([revealing, () => listing.status, listingView], async ([target, status, view]) => {
+  if (!target || status === 'pending' || !view) return
+  revealing.value = null
+  const found = await view.reveal(target.id, { highlight: target.highlight })
+  if (found || !target.highlight) return
+  toast.info(
+    listing.hasNext
+      ? __('Opened {0}. The item is further down.', [placeLabel.value])
+      : __('Opened {0}. The item is no longer in it.', [placeLabel.value]),
+  )
+})
+/** The folder a listed item is in, when its trail shows it. Trash rows have none. */
+function shownParent(row: DriveNode) {
+  const parent = row.breadcrumbs?.at(-1)
+  return parent && parent.name === row.parent_node && row.state === 'Active' ? parent : null
+}
+/** Opens the item's folder with the item focused and highlighted. */
+function showRowInFolder(row: DriveNode) {
+  const parent = shownParent(row)
+  if (!parent) return
+  const state = { reveal: row.name, highlight: true }
+  const root = rootPath(parent.name, discovered.data)
+  void router.push(
+    root ? { path: root, query: presentationQuery.value, state } : { ...folderPath(parent), state },
+  )
+}
+function openView(view: ListingView) {
+  const name = {
+    personal: 'files',
+    organization: discovered.data?.organization ? 'files-organization' : null,
+    shared: 'files-shared-with-me',
+    recent: 'files-recent',
+    starred: 'files-starred',
+  }[view]
+  if (name) void router.push({ name })
+}
+function setPresentation(change: PresentationChange) {
+  clearSelected()
+  void replacePresentation(router, userPresentation.value, change)
+}
+function setColumn(column: FilesColumn, visible: boolean) {
+  writeColumnChoice(userPresentation.value.columns, column, visible)
+  presentationVersion.value += 1
+}
+function changeSort(column: FilesSort) {
+  if (!arrangeable.value) return
+  setPresentation(nextSort(settingsPresentation.value, column))
+}
+function updateSearch(value: string | number) {
+  const q = String(value).trim() || undefined
+  void router.replace({ query: { ...route.query, q } })
+}
+function clearSearch() {
+  searchText.value = ''
+  updateSearch('')
+}
+/** The clear button leaves with the term, so focus stays in the field. */
+function clearSearchAndFocus(event: MouseEvent) {
+  const checkedEventTarget = event.currentTarget
+  if (!(checkedEventTarget instanceof HTMLElement)) return
+
+  const field = checkedEventTarget.closest('.files-search')?.querySelector('input')
+  clearSearch()
+  field?.focus()
+}
+function selectNode(row: DriveNode, range: boolean) {
+  picked.toggle(row.name, range)
+}
+function selectAll() {
+  picked.selectAll()
+}
+function clearSelected() {
+  picked.clear()
+}
+/** A pasted image, such as a screenshot, uploads into the open folder as a picked file would. */
+function onPaste(event: ClipboardEvent) {
+  const target = uploadTarget.value
+  if (!target || isTextField(event.target)) return
+  const files = pastedImages(event.clipboardData)
+  if (!files.length) return
+  event.preventDefault()
+  void uploads.value?.upload({ files, folders: [] }, target)
+}
+function onMobileBack() {
+  if (selectionMode.value) clearSelected()
+}
+function requestPanel() {
+  openAreaSidebar('files')
+}
+function typeIcon(value: string | number) {
+  const option = typeChoices.value.find((choice) => choice.value === value)
+  return option ? [nodeIcon(option.sample), nodeIconTint(option.sample)] : []
+}
+/**
+ * With no search field, frappe-ui's MultiSelect focuses the first button in
+ * its popover when it opens, which is Clear here, so Enter would clear the
+ * filter. Focus that arrives from outside the popover goes to the first chosen
+ * type instead, as it does in a listbox. Clear shows only when a type is
+ * chosen. Remove this once MultiSelect does it itself.
+ */
+function enterTypeOptions(event: FocusEvent) {
+  const checkedEventTarget = event.currentTarget
+  if (!(checkedEventTarget instanceof HTMLElement)) return
+
+  const listbox = checkedEventTarget.closest<HTMLElement>('[role="listbox"]')
+  const from = event.relatedTarget instanceof Node ? event.relatedTarget : null
+  if (!listbox || listbox.contains(from)) return
+  listbox.querySelector<HTMLElement>('[role="option"][aria-selected="true"]')?.focus()
+}
+function setTypes(values: readonly (string | number)[]) {
+  const chosen = new Set(values)
+  replaceTypeQuery(typeQuery(typeChoices.value.filter((option) => chosen.has(option.value))))
+}
+function replaceTypeQuery(type: string | undefined) {
+  const { type: _type, ...query } = route.query
+  void router.replace({ query: type ? { ...query, type } : query })
+}
+function switchTrashRoot(value: string | number) {
+  clearSelected()
+  void router.replace({
+    query: { ...route.query, root: value === 'organization' ? 'organization' : undefined },
+  })
+}
+function startPreviewObservation() {
+  if (stopPreviews) return
+  stopPreviews = observePreviewRefresh({
+    refresh: async () => {
+      await listing.refetch()
+    },
+    rows: () => listing.rows,
+  })
+}
+function refreshPreviews() {
+  void listing.refetch()
+}
+function reload() {
+  void detail.refetch()
+  void listing.refetch()
+}
+
+async function openNode(row: DriveNode, newTab = false) {
+  if (row.kind === 'link') {
+    if (!row.url) return
+    const origin = new URL(row.url, window.location.href).origin
+    const allowed = await confirm({
+      title: 'Open external link?',
+      message: `This link opens ${origin} in a new tab.`,
+      confirmLabel: 'Open',
+    })
+    if (!allowed) return
+    if (linkAccess(row, signedIn.value).visit)
+      await client.mutation(api.drive.nodes.visit, { node: row.name })
+    window.open(row.url, '_blank', 'noopener,noreferrer')
+    return
+  }
+  const target = openTarget(row)
+  if (newTab) {
+    window.open(router.resolve(target).href, '_blank', 'noopener,noreferrer')
+    return
+  }
+  if (row.kind === 'folder') openedTrail.value = trailOf(row)
+  await router.push(target)
+}
+/**
+ * Where opening an item goes. A folder keeps the user's view settings. A
+ * document's history entry carries its title, so its tab is named before it
+ * loads. A file keeps the type filter, so its preview steps through the files
+ * this listing shows.
+ */
+function openTarget(row: DriveNode): RouteLocationRaw {
+  if (row.kind === 'folder') return { path: nodePath(row), query: presentationQuery.value }
+  if (row.kind !== 'file') return driveNodeRoute(row)
+  const target = driveNodeRoute(row)
+  const state = { ...target.state, ...openingLocationState(previewLocation(row)) }
+  return { ...target, state, query: { type: typeQuery(listingTypes.value) } }
+}
+/** The folder a file's preview header names, when this listing knows it, so its opening header names it too. */
+function previewLocation(row: DriveNode): string | null {
+  const parent = detail.data?.name === row.parent_node ? detail.data : null
+  const folder = row.breadcrumbs ? folderOf(row) : parent
+  return folder ? locationTitle(folder, discovered.data) : null
+}
+/** The address an item's name links to. An external link asks before it opens, so it has none. */
+function nodeHref(row: DriveNode): string | undefined {
+  if (row.kind === 'link') return undefined
+  if (!nodeActions(row, signedIn.value).openInNewTab) return undefined
+  return router.resolve(openTarget(row)).href
+}
+
+/** Importing beside a file takes UPLOAD on its folder. Outside that folder's listing the role is not known here, and Drive refuses when asked. */
+function mayUploadBeside(row: DriveNode) {
+  return row.parent_node !== detail.data?.name || !!uploadTargetOf(detail.data)
+}
+
+/** Imports an uploaded .xlsx or .csv into a new spreadsheet beside it, then opens that. */
+async function openRowAsSpreadsheet(row: DriveNode) {
+  if (!row.parent_node) return
+  // A refusal is reported where the spreadsheet is created.
+  const sheet = await openAsSpreadsheet({ ...row, parent_node: row.parent_node }).catch(() => null)
+  if (sheet) await router.push(driveNodeRoute(sheet))
+}
+
+/**
+ * Sets the menu a right-click opens. An item in a selection of several gets the
+ * selection's actions. Any other item gets its own menu, and the selection
+ * clears unless it is that item alone. Empty space gets the New button's
+ * options. Where none apply, the event stops before the menu's trigger, so the
+ * browser's own menu shows.
+ */
+function openContextMenu(row: DriveNode | null, event: MouseEvent) {
+  const options = row
+    ? itemContextOptions(row)
+    : canCreate.value && !isSearching.value
+      ? newOptions.value
+      : []
+  if (!options.length) {
+    event.stopPropagation()
+    return
+  }
+  listingMenuEvent = event
+  contextRow.value = row?.name ?? null
+  contextOptions.value = options
+}
+function isTextField(target: EventTarget | null) {
+  return target instanceof Element && !!target.closest('input, textarea, [contenteditable="true"]')
+}
+function onPanePointerdown(event: PointerEvent) {
+  paneTouch = event.pointerType !== 'mouse'
+  // A touch press would start the menu's own long-press timer. Marking it
+  // handled stops that, as the listing does for its items. Text fields keep
+  // their press, so tapping the search field still focuses it.
+  if (paneTouch && !isTextField(event.target)) event.preventDefault()
+}
+/** A right-click in the pane outside the listing: the toolbar, the padding, the space below. */
+function onPaneContextMenu(event: MouseEvent) {
+  if (event === listingMenuEvent) return
+  if (paneTouch) {
+    event.preventDefault()
+    return
+  }
+  // A text field keeps the browser's menu, for paste and spelling.
+  if (isTextField(event.target)) {
+    event.stopPropagation()
+    return
+  }
+  openContextMenu(null, event)
+}
+function itemContextOptions(row: DriveNode): DropdownItem[] {
+  const selected = selection.value
+  if (selected.length > 1 && selected.includes(row.name)) {
+    return [{ group: `${selected.length} selected`, options: bulkActions.value }]
+  }
+  if (selected.length && !(selected.length === 1 && selected[0] === row.name)) clearSelected()
+  return rowMenuOptions(row)
+}
+/** A row's own menu. `nodeActions` decides what it offers, so a trashed row offers only what Trash allows. */
+function rowMenuOptions(row: DriveNode): DropdownItem[] {
+  const can = nodeActions(row, signedIn.value)
+  const groups: { group: string; hideLabel: true; options: DropdownActionOption[] }[] = [
+    {
+      group: 'Open',
+      hideLabel: true,
+      options: [
+        { key: 'open', label: 'Open', icon: 'lucide-arrow-up-right', onClick: () => openNode(row) },
+        ...(can.openInNewTab
+          ? [
+              {
+                key: 'open-in-new-tab',
+                label: 'Open in new tab',
+                icon: 'lucide-external-link',
+                onClick: () => openNode(row, true),
+              },
+            ]
+          : []),
+        ...(shownParent(row)
+          ? [
+              {
+                key: 'show-in-folder',
+                label: __('Show in folder'),
+                icon: 'lucide-folder-search',
+                onClick: () => showRowInFolder(row),
+              },
+            ]
+          : []),
+        ...(can.copy && opensAsSpreadsheet(row) && mayUploadBeside(row)
+          ? [
+              {
+                label: 'Open as spreadsheet',
+                icon: 'lucide-sheet',
+                onClick: () => openRowAsSpreadsheet(row),
+              },
+            ]
+          : []),
+        ...(can.share
+          ? [{ key: 'share', label: 'Share', icon: 'lucide-share-2', onClick: () => shareRow(row) }]
+          : []),
+        ...(can.copyLink
+          ? [{ label: 'Copy link', icon: 'lucide-link', onClick: () => copyNodeLink(row) }]
+          : []),
+        ...(can.download
+          ? [{ label: 'Download', icon: 'lucide-download', onClick: () => downloadItems([row]) }]
+          : []),
+        { label: 'Details', icon: 'lucide-info', onClick: () => dialogs.showDetails(row.name) },
+      ],
+    },
+    {
+      group: 'Organize',
+      hideLabel: true,
+      options: [
+        ...(can.rename
+          ? [
+              {
+                key: 'rename',
+                label: 'Rename',
+                icon: 'lucide-pencil',
+                onClick: () => beginRename(row),
+              },
+            ]
+          : []),
+        ...(can.move
+          ? [
+              {
+                label: 'Move',
+                icon: 'lucide-folder-input',
+                onClick: () => beginPicker(row, 'move'),
+              },
+            ]
+          : []),
+        ...(can.copy
+          ? [{ label: 'Make a copy', icon: 'lucide-copy', onClick: () => beginPicker(row, 'copy') }]
+          : []),
+        ...(can.star
+          ? [
+              {
+                label: row.favourite ? 'Unstar' : 'Star',
+                icon: 'lucide-star',
+                onClick: () => toggleStar(row),
+              },
+            ]
+          : []),
+      ],
+    },
+    {
+      group: 'Select',
+      hideLabel: true,
+      options: [
+        {
+          key: 'select',
+          label: 'Select',
+          icon: 'lucide-square-check',
+          onClick: () => selectNode(row, false),
+        },
+        ...(recentActions.value
+          ? [
+              {
+                key: 'remove-from-recent',
+                label: 'Remove from Recent',
+                icon: 'lucide-list-x',
+                onClick: () => removeFromRecent([row]),
+              },
+            ]
+          : []),
+      ],
+    },
+    {
+      group: 'Trash',
+      hideLabel: true,
+      options: [
+        ...(can.trash
+          ? [
+              {
+                key: 'trash',
+                label: 'Move to trash',
+                icon: 'lucide-trash-2',
+                theme: 'red' as const,
+                onClick: () => trashRow(row),
+              },
+            ]
+          : []),
+        ...(can.restore
+          ? [
+              {
+                key: 'restore',
+                label: 'Restore',
+                icon: 'lucide-undo-2',
+                onClick: () => trash.restore([itemOf(row)]),
+              },
+            ]
+          : []),
+        ...(can.deleteForever
+          ? [
+              {
+                key: 'delete-forever',
+                label: 'Delete forever',
+                icon: 'lucide-trash-2',
+                theme: 'red' as const,
+                onClick: () => trash.purge([itemOf(row)]),
+              },
+            ]
+          : []),
+      ],
+    },
+  ]
+  return groups.filter((group) => group.options.length)
+}
+/**
+ * A row's trail, as far as the page knows it. Search rows carry their path. A
+ * row of the folder shown sits under its trail. A saved view knows the row only.
+ */
+function trailOf(row: DriveNode): FolderTrail {
+  const self = { name: row.name, title: row.title }
+  if (row.breadcrumbs) return [...row.breadcrumbs, self]
+  if (concreteDestination.value && !isSearching.value && trail.value) return [...trail.value, self]
+  return [self]
+}
+/** The node's own page, as an absolute URL. A link node copies where it points. */
+function copyNodeLink(row: DriveNode) {
+  void copyLink(row.kind === 'link' && row.url ? row.url : router.resolve(nodePath(row)).href)
+}
+function folderPath(folder: Pick<DriveNode, 'name' | 'title'>) {
+  return { path: nodePath({ ...folder, kind: 'folder' }), query: presentationQuery.value }
+}
+function trashPath(row: Pick<DriveNode, 'root'>): RouteLocationRaw {
+  return trashLocation(row, discovered.data)
+}
+function nodePath(row: Pick<DriveNode, 'name' | 'title' | 'kind'>) {
+  return driveNodeRoute(row).path
+}
+function pickUpload(source: 'files' | 'folder') {
+  const target = newUploadTarget.value
+  if (!target) return
+  if (source === 'files') uploads.value?.pickFiles(target)
+  else uploads.value?.pickFolder(target)
+}
+/** Folder rows decide drops by their own access. Saved views and search take none (spec §6.7). */
+function rowDrop(row: DriveNode) {
+  return concreteDestination.value && !isSearching.value ? rowDropHandlers(drop, row) : null
+}
+/** Drag to move, in a folder the user can rearrange. Saved views, search and a trashed folder have none. */
+const dragMove = useDragMove({
+  enabled: () =>
+    signedIn.value && concreteDestination.value && !isSearching.value && !trashedFolder.value,
+  rows: () => listing.rows,
+  selection: () => selection.value,
+  folder: () => (detail.data?.name === parentId.value ? detail.data : null),
+  roots: () => discovered.data,
+  move: moveDragged,
+  trash: trashDragged,
+})
+const dragOn = computed(() => (dragMove.isOn() ? dragMove : undefined))
+/** A drop moves as the Move dialog does: the selection in a batch, one row on its own. */
+async function moveDragged(
+  { items, fromSelection }: DraggedItems,
+  folder: { node: string; title: string },
+) {
+  await moveItems(items, folder.node, folder.title, { bulk: fromSelection })
+}
+async function trashDragged({ items: [only], fromSelection }: DraggedItems) {
+  if (fromSelection) await runBulkTrash()
+  else if (only) await trashRow(only)
+}
+function itemOf(row: Pick<DriveNode, 'name' | 'title'>) {
+  return { node: row.name, title: row.title }
+}
+async function runRestore() {
+  await trash.restore(selectedRows.value.map(itemOf))
+}
+async function runPurge() {
+  await trash.purge(selectedRows.value.map(itemOf))
+}
+async function trashRow(row: DriveNode) {
+  const item = itemOf(row)
+  if (!(await trashMutation.run({ node: row.name, state: 'Trashed' }))) return
+  deselect(row)
+  announceTrash([item])
+}
+/** A row that has left the listing leaves the selection too, as a batch's rows do. */
+function deselect(row: DriveNode) {
+  if (selection.value.includes(row.name))
+    picked.keepOnly(selection.value.filter((name) => name !== row.name))
+}
+/** A trashed folder opens read-only, so the page goes up to its parent first. */
+async function trashOpenFolder(folder: DriveNode) {
+  const parent = folderParent.value
+  if (!(await trashMutation.run({ node: folder.name, state: 'Trashed' }))) return
+  if (parent) await router.replace(parent)
+  announceTrash([itemOf(folder)])
+}
+/** A folder deleted forever is gone, so the page goes back to the Trash it was in. */
+async function purgeOpenFolder(item: { node: string; title: string }, folder: DriveNode) {
+  const result = await trash.purge([item])
+  if (result?.ok.includes(item.node)) await router.replace(trashPath(folder))
+}
+function beginRename(row: DriveNode) {
+  activeNode.value = row
+  renameOpen.value = true
+}
+function beginPicker(row: DriveNode, mode: 'move' | 'copy') {
+  activeNode.value = row
+  pickerMode.value = mode
+  pickerBulk.value = false
+  pickerOpen.value = true
+}
+function beginBulkMove() {
+  pickerMode.value = 'move'
+  pickerBulk.value = true
+  pickerOpen.value = true
+}
+async function applyPicker(parent: string, destination: string) {
+  const row = activeNode.value
+  if (pickerMode.value === 'copy') {
+    if (!row) return
+    const copy = await copyMutation.run({ node: row.name, parent_node: parent })
+    announceCopy({ node: copy.name, title: copy.title }, destination)
+    pickerOpen.value = false
+    return
+  }
+  // The moved rows leave the list at once, so the picker closes with them.
+  pickerOpen.value = false
+  const rows = pickerBulk.value ? selectedRows.value : row ? [row] : []
+  await moveItems(rows, parent, destination, { bulk: pickerBulk.value })
+}
+/** Moves `rows` to `parent`: together as a batch, or one row on its own. */
+async function moveItems(
+  rows: readonly DriveNode[],
+  parent: string,
+  destination: string,
+  { bulk }: { bulk: boolean },
+) {
+  // Read before the move: a move changes each node's parent in place.
+  const moving: MovedItem[] = rows.flatMap((row) =>
+    row.parent_node
+      ? [{ node: row.name, title: row.title, from: row.parent_node, to: parent }]
+      : [],
+  )
+  if (bulk) {
+    const result = await runBatch(
+      moving.map((item) => item.node),
+      { parent_node: parent },
+      'moved',
+    )
+    if (!result) return
+    announceMove(
+      moving.filter((item) => result.ok.includes(item.node)),
+      destination,
+    )
+    // The toast reports what moved. The alert stays only to list failures.
+    if (!result.failed.length) batchOutcome.value = null
+    return
+  }
+  const [row] = rows
+  if (!row) return
+  await moveMutation.run({ node: row.name, parent_node: parent })
+  deselect(row)
+  announceMove(moving, destination)
+}
+async function runBulkTrash() {
+  const trashing = selectedRows.value.map(itemOf)
+  if (trashing.length > 1) {
+    const agreed = await confirm({
+      title: __('Move {0} items to trash?', [trashing.length]),
+      message: __('You can restore them from Trash.'),
+      confirmLabel: __('Move to trash'),
+      destructive: true,
+    })
+    if (!agreed) return
+  }
+  const result = await runBatch(
+    trashing.map((item) => item.node),
+    { state: 'Trashed' },
+    'moved to trash',
+  )
+  if (!result) return
+  announceTrash(trashing.filter((item) => result.ok.includes(item.node)))
+}
+/** Sends the nodes the caller also announces, so the toast's Undo covers exactly what changed. */
+async function runBatch(
+  nodes: string[],
+  patch: { parent_node?: string; state?: 'Trashed' },
+  verb: BatchVerb,
+): Promise<DriveBatchResult | null> {
+  // The rows leave at once, and the selection with them. A refusal brings both back.
+  picked.keepOnly([])
+  try {
+    const result = await inBatches(nodes, (chunk) => batchMutation.run({ nodes: chunk, patch }))
+
+    batchOutcome.value = result
+    batchVerb.value = verb
+    picked.keepOnly(result.failed.map((failure) => failure.node))
+    return result
+  } catch {
+    picked.keepOnly(nodes)
+    return null
+  }
+}
+/** Forgets that the user opened the items. Recent is read again, so their rows leave it. */
+async function removeFromRecent(rows: readonly DriveNode[]) {
+  await clearRecentMutation.run({ nodes: rows.map((row) => row.name) })
+  clearSelected()
+}
+async function toggleStar(row: DriveNode) {
+  await setStar(row, !row.favourite)
+}
+/** Stars every selected item, or unstars them all when every one is already starred. */
+async function starRows(rows: readonly DriveNode[]) {
+  const starred = !rows.every((row) => row.favourite)
+  const changing = rows.filter((row) => !!row.favourite !== starred)
+  await Promise.allSettled(changing.map((row) => setStar(row, starred)))
+}
+async function setStar(row: DriveNode, starred: boolean) {
+  const result = starred
+    ? await starMutation.run({ node: row.name })
+    : await unstarMutation.run({ node: row.name })
+  if (result) row.favourite = starred
+}
+/** A share write can change the caller's own access, so the listing is read again. */
+async function shareRow(row: DriveNode) {
+  if (await dialogs.share(row.name, row)) void listing.refetch()
+}
+let creatingDocument = false
+function create(kind: CreateRequest['kind']) {
+  if (!parentId.value) return
+  createRequest.value = { parent: parentId.value, kind }
+  createOpen.value = true
+}
+/** Creates a document with its default title and opens it; a second click meanwhile does nothing. */
+async function createAndOpen(contentDoctype: string) {
+  const parent = parentId.value
+  if (!parent || creatingDocument) return
+  creatingDocument = true
+  try {
+    // createDocument reports its own errors.
+    const created = await createDocument({
+      parent_node: parent,
+      content_doctype: contentDoctype,
+    }).catch(() => null)
+    // The document's surface may ask what a new one should start as.
+    if (created) await router.push(newDocumentRoute(created))
+  } finally {
+    creatingDocument = false
+  }
+}
+function onCreated(created: DriveNode) {
+  // A search hides what was just added, so the folder shows again.
+  if (isSearching.value) clearSearch()
+  else if (created.parent_node === parentId.value) createdRows.add(created)
+}
+function replaceSlug(row: DriveNode) {
+  if (props.destination === 'folder' && row.name === route.params.node) {
+    void router.replace({
+      path: `/drive/f/${encodeURIComponent(row.name)}/${slugify(row.title)}`,
+      query: route.query,
+    })
+  }
+}
+function syncSavedViewQuery() {
+  if (concreteDestination.value || isSearching.value) return
+  if (!route.query.sort && !route.query.dir) return
+  const { sort: _sort, dir: _dir, ...query } = route.query
+  void router.replace({ query })
+}
+</script>
+
+<style>
+/*
+ * The field draws its own clear button, so the browser's is hidden. Not
+ * scoped: TextInput passes its attributes to the input, so its root carries
+ * no scope id.
+ */
+.files-search input[type='search']::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none;
+}
+</style>
