@@ -6,10 +6,10 @@ import {
   downloadRecovery,
   keepOutlivedRecovery,
   keepRecovery,
+  newestRecovery,
   readRecovery,
   recoveryFile,
   recoveryRecords,
-  removeNewestRecovery,
 } from './recovery'
 
 const PREFIX = 'suite:slides-recovery:me@example.com:'
@@ -259,7 +259,8 @@ describe('Slides recovery copy', () => {
     keepRecovery('node-1', [{ clientId: 'older' }], { sticky: true })
     keepRecovery('node-1', [{ clientId: 'newer' }], { sticky: true })
 
-    removeNewestRecovery('node-1')
+    const newest = newestRecovery('node-1')!
+    discardRecovery('node-1', newest.id, newest.copy)
 
     expect(kept()).toEqual([['older', true]])
   })

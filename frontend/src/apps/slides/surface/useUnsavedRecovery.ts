@@ -8,12 +8,13 @@ import type { LostAccess } from '@/platform/collab'
 import { translate } from '@/platform/translation'
 
 import {
+  discardRecovery,
   downloadRecovery,
   downloadSlides,
   keepOutlivedRecovery,
   keepRecovery,
+  newestRecovery,
   readRecovery,
-  removeNewestRecovery,
 } from './recovery'
 
 export interface RetainOptions {
@@ -147,11 +148,15 @@ export function useUnsavedRecovery(
   }
 
   async function discardChanges() {
+    // the copy as it is while the person is asked, so one another tab writes meanwhile stays
+    const shown = newestRecovery(session.nodeId)
     if (!window.confirm(translate("Discard your kept changes? This can't be undone."))) {
       return
     }
 
-    removeNewestRecovery(session.nodeId)
+    if (shown) {
+      discardRecovery(session.nodeId, shown.id, shown.copy)
+    }
     syncHasRecovery()
     // the edits on screen would go into a copy again on leaving
     if (!isWritable()) {

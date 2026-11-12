@@ -15,13 +15,14 @@ vi.mock('@/apps/slides/stores/slide', async () => {
   const { ref } = await import('vue')
   return { slides: ref([]) }
 })
-vi.mock('./recovery', () => ({
+vi.mock('./recovery', async (original) => ({
+  ...(await original<typeof import('./recovery')>()),
   downloadRecovery: vi.fn(),
   downloadSlides: vi.fn(),
   keepRecovery: vi.fn(),
   readRecovery: () => [],
-  removeNewestRecovery: vi.fn(),
 }))
+const stored = await vi.importActual<typeof import('./recovery')>('./recovery')
 
 function recovery() {
   return useUnsavedRecovery(
@@ -66,4 +67,33 @@ describe('keeping the text of a deleted element', () => {
     expect(options.duration).toBe(Number.POSITIVE_INFINITY)
     expect(downloadSlides).toHaveBeenCalledWith(typed, 'Talk')
   })
+})
+
+describe("the menu's Discard", () => {
+  const shownAt = new Date('2026-11-12T10:00:00Z')
+
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    localStorage.clear()
+  })
+
+  it.each([
+    ['a newer', new Date('2026-11-12T10:01:00Z')],
+    ['a same-date, different', shownAt],
+  ])(
+    'discards the copy shown when it asked, keeping %s copy written during the prompt',
+    async (_, at) => {
+      stored.keepRecovery('n', [{ clientId: 'shown' }], { sticky: true, now: shownAt })
+      vi.spyOn(window, 'confirm').mockImplementation(() => {
+        stored.keepRecovery('n', [{ clientId: 'written' }], { sticky: true, now: at })
+        return true
+      })
+
+      await recovery().discardChanges()
+
+      expect(stored.readRecovery('n').map((copy) => copy.slides)).toEqual([
+        [{ clientId: 'written' }],
+      ])
+    },
+  )
 })

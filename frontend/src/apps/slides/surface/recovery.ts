@@ -125,7 +125,7 @@ function splitList(node: string) {
   }
 }
 
-interface RecoveryRecord {
+export interface RecoveryRecord {
   id: string
   copy: RecoveryCopy
   // The order a tab kept its copies in, where two share a date
@@ -266,11 +266,8 @@ export function discardRecovery(
   }
 }
 
-export function removeNewestRecovery(node: string): void {
-  const newest = recoveryRecords(node).at(-1)
-  if (newest) {
-    discardRecovery(node, newest.id, newest.copy)
-  }
+export function newestRecovery(node: string): RecoveryRecord | undefined {
+  return recoveryRecords(node).at(-1)
 }
 
 /** The title as a file name: the characters no file system takes dropped. */
