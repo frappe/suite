@@ -896,8 +896,11 @@ class TestRowsOfAnUnconvertedDeck(IntegrationTestCase):
         frappe.set_user(OWNER)
         self.addCleanup(frappe.set_user, "Administrator")
         suffix = frappe.generate_hash(6)
-        deck = frappe.get_doc("Presentation", make_presentation(f"Waits {suffix}").name)
+        name = make_presentation(f"Waits {suffix}").name
+        reason = "Advance After must be between 1 and 3600 seconds"
         for value in ("soon", 0, 3601, "1,000", "١٢"):
+            # A fresh read each time, so no earlier refusal leaves it out of date
+            deck = frappe.get_doc("Presentation", name)
             deck.slides[0].advance_after = value
-            with self.subTest(value=value), self.assertRaises(frappe.ValidationError):
+            with self.subTest(value=value), self.assertRaisesRegex(frappe.ValidationError, reason):
                 deck.save()
