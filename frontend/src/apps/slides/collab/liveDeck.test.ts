@@ -655,7 +655,7 @@ describe('a presentation with no slides', () => {
 })
 
 describe("filling a new presentation's blank slide", () => {
-  const picture = (id: string, refId: string) => ({
+  const picture = (id: string, refId: string | number) => ({
     id,
     type: 'image',
     left: 1,
@@ -791,6 +791,28 @@ describe("filling a new presentation's blank slide", () => {
 
     for (const doc of [one, other]) {
       expect(new Set(transitionKeys(doc)).size).toBe(readSlides(doc)[0].elements.length)
+    }
+  })
+
+  it('leaves no transition key twice when the kept element pairs by a number', () => {
+    const [one, other] = apart()
+    const [tabA, tabB] = [tabOn(one), tabOn(other)]
+    const numbered = (): StoreSlide => ({
+      clientId: 'numbered',
+      elements: [picture('n1', 1), picture('n2', 2)],
+    })
+
+    tabA.deck.fillBlank(numbered())
+    tabB.deck.fillBlank(numbered())
+    for (const tab of [tabA, tabB]) {
+      tab.store.slides[0].elements[0].left = 99
+      tab.deck.push()
+    }
+    connect(one, other)
+
+    for (const doc of [one, other]) {
+      expect(readSlides(doc)[0].elements).toHaveLength(3)
+      expect(new Set(transitionKeys(doc)).size).toBe(3)
     }
   })
 

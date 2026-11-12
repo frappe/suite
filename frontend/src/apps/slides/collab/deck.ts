@@ -15,6 +15,7 @@
 
 import * as Y from 'yjs'
 
+import { transitionKey as transitionKeyOf } from '@/apps/slides/utils/transitionKey'
 import { randomId } from '@/platform/random-id'
 
 export const ROOT = { slides: 'slides', elements: 'elements' } as const
@@ -336,11 +337,10 @@ export function elementState(doc: Y.Doc, id: string) {
   return JSON.stringify(elementsOf(doc).get(id)?.toJSON() ?? null)
 }
 
-// Magic Move pairs elements across slides by this key, as the show's `getTransitionKey` does
+// The key Magic Move pairs this element by across slides
 export function transitionKey(doc: Y.Doc, id: string) {
   const element = elementsOf(doc).get(id)
-  const refId = element?.get('refId')
-  return element?.get('type') !== 'table' && typeof refId === 'string' && refId ? refId : id
+  return transitionKeyOf({ id, type: element?.get('type'), refId: element?.get('refId') })
 }
 
 export function elementText(doc: Y.Doc, id: string): Y.XmlFragment | undefined {
