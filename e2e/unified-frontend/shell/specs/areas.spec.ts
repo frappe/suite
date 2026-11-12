@@ -40,7 +40,7 @@ const driveArea = (page: Page) => page.getByRole("group", { name: "Locations" })
 async function railLabels(page: Page): Promise<string[]> {
 	// An empty rail list has no size, so wait for the shell's avatar instead.
 	await expect(rail(page)).toBeAttached();
-	await expect(page.getByRole("button", { name: "Account" })).toBeVisible();
+	await expect(page.getByRole("button", { name: "Account", exact: true })).toBeVisible();
 	// The Mail label carries its unread count, so read each label's first word.
 	return rail(page)
 		.getByRole("link")
@@ -48,7 +48,7 @@ async function railLabels(page: Page): Promise<string[]> {
 }
 
 async function openAccountMenu(page: Page) {
-	await page.getByRole("button", { name: "Account" }).click();
+	await page.getByRole("button", { name: "Account", exact: true }).click();
 	await expect(page.getByRole("menuitem", { name: "Log out" })).toBeVisible();
 }
 

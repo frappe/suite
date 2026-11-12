@@ -98,6 +98,14 @@ const TONES: Record<ColourProperty, { gray: Rgb; none: Rgb }> = {
 }
 
 // A palette name or any var(--...) reference, with nothing around it
+// A whole font family that is a quoted name holding a ';'
+const SEMICOLON_NAME = /^\s*(?:"[^"]*;[^"]*"|'[^']*;[^']*')\s*$/
+// The alpha variable closing a colour Tailwind's classes wrote, which they set to full opacity
+const TAILWIND_ALPHA = /\s*\/\s*var\(--tw-[a-z-]*opacity\)\s*\)\s*$/i
+const COLUMN_WIDTH = /^(\d+)px$/
+const CELL_WIDTH = /^([\d.]+)(px|pt|in)$/
+const PIXELS_PER_INCH = 96
+const POINTS_PER_INCH = 72
 const WHOLE_NAME = /^([a-z]+|var\(--[a-z0-9-]+\))$/i
 
 // Old Drive's highlight picker, from its DocMenuAndInfoBar: the editor reads these tones as their
@@ -130,10 +138,12 @@ function oldDriveName(property: ColourProperty, rgb: ReturnType<typeof rgbOf>) {
 // The palette name an old colour keeps its look as, '' when it looks like none: old Drive's own,
 // the one the editor reads, or for a tone it reads as none, gray or no colour by whichever is
 // nearer; null when it can't be read or holds more than a colour
-function oldPaletteName(property: ColourProperty, value: string): string | null {
-  if (value.includes(';')) {
+function oldPaletteName(property: ColourProperty, stored: string): string | null {
+  if (stored.includes(';')) {
     return null
   }
+
+  const value = stored.replace(TAILWIND_ALPHA, ')')
 
   const rgb = rgbOf(value)
   if (rgb?.alpha === 0 || LOOKS_UNSET[property].includes(value.trim().toLowerCase())) {
@@ -180,30 +190,46 @@ function textColourFormat(color: unknown): Attributes | null {
   return { color: name || null }
 }
 
-// An old font family whose first ';' ends it, read as the editor reads the family before it;
-// nothing when it holds no ';', an open quote, a family the editor can't read, a line break,
-// escape or comment before the ';', or when what follows could hold a declaration or swallow the
-// styles drawn after it
+// An old font family without its quoted names holding a ';', which name no font, so a browser
+// reads past them to the next family; unchanged when a quote stays open, or with an escape or
+// comment to misread
+function withoutSemicolonNames(fontFamily: string) {
+  const families = fontFamily.match(/(?:[^,"']|"[^"]*"|'[^']*')+/g) ?? []
+  if (families.join(',') !== fontFamily || /\\|\/\*/.test(fontFamily)) {
+    return fontFamily
+  }
+
+  return families
+    .filter((family) => !SEMICOLON_NAME.test(family))
+    .join(',')
+    .trim()
+}
+
+// An old font family whose first ';' ends it, read as the editor reads the family before it, once
+// its quoted names holding a ';' are gone; nothing when neither applies, or with an open quote, a
+// family the editor can't read, a line break, escape or comment before the ';', or when what
+// follows could hold a declaration or swallow the styles drawn after it
 function fontFamilyFormat(fontFamily: unknown) {
   if (typeof fontFamily !== 'string') {
     return {}
   }
 
-  const end = fontFamily.indexOf(';')
+  const value = withoutSemicolonNames(fontFamily)
+  const [before, ...after] = value.split(';')
   if (
-    end < 0 ||
-    !/^[\p{L}\p{N} \t,._;-]*$/u.test(fontFamily.slice(end + 1)) ||
-    unclosedQuote(fontFamily) ||
-    /[\n\r\f]/.test(fontFamily.slice(0, end)) ||
-    /\\|\/\*/.test(fontFamily.slice(0, end))
+    (value === fontFamily && !after.length) ||
+    !/^[\p{L}\p{N} \t,._;-]*$/u.test(after.join(';')) ||
+    unclosedQuote(value) ||
+    /[\n\r\f]/.test(before) ||
+    /\\|\/\*/.test(before)
   ) {
     return {}
   }
 
   const element = document.createElement('span')
-  element.style.setProperty('font-family', fontFamily.slice(0, end))
+  element.style.setProperty('font-family', before)
   const family = element.style.fontFamily.replace(/['"]+/g, '')
-  if (!family && fontFamily.slice(0, end).trim()) {
+  if (!family && before.trim()) {
     return {}
   }
 
@@ -443,6 +469,124 @@ export function repairOldCellSpans(body: XmlFragment) {
   }
 
   return repairedSpans
+}
+
+// A cell's `background` that is only a colour, as that colour, the defaults it set gone; anything
+// more is left to fail the check
+function readCellBackground({ style }: HTMLElement) {
+  const value = style.getPropertyValue('background')
+  const probe = document.createElement('td').style
+  probe.setProperty('background-color', value)
+  const isOnlyColour = !!probe.getPropertyValue('background-color')
+  probe.setProperty('background', value)
+  const parts = [...probe]
+  const isDefault = parts.every(
+    (name) => style.getPropertyValue(name) === probe.getPropertyValue(name),
+  )
+  if (!isOnlyColour || !isDefault || style.getPropertyPriority('background')) {
+    return false
+  }
+
+  for (const name of parts.filter((part) => part !== 'background-color')) {
+    style.removeProperty(name)
+  }
+
+  return true
+}
+
+function pixelsPer(unit: string) {
+  if (unit === 'pt') {
+    return PIXELS_PER_INCH / POINTS_PER_INCH
+  }
+
+  return unit === 'in' ? PIXELS_PER_INCH : 1
+}
+
+// A cell's width in a unit that converts to pixels, as its column width; one that disagrees with
+// the width the cell has, or spans columns, is left to fail the check
+function readCellWidth(cell: HTMLElement) {
+  const [, amount, unit] = CELL_WIDTH.exec(cell.style.getPropertyValue('width')) ?? []
+  if (
+    !unit ||
+    cell.style.getPropertyPriority('width') ||
+    Number(cell.getAttribute('colspan') ?? 1) !== 1
+  ) {
+    return false
+  }
+
+  const width = String(Math.round(Number(amount) * pixelsPer(unit)))
+  if ((cell.getAttribute('colwidth') ?? width) !== width) {
+    return false
+  }
+
+  cell.setAttribute('colwidth', width)
+  cell.style.removeProperty('width')
+  return true
+}
+
+function columnWidthOf(col: HTMLElement) {
+  const [, width] = COLUMN_WIDTH.exec(col.style.getPropertyValue('width')) ?? []
+  return width
+}
+
+function setColumnWidths(cells: HTMLTableCellElement[], widths: (string | undefined)[]) {
+  for (const [index, cell] of cells.entries()) {
+    if (widths[index]) {
+      cell.setAttribute('colwidth', widths[index])
+    }
+  }
+}
+
+// A table whose pixel widths are only on its column list, those widths put on its cells, which is
+// where the editor holds them; one with a span or a cell width of its own is left to fail the check
+function readColumnWidths(table: HTMLTableElement) {
+  const widths = [...table.querySelectorAll<HTMLElement>(':scope > colgroup > col')].map(
+    columnWidthOf,
+  )
+  const rows = [...table.rows].map((row) => [...row.cells])
+  const isPlain = rows
+    .flat()
+    .every((cell) => !cell.hasAttribute('colwidth') && cell.colSpan === 1 && cell.rowSpan === 1)
+  if (!isPlain || !widths.some(Boolean) || rows.some((row) => row.length > widths.length)) {
+    return false
+  }
+
+  for (const cells of rows) {
+    setColumnWidths(cells, widths)
+  }
+
+  return true
+}
+
+/**
+ * Reads a pasted table's sizes and colours where the editor holds them, and takes off a border image
+ * of none, the default. Returns the heights dropped, which the editor has nowhere to hold, and
+ * whether any cell changed.
+ */
+export function readHtmlCellStyles(body: HTMLElement) {
+  let heights = 0
+  let isRead = false
+  for (const cell of body.querySelectorAll<HTMLElement>('td, th')) {
+    const { style } = cell
+    if (style.getPropertyValue('border-image') === 'none') {
+      style.removeProperty('border-image')
+      isRead = true
+    }
+
+    isRead = readCellBackground(cell) || isRead
+    isRead = readCellWidth(cell) || isRead
+    if (style.getPropertyValue('height')) {
+      style.removeProperty('height')
+      heights += 1
+      isRead = true
+    }
+  }
+
+  for (const table of body.querySelectorAll('table')) {
+    isRead = readColumnWidths(table) || isRead
+  }
+
+  return { heights, isRead }
 }
 
 export function repairHtmlCellSpans(body: HTMLElement) {

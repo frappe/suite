@@ -176,6 +176,7 @@ from suite.mail.doctype.vacation_response.vacation_response import (
 from suite.mail.http.admin import CONTRACT_ROUTES as ADMIN_CONTRACT_ROUTES
 from suite.mail.http.admin_actions import CONTRACT_ROUTES as ADMIN_ACTION_CONTRACT_ROUTES
 from suite.mail.http.auth import CONTRACT_ROUTES as AUTH_CONTRACT_ROUTES
+from suite.mail.http.auth import ROUTES as AUTH_ROUTES
 from suite.mail.http.auth import (
     create_account,
     get_account_request,
@@ -508,6 +509,7 @@ CONTRACT_ROUTES += (
 
 CONTRACT_ROUTES += CALENDAR_CONTRACT_ROUTES
 
+ROUTES += AUTH_ROUTES
 CONTRACT_ROUTES += AUTH_CONTRACT_ROUTES
 
 CONTRACT_ROUTES += (

@@ -48,7 +48,7 @@
       </template>
       <!-- Text editor buttons -->
       <div class="flex min-w-0 items-center gap-1 overflow-x-auto" :class="{ 'px-3': isMobile }">
-        <TextEditorFixedMenu :buttons class="!bg-inherit" />
+        <EditorFixedMenu :items="menu" class="shrink-0" />
         <EmojiPicker
           v-if="!isMobile"
           v-slot="{ toggle }"
@@ -105,14 +105,15 @@
 </template>
 <script setup lang="ts">
 import { Button, Dropdown } from 'frappe-ui'
-import { TextEditorFixedMenu } from 'frappe-ui/experimental'
+import { EditorFixedMenu } from 'frappe-ui/editor'
 import { CalendarClock, ChevronDown, Laugh, Paperclip } from 'lucide-vue-next'
 import { computed, useTemplateRef } from 'vue'
 
 import ComposeReminderButton from '@/apps/mail/components/ComposeReminderButton.vue'
 import EmojiPicker from '@/apps/mail/components/EmojiPicker.vue'
 import { isMac } from '@/apps/mail/utils'
-import { useScreenSize, useTextEditorButtons } from '@/apps/mail/utils/composables'
+import { useScreenSize } from '@/apps/mail/utils/composables'
+import { useEditorMenu } from '@/apps/mail/utils/editorMenu'
 
 const { isRecipientsEmpty, isUploading, saveFailed, remindAt } = defineProps<{
   isRecipientsEmpty: boolean
@@ -144,7 +145,7 @@ const sendOptions = [
 ]
 
 const { isMobile } = useScreenSize()
-const { buttons } = useTextEditorButtons(() => true)
+const menu = useEditorMenu(() => true)
 
 const fileInput = useTemplateRef('fileInput')
 

@@ -5,6 +5,8 @@ import { assertSchema } from '@/platform/transport/schema'
 import type {
   AccountGetInput,
   AccountGetOutput,
+  AccountPatchInput,
+  AccountPatchOutput,
   AdminHealthGetInput,
   AdminHealthGetOutput,
   ErrorsPostInput,
@@ -73,6 +75,8 @@ import type {
   UserTransferOutput,
   UserTransferPreviewInput,
   UserTransferPreviewOutput,
+  WorkspaceGetInput,
+  WorkspaceGetOutput,
 } from './generated'
 
 export const operationAdminHealthGet: Validators<AdminHealthGetInput, AdminHealthGetOutput> = {
@@ -238,10 +242,15 @@ export const operationOnboardingGet: Validators<OnboardingGetInput, OnboardingGe
         properties: {
           cloud: { title: 'Cloud', type: 'boolean' },
           domains: { items: { type: 'string' }, title: 'Domains', type: 'array' },
+          supplied_domain: {
+            anyOf: [{ type: 'string' }, { type: 'null' }],
+            title: 'Supplied Domain',
+          },
           account: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Account' },
           ready: { title: 'Ready', type: 'boolean' },
+          backup_email: { title: 'Backup Email', type: 'string' },
         },
-        required: ['cloud', 'domains', 'account', 'ready'],
+        required: ['cloud', 'domains', 'supplied_domain', 'account', 'ready', 'backup_email'],
         title: 'OnboardingOptions',
         type: 'object',
       },
@@ -957,6 +966,8 @@ export const operationAccountGet: Validators<AccountGetInput, AccountGetOutput> 
               is_mail_server_configured: { title: 'Is Mail Server Configured', type: 'boolean' },
               must_change_password: { title: 'Must Change Password', type: 'boolean' },
               setup_required: { title: 'Setup Required', type: 'boolean' },
+              needs_welcome: { title: 'Needs Welcome', type: 'boolean' },
+              get_started_hidden: { title: 'Get Started Hidden', type: 'boolean' },
             },
             required: [
               'name',
@@ -969,6 +980,8 @@ export const operationAccountGet: Validators<AccountGetInput, AccountGetOutput> 
               'is_mail_server_configured',
               'must_change_password',
               'setup_required',
+              'needs_welcome',
+              'get_started_hidden',
             ],
             title: 'Account',
             type: 'object',
@@ -986,6 +999,74 @@ export const operationAccountGet: Validators<AccountGetInput, AccountGetOutput> 
         anyOf: [{ $ref: '#/$defs/Account' }, { type: 'null' }],
       },
       'account_get output',
+    )
+  },
+}
+
+export const operationAccountPatch: Validators<AccountPatchInput, AccountPatchOutput> = {
+  validateInput(value: unknown): asserts value is AccountPatchInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          welcomed: { const: true, title: 'Welcomed', type: 'boolean' },
+          get_started_hidden: { title: 'Get Started Hidden', type: 'boolean' },
+        },
+        required: [],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'account_patch input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is AccountPatchOutput {
+    assertSchema(
+      value,
+      {
+        $defs: {
+          AccountRoles: {
+            properties: {
+              system_manager: { title: 'System Manager', type: 'boolean' },
+              suite_admin: { title: 'Suite Admin', type: 'boolean' },
+            },
+            required: ['system_manager', 'suite_admin'],
+            title: 'AccountRoles',
+            type: 'object',
+          },
+        },
+        properties: {
+          name: { title: 'Name', type: 'string' },
+          email: { title: 'Email', type: 'string' },
+          full_name: { title: 'Full Name', type: 'string' },
+          avatar: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Avatar' },
+          time_zone: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Time Zone' },
+          roles: { $ref: '#/$defs/AccountRoles' },
+          is_jmap_configured: { title: 'Is Jmap Configured', type: 'boolean' },
+          is_mail_server_configured: { title: 'Is Mail Server Configured', type: 'boolean' },
+          must_change_password: { title: 'Must Change Password', type: 'boolean' },
+          setup_required: { title: 'Setup Required', type: 'boolean' },
+          needs_welcome: { title: 'Needs Welcome', type: 'boolean' },
+          get_started_hidden: { title: 'Get Started Hidden', type: 'boolean' },
+        },
+        required: [
+          'name',
+          'email',
+          'full_name',
+          'avatar',
+          'time_zone',
+          'roles',
+          'is_jmap_configured',
+          'is_mail_server_configured',
+          'must_change_password',
+          'setup_required',
+          'needs_welcome',
+          'get_started_hidden',
+        ],
+        title: 'Account',
+        type: 'object',
+      },
+      'account_patch output',
     )
   },
 }
@@ -1013,6 +1094,31 @@ export const operationSiteGet: Validators<SiteGetInput, SiteGetOutput> = {
         type: 'object',
       },
       'site_get output',
+    )
+  },
+}
+
+export const operationWorkspaceGet: Validators<WorkspaceGetInput, WorkspaceGetOutput> = {
+  validateInput(value: unknown): asserts value is WorkspaceGetInput {
+    assertSchema(
+      value,
+      { type: 'object', properties: {}, required: [], additionalProperties: false, $defs: {} },
+      'workspace_get input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is WorkspaceGetOutput {
+    assertSchema(
+      value,
+      {
+        properties: {
+          workspace_name: { title: 'Workspace Name', type: 'string' },
+          workspace_logo: { title: 'Workspace Logo', type: 'string' },
+        },
+        required: ['workspace_name', 'workspace_logo'],
+        title: 'Workspace',
+        type: 'object',
+      },
+      'workspace_get output',
     )
   },
 }

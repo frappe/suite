@@ -8,9 +8,18 @@ def after_insert(doc, method: str | None = None) -> None:
     after_user_insert(doc, method)
     create_user_settings(doc, method)
     if doc.name not in ("Guest", "Administrator"):
+        from suite.composition.welcome import mark_new_person
         from suite.suite_core.storage import initialize_user_limit
 
         initialize_user_limit(doc.name)
+        mark_new_person(doc.name)
+
+
+def before_insert(doc, method: str | None = None) -> None:
+    # Frappe starts every account on Light. Suite follows the person's system instead, and setup
+    # does not ask: the theme can be changed any time in Settings.
+    if doc.desk_theme in (None, "", "Light"):
+        doc.desk_theme = "Automatic"
 
 
 def on_trash(doc, method: str | None = None) -> None:

@@ -72,7 +72,7 @@ describe('drawing a converted deck', () => {
     ])
   })
 
-  it('puts a box where the old row had it, with its own settings', () => {
+  it('puts an element where the old row had it, with its own settings', () => {
     const [{ elements }] = drawn([
       {
         id: 's',
@@ -103,7 +103,7 @@ describe('drawing a converted deck', () => {
     })
   })
 
-  it('stacks boxes as the old zIndex did', () => {
+  it('stacks elements as the old zIndex did', () => {
     const [{ elements }] = drawn([
       {
         id: 's',
@@ -121,9 +121,11 @@ describe('drawing a converted deck', () => {
     expect(byLayer.map(({ id }) => id)).toEqual(['bottom', 'middle', 'top'])
   })
 
-  it('gives a box its text, a marked hard break included', () => {
+  it('gives an element its text, a marked hard break included', () => {
     const content = '<p><span style="font-size: 24px">one<br>two</span></p>'
-    const [{ elements }] = drawn([{ id: 's', elements: [{ id: 'box', type: 'text', content }] }])
+    const [{ elements }] = drawn([
+      { id: 's', elements: [{ id: 'element', type: 'text', content }] },
+    ])
     const body = new DOMParser().parseFromString(String(elements[0].content), 'text/html').body
 
     expect(body.textContent).toBe('onetwo')

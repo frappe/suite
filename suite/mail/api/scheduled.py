@@ -41,6 +41,7 @@ from uuid import NAMESPACE_OID, uuid5, uuid7
 import frappe
 from frappe import _
 from frappe.utils import (
+    add_to_date,
     cint,
     get_datetime,
     get_datetime_str,
@@ -54,6 +55,7 @@ from jmap.models.responses import SetResponse
 from pydantic import BaseModel, model_validator
 from redis.exceptions import LockError
 
+from suite.mail.api.mail import get_undo_send_hold
 from suite.mail.bounces import get_reports
 from suite.mail.jmap import (
     SuiteJMAPClient,
@@ -90,6 +92,10 @@ Refused = Literal["empty", "gone", "throw"]
 # one may hold the record: past every request it makes timing out.
 RETRY_LOCK_WAIT = 10
 RETRY_LOCK_TIMEOUT = 600
+
+# How long past its send time a mail still in the queue counts as stuck (minutes): long enough
+# that one going out normally has left it.
+STUCK_AFTER_MINUTES = 5
 
 
 class SubmissionFilter(BaseModel):
@@ -128,6 +134,7 @@ def get_submissions(
     thread_id: str | None = None,
     before: str | None = None,
     after: str | None = None,
+    waiting_only: bool = False,
     page: int = 1,
     page_length: int = 50,
     start: int | None = None,
@@ -137,7 +144,8 @@ def get_submissions(
     cap (maxObjectsInGet).
 
     The filters are the RFC 8621 §7.3 FilterCondition properties: `undo_status` is one of
-    pending/final/canceled, `before`/`after` bound sendAt (UTC `...Z` timestamps)."""
+    pending/final/canceled, `before`/`after` bound sendAt (UTC `...Z` timestamps). `waiting_only`
+    narrows the listing to the sends worth pointing out, as `_waiting_filter` defines them."""
 
     _validate_ids(account=account)
     filter = parse(
@@ -151,6 +159,8 @@ def get_submissions(
             "after": after,
         },
     ).to_jmap()
+    if waiting_only:
+        filter = _waiting_filter(filter)
 
     page = max(cint(page), 1)
     page_length = min(max(cint(page_length), 1), 100)
@@ -492,6 +502,31 @@ def _hold_active(submission: dict) -> bool:
         return False
 
     return datetime.fromisoformat(send_at.replace("Z", "+00:00")) > datetime.now(UTC)
+
+
+def _waiting_filter(filter: dict) -> dict:
+    """`filter`, narrowed to sends held until a time someone chose and released mail that is stuck.
+
+    On the server a mail held for Undo send is the same as a scheduled one: pending, with a sendAt
+    ahead. What tells them apart is how far ahead: no Undo hold can be due later than one placed
+    this instant, so only a sendAt past that was chosen. A scheduled send that close is about to
+    go and reads as gone. The extra second keeps out a hold placed this same second: sendAt has
+    whole seconds and `after` includes its own.
+
+    Released mail stays pending for as long as it is in the queue. The queue's own retry state is
+    out of reach (see `_queue_messages_by_envid`), so age is what tells a delivery that keeps
+    failing from one going out.
+    """
+
+    _, undo_hold = get_undo_send_hold()
+    pending = {**filter, "undoStatus": "pending"}
+    return {
+        "operator": "OR",
+        "conditions": [
+            {**pending, "after": to_utc_z(add_to_date(undo_hold, seconds=1))},
+            {**pending, "before": to_utc_z(add_to_date(now(), minutes=-STUCK_AFTER_MINUTES))},
+        ],
+    }
 
 
 def _envid(submission: dict) -> str | None:
