@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Editor } from '@tiptap/core'
-import { onKeyStroke, useMediaQuery } from '@vueuse/core'
+import { useMediaQuery } from '@vueuse/core'
 import { Button, dialog, Dropdown, Skeleton, toast } from 'frappe-ui'
 import {
   computed,
@@ -168,17 +168,6 @@ watch(panel, (shown) => {
     previewed.value = null
   }
 })
-// Escape goes back to the presentation, unless a dialog or menu over the preview takes the key
-onKeyStroke(
-  'Escape',
-  (event) => {
-    const isOverlayOpen = document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')
-    if (!event.defaultPrevented && previewed.value && !isOverlayOpen) {
-      previewed.value = null
-    }
-  },
-  { target: document },
-)
 const {
   threads: readThreads,
   readAt: threadsReadAt,
@@ -1211,6 +1200,7 @@ onBeforeUnmount(() => {
         noun="presentation"
         @restore-version="confirmRestore"
         @download-version="downloadListedVersion"
+        @back="previewed = null"
       />
     </div>
 

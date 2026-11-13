@@ -294,6 +294,68 @@ describe('naming a version in the Versions panel', () => {
   })
 })
 
+describe('Escape over a shown version', () => {
+  // A panel showing `version`, counting the times it asks to go back
+  function panelShowing(version: DocumentVersion | null) {
+    const backs: string[] = []
+    const host = document.createElement('div')
+    document.body.append(host)
+    const app = createApp(() =>
+      h(DocumentSidePanel, {
+        panel: 'versions',
+        previewedVersion: version,
+        onBack: () => backs.push('back'),
+        session: fromPartial<DocumentSession>({
+          versions: { list: async () => ({ rows: [], next_cursor: null }) },
+        }),
+        canComment: true,
+        canEditDocument: false,
+        canShare: false,
+        canRestoreVersion: false,
+        canSaveVersion: false,
+        isRestoringVersion: false,
+        threads: [],
+        threadsReadAt: 1,
+        places: null,
+        refreshThreads: async () => {},
+        threadActions: fromPartial<ThreadActions>({}),
+        drafts: noDrafts,
+        noun: 'document',
+        saveFirst: async () => {},
+      }),
+    )
+    app.use(translationPlugin).mount(host)
+    mounted = app
+    return backs
+  }
+
+  function pressEscape() {
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  }
+
+  const shown = fromPartial<DocumentVersion>({ seq: 1, kind: 'auto', label: null })
+
+  it('goes back once a version is shown, and not with none shown', () => {
+    const fromShown = panelShowing(shown)
+    pressEscape()
+    mounted?.unmount()
+    const fromNone = panelShowing(null)
+    pressEscape()
+
+    expect([fromShown, fromNone]).toEqual([['back'], []])
+  })
+
+  it('leaves the key to a dialog or menu open over the version', () => {
+    const backs = panelShowing(shown)
+    const dialog = document.createElement('div')
+    dialog.setAttribute('role', 'dialog')
+    document.body.append(dialog)
+    pressEscape()
+
+    expect(backs).toEqual([])
+  })
+})
+
 describe('renaming a version in the Versions panel', () => {
   const automatic = fromPartial<DocumentVersion>({
     seq: 2,

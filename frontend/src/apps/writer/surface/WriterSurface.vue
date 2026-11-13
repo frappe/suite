@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { Editor } from '@tiptap/core'
-import { onKeyStroke } from '@vueuse/core'
 import { Badge, Button, dialog, toast } from 'frappe-ui'
 import {
   computed,
@@ -570,16 +569,6 @@ function togglePanel(name: DocumentPanel) {
   panel.value = panel.value === name ? null : name
 }
 
-// Escape leaves a version shown, unless a dialog or menu over it takes the key
-onKeyStroke(
-  'Escape',
-  (event) => {
-    const isOverlayOpen = document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')
-    if (!event.defaultPrevented && preview.value.version && !isOverlayOpen) void backToCurrent()
-  },
-  { target: document },
-)
-
 function discardedCopy() {
   closeAnyPreview()
 }
@@ -941,6 +930,7 @@ onBeforeUnmount(() => {
                 @update:previewed-version="showVersion"
                 @restore-version="confirmRestore"
                 @download-version="downloadVersion"
+                @back="backToCurrent"
                 @closed="backToText"
                 @comment-sent="backToText"
               />

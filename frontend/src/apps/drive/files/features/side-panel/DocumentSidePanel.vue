@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { onKeyStroke } from '@vueuse/core'
 import { Button, TextInput } from 'frappe-ui'
 import { computed, nextTick, ref, watch } from 'vue'
 
@@ -45,6 +46,8 @@ const emit = defineEmits<{
   closed: [panel: DocumentPanel]
   restoreVersion: [version: DocumentVersion]
   downloadVersion: [version: DocumentVersion]
+  /** Escape over a shown version, which goes back as the bar's Back does. */
+  back: []
   commentSent: []
   'update:previewedVersion': [version: DocumentVersion | null]
 }>()
@@ -86,6 +89,18 @@ watch(
     }
   },
   { immediate: true },
+)
+
+// Escape leaves a version shown, unless a dialog or menu over it takes the key
+onKeyStroke(
+  'Escape',
+  (event) => {
+    const isOverlayOpen = document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')
+    if (!event.defaultPrevented && previewedVersion.value && !isOverlayOpen) {
+      emit('back')
+    }
+  },
+  { target: document },
 )
 
 watch(previewedVersion, () => {

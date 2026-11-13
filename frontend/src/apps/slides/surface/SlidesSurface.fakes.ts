@@ -41,6 +41,8 @@ interface VersionsPanelFixture {
   preview: (version: DocumentVersion | null) => void
   restore: (version: DocumentVersion) => void
   download: (version: DocumentVersion) => void
+  // the panel's Escape over a shown version
+  back: () => void
 }
 const versionsPanel = vi.hoisted((): VersionsPanelFixture => ({
   isOpen: false,
@@ -53,6 +55,7 @@ const versionsPanel = vi.hoisted((): VersionsPanelFixture => ({
   preview: () => {},
   restore: () => {},
   download: () => {},
+  back: () => {},
 }))
 // the two theme dialogs: the new presentation's pick, and a change of theme
 const themeChange = vi.hoisted(() => ({
@@ -288,7 +291,7 @@ vi.mock('@/apps/drive', async (importOriginal) => ({
       canRestoreVersion: Boolean,
       canSaveVersion: Boolean,
     },
-    emits: ['update:previewedVersion', 'restoreVersion', 'downloadVersion'],
+    emits: ['update:previewedVersion', 'restoreVersion', 'downloadVersion', 'back'],
     setup(
       props: {
         panel: string | null
@@ -303,6 +306,7 @@ vi.mock('@/apps/drive', async (importOriginal) => ({
       versionsPanel.preview = (version) => emit('update:previewedVersion', version)
       versionsPanel.restore = (version) => emit('restoreVersion', version)
       versionsPanel.download = (version) => emit('downloadVersion', version)
+      versionsPanel.back = () => emit('back')
       expose({
         reloadVersions: async () => {
           versionsPanel.reloads += 1

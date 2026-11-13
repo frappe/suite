@@ -987,7 +987,7 @@ describe('a deck on the content layer', () => {
       return root.querySelector('[aria-label="Version preview"]')
     }
 
-    it('shows a version read-only in the canvas place, steps through its slides, and Escape goes back', async () => {
+    it('shows a version read-only in the canvas place, steps through its slides, and the panel’s Escape goes back', async () => {
       const live = convertedRoom('now')
       versionBytes.current = await storedVersion(roomOf('first', 'second').doc)
       mounted = await openedSurface({ deck: { is_converted: true } })
@@ -1008,7 +1008,7 @@ describe('a deck on the content layer', () => {
       await vi.waitFor(() => expect(preview.textContent).toContain('second'))
       expect(preview.textContent).toContain('2 of 2')
 
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+      versionsPanel.back()
       await vi.waitFor(() => expect(previewOf(mounted!.root)).toBeNull())
       expect(versionsPanel.previewed).toBeNull()
       expect(mounted.root.querySelector('[data-toolbar]')).not.toBeNull()
