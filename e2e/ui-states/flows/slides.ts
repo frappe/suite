@@ -2,8 +2,9 @@ import { expect, type Page } from "@playwright/test";
 import { grantAccess, ROLE, type DriveNode } from "../../drive-backed-apps/helpers/drive";
 import { demoUser, openDemoScene } from "../demo";
 import { defineFlow, setupFlow } from "../flow";
-import { perScene, type BaseScene } from "../scene";
-import { createDeck, expectEditor, failSaves, gate, withoutServiceWorker, type Gate } from "./slides-helpers";
+import { perScene, type BaseScene, type Hold } from "../scene";
+import { copySeededDeck, createDeck, expectEditor, withoutServiceWorker } from "./slides-helpers";
+import { header, updates } from "./writer-sheets-helpers";
 
 type Event =
 	| { type: "OPEN_HELD" }
@@ -12,8 +13,6 @@ type Event =
 	| { type: "DECK_FAILS" }
 	| { type: "OPEN_MISSING" }
 	| { type: "OPEN_AS_VIEWER" }
-	| { type: "OPEN_SECOND_TAB" }
-	| { type: "EDIT_HERE" }
 	| { type: "OPEN_NEW" }
 	| { type: "PICK_THEME" }
 	| { type: "SELECT_TEXT" }
@@ -42,23 +41,24 @@ type Event =
 	| { type: "EXIT" }
 	| { type: "EXPORT" }
 	| { type: "OPEN_COMMENTS" }
+	| { type: "START_COMMENT" }
 	| { type: "ADD_COMMENT" }
 	| { type: "OPEN_VERSIONS" }
 	| { type: "SAVE_VERSION" }
 	| { type: "NAME_VERSION" }
 	| { type: "OPEN_OFFLINE" }
 	| { type: "SAVE_COPY" }
-	| { type: "SAVE_FAILS" }
-	| { type: "OTHER_EDITS" }
+	| { type: "TYPE_HELD" }
 	| { type: "PHONE" };
 
 /**
  * A presentation opened at /d/:node. The host (`DocumentHost.vue`) chooses
  * between its header skeleton, a failure, a refusal and the surface; the
  * surface (`SlidesSurface.vue`) then chooses between unreadable, its own
- * skeleton, a load error, the phone viewer and the editor, with notices for a
- * second tab and for a deck that changed elsewhere. The slideshow is the
- * `slides-slideshow` route at /d/:node/present.
+ * skeleton, a load error, the phone viewer and the editor. The editor saves
+ * through the deck's collaboration room (`useConvertedRoom.ts`), so a second
+ * tab edits alongside the first. The slideshow is the `slides-slideshow` route
+ * at /d/:node/present.
  */
 const machine = setupFlow<Event>().createMachine({
 	id: "slides",
@@ -70,7 +70,6 @@ const machine = setupFlow<Event>().createMachine({
 				OPEN_HELD: "hostOpening",
 				OPEN_MISSING: "noAccess",
 				OPEN_AS_VIEWER: "viewOnly",
-				OPEN_SECOND_TAB: "lockedElsewhere",
 				OPEN_NEW: "themePicker",
 				SELECT_TEXT: "textSelected",
 				RIGHT_CLICK_SHAPE: "elementMenu",
@@ -88,8 +87,7 @@ const machine = setupFlow<Event>().createMachine({
 				OPEN_COMMENTS: "commentsEmpty",
 				OPEN_VERSIONS: "versions",
 				OPEN_OFFLINE: "offlineDialog",
-				SAVE_FAILS: "saveFailed",
-				OTHER_EDITS: "changedElsewhere",
+				TYPE_HELD: "saving",
 				PHONE: "phoneViewer",
 			},
 		},
@@ -102,24 +100,17 @@ const machine = setupFlow<Event>().createMachine({
 			on: { RETRY_HELD: "deckOpening" },
 		},
 		deckOpening: {
-			meta: { description: "The header has loaded and the slides are still loading: grey blocks for the slide list, the slide and the properties panel; Present is disabled." },
+			meta: { description: "The header has loaded and the slides are still loading: grey blocks for the slide list and the slide, and Present is disabled. The header says “View only” to Maya, who owns the deck, until the slides arrive." },
 			on: { DECK_FAILS: "deckFailed" },
 		},
 		deckFailed: {
-			meta: { description: "The slides failed to load: a lock icon over “Something went wrong”, with no way to try again." },
+			meta: { description: "The slides failed to load: a lock icon over “Something went wrong”, with no way to try again. The header still says “View only” to the deck's owner." },
 		},
 		noAccess: {
 			meta: { description: "A link to a presentation that does not exist, or that this person cannot open: “You don’t have access to this document.”" },
 		},
 		viewOnly: {
 			meta: { description: "Leo has View access: a “View only” badge beside the title, and the slides without the toolbar, the properties panel or Add slide." },
-		},
-		lockedElsewhere: {
-			meta: { description: "The same deck opened in a second tab of the same browser: the slides show without editing tools, and a notice at the bottom says it is open for editing in another tab, with Edit here." },
-			on: { EDIT_HERE: "tookOver" },
-		},
-		tookOver: {
-			meta: { description: "After Edit here in the second tab, the first tab loses editing and shows the same notice, with its own Edit here." },
 		},
 		themePicker: {
 			meta: { description: "A new, empty presentation opens with “Select theme”: Light and Dark, with no close button." },
@@ -215,11 +206,15 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "Export opens the browser's print: in print media the editor is gone and the slides are laid out one after another." },
 		},
 		commentsEmpty: {
-			meta: { description: "The comments panel on a deck with no comments: “No comments yet.” and a box to write one." },
+			meta: { description: "The comments panel on a deck with no comments: an “Add a comment” box at the top and “No open comments. Add one above.” A deck takes comments on the whole deck only, not on a slide or its text." },
+			on: { START_COMMENT: "commentDraft" },
+		},
+		commentDraft: {
+			meta: { description: "The comment box opened: a focused field, and Cancel and a Comment button that stays disabled until something is written." },
 			on: { ADD_COMMENT: "commentPosted" },
 		},
 		commentPosted: {
-			meta: { description: "The comment added: it shows under the box with Maya Chen's avatar, name and time." },
+			meta: { description: "The comment added: it shows under the box with Maya Chen's avatar, name and time, a Reply field, and a check to resolve it." },
 		},
 		versions: {
 			meta: { description: "The versions panel on a new deck: “No versions yet.” with a line about what a version keeps, and Save version at the top." },
@@ -239,11 +234,11 @@ const machine = setupFlow<Event>().createMachine({
 		availableOffline: {
 			meta: { description: "The copy is kept: a toast says “Available offline” and the cloud button's tooltip says the same." },
 		},
-		saveFailed: {
-			meta: { description: "The Text tool added a text box and the server refused the save: an amber “Not saved” badge replaces “Edited just now”, with no reason and no retry button." },
-		},
-		changedElsewhere: {
-			meta: { description: "Leo saved an edit first, then Maya added a text box: editing stops, the header shows “Not saved” and Download my changes, and a notice says the deck changed elsewhere, with Download and Reload." },
+		saving: {
+			meta: {
+				description:
+					"The Text tool added a text box and its save is still out. The header reads Edited just now, as it does once saved: nothing on screen tells saving from saved.",
+			},
 		},
 		phoneViewer: {
 			meta: { description: "At phone width the deck opens in a viewer: one slide at a time with arrows and “1 of 5” above the app's bottom tab bar, and no editing tools." },
@@ -253,15 +248,15 @@ const machine = setupFlow<Event>().createMachine({
 
 interface Probe {
 	page: Page;
-	node: Gate;
-	deck: Gate | null;
+	node: Hold;
+	deck: Hold | null;
 }
 
 const decks = perScene<DriveNode>("slides: deck");
 const probes = perScene<Probe>("slides: probe page");
 const others = perScene<Page>("slides: other page");
 const PROBE_STATES = new Set(["hostOpening", "hostFailed", "deckOpening", "deckFailed"]);
-const OTHER_STATES = new Set(["viewOnly", "lockedElsewhere"]);
+const OTHER_STATES = new Set(["viewOnly"]);
 const LEO = demoUser("leo");
 
 /** The slide's top-left heading, in the 1440 × 900 viewport. */
@@ -281,6 +276,10 @@ function deckPath(scene: BaseScene): string {
 
 function toolbar(page: Page) {
 	return page.locator("svg.lucide-shapes").locator("xpath=ancestor::div[contains(@class,'bottom-10')]");
+}
+
+function commentsPanel(page: Page) {
+	return page.getByRole("complementary", { name: "Comments" });
 }
 
 async function rightClick(page: Page, at: { x: number; y: number }): Promise<void> {
@@ -309,7 +308,7 @@ export const slides = defineFlow<Event, BaseScene>({
 	open: (browser) => openDemoScene(browser, "maya"),
 	machine,
 	async enter(scene) {
-		decks.set(scene, await createDeck(scene, "Q4 planning deck"));
+		decks.set(scene, await copySeededDeck(scene, "Q4 planning deck"));
 		await scene.goto(deckPath(scene));
 		await expectEditor(scene.page);
 	},
@@ -318,26 +317,26 @@ export const slides = defineFlow<Event, BaseScene>({
 			const page = await scene.pageAs(demoUser("maya"));
 			await withoutServiceWorker(page);
 			const node = decks.get(scene).name;
-			probes.set(scene, { page, node: await gate(page, new RegExp(`/api/suite/drive/nodes/${node}\\?`)), deck: null });
+			probes.set(scene, { page, node: await scene.hold(new RegExp(`/api/suite/drive/nodes/${node}\\?`), page), deck: null });
 			await page.goto(deckPath(scene));
 			await expect(page.getByRole("status", { name: /^Opening/ }).first()).toBeVisible();
 		},
 		async HOST_FAILS(scene) {
 			const { page, node } = probes.get(scene);
-			await node.fail();
+			await node.abort(500);
 			await expect(page.getByText("Could not open this document")).toBeVisible({ timeout: 30_000 });
 		},
 		async RETRY_HELD(scene) {
 			const probe = probes.get(scene);
-			probe.deck = await gate(probe.page, /get_public_presentation/);
-			await probe.node.open();
+			probe.deck = await scene.hold(/get_public_presentation/, probe.page);
+			await probe.node.release();
 			await probe.page.getByRole("button", { name: "Try again" }).click();
 			await expect(probe.page.getByRole("status", { name: "Opening presentation" })).toBeVisible({ timeout: 15_000 });
 		},
 		async DECK_FAILS(scene) {
 			const { page, deck } = probes.get(scene);
 			if (!deck) throw new Error("The deck read was never held");
-			await deck.fail();
+			await deck.abort(500);
 			await expect(page.getByRole("status", { name: "Opening presentation" })).toBeHidden({ timeout: 30_000 });
 			await expect(page.getByText("Something went wrong")).toBeVisible();
 		},
@@ -351,18 +350,8 @@ export const slides = defineFlow<Event, BaseScene>({
 			await expectEditor(page);
 			await expect(page.locator("svg.lucide-shapes")).toBeHidden();
 		},
-		async OPEN_SECOND_TAB(scene) {
-			const page = await scene.context.newPage();
-			others.set(scene, page);
-			await page.goto(deckPath(scene));
-			await expect(page.getByText("This presentation is open for editing in another tab.")).toBeVisible({ timeout: 20_000 });
-		},
-		async EDIT_HERE(scene) {
-			await others.get(scene).getByRole("button", { name: "Edit here" }).click();
-			await expect(scene.page.getByText("This presentation is open for editing in another tab.")).toBeVisible({ timeout: 15_000 });
-		},
 		async OPEN_NEW(scene) {
-			const blank = await createDeck(scene, "Board update", false);
+			const blank = await createDeck(scene, "Board update");
 			await scene.goto(`/d/${blank.name}?new=1`);
 			await expect(scene.page.getByText("Select theme")).toBeVisible({ timeout: 20_000 });
 		},
@@ -490,14 +479,19 @@ export const slides = defineFlow<Event, BaseScene>({
 		},
 		async OPEN_COMMENTS(scene) {
 			await scene.page.getByRole("button", { name: "Comments" }).click();
-			await expect(scene.page.getByText("No comments yet.")).toBeVisible();
+			await expect(commentsPanel(scene.page).getByText("No open comments. Add one above.")).toBeVisible();
+		},
+		async START_COMMENT(scene) {
+			await commentsPanel(scene.page).getByRole("button", { name: "Add a comment" }).click();
+			await expect(commentsPanel(scene.page).getByRole("combobox", { name: "Add a comment" })).toBeFocused();
 		},
 		async ADD_COMMENT(scene) {
+			const panel = commentsPanel(scene.page);
 			const text = "Can we move the hiring slide before the roadmap?";
-			await scene.page.getByRole("textbox", { name: "New comment" }).fill(text);
-			await scene.page.getByRole("button", { name: "Add", exact: true }).click();
-			await expect(scene.page.getByText(text)).toBeVisible();
-			await expect(scene.page.getByText("No comments yet.")).toBeHidden();
+			await panel.getByRole("combobox", { name: "Add a comment" }).fill(text);
+			await panel.getByRole("button", { name: "Comment", exact: true }).click();
+			await expect(panel.getByText(text)).toBeVisible();
+			await expect(panel.getByText("No open comments", { exact: false })).toBeHidden();
 		},
 		async OPEN_VERSIONS(scene) {
 			await scene.page.getByRole("button", { name: "Versions" }).click();
@@ -522,24 +516,10 @@ export const slides = defineFlow<Event, BaseScene>({
 			await scene.page.getByRole("button", { name: "Save copy" }).click();
 			await expect(scene.toast("Available offline")).toBeVisible({ timeout: 20_000 });
 		},
-		async SAVE_FAILS(scene) {
-			await failSaves(scene.page);
+		async TYPE_HELD(scene) {
+			await scene.hold(updates(decks.get(scene).name));
 			await scene.page.locator("svg.lucide-type").click();
-			await expect(scene.page.getByText("Not saved", { exact: true })).toBeVisible({ timeout: 20_000 });
-		},
-		async OTHER_EDITS(scene) {
-			const leo = await openAs(scene, ROLE.EDIT);
-			await expectEditor(leo);
-			const saved = leo.waitForResponse((response) => /save_slides/.test(response.url()) && response.ok(), { timeout: 20_000 });
-			await leo.locator("svg.lucide-shapes").click();
-			await leo.getByRole("menuitem", { name: "Oval" }).click();
-			await leo.mouse.move(400, 480);
-			await leo.mouse.down();
-			await leo.mouse.move(500, 540, { steps: 5 });
-			await leo.mouse.up();
-			await saved;
-			await scene.page.locator("svg.lucide-type").click();
-			await expect(scene.page.getByText("This presentation changed elsewhere.", { exact: false })).toBeVisible({ timeout: 20_000 });
+			await expect(header(scene.page, "saving")).toBeVisible({ timeout: 20_000 });
 		},
 		async PHONE(scene) {
 			await scene.page.setViewportSize({ width: 390, height: 844 });

@@ -2,6 +2,7 @@ import { expect, type APIRequestContext, type APIResponse, type Locator, type Pa
 
 import type {
 	NodeChildrenOutput,
+	NodeCopyInput,
 	NodeCreateCreateDocumentInput,
 	NodeCreateCreateFolderInput,
 	NodeDeleteGrantOutput,
@@ -187,6 +188,12 @@ export async function waitForChild(request: APIRequestContext, title: string, pa
 		.toBeTruthy();
 	if (!found) throw new Error("Expected a matching child after polling");
 	return found;
+}
+
+/** Copies `node` as `title` into `parent` or the Personal root, as Drive's Make a copy does. */
+export async function copyNode(request: APIRequestContext, node: string, title: string, parent?: string): Promise<DriveNode> {
+	const body: Body<NodeCopyInput, "node"> = { parent_node: parent ?? (await personalRoot(request)), title };
+	return driveRequest<DriveNode>(request, "post", `nodes/${node}/copy`, body);
 }
 
 export async function moveNode(request: APIRequestContext, node: string, parent: string): Promise<void> {

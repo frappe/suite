@@ -1,44 +1,46 @@
-import { expect, type APIRequestContext, type Page, type Route } from "@playwright/test";
-import { createDocument, discardNode, type DriveNode } from "../../drive-backed-apps/helpers/drive";
-import type { BaseScene } from "../scene";
+import { expect, type Page } from "@playwright/test";
+import { copyNode, createDocument, discardNode, view, type DriveNode } from "../../drive-backed-apps/helpers/drive";
+import { callMethod, type BaseScene } from "../scene";
 
-/** The seeded Northwind deck, "Q3 review and Q4 priorities": five slides with text, cards and a callout. */
-const SEEDED_PRESENTATION = "30clgs28gn";
+/** The seeded Northwind deck: five slides with text, cards and a callout. */
+const SEEDED_TITLE = "Q3 review and Q4 priorities";
+const PRESENTATION = "suite.slides.doctype.presentation.presentation";
 
-interface SeededSlide {
-	background: string | null;
-	elements: string;
-	transition: string | null;
-	transition_duration: number | null;
-}
-
-interface SeededPresentation {
-	slides: SeededSlide[];
-	theme: string;
-}
-
-/** A new presentation in the person's root, purged when the scene closes. Empty, or with the seeded deck's five slides. */
-export async function createDeck(scene: BaseScene, title: string, copySeeded = true): Promise<DriveNode> {
-	const node = await createDocument(scene.api, scene.name(title), "Presentation");
+/** A copy of the seeded deck in the person's root, made as Drive's Make a copy makes one, and purged when the scene closes. */
+export async function copySeededDeck(scene: BaseScene, title: string): Promise<DriveNode> {
+	const source = await seededDeck(scene);
+	const node = await copyNode(scene.api, source.name, scene.name(title));
 	scene.defer(() => discardNode(scene.api, node.name));
-	if (copySeeded) await copySeededSlides(scene.api, node);
 	return node;
 }
 
-async function copySeededSlides(api: APIRequestContext, node: DriveNode): Promise<void> {
-	const response = await api.get(`/api/resource/Presentation/${SEEDED_PRESENTATION}`);
-	// SAFETY: Frappe's resource API answers `{ data: doc }`; the fields read here are Presentation's own.
-	const { data } = (await response.json()) as { data: SeededPresentation };
-	const slides = data.slides.map(({ background, elements, transition, transition_duration }) => ({
-		background,
-		elements,
-		transition,
-		transition_duration,
-	}));
-	const write = await api.put(`/api/resource/Presentation/${node.content_docname}`, {
-		data: { slides, theme: data.theme },
-	});
-	if (!write.ok()) throw new Error(`Copying the seeded slides failed: ${write.status()}`);
+/** A new, empty presentation in the person's root, purged when the scene closes. */
+export async function createDeck(scene: BaseScene, title: string): Promise<DriveNode> {
+	const node = await createDocument(scene.api, scene.name(title), "Presentation");
+	scene.defer(() => discardNode(scene.api, node.name));
+	return node;
+}
+
+/**
+ * The seeded deck, found by its title, once it is collaborative. A demo site
+ * seeded before Slides collaboration keeps it on its old rows until someone
+ * opens it, and a copy made before that would wait for its own conversion.
+ */
+async function seededDeck(scene: BaseScene): Promise<DriveNode> {
+	const [deck] = (await view(scene.api, "search", { term: SEEDED_TITLE, content_doctype: "Presentation" })).filter(
+		(row) => row.title === SEEDED_TITLE,
+	);
+	if (!deck?.content_docname) throw new Error(`The demo site has no presentation called ${SEEDED_TITLE}`);
+	const docname = deck.content_docname;
+	const isConverted = async () =>
+		!!(await callMethod<{ is_converted?: boolean }>(scene.api, `${PRESENTATION}.get_public_presentation`, { name: docname })).is_converted;
+	if (await isConverted()) return deck;
+	// Opening the deck, as the editor does, asks for its conversion.
+	const user = await callMethod<string>(scene.api, "frappe.auth.get_logged_user");
+	const opened = await scene.api.get(`/api/suite/content/${deck.name}/document`, { headers: { "X-Expected-User": user } });
+	if (!opened.ok()) throw new Error(`Opening ${SEEDED_TITLE} failed: ${opened.status()}`);
+	await expect.poll(isConverted, { timeout: 120_000, intervals: [2_000] }).toBe(true);
+	return deck;
 }
 
 /** Waits for the editor: the title in the header, the skeleton gone, the slide list counting slides. */
@@ -46,56 +48,6 @@ export async function expectEditor(page: Page, slideCount = 5): Promise<void> {
 	await expect(page.getByRole("textbox", { name: "Presentation title" })).toBeVisible({ timeout: 20_000 });
 	await expect(page.getByRole("status", { name: "Opening presentation" })).toBeHidden({ timeout: 20_000 });
 	await expect(page.getByText(`1 of ${slideCount}`, { exact: true })).toBeVisible();
-}
-
-/**
- * A request gate on one page: requests matching `pattern` wait while it is
- * shut, fail with a server error while failing, and pass once opened. The
- * scene's own `hold` only routes the scene's page; these states live on a
- * second page.
- */
-export interface Gate {
-	fail(): Promise<void>;
-	open(): Promise<void>;
-}
-
-export async function gate(page: Page, pattern: RegExp): Promise<Gate> {
-	const held: Route[] = [];
-	let mode: "hold" | "fail" | "pass" = "hold";
-	const reject = (route: Route) =>
-		route
-			.fulfill({
-				status: 500,
-				contentType: "application/json",
-				body: JSON.stringify({ exc_type: "ServerError", message: "Something went wrong" }),
-			})
-			.catch(() => undefined);
-	await page.route(pattern, async (route) => {
-		if (mode === "pass") await route.continue();
-		else if (mode === "fail") await reject(route);
-		else held.push(route);
-	});
-	return {
-		async fail() {
-			mode = "fail";
-			await Promise.all(held.splice(0).map(reject));
-		},
-		async open() {
-			mode = "pass";
-			await Promise.all(held.splice(0).map((route) => route.continue().catch(() => undefined)));
-		},
-	};
-}
-
-/** Answers every save from `page` with a server error, so the deck stays unsaved. */
-export async function failSaves(page: Page): Promise<void> {
-	await page.route(/save_slides/, (route) =>
-		route.fulfill({
-			status: 417,
-			contentType: "application/json",
-			body: JSON.stringify({ exc_type: "ServerError", message: "Something went wrong" }),
-		}),
-	);
 }
 
 /**
