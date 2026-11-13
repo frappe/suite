@@ -1431,6 +1431,84 @@ class WriterBodyTest(unittest.TestCase):
             self.assertEqual(content.writer_images_wrapped, 1)
             self.assertEqual(content.writer_bodies_rewritten, 1)
 
+    def converted_top(self, content: str):
+        self.add_document("top-doc", "node-t", body=WriterBody(content=content, html="<p></p>"))
+        first = convert_history_and_comments(self.env)
+        body = self.source.writer_bodies["top-doc"]
+        second = convert_history_and_comments(self.env)
+        # A rerun wraps nothing again
+        self.assertEqual(self.source.writer_bodies["top-doc"], body)
+        self.assertEqual(second.writer_images_wrapped, first.writer_images_wrapped)
+        return first, list(body_fragment(body.content).children)
+
+    def test_pictures_side_by_side_at_the_top_share_one_paragraph(self):
+        # Old Writer fitted a run of loose top-level pictures into one
+        # paragraph, so they stood side by side, and they still do
+        content, blocks = self.converted_top(
+            yjs_body(image(src="/files/a.png", alt="first"), image(src="/files/b.png", width=320))
+        )
+
+        (wrapper,) = blocks
+        self.assertEqual(wrapper.tag, "paragraph")
+        self.assertEqual(
+            [(child.tag, dict(child.attributes)) for child in wrapper.children],
+            [
+                ("image", {"src": "/files/a.png", "alt": "first"}),
+                ("image", {"src": "/files/b.png", "width": 320}),
+            ],
+        )
+        self.assertEqual(content.writer_images_wrapped, 2)
+        self.assertEqual(content.writer_bodies_rewritten, 1)
+
+    def test_loose_text_between_pictures_at_the_top_joins_their_paragraph(self):
+        # A block ends the run, so the picture after it starts a paragraph of its own
+        document = pycrdt.Doc()
+        fragment = pycrdt.XmlFragment()
+        document["default"] = fragment
+        fragment.children.append(image(src="/files/a.png"))
+        text = fragment.children.append(pycrdt.XmlText())
+        text.insert(0, "bold", {"bold": True})
+        text.insert(4, " plain")
+        fragment.children.append(image(src="/files/b.png"))
+        fragment.children.append(paragraph(pycrdt.XmlText("after")))
+        fragment.children.append(image(src="/files/c.png"))
+        content, blocks = self.converted_top(base64.b64encode(document.get_update()).decode("ascii"))
+
+        run, after, last = blocks
+        self.assertEqual([block.tag for block in blocks], ["paragraph", "paragraph", "paragraph"])
+        first_picture, words, second_picture = list(run.children)
+        self.assertEqual(
+            (dict(first_picture.attributes), dict(second_picture.attributes)),
+            ({"src": "/files/a.png"}, {"src": "/files/b.png"}),
+        )
+        self.assertEqual(words.diff(), [("bold", {"bold": True}), (" plain", None)])
+        self.assertEqual(str(after), "<paragraph>after</paragraph>")
+        self.assertEqual([dict(child.attributes) for child in last.children], [{"src": "/files/c.png"}])
+        self.assertEqual(content.writer_images_wrapped, 3)
+
+    def test_old_resizable_media_at_the_top_ends_a_run_and_stays_as_it_is(self):
+        # The runtime turns old media into its own paragraph, so the pictures
+        # around it keep their order rather than joining across it
+        media = {"src": "/files/m.png", "media-type": "img", "dataAlign": "center"}
+        content, blocks = self.converted_top(
+            yjs_body(
+                image(src="/files/a.png"),
+                image(src="/files/b.png"),
+                pycrdt.XmlElement("resizableMedia", media),
+                image(src="/files/c.png"),
+            )
+        )
+
+        self.assertEqual([block.tag for block in blocks], ["paragraph", "resizableMedia", "paragraph"])
+        before, old, after = blocks
+        self.assertEqual(
+            [dict(child.attributes) for child in before.children],
+            [{"src": "/files/a.png"}, {"src": "/files/b.png"}],
+        )
+        self.assertEqual(dict(old.attributes), media)
+        self.assertEqual([dict(child.attributes) for child in after.children], [{"src": "/files/c.png"}])
+        self.assertEqual(content.writer_images_wrapped, 3)
+
     def test_a_rewritten_body_keeps_the_changes_yjs_held_back(self):
         # Later edits whose earlier part never reached the server: Yjs holds
         # them unapplied until that part comes, so a rewrite must carry them

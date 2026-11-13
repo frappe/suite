@@ -14,7 +14,10 @@ Build changes a Writer body in three ways and touches nothing else:
   cells, and the document root accept only blocks, so the editor drops an
   image found directly inside one. ProseMirror cannot mix inline and block
   content in one content expression, so the schema cannot accept it.
-  Build wraps each such image in its own paragraph instead.
+  Build wraps each such image in its own paragraph instead. At the top it
+  wraps each run of loose inline content, text included, in one paragraph:
+  old Writer fitted the run into one, so pictures in a run stood side by
+  side.
 - **Picture addresses on the old site's host.** Old Writer could store a
   picture as an absolute address on the host it ran on,
   `https://drive.frappe.io/api/method/...`. Build drops the scheme and host
@@ -111,6 +114,8 @@ PARAGRAPH = "paragraph"
 # is left alone. Every other parent, the root fragment included, accepts only
 # blocks.
 IMAGE_PARENTS = frozenset({"paragraph", "heading", "imageGroup", "codeBlock"})
+# The editor's inline atoms, which a paragraph holds and the root does not
+INLINE_NODES = frozenset({IMAGE, "hardBreak", "mention", "tagItem", "attachment"})
 
 # Called once per id that stays as it is, with the reason.
 ReportMissing = Callable[[str, str], None]
@@ -385,8 +390,10 @@ def _rewritten_content(
                         element.attributes[key] = rewritten
                         changed = True
 
-            wrapped = _wrap_loose_images(fragment)
-        if not changed and not wrapped:
+            runs, run_images = wrap_top_level_runs(fragment)
+            wrapped = run_images + _wrap_loose_images(fragment)
+
+        if not changed and not runs and not wrapped:
             return content, 0
 
         # Merged onto the stored bytes: an update from the document alone leaves out what Yjs holds back
@@ -433,11 +440,78 @@ def path_id(path: str) -> re.Match | None:
     return None
 
 
+def wrap_top_level_runs(fragment: pycrdt.XmlFragment) -> tuple[int, int]:
+    """Put each run of loose inline content at the top in one paragraph, answering runs and images."""
+    # Old Writer drew a run so: ProseMirror fitted it into the paragraph the
+    # root needs, and the next block closed that paragraph. Yjs has no move,
+    # so the run is deleted and an equal one inserted in a paragraph at its index
+    runs = 0
+    images = 0
+    for start, pieces in reversed(top_level_runs(fragment)):
+        for _ in pieces:
+            del fragment.children[start]
+
+        wrapper = fragment.children.insert(start, pycrdt.XmlElement(PARAGRAPH))
+        for piece in pieces:
+            append_copy(wrapper, piece)
+
+        runs += 1
+        images += [tag for tag, _ in pieces].count(IMAGE)
+
+    return runs, images
+
+
+def top_level_runs(fragment: pycrdt.XmlFragment) -> list[tuple[int, list]]:
+    """Answer the index each run of loose inline content at the top starts at, with a copy of its pieces."""
+    runs: list[tuple[int, list]] = []
+    for index, child in enumerate(fragment.children):
+        if not loose_inline(child):
+            continue
+
+        if not runs or runs[-1][0] + len(runs[-1][1]) != index:
+            runs.append((index, []))
+
+        runs[-1][1].append(piece_of(child))
+
+    return runs
+
+
+def loose_inline(child: pycrdt.XmlElement | pycrdt.XmlText) -> bool:
+    """Answer whether a child of the root is text or an inline atom."""
+    if isinstance(child, pycrdt.XmlText):
+        return True
+
+    return isinstance(child, pycrdt.XmlElement) and child.tag in INLINE_NODES and not list(child.children)
+
+
+def piece_of(child: pycrdt.XmlElement | pycrdt.XmlText) -> tuple[str | None, object]:
+    """Copy a text with its formatting, or an atom with its attributes."""
+    if isinstance(child, pycrdt.XmlText):
+        return None, child.diff()
+
+    return child.tag, dict(child.attributes)
+
+
+def append_copy(wrapper: pycrdt.XmlElement, piece: tuple[str | None, object]) -> None:
+    """Append a copied piece to the paragraph."""
+    tag, held = piece
+    if tag is not None:
+        wrapper.children.append(pycrdt.XmlElement(tag, held))
+        return
+
+    text = wrapper.children.append(pycrdt.XmlText())
+    for value, attributes in held:
+        if isinstance(value, str):
+            text.insert(len(text), value, attributes)
+        else:
+            text.insert_embed(len(text), value, attributes)
+
+
 def _wrap_loose_images(fragment) -> int:
     """Put every image whose parent accepts only blocks in its own paragraph.
 
     One paragraph per image, so pictures that stood one under another still
-    do. The replacement carries every attribute the image had. Yjs has no
+    do. Runs at the top are wrapped already. The replacement carries every attribute the image had. Yjs has no
     move, so the image is deleted and an equal one inserted at its index.
     """
     wrapped = 0
