@@ -65,3 +65,11 @@ describe('canMoveToMailbox', () => {
     expect(canMoveToMailbox(undefined, [], ids)).toBe(false)
   })
 })
+
+describe('the Snoozed folder', () => {
+  it('is no place to move mail to: going there means choosing when it comes back', () => {
+    expect(canMoveToMailbox('mb-snoozed', [ids.trash], { ...ids, snoozed: 'mb-snoozed' })).toBe(
+      false,
+    )
+  })
+})

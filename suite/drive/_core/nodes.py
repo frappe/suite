@@ -2111,7 +2111,7 @@ def root_id(node: dict) -> str:
     return node.get("name") if node.get("kind") == "root" else node.get("root")
 
 
-def child_path(node: dict) -> str:
+def child_path(node: Mapping) -> str:
     """Return the root-relative path assigned to direct children of a node."""
     if node.get("kind") == "root":
         return ""
@@ -2748,7 +2748,7 @@ def _refuse_sibling_collision(
     """
     free = _free_title(parent, title, exclude=exclude, for_update=for_update)
     if free != title:
-        raise DriveConflict(_("An active Drive node with this title already exists"), free_title=free)
+        raise DriveConflict(_("That name is taken in this folder."), free_title=free)
 
 
 # Page size for both blob-source scans below. Storage deduplicates by

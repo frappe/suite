@@ -3,10 +3,10 @@ import { Button, Dropdown, TextInput, type DropdownOptions } from 'frappe-ui'
 import { computed, nextTick, ref } from 'vue'
 
 import type { DocumentVersion } from '@/apps/drive'
-import { fullName } from '@/apps/writer/composables/useUsers'
+import { fullName } from '@/platform/collab/names'
+import { versionDays, versionTime } from '@/platform/collab/versionDates'
 
 import { waitForFocusBack } from './focusBack'
-import { versionDays, versionTime } from './versionDates'
 
 /**
  * The document's versions under the day each was taken, newest first, with

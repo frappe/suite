@@ -3,6 +3,7 @@ import { ref } from 'vue'
 
 import {
   cache,
+  DECLARED_FONTS,
   deletedCaches,
   FakeCache,
   fetched,
@@ -10,12 +11,14 @@ import {
   presentationDoc,
   presentationId,
   recordedKeys,
+  recordOf,
   responses,
   SHELL_HTML,
   shellResponse,
   slides,
   slideshowChunkLoads,
   slidesWith,
+  STARTUP_API,
   startupFetched,
   state,
   statusOf,
@@ -27,6 +30,7 @@ const {
   cancelOfflineCopy,
   removeOfflineCopy,
   removeNodeOfflineCopy,
+  removeRowedOfflineCopy,
   refreshOfflineStatus,
   warmOfflineCopyAssets,
   offlineCopyProgress,
@@ -752,6 +756,26 @@ describe('a pin and the visited copies', () => {
     expect(seeded.has('/d/n1')).toBe(false)
   })
 
+  it('stores every font the slides declare before it reports the pin saved', async () => {
+    const result = await saveOfflineCopy('p1')
+
+    expect(result?.ok).toBe(true)
+    expect(DECLARED_FONTS.length).toBeGreaterThan(0)
+    expect(DECLARED_FONTS.filter((url) => !cache.has(url))).toEqual([])
+    expect(DECLARED_FONTS.filter((url) => !recordOf('p1').keys.includes(url))).toEqual([])
+  })
+
+  it('fails a pin whose font could not be stored', async () => {
+    const original = fetch
+    const font = '/assets/suite/slides/fonts/Anton/Anton-Regular-latin.woff2'
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) =>
+      url === font ? new Response('', { status: 503 }) : original(url, init),
+    )
+
+    await expect(saveOfflineCopy('p1')).rejects.toThrow(font)
+    expect(localStorage.getItem('slides-offline-copy:p1')).toBeNull()
+  })
+
   it('marks what a pin fetches, so the worker stays out of it', async () => {
     const original = fetch
     const unmarked: string[] = []
@@ -787,5 +811,46 @@ describe('removeOfflineCopy', () => {
     expect(localStorage.getItem('slides-offline-copy:p1')).toBeNull()
     presentationId.value = 'p2'
     expect(statusOf('p2')).toBe('available')
+  })
+})
+
+// Q18′: a copy saved before the presentation went live holds its rows, which offline would open in place of the room
+describe('a copy saved before the presentation went live', () => {
+  const rowed = () =>
+    new Response(JSON.stringify({ message: { name: 'p1', slides: [{ name: 's1' }] } }), {
+      headers: { 'Content-Type': 'application/json' },
+    })
+  const [presentationRead] = STARTUP_API
+
+  async function savedBeforeLive() {
+    await saveOfflineCopy('p1')
+    await cache.put(presentationRead, rowed())
+  }
+
+  it("loses its rows to the owner's refresh", async () => {
+    await savedBeforeLive()
+
+    await warmOfflineCopyAssets('p1')
+
+    expect(await cache.text(presentationRead)).not.toContain('slides')
+  })
+
+  it('is removed with its files for someone who cannot refresh it', async () => {
+    await savedBeforeLive()
+
+    await removeRowedOfflineCopy('p1')
+
+    expect(localStorage.getItem('slides-offline-copy:p1')).toBeNull()
+    expect(cache.has(presentationRead)).toBe(false)
+    expect(cache.has('/private/files/a.png')).toBe(false)
+  })
+
+  it('is kept when it holds no rows', async () => {
+    await saveOfflineCopy('p1')
+
+    await removeRowedOfflineCopy('p1')
+
+    expect(recordedKeys('p1')).toEqual(['/private/files/a.png', '/private/files/b.png'])
+    expect(cache.has(presentationRead)).toBe(true)
   })
 })

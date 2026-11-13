@@ -41,6 +41,7 @@ from suite.mail.jmap import (
     get_mailbox_id_by_role,
     omit_none,
 )
+from suite.mail.pins import pin_keyword, takes_pins
 from suite.mail.store import (
     Entity,
     get_blob_store,
@@ -810,15 +811,19 @@ def fetch_messages(
 
 
 def fetch_threads(
-    account: str, filter: dict | None = None, position: int = 0, limit: int = 50
+    account: str,
+    filter: dict | None = None,
+    position: int = 0,
+    limit: int = 50,
+    sort: list[dict] | None = None,
 ) -> dict[str, list[dict]]:
-    """Returns a page of threads matching the filter.
+    """Returns a page of threads matching the filter, newest first unless `sort` says otherwise.
 
     Each thread ID is mapped to the full list of messages in that thread (the entire conversation
     across all mailboxes), ordered oldest to newest.
     """
 
-    return query_threads(account, filter, position, limit)[0]
+    return query_threads(account, filter, position, limit, sort=sort)[0]
 
 
 def query_threads(
@@ -827,6 +832,7 @@ def query_threads(
     position: int = 0,
     limit: int = 50,
     calculate_total: bool = False,
+    sort: list[dict] | None = None,
 ) -> tuple[dict[str, list[dict]], dict[str, str], int]:
     """A page of threads matching the filter, as `fetch_threads` returns them, with each thread's
     newest message that matched (by id, keyed by thread) and, if asked, how many threads match."""
@@ -835,7 +841,7 @@ def query_threads(
     with client.batch() as b:
         q = b.mail.email.query(
             filter=filter or {},
-            sort=[{"property": "receivedAt", "isAscending": False}],
+            sort=sort or [{"property": "receivedAt", "isAscending": False}],
             collapseThreads=True,
             position=position,
             limit=limit,
@@ -1216,10 +1222,12 @@ def try_set_seen(account: str, ids: list[str], seen: bool = True) -> tuple[list[
     """Sets the seen status of messages as far as the server will (see `_try_update_emails`)."""
 
     emails = [{"id": id, "keywords": {"$seen": seen}} for id in ids]
+    _note_written(account, ids)
     changed, complete = _try_update_emails(
         account, emails, _("Failed to set seen status for mail(s)"), replace_keywords=False
     )
     _cache_seen(account, changed, seen)
+    _note_written(account, changed)
     return changed, complete
 
 
@@ -1229,10 +1237,12 @@ def set_seen_status(account: str, ids: list[str], seen: bool = True) -> None:
     if not account or not ids:
         frappe.throw(_("Account and Mail IDs are required."))
 
+    _note_written(account, ids)
     try:
         emails = [{"id": id, "keywords": {"$seen": seen}} for id in ids]
         _update_emails(account, emails, replace_keywords=False)
         _cache_seen(account, ids, seen)
+        _note_written(account, ids)
 
     except Exception:
         log_mail_error(
@@ -1257,6 +1267,7 @@ def set_unscreened_status(account: str, ids: list[str], unscreened: bool) -> Non
     if not account or not ids:
         frappe.throw(_("Account and Mail IDs are required."))
 
+    _note_written(account, ids)
     try:
         # A null patch removes a keyword; JMAP has no false keyword.
         value = True if unscreened else None
@@ -1275,6 +1286,7 @@ def set_unscreened_status(account: str, ids: list[str], unscreened: bool) -> Non
 
         if messages_to_cache:
             _cache_messages(account, messages_to_cache)
+        _note_written(account, ids)
 
     except Exception:
         log_mail_error(
@@ -1290,6 +1302,7 @@ def set_flagged_status(account: str, ids: list[str], flagged: bool = True) -> No
     if not account or not ids:
         frappe.throw(_("Account and Mail IDs are required."))
 
+    _note_written(account, ids)
     try:
         emails = [{"id": id, "keywords": {"$flagged": flagged}} for id in ids]
         _update_emails(account, emails, replace_keywords=False)
@@ -1307,6 +1320,7 @@ def set_flagged_status(account: str, ids: list[str], flagged: bool = True) -> No
 
         if messages_to_cache:
             _cache_messages(account, messages_to_cache)
+        _note_written(account, ids)
 
     except Exception:
         log_mail_error(
@@ -1314,6 +1328,46 @@ def set_flagged_status(account: str, ids: list[str], flagged: bool = True) -> No
             frappe.get_traceback(with_context=True),
         )
         frappe.throw(_("Failed to set flagged status for mail(s)."))
+
+
+def set_pinned_status(
+    account: str, ids: list[str], pinned: bool = True, mailbox: str | None = None
+) -> list[str]:
+    """Pin the conversation these messages are in a folder, or unpin it there; returns the messages
+    changed.
+
+    A pin belongs to the folder it is made in, the Inbox unless `mailbox` names another that takes
+    pins (see suite.mail.pins). It goes on what the messages hold in that folder, under the folder's
+    own keyword; it comes off all of them, wherever each is now.
+    """
+
+    if not account or not ids:
+        frappe.throw(_("Account and Mail IDs are required."))
+
+    mailboxes = get_cached_mailboxes(account)
+    inbox = next((m["id"] for m in mailboxes if (m.get("role") or "").lower() == "inbox"), None)
+    folder = mailbox or inbox
+    if not any(m["id"] == folder and takes_pins(m) for m in mailboxes):
+        frappe.throw(_("Mail in this folder can't be pinned."))
+    keyword = pin_keyword(folder, inbox)
+
+    if pinned:
+        ids = [mail["id"] for mail in get_messages_mailboxes(account, ids) if folder in mail["mailbox_ids"]]
+        if not ids:
+            frappe.throw(_("Only mail in this folder can be pinned here."))
+
+    try:
+        # A null patch removes a keyword; JMAP has no false keyword.
+        value = True if pinned else None
+        _update_emails(account, [{"id": id, "keywords": {keyword: value}} for id in ids])
+    except Exception:
+        log_mail_error(_("Failed to change the pin of mail(s)"), frappe.get_traceback(with_context=True))
+        frappe.throw(_("Failed to change the pin of mail(s)."))
+
+    # The cached copies go rather than being patched: a read already on its way can't cache a message
+    # as it was (see get_messages).
+    _remove_cached_messages(account, ids)
+    return ids
 
 
 def set_spam_status(account: str, ids: list[str], spam: bool = True) -> None:
@@ -1632,8 +1686,21 @@ def _remove_cached_messages(account: str, ids: list[str]) -> None:
 
     store = get_data_store(account)
     store.delete_many(Entity.EMAIL, keys=ids)
-    # Noted, so a read already on its way with the message as it was doesn't cache it back (see
-    # get_messages): a list reloading as a message is archived would otherwise keep it unarchived.
+    _note_written(account, ids)
+
+
+def _note_written(account: str, ids: list[str]) -> None:
+    """Note that these messages are being changed through Suite, as of now.
+
+    So a read already on its way with a message as it was doesn't cache it back (see get_messages):
+    a list reloading as a message is archived would otherwise keep it unarchived, one reloading as it
+    is read would keep it unread. A writer notes before it writes and again after: before, for a read
+    that fetched the message and has yet to cache it; after, for one that fetched it while the write
+    was on its way.
+    """
+
+    if not ids:
+        return
     now = _now()
     with frappe.cache.pipeline() as pipe:
         for id in ids:
@@ -1846,6 +1913,15 @@ def fetch_changes(user: str, account: str, email_state: str | None = None, ctx: 
 
                 if mailboxes_to_reload:
                     frappe.publish_realtime("new_mail_created", list(mailboxes_to_reload), user=user)
+
+                try:
+                    # Imported here: suite.mail.reminders imports this module.
+                    from suite.mail.reminders import wake_on_reply
+
+                    wake_on_reply(account, messages)
+                except Exception:
+                    # Waking early is a courtesy: the row still brings it back on time.
+                    log_mail_error(_("Failed to wake snoozed mail"), frappe.get_traceback(with_context=True))
 
                 if reactions:
                     logger.info("marking-reactions-read", count=len(reactions))

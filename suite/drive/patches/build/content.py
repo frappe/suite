@@ -148,6 +148,10 @@ def link_content_documents(env, *, batch_size: int = BUILD_BATCH_SIZE):
     # kill inside the mapper leaves a record that claims step 10 finished with
     # no content share mapped, and §14.2 lets a rerun skip a complete record.
     _convert_content_shares(env, result, batch_size)
+
+    from suite.drive.patches.build.templates import hold_template_decks_read_only
+
+    hold_template_decks_read_only(env, result, batch_size)
     result.links_completed = True
     env.state.put_content(result)
 
@@ -435,6 +439,11 @@ def _convert_content_shares(env, result, batch_size):
     empty page read.
     """
     target = env.content_target
+    # The state file can lag the last commit. These counts can't: they land in it
+    landed = target.docshare_counts()
+    if landed:
+        result.docshare_rows_dropped, result.docshare_rows_deleted = landed
+
     pending = {}
     removals = []
     after = ""
@@ -444,7 +453,9 @@ def _convert_content_shares(env, result, batch_size):
             break
         for row in rows:
             removals.append(row.preimage())
-            if row.share_doctype not in ("Writer Document", "Presentation"):
+            # A Presentation's DocShare never opened anything: its old check
+            # read the File's Drive rights
+            if row.share_doctype != "Writer Document":
                 result.docshare_rows_dropped += 1
             elif (nodes := target.content_nodes(row.share_doctype, row.share_name)) and len(nodes) == 1:
                 _stage_content_share(env, result, pending, row, nodes[0]["name"])
@@ -460,6 +471,7 @@ def _convert_content_shares(env, result, batch_size):
         after = rows[-1].name
         if len(rows) < batch_size:
             break
+
     _flush_grants(env, result, pending, removals)
 
 
@@ -495,6 +507,7 @@ def _flush_grants(env, result, pending, removals):
             target.set_grant_role(node, principal, wanted)
     target.insert_grants(fresh)
     _delete_docshares(env, result, removals)
+    target.save_docshare_counts(result.docshare_rows_dropped, result.docshare_rows_deleted)
     target.commit()
 
 

@@ -20,6 +20,8 @@ import { folderTicks } from '@/apps/mail/utils/folderTicks'
 import { canMoveToMailbox, commonMailboxIds } from '@/apps/mail/utils/mailboxTargets'
 import { mailCopies, mailCopyIds, mailCopyNames, threadStarIds } from '@/apps/mail/utils/mailCopies'
 import { isReceived } from '@/apps/mail/utils/receivedMail'
+import { resnooze, type Waited } from '@/apps/mail/utils/resnooze'
+import { snoozedMessage } from '@/apps/mail/utils/snoozeTimes'
 
 type SetSeenParams = {
   0?: string[]
@@ -38,6 +40,34 @@ interface MailThreadInstance {
  * List/reading-pane thread actions performed directly on mail ids (the full thread is loaded, so the
  * server doesn't need to resolve thread ids). Optimistic UI, undo and toasts live here too.
  */
+
+/**
+ * The confirmation for deleting threads for good: how many, that it can't be undone, and a button
+ * that says "Delete Forever" in red rather than "Confirm".
+ */
+export const deleteForeverOptions = (count: number, onConfirm: () => void) => ({
+  title:
+    count === 1
+      ? __('Delete this conversation forever?')
+      : __('Delete {0} conversations forever?', [count]),
+  message:
+    count === 1
+      ? __('Its messages in this folder are deleted permanently. This can’t be undone.')
+      : __('Their messages in this folder are deleted permanently. This can’t be undone.'),
+  icon: 'lucide-alert-triangle',
+  theme: 'red' as const,
+  // Cancel, with no handler of its own, just closes the dialog.
+  actions: [
+    { label: __('Cancel'), variant: 'subtle' as const },
+    {
+      label: __('Delete Forever'),
+      variant: 'solid' as const,
+      theme: 'red' as const,
+      onClick: onConfirm,
+    },
+  ],
+})
+
 export function useThreadActions(deps: {
   rows: ComputedRef<Thread[]>
   mailbox: ComputedRef<string>
@@ -137,6 +167,8 @@ export function useThreadActions(deps: {
   // filed, your sent mail never leaves Sent but by Trash, and a draft is never filed. `leaves` names
   // the list the conversation leaves, so the client policy takes its rows off at once.
   const fileMails = useMutation(api.mail.messages.file)
+  const snoozeMails = useMutation(api.mail.messages.snooze)
+  const unsnoozeMails = useMutation(api.mail.messages.unsnooze)
   const fileMailsSubmit = (input: Omit<InputOf<typeof api.mail.messages.file>, 'account'>) =>
     fileMails.run({ account: store.accountId, ...input })
 
@@ -447,24 +479,11 @@ export function useThreadActions(deps: {
     handleDeleteThreads(threadsToBeDeleted.value)
     showJunkOrDeleteThreads.value = false
   }
-  const junkOrDeleteThreadsOptions = computed(() => {
-    const total = threadsToBeDeleted.value.length
-    const count = total === 1 ? '' : total.toString()
-    const noun = total > 1 ? __('Threads') : __('Thread')
-    const lowerNoun = total > 1 ? __('threads') : __('thread')
-    return {
-      title: __('Delete {0} {1}', [count, noun]),
-      message: __('Are you sure you want to permanently delete the selected {0}?', [lowerNoun]),
-      actions: [
-        {
-          label: __('Confirm'),
-          variant: 'solid',
-          autofocus: true,
-          onClick: handleDeleteConfirmed,
-        },
-      ],
-    }
-  })
+  // Says how many and that it is for good, and the button says what it does: a Confirm under a
+  // question had the reader agree to something the dialog never named.
+  const junkOrDeleteThreadsOptions = computed(() =>
+    deleteForeverOptions(threadsToBeDeleted.value.length, handleDeleteConfirmed),
+  )
   const bulkDelete = useMutation(api.mail.messages.delete)
   async function bulkDeleteSubmit({ names }: { names: string[] }) {
     const input: InputOf<typeof api.mail.messages.delete> = {
@@ -838,10 +857,11 @@ export function useThreadActions(deps: {
   // Archive and Unarchive file a conversation in place: the rows leave only the list named as left,
   // and Undo puts each message back exactly. `told` reads the toast off the server's answer.
   const fileInPlace = (
-    action: 'archive' | 'unarchive',
+    action: 'archive' | 'unarchive' | 'snooze' | 'wake',
     threadIds: string[],
     leaves: boolean,
     told: (filed: { left_inbox: boolean }) => string,
+    until?: string,
   ) => {
     if (!threadIds.length) return
     const mails = threadMails(threadIds)
@@ -853,13 +873,28 @@ export function useThreadActions(deps: {
     setUndoAction(undefined)
     const removed = leaves ? handleSuccessAndRemoveFromList(threadIds, false) : []
     let forwardOk = false
-    const forward = fileMailsSubmit({
-      ids: mails.map((m) => m.id),
-      action,
-      leaves: leaves ? mailbox.value : null,
-      // Rows that stay show the new folders at once; Search is read again, its rows being matches.
-      shows: leaves || mailbox.value === 'search' ? null : expectedFolders(action, threadIds),
-    }).then(
+    let waited: Waited[] = []
+    const account = store.accountId
+    const ids = mails.map((m) => m.id)
+    const leaving = leaves ? mailbox.value : null
+    const forward = (
+      action === 'snooze'
+        ? snoozeMails.run({ account: store.accountId, ids, until: until!, leaves: leaving })
+        : action === 'wake'
+          ? unsnoozeMails.run({ account, ids, leaves: leaving }).then((answer) => {
+              waited = answer.waited
+              return answer
+            })
+          : fileMailsSubmit({
+              ids,
+              action,
+              leaves: leaving,
+              // Rows that stay show the new folders at once; Search is read again, its rows being
+              // matches.
+              shows:
+                leaves || mailbox.value === 'search' ? null : expectedFolders(action, threadIds),
+            })
+    ).then(
       (filed) => {
         forwardOk = true
         mailboxes.refetch().catch(() => {})
@@ -885,7 +920,12 @@ export function useThreadActions(deps: {
           if (!forwardOk) return
           restoreThreadsToList(removed)
           setUndoAction(undefined)
-          const restore = setMailsMailboxesSubmit({ mails: snapshot }).then(() => {
+          // Unsnoozing ended its wait: only snoozing again has it come back at its time.
+          const restore = (
+            action === 'wake'
+              ? resnooze(account, waited)
+              : setMailsMailboxesSubmit({ mails: snapshot })
+          ).then(() => {
             mailboxes.refetch().catch(() => {})
             if (mailbox.value === 'search') resetThreads()
           })
@@ -924,6 +964,23 @@ export function useThreadActions(deps: {
   const unarchiveThreads = (threadIds: string[]) =>
     fileInPlace('unarchive', threadIds, mailbox.value === mailboxIds.archive, () =>
       threadIds.length > 1 ? __('Threads unarchived.') : __('Thread unarchived.'),
+    )
+
+  // A conversation waits in Snoozed until a chosen time (suite/mail/reminders.py). It leaves the Inbox
+  // and Archive lists; in Starred or a folder of yours it stays. Asked of what is already snoozed, this
+  // only changes the time, and the row stays.
+  const snoozeThreads = (threadIds: string[], until: string) =>
+    fileInPlace(
+      'snooze',
+      threadIds,
+      [mailboxIds.inbox, mailboxIds.archive].includes(mailbox.value),
+      () => snoozedMessage(threadIds.length, until),
+      until,
+    )
+
+  const unsnoozeThreads = (threadIds: string[]) =>
+    fileInPlace('wake', threadIds, mailbox.value === mailboxIds.snoozed, () =>
+      threadIds.length > 1 ? __('Threads unsnoozed.') : __('Thread unsnoozed.'),
     )
 
   const setSpamStatus = (threadIDs: SetSeenParams) => {
@@ -1257,6 +1314,8 @@ export function useThreadActions(deps: {
 
   return {
     // Handlers
+    snoozeThreads,
+    unsnoozeThreads,
     handleSetSeen,
     handleSyncUnseen,
     setFlaggedByThreadIDs,

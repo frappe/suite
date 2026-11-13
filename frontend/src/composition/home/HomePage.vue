@@ -28,6 +28,36 @@
 
     <ScrollArea ref="home-scroll" class="min-h-0 flex-1">
       <div class="mx-auto flex w-full max-w-4xl flex-col gap-8 px-5 py-6">
+        <GetStarted />
+        <section v-if="createDocumentMutation.canCreate" aria-labelledby="home-new-heading">
+          <h2 id="home-new-heading" class="pb-3 text-lg font-medium text-ink-gray-9">
+            {{ __('New') }}
+          </h2>
+          <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <button
+              v-for="definition in documentTypes"
+              :key="definition.contentDoctype"
+              type="button"
+              class="flex h-10 min-w-0 items-center gap-2 rounded-5 border border-outline-gray-1 bg-surface-elevation-1 px-3 text-start transition-colors hover:border-outline-gray-2 hover:bg-surface-gray-1 focus-visible:focus-ring aria-disabled:cursor-default dark:hover:bg-surface-elevation-2"
+              :aria-busy="creatingType === definition.contentDoctype"
+              :aria-disabled="createDocumentMutation.isPending"
+              @click="createFromCard(definition.contentDoctype)"
+            >
+              <span
+                class="size-4.5 shrink-0"
+                :class="driveDocumentIcon(definition.contentDoctype)"
+                aria-hidden="true"
+              />
+              <span class="min-w-0 flex-1 truncate text-base font-medium text-ink-gray-8">
+                {{ definition.newLabel() }}
+              </span>
+              <Spinner
+                v-if="creatingType === definition.contentDoctype"
+                class="size-4 shrink-0 text-ink-gray-5"
+              />
+            </button>
+          </div>
+        </section>
         <section aria-labelledby="home-recent-heading">
           <div class="flex items-center justify-between pb-3">
             <h2 id="home-recent-heading" class="text-lg font-medium text-ink-gray-9">
@@ -154,8 +184,9 @@
           <p
             v-else-if="!upcomingRows.length"
             class="rounded-5 border border-outline-gray-1 px-3 py-8 text-center text-p-sm text-ink-gray-5"
+            data-testid="upcoming-empty"
           >
-            {{ __('Nothing scheduled') }}
+            {{ __('Nothing scheduled. Your meetings and events show here.') }}
           </p>
           <UpcomingEventList
             v-else
@@ -181,22 +212,6 @@
       </div>
     </ScrollArea>
 
-    <Dialog v-model:open="joinDialogOpen" :title="__('Join with code')" size="sm">
-      <FormControl
-        v-model="meetingCode"
-        :error="meetingCodeError"
-        :label="__('Meeting code')"
-        placeholder="abcd-efgh-ijkl"
-        @keydown.enter="joinWithCode"
-      />
-      <template #actions>
-        <div class="flex justify-end gap-2">
-          <Button :label="__('Cancel')" @click="joinDialogOpen = false" />
-          <Button :label="__('Join')" variant="solid" @click="joinWithCode" />
-        </div>
-      </template>
-    </Dialog>
-
     <ScheduleMeetingDialog ref="schedule-dialog" @scheduled="upcomingQuery.refetch()" />
   </div>
 </template>
@@ -205,13 +220,12 @@
 import { useNow } from '@vueuse/core'
 import {
   Button,
-  Dialog,
-  FormControl,
   PageHeader,
   PageHeaderMobile,
   PageHeaderTitle,
   ScrollArea,
   Skeleton,
+  Spinner,
 } from 'frappe-ui'
 import { computed, ref, useTemplateRef } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
@@ -224,6 +238,7 @@ import {
   type UpcomingEventRow,
 } from '@/apps/calendar'
 import {
+  driveDocumentIcon,
   DriveFileCard,
   driveNodeRoute,
   formatDriveListingDate,
@@ -233,6 +248,7 @@ import {
 } from '@/apps/drive'
 import { ScheduleMeetingDialog } from '@/apps/meet'
 import { documentTypes } from '@/composition/documentRegistry'
+import GetStarted from '@/composition/home/GetStarted.vue'
 import { formatEventTime, groupHomeEvents, homeEventWindow } from '@/composition/home/homeTime'
 import { Dropdown } from '@/platform/feedback'
 import { useRestoredScroll } from '@/platform/scroll-restoration'
@@ -256,7 +272,10 @@ const recentQuery = useQuery(api.drive.views.list, {
   expand: 'preview',
 })
 // Thumbnail URLs are signed and expire, so Recent refetches them as Drive's grid does.
-useDrivePreviewRefresh(() => recentQuery.refetch())
+useDrivePreviewRefresh(
+  () => recentQuery.refetch(),
+  () => recentRows.value,
+)
 const { query: upcomingQuery, events: cachedUpcomingEvents } = useUpcomingEvents(
   () => eventWindow.value,
 )
@@ -290,9 +309,6 @@ const upcomingRows = computed(() =>
     .slice(0, 3),
 )
 
-const joinDialogOpen = ref(false)
-const meetingCode = ref('')
-const meetingCodeError = ref('')
 const scheduleDialog = useTemplateRef<InstanceType<typeof ScheduleMeetingDialog>>('schedule-dialog')
 const newMenuItems = documentTypes.map((definition) => ({
   label: definition.newLabel(),
@@ -301,22 +317,14 @@ const newMenuItems = documentTypes.map((definition) => ({
 }))
 const meetMenuItems = [
   {
-    label: __('Start instant meeting'),
+    label: __('Start meeting'),
     icon: 'lucide-zap',
     onClick: () => startMeeting('open'),
   },
   {
-    label: __('Start restricted meeting'),
+    label: __('Start private meeting'),
     icon: 'lucide-lock',
     onClick: () => startMeeting('restricted'),
-  },
-  {
-    label: __('Join with code'),
-    icon: 'lucide-log-in',
-    onClick: () => {
-      meetingCodeError.value = ''
-      joinDialogOpen.value = true
-    },
   },
 ]
 const scheduleMenuItems = [
@@ -341,21 +349,22 @@ async function createDocument(contentDoctype: string) {
     await router.push(newDocumentRoute(node))
   }
 }
+const creatingType = ref<string | null>(null)
+/** A card creates as the New menu does; a second click while one is created does nothing. */
+async function createFromCard(contentDoctype: string) {
+  if (creatingType.value || createDocumentMutation.isPending) return
+  creatingType.value = contentDoctype
+  try {
+    await createDocument(contentDoctype)
+  } finally {
+    creatingType.value = null
+  }
+}
 async function startMeeting(type: 'open' | 'restricted') {
   const room = await createRoomMutation.run({
     type,
   })
   if (room) await router.push(meetRoute(room.code))
-}
-function joinWithCode() {
-  const code = meetingCode.value.trim()
-  meetingCodeError.value = ''
-  if (!/^[a-zA-Z0-9]{4}(?:-[a-zA-Z0-9]{4}){2}$/.test(code)) {
-    meetingCodeError.value = __('Enter a valid meeting code.')
-    return
-  }
-  joinDialogOpen.value = false
-  void router.push(meetRoute(code))
 }
 function meetRoute(code: string): string {
   return `/meet/${encodeURIComponent(code)}`

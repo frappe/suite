@@ -19,6 +19,7 @@ import { useDocumentLeaveGuard, type DocumentSaveState } from './navigation'
 import type { CellAnchor, SheetVersion } from './records'
 import { clearRecovery, downloadRecovery, keepRecovery, readRecovery } from './recovery'
 import SheetCommentsPanel from './SheetCommentsPanel.vue'
+import SheetDocumentMenu from './SheetDocumentMenu.vue'
 import SheetVersionBar from './SheetVersionBar.vue'
 import SheetVersionsPanel from './SheetVersionsPanel.vue'
 import {
@@ -150,6 +151,9 @@ watch(
 function showPanel(next: DocumentPanel | null) {
   panel.value = next
   if (next) editor.value?.closeNotes()
+}
+function togglePanel(name: DocumentPanel) {
+  showPanel(panel.value === name ? null : name)
 }
 // The list is read each time the panel opens; closing it ends a preview.
 watch(panel, (now) => {
@@ -363,6 +367,9 @@ useDocumentLeaveGuard({
       :request-context="session.credentials.context"
       :collab-session="preview ? undefined : session"
       :version="preview?.bytes"
+      :open-comments="
+        session.panels.value.includes('comments') ? () => showPanel('comments') : undefined
+      "
       @reopen="bodyRevision += 1"
       @notes-opened="panel = null"
     >
@@ -376,25 +383,25 @@ useDocumentLeaveGuard({
           :save-state="editor?.saveState ?? null"
           :view-only="viewOnly"
           :recoverable="hasRecovery"
-          :panels="session.panels.value"
-          :panel="panel"
-          layout="compact"
-          @update:panel="showPanel"
+          layout="menus"
           @download-changes="downloadChanges"
         >
           <template #status>
             <component :is="EditorStatus" />
           </template>
           <template #menus>
-            <component
-              :is="EditorMenus"
-              :open-comments="
-                session.panels.value.includes('comments') ? () => showPanel('comments') : null
-              "
-            />
+            <component :is="EditorMenus" />
           </template>
           <template #actions>
             <component :is="EditorActions" />
+          </template>
+          <template #menu>
+            <SheetDocumentMenu
+              v-if="session.panels.value.length"
+              :panels="session.panels.value"
+              :panel="panel"
+              @toggle-panel="togglePanel"
+            />
           </template>
         </DriveDocumentHeader>
       </template>
@@ -458,12 +465,14 @@ useDocumentLeaveGuard({
   position: relative;
   z-index: 10;
 }
-/* Hover and "on" fills (Comments and Versions open) follow the bar colours,
-   as in row 2; solid buttons such as Share keep their own. */
-.sheets-header :deep(button:not(:disabled, .bg-surface-gray-10):hover),
+/* Hover and "on" fills follow the bar colours, as in row 2; solid buttons
+   keep their own. */
+.sheets-header :deep(button:not(:disabled, .bg-surface-gray-10):hover) {
+  background: var(--sn-bar-hover);
+}
 .sheets-header :deep(button[data-state='open']),
 .sheets-header :deep(button[aria-pressed='true']) {
-  background: var(--sn-bar-hover);
+  background: var(--sn-bar-on);
 }
 .sheets-header :deep(button[aria-pressed='true']) {
   box-shadow: inset 0 0 0 1px var(--sn-bar-on-edge);

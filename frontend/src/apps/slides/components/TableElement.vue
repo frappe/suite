@@ -10,10 +10,10 @@
   />
   <div
     v-else
-    v-html="sanitizedContent"
     class="tableElement select-none"
     :style="elementStyles"
     @dblclick="handleDoubleClick"
+    v-html="sanitizedContent"
   ></div>
 </template>
 
@@ -29,7 +29,12 @@ import {
   setEditableState,
 } from '@/apps/slides/stores/element'
 import { interactionOffset } from '@/apps/slides/stores/interaction'
-import { markDirty } from '@/apps/slides/stores/saving'
+import {
+  askLivePush,
+  boundElementId,
+  isLive,
+  wasLastTextChangeHere,
+} from '@/apps/slides/stores/liveDeck'
 import {
   getDefaultBandColor,
   getDefaultGridColor,
@@ -105,9 +110,11 @@ watch(
 
     const width = getTableWidth(content)
     if (!width || width === element.value.width) return
+    // a co-editor's widths arrive with their own frame, and following them here is a write (Q6)
+    if (isLive() && !(boundElementId() === element.value.id && wasLastTextChangeHere())) return
 
     element.value.width = width
-    markDirty()
+    askLivePush()
   },
 )
 

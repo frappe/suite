@@ -126,7 +126,7 @@ beforeEach(() => {
   reloads.mockReset()
   engine.current = createApiClient(
     { mail: () => import('@/apps/mail/client/policy').then((module) => module.registration) },
-    { transport: createTransport({ fetch: fetcher }), persistence: false, feedback },
+    { transport: createTransport({ fetch: fetcher }), feedback },
   )
 })
 afterEach(() => {

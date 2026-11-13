@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue'
 
 import { isBlockedByLock } from '@/apps/slides/stores/commands'
-import { markDirty } from '@/apps/slides/stores/saving'
+import { askLivePush, endLiveStep, isLive, redoLive, undoLive } from '@/apps/slides/stores/liveDeck'
 
 // prosemirror-history's newGroupDelay
 const COALESCE_WINDOW = 500
@@ -57,6 +57,16 @@ export const useCommandHistory = (state, historyMeta = {}) => {
 
   // files a command whose change is already applied
   const record = (command, { forceCoalesce } = {}) => {
+    // a converted presentation undoes through its live document: a step here would
+    // put back what a co-editor changed since. A command with no key is a whole gesture
+    if (isLive()) {
+      if (!command.coalesceKey) {
+        endLiveStep()
+      }
+
+      return askLivePush()
+    }
+
     const top = prevCommands.value.at(-1)
 
     if (canCoalesce(command, top, forceCoalesce)) {
@@ -76,7 +86,7 @@ export const useCommandHistory = (state, historyMeta = {}) => {
 
     nextCommands.value = []
 
-    markDirty()
+    askLivePush()
   }
 
   const execute = (command) => {
@@ -92,6 +102,10 @@ export const useCommandHistory = (state, historyMeta = {}) => {
   }
 
   const undo = () => {
+    if (isLive()) {
+      return undoLive()
+    }
+
     if (!canUndo.value) return
 
     const command = prevCommands.value.pop()
@@ -104,10 +118,14 @@ export const useCommandHistory = (state, historyMeta = {}) => {
     nextCommands.value.push(command)
     lastRecordedAt = 0
 
-    markDirty()
+    askLivePush()
   }
 
   const redo = () => {
+    if (isLive()) {
+      return redoLive()
+    }
+
     if (!canRedo.value) return
 
     const command = nextCommands.value.pop()
@@ -120,7 +138,7 @@ export const useCommandHistory = (state, historyMeta = {}) => {
     prevCommands.value.push(command)
     lastRecordedAt = 0
 
-    markDirty()
+    askLivePush()
   }
 
   const clearHistory = () => {

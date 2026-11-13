@@ -8,7 +8,7 @@ const clients: Array<ReturnType<typeof createApiClient>> = []
 export function testClient(transport: Transport, feedback: (error: Error) => void = () => {}) {
   const engine = createApiClient(
     { drive: () => import('./policy').then((module) => module.registration) },
-    { transport, persistence: false, feedback },
+    { transport, feedback },
   )
   clients.push(engine)
   return engine.client

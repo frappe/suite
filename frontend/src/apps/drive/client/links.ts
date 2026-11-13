@@ -54,6 +54,7 @@ export interface ScopeOptions {
 
 export interface LinkStore {
   partition(nodeIds?: readonly string[]): string
+  /** Moves every read to a new partition, so no observer keeps data read under the old access. */
   invalidateAccess(): void
   /** Remembers a share link and the node it opens. A malformed token is ignored. */
   seed(code: string, target: string): void

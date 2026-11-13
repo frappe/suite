@@ -23,7 +23,8 @@ const testState = vi.hoisted(() => ({
 
 vi.mock('@/apps/drive', async () => {
   const { defineComponent: define, h: render } = await import('vue')
-  const { driveNodeRoute } = await vi.importActual<typeof import('@/apps/drive')>('@/apps/drive')
+  const { driveNodeRoute, openingLocation } =
+    await vi.importActual<typeof import('@/apps/drive')>('@/apps/drive')
   return {
     // Stands in for the password form: a click is a right password.
     DriveUnlockScreen: define({
@@ -42,9 +43,11 @@ vi.mock('@/apps/drive', async () => {
     filePreviewSurface: testState.preview,
     openDocumentSession: testState.open,
     driveNodeRoute,
+    openingLocation,
     DriveDocumentHeaderSkeleton: define({
-      props: { title: String },
-      setup: (props) => () => render('header', { 'data-skeleton': '' }, props.title),
+      props: { title: String, location: String },
+      setup: (props) => () =>
+        render('header', { 'data-skeleton': '', 'data-location': props.location }, props.title),
     }),
   }
 })
@@ -257,6 +260,28 @@ describe('DocumentHost', () => {
     await vi.waitFor(() => expect(document.title).toBe('Opening…'))
     app.unmount()
     uninstall()
+  })
+
+  it('shows the folder the opener named in the opening header, and none when it named none', async () => {
+    testState.open.mockReturnValue(new Promise(() => {}))
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/d/:node/:slug?', name: 'document-host', component: DocumentHost }],
+    })
+    const state = { ...openingTitleState('Loose file.txt'), driveLocation: 'Talks' }
+    await router.push({ path: '/d/node-1', state })
+    const root = document.createElement('div')
+    document.body.append(root)
+    const app = createApp(DocumentHost)
+    app.use(router).use(translationPlugin)
+    app.mount(root)
+    const skeleton = () => root.querySelector('[data-skeleton]')
+
+    expect(skeleton()?.getAttribute('data-location')).toBe('Talks')
+    await router.push('/d/node-2')
+    await vi.waitFor(() => expect(skeleton()?.textContent).toBe(''))
+    expect(skeleton()?.hasAttribute('data-location')).toBe(false)
+    app.unmount()
   })
 
   it('keeps a file preview on screen while the next file opens, then shows the next one', async () => {

@@ -59,6 +59,9 @@ suite.writer.patches.turn_collaboration_on
 # --- sheets ---
 # After Writer's, for the same reason
 suite.sheets.patches.turn_collaboration_on
+# --- slides ---
+# After Sheets', for the same reason
+suite.slides.patches.turn_collaboration_on
 # --- mail ---
 suite.mail.patches.create_push_subscriptions
 suite.mail.patches.rename_user_settings

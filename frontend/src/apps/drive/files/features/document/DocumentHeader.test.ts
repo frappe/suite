@@ -1,6 +1,7 @@
 import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, ref, type VNode } from 'vue'
+import { createMemoryHistory, createRouter } from 'vue-router'
 
 import type { DocumentSession } from '@/apps/drive/client/session'
 import { requireTestElement } from '@/platform/testing/dom'
@@ -8,6 +9,7 @@ import { TransportError } from '@/platform/transport'
 
 import type { DocumentPanel } from '../../../client/types'
 import DocumentHeader from './DocumentHeader.vue'
+import DocumentHeaderSkeleton from './DocumentHeaderSkeleton.vue'
 import type { DocumentSaveState } from './header'
 
 // Plain stand-ins: the test frappe-ui build has no TextInput or Badge.
@@ -90,7 +92,7 @@ function mount(
     saveState?: DocumentSaveState | null
     saveNote?: string
     viewOnly?: boolean
-    layout?: 'default' | 'centered' | 'compact'
+    layout?: 'default' | 'centered' | 'menus'
   } = {},
   slots: Record<string, () => VNode> = {},
 ) {
@@ -372,8 +374,85 @@ describe('DocumentHeader', () => {
   })
 })
 
-describe('DocumentHeader, compact (Sheets)', () => {
-  function mountWithMenus(compact: boolean) {
+describe('DocumentHeaderSkeleton', () => {
+  // The classes that size or hide what comes before the title, and the text it shows.
+  const BOX = /^(max-md:hidden|md:hidden|max-w-\S+|px-\S+|ps-\S+|size-\S+|text-base|truncate)$/
+  function layout(header: Element, title: Element) {
+    const group = header.firstElementChild!
+    const items = [...group.children].flatMap((child) =>
+      child.classList.contains('contents') ? [...child.children] : [child],
+    )
+    const before = items.slice(0, items.indexOf(title))
+    // frappe-ui draws an icon-only Button 28 px square, which its classes do not say.
+    const classes = (item: Element) =>
+      item.tagName === 'BUTTON' ? [...item.classList, 'size-7'] : [...item.classList]
+    const signature = (item: Element) => [
+      classes(item)
+        .filter((name) => BOX.test(name))
+        .sort(),
+      item.textContent?.trim(),
+    ]
+    return {
+      before: before.map(signature),
+      titleStart: [...title.classList].find((name) => /^p[sx]-/.test(name)),
+    }
+  }
+
+  function mountPair(location: { label: string; to: string } | null) {
+    const root = document.createElement('div')
+    document.body.append(root)
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/:any(.*)', component: { render: () => null } }],
+    })
+    const doc = { ...session(40), contentDoctype: 'Drive File', title: ref('Loose file.txt') }
+    const app = createApp({
+      setup: () => () => [
+        h(DocumentHeaderSkeleton, { title: 'Loose file.txt', location: location?.label }),
+        h(DocumentHeader, {
+          session: fromPartial<DocumentSession>(doc),
+          titleLabel: 'File name',
+          mime: 'text/plain',
+          location,
+        }),
+      ],
+    }).use(router)
+    app.mount(root)
+    cleanup = () => {
+      app.unmount()
+      root.remove()
+    }
+    const [skeleton, loaded] = root.querySelectorAll('header')
+    return {
+      skeleton: layout(skeleton!, skeleton!.querySelector('span.font-medium')!),
+      loaded: layout(loaded!, loaded!.querySelector('.document-title')!),
+      loadedTitle: loaded!.querySelector('.document-title > span')!,
+    }
+  }
+
+  it('lays out the folder, the way back and the icon as the loaded file header does', () => {
+    const { skeleton, loaded, loadedTitle } = mountPair({
+      label: 'Projects',
+      to: '/drive/f/projects',
+    })
+
+    expect(skeleton.before).toEqual(loaded.before)
+    expect(skeleton.before.map(([, text]) => text)).toEqual(['', 'Projects', '/', ''])
+    // Both titles start 8 px in: the skeleton's text, and the copy that sizes the field.
+    expect(skeleton.titleStart).toBe('px-2')
+    expect(loadedTitle.classList).toContain('ps-2')
+  })
+
+  it('shows only the icon before the title when the file has no folder to name', () => {
+    const { skeleton, loaded } = mountPair(null)
+
+    expect(skeleton.before).toEqual(loaded.before)
+    expect(skeleton.before).toHaveLength(1)
+  })
+})
+
+describe('DocumentHeader, menus layout (Sheets)', () => {
+  function mountWithMenus(layout: 'default' | 'menus', props: { viewOnly?: boolean } = {}) {
     const root = document.createElement('div')
     document.body.append(root)
     const app = createApp({
@@ -384,10 +463,13 @@ describe('DocumentHeader, compact (Sheets)', () => {
             session: fromPartial<DocumentSession>(session(40)),
             titleLabel: 'Spreadsheet title',
             saveState: 'clean',
-            panels: ['comments', 'versions'],
-            layout: compact ? 'compact' : 'default',
+            layout,
+            ...props,
           },
-          { menus: () => h('nav', { 'aria-label': 'Spreadsheet menus' }, 'File Edit') },
+          {
+            menus: () => h('nav', { 'aria-label': 'Spreadsheet menus' }, 'File Edit'),
+            actions: () => h('span', { 'data-presence': '' }),
+          },
         ),
     })
     app.mount(root)
@@ -399,20 +481,81 @@ describe('DocumentHeader, compact (Sheets)', () => {
     const edited = [...header.querySelectorAll('span')].find(
       (el) => el.textContent?.trim() === 'Edited 3h ago',
     )!
-    return { header, edited, menus: header.querySelector('nav')! }
+    const title = header.querySelector<HTMLInputElement>('input')!
+    return { header, edited, title, menus: header.querySelector('nav')! }
   }
 
-  it('puts the edited time beside the title, then the menus', () => {
-    const { header, edited, menus } = mountWithMenus(true)
-    const left = header.firstElementChild!
-    expect(left.contains(edited)).toBe(true)
-    expect(edited.compareDocumentPosition(menus) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(left.contains(menus)).toBe(true)
+  it('is as tall as the other document headers', () => {
+    expect(mountWithMenus('menus').header.className).toContain('h-12')
   })
 
-  it('puts the edited time on the right for every other app', () => {
-    const { header, edited } = mountWithMenus(false)
-    expect(header.firstElementChild!.contains(edited)).toBe(false)
+  it('puts the title left, the menus in a column of their own, and the rest right', () => {
+    const { header, edited, menus, title } = mountWithMenus('menus')
+    const [left, middle, right] = header.children
+    expect(header.children).toHaveLength(3)
+    expect(left!.contains(title)).toBe(true)
+    expect(left!.contains(edited)).toBe(false)
+    expect(middle!.contains(menus)).toBe(true)
+    expect(right!.contains(edited)).toBe(true)
+  })
+
+  it('keeps Writer’s order on the right: edited, presence, share, link, star', () => {
+    const { header, edited } = mountWithMenus('menus')
+    const order = [
+      edited,
+      header.querySelector('[data-presence]')!,
+      header.querySelector('button[aria-label="Copy link"]')!,
+      header.querySelector('button[aria-label="Star"]')!,
+    ]
+    for (const [at, element] of order.slice(1).entries()) {
+      expect(
+        order[at]!.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
+    }
+  })
+
+  it('holds the badges apart from the title, so a longer title cannot push them', () => {
+    const { header, title } = mountWithMenus('menus', { viewOnly: true })
+    const badge = [...header.querySelectorAll('span')].find(
+      (el) => el.textContent?.trim() === 'View only',
+    )!
+    const spacer = badge.previousElementSibling!
+    expect(spacer.className).toContain('flex-1')
+    expect(spacer.contains(title)).toBe(false)
+  })
+
+  function makeTitleOverflow(title: HTMLInputElement, overflows: boolean) {
+    Object.defineProperty(title, 'clientWidth', { value: 400 })
+    Object.defineProperty(title, 'scrollWidth', { value: overflows ? 900 : 400 })
+  }
+  const fullTitle = (header: HTMLElement) => header.querySelector('.document-full-title')
+
+  it('shows no box with the whole name when a long title is clicked into', async () => {
+    const { header, title } = mountWithMenus('menus')
+    makeTitleOverflow(title, true)
+
+    title.focus()
+    await nextTick()
+    expect(fullTitle(header)).toBeNull()
+
+    title.value = 'Budget 2027'
+    title.dispatchEvent(new Event('input', { bubbles: true }))
+    await nextTick()
+    await nextTick()
+    expect(fullTitle(header)).toBeNull()
+  })
+
+  it('leaves every other app’s header as it was', async () => {
+    const { header, edited, menus, title } = mountWithMenus('default')
+    makeTitleOverflow(title, true)
+    expect(header.className).toContain('flex')
+    expect(header.className).not.toContain('grid')
+    expect(header.children).toHaveLength(2)
+    expect(header.firstElementChild!.contains(menus)).toBe(true)
     expect(header.lastElementChild!.contains(edited)).toBe(true)
+
+    title.focus()
+    await nextTick()
+    expect(fullTitle(header)).toBeNull()
   })
 })

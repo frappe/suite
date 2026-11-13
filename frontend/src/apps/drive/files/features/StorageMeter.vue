@@ -1,6 +1,6 @@
 <!--
   How much of the personal Drive's quota is used, as a thin bar and one line.
-  Pressing it opens the Statistics tab in Settings. It keeps its space with a
+  Pressing it opens the Storage tab (`drive.statistics`) in Settings. It keeps its space with a
   skeleton while it loads, and shows nothing when the read fails.
 -->
 <template>
@@ -22,7 +22,7 @@
         :style="{ width: `${meter.percent}%` }"
       />
     </span>
-    <span class="text-xs text-ink-gray-5 tabular-nums">{{ meter.label }}</span>
+    <span class="text-xs text-ink-gray-5">{{ meter.label }}</span>
   </button>
   <div v-else-if="!failed" class="flex flex-col gap-2 px-2 py-2" aria-hidden="true">
     <Skeleton class="h-1 w-full rounded-full" />

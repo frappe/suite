@@ -41,7 +41,12 @@
     <span class="text-ink-gray-5">
       {{ __('Items in this folder will be automatically deleted after 30 days.') }}
     </span>
-    <Button :label="__('Delete Now')" variant="ghost" @click="showEmptyMailbox = true" />
+    <Button
+      :label="__('Empty {0}', [mailboxName])"
+      variant="ghost"
+      theme="red"
+      @click="showEmptyMailbox = true"
+    />
   </div>
 
   <!-- Mobile sizes by flex (the dvh calcs assume desktop chrome and overshoot
@@ -99,7 +104,12 @@
               <span class="text-ink-gray-5">
                 {{ __('Items in this folder will be automatically deleted after 30 days.') }}
               </span>
-              <Button :label="__('Delete Now')" variant="ghost" @click="showEmptyMailbox = true" />
+              <Button
+                :label="__('Empty {0}', [mailboxName])"
+                variant="ghost"
+                theme="red"
+                @click="showEmptyMailbox = true"
+              />
             </div>
 
             <InboxTabs
@@ -169,25 +179,9 @@
               <SelectActionButtons
                 v-if="selections.length"
                 :actions="selectActions"
+                :filing="folderSelectionOptions"
                 :collapsed="showReadingPane"
               />
-
-              <Dropdown v-if="showMoveTo" :options="moveToOptions">
-                <Button variant="ghost" :tooltip="__('Move To')">
-                  <template #icon>
-                    <component :is="FolderInput" class="icon" />
-                  </template>
-                </Button>
-              </Dropdown>
-              <!-- Where the selection is filed, as ticks — the thread toolbar's Folders menu, for
-                   every ticked thread at once. Stays open, to file them in several. -->
-              <Dropdown v-if="folderOptions.length" :options="folderOptions">
-                <Button variant="ghost" :tooltip="__('Folders')">
-                  <template #icon>
-                    <component :is="Folders" class="icon" />
-                  </template>
-                </Button>
-              </Dropdown>
             </template>
           </MailListToolbar>
 
@@ -207,6 +201,7 @@
                 :focused="focusedRowKey === `group:${key}`"
                 :selected="isGroupSelected(key)"
                 @toggle="toggleGroupCollapse(key)"
+                @clear="clearAllReturned"
               >
                 <!-- Mobile: group select ("all of Today") appears only in selection mode. -->
                 <template #lead>
@@ -268,8 +263,10 @@
                     :hide-sender="row.inStack"
                     :draggable="!isMobile && !isAllAccountsSearch && mailbox !== mailboxIds.drafts"
                     :screened="screener.active.value && screener.isScreened(row.thread)"
+                    :pinnable="pinnable"
                     :class="rowClasses(row)"
                     :data-row-key="row.key"
+                    @set-pinned="(pinned: boolean) => pinThreads([row.thread], pinned, mailbox)"
                     @drag-start="(e: DragEvent) => startThreadDrag(row.thread, e)"
                     @drag-end="threadDrag.end()"
                     @set-seen="(seen: boolean) => rowSetSeen(row.thread, seen)"
@@ -324,6 +321,10 @@
           :messages="currentThread?.messages"
           :land-on="mailbox === 'search' ? currentThread?.match_id : undefined"
           :can-go-next="canGoNext"
+          :returned="!!currentThread?.returned"
+          :no-reply="!!currentThread?.no_reply"
+          :snoozed-at="currentThread?.snoozed_at"
+          :returned-at="currentThread?.returned_at"
           @slide-done="threadSlide = ''"
           @reload-mails="resetThreads"
           @set-seen="
@@ -332,6 +333,13 @@
           "
           @sync-unseen="handleSyncUnseen"
           @set-flagged="(ids: string[], flagged: boolean) => setFlaggedSubmit({ ids, flagged })"
+          @set-pinned="
+            (ids: string[], pinned: boolean, folder: string) =>
+              pinMails(store.accountId, ids, pinned, folder)
+          "
+          @snooze-thread="(until: string) => snoozeTo([threadID!], until)"
+          @unsnooze-thread="unsnoozeThreads([threadID!])"
+          @clear-returned="currentThread && clearReturned([currentThread], accountId)"
           @archive-thread="handleArchiveThreads([threadID!])"
           @unarchive-thread="handleUnarchiveThreads([threadID!])"
           @move-thread="
@@ -373,6 +381,12 @@
   <Dialog v-model:open="showEmptyMailbox" v-bind="emptyMailboxOptions" />
   <Dialog v-model:open="showJunkOrDeleteThreads" v-bind="junkOrDeleteThreadsOptions" />
   <!-- The phone's selection bar; the folder menus open from its More sheet as sheets of their own. -->
+  <SnoozeMenu
+    v-model:open="showSnooze"
+    v-model:picking="pickingSnooze"
+    :current="snoozedUntilOf(snoozing)"
+    @pick="(until: string) => snoozeTo(snoozing, until)"
+  />
   <MobileSelectionBar
     :open="mobileSelectionMode"
     :actions="selectActions"
@@ -380,9 +394,9 @@
   />
 </template>
 <script setup lang="ts">
-import { Breadcrumbs, Button, Checkbox, Dialog, Dropdown } from 'frappe-ui'
+import { Breadcrumbs, Button, Checkbox, Dialog } from 'frappe-ui'
 import { FolderInput, Folders, LoaderCircle } from 'lucide-vue-next'
-import { computed, inject, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
+import { computed, h, inject, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { api, client, useInfiniteQuery, useMutation, type InputOf } from '@/api'
@@ -402,9 +416,11 @@ import MailListToolbar from '@/apps/mail/components/MailListToolbar.vue'
 import MailThread from '@/apps/mail/components/MailThread.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
 import SearchResultsHeader from '@/apps/mail/components/SearchResultsHeader.vue'
+import SnoozeMenu from '@/apps/mail/components/SnoozeMenu.vue'
 import StackListItem from '@/apps/mail/components/StackListItem.vue'
 import ThreadPane from '@/apps/mail/components/ThreadPane.vue'
 import { listScope } from '@/apps/mail/composables/useClearList'
+import { useClearReturned } from '@/apps/mail/composables/useClearReturned'
 import { tabName, useInboxTabs } from '@/apps/mail/composables/useInboxTabs'
 import { useKeptRead } from '@/apps/mail/composables/useKeptRead'
 import { useListRows, type NavRow } from '@/apps/mail/composables/useListRows'
@@ -412,7 +428,8 @@ import { useListSelection } from '@/apps/mail/composables/useListSelection'
 import { PAGE_LENGTH, usePaginatedThreads } from '@/apps/mail/composables/usePaginatedThreads'
 import { useScreener } from '@/apps/mail/composables/useScreener'
 import { useThreadDrag } from '@/apps/mail/composables/useThreadDrag'
-import { userStore, type MailboxRole } from '@/apps/mail/stores/user'
+import { useThreadPin } from '@/apps/mail/composables/useThreadPin'
+import { takesPins, userStore, type MailboxRole } from '@/apps/mail/stores/user'
 import type { Thread } from '@/apps/mail/types'
 import {
   isMac,
@@ -443,7 +460,9 @@ import {
 import { commonMailboxIds } from '@/apps/mail/utils/mailboxTargets'
 import { archivable, holdsReceivedMail, unarchivable } from '@/apps/mail/utils/receivedMail'
 import { selectActions as buildSelectActions } from '@/apps/mail/utils/selectActions'
+import { snoozeChoices } from '@/apps/mail/utils/snoozeTimes'
 import { threadRow } from '@/apps/mail/utils/threadRows'
+import { timeMenuOptions } from '@/apps/mail/utils/timeMenuOptions'
 import { mailboxParam } from '@/apps/mail/utils/unifiedFolders'
 import { useThreadActions } from '@/apps/mail/utils/useThreadActions'
 import { appDocumentTitle, usePageTitle } from '@/platform/page-meta'
@@ -512,6 +531,9 @@ const stackingEnabled = computed(
 // Mail from a sender nobody has decided on yet sits in the Inbox, marked unscreened (see useScreener).
 const screener = useScreener()
 
+// Pinned mail heads the list, and a row can be pinned here (see suite/mail/pins.py).
+const pinnable = computed(() => takesPins(mailboxes.data?.find((m) => m.id === mailbox)))
+
 // The date groups, the stacks and the keyboard cursor that walks them — all shared with the merged All
 // Inboxes list (see useListRows).
 const {
@@ -540,6 +562,8 @@ const {
   rowKey: (mail: Thread) =>
     isAllAccountsSearch.value ? `${mail.account}:${mail.name}` : mail.name,
   stackingEnabled: () => stackingEnabled.value,
+  pinsLead: () => pinnable.value,
+  hasMore: () => canGoNext.value,
   openThreadID: () => threadID,
   onOpenThreadHidden: () => goToMailbox(),
   container: mailListRef,
@@ -573,6 +597,7 @@ const {
   isAllSelected,
   mobileSelectionMode,
   toggleSelect,
+  extendRange,
   toggleSelectAll,
   resetSelections,
   isGroupSelected,
@@ -585,7 +610,7 @@ const {
 // The folder menus join the phone selection bar's More sheet, each opening as a sheet of its own.
 const folderSelectionOptions = computed(() => [
   ...(showMoveTo.value
-    ? [{ label: __('Move To'), icon: FolderInput, options: moveToOptions.value }]
+    ? [{ label: __('Move To'), icon: FolderInput, options: moveToOptions.value ?? [] }]
     : []),
   ...(folderOptions.value.length
     ? [{ label: __('Folders'), icon: Folders, options: folderOptions.value }]
@@ -645,10 +670,12 @@ const handleEnter = (e: KeyboardEvent) => {
   // Folds the day, or does nothing on the last group — exactly what clicking the header does.
   toggleGroupCollapse(row.dateKey)
 }
+// Esc lets go of the nearest thing first: the ticks (the toolbar shows them, over the open thread
+// too), then the open thread, then the cursor.
 const handleEscape = (e: KeyboardEvent) => {
   e.preventDefault()
-  if (threadID) goToMailbox()
-  else if (selections.value.length) resetSelections()
+  if (selections.value.length) resetSelections()
+  else if (threadID) goToMailbox()
   else focusedRowKey.value = undefined
 }
 const handleThreadActions = (e: KeyboardEvent, key: string) => {
@@ -721,11 +748,10 @@ const handleArrowNavigation = (e: KeyboardEvent, key: string) => {
     } else if (hasCursor(rows, focusedRowKey.value)) loadMoreThenOpenEdge(offset, 'focus')
   }
 
-  // Handle shift+arrow selection. A row carries every thread it stands for, so shifting onto a stack
-  // takes its whole run and onto a header takes the day — the same sets their checkboxes select.
-  if (!(e.shiftKey && newIDs.length)) return
-  const shouldSelect = !newIDs.every((id) => selections.value.includes(id))
-  toggleSelect([...prevIDs, ...newIDs], shouldSelect, true)
+  // Shift+arrow ticks the run from where it began (see extendRange). A row carries every thread it
+  // stands for, so shifting onto a stack takes its whole run and onto a header takes the day — the
+  // same sets their checkboxes select.
+  if (e.shiftKey && newIDs.length) extendRange(prevIDs.length ? prevIDs : newIDs, newIDs)
 }
 // The actions on the ticked threads, the same set the All accounts list offers (see selectActions).
 const selectActions = buildSelectActions(
@@ -734,6 +760,9 @@ const selectActions = buildSelectActions(
     archive: mailbox === mailboxIds.archive,
     trash: mailbox === mailboxIds.trash,
     drafts: mailbox === mailboxIds.drafts,
+    pinnable: pinnable.value,
+    snoozable: canSnooze.value && mailbox !== mailboxIds.snoozed,
+    snoozed: !!mailbox && mailbox === mailboxIds.snoozed,
     sent: mailboxIds.sent,
     archiveId: mailboxIds.archive,
     inboxId: mailboxIds.inbox,
@@ -749,8 +778,67 @@ const selectActions = buildSelectActions(
     delete: () => junkOrDeleteThreads(selections.value, false),
     read: () => handleSetSeen({ 1: selections.value }),
     unread: () => handleSetSeen({ 0: selections.value }),
+    pin: () => pinSelected(true),
+    unpin: () => pinSelected(false),
+    snooze: () => askSnooze([...selections.value]),
+    snoozeMenu: (_, { slots }) =>
+      h(
+        SnoozeMenu,
+        {
+          current: snoozedUntilOf(selections.value),
+          onPick: (until: string) => snoozeTo([...selections.value], until),
+        },
+        slots,
+      ),
+    snoozeOptions: () =>
+      timeMenuOptions(
+        snoozeChoices(),
+        (until) => snoozeTo([...selections.value], until),
+        () => askSnooze([...selections.value], true),
+      ),
+    unsnooze: () => {
+      unsnoozeThreads([...selections.value])
+      resetSelections()
+    },
   },
 )
+
+// Snoozing. Each button asks for the time in a menu of its own, and the folded More menu in a
+// submenu; a phone's selection bar has none to hang one off, so it asks in the list's sheet, as a
+// time of the reader's own is asked in its dialog, and what they asked about is held here meanwhile.
+const canSnooze = computed(() =>
+  [mailboxIds.inbox, mailboxIds.archive, mailboxIds.snoozed].includes(mailbox),
+)
+const showSnooze = ref(false)
+const pickingSnooze = ref(false)
+const snoozing = ref<string[]>([])
+const snoozedUntilOf = (ids: string[]) =>
+  (ids.length === 1 && threadRows.value?.find((row) => row.thread_id === ids[0])?.snoozed_until) ||
+  undefined
+// `own`: straight to a time of the reader's own, the choices already passed over.
+const askSnooze = (threadIds: string[], own = false) => {
+  snoozing.value = threadIds
+  if (own) pickingSnooze.value = true
+  else showSnooze.value = true
+}
+const snoozeTo = (ids: string[], until: string) => {
+  resetSelections()
+  void snoozeThreads(ids, until)
+}
+
+const { pinThreads, pinMails } = useThreadPin()
+
+// Back from waiting, the marks stay till the reader clears them (see useClearReturned).
+const { clearReturned } = useClearReturned()
+const clearAllReturned = () =>
+  clearReturned(
+    (threadRows.value ?? []).filter((row) => row.returned),
+    accountId,
+  )
+const pinSelected = (pinned: boolean) => {
+  pinThreads(selectedRows.value, pinned, mailbox)
+  resetSelections()
+}
 
 // Search
 
@@ -1131,6 +1219,8 @@ const {
   handleMoveThreads,
   handleArchiveThreads,
   handleUnarchiveThreads,
+  snoozeThreads,
+  unsnoozeThreads,
   handleSetSpamStatus,
   handleAddThreadsToMailbox,
   handleRemoveThreadsFromMailbox,
@@ -1317,15 +1407,25 @@ async function emptyMailboxSubmit() {
   raiseToast(__('{0} emptied.', [mailboxName.value]))
   resetThreads()
 }
+// How much goes, that it goes for good, and a button that says so.
+const emptyMailboxCount = computed(() => mailboxObj.value?.total_emails ?? 0)
 const emptyMailboxOptions = computed(() => ({
-  title: __('Empty {0}', [mailboxName.value]),
-  message: __(`Are you sure you want to empty this folder?`),
+  title: __('Empty {0}?', [mailboxName.value]),
+  message:
+    emptyMailboxCount.value > 1
+      ? __('All {0} messages in {1} are deleted permanently. This can’t be undone.', [
+          emptyMailboxCount.value,
+          mailboxName.value,
+        ])
+      : __('Everything in {0} is deleted permanently. This can’t be undone.', [mailboxName.value]),
   icon: 'lucide-alert-triangle',
-  theme: 'amber' as const,
+  theme: 'red' as const,
   actions: [
+    { label: __('Cancel'), variant: 'subtle' as const },
     {
-      label: __('Confirm'),
+      label: __('Delete Forever'),
       variant: 'solid' as const,
+      theme: 'red' as const,
       onClick: () => {
         emptyMailboxSubmit()
         showEmptyMailbox.value = false

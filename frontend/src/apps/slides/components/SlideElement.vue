@@ -5,7 +5,7 @@
       :key="getElementKey(element)"
       :element="element"
       :mode="mode"
-      :transitionStyles="transitionStyles"
+      :transition-styles="transitionStyles"
     />
   </div>
 </template>
@@ -100,6 +100,8 @@ const elementStyle = computed(() => {
 
   return {
     position: 'absolute',
+    // Text with no saved colour draws in the browser's own, not the app's ink
+    color: 'canvastext',
     width: elementWidth,
     height: elementHeight,
     left: `${box.left}px`,

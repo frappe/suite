@@ -13,6 +13,7 @@ import {
   XmlElement,
   XmlFragment,
   XmlText,
+  Map as YMap,
   type RelativePosition,
   type XmlHook,
 } from 'yjs'
@@ -115,16 +116,38 @@ function addMarkEntries(
   }
 }
 
-/** The old comment marks and annotations in `old` that no thread can be made from yet */
+/** The old comment marks in `old` that no thread can be made from yet */
 export function unreadableThreads(old: Doc) {
   const entries: [string, unknown][] = []
   addMarkEntries(old.getXmlFragment(BODY_FIELD), entries)
-  const found = entries.flatMap((entry) => (isUnreadableMark(entry) ? [entry[0]] : []))
-  if (old.share.has(ANNOTATIONS_ROOT) && old.getArray(ANNOTATIONS_ROOT).length) {
-    found.push(ANNOTATIONS_ROOT)
+  return entries.flatMap((entry) => (isUnreadableMark(entry) ? [entry[0]] : []))
+}
+
+function annotationId(entry: unknown): unknown {
+  if (entry instanceof YMap) {
+    return entry.get('id')
   }
 
-  return found
+  if (isPlainObject(entry)) {
+    return entry.id
+  }
+
+  return undefined
+}
+
+/** The ids in `old`'s annotations list, or null when a comment mark doesn't carry one of them */
+export function oldAnnotationIds(old: Doc, schema: Schema) {
+  if (!old.share.has(ANNOTATIONS_ROOT)) {
+    return []
+  }
+
+  const marked = markedIds(old.getXmlFragment(BODY_FIELD), schema)
+  const ids = old.getArray(ANNOTATIONS_ROOT).toArray().map(annotationId)
+  if (!ids.every((id): id is string => typeof id === 'string' && marked.has(id))) {
+    return null
+  }
+
+  return ids
 }
 
 type IdOf = (attrs: unknown) => string | undefined
@@ -249,15 +272,10 @@ function placedRun(
   return { from, to, fromPlace, toPlace }
 }
 
-// Runs in one textblock, or with only block boundaries between them, are one stretch; any leaf
-// between them, a hard break or an image as well, counts as content
+// Runs with only block boundaries between them are one stretch; any word or leaf between them,
+// a hard break or an image as well, splits them, even in one textblock
 function joins(doc: PMNode, before: PlacedRun, after: PlacedRun) {
-  const end = before.toPlace
-  const start = after.fromPlace
-  return (
-    doc.resolve(end).parent === doc.resolve(start).parent ||
-    doc.textBetween(end, start, '', '\ufffc') === ''
-  )
+  return doc.textBetween(before.toPlace, after.fromPlace, '', '\ufffc') === ''
 }
 
 // Old Writer copied a comment's mark with its words, so one id can sit in places far apart

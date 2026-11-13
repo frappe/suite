@@ -16,9 +16,8 @@ import { useRoute } from 'vue-router'
 
 import { drivePaletteSearch, DriveUploadTracker } from '@/apps/drive'
 import { findArea, useAppRegistry, useAreaWork } from '@/composition/appRegistry'
-import { documentTypes } from '@/composition/documentRegistry'
 import { settingsGroups } from '@/composition/settings'
-import { DOCUMENT_TYPES_KEY, PALETTE_SEARCH_KEY } from '@/platform/contracts'
+import { PALETTE_SEARCH_KEY } from '@/platform/contracts'
 import { AREA_PROGRESS_KEY } from '@/shell/areaProgress'
 import { SETTINGS_GROUPS_KEY } from '@/shell/settings/settings'
 
@@ -32,7 +31,6 @@ const NotificationsBell = defineAsyncComponent(
 const registry = useAppRegistry()
 const route = useRoute()
 const activeArea = computed(() => findArea(String(route.meta.area ?? '')))
-provide(DOCUMENT_TYPES_KEY, documentTypes)
 provide(SETTINGS_GROUPS_KEY, settingsGroups)
 provide(PALETTE_SEARCH_KEY, drivePaletteSearch)
 const areaWork = useAreaWork()

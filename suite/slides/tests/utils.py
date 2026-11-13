@@ -11,11 +11,13 @@ from werkzeug.test import EnvironBuilder
 from werkzeug.wrappers import Request
 
 from suite import drive
+from suite.content import log, tables
 from suite.drive._core.access import grant, revoke
 from suite.drive._core.nodes import update
 from suite.drive._core.principals import Principals
 from suite.drive._core.roles import READ
 from suite.slides import drive as slides_drive
+from suite.slides.content import APP
 from suite.tests.utils import ensure_user
 
 # Ticket 29 registered `Presentation` in `drive_content_types`, so a deck with
@@ -84,6 +86,10 @@ def make_presentation(title, parent=None, **fields):
 
     `fields` are extra legacy body columns a case needs (`is_composite`,
     `reference_presentations`), written after the deck exists.
+
+    Slides is always on, so a new deck starts with a log. The log is dropped,
+    which leaves the deck an old site's unconverted one whose rows are its
+    slides; `LoggedDeckCase.new_deck` makes a converted one.
     """
     with _deck_owner() as owner:
         node = drive.create_document(
@@ -92,11 +98,34 @@ def make_presentation(title, parent=None, **fields):
             content_doctype=slides_drive.DOCTYPE,
             is_template=bool(fields.pop("is_template", False)),
         )
+        drop_log(node)
         deck = frappe.get_doc(slides_drive.DOCTYPE, slides_drive.docname_for_node(node))
         if fields:
             deck.update(fields)
             deck.save()
     return deck
+
+
+LOG_KINDS = ("update", "session", "stage", "checkpoint", "copy", "recovery", "projection")
+
+
+# Removes `node`'s log and body in the caller's transaction, leaving the deck as it was before it converted
+def drop_log(node: str) -> None:
+    doc = log.find(APP, node)
+    if doc:
+        for kind in LOG_KINDS:
+            kind_table = tables.table(APP, kind)
+            frappe.db.sql(f"DELETE FROM `{kind_table}` WHERE `doc_id` = %s", doc.id)
+
+        doc_table = tables.table(APP, "doc")
+        frappe.db.sql(f"DELETE FROM `{doc_table}` WHERE `id` = %s", doc.id)
+
+    conversion_table = tables.table(APP, "conversion")
+    frappe.db.sql(f"DELETE FROM `{conversion_table}` WHERE `node` = %s", node)
+
+    docname = slides_drive.docname_for_node(node)
+    frappe.db.set_value(slides_drive.DOCTYPE, docname, "content", None, update_modified=False)
+    frappe.clear_document_cache(slides_drive.DOCTYPE, docname)
 
 
 def node_of(presentation_name):
@@ -133,14 +162,14 @@ def _principals():
     return Principals(user, (user, "$GENERAL"), ("$PUBLIC",), is_admin=user == "Administrator")
 
 
-def make_private_image(presentation_name, content=None):
+def make_private_image(presentation_name, content=None, file_name="private-image.png"):
     if content is None:
         content = unique_bytes(PNG_1PX)
 
     return frappe.get_doc(
         {
             "doctype": "File",
-            "file_name": "private-image.png",
+            "file_name": file_name,
             "content": content,
             "is_private": 1,
             "attached_to_doctype": "Presentation",

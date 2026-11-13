@@ -1,4 +1,3 @@
-import { fromPartial } from '@total-typescript/shoehorn'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -114,6 +113,18 @@ describe('a later visit', () => {
 
     expect(fetchedUrls().sort()).toEqual(dataUrls('n1', 'p1').sort())
     expect(header('/d/n1', 'x-visited-time')).toBe('5000')
+  })
+
+  // Q18′: a copy visited before the presentation went live would open its rows offline
+  it('replaces the rows a copy held from before the presentation went live', async () => {
+    const [presentationRead] = dataUrls('n1', 'p1')
+    answers.set(presentationRead, '{"message":{"name":"p1","slides":[{"name":"s1"}]}}')
+    await visit()
+    answers.set(presentationRead, '{"message":{"name":"p1","is_converted":true}}')
+
+    await visit()
+
+    expect(await visited().store.get(presentationRead)?.clone().text()).not.toContain('slides')
   })
 
   it('refetches the data of a node whose build was captured by another node', async () => {
@@ -787,7 +798,7 @@ describe('a picture added after the capture', () => {
   async function loadStores() {
     const { rememberVisit } = await loadStore()
     const pictures = await import('./visitedMedia')
-    localStorage.setItem('slides-caches-user', fromPartial<string>(state.user))
+    localStorage.setItem('slides-caches-user', String(state.user))
     showPresentation()
     return { rememberVisit, ...pictures }
   }

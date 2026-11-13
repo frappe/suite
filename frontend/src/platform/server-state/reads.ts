@@ -53,10 +53,7 @@ export class Reads {
     private readonly transport: Transport,
     readonly entities: Entities,
     private readonly realtime?: Realtime | false,
-    initialPartition?: string,
-  ) {
-    if (initialPartition) this.partition.value = initialPartition
-  }
+  ) {}
 
   retain(record: ReadRecord, observer: () => void, paging: boolean): void {
     const timeout = this.gc.get(record.key)
@@ -179,8 +176,6 @@ export class Reads {
     next = false,
     apply = true,
   ): Promise<unknown> {
-    options.signal?.throwIfAborted()
-    await this.entities.hydrate(record.partition)
     options.signal?.throwIfAborted()
     if (record.partition !== this.access(record.policy, record.input, record.context))
       throw abortError()
@@ -384,7 +379,7 @@ export class Reads {
     }
   }
 
-  switchPartition(partition?: string): void {
+  switchPartition(): void {
     for (const leave of this.rooms.values()) leave()
     for (const timeout of this.gc.values()) clearTimeout(timeout)
     this.rooms.clear()
@@ -396,7 +391,7 @@ export class Reads {
     this.pageRefreshes.clear()
     this.entities.clear()
     this.revision += 1
-    this.partition.value = partition ?? randomId()
+    this.partition.value = randomId()
   }
 
   dispose(): void {

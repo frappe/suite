@@ -21,7 +21,7 @@ vi.mock('@/api', async () => {
     api: { slides },
     ...createApiClient(
       { slides: async () => registration },
-      { persistence: false, transport: createTransport({ fetch: server.fetch }) },
+      { transport: createTransport({ fetch: server.fetch }) },
     ),
   }
 })
@@ -31,20 +31,10 @@ vi.mock('@/apps/slides/router', () => ({ router: { currentRoute: { value: { quer
 vi.mock('@/apps/slides/stores/slide', () => ({ slides: ref([]) }))
 vi.mock('@/apps/slides/stores/historyMeta', () => ({ commandHistory: {} }))
 vi.mock('@/apps/slides/stores/element', () => ({ normalizeZIndices: (els: unknown[]) => els }))
-vi.mock('@/apps/slides/stores/saving', () => ({
-  markDirty: vi.fn(),
-  markClean: vi.fn(),
-  writeDraft: vi.fn(),
-  clearSaveFailure: vi.fn(),
-  saveRefused: ref(false),
-  getPresentationFromLocalDB: async () => null,
-}))
 
-const { initPresentationDoc, savePresentationDoc, setDocumentContext } =
-  await import('./presentation')
+const { initPresentationDoc, setDocumentContext } = await import('./presentation')
 
-const answer = (message: unknown, status = 200) =>
-  new Response(JSON.stringify(status === 200 ? { message } : message), { status })
+const answer = (message: unknown) => new Response(JSON.stringify({ message }), { status: 200 })
 
 describe('where the presentation requests go', () => {
   beforeEach(() => {
@@ -61,16 +51,15 @@ describe('where the presentation requests go', () => {
     expect(visits).toEqual(['node-1'])
   })
 
-  it('the surface sends loads and saves through its session fetch and records no visit itself', async () => {
+  it('the surface sends loads through its session fetch and records no visit itself', async () => {
     const sent: Array<{ url: string; init?: RequestInit }> = []
     server.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
       sent.push({ url, init })
-      return url.includes('save_slides') ? answer({ modified: 'M2' }) : answer(served)
+      return answer(served)
     })
     const release = setDocumentContext('p1', context('p1'))
 
     await initPresentationDoc('p1')
-    await savePresentationDoc('p1', [{ clientId: 'c1', elements: [] }], 'M1')
     release()
 
     expect(new Headers(sent[0].init?.headers).get('X-Drive-Links')).toBe('p1')
@@ -79,33 +68,6 @@ describe('where the presentation requests go', () => {
       '/api/method/suite.slides.doctype.presentation.presentation.get_public_presentation?name=p1',
     )
     expect(sent[0].init?.method).toBe('GET')
-    expect(sent[1].url).toBe('/api/method/suite.slides.api.slides.save_slides')
-    expect(sent[1].init?.method).toBe('POST')
-    expect(JSON.parse(String(sent[1].init?.body))).toMatchObject({
-      name: 'p1',
-      base_modified: 'M1',
-    })
-  })
-
-  it('a refused save through the surface fails with the server exception type', async () => {
-    server.fetch.mockResolvedValue(answer({ exc_type: 'PermissionError' }, 403))
-    const release = setDocumentContext('p1', context('p1'))
-    await expect(savePresentationDoc('p1', [], 'M1')).rejects.toMatchObject({
-      type: 'PermissionError',
-      status: 403,
-    })
-    release()
-  })
-
-  it("a save that lands after another deck opened goes out with its own deck's credentials", async () => {
-    const releaseA = setDocumentContext('deck-a', context('deck-a'))
-    const releaseB = setDocumentContext('deck-b', context('deck-b'))
-    server.fetch.mockResolvedValue(answer({ modified: 'M2' }))
-    await savePresentationDoc('deck-a', [{ clientId: 'c1', elements: [] }], 'M1')
-    expect(server.fetch).toHaveBeenCalledTimes(1)
-    expect(new Headers(server.fetch.mock.calls[0][1].headers).get('X-Drive-Links')).toBe('deck-a')
-    releaseA()
-    releaseB()
   })
 
   it('releasing an older surface leaves the newer surface in place', async () => {

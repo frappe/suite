@@ -1,11 +1,13 @@
 """`move_file_media_to_drive`: a deck's File-backed pictures become media nodes below it."""
 
-from contextlib import contextmanager
+from contextlib import contextmanager, redirect_stdout
+from io import StringIO
 from unittest.mock import patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
 
+from suite.slides.content.tests.support import delete_log
 from suite.slides.patches import move_file_media_to_drive
 from suite.slides.patches.move_file_media_to_drive import convert_deck, execute
 from suite.slides.tests.utils import make_presentation, make_private_image, node_of
@@ -33,6 +35,15 @@ def deck_transactions():
         yield
 
 
+def deck_without_log(title):
+    # What `execute` converts: a new deck starts with a log, and one from before collaboration has none
+    deck = make_presentation(title)
+    with patch.object(frappe.db, "commit"):
+        delete_log(node_of(deck.name))
+
+    return deck
+
+
 def failure_logs(docname):
     return frappe.get_all(
         "Error Log",
@@ -47,7 +58,8 @@ class TestMoveFileMediaToDrive(IntegrationTestCase):
         ensure_user(OWNER)
         frappe.set_user(OWNER)
         self.addCleanup(frappe.set_user, "Administrator")
-        self.deck = make_presentation(f"Legacy media {frappe.generate_hash(6)}")
+        suffix = frappe.generate_hash(6)
+        self.deck = deck_without_log(f"Legacy media {suffix}")
         self.file = make_private_image(self.deck.name)
         self.slide = self.deck.slides[0].name
 
@@ -79,7 +91,7 @@ class TestMoveFileMediaToDrive(IntegrationTestCase):
         )
 
         frappe.set_user("Administrator")
-        convert_deck(self.deck.name, node_of(self.deck.name))
+        convert_deck(self.deck.name, node_of(self.deck.name), set())
 
         background, elements = self.body()
         picture = elements[0]["src"]
@@ -93,10 +105,10 @@ class TestMoveFileMediaToDrive(IntegrationTestCase):
         self.write_body("#ffffffff", [{"type": "image", "src": self.file.file_url}])
 
         frappe.set_user("Administrator")
-        convert_deck(self.deck.name, node_of(self.deck.name))
+        convert_deck(self.deck.name, node_of(self.deck.name), set())
         _, converted = self.body()
 
-        self.assertEqual(convert_deck(self.deck.name, node_of(self.deck.name)), {})
+        self.assertEqual(convert_deck(self.deck.name, node_of(self.deck.name), set()), {})
         self.assertEqual(self.body()[1], converted)
 
     def test_a_url_of_another_decks_file_stays_on_the_legacy_read_path(self):
@@ -105,11 +117,12 @@ class TestMoveFileMediaToDrive(IntegrationTestCase):
         self.write_body("#ffffffff", [{"type": "image", "src": foreign.file_url}])
 
         frappe.set_user("Administrator")
-        self.assertEqual(convert_deck(self.deck.name, node_of(self.deck.name)), {})
+        self.assertEqual(convert_deck(self.deck.name, node_of(self.deck.name), set()), {})
         self.assertEqual(self.body()[1][0]["src"], foreign.file_url)
 
     def test_a_failed_deck_stays_legacy_and_logged_while_the_others_convert_and_a_rerun_finishes_it(self):
-        healthy = make_presentation(f"Healthy deck {frappe.generate_hash(6)}")
+        suffix = frappe.generate_hash(6)
+        healthy = deck_without_log(f"Healthy deck {suffix}")
         healthy_file = make_private_image(healthy.name)
         healthy_slide = healthy.slides[0].name
         frappe.db.set_value(
@@ -120,8 +133,8 @@ class TestMoveFileMediaToDrive(IntegrationTestCase):
         )
         self.write_body("#ffffffff", [{"type": "image", "src": self.file.file_url}])
 
-        def fail_for_one_deck(docname, node):
-            mapping = convert(docname, node)
+        def fail_for_one_deck(docname, node, lost_urls):
+            mapping = convert(docname, node, lost_urls)
             if docname == self.deck.name:
                 raise OSError("storage is down")
             return mapping
@@ -158,7 +171,7 @@ class TestMoveFileMediaToDrive(IntegrationTestCase):
         ensure_user(OTHER_OWNER)
         frappe.set_user(OTHER_OWNER)
         suffix = frappe.generate_hash(6)
-        healthy = make_presentation(f"Healthy deck {suffix}")
+        healthy = deck_without_log(f"Healthy deck {suffix}")
         healthy_file = make_private_image(healthy.name)
         healthy_slide = healthy.slides[0].name
         frappe.db.set_value(
@@ -204,7 +217,7 @@ class TestMoveFileMediaToDrive(IntegrationTestCase):
 
     def test_a_file_that_cannot_be_read_fails_its_deck_and_the_others_still_convert(self):
         suffix = frappe.generate_hash(6)
-        healthy = make_presentation(f"Healthy deck {suffix}")
+        healthy = deck_without_log(f"Healthy deck {suffix}")
         healthy_file = make_private_image(healthy.name)
         healthy_slide = healthy.slides[0].name
         frappe.db.set_value(
@@ -256,3 +269,20 @@ class TestMoveFileMediaToDrive(IntegrationTestCase):
             frappe.db.get_value("Drive Node", converted["src"], "parent_node"), node_of(self.deck.name)
         )
         self.assertEqual(failure_logs(self.deck.name), [])
+
+    def test_lost_bytes_are_counted_in_the_output_and_a_clean_run_prints_no_count(self):
+        self.write_body("#ffffffff", [{"type": "image", "src": self.file.file_url}])
+
+        frappe.set_user("Administrator")
+        with deck_transactions():
+            with (
+                self.reading_the_file_raises(FileNotFoundError("no bytes")),
+                redirect_stdout(StringIO()) as lost_run,
+            ):
+                execute()
+
+            with redirect_stdout(StringIO()) as clean_run:
+                execute()
+
+        self.assertIn("media URLs left unread: 1.", lost_run.getvalue())
+        self.assertNotIn("left unread", clean_run.getvalue())

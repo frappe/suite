@@ -39,6 +39,23 @@ const UNSET = fromAny<string, unknown>(null)
 const DRIVE_PAGE_BREAK =
   'id="page-break-div" style="page-break-after: always; border: 2px dashed lightgray; margin: 25px 0px;"'
 
+// An old frame as Drive's editor stored it, its sandbox from before allow-presentation
+function oldFrame(attributes: Record<string, unknown>) {
+  const frame = {
+    width: 640,
+    height: 360,
+    aspectRatio: 0.5625,
+    align: 'center',
+    title: 'Talk',
+    frameborder: '0',
+    allowfullscreen: 'true',
+    sandbox: 'allow-scripts allow-same-origin allow-popups allow-forms',
+    interactive: false,
+    ...attributes,
+  }
+  return yAtom('iframe', fromAny(frame))
+}
+
 vi.mock('@tiptap/core', async (importOriginal) => {
   const original = await importOriginal<typeof import('@tiptap/core')>()
   return { ...original, generateJSON: vi.fn(original.generateJSON) }
@@ -103,6 +120,35 @@ describe('convertLegacy', () => {
 
     const video = { type: 'video', attrs: { src: '/files/demo.mp4' } }
     expect([bodyOf(result.state), result.dropped]).toEqual([page(words('one'), video), []])
+  })
+
+  it('keeps an old frame of a video on the site as that video, with its link, size and title', () => {
+    const doc = legacyDoc(yParagraph('one'), oldFrame({ src: '/files/talk.mp4' }))
+
+    const result = convert(stored(doc))
+
+    const video = {
+      type: 'video',
+      attrs: { src: '/files/talk.mp4', width: 640, height: 360, align: 'center', title: 'Talk' },
+    }
+    expect([bodyOf(result.state), result.dropped]).toEqual([page(words('one'), video), []])
+  })
+
+  it.each([
+    { name: 'a file on the site that is not a video', attrs: { src: '/files/notes.pdf' } },
+    { name: 'a video off the site', attrs: { src: 'https://example.com/files/talk.mp4' } },
+    { name: 'a video link with a query', attrs: { src: '/files/talk.mp4?view=1' } },
+    { name: 'a video set to take clicks', attrs: { src: '/files/talk.mp4', interactive: true } },
+    {
+      name: 'a video with a sandbox right the editor never gave',
+      attrs: { src: '/files/talk.mp4', sandbox: 'allow-top-navigation' },
+    },
+  ])('keeps an old frame of $name as a frame', ({ attrs }) => {
+    const doc = legacyDoc(yParagraph('one'), oldFrame(attrs))
+
+    const result = convert(stored(doc))
+
+    expect(bodyOf(result.state).content[1].type).toBe('iframe')
   })
 
   it("drops the upload id frappe-ui left on Drive's block image and records it", () => {
@@ -944,6 +990,27 @@ describe('convertLegacy', () => {
     const legacy = { content: null, html, collab: 0, ycomments: null }
 
     expect(convertLegacy(legacy, MAX_STATE)).toEqual({ kind: 'failed', reason: 'check' })
+  })
+
+  it('drops a link to nowhere, keeping its words, and records it', () => {
+    const link = 'target="_blank" rel="noopener noreferrer nofollow" href=""'
+    const html = `<p>see <a ${link}>here</a> and <a href="">there</a></p>`
+
+    const result = convert({ content: null, html, collab: 0, ycomments: null })
+
+    expect([bodyOf(result.state), result.dropped]).toEqual([
+      page(words('see here and there')),
+      [{ kind: 'empty-link', count: 2 }],
+    ])
+  })
+
+  it('refuses a link to nowhere holding anything more than a link does', () => {
+    const html = '<p><a id="top" href="">here</a></p>'
+
+    expect(convertLegacy({ content: null, html, collab: 0, ycomments: null }, MAX_STATE)).toEqual({
+      kind: 'failed',
+      reason: 'check',
+    })
   })
 
   it('keeps a Drive video whose source repeats its src', () => {
