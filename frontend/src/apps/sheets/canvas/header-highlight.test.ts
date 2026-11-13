@@ -33,7 +33,7 @@ describe('selection headers', () => {
     const { tint, ink, font } = rowHeaders()
     for (const row of ['2', '3']) {
       expect(tint[row], `row ${row}`).toBe(COLORS.activeHeader)
-      expect(ink[row], `row ${row}`).toBe(COLORS.cellText)
+      expect(ink[row], `row ${row}`).toBe(COLORS.activeHeaderText)
       expect(font[row], `row ${row}`).toMatch(/^600 /)
     }
   })
@@ -88,7 +88,13 @@ describe('the grid\u2019s quiet colours', () => {
     applyTheme(theme)
     const token = (name: string) => style.getPropertyValue(name).trim()
     expect(COLORS.headerBg).toBe(token('--surface-base'))
-    expect(COLORS.gridLine).toBe(token('--outline-gray-1'))
+    // One step darker than --outline-gray-1, so the grid reads as clearly
+    // as Writer's table borders.
+    expect(COLORS.gridLine).toBe(token('--outline-gray-2'))
+    // The selected header keeps its dark label; the cells take Writer's
+    // body ink, a step lighter.
+    expect(COLORS.activeHeaderText).toBe(token('--ink-gray-9'))
+    expect(COLORS.cellText).toBe(token('--ink-gray-7'))
     expect(COLORS.activeHeader).toBe(token('--surface-gray-2'))
   })
 
@@ -114,7 +120,7 @@ describe('separators between selected headers', () => {
 
   it('match the plain gridline in light mode', () => {
     applyTheme('light')
-    expect(separators().rows['2']).toBe(cssVariables.light['--outline-gray-1'])
+    expect(separators().rows['2']).toBe(cssVariables.light['--outline-gray-2'])
   })
 
   it('stay the plain gridline colour outside the selection', () => {

@@ -242,7 +242,7 @@
                   <span class="lucide-type sn-swatch-glyph" aria-hidden="true" />
                   <span
                     class="sn-swatch-underline"
-                    :style="{ background: activeFormat.color || 'var(--ink-gray-9)' }"
+                    :style="{ background: activeFormat.color || 'var(--ink-gray-7)' }"
                   ></span>
                 </span>
                 <span class="lucide-chevron-down size-3.5" aria-hidden="true" />
