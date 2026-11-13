@@ -376,3 +376,12 @@ ${selector} {`)
     expect(rule('.sn-toolbar :deep(button:disabled)')).toContain('opacity: 0.4')
   })
 })
+
+describe('SheetToolbar text colour', () => {
+  // With no colour set, the swatch under the "T" shows the ink a cell gets
+  // by default (canvas/constants.ts COLORS.cellText).
+  it('shows the default cell ink when the cell has no text colour', () => {
+    const sfc = readFileSync(resolve(__dirname, 'SheetToolbar.vue'), 'utf8')
+    expect(sfc).toContain("activeFormat.color || 'var(--ink-gray-7)'")
+  })
+})

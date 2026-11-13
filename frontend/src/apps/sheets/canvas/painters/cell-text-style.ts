@@ -8,8 +8,8 @@ import type { CellFormat } from '../types.js'
 
 // Ink for a cell's text. A fill — from a conditional-formatting rule or from
 // the fill picker — is a literal colour that ignores the theme, so the
-// themed ink can vanish on it: in dark mode `--ink-gray-9` is near-white and
-// a pale colour-scale fill leaves white on white. Over a fill, read the ink
+// themed ink can vanish on it: in dark mode `--ink-gray-7` is light grey and
+// a pale colour-scale fill leaves light on light. Over a fill, read the ink
 // off the fill instead. An unfilled cell keeps the themed ink.
 export function inkFor(fmt: CellFormat): string {
   if (fmt.color) return fmt.color
