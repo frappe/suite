@@ -5,7 +5,7 @@ Walks every Suite screen and interaction state as an explicit state machine and 
 Flows run against three sites on one bench:
 
 - **The Drive site** (`BASE_URL`): e2e users provisioned per run. Drive, the editors' file flows, sharing and the guest views use it.
-- **The demo site** (`UI_STATES_DEMO_URL`, default `http://ui-states-suite.localhost:8021`): the Northwind dataset from `suite.composition.demo.drive.seed`, with its own Stalwart, so Mail, Calendar, People, Home, Admin and the editors have real-looking content. The seed prints the shared password once; save it as `{"password": "…"}` in the file `UI_STATES_DEMO` names (default `~/.local/state/ui-states/demo.json`). Never commit it. `admin` maps the site without Suite Cloud, and `mailAdmin` needs the stand-in (`"suite_cloud_fake": 1` in its config), so they cannot pass in one run: capture `mailAdmin` on its own with the stand-in on, then turn it off. The site reads its config again within a minute.
+- **The demo site** (`UI_STATES_DEMO_URL`, default `http://ui-states-suite.localhost:8021`): the Northwind dataset from `suite.composition.demo.drive.seed`, with its own Stalwart, so Mail, Calendar, People, Home, Admin and the editors have real-looking content. The seed prints the shared password once; save it as `{"password": "…"}` in the file `UI_STATES_DEMO` names (default `~/.local/state/ui-states/demo.json`). Never commit it. `mailAdmin` needs Suite Cloud, so it turns the site's stand-in (`suite_cloud_fake` in its config) on before its first path and off after its last, also when it fails, and waits each time for the site to answer that way (up to a minute). `admin` turns the stand-in off before it starts, in case a stopped run left it on.
 - **The setup site** (`UI_STATES_SETUP_URL`, default `http://ui-states-setup.localhost:8021`): a site never set up, for the first Admin's wizard.
 
 ## Run
@@ -25,13 +25,23 @@ E2E_BENCH_PATH=/path/to/bench UI_STATES_FLOWS=listing,share \
 - `E2E_TEST_API_URL` is the server for `suite.drive.e2e_api`, which needs `DEV_SERVER=1`. It defaults to `BASE_URL`'s host on port 8095. The run starts a `frappe serve` there from `E2E_BENCH_PATH`, or reuses one already listening.
 - `UI_STATES_FLOWS` picks flows by id. Leave it out to run every flow.
 
+The `meet` flow needs a media server (SFU) on port 3021, with the secret the flow signs its tokens with. Start it from `suite/meet/sfu-server` (after `yarn install` there) before the run, and stop it after:
+
+```sh
+JWT_SECRET=ui-states-meet-sfu PORT=3021 HOST=127.0.0.1 NODE_ENV=development \
+  WEBRTC_LISTEN_IP=127.0.0.1 WEBRTC_SERVER_PORT=40021 MEDIASOUP_NUM_WORKERS=1 \
+  node_modules/.bin/ts-node src/server.ts
+```
+
+`UI_STATES_SFU_URL` and `UI_STATES_SFU_SECRET` change the address and the secret.
+
 The dev bench restarts itself after 5000 requests and its port refuses connections meanwhile. When that happens, the path's cleanups run again once the bench is back, and `bench.ts` walks the path again; any other failure fails the run.
 
 Each run writes to `out/`: screenshots in `out/<flow>/`, one `<flow>.json` per flow captured, and `index.json` with every flow id in canvas order. The review canvas is built from `out/` by the `review-ui-states` skill, which owns the page.
 
 ## Files
 
-- `flow.ts`: a flow is an XState machine plus `enter` and one step per event. State `meta.description` is what the canvas shows; `meta.transient` keeps a state in the graph without a screenshot.
+- `flow.ts`: a flow is an XState machine plus `enter` and one step per event, and optionally `prepare` for a change to the site around all its paths. State `meta.description` is what the canvas shows; `meta.transient` keeps a state in the graph without a screenshot.
 - `bench.ts`: watches the bench's port so a path that failed during a bench restart is walked again, and a cleanup that failed for it runs again.
 - `scene.ts`: one signed-in browser per path, with its own folder under `UI states` in My files (purged on close). `hold()` and `lastHold` for mid-flight and failed requests, `dialog()`, `toast()` and `rowAction()` for the page's own widgets, `as()` and `pageAs()` for a second user, `defer()` for a cleanup, `perScene()` for a value a flow keeps per path, and `callMethod()` for a whitelisted method.
 - `demo.ts`: the demo and setup sites, `openDemoScene()` / `openSetupScene()` for a flow's `open`, the demo people's names, and `personalAccount()` for a person's mail account.

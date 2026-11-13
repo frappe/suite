@@ -2,7 +2,7 @@ import { expect, type APIRequestContext, type Locator, type Page } from "@playwr
 import { createFolder, uploadFile } from "../../drive-backed-apps/helpers/drive";
 import type { Credentials } from "../../shared/auth";
 import { frappeData } from "../../shared/frappe";
-import { DEMO_URL, demoUser, openDemoScene } from "../demo";
+import { DEMO_URL, demoUser, openDemoScene, setSuiteCloudStandIn } from "../demo";
 import { defineFlow, setupFlow } from "../flow";
 import { perScene, type BaseScene } from "../scene";
 
@@ -66,7 +66,9 @@ type Event =
  * General settings. `LocalUsersView.vue` keeps its dialogs as separate refs
  * (`inviting`, `editingProfile`, `transferUser`, `lifecycleOpen`, …) and
  * opens confirms through frappe-ui's imperative `dialog.confirm`, so this
- * machine is the only place their states sit side by side.
+ * machine is the only place their states sit side by side. The flow turns
+ * the demo site's Suite Cloud stand-in off first, in case a run that was
+ * stopped during `mailAdmin` left it on.
  */
 const machine = setupFlow<Event>().createMachine({
 	id: "admin",
@@ -411,6 +413,10 @@ export const admin = defineFlow<Event, BaseScene>({
 	title: "Admin",
 	source: "frontend/src/composition/admin/LocalUsersView.vue",
 	open: (browser) => openDemoScene(browser),
+	async prepare(browser) {
+		await setSuiteCloudStandIn(browser, false);
+		return undefined;
+	},
 	machine,
 	async enter(scene) {
 		casts.set(scene, await provisionCast(scene));

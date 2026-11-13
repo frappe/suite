@@ -4,7 +4,7 @@ import { test } from "@playwright/test";
 import { createTestModel } from "@xstate/graph";
 import type { AnyFlow } from "./flow";
 import { flows } from "./flows";
-import { watchBench } from "./bench";
+import { acrossRestarts, watchBench } from "./bench";
 import { describeMachine, writeManifest, type EdgeRecord, type FlowManifest } from "./manifest";
 import { OUT_DIR } from "./playwright.config";
 import { openScene, type BaseScene } from "./scene";
@@ -29,7 +29,9 @@ for (const flow of flows) {
 		const paths = createTestModel(flow.machine).getShortestPaths();
 		mkdirSync(resolve(OUT_DIR, flow.id), { recursive: true });
 		const bench = watchBench(baseURL);
+		let undo: (() => Promise<void>) | undefined;
 		try {
+			undo = await acrossRestarts(baseURL, async () => flow.prepare?.(browser));
 			for (const path of paths) {
 				await bench.survive(async () => {
 					const scene = flow.open ? await flow.open(browser) : await openScene(browser, baseURL, flow.folderTitle ?? flow.title);
@@ -52,6 +54,7 @@ for (const flow of flows) {
 			}
 		} finally {
 			bench.stop();
+			if (undo) await acrossRestarts(baseURL, undo);
 		}
 		writeManifest(OUT_DIR, manifest);
 	});

@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
-import type { APIRequestContext, Browser } from "@playwright/test";
+import { expect, type APIRequestContext, type Browser } from "@playwright/test";
 import type { Credentials } from "../shared/auth";
+import { setSiteConfig } from "./bench";
 import { callMethod, openBrowserScene, type BaseScene } from "./scene";
 
 /**
@@ -74,4 +75,34 @@ export function openDemoScene(browser: Browser, person: DemoPerson = "maya"): Pr
 /** A page on the setup site, signed in as Administrator, the only user it has. */
 export function openSetupScene(browser: Browser): Promise<BaseScene> {
 	return openBrowserScene(browser, SETUP_URL);
+}
+
+/** Each server process reads the site config again after up to a minute. */
+const CONFIG_REREAD_MS = 90_000;
+/** Answers in a row that must agree, in case the bench serves from more than one process. */
+const AGREEING_ANSWERS = 3;
+
+/**
+ * Turns the demo site's Suite Cloud stand-in (`suite_cloud_fake`, see
+ * `suite/mail/dev_suite_cloud.py`) on or off, then waits until the site
+ * answers Maya that way.
+ */
+export async function setSuiteCloudStandIn(browser: Browser, on: boolean): Promise<void> {
+	await setSiteConfig(new URL(DEMO_URL).hostname, "suite_cloud_fake", on ? 1 : 0);
+	const scene = await openDemoScene(browser);
+	try {
+		let agreeing = 0;
+		await expect
+			.poll(
+				async () => {
+					const info = await callMethod<{ is_suite_cloud_configured: boolean }>(scene.api, "suite.mail.api.account.get_user_info");
+					agreeing = info.is_suite_cloud_configured === on ? agreeing + 1 : 0;
+					return agreeing;
+				},
+				{ message: `the demo site to answer with Suite Cloud ${on ? "on" : "off"}`, timeout: CONFIG_REREAD_MS, intervals: [1_000] },
+			)
+			.toBeGreaterThanOrEqual(AGREEING_ANSWERS);
+	} finally {
+		await scene.close();
+	}
 }

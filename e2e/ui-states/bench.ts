@@ -1,4 +1,7 @@
+import { execFile } from "node:child_process";
 import { connect } from "node:net";
+import { resolve } from "node:path";
+import { promisify } from "node:util";
 import { expect } from "@playwright/test";
 
 const POLL_MS = 200;
@@ -76,4 +79,13 @@ function isListening(baseURL: string): Promise<boolean> {
 		});
 		socket.once("error", () => done(false));
 	});
+}
+
+/** Sets one key in a site's `site_config.json` on the bench at `E2E_BENCH_PATH`, as `bench set-config --parse` does. */
+export async function setSiteConfig(site: string, key: string, value: number): Promise<void> {
+	const benchPath = process.env.E2E_BENCH_PATH;
+	if (!benchPath) throw new Error("E2E_BENCH_PATH must name the bench that serves the sites");
+	const python = resolve(benchPath, "env/bin/python");
+	const args = ["-m", "frappe.utils.bench_helper", "frappe", "--site", site, "set-config", key, String(value), "--parse"];
+	await promisify(execFile)(python, args, { cwd: resolve(benchPath, "sites") });
 }

@@ -1,5 +1,5 @@
 import { expect, type Locator, type Page } from "@playwright/test";
-import { openDemoScene } from "../demo";
+import { openDemoScene, setSuiteCloudStandIn } from "../demo";
 import { defineFlow, setupFlow } from "../flow";
 import { callMethod, perScene, unlessRefused, type BaseScene } from "../scene";
 
@@ -75,8 +75,9 @@ type Event =
 	| { type: "CONFIRM_DELETE_LIST" };
 
 /**
- * Mail's admin pages under /admin/mail: Domains, Groups and Mailing lists, with
- * the demo site's Suite Cloud stand-in (`suite_cloud_fake`) turned on. The
+ * Mail's admin pages under /admin/mail: Domains, Groups and Mailing lists.
+ * They need Suite Cloud, so the flow turns the demo site's stand-in
+ * (`suite_cloud_fake`) on before its first path and off after its last. The
  * stand-in seeds one live domain, example.com; each path adds its own pending
  * and disabled domains, and its own groups and lists on example.com, and
  * removes them when it ends.
@@ -374,6 +375,10 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 	title: "Mail admin",
 	source: "frontend/src/apps/mail/adminRoutes.ts",
 	open: (browser) => openDemoScene(browser),
+	async prepare(browser) {
+		await setSuiteCloudStandIn(browser, true);
+		return () => setSuiteCloudStandIn(browser, false);
+	},
 	machine,
 	async enter(scene) {
 		const stamp = scene.name("x").split(" ")[1];
