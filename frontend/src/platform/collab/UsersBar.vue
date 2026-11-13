@@ -1,5 +1,5 @@
 <template>
-  <Dropdown align="end" :options="users">
+  <Dropdown align="end" :options="menuItems">
     <template #default>
       <button
         type="button"
@@ -34,36 +34,50 @@
       <div
         class="flex items-center gap-2 py-1.5 px-2 rounded-4 cursor-pointer hover:bg-surface-gray-1 focus:outline-none"
       >
-        <Avatar v-if="item.avatar" :size="'md'" :image="item.avatar" :label="item.name" />
+        <Avatar
+          v-if="item.person.avatar"
+          :size="'md'"
+          :image="item.person.avatar"
+          :label="item.person.name"
+        />
         <span
           v-else
           class="peer-colour peer-chip peer-chip-md peer-initials"
-          :style="peerColourStyle(item)"
+          :style="peerColourStyle(item.person)"
           aria-hidden="true"
         >
-          {{ initialsOf(item.name) }}
+          {{ initialsOf(item.person.name) }}
         </span>
         <div class="text-sm text-ink-gray-8 mr-4 flex flex-col gap-0.5">
-          <span>{{ item.name }}</span>
-          <span v-if="emailOf(item)" class="text-xs text-ink-gray-5">{{ emailOf(item) }}</span>
+          <span>{{ item.person.name }}</span>
+          <span v-if="emailOf(item.person)" class="text-xs text-ink-gray-5">{{
+            emailOf(item.person)
+          }}</span>
         </div>
       </div>
     </template>
   </Dropdown>
 </template>
-<script setup>
+<script setup lang="ts">
+import './peers.css'
+
 import { Avatar, Dropdown, Tooltip } from 'frappe-ui'
 import { computed, onBeforeUnmount, ref } from 'vue'
 
-import { colourStyle } from '@/apps/writer/collab/colours'
-import { initialsOf } from '@/apps/writer/collab/peers'
-import { useUsers } from '@/apps/writer/composables/useUsers'
+import { colourStyle, type PeerColour } from '@/platform/collab/colours'
+import { getUser } from '@/platform/collab/names'
+import { initialsOf } from '@/platform/collab/peers'
 
-const props = defineProps({
-  users: Array,
-})
+interface Person {
+  id: string
+  name: string
+  avatar?: string
+  colour?: PeerColour
+  color?: string
+  idleSince: number | null
+}
 
-const { getUser } = useUsers()
+const props = defineProps<{ users: Person[] }>()
 
 const MINUTE_MS = 60_000
 const TICK_MS = 30_000
@@ -85,6 +99,10 @@ const buttonLabel = computed(() => {
   return __('{0} other people here', [props.users.length])
 })
 
+// frappe-ui's menu takes items with a label; each carries its person, and the id keeps rows apart
+const menuItems = computed(() =>
+  props.users.map((user) => ({ label: user.name, value: user.id, person: user })),
+)
 const shownUsers = computed(() => props.users.slice(0, SHOWN_USERS))
 const hiddenCount = computed(() => props.users.length - SHOWN_USERS)
 const hasHiddenUsers = computed(() => hiddenCount.value > 0)
@@ -97,12 +115,12 @@ const moreUsersLabel = computed(() => {
   return __('{0} more users', [hiddenCount.value])
 })
 
-function isIdle(user) {
-  return user.idleSince != null
+function isIdle(user: Person) {
+  return user.idleSince !== null
 }
 
-function tooltipOf(user) {
-  if (!isIdle(user)) {
+function tooltipOf(user: Person) {
+  if (user.idleSince === null) {
     return user.name
   }
 
@@ -111,14 +129,14 @@ function tooltipOf(user) {
 }
 
 // A second line only when it tells more than the name: a guest has no email, and a user id can equal the name
-function emailOf(user) {
+function emailOf(user: Person) {
   const email = getUser(user.id)?.email
   return email && email !== user.name ? email : ''
 }
 
 // A collaborative document's person has a colour with a dark-mode variant; the older editor's has one colour,
 // which fills its initials in white
-function peerColourStyle(user) {
+function peerColourStyle(user: Person) {
   if (user.colour) {
     return colourStyle(user.colour)
   }

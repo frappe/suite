@@ -1,4 +1,4 @@
-import { fromPartial } from '@total-typescript/shoehorn'
+import { fromAny } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 
@@ -296,7 +296,8 @@ describe('saveCurrentState', () => {
           return put.call(this, record, key)
         }
 
-        const transaction = fromPartial<FakeTransaction>(this.transaction)
+        // fake-indexeddb's own transaction, whose request runner the DOM type leaves out
+        const transaction = fromAny<FakeTransaction, IDBTransaction>(this.transaction)
         return transaction._execRequestAsync({
           source: this,
           operation() {
@@ -423,7 +424,7 @@ describe('saveCurrentState', () => {
 
     it('clears the visited copies and retries when the put request itself fails', async () => {
       failFirstPutRequest(quotaError())
-      let draftAtPush: { content: { background: string }[] } | null = null
+      let draftAtPush!: Draft
       let writesAtPush = 0
       serverSave = async () => {
         draftAtPush = await getPresentationFromLocalDB('p1')
@@ -437,7 +438,7 @@ describe('saveCurrentState', () => {
 
       expect(deleted).toEqual(['slides-visited'])
       expect(writesAtPush).toBe(2)
-      expect(draftAtPush?.content[0].background).toBe('#654321ff')
+      expect(draftAtPush.content[0].background).toBe('#654321ff')
     })
 
     it('retries once, then pushes without the draft', async () => {

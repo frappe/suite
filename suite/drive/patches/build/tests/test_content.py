@@ -105,6 +105,33 @@ class CountingTarget(FakeContentTarget):
             self.written += carried
 
 
+class StopAtShareCommit(FakeContentTarget):
+    """Stop on the commit that deletes the given DocShare, on either side of it."""
+
+    def __init__(self, share, *, committed, **kwargs):
+        super().__init__(**kwargs)
+        self.stop_share = share
+        self.committed_first = committed
+        self.shares_at_last_commit = list(self.content.share_rows)
+
+    def commit(self):
+        reached = self.stop_share in self.docshares_deleted
+        share = self.stop_share
+        if reached:
+            self.stop_share = None
+
+        if reached and not self.committed_first:
+            self.content.share_rows = list(self.shares_at_last_commit)
+            self.docshares_deleted.remove(share)
+            self.unsaved_share_counts = self.saved_share_counts
+            raise InterruptedRun(share)
+
+        super().commit()
+        self.shares_at_last_commit = list(self.content.share_rows)
+        if reached:
+            raise InterruptedRun(share)
+
+
 class CountingGrantReads(FakeContentTarget):
     """Count the grant round trips the share mapper issues."""
 
@@ -868,8 +895,7 @@ class ContentTest(unittest.TestCase):
         self.assertFalse(env.state.content().links_completed)
         self.assertFalse(env.state.content().completed)
 
-    def test_a_converted_template_validates_and_receives_its_governed_shares(self):
-        """§7 maps a Presentation share onto the template node step 8 wrote."""
+    def test_a_converted_template_validates_and_its_share_gives_no_grant(self):
         deck = document("Presentation", "deck-template", title="Light", is_template=1, node="deck-template")
         share = ContentShareRow("share-1", "Presentation", "deck-template", user="reader@example.com", read=1)
         source = FakeContent(
@@ -882,9 +908,9 @@ class ContentTest(unittest.TestCase):
 
         result = link_content_documents(env)
 
-        self.assertEqual(
-            target.grant_roles("deck-template", ("reader@example.com",))["reader@example.com"], READ
-        )
+        self.assertEqual(target.grant_roles("deck-template", ("reader@example.com",)), {})
+        self.assertEqual(result.docshare_rows_dropped, 1)
+        self.assertEqual(source.share_rows, [])
         self.assertEqual(result.orphan_content_docs_adopted, 0)
         self.assertTrue(result.links_completed)
 
@@ -929,6 +955,90 @@ class ContentTest(unittest.TestCase):
         self.assertEqual(source.share_rows, [])
         self.assertEqual(sorted(target.docshares_deleted), ["share-1", "share-2", "share-3", "share-4"])
         self.assertEqual(env.docshare_journal.preimage("share-4"), shares[3].preimage())
+
+    def test_an_everyone_share_opens_a_writer_document_but_not_a_presentation(self):
+        # The old Presentation check read the File's Drive rights, never DocShare
+        writer = document("Writer Document", "writer-1")
+        deck = document("Presentation", "deck-1")
+        shares = [
+            ContentShareRow("share-1", writer.doctype, writer.name, everyone=1, read=1, write=1, share=1),
+            ContentShareRow("share-2", deck.doctype, deck.name, everyone=1, read=1, write=1, share=1),
+        ]
+        source = FakeContent(
+            documents=[writer, deck],
+            files=[file_for(writer, "file-writer"), file_for(deck, "file-deck")],
+            shares=shares,
+        )
+        env, target = self.environment(source)
+        add_document_node(target, "file-writer", writer)
+        add_document_node(target, "file-deck", deck)
+
+        result = link_content_documents(env)
+
+        self.assertEqual(target.grant_roles("file-writer", (GENERAL,))[GENERAL], MANAGE)
+        self.assertEqual(target.grant_roles("file-deck", (GENERAL,)), {})
+        self.assertEqual(result.docshare_rows_dropped, 1)
+        self.assertEqual(result.docshare_rows_deleted, 2)
+        self.assertEqual(source.share_rows, [])
+        self.assertEqual(env.docshare_journal.preimage("share-2"), shares[1].preimage())
+
+    def presentation_shares(self):
+        row = document("Presentation", "deck-1")
+        shares = []
+        for name in ("share-1", "share-2"):
+            shares.append(ContentShareRow(name, row.doctype, row.name, user="reader@example.com", read=1))
+
+        source = FakeContent(
+            documents=[row],
+            files=[file_for(row, "file-1")],
+            shares=shares,
+            users={"reader@example.com": True},
+        )
+        return row, source
+
+    def assert_restart_counts_each_share_once(self, *, stop_share, committed):
+        row, source = self.presentation_shares()
+        target = StopAtShareCommit(stop_share, committed=committed, content=source)
+        env, target = self.environment(source, target)
+        add_document_node(target, "file-1", row)
+
+        with self.assertRaises(InterruptedRun):
+            link_content_documents(env, batch_size=1)
+
+        result = link_content_documents(env, batch_size=1)
+
+        self.assertEqual(source.share_rows, [])
+        self.assertEqual(result.docshare_rows_dropped, 2)
+        self.assertEqual(result.docshare_rows_deleted, 2)
+
+    def test_a_row_recreated_after_a_committed_batch_adds_to_its_counts(self):
+        row, source = self.presentation_shares()
+        first_share = source.share_rows[0]
+        target = StopAtShareCommit("share-1", committed=True, content=source)
+        env, target = self.environment(source, target)
+        add_document_node(target, "file-1", row)
+
+        with self.assertRaises(InterruptedRun):
+            link_content_documents(env, batch_size=2)
+
+        source.share_rows.insert(0, first_share)
+        result = link_content_documents(env, batch_size=2)
+
+        self.assertEqual(source.share_rows, [])
+        self.assertEqual(result.docshare_rows_dropped, 3)
+        self.assertEqual(result.docshare_rows_deleted, 3)
+
+    def test_a_stop_after_the_share_commit_keeps_its_counts(self):
+        self.assert_restart_counts_each_share_once(stop_share="share-1", committed=True)
+
+    def test_a_stop_after_a_later_share_commit_keeps_every_count(self):
+        self.assert_restart_counts_each_share_once(stop_share="share-2", committed=True)
+
+    def test_a_stop_before_the_share_commit_does_not_count_it_twice(self):
+        self.assert_restart_counts_each_share_once(stop_share="share-1", committed=False)
+
+    def test_a_stop_before_a_later_share_commit_does_not_count_it_twice(self):
+        self.assert_restart_counts_each_share_once(stop_share="share-2", committed=False)
 
     def test_a_rerun_keeps_the_count_of_governed_shares_it_deleted(self):
         row = document("Writer Document", "writer-1")

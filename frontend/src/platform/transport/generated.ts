@@ -130,8 +130,10 @@ export type OnboardingGetInput = Record<string, never>
 export type OnboardingGetOutput = {
   cloud: boolean
   domains: Array<string>
+  supplied_domain: string | null
   account: string | null
   ready: boolean
+  backup_email: string
 }
 
 export type OnboardingGetError = 'BadRequest' | 'PermissionError'
@@ -581,6 +583,8 @@ export type AccountGetOutputAccount = {
   is_mail_server_configured: boolean
   must_change_password: boolean
   setup_required: boolean
+  needs_welcome: boolean
+  get_started_hidden: boolean
 }
 
 export type AccountGetOutputAccountRoles = { system_manager: boolean; suite_admin: boolean }
@@ -606,6 +610,43 @@ const operationAccountGet: QueryRef<AccountGetInput, AccountGetOutput, AccountGe
   loadValidators: async () => (await import('./validators')).operationAccountGet,
 }
 
+export type AccountPatchOutputAccountRoles = { system_manager: boolean; suite_admin: boolean }
+
+export type AccountPatchInput = { welcomed?: true; get_started_hidden?: boolean }
+
+export type AccountPatchOutput = {
+  name: string
+  email: string
+  full_name: string
+  avatar: string | null
+  time_zone: string | null
+  roles: AccountPatchOutputAccountRoles
+  is_jmap_configured: boolean
+  is_mail_server_configured: boolean
+  must_change_password: boolean
+  setup_required: boolean
+  needs_welcome: boolean
+  get_started_hidden: boolean
+}
+
+export type AccountPatchError = 'BadRequest'
+
+const operationAccountPatch: MutationRef<AccountPatchInput, AccountPatchOutput, AccountPatchError> =
+  {
+    id: 'account_patch',
+    owner: 'suite',
+    kind: 'mutation',
+    publicName: 'account.update',
+    method: 'PATCH',
+    path: 'account',
+    prefix: '/api/suite/',
+    pathParams: [],
+    nodeParams: [],
+    entity: null,
+    errors: ['BadRequest'],
+    loadValidators: async () => (await import('./validators')).operationAccountPatch,
+  }
+
 export type SiteGetInput = Record<string, never>
 
 export type SiteGetOutput = {
@@ -630,6 +671,27 @@ const operationSiteGet: QueryRef<SiteGetInput, SiteGetOutput, SiteGetError> = {
   entity: null,
   errors: [],
   loadValidators: async () => (await import('./validators')).operationSiteGet,
+}
+
+export type WorkspaceGetInput = Record<string, never>
+
+export type WorkspaceGetOutput = { workspace_name: string; workspace_logo: string }
+
+export type WorkspaceGetError = never
+
+const operationWorkspaceGet: QueryRef<WorkspaceGetInput, WorkspaceGetOutput, WorkspaceGetError> = {
+  id: 'workspace_get',
+  owner: 'suite',
+  kind: 'query',
+  publicName: 'site.workspace',
+  method: 'GET',
+  path: 'workspace',
+  prefix: '/api/suite/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: [],
+  loadValidators: async () => (await import('./validators')).operationWorkspaceGet,
 }
 
 export type SitePatchCompleteOnboardingInput = { is_onboarded: true; timezone?: string }
@@ -905,20 +967,21 @@ export type FrappeLoginInput = { usr: string; pwd: string }
 
 export type FrappeLoginOutput = unknown
 
-export type FrappeLoginError = never
+export type FrappeLoginError = 'AuthenticationError'
 
 const operationFrappeLogin: MutationRef<FrappeLoginInput, FrappeLoginOutput, FrappeLoginError> = {
   id: 'frappe.login',
   owner: 'suite',
   kind: 'mutation',
   publicName: 'auth.login',
+  envelope: 'message',
   method: 'POST',
-  path: '/api/v2/method/login',
+  path: '/api/method/login',
   prefix: '/api/suite/',
   pathParams: [],
   nodeParams: [],
   entity: null,
-  errors: [],
+  errors: ['AuthenticationError'],
   loadValidators: async () => (await import('./validators')).operationFrappeLogin,
 }
 
@@ -1166,6 +1229,7 @@ export const api = {
     mailOnboarding: operationOnboardingGet,
     setupMail: operationOnboardingPost,
     get: operationSiteGet,
+    workspace: operationWorkspaceGet,
     completeOnboarding: operationSitePatchCompleteOnboarding,
     updateSettings: operationSitePatchUpdateSiteSettings,
   },
@@ -1188,6 +1252,7 @@ export const api = {
   },
   account: {
     get: operationAccountGet,
+    update: operationAccountPatch,
     resetPassword: operationFrappeUserResetPassword,
     changePassword: operationFrappeUserUpdatePassword,
     generateKeys: operationSuiteGenerateUserKeys,

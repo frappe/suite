@@ -40,6 +40,34 @@ interface MailThreadInstance {
  * List/reading-pane thread actions performed directly on mail ids (the full thread is loaded, so the
  * server doesn't need to resolve thread ids). Optimistic UI, undo and toasts live here too.
  */
+
+/**
+ * The confirmation for deleting threads for good: how many, that it can't be undone, and a button
+ * that says "Delete Forever" in red rather than "Confirm".
+ */
+export const deleteForeverOptions = (count: number, onConfirm: () => void) => ({
+  title:
+    count === 1
+      ? __('Delete this conversation forever?')
+      : __('Delete {0} conversations forever?', [count]),
+  message:
+    count === 1
+      ? __('Its messages in this folder are deleted permanently. This can’t be undone.')
+      : __('Their messages in this folder are deleted permanently. This can’t be undone.'),
+  icon: 'lucide-alert-triangle',
+  theme: 'red' as const,
+  // Cancel, with no handler of its own, just closes the dialog.
+  actions: [
+    { label: __('Cancel'), variant: 'subtle' as const },
+    {
+      label: __('Delete Forever'),
+      variant: 'solid' as const,
+      theme: 'red' as const,
+      onClick: onConfirm,
+    },
+  ],
+})
+
 export function useThreadActions(deps: {
   rows: ComputedRef<Thread[]>
   mailbox: ComputedRef<string>
@@ -451,24 +479,11 @@ export function useThreadActions(deps: {
     handleDeleteThreads(threadsToBeDeleted.value)
     showJunkOrDeleteThreads.value = false
   }
-  const junkOrDeleteThreadsOptions = computed(() => {
-    const total = threadsToBeDeleted.value.length
-    const count = total === 1 ? '' : total.toString()
-    const noun = total > 1 ? __('Threads') : __('Thread')
-    const lowerNoun = total > 1 ? __('threads') : __('thread')
-    return {
-      title: __('Delete {0} {1}', [count, noun]),
-      message: __('Are you sure you want to permanently delete the selected {0}?', [lowerNoun]),
-      actions: [
-        {
-          label: __('Confirm'),
-          variant: 'solid',
-          autofocus: true,
-          onClick: handleDeleteConfirmed,
-        },
-      ],
-    }
-  })
+  // Says how many and that it is for good, and the button says what it does: a Confirm under a
+  // question had the reader agree to something the dialog never named.
+  const junkOrDeleteThreadsOptions = computed(() =>
+    deleteForeverOptions(threadsToBeDeleted.value.length, handleDeleteConfirmed),
+  )
   const bulkDelete = useMutation(api.mail.messages.delete)
   async function bulkDeleteSubmit({ names }: { names: string[] }) {
     const input: InputOf<typeof api.mail.messages.delete> = {
