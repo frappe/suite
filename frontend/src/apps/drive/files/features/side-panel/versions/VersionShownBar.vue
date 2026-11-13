@@ -4,7 +4,7 @@ import { Button } from 'frappe-ui'
 import type { DocumentVersion } from '@/apps/drive'
 import { versionTitle } from '@/platform/collab/versionDates'
 
-import DocumentStrip from '../DocumentStrip.vue'
+import DocumentStrip from '../../DocumentStrip.vue'
 
 /** The line over a version shown in the document's place: its name, Restore and Back to current. */
 defineProps<{

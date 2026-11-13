@@ -6,7 +6,7 @@ import type { DocumentVersion } from '@/apps/drive'
 import { fullName } from '@/platform/collab/names'
 import { versionDays, versionTime } from '@/platform/collab/versionDates'
 
-import { waitForFocusBack } from '../focusBack'
+import { waitForFocusBack } from '../../focusBack'
 
 /**
  * The document's versions under the day each was taken, newest first, with
