@@ -50,6 +50,7 @@ Each run writes to `out/`: screenshots in `out/<flow>/`, one `<flow>.json` per f
 5. Reach states a normal load passes too quickly with `scene.hold()`: hold a request for a skeleton or mid-flight state, `abort()` it for a failure, `release()` to continue. The transport retries 5xx, so `abort()` keeps failing until `release()`.
 6. A state too brief to screenshot, or one this site cannot reach, still goes in the machine with `meta.transient: true`. Say why in its description. An unreachable state has no transition leading to it.
 7. Run the flow, look at every screenshot in `out/<flow>/`, and fix steps whose screenshot is not the state they claim.
+8. Rename a state only on purpose. Reviewers' comments on the canvas are kept by `flow/state`, so list the old id in the renamed state's `meta.formerly` (`formerly: ["oldId"]`) and the canvas moves them to the new id.
 
 ```ts
 import { expect } from "@playwright/test";

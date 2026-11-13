@@ -9,7 +9,8 @@ import type { BaseScene, Scene } from "./scene";
  *
  * State nodes carry `meta.description` for the canvas. `meta.transient` keeps
  * a state in the graph without a screenshot, for a state too brief to
- * screenshot reliably or one that this site cannot reach.
+ * screenshot reliably or one that this site cannot reach. `meta.formerly`
+ * lists a renamed state's old ids.
  */
 export interface Flow<TEvent extends EventObject = EventObject, TScene extends BaseScene = Scene> {
 	id: string;
@@ -37,6 +38,11 @@ export interface Flow<TEvent extends EventObject = EventObject, TScene extends B
 export interface StateMeta {
 	description: string;
 	transient?: boolean;
+	/**
+	 * The ids this state had before it was renamed, in the same flow. The
+	 * review canvas moves comments and history left on an old id to this one.
+	 */
+	formerly?: string[];
 }
 
 /** A flow with its event and scene types erased, as the capture run and the registry see it. */
