@@ -288,7 +288,8 @@ export function createWorkbook({
   //   - a ₹ or £ amount is a number with that currency (typed-currency.ts);
   //   - a formula scaling one percent cell by plain numbers shows a percent
   //     (percent-format.ts);
-  //   - one date minus another shows the days between (date-diff.ts).
+  //   - one date minus another shows the days between (date-diff.ts);
+  //   - a plain number over the same value drops a typed format (dropTypedFormat).
   function setInput(si: number, row: number, col: number, input: string): void {
     const area = { sheet: si, row, column: col, width: 1, height: 1 }
     const numFmt = (sheet: string | null, r: number, c: number) =>

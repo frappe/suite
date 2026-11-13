@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import { clearTypedFormats } from '../engine/typed-formats'
 import { roots } from './schema'
 import {
   cmd,
@@ -68,34 +69,27 @@ describe('undo: own steps', () => {
     await expectConverged(a, b)
   })
 
-  // What Clear formatting sends for a typed 15% (SheetEditor's
-  // _clearEngineFormats): IronCalc's format back to general, and the plain
-  // value as the input, in the action's one commit.
+  // Clear formatting of a typed 15% and $1.50, as the editor sends it.
   it('undoes and redoes clearing a typed format, in both tabs and after a reload', async () => {
     const [a, b, ua] = await undoTabs()
     await type(a, 'Sheet1', 'J6', '15%')
     await type(a, 'Sheet1', 'J7', '$1.50')
     await sync(a, b)
-    const range = (row: number) => ({ r1: row, c1: 10, r2: row, c2: 10 })
-    a.glue.dispatch(
-      cmd('batch', {
-        commands: [6, 7].map((row) =>
-          cmd('setRangeStyle', {
-            sheet: 'Sheet1',
-            range: range(row),
-            style: { num_fmt: 'general' },
-          }),
-        ),
-      }),
-    )
-    a.glue.dispatch(
-      cmd('batch', {
-        commands: [
-          cmd('setInput', { sheet: 'Sheet1', row: 6, col: 10, input: '0.15' }),
-          cmd('setInput', { sheet: 'Sheet1', row: 7, col: 10, input: '1.5' }),
-        ],
-      }),
-    )
+    await clearTypedFormats(['J6', 'J7'], 'Sheet1', {
+      dispatch: (c) => a.glue.dispatch(c),
+      command: cmd,
+      readInputs: async (sheet, r) =>
+        (
+          await a.client.readViewport({
+            sheet,
+            r1: r.r0 + 1,
+            c1: r.c0 + 1,
+            r2: r.r1 + 1,
+            c2: r.c1 + 1,
+            includeInputs: true,
+          })
+        ).inputs ?? [],
+    })
     await a.glue.commit()
     const plain = { 'Sheet1!J6': '0.15', 'Sheet1!J7': '1.5' }
     await sync(a, b)
