@@ -1,7 +1,12 @@
 import * as Y from 'yjs'
 
 import { api, client } from '@/api'
-import type { DocumentSession, VersionImage } from '@/apps/drive'
+import {
+  askUntilConverted,
+  type ConvertedState,
+  type DocumentSession,
+  type VersionImage,
+} from '@/apps/drive'
 import { ROOT } from '@/apps/slides/collab/deck'
 import { isMediaNodeId } from '@/apps/slides/stores/documentMedia'
 
@@ -15,13 +20,6 @@ function isFieldRecord(value: unknown): value is Record<string, unknown> {
 
 /** A stored version's body: the Yjs state of a converted presentation, or an old row version's slides. */
 export type VersionBody = { state: Uint8Array } | { legacySlides: unknown[] }
-
-/** The server's upgrade of an old row version: its Yjs state, a refusal with its reason, or not done yet. */
-export type ConvertedVersion =
-  { state: Uint8Array } | { refused: string | null } | { isPending: true }
-
-const ASK_EVERY_MS = 2000
-const WAIT_MS = 150_000
 
 /** Reads a stored Slides version by its schema. Throws on bytes it cannot read. */
 export async function readVersionBody(bytes: Uint8Array): Promise<VersionBody> {
@@ -51,26 +49,8 @@ function fromBase64(value: string) {
 }
 
 /** Runs old version `seq` through the server's converter, asking until it answers or the wait runs out. */
-export async function convertedVersion(
-  session: DocumentSession,
-  seq: number,
-): Promise<ConvertedVersion> {
-  const giveUpAt = Date.now() + WAIT_MS
-  let converted = await askToConvert(session, seq)
-  while (converted.pending) {
-    if (Date.now() >= giveUpAt) {
-      return { isPending: true }
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, ASK_EVERY_MS))
-    converted = await askToConvert(session, seq)
-  }
-
-  if (!converted.state) {
-    return { refused: converted.reason ?? null }
-  }
-
-  return { state: fromBase64(converted.state) }
+export function convertedVersion(session: DocumentSession, seq: number): Promise<ConvertedState> {
+  return askUntilConverted(() => askToConvert(session, seq))
 }
 
 function askToConvert(session: DocumentSession, seq: number) {

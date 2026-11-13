@@ -455,6 +455,10 @@ export { default as DriveVersionShownBar } from '@/apps/drive/files/features/sid
 export { default as DriveDocumentStrip } from '@/apps/drive/files/features/DocumentStrip.vue'
 export { showError } from '@/apps/drive/files/features/side-panel/versions/useDocumentPanel'
 export { fetchVersion } from '@/apps/drive/files/features/side-panel/versions/fetchVersion'
+export {
+  askUntilConverted,
+  type ConvertedState,
+} from '@/apps/drive/files/features/side-panel/versions/askUntilConverted'
 export { waitForFocusBack } from '@/apps/drive/files/features/focusBack'
 
 export const filePreviewSurface = defineAsyncComponent(

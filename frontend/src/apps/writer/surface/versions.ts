@@ -3,7 +3,7 @@ import { yXmlFragmentToProsemirrorJSON } from '@tiptap/y-tiptap'
 import { Doc } from 'yjs'
 
 import { api, client } from '@/api'
-import { fetchVersion, type DocumentSession } from '@/apps/drive'
+import { askUntilConverted, fetchVersion, type DocumentSession } from '@/apps/drive'
 import { BODY_FIELD } from '@/apps/writer/collab'
 import { readLegacy, type LegacyBody } from '@/apps/writer/collab/legacy-read'
 import { loadVersion, withOldMediaConverted } from '@/apps/writer/collab/old-media'
@@ -27,9 +27,6 @@ export type VersionBody =
 /** An old version as the converter makes it, its refusal with the reason System Managers see, or still converting. */
 export type ConvertedVersion =
   { body: VersionBody } | { refused: string | null } | { isPending: true }
-
-const ASK_EVERY_MS = 2000
-const WAIT_MS = 150_000
 
 /** Reads a stored Writer version by its schema. Throws on bytes it cannot show. */
 export async function readVersion(bytes: Uint8Array): Promise<StoredVersion> {
@@ -110,23 +107,13 @@ export async function convertedVersion(
   session: DocumentSession,
   seq: number,
 ): Promise<ConvertedVersion> {
-  const giveUpAt = Date.now() + WAIT_MS
-  let converted = await askToConvert(session, seq)
-  while (converted.pending) {
-    if (Date.now() >= giveUpAt) {
-      return { isPending: true }
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, ASK_EVERY_MS))
-    converted = await askToConvert(session, seq)
-  }
-
-  if (!converted.state) {
-    return { refused: converted.reason ?? null }
+  const converted = await askUntilConverted(() => askToConvert(session, seq))
+  if (!('state' in converted)) {
+    return converted
   }
 
   // No lineage matches a converted state, so the restore matches it by content
-  return { body: { lineage: '', state: fromBase64(converted.state) } }
+  return { body: { lineage: '', state: converted.state } }
 }
 
 function askToConvert(session: DocumentSession, seq: number) {
