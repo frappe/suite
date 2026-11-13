@@ -1580,6 +1580,11 @@ class SiteContentSource:
         # Content node links arrive at model sync too; preflight only reads.
         if not frappe.db.has_column(doctype, "node"):
             fields.remove("node")
+
+        # A site installed after Presentation's field left never had the column (Q19')
+        if doctype == "Presentation" and not frappe.db.has_column(doctype, "thumbnail"):
+            fields.remove("thumbnail")
+
         columns = ("name", *fields, "owner", "creation", "modified", "modified_by")
         rows = _legacy_page(doctype, columns, after, limit, self.name_prefix)
         return [ContentRow(doctype=doctype, **dict(row)) for row in rows]

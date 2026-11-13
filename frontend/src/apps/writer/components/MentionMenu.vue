@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, useId, useTemplateRef, watch } from 'vue'
 
-import MentionList from '@/apps/writer/components/MentionList.vue'
-import { searchMentions, useUsers } from '@/apps/writer/composables/useUsers'
-import type { WriterUser } from '@/apps/writer/drive'
+import {
+  DriveMentionList as MentionList,
+  searchMentions,
+  useUsers,
+  type MentionUser,
+} from '@/apps/drive'
 import { translate as __ } from '@/platform/translation'
 
 const MAX_SHOWN = 6
@@ -12,7 +15,7 @@ const MAX_SHOWN = 6
 defineOptions({ inheritAttrs: false })
 
 /** The document's `@` menu: the people the comment box offers, ranked for this document. */
-const props = defineProps<{ query: string; command: (person: WriterUser) => void }>()
+const props = defineProps<{ query: string; command: (person: MentionUser) => void }>()
 
 const { users, answeredQuery } = useUsers()
 const listId = useId()

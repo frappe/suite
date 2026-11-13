@@ -9,6 +9,8 @@ import type {
   CompositeGroupOutput,
   CompositeManifestInput,
   CompositeManifestOutput,
+  ConvertVersionInput,
+  ConvertVersionOutput,
   GetCompositePresentationInput,
   GetCompositePresentationOutput,
   GetEditorAccessInput,
@@ -21,8 +23,8 @@ import type {
   GetUpdatedJsonOutput,
   IsCompositePresentationInput,
   IsCompositePresentationOutput,
-  SaveSlidesInput,
-  SaveSlidesOutput,
+  RecoveryNamesInput,
+  RecoveryNamesOutput,
   UpdateSlideAttachmentsInput,
   UpdateSlideAttachmentsOutput,
   UpdateThemeInput,
@@ -153,7 +155,7 @@ export const operationGetPublicPresentation: Validators<
           is_converted: { title: 'Is Converted', type: 'boolean' },
           conversion: { $ref: '#/$defs/ConversionStatus' },
         },
-        required: ['name', 'modified', 'modified_by', 'node', 'is_composite', 'theme', 'slides'],
+        required: ['name', 'modified', 'modified_by', 'node', 'is_composite', 'theme'],
         title: 'Deck',
         type: 'object',
       },
@@ -286,7 +288,7 @@ export const operationGetCompositePresentation: Validators<
           is_converted: { title: 'Is Converted', type: 'boolean' },
           conversion: { $ref: '#/$defs/ConversionStatus' },
         },
-        required: ['name', 'modified', 'modified_by', 'node', 'is_composite', 'theme', 'slides'],
+        required: ['name', 'modified', 'modified_by', 'node', 'is_composite', 'theme'],
         title: 'Deck',
         type: 'object',
       },
@@ -314,68 +316,6 @@ export const operationIsCompositePresentation: Validators<
   },
   validateOutput(value: unknown): asserts value is IsCompositePresentationOutput {
     assertSchema(value, { type: 'boolean' }, 'is_composite_presentation output')
-  },
-}
-
-export const operationSaveSlides: Validators<SaveSlidesInput, SaveSlidesOutput> = {
-  validateInput(value: unknown): asserts value is SaveSlidesInput {
-    assertSchema(
-      value,
-      {
-        type: 'object',
-        properties: {
-          name: { title: 'Name', type: 'string' },
-          slides: { items: { $ref: '#/$defs/SlideChanges' }, title: 'Slides', type: 'array' },
-          base_modified: { title: 'Base Modified', type: 'string' },
-        },
-        required: ['name', 'slides', 'base_modified'],
-        additionalProperties: false,
-        $defs: {
-          SlideChanges: {
-            properties: {
-              client_id: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Client Id' },
-              background: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Background' },
-              elements: {
-                anyOf: [
-                  { type: 'string' },
-                  { items: { additionalProperties: true, type: 'object' }, type: 'array' },
-                  { type: 'null' },
-                ],
-                title: 'Elements',
-              },
-              transition: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Transition' },
-              transition_duration: {
-                anyOf: [{ type: 'string' }, { type: 'number' }, { type: 'null' }],
-                title: 'Transition Duration',
-              },
-              fade_unmatched_elements: {
-                anyOf: [{ type: 'boolean' }, { enum: [0, 1], type: 'integer' }],
-                title: 'Fade Unmatched Elements',
-              },
-              advance_after: {
-                anyOf: [{ type: 'string' }, { type: 'number' }, { type: 'null' }],
-                title: 'Advance After',
-              },
-            },
-            title: 'SlideChanges',
-            type: 'object',
-          },
-        },
-      },
-      'save_slides input',
-    )
-  },
-  validateOutput(value: unknown): asserts value is SaveSlidesOutput {
-    assertSchema(
-      value,
-      {
-        properties: { modified: { title: 'Modified', type: 'string' } },
-        required: ['modified'],
-        title: 'SavedDeck',
-        type: 'object',
-      },
-      'save_slides output',
-    )
   },
 }
 
@@ -493,13 +433,26 @@ export const operationGetTemplates: Validators<GetTemplatesInput, GetTemplatesOu
           Template: {
             properties: {
               name: { title: 'Name', type: 'string' },
+              node: { title: 'Node', type: 'string' },
               title: { title: 'Title', type: 'string' },
               slug: { title: 'Slug', type: 'string' },
               creation: { title: 'Creation', type: 'string' },
               is_template: { const: 1, title: 'Is Template', type: 'integer' },
+              is_converted: { title: 'Is Converted', type: 'boolean' },
+              thumbnails: { items: { type: 'string' }, title: 'Thumbnails', type: 'array' },
               layouts: { items: { $ref: '#/$defs/Slide' }, title: 'Layouts', type: 'array' },
             },
-            required: ['name', 'title', 'slug', 'creation', 'is_template', 'layouts'],
+            required: [
+              'name',
+              'node',
+              'title',
+              'slug',
+              'creation',
+              'is_template',
+              'is_converted',
+              'thumbnails',
+              'layouts',
+            ],
             title: 'Template',
             type: 'object',
           },
@@ -759,6 +712,82 @@ export const operationGetEditorAccess: Validators<GetEditorAccessInput, GetEdito
       value,
       { enum: ['edit', 'view', 'none'], type: 'string' },
       'get_editor_access output',
+    )
+  },
+}
+
+export const operationConvertVersion: Validators<ConvertVersionInput, ConvertVersionOutput> = {
+  validateInput(value: unknown): asserts value is ConvertVersionInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          node: { title: 'Node', type: 'string' },
+          seq: { title: 'Seq', type: 'integer' },
+        },
+        required: ['node', 'seq'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'convert_version input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is ConvertVersionOutput {
+    assertSchema(
+      value,
+      {
+        properties: {
+          state: { title: 'State', type: 'string' },
+          reason: { title: 'Reason', type: 'string' },
+          pending: { title: 'Pending', type: 'boolean' },
+        },
+        title: 'VersionConversion',
+        type: 'object',
+      },
+      'convert_version output',
+    )
+  },
+}
+
+export const operationRecoveryNames: Validators<RecoveryNamesInput, RecoveryNamesOutput> = {
+  validateInput(value: unknown): asserts value is RecoveryNamesInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          presentations: { items: { type: 'string' }, title: 'Presentations', type: 'array' },
+          nodes: { items: { type: 'string' }, title: 'Nodes', type: 'array' },
+        },
+        required: ['presentations', 'nodes'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'recovery_names input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is RecoveryNamesOutput {
+    assertSchema(
+      value,
+      {
+        $defs: {
+          RecoveryName: {
+            properties: {
+              presentation: { title: 'Presentation', type: 'string' },
+              node: { title: 'Node', type: 'string' },
+              title: { title: 'Title', type: 'string' },
+              can_edit: { title: 'Can Edit', type: 'boolean' },
+            },
+            required: ['presentation', 'node', 'title', 'can_edit'],
+            title: 'RecoveryName',
+            type: 'object',
+          },
+        },
+        items: { $ref: '#/$defs/RecoveryName' },
+        type: 'array',
+      },
+      'recovery_names output',
     )
   },
 }

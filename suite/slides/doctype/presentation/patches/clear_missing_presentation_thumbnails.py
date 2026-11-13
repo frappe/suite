@@ -52,20 +52,21 @@ def execute():
     framework's attach hook then retries the missing blob on every save of those decks
     and logs "Error Attaching File" each time.
     """
-    presentations = frappe.get_all(
-        "Presentation",
-        filters={"thumbnail": ["like", "/%files/%"]},
-        fields=["name", "thumbnail"],
+    # the field left the DocType (Q19'), so its column, where one is left, is reached by SQL
+    if not frappe.db.has_column("Presentation", "thumbnail"):
+        return
+
+    presentations = frappe.db.sql(
+        "SELECT `name`, `thumbnail` FROM `tabPresentation` WHERE `thumbnail` LIKE %s",
+        "/%files/%",
+        as_dict=True,
     )
 
     for presentation in presentations:
         if not is_dangling(presentation.thumbnail):
             continue
 
-        frappe.db.set_value(
-            "Presentation",
+        frappe.db.sql(
+            "UPDATE `tabPresentation` SET `thumbnail` = '' WHERE `name` = %s",
             presentation.name,
-            "thumbnail",
-            "",
-            update_modified=False,
         )
