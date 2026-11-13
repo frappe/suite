@@ -122,7 +122,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "Clicking a recipient chip opens a menu with Move to Cc, Move to Bcc and Remove." },
 		},
 		ccBcc: {
-			meta: { description: "The Cc and Bcc toggle adds a Cc and a Bcc field under To." },
+			meta: { description: "The Cc Bcc button adds a Cc and a Bcc field under To." },
 		},
 		written: {
 			meta: { description: "Subject and body written. Autosave stored the draft two seconds after the last change, and nothing in the window says so." },
@@ -446,7 +446,7 @@ export const compose = defineFlow<Event, BaseScene>({
 			await expect(scene.page.getByText("Move to Cc", { exact: true })).toBeVisible();
 		},
 		async SHOW_CC_BCC(scene) {
-			await composer(scene.page).getByRole("button", { name: "Show Cc and Bcc" }).click();
+			await composer(scene.page).getByRole("button", { name: "Cc Bcc", exact: true }).click();
 			await expect(composer(scene.page).getByText("Bcc", { exact: true })).toBeVisible();
 		},
 		async OPEN_CONTACTS(scene) {

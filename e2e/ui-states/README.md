@@ -5,7 +5,7 @@ Walks every Suite screen and interaction state as an explicit state machine and 
 Flows run against three sites on one bench:
 
 - **The Drive site** (`BASE_URL`): e2e users provisioned per run. Drive, the editors' file flows, sharing and the guest views use it.
-- **The demo site** (`UI_STATES_DEMO_URL`, default `http://ui-states-suite.localhost:8021`): the Northwind dataset from `suite.composition.demo.drive.seed`, with its own Stalwart, so Mail, Calendar, People, Home, Admin and the editors have real-looking content. The seed prints the shared password once; save it as `{"password": "…"}` in the file `UI_STATES_DEMO` names (default `~/.local/state/ui-states/demo.json`). Never commit it.
+- **The demo site** (`UI_STATES_DEMO_URL`, default `http://ui-states-suite.localhost:8021`): the Northwind dataset from `suite.composition.demo.drive.seed`, with its own Stalwart, so Mail, Calendar, People, Home, Admin and the editors have real-looking content. The seed prints the shared password once; save it as `{"password": "…"}` in the file `UI_STATES_DEMO` names (default `~/.local/state/ui-states/demo.json`). Never commit it. `admin` maps the site without Suite Cloud, and `mailAdmin` needs the stand-in (`"suite_cloud_fake": 1` in its config), so they cannot pass in one run: capture `mailAdmin` on its own with the stand-in on, then turn it off. The site reads its config again within a minute.
 - **The setup site** (`UI_STATES_SETUP_URL`, default `http://ui-states-setup.localhost:8021`): a site never set up, for the first Admin's wizard.
 
 ## Run
