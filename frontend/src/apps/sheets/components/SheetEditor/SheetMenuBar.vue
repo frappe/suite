@@ -24,6 +24,7 @@
             :class="menuClasses.content"
             align="start"
             :side-offset="4"
+            :collision-padding="WINDOW_MARGIN"
           >
             <Menu
               :groups="normalizeMenuOptions(menu.options)"
@@ -51,7 +52,7 @@ import {
   MenubarSubTrigger,
   MenubarTrigger,
 } from 'reka-ui'
-import { computed, ref } from 'vue'
+import { computed, h, ref, type FunctionalComponent } from 'vue'
 
 import { translate as __ } from '@/platform/translation'
 
@@ -111,12 +112,24 @@ const bars = computed(() => [
 
 const portalTarget = usePortalTarget()
 
+/** The room a panel leaves between itself and the edge of the window. */
+const WINDOW_MARGIN = 8
+
+// A panel's rows sit 6px inside it (p-1.5) and a submenu is placed from its row. So
+// it moves up 6px to start level with that row, and out 8px to clear the panel by 2.
+const SubContent: FunctionalComponent = (_, { attrs, slots }) =>
+  h(
+    MenubarSubContent,
+    { ...attrs, 'side-offset': 8, alignOffset: -6, collisionPadding: WINDOW_MARGIN },
+    slots,
+  )
+
 const primitives = {
   Item: MenubarItem,
   Label: MenubarLabel,
   Portal: MenubarPortal,
   Sub: MenubarSub,
-  SubContent: MenubarSubContent,
+  SubContent,
   SubTrigger: MenubarSubTrigger,
 }
 </script>

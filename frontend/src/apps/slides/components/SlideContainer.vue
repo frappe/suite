@@ -10,13 +10,13 @@
     >
       <ElementContextMenu ref="elementContextMenu">
         <SelectionBox
-          ref="selectionBox"
           v-if="!inReadonlyMode"
-          :isDragging
+          ref="selectionBox"
+          :is-dragging
           @mousedown="(e) => handleMouseDown(e)"
         />
 
-        <MarqueeOverlay v-if="!inReadonlyMode" @setIsSelecting="(val) => (isSelecting = val)" />
+        <MarqueeOverlay v-if="!inReadonlyMode" @set-is-selecting="(val) => (isSelecting = val)" />
 
         <ShapeDrawOverlay v-if="!inReadonlyMode" />
 
@@ -24,7 +24,7 @@
 
         <ConnectorPorts v-if="!inReadonlyMode" />
 
-        <SnapGuides :ongoingInteraction="hasOngoingInteraction" :activeGuides="activeGuides" />
+        <SnapGuides :ongoing-interaction="hasOngoingInteraction" :active-guides="activeGuides" />
 
         <SlideElement
           v-for="element in currentSlide?.elements"
@@ -40,9 +40,18 @@
         />
       </ElementContextMenu>
 
+      <p
+        v-if="currentSlide?.compositePlaceholder === 'failed'"
+        class="pointer-events-none absolute inset-0 flex items-center justify-center text-lg text-ink-gray-5"
+      >
+        {{ translate("Couldn't load this slide. Reload to try again.") }}
+      </p>
+
+      <PeerOutlines :scale />
+
       <OverflowContentOverlay />
     </div>
-    <DropTargetOverlay v-show="mediaDragOver" @hideOverlay="hideOverlay" />
+    <DropTargetOverlay v-show="mediaDragOver" @hide-overlay="hideOverlay" />
   </div>
 </template>
 
@@ -68,6 +77,7 @@ import DropTargetOverlay from '@/apps/slides/components/DropTargetOverlay.vue'
 import ElementContextMenu from '@/apps/slides/components/ElementContextMenu.vue'
 import MarqueeOverlay from '@/apps/slides/components/MarqueeOverlay.vue'
 import OverflowContentOverlay from '@/apps/slides/components/OverflowContentOverlay.vue'
+import PeerOutlines from '@/apps/slides/components/PeerOutlines.vue'
 import SelectionBox from '@/apps/slides/components/SelectionBox.vue'
 import ShapeDrawOverlay from '@/apps/slides/components/ShapeDrawOverlay.vue'
 import SlideElement from '@/apps/slides/components/SlideElement.vue'
@@ -131,6 +141,7 @@ import {
   isAspectLocked,
 } from '@/apps/slides/utils/resize'
 import { getMinTableWidth } from '@/apps/slides/utils/tableWidths'
+import { translate } from '@/platform/translation'
 
 const props = defineProps({
   // scale the slide to fit the container, centered, with pan and zoom off (the phone layout)

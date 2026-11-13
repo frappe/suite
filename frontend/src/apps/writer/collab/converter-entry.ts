@@ -24,6 +24,13 @@ for (const name of Object.getOwnPropertyNames(window)) {
 
 addInnerText(window)
 
+// jsdom has none and a table's node view builds one; nothing ever resizes here
+globalThis.ResizeObserver = class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
 // Node's permission model can't block the network, so the child drops the globals the editor's
 // paste and upload code would reach it with, on Node and on the window; converting never calls them
 for (const name of ['fetch', 'WebSocket', 'EventSource', 'XMLHttpRequest']) {

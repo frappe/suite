@@ -18,7 +18,7 @@ const edit = (content: string, editable = false) => {
   return activeEditor.value
 }
 
-const markup = () => activeEditor.value.getHTML().replace(/ (style|lineheight)="[^"]*"/g, '')
+const markup = () => activeEditor.value!.getHTML().replace(/ (style|lineheight)="[^"]*"/g, '')
 
 afterEach(() => {
   activeEditor.value?.destroy()
@@ -61,5 +61,5 @@ it('recolours the marker with the text while the box is open', () => {
 
   updateProperty('color', 'rgb(255, 0, 0)')
 
-  expect(editor.view.dom.querySelector('li').style.color).toBe('rgb(255, 0, 0)')
+  expect(editor.view.dom.querySelector('li')!.style.color).toBe('rgb(255, 0, 0)')
 })

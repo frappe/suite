@@ -44,6 +44,7 @@ from suite.drive.patches.build.history import convert_history_and_comments
 from suite.drive.patches.build.mapping import GENERAL, PUBLIC
 from suite.drive.patches.build.ports import (
     ACTIVE,
+    DOCSHARE_COUNTS,
     PERSONAL,
     SiteContentSource,
     SiteContentTarget,
@@ -880,10 +881,10 @@ class TestMigratedComments(BuildContentCase):
         self.assertEqual(stored.anchor, thread)
         self.assertEqual(stored.resolved, 1)
         # The reply has a blank author, so §9's last complete entry is the
-        # first comment, deleted user and all.
-        self.assertEqual(stored.resolved_by, "deleted@example.invalid")
+        # first comment. Its author has no User row, so it is Guest
+        self.assertEqual(stored.resolved_by, "Guest")
         self.assertEqual(stored.resolved_at, get_datetime(epoch_millis(1_000, timezone)))
-        self.assertEqual(stored.owner, "deleted@example.invalid")
+        self.assertEqual(stored.owner, "Guest")
 
         first = frappe.db.get_value(
             "Drive Comment",
@@ -892,8 +893,9 @@ class TestMigratedComments(BuildContentCase):
             as_dict=True,
         )
         self.assertEqual(first.content, "First")
-        self.assertEqual(first.author, "deleted@example.invalid")
-        self.assertIsNone(first.author_name)
+        # Named by the old email, which a Link to User can't hold
+        self.assertEqual(first.author, "Guest")
+        self.assertEqual(first.author_name, "deleted@example.invalid")
         self.assertEqual(json.loads(first.mentions), [f"{self.prefix}a@example.invalid"])
         self.assertEqual(first.creation, get_datetime(epoch_millis(1_000, timezone)))
         self.assertEqual(first.idx, 1)
@@ -1593,3 +1595,50 @@ class TestSecondRun(BuildContentCase):
         self.assertEqual(second.documents_seen, 3)
         self.assertTrue(second.completed)
         self.assertEqual([row["name"] for row in self.media_children(deck["node"])], [deck["keeper"]])
+
+
+class TestDocShareCounts(IntegrationTestCase):
+    def test_a_later_batch_replaces_the_saved_totals_in_one_row(self):
+        target = SiteContentTarget()
+
+        target.save_docshare_counts(1, 2)
+        target.save_docshare_counts(3, 4)
+
+        rows = frappe.db.sql(
+            "SELECT `value` FROM `tabSingles` WHERE `doctype` = %s AND `field` = %s", DOCSHARE_COUNTS
+        )
+        self.assertEqual(target.docshare_counts(), (3, 4))
+        self.assertEqual(len(rows), 1)
+
+    def test_totals_saved_as_anything_but_one_valid_row_refuse_a_save_and_a_read(self):
+        # tabSingles has no unique key, so nothing stops a second row
+        starts = {"a null row": [None], "two rows": ["1,2", "5,6"], "an unparseable row": ["1;2"]}
+        for start, values in starts.items():
+            with self.subTest(start=start):
+                self.assert_refused_over(values)
+
+    def assert_refused_over(self, values: list[str | None]) -> None:
+        target = SiteContentTarget()
+        self.seed_totals(values)
+
+        with self.assertRaises(ValueError):
+            target.save_docshare_counts(3, 4)
+
+        with self.assertRaises(ValueError):
+            target.docshare_counts()
+
+        self.assertCountEqual(self.saved_totals(), values)
+
+    def seed_totals(self, values: list[str | None]) -> None:
+        doctype, field = DOCSHARE_COUNTS
+        frappe.db.sql("DELETE FROM `tabSingles` WHERE `doctype` = %s AND `field` = %s", DOCSHARE_COUNTS)
+        for value in values:
+            frappe.db.sql(
+                "INSERT INTO `tabSingles` (`doctype`, `field`, `value`) VALUES (%s, %s, %s)",
+                (doctype, field, value),
+            )
+
+    def saved_totals(self) -> list[str | None]:
+        return frappe.db.sql_list(
+            "SELECT `value` FROM `tabSingles` WHERE `doctype` = %s AND `field` = %s", DOCSHARE_COUNTS
+        )

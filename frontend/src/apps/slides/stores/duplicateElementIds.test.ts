@@ -1,4 +1,6 @@
+import { fromAny } from '@total-typescript/shoehorn'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { Ref } from 'vue'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: (url: string) => url }))
 vi.mock('@/apps/slides/router', () => ({ router: { replace: () => Promise.resolve() } }))
@@ -19,7 +21,12 @@ class StubImage {
 }
 vi.stubGlobal('Image', StubImage)
 
-const { slides, slideIndex, getNewSlide } = await import('./slide')
+const { slides: storeSlides, slideIndex, getNewSlide } = await import('./slide')
+// the store types each slide's fields as unknown, and these tests read them
+const slides = fromAny<
+  Ref<(Record<string, unknown> & { elements: Record<string, unknown>[] })[]>,
+  unknown
+>(storeSlides)
 const { replaceMediaElement } = await import('./element')
 const { resetImageCrop } = await import('./imageCrop')
 const { setCommandHistory } = await import('./historyMeta')

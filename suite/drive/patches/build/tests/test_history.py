@@ -421,7 +421,9 @@ class HistoryTest(unittest.TestCase):
                 modified=STAMP,
             ),
         ]
-        source = FakeContent(documents=[document], writer_versions=versions)
+        source = FakeContent(
+            documents=[document], writer_versions=versions, users={"author@example.com": True}
+        )
         env, target = self.environment(source)
         add_document_node(target, "node-1", "Writer Document", "writer-1")
 
@@ -466,7 +468,9 @@ class HistoryTest(unittest.TestCase):
                 modified_by="editor@example.com",
             ),
         ]
-        source = FakeContent(documents=[document], sheet_snapshots=snapshots)
+        source = FakeContent(
+            documents=[document], sheet_snapshots=snapshots, users={"actor@example.com": True}
+        )
         env, target = self.environment(source)
         add_document_node(target, "node-1", "Sheet", "sheet-1")
 
@@ -483,6 +487,40 @@ class HistoryTest(unittest.TestCase):
         self.assertEqual(row["modified_by"], "editor@example.com")
         self.assertEqual(row["size"], len(expected))
         self.assertEqual(target.read_blob(row["blob"]), expected)
+
+    def test_a_writer_version_whose_owner_has_no_user_has_guest_as_its_actor(self):
+        document = content_row("Writer Document", "writer-1", "node-1")
+        version = WriterVersionRow(
+            "version-1", "writer-1", "<p>old</p>", owner="gone@example.com", creation=STAMP, modified=STAMP
+        )
+        source = FakeContent(documents=[document], writer_versions=[version], users={OWNER: True})
+        env, target = self.environment(source)
+        add_document_node(target, "node-1", "Writer Document", "writer-1")
+
+        convert_history_and_comments(env)
+
+        self.assertEqual(target.version_rows["version-1"]["actor"], "Guest")
+
+    def test_a_sheet_snapshot_whose_actor_has_no_user_has_guest_as_its_actor(self):
+        document = content_row("Sheet", "sheet-1", "node-1")
+        snapshot = SheetSnapshotRow(
+            "snapshot-1",
+            "sheet-1",
+            1,
+            "auto",
+            "{}",
+            actor="gone@example.com",
+            owner=OWNER,
+            creation=STAMP,
+            modified=STAMP,
+        )
+        source = FakeContent(documents=[document], sheet_snapshots=[snapshot], users={OWNER: True})
+        env, target = self.environment(source)
+        add_document_node(target, "node-1", "Sheet", "sheet-1")
+
+        convert_history_and_comments(env)
+
+        self.assertEqual(target.version_rows["snapshot-1"]["actor"], "Guest")
 
     def test_an_invalid_snapshot_kind_refuses_the_document(self):
         document = content_row("Sheet", "sheet-1", "node-1")
@@ -1135,6 +1173,51 @@ class WriterBodyTest(unittest.TestCase):
         for content in (first, second):
             self.assertEqual(content.writer_images_wrapped, 1)
             self.assertEqual(content.writer_bodies_rewritten, 1)
+
+    def test_a_rewritten_body_keeps_the_changes_yjs_held_back(self):
+        # Later edits whose earlier part never reached the server: Yjs holds
+        # them unapplied until that part comes, so a rewrite must carry them
+        author = pycrdt.Doc()
+        fragment = pycrdt.XmlFragment()
+        author["default"] = fragment
+        text = pycrdt.XmlText("early")
+        fragment.children.append(paragraph(text))
+        missing = author.get_update()
+        before = author.get_state()
+        with author.transaction():
+            text += " later"
+            del text[0:2]
+
+        held = author.get_update(before)
+        listed = yjs_body(
+            pycrdt.XmlElement(
+                "bulletList",
+                None,
+                [pycrdt.XmlElement("listItem", None, [image(src=embed("own-1"))])],
+            )
+        )
+        merged = pycrdt.merge_updates(base64.b64decode(listed), held)
+        src = embed("own-1")
+        self.add_document(
+            "held-doc",
+            "node-h",
+            body=WriterBody(
+                content=base64.b64encode(merged).decode("ascii"),
+                html=f'<ul><li><img src="{src}"></li></ul>',
+            ),
+        )
+        self.add_picture("own-1", "node-h", "blob-own", "chart.png")
+
+        content = convert_history_and_comments(self.env)
+
+        self.assertEqual(content.writer_images_wrapped, 1)
+        arrived = pycrdt.Doc()
+        arrived_fragment = pycrdt.XmlFragment()
+        arrived["default"] = arrived_fragment
+        arrived.apply_update(base64.b64decode(self.source.writer_bodies["held-doc"].content))
+        arrived.apply_update(missing)
+        blocks = {child.tag: child for child in arrived_fragment.children}
+        self.assertEqual(str(next(iter(blocks["paragraph"].children))), "rly later")
 
 
 if __name__ == "__main__":

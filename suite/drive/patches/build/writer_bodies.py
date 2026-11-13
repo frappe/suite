@@ -332,6 +332,7 @@ def _rewritten_content(content: str | None, mapping: dict[str, str]) -> tuple[st
         return content, 0
     with _readable():
         document, fragment = _loaded(raw)
+        before = document.get_state()
         changed = False
         with document.transaction():
             if mapping:
@@ -350,7 +351,10 @@ def _rewritten_content(content: str | None, mapping: dict[str, str]) -> tuple[st
             wrapped = _wrap_loose_images(fragment)
         if not changed and not wrapped:
             return content, 0
-        return base64.b64encode(document.get_update()).decode("ascii"), wrapped
+
+        # Merged onto the stored bytes: an update from the document alone leaves out what Yjs holds back
+        update = pycrdt.merge_updates(raw, document.get_update(before))
+        return base64.b64encode(update).decode("ascii"), wrapped
 
 
 def _wrap_loose_images(fragment) -> int:

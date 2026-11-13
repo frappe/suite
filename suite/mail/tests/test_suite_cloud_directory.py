@@ -594,6 +594,29 @@ class TestMembers(SuiteCloudTestCase):
         account_api.create_account(request_key, "Ivan", "Doe", "a-strong-password-9")
         self.assertTrue(self.fake.accounts[email]["disable_receiving"])
 
+    def test_accepting_an_invite_names_the_stage_that_failed_and_can_be_retried(self) -> None:
+        from suite.mail.account_setup import MailboxSetupFailed
+        from suite.mail.api import account as account_api
+
+        email = f"kim@{DOMAIN}"
+        with patch("frappe.sendmail"):
+            admin.add_member("kim", DOMAIN, is_admin=False, send_invite=True, backup_email="kim@backup.test")
+        request_key = frappe.db.get_value("Mail Account Request", {"account": email}, "request_key")
+
+        # A request that fails is rolled back whole, as Frappe does with every request.
+        frappe.db.savepoint("attempt")
+        with (
+            patch("suite.mail.directory.create_account", side_effect=Exception("Suite Cloud is down")),
+            self.assertRaises(MailboxSetupFailed) as failure,
+        ):
+            account_api.create_account(request_key, "Kim", "Lee", "a-strong-password-9")
+        frappe.db.rollback(save_point="attempt")
+        # The page shows the provider's reason, not a stack of wrappers.
+        self.assertIn("Suite Cloud is down", str(failure.exception))
+
+        account_api.create_account(request_key, "Kim", "Lee", "a-strong-password-9")
+        self.assertIn(email, self.fake.accounts)
+
     def test_a_suite_cloud_that_ignores_the_option_does_not_leave_a_receiving_mailbox(self) -> None:
         def create_as_before_the_option(email, password, disable_receiving=None, **kwargs):
             return self.fake.accounts__create_account(email, password, **kwargs)
@@ -846,7 +869,7 @@ class TestMembers(SuiteCloudTestCase):
         self.assertTrue(request_key)
         invite = self.fake.emails[-1]  # Suite Cloud sends it from its template
         self.assertEqual((invite["email_type"], invite["recipient"]), ("account-invite", "frank@backup.test"))
-        self.assertIn(f"/mail/signup/{request_key}", invite["params"]["link"])
+        self.assertIn(f"/join/{request_key}", invite["params"]["link"])
 
     def _suite_admin(self) -> str:
         """An enabled Suite Admin of this site who is not the Administrator."""

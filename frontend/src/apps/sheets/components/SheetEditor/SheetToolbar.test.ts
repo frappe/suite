@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, isRef, nextTick, ref } from 'vue'
 
@@ -45,6 +47,8 @@ function mountRow(props: Record<string, unknown> = {}) {
     onToggleFormatPainter: vi.fn(),
     onAdjustFontSize: vi.fn(),
     onSetFontSize: vi.fn(),
+    onInsertLink: vi.fn(),
+    onInsertChart: vi.fn(),
   }
   const clearFormatting = vi.fn()
   const root = document.createElement('div')
@@ -69,6 +73,11 @@ function mountRow(props: Record<string, unknown> = {}) {
         textWrapIcon: 'lucide-wrap-text',
         borderDropdownOptions: [{ label: 'All borders', onClick: vi.fn() }],
         formatMenuOptions: [{ label: 'Clear formatting', onClick: clearFormatting }],
+        fontFamilyDropdownOptions: [
+          { label: 'Inter', onClick: vi.fn() },
+          { label: 'Georgia', onClick: vi.fn() },
+        ],
+        fontFamilyLabel: 'Inter',
         ...handlers,
         // A ref prop stays live, so a test can change it after mounting.
         ...Object.fromEntries(Object.entries(props).map(([k, v]) => [k, isRef(v) ? v.value : v])),
@@ -101,6 +110,7 @@ describe('SheetToolbar (row 2)', () => {
       'Percent',
       'Fewer decimal places',
       'More decimal places',
+      'Font: Inter',
       'Decrease font size',
       'Font size',
       'Increase font size',
@@ -113,6 +123,8 @@ describe('SheetToolbar (row 2)', () => {
       'Merge cells',
       'Alignment',
       'Text wrapping',
+      'Link',
+      'Chart',
       'Sort',
       'Filter',
       'Format',
@@ -268,11 +280,90 @@ describe('SheetToolbar (row 2)', () => {
     expect(field.className).not.toContain('border-outline-gray-2')
   })
 
+  it('shows the Comment tool only where the surface has comments', () => {
+    const openComments = vi.fn()
+    const { root } = mountRow({ openComments })
+    button(root, 'Comment').click()
+    expect(openComments).toHaveBeenCalledOnce()
+    cleanup?.()
+    expect(button(mountRow().root, 'Comment')).toBeNull()
+  })
+
+  it('keeps Comment usable for a viewer, whose Link and Chart are off', () => {
+    const { root } = mountRow({ readOnly: true, openComments: vi.fn() })
+    expect(button(root, 'Comment').disabled).toBe(false)
+    expect(button(root, 'Comment').closest('.sn-tools--readonly')).toBeNull()
+    expect(button(root, 'Link').disabled).toBe(true)
+    expect(button(root, 'Chart').disabled).toBe(true)
+  })
+
+  it('runs the same Link and Chart actions as the Insert menu', () => {
+    const { root, handlers } = mountRow()
+    button(root, 'Link').click()
+    button(root, 'Chart').click()
+    expect(handlers.onInsertLink).toHaveBeenCalledOnce()
+    expect(handlers.onInsertChart).toHaveBeenCalledOnce()
+  })
+
+  it('lists the fonts from the Font tool', async () => {
+    const { root } = mountRow()
+    const font = button(root, 'Font: Inter')
+    expect(font.textContent).toContain('Georgia') // the hidden name that sets its width
+    font.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await settle()
+    const items = [...document.querySelectorAll('[role="menuitem"]')].map((el) => el.textContent)
+    expect(items).toEqual(['Inter', 'Georgia'])
+  })
+
+  it.each([
+    'Number format: General',
+    'Currency: ₹',
+    'Font: Inter',
+    'Text colour',
+    'Fill colour',
+    'Borders',
+    'Alignment',
+    'Text wrapping',
+  ])('puts a chevron on %s, which opens a menu', (label) => {
+    const { root } = mountRow()
+    expect(button(root, label).querySelector('.lucide-chevron-down')).not.toBeNull()
+  })
+
   it('marks the Format button as the one for narrow screens', () => {
     const { root } = mountRow()
     const format = [...root.querySelectorAll('button')].find(
       (b) => b.textContent?.trim() === 'Format',
     )!
     expect(format.closest('.sn-format-group')).not.toBeNull()
+  })
+})
+
+describe('SheetToolbar spacing', () => {
+  const css = readFileSync(resolve(__dirname, 'SheetToolbar.vue'), 'utf8')
+  const rule = (selector: string) => {
+    const at = css.indexOf(`
+${selector} {`)
+    expect(at, selector).toBeGreaterThan(-1)
+    return css.slice(at, css.indexOf('}', at))
+  }
+
+  it('is a 36px row of tools 2px apart, as in Writer', () => {
+    expect(rule('.sn-toolbar')).toContain('height: 36px')
+    expect(rule('.sn-toolbar')).toContain('gap: 2px')
+    expect(rule('.sn-tools-scroll')).toContain('gap: 2px')
+  })
+
+  it('draws Writer’s divider', () => {
+    expect(rule('.sn-vr')).toContain('height: 20px')
+    expect(rule('.sn-vr')).toContain('margin: 0 4px')
+    expect(rule('.sn-vr')).toContain('background: var(--surface-gray-3)')
+  })
+
+  it('keeps the sideways scroll on a narrow bar', () => {
+    expect(rule('.sn-tools-scroll')).toContain('overflow-x: auto')
+  })
+
+  it('starts the undo icon on the left edge of the row below', () => {
+    expect(rule('.sn-toolbar')).toContain('padding: 0 12px 0 9px')
   })
 })

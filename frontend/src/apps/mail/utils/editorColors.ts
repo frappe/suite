@@ -14,7 +14,7 @@ import type { CheerioAPI } from 'cheerio'
 // Baking dark colours into the wire format would defeat that and reach the recipient wrong.
 //
 // The values are frappe-ui's own — `textColorHexMap` and `highlightColorHexMap` in
-// TextEditor/extensions/shared/color-utils.ts. They are copied rather than imported because that
+// molecules/editor/extensions/shared/color-utils.ts. They are copied rather than imported because that
 // module isn't in frappe-ui's package exports. They double as the extension's own legacy parse
 // map, so a body written this way still reads back as a named colour when a draft is reopened.
 const TEXT_COLORS = new Map<string, string>([

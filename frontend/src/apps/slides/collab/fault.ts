@@ -12,12 +12,12 @@ import * as Y from 'yjs'
 
 import { extensions } from '@/apps/slides/stores/tiptapSetup'
 
-import { BOX_KEYS, ROOT, SLIDE_KEYS } from './deck'
+import { ELEMENT_KEYS, ROOT, SLIDE_KEYS } from './deck'
 
 const schema = getSchema(extensions)
 const KEYS_BY_ROOT = new Map<string, Set<string>>([
   [ROOT.slides, new Set(SLIDE_KEYS)],
-  [ROOT.boxes, new Set(BOX_KEYS)],
+  [ROOT.elements, new Set(ELEMENT_KEYS)],
 ])
 
 // A fresh doc's roots are untyped until read, so this looks at the raw items

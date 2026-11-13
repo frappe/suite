@@ -74,7 +74,7 @@ def owner_folder() -> str:
 
 
 class LoggedDeckCase(IntegrationTestCase):
-    """Turns Slides on for one test and back off after it, once its logs are gone."""
+    """Turns Slides on for one test and back to the mode it found after it, once its logs are gone."""
 
     @classmethod
     def setUpClass(cls):
@@ -86,15 +86,22 @@ class LoggedDeckCase(IntegrationTestCase):
     def setUp(self):
         super().setUp()
         frappe.set_user("Administrator")
+        found = log.mode(APP)
         log.set_mode(APP, "on")
         frappe.db.commit()
-        self.addCleanup(self.turn_off)
+        self.addCleanup(self.restore_mode, found)
         frappe.set_user(OWNER)
         self.addCleanup(frappe.set_user, "Administrator")
 
     def turn_off(self) -> None:
         frappe.set_user("Administrator")
         log.set_mode(APP, "off")
+        frappe.db.commit()
+
+    def restore_mode(self, found: str) -> None:
+        # A site whose Slides has logs can't turn it off, so only undo what setUp changed
+        frappe.set_user("Administrator")
+        log.set_mode(APP, found)
         frappe.db.commit()
 
     def new_deck(self) -> str:

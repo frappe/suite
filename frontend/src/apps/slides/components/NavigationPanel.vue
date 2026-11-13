@@ -109,9 +109,6 @@ const handleSortEnd = (sortChange) => {
 const slideSort = useDragSort(scrollableArea, slidesLength, rowSize, handleSortEnd)
 
 function startSort(event, index) {
-  // a converted presentation is read-only until live editing
-  if (presentationDoc.value?.is_converted) return
-
   slideSort.handleSortStart(event, index)
 }
 

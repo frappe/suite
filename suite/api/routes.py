@@ -43,6 +43,7 @@ from suite.api.preferences import (
     update_preferences,
 )
 from suite.composition.http import BadRequest, Route, refusals_as_bad_request
+from suite.composition.welcome import complete_welcome, get_started_hidden, hide_get_started, needs_welcome
 from suite.suite_core.push import PushResult, subscribe, unsubscribe
 from suite.utils.user import generate_user_keys
 
@@ -65,6 +66,15 @@ class Account(TypedDict):
     is_mail_server_configured: bool
     must_change_password: bool
     setup_required: bool
+    # Added after onboarding and not yet through the welcome steps.
+    needs_welcome: bool
+    # The person hid Home's Get started list.
+    get_started_hidden: bool
+
+
+class AccountUpdate(TypedDict):
+    welcomed: NotRequired[Literal[True]]
+    get_started_hidden: NotRequired[bool]
 
 
 class Site(TypedDict):
@@ -77,6 +87,11 @@ class Site(TypedDict):
 class CompleteOnboarding(TypedDict):
     is_onboarded: Literal[True]
     timezone: NotRequired[str]
+
+
+class Workspace(TypedDict):
+    workspace_name: str
+    workspace_logo: str
 
 
 class UpdateSiteSettings(TypedDict):
@@ -171,9 +186,10 @@ class PushToken(TypedDict):
 
 
 CONTRACT_ROUTES = (
+    # Frappe signs a person in only on /api/method/login. The v2 path answers 200 and does nothing.
     Route(
         "POST",
-        "/api/v2/method/login",
+        "/api/method/login",
         "login",
         id="frappe.login",
         body=LoginInput,
@@ -181,6 +197,8 @@ CONTRACT_ROUTES = (
         kind="mutation",
         public_name="auth.login",
         allow_guest=True,
+        envelope="message",
+        errors=(frappe.AuthenticationError,),
     ),
     Route(
         "POST",
@@ -320,7 +338,27 @@ ROUTES = (
         kind="query",
         public_name="account.get",
     ),
+    Route(
+        "PATCH",
+        "account",
+        "account_patch",
+        body=AccountUpdate,
+        errors=(BadRequest,),
+        output=Account,
+        kind="mutation",
+        public_name="account.update",
+    ),
     Route("GET", "site", "site_get", output=Site, kind="query", public_name="site.get"),
+    # The name and logo a sign-in or invitation page shows before anyone signs in (§4.1).
+    Route(
+        "GET",
+        "workspace",
+        "workspace_get",
+        allow_guest=True,
+        output=Workspace,
+        kind="query",
+        public_name="site.workspace",
+    ),
     Route(
         "PATCH",
         "site",
@@ -419,6 +457,8 @@ def account_get() -> Account | None:
                 or not row.get("is_jmap_configured")
             )
         ),
+        "needs_welcome": needs_welcome(row["name"]),
+        "get_started_hidden": get_started_hidden(row["name"]),
         "roles": {
             "system_manager": "System Manager" in row.get("roles", []),
             "suite_admin": row["name"] == "Administrator" or "Suite Admin" in row.get("roles", []),
@@ -426,9 +466,33 @@ def account_get() -> Account | None:
     }
 
 
+@frappe.whitelist(methods=["PATCH"])
+def account_patch(welcomed: Given = None, get_started_hidden: Given = None) -> Account:
+    if welcomed is None and get_started_hidden is None:
+        frappe.throw(_("Nothing to update"), BadRequest)
+    if welcomed is not None and welcomed is not True:
+        frappe.throw(_("The welcome can only be marked complete"), BadRequest)
+    if get_started_hidden is not None and not isinstance(get_started_hidden, bool):
+        frappe.throw(_("get_started_hidden must be true or false"), BadRequest)
+    if welcomed:
+        complete_welcome(frappe.session.user)
+    if get_started_hidden is not None:
+        hide_get_started(frappe.session.user, get_started_hidden is True)
+    result = account_get()
+    if result is None:
+        frappe.throw(_("Sign in to finish the welcome"), BadRequest)
+    return result
+
+
 @frappe.whitelist(methods=["GET"])
 def site_get() -> Site:
     return {**account.get_onboarding_state(), **account.get_workspace()}
+
+
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+def workspace_get() -> Workspace:
+    branding = account.get_workspace()
+    return {"workspace_name": branding["workspace_name"], "workspace_logo": branding["workspace_logo"]}
 
 
 @frappe.whitelist(methods=["PATCH"])

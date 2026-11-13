@@ -6,7 +6,7 @@ import * as Y from 'yjs'
 import { extensions } from '@/apps/slides/stores/tiptapSetup'
 
 import { convertLegacy } from './conversion'
-import { boxText } from './deck'
+import { elementText } from './deck'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
 
@@ -22,7 +22,7 @@ afterEach(() => {
 })
 
 function convertedState() {
-  const elements = [{ id: 'box', type: 'text', content: MARKED_BREAK }]
+  const elements = [{ id: 'element', type: 'text', content: MARKED_BREAK }]
   const answer = convertLegacy({ slides: [{ id: 'slide', elements }] }, MAX_STATE)
   if (answer.kind !== 'converted') {
     throw new Error(JSON.stringify(answer))
@@ -31,11 +31,11 @@ function convertedState() {
   return answer.state
 }
 
-// A tab with the real binding on one box's text
+// A tab with the real binding on one element's text
 function open(state: Uint8Array) {
   const doc = new Y.Doc()
   Y.applyUpdate(doc, state, 'remote')
-  const collaboration = Collaboration.configure({ fragment: boxText(doc, 'box') })
+  const collaboration = Collaboration.configure({ fragment: elementText(doc, 'element') })
   const mount = document.createElement('div')
   document.body.append(mount)
   const editor = new Editor({ element: mount, extensions: [...extensions, collaboration] })

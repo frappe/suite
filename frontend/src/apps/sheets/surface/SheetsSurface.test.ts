@@ -65,7 +65,7 @@ const editor = await vi.hoisted(async () => {
 })
 vi.mock('@/apps/sheets/components/SheetEditor/index.vue', () => ({
   default: defineComponent({
-    props: { writable: Boolean },
+    props: { writable: Boolean, openComments: { type: Function, default: null } },
     setup(props, { expose, slots }) {
       // As the real editor: once view only, the cell editor closes, and the
       // room commits what it holds when access goes.
@@ -112,11 +112,7 @@ vi.mock('@/apps/sheets/components/SheetEditor/index.vue', () => ({
         goToCell: () => true,
         closeNotes: () => {},
       })
-      const menus = defineComponent({
-        props: { openComments: { type: Function, default: null } },
-        setup: (menu) => () =>
-          menu.openComments ? h('button', { 'data-comment-menu': '' }) : null,
-      })
+      const menus = () => (props.openComments ? h('button', { 'data-comment-menu': '' }) : null)
       return () => [slots.header?.({ menus }), slots['side-panel']?.()]
     },
   }),

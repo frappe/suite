@@ -1,6 +1,6 @@
 <!--
   The phone account sheet, opened from the avatar in the bottom nav [T010]:
-  who is signed in, then Settings, Theme and Log out. The sheet shows no title,
+  who is signed in, then Settings and Theme, and Log out set apart. The sheet shows no title,
   so a visually hidden one names the dialog "Account".
 -->
 <template>
@@ -16,21 +16,27 @@
           </div>
         </div>
 
-        <nav class="space-y-0.5" :aria-label="__('Account')">
-          <SidebarItem :label="__('Settings')" icon="lucide-settings" @click="showSettings" />
-          <div class="flex h-7 items-center justify-between gap-3 pl-2">
-            <span class="flex items-center gap-2 text-sm text-ink-gray-8">
-              <span class="lucide-sun-moon size-4 text-ink-gray-6" aria-hidden="true" />
-              {{ __('Theme') }}
-            </span>
-            <TabButtons
-              :model-value="theme.savedMode.value"
-              :options="themeOptions"
-              :aria-label="__('Theme')"
-              @update:model-value="setTheme"
-            />
+        <nav :aria-label="__('Account')">
+          <div class="space-y-0.5">
+            <SidebarItem :label="__('Settings')" icon="lucide-settings" @click="showSettings" />
+            <div class="flex h-7 items-center justify-between gap-3 pl-2">
+              <span class="flex items-center gap-2 text-sm text-ink-gray-8">
+                <span class="lucide-sun-moon size-4 text-ink-gray-6" aria-hidden="true" />
+                {{ __('Theme') }}
+              </span>
+              <TabButtons
+                :model-value="theme.savedMode.value"
+                :options="themeOptions"
+                :aria-label="__('Theme')"
+                @update:model-value="setTheme"
+              />
+            </div>
           </div>
-          <SidebarItem :label="__('Log out')" icon="lucide-log-out" @click="logOut" />
+          <!-- Set apart from the settings above it, as the desktop menu sets it in a group of its
+               own: a tap that meant Theme must not end the session. -->
+          <div class="mt-3 border-t pt-3">
+            <SidebarItem :label="__('Log out')" icon="lucide-log-out" @click="logOut" />
+          </div>
         </nav>
       </div>
     </div>

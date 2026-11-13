@@ -56,20 +56,6 @@
         </SettingsRow>
         <SettingsRow
           class="!py-0"
-          :title="__('Delete Email After Sending')"
-          :description="__('Automatically deletes the email from your mailbox after it is sent.')"
-        >
-          <Switch v-model="destroyEmailAfterSubmit" />
-        </SettingsRow>
-        <SettingsRow
-          class="!py-0"
-          :title="__('Delete Newsletter After Sending')"
-          :description="__('Automatically deletes the newsletter after it is sent.')"
-        >
-          <Switch v-model="destroyNewsletterAfterSubmit" />
-        </SettingsRow>
-        <SettingsRow
-          class="!py-0"
           :title="__('Keep Forwarded Email In Thread')"
           :description="__('Keep forwarded emails in the original thread.')"
         >
@@ -97,6 +83,32 @@
           :description="__('What to do with their mail already in your Inbox.')"
         >
           <Select v-model="draft.on_block_old_mail" :options="ON_BLOCK_OLD_MAIL_OPTIONS" />
+        </SettingsRow>
+
+        <!-- Apart from the routine switches, and last of them: each one costs the copy of what you
+             send, and a copy that was never kept can't be found or answered from later. -->
+        <h2 class="text-base-semibold text-ink-gray-8">{{ __('Sent Copies') }}</h2>
+        <SettingsRow
+          class="!py-0"
+          :title="__('Don’t Keep Sent Mail')"
+          :description="
+            __(
+              'Mail you send is deleted once it has gone, and is not kept in Sent. You can’t find it, forward it or reply from it later.',
+            )
+          "
+        >
+          <Switch v-model="destroyEmailAfterSubmit" />
+        </SettingsRow>
+        <SettingsRow
+          class="!py-0"
+          :title="__('Don’t Keep Sent Newsletters')"
+          :description="
+            __(
+              'Newsletters, the bulk mail your apps send through this account, are deleted once they have gone rather than kept in Sent.',
+            )
+          "
+        >
+          <Switch v-model="destroyNewsletterAfterSubmit" />
         </SettingsRow>
 
         <!-- Read-only, so it sits after the settings rather than ahead of them; the

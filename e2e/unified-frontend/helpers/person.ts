@@ -12,7 +12,7 @@ const PERSON_PASSWORD = "ShareJourney!2026";
 
 let ensured = false;
 
-/** Creates PERSON if missing and sets its password through the bench interpreter. */
+/** Creates PERSON if missing, sets its password and ends its welcome, through the bench interpreter. */
 export function ensurePerson(): void {
 	if (ensured) return;
 	const bench = process.env.BENCH_PATH ?? "/home/faris/benches/suite-bench";
@@ -33,6 +33,9 @@ export function ensurePerson(): void {
 		"if frappe.db.exists('Role', 'Suite User'):",
 		"    frappe.get_doc('User', email).add_roles('Suite User')",
 		`update_password(email, ${JSON.stringify(PERSON_PASSWORD)})`,
+		"# PERSON already uses Suite: a new account would walk the welcome first.",
+		"from suite.composition.welcome import NEEDS_WELCOME",
+		"frappe.defaults.clear_user_default(NEEDS_WELCOME, email)",
 		"frappe.db.commit()",
 		"frappe.destroy()",
 	].join("\n");

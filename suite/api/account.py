@@ -37,6 +37,10 @@ def mark_onboarded(timezone: str | None = None) -> None:
 
     frappe.db.set_single_value("Suite Settings", "is_onboarded", 1)
 
+    from suite.composition.welcome import finish_site_setup
+
+    finish_site_setup(frappe.session.user)
+
 
 @frappe.whitelist()
 def get_workspace() -> dict[str, str]:

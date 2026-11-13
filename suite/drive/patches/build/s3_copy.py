@@ -12,7 +12,7 @@ For each Drive `File` row whose `file_url` is a
    row is an upload in flight and is not reused; `File Blob` allows
    duplicate content, so Build stores its own blob beside it.
 3. Otherwise server-side copy it into its blob folder,
-   `private/<site prefix>/<blob>/<filename>`, in the same bucket,
+   `<site prefix>/private/<blob>/<filename>`, in the same bucket,
    single-part below 5 GB and boto3's managed multipart copy above it.
 4. Record the legacy key, destination, size and checksum in the copy
    ledger (`copy_ledger.py`), then insert one `File Blob` with
@@ -73,10 +73,10 @@ from frappe.storage.blob import sniff_mime
 from suite.drive.patches.build.copy_ledger import CopiedObject
 from suite.drive.patches.build.environment import BUILD_BATCH_SIZE
 from suite.drive.patches.build.layout import (
-    PRIVATE_NAMESPACE,
     blob_folder,
     blob_key,
     blob_name,
+    key_of_private_object,
     needs_multipart_copy,
     private_key,
 )
@@ -251,7 +251,7 @@ def _link(
 
     placement.blob = env.storage.insert_blob(
         name=blob_name(digest.checksum),
-        key=destination.removeprefix(PRIVATE_NAMESPACE),
+        key=key_of_private_object(destination),
         checksum=digest.checksum,
         size=digest.size,
         mime_type=digest.mime_type,
@@ -300,7 +300,7 @@ def _place_new_object(
     else:
         destination = min(found, default=private_key(blob_key(key_prefix, name, filename)))
         _copy_verified(bucket, legacy_key, destination, size)
-    return destination.removeprefix(PRIVATE_NAMESPACE)
+    return key_of_private_object(destination)
 
 
 def _copy_verified(bucket, legacy_key: str, destination: str, size: int) -> None:

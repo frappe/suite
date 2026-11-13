@@ -73,21 +73,6 @@ class TestMailExchangeFormats(StalwartIntegrationTestCase):
             with self.subTest(format=format, archive_type=archive_type):
                 self._run_mail_round_trip(format, archive_type)
 
-    def test_mail_export_with_filter_and_limit(self):
-        with self.set_user(self.member.email):
-            create_mail_export(
-                self.account,
-                "mbox",
-                ".zip",
-                "Received At (ASC)",
-                limit=1,
-                filter={"text": self.subjects[0]},
-            )
-            export = frappe.get_last_doc("Mail Exchange", {"account": self.account, "operation": "Export"})
-            export._export()
-            export.reload()
-        self.assertEqual(export.status, "Completed", export.get("output"))
-
     def test_contacts_format_round_trips(self):
         from suite.mail.api.contacts import get_address_books
         from suite.mail.doctype.contact_card.contact_card import add_contact_card

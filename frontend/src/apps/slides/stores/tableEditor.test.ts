@@ -1,8 +1,8 @@
 import { AllSelection } from '@tiptap/pm/state'
 import { CellSelection } from '@tiptap/pm/tables'
-import { fromPartial } from '@total-typescript/shoehorn'
+import { fromAny, fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { nextTick } from 'vue'
+import { nextTick, type Ref } from 'vue'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
 vi.mock('@/apps/slides/router', () => ({ router: { replace: () => Promise.resolve() } }))
@@ -14,7 +14,12 @@ const {
   focusElementId,
   setEditableState,
 } = await import('./element')
-const { slides, slideIndex } = await import('./slide')
+const { slides: storeSlides, slideIndex } = await import('./slide')
+// the store types each slide's fields as unknown, and these tests read them
+const slides = fromAny<
+  Ref<(Record<string, unknown> & { elements: Record<string, unknown>[] })[]>,
+  unknown
+>(storeSlides)
 const { hasTableNode, ZWSP } = await import('./tiptapSetup')
 const { useTextEditor } = await import('@/apps/slides/composables/useTextEditor')
 const { useCommandHistory } = await import('@/apps/slides/composables/useCommandHistory')
@@ -38,38 +43,38 @@ const bareTable = (rows: number, columns: number) =>
 
 const cellPositions = () => {
   const positions: number[] = []
-  activeEditor.value.state.doc.descendants((node: any, pos: number) => {
+  activeEditor.value!.state.doc.descendants((node: any, pos: number) => {
     if (['tableCell', 'tableHeader'].includes(node.type.name)) positions.push(pos)
   })
   return positions
 }
 
 const caretInCell = (index = 0) => {
-  const pos = cellPositions().at(index) + 2
-  activeEditor.value.commands.setTextSelection(pos)
+  const pos = cellPositions().at(index)! + 2
+  activeEditor.value!.commands.setTextSelection(pos)
   return pos
 }
 
 const selectCells = (from: number, to: number) => {
-  const { view } = activeEditor.value
+  const { view } = activeEditor.value!
   view.dispatch(view.state.tr.setSelection(CellSelection.create(view.state.doc, from, to)))
 }
 
 // the bindings under test are Table's own, so the press has to reach the keymap
 const pressKey = (key: string) =>
-  activeEditor.value.view.someProp('handleKeyDown', (handler: any) =>
-    handler(activeEditor.value.view, new KeyboardEvent('keydown', { key })),
+  activeEditor.value!.view.someProp('handleKeyDown', (handler: any) =>
+    handler(activeEditor.value!.view, new KeyboardEvent('keydown', { key })),
   )
 
-const typedText = () => activeEditor.value.state.doc.textContent.replaceAll(ZWSP, '')
+const typedText = () => activeEditor.value!.state.doc.textContent.replaceAll(ZWSP, '')
 
 // the element store re-runs its editor lifecycle on a selection change, so build
 // the editor under test after those watchers settle
 const mountTable = async (content: string, editable = true) => {
-  slides.value = [{ clientId: 'c1', elements: [{ id: 1, type: 'table', content }] }]
+  slides.value = [{ clientId: 'c1', elements: [{ id: '1', type: 'table', content }] }]
   slideIndex.value = 0
-  activeElementIds.value = [1]
-  focusElementId.value = editable ? 1 : null
+  activeElementIds.value = ['1']
+  focusElementId.value = editable ? '1' : null
   await nextTick()
 
   initTextEditor(1, content, editable)
@@ -94,9 +99,9 @@ describe('how the editor draws a table', () => {
   it('renders no wrapper element around it', () => {
     initTextEditor('t1', filled, true)
 
-    expect(activeEditor.value.view.dom.querySelector('.tableWrapper')).toBe(null)
-    expect(activeEditor.value.view.dom.querySelector('table')?.parentElement).toBe(
-      activeEditor.value.view.dom,
+    expect(activeEditor.value!.view.dom.querySelector('.tableWrapper')).toBe(null)
+    expect(activeEditor.value!.view.dom.querySelector('table')?.parentElement).toBe(
+      activeEditor.value!.view.dom,
     )
   })
 })
@@ -106,19 +111,19 @@ describe('where Tab leaves the caret', () => {
     await mountTable(seeded())
     caretInCell()
 
-    activeEditor.value.commands.goToNextCell(1)
+    activeEditor.value!.commands.goToNextCell()
 
-    expect(activeEditor.value.state.selection.empty).toBe(true)
+    expect(activeEditor.value!.state.selection.empty).toBe(true)
   })
 
   it('still selects the contents of a cell that has text', async () => {
     await mountTable(filled)
     caretInCell()
 
-    activeEditor.value.commands.goToNextCell(1)
+    activeEditor.value!.commands.goToNextCell()
 
-    const { from, to } = activeEditor.value.state.selection
-    expect(activeEditor.value.state.doc.textBetween(from, to)).toBe('two')
+    const { from, to } = activeEditor.value!.state.selection
+    expect(activeEditor.value!.state.doc.textBetween(from, to)).toBe('two')
   })
 
   // stock adds the row bare, and a cell with no alignment of its own reads the
@@ -129,7 +134,7 @@ describe('where Tab leaves the caret', () => {
 
     pressKey('Tab')
 
-    const html = activeEditor.value.getHTML()
+    const html = activeEditor.value!.getHTML()
     expect(html.match(/text-align: left/g)).toHaveLength(6)
     expect(html.match(/font-size: 18px/g)).toHaveLength(6)
   })
@@ -142,9 +147,9 @@ describe('where Tab leaves the caret', () => {
     )
     const cell = caretInCell()
 
-    activeEditor.value.commands.setTextSelection({ from: cell + 3, to: cell + 6 })
+    activeEditor.value!.commands.setTextSelection({ from: cell + 3, to: cell + 6 })
 
-    expect(activeEditor.value.state.selection.empty).toBe(false)
+    expect(activeEditor.value!.state.selection.empty).toBe(false)
   })
 })
 
@@ -156,16 +161,16 @@ describe('where undo leaves the caret', () => {
 
     await mountTable(filled)
     const endOfFirstCell = caretInCell() + 'one'.length
-    activeEditor.value.commands.setTextSelection(endOfFirstCell)
+    activeEditor.value!.commands.setTextSelection(endOfFirstCell)
 
-    activeEditor.value.commands.insertContent('ABCDEFGHIJ')
+    activeEditor.value!.commands.insertContent('ABCDEFGHIJ')
     await nextTick()
 
     await history.undo()
     await nextTick()
     await nextTick()
 
-    expect(activeEditor.value.state.selection.from).toBe(endOfFirstCell)
+    expect(activeEditor.value!.state.selection.from).toBe(endOfFirstCell)
   })
 
   // no caret is visible yet, so a selection parked at the end surfaces on the next entry
@@ -178,7 +183,7 @@ describe('where undo leaves the caret', () => {
 
     setEditableState()
 
-    expect(activeEditor.value.state.selection.from).toBe(pos)
+    expect(activeEditor.value!.state.selection.from).toBe(pos)
   })
 
   // cell selections end on the cells themselves, and putting one of those back as a
@@ -186,12 +191,12 @@ describe('where undo leaves the caret', () => {
   it('leaves a position a caret can actually sit in when cells were selected', async () => {
     await mountTable(filled)
     const cells = cellPositions()
-    selectCells(cells[0], cells.at(-1))
+    selectCells(cells[0], cells.at(-1)!)
 
     slides.value[0].elements[0].content = filled.replace('one', 'edited')
     await nextTick()
 
-    expect(activeEditor.value.state.selection.$from.parent.inlineContent).toBe(true)
+    expect(activeEditor.value!.state.selection.$from.parent.inlineContent).toBe(true)
   })
 
   // replacing only the differing range cuts mid-node, and prosemirror fits the pieces
@@ -203,9 +208,9 @@ describe('where undo leaves the caret', () => {
     await mountTable(filled)
     caretInCell()
 
-    activeEditor.value.commands.insertContent('XYZ')
+    activeEditor.value!.commands.insertContent('XYZ')
     await nextTick()
-    const edited = activeEditor.value.getHTML()
+    const edited = activeEditor.value!.getHTML()
 
     await history.undo()
     await nextTick()
@@ -214,7 +219,7 @@ describe('where undo leaves the caret', () => {
     await nextTick()
     await nextTick()
 
-    expect(activeEditor.value.getHTML()).toBe(edited)
+    expect(activeEditor.value!.getHTML()).toBe(edited)
   })
 
   // the row and column commands run on the last cell, borrowing the caret to get there
@@ -224,7 +229,7 @@ describe('where undo leaves the caret', () => {
 
     setRowCount(3, 2)
 
-    expect(activeEditor.value.state.selection.from).toBe(pos)
+    expect(activeEditor.value!.state.selection.from).toBe(pos)
   })
 })
 
@@ -233,22 +238,22 @@ describe('backspace over a whole table', () => {
   it('empties the cells and leaves the table standing', () => {
     initTextEditor('t1', filled, true)
     const cells = cellPositions()
-    selectCells(cells[0], cells.at(-1))
+    selectCells(cells[0], cells.at(-1)!)
 
     pressKey('Backspace')
 
-    expect(hasTableNode(activeEditor.value.state.doc)).toBe(true)
+    expect(hasTableNode(activeEditor.value!.state.doc)).toBe(true)
     expect(typedText()).toBe('')
   })
 
   it('empties the cells when the whole document is selected instead', () => {
     initTextEditor('t2', filled, true)
-    const { view } = activeEditor.value
+    const { view } = activeEditor.value!
     view.dispatch(view.state.tr.setSelection(new AllSelection(view.state.doc)))
 
     pressKey('Backspace')
 
-    expect(hasTableNode(activeEditor.value.state.doc)).toBe(true)
+    expect(hasTableNode(activeEditor.value!.state.doc)).toBe(true)
     expect(typedText()).toBe('')
   })
 
@@ -267,12 +272,12 @@ describe('backspace over a whole table', () => {
   it('leaves the cells something for their styles to sit on', () => {
     initTextEditor('t4', seeded(), true)
     const cells = cellPositions()
-    selectCells(cells[0], cells.at(-1))
+    selectCells(cells[0], cells.at(-1)!)
 
     pressKey('Backspace')
 
     expect(typedText()).toBe('')
-    expect(activeEditor.value.getHTML().match(/font-size: 18px/g)).toHaveLength(4)
+    expect(activeEditor.value!.getHTML().match(/font-size: 18px/g)).toHaveLength(4)
   })
 })
 
@@ -283,18 +288,18 @@ describe('what the table can still say about its own width', () => {
     initTextEditor('t1', seeded(), true)
     caretInCell(2)
 
-    activeEditor.value.view.pasteHTML(bareTable(1, 3), fromPartial<ClipboardEvent>({}))
+    activeEditor.value!.view.pasteHTML(bareTable(1, 3), fromPartial<ClipboardEvent>({}))
 
-    expect(getTableWidth(activeEditor.value.getHTML())).toBe(450)
+    expect(getTableWidth(activeEditor.value!.getHTML())).toBe(450)
   })
 
   it('stays measurable after tab appends a row at the last cell', () => {
     initTextEditor('t2', seeded(), true)
     caretInCell(-1)
 
-    activeEditor.value.commands.addRowAfter()
+    activeEditor.value!.commands.addRowAfter()
 
-    const html = activeEditor.value.getHTML()
+    const html = activeEditor.value!.getHTML()
     expect(getTableWidth(html)).toBe(300)
     expect(html.match(/colwidth="150"/g)).toHaveLength(6)
   })
@@ -302,9 +307,9 @@ describe('what the table can still say about its own width', () => {
   it('invents no widths for a table that states none', () => {
     initTextEditor('t3', bareTable(1, 2), true)
 
-    activeEditor.value.commands.addRowAfter()
+    activeEditor.value!.commands.addRowAfter()
 
-    expect(activeEditor.value.getHTML()).not.toContain('colwidth')
+    expect(activeEditor.value!.getHTML()).not.toContain('colwidth')
   })
 
   // a drag writes the width it was given on one column, and the other two are still
@@ -313,13 +318,13 @@ describe('what the table can still say about its own width', () => {
     initTextEditor('t4', bareTable(2, 3), true)
     const cells = cellPositions()
 
-    const { view } = activeEditor.value
+    const { view } = activeEditor.value!
     const tr = view.state.tr
     // what a drag on the middle column commits: that width on every cell in it
     ;[cells[1], cells[4]].forEach((pos) => tr.setNodeAttribute(pos, 'colwidth', [400]))
     view.dispatch(tr)
 
-    expect(activeEditor.value.getHTML().match(/colwidth="400"/g)).toHaveLength(2)
-    expect(getTableWidth(activeEditor.value.getHTML())).toBe(null)
+    expect(activeEditor.value!.getHTML().match(/colwidth="400"/g)).toHaveLength(2)
+    expect(getTableWidth(activeEditor.value!.getHTML())).toBe(null)
   })
 })

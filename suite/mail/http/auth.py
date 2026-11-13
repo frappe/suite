@@ -5,6 +5,13 @@ from typing import NotRequired, TypedDict
 import frappe
 
 from suite.composition.http import Route, RouteKind
+from suite.mail.account_setup import (
+    AccountActivationFailed,
+    DriveSetupFailed,
+    InvitationClosed,
+    MailboxSetupFailed,
+    WeakPassword,
+)
 from suite.mail.api import get_branding, get_signup_domains, get_signup_settings
 from suite.mail.api.account import (
     create_account,
@@ -48,10 +55,6 @@ class VerifyOtp(OtpRequest):
     otp: str
 
 
-class RequestKey(TypedDict):
-    request_key: str
-
-
 class AccountRequest(TypedDict):
     backup_email: str | None
     account: str | None
@@ -60,6 +63,13 @@ class AccountRequest(TypedDict):
     workspace_name: str
     workspace_logo: str
     invited_by_name: str
+    invited_by_image: str | None
+    invited_by_email: str
+    is_admin: Flag
+    # The site's first Admin: the invitation opens the site wizard, which creates the account.
+    sets_up_site: Flag
+    # UTC, like every other timestamp the client reads.
+    expires_at: str | None
 
 
 class Option(TypedDict):
@@ -72,7 +82,7 @@ class AccountOptions(TypedDict):
     time_zones: list[Option]
 
 
-class CreateAccount(RequestKey):
+class CreateAccount(TypedDict):
     first_name: str
     last_name: str
     password: str
@@ -139,30 +149,6 @@ _OPERATIONS: tuple[tuple[str, str, RouteKind, str, object, object], ...] = (
         str,
     ),
     (
-        "get_account_request",
-        "/api/method/suite.mail.api.account.get_account_request",
-        "query",
-        "public.accountRequest",
-        RequestKey,
-        AccountRequest | None,
-    ),
-    (
-        "get_account_setup_options",
-        "/api/method/suite.mail.api.account.get_account_setup_options",
-        "query",
-        "public.accountOptions",
-        RequestKey,
-        AccountOptions,
-    ),
-    (
-        "create_account",
-        "/api/method/suite.mail.api.account.create_account",
-        "mutation",
-        "public.createAccount",
-        CreateAccount,
-        type(None),
-    ),
-    (
         "send_reset_password_link",
         "/api/method/suite.mail.api.account.send_reset_password_link",
         "mutation",
@@ -200,4 +186,49 @@ CONTRACT_ROUTES = tuple(
         ),
     )
     for handler, path, kind, public_name, body, output in _OPERATIONS
+)
+
+# An invitation, or a confirmed signup, by its request key: what it is, the choices for the new
+# account, and creating that account.
+ROUTES = (
+    Route(
+        "GET",
+        "invitations/{request_key}",
+        "get_account_request",
+        kind="query",
+        public_name="public.accountRequest",
+        output=AccountRequest | None,
+        allow_guest=True,
+        errors=(frappe.RateLimitExceededError,),
+    ),
+    Route(
+        "GET",
+        "invitations/{request_key}/options",
+        "get_account_setup_options",
+        kind="query",
+        public_name="public.accountOptions",
+        output=AccountOptions,
+        allow_guest=True,
+        errors=(InvitationClosed, frappe.RateLimitExceededError),
+    ),
+    Route(
+        "POST",
+        "invitations/{request_key}/account",
+        "create_account",
+        kind="mutation",
+        public_name="public.createAccount",
+        body=CreateAccount,
+        output=type(None),
+        allow_guest=True,
+        # The invitation page marks the setup row that failed (§4.1).
+        errors=(
+            frappe.DoesNotExistError,
+            InvitationClosed,
+            WeakPassword,
+            DriveSetupFailed,
+            MailboxSetupFailed,
+            AccountActivationFailed,
+            frappe.RateLimitExceededError,
+        ),
+    ),
 )

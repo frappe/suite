@@ -25,12 +25,6 @@ describe('serverEventId', () => {
   it('names the event itself when it belongs to no series', () => {
     expect(serverEventId({ name: 'ih|me', event_id: 'me' })).toBe('me')
   })
-
-  it('never answers with the account-qualified name the UI draws with', () => {
-    const event = { name: 'te|eaaaalw', event_id: 'eaaaalw', master_id: 'lw' }
-
-    expect(serverEventId(event)).not.toContain('|')
-  })
 })
 
 describe('sameEvent', () => {

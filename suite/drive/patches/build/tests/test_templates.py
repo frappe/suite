@@ -2,10 +2,14 @@
 
 import tempfile
 import unittest
+from dataclasses import replace
+from itertools import product
 from pathlib import Path
 
-from suite.drive._core.roles import EDIT, MANAGE, NONE, READ
-from suite.drive.patches.build.content import BuildContentError, link_content_documents
+from suite.drive._core.access import Acc
+from suite.drive._core.principals import Principals
+from suite.drive._core.roles import COMMENT, EDIT, MANAGE, NONE, READ
+from suite.drive.patches.build.content import BuildContentError, _grant_row, link_content_documents
 from suite.drive.patches.build.content_mapping import InvalidLegacyContent
 from suite.drive.patches.build.mapping import GENERAL, PUBLIC
 from suite.drive.patches.build.ports import ACTIVE, TRASHED, ContentRow, TreeRow, WriterTemplateRow
@@ -783,6 +787,179 @@ class TemplateTest(unittest.TestCase):
         self.assertTrue(linked.links_completed)
         self.assertEqual(linked.orphan_content_docs_adopted, 0)
         self.assertEqual(source.document_rows[(deck.doctype, deck.name)].node, node)
+
+    def test_only_the_owner_keeps_more_than_read_on_a_template_deck_and_its_media(self):
+        # The old hook answered read for all but the deck's owner, whatever rows it held
+        deck = presentation_template("deck-template")
+        source = FakeContent(
+            documents=[deck],
+            files=[TreeRow("file-1", content_doctype="Presentation", content_docname=deck.name)],
+            users={"Administrator": True, OWNER: True},
+        )
+        env, target = self.environment(source)
+        node = self.tree_node(target, deck.name)
+        media = self.tree_node(
+            target, deck.name, name="media-1", parent_node=node, content_doctype=None, content_docname=None
+        )
+        link = "$LINK:token"
+        editor = "editor@example.com"
+        denied = "denied@example.com"
+        target.insert_grants(
+            [
+                _grant_row(env, node, link, COMMENT),
+                _grant_row(env, node, editor, EDIT),
+                _grant_row(env, node, denied, NONE),
+                _grant_row(env, media, editor, EDIT),
+                _grant_row(env, media, OWNER, MANAGE),
+            ]
+        )
+
+        convert_slides_and_templates(env)
+        result = link_content_documents(env)
+
+        self.assertEqual(
+            target.grant_roles(node, (link, editor, denied, OWNER, GENERAL)),
+            {link: READ, editor: READ, denied: NONE, OWNER: MANAGE, GENERAL: READ},
+        )
+        self.assertEqual(target.grant_roles(media, (editor, OWNER)), {editor: READ, OWNER: MANAGE})
+        self.assertIn(
+            (f"Presentation:{deck.name}", f"template Presentation {deck.name}: 3 grants lowered to read"),
+            [(issue.source, issue.reason) for issue in result.issues],
+        )
+
+    def test_a_link_or_share_on_a_folder_above_gives_no_more_than_read(self):
+        deck = presentation_template("deck-template")
+        source = FakeContent(
+            documents=[deck],
+            files=[TreeRow("file-1", content_doctype="Presentation", content_docname=deck.name)],
+            users={"Administrator": True, OWNER: True},
+        )
+        env, target = self.environment(source)
+        node = self.tree_node(target, deck.name)
+        media = self.tree_node(
+            target, deck.name, name="media-1", parent_node=node, content_doctype=None, content_docname=None
+        )
+        link = "$LINK:token"
+        editor = "editor@example.com"
+        target.insert_grants(
+            [_grant_row(env, "old-folder", link, EDIT), _grant_row(env, "old-folder", editor, EDIT)]
+        )
+
+        convert_slides_and_templates(env)
+        link_content_documents(env)
+
+        people = {
+            "link, signed out": Principals("Guest", (), (PUBLIC, link)),
+            "link, signed in": Principals(
+                "someone@example.com", ("someone@example.com", GENERAL), (PUBLIC, link)
+            ),
+            "share on the folder": Principals(editor, (editor, GENERAL), (PUBLIC,)),
+        }
+        places = {"deck": ["old-folder", node], "media": ["old-folder", node, media]}
+        for (label, person), (place, chain) in product(people.items(), places.items()):
+            with self.subTest(label, place=place):
+                self.assertEqual(self.role_down(target, chain, person), READ)
+
+        self.assertEqual(
+            self.role_down(target, ["old-folder", node], Principals(OWNER, (OWNER, GENERAL), (PUBLIC,))),
+            MANAGE,
+        )
+
+    def role_down(self, target, chain, person):
+        acc = Acc()
+        rows = (row for row in target.drive.grant_rows.values() if row["principal"] in person.all())
+        for row in rows:
+            if row["node"] in chain:
+                acc.offer(row["principal"], row["role"], chain.index(row["node"]), person)
+
+        return acc.answer()
+
+    def test_a_stop_just_after_lowering_keeps_the_count(self):
+        deck = presentation_template("deck-template")
+        source = FakeContent(
+            documents=[deck],
+            files=[TreeRow("file-1", content_doctype="Presentation", content_docname=deck.name)],
+            users={"Administrator": True, OWNER: True},
+        )
+        env, target = self.environment(source)
+        node = self.tree_node(target, deck.name)
+        editor = "editor@example.com"
+        target.insert_grants([_grant_row(env, node, editor, EDIT)])
+        convert_slides_and_templates(env)
+        commit = target.commit
+
+        def commit_then_stop_once_lowered():
+            commit()
+            if target.grant_roles(node, (editor,)) == {editor: READ}:
+                raise InterruptedRun
+
+        target.commit = commit_then_stop_once_lowered
+        with self.assertRaises(InterruptedRun):
+            link_content_documents(env)
+
+        self.assertIn(
+            f"template Presentation {deck.name}: 1 grants lowered to read",
+            [issue.reason for issue in env.state.content().issues],
+        )
+
+    def lowering_run(self):
+        deck = presentation_template("deck-template")
+        source = FakeContent(
+            documents=[deck],
+            files=[TreeRow("file-1", content_doctype="Presentation", content_docname=deck.name)],
+            users={"Administrator": True, OWNER: True},
+        )
+        env, target = self.environment(source)
+        node = self.tree_node(target, deck.name)
+        target.insert_grants([_grant_row(env, node, "editor@example.com", EDIT)])
+        convert_slides_and_templates(env)
+        return env, target
+
+    def test_a_restart_before_the_commit_counts_the_lowering_once(self):
+        clean_env, _target = self.lowering_run()
+        clean = link_content_documents(clean_env)
+        env, target = self.lowering_run()
+        node = self.tree_node(target, "deck-template")
+        editor = "editor@example.com"
+        commit = target.commit
+
+        def stop_before_commit_once_lowered():
+            if target.grant_roles(node, (editor,)) == {editor: READ}:
+                target.commit = commit
+                target.drive.rollback()
+                raise InterruptedRun
+
+            commit()
+
+        target.commit = stop_before_commit_once_lowered
+        with self.assertRaises(InterruptedRun):
+            link_content_documents(env)
+
+        restarted = link_content_documents(env)
+
+        self.assertEqual(target.grant_roles(node, (editor,)), {editor: READ})
+        self.assertEqual(restarted.issues_total, clean.issues_total)
+        self.assertEqual(restarted.issues_by_phase, clean.issues_by_phase)
+        self.assertEqual(
+            sorted(issue.reason for issue in restarted.issues),
+            sorted(issue.reason for issue in clean.issues),
+        )
+
+    def test_rights_on_an_ordinary_deck_are_left_alone(self):
+        deck = replace(presentation_template("plain-deck"), is_template=0)
+        source = FakeContent(
+            documents=[deck],
+            files=[TreeRow("file-1", content_doctype="Presentation", content_docname=deck.name)],
+            users={"Administrator": True, OWNER: True},
+        )
+        env, target = self.environment(source)
+        node = self.tree_node(target, deck.name)
+        target.insert_grants([_grant_row(env, node, "editor@example.com", EDIT)])
+
+        convert_slides_and_templates(env)
+        link_content_documents(env)
+
+        self.assertEqual(target.grant_roles(node, ("editor@example.com",)), {"editor@example.com": EDIT})
 
     def test_two_nodes_for_one_template_deck_are_refused(self):
         deck = presentation_template("deck-template")

@@ -237,7 +237,7 @@ class TestMediaFileAccess(IntegrationTestCase):
 
     def test_a_lookalike_name_on_my_presentation_grants_nothing(self):
         with self.set_user(OTHER_USER):
-            mine = make_presentation("Lookalike")
+            mine = make_presentation(f"Lookalike {frappe.generate_hash(length=8)}")
         for secret, own in self.make_lookalikes(mine.name):
             with self.set_user(OTHER_USER), self.subTest(url=secret.file_url):
                 self.assertIsNone(validate_media_file(own.file_url, mine.name))
@@ -247,7 +247,7 @@ class TestMediaFileAccess(IntegrationTestCase):
     def test_a_lookalike_name_on_a_template_grants_nothing(self):
         with self.set_user(OTHER_USER):
             mine = make_presentation("Lookalike Viewer")
-            template = make_presentation("Lookalike", is_template=True)
+            template = make_presentation(f"Lookalike {frappe.generate_hash(length=8)}", is_template=True)
         for secret, _own in self.make_lookalikes(template.name):
             with self.set_user(OTHER_USER), self.subTest(url=secret.file_url):
                 with self.assertRaises(Forbidden):

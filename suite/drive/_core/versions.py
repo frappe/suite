@@ -74,6 +74,7 @@ def take_version(
     kind: str = "auto",
     label: str | None = None,
     actor: str | None = None,
+    activity: bool = True,
 ) -> int:
     """Capture one file head or content document body as immutable bytes, credited to `actor` or the caller."""
     _validate_kind_and_label(kind, label)
@@ -95,13 +96,14 @@ def take_version(
             label=label,
             actor=actor,
         )
-        _record_activity(
-            current.name,
-            "edit",
-            principals,
-            {"blob": blob, "size": size, "version": seq},
-            via_link=via_link,
-        )
+        if activity:
+            _record_activity(
+                current.name,
+                "edit",
+                principals,
+                {"blob": blob, "size": size, "version": seq},
+                via_link=via_link,
+            )
     except Exception as exc:
         # Content bytes are stored before this savepoint. On a refused write
         # their unreferenced File Blob row is deliberately left for framework

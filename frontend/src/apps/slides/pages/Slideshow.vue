@@ -328,6 +328,7 @@ useBrowserZoomGuard()
 
 onMounted(() => {
   active = true
+  document.body.classList.add('slides-presenting')
   resetFocus()
   // keys go to the show, not to whatever started it underneath
   takeFocus()
@@ -346,6 +347,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   active = false
+  document.body.classList.remove('slides-presenting')
   document.removeEventListener('focusout', takeFocusBack)
   document.removeEventListener('fullscreenchange', handleFullScreenChange)
   document.removeEventListener('visibilitychange', handleVisibilityChange)
@@ -438,6 +440,10 @@ useKeyboardShortcut([
 </script>
 
 <style>
+body.slides-presenting [data-sonner-toaster] {
+  display: none;
+}
+
 /* has to beat the cursor elements set on themselves */
 .slideshow-hide-cursor,
 .slideshow-hide-cursor * {

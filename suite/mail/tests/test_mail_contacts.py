@@ -8,7 +8,6 @@ from suite.mail.api.contacts import (
     get_address_books,
     get_contact_cards,
     get_contacts,
-    get_contacts_from_cache,
 )
 from suite.mail.doctype.address_book.address_book import (
     add_address_book,
@@ -122,7 +121,6 @@ class TestMailContacts(StalwartIntegrationTestCase):
                 message="Contact did not move between address books.",
             )
 
-            self.assertIsInstance(get_contacts_from_cache(self.account), list)
 
             delete_contact_cards(self.account, [card_id])
             self.wait_until(

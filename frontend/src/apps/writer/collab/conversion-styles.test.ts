@@ -528,6 +528,36 @@ describe('convertLegacy', () => {
     ])
   })
 
+  it.each([
+    [
+      'InterVar, ui-sans-serif, system-ui, sans-serif, " font-size: 16px;"',
+      'InterVar, ui-sans-serif, system-ui, sans-serif',
+    ],
+    ["'a;b', Inter; x", 'Inter'],
+  ])('reads past a quoted name holding a semicolon in the Yjs font family %j', (value, family) => {
+    const legacy = stored(legacyDoc(yMarked('word', { textStyle: { fontFamily: value } })))
+
+    const result = convert(legacy)
+
+    const [{ content }] = bodyOf(result.state).content
+    expect([content[0].marks, result.dropped]).toEqual([
+      [{ type: 'textStyle', attrs: expect.objectContaining({ fontFamily: family }) }],
+      [],
+    ])
+  })
+
+  it.each(['" font-size: 16px;;;"', "'Brand;Sans'"])(
+    'converts a Yjs font family %j, only a quoted name holding a semicolon, as no font',
+    (value) => {
+      const legacy = stored(legacyDoc(yMarked('word', { textStyle: { fontFamily: value } })))
+
+      const result = convert(legacy)
+
+      const [{ content }] = bodyOf(result.state).content
+      expect([content[0].marks, result.dropped]).toEqual([undefined, []])
+    },
+  )
+
   it.each([';', '; x'])(
     "converts a Yjs font family %j with nothing before its ';' as no font",
     (value) => {
@@ -551,7 +581,6 @@ describe('convertLegacy', () => {
     'Inter; colour: red',
     'Inter; x (',
     'Inter; "x',
-    "'Brand;Sans'",
     '"A;B"; C',
     'Inter; x /* y',
     'Inter; x\\',
@@ -1352,8 +1381,23 @@ describe('convertLegacy on pasted HTML span colours, read as on the Yjs path', (
     })
   })
 
-  it("refuses an HTML span colour the editor can't read, whose alpha is a variable", () => {
-    const html = '<p>a<span style="color: rgb(0 0 0 / var(--tw-text-opacity))">b</span></p>'
+  it('reads a Tailwind colour by its channels, its alpha variable being full opacity', () => {
+    const black = 'color: rgb(0 0 0 / var(--tw-text-opacity))'
+    const red = 'color: rgb(220 38 38 / var(--tw-text-opacity))'
+    const html = `<p><span style="${black}">a</span><span style="${red}">b</span></p>`
+
+    const result = convert({ content: null, html, collab: 0, ycomments: null })
+
+    const [{ content }] = bodyOf(result.state).content
+    expect(drawnColours(content)).toEqual([
+      ['a', []],
+      ['b', [['textStyle', 'red']]],
+    ])
+    expect(result.dropped).toEqual([])
+  })
+
+  it("refuses an HTML span colour the editor can't read, whose alpha is a variable of its own", () => {
+    const html = '<p>a<span style="color: rgb(0 0 0 / var(--my-alpha))">b</span></p>'
 
     expect(convertLegacy({ content: null, html, collab: 0, ycomments: null }, MAX_STATE)).toEqual({
       kind: 'failed',
@@ -1675,7 +1719,6 @@ describe('convertLegacy on table cell styles', () => {
 
   it.each([
     'border: 1px solid red; position: absolute',
-    'background: #123456',
     'background-color: #fef08a !important',
     'overflow-x: hidden',
     'overflow: hidden; overflow-x: auto',
@@ -1771,6 +1814,103 @@ describe('convertLegacy on table cell styles', () => {
     const result = convert(yTable(yCell('tableCell', { colspan: 2, colwidth: [100] })))
 
     expect(cellOf(result.state).attrs).toMatchObject({ colspan: 2, colwidth: [100] })
+  })
+})
+
+describe('convertLegacy on a table pasted from Word', () => {
+  function converted(cell: string) {
+    return convert({ content: null, html: cell, collab: 0, ycomments: null })
+  }
+
+  it('keeps its colour, width and borders, and records its height', () => {
+    const style =
+      'width:30.6pt; border:solid black 1.0pt; border-left:none; background:#C5DFB3; padding:0in 0in 0in 0in; height:26.35pt'
+
+    const result = converted(htmlCell(`style="${style}"`))
+
+    const { colwidth, style: kept } = cellOf(result.state).attrs
+    expect(colwidth).toEqual([41])
+    expect(kept).toContain('background-color: rgb(197, 223, 179)')
+    expect(kept).toContain('border-style: solid solid solid none')
+    expect(kept).toContain('border-width: 1pt 1pt 1pt medium')
+    expect(kept).not.toMatch(/height|[^-]width: 30/)
+    expect(result.dropped).toEqual([{ kind: 'cell-height', count: 1 }])
+  })
+
+  it.each([
+    ['background:yellow', 'background-color: yellow;'],
+    ['background:#D9D9D9', 'background-color: rgb(217, 217, 217);'],
+  ])('reads the lone colour of "%s" as the cell background', (style, kept) => {
+    const result = converted(htmlCell(`style="${style}"`))
+
+    expect(cellOf(result.state).attrs.style).toBe(kept)
+    expect(result.dropped).toEqual([])
+  })
+
+  it.each([
+    ['width:1in', 96],
+    ['width:120px', 120],
+    ['width:471.55pt', 629],
+  ])('reads "%s" as the column width', (style, width) => {
+    const result = converted(htmlCell(`style="${style}"`))
+
+    expect(cellOf(result.state).attrs.colwidth).toEqual([width])
+    expect(result.dropped).toEqual([])
+  })
+
+  it('keeps a cell width that repeats the column width it was given', () => {
+    const result = converted(htmlCell('colwidth="629" style="width:471.55pt"'))
+
+    expect(cellOf(result.state).attrs.colwidth).toEqual([629])
+  })
+
+  it.each([
+    ['a percent width', 'style="width:50%"'],
+    ['a width against its column width', 'colwidth="90" style="width:30pt"'],
+    ['a width across two columns', 'colspan="2" style="width:30pt"'],
+    ['a background holding more than a colour', 'style="background:#fff url(x.png)"'],
+    ['a border image', 'style="border-image:url(x.png) 1"'],
+  ])('refuses %s', (_name, attributes) => {
+    const html = htmlCell(attributes)
+
+    expect(convertLegacy({ content: null, html, collab: 0, ycomments: null }, MAX_STATE)).toEqual({
+      kind: 'failed',
+      reason: 'check',
+    })
+  })
+})
+
+describe('convertLegacy on a table sized only by its column list', () => {
+  function table(cols: string, cell: string) {
+    return `<table style="min-width: 666px"><colgroup>${cols}</colgroup><tr>${cell}</tr></table>`
+  }
+
+  function widths(state: Uint8Array) {
+    const [{ content }] = bodyOf(state).content
+    return content[0].content.map(({ attrs }: JSONContent) => attrs?.colwidth)
+  }
+
+  const COLS = '<col style="width: 510px"><col style="width: 131px"><col style="min-width: 25px">'
+  const CELL = '<td colspan="1" rowspan="1"><p>x</p></td>'
+
+  it('puts each column width on its cells', () => {
+    const html = table(COLS, CELL.repeat(3))
+
+    const result = convert({ content: null, html, collab: 0, ycomments: null })
+
+    expect([widths(result.state), result.dropped]).toEqual([[[510], [131], null], []])
+  })
+
+  it.each([
+    ['a cell spanning columns', '<td colspan="2"><p>x</p></td>' + CELL],
+    ['a cell with its own column width', '<td colwidth="90"><p>x</p></td>' + CELL.repeat(2)],
+  ])('refuses column widths beside %s', (_name, cells) => {
+    const html = table(COLS, cells)
+
+    expect(convertLegacy({ content: null, html, collab: 0, ycomments: null }, MAX_STATE)).toEqual({
+      kind: 'failed',
+      reason: 'check',
+    })
   })
 })
 

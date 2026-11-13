@@ -1,68 +1,12 @@
 import { shallowRef, type ShallowRef } from 'vue'
 
 import { searchUsers, type WriterUser } from '@/apps/writer/drive'
+import { createPeople, people as shared } from '@/platform/collab/names'
 import { useSession } from '@/platform/session'
 
 const SEARCH_DELAY_MS = 250
 
 type Search = (query: string, node?: string | null) => Promise<WriterUser[]>
-
-// Everyone seen so far, for avatars and names on mentions, comments and carets
-function createDirectory() {
-  const known = new Map<string, WriterUser>()
-  /** Bumped when people arrive, so names read from `known` update. */
-  const version = shallowRef(0)
-
-  function remember(people: WriterUser[]) {
-    for (const person of people) {
-      known.set(person.name, person)
-    }
-
-    version.value++
-  }
-
-  function getUser(name: string) {
-    void version.value
-    return known.get(name)
-  }
-
-  return { remember, getUser }
-}
-
-// Names people by user id, looking each one up once
-function createNames(search: Search, directory: ReturnType<typeof createDirectory>) {
-  const lookups = new Map<string, Promise<void>>()
-
-  /** A failed lookup leaves the user id as the name. */
-  async function fetchPerson(user: string) {
-    const found = await search(user).catch(() => null)
-    if (found) {
-      directory.remember(found)
-    }
-  }
-
-  function lookUp(user: string): Promise<void> {
-    let lookup = lookups.get(user)
-    if (!lookup) {
-      lookup = fetchPerson(user)
-      lookups.set(user, lookup)
-    }
-
-    return lookup
-  }
-
-  /** A person's full name; their user id until the lookup answers. */
-  function fullName(user: string): string {
-    const found = directory.getUser(user)
-    if (!found) {
-      void lookUp(user)
-    }
-
-    return found?.full_name || user
-  }
-
-  return { lookUp, fullName }
-}
 
 interface MenuState {
   users: ShallowRef<WriterUser[]>
@@ -183,8 +127,7 @@ function createMentionSearch(menu: ReturnType<typeof createMenu>) {
   return { ask, searchMentions, forget }
 }
 
-export function createUsers(search: Search = searchUsers) {
-  const directory = createDirectory()
+export function createUsers(search: Search = searchUsers, directory = createPeople(search)) {
   const menu = createMenu(search, directory.remember)
   const mentionSearch = createMentionSearch(menu)
   let isStarted = false
@@ -205,10 +148,8 @@ export function createUsers(search: Search = searchUsers) {
     }
   }
 
-  const names = createNames(search, directory)
   return {
     ...directory,
-    ...names,
     users: menu.users,
     answeredQuery: menu.answeredQuery,
     searchMentions: mentionSearch.searchMentions,
@@ -217,7 +158,8 @@ export function createUsers(search: Search = searchUsers) {
   }
 }
 
-const people = createUsers()
+// Shares one directory with the names peers go by, so a person is looked up once
+const people = createUsers(searchUsers, shared)
 
 export const { searchMentions, lookUp, fullName } = people
 

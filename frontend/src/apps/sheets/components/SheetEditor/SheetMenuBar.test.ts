@@ -1,7 +1,23 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createApp, h, nextTick } from 'vue'
+import { createApp, h, nextTick, type SetupContext } from 'vue'
 
 import SheetMenuBar, { type SheetMenu } from './SheetMenuBar.vue'
+
+const subContent = vi.hoisted((): Record<string, unknown>[] => [])
+
+// Records the props each submenu panel gets, on the way to the real one.
+vi.mock('reka-ui', async (importOriginal) => {
+  const reka = await importOriginal<typeof import('reka-ui')>()
+  const MenubarSubContent = (_: unknown, { attrs, slots }: SetupContext) => {
+    subContent.push(attrs)
+    return h(reka.MenubarSubContent, attrs, slots)
+  }
+  return { ...reka, MenubarSubContent }
+})
+
+const menuCss = readFileSync(resolve(__dirname, 'SheetEditor.global.css'), 'utf8')
 
 // The real Button and portal helper. Opening, closing and focus are reka's. The
 // Dropdown is what Writer's menu uses, so the look can be compared with it.
@@ -235,6 +251,26 @@ describe('SheetMenuBar', () => {
       b.textContent?.trim(),
     )
     expect(names).toEqual(['File', 'Edit', 'View', 'Insert', 'Data'])
+  })
+
+  it('starts a submenu level with the row that opened it', async () => {
+    const options = [{ label: 'Number', submenu: [{ label: 'Plain text', onClick: vi.fn() }] }]
+    const root = mountBar([{ key: 'format', label: 'Format', options }])
+    press(trigger(root, 'Format'), 'Enter')
+    await settle()
+    const row = menuItem('Number')!
+    row.focus()
+    press(row, 'ArrowRight')
+    await settle()
+    expect(menuItem('Plain text')).toBeDefined()
+    // The real offset needs layout, so this reads what reka is handed.
+    expect(subContent.at(-1)?.alignOffset).toBe(-6)
+  })
+
+  it('lets a panel grow to the window, with a slim scrollbar and no arrows', () => {
+    expect(menuCss).not.toContain('min(60vh, 480px)')
+    expect(menuCss).toContain('var(--reka-popper-available-height)')
+    expect(menuCss).toMatch(/\.menu-content::-webkit-scrollbar-button[^{]*\{\s*display: none/)
   })
 
   it('folds the six menus into one Menu, each a submenu, for a narrow header', async () => {

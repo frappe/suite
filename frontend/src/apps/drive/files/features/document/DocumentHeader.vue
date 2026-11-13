@@ -49,13 +49,11 @@
           :aria-invalid="titleError ? true : undefined"
           @pointerdown="noteTitlePress"
           @click="selectTitleOnClick"
-          @focus="updateFullTitle"
-          @blur="leaveTitle"
+          @blur="renameOnBlur"
           @keydown.stop
           @keydown.enter.prevent="renameOnEnter"
           @keydown.escape.prevent="revertTitle"
         />
-        <p v-if="showsFullTitle" class="document-full-title" aria-hidden="true">{{ titleDraft }}</p>
       </div>
       <span
         v-if="titleError"
@@ -393,25 +391,6 @@ async function rename(): Promise<string | null> {
   }
 }
 
-/** The whole name, shown under the field while a title too long for it is focused. */
-const showsFullTitle = ref(false)
-
-function updateFullTitle() {
-  const input = titleInput.value?.inputElement
-  showsFullTitle.value =
-    hasCenteredMenus.value &&
-    input != null &&
-    document.activeElement === input &&
-    input.scrollWidth > input.clientWidth
-}
-// After the render: typing changes the field's width and what fits in it.
-watch(titleDraft, updateFullTitle, { flush: 'post' })
-
-function leaveTitle() {
-  showsFullTitle.value = false
-  void renameOnBlur()
-}
-
 /** Enter keeps the field focused on a refusal, so the name can be corrected. */
 async function renameOnEnter() {
   const refusal = await rename()
@@ -471,11 +450,6 @@ defineExpose({
 .document-title :deep([data-slot='control'][readonly]) {
   background: transparent;
   cursor: default;
-}
-
-/* Floats over the rows below, so showing it moves nothing. */
-.document-full-title {
-  @apply absolute start-0 top-[calc(100%+0.25rem)] z-10 w-max max-w-[min(32rem,calc(100vw-2rem))] break-words rounded-4 border border-outline-elevation-2 bg-surface-elevation-2 px-3 py-2 text-base text-ink-gray-9 shadow-2xl;
 }
 
 /*

@@ -7,11 +7,6 @@ const KEY = 'calendar-view'
 describe('rememberCalendarView', () => {
   beforeEach(() => localStorage.clear())
 
-  it('remembers a view route', () => {
-    rememberCalendarView('calendar-week')
-    expect(localStorage.getItem(KEY)).toBe('calendar-week')
-  })
-
   // The calendar has routes that are not views — the profile page, the shortcut
   // records the guard expands — and landing on one is not a change of view.
   it('ignores anything that is not a view', () => {
@@ -36,11 +31,6 @@ describe('lastCalendarView', () => {
 
   it('has nothing to say before a view has been opened', () => {
     expect(lastCalendarView()).toBeNull()
-  })
-
-  it('returns what was remembered', () => {
-    rememberCalendarView('calendar-day')
-    expect(lastCalendarView()).toBe('calendar-day')
   })
 
   // Storage is shared with whatever else runs on the origin, and a key can

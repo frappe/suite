@@ -4,7 +4,7 @@ export { covers } from './covers'
 export { watchRooms } from './hub'
 export { judge, type Fault } from './judge'
 export { sizeCheck } from './limits'
-export { openRoom } from './open'
+export { openRoom, readSavedState } from './open'
 export { ADOPT, APPLIED_UPDATE, MERGED_UPDATE, REMOTE } from './origins'
 export {
   isRecoverable,

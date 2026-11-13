@@ -96,7 +96,7 @@ const ATTRIBUTE_DEFAULTS = new Map<string, string | null>([
 export interface DrawRules {
   // What `.textElement p, .textElement li` or `.tableElement p` give a line
   lineHeight: string
-  // `white-space: pre` or `pre-wrap` in a text box, the browser's folding in a table
+  // `white-space: pre` or `pre-wrap` in a text element, the browser's folding in a table
   isWhitespaceKept: boolean
 }
 

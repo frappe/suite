@@ -146,6 +146,8 @@ vi.mock('@/platform/session', async (importOriginal) => {
   }
 })
 
+// The Get started list has its own test, with the queries it reads.
+vi.mock('@/composition/home/GetStarted.vue', () => ({ default: { render: () => null } }))
 // the slides package root installs a guard on the app router at import (boundary debt)
 vi.mock('@/apps/slides/router', () => ({ router: { beforeEach: () => {} } }))
 vi.mock('@/apps/drive', async (importOriginal) => ({

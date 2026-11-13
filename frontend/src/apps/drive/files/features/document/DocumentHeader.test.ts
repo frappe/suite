@@ -530,30 +530,17 @@ describe('DocumentHeader, menus layout (Sheets)', () => {
   }
   const fullTitle = (header: HTMLElement) => header.querySelector('.document-full-title')
 
-  it('shows the whole name under a title too long for its field, while it is clicked into', async () => {
+  it('shows no box with the whole name when a long title is clicked into', async () => {
     const { header, title } = mountWithMenus('menus')
     makeTitleOverflow(title, true)
 
     title.focus()
     await nextTick()
-    expect(fullTitle(header)?.textContent).toBe('Budget')
+    expect(fullTitle(header)).toBeNull()
 
     title.value = 'Budget 2027'
     title.dispatchEvent(new Event('input', { bubbles: true }))
     await nextTick()
-    await nextTick()
-    expect(fullTitle(header)?.textContent).toBe('Budget 2027')
-
-    title.blur()
-    await nextTick()
-    expect(fullTitle(header)).toBeNull()
-  })
-
-  it('shows no second copy of a name that fits', async () => {
-    const { header, title } = mountWithMenus('menus')
-    makeTitleOverflow(title, false)
-
-    title.focus()
     await nextTick()
     expect(fullTitle(header)).toBeNull()
   })

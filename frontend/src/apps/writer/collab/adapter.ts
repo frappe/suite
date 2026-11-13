@@ -1,6 +1,6 @@
-import { caretPosition } from '@/apps/writer/collab/carets'
 import { writerRender } from '@/apps/writer/collab/render'
 import type { CollabAdapter } from '@/platform/collab'
+import { caretPosition } from '@/platform/collab/carets'
 
 import declared from '../../../../../suite/writer/content/schema.json'
 

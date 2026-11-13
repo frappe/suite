@@ -1,6 +1,6 @@
 import { fromAny, fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it } from 'vitest'
-import { XmlElement, XmlText } from 'yjs'
+import { XmlElement, XmlText, Map as YMap } from 'yjs'
 
 import { convertLegacy } from '@/apps/writer/collab/conversion'
 import { BODY_FIELD } from '@/apps/writer/collab/field'
@@ -61,11 +61,24 @@ describe('convertLegacy', () => {
     expect(convertLegacy(legacy, MAX_STATE)).toEqual({ kind: 'failed', reason: 'check' })
   })
 
-  it('refuses a Yjs document whose annotations list holds threads', () => {
-    const doc = legacyDoc(yParagraph('one'))
-    doc.getArray('docAnnotations').insert(0, [{ id: 'a1' }])
+  it('refuses a Yjs document whose annotations list holds a thread no comment mark carries', () => {
+    const doc = legacyDoc(yMarked('see', { comment: { commentId: 'c1' } }))
+    doc.getArray('docAnnotations').insert(0, [{ id: 'c1' }, { id: 'a1' }])
 
     expect(convertLegacy(stored(doc), MAX_STATE)).toEqual({ kind: 'failed', reason: 'check' })
+  })
+
+  it.each([
+    { name: 'a plain entry', entry: () => ({ id: 'c1', replies: [{ id: 'r1' }] }) },
+    { name: 'a shared map', entry: () => new YMap([['id', 'c1']]) },
+  ])('records an annotations list whose thread, $name, a comment mark carries', ({ entry }) => {
+    const doc = legacyDoc(yMarked('see', { comment: { commentId: 'c1' } }))
+    doc.getArray('docAnnotations').insert(0, [entry()])
+
+    const result = convert(stored(doc))
+
+    expect(result.dropped).toEqual([{ kind: 'old-annotations', ids: ['c1'] }])
+    expect(Object.keys(result.anchors)).toEqual(['c1'])
   })
 
   it('refuses HTML holding an annotation', () => {

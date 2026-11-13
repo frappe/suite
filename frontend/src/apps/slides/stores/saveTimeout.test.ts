@@ -113,7 +113,7 @@ describe('savePresentationDoc', () => {
     presentationDoc.value = { name: 'p1', modified: 'M1' }
     let sent: any[] = []
     server.answer = (options) => {
-      sent = options.params.slides
+      if (Array.isArray(options.params.slides)) sent = options.params.slides
       return { modified: 'M2' }
     }
 

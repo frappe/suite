@@ -19,7 +19,7 @@ Only ledger keys are considered. An object Build never copied (a `File`
 row recorded under `missing_bytes`, an orphan object nobody referenced) is
 not in the ledger and stays in the bucket; the report says how many such
 rows Build recorded. A ledger key is kept, and reported as kept, when it
-starts with `private/` or `public/` (the framework's own storage roots),
+starts with `private/`, `public/` or `sites/` (the framework's own storage roots),
 equals its own destination, or is named by a `File Blob` row.
 
 Before each batch of 1000 the command HEADs every destination and requires
@@ -60,12 +60,12 @@ DELETE_BATCH_SIZE = 1000
 
 DELETED_FILENAME = "drive-legacy-objects-deleted.jsonl"
 
-# The framework S3 driver's own key space. A legacy key under either is
+# The framework S3 driver's own key space. A legacy key under any of these is
 # never Drive's to delete, whatever the ledger says.
-FRAMEWORK_ROOTS = ("private/", "public/")
+FRAMEWORK_ROOTS = ("private/", "public/", "sites/")
 
 # Why a ledger key is kept, as the report names it.
-UNDER_FRAMEWORK_ROOT = "under the framework's private/ or public/ root"
+UNDER_FRAMEWORK_ROOT = "under the framework's private/, public/ or sites/ root"
 OWN_DESTINATION = "is its own canonical copy"
 REFERENCED_BY_BLOB = "named by a File Blob"
 

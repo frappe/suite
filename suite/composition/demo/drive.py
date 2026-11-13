@@ -29,6 +29,7 @@ from suite.drive._core.access import grant, revoke_grant
 from suite.drive._core.roots import archive_personal_root, create_root, purge_root
 from suite.drive.framework import principals_for
 from suite.suite_core import storage
+from suite.writer import create_document
 
 WORKSPACE = "Northwind Labs"
 PREFIX = f"{WORKSPACE} - "
@@ -286,7 +287,7 @@ def _organization_content(folders: dict[str, str], uploaded: dict[str, bytes]) -
     result = {}
     with acting_as(email_of("maya")):
         handbook = drive.ensure_folder(folders["Company"], "Handbook")
-        result["welcome"] = content.writer(handbook, "Welcome to Northwind", content.ONBOARDING)
+        result["welcome"] = create_document(handbook, "Welcome to Northwind", content.ONBOARDING)
         reference = drive.ensure_folder(handbook, "Policies and reference")
         for title in uploaded:
             _store(reference, title, uploaded)
@@ -295,22 +296,22 @@ def _organization_content(folders: dict[str, str], uploaded: dict[str, bytes]) -
         )
         frappe.db.commit()
         project = drive.ensure_folder(drive.ensure_folder(folders["Product"], "Beacon"), "Collections beta")
-        result["spec"] = content.writer(project, "Collections product specification", content.PRODUCT_SPEC)
-        result["meeting"] = content.writer(project, "Launch readiness - 19 October", content.MEETING)
+        result["spec"] = create_document(project, "Collections product specification", content.PRODUCT_SPEC)
+        result["meeting"] = create_document(project, "Launch readiness - 19 October", content.MEETING)
     frappe.db.commit()
     with acting_as(email_of("leo")):
         research = drive.ensure_folder(drive.ensure_folder(folders["Design"], "Research"), "October studies")
-        result["research"] = content.writer(research, "Collections usability study", content.DESIGN)
+        result["research"] = create_document(research, "Collections usability study", content.DESIGN)
         _store(research, "Northwind brand cover.png", uploaded)
     frappe.db.commit()
     with acting_as(email_of("arjun")):
         releases = drive.ensure_folder(folders["Engineering"], "Releases")
-        result["playbook"] = content.writer(releases, "Release playbook", content.ENGINEERING)
+        result["playbook"] = create_document(releases, "Release playbook", content.ENGINEERING)
         _store(releases, "Beta customer feedback.csv", uploaded)
     frappe.db.commit()
     with acting_as(email_of("theo")):
         launch = drive.ensure_folder(folders["Marketing"], "November launch")
-        brief = content.writer(launch, "Beacon beta launch brief", content.MARKETING)
+        brief = create_document(launch, "Beacon beta launch brief", content.MARKETING)
         result["launch brief"] = brief
         # Publishing only this document leaves the restricted team folder private. $PUBLIC alone
         # does not lift the folder's $GENERAL deny for signed-in people, and nearest wins, so
@@ -342,7 +343,7 @@ def _personal_content(uploaded: dict[str, bytes]) -> dict[str, str]:
             if root is None:
                 raise RuntimeError(f"Missing personal root for {person.email}")
             work = drive.ensure_folder(root, "Working notes")
-            result[person.email] = content.writer(
+            result[person.email] = create_document(
                 work, f"{person.first}'s weekly priorities", content.personal_note(person.first, person.team)
             )
             archive = drive.ensure_folder(drive.ensure_folder(root, "Projects"), "October 2026")

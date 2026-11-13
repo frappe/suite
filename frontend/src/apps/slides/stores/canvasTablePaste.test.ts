@@ -1,5 +1,6 @@
-import tinycolor from 'tinycolor2'
+import { fromAny } from '@total-typescript/shoehorn'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { Ref } from 'vue'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({
   getAttachmentUrl: () => '',
@@ -10,7 +11,9 @@ vi.mock('@/apps/slides/router', () => ({ router: { replace: () => Promise.resolv
 const { focusElementId } = await import('./element')
 await import('@/apps/slides/composables/useTextEditor')
 const { handlePaste } = await import('./copyPaste')
-const { slides, slideIndex, slideBounds } = await import('./slide')
+const { slides: storeSlides, slideIndex, slideBounds } = await import('./slide')
+// the store types each slide's fields as unknown, and these tests read them
+const slides = fromAny<Ref<any[]>, unknown>(storeSlides)
 const { useCommandHistory } = await import('@/apps/slides/composables/useCommandHistory')
 const { actionOrder, actions, setCommandHistory } = await import('./historyMeta')
 const { getTableSize, getTableWidth } = await import('@/apps/slides/utils/tableWidths')
@@ -74,8 +77,7 @@ const readTds = (content: string) =>
   Array.from(new DOMParser().parseFromString(content, 'text/html').querySelectorAll('td'))
 
 // the editor writes colours as rgb()
-const hexOf = (color: string) => tinycolor(color).toHexString()
-const textColorOf = (cell: HTMLTableCellElement) => hexOf(cell.querySelector('span')!.style.color)
+const textColorOf = (cell: HTMLTableCellElement) => cell.querySelector('span')!.style.color
 
 beforeEach(() => {
   history = useCommandHistory(slides, { actionOrder, actions })
@@ -108,12 +110,12 @@ describe('pasting a spreadsheet range onto the canvas', () => {
     const table = await paste(sheetsRange)
     const [apple, qty, red, wide] = readTds(table.content)
 
-    expect(hexOf(apple.style.backgroundColor)).toBe('#fff2cc')
-    expect(textColorOf(apple)).toBe('#000000')
+    expect(apple.style.backgroundColor).toBe('rgb(255, 242, 204)')
+    expect(textColorOf(apple)).toBe('rgb(0, 0, 0)')
     expect(qty.querySelector('span')!.style.fontSize).toBe('25px')
     expect(qty.querySelector('p')!.style.textAlign).toBe('right')
-    expect(textColorOf(red)).toBe('#990000')
-    expect(textColorOf(wide)).toBe('#ffffff')
+    expect(textColorOf(red)).toBe('rgb(153, 0, 0)')
+    expect(textColorOf(wide)).toBe('rgb(255, 255, 255)')
     // a merged cell holds the widths of both its columns
     expect(wide.getAttribute('colwidth')).toBe('150,150')
   })

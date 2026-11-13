@@ -1,10 +1,14 @@
+import { fromAny } from '@total-typescript/shoehorn'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { Ref } from 'vue'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
 vi.mock('@/apps/slides/router', () => ({ router: { replace: () => Promise.resolve() } }))
 
 const { addTableElement, getEmptyTableCells } = await import('./element')
-const { slides, slideIndex, slideBounds } = await import('./slide')
+const { slides: storeSlides, slideIndex, slideBounds } = await import('./slide')
+// the store types each slide's fields as unknown, and these tests read them
+const slides = fromAny<Ref<any[]>, unknown>(storeSlides)
 const { useCommandHistory } = await import('@/apps/slides/composables/useCommandHistory')
 const { actionOrder, actions, setCommandHistory } = await import('./historyMeta')
 const { getTableWidth } = await import('@/apps/slides/utils/tableWidths')

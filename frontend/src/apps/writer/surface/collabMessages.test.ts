@@ -602,11 +602,35 @@ describe('collab read-only copy for old documents', () => {
       "This document couldn't be upgraded, so it stays read-only.",
     )
     expect(pageText(notUpgradedBanner('too_large', false))).toBe(
-      "This document couldn't be upgraded, so it stays read-only. Reason: too_large.",
+      "This document couldn't be upgraded, so it stays read-only. Reason: it is too large to edit together.",
     )
     expect(pageText(notUpgradedBanner('too_large', true))).toBe(
-      "This document couldn't be upgraded, so it stays read-only. Reason: too_large." +
+      "This document couldn't be upgraded, so it stays read-only. Reason: it is too large to edit together." +
         " Its saved body couldn't be read, so this is its last saved copy.",
+    )
+  })
+
+  it.each([
+    'check',
+    'check: copy',
+    'too_large',
+    'unreadable-yjs',
+    'over_quota',
+    'child_timeout',
+    'child_crash',
+    'bad_answer',
+  ])('gives the refusal %s in plain words', (reason) => {
+    const shown = pageText(notUpgradedBanner(reason, false))
+
+    expect(shown).toContain(' Reason: ')
+    for (const code of reason.split(': ')) {
+      expect(shown).not.toContain(code)
+    }
+  })
+
+  it('leaves out a refusal code it has no words for', () => {
+    expect(pageText(notUpgradedBanner('a_new_code', false))).toBe(
+      "This document couldn't be upgraded, so it stays read-only.",
     )
   })
 })

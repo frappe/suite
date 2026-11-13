@@ -18,7 +18,8 @@ from frappe.storage.blob import key_filename
 # through the boto3 managed multipart copy (§14.2 step 3, "5 GB").
 MULTIPART_COPY_THRESHOLD = 5 * 1024**3
 
-# `S3Driver.object_key` puts every private blob key under this.
+# `S3Driver.object_key` adds this to a blob's key: inside the site's storage
+# folder for `sites/<site>/storage/` keys, and in front of any older key.
 PRIVATE_NAMESPACE = "private/"
 
 # Changing this renames every blob a resumed run looks for.
@@ -44,7 +45,22 @@ def blob_key(key_prefix: str, name: str, filename: str | None) -> str:
 
 def private_key(key: str) -> str:
     """The bucket key a private blob's `key` occupies: `S3Driver.object_key`."""
-    return PRIVATE_NAMESPACE + key
+    storage_folder, rest = _split_storage_folder(key)
+    return f"{storage_folder}{PRIVATE_NAMESPACE}{rest}"
+
+
+def key_of_private_object(object_key: str) -> str:
+    """`File Blob.key` of a private bucket key: the inverse of `private_key`."""
+    storage_folder, rest = _split_storage_folder(object_key)
+    return storage_folder + rest.removeprefix(PRIVATE_NAMESPACE)
+
+
+def _split_storage_folder(key: str) -> tuple[str, str]:
+    """`sites/<site>/storage/` and the rest of `key`, or nothing and all of an older key."""
+    parts = key.split("/", 3)
+    if len(parts) == 4 and parts[0] == "sites" and parts[2] == "storage":
+        return f"sites/{parts[1]}/storage/", parts[3]
+    return "", key
 
 
 def needs_multipart_copy(size: int) -> bool:

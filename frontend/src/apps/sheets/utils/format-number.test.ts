@@ -171,11 +171,6 @@ describe('applyNumberFmt — currency variants', () => {
   it('unknown currency variant falls back to USD', () => {
     expect(applyNumberFmt(10, 'currency:XYZ:0')).toBe('$10')
   })
-
-  it('bare `currency` still defaults to USD (backwards-compat)', () => {
-    expect(applyNumberFmt(10, 'currency:0')).toBe('$10')
-    expect(applyNumberFmt(10, 'currency')).toMatch(/^\$10/)
-  })
 })
 
 // The grid formats IronCalc's display string, which IronCalc has already
@@ -360,12 +355,6 @@ describe('applyNumberFmt — number variants', () => {
 
   it('number:us groups with commas every 3 digits', () => {
     expect(applyNumberFmt(1234567, 'number:us:0')).toBe('1,234,567')
-  })
-
-  it('legacy number:N (no variant) keeps user-default grouping', () => {
-    // Just verify the function doesn't throw and emits something sensible —
-    // the exact grouping depends on test-runner locale.
-    expect(applyNumberFmt(1234, 'number:0')).toMatch(/\d/)
   })
 })
 

@@ -11,6 +11,7 @@ import {
 import { presentationDoc, presentationId, viewOnly } from '@/apps/slides/stores/presentation'
 import { slides } from '@/apps/slides/stores/slide'
 import { forgetVisitedNode } from '@/apps/slides/stores/visitedCopies'
+import { bundledFontFiles } from '@/apps/slides/utils/bundledFonts'
 import { canonicalMediaKey } from '@/apps/slides/utils/canonicalMediaKey'
 import { loadedAssets } from '@/apps/slides/utils/loadedAssets'
 import { getAttachmentUrl } from '@/apps/slides/utils/mediaUploads'
@@ -193,6 +194,8 @@ async function fetchStartup(node, id, pinned, loadOptions, signal) {
   const requests = [
     ...startupUrls(node, id, loadOptions).map((url) => [url, 'api']),
     ...assets.flatMap((asset) => (!pinned.has(asset) ? [[asset, 'asset']] : [])),
+    // stable names, so a pinned one may be old; offline, text would draw in a fallback without them
+    ...bundledFontFiles.map((font) => [font, 'asset']),
   ]
   const { responses, missing } = await fetchAllCacheable(requests, signal)
   responses.set(`/d/${node}`, shell)

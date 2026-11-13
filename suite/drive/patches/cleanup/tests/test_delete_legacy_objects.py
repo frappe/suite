@@ -197,7 +197,7 @@ class TestConfirmedDelete(unittest.TestCase):
         self.path = Path(self.tmp.name)
 
     def test_keys_the_command_must_not_delete_are_reported_as_kept_with_a_reason(self):
-        # Every real canonical copy is under private/; this one is spelled
+        # Every real canonical copy is under a framework root; this one is spelled
         # elsewhere so the own-destination rule is exercised on its own.
         canonical = "drive/same.pdf"
         site = DeleteFixture(
@@ -206,6 +206,7 @@ class TestConfirmedDelete(unittest.TestCase):
                 copied("abc/referenced.pdf"),
                 copied("private/5e1f0c3a9b7d/k3x9q2m7pa/framework.pdf"),
                 copied("public/5e1f0c3a9b7d/k3x9q2m7pa/framework.pdf"),
+                copied("sites/acme/storage/private/k3x9q2m7pa/framework.pdf"),
                 copied(canonical, destination=canonical),
                 copied("abc/plain.pdf"),
             ),
@@ -216,7 +217,7 @@ class TestConfirmedDelete(unittest.TestCase):
         self.assertEqual(site.bucket.deleted_keys, ["abc/plain.pdf"])
         kept = report.totals().kept
         self.assertEqual(kept[REFERENCED_BY_BLOB], 1)
-        self.assertEqual(kept[UNDER_FRAMEWORK_ROOT], 2)
+        self.assertEqual(kept[UNDER_FRAMEWORK_ROOT], 3)
         self.assertEqual(kept[OWN_DESTINATION], 1)
         self.assertIn("abc/referenced.pdf", site.bucket.sizes)
         self.assertIn(canonical, site.bucket.sizes)

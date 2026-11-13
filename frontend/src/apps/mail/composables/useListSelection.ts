@@ -64,11 +64,31 @@ export const useListSelection = ({
     if (selected) selections.value = [...new Set([...selections.value, ...touched])]
     else selections.value = selections.value.filter((key) => !touched.has(key))
     lastSelected.value = keys
+    run = undefined
+  }
+
+  // Shift+arrow ticks the run from where it began (the anchor) to the row now under the cursor, as a
+  // file manager does: turning back toward the anchor unticks the rows the run no longer covers, one
+  // at a time, and whatever was ticked before the run began stays ticked. Toggling the rows stepped
+  // between instead lost the anchor, and turning round unticked two rows a step. A run ends when the
+  // cursor moves without Shift — the next one then starts from wherever it is — or on a tick by hand.
+  let run: { anchor: string[]; to: string[]; before: string[] } | undefined
+  const extendRange = (from: string[], to: string[]) => {
+    const all = keys()
+    const continues = run && from.length === run.to.length && from.every((k, i) => k === run!.to[i])
+    if (!run || !continues)
+      run = { anchor: from, to: from, before: selections.value.filter((k) => !from.includes(k)) }
+    const ends = [...run.anchor, ...to].map((key) => all.indexOf(key)).filter((i) => i >= 0)
+    const covered = ends.length ? all.slice(Math.min(...ends), Math.max(...ends) + 1) : []
+    selections.value = [...new Set([...run.before, ...covered])]
+    run.to = to
+    lastSelected.value = to
   }
 
   const toggleSelectAll = (selected: boolean) => {
     selections.value = selected ? [...keys()] : []
     lastSelected.value = undefined
+    run = undefined
   }
 
   const resetSelections = () => toggleSelectAll(false)
@@ -83,6 +103,7 @@ export const useListSelection = ({
     isAllSelected,
     mobileSelectionMode,
     toggleSelect,
+    extendRange,
     toggleSelectAll,
     resetSelections,
     isGroupSelected,

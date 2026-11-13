@@ -307,7 +307,7 @@ def write_conversion(app: str, node: str, old: OldBody, converted: convert.Conve
 def keep_old_version(node: str) -> None:
     """Keep the old body as a version before anything writes it."""
     try:
-        drive.take_version(node, kind="milestone", label=_("Before collaboration"))
+        drive.take_version(node, kind="milestone", label=_("Before collaboration"), activity=False)
     except drive.DriveStorageUnmeasured:
         raise ConversionPostponed from None
     except drive.DriveOverQuota:

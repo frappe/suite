@@ -12,7 +12,6 @@
       <div
         class="bg-surface-base mx-auto w-full px-4 py-8 sm:mt-6 sm:w-[26rem] sm:rounded-6 sm:px-8 sm:shadow-xl"
       >
-        <!-- An invitation names its organisation and inviter itself (InviteSetupView). -->
         <div v-if="title" class="mb-6 text-center">
           <span class="text-center text-lg-medium leading-5 tracking-tight">
             {{ title }}
@@ -45,8 +44,6 @@ const title = computed(() => {
     case 'mail-forgot-password':
     case 'mail-reset-password':
       return __('Reset Password')
-    case 'mail-invite-setup':
-      return ''
     default:
       return __('Create a new account')
   }

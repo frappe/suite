@@ -1,8 +1,6 @@
 import { AlignmentType, LevelFormat } from 'docx'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { pxToTwips, toDocxLine } from '@/apps/writer/utils/typography'
-
 import {
   buildListLevels,
   clampSpan,
@@ -252,17 +250,17 @@ describe('paragraphSpacing — paragraph-level style overrides document defaults
   })
   it('marginTop overrides "before"; marginBottom and line are untouched', () => {
     const result = paragraphSpacing({ style: { marginTop: '10px' } }, defaults)
-    expect(result.before).toBe(pxToTwips('10px'))
+    expect(result.before).toBe(150)
     expect(result.after).toBe(defaults.after)
     expect(result.line).toBe(defaults.line)
   })
   it('marginBottom overrides "after"', () => {
     const result = paragraphSpacing({ style: { marginBottom: '5px' } }, defaults)
-    expect(result.after).toBe(pxToTwips('5px'))
+    expect(result.after).toBe(75)
   })
   it('lineHeight overrides "line"', () => {
     const result = paragraphSpacing({ style: { lineHeight: '1.5' } }, defaults)
-    expect(result.line).toBe(toDocxLine('1.5'))
+    expect(result.line).toBe(300)
   })
   it('lineRule is always "auto", regardless of overrides', () => {
     expect(paragraphSpacing({ style: { marginTop: '1px' } }, defaults).lineRule).toBe('auto')

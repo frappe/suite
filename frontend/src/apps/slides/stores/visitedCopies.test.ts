@@ -1,4 +1,3 @@
-import { fromPartial } from '@total-typescript/shoehorn'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -787,7 +786,7 @@ describe('a picture added after the capture', () => {
   async function loadStores() {
     const { rememberVisit } = await loadStore()
     const pictures = await import('./visitedMedia')
-    localStorage.setItem('slides-caches-user', fromPartial<string>(state.user))
+    localStorage.setItem('slides-caches-user', String(state.user))
     showPresentation()
     return { rememberVisit, ...pictures }
   }

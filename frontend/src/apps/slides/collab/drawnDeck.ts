@@ -1,5 +1,5 @@
 // The presentation in the form the slide store holds and its components draw: one
-// flat element per box, stacked in `order`, with its rich text as HTML
+// flat old-format element per element, stacked in `order`, with its rich text as HTML
 
 import { generateHTML, getSchema } from '@tiptap/core'
 import { yXmlFragmentToProseMirrorRootNode } from '@tiptap/y-tiptap'
@@ -7,13 +7,17 @@ import type * as Y from 'yjs'
 
 import { extensions } from '@/apps/slides/stores/tiptapSetup'
 
-import { boxText, readSlides, TYPES_WITH_TEXT, type DeckItem } from './deck'
+import { elementText, readSlides, TYPES_WITH_TEXT, type DeckItem } from './deck'
 
-const schema = getSchema(extensions)
+export const deckSchema = getSchema(extensions)
 
 export interface DrawnSlide extends Record<string, unknown> {
   clientId: string
-  elements: Record<string, unknown>[]
+  elements: DrawnElement[]
+}
+
+interface DrawnElement extends Record<string, unknown> {
+  id: string
 }
 
 function connectorOf({ connectorStart, connectorEnd, route }: DeckItem) {
@@ -24,29 +28,40 @@ function connectorOf({ connectorStart, connectorEnd, route }: DeckItem) {
   return { connector: { start: connectorStart, end: connectorEnd, route } }
 }
 
-function textOf(doc: Y.Doc, { id, type }: DeckItem) {
-  const fragment = boxText(doc, id)
+function textOf(doc: Y.Doc, { id, type }: DeckItem, htmlById: Map<string, string>) {
+  const fragment = elementText(doc, id)
   if (typeof type !== 'string' || !TYPES_WITH_TEXT.has(type) || !fragment) {
     return {}
   }
 
-  const root = yXmlFragmentToProseMirrorRootNode(fragment, schema)
-  return { content: generateHTML(root.toJSON(), extensions) }
+  if (!htmlById.has(id)) {
+    const root = yXmlFragmentToProseMirrorRootNode(fragment, deckSchema)
+    htmlById.set(id, generateHTML(root.toJSON(), extensions))
+  }
+
+  return { content: htmlById.get(id) }
 }
 
-export function drawnSlides(doc: Y.Doc): DrawnSlide[] {
-  return readSlides(doc).map(({ id, boxes, ...slide }, at) => ({
+// `htmlById` keeps each element's HTML between calls; the caller drops the ones that change
+export function drawnSlides(doc: Y.Doc, htmlById = new Map<string, string>()): DrawnSlide[] {
+  return readSlides(doc).map(({ id, elements, ...slide }, at) => ({
     ...slide,
     clientId: id,
     // the thumbnail's number, as a row's idx gave it
     idx: at + 1,
-    elements: boxes.map((box, index) => {
-      const { frame, connectorStart: _start, connectorEnd: _end, route: _route, ...fields } = box
+    elements: elements.map((element, index) => {
+      const {
+        frame,
+        connectorStart: _start,
+        connectorEnd: _end,
+        route: _route,
+        ...fields
+      } = element
       return {
         ...fields,
         ...(frame && typeof frame === 'object' ? frame : undefined),
-        ...connectorOf(box),
-        ...textOf(doc, box),
+        ...connectorOf(element),
+        ...textOf(doc, element, htmlById),
         zIndex: index + 1,
       }
     }),

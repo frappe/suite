@@ -56,11 +56,13 @@
             <Button
               :variant="activeNumberFormatType === 'currency' || open ? 'subtle' : 'ghost'"
               size="sm"
-              :icon="currencyIcon"
+              icon-right="lucide-chevron-down"
               :aria-pressed="activeNumberFormatType === 'currency'"
               :aria-label="__('Currency: {0}', [activeCurrencySymbol])"
               :tooltip="__('Currency')"
-            />
+            >
+              <span class="size-4" :class="currencyIcon" aria-hidden="true" />
+            </Button>
           </template>
         </Dropdown>
         <Button
@@ -93,6 +95,30 @@
       <div class="sn-vr" />
 
       <div class="sn-group" :class="tools" :aria-disabled="readOnly || undefined">
+        <Dropdown :options="fontFamilyDropdownOptions">
+          <template #default="{ open }">
+            <Button
+              class="sn-phone-hide"
+              :variant="open ? 'subtle' : 'ghost'"
+              size="sm"
+              icon-right="lucide-chevron-down"
+              :aria-label="__('Font: {0}', [fontFamilyLabel])"
+              :tooltip="__('Font')"
+            >
+              <!-- Every name in one cell, so the select keeps the width of the
+                   longest and the tools after it never move. -->
+              <span class="sn-font-names">
+                <span
+                  v-for="font in fontFamilyDropdownOptions"
+                  :key="font.label"
+                  :class="font.label !== fontFamilyLabel && 'invisible'"
+                  :aria-hidden="font.label !== fontFamilyLabel"
+                  >{{ font.label }}</span
+                >
+              </span>
+            </Button>
+          </template>
+        </Dropdown>
         <!-- Font size as in Google: − and + step it by 1, the field takes a
              typed size (Enter), and clicking the field lists common sizes.
              A phone keeps only the field, for room. -->
@@ -163,6 +189,11 @@
             @click="emit('adjust-font-size', 1)"
           />
         </div>
+      </div>
+
+      <div class="sn-vr" />
+
+      <div class="sn-group" :class="tools" :aria-disabled="readOnly || undefined">
         <Button
           :aria-label="__('Bold')"
           :variant="activeFormat.bold ? 'subtle' : 'ghost'"
@@ -207,11 +238,14 @@
                 :aria-label="__('Text colour')"
                 @click="toggle()"
               >
-                <span class="lucide-type sn-swatch-glyph" aria-hidden="true" />
-                <span
-                  class="sn-swatch-underline"
-                  :style="{ background: activeFormat.color || 'var(--ink-gray-9)' }"
-                ></span>
+                <span class="sn-swatch">
+                  <span class="lucide-type sn-swatch-glyph" aria-hidden="true" />
+                  <span
+                    class="sn-swatch-underline"
+                    :style="{ background: activeFormat.color || 'var(--ink-gray-9)' }"
+                  ></span>
+                </span>
+                <span class="lucide-chevron-down size-3.5" aria-hidden="true" />
               </button>
             </Tooltip>
           </template>
@@ -233,11 +267,14 @@
                 :aria-label="__('Fill colour')"
                 @click="toggle()"
               >
-                <span class="lucide-paint-bucket sn-swatch-glyph" aria-hidden="true" />
-                <span
-                  class="sn-swatch-underline sn-swatch-fill"
-                  :style="{ background: activeFormat.backgroundColor || 'var(--surface-base)' }"
-                ></span>
+                <span class="sn-swatch">
+                  <span class="lucide-paint-bucket sn-swatch-glyph" aria-hidden="true" />
+                  <span
+                    class="sn-swatch-underline sn-swatch-fill"
+                    :style="{ background: activeFormat.backgroundColor || 'var(--surface-base)' }"
+                  ></span>
+                </span>
+                <span class="lucide-chevron-down size-3.5" aria-hidden="true" />
               </button>
             </Tooltip>
           </template>
@@ -253,9 +290,11 @@
               :aria-label="__('Borders')"
               :variant="open ? 'subtle' : 'ghost'"
               size="sm"
-              icon="lucide-grid-2x2"
+              icon-right="lucide-chevron-down"
               :tooltip="__('Borders')"
-            />
+            >
+              <span class="lucide-grid-2x2 size-4" aria-hidden="true" />
+            </Button>
           </template>
         </Dropdown>
         <Button
@@ -272,9 +311,11 @@
               :aria-label="__('Alignment')"
               :variant="open ? 'subtle' : 'ghost'"
               size="sm"
-              :icon="hAlignIcon"
+              icon-right="lucide-chevron-down"
               :tooltip="__('Alignment')"
-            />
+            >
+              <span class="size-4" :class="hAlignIcon" aria-hidden="true" />
+            </Button>
           </template>
         </Dropdown>
         <Dropdown :options="textWrapDropdownOptions">
@@ -283,11 +324,46 @@
               :aria-label="__('Text wrapping')"
               :variant="open ? 'subtle' : 'ghost'"
               size="sm"
-              :icon="textWrapIcon"
+              icon-right="lucide-chevron-down"
               :tooltip="__('Text wrapping')"
-            />
+            >
+              <span class="size-4" :class="textWrapIcon" aria-hidden="true" />
+            </Button>
           </template>
         </Dropdown>
+      </div>
+
+      <!-- All three are in the Insert menu. A viewer who can comment still can,
+           so this group is not inert for viewers as the others are. -->
+      <div class="sn-vr sn-insert" />
+      <div class="sn-group sn-insert">
+        <Button
+          :aria-label="__('Link')"
+          variant="ghost"
+          size="sm"
+          icon="lucide-link"
+          :tooltip="__('Link')"
+          :disabled="readOnly"
+          @click="emit('insert-link')"
+        />
+        <Button
+          v-if="openComments"
+          :aria-label="__('Comment')"
+          variant="ghost"
+          size="sm"
+          icon="lucide-message-square-plus"
+          :tooltip="__('Comment')"
+          @click="openComments()"
+        />
+        <Button
+          :aria-label="__('Chart')"
+          variant="ghost"
+          size="sm"
+          icon="lucide-chart-bar"
+          :tooltip="__('Chart')"
+          :disabled="readOnly"
+          @click="emit('insert-chart')"
+        />
       </div>
 
       <!-- Then this one: both are in the Data menu. -->
@@ -379,6 +455,10 @@ const props = defineProps<{
   borderDropdownOptions: DropdownOptions
   /** The menu bar's Format menu, opened by the Format button. */
   formatMenuOptions: DropdownOptions
+  fontFamilyDropdownOptions: { label: string; selected?: boolean; onClick: () => void }[]
+  fontFamilyLabel: string
+  /** Opens the surface's comments panel; the editor alone has none. */
+  openComments?: (() => void) | null
 }>()
 const emit = defineEmits<{
   'number-format': [type: 'percentage']
@@ -393,6 +473,8 @@ const emit = defineEmits<{
   'update:showSortFilter': [on: boolean]
   merge: []
   sort: []
+  'insert-link': []
+  'insert-chart': []
 }>()
 
 const tools = computed(() => ({ 'sn-tools--readonly': props.readOnly }))
@@ -443,37 +525,74 @@ const currencyIcon = computed(
 </script>
 
 <style scoped>
-/* ── Row 2 · tools (40 px) ───────────────────────────────────────────────── */
+/* ── Row 2 · tools (36 px) ───────────────────────────────────────────────── */
+/* The left padding starts the undo icon on the file icon's and the cell
+   name's left edge. */
 .sn-toolbar {
   container: sn-toolbar / inline-size;
   display: flex;
   align-items: center;
-  gap: 8px;
-  height: 40px;
-  padding: 0 8px;
-  border-bottom: 1px solid var(--outline-gray-2);
+  gap: 2px;
+  height: 36px;
+  padding: 0 12px 0 9px;
   background: var(--sn-bar-bg);
   flex-shrink: 0;
 }
 /* The tools scroll instead of clipping. Menus, tooltips and the colour
-   popovers are portalled, so the scroll box does not clip them. */
+   popovers are portalled, so the scroll box does not clip them. They hang from
+   the top, so the scrollbar's height can't nudge them off the row's centre. */
 .sn-tools-scroll {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  align-items: flex-start;
+  gap: 2px;
   min-width: 0;
   height: 100%;
+  padding-top: 4px;
   overflow-x: auto;
   overflow-y: hidden;
-  /* Thin but visible, so a mouse user can tell more tools are there. */
-  scrollbar-width: thin;
+}
+.sn-tools-scroll > .sn-vr {
+  margin-top: 4px;
+}
+/* A 4px thumb fits under the 28px tools, so a mouse user can tell more are
+   there. Chrome ignores these while scrollbar-width is set; the app sets it to
+   thin everywhere, and a thin bar would not fit, so Firefox goes without. */
+@supports selector(::-webkit-scrollbar) {
+  .sn-tools-scroll {
+    scrollbar-width: auto;
+  }
+}
+@supports not selector(::-webkit-scrollbar) {
+  .sn-tools-scroll {
+    scrollbar-width: none;
+  }
+}
+.sn-tools-scroll::-webkit-scrollbar {
+  height: 4px;
+}
+.sn-tools-scroll::-webkit-scrollbar-button {
+  display: none;
+}
+.sn-tools-scroll::-webkit-scrollbar-thumb {
+  border-radius: 2px;
+  background: var(--surface-gray-4);
 }
 /* Hover and "on" fills follow the bar colours (SheetEditor.css --sn-bar-*);
    solid buttons keep their own. */
-.sn-toolbar :deep(button:not(:disabled, .bg-surface-gray-10):hover),
+.sn-toolbar :deep(button:not(:disabled, .bg-surface-gray-10):hover) {
+  background: var(--sn-bar-hover);
+}
 .sn-toolbar :deep(button[data-state='open']),
 .sn-toolbar :deep(button[aria-pressed='true']) {
-  background: var(--sn-bar-hover);
+  background: var(--sn-bar-on);
+}
+/* A tool that opens a menu: Writer's select, with its smaller chevron. */
+.sn-toolbar :deep(button:has(> .lucide-chevron-down)) {
+  gap: 4px;
+}
+.sn-toolbar :deep(button > .lucide-chevron-down) {
+  width: 14px;
+  height: 14px;
 }
 .sn-toolbar :deep(button[aria-pressed='true']) {
   box-shadow: inset 0 0 0 1px var(--sn-bar-on-edge);
@@ -489,12 +608,12 @@ const currencyIcon = computed(
   opacity: 0.45;
   pointer-events: none;
 }
-/* Groups sit 8 px apart with a hairline between them, buttons 2 px apart
-   inside one: the gap alone says where a group ends. */
+/* Writer's divider: tools 2 px apart, 6 px either side of the hairline. */
 .sn-vr {
   width: 1px;
-  height: 18px;
-  background: var(--outline-gray-2);
+  height: 20px;
+  margin: 0 4px;
+  background: var(--surface-gray-3);
   flex-shrink: 0;
 }
 
@@ -503,10 +622,11 @@ const currencyIcon = computed(
   display: none;
   margin-left: auto;
 }
-/* Overflow only when the bar is narrow: the layout tools go first, then
-   sort and filter. Nothing is lost, the Format and Data menus hold both. */
+/* Overflow only when the bar is narrow: the layout and insert tools go first,
+   then sort and filter. Nothing is lost, the menus hold all of them. */
 @container sn-toolbar (max-width: 800px) {
-  .sn-layout {
+  .sn-layout,
+  .sn-insert {
     display: none;
   }
   .sn-format-group {
@@ -528,6 +648,16 @@ const currencyIcon = computed(
   .sn-data {
     display: none;
   }
+}
+
+/* Every font name in one grid cell; only the current one is visible. */
+.sn-font-names {
+  display: grid;
+  justify-items: start;
+}
+.sn-font-names > * {
+  grid-area: 1 / 1;
+  white-space: nowrap;
 }
 
 /* − field +. flex-shrink:0 — the input has no min-content width, so a
@@ -571,28 +701,35 @@ const currencyIcon = computed(
   margin-left: 4px;
 }
 
-/* Colour buttons: the Lucide glyph over a bar in the current colour. They
-   open the ColorPicker popover. */
+/* Colour buttons: the Lucide glyph over a bar in the current colour, then a
+   chevron. They open the ColorPicker popover. */
 .sn-swatch-btn {
   position: relative;
   height: 28px;
-  width: 28px;
-  border-radius: 6px;
+  border-radius: 8px;
   display: inline-flex;
-  flex-direction: column;
+  flex-shrink: 0;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   border: 0;
-  gap: 1px;
+  gap: 4px;
   transition: background-color 0.12s;
   background: transparent;
-  padding: 0;
+  padding: 0 8px;
   color: var(--ink-gray-7);
 }
-.sn-swatch-btn:hover,
-.sn-swatch-btn.is-open {
+.sn-swatch-btn:hover {
   background: var(--sn-bar-hover);
+}
+.sn-swatch-btn.is-open {
+  background: var(--sn-bar-on);
+}
+.sn-swatch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
 }
 .sn-swatch-btn:focus-visible {
   outline: 2px solid var(--outline-gray-3);

@@ -39,10 +39,10 @@ export const COLORS = {
     return _token('--surface-base', '#FFFFFF')
   },
   get gridLine() {
-    return _token('--outline-gray-2', '#E2E2E2')
+    return _token('--outline-gray-1', '#EDEDED')
   },
   get headerBg() {
-    return _token('--surface-sidebar', '#F8F8F8')
+    return _token('--surface-base', '#FFFFFF')
   },
   get headerText() {
     return _token('--ink-gray-5', '#7C7C7C')
@@ -77,17 +77,17 @@ export const COLORS = {
     return _token('--ink-gray-9', '#171717')
   },
   get activeHeader() {
-    return _token('--surface-gray-4', '#E2E2E2')
+    return _token('--surface-gray-2', '#F3F3F3')
   },
   // An active filter's range outline (Google-Sheets-style green).
   get filterOutline() {
     return _token('--ink-green-3', '#15803D')
   },
   // Separators between selected headers: one step past the tint on the same
-  // surface scale, so they show on it in both themes. gridLine is the tint's
-  // own grey in light mode, and --outline-gray-3 is in dark mode.
+  // surface scale, so they show on it in both themes. In light mode that is
+  // gridLine's own grey; in dark mode gridLine would sit darker than the tint.
   get activeHeaderLine() {
-    return _token('--surface-gray-5', '#C7C7C7')
+    return _token('--surface-gray-3', '#EDEDED')
   },
   get freezeLine() {
     return _token('--ink-gray-7', '#525252')

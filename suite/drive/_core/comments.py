@@ -42,6 +42,7 @@ _BRACKET_MENTION = re.compile(r"@\[([^\]\r\n]{1,140})\]")
 _EMAIL_MENTION = re.compile(r"(?<![\w@])@([A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})")
 _DATA_MENTION = re.compile(r"data-(?:id|user)=[\"']([^\"'\r\n]{1,140})[\"']")
 _CLIENT_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
+_LIST_START = re.compile(r"[\t\n\f\r ]*([-+]?)0*([0-9]{1,10})(?![0-9])")
 # The most a comment holds, in UTF-8 bytes, as the old Text column did
 MAX_COMMENT_BYTES = 65_535
 # The characters of a comment its activity keeps, for the notification to quote
@@ -911,8 +912,15 @@ def is_mention(tag: Tag) -> bool:
     return tag.name == "span" and marked and bool(tag.get("data-id"))
 
 
+def list_start(tag: Tag) -> int:
+    """Answer the number a list starts at, read as a browser reads `start`: 1 for no number or one past 32 bits."""
+    found = _LIST_START.match(text_attribute(tag, "start") or "")
+    start = int(found[1] + found[2]) if found else 1
+    return start if -(2**31) <= start < 2**31 else 1
+
+
 def append_list_items(tag: Tag, parts: list[str], mentions: list[str]) -> None:
-    for number, item in enumerate(tag.find_all("li", recursive=False), 1):
+    for number, item in enumerate(tag.find_all("li", recursive=False), list_start(tag)):
         marker = "- "
         if tag.name == "ol":
             marker = f"{number}. "

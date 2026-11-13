@@ -1,16 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { isViewRoute, VIEW_ROUTES } from './mobileView'
+import { isViewRoute } from './mobileView'
 
 describe('isViewRoute', () => {
   it('is true for every view, on either device', () => {
-    for (const name of VIEW_ROUTES) expect(isViewRoute(name)).toBe(true)
-    expect(VIEW_ROUTES).toEqual([
-      'calendar-day',
-      'calendar-week',
-      'calendar-month',
-      'calendar-agenda',
-    ])
+    for (const name of ['calendar-day', 'calendar-week', 'calendar-month', 'calendar-agenda'])
+      expect(isViewRoute(name)).toBe(true)
   })
 
   // The phone rewrites the route to the view it is showing whenever the view moves. On a

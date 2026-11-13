@@ -78,13 +78,14 @@ RESULT_PREFIX = "drive-build-dry-run"
 ROWS_LISTED = 50
 
 # What Build does with a `DocShare` row, by `share_doctype`. Sheet rows are
-# step 6 (`grants`); the two content doctypes are step 10
+# step 6 (`grants`); Writer Document rows are step 10
 # (`content._convert_content_shares`), which drops every other governed
-# doctype because history and child rows carry no node.
+# doctype because history and child rows carry no node and a Presentation's
+# DocShare never opened anything
 DOCSHARE_FATES = {
     "Sheet": "rewritten as grants on the sheet's node (step 6)",
     "Writer Document": "rewritten as grants on the document's node (step 10)",
-    "Presentation": "rewritten as grants on the deck's node (step 10)",
+    "Presentation": "dropped (step 10): the old check read the File's rights, never DocShare",
 }
 DOCSHARE_DROPPED = "dropped (step 10): history or a child row, which has no node"
 

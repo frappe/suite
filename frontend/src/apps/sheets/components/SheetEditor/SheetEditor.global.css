@@ -1,17 +1,38 @@
-/* Unscoped: frappe-ui's Dropdown teleports its menu to document.body, so
-   a scoped rule never reaches it. This caps the menu height (and the
-   inner content body Reka renders inside it) so long lists like the
-   number-format picker stay scrollable instead of falling off-screen.
-   frappe-ui beta.3 named the teleported menu `.dropdown-content`; beta.25
+/* Unscoped: frappe-ui's Dropdown teleports its menu to document.body, so a
+   scoped rule never reaches it. A menu may use the room the window has for
+   it (reka measures that for the popper), so it scrolls only when it doesn't
+   fit. frappe-ui beta.3 named the teleported menu `.dropdown-content`; beta.25
    (the version Suite ships) renamed it to `.menu-content` /
-   `[data-reka-menu-content]`, so target every marker or the cap silently
-   stops matching after a frappe-ui bump and the menu clips off-screen. */
-.dropdown-content,
-.dropdown-content [data-slot='content-body'],
-.menu-content,
-[data-reka-menu-content] {
-  max-height: min(60vh, 480px);
+   `[data-reka-menu-content]`, so target every marker or the limit silently
+   stops matching after a frappe-ui bump and the menu clips off-screen.
+   `body:has(.sn-root)` keeps it off other apps' menus. */
+body:has(.sn-root) .dropdown-content,
+body:has(.sn-root) .dropdown-content [data-slot='content-body'],
+body:has(.sn-root) .menu-content,
+body:has(.sn-root) [data-reka-menu-content] {
+  max-height: var(--reka-popper-available-height);
   overflow-y: auto;
+}
+/* A menu that does scroll gets a slim thumb, not the system bar and its arrows.
+   Chrome ignores these while scrollbar-width is set, and the app sets it to
+   thin everywhere, so a panel resets it. Firefox has no such pseudo-elements. */
+@supports selector(::-webkit-scrollbar) {
+  body:has(.sn-root) .menu-content {
+    scrollbar-width: auto;
+  }
+}
+body:has(.sn-root) .menu-content::-webkit-scrollbar {
+  width: 6px;
+}
+body:has(.sn-root) .menu-content::-webkit-scrollbar-button {
+  display: none;
+}
+body:has(.sn-root) .menu-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+body:has(.sn-root) .menu-content::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: var(--surface-gray-4);
 }
 /* reka-ui teleports the popover to <body> (frappe-ui default z-index:50) with
    no marker we can target, so the slicer's column menu rendered behind the

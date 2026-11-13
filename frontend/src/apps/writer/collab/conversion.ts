@@ -53,6 +53,7 @@ import {
   listedComments,
   markedIds,
   markOldThreads,
+  oldAnnotationIds,
   oldCommentAnchors,
   oldRanges,
   rangeAnchors,
@@ -66,6 +67,7 @@ import {
   isOldLayout,
   isOldMediaMappable,
   oldLayout,
+  readSiteVideoFrames,
 } from '@/apps/writer/collab/old-media'
 import {
   breaksStyle,
@@ -75,6 +77,7 @@ import {
   mapOldCellStyles,
   mapOldColours,
   moveSpanHighlights,
+  readHtmlCellStyles,
   readOldHighlights,
   readOldTextColours,
   repairHtmlCellSpans,
@@ -91,13 +94,16 @@ import { isSameColour } from '@/apps/writer/utils/css-colour'
 
 const extensions = writerSchema()
 const schema = getSchema(extensions)
+const LINK_ATTRIBUTES = new Set(['href', 'target', 'rel'])
 
 /**
  * What the conversion couldn't carry over: Drive's table of contents, rebuilt from the headings, a
  * part holding nothing, a change Yjs held back, the words of an old comment's copy away from its
  * anchor, the place of an old comment whose words are gone, a Yjs body holding nothing, read past
- * for the HTML, a property or attribute on the noise list, or the count of table cell spans set
- * to the span a browser drew.
+ * for the HTML, a property or attribute on the noise list, the count of table cell spans set
+ * to the span a browser drew, an old annotations list no screen draws, its threads kept by their
+ * comment marks, the count of links with an empty address, their words kept, or the count of
+ * table cell heights.
  */
 export type Dropped =
   | { kind: 'toc-hint' }
@@ -108,6 +114,9 @@ export type Dropped =
   | { kind: 'empty-yjs' }
   | { kind: 'noise'; name: string }
   | { kind: 'table-span'; count: number }
+  | { kind: 'old-annotations'; ids: string[] }
+  | { kind: 'empty-link'; count: number }
+  | { kind: 'cell-height'; count: number }
 
 /** A thread Drive kept only in its 2023 comment marks, under a key its far copies name */
 export interface OldThread {
@@ -368,8 +377,24 @@ function droppedFloats(body: XmlFragment): Dropped[] {
   return [{ kind: 'noise', name: 'dataFloat' }]
 }
 
-// The check compares the old body with the fresh one as Yjs holds both. Between them:
-// convertOldMedia, checked on its own by where the media points and by old media holding only what
+function droppedCount(kind: 'empty-link' | 'cell-height', count: number): Dropped[] {
+  if (!count) {
+    return []
+  }
+
+  return [{ kind, count }]
+}
+
+function droppedAnnotations(ids: string[] | null): Dropped[] {
+  if (!ids?.length) {
+    return []
+  }
+
+  return [{ kind: 'old-annotations', ids }]
+}
+
+// The check compares the old body with the fresh one as Yjs holds both. Between them: an old frame
+// of a video on the site, read as that video; convertOldMedia, checked on its own by where the media points and by old media holding only what
 // the old editor wrote; a float beside an alignment, dropped (recorded); Drive's defaults, dropped;
 // a mark stored as true where the mark holds no attributes, read as that mark; frappe-ui's upload
 // id on media, dropped (recorded); Drive's mention author and type, dropped (recorded); an atom key
@@ -382,7 +407,9 @@ function droppedFloats(body: XmlFragment): Dropped[] {
 function fromYjs(old: Doc) {
   const body = old.getXmlFragment(BODY_FIELD)
   const threads = markOldThreads(body, schema)
-  const hasUnreadableThreads = !threads || unreadableThreads(old).length > 0
+  const annotations = oldAnnotationIds(old, schema)
+  const hasUnreadableThreads = !threads || !annotations || unreadableThreads(old).length > 0
+  readSiteVideoFrames(body)
   const media = mediaSources(body)
   const isOldMediaKept = isOldMediaMappable(body)
   const floats = droppedFloats(body)
@@ -402,7 +429,11 @@ function fromYjs(old: Doc) {
   const source = inventory(body, new Set(setAside))
   return {
     node,
-    dropped: [...setAside.map(droppedPart), ...pendingDrop(old)],
+    dropped: [
+      ...setAside.map(droppedPart),
+      ...pendingDrop(old),
+      ...droppedAnnotations(annotations),
+    ],
     hasUnreadableThreads,
     threads: threads?.threads ?? [],
     check: (fresh: XmlFragment): Dropped[] | null => {
@@ -577,6 +608,19 @@ function droppedHtmlFloats(body: HTMLElement) {
 // The HTML the editor reads, its old media mapped and its colours and empty fonts read in place as
 // on the Yjs path; written back from the parse only when that, moving a span's background or the
 // caller changed it. Text goes first, so a mark whose text colour is see-through can unwrap
+// A link with an empty address goes nowhere the editor can hold, so it unwraps to its words; one
+// holding anything more than a link does is left to fail the check
+function dropEmptyLinks(body: HTMLElement) {
+  const links = [...body.querySelectorAll('a[href=""]')].filter((link) =>
+    [...link.attributes].every(({ name }) => LINK_ATTRIBUTES.has(name)),
+  )
+  for (const link of links) {
+    link.replaceWith(...link.childNodes)
+  }
+
+  return links.length
+}
+
 function readableHtml(body: HTMLElement, html: string, isRewritten: boolean) {
   const reads = [readOldTextColours(body), readOldHighlights(body), dropEmptyFonts(body)]
   const isMapped = mapOldMedia(body)
@@ -760,11 +804,18 @@ function fromHtml(html: string) {
   const isFontRead = dropUnclosedFonts(body)
   const mentionTypes = readOldMentions(body)
   const repairedSpans = repairHtmlCellSpans(body)
+  const emptyLinks = dropEmptyLinks(body)
   // Before the defaults go, since dropping one rewrites the style text from the parse
   const raw = rawStyles(body)
   const floats = droppedHtmlFloats(body)
+  const cells = readHtmlCellStyles(body)
   const isRewritten =
-    !!threads?.threads.length || isFontRead || mentionTypes.length > 0 || repairedSpans > 0
+    cells.isRead ||
+    !!threads?.threads.length ||
+    isFontRead ||
+    mentionTypes.length > 0 ||
+    repairedSpans > 0 ||
+    emptyLinks > 0
   const node = schema.nodeFromJSON(generateJSON(readableHtml(body, html, isRewritten), extensions))
   const uploadMarks = dropUploadMarks(body)
   const mentionAuthors = dropMentionAuthors(body)
@@ -797,6 +848,8 @@ function fromHtml(html: string) {
         ...names.map((name): Dropped => ({ kind: 'noise', name })),
         ...droppedImages(threads),
         ...droppedSpans(repairedSpans),
+        ...droppedCount('empty-link', emptyLinks),
+        ...droppedCount('cell-height', cells.heights),
       ]
     },
   }
@@ -809,7 +862,10 @@ function fromHtmlOverYjs(old: Doc, html: string) {
   return {
     ...parsed,
     dropped: [{ kind: 'empty-yjs' } as const, ...pendingDrop(old)],
-    hasUnreadableThreads: parsed.hasUnreadableThreads || unreadableThreads(old).length > 0,
+    hasUnreadableThreads:
+      parsed.hasUnreadableThreads ||
+      !oldAnnotationIds(old, schema) ||
+      unreadableThreads(old).length > 0,
   }
 }
 

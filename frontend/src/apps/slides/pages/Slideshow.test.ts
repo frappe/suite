@@ -65,6 +65,17 @@ afterEach(() => {
 })
 
 describe('presenting', () => {
+  it('hides toasts only while the slideshow is up', async () => {
+    await present()
+
+    expect(document.body.classList.contains('slides-presenting')).toBe(true)
+
+    app!.unmount()
+    app = null
+
+    expect(document.body.classList.contains('slides-presenting')).toBe(false)
+  })
+
   it('takes the keyboard from the control that started it', async () => {
     const trigger = await present()
 

@@ -3,6 +3,7 @@ import { ref } from 'vue'
 
 import {
   cache,
+  DECLARED_FONTS,
   deletedCaches,
   FakeCache,
   fetched,
@@ -10,6 +11,7 @@ import {
   presentationDoc,
   presentationId,
   recordedKeys,
+  recordOf,
   responses,
   SHELL_HTML,
   shellResponse,
@@ -750,6 +752,26 @@ describe('a pin and the visited copies', () => {
     await removeNodeOfflineCopy('n1')
 
     expect(seeded.has('/d/n1')).toBe(false)
+  })
+
+  it('stores every font the slides declare before it reports the pin saved', async () => {
+    const result = await saveOfflineCopy('p1')
+
+    expect(result?.ok).toBe(true)
+    expect(DECLARED_FONTS.length).toBeGreaterThan(0)
+    expect(DECLARED_FONTS.filter((url) => !cache.has(url))).toEqual([])
+    expect(DECLARED_FONTS.filter((url) => !recordOf('p1').keys.includes(url))).toEqual([])
+  })
+
+  it('fails a pin whose font could not be stored', async () => {
+    const original = fetch
+    const font = '/assets/suite/slides/fonts/Anton/Anton-Regular-latin.woff2'
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) =>
+      url === font ? new Response('', { status: 503 }) : original(url, init),
+    )
+
+    await expect(saveOfflineCopy('p1')).rejects.toThrow(font)
+    expect(localStorage.getItem('slides-offline-copy:p1')).toBeNull()
   })
 
   it('marks what a pin fetches, so the worker stays out of it', async () => {

@@ -43,6 +43,7 @@ class Subscription(TypedDict):
     id: str
     name: str
     device_client_id: str
+    this_site: bool
     expires: str | None
     types: str
     creation: str
