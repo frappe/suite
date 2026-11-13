@@ -349,7 +349,7 @@ import { useClearReturned } from '@/apps/mail/composables/useClearReturned'
 import { closeComposeWindowFor } from '@/apps/mail/composables/useComposeWindow'
 import { tabName, useInboxTabs } from '@/apps/mail/composables/useInboxTabs'
 import { useKeptRead } from '@/apps/mail/composables/useKeptRead'
-import { useListRows } from '@/apps/mail/composables/useListRows'
+import { useListRows, type NavRow } from '@/apps/mail/composables/useListRows'
 import { useListSelection } from '@/apps/mail/composables/useListSelection'
 import { useMailRemoval } from '@/apps/mail/composables/useMailRemoval'
 import { PAGE_LENGTH, usePaginatedThreads } from '@/apps/mail/composables/usePaginatedThreads'
@@ -444,6 +444,13 @@ const isOutgoingFolder = computed(() => folder === 'sent' || folder === 'drafts'
 // around it — the epochs, the refresh merge, the sentinel, the edge crossing. Rows are keyed by
 // account + thread_id since the same thread_id can recur across accounts in this merged view.
 const threadKey = (thread: Thread) => `${thread.account}:${thread.thread_id}`
+// The threads a row of the list stands for, by key: a stack's run, a day header's day.
+const rowKeys = (row: NavRow): string[] =>
+  row.type === 'thread'
+    ? [threadKey(row.thread)]
+    : row.type === 'stack'
+      ? row.threads.map(threadKey)
+      : (getGroupThreads(row.dateKey) ?? [])
 
 /**
  * The open thread's key, from the two route params that name it.
@@ -636,6 +643,7 @@ const {
   isAllSelected,
   mobileSelectionMode,
   toggleSelect,
+  extendRange,
   toggleSelectAll,
   resetSelections,
   isGroupSelected,
@@ -763,11 +771,12 @@ const handleKeyDown = (e: KeyboardEvent) => {
   }
   if (shouldIgnoreKeypress(e)) return
 
-  // Escape backs out of the open thread, then clears the selection, then the cursor.
+  // Escape clears the selection, then backs out of the open thread, then lets go of the cursor, as
+  // in a single account's list.
   if (key === 'escape') {
     e.preventDefault()
-    if (threadID) return closeThread()
     if (selections.value.length) return resetSelections()
+    if (threadID) return closeThread()
     focusedRowKey.value = undefined
     return
   }
@@ -795,13 +804,24 @@ const handleKeyDown = (e: KeyboardEvent) => {
   if (!isNavigationKey(key)) return
   e.preventDefault()
   const offset = navigationOffset(key)
-  if (threadID) return stepOpenThread(offset)
+  const from = focusedRow.value ? rowKeys(focusedRow.value) : []
+  if (threadID) {
+    const to = threadByOffset(offset)
+    stepOpenThread(offset)
+    if (e.shiftKey && to) extendRange(from.length ? from : [to], [to])
+    return
+  }
 
   // With no thread open the keys move the cursor without opening anything, as the mailbox list
-  // does — Enter opens what the marker is on, or folds the day.
+  // does — Enter opens what the marker is on, or folds the day. Shift ticks the run from where it
+  // began, as there (see extendRange).
   const rows = navigableRows.value
   const next = stepFromKey(rows, focusedRowKey.value, offset)
-  if (next) return focusRow(next)
+  if (next) {
+    focusRow(next)
+    if (e.shiftKey) extendRange(from.length ? from : rowKeys(next), rowKeys(next))
+    return
+  }
   // Off the bottom of what is loaded: load the next window and take the cursor into it. Only from a
   // row the cursor is actually on — a lost cursor restarts from the top instead (see stepFromKey).
   if (hasCursor(rows, focusedRowKey.value)) loadMoreThenOpenEdge(offset, 'focus')
