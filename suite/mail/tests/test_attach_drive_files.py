@@ -16,8 +16,17 @@ from suite.suite_core.doctype.rate_limit.rate_limit import get_rate_limits
 OWNER = "drive-attach-owner@example.com"
 OUTSIDER = "drive-attach-outsider@example.com"
 
-# The smallest well-formed PDF: Drive knows it as a PDF from its bytes, whatever its title says.
-PDF = b"%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n"
+
+def _pdf() -> bytes:
+    """A one-page PDF. Drive knows it as a PDF from its bytes, whatever its title says, and it is
+    whole enough for the JavaScript scan a PDF gets when it is saved as a File."""
+
+    from pypdf import PdfWriter
+
+    writer, out = PdfWriter(), io.BytesIO()
+    writer.add_blank_page(width=72, height=72)
+    writer.write(out)
+    return out.getvalue()
 
 
 def _ensure_user(email: str) -> None:
@@ -71,7 +80,7 @@ class TestAttachDriveFiles(IntegrationTestCase):
         # The mail's attachment type is read off the file name, so "Invoice" alone would go out as
         # an unknown type.
         title = _unique("Invoice October")
-        node = self._in_drive(title, PDF)
+        node = self._in_drive(title, _pdf())
 
         attached = mail.attach_drive_files([node])
 
