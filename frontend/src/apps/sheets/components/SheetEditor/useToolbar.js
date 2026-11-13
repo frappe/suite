@@ -1,7 +1,6 @@
 import { ref } from 'vue'
 
 import { formatScope } from '../../engine/format-scope.js'
-import { numFmtFromEngine } from '../../engine/xlsx-io.js'
 
 // getGrid is a getter fn () => grid so the toolbar always has the live reference.
 // markDirty (optional) is called after every mutation so the SheetEditor can
@@ -113,10 +112,9 @@ export function useToolbar({
 
   // A typed 50%, $1.50 or date is formatted by IronCalc itself, not the side
   // store. Clear formatting clears that too (so 50% shows 0.5, as in Google
-  // Sheets, and a later typed 20% shows 20%), before the op is pushed, which
-  // commits the action: its plain inputs are then in the same undo step.
-  // Undo only restores the side store, so IronCalc's format is first copied
-  // there as ours: the op's before-state then brings the look back. Read for
+  // Sheets, and a later typed 20% shows 20%) by storing the plain value as the
+  // input. That happens before the op is pushed, which commits the action, so
+  // one undo puts the typed input and the side store back. Read for
   // selections up to 10,000 cells.
   async function clearFormatting() {
     const sn = currentSheet.value
@@ -125,11 +123,6 @@ export function useToolbar({
     const engineFmts = small && readEngineFormats ? await readEngineFormats(sel, sn) : {}
     const engineIds = Object.keys(engineFmts)
     if (engineIds.length) await clearEngineFormats?.(engineIds, sn)
-    for (const id of engineIds) {
-      const ours = numFmtFromEngine(engineFmts[id], { dates: true })
-      if (ours && !formats.get(id, sn).numberFormat)
-        formats.applyToRange([id], { numberFormat: ours }, sn)
-    }
     _formatOp('clearFormatting', [], {
       cols: (cols, sn) => formats.clearColumns(cols, sn),
       rows: (rows, sn) => formats.clearRows(rows, sn),
