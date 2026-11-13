@@ -24,7 +24,7 @@ export async function persistently(cleanup: () => Promise<unknown>): Promise<voi
 }
 
 /** Calls a whitelisted method and returns its `message`. */
-export async function callMethod<T>(api: APIRequestContext, method: string, body: object): Promise<T> {
+export async function callMethod<T>(api: APIRequestContext, method: string, body: Record<string, unknown>): Promise<T> {
 	const response = await api.post(`/api/method/${method}`, { data: body });
 	if (!response.ok()) throw new Error(`${method} answered ${response.status()}: ${await response.text()}`);
 	// SAFETY: every whitelisted method answers `{ message }`; the caller names the message's type.

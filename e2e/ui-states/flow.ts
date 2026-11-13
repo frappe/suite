@@ -46,7 +46,7 @@ export function defineFlow<TEvent extends EventObject, TScene extends BaseScene 
 	flow: Flow<TEvent, TScene>,
 ): AnyFlow {
 	// SAFETY: a flow only ever receives the scene its own `open` made, or the Drive scene when it has no `open`.
-	return flow as unknown as AnyFlow;
+	return flow as AnyFlow;
 }
 
 /** XState's `setup`, with the machine's events typed as `TEvent`. */

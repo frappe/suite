@@ -326,7 +326,9 @@ async function quietly(scene: BaseScene, method: string, data: Record<string, un
 async function sweep(scene: BaseScene): Promise<void> {
 	// SAFETY: these methods answer `{ items: [{ id | name }] }`.
 	const domains = (await call(scene, "get_domains", { page_length: 100 })) as { items: { name: string }[] };
+	// SAFETY: as above, keyed by `id`.
 	const groups = (await call(scene, "get_groups", { page_length: 100 })) as { items: { id: string }[] };
+	// SAFETY: as above, keyed by `id`.
 	const lists = (await call(scene, "get_mailing_lists", { page_length: 100 })) as { items: { id: string }[] };
 	const ours = /^(harbor|archive|quay)-[0-9a-z]+\.test$/;
 	for (const group of groups.items.filter((item) => /^frontdesk-[0-9a-z]+@/.test(item.id)))

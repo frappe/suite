@@ -53,7 +53,7 @@ export const GUEST_NAME = "Dana Wright";
 const shapingOff = perScene<boolean>("SFU shaping");
 const meetBrowser = perScene<Browser>("Meet browser");
 
-function base64Url(value: object): string {
+function base64Url(value: Record<string, unknown>): string {
 	return Buffer.from(JSON.stringify(value)).toString("base64url");
 }
 
@@ -81,7 +81,7 @@ function meetingIdOf(url: string, body: string | null): string {
 /** What `_build_sfu_connection_details` answers for a signed-in person. */
 function memberDetails(person: Person, meetingId: string, isHost: boolean, scope: "full" | "presence-preview") {
 	const now = Math.floor(Date.now() / 1000);
-	const token = signToken({
+	const claims = {
 		user_id: person.email,
 		meeting_id: meetingId,
 		site: SITE,
@@ -94,8 +94,8 @@ function memberDetails(person: Person, meetingId: string, isHost: boolean, scope
 		is_cohost: false,
 		e2ee_required: false,
 		host_only_chat: false,
-		...(scope === "presence-preview" ? { session_id: randomUUID() } : {}),
-	});
+	};
+	const token = signToken(scope === "presence-preview" ? { ...claims, session_id: randomUUID() } : claims);
 	return {
 		status: "joined",
 		message: "Successfully joined the meeting",

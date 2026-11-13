@@ -1,6 +1,6 @@
 import { expect, type Locator, type Page, type Route } from "@playwright/test";
 import { demoUser, openDemoScene } from "../demo";
-import { defineFlow, setupFlow } from "../flow";
+import { defineFlow, setupFlow, type StateMeta } from "../flow";
 import { perScene, type BaseScene } from "../scene";
 
 /** One tab of an app's group: its name in the sidebar, which of the same names it is, and text only its loaded body shows. */
@@ -37,7 +37,7 @@ const CALENDAR_TABS = {
 	calendarAdvanced: { nav: "Advanced", last: true, marker: "Calendar Client Configuration", description: "Calendar > Advanced: the CalDAV server URL, calendar URL and username, each with Copy." },
 } as const satisfies Record<string, AppTab>;
 
-const APP_TABS: Record<string, AppTab> = { ...MAIL_TABS, ...CALENDAR_TABS };
+const APP_TABS = new Map<string, AppTab>(Object.entries({ ...MAIL_TABS, ...CALENDAR_TABS }));
 type AppTabState = keyof typeof MAIL_TABS | keyof typeof CALENDAR_TABS;
 type AppTabEvent = { type: `OPEN_${AppTabState}` };
 
@@ -75,23 +75,28 @@ type Event =
 	| { type: "SAVE_FAILS" }
 	| { type: "CHANGE_UNDO_SEND" };
 
+/** A settings tab as a machine state. */
+type AppTabNode = { meta: StateMeta; on?: Record<string, string> };
+
 /** Tabs whose saves lead further. */
-const APP_TAB_EDGES: Record<string, Record<string, string>> = {
-	mailAccount: { TOGGLE: "mailAccountDirty" },
-	mailCompose: { CHANGE_UNDO_SEND: "composeSaved" },
-};
+const APP_TAB_EDGES = new Map<string, Record<string, string>>([
+	["mailAccount", { TOGGLE: "mailAccountDirty" }],
+	["mailCompose", { CHANGE_UNDO_SEND: "composeSaved" }],
+]);
 
 function appTabStates() {
 	return Object.fromEntries(
-		Object.entries(APP_TABS).map(([state, tab]) => [
-			state,
-			{ meta: { description: tab.description }, ...(APP_TAB_EDGES[state] ? { on: APP_TAB_EDGES[state] } : {}) },
-		]),
+		[...APP_TABS].map(([state, tab]) => {
+			const node: AppTabNode = { meta: { description: tab.description } };
+			const on = APP_TAB_EDGES.get(state);
+			if (on) node.on = on;
+			return [state, node];
+		}),
 	);
 }
 
 function appTabTransitions() {
-	return Object.fromEntries(Object.keys(APP_TABS).map((state) => [`OPEN_${state}`, state]));
+	return Object.fromEntries([...APP_TABS.keys()].map((state) => [`OPEN_${state}`, state]));
 }
 
 /**
@@ -290,7 +295,7 @@ function tab(page: Page, nav: string, last = false): Locator {
 }
 
 async function openAppTab(page: Page, state: string): Promise<void> {
-	const spec = APP_TABS[state];
+	const spec = APP_TABS.get(state);
 	if (!spec) throw new Error(`suiteSettings: no tab ${state}`);
 	await tab(page, spec.nav, spec.last).click();
 	await expect(dialog(page).getByText(spec.marker, { exact: false }).first()).toBeVisible({ timeout: 20_000 });
@@ -382,8 +387,9 @@ export const suiteSettings = defineFlow<Event, BaseScene>({
 		await openHome(scene.page);
 	},
 	events: {
+		// SAFETY: APP_TABS holds exactly the states AppTabEvent names, so these keys are its event types.
 		...(Object.fromEntries(
-			Object.keys(APP_TABS).map((state) => [`OPEN_${state}`, (scene: BaseScene) => openAppTab(scene.page, state)]),
+			[...APP_TABS.keys()].map((state) => [`OPEN_${state}`, (scene: BaseScene) => openAppTab(scene.page, state)]),
 		) as Record<AppTabEvent["type"], (scene: BaseScene) => Promise<void>>),
 		async OPEN(scene) {
 			await openSettings(scene.page);

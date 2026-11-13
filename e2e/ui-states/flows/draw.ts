@@ -199,14 +199,14 @@ const BRIEF_EDGE = { x: 321, y: 524 };
 const drawings = perScene<DriveNode>("draw: drawing");
 const viewers = perScene<Page>("draw: viewer page");
 
-async function createDrawing(scene: BaseScene, title: string, content: object | null): Promise<DriveNode> {
+async function createDrawing(scene: BaseScene, title: string, content: Record<string, unknown> | null): Promise<DriveNode> {
 	const node = await createDocument(scene.api, scene.name(title), "Drawing");
 	scene.defer(() => discardNode(scene.api, node.name));
 	if (content) await writeDrawing(scene.api, node.name, content);
 	return node;
 }
 
-async function writeDrawing(api: APIRequestContext, node: string, content: object): Promise<void> {
+async function writeDrawing(api: APIRequestContext, node: string, content: Record<string, unknown>): Promise<void> {
 	const current = await api.get(`/api/suite/draw/documents/${node}`);
 	// SAFETY: Draw's document read answers `{ data: { modified } }` among other fields.
 	const { data } = (await current.json()) as { data: { modified: string } };

@@ -56,6 +56,6 @@ stalwart-cli
 .claude/
 .vscode
 
-# Drive UI state captures
+# UI states captures
 /e2e/ui-states/out/
 /e2e/ui-states/.runs/

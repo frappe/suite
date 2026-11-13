@@ -16,6 +16,18 @@ const METHOD = "/api/method/suite.mail.api";
 
 type Json = Record<string, unknown>;
 
+/** One row of a submission's `recipients_status`. */
+type RecipientStatus = {
+	email: string;
+	status: Delivery;
+	reason: string | null;
+	smtp_reply: string | null;
+	delivered: string | null;
+	displayed: string | null;
+	retries: number;
+	next_retry: string | null;
+};
+
 async function call<T>(api: APIRequestContext, method: string, data: Json): Promise<T> {
 	const response = await api.post(`${METHOD}.${method}`, { data });
 	if (!response.ok()) throw new Error(`${method} answered ${response.status()}: ${await response.text()}`);
@@ -170,7 +182,7 @@ export async function shapeSubmission(page: Page, delivery: Delivery): Promise<v
 		const body = (await response.json()) as { message?: Json & { recipients_status: Json[] } };
 		const submission = body.message;
 		if (submission) {
-			const recipient: Json = {
+			const recipient: RecipientStatus = {
 				email: LEO.email,
 				status: delivery,
 				reason: null,

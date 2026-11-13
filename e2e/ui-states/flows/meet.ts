@@ -382,15 +382,15 @@ const PHONE = { width: 390, height: 844 };
 const UNKNOWN_CODE = "qxzv-wmbt-klop";
 
 /** States screenshotted from a page other than Maya's main tab. */
-const FRAMED: Record<string, (scene: BaseScene) => Page> = {
-	guestPreview: (scene) => guest.get(scene),
-	guestWaiting: (scene) => guest.get(scene),
-	previewMediaBlocked: (scene) => elsewhere.get(scene),
-	previewCameraBlocked: (scene) => elsewhere.get(scene),
-	removed: (scene) => leo.get(scene),
-	audioTest: (scene) => elsewhere.get(scene),
-	scheduleNoAccount: (scene) => elsewhere.get(scene),
-};
+const FRAMED = new Map<string, (scene: BaseScene) => Page>([
+	["guestPreview", (scene) => guest.get(scene)],
+	["guestWaiting", (scene) => guest.get(scene)],
+	["previewMediaBlocked", (scene) => elsewhere.get(scene)],
+	["previewCameraBlocked", (scene) => elsewhere.get(scene)],
+	["removed", (scene) => leo.get(scene)],
+	["audioTest", (scene) => elsewhere.get(scene)],
+	["scheduleNoAccount", (scene) => elsewhere.get(scene)],
+]);
 
 /**
  * The first tile on the page: Maya's own in the preview and in a call she is
@@ -500,6 +500,7 @@ export const meet = defineFlow<Event, BaseScene>({
 			const response = await answered;
 			// SAFETY: meetings.createCalendar posts the account and answers the new event and meeting.
 			const { account } = response.request().postDataJSON() as { account: string };
+			// SAFETY: as above, the response body.
 			const { data } = (await response.json()) as { data: { event_id: string; meeting_id: string } };
 			removeMeetingLater(scene, data.meeting_id);
 			scene.defer(() =>
@@ -746,7 +747,7 @@ export const meet = defineFlow<Event, BaseScene>({
 		},
 	},
 	frame(scene, state) {
-		const page = FRAMED[state]?.(scene);
+		const page = FRAMED.get(state)?.(scene);
 		return page ? page.locator("body") : null;
 	},
 });
