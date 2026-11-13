@@ -123,13 +123,31 @@ def own_tier(principal: str, user: str) -> int:
     return SITE_TIER
 
 
+def _nearest_own(
+    held: tuple[int | None, int, int], role: int, depth: int, tier: int
+) -> tuple[int | None, int, int]:
+    """Keep the nearer of two own grants; a tie goes to the tier, then any deny, then the highest role."""
+    held_role, held_depth, held_tier = held
+    if depth > held_depth or (depth == held_depth and tier < held_tier):
+        return role, depth, tier
+    if depth == held_depth and tier == held_tier:
+        return (0 if held_role == 0 or role == 0 else max(held_role, role)), depth, tier
+    return held
+
+
 @dataclasses.dataclass
 class Acc:
-    """Nearest-wins state for one node."""
+    """Nearest-wins state for one node.
+
+    `named` is the same pass over the grants naming the person or their groups, without `$GENERAL`.
+    """
 
     own: int | None = None
     own_depth: int = -1
     own_tier: int = 9
+    named: int | None = None
+    named_depth: int = -1
+    named_tier: int = 9
     open: int | None = None
     open_depth: int = -1
 
@@ -139,15 +157,13 @@ class Acc:
     def offer(self, principal: str, role: int, depth: int, principals: Principals) -> None:
         if principal in principals.own:
             tier = own_tier(principal, principals.user)
-            if depth > self.own_depth:
-                self.own, self.own_depth, self.own_tier = role, depth, tier
-            elif depth == self.own_depth and tier < self.own_tier:
-                self.own, self.own_tier = role, tier
-            elif depth == self.own_depth and tier == self.own_tier:
-                if self.own == 0 or role == 0:
-                    self.own = 0
-                else:
-                    self.own = max(self.own, role)
+            self.own, self.own_depth, self.own_tier = _nearest_own(
+                (self.own, self.own_depth, self.own_tier), role, depth, tier
+            )
+            if tier < SITE_TIER:
+                self.named, self.named_depth, self.named_tier = _nearest_own(
+                    (self.named, self.named_depth, self.named_tier), role, depth, tier
+                )
         elif principal in principals.open:
             if depth > self.open_depth:
                 self.open, self.open_depth = role, depth
@@ -155,9 +171,13 @@ class Acc:
                 self.open = role
 
     def answer(self) -> int:
-        if self.own == 0:
+        if self.own == 0 and not self._open_passes_general_deny():
             return 0
         return max(self.own or 0, self.open or 0)
+
+    def _open_passes_general_deny(self) -> bool:
+        """Answer whether a nearer open grant passes a `$GENERAL` deny, which blocks no one."""
+        return self.named != 0 and self.open_depth > self.own_depth
 
 
 def holds_without_grant(need: int, principals: Principals) -> bool:
@@ -827,7 +847,7 @@ def _is_winner(row, acc: Acc, depth: Mapping[str, int], principals: Principals) 
         )
     if row.principal in principals.open:
         return (
-            acc.own != NONE
+            (acc.own != NONE or acc.answer() > NONE)
             and acc.answer() == (acc.open or 0)
             and depth[row.node] == acc.open_depth
             and row.role == acc.open

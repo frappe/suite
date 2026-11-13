@@ -35,6 +35,11 @@ declare module 'vue-router' {
     phoneChrome?: PhoneChromeOwner
     allowGuest?: boolean
     title?: string
+    /**
+     * Onboarding: the page runs its own steps, so the suite's command menu and
+     * Settings stay closed. Its Cmd+K step opens a practice menu instead.
+     */
+    onboarding?: boolean
   }
 }
 

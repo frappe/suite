@@ -22,6 +22,124 @@ const operationInboxSummary: QueryRef<InboxSummaryInput, InboxSummaryOutput, Inb
   loadValidators: async () => (await import('./validators')).operationInboxSummary,
 }
 
+export type GetAccountRequestOutputAccountRequest = {
+  backup_email: string | null
+  account: string | null
+  is_verified: 0 | 1
+  is_expired: 0 | 1
+  workspace_name: string
+  workspace_logo: string
+  invited_by_name: string
+  invited_by_image: string | null
+  invited_by_email: string
+  is_admin: 0 | 1
+  sets_up_site: 0 | 1
+  expires_at: string | null
+}
+
+export type GetAccountRequestInput = { request_key: string }
+
+export type GetAccountRequestOutput = GetAccountRequestOutputAccountRequest | null
+
+export type GetAccountRequestError = 'RateLimitExceededError'
+
+const operationGetAccountRequest: QueryRef<
+  GetAccountRequestInput,
+  GetAccountRequestOutput,
+  GetAccountRequestError
+> = {
+  id: 'get_account_request',
+  owner: 'mail',
+  kind: 'query',
+  publicName: 'public.accountRequest',
+  method: 'GET',
+  path: 'invitations/{request_key}',
+  prefix: '/api/suite/mail/',
+  pathParams: ['request_key'],
+  nodeParams: [],
+  entity: null,
+  errors: ['RateLimitExceededError'],
+  loadValidators: async () => (await import('./validators')).operationGetAccountRequest,
+}
+
+export type GetAccountSetupOptionsOutputOption = { value: string; label: string }
+
+export type GetAccountSetupOptionsInput = { request_key: string }
+
+export type GetAccountSetupOptionsOutput = {
+  locales: Array<GetAccountSetupOptionsOutputOption>
+  time_zones: Array<GetAccountSetupOptionsOutputOption>
+}
+
+export type GetAccountSetupOptionsError = 'InvitationClosed' | 'RateLimitExceededError'
+
+const operationGetAccountSetupOptions: QueryRef<
+  GetAccountSetupOptionsInput,
+  GetAccountSetupOptionsOutput,
+  GetAccountSetupOptionsError
+> = {
+  id: 'get_account_setup_options',
+  owner: 'mail',
+  kind: 'query',
+  publicName: 'public.accountOptions',
+  method: 'GET',
+  path: 'invitations/{request_key}/options',
+  prefix: '/api/suite/mail/',
+  pathParams: ['request_key'],
+  nodeParams: [],
+  entity: null,
+  errors: ['InvitationClosed', 'RateLimitExceededError'],
+  loadValidators: async () => (await import('./validators')).operationGetAccountSetupOptions,
+}
+
+export type CreateAccountInput = {
+  first_name: string
+  last_name: string
+  password: string
+  locale?: string | null
+  time_zone?: string | null
+  request_key: string
+}
+
+export type CreateAccountOutput = null
+
+export type CreateAccountError =
+  | 'DoesNotExistError'
+  | 'InvitationClosed'
+  | 'WeakPassword'
+  | 'DriveSetupFailed'
+  | 'MailboxSetupFailed'
+  | 'AccountActivationFailed'
+  | 'RateLimitExceededError'
+
+const operationCreateAccount: MutationRef<
+  CreateAccountInput,
+  CreateAccountOutput,
+  CreateAccountError
+> = {
+  id: 'create_account',
+  owner: 'mail',
+  kind: 'mutation',
+  publicName: 'public.createAccount',
+  empty: true,
+  method: 'POST',
+  path: 'invitations/{request_key}/account',
+  prefix: '/api/suite/mail/',
+  pathParams: ['request_key'],
+  nodeParams: [],
+  entity: null,
+  errors: [
+    'DoesNotExistError',
+    'InvitationClosed',
+    'WeakPassword',
+    'DriveSetupFailed',
+    'MailboxSetupFailed',
+    'AccountActivationFailed',
+    'RateLimitExceededError',
+  ],
+  loadValidators: async () => (await import('./validators')).operationCreateAccount,
+}
+
 export type ExchangeInput = {
   doctype: 'Mail Exchange' | 'Contacts Exchange' | 'Calendar Exchange'
   name: string
@@ -2141,108 +2259,6 @@ const operationVerifyOtp: MutationRef<VerifyOtpInput, VerifyOtpOutput, VerifyOtp
   entity: null,
   errors: ['PermissionError', 'AuthenticationError', 'ValidationError'],
   loadValidators: async () => (await import('./validators')).operationVerifyOtp,
-}
-
-export type GetAccountRequestOutputAccountRequest = {
-  backup_email: string | null
-  account: string | null
-  is_verified: 0 | 1
-  is_expired: 0 | 1
-  workspace_name: string
-  workspace_logo: string
-  invited_by_name: string
-}
-
-export type GetAccountRequestInput = { request_key: string }
-
-export type GetAccountRequestOutput = GetAccountRequestOutputAccountRequest | null
-
-export type GetAccountRequestError = 'PermissionError' | 'AuthenticationError' | 'ValidationError'
-
-const operationGetAccountRequest: QueryRef<
-  GetAccountRequestInput,
-  GetAccountRequestOutput,
-  GetAccountRequestError
-> = {
-  id: 'get_account_request',
-  owner: 'mail',
-  kind: 'query',
-  publicName: 'public.accountRequest',
-  envelope: 'message',
-  method: 'POST',
-  path: '/api/method/suite.mail.api.account.get_account_request',
-  prefix: '/api/suite/mail/',
-  pathParams: [],
-  nodeParams: [],
-  entity: null,
-  errors: ['PermissionError', 'AuthenticationError', 'ValidationError'],
-  loadValidators: async () => (await import('./validators')).operationGetAccountRequest,
-}
-
-export type GetAccountSetupOptionsOutputOption = { value: string; label: string }
-
-export type GetAccountSetupOptionsInput = { request_key: string }
-
-export type GetAccountSetupOptionsOutput = {
-  locales: Array<GetAccountSetupOptionsOutputOption>
-  time_zones: Array<GetAccountSetupOptionsOutputOption>
-}
-
-export type GetAccountSetupOptionsError =
-  'PermissionError' | 'AuthenticationError' | 'ValidationError'
-
-const operationGetAccountSetupOptions: QueryRef<
-  GetAccountSetupOptionsInput,
-  GetAccountSetupOptionsOutput,
-  GetAccountSetupOptionsError
-> = {
-  id: 'get_account_setup_options',
-  owner: 'mail',
-  kind: 'query',
-  publicName: 'public.accountOptions',
-  envelope: 'message',
-  method: 'POST',
-  path: '/api/method/suite.mail.api.account.get_account_setup_options',
-  prefix: '/api/suite/mail/',
-  pathParams: [],
-  nodeParams: [],
-  entity: null,
-  errors: ['PermissionError', 'AuthenticationError', 'ValidationError'],
-  loadValidators: async () => (await import('./validators')).operationGetAccountSetupOptions,
-}
-
-export type CreateAccountInput = {
-  request_key: string
-  first_name: string
-  last_name: string
-  password: string
-  locale?: string | null
-  time_zone?: string | null
-}
-
-export type CreateAccountOutput = null
-
-export type CreateAccountError = 'PermissionError' | 'AuthenticationError' | 'ValidationError'
-
-const operationCreateAccount: MutationRef<
-  CreateAccountInput,
-  CreateAccountOutput,
-  CreateAccountError
-> = {
-  id: 'create_account',
-  owner: 'mail',
-  kind: 'mutation',
-  publicName: 'public.createAccount',
-  empty: true,
-  envelope: 'message',
-  method: 'POST',
-  path: '/api/method/suite.mail.api.account.create_account',
-  prefix: '/api/suite/mail/',
-  pathParams: [],
-  nodeParams: [],
-  entity: null,
-  errors: ['PermissionError', 'AuthenticationError', 'ValidationError'],
-  loadValidators: async () => (await import('./validators')).operationCreateAccount,
 }
 
 export type SendResetPasswordLinkInput = { user: string }
@@ -7008,6 +7024,7 @@ export type GetSubmissionsInput = {
   thread_id?: string | null
   before?: string | null
   after?: string | null
+  waiting_only?: boolean
   start?: number
   page_length?: number
 }
@@ -7311,6 +7328,7 @@ export type FetchPushSubscriptionsOutputSubscription = {
   id: string
   name: string
   device_client_id: string
+  this_site: boolean
   expires: string | null
   types: string
   creation: string
@@ -7432,6 +7450,20 @@ export const api = {
   inbox: {
     summary: operationInboxSummary,
     unreadCount: operationGetAllInboxUnreadCount,
+  },
+  public: {
+    accountRequest: operationGetAccountRequest,
+    accountOptions: operationGetAccountSetupOptions,
+    createAccount: operationCreateAccount,
+    branding: operationGetBranding,
+    signupSettings: operationGetSignupSettings,
+    signupDomains: operationGetSignupDomains,
+    checkEmail: operationValidateEmailAssigned,
+    signup: operationSignup,
+    resendCode: operationResendOtp,
+    verifyCode: operationVerifyOtp,
+    sendResetLink: operationSendResetPasswordLink,
+    resetAccount: operationGetUserForResetPasswordKey,
   },
   exchanges: {
     get: operationExchange,
@@ -7650,20 +7682,6 @@ export const api = {
     spam: operationSetMailsSpamStatus,
     delete: operationDeleteMessages,
     download: operationFetchMailAsEml,
-  },
-  public: {
-    branding: operationGetBranding,
-    signupSettings: operationGetSignupSettings,
-    signupDomains: operationGetSignupDomains,
-    checkEmail: operationValidateEmailAssigned,
-    signup: operationSignup,
-    resendCode: operationResendOtp,
-    verifyCode: operationVerifyOtp,
-    accountRequest: operationGetAccountRequest,
-    accountOptions: operationGetAccountSetupOptions,
-    createAccount: operationCreateAccount,
-    sendResetLink: operationSendResetPasswordLink,
-    resetAccount: operationGetUserForResetPasswordKey,
   },
   attachments: {
     download: operationFetchAttachment,

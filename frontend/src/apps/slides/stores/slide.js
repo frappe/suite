@@ -5,6 +5,7 @@ import { router } from '@/apps/slides/router'
 import { flushPendingBlur, resetFocus } from '@/apps/slides/stores/element'
 import { commandHistory } from '@/apps/slides/stores/historyMeta'
 import {
+  currentOpening,
   inReadonlyMode,
   presentationId,
   presentationTheme,
@@ -19,11 +20,13 @@ import { randomId } from '@/platform/random-id'
 import { translate } from '@/platform/translation'
 
 import { addSlideCommand, editSlideCommand, removeSlideCommand } from './commands'
+import { flushLive, isLive } from './liveDeck'
 import { inSlideShowMode } from './slideshow'
 
 /** @type {import('vue').Ref<Record<string, unknown>[]>} */
 const slides = ref([])
 
+/** @type {import('vue').Ref<number>} */
 const slideIndex = ref()
 const focusedSlide = ref(null)
 
@@ -36,6 +39,7 @@ const selectionBounds = reactive({
   height: 0,
 })
 
+/** @type {{ left?: number, top?: number, width?: number, height?: number, scale?: number }} */
 const slideBounds = reactive({})
 
 // an element measures zero in one axis while its text editor is swapped out, and
@@ -143,6 +147,10 @@ const resetAndSave = async () => {
 
 const saveSlide = (e) => {
   e.preventDefault()
+  if (isLive()) {
+    return flushLive()
+  }
+
   resetAndSave()
 }
 
@@ -196,7 +204,13 @@ const insertDuplicateSlide = async (index, layoutObj, toDuplicate) => {
   const source = slides.value[index]
   const newSlide = getNewSlide(toDuplicate, layoutObj, source)
 
-  if (!toDuplicate) newSlide.elements = await transformElements(newSlide.elements)
+  if (!toDuplicate) {
+    const stillOpen = currentOpening()
+    newSlide.elements = await transformElements(newSlide.elements)
+    if (!stillOpen()) {
+      return
+    }
+  }
 
   insertSlide(newSlide, index)
 }

@@ -268,8 +268,8 @@ class TestBuildStoragePreparation(IntegrationTestCase):
         blob = frappe.get_doc("File Blob", row.blob)
         self.drop_blob_later(blob.name)
         self.assertEqual(blob.name, blob_name(checksum))
-        # The framework's default site folder for this site's database.
-        site_folder = hashlib.sha256(frappe.conf.db_name.encode()).hexdigest()[:12]
+        # The framework's storage folder for this site.
+        site_folder = f"sites/{frappe.local.site}/storage"
         self.assertEqual(blob.key, f"{site_folder}/{blob.name}/report.PDF")
         self.assertEqual(blob.checksum, checksum)
         self.assertEqual(blob.file_size, len(content))
@@ -277,7 +277,7 @@ class TestBuildStoragePreparation(IntegrationTestCase):
         self.assertEqual(cint(blob.is_private), 1)
         self.assertEqual(blob.status, "Ready")
 
-        destination = f"private/{blob.key}"
+        destination = f"{site_folder}/private/{blob.name}/report.PDF"
         self.assertEqual(self.bucket.copies, [("copy_object", key, destination)])
         self.assertEqual(self.bucket.objects[destination], content)
         (copied,) = CopyLedger(Path(self.tmp.name) / LEDGER_FILENAME).entries()

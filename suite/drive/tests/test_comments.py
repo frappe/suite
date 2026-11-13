@@ -1394,3 +1394,42 @@ class TestSiteTime(UnitTestCase):
 
             with self.subTest(value=value), self.assertRaises(frappe.ValidationError):
                 site_time(value, "UTC")
+
+
+class TestOldCommentLists(UnitTestCase):
+    """An old comment's numbered list reads with the numbers a browser drew."""
+
+    def numbers_of(self, opening_tag: str) -> str:
+        text, _mentions = comments.html_comment_text(f"{opening_tag}<li>a</li><li>b</li></ol>")
+        return text
+
+    def test_a_list_starts_at_its_start(self):
+        self.assertEqual(self.numbers_of('<ol start="2">'), "2. a\n3. b")
+
+    def test_a_list_with_no_start_counts_from_one(self):
+        self.assertEqual(self.numbers_of("<ol>"), "1. a\n2. b")
+
+    def test_a_start_reads_as_chrome_reads_it(self):
+        cases = {
+            "abc": "1. a\n2. b",
+            "": "1. a\n2. b",
+            "- 3": "1. a\n2. b",
+            "2abc": "2. a\n3. b",
+            "2.5": "2. a\n3. b",
+            " 5": "5. a\n6. b",
+            "+4": "4. a\n5. b",
+            "-3": "-3. a\n-2. b",
+            "0": "0. a\n1. b",
+            "٣": "1. a\n2. b",
+            "2147483647": "2147483647. a\n2147483648. b",
+            "2147483648": "1. a\n2. b",
+            "-2147483649": "1. a\n2. b",
+            "9" * 5000: "1. a\n2. b",
+        }
+        for start, expected in cases.items():
+            with self.subTest(start=start[:20]):
+                self.assertEqual(self.numbers_of(f'<ol start="{start}">'), expected)
+
+    def test_a_bullet_list_keeps_its_bullets(self):
+        text, _mentions = comments.html_comment_text('<ul start="2"><li>a</li><li>b</li></ul>')
+        self.assertEqual(text, "- a\n- b")

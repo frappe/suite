@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick } from 'vue'
 
-import UsersBar from '@/apps/writer/components/UsersBar.vue'
+import UsersBar from '@/platform/collab/UsersBar.vue'
 import { translate } from '@/platform/translation'
 
 vi.mock('frappe-ui', () => ({
@@ -30,10 +30,8 @@ vi.mock('frappe-ui', () => ({
 }))
 
 // The people search knows Ada's email; it never returns the Administrator account
-vi.mock('@/apps/writer/composables/useUsers', () => ({
-  useUsers: () => ({
-    getUser: (user: string) => (user === 'ada@x.com' ? { email: 'ada@x.com' } : undefined),
-  }),
+vi.mock('@/platform/collab/names', () => ({
+  getUser: (user: string) => (user === 'ada@x.com' ? { email: 'ada@x.com' } : undefined),
 }))
 
 const MINUTE_MS = 60_000
@@ -49,7 +47,7 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-function mount(users: object[]) {
+function mount(users: InstanceType<typeof UsersBar>['$props']['users']) {
   const root = document.createElement('div')
   document.body.appendChild(root)
   const app = createApp({ setup: () => () => h(UsersBar, { users }) })

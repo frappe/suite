@@ -1222,10 +1222,12 @@ def try_set_seen(account: str, ids: list[str], seen: bool = True) -> tuple[list[
     """Sets the seen status of messages as far as the server will (see `_try_update_emails`)."""
 
     emails = [{"id": id, "keywords": {"$seen": seen}} for id in ids]
+    _note_written(account, ids)
     changed, complete = _try_update_emails(
         account, emails, _("Failed to set seen status for mail(s)"), replace_keywords=False
     )
     _cache_seen(account, changed, seen)
+    _note_written(account, changed)
     return changed, complete
 
 
@@ -1235,10 +1237,12 @@ def set_seen_status(account: str, ids: list[str], seen: bool = True) -> None:
     if not account or not ids:
         frappe.throw(_("Account and Mail IDs are required."))
 
+    _note_written(account, ids)
     try:
         emails = [{"id": id, "keywords": {"$seen": seen}} for id in ids]
         _update_emails(account, emails, replace_keywords=False)
         _cache_seen(account, ids, seen)
+        _note_written(account, ids)
 
     except Exception:
         log_mail_error(
@@ -1263,6 +1267,7 @@ def set_unscreened_status(account: str, ids: list[str], unscreened: bool) -> Non
     if not account or not ids:
         frappe.throw(_("Account and Mail IDs are required."))
 
+    _note_written(account, ids)
     try:
         # A null patch removes a keyword; JMAP has no false keyword.
         value = True if unscreened else None
@@ -1281,6 +1286,7 @@ def set_unscreened_status(account: str, ids: list[str], unscreened: bool) -> Non
 
         if messages_to_cache:
             _cache_messages(account, messages_to_cache)
+        _note_written(account, ids)
 
     except Exception:
         log_mail_error(
@@ -1296,6 +1302,7 @@ def set_flagged_status(account: str, ids: list[str], flagged: bool = True) -> No
     if not account or not ids:
         frappe.throw(_("Account and Mail IDs are required."))
 
+    _note_written(account, ids)
     try:
         emails = [{"id": id, "keywords": {"$flagged": flagged}} for id in ids]
         _update_emails(account, emails, replace_keywords=False)
@@ -1313,6 +1320,7 @@ def set_flagged_status(account: str, ids: list[str], flagged: bool = True) -> No
 
         if messages_to_cache:
             _cache_messages(account, messages_to_cache)
+        _note_written(account, ids)
 
     except Exception:
         log_mail_error(
@@ -1678,8 +1686,21 @@ def _remove_cached_messages(account: str, ids: list[str]) -> None:
 
     store = get_data_store(account)
     store.delete_many(Entity.EMAIL, keys=ids)
-    # Noted, so a read already on its way with the message as it was doesn't cache it back (see
-    # get_messages): a list reloading as a message is archived would otherwise keep it unarchived.
+    _note_written(account, ids)
+
+
+def _note_written(account: str, ids: list[str]) -> None:
+    """Note that these messages are being changed through Suite, as of now.
+
+    So a read already on its way with a message as it was doesn't cache it back (see get_messages):
+    a list reloading as a message is archived would otherwise keep it unarchived, one reloading as it
+    is read would keep it unread. A writer notes before it writes and again after: before, for a read
+    that fetched the message and has yet to cache it; after, for one that fetched it while the write
+    was on its way.
+    """
+
+    if not ids:
+        return
     now = _now()
     with frappe.cache.pipeline() as pipe:
         for id in ids:

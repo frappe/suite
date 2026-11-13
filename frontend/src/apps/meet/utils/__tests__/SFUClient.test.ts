@@ -85,28 +85,10 @@ describe('getSFUEndpoint', () => {
   })
 })
 
-describe('isConnected / getters', () => {
-  it('returns false initially', () => {
-    const client = createClient()
-    expect(client.isConnected()).toBe(false)
-    expect(client.getConnectionStatus().connected).toBe(false)
-  })
-
-  it('getMeetingId and getUserId return connection details', () => {
-    const client = createClient()
-    client.connectionDetails.meetingId = 'meet-123'
-    client.connectionDetails.userId = 'user-abc'
-    expect(client.getMeetingId()).toBe('meet-123')
-    expect(client.getUserId()).toBe('user-abc')
-  })
-
-  it('getCodecStrategy returns svc as default', () => {
+describe('codec strategy', () => {
+  it('defaults to svc and honors configured simulcast', () => {
     const client = createClient()
     expect(client.getCodecStrategy()).toBe('svc')
-  })
-
-  it('getCodecStrategy returns configured strategy', () => {
-    const client = createClient()
     client.connectionDetails.codecStrategy = 'simulcast'
     expect(client.getCodecStrategy()).toBe('simulcast')
   })

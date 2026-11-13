@@ -234,7 +234,7 @@ function formatStat(n: number) {
   display: flex;
   align-items: stretch;
   height: 36px;
-  border-top: 1px solid var(--outline-gray-2);
+  border-top: 1px solid var(--outline-gray-1);
   background: var(--surface-base);
   flex-shrink: 0;
   overflow: hidden;

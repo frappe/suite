@@ -10,7 +10,7 @@ import {
 import { warmAssets } from './utils/startupRequests'
 
 vi.mock('@/apps/slides/pages/Slideshow.vue', () => ({}))
-vi.mock('@/apps/slides/utils/bundledFonts', () => ({ loadBundledFonts: async () => {} }))
+vi.mock('@/apps/slides/utils/bundledFonts', () => ({ warmBundledFonts: async () => {} }))
 
 vi.mock('workbox-range-requests', () => ({
   createPartialResponse: async (_request: Request, response: Response) => response,
@@ -212,6 +212,38 @@ describe('the shell document', () => {
 })
 
 // offline, any same-origin GET the user pinned is answered from the pin, so a
+describe('a warmed font file', () => {
+  const FONT = `${location.origin}/assets/suite/slides/fonts/Anton/Anton-Regular-latin.woff2`
+
+  async function fetchFont() {
+    let responded: Promise<Response> | undefined
+    const writes: Promise<unknown>[] = []
+    // a plain fetch, as the warm-up sends: no font destination
+    listeners.get('fetch')!({
+      request: { url: FONT, method: 'GET', mode: 'cors', headers: new Headers(), referrer: '' },
+      clientId: 'c1',
+      respondWith: (value: Promise<Response>) => {
+        responded = value
+      },
+      waitUntil: (value: Promise<unknown>) => writes.push(value),
+    })
+    const response = await responded!
+    await Promise.all(writes)
+    return response
+  }
+
+  it('is answered offline after one fetch', async () => {
+    await fetchFont()
+
+    online = false
+    networkFails = true
+    const response = await fetchFont()
+
+    expect(await response.text()).toBe('network')
+    expect(opened.get('slides-assets')?.has(FONT)).toBe(true)
+  })
+})
+
 // pinned presentation opens at /d/<node> without the network
 describe('a pinned presentation offline', () => {
   type FakeRequest = Pick<Request, 'url' | 'method' | 'mode' | 'headers' | 'referrer'>
