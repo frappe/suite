@@ -15,12 +15,14 @@ import {
 import { useRoute, useRouter } from 'vue-router'
 
 import {
+  DriveDocumentSidePanel as DocumentSidePanel,
   DRIVE_ROLES,
   DriveDocumentHeader,
   imagesNotice,
   missingImages,
   rankMentionsFor,
   restoreImages,
+  showError,
   useCommentDrafts,
   useDocumentThreads,
   useThreadChanges,
@@ -63,7 +65,6 @@ import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 
 import { frozenBanner, isSafeOnDevice, notUpgradedBanner, upgradingBanner } from './collabMessages'
-import DocumentSidePanel from './DocumentSidePanel.vue'
 import { downloadHTML } from './exports'
 import {
   resolveDocumentUnload,
@@ -74,7 +75,6 @@ import {
 import { goToPlace, readingPlace } from './readingPlace'
 import { restoreVersion, type VersionRestore } from './restoreVersion'
 import { saveFirst } from './saveFirst'
-import { showError } from './useDocumentPanel'
 import { useWriterCollab } from './useWriterCollab'
 import { versionImages } from './versionImages'
 import VersionPreview from './VersionPreview.vue'

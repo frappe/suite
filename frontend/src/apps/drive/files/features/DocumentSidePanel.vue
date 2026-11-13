@@ -2,19 +2,19 @@
 import { Button, TextInput } from 'frappe-ui'
 import { computed, nextTick, ref, watch } from 'vue'
 
-import {
-  DriveCommentList as CommentList,
-  type DocumentPanel,
-  type DocumentSession,
-  type DocumentThread,
-  type DocumentVersion,
-  type ThreadActions,
-  type useCommentDrafts,
+import type {
+  DocumentPanel,
+  DocumentSession,
+  DocumentThread,
+  DocumentVersion,
+  ThreadActions,
+  useCommentDrafts,
 } from '@/apps/drive'
-import type { ThreadPlaces } from '@/apps/writer/collab/highlights'
 
-import { useDocumentPanel } from './useDocumentPanel'
-import VersionList from './VersionList.vue'
+import CommentList from './comments/CommentList.vue'
+import type { ThreadPlaces } from './comments/places'
+import { useDocumentPanel } from './versions/useDocumentPanel'
+import VersionList from './versions/VersionList.vue'
 
 const props = defineProps<{
   session: DocumentSession

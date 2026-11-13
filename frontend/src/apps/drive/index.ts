@@ -442,6 +442,14 @@ export {
   type MissingImage,
   type VersionImage,
 } from '@/apps/drive/files/features/document/versionImages'
+/**
+ * A document's side panel: its comments or its versions, one at a time. Versions sit under
+ * the day each was taken, with view, restore, download, rename and save; the app shows a
+ * viewed version and does the restore and download itself.
+ */
+export { default as DriveDocumentSidePanel } from '@/apps/drive/files/features/DocumentSidePanel.vue'
+export { showError } from '@/apps/drive/files/features/versions/useDocumentPanel'
+export { waitForFocusBack } from '@/apps/drive/files/features/focusBack'
 
 export const filePreviewSurface = defineAsyncComponent(
   () => import('@/apps/drive/files/features/preview/FilePreviewSurface.vue'),
