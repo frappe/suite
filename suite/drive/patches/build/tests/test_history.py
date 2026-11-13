@@ -1126,6 +1126,70 @@ class WriterBodyTest(unittest.TestCase):
             self.assertEqual(content.writer_versions_rewritten, 2)
             self.assertEqual(content.writer_media_references_missing, 0)
 
+    def test_a_picture_address_on_the_old_prod_or_own_host_becomes_a_site_path(self):
+        # Owner ruling 2026-11-13: a document must not depend on the host it
+        # was written on. Only the old Frappe hosts and the site's own lose
+        # the host; any other host is someone else's picture
+        path = embed("own-1")
+        prod = "https://drive.frappe.io" + path
+        cloud = "http://suite.bom.frappe.cloud" + path
+        own = "https://site.example" + path
+        other = "https://drive.example.com" + path
+        lookalike = "https://notdrive.frappe.io" + path
+        old_api = (
+            "https://drive.frappe.io/api/method/drive.api.embed.get_file_content"
+            "?embed_name=own-1&parent_entity_name=node-b"
+        )
+        self.add_document(
+            "reader-doc",
+            "node-b",
+            body=WriterBody(
+                content=yjs_body(
+                    paragraph(image(src=prod)),
+                    paragraph(image(src=other)),
+                    paragraph(image(src=embed("own-1"))),
+                ),
+                html=(
+                    f'<p><img src="{cloud}"></p><p><img src="{own}"></p><p><img src="{lookalike}"></p>'
+                    f'<p><a href="https://drive.frappe.io/writer/node-b">page</a></p>'
+                ),
+            ),
+        )
+        self.add_picture("own-1", "node-b", "blob-own", "own.png")
+        self.source.writer_version_rows.append(
+            WriterVersionRow(
+                "version-1",
+                "reader-doc",
+                f'<p><img src="{old_api}"></p><p><img src="{other}"></p>',
+                owner=OWNER,
+                creation=STAMP,
+                modified=STAMP,
+            )
+        )
+
+        content = convert_history_and_comments(self.env)
+
+        body = self.source.writer_bodies["reader-doc"]
+        sources: list[str] = []
+        for child in body_fragment(body.content).children:
+            sources.append(dict(child.children[0].attributes)["src"])
+
+        self.assertEqual(sources, [path, other, path])
+        self.assertEqual(
+            body.html,
+            f'<p><img src="{path}"></p><p><img src="{path}"></p>'
+            f'<p><img src="{lookalike}"></p>'
+            f'<p><a href="https://drive.frappe.io/writer/node-b">page</a></p>',
+        )
+        version = self.target.version_rows["version-1"]
+        self.assertEqual(
+            self.target.read_blob(version["blob"]).decode("utf-8"),
+            '<p><img src="/api/method/drive.api.embed.get_file_content'
+            f'?embed_name=own-1&parent_entity_name=node-b"></p><p><img src="{other}"></p>',
+        )
+        self.assertEqual((content.writer_bodies_rewritten, content.writer_versions_rewritten), (1, 1))
+        self.assertEqual(content.writer_media_copied, 0)
+
     def test_a_picture_directly_inside_a_list_item_is_wrapped_in_a_paragraph(self):
         # B113: the editor's image is inline and a list item holds only
         # blocks, so the editor dropped this picture. After Build it sits in

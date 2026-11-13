@@ -1,6 +1,6 @@
 """§14.6 and §14.7: make legacy Writer bodies readable by the new Writer.
 
-Build changes a Writer body in two ways and touches nothing else:
+Build changes a Writer body in three ways and touches nothing else:
 
 - **Pictures another document owns** (B112). A legacy body can show a
   picture stored under a different document: the legacy embed URL served
@@ -15,6 +15,12 @@ Build changes a Writer body in two ways and touches nothing else:
   image found directly inside one. ProseMirror cannot mix inline and block
   content in one content expression, so the schema cannot accept it.
   Build wraps each such image in its own paragraph instead.
+- **Picture addresses on the old site's host.** Old Writer could store a
+  picture as an absolute address on the host it ran on,
+  `https://drive.frappe.io/api/method/...`. Build drops the scheme and host
+  so the document doesn't depend on the host (owner ruling, 2026-11-13).
+  Only the old Frappe hosts and the site's own count; an address on any
+  other host stays as it is.
 
 Three callers, one `DocumentPictures` per document:
 
@@ -24,7 +30,7 @@ Three callers, one `DocumentPictures` per document:
   `writer_version_html`. A version can show a picture the live body no
   longer shows, so its ids are mapped too, with the same copies: a version
   shown or restored after Build names the document's own node. Only the id
-  inside each picture reference changes. Version bytes are HTML, which the
+  and an own host inside each picture reference change. Version bytes are HTML, which the
   editor parses with ProseMirror's `DOMParser`; that wraps loose inline
   content itself, so B113 needs no rewrite there.
 - Step 8 calls `convert_template_body` for each `Writer Template` before it
@@ -69,6 +75,10 @@ MEDIA_PATTERNS = (
     re.compile(rf'{NODE_ATTRIBUTE}="({MEDIA_ID})"'),
 )
 BARE_MEDIA_ID = re.compile(MEDIA_ID)
+# The hosts old Frappe Drive was served from. A constant, not site config:
+# a key nobody set on prod would leave every address in place silently
+OLD_PROD_HOSTS = ("drive.frappe.io", "suite.bom.frappe.cloud")
+EMBED_PATH = r"/api/method/(?:suite\.)?(?:writer\.api\.embed\.get|drive\.api\.embed\.get_file_content)\?"
 
 IMAGE = "image"
 PARAGRAPH = "paragraph"
@@ -113,6 +123,7 @@ class DocumentPictures:
         # the stored node only when it first needs a copy.
         self._node_row = node_row
         self._report = report
+        self.own_host = own_host_pattern(env.content.site_host())
         self._own = {child["name"] for child in children}
         self._settled: set[str] = set()
         self._by_blob: dict[str, str] = {}
@@ -185,7 +196,7 @@ def convert_writer_body(env, content, document, node: str) -> DocumentPictures:
     rewrite = None
     try:
         copies = pictures.claim(_html_ids(body.html or "") | _body_ids(body.content))
-        rewrite = _rewritten(body, pictures.mapping)
+        rewrite = _rewritten(body, pictures)
     except UnreadableBody:
         # The body stays as it is. A copy already claimed is still inserted
         # below: the mapping names it, and a version may use it.
@@ -212,7 +223,8 @@ def writer_version_html(env, content, pictures: DocumentPictures, snapshots: lis
 
     Copies a picture the first time any version names it, and commits the
     copies before the caller writes a version that names them. Only the id
-    inside each picture reference changes; every other byte is the source's.
+    and an own host inside each picture reference change; every other byte
+    is the source's.
     """
     copies = pictures.claim(set().union(*(_html_ids(text) for text in snapshots)))
     if copies:
@@ -220,9 +232,9 @@ def writer_version_html(env, content, pictures: DocumentPictures, snapshots: lis
         target.insert_nodes(copies)
         target.commit()
         content.writer_media_copied += len(copies)
-    if not pictures.mapping:
-        return list(snapshots)
-    rewritten = [_remap_text(text, pictures.mapping) for text in snapshots]
+
+    rewritten = [_remap_text(text, pictures.mapping, pictures.own_host) for text in snapshots]
+
     content.writer_versions_rewritten += sum(
         new != old for new, old in zip(rewritten, snapshots, strict=True)
     )
@@ -251,7 +263,7 @@ def convert_template_body(
 
     pictures = DocumentPictures(env, template, node["name"], report, node_row=node)
     copies = pictures.claim(_html_ids(body.html or "") | _body_ids(body.content))
-    rewrite = _rewritten(body, pictures.mapping)
+    rewrite = _rewritten(body, pictures)
     return (rewrite.body if rewrite else body), copies
 
 
@@ -313,20 +325,23 @@ def _copy_node(env, document, parent: dict, picture: dict, title: str) -> dict:
     }
 
 
-def _rewritten(body: WriterBody, mapping: dict[str, str]) -> _Rewrite | None:
-    """The body with `mapping` applied and loose images wrapped, or None.
+def _rewritten(body: WriterBody, pictures: DocumentPictures) -> _Rewrite | None:
+    """Apply the pictures' ids and hosts and wrap loose images; None when nothing changed."""
+    mapping = pictures.mapping
+    own_host = pictures.own_host
+    html = body.html
+    if html:
+        html = _remap_text(html, mapping, own_host)
 
-    None means nothing changed, so a body that is already valid and names
-    only its own pictures is never written.
-    """
-    html = _remap_text(body.html, mapping) if body.html and mapping else body.html
-    content, wrapped = _rewritten_content(body.content, mapping)
+    content, wrapped = _rewritten_content(body.content, mapping, own_host)
     if content == body.content and html == body.html:
         return None
     return _Rewrite(WriterBody(content=content, html=html), wrapped)
 
 
-def _rewritten_content(content: str | None, mapping: dict[str, str]) -> tuple[str | None, int]:
+def _rewritten_content(
+    content: str | None, mapping: dict[str, str], own_host: re.Pattern
+) -> tuple[str | None, int]:
     raw = _decoded(content)
     if raw is None:
         return content, 0
@@ -335,19 +350,20 @@ def _rewritten_content(content: str | None, mapping: dict[str, str]) -> tuple[st
         before = document.get_state()
         changed = False
         with document.transaction():
-            if mapping:
-                for element in _elements(fragment):
-                    for key, value in dict(element.attributes).items():
-                        if not isinstance(value, str):
-                            continue
-                        rewritten = (
-                            mapping.get(value, value)
-                            if key == NODE_ATTRIBUTE
-                            else _remap_text(value, mapping)
-                        )
-                        if rewritten != value:
-                            element.attributes[key] = rewritten
-                            changed = True
+            for element in _elements(fragment):
+                for key, value in dict(element.attributes).items():
+                    if not isinstance(value, str):
+                        continue
+
+                    if key == NODE_ATTRIBUTE:
+                        rewritten = mapping.get(value, value)
+                    else:
+                        rewritten = _remap_text(value, mapping, own_host)
+
+                    if rewritten != value:
+                        element.attributes[key] = rewritten
+                        changed = True
+
             wrapped = _wrap_loose_images(fragment)
         if not changed and not wrapped:
             return content, 0
@@ -415,8 +431,14 @@ def _body_ids(content: str | None) -> set[str]:
     return found
 
 
-def _remap_text(text: str, mapping: dict[str, str]) -> str:
-    """Replace only the id inside each match, never the rest of the URL."""
+def own_host_pattern(site_host: str) -> re.Pattern:
+    """Match the scheme and exact host in front of a picture path on one of this site's hosts."""
+    hosts = "|".join(re.escape(host) for host in sorted({*OLD_PROD_HOSTS, site_host} - {""}))
+    return re.compile(rf"https?://(?:{hosts})(?={EMBED_PATH})")
+
+
+def _remap_text(text: str, mapping: dict[str, str], own_host: re.Pattern) -> str:
+    """Drop an own host in front of a picture path, and replace only the id inside each match."""
 
     def swap(match: re.Match) -> str:
         replacement = mapping.get(match.group(1))
@@ -425,6 +447,7 @@ def _remap_text(text: str, mapping: dict[str, str]) -> str:
         start, end = match.start(1) - match.start(), match.end(1) - match.start()
         return match.group(0)[:start] + replacement + match.group(0)[end:]
 
+    text = own_host.sub("", text)
     for pattern in MEDIA_PATTERNS:
         text = pattern.sub(swap, text)
     return text
