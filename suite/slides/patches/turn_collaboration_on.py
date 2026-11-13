@@ -1,0 +1,16 @@
+import frappe
+
+from suite.content import log
+from suite.slides.content import APP, turn_on
+
+
+def execute() -> None:
+    """Turn Slides' collaboration on, which it then stays."""
+    # A first turn-on pauses the background conversion until the owner unpauses it after the restart; a
+    # presentation someone opens still converts (suite.content.conversions)
+    already_on = log.mode(APP) == "on"
+    turn_on()
+    if not already_on:
+        row = {"parent": "Suite Collab Settings", "parentfield": "apps", "app": APP}
+        frappe.db.set_value("Suite Collab App", row, "conversion_paused", 1)
+        frappe.clear_document_cache("Suite Collab Settings", "Suite Collab Settings")

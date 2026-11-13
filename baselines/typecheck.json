@@ -50,7 +50,7 @@
   "frontend/src/apps/mail/pages/ContactsExchangesView.vue": 1,
   "frontend/src/apps/mail/pages/MailExchangeView.vue": 2,
   "frontend/src/apps/mail/pages/MailExchangesView.vue": 1,
-  "frontend/src/apps/mail/pages/MailboxView.vue": 7,
+  "frontend/src/apps/mail/pages/MailboxView.vue": 6,
   "frontend/src/apps/mail/pages/MimeMessageView.vue": 6,
   "frontend/src/apps/mail/pages/SubmissionDetailsView.vue": 1,
   "frontend/src/apps/mail/pages/UnifiedFolderView.vue": 4,

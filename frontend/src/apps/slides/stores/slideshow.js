@@ -1,4 +1,4 @@
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, ref, shallowRef } from 'vue'
 
 import { router } from '@/apps/slides/router'
 import { applyReverseTransition } from '@/apps/slides/stores/presentation'
@@ -15,6 +15,15 @@ import { getAttachmentUrl } from '@/apps/slides/utils/mediaUploads'
 const inSlideShowMode = ref(false)
 
 const onLoop = ref(false)
+
+// Q175: a slide a co-editor deletes while it is shown stays up until the presenter moves on;
+// the slide that took its place is at the shown index, so Next shows it
+const heldSlide = shallowRef(null)
+const shownSlide = computed(() => heldSlide.value ?? currentSlide.value)
+// a slide already held is the one shown
+function holdShownSlide(slide) {
+  heldSlide.value ??= slide
+}
 
 // the click's user activation expires before the slideshow route finishes
 // loading, so fullscreen has to be requested here and not on the other side
@@ -78,6 +87,7 @@ const startSlideShow = ({ loop = false, fromStart = false } = {}) => {
 }
 
 const resetSlideShowState = () => {
+  heldSlide.value = null
   inSlideShowMode.value = false
   onLoop.value = false
 }
@@ -98,7 +108,7 @@ const endSlideShow = () => {
 }
 
 const showSlideshowEndScreen = computed(() => {
-  return slideIndex.value >= slides.value.length
+  return !heldSlide.value && slideIndex.value >= slides.value.length
 })
 
 const prefetchedAssets = ref(new Set())
@@ -237,7 +247,7 @@ const scheduleAdvance = (hasEntrance = true) => {
 
 const startWait = () => {
   cancelAdvance()
-  const seconds = advanceSeconds(currentSlide.value?.advanceAfter)
+  const seconds = advanceSeconds(shownSlide.value?.advanceAfter)
   if (seconds === null) return
   const entranceLeft = Math.max(0, entranceEnds - Date.now())
   advanceTimer = setTimeout(advance, seconds * 1000 + entranceLeft)
@@ -292,7 +302,13 @@ const replaySlide = () => {
 }
 
 const changeSlideInSlideshow = (index) => {
+  if (heldSlide.value && index > slideIndex.value) {
+    index = slideIndex.value
+  }
+
   if (index < 0) return
+
+  heldSlide.value = null
   if (index >= slides.value.length + 1) return endSlideShow()
 
   applyReverseTransition.value = index < slideIndex.value
@@ -336,4 +352,6 @@ export {
   cancelAdvance,
   prevSlide,
   isMagicMoveApplied,
+  shownSlide,
+  holdShownSlide,
 }

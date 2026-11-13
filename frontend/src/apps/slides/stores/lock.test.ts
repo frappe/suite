@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 
-vi.mock('@/apps/slides/stores/saving', () => ({ markDirty: () => {} }))
 vi.mock('@/apps/slides/stores/presentation', () => ({ slidesLength: ref(0) }))
 vi.mock('@/apps/slides/utils/helpers', () => ({
   cloneObj: (obj: any) => JSON.parse(JSON.stringify(obj)),

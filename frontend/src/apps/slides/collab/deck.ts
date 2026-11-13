@@ -15,6 +15,7 @@
 
 import * as Y from 'yjs'
 
+import { transitionKey as transitionKeyOf } from '@/apps/slides/utils/transitionKey'
 import { randomId } from '@/platform/random-id'
 
 export const ROOT = { slides: 'slides', elements: 'elements' } as const
@@ -308,6 +309,38 @@ export function setElement(doc: Y.Doc, id: string, fields: Fields) {
   if (element) {
     doc.transact(() => writeFields(element, fields, ELEMENT_FIELDS))
   }
+}
+
+// The slide's fields in a map of its own at the same id, so of two tabs doing this at once one
+// map wins whole, never a mix of both. Returns where that map stands after later changes
+export function replaceSlide(doc: Y.Doc, id: string, fields: Fields) {
+  const order = slidesOf(doc).get(id)?.get('order')
+  const slide: Item = new Y.Map()
+  doc.transact(() => {
+    slidesOf(doc).set(id, slide)
+    slide.set('order', order)
+    writeFields(slide, fields, SLIDE_FIELDS)
+  })
+
+  return () => {
+    const now = slidesOf(doc).get(id)
+    if (!now) {
+      return 'gone'
+    }
+
+    return now === slide ? 'held' : 'replaced'
+  }
+}
+
+/** Everything the element holds now, as one string to compare with a later one. */
+export function elementState(doc: Y.Doc, id: string) {
+  return JSON.stringify(elementsOf(doc).get(id)?.toJSON() ?? null)
+}
+
+// The key Magic Move pairs this element by across slides
+export function transitionKey(doc: Y.Doc, id: string) {
+  const element = elementsOf(doc).get(id)
+  return transitionKeyOf({ id, type: element?.get('type'), refId: element?.get('refId') })
 }
 
 export function elementText(doc: Y.Doc, id: string): Y.XmlFragment | undefined {

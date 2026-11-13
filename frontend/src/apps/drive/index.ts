@@ -11,7 +11,6 @@ import { useRouter, type RouteLocationPathRaw, type Router } from 'vue-router'
 
 import { api, client, useQuery } from '@/api'
 import FilesIcon from '@/apps/drive/AreaIcon.vue'
-import { createGuestCommentName, type GuestCommentName } from '@/apps/drive/client/guestName'
 import { driveLinks } from '@/apps/drive/client/links'
 import { createDocument, recordVisit } from '@/apps/drive/client/nodes'
 import { openDriveDocumentSession, type DocumentSession } from '@/apps/drive/client/session'
@@ -52,14 +51,48 @@ export function rememberDriveLink(token: string, node: string): void {
 }
 
 /** The "Your name" field of a comment composer. Call it in a component's setup (spec §10.5). */
-export function useDriveGuestName(): GuestCommentName {
-  return createGuestCommentName(driveLinks, useSession())
-}
+export { useDriveGuestName } from '@/apps/drive/files/features/comments/guestName'
 
 export { GUEST_NAME_LIMIT, type GuestCommentName } from '@/apps/drive/client/guestName'
 
 /** A comment's author: a guest's name and the Guest marker, or the product's own label in the slot. */
 export { default as DriveCommentAuthor } from '@/apps/drive/files/features/CommentAuthor.vue'
+
+/**
+ * A document's comment panel: threads, replies, resolve and Undo, edit, delete,
+ * unread marks, device drafts and retry, and the mention box with its access
+ * messages. Pass the threads, their places, the drafts and the thread actions.
+ */
+export { default as DriveCommentList } from '@/apps/drive/files/features/comments/CommentList.vue'
+export { useDocumentThreads } from '@/apps/drive/files/features/comments/useDocumentThreads'
+export {
+  useThreadChanges,
+  type ThreadActions,
+} from '@/apps/drive/files/features/comments/useThreadChanges'
+export {
+  useCommentDrafts,
+  type ShownDraft,
+} from '@/apps/drive/files/features/comments/useCommentDrafts'
+export {
+  keepDraft as keepCommentDraft,
+  readDrafts as readCommentDrafts,
+  type CommentDraft,
+} from '@/apps/drive/files/features/comments/commentDrafts'
+/** Where a product's comments point. A product with whole-document comments only passes none. */
+export type {
+  CommentAnchors,
+  ThreadPlace,
+  ThreadPlaces,
+} from '@/apps/drive/files/features/comments/places'
+
+/** The `@` menu's rows, and the people it offers for the open document. */
+export { default as DriveMentionList } from '@/apps/drive/files/features/comments/MentionList.vue'
+export {
+  rankMentionsFor,
+  searchMentions,
+  useUsers,
+} from '@/apps/drive/files/features/comments/useUsers'
+export type { MentionUser } from '@/apps/drive/files/features/comments/people'
 
 /**
  * A file's card, as Drive's grid shows it. Pass `node` and `meta`. The card picks
@@ -402,6 +435,14 @@ export { openingLocation } from '@/apps/drive/files/features/document/openingLoc
 export { PANEL_BUTTONS } from '@/apps/drive/files/features/document/header'
 export type { DocumentPanel } from '@/apps/drive/client/types'
 export type { DocumentSaveState } from '@/apps/drive/files/features/document/header'
+/** A version's images that are binned or deleted: which ones, how to bring them back, and what to say. */
+export {
+  imagesNotice,
+  missingImages,
+  restoreImages,
+  type MissingImage,
+  type VersionImage,
+} from '@/apps/drive/files/features/document/versionImages'
 
 export const filePreviewSurface = defineAsyncComponent(
   () => import('@/apps/drive/files/features/preview/FilePreviewSurface.vue'),
