@@ -20,12 +20,9 @@ import {
   DriveDocumentHeader,
   imagesNotice,
   missingImages,
-  rankMentionsFor,
   restoreImages,
   showError,
-  useCommentDrafts,
-  useDocumentThreads,
-  useThreadChanges,
+  useDocumentComments,
   DriveVersionShownBar as VersionShownBar,
   type DocumentPanel,
   type DocumentSession,
@@ -135,15 +132,15 @@ const preview = shallowRef<
 const recoveryBanner = ref<InstanceType<typeof RecoveryBanner> | null>(null)
 const seesComments = computed(() => props.session.panels.value.includes('comments'))
 const {
-  threads: readThreads,
+  threads,
   readAt: threadsReadAt,
   refresh: refreshThreads,
-} = useDocumentThreads(props.session, () => seesComments.value)
-const { threads, actions: threadActions } = useThreadChanges({
-  session: props.session,
-  readThreads,
-  readAt: threadsReadAt,
-  refresh: refreshThreads,
+  actions: threadActions,
+  drafts: commentDrafts,
+} = useDocumentComments(props.session, {
+  isShown: () => seesComments.value,
+  room: () => room.value,
+  anchors: { quote: anchorQuote, ends: anchorEnds },
 })
 
 const {
@@ -226,14 +223,6 @@ const shownBanner = computed(() => {
   return stopBanner.value
 })
 const showsRecoveryBanner = computed(() => !isPreviewing.value && !stopBanner.value)
-
-const commentDrafts = useCommentDrafts({
-  session: props.session,
-  user: useSession().user.value?.id ?? 'Guest',
-  room: () => room.value,
-  refreshThreads,
-  anchors: { quote: anchorQuote, ends: anchorEnds },
-})
 
 function refusesComment() {
   if (canComment.value) {
@@ -400,7 +389,6 @@ provide(RENAME_DOCUMENT, async (title) => {
 })
 
 provide(DOCUMENT_MEDIA, (id) => props.session.media(id))
-rankMentionsFor(props.session.nodeId)
 
 function showVersion(shown: DocumentVersion | null) {
   if (!shown) {

@@ -25,12 +25,9 @@ import {
   DriveDocumentHeader,
   imagesNotice,
   missingImages,
-  rankMentionsFor,
   restoreImages,
-  useCommentDrafts,
-  useDocumentThreads,
+  useDocumentComments,
   useDriveDocumentActions,
-  useThreadChanges,
   DriveVersionShownBar as VersionShownBar,
   waitForFocusBack,
   type DocumentPanel,
@@ -168,25 +165,14 @@ watch(panel, (shown) => {
     previewed.value = null
   }
 })
-const {
-  threads: readThreads,
-  readAt: threadsReadAt,
-  refresh: refreshThreads,
-} = useDocumentThreads(props.session, () => panel.value === 'comments')
-const { threads, actions: threadActions } = useThreadChanges({
-  session: props.session,
-  readThreads,
-  readAt: threadsReadAt,
-  refresh: refreshThreads,
-})
 // Comments are on the whole presentation, so a draft waits on no text in the room
-const commentDrafts = useCommentDrafts({
-  session: props.session,
-  user: userSession.user.value?.id ?? 'Guest',
-  room: () => null,
-  refreshThreads,
-})
-rankMentionsFor(props.session.nodeId)
+const {
+  threads,
+  readAt: threadsReadAt,
+  refresh: refreshThreads,
+  actions: threadActions,
+  drafts: commentDrafts,
+} = useDocumentComments(props.session, { isShown: () => panel.value === 'comments' })
 const exporting = ref(false)
 // A version's slides to print in place of the presentation's, for a version that can't be restored
 const printedSlides = shallowRef<Record<string, unknown>[] | null>(null)
