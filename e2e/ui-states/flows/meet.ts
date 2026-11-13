@@ -434,6 +434,21 @@ async function leoJoins(scene: BaseScene): Promise<Page> {
 	return page;
 }
 
+/**
+ * The dialog defaults to the next two whole hours of today, which after 22:00
+ * end at midnight, before they start, and leave Schedule disabled. The flow
+ * pins the page's clock to 9:00 tomorrow, so the meeting it schedules is
+ * still upcoming for the server and the screens match at any hour.
+ */
+async function pinScheduleMorning(scene: BaseScene) {
+	const morning = new Date();
+	morning.setDate(morning.getDate() + 1);
+	morning.setHours(9, 0, 0, 0);
+	await scene.context.clock.install({ time: morning });
+	await scene.page.reload();
+	await expect(scene.page.getByRole("button", { name: "Schedule meet" })).toBeVisible();
+}
+
 async function openSchedule(page: Page) {
 	await page.getByRole("button", { name: "Schedule meet" }).click();
 	await expect(page.getByRole("dialog", { name: "Schedule meet" })).toBeVisible();
@@ -480,6 +495,7 @@ export const meet = defineFlow<Event, BaseScene>({
 			await startFromHome(scene, "Restricted meet");
 		},
 		async SCHEDULE(scene) {
+			await pinScheduleMorning(scene);
 			await openSchedule(scene.page);
 			await expect(scene.page.getByLabel("Title")).toBeVisible();
 		},
