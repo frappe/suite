@@ -430,7 +430,7 @@ export {
   restoreImages,
   type MissingImage,
   type VersionImage,
-} from '@/apps/drive/files/features/document/versionImages'
+} from '@/apps/drive/files/features/side-panel/versions/versionImages'
 /**
  * A document's side panel: its comments or its versions, one at a time. Versions sit under
  * the day each was taken, with view, restore, download, rename and save; the app shows a
