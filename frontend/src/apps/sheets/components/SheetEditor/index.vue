@@ -66,7 +66,11 @@
         />
       </DefineTopbarStatus>
       <DefineTopbarMenus>
-        <SheetMenuBar :menus="menuBar" :open-comments="openComments" />
+        <SheetMenuBar
+          :menus="menuBar"
+          :open-comments="openComments"
+          @item-ran="_refocusGridAfterDialog"
+        />
       </DefineTopbarMenus>
       <DefineTopbarActions>
         <SheetTopbarActions :present-users="presentUsers" :current-sheet="currentSheet" />
@@ -687,6 +691,7 @@
         </div>
 
         <textarea
+          ref="noteBoxRef"
           v-model="commentPanel.draft"
           class="sn-comment-ta"
           rows="2"
@@ -766,7 +771,7 @@
 
 <script setup>
 import { createReusableTemplate } from '@vueuse/core'
-import { Badge, Button, Dialog, Dropdown, FormControl, Spinner, Tooltip } from 'frappe-ui'
+import { Badge, Button, Dialog, Dropdown, FormControl, Spinner, toast, Tooltip } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import * as Y from 'yjs'
@@ -2178,6 +2183,7 @@ const {
   openTabMenu,
 } = useContextMenu({
   getGrid: () => grid,
+  refocusGrid: () => _refocusGridAfterDialog(),
 })
 
 // The right-click menu is entirely mutation actions (insert/delete/freeze/
@@ -2654,11 +2660,12 @@ function _setupGridInstance() {
           // 'warn' rules let the value through but surface a transient notice;
           // 'reject' (default) blocks the edit and repaints the pre-edit value.
           if (!v.valid && v.severity !== 'warn') {
-            const msg = v.message || 'Value rejected by data validation rule'
-            saveError.value = msg
-            setTimeout(() => {
-              if (saveError.value === msg) saveError.value = ''
-            }, 3500)
+            // A toast, not the top bar's small badge, which went unseen (ISSUES #152).
+            toast.error(
+              v.message
+                ? __("This value isn't allowed. {0}", [v.message])
+                : __("This value isn't allowed."),
+            )
             // Force a re-render so the canvas repaints with the pre-edit value
             // (we never called sheet.setCell so the engine still has it).
             grid?.render?.()
@@ -3669,7 +3676,11 @@ function openCommentPanel() {
   commentPanel.draft = ''
   _loadCommentThread()
   commentPanel.open = true
+  // Opened to write a note (Insert > Note, Shift+F2): the cursor goes in the
+  // box, not back on the menu that opened it (ISSUES #150).
+  void nextTick(() => noteBoxRef.value?.focus())
 }
+const noteBoxRef = ref(null)
 
 // Mirror the engine's thread for `commentPanel.id` into the reactive panel.
 function _loadCommentThread() {
@@ -3893,6 +3904,12 @@ function openDropdown(id, rule, pos = {}) {
   dropdownPanel.w = pos.w ?? 120
   dropdownPanel.open = true
 }
+// The picker belongs to its cell: it closes once the selection leaves it,
+// rather than staying open over the next cells (ISSUES #152).
+watch([activeCell, currentSheet], ([id], [, sheetBefore]) => {
+  if (dropdownPanel.open && (id !== dropdownPanel.id || currentSheet.value !== sheetBefore))
+    dropdownPanel.open = false
+})
 async function pickDropdownOption(opt) {
   const id = dropdownPanel.id
   const sn = currentSheet.value
