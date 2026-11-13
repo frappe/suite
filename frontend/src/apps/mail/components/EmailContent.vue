@@ -34,7 +34,6 @@ import iframeResizerChildScript from '@iframe-resizer/child/index.umd.js?raw'
 // The package maps `./sfc` only via its (non-honored) `browser` field under
 // Vite 8/Rolldown, so import the concrete SFC file directly.
 import IframeResizer from '@iframe-resizer/vue/iframe-resizer.vue'
-import DOMPurify from 'dompurify'
 import { computed, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 
 import { blockRemoteAssets } from '@/apps/mail/utils'
@@ -46,7 +45,7 @@ import {
   remapEmailForDarkMode,
 } from '@/apps/mail/utils/darkMail'
 import { highlightBody } from '@/apps/mail/utils/highlightBody'
-import { escapeBracketedAddresses, unwrapStyleSheets } from '@/apps/mail/utils/html'
+import { escapeBracketedAddresses, mailPurifier } from '@/apps/mail/utils/html'
 import { parseMailto } from '@/apps/mail/utils/mailto'
 import { findQuoteRoots } from '@/apps/mail/utils/quotedContent'
 
@@ -147,10 +146,7 @@ const collapseQuotes = (doc: Document) => {
 }
 
 const body = computed(() => {
-  let sanitized = DOMPurify.sanitize(
-    unwrapStyleSheets(escapeBracketedAddresses(content)),
-    DOMPURIFY_CONFIG,
-  )
+  let sanitized = mailPurifier.sanitize(escapeBracketedAddresses(content), DOMPURIFY_CONFIG)
   if (blockImages) sanitized = blockRemoteAssets(sanitized)
   const doc = new DOMParser().parseFromString(sanitized, 'text/html')
   // Two kinds of email render exactly as authored, dark theme or not: those

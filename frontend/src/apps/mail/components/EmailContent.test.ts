@@ -5,7 +5,11 @@ import EmailContent from '@/apps/mail/components/EmailContent.vue'
 
 // The stubbed frame hands its emit back, so a test can say when the resizer reports ready.
 const resizer = vi.hoisted(() => ({ reportReady: () => {} }))
-const theme = vi.hoisted(() => ({ value: 'light' as 'light' | 'dark' }))
+// The app's theme, which a test switches before it mounts.
+interface Theme {
+  value: 'light' | 'dark'
+}
+const theme = vi.hoisted((): Theme => ({ value: 'light' }))
 
 vi.mock('@iframe-resizer/vue/iframe-resizer.vue', async () => {
   const { defineComponent, h } = await import('vue')
@@ -127,6 +131,25 @@ describe('EmailContent renders mail as it was sent', () => {
     const css = stylesheets(rendered(root))
     expect(css).toContain('@media only screen and (max-width: 480px)')
     expect(css).toContain('.hide-on-phone { display: none !important; }')
+  })
+
+  it('keeps a stylesheet hidden in a comment that the sender never closed', async () => {
+    const root = mount(
+      '<p>Hello</p><style><!-- @media only screen and (max-width: 480px) { .stack { display: block !important; } }',
+    )
+    await nextTick()
+
+    expect(stylesheets(rendered(root))).toContain('.stack { display: block !important; }')
+  })
+
+  // Any sender can write this; the tab must not freeze reading it.
+  it('renders a body of unclosed style tags without stalling', async () => {
+    const started = performance.now()
+    const root = mount('<p>Hello</p>' + '<style>'.repeat(150_000))
+    await nextTick()
+
+    expect(performance.now() - started).toBeLessThan(1_000)
+    expect(rendered(root).body.textContent).toContain('Hello')
   })
 
   it('keeps every cell of a table quoted in a reply, with its borders', async () => {

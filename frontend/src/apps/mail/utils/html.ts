@@ -1,5 +1,7 @@
-// Pure HTML-string helpers, kept out of the utils barrel so they can be used (and
-// tested) without pulling in its Vue-component and frappe-ui imports.
+// HTML helpers, kept out of the utils barrel so they can be used (and tested) without
+// pulling in its Vue-component and frappe-ui imports.
+
+import DOMPurify, { type UponSanitizeElementHook } from 'dompurify'
 
 export const escapeHtml = (s: string) =>
   s.replace(
@@ -56,16 +58,24 @@ export const escapeBracketedAddresses = (html: string) =>
 // (`/*<![CDATA[*/ … /*]]>*/`). CSS reads straight past both, but the sanitizer drops any
 // element whose text looks like markup, and with it about a third of real-world mail's
 // stylesheets: the @media rules that stack a newsletter's columns on a phone, so the mail
-// stayed 650px wide in a 360px pane. The wrappers mean nothing to CSS, so they go before
-// sanitizing; any other markup-like text still costs the stylesheet, as before.
-const STYLE_ELEMENT = /(<style\b[^>]*>)([\s\S]*?)(<\/style\s*>)/gi
+// stayed 650px wide in a 360px pane. The wrappers mean nothing to CSS, so they go just
+// before the sanitizer judges the stylesheet; any other markup-like text still costs it, as
+// before. A hook rather than a pattern over the raw HTML: the parser has already found where
+// each stylesheet ends, where a pattern scanned to the end of the mail once per unclosed
+// <style>, and a body of them froze the tab.
 const STYLE_WRAPPER = /<!--|-->|<!\[CDATA\[|\]\]>/g
 
-export const unwrapStyleSheets = (html: string) =>
-  html.replace(
-    STYLE_ELEMENT,
-    (_, open: string, css: string, close: string) => open + css.replace(STYLE_WRAPPER, '') + close,
-  )
+const unwrapStyleSheet: UponSanitizeElementHook = (node, { tagName }) => {
+  if (tagName !== 'style') return
+  node.childNodes.forEach((child) => {
+    if (child.nodeType === Node.TEXT_NODE && child.nodeValue)
+      child.nodeValue = child.nodeValue.replace(STYLE_WRAPPER, '')
+  })
+}
+
+// Mail's own instance, so the hook stays out of the HTML other code cleans with the shared one.
+export const mailPurifier = DOMPurify(window)
+mailPurifier.addHook('uponSanitizeElement', unwrapStyleSheet)
 
 // Plain text as HTML that keeps its shape.
 //
