@@ -5,7 +5,7 @@ import { loginViaApi } from "../shared/auth";
 
 /** This suite's own run, so drive-backed-apps never removes its users, nor it theirs. */
 export const STATE_DIR = resolve(__dirname, ".state");
-/** Actor, peer and fresh (see `People` in scene.ts), and a spare. */
+/** Actor, peer and fresh (see `People` in scene.ts). `provision_users` makes users in pairs, so a fourth goes unused. */
 const USER_COUNT = 4;
 
 /** Real-looking names, so screenshots read like a workspace and not a test run. */
