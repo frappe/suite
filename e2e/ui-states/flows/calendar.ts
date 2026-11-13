@@ -1,5 +1,5 @@
 import { expect, type APIRequestContext, type Locator } from "@playwright/test";
-import { demoUser, openDemoScene } from "../demo";
+import { demoUser, identityOf, openDemoScene, personalAccount, type DemoPerson } from "../demo";
 import { defineFlow, setupFlow } from "../flow";
 import { perScene, type BaseScene } from "../scene";
 import {
@@ -7,12 +7,11 @@ import {
 	createEvent,
 	defaultCalendar,
 	localDate,
-	persistently,
-	personalAccount,
 	removeCalendarsNamed,
 	removeEventsTitled,
 	setCalendarVisible,
 	type NewEvent,
+	type Participant,
 } from "./calendar-helpers";
 
 type Event =
@@ -394,31 +393,25 @@ async function cardMenu(scene: BaseScene, title: string): Promise<void> {
 function deferEvents(scene: BaseScene, ...titles: string[]): void {
 	const { account } = context.get(scene);
 	scene.defer(async () => {
-		const leo = await persistentlyValue(() => scene.as(demoUser("leo")));
-		const leoAccount = await persistentlyValue(() => personalAccount(leo));
+		const leo = await scene.as(demoUser("leo"));
+		const leoAccount = await personalAccount(leo);
 		for (const title of titles) {
-			await persistently(() => removeEventsTitled(leo, leoAccount, title));
-			await persistently(() => removeEventsTitled(scene.api, account, title));
+			await removeEventsTitled(leo, leoAccount, title);
+			await removeEventsTitled(scene.api, account, title);
 		}
 	});
 }
 
-async function persistentlyValue<T>(read: () => Promise<T>): Promise<T> {
-	let value: T | undefined;
-	await persistently(async () => {
-		value = await read();
-	});
-	// SAFETY: persistently only returns after `read` succeeded, which set `value`.
-	return value as T;
+/** A demo person as an event's participant names them. */
+function participant(person: DemoPerson, participation_status: Participant["participation_status"], expect_reply?: number): Participant {
+	const { email, name } = identityOf(person);
+	return { email, _name: name, participation_status, expect_reply };
 }
-
-const MAYA = { email: "maya@northwind.test", _name: "Maya Chen" };
-const LEO = { email: "leo@northwind.test", _name: "Leo Park" };
 
 /** Seeds an event Maya organizes, then reloads the week to show it. */
 async function seedOwn(scene: BaseScene, event: NewEvent): Promise<void> {
 	deferEvents(scene, event.title);
-	await createEvent(scene.api, context.get(scene).account, MAYA.email, event);
+	await createEvent(scene.api, context.get(scene).account, identityOf("maya").email, event);
 	await scene.page.reload();
 	await expect(scene.page.getByText(event.title, { exact: true }).first()).toBeVisible();
 }
@@ -427,13 +420,10 @@ async function seedOwn(scene: BaseScene, event: NewEvent): Promise<void> {
 async function seedInvite(scene: BaseScene, event: Omit<NewEvent, "participants" | "invite">): Promise<void> {
 	deferEvents(scene, event.title);
 	const leo: APIRequestContext = await scene.as(demoUser("leo"));
-	await createEvent(leo, await personalAccount(leo), LEO.email, {
+	await createEvent(leo, await personalAccount(leo), identityOf("leo").email, {
 		...event,
 		invite: true,
-		participants: [
-			{ ...LEO, participation_status: "ACCEPTED" },
-			{ ...MAYA, participation_status: "NEEDS-ACTION", expect_reply: 1 },
-		],
+		participants: [participant("leo", "ACCEPTED"), participant("maya", "NEEDS-ACTION", 1)],
 	});
 	await expect(async () => {
 		await scene.page.reload();
@@ -445,7 +435,7 @@ async function seedInvite(scene: BaseScene, event: Omit<NewEvent, "participants"
 async function seedCalendar(scene: BaseScene): Promise<string> {
 	const { account } = context.get(scene);
 	const name = scene.name("Side projects");
-	scene.defer(() => persistently(() => removeCalendarsNamed(scene.api, account, name)));
+	scene.defer(() => removeCalendarsNamed(scene.api, account, name));
 	await createCalendar(scene.api, account, name, "#6846e3"); // Violet in the app palette
 	await scene.page.reload();
 	await expect(myCalendars(scene).getByRole("button", { name, exact: true })).toBeVisible();
@@ -550,7 +540,7 @@ export const calendar = defineFlow<Event, BaseScene>({
 		async HIDE_CALENDAR(scene) {
 			const { account } = context.get(scene);
 			const own = await defaultCalendar(scene.api, account);
-			scene.defer(() => persistently(() => setCalendarVisible(scene.api, account, own.id, true)));
+			scene.defer(() => setCalendarVisible(scene.api, account, own.id, true));
 			await myCalendars(scene).getByRole("button", { name: own._name, exact: true }).click();
 			await expect(scene.page.getByText("Launch check-in")).toHaveCount(0);
 		},
@@ -562,7 +552,7 @@ export const calendar = defineFlow<Event, BaseScene>({
 			const dialog = scene.dialog("New Calendar");
 			const name = scene.name("Travel");
 			const { account } = context.get(scene);
-			scene.defer(() => persistently(() => removeCalendarsNamed(scene.api, account, name)));
+			scene.defer(() => removeCalendarsNamed(scene.api, account, name));
 			await dialog.getByRole("textbox", { name: "Name" }).fill(name);
 			await dialog.getByRole("combobox", { name: "Color" }).click();
 			await scene.page.getByRole("option", { name: "Amber" }).click();
@@ -593,7 +583,7 @@ export const calendar = defineFlow<Event, BaseScene>({
 			const dialog = scene.dialog("Edit Calendar");
 			const name = scene.name("Weekend projects");
 			const { account } = context.get(scene);
-			scene.defer(() => persistently(() => removeCalendarsNamed(scene.api, account, name)));
+			scene.defer(() => removeCalendarsNamed(scene.api, account, name));
 			await dialog.getByRole("textbox", { name: "Name" }).fill(name);
 			await expect(dialog.getByRole("button", { name: "Save" })).toBeEnabled();
 		},
@@ -698,10 +688,7 @@ export const calendar = defineFlow<Event, BaseScene>({
 			await seedOwn(scene, {
 				title,
 				start: todayAt(19),
-				participants: [
-					{ ...MAYA, participation_status: "ACCEPTED" },
-					{ ...LEO, participation_status: "NEEDS-ACTION", expect_reply: 1 },
-				],
+				participants: [participant("maya", "ACCEPTED"), participant("leo", "NEEDS-ACTION", 1)],
 			});
 			await openCard(scene, title);
 		},

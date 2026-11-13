@@ -39,8 +39,8 @@ export interface BaseScene {
 	/** A name unique to this path. */
 	name(label: string): string;
 	goto(path: string): Promise<void>;
-	/** Holds requests whose URL matches until released or aborted. */
-	hold(url: string | RegExp): Promise<Hold>;
+	/** Holds requests whose URL matches, from the scene's page or from `target`, until released or aborted. */
+	hold(url: string | RegExp, target?: Page): Promise<Hold>;
 	/** The most recent `hold()` of this scene. Throws when there is none. */
 	readonly lastHold: Hold;
 	/** Waits for transitions and the skeleton delay. */
@@ -89,6 +89,33 @@ export function perScene<T>(label: string) {
 			return value;
 		},
 	};
+}
+
+/** Calls a whitelisted method as `api`'s user and answers its `message`, which a method returning nothing leaves out. */
+export async function callMethod<T = unknown>(api: APIRequestContext, method: string, data: Record<string, unknown> = {}): Promise<T> {
+	const response = await api.post(`/api/method/${method}`, { data });
+	if (!response.ok()) throw new MethodRefused(method, response.status(), await response.text());
+	// SAFETY: Frappe wraps a whitelisted method's return value in `message`; the caller names its type.
+	return ((await response.json()) as { message: T }).message;
+}
+
+/** A whitelisted method answered with an error status. */
+export class MethodRefused extends Error {
+	constructor(
+		readonly method: string,
+		readonly status: number,
+		body: string,
+	) {
+		super(`${method} answered ${status}: ${body}`);
+	}
+}
+
+/**
+ * For a cleanup whose record may be gone already, or never made: the server
+ * refusing is fine. Anything else, the bench being away included, still throws.
+ */
+export function unlessRefused(error: unknown): void {
+	if (!(error instanceof MethodRefused && error.status < 500)) throw error;
 }
 
 function people(): People {
@@ -158,7 +185,7 @@ export async function openBrowserScene(browser: Browser, baseURL: string, user?:
 		async goto(path) {
 			await page.goto(path);
 		},
-		async hold(url) {
+		async hold(url, target = page) {
 			// The handler stays routed for the scene's life: unrouting lets a held request through.
 			const held: Route[] = [];
 			let failing: number | null = null;
@@ -170,7 +197,7 @@ export async function openBrowserScene(browser: Browser, baseURL: string, user?:
 					// A 413 without Drive's own type reads as a proxy's body limit, and the chunk goes again at half the size.
 					body: JSON.stringify({ exc_type: status === 413 ? "DriveOverQuota" : "ServerError", message: "Something went wrong" }),
 				});
-			await page.route(url, async (route) => {
+			await target.route(url, async (route) => {
 				if (passing) await route.continue();
 				else if (failing === null) held.push(route);
 				else await fail(route, failing);

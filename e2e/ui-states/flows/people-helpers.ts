@@ -1,49 +1,11 @@
 import type { APIRequestContext } from "@playwright/test";
+import { callMethod } from "../scene";
 
 /**
  * Seeds People's contacts and address books on the demo site through the same
  * whitelisted methods the app calls, for the `people` flow. Each seeding call
  * returns the id the cleanup needs.
  */
-
-/**
- * Runs a cleanup until it succeeds, for up to a minute. The dev bench restarts
- * itself every few thousand requests and refuses connections meanwhile; a
- * cleanup that ran into that window would leave its data on the shared site.
- */
-export async function persistently(cleanup: () => Promise<unknown>): Promise<void> {
-	for (let attempt = 1; ; attempt += 1) {
-		try {
-			await cleanup();
-			return;
-		} catch (error) {
-			if (attempt >= 20) throw error;
-			await new Promise((resolve) => setTimeout(resolve, 3000));
-		}
-	}
-}
-
-/** Calls a whitelisted method and returns its `message`. */
-export async function callMethod<T>(api: APIRequestContext, method: string, body: Record<string, unknown>): Promise<T> {
-	const response = await api.post(`/api/method/${method}`, { data: body });
-	if (!response.ok()) throw new Error(`${method} answered ${response.status()}: ${await response.text()}`);
-	// SAFETY: every whitelisted method answers `{ message }`; the caller names the message's type.
-	const { message } = (await response.json()) as { message: T };
-	return message;
-}
-
-interface Account {
-	id: string;
-	is_personal: boolean;
-}
-
-/** The signed-in user's personal mail account, where their contacts live. */
-export async function personalAccount(api: APIRequestContext): Promise<string> {
-	const info = await callMethod<{ accounts: Account[] }>(api, "suite.mail.api.account.get_user_info", {});
-	const account = info.accounts.find((candidate) => candidate.is_personal);
-	if (!account) throw new Error("people: the demo user has no personal mail account");
-	return account.id;
-}
 
 export interface AddressBook {
 	id: string;

@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { DEMO_URL } from "../demo";
+import { DEMO_URL, identityOf, mailboxOf, personalAccount } from "../demo";
 import { fixture } from "../content";
-import type { BaseScene } from "../scene";
+import { callMethod, type BaseScene } from "../scene";
 
 /**
  * Test mail for the Mail flow, delivered straight into a demo person's
@@ -128,8 +128,6 @@ export interface Letter {
 	calendar?: string;
 }
 
-const MAYA = "Maya Chen <maya@northwind.test>";
-
 function base64Lines(content: Buffer): string {
 	return content.toString("base64").replace(/.{76}/g, "$&\r\n");
 }
@@ -155,7 +153,7 @@ export function compose(letter: Letter): string {
 	}
 	const headers = [
 		`From: ${letter.from}`,
-		`To: ${MAYA}`,
+		`To: ${mailboxOf("maya")}`,
 		`Subject: ${letter.subject}`,
 		`Date: ${new Date().toUTCString()}`,
 		`Message-ID: <${MESSAGE_ID_PREFIX}${letter.id}@northwind.test>`,
@@ -171,6 +169,8 @@ function icsDate(date: Date): string {
 
 /** An invitation from Theo to Maya, next week, for an event no calendar holds yet. */
 export function invitation(uid: string, start: Date): string {
+	const theo = identityOf("theo");
+	const maya = identityOf("maya");
 	return [
 		"BEGIN:VCALENDAR",
 		"VERSION:2.0",
@@ -183,9 +183,9 @@ export function invitation(uid: string, start: Date): string {
 		"DURATION:PT45M",
 		"SUMMARY:Beta launch walkthrough",
 		"LOCATION:Studio room",
-		"ORGANIZER;CN=Theo Okafor:mailto:theo@northwind.test",
-		"ATTENDEE;CN=Theo Okafor;ROLE=CHAIR;PARTSTAT=ACCEPTED:mailto:theo@northwind.test",
-		"ATTENDEE;CN=Maya Chen;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:maya@northwind.test",
+		`ORGANIZER;CN=${theo.name}:mailto:${theo.email}`,
+		`ATTENDEE;CN=${theo.name};ROLE=CHAIR;PARTSTAT=ACCEPTED:mailto:${theo.email}`,
+		`ATTENDEE;CN=${maya.name};ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:${maya.email}`,
 		"END:VEVENT",
 		"END:VCALENDAR",
 		"",
@@ -200,7 +200,7 @@ export function testLetters(stamp: string): { raw: string; keywords?: string[] }
 		{
 			raw: compose({
 				id: `${stamp}-invite`,
-				from: "Theo Okafor <theo@northwind.test>",
+				from: mailboxOf("theo"),
 				subject: "Invitation: Beta launch walkthrough",
 				html: "<p>Hi Maya,</p><p>Let's walk through the launch plan together before the beta opens. I booked the studio room.</p><p>Theo</p>",
 				calendar: invitation(`ui-states-mail-${stamp}@northwind.test`, start),
@@ -235,7 +235,7 @@ export function testLetters(stamp: string): { raw: string; keywords?: string[] }
  * any an interrupted path left, and removes them when the scene closes.
  */
 export async function deliverTestMail(scene: BaseScene): Promise<void> {
-	const maya = await Mailbox.open("maya@northwind.test");
+	const maya = await Mailbox.open(identityOf("maya").email);
 	await maya.removeDelivered();
 	scene.defer(() => maya.removeDelivered());
 	await maya.deliver(testLetters(Date.now().toString(36)));
@@ -243,35 +243,25 @@ export async function deliverTestMail(scene: BaseScene): Promise<void> {
 
 /** The reader's own folder the folder states make, and remove when the path closes. */
 export const FOLDER_NAME = "Beta feedback";
-const METHOD = "/api/method/suite.mail.api";
-
-async function post<T>(scene: BaseScene, method: string, data: Record<string, unknown>): Promise<T> {
-	const response = await scene.api.post(`${METHOD}.${method}`, { data });
-	if (!response.ok()) throw new Error(`${method} failed: ${response.status()} ${await response.text()}`);
-	// SAFETY: a whitelisted method answers `{ message }`, typed by its caller.
-	return ((await response.json()) as { message: T }).message;
-}
-
-/** The signed-in person's mail account id, as Mail's URLs name it. */
-export async function mailAccount(scene: BaseScene): Promise<string> {
-	const user = await post<{ accounts: { id: string }[] }>(scene, "account.get_user_info", {});
-	const account = user.accounts[0]?.id;
-	if (!account) throw new Error("The signed-in person has no mail account");
-	return account;
-}
+const METHOD = "suite.mail.api";
 
 /** Creates FOLDER_NAME through Mail's own API, after removing one left behind. */
 export async function createFolder(scene: BaseScene): Promise<void> {
 	await removeFolder(scene);
 	scene.defer(() => removeFolder(scene));
-	await post(scene, "mail.create_mailbox", { account: await mailAccount(scene), name: FOLDER_NAME, icon: "folder", color: "Gray" });
+	await callMethod(scene.api, `${METHOD}.mail.create_mailbox`, {
+		account: await personalAccount(scene.api),
+		name: FOLDER_NAME,
+		icon: "folder",
+		color: "Gray",
+	});
 }
 
 /** Deletes every folder called FOLDER_NAME through Mail's own API. */
 export async function removeFolder(scene: BaseScene): Promise<void> {
-	const account = await mailAccount(scene);
-	const folders = await post<{ id: string; _name: string }[]>(scene, "mail.get_mailboxes", { account });
+	const account = await personalAccount(scene.api);
+	const folders = await callMethod<{ id: string; _name: string }[]>(scene.api, `${METHOD}.mail.get_mailboxes`, { account });
 	for (const folder of folders.filter((mailbox) => mailbox._name === FOLDER_NAME)) {
-		await post(scene, "mail.delete_mailbox", { account, id: folder.id, name: folder._name });
+		await callMethod(scene.api, `${METHOD}.mail.delete_mailbox`, { account, id: folder.id, name: folder._name });
 	}
 }

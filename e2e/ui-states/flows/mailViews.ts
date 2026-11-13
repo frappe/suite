@@ -1,12 +1,11 @@
 import { expect, type Locator, type Page } from "@playwright/test";
-import { openDemoScene } from "../demo";
+import { openDemoScene, personalAccount } from "../demo";
 import { defineFlow, setupFlow } from "../flow";
 import { perScene, type BaseScene } from "../scene";
 import {
 	createFolder,
 	deliverTestMail,
 	FOLDER_NAME,
-	mailAccount,
 	MAILBOXES_URL,
 	MIME_URL,
 	removeFolder,
@@ -161,7 +160,7 @@ export const mailViews = defineFlow<Event, BaseScene>({
 	},
 	events: {
 		async OPEN_SCREENER(scene) {
-			await scene.goto(`/mail/account/${await mailAccount(scene)}/screener`);
+			await scene.goto(`/mail/account/${await personalAccount(scene.api)}/screener`);
 			await expect(scene.page).toHaveURL(/\/mailbox\/inbox$/);
 			await expect(scene.page.getByRole("link", { name: SCREENED_SUBJECT })).toBeVisible();
 		},
@@ -171,15 +170,15 @@ export const mailViews = defineFlow<Event, BaseScene>({
 		},
 		async SEARCH_SLOW(scene) {
 			await scene.hold(SEARCH_URL);
-			await scene.goto(`/mail/account/${await mailAccount(scene)}/mailbox/search?text=CSV%20import`);
+			await scene.goto(`/mail/account/${await personalAccount(scene.api)}/mailbox/search?text=CSV%20import`);
 			await expect(scene.page.getByText("Searching…")).toBeVisible();
 		},
 		async SEARCH(scene) {
-			await scene.goto(`/mail/account/${await mailAccount(scene)}/mailbox/search?text=CSV%20import`);
+			await scene.goto(`/mail/account/${await personalAccount(scene.api)}/mailbox/search?text=CSV%20import`);
 			await expect(scene.page.getByText(/^\d+ results?$/)).toBeVisible();
 		},
 		async SEARCH_MISS(scene) {
-			await scene.goto(`/mail/account/${await mailAccount(scene)}/mailbox/search?text=zebra%20marmalade`);
+			await scene.goto(`/mail/account/${await personalAccount(scene.api)}/mailbox/search?text=zebra%20marmalade`);
 			await expect(scene.page.getByText("No results found for the given query.")).toBeVisible();
 		},
 		async NEW_FOLDER(scene) {

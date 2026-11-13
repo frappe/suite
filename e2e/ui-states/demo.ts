@@ -1,17 +1,16 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
-import type { Browser } from "@playwright/test";
+import type { APIRequestContext, Browser } from "@playwright/test";
 import type { Credentials } from "../shared/auth";
-import { openBrowserScene, type BaseScene } from "./scene";
+import { callMethod, openBrowserScene, type BaseScene } from "./scene";
 
 /**
  * The two sites beside the Drive site, on the same bench:
  *
  * - The demo site holds the Northwind dataset (`suite.composition.demo.drive.seed`),
  *   with its own Stalwart, so Mail, Calendar, People, Home and Admin have
- *   real-looking content. Six people: maya (Suite Admin), leo, arjun, nisha,
- *   theo and sofia, all `@northwind.test`.
+ *   real-looking content. Six people, in `NAMES` below; Maya is the Suite Admin.
  * - The setup site was never set up, so it shows the first Admin's wizard.
  *
  * The seed prints the Northwind password once; `UI_STATES_DEMO` names the
@@ -21,14 +20,50 @@ export const DEMO_URL = process.env.UI_STATES_DEMO_URL ?? "http://ui-states-suit
 export const SETUP_URL = process.env.UI_STATES_SETUP_URL ?? "http://ui-states-setup.localhost:8021";
 export const DEMO_DOMAIN = "northwind.test";
 
-export type DemoPerson = "maya" | "leo" | "arjun" | "nisha" | "theo" | "sofia";
+/** Each demo person's display name, as the seed's cast (`suite/composition/demo/cast.py`) gives it. */
+const NAMES = {
+	maya: "Maya Chen",
+	leo: "Leo Park",
+	arjun: "Arjun Rao",
+	nisha: "Nisha Patel",
+	theo: "Theo Williams",
+	sofia: "Sofia Martinez",
+} as const;
+
+export type DemoPerson = keyof typeof NAMES;
+
+export interface Identity {
+	email: string;
+	name: string;
+}
+
+export function identityOf(person: DemoPerson): Identity {
+	return { email: `${person}@${DEMO_DOMAIN}`, name: NAMES[person] };
+}
+
+/** `Name <address>`, as a mail header names the person. */
+export function mailboxOf(person: DemoPerson): string {
+	const { email, name } = identityOf(person);
+	return `${name} <${email}>`;
+}
+
+/**
+ * The signed-in person's own mail account id, which Mail's URLs and methods
+ * name. The seed does not fix it, so it is read each time.
+ */
+export async function personalAccount(api: APIRequestContext): Promise<string> {
+	const info = await callMethod<{ accounts: { id: string; is_personal: boolean }[] }>(api, "suite.mail.api.account.get_user_info");
+	const account = info.accounts.find((candidate) => candidate.is_personal);
+	if (!account) throw new Error("The signed-in demo person has no personal mail account");
+	return account.id;
+}
 
 const demoFile = process.env.UI_STATES_DEMO ?? resolve(homedir(), ".local/state/ui-states/demo.json");
 
 export function demoUser(person: DemoPerson): Credentials {
 	// SAFETY: the operator wrote this file from the seed's output; it holds the shared Northwind password.
 	const { password } = JSON.parse(readFileSync(demoFile, "utf8")) as { password: string };
-	return { email: `${person}@${DEMO_DOMAIN}`, password };
+	return { email: identityOf(person).email, password };
 }
 
 /** A page on the demo site, signed in as `person` (Maya, the Suite Admin, by default). */

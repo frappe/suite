@@ -25,17 +25,17 @@ E2E_BENCH_PATH=/path/to/bench UI_STATES_FLOWS=listing,share \
 - `E2E_TEST_API_URL` is the server for `suite.drive.e2e_api`, which needs `DEV_SERVER=1`. It defaults to `BASE_URL`'s host on port 8095. The run starts a `frappe serve` there from `E2E_BENCH_PATH`, or reuses one already listening.
 - `UI_STATES_FLOWS` picks flows by id. Leave it out to run every flow.
 
-The dev bench restarts itself after 5000 requests and its port refuses connections meanwhile; `bench.ts` walks a path again when that happens, and any other failure fails the run.
+The dev bench restarts itself after 5000 requests and its port refuses connections meanwhile. When that happens, the path's cleanups run again once the bench is back, and `bench.ts` walks the path again; any other failure fails the run.
 
 Each run writes to `out/`: screenshots in `out/<flow>/`, one `<flow>.json` per flow captured, and `index.json` with every flow id in canvas order. The review canvas is built from `out/` by the `review-ui-states` skill, which owns the page.
 
 ## Files
 
 - `flow.ts`: a flow is an XState machine plus `enter` and one step per event. State `meta.description` is what the canvas shows; `meta.transient` keeps a state in the graph without a screenshot.
-- `bench.ts`: watches the bench's port so a path that failed during a bench restart is walked again.
-- `scene.ts`: one signed-in browser per path, with its own folder under `UI states` in My files (purged on close). `hold()` and `lastHold` for mid-flight and failed requests, `dialog()`, `toast()` and `rowAction()` for the page's own widgets, `as()` and `pageAs()` for a second user, `perScene()` for a value a flow keeps per path.
-- `demo.ts`: the demo and setup sites, and `openDemoScene()` / `openSetupScene()` for a flow's `open`.
-- `global-setup.ts`: provisions the Drive site's users and gives them real-looking names.
+- `bench.ts`: watches the bench's port so a path that failed during a bench restart is walked again, and a cleanup that failed for it runs again.
+- `scene.ts`: one signed-in browser per path, with its own folder under `UI states` in My files (purged on close). `hold()` and `lastHold` for mid-flight and failed requests, `dialog()`, `toast()` and `rowAction()` for the page's own widgets, `as()` and `pageAs()` for a second user, `defer()` for a cleanup, `perScene()` for a value a flow keeps per path, and `callMethod()` for a whitelisted method.
+- `demo.ts`: the demo and setup sites, `openDemoScene()` / `openSetupScene()` for a flow's `open`, the demo people's names, and `personalAccount()` for a person's mail account.
+- `global-setup.ts`: provisions the Drive site's users into `.state/`, gives them real-looking names, and removes them at teardown.
 - `manifest.ts`: the per-flow JSON the canvas reads.
 - `content.ts`: fills a folder with the mix a real folder has, and reads `fixtures/`.
 - `capture.spec.ts`: walks the shortest path to every state, screenshots each state the first time a path reaches it, records parent, event and edges.

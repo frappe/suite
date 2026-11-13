@@ -1,7 +1,7 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import { openDemoScene } from "../demo";
 import { defineFlow, setupFlow } from "../flow";
-import { perScene, type BaseScene } from "../scene";
+import { callMethod, perScene, unlessRefused, type BaseScene } from "../scene";
 
 type Event =
 	| { type: "SUITE_CLOUD_OFF" }
@@ -284,7 +284,7 @@ const machine = setupFlow<Event>().createMachine({
 
 /** The stand-in's seeded live domain. Groups and lists need an active domain, so they go here. */
 const LIVE = "example.com";
-const ADMIN_API = "/api/method/suite.mail.api.admin.";
+const ADMIN_API = "suite.mail.api.admin";
 
 interface Names {
 	stamp: string;
@@ -298,38 +298,20 @@ interface Names {
 }
 const names = perScene<Names>("mailAdmin: names");
 
-async function call(scene: BaseScene, method: string, data: Record<string, unknown>): Promise<unknown> {
-	const response = await scene.api.post(ADMIN_API + method, { data });
-	if (!response.ok()) throw new Error(`mailAdmin: ${method} failed: ${await response.text()}`);
-	// SAFETY: Frappe's method endpoint wraps every answer in `message`.
-	return ((await response.json()) as { message?: unknown }).message;
+function call<T = unknown>(scene: BaseScene, method: string, data: Record<string, unknown>): Promise<T> {
+	return callMethod<T>(scene.api, `${ADMIN_API}.${method}`, data);
 }
 
-/**
- * Cleanup. The item may never have been made, or a path may have deleted it
- * already, so a refusal is fine. The bench re-execs itself every 5000 requests
- * and refuses connections meanwhile, so a failed connection or a 5xx is tried
- * again until the bench is back.
- */
+/** Cleanup. The item may never have been made, or a path may have deleted it already, so a refusal is fine. */
 async function quietly(scene: BaseScene, method: string, data: Record<string, unknown>): Promise<void> {
-	for (let attempt = 0; attempt < 30; attempt++) {
-		const status = await scene.api
-			.post(ADMIN_API + method, { data })
-			.then((response) => response.status())
-			.catch(() => 0);
-		if (status !== 0 && status < 500) return;
-		await new Promise((done) => setTimeout(done, 1000));
-	}
+	await call(scene, method, data).catch(unlessRefused);
 }
 
 /** Removes what an earlier run of this flow left behind, so the empty Groups and Mailing lists states hold. */
 async function sweep(scene: BaseScene): Promise<void> {
-	// SAFETY: these methods answer `{ items: [{ id | name }] }`.
-	const domains = (await call(scene, "get_domains", { page_length: 100 })) as { items: { name: string }[] };
-	// SAFETY: as above, keyed by `id`.
-	const groups = (await call(scene, "get_groups", { page_length: 100 })) as { items: { id: string }[] };
-	// SAFETY: as above, keyed by `id`.
-	const lists = (await call(scene, "get_mailing_lists", { page_length: 100 })) as { items: { id: string }[] };
+	const domains = await call<{ items: { name: string }[] }>(scene, "get_domains", { page_length: 100 });
+	const groups = await call<{ items: { id: string }[] }>(scene, "get_groups", { page_length: 100 });
+	const lists = await call<{ items: { id: string }[] }>(scene, "get_mailing_lists", { page_length: 100 });
 	const ours = /^(harbor|archive|quay)-[0-9a-z]+\.test$/;
 	for (const group of groups.items.filter((item) => /^frontdesk-[0-9a-z]+@/.test(item.id)))
 		await quietly(scene, "delete_groups", { ids: [group.id] });

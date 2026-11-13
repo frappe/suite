@@ -1,5 +1,5 @@
 import { expect, type Page } from "@playwright/test";
-import { demoUser, openDemoScene } from "../demo";
+import { demoUser, identityOf, openDemoScene, personalAccount } from "../demo";
 import { defineFlow, setupFlow } from "../flow";
 import type { BaseScene } from "../scene";
 
@@ -472,8 +472,8 @@ export const mailAccount = defineFlow<Event, BaseScene>({
 			await openInvite(scene, true, "This invitation has expired");
 		},
 		async OPEN_PROFILE(scene) {
-			await scene.goto("/mail/account/c/profile");
-			await expect(scene.page.getByText("Maya Chen", { exact: true }).first()).toBeVisible();
+			await scene.goto(`/mail/account/${await personalAccount(scene.api)}/profile`);
+			await expect(scene.page.getByText(identityOf("maya").name, { exact: true }).first()).toBeVisible();
 			await expect(scene.page.getByText("Push Subscriptions")).toBeVisible();
 			await expect(button(scene.page, "Log Out")).toBeVisible();
 		},

@@ -1,12 +1,10 @@
 import type { APIRequestContext } from "@playwright/test";
-import { callMethod, persistently, personalAccount } from "./people-helpers";
+import { callMethod } from "../scene";
 
 /**
  * Seeds calendars and events on the demo site through the whitelisted methods
  * the Calendar app calls, for the `calendar` flow, and removes them again.
  */
-
-export { personalAccount, persistently };
 
 /** The zone the browser and the seeded events share: the runner's own. */
 export const TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;

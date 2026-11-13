@@ -1,18 +1,20 @@
 import type { APIRequestContext, Page } from "@playwright/test";
-import { demoUser } from "../demo";
-import { perScene, type BaseScene } from "../scene";
+import { demoUser, identityOf, personalAccount } from "../demo";
+import { callMethod, perScene, unlessRefused, type BaseScene } from "../scene";
 
 /**
- * Mail calls the compose flow seeds and cleans up with. Maya's mail account
- * on the demo site is `c` and Leo's is `d`; every mail the flow writes carries
- * the path's own token in its subject, so cleanup finds it by that token in
- * every mailbox it reached.
+ * Mail calls the compose flow seeds and cleans up with. Every mail the flow
+ * writes carries the path's own token in its subject, so cleanup finds it by
+ * that token in every mailbox it reached.
  */
-export const MAYA_ACCOUNT = "c";
-const LEO_ACCOUNT = "d";
-export const LEO = { email: "leo@northwind.test", display_name: "Leo Park" };
 
-const METHOD = "/api/method/suite.mail.api";
+const MAYA = identityOf("maya");
+const LEO = identityOf("leo");
+/** Leo as a recipient, the way the composer sends one. */
+export const LEO_RECIPIENT = { email: LEO.email, display_name: LEO.name };
+
+/** Maya's mail account, which Mail's URLs and every call here name. Read in `enter`. */
+export const mayaAccount = perScene<string>("compose: Maya's mail account");
 
 type Json = Record<string, unknown>;
 
@@ -28,12 +30,13 @@ type RecipientStatus = {
 	next_retry: string | null;
 };
 
-async function call<T>(api: APIRequestContext, method: string, data: Json): Promise<T> {
-	const response = await api.post(`${METHOD}.${method}`, { data });
-	if (!response.ok()) throw new Error(`${method} answered ${response.status()}: ${await response.text()}`);
-	// SAFETY: Frappe wraps a whitelisted method's return value in `message`.
-	const { message } = (await response.json()) as { message: T };
-	return message;
+function call<T>(api: APIRequestContext, method: string, data: Json): Promise<T> {
+	return callMethod<T>(api, `suite.mail.api.${method}`, data);
+}
+
+/** Reads Maya's account for this path, for `mayaAccount`. */
+export async function rememberAccount(scene: BaseScene): Promise<void> {
+	mayaAccount.set(scene, await personalAccount(scene.api));
 }
 
 /** The text every mail of this path carries in its subject. */
@@ -65,10 +68,10 @@ export function recordWrites(scene: BaseScene): void {
 /** Creates a mail from Maya to Leo through the same call the composer makes. */
 export async function sendAsMaya(scene: BaseScene, subject: string, sendAt?: Date): Promise<MailResult> {
 	const result = await call<MailResult>(scene.api, "mail.create_mail", {
-		account: MAYA_ACCOUNT,
-		from_email: "maya@northwind.test",
-		from_name: "Maya Chen",
-		to: [LEO],
+		account: mayaAccount.get(scene),
+		from_email: MAYA.email,
+		from_name: MAYA.name,
+		to: [LEO_RECIPIENT],
 		cc: [],
 		bcc: [],
 		subject,
@@ -91,11 +94,11 @@ interface SearchRow {
 	messages?: { id: string; subject?: string | null }[];
 }
 
-async function submissionsWith(api: APIRequestContext, token: string): Promise<SubmissionRow[]> {
+async function submissionsWith(api: APIRequestContext, account: string, token: string): Promise<SubmissionRow[]> {
 	const rows: SubmissionRow[] = [];
 	for (const undo_status of ["pending", "final", "canceled"]) {
 		const page = await call<{ rows: SubmissionRow[] }>(api, "scheduled.get_submissions", {
-			account: MAYA_ACCOUNT,
+			account,
 			undo_status,
 			start: 0,
 			page_length: 100,
@@ -126,7 +129,7 @@ async function messagesWith(api: APIRequestContext, account: string, token: stri
 
 async function deleteMessages(api: APIRequestContext, account: string, ids: Iterable<string>): Promise<void> {
 	// One already gone (a discard that committed, a draft replaced by a later save) is fine.
-	for (const id of ids) await call(api, "mail.delete_mail", { account, id }).catch(() => undefined);
+	for (const id of ids) await call(api, "mail.delete_mail", { account, id }).catch(unlessRefused);
 }
 
 /**
@@ -139,26 +142,28 @@ export async function forgetMail(scene: BaseScene): Promise<void> {
 	// Off the composer first, so no autosave writes a draft after this.
 	await scene.page.goto("about:blank").catch(() => undefined);
 	const api = scene.api;
+	const account = mayaAccount.get(scene);
 	let delivered = false;
-	for (const submission of await submissionsWith(api, token)) {
+	for (const submission of await submissionsWith(api, account, token)) {
 		if (submission.undo_status === "pending") {
-			await call(api, "scheduled.cancel_scheduled_mail", { account: MAYA_ACCOUNT, id: submission.id }).catch(() => undefined);
+			await call(api, "scheduled.cancel_scheduled_mail", { account, id: submission.id }).catch(unlessRefused);
 		} else if (submission.undo_status === "final") delivered = true;
 	}
 	// Cancelled ones settle as `canceled`; every record of this path is dropped.
-	for (const submission of await submissionsWith(api, token)) {
+	for (const submission of await submissionsWith(api, account, token)) {
 		if (submission.undo_status === "final") delivered = true;
-		await call(api, "scheduled.dismiss_failed_mail", { account: MAYA_ACCOUNT, id: submission.id }).catch(() => undefined);
+		await call(api, "scheduled.dismiss_failed_mail", { account, id: submission.id }).catch(unlessRefused);
 	}
-	await deleteMessages(api, MAYA_ACCOUNT, written.get(scene));
-	await deleteMessages(api, MAYA_ACCOUNT, await messagesWith(api, MAYA_ACCOUNT, token));
+	await deleteMessages(api, account, written.get(scene));
+	await deleteMessages(api, account, await messagesWith(api, account, token));
 	if (!delivered) return;
 	const leo = await scene.as(demoUser("leo"));
+	const leoAccount = await personalAccount(leo);
 	// Delivery to the local Stalwart takes a moment; wait for the copy rather than miss it.
 	for (let attempt = 0; attempt < 20; attempt++) {
-		const ids = await messagesWith(leo, LEO_ACCOUNT, token);
+		const ids = await messagesWith(leo, leoAccount, token);
 		if (ids.length) {
-			await deleteMessages(leo, LEO_ACCOUNT, ids);
+			await deleteMessages(leo, leoAccount, ids);
 			return;
 		}
 		await scene.page.waitForTimeout(1000);
@@ -202,7 +207,7 @@ export async function shapeSubmission(page: Page, delivery: Delivery): Promise<v
 				submission.next_retry = at(14);
 				Object.assign(recipient, { retries: 3, next_retry: at(14), reason: "451 4.7.1 Greylisted, please try again later", smtp_reply: null });
 			} else if (delivery === "failed") {
-				const reason = "550 5.1.1 <leo@northwind.test>: Recipient address rejected: mailbox is full";
+				const reason = `550 5.1.1 <${LEO.email}>: Recipient address rejected: mailbox is full`;
 				submission.delivery_errors = [{ email: LEO.email, reason }];
 				Object.assign(recipient, { retries: 5, reason, smtp_reply: reason });
 			} else if (delivery === "delivered") {
@@ -240,5 +245,5 @@ export async function onlyOwnSubmissions(scene: BaseScene): Promise<void> {
 
 /** Cancels a scheduled submission the way the Outbox does, which moves its mail back to Drafts. */
 export async function cancelAsMaya(scene: BaseScene, submission: string): Promise<void> {
-	await call(scene.api, "scheduled.cancel_scheduled_mail", { account: MAYA_ACCOUNT, id: submission });
+	await call(scene.api, "scheduled.cancel_scheduled_mail", { account: mayaAccount.get(scene), id: submission });
 }

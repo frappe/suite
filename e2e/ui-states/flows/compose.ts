@@ -5,9 +5,10 @@ import { perScene, type BaseScene } from "../scene";
 import {
 	cancelAsMaya,
 	forgetMail,
-	MAYA_ACCOUNT,
+	mayaAccount,
 	onlyOwnSubmissions,
 	recordWrites,
+	rememberAccount,
 	sendAsMaya,
 	shapeSubmission,
 } from "./compose-helpers";
@@ -359,7 +360,7 @@ async function seedAndOpenOutbox(scene: BaseScene, when: "scheduled" | "sent"): 
 	const mail = await sendAsMaya(scene, subject, sendAt);
 	if (!mail.submission_id) throw new Error(`create_mail gave no submission for ${subject}`);
 	seeded.set(scene, { subject, submission: mail.submission_id });
-	await scene.goto(`/mail/account/${MAYA_ACCOUNT}/outbox`);
+	await scene.goto(`/mail/account/${mayaAccount.get(scene)}/outbox`);
 	if (when === "sent") await scene.page.getByRole("radio", { name: "Final", exact: true }).click();
 	// A plain send sits in Pending for the server's undo period before it turns final.
 	await expect(outboxRow(scene)).toBeVisible({ timeout: 45_000 });
@@ -410,10 +411,11 @@ export const compose = defineFlow<Event, BaseScene>({
 	open: (browser) => openDemoScene(browser),
 	machine,
 	async enter(scene) {
+		await rememberAccount(scene);
 		recordWrites(scene);
 		await onlyOwnSubmissions(scene);
 		scene.defer(() => forgetMail(scene));
-		await scene.goto(`/mail/account/${MAYA_ACCOUNT}/mailbox/inbox`);
+		await scene.goto(`/mail/account/${mayaAccount.get(scene)}/mailbox/inbox`);
 		await expect(scene.page.getByRole("button", { name: "Compose", exact: true })).toBeVisible();
 	},
 	events: {
@@ -563,12 +565,12 @@ export const compose = defineFlow<Event, BaseScene>({
 			await expect(composer(scene.page).getByRole("textbox", { name: "Subject" })).toHaveValue(subjectOf(scene));
 		},
 		async OPEN_OUTBOX(scene) {
-			await scene.goto(`/mail/account/${MAYA_ACCOUNT}/outbox`);
+			await scene.goto(`/mail/account/${mayaAccount.get(scene)}/outbox`);
 			await expect(scene.page.getByText("No pending submissions")).toBeVisible();
 		},
 		async OPEN_OUTBOX_SLOW(scene) {
 			await scene.hold(LIST);
-			await scene.goto(`/mail/account/${MAYA_ACCOUNT}/outbox`);
+			await scene.goto(`/mail/account/${mayaAccount.get(scene)}/outbox`);
 			await expect(scene.page.getByRole("button", { name: "Filter" })).toBeVisible();
 		},
 		async LIST_FAILS(scene) {
@@ -673,7 +675,7 @@ export const compose = defineFlow<Event, BaseScene>({
 			const subject = subjectOf(scene);
 			const mail = await scheduleAndCancel(scene, subject);
 			seeded.set(scene, { subject, submission: mail.submission_id });
-			await scene.goto(`/mail/account/${MAYA_ACCOUNT}/outbox/${mail.submission_id}`);
+			await scene.goto(`/mail/account/${mayaAccount.get(scene)}/outbox/${mail.submission_id}`);
 			await expect(scene.page.getByRole("heading", { name: subject })).toBeVisible();
 			await expect(scene.page.getByText("Cancelled", { exact: true }).first()).toBeVisible();
 		},

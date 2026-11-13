@@ -9,7 +9,6 @@ import {
 	hostElsewhere,
 	hostWithMediaBlocked,
 	joinFromPreview,
-	LEO,
 	meetingIdFromUrl,
 	openMeetScene,
 	pageAsPerson,
@@ -428,7 +427,7 @@ async function openLink(scene: BaseScene, page: Page, id: string) {
 }
 
 async function leoJoins(scene: BaseScene): Promise<Page> {
-	const page = await pageAsPerson(scene, "leo", LEO);
+	const page = await pageAsPerson(scene, "leo");
 	leo.set(scene, page);
 	await openLink(scene, page, meetingId.get(scene));
 	await joinFromPreview(page);

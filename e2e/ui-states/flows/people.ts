@@ -1,5 +1,5 @@
 import { expect, type Locator } from "@playwright/test";
-import { openDemoScene } from "../demo";
+import { openDemoScene, personalAccount } from "../demo";
 import { defineFlow, setupFlow } from "../flow";
 import { perScene, type BaseScene } from "../scene";
 import {
@@ -10,8 +10,6 @@ import {
 	removeAddressBooks,
 	deleteContacts,
 	findContacts,
-	personalAccount,
-	persistently,
 	removeContacts,
 	type NewContact,
 } from "./people-helpers";
@@ -285,7 +283,7 @@ async function seedContacts(scene: BaseScene, contacts: NewContact[], books?: st
 	for (const contact of contacts) {
 		const id = await createContact(scene.api, ctx.account, books ?? [ctx.book], contact);
 		ctx.contacts.set(contact.full_name, id);
-		scene.defer(() => persistently(() => removeContacts(scene.api, ctx.account, [id])));
+		scene.defer(() => removeContacts(scene.api, ctx.account, [id]));
 	}
 }
 
@@ -298,12 +296,10 @@ function contactId(scene: BaseScene, name: string): string {
 /** Removes whatever the path created through the UI, found by its unique name. */
 function deferContactNamed(scene: BaseScene, name: string): void {
 	const { account } = context.get(scene);
-	scene.defer(() =>
-		persistently(async () => {
-			const ids = (await findContacts(scene.api, account, name)).map((row) => row.id);
-			if (ids.length) await deleteContacts(scene.api, account, ids);
-		}),
-	);
+	scene.defer(async () => {
+		const ids = (await findContacts(scene.api, account, name)).map((row) => row.id);
+		if (ids.length) await deleteContacts(scene.api, account, ids);
+	});
 }
 
 async function openPopulated(scene: BaseScene): Promise<void> {
@@ -326,7 +322,7 @@ async function seedBook(scene: BaseScene): Promise<string> {
 	const ctx = context.get(scene);
 	const name = scene.name("Launch partners");
 	const id = await createAddressBook(scene.api, ctx.account, name, "Agencies and freelancers working on the Beacon launch.");
-	scene.defer(() => persistently(() => removeAddressBooks(scene.api, ctx.account, [id])));
+	scene.defer(() => removeAddressBooks(scene.api, ctx.account, [id]));
 	await seedContacts(scene, SEED.slice(1, 3), [ctx.book, id]);
 	return id;
 }
@@ -502,12 +498,10 @@ export const people = defineFlow<Event, BaseScene>({
 			const dialog = scene.dialog("New Address Book");
 			const name = scene.name("Press contacts");
 			const { account } = context.get(scene);
-			scene.defer(() =>
-				persistently(async () => {
-					const ids = (await addressBooks(scene.api, account)).filter((book) => book._name === name).map((book) => book.id);
-					if (ids.length) await removeAddressBooks(scene.api, account, ids);
-				}),
-			);
+			scene.defer(async () => {
+				const ids = (await addressBooks(scene.api, account)).filter((book) => book._name === name).map((book) => book.id);
+				if (ids.length) await removeAddressBooks(scene.api, account, ids);
+			});
 			await dialog.getByRole("textbox", { name: "Name" }).fill(name);
 			await dialog.getByRole("textbox", { name: "Description" }).fill("Journalists covering the Beacon launch.");
 			await expect(dialog.getByRole("button", { name: "Save" })).toBeEnabled();

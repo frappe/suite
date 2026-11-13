@@ -1,6 +1,6 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { expect, test, type Browser, type BrowserContext, type Page, type Route } from "@playwright/test";
-import { DEMO_URL, demoUser, type DemoPerson } from "../demo";
+import { DEMO_URL, demoUser, identityOf, type DemoPerson, type Identity } from "../demo";
 import { openBrowserScene, perScene, VIEWPORT, type BaseScene } from "../scene";
 import { loginViaApi, type Credentials } from "../../shared/auth";
 
@@ -41,13 +41,7 @@ function allowMedia(context: BrowserContext): Promise<void> {
 	return context.grantPermissions(["camera", "microphone"]);
 }
 
-export interface Person {
-	email: string;
-	name: string;
-}
-
-export const HOST: Person = { email: demoUser("maya").email, name: "Maya Chen" };
-export const LEO: Person = { email: demoUser("leo").email, name: "Leo Park" };
+const HOST = identityOf("maya");
 export const GUEST_NAME = "Dana Wright";
 
 const shapingOff = perScene<boolean>("SFU shaping");
@@ -79,7 +73,7 @@ function meetingIdOf(url: string, body: string | null): string {
 }
 
 /** What `_build_sfu_connection_details` answers for a signed-in person. */
-function memberDetails(person: Person, meetingId: string, isHost: boolean, scope: "full" | "presence-preview") {
+function memberDetails(person: Identity, meetingId: string, isHost: boolean, scope: "full" | "presence-preview") {
 	const now = Math.floor(Date.now() / 1000);
 	const claims = {
 		user_id: person.email,
@@ -172,7 +166,7 @@ async function fetchFromSite(route: Route, options?: Parameters<Route["fetch"]>[
  * Lets `person` reach the SFU on a site without `sfu_secret`. `isHost` is
  * what the site would put in the token: Maya owns every meeting the flow makes.
  */
-async function shapeMemberRequests(context: BrowserContext, scene: BaseScene, person: Person, isHost: boolean) {
+async function shapeMemberRequests(context: BrowserContext, scene: BaseScene, person: Identity, isHost: boolean) {
 	await context.route(/\/api\/suite\/meet\/rooms\/(joins|connections|presence-tokens|tokens)(\?|$)/, async (route) => {
 		const response = await fetchFromSite(route);
 		const body = await response.text();
@@ -263,10 +257,10 @@ export async function openMeetScene(browser: Browser): Promise<BaseScene> {
 }
 
 /** A second person on the demo site, in the scene's browser, closed with the scene. */
-export async function pageAsPerson(scene: BaseScene, who: DemoPerson, person: Person): Promise<Page> {
+export async function pageAsPerson(scene: BaseScene, who: DemoPerson): Promise<Page> {
 	const page = await scene.pageAs(demoUser(who));
 	await allowMedia(page.context());
-	await shapeMemberRequests(page.context(), scene, person, false);
+	await shapeMemberRequests(page.context(), scene, identityOf(who), false);
 	return page;
 }
 
@@ -313,18 +307,11 @@ export async function createMeeting(scene: BaseScene, type: "open" | "restricted
 	return data.code;
 }
 
-/** Removes a meeting the path made through the UI. */
+/** Removes a meeting the path made through the UI. One already gone is fine. */
 export function removeMeetingLater(scene: BaseScene, meetingId: string): void {
-	// Other flows' runs restart the bench; keep trying through a restart so the meeting is not left behind.
 	scene.defer(async () => {
-		for (let attempt = 1; ; attempt++) {
-			const status = await scene.api
-				.delete(`/api/v2/document/Meet Room/${meetingId}`)
-				.then((response) => response.status())
-				.catch(() => 0);
-			if ((status > 0 && status < 500) || attempt === 30) return;
-			await new Promise((resolve) => setTimeout(resolve, 1_000));
-		}
+		const response = await scene.api.delete(`/api/v2/document/Meet Room/${meetingId}`);
+		if (response.status() >= 500) throw new Error(`Removing meeting ${meetingId} answered ${response.status()}`);
 	});
 }
 
