@@ -17,15 +17,15 @@ const emit = defineEmits<{ restore: [version: DocumentVersion]; back: [] }>()
 
 <template>
   <DocumentStrip>
-    <p class="truncate">Viewing {{ versionTitle(version) }}</p>
+    <p class="truncate">{{ __('Viewing {0}', [versionTitle(version)]) }}</p>
     <div class="flex shrink-0 items-center gap-1">
       <Button
         v-if="canRestore"
         size="sm"
         variant="ghost"
         icon="lucide-undo-2"
-        tooltip="Restore this version"
-        aria-label="Restore this version"
+        :tooltip="__('Restore this version')"
+        :aria-label="__('Restore this version')"
         :disabled="isRestoring"
         @click="emit('restore', version)"
       />
