@@ -118,6 +118,7 @@ async function openVersionsPanel(isRefusingVersions = false) {
       refreshThreads: async () => {},
       threadActions: fromPartial<ThreadActions>({}),
       drafts: noDrafts,
+      noun: 'document',
       saveFirst: async () => {
         steps.push('saved')
       },
@@ -285,6 +286,7 @@ describe('renaming a version in the Versions panel', () => {
         refreshThreads: async () => {},
         threadActions: fromPartial<ThreadActions>({}),
         drafts: noDrafts,
+        noun: 'document',
         saveFirst: async () => {},
       }),
     )
@@ -358,6 +360,7 @@ function panelWhileVersionsLoad(kind: DocumentPanel) {
       refreshThreads: async () => {},
       threadActions: fromPartial<ThreadActions>({}),
       drafts,
+      noun: 'document',
       saveFirst: async () => {},
     }),
   )

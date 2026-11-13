@@ -16,6 +16,7 @@ import { useRoute, useRouter } from 'vue-router'
 
 import {
   DriveDocumentSidePanel as DocumentSidePanel,
+  DriveDocumentStrip as DocumentStrip,
   DRIVE_ROLES,
   DriveDocumentHeader,
   imagesNotice,
@@ -26,6 +27,7 @@ import {
   useCommentDrafts,
   useDocumentThreads,
   useThreadChanges,
+  DriveVersionShownBar as VersionShownBar,
   type DocumentPanel,
   type DocumentSession,
   type DocumentThread,
@@ -36,7 +38,6 @@ import { anchorEnds, anchorQuote } from '@/apps/writer/collab/anchors'
 import type { ThreadPlaces } from '@/apps/writer/collab/highlights'
 import { withinTenSeconds } from '@/apps/writer/collab/timeout'
 import CollabTextEditor from '@/apps/writer/components/CollabTextEditor.vue'
-import DocumentStrip from '@/apps/writer/components/DocumentStrip.vue'
 import ReadOnlyEditor from '@/apps/writer/components/ReadOnlyEditor.vue'
 import { DOCUMENT_MEDIA } from '@/apps/writer/extensions/drive-media'
 import DocumentSkeleton from '@/apps/writer/opening/DocumentSkeleton.vue'
@@ -59,7 +60,6 @@ import { watchConversion, type CollabRoom, type VersionRestored } from '@/platfo
 import type { peopleOf } from '@/platform/collab/peers'
 import { othersPresentWarning, restoredByOther } from '@/platform/collab/restoreNotices'
 import UsersBar from '@/platform/collab/UsersBar.vue'
-import { versionTitle } from '@/platform/collab/versionDates'
 import { useHideRail } from '@/platform/rail'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
@@ -894,28 +894,13 @@ onBeforeUnmount(() => {
             :editable="editable"
           >
             <template v-if="preview.version" #toolbar>
-              <DocumentStrip>
-                <p class="truncate">Viewing {{ versionTitle(preview.version) }}</p>
-                <div class="flex shrink-0 items-center gap-1">
-                  <Button
-                    v-if="canRestoreVersion"
-                    size="sm"
-                    variant="ghost"
-                    icon="lucide-undo-2"
-                    tooltip="Restore this version"
-                    aria-label="Restore this version"
-                    :disabled="isRestoringVersion"
-                    @click="confirmRestore(preview.version)"
-                  />
-                  <Button
-                    size="sm"
-                    variant="subtle"
-                    :label="__('Back to current')"
-                    :tooltip="__('Back to the current version (Esc)')"
-                    @click="backToCurrent"
-                  />
-                </div>
-              </DocumentStrip>
+              <VersionShownBar
+                :version="preview.version"
+                :can-restore="canRestoreVersion"
+                :is-restoring="isRestoringVersion"
+                @restore="confirmRestore"
+                @back="backToCurrent"
+              />
             </template>
             <template v-else-if="preview.copy" #toolbar>
               <DocumentStrip>
@@ -960,6 +945,7 @@ onBeforeUnmount(() => {
                 :thread-actions="threadActions"
                 :drafts="commentDrafts"
                 :save-first="saveBeforeVersion"
+                noun="document"
                 @update:previewed-version="showVersion"
                 @restore-version="confirmRestore"
                 @download-version="downloadVersion"

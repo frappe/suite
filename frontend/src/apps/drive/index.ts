@@ -448,6 +448,10 @@ export {
  * viewed version and does the restore and download itself.
  */
 export { default as DriveDocumentSidePanel } from '@/apps/drive/files/features/DocumentSidePanel.vue'
+/** The line over a version shown in the document's place, with Restore and Back to current. */
+export { default as DriveVersionShownBar } from '@/apps/drive/files/features/versions/VersionShownBar.vue'
+/** A line across the document under its header, with its actions at the right edge. */
+export { default as DriveDocumentStrip } from '@/apps/drive/files/features/DocumentStrip.vue'
 export { showError } from '@/apps/drive/files/features/versions/useDocumentPanel'
 export { waitForFocusBack } from '@/apps/drive/files/features/focusBack'
 

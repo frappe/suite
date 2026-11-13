@@ -12,7 +12,7 @@ import type {
 } from '@/apps/drive'
 
 import CommentList from './comments/CommentList.vue'
-import type { ThreadPlaces } from './comments/places'
+import type { FileNoun, ThreadPlaces } from './comments/places'
 import { useDocumentPanel } from './versions/useDocumentPanel'
 import VersionList from './versions/VersionList.vue'
 
@@ -36,6 +36,8 @@ const props = defineProps<{
   drafts: ReturnType<typeof useCommentDrafts>
   /** Saves the document's pending edits, throwing why it couldn't. */
   saveFirst: () => Promise<void>
+  /** What the app calls the file, in the comment panel's messages. */
+  noun: FileNoun
 }>()
 
 const panel = defineModel<DocumentPanel | null>('panel', { required: true })
@@ -212,7 +214,7 @@ defineExpose({ reloadVersions: () => load('versions'), startNamingVersion, start
             :can-share
             :actions="threadActions"
             :drafts
-            noun="document"
+            :noun
             @sent="emit('commentSent')"
           />
           <p v-else-if="lists.isLoading" class="px-2 text-sm text-ink-gray-5">
