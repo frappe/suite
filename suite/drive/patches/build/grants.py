@@ -403,6 +403,12 @@ def _creator_grants(env, grants: GrantConversion, nodes, batch, batch_size: int)
     `merged_role`. A dead owner has nobody to grant to and is counted. A
     rerun finds the owner at EDIT and writes nothing, which is why both
     counts are cumulative.
+
+    Media under a presentation is the one exception: it takes its rights
+    from the presentation (owner ruling, 2026-11-13). An upload's owner is
+    whoever uploaded it, so the rule would give EDIT on a picture in
+    someone else's presentation to a user who holds nothing on the
+    presentation itself.
     """
     # Every legacy row is stored before the owners are read, so a deny on
     # the owner is a stored row this pass can see and override.
@@ -418,6 +424,10 @@ def _creator_grants(env, grants: GrantConversion, nodes, batch, batch_size: int)
             if nodes.user_enabled(owner) is None:
                 grants.creator_owners_dead += 1
                 continue
+
+            if is_presentation_media(nodes, row):
+                continue
+
             if env.drive.effective_role(row, owner) >= EDIT:
                 continue
             if env.drive.grant_roles(row["name"], (owner,)).get(owner) == NONE:
@@ -430,6 +440,16 @@ def _creator_grants(env, grants: GrantConversion, nodes, batch, batch_size: int)
         if len(rows) < batch_size:
             break
     batch.flush()
+
+
+def is_presentation_media(nodes: _NodeFacts, row: dict) -> bool:
+    """Answer whether `row` sits directly under a presentation."""
+    parent = row.get("parent_node")
+    if not parent:
+        return False
+
+    parent_row = nodes.get(parent) or {}
+    return parent_row.get("content_doctype") == "Presentation"
 
 
 # ---------------------------------------------------------------- node facts

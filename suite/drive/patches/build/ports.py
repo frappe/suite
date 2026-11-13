@@ -1455,7 +1455,7 @@ class SiteDrive:
                 ["kind", "!=", "root"],
                 ["owner", "not in", ["Administrator", "Guest", ""]],
             ],
-            fields=["name", "owner", "kind", "root", "path"],
+            fields=["name", "owner", "kind", "root", "path", "parent_node"],
             order_by="name asc",
             limit=limit,
         )
