@@ -9,6 +9,7 @@ import {
 	localDate,
 	removeCalendarsNamed,
 	removeEventsTitled,
+	seedWednesday,
 	setCalendarVisible,
 	type NewEvent,
 	type Participant,
@@ -349,6 +350,8 @@ const machine = setupFlow<Event>().createMachine({
 
 interface CalendarContext {
 	account: string;
+	/** The browser's pinned "today"; see `seedWednesday`. */
+	today: Date;
 }
 
 const context = perScene<CalendarContext>("calendar");
@@ -391,13 +394,13 @@ async function cardMenu(scene: BaseScene, title: string): Promise<void> {
 
 /** Removes events titled `titles` from Maya's and Leo's accounts when the path ends. */
 function deferEvents(scene: BaseScene, ...titles: string[]): void {
-	const { account } = context.get(scene);
+	const { account, today } = context.get(scene);
 	scene.defer(async () => {
 		const leo = await scene.as(demoUser("leo"));
 		const leoAccount = await personalAccount(leo);
 		for (const title of titles) {
-			await removeEventsTitled(leo, leoAccount, title);
-			await removeEventsTitled(scene.api, account, title);
+			await removeEventsTitled(leo, leoAccount, title, today);
+			await removeEventsTitled(scene.api, account, title, today);
 		}
 	});
 }
@@ -462,8 +465,9 @@ async function pickView(scene: BaseScene, view: "Day" | "Week" | "Month" | "Agen
 	await expect(scene.page.getByText("Beacon standup").first()).toBeVisible();
 }
 
-/** Today at `hour`, as the API's local wall time. */
-const todayAt = (hour: number, days = 0) => `${localDate(days)}T${String(hour).padStart(2, "0")}:00:00`;
+/** The pinned today at `hour`, as the API's local wall time. */
+const todayAt = (scene: BaseScene, hour: number, days = 0) =>
+	`${localDate(context.get(scene).today, days)}T${String(hour).padStart(2, "0")}:00:00`;
 
 /**
  * Maya's seeded series have no end date, so every range on the demo site has events.
@@ -482,8 +486,12 @@ export const calendar = defineFlow<Event, BaseScene>({
 	open: (browser) => openDemoScene(browser, "maya"),
 	machine,
 	async enter(scene) {
-		context.set(scene, { account: await personalAccount(scene.api) });
-		await scene.goto(viewPath(scene, "month", localDate()));
+		const account = await personalAccount(scene.api);
+		const today = await seedWednesday(scene.api, account);
+		context.set(scene, { account, today });
+		// The clock runs on from `today`, and starts there again on every path.
+		await scene.context.clock.install({ time: today });
+		await scene.goto(viewPath(scene, "month", localDate(today)));
 		await expect(scene.page.getByRole("radio", { name: "Month" })).toBeChecked();
 		await expect(scene.page.getByText("Launch check-in").first()).toBeVisible();
 	},
@@ -530,7 +538,7 @@ export const calendar = defineFlow<Event, BaseScene>({
 		},
 		async MINI_NEXT(scene) {
 			const sidebar = scene.page.getByRole("complementary", { name: "Calendar" });
-			const month = new Date();
+			const month = new Date(context.get(scene).today);
 			month.setDate(1);
 			month.setMonth(month.getMonth() + 1);
 			const label = month.toLocaleString("en-US", { month: "long" });
@@ -618,7 +626,7 @@ export const calendar = defineFlow<Event, BaseScene>({
 			await expect(button).toBeHidden();
 		},
 		async CLICK_SLOT(scene) {
-			const today = new Date().toDateString();
+			const today = context.get(scene).today.toDateString();
 			await scene.page.locator(`[data-time-grid][data-date-attr^="${today}"] .cell[data-time-attr]`).nth(19).click();
 			await expect(eventForm(scene).getByRole("combobox", { name: "Select time" }).first()).toHaveValue("7:00 PM");
 		},
@@ -687,7 +695,7 @@ export const calendar = defineFlow<Event, BaseScene>({
 			const title = scene.name("Supplier call");
 			await seedOwn(scene, {
 				title,
-				start: todayAt(19),
+				start: todayAt(scene, 19),
 				participants: [participant("maya", "ACCEPTED"), participant("leo", "NEEDS-ACTION", 1)],
 			});
 			await openCard(scene, title);
@@ -705,7 +713,7 @@ export const calendar = defineFlow<Event, BaseScene>({
 		async OPEN_SERIES(scene) {
 			const title = scene.name("Evening review");
 			deferEvents(scene, scene.name("Evening review, moved"));
-			await seedOwn(scene, { title, start: todayAt(21, -7), weekly: true });
+			await seedOwn(scene, { title, start: todayAt(scene, 21, -7), weekly: true });
 			await openCard(scene, title);
 		},
 		async DELETE_SERIES(scene) {
@@ -734,7 +742,7 @@ export const calendar = defineFlow<Event, BaseScene>({
 		},
 		async OPEN_INVITE(scene) {
 			const title = scene.name("Press briefing");
-			await seedInvite(scene, { title, start: todayAt(20) });
+			await seedInvite(scene, { title, start: todayAt(scene, 20) });
 			await openCard(scene, title);
 			await expect(card(scene, title).getByRole("radio", { name: "Yes" })).not.toBeChecked();
 		},
@@ -745,7 +753,7 @@ export const calendar = defineFlow<Event, BaseScene>({
 		},
 		async OPEN_RECURRING_INVITE(scene) {
 			const title = scene.name("Launch retro");
-			await seedInvite(scene, { title, start: todayAt(18, -7), weekly: true });
+			await seedInvite(scene, { title, start: todayAt(scene, 18, -7), weekly: true });
 			await openCard(scene, title);
 		},
 		async ANSWER_RECURRING(scene) {
@@ -753,7 +761,7 @@ export const calendar = defineFlow<Event, BaseScene>({
 			await expect(stacked(scene, "Respond to repeating event").getByRole("radio", { name: "All events in the series", includeHidden: true })).toBeChecked();
 		},
 		async OPEN_PENDING_INVITE(scene) {
-			await scene.goto(viewPath(scene, "week", localDate(7)));
+			await scene.goto(viewPath(scene, "week", localDate(context.get(scene).today, 7)));
 			await openCard(scene, "Collections retest: share position");
 		},
 		async SEARCH(scene) {

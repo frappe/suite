@@ -9,9 +9,32 @@ import { callMethod } from "../scene";
 /** The zone the browser and the seeded events share: the runner's own. */
 export const TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-/** The runner's calendar date `days` from today, as `YYYY-MM-DD`. */
-export function localDate(days = 0): string {
-	const date = new Date();
+/** Maya's one-off event on the Wednesday of the seed's week (`maya-focus` in `suite/composition/demo/agenda.py`). */
+const SEED_WEDNESDAY_EVENT = "Focus: launch checklist";
+/** Before Maya's first event that day, so all of them are still to come. */
+const PINNED_TIME = "08:30:00";
+
+/**
+ * The calendar's "today", which the flow pins the browser's clock to: 8:30
+ * on the Wednesday of the week the demo seed ran. The seed dates its events
+ * by weeks from that one, so on this day the focus block overlaps the
+ * standup, Launch check-in is tomorrow and the Collections retest is next
+ * week, however long ago the site was seeded, and the screens stay the same
+ * from one capture to the next.
+ */
+export async function seedWednesday(api: APIRequestContext, account: string): Promise<Date> {
+	const [focus] = await callMethod<{ start: string }[]>(api, "suite.calendar.api.search_calendar_events_with_shared", {
+		account,
+		text: SEED_WEDNESDAY_EVENT,
+		time_zone: TIME_ZONE,
+	});
+	if (!focus) throw new Error(`calendar: the demo seed's “${SEED_WEDNESDAY_EVENT}” is missing`);
+	return new Date(`${focus.start.slice(0, 10)}T${PINNED_TIME}`);
+}
+
+/** The runner's calendar date `days` after `today`, as `YYYY-MM-DD`. */
+export function localDate(today: Date, days = 0): string {
+	const date = new Date(today);
 	date.setDate(date.getDate() + days);
 	const pad = (value: number) => String(value).padStart(2, "0");
 	return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
@@ -101,14 +124,14 @@ interface EventRow {
 
 /**
  * Deletes every event titled `title` in the account, a month either side of
- * today. Rows of a series are occurrences; the series is deleted through its
+ * `today`. Rows of a series are occurrences; the series is deleted through its
  * `master_id`, since the server refuses an occurrence's synthetic id.
  */
-export async function removeEventsTitled(api: APIRequestContext, account: string, title: string): Promise<void> {
+export async function removeEventsTitled(api: APIRequestContext, account: string, title: string, today: Date): Promise<void> {
 	const rows = await callMethod<EventRow[]>(api, "suite.calendar.api.get_calendar_events_with_shared", {
 		account,
-		from_date: `${localDate(-40)}T00:00:00Z`,
-		to_date: `${localDate(40)}T00:00:00Z`,
+		from_date: `${localDate(today, -40)}T00:00:00Z`,
+		to_date: `${localDate(today, 40)}T00:00:00Z`,
 		time_zone: TIME_ZONE,
 	});
 	const ids = [...new Set(rows.filter((row) => row.account === account && row.title === title).map((row) => row.master_id || row.id))];
