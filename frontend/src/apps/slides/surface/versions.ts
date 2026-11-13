@@ -3,6 +3,7 @@ import * as Y from 'yjs'
 import { api, client } from '@/api'
 import {
   askUntilConverted,
+  readStoredState,
   type ConvertedState,
   type DocumentSession,
   type VersionImage,
@@ -40,12 +41,7 @@ export async function readVersionBody(bytes: Uint8Array): Promise<VersionBody> {
     throw new Error('This version cannot be read.')
   }
 
-  const stream = new Response(fromBase64(state)).body!.pipeThrough(new DecompressionStream('gzip'))
-  return { state: new Uint8Array(await new Response(stream).arrayBuffer()) }
-}
-
-function fromBase64(value: string) {
-  return Uint8Array.from(atob(value), (char) => char.charCodeAt(0))
+  return { state: await readStoredState(state) }
 }
 
 /** Runs old version `seq` through the server's converter, asking until it answers or the wait runs out. */

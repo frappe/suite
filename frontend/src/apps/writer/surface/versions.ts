@@ -3,7 +3,12 @@ import { yXmlFragmentToProsemirrorJSON } from '@tiptap/y-tiptap'
 import { Doc } from 'yjs'
 
 import { api, client } from '@/api'
-import { askUntilConverted, fetchVersion, type DocumentSession } from '@/apps/drive'
+import {
+  askUntilConverted,
+  fetchVersion,
+  readStoredState,
+  type DocumentSession,
+} from '@/apps/drive'
 import { BODY_FIELD } from '@/apps/writer/collab'
 import { readLegacy, type LegacyBody } from '@/apps/writer/collab/legacy-read'
 import { loadVersion, withOldMediaConverted } from '@/apps/writer/collab/old-media'
@@ -96,7 +101,7 @@ export async function readVersionBody(bytes: Uint8Array): Promise<VersionBody> {
 
   const isYjsVersion = version.schema === 'writer-document/2' && version.codec === 'yjs1'
   if (isYjsVersion && typeof version.state === 'string' && typeof version.lineage === 'string') {
-    return { lineage: version.lineage, state: await gunzip(fromBase64(version.state)) }
+    return { lineage: version.lineage, state: await readStoredState(version.state) }
   }
 
   throw new Error('This version cannot be read.')
@@ -151,16 +156,4 @@ function parsedOrNull(text: string): JsonValue {
     // Migrated history is raw HTML
     return null
   }
-}
-
-function fromBase64(text: string): Uint8Array<ArrayBuffer> {
-  const binary = atob(text)
-  return Uint8Array.from(binary, (char) => char.charCodeAt(0))
-}
-
-async function gunzip(bytes: Uint8Array<ArrayBuffer>): Promise<Uint8Array> {
-  const compressed = new Response(bytes).body!
-  const stream = compressed.pipeThrough(new DecompressionStream('gzip'))
-  const buffer = await new Response(stream).arrayBuffer()
-  return new Uint8Array(buffer)
 }

@@ -1,3 +1,5 @@
+import { fromBase64 } from './storedState'
+
 /** One answer from an app's server converter for an old version, as each app's endpoint sends it. */
 interface VersionConversion {
   state?: string
@@ -31,5 +33,5 @@ export async function askUntilConverted(
     return { refused: converted.reason ?? null }
   }
 
-  return { state: Uint8Array.from(atob(converted.state), (char) => char.charCodeAt(0)) }
+  return { state: fromBase64(converted.state) }
 }

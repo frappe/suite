@@ -454,6 +454,7 @@ export { default as DriveVersionShownBar } from '@/apps/drive/files/features/sid
 /** A line across the document under its header, with its actions at the right edge. */
 export { default as DriveDocumentStrip } from '@/apps/drive/files/features/DocumentStrip.vue'
 export { showError } from '@/apps/drive/files/features/side-panel/versions/useDocumentPanel'
+export { readStoredState } from '@/apps/drive/files/features/side-panel/versions/storedState'
 export { fetchVersion } from '@/apps/drive/files/features/side-panel/versions/fetchVersion'
 export {
   askUntilConverted,
