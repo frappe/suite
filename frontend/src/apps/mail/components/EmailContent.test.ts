@@ -92,4 +92,38 @@ describe('EmailContent', () => {
     expect(doc.querySelector('.quote-toggle')).not.toBeNull()
     expect(doc.querySelector('blockquote')!.classList).toContain('quote-hidden')
   })
+
+  // The thread prints the conversation when it hears ⌘P from the frame; the browser printing the
+  // whole app first would be a second, wrong print.
+  it('keeps ⌘P and Ctrl+P inside a message from the browser, and still hands them to the thread', async () => {
+    const root = mount()
+    await nextTick()
+
+    const srcdoc = new DOMParser().parseFromString(
+      frame(root)!.getAttribute('srcdoc')!,
+      'text/html',
+    )
+    const script = [...srcdoc.querySelectorAll('script')].find((s) =>
+      s.textContent?.includes("'keydown'"),
+    )!.textContent!
+    const inner = document.implementation.createHTMLDocument('')
+    const forwarded = vi.fn()
+    const frameWindow = { parent: { postMessage: forwarded }, addEventListener: () => {} }
+    // The frame's own script, run against a document of its own as the frame would run it.
+    new Function('window', 'document', script)(frameWindow, inner)
+    const press = (init: KeyboardEventInit) => {
+      const event = new KeyboardEvent('keydown', { ...init, bubbles: true, cancelable: true })
+      inner.body.dispatchEvent(event)
+      return event
+    }
+
+    expect(press({ key: 'p', metaKey: true }).defaultPrevented).toBe(true)
+    expect(press({ key: 'p', ctrlKey: true }).defaultPrevented).toBe(true)
+    expect(press({ key: 'p' }).defaultPrevented).toBe(false)
+    expect(press({ key: 'f', metaKey: true }).defaultPrevented).toBe(false)
+    expect(forwarded).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'keyboard', eventType: 'keydown', key: 'p', metaKey: true }),
+      '*',
+    )
+  })
 })

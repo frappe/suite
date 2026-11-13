@@ -420,9 +420,9 @@ const moreActions = computed((): Action[] => [
     icon: Trash2,
     condition: () => threadMailboxes.value.includes(mailboxIds.value.trash),
   },
-  // The conversation on paper, or as a PDF from the same dialog.
+  // The conversation on paper, or as a PDF from the same dialog. A phone has no keys to name.
   {
-    label: isMac ? __('Print (⌘P)') : __('Print (Ctrl+P)'),
+    label: isMobile.value ? __('Print') : isMac ? __('Print (⌘P)') : __('Print (Ctrl+P)'),
     onClick: () => emit('print'),
     icon: Printer,
     condition: () => !inDrafts.value,

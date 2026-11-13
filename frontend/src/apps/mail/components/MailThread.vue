@@ -844,7 +844,6 @@ import type {
 } from '@/apps/mail/types'
 import {
   analyzeRemoteAssets,
-  blockRemoteAssets,
   copyToClipBoard,
   decodeHtmlEntities,
   downloadUrlAsFile,
@@ -869,7 +868,6 @@ import {
 } from '@/apps/mail/utils/composables'
 import { containEmailHtml } from '@/apps/mail/utils/containEmailHtml'
 import { useMinuteClock } from '@/apps/mail/utils/datetime'
-import formatDate from '@/apps/mail/utils/dayjs'
 import { mailCopies, mailCopyIds } from '@/apps/mail/utils/mailCopies'
 import { getSenderInitial } from '@/apps/mail/utils/participants'
 import { printMessages, type PrintedMessage } from '@/apps/mail/utils/printMail'
@@ -2127,21 +2125,19 @@ const getBodyContent = (mail: Mail) => {
 }
 // ── Printing ────────────────────────────────────────────────────────────────────────────────────
 
-// A message as it goes on paper: its own body, with remote images held back where the reader holds
-// them back — printing is no reason to load what the reader chose not to.
+// A message as it goes on paper: its own body, with remote content held back where the reader holds
+// it back — printing is no reason to load what the reader chose not to.
 const printed = (mail: Mail): PrintedMessage => {
   const { to, cc } = getGroupedRecipients(mail.recipients ?? [], true, true)
-  const html = hasHtmlContent(mail.html_body)
-    ? isBlocked(mail)
-      ? blockRemoteAssets(mail.html_body)
-      : mail.html_body
-    : `<div style="white-space: pre-wrap">${plainTextToHtml(getPlainTextBody(mail))}</div>`
   return {
     from: mail.from_name ? `${mail.from_name} <${mail.from_email}>` : mail.from_email,
     to,
     cc,
-    date: formatDate(mail.received_at).format('ddd, D MMM YYYY [at] h:mm A'),
-    body: html,
+    receivedAt: mail.received_at,
+    body: hasHtmlContent(mail.html_body)
+      ? mail.html_body
+      : `<div style="white-space: pre-wrap">${plainTextToHtml(getPlainTextBody(mail))}</div>`,
+    blockRemote: isBlocked(mail),
     attachments: filteredAttachments(mail).map((attachment) => attachment.filename),
   }
 }
