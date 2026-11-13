@@ -798,6 +798,7 @@ import { deleteMap, insertMap, moveMap } from '../../engine/ref-remap.js'
 import { createSlicerEngine } from '../../engine/slicers.js'
 import { createSortFilter } from '../../engine/sortFilter.js'
 import { parseSparkline, sparkSpec } from '../../engine/sparkline.js'
+import { clearTypedFormats, resetFormatCommands } from '../../engine/typed-formats.js'
 import { createValidationEngine } from '../../engine/validation.js'
 import { numFmtFromEngine } from '../../engine/xlsx-io.js'
 import { cellId, colLabel, parseCellId } from '../../utils/cells.js'
@@ -1570,14 +1571,21 @@ async function _readEngineFormats(rect, sn) {
   return out
 }
 
-// Sets cells back to IronCalc's general number format (Clear formatting).
+// Sets cells back to IronCalc's general number format, in this tab only
+// (Number format > General, sort).
 function _resetEngineFormats(ids, sn) {
-  const commands = ids.map((id) => {
-    const p = parseCellId(id)
-    const range = { r1: p.row + 1, c1: p.col + 1, r2: p.row + 1, c2: p.col + 1 }
-    return _command('setRangeStyle', { sheet: sn, range, style: { num_fmt: 'general' } })
-  })
+  const commands = resetFormatCommands(ids, sn, _command)
   if (commands.length) _dispatch(_command('batch', { commands }))
+}
+
+// Clear formatting for the cells IronCalc formatted itself, for every tab
+// and reload (engine/typed-formats.ts).
+function _clearEngineFormats(ids, sn) {
+  return clearTypedFormats(ids, sn, {
+    dispatch: _dispatch,
+    command: _command,
+    readInputs: async (sheet, rect) => (await _readRect(sheet, rect)).inputs,
+  })
 }
 const hAlignIcon = computed(() => {
   if (activeFormat.value?.align === 'center') return 'lucide-align-center'
@@ -1757,7 +1765,7 @@ const {
     isDirty.value = true
   },
   readEngineFormats: _readEngineFormats,
-  resetEngineFormats: _resetEngineFormats,
+  clearEngineFormats: _clearEngineFormats,
 })
 
 // Selection + grid bounds, so full-column / full-row / whole-sheet selections

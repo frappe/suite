@@ -1,7 +1,18 @@
 import { describe, expect, it } from 'vitest'
 
+import { clearTypedFormats } from '../engine/typed-formats'
 import { roots } from './schema'
-import { cmd, displays, inputs, storeState, sync, twoTabs, type, type Tab } from './test-tabs'
+import {
+  cmd,
+  displays,
+  inputs,
+  openTab,
+  storeState,
+  sync,
+  twoTabs,
+  type,
+  type Tab,
+} from './test-tabs'
 import { createUndo, type Selection, type Undo } from './undo'
 
 // Collab undo on a tab, with a selection the test moves by hand (the editor's grid).
@@ -56,6 +67,47 @@ describe('undo: own steps', () => {
     await ua.redo()
     expect((await displays(a))['Sheet1!A2']).toBe('2')
     await expectConverged(a, b)
+  })
+
+  // Clear formatting of a typed 15% and $1.50, as the editor sends it.
+  it('undoes and redoes clearing a typed format, in both tabs and after a reload', async () => {
+    const [a, b, ua] = await undoTabs()
+    await type(a, 'Sheet1', 'J6', '15%')
+    await type(a, 'Sheet1', 'J7', '$1.50')
+    await sync(a, b)
+    await clearTypedFormats(['J6', 'J7'], 'Sheet1', {
+      dispatch: (c) => a.glue.dispatch(c),
+      command: cmd,
+      readInputs: async (sheet, r) =>
+        (
+          await a.client.readViewport({
+            sheet,
+            r1: r.r0 + 1,
+            c1: r.c0 + 1,
+            r2: r.r1 + 1,
+            c2: r.c1 + 1,
+            includeInputs: true,
+          })
+        ).inputs ?? [],
+    })
+    await a.glue.commit()
+    const plain = { 'Sheet1!J6': '0.15', 'Sheet1!J7': '1.5' }
+    await sync(a, b)
+    expect(await displays(a)).toEqual(plain)
+    expect(await displays(b)).toEqual(plain)
+    expect(await displays(await openTab('reload', a.doc))).toEqual(plain)
+
+    await ua.undo()
+    await sync(a, b)
+    const typed = { 'Sheet1!J6': '15%', 'Sheet1!J7': '$1.50' }
+    expect(await displays(a)).toEqual(typed)
+    expect(await displays(b)).toEqual(typed)
+
+    await ua.redo()
+    await sync(a, b)
+    expect(await displays(a)).toEqual(plain)
+    expect(await displays(b)).toEqual(plain)
+    expect(await displays(await openTab('reload', a.doc))).toEqual(plain)
   })
 
   it('undoes clearing a cell', async () => {
