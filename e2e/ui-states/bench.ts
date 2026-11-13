@@ -54,7 +54,8 @@ export function watchBench(baseURL: string): BenchWatch {
 /**
  * Runs `work`, and runs it again once the bench listens if it failed because
  * the bench was away. For cleanups, which must finish even when a restart
- * cut their path short.
+ * cut their path short, and for requests a route handler passes on, whose
+ * failure would otherwise fail the run without the path being walked again.
  */
 export async function acrossRestarts<T>(baseURL: string, work: () => Promise<T>): Promise<T> {
 	for (let attempt = 1; ; attempt++) {

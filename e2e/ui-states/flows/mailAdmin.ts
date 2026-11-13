@@ -1,5 +1,6 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import { callMethod, unlessRefused } from "../../shared/frappe";
+import { acrossRestarts } from "../bench";
 import { openDemoScene, setSuiteCloudStandIn } from "../demo";
 import { defineFlow, setupFlow } from "../flow";
 import { perScene, type BaseScene } from "../scene";
@@ -414,14 +415,14 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 		async SUITE_CLOUD_OFF(scene) {
 			// The answers a site without Suite Cloud gives: the account says so, and the storage report has no cloud.
 			await scene.page.route("**/api/method/suite.mail.api.account.get_user_info*", async (route) => {
-				const response = await route.fetch();
+				const response = await acrossRestarts(scene.baseURL, () => route.fetch());
 				// SAFETY: get_user_info answers `{ message: { ...user, is_suite_cloud_configured } }`.
 				const body = (await response.json()) as { message: Record<string, unknown> };
 				body.message.is_suite_cloud_configured = false;
 				await route.fulfill({ response, json: body });
 			});
 			await scene.page.route(/\/api\/suite\/storage(\?|$)/, async (route) => {
-				const response = await route.fetch();
+				const response = await acrossRestarts(scene.baseURL, () => route.fetch());
 				// SAFETY: the storage report answers `{ data: { cloud, ... } }`.
 				const body = (await response.json()) as { data: Record<string, unknown> };
 				body.data.cloud = false;

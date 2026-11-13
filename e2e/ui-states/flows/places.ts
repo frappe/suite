@@ -1,5 +1,6 @@
 import { expect, type Route } from "@playwright/test";
 import type { Credentials } from "../../shared/auth";
+import { acrossRestarts } from "../bench";
 import { fillFolder, folderPath, type FolderContent } from "../content";
 import { defineFlow, setupFlow } from "../flow";
 import {
@@ -147,12 +148,14 @@ async function showAs(scene: Scene, user: Credentials): Promise<void> {
 		async (route: Route) => {
 			const request = route.request();
 			const { cookie: _cookie, ...headers } = await request.allHeaders();
-			const response = await other.fetch(request.url(), {
-				method: request.method(),
-				headers,
-				data: request.postDataBuffer() ?? undefined,
-				maxRedirects: 0,
-			});
+			const response = await acrossRestarts(scene.baseURL, () =>
+				other.fetch(request.url(), {
+					method: request.method(),
+					headers,
+					data: request.postDataBuffer() ?? undefined,
+					maxRedirects: 0,
+				}),
+			);
 			const answered = response.headers();
 			delete answered["set-cookie"];
 			await route.fulfill({ response, headers: answered });

@@ -1,4 +1,5 @@
 import { expect, type Locator, type Page, type Route } from "@playwright/test";
+import { acrossRestarts } from "../bench";
 import { demoUser, openDemoScene } from "../demo";
 import { defineFlow, setupFlow, type StateMeta } from "../flow";
 import { perScene, type BaseScene } from "../scene";
@@ -336,7 +337,7 @@ async function answerMailSave(scene: BaseScene, url: RegExp, reads: RegExp = url
 	let saved: Record<string, unknown> | null = null;
 	const overlay = async (route: Route) => {
 		if (!saved) return route.continue();
-		const response = await route.fetch();
+		const response = await acrossRestarts(scene.baseURL, () => route.fetch());
 		// SAFETY: Mail reads answer an object under `data` (REST) or `message` (method).
 		const body = (await response.json()) as { data?: Record<string, unknown>; message?: Record<string, unknown> };
 		const key = body.data ? "data" : "message";
