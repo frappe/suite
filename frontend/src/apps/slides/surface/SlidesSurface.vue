@@ -130,8 +130,6 @@ import { useUnsavedRecovery } from './useUnsavedRecovery'
 import { convertedVersion, readVersionBody, versionImages } from './versions'
 import { versionSlides } from './versionSlides'
 
-type Panel = DocumentPanel
-
 const CONVERSION_POLL_MS = 15_000
 
 const Slideshow = defineAsyncComponent(() => import('@/apps/slides/pages/Slideshow.vue'))
@@ -154,7 +152,7 @@ const presentedSlide = computed(() => Math.max(1, Math.trunc(Number(route.query.
 const online = ref(typeof navigator === 'undefined' ? true : navigator.onLine)
 const composite = ref(false)
 const compositeItems = ref<CompositeItem[]>([])
-const panel = ref<Panel | null>(null)
+const panel = ref<DocumentPanel | null>(null)
 // The version shown read-only in the canvas's place (Q7); it shows only beside the versions panel
 const previewed = ref<DocumentVersion | null>(null)
 watch(panel, (shown) => {
@@ -443,7 +441,7 @@ function showSlide(step: number) {
   changeEditorSlide((slideIndex.value ?? 0) + step, false)
 }
 
-function showPanel(next: Panel | null) {
+function showPanel(next: DocumentPanel | null) {
   panel.value = next
 }
 
