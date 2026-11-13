@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 
-import { raiseOptimisticToast, raisePromiseToast } from '@/apps/mail/utils'
+import { afterLanding, raiseOptimisticToast, raisePromiseToast } from '@/apps/mail/utils'
 import { reportMutationError } from '@/platform/feedback'
 
 const toast = vi.hoisted(() => ({
@@ -64,4 +64,30 @@ it('reports a handled refusal once', async () => {
   )
   expect(toast.error).not.toHaveBeenCalled()
   expect(toast.success).not.toHaveBeenCalled()
+})
+
+// An Undo pressed while its write is in flight must not race it: the inverse sent alongside could
+// land first and be overtaken, leaving the change in place under a toast that says it was undone.
+it('holds an Undo until its write has landed', async () => {
+  let land: (() => void) | undefined
+  const forward = new Promise<void>((resolve) => {
+    land = resolve
+  })
+  const inverse = vi.fn()
+  afterLanding(forward, inverse)()
+  await Promise.resolve()
+  expect(inverse).not.toHaveBeenCalled()
+
+  land?.()
+  await vi.waitFor(() => expect(inverse).toHaveBeenCalledOnce())
+})
+
+it('drops an Undo whose write was refused, as there is nothing to take back', async () => {
+  const forward = Promise.reject(new Error('Mail server is down'))
+  forward.catch(() => {})
+  const inverse = vi.fn()
+  afterLanding(forward, inverse)()
+  await forward.catch(() => {})
+  await new Promise((resolve) => setTimeout(resolve))
+  expect(inverse).not.toHaveBeenCalled()
 })

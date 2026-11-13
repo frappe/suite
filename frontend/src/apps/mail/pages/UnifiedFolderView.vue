@@ -358,6 +358,7 @@ import { useThreadPin } from '@/apps/mail/composables/useThreadPin'
 import { userStore } from '@/apps/mail/stores/user'
 import type { Mail, Mailbox, MailboxData, MailCopy, Thread, UnifiedFolder } from '@/apps/mail/types'
 import {
+  afterLanding,
   commitAfterUndo,
   isMac,
   raiseError,
@@ -990,30 +991,32 @@ const handleAddToMailbox = (mailboxId: string) => {
   const snapshot = threadSnapshot(thread)
   syncFolderTag(mailboxId, true)
 
+  const forward = runPaneCommand(
+    {
+      kind: 'add',
+      input: {
+        ids,
+        mailbox_id: mailboxId,
+      },
+    },
+    thread.account,
+  ).catch((error) => {
+    syncFolderTag(mailboxId, false)
+    throw error
+  })
   // Undo replays the exact membership rather than the inverse call: a mail that was already in
-  // the folder before an "add" must stay in it afterwards.
-  const undoAction = () => {
+  // the folder before an "add" must stay in it afterwards. Only once the add has landed: see
+  // afterLanding.
+  const undoAction = afterLanding(forward, () => {
     syncFolderTag(mailboxId, false)
     raiseOptimisticToast(
       restoreMails(thread.account, snapshot),
       folder ? __('Thread removed from {0}.', [folder]) : __('Thread removed from folder.'),
     )
-  }
+  })
   setUndoAction(undoAction)
   raiseOptimisticToast(
-    runPaneCommand(
-      {
-        kind: 'add',
-        input: {
-          ids,
-          mailbox_id: mailboxId,
-        },
-      },
-      thread.account,
-    ).catch((error) => {
-      syncFolderTag(mailboxId, false)
-      throw error
-    }),
+    forward,
     folder ? __('Thread added to {0}.', [folder]) : __('Thread added to folder.'),
     undoAction,
   )
@@ -1025,27 +1028,28 @@ const handleRemoveFromMailbox = (mailboxId: string) => {
   const snapshot = threadSnapshot(thread)
   syncFolderTag(mailboxId, false)
 
-  // Undo replays the exact membership rather than the inverse call: a mail that was already in
-  // the folder before an "add" must stay in it afterwards.
-  const undoAction = () => {
+  const forward = runPaneCommand(
+    {
+      kind: 'remove',
+      input: {
+        ids: messageIdsOf(thread),
+        mailbox_id: mailboxId,
+      },
+    },
+    thread.account,
+  ).catch((error) => {
+    syncFolderTag(mailboxId, true)
+    throw error
+  })
+  // Undo replays the exact membership rather than the inverse call, and only once the remove has
+  // landed: see afterLanding.
+  const undoAction = afterLanding(forward, () => {
     syncFolderTag(mailboxId, true)
     raiseOptimisticToast(restoreMails(thread.account, snapshot), __('Thread added back.'))
-  }
+  })
   setUndoAction(undoAction)
   raiseOptimisticToast(
-    runPaneCommand(
-      {
-        kind: 'remove',
-        input: {
-          ids: messageIdsOf(thread),
-          mailbox_id: mailboxId,
-        },
-      },
-      thread.account,
-    ).catch((error) => {
-      syncFolderTag(mailboxId, true)
-      throw error
-    }),
+    forward,
     folder ? __('Thread removed from {0}.', [folder]) : __('Thread removed from folder.'),
     undoAction,
   )

@@ -10,6 +10,7 @@ import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
 import { userStore, type MailboxRole } from '@/apps/mail/stores/user'
 import type { Mail, Mailbox, MailCopy, Thread } from '@/apps/mail/types'
 import {
+  afterLanding,
   commitAfterUndo,
   getIcon,
   raiseOptimisticToast,
@@ -365,11 +366,7 @@ export function useThreadActions(deps: {
 
     // Undo = remove again, but only once the add has actually landed (no-op if it failed).
     setUndoAction(
-      () =>
-        void forward.then(
-          () => handleRemoveThreadsFromMailbox(mailboxId, threadIds, true),
-          () => {},
-        ),
+      afterLanding(forward, () => handleRemoveThreadsFromMailbox(mailboxId, threadIds, true)),
     )
     const success =
       threadIds.length === 1
@@ -449,11 +446,7 @@ export function useThreadActions(deps: {
 
     // Undo = add back, but only once the remove has landed (no-op if it failed).
     setUndoAction(
-      () =>
-        void forward.then(
-          () => void addThreadsToMailbox(mailboxId, threadIdsToBeUpdated, true),
-          () => {},
-        ),
+      afterLanding(forward, () => void addThreadsToMailbox(mailboxId, threadIdsToBeUpdated, true)),
     )
     raiseOptimisticToast(forward, success, undo)
   }

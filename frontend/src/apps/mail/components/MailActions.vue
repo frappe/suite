@@ -68,6 +68,7 @@ import { useScreener } from '@/apps/mail/composables/useScreener'
 import { FLAGGED_STAR_STYLE } from '@/apps/mail/constants'
 import type { ComposeMailData, Identity, Mail, ScreenedAddress } from '@/apps/mail/types'
 import {
+  afterLanding,
   downloadUrlAsFile,
   matchesScreenedValue,
   raiseError,
@@ -402,14 +403,17 @@ const unblockSender = (isUndo = false) => {
     { silent: true },
   )
   if (isUndo) return raiseOptimisticToast(forward, __('Sender blocked.'))
-  setUndoAction(() => {
-    const back = client.mutation(
-      api.mail.screening.set,
-      { account: scopeAccountId.value, emails: [mail.from_email], action: 'Spam' },
-      { silent: true },
-    )
-    raiseOptimisticToast(back, __('Sender blocked.'))
-  })
+  // Blocked again only once the unblock has landed: see afterLanding.
+  setUndoAction(
+    afterLanding(forward, () => {
+      const back = client.mutation(
+        api.mail.screening.set,
+        { account: scopeAccountId.value, emails: [mail.from_email], action: 'Spam' },
+        { silent: true },
+      )
+      raiseOptimisticToast(back, __('Sender blocked.'))
+    }),
+  )
   raiseOptimisticToast(forward, __('Sender unblocked.'), undo)
 }
 

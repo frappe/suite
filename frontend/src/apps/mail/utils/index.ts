@@ -120,6 +120,14 @@ export const raisePromiseToast = async (
   }
 }
 
+/**
+ * The Undo for a write still in flight: it runs once the write has landed, and not at all if the
+ * write was refused. Sent alongside the write, the inverse could land first and be overtaken by it,
+ * leaving the change in place under a toast that says it was taken back.
+ */
+export const afterLanding = (forward: Promise<unknown>, undo: () => void) => () =>
+  void forward.then(undo, () => {})
+
 // The rows change on the click, and so does the toast that says so, Undo and all: waiting for the
 // server put "Archived · Undo" on screen after the reader had moved on, on a slow link seconds
 // later. A refusal takes the toast down and says why; the write's own rollback puts the rows back,
