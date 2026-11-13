@@ -47,6 +47,14 @@
         class="shrink-0"
         @retry="retrySave()"
       />
+      <!-- In the header, where it can always be reached: in the formatting row it only appeared once
+           the body had the caret, so a mail that was nothing but an attachment had no way to it. -->
+      <Button variant="ghost" :label="__('Attach files')" @click="fileInput?.click()">
+        <template #icon>
+          <Paperclip class="text-ink-gray-5 size-5" />
+        </template>
+      </Button>
+      <input ref="fileInput" type="file" class="hidden" multiple @change="onFilesSelected" />
       <AdaptiveDropdown :options="ACTIONS">
         <Button variant="ghost" :label="__('More actions')">
           <template #icon>
@@ -275,18 +283,6 @@
               class="flex items-center gap-1 overflow-x-auto px-2 py-1 [&_button]:min-h-9 [&_button]:min-w-9 [&_button]:items-center [&_button]:justify-center [&_svg]:size-4"
             >
               <EditorFixedMenu :items="menu" class="shrink-0" />
-              <Button variant="ghost" :label="__('Attach files')" @click="fileInput?.click()">
-                <template #icon>
-                  <Paperclip class="icon" />
-                </template>
-              </Button>
-              <input
-                ref="fileInput"
-                type="file"
-                class="hidden"
-                multiple
-                @change="onFilesSelected"
-              />
             </div>
           </div>
         </template>

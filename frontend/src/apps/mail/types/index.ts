@@ -19,16 +19,7 @@ export interface ScreenedAddress {
 // A JMAP push subscription (virtual doctype: Push Subscription). Each one registers a device/client
 // with the JMAP server so it receives StateChange notifications. `name` is `user|id` and is the row
 // key used by bulk_delete. `types` is a JSON string of the data types the client subscribes to.
-export interface PushSubscription {
-  user: string
-  id: string
-  name: string
-  device_client_id: string
-  expires: string | null
-  types: string
-  creation: string
-  modified: string
-}
+export type PushSubscription = import('../client/generated').FetchPushSubscriptionsOutput[number]
 
 export type User = NonNullable<import('../client/generated').GetUserInfoOutput>
 export type UserAccount = User['accounts'][number]

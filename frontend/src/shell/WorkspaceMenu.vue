@@ -22,7 +22,7 @@ import { useSession } from '@/platform/session'
 import { openSettings } from '@/platform/settings'
 import { translate as __ } from '@/platform/translation'
 
-const { areas, name, mark } = defineProps<{
+const { name, mark } = defineProps<{
   /** Areas placed in this menu rather than the rail; already filtered by capability. */
   areas: readonly AreaDefinition[]
   name: string
@@ -55,29 +55,25 @@ const options = computed<DropdownOptions>(() => [
   {
     group: __('Manage'),
     hideLabel: true,
-    options: [
-      ...areas.map((area) => ({
-        label: area.label(),
-        icon: area.icon,
-        onClick: () => void router.push(area.to),
-      })),
-      // Inviting and workspace settings belong to Suite admins; everyone else
-      // gets their own settings.
-      ...(isAdmin.value
-        ? [
-            {
-              label: __('Invite people'),
-              icon: 'lucide-user-plus',
-              onClick: () => void router.push('/admin/users'),
-            },
-            {
-              label: __('Workspace settings'),
-              icon: 'lucide-settings',
-              onClick: () => void router.push('/admin/settings'),
-            },
-          ]
-        : [{ label: __('Settings'), icon: 'lucide-settings', onClick: () => openSettings() }]),
-    ],
+    options: isAdmin.value
+      ? [
+          {
+            label: __('Admin'),
+            icon: 'lucide-shield-check',
+            onClick: () => void router.push('/admin'),
+          },
+          {
+            label: __('Invite people'),
+            icon: 'lucide-user-plus',
+            onClick: () => void router.push('/admin/users'),
+          },
+          {
+            label: __('Workspace settings'),
+            icon: 'lucide-settings',
+            onClick: () => void router.push('/admin/settings'),
+          },
+        ]
+      : [{ label: __('Settings'), icon: 'lucide-settings', onClick: () => openSettings() }],
   },
 ])
 </script>

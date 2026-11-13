@@ -22971,6 +22971,10 @@
                 "title": "Device Client Id",
                 "type": "string"
               },
+              "this_site": {
+                "title": "This Site",
+                "type": "boolean"
+              },
               "expires": {
                 "anyOf": [
                   {
@@ -23000,6 +23004,7 @@
               "id",
               "name",
               "device_client_id",
+              "this_site",
               "expires",
               "types",
               "creation",
