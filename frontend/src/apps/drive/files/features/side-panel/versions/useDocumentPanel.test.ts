@@ -24,8 +24,6 @@ function versionsSession() {
   return { session, taken }
 }
 
-async function noRefresh() {}
-
 afterEach(() => vi.clearAllMocks())
 
 describe('saving a named version', () => {
@@ -37,7 +35,7 @@ describe('saving a named version', () => {
       order.push(`saved before ${taken.length} versions`)
     }
 
-    const isTaken = await useDocumentPanel(session, noRefresh).saveVersion('Draft one', saveFirst)
+    const isTaken = await useDocumentPanel(session).saveVersion('Draft one', saveFirst)
 
     expect([isTaken, order, taken]).toEqual([
       true,
@@ -52,7 +50,7 @@ describe('saving a named version', () => {
       throw new Error('No version was taken: saving is paused.')
     }
 
-    const isTaken = await useDocumentPanel(session, noRefresh).saveVersion('Draft one', saveFirst)
+    const isTaken = await useDocumentPanel(session).saveVersion('Draft one', saveFirst)
 
     expect([isTaken, taken, vi.mocked(toast.error).mock.calls]).toEqual([
       false,
@@ -88,8 +86,8 @@ function renamingSession(refusal?: string) {
 
 async function renameRow(refusal: string | undefined, seq: number, label: string) {
   const { session, sent } = renamingSession(refusal)
-  const panel = useDocumentPanel(session, noRefresh)
-  await panel.load('versions')
+  const panel = useDocumentPanel(session)
+  await panel.loadVersions()
   const version = panel.lists.versions.find((row) => row.seq === seq)!
   const renamed = await panel.renameVersion(version, label)
   const shown = panel.lists.versions.map((row) => ({
@@ -154,8 +152,8 @@ describe('renaming a version', () => {
           ),
       },
     })
-    const panel = useDocumentPanel(session, noRefresh)
-    await panel.load('versions')
+    const panel = useDocumentPanel(session)
+    await panel.loadVersions()
 
     const renamed = await panel.renameVersion(panel.lists.versions[0]!, 'Before the review')
 

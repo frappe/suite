@@ -14,6 +14,7 @@ import type { VersionRestored } from '@/platform/collab'
 import { requireTestElement } from '@/platform/testing/dom'
 import { translationPlugin } from '@/platform/translation'
 
+import { useDocumentComments } from './comments/useDocumentComments'
 import DocumentSidePanel from './DocumentSidePanel.vue'
 
 vi.mock('frappe-ui', async () => {
@@ -539,5 +540,69 @@ describe('the Comments panel while versions load', () => {
       host.textContent?.includes('Loading…'),
       host.textContent?.includes('Add a comment'),
     ]).toEqual([false, true])
+  })
+})
+
+// The real panel over a document's real comment threads, with the reads of them counted
+function panelOverThreads(
+  isShown: (panel: DocumentPanel | null) => boolean,
+  first: DocumentPanel | null,
+) {
+  const reads: number[] = []
+  const session = fromPartial<DocumentSession>({
+    nodeId: 'node-1',
+    comments: {
+      list: async () => {
+        reads.push(1)
+        return { threads: [] }
+      },
+    },
+    versions: { list: async () => ({ rows: [], next_cursor: null }) },
+  })
+  const panel = ref<DocumentPanel | null>(first)
+  const host = document.createElement('div')
+  document.body.append(host)
+  const app = createApp({
+    setup() {
+      const comments = useDocumentComments(session, { isShown: () => isShown(panel.value) })
+      return () =>
+        h(DocumentSidePanel, {
+          panel: panel.value,
+          previewedVersion: null,
+          session,
+          canComment: true,
+          canEditDocument: false,
+          canShare: false,
+          canRestoreVersion: false,
+          canSaveVersion: false,
+          isRestoringVersion: false,
+          comments,
+          places: null,
+          noun: 'document',
+          saveFirst: async () => {},
+        })
+    },
+  })
+  app.use(translationPlugin).mount(host)
+  mounted = app
+  return { panel, reads }
+}
+
+describe('reading the threads the Comments panel shows', () => {
+  it('reads them once when Comments opens, where they are read only while it is open', async () => {
+    const { panel, reads } = panelOverThreads((open) => open === 'comments', null)
+    await settled()
+
+    panel.value = 'comments'
+    await settled()
+
+    expect(reads).toHaveLength(1)
+  })
+
+  it('reads them once when the panel starts on Comments, where they are always read', async () => {
+    const { reads } = panelOverThreads(() => true, 'comments')
+    await settled()
+
+    expect(reads).toHaveLength(1)
   })
 })

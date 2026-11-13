@@ -47,9 +47,8 @@ const emit = defineEmits<{
 const openThread = defineModel<string | null>('openThread', { default: null })
 const litThread = defineModel<string | null>('litThread', { default: null })
 
-const { lists, load, loadMoreVersions, saveVersion, renameVersion } = useDocumentPanel(
+const { lists, loadVersions, loadMoreVersions, saveVersion, renameVersion } = useDocumentPanel(
   props.session,
-  props.comments.refresh,
 )
 
 const isSavingVersion = ref(false)
@@ -70,8 +69,8 @@ const versionNameHint = computed(() =>
 watch(
   panel,
   (kind) => {
-    if (kind) {
-      void load(kind)
+    if (kind === 'versions') {
+      void loadVersions()
     }
 
     if (kind !== 'versions') {
@@ -175,12 +174,12 @@ async function startDocumentComment() {
 
 // Someone else restored a version: the list reads again, and the person is told who and which
 async function tellRestoredByOther(restored: VersionRestored) {
-  void load('versions')
+  void loadVersions()
   toast.info(await restoredByOther(restored, props.noun))
 }
 
 defineExpose({
-  reloadVersions: () => load('versions'),
+  reloadVersions: loadVersions,
   nameVersion,
   startDocumentComment,
   tellRestoredByOther,
