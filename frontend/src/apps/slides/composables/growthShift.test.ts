@@ -129,6 +129,7 @@ describe('centred auto-width text typed into while its font loads', () => {
       isSelected: () => false,
       setBoundText: () => {},
       canWrite: () => true,
+      restoreRev: () => 0,
       fontsPending: () => fonts.pending,
       onRenamed: () => {},
       onMerged: () => {},

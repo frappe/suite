@@ -18,15 +18,20 @@ import {
   deleteElement,
   deleteSlide,
   ELEMENT_FIELDS,
+  elementIds,
   elementOrders,
+  elementState,
   elementText,
   moveElement,
   moveSlide,
+  replaceSlide,
   ROOT,
   setElement,
   setSlide,
   SLIDE_FIELDS,
+  slideIds,
   slideOrders,
+  transitionKey,
 } from './deck'
 import { deckSchema, drawnSlides } from './drawnDeck'
 import { openLiveUndo, type StepDirection } from './liveUndo'
@@ -34,8 +39,10 @@ import { openLiveUndo, type StepDirection } from './liveUndo'
 const LIVE_ORIGIN = 'slides-live-store'
 // Opening an editor isn't an edit, so this write is no undo step
 const SEED_ORIGIN = 'slides-live-seed'
+// Taking back a fill another tab's fill beat isn't an edit either
+const GIVE_WAY_ORIGIN = 'slides-live-give-way'
 
-const LOCAL_ORIGINS = new Set<unknown>([LIVE_ORIGIN, SEED_ORIGIN, ySyncPluginKey])
+const LOCAL_ORIGINS = new Set<unknown>([LIVE_ORIGIN, SEED_ORIGIN, GIVE_WAY_ORIGIN, ySyncPluginKey])
 const CENTRED = 'translate(-50%, -50%)'
 const FRAME_KEYS = ['left', 'top', 'width', 'height', 'transform', 'transformOrigin']
 const DRAWN_ELEMENT_KEYS = new Set([...ELEMENT_FIELDS, ...FRAME_KEYS, 'connector', 'content'])
@@ -60,10 +67,13 @@ export interface LiveDeckHost {
   /** Text the store set on that element from outside the editor: a column resize, say. */
   setBoundText: (html: string | null) => void
   canWrite: () => boolean
+  /** The room's count of restores so far. It moves before the restore's rows arrive. */
+  restoreRev: () => number
   /** A font is still loading, so a top-left `flatten` works out now is only good for drawing. */
   fontsPending: () => boolean
   onRenamed: (renames: Map<string, string>) => void
-  onMerged: (previousSlideIds: string[]) => void
+  /** The store took the room's slides; these were its slides before. */
+  onMerged: (previousSlides: StoreSlide[]) => void
   onStep: (step: LiveStep) => void
   /** Someone else deleted the element this tab is typing in. Its text is still in the store. */
   onBoundDeleted: (id: string) => void
@@ -296,6 +306,13 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
   const steps = openLiveUndo(doc, [LIVE_ORIGIN, ySyncPluginKey])
   let mirror = mirrorOf(host.slides())
   let reportedGoneId: string | null = null
+  let restoreRev = host.restoreRev()
+  // this tab's fill of the blank slide, and its elements as written
+  let heldFill: {
+    slideId: string
+    status: ReturnType<typeof replaceSlide>
+    elements: Map<string, string>
+  } | null = null
 
   function forEachStoreElement(visit: (element: StoreItem) => void) {
     for (const slide of host.slides()) {
@@ -469,7 +486,7 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
 
   function merge() {
     const store = host.slides()
-    const previousIds = store.map(({ clientId }) => clientId)
+    const previous = [...store]
     const slideById = new Map(store.map((slide) => [slide.clientId, slide]))
     const next = drawnSlides(doc, htmlById).map((drawn) => {
       const flat = drawn.elements.map(host.flatten)
@@ -496,11 +513,49 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
 
     replaceIfDifferent<StoreSlide>(store, next)
     mirror = mirrorOf(store)
-    host.onMerged(previousIds)
+    host.onMerged(previous)
+  }
+
+  // Q1: of two tabs filling the blank slide at once, one slide map wins. The other tab takes back
+  // its fill's elements, all but any its user changed since, and those drop a pairing the slide
+  // already holds (Q4). A tab that can't write leaves its document as the room has it
+  function giveWayIfBeaten() {
+    const status = heldFill?.status()
+    if (!heldFill || status === 'held') {
+      return
+    }
+
+    const { slideId, elements } = heldFill
+    heldFill = null
+    if (status === 'gone' || !host.canWrite()) {
+      return
+    }
+
+    doc.transact(() => {
+      for (const [id, state] of elements) {
+        if (elementState(doc, id) === state) {
+          deleteElement(doc, id)
+        }
+      }
+
+      const onSlide = elementIds(doc, slideId)
+      const kept = onSlide.filter((id) => elements.has(id))
+      const keys = new Set(
+        onSlide.filter((id) => !elements.has(id)).map((id) => transitionKey(doc, id)),
+      )
+      for (const id of kept) {
+        if (keys.has(transitionKey(doc, id))) {
+          setElement(doc, id, { refId: undefined })
+        }
+
+        keys.add(transitionKey(doc, id))
+      }
+    }, GIVE_WAY_ORIGIN)
   }
 
   function pull() {
     push()
+    giveWayIfBeaten()
     merge()
     // the one write a remote change can cause (Q27)
     if (host.canWrite()) {
@@ -522,7 +577,18 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
     }
   }
 
+  // Undo never reaches past a restore (Q5). Checked as its rows arrive, before anything held goes back
+  function forgetPastRestore() {
+    const rev = host.restoreRev()
+    if (rev !== restoreRev) {
+      restoreRev = rev
+      heldFill = null
+      steps.forget()
+    }
+  }
+
   function onUpdate(_update: Uint8Array, origin: unknown) {
+    forgetPastRestore()
     if (LOCAL_ORIGINS.has(origin)) {
       return
     }
@@ -593,6 +659,40 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
     }
   }
 
+  // Checked and written in one transaction, so a co-editor's element can't land between them. The
+  // fields go in a new slide map: the store's push writes only what differs from the mirror
+  function fillBlank(layout: StoreSlide) {
+    if (!host.canWrite()) {
+      return false
+    }
+
+    push()
+    let isFilled = false
+    doc.transact(() => {
+      const [slideId, ...others] = slideIds(doc)
+      const slide = host.slides().find(({ clientId }) => clientId === slideId)
+      if (!slide || others.length || elementIds(doc, slideId).length) {
+        return
+      }
+
+      const fields = slideFields(layout)
+      const status = replaceSlide(doc, slideId, fields)
+      Object.assign(slide, fields)
+      slide.elements.splice(0, slide.elements.length, ...layout.elements)
+      push()
+      const elements = elementIds(doc, slideId).map((id) => [id, elementState(doc, id)] as const)
+      heldFill = { slideId, status, elements: new Map(elements) }
+      isFilled = true
+    }, LIVE_ORIGIN)
+    merge()
+    if (isFilled) {
+      // the theme pick is how the presentation starts, not an edit to undo
+      steps.forget()
+    }
+
+    return isFilled
+  }
+
   const elementsRoot = doc.getMap(ROOT.elements)
   elementsRoot.observeDeep(forgetChangedText)
   doc.on('update', onUpdate)
@@ -603,11 +703,19 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
     push,
     /** Draws the document again without writing to it. Send the store's changes first. */
     redraw: merge,
+    /** Sends the store's changes, then draws the document with the blank an emptied one needs. */
+    pull,
+    /** Puts the layout on the presentation's one blank slide. False if it isn't blank any more. */
+    fillBlank,
     holdsPosition: (id: string) => savedFrame(id)?.transform === CENTRED && host.fontsPending(),
     undo: () => takeStep('undo'),
     redo: () => takeStep('redo'),
     /** The change just made is one undo step, and nothing after it joins that step. */
     endStep: steps.endStep,
+    /** Forgets every undo step: the restoring tab's, before its restore writes. */
+    forgetSteps: steps.forget,
+    /** Forgets every undo step once a restore has landed, which a restore that changed nothing here needs. */
+    followRestore: forgetPastRestore,
     undoManager: steps.manager,
     /** An element's first text, written when its editor opens. */
     seedText(id: string, html: string) {

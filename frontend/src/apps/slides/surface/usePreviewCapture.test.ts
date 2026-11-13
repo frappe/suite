@@ -3,8 +3,6 @@ import { effectScope, nextTick, shallowRef, type EffectScope } from 'vue'
 
 type PreviewPush = { node: string; image: string; mime: string }
 const pushedPreviews: PreviewPush[] = []
-let serverRefusesSaves = false
-let saves = 0
 
 // The network and the drawing library are the boundaries.
 vi.mock('@/api', async (original) => {
@@ -12,10 +10,9 @@ vi.mock('@/api', async (original) => {
   const mutation = async (operation: unknown, body: PreviewPush) => {
     if (operation === real.api.drive.nodes.setPreview) {
       pushedPreviews.push(body)
-      return { preview: null }
     }
-    if (serverRefusesSaves) throw new Error('The server is unavailable')
-    return { modified: `saved-${++saves}` }
+
+    return { preview: null }
   }
   return { ...real, client: { ...real.client, mutation } }
 })
@@ -32,10 +29,7 @@ vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' 
 
 const { presentationDoc, presentationId, slidesLength, viewOnly } =
   await import('@/apps/slides/stores/presentation')
-const { lockedElsewhere } = await import('@/apps/slides/stores/editLock')
 const { slides } = await import('@/apps/slides/stores/slide')
-const { clearSaveFailure, markClean, markDirty, saveChanges } =
-  await import('@/apps/slides/stores/saving')
 const { usePreviewCapture } = await import('./usePreviewCapture')
 
 const slide = (clientId: string) => ({ clientId, background: '#ffffffff', elements: [] })
@@ -46,8 +40,8 @@ let frame: HTMLElement
 
 async function editAndSave(index = 0) {
   slides.value[index].background = `#${Math.random().toString(16).slice(2, 8)}ff`
-  markDirty()
-  await saveChanges()
+  // the surface asks once the room says the save landed
+  preview?.captureAfterPause()
   await nextTick()
 }
 
@@ -61,16 +55,12 @@ describe('the deck preview', () => {
     pushedPreviews.length = 0
     drawings.count = 0
     drawings.finish = Promise.resolve()
-    serverRefusesSaves = false
     viewOnly.value = false
-    lockedElsewhere.value = false
-    clearSaveFailure()
     const id = `deck-${Math.random()}`
     presentationId.value = id
     presentationDoc.value = { name: id, modified: 'base' }
     slides.value = [slide('one'), slide('two')]
     slidesLength.value = 2
-    markClean()
     frame = document.body.appendChild(document.createElement('div'))
     scope = effectScope()
     preview = scope.run(() => usePreviewCapture({ node: 'deck-node', target: shallowRef(frame) }))
@@ -139,26 +129,8 @@ describe('the deck preview', () => {
     await vi.waitFor(() => expect(pushedPreviews).toHaveLength(1))
   })
 
-  it('sends nothing from a tab another tab took the deck from', async () => {
-    await editAndSave()
-    lockedElsewhere.value = true
-    await waitOutThePause()
-
-    expect(drawings.count).toBe(0)
-    expect(pushedPreviews).toHaveLength(0)
-  })
-
   it('sends nothing from a view only tab', async () => {
     viewOnly.value = true
-    await editAndSave()
-    await waitOutThePause()
-
-    expect(drawings.count).toBe(0)
-    expect(pushedPreviews).toHaveLength(0)
-  })
-
-  it('sends nothing after a save the server refused', async () => {
-    serverRefusesSaves = true
     await editAndSave()
     await waitOutThePause()
 

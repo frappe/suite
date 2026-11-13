@@ -347,8 +347,7 @@
           "modified_by",
           "node",
           "is_composite",
-          "theme",
-          "slides"
+          "theme"
         ],
         "title": "Deck",
         "type": "object"
@@ -704,8 +703,7 @@
           "modified_by",
           "node",
           "is_composite",
-          "theme",
-          "slides"
+          "theme"
         ],
         "title": "Deck",
         "type": "object"
@@ -741,163 +739,6 @@
       "body": null,
       "output": {
         "type": "boolean"
-      },
-      "errors": [],
-      "entity": null,
-      "nodeParams": [],
-      "stream": false,
-      "bytes": false
-    },
-    {
-      "id": "save_slides",
-      "kind": "mutation",
-      "publicName": "documents.save",
-      "page": null,
-      "envelope": "message",
-      "method": "POST",
-      "path": "/api/method/suite.slides.api.slides.save_slides",
-      "pathParams": [],
-      "query": null,
-      "body": {
-        "$defs": {
-          "SlideChanges": {
-            "properties": {
-              "client_id": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "title": "Client Id"
-              },
-              "background": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "title": "Background"
-              },
-              "elements": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "items": {
-                      "additionalProperties": true,
-                      "type": "object"
-                    },
-                    "type": "array"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "title": "Elements"
-              },
-              "transition": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "title": "Transition"
-              },
-              "transition_duration": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "title": "Transition Duration"
-              },
-              "fade_unmatched_elements": {
-                "anyOf": [
-                  {
-                    "type": "boolean"
-                  },
-                  {
-                    "enum": [
-                      0,
-                      1
-                    ],
-                    "type": "integer"
-                  }
-                ],
-                "title": "Fade Unmatched Elements"
-              },
-              "advance_after": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "title": "Advance After"
-              }
-            },
-            "title": "SlideChanges",
-            "type": "object"
-          }
-        },
-        "properties": {
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "slides": {
-            "items": {
-              "$ref": "#/$defs/SlideChanges"
-            },
-            "title": "Slides",
-            "type": "array"
-          },
-          "base_modified": {
-            "title": "Base Modified",
-            "type": "string"
-          }
-        },
-        "required": [
-          "name",
-          "slides",
-          "base_modified"
-        ],
-        "title": "SaveDeck",
-        "type": "object"
-      },
-      "output": {
-        "properties": {
-          "modified": {
-            "title": "Modified",
-            "type": "string"
-          }
-        },
-        "required": [
-          "modified"
-        ],
-        "title": "SavedDeck",
-        "type": "object"
       },
       "errors": [],
       "entity": null,
@@ -1146,6 +987,10 @@
                 "title": "Name",
                 "type": "string"
               },
+              "node": {
+                "title": "Node",
+                "type": "string"
+              },
               "title": {
                 "title": "Title",
                 "type": "string"
@@ -1163,6 +1008,17 @@
                 "title": "Is Template",
                 "type": "integer"
               },
+              "is_converted": {
+                "title": "Is Converted",
+                "type": "boolean"
+              },
+              "thumbnails": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Thumbnails",
+                "type": "array"
+              },
               "layouts": {
                 "items": {
                   "$ref": "#/$defs/Slide"
@@ -1173,10 +1029,13 @@
             },
             "required": [
               "name",
+              "node",
               "title",
               "slug",
               "creation",
               "is_template",
+              "is_converted",
+              "thumbnails",
               "layouts"
             ],
             "title": "Template",
@@ -1698,6 +1557,134 @@
           "none"
         ],
         "type": "string"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "convert_version",
+      "kind": "mutation",
+      "publicName": "versions.convert",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.slides.api.versions.convert_version",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "node": {
+            "title": "Node",
+            "type": "string"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "node",
+          "seq"
+        ],
+        "title": "ConvertVersion",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "pending": {
+            "title": "Pending",
+            "type": "boolean"
+          }
+        },
+        "title": "VersionConversion",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "recovery_names",
+      "kind": "query",
+      "publicName": "recovery.names",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.slides.api.recovery.recovery_names",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "presentations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Presentations",
+            "type": "array"
+          },
+          "nodes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Nodes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "presentations",
+          "nodes"
+        ],
+        "title": "RecoveryNamesInput",
+        "type": "object"
+      },
+      "output": {
+        "$defs": {
+          "RecoveryName": {
+            "properties": {
+              "presentation": {
+                "title": "Presentation",
+                "type": "string"
+              },
+              "node": {
+                "title": "Node",
+                "type": "string"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              },
+              "can_edit": {
+                "title": "Can Edit",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "presentation",
+              "node",
+              "title",
+              "can_edit"
+            ],
+            "title": "RecoveryName",
+            "type": "object"
+          }
+        },
+        "items": {
+          "$ref": "#/$defs/RecoveryName"
+        },
+        "type": "array"
       },
       "errors": [],
       "entity": null,

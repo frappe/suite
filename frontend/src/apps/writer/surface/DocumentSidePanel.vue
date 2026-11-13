@@ -2,13 +2,18 @@
 import { Button, TextInput } from 'frappe-ui'
 import { computed, nextTick, ref, watch } from 'vue'
 
-import type { DocumentPanel, DocumentSession, DocumentThread, DocumentVersion } from '@/apps/drive'
+import {
+  DriveCommentList as CommentList,
+  type DocumentPanel,
+  type DocumentSession,
+  type DocumentThread,
+  type DocumentVersion,
+  type ThreadActions,
+  type useCommentDrafts,
+} from '@/apps/drive'
 import type { ThreadPlaces } from '@/apps/writer/collab/highlights'
 
-import CommentList from './CommentList.vue'
-import type { useCommentDrafts } from './useCommentDrafts'
 import { useDocumentPanel } from './useDocumentPanel'
-import type { ThreadActions } from './useThreadChanges'
 import VersionList from './VersionList.vue'
 
 const props = defineProps<{
@@ -207,6 +212,7 @@ defineExpose({ reloadVersions: () => load('versions'), startNamingVersion, start
             :can-share
             :actions="threadActions"
             :drafts
+            noun="document"
             @sent="emit('commentSent')"
           />
           <p v-else-if="lists.isLoading" class="px-2 text-sm text-ink-gray-5">

@@ -29,8 +29,12 @@ import {
   setEditableState,
 } from '@/apps/slides/stores/element'
 import { interactionOffset } from '@/apps/slides/stores/interaction'
-import { boundElementId, isLive, wasLastTextChangeHere } from '@/apps/slides/stores/liveDeck'
-import { markDirty } from '@/apps/slides/stores/saving'
+import {
+  askLivePush,
+  boundElementId,
+  isLive,
+  wasLastTextChangeHere,
+} from '@/apps/slides/stores/liveDeck'
 import {
   getDefaultBandColor,
   getDefaultGridColor,
@@ -110,7 +114,7 @@ watch(
     if (isLive() && !(boundElementId() === element.value.id && wasLastTextChangeHere())) return
 
     element.value.width = width
-    markDirty()
+    askLivePush()
   },
 )
 

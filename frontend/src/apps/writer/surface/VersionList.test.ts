@@ -47,7 +47,7 @@ vi.mock('frappe-ui', async () => {
   }
 })
 
-vi.mock('@/apps/writer/composables/useUsers', () => ({
+vi.mock('@/platform/collab/names', () => ({
   fullName: (user: string) => ({ 'ana@example.com': 'Ana Silva' })[user] ?? user,
 }))
 

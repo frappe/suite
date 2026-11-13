@@ -64,8 +64,3 @@ class TestNewDeck(LoggedDeckCase):
 
         _, copy_state = opened(copied)
         self.assertEqual(slide_ids(copy_state), slide_ids(source_state))
-
-    def test_mode_off_makes_no_log(self):
-        self.turn_off()
-
-        self.assertIsNone(content.find(APP, self.new_deck()))

@@ -24,7 +24,7 @@
           :skip="!prevSlide?.fadeUnmatchedElements"
         >
           <SlideElement
-            v-for="element in currentSlide?.elements"
+            v-for="element in shownSlide?.elements"
             :key="`slideshow-${getElementKey(element)}`"
             mode="slideshow"
             :element="element"
@@ -49,7 +49,7 @@
             @click="changeSlideInSlideshow(slideIndex + 1)"
           >
             <SlideElement
-              v-for="element in currentSlide?.elements"
+              v-for="element in shownSlide?.elements"
               :key="`slideshow-${getElementKey(element)}`"
               mode="slideshow"
               :element="element"
@@ -94,6 +94,7 @@ import {
   requestWakeLock,
   resetSlideShowState,
   scheduleAdvance,
+  shownSlide,
   showSlideshowEndScreen,
 } from '@/apps/slides/stores/slideshow'
 import { getTransitionKey } from '@/apps/slides/stores/transition'
@@ -132,7 +133,7 @@ const slideStyles = computed(() => {
     width: '960px',
     height: '540px',
     overflow: 'hidden',
-    backgroundColor: currentSlide.value?.background || '#ffffff',
+    backgroundColor: shownSlide.value?.background || '#ffffff',
   }
 
   if (prevSlide.value?.transition == 'Magic Move') {
@@ -286,7 +287,7 @@ const handleVisibilityChange = () => {
 const slideContainerStyles = computed(() => {
   return {
     clipPath: clipPath.value,
-    backgroundColor: currentSlide.value?.background || '#ffffff',
+    backgroundColor: shownSlide.value?.background || '#ffffff',
   }
 })
 
@@ -376,7 +377,7 @@ watch(
 
 // any change of slide, by hand, by the timer, or by the load, restarts the wait
 // the slide the show opens on, or loads into, waits only its delay
-watch([currentSlide, inSlideShowMode], ([, presenting], [previous, wasPresenting]) => {
+watch([shownSlide, inSlideShowMode], ([, presenting], [previous, wasPresenting]) => {
   if (presenting) scheduleAdvance(wasPresenting && Boolean(previous))
   else cancelAdvance()
 })

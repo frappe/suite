@@ -97,20 +97,15 @@
                 @move="moveRecipient"
                 @show-cc-bcc="showCcBcc = true"
               />
+              <!-- Named in words, not a bare chevron: the fields it opens are the ones people look for. -->
               <Button
                 v-if="!(mail.cc?.length || mail.bcc?.length)"
                 variant="ghost"
-                :aria-label="showCcBcc ? __('Hide Cc and Bcc') : __('Show Cc and Bcc')"
-                :tooltip="__('Cc and Bcc')"
+                class="shrink-0 !text-ink-gray-5"
+                :label="__('Cc Bcc')"
+                :aria-expanded="showCcBcc"
                 @click="toggleCcBcc"
-              >
-                <template #icon>
-                  <component
-                    :is="showCcBcc ? ChevronUp : ChevronDown"
-                    class="text-ink-gray-5 h-4 w-4"
-                  />
-                </template>
-              </Button>
+              />
             </div>
             <div ref="toSuggestions" class="empty:hidden" />
             <template v-if="showCcBcc">
@@ -230,15 +225,11 @@
                   <Button
                     v-if="!(mail.cc?.length || mail.bcc?.length)"
                     variant="ghost"
+                    class="shrink-0 !text-ink-gray-5"
+                    :label="__('Cc Bcc')"
+                    :aria-expanded="showCcBcc"
                     @click="toggleCcBcc"
-                  >
-                    <template #icon>
-                      <component
-                        :is="showCcBcc ? ChevronUp : ChevronDown"
-                        class="text-ink-gray-5 h-4 w-4"
-                      />
-                    </template>
-                  </Button>
+                  />
                 </div>
               </div>
               <div ref="toSuggestions" class="empty:hidden" />
@@ -411,15 +402,7 @@
 <script setup lang="ts">
 import { Button, Combobox, Dropdown, Tooltip, UploadError, useFileUpload } from 'frappe-ui'
 import { Editor, EditorContent } from 'frappe-ui/editor'
-import {
-  ChevronDown,
-  ChevronUp,
-  ExternalLink,
-  Forward,
-  Reply,
-  ReplyAll,
-  UploadCloud,
-} from 'lucide-vue-next'
+import { ExternalLink, Forward, Reply, ReplyAll, UploadCloud } from 'lucide-vue-next'
 import { computed, inject, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 
 import AttachmentCapsule from '@/apps/mail/components/AttachmentCapsule.vue'
