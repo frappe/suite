@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest'
 
 import { roots } from './schema'
-import { cmd, displays, inputs, storeState, sync, twoTabs, type, type Tab } from './test-tabs'
+import {
+  cmd,
+  displays,
+  inputs,
+  openTab,
+  storeState,
+  sync,
+  twoTabs,
+  type,
+  type Tab,
+} from './test-tabs'
 import { createUndo, type Selection, type Undo } from './undo'
 
 // Collab undo on a tab, with a selection the test moves by hand (the editor's grid).
@@ -56,6 +66,54 @@ describe('undo: own steps', () => {
     await ua.redo()
     expect((await displays(a))['Sheet1!A2']).toBe('2')
     await expectConverged(a, b)
+  })
+
+  // What Clear formatting sends for a typed 15% (SheetEditor's
+  // _clearEngineFormats): IronCalc's format back to general, and the plain
+  // value as the input, in the action's one commit.
+  it('undoes and redoes clearing a typed format, in both tabs and after a reload', async () => {
+    const [a, b, ua] = await undoTabs()
+    await type(a, 'Sheet1', 'J6', '15%')
+    await type(a, 'Sheet1', 'J7', '$1.50')
+    await sync(a, b)
+    const range = (row: number) => ({ r1: row, c1: 10, r2: row, c2: 10 })
+    a.glue.dispatch(
+      cmd('batch', {
+        commands: [6, 7].map((row) =>
+          cmd('setRangeStyle', {
+            sheet: 'Sheet1',
+            range: range(row),
+            style: { num_fmt: 'general' },
+          }),
+        ),
+      }),
+    )
+    a.glue.dispatch(
+      cmd('batch', {
+        commands: [
+          cmd('setInput', { sheet: 'Sheet1', row: 6, col: 10, input: '0.15' }),
+          cmd('setInput', { sheet: 'Sheet1', row: 7, col: 10, input: '1.5' }),
+        ],
+      }),
+    )
+    await a.glue.commit()
+    const plain = { 'Sheet1!J6': '0.15', 'Sheet1!J7': '1.5' }
+    await sync(a, b)
+    expect(await displays(a)).toEqual(plain)
+    expect(await displays(b)).toEqual(plain)
+    expect(await displays(await openTab('reload', a.doc))).toEqual(plain)
+
+    await ua.undo()
+    await sync(a, b)
+    const typed = { 'Sheet1!J6': '15%', 'Sheet1!J7': '$1.50' }
+    expect(await displays(a)).toEqual(typed)
+    expect(await displays(b)).toEqual(typed)
+
+    await ua.redo()
+    await sync(a, b)
+    expect(await displays(a)).toEqual(plain)
+    expect(await displays(b)).toEqual(plain)
+    expect(await displays(await openTab('reload', a.doc))).toEqual(plain)
   })
 
   it('undoes clearing a cell', async () => {

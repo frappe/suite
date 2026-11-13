@@ -1579,6 +1579,32 @@ function _resetEngineFormats(ids, sn) {
   })
   if (commands.length) _dispatch(_command('batch', { commands }))
 }
+
+// Clear formatting for the cells IronCalc formatted itself: resets that
+// format, then stores each cell's plain value (0.15 for a typed 15%, 1.5 for
+// $1.50, the serial for a date) as its input. IronCalc's format is not in the
+// collab doc, but the input is: the clear then reaches other tabs, undo and
+// reload. Formulas keep their input. Called before the action is committed,
+// so both writes are in its one undo step.
+async function _clearEngineFormats(ids, sn) {
+  _resetEngineFormats(ids, sn)
+  const cells = ids.map(parseCellId).filter(Boolean)
+  if (!cells.length) return
+  const rect = {
+    r0: Math.min(...cells.map((p) => p.row)),
+    c0: Math.min(...cells.map((p) => p.col)),
+    r1: Math.max(...cells.map((p) => p.row)),
+    c1: Math.max(...cells.map((p) => p.col)),
+  }
+  const { inputs } = await _readRect(sn, rect)
+  const commands = []
+  for (const p of cells) {
+    const input = inputs[p.row - rect.r0]?.[p.col - rect.c0]
+    if (!input || input.startsWith('=')) continue
+    commands.push(_command('setInput', { sheet: sn, row: p.row + 1, col: p.col + 1, input }))
+  }
+  if (commands.length) _dispatch(_command('batch', { commands }))
+}
 const hAlignIcon = computed(() => {
   if (activeFormat.value?.align === 'center') return 'lucide-align-center'
   if (activeFormat.value?.align === 'right') return 'lucide-align-right'
@@ -1757,7 +1783,7 @@ const {
     isDirty.value = true
   },
   readEngineFormats: _readEngineFormats,
-  resetEngineFormats: _resetEngineFormats,
+  clearEngineFormats: _clearEngineFormats,
 })
 
 // Selection + grid bounds, so full-column / full-row / whole-sheet selections

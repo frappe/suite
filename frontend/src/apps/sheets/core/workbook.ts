@@ -91,6 +91,9 @@ export interface RangeStats {
 // IronCalc's cell type for a number (getCellType).
 const NUMBER_CELL = 1
 
+// A number as IronCalc writes it in the general format: no grouping, symbol or %.
+const PLAIN_NUMBER = /^-?(\d+\.?\d*|\.\d+)$/
+
 // A number cell's value from its shown text: IronCalc exposes no raw value,
 // so drop grouping and currency marks and read a trailing % as /100.
 export function numberFromShown(shown: string): number {
@@ -291,6 +294,7 @@ export function createWorkbook({
     const numFmt = (sheet: string | null, r: number, c: number) =>
       model.getCellStyle(sheet == null ? si : sheetIndex(sheet), r, c).style.num_fmt
     const currency = typedCurrency(input)
+    dropTypedFormat(si, row, col, input)
     model.setUserInput(si, row, col, currency ? currency.input : input)
     const fmt = numFmt(null, row, col)
     if (currency) {
@@ -306,6 +310,24 @@ export function createWorkbook({
     } else if (isDateFormat(fmt) && isDateDifference(input, numFmt)) {
       model.updateRangeStyle(area, 'num_fmt', 'general')
     }
+  }
+
+  // A plain number typed over the same value with a format IronCalc gave a
+  // typed input (0.15 over 15%, 45306 over 2024-01-15) shows plain, as a fresh
+  // cell would. IronCalc keeps the old format otherwise. Clear formatting
+  // stores the plain value as the input (SheetEditor's _clearEngineFormats),
+  // so this is how the clear shows in other tabs and on redo. A different
+  // number keeps the format (7 over 15% is 700%).
+  function dropTypedFormat(si: number, row: number, col: number, input: string): void {
+    if (!PLAIN_NUMBER.test(input) || model.getCellType(si, row, col) !== NUMBER_CELL) return
+    if (model.getCellContent(si, row, col).startsWith('=')) return
+    const fmt = model.getCellStyle(si, row, col).style.num_fmt
+    if (/^general$/i.test(fmt)) return
+    // IronCalc exposes no raw value: read it with the general format.
+    const area = { sheet: si, row, column: col, width: 1, height: 1 }
+    model.updateRangeStyle(area, 'num_fmt', 'general')
+    if (Number(model.getCellContent(si, row, col)) !== Number(input))
+      model.updateRangeStyle(area, 'num_fmt', fmt)
   }
 
   // Deletes rows or columns, first pulling in the range ends IronCalc would

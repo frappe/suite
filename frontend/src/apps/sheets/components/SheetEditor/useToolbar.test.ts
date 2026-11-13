@@ -9,7 +9,7 @@ describe('clearFormatting', () => {
   function setup(engineFmts: Record<string, string>) {
     const formats = createFormatsEngine()
     const history = { pushOp: vi.fn() }
-    const resetEngineFormats = vi.fn()
+    const clearEngineFormats = vi.fn(async () => {})
     const toolbar = useToolbar({
       currentSheet: { value: 'Sheet1' },
       formats,
@@ -22,22 +22,38 @@ describe('clearFormatting', () => {
       selectionIds: () => ['A1', 'B1', 'A2', 'B2'],
       syncFlags: vi.fn(),
       readEngineFormats: async () => engineFmts,
-      resetEngineFormats,
+      clearEngineFormats,
     })
-    return { toolbar, formats, history, resetEngineFormats }
+    return { toolbar, formats, history, clearEngineFormats }
   }
 
-  it("resets IronCalc's format, and undo can bring it back", async () => {
+  it("clears IronCalc's format, and undo can bring it back", async () => {
     const t = setup({ A1: '#,##0%', B1: 'yyyy-mm-dd' })
     t.formats.set('A2', { bold: true }, 'Sheet1')
     await t.toolbar.clearFormatting()
-    expect(t.resetEngineFormats).toHaveBeenCalledWith(['A1', 'B1'], 'Sheet1')
+    expect(t.clearEngineFormats).toHaveBeenCalledWith(['A1', 'B1'], 'Sheet1')
     const op = t.history.pushOp.mock.calls[0]?.[0]
     // The before-state holds IronCalc's formats as ours, for undo.
     expect(op.beforeFormats.A1).toEqual({ numberFormat: 'percentage:0' })
     expect(op.beforeFormats.B1).toEqual({ numberFormat: 'date:ymd' })
     expect(op.beforeFormats.A2).toEqual({ bold: true })
     for (const id of ['A1', 'B1', 'A2', 'B2']) expect(op.afterFormats[id] ?? {}).toEqual({})
+  })
+
+  // The plain inputs it writes must go into the action's commit (pushOp), or
+  // they would land in the next action's undo step.
+  it("clears IronCalc's format before the action is committed", async () => {
+    const t = setup({ A1: '#,##0%' })
+    let pushed = false
+    t.clearEngineFormats.mockImplementation(async () => {
+      expect(pushed).toBe(false)
+    })
+    t.history.pushOp.mockImplementation(() => (pushed = true))
+    await t.toolbar.clearFormatting()
+    expect(t.clearEngineFormats).toHaveBeenCalledOnce()
+    expect(t.clearEngineFormats.mock.invocationCallOrder[0]).toBeLessThan(
+      t.history.pushOp.mock.invocationCallOrder[0]!,
+    )
   })
 
   it('keeps a side-store number format as the one undo restores', async () => {
@@ -52,6 +68,6 @@ describe('clearFormatting', () => {
   it('touches nothing in IronCalc when it formatted nothing', async () => {
     const t = setup({})
     await t.toolbar.clearFormatting()
-    expect(t.resetEngineFormats).not.toHaveBeenCalled()
+    expect(t.clearEngineFormats).not.toHaveBeenCalled()
   })
 })
