@@ -1,7 +1,8 @@
 import type { APIRequestContext, Browser, BrowserContext, Locator, Page, Route } from "@playwright/test";
 import { readRun } from "../drive-backed-apps/global-setup";
-import { createFolder, type DriveNode, openRowMenu, purgeNode, trashNode } from "../drive-backed-apps/helpers/drive";
+import { createFolder, discardNode, type DriveNode, openRowMenu, purgeNode, trashNode } from "../drive-backed-apps/helpers/drive";
 import { loginViaApi, type Credentials } from "../shared/auth";
+import { acrossRestarts } from "./bench";
 import { STATE_DIR } from "./global-setup";
 
 export const VIEWPORT = { width: 1440, height: 900 };
@@ -54,6 +55,10 @@ export interface BaseScene {
 	toast(text: string | RegExp): Locator;
 	/** Runs `cleanup` when the scene closes, last registered first. Use it to remove what a path created. */
 	defer(cleanup: () => Promise<unknown>): void;
+	/**
+	 * Runs every deferred cleanup, each again after a bench restart, then
+	 * closes every context. Throws the cleanups' failures once all have run.
+	 */
 	close(): Promise<void>;
 }
 
@@ -202,12 +207,12 @@ export async function openBrowserScene(browser: Browser, baseURL: string, user?:
 			cleanups.push(cleanup);
 		},
 		async close() {
-			try {
-				for (const cleanup of cleanups.reverse()) await cleanup();
-				await Promise.all(others.map((other) => other.close()));
-			} finally {
-				await context.close();
+			const failures: unknown[] = [];
+			for (const cleanup of cleanups.reverse()) {
+				await acrossRestarts(baseURL, cleanup).catch((error: unknown) => failures.push(error));
 			}
+			await Promise.allSettled([...others, context].map((open) => open.close()));
+			if (failures.length) throw new AggregateError(failures, `Cleanup failed: ${failures.map(String).join("; ")}`);
 		},
 	};
 }
@@ -219,10 +224,8 @@ export async function openScene(browser: Browser, baseURL: string, folderTitle: 
 	const root = await personalRoot(base.api);
 	const parent = await workspaceFolder(base.api, root);
 	const folder = await recreateFolder(base.api, folderTitle, parent);
-	base.defer(async () => {
-		await trashNode(base.api, folder.name);
-		await purgeNode(base.api, folder.name);
-	});
+	// Idempotent, so a cleanup a bench restart cut short between trash and purge can run again.
+	base.defer(() => discardNode(base.api, folder.name));
 	return Object.assign(base, {
 		people: who,
 		root,
