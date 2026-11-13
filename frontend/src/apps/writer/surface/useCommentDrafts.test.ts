@@ -10,7 +10,8 @@ import {
   type ID,
 } from 'yjs'
 
-import { readCommentDrafts, useCommentDrafts, type DocumentSession } from '@/apps/drive'
+import { readCommentDrafts, type DocumentSession } from '@/apps/drive'
+import { useCommentDrafts } from '@/apps/drive/files/features/side-panel/comments/useCommentDrafts'
 import {
   anchorEnds,
   anchorQuote,

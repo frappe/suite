@@ -57,25 +57,10 @@ export { GUEST_NAME_LIMIT, type GuestCommentName } from '@/apps/drive/client/gue
 /** A comment's author: a guest's name and the Guest marker, or the product's own label in the slot. */
 export { default as DriveCommentAuthor } from '@/apps/drive/files/features/CommentAuthor.vue'
 
-/**
- * A document's comment panel: threads, replies, resolve and Undo, edit, delete,
- * unread marks, device drafts and retry, and the mention box with its access
- * messages. Pass the threads, their places, the drafts and the thread actions.
- */
-export { default as DriveCommentList } from '@/apps/drive/files/features/side-panel/comments/CommentList.vue'
 export {
   useDocumentComments,
   type DocumentComments,
 } from '@/apps/drive/files/features/side-panel/comments/useDocumentComments'
-export { useDocumentThreads } from '@/apps/drive/files/features/side-panel/comments/useDocumentThreads'
-export {
-  useThreadChanges,
-  type ThreadActions,
-} from '@/apps/drive/files/features/side-panel/comments/useThreadChanges'
-export {
-  useCommentDrafts,
-  type ShownDraft,
-} from '@/apps/drive/files/features/side-panel/comments/useCommentDrafts'
 export {
   keepDraft as keepCommentDraft,
   readDrafts as readCommentDrafts,

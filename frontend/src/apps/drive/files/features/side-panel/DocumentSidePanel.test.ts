@@ -8,12 +8,12 @@ import type {
   DocumentPanel,
   DocumentSession,
   DocumentVersion,
-  useCommentDrafts,
 } from '@/apps/drive'
 import type { VersionRestored } from '@/platform/collab'
 import { requireTestElement } from '@/platform/testing/dom'
 import { translationPlugin } from '@/platform/translation'
 
+import type { useCommentDrafts } from './comments/useCommentDrafts'
 import { useDocumentComments } from './comments/useDocumentComments'
 import DocumentSidePanel from './DocumentSidePanel.vue'
 
