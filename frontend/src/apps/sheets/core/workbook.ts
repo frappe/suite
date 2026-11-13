@@ -316,7 +316,7 @@ export function createWorkbook({
   // A plain number typed over the same value with a format IronCalc gave a
   // typed input (0.15 over 15%, 45306 over 2024-01-15) shows plain, as a fresh
   // cell would. IronCalc keeps the old format otherwise. Clear formatting
-  // stores the plain value as the input (SheetEditor's _clearEngineFormats),
+  // stores the plain value as the input (engine/typed-formats.ts),
   // so this is how the clear shows in other tabs and on redo. A different
   // number keeps the format (7 over 15% is 700%).
   function dropTypedFormat(si: number, row: number, col: number, input: string): void {

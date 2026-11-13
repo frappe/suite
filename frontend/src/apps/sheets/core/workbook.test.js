@@ -211,8 +211,8 @@ describe('workbook — ₹ and £ amounts are numbers', () => {
   })
 })
 
-// Clear formatting stores a typed 15% as 0.15 (SheetEditor's
-// _clearEngineFormats). A tab that still shows the typed format gets that
+// Clear formatting stores a typed 15% as 0.15 (clearTypedFormats in
+// engine/typed-formats.ts). A tab that still shows the typed format gets that
 // input, and must show it plain, as a reload would.
 describe('workbook — the plain value typed over a typed format drops it', () => {
   it('shows a typed percent, amount or date plain', () => {
