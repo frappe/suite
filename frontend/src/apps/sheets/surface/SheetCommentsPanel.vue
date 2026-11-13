@@ -8,6 +8,7 @@ import {
   useDriveGuestName,
   type DocumentSession,
 } from '@/apps/drive'
+import { translate as __ } from '@/platform/translation'
 
 import {
   cellAnchor,
@@ -32,6 +33,8 @@ const loadError = ref('')
 const draft = ref('')
 const replies = ref<Record<string, string>>({})
 const busy = ref(false)
+/** A new comment on its way to the server, shown until the list has it. */
+const pending = ref<{ text: string; anchor: CellAnchor } | null>(null)
 const root = ref<HTMLElement | null>(null)
 // Guests may sign their comments and replies. Signed-in users never see the field (spec §10.5).
 const {
@@ -75,18 +78,20 @@ async function run(action: () => Promise<unknown>, failure: string) {
   }
 }
 
+// The post takes a second or more. The comment shows as pending at once, and
+// the box empties, so a second submit has nothing to post (ISSUES #154).
 async function create() {
   const text = draft.value.trim()
-  if (!text || !props.cursor) return
+  if (!text || !props.cursor || pending.value) return
   const anchor = cellAnchor(props.cursor)
-  if (
-    await run(
-      () => props.session.comments.create(anchor, text, takeGuestName()),
-      'Could not add the comment.',
-    )
-  ) {
-    draft.value = ''
-  }
+  pending.value = { text, anchor: { ...props.cursor } }
+  draft.value = ''
+  const posted = await run(
+    () => props.session.comments.create(anchor, text, takeGuestName()),
+    'Could not add the comment.',
+  )
+  pending.value = null
+  if (!posted && !draft.value) draft.value = text
 }
 
 async function reply(thread: string) {
@@ -188,10 +193,24 @@ onMounted(() => {
         <p class="mt-1.5 text-p-sm text-ink-gray-5">{{ loadError }}</p>
         <Button class="mt-4" label="Retry" icon-left="lucide-refresh-cw" @click="retry" />
       </div>
-      <p v-else-if="!threads.length" class="px-4 py-10 text-center text-p-sm text-ink-gray-5">
+      <p
+        v-else-if="!threads.length && !pending"
+        class="px-4 py-10 text-center text-p-sm text-ink-gray-5"
+      >
         No comments yet.
       </p>
       <template v-else>
+        <article
+          v-if="pending"
+          class="space-y-1 border-b border-outline-gray-1 p-4 text-ink-gray-6"
+          aria-busy="true"
+        >
+          <div class="flex items-center justify-between gap-2 text-sm">
+            <span>{{ `${pending.anchor.sheet} · ${pending.anchor.cell}` }}</span>
+            <span class="text-ink-gray-5">{{ __('Posting…') }}</span>
+          </div>
+          <p class="whitespace-pre-wrap break-words text-p-sm">{{ pending.text }}</p>
+        </article>
         <section
           v-for="group in [openThreads, resolvedThreads]"
           :key="group === openThreads ? 'open' : 'resolved'"

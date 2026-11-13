@@ -130,4 +130,39 @@ describe('SheetCommentsPanel', () => {
     const { root } = await mountPanel()
     expect(document.activeElement).toBe(root.querySelector('textarea[aria-label="New comment"]'))
   })
+
+  // ISSUES #154: nothing showed for the 1.5 s the post took, and a second
+  // submit in that time posted the comment twice.
+  it('shows the comment as pending at once and posts it once', async () => {
+    const { root, create, land } = await mountPanel()
+    type(root, 'Check this')
+    await nextTick()
+    const form = root.querySelector('form')!
+    form.dispatchEvent(new Event('submit', { cancelable: true }))
+    form.dispatchEvent(new Event('submit', { cancelable: true }))
+    await nextTick()
+    expect(create).toHaveBeenCalledOnce()
+    expect(root.textContent).toContain('Check this')
+    expect(root.textContent).toContain('Posting…')
+    expect(root.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true)
+
+    land()
+    await settle()
+    expect(root.textContent).not.toContain('Posting…')
+    expect(root.textContent!.match(/Check this/g)).toHaveLength(1)
+  })
+
+  it('puts the text back when the post fails', async () => {
+    const { root, create } = await mountPanel()
+    create.mockRejectedValueOnce(new Error('Offline'))
+    type(root, 'Check this')
+    await nextTick()
+    root.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }))
+    await settle()
+    expect(toast.error).toHaveBeenCalledWith('Offline')
+    expect(root.textContent).not.toContain('Posting…')
+    expect(
+      root.querySelector<HTMLTextAreaElement>('textarea[aria-label="New comment"]')!.value,
+    ).toBe('Check this')
+  })
 })
