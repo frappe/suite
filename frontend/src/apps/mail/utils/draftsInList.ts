@@ -7,7 +7,8 @@
  * `payListDebt` in useComposeMail). So until the editor closes the row read the conversation as it
  * was before the reply was begun — no Draft, the last message's words. It reads its draft from here
  * instead, until the list's own copy has caught up (the row holds the draft by the id it was last
- * saved under) or the draft is sent or discarded.
+ * saved under) or the draft is sent or discarded — here, or elsewhere, which only a read of the list
+ * begun after the draft was saved can tell (see `beginListRead`).
  */
 import { reactive } from 'vue'
 
@@ -17,9 +18,12 @@ interface DraftInList {
   /** The id the draft was last saved under: each save replaces it, under a new one. */
   id: string
   preview: string
+  /** When it was last shown, in saves since the page loaded. */
+  shown: number
 }
 
 const drafts = reactive(new Map<string, DraftInList>())
+let saves = 0
 
 // Thread ids are per account.
 const key = (account: string, threadId: string) => `${account}|${threadId}`
@@ -34,7 +38,7 @@ const previewOf = (html: string) => {
 }
 
 export const showDraftInList = (account: string, threadId: string, id: string, html: string) =>
-  drafts.set(key(account, threadId), { id, preview: previewOf(html) })
+  drafts.set(key(account, threadId), { id, preview: previewOf(html), shown: ++saves })
 
 export const forgetDraftInList = (account: string, threadId: string) =>
   drafts.delete(key(account, threadId))
@@ -43,6 +47,23 @@ interface Row {
   id: string
   thread_id: string
   messages?: readonly { id: string }[]
+}
+
+/**
+ * Note a read of the list about to begin; call what it returns with the rows once the read is in.
+ *
+ * Its rows are then the truth for every draft shown before it began: the row holds the draft, or the
+ * draft was discarded, deleted or sent elsewhere and its Draft badge must go. A draft saved while
+ * the read was out may be missing from it only because the read came first, so it stays.
+ */
+export const beginListRead = () => {
+  const began = saves
+  return (rows: readonly (Row & { account: string })[]) =>
+    rows.forEach((row) => {
+      const conversation = key(row.account, row.thread_id)
+      const draft = drafts.get(conversation)
+      if (draft && draft.shown <= began) drafts.delete(conversation)
+    })
 }
 
 /** The draft this row should show, unless the row holds it already. */

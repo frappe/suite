@@ -8,12 +8,17 @@ import unittest
 from unittest import mock
 
 import httpx
+from jmap import MethodError
 from jmap.auth import BasicAuth
 from jmap.core.retry import RetryPolicy
 from jmap.testing.fake import FakeJMAPServer
 
 from suite.mail.doctype.mail_message import mail_message
-from suite.mail.jmap import SuiteJMAPClient
+from suite.mail.doctype.push_subscription.push_subscription import (
+    freeze_jmap_push_notifications,
+    unfreeze_jmap_push_notifications,
+)
+from suite.mail.jmap import MailServerUnavailableError, SuiteJMAPClient
 
 CORE = "urn:ietf:params:jmap:core"
 MAIL = "urn:ietf:params:jmap:mail"
@@ -283,6 +288,56 @@ class SyncAccountChanges(unittest.TestCase):
             mail_message.sync_account_changes(USER, ACCOUNT)
 
         release.assert_called_once_with(f"fetch_changes:{USER}:{ACCOUNT}", "lock-1")
+
+    def test_does_nothing_while_an_import_has_push_frozen(self):
+        freeze_jmap_push_notifications(USER)
+        self.addCleanup(unfreeze_jmap_push_notifications, USER)
+
+        with (
+            mock.patch.object(mail_message, "acquire_lock", return_value="lock-1"),
+            mock.patch.object(mail_message, "release_lock"),
+            mock.patch.object(mail_message, "fetch_changes") as fetch_changes,
+        ):
+            found = mail_message.sync_account_changes(USER, ACCOUNT)
+
+        fetch_changes.assert_not_called()
+        self.assertEqual(found, {"new_mail_in": [], "changed": False})
+
+    def _sync_against(self, server: FakeJMAPServer) -> tuple[Exception | None, mock.Mock]:
+        """Sync against `server`: what reached the caller, and the Error Log writer."""
+
+        client = _client(server)
+        with (
+            mock.patch.object(mail_message, "acquire_lock", return_value="lock-1"),
+            mock.patch.object(mail_message, "release_lock"),
+            mock.patch.object(mail_message, "get_sync_state", return_value="s1"),
+            mock.patch.object(mail_message, "update_sync_state"),
+            mock.patch.object(mail_message, "get_jmap_client", return_value=client),
+            mock.patch.object(mail_message, "log_mail_error") as log_mail_error,
+        ):
+            try:
+                mail_message.sync_account_changes(USER, ACCOUNT)
+            except Exception as failure:
+                return failure, log_mail_error
+        return None, log_mail_error
+
+    def test_a_state_the_server_cannot_answer_from_reaches_the_client_unlogged(self):
+        # The client waits longer after a failure, and logs nothing on each ask while it lasts.
+        server = _server()
+        server.fail("Email/changes", "cannotCalculateChanges")
+
+        failure, log_mail_error = self._sync_against(server)
+
+        self.assertIsInstance(failure, MethodError)
+        log_mail_error.assert_not_called()
+
+    def test_an_unreachable_mail_server_reaches_the_client_as_unavailable(self):
+        server = _server()
+        server.quirks.scripted_failures.append(httpx.Response(503))
+
+        failure, _ = self._sync_against(server)
+
+        self.assertIsInstance(failure, MailServerUnavailableError)
 
 
 class FetchChangesReactions(unittest.TestCase):

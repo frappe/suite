@@ -374,6 +374,7 @@ import {
   useSwipeNav,
   useUndo,
 } from '@/apps/mail/utils/composables'
+import { beginListRead } from '@/apps/mail/utils/draftsInList'
 import { useListFilter } from '@/apps/mail/utils/listFilter'
 import {
   hasCursor,
@@ -581,7 +582,12 @@ const resetThreads = () => {
 // Refresh the loaded windows without changing the reader's selection.
 const refreshThreads = (reloadCounts = true) => {
   if (isFetching.value) return
-  void threads.refetch().catch(() => {})
+  // A draft discarded, deleted or sent elsewhere loses its Draft badge here (see beginListRead).
+  const settleDrafts = beginListRead()
+  void threads
+    .refetch()
+    .then(() => settleDrafts(threadRows.value))
+    .catch(() => {})
   if (reloadCounts) refreshCounts()
 }
 

@@ -4,12 +4,15 @@ import { effectScope } from 'vue'
 
 import { useChangeSync } from '@/apps/mail/composables/useChangeSync'
 
-const server = vi.hoisted<{ syncs: number; found: { new_mail_in: string[]; changed: boolean } }>(
-  () => ({
-    syncs: 0,
-    found: { new_mail_in: [], changed: false },
-  }),
-)
+const server = vi.hoisted<{
+  syncs: number
+  failing: boolean
+  found: { new_mail_in: string[]; changed: boolean }
+}>(() => ({
+  syncs: 0,
+  failing: false,
+  found: { new_mail_in: [], changed: false },
+}))
 
 // The server's side: what a fetch of changes found, and how often it was asked.
 vi.mock('@/api', () => ({
@@ -17,6 +20,7 @@ vi.mock('@/api', () => ({
   client: {
     mutation: async () => {
       server.syncs += 1
+      if (server.failing) throw new Error('Internal Server Error')
       return server.found
     },
   },
@@ -42,12 +46,15 @@ const fakeSocket = () => {
 }
 
 let visibility: DocumentVisibilityState = 'visible'
+let serverUnavailable = false
 let scope = effectScope()
 
 beforeEach(() => {
   scope = effectScope()
   vi.useFakeTimers()
   server.syncs = 0
+  server.failing = false
+  serverUnavailable = false
   server.found = { new_mail_in: [], changed: false }
   visibility = 'visible'
   vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility)
@@ -61,7 +68,7 @@ afterEach(() => {
 
 const start = () => {
   const socket = fakeSocket()
-  scope.run(() => useChangeSync(fromPartial(socket)))
+  scope.run(() => useChangeSync(fromPartial(socket), () => serverUnavailable))
   return socket
 }
 
@@ -129,5 +136,49 @@ describe('useChangeSync keeps the lists up with the mail server', () => {
     await vi.advanceTimersByTimeAsync(15_000)
 
     expect(newMail).not.toHaveBeenCalled()
+  })
+
+  it('asks less and less often while the server keeps failing, but keeps asking', async () => {
+    server.failing = true
+    start()
+    await vi.advanceTimersByTimeAsync(5 * 60_000)
+    const inFirstFiveMinutes = server.syncs
+
+    // Looking again does not bring the next ask forward while they fail.
+    document.dispatchEvent(new Event('visibilitychange'))
+    await vi.advanceTimersByTimeAsync(5 * 60_000)
+
+    // Every 15 s would be 20 asks in each five minutes.
+    expect(inFirstFiveMinutes).toBeLessThan(10)
+    expect(server.syncs - inFirstFiveMinutes).toBeGreaterThan(0)
+    expect(server.syncs - inFirstFiveMinutes).toBeLessThan(inFirstFiveMinutes)
+  })
+
+  it('goes back to every 15 seconds once the server answers again', async () => {
+    server.failing = true
+    start()
+    await vi.advanceTimersByTimeAsync(10 * 60_000)
+    server.failing = false
+    const before = server.syncs
+    await vi.advanceTimersByTimeAsync(10 * 60_000)
+    expect(server.syncs).toBeGreaterThan(before)
+
+    const answered = server.syncs
+    await vi.advanceTimersByTimeAsync(45_000)
+
+    expect(server.syncs - answered).toBe(3)
+  })
+
+  it('stops asking once the mail server is shown as unavailable', async () => {
+    start()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(server.syncs).toBe(1)
+
+    serverUnavailable = true
+    document.dispatchEvent(new Event('visibilitychange'))
+    window.dispatchEvent(new Event('online'))
+    await vi.advanceTimersByTimeAsync(10 * 60_000)
+
+    expect(server.syncs).toBe(1)
   })
 })

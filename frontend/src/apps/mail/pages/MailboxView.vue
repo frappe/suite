@@ -449,6 +449,7 @@ import {
   useUndo,
 } from '@/apps/mail/utils/composables'
 import { utcDayEnd, utcDayStart } from '@/apps/mail/utils/datetime'
+import { beginListRead } from '@/apps/mail/utils/draftsInList'
 import { useListFilter } from '@/apps/mail/utils/listFilter'
 import {
   hasCursor,
@@ -1056,7 +1057,12 @@ watch(screener.version, () => refreshThreads(false))
 // the Refresh button, the periodic poll, and the new-mail socket. Selections are preserved.
 const refreshThreads = (reloadMailboxes = true) => {
   if (isFetching.value) return
-  void activeThreads.value.refetch().catch(() => {})
+  // A draft discarded, deleted or sent elsewhere loses its Draft badge here (see beginListRead).
+  const settleDrafts = beginListRead()
+  void activeThreads.value
+    .refetch()
+    .then(() => settleDrafts(threadRows.value))
+    .catch(() => {})
   if (reloadMailboxes) void store.refreshCounts()
 }
 

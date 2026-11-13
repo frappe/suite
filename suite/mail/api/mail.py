@@ -673,7 +673,8 @@ def sync_changes() -> ListChanges:
     What arrived or changed since the last look reaches every open list as a push's changes do,
     through the socket, and is returned for the one that asked. Mailbox ids are per account, so
     `new_mail_in` can name another account's folder; a list that reads one as its own only reads
-    again for nothing.
+    again for nothing. A failure ends the round and reaches the client, which waits longer before it
+    asks again; an unreachable mail server answers 503, as on any other call.
     """
 
     found = ListChanges(new_mail_in=[], changed=False)

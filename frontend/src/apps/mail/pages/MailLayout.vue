@@ -163,7 +163,7 @@ provide('$dayjs', dayjs)
 const socket = initSocket()
 provide('$socket', socket)
 onScopeDispose(() => socket.disconnect())
-useChangeSync(socket)
+useChangeSync(socket, () => mailServerUnavailable.value)
 
 const Layout = computed(() => {
   if (route.meta.noLayout) return 'div'

@@ -25,6 +25,7 @@ from frappe.utils import (
 
 from suite.mail import classification
 from suite.mail.doctype.mail_queue.mail_queue import MailQueue
+from suite.mail.doctype.push_subscription.push_subscription import is_jmap_push_notifications_frozen
 from suite.mail.doctype.sieve_script.sieve_script import UNSCREENED_KEYWORD
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import (
@@ -1796,9 +1797,18 @@ class ListChanges(TypedDict):
 
 
 def fetch_changes(
-    user: str, account: str, email_state: str | None = None, ctx: dict | None = None
+    user: str,
+    account: str,
+    email_state: str | None = None,
+    ctx: dict | None = None,
+    *,
+    raise_failure: bool = False,
 ) -> ListChanges:
-    """Fetch changes from the server and remove MailMessage documents from the cache."""
+    """Fetch changes from the server and remove MailMessage documents from the cache.
+
+    A failure is logged and swallowed, as a push wants: the next push tries again. `raise_failure`
+    hands it to a caller that answers someone who can wait and ask again instead.
+    """
 
     found = ListChanges(new_mail_in=[], changed=False)
     ctx = ctx or {}
@@ -1819,6 +1829,8 @@ def fetch_changes(
                 ctx["email_state"] = email_state
             except Exception:
                 logger.error("email-sync-state-init-failed")
+                if raise_failure:
+                    raise
                 log_mail_error(
                     _("Failed to initialize email sync state"),
                     frappe.get_traceback(with_context=True),
@@ -1967,12 +1979,14 @@ def fetch_changes(
             ctx.pop("email_state", None)
             ctx.pop("new_state", None)
 
-            more = fetch_changes(user, account, ctx=ctx)
+            more = fetch_changes(user, account, ctx=ctx, raise_failure=raise_failure)
             found["new_mail_in"] = list({*found["new_mail_in"], *more["new_mail_in"]})
             found["changed"] = found["changed"] or more["changed"]
 
     except Exception:
         logger.error("fetch-changes-failed")
+        if raise_failure:
+            raise
         log_mail_error(
             _("Failed to fetch changes"),
             frappe.get_traceback(with_context=True),
@@ -2005,7 +2019,14 @@ def sync_account_changes(user: str, account: str) -> ListChanges:
     the changes reach every open tab the way a push's do, as `new_mail_created` and `mail_changed`.
     Run in the request rather than queued: with nothing new it is one Email/changes call. What it
     found is returned too, for the tab that asked, which hears it even with its socket down.
+
+    While an import has push frozen it does nothing, as a push does nothing then: the imported mail
+    would be announced, and notified, as new mail arriving. A failure is raised rather than logged
+    here, so that a client asking every few seconds can wait longer instead of logging each ask.
     """
+
+    if is_jmap_push_notifications_frozen(user):
+        return ListChanges(new_mail_in=[], changed=False)
 
     lockname = f"fetch_changes:{user}:{account}"
     identifier = acquire_lock(lockname, acquire_timeout=0)
@@ -2013,7 +2034,7 @@ def sync_account_changes(user: str, account: str) -> ListChanges:
         return ListChanges(new_mail_in=[], changed=False)
 
     try:
-        return fetch_changes(user, account, ctx={"source": "sync"})
+        return fetch_changes(user, account, ctx={"source": "sync"}, raise_failure=True)
     finally:
         release_lock(lockname, identifier)
 
