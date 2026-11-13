@@ -1,13 +1,14 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { resolve } from "node:path";
 import { request, type APIRequestContext, type FullConfig } from "@playwright/test";
 
 import { loginViaApi, type Credentials } from "../shared/auth";
 import { frappeData } from "../shared/frappe";
 
-const statePath = resolve(__dirname, ".state/run.json");
-const userStatePath = (index: number) =>
-	resolve(__dirname, `.state/user-${index}.json`);
+/** Where this suite keeps its run; another suite that provisions users keeps its own. */
+export const STATE_DIR = resolve(__dirname, ".state");
+const runPath = (stateDir: string) => resolve(stateDir, "run.json");
+const userStatePath = (stateDir: string, index: number) => resolve(stateDir, `user-${index}.json`);
 const admin: Credentials = {
 	email: process.env.E2E_ADMIN_EMAIL ?? "Administrator",
 	password: process.env.E2E_ADMIN_PASSWORD ?? "admin",
@@ -23,12 +24,20 @@ export function testApiUrl(baseURL: string): string {
 	return process.env.E2E_TEST_API_URL ?? baseURL;
 }
 
-async function cleanupPreviousRun(api: APIRequestContext): Promise<void> {
+/** The users `provisionUsers` made for the run kept in `stateDir`. */
+export interface Run {
+	run_id: string;
+	users: Credentials[];
+}
+
+export function readRun(stateDir: string): Run {
+	// SAFETY: only `provisionUsers` writes this file, with the run the server answered.
+	return JSON.parse(readFileSync(runPath(stateDir), "utf8")) as Run;
+}
+
+async function cleanupPreviousRun(api: APIRequestContext, stateDir: string): Promise<void> {
 	try {
-		// SAFETY: the state file is produced by this setup workflow; the saved run_id identifies the prior provisioned fixture.
-		const { run_id } = JSON.parse(readFileSync(statePath, "utf8")) as {
-			run_id: string;
-		};
+		const { run_id } = readRun(stateDir);
 		await api.post("/api/method/suite.drive.e2e_api.cleanup_users", {
 			form: { run_id },
 		});
@@ -37,7 +46,12 @@ async function cleanupPreviousRun(api: APIRequestContext): Promise<void> {
 	}
 }
 
-export default async function globalSetup(config: FullConfig): Promise<void> {
+export default function globalSetup(config: FullConfig): Promise<void> {
+	return provisionUsers(config, STATE_DIR, Math.max(1, config.workers) * 2);
+}
+
+/** Provisions `userCount` users for this run, after removing the users of the last run kept in `stateDir`. */
+export async function provisionUsers(config: FullConfig, stateDir: string, userCount: number): Promise<void> {
 	const baseURL = config.projects[0]?.use.baseURL;
 	if (typeof baseURL !== "string") throw new Error("Playwright baseURL is required");
 
@@ -58,9 +72,8 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
 
 	const api = await request.newContext({ baseURL: testApiUrl(baseURL) });
 	await loginViaApi(api, admin);
-	await cleanupPreviousRun(api);
+	await cleanupPreviousRun(api, stateDir);
 	const runId = `${Date.now().toString(36)}-${process.pid}`;
-	const userCount = Math.max(1, config.workers) * 2;
 	const response = await api.post("/api/method/suite.drive.e2e_api.provision_users", {
 		form: {
 			run_id: runId,
@@ -68,16 +81,13 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
 			user_count: userCount,
 		},
 	});
-	const run = await frappeData<{
-		run_id: string;
-		users: Credentials[];
-	}>(response);
-	mkdirSync(dirname(statePath), { recursive: true });
-	writeFileSync(statePath, JSON.stringify(run));
+	const run = await frappeData<Run>(response);
+	mkdirSync(stateDir, { recursive: true });
+	writeFileSync(runPath(stateDir), JSON.stringify(run));
 	for (const [index, user] of run.users.entries()) {
 		const userApi = await request.newContext({ baseURL });
 		await loginViaApi(userApi, user);
-		await userApi.storageState({ path: userStatePath(index) });
+		await userApi.storageState({ path: userStatePath(stateDir, index) });
 		await userApi.dispose();
 	}
 	await api.dispose();

@@ -1,8 +1,8 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import type { APIRequestContext, Browser, BrowserContext, Locator, Page, Route } from "@playwright/test";
+import { readRun } from "../drive-backed-apps/global-setup";
 import { createFolder, type DriveNode, openRowMenu, purgeNode, trashNode } from "../drive-backed-apps/helpers/drive";
 import { loginViaApi, type Credentials } from "../shared/auth";
+import { STATE_DIR } from "./global-setup";
 
 export const VIEWPORT = { width: 1440, height: 900 };
 /** Enough for frappe-ui transitions and the 180 ms skeleton delay to finish. */
@@ -86,12 +86,8 @@ export function perScene<T>(label: string) {
 	};
 }
 
-const statePath = resolve(__dirname, "../drive-backed-apps/.state/run.json");
-
 function people(): People {
-	// SAFETY: global setup wrote this file with the users it provisioned.
-	const run = JSON.parse(readFileSync(statePath, "utf8")) as { users: Credentials[] };
-	const [actor, peer, fresh] = run.users;
+	const [actor, peer, fresh] = readRun(STATE_DIR).users;
 	if (!actor || !peer || !fresh) throw new Error("ui-states needs three provisioned users");
 	return { actor, peer, fresh };
 }

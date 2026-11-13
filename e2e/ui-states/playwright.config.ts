@@ -28,8 +28,7 @@ export default defineConfig({
 	// One spec file without fullyParallel: flows run one after another, since they share the users' Trash and Recent.
 	fullyParallel: false,
 	retries: 0,
-	// Global setup provisions two users per configured worker: actor, peer, fresh, spare.
-	workers: 2,
+	workers: 1,
 	timeout: 15 * 60_000,
 	expect: { timeout: 10_000 },
 	reporter: [["list"]],
@@ -50,6 +49,6 @@ export default defineConfig({
 		timeout: 120_000,
 		gracefulShutdown: { signal: "SIGTERM" as const, timeout: 5_000 },
 	},
+	// Provisions this run's users into `.state/`; the teardown it answers removes them.
 	globalSetup: "./global-setup.ts",
-	globalTeardown: "../drive-backed-apps/global-teardown.ts",
 });
