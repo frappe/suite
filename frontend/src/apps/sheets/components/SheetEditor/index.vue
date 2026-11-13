@@ -771,7 +771,7 @@
 
 <script setup>
 import { createReusableTemplate } from '@vueuse/core'
-import { Badge, Button, Dialog, Dropdown, FormControl, Spinner, Tooltip } from 'frappe-ui'
+import { Badge, Button, Dialog, Dropdown, FormControl, Spinner, toast, Tooltip } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import * as Y from 'yjs'
@@ -2660,11 +2660,12 @@ function _setupGridInstance() {
           // 'warn' rules let the value through but surface a transient notice;
           // 'reject' (default) blocks the edit and repaints the pre-edit value.
           if (!v.valid && v.severity !== 'warn') {
-            const msg = v.message || 'Value rejected by data validation rule'
-            saveError.value = msg
-            setTimeout(() => {
-              if (saveError.value === msg) saveError.value = ''
-            }, 3500)
+            // A toast, not the top bar's small badge, which went unseen (ISSUES #152).
+            toast.error(
+              v.message
+                ? __("This value isn't allowed. {0}", [v.message])
+                : __("This value isn't allowed."),
+            )
             // Force a re-render so the canvas repaints with the pre-edit value
             // (we never called sheet.setCell so the engine still has it).
             grid?.render?.()
@@ -3903,6 +3904,12 @@ function openDropdown(id, rule, pos = {}) {
   dropdownPanel.w = pos.w ?? 120
   dropdownPanel.open = true
 }
+// The picker belongs to its cell: it closes once the selection leaves it,
+// rather than staying open over the next cells (ISSUES #152).
+watch([activeCell, currentSheet], ([id], [, sheetBefore]) => {
+  if (dropdownPanel.open && (id !== dropdownPanel.id || currentSheet.value !== sheetBefore))
+    dropdownPanel.open = false
+})
 async function pickDropdownOption(opt) {
   const id = dropdownPanel.id
   const sn = currentSheet.value
