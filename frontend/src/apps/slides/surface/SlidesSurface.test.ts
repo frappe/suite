@@ -872,6 +872,40 @@ describe('a deck on the content layer', () => {
     })
   })
 
+  describe('the presentation menu', () => {
+    function menuEntry(label: string) {
+      return Array.from(mounted!.root.querySelectorAll('button')).find(
+        (button) => button.textContent === label,
+      )
+    }
+
+    it('opens the versions panel to name a version once the closing menu gives focus back', async () => {
+      convertedRoom('one')
+      mounted = await openedSurface({ deck: { is_converted: true } })
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+      const namings = versionsPanel.namings
+
+      requireTestElement(menuEntry('Save version'), HTMLElement).click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(versionsPanel.namings).toBe(namings)
+      requireTestElement(
+        mounted.root.querySelector('[aria-label="Presentation menu"]'),
+        HTMLElement,
+      ).dispatchEvent(new FocusEvent('focus'))
+
+      await vi.waitFor(() => expect(versionsPanel.namings).toBe(namings + 1))
+      expect(versionsPanel.isOpen).toBe(true)
+    })
+
+    it('offers no Save version to someone who can only view', async () => {
+      mounted = await openedSurface({ role: 10 })
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(served.slides.length))
+
+      expect(menuEntry('Shortcuts')).toBeDefined()
+      expect(menuEntry('Save version')).toBeUndefined()
+    })
+  })
+
   describe('restoring a version', () => {
     // a version as the panel lists it
     function listed(seq: number) {

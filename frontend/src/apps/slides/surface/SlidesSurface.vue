@@ -32,6 +32,7 @@ import {
   useDriveDocumentActions,
   useThreadChanges,
   DriveVersionShownBar as VersionShownBar,
+  waitForFocusBack,
   type DocumentPanel,
   type DocumentSession,
   type DocumentVersion,
@@ -398,11 +399,19 @@ watch([showThemeDialog, showThemeChange], (opened) => {
   }
 })
 const driveActions = useDriveDocumentActions(props.session)
+// Save version goes once the closing menu has handed focus back to its button
+const menuFocusBack = waitForFocusBack()
 const presentationMenu = computed(() => [
   { group: '', options: driveActions.value.back },
   {
     group: '',
     options: [
+      {
+        label: translate('Save version'),
+        icon: 'lucide-bookmark',
+        condition: () => canRestoreVersions.value,
+        onClick: () => menuFocusBack.wait(nameVersion),
+      },
       {
         label: 'Change theme',
         icon: 'lucide-swatch-book',
@@ -460,6 +469,14 @@ watch(phone, (isPhone) => {
 const slidePosition = computed(() => (slideIndex.value ?? 0) + 1)
 function showSlide(step: number) {
   changeEditorSlide((slideIndex.value ?? 0) + step, false)
+}
+
+// The name box opens once the panel has seen any preview close, which would otherwise cancel it
+async function nameVersion() {
+  previewed.value = null
+  panel.value = 'versions'
+  await nextTick()
+  void sidePanel.value?.startNamingVersion()
 }
 
 function showPanel(next: Panel | null) {
@@ -1060,6 +1077,7 @@ onBeforeUnmount(() => {
             variant="ghost"
             icon-right="lucide-chevron-down"
             :aria-label="__('Presentation menu')"
+            @focus="menuFocusBack.focused()"
           >
             <span class="block size-4.5" :class="icon" aria-hidden="true" />
           </Button>
