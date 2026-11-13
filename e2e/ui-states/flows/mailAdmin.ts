@@ -355,9 +355,19 @@ async function reloadWaitingFor(scene: BaseScene, pattern: RegExp): Promise<void
 	await sent;
 }
 
+/**
+ * Picks `option` from the first select in `within`. A select opened while its
+ * dialog is still coming in can open off screen, never placed by its
+ * popover; Escape closes it and the next try opens it again.
+ */
 async function pickOption(scene: BaseScene, within: Locator, option: string): Promise<void> {
-	await within.getByRole("combobox").first().click();
-	await scene.page.getByRole("option", { name: option, exact: true }).click();
+	const choice = scene.page.getByRole("option", { name: option, exact: true });
+	await expect(async () => {
+		if (await choice.isVisible()) await scene.page.keyboard.press("Escape");
+		await within.getByRole("combobox").first().click();
+		await expect(choice).toBeInViewport({ timeout: 2_000 });
+	}).toPass({ timeout: 15_000 });
+	await choice.click();
 }
 
 async function menuItem(scene: BaseScene, name: string): Promise<void> {
