@@ -879,7 +879,7 @@ describe('a deck on the content layer', () => {
       )
     }
 
-    it('opens the versions panel to name a version once the closing menu gives focus back', async () => {
+    it('has the side panel name a version once the closing menu gives focus back', async () => {
       convertedRoom('one')
       mounted = await openedSurface({ deck: { is_converted: true } })
       await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
@@ -894,7 +894,6 @@ describe('a deck on the content layer', () => {
       ).dispatchEvent(new FocusEvent('focus'))
 
       await vi.waitFor(() => expect(versionsPanel.namings).toBe(namings + 1))
-      expect(versionsPanel.isOpen).toBe(true)
     })
 
     it('offers no Save version to someone who can only view', async () => {

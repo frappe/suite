@@ -65,7 +65,7 @@ vi.mock('@/apps/drive', async (importOriginal) => ({
 }))
 
 interface NamingPanel {
-  startNamingVersion(): Promise<void>
+  nameVersion(): Promise<void>
 }
 
 let mounted: App | null = null
@@ -126,7 +126,7 @@ async function openVersionsPanel(isRefusingVersions = false) {
   )
   app.use(translationPlugin).mount(host)
   mounted = app
-  await panel.value?.startNamingVersion()
+  await panel.value?.nameVersion()
   // As clicking another version's row in the list does
   async function view(version: DocumentVersion) {
     viewed.value = version
@@ -230,6 +230,53 @@ describe('naming a version in the Versions panel', () => {
     await view(fromPartial<DocumentVersion>({ seq: 1, kind: 'auto', label: null }))
 
     expect(nameBox()?.value).toBe('Before the review')
+  })
+
+  it('leaves the shown version and opens Versions to name one, from another panel', async () => {
+    const panel = ref<NamingPanel | null>(null)
+    const shownPanel = ref<DocumentPanel | null>('comments')
+    const viewed = ref<DocumentVersion | null>(
+      fromPartial<DocumentVersion>({ seq: 1, kind: 'auto', label: null }),
+    )
+    const host = document.createElement('div')
+    document.body.append(host)
+    const app = createApp(() =>
+      h(DocumentSidePanel, {
+        ref: panel,
+        panel: shownPanel.value,
+        'onUpdate:panel': (next: DocumentPanel | null) => (shownPanel.value = next),
+        previewedVersion: viewed.value,
+        'onUpdate:previewedVersion': (next: DocumentVersion | null) => (viewed.value = next),
+        session: fromPartial<DocumentSession>({
+          comments: { list: async () => [] },
+          versions: { list: async () => ({ rows: [], next_cursor: null }) },
+        }),
+        canComment: true,
+        canEditDocument: false,
+        canShare: false,
+        canRestoreVersion: false,
+        canSaveVersion: true,
+        isRestoringVersion: false,
+        threads: [],
+        threadsReadAt: 1,
+        places: null,
+        refreshThreads: async () => {},
+        threadActions: fromPartial<ThreadActions>({}),
+        drafts: noDrafts,
+        noun: 'document',
+        saveFirst: async () => {},
+      }),
+    )
+    app.use(translationPlugin).mount(host)
+    mounted = app
+
+    await panel.value?.nameVersion()
+
+    expect([shownPanel.value, viewed.value, document.activeElement === nameBox()]).toEqual([
+      'versions',
+      null,
+      true,
+    ])
   })
 
   it('keeps the box, the name and the cursor when the version fails to save', async () => {

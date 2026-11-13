@@ -307,7 +307,7 @@ vi.mock('@/apps/drive', async (importOriginal) => ({
         reloadVersions: async () => {
           versionsPanel.reloads += 1
         },
-        startNamingVersion: async () => {
+        nameVersion: async () => {
           versionsPanel.namings += 1
         },
       })

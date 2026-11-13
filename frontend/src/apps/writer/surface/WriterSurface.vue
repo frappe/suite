@@ -649,14 +649,6 @@ function flush(): Promise<void> {
   return Promise.resolve()
 }
 
-// The name box opens once the panel has seen any preview close, which would otherwise cancel it
-async function nameVersion() {
-  closeAnyPreview()
-  panel.value = 'versions'
-  await nextTick()
-  void sidePanel.value?.startNamingVersion()
-}
-
 // A collab document's version covers what this tab typed; other documents take it as stored
 async function saveBeforeVersion() {
   if (room.value) {
@@ -823,7 +815,7 @@ onBeforeUnmount(() => {
           :panels="session.panels.value"
           :panel="panel"
           @toggle-panel="togglePanel"
-          @save-version="nameVersion"
+          @save-version="sidePanel?.nameVersion()"
           @set-locked="setDocumentLocked"
         />
       </template>
@@ -949,7 +941,6 @@ onBeforeUnmount(() => {
                 @update:previewed-version="showVersion"
                 @restore-version="confirmRestore"
                 @download-version="downloadVersion"
-                @save-version="nameVersion"
                 @closed="backToText"
                 @comment-sent="backToText"
               />

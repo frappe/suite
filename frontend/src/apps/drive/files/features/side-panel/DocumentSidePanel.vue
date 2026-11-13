@@ -45,8 +45,8 @@ const emit = defineEmits<{
   closed: [panel: DocumentPanel]
   restoreVersion: [version: DocumentVersion]
   downloadVersion: [version: DocumentVersion]
-  saveVersion: []
   commentSent: []
+  'update:previewedVersion': [version: DocumentVersion | null]
 }>()
 const previewedVersion = defineModel<DocumentVersion | null>('previewedVersion', {
   required: true,
@@ -109,6 +109,15 @@ async function startNamingVersion() {
   versionNameInput.value?.focus()
 }
 
+// The name box opens once the panel has seen any preview close, which would otherwise cancel it;
+// the app hears it even with no version shown, so it closes any other preview, like a recovery copy
+async function nameVersion() {
+  emit('update:previewedVersion', null)
+  panel.value = 'versions'
+  await nextTick()
+  await startNamingVersion()
+}
+
 function stopNamingVersion() {
   isNamingVersion.value = false
   versionName.value = ''
@@ -156,7 +165,7 @@ async function startDocumentComment() {
   await commentList.value?.startDocumentComment()
 }
 
-defineExpose({ reloadVersions: () => load('versions'), startNamingVersion, startDocumentComment })
+defineExpose({ reloadVersions: () => load('versions'), nameVersion, startDocumentComment })
 </script>
 
 <template>
@@ -231,7 +240,7 @@ defineExpose({ reloadVersions: () => load('versions'), startNamingVersion, start
               :rename="versionRename"
               @restore="emit('restoreVersion', $event)"
               @download="emit('downloadVersion', $event)"
-              @save-version="emit('saveVersion')"
+              @save-version="nameVersion"
             />
             <p v-if="hasNoVersions" class="px-2 text-sm text-ink-gray-5">
               {{ __('No versions yet.') }}

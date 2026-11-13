@@ -410,7 +410,7 @@ const presentationMenu = computed(() => [
         label: translate('Save version'),
         icon: 'lucide-bookmark',
         condition: () => canRestoreVersions.value,
-        onClick: () => menuFocusBack.wait(nameVersion),
+        onClick: () => menuFocusBack.wait(() => void sidePanel.value?.nameVersion()),
       },
       {
         label: 'Change theme',
@@ -469,14 +469,6 @@ watch(phone, (isPhone) => {
 const slidePosition = computed(() => (slideIndex.value ?? 0) + 1)
 function showSlide(step: number) {
   changeEditorSlide((slideIndex.value ?? 0) + step, false)
-}
-
-// The name box opens once the panel has seen any preview close, which would otherwise cancel it
-async function nameVersion() {
-  previewed.value = null
-  panel.value = 'versions'
-  await nextTick()
-  void sidePanel.value?.startNamingVersion()
 }
 
 function showPanel(next: Panel | null) {
