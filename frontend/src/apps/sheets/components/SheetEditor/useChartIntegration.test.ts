@@ -8,7 +8,13 @@ import { useChartIntegration } from './useChartIntegration.js'
 
 // A grid of 100 px columns and 24 px rows below a 24 px header, behind a
 // 50 px row header: what getCellRect reports with no scroll or zoom.
-function setup({ viewportW = 1400, readRange = vi.fn(async () => ({ displays: [] })) } = {}) {
+const NO_VALUES: string[] = []
+
+function setup({
+  viewportW = 1400,
+  readRange = vi.fn(async () => ({ displays: [] })),
+  usedCellIds = NO_VALUES,
+} = {}) {
   const chart = createChartEngine()
   const grid = {
     getSelection: () => null,
@@ -28,6 +34,7 @@ function setup({ viewportW = 1400, readRange = vi.fn(async () => ({ displays: []
     history: { push: vi.fn() },
     isDirty: ref(false),
     getGrid: () => grid,
+    usedCellIds: () => usedCellIds,
   })
   const insert = (sourceRange: string) => {
     ui.onChartConfirm({ type: 'bar', sourceSheet: 'Sheet1', sourceRange })
@@ -47,6 +54,18 @@ describe('a new chart', () => {
   it('goes below its data when there is no room to the right', () => {
     const { insert } = setup({ viewportW: 700 })
     expect(insert('C2:F6')).toMatchObject({ x: 50 + 200, y: 24 + 24 * 6 + 16 })
+  })
+
+  // ISSUES #158: the chart went on C1 over a table that starts in C.
+  it('goes past values to the right of its data', () => {
+    const { insert } = setup({ usedCellIds: ['A1', 'B6', 'C1', 'D3'] })
+    expect(insert('A1:B6')).toMatchObject({ x: 50 + 400 + 16, y: COL_HEADER_H })
+  })
+
+  it('ignores values outside the cells it covers', () => {
+    // The chart is 480 x 320 px: from x 266 in C it ends in G, and in row 14.
+    const { insert } = setup({ usedCellIds: ['H1', 'C20'] })
+    expect(insert('A1:B6')).toMatchObject({ x: 50 + 200 + 16, y: COL_HEADER_H })
   })
 
   it('a second chart on the same data is offset, not stacked', () => {

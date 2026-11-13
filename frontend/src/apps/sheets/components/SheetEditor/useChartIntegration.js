@@ -2,7 +2,8 @@ import { computed, ref, watch } from 'vue'
 
 import { COL_HEADER_H, DEFAULT_COL_W, DEFAULT_ROW_H, ROW_HEADER_W } from '../../canvas/constants'
 import { DEFAULT_CHART_SIZE } from '../../engine/charts.js'
-import { parseCellId } from '../../utils/cells.js'
+import { cellId, parseCellId } from '../../utils/cells.js'
+import { placeBeside } from '../../utils/place-floating.js'
 
 /**
  * Wires the chart engine to the SheetEditor surface. Mirrors the
@@ -21,6 +22,7 @@ import { parseCellId } from '../../utils/cells.js'
  *   history:        { push: () => void },
  *   isDirty:        import('vue').Ref<boolean>,
  *   getGrid:        () => object,
+ *   usedCellIds?:   () => string[],              // the open sheet's non-empty cells
  * }} opts
  */
 export function useChartIntegration({
@@ -31,6 +33,7 @@ export function useChartIntegration({
   history,
   isDirty,
   getGrid,
+  usedCellIds = () => [],
 }) {
   const chartDialogOpen = ref(false)
   const chartInitialRange = ref('')
@@ -122,10 +125,10 @@ export function useChartIntegration({
 
   // Default chart placement. When the source range is on the sheet the
   // chart goes on, put the chart beside it, level with its first row, as
-  // Google does; below it when there is no room to the right. It covered
-  // the data and the column headers before (ISSUES #65: the row was read
-  // as `.r` of a `{row, col}`, so y was NaN and painted at 0). Otherwise
-  // keep the top-left stagger.
+  // Google does, past any cells with values (ISSUES #158); below it when
+  // there is no room to the right. It covered the data and the column
+  // headers before (ISSUES #65: the row was read as `.r` of a `{row, col}`,
+  // so y was NaN and painted at 0). Otherwise keep the top-left stagger.
   function _defaultPosition(config, offset) {
     const fallback = { x: 40 + offset, y: COL_HEADER_H + 16 + offset }
     const sourceSheet = config.sourceSheet || currentSheet.value
@@ -148,16 +151,17 @@ export function useChartIntegration({
         width: DEFAULT_COL_W,
         height: DEFAULT_ROW_H,
       }
-    const viewW = grid?.getViewportSize?.()?.w ?? Infinity
-    const topRight = rect(r0, c1)
-    const right = topRight.x + topRight.width + 16
-    if (right + DEFAULT_CHART_SIZE.width <= viewW)
-      return { x: right + offset, y: Math.max(COL_HEADER_H, topRight.y) + offset }
-    const bottomLeft = rect(r1, c0)
-    return {
-      x: Math.max(ROW_HEADER_W, bottomLeft.x) + offset,
-      y: Math.max(COL_HEADER_H, bottomLeft.y + bottomLeft.height + 16) + offset,
-    }
+    const view = grid?.getViewportSize?.() ?? { w: Infinity, h: Infinity }
+    const used = new Set(usedCellIds())
+    return placeBeside({
+      source: { r0, c0, r1, c1 },
+      size: DEFAULT_CHART_SIZE,
+      cellRect: rect,
+      hasValue: (r, c) => used.has(cellId(r, c)),
+      view,
+      min: { x: ROW_HEADER_W, y: COL_HEADER_H },
+      offset,
+    })
   }
 
   function onChartDelete(id) {

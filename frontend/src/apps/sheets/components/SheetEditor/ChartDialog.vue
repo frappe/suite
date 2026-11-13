@@ -1,212 +1,216 @@
 <template>
   <Dialog v-model:open="show" :title="chartId ? 'Edit chart' : 'Insert chart'" size="4xl">
     <template #default>
-      <!-- ── Source range ─────────────────────────────────────────────── -->
-      <div class="cd-section">
-        <p class="cd-label">Source range</p>
-        <div class="cd-range-row">
-          <FormControl
-            v-model="rangeInput"
-            type="text"
-            placeholder="e.g. A1:D20"
-            class="cd-range-input"
-            @blur="detect"
-            @keydown.enter.prevent="detect"
-          />
-          <Button size="sm" variant="outline" label="Detect" @click="detect" />
-          <FormControl
-            type="checkbox"
-            v-model="hasHeader"
-            label="First row is header"
-            class="cd-header-toggle"
-            @change="onHeaderToggle"
-          />
+      <!-- The body scrolls inside a capped height, so Insert / Cancel stay
+           on screen in a short window instead of the whole page scrolling. -->
+      <div class="cd-body">
+        <!-- ── Source range ─────────────────────────────────────────────── -->
+        <div class="cd-section">
+          <p class="cd-label">Source range</p>
+          <div class="cd-range-row">
+            <FormControl
+              v-model="rangeInput"
+              type="text"
+              placeholder="e.g. A1:D20"
+              class="cd-range-input"
+              @blur="detect"
+              @keydown.enter.prevent="detect"
+            />
+            <Button size="sm" variant="outline" label="Detect" @click="detect" />
+            <FormControl
+              type="checkbox"
+              v-model="hasHeader"
+              label="First row is header"
+              class="cd-header-toggle"
+              @change="onHeaderToggle"
+            />
+          </div>
+          <p v-if="rangeError" class="cd-error">{{ rangeError }}</p>
         </div>
-        <p v-if="rangeError" class="cd-error">{{ rangeError }}</p>
-      </div>
 
-      <!-- ── Chart type picker ────────────────────────────────────────── -->
-      <div class="cd-section">
-        <p class="cd-label">Chart type</p>
-        <div class="cd-type-grid">
-          <button
-            v-for="t in CHART_TYPES"
-            :key="t"
-            class="cd-type-btn"
-            :class="{ 'cd-type-btn--active': chartType === t }"
-            @click="chartType = t"
-          >
-            <FeatherIcon :name="CHART_ICONS[t]" class="cd-type-icon" />
-            <span>{{ _label(t) }}</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- ── Encoding + Preview side by side ────────────────────────────-->
-      <div v-if="columns.length" class="cd-grid">
-        <div class="cd-encoding">
-          <p class="cd-label">Title</p>
-          <FormControl v-model="title" type="text" placeholder="(optional)" />
-
-          <p class="cd-label" style="margin-top: 14px">
-            {{ chartType === 'pie' ? 'Labels' : 'X axis' }}
-          </p>
-          <!-- Combobox keeps the dropdown anchored + scrollable + searchable.
-                Native <select> on macOS renders a system popover that grows to
-                fit all options and clips on top of the dialog body. -->
-          <Combobox
-            :model-value="String(xCol)"
-            :options="columnOptions"
-            trigger="button"
-            placeholder="Pick a column"
-            @update:model-value="onXAxisChange"
-          />
-
-          <p class="cd-label" style="margin-top: 14px">
-            {{ chartType === 'pie' ? 'Aggregate slices' : 'Aggregate' }}
-          </p>
-          <FormControl type="select" v-model="opts.aggregate" :options="CHART_AGGREGATIONS" />
-          <p v-if="opts.aggregate !== 'none'" class="cd-hint">
-            Rows sharing the same {{ chartType === 'pie' ? 'label' : 'X value' }} are grouped and
-            summarised.
-          </p>
-
-          <div class="cd-series-head" style="margin-top: 14px">
-            <p class="cd-label" style="margin: 0">
-              {{ chartType === 'pie' ? 'Values' : 'Series' }}
-              <span class="cd-series-count">{{ yCols.length }} / {{ columns.length - 1 }}</span>
-            </p>
-            <Button size="sm" variant="ghost" label="Numeric only" @click="selectNumericSeries" />
-          </div>
-          <FormControl
-            v-model="seriesFilter"
-            type="text"
-            placeholder="Filter columns…"
-            class="cd-series-filter"
-          />
-          <div class="cd-series-list" ref="seriesListRef">
-            <!-- Master row: toggles every visible column. Indeterminate when
-                 only some of the visible columns are selected — same UX as
-                 file-manager multi-selects, so users don't have to scroll. -->
-            <div class="cd-series-row cd-series-row--master" @click="toggleMasterSelection">
-              <FormControl
-                type="checkbox"
-                :model-value="masterCheckState === 'all'"
-                @update:model-value="toggleMasterSelection"
-                @click.stop
-              />
-              <span class="cd-series-label">
-                <strong>{{ masterCheckLabel }}</strong>
-              </span>
-            </div>
-            <div
-              v-for="col in filteredColumns"
-              :key="col.idx"
-              class="cd-series-row"
-              :class="{ 'cd-series-row--disabled': col.idx === xCol }"
-              @click="col.idx !== xCol && _toggleY(col.idx)"
-            >
-              <FormControl
-                type="checkbox"
-                :model-value="yCols.includes(col.idx)"
-                :disabled="col.idx === xCol"
-                @update:model-value="_toggleY(col.idx)"
-                @click.stop
-              />
-              <span class="cd-series-label">{{ col.label }}</span>
-              <span v-if="col.isNumeric" class="cd-series-tag">#</span>
-            </div>
-            <div v-if="!filteredColumns.length" class="cd-series-empty">
-              No columns match "{{ seriesFilter }}"
-            </div>
-          </div>
-
-          <p class="cd-label" style="margin-top: 14px">Options</p>
-          <div class="cd-options">
-            <FormControl
-              v-if="chartType !== 'pie'"
-              type="checkbox"
-              v-model="opts.showLegend"
-              label="Show legend"
-            />
-            <FormControl type="checkbox" v-model="opts.dataLabels" label="Show data labels" />
-            <FormControl
-              v-if="chartType !== 'pie'"
-              type="checkbox"
-              v-model="opts.gridLines"
-              label="Show grid lines"
-            />
-            <FormControl
-              v-if="chartType === 'line' || chartType === 'area'"
-              type="checkbox"
-              v-model="opts.smooth"
-              label="Smooth curves"
-            />
-            <FormControl
-              v-if="chartType === 'bar' || chartType === 'area'"
-              type="checkbox"
-              v-model="opts.stacked"
-              label="Stacked"
-            />
-          </div>
-
-          <div class="cd-colors-head" style="margin-top: 14px">
-            <p class="cd-label" style="margin: 0">Colors</p>
-            <Button
-              v-if="hasCustomColors"
-              size="sm"
-              variant="ghost"
-              label="Reset"
-              @click="resetColors"
-            />
-          </div>
-          <div class="cd-palettes">
+        <!-- ── Chart type picker ────────────────────────────────────────── -->
+        <div class="cd-section">
+          <p class="cd-label">Chart type</p>
+          <div class="cd-type-grid">
             <button
-              v-for="p in CHART_PALETTES"
-              :key="p.name"
-              type="button"
-              class="cd-palette"
-              :class="{ 'cd-palette--active': activePaletteName === p.name }"
-              :title="p.name"
-              @click="applyPalette(p)"
+              v-for="t in CHART_TYPES"
+              :key="t"
+              class="cd-type-btn"
+              :class="{ 'cd-type-btn--active': chartType === t }"
+              @click="chartType = t"
             >
-              <span
-                v-for="(c, i) in p.colors.slice(0, 5)"
-                :key="i"
-                class="cd-palette-stop"
-                :style="{ background: c }"
-              />
+              <FeatherIcon :name="CHART_ICONS[t]" class="cd-type-icon" />
+              <span>{{ _label(t) }}</span>
             </button>
           </div>
-          <!-- Per-series overrides only make sense for cartesian charts, where
+        </div>
+
+        <!-- ── Encoding + Preview side by side ────────────────────────────-->
+        <div v-if="columns.length" class="cd-grid">
+          <div class="cd-encoding">
+            <p class="cd-label">Title</p>
+            <FormControl v-model="title" type="text" placeholder="(optional)" />
+
+            <p class="cd-label" style="margin-top: 14px">
+              {{ chartType === 'pie' ? 'Labels' : 'X axis' }}
+            </p>
+            <!-- Combobox keeps the dropdown anchored + scrollable + searchable.
+                Native <select> on macOS renders a system popover that grows to
+                fit all options and clips on top of the dialog body. -->
+            <Combobox
+              :model-value="String(xCol)"
+              :options="columnOptions"
+              trigger="button"
+              placeholder="Pick a column"
+              @update:model-value="onXAxisChange"
+            />
+
+            <p class="cd-label" style="margin-top: 14px">
+              {{ chartType === 'pie' ? 'Aggregate slices' : 'Aggregate' }}
+            </p>
+            <FormControl type="select" v-model="opts.aggregate" :options="CHART_AGGREGATIONS" />
+            <p v-if="opts.aggregate !== 'none'" class="cd-hint">
+              Rows sharing the same {{ chartType === 'pie' ? 'label' : 'X value' }} are grouped and
+              summarised.
+            </p>
+
+            <div class="cd-series-head" style="margin-top: 14px">
+              <p class="cd-label" style="margin: 0">
+                {{ chartType === 'pie' ? 'Values' : 'Series' }}
+                <span class="cd-series-count">{{ yCols.length }} / {{ columns.length - 1 }}</span>
+              </p>
+              <Button size="sm" variant="ghost" label="Numeric only" @click="selectNumericSeries" />
+            </div>
+            <FormControl
+              v-model="seriesFilter"
+              type="text"
+              placeholder="Filter columns…"
+              class="cd-series-filter"
+            />
+            <div class="cd-series-list" ref="seriesListRef">
+              <!-- Master row: toggles every visible column. Indeterminate when
+                 only some of the visible columns are selected — same UX as
+                 file-manager multi-selects, so users don't have to scroll. -->
+              <div class="cd-series-row cd-series-row--master" @click="toggleMasterSelection">
+                <FormControl
+                  type="checkbox"
+                  :model-value="masterCheckState === 'all'"
+                  @update:model-value="toggleMasterSelection"
+                  @click.stop
+                />
+                <span class="cd-series-label">
+                  <strong>{{ masterCheckLabel }}</strong>
+                </span>
+              </div>
+              <div
+                v-for="col in filteredColumns"
+                :key="col.idx"
+                class="cd-series-row"
+                :class="{ 'cd-series-row--disabled': col.idx === xCol }"
+                @click="col.idx !== xCol && _toggleY(col.idx)"
+              >
+                <FormControl
+                  type="checkbox"
+                  :model-value="yCols.includes(col.idx)"
+                  :disabled="col.idx === xCol"
+                  @update:model-value="_toggleY(col.idx)"
+                  @click.stop
+                />
+                <span class="cd-series-label">{{ col.label }}</span>
+                <span v-if="col.isNumeric" class="cd-series-tag">#</span>
+              </div>
+              <div v-if="!filteredColumns.length" class="cd-series-empty">
+                No columns match "{{ seriesFilter }}"
+              </div>
+            </div>
+
+            <p class="cd-label" style="margin-top: 14px">Options</p>
+            <div class="cd-options">
+              <FormControl
+                v-if="chartType !== 'pie'"
+                type="checkbox"
+                v-model="opts.showLegend"
+                label="Show legend"
+              />
+              <FormControl type="checkbox" v-model="opts.dataLabels" label="Show data labels" />
+              <FormControl
+                v-if="chartType !== 'pie'"
+                type="checkbox"
+                v-model="opts.gridLines"
+                label="Show grid lines"
+              />
+              <FormControl
+                v-if="chartType === 'line' || chartType === 'area'"
+                type="checkbox"
+                v-model="opts.smooth"
+                label="Smooth curves"
+              />
+              <FormControl
+                v-if="chartType === 'bar' || chartType === 'area'"
+                type="checkbox"
+                v-model="opts.stacked"
+                label="Stacked"
+              />
+            </div>
+
+            <div class="cd-colors-head" style="margin-top: 14px">
+              <p class="cd-label" style="margin: 0">Colors</p>
+              <Button
+                v-if="hasCustomColors"
+                size="sm"
+                variant="ghost"
+                label="Reset"
+                @click="resetColors"
+              />
+            </div>
+            <div class="cd-palettes">
+              <button
+                v-for="p in CHART_PALETTES"
+                :key="p.name"
+                type="button"
+                class="cd-palette"
+                :class="{ 'cd-palette--active': activePaletteName === p.name }"
+                :title="p.name"
+                @click="applyPalette(p)"
+              >
+                <span
+                  v-for="(c, i) in p.colors.slice(0, 5)"
+                  :key="i"
+                  class="cd-palette-stop"
+                  :style="{ background: c }"
+                />
+              </button>
+            </div>
+            <!-- Per-series overrides only make sense for cartesian charts, where
                the colour array maps positionally to series. A pie maps colours
                to slices (rows), not series, so the palette presets above are the
                only meaningful control there. -->
-          <div v-if="chartType !== 'pie' && selectedSeries.length" class="cd-series-colors">
-            <label v-for="s in selectedSeries" :key="s.idx" class="cd-series-color">
-              <input
-                type="color"
-                class="cd-color-input"
-                :value="s.color"
-                @input="setSeriesColor(s.idx, $event.target.value)"
-              />
-              <span class="cd-series-color-label">{{ s.label }}</span>
-            </label>
+            <div v-if="chartType !== 'pie' && selectedSeries.length" class="cd-series-colors">
+              <label v-for="s in selectedSeries" :key="s.idx" class="cd-series-color">
+                <input
+                  type="color"
+                  class="cd-color-input"
+                  :value="s.color"
+                  @input="setSeriesColor(s.idx, $event.target.value)"
+                />
+                <span class="cd-series-color-label">{{ s.label }}</span>
+              </label>
+            </div>
           </div>
-        </div>
 
-        <div class="cd-preview">
-          <p class="cd-label">Preview</p>
-          <div class="cd-preview-frame">
-            <ChartView
-              v-if="previewConfig"
-              :config="previewConfig"
-              :matrix="previewMatrix"
-              :num-fmts="numFmts"
-              width="auto"
-              height="auto"
-            />
-            <div v-else class="cd-preview-placeholder">Pick a series to see a preview</div>
+          <div class="cd-preview">
+            <p class="cd-label">Preview</p>
+            <div class="cd-preview-frame">
+              <ChartView
+                v-if="previewConfig"
+                :config="previewConfig"
+                :matrix="previewMatrix"
+                :num-fmts="numFmts"
+                width="auto"
+                height="auto"
+              />
+              <div v-else class="cd-preview-placeholder">Pick a series to see a preview</div>
+            </div>
           </div>
         </div>
       </div>
@@ -608,6 +612,16 @@ function _autoDetectRange() {
 </script>
 
 <style scoped>
+/* The dialog's title, actions and margins take about 18rem; the body gets
+   the rest of the window and scrolls. */
+.cd-body {
+  max-height: calc(100dvh - 18rem);
+  min-height: 12rem;
+  overflow-y: auto;
+  /* Room for the focus rings at the scroll edges. */
+  margin: -4px;
+  padding: 4px;
+}
 .cd-section {
   margin-bottom: 18px;
 }
