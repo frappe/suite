@@ -3,7 +3,7 @@ import { computed, createApp, defineComponent, h, ref, type Ref, type SetupConte
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import type { Doc } from 'yjs'
 
-import type { DocumentSession } from '@/apps/drive'
+import type { DocumentSession, DocumentVersion } from '@/apps/drive'
 import type { ConvertVersionOutput } from '@/apps/slides/client/generated'
 import { translationPlugin } from '@/platform/translation'
 
@@ -27,24 +27,29 @@ interface SignedIn {
   user: string | null
 }
 const signedIn = vi.hoisted((): SignedIn => ({ user: 'me@example.com' }))
+// the shared side panel as the surface hands it over, and what a person does in its versions list
 interface VersionsPanelFixture {
-  flush: () => Promise<void>
-  restore: (seq: string) => Promise<void>
-  confirmRestore: ((seq: string) => void) | null
-  writable: boolean
+  isOpen: boolean
+  saveFirst: () => Promise<void>
+  canRestore: boolean
+  canSave: boolean
   reloads: number
-  // the version shown in the canvas's place, and how the panel picks one
-  previewed: string | null
-  preview: (seq: string | null) => void
+  // the version shown in the canvas's place, and how the list picks one
+  previewed: DocumentVersion | null
+  preview: (version: DocumentVersion | null) => void
+  restore: (version: DocumentVersion) => void
+  download: (version: DocumentVersion) => void
 }
 const versionsPanel = vi.hoisted((): VersionsPanelFixture => ({
-  flush: async () => {},
-  restore: async () => {},
-  confirmRestore: null,
-  writable: false,
+  isOpen: false,
+  saveFirst: async () => {},
+  canRestore: false,
+  canSave: false,
   reloads: 0,
   previewed: null,
   preview: () => {},
+  restore: () => {},
+  download: () => {},
 }))
 // the two theme dialogs: the new presentation's pick, and a change of theme
 const themeChange = vi.hoisted(() => ({
@@ -271,11 +276,43 @@ vi.mock('@/apps/drive', async (importOriginal) => ({
           h('button', { 'data-comments': '', onClick: () => emit('update:panel', 'comments') }),
         ]),
   },
-  DriveCommentList: {
+  DriveDocumentSidePanel: {
     inheritAttrs: false,
-    setup: (_props: unknown, { attrs }: SetupContext) => {
+    props: {
+      panel: { type: String, default: null },
+      previewedVersion: { type: Object, default: null },
+      saveFirst: { type: Function, default: null },
+      canRestoreVersion: Boolean,
+      canSaveVersion: Boolean,
+    },
+    emits: ['update:previewedVersion', 'restoreVersion', 'downloadVersion'],
+    setup(
+      props: {
+        panel: string | null
+        previewedVersion: DocumentVersion | null
+        saveFirst: () => Promise<void>
+        canRestoreVersion: boolean
+        canSaveVersion: boolean
+      },
+      { attrs, emit, expose }: SetupContext,
+    ) {
       commentPanel.attrs = attrs
-      return () => h('section', { 'data-comment-list': '' })
+      versionsPanel.preview = (version) => emit('update:previewedVersion', version)
+      versionsPanel.restore = (version) => emit('restoreVersion', version)
+      versionsPanel.download = (version) => emit('downloadVersion', version)
+      expose({
+        reloadVersions: async () => {
+          versionsPanel.reloads += 1
+        },
+      })
+      return () => {
+        versionsPanel.isOpen = props.panel === 'versions'
+        versionsPanel.saveFirst = props.saveFirst
+        versionsPanel.canRestore = props.canRestoreVersion
+        versionsPanel.canSave = props.canSaveVersion
+        versionsPanel.previewed = props.previewedVersion
+        return h('aside', { 'data-side-panel': props.panel ?? '' })
+      }
     },
   },
   useDriveDocumentActions: () => computed(() => ({ back: [], node: [] })),
@@ -337,44 +374,6 @@ vi.doMock('@/apps/slides/components/ThemeDialog.vue', () => ({
       }
 
       return () => (props.open && !props.update ? h('div', { 'data-theme-pick': '' }) : null)
-    },
-  },
-}))
-
-vi.doMock('./SlidesVersionsPanel.vue', () => ({
-  default: {
-    props: {
-      flush: { type: Function, default: null },
-      restore: { type: Function, default: null },
-      confirmRestore: { type: Function, default: null },
-      writable: Boolean,
-      previewed: { type: String, default: null },
-    },
-    emits: ['update:previewed'],
-    setup(
-      props: {
-        flush: () => Promise<void>
-        restore: (seq: string) => Promise<void>
-        confirmRestore: ((seq: string) => void) | null
-        writable: boolean
-        previewed: string | null
-      },
-      { emit, expose }: SetupContext,
-    ) {
-      versionsPanel.preview = (seq) => emit('update:previewed', seq)
-      versionsPanel.flush = props.flush
-      versionsPanel.restore = props.restore
-      expose({
-        reload: async () => {
-          versionsPanel.reloads += 1
-        },
-      })
-      return () => {
-        versionsPanel.confirmRestore = props.confirmRestore
-        versionsPanel.writable = props.writable
-        versionsPanel.previewed = props.previewed
-        return null
-      }
     },
   },
 }))
@@ -572,7 +571,7 @@ export async function openedSurface({
     await vi.waitFor(() => expect(thumbnails(root)).toHaveLength(slides.length))
   }
 
-  return { app, root, docname, router, access, loads }
+  return { app, root, docname, router, access, loads, session: opened }
 }
 
 export function shown() {
@@ -603,6 +602,7 @@ export function startsFromEmptyStore() {
   afterEach(() => {
     fakeServer.isFailingTemplates = false
     versionConversion.answer = {}
+    versionsPanel.isOpen = false
     templates.list = []
     slideAdoption.held = null
     served.modified = 'M1'
