@@ -526,15 +526,14 @@ const currencyIcon = computed(
 
 <style scoped>
 /* ── Row 2 · tools (36 px) ───────────────────────────────────────────────── */
-/* The left padding starts the undo icon on the file icon's and the cell
-   name's left edge. */
+/* Writer's padding, so Undo sits at the same x in both apps. */
 .sn-toolbar {
   container: sn-toolbar / inline-size;
   display: flex;
   align-items: center;
   gap: 2px;
   height: 36px;
-  padding: 0 12px 0 9px;
+  padding: 0 12px;
   background: var(--sn-bar-bg);
   flex-shrink: 0;
 }
@@ -576,6 +575,14 @@ const currencyIcon = computed(
 .sn-tools-scroll::-webkit-scrollbar-thumb {
   border-radius: 2px;
   background: var(--surface-gray-4);
+}
+/* Writer's toolbar ink (chrome.css .writer-tool), in place of the Button's
+   darker default; solid buttons keep their own. */
+.sn-toolbar :deep(button:not(.bg-surface-gray-10)) {
+  color: var(--ink-gray-7);
+}
+.sn-toolbar :deep(button:disabled) {
+  opacity: 0.4;
 }
 /* Hover and "on" fills follow the bar colours (SheetEditor.css --sn-bar-*);
    solid buttons keep their own. */
