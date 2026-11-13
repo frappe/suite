@@ -197,6 +197,7 @@ defineExpose({
     <aside
       v-if="panel"
       :aria-label="title"
+      data-document-side-panel
       class="absolute bottom-0 right-0 top-0 z-20 w-full overflow-hidden border-l border-outline-gray-1 bg-surface-elevation-1 md:static md:box-content md:w-80 md:shrink-0 md:bg-surface-base"
     >
       <div class="flex h-full w-full flex-col md:w-80 md:p-2">
