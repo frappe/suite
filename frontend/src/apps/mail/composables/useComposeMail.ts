@@ -23,7 +23,11 @@ import {
   moveRecipient as moveRecipientBetweenFields,
   type RecipientField,
 } from '@/apps/mail/utils/recipientFields'
-import { CustomImageExtension, mailEditorKit, uploadFunction } from '@/apps/mail/utils/text-editor'
+import {
+  CustomImageExtension,
+  mailEditorKit,
+  type uploadFunction,
+} from '@/apps/mail/utils/text-editor'
 import { undoSendPeriodOf } from '@/apps/mail/utils/undoSend'
 
 /** The mounted editor, as far as this composable cares about it. */
@@ -668,10 +672,13 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   const updateDraft = useMutation(api.mail.messages.updateDraft)
   // An image left in the body as a data URL goes as a file, not as base64 in the HTML (see
   // uploadEmbeddedImages). Not while the editor's own uploads are running: one of those is about to
-  // replace its image, and uploading it here as well would send it twice.
+  // replace its image, and uploading it here as well would send it twice. The host's upload counts
+  // towards that too, so a save starting meanwhile leaves these alone. The files are pointed at in
+  // the body as it is once they are up, which holds whatever was typed while they went.
   async function uploadStrandedImages() {
     if (options.isUploading?.()) return
-    const body = await uploadEmbeddedImages(mail.html_body, uploadFunction)
+    const pointAtFiles = await uploadEmbeddedImages(mail.html_body, options.uploadInlineImage)
+    const body = pointAtFiles(mail.html_body)
     if (body !== mail.html_body) mail.html_body = body
   }
   async function updateDraftSubmit({

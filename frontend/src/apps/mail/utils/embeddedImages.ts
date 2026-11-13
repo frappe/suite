@@ -3,28 +3,55 @@ import { randomString } from '@/apps/mail/utils'
 /**
  * Images still in a body as `data:` URLs, uploaded and pointed at their files on the way out.
  *
- * The editor holds a pasted or dropped image as a data URL until its upload replaces it, and an
- * editor reset while the upload ran (suite#51) left the data URL there for good. Sent that way the
- * image travels as base64 inside the HTML: megabytes many clients strip, and not an attachment the
- * recipient can save. Uploaded here it becomes a file with a `data-cid`, which the send path turns
- * into an inline attachment like any other (processInlineImages).
+ * The editor uploads an image dropped or pasted on its own, but some come in as data URLs and stay
+ * that way: an image inside pasted HTML, one in a forwarded mail, one left in an older draft. Sent
+ * like that the image travels as base64 inside the HTML: megabytes many clients strip, and not an
+ * attachment the recipient can save. Uploaded here it becomes a file with a `data-cid`, which the
+ * send path turns into an inline attachment like any other (processInlineImages).
+ *
+ * The uploads take a while and the body goes on being edited meanwhile, so this uploads from the
+ * body as it was and hands back the change to make, for whatever the body is once they are done.
+ * An upload that fails leaves its image as it is, for the next save to try again.
  */
 export const uploadEmbeddedImages = async (
   html: string,
   upload: (file: File) => Promise<{ file_url: string }>,
-): Promise<string> => {
-  if (!html.includes('data:image/')) return html
-  const doc = new DOMParser().parseFromString(html, 'text/html')
-  const images = [...doc.querySelectorAll<HTMLImageElement>('img[src^="data:image/"]')]
-  if (!images.length) return html
-  for (const image of images) {
-    const file = fileOf(image.getAttribute('src')!)
+): Promise<(current: string) => string> => {
+  const fileUrls = new Map<string, string>()
+  for (const url of new Set(dataUrlsIn(html))) {
+    const file = fileOf(url)
     if (!file) continue
-    const { file_url } = await upload(file)
-    image.setAttribute('src', file_url)
-    if (!image.getAttribute('data-cid')) image.setAttribute('data-cid', randomString(10))
+    try {
+      fileUrls.set(url, (await upload(file)).file_url)
+    } catch {
+      // Left as a data URL; the next save tries again.
+    }
   }
-  return doc.body.innerHTML
+  return (current) => (fileUrls.size ? pointAtFiles(current, fileUrls) : current)
+}
+
+const dataUrlsIn = (html: string) => {
+  if (!html.includes('data:image/')) return []
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  const urls: string[] = []
+  for (const image of doc.querySelectorAll('img[src^="data:image/"]')) {
+    const src = image.getAttribute('src')
+    if (src) urls.push(src)
+  }
+  return urls
+}
+
+const pointAtFiles = (html: string, fileUrls: Map<string, string>) => {
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  let changed = false
+  for (const image of doc.querySelectorAll('img[src^="data:image/"]')) {
+    const fileUrl = fileUrls.get(image.getAttribute('src') ?? '')
+    if (!fileUrl) continue
+    image.setAttribute('src', fileUrl)
+    if (!image.getAttribute('data-cid')) image.setAttribute('data-cid', randomString(10))
+    changed = true
+  }
+  return changed ? doc.body.innerHTML : html
 }
 
 /** The file a data URL holds, or nothing for one that isn't well formed. */

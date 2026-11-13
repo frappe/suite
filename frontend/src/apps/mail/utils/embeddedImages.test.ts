@@ -16,7 +16,8 @@ describe('uploadEmbeddedImages', () => {
       return { file_url: '/private/files/image.png' }
     }
 
-    const body = await uploadEmbeddedImages(`<div>See this:</div><img src="${PNG}">`, upload)
+    const html = `<div>See this:</div><img src="${PNG}">`
+    const body = (await uploadEmbeddedImages(html, upload))(html)
 
     expect(uploaded.map((file) => [file.name, file.type, file.size])).toEqual([
       ['image.png', 'image/png', 68],
@@ -31,7 +32,7 @@ describe('uploadEmbeddedImages', () => {
     const upload = vi.fn()
     const html = '<div>Hi</div><img src="/private/files/a.png" data-cid="x">'
 
-    expect(await uploadEmbeddedImages(html, upload)).toBe(html)
+    expect((await uploadEmbeddedImages(html, upload))(html)).toBe(html)
     expect(upload).not.toHaveBeenCalled()
   })
 })
