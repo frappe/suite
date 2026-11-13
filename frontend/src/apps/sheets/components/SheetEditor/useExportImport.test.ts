@@ -11,7 +11,7 @@ import { createMergeEngine } from '../../engine/merge.js'
 import { createValidationEngine } from '../../engine/validation.js'
 import { useExportImport } from './useExportImport.js'
 
-vi.mock('frappe-ui', () => ({ toast: { info: vi.fn() } }))
+vi.mock('frappe-ui', () => ({ toast: { info: vi.fn(), error: vi.fn() } }))
 
 type Sheet = { inputs: string[][]; displays: string[][]; numFmts: string[][] }
 type XCell = { t: string; v: unknown; z?: string; f?: string }
@@ -665,5 +665,29 @@ describe('Sheets: importing a file', () => {
     await io.importXLSX(file(write(book, { type: 'array', bookType: 'xlsx' })))
 
     expect(sheetsAtStep).toEqual([['Sheet1', 'Q4 Budget', 'Headcount']])
+  })
+})
+
+// ISSUES #155. File > Print opens its view in a new window; a browser that
+// blocks pop-ups gives null, and nothing at all happened.
+describe('print', () => {
+  it('says so when the browser blocks the print window', async () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    const readSheet = vi.fn()
+    const { print } = useExportImport({
+      cells: { readSheet, usedCells: vi.fn() },
+      sheetNames: () => ['Sheet1'],
+      currentSheet: { value: 'Sheet1' },
+      getCurrentTitle: () => 't',
+      repopulateGrid: vi.fn(),
+      syncNames: vi.fn(),
+      switchSheet: vi.fn(),
+      syncFlags: vi.fn(),
+      isDirty: { value: false },
+    })
+    await print('sheet')
+    expect(toast.error).toHaveBeenCalledWith(expect.stringMatching(/allow pop-ups/i))
+    expect(readSheet).not.toHaveBeenCalled()
+    open.mockRestore()
   })
 })
