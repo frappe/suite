@@ -1,4 +1,4 @@
-import { fromPartial } from '@total-typescript/shoehorn'
+import { fromAny, fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, ref, type App } from 'vue'
 
@@ -134,6 +134,12 @@ function press(key: string, on: Element = document.activeElement ?? document.bod
   on.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
 }
 
+// The ids of the elements on the one slide
+function elementIds() {
+  const [slide] = fromAny<{ elements: { id: string }[] }[], unknown>(slides.value)
+  return slide.elements.map((element) => element.id)
+}
+
 function panelButton() {
   const button = document.querySelector<HTMLButtonElement>('[data-document-side-panel] button')
   button!.focus()
@@ -170,7 +176,7 @@ describe('keys in the side panel beside the canvas', () => {
 
     press('Delete', document.body)
 
-    expect(slides.value[0].elements).toEqual([])
+    expect(elementIds()).toEqual([])
   })
 
   it('keeps the selected element on Delete or Backspace from a Versions button', async () => {
@@ -179,7 +185,7 @@ describe('keys in the side panel beside the canvas', () => {
     press('Delete', panelButton())
     press('Backspace', panelButton())
 
-    expect(slides.value[0].elements.map((element) => element.id)).toEqual(['element-1'])
+    expect(elementIds()).toEqual(['element-1'])
   })
 
   it('keeps the selection and its text when typing in a comment box', async () => {
@@ -192,9 +198,11 @@ describe('keys in the side panel beside the canvas', () => {
     expect(document.activeElement).toBe(box)
     press('h', panelButton())
 
-    expect([slides.value[0].elements.length, activeElementIds.value, focusElementId.value]).toEqual(
-      [1, ['element-1'], null],
-    )
+    expect([elementIds(), activeElementIds.value, focusElementId.value]).toEqual([
+      ['element-1'],
+      ['element-1'],
+      null,
+    ])
   })
 
   it('still goes back from a shown version on Escape from a panel button', async () => {
