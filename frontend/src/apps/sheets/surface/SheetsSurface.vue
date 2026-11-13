@@ -466,15 +466,17 @@ useDocumentLeaveGuard({
   z-index: 10;
 }
 /* Hover and "on" fills follow the bar colours, as in row 2; solid buttons
-   keep their own. */
+   keep their own. Only a panel toggle (`data-panel`) shows the "on" fill:
+   the Star is pressed while the file is starred, and, as in Writer, it shows
+   that with its filled icon, not with a box. */
 .sheets-header :deep(button:not(:disabled, .bg-surface-gray-10):hover) {
   background: var(--sn-bar-hover);
 }
 .sheets-header :deep(button[data-state='open']),
-.sheets-header :deep(button[aria-pressed='true']) {
+.sheets-header :deep(button[data-panel][aria-pressed='true']) {
   background: var(--sn-bar-on);
 }
-.sheets-header :deep(button[aria-pressed='true']) {
+.sheets-header :deep(button[data-panel][aria-pressed='true']) {
   box-shadow: inset 0 0 0 1px var(--sn-bar-on-edge);
 }
 /* Muted text (Saved, the folder) follows the bar, to stay readable on it. */
