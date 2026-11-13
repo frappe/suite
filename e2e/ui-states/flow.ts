@@ -26,12 +26,10 @@ export interface Flow<TEvent extends EventObject = EventObject, TScene extends B
 	open?(browser: Browser): Promise<TScene>;
 	/** What each Drive path's own folder is called, as the breadcrumbs show it. Defaults to the title. */
 	folderTitle?: string;
-	/**
-	 * Runs once before the flow's first path, for a change to the site that
-	 * every path needs. Answers its undo, if any, which runs after the last
-	 * path, also when the flow failed.
-	 */
-	prepare?(browser: Browser): Promise<(() => Promise<void>) | undefined>;
+	/** Runs once before the flow's first path, for a change to the site that every path needs. */
+	prepare?(browser: Browser): Promise<void>;
+	/** Undoes `prepare` after the flow's last path, also when the flow or `prepare` itself failed partway. */
+	restore?(browser: Browser): Promise<void>;
 	/** Brings a fresh, signed-in page to the machine's initial state. */
 	enter(scene: TScene): Promise<void>;
 	events: Record<TEvent["type"], (scene: TScene) => Promise<void>>;

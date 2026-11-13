@@ -31,7 +31,7 @@ export interface Run {
 }
 
 export function readRun(stateDir: string): Run {
-	// SAFETY: only `provisionUsers` writes this file, with the run the server answered.
+	// SAFETY: only `provisionUsers` writes this file: the run's id before provisioning, then the run the server answered.
 	return JSON.parse(readFileSync(runPath(stateDir), "utf8")) as Run;
 }
 
@@ -74,6 +74,9 @@ export async function provisionUsers(config: FullConfig, stateDir: string, userC
 	await loginViaApi(api, admin);
 	await cleanupPreviousRun(api, stateDir);
 	const runId = `${Date.now().toString(36)}-${process.pid}`;
+	// Kept before the users exist, so the teardown removes them even when the answer never arrives.
+	mkdirSync(stateDir, { recursive: true });
+	writeFileSync(runPath(stateDir), JSON.stringify({ run_id: runId, users: [] } satisfies Run));
 	const response = await api.post("/api/method/suite.drive.e2e_api.provision_users", {
 		form: {
 			run_id: runId,
@@ -82,7 +85,6 @@ export async function provisionUsers(config: FullConfig, stateDir: string, userC
 		},
 	});
 	const run = await frappeData<Run>(response);
-	mkdirSync(stateDir, { recursive: true });
 	writeFileSync(runPath(stateDir), JSON.stringify(run));
 	for (const [index, user] of run.users.entries()) {
 		const userApi = await request.newContext({ baseURL });

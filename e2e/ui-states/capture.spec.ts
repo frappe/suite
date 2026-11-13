@@ -29,9 +29,8 @@ for (const flow of flows) {
 		const paths = createTestModel(flow.machine).getShortestPaths();
 		mkdirSync(resolve(OUT_DIR, flow.id), { recursive: true });
 		const bench = watchBench(baseURL);
-		let undo: (() => Promise<void>) | undefined;
 		try {
-			undo = await acrossRestarts(baseURL, async () => flow.prepare?.(browser));
+			await acrossRestarts(baseURL, async () => flow.prepare?.(browser));
 			for (const path of paths) {
 				await bench.survive(async () => {
 					const scene = flow.open ? await flow.open(browser) : await openScene(browser, baseURL, flow.folderTitle ?? flow.title);
@@ -54,7 +53,7 @@ for (const flow of flows) {
 			}
 		} finally {
 			bench.stop();
-			if (undo) await acrossRestarts(baseURL, undo);
+			await acrossRestarts(baseURL, async () => flow.restore?.(browser));
 		}
 		writeManifest(OUT_DIR, manifest);
 	});

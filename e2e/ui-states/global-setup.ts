@@ -1,7 +1,6 @@
 import { resolve } from "node:path";
 import { request, type FullConfig } from "@playwright/test";
 import { provisionUsers, readRun } from "../drive-backed-apps/global-setup";
-import { removeUsers } from "../drive-backed-apps/global-teardown";
 import { loginViaApi } from "../shared/auth";
 
 /** This suite's own run, so drive-backed-apps never removes its users, nor it theirs. */
@@ -19,9 +18,9 @@ const NAMES = [
 
 /**
  * Provisions the e2e users, then gives them names fit for a screenshot.
- * Answers the teardown, which removes them.
+ * `global-teardown.ts` removes them, also when this fails partway.
  */
-export default async function globalSetup(config: FullConfig): Promise<() => Promise<void>> {
+export default async function globalSetup(config: FullConfig): Promise<void> {
 	await provisionUsers(config, STATE_DIR, USER_COUNT);
 	const baseURL = config.projects[0]?.use.baseURL;
 	if (typeof baseURL !== "string") throw new Error("Playwright baseURL is required");
@@ -35,5 +34,4 @@ export default async function globalSetup(config: FullConfig): Promise<() => Pro
 		if (!response.ok()) throw new Error(`Renaming ${user.email} failed: ${response.status()}`);
 	}
 	await admin.dispose();
-	return () => removeUsers(config, STATE_DIR);
 }

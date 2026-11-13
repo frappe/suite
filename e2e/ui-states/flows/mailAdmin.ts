@@ -385,10 +385,8 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 	title: "Mail admin",
 	source: "frontend/src/apps/mail/adminRoutes.ts",
 	open: (browser) => openDemoScene(browser),
-	async prepare(browser) {
-		await setSuiteCloudStandIn(browser, true);
-		return () => setSuiteCloudStandIn(browser, false);
-	},
+	prepare: (browser) => setSuiteCloudStandIn(browser, true),
+	restore: (browser) => setSuiteCloudStandIn(browser, false),
 	machine,
 	async enter(scene) {
 		const stamp = scene.name("x").split(" ")[1];

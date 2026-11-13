@@ -1,7 +1,7 @@
 import { expect, type Page } from "@playwright/test";
 import { fixture, folderPath } from "../content";
 import { defineFlow, setupFlow } from "../flow";
-import { purgeNode, row, trashNode, uploadFile, type DriveNode } from "../../drive-backed-apps/helpers/drive";
+import { row, trashAndPurge, uploadFile, type DriveNode } from "../../drive-backed-apps/helpers/drive";
 import { perScene, type Scene } from "../scene";
 
 type Event =
@@ -227,10 +227,9 @@ export const preview = defineFlow<Event>({
 		async OPEN_WITHOUT_ACCESS(scene) {
 			const peer = await scene.as(scene.people.peer);
 			const secret = await uploadFile(peer, scene.name("Salary bands.txt"), Buffer.from("Private\n"));
+			scene.defer(() => trashAndPurge(peer, secret.name));
 			await scene.goto(`/d/${secret.name}`);
 			await expect(scene.page.getByText("You don’t have access to this document.")).toBeVisible();
-			await trashNode(peer, secret.name);
-			await purgeNode(peer, secret.name);
 		},
 		async OPEN_MENU(scene) {
 			await scene.page.getByRole("button", { name: "More file actions" }).click();

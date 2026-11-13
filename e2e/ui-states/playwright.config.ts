@@ -49,6 +49,7 @@ export default defineConfig({
 		timeout: 120_000,
 		gracefulShutdown: { signal: "SIGTERM" as const, timeout: 5_000 },
 	},
-	// Provisions this run's users into `.state/`; the teardown it answers removes them.
+	// Provisions this run's users into `.state/`. Playwright runs the teardown, which removes them, even when the setup failed.
 	globalSetup: "./global-setup.ts",
+	globalTeardown: "./global-teardown.ts",
 });

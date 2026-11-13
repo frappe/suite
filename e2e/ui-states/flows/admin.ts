@@ -346,6 +346,8 @@ async function sweepStaleCast(scene: BaseScene, admin: APIRequestContext): Promi
 /** Creates one user through Administrator and removes them, with their Drive root, when the scene closes. */
 async function castMember(scene: BaseScene, admin: APIRequestContext, first: string, last: string): Promise<Extra> {
 	const email = `${first.toLowerCase()}.${scene.name("x").split(" ")[1]}@northwind.test`;
+	// Registered first, so a user whose root lookup fails is still removed.
+	scene.defer(async () => removeMember(scene, admin, email, (await storageRoots(scene)).find((root) => root.user === email)?.name));
 	await frappeData(
 		await admin.post("/api/resource/User", {
 			data: { email, first_name: first, last_name: last, send_welcome_email: 0, new_password: CAST_PASSWORD, roles: [{ role: "Suite User" }] },
@@ -353,7 +355,6 @@ async function castMember(scene: BaseScene, admin: APIRequestContext, first: str
 	);
 	const root = (await storageRoots(scene)).find((candidate) => candidate.user === email)?.name;
 	if (!root) throw new Error(`admin: ${email} has no Drive root`);
-	scene.defer(() => removeMember(scene, admin, email, root));
 	return { email, password: CAST_PASSWORD, personal_root: root };
 }
 
@@ -415,10 +416,7 @@ export const admin = defineFlow<Event, BaseScene>({
 	title: "Admin",
 	source: "frontend/src/composition/admin/LocalUsersView.vue",
 	open: (browser) => openDemoScene(browser),
-	async prepare(browser) {
-		await setSuiteCloudStandIn(browser, false);
-		return undefined;
-	},
+	prepare: (browser) => setSuiteCloudStandIn(browser, false),
 	machine,
 	async enter(scene) {
 		casts.set(scene, await provisionCast(scene));
