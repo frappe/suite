@@ -29,9 +29,11 @@ The `meet` flow needs a media server (SFU) on port 3021, with the secret the flo
 
 ```sh
 JWT_SECRET=ui-states-meet-sfu PORT=3021 HOST=127.0.0.1 NODE_ENV=development \
-  WEBRTC_LISTEN_IP=127.0.0.1 WEBRTC_SERVER_PORT=40021 MEDIASOUP_NUM_WORKERS=1 \
-  node_modules/.bin/ts-node src/server.ts
+  WEBRTC_LISTEN_IP=127.0.0.1 WEBRTC_ANNOUNCED_IP=127.0.0.1 WEBRTC_SERVER_PORT=40021 \
+  MEDIASOUP_NUM_WORKERS=1 node_modules/.bin/ts-node src/server.ts
 ```
+
+Without `WEBRTC_ANNOUNCED_IP` the SFU offers the machine's network address, which a loopback listener does not answer: the call connects, but no video arrives and the screen-share states fail.
 
 `UI_STATES_SFU_URL` and `UI_STATES_SFU_SECRET` change the address and the secret.
 
