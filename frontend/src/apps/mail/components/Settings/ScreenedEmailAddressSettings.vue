@@ -65,7 +65,7 @@
         >
           <ListView
             ref="listView"
-            class="h-full min-h-0"
+            class="h-full min-h-0 !w-full"
             :columns="COLUMNS"
             :rows="rows"
             row-key="email"
@@ -185,7 +185,7 @@ const sortField = ref<SortField>('modified')
 const sortDir = ref<'asc' | 'desc'>('desc')
 const sortLabel = computed(() => SORT_LABELS[sortField.value])
 const sortOptions = computed(() =>
-  (Object.keys(SORT_LABELS) as SortField[]).map((field) => ({
+  (['modified', 'creation', 'email'] satisfies SortField[]).map((field) => ({
     label: SORT_LABELS[field],
     onClick: () => (sortField.value = field),
   })),
@@ -215,7 +215,10 @@ const rows = computed(() => {
         : '',
     }))
 })
-const selectedEmails = () => Array.from(listViewRef.value?.selections ?? []) as string[]
+const selectedEmails = () =>
+  Array.from(listViewRef.value?.selections ?? []).filter(
+    (value): value is string => typeof value === 'string',
+  )
 
 // Bulk edit: `screen_email_addresses` upserts the action for every selected address and rebuilds the
 // sieve script only once, so switching many senders between Block/Junk/Accept is a single request.
@@ -230,7 +233,7 @@ async function editScreenedAddressesSubmit({ action }: { action: ScreeningAction
   raiseToast(__('Action updated.'))
   listViewRef.value?.toggleAllRows()
 }
-const bulkActionOptions = (['Accepted', 'Spam'] as ScreeningAction[]).map((action) => ({
+const bulkActionOptions = (['Accepted', 'Spam'] satisfies ScreeningAction[]).map((action) => ({
   label: ACTION_LABELS[action] ?? action,
   onClick: () =>
     editScreenedAddressesSubmit({
@@ -264,23 +267,24 @@ const removeModalOptions = computed(() => ({
   ],
 }))
 
-// `fr` units (numbers) so the columns share the row width instead of overflowing (percentages plus the
-// checkbox column would exceed 100% and add a horizontal scrollbar).
+// Shares of the panel's width, each free to shrink below its contents (`minmax(0, …)`), in a list
+// held to the panel's width (`!w-full` over the list's own `w-max`): sized to its longest address
+// instead, the table ran past the panel and clipped Last Modified.
 const COLUMNS = [
   {
     label: __('Email or Domain'),
     key: 'email',
-    width: 3,
+    width: 'minmax(0, 3fr)',
   },
   {
     label: __('Action'),
     key: 'action',
-    width: 1,
+    width: 'minmax(0, 1fr)',
   },
   {
     label: __('Last Modified'),
     key: 'modified',
-    width: 1,
+    width: 'minmax(0, 1fr)',
   },
 ]
 const MESSAGE = __(

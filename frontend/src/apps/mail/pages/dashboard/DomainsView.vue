@@ -55,7 +55,6 @@
     <DashboardPager
       v-if="list.status === 'success' && list.total"
       :count="list.rows.length"
-      :total="list.total ?? 0"
       :has-more="list.hasNext"
       :loading="list.isFetching"
       @load-more="list.fetchNext().catch(() => {})"
@@ -68,7 +67,7 @@ import { refDebounced } from '@vueuse/core'
 import { Badge, ErrorMessage, FormControl, usePageMeta } from 'frappe-ui'
 import { computed, ref } from 'vue'
 
-import { api, useInfiniteQuery } from '@/api'
+import { api, useInfiniteQuery, type InputOf } from '@/api'
 import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
 import AddDomainModal from '@/apps/mail/components/Modals/AddDomainModal.vue'
 import { useAddOnArrival } from '@/apps/mail/utils/addOnArrival'
@@ -88,16 +87,15 @@ useAddOnArrival(showAddDomain)
 const search = ref('')
 const status = ref<'All' | DomainStatus>('All')
 const debouncedSearch = refDebounced(search, 300)
-const list = useInfiniteQuery(api.mail.admin.domains.list, () => ({
-  txt: debouncedSearch.value,
-  ...(status.value !== 'All'
-    ? {
-        status: status.value,
-      }
-    : {}),
-  start: 0,
-  page_length: DEFAULT_PAGE_LENGTH,
-}))
+const list = useInfiniteQuery(api.mail.admin.domains.list, () => {
+  const input: InputOf<typeof api.mail.admin.domains.list> = {
+    txt: debouncedSearch.value,
+    start: 0,
+    page_length: DEFAULT_PAGE_LENGTH,
+  }
+  if (status.value !== 'All') input.status = status.value
+  return input
+})
 const LIST_COLUMNS = [
   {
     label: __('Domain'),

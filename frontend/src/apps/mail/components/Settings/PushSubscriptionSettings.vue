@@ -74,8 +74,10 @@ import type { PushSubscription } from '@/apps/mail/types'
 import { raiseError, raiseToast } from '@/apps/mail/utils'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 
-const user = inject('$user')
-const dayjs = inject('$dayjs')
+const user = inject<import('@/apps/mail/types').UserResource>('$user')
+if (!user) throw new Error('Missing Mail user resource')
+const dayjs = inject<typeof import('dayjs')>('$dayjs')
+if (!dayjs) throw new Error('Missing Mail date formatter')
 const listViewRef = useTemplateRef('listView')
 const showAddModal = ref(false)
 const showDeleteModal = ref(false)
@@ -97,17 +99,27 @@ const formatTypes = (types: string) => {
     return '—'
   }
 }
+// Named, not shown as the mail server's bare ids: this site's own subscription says so, and any
+// other (an app or site that registered one, by hand or through the API) is told apart by the
+// start of its id.
+const clientOf = (sub: PushSubscription) =>
+  sub.this_site
+    ? __('This site ({0})', [window.location.host])
+    : __('Another client · {0}', [sub.id.slice(0, 8)])
 const rows = computed(() =>
   (pushSubscriptions.data ?? []).map((sub: PushSubscription) => ({
     name: sub.name,
     user: sub.user,
     id: sub.id,
-    device_client_id: sub.device_client_id,
+    client: clientOf(sub),
     types: formatTypes(sub.types),
     expires: sub.expires ? dayjs(sub.expires).format('D MMM YYYY, h:mm A') : '—',
   })),
 )
-const selectedNames = () => Array.from(listViewRef.value?.selections ?? []) as string[]
+const selectedNames = () =>
+  Array.from(listViewRef.value?.selections ?? []).filter(
+    (value): value is string => typeof value === 'string',
+  )
 const selectedRows = () => {
   const names = new Set(selectedNames())
   return (pushSubscriptions.data ?? []).filter((s: PushSubscription) => names.has(s.name))
@@ -129,11 +141,7 @@ const renewSelected = async () => {
     raiseToast(__('Selected subscriptions renewed.'))
     listViewRef.value?.toggleAllRows()
   } catch (error) {
-    const err = error as {
-      messages?: string[]
-      message?: string
-    }
-    raiseError(err)
+    raiseError(error)
   } finally {
     // Reload after any outcome: a mid-loop failure still leaves earlier subscriptions renewed with
     // updated expiry, so the table must reflect current server state without a manual refresh.
@@ -169,14 +177,9 @@ const deleteModalOptions = computed(() => ({
 // `fr` units (numbers) so the columns share the row width instead of overflowing.
 const COLUMNS = [
   {
-    label: __('Device Client ID'),
-    key: 'device_client_id',
-    width: 2,
-  },
-  {
-    label: __('Subscription ID'),
-    key: 'id',
-    width: 2,
+    label: __('Client'),
+    key: 'client',
+    width: 3,
   },
   {
     label: __('Types'),

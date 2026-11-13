@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, ref, type PropType } from 'vue'
 
@@ -31,7 +32,7 @@ vi.mock('frappe-ui', () => {
           h('button', attrs),
     }),
     Dropdown: defineComponent({
-      props: { options: { type: Array as PropType<MenuEntry[]>, required: true } },
+      props: { options: { type: fromPartial<PropType<MenuEntry[]>>(Array), required: true } },
       setup:
         (props, { slots }) =>
         () =>

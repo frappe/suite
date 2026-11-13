@@ -44,6 +44,7 @@ from suite.drive.patches.build.history import convert_history_and_comments
 from suite.drive.patches.build.mapping import GENERAL, PUBLIC
 from suite.drive.patches.build.ports import (
     ACTIVE,
+    DOCSHARE_COUNTS,
     PERSONAL,
     SiteContentSource,
     SiteContentTarget,
@@ -55,6 +56,7 @@ from suite.drive.patches.build.tests import legacy_schema
 from suite.drive.patches.cleanup.ports import SiteContentRows
 from suite.drive.patches.cleanup.removal import RETAINED_DOCTYPES_STEP_4, phase_content_history
 from suite.drive.patches.cleanup.tests.fakes import FakeSchema, cleanup_environment
+from suite.tests.utils import column_hidden
 
 # One fixed stamp for every source row and for `env.now()`. A fixture with a
 # clock has no exact expected value for the rows Build authors itself.
@@ -557,6 +559,12 @@ class BuildContentCase(IntegrationTestCase):
     def node_row(self, name) -> dict:
         return SiteContentTarget().nodes((name,))[name]
 
+    def deck_thumbnail(self, docname):
+        ((thumbnail,),) = frappe.db.sql(
+            "SELECT `thumbnail` FROM `tabPresentation` WHERE `name` = %s", docname
+        )
+        return thumbnail
+
     def media_children(self, node) -> list[dict]:
         return [row for row in SiteContentTarget().child_nodes(node) if row.get("kind") == "file"]
 
@@ -880,10 +888,10 @@ class TestMigratedComments(BuildContentCase):
         self.assertEqual(stored.anchor, thread)
         self.assertEqual(stored.resolved, 1)
         # The reply has a blank author, so §9's last complete entry is the
-        # first comment, deleted user and all.
-        self.assertEqual(stored.resolved_by, "deleted@example.invalid")
+        # first comment. Its author has no User row, so it is Guest
+        self.assertEqual(stored.resolved_by, "Guest")
         self.assertEqual(stored.resolved_at, get_datetime(epoch_millis(1_000, timezone)))
-        self.assertEqual(stored.owner, "deleted@example.invalid")
+        self.assertEqual(stored.owner, "Guest")
 
         first = frappe.db.get_value(
             "Drive Comment",
@@ -892,8 +900,9 @@ class TestMigratedComments(BuildContentCase):
             as_dict=True,
         )
         self.assertEqual(first.content, "First")
-        self.assertEqual(first.author, "deleted@example.invalid")
-        self.assertIsNone(first.author_name)
+        # Named by the old email, which a Link to User can't hold
+        self.assertEqual(first.author, "Guest")
+        self.assertEqual(first.author_name, "deleted@example.invalid")
         self.assertEqual(json.loads(first.mentions), [f"{self.prefix}a@example.invalid"])
         self.assertEqual(first.creation, get_datetime(epoch_millis(1_000, timezone)))
         self.assertEqual(first.idx, 1)
@@ -1334,11 +1343,36 @@ class TestSlideMedia(BuildContentCase):
             [deck["thumbnail"]],
         )
 
+    def test_a_deck_is_read_on_a_site_that_never_had_the_thumbnail_column(self):
+        # a site installed after Presentation's field left has no column for Build to read (Q19')
+        deck = self.deck_fixture()
+        self.enterContext(column_hidden("Presentation", "thumbnail"))
+
+        rows = SiteContentSource(self.prefix).documents("Presentation", "", 10)
+
+        self.assertEqual([(row.name, row.thumbnail) for row in rows], [(deck["docname"], None)])
+
+    def test_hiding_the_thumbnail_column_keeps_its_values(self):
+        deck = self.deck_fixture()
+        # the DDL commits this test's rows, so tearDown's sweep has to commit too
+        self.addCleanup(frappe.db.commit)
+
+        with column_hidden("Presentation", "thumbnail"):
+            self.assertFalse(frappe.db.has_column("Presentation", "thumbnail"))
+
+        with self.assertRaises(SimulatedCrash), column_hidden("Presentation", "thumbnail"):
+            raise SimulatedCrash
+
+        self.assertEqual(self.deck_thumbnail(deck["docname"]), f"/files/{self.prefix}thumb.png")
+
     def test_a_thumbnail_a_slide_uses_is_also_a_media_child(self):
         """§14.7: one File can be both the deck preview and a slide picture."""
         thumb_url = f"/files/{self.prefix}thumb.png"
         deck = self.deck_fixture(elements=[{"type": "image", "src": thumb_url}])
-        self.assertEqual(frappe.db.get_value("Presentation", deck["docname"], "thumbnail"), thumb_url)
+        ((thumbnail,),) = frappe.db.sql(
+            "SELECT `thumbnail` FROM `tabPresentation` WHERE `name` = %s", deck["docname"]
+        )
+        self.assertEqual(thumbnail, thumb_url)
 
         report = convert_slides_and_templates(self.environment())
 
@@ -1593,3 +1627,50 @@ class TestSecondRun(BuildContentCase):
         self.assertEqual(second.documents_seen, 3)
         self.assertTrue(second.completed)
         self.assertEqual([row["name"] for row in self.media_children(deck["node"])], [deck["keeper"]])
+
+
+class TestDocShareCounts(IntegrationTestCase):
+    def test_a_later_batch_replaces_the_saved_totals_in_one_row(self):
+        target = SiteContentTarget()
+
+        target.save_docshare_counts(1, 2)
+        target.save_docshare_counts(3, 4)
+
+        rows = frappe.db.sql(
+            "SELECT `value` FROM `tabSingles` WHERE `doctype` = %s AND `field` = %s", DOCSHARE_COUNTS
+        )
+        self.assertEqual(target.docshare_counts(), (3, 4))
+        self.assertEqual(len(rows), 1)
+
+    def test_totals_saved_as_anything_but_one_valid_row_refuse_a_save_and_a_read(self):
+        # tabSingles has no unique key, so nothing stops a second row
+        starts = {"a null row": [None], "two rows": ["1,2", "5,6"], "an unparseable row": ["1;2"]}
+        for start, values in starts.items():
+            with self.subTest(start=start):
+                self.assert_refused_over(values)
+
+    def assert_refused_over(self, values: list[str | None]) -> None:
+        target = SiteContentTarget()
+        self.seed_totals(values)
+
+        with self.assertRaises(ValueError):
+            target.save_docshare_counts(3, 4)
+
+        with self.assertRaises(ValueError):
+            target.docshare_counts()
+
+        self.assertCountEqual(self.saved_totals(), values)
+
+    def seed_totals(self, values: list[str | None]) -> None:
+        doctype, field = DOCSHARE_COUNTS
+        frappe.db.sql("DELETE FROM `tabSingles` WHERE `doctype` = %s AND `field` = %s", DOCSHARE_COUNTS)
+        for value in values:
+            frappe.db.sql(
+                "INSERT INTO `tabSingles` (`doctype`, `field`, `value`) VALUES (%s, %s, %s)",
+                (doctype, field, value),
+            )
+
+    def saved_totals(self) -> list[str | None]:
+        return frappe.db.sql_list(
+            "SELECT `value` FROM `tabSingles` WHERE `doctype` = %s AND `field` = %s", DOCSHARE_COUNTS
+        )

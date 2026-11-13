@@ -1,7 +1,9 @@
 # Copyright (c) 2024, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
 
+import glob
 import json
+import os
 import random
 import re
 import string
@@ -94,6 +96,12 @@ class Presentation(drive.DriveContent, Document):
                     )
                 )
 
+    def apply_fieldlevel_read_permissions(self) -> None:
+        """Hide a converted deck's rows: they stopped at its conversion, so they aren't its slides (Q20')."""
+        super().apply_fieldlevel_read_permissions()
+        if log.find(APP, self.node):
+            self.set("slides", [])
+
     def on_update(self):
         if self.flags.in_insert:
             # `create_document` stamps the new node itself. Touching here
@@ -119,9 +127,8 @@ def get_presentations() -> list[dict]:
     node is read for those three answers: a trashed deck and a template are
     left out, and the title is the node's.
 
-    LIMITATION: `thumbnail` is empty. A deck's preview is a `Drive Node
-    Preview` served over §6.8's signed byte path, which this payload has no
-    field for.
+    LIMITATION: no preview. A deck's preview is a `Drive Node Preview`
+    served over §6.8's signed byte path, which this payload has no field for.
     """
     presentations = frappe.get_list(
         "Presentation",
@@ -159,7 +166,6 @@ def _published_decks(rows: list[dict]) -> list[dict]:
             # Trashed, or a template. Either way Drive hides it here.
             continue
         row["title"] = listed["title"]
-        row["thumbnail"] = ""
         kept.append(row)
     return kept
 
@@ -223,6 +229,18 @@ def is_system_template(template_title: str) -> bool:
 def get_template_thumbnail(template_title: str, index: int) -> str:
     template_title = (template_title or "light").lower()
     return f"/assets/suite/slides/frontend/images/layouts/{template_title}/thumbnail-{index}.webp"
+
+
+def system_template_pictures(template_title: str) -> list[str]:
+    """Answer the pictures a system template's layouts show, in slide order, and none for another template."""
+    if not is_system_template(template_title):
+        return []
+
+    folder = frappe.get_app_path(
+        "suite", "public", "slides", "frontend", "images", "layouts", template_title.lower()
+    )
+    count = len(glob.glob(os.path.join(folder, "thumbnail-*.webp")))
+    return [get_template_thumbnail(template_title, index) for index in range(1, count + 1)]
 
 
 def deck_answer(deck: Presentation) -> dict:
@@ -412,6 +430,8 @@ def get_public_presentation(name: str):
     if deck.node and not deck.is_composite and log.enabled(APP):
         if log.find(APP, deck.node):
             answer["is_converted"] = True
+            # every tab opens through here, so the rows must not read as the deck's slides (Q20')
+            answer.pop("slides")
         else:
             answer["conversion"] = conversion_status(APP, deck.node)
 
@@ -426,11 +446,23 @@ def get_templates():
     may use it is the grant on that node, so the list is scoped by READ.
     """
     templates = _readable_templates()
+    # a converted template's rows stopped at its conversion: the tab reads its saved slides
+    is_on = log.enabled(APP)
+    for template in templates:
+        template["is_converted"] = bool(is_on and log.find(APP, template["node"]))
+        template["thumbnails"] = system_template_pictures(template["title"])
 
+    attach_row_layouts(templates)
+    return templates
+
+
+def attach_row_layouts(templates: list[dict]) -> None:
+    """Give each template still on its rows those rows as its layouts, and a converted one none."""
+    on_rows = [template["name"] for template in templates if not template["is_converted"]]
     slides = frappe.get_all(
         "Slide",
         filters={
-            "parent": ["in", [t["name"] for t in templates]],
+            "parent": ["in", on_rows],
             "parenttype": "Presentation",
             "parentfield": "slides",
         },
@@ -451,8 +483,6 @@ def get_templates():
                 if is_system_template(template["title"])
                 else ""
             )
-
-    return templates
 
 
 def _readable_templates() -> list[dict]:
@@ -476,6 +506,7 @@ def _readable_templates() -> list[dict]:
     return [
         {
             "name": node["content_docname"],
+            "node": node["name"],
             "title": node["title"],
             "slug": slug(node["title"] or ""),
             "creation": node["creation"],

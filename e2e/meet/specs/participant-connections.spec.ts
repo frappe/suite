@@ -9,7 +9,6 @@ import { expectRemoteVideoReceiving } from "../helpers/media";
 test.describe("Participant Connection switching", () => {
 	test(
 		"switches from the preview without a second confirmation",
-		{ tag: "@meet-group-3" },
 		async ({ hostPage, createMeeting, createParticipant }) => {
 			const meetingId = await createMeeting();
 			const secondHostEndpoint = await createParticipant();

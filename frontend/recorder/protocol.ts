@@ -50,10 +50,11 @@ export interface ProducerEvent {
 type RecordingChallengeMessage = RecordingProofChallenge
 
 const exactKeys = (
-  value: object,
+  value: unknown,
   required: readonly string[],
   optional: readonly string[] = [],
 ): boolean => {
+  if (!value || typeof value !== 'object') return false
   const keys = Object.keys(value)
   return (
     required.every((key) => keys.includes(key)) &&
@@ -108,10 +109,13 @@ const parseStageParticipant = (value: unknown): RecorderStageParticipant | null 
     typeof value.video_enabled !== 'boolean'
   )
     return null
-  return {
+  const identity: Pick<RecorderStageParticipant, 'participant_id' | 'name' | 'avatar'> = {
     participant_id: value.participant_id,
     name: value.name,
-    ...(typeof value.avatar === 'string' ? { avatar: value.avatar } : {}),
+  }
+  if (typeof value.avatar === 'string') identity.avatar = value.avatar
+  return {
+    ...identity,
     audio_enabled: value.audio_enabled,
     video_enabled: value.video_enabled,
   }
@@ -266,8 +270,9 @@ export const parseRecorderStageSnapshot = (value: unknown): RecorderStageSnapsho
     ) ||
     value.protocol_version !== 1 ||
     !nonemptyString(value.room_id) ||
+    typeof value.cursor !== 'number' ||
     !Number.isSafeInteger(value.cursor) ||
-    (value.cursor as number) < 0 ||
+    value.cursor < 0 ||
     !canonicalTimestamp(value.observed_at) ||
     !Array.isArray(value.participants) ||
     !Array.isArray(value.producers) ||
@@ -310,7 +315,7 @@ export const parseRecorderStageSnapshot = (value: unknown): RecorderStageSnapsho
     value.active_speaker_ids.some((id) => !participantIds.has(id))
   )
     return null
-  return {
+  const snapshot: RecorderStageSnapshot = {
     protocol_version: 1,
     room_id: value.room_id,
     cursor: Number(value.cursor),
@@ -324,10 +329,10 @@ export const parseRecorderStageSnapshot = (value: unknown): RecorderStageSnapsho
       ]),
     ),
     active_speaker_ids: value.active_speaker_ids,
-    ...(value.shared_stage === undefined
-      ? {}
-      : { shared_stage: parseSharedStage(value.shared_stage)! }),
   }
+  if (value.shared_stage !== undefined)
+    snapshot.shared_stage = parseSharedStage(value.shared_stage)!
+  return snapshot
 }
 
 export const parseRecordingProjectionSnapshotResponse = (
@@ -352,8 +357,9 @@ export const parseRecorderStageProjectionEvent = (
     !exactKeys(value, ['protocol_version', 'room_id', 'cursor', 'observed_at', 'payload']) ||
     value.protocol_version !== 1 ||
     !nonemptyString(value.room_id) ||
+    typeof value.cursor !== 'number' ||
     !Number.isSafeInteger(value.cursor) ||
-    (value.cursor as number) <= 0 ||
+    value.cursor <= 0 ||
     !canonicalTimestamp(value.observed_at)
   )
     return null
@@ -362,7 +368,7 @@ export const parseRecorderStageProjectionEvent = (
     ? {
         protocol_version: 1,
         room_id: value.room_id,
-        cursor: value.cursor as number,
+        cursor: value.cursor,
         observed_at: value.observed_at,
         payload,
       }
@@ -423,17 +429,17 @@ export const parseParticipantUpdate = (value: unknown): RecorderParticipantUpdat
     (userDataValue !== undefined && !userData)
   )
     return null
-  return {
-    ...('participantId' in value ? { participantId } : {}),
-    ...('user_id' in value ? { user_id: userId } : {}),
-    ...('user_name' in value ? { user_name: userName } : {}),
-    ...('avatar' in value ? { avatar } : {}),
-    ...('initials' in value ? { initials } : {}),
-    ...('audio_enabled' in value ? { audio_enabled: audioEnabled } : {}),
-    ...('video_enabled' in value ? { video_enabled: videoEnabled } : {}),
-    ...('is_guest' in value ? { is_guest: isGuest } : {}),
-    ...('userData' in value ? { userData: userData || undefined } : {}),
-  }
+  const update: RecorderParticipantUpdate = {}
+  if ('participantId' in value) update.participantId = participantId
+  if ('user_id' in value) update.user_id = userId
+  if ('user_name' in value) update.user_name = userName
+  if ('avatar' in value) update.avatar = avatar
+  if ('initials' in value) update.initials = initials
+  if ('audio_enabled' in value) update.audio_enabled = audioEnabled
+  if ('video_enabled' in value) update.video_enabled = videoEnabled
+  if ('is_guest' in value) update.is_guest = isGuest
+  if ('userData' in value) update.userData = userData || undefined
+  return update
 }
 
 export const parseRecordingChallenge = (value: unknown): RecordingChallengeMessage | null => {
@@ -489,13 +495,16 @@ export const parseRecordingProofResponse = (value: unknown): RecordingProofRespo
     value.reason_code === 'invalid_proof' &&
     (!('diagnostic' in value) ||
       (typeof value.diagnostic === 'string' && value.diagnostic.length <= 256))
-  )
-    return {
+  ) {
+    const response: Extract<RecordingProofResponse, { success: false }> = {
       protocol_version: 1,
       success: false,
       reason_code: 'invalid_proof',
-      ...('diagnostic' in value ? { diagnostic: value.diagnostic as string } : {}),
     }
+    if ('diagnostic' in value && typeof value.diagnostic === 'string')
+      response.diagnostic = value.diagnostic
+    return response
+  }
   return null
 }
 

@@ -35,13 +35,17 @@ export function mediaListUrl(node: string): string {
   return buildUrl(api.drive.nodes.media, { node })
 }
 
+export function presentationUrl(presentationId: string): string {
+  return buildUrl(api.slides.documents.get, { name: presentationId })
+}
+
 // the reads a /d/<node> page starts with, by the urls the client requests them by
 export function startupUrls(
   node: string,
   presentationId: string,
   { readonly, composite }: { readonly: boolean; composite: boolean },
 ): string[] {
-  const urls = [buildUrl(api.slides.documents.get, { name: presentationId })]
+  const urls = [presentationUrl(presentationId)]
   // an editable deck is never composite; the viewer then renders the referenced decks
   if (readonly && composite) {
     urls.push(buildUrl(api.slides.documents.composite, { name: presentationId }))
@@ -56,10 +60,12 @@ const ENTRY_ASSETS = 'script[type="module"][src], link[rel="modulepreload"], lin
 // the shell's own script, preloads and styles, from the same build as the shell
 export function entryAssets(html: string): string[] {
   return [...new DOMParser().parseFromString(html, 'text/html').querySelectorAll(ENTRY_ASSETS)]
-    .map(
-      (element) =>
-        new URL(element.getAttribute('src') ?? element.getAttribute('href') ?? '', location.origin),
-    )
-    .filter((url) => url.origin === location.origin)
+    .flatMap((element) => {
+      const mappedValue = new URL(
+        element.getAttribute('src') ?? element.getAttribute('href') ?? '',
+        location.origin,
+      )
+      return mappedValue.origin === location.origin ? [mappedValue] : []
+    })
     .map((url) => url.pathname)
 }

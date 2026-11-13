@@ -1,4 +1,5 @@
 import { judge } from '@suite/collab-client'
+import { fromAny } from '@total-typescript/shoehorn'
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
 
@@ -55,53 +56,59 @@ describe('sheetsFault: what the checker refuses', () => {
 
   it('refuses a cell input that is not a string or a number', () => {
     const doc = goodDoc()
-    roots(doc).inputs.set('s:r:c', { value: 1 } as unknown as string)
+    roots(doc).inputs.set('s:r:c', fromAny<string, unknown>({ value: 1 }))
     expect(sheetsFault(rebuilt(doc))).toBe('schema: inputs holds a bad value')
   })
 
   it('accepts a number typed as a number', () => {
     const doc = goodDoc()
-    roots(doc).inputs.set('s:r:c', 500 as unknown as string)
+    roots(doc).inputs.set('s:r:c', fromAny<string, unknown>(500))
     expect(sheetsFault(rebuilt(doc))).toBeNull()
   })
 
   it('refuses a row list that is not a list of string ids', () => {
     const notList = goodDoc()
-    roots(notList).rows.set('s2', 'e1' as unknown as Y.Array<string>)
+    roots(notList).rows.set('s2', fromAny<Y.Array<string>, unknown>('e1'))
     expect(sheetsFault(rebuilt(notList))).toBe('schema: rows holds a bad value')
 
     const badId = goodDoc()
     const list = new Y.Array<string>()
-    list.push([7 as unknown as string])
+    list.push([fromAny<string, unknown>(7)])
     roots(badId).cols.set('s2', list)
     expect(sheetsFault(rebuilt(badId))).toBe('schema: cols holds a bad value')
   })
 
   it('refuses a sheet id that is not a string, and a sheet with no name', () => {
     const badId = goodDoc()
-    roots(badId).sheets.push([3 as unknown as string])
+    roots(badId).sheets.push([fromAny<string, unknown>(3)])
     expect(sheetsFault(rebuilt(badId))).toBe('schema: sheets holds a bad value')
 
     const noName = goodDoc()
-    roots(noName).sheetMeta.set('s2', { title: 'x' } as never)
+    roots(noName).sheetMeta.set(
+      's2',
+      fromAny<Parameters<ReturnType<typeof roots>['sheetMeta']['set']>[1], unknown>({ title: 'x' }),
+    )
     expect(sheetsFault(rebuilt(noName))).toBe('schema: sheetMeta holds a bad value')
   })
 
   it('refuses a shared type where the glue stores plain JSON', () => {
     const doc = goodDoc()
-    roots(doc).formats.set('s:r:c', new Y.Map() as never)
+    roots(doc).formats.set(
+      's:r:c',
+      fromAny<Parameters<ReturnType<typeof roots>['formats']['set']>[1], unknown>(new Y.Map()),
+    )
     expect(sheetsFault(rebuilt(doc))).toBe('schema: formats holds a bad value')
   })
 
   it('refuses a tail count that is not a number', () => {
     const doc = goodDoc()
-    roots(doc).tails.set('s:rows:e', 'many' as unknown as number)
+    roots(doc).tails.set('s:rows:e', fromAny<number, unknown>('many'))
     expect(sheetsFault(rebuilt(doc))).toBe('schema: tails holds a bad value')
   })
 
   it('never names what a cell holds in its reason', () => {
     const doc = goodDoc()
-    roots(doc).inputs.set('secret:key:here', { secret: 'salary 900' } as unknown as string)
+    roots(doc).inputs.set('secret:key:here', fromAny<string, unknown>({ secret: 'salary 900' }))
     expect(sheetsFault(rebuilt(doc))).not.toMatch(/secret|salary/)
   })
 
@@ -111,7 +118,7 @@ describe('sheetsFault: what the checker refuses', () => {
     const rows: Uint8Array[] = []
     doc.on('update', (update: Uint8Array) => rows.push(update))
     roots(doc).inputs.set('a:b:c', 'fine')
-    roots(doc).inputs.set('a:b:d', [1, 2] as unknown as string)
+    roots(doc).inputs.set('a:b:d', fromAny<string, unknown>([1, 2]))
     roots(doc).inputs.set('a:b:e', 'fine too')
     expect(judge(checkpoint, rows, sheetsFault, () => {})).toEqual({
       verdict: 'bad',

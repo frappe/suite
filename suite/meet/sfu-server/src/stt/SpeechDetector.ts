@@ -162,10 +162,11 @@ export class SileroSpeechDetector implements SpeechDetector {
 					value < 0 ||
 					value > 1 ||
 					output.stateN.type !== 'float32' ||
+					!(output.stateN.data instanceof Float32Array) ||
 					output.stateN.data.length !== 256
 				)
 					throw new Error('Invalid Silero VAD output');
-				this.state = Float32Array.from(output.stateN.data as Float32Array);
+				this.state = Float32Array.from(output.stateN.data);
 				this.context = Float32Array.from(
 					frame.subarray(FRAME_SAMPLES - CONTEXT_SAMPLES),
 				);

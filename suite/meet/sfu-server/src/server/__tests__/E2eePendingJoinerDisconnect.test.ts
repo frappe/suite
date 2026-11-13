@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn';
 // Smoke tests for stale pending E2EE join cleanup on disconnect. Run via:
 //   yarn test
 
@@ -9,7 +10,10 @@ import {
 } from '../E2eeRosterPersistence';
 import { E2eeRosterStore } from '../E2eeRosterStore';
 
-function assert(condition: unknown, message: string): asserts condition {
+function assert<Condition>(
+	condition: Condition,
+	message: string,
+): asserts condition {
 	if (!condition) throw new Error(`assertion failed: ${message}`);
 }
 
@@ -47,34 +51,7 @@ type PendingCommitRequest = {
 	timer: ReturnType<typeof setTimeout>;
 };
 
-type TestRelay = {
-	enqueueCommitRequest: (
-		roomId: string,
-		joiningSenderIds: number[],
-		epochNumber: number,
-	) => void;
-	requestCommitFromHost: (
-		roomId: string,
-		joiningSenderIds: number[],
-		epochNumber: number,
-	) => Promise<void>;
-	redesignate: (roomId: string, epochNumber: number) => Promise<void>;
-	commitRequestBatches: Map<unknown, unknown>;
-	pendingCommitRequests: Map<string, PendingCommitRequest>;
-	participantToSender: Map<string, Map<string, number>>;
-};
-
-function makeRelay(): {
-	relay: E2EEEpochRelay;
-	testRelay: TestRelay;
-	roster: E2eeRosterStore;
-	sent: Array<{
-		room: string;
-		target: string;
-		committerSenderId: number;
-		joiningSenderIds: number[];
-	}>;
-} {
+function makeRelay() {
 	const sent: Array<{
 		room: string;
 		target: string;
@@ -95,7 +72,7 @@ function makeRelay(): {
 			}
 		},
 	});
-	const fakeIo = {
+	const fakeIo = fromPartial<ConstructorParameters<typeof E2EEEpochRelay>[0]>({
 		sockets: {
 			adapter: {
 				rooms: new Map<string, Set<string>>([
@@ -107,7 +84,7 @@ function makeRelay(): {
 				['alice-socket', makeSocket('alice-socket', 'alice-1')],
 			]),
 		},
-	} as never;
+	});
 	const relay = new E2EEEpochRelay(
 		fakeIo,
 		new Map<string, Set<string>>([
@@ -127,7 +104,7 @@ function makeRelay(): {
 	);
 	const roster = new E2eeRosterStore(new InMemoryRosterPersistence());
 	relay.setRoster(roster);
-	const testRelay = relay as unknown as TestRelay;
+	const testRelay = relay;
 	return { relay, testRelay, roster, sent };
 }
 
@@ -139,13 +116,13 @@ async function main(): Promise<void> {
 			'meeting-1',
 			makeEntry(7, { participantId: 'host-1', isHost: true }),
 		);
-		testRelay.enqueueCommitRequest('meeting-1', [13], 1);
+		testRelay['enqueueCommitRequest']('meeting-1', [13], 1);
 		relay.removePendingJoiner('meeting-1', 13);
 		await new Promise((resolve) => setTimeout(resolve, 400));
 		assert(sent.length === 0, `expected no commit-request, got ${sent.length}`);
 		assert(
-			testRelay.commitRequestBatches.size === 0,
-			`expected no pending batches, got ${testRelay.commitRequestBatches.size}`,
+			testRelay['commitRequestBatches'].size === 0,
+			`expected no pending batches, got ${testRelay['commitRequestBatches'].size}`,
 		);
 		relay.clearRoom('meeting-1');
 	}
@@ -157,15 +134,15 @@ async function main(): Promise<void> {
 			'meeting-1',
 			makeEntry(7, { participantId: 'host-1', isHost: true }),
 		);
-		await testRelay.requestCommitFromHost('meeting-1', [13], 1);
+		await testRelay['requestCommitFromHost']('meeting-1', [13], 1);
 		relay.removePendingJoiner('meeting-1', 13);
-		await testRelay.redesignate('meeting-1', 1);
+		await testRelay['redesignate']('meeting-1', 1);
 		assert(
 			sent.length === 1,
 			`expected one initial request, got ${sent.length}`,
 		);
 		assert(
-			!testRelay.pendingCommitRequests.has('meeting-1:1'),
+			!testRelay['pendingCommitRequests'].has('meeting-1:1'),
 			'expected pending commit request to be removed',
 		);
 		relay.clearRoom('meeting-1');
@@ -182,9 +159,9 @@ async function main(): Promise<void> {
 			'meeting-1',
 			makeEntry(9, { participantId: 'alice-1', joinedAt: 2 }),
 		);
-		await testRelay.requestCommitFromHost('meeting-1', [13, 15], 1);
+		await testRelay['requestCommitFromHost']('meeting-1', [13, 15], 1);
 		relay.removePendingJoiner('meeting-1', 13);
-		await testRelay.redesignate('meeting-1', 1);
+		await testRelay['redesignate']('meeting-1', 1);
 		assert(sent.length === 2, `expected second request, got ${sent.length}`);
 		assert(
 			JSON.stringify(sent[1].joiningSenderIds) === JSON.stringify([15]),
@@ -200,20 +177,20 @@ async function main(): Promise<void> {
 			'meeting-1',
 			makeEntry(7, { participantId: 'host-1', isHost: true }),
 		);
-		testRelay.participantToSender.set(
+		testRelay['participantToSender'].set(
 			'meeting-1',
 			new Map<string, number>([
 				['host-1', 7],
 				['joiner-13', 13],
 			]),
 		);
-		await testRelay.requestCommitFromHost('meeting-1', [13], 1);
+		await testRelay['requestCommitFromHost']('meeting-1', [13], 1);
 		await roster.remove('meeting-1', 7);
 		relay.removePendingJoiner('meeting-1', 7);
-		await testRelay.redesignate('meeting-1', 1);
+		await testRelay['redesignate']('meeting-1', 1);
 		assert(sent.length === 1, `expected no redesignation, got ${sent.length}`);
 		assert(
-			!testRelay.pendingCommitRequests.has('meeting-1:1'),
+			!testRelay['pendingCommitRequests'].has('meeting-1:1'),
 			'expected pending commit request to be dropped',
 		);
 		relay.clearRoom('meeting-1');
@@ -233,10 +210,10 @@ async function main(): Promise<void> {
 			attempts: 0,
 			timer: setTimeout(() => undefined, 10_000),
 		};
-		testRelay.pendingCommitRequests.set('meeting-1:1', pending);
+		testRelay['pendingCommitRequests'].set('meeting-1:1', pending);
 		relay.removePendingJoiner('meeting-1', 13);
 		assert(
-			testRelay.pendingCommitRequests.has('meeting-1:1'),
+			testRelay['pendingCommitRequests'].has('meeting-1:1'),
 			'expected remove-only pending request to remain',
 		);
 		clearTimeout(pending.timer);

@@ -1,13 +1,20 @@
 import * as yjs from 'yjs'
 
-import { HTTP_FORBIDDEN, HTTP_NOT_FOUND, HTTP_OK, readReply, toOpenError } from './answers'
+import {
+  CollabOpenError,
+  HTTP_FORBIDDEN,
+  HTTP_NOT_FOUND,
+  HTTP_OK,
+  readReply,
+  toOpenError,
+} from './answers'
 import { randomHex } from './bytes'
 import { decodeFrame, type LiveOpenHeader, type OpenHeader, type Row } from './frames'
 import type { Opening, RoomInit } from './opening'
 import { REMOTE } from './origins'
 import { Room } from './room'
 import type { DeviceCopy, DeviceStore, StoredSession } from './store'
-import type { DeviceDoc, Opened, OpenOptions } from './types'
+import type { CollabEndpoints, DeviceDoc, Opened, OpenOptions } from './types'
 
 // Server-issued clientIDs sit below this; a tab offline picks its own above it
 const DEVICE_ID_FLOOR = 2 ** 30
@@ -115,6 +122,31 @@ export async function openRoom(options: OpenOptions): Promise<Opened> {
   return { state: 'live', room }
 }
 
+// The document as saved now, read once with no room: null when it isn't collaborative
+export async function readSavedState(open: CollabEndpoints['open']) {
+  const answer = await open()
+  if (answer.status !== HTTP_OK) {
+    throw new CollabOpenError(answer.status, readReply(answer).collab ?? null)
+  }
+
+  const { header, checkpoint, rows } = decodeFrame<OpenHeader>(answer.bytes)
+  if (header.state !== 'live') {
+    return null
+  }
+
+  const doc = new yjs.Doc()
+  const parts = rows.filter((row) => row.bytes.length).map((row) => row.bytes)
+  if (checkpoint) {
+    parts.unshift(checkpoint)
+  }
+
+  if (parts.length) {
+    yjs.applyUpdate(doc, yjs.mergeUpdates(parts), REMOTE)
+  }
+
+  return doc
+}
+
 // The device copy, bound only once the server accepts the claim
 async function openOffline(
   copy: DeviceCopy,
@@ -170,7 +202,9 @@ async function trySaveSession(
     await store.saveSession(session)
     return 'saved'
   } catch (error) {
-    return (error as Error)?.name === 'ConstraintError' ? 'clash' : 'failed'
+    return error && typeof error === 'object' && 'name' in error && error.name === 'ConstraintError'
+      ? 'clash'
+      : 'failed'
   }
 }
 

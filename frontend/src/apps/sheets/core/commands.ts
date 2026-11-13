@@ -176,73 +176,83 @@ function fail(type: string, msg: string): never {
   throw new Error(`invalid ${type} command: ${msg}`)
 }
 
-const isPosInt = (n: unknown): n is number => Number.isInteger(n) && (n as number) >= 1
-const isNonNegInt = (n: unknown): n is number => Number.isInteger(n) && (n as number) >= 0
+const isPosInt = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 1
+const isNonNegInt = (n: unknown): n is number =>
+  typeof n === 'number' && Number.isInteger(n) && n >= 0
 
-// Single read boundary for unvalidated JSON. Reflect.get keeps the rest of
-// this module free of open-record types; every caller narrows before use.
-function prop(o: object, key: string): unknown {
-  return Reflect.get(o, key)
+// Unparsed JSON fields stay unknown until the command validator narrows them.
+function prop(o: Record<string, unknown>, key: string): unknown {
+  return o[key]
 }
 
-function isPlainObject(v: unknown): v is object {
+function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v)
 }
 
-function reqSheet(t: string, p: object): void {
+function reqSheet(t: string, p: Record<string, unknown>): void {
   const v = prop(p, 'sheet')
   if (typeof v !== 'string' || v === '') fail(t, '"sheet" must be a non-empty sheet name')
 }
-function reqPosInt(t: string, p: object, key: string): void {
+function reqPosInt(t: string, p: Record<string, unknown>, key: string): void {
   if (!isPosInt(prop(p, key))) fail(t, `"${key}" must be an integer >= 1`)
 }
-function reqNonNegInt(t: string, p: object, key: string): void {
+function reqNonNegInt(t: string, p: Record<string, unknown>, key: string): void {
   if (!isNonNegInt(prop(p, key))) fail(t, `"${key}" must be an integer >= 0`)
 }
-function reqName(t: string, p: object, key = 'name'): void {
+function reqName(t: string, p: Record<string, unknown>, key = 'name'): void {
   const v = prop(p, key)
   if (typeof v !== 'string' || v === '') fail(t, `"${key}" must be a non-empty string`)
 }
-function reqSize(t: string, p: object, key: string): void {
+function reqSize(t: string, p: Record<string, unknown>, key: string): void {
   const v = prop(p, key)
   if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) {
     fail(t, `"${key}" must be a positive number`)
   }
 }
-function reqString(t: string, p: object, key: string): void {
+function reqString(t: string, p: Record<string, unknown>, key: string): void {
   if (typeof prop(p, key) !== 'string') fail(t, `"${key}" must be a string`)
 }
-function optPosInt(t: string, p: object, key: string): void {
+function optPosInt(t: string, p: Record<string, unknown>, key: string): void {
   const v = prop(p, key)
   if (v !== undefined && !isPosInt(v)) fail(t, `"${key}" must be an integer >= 1`)
 }
-function reqNonZeroInt(t: string, p: object, key: string): void {
+function reqNonZeroInt(t: string, p: Record<string, unknown>, key: string): void {
   const v = prop(p, key)
   if (!Number.isInteger(v) || v === 0) fail(t, `"${key}" must be a non-zero integer`)
 }
-function reqOrder(t: string, p: object, lo: string, hi: string, msg: string): void {
-  if ((prop(p, hi) as number) < (prop(p, lo) as number)) fail(t, msg)
+function reqOrder(
+  t: string,
+  p: Record<string, unknown>,
+  lo: string,
+  hi: string,
+  msg: string,
+): void {
+  const high = prop(p, hi)
+  const low = prop(p, lo)
+  // Both fields have passed their integer validators before this order check.
+  if (typeof high !== 'number' || typeof low !== 'number') fail(t, msg)
+  if (high < low) fail(t, msg)
 }
-function reqRange(t: string, p: object): void {
+function reqRange(t: string, p: Record<string, unknown>): void {
   const r = prop(p, 'range')
   if (!isPlainObject(r)) fail(t, '"range" must be an object { r1, c1, r2, c2 }')
   for (const k of ['r1', 'c1', 'r2', 'c2']) {
     if (!isPosInt(prop(r, k))) fail(t, `range "${k}" must be an integer >= 1`)
   }
-  const r1 = prop(r, 'r1') as number,
-    r2 = prop(r, 'r2') as number
-  const c1 = prop(r, 'c1') as number,
-    c2 = prop(r, 'c2') as number
+  const { r1, r2, c1, c2 } = r
+  if (!isPosInt(r1) || !isPosInt(r2) || !isPosInt(c1) || !isPosInt(c2)) {
+    fail(t, 'range coordinates must be positive integers')
+  }
   if (r2 < r1 || c2 < c1) fail(t, 'range end must not precede range start')
 }
-function reqScope(t: string, p: object): void {
+function reqScope(t: string, p: Record<string, unknown>): void {
   const v = prop(p, 'scope')
   if (v != null && (typeof v !== 'string' || v === '')) {
     fail(t, '"scope" must be a sheet name or null')
   }
 }
 
-type Validator = (t: string, p: object) => void
+type Validator = (t: string, p: Record<string, unknown>) => void
 
 const validators: Readonly<Record<Exclude<CommandType, 'batch'>, Validator>> = {
   setInput(t, p) {
@@ -358,7 +368,7 @@ const validators: Readonly<Record<Exclude<CommandType, 'batch'>, Validator>> = {
 }
 
 function isCommandType(v: unknown): v is CommandType {
-  return typeof v === 'string' && (Object.values(CommandTypes) as string[]).includes(v)
+  return typeof v === 'string' && Object.values(CommandTypes).some((type) => type === v)
 }
 
 export interface ValidateOptions {
@@ -366,6 +376,7 @@ export interface ValidateOptions {
 }
 
 export function validateCommand(cmd: unknown, { inBatch = false }: ValidateOptions = {}): Command {
+  const input = cmd
   if (!isPlainObject(cmd)) {
     throw new Error('invalid command: must be a plain object')
   }
@@ -392,8 +403,10 @@ export function validateCommand(cmd: unknown, { inBatch = false }: ValidateOptio
     if (!Array.isArray(subs) || subs.length === 0)
       fail('batch', '"commands" must be a non-empty array')
     for (const sub of subs) validateCommand(sub, { inBatch: true })
-    return cmd as BatchCommand
+    // SAFETY: The envelope, batch payload and every non-nested command were validated above.
+    return input as BatchCommand
   }
   validators[type](type, p)
-  return cmd as NonBatchCommand
+  // SAFETY: The envelope and the validator selected by its discriminant checked the payload.
+  return input as NonBatchCommand
 }

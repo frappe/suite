@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 import { Doc, encodeStateAsUpdate, XmlElement, XmlText } from 'yjs'
@@ -19,7 +20,10 @@ vi.hoisted(() => {
 })
 
 vi.mock('frappe-ui', async () => (await import('./writer-surface-fakes')).fakeFrappeUi())
-vi.mock('@/apps/drive', async () => (await import('./writer-surface-fakes')).fakeDrive())
+vi.mock('@/apps/drive', async (importOriginal) => {
+  const { fakeDrive } = await import('./writer-surface-fakes')
+  return fakeDrive(await importOriginal<typeof import('@/apps/drive')>())
+})
 vi.mock('@/platform/session', async (importOriginal) => {
   const { fakeSession } = await import('./writer-surface-fakes')
   return fakeSession(await importOriginal<typeof import('@/platform/session')>())
@@ -43,13 +47,13 @@ vi.mock('@/apps/writer/components/CollabTextEditor.vue', async (importOriginal) 
     await importOriginal<typeof import('@/apps/writer/components/CollabTextEditor.vue')>()
   return fakeCollabTextEditor(real)
 })
-vi.mock('@/apps/writer/components/UsersBar.vue', () => ({ default: { render: () => null } }))
+vi.mock('@/platform/collab/UsersBar.vue', () => ({ default: { render: () => null } }))
 vi.mock('./WriterDocumentMenu.vue', async () =>
   (await import('./writer-surface-fakes')).fakeDocumentMenu(),
 )
-vi.mock('@/apps/writer/composables/useUsers', async (importOriginal) => {
-  const { fakeUsers } = await import('./writer-surface-fakes')
-  return fakeUsers(await importOriginal<typeof import('@/apps/writer/composables/useUsers')>())
+vi.mock('@/platform/collab/names', async (importOriginal) => {
+  const { fakeNames } = await import('./writer-surface-fakes')
+  return fakeNames(await importOriginal<typeof import('@/platform/collab/names')>())
 })
 vi.mock('./VersionPreview.vue', async () =>
   (await import('./writer-surface-fakes')).fakeVersionPreview(),
@@ -131,12 +135,12 @@ describe('Writer surface', () => {
   })
 
   it('names the reason a document was refused when the server gives one', async () => {
-    oldDocument('Old text', { state: 'refused', reason: 'unknown_node: mystery' })
+    oldDocument('Old text', { state: 'refused', reason: 'check: copy' })
     const root = await openedSurface()
 
     await vi.waitFor(() =>
       expect(stripTexts(root)).toEqual([
-        "This document couldn't be upgraded, so it stays read-only. Reason: unknown_node: mystery.",
+        "This document couldn't be upgraded, so it stays read-only. Reason: the upgraded version didn't match the original.",
       ]),
     )
   })
@@ -280,7 +284,7 @@ describe('Writer surface', () => {
 
   it("lets an editor change someone else's comment while the document awaits conversion", async () => {
     oldDocument('Old text', { state: 'pending' })
-    const thread = {
+    const thread = fromPartial<DocumentThread>({
       name: 'about',
       anchor: 'document',
       resolved: false,
@@ -294,8 +298,8 @@ describe('Writer surface', () => {
           creation: new Date().toISOString(),
         },
       ],
-    } as unknown as DocumentThread
-    const comments = { list: async () => ({ threads: [thread] }) } as unknown as Comments
+    })
+    const comments = fromPartial<Comments>({ list: async () => ({ threads: [thread] }) })
     const root = await openedSurface(undefined, '/d/node-1', comments)
 
     root.querySelector<HTMLElement>('[data-open-comments]')!.click()

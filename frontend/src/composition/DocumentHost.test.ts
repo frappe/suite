@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createApp, defineComponent, h, ref } from 'vue'
+import { createApp, defineComponent, h, ref, type VNode } from 'vue'
 import { createMemoryHistory, createRouter, RouterView, type HistoryState } from 'vue-router'
 
+import type { DocumentSession } from '@/apps/drive'
 import { GUEST_FRAME_KEY } from '@/platform/contracts'
 import { installPageMeta, mentionedByState, openingTitleState } from '@/platform/page-meta'
 import { translationPlugin } from '@/platform/translation'
@@ -9,18 +10,21 @@ import { TransportError } from '@/platform/transport'
 
 import DocumentHost, { selectDocumentSurface } from './DocumentHost.vue'
 
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const testState = vi.hoisted(() => ({
   open: vi.fn(),
   dispose: vi.fn(),
   nodeLocked: vi.fn(),
   forget: vi.fn(),
-  surface: { name: 'WriterTestSurface', render: (): unknown => null },
-  preview: { name: 'FileTestSurface', props: ['session'], render: (): unknown => null },
+  surface: { name: 'WriterTestSurface', render: (): VNode | null => null },
+  preview: { name: 'FileTestSurface', props: ['session'], render: (): VNode | null => null },
 }))
 
 vi.mock('@/apps/drive', async () => {
   const { defineComponent: define, h: render } = await import('vue')
-  const { driveNodeRoute } = await vi.importActual<typeof import('@/apps/drive')>('@/apps/drive')
+  const { driveNodeRoute, openingLocation } =
+    await vi.importActual<typeof import('@/apps/drive')>('@/apps/drive')
   return {
     // Stands in for the password form: a click is a right password.
     DriveUnlockScreen: define({
@@ -39,9 +43,11 @@ vi.mock('@/apps/drive', async () => {
     filePreviewSurface: testState.preview,
     openDocumentSession: testState.open,
     driveNodeRoute,
+    openingLocation,
     DriveDocumentHeaderSkeleton: define({
-      props: { title: String },
-      setup: (props) => () => render('header', { 'data-skeleton': '' }, props.title),
+      props: { title: String, location: String },
+      setup: (props) => () =>
+        render('header', { 'data-skeleton': '', 'data-location': props.location }, props.title),
     }),
   }
 })
@@ -93,15 +99,18 @@ const refusal = (status: number, type: string) =>
   new TransportError({ status, type, message: type })
 
 function session(contentDoctype = 'Writer Document') {
-  return {
+  const title = ref('Quarterly plan')
+  const state = ref<DocumentSession['state']['value']>('Active')
+  const fixture = fromPartial<DocumentSession>({
     nodeId: 'node-1',
     contentDoctype,
     contentDocname: 'content-1',
-    title: ref('Quarterly plan'),
-    state: ref('Active'),
+    title,
+    state,
     access: ref({ role: 40 }),
     dispose: testState.dispose,
-  } as any
+  })
+  return { ...fixture, title, state }
 }
 
 afterEach(() => {
@@ -115,14 +124,14 @@ afterEach(() => {
 
 describe('DocumentHost', () => {
   it('selects the registered product adapter and the Drive file surface', async () => {
-    const definitions = [
+    const definitions: any = [
       {
         contentDoctype: 'Writer Document',
         newLabel: () => 'New document',
         icon: {},
         loadSurface: async () => testState.surface,
       },
-    ] as any
+    ]
     expect(await selectDocumentSurface(session(), definitions)).toBe(testState.surface)
     expect(await selectDocumentSurface(session('File'), definitions)).toBe(testState.preview)
     expect(await selectDocumentSurface(session('Unknown'), definitions)).toBeNull()
@@ -149,7 +158,7 @@ describe('DocumentHost', () => {
 
   it('keeps the document open through its slideshow, and its slug once back', async () => {
     testState.open.mockResolvedValue(session())
-    const view = { render: (): unknown => null }
+    const view = { render: (): VNode | null => null }
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
@@ -185,7 +194,7 @@ describe('DocumentHost', () => {
   it('drops the slug when a rename would turn it into a view', async () => {
     const opened = session()
     testState.open.mockResolvedValue(opened)
-    const view = { render: (): unknown => null }
+    const view = { render: (): VNode | null => null }
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
@@ -251,6 +260,28 @@ describe('DocumentHost', () => {
     await vi.waitFor(() => expect(document.title).toBe('Opening…'))
     app.unmount()
     uninstall()
+  })
+
+  it('shows the folder the opener named in the opening header, and none when it named none', async () => {
+    testState.open.mockReturnValue(new Promise(() => {}))
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/d/:node/:slug?', name: 'document-host', component: DocumentHost }],
+    })
+    const state = { ...openingTitleState('Loose file.txt'), driveLocation: 'Talks' }
+    await router.push({ path: '/d/node-1', state })
+    const root = document.createElement('div')
+    document.body.append(root)
+    const app = createApp(DocumentHost)
+    app.use(router).use(translationPlugin)
+    app.mount(root)
+    const skeleton = () => root.querySelector('[data-skeleton]')
+
+    expect(skeleton()?.getAttribute('data-location')).toBe('Talks')
+    await router.push('/d/node-2')
+    await vi.waitFor(() => expect(skeleton()?.textContent).toBe(''))
+    expect(skeleton()?.hasAttribute('data-location')).toBe(false)
+    app.unmount()
   })
 
   it('keeps a file preview on screen while the next file opens, then shows the next one', async () => {

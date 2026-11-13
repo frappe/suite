@@ -1,6 +1,7 @@
 import {
   openDeviceStore,
   openRoom,
+  readSavedState,
   watchRooms,
   type CollabAdapter,
   type CollabEndpoints,
@@ -73,7 +74,18 @@ const STAGE: Operation = {
   pathParams: ['node', 'stage_id', 'piece_index'],
 }
 
-function jsonBody(value: object) {
+type SessionRequest = {
+  sid: string
+  claim?: NonNullable<Parameters<CollabEndpoints['session']>[1]>
+}
+type ContentRequest =
+  | { stage_id: string }
+  | SessionRequest
+  | { rev: number }
+  | { seen_rev: number; version: number }
+  | { token: string }
+
+function jsonBody(value: ContentRequest) {
   return new TextEncoder().encode(JSON.stringify(value))
 }
 
@@ -131,7 +143,7 @@ function sessionEndpoints(
 ): Pick<CollabEndpoints, 'session' | 'suspect'> {
   return {
     session: (sessionId, claim) => {
-      const sessionClaim: Record<string, unknown> = { sid: sessionId }
+      const sessionClaim: SessionRequest = { sid: sessionId }
       if (claim) {
         sessionClaim.claim = claim
       }
@@ -164,7 +176,10 @@ function restoreEndpoints(
 }
 
 // Every request names who the tab expects to be, so the server can tell a lapsed sign-in from lost access
-function contentEndpoints(session: CollabSession, expectedUser: string): CollabEndpoints {
+function contentEndpoints(
+  session: Pick<CollabSession, 'nodeId' | 'credentials'>,
+  expectedUser: string,
+): CollabEndpoints {
   const transport = createTransport({
     fetch: (url, init) => session.credentials.fetch(String(url), init),
   })
@@ -216,6 +231,11 @@ async function roomDevice(session: CollabSession, app: string, user: string) {
 // Tells `onTold` once the server converts or refuses the document waiting in the rooms `keys` name
 export function watchConversion(keys: string[], onTold: () => void) {
   return watchRooms(getRealtimeSocket(), keys, 'suite_collab_converted', onTold)
+}
+
+// A document's saved state with no room, for a screen that only shows it: null when it isn't collaborative
+export function readSavedDocument(document: Pick<CollabSession, 'nodeId' | 'credentials'>) {
+  return readSavedState(contentEndpoints(document, signedIn()).open)
 }
 
 // `onThreadsChanged` is told when the document's comment threads may have changed;

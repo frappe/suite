@@ -1,19 +1,21 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, useId, useTemplateRef, watch } from 'vue'
 
-import MentionList from '@/apps/writer/components/MentionList.vue'
-import { searchMentions, useUsers } from '@/apps/writer/composables/useUsers'
-import type { WriterUser } from '@/apps/writer/drive'
+import {
+  DriveMentionList as MentionList,
+  searchMentions,
+  useUsers,
+  type MentionUser,
+} from '@/apps/drive'
 import { translate as __ } from '@/platform/translation'
 
 const MAX_SHOWN = 6
-const STEPS: Record<string, number> = { ArrowDown: 1, ArrowUp: -1 }
 
 // The suggestion plugin passes all its props; only these two are the menu's
 defineOptions({ inheritAttrs: false })
 
 /** The document's `@` menu: the people the comment box offers, ranked for this document. */
-const props = defineProps<{ query: string; command: (person: WriterUser) => void }>()
+const props = defineProps<{ query: string; command: (person: MentionUser) => void }>()
 
 const { users, answeredQuery } = useUsers()
 const listId = useId()
@@ -41,7 +43,7 @@ async function move(step: number) {
 /** The editor's keys while the menu is open; true when the key was the menu's. */
 function onKeyDown({ event }: { event: KeyboardEvent }) {
   if (!offered.value.length) return false
-  const step = STEPS[event.key]
+  const step = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0
   if (step) {
     void move(step)
     return true

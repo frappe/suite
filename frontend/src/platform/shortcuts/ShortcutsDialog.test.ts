@@ -1,4 +1,3 @@
-import type { KeyboardShortcutCombo } from 'frappe-ui'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, ref } from 'vue'
 
@@ -21,6 +20,22 @@ afterEach(() => {
 })
 
 /** Opens the dialog over a page that registered Suite's, Drive's and frappe-ui's kinds of shortcut. */
+const FUNCTION_KEYS = [
+  'F1',
+  'F2',
+  'F3',
+  'F4',
+  'F5',
+  'F6',
+  'F7',
+  'F8',
+  'F9',
+  'F10',
+  'F11',
+  'F12',
+] as const
+const FILLER_COMBOS = [...FUNCTION_KEYS, ...FUNCTION_KEYS.map((key) => `Shift+${key}` as const)]
+
 async function openDialog(platform: string, filler = 0) {
   dialogOpen.value = true
   vi.spyOn(navigator, 'platform', 'get').mockReturnValue(platform)
@@ -37,12 +52,11 @@ async function openDialog(platform: string, filler = 0) {
           { combo: 'Mod+End', description: 'Last item', group: 'Files', handler },
           // frappe-ui's Settings dialog registers its toggle with no group.
           { combo: 'Mod+Shift+Comma', description: 'Toggle settings', handler },
-          ...Array.from({ length: filler }, (_, index) => ({
-            combo: `F${index + 1}` as KeyboardShortcutCombo,
-            description: `Filler ${index + 1}`,
-            group: 'Sheet',
-            handler,
-          })),
+          ...Array.from({ length: filler }, (_, index) => {
+            const combo = FILLER_COMBOS[index]
+            if (!combo) throw new Error('Not enough valid filler shortcuts')
+            return { combo, description: `Filler ${index + 1}`, group: 'Sheet', handler }
+          }),
         ])
         useKeySequences([
           { keys: ['S'], description: 'Share selected item', group: 'Files', handler },
@@ -69,9 +83,9 @@ function listing(): Record<string, Record<string, string[]>> {
   const groups = [...document.querySelectorAll('section')].map((section) => {
     const rows = [...section.querySelectorAll('h3 ~ div')].map((row) => [
       row.firstElementChild?.textContent?.trim() ?? '',
-      [...row.querySelectorAll('[role="img"] *')]
-        .filter((part) => !part.children.length)
-        .map((part) => part.textContent?.trim() ?? ''),
+      [...row.querySelectorAll('[role="img"] *')].flatMap((part) =>
+        !part.children.length ? [part.textContent?.trim() ?? ''] : [],
+      ),
     ])
     return [section.querySelector('h3')?.textContent?.trim() ?? '', Object.fromEntries(rows)]
   })

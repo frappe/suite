@@ -10,13 +10,18 @@ import { applyAwarenessUpdate, Awareness, encodeAwarenessUpdate } from 'y-protoc
 import * as yjs from 'yjs'
 
 import type { CollabRoom, Peer } from '@/platform/collab'
+import { caretPosition } from '@/platform/collab/carets'
+import { assignColours, PALETTE } from '@/platform/collab/colours'
 
 import { writerBinding } from './binding'
-import { caretPosition } from './carets'
-import { assignColours, PALETTE } from './colours'
+
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
 
 const searchUsers = vi.hoisted(() => vi.fn())
-vi.mock('@/apps/writer/drive', () => ({ searchUsers }))
+vi.mock('@/api', () => ({
+  client: { query: searchUsers },
+  api: { suite: { people: { list: {} } } },
+}))
 
 const PEER_ID = 2 ** 31 + 7
 const NAME_SHOWN_MS = 3000
@@ -72,12 +77,12 @@ function openEditor(from?: yjs.Doc) {
       Text,
       Bold,
       ...writerBinding(
-        {
+        fromPartial<CollabRoom>({
           doc,
           presence,
           status: { restoreRev: 0 },
           onChange: () => () => true,
-        } as unknown as CollabRoom,
+        }),
         () => {},
       ),
     ],
@@ -104,7 +109,7 @@ function remotePeer(awareness: Awareness) {
   const doc = new yjs.Doc()
   doc.clientID = PEER_ID
   const peerAwareness = new Awareness(doc)
-  function setPeerState(state: object | null) {
+  function setPeerState(state: Parameters<Awareness['setLocalState']>[0]) {
     peerAwareness.setLocalState(state)
     const update = encodeAwarenessUpdate(peerAwareness, [PEER_ID])
     applyAwarenessUpdate(awareness, update, 'remote')
@@ -187,7 +192,7 @@ function ownCaretAt(editor: Editor) {
     return caret
   })
   const ruler = { font: '', measureText: () => ({ width: 48 }) }
-  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(ruler as never)
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(fromPartial(ruler))
   vi.spyOn(editor.view, 'hasFocus').mockReturnValue(true)
   const coords = vi.spyOn(editor.view, 'coordsAtPos')
   return (place: keyof typeof OWN_CARETS) => {
@@ -213,7 +218,7 @@ describe('Writer carets', () => {
     focus(editor)
     editor.commands.setTextSelection(2)
 
-    let answerLookup = (_: object[]) => {}
+    let answerLookup = (_: { rows: { kind: string; name: string; full_name: string }[] }) => {}
 
     const lookup = new Promise((resolve) => {
       answerLookup = resolve
@@ -224,7 +229,9 @@ describe('Writer carets', () => {
     peerSays({ user, cursor: caretAt(editor, 3) })
     await tick()
     const labelsBefore = labelTexts(editor)
-    answerLookup([{ name: 'bea@x.com', full_name: 'Bea Writer' }])
+    answerLookup({
+      rows: [{ kind: 'user', name: 'bea@x.com', full_name: 'Bea Writer' }],
+    })
     await tick()
 
     expect(awareness.getLocalState()?.cursor).toHaveProperty('head')
@@ -233,12 +240,12 @@ describe('Writer carets', () => {
   })
 
   it('keeps a peer’s caret where it was while their text is on its way, and drops it when they clear or leave', async () => {
-    searchUsers.mockResolvedValue([])
+    searchUsers.mockResolvedValue({ rows: [] })
     const { editor, awareness, doc } = openEditor()
     // Their edit has this tab measure its own caret, and the test page lays nothing out
     vi.spyOn(editor.view, 'coordsAtPos').mockReturnValue(OWN_CARETS.clear)
     const setPeerState = remotePeer(awareness)
-    async function peerSays(state: object | null) {
+    async function peerSays(state: Parameters<Awareness['setLocalState']>[0]) {
       setPeerState(state)
       await tick()
     }
@@ -248,8 +255,8 @@ describe('Writer carets', () => {
     const ourUpdate = yjs.encodeStateAsUpdate(doc)
     yjs.applyUpdate(peerDoc, ourUpdate)
     const peerVectorBefore = yjs.encodeStateVector(peerDoc)
-    const paragraph = peerDoc.getXmlFragment('default').get(0) as yjs.XmlElement
-    const paragraphText = paragraph.get(0) as yjs.XmlText
+    const paragraph = fromPartial<yjs.XmlElement>(peerDoc.getXmlFragment('default').get(0))
+    const paragraphText = fromPartial<yjs.XmlText>(paragraph.get(0))
     paragraphText.insert(5, ' world')
     const position = yjs.createRelativePositionFromTypeIndex(paragraphText, 8)
     const aheadPosition = yjs.relativePositionToJSON(position)
@@ -273,7 +280,7 @@ describe('Writer carets', () => {
 
   // Ann types at her caret in one tab; the other tab has her words before her caret's next message
   async function typedBeforeTheirCaret(caret: number, typing: string, isBold = false) {
-    searchUsers.mockResolvedValue([])
+    searchUsers.mockResolvedValue({ rows: [] })
     const ann = openEditor()
     focus(ann.editor)
     ann.editor.chain().setTextSelection({ from: 1, to: 3 }).setMark('bold', {}).run()
@@ -318,9 +325,9 @@ describe('Writer carets', () => {
 
     const theirs = new yjs.Doc()
     yjs.applyUpdate(theirs, yjs.encodeStateAsUpdate(doc))
-    const theirText = (theirs.getXmlFragment('default').get(0) as yjs.XmlElement).get(
-      0,
-    ) as yjs.XmlText
+    const theirText = fromPartial<yjs.XmlText>(
+      fromPartial<yjs.XmlElement>(theirs.getXmlFragment('default').get(0)).get(0),
+    )
     theirText.insert(2, 'XY')
     yjs.applyUpdate(doc, yjs.encodeStateAsUpdate(theirs, yjs.encodeStateVector(doc)))
 
@@ -328,7 +335,7 @@ describe('Writer carets', () => {
   })
 
   it('shades what another person selected in their colour, and nothing for a caret alone', async () => {
-    searchUsers.mockResolvedValue([])
+    searchUsers.mockResolvedValue({ rows: [] })
     const { editor, awareness } = openEditor()
     const peerSays = remotePeer(awareness)
     const user = { id: 'bea@x.com' }
@@ -346,7 +353,7 @@ describe('Writer carets', () => {
   })
 
   it('draws every caret, flag and selection only in the person’s own colour set', async () => {
-    searchUsers.mockResolvedValue([])
+    searchUsers.mockResolvedValue({ rows: [] })
     const { editor, awareness } = openEditor()
     const peerSays = remotePeer(awareness)
     peerSays({ user: { id: BEA.user }, cursor: caretAt(editor, 2, 5) })
@@ -406,7 +413,7 @@ describe('Writer carets', () => {
   })
 
   it('repaints a person’s caret and selection when an earlier arrival with their colour joins', async () => {
-    searchUsers.mockResolvedValue([])
+    searchUsers.mockResolvedValue({ rows: [] })
     const { editor, awareness, roomChanges } = openEditor()
     const peerSays = remotePeer(awareness)
     peerSays({ user: { id: BEA.user }, cursor: caretAt(editor, 2, 5) })
@@ -422,7 +429,7 @@ describe('Writer carets', () => {
 
   it('names a person while they move, select or type, and shrinks the name to a dot three seconds after', async () => {
     vi.useFakeTimers()
-    searchUsers.mockResolvedValue([])
+    searchUsers.mockResolvedValue({ rows: [] })
     const { editor, awareness } = openEditor()
     const peerSays = remotePeer(awareness)
     const user = { id: 'bea@x.com' }
@@ -507,7 +514,7 @@ describe('Writer carets', () => {
 
   it('names a person who moves after another plugin joined the editor', async () => {
     vi.useFakeTimers()
-    searchUsers.mockResolvedValue([])
+    searchUsers.mockResolvedValue({ rows: [] })
     const { editor, awareness } = openEditor()
     const peerSays = remotePeer(awareness)
     const user = { id: BEA.user }
@@ -523,7 +530,7 @@ describe('Writer carets', () => {
   })
 
   it('counts this tab’s own typing for other tabs, and not another person’s edits', () => {
-    searchUsers.mockResolvedValue([])
+    searchUsers.mockResolvedValue({ rows: [] })
     const { editor, awareness, doc } = openEditor()
     focus(editor)
     function typedSoFar() {
@@ -536,9 +543,9 @@ describe('Writer carets', () => {
     const typed = typedSoFar()
     const theirs = new yjs.Doc()
     yjs.applyUpdate(theirs, yjs.encodeStateAsUpdate(doc))
-    const theirText = (theirs.getXmlFragment('default').get(0) as yjs.XmlElement).get(
-      0,
-    ) as yjs.XmlText
+    const theirText = fromPartial<yjs.XmlText>(
+      fromPartial<yjs.XmlElement>(theirs.getXmlFragment('default').get(0)).get(0),
+    )
     theirText.insert(0, 'well, ')
     yjs.applyUpdate(doc, yjs.encodeStateAsUpdate(theirs, yjs.encodeStateVector(doc)))
 

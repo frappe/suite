@@ -1,5 +1,6 @@
 import { getSchema } from '@tiptap/core'
 import { initProseMirrorDoc, relativePositionToAbsolutePosition } from '@tiptap/y-tiptap'
+import { fromAny, fromPartial } from '@total-typescript/shoehorn'
 import { describe, expect, it } from 'vitest'
 import {
   applyUpdate,
@@ -53,7 +54,7 @@ function yText(content: string, commentId: string) {
 
 function yInline(...children: (XmlText | XmlElement<Record<string, object | string>>)[]) {
   const node = new XmlElement('paragraph')
-  node.insert(0, children as (XmlText | XmlElement)[])
+  node.insert(0, fromPartial<(XmlText | XmlElement)[]>(children))
   return node
 }
 
@@ -73,7 +74,7 @@ function words(text: XmlText) {
 // The text an end sits in and its index there
 function placeOf(doc: Doc, position: RelativePosition) {
   const absolute = createAbsolutePositionFromRelativePosition(position, doc)!
-  return [words(absolute.type as XmlText), absolute.index]
+  return [words(fromPartial<XmlText>(absolute.type)), absolute.index]
 }
 
 function textAnchor(anchor: string) {
@@ -170,16 +171,26 @@ describe('oldCommentAnchors', () => {
     expect(placed(doc, anchors.c1)).toEqual({ start: ['top', 0], end: ['top', 3], quote: 'top' })
   })
 
-  it('spans the unmarked words inside one comment, so the comment keeps one place', () => {
+  it('keeps two pieces of one comment in a paragraph apart, never marking the words between', () => {
     const doc = docWith(yParagraph(['ab', comment('c3')], ['XY'], ['cd', comment('c3')]))
 
-    const { anchors } = oldCommentAnchors(doc.getXmlFragment(BODY_FIELD), schema)
+    const { anchors, copies } = oldCommentAnchors(doc.getXmlFragment(BODY_FIELD), schema)
 
     expect(placed(doc, anchors.c3)).toEqual({
       start: ['abXYcd', 0],
-      end: ['abXYcd', 6],
-      quote: 'abXYcd',
+      end: ['abXYcd', 2],
+      quote: 'ab',
     })
+    expect(copies).toEqual([{ id: 'c3', text: 'cd' }])
+  })
+
+  it('keeps one piece of a comment whole where another mark splits its words', () => {
+    const doc = docWith(yParagraph(['ab', comment('c3')], ['XY', { ...comment('c3'), bold: true }]))
+
+    const { anchors, copies } = oldCommentAnchors(doc.getXmlFragment(BODY_FIELD), schema)
+
+    expect(placed(doc, anchors.c3)).toEqual({ start: ['abXY', 0], end: ['abXY', 4], quote: 'abXY' })
+    expect(copies).toEqual([])
   })
 
   it('quotes a comment holding a mention as the editor quotes it', () => {
@@ -244,7 +255,7 @@ describe('oldCommentAnchors', () => {
 
   it('reads a comment only from text and inline nodes, not from a block holding the key', () => {
     const block = yParagraph(['hello'])
-    block.setAttribute('comment', comment('c1').comment as never)
+    block.setAttribute('comment', fromAny(comment('c1').comment))
 
     expect(oldCommentAnchors(docWith(block).getXmlFragment(BODY_FIELD), schema)).toEqual({
       anchors: {},

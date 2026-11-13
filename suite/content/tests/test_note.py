@@ -422,7 +422,9 @@ class TestNoteEditor(NoteAppCase):
             (("converted",),),
         )
         self.assertFalse(frappe.db.sql("SELECT 1 FROM `__writer_content_conversion` WHERE `node` = %s", node))
-        take_version.assert_called_once_with(node, kind="milestone", label="Before collaboration")
+        take_version.assert_called_once_with(
+            node, kind="milestone", label="Before collaboration", activity=False
+        )
         fix_up.assert_called_once()
         [[fixed_node, _old, checked]] = [call.args for call in fix_up.call_args_list]
         self.assertEqual(fixed_node, node)

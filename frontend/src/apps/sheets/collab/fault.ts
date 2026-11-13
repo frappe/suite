@@ -23,14 +23,13 @@ const isPlain: Rule = (v) => !(v instanceof Y.AbstractType) && !(v instanceof Ui
 const isIdList: Rule = (v) => v instanceof Y.Array && v.toArray().every(isString)
 
 // The rule for each map root's values; a root not listed holds plain JSON.
-const VALUE_RULES: Record<string, Rule> = {
+const VALUE_RULES = {
   [ROOT.inputs]: (v) => isString(v) || isNumber(v),
-  [ROOT.sheetMeta]: (v) =>
-    isPlain(v) && typeof v === 'object' && v !== null && isString((v as { name?: unknown }).name),
+  [ROOT.sheetMeta]: (v) => isPlain(v) && typeof v === 'object' && v !== null && isString(v.name),
   [ROOT.rows]: isIdList,
   [ROOT.cols]: isIdList,
   [ROOT.tails]: isNumber,
-}
+} satisfies Record<string, Rule>
 
 // Whether a root holds live entries of the other kind: list items in a map,
 // keys in a list. A fresh doc's roots are untyped until read, so this looks at

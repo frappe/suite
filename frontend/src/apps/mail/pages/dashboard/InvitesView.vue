@@ -95,7 +95,6 @@
   <DashboardPager
     v-if="list.status === 'success' && list.total"
     :count="list.rows.length"
-    :total="list.total ?? 0"
     :has-more="list.hasNext"
     :loading="list.isFetching"
     @load-more="list.fetchNext().catch(() => {})"
@@ -151,16 +150,15 @@ const selectedInvite = ref('')
 const showEditInvite = ref(false)
 const showDeleteInvites = ref(false)
 const debouncedSearch = refDebounced(search, 300)
-const list = useInfiniteQuery(api.mail.admin.invites.list, () => ({
-  search: debouncedSearch.value,
-  ...(status.value !== 'All'
-    ? {
-        status: status.value,
-      }
-    : {}),
-  start: 0,
-  page_length: DEFAULT_PAGE_LENGTH,
-}))
+const list = useInfiniteQuery(api.mail.admin.invites.list, () => {
+  const input: InputOf<typeof api.mail.admin.invites.list> = {
+    search: debouncedSearch.value,
+    start: 0,
+    page_length: DEFAULT_PAGE_LENGTH,
+  }
+  if (status.value !== 'All') input.status = status.value
+  return input
+})
 const inviteRows = computed<InviteRow[]>(() =>
   list.rows.map((row) => ({
     ...row,

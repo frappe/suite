@@ -11,7 +11,8 @@ vi.mock('@/apps/slides/utils/helpers', () => ({
 
 const { removeSlideCommand } = await import('./commands')
 
-const makeSlide = (clientId: string) => ({ clientId, elements: [] })
+// a stale `idx`, which the command must renumber
+const makeSlide = (clientId: string) => ({ clientId, elements: [], idx: 0 })
 
 describe('removeSlideCommand', () => {
   it('keeps the restored slide at its original index', () => {
@@ -24,19 +25,5 @@ describe('removeSlideCommand', () => {
 
     expect(state.map((s) => s.clientId)).toEqual(['c1', 'c2', 'c3'])
     expect(state.map((s) => s.idx)).toEqual([1, 2, 3])
-  })
-
-  it('lands on the slide that moved up into the gap', () => {
-    slidesLength.value = 3
-    const command = removeSlideCommand({ slide: makeSlide('c2'), index: 1, slideIndex: 1 })
-
-    expect(command.jumpToSlideIndex).toBe(1)
-  })
-
-  it('falls back to the new last slide when the last one goes', () => {
-    slidesLength.value = 3
-    const command = removeSlideCommand({ slide: makeSlide('c3'), index: 2, slideIndex: 2 })
-
-    expect(command.jumpToSlideIndex).toBe(1)
   })
 })

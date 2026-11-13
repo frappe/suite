@@ -35,12 +35,27 @@ const props = defineProps<{ editor: Editor; anchors: unknown[] }>()
 
 const { tabs, activeTabId } = useDocumentTabs(props.editor)
 
+function isAnchor(value: unknown): value is Anchor {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    'id' in value &&
+    typeof value.id === 'string' &&
+    'level' in value &&
+    typeof value.level === 'number' &&
+    'textContent' in value &&
+    typeof value.textContent === 'string' &&
+    'isActive' in value &&
+    typeof value.isActive === 'boolean'
+  )
+}
+
 function headingOf(id: string) {
   return props.editor.view.dom.querySelector<HTMLElement>(`[data-toc-id="${id}"]`)
 }
 
 const shownAnchors = computed(() => {
-  const anchors = props.anchors as Anchor[]
+  const anchors = props.anchors.filter(isAnchor)
   if (!tabs.value.length || !activeTabId.value) return anchors
   return anchors.filter((anchor) => {
     const heading = headingOf(anchor.id)

@@ -32,7 +32,7 @@ self.addEventListener('notificationclick', (event: NotificationEvent) => {
 
 // Firebase config initialization
 try {
-  const firebaseApp = initializeApp(JSON.parse(jsonConfig as string))
+  const firebaseApp = initializeApp(JSON.parse(jsonConfig ?? 'null'))
   const messaging = getMessaging(firebaseApp)
 
   onBackgroundMessage(messaging, (payload: import('firebase/messaging').MessagePayload) => {

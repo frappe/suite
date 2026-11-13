@@ -46,7 +46,10 @@ const { requestCompose } = useComposeMail()
 const compose = () => requestCompose({})
 
 const handleKeydown = (e: KeyboardEvent) => {
-  const target = e.target as HTMLElement
+  const checkedEventTarget = e.target
+  if (!(checkedEventTarget instanceof HTMLElement)) return
+
+  const target = checkedEventTarget
   if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
     return
 

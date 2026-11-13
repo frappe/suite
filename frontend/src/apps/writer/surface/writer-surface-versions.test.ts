@@ -19,13 +19,18 @@ import {
   type Versions,
 } from './writer-surface-fixtures'
 
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 vi.hoisted(() => {
   vi.stubGlobal('__SUITE_BUILD__', '100')
   vi.stubEnv('DEV', false)
 })
 
 vi.mock('frappe-ui', async () => (await import('./writer-surface-fakes')).fakeFrappeUi())
-vi.mock('@/apps/drive', async () => (await import('./writer-surface-fakes')).fakeDrive())
+vi.mock('@/apps/drive', async (importOriginal) => {
+  const { fakeDrive } = await import('./writer-surface-fakes')
+  return fakeDrive(await importOriginal<typeof import('@/apps/drive')>())
+})
 vi.mock('@/platform/session', async (importOriginal) => {
   const { fakeSession } = await import('./writer-surface-fakes')
   return fakeSession(await importOriginal<typeof import('@/platform/session')>())
@@ -49,13 +54,13 @@ vi.mock('@/apps/writer/components/CollabTextEditor.vue', async (importOriginal) 
     await importOriginal<typeof import('@/apps/writer/components/CollabTextEditor.vue')>()
   return fakeCollabTextEditor(real)
 })
-vi.mock('@/apps/writer/components/UsersBar.vue', () => ({ default: { render: () => null } }))
+vi.mock('@/platform/collab/UsersBar.vue', () => ({ default: { render: () => null } }))
 vi.mock('./WriterDocumentMenu.vue', async () =>
   (await import('./writer-surface-fakes')).fakeDocumentMenu(),
 )
-vi.mock('@/apps/writer/composables/useUsers', async (importOriginal) => {
-  const { fakeUsers } = await import('./writer-surface-fakes')
-  return fakeUsers(await importOriginal<typeof import('@/apps/writer/composables/useUsers')>())
+vi.mock('@/platform/collab/names', async (importOriginal) => {
+  const { fakeNames } = await import('./writer-surface-fakes')
+  return fakeNames(await importOriginal<typeof import('@/platform/collab/names')>())
 })
 vi.mock('./VersionPreview.vue', async () =>
   (await import('./writer-surface-fakes')).fakeVersionPreview(),
@@ -114,18 +119,20 @@ async function restoreFromTheBar(versions: Versions) {
 
 describe('Writer surface', () => {
   it('shows the next page of versions after Load more', async () => {
-    const pages: Record<string, unknown> = {
-      first: {
-        rows: [{ seq: 2, kind: 'named', label: 'Draft two' }],
-        next_cursor: 'page-2',
-      },
-      'page-2': {
-        rows: [{ seq: 1, kind: 'named', label: 'Draft one' }],
-        next_cursor: null,
-      },
-    }
-    const list = vi.fn(async (cursor?: string) => pages[cursor ?? 'first'])
-    const root = await openedSurface({ list } as unknown as Versions)
+    const pages = new Map<string, unknown>(
+      Object.entries({
+        first: {
+          rows: [{ seq: 2, kind: 'named', label: 'Draft two' }],
+          next_cursor: 'page-2',
+        },
+        'page-2': {
+          rows: [{ seq: 1, kind: 'named', label: 'Draft one' }],
+          next_cursor: null,
+        },
+      }),
+    )
+    const list = vi.fn(async (cursor?: string) => pages.get(cursor ?? 'first'))
+    const root = await openedSurface(fromPartial<Versions>({ list }))
 
     root.querySelector<HTMLElement>('[data-open-versions]')!.click()
     await vi.waitFor(() => expect(root.textContent).toContain('Draft two'))
@@ -154,7 +161,7 @@ describe('Writer surface', () => {
       }
     }
 
-    const root = await openedSurface({ list } as unknown as Versions)
+    const root = await openedSurface(fromPartial<Versions>({ list }))
 
     root.querySelector<HTMLElement>('[data-open-versions]')!.click()
     await vi.waitFor(() => expect(root.textContent).toContain('Before review'))
@@ -205,7 +212,7 @@ describe('Writer surface', () => {
   ])('closes a shown version before naming one from %s', async (_, saveButton) => {
     liveRoom()
     const create = vi.fn(async () => ({}))
-    const root = await openedSurface({ ...oneVersion, create } as unknown as Versions)
+    const root = await openedSurface(fromPartial<Versions>({ ...oneVersion, create }))
     root.querySelector<HTMLElement>('[data-open-versions]')!.click()
     await vi.waitFor(() => expect(root.textContent).toContain('Before review'))
     versionRow(root, 'Before review').click()
@@ -243,7 +250,7 @@ describe('Writer surface', () => {
     const key = encodeURIComponent(copy.key)
     const create = vi.fn(async () => ({}))
     const root = await openedSurface(
-      { ...oneVersion, create } as unknown as Versions,
+      fromPartial<Versions>({ ...oneVersion, create }),
       `/d/node-1?recovery=${key}`,
     )
     await vi.waitFor(() => expect(root.textContent).toContain('Viewing recovery copy from'))
@@ -271,7 +278,7 @@ describe('Writer surface', () => {
       rows: [{ seq: 3, kind: 'named', label: 'Before review' }],
       next_cursor: null,
     }))
-    const root = await openedSurface({ list } as unknown as Versions)
+    const root = await openedSurface(fromPartial<Versions>({ list }))
     function editorShown() {
       return root.querySelector<HTMLElement>('[data-editor]')!.style.display !== 'none'
     }
@@ -338,7 +345,7 @@ describe('Writer surface', () => {
 
   it('restores the shown version from the version bar', async () => {
     const room = await roomRestoring('Back then')
-    const versions = { ...oneVersion, contentUrl: () => '/version/3' } as unknown as Versions
+    const versions = fromPartial<Versions>({ ...oneVersion, contentUrl: () => '/version/3' })
     const root = await restoreFromTheBar(versions)
 
     await vi.waitFor(() => expect(shownText(root)).toBe('Back then'))
@@ -355,23 +362,34 @@ describe('Writer surface', () => {
     )
     vi.spyOn(client, 'mutation').mockResolvedValue({ reason: 'crashed' })
     const error = vi.spyOn(toast, 'error')
-    await restoreFromTheBar({
-      ...oneVersion,
-      contentUrl: () => '/version/3',
-    } as unknown as Versions)
+    await restoreFromTheBar(
+      fromPartial<Versions>({
+        ...oneVersion,
+        contentUrl: () => '/version/3',
+      }),
+    )
 
     await vi.waitFor(() => expect(error).toHaveBeenCalledOnce())
-    const [message, options] = error.mock.calls[0] as [
-      string,
-      { action: { label: string; onClick: () => void } },
-    ]
-    expect([message, options.action.label]).toEqual([
+    const call = error.mock.calls[0]
+    if (!call) throw new Error('Expected an error toast')
+    const [message, options] = call
+    const action = options?.action
+    if (
+      !action ||
+      typeof action !== 'object' ||
+      !('label' in action) ||
+      !('onClick' in action) ||
+      typeof action.onClick !== 'function'
+    ) {
+      throw new Error('Expected a download action on the refusal toast')
+    }
+    expect([message, action.label]).toEqual([
       "This version couldn't be upgraded, so it can't be restored. You can download it. Reason: crashed.",
       'Download',
     ])
     expect(room.restoreVersion).not.toHaveBeenCalled()
 
-    options.action.onClick()
+    action.onClick(new MouseEvent('click'))
     await vi.waitFor(() => expect(downloadHTML).toHaveBeenCalledOnce())
     const [html, name] = vi.mocked(downloadHTML).mock.calls[0]
     expect([html, name]).toEqual([
@@ -386,10 +404,12 @@ describe('Writer surface', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const error = vi.spyOn(toast, 'error')
     const success = vi.spyOn(toast, 'success')
-    await restoreFromTheBar({
-      ...oneVersion,
-      contentUrl: () => '/version/3',
-    } as unknown as Versions)
+    await restoreFromTheBar(
+      fromPartial<Versions>({
+        ...oneVersion,
+        contentUrl: () => '/version/3',
+      }),
+    )
 
     await vi.waitFor(() => expect(error).toHaveBeenCalledOnce())
     expect([error.mock.calls[0], success.mock.calls]).toEqual([

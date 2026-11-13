@@ -1,3 +1,5 @@
+import { fromAny, fromPartial } from '@total-typescript/shoehorn'
+import type { ClientState, KeyPackage, MLSMessage, PrivateKeyPackage, Welcome } from 'ts-mls'
 import { describe, expect, it, vi } from 'vitest'
 import { shallowRef } from 'vue'
 
@@ -8,73 +10,72 @@ import {
   wipeActiveEpochState,
 } from '../E2EEEpochStateStore'
 
+// Crypto values are opaque identity tokens here; protocol calls are mocked and never decode them.
 function createController(options: { isHost?: boolean } = {}) {
   const sendE2EEEpochEnvelope = vi.fn()
   const generateKeyPackage = vi.fn(async () => ({
-    publicPackage: { id: 'public-package' } as never,
-    privatePackage: { id: 'private-package' } as never,
+    publicPackage: fromAny<KeyPackage, unknown>({ id: 'public-package' }),
+    privatePackage: fromAny<PrivateKeyPackage, unknown>({ id: 'private-package' }),
   }))
   const addMultipleMembers = vi.fn(async (state: unknown, joiningMembers: unknown[]) => {
     expect(Array.isArray(joiningMembers)).toBe(true)
     return {
-      commit: { id: 'commit' } as never,
-      welcome: { id: 'welcome' } as never,
+      commit: fromAny<MLSMessage, unknown>({ id: 'commit' }),
+      welcome: fromAny<Welcome, unknown>({ id: 'welcome' }),
       epoch: {
         epochNumber: 2,
-        state: state as never,
-        meetingSecret: new Uint8Array(32) as Uint8Array<ArrayBuffer>,
+        state: fromAny<ClientState, unknown>(state),
+        meetingSecret: new Uint8Array(32),
       },
     }
   })
   const encodeKeyPackage = vi.fn((_keyPackage: unknown) => new Uint8Array([1, 2, 3]))
-  const decodeKeyPackage = vi.fn(
-    (_encoded: Uint8Array) =>
-      ({
-        id: 'decoded-key-package',
-      }) as never,
+  const decodeKeyPackage = vi.fn((_encoded: Uint8Array) =>
+    fromAny<KeyPackage, unknown>({
+      id: 'decoded-key-package',
+    }),
   )
   const encodeCommit = vi.fn((_commit: unknown) => new Uint8Array([4, 5, 6]))
   const encodeWelcome = vi.fn((_welcome: unknown) => new Uint8Array([7, 8, 9]))
-  const decodeWelcome = vi.fn(
-    (_encoded: Uint8Array) =>
-      ({
-        id: 'decoded-welcome',
-      }) as never,
+  const decodeWelcome = vi.fn((_encoded: Uint8Array) =>
+    fromAny<Welcome, unknown>({
+      id: 'decoded-welcome',
+    }),
   )
   const joinFromWelcome = vi.fn(async () => ({
     epochNumber: 2,
-    state: { id: 'joined-epoch-2-state' } as never,
-    meetingSecret: new Uint8Array(32) as Uint8Array<ArrayBuffer>,
+    state: fromAny<ClientState, unknown>({ id: 'joined-epoch-2-state' }),
+    meetingSecret: new Uint8Array(32),
   }))
   const processCommit = vi.fn()
   const removeMember = vi.fn(async (state: unknown, leafIndex: number) => ({
-    commit: { id: 'commit' } as never,
+    commit: fromAny<MLSMessage, unknown>({ id: 'commit' }),
     epoch: {
       epochNumber: 3,
-      state: state as never,
-      meetingSecret: new Uint8Array(32) as Uint8Array<ArrayBuffer>,
+      state: fromAny<ClientState, unknown>(state),
+      meetingSecret: new Uint8Array(32),
       _removedLeaf: leafIndex,
     },
   }))
   const createGenesisEpoch = vi.fn(async () => ({
     epochNumber: 1,
-    state: { id: 'genesis-state' } as never,
-    meetingSecret: new Uint8Array(32) as Uint8Array<ArrayBuffer>,
+    state: fromAny<ClientState, unknown>({ id: 'genesis-state' }),
+    meetingSecret: new Uint8Array(32),
   }))
   const controller = new E2EEEpochSignalingController({
     meetingId: 'meeting-1',
-    sfuClient: {
+    sfuClient: fromPartial({
       getOwnSenderId: vi.fn(() => 7),
       sendE2EEEpochEnvelope,
-    } as never,
-    currentUser: {
+    }),
+    currentUser: fromPartial({
       currentUser: shallowRef({ user_id: 'user-1' }),
-    } as never,
+    }),
     isCurrentTabHost: shallowRef(Boolean(options.isHost)),
     getDeviceIdentity: vi.fn(async () => ({
       deviceId: 'device-1',
       signingPublicKey: 'signing-public-key',
-      signingKeyPair: { privateKey: {} as CryptoKey } as CryptoKeyPair,
+      signingKeyPair: fromPartial<CryptoKeyPair>({ privateKey: fromPartial<CryptoKey>({}) }),
     })),
     epochProtocolProvider: {
       createGenesisEpoch,
@@ -200,7 +201,7 @@ describe('E2EEEpochSignalingController', () => {
       message: 'This encrypted meeting needs the host to join before others can enter.',
     })
 
-    expect((listener.mock.calls[0][0] as CustomEvent).detail).toEqual({
+    expect(fromPartial<CustomEvent>(listener.mock.calls[0][0]).detail).toEqual({
       status: 'pending',
       reason: 'waiting-for-host',
       epochNumber: 1,
@@ -212,8 +213,8 @@ describe('E2EEEpochSignalingController', () => {
   it('authors an add-member commit when this host is the designated committer', async () => {
     installActiveEpochState({
       epochNumber: 1,
-      state: { id: 'epoch-1-state' } as never,
-      meetingSecret: new Uint8Array(32) as Uint8Array<ArrayBuffer>,
+      state: fromPartial({ id: 'epoch-1-state' }),
+      meetingSecret: new Uint8Array(32),
     })
     const { controller, sendE2EEEpochEnvelope, addMultipleMembers } = createController({
       isHost: true,
@@ -290,8 +291,8 @@ describe('E2EEEpochSignalingController', () => {
   it('quietly ignores reflected self-authored commits after local epoch advance', async () => {
     installActiveEpochState({
       epochNumber: 2,
-      state: { id: 'epoch-2-state' } as never,
-      meetingSecret: new Uint8Array(32) as Uint8Array<ArrayBuffer>,
+      state: fromPartial({ id: 'epoch-2-state' }),
+      meetingSecret: new Uint8Array(32),
     })
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     const { controller, processCommit } = createController()
@@ -317,8 +318,8 @@ describe('E2EEEpochSignalingController', () => {
   it('authors an add-member commit when a non-host tab is the designated committer', async () => {
     installActiveEpochState({
       epochNumber: 1,
-      state: { id: 'epoch-1-state' } as never,
-      meetingSecret: new Uint8Array(32) as Uint8Array<ArrayBuffer>,
+      state: fromPartial({ id: 'epoch-1-state' }),
+      meetingSecret: new Uint8Array(32),
     })
     // Same senderId 7, but isCurrentTabHost is now false — a non-host
     // current member tab is the designated committer.
@@ -382,8 +383,8 @@ describe('E2EEEpochSignalingController', () => {
     ]
     installActiveEpochState({
       epochNumber: 2,
-      state: { ratchetTree: mockTree } as never,
-      meetingSecret: new Uint8Array(32) as Uint8Array<ArrayBuffer>,
+      state: fromPartial({ ratchetTree: mockTree }),
+      meetingSecret: new Uint8Array(32),
     })
     const { controller, sendE2EEEpochEnvelope, removeMember } = createController({
       isHost: true,

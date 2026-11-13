@@ -62,14 +62,14 @@ function waitForUpdates() {
   return new Promise((resolve) => setTimeout(resolve, 0))
 }
 
-function image(src: string, attrs: object = {}) {
+function image(src: string, attrs: NonNullable<JSONContent['attrs']> = {}) {
   return {
     type: 'image',
     attrs: { src, ...attrs },
   }
 }
 
-function imageParagraph(src: string, attrs: object = {}) {
+function imageParagraph(src: string, attrs: NonNullable<JSONContent['attrs']> = {}) {
   return {
     type: 'paragraph',
     content: [image(src, attrs)],
@@ -130,7 +130,7 @@ function openEditor(content: JSONContent | yjs.Doc, isCollaborative = true) {
 
   const editorOptions: Partial<EditorOptions> = { extensions: editorExtensions(ydoc) }
   if (!ydoc) {
-    editorOptions.content = content as JSONContent
+    editorOptions.content = content
   }
 
   const editor = new Editor(editorOptions)

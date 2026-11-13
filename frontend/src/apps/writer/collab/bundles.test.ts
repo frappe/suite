@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import { createRequire } from 'node:module'
 import os from 'node:os'
 import path from 'node:path'
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterAll, describe, expect, it } from 'vitest'
 
 // The server's Node children, built fresh and run as the server runs them
@@ -56,20 +57,26 @@ function framed(parts: Uint8Array[]) {
   )
 }
 
-function run(bundle: string, header: object, ...rest: Uint8Array[]) {
+function run(bundle: string, header: unknown, ...rest: Uint8Array[]) {
   const child = spawnSync(
     process.execPath,
     ['--permission', `--allow-fs-read=${bundle}`, '--expose-gc', bundle],
     { input: framed([Buffer.from(JSON.stringify(header)), ...rest]), env: {}, timeout: 60_000 },
   )
   if (child.status !== 0) throw new Error(`exit ${child.status}: ${child.stderr.toString()}`)
-  return JSON.parse(child.stdout.toString()) as Record<string, unknown>
+  return fromPartial<Record<string, unknown>>(JSON.parse(child.stdout.toString()))
 }
 
 function bundledSources(outDir: string, bundle: string) {
-  const map = JSON.parse(fs.readFileSync(path.join(outDir, `${bundle}.map`), 'utf8')) as {
-    sources: string[]
-  }
+  const map: unknown = JSON.parse(fs.readFileSync(path.join(outDir, `${bundle}.map`), 'utf8'))
+  if (
+    !map ||
+    typeof map !== 'object' ||
+    !('sources' in map) ||
+    !Array.isArray(map.sources) ||
+    !map.sources.every((source): source is string => typeof source === 'string')
+  )
+    throw new Error('Expected source-map source paths')
   return map.sources
 }
 
@@ -103,6 +110,25 @@ describe('Writer server bundles under --permission', () => {
       expect(run(bundle, {})).toEqual({ version: expect.any(String) })
     },
   )
+
+  // Opening a table builds its node view, which a paragraph never does
+  it('the converter converts an old document holding a table', { timeout: BUILD_LIMIT_MS }, () => {
+    const bundle = path.join(build('converter'), 'converter.cjs')
+
+    const answer = run(bundle, {
+      legacy: {
+        content: null,
+        html: '<table><tr><td><p>Cell</p></td></tr></table>',
+        collab: 0,
+        ycomments: null,
+      },
+      maxState: 10_000_000,
+    })
+
+    expect(answer).toMatchObject({ kind: 'converted' })
+    expect(answer.html).toContain('<table')
+    expect(answer.html).toContain('Cell')
+  })
 
   it('the checker is one file with no Drive UI, and judges', { timeout: BUILD_LIMIT_MS }, () => {
     const outDir = build('checker')

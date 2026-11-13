@@ -16,7 +16,7 @@ test('coverage retains untested TypeScript and Vue sources with package subpaths
     'src/apps/mail/composables/useComposeMail.ts',
     'src/apps/meet/composables/useSFUConnection.ts',
     'src/apps/meet/components/ChatPanel.vue',
-    'src/shell/SetupView.vue',
+    'src/composition/onboarding/SetupView.vue',
   ]
   try {
     const result = spawnSync(

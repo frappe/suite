@@ -26,6 +26,10 @@ export interface Schema {
   pattern?: string
 }
 
+function isSchemaObject<Value>(value: Value): value is Value & Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
 export function assertSchema(value: unknown, schema: Schema, label: string, root = schema): void {
   if (schema.$ref) return assertSchema(value, resolveRef(root, schema.$ref), label, root)
   if ('const' in schema && value !== schema.const) fail(label, 'has the wrong literal value')
@@ -38,8 +42,8 @@ export function assertSchema(value: unknown, schema: Schema, label: string, root
   const types = typeof schema.type === 'string' ? [schema.type] : (schema.type ?? [])
   if (types.length && !types.some((type) => matchesType(value, type)))
     fail(label, 'has the wrong type')
-  if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-    const record = value as Record<string, unknown>
+  if (isSchemaObject(value)) {
+    const record = value
     for (const key of schema.required ?? [])
       if (record[key] === undefined) fail(`${label}.${key}`, 'is required')
     for (const [key, child] of Object.entries(record)) {
@@ -107,7 +111,7 @@ function resolveRef(root: Schema, ref: string): Schema {
 function matchesType(value: unknown, type: string): boolean {
   if (type === 'null') return value === null
   if (type === 'array') return Array.isArray(value)
-  if (type === 'object') return value !== null && typeof value === 'object' && !Array.isArray(value)
+  if (type === 'object') return isSchemaObject(value)
   if (type === 'integer') return typeof value === 'number' && Number.isInteger(value)
   return typeof value === type
 }

@@ -33,6 +33,10 @@ import {
 import type { MediaScreenShareEvent, SFUMediaManager } from './SFUMediaManager'
 import type { RecoveryResult, SFURecoveryManager } from './SFURecoveryManager'
 
+interface ParticipantCurrentUser {
+  value: User | null
+}
+
 interface SFUProducerEvent {
   producerId: string
   participantId: string
@@ -170,6 +174,9 @@ interface ParticipantConnectionOptions {
   recoveryManager: SFURecoveryManager
   expectedMedia?: ExpectedMediaReconciler
 }
+interface ParticipantConnectionEnsureRefResult {
+  value: User | null
+}
 
 export class ParticipantConnection {
   sfuClient: SFUClient
@@ -182,7 +189,7 @@ export class ParticipantConnection {
   readonly participantRecovery: ParticipantConnectionRecovery
 
   meetingId: string | null = null
-  currentUser: { value: User | null } = { value: null }
+  currentUser: ParticipantCurrentUser = { value: null }
   isConnected = false
   initialSyncInProgress = false
   private bufferedReconciliationEvents: ReconciliationEvent[] = []
@@ -514,10 +521,11 @@ export class ParticipantConnection {
     // the replacement media side is ready and setupExistingParticipants syncs it.
     this.initialSyncInProgress = true
     try {
-      await this.sfuClient.joinRoom(this.meetingId ?? '', userData, mediaState, {
+      const joinOptions: NonNullable<Parameters<SFUClient['joinRoom']>[3]> = {
         connectionId: this.connectionId,
-        ...(conflictId ? { conflictId } : {}),
-      })
+      }
+      if (conflictId) joinOptions.conflictId = conflictId
+      await this.sfuClient.joinRoom(this.meetingId ?? '', userData, mediaState, joinOptions)
       if (generation !== this.lifecycleGeneration) {
         await this.sfuClient.disconnect()
         return false
@@ -1530,9 +1538,7 @@ export class ParticipantConnection {
             const allForPid = this.mediaManager.consumerManager.getConsumersByParticipant(pid)
             for (const c of allForPid) {
               const maybeScreen =
-                c.isScreen ||
-                c.appData?.type === 'screen' ||
-                (c.consumer as { appData?: { type?: string } })?.appData?.type === 'screen'
+                c.isScreen || c.appData?.type === 'screen' || c.consumer?.appData?.type === 'screen'
               if (maybeScreen) {
                 this.mediaManager.consumerManager.removeConsumer(c.id)
               }
@@ -1540,7 +1546,7 @@ export class ParticipantConnection {
           }
         }
       } catch (e: unknown) {
-        console.warn('Error handling consumer_closed', (e as Error).message)
+        console.warn('Error handling consumer_closed', e instanceof Error ? e.message : String(e))
       }
     })
 
@@ -1737,9 +1743,9 @@ export class ParticipantConnection {
     }, 16)
   }
 
-  private ensureRef(obj: User | { value: User | null } | null): {
-    value: User | null
-  } {
+  private ensureRef(
+    obj: User | { value: User | null } | null,
+  ): ParticipantConnectionEnsureRefResult {
     if (obj && 'value' in obj) {
       return obj
     }
@@ -1764,7 +1770,7 @@ export class ParticipantConnection {
       this.expectedMedia.reset()
       this.localProducerBytes.clear()
       this.recoveryManager.reset()
-      let disconnectError: unknown = null
+      let disconnectError: unknown
       try {
         await this.mediaManager.cleanup()
       } catch (error) {

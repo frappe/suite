@@ -110,11 +110,11 @@
                 </template>
               </FormControl>
             </div>
-            <template v-if="recipients.rows.length">
+            <div v-if="recipients.rows.length" class="divide-y">
               <div
                 v-for="recipient in recipients.rows"
                 :key="recipient.email"
-                class="group flex items-center border-b px-5 py-3 text-base last:border-b-0"
+                class="group flex items-center px-5 py-3 text-base"
               >
                 <span class="flex-1 truncate">{{ recipient.email }}</span>
                 <Button
@@ -126,7 +126,7 @@
                   <template #icon><FeatherIcon name="x" class="h-4 w-4" /></template>
                 </Button>
               </div>
-            </template>
+            </div>
             <div
               v-else-if="recipients.status === 'success'"
               class="text-ink-gray-5 px-5 py-6 text-center text-sm"
@@ -136,10 +136,8 @@
             <DashboardPager
               v-if="recipients.status === 'success' && recipients.total"
               :count="recipients.rows.length"
-              :total="recipients.total ?? 0"
               :has-more="recipients.hasNext"
               :loading="recipients.isFetching"
-              :flush="false"
               @load-more="recipients.fetchNext().catch(() => {})"
             />
           </div>
@@ -215,6 +213,7 @@ const recipientSearch = ref('')
 const list = useQuery(api.mail.admin.mailingLists.get, () => ({
   list_id: listId,
 }))
+// SAFETY: suite/mail/api/admin.py::get_mailing_list owns this response projection; undefined represents a pending query.
 usePageMeta(() => appPageMeta((list.data as ListData | undefined)?.email || listId, 'Mail'))
 watch(
   () => list.error,
@@ -226,6 +225,7 @@ watch(
     })
   },
 )
+// SAFETY: suite/mail/api/admin.py::get_mailing_list owns this response projection; undefined represents a pending query.
 const data = computed(() => list.data as ListData | undefined)
 
 // Recipients are searched and paged on Suite Cloud: a list can hold thousands, and the detail

@@ -1,18 +1,26 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { announceCopy, announceMove, announceRestore, announceTrash } from './changeToast'
+import {
+  announceCopy,
+  announceMove,
+  announceRestore,
+  announceTrash,
+  undoLatest,
+} from './changeToast'
 
 // A Drive server that records each move and keeps every node's parent.
+const { fromAny, fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const net = vi.hoisted(() => {
   const state = {
     parents: new Map<string, string>(),
-    requests: [] as Array<{ method: string; path: string; body: unknown }>,
+    requests: fromPartial<Array<{ method: string; path: string; body: unknown }>>([]),
     /** The folder the server refuses to move items into, with its message. */
-    refuse: null as { parent: string; message: string } | null,
+    refuse: fromPartial<{ parent: string; message: string } | null>(null),
     /** Each node's state, as a trash or restore left it. */
     states: new Map<string, string>(),
     /** A node the server refuses to restore, with its message. */
-    refuseRestore: null as { node: string; message: string } | null,
+    refuseRestore: fromPartial<{ node: string; message: string } | null>(null),
   }
   const node = (name: string) => ({
     name,
@@ -57,7 +65,14 @@ const net = vi.hoisted(() => {
       return json({ data: node(name) })
     }
     if (init.method === 'POST' && path === 'nodes/batch' && body.patch.state) {
-      const { nodes, patch } = body as { nodes: string[]; patch: { state: string } }
+      if (
+        !Array.isArray(body.nodes) ||
+        !body.nodes.every((name: unknown) => typeof name === 'string') ||
+        typeof body.patch.state !== 'string'
+      )
+        throw new Error('Expected a batch state change')
+      const nodes: string[] = body.nodes
+      const patch = { state: String(body.patch.state) }
       const refused = patch.state === 'Active' ? state.refuseRestore : null
       const failed = refused ? nodes.filter((name) => name === refused.node) : []
       for (const name of nodes) if (!failed.includes(name)) state.states.set(name, patch.state)
@@ -73,9 +88,19 @@ const net = vi.hoisted(() => {
       })
     }
     if (init.method === 'POST' && path === 'nodes/batch') {
-      const { nodes, patch } = body as {
-        nodes: string[]
-        patch: { parent_node: string; expect_parent_node?: string }
+      if (
+        !Array.isArray(body.nodes) ||
+        !body.nodes.every((name: unknown) => typeof name === 'string') ||
+        typeof body.patch?.parent_node !== 'string'
+      )
+        throw new Error('Expected a batch move')
+      const nodes: string[] = body.nodes
+      const patch = {
+        parent_node: String(body.patch.parent_node),
+        expect_parent_node:
+          typeof body.patch.expect_parent_node === 'string'
+            ? body.patch.expect_parent_node
+            : undefined,
       }
       const refuse = state.refuse
       if (refuse && refuse.parent === patch.parent_node) {
@@ -114,18 +139,28 @@ interface ShownToast {
   message: string
   description?: string
   action?: { label: string; onClick: () => void }
+  onDismiss?: () => void
+  onAutoClose?: () => void
+  closed?: boolean
 }
-const feedback = vi.hoisted(() => ({ toasts: [] as ShownToast[] }))
+// A toast's id is its place in the list; closing one calls its onDismiss, as vue-sonner does.
+const feedback = vi.hoisted(() => ({ toasts: fromPartial<ShownToast[]>([]) }))
 vi.mock('@/platform/feedback', () => ({
   toast: {
     success: (message: string, options?: Omit<ShownToast, 'kind' | 'message'>) =>
-      feedback.toasts.push({ kind: 'success', message, ...options }),
+      feedback.toasts.push({ kind: 'success', message, ...options }) - 1,
     error: (message: string, options?: Omit<ShownToast, 'kind' | 'message'>) =>
-      feedback.toasts.push({ kind: 'error', message, ...options }),
+      feedback.toasts.push({ kind: 'error', message, ...options }) - 1,
+    dismiss: (id: number) => {
+      const shown = feedback.toasts[id]!
+      shown.closed = true
+      shown.onDismiss?.()
+    },
   },
 }))
 
 afterEach(() => {
+  for (const shown of feedback.toasts) shown.onDismiss?.()
   feedback.toasts.length = 0
   net.requests.length = 0
   net.parents.clear()
@@ -298,6 +333,21 @@ describe('Trash and restore toasts with Undo', () => {
     })
   })
 
+  it('restores 250 trashed items in two requests, as the server takes at most 200', async () => {
+    const names = Array.from({ length: 250 }, (_, index) => `item-${index}`)
+    announceTrash(changed('Trashed', ...names))
+
+    undo()
+    await vi.waitFor(() => expect(feedback.toasts).toHaveLength(2))
+    expect(
+      net.requests.map(
+        (request) => fromAny<{ nodes: string[] }, unknown>(request.body).nodes.length,
+      ),
+    ).toEqual([200, 50])
+    expect([...net.states.values()].every((state) => state === 'Active')).toBe(true)
+    expect(feedback.toasts[1]).toMatchObject({ kind: 'success', message: 'Restored 250 items' })
+  })
+
   it('names the items Undo could not restore, with the server’s reason', async () => {
     net.refuseRestore = { node: 'b', message: 'The folder “b” was in is in Trash.' }
     announceTrash(changed('Trashed', 'a', 'b'))
@@ -310,5 +360,31 @@ describe('Trash and restore toasts with Undo', () => {
       message: 'Could not restore “b”',
       description: 'The folder “b” was in is in Trash.',
     })
+  })
+})
+
+describe('Undo from the keyboard', () => {
+  it('takes back the newest change still on screen, then the one before it', async () => {
+    net.states.set('a', 'Trashed')
+    announceTrash([{ node: 'a', title: 'a' }])
+    announceMove(moved({ b: 'projects' }), 'Marketing')
+
+    expect(undoLatest()).toBe(true)
+    await vi.waitFor(() => expect(net.parents.get('b')).toBe('projects'))
+    expect(feedback.toasts[1]!.closed).toBe(true)
+    expect(net.states.get('a')).toBe('Trashed')
+
+    expect(undoLatest()).toBe(true)
+    await vi.waitFor(() => expect(net.states.get('a')).toBe('Active'))
+    expect(undoLatest()).toBe(false)
+  })
+
+  it('has nothing to undo once the toast closed or its Undo was clicked', () => {
+    announceTrash([{ node: 'a', title: 'a' }])
+    announceTrash([{ node: 'b', title: 'b' }])
+    feedback.toasts[0]!.onAutoClose!()
+    undo(1)
+
+    expect(undoLatest()).toBe(false)
   })
 })

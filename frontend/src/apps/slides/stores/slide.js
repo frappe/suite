@@ -1,10 +1,10 @@
-import { toast } from 'frappe-ui'
 import { computed, reactive, ref } from 'vue'
 
 import { router } from '@/apps/slides/router'
 import { flushPendingBlur, resetFocus } from '@/apps/slides/stores/element'
 import { commandHistory } from '@/apps/slides/stores/historyMeta'
 import {
+  currentOpening,
   inReadonlyMode,
   presentationId,
   presentationTheme,
@@ -12,18 +12,18 @@ import {
   templateList,
   transformElements,
 } from '@/apps/slides/stores/presentation'
-import { dirty, saveFailed, saveRefused, saveWithoutDelay } from '@/apps/slides/stores/saving'
 import { remapElementIds } from '@/apps/slides/utils/connectors'
 import { cloneObj } from '@/apps/slides/utils/helpers'
 import { randomId } from '@/platform/random-id'
-import { translate } from '@/platform/translation'
 
 import { addSlideCommand, editSlideCommand, removeSlideCommand } from './commands'
 import { inSlideShowMode } from './slideshow'
+import { drawTemplateLayouts } from './templateLayouts'
 
 /** @type {import('vue').Ref<Record<string, unknown>[]>} */
 const slides = ref([])
 
+/** @type {import('vue').Ref<number>} */
 const slideIndex = ref()
 const focusedSlide = ref(null)
 
@@ -36,6 +36,7 @@ const selectionBounds = reactive({
   height: 0,
 })
 
+/** @type {{ left?: number, top?: number, width?: number, height?: number, scale?: number }} */
 const slideBounds = reactive({})
 
 // an element measures zero in one axis while its text editor is swapped out, and
@@ -117,35 +118,6 @@ const changeSlide = (index, focus = true) => {
   })
 }
 
-const resetAndSave = async () => {
-  await resetFocus()
-  if (saveRefused.value) {
-    toast.error(translate('This presentation changed elsewhere. Reload to continue.'))
-    return
-  }
-
-  if (!dirty.value) {
-    toast.info('No changes to save')
-    return
-  }
-  const toastProps = {
-    loading: `Saving ...`,
-    success: () => `Saved`,
-    error: () => 'Could not save presentation. Please try again.',
-  }
-  toast.promise(
-    saveWithoutDelay().then(() => {
-      if (saveFailed.value) throw new Error('Save failed')
-    }),
-    toastProps,
-  )
-}
-
-const saveSlide = (e) => {
-  e.preventDefault()
-  resetAndSave()
-}
-
 const deleteSlide = (deleteActive, index) => {
   let deleteIndex = index ?? focusedSlide.value
   if (deleteIndex == null && deleteActive) deleteIndex = slideIndex.value
@@ -196,7 +168,13 @@ const insertDuplicateSlide = async (index, layoutObj, toDuplicate) => {
   const source = slides.value[index]
   const newSlide = getNewSlide(toDuplicate, layoutObj, source)
 
-  if (!toDuplicate) newSlide.elements = await transformElements(newSlide.elements)
+  if (!toDuplicate) {
+    const stillOpen = currentOpening()
+    newSlide.elements = await transformElements(newSlide.elements)
+    if (!stillOpen()) {
+      return
+    }
+  }
 
   insertSlide(newSlide, index)
 }
@@ -205,11 +183,15 @@ const duplicateSlide = (index = slideIndex.value) => {
   insertDuplicateSlide(index, null, true)
 }
 
-const addEmptySlide = (e, index) => {
-  e?.preventDefault()
-  const layout = templateList.value.find((template) => template.name === presentationTheme.value)
-    ?.layouts[0]
-  if (layout) handleInsertSlide(index, cloneObj(layout))
+const addEmptySlide = async (event, index) => {
+  event?.preventDefault()
+  const theme = presentationTheme.value
+  const stillOpen = currentOpening()
+  await drawTemplateLayouts([theme])
+  const layout = templateList.value.find((template) => template.name === theme)?.layouts[0]
+  if (layout && stillOpen()) {
+    handleInsertSlide(index, cloneObj(layout))
+  }
 }
 
 const handleInsertSlide = (index, layoutObj) => {
@@ -230,7 +212,6 @@ export {
   getNewSlide,
   setSlideIndex,
   changeSlide,
-  saveSlide,
   deleteSlide,
   changeEditorSlide,
   duplicateSlide,

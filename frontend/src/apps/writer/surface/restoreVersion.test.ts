@@ -1,6 +1,7 @@
 import { getSchema } from '@tiptap/core'
 import { prosemirrorJSONToYDoc, yXmlFragmentToProsemirrorJSON } from '@tiptap/y-tiptap'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { fromPartial } from '@total-typescript/shoehorn'
+import { describe, expect, it, vi } from 'vitest'
 import {
   createAbsolutePositionFromRelativePosition,
   createRelativePositionFromTypeIndex,
@@ -15,15 +16,8 @@ import { encodeAnchor, readAnchor } from '@/apps/writer/collab/anchors'
 import { writerSchema } from '@/apps/writer/schema'
 import type { RestoreResult } from '@/platform/collab'
 
-import { othersPresentWarning, restoredByOther, restoreVersion } from './restoreVersion'
+import { restoreVersion } from './restoreVersion'
 import type { ConvertedVersion } from './versions'
-
-const NAMES: Record<string, string> = { 'amira@northwind.test': 'Amira Haddad' }
-
-vi.mock('@/apps/writer/composables/useUsers', () => ({
-  lookUp: () => Promise.resolve(),
-  fullName: (user: string) => NAMES[user] ?? user,
-}))
 
 const schema = getSchema(writerSchema())
 
@@ -79,8 +73,8 @@ function documentWithThread() {
 }
 
 function textOf(doc: Doc) {
-  const paragraph = doc.getXmlFragment(BODY_FIELD).get(0) as XmlElement
-  return paragraph.get(0) as XmlText
+  const paragraph = fromPartial<XmlElement>(doc.getXmlFragment(BODY_FIELD).get(0))
+  return fromPartial<XmlText>(paragraph.get(0))
 }
 
 async function yjsVersion(doc: Doc) {
@@ -92,7 +86,7 @@ async function yjsVersion(doc: Doc) {
   return encode({ schema: 'writer-document/2', codec: 'yjs1', lineage: 'one', state })
 }
 
-function encode(value: object) {
+function encode(value: unknown) {
   return new TextEncoder().encode(JSON.stringify(value))
 }
 
@@ -105,7 +99,7 @@ function covered(doc: Doc, anchor: string) {
 
   const from = createAbsolutePositionFromRelativePosition(read.start, doc)!
   const to = createAbsolutePositionFromRelativePosition(read.end, doc)!
-  return (from.type as XmlText).toString().slice(from.index, to.index)
+  return fromPartial<XmlText>(from.type).toString().slice(from.index, to.index)
 }
 
 // A restore after "world" was deleted, in a room whose server holds what it is told to
@@ -141,17 +135,16 @@ describe('restoreVersion', () => {
     ])
   })
 
-  it.each([
-    ['a refused restore', { outcome: 'refused' }, true],
-    ['text the server does not hold', { outcome: 'landed' }, false],
-  ] as [string, RestoreResult, boolean][])(
-    'moves no thread for %s',
-    async (_case, result, isSaved) => {
-      const { notice } = await restoreLostWorld(result, isSaved)
+  it.each(
+    fromPartial<[string, RestoreResult, boolean][]>([
+      ['a refused restore', { outcome: 'refused' }, true],
+      ['text the server does not hold', { outcome: 'landed' }, false],
+    ]),
+  )('moves no thread for %s', async (_case, result, isSaved) => {
+    const { notice } = await restoreLostWorld(result, isSaved)
 
-      expect(notice.anchors).toEqual({})
-    },
-  )
+    expect(notice.anchors).toEqual({})
+  })
 
   it('never begins a restore of bytes it cannot read', async () => {
     const room = fakeRoom({ outcome: 'landed' })
@@ -165,33 +158,32 @@ describe('restoreVersion', () => {
     ])
   })
 
-  it.each([
-    [{ outcome: 'unchanged' }, true, 'The document already matches this version.'],
-    [{ outcome: 'unsent' }, false, 'Your changes are still saving. Try again in a moment.'],
-    [
-      { outcome: 'refused', refusal: 'restore_recent', retryS: 42 },
-      false,
-      'A restore just ran. Try again in 42 seconds.',
-    ],
-    [
-      { outcome: 'refused', refusal: 'restoring' },
-      false,
-      'Someone else is restoring a version. Try again once it is done.',
-    ],
-    [
-      { outcome: 'refused', refusal: 'milestone_failed' },
-      false,
-      "The document as it is now couldn't be kept as a version first, so nothing was restored.",
-    ],
-    [{ outcome: 'refused' }, false, 'The version was not restored.'],
-  ] as [RestoreResult, boolean, string][])(
-    'tells the person how %o went',
-    async (result, isRestored, message) => {
-      const notice = await restoreVersion(fakeRoom(result), 4, html('<p>x</p>'), [], refuseConvert)
+  it.each(
+    fromPartial<[RestoreResult, boolean, string][]>([
+      [{ outcome: 'unchanged' }, true, 'The document already matches this version.'],
+      [{ outcome: 'unsent' }, false, 'Your changes are still saving. Try again in a moment.'],
+      [
+        { outcome: 'refused', refusal: 'restore_recent', retryS: 42 },
+        false,
+        'A restore just ran. Try again in 42 seconds.',
+      ],
+      [
+        { outcome: 'refused', refusal: 'restoring' },
+        false,
+        'Someone else is restoring a version. Try again once it is done.',
+      ],
+      [
+        { outcome: 'refused', refusal: 'milestone_failed' },
+        false,
+        "The document as it is now couldn't be kept as a version first, so nothing was restored.",
+      ],
+      [{ outcome: 'refused' }, false, 'The version was not restored.'],
+    ]),
+  )('tells the person how %o went', async (result, isRestored, message) => {
+    const notice = await restoreVersion(fakeRoom(result), 4, html('<p>x</p>'), [], refuseConvert)
 
-      expect(notice).toEqual({ isRestored, message, anchors: {} })
-    },
-  )
+    expect(notice).toEqual({ isRestored, message, anchors: {} })
+  })
 
   it('restores nothing while the server is still upgrading an old version', async () => {
     const room = fakeRoom({ outcome: 'landed' })
@@ -254,77 +246,5 @@ describe('restoreVersion', () => {
 
     await expect(restore).rejects.toThrow('down')
     expect(room.restoreVersion.mock.calls.length).toBe(0)
-  })
-})
-
-describe('restoring under other people', () => {
-  const me = 'me@northwind.test'
-
-  it('warns about nobody when only this person has the document open', () => {
-    const people = [{ id: me, name: 'Me' }]
-
-    expect(othersPresentWarning(people, me)).toBe('')
-  })
-
-  it('names each other person once, even with the document open in two of their tabs', () => {
-    const people = [
-      { id: me, name: 'Me' },
-      { id: 'amira@northwind.test', name: 'Amira Haddad' },
-      { id: 'amira@northwind.test', name: 'Amira Haddad' },
-      { id: 'ben@northwind.test', name: 'Ben Ito' },
-    ]
-
-    expect(othersPresentWarning(people, me)).toBe(
-      'Amira Haddad and Ben Ito have this document open now and will be told you restored it.',
-    )
-  })
-
-  it('names one other person in the singular', () => {
-    const people = [{ id: 'amira@northwind.test', name: 'Amira Haddad' }]
-
-    expect(othersPresentWarning(people, me)).toBe(
-      'Amira Haddad has this document open now and will be told you restored it.',
-    )
-  })
-})
-
-describe('told about another person’s restore', () => {
-  afterEach(() => {
-    vi.useRealTimers()
-  })
-
-  it('names who restored a named version, and the name', async () => {
-    const restored = {
-      by: 'amira@northwind.test',
-      version: { seq: 3, label: 'Draft for review', takenAt: '2026-10-22T05:12:00+00:00' },
-    }
-
-    expect(await restoredByOther(restored)).toBe(
-      'Amira Haddad restored the version “Draft for review”.',
-    )
-  })
-
-  it('names an automatic version by its time today, and by its day before today', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] })
-    vi.setSystemTime(new Date(2026, 9, 22, 18, 0))
-    const today = new Date(2026, 9, 22, 10, 42).toISOString()
-    const earlier = new Date(2026, 9, 12, 10, 42).toISOString()
-    const restored = (takenAt: string) => ({
-      by: 'amira@northwind.test',
-      version: { seq: 3, label: null, takenAt },
-    })
-
-    expect(await restoredByOther(restored(today))).toMatch(
-      /^Amira Haddad restored the version from 10:42\sAM\.$/,
-    )
-    expect(await restoredByOther(restored(earlier))).toMatch(
-      /^Amira Haddad restored the version from (Oct 12|12 Oct), 10:42\sAM\.$/,
-    )
-  })
-
-  it('still tells the reader when the notice names no person or no version', async () => {
-    expect(await restoredByOther({ by: null, version: null })).toBe(
-      'Someone restored an earlier version of this document.',
-    )
   })
 })

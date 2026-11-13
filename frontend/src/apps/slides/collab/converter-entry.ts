@@ -11,11 +11,14 @@ type ConverterInput = { legacy: LegacyDeck; maxState: number } | Record<string, 
 // The editor parses old HTML into a document that loads nothing; each window name is read only when
 // used, since some, like localStorage, throw on the blank page's origin
 const { window } = new JSDOM('')
+function isWindowKey(name: string): name is Extract<keyof typeof window, string> {
+  return name in window
+}
 for (const name of Object.getOwnPropertyNames(window)) {
-  if (!(name in globalThis)) {
+  if (!(name in globalThis) && isWindowKey(name)) {
     Object.defineProperty(globalThis, name, {
       configurable: true,
-      get: () => Reflect.get(window, name),
+      get: () => window[name],
     })
   }
 }
@@ -31,15 +34,15 @@ const stdinChunks: Buffer[] = []
 
 function convertInput() {
   const [headerFrame] = readFrames(Buffer.concat(stdinChunks))
+  // SAFETY: this private stdin pipe is written by suite/content/convert.py, which
+  // constructs {legacy, maxState} from this app's read_old result, or {} for version probes.
+  // The conversion owner checks unsupported nested legacy content before producing state.
   const input = JSON.parse(headerFrame!.toString()) as ConverterInput
-  let answer: object = {}
-  if ('legacy' in input) {
-    const result = convertLegacy(input.legacy, input.maxState)
-    answer = result
-    if (result.kind === 'converted') {
-      answer = { ...result, state: Buffer.from(result.state).toString('base64') }
-    }
-  }
+  const result = 'legacy' in input ? convertLegacy(input.legacy, input.maxState) : undefined
+  const answer =
+    result?.kind === 'converted'
+      ? { ...result, state: Buffer.from(result.state).toString('base64') }
+      : result
 
   process.stdout.write(JSON.stringify({ ...answer, version: __CONVERTER_VERSION__ }))
 }

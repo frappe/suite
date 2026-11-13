@@ -20,7 +20,7 @@ beforeEach(() => {
   setActivePinia(createPinia())
   engine = createApiClient(
     { meet: () => import('@/apps/meet/client/policy').then((m) => m.registration) },
-    { transport: createTransport({ fetch: fetcher, maxRetries: 0 }), persistence: false, feedback },
+    { transport: createTransport({ fetch: fetcher, maxRetries: 0 }), feedback },
   )
   mocks.mutation.mockImplementation(engine.client.mutation)
 })

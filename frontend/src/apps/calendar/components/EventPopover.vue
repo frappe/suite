@@ -71,7 +71,7 @@ const onFocusOutside = (event: Event) => event.preventDefault()
 // and a dismiss racing the toggle would close and reopen in one click — the
 // guard frappe-ui's Popover puts on its own trigger.
 const onInteractOutside = (event: Event) => {
-  const target = event.target as Element | null
+  const target = event.target instanceof Element ? event.target : null
   if (target && anchor?.contains(target)) event.preventDefault()
 }
 

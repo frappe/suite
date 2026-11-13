@@ -95,8 +95,6 @@ const moreAnswers = computed(() =>
       label: __('Mark {0} as trusted', [domain.slice(1)]),
       onClick: () => emit('allowDomain', domain),
     })),
-  ]
-    .filter((options) => options.length)
-    .map((options) => ({ group: '', options })),
+  ].flatMap((options) => (options.length ? [{ group: '', options: options }] : [])),
 )
 </script>

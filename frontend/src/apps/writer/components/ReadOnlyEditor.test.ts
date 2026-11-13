@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, ref, type App } from 'vue'
 import { Doc, encodeStateAsUpdate, XmlElement, XmlText } from 'yjs'
@@ -12,8 +13,6 @@ vi.mock('./ToCMobile.vue', () => ({ default: { render: () => null } }))
 vi.mock('@/apps/drive', () => ({
   hasDefaultDocumentTitle: () => false,
   useDriveDialogs: () => ({ pickFile: async () => undefined }),
-}))
-vi.mock('@/apps/writer/composables/useUsers', () => ({
   useUsers: () => ({ users: ref([]) }),
   searchMentions: () => [],
 }))
@@ -58,8 +57,8 @@ function mountOld(
   document.body.append(root)
   const shown = ref<Exposed | null>(null)
   const props = {
-    file: { name: 'node-1', title: 'Plan', isEditable: false } as unknown as EditorFile,
-    document: { doc: { ...row, ycomments: null } } as unknown as WriterDocument,
+    file: fromPartial<EditorFile>({ name: 'node-1', title: 'Plan', isEditable: false }),
+    document: fromPartial<WriterDocument>({ doc: { ...row, ycomments: null } }),
     settings: {},
   }
   const app = createApp({

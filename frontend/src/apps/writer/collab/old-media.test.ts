@@ -1,5 +1,6 @@
 import { getSchema } from '@tiptap/core'
 import { yXmlFragmentToProsemirrorJSON } from '@tiptap/y-tiptap'
+import { fromAny } from '@total-typescript/shoehorn'
 import { describe, expect, it } from 'vitest'
 import { Doc, XmlElement, XmlText } from 'yjs'
 
@@ -12,7 +13,7 @@ const schema = getSchema(writerSchema())
 function oldMedia(attributes: Record<string, unknown>) {
   const node = new XmlElement('resizableMedia')
   for (const [key, value] of Object.entries(attributes)) {
-    node.setAttribute(key, value as string)
+    node.setAttribute(key, fromAny<string, unknown>(value))
   }
 
   return node
@@ -51,7 +52,7 @@ function paragraph(...content: object[]) {
   return { type: 'paragraph', content }
 }
 
-function image(attrs: object) {
+function image(attrs: Record<string, unknown>) {
   return { type: 'image', attrs }
 }
 

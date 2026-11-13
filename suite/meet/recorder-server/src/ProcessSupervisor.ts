@@ -42,14 +42,17 @@ export class ProcessSupervisor {
 	): Promise<ManagedProcess> {
 		await mkdir(dirname(options.logPath), { recursive: true, mode: 0o700 });
 		const log = createWriteStream(options.logPath, { flags: 'w', mode: 0o600 });
+		const {
+			logPath: _logPath,
+			onUnexpectedExit: _onUnexpectedExit,
+			...spawnOptions
+		} = options;
 		const child = this.spawner(command, args, {
-			...options,
-			logPath: undefined,
-			onUnexpectedExit: undefined,
+			...spawnOptions,
 			shell: false,
 			detached: true,
 			stdio: ['ignore', 'pipe', 'pipe'],
-		} as SpawnOptions);
+		});
 		let logged = 0;
 		const writeLog = (chunk: Buffer | string) => {
 			if (logged >= this.maxLogBytes) return;
@@ -92,7 +95,13 @@ export class ProcessSupervisor {
 					try {
 						this.kill(-child.pid, 'SIGTERM');
 					} catch (error) {
-						if ((error as NodeJS.ErrnoException).code === 'ESRCH') return;
+						if (
+							typeof error === 'object' &&
+							error !== null &&
+							'code' in error &&
+							error.code === 'ESRCH'
+						)
+							return;
 						throw error;
 					}
 					let timer: NodeJS.Timeout | undefined;
@@ -107,7 +116,13 @@ export class ProcessSupervisor {
 						try {
 							this.kill(-child.pid, 'SIGKILL');
 						} catch (error) {
-							if ((error as NodeJS.ErrnoException).code === 'ESRCH') return;
+							if (
+								typeof error === 'object' &&
+								error !== null &&
+								'code' in error &&
+								error.code === 'ESRCH'
+							)
+								return;
 							throw error;
 						}
 						await exited;

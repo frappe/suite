@@ -13,7 +13,7 @@ import * as yjs from 'yjs'
 const VENDORED_DIR = path.resolve(__dirname, '../../../../packages/collab-prosemirror')
 
 // Published @tiptap/y-tiptap 3.0.5, except where a later commit names its change
-const SHA256: Record<string, string> = {
+const SHA256 = {
   // published 606fedd1...; then every new textblock gets its text node eagerly; then content the editor
   // can't hold freezes the binding, and leftovers holding nothing are hidden and skipped, never deleted;
   // then side-by-side texts are written as one run in place, never folded into one;
@@ -41,7 +41,7 @@ const SHA256: Record<string, string> = {
   // published 456adef9...; then placeFragment and UnplaceableReason; then builtMarks
   'dist/src/y-tiptap.d.ts': '2bda19fccd0a36eece450691d43f68a2de377a5658aac1798641e6afd9af54e6',
   LICENSE: 'fd69bd7c93b6c32f43c8244c3182029c1af6cc14bb259a0195750f1661e9e304',
-}
+} satisfies Record<string, string>
 
 describe('owned collab binding', () => {
   it('matches the published package plus our recorded changes', () => {

@@ -2,6 +2,7 @@ import { Editor } from '@tiptap/core'
 import Document from '@tiptap/extension-document'
 import Paragraph from '@tiptap/extension-paragraph'
 import Text from '@tiptap/extension-text'
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Awareness } from 'y-protocols/awareness'
 import * as yjs from 'yjs'
@@ -51,7 +52,7 @@ function openEditor(room: ReturnType<typeof fakeRoom>) {
     Document,
     Paragraph,
     Text,
-    ...writerBinding(room as unknown as CollabRoom, () => {}),
+    ...writerBinding(fromPartial<CollabRoom>(room), () => {}),
   ]
   const editor = new Editor({ element, extensions })
   editors.push(editor)

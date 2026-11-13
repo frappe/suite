@@ -6,7 +6,7 @@ import frappe
 from frappe.utils import now_datetime
 
 from suite import drive
-from suite.content import touches
+from suite.content import editors, touches
 from suite.content.http import routes
 from suite.drive._core.access import grant
 from suite.drive._core.principals import Principals
@@ -135,6 +135,10 @@ class TestWriterCollabAccess(CollabCase):
             ),
         )
 
+        # Slides now keeps Presentation, so only Writer is registered here to leave a type no app keeps.
+        self.enterContext(
+            patch.object(editors, "editors", return_value={writer_content.APP: writer_content.EDITOR})
+        )
         for user, node, answers in expected:
             frappe.set_user(user)
             session_body = json.dumps({"sid": uuid.uuid4().hex}).encode()

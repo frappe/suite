@@ -1,27 +1,16 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { ConsumerManager } from '../media/ConsumerManager'
-import type { ParticipantManager } from '../media/ParticipantManager'
-import type { TransportManager } from '../media/TransportManager'
-import type { VideoElementManager } from '../media/VideoElementManager'
-import type { SFUMediaManager } from '../sfu/SFUMediaManager'
 import { SFUMeetingManager } from '../SFUMeetingManager'
 
-type TestableSFUMeetingManager = Pick<SFUMeetingManager, keyof SFUMeetingManager> & {
-  videoManager: VideoElementManager
-  participantManager: ParticipantManager
-  consumerManager: ConsumerManager
-  transportManager: TransportManager
-  mediaManager: SFUMediaManager
-  mediaHandler: SFUMediaManager['mediaHandler']
-}
-
 const createManager = (client: Partial<ConstructorParameters<typeof SFUMeetingManager>[0]>) =>
-  new SFUMeetingManager({
-    on: vi.fn(),
-    off: vi.fn(),
-    ...client,
-  } as never) as unknown as TestableSFUMeetingManager
+  new SFUMeetingManager(
+    fromPartial({
+      on: vi.fn(),
+      off: vi.fn(),
+      ...client,
+    }),
+  )
 
 class FakeMediaStream {
   private tracks: MediaStreamTrack[]
@@ -48,7 +37,7 @@ class FakeMediaStream {
 }
 
 const mediaTrack = (id: string, kind: 'audio' | 'video') =>
-  ({ id, kind, readyState: 'live' }) as MediaStreamTrack
+  fromPartial<MediaStreamTrack>({ id, kind, readyState: 'live' })
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -67,50 +56,30 @@ afterEach(() => {
 
 function prepareE2EEManager() {
   vi.stubGlobal('MediaStream', FakeMediaStream)
-  const manager = createManager({
-    isConnected: vi.fn(() => true),
-    closeProducer: vi.fn().mockResolvedValue(undefined),
-  } as never)
-  const connectionManager = (
-    manager as unknown as {
-      connectionManager: {
-        clearBufferedReconciliationEvents: () => void
-        setupExistingParticipants: () => Promise<void>
-      }
-    }
-  ).connectionManager
-  vi.spyOn(manager.mediaManager, 'cancelPendingSubscriptions').mockResolvedValue()
-  vi.spyOn(manager.consumerManager, 'clear').mockImplementation(() => {})
+  const manager = createManager(
+    fromPartial({
+      isConnected: vi.fn(() => true),
+      closeProducer: vi.fn().mockResolvedValue(undefined),
+    }),
+  )
+  const connectionManager = manager['connectionManager']
+  vi.spyOn(manager['mediaManager'], 'cancelPendingSubscriptions').mockResolvedValue()
+  vi.spyOn(manager['consumerManager'], 'clear').mockImplementation(() => {})
   vi.spyOn(connectionManager, 'clearBufferedReconciliationEvents').mockImplementation(() => {})
   vi.spyOn(connectionManager, 'setupExistingParticipants').mockResolvedValue()
-  vi.spyOn(manager.transportManager, 'cleanup').mockImplementation(() => {})
-  vi.spyOn(manager.transportManager, 'initializeDevice').mockResolvedValue()
-  vi.spyOn(manager.transportManager, 'createReceiveTransport').mockResolvedValue(undefined)
-  vi.spyOn(manager.transportManager, 'createSendTransport').mockResolvedValue(undefined)
+  vi.spyOn(manager['transportManager'], 'cleanup').mockImplementation(() => {})
+  vi.spyOn(manager['transportManager'], 'initializeDevice').mockResolvedValue()
+  vi.spyOn(manager['transportManager'], 'createReceiveTransport').mockResolvedValue(undefined)
+  vi.spyOn(manager['transportManager'], 'createSendTransport').mockResolvedValue(undefined)
   return manager
 }
 
 describe('SFUMeetingManager adaptive streaming', () => {
   it('escalates exhausted expected publication repair', async () => {
-    const manager = createManager({} as never)
-    const connection = (
-      manager as unknown as {
-        connectionManager: {
-          expectedMedia: {
-            observe: (entry: unknown) => void
-            repair: (
-              key: string,
-              stage: 'publication',
-              action: 'recreate_producer',
-              operation: () => Promise<void>,
-            ) => Promise<boolean>
-          }
-          escalateRecovery: (trigger: unknown) => Promise<boolean>
-        }
-      }
-    ).connectionManager
+    const manager = createManager(fromPartial({}))
+    const connection = manager['connectionManager']
     const escalate = vi.spyOn(connection, 'escalateRecovery').mockResolvedValue(true)
-    connection.expectedMedia.observe({
+    connection['expectedMedia'].observe({
       key: 'local:microphone',
       direction: 'local',
       media: 'audio',
@@ -118,7 +87,7 @@ describe('SFUMeetingManager adaptive streaming', () => {
       desired: true,
     })
     for (let attempt = 0; attempt < 4; attempt += 1) {
-      await connection.expectedMedia.repair(
+      await connection['expectedMedia'].repair(
         'local:microphone',
         'publication',
         'recreate_producer',
@@ -134,8 +103,8 @@ describe('SFUMeetingManager adaptive streaming', () => {
   })
 
   it('retries playback before reconciling media after browser resume', async () => {
-    const manager = createManager({} as never)
-    const retryPlayback = vi.spyOn(manager.videoManager, 'retryPlayback').mockResolvedValue()
+    const manager = createManager(fromPartial({}))
+    const retryPlayback = vi.spyOn(manager['videoManager'], 'retryPlayback').mockResolvedValue()
     const reconcile = vi.spyOn(manager, 'reconcileExpectedMedia').mockResolvedValue()
 
     await manager.recoverBrowserLifecycle()
@@ -148,9 +117,11 @@ describe('SFUMeetingManager adaptive streaming', () => {
   })
 
   it('rejects visible preferences while disconnected', async () => {
-    const manager = createManager({
-      isConnected: vi.fn(() => false),
-    } as never)
+    const manager = createManager(
+      fromPartial({
+        isConnected: vi.fn(() => false),
+      }),
+    )
 
     await expect(
       manager.updateConsumerStreamPreferences('consumer-1', {
@@ -162,11 +133,13 @@ describe('SFUMeetingManager adaptive streaming', () => {
   })
 
   it('rejects a failed visible preference without clearing adaptive pause', async () => {
-    const manager = createManager({
-      isConnected: vi.fn(() => true),
-      updateConsumerPreferences: vi.fn().mockRejectedValue(new Error('offline')),
-    } as never)
-    const updateConsumer = vi.spyOn(manager.consumerManager, 'updateConsumer')
+    const manager = createManager(
+      fromPartial({
+        isConnected: vi.fn(() => true),
+        updateConsumerPreferences: vi.fn().mockRejectedValue(new Error('offline')),
+      }),
+    )
+    const updateConsumer = vi.spyOn(manager['consumerManager'], 'updateConsumer')
 
     await expect(
       manager.updateConsumerStreamPreferences('consumer-1', {
@@ -185,11 +158,13 @@ describe('SFUMeetingManager adaptive streaming', () => {
       .fn()
       .mockReturnValueOnce(visibleRequest.promise)
       .mockReturnValueOnce(hiddenRequest.promise)
-    const manager = createManager({
-      isConnected: vi.fn(() => true),
-      updateConsumerPreferences,
-    } as never)
-    const updateConsumer = vi.spyOn(manager.consumerManager, 'updateConsumer')
+    const manager = createManager(
+      fromPartial({
+        isConnected: vi.fn(() => true),
+        updateConsumerPreferences,
+      }),
+    )
+    const updateConsumer = vi.spyOn(manager['consumerManager'], 'updateConsumer')
 
     const visible = manager.updateConsumerStreamPreferences('consumer-1', {
       visible: true,
@@ -223,7 +198,7 @@ describe('SFUMeetingManager facade operations', () => {
       closeProducer,
       pauseProducer,
       resumeProducer,
-    } as never
+    }
     const manager = createManager(client)
     const initialTrack = mediaTrack('initial', 'video')
     const replacementTrack = Object.assign(mediaTrack('replacement', 'video'), {
@@ -241,7 +216,7 @@ describe('SFUMeetingManager facade operations', () => {
       resume: vi.fn(),
       close: vi.fn(),
     }
-    vi.spyOn(manager.transportManager, 'createProducer').mockResolvedValue(producer as never)
+    vi.spyOn(manager['transportManager'], 'createProducer').mockResolvedValue(fromPartial(producer))
 
     await manager.createLocalProducer('video', initialTrack)
     await manager.replaceLocalProducerTrack('video', replacementTrack)
@@ -263,11 +238,13 @@ describe('SFUMeetingManager facade operations', () => {
     vi.stubGlobal('MediaStream', FakeMediaStream)
     const closeProducer = vi.fn().mockResolvedValue(undefined)
     const resumeProducer = vi.fn().mockResolvedValue(undefined)
-    const manager = createManager({
-      isConnected: vi.fn(() => true),
-      closeProducer,
-      resumeProducer,
-    } as never)
+    const manager = createManager(
+      fromPartial({
+        isConnected: vi.fn(() => true),
+        closeProducer,
+        resumeProducer,
+      }),
+    )
     const track = mediaTrack('microphone', 'audio')
     const creation = deferred<{
       id: string
@@ -295,13 +272,17 @@ describe('SFUMeetingManager facade operations', () => {
       }),
       close: vi.fn(),
     }
-    vi.spyOn(manager.transportManager, 'createProducer').mockReturnValue(creation.promise as never)
+    vi.spyOn(manager['transportManager'], 'createProducer').mockReturnValue(
+      fromPartial(creation.promise),
+    )
 
     const reconciliation = manager.reconcileLocalProducerTrack('audio', track, {
       resume: true,
     })
-    await vi.waitFor(() => expect(manager.transportManager.createProducer).toHaveBeenCalledOnce())
-    manager.mediaHandler.setProducers({ audioProducer: current as never })
+    await vi.waitFor(() =>
+      expect(manager['transportManager'].createProducer).toHaveBeenCalledOnce(),
+    )
+    manager['mediaHandler'].setProducers({ audioProducer: fromPartial(current) })
     creation.resolve(abandoned)
     await reconciliation
 
@@ -327,9 +308,9 @@ describe('SFUMeetingManager facade operations', () => {
       }),
       close: vi.fn(),
     }
-    manager.mediaHandler.setProducers({ videoProducer: producer as never })
+    manager['mediaHandler'].setProducers({ videoProducer: fromPartial(producer) })
 
-    const result = await manager.publishMedia(new FakeMediaStream([requestedTrack]) as never, {
+    const result = await manager.publishMedia(fromPartial(new FakeMediaStream([requestedTrack])), {
       publishVideo: true,
       publishAudio: false,
     })
@@ -343,9 +324,11 @@ describe('SFUMeetingManager facade operations', () => {
 
   it('reports audio and video publication outcomes independently', async () => {
     vi.stubGlobal('MediaStream', FakeMediaStream)
-    const manager = createManager({
-      isConnected: vi.fn(() => false),
-    } as never)
+    const manager = createManager(
+      fromPartial({
+        isConnected: vi.fn(() => false),
+      }),
+    )
     const video = mediaTrack('video', 'video')
     const audio = mediaTrack('audio', 'audio')
     const videoError = new Error('video failed')
@@ -357,11 +340,11 @@ describe('SFUMeetingManager facade operations', () => {
       resume: vi.fn(),
       close: vi.fn(),
     }
-    vi.spyOn(manager.transportManager, 'createProducer')
+    vi.spyOn(manager['transportManager'], 'createProducer')
       .mockRejectedValueOnce(videoError)
-      .mockResolvedValueOnce(audioProducer as never)
+      .mockResolvedValueOnce(fromPartial(audioProducer))
 
-    const result = await manager.publishMedia(new FakeMediaStream([video, audio]) as never, {
+    const result = await manager.publishMedia(fromPartial(new FakeMediaStream([video, audio])), {
       publishVideo: true,
       publishAudio: true,
     })
@@ -375,10 +358,12 @@ describe('SFUMeetingManager facade operations', () => {
 
   it('abandons a delayed screen producer after screen sharing stops', async () => {
     const closeProducer = vi.fn().mockResolvedValue(undefined)
-    const manager = createManager({
-      isConnected: vi.fn(() => true),
-      closeProducer,
-    } as never)
+    const manager = createManager(
+      fromPartial({
+        isConnected: vi.fn(() => true),
+        closeProducer,
+      }),
+    )
     const track = mediaTrack('screen', 'video')
     const creation = deferred<{
       id: string
@@ -394,10 +379,14 @@ describe('SFUMeetingManager facade operations', () => {
       paused: false,
       close: vi.fn(),
     }
-    vi.spyOn(manager.transportManager, 'createProducer').mockReturnValue(creation.promise as never)
+    vi.spyOn(manager['transportManager'], 'createProducer').mockReturnValue(
+      fromPartial(creation.promise),
+    )
 
     const publication = manager.publishScreenTrack(track)
-    await vi.waitFor(() => expect(manager.transportManager.createProducer).toHaveBeenCalledOnce())
+    await vi.waitFor(() =>
+      expect(manager['transportManager'].createProducer).toHaveBeenCalledOnce(),
+    )
     expect(manager.hasLocalMediaPublications()).toBe(true)
     const stopping = manager.stopScreenShare()
     creation.resolve(staleProducer)
@@ -413,11 +402,13 @@ describe('SFUMeetingManager facade operations', () => {
     const stopSignal = deferred<unknown>()
     const sendScreenShare = vi.fn(() => stopSignal.promise)
     const closeProducer = vi.fn().mockResolvedValue(undefined)
-    const manager = createManager({
-      isConnected: vi.fn(() => true),
-      sendScreenShare,
-      closeProducer,
-    } as never)
+    const manager = createManager(
+      fromPartial({
+        isConnected: vi.fn(() => true),
+        sendScreenShare,
+        closeProducer,
+      }),
+    )
     const producer = {
       id: 'screen-producer',
       track: mediaTrack('screen', 'video'),
@@ -425,7 +416,7 @@ describe('SFUMeetingManager facade operations', () => {
       paused: false,
       close: vi.fn(),
     }
-    manager.mediaHandler.setProducers({ screenProducer: producer as never })
+    manager['mediaHandler'].setProducers({ screenProducer: fromPartial(producer) })
 
     const stopping = manager.stopScreenShare({
       reason: 'user-click',
@@ -459,11 +450,13 @@ describe('SFUMeetingManager facade operations', () => {
   it('closes the screen producer when stop signaling rejects', async () => {
     const stopSignal = deferred<unknown>()
     const closeProducer = vi.fn().mockResolvedValue(undefined)
-    const manager = createManager({
-      isConnected: vi.fn(() => true),
-      sendScreenShare: vi.fn(() => stopSignal.promise),
-      closeProducer,
-    } as never)
+    const manager = createManager(
+      fromPartial({
+        isConnected: vi.fn(() => true),
+        sendScreenShare: vi.fn(() => stopSignal.promise),
+        closeProducer,
+      }),
+    )
     const producer = {
       id: 'screen-producer',
       track: mediaTrack('screen', 'video'),
@@ -471,7 +464,7 @@ describe('SFUMeetingManager facade operations', () => {
       paused: false,
       close: vi.fn(),
     }
-    manager.mediaHandler.setProducers({ screenProducer: producer as never })
+    manager['mediaHandler'].setProducers({ screenProducer: fromPartial(producer) })
 
     const stopping = manager.stopScreenShare({ reason: 'track-ended' })
     stopSignal.reject(new Error('stop rejected'))
@@ -486,10 +479,12 @@ describe('SFUMeetingManager facade operations', () => {
 
   it('abandons a delayed screen producer when its track ends', async () => {
     const closeProducer = vi.fn().mockResolvedValue(undefined)
-    const manager = createManager({
-      isConnected: vi.fn(() => true),
-      closeProducer,
-    } as never)
+    const manager = createManager(
+      fromPartial({
+        isConnected: vi.fn(() => true),
+        closeProducer,
+      }),
+    )
     const track = mediaTrack('screen', 'video')
     const creation = deferred<{
       id: string
@@ -505,10 +500,14 @@ describe('SFUMeetingManager facade operations', () => {
       paused: false,
       close: vi.fn(),
     }
-    vi.spyOn(manager.transportManager, 'createProducer').mockReturnValue(creation.promise as never)
+    vi.spyOn(manager['transportManager'], 'createProducer').mockReturnValue(
+      fromPartial(creation.promise),
+    )
 
     const publication = manager.publishScreenTrack(track)
-    await vi.waitFor(() => expect(manager.transportManager.createProducer).toHaveBeenCalledOnce())
+    await vi.waitFor(() =>
+      expect(manager['transportManager'].createProducer).toHaveBeenCalledOnce(),
+    )
     Reflect.set(track, 'readyState', 'ended')
     creation.resolve(staleProducer)
 
@@ -520,11 +519,13 @@ describe('SFUMeetingManager facade operations', () => {
 
   it('invalidates a delayed screen publication when manager cleanup starts', async () => {
     const closeProducer = vi.fn().mockResolvedValue(undefined)
-    const manager = createManager({
-      isConnected: vi.fn(() => true),
-      closeProducer,
-      disconnect: vi.fn().mockResolvedValue(undefined),
-    } as never)
+    const manager = createManager(
+      fromPartial({
+        isConnected: vi.fn(() => true),
+        closeProducer,
+        disconnect: vi.fn().mockResolvedValue(undefined),
+      }),
+    )
     const track = mediaTrack('screen', 'video')
     const creation = deferred<{
       id: string
@@ -540,10 +541,14 @@ describe('SFUMeetingManager facade operations', () => {
       paused: false,
       close: vi.fn(),
     }
-    vi.spyOn(manager.transportManager, 'createProducer').mockReturnValue(creation.promise as never)
+    vi.spyOn(manager['transportManager'], 'createProducer').mockReturnValue(
+      fromPartial(creation.promise),
+    )
 
     const publication = manager.publishScreenTrack(track)
-    await vi.waitFor(() => expect(manager.transportManager.createProducer).toHaveBeenCalledOnce())
+    await vi.waitFor(() =>
+      expect(manager['transportManager'].createProducer).toHaveBeenCalledOnce(),
+    )
     const cleanup = manager.cleanup()
     creation.resolve(staleProducer)
 
@@ -556,10 +561,12 @@ describe('SFUMeetingManager facade operations', () => {
 
   it('keeps a recovered screen producer that replaces delayed creation', async () => {
     const closeProducer = vi.fn().mockResolvedValue(undefined)
-    const manager = createManager({
-      isConnected: vi.fn(() => true),
-      closeProducer,
-    } as never)
+    const manager = createManager(
+      fromPartial({
+        isConnected: vi.fn(() => true),
+        closeProducer,
+      }),
+    )
     const track = mediaTrack('screen', 'video')
     const creation = deferred<{
       id: string
@@ -582,12 +589,16 @@ describe('SFUMeetingManager facade operations', () => {
       paused: false,
       close: vi.fn(),
     }
-    vi.spyOn(manager.transportManager, 'createProducer').mockReturnValue(creation.promise as never)
+    vi.spyOn(manager['transportManager'], 'createProducer').mockReturnValue(
+      fromPartial(creation.promise),
+    )
 
     const publication = manager.publishScreenTrack(track)
-    await vi.waitFor(() => expect(manager.transportManager.createProducer).toHaveBeenCalledOnce())
-    manager.mediaHandler.setProducers({
-      screenProducer: recoveredProducer as never,
+    await vi.waitFor(() =>
+      expect(manager['transportManager'].createProducer).toHaveBeenCalledOnce(),
+    )
+    manager['mediaHandler'].setProducers({
+      screenProducer: fromPartial(recoveredProducer),
     })
     creation.resolve(staleProducer)
 
@@ -602,10 +613,12 @@ describe('SFUMeetingManager facade operations', () => {
 
   it('does not overwrite replacement screen state after delayed creation', async () => {
     const closeProducer = vi.fn().mockResolvedValue(undefined)
-    const manager = createManager({
-      isConnected: vi.fn(() => true),
-      closeProducer,
-    } as never)
+    const manager = createManager(
+      fromPartial({
+        isConnected: vi.fn(() => true),
+        closeProducer,
+      }),
+    )
     const requestedTrack = mediaTrack('requested-screen', 'video')
     const replacementTrack = mediaTrack('replacement-screen', 'video')
     const creation = deferred<{
@@ -629,12 +642,16 @@ describe('SFUMeetingManager facade operations', () => {
       paused: false,
       close: vi.fn(),
     }
-    vi.spyOn(manager.transportManager, 'createProducer').mockReturnValue(creation.promise as never)
+    vi.spyOn(manager['transportManager'], 'createProducer').mockReturnValue(
+      fromPartial(creation.promise),
+    )
 
     const publication = manager.publishScreenTrack(requestedTrack)
-    await vi.waitFor(() => expect(manager.transportManager.createProducer).toHaveBeenCalledOnce())
-    manager.mediaHandler.setProducers({
-      screenProducer: replacementProducer as never,
+    await vi.waitFor(() =>
+      expect(manager['transportManager'].createProducer).toHaveBeenCalledOnce(),
+    )
+    manager['mediaHandler'].setProducers({
+      screenProducer: fromPartial(replacementProducer),
     })
     creation.resolve(staleProducer)
 
@@ -645,12 +662,14 @@ describe('SFUMeetingManager facade operations', () => {
   })
 
   it('exposes only the video consumer id', () => {
-    const manager = createManager({} as never)
-    vi.spyOn(manager.consumerManager, 'getVideoConsumer')
-      .mockReturnValueOnce({
-        id: 'video-consumer',
-        adaptivelyPaused: false,
-      } as never)
+    const manager = createManager(fromPartial({}))
+    vi.spyOn(manager['consumerManager'], 'getVideoConsumer')
+      .mockReturnValueOnce(
+        fromPartial({
+          id: 'video-consumer',
+          adaptivelyPaused: false,
+        }),
+      )
       .mockReturnValueOnce(undefined)
 
     expect(manager.getVideoConsumerId('participant-1')).toBe('video-consumer')
@@ -658,9 +677,11 @@ describe('SFUMeetingManager facade operations', () => {
   })
 
   it('returns immutable RTC samples and drops a producer replaced during sampling', async () => {
-    const manager = createManager({
-      getConnectionStatus: vi.fn(() => ({ connected: true })),
-    } as never)
+    const manager = createManager(
+      fromPartial({
+        getConnectionStatus: vi.fn(() => ({ connected: true })),
+      }),
+    )
     const stats = deferred<Map<string, unknown>>()
     const oldProducer = {
       id: 'old-producer',
@@ -671,16 +692,16 @@ describe('SFUMeetingManager facade operations', () => {
       appData: {},
       getStats: vi.fn(() => stats.promise),
     }
-    manager.mediaHandler.setProducers({ audioProducer: oldProducer as never })
+    manager['mediaHandler'].setProducers({ audioProducer: fromPartial(oldProducer) })
 
     const sampling = manager.sampleRTCStats()
     await vi.waitFor(() => expect(oldProducer.getStats).toHaveBeenCalledOnce())
-    manager.mediaHandler.setProducers({
-      audioProducer: {
+    manager['mediaHandler'].setProducers({
+      audioProducer: fromPartial({
         ...oldProducer,
         id: 'replacement-producer',
         getStats: vi.fn().mockResolvedValue(new Map()),
-      } as never,
+      }),
     })
     stats.resolve(new Map([['outbound', { id: 'outbound', type: 'outbound-rtp' }]]))
     const sample = await sampling
@@ -696,10 +717,12 @@ describe('SFUMeetingManager facade operations', () => {
   it('captures microphone packet progress without device identifiers', async () => {
     vi.useFakeTimers()
     try {
-      const manager = createManager({
-        getConnectionStatus: () => ({ connected: true, socketId: 'socket' }),
-      } as never)
-      vi.spyOn(manager.transportManager, 'getNetworkStats').mockResolvedValue(null as never)
+      const manager = createManager(
+        fromPartial({
+          getConnectionStatus: () => ({ connected: true, socketId: 'socket' }),
+        }),
+      )
+      vi.spyOn(manager['transportManager'], 'getNetworkStats').mockResolvedValue(fromPartial(null))
       const getStats = vi
         .fn()
         .mockResolvedValueOnce(
@@ -719,8 +742,8 @@ describe('SFUMeetingManager facade operations', () => {
         .mockResolvedValueOnce(
           new Map([['audio', { type: 'outbound-rtp', packetsSent: 20, totalAudioEnergy: 3 }]]),
         )
-      manager.mediaHandler.setProducers({
-        audioProducer: {
+      manager['mediaHandler'].setProducers({
+        audioProducer: fromPartial({
           id: 'mic',
           kind: 'audio',
           closed: false,
@@ -733,9 +756,9 @@ describe('SFUMeetingManager facade operations', () => {
             muted: false,
             getSettings: () => ({ deviceId: 'private-device' }),
           },
-        } as never,
+        }),
       })
-      manager.consumerManager.consumers.set('remote-audio', {
+      manager['consumerManager'].consumers.set('remote-audio', {
         id: 'remote-audio',
         participantId: 'speaker',
         producerId: 'remote-producer',
@@ -744,7 +767,7 @@ describe('SFUMeetingManager facade operations', () => {
         adaptivelyPaused: false,
         createdAt: 0,
         track: { ...mediaTrack('remote', 'audio'), enabled: true, muted: false },
-        consumer: {
+        consumer: fromPartial({
           paused: false,
           getStats: vi.fn().mockResolvedValue(
             new Map([
@@ -763,11 +786,11 @@ describe('SFUMeetingManager facade operations', () => {
               ],
             ]),
           ),
-        } as never,
+        }),
       })
       const element = document.createElement('audio')
       element.muted = true
-      manager.videoManager.audioElements.set('listener', element)
+      manager['videoManager'].audioElements.set('listener', element)
       const collection = manager.getConnectionDiagnostics()
       await vi.runAllTimersAsync()
       const result = await collection
@@ -805,10 +828,14 @@ describe('SFUMeetingManager facade operations', () => {
   it('still reports connection state when audio statistics never resolve', async () => {
     vi.useFakeTimers()
     try {
-      const manager = createManager({
-        getConnectionStatus: () => ({ connected: false, socketId: null }),
-      } as never)
-      vi.spyOn(manager.transportManager, 'getNetworkStats').mockRejectedValue(new Error('closed'))
+      const manager = createManager(
+        fromPartial({
+          getConnectionStatus: () => ({ connected: false, socketId: null }),
+        }),
+      )
+      vi.spyOn(manager['transportManager'], 'getNetworkStats').mockRejectedValue(
+        new Error('closed'),
+      )
       vi.spyOn(manager, 'sampleRTCStats').mockImplementation(() => new Promise(() => {}))
       const collection = manager.getConnectionDiagnostics()
       await vi.runAllTimersAsync()
@@ -825,7 +852,7 @@ describe('SFUMeetingManager facade operations', () => {
 
   it('routes host control through an acknowledged client request', async () => {
     const sendRequest = vi.fn().mockResolvedValue({ success: true })
-    const manager = createManager({ sendRequest } as never)
+    const manager = createManager(fromPartial({ sendRequest }))
 
     await manager.sendHostControl('mute_participant', 'participant-1')
 
@@ -836,8 +863,8 @@ describe('SFUMeetingManager facade operations', () => {
   })
 
   it('keeps health monitoring active until its last facade subscriber leaves', () => {
-    const manager = createManager({} as never)
-    const monitor = Reflect.get(manager, 'mediaHealthMonitor')
+    const manager = createManager(fromPartial({}))
+    const monitor = manager['mediaHealthMonitor']
     const start = vi.spyOn(monitor, 'start').mockImplementation(() => {})
     const stop = vi.spyOn(monitor, 'stop').mockImplementation(() => {})
     const stopFirst = manager.startMediaHealthMonitoring(vi.fn())
@@ -854,14 +881,14 @@ describe('SFUMeetingManager facade operations', () => {
 
 describe('SFUMeetingManager recovery fallback', () => {
   it('does not announce healthy just because ICE restart resolves', async () => {
-    const manager = createManager({ isConnected: vi.fn(() => true) } as never)
+    const manager = createManager(fromPartial({ isConnected: vi.fn(() => true) }))
     const onRecoveryStateChange = vi.fn()
     manager.initialize({
       meetingId: 'meeting-1',
       currentUser: { user_id: 'me' },
       eventHandlers: { onRecoveryStateChange },
     })
-    vi.spyOn(manager.transportManager, 'restartAllTransportIce').mockResolvedValue({
+    vi.spyOn(manager['transportManager'], 'restartAllTransportIce').mockResolvedValue({
       send: 'not-needed',
       recv: 'restarted',
     })
@@ -874,14 +901,16 @@ describe('SFUMeetingManager recovery fallback', () => {
   })
 
   it('keeps existing consumers after a successful ICE restart', async () => {
-    const manager = createManager({
-      isConnected: vi.fn(() => true),
-    } as never)
-    vi.spyOn(manager.transportManager, 'restartAllTransportIce').mockResolvedValue({
+    const manager = createManager(
+      fromPartial({
+        isConnected: vi.fn(() => true),
+      }),
+    )
+    vi.spyOn(manager['transportManager'], 'restartAllTransportIce').mockResolvedValue({
       send: 'restarted',
       recv: 'restarted',
     })
-    const closeReceiveTransport = vi.spyOn(manager.transportManager, 'closeReceiveTransport')
+    const closeReceiveTransport = vi.spyOn(manager['transportManager'], 'closeReceiveTransport')
 
     await expect(manager.recoverTransport('transport_recv_failed')).resolves.toBe('recovered')
 
@@ -889,25 +918,21 @@ describe('SFUMeetingManager recovery fallback', () => {
   })
 
   it('resets receive media when send rebuild fails', async () => {
-    const manager = createManager({
-      isConnected: vi.fn(() => true),
-    } as never)
-    vi.spyOn(manager.transportManager, 'restartAllTransportIce').mockResolvedValue({
+    const manager = createManager(
+      fromPartial({
+        isConnected: vi.fn(() => true),
+      }),
+    )
+    vi.spyOn(manager['transportManager'], 'restartAllTransportIce').mockResolvedValue({
       send: 'failed',
       recv: 'failed',
     })
-    vi.spyOn(manager.mediaManager, 'rebuildSendSide').mockRejectedValue(
+    vi.spyOn(manager['mediaManager'], 'rebuildSendSide').mockRejectedValue(
       new Error('send rebuild failed'),
     )
-    const connection = (
-      manager as unknown as {
-        connectionManager: {
-          escalateRecovery: (trigger: unknown) => Promise<boolean>
-        }
-      }
-    ).connectionManager
+    const connection = manager['connectionManager']
     const escalate = vi.spyOn(connection, 'escalateRecovery').mockResolvedValue(true)
-    const closeReceiveTransport = vi.spyOn(manager.transportManager, 'closeReceiveTransport')
+    const closeReceiveTransport = vi.spyOn(manager['transportManager'], 'closeReceiveTransport')
 
     await expect(manager.recoverTransport('transport_send_failed')).resolves.toBe('failed')
 
@@ -936,12 +961,12 @@ describe('SFUMeetingManager E2EE recovery tracks', () => {
       paused: false,
       close: vi.fn(),
     }
-    manager.mediaHandler.setProducers({
-      screenProducer: oldScreenProducer as never,
+    manager['mediaHandler'].setProducers({
+      screenProducer: fromPartial(oldScreenProducer),
     })
     const createProducer = vi
-      .spyOn(manager.transportManager, 'createProducer')
-      .mockResolvedValue(e2eeScreenProducer as never)
+      .spyOn(manager['transportManager'], 'createProducer')
+      .mockResolvedValue(fromPartial(e2eeScreenProducer))
 
     expect(manager.hasLocalMediaPublications()).toBe(true)
     await expect(manager.reconfigureForE2EE(null, null)).resolves.toEqual({
@@ -950,9 +975,9 @@ describe('SFUMeetingManager E2EE recovery tracks', () => {
     })
 
     expect(oldScreenProducer.close).toHaveBeenCalledOnce()
-    expect(manager.transportManager.createSendTransport).toHaveBeenCalledOnce()
+    expect(manager['transportManager'].createSendTransport).toHaveBeenCalledOnce()
     expect(createProducer).toHaveBeenCalledWith(screen, { type: 'screen' })
-    expect(manager.mediaHandler.screenProducer).toBe(e2eeScreenProducer)
+    expect(manager['mediaHandler'].screenProducer).toBe(e2eeScreenProducer)
     expect(screen.readyState).toBe('live')
   })
 
@@ -961,14 +986,14 @@ describe('SFUMeetingManager E2EE recovery tracks', () => {
     const screen = mediaTrack('screen', 'video')
     const video = mediaTrack('video', 'video')
     const audio = mediaTrack('audio', 'audio')
-    manager.mediaHandler.setProducers({
-      screenProducer: {
+    manager['mediaHandler'].setProducers({
+      screenProducer: fromPartial({
         id: 'old-screen',
         track: screen,
         close: vi.fn(),
-      } as never,
-      videoProducer: { id: 'old-video', track: video, close: vi.fn() } as never,
-      audioProducer: { id: 'old-audio', track: audio, close: vi.fn() } as never,
+      }),
+      videoProducer: fromPartial({ id: 'old-video', track: video, close: vi.fn() }),
+      audioProducer: fromPartial({ id: 'old-audio', track: audio, close: vi.fn() }),
     })
     const producers = new Map(
       [video, audio, screen].map((track) => [
@@ -983,13 +1008,13 @@ describe('SFUMeetingManager E2EE recovery tracks', () => {
       ]),
     )
     const createProducer = vi
-      .spyOn(manager.transportManager, 'createProducer')
-      .mockImplementation(async (track) => producers.get(track) as never)
+      .spyOn(manager['transportManager'], 'createProducer')
+      .mockImplementation(async (track) => fromPartial(producers.get(track)))
 
     await expect(
       manager.reconfigureForE2EE(
-        new FakeMediaStream([video]) as never,
-        new FakeMediaStream([audio]) as never,
+        fromPartial(new FakeMediaStream([video])),
+        fromPartial(new FakeMediaStream([audio])),
       ),
     ).resolves.toEqual({ videoPublished: true, audioPublished: true })
 
@@ -1002,9 +1027,9 @@ describe('SFUMeetingManager E2EE recovery tracks', () => {
     expect(createProducer).toHaveBeenNthCalledWith(3, screen, {
       type: 'screen',
     })
-    expect(manager.mediaHandler.videoProducer).toBe(producers.get(video))
-    expect(manager.mediaHandler.audioProducer).toBe(producers.get(audio))
-    expect(manager.mediaHandler.screenProducer).toBe(producers.get(screen))
+    expect(manager['mediaHandler'].videoProducer).toBe(producers.get(video))
+    expect(manager['mediaHandler'].audioProducer).toBe(producers.get(audio))
+    expect(manager['mediaHandler'].screenProducer).toBe(producers.get(screen))
   })
 
   it('removes screen consumers before the E2EE receive clear', async () => {
@@ -1015,16 +1040,18 @@ describe('SFUMeetingManager E2EE recovery tracks', () => {
       producerId: 'screen-producer',
       isScreen: true,
     }
-    vi.spyOn(manager.consumerManager, 'getScreenShareConsumers').mockReturnValue([screen] as never)
+    vi.spyOn(manager['consumerManager'], 'getScreenShareConsumers').mockReturnValue(
+      fromPartial([screen]),
+    )
     const remove = vi
-      .spyOn(manager.consumerManager, 'removeConsumer')
-      .mockReturnValue(screen as never)
+      .spyOn(manager['consumerManager'], 'removeConsumer')
+      .mockReturnValue(fromPartial(screen))
 
     await manager.reconfigureForE2EE(null, null)
 
     expect(remove).toHaveBeenCalledWith('screen-consumer')
     expect(remove.mock.invocationCallOrder[0]).toBeLessThan(
-      vi.mocked(manager.consumerManager.clear).mock.invocationCallOrder[0],
+      vi.mocked(manager['consumerManager'].clear).mock.invocationCallOrder[0],
     )
   })
 
@@ -1037,40 +1064,40 @@ describe('SFUMeetingManager E2EE recovery tracks', () => {
       track: screen,
       close: vi.fn(),
     }
-    manager.mediaHandler.setProducers({
-      screenProducer: oldScreenProducer as never,
+    manager['mediaHandler'].setProducers({
+      screenProducer: fromPartial(oldScreenProducer),
     })
-    const createProducer = vi.spyOn(manager.transportManager, 'createProducer')
+    const createProducer = vi.spyOn(manager['transportManager'], 'createProducer')
 
     expect(manager.hasLocalMediaPublications()).toBe(true)
     await manager.reconfigureForE2EE(null, null)
 
     expect(oldScreenProducer.close).toHaveBeenCalledOnce()
     expect(createProducer).not.toHaveBeenCalled()
-    expect(manager.mediaHandler.screenProducer).toBeNull()
+    expect(manager['mediaHandler'].screenProducer).toBeNull()
   })
 
   it('restores active recovery tracks before recreating producers', async () => {
     const manager = prepareE2EEManager()
     const video = mediaTrack('video', 'video')
     const audio = mediaTrack('audio', 'audio')
-    manager.mediaHandler.setProducers({
-      videoProducer: { close: vi.fn() } as never,
-      audioProducer: { close: vi.fn() } as never,
+    manager['mediaHandler'].setProducers({
+      videoProducer: fromPartial({ close: vi.fn() }),
+      audioProducer: fromPartial({ close: vi.fn() }),
     })
-    const synchronize = vi.spyOn(manager.mediaManager, 'setLocalTrack')
+    const synchronize = vi.spyOn(manager['mediaManager'], 'setLocalTrack')
     const createProducer = vi
-      .spyOn(manager.transportManager, 'createProducer')
-      .mockImplementation(async (track) => ({ track }) as never)
+      .spyOn(manager['transportManager'], 'createProducer')
+      .mockImplementation(async (track) => fromPartial({ track }))
 
     const result = await manager.reconfigureForE2EE(
-      new FakeMediaStream([video]) as never,
-      new FakeMediaStream([audio]) as never,
+      fromPartial(new FakeMediaStream([video])),
+      fromPartial(new FakeMediaStream([audio])),
     )
 
     expect(result).toEqual({ videoPublished: true, audioPublished: true })
-    expect(manager.mediaHandler.localStream?.getVideoTracks()).toEqual([video])
-    expect(manager.mediaHandler.localStream?.getAudioTracks()).toEqual([audio])
+    expect(manager['mediaHandler'].localStream?.getVideoTracks()).toEqual([video])
+    expect(manager['mediaHandler'].localStream?.getAudioTracks()).toEqual([audio])
     expect(synchronize).toHaveBeenCalledWith('video', video)
     expect(synchronize).toHaveBeenCalledWith('audio', audio)
     expect(synchronize.mock.invocationCallOrder[0]).toBeLessThan(
@@ -1085,18 +1112,18 @@ describe('SFUMeetingManager E2EE recovery tracks', () => {
   it('retains an active recovery track when E2EE producer recreation fails', async () => {
     const manager = prepareE2EEManager()
     const video = mediaTrack('video', 'video')
-    manager.mediaHandler.setProducers({
-      videoProducer: { close: vi.fn() } as never,
+    manager['mediaHandler'].setProducers({
+      videoProducer: fromPartial({ close: vi.fn() }),
     })
-    const synchronize = vi.spyOn(manager.mediaManager, 'setLocalTrack')
+    const synchronize = vi.spyOn(manager['mediaManager'], 'setLocalTrack')
     const createProducer = vi
-      .spyOn(manager.transportManager, 'createProducer')
+      .spyOn(manager['transportManager'], 'createProducer')
       .mockRejectedValue(new Error('producer failed'))
 
-    const result = await manager.reconfigureForE2EE(new FakeMediaStream([video]) as never, null)
+    const result = await manager.reconfigureForE2EE(fromPartial(new FakeMediaStream([video])), null)
 
     expect(result).toEqual({ videoPublished: false, audioPublished: false })
-    expect(manager.mediaHandler.localStream?.getVideoTracks()).toEqual([video])
+    expect(manager['mediaHandler'].localStream?.getVideoTracks()).toEqual([video])
     expect(synchronize).toHaveBeenCalledWith('video', video)
     expect(synchronize.mock.invocationCallOrder[0]).toBeLessThan(
       createProducer.mock.invocationCallOrder[0],
@@ -1108,7 +1135,7 @@ describe('SFUMeetingManager E2EE recovery tracks', () => {
     const manager = prepareE2EEManager()
     const mutationStarted = deferred<void>()
     const releaseMutation = deferred<void>()
-    const mutation = manager.mediaManager.serializeSendMediaMutation(async () => {
+    const mutation = manager['mediaManager'].serializeSendMediaMutation(async () => {
       mutationStarted.resolve()
       await releaseMutation.promise
     })
@@ -1116,17 +1143,17 @@ describe('SFUMeetingManager E2EE recovery tracks', () => {
 
     const reconfiguration = manager.reconfigureForE2EE(null, null)
 
-    expect(manager.mediaManager.cancelPendingSubscriptions).not.toHaveBeenCalled()
+    expect(manager['mediaManager'].cancelPendingSubscriptions).not.toHaveBeenCalled()
     releaseMutation.resolve()
     await Promise.all([mutation, reconfiguration])
-    expect(manager.mediaManager.cancelPendingSubscriptions).toHaveBeenCalledOnce()
+    expect(manager['mediaManager'].cancelPendingSubscriptions).toHaveBeenCalledOnce()
   })
 
   it('holds later send-media mutations until E2EE recreation finishes', async () => {
     const manager = prepareE2EEManager()
     const initializeStarted = deferred<void>()
     const releaseInitialize = deferred<void>()
-    vi.mocked(manager.transportManager.initializeDevice).mockImplementation(async () => {
+    vi.mocked(manager['transportManager'].initializeDevice).mockImplementation(async () => {
       initializeStarted.resolve()
       await releaseInitialize.promise
     })
@@ -1134,7 +1161,7 @@ describe('SFUMeetingManager E2EE recovery tracks', () => {
     const reconfiguration = manager.reconfigureForE2EE(null, null)
     await initializeStarted.promise
     let mutationRan = false
-    const mutation = manager.mediaManager.serializeSendMediaMutation(async () => {
+    const mutation = manager['mediaManager'].serializeSendMediaMutation(async () => {
       mutationRan = true
     })
 
@@ -1147,21 +1174,24 @@ describe('SFUMeetingManager E2EE recovery tracks', () => {
   it('reports a selected track that ends while queued as unpublished', async () => {
     const manager = prepareE2EEManager()
     const video = mediaTrack('video', 'video')
-    manager.mediaHandler.setProducers({
-      videoProducer: { id: 'old-video-producer', close: vi.fn() } as never,
+    manager['mediaHandler'].setProducers({
+      videoProducer: fromPartial({ id: 'old-video-producer', close: vi.fn() }),
     })
     const createProducer = vi
-      .spyOn(manager.transportManager, 'createProducer')
-      .mockResolvedValue({} as never)
+      .spyOn(manager['transportManager'], 'createProducer')
+      .mockResolvedValue(fromPartial({}))
     const activeMutationEntered = deferred<void>()
     const releaseActiveMutation = deferred<void>()
-    const activeMutation = manager.mediaManager.serializeSendMediaMutation(async () => {
+    const activeMutation = manager['mediaManager'].serializeSendMediaMutation(async () => {
       activeMutationEntered.resolve()
       await releaseActiveMutation.promise
     })
     await activeMutationEntered.promise
 
-    const reconfiguration = manager.reconfigureForE2EE(new FakeMediaStream([video]) as never, null)
+    const reconfiguration = manager.reconfigureForE2EE(
+      fromPartial(new FakeMediaStream([video])),
+      null,
+    )
     Reflect.set(video, 'readyState', 'ended')
     releaseActiveMutation.resolve()
 
@@ -1171,7 +1201,7 @@ describe('SFUMeetingManager E2EE recovery tracks', () => {
       audioPublished: false,
     })
     expect(createProducer).not.toHaveBeenCalled()
-    expect(manager.mediaHandler.localStream?.getVideoTracks()).toEqual([])
+    expect(manager['mediaHandler'].localStream?.getVideoTracks()).toEqual([])
   })
 
   it('closes an E2EE producer when its track ends during creation', async () => {
@@ -1188,15 +1218,18 @@ describe('SFUMeetingManager E2EE recovery tracks', () => {
       track: video,
       close: vi.fn(),
     }
-    manager.mediaHandler.setProducers({
-      videoProducer: { id: 'old-video-producer', close: vi.fn() } as never,
+    manager['mediaHandler'].setProducers({
+      videoProducer: fromPartial({ id: 'old-video-producer', close: vi.fn() }),
     })
-    vi.spyOn(manager.transportManager, 'createProducer').mockImplementation(() => {
+    vi.spyOn(manager['transportManager'], 'createProducer').mockImplementation(() => {
       creationEntered.resolve()
-      return releaseCreation.promise as never
+      return fromPartial(releaseCreation.promise)
     })
 
-    const reconfiguration = manager.reconfigureForE2EE(new FakeMediaStream([video]) as never, null)
+    const reconfiguration = manager.reconfigureForE2EE(
+      fromPartial(new FakeMediaStream([video])),
+      null,
+    )
     await creationEntered.promise
     Reflect.set(video, 'readyState', 'ended')
     releaseCreation.resolve(unusableProducer)
@@ -1206,8 +1239,8 @@ describe('SFUMeetingManager E2EE recovery tracks', () => {
       audioPublished: false,
     })
     expect(unusableProducer.close).toHaveBeenCalledOnce()
-    expect(manager.mediaHandler.videoProducer).toBeNull()
-    expect(manager.mediaHandler.localStream?.getVideoTracks()).toEqual([])
+    expect(manager['mediaHandler'].videoProducer).toBeNull()
+    expect(manager['mediaHandler'].localStream?.getVideoTracks()).toEqual([])
   })
 
   it('rechecks video publication after awaited audio creation', async () => {
@@ -1226,20 +1259,20 @@ describe('SFUMeetingManager E2EE recovery tracks', () => {
     }
     const audioCreationEntered = deferred<void>()
     const releaseAudioCreation = deferred<typeof audioProducer>()
-    manager.mediaHandler.setProducers({
-      videoProducer: { id: 'old-video', close: vi.fn() } as never,
-      audioProducer: { id: 'old-audio', close: vi.fn() } as never,
+    manager['mediaHandler'].setProducers({
+      videoProducer: fromPartial({ id: 'old-video', close: vi.fn() }),
+      audioProducer: fromPartial({ id: 'old-audio', close: vi.fn() }),
     })
-    vi.spyOn(manager.transportManager, 'createProducer')
-      .mockResolvedValueOnce(videoProducer as never)
+    vi.spyOn(manager['transportManager'], 'createProducer')
+      .mockResolvedValueOnce(fromPartial(videoProducer))
       .mockImplementationOnce(() => {
         audioCreationEntered.resolve()
-        return releaseAudioCreation.promise as never
+        return fromPartial(releaseAudioCreation.promise)
       })
 
     const reconfiguration = manager.reconfigureForE2EE(
-      new FakeMediaStream([video]) as never,
-      new FakeMediaStream([audio]) as never,
+      fromPartial(new FakeMediaStream([video])),
+      fromPartial(new FakeMediaStream([audio])),
     )
     await audioCreationEntered.promise
     Reflect.set(video, 'readyState', 'ended')
@@ -1251,17 +1284,15 @@ describe('SFUMeetingManager E2EE recovery tracks', () => {
     })
     expect(videoProducer.close).toHaveBeenCalledOnce()
     expect(audioProducer.close).not.toHaveBeenCalled()
-    expect(manager.mediaHandler.videoProducer).toBeNull()
-    expect(manager.mediaHandler.audioProducer).toBe(audioProducer)
+    expect(manager['mediaHandler'].videoProducer).toBeNull()
+    expect(manager['mediaHandler'].audioProducer).toBe(audioProducer)
   })
 
   it('logs an unrelated AbortError while E2EE reconfiguration is active', async () => {
     const manager = prepareE2EEManager()
     const abortError = new DOMException('Unrelated interruption', 'AbortError')
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
-    const connectionManager = Reflect.get(manager, 'connectionManager') as {
-      setupExistingParticipants: () => Promise<void>
-    }
+    const connectionManager = manager['connectionManager']
     vi.spyOn(connectionManager, 'setupExistingParticipants').mockRejectedValue(abortError)
 
     await expect(manager.reconfigureForE2EE(null, null)).rejects.toBe(abortError)
@@ -1286,7 +1317,7 @@ describe('SFUMeetingManager E2EE recovery tracks', () => {
           isScreen: false,
         },
       ]),
-    } as never
+    }
     const manager = createManager(sfuClient)
     manager.initialize({
       meetingId: 'meeting-1',
@@ -1294,19 +1325,21 @@ describe('SFUMeetingManager E2EE recovery tracks', () => {
     })
     await manager.setVisibleRemoteVideoParticipants(['remote-1'])
     const video = mediaTrack('video', 'video')
-    manager.mediaHandler.setProducers({
-      videoProducer: { id: 'old-video', close: vi.fn() } as never,
+    manager['mediaHandler'].setProducers({
+      videoProducer: fromPartial({ id: 'old-video', close: vi.fn() }),
     })
-    vi.spyOn(manager.transportManager, 'cleanup').mockImplementation(() => {})
-    vi.spyOn(manager.transportManager, 'initializeDevice').mockResolvedValue()
-    vi.spyOn(manager.transportManager, 'createReceiveTransport').mockResolvedValue(undefined)
-    vi.spyOn(manager.transportManager, 'createSendTransport').mockResolvedValue(undefined)
-    vi.spyOn(manager.transportManager, 'isDeviceLoaded').mockReturnValue(true)
-    vi.spyOn(manager.transportManager, 'createProducer').mockResolvedValue({
-      id: 'e2ee-video',
-      track: video,
-      close: vi.fn(),
-    } as never)
+    vi.spyOn(manager['transportManager'], 'cleanup').mockImplementation(() => {})
+    vi.spyOn(manager['transportManager'], 'initializeDevice').mockResolvedValue()
+    vi.spyOn(manager['transportManager'], 'createReceiveTransport').mockResolvedValue(undefined)
+    vi.spyOn(manager['transportManager'], 'createSendTransport').mockResolvedValue(undefined)
+    vi.spyOn(manager['transportManager'], 'isDeviceLoaded').mockReturnValue(true)
+    vi.spyOn(manager['transportManager'], 'createProducer').mockResolvedValue(
+      fromPartial({
+        id: 'e2ee-video',
+        track: video,
+        close: vi.fn(),
+      }),
+    )
     const consumerRequest = deferred<{
       id: string
       producerId: string
@@ -1314,17 +1347,17 @@ describe('SFUMeetingManager E2EE recovery tracks', () => {
       close: ReturnType<typeof vi.fn>
     }>()
     const consumerCreationEntered = deferred<void>()
-    vi.spyOn(manager.transportManager, 'createConsumer').mockImplementation(() => {
+    vi.spyOn(manager['transportManager'], 'createConsumer').mockImplementation(() => {
       consumerCreationEntered.resolve()
-      return consumerRequest.promise as never
+      return fromPartial(consumerRequest.promise)
     })
-    const addConsumer = vi.spyOn(manager.consumerManager, 'addConsumer')
-    const handlerCleanup = vi.spyOn(manager.mediaHandler, 'cleanup')
+    const addConsumer = vi.spyOn(manager['consumerManager'], 'addConsumer')
+    const handlerCleanup = vi.spyOn(manager['mediaHandler'], 'cleanup')
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     const lifecycle = new AbortController()
 
     const reconfiguration = manager.reconfigureForE2EE(
-      new FakeMediaStream([video]) as never,
+      fromPartial(new FakeMediaStream([video])),
       null,
       lifecycle.signal,
     )

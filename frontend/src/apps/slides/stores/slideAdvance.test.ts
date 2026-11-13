@@ -1,7 +1,10 @@
+import { fromAny } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
-const replace = vi.fn(() => Promise.resolve())
+const replace = vi.fn<(route: { query?: { slide?: number } }) => Promise<void>>(() =>
+  Promise.resolve(),
+)
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
 vi.mock('@/apps/slides/router', () => ({
@@ -13,7 +16,24 @@ const { scheduleAdvance, cancelAdvance } = await import('./slideshow')
 
 const slideQueryOfLastReplace = () => replace.mock.lastCall?.[0]
 
-const addVideo = ({ paused, loop = false, currentTime = 1, playable = true }) => {
+// the media state a test drives by hand; a real element's is read-only
+type FakeVideo = Omit<HTMLVideoElement, 'paused' | 'ended' | 'error'> & {
+  paused: boolean
+  ended: boolean
+  error: { code: number } | null
+}
+
+const addVideo = ({
+  paused,
+  loop = false,
+  currentTime = 1,
+  playable = true,
+}: {
+  paused: boolean
+  loop?: boolean
+  currentTime?: number
+  playable?: boolean
+}) => {
   const video = document.createElement('video')
   Object.defineProperties(video, {
     paused: { value: paused, writable: true },
@@ -22,7 +42,7 @@ const addVideo = ({ paused, loop = false, currentTime = 1, playable = true }) =>
     loop: { value: loop },
     currentTime: { value: currentTime, writable: true },
     play: {
-      value: vi.fn(function () {
+      value: vi.fn(function (this: FakeVideo) {
         if (!playable) return Promise.reject(new DOMException('', 'NotAllowedError'))
         this.paused = false
         return Promise.resolve()
@@ -30,10 +50,10 @@ const addVideo = ({ paused, loop = false, currentTime = 1, playable = true }) =>
     },
   })
   document.body.appendChild(video)
-  return video
+  return fromAny<FakeVideo, HTMLVideoElement>(video)
 }
 
-const endVideo = (video) => {
+const endVideo = (video: FakeVideo) => {
   video.ended = true
   video.dispatchEvent(new Event('ended'))
 }
@@ -42,7 +62,7 @@ describe('a slide that advances on its own', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     replace.mockClear()
-    slides.value = [{ elements: [], advanceAfter: '2' }, { elements: [] }] as any
+    slides.value = [{ elements: [], advanceAfter: '2' }, { elements: [] }]
     slideIndex.value = 0
   })
 
@@ -234,7 +254,7 @@ describe('a slide that advances on its own', () => {
   })
 
   it('leaves a later slide alone when a refusal comes late', async () => {
-    let refuse
+    let refuse: ((reason: unknown) => void) | undefined
     const video = addVideo({ paused: true, currentTime: 0 })
     vi.mocked(video.play).mockImplementationOnce(
       () => new Promise((_, reject) => (refuse = reject)),
@@ -243,7 +263,7 @@ describe('a slide that advances on its own', () => {
 
     vi.advanceTimersByTime(2000)
     slideIndex.value = 1
-    refuse(new DOMException('', 'AbortError'))
+    refuse!(new DOMException('', 'AbortError'))
     await vi.advanceTimersByTimeAsync(0)
     await nextTick()
     expect(replace).not.toHaveBeenCalled()
@@ -292,7 +312,7 @@ describe('a slide that advances on its own', () => {
       { elements: [], transition: 'Magic Move', transitionDuration: '3' },
       { elements: [], advanceAfter: '2' },
       { elements: [] },
-    ] as any
+    ]
     slideIndex.value = 1
     scheduleAdvance()
 
@@ -315,7 +335,7 @@ describe('a slide that advances on its own', () => {
       },
       { elements: [], advanceAfter: '2' },
       { elements: [] },
-    ] as any
+    ]
     slideIndex.value = 1
     scheduleAdvance()
 

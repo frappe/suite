@@ -17,13 +17,18 @@ import {
   type EditorElement,
 } from './writer-surface-fixtures'
 
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 vi.hoisted(() => {
   vi.stubGlobal('__SUITE_BUILD__', '100')
   vi.stubEnv('DEV', false)
 })
 
 vi.mock('frappe-ui', async () => (await import('./writer-surface-fakes')).fakeFrappeUi())
-vi.mock('@/apps/drive', async () => (await import('./writer-surface-fakes')).fakeDrive())
+vi.mock('@/apps/drive', async (importOriginal) => {
+  const { fakeDrive } = await import('./writer-surface-fakes')
+  return fakeDrive(await importOriginal<typeof import('@/apps/drive')>())
+})
 vi.mock('@/platform/session', async (importOriginal) => {
   const { fakeSession } = await import('./writer-surface-fakes')
   return fakeSession(await importOriginal<typeof import('@/platform/session')>())
@@ -47,13 +52,13 @@ vi.mock('@/apps/writer/components/CollabTextEditor.vue', async (importOriginal) 
     await importOriginal<typeof import('@/apps/writer/components/CollabTextEditor.vue')>()
   return fakeCollabTextEditor(real)
 })
-vi.mock('@/apps/writer/components/UsersBar.vue', () => ({ default: { render: () => null } }))
+vi.mock('@/platform/collab/UsersBar.vue', () => ({ default: { render: () => null } }))
 vi.mock('./WriterDocumentMenu.vue', async () =>
   (await import('./writer-surface-fakes')).fakeDocumentMenu(),
 )
-vi.mock('@/apps/writer/composables/useUsers', async (importOriginal) => {
-  const { fakeUsers } = await import('./writer-surface-fakes')
-  return fakeUsers(await importOriginal<typeof import('@/apps/writer/composables/useUsers')>())
+vi.mock('@/platform/collab/names', async (importOriginal) => {
+  const { fakeNames } = await import('./writer-surface-fakes')
+  return fakeNames(await importOriginal<typeof import('@/platform/collab/names')>())
 })
 vi.mock('./VersionPreview.vue', async () =>
   (await import('./writer-surface-fakes')).fakeVersionPreview(),
@@ -78,7 +83,7 @@ describe('commenting from the editor', () => {
     const presence = { awareness: new Awareness(room.doc), peers: [], onChange: () => () => {} }
     Object.assign(room, { presence })
     room.status = { ...room.status, restoreRev: 0 }
-    const comments = { list: async () => ({ threads: threads(room.doc) }) } as unknown as Comments
+    const comments = fromPartial<Comments>({ list: async () => ({ threads: threads(room.doc) }) })
     const root = await openedSurface(undefined, '/d/node-1', comments)
     const element = root.querySelector<EditorElement>('[data-editor] .ProseMirror')!
     return { root, editor: element.editor }
@@ -149,7 +154,7 @@ describe('commenting from the editor', () => {
 
     const world = editor.view.dom.querySelector('[data-thread]')!
     editor.view.someProp('handleClick', (click) =>
-      click(editor.view, 8, { target: world } as never),
+      click(editor.view, 8, fromPartial({ target: world })),
     )
     await settled()
 
@@ -160,7 +165,9 @@ describe('commenting from the editor', () => {
 
 // A thread on "world" in a document reading "hello world"
 function threadOnWorld(doc: Doc) {
-  const text = (doc.getXmlFragment('default').get(0) as XmlElement).get(0) as XmlText
+  const text = fromPartial<XmlText>(
+    fromPartial<XmlElement>(doc.getXmlFragment('default').get(0)).get(0),
+  )
   const from = createRelativePositionFromTypeIndex(text, 6, 0)
   const to = createRelativePositionFromTypeIndex(text, 11, -1)
   const comment = {
@@ -172,10 +179,10 @@ function threadOnWorld(doc: Doc) {
     creation: new Date().toISOString(),
   }
   const anchor = encodeAnchor(from, to, 'world')
-  return {
+  return fromPartial<DocumentThread>({
     name: 'world',
     anchor,
     resolved: false,
     comments: [comment],
-  } as unknown as DocumentThread
+  })
 }

@@ -115,6 +115,18 @@ describe('a later visit', () => {
     expect(header('/d/n1', 'x-visited-time')).toBe('5000')
   })
 
+  // Q18′: a copy visited before the presentation went live would open its rows offline
+  it('replaces the rows a copy held from before the presentation went live', async () => {
+    const [presentationRead] = dataUrls('n1', 'p1')
+    answers.set(presentationRead, '{"message":{"name":"p1","slides":[{"name":"s1"}]}}')
+    await visit()
+    answers.set(presentationRead, '{"message":{"name":"p1","is_converted":true}}')
+
+    await visit()
+
+    expect(await visited().store.get(presentationRead)?.clone().text()).not.toContain('slides')
+  })
+
   it('refetches the data of a node whose build was captured by another node', async () => {
     seedNode('n1', 500)
     await visit('n2', 'p2')
@@ -257,7 +269,7 @@ describe('who gets no copy', () => {
   })
 
   it('the kill switch', async () => {
-    window.disable_slides_service_worker = 1 as never
+    Object.defineProperty(window, 'disable_slides_service_worker', { value: 1, configurable: true })
     await visit()
     await expectNothing()
   })
@@ -786,7 +798,7 @@ describe('a picture added after the capture', () => {
   async function loadStores() {
     const { rememberVisit } = await loadStore()
     const pictures = await import('./visitedMedia')
-    localStorage.setItem('slides-caches-user', state.user as string)
+    localStorage.setItem('slides-caches-user', String(state.user))
     showPresentation()
     return { rememberVisit, ...pictures }
   }

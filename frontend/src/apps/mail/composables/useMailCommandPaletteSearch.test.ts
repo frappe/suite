@@ -4,12 +4,14 @@ import { nextTick, ref } from 'vue'
 import { useMailCommandPaletteSearch } from './useMailCommandPaletteSearch'
 
 // The two accounts a test can be given; a test that wants one account empties this first.
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 const accounts = vi.hoisted(() => ({ value: ['work', 'personal'] }))
 // Every payload the search endpoint was submitted with, oldest first.
-const searches = vi.hoisted(() => [] as Record<string, unknown>[])
+const searches = vi.hoisted(() => fromPartial<Record<string, unknown>[]>([]))
 
 const answer = vi.hoisted(() => ({ value: async (_rows?: unknown[], _matched?: number) => {} }))
-const engines = vi.hoisted(() => ({ current: null as unknown, dispose: () => {} }))
+const engines = vi.hoisted(() => ({ dispose: () => {} }))
 vi.mock('@vueuse/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@vueuse/core')>()),
   refDebounced: (value: unknown) => value,
@@ -22,7 +24,6 @@ vi.mock('@/api', async () => {
     createApiClient(
       { mail: async () => registration },
       {
-        persistence: false,
         transport: {
           request: async (reference, input) => {
             if (!reference.path.endsWith('search_mails')) return []

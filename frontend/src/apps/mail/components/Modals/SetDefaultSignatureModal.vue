@@ -17,11 +17,9 @@
 
       <div class="mt-4 space-y-1.5">
         <label class="text-ink-gray-5 block text-xs"> {{ __('Signature') }} </label>
-        <TextEditor
-          editor-class="prose-sm min-h-[8rem] border rounded-4 p-2 max-w-none border-outline-gray-2"
-          :extensions="[CustomParagraphExtension]"
+        <MailRichTextField
+          :model-value="signature"
           :placeholder="__('Write your signature here')"
-          :content="signature"
           :editable="false"
         />
       </div>
@@ -31,14 +29,13 @@
 
 <script setup lang="ts">
 import { Dialog, FormControl } from 'frappe-ui'
-import { TextEditor } from 'frappe-ui/experimental'
 import { computed, ref } from 'vue'
 
 import { api, useMutation, type InputOf } from '@/api'
+import MailRichTextField from '@/apps/mail/components/Controls/MailRichTextField.vue'
 import { userStore } from '@/apps/mail/stores/user'
 import type { Identity } from '@/apps/mail/types'
 import { raiseToast } from '@/apps/mail/utils'
-import { CustomParagraphExtension } from '@/apps/mail/utils/text-editor'
 
 const { identities } = userStore()
 const show = defineModel<boolean>()

@@ -5,43 +5,55 @@ import Text from '@tiptap/extension-text'
 import { Mention } from 'frappe-ui/editor'
 import { afterEach, expect, it, vi } from 'vitest'
 
+import { rankMentionsFor } from '@/apps/drive'
 import MentionMenu from '@/apps/writer/components/MentionMenu.vue'
-import { rankMentionsFor } from '@/apps/writer/composables/useUsers'
-import type { WriterUser } from '@/apps/writer/drive'
 
 import { mentionMenuExtension } from './mention-menu'
 
-const asked = vi.hoisted(() => [] as string[])
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
 
-vi.mock('@/platform/session', async () => {
+const asked = vi.hoisted(() => fromPartial<string[]>([]))
+
+vi.mock('@/platform/session', async (importOriginal) => {
   const { ref } = await import('vue')
-  return { useSession: () => ({ user: ref('owner@suite.test') }) }
+  const original = await importOriginal<typeof import('@/platform/session')>()
+  const user = ref('owner@suite.test')
+  return { ...original, useSession: () => ({ ...original.useSession(), user }) }
 })
 
-vi.mock('@/apps/writer/drive', () => {
-  const person = (name: string, label: string, hasAccess: boolean): WriterUser => ({
-    name,
-    email: name,
-    full_name: label,
-    user_image: null,
-    value: name,
-    label,
-    has_access: hasAccess,
-  })
+// The people route answers with users whose name holds the query
+vi.mock('@/api', async (importOriginal) => {
+  function person(name: string, fullName: string, hasAccess: boolean) {
+    return {
+      kind: 'user',
+      name,
+      email: name,
+      full_name: fullName,
+      user_image: null,
+      has_access: hasAccess,
+    }
+  }
   const everyone = [
     person('maya@suite.test', 'Maya Reader', true),
     person('omar@suite.test', 'Omar Outside', false),
   ]
   return {
-    searchUsers: async (query: string) => {
-      asked.push(query)
-      return everyone.filter((user) => user.label.toLowerCase().includes(query.toLowerCase()))
+    ...(await importOriginal<typeof import('@/api')>()),
+    client: {
+      query: async (_route: unknown, { q: query = '' }: { q?: string }) => {
+        asked.push(query)
+        return {
+          rows: everyone.filter((user) =>
+            user.full_name.toLowerCase().includes(query.toLowerCase()),
+          ),
+        }
+      },
     },
   }
 })
 
 // jsdom measures no text; the editor scrolls to the caret and the menu places itself at it
-Range.prototype.getClientRects = () => ({ length: 0, item: () => null }) as unknown as DOMRectList
+Range.prototype.getClientRects = () => fromPartial<DOMRectList>({ length: 0, item: () => null })
 Range.prototype.getBoundingClientRect = () => new DOMRect()
 
 let editor: Editor | undefined

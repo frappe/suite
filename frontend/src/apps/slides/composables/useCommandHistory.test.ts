@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 
-vi.mock('@/apps/slides/stores/saving', () => ({ markDirty: () => {} }))
 vi.mock('@/apps/slides/stores/presentation', () => ({ slidesLength: ref(0) }))
 vi.mock('@/apps/slides/utils/helpers', () => ({
   cloneObj: (obj: any) => JSON.parse(JSON.stringify(obj)),
@@ -9,6 +8,7 @@ vi.mock('@/apps/slides/utils/helpers', () => ({
 
 const { useCommandHistory } = await import('./useCommandHistory')
 const { batchCommand, editElementCommand } = await import('@/apps/slides/stores/commands')
+const { setLiveSeat } = await import('@/apps/slides/stores/liveDeck')
 
 const COALESCE_WINDOW = 500
 
@@ -20,14 +20,14 @@ const actionOrder = {
 const makeState = (overrides = {}) => [
   {
     clientId: 'c1',
-    elements: [{ id: 1, type: 'text', content: 'a', locked: false, ...overrides }],
+    elements: [{ id: '1', type: 'text', content: 'a', locked: false, ...overrides }],
   },
 ]
 
 const contentEdit = (oldValue: string, newValue: string, coalesceKey = 'content:c1:1') =>
   editElementCommand({
     slideId: 'c1',
-    elementIds: [1],
+    elementIds: ['1'],
     property: 'content',
     oldValue,
     newValue,
@@ -37,7 +37,7 @@ const contentEdit = (oldValue: string, newValue: string, coalesceKey = 'content:
 const keylessEdit = (oldValue: string, newValue: string) =>
   editElementCommand({
     slideId: 'c1',
-    elementIds: [1],
+    elementIds: ['1'],
     property: 'content',
     oldValue,
     newValue,
@@ -46,12 +46,12 @@ const keylessEdit = (oldValue: string, newValue: string) =>
 const batchEdit = (edits: [string, string][]) =>
   batchCommand({
     slideId: 'c1',
-    elementIds: [1, 2],
+    elementIds: ['1', '2'],
     coalesceKey: 'content:c1:1,2',
     commands: edits.map(([oldValue, newValue], i) =>
       editElementCommand({
         slideId: 'c1',
-        elementIds: [i + 1],
+        elementIds: [String(i + 1)],
         property: 'content',
         oldValue,
         newValue,
@@ -137,7 +137,7 @@ describe('record coalescing', () => {
   })
 
   it('keeps a batch whose lead lands back while another element changed', async () => {
-    state.value[0].elements.push({ id: 2, type: 'text', content: 'x', locked: false })
+    state.value[0].elements.push({ id: '2', type: 'text', content: 'x', locked: false })
     history.record(
       batchEdit([
         ['a', 'ab'],
@@ -176,7 +176,7 @@ describe('record coalescing', () => {
   })
 
   it('starts a new entry when the next batch has fewer boxes', async () => {
-    state.value[0].elements.push({ id: 2, type: 'text', content: 'x', locked: false })
+    state.value[0].elements.push({ id: '2', type: 'text', content: 'x', locked: false })
     history.record(
       batchEdit([
         ['a', 'ab'],
@@ -286,5 +286,49 @@ describe('record bookkeeping', () => {
 
     expect(history.canUndo.value).toBe(false)
     expect(state.value[0].elements[0].content).toBe('v5')
+  })
+})
+
+describe('on a live presentation', () => {
+  const seat = {
+    push: vi.fn(),
+    flush: vi.fn(),
+    undo: vi.fn(),
+    redo: vi.fn(),
+    endStep: vi.fn(),
+    holdsPosition: () => false,
+    bindText: () => ({ extensions: [], seeded: false }),
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    setLiveSeat(seat)
+  })
+  afterEach(() => {
+    setLiveSeat(null)
+  })
+
+  it('leaves undo and redo to the live document, so a co-editor change since is never put back', () => {
+    history.execute(contentEdit('a', 'b'))
+    state.value[0].elements[0].content = 'from a co-editor'
+
+    history.undo()
+    history.redo()
+
+    expect(seat.undo).toHaveBeenCalledTimes(1)
+    expect(seat.redo).toHaveBeenCalledTimes(1)
+    expect(state.value[0].elements[0].content).toBe('from a co-editor')
+  })
+
+  it('makes a command with no typing key its own step', () => {
+    history.execute(keylessEdit('a', 'b'))
+
+    expect(seat.endStep).toHaveBeenCalledTimes(1)
+  })
+
+  it('lets typing group by its pauses', () => {
+    history.execute(contentEdit('a', 'b'))
+
+    expect(seat.endStep).not.toHaveBeenCalled()
   })
 })

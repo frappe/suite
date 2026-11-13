@@ -44,6 +44,7 @@ import { computed } from 'vue'
 import type { GetTemplatesOutputTemplate } from '@/apps/slides/client/generated'
 import SlidePreview from '@/apps/slides/components/SlidePreview.vue'
 import { presentationTheme, templateList } from '@/apps/slides/stores/presentation'
+import { firstLayout } from '@/apps/slides/stores/templateLayouts'
 import { getThumbnailCardStyles } from '@/apps/slides/utils/helpers'
 
 type Theme = GetTemplatesOutputTemplate
@@ -83,15 +84,12 @@ const getThemeThumbnailClasses = (theme: string) => {
     : ''
 }
 
-const getThemePreviewLayout = (theme: Theme) => {
-  const thumbnailIdx = ['Light', 'Dark'].includes(theme.title) ? 2 : 0
-  return theme.layouts[thumbnailIdx] || theme.layouts[0]
-}
+const getThemePreviewLayout = (theme: Theme) => firstLayout(theme)
 
 const getThemeThumbnailStyles = (theme: Theme) => {
   const layout = getThemePreviewLayout(theme)
   return {
-    ...getThumbnailCardStyles(layout?.thumbnail as string),
+    ...getThumbnailCardStyles(typeof layout?.thumbnail === 'string' ? layout.thumbnail : ''),
     '--tw-ring-offset-color': 'var(--surface-base)',
   }
 }

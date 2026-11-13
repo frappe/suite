@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn';
 import type { Socket } from 'socket.io';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { MediasoupManager } from '../../mediasoup/MediasoupManager';
@@ -7,7 +8,7 @@ import { RoomLifecycleCoordinator } from '../RoomLifecycleCoordinator';
 import type { RoomRegistry } from '../RoomRegistry';
 
 function createCoordinator(graceMs = 1_000) {
-	const recorder = { disconnect: vi.fn() } as unknown as Socket;
+	const recorder = fromPartial<Socket>({ disconnect: vi.fn() });
 	const registry = {
 		hasHumanParticipants: vi.fn().mockReturnValue(false),
 		getRecorderSockets: vi.fn().mockReturnValue([recorder]),
@@ -17,10 +18,10 @@ function createCoordinator(graceMs = 1_000) {
 	const roster = { clearRoom: vi.fn().mockResolvedValue(undefined) };
 	const mediasoup = { closeRoom: vi.fn().mockResolvedValue(undefined) };
 	const coordinator = new RoomLifecycleCoordinator(
-		registry as unknown as RoomRegistry,
-		epochRelay as unknown as E2EEEpochRelay,
-		roster as unknown as E2eeRosterStore,
-		mediasoup as unknown as MediasoupManager,
+		fromPartial<RoomRegistry>(registry),
+		fromPartial<E2EEEpochRelay>(epochRelay),
+		fromPartial<E2eeRosterStore>(roster),
+		fromPartial<MediasoupManager>(mediasoup),
 		graceMs,
 	);
 	return { coordinator, epochRelay, mediasoup, recorder, registry, roster };

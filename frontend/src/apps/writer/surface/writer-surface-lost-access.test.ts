@@ -15,13 +15,18 @@ import {
   type EditorElement,
 } from './writer-surface-fixtures'
 
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
 vi.hoisted(() => {
   vi.stubGlobal('__SUITE_BUILD__', '100')
   vi.stubEnv('DEV', false)
 })
 
 vi.mock('frappe-ui', async () => (await import('./writer-surface-fakes')).fakeFrappeUi())
-vi.mock('@/apps/drive', async () => (await import('./writer-surface-fakes')).fakeDrive())
+vi.mock('@/apps/drive', async (importOriginal) => {
+  const { fakeDrive } = await import('./writer-surface-fakes')
+  return fakeDrive(await importOriginal<typeof import('@/apps/drive')>())
+})
 vi.mock('@/platform/session', async (importOriginal) => {
   const { fakeSession } = await import('./writer-surface-fakes')
   return fakeSession(await importOriginal<typeof import('@/platform/session')>())
@@ -45,13 +50,13 @@ vi.mock('@/apps/writer/components/CollabTextEditor.vue', async (importOriginal) 
     await importOriginal<typeof import('@/apps/writer/components/CollabTextEditor.vue')>()
   return fakeCollabTextEditor(real)
 })
-vi.mock('@/apps/writer/components/UsersBar.vue', () => ({ default: { render: () => null } }))
+vi.mock('@/platform/collab/UsersBar.vue', () => ({ default: { render: () => null } }))
 vi.mock('./WriterDocumentMenu.vue', async () =>
   (await import('./writer-surface-fakes')).fakeDocumentMenu(),
 )
-vi.mock('@/apps/writer/composables/useUsers', async (importOriginal) => {
-  const { fakeUsers } = await import('./writer-surface-fakes')
-  return fakeUsers(await importOriginal<typeof import('@/apps/writer/composables/useUsers')>())
+vi.mock('@/platform/collab/names', async (importOriginal) => {
+  const { fakeNames } = await import('./writer-surface-fakes')
+  return fakeNames(await importOriginal<typeof import('@/platform/collab/names')>())
 })
 vi.mock('./VersionPreview.vue', async () =>
   (await import('./writer-surface-fakes')).fakeVersionPreview(),
@@ -85,9 +90,17 @@ async function downloadedChanges(afterClose: (root: Element) => unknown = () => 
   await vi.waitFor(() => expect(warning).toHaveBeenCalled())
   await afterClose(root)
   const [, shown] = warning.mock.lastCall!
-  ;(shown!.action as { onClick: () => void }).onClick()
+  const action = shown?.action
+  if (
+    !action ||
+    typeof action !== 'object' ||
+    !('onClick' in action) ||
+    typeof action.onClick !== 'function'
+  )
+    throw new Error('Expected a keep-copy action')
+  action.onClick()
   await vi.waitFor(() => expect(files).toHaveLength(1))
-  return files[0] as File
+  return fromPartial<File>(files[0])
 }
 
 describe('Writer surface', () => {
@@ -204,7 +217,7 @@ describe('Writer surface', () => {
 
   it('tells the room that reading access was lost when the document is refused, before its role drops', async () => {
     const room = liveRoom()
-    const state = ref('Active')
+    const state = ref<'Active' | 'Refused' | 'Trashed'>('Active')
     await openedSurface(undefined, '/d/node-1', undefined, undefined, state)
 
     state.value = 'Refused'

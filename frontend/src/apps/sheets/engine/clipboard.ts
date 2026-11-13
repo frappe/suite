@@ -61,7 +61,7 @@ export function createClipboard({
   let _mode: 'copy' | 'cut' | null = null // set at once, so hasData() is true while reading
   let _srcSel: Rect | null = null // { r0, c0, r1, c1 } of the source
   let _srcSheet: string | null = null // the sheet the source is on
-  let _pivot: unknown = null // portable pivot config when the source overlaps a pivot
+  let _pivot: unknown // portable pivot config when the source overlaps a pivot
   let _ready: Promise<void> | null = null // the source read; paste waits for it
   let _systemText: string | null = null // what this copy wrote to the system clipboard
 
@@ -180,10 +180,14 @@ export function createClipboard({
   //      every dest cell.  This is the "copy A1, paste B1:D1" UX.
   //   3. destSel is N×M and source is a divisor (k·rows, l·cols) → tile the
   //      source block across the destination (matches Google Sheets).
-  function _resolveTargets(anch: CellPos, destSel: Rect | null): Target[] {
+  function _resolveTargets(
+    anch: CellPos,
+    destSel: Rect | null,
+    data: Record<string, string>,
+  ): Target[] {
     const targets: Target[] = []
     // paste() only calls this once the source read has filled _data.
-    const keys = Object.keys(_data as Record<string, string>)
+    const keys = Object.keys(data)
     const srcRows = _srcSel ? _srcSel.r1 - _srcSel.r0 + 1 : 1
     const srcCols = _srcSel ? _srcSel.c1 - _srcSel.c0 + 1 : 1
 
@@ -240,8 +244,9 @@ export function createClipboard({
     const sh = getCurrentSheet()
     // A filled buffer always comes with its source rect, display values and
     // formats (set together in _capture).
-    const srcSel = _srcSel as Rect
-    const shown = _shown as Record<string, string>
+    const srcSel = _srcSel
+    const shown = _shown
+    if (!srcSel || !shown) throw new Error('Captured clipboard context is missing')
 
     // A full paste of a copied pivot mints a new live pivot at the anchor
     // instead of writing static cells — the pivot renders its own output, so
@@ -254,7 +259,7 @@ export function createClipboard({
       return createPivotFromPaste(_pivot, anchorId, sh)
     }
 
-    const targets = _resolveTargets(anch, destSel)
+    const targets = _resolveTargets(anch, destSel, data)
 
     // Block the whole paste if any destination cell is protected — `targets`
     // is the exact output extent, so a multi-cell block anchored at an
@@ -277,7 +282,8 @@ export function createClipboard({
         const id = colLabel(c) + (r + 1)
         const key = `${dr},${dc}`
         // Every target's (dr, dc) lies inside the captured source.
-        const raw = data[key] as string
+        const raw = data[key]
+        if (raw === undefined) throw new Error('Captured clipboard cell is missing')
         if (kind === 'all' || kind === 'formulas') {
           writes[id] =
             typeof raw === 'string' && raw.startsWith('=')
@@ -286,7 +292,12 @@ export function createClipboard({
         } else {
           // 'values' — formulas paste as the value they showed when copied.
           const isFormula = typeof raw === 'string' && raw.startsWith('=')
-          writes[id] = isFormula ? (shown[key] as string) : raw
+          if (!isFormula) writes[id] = raw
+          else {
+            const display = shown[key]
+            if (display === undefined) throw new Error('Captured clipboard display is missing')
+            writes[id] = display
+          }
         }
       }
       cells.write(sh, writes)
@@ -295,7 +306,8 @@ export function createClipboard({
     // Formats / validation pass — still per-cell, but skipped entirely when
     // the user picked Values or Formulas mode.
     if ((kind === 'all' || kind === 'formats') && (formats || validation)) {
-      const fmts = _fmts as Record<string, Format>
+      const fmts = _fmts
+      if (!fmts) throw new Error('Captured clipboard formats are missing')
       for (const { r, c, dr, dc } of targets) {
         const id = colLabel(c) + (r + 1)
         const key = `${dr},${dc}`
@@ -322,7 +334,8 @@ export function createClipboard({
     ) {
       const { r0, c0, r1, c1 } = _srcSel
       // Set with the source rect in _capture.
-      const src = _srcSheet as string
+      const src = _srcSheet
+      if (src === null) throw new Error('Captured clipboard source sheet is missing')
       // Cells that just received the paste — when source and destination
       // overlap (e.g. cut C2:C7, paste at C3:C8) the clear pass must NOT
       // touch these or it wipes the content we just wrote. Only the source
@@ -394,7 +407,7 @@ export function createClipboard({
       grid.push(row)
     }
     // Drop trailing all-empty rows some editors append.
-    while (grid.length && (grid[grid.length - 1] as string[]).every((c) => c === '')) grid.pop()
+    while (grid.at(-1)?.every((c) => c === '')) grid.pop()
     return grid.length ? { grid, links } : null
   }
 
@@ -454,8 +467,8 @@ export function createClipboard({
     if (!anch) return null
     const { srcRows, srcCols, tileable } = _gridGeometry(grid, anch, destSel)
     // tileable implies destSel.
-    if (tileable) {
-      const d = destSel as Rect
+    if (tileable && destSel) {
+      const d = destSel
       return { r0: d.r0, c0: d.c0, r1: d.r1, c1: d.c1 }
     }
     return { r0: anch.row, c0: anch.col, r1: anch.row + srcRows - 1, c1: anch.col + srcCols - 1 }
@@ -514,14 +527,16 @@ export function createClipboard({
       if (url) linkAt[id] = url
       else if (formats?.get(id, sn)?.['hyperlink']) linkAt[id] = null
     }
-    if (tileable) {
+    if (tileable && destSel) {
       // tileable implies destSel; (dr, dc) stay inside the grid.
-      const d = destSel as Rect
+      const d = destSel
       for (let r = d.r0; r <= d.r1; r++) {
         for (let c = d.c0; c <= d.c1; c++) {
           const dr = (r - d.r0) % srcRows
           const dc = (c - d.c0) % srcCols
-          place(colLabel(c) + (r + 1), (grid[dr] as string[])[dc] ?? '', dr, dc)
+          const row = grid[dr]
+          if (!row) throw new Error('Clipboard tile row is missing')
+          place(colLabel(c) + (r + 1), row[dc] ?? '', dr, dc)
         }
       }
     } else {

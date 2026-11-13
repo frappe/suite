@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
+import { api, client } from '@/api'
+
 import AdminUsersView from './AdminUsersView.vue'
 
 vi.mock('@/apps/mail/utils/addOnArrival', () => ({ useAddOnArrival: vi.fn() }))
@@ -35,7 +37,11 @@ vi.mock('frappe-ui', () => ({
   }),
 }))
 
-const requests = vi.hoisted(() => [] as string[])
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
+
+const adminScenario = vi.hoisted(() => ({ enabled: false, secondEnabled: false }))
+
+const requests = vi.hoisted(() => fromPartial<string[]>([]))
 vi.hoisted(() => {
   globalThis.fetch = async (input) => {
     const url = String(input instanceof Request ? input.url : input)
@@ -62,6 +68,32 @@ vi.hoisted(() => {
     return new Response(
       JSON.stringify({
         data: [
+          ...(adminScenario.enabled
+            ? [
+                {
+                  name: 'admin@frappe.io',
+                  email: 'admin@frappe.io',
+                  full_name: 'Admin',
+                  user_image: null,
+                  is_admin: true,
+                  enabled: true,
+                  account: null,
+                  setup_status: 'Active',
+                  must_change_password: false,
+                },
+                {
+                  name: 'second@frappe.io',
+                  email: 'second@frappe.io',
+                  full_name: 'Second admin',
+                  user_image: null,
+                  is_admin: true,
+                  enabled: adminScenario.secondEnabled,
+                  account: null,
+                  setup_status: 'Active',
+                  must_change_password: false,
+                },
+              ]
+            : []),
           {
             name: 'aisha@frappe.io',
             email: 'aisha@frappe.io',
@@ -127,6 +159,8 @@ async function install(app: ReturnType<typeof createApp>) {
 afterEach(() => {
   for (const app of apps.splice(0)) app.unmount()
   document.body.innerHTML = ''
+  adminScenario.enabled = false
+  adminScenario.secondEnabled = false
 })
 async function mount() {
   const element = document.createElement('div')
@@ -152,6 +186,21 @@ async function click(element: HTMLElement, label: string) {
 }
 
 describe('Admin Users', () => {
+  it.each([
+    { secondEnabled: false, warns: true },
+    { secondEnabled: true, warns: false },
+  ])(
+    'warns about a single active Admin with members present (second active: $secondEnabled)',
+    async ({ secondEnabled, warns }) => {
+      adminScenario.enabled = true
+      adminScenario.secondEnabled = secondEnabled
+      await client.query(api.suite.users.list)
+      const element = await mount()
+      await nextTick()
+      expect(element.textContent?.includes('Only one active Admin')).toBe(warns)
+    },
+  )
+
   it('lets Suite composition supply the user directory while retaining invitations', async () => {
     const element = document.createElement('div')
     document.body.append(element)

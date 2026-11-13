@@ -28,3 +28,20 @@ it('replaces the unrendered token with this session’s boot before requests beg
     cache: 'no-store',
   })
 })
+
+it('starts the page in the saved theme, as the server-rendered page does', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ message: { csrf_token: 'token', desk_theme: 'Dark' } })),
+      ),
+  )
+
+  await loadDevBoot()
+
+  expect(document.documentElement.dataset.themeMode).toBe('dark')
+  expect('desk_theme' in window).toBe(false)
+  delete document.documentElement.dataset.themeMode
+})

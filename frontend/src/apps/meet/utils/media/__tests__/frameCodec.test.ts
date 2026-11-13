@@ -118,12 +118,7 @@ describe('frameCodec: buildSignedFramePayload', () => {
     const clearPrefix = new Uint8Array([4, 5])
     const frameMagic = new Uint8Array([6])
     const ciphertext = new Uint8Array([7, 8, 9])
-    const out = buildSignedFramePayload(
-      headerFixed as Uint8Array<ArrayBuffer>,
-      clearPrefix as Uint8Array<ArrayBuffer>,
-      frameMagic as Uint8Array<ArrayBuffer>,
-      ciphertext as Uint8Array<ArrayBuffer>,
-    )
+    const out = buildSignedFramePayload(headerFixed, clearPrefix, frameMagic, ciphertext)
     expect(Array.from(out)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9])
   })
 })

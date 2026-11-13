@@ -175,11 +175,7 @@ export class Presence {
     if (!batch || !this.hooks.isOwnRoom(batch.room)) return
 
     const room = batch.room
-    function inRoom(state: object) {
-      return { ...state, room }
-    }
-
-    const states = batch.states.map(inRoom)
+    const states = batch.states.map((state) => ({ ...state, room }))
     for (const state of states) {
       this.addMember(state)
     }
@@ -261,7 +257,10 @@ export class Presence {
   // One awareness update for the whole batch, clocked by the service's count
   private applyCarets(states: object[]) {
     const accepted: Clocked[] = []
-    const carets = states.map(parseCaret).filter((caret): caret is HeardCaret => !!caret)
+    const carets = states.flatMap((state) => {
+      const caret = parseCaret(state)
+      return caret ? [caret] : []
+    })
     const now = Date.now()
     for (const caret of carets) {
       const clocked = this.acceptCaret(caret, now)
@@ -294,9 +293,9 @@ export class Presence {
 
     const wake = () => {
       this.wakeTimer = null
-      const lapsed = [...this.members]
-        .filter(([, member]) => caretLapsed(member, Date.now()))
-        .map(([pid]) => pid)
+      const lapsed = [...this.members].flatMap(([pid, member]) =>
+        caretLapsed(member, Date.now()) ? [pid] : [],
+      )
       this.removeCarets(lapsed)
       this.wakeWhenHiddenTurnsIdle()
       this.notifyListeners()
