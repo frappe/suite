@@ -30,7 +30,6 @@
   "frontend/src/apps/mail/components/Settings/ContactsExportSettings.vue": 1,
   "frontend/src/apps/mail/components/Settings/IdentitySettings.vue": 4,
   "frontend/src/apps/mail/components/Settings/MailExportSettings.vue": 1,
-  "frontend/src/apps/mail/components/Settings/VacationResponseSettings.vue": 1,
   "frontend/src/apps/mail/pages/ForgotPasswordView.vue": 1,
   "frontend/src/apps/mail/pages/LoginView.vue": 1,
   "frontend/src/apps/mail/pages/SignupView.vue": 5,
