@@ -35,6 +35,25 @@ describe('planFill', () => {
     expect(writes).toEqual({ B2: '=A2*2', B3: '=A3*2' })
   })
 
+  // ISSUES #151: a ref dragged above row 1 or left of column A is #REF!.
+  it('turns refs dragged above row 1 into #REF!', () => {
+    const writes = planFill(
+      { r0: 2, c0: 1, r1: 2, c1: 1 },
+      { r0: 0, c0: 1, r1: 2, c1: 1 },
+      from({ B3: '=B2*2' }),
+    )
+    expect(writes).toEqual({ B2: '=B1*2', B1: '=#REF!*2' })
+  })
+
+  it('turns refs dragged left of column A into #REF!', () => {
+    const writes = planFill(
+      { r0: 0, c0: 2, r1: 0, c1: 2 },
+      { r0: 0, c0: 0, r1: 0, c1: 2 },
+      from({ C1: '=B1+$B1' }),
+    )
+    expect(writes).toEqual({ B1: '=A1+$B1', A1: '=#REF!+$B1' })
+  })
+
   it('fills upward', () => {
     const writes = planFill(
       { r0: 2, c0: 0, r1: 2, c1: 0 },

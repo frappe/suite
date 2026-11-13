@@ -53,6 +53,15 @@ describe('sort', () => {
     expect(cells.writes[0][1]).toEqual({ A2: '1', B2: '=A2*2', A3: '2', B3: '=A3*2' })
   })
 
+  // ISSUES #151 turned refs pasted off the sheet into #REF!; sort keeps its old handling.
+  it('leaves a ref that would move above row 1 unchanged', async () => {
+    const cells = makeCells({ A1: 'h', A2: '2', B2: '=5', A3: '1', B3: '=B1*2' })
+    const sf = createSortFilter(cells)
+    sf.setRange({ r0: 0, c0: 0, r1: 2, c1: 1 }, 'Sheet1')
+    await sf.sort(0, 'asc', 'Sheet1')
+    expect(cells.writes[0][1]).toEqual({ A2: '1', B2: '=B1*2', A3: '2', B3: '=5' })
+  })
+
   it('puts blanks last in both directions', async () => {
     const cells = makeCells({ A1: 'h', A2: '', A3: '1', A4: '2' })
     const sf = createSortFilter(cells)
