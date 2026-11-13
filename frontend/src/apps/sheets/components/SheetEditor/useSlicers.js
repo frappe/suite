@@ -4,7 +4,8 @@
 // Usage:
 //   const { slicerVersion, activeSlicers, insertSlicer, ... } = useSlicers({
 //     sortFilter, slicers, currentSheet, activeCell, contextMenu, history,
-//     getGrid, detectContiguousBlock, repopulateGrid, applyHiddenRows, markDirty })
+//     getGrid, getGridOrigin, usedCellIds, detectContiguousBlock, repopulateGrid,
+//     applyHiddenRows, markDirty })
 //
 // A slicer is a floating value-filter control bound to a column of the filter
 // range. It reads/writes that column's `inSet` spec in sortFilter; the slicers
@@ -14,7 +15,13 @@
 
 import { computed, ref } from 'vue'
 
-import { colLabel, parseCellId } from '../../utils/cells.js'
+import { COL_HEADER_H, ROW_HEADER_W } from '../../canvas/constants'
+import { cellId, colLabel, parseCellId } from '../../utils/cells.js'
+import { placeBeside } from '../../utils/place-floating.js'
+
+// A slicer's footprint for placing a new one: its fixed width and the
+// height of a full value list.
+const SLICER_SIZE = { width: 220, height: 300 }
 
 export function useSlicers({
   sortFilter,
@@ -24,6 +31,8 @@ export function useSlicers({
   contextMenu,
   history,
   getGrid,
+  getGridOrigin = () => null,
+  usedCellIds = () => [],
   detectContiguousBlock,
   repopulateGrid,
   applyHiddenRows,
@@ -175,11 +184,31 @@ export function useSlicers({
     // strand a dead slicer. (Auto-created ranges are centred on col, so they pass.)
     const range = sortFilter.getRange(sn)
     if (!range || col < range.c0 || col > range.c1) return
-    slicers.add(col, 96 + slicers.list(sn).length * 28, 96, sn)
+    const { x, y } = _newSlicerPosition(range, slicers.list(sn).length * 28)
+    slicers.add(col, x, y, sn)
     applyHiddenRows() // paints the filter's chevrons/outline (and bumps slicerVersion)
     getGrid()?.render?.()
     history.push()
     markDirty()
+  }
+  // Right of the filter range it reads, level with its top, on cells with no
+  // values (ISSUES #158: it covered A1:C11). Slicers are fixed to the window,
+  // so the canvas-local spot is moved by the canvas's own position.
+  function _newSlicerPosition(range, offset) {
+    const grid = getGrid()
+    const origin = getGridOrigin()
+    if (!grid?.getCellRect || !origin) return { x: 96 + offset, y: 96 }
+    const used = new Set(usedCellIds())
+    const at = placeBeside({
+      source: range,
+      size: SLICER_SIZE,
+      cellRect: (r, c) => grid.getCellRect(r, c),
+      hasValue: (r, c) => used.has(cellId(r, c)),
+      view: grid.getViewportSize?.() ?? { w: Infinity, h: Infinity },
+      min: { x: ROW_HEADER_W, y: COL_HEADER_H },
+      offset,
+    })
+    return { x: Math.round(origin.left + at.x), y: Math.round(origin.top + at.y) }
   }
   function removeSlicer(sl) {
     const sn = currentSheet.value

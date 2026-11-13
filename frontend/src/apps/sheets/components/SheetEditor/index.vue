@@ -2265,6 +2265,7 @@ const {
   history,
   isDirty,
   getGrid: () => grid,
+  usedCellIds: () => _usedCellIds(),
 })
 // The chart dialog's preview: shown values and their number formats (a
 // scatter chart reads dates with them; the type can change after the read).
@@ -3967,6 +3968,9 @@ const {
   contextMenu,
   history,
   getGrid: () => grid,
+  // Slicers are fixed to the window; the grid's cell rects are canvas-local.
+  getGridOrigin: () => canvasRef.value?.getBoundingClientRect() ?? null,
+  usedCellIds: () => _usedCellIds(),
   detectContiguousBlock: _detectContiguousBlock,
   repopulateGrid: () => _repopulateGrid(),
   applyHiddenRows: () => _applyHiddenRows(),
