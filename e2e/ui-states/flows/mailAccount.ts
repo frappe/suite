@@ -333,9 +333,9 @@ function invitation(expired: boolean) {
 		is_expired: expired ? 1 : 0,
 		workspace_name: "Northwind",
 		workspace_logo: "",
-		invited_by_name: "Maya Chen",
+		invited_by_name: identityOf("maya").name,
 		invited_by_image: null,
-		invited_by_email: "maya@northwind.test",
+		invited_by_email: identityOf("maya").email,
 		is_admin: 0,
 		sets_up_site: 0,
 		expires_at: new Date(Date.now() + (expired ? -2 : 5) * 86_400_000).toISOString().replace("T", " ").replace(/\.\d+Z$/, ""),
@@ -402,8 +402,8 @@ export const mailAccount = defineFlow<Event, BaseScene>({
 			await expect(scene.page.getByText(/does not exist/)).toBeVisible({ timeout: 15_000 });
 		},
 		async SEND_RESET(scene) {
-			await answer(scene.page, RESET_LINK, "maya@northwind.test");
-			await scene.page.getByLabel("Email").fill("maya@northwind.test");
+			await answer(scene.page, RESET_LINK, identityOf("maya").email);
+			await scene.page.getByLabel("Email").fill(identityOf("maya").email);
 			await button(scene.page, "Send Reset Link").click();
 			await expect(scene.page.getByText(/We have sent an email to maya@northwind.test/)).toBeVisible();
 		},
@@ -413,7 +413,7 @@ export const mailAccount = defineFlow<Event, BaseScene>({
 			await expect(button(scene.page, "Send Reset Link")).toBeVisible();
 		},
 		async OPEN_RESET_LINK(scene) {
-			await answer(scene.page, RESET_KEY, "maya@northwind.test");
+			await answer(scene.page, RESET_KEY, identityOf("maya").email);
 			await scene.goto("/mail/reset-password/9d8c7b6a5f4e");
 			await expect(scene.page.getByLabel("New Password")).toBeVisible();
 			await expect(scene.page.getByLabel("Email")).toHaveValue("maya@northwind.test");

@@ -2,7 +2,7 @@ import { expect, type APIRequestContext, type Locator, type Page } from "@playwr
 import { createFolder, uploadFile } from "../../drive-backed-apps/helpers/drive";
 import type { Credentials } from "../../shared/auth";
 import { frappeData } from "../../shared/frappe";
-import { DEMO_URL, demoUser, openDemoScene, setSuiteCloudStandIn } from "../demo";
+import { DEMO_URL, demoUser, identityOf, openDemoScene, setSuiteCloudStandIn } from "../demo";
 import { defineFlow, setupFlow } from "../flow";
 import { perScene, type BaseScene } from "../scene";
 
@@ -603,7 +603,7 @@ export const admin = defineFlow<Event, BaseScene>({
 			await expect(dialog.getByText(/Transfer complete|retained nodes remain/)).toBeVisible({ timeout: 30_000 });
 		},
 		async DEMOTE_SELF(scene) {
-			await openActions(scene, "maya@northwind.test");
+			await openActions(scene, identityOf("maya").email);
 			await pick(scene, "Demote to member");
 			await expect(scene.dialog("Demote Maya Chen?")).toBeVisible();
 		},
@@ -613,7 +613,7 @@ export const admin = defineFlow<Event, BaseScene>({
 			await expect(dialog.getByRole("alert")).toBeVisible();
 		},
 		async DISABLE_SELF(scene) {
-			await openActions(scene, "maya@northwind.test");
+			await openActions(scene, identityOf("maya").email);
 			await pick(scene, "Disable user");
 			const dialog = scene.dialog("Disable Maya Chen?");
 			await dialog.getByRole("button", { name: "Confirm" }).click();
