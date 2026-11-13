@@ -347,8 +347,11 @@ const typedRecipient = computed<DraftRecipient | null>(() => {
  * screen.
  */
 type ContactSuggestion = (typeof contacts.value)[number]
+// Put away by Esc, until the typing changes. The typed text stays: Esc is "not these", not "start
+// over", and the key must not reach the composer, where it would dock an expanded window instead.
+const isDismissed = ref(false)
 const inlineSuggestions = computed(() => {
-  if (!suggestionsTo || !isFocused.value) return []
+  if (!suggestionsTo || !isFocused.value || isDismissed.value) return []
 
   const contacts = options.value.filter(
     (option): option is ContactSuggestion => 'email' in option && typeof option.email === 'string',
@@ -378,7 +381,17 @@ const namesShared = computed(() => {
 // what was typed when that is an address, and on a desktop the first suggestion otherwise, which is
 // what Enter took from the floating list the inline one replaced there.
 const activeSuggestion = ref(-1)
-watch(searchText, () => (activeSuggestion.value = -1))
+watch(searchText, () => {
+  activeSuggestion.value = -1
+  isDismissed.value = false
+})
+// The list sits in the header's scroller, which can be shorter than it: the row the arrows land on
+// is scrolled to, so Enter never adds one that is out of sight.
+watch(
+  activeSuggestion,
+  (i) => suggestionListRef.value?.children.item(i)?.scrollIntoView({ block: 'nearest' }),
+  { flush: 'post' },
+)
 
 const commitTyped = () => {
   const typed = typedRecipient.value
@@ -394,7 +407,8 @@ const commitTyped = () => {
 // what has been typed. The Combobox's own Enter handling belongs to the popover, which the
 // inline list replaces, so nothing else would.
 const handleInlineEnter = (e: KeyboardEvent) => {
-  if (!suggestionsTo) return
+  // The Enter that confirms an input method's composition belongs to the composition.
+  if (!suggestionsTo || e.isComposing) return
   const chosen =
     inlineSuggestions.value[activeSuggestion.value] ??
     (!typedRecipient.value && !isMobile.value ? inlineSuggestions.value[0] : undefined)
@@ -456,6 +470,12 @@ const handleContainerKeydown = (e: KeyboardEvent) => {
           ? 0
           : count - 1
         : (activeSuggestion.value + step + count) % count
+    return
+  }
+  // Esc puts the suggestions away, and goes no further while they are showing.
+  if (e.key === 'Escape' && count) {
+    e.stopPropagation()
+    isDismissed.value = true
     return
   }
 

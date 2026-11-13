@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { createApp, defineComponent, h, nextTick, ref } from 'vue'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createApp, defineComponent, h, nextTick, ref, type App } from 'vue'
 
 import type { DraftRecipient } from '@/apps/mail/types'
 import type { RecipientField } from '@/apps/mail/utils/recipientFields'
@@ -82,6 +82,18 @@ vi.mock('@/apps/mail/utils/accountScope', async () => {
 const amy: DraftRecipient = { email: 'amy@example.com', display_name: 'Amy Diaz' }
 const bo: DraftRecipient = { email: 'bo@example.com', display_name: 'Bo Chen' }
 
+const mounted: App[] = []
+
+/**
+ * Dispatch a step later than anything before it. Vue skips a listener for an event stamped no later
+ * than the millisecond the listener was attached, and mounting, typing and a key press can all land
+ * inside one; the clock is frozen in `beforeEach` and moved on here, so none of them does.
+ */
+const fire = (target: EventTarget | null | undefined, event: Event) => {
+  vi.setSystemTime(Date.now() + 1)
+  target?.dispatchEvent(event)
+}
+
 function mount(
   recipients: DraftRecipient[],
   field: RecipientField = 'to',
@@ -109,6 +121,7 @@ function mount(
   )
   app.config.globalProperties.__ = window.__
   app.mount(root)
+  mounted.push(app)
   return { app, root, model, moves, revealedCcBcc }
 }
 
@@ -125,20 +138,29 @@ const menuItem = (root: HTMLElement, label: string) =>
 
 /** A tap on a chip, close enough: the row expands on the click before it. */
 const tapChip = async (root: HTMLElement, index: number) => {
-  root
-    .querySelector('[data-recipient-input]')
-    ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  fire(root.querySelector('[data-recipient-input]'), new MouseEvent('click', { bubbles: true }))
   await nextTick()
-  chips(root)[index]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  fire(chips(root)[index], new MouseEvent('click', { bubbles: true }))
   await nextTick()
 }
 
+// jsdom lays nothing out, so it has no scrollIntoView; the stub records which element asked.
+const scrollIntoView = vi.fn()
+
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  scrollIntoView.mockClear()
+  Element.prototype.scrollIntoView = scrollIntoView
   window.__ = (message: string, args?: string[]) =>
     args ? message.replace(/\{(\d+)\}/g, (_, i) => args[Number(i)]) : message
   isMobile.value = true
   suggested.value = []
   document.body.innerHTML = ''
+})
+
+afterEach(() => {
+  for (const app of mounted.splice(0)) app.unmount()
+  vi.useRealTimers()
 })
 
 describe('RecipientInput chip menu', () => {
@@ -208,7 +230,7 @@ describe('RecipientInput chips on desktop', () => {
     const remove = chips(root)[0].querySelector<HTMLElement>('[aria-label^="Remove"]')
     expect(remove).not.toBeNull()
 
-    remove!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    fire(remove, new MouseEvent('click', { bubbles: true }))
     await nextTick()
     expect(model.value.map((r) => r.email)).toEqual(['bo@example.com'])
   })
@@ -228,18 +250,16 @@ describe('RecipientInput suggestions in the page', () => {
   const sasha = { email: 'sasha@work.example', name: 'Sasha Iyer' }
 
   const typeInto = async (root: HTMLElement, text: string) => {
-    root
-      .querySelector('[data-recipient-input]')
-      ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    fire(root.querySelector('[data-recipient-input]'), new MouseEvent('click', { bubbles: true }))
     const input = root.querySelector('input')!
     input.value = text
-    input.dispatchEvent(new Event('input', { bubbles: true }))
+    fire(input, new Event('input', { bubbles: true }))
     await nextTick()
     await nextTick()
     return input
   }
-  const press = async (input: HTMLInputElement, key: string) => {
-    input.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+  const press = async (input: HTMLInputElement, key: string, isComposing = false) => {
+    fire(input, new KeyboardEvent('keydown', { key, isComposing, bubbles: true, cancelable: true }))
     await nextTick()
   }
   const options = (list: HTMLElement) => [...list.querySelectorAll('[role="option"]')]
@@ -302,5 +322,64 @@ describe('RecipientInput suggestions in the page', () => {
 
     await press(input, 'Enter')
     expect(model.value.map((r) => r.email)).toEqual(['sam@work.example'])
+  })
+
+  it('brings the row the arrow keys land on into view, so Enter never adds one out of sight', async () => {
+    isMobile.value = false
+    suggested.value = [samAtWork, samAtHome, sasha]
+    const list = document.createElement('div')
+    document.body.appendChild(list)
+    const { root } = mount([], 'to', list)
+    const input = await typeInto(root, 'sa')
+
+    // Up from the start goes round to the last row, the one a short scroller cuts off.
+    await press(input, 'ArrowUp')
+    const scrolled = scrollIntoView.mock.contexts.at(-1)
+    expect(scrolled).toBeInstanceOf(Element)
+    expect(scrolled instanceof Element && scrolled.contains(options(list)[2])).toBe(true)
+  })
+
+  it('leaves the suggestions alone on the Enter that confirms an input method', async () => {
+    isMobile.value = false
+    suggested.value = [sasha, samAtWork]
+    const list = document.createElement('div')
+    document.body.appendChild(list)
+    const { root, model } = mount([], 'to', list)
+    const input = await typeInto(root, 'sa')
+
+    await press(input, 'Enter', true)
+    expect(model.value).toEqual([])
+    expect(options(list)).toHaveLength(2)
+  })
+
+  it('puts the suggestions away on Esc, keeping it from the composer until they are gone', async () => {
+    isMobile.value = false
+    suggested.value = [sasha, samAtWork]
+    const list = document.createElement('div')
+    document.body.appendChild(list)
+    const { root, model } = mount([], 'to', list)
+    const input = await typeInto(root, 'sa')
+    // The composer listens on the window: Esc there docks an expanded window.
+    let composerEscapes = 0
+    const composerEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') composerEscapes++
+    }
+    window.addEventListener('keydown', composerEsc)
+
+    try {
+      await press(input, 'Escape')
+      expect(options(list)).toEqual([])
+      expect(composerEscapes).toBe(0)
+      expect(input.value).toBe('sa')
+
+      // Enter adds nothing that is no longer on screen.
+      await press(input, 'Enter')
+      expect(model.value).toEqual([])
+
+      await press(input, 'Escape')
+      expect(composerEscapes).toBe(1)
+    } finally {
+      window.removeEventListener('keydown', composerEsc)
+    }
   })
 })

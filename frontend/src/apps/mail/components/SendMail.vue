@@ -225,7 +225,8 @@ const leaveExpanded = () => {
 
 // Esc docks an expanded window. Ignored while a popover is open,
 // or a dialog above this window — the contacts picker, Send later — which reka closes on the same
-// key without marking it handled.
+// key without marking it handled. A recipient field's suggestion list keeps the key from reaching
+// here at all: Esc there puts the list away (see RecipientInput).
 const onEscape = (e: KeyboardEvent) => {
   if (e.key !== 'Escape' || e.defaultPrevented || !show.value) return
   if (!expanded.value || minimised.value) return
