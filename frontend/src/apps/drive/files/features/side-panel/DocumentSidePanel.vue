@@ -22,6 +22,8 @@ const props = defineProps<{
   canRestoreVersion: boolean
   canSaveVersion: boolean
   isRestoringVersion: boolean
+  /** The version the app shows; the panel asks for a change by update:previewedVersion. */
+  previewedVersion: DocumentVersion | null
   /** The document's threads, their actions and drafts, as useDocumentComments gives them. */
   comments: DocumentComments
   /** Where each thread shows in the editor; null when the editor can't tell. */
@@ -42,9 +44,6 @@ const emit = defineEmits<{
   commentSent: []
   'update:previewedVersion': [version: DocumentVersion | null]
 }>()
-const previewedVersion = defineModel<DocumentVersion | null>('previewedVersion', {
-  required: true,
-})
 const openThread = defineModel<string | null>('openThread', { default: null })
 const litThread = defineModel<string | null>('litThread', { default: null })
 
@@ -87,18 +86,21 @@ onKeyStroke(
   'Escape',
   (event) => {
     const isOverlayOpen = document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')
-    if (!event.defaultPrevented && previewedVersion.value && !isOverlayOpen) {
+    if (!event.defaultPrevented && props.previewedVersion && !isOverlayOpen) {
       emit('back')
     }
   },
   { target: document },
 )
 
-watch(previewedVersion, () => {
-  if (!versionName.value.trim()) {
-    stopNamingVersion()
-  }
-})
+watch(
+  () => props.previewedVersion,
+  () => {
+    if (!versionName.value.trim()) {
+      stopNamingVersion()
+    }
+  },
+)
 
 function closePanel() {
   const closed = panel.value
@@ -157,8 +159,8 @@ async function saveNamedVersion() {
 // The bar over a viewed version names it, so it takes the new name too
 async function renameShownVersion(version: DocumentVersion, label: string) {
   const renamed = await renameVersion(version, label)
-  if (renamed && previewedVersion.value?.seq === version.seq) {
-    previewedVersion.value = renamed
+  if (renamed && props.previewedVersion?.seq === version.seq) {
+    emit('update:previewedVersion', renamed)
   }
 
   return !!renamed
@@ -248,13 +250,14 @@ defineExpose({
           </p>
           <template v-else>
             <VersionList
-              v-model:previewed="previewedVersion"
+              :previewed="previewedVersion"
               :versions="lists.versions"
               :can-restore="canRestoreVersion"
               :is-restoring="isRestoringVersion"
               :can-save-version="canSaveVersion"
               :is-current-hidden="showsVersionName"
               :rename="versionRename"
+              @update:previewed="(shown) => emit('update:previewedVersion', shown)"
               @restore="emit('restoreVersion', $event)"
               @download="emit('downloadVersion', $event)"
               @save-version="nameVersion"
