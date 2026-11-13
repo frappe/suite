@@ -48,8 +48,13 @@ async function openDeck(page: Page, node = deck.name) {
 	await page.goto(`/d/${node}`);
 	const title = page.getByRole("textbox", { name: "Presentation title" });
 	await expect(title).toBeVisible({ timeout: 20_000 });
-	await expect(page.getByText("Opening presentation…")).toHaveCount(0, { timeout: 20_000 });
+	await expect(page.getByRole("status", { name: "Opening presentation" })).toHaveCount(0, { timeout: 20_000 });
 	return title;
+}
+
+/** A push of the room's work. */
+function isPush(url: string) {
+	return new URL(url).pathname.endsWith("/updates");
 }
 
 /** Add a rectangle to the open slide, as a person does: press R, then draw it on the slide. */
@@ -104,25 +109,49 @@ test("renames, exports and comments without a legacy Drive call", async ({ page 
 test("losing edit access freezes the deck, sends no write and offers the changes", async ({ page }) => {
 	const seen = watchPage(page);
 	await openDeck(page);
-	// Every save fails, so the edit below stays unsaved.
-	await page.route("**/suite.slides.api.slides.save_slides", (route) => route.abort());
+	// Every push fails, so the edit below stays unsent
+	await page.route(/\/content\/[^/]+\/updates/, (route) => {
+		if (route.request().method() === "POST") {
+			return route.abort("failed");
+		}
 
+		return route.continue();
+	});
+
+	const pushed = page.waitForRequest((request) => request.method() === "POST" && isPush(request.url()));
 	await addRectangle(page);
-	await expect(page.getByText("Not saved", { exact: true })).toBeVisible();
+	await pushed;
 	await patchNode(api, deck.name, { state: "Trashed" });
 	await page.evaluate(() => window.dispatchEvent(new Event("focus")));
 
 	// A trashed item is read-only; its Trashed badge takes the place of View only.
 	await expect(page.getByText("Trashed", { exact: true })).toBeVisible();
+	// The edit is still unsent, so the toast says it is kept, not only that the deck is view only
 	await expect(page.getByText("Editing access changed. Your unsaved changes are kept on this device.")).toBeVisible();
 	const frozenAt = seen.requests.length;
 	await page.waitForTimeout(3_000);
-	expect(seen.requests.slice(frozenAt).filter((line) => line.includes("save_slides"))).toEqual([]);
+	// The room may still send its unsent work once, within a short bound; this test's route aborts it
+	const writes = seen.requests
+		.slice(frozenAt)
+		.filter((line) => line.startsWith("POST") && line.includes("suite.slides"));
+	expect(writes).toEqual([]);
 
 	const user = (await page.context().cookies()).find((cookie) => cookie.name === "user_id");
 	expect(user).toBeDefined();
-	const recoveryKey = `suite:slides-recovery:${decodeURIComponent(user!.value)}:${deck.name}`;
-	const recovery = () => page.evaluate((key) => localStorage.getItem(key), recoveryKey);
+	// Each copy has a key of its own under the presentation's
+	const person = decodeURIComponent(user!.value);
+	const recoveryKey = `suite:slides-recovery:${person}:${deck.name}:`;
+	function recovery() {
+		return page.evaluate(
+			(prefix) =>
+				JSON.stringify(
+					Object.keys(localStorage)
+						.filter((key) => key.startsWith(prefix))
+						.map((key) => JSON.parse(localStorage.getItem(key)!)),
+				),
+			recoveryKey,
+		);
+	}
 	expect(await recovery()).toContain("rectangle");
 
 	const download = page.waitForEvent("download");
@@ -132,8 +161,8 @@ test("losing edit access freezes the deck, sends no write and offers the changes
 	expect(JSON.parse(readFileSync((await file.path())!, "utf8")).slides[0].elements).toEqual(
 		expect.arrayContaining([expect.objectContaining({ shapeType: "rectangle" })]),
 	);
-	// A browser save can't be confirmed, so the download marks the copy and keeps it.
-	expect(JSON.parse((await recovery())!)).toEqual(
+	// The toast saves the slides on screen, so the kept copy stays as it was, not marked downloaded
+	expect(JSON.parse(await recovery())).not.toEqual(
 		expect.arrayContaining([expect.objectContaining({ downloaded: true })]),
 	);
 	expect(await recovery()).toContain("rectangle");
@@ -196,7 +225,7 @@ test("a person who holds only an edit link opens and saves the deck", async ({ b
 	await openDeck(page);
 	await expect(page.getByText("View only", { exact: true })).toHaveCount(0);
 
-	const saved = page.waitForResponse((answer) => answer.url().includes("suite.slides.api.slides.save_slides"));
+	const saved = page.waitForResponse((answer) => answer.request().method() === "POST" && isPush(answer.url()));
 	await addRectangle(page);
 	const answer = await saved;
 	expect(answer.status()).toBe(200);
@@ -244,8 +273,27 @@ test("a composite sends the link code of a deck that is shared on its own", asyn
 	expect(answer.status()).toBe(200);
 	const sent = (await answer.request().headerValue("x-drive-links")) ?? "";
 	expect(sent.split(",").sort()).toEqual([deckCode, partCode].sort());
-	await expect(page.getByRole("button", { name: "1 · ready" })).toBeVisible();
-	await expect(page.getByRole("button", { name: "2 · unreadable" })).toBeVisible();
+	// Only the deck shared on its own reads; the private one stays a blank slide, not a failed load
+	const parts = await frappeData<{ references: Array<{ index: number; readable: boolean }> }>(answer);
+	const read = parts.references
+		.map(({ index, readable }) => [index, readable])
+		.sort(([left], [right]) => Number(left) - Number(right));
+	expect(read).toEqual([
+		[1, true],
+		[2, false],
+	]);
+	// Each new part holds one slide: the shared part's loads, and the private part's stays blank
+	const failed = page.getByText("Couldn't load this slide. Reload to try again.");
+	// The canvas is the one 960px slide; thumbnails carry the same element marks at their own size
+	const canvas = page.locator(".w-\\[960px\\]");
+	await expect(page.getByText("1 of 2", { exact: true })).toBeVisible();
+	await expect(canvas).toBeVisible();
+	await expect(failed).toHaveCount(0);
+
+	await page.keyboard.press("ArrowDown");
+	await expect(page.getByText("2 of 2", { exact: true })).toBeVisible();
+	await expect(canvas.locator("[data-index]")).toHaveCount(0);
+	await expect(failed).toHaveCount(0);
 	await visitor.close();
 });
 

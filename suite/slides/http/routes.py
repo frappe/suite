@@ -5,7 +5,8 @@ from typing import Literal, NotRequired, TypedDict
 from suite.composition.http import Route
 from suite.content.conversions import ConversionStatus
 from suite.slides.api.composite import composite_group, composite_manifest
-from suite.slides.api.slides import save_slides
+from suite.slides.api.recovery import recovery_names
+from suite.slides.api.versions import VersionConversion, convert_version
 from suite.slides.doctype.presentation.presentation import (
     apply_theme,
     get_composite_presentation,
@@ -57,25 +58,11 @@ class Deck(TypedDict):
     node: str
     is_composite: bool | Literal[0, 1]
     theme: str | None
-    slides: list[Slide]
+    # a converted deck's answer has none: its rows aren't its slides (Q20')
+    slides: NotRequired[list[Slide]]
     references: NotRequired[list[ReferenceAnswer]]
     is_converted: NotRequired[bool]
     conversion: NotRequired[ConversionStatus]
-
-
-class SlideChanges(TypedDict, total=False):
-    client_id: str | None
-    background: str | None
-    elements: str | list[dict[str, object]] | None
-    transition: str | None
-    transition_duration: str | float | None
-    fade_unmatched_elements: bool | Literal[0, 1]
-    advance_after: str | float | None
-
-
-class SaveDeck(DeckInput):
-    slides: list[SlideChanges]
-    base_modified: str
 
 
 class SavedDeck(TypedDict):
@@ -93,10 +80,13 @@ class ThemedDeck(TypedDict):
 
 class Template(TypedDict):
     name: str
+    node: str
     title: str
     slug: str
     creation: str
     is_template: Literal[1]
+    is_converted: bool
+    thumbnails: list[str]
     layouts: list[Slide]
 
 
@@ -133,6 +123,23 @@ class AccessInput(TypedDict):
     presentation_id: str
 
 
+class RecoveryNamesInput(TypedDict):
+    presentations: list[str]
+    nodes: list[str]
+
+
+class RecoveryName(TypedDict):
+    presentation: str
+    node: str
+    title: str
+    can_edit: bool
+
+
+class ConvertVersion(TypedDict):
+    node: str
+    seq: int
+
+
 CONTRACT_ROUTES = (
     Route(
         "GET",
@@ -164,17 +171,6 @@ CONTRACT_ROUTES = (
         output=bool,
         kind="query",
         public_name="documents.isComposite",
-        allow_guest=True,
-        envelope="message",
-    ),
-    Route(
-        "POST",
-        "/api/method/suite.slides.api.slides.save_slides",
-        "save_slides",
-        body=SaveDeck,
-        output=SavedDeck,
-        kind="mutation",
-        public_name="documents.save",
         allow_guest=True,
         envelope="message",
     ),
@@ -258,6 +254,27 @@ CONTRACT_ROUTES = (
         kind="query",
         public_name="documents.access",
         allow_guest=True,
+        envelope="message",
+    ),
+    Route(
+        "POST",
+        "/api/method/suite.slides.api.versions.convert_version",
+        "convert_version",
+        body=ConvertVersion,
+        output=VersionConversion,
+        kind="mutation",
+        public_name="versions.convert",
+        allow_guest=True,
+        envelope="message",
+    ),
+    Route(
+        "POST",
+        "/api/method/suite.slides.api.recovery.recovery_names",
+        "recovery_names",
+        body=RecoveryNamesInput,
+        output=list[RecoveryName],
+        kind="query",
+        public_name="recovery.names",
         envelope="message",
     ),
 )

@@ -2,13 +2,17 @@ import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, ref, type App } from 'vue'
 
-import type { DocumentPanel, DocumentSession, DocumentVersion } from '@/apps/drive'
+import type {
+  DocumentPanel,
+  DocumentSession,
+  DocumentVersion,
+  ThreadActions,
+  useCommentDrafts,
+} from '@/apps/drive'
 import { requireTestElement } from '@/platform/testing/dom'
 import { translationPlugin } from '@/platform/translation'
 
 import DocumentSidePanel from './DocumentSidePanel.vue'
-import type { useCommentDrafts } from './useCommentDrafts'
-import type { ThreadActions } from './useThreadChanges'
 
 vi.mock('frappe-ui', async () => {
   const { defineComponent: define, h: render, ref: state } = await import('vue')
@@ -55,21 +59,10 @@ vi.mock('frappe-ui', async () => {
   }
 })
 
-vi.mock('@/apps/drive', async () => {
-  const { defineComponent: define, ref: state } = await import('vue')
-  return {
-    DriveCommentAuthor: define({ setup: () => () => null }),
-    formatDriveDateTime: String,
-    GUEST_NAME_LIMIT: 140,
-    useDriveGuestName: () => ({
-      shown: state(false),
-      text: state(''),
-      atLimit: state(false),
-      maxLength: 140,
-      take: () => '',
-    }),
-  }
-})
+vi.mock('@/apps/drive', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/apps/drive')>()),
+  formatDriveDateTime: String,
+}))
 
 interface NamingPanel {
   startNamingVersion(): Promise<void>

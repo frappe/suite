@@ -47,7 +47,7 @@ export type GetPublicPresentationOutput = {
   node: string
   is_composite: boolean | (0 | 1)
   theme: string | null
-  slides: Array<GetPublicPresentationOutputSlide>
+  slides?: Array<GetPublicPresentationOutputSlide>
   references?: Array<GetPublicPresentationOutputReferenceAnswer>
   is_converted?: boolean
   conversion?: GetPublicPresentationOutputConversionStatus
@@ -121,7 +121,7 @@ export type GetCompositePresentationOutput = {
   node: string
   is_composite: boolean | (0 | 1)
   theme: string | null
-  slides: Array<GetCompositePresentationOutputSlide>
+  slides?: Array<GetCompositePresentationOutputSlide>
   references?: Array<GetCompositePresentationOutputReferenceAnswer>
   is_converted?: boolean
   conversion?: GetCompositePresentationOutputConversionStatus
@@ -173,42 +173,6 @@ const operationIsCompositePresentation: QueryRef<
   entity: null,
   errors: [],
   loadValidators: async () => (await import('./validators')).operationIsCompositePresentation,
-}
-
-export type SaveSlidesInputSlideChanges = {
-  client_id?: string | null
-  background?: string | null
-  elements?: string | Array<{ [key: string]: unknown }> | null
-  transition?: string | null
-  transition_duration?: string | number | null
-  fade_unmatched_elements?: boolean | (0 | 1)
-  advance_after?: string | number | null
-}
-
-export type SaveSlidesInput = {
-  name: string
-  slides: Array<SaveSlidesInputSlideChanges>
-  base_modified: string
-}
-
-export type SaveSlidesOutput = { modified: string }
-
-export type SaveSlidesError = never
-
-const operationSaveSlides: MutationRef<SaveSlidesInput, SaveSlidesOutput, SaveSlidesError> = {
-  id: 'save_slides',
-  owner: 'slides',
-  kind: 'mutation',
-  publicName: 'documents.save',
-  envelope: 'message',
-  method: 'POST',
-  path: '/api/method/suite.slides.api.slides.save_slides',
-  prefix: '/api/suite/slides/',
-  pathParams: [],
-  nodeParams: [],
-  entity: null,
-  errors: [],
-  loadValidators: async () => (await import('./validators')).operationSaveSlides,
 }
 
 export type ApplyThemeInput = { name: string; theme: string }
@@ -271,10 +235,13 @@ export type GetTemplatesOutputSlide = {
 
 export type GetTemplatesOutputTemplate = {
   name: string
+  node: string
   title: string
   slug: string
   creation: string
   is_template: 1
+  is_converted: boolean
+  thumbnails: Array<string>
   layouts: Array<GetTemplatesOutputSlide>
 }
 
@@ -478,12 +445,70 @@ const operationGetEditorAccess: QueryRef<
   loadValidators: async () => (await import('./validators')).operationGetEditorAccess,
 }
 
+export type ConvertVersionInput = { node: string; seq: number }
+
+export type ConvertVersionOutput = { state?: string; reason?: string; pending?: boolean }
+
+export type ConvertVersionError = never
+
+const operationConvertVersion: MutationRef<
+  ConvertVersionInput,
+  ConvertVersionOutput,
+  ConvertVersionError
+> = {
+  id: 'convert_version',
+  owner: 'slides',
+  kind: 'mutation',
+  publicName: 'versions.convert',
+  envelope: 'message',
+  method: 'POST',
+  path: '/api/method/suite.slides.api.versions.convert_version',
+  prefix: '/api/suite/slides/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: [],
+  loadValidators: async () => (await import('./validators')).operationConvertVersion,
+}
+
+export type RecoveryNamesOutputRecoveryName = {
+  presentation: string
+  node: string
+  title: string
+  can_edit: boolean
+}
+
+export type RecoveryNamesInput = { presentations: Array<string>; nodes: Array<string> }
+
+export type RecoveryNamesOutput = Array<RecoveryNamesOutputRecoveryName>
+
+export type RecoveryNamesError = never
+
+const operationRecoveryNames: QueryRef<
+  RecoveryNamesInput,
+  RecoveryNamesOutput,
+  RecoveryNamesError
+> = {
+  id: 'recovery_names',
+  owner: 'slides',
+  kind: 'query',
+  publicName: 'recovery.names',
+  envelope: 'message',
+  method: 'POST',
+  path: '/api/method/suite.slides.api.recovery.recovery_names',
+  prefix: '/api/suite/slides/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: [],
+  loadValidators: async () => (await import('./validators')).operationRecoveryNames,
+}
+
 export const api = {
   documents: {
     get: operationGetPublicPresentation,
     composite: operationGetCompositePresentation,
     isComposite: operationIsCompositePresentation,
-    save: operationSaveSlides,
     applyTheme: operationApplyTheme,
     updateTheme: operationUpdateTheme,
     access: operationGetEditorAccess,
@@ -498,5 +523,11 @@ export const api = {
   composites: {
     manifest: operationCompositeManifest,
     group: operationCompositeGroup,
+  },
+  versions: {
+    convert: operationConvertVersion,
+  },
+  recovery: {
+    names: operationRecoveryNames,
   },
 } as const

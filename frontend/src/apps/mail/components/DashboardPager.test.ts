@@ -39,7 +39,6 @@ function mount(state: { count: number; hasMore: boolean; loading: boolean }) {
     render: () =>
       h(DashboardPager, {
         count: state.count,
-        total: 100,
         hasMore: state.hasMore,
         loading: state.loading,
         onLoadMore: loads,
@@ -84,17 +83,13 @@ describe('Dashboard pager', () => {
     await nextTick()
     expect(loads).toHaveBeenCalledTimes(1)
 
-    const buttons = [...document.querySelectorAll('button')]
-    expect(buttons.map((button) => button.textContent?.trim())).toEqual(['Load More'])
-    buttons[0]?.click()
-    await nextTick()
-    expect(loads).toHaveBeenCalledTimes(2)
+    expect(document.querySelectorAll('button')).toHaveLength(0)
 
     notify(false)
     await nextTick()
     notify(true)
     await nextTick()
-    expect(loads).toHaveBeenCalledTimes(3)
+    expect(loads).toHaveBeenCalledTimes(2)
   })
 
   it('stops when there is nothing more to load', async () => {

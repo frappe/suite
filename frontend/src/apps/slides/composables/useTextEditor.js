@@ -20,6 +20,7 @@ import {
 import { getElementDiv } from '@/apps/slides/stores/elementRegistry'
 import { commandHistory } from '@/apps/slides/stores/historyMeta'
 import {
+  askLivePush,
   bindLiveText,
   currentId,
   holdsPosition,
@@ -29,7 +30,6 @@ import {
   pushLiveNow,
   unbindLiveText,
 } from '@/apps/slides/stores/liveDeck'
-import { markDirty } from '@/apps/slides/stores/saving'
 import { currentSlide } from '@/apps/slides/stores/slide'
 import { extensions, patchEmptyParagraphs } from '@/apps/slides/stores/tiptapSetup'
 import { throttleToFrame } from '@/apps/slides/utils/helpers'
@@ -231,7 +231,7 @@ export const useTextEditor = () => {
   const updateElementContent = (editor) => {
     if (!editorElement) return
     editorElement.content = patchedHTML(editor.getHTML())
-    markDirty()
+    askLivePush()
   }
 
   const growthAnchor = (editor) => {

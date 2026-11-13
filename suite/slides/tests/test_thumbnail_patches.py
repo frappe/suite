@@ -8,15 +8,58 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils import get_files_path
 
 from suite.slides.doctype.presentation.patches.cleanup_unused_thumbnail_files import (
+    execute as cleanup_unused_thumbnail_files,
+)
+from suite.slides.doctype.presentation.patches.cleanup_unused_thumbnail_files import (
     get_unused_thumbnail_files,
 )
 from suite.slides.doctype.presentation.patches.clear_missing_presentation_thumbnails import (
     execute as clear_missing_presentation_thumbnails,
 )
+from suite.slides.doctype.presentation.patches.move_slide_thumbnail_to_presentation import (
+    execute as move_slide_thumbnail_to_presentation,
+)
 from suite.slides.tests.utils import PNG_1PX, make_presentation, unique_bytes
+from suite.tests.utils import column_hidden
 
 
-class TestThumbnailPatches(IntegrationTestCase):
+def thumbnail_of(presentation_name):
+    # the field left the DocType, so only SQL reaches the column it left behind
+    ((thumbnail,),) = frappe.db.sql(
+        "SELECT `thumbnail` FROM `tabPresentation` WHERE `name` = %s", presentation_name
+    )
+    return thumbnail
+
+
+def set_thumbnail(presentation_name, file_url):
+    frappe.db.sql(
+        "UPDATE `tabPresentation` SET `thumbnail` = %s WHERE `name` = %s", (file_url, presentation_name)
+    )
+
+
+class ThumbnailColumnCase(IntegrationTestCase):
+    """Gives the class the old `thumbnail` column, or hides it, and puts back what it found."""
+
+    column_present: bool
+
+    @classmethod
+    def setUpClass(cls):
+        # Before the base class's rollback, so these run after it: DDL commits what it finds open
+        found = frappe.db.has_column("Presentation", "thumbnail")
+        if found and not cls.column_present:
+            cls.enterClassContext(column_hidden("Presentation", "thumbnail"))
+        elif cls.column_present and not found:
+            cls.alter_column("ADD COLUMN `thumbnail` text")
+            cls.addClassCleanup(cls.alter_column, "DROP COLUMN `thumbnail`")
+
+        super().setUpClass()
+
+    @staticmethod
+    def alter_column(change):
+        frappe.db.sql_ddl(f"ALTER TABLE `tabPresentation` {change}")
+        # The column list is cached per table and DDL does not refresh it
+        frappe.client_cache.delete_value("table_columns::tabPresentation")
+
     def make_legacy_thumbnail_file(self, presentation_name):
         """A thumbnail as the patches find it: a pre-webp name under /private/files.
 
@@ -44,10 +87,16 @@ class TestThumbnailPatches(IntegrationTestCase):
         file.db_insert()
         return file
 
+
+class TestThumbnailPatches(ThumbnailColumnCase):
+    """A site from before the field left: its column still holds the old thumbnails (Q19')."""
+
+    column_present = True
+
     def test_cleanup_keeps_thumbnail_referenced_only_by_the_deck(self):
         referenced = make_presentation("Deck With Legacy Thumbnail")
         kept = self.make_legacy_thumbnail_file(referenced.name)
-        frappe.db.set_value("Presentation", referenced.name, "thumbnail", kept.file_url)
+        set_thumbnail(referenced.name, kept.file_url)
 
         orphan = self.make_legacy_thumbnail_file(make_presentation("Deck Without Thumbnail").name)
 
@@ -57,20 +106,20 @@ class TestThumbnailPatches(IntegrationTestCase):
 
     def test_missing_thumbnail_blob_is_cleared(self):
         presentation = make_presentation("Deck With Deleted Thumbnail")
-        frappe.db.set_value("Presentation", presentation.name, "thumbnail", "/files/thumbnail-deleted.png")
+        set_thumbnail(presentation.name, "/files/thumbnail-deleted.png")
 
         clear_missing_presentation_thumbnails()
 
-        self.assertEqual(frappe.db.get_value("Presentation", presentation.name, "thumbnail"), "")
+        self.assertEqual(thumbnail_of(presentation.name), "")
 
     def test_present_thumbnail_blob_is_kept(self):
         presentation = make_presentation("Deck With Live Thumbnail")
         file = self.make_legacy_thumbnail_file(presentation.name)
-        frappe.db.set_value("Presentation", presentation.name, "thumbnail", file.file_url)
+        set_thumbnail(presentation.name, file.file_url)
 
         clear_missing_presentation_thumbnails()
 
-        self.assertEqual(frappe.db.get_value("Presentation", presentation.name, "thumbnail"), file.file_url)
+        self.assertEqual(thumbnail_of(presentation.name), file.file_url)
 
     def test_thumbnail_sanitized_to_the_public_prefix_is_kept(self):
         # sanitize_attachment_urls stripped /private from the stored string only, so the
@@ -78,11 +127,11 @@ class TestThumbnailPatches(IntegrationTestCase):
         presentation = make_presentation("Presentation With Sanitized Thumbnail")
         file = self.make_legacy_thumbnail_file(presentation.name)
         sanitized_url = file.file_url.replace("/private", "", 1)
-        frappe.db.set_value("Presentation", presentation.name, "thumbnail", sanitized_url)
+        set_thumbnail(presentation.name, sanitized_url)
 
         clear_missing_presentation_thumbnails()
 
-        self.assertEqual(frappe.db.get_value("Presentation", presentation.name, "thumbnail"), sanitized_url)
+        self.assertEqual(thumbnail_of(presentation.name), sanitized_url)
 
     def test_thumbnail_backed_by_a_file_row_is_kept(self):
         # the blob need not sit on local disk: a surviving File row means some storage
@@ -90,8 +139,25 @@ class TestThumbnailPatches(IntegrationTestCase):
         presentation = make_presentation("Deck With Remote Thumbnail")
         file = self.make_legacy_thumbnail_file(presentation.name)
         os.remove(frappe.get_doc("File", file.name).get_full_path())
-        frappe.db.set_value("Presentation", presentation.name, "thumbnail", file.file_url)
+        set_thumbnail(presentation.name, file.file_url)
 
         clear_missing_presentation_thumbnails()
 
-        self.assertEqual(frappe.db.get_value("Presentation", presentation.name, "thumbnail"), file.file_url)
+        self.assertEqual(thumbnail_of(presentation.name), file.file_url)
+
+
+class TestPatchesWithTheColumnGone(ThumbnailColumnCase):
+    """A site installed after the field left never had the column, and still runs the old patches (Q19')."""
+
+    column_present = False
+
+    def test_the_old_thumbnail_patches_run_and_still_sweep_an_unused_file(self):
+        suffix = frappe.generate_hash(6)
+        presentation = make_presentation(f"Deck On A New Site {suffix}")
+        orphan = self.make_legacy_thumbnail_file(presentation.name)
+
+        move_slide_thumbnail_to_presentation()
+        cleanup_unused_thumbnail_files()
+        clear_missing_presentation_thumbnails()
+
+        self.assertFalse(frappe.db.exists("File", orphan.name))
