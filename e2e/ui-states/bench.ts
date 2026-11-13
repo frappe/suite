@@ -19,8 +19,9 @@ interface BenchWatch {
 /**
  * The dev bench re-execs its runner after 5000 requests, and its port refuses
  * connections until the new process listens. A full capture crosses that
- * limit, so a failure while the port was refusing is the bench's restart, not
- * the flow's. Any other failure still fails the run.
+ * limit, so a failure while the port was refusing, or one that says the
+ * connection was refused, is the bench's restart, not the flow's. Any other
+ * failure still fails the run.
  */
 export function watchBench(baseURL: string): BenchWatch {
 	let refusedAt = 0;
@@ -38,7 +39,9 @@ export function watchBench(baseURL: string): BenchWatch {
 					return;
 				} catch (error) {
 					await poll();
-					if (refusedAt < startedAt || attempt === ATTEMPTS) throw error;
+					// A restart shorter than the poll interval shows only in the error.
+					const away = refusedAt >= startedAt || CONNECTION_LOST.test(String(error));
+					if (!away || attempt === ATTEMPTS) throw error;
 					console.log(`The bench restarted during a path; walking it again (attempt ${attempt + 1}).`);
 					await untilListening(baseURL);
 				}
