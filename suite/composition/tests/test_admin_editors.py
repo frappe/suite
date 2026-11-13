@@ -12,7 +12,6 @@ from suite.drive._core.access import grant
 from suite.drive._core.nodes import _node
 from suite.drive.framework import principals_for
 from suite.sheets import api as sheets_api
-from suite.slides.api.slides import save_slides
 from suite.tests.utils import ensure_user
 
 REFUSED = (frappe.PermissionError, drive.DriveError)
@@ -57,6 +56,7 @@ class TestAdminEditorRefusals(IntegrationTestCase):
     def test_a_slides_save_is_refused(self):
         deck = self._commentable_document("Presentation", "Pitch")
         frappe.set_user(self.admin)
-        modified = str(frappe.db.get_value("Presentation", deck, "modified"))
-        with self.assertRaises(REFUSED):
-            save_slides(deck, [], modified)
+        # A presentation saves only through its room, and a push there needs EDIT on the node
+        node = frappe.db.get_value("Presentation", deck, "node")
+        with self.assertRaises(content.Refusal):
+            authorize_node(node, drive.EDIT, self.admin)

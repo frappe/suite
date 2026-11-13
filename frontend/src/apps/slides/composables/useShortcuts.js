@@ -22,14 +22,13 @@ import {
 import { commandHistory } from '@/apps/slides/stores/historyMeta'
 import { cancelCrop, commitCrop, inCropMode } from '@/apps/slides/stores/imageCrop'
 import { commitInteraction, interactionOffset } from '@/apps/slides/stores/interaction'
-import { presentationDoc } from '@/apps/slides/stores/presentation'
+import { flushLive } from '@/apps/slides/stores/liveDeck'
 import {
   addEmptySlide,
   changeEditorSlide,
   changeSlide,
   deleteSlide,
   duplicateSlide,
-  saveSlide,
   selectionBounds,
   slideIndex,
   updateSelectionBounds,
@@ -237,7 +236,10 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
       description: 'Save',
       group: 'General',
       enabled: inEditMode,
-      handler: (e) => saveSlide(e),
+      handler: (e) => {
+        e.preventDefault()
+        flushLive()
+      },
     },
     {
       combo: 'Mod+Z',
@@ -480,9 +482,6 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
       description: 'Start',
       group: 'Slideshow',
       handler: () => {
-        // a converted presentation plays no slideshow until live editing
-        if (presentationDoc.value?.is_converted) return
-
         if (inEditMode() || inReadonly()) startSlideShow()
       },
     },

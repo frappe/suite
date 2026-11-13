@@ -13,8 +13,18 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils import cstr
 
 from suite import drive
+from suite.content import log, tables
 from suite.drive import EDIT
-from suite.drive._core.errors import DriveForbidden, DriveNotFound
+from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFound
+from suite.slides import drive as slides_drive
+from suite.slides.content import APP
+from suite.slides.content.tests.support import (
+    LoggedDeckCase,
+    delete_log,
+    opened,
+    owner_folder,
+    trash_template,
+)
 from suite.slides.doctype.presentation import presentation as presentation_module
 from suite.slides.doctype.presentation.presentation import (
     apply_theme,
@@ -29,6 +39,7 @@ from suite.slides.doctype.presentation.presentation import (
 )
 from suite.slides.tests.utils import (
     PNG_1PX,
+    drop_log,
     make_presentation,
     make_private,
     make_private_image,
@@ -178,14 +189,13 @@ class TestPresentationSecurity(IntegrationTestCase):
         that it was attached to the `thumbnail` field, that resaving the deck
         did not clone it, and what a duplicate inherited. A linked deck pushes
         the browser capture through Drive instead, which replaces one
-        `Drive Node Preview` row without stamping the deck ([012 §8]), and the
-        column it used to write stays empty for good.
+        `Drive Node Preview` row without stamping the deck ([012 §8]). The
+        `thumbnail` field itself left the DocType (Q19').
         """
         with self.set_user(OWNER):
             presentation = make_presentation("Linked Thumbnail")
             push_capture(presentation.name)
 
-        self.assertEqual(frappe.db.get_value("Presentation", presentation.name, "thumbnail"), None)
         self.assertTrue(frappe.db.exists("Drive Node Preview", {"node": node_of(presentation.name)}))
         self.assertFalse(
             frappe.db.exists(
@@ -209,7 +219,6 @@ class TestPresentationSecurity(IntegrationTestCase):
             push_capture(source.name)
             copy = create_presentation(duplicate_from=source.name)
 
-        self.assertEqual(copy.thumbnail, None, "the legacy column is frozen for a linked deck")
         self.assertTrue(frappe.db.exists("Drive Node Preview", {"node": node_of(copy.name)}))
 
     def test_composite_excludes_reference_made_private_later(self):
@@ -512,6 +521,94 @@ class TestApplyTheme(IntegrationTestCase):
         self.assertEqual(self.body_of_deck(), before)
 
 
+class TestThemeOfAConvertedDeck(LoggedDeckCase):
+    """A converted deck's theme pick: the tab fills its live slide, the row only names the theme (Q1)."""
+
+    def setUp(self):
+        super().setUp()
+        self.node = self.new_deck()
+        self.deck = slides_drive.docname_for_node(self.node)
+        suffix = frappe.generate_hash(6)
+        theme_node = drive.create_document(
+            owner_folder(), f"Theme {suffix}", content_doctype="Presentation", is_template=True
+        )
+        self.addCleanup(trash_template, theme_node)
+        self.addCleanup(delete_log, theme_node)
+        self.theme = slides_drive.docname_for_node(theme_node)
+
+    def test_the_row_takes_the_theme_and_the_live_deck_is_left_alone(self):
+        _header, before = opened(self.node)
+
+        update_theme(self.deck, self.theme)
+
+        self.assertEqual(frappe.db.get_value("Presentation", self.deck, "theme"), self.theme)
+        _header, after = opened(self.node)
+        self.assertEqual(after, before)
+
+    def test_the_server_never_fills_its_slide(self):
+        _header, before = opened(self.node)
+        theme_before = frappe.db.get_value("Presentation", self.deck, "theme")
+
+        with self.assertRaises(DriveConflict):
+            apply_theme(self.deck, self.theme)
+
+        self.assertEqual(frappe.db.get_value("Presentation", self.deck, "theme"), theme_before)
+        _header, after = opened(self.node)
+        self.assertEqual(after, before)
+
+
+class TestTemplatesOnTheLayer(LoggedDeckCase):
+    """A converted template's layouts are its saved slides, which the tab reads itself (Q2)."""
+
+    def new_template(self, title: str, parent: str | None = None) -> str:
+        node = drive.create_document(
+            parent or owner_folder(), title, content_doctype="Presentation", is_template=True
+        )
+        self.addCleanup(trash_template, node)
+        self.addCleanup(delete_log, node)
+        return slides_drive.docname_for_node(node)
+
+    def offered(self) -> dict:
+        return {row["name"]: row for row in get_templates()}
+
+    def test_a_converted_template_names_its_node_and_sends_no_rows(self):
+        suffix = frappe.generate_hash(6)
+        template = self.new_template(f"Brand {suffix}")
+
+        row = self.offered()[template]
+
+        self.assertEqual(row["node"], node_of(template))
+        self.assertTrue(row["is_converted"])
+        self.assertEqual(row["layouts"], [])
+
+    def test_a_template_still_on_its_rows_sends_them(self):
+        suffix = frappe.generate_hash(6)
+        template = self.new_template(f"Old brand {suffix}")
+        # An old site's template that never converted has its rows and no log
+        delete_log(node_of(template))
+
+        row = self.offered()[template]
+
+        self.assertFalse(row["is_converted"])
+        self.assertEqual(len(row["layouts"]), 1)
+
+    def test_only_a_system_template_names_its_pictures(self):
+        # a system template is known by its title, which a folder holds once
+        suffix = frappe.generate_hash(6)
+        light = self.new_template("Light", drive.ensure_folder(owner_folder(), f"System {suffix}"))
+        brand = self.new_template(f"Brand {suffix}")
+
+        rows = self.offered()
+
+        # the seven pictures shipped under public/slides/frontend/images/layouts/light
+        pictures: list[str] = []
+        for number in range(1, 8):
+            pictures.append(f"/assets/suite/slides/frontend/images/layouts/light/thumbnail-{number}.webp")
+
+        self.assertEqual(rows[light]["thumbnails"], pictures)
+        self.assertEqual(rows[brand]["thumbnails"], [])
+
+
 class TestDeckList(IntegrationTestCase):
     """`get_presentations` answers the Home cards off both stores.
 
@@ -540,10 +637,9 @@ class TestDeckList(IntegrationTestCase):
 
     def test_a_linked_deck_publishes_no_thumbnail_here(self):
         """Its preview is a `Drive Node Preview` on §6.8's signed byte path,
-        which this payload has no field for. Blank, never a stale legacy
-        path."""
+        which this payload has no field for. No legacy path either (Q19')."""
         push_capture(self.deck.name)
-        self.assertEqual(self._rows()[self.deck.name]["thumbnail"], "")
+        self.assertNotIn("thumbnail", self._rows()[self.deck.name])
 
     def test_a_trashed_deck_leaves_the_list(self):
         trash(self.deck.name)
@@ -631,6 +727,48 @@ class TestCreateIsAtomic(IntegrationTestCase):
         self.assertEqual(self._decks(), before)
 
 
+class TestConvertedRowsAreNotSlides(LoggedDeckCase):
+    """A converted deck's rows stopped at its conversion, so no reader gets them as its slides (Q20')."""
+
+    def setUp(self):
+        super().setUp()
+        self.node = self.new_deck()
+        self.deck = slides_drive.docname_for_node(self.node)
+        self.theme = frappe.db.get_value("Presentation", self.deck, "theme")
+        # the rows are still there to leak
+        self.assertTrue(frappe.get_all("Slide", filters={"parent": self.deck}))
+
+    def test_a_desk_or_rest_read_carries_no_slides(self):
+        from frappe.desk.form.load import getdoc
+
+        getdoc("Presentation", self.deck)
+        reads = {"desk": frappe.response.docs[0], "rest": client_get("Presentation", self.deck)}
+        for route, answer in reads.items():
+            with self.subTest(route):
+                self.assertFalse(answer.get("slides"))
+                self.assertEqual(answer.get("theme"), self.theme)
+
+    def test_the_opening_answer_carries_no_slides_and_still_names_the_deck(self):
+        answer = get_public_presentation(self.deck)
+
+        self.assertNotIn("slides", answer)
+        self.assertTrue(answer["is_converted"])
+        self.assertEqual(answer["theme"], self.theme)
+        self.assertEqual(answer["node"], self.node)
+
+    def test_the_converted_deck_still_opens(self):
+        header, state = opened(self.node)
+
+        self.assertTrue(header["lineage"])
+        self.assertTrue(state)
+
+    def test_a_deck_still_on_its_rows_keeps_them(self):
+        delete_log(self.node)
+
+        self.assertEqual(len(get_public_presentation(self.deck)["slides"]), 1)
+        self.assertEqual(len(client_get("Presentation", self.deck)["slides"]), 1)
+
+
 class TestDeckBodyStaysServerSide(IntegrationTestCase):
     """The stored Yjs state reaches no reader and takes no generic write (R1011)."""
 
@@ -706,3 +844,63 @@ class TestDeckBodyStaysServerSide(IntegrationTestCase):
                 pass
 
         self.assertEqual(self.stored(), self.BODY)
+
+
+class TestUnconvertedFixture(IntegrationTestCase):
+    """The fixture that stands for an old site's deck that never converted: its rows, and nothing of the layer."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        ensure_user(OWNER)
+
+    def assert_never_converted(self, deck: str):
+        node = node_of(deck)
+        conversion_table = tables.table(APP, "conversion")
+        conversions = frappe.db.sql(f"SELECT COUNT(*) FROM `{conversion_table}` WHERE `node` = %s", node)
+
+        self.assertEqual(len(frappe.get_doc("Presentation", deck).slides), 1)
+        self.assertFalse(frappe.db.get_value("Presentation", deck, "content"))
+        self.assertFalse(frappe.get_cached_doc("Presentation", deck).content)
+        self.assertIsNone(log.find(APP, node))
+        self.assertEqual(conversions[0][0], 0)
+
+    def test_a_made_presentation_has_its_rows_and_no_body_log_or_conversion(self):
+        suffix = frappe.generate_hash(6)
+        with self.set_user(OWNER):
+            deck = make_presentation(f"Made {suffix}").name
+
+        self.assert_never_converted(deck)
+
+    def test_dropping_a_logged_decks_log_also_drops_its_cached_body(self):
+        suffix = frappe.generate_hash(6)
+        title = f"Logged {suffix}"
+        node = drive.create_document(owner_folder(), title, content_doctype="Presentation")
+        deck = slides_drive.docname_for_node(node)
+        self.assertTrue(frappe.get_cached_doc("Presentation", deck).content)
+
+        drop_log(node)
+
+        self.assert_never_converted(deck)
+
+
+class TestRowsOfAnUnconvertedDeck(IntegrationTestCase):
+    """A deck still on its rows checks each slide it saves."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        ensure_user(OWNER)
+
+    def test_advance_after_out_of_range_is_refused(self):
+        frappe.set_user(OWNER)
+        self.addCleanup(frappe.set_user, "Administrator")
+        suffix = frappe.generate_hash(6)
+        name = make_presentation(f"Waits {suffix}").name
+        reason = "Advance After must be between 1 and 3600 seconds"
+        for value in ("soon", 0, 3601, "1,000", "١٢"):
+            # A fresh read each time, so no earlier refusal leaves it out of date
+            deck = frappe.get_doc("Presentation", name)
+            deck.slides[0].advance_after = value
+            with self.subTest(value=value), self.assertRaisesRegex(frappe.ValidationError, reason):
+                deck.save()

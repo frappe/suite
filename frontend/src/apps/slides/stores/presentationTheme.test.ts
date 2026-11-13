@@ -6,7 +6,6 @@ vi.mock('@/apps/slides/router', () => ({ router: { currentRoute: { value: { quer
 vi.mock('@/apps/slides/stores/slide', () => ({}))
 vi.mock('@/apps/slides/stores/historyMeta', () => ({}))
 vi.mock('@/apps/slides/stores/element', () => ({}))
-vi.mock('@/apps/slides/stores/saving', () => ({}))
 
 const { presentationDoc, presentationTheme, templateList } = await import('./presentation')
 
