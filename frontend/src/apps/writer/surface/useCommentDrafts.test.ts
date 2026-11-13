@@ -10,8 +10,7 @@ import {
   type ID,
 } from 'yjs'
 
-import { readCommentDrafts, type DocumentSession } from '@/apps/drive'
-import { useCommentDrafts } from '@/apps/drive/files/features/side-panel/comments/useCommentDrafts'
+import { readCommentDrafts, useDocumentComments, type DocumentSession } from '@/apps/drive'
 import {
   anchorEnds,
   anchorQuote,
@@ -21,6 +20,17 @@ import {
 import type { CollabRoom } from '@/platform/collab'
 
 vi.mock('frappe-ui', () => ({ toast: { error: vi.fn() } }))
+// Ann is signed in; her mention menu's people answer none
+vi.mock('@/platform/session', async (importOriginal) => {
+  const { computed } = await import('vue')
+  const user = computed(() => ({ id: 'ann', fullName: 'Ann', avatar: null }))
+  const session = await importOriginal<typeof import('@/platform/session')>()
+  return { ...session, useSession: () => ({ ...session.useSession(), user }) }
+})
+vi.mock('@/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/api')>()),
+  client: { query: async () => ({ rows: [] }) },
+}))
 
 afterEach(() => {
   vi.clearAllMocks()
@@ -100,14 +110,18 @@ function driveComments(answers: (() => Promise<unknown>)[] = []) {
 }
 
 function openDrafts(session: ReturnType<typeof driveComments>['session'], room: CollabRoom | null) {
-  const refreshThreads = vi.fn(async () => {})
-  const drafts = useCommentDrafts({
-    session,
-    user: 'ann',
-    room: () => room,
-    refreshThreads,
-    anchors: { quote: anchorQuote, ends: anchorEnds },
-  })
+  const refreshThreads = vi.fn(async () => ({ threads: [] }))
+  const { drafts } = useDocumentComments(
+    { ...session, comments: { ...session.comments, list: refreshThreads } },
+    {
+      isShown: () => true,
+      isOpen: () => false,
+      room: () => room,
+      anchors: { quote: anchorQuote, ends: anchorEnds },
+    },
+  )
+  // The first read of the threads comes with them; each later one is a refresh
+  refreshThreads.mockClear()
   return { ...drafts, refreshThreads }
 }
 
