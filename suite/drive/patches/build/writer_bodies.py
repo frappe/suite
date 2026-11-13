@@ -24,6 +24,10 @@ Build changes a Writer body in three ways and touches nothing else:
   as it is. Only a whole `src` or `href` value changes, never an address
   inside other text.
 
+A picture reference is a `src`, `href` or `data-node` attribute, of a real
+html start tag or of a Yjs element. An id anywhere else, in a sentence or a
+caption, shows no picture, so it is never copied or rewritten.
+
 Three callers, one `DocumentPictures` per document:
 
 - Step 7 calls `convert_writer_body` once per Writer document, before its
@@ -56,7 +60,7 @@ back to a raw scan for such a body, and Build has no better reading of it.
 import base64
 import binascii
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from urllib.parse import urlsplit
@@ -85,9 +89,12 @@ EMBED_PATH = re.compile(
     r"/api/method/(?:suite\.)?(?:writer\.api\.embed\.get|drive\.api\.embed\.get_file_content)\?"
 )
 DEFAULT_PORTS = {"http": 80, "https": 443}
-# A whole quoted `src` or `href` value; `data-src` and the like are not picture addresses
-HTML_ADDRESS = re.compile(r"""(?<![\w-])((?:src|href)\s*=\s*)(["'])(.*?)\2""", re.IGNORECASE | re.DOTALL)
+# A start tag with its name, quotes respected, or a comment, which holds no tags
+HTML_TAG = re.compile(r"""<!--.*?-->|<([A-Za-z][^\s/>"']*)(?:"[^"]*"|'[^']*'|[^"'>])*>""", re.DOTALL)
+TAG_ATTRIBUTE = re.compile(r"""([^\s"'>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?""")
+# Only these attributes hold a picture reference; an id anywhere else is someone's words
 ADDRESS_ATTRIBUTES = ("src", "href")
+MEDIA_ATTRIBUTES = (*ADDRESS_ATTRIBUTES, NODE_ATTRIBUTE)
 
 IMAGE = "image"
 PARAGRAPH = "paragraph"
@@ -379,14 +386,14 @@ def _rewritten_content(
 
 
 def rewritten_attribute(key: str, value: str, mapping: dict[str, str], hosts: frozenset) -> str:
-    """Answer one Yjs attribute value with its ids swapped and, for an address, its own host dropped."""
+    """Answer a picture attribute's value with its ids swapped and its own host dropped."""
     if key == NODE_ATTRIBUTE:
         return mapping.get(value, value)
 
-    if key in ADDRESS_ATTRIBUTES:
-        value = site_address(value, hosts)
+    if key not in ADDRESS_ATTRIBUTES:
+        return value
 
-    return swapped_ids(value, mapping)
+    return swapped_ids(site_address(value, hosts), mapping)
 
 
 def _wrap_loose_images(fragment) -> int:
@@ -423,7 +430,43 @@ def _loose_image(child) -> bool:
 
 
 def _html_ids(text: str) -> set[str]:
-    return {match.group(1) for pattern in MEDIA_PATTERNS for match in pattern.finditer(text)}
+    return set().union(*(attribute_ids(name, value) for _, _, name, value in media_values(text)))
+
+
+def attribute_ids(key: str, value: str) -> set[str]:
+    """Answer the ids a picture attribute names; none for any other attribute."""
+    # `data-node` holds the bare id, so the patterns alone never see it
+    if key == NODE_ATTRIBUTE and BARE_MEDIA_ID.fullmatch(value):
+        return {value}
+
+    if key not in ADDRESS_ATTRIBUTES:
+        return set()
+
+    found: set[str] = set()
+    for pattern in MEDIA_PATTERNS:
+        found.update(match.group(1) for match in pattern.finditer(value))
+
+    return found
+
+
+def media_values(html: str) -> Iterator[tuple[int, int, str, str]]:
+    """Yield the span, lowercase name and value of each picture attribute in a real start tag."""
+    for tag in HTML_TAG.finditer(html):
+        # A comment matches with no tag name
+        if tag.group(1) is not None:
+            yield from tag_media_values(html, tag)
+
+
+def tag_media_values(html: str, tag: re.Match) -> Iterator[tuple[int, int, str, str]]:
+    """Yield the span, lowercase name and value of each picture attribute in one start tag."""
+    for attribute in TAG_ATTRIBUTE.finditer(html, tag.end(1), tag.end() - 1):
+        name = attribute.group(1).lower()
+        # The last group that matched is the value; group 1 alone is a bare attribute name
+        value = attribute.lastindex
+        if name not in MEDIA_ATTRIBUTES or value == 1:
+            continue
+
+        yield attribute.start(value), attribute.end(value), name, attribute.group(value)
 
 
 def _body_ids(content: str | None) -> set[str]:
@@ -436,14 +479,9 @@ def _body_ids(content: str | None) -> set[str]:
         _, fragment = _loaded(raw)
         for element in _elements(fragment):
             for key, value in dict(element.attributes).items():
-                if not isinstance(value, str):
-                    continue
-                # `data-node` holds the bare id, with the attribute name held
-                # apart from it, so the patterns alone never see it here.
-                if key == NODE_ATTRIBUTE and BARE_MEDIA_ID.fullmatch(value):
-                    found.add(value)
-                else:
-                    found |= _html_ids(value)
+                if isinstance(value, str):
+                    found |= attribute_ids(key, value)
+
     return found
 
 
@@ -485,12 +523,15 @@ def site_address(value: str, hosts: frozenset) -> str:
 
 
 def _remap_text(text: str, mapping: dict[str, str], hosts: frozenset) -> str:
-    """Drop an own host from each whole `src` or `href` value, and replace only the ids."""
+    """Rewrite only the value of each picture attribute in a real start tag."""
+    pieces: list[str] = []
+    last = 0
+    for start, end, name, value in media_values(text):
+        pieces += [text[last:start], rewritten_attribute(name, value, mapping, hosts)]
+        last = end
 
-    def localized(match: re.Match) -> str:
-        return match.group(1) + match.group(2) + site_address(match.group(3), hosts) + match.group(2)
-
-    return swapped_ids(HTML_ADDRESS.sub(localized, text), mapping)
+    pieces.append(text[last:])
+    return "".join(pieces)
 
 
 def swapped_ids(text: str, mapping: dict[str, str]) -> str:

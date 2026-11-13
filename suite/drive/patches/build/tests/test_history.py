@@ -1217,6 +1217,65 @@ class WriterBodyTest(unittest.TestCase):
         self.assertEqual(self.target.read_blob(version["blob"]).decode("utf-8"), html)
         self.assertEqual((content.writer_bodies_rewritten, content.writer_versions_rewritten), (0, 0))
 
+    def test_text_that_only_looks_like_a_picture_attribute_stays_as_it_is(self):
+        # Only an attribute of a real tag is a picture address. A sentence or
+        # a caption quoting one is someone's words, even on the old host
+        path = embed("own-1")
+        prod = "https://drive.frappe.io" + path
+        html = (
+            f'<p>Use src="{prod}"</p>'
+            f'<p><img alt="Example src=\'{prod}\'" src="{path}"></p>'
+            f'<p><img alt="a > b" src="{prod}"></p>'
+        )
+        self.add_document("reader-doc", "node-b", body=WriterBody(content=None, html=html))
+        self.add_picture("own-1", "node-b", "blob-own", "own.png")
+
+        convert_history_and_comments(self.env)
+
+        self.assertEqual(
+            self.source.writer_bodies["reader-doc"].html,
+            f'<p>Use src="{prod}"</p>'
+            f'<p><img alt="Example src=\'{prod}\'" src="{path}"></p>'
+            f'<p><img alt="a > b" src="{path}"></p>',
+        )
+
+    def test_a_borrowed_picture_named_only_in_words_is_neither_copied_nor_rewritten(self):
+        # A sentence or a caption naming another document's picture shows no
+        # picture, so it needs no copy and keeps its words. A real picture of
+        # the same id in the same document is still copied and pointed at it
+        self.add_document("owner-doc", "node-a", owner="author@example.com")
+        self.add_picture("pic-1", "node-a", "blob-1", "photo.png", owner="author@example.com")
+        borrowed = embed("pic-1")
+        words = f'<p>Copy {borrowed}</p><p>Use src="{borrowed}"</p>'
+        caption = f"was {borrowed}"
+        prose_body = WriterBody(content=yjs_body(paragraph(image(alt=caption))), html=words)
+        self.add_document("prose-doc", "node-c", body=prose_body)
+        self.source.writer_version_rows.append(
+            WriterVersionRow("version-c", "prose-doc", words, owner=OWNER, creation=STAMP, modified=STAMP)
+        )
+        self.add_document(
+            "reader-doc",
+            "node-b",
+            body=WriterBody(
+                content=yjs_body(paragraph(image(src=borrowed, alt=caption))),
+                html=f'{words}<p><img src="{borrowed}" alt="{caption}"></p>',
+            ),
+        )
+
+        convert_history_and_comments(self.env)
+
+        self.assertEqual(self.children("node-c"), {})
+        self.assertEqual(self.source.writer_bodies["prose-doc"], prose_body)
+        version = self.target.version_rows["version-c"]
+        self.assertEqual(self.target.read_blob(version["blob"]).decode("utf-8"), words)
+        (copy,) = self.children("node-b")
+        self.assertEqual(self.target.node_rows[copy]["blob"], "blob-1")
+        body = self.source.writer_bodies["reader-doc"]
+        (child,) = body_fragment(body.content).children
+        copied = embed(copy)
+        self.assertEqual(dict(child.children[0].attributes), {"src": copied, "alt": caption})
+        self.assertEqual(body.html, f'{words}<p><img src="{copied}" alt="{caption}"></p>')
+
     def test_an_old_prod_host_in_capitals_or_with_its_default_port_becomes_a_site_path(self):
         # A host is the same host in any case and on its scheme's default
         # port; another port is another server
