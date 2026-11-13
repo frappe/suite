@@ -22,24 +22,23 @@ export async function createDeck(scene: BaseScene, title: string): Promise<Drive
 }
 
 /**
- * The seeded deck, found by its title, once it is collaborative. A demo site
- * seeded before Slides collaboration keeps it on its old rows until someone
- * opens it, and a copy made before that would wait for its own conversion.
+ * The seeded deck, found by its title. It must be collaborative already: a
+ * copy of a deck still on its old rows would wait for its own conversion.
  */
 async function seededDeck(scene: BaseScene): Promise<DriveNode> {
 	const [deck] = (await view(scene.api, "search", { term: SEEDED_TITLE, content_doctype: "Presentation" })).filter(
 		(row) => row.title === SEEDED_TITLE,
 	);
 	if (!deck?.content_docname) throw new Error(`The demo site has no presentation called ${SEEDED_TITLE}`);
-	const docname = deck.content_docname;
-	const isConverted = async () =>
-		!!(await callMethod<{ is_converted?: boolean }>(scene.api, `${PRESENTATION}.get_public_presentation`, { name: docname })).is_converted;
-	if (await isConverted()) return deck;
-	// Opening the deck, as the editor does, asks for its conversion.
-	const user = await callMethod<string>(scene.api, "frappe.auth.get_logged_user");
-	const opened = await scene.api.get(`/api/suite/content/${deck.name}/document`, { headers: { "X-Expected-User": user } });
-	if (!opened.ok()) throw new Error(`Opening ${SEEDED_TITLE} failed: ${opened.status()}`);
-	await expect.poll(isConverted, { timeout: 120_000, intervals: [2_000] }).toBe(true);
+	const { is_converted } = await callMethod<{ is_converted?: boolean }>(scene.api, `${PRESENTATION}.get_public_presentation`, {
+		name: deck.content_docname,
+	});
+	if (!is_converted) {
+		throw new Error(
+			`The demo site was seeded before Slides collaboration, so "${SEEDED_TITLE}" is not collaborative yet. ` +
+				"Open it once in the Slides editor, which converts it, or seed the demo site again.",
+		);
+	}
 	return deck;
 }
 
