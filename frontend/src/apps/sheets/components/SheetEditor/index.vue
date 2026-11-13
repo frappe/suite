@@ -66,7 +66,11 @@
         />
       </DefineTopbarStatus>
       <DefineTopbarMenus>
-        <SheetMenuBar :menus="menuBar" :open-comments="openComments" />
+        <SheetMenuBar
+          :menus="menuBar"
+          :open-comments="openComments"
+          @item-ran="_refocusGridAfterDialog"
+        />
       </DefineTopbarMenus>
       <DefineTopbarActions>
         <SheetTopbarActions :present-users="presentUsers" :current-sheet="currentSheet" />
@@ -687,6 +691,7 @@
         </div>
 
         <textarea
+          ref="noteBoxRef"
           v-model="commentPanel.draft"
           class="sn-comment-ta"
           rows="2"
@@ -2178,6 +2183,7 @@ const {
   openTabMenu,
 } = useContextMenu({
   getGrid: () => grid,
+  refocusGrid: () => _refocusGridAfterDialog(),
 })
 
 // The right-click menu is entirely mutation actions (insert/delete/freeze/
@@ -3669,7 +3675,11 @@ function openCommentPanel() {
   commentPanel.draft = ''
   _loadCommentThread()
   commentPanel.open = true
+  // Opened to write a note (Insert > Note, Shift+F2): the cursor goes in the
+  // box, not back on the menu that opened it (ISSUES #150).
+  void nextTick(() => noteBoxRef.value?.focus())
 }
+const noteBoxRef = ref(null)
 
 // Mirror the engine's thread for `commentPanel.id` into the reactive panel.
 function _loadCommentThread() {

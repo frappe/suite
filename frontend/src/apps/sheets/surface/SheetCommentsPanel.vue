@@ -32,6 +32,7 @@ const loadError = ref('')
 const draft = ref('')
 const replies = ref<Record<string, string>>({})
 const busy = ref(false)
+const root = ref<HTMLElement | null>(null)
 // Guests may sign their comments and replies. Signed-in users never see the field (spec §10.5).
 const {
   shown: showGuestName,
@@ -117,11 +118,17 @@ function message(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback
 }
 
-onMounted(load)
+onMounted(() => {
+  // Opened to write a comment (Insert > Comment, the toolbar button): the
+  // cursor goes in the box (ISSUES #150).
+  root.value?.querySelector<HTMLTextAreaElement>('textarea[aria-label="New comment"]')?.focus()
+  void load()
+})
 </script>
 
 <template>
   <aside
+    ref="root"
     class="absolute inset-y-0 right-0 z-30 flex w-80 flex-col border-l border-outline-gray-2 bg-surface-base text-ink-gray-8 shadow-xl"
     aria-label="Comments"
     @click.stop
