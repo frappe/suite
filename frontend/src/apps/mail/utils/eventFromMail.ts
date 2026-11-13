@@ -38,17 +38,52 @@ export const eventFromMail = (
   }
 }
 
+// The HTML part, when there is one, over the text part: only HTML marks its quoted trail well
+// enough to leave out (Outlook's text replies carry theirs unmarked).
 const words = (mail: Pick<Mail, 'html_body' | 'text_body'>) => {
   let text = mail.text_body ?? ''
   if (mail.html_body) {
     const doc = new DOMParser().parseFromString(mail.html_body, 'text/html')
     doc.querySelectorAll('style, script, title').forEach((element) => element.remove())
     findQuoteRoots(doc).forEach((quote) => quote.remove())
-    text = doc.body.innerText ?? doc.body.textContent ?? ''
+    text = renderedText(doc.body)
   }
   text = text
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim()
   return text.length > DESCRIPTION_LIMIT ? `${text.slice(0, DESCRIPTION_LIMIT).trimEnd()}…` : text
+}
+
+// Stand-ins for the line breaks a browser draws at a block's edges: one around a block, two around
+// a paragraph, however many edges meet. A <br> is a break of its own and never merges.
+const LINE = '\uE000'
+const PARAGRAPH = '\uE001'
+const BREAK = '\uE002'
+const BLOCKS =
+  'address, article, aside, blockquote, center, dd, div, dl, dt, figure, footer, form, header, hr, li, main, nav, ol, section, table, tr, ul'
+const PARAGRAPHS = 'h1, h2, h3, h4, h5, h6, p, pre'
+
+// A parsed document is never laid out, so its innerText is only its textContent, every line
+// break the mail shows lost ("Hi,Can we meet…"). This spells them out instead.
+const renderedText = (body: HTMLElement) => {
+  // Whitespace in the HTML source is folded, as a browser folds it, except where it is preformatted.
+  const walker = body.ownerDocument.createTreeWalker(body, NodeFilter.SHOW_TEXT)
+  for (let node = walker.nextNode(); node; node = walker.nextNode())
+    if (!node.parentElement?.closest('pre'))
+      node.nodeValue = (node.nodeValue ?? '').replace(/\s+/g, ' ')
+  body.querySelectorAll('br').forEach((element) => element.replaceWith(BREAK))
+  body.querySelectorAll(BLOCKS).forEach((element) => {
+    element.before(LINE)
+    element.after(LINE)
+  })
+  body.querySelectorAll(PARAGRAPHS).forEach((element) => {
+    element.before(PARAGRAPH)
+    element.after(PARAGRAPH)
+  })
+  return (body.textContent ?? '')
+    .replace(/[ \t]*[\uE000\uE001][\uE000\uE001 \t]*/g, (edges) =>
+      edges.includes(PARAGRAPH) ? '\n\n' : '\n',
+    )
+    .replace(/[ \t]*\uE002[ \t]*/g, '\n')
 }

@@ -45,7 +45,7 @@ import {
   viewForRoute,
   type MobileView,
 } from '@/apps/calendar/utils/mobileView'
-import { takeNewEventDraft } from '@/apps/calendar/utils/newEventDraft'
+import { useNewEventDrafts } from '@/apps/calendar/utils/newEventDraft'
 import { reanchoredRule } from '@/apps/calendar/utils/recurrence'
 import {
   isFirstOccurrence,
@@ -693,14 +693,15 @@ const newEventDate = () => {
 
 // The phone's new-event button (CalendarLayout) and other areas ask for a new event through the URL
 // (?new=1). Consume the flag so reload or Back does not reopen the modal.
+const newEventDrafts = useNewEventDrafts()
 const openNewEventFromRoute = (flag) => {
   if (!flag) return
   const { new: _new, ...query } = route.query
   router.replace({ query })
   handleOpenEvent({
     date: isMobile.value ? dayjs(mobileDate.value).toDate() : newEventDate(),
-    // What another area filled in, from a mail say (see useNewCalendarEvent).
-    prefill: takeNewEventDraft(),
+    // What another area filled in, from a mail say, held under the flag (see useNewCalendarEvent).
+    prefill: newEventDrafts.take(flag),
   })
 }
 

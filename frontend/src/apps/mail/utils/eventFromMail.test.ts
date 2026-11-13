@@ -27,6 +27,26 @@ describe('an event from a mail', () => {
     )
   })
 
+  it('keeps the paragraphs and lines the mail shows apart', () => {
+    // As Gmail writes a reply: a div per line, and a div holding only a <br> for the blank one.
+    const gmail = {
+      ...mail,
+      html_body:
+        '<div dir="ltr">Hi,<div><br></div><div>Can we meet Thursday?</div><div>Room 4 is free.</div><div><br></div><div>Priya</div></div>',
+    }
+    expect(eventFromMail(gmail, []).description).toBe(
+      'Hi,\n\nCan we meet Thursday?\nRoom 4 is free.\n\nPriya',
+    )
+
+    const paragraphs = {
+      ...mail,
+      html_body: '<p>Hi Lena,</p>\n  <p>Can we meet\n  Thursday?<br>Say at ten.</p>',
+    }
+    expect(eventFromMail(paragraphs, []).description).toBe(
+      'Hi Lena,\n\nCan we meet Thursday?\nSay at ten.',
+    )
+  })
+
   it('invites everyone on the mail but you, and nobody who was only Bcc’d', () => {
     expect(eventFromMail(mail, ['ME@example.com']).participants).toEqual([
       { email: 'priya@example.com', name: 'Priya Nair' },

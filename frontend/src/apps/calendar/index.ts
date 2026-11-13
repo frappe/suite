@@ -5,7 +5,7 @@ import { useRouter } from 'vue-router'
 import { api, useQuery } from '@/api'
 import CalendarIcon from '@/apps/calendar/AreaIcon.vue'
 import { showEventReminder, type EventReminder } from '@/apps/calendar/reminders'
-import { holdNewEventDraft, type NewEventDraft } from '@/apps/calendar/utils/newEventDraft'
+import { useNewEventDrafts, type NewEventDraft } from '@/apps/calendar/utils/newEventDraft'
 import type { AreaDefinition } from '@/platform/contracts'
 import { realtime, type Realtime } from '@/platform/realtime'
 import { hasCapabilities, useSession, type Session } from '@/platform/session'
@@ -27,11 +27,10 @@ export type { NewEventDraft } from '@/apps/calendar/utils/newEventDraft'
  */
 export function useNewCalendarEvent(): (draft: NewEventDraft) => Promise<unknown> {
   const router = useRouter()
-  return (draft) => {
-    holdNewEventDraft(draft)
+  const drafts = useNewEventDrafts()
+  return (draft) =>
     // By path: Calendar's routes load with the area, so from elsewhere its route names are unknown.
-    return router.push({ path: calendarArea.to, query: { new: '1' } })
-  }
+    router.push({ path: calendarArea.to, query: { new: drafts.hold(draft) } })
 }
 export { useUpcomingEvents } from '@/apps/calendar/client/useUpcomingEvents'
 /** Shared upcoming-event presentation; callers supply their own event window and actions. */
