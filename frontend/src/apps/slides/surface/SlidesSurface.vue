@@ -97,13 +97,9 @@ import { drawnFontsLoaded, warmBundledFonts } from '@/apps/slides/utils/bundledF
 import { isMediaOwner } from '@/apps/slides/utils/mediaUploads'
 import { collectMediaSources } from '@/apps/slides/utils/pinTargets'
 import { postToServiceWorker, registerSlidesWorker } from '@/apps/slides/utils/serviceWorker'
-import { readSavedDocument, watchConversion, type VersionRestored } from '@/platform/collab'
+import { readSavedDocument, watchConversion } from '@/platform/collab'
 import { peopleOf, presenceColours } from '@/platform/collab/peers'
-import {
-  othersPresentWarning,
-  restoredByOther,
-  type RestoreNotice,
-} from '@/platform/collab/restoreNotices'
+import { othersPresentWarning, type RestoreNotice } from '@/platform/collab/restoreNotices'
 import UsersBar from '@/platform/collab/UsersBar.vue'
 import { useHideRail } from '@/platform/rail'
 import { getCookieSessionUser, useSession } from '@/platform/session'
@@ -248,7 +244,7 @@ const convertedRoom = useConvertedRoom({
   retainRecovery,
   retainStickyOrOffer,
   onThreadsChanged: () => void refreshThreads(),
-  onVersionRestored: (restored) => void tellRestoredByOther(restored),
+  onVersionRestored: (restored) => void sidePanel.value?.tellRestoredByOther(restored),
 })
 provide('livePresence', convertedRoom.presence)
 const roomPeople = computed(() => {
@@ -605,10 +601,6 @@ async function downloadListedVersion(version: DocumentVersion) {
   await downloadVersion(version, bytes)
 }
 
-async function tellRestoredByOther(restored: VersionRestored) {
-  void sidePanel.value?.reloadVersions()
-  toast.info(await restoredByOther(restored, 'presentation'))
-}
 let isWaitingToPrint = false
 async function printDrawnPages() {
   const pages = exportView.value?.$el

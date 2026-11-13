@@ -1,4 +1,5 @@
 import { fromPartial } from '@total-typescript/shoehorn'
+import { toast } from 'frappe-ui'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, ref, type App } from 'vue'
 
@@ -9,6 +10,7 @@ import type {
   ThreadActions,
   useCommentDrafts,
 } from '@/apps/drive'
+import type { VersionRestored } from '@/platform/collab'
 import { requireTestElement } from '@/platform/testing/dom'
 import { translationPlugin } from '@/platform/translation'
 
@@ -55,7 +57,7 @@ vi.mock('frappe-ui', async () => {
         return () => render('input', { ref: input, value: props.modelValue, onInput: write })
       },
     }),
-    toast: { success: vi.fn(), error: vi.fn() },
+    toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
   }
 })
 
@@ -353,6 +355,58 @@ describe('Escape over a shown version', () => {
     pressEscape()
 
     expect(backs).toEqual([])
+  })
+})
+
+describe('a version restored by someone else', () => {
+  it('tells the person in the app’s word, and lists the versions again', async () => {
+    const reads: string[] = []
+    const panel = ref<{ tellRestoredByOther(restored: VersionRestored): Promise<void> } | null>(
+      null,
+    )
+    const host = document.createElement('div')
+    document.body.append(host)
+    const app = createApp(() =>
+      h(DocumentSidePanel, {
+        ref: panel,
+        panel: 'versions',
+        previewedVersion: null,
+        session: fromPartial<DocumentSession>({
+          versions: {
+            list: async () => {
+              reads.push('versions')
+              return { rows: [], next_cursor: null }
+            },
+          },
+        }),
+        canComment: true,
+        canEditDocument: false,
+        canShare: false,
+        canRestoreVersion: false,
+        canSaveVersion: false,
+        isRestoringVersion: false,
+        threads: [],
+        threadsReadAt: 1,
+        places: null,
+        refreshThreads: async () => {},
+        threadActions: fromPartial<ThreadActions>({}),
+        drafts: noDrafts,
+        noun: 'presentation',
+        saveFirst: async () => {},
+      }),
+    )
+    app.use(translationPlugin).mount(host)
+    mounted = app
+    await settled()
+    reads.length = 0
+
+    await panel.value?.tellRestoredByOther({ by: null, version: null })
+    await settled()
+
+    expect([vi.mocked(toast.info).mock.lastCall, reads]).toEqual([
+      ['Someone restored an earlier version of this presentation.'],
+      ['versions'],
+    ])
   })
 })
 

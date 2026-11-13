@@ -52,9 +52,9 @@ import RecoveryCopyActions from '@/apps/writer/recovery/RecoveryCopyActions.vue'
 import RecoveryPreview from '@/apps/writer/recovery/RecoveryPreview.vue'
 import { RENAME_DOCUMENT } from '@/apps/writer/renameDocument'
 import { belowMinBuild } from '@/platform/build'
-import { watchConversion, type CollabRoom, type VersionRestored } from '@/platform/collab'
+import { watchConversion, type CollabRoom } from '@/platform/collab'
 import type { peopleOf } from '@/platform/collab/peers'
-import { othersPresentWarning, restoredByOther } from '@/platform/collab/restoreNotices'
+import { othersPresentWarning } from '@/platform/collab/restoreNotices'
 import UsersBar from '@/platform/collab/UsersBar.vue'
 import { useHideRail } from '@/platform/rail'
 import { useSession } from '@/platform/session'
@@ -162,7 +162,10 @@ const {
   props.session,
   retainRecovery,
   () => writes.writable.value,
-  { threadsChanged: refreshThreads, versionRestored: tellRestoredByOther },
+  {
+    threadsChanged: refreshThreads,
+    versionRestored: (restored) => void sidePanel.value?.tellRestoredByOther(restored),
+  },
   () => !!editorSurface.value?.isFrozen,
 )
 
@@ -507,11 +510,6 @@ async function restoreBody(shown: DocumentVersion): Promise<VersionRestore> {
 
 function liveScroller() {
   return document.querySelector('#editor-scroll-container')
-}
-
-async function tellRestoredByOther(restored: VersionRestored) {
-  void sidePanel.value?.reloadVersions()
-  toast.info(await restoredByOther(restored, 'document'))
 }
 
 function viewCopy(copy: RecoveryCopy) {

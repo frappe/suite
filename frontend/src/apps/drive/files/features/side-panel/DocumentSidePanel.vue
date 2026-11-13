@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onKeyStroke } from '@vueuse/core'
-import { Button, TextInput } from 'frappe-ui'
+import { Button, TextInput, toast } from 'frappe-ui'
 import { computed, nextTick, ref, watch } from 'vue'
 
 import type {
@@ -11,6 +11,8 @@ import type {
   ThreadActions,
   useCommentDrafts,
 } from '@/apps/drive'
+import type { VersionRestored } from '@/platform/collab'
+import { restoredByOther } from '@/platform/collab/restoreNotices'
 
 import CommentList from './comments/CommentList.vue'
 import type { FileNoun, ThreadPlaces } from './comments/places'
@@ -180,7 +182,18 @@ async function startDocumentComment() {
   await commentList.value?.startDocumentComment()
 }
 
-defineExpose({ reloadVersions: () => load('versions'), nameVersion, startDocumentComment })
+// Someone else restored a version: the list reads again, and the person is told who and which
+async function tellRestoredByOther(restored: VersionRestored) {
+  void load('versions')
+  toast.info(await restoredByOther(restored, props.noun))
+}
+
+defineExpose({
+  reloadVersions: () => load('versions'),
+  nameVersion,
+  startDocumentComment,
+  tellRestoredByOther,
+})
 </script>
 
 <template>

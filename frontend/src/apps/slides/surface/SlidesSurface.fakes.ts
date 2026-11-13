@@ -36,6 +36,8 @@ interface VersionsPanelFixture {
   reloads: number
   // times the panel was asked to open its name box
   namings: number
+  // the restores by someone else the panel was told of
+  restoredByOther: unknown[]
   // the version shown in the canvas's place, and how the list picks one
   previewed: DocumentVersion | null
   preview: (version: DocumentVersion | null) => void
@@ -51,6 +53,7 @@ const versionsPanel = vi.hoisted((): VersionsPanelFixture => ({
   canSave: false,
   reloads: 0,
   namings: 0,
+  restoredByOther: [],
   previewed: null,
   preview: () => {},
   restore: () => {},
@@ -313,6 +316,9 @@ vi.mock('@/apps/drive', async (importOriginal) => ({
         },
         nameVersion: async () => {
           versionsPanel.namings += 1
+        },
+        tellRestoredByOther: async (restored: unknown) => {
+          versionsPanel.restoredByOther.push(restored)
         },
       })
       return () => {

@@ -1214,12 +1214,12 @@ describe('a deck on the content layer', () => {
       expect(versionsPanel.reloads).toBe(reloads + 1)
     })
 
-    it('tells this tab when someone else restored a version, and lists the versions again', async () => {
+    it('hands a restore by someone else to the side panel, which tells this tab', async () => {
       convertedRoom('one')
       mounted = await openedSurface({ deck: { is_converted: true } })
       await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
       await openVersions()
-      const reloads = versionsPanel.reloads
+      versionsPanel.restoredByOther = []
 
       const [{ onVersionRestored }] = fromAny<
         [{ onVersionRestored: (restored: unknown) => void }],
@@ -1227,12 +1227,7 @@ describe('a deck on the content layer', () => {
       >(collabRoom.open.mock.lastCall)
       onVersionRestored({ by: null, version: null })
 
-      await vi.waitFor(() =>
-        expect(toast.info).toHaveBeenCalledWith(
-          'Someone restored an earlier version of this presentation.',
-        ),
-      )
-      expect(versionsPanel.reloads).toBe(reloads + 1)
+      expect(versionsPanel.restoredByOther).toEqual([{ by: null, version: null }])
     })
   })
 
