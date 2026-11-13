@@ -171,7 +171,9 @@ export function createSortFilter(cells: CellPort) {
       for (let c = rect.c0; c <= rect.c1; c++) {
         before[cellId(r0 + to, c)] = inputs[to]?.[c - rect.c0] ?? ''
         const v = inputs[from]?.[c - rect.c0] ?? ''
-        after[cellId(r0 + to, c)] = v.startsWith('=') ? adjustFormula(v, to - from, 0) : v
+        after[cellId(r0 + to, c)] = v.startsWith('=')
+          ? adjustFormula(v, to - from, 0, { keepOffSheet: true })
+          : v
       }
     })
     cells.write(sheetName, after)

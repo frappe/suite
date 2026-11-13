@@ -22,14 +22,61 @@ function _shiftRef(
   return `${cDollar}${colLabel(newCol)}${rDollar}${newRow + 1}`
 }
 
+// A string literal (skipped), or a cell ref or range with an optional sheet
+// prefix. The lookarounds keep it from firing mid-identifier or on function
+// names that look like refs (`LOG10(`).
+const SHEET_PREFIX = String.raw`(?:'(?:[^']|'')*'|[A-Za-z_][A-Za-z0-9_.]*)!`
+const CELL = String.raw`(\$?)([A-Za-z]+)(\$?)(\d+)`
+const REF_UNIT = new RegExp(
+  String.raw`("(?:[^"]|"")*")|(?<![A-Za-z0-9_$'!])(?:${SHEET_PREFIX})?${CELL}` +
+    String.raw`(?:\s*:\s*(?:${SHEET_PREFIX})?${CELL})?(?![A-Za-z0-9_(!])`,
+  'g',
+)
+
+function _leavesSheet(
+  cDollar: string,
+  colStr: string,
+  rDollar: string,
+  rowStr: string,
+  dr: number,
+  dc: number,
+) {
+  return (
+    (!cDollar && _colIndex(colStr.toUpperCase()) + dc < 0) ||
+    (!rDollar && parseInt(rowStr, 10) - 1 + dr < 0)
+  )
+}
+
+// Turn every ref or range that the shift would push above row 1 or left of
+// column A into #REF!, as Excel and Google Sheets do for a pasted formula.
+function _refErrorsOffSheet(formula: string, dr: number, dc: number): string {
+  return formula.replace(REF_UNIT, (match: string, str: string | undefined, ...g: string[]) => {
+    if (str !== undefined) return match
+    const [c1 = '', col1 = '', r1 = '', row1 = '', c2, col2, r2, row2] = g
+    const off =
+      _leavesSheet(c1, col1, r1, row1, dr, dc) ||
+      (col2 !== undefined && _leavesSheet(c2 ?? '', col2, r2 ?? '', row2 ?? '', dr, dc))
+    return off ? '#REF!' : match
+  })
+}
+
 // Adjust all relative cell references in a formula by (dr, dc) rows/cols.
 // Absolute refs (prefixed with $) are left unchanged.
 // The (?!!) negative lookahead skips sequences like SHEET2! (sheet-name identifiers).
+// A ref or range that would move above row 1 or left of column A becomes
+// #REF! (copy, paste, fill). `keepOffSheet` leaves such a ref unchanged
+// instead, for callers that move cells rather than copy them (cut, sort).
 // Anything that isn't a formula string comes back unchanged.
-export function adjustFormula<T>(formula: T, dr: number, dc: number): T | string {
+export function adjustFormula<T>(
+  formula: T,
+  dr: number,
+  dc: number,
+  { keepOffSheet = false }: { keepOffSheet?: boolean } = {},
+): T | string {
   if (!formula || typeof formula !== 'string' || !formula.startsWith('=')) return formula
   if (dr === 0 && dc === 0) return formula
-  return formula.replace(
+  const src = keepOffSheet ? formula : _refErrorsOffSheet(formula, dr, dc)
+  return src.replace(
     /(\$?)([A-Za-z]+)(\$?)(\d+)(?!!)/g,
     (_: string, cDollar: string, colStr: string, rDollar: string, rowStr: string) =>
       _shiftRef(cDollar, colStr.toUpperCase(), rDollar, rowStr, dr, dc),

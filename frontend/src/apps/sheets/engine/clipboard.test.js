@@ -249,6 +249,51 @@ describe('clipboard — cut clears the source but not overlapping dest cells', (
   })
 })
 
+describe('clipboard — refs pasted off the sheet become #REF! (ISSUES #151)', () => {
+  const H2 = { r0: 1, c0: 7, r1: 1, c1: 7 }
+  for (const kind of ['all', 'formulas']) {
+    it(`copy A6 =SUM(A1:A5) to H2 gives #REF! (${kind})`, async () => {
+      const sheet = makeSheet({ A6: '=SUM(A1:A5)' })
+      const cb = createClipboard({ cells: sheet, getCurrentSheet: () => 'Sheet1' })
+      await cb.copy({ r0: 5, c0: 0, r1: 5, c1: 0 })
+      await cb.paste('H2', null, kind, H2)
+      expect(sheet.getCell('H2')).toBe('=SUM(#REF!)')
+    })
+  }
+
+  it('copy I5 =I1*3 to I2 gives =#REF!*3', async () => {
+    const sheet = makeSheet({ I5: '=I1*3' })
+    const cb = createClipboard({ cells: sheet, getCurrentSheet: () => 'Sheet1' })
+    await cb.copy({ r0: 4, c0: 8, r1: 4, c1: 8 })
+    await cb.paste('I2', null, 'all')
+    expect(sheet.getCell('I2')).toBe('=#REF!*3')
+  })
+
+  it('copy B1 =A1 to A1 gives =#REF!', async () => {
+    const sheet = makeSheet({ B1: '=A1' })
+    const cb = createClipboard({ cells: sheet, getCurrentSheet: () => 'Sheet1' })
+    await cb.copy({ r0: 0, c0: 1, r1: 0, c1: 1 })
+    await cb.paste('A1', null, 'all')
+    expect(sheet.getCell('A1')).toBe('=#REF!')
+  })
+
+  it('in-bounds pastes shift as before', async () => {
+    const sheet = makeSheet({ C3: '=A1+$B1+B$2+$A$1+Sheet2!A1+SUM(A1:B2)' })
+    const cb = createClipboard({ cells: sheet, getCurrentSheet: () => 'Sheet1' })
+    await cb.copy({ r0: 2, c0: 2, r1: 2, c1: 2 })
+    await cb.paste('F7', null, 'all')
+    expect(sheet.getCell('F7')).toBe('=D5+$B5+E$2+$A$1+Sheet2!D5+SUM(D5:E6)')
+  })
+
+  it('cut-paste keeps its current behaviour (no #REF!)', async () => {
+    const sheet = makeSheet({ A6: '=SUM(A1:A5)' })
+    const cb = createClipboard({ cells: sheet, getCurrentSheet: () => 'Sheet1' })
+    await cb.cut({ r0: 5, c0: 0, r1: 5, c1: 0 })
+    await cb.paste('H2', null, 'all', H2)
+    expect(sheet.getCell('H2')).toBe('=SUM(A1:H1)')
+  })
+})
+
 describe('clipboard — measure external paste extent (undo-capture bounds)', () => {
   // Repro for the live bug: a multi-row text file pasted into a single clicked
   // cell wrote every row, but undo only reverted the anchor because the editor
