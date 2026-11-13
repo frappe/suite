@@ -33,6 +33,7 @@ from jmap.auth import BasicAuth
 from jmap.core.retry import RetryPolicy
 from jmap.testing.fake import FakeJMAPServer
 
+from suite.mail.api.mail import get_undo_send_hold
 from suite.mail.api.scheduled import (
     SUBMISSION_PROPERTIES,
     _query_submissions,
@@ -802,6 +803,99 @@ class _FakeServerCase(IntegrationTestCase):
         """Every method the server was asked to run, in order."""
 
         return [call[0] for request in server.requests for call in request["methodCalls"]]
+
+
+class TestWaitingOnly(_FakeServerCase):
+    """What the sidebar counts as waiting. A mail held for Undo send and a mail scheduled for
+    later look alike on the server, as do one going out and one stuck retrying, so the fake answers
+    the query as RFC 8621 §7.3 says: `after` keeps a sendAt the same as or later than it, `before`
+    one earlier."""
+
+    NOW = "2026-11-09 10:00:00.900000"
+
+    def setUp(self):
+        super().setUp()
+        # One instant, late in its second: the closest a listing can ever follow the hold it reads.
+        for clock in ("suite.mail.api.mail.now", "suite.mail.api.scheduled.now"):
+            patcher = mock.patch(clock, return_value=self.NOW)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def listing(self, send_ats: list[str], **filters) -> dict:
+        server = self.serve()
+        submissions = [
+            {"id": f"sub{i}", "emailId": f"e{i}", "threadId": f"t{i}", "undoStatus": "pending", "sendAt": at}
+            for i, at in enumerate(send_ats)
+        ]
+
+        def matches(s, condition):
+            if "conditions" in condition:
+                return any(matches(s, part) for part in condition["conditions"])
+            return (
+                condition.get("undoStatus", s["undoStatus"]) == s["undoStatus"]
+                and ("after" not in condition or _epoch(s["sendAt"]) >= _epoch(condition["after"]))
+                and ("before" not in condition or _epoch(s["sendAt"]) < _epoch(condition["before"]))
+            )
+
+        def query(arguments, _server):
+            condition = arguments.get("filter") or {}
+            matched = [s["id"] for s in submissions if matches(s, condition)]
+            return {"ids": matched[: arguments["limit"]], "total": len(matched), "position": 0}
+
+        server.handle("EmailSubmission/query", query)
+        server.respond("EmailSubmission/get", {"state": "s1", "list": submissions, "notFound": []})
+        server.respond("Email/get", {"state": "s1", "list": [], "notFound": []})
+
+        return get_submissions(ACCOUNT, start=0, page_length=1, **filters)
+
+    def undo_hold(self) -> str:
+        """When a plain Send made now is held until, as the server is told it: whole seconds."""
+
+        return to_utc_z(get_undo_send_hold()[1])
+
+    def from_now(self, **ahead) -> str:
+        return to_utc_z(add_to_date(self.NOW, **ahead))
+
+    def test_a_mail_held_for_undo_send_is_not_counted(self):
+        for period in (5, 10, 20, 30):
+            with (
+                self.subTest(period=period),
+                mock.patch("suite.mail.api.mail.get_undo_send_period", return_value=period),
+            ):
+                self.assertEqual(self.listing([self.undo_hold()], waiting_only=True)["total"], 0)
+
+    def test_scheduled_sends_are_counted_beside_an_undo_hold(self):
+        held = [self.undo_hold(), self.from_now(hours=2), self.from_now(days=1)]
+        self.assertEqual(self.listing(held, waiting_only=True)["total"], 2)
+
+    def test_a_send_due_past_the_undo_window_is_counted(self):
+        self.assertEqual(self.listing([self.from_now(seconds=30)], waiting_only=True)["total"], 1)
+
+    def test_a_send_due_within_seconds_is_about_to_go_and_not_counted(self):
+        self.assertEqual(self.listing([self.from_now(seconds=3)], waiting_only=True)["total"], 0)
+
+    def test_a_mail_going_out_straight_away_is_not_counted(self):
+        for ago in (0, 10, 120):
+            with self.subTest(seconds_ago=ago):
+                self.assertEqual(self.listing([self.from_now(seconds=-ago)], waiting_only=True)["total"], 0)
+
+    def test_a_released_mail_still_in_the_queue_after_minutes_is_counted(self):
+        for ago in (6, 90, 60 * 24):
+            with self.subTest(minutes_ago=ago):
+                self.assertEqual(self.listing([self.from_now(minutes=-ago)], waiting_only=True)["total"], 1)
+
+    def test_stuck_and_scheduled_are_counted_together_without_the_ones_passing_through(self):
+        submissions = [
+            self.undo_hold(),
+            self.from_now(seconds=-10),
+            self.from_now(minutes=-30),
+            self.from_now(hours=2),
+        ]
+        self.assertEqual(self.listing(submissions, waiting_only=True)["total"], 2)
+
+    def test_the_outbox_itself_still_lists_an_undo_hold(self):
+        held = [self.undo_hold(), self.from_now(hours=2)]
+        self.assertEqual(self.listing(held, undo_status="pending")["total"], 2)
 
 
 class TestSendAtWindow(_FakeServerCase):

@@ -492,6 +492,28 @@ class TestAdminLifecycle(IntegrationTestCase):
         self.assertEqual(policy["users"][self.address]["cap"], 5_000_000_000)
         self.assertEqual(self.provider.created, 1)
 
+    def test_a_weak_password_is_refused_before_setup_and_leaves_the_invitation_open(self):
+        from suite.mail.account_setup import WeakPassword
+
+        # Only the policy: saving all of System Settings needs a language and time zone a test site may lack.
+        for field, value in (("enable_password_policy", 1), ("minimum_password_score", 2)):
+            self.addCleanup(
+                frappe.db.set_single_value,
+                "System Settings",
+                field,
+                frappe.db.get_single_value("System Settings", field),
+            )
+            frappe.db.set_single_value("System Settings", field, value)
+        add_member(self.username, "company.frappe.cloud", False, True, "contact@example.test")
+        key = frappe.db.get_value("Mail Account Request", {"account": self.address}, "request_key")
+        # A plain refusal, which the form shows, not a setup stage that failed.
+        with self.set_user("Guest"), self.assertRaises(WeakPassword):
+            accept_invitation(key, "Employee", "", "abcabcabc")
+        self.assertEqual(self.provider.created, 0)
+        with self.set_user("Guest"):
+            accept_invitation(key, "Employee", "", "Chosen-invite-passphrase-55!")
+        self.assertTrue(frappe.db.exists("User", self.address))
+
     def failed_creation(self):
         frappe.clear_messages()
         self.provider.fail = "mail.accounts.create_account"
@@ -774,13 +796,17 @@ class TestAdminLifecycle(IntegrationTestCase):
     def test_an_invitation_gives_the_provider_the_workspace_and_inviter(self):
         frappe.db.set_single_value("Suite Settings", "workspace_name", "Acme")
         frappe.db.set_single_value("Suite Settings", "workspace_logo", "/files/acme.png")
-        add_member(self.username, "company.frappe.cloud", False, True, "contact@example.test")
+        inviter = f"maya-{frappe.generate_hash(length=8)}@company.frappe.cloud"
+        ensure_user(inviter)
+        frappe.get_doc("User", inviter).add_roles("Suite Admin")
+        with self.set_user(inviter):
+            add_member(self.username, "company.frappe.cloud", False, True, "contact@example.test")
 
         params = self.provider.emails[-1]["params"]
         self.assertEqual(params["workspace_name"], "Acme")
         self.assertTrue(params["workspace_logo"].endswith("/files/acme.png"))
         self.assertTrue(params["workspace_logo"].startswith("http"))
-        self.assertEqual(params["invited_by_name"], frappe.utils.get_fullname(frappe.session.user))
+        self.assertEqual(params["invited_by_name"], frappe.utils.get_fullname(inviter))
 
     def test_the_invitation_email_escapes_workspace_and_inviter_names(self):
         html = frappe.get_template("templates/emails/account_invitation.html").render(
@@ -812,7 +838,7 @@ class TestAdminLifecycle(IntegrationTestCase):
         first_email = self.provider.emails[0]
         self.assertEqual(first_email["email_type"], "account-invite")
         self.assertEqual(first_email["recipient"], "contact@example.test")
-        self.assertTrue(first_email["params"]["link"].endswith(f"/mail/signup/{old_key}"))
+        self.assertTrue(first_email["params"]["link"].endswith(f"/join/{old_key}"))
 
         set_default(6_000_000_000)
         self.assertEqual(request.combined_cap_bytes, 4_000_000_000)
@@ -827,7 +853,7 @@ class TestAdminLifecycle(IntegrationTestCase):
         resent_email = self.provider.emails[1]
         self.assertEqual(resent_email["email_type"], "account-invite")
         self.assertEqual(resent_email["recipient"], "contact@example.test")
-        self.assertTrue(resent_email["params"]["link"].endswith(f"/mail/signup/{request.request_key}"))
+        self.assertTrue(resent_email["params"]["link"].endswith(f"/join/{request.request_key}"))
         with self.set_user("Guest"):
             with self.assertRaises(frappe.DoesNotExistError):
                 accept_invitation(old_key, "Employee", "", "Chosen-invite-passphrase-55!")
@@ -862,6 +888,78 @@ class TestAdminLifecycle(IntegrationTestCase):
             shown = get_account_request(key)
         self.assertEqual((shown["workspace_name"], shown["account"]), ("Northwind", self.address))
         self.assertTrue(shown["invited_by_name"].startswith("maya-"))
+
+    def test_an_invitation_from_administrator_names_no_inviter(self):
+        # Suite Cloud invites a new site's first Admin as Administrator, which is not a person.
+        frappe.db.set_single_value("Suite Settings", "workspace_name", "Northwind")
+        with (
+            patch("suite.suite_core.suite_email._email_provider", return_value=None),
+            patch("frappe.sendmail") as sendmail,
+            self.set_user("Administrator"),
+        ):
+            result = add_member(self.username, "company.frappe.cloud", True, True, "owner@example.test")
+        self.assertTrue(result["success"])
+        subject = sendmail.call_args.kwargs["subject"]
+        self.assertIn("Northwind", subject)
+        self.assertNotIn("Administrator", subject)
+        key = frappe.db.get_value("Mail Account Request", {"account": self.address}, "request_key")
+        with self.set_user("Guest"):
+            shown = get_account_request(key)
+        self.assertEqual((shown["invited_by_name"], shown["invited_by_email"]), ("", ""))
+
+    def test_only_an_admin_invited_before_setup_sets_the_site_up(self):
+        # The site's first Admin opens the setup wizard from their invitation; later Admins join.
+        def invite(username: str, is_admin: bool) -> str:
+            with (
+                patch("suite.suite_core.suite_email._email_provider", return_value=None),
+                patch("frappe.sendmail"),
+                self.set_user("Administrator"),
+            ):
+                self.assertTrue(
+                    add_member(username, "company.frappe.cloud", is_admin, True, "x@example.test")["success"]
+                )
+            return frappe.db.get_value(
+                "Mail Account Request", {"account": f"{username}@company.frappe.cloud"}, "request_key"
+            )
+
+        frappe.db.set_single_value("Suite Settings", "is_onboarded", 0)
+        owner = invite(self.username, True)
+        member = invite(f"{self.username}-m", False)
+        with self.set_user("Guest"):
+            self.assertEqual(get_account_request(owner)["sets_up_site"], 1)
+            self.assertEqual(get_account_request(member)["sets_up_site"], 0)
+
+        frappe.db.set_single_value("Suite Settings", "is_onboarded", 1)
+        with self.set_user("Guest"):
+            self.assertEqual(get_account_request(owner)["sets_up_site"], 0)
+
+    def test_the_supplied_domain_is_the_oldest_active_one_whatever_order_suite_cloud_lists(self):
+        listed = [
+            {"domain": "acme.com", "enabled": True, "is_verified": True, "created_at": "2026-03-02 09:00:00"},
+            {
+                "domain": "draft.acme.com",
+                "enabled": True,
+                "is_verified": False,
+                "created_at": "2026-01-01 08:00:00",
+            },
+            {
+                "domain": "acme.frappe.space",
+                "enabled": True,
+                "is_verified": True,
+                "created_at": "2026-01-01 09:00:00",
+            },
+        ]
+        call = self.provider.call
+        self.provider.call = lambda method, **args: (
+            listed if method == "mail.domains.list_domains" else call(method, **args)
+        )
+        admin = f"first-admin-{frappe.generate_hash(length=8)}@contact.example.test"
+        ensure_user(admin)
+        frappe.get_doc("User", admin).add_roles("Suite Admin")
+        with self.set_user(admin):
+            options = mail.administer_account("onboarding_options")
+        self.assertEqual(options["supplied_domain"], "acme.frappe.space")
+        self.assertEqual(options["domains"], ["acme.frappe.space", "acme.com"])
 
     def test_supplied_domain_onboarding_requires_no_customer_dns_and_preserves_business_identity(self):
         frappe.db.set_single_value("Suite Settings", "is_onboarded", 0)

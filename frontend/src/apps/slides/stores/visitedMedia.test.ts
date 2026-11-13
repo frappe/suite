@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 
+import type { MediaStatus } from '@/apps/drive'
+
 const slides = ref<unknown[]>([])
 const presentationDoc = ref<Record<string, unknown>>({})
 const presentationId = ref('p1')
@@ -16,7 +18,7 @@ vi.mock('@/apps/slides/stores/element', () => ({
 }))
 vi.mock('frappe-ui', () => ({ toast: {}, FileUploadHandler: class {} }))
 vi.mock('@/apps/slides/pages/Slideshow.vue', () => ({ default: {} }))
-vi.mock('@/apps/slides/utils/bundledFonts', () => ({ loadBundledFonts: async () => {} }))
+vi.mock('@/apps/slides/utils/bundledFonts', () => ({ warmBundledFonts: async () => {} }))
 vi.mock('@/platform/session', async (importOriginal) => {
   const original = await importOriginal<typeof import('@/platform/session')>()
   return {
@@ -164,7 +166,7 @@ describe('pictures of a presentation opened online', () => {
       id: 'node1234',
       src,
       cacheKey: ref('drive-media:node1234'),
-      status: ref('ready'),
+      status: ref<MediaStatus>('ready'),
       refresh: async () => {},
     }
     const release = setDocumentMedia(() => fromPartial(handle))

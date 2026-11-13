@@ -79,11 +79,11 @@ describe('dragging a thumbnail in the read-only view', () => {
     expect(execute).toHaveBeenCalledWith({ oldIndex: 0, newIndex: 1 })
   })
 
-  it('moves nothing in a converted presentation, which is read-only until live editing', async () => {
+  it('reorders a converted presentation the same way', async () => {
     presentationDoc.value = { name: 'p1', is_converted: 1 }
 
     await dragFirstSlideDown()
 
-    expect(execute).not.toHaveBeenCalled()
+    expect(execute).toHaveBeenCalledWith({ oldIndex: 0, newIndex: 1 })
   })
 })

@@ -124,9 +124,10 @@ export async function fakeFrappeUi() {
   }
 }
 
-export async function fakeDrive() {
-  const { defineComponent: define, h: render, ref: state } = await import('vue')
+export async function fakeDrive(original: typeof import('@/apps/drive')) {
+  const { defineComponent: define, h: render } = await import('vue')
   return {
+    ...original,
     DriveDocumentHeader: define({
       props: {
         saveState: { type: String, default: null },
@@ -143,16 +144,7 @@ export async function fakeDrive() {
           slots.menu?.(),
         ],
     }),
-    DriveCommentAuthor: define({ setup: () => () => null }),
     DRIVE_ROLES: { read: 10, comment: 20, upload: 30, edit: 40, manage: 50 },
-    GUEST_NAME_LIMIT: 140,
-    useDriveGuestName: () => ({
-      shown: state(false),
-      text: state(''),
-      atLimit: state(false),
-      maxLength: 140,
-      take: () => '',
-    }),
   }
 }
 
@@ -354,10 +346,15 @@ export async function fakeDocumentMenu() {
   }
 }
 
-export function fakeUsers(original: typeof import('@/apps/writer/composables/useUsers')) {
+export function fakeNames(original: typeof import('@/platform/collab/names')) {
+  function fullName(user: string) {
+    return user
+  }
+
   return {
     ...original,
-    fullName: (user: string) => user,
+    fullName,
+    people: { ...original.people, fullName },
   }
 }
 

@@ -55,7 +55,7 @@ from suite.drive.framework import (
 from suite.slides import drive as slides
 from suite.slides.doctype.presentation import presentation as api
 from suite.slides.doctype.presentation.presentation import Presentation
-from suite.slides.tests.utils import make_presentation
+from suite.slides.tests.utils import drop_log, make_presentation
 from suite.tests.utils import ensure_user
 
 USER = "slides-adoption-user@example.com"
@@ -352,7 +352,10 @@ class TestSlidesInDrive(IntegrationTestCase):
     # helpers
 
     def _deck(self, title="Deck", parent=None, **kwargs) -> str:
-        return drive.create_document(parent or self.root.node, title, content_doctype=DOCTYPE, **kwargs)
+        # Unconverted, as an old site's deck whose rows are its slides
+        node = drive.create_document(parent or self.root.node, title, content_doctype=DOCTYPE, **kwargs)
+        drop_log(node)
+        return node
 
     def _docname(self, node: str) -> str:
         return frappe.db.get_value("Drive Node", node, "content_docname")
@@ -724,15 +727,14 @@ class TestSlidesInDrive(IntegrationTestCase):
             drive.adopt_media(target, [picture])
 
     def test_a_reader_cannot_save_a_deck_and_a_trashed_deck_refuses_an_editor(self):
-        from suite.slides.api.slides import save_slides
-
         node = self._deck(title="Save rights")
         docname = self._docname(node)
         before = [row["name"] for row in self._slide_rows(node)]
 
         def save():
-            modified = str(frappe.db.get_value(DOCTYPE, docname, "modified"))
-            save_slides(docname, [{"client_id": "x", "background": "#000000ff", "elements": "[]"}], modified)
+            deck = frappe.get_doc(DOCTYPE, docname)
+            deck.slides[0].background = "#000000ff"
+            deck.save()
 
         grant(node, OTHER, drive.READ, self.admin)
         self._as(OTHER)
@@ -882,7 +884,6 @@ class TestSlidesInDrive(IntegrationTestCase):
         row = frappe.db.get_value("Drive Node Preview", {"node": node}, ["source_blob", "blob"], as_dict=True)
         self.assertIsNone(row.source_blob, "a pushed preview has no source blob")
         self.assertTrue(row.blob)
-        self.assertFalse(frappe.db.get_value(DOCTYPE, docname, "thumbnail"), "no legacy thumbnail column")
         self.assertFalse(
             frappe.db.exists("File", {"attached_to_doctype": DOCTYPE, "attached_to_name": docname})
         )

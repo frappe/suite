@@ -31,7 +31,6 @@ import {
   ThreadHighlights,
   type ThreadPlaces,
 } from '@/apps/writer/collab/highlights'
-import { peopleOf, presenceColours } from '@/apps/writer/collab/peers'
 import { anchorSelection } from '@/apps/writer/collab/places'
 import { withinTenSeconds } from '@/apps/writer/collab/timeout'
 import { ThreadsAfterUndo } from '@/apps/writer/collab/undone-anchors'
@@ -43,6 +42,7 @@ import type {
   WriterSettings,
 } from '@/apps/writer/surface/writerDocument'
 import type { CollabRoom } from '@/platform/collab'
+import { peopleOf, presenceColours } from '@/platform/collab/peers'
 
 import CoreEditor from './CoreEditor.vue'
 

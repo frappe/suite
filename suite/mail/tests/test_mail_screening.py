@@ -14,7 +14,6 @@ from suite.mail.api.mail import (
     screen_out_senders,
     unscreen_email_addresses,
 )
-from suite.mail.api.mail import get_global_screened_addresses as get_global_screened
 from suite.mail.doctype.mail_message.mail_message import get_messages
 from suite.mail.tests.base import StalwartIntegrationTestCase, unique_name
 
@@ -76,8 +75,6 @@ class TestMailScreening(StalwartIntegrationTestCase):
 
             unscreen_email_addresses(self.account, [stranger])
             self.assertNotIn(stranger, self._screened())
-
-            self.assertIsInstance(get_global_screened(), list)
 
     def test_auto_accept_on_send(self):
         correspondent = self.create_member()

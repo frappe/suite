@@ -8,12 +8,11 @@ import {
 } from '@tiptap/pm/state'
 import { Decoration, DecorationSet, type EditorView } from '@tiptap/pm/view'
 
-import type { DocumentThread } from '@/apps/drive'
+import type { DocumentThread, ThreadPlace, ThreadPlaces } from '@/apps/drive'
 
-import { placeThread, type ThreadPlace } from './places'
+import { placeThread } from './places'
 
-/** Each thread's place in this tab, by thread name. */
-export type ThreadPlaces = ReadonlyMap<string, ThreadPlace>
+export type { ThreadPlaces }
 
 interface Highlights {
   places: ThreadPlaces

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { useMediaQuery } from '@vueuse/core'
-import { Avatar, Button, Dropdown, Skeleton, TextInput, toast } from 'frappe-ui'
+import type { Editor } from '@tiptap/core'
+import { onKeyStroke, useMediaQuery } from '@vueuse/core'
+import { Button, dialog, Dropdown, Skeleton, toast } from 'frappe-ui'
 import {
   computed,
   defineAsyncComponent,
@@ -9,20 +10,30 @@ import {
   onMounted,
   provide,
   ref,
+  shallowRef,
   useTemplateRef,
   watch,
 } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
+import '@/apps/slides/styles/fonts.css'
+import '@/apps/slides/styles/scrollbars.css'
+
 import { api, client } from '@/api'
 import {
-  DriveCommentAuthor,
+  DriveCommentList,
   DriveDocumentHeader,
-  GUEST_NAME_LIMIT,
+  imagesNotice,
+  missingImages,
+  rankMentionsFor,
+  restoreImages,
+  useCommentDrafts,
+  useDocumentThreads,
   useDriveDocumentActions,
-  useDriveGuestName,
+  useThreadChanges,
   type DocumentPanel,
   type DocumentSession,
+  type MissingImage,
 } from '@/apps/drive'
 import LayoutDialog from '@/apps/slides/components/LayoutDialog.vue'
 import NavigationPanel from '@/apps/slides/components/NavigationPanel.vue'
@@ -35,18 +46,21 @@ import Toolbar from '@/apps/slides/components/Toolbar.vue'
 import { useCommandHistory } from '@/apps/slides/composables/useCommandHistory'
 import { useNavigationPanel } from '@/apps/slides/composables/useNavigationPanel'
 import { useShortcuts } from '@/apps/slides/composables/useShortcuts'
+import { activeEditor } from '@/apps/slides/composables/useTextEditor'
+import { useOldDraft } from '@/apps/slides/recovery/useOldDraft'
 import { setDocumentMedia } from '@/apps/slides/stores/documentMedia'
-import { acquireEditLock, lockedElsewhere, releaseEditLock } from '@/apps/slides/stores/editLock'
-import { flushPendingBlur, resetFocus } from '@/apps/slides/stores/element'
+import { focusElementId, resetFocus } from '@/apps/slides/stores/element'
 import {
   actionOrder as historyMetaActionOrder,
   actions as historyMetaActions,
   setCommandHistory,
 } from '@/apps/slides/stores/historyMeta'
+import { flushLive } from '@/apps/slides/stores/liveDeck'
 import {
   offlineCopyStatus,
   pruneOfflineCopy,
   refreshOfflineStatus,
+  removeRowedOfflineCopy,
   warmOfflineCopyAssets,
 } from '@/apps/slides/stores/offlineCopy'
 import {
@@ -56,23 +70,14 @@ import {
   loadTemplates,
   presentationDoc,
   presentationId,
+  presentationTheme,
   resetEditorState,
+  rowSlides,
   setDocumentContext,
   slidesLength,
-  startLoad,
+  templateList,
   viewOnly,
-  writesBlocked,
 } from '@/apps/slides/stores/presentation'
-import {
-  dirty,
-  isSaving,
-  keepDraftAsClean,
-  resumeWrites,
-  saveChanges,
-  saveFailed,
-  saveRefused,
-  savingFor,
-} from '@/apps/slides/stores/saving'
 import {
   changeEditorSlide,
   handleInsertSlide,
@@ -81,18 +86,31 @@ import {
   slides,
 } from '@/apps/slides/stores/slide'
 import { inSlideShowMode, startSlideShow } from '@/apps/slides/stores/slideshow'
+import {
+  drawTemplateLayouts,
+  firstLayout,
+  setTemplateReader,
+} from '@/apps/slides/stores/templateLayouts'
 import { cancelVisit, rememberVisit } from '@/apps/slides/stores/visitedCopies'
 import { stopVisitedMedia, storeVisitedMedia } from '@/apps/slides/stores/visitedMedia'
+import { drawnFontsLoaded, warmBundledFonts } from '@/apps/slides/utils/bundledFonts'
 import { isMediaOwner } from '@/apps/slides/utils/mediaUploads'
+import { collectMediaSources } from '@/apps/slides/utils/pinTargets'
 import { postToServiceWorker, registerSlidesWorker } from '@/apps/slides/utils/serviceWorker'
+import { readSavedDocument, watchConversion, type VersionRestored } from '@/platform/collab'
+import { peopleOf, presenceColours } from '@/platform/collab/peers'
+import {
+  othersPresentWarning,
+  restoredByOther,
+  type RestoreNotice,
+} from '@/platform/collab/restoreNotices'
+import UsersBar from '@/platform/collab/UsersBar.vue'
 import { useHideRail } from '@/platform/rail'
 import { getCookieSessionUser, useSession } from '@/platform/session'
 import { openAreaShortcuts } from '@/platform/shortcuts'
 import { translate } from '@/platform/translation'
 
 import { createSlidesAccess } from './access'
-import { useAutosave } from './autosave'
-import { authorLabel, commentTime, type CommentThread } from './comments'
 import {
   CompositeGroupLoader,
   indexOfPlace,
@@ -101,17 +119,24 @@ import {
   type CompositeItem,
   type MergedCompositeSlide,
 } from './compositeGroups'
+import { withSavedSlides } from './compositeSaved'
 import { conversionNotice, type ConversionStatus } from './conversionNotice'
-import { watchConvertedSlides } from './convertedSlides'
 import ExportView from './ExportView.vue'
 import { resolveDocumentUnload, useDocumentLeaveGuard, type DocumentSaveState } from './navigation'
 import { useNewPresentationTheme } from './newPresentation'
 import PreviewCapture from './PreviewCapture.vue'
+import { fileTitle, saveThroughBrowser } from './recovery'
+import SlidesVersionPreview from './SlidesVersionPreview.vue'
 import SlidesVersionsPanel from './SlidesVersionsPanel.vue'
 import SurfaceNotice from './SurfaceNotice.vue'
+import { useConvertedRoom } from './useConvertedRoom'
 import { useUnsavedRecovery } from './useUnsavedRecovery'
+import { convertedVersion, fetchVersion, readVersionBody, versionImages } from './versions'
+import { versionSlides } from './versionSlides'
 
 type Panel = DocumentPanel
+
+const CONVERSION_POLL_MS = 15_000
 
 const Slideshow = defineAsyncComponent(() => import('@/apps/slides/pages/Slideshow.vue'))
 
@@ -126,60 +151,89 @@ const route = useRoute()
 const router = useRouter()
 const userSession = useSession()
 const presenting = computed(
-  () =>
-    route.name === 'slides-slideshow' &&
-    loaded.value &&
-    slides.value.length > 0 &&
-    !isConverted.value,
+  () => route.name === 'slides-slideshow' && loaded.value && slides.value.length > 0,
 )
 // `?slide=N`: the slide the show presents, and the one the editor opens on.
 const presentedSlide = computed(() => Math.max(1, Math.trunc(Number(route.query.slide)) || 1))
 const online = ref(typeof navigator === 'undefined' ? true : navigator.onLine)
 const composite = ref(false)
 const compositeItems = ref<CompositeItem[]>([])
-const compositeLoader = ref<CompositeGroupLoader | null>(null)
 const panel = ref<Panel | null>(null)
-const threads = ref<CommentThread[]>([])
-const panelLoading = ref(false)
-const commentText = ref('')
-// Guests may sign their comments. Signed-in users never see the field (spec §10.5).
+// The version shown read-only in the canvas's place (Q7); it shows only beside the versions panel
+const previewed = ref<string | null>(null)
+watch(panel, (shown) => {
+  if (shown !== 'versions') {
+    previewed.value = null
+  }
+})
+// Escape goes back to the presentation, unless a dialog or menu over the preview takes the key
+onKeyStroke(
+  'Escape',
+  (event) => {
+    const isOverlayOpen = document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')
+    if (!event.defaultPrevented && previewed.value && !isOverlayOpen) {
+      previewed.value = null
+    }
+  },
+  { target: document },
+)
 const {
-  shown: showGuestName,
-  text: guestName,
-  atLimit: guestNameAtLimit,
-  maxLength: guestNameMaxLength,
-  take: takeGuestName,
-} = useDriveGuestName()
+  threads: readThreads,
+  readAt: threadsReadAt,
+  refresh: refreshThreads,
+} = useDocumentThreads(props.session, () => panel.value === 'comments')
+const { threads, actions: threadActions } = useThreadChanges({
+  session: props.session,
+  readThreads,
+  readAt: threadsReadAt,
+  refresh: refreshThreads,
+})
+// Comments are on the whole presentation, so a draft waits on no text in the room
+const commentDrafts = useCommentDrafts({
+  session: props.session,
+  user: userSession.user.value?.id ?? 'Guest',
+  room: () => null,
+  refreshThreads,
+})
+rankMentionsFor(props.session.nodeId)
 const exporting = ref(false)
+// A version's slides to print in place of the presentation's, for a version that can't be restored
+const printedSlides = shallowRef<Record<string, unknown>[] | null>(null)
+const exportedSlides = computed(() => printedSlides.value ?? slides.value)
 const {
-  isOnlyCopy,
-  clearOnlyCopy,
   canDownloadChanges,
   narrowed,
   widened,
-  keepSticky,
   retainRecovery,
+  retainStickyOrOffer,
   retainOrWarn,
-  reloadAfterAccessBack,
   downloadChanges,
   discardChanges,
-  settleCopies,
-  heldNotice,
 } = useUnsavedRecovery(props.session, {
   isWritable: () => access.writable.value,
-  isEditable: () => editable.value,
+  isReadable: () => access.readable.value,
   load,
-  cancelRunningLoad,
+  loseAccess: (lost) => convertedRoom.loseAccess(lost),
+  regainAccess: () => convertedRoom.regainAccess(),
 })
-const isSlideInteractionActive = ref(false)
+const { oldDraftNotice, settleOldDraft, downloadOldDraft, dismissOldDraft } = useOldDraft(
+  props.session,
+  {
+    isEditor: () => !viewOnly.value,
+  },
+)
 const previewCapture = useTemplateRef<InstanceType<typeof PreviewCapture>>('previewCapture')
-const access = createSlidesAccess(props.session, { narrowed, widened })
+const exportView = useTemplateRef<InstanceType<typeof ExportView>>('exportView')
+const versionsPanel = useTemplateRef<InstanceType<typeof SlidesVersionsPanel>>('versionsPanel')
+const access = createSlidesAccess(props.session, {
+  narrowed: () => void narrowed(),
+  widened: () => void widened(),
+})
 // A restore pauses editing: nothing is written while the server rewrites the deck.
 const restoring = ref(false)
-// Read-only until live editing, and drawn from its room: its rows no longer change
+// Edited through its room: its rows no longer change
 const isConverted = ref(false)
-let closeConvertedRoom: (() => void) | null = null
-// A deck still on its rows, waiting for conversion or refused by it, is read-only too
+// A deck still on its rows, waiting for conversion or refused by it, is read-only
 const conversion = ref<ConversionStatus | null>(null)
 const onLayer = computed(() => isConverted.value || !!conversion.value)
 const notice = computed(() => {
@@ -189,31 +243,48 @@ const notice = computed(() => {
 
   return conversionNotice(conversion.value)
 })
+// Only a live room takes edits: an opening with rows, a copy pinned before the upgrade
+// included, is read-only (Q15′)
 const editable = computed(
   () =>
     access.writable.value &&
     !composite.value &&
     !restoring.value &&
-    !isOnlyCopy.value &&
-    !onLayer.value,
+    isConverted.value &&
+    convertedRoom.allowsEditing.value,
 )
 // A composite can restore a version of itself, so this is not `inReadonlyMode`.
 const canRestoreVersions = computed(
   () =>
     access.writable.value &&
     !restoring.value &&
-    !isOnlyCopy.value &&
-    !onLayer.value &&
-    !writesBlocked.value,
+    (!onLayer.value || (isConverted.value && convertedRoom.allowsEditing.value)),
 )
+// A converted presentation asks and restores itself. A row presentation leaves both to the panel
+const liveRestore = computed(() => (isConverted.value ? confirmLiveRestore : undefined))
 // Phones get a viewer: the slide fitted to the screen with previous and next. The
 // editor's panels need a wide screen. Same breakpoint as the shell's phone layout.
 const phone = useMediaQuery('(max-width: 767px)')
+const convertedRoom = useConvertedRoom({
+  session: props.session,
+  // Not `editable`, which asks the room back
+  mayEdit: () => access.writable.value && !composite.value && !restoring.value && !phone.value,
+  isPresenting: () => route.name === 'slides-slideshow',
+  retainRecovery,
+  retainStickyOrOffer,
+  onThreadsChanged: () => void refreshThreads(),
+  onVersionRestored: (restored) => void tellRestoredByOther(restored),
+})
+provide('livePresence', convertedRoom.presence)
+const roomPeople = computed(() => {
+  const presence = convertedRoom.presence.value
+  return presence ? peopleOf(presence.peers, presenceColours(presence)) : []
+})
 const { isNavigationPanelOpen } = useNavigationPanel()
 // the side panel floats over the slide area, so a notice starts at its edge
 const isNoticeBesidePanel = computed(() => !phone.value && isNavigationPanelOpen.value)
 // What the canvas, panels and shortcuts read: the phone viewer edits nothing. The
-// stores keep their own `inReadonlyMode`, which follows access, the edit lock and a refused save.
+// stores keep their own `inReadonlyMode`, which follows access and a refused save
 const canvasReadonly = computed(() => inReadonlyMode.value || phone.value)
 const editing = computed(() => !canvasReadonly.value)
 const { open: showThemeDialog, offer: offerTheme } = useNewPresentationTheme(
@@ -223,21 +294,23 @@ const { open: showThemeDialog, offer: offerTheme } = useNewPresentationTheme(
 useHideRail()
 
 // Body requests go through the session, with this document's link credentials.
-// A refused write is a verdict: access narrows until the presentation opens again.
 const releaseContext = setDocumentContext(
   props.session.contentDocname,
   props.session.credentials.context,
-  () => access.refuse(),
-  keepSticky,
 )
 // A migrated deck names its pictures by node id; the session signs their urls.
 const releaseMedia = setDocumentMedia((id) => props.session.media(id))
+const releaseTemplateReader = setTemplateReader(readSource)
 const history = useCommandHistory(slides, {
   actions: historyMetaActions,
   actionOrder: historyMetaActionOrder,
 })
 setCommandHistory(history)
-useShortcuts(canvasReadonly, inSlideShowMode)
+// a previewed version hides the live presentation, so no shortcut may change it
+useShortcuts(
+  computed(() => canvasReadonly.value || !!previewed.value),
+  inSlideShowMode,
+)
 provide('inReadonlyMode', canvasReadonly)
 provide('inSlideShowMode', inSlideShowMode)
 provide('isOnline', online)
@@ -248,16 +321,14 @@ const insertIndex = ref(0)
 provide('openLayoutDialog', (index: number) => {
   insertIndex.value = index
   showLayoutDialog.value = true
+  void drawTemplateLayouts([presentationTheme.value])
 })
 function insertLayout(layout: unknown) {
   handleInsertSlide(insertIndex.value, layout)
 }
 
 /** A theme write rewrites the deck on the server, so it pauses editing like a restore. */
-async function writeTheme(
-  endpoint: typeof api.slides.documents.applyTheme | typeof api.slides.documents.updateTheme,
-  theme: string,
-) {
+async function writeTheme(theme: string) {
   showThemeDialog.value = false
   showThemeChange.value = false
   // a dialog stays open through a change of access, or of the edit lock
@@ -266,10 +337,9 @@ async function writeTheme(
   }
 
   try {
-    await flushEdits()
     restoring.value = true
     await client.mutation(
-      endpoint,
+      api.slides.documents.updateTheme,
       { name: props.session.contentDocname, theme },
       { context: contextFor(props.session.contentDocname) },
     )
@@ -282,7 +352,52 @@ async function writeTheme(
   }
 }
 
+/** A converted presentation takes its theme in its room, then the row records which theme it was. */
+async function fillTheme(theme: string) {
+  showThemeDialog.value = false
+  const template = templateList.value.find(({ name }) => name === theme)
+  if (inReadonlyMode.value || !template) {
+    return
+  }
+
+  await drawTemplateLayouts([theme])
+  const layout = firstLayout(template)
+  if (!layout) {
+    toast.error(translate('This theme has no slides to start from'))
+    return
+  }
+
+  try {
+    // the layout's pictures belong to the template: this presentation takes its own
+    const adopted = await client.mutation(
+      api.slides.media.adoptSlide,
+      { parent: props.session.contentDocname, slide: layout },
+      { context: contextFor(props.session.contentDocname) },
+    )
+    // a converted template's layouts are already drawn, and only their elements come back as text
+    const [slide] = template.is_converted
+      ? [{ ...adopted, elements: JSON.parse(String(adopted.elements)) }]
+      : rowSlides([adopted])
+    if (!convertedRoom.fillBlank(slide)) {
+      toast.error(translate('Only a new, empty presentation can take a theme'))
+      return
+    }
+  } catch (error) {
+    const message = error instanceof Error && error.message
+    toast.error(message || translate('Could not change the theme.'))
+    return
+  }
+
+  await writeTheme(theme)
+}
+
 const showThemeChange = ref(false)
+// a theme picker shows every template's layouts
+watch([showThemeDialog, showThemeChange], (opened) => {
+  if (opened.some(Boolean)) {
+    void drawTemplateLayouts()
+  }
+})
 const driveActions = useDriveDocumentActions(props.session)
 const presentationMenu = computed(() => [
   { group: '', options: driveActions.value.back },
@@ -304,12 +419,6 @@ const presentationMenu = computed(() => [
         condition: () => canDownloadChanges.value,
         onClick: discardChanges,
       },
-      {
-        label: translate('Reload'),
-        icon: 'lucide-refresh-cw',
-        condition: () => isOnlyCopy.value && access.writable.value,
-        onClick: reloadAfterAccessBack,
-      },
     ],
   },
   { group: '', options: driveActions.value.node },
@@ -322,19 +431,24 @@ watch(
     if (presentationDoc.value) presentationDoc.value.title = title
   },
 )
-// an empty presentation has no show, and a converted one none from its rows, so /present opens the deck
-watch(
-  [() => route.name, loaded, () => slides.value.length, isConverted],
-  ([name, done, count, converted]) => {
-    if (name === 'slides-slideshow' && done && (!count || converted)) {
-      void router.replace({ name: 'document-host', params: route.params, query: route.query })
-    }
-  },
-)
+// an empty presentation has no show, so /present opens the deck
+watch([() => route.name, loaded, () => slides.value.length], ([name, done, count]) => {
+  if (name === 'slides-slideshow' && done && !count) {
+    void router.replace({ name: 'document-host', params: route.params, query: route.query })
+  }
+})
 watch(
   editable,
   (canEdit) => {
     viewOnly.value = !canEdit
+    // only an editor adds slides from the theme, so the templates wait for the room to take edits
+    if (canEdit) void loadTemplates()
+    // Only an element being typed in was editable, so only that one becomes so again
+    if (!canEdit || focusElementId.value) {
+      // SAFETY: the untyped text editor store holds the open element's editor, or null
+      const editor = activeEditor.value as Editor | null
+      editor?.setEditable(canEdit)
+    }
   },
   {
     immediate: true,
@@ -344,26 +458,6 @@ watch(
 watch(phone, (isPhone) => {
   if (isPhone) resetFocus()
 })
-// An open text box would keep taking keystrokes that no save carries. Not on every
-// entry to read-only: closing a box marks the deck dirty, which a tab that has just
-// lost access could never clear, and a restore that fails should keep the selection.
-watch(writesBlocked, (blocked) => {
-  if (!blocked) return
-  flushPendingBlur()
-  resetFocus()
-})
-// The lock has already gone: this runs when the steal rejects this tab's request, and
-// nothing waits for the write, so the tab that took over can read the draft before it lands.
-function keepDraftForTakeover() {
-  flushPendingBlur()
-  void keepDraftAsClean()
-}
-async function editHere() {
-  await acquireEditLock(props.session.contentDocname, keepDraftForTakeover, { steal: true })
-  await load()
-  // The loaded deck can hold another tab's edits, which this tab's undo steps know nothing about.
-  history.clearHistory()
-}
 const slidePosition = computed(() => (slideIndex.value ?? 0) + 1)
 function showSlide(step: number) {
   changeEditorSlide((slideIndex.value ?? 0) + step, false)
@@ -371,41 +465,13 @@ function showSlide(step: number) {
 
 function showPanel(next: Panel | null) {
   panel.value = next
-  if (next === 'comments') void loadComments()
-}
-async function loadComments() {
-  panelLoading.value = true
-  try {
-    // SAFETY: DocumentSession.comments.list calls the Suite threads endpoint, which returns its threads projection.
-    const result = (await props.session.comments.list()) as {
-      threads?: CommentThread[]
-    }
-    threads.value = result.threads ?? []
-  } catch (error) {
-    toast.error(error instanceof Error ? error.message : 'Could not load the comments.')
-  } finally {
-    panelLoading.value = false
-  }
 }
 
-/** Save pending edits, or refuse: a version holds only the saved state. */
-async function flushEdits() {
-  await saveChanges()
-  if (saveRefused.value) {
-    throw new Error(translate('This presentation changed elsewhere. Reload before you do this.'))
-  }
-
-  if (dirty.value || isSaving.value || saveFailed.value) {
-    throw new Error(
-      'Your latest changes are not saved yet. Try again when the presentation is saved.',
-    )
-  }
-}
 async function restoreVersion(seq: string) {
-  await flushEdits()
   restoring.value = true
   try {
     await props.session.versions.restore(seq)
+    previewed.value = null
     await load()
     // A reload that failed leaves the old slides in place, and they are not the restored version.
     if (!loadError.value) previewCapture.value?.captureAfterPause()
@@ -413,36 +479,162 @@ async function restoreVersion(seq: string) {
     restoring.value = false
   }
 }
-async function addComment() {
-  const text = commentText.value.trim()
-  if (!text || !access.canComment.value) return
+
+function storedFile(seq: string, bytes: Uint8Array) {
+  const title = fileTitle(props.session.title.value)
+  return new File([new Uint8Array(bytes)], `${title} (v${seq}).json`, { type: 'application/json' })
+}
+
+// Bytes no preview can draw: the person keeps them as the stored file
+function offerStoredFile(seq: string, bytes: Uint8Array) {
+  const file = storedFile(seq, bytes)
+  toast.error(
+    translate("This version can't be read, so it can't be restored. You can download it."),
+    {
+      action: { label: translate('Download'), onClick: () => saveThroughBrowser(file) },
+    },
+  )
+}
+
+// Version `seq`'s bytes and its pictures binned or deleted now; null once the person is told why not
+async function versionToRestore(seq: string) {
   try {
-    await props.session.comments.create('document', text, takeGuestName())
+    const bytes = await fetchVersion(props.session, Number(seq))
+    const body = await readVersionBody(bytes).catch(() => null)
+    if (!body) {
+      offerStoredFile(seq, bytes)
+      return null
+    }
+
+    return { bytes, images: await missingImages(props.session, versionImages(body)) }
   } catch (error) {
-    toast.error(error instanceof Error ? error.message : 'Could not add the comment.')
+    console.error(error)
+    toast.error(translate("This version's images couldn't be checked, so nothing was restored."))
+    return null
+  }
+}
+
+// A converted presentation restores in the editor, for everyone at once (Q5)
+async function confirmLiveRestore(seq: string) {
+  const version = await versionToRestore(seq)
+  if (!version) {
     return
   }
-  commentText.value = ''
-  await loadComments()
+
+  const { bytes, images } = version
+  const message = [
+    translate(
+      'The presentation goes back to this version for everyone. Its current state is kept as a version first.',
+    ),
+    othersPresentWarning(roomPeople.value, userSession.user.value?.id ?? '', 'presentation'),
+    imagesNotice(images),
+  ]
+  dialog.confirm({
+    title: translate('Restore this version?'),
+    message: message.filter(Boolean).join(' '),
+    confirmLabel: translate('Restore'),
+    onConfirm: () => restoreLive(seq, bytes, images),
+  })
+}
+
+async function restoreLive(seq: string, bytes: Uint8Array, images: MissingImage[]) {
+  try {
+    await restoreImages(props.session, images)
+    const restored = await convertedRoom.restore(Number(seq), bytes, () =>
+      convertedVersion(props.session, Number(seq)),
+    )
+    if (!restored.isRestored) {
+      tellNotRestored(seq, bytes, restored)
+      return
+    }
+
+    toast.success(restored.message)
+    previewed.value = null
+    void versionsPanel.value?.reload()
+    previewCapture.value?.captureAfterPause()
+  } catch (error) {
+    console.error(error)
+    toast.error(translate('The version was not restored.'))
+  }
+}
+
+function tellNotRestored(seq: string, bytes: Uint8Array, refused: RestoreNotice) {
+  if (!refused.canDownload) {
+    toast.error(refused.message)
+    return
+  }
+
+  toast.error(refused.message, {
+    action: { label: translate('Download'), onClick: () => void downloadVersion(seq, bytes) },
+  })
+}
+
+// A version that can be drawn shows in the preview and prints as a PDF; one that can't goes out as stored
+async function downloadVersion(seq: string, bytes: Uint8Array) {
+  let shown: Record<string, unknown>[]
+  try {
+    shown = versionSlides(await readVersionBody(bytes))
+  } catch {
+    saveThroughBrowser(storedFile(seq, bytes))
+    return
+  }
+
+  panel.value = 'versions'
+  previewed.value = seq
+  printedSlides.value = shown
+  exportPdf()
+}
+
+async function tellRestoredByOther(restored: VersionRestored) {
+  void versionsPanel.value?.reload()
+  toast.info(await restoredByOther(restored, 'presentation'))
+}
+let isWaitingToPrint = false
+async function printDrawnPages() {
+  const pages = exportView.value?.$el
+  if (!pages) return
+
+  try {
+    await drawnFontsLoaded(pages)
+  } catch {
+    // a failed wait prints as a stall does
+  }
+
+  // left the presentation while a font loaded
+  if (!exportView.value) return
+
+  window.addEventListener(
+    'afterprint',
+    () => {
+      exporting.value = false
+      printedSlides.value = null
+    },
+    {
+      once: true,
+    },
+  )
+  window.print()
 }
 function exportPdf() {
+  if (isWaitingToPrint) return
+
+  isWaitingToPrint = true
   exporting.value = true
   void nextTick(() => {
     window.setTimeout(() => {
-      window.addEventListener(
-        'afterprint',
-        () => {
-          exporting.value = false
-        },
-        {
-          once: true,
-        },
-      )
-      window.print()
+      void printDrawnPages().finally(() => {
+        isWaitingToPrint = false
+      })
     }, 200)
   })
 }
-async function loadComposite() {
+// A source's own link code, so a public combined presentation opens signed out
+async function readSource(nodeId: string) {
+  const credentials = props.session.credentials.group([nodeId])[0]
+  return readSavedDocument({ nodeId, credentials })
+}
+
+async function loadComposite(run: number) {
   // Sent with every held link code: the server names the node of each
   // reference those codes open, and each group then sends only its own codes.
   const manifest = await client.query(
@@ -454,12 +646,14 @@ async function loadComposite() {
       context: props.session.credentials.heldContext,
     },
   )
+  if (!isCurrent(run)) return
+
   let shown: MergedCompositeSlide[] = []
   const loader = new CompositeGroupLoader(
     manifest,
     props.session.credentials,
-    (references, context) =>
-      client.query(
+    async (references, context) => {
+      const group = await client.query(
         api.slides.composites.group,
         {
           name: props.session.contentDocname,
@@ -468,8 +662,12 @@ async function loadComposite() {
         {
           context,
         },
-      ),
+      )
+      return { references: await withSavedSlides(group.references, readSource) }
+    },
     (items) => {
+      if (!isCurrent(run)) return
+
       compositeItems.value = items.map((item) => ({
         ...item,
       }))
@@ -484,7 +682,6 @@ async function loadComposite() {
       if (merged.length) setSlideIndex((place ? indexOfPlace(shown, place) : 0) + 1)
     },
   )
-  compositeLoader.value = loader
   compositeItems.value = loader.items.map((item) => ({
     ...item,
   }))
@@ -495,30 +692,27 @@ async function loadComposite() {
 // latest load may end the loading state: an earlier one returns no document, and
 // ending it then draws the panels before any slide is there.
 let latestLoad = 0
+// a surface left behind loads nothing more, so a late reply can't land in the next presentation
+let isLeft = false
+function isCurrent(run: number) {
+  return !isLeft && run === latestLoad
+}
 async function load() {
+  if (isLeft) return
+
   const run = ++latestLoad
+  const name = props.session.contentDocname
   loading.value = true
   loadError.value = ''
   try {
     // Not `editable`: a restore pauses editing, and its reload is still an editor load.
-    const readonly = !access.writable.value || composite.value || onLayer.value
-    // Refused while another tab holds the deck, which this one then shows read-only.
-    // Refused with no holder: the surface closed while the request waited.
-    const held =
-      readonly || (await acquireEditLock(props.session.contentDocname, keepDraftForTakeover))
-    if (run !== latestLoad || (!held && !lockedElsewhere.value)) return
+    const readonly = !access.writable.value || composite.value || !!conversion.value
     const doc = await initPresentationDoc(props.session.contentDocname, readonly)
-    if (run !== latestLoad) return
-
-    clearOnlyCopy()
-    if (doc) {
-      settleCopies()
-    }
+    if (!isCurrent(run)) return
 
     if (presentationDoc.value) presentationDoc.value.title = props.session.title.value
 
     setSlideIndex(presentedSlide.value)
-    loadTemplates()
     composite.value = !!doc?.is_composite
     isConverted.value = !!doc?.is_converted
     const status = doc?.conversion
@@ -531,67 +725,113 @@ async function load() {
               : { reason: undefined }),
           }
         : null
-    closeConvertedRoom?.()
-    closeConvertedRoom = null
+    conversionKeys = roomKeys(status)
     if (isConverted.value) {
       await showConvertedSlides(run)
+      // a left room's open still lands here, after the next presentation took the store
+      if (!isCurrent(run)) return
+
+      // a draft from before the live room holds edits it never sent, so it stays as a copy
+      void settleOldDraft()
+      // the owner's visit refreshes their copy
+      if (!canPin.value) {
+        removeRowedOfflineCopy(name).catch(() => {})
+      }
     }
 
-    if (run !== latestLoad) return
+    if (!isCurrent(run)) return
 
     if (composite.value) {
-      await loadComposite()
-    } else if (!onLayer.value) {
+      await loadComposite(run)
+    } else if (!conversion.value) {
       void offerTheme()
     }
+
+    if (!isCurrent(run)) return
 
     // a group that didn't load names none of its pictures, so their bytes would pass for orphans
     if (!composite.value || compositeItems.value.every((item) => item.status === 'ready')) {
       pruneOfflineCopy(presentationId.value).catch(() => {})
     }
   } catch (error) {
-    if (run !== latestLoad) return
+    if (!isCurrent(run)) return
     loadError.value = error instanceof Error ? error.message : 'Could not open this presentation.'
     // The server may have rewritten the deck, so an earlier save's capture would send old slides.
     previewCapture.value?.cancelCapture()
   } finally {
-    if (run === latestLoad) {
+    if (isCurrent(run)) {
       loading.value = false
       loaded.value = true
     }
   }
 }
 
-async function showConvertedSlides(run: number) {
-  const close = await watchConvertedSlides(props.session, (drawn) => {
-    if (run !== latestLoad) return
-
-    // a redraw keeps the shown slide, or the one in its place when it was deleted
-    const at = slideIndex.value ?? 0
-    const kept = drawn.findIndex(({ clientId }) => clientId === slides.value[at]?.clientId)
-    slides.value = drawn
-    slidesLength.value = drawn.length
-    if (drawn.length) {
-      setSlideIndex((kept === -1 ? at : kept) + 1)
-    }
-  })
-  if (!close) {
-    throw new Error(translate('Could not open this presentation.'))
+// The keys of the rooms that tell a waiting presentation its conversion's outcome
+function roomKeys(status: unknown): string[] {
+  if (!status || typeof status !== 'object' || !('rooms' in status)) {
+    return []
   }
 
-  if (run !== latestLoad) {
-    close()
+  const { rooms } = status
+  return rooms && typeof rooms === 'object' && 'keys' in rooms && Array.isArray(rooms.keys)
+    ? rooms.keys
+    : []
+}
+
+// A presentation still on its rows waits for its conversion, then opens live by itself
+// A refused one stays refused while it is open, so its poll stops
+// The conversion's rooms tell the tab its outcome sooner; the poll also moves it to each epoch's rooms
+let conversionKeys: string[] = []
+let conversionPoll: ReturnType<typeof setInterval> | undefined
+let conversionWatch: ReturnType<typeof watchConversion> | null = null
+
+function stopWaiting() {
+  clearInterval(conversionPoll)
+  conversionWatch?.stop()
+  conversionWatch = null
+}
+
+async function checkConversion() {
+  const name = props.session.contentDocname
+  let doc
+  try {
+    doc = await client.query(api.slides.documents.get, { name }, { context: contextFor(name) })
+  } catch {
     return
   }
 
-  closeConvertedRoom = close
-  setSlideIndex(presentedSlide.value)
+  if (isLeft) return
+
+  if (doc.is_converted || doc.conversion?.state === 'refused') {
+    stopWaiting()
+    void load()
+  } else {
+    conversionWatch?.setKeys(doc.conversion?.rooms?.keys ?? [])
+  }
 }
 
-function cancelRunningLoad() {
-  latestLoad++
-  startLoad()
-  loading.value = false
+watch(
+  () => conversion.value?.state,
+  (state) => {
+    stopWaiting()
+    if (!state || state === 'refused') {
+      return
+    }
+
+    conversionPoll = setInterval(checkConversion, CONVERSION_POLL_MS)
+    conversionWatch = watchConversion(conversionKeys, () => void checkConversion())
+  },
+)
+
+async function showConvertedSlides(run: number) {
+  const isOpen = await convertedRoom.open(() => !isCurrent(run))
+  if (!isOpen) {
+    throw new Error(translate('Could not open this presentation.'))
+  }
+
+  if (isCurrent(run)) {
+    setSlideIndex(presentedSlide.value)
+  }
 }
 
 function normalizeCompositeSlide(value: unknown) {
@@ -624,29 +864,27 @@ function placeholderSlide(entry: { reference: string; index: number; status: str
     compositePlaceholder: entry.status,
   }
 }
-const saveState = computed<DocumentSaveState>(() => {
-  if (isSaving.value) {
-    return 'saving'
-  }
-
-  if (saveFailed.value) {
-    return 'failed'
-  }
-
-  // only the screen holds the slides, whatever the save flags say
-  return dirty.value || isOnlyCopy.value ? 'unsaved' : 'clean'
-})
+// Only a converted presentation is edited, so only its room has anything to send
+const saveState = computed<DocumentSaveState>(() =>
+  isConverted.value ? convertedRoom.saveState.value : 'clean',
+)
 async function flush() {
-  await saveChanges()
+  flushLive()
 }
 useDocumentLeaveGuard({
   state: () => saveState.value,
   flush,
   retainRecovery,
 })
-useAutosave({
-  editable,
-  interacting: isSlideInteractionActive,
+// The card picture follows the room: once everything reached the server (Q2)
+watch(convertedRoom.saveState, (state) => {
+  if (!isConverted.value) return
+
+  if (state === 'clean') {
+    previewCapture.value?.captureAfterPause()
+  } else {
+    previewCapture.value?.cancelCapture()
+  }
 })
 // The show takes the keyboard: the editor under it is inert, so no editor menu opens over
 // the audience, and focus goes back where it was, or to Present, once the show ends
@@ -670,22 +908,8 @@ watch(
   },
   { flush: 'post' },
 )
-// closing the tab ends a push of the presentation left behind too
-function unloadState(): DocumentSaveState {
-  if (savingFor.value) {
-    return 'saving'
-  }
-
-  return saveState.value
-}
-
-// the warning is for the other push; a clean presentation has nothing of its own to keep
-function retainUnlessClean() {
-  return saveState.value === 'clean' || retainOrWarn()
-}
-
 function warnBeforeUnload(event: Event) {
-  resolveDocumentUnload({ state: unloadState, retainRecovery: retainUnlessClean }, event)
+  resolveDocumentUnload({ state: () => saveState.value, retainRecovery: retainOrWarn }, event)
 }
 
 // what a refused picture means for the copy depends on which of these it is
@@ -698,19 +922,31 @@ function setOffline() {
 }
 
 const deckUnavailable = computed(
-  () => loading.value || !access.readable.value || !slides.value.length || isConverted.value,
+  () => loading.value || !access.readable.value || !slides.value.length,
 )
+// Q138: the room takes no edits from a guest, so an edit link's guest is asked to sign in
+const asksGuestToSignIn = computed(
+  () => isConverted.value && !userSession.user.value && access.writable.value,
+)
+// as Writer's signed-out banner: back to this page once signed in
+function signInHref() {
+  return `/login?redirect-to=${encodeURIComponent(location.pathname)}`
+}
 const canPin = computed(
   () =>
     'serviceWorker' in navigator &&
     'caches' in window &&
     !window.disable_slides_service_worker &&
     !presentationDoc.value?.is_composite &&
-    !isConverted.value &&
     isMediaOwner(presentationDoc.value?.owner, userSession.user.value?.id),
 )
 const showsOfflineCopy = computed(() => canPin.value || offlineCopyStatus.value === 'unusable')
-watch([slides, () => presentationDoc.value?.modified], () => {
+// a live presentation fills and changes its slides in place: their count and the pictures
+// they name stand in for a save, so a text edit runs nothing here
+const slidesAndPictures = computed(() =>
+  [slides.value.length, ...collectMediaSources(slides.value).map(({ src }) => src)].join(' '),
+)
+watch([slides, slidesAndPictures, () => presentationDoc.value?.modified], () => {
   if (!slides.value.length) {
     refreshOfflineStatus(null)
     return
@@ -728,32 +964,39 @@ watch([slides, () => presentationDoc.value?.modified], () => {
     void storeVisitedMedia(presentationId.value)
   }
 })
+// outside any visit or pin, which mark what they fetch so the worker keeps out
+const warmFonts = () => void warmBundledFonts().catch(() => {})
 onMounted(() => {
   void load()
   void registerSlidesWorker()
   void postToServiceWorker('slides-entered')
+  // a first visit's worker can take control long after the page opened
+  if (navigator.serviceWorker?.controller) {
+    warmFonts()
+  } else {
+    navigator.serviceWorker?.addEventListener('controllerchange', warmFonts, { once: true })
+  }
   window.addEventListener('online', setOnline)
   window.addEventListener('offline', setOffline)
   window.addEventListener('beforeunload', warnBeforeUnload)
 })
 onBeforeUnmount(() => {
   // a load or room still on its way after this finds itself stale and touches nothing
-  latestLoad++
-  closeConvertedRoom?.()
+  isLeft = true
+  stopWaiting()
+  resetFocus()
+  convertedRoom.close()
   cancelVisit()
   stopVisitedMedia()
   void postToServiceWorker('slides-left')
+  navigator.serviceWorker?.removeEventListener('controllerchange', warmFonts)
   window.removeEventListener('online', setOnline)
   window.removeEventListener('offline', setOffline)
   window.removeEventListener('beforeunload', warnBeforeUnload)
   resetFocus()
-  // A deck whose writes stopped sends nothing here; the next open starts afresh.
-  void saveChanges().finally(() => {
-    releaseContext()
-    releaseMedia()
-    resumeWrites(props.session.contentDocname)
-  })
-  releaseEditLock()
+  releaseContext()
+  releaseMedia()
+  releaseTemplateReader()
   resetEditorState()
 })
 </script>
@@ -787,6 +1030,7 @@ onBeforeUnmount(() => {
         </Dropdown>
       </template>
       <template #actions>
+        <UsersBar v-if="roomPeople.length" :users="roomPeople" />
         <OfflineCopyButton v-if="showsOfflineCopy" />
         <Button
           icon="lucide-file-down"
@@ -851,13 +1095,10 @@ onBeforeUnmount(() => {
       >
         {{ notice }}
       </p>
-      <template v-if="phone">
+      <SlidesVersionPreview v-if="previewed" :session="session" :seq="previewed" />
+      <template v-else-if="phone">
         <div class="relative flex min-h-0 flex-1">
-          <SlideContainer
-            v-if="presentationDoc"
-            v-model:has-ongoing-interaction="isSlideInteractionActive"
-            fit
-          />
+          <SlideContainer v-if="presentationDoc" fit />
         </div>
         <nav
           v-if="slidesLength"
@@ -885,61 +1126,34 @@ onBeforeUnmount(() => {
       </template>
       <template v-else>
         <div class="relative flex min-h-0 flex-1">
-          <SlideContainer
-            v-if="presentationDoc"
-            v-model:has-ongoing-interaction="isSlideInteractionActive"
-          />
+          <SlideContainer v-if="presentationDoc" />
         </div>
         <NavigationPanel class="absolute inset-y-0 left-0" @change-slide="changeEditorSlide" />
         <Toolbar v-if="editing && presentationDoc" />
         <PropertiesPanel v-if="editing" class="absolute inset-y-0 right-0" />
-        <SurfaceNotice
-          v-if="editable && lockedElsewhere && !heldNotice"
-          icon="lucide-lock"
-          :message="__('This presentation is open for editing in another tab.')"
-        >
-          <Button variant="ghost" :label="__('Edit here')" @click="editHere" />
-        </SurfaceNotice>
       </template>
     </div>
 
     <SurfaceNotice
-      v-if="heldNotice && !loading"
-      icon="lucide-triangle-alert"
-      icon-class="text-ink-amber-6"
-      :message="heldNotice.message"
+      v-if="asksGuestToSignIn && !loading"
+      icon="lucide-log-in"
+      :message="__('Guests can\'t edit this presentation yet.')"
     >
-      <Button variant="ghost" :label="__('Download')" @click="downloadChanges" />
-      <Button
-        v-if="heldNotice.reload"
-        variant="ghost"
-        :label="__('Reload')"
-        @click="heldNotice.reload"
-      />
-    </SurfaceNotice>
-
-    <div
-      v-if="compositeItems.length && access.readable.value"
-      class="absolute bottom-3 left-1/2 z-20 flex max-w-[70%] -translate-x-1/2 gap-1 rounded-6 border border-outline-gray-1 bg-surface-elevation-2 p-2 shadow-2xl"
-    >
-      <button
-        v-for="item in compositeItems"
-        :key="item.reference"
-        type="button"
-        class="rounded-4 px-2 py-1 text-xs leading-tighter"
-        :class="
-          item.status === 'ready'
-            ? 'bg-surface-green-2 text-ink-green-7'
-            : item.status === 'loading'
-              ? 'bg-surface-gray-2 text-ink-gray-6'
-              : 'bg-surface-amber-2 text-ink-amber-7'
-        "
-        :disabled="item.status !== 'failed'"
-        @click="item.group !== undefined && compositeLoader?.retry(item.group)"
+      <a
+        class="rounded px-2 py-1 text-base font-medium text-ink-gray-8 hover:bg-surface-gray-2"
+        :href="signInHref()"
       >
-        {{ item.index }} · {{ item.status }}
-      </button>
-    </div>
+        {{ __('Sign in to edit') }}
+      </a>
+    </SurfaceNotice>
+    <SurfaceNotice
+      v-if="oldDraftNotice && !loading"
+      icon="lucide-history"
+      :message="oldDraftNotice"
+    >
+      <Button variant="ghost" :label="__('Download')" @click="downloadOldDraft" />
+      <Button variant="ghost" :label="__('Dismiss')" @click="dismissOldDraft" />
+    </SurfaceNotice>
 
     <aside
       v-if="panel === 'comments'"
@@ -950,84 +1164,39 @@ onBeforeUnmount(() => {
         <h2 class="text-lg-semibold">Comments</h2>
         <Button icon="lucide-x" aria-label="Close panel" variant="ghost" @click="panel = null" />
       </div>
-      <div class="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
-        <p v-if="panelLoading" class="text-sm text-ink-gray-5">Loading…</p>
-        <template v-else>
-          <form v-if="access.canComment.value" class="space-y-2" @submit.prevent="addComment">
-            <TextInput
-              v-if="showGuestName"
-              v-model="guestName"
-              label="Your name"
-              placeholder="Guest"
-              autocomplete="name"
-              :maxlength="guestNameMaxLength"
-              :description="
-                guestNameAtLimit
-                  ? `Names can have up to ${GUEST_NAME_LIMIT} characters.`
-                  : 'Optional. Shown with your comments.'
-              "
-              @keydown.stop
-            />
-            <div class="flex gap-2">
-              <TextInput
-                v-model="commentText"
-                class="flex-1"
-                placeholder="Add a comment"
-                aria-label="New comment"
-                @keydown.stop
-              />
-              <Button type="submit" label="Add" :disabled="!commentText.trim()" />
-            </div>
-          </form>
-          <article
-            v-for="thread in threads"
-            :key="thread.name"
-            class="space-y-2 rounded-4 bg-surface-gray-1 p-3"
-            :class="thread.resolved && 'opacity-60'"
-          >
-            <div v-for="comment in thread.comments" :key="comment.name" class="space-y-1">
-              <p class="flex items-center gap-2 text-sm-medium text-ink-gray-8">
-                <Avatar
-                  v-if="comment.person"
-                  :image="comment.person.user_image ?? undefined"
-                  :label="comment.person.full_name"
-                  size="sm"
-                  shape="circle"
-                />
-                <DriveCommentAuthor :author="comment.author" :author-name="comment.author_name">{{
-                  authorLabel(comment)
-                }}</DriveCommentAuthor>
-                <span class="flex-1 text-xs text-ink-gray-5">{{ commentTime(comment) }}</span>
-              </p>
-              <p class="whitespace-pre-wrap text-p-sm text-ink-gray-7">{{ comment.content }}</p>
-            </div>
-          </article>
-          <p v-if="!threads.length" class="text-sm text-ink-gray-5">No comments yet.</p>
-        </template>
+      <div class="min-h-0 flex-1 overflow-y-auto p-4">
+        <DriveCommentList
+          :threads
+          :read-at="threadsReadAt"
+          :node="session.nodeId"
+          :places="null"
+          :can-comment="access.canComment.value"
+          :can-edit-document="access.writable.value"
+          :can-share="session.canShare.value"
+          :actions="threadActions"
+          :drafts="commentDrafts"
+          noun="presentation"
+        />
       </div>
     </aside>
     <SlidesVersionsPanel
       v-else-if="panel === 'versions'"
+      ref="versionsPanel"
+      v-model:previewed="previewed"
       :session="session"
       :writable="canRestoreVersions"
-      :flush="flushEdits"
+      :flush="convertedRoom.saveBeforeVersion"
       :restore="restoreVersion"
+      :confirm-restore="liveRestore"
       @close="panel = null"
     />
 
     <LayoutDialog v-model:open="showLayoutDialog" @insert="insertLayout" />
-    <ThemeDialog
-      v-model:open="showThemeDialog"
-      @create="writeTheme(api.slides.documents.applyTheme, $event)"
-    />
-    <ThemeDialog
-      v-model:open="showThemeChange"
-      update
-      @update="writeTheme(api.slides.documents.updateTheme, $event)"
-    />
+    <ThemeDialog v-model:open="showThemeDialog" @create="fillTheme($event)" />
+    <ThemeDialog v-model:open="showThemeChange" update @update="writeTheme($event)" />
 
     <teleport to="body">
-      <ExportView v-if="exporting" :slides="slides" />
+      <ExportView v-if="exporting" ref="exportView" :slides="exportedSlides" />
       <!-- `restoring` keeps it mounted while a restore pauses editing: it holds what it last sent,
            and it must be there to take the capture the restore asks for. -->
       <PreviewCapture v-if="editing || restoring" ref="previewCapture" :session="session" />

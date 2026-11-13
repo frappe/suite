@@ -11,6 +11,7 @@ to 3, then `LegacyTree` for everything Build reads out of the legacy tables
 and `DriveTarget` for everything it writes into Drive's own.
 """
 
+import re
 from collections import defaultdict
 from dataclasses import dataclass, replace
 from typing import IO, Protocol
@@ -956,6 +957,9 @@ class ContentTarget(Protocol):
 
     def grant_pairs(self, pairs: tuple[tuple[str, str], ...]) -> dict[tuple[str, str], int]: ...
 
+    def grants_above(self, nodes: tuple[str, ...], role: int) -> list[dict]:
+        """Answer the node and principal of each grant above `role` on these nodes."""
+
     def set_grant_role(self, node: str, principal: str, role: int) -> None: ...
 
     def insert_versions(self, rows: list[dict]) -> None: ...
@@ -976,6 +980,12 @@ class ContentTarget(Protocol):
         Same rule and same raw write as `DriveTarget.delete_docshare`; step
         10 owns the rows on the content doctypes and their history tables,
         step 6 owns the Sheet rows."""
+
+    def save_docshare_counts(self, dropped: int, deleted: int) -> None:
+        """Hold step 10's DocShare totals in the open transaction, to land with its batch."""
+
+    def docshare_counts(self) -> tuple[int, int] | None:
+        """Read the dropped and deleted totals of the last committed batch, if one was."""
 
     def purge_content_document(self, doctype: str, docname: str) -> None:
         """Purge one content document through the app's registered `on_purge`.
@@ -1570,6 +1580,11 @@ class SiteContentSource:
         # Content node links arrive at model sync too; preflight only reads.
         if not frappe.db.has_column(doctype, "node"):
             fields.remove("node")
+
+        # A site installed after Presentation's field left never had the column (Q19')
+        if doctype == "Presentation" and not frappe.db.has_column(doctype, "thumbnail"):
+            fields.remove("thumbnail")
+
         columns = ("name", *fields, "owner", "creation", "modified", "modified_by")
         rows = _legacy_page(doctype, columns, after, limit, self.name_prefix)
         return [ContentRow(doctype=doctype, **dict(row)) for row in rows]
@@ -1870,8 +1885,51 @@ WRITER_DOCUMENT_COLUMNS = (
 )
 
 
+# In `tabSingles` because it has to land in the commit of the rows it counts. No DocType owns it
+DOCSHARE_COUNTS = ("Drive Build State", "docshare_counts")
+
+
+def saved_docshare_counts() -> tuple[int, int] | None:
+    """Read the one saved totals row, or None when there is none; any other row raises."""
+    # tabSingles has no unique key, so a second row can't be ruled out by the table
+    rows = frappe.db.sql_list(
+        "SELECT `value` FROM `tabSingles` WHERE `doctype` = %s AND `field` = %s", DOCSHARE_COUNTS
+    )
+    if not rows:
+        return None
+
+    count = len(rows)
+    if count > 1:
+        raise ValueError(f"{count} DocShare totals rows are saved, so which one holds is unknown")
+
+    matched = re.fullmatch(r"([0-9]+),([0-9]+)", rows[0] or "")
+    if not matched:
+        raise ValueError(f"the saved DocShare totals {rows[0]!r} don't read as two counts")
+
+    return int(matched[1]), int(matched[2])
+
+
 class SiteContentTarget:
     """`ContentTarget` over the real target and content tables."""
+
+    def save_docshare_counts(self, dropped: int, deleted: int) -> None:
+        doctype, field = DOCSHARE_COUNTS
+        values = {"doctype": doctype, "field": field, "value": f"{dropped},{deleted}"}
+        # Build removes no rows but DocShares, so a later batch's totals overwrite the saved ones
+        if saved_docshare_counts() is None:
+            frappe.db.sql(
+                "INSERT INTO `tabSingles` (`doctype`, `field`, `value`) VALUES (%(doctype)s, %(field)s, %(value)s)",
+                values,
+            )
+            return
+
+        frappe.db.sql(
+            "UPDATE `tabSingles` SET `value` = %(value)s WHERE `doctype` = %(doctype)s AND `field` = %(field)s",
+            values,
+        )
+
+    def docshare_counts(self) -> tuple[int, int] | None:
+        return saved_docshare_counts()
 
     def nodes(self, names: tuple[str, ...]) -> dict[str, dict]:
         if not names:
@@ -2079,6 +2137,15 @@ class SiteContentTarget:
                 if key in wanted:
                     found[key] = cint(row.role)
         return found
+
+    def grants_above(self, nodes: tuple[str, ...], role: int) -> list[dict]:
+        """Answer the node and principal of each grant above `role` on these nodes."""
+        rows = frappe.get_all(
+            "Drive Grant",
+            filters=[["node", "in", list(nodes)], ["role", ">", role]],
+            fields=["node", "principal"],
+        )
+        return [dict(row) for row in rows]
 
     def set_grant_role(self, node: str, principal: str, role: int) -> None:
         SiteDrive().raise_grant(node, principal, role)

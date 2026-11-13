@@ -28,6 +28,7 @@
 
     <ScrollArea ref="home-scroll" class="min-h-0 flex-1">
       <div class="mx-auto flex w-full max-w-4xl flex-col gap-8 px-5 py-6">
+        <GetStarted />
         <section v-if="createDocumentMutation.canCreate" aria-labelledby="home-new-heading">
           <h2 id="home-new-heading" class="pb-3 text-lg font-medium text-ink-gray-9">
             {{ __('New') }}
@@ -183,8 +184,9 @@
           <p
             v-else-if="!upcomingRows.length"
             class="rounded-5 border border-outline-gray-1 px-3 py-8 text-center text-p-sm text-ink-gray-5"
+            data-testid="upcoming-empty"
           >
-            {{ __('Nothing scheduled') }}
+            {{ __('Nothing scheduled. Your meetings and events show here.') }}
           </p>
           <UpcomingEventList
             v-else
@@ -210,22 +212,6 @@
       </div>
     </ScrollArea>
 
-    <Dialog v-model:open="joinDialogOpen" :title="__('Join with code')" size="sm">
-      <FormControl
-        v-model="meetingCode"
-        :error="meetingCodeError"
-        :label="__('Meeting code')"
-        placeholder="abcd-efgh-ijkl"
-        @keydown.enter="joinWithCode"
-      />
-      <template #actions>
-        <div class="flex justify-end gap-2">
-          <Button :label="__('Cancel')" @click="joinDialogOpen = false" />
-          <Button :label="__('Join')" variant="solid" @click="joinWithCode" />
-        </div>
-      </template>
-    </Dialog>
-
     <ScheduleMeetingDialog ref="schedule-dialog" @scheduled="upcomingQuery.refetch()" />
   </div>
 </template>
@@ -234,8 +220,6 @@
 import { useNow } from '@vueuse/core'
 import {
   Button,
-  Dialog,
-  FormControl,
   PageHeader,
   PageHeaderMobile,
   PageHeaderTitle,
@@ -264,6 +248,7 @@ import {
 } from '@/apps/drive'
 import { ScheduleMeetingDialog } from '@/apps/meet'
 import { documentTypes } from '@/composition/documentRegistry'
+import GetStarted from '@/composition/home/GetStarted.vue'
 import { formatEventTime, groupHomeEvents, homeEventWindow } from '@/composition/home/homeTime'
 import { Dropdown } from '@/platform/feedback'
 import { useRestoredScroll } from '@/platform/scroll-restoration'
@@ -324,9 +309,6 @@ const upcomingRows = computed(() =>
     .slice(0, 3),
 )
 
-const joinDialogOpen = ref(false)
-const meetingCode = ref('')
-const meetingCodeError = ref('')
 const scheduleDialog = useTemplateRef<InstanceType<typeof ScheduleMeetingDialog>>('schedule-dialog')
 const newMenuItems = documentTypes.map((definition) => ({
   label: definition.newLabel(),
@@ -335,22 +317,14 @@ const newMenuItems = documentTypes.map((definition) => ({
 }))
 const meetMenuItems = [
   {
-    label: __('Start instant meeting'),
+    label: __('Start meeting'),
     icon: 'lucide-zap',
     onClick: () => startMeeting('open'),
   },
   {
-    label: __('Start restricted meeting'),
+    label: __('Start private meeting'),
     icon: 'lucide-lock',
     onClick: () => startMeeting('restricted'),
-  },
-  {
-    label: __('Join with code'),
-    icon: 'lucide-log-in',
-    onClick: () => {
-      meetingCodeError.value = ''
-      joinDialogOpen.value = true
-    },
   },
 ]
 const scheduleMenuItems = [
@@ -391,16 +365,6 @@ async function startMeeting(type: 'open' | 'restricted') {
     type,
   })
   if (room) await router.push(meetRoute(room.code))
-}
-function joinWithCode() {
-  const code = meetingCode.value.trim()
-  meetingCodeError.value = ''
-  if (!/^[a-zA-Z0-9]{4}(?:-[a-zA-Z0-9]{4}){2}$/.test(code)) {
-    meetingCodeError.value = __('Enter a valid meeting code.')
-    return
-  }
-  joinDialogOpen.value = false
-  void router.push(meetRoute(code))
 }
 function meetRoute(code: string): string {
   return `/meet/${encodeURIComponent(code)}`
