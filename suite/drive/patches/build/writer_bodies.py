@@ -85,12 +85,19 @@ BARE_MEDIA_ID = re.compile(MEDIA_ID)
 # The hosts old Frappe Drive was served from. A constant, not site config:
 # a key nobody set on prod would leave every address in place silently
 OLD_PROD_HOSTS = ("drive.frappe.io", "suite.bom.frappe.cloud")
+API_METHOD = "/api/method/"
 EMBED_PATH = re.compile(
-    r"/api/method/(?:suite\.)?(?:writer\.api\.embed\.get|drive\.api\.embed\.get_file_content)\?"
+    rf"{API_METHOD}(?:suite\.)?(?:writer\.api\.embed\.get|drive\.api\.embed\.get_file_content)\?"
 )
 DEFAULT_PORTS = {"http": 80, "https": 443}
-# A start tag with its name, quotes respected, or a comment, which holds no tags
-HTML_TAG = re.compile(r"""<!--.*?-->|<([A-Za-z][^\s/>"']*)(?:"[^"]*"|'[^']*'|[^"'>])*>""", re.DOTALL)
+# A start tag with its name, quotes respected. A comment, and a text-only element up to
+# its closing tag, hold no tags and match with no name
+HTML_TAG = re.compile(
+    r"""<!--.*?-->"""
+    r"""|<(?P<text>textarea|script|style|title)\b(?:"[^"]*"|'[^']*'|[^"'>])*>(?:.*?</(?P=text)\s*>|.*)"""
+    r"""|<(?P<name>[A-Za-z][^\s/>"']*)(?:"[^"]*"|'[^']*'|[^"'>])*>""",
+    re.DOTALL | re.IGNORECASE,
+)
 TAG_ATTRIBUTE = re.compile(r"""([^\s"'>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?""")
 # Only these attributes hold a picture reference; an id anywhere else is someone's words
 ADDRESS_ATTRIBUTES = ("src", "href")
@@ -211,7 +218,8 @@ def convert_writer_body(env, content, document, node: str) -> DocumentPictures:
     copies: list[dict] = []
     rewrite = None
     try:
-        copies = pictures.claim(_html_ids(body.html or "") | _body_ids(body.content))
+        hosts = pictures.own_hosts
+        copies = pictures.claim(_html_ids(body.html or "", hosts) | _body_ids(body.content, hosts))
         rewrite = _rewritten(body, pictures)
     except UnreadableBody:
         # The body stays as it is. A copy already claimed is still inserted
@@ -242,7 +250,7 @@ def writer_version_html(env, content, pictures: DocumentPictures, snapshots: lis
     and an own host inside each picture reference change; every other byte
     is the source's.
     """
-    copies = pictures.claim(set().union(*(_html_ids(text) for text in snapshots)))
+    copies = pictures.claim(set().union(*(_html_ids(text, pictures.own_hosts) for text in snapshots)))
     if copies:
         target = env.content_target
         target.insert_nodes(copies)
@@ -278,7 +286,8 @@ def convert_template_body(
         )
 
     pictures = DocumentPictures(env, template, node["name"], report, node_row=node)
-    copies = pictures.claim(_html_ids(body.html or "") | _body_ids(body.content))
+    hosts = pictures.own_hosts
+    copies = pictures.claim(_html_ids(body.html or "", hosts) | _body_ids(body.content, hosts))
     rewrite = _rewritten(body, pictures)
     return (rewrite.body if rewrite else body), copies
 
@@ -390,10 +399,38 @@ def rewritten_attribute(key: str, value: str, mapping: dict[str, str], hosts: fr
     if key == NODE_ATTRIBUTE:
         return mapping.get(value, value)
 
-    if key not in ADDRESS_ATTRIBUTES:
+    path = picture_path(key, value, hosts)
+    if path is None:
         return value
 
-    return swapped_ids(site_address(value, hosts), mapping)
+    match = path_id(path)
+    if match is None:
+        return path
+
+    replacement = mapping.get(match.group(1), match.group(1))
+    return path[: match.start(1)] + replacement + path[match.end(1) :]
+
+
+def picture_path(key: str, value: str, hosts: frozenset) -> str | None:
+    """Answer a whole picture address on this site as a site path; None for any other value."""
+    if key not in ADDRESS_ATTRIBUTES:
+        return None
+
+    path = site_address(value, hosts)
+    if not EMBED_PATH.match(path):
+        return None
+
+    return path
+
+
+def path_id(path: str) -> re.Match | None:
+    """Match the id a picture path names, right after its method."""
+    for pattern in MEDIA_PATTERNS:
+        match = pattern.match(path, len(API_METHOD))
+        if match:
+            return match
+
+    return None
 
 
 def _wrap_loose_images(fragment) -> int:
@@ -429,37 +466,35 @@ def _loose_image(child) -> bool:
     return isinstance(child, pycrdt.XmlElement) and child.tag == IMAGE and not list(child.children)
 
 
-def _html_ids(text: str) -> set[str]:
-    return set().union(*(attribute_ids(name, value) for _, _, name, value in media_values(text)))
+def _html_ids(text: str, hosts: frozenset) -> set[str]:
+    return set().union(*(attribute_ids(name, value, hosts) for _, _, name, value in media_values(text)))
 
 
-def attribute_ids(key: str, value: str) -> set[str]:
+def attribute_ids(key: str, value: str, hosts: frozenset) -> set[str]:
     """Answer the ids a picture attribute names; none for any other attribute."""
     # `data-node` holds the bare id, so the patterns alone never see it
     if key == NODE_ATTRIBUTE and BARE_MEDIA_ID.fullmatch(value):
         return {value}
 
-    if key not in ADDRESS_ATTRIBUTES:
+    path = picture_path(key, value, hosts)
+    match = path_id(path or "")
+    if match is None:
         return set()
 
-    found: set[str] = set()
-    for pattern in MEDIA_PATTERNS:
-        found.update(match.group(1) for match in pattern.finditer(value))
-
-    return found
+    return {match.group(1)}
 
 
 def media_values(html: str) -> Iterator[tuple[int, int, str, str]]:
     """Yield the span, lowercase name and value of each picture attribute in a real start tag."""
     for tag in HTML_TAG.finditer(html):
         # A comment matches with no tag name
-        if tag.group(1) is not None:
+        if tag.group("name") is not None:
             yield from tag_media_values(html, tag)
 
 
 def tag_media_values(html: str, tag: re.Match) -> Iterator[tuple[int, int, str, str]]:
     """Yield the span, lowercase name and value of each picture attribute in one start tag."""
-    for attribute in TAG_ATTRIBUTE.finditer(html, tag.end(1), tag.end() - 1):
+    for attribute in TAG_ATTRIBUTE.finditer(html, tag.end("name"), tag.end() - 1):
         name = attribute.group(1).lower()
         # The last group that matched is the value; group 1 alone is a bare attribute name
         value = attribute.lastindex
@@ -469,7 +504,7 @@ def tag_media_values(html: str, tag: re.Match) -> Iterator[tuple[int, int, str, 
         yield attribute.start(value), attribute.end(value), name, attribute.group(value)
 
 
-def _body_ids(content: str | None) -> set[str]:
+def _body_ids(content: str | None, hosts: frozenset) -> set[str]:
     """The ids the live attributes name. Deleted content is never read."""
     raw = _decoded(content)
     if raw is None:
@@ -480,7 +515,7 @@ def _body_ids(content: str | None) -> set[str]:
         for element in _elements(fragment):
             for key, value in dict(element.attributes).items():
                 if isinstance(value, str):
-                    found |= attribute_ids(key, value)
+                    found |= attribute_ids(key, value, hosts)
 
     return found
 
@@ -532,21 +567,6 @@ def _remap_text(text: str, mapping: dict[str, str], hosts: frozenset) -> str:
 
     pieces.append(text[last:])
     return "".join(pieces)
-
-
-def swapped_ids(text: str, mapping: dict[str, str]) -> str:
-    """Replace only the id inside each picture reference that `mapping` names."""
-
-    def swap(match: re.Match) -> str:
-        replacement = mapping.get(match.group(1))
-        if replacement is None:
-            return match.group(0)
-        start, end = match.start(1) - match.start(), match.end(1) - match.start()
-        return match.group(0)[:start] + replacement + match.group(0)[end:]
-
-    for pattern in MEDIA_PATTERNS:
-        text = pattern.sub(swap, text)
-    return text
 
 
 def _decoded(content: str | None) -> bytes | None:

@@ -1276,6 +1276,51 @@ class WriterBodyTest(unittest.TestCase):
         self.assertEqual(dict(child.children[0].attributes), {"src": copied, "alt": caption})
         self.assertEqual(body.html, f'{words}<p><img src="{copied}" alt="{caption}"></p>')
 
+    def test_an_address_on_another_host_keeps_the_borrowed_id_it_names(self):
+        # Only a whole picture address of this site names one of our pictures;
+        # a proxy or another host serves its own bytes, so its address stays
+        self.add_document("owner-doc", "node-a", owner="author@example.com")
+        self.add_picture("pic-1", "node-a", "blob-1", "photo.png", owner="author@example.com")
+        borrowed = embed("pic-1")
+        proxy = "https://proxy.example/fetch/https://drive.frappe.io" + borrowed
+        other = "https://drive.example.com" + borrowed
+        self.add_document(
+            "reader-doc",
+            "node-b",
+            body=WriterBody(
+                content=yjs_body(paragraph(image(src=proxy)), paragraph(image(src=borrowed))),
+                html=f'<p><img src="{proxy}"></p><p><img src="{other}"></p><p><img src="{borrowed}"></p>',
+            ),
+        )
+
+        convert_history_and_comments(self.env)
+
+        (copy,) = self.children("node-b")
+        copied = embed(copy)
+        body = self.source.writer_bodies["reader-doc"]
+        sources: list[str] = []
+        for child in body_fragment(body.content).children:
+            sources.append(dict(child.children[0].attributes)["src"])
+
+        self.assertEqual(sources, [proxy, copied])
+        self.assertEqual(
+            body.html, f'<p><img src="{proxy}"></p><p><img src="{other}"></p><p><img src="{copied}"></p>'
+        )
+
+    def test_a_borrowed_picture_inside_text_only_elements_is_neither_copied_nor_rewritten(self):
+        # A textarea or a script holds text, not markup, so a tag in it shows no picture
+        self.add_document("owner-doc", "node-a", owner="author@example.com")
+        self.add_picture("pic-1", "node-a", "blob-1", "photo.png", owner="author@example.com")
+        borrowed = embed("pic-1")
+        tag = f'<img src="{borrowed}">'
+        body = WriterBody(content=None, html=f"<textarea>{tag}</textarea><SCRIPT>x='{tag}'</script >")
+        self.add_document("reader-doc", "node-b", body=body)
+
+        convert_history_and_comments(self.env)
+
+        self.assertEqual(self.children("node-b"), {})
+        self.assertEqual(self.source.writer_bodies["reader-doc"], body)
+
     def test_an_old_prod_host_in_capitals_or_with_its_default_port_becomes_a_site_path(self):
         # A host is the same host in any case and on its scheme's default
         # port; another port is another server
