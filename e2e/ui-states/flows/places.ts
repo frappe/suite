@@ -122,7 +122,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "An empty Trash, saying how long trashed items stay." },
 		},
 		recoveryEmpty: {
-			meta: { description: "Recovery copies when this device keeps none." },
+			meta: { description: "Recovery copies when this device keeps none. Each document type (Writer, Slides) shows its own empty state, so “No recovery copies” appears twice." },
 		},
 	},
 });
@@ -268,7 +268,8 @@ export const places = defineFlow<Event>({
 		},
 		async GO_RECOVERY(scene) {
 			await scene.goto("/drive/recovery");
-			await expectEmpty(scene, "No recovery copies");
+			// Each document type's section shows its own empty state, so the message appears once per type.
+			await expect(scene.page.getByText("No recovery copies", { exact: true }).first()).toBeVisible();
 		},
 		async OPEN_FOLDER(scene) {
 			await scene.goto(folderPath(scene.folder));
