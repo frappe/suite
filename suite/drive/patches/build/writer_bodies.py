@@ -94,7 +94,7 @@ DEFAULT_PORTS = {"http": 80, "https": 443}
 # its closing tag, hold no tags and match with no name
 HTML_TAG = re.compile(
     r"""<!--.*?-->"""
-    r"""|<(?P<text>textarea|script|style|title)\b(?:"[^"]*"|'[^']*'|[^"'>])*>(?:.*?</(?P=text)\s*>|.*)"""
+    r"""|<(?P<text>textarea|script|style|title)(?=[\s/>])(?:"[^"]*"|'[^']*'|[^"'>])*>(?:.*?</(?P=text)\s*>|.*)"""
     r"""|<(?P<name>[A-Za-z][^\s/>"']*)(?:"[^"]*"|'[^']*'|[^"'>])*>""",
     re.DOTALL | re.IGNORECASE,
 )

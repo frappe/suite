@@ -1321,6 +1321,24 @@ class WriterBodyTest(unittest.TestCase):
         self.assertEqual(self.children("node-b"), {})
         self.assertEqual(self.source.writer_bodies["reader-doc"], body)
 
+    def test_a_picture_after_a_tag_named_like_a_text_only_element_is_still_copied(self):
+        # `title-card` and `script-box` are other elements; only the exact name holds text
+        self.add_document("owner-doc", "node-a", owner="author@example.com")
+        self.add_picture("pic-1", "node-a", "blob-1", "photo.png", owner="author@example.com")
+        borrowed = embed("pic-1")
+        wrappers = "<title-card>Heading</title-card><script-box>Note</script-box>"
+        self.add_document(
+            "reader-doc",
+            "node-b",
+            body=WriterBody(content=None, html=f'{wrappers}<img src="{borrowed}">'),
+        )
+
+        convert_history_and_comments(self.env)
+
+        (copy,) = self.children("node-b")
+        copied = embed(copy)
+        self.assertEqual(self.source.writer_bodies["reader-doc"].html, f'{wrappers}<img src="{copied}">')
+
     def test_an_old_prod_host_in_capitals_or_with_its_default_port_becomes_a_site_path(self):
         # A host is the same host in any case and on its scheme's default
         # port; another port is another server
