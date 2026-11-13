@@ -8,6 +8,8 @@ import { useDocumentThreads } from './useDocumentThreads'
 import { useThreadChanges } from './useThreadChanges'
 import { rankMentionsFor } from './useUsers'
 
+export type DocumentComments = ReturnType<typeof useDocumentComments>
+
 interface CommentOptions {
   /** Whether the person may see the discussion; no threads are read while false. */
   isShown: () => boolean

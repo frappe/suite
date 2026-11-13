@@ -132,13 +132,7 @@ const preview = shallowRef<
 
 const recoveryBanner = ref<InstanceType<typeof RecoveryBanner> | null>(null)
 const seesComments = computed(() => props.session.panels.value.includes('comments'))
-const {
-  threads,
-  readAt: threadsReadAt,
-  refresh: refreshThreads,
-  actions: threadActions,
-  drafts: commentDrafts,
-} = useDocumentComments(props.session, {
+const comments = useDocumentComments(props.session, {
   isShown: () => seesComments.value,
   room: () => room.value,
   anchors: { quote: anchorQuote, ends: anchorEnds },
@@ -164,7 +158,7 @@ const {
   retainRecovery,
   () => writes.writable.value,
   {
-    threadsChanged: refreshThreads,
+    threadsChanged: comments.refresh,
     versionRestored: (restored) => void sidePanel.value?.tellRestoredByOther(restored),
   },
   () => !!editorSurface.value?.isFrozen,
@@ -238,7 +232,7 @@ function refusesComment() {
 }
 
 // The text of a comment stays marked from its draft until it is posted or discarded
-const draftAnchors = computed(() => commentDrafts.drafts.value.map((draft) => draft.anchor))
+const draftAnchors = computed(() => comments.drafts.drafts.value.map((draft) => draft.anchor))
 
 // A comment on the selected text starts as a draft in the comments panel
 function commentOnText(anchor: string) {
@@ -246,7 +240,7 @@ function commentOnText(anchor: string) {
     return
   }
 
-  commentDrafts.start(anchor)
+  comments.drafts.start(anchor)
   panel.value = 'comments'
 }
 
@@ -366,7 +360,7 @@ const editorView = computed<EditorView>(() => {
     const collabProps = {
       room: room.value,
       file,
-      threads: threads.value,
+      threads: comments.threads.value,
       onComment: commentOnText,
       onCommentOnDocument: commentOnDocument,
       onReanchor: moveThreadsBack,
@@ -494,7 +488,7 @@ async function moveThreadsBack(anchors: Record<string, string>) {
     return
   }
 
-  await refreshThreads()
+  await comments.refresh()
 }
 
 async function restoreBody(shown: DocumentVersion): Promise<VersionRestore> {
@@ -504,7 +498,7 @@ async function restoreBody(shown: DocumentVersion): Promise<VersionRestore> {
   }
 
   const bytes = await fetchVersion(props.session, shown.seq)
-  return restoreVersion(liveRoom, shown.seq, bytes, threads.value, () =>
+  return restoreVersion(liveRoom, shown.seq, bytes, comments.threads.value, () =>
     convertedVersion(props.session, shown.seq),
   )
 }
@@ -906,12 +900,8 @@ onBeforeUnmount(() => {
                 :can-restore-version="canRestoreVersion"
                 :can-save-version="canSaveVersion"
                 :is-restoring-version="isRestoringVersion"
-                :threads="threads"
-                :threads-read-at="threadsReadAt"
+                :comments
                 :places="threadPlaces"
-                :refresh-threads="refreshThreads"
-                :thread-actions="threadActions"
-                :drafts="commentDrafts"
                 :save-first="saveBeforeVersion"
                 noun="document"
                 @update:previewed-version="showVersion"

@@ -4,10 +4,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, ref, type App } from 'vue'
 
 import type {
+  DocumentComments,
   DocumentPanel,
   DocumentSession,
   DocumentVersion,
-  ThreadActions,
   useCommentDrafts,
 } from '@/apps/drive'
 import type { VersionRestored } from '@/platform/collab'
@@ -73,6 +73,16 @@ interface NamingPanel {
 let mounted: App | null = null
 const noDrafts = fromPartial<ReturnType<typeof useCommentDrafts>>({ drafts: ref([]) })
 
+function noComments(drafts = noDrafts) {
+  return fromPartial<DocumentComments>({
+    threads: ref([]),
+    readAt: ref(1),
+    refresh: async () => {},
+    actions: {},
+    drafts,
+  })
+}
+
 afterEach(() => {
   mounted?.unmount()
   document.body.replaceChildren()
@@ -114,12 +124,8 @@ async function openVersionsPanel(isRefusingVersions = false) {
       canRestoreVersion: false,
       canSaveVersion: false,
       isRestoringVersion: false,
-      threads: [],
-      threadsReadAt: 1,
+      comments: noComments(),
       places: null,
-      refreshThreads: async () => {},
-      threadActions: fromPartial<ThreadActions>({}),
-      drafts: noDrafts,
       noun: 'document',
       saveFirst: async () => {
         steps.push('saved')
@@ -259,12 +265,8 @@ describe('naming a version in the Versions panel', () => {
         canRestoreVersion: false,
         canSaveVersion: true,
         isRestoringVersion: false,
-        threads: [],
-        threadsReadAt: 1,
+        comments: noComments(),
         places: null,
-        refreshThreads: async () => {},
-        threadActions: fromPartial<ThreadActions>({}),
-        drafts: noDrafts,
         noun: 'document',
         saveFirst: async () => {},
       }),
@@ -316,12 +318,8 @@ describe('Escape over a shown version', () => {
         canRestoreVersion: false,
         canSaveVersion: false,
         isRestoringVersion: false,
-        threads: [],
-        threadsReadAt: 1,
+        comments: noComments(),
         places: null,
-        refreshThreads: async () => {},
-        threadActions: fromPartial<ThreadActions>({}),
-        drafts: noDrafts,
         noun: 'document',
         saveFirst: async () => {},
       }),
@@ -385,12 +383,8 @@ describe('a version restored by someone else', () => {
         canRestoreVersion: false,
         canSaveVersion: false,
         isRestoringVersion: false,
-        threads: [],
-        threadsReadAt: 1,
+        comments: noComments(),
         places: null,
-        refreshThreads: async () => {},
-        threadActions: fromPartial<ThreadActions>({}),
-        drafts: noDrafts,
         noun: 'presentation',
         saveFirst: async () => {},
       }),
@@ -443,12 +437,8 @@ describe('renaming a version in the Versions panel', () => {
         canRestoreVersion: false,
         canSaveVersion,
         isRestoringVersion: false,
-        threads: [],
-        threadsReadAt: 1,
+        comments: noComments(),
         places: null,
-        refreshThreads: async () => {},
-        threadActions: fromPartial<ThreadActions>({}),
-        drafts: noDrafts,
         noun: 'document',
         saveFirst: async () => {},
       }),
@@ -517,12 +507,8 @@ function panelWhileVersionsLoad(kind: DocumentPanel) {
       canRestoreVersion: false,
       canSaveVersion: false,
       isRestoringVersion: false,
-      threads: [],
-      threadsReadAt: 1,
+      comments: noComments(drafts),
       places: null,
-      refreshThreads: async () => {},
-      threadActions: fromPartial<ThreadActions>({}),
-      drafts,
       noun: 'document',
       saveFirst: async () => {},
     }),

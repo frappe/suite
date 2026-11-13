@@ -3,19 +3,13 @@ import { onKeyStroke } from '@vueuse/core'
 import { Button, TextInput, toast } from 'frappe-ui'
 import { computed, nextTick, ref, watch } from 'vue'
 
-import type {
-  DocumentPanel,
-  DocumentSession,
-  DocumentThread,
-  DocumentVersion,
-  ThreadActions,
-  useCommentDrafts,
-} from '@/apps/drive'
+import type { DocumentPanel, DocumentSession, DocumentVersion } from '@/apps/drive'
 import type { VersionRestored } from '@/platform/collab'
 import { restoredByOther } from '@/platform/collab/restoreNotices'
 
 import CommentList from './comments/CommentList.vue'
 import type { FileNoun, ThreadPlaces } from './comments/places'
+import type { DocumentComments } from './comments/useDocumentComments'
 import { useDocumentPanel } from './versions/useDocumentPanel'
 import VersionList from './versions/VersionList.vue'
 
@@ -28,15 +22,10 @@ const props = defineProps<{
   canRestoreVersion: boolean
   canSaveVersion: boolean
   isRestoringVersion: boolean
-  threads: DocumentThread[]
-  /** When Drive's threads were read; null before the first read. */
-  threadsReadAt: number | null
+  /** The document's threads, their actions and drafts, as useDocumentComments gives them. */
+  comments: DocumentComments
   /** Where each thread shows in the editor; null when the editor can't tell. */
   places: ThreadPlaces | null
-  refreshThreads: () => Promise<void>
-  threadActions: ThreadActions
-  /** Comments not posted yet, on text or on the whole document. */
-  drafts: ReturnType<typeof useCommentDrafts>
   /** Saves the document's pending edits, throwing why it couldn't. */
   saveFirst: () => Promise<void>
   /** What the app calls the file, in the comment panel's messages. */
@@ -61,7 +50,7 @@ const litThread = defineModel<string | null>('litThread', { default: null })
 
 const { lists, load, loadMoreVersions, saveVersion, renameVersion } = useDocumentPanel(
   props.session,
-  props.refreshThreads,
+  props.comments.refresh,
 )
 
 const isSavingVersion = ref(false)
@@ -242,15 +231,15 @@ defineExpose({
             ref="commentList"
             v-model:open-thread="openThread"
             v-model:lit-thread="litThread"
-            :threads
-            :read-at="threadsReadAt"
+            :threads="comments.threads.value"
+            :read-at="comments.readAt.value"
             :node="session.nodeId"
             :places
             :can-comment
             :can-edit-document
             :can-share
-            :actions="threadActions"
-            :drafts
+            :actions="comments.actions"
+            :drafts="comments.drafts"
             :noun
             @sent="emit('commentSent')"
           />

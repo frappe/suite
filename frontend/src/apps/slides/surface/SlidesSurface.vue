@@ -161,13 +161,7 @@ watch(panel, (shown) => {
   }
 })
 // Comments are on the whole presentation, so a draft waits on no text in the room
-const {
-  threads,
-  readAt: threadsReadAt,
-  refresh: refreshThreads,
-  actions: threadActions,
-  drafts: commentDrafts,
-} = useDocumentComments(props.session, { isShown: () => panel.value === 'comments' })
+const comments = useDocumentComments(props.session, { isShown: () => panel.value === 'comments' })
 const exporting = ref(false)
 // A version's slides to print in place of the presentation's, for a version that can't be restored
 const printedSlides = shallowRef<Record<string, unknown>[] | null>(null)
@@ -242,7 +236,7 @@ const convertedRoom = useConvertedRoom({
   isPresenting: () => route.name === 'slides-slideshow',
   retainRecovery,
   retainStickyOrOffer,
-  onThreadsChanged: () => void refreshThreads(),
+  onThreadsChanged: () => void comments.refresh(),
   onVersionRestored: (restored) => void sidePanel.value?.tellRestoredByOther(restored),
 })
 provide('livePresence', convertedRoom.presence)
@@ -1167,12 +1161,8 @@ onBeforeUnmount(() => {
         :can-restore-version="canRestoreVersions"
         :can-save-version="canRestoreVersions"
         :is-restoring-version="restoring"
-        :threads
-        :threads-read-at="threadsReadAt"
+        :comments
         :places="null"
-        :refresh-threads="refreshThreads"
-        :thread-actions="threadActions"
-        :drafts="commentDrafts"
         :save-first="convertedRoom.saveBeforeVersion"
         noun="presentation"
         @restore-version="confirmRestore"

@@ -17,7 +17,7 @@ import {
   type XmlText,
 } from 'yjs'
 
-import type { DocumentVersion, useCommentDrafts } from '@/apps/drive'
+import type { DocumentComments, DocumentVersion } from '@/apps/drive'
 import type { StoreSlide } from '@/apps/slides/collab/liveDeck'
 import type { LostAccess, RoomStatus } from '@/platform/collab'
 import { requireTestElement } from '@/platform/testing/dom'
@@ -2258,6 +2258,10 @@ describe('Slides panels', () => {
     requireTestElement(mounted!.root.querySelector('[data-comments]'), HTMLButtonElement).click()
   }
 
+  function panelComments() {
+    return fromAny<DocumentComments, unknown>(commentPanel.attrs.comments)
+  }
+
   it('shows the presentation’s threads in the shared comment panel, named as a presentation', async () => {
     driveComments.threads = [
       { name: 'thread-1', anchor: 'document', resolved: false, comments: [] },
@@ -2266,9 +2270,9 @@ describe('Slides panels', () => {
 
     openComments()
 
-    await vi.waitFor(() => expect(commentPanel.attrs.threads).toHaveLength(1))
-    const { threads, noun, places } = commentPanel.attrs
-    const [thread] = fromAny<{ name: string }[], unknown>(threads)
+    await vi.waitFor(() => expect(panelComments().threads.value).toHaveLength(1))
+    const { noun, places } = commentPanel.attrs
+    const [thread] = panelComments().threads.value
     const flags = [commentPanel.attrs['can-comment'], commentPanel.attrs['can-edit-document']]
     expect([thread.name, noun, places, flags]).toEqual([
       'thread-1',
@@ -2282,7 +2286,7 @@ describe('Slides panels', () => {
     mounted = await openedSurface({ role: 20 })
     openComments()
     await vi.waitFor(() => expect(driveComments.reads).toBe(1))
-    const drafts = fromAny<ReturnType<typeof useCommentDrafts>, unknown>(commentPanel.attrs.drafts)
+    const { drafts } = panelComments()
 
     drafts.start('document')
     const [draft] = drafts.drafts.value

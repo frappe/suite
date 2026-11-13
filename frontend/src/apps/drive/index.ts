@@ -63,7 +63,10 @@ export { default as DriveCommentAuthor } from '@/apps/drive/files/features/Comme
  * messages. Pass the threads, their places, the drafts and the thread actions.
  */
 export { default as DriveCommentList } from '@/apps/drive/files/features/side-panel/comments/CommentList.vue'
-export { useDocumentComments } from '@/apps/drive/files/features/side-panel/comments/useDocumentComments'
+export {
+  useDocumentComments,
+  type DocumentComments,
+} from '@/apps/drive/files/features/side-panel/comments/useDocumentComments'
 export { useDocumentThreads } from '@/apps/drive/files/features/side-panel/comments/useDocumentThreads'
 export {
   useThreadChanges,
