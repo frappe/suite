@@ -405,7 +405,7 @@ export const mailAccount = defineFlow<Event, BaseScene>({
 			await answer(scene.page, RESET_LINK, identityOf("maya").email);
 			await scene.page.getByLabel("Email").fill(identityOf("maya").email);
 			await button(scene.page, "Send Reset Link").click();
-			await expect(scene.page.getByText(/We have sent an email to maya@northwind.test/)).toBeVisible();
+			await expect(scene.page.getByText(`We have sent an email to ${identityOf("maya").email}`)).toBeVisible();
 		},
 		async OPEN_BAD_RESET_LINK(scene) {
 			await scene.goto("/mail/reset-password/9d8c7b6a5f4e");
@@ -416,7 +416,7 @@ export const mailAccount = defineFlow<Event, BaseScene>({
 			await answer(scene.page, RESET_KEY, identityOf("maya").email);
 			await scene.goto("/mail/reset-password/9d8c7b6a5f4e");
 			await expect(scene.page.getByLabel("New Password")).toBeVisible();
-			await expect(scene.page.getByLabel("Email")).toHaveValue("maya@northwind.test");
+			await expect(scene.page.getByLabel("Email")).toHaveValue(identityOf("maya").email);
 		},
 		async OPEN_SIGNUP_CLOSED(scene) {
 			await scene.goto("/mail/signup");

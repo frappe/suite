@@ -605,17 +605,17 @@ export const admin = defineFlow<Event, BaseScene>({
 		async DEMOTE_SELF(scene) {
 			await openActions(scene, identityOf("maya").email);
 			await pick(scene, "Demote to member");
-			await expect(scene.dialog("Demote Maya Chen?")).toBeVisible();
+			await expect(scene.dialog(`Demote ${identityOf("maya").name}?`)).toBeVisible();
 		},
 		async CONFIRM_DEMOTE_SELF(scene) {
-			const dialog = scene.dialog("Demote Maya Chen?");
+			const dialog = scene.dialog(`Demote ${identityOf("maya").name}?`);
 			await dialog.getByRole("button", { name: "Confirm" }).click();
 			await expect(dialog.getByRole("alert")).toBeVisible();
 		},
 		async DISABLE_SELF(scene) {
 			await openActions(scene, identityOf("maya").email);
 			await pick(scene, "Disable user");
-			const dialog = scene.dialog("Disable Maya Chen?");
+			const dialog = scene.dialog(`Disable ${identityOf("maya").name}?`);
 			await dialog.getByRole("button", { name: "Confirm" }).click();
 			await expect(dialog.getByRole("alert")).toBeVisible();
 		},
