@@ -23,16 +23,6 @@ export type ConvertedVersion =
 const ASK_EVERY_MS = 2000
 const WAIT_MS = 150_000
 
-/** The stored bytes of version `seq`. */
-export async function fetchVersion(session: DocumentSession, seq: number): Promise<Uint8Array> {
-  const response = await session.credentials.fetch(session.versions.contentUrl(String(seq)))
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`)
-  }
-
-  return new Uint8Array(await response.arrayBuffer())
-}
-
 /** Reads a stored Slides version by its schema. Throws on bytes it cannot read. */
 export async function readVersionBody(bytes: Uint8Array): Promise<VersionBody> {
   const version: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))

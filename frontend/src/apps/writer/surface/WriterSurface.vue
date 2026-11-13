@@ -18,6 +18,7 @@ import {
   DriveDocumentStrip as DocumentStrip,
   DRIVE_ROLES,
   DriveDocumentHeader,
+  fetchVersion,
   imagesNotice,
   missingImages,
   restoreImages,
@@ -74,7 +75,7 @@ import { saveFirst } from './saveFirst'
 import { useWriterCollab } from './useWriterCollab'
 import { versionImages } from './versionImages'
 import VersionPreview from './VersionPreview.vue'
-import { convertedVersion, fetchVersion, readVersionBody, storedVersionHTML } from './versions'
+import { convertedVersion, readVersionBody, storedVersionHTML } from './versions'
 import { createWriterDocument, editorFileOf, isLocked, type EditorFile } from './writerDocument'
 import WriterDocumentMenu from './WriterDocumentMenu.vue'
 import { createWriteGate } from './writes'

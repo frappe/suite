@@ -12,13 +12,13 @@ import {
   watch,
 } from 'vue'
 
-import type { DocumentSession } from '@/apps/drive'
+import { fetchVersion, type DocumentSession } from '@/apps/drive'
 import PreviewPane from '@/apps/writer/components/PreviewPane.vue'
 import { DOCUMENT_MEDIA } from '@/apps/writer/extensions/drive-media'
 import type { LayoutSettings } from '@/apps/writer/utils/editor-layout'
 import { previewEditor } from '@/apps/writer/utils/preview-editor'
 
-import { fetchVersion, readVersion } from './versions'
+import { readVersion } from './versions'
 
 const props = defineProps<{
   session: DocumentSession

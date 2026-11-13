@@ -23,6 +23,7 @@ import { api, client } from '@/api'
 import {
   DriveDocumentSidePanel as DocumentSidePanel,
   DriveDocumentHeader,
+  fetchVersion,
   imagesNotice,
   missingImages,
   restoreImages,
@@ -126,7 +127,7 @@ import SlidesVersionPreview from './SlidesVersionPreview.vue'
 import SurfaceNotice from './SurfaceNotice.vue'
 import { useConvertedRoom } from './useConvertedRoom'
 import { useUnsavedRecovery } from './useUnsavedRecovery'
-import { convertedVersion, fetchVersion, readVersionBody, versionImages } from './versions'
+import { convertedVersion, readVersionBody, versionImages } from './versions'
 import { versionSlides } from './versionSlides'
 
 type Panel = DocumentPanel

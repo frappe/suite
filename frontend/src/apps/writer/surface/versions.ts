@@ -3,7 +3,7 @@ import { yXmlFragmentToProsemirrorJSON } from '@tiptap/y-tiptap'
 import { Doc } from 'yjs'
 
 import { api, client } from '@/api'
-import type { DocumentSession } from '@/apps/drive'
+import { fetchVersion, type DocumentSession } from '@/apps/drive'
 import { BODY_FIELD } from '@/apps/writer/collab'
 import { readLegacy, type LegacyBody } from '@/apps/writer/collab/legacy-read'
 import { loadVersion, withOldMediaConverted } from '@/apps/writer/collab/old-media'
@@ -30,17 +30,6 @@ export type ConvertedVersion =
 
 const ASK_EVERY_MS = 2000
 const WAIT_MS = 150_000
-
-/** The stored bytes of version `seq`. */
-export async function fetchVersion(session: DocumentSession, seq: number): Promise<Uint8Array> {
-  const url = session.versions.contentUrl(String(seq))
-  const response = await session.credentials.fetch(url)
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`)
-  }
-
-  return new Uint8Array(await response.arrayBuffer())
-}
 
 /** Reads a stored Writer version by its schema. Throws on bytes it cannot show. */
 export async function readVersion(bytes: Uint8Array): Promise<StoredVersion> {
