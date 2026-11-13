@@ -92,7 +92,6 @@ from suite.mail.api.contacts import (
 )
 from suite.mail.api.mail import (
     AttachedFile,
-    DriveFile,
     add_mails_to_mailbox,
     allow_screening_senders,
     attach_drive_files,
@@ -268,7 +267,7 @@ from suite.mail.http.shapes import (
 
 
 class AttachDriveFiles(TypedDict):
-    files: list[DriveFile]
+    nodes: list[str]
 
 
 class InboxSummary(TypedDict):

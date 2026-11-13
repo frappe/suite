@@ -98,6 +98,7 @@ execute:frappe.db.set_single_value("Mail Settings", "enable_email_classification
 suite.mail.patches.group_by_date
 # T3-27: the Screening gate keeps delivery reports unmarked.
 suite.mail.patches.rebuild_screening_gates #delivery-reports
+suite.mail.patches.add_attach_drive_files_rate_limit
 # --- calendar ---
 # (no patches)
 # --- suite_core ---

@@ -73,6 +73,8 @@ def add_rate_limits() -> None:
         # suite.mail.api.mail
         # Large attachments and import archives arrive as 24 MB chunks, one request each.
         {"method_path": "suite.mail.api.mail.upload_file", "limit": 120, "seconds": 60},
+        # One request per pick from Drive, each copying up to a mail's worth of files.
+        {"method_path": "suite.mail.api.mail.attach_drive_files", "limit": 60, "seconds": 60},
         # suite.mail.api.outbound
         {"method_path": "suite.mail.api.outbound.upload_attachment", "limit": 60, "seconds": 60},
         # The per-priority limits below stack on top of these, so the ceiling has to leave room

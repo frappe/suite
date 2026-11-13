@@ -5532,38 +5532,17 @@
       "pathParams": [],
       "query": null,
       "body": {
-        "$defs": {
-          "DriveFile": {
-            "description": "A file picked in Drive to attach: its node, and its name as Drive shows it.",
-            "properties": {
-              "node": {
-                "title": "Node",
-                "type": "string"
-              },
-              "title": {
-                "title": "Title",
-                "type": "string"
-              }
-            },
-            "required": [
-              "node",
-              "title"
-            ],
-            "title": "DriveFile",
-            "type": "object"
-          }
-        },
         "properties": {
-          "files": {
+          "nodes": {
             "items": {
-              "$ref": "#/$defs/DriveFile"
+              "type": "string"
             },
-            "title": "Files",
+            "title": "Nodes",
             "type": "array"
           }
         },
         "required": [
-          "files"
+          "nodes"
         ],
         "title": "AttachDriveFiles",
         "type": "object"

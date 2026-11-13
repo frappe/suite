@@ -2856,24 +2856,10 @@ export const operationAttachDriveFiles: Validators<AttachDriveFilesInput, Attach
         value,
         {
           type: 'object',
-          properties: {
-            files: { items: { $ref: '#/$defs/DriveFile' }, title: 'Files', type: 'array' },
-          },
-          required: ['files'],
+          properties: { nodes: { items: { type: 'string' }, title: 'Nodes', type: 'array' } },
+          required: ['nodes'],
           additionalProperties: false,
-          $defs: {
-            DriveFile: {
-              description:
-                'A file picked in Drive to attach: its node, and its name as Drive shows it.',
-              properties: {
-                node: { title: 'Node', type: 'string' },
-                title: { title: 'Title', type: 'string' },
-              },
-              required: ['node', 'title'],
-              title: 'DriveFile',
-              type: 'object',
-            },
-          },
+          $defs: {},
         },
         'attach_drive_files input',
       )

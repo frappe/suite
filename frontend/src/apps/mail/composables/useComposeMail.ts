@@ -705,8 +705,9 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   // ── Attaching from Drive ────────────────────────────────────────────────────────────────────
 
   // Drive's own picker, then copies made on the server (attach_drive_files): what the mail carries
-  // is the file as it was picked. A refusal — a file too large, or one the user can no longer read —
-  // comes back in the server's words, as an upload's does. While it runs the mail waits to be sent.
+  // is the file as it was picked, under the name Drive gives it. A refusal — a file too large, too
+  // much at once, or one the user can no longer read — comes back in the server's words, as an
+  // upload's does. While it runs the mail waits to be sent.
   const driveDialogs = useDriveDialogs()
   const attachingFromDrive = ref(0)
   const attachFromDrive = async () => {
@@ -718,7 +719,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     attachingFromDrive.value++
     try {
       const attached = await client.mutation(api.mail.attachments.fromDrive, {
-        files: files.map(({ node, title }) => ({ node, title })),
+        nodes: files.map(({ node }) => node),
       })
       mail.attachments.push(
         // As an upload's file is kept (see ComposeMailEditor's attachDoc): no blob yet, so it opens

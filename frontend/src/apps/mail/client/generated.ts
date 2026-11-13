@@ -1739,8 +1739,6 @@ const operationScreenEmailAddresses: MutationRef<
   loadValidators: async () => (await import('./validators')).operationScreenEmailAddresses,
 }
 
-export type AttachDriveFilesInputDriveFile = { node: string; title: string }
-
 export type AttachDriveFilesOutputAttachedFile = {
   name: string
   file_name: string
@@ -1748,7 +1746,7 @@ export type AttachDriveFilesOutputAttachedFile = {
   file_size: number
 }
 
-export type AttachDriveFilesInput = { files: Array<AttachDriveFilesInputDriveFile> }
+export type AttachDriveFilesInput = { nodes: Array<string> }
 
 export type AttachDriveFilesOutput = Array<AttachDriveFilesOutputAttachedFile>
 

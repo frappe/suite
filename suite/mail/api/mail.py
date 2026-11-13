@@ -2662,11 +2662,9 @@ def _refuse_oversized_attachment(filename: str) -> None:
     )
 
 
-class DriveFile(TypedDict):
-    """A file picked in Drive to attach: its node, and its name as Drive shows it."""
-
-    node: str
-    title: str
+# What one pick from Drive may bring in all: as much as one mail carries at the common provider limit
+# above. Each copy is held in memory until all are read, so this bounds what one request holds.
+MAX_DRIVE_ATTACHMENT_TOTAL = MAX_ATTACHMENT_SIZE
 
 
 class AttachedFile(TypedDict):
@@ -2677,26 +2675,44 @@ class AttachedFile(TypedDict):
 
 
 @frappe.whitelist(methods=["POST"])
-def attach_drive_files(files: JSONList[DriveFile]) -> list[AttachedFile]:
+@dynamic_rate_limit()
+def attach_drive_files(nodes: JSONList[str]) -> list[AttachedFile]:
     """Attach files from Drive to a mail being written, as copies.
 
     Each one is read through Drive, which refuses a file the user can't read, and saved as a private
-    file as an upload from the device would be (see `upload_file`), under the same size limit. A copy
-    rather than a link: the mail goes on carrying what was attached even if the Drive file changes,
-    moves or goes.
+    file as an upload from the device would be (see `upload_file`), under the same size limit, and
+    together under `MAX_DRIVE_ATTACHMENT_TOTAL`. A copy rather than a link: the mail goes on carrying
+    what was attached even if the Drive file changes, moves or goes. Every file is read before any is
+    kept, so a refusal keeps none.
     """
 
-    from frappe.core.doctype.file.utils import get_safe_file_name
+    from contextlib import closing
+
+    from frappe.core.doctype.file.exceptions import MaxFileSizeReachedError
 
     from suite import drive
 
-    attached = []
-    for picked in files:
-        stream, _mime = drive.read_file(picked["node"])
-        filename = get_safe_file_name(picked.get("title") or picked["node"])
-        content = stream.read(MAX_ATTACHMENT_SIZE + 1)
+    picked, total = [], 0
+    for node in nodes:
+        stream, mime = drive.read_file(node)
+        # After the read: `node_title` checks no role, and the read has just checked READ.
+        filename = _drive_attachment_name(drive.node_title(node), mime)
+        with closing(stream):
+            content = stream.read(MAX_ATTACHMENT_SIZE + 1)
         if len(content) > MAX_ATTACHMENT_SIZE:
             _refuse_oversized_attachment(filename)
+        total += len(content)
+        if total > MAX_DRIVE_ATTACHMENT_TOTAL:
+            frappe.throw(
+                _("These files come to more than {0} MB together. Attach fewer at a time.").format(
+                    MAX_DRIVE_ATTACHMENT_TOTAL // (1024 * 1024)
+                ),
+                MaxFileSizeReachedError,
+            )
+        picked.append((filename, content))
+
+    attached = []
+    for filename, content in picked:
         file = frappe.get_doc(
             {
                 "doctype": "File",
@@ -2715,6 +2731,26 @@ def attach_drive_files(files: JSONList[DriveFile]) -> list[AttachedFile]:
             )
         )
     return attached
+
+
+def _drive_attachment_name(title: str, mime: str) -> str:
+    """The attachment's file name: the Drive title, with an extension for its type when it has none.
+
+    A sent attachment's type is read off its file name (`MailQueue`), and a Drive title need not end
+    in one, so a PDF titled "Invoice" would otherwise go out as an unknown type.
+    """
+
+    from mimetypes import guess_extension, guess_type
+
+    from frappe.core.doctype.file.utils import get_safe_file_name
+
+    if (
+        mime != "application/octet-stream"
+        and not guess_type(title)[0]
+        and (extension := guess_extension(mime))
+    ):
+        title += extension
+    return get_safe_file_name(title)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
