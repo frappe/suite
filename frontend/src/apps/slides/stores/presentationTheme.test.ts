@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('frappe-ui', () => ({ toast: { warning: vi.fn(), error: vi.fn() } }))
@@ -5,15 +6,14 @@ vi.mock('@/apps/slides/router', () => ({ router: { currentRoute: { value: { quer
 vi.mock('@/apps/slides/stores/slide', () => ({}))
 vi.mock('@/apps/slides/stores/historyMeta', () => ({}))
 vi.mock('@/apps/slides/stores/element', () => ({}))
-vi.mock('@/apps/slides/stores/saving', () => ({}))
 
 const { presentationDoc, presentationTheme, templateList } = await import('./presentation')
 
 describe('the theme a presentation adds slides from', () => {
   beforeEach(() => {
     templateList.value = [
-      { name: 'T-dark', title: 'Dark' },
-      { name: 'T-light', title: 'Light' },
+      fromPartial({ name: 'T-dark', title: 'Dark' }),
+      fromPartial({ name: 'T-light', title: 'Light' }),
     ]
   })
 

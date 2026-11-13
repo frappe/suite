@@ -17,19 +17,25 @@ import { useRoute, useRouter } from 'vue-router'
 import {
   DRIVE_ROLES,
   DriveDocumentHeader,
+  imagesNotice,
+  missingImages,
+  rankMentionsFor,
+  restoreImages,
+  useCommentDrafts,
+  useDocumentThreads,
+  useThreadChanges,
   type DocumentPanel,
   type DocumentSession,
   type DocumentThread,
   type DocumentVersion,
+  type MissingImage,
 } from '@/apps/drive'
+import { anchorEnds, anchorQuote } from '@/apps/writer/collab/anchors'
 import type { ThreadPlaces } from '@/apps/writer/collab/highlights'
-import type { peopleOf } from '@/apps/writer/collab/peers'
 import { withinTenSeconds } from '@/apps/writer/collab/timeout'
 import CollabTextEditor from '@/apps/writer/components/CollabTextEditor.vue'
 import DocumentStrip from '@/apps/writer/components/DocumentStrip.vue'
 import ReadOnlyEditor from '@/apps/writer/components/ReadOnlyEditor.vue'
-import UsersBar from '@/apps/writer/components/UsersBar.vue'
-import { rankMentionsFor } from '@/apps/writer/composables/useUsers'
 import { DOCUMENT_MEDIA } from '@/apps/writer/extensions/drive-media'
 import DocumentSkeleton from '@/apps/writer/opening/DocumentSkeleton.vue'
 import { isOpening } from '@/apps/writer/opening/openingEditor'
@@ -48,6 +54,10 @@ import RecoveryPreview from '@/apps/writer/recovery/RecoveryPreview.vue'
 import { RENAME_DOCUMENT } from '@/apps/writer/renameDocument'
 import { belowMinBuild } from '@/platform/build'
 import { watchConversion, type CollabRoom, type VersionRestored } from '@/platform/collab'
+import type { peopleOf } from '@/platform/collab/peers'
+import { othersPresentWarning, restoredByOther } from '@/platform/collab/restoreNotices'
+import UsersBar from '@/platform/collab/UsersBar.vue'
+import { versionTitle } from '@/platform/collab/versionDates'
 import { useHideRail } from '@/platform/rail'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
@@ -62,26 +72,11 @@ import {
   type LeaveGuardOptions,
 } from './navigation'
 import { goToPlace, readingPlace } from './readingPlace'
-import {
-  othersPresentWarning,
-  restoredByOther,
-  restoreVersion,
-  type VersionRestore,
-} from './restoreVersion'
+import { restoreVersion, type VersionRestore } from './restoreVersion'
 import { saveFirst } from './saveFirst'
-import { useCommentDrafts } from './useCommentDrafts'
 import { showError } from './useDocumentPanel'
-import { useDocumentThreads } from './useDocumentThreads'
-import { useThreadChanges } from './useThreadChanges'
 import { useWriterCollab } from './useWriterCollab'
-import { versionTitle } from './versionDates'
-import {
-  imagesNotice,
-  missingImages,
-  restoreImages,
-  versionImages,
-  type MissingImage,
-} from './versionImages'
+import { versionImages } from './versionImages'
 import VersionPreview from './VersionPreview.vue'
 import { convertedVersion, fetchVersion, readVersionBody, storedVersionHTML } from './versions'
 import { createWriterDocument, editorFileOf, isLocked, type EditorFile } from './writerDocument'
@@ -238,6 +233,7 @@ const commentDrafts = useCommentDrafts({
   user: useSession().user.value?.id ?? 'Guest',
   room: () => room.value,
   refreshThreads,
+  anchors: { quote: anchorQuote, ends: anchorEnds },
 })
 
 function refusesComment() {
@@ -450,7 +446,7 @@ async function confirmRestore(shown: DocumentVersion) {
     __(
       'The document goes back to this version for everyone. Its current state is kept as a version first.',
     ),
-    othersPresentWarning(peers.value, useSession().user.value?.id ?? ''),
+    othersPresentWarning(peers.value, useSession().user.value?.id ?? '', 'document'),
     imagesNotice(images),
   ]
   dialog.confirm({
@@ -528,7 +524,7 @@ function liveScroller() {
 
 async function tellRestoredByOther(restored: VersionRestored) {
   void sidePanel.value?.reloadVersions()
-  toast.info(await restoredByOther(restored))
+  toast.info(await restoredByOther(restored, 'document'))
 }
 
 function viewCopy(copy: RecoveryCopy) {

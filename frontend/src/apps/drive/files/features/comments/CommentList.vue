@@ -1,0 +1,901 @@
+<script setup lang="ts">
+import { Button, Dropdown, TextInput, type DropdownOptions } from 'frappe-ui'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+
+import type { DocumentThread } from '@/apps/drive'
+import { GUEST_NAME_LIMIT } from '@/apps/drive/client/guestName'
+import DriveCommentAuthor from '@/apps/drive/files/features/CommentAuthor.vue'
+import { dayOrTime } from '@/platform/collab/versionDates'
+import { confirm, toast } from '@/platform/feedback'
+import { useSession } from '@/platform/session'
+import { translate as __ } from '@/platform/translation'
+
+import { commentExcerpt, isEdited } from './commentDetails'
+import CommentDraftCard from './CommentDraftCard.vue'
+import CommentDraftRow from './CommentDraftRow.vue'
+import { submitOnEnter } from './commentMentions'
+import CommentText from './CommentText.vue'
+import { useDriveGuestName } from './guestName'
+import { confirmMentionAccess } from './mentionAccess'
+import MentionTextarea from './MentionTextarea.vue'
+import PersonAvatar from './PersonAvatar.vue'
+import { DOCUMENT_ANCHOR, type FileNoun, type ThreadPlaces } from './places'
+import { useSeenThreads } from './seenThreads'
+import { threadRows, type ThreadRow } from './threadRows'
+import type { ShownDraft, useCommentDrafts } from './useCommentDrafts'
+import type { ThreadActions } from './useThreadChanges'
+import { fullName } from './useUsers'
+
+type ThreadComment = DocumentThread['comments'][number]
+// A row, or the Resolved line when row is null
+interface ShownItem {
+  key: string
+  row: ThreadRow | null
+}
+
+const RESOLVED_MESSAGE_MS = 5000
+// Its own key, so changes to the threads around it keep the line and its focus
+const RESOLVED_LINE = 'resolved-line'
+// The most a comment holds, in UTF-8 bytes, as Drive counts them
+const MAX_COMMENT_BYTES = 65_535
+
+/**
+ * The document's comment threads, open ones first and resolved ones folded below,
+ * one row each and one open at a time. A closed row shows who started the thread,
+ * where it is, when, its first comment and how many replies it has.
+ */
+const props = defineProps<{
+  threads: DocumentThread[]
+  /** When Drive's threads were read; null before the first read. */
+  readAt: number | null
+  /** The document the threads are on. */
+  node: string
+  /** Where each thread shows in the editor; null when the editor can't tell. */
+  places: ThreadPlaces | null
+  canComment: boolean
+  /** Whether the person can edit the document, which lets them change anyone's comment. */
+  canEditDocument: boolean
+  /** Whether the person can share the document, to offer it to people a comment names. */
+  canShare: boolean
+  actions: ThreadActions
+  /** Comments not posted yet, on text or on the whole document. */
+  drafts: ReturnType<typeof useCommentDrafts>
+  noun: FileNoun
+}>()
+
+/** The thread shown open; its text in the editor stays lit. */
+const openThread = defineModel<string | null>('openThread', { default: null })
+/** The closed thread whose row is pointed at, whose text lights faintly. */
+const litThread = defineModel<string | null>('litThread', { default: null })
+/** A new comment was sent, so the writer can go back to the text. */
+const emit = defineEmits<{ sent: [] }>()
+
+const isResolvedShown = ref(false)
+const rowItems = ref<HTMLElement[]>([])
+const documentCard = ref<{ focus(): void } | null>(null)
+const replyBoxes = ref<{ focus(): void }[]>([])
+/** A reply typed into each thread, kept while another is open. */
+const replyTexts = ref<Record<string, string>>({})
+/** Threads whose resolve or reopen Drive hasn't answered. */
+const changingThreads = new Set<string>()
+let isSendingReply = false
+const editingComment = ref<string | null>(null)
+const editText = ref('')
+const editBoxes = ref<{ focus(): void }[]>([])
+/** The comment whose menu is open keeps its ⋯ while the pointer is in the menu. */
+const menuComment = ref<string | null>(null)
+const session = useSession()
+const user = computed(() => session.user.value?.id)
+const { isUnread, markSeen } = useSeenThreads({
+  user: user.value ?? 'Guest',
+  node: props.node,
+  threads: () => props.threads,
+  readAt: () => props.readAt,
+  openThread: () => openThread.value,
+})
+
+// Guests may sign their comments. Signed-in users never see the field (spec §10.5)
+const {
+  shown: showGuestName,
+  text: guestName,
+  atLimit: guestNameAtLimit,
+  maxLength: guestNameMaxLength,
+  take: takeGuestName,
+} = useDriveGuestName()
+
+const rows = computed(() => threadRows(props.threads, props.places))
+const openRows = computed(() => rows.value.filter(({ thread }) => !thread.resolved))
+const resolvedRows = computed(() => rows.value.filter(({ thread }) => thread.resolved))
+const shownResolvedRows = computed(() => {
+  if (!isResolvedShown.value) {
+    return []
+  }
+
+  return resolvedRows.value
+})
+const shownItems = computed(() => {
+  const items: ShownItem[] = openRows.value.map((row) => ({ key: row.thread.name, row }))
+  if (resolvedRows.value.length) {
+    items.push({ key: RESOLVED_LINE, row: null })
+  }
+
+  for (const row of shownResolvedRows.value) {
+    items.push({ key: row.thread.name, row })
+  }
+
+  return items
+})
+const boxDrafts = computed(() => props.drafts.drafts.value.filter((draft) => !draft.isSent))
+// The whole-document box takes the place of the line that starts it
+const documentDraft = computed(() => boxDrafts.value.find(isOnDocument))
+const textDrafts = computed(() => boxDrafts.value.filter((draft) => !isOnDocument(draft)))
+const sentDrafts = computed(() => props.drafts.drafts.value.filter((draft) => draft.isSent))
+const hasShownDrafts = computed(() => !!props.drafts.drafts.value.length)
+const isEmpty = computed(() => !openRows.value.length && !hasShownDrafts.value)
+const emptyText = computed(() => {
+  if (!props.canComment) {
+    return 'No open comments.'
+  }
+
+  if (props.drafts.isWholeDocumentOnly) {
+    return 'No open comments. Add one above.'
+  }
+
+  return 'No open comments. Select text and press Comment, or add one above.'
+})
+const replyText = computed({
+  get: () => replyTexts.value[openThread.value ?? ''] ?? '',
+  set: (text: string) => {
+    if (openThread.value) {
+      replyTexts.value[openThread.value] = text
+    }
+  },
+})
+const hasReplyText = computed(() => !!replyText.value.trim())
+const isEditBlank = computed(() => !editText.value.trim())
+const guestNameHint = computed(() => {
+  if (guestNameAtLimit.value) {
+    return `Names can have up to ${GUEST_NAME_LIMIT} characters.`
+  }
+
+  return 'Optional. Shown with your comments.'
+})
+
+function canReply(thread: DocumentThread) {
+  return !thread.resolved && props.canComment
+}
+
+function toggleResolvedShown() {
+  isResolvedShown.value = !isResolvedShown.value
+}
+
+function isOpen(thread: DocumentThread) {
+  return openThread.value === thread.name
+}
+
+function isClosed(thread: DocumentThread) {
+  return !isOpen(thread)
+}
+
+// Opened from the list, the thread's reply box takes the cursor
+async function toggleThread(thread: DocumentThread) {
+  if (isOpen(thread)) {
+    closeThread()
+    return
+  }
+
+  openThread.value = thread.name
+  await nextTick()
+  replyBoxes.value[0]?.focus()
+}
+
+function closeThread() {
+  openThread.value = null
+}
+
+function lightThread(thread: DocumentThread) {
+  litThread.value = thread.name
+}
+
+function dimThread() {
+  litThread.value = null
+}
+
+// A thread opened from its text shows in view, unfolding Resolved for a resolved one
+async function showOpenThread(name: string | null) {
+  const row = rows.value.find(({ thread }) => thread.name === name)
+  if (!row) {
+    return
+  }
+
+  if (row.thread.resolved) {
+    isResolvedShown.value = true
+  }
+
+  await nextTick()
+  const item = rowItems.value.find((element) => element.dataset.thread === name)
+  item?.scrollIntoView({ block: 'nearest' })
+}
+
+watch(openThread, showOpenThread, { immediate: true })
+
+// Another comment opening puts back the line in place of a whole-document box with no words
+watch(openThread, (name) => {
+  if (name && documentDraft.value && !documentDraft.value.text.trim()) {
+    props.drafts.discard(documentDraft.value)
+  }
+})
+
+function hasThread(shown: ThreadRow[], name: string | null) {
+  return shown.some(({ thread }) => thread.name === name)
+}
+
+// The open thread closes once it leaves its part of the list: resolved, reopened, deleted or folded away
+watch([openRows, shownResolvedRows], (shown, before) => {
+  if (
+    shown.some(
+      (part, index) =>
+        hasThread(before[index], openThread.value) && !hasThread(part, openThread.value),
+    )
+  ) {
+    closeThread()
+  }
+})
+
+// A closed panel leaves no text lit
+onBeforeUnmount(() => {
+  closeThread()
+  dimThread()
+})
+
+// Asks only when words would be lost
+async function canDiscard(text: string) {
+  if (!text.trim()) {
+    return true
+  }
+
+  return confirm({
+    title: 'Discard comment?',
+    message: "It hasn't been posted, and can't be brought back.",
+    confirmLabel: 'Discard',
+    destructive: true,
+  })
+}
+
+function isOnDocument(draft: ShownDraft) {
+  return draft.anchor === DOCUMENT_ANCHOR
+}
+
+// One whole-document box at a time; asking again puts the cursor back in it
+async function startDocumentComment() {
+  if (!documentDraft.value) {
+    props.drafts.start(DOCUMENT_ANCHOR)
+  }
+
+  await nextTick()
+  documentCard.value?.focus()
+}
+
+function writeDraft(draft: ShownDraft, text: string) {
+  props.drafts.write(draft, text)
+}
+
+// Words over the limit are kept to shorten, never sent to be refused
+function fitsInComment(text: string) {
+  const isFitting = new TextEncoder().encode(text).length <= MAX_COMMENT_BYTES
+  if (!isFitting) {
+    toast.error('This comment is too long. Shorten it and try again.')
+  }
+
+  return isFitting
+}
+
+// Opens the new thread unless the writer has opened another since
+async function sendDraft(draft: ShownDraft, announce: () => void, afterSend = () => {}) {
+  const posting = props.drafts.post(draft, takeGuestName())
+  afterSend()
+  const thread = await posting
+  if (thread) {
+    openThread.value ??= thread
+    announce()
+  }
+}
+
+// The writer goes back to the text at once, with the comment already in the list
+async function postDraft(draft: ShownDraft) {
+  const text = draft.text.trim()
+  const announce = fitsInComment(text) ? await mayMention(text) : null
+  if (announce) {
+    await sendDraft(draft, announce, () => emit('sent'))
+  }
+}
+
+// Sending again is a retry: the same words under the same client id
+async function retryDraft(draft: ShownDraft) {
+  const announce = await mayMention(draft.text.trim())
+  if (announce) {
+    await sendDraft(draft, announce)
+  }
+}
+
+async function discardDraft(draft: ShownDraft) {
+  if (await canDiscard(draft.text)) {
+    props.drafts.discard(draft)
+  }
+}
+
+async function discardSentDraft(draft: ShownDraft) {
+  const isConfirmed = await confirm({
+    title: 'Discard this comment?',
+    message: "It hasn't been posted, and can't be brought back.",
+    confirmLabel: 'Discard',
+    destructive: true,
+  })
+  if (isConfirmed) {
+    props.drafts.discard(draft)
+  }
+}
+
+// Null when the writer stops to reconsider; otherwise says, once posted, what the post did for them
+function mayMention(text: string, mentionedBefore?: string[]) {
+  return confirmMentionAccess(props.node, text, {
+    canShare: props.canShare,
+    mentionedBefore,
+    noun: props.noun,
+  })
+}
+
+// What was typed after the sent words; all of it when the sent words themselves changed
+function typedSince(now: string, sent: string) {
+  if (!now.startsWith(sent)) {
+    return now
+  }
+
+  return now.slice(sent.length)
+}
+
+async function submitReply(thread: DocumentThread) {
+  const typed = replyTexts.value[thread.name] ?? ''
+  const text = typed.trim()
+  if (!text || isSendingReply || !fitsInComment(text)) {
+    return
+  }
+
+  isSendingReply = true
+  const announce = await mayMention(text)
+  isSendingReply = false
+  if (!announce) {
+    return
+  }
+
+  replyTexts.value[thread.name] = typedSince(replyTexts.value[thread.name] ?? '', typed)
+  if (await props.actions.reply(thread.name, text, takeGuestName())) {
+    announce()
+  }
+}
+
+function offerUndoResolve(thread: DocumentThread) {
+  toast.success('Comment resolved', {
+    duration: RESOLVED_MESSAGE_MS,
+    action: { label: 'Undo', onClick: () => void setResolved(thread.name, false) },
+  })
+}
+
+// One's own resolve or reopen leaves the thread seen, once the list holds it
+async function setResolved(thread: string, isResolved: boolean) {
+  const isChanged = await props.actions.resolve(thread, isResolved)
+  if (isChanged) {
+    await nextTick()
+    markSeen(thread)
+  }
+
+  return isChanged
+}
+
+// The thread leaves its part of the list at once, and comes back open if Drive refuses
+async function toggleResolved(thread: DocumentThread) {
+  if (changingThreads.has(thread.name)) {
+    return
+  }
+
+  const isResolving = !thread.resolved
+  const wasOpen = isOpen(thread)
+  changingThreads.add(thread.name)
+  const isChanged = await setResolved(thread.name, isResolving)
+  changingThreads.delete(thread.name)
+  if (isChanged && isResolving) {
+    offerUndoResolve(thread)
+  } else if (!isChanged && wasOpen) {
+    openThread.value ??= thread.name
+  }
+}
+
+function resolveLabel(thread: DocumentThread) {
+  if (thread.resolved) {
+    return 'Reopen'
+  }
+
+  return 'Resolve'
+}
+
+function resolveIcon(thread: DocumentThread) {
+  if (thread.resolved) {
+    return 'lucide-rotate-ccw'
+  }
+
+  return 'lucide-check'
+}
+
+// Open, the first comment's text sits where the closed row showed it
+function threadButtonClass(thread: DocumentThread) {
+  if (isOpen(thread)) {
+    return 'pb-1'
+  }
+
+  return 'pb-2'
+}
+
+function commentTextClass(thread: DocumentThread, comment: ThreadComment) {
+  if (isReply(thread, comment)) {
+    return 'text-p-sm'
+  }
+
+  return 'text-sm'
+}
+
+async function deleteComment(comment: ThreadComment) {
+  const excerpt = commentExcerpt(comment.content, comment.mentions, fullName)
+  const isConfirmed = await confirm({
+    title: __('Delete this comment?'),
+    message: __('“{0}” will be deleted. It can’t be brought back.', [excerpt]),
+    confirmLabel: 'Delete',
+    destructive: true,
+  })
+  if (!isConfirmed) {
+    return
+  }
+
+  const wasOpen = openThread.value
+  const isRemoved = await props.actions.removeComment(comment.name)
+  if (!isRemoved) {
+    openThread.value ??= wasOpen
+  }
+}
+
+// Drive lets anyone who can edit change a comment, and a signed-in author their own
+function canChange(comment: ThreadComment) {
+  if (!props.canComment) {
+    return false
+  }
+
+  if (props.canEditDocument) {
+    return true
+  }
+
+  return !!user.value && user.value !== 'Guest' && comment.author === user.value
+}
+
+function isEditing(comment: ThreadComment) {
+  return editingComment.value === comment.name
+}
+
+function hasMenu(comment: ThreadComment) {
+  return canChange(comment) && !isEditing(comment) && !props.actions.isUnsent(comment.name)
+}
+
+function menuClass(comment: ThreadComment) {
+  if (menuComment.value === comment.name) {
+    return ''
+  }
+
+  return 'invisible group-hover/comment:visible group-focus-within/comment:visible'
+}
+
+function noteMenu(comment: ThreadComment, isMenuOpen: boolean) {
+  if (isMenuOpen) {
+    menuComment.value = comment.name
+  } else if (menuComment.value === comment.name) {
+    menuComment.value = null
+  }
+}
+
+function commentActions(comment: ThreadComment): DropdownOptions {
+  return [
+    { label: 'Edit', icon: 'lucide-pencil', onClick: () => startEdit(comment) },
+    { label: 'Delete', icon: 'lucide-trash-2', onClick: () => deleteComment(comment) },
+  ]
+}
+
+async function startEdit(comment: ThreadComment) {
+  // Its menu unmounts before it can report closing
+  menuComment.value = null
+  editingComment.value = comment.name
+  editText.value = comment.content
+  await nextTick()
+  editBoxes.value[0]?.focus()
+}
+
+function stopEdit() {
+  editingComment.value = null
+  editText.value = ''
+}
+
+// An unchanged text sends nothing; a refused one comes back to the box with its words
+async function saveEdit(comment: ThreadComment) {
+  const text = editText.value.trim()
+  if (text === comment.content) {
+    stopEdit()
+    return
+  }
+
+  const announce = fitsInComment(text) ? await mayMention(text, comment.mentions) : null
+  if (!announce) {
+    return
+  }
+
+  stopEdit()
+  if (await props.actions.editComment(comment.name, text)) {
+    announce()
+  } else if (!editingComment.value) {
+    editingComment.value = comment.name
+    editText.value = text
+    await nextTick()
+    editBoxes.value[0]?.focus()
+  }
+}
+
+function isListed(name: string) {
+  return props.threads.some((thread) => thread.comments.some((comment) => comment.name === name))
+}
+
+// Someone else deleted the comment being edited, so there is nothing left to save it to
+function dropDeletedEdit() {
+  if (!editingComment.value || isListed(editingComment.value)) {
+    return
+  }
+
+  stopEdit()
+  toast.warning("This comment was deleted, so your edit wasn't saved.")
+}
+
+watch(() => props.threads, dropDeletedEdit)
+
+// A comment kept from the old Drive is stored under the owner, so its own name stands with no photo
+function authorImage(comment: ThreadComment) {
+  if (comment.author_name?.trim()) {
+    return undefined
+  }
+
+  return comment.person?.user_image ?? undefined
+}
+
+// The first comment's ⋯ shows in the header, beside Resolve, while its thread is open
+function hasHeaderMenu(thread: DocumentThread) {
+  return isOpen(thread) && hasMenu(firstComment(thread))
+}
+
+function authorLabel(comment: ThreadComment) {
+  return comment.author_name?.trim() || comment.person?.full_name || comment.author || 'Someone'
+}
+
+function firstComment(thread: DocumentThread) {
+  return thread.comments[0]
+}
+
+function resolvedLabel(thread: DocumentThread) {
+  if (!thread.resolved_by) {
+    return __('Resolved')
+  }
+
+  const when = thread.resolved_at ? ` · ${dayOrTime({ creation: thread.resolved_at })}` : ''
+  return __('Resolved by {0}', [fullName(thread.resolved_by)]) + when
+}
+
+function isReply(thread: DocumentThread, comment: ThreadComment) {
+  return comment !== firstComment(thread)
+}
+
+function replies(thread: DocumentThread) {
+  return thread.comments.slice(1)
+}
+
+function repliesLabel(thread: DocumentThread) {
+  const count = replies(thread).length
+  if (count === 1) {
+    return '1 reply'
+  }
+
+  return `${count} replies`
+}
+
+defineExpose({ startDocumentComment })
+
+function rowClass(thread: DocumentThread) {
+  return isOpen(thread) ? 'bg-surface-gray-1' : 'hover:bg-surface-gray-1'
+}
+</script>
+
+<template>
+  <div class="space-y-3" @keydown.esc="closeThread">
+    <template v-if="canComment">
+      <TextInput
+        v-if="showGuestName"
+        v-model="guestName"
+        :label="__('Your name')"
+        :placeholder="__('Guest')"
+        autocomplete="name"
+        :maxlength="guestNameMaxLength"
+        :description="guestNameHint"
+      />
+      <CommentDraftCard
+        v-if="documentDraft"
+        ref="documentCard"
+        :key="documentDraft.clientId"
+        :draft="documentDraft"
+        :quote="drafts.quoteOf(documentDraft.anchor)"
+        @write="writeDraft(documentDraft, $event)"
+        @post="postDraft(documentDraft)"
+        @discard="discardDraft(documentDraft)"
+      />
+      <button
+        v-else
+        type="button"
+        class="block w-full rounded-4 border border-[--surface-gray-2] bg-surface-gray-2 px-[7px] py-[5px] text-left text-sm text-ink-gray-4 hover:border-outline-elevation-2 hover:bg-surface-gray-3"
+        @click="startDocumentComment"
+      >
+        {{ __('Add a comment') }}
+      </button>
+    </template>
+    <CommentDraftCard
+      v-for="draft in textDrafts"
+      :key="draft.clientId"
+      :draft
+      :quote="drafts.quoteOf(draft.anchor)"
+      @write="writeDraft(draft, $event)"
+      @post="postDraft(draft)"
+      @discard="discardDraft(draft)"
+    />
+    <p v-if="isEmpty" class="px-2 text-p-sm text-ink-gray-5">{{ emptyText }}</p>
+    <ul class="space-y-1.5">
+      <CommentDraftRow
+        v-for="draft in sentDrafts"
+        :key="draft.clientId"
+        :draft
+        :quote="drafts.quoteOf(draft.anchor)"
+        @retry="retryDraft(draft)"
+        @discard="discardSentDraft(draft)"
+      />
+      <template v-for="{ key, row } in shownItems" :key>
+        <li
+          v-if="row"
+          ref="rowItems"
+          :data-thread="row.thread.name"
+          class="group relative rounded-4"
+          :class="rowClass(row.thread)"
+          @mouseenter="lightThread(row.thread)"
+          @mouseleave="dimThread"
+        >
+          <button
+            type="button"
+            class="block w-full space-y-1 px-2 pt-2 text-left"
+            :class="threadButtonClass(row.thread)"
+            :aria-expanded="isOpen(row.thread)"
+            @click="toggleThread(row.thread)"
+          >
+            <span
+              class="flex items-center gap-1.5 text-xs text-ink-gray-5"
+              :class="hasHeaderMenu(row.thread) ? 'pr-16' : 'pr-8'"
+            >
+              <PersonAvatar
+                :user="firstComment(row.thread).author"
+                :name="authorLabel(firstComment(row.thread))"
+                :image="authorImage(firstComment(row.thread))"
+              />
+              <span class="min-w-0 truncate text-sm-medium text-ink-gray-7">
+                <DriveCommentAuthor
+                  :author="firstComment(row.thread).author"
+                  :author-name="firstComment(row.thread).author_name"
+                  >{{ authorLabel(firstComment(row.thread)) }}</DriveCommentAuthor
+                >
+              </span>
+              <span v-if="isUnread(row.thread)" class="flex shrink-0 items-center">
+                <span class="size-1.5 rounded-full bg-surface-amber-7" aria-hidden="true" />
+                <span class="sr-only">{{ __('Unread') }}</span>
+              </span>
+              <span class="shrink-0">{{ dayOrTime(firstComment(row.thread)) }}</span>
+              <span v-if="isEdited(firstComment(row.thread))" class="shrink-0">
+                {{ __('(edited)') }}
+              </span>
+            </span>
+            <span v-if="row.quote || row.where" class="block py-0.5">
+              <span
+                class="flex gap-1.5 border-l-2 border-outline-gray-3 pl-2 text-sm text-ink-gray-5"
+              >
+                <span class="truncate">{{ row.quote }}</span>
+                <span v-if="row.where" class="shrink-0 text-xs leading-5">{{ row.where }}</span>
+              </span>
+            </span>
+            <span v-if="isClosed(row.thread)" class="flex gap-1 text-sm">
+              <span class="min-w-0 flex-1 truncate text-ink-gray-7">
+                <CommentText
+                  :content="firstComment(row.thread).content"
+                  :mentions="firstComment(row.thread).mentions"
+                />
+              </span>
+              <span v-if="replies(row.thread).length" class="shrink-0 text-ink-gray-5">
+                · {{ repliesLabel(row.thread) }}
+              </span>
+            </span>
+          </button>
+          <div
+            v-if="canComment"
+            class="invisible absolute right-2 top-[3px] flex items-center group-focus-within:visible group-hover:visible"
+            :class="isOpen(row.thread) && '[@media(hover:none)]:visible'"
+          >
+            <Dropdown
+              v-if="hasHeaderMenu(row.thread)"
+              :options="commentActions(firstComment(row.thread))"
+              align="end"
+            >
+              <Button
+                size="sm"
+                variant="ghost"
+                icon="lucide-ellipsis"
+                :aria-label="__('More comment actions')"
+              />
+            </Dropdown>
+            <Button
+              size="sm"
+              variant="ghost"
+              :icon="resolveIcon(row.thread)"
+              :aria-label="resolveLabel(row.thread)"
+              :tooltip="resolveLabel(row.thread)"
+              @click="toggleResolved(row.thread)"
+            />
+          </div>
+          <template v-if="isOpen(row.thread)">
+            <div class="space-y-2 px-2 pb-2">
+              <div
+                v-for="comment in row.thread.comments"
+                :key="comment.name"
+                class="group/comment relative space-y-1"
+              >
+                <p
+                  v-if="isReply(row.thread, comment)"
+                  class="flex items-center gap-1.5 pr-8 text-sm-medium text-ink-gray-7"
+                >
+                  <PersonAvatar
+                    :user="comment.author"
+                    :name="authorLabel(comment)"
+                    :image="authorImage(comment)"
+                  />
+                  <span class="flex min-w-0 flex-1 items-baseline gap-2">
+                    <DriveCommentAuthor
+                      :author="comment.author"
+                      :author-name="comment.author_name"
+                      >{{ authorLabel(comment) }}</DriveCommentAuthor
+                    >
+                    <span class="flex-1 whitespace-nowrap text-xs text-ink-gray-5">
+                      {{ dayOrTime(comment) }}
+                      <template v-if="isEdited(comment)">{{ __('(edited)') }}</template>
+                    </span>
+                  </span>
+                </p>
+                <form
+                  v-if="isEditing(comment)"
+                  class="space-y-2"
+                  @submit.prevent="saveEdit(comment)"
+                >
+                  <MentionTextarea
+                    ref="editBoxes"
+                    v-model="editText"
+                    :mentions="comment.mentions"
+                    :rows="2"
+                    :aria-label="__('Edit comment')"
+                    @keydown.esc.stop.prevent="stopEdit"
+                    @keydown.enter="submitOnEnter($event, () => isEditBlank || saveEdit(comment))"
+                  />
+                  <div class="flex justify-end gap-1">
+                    <Button size="sm" variant="ghost" :label="__('Cancel')" @click="stopEdit" />
+                    <Button
+                      type="submit"
+                      size="sm"
+                      variant="outline"
+                      :label="__('Save')"
+                      :disabled="isEditBlank"
+                    />
+                  </div>
+                </form>
+                <p
+                  v-else
+                  class="whitespace-pre-wrap pr-8 text-ink-gray-7"
+                  :class="commentTextClass(row.thread, comment)"
+                >
+                  <CommentText :content="comment.content" :mentions="comment.mentions" />
+                </p>
+                <p
+                  v-if="actions.isNotSent(comment.name)"
+                  class="flex items-center gap-1.5 text-xs text-ink-gray-5"
+                >
+                  {{ __('Not sent') }}
+                  <button
+                    type="button"
+                    class="text-ink-gray-8 hover:underline"
+                    @click="actions.retryReply(comment.name)"
+                  >
+                    {{ __('Retry') }}
+                  </button>
+                  <button
+                    type="button"
+                    class="text-ink-gray-8 hover:underline"
+                    @click="actions.discardReply(comment.name)"
+                  >
+                    {{ __('Discard') }}
+                  </button>
+                </p>
+                <div
+                  v-if="isReply(row.thread, comment) && hasMenu(comment)"
+                  class="absolute -top-1 right-0"
+                  :class="menuClass(comment)"
+                >
+                  <Dropdown
+                    :options="commentActions(comment)"
+                    align="end"
+                    @update:open="noteMenu(comment, $event)"
+                  >
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      icon="lucide-ellipsis"
+                      :aria-label="__('More comment actions')"
+                    />
+                  </Dropdown>
+                </div>
+              </div>
+              <p v-if="row.thread.resolved" class="text-xs text-ink-gray-5">
+                {{ resolvedLabel(row.thread) }}
+              </p>
+              <form v-if="canReply(row.thread)" @submit.prevent="submitReply(row.thread)">
+                <div class="relative">
+                  <MentionTextarea
+                    ref="replyBoxes"
+                    v-model="replyText"
+                    :rows="1"
+                    class="pr-8"
+                    :placeholder="__('Reply')"
+                    :aria-label="__('Reply')"
+                    @keydown.enter="submitOnEnter($event, () => submitReply(row.thread))"
+                  />
+                  <!-- 3px puts the glyph at the textarea's 9px text inset, border included -->
+                  <Button
+                    v-if="hasReplyText"
+                    type="submit"
+                    class="absolute bottom-1 right-[3px]"
+                    size="sm"
+                    variant="ghost"
+                    icon="lucide-arrow-up"
+                    :aria-label="__('Send reply')"
+                  />
+                </div>
+              </form>
+            </div>
+          </template>
+        </li>
+        <li v-else role="none" class="pt-2 first:pt-0">
+          <button
+            type="button"
+            class="group flex w-full items-center rounded-4 px-2 py-1.5 text-left text-sm text-ink-gray-5 hover:bg-surface-gray-2"
+            :aria-expanded="isResolvedShown"
+            @click="toggleResolvedShown"
+          >
+            {{ __('Resolved · {0}', [resolvedRows.length]) }}
+            <span
+              class="lucide-chevron-right ml-auto size-4 transition-transform duration-200 group-aria-expanded:rotate-90"
+              aria-hidden="true"
+            />
+          </button>
+        </li>
+      </template>
+    </ul>
+  </div>
+</template>

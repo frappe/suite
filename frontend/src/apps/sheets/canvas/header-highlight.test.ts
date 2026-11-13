@@ -79,6 +79,25 @@ function applyTheme(theme: 'light' | 'dark'): void {
   for (const [name, value] of Object.entries(vars)) style.setProperty(name, String(value))
 }
 
+describe('the grid\u2019s quiet colours', () => {
+  afterEach(() => {
+    style.cssText = ''
+  })
+
+  it.each(['light', 'dark'] as const)('read the design tokens in %s mode', (theme) => {
+    applyTheme(theme)
+    const token = (name: string) => style.getPropertyValue(name).trim()
+    expect(COLORS.headerBg).toBe(token('--surface-base'))
+    expect(COLORS.gridLine).toBe(token('--outline-gray-1'))
+    expect(COLORS.activeHeader).toBe(token('--surface-gray-2'))
+  })
+
+  it.each(['light', 'dark'] as const)('keep gridlines off the background in %s mode', (theme) => {
+    applyTheme(theme)
+    expect(COLORS.gridLine).not.toBe(COLORS.white)
+  })
+})
+
 describe('separators between selected headers', () => {
   afterEach(() => {
     style.cssText = ''
@@ -93,10 +112,9 @@ describe('separators between selected headers', () => {
     }
   })
 
-  it('keep their light-mode colour', () => {
-    // #1129 shipped the light separators on --outline-gray-3.
+  it('match the plain gridline in light mode', () => {
     applyTheme('light')
-    expect(separators().rows['2']).toBe(cssVariables.light['--outline-gray-3'])
+    expect(separators().rows['2']).toBe(cssVariables.light['--outline-gray-1'])
   })
 
   it('stay the plain gridline colour outside the selection', () => {

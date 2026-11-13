@@ -35,7 +35,7 @@ vi.mock('@/platform/collab', async (original) => {
 })
 
 const { discardCopy, keepPageCopy, listCopies } = await import('./copies')
-const { keepDraft } = await import('./commentDrafts')
+const { keepCommentDraft } = await import('@/apps/drive')
 const { default: UnsavedWork } = await import('./UnsavedWork.vue')
 
 async function openedPage(ready = (root: Element) => rowButton(root)) {
@@ -152,9 +152,17 @@ describe('Writer recovery copies page', () => {
 
   it("lists the document's unposted comments with its copy", async () => {
     keepPageCopy('gone', 'Plan', '<p>Typed while offline</p>')
-    keepDraft('Guest', 'gone', { clientId: 'one', anchor: anchorOn('offline'), text: 'Why?' })
-    keepDraft('Guest', 'gone', { clientId: 'two', anchor: anchorOn('Typed'), text: '  ' })
-    keepDraft('Guest', 'other', { clientId: 'three', anchor: anchorOn('Plan'), text: 'Elsewhere' })
+    keepCommentDraft('Guest', 'gone', {
+      clientId: 'one',
+      anchor: anchorOn('offline'),
+      text: 'Why?',
+    })
+    keepCommentDraft('Guest', 'gone', { clientId: 'two', anchor: anchorOn('Typed'), text: '  ' })
+    keepCommentDraft('Guest', 'other', {
+      clientId: 'three',
+      anchor: anchorOn('Plan'),
+      text: 'Elsewhere',
+    })
     const { root } = await openedPage()
 
     rowButton(root).click()

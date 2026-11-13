@@ -1,11 +1,14 @@
+import { fromAny } from '@total-typescript/shoehorn'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { Ref } from 'vue'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
 vi.mock('@/apps/slides/router', () => ({ router: { replace: () => Promise.resolve() } }))
 
-const { slides, slideIndex } = await import('@/apps/slides/stores/slide')
+const { slides: storeSlides, slideIndex } = await import('@/apps/slides/stores/slide')
+// the store types each slide's fields as unknown, and these tests read them
+const slides = fromAny<Ref<any[]>, unknown>(storeSlides)
 const { activeElementIds } = await import('@/apps/slides/stores/element')
-const { dirty } = await import('@/apps/slides/stores/saving')
 const { setCommandHistory } = await import('@/apps/slides/stores/historyMeta')
 const { useCommandHistory } = await import('./useCommandHistory')
 const { setElementProperty, useElementProperty } = await import('./editProperty')
@@ -47,7 +50,6 @@ beforeEach(() => {
   history = useCommandHistory(slides, { actionOrder, actions: {} })
   setCommandHistory(history)
   executed = vi.spyOn(history, 'execute')
-  dirty.value = false
 })
 
 describe('editing a property over a selection', () => {
@@ -90,7 +92,6 @@ describe('editing a property over a selection', () => {
 
     expect(executed).not.toHaveBeenCalled()
     expect(history.canUndo.value).toBe(false)
-    expect(dirty.value).toBe(false)
   })
 
   it('records a single selection as a bare edit', () => {

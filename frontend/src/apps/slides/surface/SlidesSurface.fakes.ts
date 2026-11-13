@@ -1,43 +1,94 @@
 import { afterEach, beforeEach, expect, vi } from 'vitest'
-import {
-  computed,
-  createApp,
-  defineComponent,
-  h,
-  ref,
-  type Component,
-  type Ref,
-  type SetupContext,
-} from 'vue'
+import { computed, createApp, defineComponent, h, ref, type Ref, type SetupContext } from 'vue'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
+import type { Doc } from 'yjs'
 
 import type { DocumentSession } from '@/apps/drive'
+import type { ConvertVersionOutput } from '@/apps/slides/client/generated'
 import { translationPlugin } from '@/platform/translation'
 
 const { fromPartial, fromAny } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
 
 const server = vi.hoisted(() => ({ fetch: vi.fn() }))
-export const saves: unknown[] = []
-export const previews: unknown[] = []
-// what Drive's restore route does; a test swaps it to change the deck or to fail
-export const versionRestore = { run: async (_seq: string) => {} }
-const signedIn = vi.hoisted(() => ({ user: 'me@example.com' }))
-const versionsPanel = vi.hoisted(() => ({
-  flush: async () => {},
-  restore: async (_seq: string) => {},
-  writable: false,
-}))
-const themeChange = vi.hoisted(() => ({ update: (_theme: string) => {} }))
-const forgetTemplates = vi.hoisted(() => ({ run: () => {} }))
-interface PropertiesPanelFixture {
-  real: Component | null
+// the stored bytes every version's content URL answers with
+export const versionBytes = { current: new Uint8Array() }
+// what the server's upgrade of an old version answers
+interface VersionConversionFixture {
+  answer: ConvertVersionOutput
 }
-const propertiesPanel = vi.hoisted((): PropertiesPanelFixture => ({ real: null }))
+export const versionConversion: VersionConversionFixture = { answer: {} }
+// the slides the print view was last handed
+interface ExportedFixture {
+  slides: unknown[]
+}
+const exported = vi.hoisted((): ExportedFixture => ({ slides: [] }))
+// a guest has no user
+interface SignedIn {
+  user: string | null
+}
+const signedIn = vi.hoisted((): SignedIn => ({ user: 'me@example.com' }))
+interface VersionsPanelFixture {
+  flush: () => Promise<void>
+  restore: (seq: string) => Promise<void>
+  confirmRestore: ((seq: string) => void) | null
+  writable: boolean
+  reloads: number
+  // the version shown in the canvas's place, and how the panel picks one
+  previewed: string | null
+  preview: (seq: string | null) => void
+}
+const versionsPanel = vi.hoisted((): VersionsPanelFixture => ({
+  flush: async () => {},
+  restore: async () => {},
+  confirmRestore: null,
+  writable: false,
+  reloads: 0,
+  previewed: null,
+  preview: () => {},
+}))
+// the two theme dialogs: the new presentation's pick, and a change of theme
+const themeChange = vi.hoisted(() => ({
+  create: (_theme: string) => {},
+  update: (_theme: string) => {},
+}))
+// the templates the picker lists
+interface TemplatesFixture {
+  list: unknown[]
+}
+export const templates: TemplatesFixture = { list: [] }
+// a pasted slide's pictures, adopted: a test can hold the answer back
+interface SlideAdoptionFixture {
+  held: Promise<void> | null
+}
+export const slideAdoption: SlideAdoptionFixture = { held: null }
+const forgetTemplates = vi.hoisted(() => ({ run: () => {} }))
+// what the presentation's comment threads read, and what the comment panel was handed
+interface DriveComments {
+  threads: unknown[]
+  reads: number
+  sent: unknown[][]
+}
+export const driveComments: DriveComments = { threads: [], reads: 0, sent: [] }
+interface CommentPanelFixture {
+  attrs: Record<string, unknown>
+}
+const commentPanel = vi.hoisted((): CommentPanelFixture => ({ attrs: {} }))
 // a converted presentation's room; tests hand it a live one
 const collabRoom = vi.hoisted(() => ({
   open: vi.fn(async (): Promise<unknown> => ({ state: 'failed' })),
 }))
-export const fakeServer = { isRefusing: false, isFailingTemplates: false, opens: 0 }
+// converted templates' and sources' saved states by node, and the nodes read; any other node reads for real
+interface SavedStatesFixture {
+  byNode: Map<string, Doc | Error>
+  reads: string[]
+}
+const savedStates = vi.hoisted((): SavedStatesFixture => ({ byNode: new Map(), reads: [] }))
+// The realtime socket a presentation waiting for its conversion listens on
+const realtime = await vi.hoisted(async () => {
+  const { fakeSocket } = await import('@suite/collab-client/test-support')
+  return { socket: fakeSocket({ answers: true }) }
+})
+export const fakeServer = { isFailingTemplates: false, opens: 0 }
 
 interface MenuEntry {
   label: string
@@ -125,7 +176,7 @@ vi.mock('frappe-ui', () => {
           ]),
     },
     FileUploadHandler: class {},
-    dialog: vi.fn(),
+    dialog: Object.assign(vi.fn(), { confirm: vi.fn(), danger: vi.fn() }),
     toast: {
       error: vi.fn(),
       warning: vi.fn(),
@@ -145,7 +196,7 @@ vi.mock('@/platform/session', async (importOriginal) => {
       ...original.useSession(),
       user: {
         get value() {
-          return { id: signedIn.user }
+          return signedIn.user ? { id: signedIn.user } : null
         },
       },
     }),
@@ -171,16 +222,35 @@ vi.mock('@/apps/slides/stores/visitedCopies', async (importOriginal) => ({
   rememberVisit: visits.remember,
   cancelVisit: visits.cancel,
 }))
-vi.mock('@/platform/collab', async (importOriginal) => ({
-  ...(await importOriginal<object>()),
-  openCollabRoom: collabRoom.open,
-}))
+vi.mock('@/platform/collab', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/platform/collab')>()
+  const { watchRooms } = await import('@suite/collab-client')
+  return {
+    ...real,
+    openCollabRoom: collabRoom.open,
+    watchConversion: (keys: string[], onTold: () => void) =>
+      watchRooms(realtime.socket, keys, 'suite_collab_converted', onTold),
+    readSavedDocument: async (options: Parameters<typeof real.readSavedDocument>[0]) => {
+      const saved = savedStates.byNode.get(options.nodeId)
+      if (!saved) {
+        return real.readSavedDocument(options)
+      }
+
+      savedStates.reads.push(options.nodeId)
+      if (saved instanceof Error) {
+        throw saved
+      }
+
+      return saved
+    },
+  }
+})
 vi.mock('@/apps/slides/router', () => ({
   router: { currentRoute: { value: { params: {}, query: {} } }, replace: vi.fn() },
 }))
-vi.mock('@/apps/drive', () => ({
+vi.mock('@/apps/drive', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   documentSessionUrls: () => [],
-  GUEST_NAME_LIMIT: 50,
   DriveDocumentHeader: {
     props: { recoverable: Boolean, panels: { type: Array, default: () => [] } },
     emits: ['download-changes', 'update:panel'],
@@ -198,17 +268,17 @@ vi.mock('@/apps/drive', () => ({
             onClick: () => emit('download-changes'),
           }),
           h('button', { 'data-versions': '', onClick: () => emit('update:panel', 'versions') }),
+          h('button', { 'data-comments': '', onClick: () => emit('update:panel', 'comments') }),
         ]),
   },
-  DriveCommentAuthor: { render: () => null },
+  DriveCommentList: {
+    inheritAttrs: false,
+    setup: (_props: unknown, { attrs }: SetupContext) => {
+      commentPanel.attrs = attrs
+      return () => h('section', { 'data-comment-list': '' })
+    },
+  },
   useDriveDocumentActions: () => computed(() => ({ back: [], node: [] })),
-  useDriveGuestName: () => ({
-    shown: ref(false),
-    text: ref(''),
-    atLimit: ref(false),
-    maxLength: 50,
-    take: () => undefined,
-  }),
 }))
 // a thumbnail that isn't the current slide asks the surface to change to it
 vi.mock('@/apps/slides/components/NavigationPanel.vue', async () => {
@@ -231,25 +301,42 @@ vi.mock('@/apps/slides/components/NavigationPanel.vue', async () => {
 for (const path of [
   '@/apps/slides/components/SlideContainer.vue',
   '@/apps/slides/components/LayoutDialog.vue',
-  './ExportView.vue',
 ]) {
   vi.doMock(path, () => ({ default: { render: () => null } }))
 }
+
+vi.doMock('./ExportView.vue', () => ({
+  default: {
+    props: { slides: { type: Array, default: () => [] } },
+    setup(props: { slides: unknown[] }) {
+      return () => {
+        exported.slides = props.slides
+        return h('div', [h('span', { style: 'font-family: Anton' }, 'Drawn')])
+      }
+    },
+  },
+}))
 
 vi.doMock('@/apps/slides/components/Toolbar.vue', () => ({
   default: { render: () => h('div', { 'data-toolbar': '' }) },
 }))
 
 vi.doMock('@/apps/slides/components/PropertiesPanel.vue', () => ({
-  default: { render: () => propertiesPanel.real && h(propertiesPanel.real) },
+  default: { render: () => null },
 }))
 
 vi.doMock('@/apps/slides/components/ThemeDialog.vue', () => ({
   default: {
-    emits: ['update'],
-    setup(_: unknown, { emit }: SetupContext) {
-      themeChange.update = (theme) => emit('update', theme)
-      return () => null
+    props: { update: Boolean, open: Boolean },
+    emits: ['create', 'update'],
+    setup(props: { update: boolean; open: boolean }, { emit }: SetupContext) {
+      if (props.update) {
+        themeChange.update = (theme) => emit('update', theme)
+      } else {
+        themeChange.create = (theme) => emit('create', theme)
+      }
+
+      return () => (props.open && !props.update ? h('div', { 'data-theme-pick': '' }) : null)
     },
   },
 }))
@@ -259,17 +346,33 @@ vi.doMock('./SlidesVersionsPanel.vue', () => ({
     props: {
       flush: { type: Function, default: null },
       restore: { type: Function, default: null },
+      confirmRestore: { type: Function, default: null },
       writable: Boolean,
+      previewed: { type: String, default: null },
     },
-    setup(props: {
-      flush: () => Promise<void>
-      restore: (seq: string) => Promise<void>
-      writable: boolean
-    }) {
+    emits: ['update:previewed'],
+    setup(
+      props: {
+        flush: () => Promise<void>
+        restore: (seq: string) => Promise<void>
+        confirmRestore: ((seq: string) => void) | null
+        writable: boolean
+        previewed: string | null
+      },
+      { emit, expose }: SetupContext,
+    ) {
+      versionsPanel.preview = (seq) => emit('update:previewed', seq)
       versionsPanel.flush = props.flush
       versionsPanel.restore = props.restore
+      expose({
+        reload: async () => {
+          versionsPanel.reloads += 1
+        },
+      })
       return () => {
+        versionsPanel.confirmRestore = props.confirmRestore
         versionsPanel.writable = props.writable
+        versionsPanel.previewed = props.previewed
         return null
       }
     },
@@ -306,8 +409,29 @@ function session(
     access,
     panels: ref(panels),
     refreshAccess: async () => {},
-    credentials: { context: undefined, heldContext: undefined },
-    versions: { restore: (seq: string) => versionRestore.run(seq) },
+    credentials: {
+      context: undefined,
+      heldContext: undefined,
+      fetch: async () => new Response(versionBytes.current),
+      group: (nodeIds: readonly string[]) => [
+        { context: undefined, nodeIds: [...nodeIds], fetch: server.fetch },
+      ],
+    },
+    versions: {
+      restore: async () => {},
+      contentUrl: (seq: string) => `/versions/${seq}`,
+    },
+    canShare: ref(false),
+    comments: {
+      list: async () => {
+        driveComments.reads += 1
+        return { threads: driveComments.threads }
+      },
+      create: async (...sent: unknown[]) => {
+        driveComments.sent.push(sent)
+        return { name: 'thread-new' }
+      },
+    },
     media,
   })
 }
@@ -328,7 +452,8 @@ export async function openedSurface({
   slides?: unknown[]
   firstLoad?: Promise<void | Response>
   media?: DocumentSession['media']
-  composite?: Record<string, unknown[] | Error>
+  // a reference's rows, or the node of a converted source whose saved state `savedStates` holds
+  composite?: Record<string, unknown[] | Error | Promise<unknown[]> | { node: string }>
   deck?: Record<string, unknown>
   panels?: DocumentSession['panels']['value']
 } = {}) {
@@ -340,23 +465,11 @@ export async function openedSurface({
 
   server.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
     if (url.includes('/preview')) {
-      previews.push(JSON.parse(String(init?.body)))
       return new Response(JSON.stringify({ preview: null }), { status: 200 })
     }
 
-    if (url.includes('save_slides')) {
-      if (fakeServer.isRefusing) {
-        return new Response(JSON.stringify({ exc_type: 'TimestampMismatchError' }), { status: 417 })
-      }
-
-      const body = JSON.parse(String(init?.body))
-      // an earlier open's leaving push can land here
-      if (body.name === docname) {
-        saves.push(body)
-      }
-
-      const version = saves.length + 1
-      return answer({ modified: `M${version}` })
+    if (url.includes('convert_version')) {
+      return answer(versionConversion.answer)
     }
 
     if (url.includes('get_templates')) {
@@ -364,15 +477,26 @@ export async function openedSurface({
         throw new TypeError('Failed to fetch')
       }
 
-      return answer([])
+      return answer(templates.list)
+    }
+
+    // as the server adopts a pasted slide's pictures: each one becomes this presentation's own
+    if (url.includes('update_slide_attachments')) {
+      const { slide } = JSON.parse(String(init?.body))
+      await slideAdoption.held
+      const sent = typeof slide.elements === 'string' ? JSON.parse(slide.elements) : slide.elements
+      const elements = sent.map((element: { src?: string }) =>
+        element.src ? { ...element, src: `adopted:${element.src}` } : element,
+      )
+      return answer({ ...slide, elements: JSON.stringify(elements) })
     }
 
     if (composite && url.includes('composite_manifest')) {
-      const references = Object.keys(composite).map((reference, index) => ({
+      const references = Object.entries(composite).map(([reference, group], index) => ({
         reference,
         index: index + 1,
         presentation: reference,
-        node: null,
+        node: sourceNode(group),
       }))
 
       return answer({
@@ -387,7 +511,8 @@ export async function openedSurface({
 
     if (composite && url.includes('composite_group')) {
       const [reference] = JSON.parse(String(init?.body)).references
-      const group = composite[reference]
+      // a test can hold a group back
+      const group = await composite[reference]
       if (group instanceof Error) {
         throw group
       }
@@ -401,9 +526,9 @@ export async function openedSurface({
             index: 1,
             presentation: reference,
             readable: true,
-            node: null,
+            node: sourceNode(group),
             composite: false,
-            slides: group,
+            slides: sourceNode(group) ? null : group,
           },
         ],
       })
@@ -415,13 +540,10 @@ export async function openedSurface({
       return heldAnswer
     }
 
-    return answer({
-      ...structuredClone(served),
-      slides,
-      name: docname,
-      is_composite: composite ? 1 : 0,
-      ...deck,
-    })
+    const { slides: _servedRows, ...shell } = structuredClone(served)
+    const opening = { ...shell, name: docname, is_composite: composite ? 1 : 0, ...deck }
+    // the server sends a converted deck's opening with no rows (Q20')
+    return answer(deck?.is_converted ? opening : { ...opening, slides })
   })
   const access = ref({ role })
   const opened = session(docname, access, media, panels)
@@ -457,6 +579,10 @@ export function shown() {
   return document.querySelector('[data-show]') !== null
 }
 
+function sourceNode(group: unknown) {
+  return group && typeof group === 'object' && 'node' in group ? String(group.node) : null
+}
+
 export function thumbnails(root: Element) {
   return [...root.querySelectorAll<HTMLButtonElement>('nav button')]
 }
@@ -475,8 +601,10 @@ export function startsFromEmptyStore() {
   })
 
   afterEach(() => {
-    fakeServer.isRefusing = false
     fakeServer.isFailingTemplates = false
+    versionConversion.answer = {}
+    templates.list = []
+    slideAdoption.held = null
     served.modified = 'M1'
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
@@ -485,12 +613,15 @@ export function startsFromEmptyStore() {
 
 export {
   collabRoom,
+  realtime,
+  savedStates,
+  commentPanel,
   server,
   signedIn,
   versionsPanel,
+  exported,
   themeChange,
   forgetTemplates,
-  propertiesPanel,
   warms,
   visits,
 }

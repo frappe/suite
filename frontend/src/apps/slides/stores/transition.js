@@ -1,6 +1,7 @@
 import { currentSlide, slideIndex, slides } from '@/apps/slides/stores/slide'
 import { ZWSP } from '@/apps/slides/stores/tiptapSetup'
 import { generateUniqueId } from '@/apps/slides/utils/helpers'
+import { transitionKey as getTransitionKey } from '@/apps/slides/utils/transitionKey'
 
 import { editElementCommand, editSlideCommand } from './commands'
 
@@ -344,11 +345,6 @@ const getCommandsToSetTransition = (slide, index, settings) => {
 
   return commands
 }
-
-// elements sharing a key across slides get one reused node, which is what magic move
-// tweens. A table keeps its own id so it cuts with the slide, refId or not
-const getTransitionKey = (element) =>
-  element.type == 'table' ? element.id : element.refId || element.id
 
 export {
   getTransitionKey,

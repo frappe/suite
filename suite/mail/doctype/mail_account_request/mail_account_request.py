@@ -20,6 +20,7 @@ from frappe.utils import (
     validate_email_address,
 )
 
+from suite.mail.account_setup import InvitationClosed, setup_stage
 from suite.mail.directory import account_exists, create_account, delete_account_by_email, get_domains
 from suite.mail.suite_cloud import SuiteCloudUnavailableError
 from suite.mail.utils import is_jmap_server_configured, log_mail_error
@@ -295,7 +296,7 @@ class MailAccountRequest(Document):
         """Forbids action if the request has expired."""
 
         if self.is_expired:
-            frappe.throw(_("This request has expired. Please create a new one."))
+            frappe.throw(_("This request has expired. Please create a new one."), InvitationClosed)
 
     def set_otp(self) -> None:
         """Generates a fresh signup OTP, caching only its hash (see `verify_otp`).
@@ -314,14 +315,26 @@ class MailAccountRequest(Document):
 
     @property
     def invitation(self) -> dict[str, str]:
-        """Who is inviting: the organisation's name and logo (Suite Settings) and the inviter's name."""
+        """Who is inviting: the organisation's name and logo (Suite Settings) and the inviter's name.
+
+        Administrator is a recovery identity, not a person: Suite Cloud invites a new site's first
+        Admin as Administrator. Such an invitation names no inviter.
+        """
 
         from suite.api.account import get_workspace
 
-        inviter = self.invited_by or ""
+        inviter = "" if self.invited_by == "Administrator" else self.invited_by or ""
         return {
             **get_workspace(),
             "invited_by_name": frappe.utils.get_fullname(inviter) if inviter else "",
+            "invited_by_image": frappe.db.get_value("User", inviter, "user_image") if inviter else None,
+            # Where the invitee writes for a new invitation: the inviter's business address
+            # once they have one, otherwise the email they sign in with.
+            "invited_by_email": (
+                frappe.db.get_value("User Settings", {"user": inviter}, "username") or inviter
+                if inviter
+                else ""
+            ),
         }
 
     @frappe.whitelist()
@@ -364,12 +377,19 @@ class MailAccountRequest(Document):
 
         invitation = self.invitation
         workspace, inviter = invitation["workspace_name"], invitation["invited_by_name"]
-        heading = (
-            _("{0} invited you to join {1} on Suite").format(inviter, workspace)
-            if workspace
-            else _("{0} invited you to join Suite").format(inviter)
-        )
-        link = get_url("/mail/signup/" + self.request_key)
+        if inviter:
+            heading = (
+                _("{0} invited you to join {1} on Suite").format(inviter, workspace)
+                if workspace
+                else _("{0} invited you to join Suite").format(inviter)
+            )
+        else:
+            heading = (
+                _("You are invited to join {0} on Suite").format(workspace)
+                if workspace
+                else _("You are invited to join Suite")
+            )
+        link = get_url("/join/" + self.request_key)
         suite_email.send(
             "account-invite",
             self.backup_email,
@@ -485,19 +505,25 @@ class MailAccountRequest(Document):
             # identity, password, API keys, Drive root, or private records.
             identity = f"suite-{self.name}@identity.invalid"
         existing = read(identity)
-        if not frappe.db.exists("User", identity):
-            # Step - 3: Create User
-            user = create_user(
-                identity,
-                first_name,
-                last_name,
-                password,
-                ["Suite User", "Suite Admin"] if self.is_admin else ["Suite User"],
-            )
-            if time_zone:
-                frappe.db.set_value("User", user, "time_zone", time_zone)
-        else:
-            user = identity
+        # Creating the User gives them a Personal Drive root (`after_insert`), so its failure is the Drive stage.
+        with setup_stage("drive"):
+            if not frappe.db.exists("User", identity):
+                user = create_user(
+                    identity,
+                    first_name,
+                    last_name,
+                    password,
+                    ["Suite User", "Suite Admin"] if self.is_admin else ["Suite User"],
+                )
+                if time_zone:
+                    frappe.db.set_value("User", user, "time_zone", time_zone)
+            else:
+                user = identity
+            from suite import drive
+
+            # A User from an earlier attempt may predate its root; this gives it one.
+            if not drive.ensure_personal_root(user):
+                frappe.throw(_("The personal Drive could not be created"))
         self.suite_user = user
         self.db_set("suite_user", user)
         if not existing:
@@ -507,27 +533,29 @@ class MailAccountRequest(Document):
             # request's snapshot before any provider effect can fail (§6.2).
             initialize_user_limit(user, cap=self.combined_cap_bytes or None, use_default=False)
         write(user, account=self.account, operation=self.name, status="Setup failed")
-        provision(
-            user,
-            self.account,
-            password=password,
-            operation=self.name,
-            display_name=f"{first_name} {last_name}" if last_name else first_name,
-            aliases=self._aliases,
-            groups=self._surviving("mail.groups.list_groups", self._groups),
-            mailing_lists=self._surviving("mail.mailing_lists.list_mailing_lists", self._mailing_lists),
-            locale=locale,
-            time_zone=time_zone,
-            disable_receiving=bool(self.disable_receiving),
-        )
-        settings = frappe.get_doc("User Settings", {"user": user})
-        frappe.db.set_value("User Settings", settings.name, "backup_email", self.backup_email)
-        if not temporary:
-            from suite.mail.directory import update_password
+        with setup_stage("mailbox"):
+            provision(
+                user,
+                self.account,
+                password=password,
+                operation=self.name,
+                display_name=f"{first_name} {last_name}" if last_name else first_name,
+                aliases=self._aliases,
+                groups=self._surviving("mail.groups.list_groups", self._groups),
+                mailing_lists=self._surviving("mail.mailing_lists.list_mailing_lists", self._mailing_lists),
+                locale=locale,
+                time_zone=time_zone,
+                disable_receiving=bool(self.disable_receiving),
+            )
+        with setup_stage("account"):
+            settings = frappe.get_doc("User Settings", {"user": user})
+            frappe.db.set_value("User Settings", settings.name, "backup_email", self.backup_email)
+            if not temporary:
+                from suite.mail.directory import update_password
 
-            update_password(user, password)
-            set_account_enabled(user, True)
-        write(user, status="Active", must_change_password=0, temporary_expires_at=None)
+                update_password(user, password)
+                set_account_enabled(user, True)
+            write(user, status="Active", must_change_password=0, temporary_expires_at=None)
         invalidate_measurements(user, self.account)
         # Step - 5: Create Push Subscription
         if frappe.utils.get_url().startswith("https"):

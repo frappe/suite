@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
-const replace = vi.fn(() => Promise.resolve())
+const replace = vi.fn<(route: { query?: { slide?: number } }) => Promise<void>>(() =>
+  Promise.resolve(),
+)
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
 vi.mock('@/apps/slides/router', () => ({

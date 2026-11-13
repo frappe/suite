@@ -18,6 +18,14 @@ describe('parseAcToken', () => {
   })
   it('returns null when the value is not a formula', () => {
     expect(parseAcToken('SUM', 3)).toBeNull()
+    expect(parseAcToken('', 0)).toBeNull()
+  })
+  it('finds tokens inside a function and after a comma', () => {
+    expect(parseAcToken('=SUM(AV', 7)).toEqual({ tok: 'AV', tokStart: 5 })
+    expect(parseAcToken('=IF(A1,TR', 9)).toEqual({ tok: 'TR', tokStart: 7 })
+  })
+  it('leaves cell-reference filtering to the suggestion layer', () => {
+    expect(parseAcToken('=A1', 3)).toEqual({ tok: 'A1', tokStart: 1 })
   })
   it('returns null once inside the parens', () => {
     expect(parseAcToken('=SUM(', 5)).toBeNull()

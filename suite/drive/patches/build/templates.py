@@ -15,7 +15,8 @@ from suite.drive.patches.build.content_mapping import (
 )
 from suite.drive.patches.build.environment import BUILD_BATCH_SIZE, BuildEnvironment
 from suite.drive.patches.build.mapping import GENERAL, PUBLIC
-from suite.drive.patches.build.ports import ACTIVE, WriterBody
+from suite.drive.patches.build.ports import ACTIVE, ContentRow, ContentTarget, WriterBody
+from suite.drive.patches.build.state import ContentConversion
 from suite.drive.patches.build.titles import SiblingTitles
 from suite.drive.patches.build.writer_bodies import convert_template_body
 
@@ -377,6 +378,63 @@ def missing_public_grant(env: BuildEnvironment, node: str) -> list[dict]:
         raise InvalidLegacyContent(f"template {node} has a conflicting {PUBLIC} grant")
 
     return []
+
+
+def hold_template_decks_read_only(
+    env: BuildEnvironment, result: ContentConversion, batch_size: int = BUILD_BATCH_SIZE
+) -> None:
+    """Lower every grant above read on a template deck and its media, but the owner's."""
+    # The old `Presentation` hook answered read for everyone but the deck's
+    # owner, whatever `Drive Permission` or `DocShare` rows it held. Those rows
+    # still become grants, so this runs after the share mapper, the last step
+    # that writes one. A rerun finds nothing left to lower, so each count is
+    # kept as a cumulative issue
+    source, target = _ports(env)
+    for row in (row for kind, row in _template_rows(source, batch_size) if kind == "presentation"):
+        lowered = lower_to_read(target, row)
+        capped = cap_inherited_links(env, row)
+        if lowered and row.name not in result.templates_lowered:
+            result.record_issue(
+                f"Presentation:{row.name}",
+                f"template Presentation {row.name}: {lowered} grants lowered to read",
+                phase="links",
+                cumulative=True,
+            )
+            result.templates_lowered.append(row.name)
+            # first: the other order loses the issue line to a stop between the two
+            env.state.put_content(result)
+
+        if lowered or capped:
+            target.commit()
+
+
+def lower_to_read(target: ContentTarget, row: ContentRow) -> int:
+    """Lower the non-owner grants on one template deck and its media, and answer how many."""
+    nodes: list[str] = []
+    for deck in target.content_nodes("Presentation", row.name):
+        children = target.child_nodes(deck["name"])
+        nodes += [deck["name"], *[child["name"] for child in children]]
+
+    above = [grant for grant in target.grants_above(tuple(nodes), READ) if grant["principal"] != row.owner]
+    for grant in above:
+        target.set_grant_role(grant["node"], grant["principal"], READ)
+
+    return len(above)
+
+
+def cap_inherited_links(env: BuildEnvironment, row: ContentRow) -> int:
+    """Stop a link on a folder above giving more than read, and answer how many decks needed it."""
+    # The deepest open grant decides the open side, so `$PUBLIC` read on the deck
+    # holds every link above it to read. `$GENERAL` read, already on the deck, does
+    # the same for shares above it
+    target = env.content_target
+    capped = 0
+    for deck in target.content_nodes("Presentation", row.name):
+        if PUBLIC not in target.grant_roles(deck["name"], (PUBLIC,)):
+            target.insert_grants([_grant_row(env, deck["name"], PUBLIC, READ)])
+            capped += 1
+
+    return capped
 
 
 def _valid_owner(env, owner):

@@ -326,8 +326,7 @@ class TestTheKeyPrefix(unittest.TestCase):
             patch.object(frappe, "conf", conf),
             patch.object(frappe.local, "storage_driver_instances", {}, create=True),
         ):
-            # sha256(b"suite_build_db")[:12], the framework's default folder
-            self.assertEqual(SiteStorage().key_prefix(), "57b841b5ba8c/")
+            self.assertEqual(SiteStorage().key_prefix(), f"sites/{frappe.local.site}/storage/")
 
 
 class TestTheSiteWiring(StubbedDatabase):

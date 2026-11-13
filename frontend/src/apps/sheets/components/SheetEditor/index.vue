@@ -65,7 +65,7 @@
           :tooltip="protectionNotice"
         />
       </DefineTopbarStatus>
-      <DefineTopbarMenus v-slot="{ openComments }">
+      <DefineTopbarMenus>
         <SheetMenuBar :menus="menuBar" :open-comments="openComments" />
       </DefineTopbarMenus>
       <DefineTopbarActions>
@@ -117,6 +117,9 @@
         :text-wrap-icon="textWrapIcon"
         :border-dropdown-options="borderDropdownOptions"
         :format-menu-options="formatMenuOptions"
+        :font-family-dropdown-options="fontFamilyDropdownOptions"
+        :font-family-label="activeFontFamilyLabel"
+        :open-comments="openComments"
         @number-format="toggleNumberFmt"
         @adjust-decimals="adjustDecimals"
         @adjust-font-size="adjustFontSize"
@@ -128,6 +131,8 @@
         @toggle-format-painter="toggleFormatPainter"
         @merge="toggleMerge"
         @sort="openQuickFilterForActive"
+        @insert-link="openHyperlinkDialog()"
+        @insert-chart="openChartDialog()"
       />
 
       <!-- Row 3 · the formula bar: name box, a divider, then fx and the cell's value -->
@@ -868,6 +873,11 @@ const props = defineProps({
   // The Drive title; it follows a rename.
   title: {
     type: String,
+    default: null,
+  },
+  // Opens the surface's comments panel; the editor alone has none.
+  openComments: {
+    type: Function,
     default: null,
   },
   requestContext: {
@@ -1788,6 +1798,7 @@ const activeFontFamilyLabel = computed(
 const fontFamilyDropdownOptions = computed(() =>
   FONT_FAMILY_OPTIONS.map((o) => ({
     label: o.label,
+    selected: o.label === activeFontFamilyLabel.value,
     onClick: () => setFontFamily(o.value),
   })),
 )
@@ -2028,10 +2039,7 @@ const menuBar = computed(() =>
     numberFormat: toggleNumberFmt,
     adjustDecimals,
     toggleFormat: toggleFmt,
-    fontFamilyOptions: fontFamilyDropdownOptions.value.map((o) => ({
-      ...o,
-      selected: o.label === activeFontFamilyLabel.value,
-    })),
+    fontFamilyOptions: fontFamilyDropdownOptions.value,
     alignOptions: alignDropdownOptions,
     wrapOptions: textWrapDropdownOptions.value,
     toggleMerge,

@@ -167,6 +167,7 @@ which is what an offboarded user looks like.
 | `node_url` | one primary-key read of the node's kind |
 | `node_owner` | one primary-key read of the node's owner |
 | `ensure_folder` | one indexed read of the parent's children; on a miss, one folder create under the parent-chain lock |
+| `record_visit` | one READ check and one upsert of the caller's `Drive Recent` row |
 | `store_file` | one pass over the bytes to hash and store them, then one file create under the parent-chain lock |
 
 No workflow scans `Drive Node`. Every one is bounded work per call, so a
@@ -509,14 +510,22 @@ def people_on(node: str, users: Iterable[str] = ()) -> dict[str, PersonOnNode]:
     return _people_on(node, _principals(), users)
 
 
-def take_version(node: str, *, kind: str = "auto", label: str | None = None, actor: str | None = None) -> int:
+def take_version(
+    node: str,
+    *,
+    kind: str = "auto",
+    label: str | None = None,
+    actor: str | None = None,
+    activity: bool = True,
+) -> int:
     """Store a node's current bytes as an immutable version and return its seq; needs EDIT.
 
     `actor` credits someone other than the caller, as a sweep versioning other people's edits does.
+    `activity=False` records no edit, for a version the system keeps that nobody's edit made.
     """
     from suite.drive._core.versions import take_version as _take_version
 
-    return _take_version(_principals(), node, kind=kind, label=label, actor=actor)
+    return _take_version(_principals(), node, kind=kind, label=label, actor=actor, activity=activity)
 
 
 def check_history_reader(node: str) -> None:
@@ -552,6 +561,13 @@ def ensure_folder(parent: str, title: str) -> str:
     from suite.drive._core.nodes import ensure_folder as _ensure_folder
 
     return _ensure_folder(_principals(), parent, title)
+
+
+def record_visit(node: str) -> None:
+    """Put `node` at the top of the caller's Recent, as opening it does. Needs READ on `node`."""
+    from suite.drive._core.activity import visit
+
+    visit(_principals(), node)
 
 
 def store_file(
@@ -655,6 +671,7 @@ __all__ = (
     "push_preview",
     "read_file",
     "read_version",
+    "record_visit",
     "reduce_storage_reservation",
     "refuse_shared_child_rows",
     "refuse_shared_linked_rows",

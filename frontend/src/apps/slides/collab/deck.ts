@@ -5,19 +5,20 @@
 // Layout (one Y.Doc per deck):
 //
 //   slides   Y.Map   slide id → Y.Map of SLIDE_KEYS
-//   boxes    Y.Map   box id → Y.Map of BOX_KEYS
+//   elements    Y.Map   element id → Y.Map of ELEMENT_KEYS
 //
-// Flat, with no nesting: `parent` names a box's slide. `order` is a string
+// Flat, with no nesting: `parent` names an element's slide. `order` is a string
 // compared by code unit, ties broken by id, so a move writes one value on the
 // moved item and a gap never runs out. `frame` holds position, size and the
 // centred form as one value, so two tabs can't mix them. `text` is a Y.XmlFragment
-// holding the box's rich text. The doc holds no Y.Array and no Y.Text
+// holding the element's rich text. The doc holds no Y.Array and no Y.Text
 
 import * as Y from 'yjs'
 
+import { transitionKey as transitionKeyOf } from '@/apps/slides/utils/transitionKey'
 import { randomId } from '@/platform/random-id'
 
-export const ROOT = { slides: 'slides', boxes: 'boxes' } as const
+export const ROOT = { slides: 'slides', elements: 'elements' } as const
 
 export const SLIDE_FIELDS = new Set([
   'background',
@@ -27,7 +28,7 @@ export const SLIDE_FIELDS = new Set([
   'advanceAfter',
 ])
 
-export const BOX_FIELDS = new Set([
+export const ELEMENT_FIELDS = new Set([
   'type',
   'frame',
   'rotation',
@@ -77,9 +78,9 @@ export const BOX_FIELDS = new Set([
 ])
 
 export const SLIDE_KEYS = ['order', ...SLIDE_FIELDS]
-export const BOX_KEYS = ['parent', 'order', 'text', ...BOX_FIELDS]
+export const ELEMENT_KEYS = ['parent', 'order', 'text', ...ELEMENT_FIELDS]
 
-export const BOX_TYPES = new Set(['text', 'image', 'video', 'shape', 'table'])
+export const ELEMENT_TYPES = new Set(['text', 'image', 'video', 'shape', 'table'])
 export const TYPES_WITH_TEXT = new Set(['text', 'shape', 'table'])
 
 type Item = Y.Map<unknown>
@@ -95,7 +96,7 @@ export interface DeckItem {
 }
 
 export interface DeckSlide extends DeckItem {
-  boxes: DeckItem[]
+  elements: DeckItem[]
 }
 
 const DIGITS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
@@ -119,8 +120,8 @@ function slidesOf(doc: Y.Doc): Y.Map<Item> {
   return doc.getMap(ROOT.slides)
 }
 
-function boxesOf(doc: Y.Doc): Y.Map<Item> {
-  return doc.getMap(ROOT.boxes)
+function elementsOf(doc: Y.Doc): Y.Map<Item> {
+  return doc.getMap(ROOT.elements)
 }
 
 function orderPast(lo: string): string {
@@ -182,8 +183,10 @@ function slidesInOrder(doc: Y.Doc) {
   return inOrder([...slidesOf(doc).entries()])
 }
 
-function boxesInOrder(doc: Y.Doc, slideId: string) {
-  return inOrder([...boxesOf(doc).entries()].filter(([, box]) => box.get('parent') === slideId))
+function elementsInOrder(doc: Y.Doc, slideId: string) {
+  return inOrder(
+    [...elementsOf(doc).entries()].filter(([, element]) => element.get('parent') === slideId),
+  )
 }
 
 // The order that puts an item right after afterId. Null means first. An id that
@@ -202,7 +205,7 @@ function orderOnTop(siblings: Sibling[]) {
   return orderAfter(siblings, siblings.at(-1)?.id ?? null)
 }
 
-// A box under the drawn blank would stay hidden for good, on every tab, since
+// An element under the drawn blank would stay hidden for good, on every tab, since
 // that slide never exists. The tab adds a real slide first
 function refuseDrawnBlank(parent: string) {
   if (parent === DRAWN_BLANK) {
@@ -233,30 +236,30 @@ function writeFields(item: Item, fields: Fields, declared: Set<string>) {
 export function writeDeck(doc: Y.Doc, slides: DeckSlide[]) {
   doc.transact(() => {
     let slideOrder = ''
-    for (const { id, boxes, ...fields } of slides) {
+    for (const { id, elements, ...fields } of slides) {
       slideOrder = orderPast(slideOrder)
       const slide: Item = new Y.Map()
       slidesOf(doc).set(id, slide)
       slide.set('order', slideOrder)
       writeFields(slide, fields, SLIDE_FIELDS)
-      writeBoxes(doc, id, boxes)
+      writeElements(doc, id, elements)
     }
   })
 }
 
-function writeBoxes(doc: Y.Doc, parent: string, boxes: DeckItem[]) {
-  let boxOrder = ''
-  for (const { id, ...fields } of boxes) {
-    boxOrder = orderPast(boxOrder)
-    const box: Item = new Y.Map()
-    boxesOf(doc).set(id, box)
-    box.set('parent', parent)
-    box.set('order', boxOrder)
+function writeElements(doc: Y.Doc, parent: string, elements: DeckItem[]) {
+  let elementOrder = ''
+  for (const { id, ...fields } of elements) {
+    elementOrder = orderPast(elementOrder)
+    const element: Item = new Y.Map()
+    elementsOf(doc).set(id, element)
+    element.set('parent', parent)
+    element.set('order', elementOrder)
     if (typeof fields.type === 'string' && TYPES_WITH_TEXT.has(fields.type)) {
-      box.set('text', new Y.XmlFragment())
+      element.set('text', new Y.XmlFragment())
     }
 
-    writeFields(box, fields, BOX_FIELDS)
+    writeFields(element, fields, ELEMENT_FIELDS)
   }
 }
 
@@ -273,27 +276,27 @@ export function addSlide(doc: Y.Doc, fields: Fields = {}, afterId?: string) {
   return id
 }
 
-// New boxes go on top of their slide
-export function addBox(doc: Y.Doc, parent: string, fields: Fields) {
+// New elements go on top of their slide
+export function addElement(doc: Y.Doc, parent: string, fields: Fields) {
   refuseDrawnBlank(parent)
   const id = randomId()
   doc.transact(() => {
-    const siblings = boxesInOrder(doc, parent)
-    const box: Item = new Y.Map()
-    boxesOf(doc).set(id, box)
-    box.set('parent', parent)
-    box.set('order', orderOnTop(siblings))
+    const siblings = elementsInOrder(doc, parent)
+    const element: Item = new Y.Map()
+    elementsOf(doc).set(id, element)
+    element.set('parent', parent)
+    element.set('order', orderOnTop(siblings))
     if (typeof fields.type === 'string' && TYPES_WITH_TEXT.has(fields.type)) {
-      box.set('text', new Y.XmlFragment())
+      element.set('text', new Y.XmlFragment())
     }
 
-    writeFields(box, fields, BOX_FIELDS)
+    writeFields(element, fields, ELEMENT_FIELDS)
   })
 
   return id
 }
 
-// A slide or box another tab deleted stays deleted: these change nothing then
+// A slide or element another tab deleted stays deleted: these change nothing then
 export function setSlide(doc: Y.Doc, id: string, fields: Fields) {
   const slide = slidesOf(doc).get(id)
   if (slide) {
@@ -301,15 +304,47 @@ export function setSlide(doc: Y.Doc, id: string, fields: Fields) {
   }
 }
 
-export function setBox(doc: Y.Doc, id: string, fields: Fields) {
-  const box = boxesOf(doc).get(id)
-  if (box) {
-    doc.transact(() => writeFields(box, fields, BOX_FIELDS))
+export function setElement(doc: Y.Doc, id: string, fields: Fields) {
+  const element = elementsOf(doc).get(id)
+  if (element) {
+    doc.transact(() => writeFields(element, fields, ELEMENT_FIELDS))
   }
 }
 
-export function boxText(doc: Y.Doc, id: string): Y.XmlFragment | undefined {
-  const text = boxesOf(doc).get(id)?.get('text')
+// The slide's fields in a map of its own at the same id, so of two tabs doing this at once one
+// map wins whole, never a mix of both. Returns where that map stands after later changes
+export function replaceSlide(doc: Y.Doc, id: string, fields: Fields) {
+  const order = slidesOf(doc).get(id)?.get('order')
+  const slide: Item = new Y.Map()
+  doc.transact(() => {
+    slidesOf(doc).set(id, slide)
+    slide.set('order', order)
+    writeFields(slide, fields, SLIDE_FIELDS)
+  })
+
+  return () => {
+    const now = slidesOf(doc).get(id)
+    if (!now) {
+      return 'gone'
+    }
+
+    return now === slide ? 'held' : 'replaced'
+  }
+}
+
+/** Everything the element holds now, as one string to compare with a later one. */
+export function elementState(doc: Y.Doc, id: string) {
+  return JSON.stringify(elementsOf(doc).get(id)?.toJSON() ?? null)
+}
+
+// The key Magic Move pairs this element by across slides
+export function transitionKey(doc: Y.Doc, id: string) {
+  const element = elementsOf(doc).get(id)
+  return transitionKeyOf({ id, type: element?.get('type'), refId: element?.get('refId') })
+}
+
+export function elementText(doc: Y.Doc, id: string): Y.XmlFragment | undefined {
+  const text = elementsOf(doc).get(id)?.get('text')
   return text instanceof Y.XmlFragment ? text : undefined
 }
 
@@ -323,42 +358,42 @@ export function moveSlide(doc: Y.Doc, id: string, afterId: string | null) {
   slide.set('order', orderAfter(others, afterId))
 }
 
-export function moveBox(doc: Y.Doc, id: string, afterId: string | null) {
-  const box = boxesOf(doc).get(id)
-  if (!box || afterId === id) {
+export function moveElement(doc: Y.Doc, id: string, afterId: string | null) {
+  const element = elementsOf(doc).get(id)
+  if (!element || afterId === id) {
     return
   }
 
-  const parent = box.get('parent')
+  const parent = element.get('parent')
   if (typeof parent !== 'string') return
-  const others = boxesInOrder(doc, parent).filter((sibling) => sibling.id !== id)
-  box.set('order', orderAfter(others, afterId))
+  const others = elementsInOrder(doc, parent).filter((sibling) => sibling.id !== id)
+  element.set('order', orderAfter(others, afterId))
 }
 
-// A box moved to another slide goes on top there
-export function moveBoxToSlide(doc: Y.Doc, id: string, parent: string) {
+// An element moved to another slide goes on top there
+export function moveElementToSlide(doc: Y.Doc, id: string, parent: string) {
   refuseDrawnBlank(parent)
-  const box = boxesOf(doc).get(id)
-  if (!box) {
+  const element = elementsOf(doc).get(id)
+  if (!element) {
     return
   }
 
   doc.transact(() => {
-    const siblings = boxesInOrder(doc, parent)
-    box.set('parent', parent)
-    box.set('order', orderOnTop(siblings))
+    const siblings = elementsInOrder(doc, parent)
+    element.set('parent', parent)
+    element.set('order', orderOnTop(siblings))
   })
 }
 
-export function deleteBox(doc: Y.Doc, id: string) {
-  boxesOf(doc).delete(id)
+export function deleteElement(doc: Y.Doc, id: string) {
+  elementsOf(doc).delete(id)
 }
 
-// One change, so no tab ever sees the slide gone and its boxes still there
+// One change, so no tab ever sees the slide gone and its elements still there
 export function deleteSlide(doc: Y.Doc, id: string) {
   doc.transact(() => {
-    for (const { id: boxId } of boxesInOrder(doc, id)) {
-      boxesOf(doc).delete(boxId)
+    for (const { id: elementId } of elementsInOrder(doc, id)) {
+      elementsOf(doc).delete(elementId)
     }
 
     slidesOf(doc).delete(id)
@@ -369,8 +404,22 @@ export function slideIds(doc: Y.Doc) {
   return slidesInOrder(doc).map(({ id }) => id)
 }
 
-export function boxIds(doc: Y.Doc, slideId: string) {
-  return boxesInOrder(doc, slideId).map(({ id }) => id)
+export function elementIds(doc: Y.Doc, slideId: string) {
+  return elementsInOrder(doc, slideId).map(({ id }) => id)
+}
+
+function orderValues(siblings: Sibling[]) {
+  return new Map(siblings.map(({ id, item }) => [id, orderOf(item)]))
+}
+
+// Each slide's saved order value, first slide first
+export function slideOrders(doc: Y.Doc) {
+  return orderValues(slidesInOrder(doc))
+}
+
+// Each element's saved order value, bottom element first
+export function elementOrders(doc: Y.Doc, slideId: string) {
+  return orderValues(elementsInOrder(doc, slideId))
 }
 
 // Reads below fix leftovers of a merge in what they return and never write, so
@@ -384,11 +433,11 @@ function plainFields(id: string, item: Item): DeckItem {
   return { id, ...structuredClone(Object.fromEntries(fields)) }
 }
 
-function boxEntriesBySlide(doc: Y.Doc) {
+function elementEntriesBySlide(doc: Y.Doc) {
   const bySlide = new Map<string, [string, Item][]>()
-  for (const entry of boxesOf(doc).entries()) {
-    const [, box] = entry
-    const parent = box.get('parent')
+  for (const entry of elementsOf(doc).entries()) {
+    const [, element] = entry
+    const parent = element.get('parent')
     if (typeof parent !== 'string') continue
     if (!bySlide.has(parent)) {
       bySlide.set(parent, [])
@@ -401,9 +450,9 @@ function boxEntriesBySlide(doc: Y.Doc) {
 }
 
 // A connector end draws free when its target is gone, or is not on this slide
-function freeLostEnds(box: DeckItem, onSlide: Set<string>) {
+function freeLostEnds(element: DeckItem, onSlide: Set<string>) {
   for (const key of CONNECTOR_ENDS) {
-    const end = box[key]
+    const end = element[key]
     if (
       end &&
       (typeof end !== 'object' ||
@@ -411,29 +460,29 @@ function freeLostEnds(box: DeckItem, onSlide: Set<string>) {
         typeof end.elementId !== 'string' ||
         !onSlide.has(end.elementId))
     ) {
-      box[key] = null
+      element[key] = null
     }
   }
 
-  return box
+  return element
 }
 
-// The deck to draw. A box whose slide is gone has no slide to appear under, and
+// The deck to draw. An element whose slide is gone has no slide to appear under, and
 // a deck with no slides draws one blank that is not in the doc
 export function readSlides(doc: Y.Doc): DeckSlide[] {
-  const bySlide = boxEntriesBySlide(doc)
+  const bySlide = elementEntriesBySlide(doc)
   const slides = slidesInOrder(doc).map(({ id, item }) => {
     const entries = bySlide.get(id) ?? []
-    const onSlide = new Set(entries.map(([boxId]) => boxId))
-    const boxes = inOrder(entries).map((box) =>
-      freeLostEnds(plainFields(box.id, box.item), onSlide),
+    const onSlide = new Set(entries.map(([elementId]) => elementId))
+    const elements = inOrder(entries).map((element) =>
+      freeLostEnds(plainFields(element.id, element.item), onSlide),
     )
 
-    return { ...plainFields(id, item), boxes }
+    return { ...plainFields(id, item), elements }
   })
 
   if (!slides.length) {
-    return [{ id: DRAWN_BLANK, boxes: [] }]
+    return [{ id: DRAWN_BLANK, elements: [] }]
   }
 
   return slides

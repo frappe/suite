@@ -12,6 +12,7 @@ from suite.drive.patches.build.layout import (
     blob_folder,
     blob_key,
     blob_name,
+    key_of_private_object,
     needs_multipart_copy,
     private_key,
 )
@@ -42,19 +43,36 @@ class TestBlobLayout(unittest.TestCase):
         )
         self.assertEqual(blob_folder("acme/", NAME), f"acme/{NAME}/")
 
+    def test_a_private_blob_sits_inside_the_sites_storage_folder(self):
+        prefix = "sites/acme.test/storage/"
+        self.assertEqual(
+            private_key(blob_key(prefix, NAME, "Q3 report.PDF")),
+            f"sites/acme.test/storage/private/{NAME}/Q3 report.PDF",
+        )
+        self.assertEqual(private_key(blob_folder(prefix, NAME)), f"sites/acme.test/storage/private/{NAME}/")
+
     def test_the_key_is_what_the_frameworks_s3_driver_builds(self):
         # The driver's own prefix, from the site config, and `make_key` over
         # it. Filenames the framework rewrites must be rewritten the same way.
-        for driver in (s3_driver(), s3_driver(prefix="acme")):
-            for filename in ("report.PDF", "a/b?.txt", None, "x" * 300 + ".pdf"):
-                with self.subTest(prefix=driver.key_prefix, filename=filename):
-                    key = blob_key(driver.key_prefix, NAME, filename)
-                    self.assertEqual(key, make_key(driver, NAME, filename))
-                    self.assertEqual(private_key(key), driver.object_key(key, is_private=True))
+        driver = s3_driver()
+        for filename in ("report.PDF", "a/b?.txt", None, "x" * 300 + ".pdf"):
+            with self.subTest(filename=filename):
+                key = blob_key(driver.key_prefix, NAME, filename)
+                self.assertEqual(key, make_key(driver, NAME, filename))
+                object_key = driver.object_key(key, is_private=True)
+                self.assertEqual(private_key(key), object_key)
+                self.assertEqual(key_of_private_object(object_key), key)
 
-    def test_the_default_prefix_is_the_database_name_hash(self):
-        # sha256(b"suite_build_db")[:12]
-        self.assertEqual(s3_driver().key_prefix, "57b841b5ba8c/")
+    def test_an_older_blob_key_still_gets_the_frameworks_bucket_key(self):
+        # Blobs written before the storage folder keep their keys.
+        driver = s3_driver()
+        key = f"57b841b5ba8c/{NAME}/report.PDF"
+        object_key = driver.object_key(key, is_private=True)
+        self.assertEqual(private_key(key), object_key)
+        self.assertEqual(key_of_private_object(object_key), key)
+
+    def test_the_prefix_is_the_sites_storage_folder(self):
+        self.assertEqual(s3_driver().key_prefix, f"sites/{frappe.local.site}/storage/")
 
     def test_relocate_leaves_a_build_blob_where_it_is(self):
         # `relocate_blobs` moves a blob unless its key already equals
