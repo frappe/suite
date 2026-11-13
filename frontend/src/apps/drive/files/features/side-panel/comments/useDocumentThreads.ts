@@ -7,12 +7,14 @@ import type { DocumentSession, DocumentThread } from '@/apps/drive'
 const READ_LIMIT_MS = 10_000
 
 /**
- * A document's comment threads as Drive has them, read again on focus and whenever `refresh` is called.
- * No read is sent while `seesThreads` is false: the reader may not see the discussion.
+ * A document's comment threads as Drive has them, read again on focus, when `isOpen` turns true
+ * and whenever `refresh` is called. No read is sent while `seesThreads` is false: the reader may
+ * not see the discussion.
  */
 export function useDocumentThreads(
   session: Pick<DocumentSession, 'comments'>,
   seesThreads: () => boolean = () => true,
+  isOpen: () => boolean = () => false,
 ) {
   const threads = shallowRef<DocumentThread[]>([])
   /** When the read of the threads shown was sent; null before the first read answers. */
@@ -28,7 +30,16 @@ export function useDocumentThreads(
     readAt.value = sentAt
   })
   useEventListener(window, 'focus', () => void reader.read())
-  watch(seesThreads, () => void reader.read(), { immediate: true })
+  // Seeing the threads and opening them at once is one read
+  watch(
+    [seesThreads, isOpen],
+    ([sees, open], previous) => {
+      if (!previous || sees !== previous[0] || (open && !previous[1])) {
+        void reader.read()
+      }
+    },
+    { immediate: true },
+  )
   return { threads, readAt, refresh: reader.read }
 }
 

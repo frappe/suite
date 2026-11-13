@@ -161,7 +161,12 @@ watch(panel, (shown) => {
   }
 })
 // Comments are on the whole presentation, so a draft waits on no text in the room
-const comments = useDocumentComments(props.session, { isShown: () => panel.value === 'comments' })
+// Slides shows comments only in the panel, so it reads them only while the panel is open
+const isCommentsOpen = () => panel.value === 'comments'
+const comments = useDocumentComments(props.session, {
+  isShown: isCommentsOpen,
+  isOpen: isCommentsOpen,
+})
 const exporting = ref(false)
 // A version's slides to print in place of the presentation's, for a version that can't be restored
 const printedSlides = shallowRef<Record<string, unknown>[] | null>(null)

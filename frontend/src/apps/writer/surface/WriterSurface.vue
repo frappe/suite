@@ -134,6 +134,7 @@ const recoveryBanner = ref<InstanceType<typeof RecoveryBanner> | null>(null)
 const seesComments = computed(() => props.session.panels.value.includes('comments'))
 const comments = useDocumentComments(props.session, {
   isShown: () => seesComments.value,
+  isOpen: () => panel.value === 'comments',
   room: () => room.value,
   anchors: { quote: anchorQuote, ends: anchorEnds },
 })

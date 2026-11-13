@@ -7,6 +7,7 @@ import type {
   DocumentComments,
   DocumentPanel,
   DocumentSession,
+  DocumentThread,
   DocumentVersion,
 } from '@/apps/drive'
 import type { VersionRestored } from '@/platform/collab'
@@ -543,10 +544,28 @@ describe('the Comments panel while versions load', () => {
   })
 })
 
-// The real panel over a document's real comment threads, with the reads of them counted
+// A comment someone left on the whole document
+const LEFT_ELSEWHERE = fromPartial<DocumentThread>({
+  name: 'whole',
+  resolved: false,
+  comments: [
+    {
+      name: 'c1',
+      author: 'ben@x.com',
+      author_name: null,
+      person: { full_name: 'Ben Ito' },
+      content: 'Looks good overall',
+      creation: new Date().toISOString(),
+    },
+  ],
+})
+
+// The real panel over a document's real comment threads. Each read answers the next of
+// `answers`, the last one again once they run out; a thrown answer is a failed read
 function panelOverThreads(
   isShown: (panel: DocumentPanel | null) => boolean,
   first: DocumentPanel | null,
+  answers: (() => DocumentThread[])[] = [() => []],
 ) {
   const reads: number[] = []
   const session = fromPartial<DocumentSession>({
@@ -554,7 +573,8 @@ function panelOverThreads(
     comments: {
       list: async () => {
         reads.push(1)
-        return { threads: [] }
+        const answer = answers.length > 1 ? answers.shift()! : answers[0]
+        return { threads: answer() }
       },
     },
     versions: { list: async () => ({ rows: [], next_cursor: null }) },
@@ -564,7 +584,10 @@ function panelOverThreads(
   document.body.append(host)
   const app = createApp({
     setup() {
-      const comments = useDocumentComments(session, { isShown: () => isShown(panel.value) })
+      const comments = useDocumentComments(session, {
+        isShown: () => isShown(panel.value),
+        isOpen: () => panel.value === 'comments',
+      })
       return () =>
         h(DocumentSidePanel, {
           panel: panel.value,
@@ -585,22 +608,68 @@ function panelOverThreads(
   })
   app.use(translationPlugin).mount(host)
   mounted = app
-  return { panel, reads }
+  return { panel, reads, host }
 }
 
+// Comments allowed, as Writer reads them for the text's highlights while the panel is closed
+const allowed = () => true
+// Read only while the panel shows them, as Slides does
+const whileOpen = (panel: DocumentPanel | null) => panel === 'comments'
+
 describe('reading the threads the Comments panel shows', () => {
-  it('reads them once when Comments opens, where they are read only while it is open', async () => {
-    const { panel, reads } = panelOverThreads((open) => open === 'comments', null)
+  it('reads them again on opening Comments when the first read failed', async () => {
+    const failed = () => {
+      throw new Error('offline')
+    }
+    const { panel, reads, host } = panelOverThreads(allowed, null, [failed, () => [LEFT_ELSEWHERE]])
     await settled()
 
     panel.value = 'comments'
     await settled()
 
-    expect(reads).toHaveLength(1)
+    expect([reads.length, host.textContent?.includes('Looks good overall')]).toEqual([2, true])
   })
 
-  it('reads them once when the panel starts on Comments, where they are always read', async () => {
-    const { reads } = panelOverThreads(() => true, 'comments')
+  it('shows a comment left elsewhere on opening Comments, with no room to say it changed', async () => {
+    const { panel, reads, host } = panelOverThreads(allowed, null, [
+      () => [],
+      () => [LEFT_ELSEWHERE],
+    ])
+    await settled()
+
+    panel.value = 'comments'
+    await settled()
+
+    expect([reads.length, host.textContent?.includes('Looks good overall')]).toEqual([2, true])
+  })
+
+  it('reads them once for each opening of Comments, where comments are allowed', async () => {
+    const { panel, reads } = panelOverThreads(allowed, null)
+    await settled()
+    const beforeOpening = reads.length
+
+    for (const next of ['comments', null, 'versions', 'comments'] as const) {
+      panel.value = next
+      await settled()
+    }
+
+    expect([beforeOpening, reads.length]).toEqual([1, 3])
+  })
+
+  it('reads them once for each opening of Comments, where they are read only while open', async () => {
+    const { panel, reads } = panelOverThreads(whileOpen, null)
+    await settled()
+
+    for (const next of ['comments', null, 'comments'] as const) {
+      panel.value = next
+      await settled()
+    }
+
+    expect(reads).toHaveLength(2)
+  })
+
+  it('reads them once when the panel starts on Comments', async () => {
+    const { reads } = panelOverThreads(allowed, 'comments')
     await settled()
 
     expect(reads).toHaveLength(1)

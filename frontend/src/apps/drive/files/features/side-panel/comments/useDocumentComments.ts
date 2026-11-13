@@ -13,6 +13,8 @@ export type DocumentComments = ReturnType<typeof useDocumentComments>
 interface CommentOptions {
   /** Whether the person may see the discussion; no threads are read while false. */
   isShown: () => boolean
+  /** Whether the comments panel is open; each opening reads the threads again. */
+  isOpen: () => boolean
   /** The room a draft on text waits on; whole-document comments wait on none. */
   room?: () => CollabRoom | null
   /** Where the app's comments point; whole-document comments only when left out. */
@@ -26,9 +28,9 @@ interface CommentOptions {
  */
 export function useDocumentComments(
   session: Pick<DocumentSession, 'comments' | 'nodeId'>,
-  { isShown, room = () => null, anchors }: CommentOptions,
+  { isShown, isOpen, room = () => null, anchors }: CommentOptions,
 ) {
-  const { threads: readThreads, readAt, refresh } = useDocumentThreads(session, isShown)
+  const { threads: readThreads, readAt, refresh } = useDocumentThreads(session, isShown, isOpen)
   const { threads, actions } = useThreadChanges({ session, readThreads, readAt, refresh })
   const drafts = useCommentDrafts({
     session,
