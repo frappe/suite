@@ -272,15 +272,10 @@ function placedRun(
   return { from, to, fromPlace, toPlace }
 }
 
-// Runs in one textblock, or with only block boundaries between them, are one stretch; any leaf
-// between them, a hard break or an image as well, counts as content
+// Runs with only block boundaries between them are one stretch; any word or leaf between them,
+// a hard break or an image as well, splits them, even in one textblock
 function joins(doc: PMNode, before: PlacedRun, after: PlacedRun) {
-  const end = before.toPlace
-  const start = after.fromPlace
-  return (
-    doc.resolve(end).parent === doc.resolve(start).parent ||
-    doc.textBetween(end, start, '', '\ufffc') === ''
-  )
+  return doc.textBetween(before.toPlace, after.fromPlace, '', '\ufffc') === ''
 }
 
 // Old Writer copied a comment's mark with its words, so one id can sit in places far apart

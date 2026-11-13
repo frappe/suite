@@ -16,7 +16,12 @@ import { canonicalMediaKey } from '@/apps/slides/utils/canonicalMediaKey'
 import { loadedAssets } from '@/apps/slides/utils/loadedAssets'
 import { getAttachmentUrl } from '@/apps/slides/utils/mediaUploads'
 import { fetchPinned } from '@/apps/slides/utils/offlineRequests'
-import { collectMediaSources, entryAssets, startupUrls } from '@/apps/slides/utils/pinTargets'
+import {
+  collectMediaSources,
+  entryAssets,
+  presentationUrl,
+  startupUrls,
+} from '@/apps/slides/utils/pinTargets'
 import { clearVisitedCopies } from '@/apps/slides/utils/serviceWorker'
 import { isOutOfSpace, PINNED_CACHE_NAME, RECORD_PREFIX } from '@/apps/slides/utils/slidesCaches'
 import { isMediaContentType } from '@/apps/slides/utils/slidesRequests'
@@ -476,6 +481,23 @@ const removeOfflineCopy = async (id) => {
   localStorage.removeItem(recordKey(id))
 }
 
+async function holdsRows(cache, key) {
+  const body = await (await cache.match(key))?.json().catch(() => null)
+  return Array.isArray(body?.message?.slides)
+}
+
+// Q18′: a copy saved before the presentation went live would open its rows offline in place of the room;
+// the owner's refresh replaces them, and anyone else's copy goes
+async function removeRowedOfflineCopy(id) {
+  if (!readRecord(id)) {
+    return
+  }
+
+  if (await holdsRows(await openPinnedCache(), presentationUrl(id))) {
+    await removeOfflineCopy(id)
+  }
+}
+
 // every copy of the node, found by the node because a refused open never learns the docname
 async function removeNodeOfflineCopy(node) {
   forget(node)
@@ -584,6 +606,7 @@ export {
   cancelOfflineCopy,
   removeOfflineCopy,
   removeNodeOfflineCopy,
+  removeRowedOfflineCopy,
   refreshOfflineStatus,
   warmOfflineCopyAssets,
 }

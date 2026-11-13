@@ -66,7 +66,7 @@
         >
           <ListView
             ref="listView"
-            class="h-full min-h-0"
+            class="h-full min-h-0 !w-full"
             :columns="COLUMNS"
             :rows="rows"
             row-key="email"
@@ -273,23 +273,24 @@ const removeModalOptions = computed(() => ({
   ],
 }))
 
-// `fr` units (numbers) so the columns share the row width instead of overflowing (percentages plus the
-// checkbox column would exceed 100% and add a horizontal scrollbar).
+// Shares of the panel's width, each free to shrink below its contents (`minmax(0, …)`), in a list
+// held to the panel's width (`!w-full` over the list's own `w-max`): sized to its longest address
+// instead, the table ran past the panel and clipped Last Modified.
 const COLUMNS = [
   {
     label: __('Email or Domain'),
     key: 'email',
-    width: 3,
+    width: 'minmax(0, 3fr)',
   },
   {
     label: __('Action'),
     key: 'action',
-    width: 1,
+    width: 'minmax(0, 1fr)',
   },
   {
     label: __('Last Modified'),
     key: 'modified',
-    width: 1,
+    width: 'minmax(0, 1fr)',
   },
 ]
 const MESSAGE = __(

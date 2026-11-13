@@ -27,7 +27,10 @@ vi.hoisted(() => {
 })
 
 vi.mock('frappe-ui', async () => (await import('./writer-surface-fakes')).fakeFrappeUi())
-vi.mock('@/apps/drive', async () => (await import('./writer-surface-fakes')).fakeDrive())
+vi.mock('@/apps/drive', async (importOriginal) => {
+  const { fakeDrive } = await import('./writer-surface-fakes')
+  return fakeDrive(await importOriginal<typeof import('@/apps/drive')>())
+})
 vi.mock('@/platform/session', async (importOriginal) => {
   const { fakeSession } = await import('./writer-surface-fakes')
   return fakeSession(await importOriginal<typeof import('@/platform/session')>())
@@ -55,9 +58,9 @@ vi.mock('@/platform/collab/UsersBar.vue', () => ({ default: { render: () => null
 vi.mock('./WriterDocumentMenu.vue', async () =>
   (await import('./writer-surface-fakes')).fakeDocumentMenu(),
 )
-vi.mock('@/apps/writer/composables/useUsers', async (importOriginal) => {
-  const { fakeUsers } = await import('./writer-surface-fakes')
-  return fakeUsers(await importOriginal<typeof import('@/apps/writer/composables/useUsers')>())
+vi.mock('@/platform/collab/names', async (importOriginal) => {
+  const { fakeNames } = await import('./writer-surface-fakes')
+  return fakeNames(await importOriginal<typeof import('@/platform/collab/names')>())
 })
 vi.mock('./VersionPreview.vue', async () =>
   (await import('./writer-surface-fakes')).fakeVersionPreview(),

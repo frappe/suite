@@ -14,7 +14,6 @@ from suite.drive._core import comments
 from suite.drive.framework import principals_for
 from suite.slides import content as slides_content
 from suite.slides import drive as slides_drive
-from suite.slides.api.slides import save_slides
 from suite.slides.content import APP, CONVERTER_BUILD
 from suite.slides.content.tests.support import OWNER, LoggedDeckCase, delete_log, opened
 from suite.slides.doctype.presentation.presentation import apply_theme, get_public_presentation
@@ -580,18 +579,6 @@ class TestOldPathsOnAConvertedDeck(ConversionCase):
         [saved] = self.rows(node)
         self.assertEqual(saved.elements, "[]")
 
-    def test_save_slides_is_refused_and_writes_nothing(self):
-        node = self.old_deck([text_element("element")])
-        self.convert(node)
-        docname = slides_drive.docname_for_node(node)
-        before = self.rows(node)
-        modified = str(frappe.db.get_value("Presentation", docname, "modified"))
-
-        with self.assertRaises(drive.DriveConflict):
-            save_slides(docname, [{"client_id": "new", "elements": "[]"}], modified)
-
-        self.assertEqual(self.rows(node), before)
-
     def test_a_retry_of_the_media_patch_leaves_a_converted_decks_rows(self):
         converted_node = self.old_deck([{"id": "pic", "type": "image", "src": "/private/files/old.png"}])
         self.convert(converted_node)
@@ -649,9 +636,9 @@ class TestOldPathsOnAConvertedDeck(ConversionCase):
         node = self.old_deck([text_element("element")])
         waiting = self.old_deck([text_element("element")])
         self.convert(node)
-        docname = slides_drive.docname_for_node(node)
         before = self.rows(node)
-        modified = str(frappe.db.get_value("Presentation", docname, "modified"))
+        deck = frappe.get_doc("Presentation", slides_drive.docname_for_node(node))
+        deck.slides[0].elements = "[]"
         moved: list[str] = []
 
         # A conversion that landed after this transaction's snapshot shows only to a locking read
@@ -662,7 +649,7 @@ class TestOldPathsOnAConvertedDeck(ConversionCase):
             ),
         ):
             with self.assertRaises(drive.DriveConflict):
-                save_slides(docname, [{"client_id": "new", "elements": "[]"}], modified)
+                deck.save()
 
             move_file_media_to_drive.execute()
 

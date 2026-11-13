@@ -1,3 +1,4 @@
+import { fromAny } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { computed, ref } from 'vue'
 
@@ -17,7 +18,10 @@ vi.mock('@/apps/slides/stores/element', () => ({
 }))
 vi.mock('frappe-ui', () => ({ toast: {}, FileUploadHandler: class {} }))
 
-const { getAttachmentUrl, mediaFileName } = await import('./mediaUploads')
+const { fileUploadHandler, getAttachmentUrl, handleUploadedMedia, mediaFileName } =
+  await import('./mediaUploads')
+const { addMediaElement } = await import('@/apps/slides/stores/element')
+const { toast } = await import('frappe-ui')
 const { setDocumentMedia } = await import('../stores/documentMedia')
 
 type Status = 'loading' | 'ready' | 'refused'
@@ -85,5 +89,24 @@ describe('the file name the panel shows', () => {
     expect(mediaFileName('/private/files/old-logo.png')).toBe('old-logo.png')
     expect(mediaFileName('/private/files/100%.png')).toBe('100%.png')
     expect(mediaFileName(undefined)).toBe('')
+  })
+})
+
+// Q18′: a picture is a Drive upload, so offline none can be added, even to a live presentation
+describe('a picture added offline', () => {
+  it('adds no element and says the upload failed', async () => {
+    fileUploadHandler.upload = vi.fn(async () => {
+      throw new TypeError('Failed to fetch')
+    })
+    toast.promise = vi.fn()
+
+    handleUploadedMedia([new File(['x'], 'cat.png', { type: 'image/png' })])
+
+    const [upload, shown] = fromAny<[Promise<unknown>, { error: string }], unknown>(
+      vi.mocked(toast.promise).mock.lastCall,
+    )
+    await expect(upload).rejects.toThrow('Failed to fetch')
+    expect(shown.error).toBe('Upload failed. Please try again.')
+    expect(addMediaElement).not.toHaveBeenCalled()
   })
 })

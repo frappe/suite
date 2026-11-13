@@ -4,25 +4,12 @@ import { computed, ref } from 'vue'
 import { api, client } from '@/api'
 import { normalizeZIndices } from '@/apps/slides/stores/element'
 import { normalizeColor } from '@/apps/slides/utils/color'
-import { serverAnswers } from '@/apps/slides/utils/offlineRequests'
 import { migrateShadow } from '@/apps/slides/utils/oldShadow'
 import { appDocumentTitle } from '@/platform/page-meta'
 import { randomId } from '@/platform/random-id'
-import { getCookieSessionUser } from '@/platform/session'
-import { translate } from '@/platform/translation'
 
-import { draftOutcome, needsServerCheck } from './draftOutcome'
 import { recordVisit } from './driveVisit'
-import { lockedElsewhere } from './editLock'
 import { commandHistory } from './historyMeta'
-import {
-  clearSaveFailure,
-  getPresentationFromLocalDB,
-  markClean,
-  markDirty,
-  saveRefused,
-  writeDraft,
-} from './saving'
 import { slides } from './slide'
 
 const presentationDoc = ref()
@@ -33,18 +20,14 @@ const presentationId = ref(null)
 // the user may not write this presentation at all
 const viewOnly = ref(false)
 
-// Another tab of this browser edits the presentation, or the server refused this
-// tab's version. Only the refusal needs a reload.
-const writesBlocked = computed(() => lockedElsewhere.value || saveRefused.value)
-// That, or the user has no write access.
-const inReadonlyMode = computed(() => viewOnly.value || writesBlocked.value)
+const inReadonlyMode = computed(() => viewOnly.value)
 
 const applyReverseTransition = ref(false)
 
 // The open surface binds its owner-selected access context to this deck.
 const documentContexts = new Map()
-function setDocumentContext(id, context, onRefused, keepDiscarded) {
-  const binding = { context, onRefused, keepDiscarded }
+function setDocumentContext(id, context) {
+  const binding = { context }
   documentContexts.set(id, binding)
   return () => {
     if (documentContexts.get(id) === binding) documentContexts.delete(id)
@@ -186,18 +169,15 @@ const parseElements = (value, slide) => {
   return normalizeZIndices(parsed)
 }
 
-// Rescue decks saved with duplicate client_ids. Returns true if anything changed.
+// Rescue decks saved with duplicate client_ids.
 const ensureUniqueClientIds = (slides) => {
   const seen = new Set()
-  let repaired = false
   for (const slide of slides) {
     if (seen.has(slide.clientId)) {
       slide.clientId = randomId()
-      repaired = true
     }
     seen.add(slide.clientId)
   }
-  return repaired
 }
 
 const normalizeSlideDoc = (doc) => {
@@ -215,7 +195,15 @@ const normalizeSlideDoc = (doc) => {
     delete slide.advance_after
     delete slide.client_id
   }
-  return ensureUniqueClientIds(doc.slides || [])
+
+  ensureUniqueClientIds(doc.slides || [])
+}
+
+/** Stored slide rows as the store draws them, as a presentation on its rows opens. Leaves `rows` alone. */
+export function rowSlides(rows) {
+  const doc = { slides: JSON.parse(JSON.stringify(rows)) }
+  normalizeSlideDoc(doc)
+  return doc.slides
 }
 
 const slidesLength = ref(0)
@@ -242,100 +230,18 @@ function currentOpening() {
 const fetchDoc = (name) =>
   client.query(api.slides.documents.get, { name }, { context: contextFor(name) })
 
-// false leaves the draft in place: with no copy, it is the only place the edits live
-function copyDiscarded(name, content) {
-  const keepDiscarded = documentContexts.get(name)?.keepDiscarded
-  if (!keepDiscarded) {
-    return false
-  }
-
-  try {
-    keepDiscarded(content)
-    return true
-  } catch {
-    return false
-  }
-}
-
-// local content skips the load pipeline; migrate it here too
-function parsedLocalSlides(content) {
-  const parsed = JSON.parse(JSON.stringify(content))
-  for (const slide of parsed) {
-    slide.background = normalizeColor(slide.background)
-    slide.elements = parseElements(slide.elements, slide)
-  }
-
-  return parsed
-}
-
-// touches no editor state, so a save during the load still targets what is on screen
-const fetchPresentation = async (name, load) => {
+const fetchPresentation = async (name) => {
   const doc = structuredClone(await fetchDoc(name))
-  const local = await getPresentationFromLocalDB(name).catch(() => null)
-  // the push this draft waited on landed after all
-  const landed = local?.dirty && holdsOwnRows(doc, local.content.map(toSlideRow))
-
-  const clientIdsRepaired = normalizeSlideDoc(doc)
+  normalizeSlideDoc(doc)
   for (const slide of doc.slides || []) {
     slide.elements = await transformElements(slide.elements)
   }
 
-  // the rows of a deck the layer holds or is about to take are only there to read,
-  // so a draft stays on the device, unrestored
-  if (doc.is_converted || doc.conversion) {
-    return { doc, content: JSON.parse(JSON.stringify(doc.slides || [])), dirty: false }
-  }
-
-  const hasServerAnswered = needsServerCheck(local, doc.modified, landed) && (await serverAnswers())
-  const outcome = draftOutcome(local, doc.modified, landed, hasServerAnswered)
-  const keepBase = outcome === 'keep'
-  const isOnServedBase = outcome === 'restore'
-  // the draft belongs to the tab that can write, on the presentation it is still opening;
-  // this one neither rewrites nor reports it
-  const isOwnDraft = local?.dirty && isLatestLoad(load) && !viewOnly.value && !lockedElsewhere.value
-  const isUncopied =
-    outcome === 'discard' && isOwnDraft && !landed && !copyDiscarded(name, local.content)
-
-  if (keepBase || isOnServedBase || isUncopied) {
-    if (keepBase || isUncopied) {
-      // a draft with no base gets the empty one: the server refuses it, so the hold takes over
-      doc.modified = local.baseModified ?? ''
-    }
-
-    const restored = parsedLocalSlides(local.content)
-    const repaired = ensureUniqueClientIds(restored)
-    // a clean row here is what the last successful save sent, since a retired one
-    // is discarded: it is the server content at baseModified, with nothing to push
-    return { doc, content: restored, dirty: local.dirty || repaired }
-  }
-
-  if (isOwnDraft) {
-    if (!landed) {
-      toast.warning(
-        translate('Your changes never reached the server. They are kept on this device.'),
-      )
-    }
-
-    // left dirty, the same draft is found and discarded again on every load; so is an
-    // older tick's retry landing over this write, unless it is built on the served base
-    await writeDraft({
-      ...local,
-      dirty: false,
-      updatedAt: Date.now(),
-      baseModified: landed ? doc.modified : local.baseModified,
-    })
-  }
-
-  // persist the repair
-  return {
-    doc,
-    content: JSON.parse(JSON.stringify(doc.slides || [])),
-    dirty: clientIdsRepaired,
-  }
+  return { doc, content: JSON.parse(JSON.stringify(doc.slides || [])) }
 }
 
-const showPresentation = (id, { doc, content, dirty }) => {
-  // a refused tab reloading in place stays in the same opening
+const showPresentation = (id, { doc, content }) => {
+  // a reload in place stays in the same opening
   if (presentationId.value !== id) {
     opening++
   }
@@ -343,9 +249,6 @@ const showPresentation = (id, { doc, content, dirty }) => {
   presentationDoc.value = doc
   slides.value = content
   slidesLength.value = content.length
-  // a tab that may not write has nothing of its own to push
-  if (dirty && !inReadonlyMode.value) markDirty()
-  else markClean()
 }
 
 const fetchReadonly = async (name, reference) => {
@@ -354,107 +257,6 @@ const fetchReadonly = async (name, reference) => {
   )
   normalizeSlideDoc(doc)
   return doc
-}
-
-// rows are matched by client_id on the server, so name, parent and idx stay out
-const toSlideRow = (slide) => ({
-  client_id: slide.clientId,
-  background: slide.background,
-  elements: slide.corruptElements ?? JSON.stringify(slide.elements, null, 2),
-  transition: slide.transition,
-  transition_duration: slide.transitionDuration,
-  fade_unmatched_elements: slide.fadeUnmatchedElements,
-  advance_after: slide.advanceAfter,
-})
-
-// what a push sends, as the server stores and returns it: Data comes back as strings, Check as 0/1
-const rowKey = (row) =>
-  JSON.stringify([
-    row.client_id,
-    row.background,
-    row.elements,
-    row.transition || null,
-    String(row.transition_duration ?? ''),
-    Number(row.fade_unmatched_elements ?? 0),
-    String(row.advance_after ?? ''),
-  ])
-
-const rowKeys = (rows) => rows.map(rowKey).join('\n')
-
-// true when this user's push put exactly these rows on the server
-const holdsOwnRows = (doc, rows) =>
-  doc.modified_by === getCookieSessionUser() && rowKeys(doc.slides || []) === rowKeys(rows)
-
-// the push the client gave up on; the server may still take it in, and edits since build on it
-let lastFailedPush = null
-
-// the version a push left behind, or null if the server holds something else
-const landedVersion = async (id, rows) => {
-  const doc = await fetchDoc(id)
-  if (holdsOwnRows(doc, rows)) return doc.modified
-  if (lastFailedPush?.id !== id || !holdsOwnRows(doc, lastFailedPush.rows)) return null
-  // what is here now goes out again on the version that push made
-  if (presentationDoc.value?.name === id) presentationDoc.value.modified = doc.modified
-  return null
-}
-
-// a push that never answers would otherwise hold the save gate for good
-const SAVE_TIMEOUT_MS = 30_000
-
-// `cancel` aborts the push too: saving.js cancels it when edit access goes
-const pushSlides = async (id, rows, baseModified, cancel) => {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), SAVE_TIMEOUT_MS)
-  const abort = () => controller.abort()
-  if (cancel?.aborted) abort()
-  cancel?.addEventListener('abort', abort, { once: true })
-  let response
-  try {
-    response = await client.mutation(
-      api.slides.documents.save,
-      {
-        name: id,
-        slides: rows,
-        base_modified: baseModified,
-      },
-      { context: contextFor(id), signal: controller.signal, silent: true },
-    )
-  } finally {
-    clearTimeout(timer)
-    cancel?.removeEventListener('abort', abort)
-  }
-  return response.modified
-}
-
-// as a load would read `content` and a push send it: a server row has its own name and types
-function showsSlides(content) {
-  return (
-    rowKeys(parsedLocalSlides(content).map(toSlideRow)) === rowKeys(slides.value.map(toSlideRow))
-  )
-}
-
-const savePresentationDoc = async (id, updatedSlides, baseModified, cancel) => {
-  const rows = updatedSlides.map(toSlideRow)
-  let modified
-  try {
-    modified = await pushSlides(id, rows, baseModified, cancel)
-  } catch (err) {
-    if (err?.type !== 'TimestampMismatchError') {
-      if (err?.status === 401 || err?.status === 403) documentContexts.get(id)?.onRefused?.()
-      lastFailedPush = { id, rows }
-      throw err
-    }
-    // a push the client gave up on may have landed anyway
-    modified = await landedVersion(id, rows)
-    if (!modified) throw err
-  }
-  lastFailedPush = null
-
-  // the editor can move on mid-save; stamping then would mark another
-  // presentation with this save's version
-  if (presentationDoc.value?.name === id) presentationDoc.value.modified = modified
-
-  return modified
 }
 
 // returns the committed doc, or null if a later load took over
@@ -467,15 +269,14 @@ const initPresentationDoc = async (id, readonly = false, load = startLoad()) => 
     if (doc.is_composite) {
       doc = await fetchReadonly(id, api.slides.documents.composite)
     }
-    loaded = { doc, content: JSON.parse(JSON.stringify(doc.slides || [])), dirty: false }
+
+    loaded = { doc, content: JSON.parse(JSON.stringify(doc.slides || [])) }
   } else {
-    loaded = await fetchPresentation(id, load)
+    loaded = await fetchPresentation(id)
   }
 
   if (!isLatestLoad(load)) return null
 
-  // a refused tab reloading in place writes again once the server copy is on screen
-  clearSaveFailure()
   showPresentation(id, loaded)
   // on `/d/` the Drive document session records the visit when it opens
   if (!documentContexts.has(id) && loaded.doc.node) recordVisit(loaded.doc.node).catch(() => {})
@@ -518,9 +319,6 @@ const resetEditorState = () => {
   slides.value = []
   slidesLength.value = 0
   commandHistory.clearHistory()
-  markClean()
-  clearSaveFailure()
-  // a push landing now would otherwise read the blank slides back as this presentation's edit
   presentationId.value = null
 }
 
@@ -537,12 +335,8 @@ export {
   measureNow,
   viewOnly,
   inReadonlyMode,
-  writesBlocked,
-  savePresentationDoc,
   initPresentationDoc,
   currentOpening,
-  showsSlides,
-  startLoad,
   resetEditorState,
   pageTitle,
   setDocumentContext,

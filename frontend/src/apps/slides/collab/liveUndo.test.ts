@@ -16,6 +16,7 @@ import {
 } from './deck'
 import { openLiveDeck, type LiveStep, type StoreItem, type StoreSlide } from './liveDeck'
 import { openLiveUndo } from './liveUndo'
+import { restoreEdit } from './restore'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
 
@@ -64,7 +65,13 @@ function tabOn(
     canWrite = true,
     boundElementId = null,
     selected = [],
-  }: { canWrite?: boolean; boundElementId?: string | null; selected?: string[] } = {},
+    restoreRev = () => 0,
+  }: {
+    canWrite?: boolean
+    boundElementId?: string | null
+    selected?: string[]
+    restoreRev?: () => number
+  } = {},
 ) {
   const store = reactive<{ slides: StoreSlide[] }>({ slides: [] })
   const steps: LiveStep[] = []
@@ -77,6 +84,7 @@ function tabOn(
     isSelected: (id) => selected.includes(id),
     setBoundText: () => {},
     canWrite: () => canWrite,
+    restoreRev,
     fontsPending: () => false,
     onRenamed: () => {},
     onMerged: () => {},
@@ -198,6 +206,7 @@ describe('undo takes back only what this tab did', () => {
       isSelected: () => false,
       setBoundText: () => {},
       canWrite: () => canWrite,
+      restoreRev: () => 0,
       fontsPending: () => false,
       onRenamed: () => {},
       onMerged: () => {},
@@ -939,5 +948,70 @@ describe('an element deleted under the person typing in it', () => {
     mine.deck.undo()
 
     expect(mine.deletedWhileBound).toEqual([])
+  })
+})
+
+describe('after a restore', () => {
+  it('undo takes back nothing done before it', () => {
+    const { one, other } = twoTabs()
+    presentation(one)
+    const mine = tabOn(one)
+    change(mine, () => (mine.element('a').opacity = 50))
+
+    mine.deck.forgetSteps()
+    mine.deck.undo()
+    mine.deck.redo()
+
+    expect(saved(other, 'a')!.get('opacity')).toBe(50)
+    expect(mine.steps).toEqual([])
+  })
+
+  it('puts nothing a tab wrote before it onto an element the restore brings back', () => {
+    const { one, other, sync } = twoTabsApart()
+    presentation(one)
+    sync()
+    const version = Y.encodeStateAsUpdate(one)
+    let restores = 0
+    const mine = tabOn(one)
+    const theirs = tabOn(other, { restoreRev: () => restores })
+    change(theirs, () => (theirs.element('a').rotation = 45))
+    sync()
+    change(mine, () => mine.store.slides[0].elements.shift())
+    sync()
+
+    restoreEdit(one, version)
+    // the room counts the restore before its rows reach the tab
+    restores = 1
+    sync()
+    sync()
+
+    for (const doc of [one, other]) {
+      expect(saved(doc, 'a')!.get('rotation')).toBeUndefined()
+    }
+  })
+
+  it('leaves nothing for another tab to undo from before the restore', () => {
+    const { one, other, sync } = twoTabsApart()
+    presentation(one)
+    sync()
+    const kept = new Y.Doc()
+    Y.applyUpdate(kept, Y.encodeStateAsUpdate(one))
+    setElement(kept, 'b', { opacity: 60 })
+    let restores = 0
+    const theirs = tabOn(other, { restoreRev: () => restores })
+    change(theirs, () => (theirs.element('b').opacity = 30))
+    sync()
+
+    restoreEdit(one, Y.encodeStateAsUpdate(kept))
+    restores = 1
+    sync()
+    theirs.deck.undo()
+    sync()
+
+    for (const doc of [one, other]) {
+      expect(saved(doc, 'b')!.get('opacity')).toBe(60)
+    }
+
+    expect(theirs.steps).toEqual([])
   })
 })

@@ -171,16 +171,26 @@ describe('oldCommentAnchors', () => {
     expect(placed(doc, anchors.c1)).toEqual({ start: ['top', 0], end: ['top', 3], quote: 'top' })
   })
 
-  it('spans the unmarked words inside one comment, so the comment keeps one place', () => {
+  it('keeps two pieces of one comment in a paragraph apart, never marking the words between', () => {
     const doc = docWith(yParagraph(['ab', comment('c3')], ['XY'], ['cd', comment('c3')]))
 
-    const { anchors } = oldCommentAnchors(doc.getXmlFragment(BODY_FIELD), schema)
+    const { anchors, copies } = oldCommentAnchors(doc.getXmlFragment(BODY_FIELD), schema)
 
     expect(placed(doc, anchors.c3)).toEqual({
       start: ['abXYcd', 0],
-      end: ['abXYcd', 6],
-      quote: 'abXYcd',
+      end: ['abXYcd', 2],
+      quote: 'ab',
     })
+    expect(copies).toEqual([{ id: 'c3', text: 'cd' }])
+  })
+
+  it('keeps one piece of a comment whole where another mark splits its words', () => {
+    const doc = docWith(yParagraph(['ab', comment('c3')], ['XY', { ...comment('c3'), bold: true }]))
+
+    const { anchors, copies } = oldCommentAnchors(doc.getXmlFragment(BODY_FIELD), schema)
+
+    expect(placed(doc, anchors.c3)).toEqual({ start: ['abXY', 0], end: ['abXY', 4], quote: 'abXY' })
+    expect(copies).toEqual([])
   })
 
   it('quotes a comment holding a mention as the editor quotes it', () => {
