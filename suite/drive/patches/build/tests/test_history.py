@@ -1190,6 +1190,77 @@ class WriterBodyTest(unittest.TestCase):
         self.assertEqual((content.writer_bodies_rewritten, content.writer_versions_rewritten), (1, 1))
         self.assertEqual(content.writer_media_copied, 0)
 
+    def test_an_old_prod_address_inside_another_value_stays_as_it_is(self):
+        # Only a whole picture address loses its host. A proxy's address, a
+        # sentence and a caption that merely contain one are someone's words
+        path = embed("own-1")
+        prod = "https://drive.frappe.io" + path
+        proxy = "https://proxy.example/fetch/" + prod
+        html = f'<p><img src="{proxy}"></p><p>copy {prod} here</p><p><img src="{path}" alt="was {prod}"></p>'
+        body = WriterBody(
+            content=yjs_body(
+                paragraph(image(src=proxy)),
+                paragraph(image(src=path, alt=f"was {prod}")),
+            ),
+            html=html,
+        )
+        self.add_document("reader-doc", "node-b", body=body)
+        self.add_picture("own-1", "node-b", "blob-own", "own.png")
+        self.source.writer_version_rows.append(
+            WriterVersionRow("version-1", "reader-doc", html, owner=OWNER, creation=STAMP, modified=STAMP)
+        )
+
+        content = convert_history_and_comments(self.env)
+
+        self.assertEqual(self.source.writer_bodies["reader-doc"], body)
+        version = self.target.version_rows["version-1"]
+        self.assertEqual(self.target.read_blob(version["blob"]).decode("utf-8"), html)
+        self.assertEqual((content.writer_bodies_rewritten, content.writer_versions_rewritten), (0, 0))
+
+    def test_an_old_prod_host_in_capitals_or_with_its_default_port_becomes_a_site_path(self):
+        # A host is the same host in any case and on its scheme's default
+        # port; another port is another server
+        path = embed("own-1")
+        capitals = "https://DRIVE.FRAPPE.IO" + path
+        https_port = "https://drive.frappe.io:443" + path
+        http_port = "http://Suite.Bom.Frappe.Cloud:80" + path
+        other_port = "https://drive.frappe.io:8443" + path
+        self.add_document(
+            "reader-doc",
+            "node-b",
+            body=WriterBody(
+                content=yjs_body(paragraph(image(src=capitals)), paragraph(image(src=other_port))),
+                html=f'<p><img src="{https_port}"></p><p><img src="{other_port}"></p>',
+            ),
+        )
+        self.add_picture("own-1", "node-b", "blob-own", "own.png")
+        self.source.writer_version_rows.append(
+            WriterVersionRow(
+                "version-1",
+                "reader-doc",
+                f"<p><img src='{http_port}'></p><p><img SRC=\"{capitals}\"></p>",
+                manual=1,
+                owner=OWNER,
+                creation=STAMP,
+                modified=STAMP,
+            )
+        )
+
+        convert_history_and_comments(self.env)
+
+        body = self.source.writer_bodies["reader-doc"]
+        sources: list[str] = []
+        for child in body_fragment(body.content).children:
+            sources.append(dict(child.children[0].attributes)["src"])
+
+        self.assertEqual(sources, [path, other_port])
+        self.assertEqual(body.html, f'<p><img src="{path}"></p><p><img src="{other_port}"></p>')
+        version = self.target.version_rows["version-1"]
+        self.assertEqual(
+            self.target.read_blob(version["blob"]).decode("utf-8"),
+            f"<p><img src='{path}'></p><p><img SRC=\"{path}\"></p>",
+        )
+
     def test_a_picture_directly_inside_a_list_item_is_wrapped_in_a_paragraph(self):
         # B113: the editor's image is inline and a list item holds only
         # blocks, so the editor dropped this picture. After Build it sits in

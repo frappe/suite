@@ -19,8 +19,10 @@ Build changes a Writer body in three ways and touches nothing else:
   picture as an absolute address on the host it ran on,
   `https://drive.frappe.io/api/method/...`. Build drops the scheme and host
   so the document doesn't depend on the host (owner ruling, 2026-11-13).
-  Only the old Frappe hosts and the site's own count; an address on any
-  other host stays as it is.
+  Only the old Frappe hosts and the site's own count, in any case and on
+  the scheme's default port; an address on any other host or port stays
+  as it is. Only a whole `src` or `href` value changes, never an address
+  inside other text.
 
 Three callers, one `DocumentPictures` per document:
 
@@ -57,6 +59,7 @@ import re
 from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 import pycrdt
 
@@ -78,7 +81,13 @@ BARE_MEDIA_ID = re.compile(MEDIA_ID)
 # The hosts old Frappe Drive was served from. A constant, not site config:
 # a key nobody set on prod would leave every address in place silently
 OLD_PROD_HOSTS = ("drive.frappe.io", "suite.bom.frappe.cloud")
-EMBED_PATH = r"/api/method/(?:suite\.)?(?:writer\.api\.embed\.get|drive\.api\.embed\.get_file_content)\?"
+EMBED_PATH = re.compile(
+    r"/api/method/(?:suite\.)?(?:writer\.api\.embed\.get|drive\.api\.embed\.get_file_content)\?"
+)
+DEFAULT_PORTS = {"http": 80, "https": 443}
+# A whole quoted `src` or `href` value; `data-src` and the like are not picture addresses
+HTML_ADDRESS = re.compile(r"""(?<![\w-])((?:src|href)\s*=\s*)(["'])(.*?)\2""", re.IGNORECASE | re.DOTALL)
+ADDRESS_ATTRIBUTES = ("src", "href")
 
 IMAGE = "image"
 PARAGRAPH = "paragraph"
@@ -123,7 +132,7 @@ class DocumentPictures:
         # the stored node only when it first needs a copy.
         self._node_row = node_row
         self._report = report
-        self.own_host = own_host_pattern(env.content.site_host())
+        self.own_hosts = own_hosts(env.content.site_host())
         self._own = {child["name"] for child in children}
         self._settled: set[str] = set()
         self._by_blob: dict[str, str] = {}
@@ -233,7 +242,7 @@ def writer_version_html(env, content, pictures: DocumentPictures, snapshots: lis
         target.commit()
         content.writer_media_copied += len(copies)
 
-    rewritten = [_remap_text(text, pictures.mapping, pictures.own_host) for text in snapshots]
+    rewritten = [_remap_text(text, pictures.mapping, pictures.own_hosts) for text in snapshots]
 
     content.writer_versions_rewritten += sum(
         new != old for new, old in zip(rewritten, snapshots, strict=True)
@@ -328,19 +337,19 @@ def _copy_node(env, document, parent: dict, picture: dict, title: str) -> dict:
 def _rewritten(body: WriterBody, pictures: DocumentPictures) -> _Rewrite | None:
     """Apply the pictures' ids and hosts and wrap loose images; None when nothing changed."""
     mapping = pictures.mapping
-    own_host = pictures.own_host
+    hosts = pictures.own_hosts
     html = body.html
     if html:
-        html = _remap_text(html, mapping, own_host)
+        html = _remap_text(html, mapping, hosts)
 
-    content, wrapped = _rewritten_content(body.content, mapping, own_host)
+    content, wrapped = _rewritten_content(body.content, mapping, hosts)
     if content == body.content and html == body.html:
         return None
     return _Rewrite(WriterBody(content=content, html=html), wrapped)
 
 
 def _rewritten_content(
-    content: str | None, mapping: dict[str, str], own_host: re.Pattern
+    content: str | None, mapping: dict[str, str], hosts: frozenset
 ) -> tuple[str | None, int]:
     raw = _decoded(content)
     if raw is None:
@@ -355,11 +364,7 @@ def _rewritten_content(
                     if not isinstance(value, str):
                         continue
 
-                    if key == NODE_ATTRIBUTE:
-                        rewritten = mapping.get(value, value)
-                    else:
-                        rewritten = _remap_text(value, mapping, own_host)
-
+                    rewritten = rewritten_attribute(key, value, mapping, hosts)
                     if rewritten != value:
                         element.attributes[key] = rewritten
                         changed = True
@@ -371,6 +376,17 @@ def _rewritten_content(
         # Merged onto the stored bytes: an update from the document alone leaves out what Yjs holds back
         update = pycrdt.merge_updates(raw, document.get_update(before))
         return base64.b64encode(update).decode("ascii"), wrapped
+
+
+def rewritten_attribute(key: str, value: str, mapping: dict[str, str], hosts: frozenset) -> str:
+    """Answer one Yjs attribute value with its ids swapped and, for an address, its own host dropped."""
+    if key == NODE_ATTRIBUTE:
+        return mapping.get(value, value)
+
+    if key in ADDRESS_ATTRIBUTES:
+        value = site_address(value, hosts)
+
+    return swapped_ids(value, mapping)
 
 
 def _wrap_loose_images(fragment) -> int:
@@ -431,14 +447,54 @@ def _body_ids(content: str | None) -> set[str]:
     return found
 
 
-def own_host_pattern(site_host: str) -> re.Pattern:
-    """Match the scheme and exact host in front of a picture path on one of this site's hosts."""
-    hosts = "|".join(re.escape(host) for host in sorted({*OLD_PROD_HOSTS, site_host} - {""}))
-    return re.compile(rf"https?://(?:{hosts})(?={EMBED_PATH})")
+def own_hosts(site_host: str) -> frozenset:
+    """Answer this site's hosts as lowercase `(host, port)` pairs, None for a default port."""
+    return frozenset({(host, None) for host in OLD_PROD_HOSTS} | {host_and_port(f"//{site_host}")}) - {None}
 
 
-def _remap_text(text: str, mapping: dict[str, str], own_host: re.Pattern) -> str:
-    """Drop an own host in front of a picture path, and replace only the id inside each match."""
+def host_and_port(address: str) -> tuple[str, int | None] | None:
+    """Answer an address's lowercase host and its port, None for its scheme's default."""
+    try:
+        parts = urlsplit(address)
+        port = parts.port
+    except ValueError:
+        return None
+
+    if not parts.hostname or "@" in parts.netloc:
+        return None
+
+    if port in {DEFAULT_PORTS.get(parts.scheme), None} or (not parts.scheme and port in {80, 443}):
+        port = None
+
+    return parts.hostname, port
+
+
+def site_address(value: str, hosts: frozenset) -> str:
+    """Drop the scheme and host from a whole picture address on one of `hosts`."""
+    if not value.lower().startswith(("http://", "https://")) or host_and_port(value) not in hosts:
+        return value
+
+    # `urlsplit` drops tabs and newlines, so its parts may not line up with the value
+    parts = urlsplit(value)
+    prefix = f"{parts.scheme}://{parts.netloc}"
+    rest = value[len(prefix) :]
+    if value[: len(prefix)].lower() != prefix.lower() or not EMBED_PATH.match(rest):
+        return value
+
+    return rest
+
+
+def _remap_text(text: str, mapping: dict[str, str], hosts: frozenset) -> str:
+    """Drop an own host from each whole `src` or `href` value, and replace only the ids."""
+
+    def localized(match: re.Match) -> str:
+        return match.group(1) + match.group(2) + site_address(match.group(3), hosts) + match.group(2)
+
+    return swapped_ids(HTML_ADDRESS.sub(localized, text), mapping)
+
+
+def swapped_ids(text: str, mapping: dict[str, str]) -> str:
+    """Replace only the id inside each picture reference that `mapping` names."""
 
     def swap(match: re.Match) -> str:
         replacement = mapping.get(match.group(1))
@@ -447,7 +503,6 @@ def _remap_text(text: str, mapping: dict[str, str], own_host: re.Pattern) -> str
         start, end = match.start(1) - match.start(), match.end(1) - match.start()
         return match.group(0)[:start] + replacement + match.group(0)[end:]
 
-    text = own_host.sub("", text)
     for pattern in MEDIA_PATTERNS:
         text = pattern.sub(swap, text)
     return text

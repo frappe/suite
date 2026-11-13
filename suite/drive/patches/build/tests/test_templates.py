@@ -1064,6 +1064,31 @@ class TemplateTest(unittest.TestCase):
         ):
             convert_templates(env)
 
+    def test_a_template_picture_on_the_old_prod_host_becomes_a_site_path(self):
+        # Every document made from the template copies its body, so a host
+        # left in it would tie all of them to the old site
+        path = "/api/method/suite.writer.api.embed.get?id=pic-1"
+        prod = "https://Drive.Frappe.IO:443" + path
+        row = WriterTemplateRow(
+            name="writer-template",
+            title="Letter",
+            content=f'<p>from {prod}</p><p><img src="{prod}" alt="logo"></p>',
+            owner=OWNER,
+            creation=STAMP,
+            modified=STAMP,
+            modified_by=OWNER,
+        )
+        source = FakeContent(writer_templates=[row], users={"Administrator": True, OWNER: True})
+        env, target = self.environment(source)
+
+        convert_templates(env)
+
+        self.assertEqual(
+            target.writer_rows[row.name]["html"],
+            f'<p>from {prod}</p><p><img src="{path}" alt="logo"></p>',
+        )
+        self.assertEqual(env.state.content().template_bodies_rewritten, 1)
+
     def test_a_second_run_changes_no_row_and_no_counter(self):
         writer = writer_template("writer-template")
         deck = presentation_template("deck-template")
