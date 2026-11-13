@@ -55,3 +55,7 @@ stalwart-cli
 *.swo
 .claude/
 .vscode
+
+# UI states captures
+/e2e/ui-states/out/
+/e2e/ui-states/.runs/

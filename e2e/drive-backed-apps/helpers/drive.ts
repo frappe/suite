@@ -2,6 +2,7 @@ import { expect, type APIRequestContext, type APIResponse, type Locator, type Pa
 
 import type {
 	NodeChildrenOutput,
+	NodeCopyInput,
 	NodeCreateCreateDocumentInput,
 	NodeCreateCreateFolderInput,
 	NodeDeleteGrantOutput,
@@ -189,6 +190,12 @@ export async function waitForChild(request: APIRequestContext, title: string, pa
 	return found;
 }
 
+/** Copies `node` as `title` into `parent` or the Personal root, as Drive's Make a copy does. */
+export async function copyNode(request: APIRequestContext, node: string, title: string, parent?: string): Promise<DriveNode> {
+	const body: Body<NodeCopyInput, "node"> = { parent_node: parent ?? (await personalRoot(request)), title };
+	return driveRequest<DriveNode>(request, "post", `nodes/${node}/copy`, body);
+}
+
 export async function moveNode(request: APIRequestContext, node: string, parent: string): Promise<void> {
 	const body: Body<NodePatchMoveInput, "node"> = { parent_node: parent };
 	await driveRequest(request, "patch", `nodes/${node}`, body);
@@ -208,6 +215,21 @@ export async function restoreNode(request: APIRequestContext, node: string): Pro
 export async function purgeNode(request: APIRequestContext, node: string): Promise<number> {
 	const answer = await driveRequest<NodePurgeOutput>(request, "delete", `nodes/${node}`);
 	return answer.count;
+}
+
+/**
+ * Trashes and purges `node`, and may run again after any part of it ran:
+ * a node already in the trash is purged, and one already gone, or trashed
+ * with a folder that goes with it, is left alone. Any other failure throws,
+ * so a caller can retry it.
+ */
+export async function trashAndPurge(request: APIRequestContext, node: string): Promise<void> {
+	const response = await request.get(`${DRIVE}/nodes/${node}`);
+	if (response.status() === 404) return;
+	const current = await unwrap<DriveNode>(response, `GET ${DRIVE}/nodes/${node}`);
+	if (current.state === "Active") await trashNode(request, node);
+	else if (current.trash_root !== node) return;
+	await purgeNode(request, node);
 }
 
 /** Trash and purge `node` so a spec leaves nothing behind. Errors are swallowed: cleanup must not fail a test. */
