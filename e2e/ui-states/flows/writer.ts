@@ -1,5 +1,5 @@
 import { expect, type Locator, type Page } from "@playwright/test";
-import { createDocument, discardNode, ROLE } from "../../drive-backed-apps/helpers/drive";
+import { createDocument, ROLE, trashAndPurge } from "../../drive-backed-apps/helpers/drive";
 import { openDemoScene } from "../demo";
 import { defineFlow, setupFlow } from "../flow";
 import { perScene, type BaseScene } from "../scene";
@@ -519,7 +519,7 @@ export const writer = defineFlow<Event, BaseScene>({
 		async RENAME_TAKEN(scene) {
 			const taken = scene.name("Partner FAQ");
 			const sibling = await createDocument(scene.api, taken, WRITER_DOCTYPE);
-			scene.defer(() => discardNode(scene.api, sibling.name));
+			scene.defer(() => trashAndPurge(scene.api, sibling.name));
 			const title = scene.page.getByRole("textbox", { name: "Document title" });
 			await title.click();
 			await title.fill(taken);

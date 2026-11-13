@@ -1,6 +1,6 @@
 import type { APIRequestContext, Browser, BrowserContext, Locator, Page, Route } from "@playwright/test";
 import { readRun } from "../drive-backed-apps/global-setup";
-import { createFolder, discardNode, type DriveNode, openRowMenu, purgeNode, trashNode } from "../drive-backed-apps/helpers/drive";
+import { createFolder, type DriveNode, openRowMenu, trashAndPurge } from "../drive-backed-apps/helpers/drive";
 import { loginViaApi, type Credentials } from "../shared/auth";
 import { acrossRestarts } from "./bench";
 import { STATE_DIR } from "./global-setup";
@@ -151,10 +151,7 @@ async function personalRoot(api: APIRequestContext): Promise<string> {
  */
 export async function recreateFolder(api: APIRequestContext, title: string, parent?: string): Promise<DriveNode> {
 	const under = parent ?? (await personalRoot(api));
-	for (const stale of (await childrenOf(api, under)).filter((row) => row.title === title)) {
-		await trashNode(api, stale.name);
-		await purgeNode(api, stale.name);
-	}
+	for (const stale of (await childrenOf(api, under)).filter((row) => row.title === title)) await trashAndPurge(api, stale.name);
 	return createFolder(api, title, under);
 }
 
@@ -251,8 +248,7 @@ export async function openScene(browser: Browser, baseURL: string, folderTitle: 
 	const root = await personalRoot(base.api);
 	const parent = await workspaceFolder(base.api, root);
 	const folder = await recreateFolder(base.api, folderTitle, parent);
-	// Idempotent, so a cleanup a bench restart cut short between trash and purge can run again.
-	base.defer(() => discardNode(base.api, folder.name));
+	base.defer(() => trashAndPurge(base.api, folder.name));
 	return Object.assign(base, {
 		people: who,
 		root,

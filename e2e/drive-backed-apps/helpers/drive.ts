@@ -217,6 +217,21 @@ export async function purgeNode(request: APIRequestContext, node: string): Promi
 	return answer.count;
 }
 
+/**
+ * Trashes and purges `node`, and may run again after any part of it ran:
+ * a node already in the trash is purged, and one already gone, or trashed
+ * with a folder that goes with it, is left alone. Any other failure throws,
+ * so a caller can retry it.
+ */
+export async function trashAndPurge(request: APIRequestContext, node: string): Promise<void> {
+	const response = await request.get(`${DRIVE}/nodes/${node}`);
+	if (response.status() === 404) return;
+	const current = await unwrap<DriveNode>(response, `GET ${DRIVE}/nodes/${node}`);
+	if (current.state === "Active") await trashNode(request, node);
+	else if (current.trash_root !== node) return;
+	await purgeNode(request, node);
+}
+
 /** Trash and purge `node` so a spec leaves nothing behind. Errors are swallowed: cleanup must not fail a test. */
 export async function discardNode(request: APIRequestContext, node: string): Promise<void> {
 	try {

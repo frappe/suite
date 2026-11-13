@@ -1,5 +1,5 @@
 import { expect, type Locator, type Page } from "@playwright/test";
-import { createDocument, discardNode, grantAccess, type DriveNode } from "../../drive-backed-apps/helpers/drive";
+import { createDocument, grantAccess, trashAndPurge, type DriveNode } from "../../drive-backed-apps/helpers/drive";
 import { demoUser, type DemoPerson } from "../demo";
 import { perScene, type BaseScene } from "../scene";
 
@@ -18,7 +18,7 @@ export const POLLING_BANNER = "Live updates are unavailable";
 /** Creates a document titled `label` plus the path's stamp, and removes it when the scene closes. */
 export async function createPathDocument(scene: BaseScene, label: string, doctype: string): Promise<DriveNode> {
 	const node = await createDocument(scene.api, scene.name(label), doctype);
-	scene.defer(() => discardNode(scene.api, node.name));
+	scene.defer(() => trashAndPurge(scene.api, node.name));
 	return node;
 }
 

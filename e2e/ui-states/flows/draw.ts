@@ -1,5 +1,5 @@
 import { expect, type APIRequestContext, type Page, type Route } from "@playwright/test";
-import { createDocument, discardNode, grantAccess, ROLE, type DriveNode } from "../../drive-backed-apps/helpers/drive";
+import { createDocument, grantAccess, ROLE, trashAndPurge, type DriveNode } from "../../drive-backed-apps/helpers/drive";
 import { demoUser, openDemoScene } from "../demo";
 import { defineFlow, setupFlow } from "../flow";
 import { perScene, type BaseScene } from "../scene";
@@ -201,7 +201,7 @@ const viewers = perScene<Page>("draw: viewer page");
 
 async function createDrawing(scene: BaseScene, title: string, content: Record<string, unknown> | null): Promise<DriveNode> {
 	const node = await createDocument(scene.api, scene.name(title), "Drawing");
-	scene.defer(() => discardNode(scene.api, node.name));
+	scene.defer(() => trashAndPurge(scene.api, node.name));
 	if (content) await writeDrawing(scene.api, node.name, content);
 	return node;
 }

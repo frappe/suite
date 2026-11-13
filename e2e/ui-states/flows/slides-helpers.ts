@@ -1,5 +1,5 @@
 import { expect, type Page } from "@playwright/test";
-import { copyNode, createDocument, discardNode, view, type DriveNode } from "../../drive-backed-apps/helpers/drive";
+import { copyNode, createDocument, trashAndPurge, view, type DriveNode } from "../../drive-backed-apps/helpers/drive";
 import { callMethod, type BaseScene } from "../scene";
 
 /** The seeded Northwind deck: five slides with text, cards and a callout. */
@@ -10,14 +10,14 @@ const PRESENTATION = "suite.slides.doctype.presentation.presentation";
 export async function copySeededDeck(scene: BaseScene, title: string): Promise<DriveNode> {
 	const source = await seededDeck(scene);
 	const node = await copyNode(scene.api, source.name, scene.name(title));
-	scene.defer(() => discardNode(scene.api, node.name));
+	scene.defer(() => trashAndPurge(scene.api, node.name));
 	return node;
 }
 
 /** A new, empty presentation in the person's root, purged when the scene closes. */
 export async function createDeck(scene: BaseScene, title: string): Promise<DriveNode> {
 	const node = await createDocument(scene.api, scene.name(title), "Presentation");
-	scene.defer(() => discardNode(scene.api, node.name));
+	scene.defer(() => trashAndPurge(scene.api, node.name));
 	return node;
 }
 

@@ -328,7 +328,9 @@ async function storageRoots(scene: BaseScene): Promise<{ name: string; user: str
 async function removeMember(scene: BaseScene, admin: APIRequestContext, email: string, root: string | undefined): Promise<void> {
 	const deleted = await admin.delete(`/api/resource/User/${encodeURIComponent(email)}`);
 	if (!deleted.ok() && deleted.status() !== 404) throw new Error(`admin: could not delete ${email}: ${await deleted.text()}`);
-	if (root) await scene.api.delete(`/api/suite/drive/roots/${root}`);
+	if (!root) return;
+	const purged = await scene.api.delete(`/api/suite/drive/roots/${root}`);
+	if (!purged.ok() && purged.status() !== 404) throw new Error(`admin: could not purge ${email}'s Drive root: ${await purged.text()}`);
 }
 
 /** Removes cast members an earlier path left behind when a bench restart cut its cleanup short. */
