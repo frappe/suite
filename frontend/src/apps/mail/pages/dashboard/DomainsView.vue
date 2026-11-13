@@ -55,7 +55,6 @@
     <DashboardPager
       v-if="list.status === 'success' && list.total"
       :count="list.rows.length"
-      :total="list.total ?? 0"
       :has-more="list.hasNext"
       :loading="list.isFetching"
       @load-more="list.fetchNext().catch(() => {})"

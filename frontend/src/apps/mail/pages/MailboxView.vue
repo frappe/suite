@@ -41,7 +41,12 @@
     <span class="text-ink-gray-5">
       {{ __('Items in this folder will be automatically deleted after 30 days.') }}
     </span>
-    <Button :label="__('Delete Now')" variant="ghost" @click="showEmptyMailbox = true" />
+    <Button
+      :label="__('Empty {0}', [mailboxName])"
+      variant="ghost"
+      theme="red"
+      @click="showEmptyMailbox = true"
+    />
   </div>
 
   <!-- Mobile sizes by flex (the dvh calcs assume desktop chrome and overshoot
@@ -99,7 +104,12 @@
               <span class="text-ink-gray-5">
                 {{ __('Items in this folder will be automatically deleted after 30 days.') }}
               </span>
-              <Button :label="__('Delete Now')" variant="ghost" @click="showEmptyMailbox = true" />
+              <Button
+                :label="__('Empty {0}', [mailboxName])"
+                variant="ghost"
+                theme="red"
+                @click="showEmptyMailbox = true"
+              />
             </div>
 
             <InboxTabs
@@ -587,6 +597,7 @@ const {
   isAllSelected,
   mobileSelectionMode,
   toggleSelect,
+  extendRange,
   toggleSelectAll,
   resetSelections,
   isGroupSelected,
@@ -659,10 +670,12 @@ const handleEnter = (e: KeyboardEvent) => {
   // Folds the day, or does nothing on the last group — exactly what clicking the header does.
   toggleGroupCollapse(row.dateKey)
 }
+// Esc lets go of the nearest thing first: the ticks (the toolbar shows them, over the open thread
+// too), then the open thread, then the cursor.
 const handleEscape = (e: KeyboardEvent) => {
   e.preventDefault()
-  if (threadID) goToMailbox()
-  else if (selections.value.length) resetSelections()
+  if (selections.value.length) resetSelections()
+  else if (threadID) goToMailbox()
   else focusedRowKey.value = undefined
 }
 const handleThreadActions = (e: KeyboardEvent, key: string) => {
@@ -735,11 +748,10 @@ const handleArrowNavigation = (e: KeyboardEvent, key: string) => {
     } else if (hasCursor(rows, focusedRowKey.value)) loadMoreThenOpenEdge(offset, 'focus')
   }
 
-  // Handle shift+arrow selection. A row carries every thread it stands for, so shifting onto a stack
-  // takes its whole run and onto a header takes the day — the same sets their checkboxes select.
-  if (!(e.shiftKey && newIDs.length)) return
-  const shouldSelect = !newIDs.every((id) => selections.value.includes(id))
-  toggleSelect([...prevIDs, ...newIDs], shouldSelect, true)
+  // Shift+arrow ticks the run from where it began (see extendRange). A row carries every thread it
+  // stands for, so shifting onto a stack takes its whole run and onto a header takes the day — the
+  // same sets their checkboxes select.
+  if (e.shiftKey && newIDs.length) extendRange(prevIDs.length ? prevIDs : newIDs, newIDs)
 }
 // The actions on the ticked threads, the same set the All accounts list offers (see selectActions).
 const selectActions = buildSelectActions(
@@ -1395,15 +1407,25 @@ async function emptyMailboxSubmit() {
   raiseToast(__('{0} emptied.', [mailboxName.value]))
   resetThreads()
 }
+// How much goes, that it goes for good, and a button that says so.
+const emptyMailboxCount = computed(() => mailboxObj.value?.total_emails ?? 0)
 const emptyMailboxOptions = computed(() => ({
-  title: __('Empty {0}', [mailboxName.value]),
-  message: __(`Are you sure you want to empty this folder?`),
+  title: __('Empty {0}?', [mailboxName.value]),
+  message:
+    emptyMailboxCount.value > 1
+      ? __('All {0} messages in {1} are deleted permanently. This can’t be undone.', [
+          emptyMailboxCount.value,
+          mailboxName.value,
+        ])
+      : __('Everything in {0} is deleted permanently. This can’t be undone.', [mailboxName.value]),
   icon: 'lucide-alert-triangle',
-  theme: 'amber' as const,
+  theme: 'red' as const,
   actions: [
+    { label: __('Cancel'), variant: 'subtle' as const },
     {
-      label: __('Confirm'),
+      label: __('Delete Forever'),
       variant: 'solid' as const,
+      theme: 'red' as const,
       onClick: () => {
         emptyMailboxSubmit()
         showEmptyMailbox.value = false

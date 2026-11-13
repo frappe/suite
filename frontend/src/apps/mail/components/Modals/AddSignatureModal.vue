@@ -10,13 +10,9 @@
         />
         <div class="space-y-1.5">
           <label class="text-ink-gray-5 block text-xs">{{ __('Signature Body') }}</label>
-          <TextEditor
-            editor-class="prose-sm min-h-[8rem] border rounded-b-6 border-t-0 p-2 max-w-none border-outline-gray-2"
-            :extensions="[CustomParagraphExtension]"
-            :fixed-menu="buttons"
+          <MailRichTextField
+            v-model="draft.html_body"
             :placeholder="__('Write your signature here')"
-            :content="draft.html_body"
-            @change="(val: string) => (draft.html_body = val)"
           />
         </div>
       </div>
@@ -26,19 +22,15 @@
 
 <script setup lang="ts">
 import { Dialog, FormControl } from 'frappe-ui'
-import { TextEditor } from 'frappe-ui/experimental'
 import { computed, reactive, watch } from 'vue'
 
 import { api, useMutation } from '@/api'
+import MailRichTextField from '@/apps/mail/components/Controls/MailRichTextField.vue'
 import { raiseToast } from '@/apps/mail/utils'
-import { useTextEditorButtons } from '@/apps/mail/utils/composables'
-import { CustomParagraphExtension } from '@/apps/mail/utils/text-editor'
 
 const show = defineModel<boolean>()
 
 const emit = defineEmits(['reloadSignatures'])
-
-const { buttons } = useTextEditorButtons()
 
 const defaultSignature = { signature_name: '', html_body: '' }
 const draft = reactive({ ...defaultSignature })
