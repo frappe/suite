@@ -126,8 +126,11 @@
         :class="{ 'min-w-0 flex-1 !text-base': isFullWidth }"
       >
         <h5
-          class="text-ink-gray-5 truncate text-sm !leading-[1.5]"
-          :class="{ 'text-ink-gray-4': previewPlaceholder, '!text-base': isFullWidth }"
+          class="truncate text-sm !leading-[1.5]"
+          :class="[
+            previewPlaceholder ? 'text-ink-gray-4' : 'text-ink-gray-5',
+            { '!text-base': isFullWidth },
+          ]"
         >
           <slot name="preview" />
         </h5>

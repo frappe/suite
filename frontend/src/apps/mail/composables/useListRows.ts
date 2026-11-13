@@ -4,6 +4,7 @@ import { computed, nextTick, ref, watch, type Ref } from 'vue'
 import { CURSOR_BAR_CLASS, OPEN_BAR_CLASS } from '@/apps/mail/constants'
 import { userStore } from '@/apps/mail/stores/user'
 import type { Thread } from '@/apps/mail/types'
+import { shouldIgnoreKeypress } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { dateGroup, PINNED_GROUP, RETURNED_GROUP } from '@/apps/mail/utils/dateGroups'
 import { isNavigationKey } from '@/apps/mail/utils/listNavigation'
@@ -252,7 +253,9 @@ export const useListRows = ({
    * thread still being open. The cursor stays where it is, unmarked, until a key moves it.
    */
   const cursorShown = ref(false)
+  // Only keys the list acts on: j, k or an arrow typed into compose or search moves nothing here.
   useEventListener(window, 'keydown', (event: KeyboardEvent) => {
+    if (shouldIgnoreKeypress(event)) return
     if (isNavigationKey(event.key.toLowerCase()) || event.key.toLowerCase() === 'g')
       cursorShown.value = true
   })

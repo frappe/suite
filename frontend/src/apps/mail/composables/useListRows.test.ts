@@ -62,3 +62,21 @@ it('draws the cursor bar while the list is walked from the keyboard, not after a
   expect(barOnFirstRow()).toBe(false)
   expect(rows.focusedRowKey.value).toBe('one')
 })
+
+// j, k and the arrows typed into a search box or the composer are text, not a walk down the list.
+it('leaves the cursor bar off for list keys typed into a field', async () => {
+  const rows = mountRows()
+  const barOnFirstRow = () => {
+    const row = rows.navigableRows.value[0]
+    return row.type === 'group' ? undefined : rows.rowClasses(row)[CURSOR_BAR_CLASS]
+  }
+  rows.focusRow(rows.navigableRows.value[0])
+  window.dispatchEvent(new PointerEvent('pointerdown'))
+  await nextTick()
+
+  const search = document.body.appendChild(document.createElement('input'))
+  for (const key of ['j', 'k', 'ArrowDown', 'g'])
+    search.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+  search.remove()
+  expect(barOnFirstRow()).toBe(false)
+})
