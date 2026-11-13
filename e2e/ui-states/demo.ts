@@ -3,8 +3,9 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { expect, type APIRequestContext, type Browser } from "@playwright/test";
 import type { Credentials } from "../shared/auth";
+import { callMethod } from "../shared/frappe";
 import { setSiteConfig } from "./bench";
-import { callMethod, openBrowserScene, type BaseScene } from "./scene";
+import { openBrowserScene, type BaseScene } from "./scene";
 
 /**
  * The two sites beside the Drive site, on the same bench:

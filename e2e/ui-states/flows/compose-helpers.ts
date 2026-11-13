@@ -1,6 +1,7 @@
 import type { APIRequestContext, Page } from "@playwright/test";
+import { callMethod, unlessRefused } from "../../shared/frappe";
 import { demoUser, identityOf, personalAccount } from "../demo";
-import { callMethod, perScene, unlessRefused, type BaseScene } from "../scene";
+import { perScene, type BaseScene } from "../scene";
 
 /**
  * Mail calls the compose flow seeds and cleans up with. Every mail the flow

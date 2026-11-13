@@ -1,7 +1,8 @@
 import { expect, type Locator, type Page } from "@playwright/test";
+import { callMethod, unlessRefused } from "../../shared/frappe";
 import { openDemoScene, setSuiteCloudStandIn } from "../demo";
 import { defineFlow, setupFlow } from "../flow";
-import { callMethod, perScene, unlessRefused, type BaseScene } from "../scene";
+import { perScene, type BaseScene } from "../scene";
 
 type Event =
 	| { type: "SUITE_CLOUD_OFF" }

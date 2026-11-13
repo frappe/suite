@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { callMethod } from "../../shared/frappe";
 import { DEMO_URL, identityOf, mailboxOf, personalAccount } from "../demo";
 import { fixture } from "../content";
-import { callMethod, type BaseScene } from "../scene";
+import type { BaseScene } from "../scene";
 
 /**
  * Test mail for the Mail flow, delivered straight into a demo person's

@@ -1,5 +1,5 @@
 import type { APIRequestContext } from "@playwright/test";
-import { callMethod } from "../scene";
+import { callMethod } from "../../shared/frappe";
 
 /**
  * Seeds calendars and events on the demo site through the whitelisted methods

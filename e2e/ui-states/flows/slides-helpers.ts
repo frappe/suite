@@ -1,6 +1,7 @@
 import { expect, type Page } from "@playwright/test";
 import { copyNode, createDocument, trashAndPurge, view, type DriveNode } from "../../drive-backed-apps/helpers/drive";
-import { callMethod, type BaseScene } from "../scene";
+import { callMethod } from "../../shared/frappe";
+import type { BaseScene } from "../scene";
 
 /** The seeded Northwind deck: five slides with text, cards and a callout. */
 const SEEDED_TITLE = "Q3 review and Q4 priorities";
