@@ -19,7 +19,7 @@
             v-model="hasHeader"
             label="First row is header"
             class="cd-header-toggle"
-            @change="detect"
+            @change="onHeaderToggle"
           />
         </div>
         <p v-if="rangeError" class="cd-error">{{ rangeError }}</p>
@@ -237,8 +237,8 @@ import {
   CHART_TYPES,
   ESPRESSO_PALETTE,
 } from '../../engine/charts.js'
+import { columnShapes, guessEncoding, guessHasHeader } from '../../engine/data-shape.js'
 import { parseCellId } from '../../utils/cells.js'
-import { displayNumber } from '../../utils/format-number.js'
 
 // Lazy-load — same rationale as in ChartOverlay.
 const ChartView = defineAsyncComponent(() => import('./ChartView.vue'))
@@ -296,10 +296,20 @@ const numFmts = ref(null)
 const columns = ref([]) // [{ idx, label, isNumeric }]
 const seriesFilter = ref('')
 
+// What the user set by hand in this dialog, which a guess must not undo.
+// The header box stays theirs until the dialog closes. X and the series
+// stay theirs until the range changes, since they are column positions in it.
+let headerSetByHand = false
+let encodingSetByHand = false
+let detectedRange = ''
+
 // ── Reset state when dialog opens ───────────────────────────────────────────
 
 watch(show, (open) => {
   if (!open) return
+  headerSetByHand = false
+  encodingSetByHand = false
+  detectedRange = ''
   if (props.existingConfig) {
     const c = props.existingConfig
     rangeInput.value = c.sourceRange || ''
@@ -383,39 +393,31 @@ async function detect() {
   rangeError.value = ''
   matrix.value = data
   numFmts.value = read.numFmts ?? null
-  const ncols = data[0]?.length || 0
+  const rangeKey = range.toUpperCase()
+  if (rangeKey !== detectedRange) {
+    encodingSetByHand = false
+    detectedRange = rangeKey
+  }
+  // A new chart guesses the header row from the data (ISSUES #153); an
+  // existing chart keeps the one it was saved with.
+  if (!props.existingConfig && !headerSetByHand) hasHeader.value = guessHasHeader(data)
   const header = hasHeader.value ? data[0] : null
-  // Detect numeric columns by sampling the body rows (excluding the header
-  // row). A column is numeric if a majority of its sampled values parse as
-  // numbers — robust against the occasional stray text cell.
-  const bodyStart = hasHeader.value ? 1 : 0
-  const sampleEnd = Math.min(data.length, bodyStart + 20)
-  columns.value = []
-  for (let i = 0; i < ncols; i++) {
-    let numHits = 0,
-      total = 0
-    for (let r = bodyStart; r < sampleEnd; r++) {
-      const v = data[r]?.[i]
-      if (v === '' || v == null) continue
-      total++
-      if (!isNaN(displayNumber(v))) numHits++
-    }
-    columns.value.push({
-      idx: i,
-      label: header?.[i] ? String(header[i]) : `Column ${_colLetter(i)}`,
-      isNumeric: total > 0 && numHits / total >= 0.6,
-    })
+  columns.value = columnShapes(data, hasHeader.value ? 1 : 0).map((c) => ({
+    ...c,
+    label: header?.[c.idx] ? String(header[c.idx]) : `Column ${_colLetter(c.idx)}`,
+  }))
+  // Default encoding: the first text column on X, the numeric columns
+  // (at most 8) as series.
+  if (props.existingConfig ? yCols.value.length === 0 : !encodingSetByHand) {
+    const guess = guessEncoding(columns.value)
+    xCol.value = guess.x
+    yCols.value = guess.y
   }
-  // Default encoding: first column on X, all numeric columns on Y. Cap at
-  // 8 so the preview doesn't choke on a 50-series wall of colour.
-  if (!props.existingConfig || yCols.value.length === 0) {
-    xCol.value = 0
-    yCols.value = columns.value
-      .filter((c) => c.idx !== 0 && c.isNumeric)
-      .slice(0, 8)
-      .map((c) => c.idx)
-    if (!yCols.value.length && ncols > 1) yCols.value = [1]
-  }
+}
+
+function onHeaderToggle() {
+  headerSetByHand = true
+  detect()
 }
 
 const columnOptions = computed(() =>
@@ -424,6 +426,7 @@ const columnOptions = computed(() =>
 
 function onXAxisChange(opt) {
   if (!opt) return
+  encodingSetByHand = true
   xCol.value = parseInt(opt, 10)
   // If the new X axis was previously selected as a Y series, drop it —
   // otherwise the same column would feed both axes and the chart breaks.
@@ -441,11 +444,13 @@ const filteredColumns = computed(() => {
 })
 
 function _toggleY(idx) {
+  encodingSetByHand = true
   if (yCols.value.includes(idx)) yCols.value = yCols.value.filter((v) => v !== idx)
   else yCols.value = [...yCols.value, idx].sort((a, b) => a - b)
 }
 
 function selectNumericSeries() {
+  encodingSetByHand = true
   yCols.value = columns.value.filter((c) => c.idx !== xCol.value && c.isNumeric).map((c) => c.idx)
 }
 
@@ -529,6 +534,7 @@ const masterCheckLabel = computed(() => {
 })
 
 function toggleMasterSelection() {
+  encodingSetByHand = true
   const visibleIdx = _selectableVisible.value.map((c) => c.idx)
   if (masterCheckState.value === 'all') {
     // Drop only the visible ones — keep selections that are filtered out.

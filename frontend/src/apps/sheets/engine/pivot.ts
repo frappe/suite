@@ -1,4 +1,4 @@
-import { cellId, parseCellId } from '../utils/cells.js'
+import { cellId, colLabel, parseCellId } from '../utils/cells.js'
 import { deepClone } from '../utils/deep-clone.js'
 import { displayNumber } from '../utils/format-number.js'
 import { newItemId } from './item-id.js'
@@ -32,6 +32,12 @@ export interface PivotSpec {
   rows?: string[]
   cols?: string[]
   values?: PivotValue[]
+  /**
+   * Whether the source's first row names the fields. Absent means it does
+   * (every pivot made before the toggle). Without one, the fields are
+   * `Column A`, `Column B`… by position in the range, and the first row is data.
+   */
+  hasHeader?: boolean
   outputSheet?: string
   /** Output origin, 0-based. */
   anchorRow?: number
@@ -185,12 +191,13 @@ export function computePivotModel(
     ? sourceRange.split(':')
     : [sourceRange, sourceRange]
   const data = getRangeValues(start, end, sourceSheet)
-  if (!data || data.length < 2) return null
+  const bodyStart = config.hasHeader === false ? 0 : 1
+  if (!data || data.length <= bodyStart) return null
 
   const plan = _planPivot(config, data[0])
   if (!plan) return null
   const dataRows = data
-    .slice(1)
+    .slice(bodyStart)
     .filter((r) => r.some((v) => v !== null && v !== undefined && v !== ''))
   if (!dataRows.length) return null
 
@@ -227,11 +234,12 @@ export async function computePivotModelAsync(
 
   const headerRow = (getRangeValues(cellId(r0, c0), cellId(r0, c1), sourceSheet) || [])[0]
   const plan = _planPivot(config, headerRow)
-  if (!plan || rEnd <= r0) return null
+  const bodyStart = config.hasHeader === false ? r0 : r0 + 1
+  if (!plan || rEnd < bodyStart) return null
 
   const acc = _newAccumulator()
   const dataRows: unknown[][] = []
-  for (let br = r0 + 1; br <= rEnd; br += blockRows) {
+  for (let br = bodyStart; br <= rEnd; br += blockRows) {
     const be = Math.min(br + blockRows - 1, rEnd)
     const block = getRangeValues(cellId(br, c0), cellId(be, c1), sourceSheet) || []
     for (const row of block) {
@@ -248,12 +256,21 @@ export async function computePivotModelAsync(
   return _finishModel(acc, dataRows, plan)
 }
 
+/**
+ * The field name of each column of a pivot source, given its first row: the
+ * header text, or `Column A`, `Column B`… by position in the range when the
+ * source has no header row.
+ */
+export function pivotFieldNames(firstRow: unknown[], hasHeader: boolean): string[] {
+  return firstRow.map((h, i) => (hasHeader ? String(h ?? '') : `Column ${colLabel(i)}`))
+}
+
 // Resolve field names → column indices from the header row, validating that
 // there's something to pivot. Returns null when the config can't produce a table.
 function _planPivot(config: PivotSpec, headerRowRaw: unknown[] | undefined): PivotPlan | null {
   const { rows, cols, values } = config
   if (!rows?.length || !values?.length || !headerRowRaw) return null
-  const headers = headerRowRaw.map((h) => String(h ?? ''))
+  const headers = pivotFieldNames(headerRowRaw, config.hasHeader !== false)
   const rowIdxs = rows.map((f) => headers.indexOf(f)).filter((i) => i >= 0)
   const colIdxs = (cols || []).map((f) => headers.indexOf(f)).filter((i) => i >= 0)
   const valCols = values

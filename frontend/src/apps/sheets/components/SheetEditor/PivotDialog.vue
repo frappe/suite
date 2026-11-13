@@ -30,6 +30,13 @@
           />
           <Button size="sm" variant="outline" label="Detect fields" @click="detectFields" />
         </div>
+        <FormControl
+          type="checkbox"
+          v-model="hasHeader"
+          :label="__('First row is header')"
+          class="pv-header-toggle"
+          @change="onHeaderToggle"
+        />
         <p v-if="rangeError" class="pv-error">{{ rangeError }}</p>
       </div>
 
@@ -185,7 +192,14 @@ import { Button, Dialog, Dropdown, FormControl } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { computed, ref, watch } from 'vue'
 
-import { AGG_OPTIONS, computePivot, parseRangeRect, rangeReader } from '../../engine/pivot.js'
+import { guessHasHeader } from '../../engine/data-shape.js'
+import {
+  AGG_OPTIONS,
+  computePivot,
+  parseRangeRect,
+  pivotFieldNames,
+  rangeReader,
+} from '../../engine/pivot.js'
 import PivotFieldPicker from './PivotFieldPicker.vue'
 
 const props = defineProps({
@@ -214,6 +228,9 @@ const availableFields = ref([])
 const rowFields = ref([])
 const colFields = ref([])
 const valueFields = ref([]) // { field, agg }[]
+const hasHeader = ref(true)
+// Once the user sets the header box, a guess no longer changes it.
+let headerSetByHand = false
 
 // Tracks how many field-pickers are currently open. While > 0 we tell the
 // frappe-ui Dialog NOT to close on outside-click, otherwise clicking a
@@ -238,8 +255,10 @@ const sheetOptions = computed(() => {
 
 watch(show, (open) => {
   if (!open) return
+  headerSetByHand = false
   if (props.existingConfig) {
     const c = props.existingConfig
+    hasHeader.value = c.hasHeader !== false
     rangeInput.value = c.sourceRange || ''
     rowFields.value = [...(c.rows || [])]
     colFields.value = [...(c.cols || [])]
@@ -252,6 +271,7 @@ watch(show, (open) => {
     detectFields()
   } else {
     rangeInput.value = props.initialRange || ''
+    hasHeader.value = true
     sourceSheetInput.value = props.currentSheet || sheetOptions.value[0]?.value || ''
     rowFields.value = []
     colFields.value = []
@@ -294,9 +314,33 @@ async function _parseFields() {
   }
   rangeError.value = ''
   source.value = { key, read: rangeReader(rect, data) }
-  // Blank header cells are empty columns, not fields.
-  availableFields.value = data[0].filter((h) => h !== '').map((h) => String(h))
+  // A new pivot guesses the header row from the data (ISSUES #153); an
+  // existing pivot keeps the one it was saved with.
+  if (!props.existingConfig && !headerSetByHand) hasHeader.value = guessHasHeader(data)
+  // A column with a blank header, or no values at all, is empty, not a field.
+  const names = pivotFieldNames(data[0], hasHeader.value)
+  availableFields.value = names.filter((_, i) =>
+    hasHeader.value ? data[0][i] !== '' : data.some((row) => row[i] !== '' && row[i] != null),
+  )
   return true
+}
+
+// The field names change with the header box, so drop picks that no
+// longer name a field.
+function onHeaderToggle() {
+  headerSetByHand = true
+  _parseFields()
+    .then((ok) => {
+      if (!ok) return
+      const have = new Set(availableFields.value)
+      rowFields.value = rowFields.value.filter((f) => have.has(f))
+      colFields.value = colFields.value.filter((f) => have.has(f))
+      valueFields.value = valueFields.value.filter((v) => have.has(v.field))
+    })
+    .catch((e) => {
+      rangeError.value = 'Could not read range.'
+      console.error('[sheets] reading the pivot source failed', e)
+    })
 }
 
 function detectFields() {
@@ -357,6 +401,7 @@ const previewTable = computed(() => {
   const config = {
     sourceSheet: sourceSheetInput.value,
     sourceRange: rangeInput.value.trim(),
+    hasHeader: hasHeader.value,
     rows: rowFields.value,
     cols: colFields.value,
     values: valueFields.value,
@@ -381,6 +426,7 @@ function onConfirm() {
     id: props.pivotId || undefined,
     sourceSheet: sourceSheetInput.value,
     sourceRange: rangeInput.value.trim(),
+    hasHeader: hasHeader.value,
     rows: [...rowFields.value],
     cols: [...colFields.value],
     values: valueFields.value.map((v) => ({ ...v })),
@@ -408,6 +454,9 @@ function onConfirm() {
   gap: 8px;
   align-items: center;
   min-width: 0;
+}
+.pv-header-toggle {
+  margin-top: 8px;
 }
 /* TextInput's outer flex item shrinks to zero by default because its inner
    wrapper has no intrinsic width and our `flex: 1` doesn't propagate past
