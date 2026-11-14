@@ -12,6 +12,8 @@ services:
               device_ids: ["${TRANSCRIPTION_GPU_DEVICE:-0}"]
               capabilities: [gpu]
     cpus: ${TRANSCRIPTION_CPUS:-2}
+    cpu_shares: ${TRANSCRIPTION_CPU_SHARES:-128}
+    oom_score_adj: ${TRANSCRIPTION_OOM_SCORE_ADJ:-500}
     mem_limit: ${TRANSCRIPTION_MEMORY:-8g}
     memswap_limit: ${TRANSCRIPTION_MEMORY:-8g}
     pids_limit: 256

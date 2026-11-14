@@ -111,6 +111,54 @@ already occupied. No inference upload endpoint is exposed. Public checkpoint
 downloads happen at startup; missing weights keep the worker unavailable until
 it can restore the pinned model. No third-party inference service is used.
 
+### Sharing a host with live captions
+
+The shared-host starting values in `deploy/.env.example` use one CPU, a 5 GiB
+host RAM limit (including swap), CPU shares of 128, and `oom_score_adj=500`.
+The Torch allocator budget is 6 GiB: a two-stream T4 colocation test on
+2026-11-14 peaked at 3.76 GiB reserved by Torch and 3,982 MiB total worker GPU
+memory, alongside 3,036 MiB for captions on a 15,360 MiB device. This leaves
+allocator growth and CUDA headroom; it does not reserve memory for captions.
+The positive OOM score makes this disposable worker a preferred victim over
+captions with a default score; it is not a guarantee. CPU shares only change
+relative CPU weight under contention. Neither setting reserves GPU compute for
+captions. Keep just one worker on the shared GPU, and leave caption settings
+unchanged. Dedicated hosts can explicitly raise these limits after measurement.
+
+In that short test, caption first-text p95 rose from 2.896 to 3.115 seconds;
+final-after-audio p95 rose from 0.132 to 0.180 seconds, with 24/24 successful
+utterances in each run. Batch processed 840 seconds of repeated English/Hindi
+FLEURS speech in 145.8 seconds (RTF 0.174), using 30-second sources. Minimum
+host available RAM was 9.04 GiB. The 5 GiB cgroup cap reclaimed file-cache pages
+without killing the worker; sampled inference RSS peaked at 2.38 GiB. Startup
+RSS, including mapped weights, briefly reached 5.68 GiB even though charged
+cgroup memory stayed capped at 5 GiB. These are different memory measures.
+This was a modest latency increase at light load, not a production capacity
+guarantee. The test reused the caption image's Torch 2.8 prerelease with the
+worker recognizer and pinned Transformers 5.19.0; repeat with the final worker
+image and representative caption traffic before enabling admission. No scheduling
+policy is installed by these settings.
+
+Before every start, record the caption container's start time/restart count,
+health, RSS, GPU memory and host `MemAvailable`. Require `MemAvailable` minus
+5 GiB to leave at least 2 GiB available; also allow for the caption service's
+roughly 2.5 GiB temporary extraction when restarting. A host RAM limit does not
+cap GPU allocations. Leave GPU headroom for caption traffic and non-Torch CUDA
+allocations beyond the worker's Torch allocator budget. Stop the worker if
+captions restart, report inference failures or become unhealthy. A normal
+HTTP-200 `busy` health response during caption inference is expected.
+
+Do **not** enable the Caddy `proxy` profile beside the existing nginx listener.
+Start only `bash start.sh transcription`, keeping port 8011 bound to loopback.
+Use [the nginx template](deploy/nginx.conf.template) in the existing host nginx:
+substitute the dedicated `TRANSCRIPTION_DOMAIN`, provision its TLS certificate,
+then validate the complete configuration with `nginx -t` before reloading it.
+The template assumes host nginx can reach `127.0.0.1:8011`; a containerized proxy
+needs an explicitly reachable upstream instead. It mirrors Caddy's exact
+`/health` and `/metrics` paths and returns 404 for everything else. Health is
+public; `/metrics` still requires the worker's bearer token. Do not add inference
+or queue endpoints, strip the Authorization header, or log credentials.
+
 Use the same full site set on all replicas of one worker pool. Each worker
 rotates sites after every claim, including failures, so a large site's backlog
 cannot indefinitely exclude another site's work. Site row locks and opaque
