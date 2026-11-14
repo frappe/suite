@@ -87,7 +87,7 @@ MEDIA_PATTERNS = (
 BARE_MEDIA_ID = re.compile(MEDIA_ID)
 # The hosts old Frappe Drive was served from. A constant, not site config:
 # a key nobody set on prod would leave every address in place silently
-OLD_PROD_HOSTS = ("drive.frappe.io", "suite.bom.frappe.cloud")
+OLD_PROD_HOSTS = ("drive.frappe.io", "suite.bom.frappe.cloud", "suite.frappe.io")
 API_METHOD = "/api/method/"
 EMBED_PATH = re.compile(
     rf"{API_METHOD}(?:suite\.)?(?:writer\.api\.embed\.get|drive\.api\.embed\.get_file_content)\?"

@@ -1190,6 +1190,32 @@ class WriterBodyTest(unittest.TestCase):
         self.assertEqual((content.writer_bodies_rewritten, content.writer_versions_rewritten), (1, 1))
         self.assertEqual(content.writer_media_copied, 0)
 
+    def test_a_picture_address_on_the_older_frappe_host_becomes_a_site_path(self):
+        # Old documents still point at the host old Frappe Drive was served
+        # from before. Another Frappe subdomain is someone else's site
+        path = embed("own-1")
+        older = "https://suite.frappe.io" + path
+        sibling = "https://other.frappe.io" + path
+        self.add_document(
+            "reader-doc",
+            "node-b",
+            body=WriterBody(
+                content=yjs_body(paragraph(image(src=older)), paragraph(image(src=sibling))),
+                html=f'<p><img src="{older}"></p><p><img src="{sibling}"></p>',
+            ),
+        )
+        self.add_picture("own-1", "node-b", "blob-own", "own.png")
+
+        convert_history_and_comments(self.env)
+
+        body = self.source.writer_bodies["reader-doc"]
+        sources: list[str] = []
+        for child in body_fragment(body.content).children:
+            sources.append(dict(child.children[0].attributes)["src"])
+
+        self.assertEqual(sources, [path, sibling])
+        self.assertEqual(body.html, f'<p><img src="{path}"></p><p><img src="{sibling}"></p>')
+
     def test_an_old_prod_address_inside_another_value_stays_as_it_is(self):
         # Only a whole picture address loses its host. A proxy's address, a
         # sentence and a caption that merely contain one are someone's words
