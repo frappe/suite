@@ -33,6 +33,7 @@ import {
 } from '@/apps/slides/stores/liveDeck'
 import {
   flattenNow,
+  fontsLoadedFor,
   measureNow,
   slidesLength,
   transformElements,
@@ -125,6 +126,8 @@ export function useConvertedRoom({
 
   const sizes = new Map<string, { key: string; size: { width: number; height: number } }>()
   let isFontPending = false
+  // measured while a font their own text draws in was loading
+  const waitingOnFonts = new Set<string>()
 
   // Until the font comes, edits leave the saved centre alone: nothing waits, a save included
   function redrawWhenFontsLoad() {
@@ -136,9 +139,20 @@ export function useConvertedRoom({
     void document.fonts.ready.then(() => {
       deck?.push()
       isFontPending = false
+      waitingOnFonts.clear()
       deck?.redraw()
       void resetGrowthBaseline()
     })
+  }
+
+  // A font only other text draws in leaves this element's shown position good to save
+  function waitsOnFonts(element: StoreItem) {
+    if (document.fonts.status === 'loading' && !fontsLoadedFor(element)) {
+      waitingOnFonts.add(element.id)
+      redrawWhenFontsLoad()
+    }
+
+    return waitingOnFonts.has(element.id)
   }
 
   function measured(element: StoreItem) {
@@ -149,8 +163,7 @@ export function useConvertedRoom({
     }
 
     const size = measureNow(element)
-    if (document.fonts.status === 'loading') {
-      redrawWhenFontsLoad()
+    if (waitsOnFonts(element)) {
       return size
     }
 
@@ -261,14 +274,7 @@ export function useConvertedRoom({
       setBoundText,
       canWrite,
       restoreRev: () => liveRoom.status.restoreRev,
-      // Text that waits on a loading font is redrawn once it comes
-      fontsPending: () => {
-        if (document.fonts.status === 'loading') {
-          redrawWhenFontsLoad()
-        }
-
-        return isFontPending
-      },
+      fontsPending: waitsOnFonts,
       onRenamed: applyRenames,
       onMerged: keepShownSlide,
       onStep: showStep,

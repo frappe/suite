@@ -650,7 +650,7 @@ describe('typing in centred text', () => {
 describe('a move of centred text while another tab has it selected', () => {
   it('keeps the move in both tabs when the other tab draws the text again', () => {
     const [asha, ravi] = [new Y.Doc(), new Y.Doc()]
-    // Ravi's write wins a tie, as it did in the owner's run
+    // Ravi's write wins a tie
     asha.clientID = 1
     ravi.clientID = 2
     writeDeck(asha, [

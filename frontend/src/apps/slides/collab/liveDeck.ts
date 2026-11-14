@@ -69,8 +69,8 @@ export interface LiveDeckHost {
   canWrite: () => boolean
   /** The room's count of restores so far. It moves before the restore's rows arrive. */
   restoreRev: () => number
-  /** A font is still loading, so a top-left `flatten` works out now is only good for drawing. */
-  fontsPending: () => boolean
+  /** A font the element's text draws in is still loading, so its `flatten` is only good for drawing. */
+  fontsPending: (element: StoreItem) => boolean
   onRenamed: (renames: Map<string, string>) => void
   /** The store took the room's slides; these were its slides before. */
   onMerged: (previousSlides: StoreSlide[]) => void
@@ -397,7 +397,7 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
       const fields = changedFields(elementFields(before), elementFields(after))
       const isEdited = Object.keys(fields).length > 0 || !sameValue(before.content, after.content)
       const isFlattened = savedFrame(id)?.transform === CENTRED && after.transform !== CENTRED
-      if (isEdited && isFlattened && !host.fontsPending()) {
+      if (isEdited && isFlattened && !host.fontsPending(after)) {
         fields.frame = elementFields(after).frame
       }
 
@@ -677,7 +677,13 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
     pull,
     /** Puts the layout on the presentation's one blank slide. False if it isn't blank any more. */
     fillBlank,
-    holdsPosition: (id: string) => savedFrame(id)?.transform === CENTRED && host.fontsPending(),
+    holdsPosition: (id: string) => {
+      const element = host
+        .slides()
+        .flatMap((slide) => slide.elements)
+        .find((item) => item.id === id)
+      return savedFrame(id)?.transform === CENTRED && !!element && host.fontsPending(element)
+    },
     undo: () => takeStep('undo'),
     redo: () => takeStep('redo'),
     /** The change just made is one undo step, and nothing after it joins that step. */

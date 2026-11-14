@@ -1269,12 +1269,20 @@ describe('a deck on the content layer', () => {
     const browser = {
       status: 'loaded',
       height: FONT_HEIGHT,
+      // the face that loads; empty for the one every text draws in
+      loadingFace: '',
       ready: Promise.resolve<unknown>(undefined),
       fontArrives: () => {},
+      check: (face: string) => browser.status !== 'loading' || !face.includes(browser.loadingFace),
     }
 
     beforeEach(() => {
-      Object.assign(browser, { status: 'loaded', height: FONT_HEIGHT, ready: Promise.resolve() })
+      Object.assign(browser, {
+        status: 'loaded',
+        height: FONT_HEIGHT,
+        loadingFace: '',
+        ready: Promise.resolve(),
+      })
       Object.defineProperty(document, 'fonts', { configurable: true, value: browser })
       vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(
         () => browser.height,
@@ -1448,6 +1456,42 @@ describe('a deck on the content layer', () => {
       expect(drawn()).toMatchObject(shown)
       expect(editor.getText()).toBe('oxyne')
       expect(editor.state.selection.from).toBe(4)
+    })
+
+    it('grows a title downwards on a first Enter while a font only other text uses loads', async () => {
+      const room = roomOf('one')
+      collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
+      const id = 'element-one'
+      setElement(room.doc, id, { frame: { left: 500, top: 300, transform: CENTRED } })
+      mounted = await openedSurface({ deck: { is_converted: true } })
+      await vi.waitFor(() => expect(viewOnly.value).toBe(false))
+      focusElementId.value = id
+      await vi.waitFor(() => expect(activeEditor.value).toBeTruthy())
+      await nextTick()
+      const editor: Editor = fromAny(activeEditor.value)
+      const drawn = () =>
+        fromPartial<Array<{ elements: Array<{ left: number; top: number }> }>>(
+          editorSlides.value,
+        )[0].elements[0]
+      const shown = { left: drawn().left, top: drawn().top }
+      const saved = () => room.doc.getMap<Map<string, unknown>>(ROOT.elements).get(id)!.get('frame')
+
+      // Anton, picked on another element after open
+      fontStartsLoading()
+      Object.assign(browser, { loadingFace: 'Anton', height: FONT_HEIGHT * 2 })
+      editor.chain().setTextSelection(4).splitBlock().run()
+      await nextTick()
+
+      expect(saved()).toMatchObject({ ...shown, transform: 'none' })
+
+      browser.fontArrives()
+      await browser.ready
+      await nextTick()
+      await nextTick()
+
+      expect(drawn()).toMatchObject(shown)
+      expect(saved()).toMatchObject({ ...shown, transform: 'none' })
+      expect(drawnSlides(room.doc)[0].elements[0]).toMatchObject(shown)
     })
   })
 

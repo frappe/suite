@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 
 import { api, client } from '@/api'
 import { normalizeZIndices } from '@/apps/slides/stores/element'
+import { drawnFontsReady } from '@/apps/slides/utils/bundledFonts'
 import { normalizeColor } from '@/apps/slides/utils/color'
 import { migrateShadow } from '@/apps/slides/utils/oldShadow'
 import { appDocumentTitle } from '@/platform/page-meta'
@@ -70,6 +71,13 @@ async function getElementDimensions(el) {
   const tempDiv = placeForMeasuring(el)
   await document.fonts.ready
   return readMeasured(tempDiv, el)
+}
+
+function fontsLoadedFor(el) {
+  const tempDiv = placeForMeasuring(el)
+  const isLoaded = drawnFontsReady(tempDiv)
+  document.body.removeChild(tempDiv)
+  return isLoaded
 }
 
 function measureNow(el) {
@@ -332,6 +340,7 @@ export {
   loadTemplates,
   presentationTheme,
   flattenNow,
+  fontsLoadedFor,
   measureNow,
   viewOnly,
   inReadonlyMode,
