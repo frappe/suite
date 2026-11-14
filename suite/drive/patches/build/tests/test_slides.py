@@ -13,13 +13,22 @@ from unittest.mock import Mock
 
 from PIL import Image
 
+from suite.drive._core.roles import READ
 from suite.drive.patches.build.content import BuildContentError, link_content_documents
+from suite.drive.patches.build.environment import BUILD_BATCH_SIZE
+from suite.drive.patches.build.patch import _convert_grants
 from suite.drive.patches.build.ports import REMOVED, ContentRow, MediaFileRow, SlideRow, TreeRow
 from suite.drive.patches.build.report import build_report
 from suite.drive.patches.build.slide_journal import JournalConflictError, SlideBody, SlidePreimageJournal
 from suite.drive.patches.build.slides import SLIDE_FIELDS, BuildSlidesError, convert_slides_and_templates
 from suite.drive.patches.build.state import ContentConversion
-from suite.drive.patches.build.tests.fakes import FakeContent, FakeContentTarget, build_environment
+from suite.drive.patches.build.tests.fakes import (
+    FakeContent,
+    FakeContentTarget,
+    FakeDrive,
+    FakeTree,
+    build_environment,
+)
 
 S3_URL = "/api/method/suite.drive.api.s3.fetch"
 
@@ -1953,6 +1962,32 @@ class SlidesTest(unittest.TestCase):
         stored = env.state.content()
         self.assertEqual(stored.media_nodes_relocated, 1)
         self.assertEqual(stored.relocated_media_nodes[0].was_under, "personal-root")
+
+    def test_media_filed_in_the_uploaders_folder_gets_no_creator_grant_before_it_moves(self):
+        # Step 6 runs while the node still sits in the folder, so only the old File row says it is media
+        uploader = "uploader@example.com"
+        source = FakeContent(documents=[deck()], media=[replace(media("media-a"), owner=uploader)])
+        drive = FakeDrive()
+        target = FakeContentTarget(drive=drive, content=source)
+        tree = FakeTree(drive=drive, users={OWNER: True, uploader: True})
+        env = build_environment(
+            self.path, tree=tree, drive=drive, content=source, content_target=target, content_ready=True
+        )
+        self.document_node(target, "deck-node", "deck-1", "Deck")
+        self.tree_node(target, "folder", "root", kind="folder")
+        self.tree_node(target, "media-a", "folder", root="root", path="/folder/", owner=uploader)
+        drive.grant_rows["general"] = {
+            "name": "general",
+            "node": "root",
+            "principal": "$GENERAL",
+            "role": READ,
+        }
+
+        _convert_grants(env, [], batch_size=BUILD_BATCH_SIZE)
+        convert_slides_and_templates(env)
+
+        self.assertEqual(target.node_rows["media-a"]["parent_node"], "deck-node")
+        self.assertEqual(drive.principals("media-a"), {})
 
     def test_the_moved_node_drops_the_dedup_suffix_it_earned_in_the_old_folder(self):
         source = FakeContent(

@@ -37,7 +37,7 @@ the delete goes through `DriveTarget`.
 """
 
 from suite.drive._core.roles import EDIT, NONE, READ
-from suite.drive.patches.build.environment import BUILD_BATCH_SIZE
+from suite.drive.patches.build.environment import BUILD_BATCH_SIZE, BuildEnvironment
 from suite.drive.patches.build.mapping import (
     GENERAL,
     GROUP_PREFIX,
@@ -408,7 +408,8 @@ def _creator_grants(env, grants: GrantConversion, nodes, batch, batch_size: int)
     from the presentation (owner ruling, 2026-11-13). An upload's owner is
     whoever uploaded it, so the rule would give EDIT on a picture in
     someone else's presentation to a user who holds nothing on the
-    presentation itself.
+    presentation itself. A media File the old tree filed in a folder still
+    counts: step 8 moves it under the presentation after this step runs.
     """
     # Every legacy row is stored before the owners are read, so a deny on
     # the owner is a stored row this pass can see and override.
@@ -418,6 +419,9 @@ def _creator_grants(env, grants: GrantConversion, nodes, batch, batch_size: int)
         rows = env.drive.owned_nodes(after, batch_size)
         if not rows:
             break
+
+        # Step 8 moves media under its presentation later, so the old File rows decide, not the parent
+        media = env.content.presentation_media(tuple(row["name"] for row in rows))
         for row in rows:
             grants.owned_nodes_seen += 1
             owner = row["owner"]
@@ -425,21 +429,30 @@ def _creator_grants(env, grants: GrantConversion, nodes, batch, batch_size: int)
                 grants.creator_owners_dead += 1
                 continue
 
-            if is_presentation_media(nodes, row):
+            if row["name"] in media or is_presentation_media(nodes, row):
                 continue
 
-            if env.drive.effective_role(row, owner) >= EDIT:
-                continue
-            if env.drive.grant_roles(row["name"], (owner,)).get(owner) == NONE:
-                batch.override(row["name"], owner, EDIT)
-                grants.creator_denies_overridden += 1
-                continue
-            batch.add(row["name"], owner, EDIT)
-            grants.creator_grants_minted += 1
+            add_creator_grant(env, grants, batch, row)
+
         after = rows[-1]["name"]
         if len(rows) < batch_size:
             break
     batch.flush()
+
+
+def add_creator_grant(env: BuildEnvironment, grants: GrantConversion, batch: _Batch, row: dict) -> None:
+    """Raise `row`'s owner to EDIT on it, overriding their own deny."""
+    owner = row["owner"]
+    if env.drive.effective_role(row, owner) >= EDIT:
+        return
+
+    if env.drive.grant_roles(row["name"], (owner,)).get(owner) == NONE:
+        batch.override(row["name"], owner, EDIT)
+        grants.creator_denies_overridden += 1
+        return
+
+    batch.add(row["name"], owner, EDIT)
+    grants.creator_grants_minted += 1
 
 
 def is_presentation_media(nodes: _NodeFacts, row: dict) -> bool:

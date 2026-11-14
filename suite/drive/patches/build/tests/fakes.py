@@ -852,6 +852,9 @@ class FakeContent:
         wanted = set(urls)
         return [row for row in self.media_rows if row.file_url in wanted]
 
+    def presentation_media(self, names):
+        return {row.name for row in self.media_rows if row.name in names}
+
     def writer_document_is_template(self, name):
         return any(row.name == name for row in self.writer_template_rows)
 
