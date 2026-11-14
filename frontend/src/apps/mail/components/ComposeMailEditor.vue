@@ -93,6 +93,7 @@
                 ref="toInput"
                 v-model="mail.to"
                 field="to"
+                :suggestions-to="toSuggestions"
                 @move="moveRecipient"
                 @show-cc-bcc="showCcBcc = true"
               />
@@ -106,6 +107,7 @@
                 @click="toggleCcBcc"
               />
             </div>
+            <div ref="toSuggestions" class="empty:hidden" />
             <template v-if="showCcBcc">
               <div
                 class="flex items-start gap-2 border-b px-4 py-2"
@@ -120,8 +122,15 @@
                     {{ __('Cc') }}
                   </button>
                 </Tooltip>
-                <RecipientInput ref="ccInput" v-model="mail.cc" field="cc" @move="moveRecipient" />
+                <RecipientInput
+                  ref="ccInput"
+                  v-model="mail.cc"
+                  field="cc"
+                  :suggestions-to="ccSuggestions"
+                  @move="moveRecipient"
+                />
               </div>
+              <div ref="ccSuggestions" class="empty:hidden" />
               <div
                 class="flex items-start gap-2 border-b px-4 py-2"
                 :class="{ 'border-transparent': isDragging }"
@@ -135,8 +144,14 @@
                     {{ __('Bcc') }}
                   </button>
                 </Tooltip>
-                <RecipientInput v-model="mail.bcc" field="bcc" @move="moveRecipient" />
+                <RecipientInput
+                  v-model="mail.bcc"
+                  field="bcc"
+                  :suggestions-to="bccSuggestions"
+                  @move="moveRecipient"
+                />
               </div>
+              <div ref="bccSuggestions" class="empty:hidden" />
             </template>
           </div>
           <input
@@ -202,6 +217,7 @@
                   ref="toInput"
                   v-model="mail.to"
                   field="to"
+                  :suggestions-to="toSuggestions"
                   @move="moveRecipient"
                   @show-cc-bcc="showCcBcc = true"
                 />
@@ -216,6 +232,7 @@
                   />
                 </div>
               </div>
+              <div ref="toSuggestions" class="empty:hidden" />
               <template v-if="showCcBcc">
                 <div class="flex gap-2">
                   <Tooltip :text="__('Select from contacts')">
@@ -230,9 +247,11 @@
                     ref="ccInput"
                     v-model="mail.cc"
                     field="cc"
+                    :suggestions-to="ccSuggestions"
                     @move="moveRecipient"
                   />
                 </div>
+                <div ref="ccSuggestions" class="empty:hidden" />
                 <div class="flex gap-2">
                   <Tooltip :text="__('Select from contacts')">
                     <span
@@ -242,8 +261,14 @@
                       {{ __('Bcc') }}
                     </span>
                   </Tooltip>
-                  <RecipientInput v-model="mail.bcc" field="bcc" @move="moveRecipient" />
+                  <RecipientInput
+                    v-model="mail.bcc"
+                    field="bcc"
+                    :suggestions-to="bccSuggestions"
+                    @move="moveRecipient"
+                  />
                 </div>
+                <div ref="bccSuggestions" class="empty:hidden" />
               </template>
             </div>
           </div>
@@ -433,6 +458,11 @@ const composerRoot = useTemplateRef<HTMLElement>('composerRoot')
 const textEditor = useTemplateRef('textEditor')
 const toInput = useTemplateRef('toInput')
 const ccInput = useTemplateRef('ccInput')
+// Where each field's suggestions go: in the page below the field, taking room rather than a
+// floating list over the fields beneath it, Subject among them (see RecipientInput).
+const toSuggestions = useTemplateRef<HTMLElement>('toSuggestions')
+const ccSuggestions = useTemplateRef<HTMLElement>('ccSuggestions')
+const bccSuggestions = useTemplateRef<HTMLElement>('bccSuggestions')
 const subjectInput = useTemplateRef<HTMLInputElement>('subjectInput')
 // An upload in flight, with the name and size of the file it is carrying.
 type FileUpload = ReturnType<typeof useFileUpload> & { name: string; size: number }

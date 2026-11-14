@@ -106,18 +106,30 @@
 		  Combobox stays for the chips and the typing; only its popover is suppressed.
 		-->
     <Teleport v-if="suggestionsTo" :to="suggestionsTo">
-      <ul v-if="inlineSuggestions.length" ref="suggestionList">
-        <li v-for="option in inlineSuggestions" :key="option.email">
+      <ul
+        v-if="inlineSuggestions.length"
+        ref="suggestionList"
+        role="listbox"
+        :aria-label="__('Suggestions')"
+      >
+        <li v-for="(option, i) in inlineSuggestions" :key="option.email" role="presentation">
           <!-- The press must not move focus: the list is only rendered while the field has it,
 					     so letting the input blur unmounts the row from under the finger and the click
 					     lands on nothing. Selection happens on the click that follows. -->
           <button
+            role="option"
+            :aria-selected="i === activeSuggestion"
             class="hover:bg-surface-gray-2 flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm"
+            :class="{ 'bg-surface-gray-2': i === activeSuggestion }"
             @mousedown.prevent
             @click="pickSuggestion(option)"
           >
             <Avatar :image="option.image" :label="option.display_name || option.email" size="lg" />
-            <ContactOption :contact="option" :query="searchText" />
+            <ContactOption
+              :contact="option"
+              :query="searchText"
+              :domain-tells-apart="namesShared.has(nameOf(option))"
+            />
           </button>
         </li>
       </ul>
@@ -335,8 +347,11 @@ const typedRecipient = computed<DraftRecipient | null>(() => {
  * screen.
  */
 type ContactSuggestion = (typeof contacts.value)[number]
+// Put away by Esc, until the typing changes. The typed text stays: Esc is "not these", not "start
+// over", and the key must not reach the composer, where it would dock an expanded window instead.
+const isDismissed = ref(false)
 const inlineSuggestions = computed(() => {
-  if (!suggestionsTo || !isFocused.value) return []
+  if (!suggestionsTo || !isFocused.value || isDismissed.value) return []
 
   const contacts = options.value.filter(
     (option): option is ContactSuggestion => 'email' in option && typeof option.email === 'string',
@@ -346,6 +361,37 @@ const inlineSuggestions = computed(() => {
 
   return (typed && !isSuggested ? [typed, ...contacts] : contacts).slice(0, 5)
 })
+
+// Two suggestions under one name — the same person at work and at home, two people called Sam —
+// differ only in their address, and mostly in its domain, so that is where those rows put the weight.
+const nameOf = (option: DraftRecipient) => (option.display_name ?? '').trim().toLowerCase()
+const namesShared = computed(() => {
+  const seen = new Set<string>()
+  const shared = new Set<string>()
+  for (const option of inlineSuggestions.value) {
+    const name = nameOf(option)
+    if (!name) continue
+    if (seen.has(name)) shared.add(name)
+    seen.add(name)
+  }
+  return shared
+})
+
+// The suggestion the arrow keys are on, -1 until they move. Enter takes it; untouched, Enter takes
+// what was typed when that is an address, and on a desktop the first suggestion otherwise, which is
+// what Enter took from the floating list the inline one replaced there.
+const activeSuggestion = ref(-1)
+watch(searchText, () => {
+  activeSuggestion.value = -1
+  isDismissed.value = false
+})
+// The list sits in the header's scroller, which can be shorter than it: the row the arrows land on
+// is scrolled to, so Enter never adds one that is out of sight.
+watch(
+  activeSuggestion,
+  (i) => suggestionListRef.value?.children.item(i)?.scrollIntoView({ block: 'nearest' }),
+  { flush: 'post' },
+)
 
 const commitTyped = () => {
   const typed = typedRecipient.value
@@ -361,9 +407,15 @@ const commitTyped = () => {
 // what has been typed. The Combobox's own Enter handling belongs to the popover, which the
 // inline list replaces, so nothing else would.
 const handleInlineEnter = (e: KeyboardEvent) => {
-  if (!suggestionsTo || !typedRecipient.value) return
+  // The Enter that confirms an input method's composition belongs to the composition.
+  if (!suggestionsTo || e.isComposing) return
+  const chosen =
+    inlineSuggestions.value[activeSuggestion.value] ??
+    (!typedRecipient.value && !isMobile.value ? inlineSuggestions.value[0] : undefined)
+  if (!chosen && !typedRecipient.value) return
   e.preventDefault()
   e.stopPropagation()
+  if (chosen) return pickSuggestion(chosen)
   commitTyped()
   nextTick(setFocus)
 }
@@ -406,6 +458,27 @@ const handleClick = () => {
 defineExpose({ setFocus })
 
 const handleContainerKeydown = (e: KeyboardEvent) => {
+  // Up and down walk the inline suggestions, round from either end.
+  const count = inlineSuggestions.value.length
+  if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && count) {
+    e.preventDefault()
+    e.stopPropagation()
+    const step = e.key === 'ArrowDown' ? 1 : -1
+    activeSuggestion.value =
+      activeSuggestion.value < 0
+        ? step > 0
+          ? 0
+          : count - 1
+        : (activeSuggestion.value + step + count) % count
+    return
+  }
+  // Esc puts the suggestions away, and goes no further while they are showing.
+  if (e.key === 'Escape' && count) {
+    e.stopPropagation()
+    isDismissed.value = true
+    return
+  }
+
   const inputEl = containerRef.value?.querySelector('input') ?? null
   const isInputFocused = document.activeElement === inputEl
   const isAtInputStart = inputEl?.selectionStart === 0 && inputEl?.selectionEnd === 0
