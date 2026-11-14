@@ -112,6 +112,7 @@ def run():
 
         recognizer = TrelisRecognizer(
             os.environ.get("TRANSCRIPTION_MODEL_CACHE", "/models"),
+            metrics=metrics,
             allocator_gib=float(os.environ.get("TRANSCRIPTION_ALLOCATOR_GIB", "7")),
         )
         worker_id = os.environ.get(

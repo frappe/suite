@@ -1,14 +1,53 @@
 """Pinned original-language inference behind the worker's text-only interface."""
 
 import copy
+import gzip
 import math
 from pathlib import Path
 
 from protocol import CONFIGURATION, MODEL, REVISION, WorkError, hint_phrases, make_hints
 
 
+def repetition_fraction(text):
+    """Share of words covered by a short phrase repeated at least three times."""
+    words = text.casefold().split()
+    covered = set()
+    for width in range(1, 5):
+        for start in range(len(words) - width * 3 + 1):
+            phrase = words[start : start + width]
+            end = start + width
+            while words[end : end + width] == phrase:
+                end += width
+            if end - start >= max(4, 3 * width):
+                covered.update(range(start, end))
+    return len(covered) / len(words) if words else 0.0
+
+
+def segment_decision(no_speech_probability, average_logprob, compression_ratio, repeated_fraction=0.0):
+    """Conservative, model-independent rejection; never rewrite uncertain speech."""
+    if not all(
+        math.isfinite(value)
+        for value in (no_speech_probability, average_logprob, compression_ratio, repeated_fraction)
+    ):
+        return False, "invalid_signals"
+    if (
+        compression_ratio > CONFIGURATION["compression_ratio_threshold"]
+        or repeated_fraction >= CONFIGURATION["repetition_fraction_threshold"]
+    ):
+        return False, "repetition"
+    if (
+        no_speech_probability > CONFIGURATION["no_speech_threshold"]
+        and average_logprob < CONFIGURATION["logprob_threshold"]
+    ):
+        return False, "no_speech"
+    if average_logprob < CONFIGURATION["hallucination_logprob_threshold"]:
+        return False, "low_probability"
+    return True, "keep"
+
+
 class TrelisRecognizer:
-    def __init__(self, cache: str, *, allocator_gib=7):
+    def __init__(self, cache: str, *, allocator_gib=7, metrics=None):
+        self.metrics = metrics
         import torch
         from huggingface_hub import snapshot_download
         from transformers import WhisperForConditionalGeneration, WhisperProcessor
@@ -104,15 +143,29 @@ class TrelisRecognizer:
         generation.max_new_tokens = min(
             CONFIGURATION["max_new_tokens"], self.model.config.max_target_positions - len(prefix)
         )
+        # Decide once below: Transformers' threshold handling can retry decoding
+        # with temperature fallback and uses a different prefix position.
         for key in ("logprob_threshold", "compression_ratio_threshold", "no_speech_threshold"):
             setattr(generation, key, None)
         with torch.inference_mode():
+            # <|nospeech|> is predicted after SOT, before language/mixedcode/task.
+            # Prompt hints precede SOT. Generation scores suppress this token, so
+            # read the unsuppressed first-step output scores explicitly.
+            first = self.model(
+                input_features=inputs.input_features,
+                decoder_input_ids=torch.tensor([prefix[: len(prompt_ids) + 1]], device=self.model.device),
+            )
+            no_speech = float(
+                first.logits[0, -1].float().softmax(-1)[tokenizer.convert_tokens_to_ids("<|nospeech|>")]
+            )
+            del first
             output = self.model.generate(
                 **inputs,
                 generation_config=generation,
                 decoder_input_ids=torch.tensor([prefix], device=self.model.device),
                 return_timestamps=False,
                 return_dict_in_generate=True,
+                output_scores=True,
                 force_unique_generate_call=True,
                 condition_on_prev_tokens=False,
             )
@@ -122,13 +175,24 @@ class TrelisRecognizer:
         generated = tokens[len(prefix) :]
         eos = self.model.generation_config.eos_token_id
         eos = eos if isinstance(eos, list) else [eos]
-        if not len(generated) or int(generated[-1]) not in eos:
-            # Token exhaustion cannot become a successful source checkpoint.
+        if not len(generated):
             raise WorkError("decoder_output_truncated", transient=True)
         result = tokenizer.decode(generated, skip_special_tokens=True)
         if not isinstance(result, str) or "\x00" in result:
             raise WorkError("invalid_model_output")
-        return result
+        scores = torch.stack(output.scores, dim=1).float().log_softmax(-1)
+        average_logprob = float(scores[0].gather(1, generated[:, None]).mean())
+        encoded = result.encode("utf-8")
+        ratio = len(encoded) / len(gzip.compress(encoded))
+        keep, reason = segment_decision(no_speech, average_logprob, ratio, repetition_fraction(result))
+        if keep and int(generated[-1]) not in eos:
+            # Repetition may exhaust the token budget. Filter it, but never
+            # checkpoint a truncated result that otherwise looks like speech.
+            raise WorkError("decoder_output_truncated", transient=True)
+        if not keep and self.metrics is not None:
+            self.metrics.add("segments_dropped_total", 1)
+            self.metrics.add(f"segments_dropped_{reason}_total", 1)
+        return result if keep else ""
 
     def memory(self) -> dict:
         return {

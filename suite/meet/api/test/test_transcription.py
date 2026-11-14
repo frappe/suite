@@ -202,6 +202,33 @@ class IntegrationTestTranscription(IntegrationTestCase):
                 self.assertFalse(job.ready_at)
                 self.assertEqual(set(frappe.get_all("File", pluck="name")), files_before)
 
+    def test_fully_filtered_capture_publishes_no_speech(self):
+        job = self.job()
+        source = {
+            "source_id": "filtered",
+            "speaker_id": "speaker-a",
+            "speaker_name": "Anita",
+            "start_ms": 0,
+            "end_ms": 1000,
+        }
+        job.manifest = json.dumps({"segments": [source], "gaps": []})
+        job.save(ignore_permissions=True)
+        with (
+            patch.object(transcription, "_authenticate"),
+            patch("suite.meet.transcription.client.authorize_manifest", return_value={"segments": []}),
+            patch("suite.meet.transcription.artifacts.publish", return_value=None) as publish,
+        ):
+            claimed = transcription.claim("worker")
+            outcome = transcription.complete(
+                job.name,
+                claimed["lease_token"],
+                "worker",
+                [{**source, "text": ""}],
+                processed_source_ids=["filtered"],
+            )
+        self.assertEqual(outcome["status"], "Ready")
+        self.assertEqual(publish.call_args.args[1], "Transcript\n\n[No speech detected]\n")
+
     def test_completed_silence_cannot_hide_a_missing_speech_source(self):
         job = self.job()
         source = {

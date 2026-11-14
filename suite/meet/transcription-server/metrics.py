@@ -27,6 +27,11 @@ DEFINITIONS = {
     "queue_poll_failures_total": ("counter", "Failed authenticated queue requests"),
     "jobs_completed_total": ("counter", "Successfully acknowledged transcription jobs"),
     "jobs_failed_total": ("counter", "Failed processing attempts including lease loss"),
+    "segments_dropped_total": ("counter", "Segments silently filtered by recognition"),
+    **{
+        f"segments_dropped_{reason}_total": ("counter", f"Segments filtered: {reason}")
+        for reason in ("no_speech", "repetition", "low_probability", "invalid_signals")
+    },
     "segments_completed_total": ("counter", "Sources processed by this worker including silence"),
     "processed_audio_seconds_total": ("counter", "Actual source audio processed, including retry work"),
     "processing_seconds_total": (
