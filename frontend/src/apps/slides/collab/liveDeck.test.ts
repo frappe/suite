@@ -58,9 +58,13 @@ function tabOn(
   const store = reactive<{ slides: StoreSlide[] }>({ slides: [] })
   const renamed: Map<string, string>[] = []
   const boundText: (string | null)[] = []
+  let drawnHigherBy = 0
   const deck = openLiveDeck(doc, {
     slides: () => store.slides,
-    flatten: flattenLikeTheEditor,
+    flatten: (element) => {
+      const flat = flattenLikeTheEditor(element)
+      return element.transform === CENTRED ? { ...flat, top: flat.top - drawnHigherBy } : flat
+    },
     boundElementId: () => boundElementId,
     isSelected: (id) => selected.includes(id),
     setBoundText: (html) => boundText.push(html),
@@ -81,6 +85,10 @@ function tabOn(
     // the tab lost edit, as a role change or a lock does
     stopWriting: () => {
       canWrite = false
+    },
+    // the tab draws centred text a little taller or shorter, as a font or zoom change does
+    redraw: (higherBy: number) => {
+      drawnHigherBy = higherBy
     },
   }
 }
@@ -636,6 +644,39 @@ describe('typing in centred text', () => {
 
       expect(savedFrame(doc, 't')).toMatchObject({ left: 77, transform: 'none' })
     })
+  })
+})
+
+describe('a move of centred text while another tab has it selected', () => {
+  it('keeps the move in both tabs when the other tab draws the text again', () => {
+    const [asha, ravi] = [new Y.Doc(), new Y.Doc()]
+    // Ravi's write wins a tie, as it did in the owner's run
+    asha.clientID = 1
+    ravi.clientID = 2
+    writeDeck(asha, [
+      {
+        id: 's',
+        elements: [{ id: 't', type: 'text', frame: { left: 500, top: 300, transform: CENTRED } }],
+      },
+    ])
+    Y.applyUpdate(ravi, Y.encodeStateAsUpdate(asha))
+    const ashaTab = tabOn(asha)
+    const raviTab = tabOn(ravi, { boundElementId: 't', selected: ['t'] })
+
+    // Neither tab has heard the other's change yet
+    raviTab.redraw(1)
+    raviTab.deck.push()
+    ashaTab.element('t').left = 175
+    ashaTab.element('t').top = 340
+    ashaTab.deck.push()
+    Y.applyUpdate(ravi, Y.encodeStateAsUpdate(asha, Y.encodeStateVector(ravi)), 'wire')
+    Y.applyUpdate(asha, Y.encodeStateAsUpdate(ravi, Y.encodeStateVector(asha)), 'wire')
+
+    const moved = { left: 175, top: 340 }
+    expect(ashaTab.element('t')).toMatchObject(moved)
+    expect(raviTab.element('t')).toMatchObject(moved)
+    expect(savedFrame(asha, 't')).toMatchObject(moved)
+    expect(savedFrame(ravi, 't')).toMatchObject(moved)
   })
 })
 
