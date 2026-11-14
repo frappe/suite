@@ -38,8 +38,20 @@
           :class="showsName(outline) ? 'opacity-0' : SHRINKING"
           data-peer-dot
         />
+        <!-- an element narrower than the tab's foot takes Writer's name flag, its corner on the outline's -->
+        <div
+          v-if="isNarrow(outline.label, outline.width)"
+          class="absolute -bottom-[0.75px] -left-[0.75px] origin-bottom-left whitespace-nowrap rounded-[6px_6px_6px_1px] bg-[var(--peer-tint)] px-1.5 text-[var(--peer-ink)] shadow-[inset_0_0_0_1.5px_var(--peer-solid)]"
+          :class="{ [`pointer-events-none scale-0 opacity-0 ${SHRINKING}`]: !showsName(outline) }"
+          :style="{ font: TAB_FONT, lineHeight: '16px' }"
+          :data-shrunk="!showsName(outline) || undefined"
+          data-peer-name
+        >
+          {{ outline.label }}
+        </div>
         <!-- shrinks into the dot, and comes back at once -->
         <svg
+          v-else
           class="absolute bottom-0 left-0 origin-bottom-left overflow-visible"
           :class="{ [`pointer-events-none scale-0 opacity-0 ${SHRINKING}`]: !showsName(outline) }"
           :width="tab(outline.label).width"
@@ -165,6 +177,11 @@ function textWidth(text: string) {
   const width = measurer.measureText(text).width
   widths.set(text, width)
   return width
+}
+
+// the tab's foot ends 0.75px left of its own right edge
+function isNarrow(label: string, width: number) {
+  return width < tab(label).width - 0.75
 }
 
 // the approved shape: joined to the outline, with a soft curve on its right side

@@ -16,12 +16,12 @@ vi.mock('@/apps/slides/stores/slide', () => ({ currentSlide }))
 const { default: PeerOutlines } = await import('./PeerOutlines.vue')
 const { registerElementDiv } = await import('@/apps/slides/stores/elementRegistry')
 
-function elementAt(id: string, left: string, top: string) {
+function elementAt(id: string, left: string, top: string, width = 400) {
   const div = document.createElement('div')
   div.style.left = left
   div.style.top = top
   // its size on the slide
-  Object.defineProperty(div, 'offsetWidth', { value: 400 })
+  Object.defineProperty(div, 'offsetWidth', { value: width })
   Object.defineProperty(div, 'offsetHeight', { value: 100 })
   registerElementDiv(id, div)
 }
@@ -130,6 +130,32 @@ describe('PeerOutlines', () => {
     expect(Number(tabLine.getAttribute('stroke-width')) * onScreen).toBe(1.5)
     expect(Number(line.getAttribute('width')) * scaleOf(layer)).toBe(400)
     expect(Number(line.getAttribute('height')) * scaleOf(layer)).toBe(100)
+  })
+
+  it('names a co-editor on an element narrower than the tab in a flag, not the joined tab', async () => {
+    elementAt('one', '40px', '60px', 4)
+    const { presence, select } = room([tab(5, 'asha')])
+    const host = await outlines(presence)
+
+    select(5, ['one'])
+    await nextTick()
+    await nextTick()
+
+    expect(nameIn(host)?.tagName).toBe('DIV')
+    expect(nameIn(host)?.textContent?.trim()).toBe('Asha')
+    expect(host.querySelector('[data-peer-name] path')).toBeNull()
+  })
+
+  it('keeps the joined tab on an element wide enough for it', async () => {
+    const { presence, select } = room([tab(5, 'asha')])
+    const host = await outlines(presence)
+
+    select(5, ['one'])
+    await nextTick()
+    await nextTick()
+
+    expect(nameIn(host)?.tagName).toBe('svg')
+    expect(nameIn(host)?.textContent?.trim()).toBe('Asha')
   })
 
   it('shows nothing while a co-editor has nothing selected', async () => {
