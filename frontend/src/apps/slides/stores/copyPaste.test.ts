@@ -315,4 +315,34 @@ describe('a paste from another presentation', () => {
 
     expect(insertSlide).toHaveBeenCalledOnce()
   })
+
+  describe('whose pictures the server refuses', () => {
+    const refusal = "Some pictures can't be copied here, so nothing was pasted."
+
+    // made in the test, so the rejection is awaited before it can count as unhandled
+    function refused() {
+      vi.mocked(toast.error).mockClear()
+      adoption.answer = Promise.reject(new Error(refusal))
+    }
+
+    it('says why and adds no slide', async () => {
+      refused()
+      await pasted({ clientId: 's1', parent: 'other', elements: [{ id: 'e1', type: 'image' }] })
+
+      expect(insertSlide).not.toHaveBeenCalled()
+      expect(toast.error).toHaveBeenCalledExactlyOnceWith(refusal)
+    })
+
+    it('says why and adds no elements', async () => {
+      refused()
+      await pasted({
+        srcPresentation: 'other',
+        srcSlide: 0,
+        elements: [{ id: 'e1', type: 'image' }],
+      })
+
+      expect(duplicateElements).not.toHaveBeenCalled()
+      expect(toast.error).toHaveBeenCalledExactlyOnceWith(refusal)
+    })
+  })
 })
