@@ -46,6 +46,7 @@ vi.mock('@/apps/mail/utils', () => ({
   }),
   raiseError: vi.fn(),
   raiseToast: vi.fn(),
+  randomString: () => 'cid1',
 }))
 interface TestIdentity {
   email: string
@@ -92,10 +93,12 @@ type ComposerHost = Parameters<typeof useComposeMail>[0]['host'] extends () => i
 
 let open = true
 const apps: ReturnType<typeof createApp>[] = []
+type Upload = Parameters<typeof useComposeMail>[0]['uploadInlineImage']
 function compose({
   signedInAs = 'maya@example.com',
   host = () => null,
-}: { signedInAs?: string; host?: () => ComposerHost } = {}) {
+  upload = vi.fn(),
+}: { signedInAs?: string; host?: () => ComposerHost; upload?: Upload } = {}) {
   let composer!: ReturnType<typeof useComposeMail>
   const app = createApp(
     defineComponent({
@@ -106,7 +109,7 @@ function compose({
           close: () => (open = false),
           isOpen: () => open,
           host,
-          uploadInlineImage: vi.fn(),
+          uploadInlineImage: upload,
         })
         composer.onOpened()
         return () => null
@@ -282,6 +285,58 @@ describe('saving a draft', () => {
         restored: true,
       }),
     )
+  })
+})
+
+describe('an image held in the body as a data URL', () => {
+  // A 1×1 transparent PNG.
+  const png =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
+  const imageOf = (html: string) =>
+    new DOMParser().parseFromString(html, 'text/html').querySelector('img')?.getAttribute('src')
+  const savedBody = (call: number) => server.updateDraft.mock.calls[call][0].html_body
+
+  it('keeps what was typed while it uploaded', async () => {
+    let finish!: () => void
+    const upload = vi.fn<Upload>(
+      () =>
+        new Promise((resolve) => {
+          finish = () => resolve(fromPartial({ file_url: '/private/files/pasted.png' }))
+        }),
+    )
+    const composer = compose({ upload })
+    server.updateDraft.mockResolvedValue({ id: 'draft-1', status: 'Drafted', error: null })
+    composer.onEditorChange(`<div>See this:</div><img src="${png}">`)
+
+    const saving = composer.saveDraft()
+    await vi.waitFor(() => expect(upload).toHaveBeenCalledOnce())
+    composer.onEditorChange(`<div>See this, and the rest:</div><img src="${png}">`)
+    finish()
+    await saving
+
+    for (const body of [composer.mail.html_body, savedBody(0)]) {
+      expect(body).toContain('See this, and the rest:')
+      expect(imageOf(body)).toBe('/private/files/pasted.png')
+    }
+  })
+
+  it('still saves when its upload is refused, and uploads it on the next save', async () => {
+    const upload = vi
+      .fn<Upload>()
+      .mockRejectedValueOnce(new Error('image.png is too large to attach.'))
+      .mockResolvedValueOnce(fromPartial({ file_url: '/private/files/pasted.png' }))
+    const composer = compose({ upload })
+    server.updateDraft.mockResolvedValue({ id: 'draft-1', status: 'Drafted', error: null })
+
+    composer.onEditorChange(`<div>See this:</div><img src="${png}">`)
+    await composer.saveDraft()
+    expect(composer.isSaveFailed.value).toBe(false)
+    expect(imageOf(savedBody(0))).toBe(png)
+
+    composer.onEditorChange(`<div>See this, again:</div><img src="${png}">`)
+    await composer.saveDraft()
+    expect(upload).toHaveBeenCalledTimes(2)
+    expect(imageOf(savedBody(1))).toBe('/private/files/pasted.png')
   })
 })
 

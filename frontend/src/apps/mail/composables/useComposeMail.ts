@@ -16,6 +16,7 @@ import {
   useUndo,
 } from '@/apps/mail/utils/composables'
 import { createEditorBody } from '@/apps/mail/utils/editorBody'
+import { uploadEmbeddedImages } from '@/apps/mail/utils/embeddedImages'
 import { createMentionSuggestion, type MentionCandidate } from '@/apps/mail/utils/mentionSuggestion'
 import { QuotedContentExtension } from '@/apps/mail/utils/quotedContentExtension'
 import {
@@ -645,6 +646,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     send_at?: string
     undo_send?: boolean
   }) {
+    await uploadStrandedImages()
     const input: InputOf<typeof api.mail.messages.create> = {
       account: scopeAccountId.value,
       from_email: mail.from_email,
@@ -668,6 +670,17 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     await onMailUpdateSuccess(result)
   }
   const updateDraft = useMutation(api.mail.messages.updateDraft)
+  // An image left in the body as a data URL goes as a file, not as base64 in the HTML (see
+  // uploadEmbeddedImages). Not while the editor's own uploads are running: one of those is about to
+  // replace its image, and uploading it here as well would send it twice. The host's upload counts
+  // towards that too, so a save starting meanwhile leaves these alone. The files are pointed at in
+  // the body as it is once they are up, which holds whatever was typed while they went.
+  async function uploadStrandedImages() {
+    if (options.isUploading?.()) return
+    const pointAtFiles = await uploadEmbeddedImages(mail.html_body, options.uploadInlineImage)
+    const body = pointAtFiles(mail.html_body)
+    if (body !== mail.html_body) mail.html_body = body
+  }
   async function updateDraftSubmit({
     submit,
     send_at,
@@ -677,6 +690,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     send_at?: string
     undo_send?: boolean
   }) {
+    await uploadStrandedImages()
     const input: InputOf<typeof api.mail.messages.updateDraft> = {
       account: scopeAccountId.value,
       id: mail.id,
