@@ -19,5 +19,6 @@ function normalizeErrorMessage(message: unknown): string {
 		.replace(/<[^>]+>/g, " ")
 		.replace(/\s+/g, " ")
 		.replace(/\s+([.,!?;:])/g, "$1")
-		.trim();
+		.trim()
+		.replace(/^(?:[\w.]+\.)?(?:[A-Z]\w*(?:Error|Exception)|Error|Exception):\s*/, "");
 }

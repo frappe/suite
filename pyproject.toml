@@ -48,6 +48,9 @@ frappe = ">=16.0.0,<18.0.0"
 line-length = 110
 target-version = "py314"
 
+[tool.ruff.per-file-target-version]
+"suite/meet/transcription-server/**/*.py" = "py311"
+
 [tool.ruff.lint]
 select = [
     "F",
@@ -88,6 +91,7 @@ validation-ignore = [
     # standalone services, each deployed and run outside the Frappe site
     "suite/meet/sfu-server/*",  # includes the nested stt-server
     "suite/meet/recorder-server/*",
+    "suite/meet/transcription-server/*",
     "suite/sheets/collab-server/*",
 ]
 

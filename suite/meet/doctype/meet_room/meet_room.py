@@ -92,6 +92,10 @@ class MeetRoom(Document):
             frappe.throw(_("Stop the active recording before enabling end-to-end encryption"))
 
     def has_active_recording(self) -> bool:
+        if frappe.db.table_exists("Meet Transcription Job") and frappe.db.exists(
+            "Meet Transcription Job", {"meet_room": self.name, "status": "Capturing"}
+        ):
+            return True
         from suite.meet.doctype.meet_recording.meet_recording import ACTIVE_RECORDING_STATUSES
 
         return bool(

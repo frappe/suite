@@ -30,3 +30,14 @@ scrape_configs:
       - files:
           - /etc/prometheus/targets/recorder*.yml
         refresh_interval: 30s
+
+  - job_name: frappe-meet-transcription
+    scheme: https
+    metrics_path: /metrics
+    authorization:
+      type: Bearer
+      credentials_file: /run/secrets/transcription_metrics_token
+    file_sd_configs:
+      - files:
+          - /etc/prometheus/targets/transcription*.yml
+        refresh_interval: 30s

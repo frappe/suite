@@ -75,14 +75,19 @@
   "grant_delivered_at",
   "stop_operation_id",
   "pending_deadline",
-  "drive_home_folder"
+  "drive_home_folder",
+  "video_enabled",
+  "transcription_enabled",
+  "transcription_language",
+  "capture_folder",
+  "capture_contract"
  ],
  "fields": [
   {"fieldname": "meet_room", "fieldtype": "Link", "label": "Meet Room", "options": "Meet Room", "reqd": 1, "search_index": 1},
   {"fieldname": "room_owner", "fieldtype": "Link", "label": "Room Owner", "options": "User", "reqd": 1, "search_index": 1},
   {"fieldname": "initiated_by", "fieldtype": "Link", "label": "Initiated By", "options": "User", "reqd": 1},
   {"fieldname": "calendar_event", "fieldtype": "Data", "label": "Calendar Event"},
-  {"fieldname": "status", "fieldtype": "Select", "label": "Status", "options": "Pending\nStarting\nRecording\nInterrupted\nStopping\nProcessing\nReady\nPartial\nFailed\nCancelled", "reqd": 1, "search_index": 1},
+  {"fieldname": "status", "fieldtype": "Select", "label": "Status", "options": "Pending\nStarting\nRecording\nInterrupted\nStopping\nProcessing\nReady\nPartial\nFailed\nCancelled\nCaptured", "reqd": 1, "search_index": 1},
   {"default": "0", "fieldname": "state_revision", "fieldtype": "Int", "label": "State Revision", "reqd": 1},
   {"default": "0", "fieldname": "recorder_event_sequence", "fieldtype": "Long Int", "label": "Recorder Event Sequence"},
   {"default": "0", "fieldname": "endpoint_generation", "fieldtype": "Int", "label": "Endpoint Generation", "reqd": 1, "read_only": 1},
@@ -149,7 +154,12 @@
   {"fieldname": "grant_delivered_at", "fieldtype": "Datetime", "label": "Grant Delivered At", "read_only": 1},
   {"fieldname": "stop_operation_id", "fieldtype": "Data", "label": "Stop Operation ID"},
   {"fieldname": "pending_deadline", "fieldtype": "Datetime", "label": "Pending Deadline", "search_index": 1},
-  {"fieldname": "drive_home_folder", "fieldtype": "Link", "label": "Drive Home Folder", "options": "File", "reqd": 1}
+  {"fieldname": "drive_home_folder", "fieldtype": "Link", "label": "Drive Home Folder", "options": "File", "reqd": 1},
+  {"fieldname": "video_enabled", "fieldtype": "Check", "label": "Video Enabled", "default": "1"},
+  {"fieldname": "transcription_enabled", "fieldtype": "Check", "label": "Transcription Enabled", "default": "0"},
+  {"fieldname": "transcription_language", "fieldtype": "Data", "label": "Transcription Language", "default": "en"},
+  {"fieldname": "capture_folder", "fieldtype": "Link", "options": "File", "label": "Capture Folder"},
+  {"fieldname": "capture_contract", "fieldtype": "Int", "label": "Capture Contract", "default": "0"}
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 0,

@@ -1,5 +1,10 @@
-import { CameraLayerDemand } from './CameraLayerDemand';
 import type { CameraLayerDemand as CameraLayerInstruction } from '../../../types/cameraLayers';
+import {
+	LEGACY_VOCABULARY_VERSION,
+	parseSpeechScope,
+	participantHintNames,
+	type SpeechScope,
+} from '../speechHints';
 import type { SttManager } from '../stt/SttManager';
 import type {
 	CloseProducerResult,
@@ -25,6 +30,7 @@ import type {
 	WebRtcTransportData,
 } from '../types';
 import { loggers } from '../utils/logger';
+import { CameraLayerDemand } from './CameraLayerDemand';
 import { ConsumerManager } from './ConsumerManager';
 import { ProducerManager } from './ProducerManager';
 import { RoomManager } from './RoomManager';
@@ -56,19 +62,27 @@ export class MediasoupManager {
 	private producerManager = new ProducerManager();
 	consumerManager = new ConsumerManager();
 	private sttManager: SttManager | null = null;
-	private cameraLayerListeners: Array<(roomId: string, peerId: string, demand: CameraLayerInstruction) => void> = [];
+	private cameraLayerListeners: Array<
+		(roomId: string, peerId: string, demand: CameraLayerInstruction) => void
+	> = [];
 	private cameraLayers = new CameraLayerDemand((roomId, peerId, demand) => {
-		for (const listener of this.cameraLayerListeners) listener(roomId, peerId, demand);
+		for (const listener of this.cameraLayerListeners)
+			listener(roomId, peerId, demand);
 	});
 
-	onCameraLayerDemand(listener: (roomId: string, peerId: string, demand: CameraLayerInstruction) => void): void {
+	onCameraLayerDemand(
+		listener: (
+			roomId: string,
+			peerId: string,
+			demand: CameraLayerInstruction,
+		) => void,
+	): void {
 		this.cameraLayerListeners.push(listener);
 	}
 
 	getCameraLayerDemand(producerId: string): CameraLayerInstruction | null {
 		return this.cameraLayers.get(producerId);
 	}
-
 
 	private networkQualityListeners: Array<
 		(
@@ -151,23 +165,35 @@ export class MediasoupManager {
 		);
 	}
 
+	pinRoomSpeechHints(roomId: string, context?: SpeechScope): void {
+		const room = this.roomManager.getRoom(roomId);
+		if (room && !room.speechContext)
+			room.speechContext = parseSpeechScope(
+				context ?? { vocabulary_version: LEGACY_VOCABULARY_VERSION, title: '' },
+			);
+	}
+
 	setSttManager(sttManager: SttManager): void {
 		this.sttManager = sttManager;
+		sttManager.setGetSpeechContext(
+			(roomId) => this.roomManager.getRoom(roomId)?.speechContext,
+		);
 		this.sttManager.setGetRouter((roomId) =>
 			this.roomManager.getRouter(roomId),
 		);
 		this.sttManager.setGetRoomNames((roomId) =>
-			this.getRoomParticipants(roomId)
-				.filter((participant) => !participant.id.startsWith('recorder:'))
-				.map((participant) => participant.info.name?.normalize('NFKC').trim())
-				.filter(
-					(name): name is string =>
-						typeof name === 'string' &&
-						name.length > 0 &&
-						name.length <= 80 &&
-						!/[\p{C}]/u.test(name),
-				)
-				.slice(0, 20),
+			participantHintNames(
+				this.getRoomParticipants(roomId)
+					.filter((participant) => !participant.id.startsWith('recorder:'))
+					.map((participant) => participant.info.name?.normalize('NFKC').trim())
+					.filter(
+						(name): name is string =>
+							typeof name === 'string' &&
+							name.length > 0 &&
+							name.length <= 80 &&
+							!/[\p{C}]/u.test(name),
+					),
+			).slice(0, 20),
 		);
 		this.sttManager.setRestartRoomTranscription((roomId) =>
 			this.startSttForExistingProducers(roomId),
@@ -673,7 +699,9 @@ export class MediasoupManager {
 		} finally {
 			this.creatingConsumers.delete(consumerKey);
 		}
-		const createdConsumer = this.consumerManager.getConsumerData(result.id)?.consumer;
+		const createdConsumer = this.consumerManager.getConsumerData(
+			result.id,
+		)?.consumer;
 		if (createdConsumer) this.cameraLayers.addConsumer(createdConsumer);
 		if (existingConsumer) {
 			this.consumerManager.closeConsumer(existingConsumer.consumer.id);
@@ -1213,6 +1241,10 @@ export class MediasoupManager {
 					break;
 			}
 		}
+	}
+
+	getTranscriptionRoom(roomId: string): Room | undefined {
+		return this.roomManager.getRoom(roomId);
 	}
 
 	getRoomPeers(roomId: string): Map<string, Peer> | undefined {

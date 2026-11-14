@@ -223,7 +223,10 @@ override_whitelisted_methods = {
 # ============================================================================
 doc_events = {
     "File": {
-        "on_update": "suite.meet.recording.ingest.delete_recording_metadata_for_removed_artifact",
+        "on_update": [
+            "suite.meet.recording.ingest.delete_recording_metadata_for_removed_artifact",
+            "suite.meet.transcription.artifacts.removed_artifact",
+        ],
     },
     "User Group": {
         "on_update": "suite.drive.utils.clear_user_group_cache",
@@ -326,6 +329,7 @@ scheduler_events = {
         "* * * * *": [
             "suite.meet.api.recording.reconcile_pending_recordings",
             "suite.meet.recording.ingest.reconcile_due_finalizations",
+            "suite.meet.api.transcription.maintenance",
         ],
         "*/5 * * * *": [
             # mail
@@ -454,6 +458,7 @@ ALLOWED_WILDCARD_PATHS = [
     "/api/method/suite.calendar.api.",
     # meet — recorder callbacks remain on their existing protocol during the API cutover
     "/api/method/suite.meet.api.recording.recorder_",
+    "/api/method/suite.meet.api.transcription.",
     "/api/v2/method/suite.meet.api.meeting.",
     "/api/v2/method/suite.meet.api.schedule.",
     "/api/v2/method/suite.meet.api.test_helpers.",

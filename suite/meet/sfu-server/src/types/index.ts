@@ -1,4 +1,3 @@
-import type { CameraLayerDemand } from "../../../types/cameraLayers";
 import type {
 	AppData,
 	AudioLevelObserver,
@@ -20,7 +19,6 @@ import type {
 } from 'mediasoup/types';
 import type {
 	ActiveSpeakerEvent,
-	SharedStageState,
 	AuthExpiredEvent,
 	ChatMessage,
 	ChatSendRequest,
@@ -68,16 +66,17 @@ import type {
 	ScreenShareStoppedEvent,
 	SFUErrorEvent,
 	SFUScope,
+	SharedStageState,
 	SttSegmentEvent,
 	SttToggleRequest,
 	TranscriptSegment,
 	UpdateTokenRequest,
 	UserData,
 } from '../../../types';
+import type { CameraLayerDemand } from '../../../types/cameraLayers';
 
 // Types shared with other SFU modules
 export type {
-	SharedStageState,
 	AppData,
 	ChatMessage,
 	Consumer,
@@ -107,6 +106,7 @@ export type {
 	ScreenShareStartedEvent,
 	ScreenShareStoppedEvent,
 	SFUScope,
+	SharedStageState,
 	TranscriptSegment,
 	UserData,
 	WebRtcTransport,
@@ -116,7 +116,7 @@ export type {
 
 // Socket.IO types
 export interface ServerToClientEvents {
-	"producer:camera_layers": (data: CameraLayerDemand) => void;
+	'producer:camera_layers': (data: CameraLayerDemand) => void;
 	'recording:challenge': (data: RecordingProofChallenge) => void;
 	'recording:projection': (data: RecorderStageProjectionEvent) => void;
 	participant_joined: (data: ParticipantJoinedEvent) => void;
@@ -155,7 +155,11 @@ export interface ServerToClientEvents {
 export interface ClientToServerEvents {
 	'producer:get_camera_layers': (
 		data: { producerId: string },
-		callback: (response: { success: true; demand: CameraLayerDemand | null } | { success: false; error: string }) => void,
+		callback: (
+			response:
+				| { success: true; demand: CameraLayerDemand | null }
+				| { success: false; error: string },
+		) => void,
 	) => void;
 	'recording:proof': (
 		data: RecordingProofRequest,
@@ -353,6 +357,7 @@ export type ClientTelemetryEvent =
 	  };
 
 export interface SocketData {
+	speechContext?: import('../speechHints').SpeechScope;
 	userId: string;
 	peerId?: string;
 	userName: string;
@@ -465,6 +470,7 @@ export interface ExistingProducer {
 
 // Mediasoup Manager types
 export interface Room {
+	speechContext?: import('../speechHints').SpeechScope;
 	id: string;
 	workerId: number;
 	router: Router;
@@ -542,6 +548,7 @@ export interface WebRTCServerOptions {
 
 // JWT types
 export interface JWTPayload {
+	speech_context?: import('../speechHints').SpeechScope;
 	user_id: string;
 	user_name: string;
 	meeting_id: string;
@@ -597,6 +604,7 @@ interface PollPayloadFE {
 // Socket.IO module augmentation
 declare module 'socket.io' {
 	interface Socket {
+		speechContext?: import('../speechHints').SpeechScope;
 		userId: string;
 		peerId?: string;
 		userName: string;

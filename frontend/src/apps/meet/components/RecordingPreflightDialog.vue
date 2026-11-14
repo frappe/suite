@@ -1,69 +1,57 @@
 <script setup lang="ts">
-import { Alert, Dialog } from "frappe-ui";
-import { computed } from "vue";
-import type { RecordingPreflight } from "../composables/useRecording";
-import { getRecordingUnavailableReason } from "../utils/recordingPresentation";
+import { Alert, Dialog, Switch } from "frappe-ui";
+import { computed, ref, watch } from "vue";
+import { getErrorMessage } from "../utils/error";
+import { captureLabel, defaultCaptureOptions, type CaptureOptions } from "../utils/capturePresentation";
 
 const props = defineProps<{
-	preflight: RecordingPreflight | null;
-	confirm: () => Promise<unknown>;
+	confirm: (options: CaptureOptions) => Promise<unknown>;
 }>();
 const open = defineModel<boolean>("open", { default: false });
-
-const actions = computed(() => {
-	const close = {
-		label: props.preflight?.eligible ? "Cancel" : "Close",
-		variant: "subtle" as const,
-		onClick: ({ close }: { close: () => void }) => close(),
-	};
-	if (!props.preflight?.eligible) return [close];
-	return [
-		{
-			label: "Start recording",
-			variant: "solid" as const,
-			theme: "red" as const,
-			onClick: async ({ close }: { close: () => void }) => {
-				await props.confirm();
-				close();
-			},
-		},
-		close,
-	];
+const options = ref(defaultCaptureOptions());
+const starting = ref(false);
+const startError = ref("");
+watch(open, (value) => {
+	if (value) {
+		options.value = defaultCaptureOptions();
+		startError.value = "";
+	}
 });
-
-const limitedByStorage = computed(
-	() =>
-		Boolean(props.preflight) &&
-		(props.preflight?.budget_seconds || 0) < (props.preflight?.estimated_seconds || 0),
-);
-const unavailable = computed(() =>
-	props.preflight && !props.preflight.eligible
-		? getRecordingUnavailableReason(props.preflight)
-		: null,
-);
-
+watch(options, () => { startError.value = ""; }, { deep: true });
+const selected = computed(() => options.value.video_enabled || options.value.transcription_enabled);
+const canStart = computed(() => selected.value && !starting.value);
+const actions = computed(() => [
+	{
+		label: `Start ${captureLabel(options.value).toLowerCase()}`,
+		variant: "solid" as const,
+		disabled: !canStart.value,
+		loading: starting.value,
+		onClick: async ({ close }: { close: () => void }) => {
+			if (!canStart.value) return;
+			starting.value = true;
+			startError.value = "";
+			try {
+				const result = await props.confirm({ ...options.value });
+				if (result && typeof result === "object" && "status" in result && result.status === "Rejected") return;
+				close();
+			} catch (error) {
+				startError.value = getErrorMessage(error) || "Could not start capture";
+			} finally {
+				starting.value = false;
+			}
+		},
+	},
+	{ label: "Cancel", disabled: starting.value, onClick: ({ close }: { close: () => void }) => close() },
+]);
 </script>
 
 <template>
-	<Dialog
-		v-model:open="open"
-		title="Start recording?"
-		theme="red"
-		size="md"
-		:actions="actions"
-	>
-		<div v-if="preflight" class="space-y-4">
-			<p class="text-p-base text-ink-gray-7">
-				Everyone in the meeting will see a recording notice. The video will be saved privately to the room owner's Drive.
-			</p>
-
-			<Alert v-if="unavailable" theme="red" :title="unavailable.title" :description="unavailable.message" />
-			<Alert
-				v-else-if="limitedByStorage"
-				theme="amber"
-				title="Storage may end the recording early"
-				description="Recording will stop when its available storage budget is reached."
-			/>
+	<Dialog v-model:open="open" title="Capture" size="md" :actions="actions" :dismissible="!starting">
+		<div class="space-y-4">
+			<Switch v-model="options.video_enabled" label="Record video" :disabled="starting" />
+			<Switch v-model="options.transcription_enabled" label="Transcribe speech" :disabled="starting" />
+			<p class="text-p-base text-ink-gray-7">Everyone will be notified. Your recording and transcript will be saved to the room owner's Drive.</p>
+			<Alert v-if="startError" theme="red" :title="startError" />
 		</div>
 	</Dialog>
 </template>

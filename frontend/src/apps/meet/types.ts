@@ -93,6 +93,11 @@ export interface JoinPayload {
 			| "Ready"
 			| "Partial"
 			| "Failed";
+		video_enabled?: boolean;
+		transcription_enabled?: boolean;
+		language?: "en";
+		transcription_capture_state?: "capturing" | "complete" | "partial" | "failed";
+		video_capture_state?: "starting" | "capturing" | "complete" | "failed";
 		started_at?: string;
 		capture_started_at?: string;
 		state_revision: number;
@@ -185,6 +190,11 @@ function normalizeRecording(value: unknown): JoinPayload["recording"] | undefine
 		status: value.status as NonNullable<JoinPayload["recording"]>["status"],
 		started_at: optionalString(value.started_at),
 		capture_started_at: optionalString(value.capture_started_at),
+		video_enabled: optionalBoolean(value.video_enabled),
+		transcription_enabled: optionalBoolean(value.transcription_enabled),
+		language: value.transcription_language === "en" || value.language === "en" ? "en" : undefined,
+		transcription_capture_state: value.transcription_capture_state === "capturing" || value.transcription_capture_state === "complete" || value.transcription_capture_state === "partial" || value.transcription_capture_state === "failed" ? value.transcription_capture_state : undefined,
+		video_capture_state: value.video_capture_state === "starting" || value.video_capture_state === "capturing" || value.video_capture_state === "complete" || value.video_capture_state === "failed" ? value.video_capture_state : undefined,
 		state_revision: value.state_revision,
 	};
 }

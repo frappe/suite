@@ -256,3 +256,23 @@ Enable telemetry in System Settings to permit frontend and backend reporting. Fr
 The SFU is deployed separately; see `../sfu-server/deploy/.env.example`. Set `SENTRY_RELEASE` to the deployed commit or image version to make regressions actionable. The Suite frontend release defaults to the installed Suite version, while Frappe supplies its own backend release metadata.
 
 Sentry is reserved for unexpected exceptions and process failures. Prometheus remains the source for failure rates and service health, while operational and expected client/WebRTC failures remain in metrics and logs.
+
+## Queued transcription
+
+The separately deployed [transcription worker](../transcription-server/README.md)
+exports authenticated aggregate metrics. Create
+`secrets/transcription_metrics_token` with the worker's metrics token, readable by
+Prometheus, then copy `prometheus/targets/transcription.yml.example` to the ignored
+runtime `transcription.yml` and list the worker HTTPS hostnames. The provisioned
+**Frappe Meet Transcription** dashboard shows queue count/audio/age, demand and
+completion rate, queue and delivery latency, workers, retries/failures, stalled
+leases, and memory. Queue-observation freshness and coverage must be checked
+before interpreting backlog snapshots.
+
+Configure all replicas of a pool with the same full site set. Queue snapshots are
+shared observations, so the dashboard takes their maximum rather than summing
+replicas; active workers and processing counters are summed. For disjoint pools,
+filter dashboard queries to one pool or provision separate dashboards. Arrival
+and completion gauges use each site's fixed reporting window, not a model-speed
+estimate. No room, participant, site or transcript content is a metric label.
+This adds dashboards only; alerts and autoscaling remain deferred.

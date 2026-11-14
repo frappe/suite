@@ -14,6 +14,7 @@ if (scenario !== 'clean' && scenario !== 'recovery') {
 }
 
 const outputRoot = process.env.OUTPUT_ROOT ?? '/output';
+const ffmpeg = process.env.FFMPEG_EXECUTABLE ?? '/usr/bin/ffmpeg';
 const scenarioRoot = join(outputRoot, scenario);
 const started = performance.now();
 
@@ -25,8 +26,7 @@ class ObservableSupervisor extends ProcessSupervisor {
 		options: Parameters<ProcessSupervisor['start']>[2],
 	): Promise<ManagedProcess> {
 		const process = await super.start(command, args, options);
-		if (command.endsWith('/ffmpeg') || command === 'ffmpeg')
-			this.ffmpeg = process;
+		if (command === ffmpeg) this.ffmpeg = process;
 		return process;
 	}
 	killFfmpeg(): void {
@@ -106,10 +106,10 @@ const worker = new CaptureWorker(
 		dataRoot: scenarioRoot,
 		display: scenario === 'clean' ? 91 : 92,
 		segmentSeconds: 2,
-		ffmpeg: '/usr/bin/ffmpeg',
-		xvfb: '/usr/bin/Xvfb',
-		pulseaudio: '/usr/bin/pulseaudio',
-		pactl: '/usr/bin/pactl',
+		ffmpeg,
+		xvfb: process.env.XVFB_EXECUTABLE ?? '/usr/bin/Xvfb',
+		pulseaudio: process.env.PULSEAUDIO_EXECUTABLE ?? '/usr/bin/pulseaudio',
+		pactl: process.env.PACTL_EXECUTABLE ?? '/usr/bin/pactl',
 		gracefulTimeoutMs: 10_000,
 		recoveryTimeoutMs: 20_000,
 	},
@@ -166,7 +166,7 @@ try {
 		worker.manifest.directory,
 		manifest.artifact?.file ?? '',
 	);
-	const decodeWarnings = await command('/usr/bin/ffmpeg', [
+	const decodeWarnings = await command(ffmpeg, [
 		'-v',
 		'warning',
 		'-i',

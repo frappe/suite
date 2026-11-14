@@ -15,7 +15,7 @@
 			>
 				<template #right>
 					<RecordingIndicator
-						v-if="!showPreview && recording.isLive.value && recording.state.value"
+						v-if="!showPreview && recording.isCapturing.value && recording.state.value"
 						:recording="recording.state.value"
 						:can-stop="isCurrentUserHost || isCurrentUserCohost"
 						@click="handleRecordingAction"
@@ -280,12 +280,12 @@
 
 		<RecordingPreflightDialog
 			v-model:open="recordingDialogOpen"
-			:preflight="recordingPreflight"
-			:confirm="confirmRecordingStart"
+			:confirm="recording.start"
 		/>
 		<RecordingStopDialog
 			v-model="recordingStopDialogOpen"
 			:loading="recording.stopLoading.value"
+			:recording="recording.state.value"
 			@confirm="confirmRecordingStop"
 		/>
 	</div>
@@ -354,7 +354,6 @@ import { useParticipantStore } from "../composables/useParticipantStore";
 import { useRaiseHand } from "../composables/useRaiseHand";
 import { useRaiseHandStore } from "../composables/useRaiseHandStore";
 import {
-	type RecordingPreflight,
 	useRecording,
 } from "../composables/useRecording";
 import { useReactionStore } from "../composables/useReactionStore";
@@ -480,7 +479,6 @@ const isCurrentUserCohost = computed(
 const recording = useRecording(meetingId.value);
 const recordingDialogOpen = ref(false);
 const recordingStopDialogOpen = ref(false);
-const recordingPreflight = ref<RecordingPreflight | null>(null);
 
 async function handleRecordingAction() {
 	try {
@@ -490,10 +488,9 @@ async function handleRecordingAction() {
 			if (recording.state.value?.status !== "Stopping") recordingStopDialogOpen.value = true;
 			return;
 		}
-		recordingPreflight.value = await recording.getPreflight();
 		recordingDialogOpen.value = true;
 	} catch (error) {
-		toast.error(error instanceof Error ? error.message : "Could not manage recording");
+		toast.error(error instanceof Error ? error.message : "Could not manage capture");
 	}
 }
 
@@ -502,18 +499,10 @@ async function confirmRecordingStop() {
 		await recording.stop();
 		recordingStopDialogOpen.value = false;
 	} catch (error) {
-		toast.error(error instanceof Error ? error.message : "Could not stop recording");
+		toast.error(error instanceof Error ? error.message : "Could not stop capture");
 	}
 }
 
-async function confirmRecordingStart() {
-	try {
-		await recording.start();
-	} catch (error) {
-		toast.error(error instanceof Error ? error.message : "Could not start recording");
-		throw error;
-	}
-}
 const previewDetails = useCall<{ title?: string }, { meeting_id: string }>({
 	url: "/api/v2/method/suite.meet.api.meeting.get_public_meeting_preview",
 	params: { meeting_id: meetingId.value },
@@ -685,6 +674,7 @@ const sfuConnection = useSFUConnection({
 	onRoomRejoined: () => void captions.restoreCaptionSubscription(),
 	onE2EERequired: () => captions.disableCaptionsForE2EE(),
 	onRecordingState: recording.syncState,
+	onTranscriptionCaptureState: recording.syncTranscriptionCapture,
 	onRecordingEnabled: recording.setGlobalEnabled,
 	onCohostPromoted: () => meetingDoc.reload(),
 });

@@ -11,6 +11,9 @@ type LogEvent =
 	| 'terminal_delivery_failed'
 	| 'segment_progress_callback_failed'
 	| 'capture_budget_check_failed'
+	| 'capture_process_exited'
+	| 'transcription_storage_unavailable'
+	| 'transcription_retention_failed'
 	| 'service_initialization_failed'
 	| 'service_error';
 
@@ -22,6 +25,8 @@ export interface LogEntry {
 	route?: string;
 	job?: string;
 	attempt?: number;
+	exit_code?: number | null;
+	signal?: NodeJS.Signals | null;
 }
 
 export interface Logger {
