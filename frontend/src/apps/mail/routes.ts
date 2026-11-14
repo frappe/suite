@@ -221,9 +221,9 @@ export const routes: RouteRecordRaw[] = [
       {
         path: 'mail-exchanges/:id',
         name: 'mail-exchange',
-        component: () => import('@/apps/mail/pages/MailExchangeView.vue'),
+        component: () => import('@/apps/mail/pages/ExchangeView.vue'),
         meta: { noLayout: true },
-        props: true,
+        props: (route) => ({ id: String(route.params.id), kind: 'mail' }),
       },
       {
         path: 'calendar-exchanges',
@@ -234,9 +234,9 @@ export const routes: RouteRecordRaw[] = [
       {
         path: 'calendar-exchanges/:id',
         name: 'mail-calendar-exchange',
-        component: () => import('@/apps/mail/pages/CalendarExchangeView.vue'),
+        component: () => import('@/apps/mail/pages/ExchangeView.vue'),
         meta: { noLayout: true },
-        props: true,
+        props: (route) => ({ id: String(route.params.id), kind: 'calendar' }),
       },
       {
         path: 'contacts-exchanges',
@@ -247,9 +247,9 @@ export const routes: RouteRecordRaw[] = [
       {
         path: 'contacts-exchanges/:id',
         name: 'mail-contacts-exchange',
-        component: () => import('@/apps/mail/pages/ContactsExchangeView.vue'),
+        component: () => import('@/apps/mail/pages/ExchangeView.vue'),
         meta: { noLayout: true },
-        props: true,
+        props: (route) => ({ id: String(route.params.id), kind: 'contacts' }),
       },
       // Shortcut routes: short paths that resolve to their full
       // account-scoped equivalents once the active accountId is known

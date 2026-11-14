@@ -24,8 +24,13 @@
               class="w-40"
             />
           </div>
+          <DashboardListSkeleton
+            v-if="calendarExchanges.status === 'pending'"
+            :columns="listColumns.length"
+            :rows="6"
+          />
           <ListView
-            v-if="rows"
+            v-else-if="calendarExchanges.status === 'success'"
             :columns="listColumns"
             :rows="rows"
             :options="LIST_OPTIONS"
@@ -71,6 +76,7 @@ import { useRoute } from 'vue-router'
 import { api, useInfiniteQuery } from '@/api'
 import { getTheme } from '@/apps/mail/utils'
 import { formatSystemDateTime } from '@/apps/mail/utils/datetime'
+import { DashboardListSkeleton } from '@/platform/dashboard'
 
 const route = useRoute()
 
