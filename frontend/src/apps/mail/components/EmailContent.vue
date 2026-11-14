@@ -34,10 +34,8 @@ import iframeResizerChildScript from '@iframe-resizer/child/index.umd.js?raw'
 // The package maps `./sfc` only via its (non-honored) `browser` field under
 // Vite 8/Rolldown, so import the concrete SFC file directly.
 import IframeResizer from '@iframe-resizer/vue/iframe-resizer.vue'
-import DOMPurify from 'dompurify'
 import { computed, onMounted, onUnmounted, ref, useTemplateRef } from 'vue'
 
-import { blockRemoteAssets } from '@/apps/mail/utils'
 import { useComposeMail, useScreenSize, useTheme } from '@/apps/mail/utils/composables'
 import {
   declaresFixedPalette,
@@ -46,9 +44,9 @@ import {
   remapEmailForDarkMode,
 } from '@/apps/mail/utils/darkMail'
 import { highlightBody } from '@/apps/mail/utils/highlightBody'
-import { escapeBracketedAddresses } from '@/apps/mail/utils/html'
 import { parseMailto } from '@/apps/mail/utils/mailto'
 import { findQuoteRoots } from '@/apps/mail/utils/quotedContent'
+import { sanitizeEmailHtml } from '@/apps/mail/utils/sanitizeEmail'
 
 // Whether to withhold remote content is the thread's to say: it offers a Show in each message that
 // holds some (see HiddenImagesBanner), and lifts the block here once the reader asks.
@@ -142,9 +140,7 @@ const collapseQuotes = (doc: Document) => {
 }
 
 const srcdoc = computed(() => {
-  let sanitized = DOMPurify.sanitize(escapeBracketedAddresses(content), DOMPURIFY_CONFIG)
-  if (blockImages) sanitized = blockRemoteAssets(sanitized)
-  const doc = new DOMParser().parseFromString(sanitized, 'text/html')
+  const doc = new DOMParser().parseFromString(sanitizeEmailHtml(content, blockImages), 'text/html')
   // Two kinds of email render exactly as authored, dark theme or not: those
   // declaring a fixed palette (suite's own templates), and art-directed ones
   // — the author claimed the full canvas and painted with color — where
@@ -398,6 +394,10 @@ const srcdoc = computed(() => {
 				// Forward keyboard events to parent
 				['keydown', 'keyup', 'keypress'].forEach(eventType => {
 					document.addEventListener(eventType, (e) => {
+						// ⌘P / Ctrl+P is the thread's: forwarded, it prints the conversation. Left to the
+						// browser too, it would first print the whole app around this frame.
+						if (eventType === 'keydown' && (e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'p')
+							e.preventDefault();
 						window.parent.postMessage({
 							type: 'keyboard',
 							eventType: eventType,
@@ -486,98 +486,6 @@ const srcdoc = computed(() => {
 })
 
 const colors = computed(() => THEME_CONFIG[dataTheme.value])
-
-const DOMPURIFY_CONFIG = {
-  ALLOWED_TAGS: [
-    'html',
-    'head',
-    'body',
-    'title',
-    'meta',
-    'style',
-    'table',
-    'tbody',
-    'thead',
-    'tfoot',
-    'tr',
-    'td',
-    'th',
-    'div',
-    'span',
-    'p',
-    'br',
-    'strong',
-    'b',
-    'em',
-    'i',
-    'u',
-    // Highlighted text. Without it KEEP_CONTENT hands the words back unstyled, so a
-    // highlight applied in our own composer came back to the reader as plain text —
-    // while the text colour beside it, which rides a <span>, survived.
-    'mark',
-    'h1',
-    'h2',
-    'h3',
-    'h4',
-    'h5',
-    'h6',
-    'a',
-    'img',
-    'blockquote',
-    'ul',
-    'ol',
-    'li',
-    'pre',
-    'code',
-  ],
-  ALLOWED_ATTR: [
-    'style',
-    'class',
-    'id',
-    'width',
-    'height',
-    'align',
-    'valign',
-    'cellpadding',
-    'cellspacing',
-    // Without colspan/rowspan a table email's grid falls apart: rows stop
-    // agreeing on column count, cells get crushed to slivers, and text can
-    // land outside its authored background (seen as invisible/vertical text).
-    'colspan',
-    'rowspan',
-    'border',
-    'bgcolor',
-    'color',
-    'href',
-    'src',
-    'alt',
-    'title',
-    'target',
-    'data-type',
-    'data-id',
-    'data-label',
-    'data-list',
-    'data-email-footer',
-    // Suite's own templates opt out of the dark-mode remap with this (see
-    // declaresFixedPalette); stripping it would silently re-enable remapping.
-    'data-fixed-palette',
-    // Apple Mail and Thunderbird mark a quoted trail with <blockquote type="cite">, the one thing
-    // that tells it apart from a quote the writer made (see findQuoteRoots); without it the trail
-    // was never folded away.
-    'type',
-    'xmlns',
-    'content',
-    'name',
-    'http-equiv',
-    'charset',
-  ],
-  KEEP_CONTENT: true,
-  ALLOW_UNKNOWN_PROTOCOLS: false,
-  WHOLE_DOCUMENT: true,
-  ADD_TAGS: ['meta', 'style', 'pre', 'code'],
-  ADD_ATTR: ['cellpadding', 'cellspacing', 'border', 'bgcolor', 'xmlns', 'charset'],
-  REMOVE_EMPTY: false,
-}
 
 const THEME_CONFIG = {
   light: {

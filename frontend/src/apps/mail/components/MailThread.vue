@@ -20,6 +20,7 @@
       @delete-thread="emit('deleteThread')"
       @prev-thread="emit('prevThread')"
       @next-thread="emit('nextThread')"
+      @print="printThread"
     />
     <!-- The swipe slide (`slide` prop) pages only the thread-specific part — subject,
 		     messages, reply bar — while the toolbar above stays put. Keyed per thread on
@@ -230,6 +231,7 @@
                             (m: Mail, spam: boolean) => emit('markMailSpam', m, spam)
                           "
                           @delete-mail="(m: Mail) => emit('deleteMail', m)"
+                          @print="printMail(mail)"
                         />
                       </div>
                       <!-- An expanded mail always needs the gap between header and body —
@@ -497,6 +499,7 @@
                                     (m: Mail, spam: boolean) => emit('markMailSpam', m, spam)
                                   "
                                   @delete-mail="(m: Mail) => emit('deleteMail', m)"
+                                  @print="printMail(mail)"
                                 />
                               </div>
                             </div>
@@ -766,6 +769,7 @@
 </template>
 
 <script setup lang="ts">
+import { useEventListener } from '@vueuse/core'
 import { Avatar, Badge, Button, Popover, toast } from 'frappe-ui'
 import {
   Ban,
@@ -866,6 +870,7 @@ import { containEmailHtml } from '@/apps/mail/utils/containEmailHtml'
 import { useMinuteClock } from '@/apps/mail/utils/datetime'
 import { mailCopies, mailCopyIds } from '@/apps/mail/utils/mailCopies'
 import { getSenderInitial } from '@/apps/mail/utils/participants'
+import { printMessages, type PrintedMessage } from '@/apps/mail/utils/printMail'
 import { isReceived } from '@/apps/mail/utils/receivedMail'
 import { returnedStrip } from '@/apps/mail/utils/snoozeTimes'
 import { submissionRow } from '@/apps/mail/utils/submission'
@@ -2118,6 +2123,38 @@ const getBodyContent = (mail: Mail) => {
   const text = getPlainTextBody(mail)
   return `<div style="white-space: pre-wrap">${text ? plainTextToHtml(text) : '&nbsp;'}</div>`
 }
+// ── Printing ────────────────────────────────────────────────────────────────────────────────────
+
+// A message as it goes on paper: its own body, with remote content held back where the reader holds
+// it back — printing is no reason to load what the reader chose not to.
+const printed = (mail: Mail): PrintedMessage => {
+  const { to, cc } = getGroupedRecipients(mail.recipients ?? [], true, true)
+  return {
+    from: mail.from_name ? `${mail.from_name} <${mail.from_email}>` : mail.from_email,
+    to,
+    cc,
+    receivedAt: mail.received_at,
+    body: hasHtmlContent(mail.html_body)
+      ? mail.html_body
+      : `<div style="white-space: pre-wrap">${plainTextToHtml(getPlainTextBody(mail))}</div>`,
+    blockRemote: isBlocked(mail),
+    attachments: filteredAttachments(mail).map((attachment) => attachment.filename),
+  }
+}
+const printMail = (mail: Mail) => printMessages(mail.subject, [printed(mail)])
+// The whole conversation, drafts aside, as it reads from the top.
+const printThread = () => {
+  const mails = thread.value.filter((mail) => !mail.draft)
+  if (mails.length) printMessages(mails[0].subject, mails.map(printed))
+}
+// ⌘P / Ctrl+P prints the conversation rather than the app around it.
+useEventListener(window, 'keydown', (event: KeyboardEvent) => {
+  if (readonly || !thread.value.length) return
+  if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'p' || event.shiftKey) return
+  event.preventDefault()
+  printThread()
+})
+
 const getQuotedContent = (mail: Mail) => `
 		<div class="frappe_mail_quote">
 			On ${dayjs(mail.received_at).format('DD MMM YYYY [at] h:mm A')}, ${mail.from_email} wrote:

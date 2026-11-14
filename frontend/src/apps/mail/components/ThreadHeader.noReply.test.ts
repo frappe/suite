@@ -295,3 +295,17 @@ describe('viewing Sent', () => {
     expect(unsnooze()).toBeNull()
   })
 })
+
+describe('Print', () => {
+  const printButton = () => root.querySelector('svg.lucide-printer')?.closest('button')
+
+  it('names its shortcut on a desktop, and none on a phone, which has no keys to press', async () => {
+    await show(THEIR_LAST_WORD, false)
+    expect(printButton()?.dataset.tooltip).toMatch(/^Print \((⌘P|Ctrl\+P)\)$/)
+    app?.unmount()
+
+    screen.mobile = true
+    await show(THEIR_LAST_WORD, false)
+    expect(printButton()?.dataset.tooltip).toBe('Print')
+  })
+})

@@ -188,6 +188,7 @@ import {
   Mail as MailIcon,
   Pin,
   PinOff,
+  Printer,
   Trash2,
 } from 'lucide-vue-next'
 import { computed, h, ref, type Component } from 'vue'
@@ -198,7 +199,7 @@ import SnoozeMenu from '@/apps/mail/components/SnoozeMenu.vue'
 import { FOLDER_ICON_COLOR_MAP, PINNED_PIN_STYLE } from '@/apps/mail/constants'
 import { takesPins } from '@/apps/mail/stores/user'
 import type { Mail, MailboxData } from '@/apps/mail/types'
-import { getIcon, getMailboxName } from '@/apps/mail/utils'
+import { getIcon, getMailboxName, isMac } from '@/apps/mail/utils'
 import { injectAccountScope } from '@/apps/mail/utils/accountScope'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { folderTicks } from '@/apps/mail/utils/folderTicks'
@@ -236,6 +237,7 @@ const emit = defineEmits([
   'deleteThread',
   'prevThread',
   'nextThread',
+  'print',
 ])
 
 const { isMobile } = useScreenSize()
@@ -417,6 +419,13 @@ const moreActions = computed((): Action[] => [
     onClick: () => emit('deleteThread'),
     icon: Trash2,
     condition: () => threadMailboxes.value.includes(mailboxIds.value.trash),
+  },
+  // The conversation on paper, or as a PDF from the same dialog. A phone has no keys to name.
+  {
+    label: isMobile.value ? __('Print') : isMac ? __('Print (⌘P)') : __('Print (Ctrl+P)'),
+    onClick: () => emit('print'),
+    icon: Printer,
+    condition: () => !inDrafts.value,
   },
 ])
 

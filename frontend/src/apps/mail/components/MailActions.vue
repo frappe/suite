@@ -53,6 +53,7 @@ import {
   ListFilter,
   LockOpen,
   Mail as MailIcon,
+  Printer,
   Reply,
   ReplyAll,
   ShieldCheck,
@@ -112,7 +113,14 @@ const {
   /** The host draws the star itself — a folded row, which keeps it at its far right. */
   hideStar?: boolean
 }>()
-const emit = defineEmits(['setFlagged', 'syncUnseen', 'moveMail', 'markMailSpam', 'deleteMail'])
+const emit = defineEmits([
+  'setFlagged',
+  'syncUnseen',
+  'moveMail',
+  'markMailSpam',
+  'deleteMail',
+  'print',
+])
 const { isMobile } = useScreenSize()
 const route = useRoute()
 const router = useRouter()
@@ -294,6 +302,12 @@ const moreActions = (mail: Mail): GroupedAction[] => [
   {
     group: '',
     options: [
+      {
+        label: __('Print'),
+        onClick: () => emit('print'),
+        icon: Printer,
+        condition: () => !mail.draft,
+      },
       {
         label: __('Download Email'),
         onClick: () => downloadEmail(),
