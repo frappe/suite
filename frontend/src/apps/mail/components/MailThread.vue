@@ -206,7 +206,12 @@
                         @click.stop="mail.collapsed = !mail.collapsed"
                       >
                         <div class="flex items-center space-x-2">
-                          <Badge v-if="mail.draft" :label="__('Draft')" theme="red" class="w-fit" />
+                          <Badge
+                            v-if="mail.draft"
+                            :label="__('Draft')"
+                            theme="gray"
+                            class="w-fit"
+                          />
                           <MailDate :datetime="mail.received_at" />
                         </div>
                         <MailActions

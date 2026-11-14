@@ -107,7 +107,11 @@
 
       <h4
         class="truncate text-sm !leading-[1.5]"
-        :class="{ italic: subjectItalic, '!text-base': isFullWidth, '!font-semibold': unread }"
+        :class="{
+          'text-ink-gray-5': subjectPlaceholder,
+          '!text-base': isFullWidth,
+          '!font-semibold': unread,
+        }"
       >
         <!-- Wherever the sender line is dropped, the dot it normally sits on comes down here. -->
         <span
@@ -122,8 +126,11 @@
         :class="{ 'min-w-0 flex-1 !text-base': isFullWidth }"
       >
         <h5
-          class="text-ink-gray-5 truncate text-sm !leading-[1.5]"
-          :class="{ italic: previewItalic, '!text-base': isFullWidth }"
+          class="truncate text-sm !leading-[1.5]"
+          :class="[
+            previewPlaceholder ? 'text-ink-gray-4' : 'text-ink-gray-5',
+            { '!text-base': isFullWidth },
+          ]"
         >
           <slot name="preview" />
         </h5>
@@ -183,8 +190,8 @@ const {
   avatarLabel,
   avatarImage,
   datetime,
-  subjectItalic = false,
-  previewItalic = false,
+  subjectPlaceholder = false,
+  previewPlaceholder = false,
   selectionMode = false,
   hideAvatar = false,
   accountLabel,
@@ -203,8 +210,10 @@ const {
   avatarLabel: string
   avatarImage?: string
   datetime: string
-  subjectItalic?: boolean
-  previewItalic?: boolean
+  // The row stands in for a missing subject or preview: the placeholder is muted, as a hint
+  // rather than words of the mail's own.
+  subjectPlaceholder?: boolean
+  previewPlaceholder?: boolean
   // Drops the sender avatar, and with it the whole leading column — the merged list is narrow
   // beside the pane, and the reclaimed width goes to sender and subject. Mobile keeps it.
   hideAvatar?: boolean
