@@ -53,11 +53,11 @@
       :class="{
         'overflow-hidden': isMobile,
         [SPLIT_PANE_CLASS]: split,
-        'absolute bottom-0 left-0 right-0 top-0': !isMobile && !showReadingPane,
+        'absolute bottom-0 left-0 right-0 top-0': !isMobile && !split,
         'fixed inset-0 z-20 pt-[env(safe-area-inset-top)] transition-[transform,visibility] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]':
           isMobile,
         'invisible translate-x-full': isMobile && !threadOpen,
-        hidden: !isMobile && !showReadingPane && !threadOpen,
+        hidden: !isMobile && !split && !threadOpen,
       }"
       @touchstart.passive="emit('touchStart', $event)"
       @touchmove.passive="emit('touchMove', $event)"
@@ -94,9 +94,11 @@ import { clampListWidth, readListWidth, writeListWidth } from '@/apps/mail/utils
  * owns nothing but the frame.
  */
 
-const { threadOpen } = defineProps<{
+const { threadOpen, beside = false } = defineProps<{
   /** Whether a thread is open. Drives the mobile slide-in and the desktop hidden/overlay state. */
   threadOpen: boolean
+  /** Split for now, with Split View off: the list has to stay in sight of what's open. */
+  beside?: boolean
 }>()
 
 // Swipe-to-page on the open thread is per-view (what "next thread" means differs), so the pane only
@@ -111,7 +113,7 @@ const { isMobile } = useScreenSize()
 // MailLayout's overlay layer; see the Teleport above.
 const overlayLayer = usePortalTarget()
 const showReadingPane = useReadingPane()
-const split = computed(() => !isMobile.value && showReadingPane.value)
+const split = computed(() => !isMobile.value && (showReadingPane.value || beside))
 
 // The list column's dragged width, or none for its default share of the screen.
 const listColumn = useTemplateRef('listColumn')

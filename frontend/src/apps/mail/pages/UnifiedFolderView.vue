@@ -383,7 +383,7 @@ import {
   stepFromKey,
   useGPrefix,
 } from '@/apps/mail/utils/listNavigation'
-import { mailCopies, mailCopyIds, threadStarIds } from '@/apps/mail/utils/mailCopies'
+import { mailCopies, mailCopyIds, threadMailIds, threadStarIds } from '@/apps/mail/utils/mailCopies'
 import {
   archivable,
   holdsReceivedMail,
@@ -1409,8 +1409,7 @@ const perAccount = (
 
 // The ids an action on several threads carries, and the state its Undo puts back: every copy of every
 // message (see mailCopies), so a twin in Sent goes and comes back with the rest.
-const copyIds = (threads: Thread[]) =>
-  threads.flatMap((t) => t.messages?.flatMap(mailCopyIds) ?? [t.id])
+const copyIds = (threads: Thread[]) => threads.flatMap(threadMailIds)
 const copySnapshot = (threads: Thread[]) =>
   threads.flatMap((t) => (t.messages ?? []).flatMap(mailCopies)).map(mailSnapshot)
 

@@ -1,7 +1,7 @@
 <template>
   <!-- Mobile mirrors the search overlay's header exactly (same row, same input classes) —
 	     searching and results are one page; tapping the readonly input resumes editing. -->
-  <div :class="isMobile ? '' : 'flex flex-col gap-2.5 border-b px-3.5 py-3 sm:px-5'">
+  <div :class="isMobile ? 'border-b' : 'flex flex-col gap-2.5 border-b px-3.5 py-3 sm:px-5'">
     <!-- A flat h-14, the height every mobile header in the product stands at (see
 		     MobileTitleHeader), rather than py-2 around the input: the editor's row above is
 		     the same 56px, so dismissing it onto this swaps the row rather than resizing it.
@@ -11,156 +11,98 @@
       <Search class="text-ink-gray-5 h-4 w-4 shrink-0" />
       <input
         readonly
-        :value="searchQuery"
+        :value="searchText"
         :placeholder="__('Search')"
         :aria-label="__('Edit search')"
         class="placeholder-ink-gray-4 w-full cursor-pointer border-none bg-transparent text-base focus:ring-0"
         @mousedown.prevent="openSearch"
       />
     </div>
+    <!-- On a desktop the words are edited where they stand, so narrowing a search never hides the
+         results it is narrowing. Operators work as they do in the palette, which ⌘K still reopens
+         for its suggestions. -->
     <FormControl
       v-else
+      v-model="line"
       type="text"
       size="sm"
-      class="w-full cursor-pointer [&_input]:cursor-pointer"
+      class="w-full"
       :class="{ 'max-w-2xl': !showReadingPane }"
-      :model-value="searchQuery"
       :placeholder="__('Search')"
-      :aria-label="__('Edit search')"
-      readonly
+      :aria-label="__('Search')"
       variant="outline"
-      @mousedown.prevent="openSearch"
+      @keydown.enter.prevent="commitLine"
+      @keydown.esc.stop.prevent="resetLine($event)"
+      @blur="line = searchText"
     >
       <template #prefix>
         <Search class="text-ink-gray-5 size-4" />
       </template>
     </FormControl>
-    <div
-      v-if="searchFilterChips.length"
-      class="flex flex-wrap items-center gap-1.5"
-      :class="{ 'px-4 py-2': isMobile }"
-    >
-      <span
-        v-for="chip in searchFilterChips"
-        :key="chip.key"
-        class="bg-surface-gray-2 inline-flex items-center gap-1 rounded-4 pl-2 pr-1"
-        :class="[
-          isMobile ? 'h-8 text-sm' : 'h-7 text-xs',
-          'hover:bg-surface-gray-3 cursor-pointer',
-        ]"
-        @click="openSearch"
-      >
-        <span class="max-w-40 truncate">{{ chip.label }}</span>
-        <button
-          class="text-ink-gray-5 hover:text-ink-gray-8 rounded-4 p-1"
-          :aria-label="__('Remove filter')"
-          @click.stop="removeSearchFilter(chip.key)"
-        >
-          <X class="size-3" />
-        </button>
-      </span>
-
-      <Button
-        variant="ghost"
-        :class="isMobile ? 'text-sm' : 'text-xs'"
-        :label="__('Clear all')"
-        @click="clearSearch"
-      />
-    </div>
+    <SearchFilters :query="query" @update="searchWith" />
+    <p v-if="count" class="text-p-sm text-ink-gray-5 px-3.5 pb-2">{{ count }}</p>
   </div>
 </template>
 
 <script setup lang="ts">
-import { Button, FormControl } from 'frappe-ui'
-import { Search, X } from 'lucide-vue-next'
-import { computed, inject } from 'vue'
+import { FormControl } from 'frappe-ui'
+import { Search } from 'lucide-vue-next'
+import { computed, inject, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import { getAttachmentOptions, getReadStatusOptions } from '@/apps/mail/constants'
+import SearchFilters from '@/apps/mail/components/SearchFilters.vue'
 import { userStore } from '@/apps/mail/stores/user'
-import type { MailboxData, UserResource } from '@/apps/mail/types'
+import type { UserResource } from '@/apps/mail/types'
 import { mailSearchRoute, useScreenSize } from '@/apps/mail/utils/composables'
+import {
+  hasSearchConditions,
+  searchQueryFrom,
+  withEditedLine,
+  type SearchQuery,
+} from '@/apps/mail/utils/searchFilters'
 import { useRootStore } from '@/stores/root'
 
-// The search view's own header: the query (click to edit) and the filters as removable pills.
-// It owns the whole search-query surface — every edit here re-runs the search by pushing a new route,
-// which is what the results below already read from. Editing any part of it — the query or a pill —
-// reopens the palette, which is where a mail search is composed; it reads this route back in.
+// The search view's own header: the query line and the filters. It owns the whole search-query
+// surface — every edit here re-runs the search by pushing a new route, which is what the results
+// below already read from.
+
+defineProps<{
+  /** How many results there are, where the list's own toolbar isn't there to say. */
+  count?: string
+}>()
 
 const route = useRoute()
 const router = useRouter()
 const user = inject<UserResource>('$user')
 if (!user) throw new Error('Missing required user provider')
 const { isMobile } = useScreenSize()
-const { accountId, mailboxes, mailboxIds } = userStore()
+const store = userStore()
 const root = useRootStore()
 
 const showReadingPane = computed(() => !!user.data?.show_reading_pane)
 
 const openSearch = () => (root.paletteOpen = true)
 
-// Lower case, as the words read in a sentence — "from: akash@frappe.io" — not as field names.
-const SEARCH_FILTER_LABELS = {
-  inMailbox: __('in'),
-  subject: __('subject'),
-  from: __('from'),
-  to: __('to'),
-  cc: __('cc'),
-  bcc: __('bcc'),
-  with: __('with'),
-  after: __('after'),
-  before: __('before'),
-} satisfies Record<string, string>
-const optionLabel = (options: { label: string; value: string }[], value: string) =>
-  options.find((o) => o.value === value)?.label ?? value
+const query = computed(() => searchQueryFrom(route.query))
+const searchText = computed(() => query.value.text || '')
 
-const searchQuery = computed(
-  () => ((Array.isArray(route.query.text) ? route.query.text[0] : route.query.text) ?? '') || '',
-)
-
-const searchFilterChips = computed(() => {
-  const query = route.query
-  const chips: { key: string; label: string }[] = []
-  for (const key of Object.keys(SEARCH_FILTER_LABELS)) {
-    const value = query[key]
-    if (!value) continue
-    const display =
-      key === 'inMailbox'
-        ? (mailboxes.data?.find((m: MailboxData) => m.id === value)?._name ?? String(value))
-        : String(value)
-    chips.push({
-      key,
-      label: `${Object.entries(SEARCH_FILTER_LABELS).find(([name]) => name === key)?.[1] ?? key}: ${display}`,
-    })
-  }
-  // Attachment/read values ("Without Attachments", "Unread") are self-descriptive — show them on their own.
-  if (query.hasAttachment)
-    chips.push({
-      key: 'hasAttachment',
-      label: optionLabel(getAttachmentOptions(), String(query.hasAttachment)),
-    })
-  if (query.isRead)
-    chips.push({ key: 'isRead', label: optionLabel(getReadStatusOptions(), String(query.isRead)) })
-  return chips
-})
-
-// Re-run the search with one filter (or all filters) dropped. When nothing is left to search, leave the
-// search view for the Inbox.
-const searchWith = (query: Record<string, string>) => {
-  if (!Object.keys(query).length) return exitSearch()
-  router.push(mailSearchRoute(accountId, query))
+const line = ref(searchText.value)
+watch(searchText, (text) => (line.value = text))
+const resetLine = (event: KeyboardEvent) => {
+  line.value = searchText.value
+  if (event.target instanceof HTMLElement) event.target.blur()
 }
-const removeSearchFilter = (key: string) => {
-  const query: Record<string, string> = {}
-  for (const [name, value] of Object.entries(route.query)) {
-    const scalar = Array.isArray(value) ? value[0] : value
-    if (typeof scalar === 'string') query[name] = scalar
-  }
-  delete query[key]
-  searchWith(query)
+const commitLine = () => searchWith(withEditedLine(query.value, line.value))
+
+// Re-run the search as edited. When nothing is left to search, leave the search view for the Inbox.
+const searchWith = (next: SearchQuery) => {
+  if (!hasSearchConditions(next)) return exitSearch()
+  router.push(mailSearchRoute(store.accountId, next))
 }
-const clearSearch = () => searchWith(searchQuery.value ? { text: searchQuery.value } : {})
 
 const exitSearch = () =>
-  router.push({ name: 'mail-mailbox', params: { accountId, mailbox: mailboxIds.inbox } })
+  router.push({
+    name: 'mail-mailbox',
+    params: { accountId: store.accountId, mailbox: store.mailboxIds.inbox },
+  })
 </script>

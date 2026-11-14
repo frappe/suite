@@ -222,13 +222,25 @@ export function useMailCommandPaletteSearch(query: Ref<string>, active: Ref<bool
         searchResource.isFetching ||
         searchResource.status === 'pending'),
   )
+  // Asked and refused, which an empty list must not be taken for.
+  const failed = computed(
+    () => searchInput.value !== false && !pending.value && searchResource.status === 'error',
+  )
+  const rows = computed(() =>
+    searchInput.value === false ? [] : (searchResource.data?.rows ?? []),
+  )
+  // A conversation only a reaction was found in is on the page for paging, and not a result. The
+  // server's count takes it in: only here is it known.
+  const shownRows = computed(() => rows.value.filter((row) => !row.reaction_only))
   const total = computed(() =>
-    searchInput.value === false ? 0 : (searchResource.data?.total ?? 0),
+    searchInput.value === false
+      ? 0
+      : (searchResource.data?.total ?? 0) - (rows.value.length - shownRows.value.length),
   )
   const results = computed<MailSearchResult[]>(() =>
     searchInput.value === false
       ? []
-      : (searchResource.data?.rows ?? []).map((mail) => ({
+      : shownRows.value.map((mail) => ({
           ...mail,
           from_name: mail.from_name ?? undefined,
           attachments: mail.attachments.map((attachment) => ({
@@ -513,6 +525,7 @@ export function useMailCommandPaletteSearch(query: Ref<string>, active: Ref<bool
     filter,
     filterValues,
     pending,
+    failed,
     hasMultipleAccounts,
     operatorContext,
     results,
