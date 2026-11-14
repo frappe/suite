@@ -10,6 +10,7 @@ import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
 import { userStore, type MailboxRole } from '@/apps/mail/stores/user'
 import type { Mail, Mailbox, MailCopy, Thread } from '@/apps/mail/types'
 import {
+  afterLanding,
   commitAfterUndo,
   getIcon,
   raiseOptimisticToast,
@@ -365,11 +366,7 @@ export function useThreadActions(deps: {
 
     // Undo = remove again, but only once the add has actually landed (no-op if it failed).
     setUndoAction(
-      () =>
-        void forward.then(
-          () => handleRemoveThreadsFromMailbox(mailboxId, threadIds, true),
-          () => {},
-        ),
+      afterLanding(forward, () => handleRemoveThreadsFromMailbox(mailboxId, threadIds, true)),
     )
     const success =
       threadIds.length === 1
@@ -449,11 +446,7 @@ export function useThreadActions(deps: {
 
     // Undo = add back, but only once the remove has landed (no-op if it failed).
     setUndoAction(
-      () =>
-        void forward.then(
-          () => void addThreadsToMailbox(mailboxId, threadIdsToBeUpdated, true),
-          () => {},
-        ),
+      afterLanding(forward, () => void addThreadsToMailbox(mailboxId, threadIdsToBeUpdated, true)),
     )
     raiseOptimisticToast(forward, success, undo)
   }
@@ -855,12 +848,13 @@ export function useThreadActions(deps: {
   }
 
   // Archive and Unarchive file a conversation in place: the rows leave only the list named as left,
-  // and Undo puts each message back exactly. `told` reads the toast off the server's answer.
+  // and Undo puts each message back exactly. `told` is what the toast says: on the click where the
+  // outcome is already known, or read off the server's answer where only that can say.
   const fileInPlace = (
     action: 'archive' | 'unarchive' | 'snooze' | 'wake',
     threadIds: string[],
     leaves: boolean,
-    told: (filed: { left_inbox: boolean }) => string,
+    told: string | ((filed: { left_inbox: boolean }) => string),
     until?: string,
   ) => {
     if (!threadIds.length) return
@@ -945,24 +939,26 @@ export function useThreadActions(deps: {
   // Archive clears the Inbox: the conversation's received mail swaps Inbox for Archive, or just gains
   // Archive where it wasn't in the Inbox, and your own mail stays where it is. So only the Inbox loses
   // the row; archived from a folder of yours, Sent or Starred the conversation stays put, and the
-  // toast says it was added to Archive rather than archived.
-  const archiveThreads = (threadIds: string[]) =>
-    fileInPlace(
+  // toast says it was added to Archive rather than archived. A row leaving the Inbox, Junk or Trash
+  // is archived for certain, so its toast comes with the click; elsewhere the answer decides.
+  const archiveThreads = (threadIds: string[]) => {
+    const leaves = [mailboxIds.inbox, mailboxIds.junk, mailboxIds.trash].includes(mailbox.value)
+    const archived = threadIds.length > 1 ? __('Threads archived.') : __('Thread archived.')
+    return fileInPlace(
       'archive',
       threadIds,
-      [mailboxIds.inbox, mailboxIds.junk, mailboxIds.trash].includes(mailbox.value),
-      (filed) =>
-        !filed.left_inbox
-          ? __('Added to Archive.')
-          : threadIds.length > 1
-            ? __('Threads archived.')
-            : __('Thread archived.'),
+      leaves,
+      leaves ? archived : (filed) => (filed.left_inbox ? archived : __('Added to Archive.')),
     )
+  }
 
   // Archive reversed: the received mail goes back from Archive to the Inbox, every other folder kept,
   // and your own mail stays where it is. Only Archive loses the row.
   const unarchiveThreads = (threadIds: string[]) =>
-    fileInPlace('unarchive', threadIds, mailbox.value === mailboxIds.archive, () =>
+    fileInPlace(
+      'unarchive',
+      threadIds,
+      mailbox.value === mailboxIds.archive,
       threadIds.length > 1 ? __('Threads unarchived.') : __('Thread unarchived.'),
     )
 
@@ -974,12 +970,15 @@ export function useThreadActions(deps: {
       'snooze',
       threadIds,
       [mailboxIds.inbox, mailboxIds.archive].includes(mailbox.value),
-      () => snoozedMessage(threadIds.length, until),
+      snoozedMessage(threadIds.length, until),
       until,
     )
 
   const unsnoozeThreads = (threadIds: string[]) =>
-    fileInPlace('wake', threadIds, mailbox.value === mailboxIds.snoozed, () =>
+    fileInPlace(
+      'wake',
+      threadIds,
+      mailbox.value === mailboxIds.snoozed,
       threadIds.length > 1 ? __('Threads unsnoozed.') : __('Thread unsnoozed.'),
     )
 

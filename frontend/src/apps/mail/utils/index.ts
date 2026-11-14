@@ -120,22 +120,35 @@ export const raisePromiseToast = async (
   }
 }
 
-// Rows can update optimistically; confirmation follows the successful server write. The message
-// can be read off the write's answer, where what happened decides what it says.
+/**
+ * The Undo for a write still in flight: it runs once the write has landed, and not at all if the
+ * write was refused. Sent alongside the write, the inverse could land first and be overtaken by it,
+ * leaving the change in place under a toast that says it was taken back.
+ */
+export const afterLanding = (forward: Promise<unknown>, undo: () => void) => () =>
+  void forward.then(undo, () => {})
+
+// The rows change on the click, and so does the toast that says so, Undo and all: waiting for the
+// server put "Archived · Undo" on screen after the reader had moved on, on a slow link seconds
+// later. A refusal takes the toast down and says why; the write's own rollback puts the rows back,
+// and an Undo pressed meanwhile waits for the write (each caller's undo does). Only a message read
+// off the write's answer, where what happened decides what it says, still waits for it.
 export const raiseOptimisticToast = <T>(
   forward: Promise<T>,
   success: string | ((result: T) => string),
   undoAction?: () => void,
 ) => {
   toast.dismiss()
-  void forward.then(
-    (result) =>
-      toast.success(
-        typeof success === 'string' ? success : success(result),
-        undoAction ? { action: { label: __('Undo'), onClick: undoAction } } : undefined,
-      ),
-    raiseError,
-  )
+  const options = undoAction ? { action: { label: __('Undo'), onClick: undoAction } } : undefined
+  if (typeof success === 'string') {
+    const shown = toast.success(success, options)
+    void forward.catch((error) => {
+      toast.dismiss(shown)
+      raiseError(error)
+    })
+    return
+  }
+  void forward.then((result) => toast.success(success(result), options), raiseError)
 }
 
 /**
