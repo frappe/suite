@@ -90,7 +90,8 @@ watch(show, () => {
   }
 })
 
-const addGroup = useMutation(api.mail.admin.groups.create)
+// The dialog's ErrorMessage reports a refusal; a toast on top would say it twice.
+const addGroup = useMutation(api.mail.admin.groups.create, { silent: true })
 async function addGroupSubmit() {
   const input: InputOf<typeof api.mail.admin.groups.create> = {
     name: name.value,

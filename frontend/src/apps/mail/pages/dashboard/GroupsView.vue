@@ -30,11 +30,7 @@
         <span v-if="column.key === 'created_at'" class="truncate text-sm text-ink-gray-5">
           {{ formatCreatedAt(item as string | undefined) }}
         </span>
-        <StorageBar
-          v-else-if="column.key === 'quota_gb'"
-          :used-bytes="row.used_bytes"
-          :quota-gb="0"
-        />
+        <StorageBar v-else-if="column.key === 'quota_gb'" :used-bytes="row.used_bytes" />
         <span
           v-else
           class="truncate text-base"

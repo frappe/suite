@@ -77,7 +77,8 @@ watch(show, () => {
   }
 })
 
-const addList = useMutation(api.mail.admin.mailingLists.create)
+// The dialog's ErrorMessage reports a refusal; a toast on top would say it twice.
+const addList = useMutation(api.mail.admin.mailingLists.create, { silent: true })
 async function addListSubmit() {
   const input: InputOf<typeof api.mail.admin.mailingLists.create> = {
     name: name.value,

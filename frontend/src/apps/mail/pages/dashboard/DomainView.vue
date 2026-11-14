@@ -39,6 +39,7 @@
         <template #actions>
           <Button :label="__('Edit')" @click="showEdit = true" />
           <Button
+            v-if="isEnabled"
             :label="__('Verify DNS')"
             icon-left="lucide-circle-check"
             :loading="verifyDomain.isPending"
@@ -56,8 +57,20 @@
           />
         </template>
       </DashboardDetailHeader>
+      <Alert
+        v-if="domain.data.status === 'Disabled'"
+        :title="__('This domain is disabled')"
+        :description="
+          __('Mail for it does not flow. Enable it, then verify its DNS records to bring it live.')
+        "
+        :primary-action="{
+          label: __('Enable domain'),
+          loading: setEnabled.isPending,
+          onClick: () => setEnabledSubmit({ enabled: true }).catch(() => {}),
+        }"
+      />
       <div
-        v-if="domain.data.status !== 'Active'"
+        v-else-if="domain.data.status === 'Pending Verification'"
         class="bg-surface-blue-1 flex items-start gap-3 rounded-4 border p-4"
       >
         <Info class="text-ink-blue-5 mt-0.5 h-4 w-4 shrink-0" />
@@ -91,7 +104,7 @@
 <script setup lang="ts">
 import Globe from '~icons/lucide/globe'
 import Info from '~icons/lucide/info'
-import { Button, dialog, Dropdown, Tooltip, usePageMeta } from 'frappe-ui'
+import { Alert, Button, dialog, Dropdown, Tooltip, usePageMeta } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -371,7 +384,7 @@ const dropdownOptions = computed(() => [
   },
 ])
 
-// Shown while the records are still to be published; an active domain needs no setup pitch.
+// Shown while the records are still to be published; an active or disabled domain needs no setup pitch.
 const BANNER = {
   title: __('Set up your domain'),
   message: __("Add the following records to your domain's DNS settings."),

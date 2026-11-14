@@ -91,7 +91,8 @@ watch(show, () => {
     updateDomain.reset()
   }
 })
-const updateDomain = useMutation(api.mail.admin.domains.update)
+// The dialog's ErrorMessage reports a refusal; a toast on top would say it twice.
+const updateDomain = useMutation(api.mail.admin.domains.update, { silent: true })
 async function updateDomainSubmit() {
   const input: InputOf<typeof api.mail.admin.domains.update> = {
     domain_id: domain.id,

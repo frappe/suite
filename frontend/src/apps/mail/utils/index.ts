@@ -45,6 +45,27 @@ export const formatBytes = (bytes: number) => {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`
 }
 
+const GB = 1024 ** 3
+
+/** Share of a known limit in use, 0-100; null when there is no limit or no usage to compare. */
+export const storagePercent = (usedBytes?: number | null, quotaGb?: number | null) =>
+  usedBytes == null || !quotaGb
+    ? null
+    : Math.min(100, Math.max(0, (usedBytes / (quotaGb * GB)) * 100))
+
+/** One wording for storage everywhere in admin: no quota (or 0) means unlimited. */
+export const storageUsageLabel = (usedBytes?: number | null, quotaGb?: number | null) => {
+  if (usedBytes == null)
+    return quotaGb == null ? __('Storage unknown') : __('{0} allotted', [formatGb(quotaGb)])
+  const used = usedBytes ? formatBytes(usedBytes) : '0 B'
+  if (!quotaGb) return __('{0} used, unlimited', [used])
+  return __('{0} of {1} ({2}%)', [
+    used,
+    formatGb(quotaGb),
+    (storagePercent(usedBytes, quotaGb) ?? 0).toFixed(1),
+  ])
+}
+
 export const raiseToast = (
   message: string,
   type = 'success',

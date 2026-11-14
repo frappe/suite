@@ -78,9 +78,10 @@
                       </span>
                     </span>
                     <span class="flex w-20 shrink-0 justify-center">
+                      <Badge v-if="entry.is_primary" :label="__('Primary')" />
                       <Switch
+                        v-else
                         :model-value="entry.enabled"
-                        :disabled="entry.is_primary"
                         @update:model-value="(value) => toggleEmailEnabled(entry, value)"
                       />
                     </span>
@@ -171,6 +172,7 @@
 import { refDebounced } from '@vueuse/core'
 import Megaphone from '~icons/lucide/megaphone'
 import {
+  Badge,
   Button,
   dialog,
   Dropdown,

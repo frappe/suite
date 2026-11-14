@@ -73,13 +73,7 @@
         <!-- Quota Usage -->
         <DashboardCard :title="__('Mail storage usage')">
           <p class="p-5 text-base text-ink-gray-7">
-            {{
-              member.data.used_bytes == null
-                ? __('Mail usage unavailable')
-                : __('{0} GB · Mail has no storage limit', [
-                    (member.data.used_bytes / 1_000_000_000).toLocaleString(),
-                  ])
-            }}
+            {{ storageUsageLabel(member.data.used_bytes) }}
           </p>
         </DashboardCard>
 
@@ -117,9 +111,10 @@
                       </span>
                     </span>
                     <span class="flex w-20 shrink-0 justify-center">
+                      <Badge v-if="entry.is_primary" :label="__('Primary')" />
                       <Switch
+                        v-else
                         :model-value="entry.enabled"
-                        :disabled="entry.is_primary"
                         @update:model-value="(value) => toggleEmailEnabled(entry, value)"
                       />
                     </span>
@@ -207,6 +202,7 @@
 <script setup lang="ts">
 import Users from '~icons/lucide/users'
 import {
+  Badge,
   Button,
   dialog,
   Dropdown,
@@ -227,7 +223,7 @@ import AddGroupEmailModal from '@/apps/mail/components/Modals/AddGroupEmailModal
 import AddGroupMembersModal from '@/apps/mail/components/Modals/AddGroupMembersModal.vue'
 import EditGroupModal from '@/apps/mail/components/Modals/EditGroupModal.vue'
 import type { QuotaUsage } from '@/apps/mail/types'
-import { raiseError, raiseToast } from '@/apps/mail/utils'
+import { raiseError, raiseToast, storageUsageLabel } from '@/apps/mail/utils'
 import { formatDateTime } from '@/apps/mail/utils/datetime'
 import {
   DashboardCard,

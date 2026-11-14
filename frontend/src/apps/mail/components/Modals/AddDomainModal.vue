@@ -116,7 +116,8 @@ const ownershipFields = computed(() =>
       ]
     : [],
 )
-const addDomain = useMutation(api.mail.admin.domains.create)
+// The dialog's ErrorMessage reports a refusal; a toast on top would say it twice.
+const addDomain = useMutation(api.mail.admin.domains.create, { silent: true })
 async function addDomainSubmit() {
   const input: InputOf<typeof api.mail.admin.domains.create> = {
     name: domainName.value.trim(),

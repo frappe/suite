@@ -15,7 +15,7 @@
         <FormControl
           v-model="status"
           :placeholder="__('Status')"
-          class="min-w-0 flex-1 sm:w-40 sm:flex-none"
+          class="min-w-0 flex-1 sm:w-48 sm:flex-none"
           type="select"
           :options="STATUS_OPTIONS"
         />

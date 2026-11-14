@@ -19,23 +19,11 @@
 import { Tooltip } from 'frappe-ui'
 import { computed } from 'vue'
 
-import { formatBytes, formatGb } from '@/apps/mail/utils'
-
-const GB = 1024 ** 3
+import { storagePercent, storageUsageLabel } from '@/apps/mail/utils'
 
 // Keep usage readable for unlimited accounts; a percentage bar requires a known limit.
 const { usedBytes, quotaGb } = defineProps<{ usedBytes?: number | null; quotaGb?: number | null }>()
 
-const percent = computed(() => {
-  if (usedBytes == null || !quotaGb) return null
-  return Math.min(100, Math.max(0, (usedBytes / (quotaGb * GB)) * 100))
-})
-
-const label = computed(() => {
-  if (usedBytes == null)
-    return quotaGb == null ? __('Storage unknown') : __('{0} allotted', [formatGb(quotaGb)])
-  const used = usedBytes ? formatBytes(usedBytes) : '0 B'
-  if (!quotaGb) return __('{0} used, unlimited', [used])
-  return __('{0} of {1} ({2}%)', [used, formatGb(quotaGb), (percent.value ?? 0).toFixed(1)])
-})
+const percent = computed(() => storagePercent(usedBytes, quotaGb))
+const label = computed(() => storageUsageLabel(usedBytes, quotaGb))
 </script>
