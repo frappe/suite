@@ -6,7 +6,7 @@ import { Paragraph } from '@tiptap/extension-paragraph'
 import { Text } from '@tiptap/extension-text'
 import { fromAny, fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
-import { nextTick, ref, type Ref } from 'vue'
+import { createApp, defineComponent, h, nextTick, provide, ref, type Ref } from 'vue'
 import { Awareness } from 'y-protocols/awareness'
 import {
   applyUpdate,
@@ -21,6 +21,7 @@ import type { DocumentComments, DocumentVersion } from '@/apps/drive'
 import type { StoreSlide } from '@/apps/slides/collab/liveDeck'
 import type { LostAccess, Peer, RoomStatus } from '@/platform/collab'
 import { requireTestElement } from '@/platform/testing/dom'
+import { translationPlugin } from '@/platform/translation'
 
 import {
   collabRoom,
@@ -76,6 +77,8 @@ const focusElementId = fromAny<Ref<string | null>, unknown>(elementStore.focusEl
 const activeEditor = fromAny<Ref<Editor | null>, unknown>(editorStore.activeEditor)
 const focused = fromAny<Ref<number | null>, unknown>(focusedSlide)
 const { registerElementDiv } = await import('@/apps/slides/stores/elementRegistry')
+const { default: FrameSection } = await import('@/apps/slides/components/FrameSection.vue')
+const { default: SelectionBox } = await import('@/apps/slides/components/SelectionBox.vue')
 const { convertLegacy } = await import('@/apps/slides/collab/conversion')
 const {
   addElement,
@@ -1445,6 +1448,72 @@ describe('a deck on the content layer', () => {
       expect(drawn()).toMatchObject(shown)
       expect(editor.getText()).toBe('oxyne')
       expect(editor.state.selection.from).toBe(4)
+    })
+  })
+
+  describe('a selected element another tab moves', () => {
+    it('moves the selection box and the Frame panel to where the other tab put it', async () => {
+      const room = roomOf('one')
+      collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
+      const id = 'element-one'
+      setElement(room.doc, id, { frame: { left: 100, top: 100, width: 300 } })
+      mounted = await openedSurface({ deck: { is_converted: true } })
+      await vi.waitFor(() => expect(viewOnly.value).toBe(false))
+      const panel = document.createElement('div')
+      document.body.append(panel)
+      // the canvas is stubbed here, so its selection box and the Frame panel are mounted beside it
+      const canvas = defineComponent({
+        setup() {
+          provide('resizer', { currentResizer: ref(null), startResize: () => {} })
+          provide('cornerRadius', { isHovered: ref(false), isRounding: ref(false) })
+          return () => [h(SelectionBox), h(FrameSection)]
+        },
+      })
+      const frame = createApp(canvas).use(translationPlugin)
+      frame.mount(panel)
+      onTestFinished(() => frame.unmount())
+      const shown = () => {
+        const box = requireTestElement(panel.querySelector('[data-selection-box]'), HTMLElement)
+        const field = (label: string) => {
+          const name = [...panel.querySelectorAll('span')].find(
+            (span) => span.textContent === label,
+          )
+          return Number(name?.parentElement?.querySelector('input')?.value)
+        }
+        return {
+          box: { left: box.style.left, top: box.style.top },
+          panel: { left: field('Left'), top: field('Top') },
+        }
+      }
+
+      // the canvas draws the element 300 by 80
+      const drawn = Object.defineProperties(document.createElement('div'), {
+        offsetWidth: { value: 300 },
+        offsetHeight: { value: 80 },
+      })
+      registerElementDiv(id, drawn)
+      onTestFinished(() => registerElementDiv(id, null))
+      // the editor page, stubbed here, shows the first slide, and the canvas fits the box to it
+      slideIndex.value = 0
+      elementStore.setActiveElements([id])
+      elementStore.cropSelectionToFitContent([id])
+      await vi.waitFor(() =>
+        expect(shown()).toEqual({
+          box: { left: '100px', top: '100px' },
+          panel: { left: 100, top: 100 },
+        }),
+      )
+      room.doc.transact(
+        () => setElement(room.doc, id, { frame: { left: 400, top: 250, width: 300 } }),
+        'peer',
+      )
+
+      await vi.waitFor(() =>
+        expect(shown()).toEqual({
+          box: { left: '400px', top: '250px' },
+          panel: { left: 400, top: 250 },
+        }),
+      )
     })
   })
 

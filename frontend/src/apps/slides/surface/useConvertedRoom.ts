@@ -17,6 +17,7 @@ import { liveTextExtensions } from '@/apps/slides/collab/liveText'
 import { lastSelector, usePeopleSelecting } from '@/apps/slides/collab/peerOutlines'
 import { resetGrowthBaseline } from '@/apps/slides/composables/useTextEditor'
 import {
+  cropSelectionToFitContent,
   resetFocus,
   activeElementIds as storeActiveIds,
   focusElementId as storeFocusId,
@@ -192,6 +193,13 @@ export function useConvertedRoom({
     if (activeElementIds.value.some((id: string) => !present.has(id))) {
       activeElementIds.value = activeElementIds.value.filter((id: string) => present.has(id))
     }
+
+    // a selected element another tab moved takes its box and Frame panel along
+    nextTick(() => {
+      if (activeElementIds.value.length) {
+        cropSelectionToFitContent(activeElementIds.value)
+      }
+    })
 
     if (focusElementId.value && !present.has(focusElementId.value)) {
       focusElementId.value = null
