@@ -21,6 +21,7 @@
           :label="__('Send')"
           :tooltip="__('Send ({0}+Enter)', [modifier])"
           :disabled="isRecipientsEmpty || isUploading"
+          :loading="isSending"
           class="!rounded-r-none !pr-2"
           @click="emit('sendMail')"
         />
@@ -38,6 +39,14 @@
           </Button>
         </Dropdown>
       </div>
+
+      <ComposeSaveState
+        v-if="saveState && draftSavePlacement === 'send'"
+        :state="saveState"
+        class="shrink-[100]"
+        @retry="emit('retrySave')"
+      />
+
       <template v-if="!isMobile">
         <ComposeReminderButton
           :remind-at
@@ -68,20 +77,21 @@
         <input ref="fileInput" type="file" class="hidden" multiple @change="onFilesSelected" />
       </div>
 
-      <!-- Stays until a save lands, so a refused save cannot pass for a kept draft. -->
-      <Button
-        v-if="saveFailed"
-        variant="ghost"
-        theme="red"
-        class="ml-auto shrink-0"
-        :label="__('Not saved · Retry')"
-        @click="emit('retrySave')"
+      <!-- Stays until a save lands, so a refused save cannot pass for a kept draft. Next to
+           Discard, the one other thing on the bar that is about the draft rather than its text.
+           Short of room, it wraps before the editor buttons scroll out of sight: a failing save is
+           no time to lose Attach. -->
+      <ComposeSaveState
+        v-if="saveState && (draftSavePlacement === 'toolbar' || inThread)"
+        :state="saveState"
+        class="ml-auto shrink-[100]"
+        @retry="emit('retrySave')"
       />
       <Button
         v-if="!isMobile"
         variant="ghost"
         class="shrink-0"
-        :class="{ 'ml-auto': !saveFailed }"
+        :class="{ 'ml-auto': draftSavePlacement !== 'toolbar' && !inThread }"
         :aria-label="__('Discard')"
         :tooltip="__('Discard ({0}+D)', [modifier])"
         @click="emit('discardMail')"
@@ -98,15 +108,20 @@ import { CalendarClock, ChevronDown, Laugh, Paperclip } from 'lucide-vue-next'
 import { computed, useTemplateRef } from 'vue'
 
 import ComposeReminderButton from '@/apps/mail/components/ComposeReminderButton.vue'
+import ComposeSaveState from '@/apps/mail/components/ComposeSaveState.vue'
 import EmojiPicker from '@/apps/mail/components/EmojiPicker.vue'
 import { isMac } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
+import { draftSavePlacement } from '@/apps/mail/utils/draftSavePlacement'
 import { useEditorMenu } from '@/apps/mail/utils/editorMenu'
 
-const { isRecipientsEmpty, isUploading, saveFailed, remindAt } = defineProps<{
+const { isRecipientsEmpty, isUploading, isSending, saveState, inThread, remindAt } = defineProps<{
   isRecipientsEmpty: boolean
   isUploading?: boolean
-  saveFailed?: boolean
+  isSending?: boolean
+  saveState?: InstanceType<typeof ComposeSaveState>['$props']['state']
+  // A reply in a thread has no title bar, so its save state stays on this one.
+  inThread?: boolean
   // When to be reminded if nobody replies, once asked for (see useComposeMail).
   remindAt?: string
 }>()

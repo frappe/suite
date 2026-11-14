@@ -19,6 +19,7 @@
 	-->
   <div
     class="bg-surface-base fixed inset-x-0 z-30 flex flex-col overflow-hidden"
+    :inert="isSending"
     :style="{ top: `${keyboardTop}px`, height: `${viewportHeight}px` }"
   >
     <header
@@ -29,13 +30,22 @@
           <X class="text-ink-gray-5 size-5" />
         </template>
       </Button>
-      <h2 class="text-ink-gray-8 flex-1 text-base font-medium">{{ __('Compose Mail') }}</h2>
-      <Button
-        v-if="isSaveFailed"
-        variant="ghost"
-        theme="red"
-        :label="__('Not saved · Retry')"
-        @click="saveDraft()"
+      <!-- Left to shrink, so the state gives way before the buttons do. -->
+      <div class="flex min-w-0 flex-1 flex-col">
+        <h2 class="text-ink-gray-8 truncate text-base font-medium">
+          {{ __('Compose Mail') }}
+        </h2>
+        <ComposeSaveState
+          v-if="draftSavePlacement !== 'send'"
+          :state="saveState"
+          @retry="retrySave()"
+        />
+      </div>
+      <ComposeSaveState
+        v-if="draftSavePlacement === 'send'"
+        :state="saveState"
+        class="shrink-0"
+        @retry="retrySave()"
       />
       <!-- In the header, where it can always be reached: in the formatting row it only appeared once
            the body had the caret, so a mail that was nothing but an attachment had no way to it. -->
@@ -70,6 +80,15 @@
       :remind-at="remindAt"
       @change="setRemindAt"
       @cancel="setRemindAt()"
+    />
+
+    <ComposeDraftNotice
+      :is-gone="saveState.status === 'gone'"
+      :copy="recoverableCopy"
+      @keep-as-new="keepAsNewDraft"
+      @discard="discardMail"
+      @restore="restoreCopy"
+      @ignore="ignoreCopy"
     />
 
     <!-- flex-1 so the body claims the rest of the page: a tap anywhere in the empty space below
@@ -175,6 +194,7 @@
                       __('Bcc')
                     }}</span>
                     <RecipientInput
+                      ref="bccInput"
                       v-model="mail.bcc"
                       field="bcc"
                       :suggestions-to="bccSuggestions"
@@ -292,6 +312,8 @@ import {
 import { computed, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { onBeforeRouteLeave, useRouter } from 'vue-router'
 
+import ComposeDraftNotice from '@/apps/mail/components/ComposeDraftNotice.vue'
+import ComposeSaveState from '@/apps/mail/components/ComposeSaveState.vue'
 import RecipientInput from '@/apps/mail/components/Controls/RecipientInput.vue'
 import ScheduleSendModal from '@/apps/mail/components/Modals/ScheduleSendModal.vue'
 import ReminderMenu from '@/apps/mail/components/ReminderMenu.vue'
@@ -300,6 +322,7 @@ import { takePendingCompose } from '@/apps/mail/composables/composeHandoff'
 import { useComposeMail } from '@/apps/mail/composables/useComposeMail'
 import type { Attachment, Identity } from '@/apps/mail/types'
 import { formatBytes, raiseToast } from '@/apps/mail/utils'
+import { draftSavePlacement } from '@/apps/mail/utils/draftSavePlacement'
 import { useEditorMenu } from '@/apps/mail/utils/editorMenu'
 import { uploadFunction } from '@/apps/mail/utils/text-editor'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
@@ -308,22 +331,15 @@ import { useKeyboardInsets } from '@/composables/useKeyboardInsets'
 const router = useRouter()
 
 const textEditor = useTemplateRef('textEditor')
-const toInput = useTemplateRef<{ setFocus: () => void }>('toInput')
-const ccInput = useTemplateRef<{ setFocus: () => void }>('ccInput')
+type RecipientField = { setFocus: () => void; commitTyped: () => boolean }
+const toInput = useTemplateRef<RecipientField>('toInput')
+const ccInput = useTemplateRef<RecipientField>('ccInput')
+const bccInput = useTemplateRef<RecipientField>('bccInput')
 const subjectInput = useTemplateRef<HTMLInputElement>('subjectInput')
 const fileInput = useTemplateRef<HTMLInputElement>('fileInput')
 const scroller = useTemplateRef<HTMLElement>('scroller')
-const pendingUploads = ref(0)
-const isUploading = computed(() => pendingUploads.value > 0)
 
-const uploadInlineImage = async (file: File) => {
-  pendingUploads.value++
-  try {
-    return await uploadFunction(file)
-  } finally {
-    pendingUploads.value--
-  }
-}
+const uploadInlineImage = (file: File) => trackUpload(file.name, uploadFunction(file))
 
 // Where each recipient input teleports its suggestion list, so the list spans the page rather than
 // the field's own column.
@@ -347,8 +363,16 @@ const {
   identities,
   isRecipientsEmpty,
   moveRecipient,
-  saveDraft,
-  isSaveFailed,
+  saveState,
+  retrySave,
+  keepAsNewDraft,
+  recoverableCopy,
+  restoreCopy,
+  ignoreCopy,
+  isSending,
+  isUploading,
+  trackUpload,
+  leave,
   sendMail,
   discardMail,
   showScheduleModal,
@@ -369,7 +393,8 @@ const {
   // The page is the composer, so it is open right up until the route leaves.
   isOpen: () => !leaving,
   host: () => textEditor.value,
-  isUploading: () => isUploading.value,
+  commitTypedRecipients: () =>
+    [toInput, ccInput, bccInput].forEach((input) => input.value?.commitTyped()),
   uploadInlineImage,
 })
 
@@ -540,17 +565,14 @@ const onFilesSelected = async (e: Event) => {
   input.value = ''
 
   for (const file of files) {
-    pendingUploads.value++
     try {
-      const doc = await uploadFunction(file)
+      const doc = await trackUpload(file.name, uploadFunction(file))
       mail.attachments.push({ ...doc, disposition: 'attachment' })
     } catch (error) {
       raiseToast(
         error instanceof Error ? error.message : __('Could not attach {0}.', [file.name]),
         'error',
       )
-    } finally {
-      pendingUploads.value--
     }
   }
 }
@@ -580,8 +602,7 @@ onMounted(() => {
 // Navigating away is the only way off this page, so this is where an unsent message gets kept.
 onBeforeRouteLeave(() => {
   leaving = true
-  saveDraft()
 })
 
-onUnmounted(() => saveDraft())
+onUnmounted(() => void leave())
 </script>

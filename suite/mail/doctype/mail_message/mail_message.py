@@ -295,7 +295,9 @@ class MailMessage(Document):
         if messages := get_messages(account, ids=[id]):
             return super(Document, self).__init__(messages[0])
 
-        frappe.throw(_("Message not found or you do not have permission to view it."))
+        frappe.throw(
+            _("Message not found or you do not have permission to view it."), frappe.DoesNotExistError
+        )
 
     def db_update(self) -> None:
         raise NotImplementedError

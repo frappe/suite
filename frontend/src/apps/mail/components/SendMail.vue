@@ -70,6 +70,14 @@
           <h2 class="text-ink-gray-9 mr-auto truncate !text-base font-medium">
             {{ title }}
           </h2>
+          <!-- Folded away, the bar is all there is of the window, so it says how the draft stands
+               wherever the state otherwise sits. -->
+          <ComposeSaveState
+            v-if="editor?.saveState && (minimised || draftSavePlacement === 'title')"
+            :state="editor.saveState"
+            class="mr-1 shrink-0"
+            @retry="editor.retrySave()"
+          />
           <Button
             v-if="!minimised"
             variant="ghost"
@@ -127,9 +135,11 @@ import { Button, usePortalTarget } from 'frappe-ui'
 import { computed, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 
 import ComposeMailEditor from '@/apps/mail/components/ComposeMailEditor.vue'
+import ComposeSaveState from '@/apps/mail/components/ComposeSaveState.vue'
 import { claimComposeWindow } from '@/apps/mail/composables/useComposeWindow'
 import type { ComposeMailData } from '@/apps/mail/types'
 import { provideAccountScope } from '@/apps/mail/utils/accountScope'
+import { draftSavePlacement } from '@/apps/mail/utils/draftSavePlacement'
 
 const show = defineModel<boolean>()
 

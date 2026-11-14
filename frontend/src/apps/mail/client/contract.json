@@ -19660,6 +19660,17 @@
             "title": "Undo Send",
             "type": "boolean"
           },
+          "draft_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Key"
+          },
           "remind_at": {
             "anyOf": [
               {
@@ -20070,6 +20081,17 @@
           "undo_send": {
             "title": "Undo Send",
             "type": "boolean"
+          },
+          "draft_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Key"
           },
           "remind_at": {
             "anyOf": [

@@ -8,22 +8,40 @@
   </component>
   <ShortcutsModal v-model:open="showShortcuts" />
   <OldMailDialog v-if="!mailServerUnavailable" />
+  <ComposeSaveTweak v-if="ComposeSaveTweak" />
 </template>
 
 <script setup lang="ts">
 import { providePortalTarget } from 'frappe-ui'
-import { computed, onMounted, onScopeDispose, onUnmounted, provide, watch } from 'vue'
+import {
+  computed,
+  defineAsyncComponent,
+  nextTick,
+  onMounted,
+  onScopeDispose,
+  onUnmounted,
+  provide,
+  watch,
+} from 'vue'
 import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 
 import DefaultLayout from '@/apps/mail/components/DefaultLayout.vue'
 import MailServerUnavailableView from '@/apps/mail/components/MailServerUnavailableView.vue'
 import ShortcutsModal from '@/apps/mail/components/Modals/ShortcutsModal.vue'
 import OldMailDialog from '@/apps/mail/components/Screener/OldMailDialog.vue'
+import { openComposePage } from '@/apps/mail/composables/composeHandoff'
+import { offerDraftCopies } from '@/apps/mail/composables/useDraftRecovery'
 import { isMailRoute } from '@/apps/mail/router'
 import { initSocket } from '@/apps/mail/socket'
 import { userStore } from '@/apps/mail/stores/user'
 import { shouldIgnoreKeypress } from '@/apps/mail/utils'
-import { useSettings, useShortcuts, useUndo } from '@/apps/mail/utils/composables'
+import {
+  useComposeMail,
+  useScreenSize,
+  useSettings,
+  useShortcuts,
+  useUndo,
+} from '@/apps/mail/utils/composables'
 import dayjs from '@/apps/mail/utils/dayjs'
 import { useGPrefix } from '@/apps/mail/utils/listNavigation'
 import {
@@ -51,6 +69,13 @@ import { useRootStore } from '@/stores/root'
  * do not need the $user/$dayjs/$socket injects.
  */
 const { userResource, mailboxIds, accountId } = userStore()
+const { isMobile } = useScreenSize()
+const { requestCompose } = useComposeMail()
+// Dev only, and left out of a production build: the condition is replaced at build time, taking the
+// import with it.
+const ComposeSaveTweak = import.meta.env.DEV
+  ? defineAsyncComponent(() => import('@/apps/mail/components/ComposeSaveTweak.vue'))
+  : null
 const router = useRouter()
 const route = useRoute()
 
@@ -155,6 +180,32 @@ const unregisterPaletteGroups = useRootStore().registerPaletteGroups('mail-layou
       ],
 )
 onScopeDispose(unregisterPaletteGroups)
+
+// A draft that never reached the server, left behind by an earlier page: offered back once, as soon
+// as it is known whose copies to look for. Mail's accounts arrive after the layout does.
+const stopWaitingForAccounts = watch(
+  () => userResource.data,
+  (data) => {
+    if (!data?.accounts?.length) return
+    // The watcher may run during its own setup, before the handle exists.
+    void nextTick(() => stopWaitingForAccounts())
+    void offerDraftCopies({
+      user: data.name,
+      accounts: data.accounts.map((account) => account.id),
+      reopen: async (draft) => {
+        // On the compose page there is nothing to open it on: it is already showing, and going to
+        // it again would not start a new one. Back out first, then in again.
+        if (route.name === 'mail-compose') {
+          await router.replace('/mail')
+          await nextTick()
+        }
+        if (isMobile.value) void openComposePage(router, draft.account ?? accountId, draft)
+        else requestCompose(draft)
+      },
+    })
+  },
+  { immediate: true },
+)
 
 provide('$user', userResource)
 provide('$dayjs', dayjs)
