@@ -225,7 +225,7 @@ def complete(
     # A worker cannot declare every failed/omitted input to be a complete empty
     # transcript; only successfully processed empty sources establish silence.
     provided = validate_gaps(_json(gaps, []))
-    if not successful and (
+    if not any(segment["text"].strip() for segment in successful) and (
         missing
         or manifest.get("gaps")
         or provided

@@ -153,6 +153,40 @@ class IntegrationTestTranscription(IntegrationTestCase):
         publish.assert_not_called()
         self.assertFalse(job.artifact)
 
+    def test_completed_silence_cannot_hide_a_missing_speech_source(self):
+        job = self.job()
+        source = {
+            "source_id": "silence",
+            "speaker_id": "speaker-a",
+            "speaker_name": "Anita",
+            "start_ms": 0,
+            "end_ms": 1000,
+        }
+        job.manifest = json.dumps(
+            {
+                "segments": [source, {**source, "source_id": "lost", "start_ms": 1000, "end_ms": 2000}],
+                "gaps": [],
+            }
+        )
+        job.save(ignore_permissions=True)
+        with (
+            patch.object(transcription, "_authenticate"),
+            patch("suite.meet.transcription.client.authorize_manifest", return_value={"segments": []}),
+        ):
+            claimed = transcription.claim("worker")
+            outcome = transcription.complete(
+                job.name,
+                claimed["lease_token"],
+                "worker",
+                [{**source, "text": ""}],
+                processed_source_ids=["silence"],
+            )
+        self.assertEqual(outcome["status"], "Failed")
+        job.reload()
+        self.assertFalse(job.artifact)
+        self.assertTrue(job.notification_pending)
+        self.assertEqual(job.failure_code, "no_usable_segments")
+
     def test_deleted_result_revokes_worker_lease(self):
         job = self.job("Deleted")
         job.lease_worker = "worker"
