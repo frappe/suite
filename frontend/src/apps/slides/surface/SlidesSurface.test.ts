@@ -1410,6 +1410,42 @@ describe('a deck on the content layer', () => {
 
       expect(saved()).toMatchObject({ left: 400, transform: 'none' })
     })
+
+    it("moves nothing and keeps the caret when a font the text doesn't use arrives mid-typing", async () => {
+      const room = roomOf('one')
+      collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
+      const id = 'element-one'
+      setElement(room.doc, id, { frame: { left: 500, top: 300, transform: CENTRED } })
+      mounted = await openedSurface({ deck: { is_converted: true } })
+      await vi.waitFor(() => expect(viewOnly.value).toBe(false))
+      focusElementId.value = id
+      await vi.waitFor(() => expect(activeEditor.value).toBeTruthy())
+      await nextTick()
+      const editor: Editor = fromAny(activeEditor.value)
+      const drawn = () =>
+        fromPartial<Array<{ elements: Array<{ left: number; top: number }> }>>(
+          editorSlides.value,
+        )[0].elements[0]
+      const shown = { left: drawn().left, top: drawn().top }
+      const saved = () => room.doc.getMap<Map<string, unknown>>(ROOT.elements).get(id)!.get('frame')
+
+      fontStartsLoading()
+      // an icon font, say: the text draws the same while it loads
+      browser.height = FONT_HEIGHT
+      editor.chain().setTextSelection(2).insertContent('x').run()
+      await nextTick()
+      browser.fontArrives()
+      await browser.ready
+      await nextTick()
+      // saved only once the font's redraw has run
+      editor.commands.insertContent('y')
+      await nextTick()
+
+      await vi.waitFor(() => expect(saved()).toMatchObject({ ...shown, transform: 'none' }))
+      expect(drawn()).toMatchObject(shown)
+      expect(editor.getText()).toBe('oxyne')
+      expect(editor.state.selection.from).toBe(4)
+    })
   })
 
   describe('with a text editor open when the room stops taking writes', () => {

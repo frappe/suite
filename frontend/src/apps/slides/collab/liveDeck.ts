@@ -427,41 +427,11 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
     }
   }
 
-  // Typing changes a centred element's height, so its top-left is worked out again
-  // Moved by hand, it keeps where it was put and saves that
-  function reflattenBound() {
-    const boundId = host.boundElementId()
-    const element = host
-      .slides()
-      .flatMap((slide) => slide.elements)
-      .find(({ id }) => id === boundId)
-    const previous = boundId && mirror.elements.get(boundId)
-    if (!element || !previous) {
-      return
-    }
-
-    const frame = savedFrame(element.id)
-    const before = JSON.parse(previous)
-    const isHeld = element.left === before.left && element.top === before.top
-    if (!isHeld || frame?.transform !== CENTRED) {
-      return
-    }
-
-    const { left, top } = host.flatten({ ...toRaw(element), ...frame })
-    if (host.fontsPending()) {
-      return
-    }
-
-    element.left = left
-    element.top = top
-  }
-
   function push() {
     if (!host.canWrite()) {
       return
     }
 
-    reflattenBound()
     let now = mirrorOf(host.slides())
     // SAFETY: only widens null; the write below sets it, and TypeScript doesn't follow into it
     let boundText = null as { html: string | null } | null

@@ -570,7 +570,8 @@ describe('an edit of centred text that does not move it', () => {
 })
 
 describe('typing in centred text', () => {
-  function typedInto(doc: Y.Doc) {
+  it('keeps the top it was shown at, so the first edit grows the text downwards', () => {
+    const doc = new Y.Doc()
     writeDeck(doc, [
       {
         id: 's',
@@ -578,20 +579,15 @@ describe('typing in centred text', () => {
       },
     ])
     const tab = tabOn(doc, { boundElementId: 't' })
-    tab.element('t').content = '<p>a much longer line of text</p>'
+    const shown = { left: tab.element('t').left, top: tab.element('t').top }
+
+    // Enter, as the first key: a second, empty line
+    tab.element('t').content = '<p>Title</p><p></p>'
     tab.deck.push()
-    return tab
-  }
 
-  it('saves the re-measured top-left with the first edit', () => {
-    const doc = new Y.Doc()
-    const tab = typedInto(doc)
-    const top = 300 - tab.element('t').content.length
-
-    expect(tab.element('t').top).toBe(top)
+    expect(tab.element('t')).toMatchObject(shown)
     expect(savedFrame(doc, 't')).toEqual({
-      left: 450,
-      top,
+      ...shown,
       transform: 'none',
       transformOrigin: 'top left',
     })

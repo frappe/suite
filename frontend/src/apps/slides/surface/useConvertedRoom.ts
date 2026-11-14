@@ -253,7 +253,14 @@ export function useConvertedRoom({
       setBoundText,
       canWrite,
       restoreRev: () => liveRoom.status.restoreRev,
-      fontsPending: () => isFontPending || document.fonts.status === 'loading',
+      // Text that waits on a loading font is redrawn once it comes
+      fontsPending: () => {
+        if (document.fonts.status === 'loading') {
+          redrawWhenFontsLoad()
+        }
+
+        return isFontPending
+      },
       onRenamed: applyRenames,
       onMerged: keepShownSlide,
       onStep: showStep,
