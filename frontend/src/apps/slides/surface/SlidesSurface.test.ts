@@ -17,7 +17,7 @@ import {
   type XmlText,
 } from 'yjs'
 
-import type { useCommentDrafts } from '@/apps/drive'
+import type { DocumentComments, DocumentVersion } from '@/apps/drive'
 import type { StoreSlide } from '@/apps/slides/collab/liveDeck'
 import type { LostAccess, RoomStatus } from '@/platform/collab'
 import { requireTestElement } from '@/platform/testing/dom'
@@ -833,19 +833,18 @@ describe('a deck on the content layer', () => {
       mounted = await openedSurface({ deck: { is_converted: true } })
       await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
       requireTestElement(mounted.root.querySelector('[data-versions]'), HTMLElement).click()
-      await vi.waitFor(() => expect(versionsPanel.confirmRestore).not.toBeNull())
+      await vi.waitFor(() => expect(versionsPanel.isOpen).toBe(true))
       return room
     }
 
     afterEach(() => {
       vi.useRealTimers()
-      versionsPanel.confirmRestore = null
     })
 
     it('goes ahead once the edits are saved, sending them first', async () => {
       const room = await openedLive()
 
-      await versionsPanel.flush()
+      await versionsPanel.saveFirst()
 
       expect(room.flush).toHaveBeenCalled()
     })
@@ -854,7 +853,7 @@ describe('a deck on the content layer', () => {
       const room = await openedLive()
       room.setStatus({ saveState: 'failed', unsentCount: 1 })
 
-      await expect(versionsPanel.flush()).rejects.toThrow(
+      await expect(versionsPanel.saveFirst()).rejects.toThrow(
         'No version was taken: your changes could not be saved.',
       )
     })
@@ -864,7 +863,7 @@ describe('a deck on the content layer', () => {
       room.setStatus({ saveState: 'unsaved', unsentCount: 1 })
       vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
 
-      const naming = expect(versionsPanel.flush()).rejects.toThrow(
+      const naming = expect(versionsPanel.saveFirst()).rejects.toThrow(
         'No version was taken: your changes are still saving. Try again in a moment.',
       )
       await vi.advanceTimersByTimeAsync(10_000)
@@ -873,10 +872,44 @@ describe('a deck on the content layer', () => {
     })
   })
 
-  describe('restoring a version', () => {
-    beforeEach(() => {
-      versionsPanel.confirmRestore = null
+  describe('the presentation menu', () => {
+    function menuEntry(label: string) {
+      return Array.from(mounted!.root.querySelectorAll('button')).find(
+        (button) => button.textContent === label,
+      )
+    }
+
+    it('has the side panel name a version once the closing menu gives focus back', async () => {
+      convertedRoom('one')
+      mounted = await openedSurface({ deck: { is_converted: true } })
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+      const namings = versionsPanel.namings
+
+      requireTestElement(menuEntry('Save version'), HTMLElement).click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(versionsPanel.namings).toBe(namings)
+      requireTestElement(
+        mounted.root.querySelector('[aria-label="Presentation menu"]'),
+        HTMLElement,
+      ).dispatchEvent(new FocusEvent('focus'))
+
+      await vi.waitFor(() => expect(versionsPanel.namings).toBe(namings + 1))
     })
+
+    it('offers no Save version to someone who can only view', async () => {
+      mounted = await openedSurface({ role: 10 })
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(served.slides.length))
+
+      expect(menuEntry('Shortcuts')).toBeDefined()
+      expect(menuEntry('Save version')).toBeUndefined()
+    })
+  })
+
+  describe('restoring a version', () => {
+    // a version as the panel lists it
+    function listed(seq: number) {
+      return fromPartial<DocumentVersion>({ seq, kind: 'auto', label: null })
+    }
 
     // a version as the server stores one: the Yjs state gzipped, then base64, in a JSON record
     async function storedVersion(doc: Doc) {
@@ -891,7 +924,7 @@ describe('a deck on the content layer', () => {
 
     async function openVersions() {
       requireTestElement(mounted!.root.querySelector('[data-versions]'), HTMLElement).click()
-      await vi.waitFor(() => expect(versionsPanel.confirmRestore).not.toBeNull())
+      await vi.waitFor(() => expect(versionsPanel.isOpen).toBe(true))
     }
 
     it('asks first, then restores it in the editor for everyone and lists the versions again', async () => {
@@ -903,12 +936,12 @@ describe('a deck on the content layer', () => {
       await openVersions()
       const reloads = versionsPanel.reloads
 
-      versionsPanel.confirmRestore!('3')
+      versionsPanel.restore(listed(3))
       await vi.waitFor(() => expect(dialog.confirm).toHaveBeenCalled())
       const [asked] = fromAny<[{ message: string; onConfirm: () => Promise<void> }], unknown>(
         vi.mocked(dialog.confirm).mock.lastCall,
       )
-      expect(versionsPanel.writable).toBe(true)
+      expect(versionsPanel.canRestore).toBe(true)
       expect(asked.message).toBe(
         'The presentation goes back to this version for everyone. Its current state is kept as a version first.',
       )
@@ -933,7 +966,7 @@ describe('a deck on the content layer', () => {
       await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
       await openVersions()
 
-      versionsPanel.confirmRestore!('3')
+      versionsPanel.restore(listed(3))
       const message = "This version can't be read, so it can't be restored. You can download it."
       await vi.waitFor(() => expect(toast.error).toHaveBeenCalledWith(message, expect.anything()))
       const [, options] = fromAny<
@@ -954,7 +987,7 @@ describe('a deck on the content layer', () => {
       return root.querySelector('[aria-label="Version preview"]')
     }
 
-    it('shows a version read-only in the canvas place, steps through its slides, and Escape goes back', async () => {
+    it('shows a version read-only in the canvas place, steps through its slides, and the panel’s Escape goes back', async () => {
       const live = convertedRoom('now')
       versionBytes.current = await storedVersion(roomOf('first', 'second').doc)
       mounted = await openedSurface({ deck: { is_converted: true } })
@@ -964,18 +997,18 @@ describe('a deck on the content layer', () => {
       const writes = vi.fn()
       live.on('update', writes)
 
-      versionsPanel.preview('3')
+      versionsPanel.preview(listed(3))
       await vi.waitFor(() => expect(previewOf(mounted!.root)?.textContent).toContain('first'))
       const preview = requireTestElement(previewOf(mounted.root), HTMLElement)
       expect(preview.textContent).toContain('1 of 2')
       expect(mounted.root.querySelector('[data-toolbar]')).toBeNull()
-      expect(versionsPanel.previewed).toBe('3')
+      expect(versionsPanel.previewed?.seq).toBe(3)
 
       requireTestElement(preview.querySelector('[aria-label="Next slide"]'), HTMLElement).click()
       await vi.waitFor(() => expect(preview.textContent).toContain('second'))
       expect(preview.textContent).toContain('2 of 2')
 
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+      versionsPanel.back()
       await vi.waitFor(() => expect(previewOf(mounted!.root)).toBeNull())
       expect(versionsPanel.previewed).toBeNull()
       expect(mounted.root.querySelector('[data-toolbar]')).not.toBeNull()
@@ -991,7 +1024,7 @@ describe('a deck on the content layer', () => {
       mounted = await openedSurface({ deck: { is_converted: true } })
       await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
       await openVersions()
-      versionsPanel.preview('3')
+      versionsPanel.preview(listed(3))
       await vi.waitFor(() => expect(previewOf(mounted!.root)?.textContent).toContain('first'))
       const before = Array.from(encodeStateAsUpdate(live))
 
@@ -1011,7 +1044,7 @@ describe('a deck on the content layer', () => {
       await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
       await openVersions()
 
-      versionsPanel.preview('1')
+      versionsPanel.preview(listed(1))
 
       await vi.waitFor(() =>
         expect(previewOf(mounted!.root)?.textContent).toContain('before collaboration'),
@@ -1030,7 +1063,7 @@ describe('a deck on the content layer', () => {
       await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
       await openVersions()
 
-      versionsPanel.confirmRestore!('1')
+      versionsPanel.restore(listed(1))
       await vi.waitFor(() => expect(dialog.confirm).toHaveBeenCalled())
       const [asked] = fromAny<[{ onConfirm: () => Promise<void> }], unknown>(
         vi.mocked(dialog.confirm).mock.lastCall,
@@ -1070,7 +1103,7 @@ describe('a deck on the content layer', () => {
         '<p>old two</p>',
       ])
       expect(previewOf(mounted!.root)?.textContent).toContain('old one')
-      expect(versionsPanel.previewed).toBe('1')
+      expect(versionsPanel.previewed?.seq).toBe(1)
       expect(room.restoreVersion).not.toHaveBeenCalled()
       expect(Array.from(encodeStateAsUpdate(room.doc))).toEqual(before)
     })
@@ -1096,20 +1129,97 @@ describe('a deck on the content layer', () => {
       expect(room.restoreVersion).not.toHaveBeenCalled()
     })
 
-    it('leaves a presentation on its rows to the panel and the server', async () => {
-      mounted = await openedSurface()
-      requireTestElement(mounted.root.querySelector('[data-versions]'), HTMLElement).click()
-      await vi.waitFor(() => expect(versionsPanel.writable).toBe(true))
+    it("prints a version's slides when the list's Download is picked, and restores nothing", async () => {
+      const room = roomOf('now')
+      collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
+      versionBytes.current = await storedVersion(roomOf('then one', 'then two').doc)
+      const print = vi.fn()
+      window.print = print
+      mounted = await openedSurface({ deck: { is_converted: true } })
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+      await openVersions()
 
-      expect(versionsPanel.confirmRestore).toBeNull()
+      versionsPanel.download(listed(3))
+
+      await vi.waitFor(() => expect(print).toHaveBeenCalledOnce())
+      const printed = fromAny<Array<{ elements: Array<{ content: string }> }>, unknown>(
+        exported.slides,
+      )
+      expect(printed.map((slide) => slide.elements[0].content)).toEqual([
+        expect.stringContaining('then one'),
+        expect.stringContaining('then two'),
+      ])
+      expect(room.restoreVersion).not.toHaveBeenCalled()
+      expect(drawnTexts()).toEqual([expect.stringContaining('>now</p>')])
     })
 
-    it('tells this tab when someone else restored a version, and lists the versions again', async () => {
+    it("restores from the bar over a shown version, and the bar's Back to current leaves it", async () => {
+      const room = roomOf('now')
+      collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
+      versionBytes.current = await storedVersion(roomOf('then').doc)
+      mounted = await openedSurface({ deck: { is_converted: true } })
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+      await openVersions()
+      versionsPanel.preview(listed(3))
+      await vi.waitFor(() => expect(previewOf(mounted!.root)?.textContent).toContain('then'))
+      vi.mocked(dialog.confirm).mockClear()
+
+      requireTestElement(
+        mounted.root.querySelector('[aria-label="Restore this version"]'),
+        HTMLElement,
+      ).click()
+      await vi.waitFor(() => expect(dialog.confirm).toHaveBeenCalled())
+      expect(room.restoreVersion).not.toHaveBeenCalled()
+
+      // the Button stub keeps its label as an attribute
+      requireTestElement(
+        mounted.root.querySelector('[label="Back to current"]'),
+        HTMLElement,
+      ).click()
+      await vi.waitFor(() => expect(previewOf(mounted!.root)).toBeNull())
+      expect(versionsPanel.previewed).toBeNull()
+      expect(drawnTexts()).toEqual([expect.stringContaining('>now</p>')])
+    })
+
+    it('asks first, then has the server restore a presentation on its rows and reads it again', async () => {
+      mounted = await openedSurface()
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(served.slides.length))
+      await openVersions()
+      const restores = vi.spyOn(mounted.session.versions, 'restore')
+      const reloads = versionsPanel.reloads
+      // the rows the server holds once it has restored the version
+      const restored = [...served.slides, { clientId: 'c3', background: '#ffffffff', elements: [] }]
+      mounted.loads.push(
+        Promise.resolve(
+          new Response(
+            JSON.stringify({ message: { ...served, name: mounted.docname, slides: restored } }),
+          ),
+        ),
+      )
+
+      versionsPanel.restore(listed(3))
+      await vi.waitFor(() => expect(dialog.confirm).toHaveBeenCalled())
+      const [asked] = fromAny<[{ message: string; onConfirm: () => Promise<void> }], unknown>(
+        vi.mocked(dialog.confirm).mock.lastCall,
+      )
+      expect(asked.message).toBe(
+        'The presentation goes back to this version. Its current state is kept as a new version first.',
+      )
+      expect(restores).not.toHaveBeenCalled()
+      await asked.onConfirm()
+
+      expect(restores).toHaveBeenCalledWith('3')
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(3))
+      expect(toast.success).toHaveBeenCalledWith('Version restored')
+      expect(versionsPanel.reloads).toBe(reloads + 1)
+    })
+
+    it('hands a restore by someone else to the side panel, which tells this tab', async () => {
       convertedRoom('one')
       mounted = await openedSurface({ deck: { is_converted: true } })
       await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
       await openVersions()
-      const reloads = versionsPanel.reloads
+      versionsPanel.restoredByOther = []
 
       const [{ onVersionRestored }] = fromAny<
         [{ onVersionRestored: (restored: unknown) => void }],
@@ -1117,12 +1227,7 @@ describe('a deck on the content layer', () => {
       >(collabRoom.open.mock.lastCall)
       onVersionRestored({ by: null, version: null })
 
-      await vi.waitFor(() =>
-        expect(toast.info).toHaveBeenCalledWith(
-          'Someone restored an earlier version of this presentation.',
-        ),
-      )
-      expect(versionsPanel.reloads).toBe(reloads + 1)
+      expect(versionsPanel.restoredByOther).toEqual([{ by: null, version: null }])
     })
   })
 
@@ -2153,6 +2258,10 @@ describe('Slides panels', () => {
     requireTestElement(mounted!.root.querySelector('[data-comments]'), HTMLButtonElement).click()
   }
 
+  function panelComments() {
+    return fromAny<DocumentComments, unknown>(commentPanel.attrs.comments)
+  }
+
   it('shows the presentation’s threads in the shared comment panel, named as a presentation', async () => {
     driveComments.threads = [
       { name: 'thread-1', anchor: 'document', resolved: false, comments: [] },
@@ -2161,9 +2270,9 @@ describe('Slides panels', () => {
 
     openComments()
 
-    await vi.waitFor(() => expect(commentPanel.attrs.threads).toHaveLength(1))
-    const { threads, noun, places } = commentPanel.attrs
-    const [thread] = fromAny<{ name: string }[], unknown>(threads)
+    await vi.waitFor(() => expect(panelComments().threads.value).toHaveLength(1))
+    const { noun, places } = commentPanel.attrs
+    const [thread] = panelComments().threads.value
     const flags = [commentPanel.attrs['can-comment'], commentPanel.attrs['can-edit-document']]
     expect([thread.name, noun, places, flags]).toEqual([
       'thread-1',
@@ -2177,7 +2286,7 @@ describe('Slides panels', () => {
     mounted = await openedSurface({ role: 20 })
     openComments()
     await vi.waitFor(() => expect(driveComments.reads).toBe(1))
-    const drafts = fromAny<ReturnType<typeof useCommentDrafts>, unknown>(commentPanel.attrs.drafts)
+    const { drafts } = panelComments()
 
     drafts.start('document')
     const [draft] = drafts.drafts.value

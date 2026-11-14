@@ -3,13 +3,17 @@ import type { Editor } from '@tiptap/core'
 import { Button, Dropdown, type DropdownOptions } from 'frappe-ui'
 import { computed, ref } from 'vue'
 
-import { PANEL_BUTTONS, type DocumentPanel, type DocumentSession } from '@/apps/drive'
+import {
+  PANEL_BUTTONS,
+  waitForFocusBack,
+  type DocumentPanel,
+  type DocumentSession,
+} from '@/apps/drive'
 import { listTabs } from '@/apps/writer/extensions/tabs'
 import { toast } from '@/platform/feedback'
 import { translate as __ } from '@/platform/translation'
 
 import { downloadDocx, downloadMarkdown, exportHTML, type ExportScope } from './exports'
-import { waitForFocusBack } from './focusBack'
 
 /**
  * The Writer document's menu in the Drive header: the side panels, download as DOCX or

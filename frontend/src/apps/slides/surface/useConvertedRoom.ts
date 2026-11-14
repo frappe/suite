@@ -1,6 +1,7 @@
 import { toast } from 'frappe-ui'
 import { computed, nextTick, shallowRef, watch, type Ref } from 'vue'
 
+import type { ConvertedState } from '@/apps/drive'
 import { slidesAdapter } from '@/apps/slides/collab/adapter'
 import { elementText } from '@/apps/slides/collab/deck'
 import { drawnSlides } from '@/apps/slides/collab/drawnDeck'
@@ -53,7 +54,6 @@ import { translate } from '@/platform/translation'
 import { restoreVersion } from './restoreVersion'
 import { saveFirst } from './saveFirst'
 import type { RetainOptions } from './useUnsavedRecovery'
-import type { ConvertedVersion } from './versions'
 
 // SAFETY: the untyped element store holds the selected element ids
 const activeElementIds = storeActiveIds as Ref<string[]>
@@ -440,7 +440,7 @@ export function useConvertedRoom({
   async function restore(
     seq: number,
     bytes: Uint8Array,
-    convert: () => Promise<ConvertedVersion>,
+    convert: () => Promise<ConvertedState>,
   ): Promise<RestoreNotice> {
     const liveRoom = room.value
     const liveDeck = deck

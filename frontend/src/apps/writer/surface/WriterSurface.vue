@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { Editor } from '@tiptap/core'
-import { onKeyStroke } from '@vueuse/core'
 import { Badge, Button, dialog, toast } from 'frappe-ui'
 import {
   computed,
@@ -15,15 +14,17 @@ import {
 import { useRoute, useRouter } from 'vue-router'
 
 import {
+  DriveDocumentSidePanel as DocumentSidePanel,
+  DriveDocumentStrip as DocumentStrip,
   DRIVE_ROLES,
   DriveDocumentHeader,
+  fetchVersion,
   imagesNotice,
   missingImages,
-  rankMentionsFor,
   restoreImages,
-  useCommentDrafts,
-  useDocumentThreads,
-  useThreadChanges,
+  showError,
+  useDocumentComments,
+  DriveVersionShownBar as VersionShownBar,
   type DocumentPanel,
   type DocumentSession,
   type DocumentThread,
@@ -34,7 +35,6 @@ import { anchorEnds, anchorQuote } from '@/apps/writer/collab/anchors'
 import type { ThreadPlaces } from '@/apps/writer/collab/highlights'
 import { withinTenSeconds } from '@/apps/writer/collab/timeout'
 import CollabTextEditor from '@/apps/writer/components/CollabTextEditor.vue'
-import DocumentStrip from '@/apps/writer/components/DocumentStrip.vue'
 import ReadOnlyEditor from '@/apps/writer/components/ReadOnlyEditor.vue'
 import { DOCUMENT_MEDIA } from '@/apps/writer/extensions/drive-media'
 import DocumentSkeleton from '@/apps/writer/opening/DocumentSkeleton.vue'
@@ -53,17 +53,15 @@ import RecoveryCopyActions from '@/apps/writer/recovery/RecoveryCopyActions.vue'
 import RecoveryPreview from '@/apps/writer/recovery/RecoveryPreview.vue'
 import { RENAME_DOCUMENT } from '@/apps/writer/renameDocument'
 import { belowMinBuild } from '@/platform/build'
-import { watchConversion, type CollabRoom, type VersionRestored } from '@/platform/collab'
+import { watchConversion, type CollabRoom } from '@/platform/collab'
 import type { peopleOf } from '@/platform/collab/peers'
-import { othersPresentWarning, restoredByOther } from '@/platform/collab/restoreNotices'
+import { othersPresentWarning } from '@/platform/collab/restoreNotices'
 import UsersBar from '@/platform/collab/UsersBar.vue'
-import { versionTitle } from '@/platform/collab/versionDates'
 import { useHideRail } from '@/platform/rail'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 
 import { frozenBanner, isSafeOnDevice, notUpgradedBanner, upgradingBanner } from './collabMessages'
-import DocumentSidePanel from './DocumentSidePanel.vue'
 import { downloadHTML } from './exports'
 import {
   resolveDocumentUnload,
@@ -74,11 +72,10 @@ import {
 import { goToPlace, readingPlace } from './readingPlace'
 import { restoreVersion, type VersionRestore } from './restoreVersion'
 import { saveFirst } from './saveFirst'
-import { showError } from './useDocumentPanel'
 import { useWriterCollab } from './useWriterCollab'
 import { versionImages } from './versionImages'
 import VersionPreview from './VersionPreview.vue'
-import { convertedVersion, fetchVersion, readVersionBody, storedVersionHTML } from './versions'
+import { convertedVersion, readVersionBody, storedVersionHTML } from './versions'
 import { createWriterDocument, editorFileOf, isLocked, type EditorFile } from './writerDocument'
 import WriterDocumentMenu from './WriterDocumentMenu.vue'
 import { createWriteGate } from './writes'
@@ -135,16 +132,11 @@ const preview = shallowRef<
 
 const recoveryBanner = ref<InstanceType<typeof RecoveryBanner> | null>(null)
 const seesComments = computed(() => props.session.panels.value.includes('comments'))
-const {
-  threads: readThreads,
-  readAt: threadsReadAt,
-  refresh: refreshThreads,
-} = useDocumentThreads(props.session, () => seesComments.value)
-const { threads, actions: threadActions } = useThreadChanges({
-  session: props.session,
-  readThreads,
-  readAt: threadsReadAt,
-  refresh: refreshThreads,
+const comments = useDocumentComments(props.session, {
+  isShown: () => seesComments.value,
+  isOpen: () => panel.value === 'comments',
+  room: () => room.value,
+  anchors: { quote: anchorQuote, ends: anchorEnds },
 })
 
 const {
@@ -166,7 +158,10 @@ const {
   props.session,
   retainRecovery,
   () => writes.writable.value,
-  { threadsChanged: refreshThreads, versionRestored: tellRestoredByOther },
+  {
+    threadsChanged: comments.refresh,
+    versionRestored: (restored) => void sidePanel.value?.tellRestoredByOther(restored),
+  },
   () => !!editorSurface.value?.isFrozen,
 )
 
@@ -228,14 +223,6 @@ const shownBanner = computed(() => {
 })
 const showsRecoveryBanner = computed(() => !isPreviewing.value && !stopBanner.value)
 
-const commentDrafts = useCommentDrafts({
-  session: props.session,
-  user: useSession().user.value?.id ?? 'Guest',
-  room: () => room.value,
-  refreshThreads,
-  anchors: { quote: anchorQuote, ends: anchorEnds },
-})
-
 function refusesComment() {
   if (canComment.value) {
     return false
@@ -246,7 +233,7 @@ function refusesComment() {
 }
 
 // The text of a comment stays marked from its draft until it is posted or discarded
-const draftAnchors = computed(() => commentDrafts.drafts.value.map((draft) => draft.anchor))
+const draftAnchors = computed(() => comments.drafts.drafts.value.map((draft) => draft.anchor))
 
 // A comment on the selected text starts as a draft in the comments panel
 function commentOnText(anchor: string) {
@@ -254,7 +241,7 @@ function commentOnText(anchor: string) {
     return
   }
 
-  commentDrafts.start(anchor)
+  comments.drafts.start(anchor)
   panel.value = 'comments'
 }
 
@@ -374,7 +361,7 @@ const editorView = computed<EditorView>(() => {
     const collabProps = {
       room: room.value,
       file,
-      threads: threads.value,
+      threads: comments.threads.value,
       onComment: commentOnText,
       onCommentOnDocument: commentOnDocument,
       onReanchor: moveThreadsBack,
@@ -401,7 +388,6 @@ provide(RENAME_DOCUMENT, async (title) => {
 })
 
 provide(DOCUMENT_MEDIA, (id) => props.session.media(id))
-rankMentionsFor(props.session.nodeId)
 
 function showVersion(shown: DocumentVersion | null) {
   if (!shown) {
@@ -503,7 +489,7 @@ async function moveThreadsBack(anchors: Record<string, string>) {
     return
   }
 
-  await refreshThreads()
+  await comments.refresh()
 }
 
 async function restoreBody(shown: DocumentVersion): Promise<VersionRestore> {
@@ -513,18 +499,13 @@ async function restoreBody(shown: DocumentVersion): Promise<VersionRestore> {
   }
 
   const bytes = await fetchVersion(props.session, shown.seq)
-  return restoreVersion(liveRoom, shown.seq, bytes, threads.value, () =>
+  return restoreVersion(liveRoom, shown.seq, bytes, comments.threads.value, () =>
     convertedVersion(props.session, shown.seq),
   )
 }
 
 function liveScroller() {
   return document.querySelector('#editor-scroll-container')
-}
-
-async function tellRestoredByOther(restored: VersionRestored) {
-  void sidePanel.value?.reloadVersions()
-  toast.info(await restoredByOther(restored, 'document'))
 }
 
 function viewCopy(copy: RecoveryCopy) {
@@ -569,16 +550,6 @@ async function backToCurrent() {
 function togglePanel(name: DocumentPanel) {
   panel.value = panel.value === name ? null : name
 }
-
-// Escape leaves a version shown, unless a dialog or menu over it takes the key
-onKeyStroke(
-  'Escape',
-  (event) => {
-    const isOverlayOpen = document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')
-    if (!event.defaultPrevented && preview.value.version && !isOverlayOpen) void backToCurrent()
-  },
-  { target: document },
-)
 
 function discardedCopy() {
   closeAnyPreview()
@@ -647,14 +618,6 @@ function flush(): Promise<void> {
   }
 
   return Promise.resolve()
-}
-
-// The name box opens once the panel has seen any preview close, which would otherwise cancel it
-async function nameVersion() {
-  closeAnyPreview()
-  panel.value = 'versions'
-  await nextTick()
-  void sidePanel.value?.startNamingVersion()
 }
 
 // A collab document's version covers what this tab typed; other documents take it as stored
@@ -823,7 +786,7 @@ onBeforeUnmount(() => {
           :panels="session.panels.value"
           :panel="panel"
           @toggle-panel="togglePanel"
-          @save-version="nameVersion"
+          @save-version="sidePanel?.nameVersion()"
           @set-locked="setDocumentLocked"
         />
       </template>
@@ -894,28 +857,13 @@ onBeforeUnmount(() => {
             :editable="editable"
           >
             <template v-if="preview.version" #toolbar>
-              <DocumentStrip>
-                <p class="truncate">Viewing {{ versionTitle(preview.version) }}</p>
-                <div class="flex shrink-0 items-center gap-1">
-                  <Button
-                    v-if="canRestoreVersion"
-                    size="sm"
-                    variant="ghost"
-                    icon="lucide-undo-2"
-                    tooltip="Restore this version"
-                    aria-label="Restore this version"
-                    :disabled="isRestoringVersion"
-                    @click="confirmRestore(preview.version)"
-                  />
-                  <Button
-                    size="sm"
-                    variant="subtle"
-                    :label="__('Back to current')"
-                    :tooltip="__('Back to the current version (Esc)')"
-                    @click="backToCurrent"
-                  />
-                </div>
-              </DocumentStrip>
+              <VersionShownBar
+                :version="preview.version"
+                :can-restore="canRestoreVersion"
+                :is-restoring="isRestoringVersion"
+                @restore="confirmRestore"
+                @back="backToCurrent"
+              />
             </template>
             <template v-else-if="preview.copy" #toolbar>
               <DocumentStrip>
@@ -953,17 +901,14 @@ onBeforeUnmount(() => {
                 :can-restore-version="canRestoreVersion"
                 :can-save-version="canSaveVersion"
                 :is-restoring-version="isRestoringVersion"
-                :threads="threads"
-                :threads-read-at="threadsReadAt"
+                :comments
                 :places="threadPlaces"
-                :refresh-threads="refreshThreads"
-                :thread-actions="threadActions"
-                :drafts="commentDrafts"
                 :save-first="saveBeforeVersion"
+                noun="document"
                 @update:previewed-version="showVersion"
                 @restore-version="confirmRestore"
                 @download-version="downloadVersion"
-                @save-version="nameVersion"
+                @back="backToCurrent"
                 @closed="backToText"
                 @comment-sent="backToText"
               />

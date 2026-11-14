@@ -7,7 +7,7 @@ import type { DocumentSession } from '@/apps/drive'
 import { writeDeck } from '@/apps/slides/collab/deck'
 import { drawnSlides } from '@/apps/slides/collab/drawnDeck'
 
-import { convertedVersion, readVersionBody, readVersions, versionImages } from './versions'
+import { convertedVersion, readVersionBody, versionImages } from './versions'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
 vi.mock('@/api', () => ({
@@ -16,28 +16,6 @@ vi.mock('@/api', () => ({
 }))
 
 const FRAME = { left: 10, top: 10, width: 100, height: 50 }
-
-describe('reading a versions page', () => {
-  it('names whoever took a version by full name, and by user id when Drive sends no name', () => {
-    const page = readVersions({
-      rows: [
-        {
-          seq: 2,
-          kind: 'auto',
-          actor: 'theo@northwind.test',
-          person: { full_name: 'Theo Williams' },
-        },
-        { seq: 1, kind: 'named', actor: 'maya@northwind.test' },
-      ],
-      next_cursor: null,
-    })
-
-    expect(page.rows.map((version) => version.actor)).toEqual([
-      'Theo Williams',
-      'maya@northwind.test',
-    ])
-  })
-})
 
 // A version as the server stores one: its Yjs state gzipped, then base64, in a JSON record
 async function storedVersion(doc: Y.Doc) {

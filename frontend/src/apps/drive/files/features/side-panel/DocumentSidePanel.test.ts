@@ -1,17 +1,21 @@
 import { fromPartial } from '@total-typescript/shoehorn'
+import { toast } from 'frappe-ui'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, ref, type App } from 'vue'
 
 import type {
+  DocumentComments,
   DocumentPanel,
   DocumentSession,
+  DocumentThread,
   DocumentVersion,
-  ThreadActions,
-  useCommentDrafts,
 } from '@/apps/drive'
+import type { VersionRestored } from '@/platform/collab'
 import { requireTestElement } from '@/platform/testing/dom'
 import { translationPlugin } from '@/platform/translation'
 
+import type { useCommentDrafts } from './comments/useCommentDrafts'
+import { useDocumentComments } from './comments/useDocumentComments'
 import DocumentSidePanel from './DocumentSidePanel.vue'
 
 vi.mock('frappe-ui', async () => {
@@ -55,7 +59,7 @@ vi.mock('frappe-ui', async () => {
         return () => render('input', { ref: input, value: props.modelValue, onInput: write })
       },
     }),
-    toast: { success: vi.fn(), error: vi.fn() },
+    toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
   }
 })
 
@@ -65,11 +69,21 @@ vi.mock('@/apps/drive', async (importOriginal) => ({
 }))
 
 interface NamingPanel {
-  startNamingVersion(): Promise<void>
+  nameVersion(): Promise<void>
 }
 
 let mounted: App | null = null
 const noDrafts = fromPartial<ReturnType<typeof useCommentDrafts>>({ drafts: ref([]) })
+
+function noComments(drafts = noDrafts) {
+  return fromPartial<DocumentComments>({
+    threads: ref([]),
+    readAt: ref(1),
+    refresh: async () => {},
+    actions: {},
+    drafts,
+  })
+}
 
 afterEach(() => {
   mounted?.unmount()
@@ -112,12 +126,9 @@ async function openVersionsPanel(isRefusingVersions = false) {
       canRestoreVersion: false,
       canSaveVersion: false,
       isRestoringVersion: false,
-      threads: [],
-      threadsReadAt: 1,
+      comments: noComments(),
       places: null,
-      refreshThreads: async () => {},
-      threadActions: fromPartial<ThreadActions>({}),
-      drafts: noDrafts,
+      noun: 'document',
       saveFirst: async () => {
         steps.push('saved')
       },
@@ -125,7 +136,7 @@ async function openVersionsPanel(isRefusingVersions = false) {
   )
   app.use(translationPlugin).mount(host)
   mounted = app
-  await panel.value?.startNamingVersion()
+  await panel.value?.nameVersion()
   // As clicking another version's row in the list does
   async function view(version: DocumentVersion) {
     viewed.value = version
@@ -231,6 +242,49 @@ describe('naming a version in the Versions panel', () => {
     expect(nameBox()?.value).toBe('Before the review')
   })
 
+  it('leaves the shown version and opens Versions to name one, from another panel', async () => {
+    const panel = ref<NamingPanel | null>(null)
+    const shownPanel = ref<DocumentPanel | null>('comments')
+    const viewed = ref<DocumentVersion | null>(
+      fromPartial<DocumentVersion>({ seq: 1, kind: 'auto', label: null }),
+    )
+    const host = document.createElement('div')
+    document.body.append(host)
+    const app = createApp(() =>
+      h(DocumentSidePanel, {
+        ref: panel,
+        panel: shownPanel.value,
+        'onUpdate:panel': (next: DocumentPanel | null) => (shownPanel.value = next),
+        previewedVersion: viewed.value,
+        'onUpdate:previewedVersion': (next: DocumentVersion | null) => (viewed.value = next),
+        session: fromPartial<DocumentSession>({
+          comments: { list: async () => [] },
+          versions: { list: async () => ({ rows: [], next_cursor: null }) },
+        }),
+        canComment: true,
+        canEditDocument: false,
+        canShare: false,
+        canRestoreVersion: false,
+        canSaveVersion: true,
+        isRestoringVersion: false,
+        comments: noComments(),
+        places: null,
+        noun: 'document',
+        saveFirst: async () => {},
+      }),
+    )
+    app.use(translationPlugin).mount(host)
+    mounted = app
+
+    await panel.value?.nameVersion()
+
+    expect([shownPanel.value, viewed.value, document.activeElement === nameBox()]).toEqual([
+      'versions',
+      null,
+      true,
+    ])
+  })
+
   it('keeps the box, the name and the cursor when the version fails to save', async () => {
     const { steps } = await openVersionsPanel(true)
 
@@ -242,6 +296,112 @@ describe('naming a version in the Versions panel', () => {
       ['saved'],
       'Before the review',
       true,
+    ])
+  })
+})
+
+describe('Escape over a shown version', () => {
+  // A panel showing `version`, counting the times it asks to go back
+  function panelShowing(version: DocumentVersion | null) {
+    const backs: string[] = []
+    const host = document.createElement('div')
+    document.body.append(host)
+    const app = createApp(() =>
+      h(DocumentSidePanel, {
+        panel: 'versions',
+        previewedVersion: version,
+        onBack: () => backs.push('back'),
+        session: fromPartial<DocumentSession>({
+          versions: { list: async () => ({ rows: [], next_cursor: null }) },
+        }),
+        canComment: true,
+        canEditDocument: false,
+        canShare: false,
+        canRestoreVersion: false,
+        canSaveVersion: false,
+        isRestoringVersion: false,
+        comments: noComments(),
+        places: null,
+        noun: 'document',
+        saveFirst: async () => {},
+      }),
+    )
+    app.use(translationPlugin).mount(host)
+    mounted = app
+    return backs
+  }
+
+  function pressEscape() {
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  }
+
+  const shown = fromPartial<DocumentVersion>({ seq: 1, kind: 'auto', label: null })
+
+  it('goes back once a version is shown, and not with none shown', () => {
+    const fromShown = panelShowing(shown)
+    pressEscape()
+    mounted?.unmount()
+    const fromNone = panelShowing(null)
+    pressEscape()
+
+    expect([fromShown, fromNone]).toEqual([['back'], []])
+  })
+
+  it('leaves the key to a dialog or menu open over the version', () => {
+    const backs = panelShowing(shown)
+    const dialog = document.createElement('div')
+    dialog.setAttribute('role', 'dialog')
+    document.body.append(dialog)
+    pressEscape()
+
+    expect(backs).toEqual([])
+  })
+})
+
+describe('a version restored by someone else', () => {
+  it('tells the person in the app’s word, and lists the versions again', async () => {
+    const reads: string[] = []
+    const panel = ref<{ tellRestoredByOther(restored: VersionRestored): Promise<void> } | null>(
+      null,
+    )
+    const host = document.createElement('div')
+    document.body.append(host)
+    const app = createApp(() =>
+      h(DocumentSidePanel, {
+        ref: panel,
+        panel: 'versions',
+        previewedVersion: null,
+        session: fromPartial<DocumentSession>({
+          versions: {
+            list: async () => {
+              reads.push('versions')
+              return { rows: [], next_cursor: null }
+            },
+          },
+        }),
+        canComment: true,
+        canEditDocument: false,
+        canShare: false,
+        canRestoreVersion: false,
+        canSaveVersion: false,
+        isRestoringVersion: false,
+        comments: noComments(),
+        places: null,
+        noun: 'presentation',
+        saveFirst: async () => {},
+      }),
+    )
+    app.use(translationPlugin).mount(host)
+    mounted = app
+    await settled()
+    reads.length = 0
+
+    await panel.value?.tellRestoredByOther({ by: null, version: null })
+    await settled()
+
+    expect([vi.mocked(toast.info).mock.lastCall, reads]).toEqual([
+      ['Someone restored an earlier version of this presentation.'],
+      ['versions'],
     ])
   })
 })
@@ -279,12 +439,9 @@ describe('renaming a version in the Versions panel', () => {
         canRestoreVersion: false,
         canSaveVersion,
         isRestoringVersion: false,
-        threads: [],
-        threadsReadAt: 1,
+        comments: noComments(),
         places: null,
-        refreshThreads: async () => {},
-        threadActions: fromPartial<ThreadActions>({}),
-        drafts: noDrafts,
+        noun: 'document',
         saveFirst: async () => {},
       }),
     )
@@ -352,12 +509,9 @@ function panelWhileVersionsLoad(kind: DocumentPanel) {
       canRestoreVersion: false,
       canSaveVersion: false,
       isRestoringVersion: false,
-      threads: [],
-      threadsReadAt: 1,
+      comments: noComments(drafts),
       places: null,
-      refreshThreads: async () => {},
-      threadActions: fromPartial<ThreadActions>({}),
-      drafts,
+      noun: 'document',
       saveFirst: async () => {},
     }),
   )
@@ -387,5 +541,137 @@ describe('the Comments panel while versions load', () => {
       host.textContent?.includes('Loading…'),
       host.textContent?.includes('Add a comment'),
     ]).toEqual([false, true])
+  })
+})
+
+// A comment someone left on the whole document
+const LEFT_ELSEWHERE = fromPartial<DocumentThread>({
+  name: 'whole',
+  resolved: false,
+  comments: [
+    {
+      name: 'c1',
+      author: 'ben@x.com',
+      author_name: null,
+      person: { full_name: 'Ben Ito' },
+      content: 'Looks good overall',
+      creation: new Date().toISOString(),
+    },
+  ],
+})
+
+// The real panel over a document's real comment threads. Each read answers the next of
+// `answers`, the last one again once they run out; a thrown answer is a failed read
+function panelOverThreads(
+  isShown: (panel: DocumentPanel | null) => boolean,
+  first: DocumentPanel | null,
+  answers: (() => DocumentThread[])[] = [() => []],
+) {
+  const reads: number[] = []
+  const session = fromPartial<DocumentSession>({
+    nodeId: 'node-1',
+    comments: {
+      list: async () => {
+        reads.push(1)
+        const answer = answers.length > 1 ? answers.shift()! : answers[0]
+        return { threads: answer() }
+      },
+    },
+    versions: { list: async () => ({ rows: [], next_cursor: null }) },
+  })
+  const panel = ref<DocumentPanel | null>(first)
+  const host = document.createElement('div')
+  document.body.append(host)
+  const app = createApp({
+    setup() {
+      const comments = useDocumentComments(session, {
+        isShown: () => isShown(panel.value),
+        isOpen: () => panel.value === 'comments',
+      })
+      return () =>
+        h(DocumentSidePanel, {
+          panel: panel.value,
+          previewedVersion: null,
+          session,
+          canComment: true,
+          canEditDocument: false,
+          canShare: false,
+          canRestoreVersion: false,
+          canSaveVersion: false,
+          isRestoringVersion: false,
+          comments,
+          places: null,
+          noun: 'document',
+          saveFirst: async () => {},
+        })
+    },
+  })
+  app.use(translationPlugin).mount(host)
+  mounted = app
+  return { panel, reads, host }
+}
+
+// Comments allowed, as Writer reads them for the text's highlights while the panel is closed
+const allowed = () => true
+// Read only while the panel shows them, as Slides does
+const whileOpen = (panel: DocumentPanel | null) => panel === 'comments'
+
+describe('reading the threads the Comments panel shows', () => {
+  it('reads them again on opening Comments when the first read failed', async () => {
+    const failed = () => {
+      throw new Error('offline')
+    }
+    const { panel, reads, host } = panelOverThreads(allowed, null, [failed, () => [LEFT_ELSEWHERE]])
+    await settled()
+
+    panel.value = 'comments'
+    await settled()
+
+    expect([reads.length, host.textContent?.includes('Looks good overall')]).toEqual([2, true])
+  })
+
+  it('shows a comment left elsewhere on opening Comments, with no room to say it changed', async () => {
+    const { panel, reads, host } = panelOverThreads(allowed, null, [
+      () => [],
+      () => [LEFT_ELSEWHERE],
+    ])
+    await settled()
+
+    panel.value = 'comments'
+    await settled()
+
+    expect([reads.length, host.textContent?.includes('Looks good overall')]).toEqual([2, true])
+  })
+
+  it('reads them once for each opening of Comments, where comments are allowed', async () => {
+    const { panel, reads } = panelOverThreads(allowed, null)
+    await settled()
+    const beforeOpening = reads.length
+
+    for (const next of ['comments', null, 'versions', 'comments'] as const) {
+      panel.value = next
+      await settled()
+    }
+
+    expect([beforeOpening, reads.length]).toEqual([1, 3])
+  })
+
+  it('reads them once for each opening of Comments, where they are read only while open', async () => {
+    const { panel, reads } = panelOverThreads(whileOpen, null)
+    await settled()
+
+    for (const next of ['comments', null, 'comments'] as const) {
+      panel.value = next
+      await settled()
+    }
+
+    expect(reads).toHaveLength(2)
+  })
+
+  it('reads them once when the panel starts on Comments', async () => {
+    const { reads } = panelOverThreads(allowed, 'comments')
+    await settled()
+
+    expect(reads).toHaveLength(1)
   })
 })

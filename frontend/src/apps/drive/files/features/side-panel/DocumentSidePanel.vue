@@ -1,20 +1,17 @@
 <script setup lang="ts">
-import { Button, TextInput } from 'frappe-ui'
+import { onKeyStroke } from '@vueuse/core'
+import { Button, TextInput, toast } from 'frappe-ui'
 import { computed, nextTick, ref, watch } from 'vue'
 
-import {
-  DriveCommentList as CommentList,
-  type DocumentPanel,
-  type DocumentSession,
-  type DocumentThread,
-  type DocumentVersion,
-  type ThreadActions,
-  type useCommentDrafts,
-} from '@/apps/drive'
-import type { ThreadPlaces } from '@/apps/writer/collab/highlights'
+import type { DocumentPanel, DocumentSession, DocumentVersion } from '@/apps/drive'
+import type { VersionRestored } from '@/platform/collab'
+import { restoredByOther } from '@/platform/collab/restoreNotices'
 
-import { useDocumentPanel } from './useDocumentPanel'
-import VersionList from './VersionList.vue'
+import CommentList from './comments/CommentList.vue'
+import type { FileNoun, ThreadPlaces } from './comments/places'
+import type { DocumentComments } from './comments/useDocumentComments'
+import { useDocumentPanel } from './versions/useDocumentPanel'
+import VersionList from './versions/VersionList.vue'
 
 const props = defineProps<{
   session: DocumentSession
@@ -25,17 +22,16 @@ const props = defineProps<{
   canRestoreVersion: boolean
   canSaveVersion: boolean
   isRestoringVersion: boolean
-  threads: DocumentThread[]
-  /** When Drive's threads were read; null before the first read. */
-  threadsReadAt: number | null
+  /** The version the app shows; the panel asks for a change by update:previewedVersion. */
+  previewedVersion: DocumentVersion | null
+  /** The document's threads, their actions and drafts, as useDocumentComments gives them. */
+  comments: DocumentComments
   /** Where each thread shows in the editor; null when the editor can't tell. */
   places: ThreadPlaces | null
-  refreshThreads: () => Promise<void>
-  threadActions: ThreadActions
-  /** Comments not posted yet, on text or on the whole document. */
-  drafts: ReturnType<typeof useCommentDrafts>
   /** Saves the document's pending edits, throwing why it couldn't. */
   saveFirst: () => Promise<void>
+  /** What the app calls the file, in the comment panel's messages. */
+  noun: FileNoun
 }>()
 
 const panel = defineModel<DocumentPanel | null>('panel', { required: true })
@@ -43,18 +39,16 @@ const emit = defineEmits<{
   closed: [panel: DocumentPanel]
   restoreVersion: [version: DocumentVersion]
   downloadVersion: [version: DocumentVersion]
-  saveVersion: []
+  /** Escape over a shown version, which goes back as the bar's Back does. */
+  back: []
   commentSent: []
+  'update:previewedVersion': [version: DocumentVersion | null]
 }>()
-const previewedVersion = defineModel<DocumentVersion | null>('previewedVersion', {
-  required: true,
-})
 const openThread = defineModel<string | null>('openThread', { default: null })
 const litThread = defineModel<string | null>('litThread', { default: null })
 
-const { lists, load, loadMoreVersions, saveVersion, renameVersion } = useDocumentPanel(
+const { lists, loadVersions, loadMoreVersions, saveVersion, renameVersion } = useDocumentPanel(
   props.session,
-  props.refreshThreads,
 )
 
 const isSavingVersion = ref(false)
@@ -75,8 +69,8 @@ const versionNameHint = computed(() =>
 watch(
   panel,
   (kind) => {
-    if (kind) {
-      void load(kind)
+    if (kind === 'versions') {
+      void loadVersions()
     }
 
     if (kind !== 'versions') {
@@ -86,11 +80,26 @@ watch(
   { immediate: true },
 )
 
-watch(previewedVersion, () => {
-  if (!versionName.value.trim()) {
-    stopNamingVersion()
-  }
-})
+// Escape leaves a version shown, unless a dialog or menu over it takes the key
+onKeyStroke(
+  'Escape',
+  (event) => {
+    const isOverlayOpen = document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')
+    if (!event.defaultPrevented && props.previewedVersion && !isOverlayOpen) {
+      emit('back')
+    }
+  },
+  { target: document },
+)
+
+watch(
+  () => props.previewedVersion,
+  () => {
+    if (!versionName.value.trim()) {
+      stopNamingVersion()
+    }
+  },
+)
 
 function closePanel() {
   const closed = panel.value
@@ -105,6 +114,15 @@ async function startNamingVersion() {
   isNamingVersion.value = true
   await nextTick()
   versionNameInput.value?.focus()
+}
+
+// The name box opens once the panel has seen any preview close, which would otherwise cancel it;
+// the app hears it even with no version shown, so it closes any other preview, like a recovery copy
+async function nameVersion() {
+  emit('update:previewedVersion', null)
+  panel.value = 'versions'
+  await nextTick()
+  await startNamingVersion()
 }
 
 function stopNamingVersion() {
@@ -140,8 +158,8 @@ async function saveNamedVersion() {
 // The bar over a viewed version names it, so it takes the new name too
 async function renameShownVersion(version: DocumentVersion, label: string) {
   const renamed = await renameVersion(version, label)
-  if (renamed && previewedVersion.value?.seq === version.seq) {
-    previewedVersion.value = renamed
+  if (renamed && props.previewedVersion?.seq === version.seq) {
+    emit('update:previewedVersion', renamed)
   }
 
   return !!renamed
@@ -154,7 +172,18 @@ async function startDocumentComment() {
   await commentList.value?.startDocumentComment()
 }
 
-defineExpose({ reloadVersions: () => load('versions'), startNamingVersion, startDocumentComment })
+// Someone else restored a version: the list reads again, and the person is told who and which
+async function tellRestoredByOther(restored: VersionRestored) {
+  void loadVersions()
+  toast.info(await restoredByOther(restored, props.noun))
+}
+
+defineExpose({
+  reloadVersions: loadVersions,
+  nameVersion,
+  startDocumentComment,
+  tellRestoredByOther,
+})
 </script>
 
 <template>
@@ -167,6 +196,7 @@ defineExpose({ reloadVersions: () => load('versions'), startNamingVersion, start
     <aside
       v-if="panel"
       :aria-label="title"
+      data-document-side-panel
       class="absolute bottom-0 right-0 top-0 z-20 w-full overflow-hidden border-l border-outline-gray-1 bg-surface-elevation-1 md:static md:box-content md:w-80 md:shrink-0 md:bg-surface-base"
     >
       <div class="flex h-full w-full flex-col md:w-80 md:p-2">
@@ -203,16 +233,16 @@ defineExpose({ reloadVersions: () => load('versions'), startNamingVersion, start
             ref="commentList"
             v-model:open-thread="openThread"
             v-model:lit-thread="litThread"
-            :threads
-            :read-at="threadsReadAt"
+            :threads="comments.threads.value"
+            :read-at="comments.readAt.value"
             :node="session.nodeId"
             :places
             :can-comment
             :can-edit-document
             :can-share
-            :actions="threadActions"
-            :drafts
-            noun="document"
+            :actions="comments.actions"
+            :drafts="comments.drafts"
+            :noun
             @sent="emit('commentSent')"
           />
           <p v-else-if="lists.isLoading" class="px-2 text-sm text-ink-gray-5">
@@ -220,16 +250,17 @@ defineExpose({ reloadVersions: () => load('versions'), startNamingVersion, start
           </p>
           <template v-else>
             <VersionList
-              v-model:previewed="previewedVersion"
+              :previewed="previewedVersion"
               :versions="lists.versions"
               :can-restore="canRestoreVersion"
               :is-restoring="isRestoringVersion"
               :can-save-version="canSaveVersion"
               :is-current-hidden="showsVersionName"
               :rename="versionRename"
+              @update:previewed="(shown) => emit('update:previewedVersion', shown)"
               @restore="emit('restoreVersion', $event)"
               @download="emit('downloadVersion', $event)"
-              @save-version="emit('saveVersion')"
+              @save-version="nameVersion"
             />
             <p v-if="hasNoVersions" class="px-2 text-sm text-ink-gray-5">
               {{ __('No versions yet.') }}

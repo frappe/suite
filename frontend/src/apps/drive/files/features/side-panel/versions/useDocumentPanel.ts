@@ -1,10 +1,10 @@
 import { toast } from 'frappe-ui'
 import { reactive } from 'vue'
 
-import type { DocumentPanel, DocumentSession, DocumentVersion } from '@/apps/drive'
+import type { DocumentSession, DocumentVersion } from '@/apps/drive'
 import { translate as __ } from '@/platform/translation'
 
-type PanelSession = Pick<DocumentSession, 'comments' | 'versions'>
+type PanelSession = Pick<DocumentSession, 'versions'>
 
 interface PanelLists {
   versions: DocumentVersion[]
@@ -111,26 +111,18 @@ async function renameVersion(
   return renamed
 }
 
-// The side panel's versions, and the document's threads read again when the panel opens
-export function useDocumentPanel(session: PanelSession, refreshThreads: () => Promise<void>) {
+// The side panel's versions; its comments read through the document's comment threads
+export function useDocumentPanel(session: PanelSession) {
   const lists = reactive<PanelLists>({
     versions: [],
     versionsCursor: null,
     isLoading: false,
     isLoadingMore: false,
   })
-  async function load(kind: DocumentPanel) {
-    if (kind === 'comments') {
-      await refreshThreads()
-      return
-    }
-
-    await loadVersions(session, lists)
-  }
 
   return {
     lists,
-    load,
+    loadVersions: () => loadVersions(session, lists),
     loadMoreVersions: () => loadMoreVersions(session, lists),
     saveVersion: (label: string, saveFirst: () => Promise<void>) =>
       saveVersion(session, lists, label, saveFirst),
