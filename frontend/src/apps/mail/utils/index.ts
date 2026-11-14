@@ -349,69 +349,6 @@ export const matchesScreenedValue = (email: string, value: string) => {
   return normalizedEmail === normalizedValue
 }
 
-// An externally-hosted reference (http/https or protocol-relative //). cid: (inline attachments) and
-// data: URIs are part of the message, so they're never remote.
-const REMOTE_URL = /^\s*(?:https?:)?\/\//i
-const REMOTE_CSS_URL = /url\(\s*['"]?(?:https?:)?\/\//i
-
-// Inspect the HTML for externally-hosted assets via the DOM (one parse): counts remote <img>, and flags
-// whether any remote asset is present at all — a remote <img>, or a remote url(...) in an inline style or
-// <style> block (background images, fonts). Used to decide the "images blocked" banner and its count.
-export const analyzeRemoteAssets = (html?: string) => {
-  if (!html) return { images: 0, hasRemote: false }
-
-  const doc = new DOMParser().parseFromString(html, 'text/html')
-
-  const images = Array.from(doc.querySelectorAll('img')).filter((img) =>
-    REMOTE_URL.test(img.getAttribute('src') || ''),
-  ).length
-
-  const hasRemoteCss =
-    Array.from(doc.querySelectorAll('[style]')).some((el) =>
-      REMOTE_CSS_URL.test(el.getAttribute('style') || ''),
-    ) ||
-    Array.from(doc.querySelectorAll('style')).some((el) =>
-      REMOTE_CSS_URL.test(el.textContent || ''),
-    )
-
-  return { images, hasRemote: images > 0 || hasRemoteCss }
-}
-
-// Blank remote url(...) in a CSS string. Regex here is unavoidable — there's no DOM API to rewrite a
-// url() inside a style string without pulling in the full CSSOM.
-const blankRemoteCssUrls = (css: string) =>
-  css.replace(/url\(\s*(['"]?)(?:https?:)?\/\/[^'")]*\1\s*\)/gi, 'url()')
-
-// Neutralize remote assets so the browser never requests them. Parses the (already-sanitized) HTML into a
-// DOM and edits it there — robust against markup/attribute quirks regex would trip on: each remote <img>
-// has its src stashed on data-blocked-src (and is tagged for hiding), and remote url(...) in inline styles
-// and <style> blocks is blanked. Inline (cid:) and data: assets are left to load as normal.
-export const blockRemoteAssets = (html: string) => {
-  const doc = new DOMParser().parseFromString(html, 'text/html')
-
-  doc.querySelectorAll('img').forEach((img) => {
-    const src = img.getAttribute('src') || ''
-    if (!REMOTE_URL.test(src)) return
-    img.setAttribute('data-blocked-src', src)
-    img.removeAttribute('src')
-    img.setAttribute('data-blocked-image', '')
-  })
-
-  doc.querySelectorAll('[style]').forEach((el) => {
-    const style = el.getAttribute('style') || ''
-    const cleaned = blankRemoteCssUrls(style)
-    if (cleaned !== style) el.setAttribute('style', cleaned)
-  })
-
-  doc.querySelectorAll('style').forEach((styleEl) => {
-    const css = styleEl.textContent || ''
-    const cleaned = blankRemoteCssUrls(css)
-    if (cleaned !== css) styleEl.textContent = cleaned
-  })
-
-  return doc.documentElement.outerHTML
-}
-
 export const getFileIcon = (type?: string) => {
   if (!type) return Paperclip
   if (type?.startsWith('image/')) return ImageIcon
@@ -490,6 +427,7 @@ export const isSystemScript = (scriptName: string) =>
   ['vacation', 'frappe_mail_automation'].includes(scriptName)
 
 export { decodeHtmlEntities, hasHtmlContent, plainTextToHtml } from '@/apps/mail/utils/html'
+export { analyzeRemoteAssets, blockRemoteAssets } from '@/apps/mail/utils/remoteAssets'
 
 export const getIcon = (mailbox: {
   _name?: string

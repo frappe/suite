@@ -34,8 +34,7 @@ import iframeResizerChildScript from '@iframe-resizer/child/index.umd.js?raw'
 // The package maps `./sfc` only via its (non-honored) `browser` field under
 // Vite 8/Rolldown, so import the concrete SFC file directly.
 import IframeResizer from '@iframe-resizer/vue/iframe-resizer.vue'
-import DOMPurify from 'dompurify'
-import { computed, onMounted, onUnmounted, ref, useTemplateRef } from 'vue'
+import { computed, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 
 import { blockRemoteAssets } from '@/apps/mail/utils'
 import { useComposeMail, useScreenSize, useTheme } from '@/apps/mail/utils/composables'
@@ -46,18 +45,23 @@ import {
   remapEmailForDarkMode,
 } from '@/apps/mail/utils/darkMail'
 import { highlightBody } from '@/apps/mail/utils/highlightBody'
-import { escapeBracketedAddresses } from '@/apps/mail/utils/html'
+import { escapeBracketedAddresses, mailPurifier } from '@/apps/mail/utils/html'
 import { parseMailto } from '@/apps/mail/utils/mailto'
 import { findQuoteRoots } from '@/apps/mail/utils/quotedContent'
 
 // Whether to withhold remote content is the thread's to say: it offers a Show in each message that
 // holds some (see HiddenImagesBanner), and lifts the block here once the reader asks.
 // `highlight`: the words a search found the message by, marked in its body.
+// `asSent`: the reader asked to see the message as its sender designed it, on a light canvas,
+// because the dark-theme remap spoiled it. Only the thread knows that, and it learns whether
+// the remap applies at all from `adapted`, which says so for the theme the app is in.
 const {
   content,
   blockImages = false,
   highlight = '',
-} = defineProps<{ content: string; blockImages?: boolean; highlight?: string }>()
+  asSent = false,
+} = defineProps<{ content: string; blockImages?: boolean; highlight?: string; asSent?: boolean }>()
+const emit = defineEmits<{ adapted: [adapted: boolean] }>()
 
 const { dataTheme } = useTheme()
 const { isMobile } = useScreenSize()
@@ -141,8 +145,8 @@ const collapseQuotes = (doc: Document) => {
   })
 }
 
-const srcdoc = computed(() => {
-  let sanitized = DOMPurify.sanitize(escapeBracketedAddresses(content), DOMPURIFY_CONFIG)
+const body = computed(() => {
+  let sanitized = mailPurifier.sanitize(escapeBracketedAddresses(content), DOMPURIFY_CONFIG)
   if (blockImages) sanitized = blockRemoteAssets(sanitized)
   const doc = new DOMParser().parseFromString(sanitized, 'text/html')
   // Two kinds of email render exactly as authored, dark theme or not: those
@@ -157,18 +161,27 @@ const srcdoc = computed(() => {
   // light-scheme self. Remap runs before collapseQuotes so the toggle buttons
   // it inserts keep their exact theme colors.
   normalizeToLightScheme(doc)
-  const remapped = dataTheme.value === 'dark' && !declaresFixedPalette(doc) && !isArtDirected(doc)
+  const adapts = dataTheme.value === 'dark' && !declaresFixedPalette(doc) && !isArtDirected(doc)
+  const remapped = adapts && !asSent
   if (remapped) remapEmailForDarkMode(doc)
   if (doc.body) highlightBody(doc.body, highlight)
   collapseQuotes(doc)
-  const transformedContent = doc.documentElement.outerHTML
+  return { html: doc.documentElement.outerHTML, adapts, remapped }
+})
+
+// As sent, the frame takes the light theme whatever the app's: the sender's design on the
+// canvas it was drawn for.
+const colors = computed(() => THEME_CONFIG[asSent ? 'light' : dataTheme.value])
+
+const srcdoc = computed(() => {
+  const { html: transformedContent, remapped } = body.value
 
   return `
 		<!DOCTYPE html>
 		<html>
 		<head>
 			<meta name="viewport" content="width=device-width, initial-scale=1">
-			<meta name="color-scheme" content="${dataTheme.value}">
+			<meta name="color-scheme" content="${asSent ? 'light' : dataTheme.value}">
 			<meta charset="UTF-8">
 			<style>
 				body {
@@ -277,10 +290,12 @@ const srcdoc = computed(() => {
 					display: none !important;
 				}
 
+				/* Code keeps its line breaks and indentation but wraps a line too long for the
+				   pane, as Gmail does: unwrapped, one long line (an inline <code> run in a
+				   notification) widened the whole message past the pane. */
 				pre, code {
 					font-family: 'Courier New', Courier, monospace;
-					white-space: pre;
-					overflow-x: auto;
+					white-space: pre-wrap;
 				}
 			</style>
 			<script> ${iframeResizerChildScript} <\/script>
@@ -385,15 +400,36 @@ const srcdoc = computed(() => {
 					});
 				};
 
+				// The last resort, as in Apple Mail: what still overflows once everything that can
+				// reflow has (a row of fixed-size images, a nowrap run, a grid's own min-width) is
+				// scaled down to the pane, never clipped at its edge or panned inside it. Zoom rather
+				// than a transform, so the frame's measured height shrinks with it. The scale is
+				// undone before measuring, so a pane that widens gets the message back at full size.
+				const fitToPane = () => {
+					document.body.style.zoom = '';
+					const pane = document.documentElement.clientWidth;
+					const content = document.documentElement.scrollWidth;
+					if (pane && content > pane + 1) document.body.style.zoom = String(pane / content);
+				};
+
 				const normalizeAll = () => {
 					normalizeWidths();
 					unsquashImages();
+					fitToPane();
 				};
 				normalizeAll();
 				window.addEventListener('resize', normalizeAll);
-				document.querySelectorAll('img').forEach((img) =>
-					img.addEventListener('load', unsquashImages),
-				);
+				// An image that fails changes the layout as surely as one that arrives, so both
+				// refit; the window's own load is the backstop once every image has settled.
+				const refit = () => {
+					unsquashImages();
+					fitToPane();
+				};
+				document.querySelectorAll('img').forEach((img) => {
+					img.addEventListener('load', refit);
+					img.addEventListener('error', refit);
+				});
+				window.addEventListener('load', refit);
 
 				// Forward keyboard events to parent
 				['keydown', 'keyup', 'keypress'].forEach(eventType => {
@@ -484,8 +520,6 @@ const srcdoc = computed(() => {
 		</html>
 	`
 })
-
-const colors = computed(() => THEME_CONFIG[dataTheme.value])
 
 const DOMPURIFY_CONFIG = {
   ALLOWED_TAGS: [
@@ -598,4 +632,11 @@ const THEME_CONFIG = {
     link: '#6CB6FF',
   },
 }
+
+// Last, because `immediate` reads the body now, and the body reads the constants above.
+watch(
+  () => body.value.adapts,
+  (adapts) => emit('adapted', adapts),
+  { immediate: true },
+)
 </script>
