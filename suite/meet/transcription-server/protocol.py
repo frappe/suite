@@ -60,7 +60,7 @@ def origin(value: str, *, allow_http: bool = False) -> str:
 
 
 def number(value, *, maximum: float = 4 * 60 * 60 * 1000) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
+    if isinstance(value, bool) or not isinstance(value, int | float):
         raise WorkError("invalid_manifest")
     if not math.isfinite(value) or not 0 <= value <= maximum:
         raise WorkError("invalid_manifest")

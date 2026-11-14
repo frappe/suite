@@ -5,10 +5,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CallbackClient } from './CallbackClient.js';
 import { CaptureWorker, type CaptureWorkerOptions } from './CaptureWorker.js';
 import { CaptureWorkerManager } from './CaptureWorkerManager.js';
+import { logger } from './logger.js';
 import type { ManagedProcess, ProcessSupervisor } from './ProcessSupervisor.js';
 import { FakeRendererBridge, TEST_PUBLIC_JWK } from './RendererBridge.js';
 import { SegmentWatcher } from './SegmentWatcher.js';
-import { logger } from './logger.js';
 import {
 	COMMAND_AUDIENCE,
 	type CommandClaims,

@@ -300,7 +300,7 @@ class FairScheduler:
             value = queue.get(name, 0)
             if (
                 isinstance(value, bool)
-                or not isinstance(value, (int, float))
+                or not isinstance(value, int | float)
                 or not math.isfinite(value)
                 or value < 0
             ):

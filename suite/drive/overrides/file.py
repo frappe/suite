@@ -99,6 +99,7 @@ class File(FrappeFile):
             frappe.throw(
                 "Generated Meet transcripts are read-only. Download a copy to edit.", frappe.PermissionError
             )
+
     def validate_private_file_access(self):
         """Run before a new File takes an existing file_url: the user must already be
         able to read a private file at that url, however the url is spelled. The

@@ -1,4 +1,3 @@
-import type { CameraLayerDemand } from "../../../types/cameraLayers";
 import type {
 	AppData,
 	AudioLevelObserver,
@@ -74,6 +73,7 @@ import type {
 	UpdateTokenRequest,
 	UserData,
 } from '../../../types';
+import type { CameraLayerDemand } from '../../../types/cameraLayers';
 
 // Types shared with other SFU modules
 export type {
@@ -116,7 +116,7 @@ export type {
 
 // Socket.IO types
 export interface ServerToClientEvents {
-	"producer:camera_layers": (data: CameraLayerDemand) => void;
+	'producer:camera_layers': (data: CameraLayerDemand) => void;
 	'recording:challenge': (data: RecordingProofChallenge) => void;
 	'recording:projection': (data: RecorderStageProjectionEvent) => void;
 	participant_joined: (data: ParticipantJoinedEvent) => void;
@@ -155,7 +155,11 @@ export interface ServerToClientEvents {
 export interface ClientToServerEvents {
 	'producer:get_camera_layers': (
 		data: { producerId: string },
-		callback: (response: { success: true; demand: CameraLayerDemand | null } | { success: false; error: string }) => void,
+		callback: (
+			response:
+				| { success: true; demand: CameraLayerDemand | null }
+				| { success: false; error: string },
+		) => void,
 	) => void;
 	'recording:proof': (
 		data: RecordingProofRequest,

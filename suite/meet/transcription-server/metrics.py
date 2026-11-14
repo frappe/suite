@@ -71,7 +71,7 @@ class Metrics:
     def observe(self, name, value):
         if (
             name not in HISTOGRAMS
-            or not isinstance(value, (int, float))
+            or not isinstance(value, int | float)
             or not math.isfinite(value)
             or value < 0
         ):
