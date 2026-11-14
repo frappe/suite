@@ -153,6 +153,55 @@ class IntegrationTestTranscription(IntegrationTestCase):
         publish.assert_not_called()
         self.assertFalse(job.artifact)
 
+    def test_partial_publication_failure_is_terminal_without_artifact_rows(self):
+        from suite.drive.utils import get_user_folder
+
+        get_user_folder(self.owner)
+        for transient, attempts in ((False, 0), (True, 3)):
+            with self.subTest(transient=transient):
+                job = self.job()
+                source = {
+                    "source_id": "speech",
+                    "speaker_id": "speaker-a",
+                    "speaker_name": "Anita",
+                    "start_ms": 0,
+                    "end_ms": 1000,
+                }
+                job.manifest = json.dumps({"segments": [source], "gaps": []})
+                job.attempts = attempts
+                job.save(ignore_permissions=True)
+                files_before = set(frappe.get_all("File", pluck="name"))
+                with (
+                    patch.object(transcription, "_authenticate"),
+                    patch(
+                        "suite.meet.transcription.client.authorize_manifest", return_value={"segments": []}
+                    ),
+                    patch(
+                        "suite.meet.transcription.artifacts.FileManager.upload_file",
+                        side_effect=OSError("Storage unavailable"),
+                    ) as upload,
+                ):
+                    claimed = transcription.claim("worker")
+                    result = transcription.fail(
+                        job.name,
+                        claimed["lease_token"],
+                        "worker",
+                        "source_unavailable",
+                        transient=transient,
+                        segments=[{**source, "text": "Recovered speech."}],
+                        processed_source_ids=["speech"],
+                    )
+                upload.assert_called_once()
+                self.assertEqual(result["status"], "Failed")
+                job.reload()
+                self.assertEqual(job.status, "Failed")
+                self.assertTrue(job.notification_pending)
+                self.assertEqual(job.failure_code, "publication_failed")
+                self.assertFalse(job.artifact)
+                self.assertFalse(job.capture_folder)
+                self.assertFalse(job.ready_at)
+                self.assertEqual(set(frappe.get_all("File", pluck="name")), files_before)
+
     def test_completed_silence_cannot_hide_a_missing_speech_source(self):
         job = self.job()
         source = {

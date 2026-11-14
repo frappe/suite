@@ -315,7 +315,16 @@ def _failure(doc, code, transient):
                 for s in manifest["segments"]
                 if s["source_id"] not in ids
             ]
-            return _publish(doc, segments, gaps, True)
+            before_publication = doc.as_dict()
+            frappe.db.savepoint("partial_transcript_publication")
+            try:
+                return _publish(doc, segments, gaps, True)
+            except Exception:
+                frappe.db.rollback(save_point="partial_transcript_publication")
+                # Publication can mutate the document before failing to save it.
+                doc.update(before_publication)
+                doc.failure_code = "publication_failed"
+                frappe.logger("meet_transcription").error("Partial transcript publication failed")
         doc.status = "Failed"
         doc.notification_pending = 1
     if capture_was_active:
