@@ -1126,6 +1126,289 @@ class WriterBodyTest(unittest.TestCase):
             self.assertEqual(content.writer_versions_rewritten, 2)
             self.assertEqual(content.writer_media_references_missing, 0)
 
+    def test_a_picture_address_on_the_old_prod_or_own_host_becomes_a_site_path(self):
+        # Owner ruling 2026-11-13: a document must not depend on the host it
+        # was written on. Only the old Frappe hosts and the site's own lose
+        # the host; any other host is someone else's picture
+        path = embed("own-1")
+        prod = "https://drive.frappe.io" + path
+        cloud = "http://suite.bom.frappe.cloud" + path
+        own = "https://site.example" + path
+        other = "https://drive.example.com" + path
+        lookalike = "https://notdrive.frappe.io" + path
+        old_api = (
+            "https://drive.frappe.io/api/method/drive.api.embed.get_file_content"
+            "?embed_name=own-1&parent_entity_name=node-b"
+        )
+        self.add_document(
+            "reader-doc",
+            "node-b",
+            body=WriterBody(
+                content=yjs_body(
+                    paragraph(image(src=prod)),
+                    paragraph(image(src=other)),
+                    paragraph(image(src=embed("own-1"))),
+                ),
+                html=(
+                    f'<p><img src="{cloud}"></p><p><img src="{own}"></p><p><img src="{lookalike}"></p>'
+                    f'<p><a href="https://drive.frappe.io/writer/node-b">page</a></p>'
+                ),
+            ),
+        )
+        self.add_picture("own-1", "node-b", "blob-own", "own.png")
+        self.source.writer_version_rows.append(
+            WriterVersionRow(
+                "version-1",
+                "reader-doc",
+                f'<p><img src="{old_api}"></p><p><img src="{other}"></p>',
+                owner=OWNER,
+                creation=STAMP,
+                modified=STAMP,
+            )
+        )
+
+        content = convert_history_and_comments(self.env)
+
+        body = self.source.writer_bodies["reader-doc"]
+        sources: list[str] = []
+        for child in body_fragment(body.content).children:
+            sources.append(dict(child.children[0].attributes)["src"])
+
+        self.assertEqual(sources, [path, other, path])
+        self.assertEqual(
+            body.html,
+            f'<p><img src="{path}"></p><p><img src="{path}"></p>'
+            f'<p><img src="{lookalike}"></p>'
+            f'<p><a href="https://drive.frappe.io/writer/node-b">page</a></p>',
+        )
+        version = self.target.version_rows["version-1"]
+        self.assertEqual(
+            self.target.read_blob(version["blob"]).decode("utf-8"),
+            '<p><img src="/api/method/drive.api.embed.get_file_content'
+            f'?embed_name=own-1&parent_entity_name=node-b"></p><p><img src="{other}"></p>',
+        )
+        self.assertEqual((content.writer_bodies_rewritten, content.writer_versions_rewritten), (1, 1))
+        self.assertEqual(content.writer_media_copied, 0)
+
+    def test_a_picture_address_on_the_older_frappe_host_becomes_a_site_path(self):
+        # Old documents still point at the host old Frappe Drive was served
+        # from before. Another Frappe subdomain is someone else's site
+        path = embed("own-1")
+        older = "https://suite.frappe.io" + path
+        sibling = "https://other.frappe.io" + path
+        self.add_document(
+            "reader-doc",
+            "node-b",
+            body=WriterBody(
+                content=yjs_body(paragraph(image(src=older)), paragraph(image(src=sibling))),
+                html=f'<p><img src="{older}"></p><p><img src="{sibling}"></p>',
+            ),
+        )
+        self.add_picture("own-1", "node-b", "blob-own", "own.png")
+
+        convert_history_and_comments(self.env)
+
+        body = self.source.writer_bodies["reader-doc"]
+        sources: list[str] = []
+        for child in body_fragment(body.content).children:
+            sources.append(dict(child.children[0].attributes)["src"])
+
+        self.assertEqual(sources, [path, sibling])
+        self.assertEqual(body.html, f'<p><img src="{path}"></p><p><img src="{sibling}"></p>')
+
+    def test_an_old_prod_address_inside_another_value_stays_as_it_is(self):
+        # Only a whole picture address loses its host. A proxy's address, a
+        # sentence and a caption that merely contain one are someone's words
+        path = embed("own-1")
+        prod = "https://drive.frappe.io" + path
+        proxy = "https://proxy.example/fetch/" + prod
+        html = f'<p><img src="{proxy}"></p><p>copy {prod} here</p><p><img src="{path}" alt="was {prod}"></p>'
+        body = WriterBody(
+            content=yjs_body(
+                paragraph(image(src=proxy)),
+                paragraph(image(src=path, alt=f"was {prod}")),
+            ),
+            html=html,
+        )
+        self.add_document("reader-doc", "node-b", body=body)
+        self.add_picture("own-1", "node-b", "blob-own", "own.png")
+        self.source.writer_version_rows.append(
+            WriterVersionRow("version-1", "reader-doc", html, owner=OWNER, creation=STAMP, modified=STAMP)
+        )
+
+        content = convert_history_and_comments(self.env)
+
+        self.assertEqual(self.source.writer_bodies["reader-doc"], body)
+        version = self.target.version_rows["version-1"]
+        self.assertEqual(self.target.read_blob(version["blob"]).decode("utf-8"), html)
+        self.assertEqual((content.writer_bodies_rewritten, content.writer_versions_rewritten), (0, 0))
+
+    def test_text_that_only_looks_like_a_picture_attribute_stays_as_it_is(self):
+        # Only an attribute of a real tag is a picture address. A sentence or
+        # a caption quoting one is someone's words, even on the old host
+        path = embed("own-1")
+        prod = "https://drive.frappe.io" + path
+        html = (
+            f'<p>Use src="{prod}"</p>'
+            f'<p><img alt="Example src=\'{prod}\'" src="{path}"></p>'
+            f'<p><img alt="a > b" src="{prod}"></p>'
+        )
+        self.add_document("reader-doc", "node-b", body=WriterBody(content=None, html=html))
+        self.add_picture("own-1", "node-b", "blob-own", "own.png")
+
+        convert_history_and_comments(self.env)
+
+        self.assertEqual(
+            self.source.writer_bodies["reader-doc"].html,
+            f'<p>Use src="{prod}"</p>'
+            f'<p><img alt="Example src=\'{prod}\'" src="{path}"></p>'
+            f'<p><img alt="a > b" src="{path}"></p>',
+        )
+
+    def test_a_borrowed_picture_named_only_in_words_is_neither_copied_nor_rewritten(self):
+        # A sentence or a caption naming another document's picture shows no
+        # picture, so it needs no copy and keeps its words. A real picture of
+        # the same id in the same document is still copied and pointed at it
+        self.add_document("owner-doc", "node-a", owner="author@example.com")
+        self.add_picture("pic-1", "node-a", "blob-1", "photo.png", owner="author@example.com")
+        borrowed = embed("pic-1")
+        words = f'<p>Copy {borrowed}</p><p>Use src="{borrowed}"</p>'
+        caption = f"was {borrowed}"
+        prose_body = WriterBody(content=yjs_body(paragraph(image(alt=caption))), html=words)
+        self.add_document("prose-doc", "node-c", body=prose_body)
+        self.source.writer_version_rows.append(
+            WriterVersionRow("version-c", "prose-doc", words, owner=OWNER, creation=STAMP, modified=STAMP)
+        )
+        self.add_document(
+            "reader-doc",
+            "node-b",
+            body=WriterBody(
+                content=yjs_body(paragraph(image(src=borrowed, alt=caption))),
+                html=f'{words}<p><img src="{borrowed}" alt="{caption}"></p>',
+            ),
+        )
+
+        convert_history_and_comments(self.env)
+
+        self.assertEqual(self.children("node-c"), {})
+        self.assertEqual(self.source.writer_bodies["prose-doc"], prose_body)
+        version = self.target.version_rows["version-c"]
+        self.assertEqual(self.target.read_blob(version["blob"]).decode("utf-8"), words)
+        (copy,) = self.children("node-b")
+        self.assertEqual(self.target.node_rows[copy]["blob"], "blob-1")
+        body = self.source.writer_bodies["reader-doc"]
+        (child,) = body_fragment(body.content).children
+        copied = embed(copy)
+        self.assertEqual(dict(child.children[0].attributes), {"src": copied, "alt": caption})
+        self.assertEqual(body.html, f'{words}<p><img src="{copied}" alt="{caption}"></p>')
+
+    def test_an_address_on_another_host_keeps_the_borrowed_id_it_names(self):
+        # Only a whole picture address of this site names one of our pictures;
+        # a proxy or another host serves its own bytes, so its address stays
+        self.add_document("owner-doc", "node-a", owner="author@example.com")
+        self.add_picture("pic-1", "node-a", "blob-1", "photo.png", owner="author@example.com")
+        borrowed = embed("pic-1")
+        proxy = "https://proxy.example/fetch/https://drive.frappe.io" + borrowed
+        other = "https://drive.example.com" + borrowed
+        self.add_document(
+            "reader-doc",
+            "node-b",
+            body=WriterBody(
+                content=yjs_body(paragraph(image(src=proxy)), paragraph(image(src=borrowed))),
+                html=f'<p><img src="{proxy}"></p><p><img src="{other}"></p><p><img src="{borrowed}"></p>',
+            ),
+        )
+
+        convert_history_and_comments(self.env)
+
+        (copy,) = self.children("node-b")
+        copied = embed(copy)
+        body = self.source.writer_bodies["reader-doc"]
+        sources: list[str] = []
+        for child in body_fragment(body.content).children:
+            sources.append(dict(child.children[0].attributes)["src"])
+
+        self.assertEqual(sources, [proxy, copied])
+        self.assertEqual(
+            body.html, f'<p><img src="{proxy}"></p><p><img src="{other}"></p><p><img src="{copied}"></p>'
+        )
+
+    def test_a_borrowed_picture_inside_text_only_elements_is_neither_copied_nor_rewritten(self):
+        # A textarea or a script holds text, not markup, so a tag in it shows no picture
+        self.add_document("owner-doc", "node-a", owner="author@example.com")
+        self.add_picture("pic-1", "node-a", "blob-1", "photo.png", owner="author@example.com")
+        borrowed = embed("pic-1")
+        tag = f'<img src="{borrowed}">'
+        body = WriterBody(content=None, html=f"<textarea>{tag}</textarea><SCRIPT>x='{tag}'</script >")
+        self.add_document("reader-doc", "node-b", body=body)
+
+        convert_history_and_comments(self.env)
+
+        self.assertEqual(self.children("node-b"), {})
+        self.assertEqual(self.source.writer_bodies["reader-doc"], body)
+
+    def test_a_picture_after_a_tag_named_like_a_text_only_element_is_still_copied(self):
+        # `title-card` and `script-box` are other elements; only the exact name holds text
+        self.add_document("owner-doc", "node-a", owner="author@example.com")
+        self.add_picture("pic-1", "node-a", "blob-1", "photo.png", owner="author@example.com")
+        borrowed = embed("pic-1")
+        wrappers = "<title-card>Heading</title-card><script-box>Note</script-box>"
+        self.add_document(
+            "reader-doc",
+            "node-b",
+            body=WriterBody(content=None, html=f'{wrappers}<img src="{borrowed}">'),
+        )
+
+        convert_history_and_comments(self.env)
+
+        (copy,) = self.children("node-b")
+        copied = embed(copy)
+        self.assertEqual(self.source.writer_bodies["reader-doc"].html, f'{wrappers}<img src="{copied}">')
+
+    def test_an_old_prod_host_in_capitals_or_with_its_default_port_becomes_a_site_path(self):
+        # A host is the same host in any case and on its scheme's default
+        # port; another port is another server
+        path = embed("own-1")
+        capitals = "https://DRIVE.FRAPPE.IO" + path
+        https_port = "https://drive.frappe.io:443" + path
+        http_port = "http://Suite.Bom.Frappe.Cloud:80" + path
+        other_port = "https://drive.frappe.io:8443" + path
+        self.add_document(
+            "reader-doc",
+            "node-b",
+            body=WriterBody(
+                content=yjs_body(paragraph(image(src=capitals)), paragraph(image(src=other_port))),
+                html=f'<p><img src="{https_port}"></p><p><img src="{other_port}"></p>',
+            ),
+        )
+        self.add_picture("own-1", "node-b", "blob-own", "own.png")
+        self.source.writer_version_rows.append(
+            WriterVersionRow(
+                "version-1",
+                "reader-doc",
+                f"<p><img src='{http_port}'></p><p><img SRC=\"{capitals}\"></p>",
+                manual=1,
+                owner=OWNER,
+                creation=STAMP,
+                modified=STAMP,
+            )
+        )
+
+        convert_history_and_comments(self.env)
+
+        body = self.source.writer_bodies["reader-doc"]
+        sources: list[str] = []
+        for child in body_fragment(body.content).children:
+            sources.append(dict(child.children[0].attributes)["src"])
+
+        self.assertEqual(sources, [path, other_port])
+        self.assertEqual(body.html, f'<p><img src="{path}"></p><p><img src="{other_port}"></p>')
+        version = self.target.version_rows["version-1"]
+        self.assertEqual(
+            self.target.read_blob(version["blob"]).decode("utf-8"),
+            f"<p><img src='{path}'></p><p><img SRC=\"{path}\"></p>",
+        )
+
     def test_a_picture_directly_inside_a_list_item_is_wrapped_in_a_paragraph(self):
         # B113: the editor's image is inline and a list item holds only
         # blocks, so the editor dropped this picture. After Build it sits in
@@ -1173,6 +1456,84 @@ class WriterBodyTest(unittest.TestCase):
         for content in (first, second):
             self.assertEqual(content.writer_images_wrapped, 1)
             self.assertEqual(content.writer_bodies_rewritten, 1)
+
+    def converted_top(self, content: str):
+        self.add_document("top-doc", "node-t", body=WriterBody(content=content, html="<p></p>"))
+        first = convert_history_and_comments(self.env)
+        body = self.source.writer_bodies["top-doc"]
+        second = convert_history_and_comments(self.env)
+        # A rerun wraps nothing again
+        self.assertEqual(self.source.writer_bodies["top-doc"], body)
+        self.assertEqual(second.writer_images_wrapped, first.writer_images_wrapped)
+        return first, list(body_fragment(body.content).children)
+
+    def test_pictures_side_by_side_at_the_top_share_one_paragraph(self):
+        # Old Writer fitted a run of loose top-level pictures into one
+        # paragraph, so they stood side by side, and they still do
+        content, blocks = self.converted_top(
+            yjs_body(image(src="/files/a.png", alt="first"), image(src="/files/b.png", width=320))
+        )
+
+        (wrapper,) = blocks
+        self.assertEqual(wrapper.tag, "paragraph")
+        self.assertEqual(
+            [(child.tag, dict(child.attributes)) for child in wrapper.children],
+            [
+                ("image", {"src": "/files/a.png", "alt": "first"}),
+                ("image", {"src": "/files/b.png", "width": 320}),
+            ],
+        )
+        self.assertEqual(content.writer_images_wrapped, 2)
+        self.assertEqual(content.writer_bodies_rewritten, 1)
+
+    def test_loose_text_between_pictures_at_the_top_joins_their_paragraph(self):
+        # A block ends the run, so the picture after it starts a paragraph of its own
+        document = pycrdt.Doc()
+        fragment = pycrdt.XmlFragment()
+        document["default"] = fragment
+        fragment.children.append(image(src="/files/a.png"))
+        text = fragment.children.append(pycrdt.XmlText())
+        text.insert(0, "bold", {"bold": True})
+        text.insert(4, " plain")
+        fragment.children.append(image(src="/files/b.png"))
+        fragment.children.append(paragraph(pycrdt.XmlText("after")))
+        fragment.children.append(image(src="/files/c.png"))
+        content, blocks = self.converted_top(base64.b64encode(document.get_update()).decode("ascii"))
+
+        run, after, last = blocks
+        self.assertEqual([block.tag for block in blocks], ["paragraph", "paragraph", "paragraph"])
+        first_picture, words, second_picture = list(run.children)
+        self.assertEqual(
+            (dict(first_picture.attributes), dict(second_picture.attributes)),
+            ({"src": "/files/a.png"}, {"src": "/files/b.png"}),
+        )
+        self.assertEqual(words.diff(), [("bold", {"bold": True}), (" plain", None)])
+        self.assertEqual(str(after), "<paragraph>after</paragraph>")
+        self.assertEqual([dict(child.attributes) for child in last.children], [{"src": "/files/c.png"}])
+        self.assertEqual(content.writer_images_wrapped, 3)
+
+    def test_old_resizable_media_at_the_top_ends_a_run_and_stays_as_it_is(self):
+        # The runtime turns old media into its own paragraph, so the pictures
+        # around it keep their order rather than joining across it
+        media = {"src": "/files/m.png", "media-type": "img", "dataAlign": "center"}
+        content, blocks = self.converted_top(
+            yjs_body(
+                image(src="/files/a.png"),
+                image(src="/files/b.png"),
+                pycrdt.XmlElement("resizableMedia", media),
+                image(src="/files/c.png"),
+            )
+        )
+
+        self.assertEqual([block.tag for block in blocks], ["paragraph", "resizableMedia", "paragraph"])
+        before, old, after = blocks
+        self.assertEqual(
+            [dict(child.attributes) for child in before.children],
+            [{"src": "/files/a.png"}, {"src": "/files/b.png"}],
+        )
+        self.assertEqual(dict(old.attributes), media)
+        self.assertEqual([dict(child.attributes) for child in after.children], [{"src": "/files/c.png"}])
+        self.assertEqual(content.writer_images_wrapped, 3)
 
     def test_a_rewritten_body_keeps_the_changes_yjs_held_back(self):
         # Later edits whose earlier part never reached the server: Yjs holds
