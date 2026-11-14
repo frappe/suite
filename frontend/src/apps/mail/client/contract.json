@@ -5522,6 +5522,48 @@
       "bytes": false
     },
     {
+      "id": "sync_changes",
+      "kind": "mutation",
+      "publicName": "changes.sync",
+      "page": null,
+      "envelope": "message",
+      "method": "POST",
+      "path": "/api/method/suite.mail.api.mail.sync_changes",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "description": "What a fetch of changes found for the lists: as announced over the socket, and returned.",
+        "properties": {
+          "new_mail_in": {
+            "items": {
+              "type": "string"
+            },
+            "title": "New Mail In",
+            "type": "array"
+          },
+          "changed": {
+            "title": "Changed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "new_mail_in",
+          "changed"
+        ],
+        "title": "ListChanges",
+        "type": "object"
+      },
+      "errors": [
+        "PermissionError",
+        "AuthenticationError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
       "id": "unscreen_email_addresses",
       "kind": "mutation",
       "publicName": "screening.remove",

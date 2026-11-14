@@ -25,6 +25,7 @@ from suite.mail.api.utils import get_avatar_url
 from suite.mail.bounces import dsn_blob_id, get_delivery_report
 from suite.mail.classification import Category, tab_filter
 from suite.mail.doctype.mail_message.mail_message import (
+    ListChanges,
     add_messages_to_mailbox,
     delete_messages,
     empty_mailbox,
@@ -45,6 +46,7 @@ from suite.mail.doctype.mail_message.mail_message import (
     set_seen_status,
     set_spam_status,
     set_unscreened_status,
+    sync_account_changes,
     try_move_messages,
     try_set_seen,
 )
@@ -662,6 +664,29 @@ def get_user_jmap_accounts() -> list[dict]:
     personal = get_user_personal_jmap_account()
     accounts.sort(key=lambda a: (a["name"] != personal, a["_name"] or ""))
     return accounts
+
+
+@frappe.whitelist(methods=["POST"])
+def sync_changes() -> ListChanges:
+    """Catch the user's open lists up with their mail server now.
+
+    What arrived or changed since the last look reaches every open list as a push's changes do,
+    through the socket, and is returned for the one that asked. Mailbox ids are per account, so
+    `new_mail_in` can name another account's folder; a list that reads one as its own only reads
+    again for nothing. A failure ends the round and reaches the client, which waits longer before it
+    asks again; an unreachable mail server answers 503, as on any other call.
+    """
+
+    found = ListChanges(new_mail_in=[], changed=False)
+    user = frappe.session.user
+    if not is_jmap_configured(user):
+        return found
+
+    for account in get_user_jmap_accounts():
+        changes = sync_account_changes(user, account["name"])
+        found["new_mail_in"] = [*found["new_mail_in"], *changes["new_mail_in"]]
+        found["changed"] = found["changed"] or changes["changed"]
+    return found
 
 
 def mailbox_slug(mailbox: dict) -> str | None:

@@ -7,7 +7,7 @@ from contextlib import suppress
 from datetime import datetime
 from email.utils import formataddr
 from functools import cached_property
-from typing import Literal
+from typing import Literal, TypedDict
 from urllib.parse import quote
 from uuid import uuid7
 
@@ -25,6 +25,7 @@ from frappe.utils import (
 
 from suite.mail import classification
 from suite.mail.doctype.mail_queue.mail_queue import MailQueue
+from suite.mail.doctype.push_subscription.push_subscription import is_jmap_push_notifications_frozen
 from suite.mail.doctype.sieve_script.sieve_script import UNSCREENED_KEYWORD
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import (
@@ -1786,9 +1787,30 @@ def _cache_blobs(account: str, blobs: dict[str, bytes]) -> None:
     store.set_many(items=blobs)
 
 
-def fetch_changes(user: str, account: str, email_state: str | None = None, ctx: dict | None = None) -> None:
-    """Fetch changes from the server and remove MailMessage documents from the cache."""
+class ListChanges(TypedDict):
+    """What a fetch of changes found for the lists: as announced over the socket, and returned."""
 
+    # The mailboxes new mail landed in (`new_mail_created`).
+    new_mail_in: list[str]
+    # Mail was read, moved or deleted elsewhere (`mail_changed`).
+    changed: bool
+
+
+def fetch_changes(
+    user: str,
+    account: str,
+    email_state: str | None = None,
+    ctx: dict | None = None,
+    *,
+    raise_failure: bool = False,
+) -> ListChanges:
+    """Fetch changes from the server and remove MailMessage documents from the cache.
+
+    A failure is logged and swallowed, as a push wants: the next push tries again. `raise_failure`
+    hands it to a caller that answers someone who can wait and ask again instead.
+    """
+
+    found = ListChanges(new_mail_in=[], changed=False)
     ctx = ctx or {}
     logger = get_push_logger(ctx)
 
@@ -1807,22 +1829,25 @@ def fetch_changes(user: str, account: str, email_state: str | None = None, ctx: 
                 ctx["email_state"] = email_state
             except Exception:
                 logger.error("email-sync-state-init-failed")
+                if raise_failure:
+                    raise
                 log_mail_error(
                     _("Failed to initialize email sync state"),
                     frappe.get_traceback(with_context=True),
                 )
-                return
+                return found
 
         if not email_state:
             logger.warning("email-sync-state-unavailable")
-            return
+            return found
 
         logger.info("initializing-email-sync-state")
-        return update_sync_state(account, type="email", state=email_state)
+        update_sync_state(account, type="email", state=email_state)
+        return found
 
     elif email_state == current_state:
         logger.debug("email-state-unchanged")
-        return
+        return found
 
     try:
         logger.debug("fetching-changes-from-server")
@@ -1866,25 +1891,22 @@ def fetch_changes(user: str, account: str, email_state: str | None = None, ctx: 
                         reactions.append(message["id"])
                         continue
 
-                    # Mail from a sender nobody has decided on yet waits quietly, as it did in the
-                    # Screener folder: no push until the sender is allowed.
+                    in_subscribed = [
+                        m["mailbox_id"]
+                        for m in message["mailboxes"]
+                        if m["mailbox_id"] in subscribed_mailboxes
+                    ]
+                    # Every new message moves a list, read or not: a reply sent from another client
+                    # lands in Sent and in the conversation open here, a draft saved elsewhere in Drafts.
+                    mailboxes_to_reload.update(in_subscribed)
+
+                    # Only unread mail is worth a notification, and mail from a sender nobody has
+                    # decided on yet waits quietly, as it did in the Screener folder: no push until
+                    # the sender is allowed.
                     if message["draft"] or message["seen"] or is_unscreened_message(message):
                         continue
 
-                    mailbox_id = None
-                    is_candidate = False
-
-                    for mailbox in message["mailboxes"]:
-                        if mailbox["mailbox_id"] not in subscribed_mailboxes:
-                            continue
-
-                        mailboxes_to_reload.add(mailbox["mailbox_id"])
-
-                        if not is_candidate and mailbox["mailbox_id"] not in disabled_mailboxes:
-                            mailbox_id = mailbox["mailbox_id"]
-                            is_candidate = True
-
-                    if is_candidate:
+                    if mailbox_id := next((m for m in in_subscribed if m not in disabled_mailboxes), None):
                         notify_candidates.append((mailbox_id, message))
 
                 logger.debug("computed-notify-candidates", notify_candidates_count=len(notify_candidates))
@@ -1912,7 +1934,8 @@ def fetch_changes(user: str, account: str, email_state: str | None = None, ctx: 
                     logger.debug("push-notifications-disabled")
 
                 if mailboxes_to_reload:
-                    frappe.publish_realtime("new_mail_created", list(mailboxes_to_reload), user=user)
+                    found["new_mail_in"] = list(mailboxes_to_reload)
+                    frappe.publish_realtime("new_mail_created", found["new_mail_in"], user=user)
 
                 try:
                     # Imported here: suite.mail.reminders imports this module.
@@ -1926,6 +1949,7 @@ def fetch_changes(user: str, account: str, email_state: str | None = None, ctx: 
                 if reactions:
                     logger.info("marking-reactions-read", count=len(reactions))
                     try_set_seen(account, reactions, True)
+                    found["changed"] = True
                     frappe.publish_realtime("mail_changed", user=user)
 
         if updated_ids := _without_classification_echoes(account, client, result.updated):
@@ -1939,6 +1963,7 @@ def fetch_changes(user: str, account: str, email_state: str | None = None, ctx: 
         if updated_ids or destroyed_ids:
             # Read, moved or deleted on another device: no new mail, but the lists this user has
             # open elsewhere are stale.
+            found["changed"] = True
             frappe.publish_realtime("mail_changed", user=user)
 
         new_state = result.new_state
@@ -1954,14 +1979,20 @@ def fetch_changes(user: str, account: str, email_state: str | None = None, ctx: 
             ctx.pop("email_state", None)
             ctx.pop("new_state", None)
 
-            fetch_changes(user, account, ctx=ctx)
+            more = fetch_changes(user, account, ctx=ctx, raise_failure=raise_failure)
+            found["new_mail_in"] = list({*found["new_mail_in"], *more["new_mail_in"]})
+            found["changed"] = found["changed"] or more["changed"]
 
     except Exception:
         logger.error("fetch-changes-failed")
+        if raise_failure:
+            raise
         log_mail_error(
             _("Failed to fetch changes"),
             frappe.get_traceback(with_context=True),
         )
+
+    return found
 
 
 def locked_fetch_changes(
@@ -1978,6 +2009,34 @@ def locked_fetch_changes(
     finally:
         logger.debug("releasing-fetch-changes-lock")
         release_lock(f"fetch_changes:{user}:{account}", lock_id)
+
+
+def sync_account_changes(user: str, account: str) -> ListChanges:
+    """Fetch the account's changes now, as a push would, unless a fetch is already under way.
+
+    Push needs the mail server to reach this site over HTTPS, and where it can't, nothing told the
+    lists that mail arrived or changed elsewhere. The client asks for this while it is looked at, and
+    the changes reach every open tab the way a push's do, as `new_mail_created` and `mail_changed`.
+    Run in the request rather than queued: with nothing new it is one Email/changes call. What it
+    found is returned too, for the tab that asked, which hears it even with its socket down.
+
+    While an import has push frozen it does nothing, as a push does nothing then: the imported mail
+    would be announced, and notified, as new mail arriving. A failure is raised rather than logged
+    here, so that a client asking every few seconds can wait longer instead of logging each ask.
+    """
+
+    if is_jmap_push_notifications_frozen(user):
+        return ListChanges(new_mail_in=[], changed=False)
+
+    lockname = f"fetch_changes:{user}:{account}"
+    identifier = acquire_lock(lockname, acquire_timeout=0)
+    if not identifier:
+        return ListChanges(new_mail_in=[], changed=False)
+
+    try:
+        return fetch_changes(user, account, ctx={"source": "sync"}, raise_failure=True)
+    finally:
+        release_lock(lockname, identifier)
 
 
 def enqueue_fetch_changes(
