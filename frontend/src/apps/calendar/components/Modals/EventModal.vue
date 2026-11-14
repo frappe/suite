@@ -35,6 +35,7 @@ import { serverEventId } from '@/apps/calendar/utils/eventIdentity'
 import { VISIBILITY_OPTIONS } from '@/apps/calendar/utils/eventOptions'
 import { formEventFields, formStart, occurrenceStart } from '@/apps/calendar/utils/eventWrite'
 import { getRepeatMessage, type EventAlert } from '@/apps/calendar/utils/format'
+import { draftGuests, seatOrganizer, type NewEventDraft } from '@/apps/calendar/utils/newEventDraft'
 import {
   isFirstOccurrence,
   scopeOptions,
@@ -155,8 +156,12 @@ const getDefaultEventData = () => {
   // Shared calendars are never writable, so the default is always the account's own.
   const calendar = defaultCalendar(calendars.data)
   const identity = store.organizerIdentity
+  // Filled in by another area (an event from a mail): its title and words, and the people in it
+  // as participants beside the organizer, each still to reply.
+  const prefill: NewEventDraft | undefined = selectedEvent?.prefill
+  const guests = draftGuests(prefill)
   return {
-    title: '',
+    title: prefill?.title ?? '',
     organizer: identity?.email,
     account: store.accountId,
     // Empty until the list has loaded, and then the server puts it in the default.
@@ -171,14 +176,22 @@ const getDefaultEventData = () => {
     links: [],
     alerts: [defaultAlert(isAllDay, dayjs(selectedEvent.date).format('YYYY-MM-DD'))],
     followsDefaults: false,
-    description: '',
+    description: prefill?.description ?? '',
     free_busy_status: 'Busy',
     privacy: 'Public',
-    participants: identity ? [organizerParticipant(identity)] : [],
+    participants: identity
+      ? seatOrganizer(guests, organizerParticipant(identity), ownAddresses())
+      : guests,
     recurrence_rule: {},
     addMeetLink: false,
   }
 }
+
+// Every address the account sends or attends as, so none of them is invited to its own event.
+const ownAddresses = () =>
+  [...(store.identities.data ?? []), ...(store.participantIdentities.data ?? [])].map(
+    (identity) => identity.email,
+  )
 
 // The organizer row of a new event: the participant identity the store picked, which
 // can differ from the login user. Without one the event has no organizer at all.
@@ -311,13 +324,17 @@ watch(show, (val) => {
 })
 
 // Identities can land after the modal opened; give the new event its organizer then,
-// ahead of any attendee already added.
+// ahead of any attendee already added, and drop a guest who turns out to be the reader.
 watch(
   () => store.organizerIdentity,
   (identity) => {
     if (!show.value || !identity || !isNew.value || event.organizer) return
     event.organizer = identity.email
-    event.participants = [organizerParticipant(identity), ...(event.participants ?? [])]
+    event.participants = seatOrganizer(
+      event.participants ?? [],
+      organizerParticipant(identity),
+      ownAddresses(),
+    )
   },
 )
 watch(
