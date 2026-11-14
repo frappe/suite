@@ -48,6 +48,7 @@ import {
   type RoomStatus,
   type VersionRestored,
 } from '@/platform/collab'
+import { peopleOf, presenceColours } from '@/platform/collab/peers'
 import type { RestoreNotice } from '@/platform/collab/restoreNotices'
 import { translate } from '@/platform/translation'
 
@@ -103,6 +104,8 @@ export function useConvertedRoom({
   const room = shallowRef<CollabRoom | null>(null)
   const status = shallowRef<RoomStatus | null>(null)
   const presence = shallowRef<RoomPresence | null>(null)
+  // Everyone else here, one entry per person, read again each time the room says who is
+  const people = shallowRef<ReturnType<typeof peopleOf>>([])
   const selectorOf = lastSelector(usePeopleSelecting(presence))
   let deck: LiveDeck | null = null
   let stopWatching = () => {}
@@ -276,6 +279,12 @@ export function useConvertedRoom({
       },
     })
     presence.value = liveRoom.presence
+    const roomPresence = liveRoom.presence!
+    const readPeople = () => {
+      people.value = peopleOf(roomPresence.peers, presenceColours(roomPresence))
+    }
+    readPeople()
+    const stopPeople = roomPresence.onChange(readPeople)
     const stopRestores = liveRoom.onChange(() => liveDeck.followRestore())
     // leaving the show runs the repair a writable open runs, so an emptied presentation gets its blank
     const stopRepair = watch(canWrite, (writable) => {
@@ -293,6 +302,8 @@ export function useConvertedRoom({
       { immediate: true },
     )
     return () => {
+      stopPeople()
+      people.value = []
       stopRestores()
       stopRepair()
       stopSelection()
@@ -462,6 +473,7 @@ export function useConvertedRoom({
     allowsEditing,
     saveState,
     presence,
+    people,
     open,
     close,
     restore,

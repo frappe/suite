@@ -19,7 +19,7 @@ import {
 
 import type { DocumentComments, DocumentVersion } from '@/apps/drive'
 import type { StoreSlide } from '@/apps/slides/collab/liveDeck'
-import type { LostAccess, RoomStatus } from '@/platform/collab'
+import type { LostAccess, Peer, RoomStatus } from '@/platform/collab'
 import { requireTestElement } from '@/platform/testing/dom'
 
 import {
@@ -279,6 +279,8 @@ function roomOf(...texts: string[]) {
   const doc = new Doc()
   applyUpdate(doc, answer.state)
   const changes = new Set<() => void>()
+  const presenceChanges = new Set<() => void>()
+  const peers: Peer[] = []
   const room = {
     doc,
     close: vi.fn(async () => {}),
@@ -291,10 +293,13 @@ function roomOf(...texts: string[]) {
     status: { canWrite: true, saveState: 'clean', unsentCount: 0, restoreRev: 0 },
     presence: {
       awareness: new Awareness(doc),
-      peers: [],
+      peers,
       ownPid: 1,
       ownArrival: 1,
-      onChange: () => () => {},
+      onChange(listener: () => void) {
+        presenceChanges.add(listener)
+        return () => presenceChanges.delete(listener)
+      },
     },
     onChange(listener: () => void) {
       changes.add(listener)
@@ -303,6 +308,11 @@ function roomOf(...texts: string[]) {
     setStatus(next: Partial<RoomStatus>) {
       room.status = { ...room.status, ...next }
       changes.forEach((listener) => listener())
+    },
+    // another tab opens the presentation, as the realtime service tells this one
+    join(peer: Peer) {
+      room.presence.peers = [...room.presence.peers, peer]
+      presenceChanges.forEach((listener) => listener())
     },
   }
   return room
@@ -521,6 +531,19 @@ describe('a deck on the content layer', () => {
 
     room.setStatus({ canWrite: true, pauseReason: null })
     await vi.waitFor(() => expect(viewOnly.value).toBe(false))
+  })
+
+  it('shows someone who opens the presentation after this tab in the circles', async () => {
+    const room = roomOf('one')
+    collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
+    mounted = await openedSurface({ deck: { is_converted: true } })
+    await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+    const circles = () => document.querySelector('header [aria-label$="is here"]')
+    expect(circles()).toBeNull()
+
+    room.join({ pid: 2, user: 'kiran@example.com', arrival: 2, idleSince: null })
+
+    await vi.waitFor(() => expect(circles()).not.toBeNull())
   })
 
   describe('a draft this device kept from before the live room', () => {

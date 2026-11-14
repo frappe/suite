@@ -99,7 +99,6 @@ import { isMediaOwner } from '@/apps/slides/utils/mediaUploads'
 import { collectMediaSources } from '@/apps/slides/utils/pinTargets'
 import { postToServiceWorker, registerSlidesWorker } from '@/apps/slides/utils/serviceWorker'
 import { readSavedDocument, watchConversion } from '@/platform/collab'
-import { peopleOf, presenceColours } from '@/platform/collab/peers'
 import { othersPresentWarning, type RestoreNotice } from '@/platform/collab/restoreNotices'
 import UsersBar from '@/platform/collab/UsersBar.vue'
 import { useHideRail } from '@/platform/rail'
@@ -245,10 +244,7 @@ const convertedRoom = useConvertedRoom({
   onVersionRestored: (restored) => void sidePanel.value?.tellRestoredByOther(restored),
 })
 provide('livePresence', convertedRoom.presence)
-const roomPeople = computed(() => {
-  const presence = convertedRoom.presence.value
-  return presence ? peopleOf(presence.peers, presenceColours(presence)) : []
-})
+const roomPeople = convertedRoom.people
 const { isNavigationPanelOpen } = useNavigationPanel()
 // the side panel floats over the slide area, so a notice starts at its edge
 const isNoticeBesidePanel = computed(() => !phone.value && isNavigationPanelOpen.value)
