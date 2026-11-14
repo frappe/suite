@@ -16,7 +16,7 @@
       :key="tab.category"
       variant="ghost"
       :route="routeFor(tab.category)"
-      class="shrink-0"
+      class="touch-target shrink-0"
     >
       <template #prefix>
         <span
@@ -33,7 +33,7 @@
       </template>
     </Button>
     <Dropdown :options="choiceMenu">
-      <Button variant="ghost" class="shrink-0" :aria-label="__('Choose categories')">
+      <Button variant="ghost" class="touch-target shrink-0" :aria-label="__('Choose categories')">
         <template #icon>
           <span class="lucide-settings-2 text-ink-gray-5 size-4" aria-hidden="true" />
         </template>

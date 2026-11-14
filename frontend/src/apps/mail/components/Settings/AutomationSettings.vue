@@ -24,7 +24,7 @@
           <Badge v-if="script.active" :label="__('Active')" theme="blue" size="sm" />
         </div>
         <Dropdown :options="scriptOptions(script)">
-          <Button variant="ghost" @click.stop>
+          <Button variant="ghost" :aria-label="__('{0} options', [script._name])" @click.stop>
             <template #icon>
               <Ellipsis class="text-ink-gray-5 h-4 w-4" />
             </template>

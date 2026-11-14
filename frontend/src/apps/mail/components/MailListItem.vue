@@ -112,7 +112,7 @@
       <!-- One family of chips, an even gap apart: files outlined, folders on the muted surface. -->
       <div
         v-if="hasExtra(isFullWidth)"
-        class="flex items-center gap-1.5"
+        class="flex items-center gap-1.5 overflow-hidden"
         :class="{ 'min-w-fit': isFullWidth }"
       >
         <Tooltip
@@ -159,6 +159,7 @@
                       />
                       <button
                         class="hidden sm:group-hover/capsule:block"
+                        :aria-label="__('Download {0}', [attachment.filename])"
                         @click.stop.prevent="downloadAttachment(attachment)"
                       >
                         <Download class="hover:text-ink-gray-8 h-4 w-4 shrink-0" />

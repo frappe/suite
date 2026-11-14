@@ -1,7 +1,7 @@
 <template>
   <template v-if="isHovered && !isMobile">
     <Tooltip v-for="action in actions" :key="action.label" :text="action.label">
-      <button class="action-btn" @click.stop.prevent="action.onClick">
+      <button class="action-btn" :aria-label="action.label" @click.stop.prevent="action.onClick">
         <component :is="action.icon" class="icon text-ink-gray-5" />
       </button>
     </Tooltip>
@@ -32,7 +32,11 @@
     <Pin class="h-5 w-5" :style="PINNED_PIN_STYLE" />
   </button>
   <Tooltip v-if="starrable && !isMobile" :text="flagged ? __('Unstar') : __('Star')">
-    <button class="action-btn" @click.stop.prevent="emit('setFlagged', !flagged)">
+    <button
+      class="action-btn"
+      :aria-label="flagged ? __('Unstar') : __('Star')"
+      @click.stop.prevent="emit('setFlagged', !flagged)"
+    >
       <Star
         class="icon text-ink-gray-5"
         :class="{ flagged }"

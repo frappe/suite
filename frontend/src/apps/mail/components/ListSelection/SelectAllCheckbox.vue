@@ -11,6 +11,7 @@
         :indeterminate="some && !selected"
         size="md"
         class="pointer-events-none"
+        :aria-label="selected || some ? __('Clear All') : __('Select All')"
       />
     </div>
   </Tooltip>

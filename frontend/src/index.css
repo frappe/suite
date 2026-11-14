@@ -65,6 +65,25 @@ body {
   cursor: pointer;
 }
 
+/* A control smaller than a fingertip still takes one. On a touch screen its hit area grows to at
+   least 44px square around it (Apple's HIG; WCAG 2.5.5), and it looks as it did. For a control
+   that stands alone: rows of a list are made 44px tall instead, since grown hit areas would
+   overlap their neighbours'. A control positioned already keeps its own position. */
+@media (pointer: coarse) {
+  .touch-target:where(:not(.absolute, .fixed, .sticky)) {
+    position: relative;
+  }
+  .touch-target::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    transform: translate(-50%, -50%);
+  }
+}
+
 /* frappe-ui's toast centres its icon on the whole message, so a two-line message
    leaves the icon between its lines. The icon and message start at the top
    instead, so the icon sits on the first line. The margin centres one text line

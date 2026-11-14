@@ -32,7 +32,7 @@
 					     itself would keep the sheet from opening. -->
           <div class="flex" @click.stop>
             <AdaptiveDropdown :options="mailboxOptions(mailbox)" :title="mailbox._name">
-              <Button variant="ghost">
+              <Button variant="ghost" :aria-label="__('{0} options', [mailbox._name])">
                 <template #icon>
                   <Ellipsis class="text-ink-gray-5 h-4 w-4" />
                 </template>

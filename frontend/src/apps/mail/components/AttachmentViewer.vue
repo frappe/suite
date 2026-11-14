@@ -30,6 +30,7 @@
             <button
               v-if="previewUrl && !isLoading && canPrint"
               class="rounded-4 p-1.5 hover:bg-white/20"
+              :aria-label="__('Print')"
               @click="printAttachment"
             >
               <Printer class="h-4 w-4" />
@@ -38,11 +39,16 @@
               v-if="previewUrl && !isLoading"
               :disabled="isDownloading"
               class="rounded-4 p-1.5 hover:bg-white/20 disabled:opacity-50"
+              :aria-label="__('Download')"
               @click="downloadAttachment"
             >
               <Download class="h-4 w-4" />
             </button>
-            <button class="rounded-4 p-1.5 hover:bg-white/20" @click="closeViewer">
+            <button
+              class="rounded-4 p-1.5 hover:bg-white/20"
+              :aria-label="__('Close')"
+              @click="closeViewer"
+            >
               <X class="h-4 w-4" />
             </button>
           </div>
@@ -137,6 +143,7 @@
             :disabled="currentIndex === 0"
             class="rounded-4 p-1.5 disabled:opacity-50"
             :class="{ 'hover:bg-white/20': currentIndex !== 0 }"
+            :aria-label="__('Previous attachment')"
             @click="previousAttachment"
           >
             <ChevronLeft class="h-4 w-4" />
@@ -148,6 +155,7 @@
             :disabled="currentIndex === attachments.length - 1"
             class="rounded-4 p-1.5 disabled:opacity-50"
             :class="{ 'hover:bg-white/20': currentIndex !== attachments.length - 1 }"
+            :aria-label="__('Next attachment')"
             @click="nextAttachment"
           >
             <ChevronRight class="h-4 w-4" />

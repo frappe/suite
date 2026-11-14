@@ -214,6 +214,7 @@
                       :model-value="isGroupSelected(key)"
                       size="md"
                       class="pointer-events-none [&_input]:mt-0"
+                      :aria-label="__('Select all of {0}', [dateGroupLabel(key)])"
                     />
                   </div>
                 </template>
@@ -447,6 +448,7 @@ import {
   useSwipeNav,
   useUndo,
 } from '@/apps/mail/utils/composables'
+import { dateGroupLabel } from '@/apps/mail/utils/dateGroups'
 import { utcDayEnd, utcDayStart } from '@/apps/mail/utils/datetime'
 import { useListFilter } from '@/apps/mail/utils/listFilter'
 import {
