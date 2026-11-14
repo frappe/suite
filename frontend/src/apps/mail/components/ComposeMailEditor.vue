@@ -355,6 +355,7 @@
           :class="{ 'border-transparent': isDragging }"
           :remind-at="remindAt"
           @select-files="(files: File[]) => uploadFiles(files)"
+          @attach-from-drive="attachFromDrive"
           @append-emoji="(emoji: string) => appendEmoji(emoji)"
           @discard-mail="discardMail"
           @send-mail="sendMail"
@@ -439,7 +440,10 @@ type FileUpload = ReturnType<typeof useFileUpload> & { name: string; size: numbe
 const fileUploads = ref<FileUpload[]>([])
 const pendingInlineUploads = ref(0)
 const isUploading = computed(
-  () => pendingInlineUploads.value > 0 || fileUploads.value.some((upload) => upload.isUploading),
+  () =>
+    pendingInlineUploads.value > 0 ||
+    fileUploads.value.some((upload) => upload.isUploading) ||
+    isAttachingFromDrive.value,
 )
 const user = inject<UserResource>('$user')
 if (!user) throw new Error('Missing required user provider')
@@ -499,6 +503,8 @@ const {
   setRemindAt,
   openQuotedContent,
   openAttachment,
+  attachFromDrive,
+  isAttachingFromDrive,
   editorExtensions,
   appendEmoji,
   editorContent,

@@ -68,6 +68,8 @@ export const registration: OwnerRegistration = {
       return { effects: { invalidates: ['mail.get_participant_identities'] } }
     if (['signup', 'resend_otp', 'verify_otp', 'send_reset_password_link'].includes(reference.id))
       return { effects: 'none' }
+    // Copies made for a mail being written: nothing anyone lists until the mail is saved.
+    if (reference.id === 'attach_drive_files') return { effects: 'none' }
     if (reference.id === 'create_account')
       return {
         effects: {

@@ -284,6 +284,7 @@ import {
   ChevronDown,
   ChevronUp,
   EllipsisVertical,
+  HardDrive,
   Paperclip,
   SendHorizontal,
   Trash2,
@@ -314,7 +315,7 @@ const subjectInput = useTemplateRef<HTMLInputElement>('subjectInput')
 const fileInput = useTemplateRef<HTMLInputElement>('fileInput')
 const scroller = useTemplateRef<HTMLElement>('scroller')
 const pendingUploads = ref(0)
-const isUploading = computed(() => pendingUploads.value > 0)
+const isUploading = computed(() => pendingUploads.value > 0 || isAttachingFromDrive.value)
 
 const uploadInlineImage = async (file: File) => {
   pendingUploads.value++
@@ -358,6 +359,8 @@ const {
   setRemindAt,
   openQuotedContent,
   openAttachment,
+  attachFromDrive,
+  isAttachingFromDrive,
   editorExtensions,
   editorContent,
   onEditorChange,
@@ -557,6 +560,7 @@ const onFilesSelected = async (e: Event) => {
 
 const remindOpen = ref(false)
 const ACTIONS = computed(() => [
+  { label: __('Attach from Drive'), onClick: () => void attachFromDrive(), icon: HardDrive },
   { label: __('Schedule send'), onClick: () => openScheduleModal(), icon: CalendarClock },
   {
     label: remindAt.value ? __('Change reminder') : __('Remind me if no reply'),

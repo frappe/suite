@@ -66,6 +66,17 @@
           </template>
         </Button>
         <input ref="fileInput" type="file" class="hidden" multiple @change="onFilesSelected" />
+        <Button
+          variant="ghost"
+          class="max-h-6 max-w-6"
+          :tooltip="__('Attach from Drive')"
+          :aria-label="__('Attach from Drive')"
+          @click="emit('attachFromDrive')"
+        >
+          <template #icon>
+            <HardDrive class="text-ink-gray-8 h-4 w-4" />
+          </template>
+        </Button>
       </div>
 
       <!-- Stays until a save lands, so a refused save cannot pass for a kept draft. -->
@@ -94,7 +105,7 @@
 <script setup lang="ts">
 import { Button, Dropdown } from 'frappe-ui'
 import { EditorFixedMenu } from 'frappe-ui/editor'
-import { CalendarClock, ChevronDown, Laugh, Paperclip } from 'lucide-vue-next'
+import { CalendarClock, ChevronDown, HardDrive, Laugh, Paperclip } from 'lucide-vue-next'
 import { computed, useTemplateRef } from 'vue'
 
 import ComposeReminderButton from '@/apps/mail/components/ComposeReminderButton.vue'
@@ -114,6 +125,7 @@ const { isRecipientsEmpty, isUploading, saveFailed, remindAt } = defineProps<{
 const emit = defineEmits([
   'appendEmoji',
   'selectFiles',
+  'attachFromDrive',
   'discardMail',
   'sendMail',
   'scheduleSend',
