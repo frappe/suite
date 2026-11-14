@@ -35,14 +35,16 @@
       >
         <span
           class="absolute -left-1 -top-1 size-2 rounded-full bg-[var(--peer-solid)]"
-          :class="{ 'opacity-0': showsName(outline) }"
+          :class="showsName(outline) ? 'opacity-0' : SHRINKING"
           data-peer-dot
         />
+        <!-- shrinks into the dot, and comes back at once -->
         <svg
-          v-if="showsName(outline)"
-          class="absolute bottom-0 left-0 overflow-visible"
+          class="absolute bottom-0 left-0 origin-bottom-left overflow-visible"
+          :class="{ [`pointer-events-none scale-0 opacity-0 ${SHRINKING}`]: !showsName(outline) }"
           :width="tab(outline.label).width"
           height="16"
+          :data-shrunk="!showsName(outline) || undefined"
           data-peer-name
         >
           <!-- drawn 0.75px left, so its line centres on the outline's -->
@@ -78,6 +80,7 @@ import '@/platform/collab/peers.css'
 const NAME_SHOWN_MS = 3000
 const LINE_WIDTH = 1.5
 const TAB_FONT = '500 11px ui-sans-serif, -apple-system, sans-serif'
+const SHRINKING = 'transition duration-200 ease-out motion-reduce:transition-none'
 
 const props = defineProps<{ scale: number }>()
 

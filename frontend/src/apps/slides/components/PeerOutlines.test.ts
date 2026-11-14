@@ -63,7 +63,7 @@ function outlineIn(host: HTMLElement) {
 }
 
 function nameIn(host: HTMLElement) {
-  return host.querySelector('[data-peer-name]')
+  return host.querySelector('[data-peer-name]:not([data-shrunk])')
 }
 
 function scaleOf(element: HTMLElement) {
@@ -158,6 +158,8 @@ describe('PeerOutlines', () => {
     vi.advanceTimersByTime(2)
     await nextTick()
     expect(nameIn(host)).toBeNull()
+    // still there, so it can shrink into the dot rather than vanish
+    expect(host.querySelector('[data-peer-name][data-shrunk]')).not.toBeNull()
 
     host
       .querySelector('[data-peer-dot]')
