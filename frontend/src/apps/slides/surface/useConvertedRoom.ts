@@ -36,7 +36,14 @@ import {
   slidesLength,
   transformElements,
 } from '@/apps/slides/stores/presentation'
-import { currentSlide, setSlideIndex, slideIndex, slides } from '@/apps/slides/stores/slide'
+import {
+  changeSlide,
+  currentSlide,
+  focusedSlide,
+  setSlideIndex,
+  slideIndex,
+  slides,
+} from '@/apps/slides/stores/slide'
 import { holdShownSlide } from '@/apps/slides/stores/slideshow'
 import {
   isRecoverable,
@@ -169,8 +176,11 @@ export function useConvertedRoom({
 
       const last = isPresenting() ? total : total - 1
       const next = kept === -1 ? Math.min(at, last) : kept
-      if (next !== at) {
+      if (next !== at && isPresenting()) {
         setSlideIndex(next + 1)
+      } else if (next !== at) {
+        // the focused slide and the address follow the slide still shown
+        changeSlide(next, focusedSlide.value != null)
       }
     }
 

@@ -5,7 +5,7 @@ import { Document } from '@tiptap/extension-document'
 import { Paragraph } from '@tiptap/extension-paragraph'
 import { Text } from '@tiptap/extension-text'
 import { fromAny, fromPartial } from '@total-typescript/shoehorn'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { nextTick, ref, type Ref } from 'vue'
 import { Awareness } from 'y-protocols/awareness'
 import {
@@ -50,6 +50,8 @@ import {
 
 const {
   addEmptySlide,
+  changeSlide,
+  focusedSlide,
   handleInsertSlide,
   slideIndex,
   slides: editorSlides,
@@ -72,6 +74,7 @@ const editorStore = await import('@/apps/slides/composables/useTextEditor')
 // the old stores are untyped; the tests set them as the surface reads them
 const focusElementId = fromAny<Ref<string | null>, unknown>(elementStore.focusElementId)
 const activeEditor = fromAny<Ref<Editor | null>, unknown>(editorStore.activeEditor)
+const focused = fromAny<Ref<number | null>, unknown>(focusedSlide)
 const { registerElementDiv } = await import('@/apps/slides/stores/elementRegistry')
 const { convertLegacy } = await import('@/apps/slides/collab/conversion')
 const {
@@ -1507,6 +1510,30 @@ describe('a deck on the content layer', () => {
 
     await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(2))
     expect(shownText()).toContain('>two</p>')
+  })
+
+  it('keeps the focused slide and the address on the shown slide when a co-editor adds one before it', async () => {
+    // the owner's case: B on slide 6, A duplicates slide 5, so the copy takes 6
+    const doc = convertedRoom('one', 'two', 'three', 'four', 'five', 'six', 'seven')
+    mounted = await openedSurface({ deck: { is_converted: true } })
+    const { router } = mounted
+    const unwired = slidesRouter.currentRoute
+    onTestFinished(() => {
+      Object.assign(slidesRouter, { currentRoute: unwired })
+      vi.mocked(slidesRouter.replace).mockReset()
+    })
+    Object.assign(slidesRouter, { currentRoute: router.currentRoute })
+    vi.mocked(slidesRouter.replace).mockImplementation((to) => router.replace(to))
+    await vi.waitFor(() => expect(editorSlides.value).toHaveLength(7))
+    changeSlide(5)
+    await vi.waitFor(() => expect(router.currentRoute.value.query.slide).toBe('6'))
+
+    addSlide(doc, {}, 'five')
+
+    await vi.waitFor(() => expect(editorSlides.value).toHaveLength(8))
+    expect(shownText()).toContain('>six</p>')
+    expect(drawnTexts()[focused.value ?? -1]).toContain('>six</p>')
+    await vi.waitFor(() => expect(router.currentRoute.value.query.slide).toBe('7'))
   })
 
   it('drops a room that opens after its presentation was left, so the next one keeps its own slides', async () => {
