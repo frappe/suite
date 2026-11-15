@@ -1,7 +1,7 @@
 <template>
   <div class="flex min-h-0 min-w-0 flex-1 flex-col bg-surface-base">
     <PageHeader>
-      <h1 class="text-xl font-semibold text-ink-gray-9">{{ __('Meet') }}</h1>
+      <PageHeaderTitle :title="__('Meet')" />
     </PageHeader>
 
     <div class="min-h-0 flex-1 overflow-y-auto">
@@ -67,7 +67,7 @@
 </template>
 
 <script setup lang="ts">
-import { Button, Dialog, PageHeader, TextInput } from 'frappe-ui'
+import { Button, Dialog, PageHeader, PageHeaderTitle, TextInput } from 'frappe-ui'
 import { computed, onMounted, onScopeDispose, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
