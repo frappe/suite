@@ -204,7 +204,6 @@ const isPinnedScreenShare = (pinId: string) =>
 const { screenShareTiles: allScreenShareTiles } = useScreenShareTiles({
   displayScreenShares,
   pinnedTiles,
-  currentUser,
   gridLayout: meetingCtx.gridLayout,
   getParticipantName,
 })
@@ -228,8 +227,6 @@ const getScreenShareTileBindings = (shareTile: ScreenShareTile) => {
     style: isPinned ? pinnedTileStyles.value[`screenshare-${shareTile.pinId}`] : tileStyle.value,
     pinType: 'screenshare' as const,
     pinId: shareTile.pinId,
-    labelSize: isPinned ? ('sm' as const) : undefined,
-    labelPosition: isPinned ? ('top-left' as const) : undefined,
     videoObjectFitClass: isPinned ? 'object-contain' : undefined,
     videoBackgroundClass: isPinned ? 'bg-gray-900' : undefined,
     tileBackgroundClass: isPinned ? 'bg-black' : undefined,

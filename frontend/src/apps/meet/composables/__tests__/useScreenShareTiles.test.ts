@@ -15,7 +15,6 @@ describe('useScreenShareTiles', () => {
     const { screenShareTiles } = useScreenShareTiles({
       displayScreenShares,
       pinnedTiles,
-      currentUser: ref(null),
       gridLayout: {
         pinnedTiles,
         displayScreenShares: fromPartial(displayScreenShares),
@@ -35,5 +34,30 @@ describe('useScreenShareTiles', () => {
     expect(screenShareTiles.value[0]?.pinId).toBe('user-1')
     expect(pinnedTiles.value).toEqual([{ type: 'screenshare', id: 'user-1' }])
     expect(unpinTile).not.toHaveBeenCalled()
+  })
+
+  it("names your own share 'Your screen' and anyone else's by their name", () => {
+    const displayScreenShares = ref([
+      { consumerId: 'local-screen', participantId: 'me', source: 'local' as const },
+      { consumerId: 'consumer-2', participantId: 'user-2', source: 'remote' as const },
+    ])
+    const pinnedTiles = ref<{ type: 'screenshare' | 'participant'; id: string }[]>([])
+    const { screenShareTiles } = useScreenShareTiles({
+      displayScreenShares,
+      pinnedTiles,
+      gridLayout: {
+        pinnedTiles,
+        displayScreenShares: fromPartial(displayScreenShares),
+        pinTile: vi.fn(),
+        unpinTile: vi.fn(),
+        resetGridLayout: vi.fn(),
+      },
+      getParticipantName: (id) => (id === 'user-2' ? 'Leo Park' : 'Maya Chen'),
+    })
+
+    expect(screenShareTiles.value.map((tile) => tile.participant.user_name)).toEqual([
+      'Your screen',
+      "Leo Park's screen",
+    ])
   })
 })

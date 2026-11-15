@@ -322,10 +322,10 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "Leo writes while Maya's chat is closed: a toast with his avatar, name and the start of the message. The toast sits over the side-panel buttons, so the unread dot on Chat is hidden while it shows." },
 		},
 		sharingScreen: {
-			meta: { description: "Maya shares her screen: her screen becomes the large tile with “You are sharing your screen” over it, and the camera tiles move to a column." },
+			meta: { description: "Maya shares her screen: her screen becomes the large tile, labelled “Your screen” in the usual bottom-left name pill, with “You are sharing your screen” over it, and the camera tiles move to a column." },
 		},
 		watchingShare: {
-			meta: { description: "Leo shares his screen: it fills the large tile, labelled “Leo Park's screen”, with the camera tiles beside it." },
+			meta: { description: "Leo shares his screen: it fills the large tile, labelled “Leo Park's screen” in the usual bottom-left name pill, with the camera tiles beside it." },
 		},
 		callCameraOff: {
 			meta: { description: "Maya turns her camera off in the call: her tile shows her avatar and the camera button turns red." },
