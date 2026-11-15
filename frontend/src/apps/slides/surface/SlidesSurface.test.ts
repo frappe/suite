@@ -1685,6 +1685,24 @@ describe('a deck on the content layer', () => {
     await vi.waitFor(() => expect(router.currentRoute.value.query.slide).toBe('7'))
   })
 
+  it('drops the slide focus on a click outside the list, so Delete then removes no slide', async () => {
+    const doc = convertedRoom('one', 'two', 'three')
+    mounted = await openedSurface({ deck: { is_converted: true } })
+    await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(3))
+    thumbnails(mounted.root)[2].click()
+    await nextTick()
+    expect(focused.value).toBe(2)
+
+    mounted.root.querySelector<HTMLElement>('[data-toolbar]')!.click()
+    await nextTick()
+    expect(focused.value).toBeNull()
+
+    await press('Delete')
+    await press('Backspace')
+    expect(thumbnails(mounted.root)).toHaveLength(3)
+    expect(drawnSlides(doc)).toHaveLength(3)
+  })
+
   it('drops a room that opens after its presentation was left, so the next one keeps its own slides', async () => {
     let open!: (opened: unknown) => void
     collabRoom.open.mockReturnValueOnce(

@@ -333,7 +333,8 @@ vi.mock('@/apps/drive', async (importOriginal) => ({
   },
   useDriveDocumentActions: () => computed(() => ({ back: [], node: [] })),
 }))
-// a thumbnail that isn't the current slide asks the surface to change to it
+// a thumbnail that isn't the current slide asks the surface to change to it,
+// and a click in the list stays in it, as the real list's `@click.stop` does
 vi.mock('@/apps/slides/components/NavigationPanel.vue', async () => {
   const { slides } = await import('@/apps/slides/stores/slide')
   return {
@@ -344,6 +345,7 @@ vi.mock('@/apps/slides/components/NavigationPanel.vue', async () => {
         () =>
           h(
             'nav',
+            { onClick: (event: MouseEvent) => event.stopPropagation() },
             slides.value.map((_slide, index) =>
               h('button', { onClick: () => emit('changeSlide', index) }),
             ),

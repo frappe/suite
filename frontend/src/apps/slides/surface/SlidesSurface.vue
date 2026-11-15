@@ -81,6 +81,7 @@ import {
 } from '@/apps/slides/stores/presentation'
 import {
   changeEditorSlide,
+  focusedSlide,
   handleInsertSlide,
   setSlideIndex,
   slideIndex,
@@ -1008,9 +1009,11 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <!-- the slide list stops its own clicks, so a click anywhere else drops its focus -->
   <div
     class="relative flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden bg-surface-base"
     :inert="presenting"
+    @click="focusedSlide = null"
   >
     <DriveDocumentHeader
       :session="session"
