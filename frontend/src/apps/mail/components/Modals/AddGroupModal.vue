@@ -2,10 +2,10 @@
   <Dialog
     v-model:open="show"
     v-bind="{
-      title: __('Add Group'),
+      title: __('Add group'),
       actions: [
         {
-          label: __('Add Group'),
+          label: __('Add group'),
           variant: 'solid' as const,
           disabled: !(name && domain),
           loading: addGroup.isPending,
@@ -42,7 +42,7 @@
 
         <Switch
           v-model="disableReceiving"
-          :label="__('Disable Receiving')"
+          :label="__('Disable receiving')"
           :description="
             __('The group cannot receive emails. Mail addressed to it bounces back to the sender.')
           "

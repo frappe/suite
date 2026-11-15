@@ -8,7 +8,7 @@
     <div class="flex items-center gap-3">
       <FormControl
         v-model="status"
-        :placeholder="__('Invitation Status')"
+        :placeholder="__('Invitation status')"
         class="w-40"
         type="select"
         :options="STATUS_OPTIONS"
@@ -24,10 +24,10 @@
     :row-height="56"
   >
     <ListHeader>
-      <ListHeaderCell>{{ __('Assigned Email') }}</ListHeaderCell>
-      <ListHeaderCell>{{ __('Backup Email') }}</ListHeaderCell>
-      <ListHeaderCell>{{ __('Invited By') }}</ListHeaderCell>
-      <ListHeaderCell>{{ __('Invitation Status') }}</ListHeaderCell>
+      <ListHeaderCell>{{ __('Assigned email address') }}</ListHeaderCell>
+      <ListHeaderCell>{{ __('Backup email address') }}</ListHeaderCell>
+      <ListHeaderCell>{{ __('Invited by') }}</ListHeaderCell>
+      <ListHeaderCell>{{ __('Invitation status') }}</ListHeaderCell>
       <ListHeaderCell
         ><span class="sr-only">{{ __('Actions') }}</span></ListHeaderCell
       >
@@ -196,7 +196,7 @@ async function deleteInvitesSubmit() {
   selectedInvites.value = []
 }
 const DELETE_INVITES_OPTIONS = {
-  title: __('Delete Invites'),
+  title: __('Delete invites'),
   message: __(
     'Are you sure you want to delete the selected invites? This will invalidate them for the recipients if pending.',
   ),

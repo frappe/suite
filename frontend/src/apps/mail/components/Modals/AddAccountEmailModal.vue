@@ -2,7 +2,7 @@
   <Dialog
     v-model:open="show"
     v-bind="{
-      title: __('Add Email Address'),
+      title: __('Add email address'),
       actions: [
         {
           label: __('Add'),
@@ -39,7 +39,7 @@
         </p>
         <FormControl
           v-model="description"
-          :label="__('Full Name')"
+          :label="__('Full name')"
           :placeholder="__('Used as the display name for this address')"
         />
         <ErrorMessage

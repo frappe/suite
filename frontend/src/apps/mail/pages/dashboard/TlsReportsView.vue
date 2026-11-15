@@ -1,5 +1,5 @@
 <template>
-  <DashboardLayout area="mail" :breadcrumbs="[{ label: __('TLS Reports') }]">
+  <DashboardLayout area="mail" :breadcrumbs="[{ label: __('TLS reports') }]">
     <!-- Filters in one row; the domain and period scope both the summary and the list. -->
     <div class="flex flex-wrap items-center justify-between gap-3">
       <FormControl
@@ -38,7 +38,7 @@
     <div v-if="summary.status !== 'error'" class="grid grid-cols-1 gap-5 xl:grid-cols-2">
       <!-- What went wrong, biggest first: the failure type says whether a certificate, the
 			     MTA-STS policy or STARTTLS itself is to blame. -->
-      <DashboardCard :title="__('Failure Types')">
+      <DashboardCard :title="__('Failure types')">
         <div v-if="failures.length" class="flex max-h-72 flex-col overflow-y-auto">
           <div
             v-for="row in failures"
@@ -144,7 +144,7 @@ import { DashboardCard, DashboardLayout, DashboardList } from '@/platform/dashbo
 import { LoadFailed } from '@/platform/load-failed'
 import { appPageMeta } from '@/platform/page-meta'
 
-usePageMeta(() => appPageMeta(__('TLS Reports'), 'Mail'))
+usePageMeta(() => appPageMeta(__('TLS reports'), 'Mail'))
 const search = ref('')
 const domain = ref('')
 const period = ref(DEFAULT_PERIOD)
@@ -201,7 +201,7 @@ const LIST_COLUMNS = [
     key: 'failed',
   },
   {
-    label: __('Success Rate'),
+    label: __('Success rate'),
     key: 'success_rate',
   },
   {

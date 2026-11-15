@@ -2,7 +2,7 @@
   <DashboardLayout
     area="mail"
     :breadcrumbs="[{ label: __('Domains') }]"
-    :button-label="isFirstRun ? undefined : __('Add Domain')"
+    :button-label="isFirstRun ? undefined : __('Add domain')"
     :button-action="() => (showAddDomain = true)"
   >
     <div class="flex flex-wrap items-center justify-between gap-3">
@@ -114,7 +114,7 @@ const LIST_COLUMNS = [
     key: 'description',
   },
   {
-    label: __('Last Verified'),
+    label: __('Last verified'),
     key: 'last_verified_at',
   },
   {
@@ -143,7 +143,7 @@ const listOptions = computed(() => ({
         title: __('No domains yet'),
         description: __('Add a domain to send and receive mail with your own addresses.'),
         button: {
-          label: __('Add Domain'),
+          label: __('Add domain'),
           variant: 'solid' as const,
           onClick: () => (showAddDomain.value = true),
         },

@@ -1,5 +1,5 @@
 <template>
-  <DashboardLayout area="mail" :breadcrumbs="[{ label: __('DMARC Reports') }]">
+  <DashboardLayout area="mail" :breadcrumbs="[{ label: __('DMARC reports') }]">
     <LoadFailed
       v-if="summary.status === 'error'"
       variant="section"
@@ -37,7 +37,7 @@
 
     <div v-if="summary.status !== 'error'" class="grid grid-cols-1 gap-5 xl:grid-cols-2">
       <!-- The sources worth a look are the big senders that fail: sorted by volume, rate beside. -->
-      <DashboardCard :title="__('Top Sending Sources')">
+      <DashboardCard :title="__('Top sending sources')">
         <BreakdownRows
           :rows="summary.data?.sources || []"
           label-key="source_ip"
@@ -121,7 +121,7 @@ import { DashboardCard, DashboardLayout, DashboardList } from '@/platform/dashbo
 import { LoadFailed } from '@/platform/load-failed'
 import { appPageMeta } from '@/platform/page-meta'
 
-usePageMeta(() => appPageMeta(__('DMARC Reports'), 'Mail'))
+usePageMeta(() => appPageMeta(__('DMARC reports'), 'Mail'))
 const search = ref('')
 const domain = ref('')
 const period = ref(DEFAULT_PERIOD)
@@ -177,7 +177,7 @@ const LIST_COLUMNS = [
     key: 'failed',
   },
   {
-    label: __('Pass Rate'),
+    label: __('Pass rate'),
     key: 'pass_rate',
   },
   {

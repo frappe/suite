@@ -3,7 +3,7 @@
     <template #loading>
       <DashboardDetailHeaderSkeleton :actions="4" />
       <div class="rounded-4 border">
-        <h2 class="h-13 flex shrink-0 items-center px-4">{{ __('DNS Records') }}</h2>
+        <h2 class="h-13 flex shrink-0 items-center px-4">{{ __('DNS records') }}</h2>
         <div v-for="n in 2" :key="n" class="space-y-4 border-t p-4">
           <div class="space-y-2">
             <DashboardSkeletonText width="6rem" />
@@ -68,7 +68,7 @@
         </div>
       </div>
       <div class="rounded-4 border">
-        <h2 class="h-13 flex shrink-0 items-center px-4">{{ __('DNS Records') }}</h2>
+        <h2 class="h-13 flex shrink-0 items-center px-4">{{ __('DNS records') }}</h2>
         <DNSRecords
           v-for="group in recordGroups"
           :key="group.key"
@@ -240,7 +240,7 @@ const badge = computed(() => domainStatusBadge(domainData.value?.status))
 const confirmDialogOptions = computed(() => {
   const config = {
     disableDomain: {
-      title: __('Disable Domain'),
+      title: __('Disable domain'),
       message: __(
         'Mail for this domain stops flowing and its verification is dropped. After enabling it again, its DNS records must be verified before mail flows. Continue?',
       ),
@@ -250,7 +250,7 @@ const confirmDialogOptions = computed(() => {
         }),
     },
     deleteDomain: {
-      title: __('Delete Domain'),
+      title: __('Delete domain'),
       message: __('Are you sure you want to delete this domain? This action cannot be undone.'),
       action: deleteDomainSubmit,
     },
@@ -337,7 +337,7 @@ const exportOptions = [
     group: '',
     options: [
       {
-        label: __('Zone File'),
+        label: __('Zone file'),
         icon: 'lucide-file-text',
         onClick: downloadDNSZoneSubmit,
       },
@@ -360,7 +360,7 @@ const dropdownOptions = computed(() => [
     options: [
       isEnabled.value
         ? {
-            label: __('Disable Domain'),
+            label: __('Disable domain'),
             icon: 'lucide-pause',
             onClick: () => {
               confirmDialogAction.value = 'disableDomain'
@@ -368,7 +368,7 @@ const dropdownOptions = computed(() => [
             },
           }
         : {
-            label: __('Enable Domain'),
+            label: __('Enable domain'),
             icon: 'lucide-play',
             onClick: () =>
               setEnabledSubmit({
@@ -376,7 +376,7 @@ const dropdownOptions = computed(() => [
               }),
           },
       {
-        label: __('Delete Domain'),
+        label: __('Delete domain'),
         icon: 'lucide-trash-2',
         onClick: () => {
           confirmDialogAction.value = 'deleteDomain'
@@ -389,7 +389,7 @@ const dropdownOptions = computed(() => [
 
 // Shown while the records are still to be published; an active domain needs no setup pitch.
 const BANNER = {
-  title: __('Set Up Your Domain'),
+  title: __('Set up your domain'),
   message: __("Add the following records to your domain's DNS settings."),
   subtitle: __('DNS changes may take up to 48 hours to propagate globally.'),
 }

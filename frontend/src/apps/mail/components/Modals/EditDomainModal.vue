@@ -2,7 +2,7 @@
   <Dialog
     v-model:open="show"
     v-bind="{
-      title: __('Edit Domain'),
+      title: __('Edit domain'),
       actions: [
         {
           label: __('Save'),
@@ -19,7 +19,7 @@
         <FormControl
           v-model="catchAllAddress"
           type="email"
-          :label="__('Catch-All Address')"
+          :label="__('Catch-all address')"
           :placeholder="__('inbox@{0}', [domain.name])"
           :description="
             __(

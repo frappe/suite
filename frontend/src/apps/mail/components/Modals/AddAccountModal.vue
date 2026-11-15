@@ -46,7 +46,7 @@
           <div class="space-y-3">
             <div v-for="(email, index) in emails" :key="index" class="space-y-1.5">
               <label class="text-ink-gray-5 block text-xs">
-                {{ index === 0 ? __('Primary Email') : __('Alias') }}
+                {{ index === 0 ? __('Primary email address') : __('Alias') }}
               </label>
               <div class="flex items-center justify-between">
                 <FormControl
@@ -78,7 +78,7 @@
             <Button
               variant="ghost"
               size="sm"
-              :label="__('Add another email')"
+              :label="__('Add another email address')"
               @click="emails.push({ username: '', domain: emails[0]?.domain || '' })"
             >
               <template #prefix>
@@ -96,35 +96,35 @@
             v-if="accountRequest.send_invite"
             v-model="accountRequest.backup_email"
             type="email"
-            :label="__('Existing contact email')"
+            :label="__('Existing contact email address')"
             placeholder="johndoe@personal.com"
             :description="__('Password resets and the invitation email are sent to this address.')"
           />
           <MultiSelect v-model="groupIds" :label="__('Groups')" :options="groupOptions" />
           <MultiSelect
             v-model="mailingListIds"
-            :label="__('Mailing Lists')"
+            :label="__('Mailing lists')"
             :options="mailingListOptions"
           />
           <hr />
 
           <Switch
             v-model="accountRequest.disable_receiving"
-            :label="__('Disable Receiving')"
+            :label="__('Disable receiving')"
             :description="__('Reject incoming emails while allowing this account to send.')"
           />
-          <Switch v-model="accountRequest.send_invite" :label="__('Send Invite')" />
+          <Switch v-model="accountRequest.send_invite" :label="__('Send invite')" />
           <template v-if="!accountRequest.send_invite">
             <div class="grid grid-cols-2 gap-3">
               <FormControl
                 v-model="accountRequest.first_name"
-                :label="__('First Name')"
+                :label="__('First name')"
                 placeholder="John"
                 required
               />
               <FormControl
                 v-model="accountRequest.last_name"
-                :label="__('Last Name')"
+                :label="__('Last name')"
                 placeholder="Doe"
               />
             </div>
@@ -146,7 +146,7 @@
               />
               <Combobox
                 v-model="accountRequest.time_zone"
-                :label="__('Time Zone')"
+                :label="__('Time zone')"
                 :options="timeZoneOptions"
                 class="min-w-0"
               />

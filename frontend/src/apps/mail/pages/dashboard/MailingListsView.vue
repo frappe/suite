@@ -1,8 +1,8 @@
 <template>
   <DashboardLayout
     area="mail"
-    :breadcrumbs="[{ label: __('Mailing Lists') }]"
-    :button-label="isFirstRun ? undefined : __('Add Mailing List')"
+    :breadcrumbs="[{ label: __('Mailing lists') }]"
+    :button-label="isFirstRun ? undefined : __('Add mailing list')"
     :button-action="() => (showAdd = true)"
   >
     <div class="flex items-center space-x-3">
@@ -57,7 +57,7 @@ import { DEFAULT_PAGE_LENGTH } from '@/apps/mail/utils/paging'
 import { DashboardLayout, DashboardList } from '@/platform/dashboard'
 import { appPageMeta } from '@/platform/page-meta'
 
-usePageMeta(() => appPageMeta(__('Mailing Lists'), 'Mail'))
+usePageMeta(() => appPageMeta(__('Mailing lists'), 'Mail'))
 const showAdd = ref(false)
 useAddOnArrival(showAdd)
 const search = ref('')
@@ -69,7 +69,7 @@ const list = useInfiniteQuery(api.mail.admin.mailingLists.list, () => ({
 }))
 const LIST_COLUMNS = [
   {
-    label: __('Email'),
+    label: __('Email address'),
     key: 'email',
   },
   {
@@ -99,7 +99,7 @@ const listOptions = computed(() => ({
         title: __('No mailing lists yet'),
         description: __('Create a mailing list to broadcast mail to many recipients at once.'),
         button: {
-          label: __('Add Mailing List'),
+          label: __('Add mailing list'),
           variant: 'solid' as const,
           onClick: () => (showAdd.value = true),
         },

@@ -13,9 +13,9 @@
           <Alert
             v-if="tab === 'users' && onlyActiveAdmin"
             theme="amber"
-            :title="__('Only one active Admin')"
+            :title="__('Only one active admin')"
             :description="
-              __('Make another user an Admin so someone else can manage the workspace.')
+              __('Make another user an admin so someone else can manage the workspace.')
             "
           />
           <section

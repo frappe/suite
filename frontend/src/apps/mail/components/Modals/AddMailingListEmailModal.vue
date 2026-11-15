@@ -2,7 +2,7 @@
   <Dialog
     v-model:open="show"
     v-bind="{
-      title: __('Add Email Address'),
+      title: __('Add email address'),
       actions: [
         {
           label: __('Add'),

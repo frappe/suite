@@ -92,7 +92,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "Without Suite Cloud (answered “not configured” in the test), Maya opens /admin/mail/domains and lands on the self-hosted Overview: Active users and Where storage goes, and no Mail section in the sidebar. Nothing says why the page she asked for is missing." },
 		},
 		domainsList: {
-			meta: { description: "Domains: one row per domain with a status badge (Active, Pending Verification, Disabled), its description, when it was last verified and when it was added, and Add Domain at the top. Every row says “2 months ago” and “—” because the stand-in fixes those dates." },
+			meta: { description: "Domains: one row per domain with a status badge (Active, Pending Verification, Disabled), its description, when it was last verified and when it was added, and Add domain at the top. Every row says “2 months ago” and “—” because the stand-in fixes those dates." },
 			on: {
 				SUITE_CLOUD_OFF: "redirectedToOverview",
 				DOMAINS_SLOW: "domainsSkeleton",
@@ -113,26 +113,26 @@ const machine = setupFlow<Event>().createMachine({
 		},
 		domainsSkeleton: { meta: { description: "Domains loading: two placeholder rows under the column headers." } },
 		domainsFailed: { meta: { description: "The domain list failed: a centred “Could not load domains” block with Retry replaces the rows." } },
-		domainsEmpty: { meta: { description: "No domains (response shaped in the test): “No domains yet” with an Add Domain button." } },
-		domainsSearchEmpty: { meta: { description: "A search that matches nothing: “No matching domains”, without the first-run Add Domain pitch." } },
+		domainsEmpty: { meta: { description: "No domains (response shaped in the test): “No domains yet” with an Add domain button." } },
+		domainsSearchEmpty: { meta: { description: "A search that matches nothing: “No matching domains”, without the first-run Add domain pitch." } },
 		domainsFiltered: { meta: { description: "The Status filter set to Pending Verification: only the domain still waiting for DNS. The select is too narrow and cuts its label to “Pending Verificati”." } },
 		domainMissing: { meta: { description: "A link to a domain that does not exist: the page goes back to Domains and a toast says “<name> not found.”" } },
 
 		addDomain: {
-			meta: { description: "Add Domain: it asks for the domain, says its ownership record must be published at the DNS provider before it is added, and keeps a place for that record. Add Domain is off until a name is typed." },
+			meta: { description: "Add domain: it asks for the domain, says its ownership record must be published at the DNS provider before it is added, and keeps a place for that record. Add domain is off until a name is typed." },
 			on: { TYPE_DOMAIN: "addDomainChecked", ADD_TAKEN_DOMAIN: "addDomainFailed" },
 		},
 		addDomainChecked: {
 			meta: { description: "A name typed and the field left: the ownership TXT record fills its place, with Host and Value each copyable; the dialog does not move." },
 			on: { ADD_DOMAIN_SLOW: "addDomainBusy", ADD_DOMAIN: "domainAdded" },
 		},
-		addDomainBusy: { meta: { description: "Add Domain pressed and the add still out: the fields grey out and the button dims, with no spinner." } },
+		addDomainBusy: { meta: { description: "Add domain pressed and the add still out: the fields grey out and the button dims, with no spinner." } },
 		addDomainFailed: { meta: { description: "A domain the site already has: “Domain … already exists.” shows at the bottom of the dialog and again in a toast." } },
 		domainAdded: { meta: { description: "The dialog closes, “Domain added.” shows, and the new domain's page opens with Pending Verification and the set-up banner." } },
 
-		domainSkeleton: { meta: { description: "One domain loading: a header placeholder with four action placeholders, and DNS Records with two groups of placeholder rows." } },
+		domainSkeleton: { meta: { description: "One domain loading: a header placeholder with four action placeholders, and DNS records with two groups of placeholder rows." } },
 		domainPending: {
-			meta: { description: "A domain waiting for DNS: Pending Verification badge, a blue banner about publishing the records, and DNS Records grouped by purpose, with the Required group marked red and each record Not verified." },
+			meta: { description: "A domain waiting for DNS: Pending Verification badge, a blue banner about publishing the records, and DNS records grouped by purpose, with the Required group marked red and each record Not verified." },
 			on: {
 				VERIFY_SLOW: "verifyBusy",
 				VERIFY: "domainVerified",
@@ -144,30 +144,30 @@ const machine = setupFlow<Event>().createMachine({
 		domainActive: { meta: { description: "A live domain: Active badge and no banner. Each record still reads Not verified, because the stand-in never marks records." } },
 		verifyBusy: { meta: { description: "Verify DNS pressed and the check still out: the button spins." } },
 		domainVerified: { meta: { description: "The check passes: “DNS records checked.” shows, the badge turns Active and the banner goes. The records still read Not verified (stand-in)." } },
-		exportMenu: { meta: { description: "Export DNS open: Zone File, CSV and JSON." } },
+		exportMenu: { meta: { description: "Export DNS open: Zone file, CSV and JSON." } },
 		domainMoreMenu: {
-			meta: { description: "The more menu: Disable Domain and Delete Domain." },
+			meta: { description: "The more menu: Disable domain and Delete domain." },
 			on: { DISABLE_DOMAIN: "disableDomainConfirm", DELETE_DOMAIN: "deleteDomainConfirm" },
 		},
 		editDomain: {
-			meta: { description: "Edit Domain: description, catch-all address, and switches for sub-addressing and relaying." },
+			meta: { description: "Edit domain: description, catch-all address, and switches for sub-addressing and relaying." },
 			on: { SAVE_DOMAIN: "domainUpdated", SAVE_DOMAIN_FAILS: "editDomainFailed" },
 		},
 		domainUpdated: { meta: { description: "Saved: the dialog closes, “Domain updated.” shows and the header shows the new description." } },
 		editDomainFailed: { meta: { description: "Saving failed: “Something went wrong” shows inside the dialog, which stays open, and again in a toast." } },
 		disableDomainConfirm: {
-			meta: { description: "Disable Domain: mail for the domain stops and its verification is dropped. Confirm is red." },
+			meta: { description: "Disable domain: mail for the domain stops and its verification is dropped. Confirm is red." },
 			on: { CONFIRM_DISABLE_DOMAIN: "domainDisabled" },
 		},
 		domainDisabled: { meta: { description: "“Domain disabled.” shows and the badge turns Disabled, but the blue banner still asks for the DNS records to be added, and Verify DNS is still offered." } },
 		deleteDomainConfirm: {
-			meta: { description: "Delete Domain: it cannot be undone. Confirm is red." },
+			meta: { description: "Delete domain: it cannot be undone. Confirm is red." },
 			on: { CONFIRM_DELETE_DOMAIN: "domainDeleted" },
 		},
 		domainDeleted: { meta: { description: "Back on Domains with “Domain deleted.” and the row gone." } },
 
 		groupsEmpty: {
-			meta: { description: "No groups yet: the first-run pitch with an Add Group button." },
+			meta: { description: "No groups yet: the first-run pitch with an Add group button." },
 			on: { GROUPS_SLOW: "groupsSkeleton", GROUPS_FAIL: "groupsFailed", OPEN_ADD_GROUP: "addGroup" },
 		},
 		groupsSkeleton: { meta: { description: "Groups loading: eight placeholder rows (Domains shows two)." } },
@@ -178,19 +178,19 @@ const machine = setupFlow<Event>().createMachine({
 		},
 		groupsSearchEmpty: { meta: { description: "A search that matches no group: “No matching groups”." } },
 		addGroup: {
-			meta: { description: "Add Group: name, a Domain select of active domains, description, members picked from mail accounts, and Disable Receiving. Add Group is off until a name and a domain are set." },
+			meta: { description: "Add group: name, a Domain select of active domains, description, members picked from mail accounts, and Disable receiving. Add group is off until a name and a domain are set." },
 			on: { FILL_GROUP: "addGroupFilled", ADD_TAKEN_GROUP: "addGroupFailed" },
 		},
 		addGroupFilled: {
-			meta: { description: "A name, a domain and a description filled in: Add Group turns on." },
+			meta: { description: "A name, a domain and a description filled in: Add group turns on." },
 			on: { ADD_GROUP_SLOW: "addGroupBusy", ADD_GROUP: "groupAdded" },
 		},
-		addGroupBusy: { meta: { description: "Add Group pressed and the add still out: the fields grey out and the button dims, with no spinner." } },
+		addGroupBusy: { meta: { description: "Add group pressed and the add still out: the fields grey out and the button dims, with no spinner." } },
 		addGroupFailed: { meta: { description: "An address that is already a group: “… is already a Mail Group.” shows at the bottom of the dialog and again in a toast." } },
 		groupAdded: { meta: { description: "“Group added.” and the group's page opens. The primary address's switch is on but greyed out, so it reads as off." } },
 		groupSkeleton: { meta: { description: "One group loading: placeholder header and cards." } },
 		groupView: {
-			meta: { description: "One group: General Information, Mail storage usage (“0 GB · Mail has no storage limit”), Email Addresses with an Enabled switch each, and Members with a search." },
+			meta: { description: "One group: General information, Mail storage usage (“0 GB · Mail has no storage limit”), Email addresses with an Enabled switch each, and Members with a search." },
 			on: {
 				OPEN_GROUP_MORE: "groupMoreMenu",
 				EDIT_GROUP: "editGroup",
@@ -199,33 +199,33 @@ const machine = setupFlow<Event>().createMachine({
 			},
 		},
 		groupMoreMenu: {
-			meta: { description: "The group's more menu: Disable Receiving and Delete." },
+			meta: { description: "The group's more menu: Disable receiving and Delete." },
 			on: { DISABLE_RECEIVING: "receivingConfirm", DELETE_GROUP: "deleteGroupConfirm" },
 		},
 		editGroup: {
-			meta: { description: "Edit Group: the description only." },
+			meta: { description: "Edit group: the description only." },
 			on: { SAVE_GROUP: "groupUpdated" },
 		},
 		groupUpdated: { meta: { description: "“Group updated.” and the new description in the header." } },
 		addGroupEmail: {
-			meta: { description: "Add Email Address: a username and a domain, and a description used as the display name." },
+			meta: { description: "Add email address: a username and a domain, and a description used as the display name." },
 			on: { ADD_GROUP_EMAIL: "groupEmailAdded" },
 		},
-		groupEmailAdded: { meta: { description: "“Email address added.” and a second row under Email Addresses." } },
-		addGroupMembers: { meta: { description: "Add Members: a picker of mail accounts. It is empty here because the stand-in has no accounts." } },
+		groupEmailAdded: { meta: { description: "“Email address added.” and a second row under Email addresses." } },
+		addGroupMembers: { meta: { description: "Add members: a picker of mail accounts. It is empty here because the stand-in has no accounts." } },
 		receivingConfirm: {
-			meta: { description: "Disable Receiving: mail sent to the group bounces back to the sender. Confirm is not red." },
+			meta: { description: "Disable receiving: mail sent to the group bounces back to the sender. Confirm is not red." },
 			on: { CONFIRM_RECEIVING: "receivingDisabled" },
 		},
 		receivingDisabled: { meta: { description: "“Receiving disabled.” and Receiving reads Disabled. The header and the address list do not change." } },
 		deleteGroupConfirm: {
-			meta: { description: "Delete Group: it cannot be undone. Confirm is red." },
+			meta: { description: "Delete group: it cannot be undone. Confirm is red." },
 			on: { CONFIRM_DELETE_GROUP: "groupDeleted" },
 		},
 		groupDeleted: { meta: { description: "Back on an empty Groups list with “Group deleted.”. In one of two runs an error toast “<address> not found.” covered it instead." } },
 
 		listsEmpty: {
-			meta: { description: "No mailing lists yet: the first-run pitch with an Add Mailing List button. The page title says “Mailing Lists”; the sidebar says “Mailing lists”." },
+			meta: { description: "No mailing lists yet: the first-run pitch with an Add mailing list button. The page title says “Mailing lists”; the sidebar says “Mailing lists”." },
 			on: { LISTS_SLOW: "listsSkeleton", LISTS_FAIL: "listsFailed", OPEN_ADD_LIST: "addList" },
 		},
 		listsSkeleton: { meta: { description: "Mailing lists loading: placeholder rows." } },
@@ -236,19 +236,19 @@ const machine = setupFlow<Event>().createMachine({
 		},
 		listsSearchEmpty: { meta: { description: "A search that matches no list: “No matching mailing lists”." } },
 		addList: {
-			meta: { description: "Add Mailing List: name, a Domain select of active domains, description and recipients one per line. Add Mailing List is off until a name and a domain are set." },
+			meta: { description: "Add mailing list: name, a Domain select of active domains, description and recipients one per line. Add mailing list is off until a name and a domain are set." },
 			on: { FILL_LIST: "addListFilled", ADD_TAKEN_LIST: "addListFailed" },
 		},
 		addListFilled: {
 			meta: { description: "A name, a domain, a description and two recipients filled in." },
 			on: { ADD_LIST_SLOW: "addListBusy", ADD_LIST: "listAdded" },
 		},
-		addListBusy: { meta: { description: "Add Mailing List pressed and the add still out: the fields grey out and the button dims, with no spinner." } },
-		addListFailed: { meta: { description: "An address that is already a list: “… is already a Mailing List.” shows at the bottom of the dialog and again in a toast." } },
+		addListBusy: { meta: { description: "Add mailing list pressed and the add still out: the fields grey out and the button dims, with no spinner." } },
+		addListFailed: { meta: { description: "An address that is already a list: “… is already a Mailing list.” shows at the bottom of the dialog and again in a toast." } },
 		listAdded: { meta: { description: "“Mailing list added.” and the list's page opens with its two recipients." } },
 		listSkeleton: { meta: { description: "One list loading: placeholder header and cards." } },
 		listView: {
-			meta: { description: "One list: Email Addresses with Enabled switches, and Recipients with a search." },
+			meta: { description: "One list: Email addresses with Enabled switches, and Recipients with a search." },
 			on: {
 				EDIT_LIST: "editList",
 				OPEN_ADD_LIST_EMAIL: "addListEmail",
@@ -257,17 +257,17 @@ const machine = setupFlow<Event>().createMachine({
 			},
 		},
 		editList: {
-			meta: { description: "Edit Mailing List: the description only." },
+			meta: { description: "Edit mailing list: the description only." },
 			on: { SAVE_LIST: "listUpdated" },
 		},
 		listUpdated: { meta: { description: "“Mailing list updated.” and the new description in the header." } },
 		addListEmail: {
-			meta: { description: "Add Email Address for the list: a username and a domain, and a description." },
+			meta: { description: "Add email address for the list: a username and a domain, and a description." },
 			on: { ADD_LIST_EMAIL: "listEmailAdded" },
 		},
-		listEmailAdded: { meta: { description: "“Email address added.” and a second row under Email Addresses." } },
+		listEmailAdded: { meta: { description: "“Email address added.” and a second row under Email addresses." } },
 		addRecipients: {
-			meta: { description: "Add Recipients: one address field per row, with Add another." },
+			meta: { description: "Add recipients: one address field per row, with Add another." },
 			on: { ADD_RECIPIENT: "recipientsAdded" },
 		},
 		recipientsAdded: { meta: { description: "“Recipients added.” and the new address under Recipients." } },
@@ -276,7 +276,7 @@ const machine = setupFlow<Event>().createMachine({
 			on: { DELETE_LIST: "deleteListConfirm" },
 		},
 		deleteListConfirm: {
-			meta: { description: "Delete Mailing List: it cannot be undone. Confirm is red." },
+			meta: { description: "Delete mailing list: it cannot be undone. Confirm is red." },
 			on: { CONFIRM_DELETE_LIST: "listDeleted" },
 		},
 		listDeleted: { meta: { description: "Back on Mailing lists with “Mailing list deleted.”." } },
@@ -463,46 +463,46 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 			await expect(scene.page.getByText(names.get(scene).pending)).toBeVisible();
 		},
 		async OPEN_ADD_DOMAIN(scene) {
-			await headerButton(scene.page, "Add Domain").click();
-			await expect(scene.dialog("Add Domain")).toBeVisible();
+			await headerButton(scene.page, "Add domain").click();
+			await expect(scene.dialog("Add domain")).toBeVisible();
 		},
 		async TYPE_DOMAIN(scene) {
-			const dialog = scene.dialog("Add Domain");
-			await dialog.getByLabel("Domain Name").fill(names.get(scene).added);
+			const dialog = scene.dialog("Add domain");
+			await dialog.getByLabel("Domain name").fill(names.get(scene).added);
 			await dialog.getByLabel("Description").fill("Quay warehouse");
 			await expect(dialog.getByRole("button", { name: "Copy value" })).toBeVisible();
 		},
 		async ADD_DOMAIN_SLOW(scene) {
 			await scene.hold(method("add_domain"));
 			const sent = scene.page.waitForRequest((request) => method("add_domain").test(request.url()));
-			await scene.dialog("Add Domain").getByRole("button", { name: "Add Domain" }).click();
+			await scene.dialog("Add domain").getByRole("button", { name: "Add domain" }).click();
 			await sent;
 		},
 		async ADD_DOMAIN(scene) {
-			await scene.dialog("Add Domain").getByRole("button", { name: "Add Domain" }).click();
+			await scene.dialog("Add domain").getByRole("button", { name: "Add domain" }).click();
 			await expect(scene.toast("Domain added.")).toBeVisible();
 			await expect(scene.page).toHaveURL(new RegExp(`/admin/mail/domains/${names.get(scene).added.replace(/\./g, "\\.")}$`));
-			await expect(scene.page.getByText("Set Up Your Domain")).toBeVisible();
+			await expect(scene.page.getByText("Set up your domain")).toBeVisible();
 		},
 		async ADD_TAKEN_DOMAIN(scene) {
-			const dialog = scene.dialog("Add Domain");
-			await dialog.getByLabel("Domain Name").fill(names.get(scene).pending);
-			await dialog.getByRole("button", { name: "Add Domain" }).click();
+			const dialog = scene.dialog("Add domain");
+			await dialog.getByLabel("Domain name").fill(names.get(scene).pending);
+			await dialog.getByRole("button", { name: "Add domain" }).click();
 			await expect(dialog.getByText(/already exists/)).toBeVisible();
 		},
 		async OPEN_DOMAIN_SLOW(scene) {
 			await scene.hold(method("get_domain"));
 			await scene.page.getByText(names.get(scene).pending).click();
-			await expect(scene.page.getByText("DNS Records")).toBeVisible();
+			await expect(scene.page.getByText("DNS records")).toBeVisible();
 		},
 		async OPEN_PENDING_DOMAIN(scene) {
 			await scene.page.getByText(names.get(scene).pending).click();
-			await expect(scene.page.getByText("Set Up Your Domain")).toBeVisible();
+			await expect(scene.page.getByText("Set up your domain")).toBeVisible();
 		},
 		async OPEN_ACTIVE_DOMAIN(scene) {
 			await scene.page.getByText(LIVE, { exact: true }).click();
 			await expect(scene.page.getByRole("button", { name: "Verify DNS" })).toBeVisible();
-			await expect(scene.page.getByText("Set Up Your Domain")).toHaveCount(0);
+			await expect(scene.page.getByText("Set up your domain")).toHaveCount(0);
 		},
 		async VERIFY_SLOW(scene) {
 			await scene.hold(method("verify_domain"));
@@ -513,22 +513,22 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 		async VERIFY(scene) {
 			await scene.page.getByRole("button", { name: "Verify DNS" }).click();
 			await expect(scene.toast("DNS records checked.")).toBeVisible();
-			await expect(scene.page.getByText("Set Up Your Domain")).toHaveCount(0);
+			await expect(scene.page.getByText("Set up your domain")).toHaveCount(0);
 		},
 		async OPEN_EXPORT(scene) {
 			await scene.page.getByRole("button", { name: "Export DNS" }).click();
-			await expect(scene.page.getByRole("menuitem", { name: "Zone File" })).toBeVisible();
+			await expect(scene.page.getByRole("menuitem", { name: "Zone file" })).toBeVisible();
 		},
 		async OPEN_DOMAIN_MORE(scene) {
 			await openMore(scene);
-			await expect(scene.page.getByRole("menuitem", { name: "Delete Domain" })).toBeVisible();
+			await expect(scene.page.getByRole("menuitem", { name: "Delete domain" })).toBeVisible();
 		},
 		async EDIT_DOMAIN(scene) {
 			await scene.page.getByRole("button", { name: "Edit", exact: true }).click();
-			await expect(scene.dialog("Edit Domain")).toBeVisible();
+			await expect(scene.dialog("Edit domain")).toBeVisible();
 		},
 		async SAVE_DOMAIN(scene) {
-			const dialog = scene.dialog("Edit Domain");
+			const dialog = scene.dialog("Edit domain");
 			await dialog.getByLabel("Description").fill("Harbor office and loading bay");
 			await dialog.getByRole("button", { name: "Save" }).click();
 			await expect(scene.toast("Domain updated.")).toBeVisible();
@@ -537,26 +537,26 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 		async SAVE_DOMAIN_FAILS(scene) {
 			const hold = await scene.hold(method("update_domain"));
 			await hold.abort(500);
-			const dialog = scene.dialog("Edit Domain");
+			const dialog = scene.dialog("Edit domain");
 			await dialog.getByLabel("Description").fill("Harbor office and loading bay");
 			await dialog.getByRole("button", { name: "Save" }).click();
 			await expect(dialog.getByText("Something went wrong")).toBeVisible();
 		},
 		async DISABLE_DOMAIN(scene) {
-			await menuItem(scene, "Disable Domain");
-			await expect(scene.dialog("Disable Domain")).toBeVisible();
+			await menuItem(scene, "Disable domain");
+			await expect(scene.dialog("Disable domain")).toBeVisible();
 		},
 		async CONFIRM_DISABLE_DOMAIN(scene) {
-			await scene.dialog("Disable Domain").getByRole("button", { name: "Confirm" }).click();
+			await scene.dialog("Disable domain").getByRole("button", { name: "Confirm" }).click();
 			await expect(scene.toast("Domain disabled.")).toBeVisible();
 			await expect(scene.page.getByRole("dialog")).toHaveCount(0);
 		},
 		async DELETE_DOMAIN(scene) {
-			await menuItem(scene, "Delete Domain");
-			await expect(scene.dialog("Delete Domain")).toBeVisible();
+			await menuItem(scene, "Delete domain");
+			await expect(scene.dialog("Delete domain")).toBeVisible();
 		},
 		async CONFIRM_DELETE_DOMAIN(scene) {
-			await scene.dialog("Delete Domain").getByRole("button", { name: "Confirm" }).click();
+			await scene.dialog("Delete domain").getByRole("button", { name: "Confirm" }).click();
 			await expect(scene.toast("Domain deleted.")).toBeVisible();
 			await expect(scene.page).toHaveURL(/\/admin\/mail\/domains$/);
 			await expect(scene.page.getByText(names.get(scene).pending)).toHaveCount(0);
@@ -586,35 +586,35 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 			await expect(scene.page.getByText("No matching groups")).toBeVisible();
 		},
 		async OPEN_ADD_GROUP(scene) {
-			await headerButton(scene.page, "Add Group").click();
-			await expect(scene.dialog("Add Group")).toBeVisible();
+			await headerButton(scene.page, "Add group").click();
+			await expect(scene.dialog("Add group")).toBeVisible();
 		},
 		async FILL_GROUP(scene) {
-			const dialog = scene.dialog("Add Group");
+			const dialog = scene.dialog("Add group");
 			await dialog.getByLabel("Name").fill(names.get(scene).group);
 			await pickOption(scene, dialog, LIVE);
 			await dialog.getByLabel("Description").fill("Front desk and visitors");
-			await expect(dialog.getByRole("button", { name: "Add Group" })).toBeEnabled();
+			await expect(dialog.getByRole("button", { name: "Add group" })).toBeEnabled();
 			scene.defer(() => quietly(scene, "delete_groups", { ids: [`${names.get(scene).group}@${LIVE}`] }));
 		},
 		async ADD_GROUP_SLOW(scene) {
 			await scene.hold(method("add_group"));
 			const sent = scene.page.waitForRequest((request) => method("add_group").test(request.url()));
-			await scene.dialog("Add Group").getByRole("button", { name: "Add Group" }).click();
+			await scene.dialog("Add group").getByRole("button", { name: "Add group" }).click();
 			await sent;
 		},
 		async ADD_GROUP(scene) {
-			await scene.dialog("Add Group").getByRole("button", { name: "Add Group" }).click();
+			await scene.dialog("Add group").getByRole("button", { name: "Add group" }).click();
 			await expect(scene.toast("Group added.")).toBeVisible();
-			await expect(scene.page.getByText("General Information")).toBeVisible();
+			await expect(scene.page.getByText("General information")).toBeVisible();
 		},
 		async ADD_TAKEN_GROUP(scene) {
 			const taken = names.get(scene).group;
 			await seedGroup(scene, taken);
-			const dialog = scene.dialog("Add Group");
+			const dialog = scene.dialog("Add group");
 			await dialog.getByLabel("Name").fill(taken);
 			await pickOption(scene, dialog, LIVE);
-			await dialog.getByRole("button", { name: "Add Group" }).click();
+			await dialog.getByRole("button", { name: "Add group" }).click();
 			await expect(dialog.getByText(/already a Mail Group/)).toBeVisible();
 		},
 		async OPEN_GROUP_SLOW(scene) {
@@ -624,28 +624,28 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 		},
 		async OPEN_GROUP(scene) {
 			await scene.page.getByText(`${names.get(scene).group}@${LIVE}`).click();
-			await expect(scene.page.getByText("General Information")).toBeVisible();
+			await expect(scene.page.getByText("General information")).toBeVisible();
 		},
 		async OPEN_GROUP_MORE(scene) {
 			await openMore(scene);
-			await expect(scene.page.getByRole("menuitem", { name: "Disable Receiving" })).toBeVisible();
+			await expect(scene.page.getByRole("menuitem", { name: "Disable receiving" })).toBeVisible();
 		},
 		async EDIT_GROUP(scene) {
 			await scene.page.getByRole("button", { name: "Edit", exact: true }).click();
-			await expect(scene.dialog("Edit Group")).toBeVisible();
+			await expect(scene.dialog("Edit group")).toBeVisible();
 		},
 		async SAVE_GROUP(scene) {
-			const dialog = scene.dialog("Edit Group");
+			const dialog = scene.dialog("Edit group");
 			await dialog.getByLabel("Description").fill("Front desk, visitors and deliveries");
 			await dialog.getByRole("button", { name: "Save" }).click();
 			await expect(scene.toast("Group updated.")).toBeVisible();
 		},
 		async OPEN_ADD_GROUP_EMAIL(scene) {
 			await scene.page.getByRole("button", { name: "Add" }).first().click();
-			await expect(scene.dialog("Add Email Address")).toBeVisible();
+			await expect(scene.dialog("Add email address")).toBeVisible();
 		},
 		async ADD_GROUP_EMAIL(scene) {
-			const dialog = scene.dialog("Add Email Address");
+			const dialog = scene.dialog("Add email address");
 			const alias = `reception-${names.get(scene).stamp}`;
 			await dialog.getByLabel("Username").fill(alias);
 			await dialog.getByLabel("Domain").fill(LIVE);
@@ -657,22 +657,22 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 		},
 		async OPEN_ADD_GROUP_MEMBERS(scene) {
 			await scene.page.getByRole("button", { name: "Add" }).last().click();
-			await expect(scene.dialog("Add Members")).toBeVisible();
+			await expect(scene.dialog("Add members")).toBeVisible();
 		},
 		async DISABLE_RECEIVING(scene) {
-			await menuItem(scene, "Disable Receiving");
-			await expect(scene.dialog("Disable Receiving")).toBeVisible();
+			await menuItem(scene, "Disable receiving");
+			await expect(scene.dialog("Disable receiving")).toBeVisible();
 		},
 		async CONFIRM_RECEIVING(scene) {
-			await scene.dialog("Disable Receiving").getByRole("button", { name: "Confirm" }).click();
+			await scene.dialog("Disable receiving").getByRole("button", { name: "Confirm" }).click();
 			await expect(scene.toast("Receiving disabled.")).toBeVisible();
 		},
 		async DELETE_GROUP(scene) {
 			await menuItem(scene, "Delete");
-			await expect(scene.dialog("Delete Group")).toBeVisible();
+			await expect(scene.dialog("Delete group")).toBeVisible();
 		},
 		async CONFIRM_DELETE_GROUP(scene) {
-			await scene.dialog("Delete Group").getByRole("button", { name: "Confirm" }).click();
+			await scene.dialog("Delete group").getByRole("button", { name: "Confirm" }).click();
 			await expect(scene.toast("Group deleted.")).toBeVisible();
 			await expect(scene.page).toHaveURL(/\/admin\/mail\/groups$/);
 		},
@@ -701,36 +701,36 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 			await expect(scene.page.getByText("No matching mailing lists")).toBeVisible();
 		},
 		async OPEN_ADD_LIST(scene) {
-			await headerButton(scene.page, "Add Mailing List").click();
-			await expect(scene.dialog("Add Mailing List")).toBeVisible();
+			await headerButton(scene.page, "Add mailing list").click();
+			await expect(scene.dialog("Add mailing list")).toBeVisible();
 		},
 		async FILL_LIST(scene) {
-			const dialog = scene.dialog("Add Mailing List");
+			const dialog = scene.dialog("Add mailing list");
 			await dialog.getByLabel("Name").fill(names.get(scene).list);
 			await pickOption(scene, dialog, LIVE);
 			await dialog.getByLabel("Description").fill("Quarterly news for the whole company");
 			await dialog.getByLabel("Recipients").fill("leo@northwind.test\nnisha@northwind.test");
-			await expect(dialog.getByRole("button", { name: "Add Mailing List" })).toBeEnabled();
+			await expect(dialog.getByRole("button", { name: "Add mailing list" })).toBeEnabled();
 			scene.defer(() => quietly(scene, "delete_mailing_lists", { ids: [`${names.get(scene).list}@${LIVE}`] }));
 		},
 		async ADD_LIST_SLOW(scene) {
 			await scene.hold(method("add_mailing_list"));
 			const sent = scene.page.waitForRequest((request) => method("add_mailing_list").test(request.url()));
-			await scene.dialog("Add Mailing List").getByRole("button", { name: "Add Mailing List" }).click();
+			await scene.dialog("Add mailing list").getByRole("button", { name: "Add mailing list" }).click();
 			await sent;
 		},
 		async ADD_LIST(scene) {
-			await scene.dialog("Add Mailing List").getByRole("button", { name: "Add Mailing List" }).click();
+			await scene.dialog("Add mailing list").getByRole("button", { name: "Add mailing list" }).click();
 			await expect(scene.page).toHaveURL(/\/admin\/mail\/mailing-lists\/.+/);
 			await expect(scene.page.getByText("Recipients").first()).toBeVisible();
 		},
 		async ADD_TAKEN_LIST(scene) {
 			const taken = names.get(scene).list;
 			await seedList(scene, taken);
-			const dialog = scene.dialog("Add Mailing List");
+			const dialog = scene.dialog("Add mailing list");
 			await dialog.getByLabel("Name").fill(taken);
 			await pickOption(scene, dialog, LIVE);
-			await dialog.getByRole("button", { name: "Add Mailing List" }).click();
+			await dialog.getByRole("button", { name: "Add mailing list" }).click();
 			await expect(dialog.getByText(/already a Mailing List/)).toBeVisible();
 		},
 		async OPEN_LIST_SLOW(scene) {
@@ -744,20 +744,20 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 		},
 		async EDIT_LIST(scene) {
 			await scene.page.getByRole("button", { name: "Edit", exact: true }).click();
-			await expect(scene.dialog("Edit Mailing List")).toBeVisible();
+			await expect(scene.dialog("Edit mailing list")).toBeVisible();
 		},
 		async SAVE_LIST(scene) {
-			const dialog = scene.dialog("Edit Mailing List");
+			const dialog = scene.dialog("Edit mailing list");
 			await dialog.getByLabel("Description").fill("Monthly news for the whole company");
 			await dialog.getByRole("button", { name: "Save" }).click();
 			await expect(scene.toast("Mailing list updated.")).toBeVisible();
 		},
 		async OPEN_ADD_LIST_EMAIL(scene) {
 			await scene.page.getByRole("button", { name: "Add" }).first().click();
-			await expect(scene.dialog("Add Email Address")).toBeVisible();
+			await expect(scene.dialog("Add email address")).toBeVisible();
 		},
 		async ADD_LIST_EMAIL(scene) {
-			const dialog = scene.dialog("Add Email Address");
+			const dialog = scene.dialog("Add email address");
 			const alias = `news-${names.get(scene).stamp}`;
 			await dialog.getByLabel("Username").fill(alias);
 			await dialog.getByLabel("Domain").fill(LIVE);
@@ -769,10 +769,10 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 		},
 		async OPEN_ADD_RECIPIENTS(scene) {
 			await scene.page.getByRole("button", { name: "Add" }).last().click();
-			await expect(scene.dialog("Add Recipients")).toBeVisible();
+			await expect(scene.dialog("Add recipients")).toBeVisible();
 		},
 		async ADD_RECIPIENT(scene) {
-			const dialog = scene.dialog("Add Recipients");
+			const dialog = scene.dialog("Add recipients");
 			await dialog.getByPlaceholder("someone@example.com").first().fill("theo@northwind.test");
 			await dialog.getByRole("button", { name: "Add", exact: true }).click();
 			await expect(scene.toast("Recipients added.")).toBeVisible();
@@ -784,10 +784,10 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 		},
 		async DELETE_LIST(scene) {
 			await menuItem(scene, "Delete");
-			await expect(scene.dialog("Delete Mailing List")).toBeVisible();
+			await expect(scene.dialog("Delete mailing list")).toBeVisible();
 		},
 		async CONFIRM_DELETE_LIST(scene) {
-			await scene.dialog("Delete Mailing List").getByRole("button", { name: "Confirm" }).click();
+			await scene.dialog("Delete mailing list").getByRole("button", { name: "Confirm" }).click();
 			await expect(scene.toast("Mailing list deleted.")).toBeVisible();
 			await expect(scene.page).toHaveURL(/\/admin\/mail\/mailing-lists$/);
 		},

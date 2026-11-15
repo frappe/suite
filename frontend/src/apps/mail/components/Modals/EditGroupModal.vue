@@ -2,7 +2,7 @@
   <Dialog
     v-model:open="show"
     v-bind="{
-      title: __('Edit Group'),
+      title: __('Edit group'),
       actions: [
         {
           label: __('Save'),

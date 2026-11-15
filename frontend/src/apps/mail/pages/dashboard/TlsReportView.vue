@@ -17,7 +17,7 @@
           </div>
         </DashboardCard>
         <div class="flex flex-col gap-5">
-          <DashboardCard :title="__('Policies Applied')">
+          <DashboardCard :title="__('Policies applied')">
             <div class="flex flex-col gap-1.5 px-5 py-3 text-sm">
               <DashboardSkeletonText width="50%" />
               <DashboardSkeletonText class="text-xs" width="35%" />
@@ -106,7 +106,7 @@
 
           <div class="flex flex-col gap-5">
             <!-- The policy as the sender found it, so a stale or missing MTA-STS policy shows here. -->
-            <DashboardCard :title="__('Policies Applied')">
+            <DashboardCard :title="__('Policies applied')">
               <div v-if="report.data.policies.length" class="flex flex-col">
                 <div
                   v-for="(policy, index) in report.data.policies"
@@ -208,13 +208,13 @@ const data = computed(() => report.data as ReportData | undefined)
 
 usePageMeta(() =>
   appPageMeta(
-    data.value ? __('TLS report for {0}', [data.value.domain ?? '—']) : __('TLS Report'),
+    data.value ? __('TLS report for {0}', [data.value.domain ?? '—']) : __('TLS report'),
     'Mail',
   ),
 )
 
 const BREADCRUMBS = computed(() => [
-  { label: __('TLS Reports'), route: '/admin/mail/tls' },
+  { label: __('TLS reports'), route: '/admin/mail/tls' },
   { label: data.value ? `${data.value.domain} · ${data.value.reporter}` : reportId },
 ])
 

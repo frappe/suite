@@ -2,10 +2,10 @@
   <Dialog
     v-model:open="show"
     v-bind="{
-      title: __('Add Mailing List'),
+      title: __('Add mailing list'),
       actions: [
         {
-          label: __('Add Mailing List'),
+          label: __('Add mailing list'),
           variant: 'solid' as const,
           disabled: !(name && domain),
           loading: addList.isPending,

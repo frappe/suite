@@ -3,7 +3,7 @@
     <template #loading>
       <DashboardDetailHeaderSkeleton :actions="2" />
       <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
-        <DashboardCard :title="__('General Information')">
+        <DashboardCard :title="__('General information')">
           <div>
             <InformationField :label="__('Description')"
               ><DashboardSkeletonText width="40%"
@@ -11,7 +11,7 @@
             <InformationField :label="__('Receiving')"
               ><DashboardSkeletonText width="40%"
             /></InformationField>
-            <InformationField :label="__('Created At')"
+            <InformationField :label="__('Added')"
               ><DashboardSkeletonText width="40%"
             /></InformationField>
           </div>
@@ -21,12 +21,12 @@
             <DashboardSkeletonText width="30%" />
           </div>
         </DashboardCard>
-        <DashboardCard :title="__('Email Addresses')">
+        <DashboardCard :title="__('Email addresses')">
           <div class="flex flex-col">
             <div
               class="bg-surface-gray-2 text-ink-gray-5 flex items-center rounded-4 px-5 py-2.5 text-sm"
             >
-              <span class="flex-1">{{ __('Email Address') }}</span>
+              <span class="flex-1">{{ __('Email address') }}</span>
               <span class="flex-1">{{ __('Description') }}</span>
               <span class="w-20 shrink-0 text-center">{{ __('Enabled') }}</span>
               <span class="w-8 shrink-0" />
@@ -60,7 +60,7 @@
 
       <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <!-- General Information -->
-        <DashboardCard :title="__('General Information')">
+        <DashboardCard :title="__('General information')">
           <div>
             <InformationField
               :label="__('Description')"
@@ -70,7 +70,7 @@
               :label="__('Receiving')"
               :value="member.data.disable_receiving ? __('Disabled') : __('Enabled')"
             />
-            <InformationField :label="__('Created At')" :value="createdAt" />
+            <InformationField :label="__('Added')" :value="createdAt" />
           </div>
         </DashboardCard>
 
@@ -89,7 +89,7 @@
 
         <!-- Email Addresses -->
         <DashboardCard
-          :title="__('Email Addresses')"
+          :title="__('Email addresses')"
           :button-label="__('Add')"
           @action="showAddEmail = true"
         >
@@ -97,7 +97,7 @@
             <div
               class="bg-surface-gray-2 text-ink-gray-5 flex items-center rounded-4 px-5 py-2.5 text-sm"
             >
-              <span class="flex-1">{{ __('Email Address') }}</span>
+              <span class="flex-1">{{ __('Email address') }}</span>
               <span class="flex-1">{{ __('Description') }}</span>
               <span class="w-20 shrink-0 text-center">{{ __('Enabled') }}</span>
               <span class="w-8 shrink-0" />
@@ -154,7 +154,7 @@
         >
           <div class="flex flex-col">
             <div class="px-5 py-2.5">
-              <FormControl v-model="memberSearch" :placeholder="__('Search by email')">
+              <FormControl v-model="memberSearch" :placeholder="__('Search by email address')">
                 <template #prefix>
                   <FeatherIcon name="search" class="text-ink-gray-5 w-4" />
                 </template>
@@ -352,7 +352,7 @@ async function setReceiving(enabled: boolean) {
 const toggleReceivingDialogOptions = computed(() => {
   const enabling = Boolean(data.value?.disable_receiving)
   return {
-    title: enabling ? __('Enable Receiving') : __('Disable Receiving'),
+    title: enabling ? __('Enable receiving') : __('Disable receiving'),
     message: enabling
       ? __(
           'Are you sure you want to enable receiving for this group? Mail addressed to it will be delivered again.',
@@ -382,7 +382,7 @@ async function deleteGroupSubmit() {
   })
 }
 const deleteDialogOptions = computed(() => ({
-  title: __('Delete Group'),
+  title: __('Delete group'),
   message: __('Are you sure you want to delete this group? This action cannot be undone.'),
   size: 'xl' as const,
   icon: 'lucide-alert-triangle',
@@ -402,12 +402,12 @@ const dropdownOptions = computed(() => [
     options: [
       data.value?.disable_receiving
         ? {
-            label: __('Enable Receiving'),
+            label: __('Enable receiving'),
             icon: 'lucide-mail-check',
             onClick: () => (showToggleReceiving.value = true),
           }
         : {
-            label: __('Disable Receiving'),
+            label: __('Disable receiving'),
             icon: 'lucide-mail-x',
             onClick: () => (showToggleReceiving.value = true),
           },

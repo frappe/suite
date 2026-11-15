@@ -2,10 +2,10 @@
   <Dialog
     v-model:open="show"
     v-bind="{
-      title: __('Add Domain'),
+      title: __('Add domain'),
       actions: [
         {
-          label: __('Add Domain'),
+          label: __('Add domain'),
           variant: 'solid' as const,
           disabled: !domainName,
           loading: addDomain.isPending,
@@ -25,7 +25,7 @@
         </p>
         <FormControl
           v-model="domainName"
-          :label="__('Domain Name')"
+          :label="__('Domain name')"
           placeholder="example.com"
           autocomplete="off"
           @blur="checkDomainSubmit().catch(() => {})"

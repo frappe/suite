@@ -2,7 +2,7 @@
   <DashboardLayout
     area="mail"
     :breadcrumbs="[{ label: __('Groups') }]"
-    :button-label="isFirstRun ? undefined : __('Add Group')"
+    :button-label="isFirstRun ? undefined : __('Add group')"
     :button-action="() => (showAddGroup = true)"
   >
     <div class="flex items-center space-x-3">
@@ -80,7 +80,7 @@ const list = useInfiniteQuery(api.mail.admin.groups.list, () => ({
 }))
 const LIST_COLUMNS = [
   {
-    label: __('Email'),
+    label: __('Email address'),
     key: 'email',
   },
   {
@@ -92,7 +92,7 @@ const LIST_COLUMNS = [
     key: 'quota_gb',
   },
   {
-    label: __('Created At'),
+    label: __('Added'),
     key: 'created_at',
   },
 ]
@@ -114,7 +114,7 @@ const listOptions = computed(() => ({
         title: __('No groups yet'),
         description: __('Create a group to give a team a shared address and mailbox.'),
         button: {
-          label: __('Add Group'),
+          label: __('Add group'),
           variant: 'solid' as const,
           onClick: () => (showAddGroup.value = true),
         },
