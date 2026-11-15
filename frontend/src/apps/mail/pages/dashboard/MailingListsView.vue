@@ -22,6 +22,7 @@
       :rows="list.rows"
       row-key="id"
       :loading="list.status === 'pending'"
+      :skeleton-rows="2"
       :row-route="listOptions.getRowRoute"
       :empty-state="list.status === 'error' ? undefined : listOptions.emptyState"
     >

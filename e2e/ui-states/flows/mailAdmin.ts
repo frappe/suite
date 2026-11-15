@@ -170,7 +170,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "No groups yet: the first-run pitch with an Add group button." },
 			on: { GROUPS_SLOW: "groupsSkeleton", GROUPS_FAIL: "groupsFailed", OPEN_ADD_GROUP: "addGroup" },
 		},
-		groupsSkeleton: { meta: { description: "Groups loading: eight placeholder rows (Domains shows two)." } },
+		groupsSkeleton: { meta: { description: "Groups loading: two placeholder rows, as on Domains." } },
 		groupsFailed: { meta: { description: "The group list failed: “Could not load groups” and Retry replace the rows." } },
 		groupsList: {
 			meta: { description: "Groups: address, description, storage (“0 B used, unlimited”) and when it was created." },
@@ -228,7 +228,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "No mailing lists yet: the first-run pitch with an Add mailing list button. The page title says “Mailing lists”; the sidebar says “Mailing lists”." },
 			on: { LISTS_SLOW: "listsSkeleton", LISTS_FAIL: "listsFailed", OPEN_ADD_LIST: "addList" },
 		},
-		listsSkeleton: { meta: { description: "Mailing lists loading: placeholder rows." } },
+		listsSkeleton: { meta: { description: "Mailing lists loading: two placeholder rows, as on Domains." } },
 		listsFailed: { meta: { description: "The mailing list failed: “Could not load mailing lists” and Retry replace the rows." } },
 		listsList: {
 			meta: { description: "Mailing lists: address, description and the number of recipients." },
