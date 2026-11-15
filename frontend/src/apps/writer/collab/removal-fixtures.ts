@@ -12,6 +12,7 @@ import {
   sendRow,
   stored,
   syncAll,
+  writeInto,
   type Tab,
 } from '@/apps/writer/collab/test-support'
 import type { CollabRoom } from '@/platform/collab'
@@ -33,11 +34,14 @@ export function text(value: string) {
   return { type: 'text', text: value }
 }
 
-export const threeParagraphs = stored(
-  paragraph(text('abc')),
-  paragraph(text('defgh')),
-  paragraph(text('xyz')),
-)
+const paragraphs = [paragraph(text('abc')), paragraph(text('defgh')), paragraph(text('xyz'))]
+
+export const threeParagraphs = stored(...paragraphs)
+
+/** Gives a room the three paragraphs as its own typing: a server takes no row of another writer's. */
+export function writeThreeParagraphs(room: CollabRoom) {
+  writeInto(room.doc, ...paragraphs)
+}
 
 export function makeHeading(tab: Tab, word: string) {
   tab.editor.chain().setTextSelection(inside(tab, word)).setNode('heading', { level: 2 }).run()

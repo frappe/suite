@@ -1,7 +1,7 @@
 import { REMOTE } from '@suite/collab-client'
 import { Editor, getSchema, type JSONContent } from '@tiptap/core'
 import Collaboration from '@tiptap/extension-collaboration'
-import { prosemirrorJSONToYDoc } from '@tiptap/y-tiptap'
+import { prosemirrorJSONToYDoc, prosemirrorJSONToYXmlFragment } from '@tiptap/y-tiptap'
 import { afterEach } from 'vitest'
 import * as yjs from 'yjs'
 
@@ -48,6 +48,12 @@ export function stored(...content: JSONContent[]) {
   const schema = getSchema(writerSchema())
   const ydoc = prosemirrorJSONToYDoc(schema, { type: 'doc', content }, BODY_FIELD)
   return yjs.encodeStateAsUpdate(ydoc)
+}
+
+/** Writes `content` into `doc`'s body as `doc`'s own typing, so its room may send it. */
+export function writeInto(doc: yjs.Doc, ...content: JSONContent[]) {
+  const schema = getSchema(writerSchema())
+  prosemirrorJSONToYXmlFragment(schema, { type: 'doc', content }, doc.getXmlFragment(BODY_FIELD))
 }
 
 export async function openTabs(state: Uint8Array, count: number) {
