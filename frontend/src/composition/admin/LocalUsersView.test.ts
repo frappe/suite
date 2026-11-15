@@ -43,19 +43,6 @@ const server = vi.hoisted(() => {
   globalThis.fetch = async (url: RequestInfo | URL, init: RequestInit = {}) => {
     const path = new URL(String(url), 'http://suite.test').pathname
     const json = (data: unknown) => new Response(JSON.stringify({ data }))
-    if (path.endsWith('enable_members') || path.endsWith('disable_members')) {
-      const body = JSON.parse(String(init.body))
-      state.writes.push({ path, body })
-      return new Response(
-        JSON.stringify({
-          message: body.names.map((user: string) => ({
-            user,
-            success: user !== 'leah@example.com' || !state.failLeah,
-            error: user === 'leah@example.com' && state.failLeah ? 'Mail setup is not ready' : null,
-          })),
-        }),
-      )
-    }
     if (init.method === 'PATCH') {
       const body = JSON.parse(String(init.body))
       state.writes.push(body)
@@ -84,7 +71,14 @@ const server = vi.hoisted(() => {
         return json({
           complete: false,
           remaining: 1,
-          results: [{ node: 'retained-file', success: false, error: 'Destination is unavailable' }],
+          results: [
+            {
+              node: 'retained-file',
+              title: 'Handover notes.md',
+              success: false,
+              error: 'Destination is unavailable',
+            },
+          ],
         })
       return json({
         success: false,
@@ -269,33 +263,39 @@ it('requires the retained address before retrying failed deletion', async () => 
 })
 
 it.each([
-  { action: 'Reactivate selected users', endpoint: 'enable_members', outcome: 'Reactivated' },
-  { action: 'Disable selected users', endpoint: 'disable_members', outcome: 'Disabled' },
+  {
+    action: 'Reactivate selected users',
+    confirm: 'Reactivate users',
+    enabled: true,
+    outcome: 'Reactivated',
+  },
+  {
+    action: 'Disable selected users',
+    confirm: 'Disable users',
+    enabled: false,
+    outcome: 'Disabled',
+  },
 ])(
   'preserves successful $outcome outcomes and retries only failed users',
-  async ({ action, endpoint, outcome }) => {
+  async ({ action, confirm, enabled, outcome }) => {
     server.bulk = true
     await mount(false)
     await click('Select all')
     await click(action)
-    await click('Confirm')
+    await click(confirm)
     await vi.waitFor(() =>
       expect(document.body.textContent).toContain(`maya@example.com: ${outcome}`),
     )
+    // The server's own reason for the refusal, not a generic failure.
     expect(document.body.textContent).toContain('leah@example.com: Mail setup is not ready')
     expect(server.writes).toEqual([
-      {
-        path: `/api/method/suite.mail.api.admin.${endpoint}`,
-        body: { names: ['leah@example.com', 'maya@example.com'] },
-      },
+      { user: 'leah@example.com', enabled },
+      { user: 'maya@example.com', enabled },
     ])
     server.failLeah = false
     await click('Retry failed users')
-    await vi.waitFor(() => expect(server.writes).toHaveLength(2))
-    expect(server.writes[1]).toEqual({
-      path: `/api/method/suite.mail.api.admin.${endpoint}`,
-      body: { names: ['leah@example.com'] },
-    })
+    await vi.waitFor(() => expect(server.writes).toHaveLength(3))
+    expect(server.writes[2]).toEqual({ user: 'leah@example.com', enabled })
     await vi.waitFor(() =>
       expect(document.body.textContent).toContain(`leah@example.com: ${outcome}`),
     )
@@ -334,7 +334,7 @@ it('requires access confirmation and preserves per-item transfer failures for re
   checkbox?.click()
   await click('Transfer next batch')
   await vi.waitFor(() =>
-    expect(document.body.textContent).toContain('retained-file: Destination is unavailable'),
+    expect(document.body.textContent).toContain('Handover notes.md: Destination is unavailable'),
   )
   expect(document.body.textContent).toContain('1 retained nodes remain')
   expect(document.body.textContent).not.toContain('Transfer complete')

@@ -171,14 +171,14 @@ const machine = setupFlow<Event>().createMachine({
 			on: { CONFIRM_SLOW: "makeAdminBusy" },
 		},
 		makeAdminBusy: {
-			meta: { description: "Confirm pressed and the role change still out: Confirm spins inside the confirm." },
+			meta: { description: "Make Admin pressed and the role change still out: the button spins inside the confirm." },
 			on: { CONFIRM_SETTLES: "madeAdmin" },
 		},
 		madeAdmin: {
 			meta: { description: "The confirm closes and Priya's row gains the Admin shield." },
 		},
 		disableConfirm: {
-			meta: { description: "Disable Priya Shah? The confirm says sessions end while incoming Mail and data are kept, and the confirm button is not red." },
+			meta: { description: "Disable Priya Shah? The confirm says sessions end while incoming Mail and data are kept, and the red button says Disable user." },
 			on: { CONFIRM_DISABLE: "userDisabled" },
 		},
 		userDisabled: {
@@ -186,18 +186,18 @@ const machine = setupFlow<Event>().createMachine({
 			on: { OPEN_DISABLED_MENU: "disabledRowMenu" },
 		},
 		disabledRowMenu: {
-			meta: { description: "A disabled user's actions: Edit profile, Make Admin, Reactivate user and Transfer Drive." },
+			meta: { description: "A disabled user's actions: Edit profile, Reactivate user and Transfer Drive." },
 			on: { REACTIVATE: "reactivateConfirm", TRANSFER: "transferDialog" },
 		},
 		reactivateConfirm: {
 			meta: { description: "Reactivate Priya Shah? Access returns once the readiness checks pass." },
 		},
 		transferDialog: {
-			meta: { description: "Transfer retained Drive content: a field for a destination folder link or ID, and Preview transfer. There is no folder picker." },
+			meta: { description: "Transfer retained Drive content: a field for a destination folder link or ID, Preview transfer, and Cancel. There is no folder picker." },
 			on: { PREVIEW_UNKNOWN: "transferPreviewFailed", PREVIEW: "transferPreview" },
 		},
 		transferPreviewFailed: {
-			meta: { description: "A destination that is not a folder: the preview fails and the error shows under the field." },
+			meta: { description: "A destination that is not a folder: “No folder found at this link or ID.” shows under the field." },
 		},
 		transferPreview: {
 			meta: { description: "The preview: destination user, usage before and after, the item count and size, who gains access, and a confirmation box. Transfer next batch stays off until it is ticked." },
@@ -208,28 +208,28 @@ const machine = setupFlow<Event>().createMachine({
 			on: { RUN_TRANSFER: "transferDone" },
 		},
 		transferDone: {
-			meta: { description: "The transfer finished: “Transfer complete” and one line per moved item, listed by node ID rather than by name." },
+			meta: { description: "The transfer finished: “Transfer complete” and one line per moved item, by name." },
 		},
 		demoteSelfConfirm: {
 			meta: { description: "Maya, the only Admin, picks Demote to member on her own row: the confirm opens like any other." },
 			on: { CONFIRM_DEMOTE_SELF: "demoteSelfRefused" },
 		},
 		demoteSelfRefused: {
-			meta: { description: "The server refuses with “The last active Admin cannot be demoted or disabled”, but the page shows only “Bad Request”, three times: inside the confirm, above the user list and in a toast. The reason is lost on the way to the page." },
+			meta: { description: "The server refuses with “The last active Admin cannot be demoted or disabled”, shown inside the confirm and nowhere else." },
 		},
 		disableSelfRefused: {
-			meta: { description: "Maya confirms disabling her own account. The server answers “You cannot disable your own account”, but the page shows only “Bad Request”, inside the confirm, above the user list and in a toast." },
+			meta: { description: "Maya confirms disabling her own account: the server's “You cannot disable your own account” shows inside the confirm, and nowhere else." },
 		},
 		usersSelected: {
 			meta: { description: "Two users ticked: a bar under the list counts them and offers Reactivate selected users and Disable selected users." },
 			on: { BULK_DISABLE: "bulkDisableConfirm" },
 		},
 		bulkDisableConfirm: {
-			meta: { description: "Disable users: the explanation and “2 users selected”, with Confirm." },
-			on: { CONFIRM_BULK: "bulkRefused" },
+			meta: { description: "Disable users: the explanation and “2 users selected”, with a red Disable users." },
+			on: { CONFIRM_BULK: "bulkDone" },
 		},
-		bulkRefused: {
-			meta: { description: "Bulk disable goes through the Mail admin API, which needs Suite Cloud: every user fails with “Suite Cloud is not configured”, and Retry failed users can only fail again." },
+		bulkDone: {
+			meta: { description: "Both users disabled: one line per user says Disabled, and only Close is left." },
 		},
 		invite: {
 			meta: { description: "Invite users: one address per line, and Send invitations off until something is typed." },
@@ -286,7 +286,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "Saving the limit failed: “Something went wrong” shows inside the dialog and again in a toast, and the typed limit stays." },
 		},
 		settings: {
-			meta: { description: "General settings, headed “Business settings”: the logo, the workspace name with a pencil that makes it editable (it saves when the field loses focus), and the site address." },
+			meta: { description: "General settings: the logo, the workspace name with a pencil that makes it editable (it saves when the field loses focus), and the site address." },
 		},
 	},
 });
@@ -546,7 +546,7 @@ export const admin = defineFlow<Event, BaseScene>({
 		async CONFIRM_SLOW(scene) {
 			await scene.hold(SUITE_USERS);
 			const sent = scene.page.waitForRequest((r) => r.method() === "PATCH" && SUITE_USERS.test(r.url()));
-			await scene.dialog("Make Priya Shah an Admin?").getByRole("button", { name: "Confirm" }).click();
+			await scene.dialog("Make Priya Shah an Admin?").getByRole("button", { name: "Make Admin" }).click();
 			await sent;
 		},
 		async CONFIRM_SETTLES(scene) {
@@ -563,7 +563,7 @@ export const admin = defineFlow<Event, BaseScene>({
 			const { priya, omar } = casts.get(scene);
 			await uploadFile(await scene.as(priya), "Handover notes.md", Buffer.from("# Handover\n\nOpen accounts and who to call.\n"), priya.personal_root, "text/markdown");
 			transferFolder.set(scene, (await createFolder(await scene.as(omar), "From Priya", omar.personal_root)).name);
-			await scene.dialog("Disable Priya Shah?").getByRole("button", { name: "Confirm" }).click();
+			await scene.dialog("Disable Priya Shah?").getByRole("button", { name: "Disable user" }).click();
 			await expect(scene.page.getByRole("dialog")).toHaveCount(0);
 			await expect(userRow(scene.page, "Priya Shah").getByText("Disabled")).toBeVisible();
 		},
@@ -609,14 +609,14 @@ export const admin = defineFlow<Event, BaseScene>({
 		},
 		async CONFIRM_DEMOTE_SELF(scene) {
 			const dialog = scene.dialog(`Demote ${identityOf("maya").name}?`);
-			await dialog.getByRole("button", { name: "Confirm" }).click();
+			await dialog.getByRole("button", { name: "Demote to member" }).click();
 			await expect(dialog.getByRole("alert")).toBeVisible();
 		},
 		async DISABLE_SELF(scene) {
 			await openActions(scene, identityOf("maya").email);
 			await pick(scene, "Disable user");
 			const dialog = scene.dialog(`Disable ${identityOf("maya").name}?`);
-			await dialog.getByRole("button", { name: "Confirm" }).click();
+			await dialog.getByRole("button", { name: "Disable user" }).click();
 			await expect(dialog.getByRole("alert")).toBeVisible();
 		},
 		async SELECT_TWO(scene) {
@@ -629,8 +629,8 @@ export const admin = defineFlow<Event, BaseScene>({
 		},
 		async CONFIRM_BULK(scene) {
 			const dialog = scene.dialog("Disable users");
-			await dialog.getByRole("button", { name: "Confirm" }).click();
-			await expect(dialog.getByRole("button", { name: "Retry failed users" })).toBeVisible();
+			await dialog.getByRole("button", { name: "Disable users" }).click();
+			await expect(dialog.getByRole("button", { name: "Close" })).toBeVisible();
 		},
 		async OPEN_INVITE(scene) {
 			await scene.page.getByRole("button", { name: "Invite users" }).click();

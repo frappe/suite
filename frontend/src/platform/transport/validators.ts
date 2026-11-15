@@ -440,10 +440,11 @@ export const operationUserTransfer: Validators<UserTransferInput, UserTransferOu
           TransferItem: {
             properties: {
               node: { title: 'Node', type: 'string' },
+              title: { title: 'Title', type: 'string' },
               success: { title: 'Success', type: 'boolean' },
               error: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Error' },
             },
-            required: ['node', 'success', 'error'],
+            required: ['node', 'title', 'success', 'error'],
             title: 'TransferItem',
             type: 'object',
           },

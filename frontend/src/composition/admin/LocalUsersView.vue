@@ -61,7 +61,6 @@
       :title="__('Could not load users')"
       :retry="() => users.refetch()"
     />
-    <ErrorMessage :message="change.error?.message || replacePassword.error?.message" />
 
     <List
       v-if="users.status !== 'error'"
@@ -191,6 +190,7 @@
             <li
               v-for="result in lifecycleResults"
               :key="result.user"
+              class="text-p-sm"
               :class="result.success ? 'text-ink-green-6' : 'text-ink-red-6'"
             >
               {{ result.user }}:
@@ -211,14 +211,21 @@
       <template #actions>
         <div class="flex justify-end gap-2">
           <Button
-            :label="__('Close')"
+            :label="lifecycleResults.length ? __('Close') : __('Cancel')"
             :disabled="lifecyclePending"
             @click="lifecycleOpen = false"
           />
           <Button
             v-if="!lifecycleResults.length || lifecycleResults.some((result) => !result.success)"
             variant="solid"
-            :label="lifecycleResults.length ? __('Retry failed users') : __('Confirm')"
+            :theme="lifecycleEnabled ? 'gray' : 'red'"
+            :label="
+              lifecycleResults.length
+                ? __('Retry failed users')
+                : lifecycleEnabled
+                  ? __('Reactivate users')
+                  : __('Disable users')
+            "
             :loading="lifecyclePending"
             @click="runLifecycle"
           />
@@ -256,7 +263,7 @@
             :label="__('Email addresses')"
             :placeholder="__('one address per line')"
           />
-          <ErrorMessage :message="invite.error?.message" />
+          <ErrorMessage :message="inviteError" />
         </div>
       </template>
       <template #actions>
@@ -280,6 +287,7 @@
     >
       <template #default>
         <div class="space-y-4">
+          <p class="text-p-base text-ink-gray-6">{{ editingProfile }}</p>
           <FormControl v-model="profileName" :label="__('Display name')" />
           <ErrorMessage :message="change.error?.message" />
         </div>
@@ -422,7 +430,7 @@
             :label="__('Destination folder')"
             :placeholder="__('Paste a folder link or paste its ID')"
           />
-          <div class="flex justify-end">
+          <div v-if="!transferPreview && !transferResults" class="flex justify-end">
             <Button
               :label="__('Preview transfer')"
               :loading="previewPending"
@@ -489,10 +497,12 @@
             </div>
             <p class="text-base text-ink-gray-8">
               {{
-                __('{0} top-level items · {1}', [
-                  transferPreview.item_count,
-                  bytes(transferPreview.bytes),
-                ])
+                transferPreview.item_count === 1
+                  ? __('1 top-level item · {0}', [bytes(transferPreview.bytes)])
+                  : __('{0} top-level items · {1}', [
+                      transferPreview.item_count,
+                      bytes(transferPreview.bytes),
+                    ])
               }}
             </p>
             <p class="text-p-sm text-ink-gray-5">
@@ -532,7 +542,7 @@
                 class="text-p-sm"
                 :class="result.success ? 'text-ink-green-6' : 'text-ink-red-6'"
               >
-                {{ result.node }}:
+                {{ result.title }}:
                 {{
                   result.success
                     ? __('Moved')
@@ -546,9 +556,8 @@
       <template #actions>
         <div class="flex justify-end gap-2">
           <Button
-            v-if="transferResults"
-            :label="__('Close')"
-            :disabled="transfer.isPending"
+            :label="transferResults ? __('Close') : __('Cancel')"
+            :disabled="transfer.isPending || previewPending"
             @click="transferOpen = false"
           />
           <Button
@@ -593,10 +602,12 @@ import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { api, client, useMutation, useQuery, type OutputOf } from '@/api'
 import { loadStorageLimitDialog } from '@/apps/mail'
 import { DashboardLayout, DashboardSkeletonText } from '@/platform/dashboard'
-import { Dropdown } from '@/platform/feedback'
+import { Dropdown, failureText } from '@/platform/feedback'
 import { LoadFailed } from '@/platform/load-failed'
 import { translate as __ } from '@/platform/translation'
+import { TransportError } from '@/platform/transport'
 
+import { formatStorage } from './storageFormat'
 import StorageUsage from './StorageUsage.vue'
 
 type User = OutputOf<typeof api.suite.users.list>[number]
@@ -615,8 +626,15 @@ const users = useQuery(api.suite.users.list)
 const loading = computed(() => users.status === 'pending')
 const SKELETON_ROWS = Array.from({ length: 8 }, (_, index) => ({ name: `skeleton-${index}` }))
 const storage = useQuery(api.suite.storage.get)
-const change = useMutation(api.suite.users.update)
-const invite = useMutation(api.suite.invitations.create)
+// Every user change runs inside a dialog that shows its own error, so none of them also toasts.
+const change = useMutation(api.suite.users.update, { silent: true })
+const invite = useMutation(api.suite.invitations.create, { silent: true })
+const inviteError = computed(() => {
+  const error = invite.error
+  if (error instanceof TransportError && error.type === 'OutgoingEmailError')
+    return __('Outgoing email is not set up. Ask your system administrator to set it up.')
+  return error?.message ?? ''
+})
 const search = ref('')
 const roleFilter = ref('all')
 const statusFilter = ref('all')
@@ -637,7 +655,7 @@ const selectedUsers = ref<string[]>([])
 const lifecycleOpen = ref(false)
 const lifecycleEnabled = ref(false)
 const lifecyclePending = ref(false)
-type LifecycleResult = OutputOf<typeof api.mail.admin.members.enable>[number]
+type LifecycleResult = { user: string; success: boolean; error: string | null }
 const lifecycleResults = ref<LifecycleResult[]>([])
 function openLifecycle(enabled: boolean) {
   lifecycleEnabled.value = enabled
@@ -648,26 +666,22 @@ async function runLifecycle() {
   const targets = lifecycleResults.value.length
     ? lifecycleResults.value.filter((result) => !result.success).map((result) => result.user)
     : [...selectedUsers.value]
+  const enabled = lifecycleEnabled.value
   lifecyclePending.value = true
+  // One change per user, so one refusal (the last Admin, your own account) keeps the others.
   try {
-    const results = await client.mutation(
-      lifecycleEnabled.value ? api.mail.admin.members.enable : api.mail.admin.members.disable,
-      { names: targets },
-      { silent: true },
-    )
-    for (const result of results) {
-      if (result.success)
-        selectedUsers.value = selectedUsers.value.filter((name) => name !== result.user)
-      const previous = lifecycleResults.value.findIndex((previous) => previous.user === result.user)
-      if (previous === -1) lifecycleResults.value.push(result)
-      else lifecycleResults.value[previous] = result
-    }
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : __('Unable to change access. Try again.')
     for (const user of targets) {
-      const previous = lifecycleResults.value.findIndex((result) => result.user === user)
-      const result = { user, success: false, error: message }
+      let result: LifecycleResult
+      try {
+        await client.mutation(api.suite.users.update, { user, enabled }, { silent: true })
+        result = { user, success: true, error: null }
+        selectedUsers.value = selectedUsers.value.filter((name) => name !== user)
+      } catch (error) {
+        const reason =
+          error instanceof Error ? failureText(error) : __('Could not change access. Try again.')
+        result = { user, success: false, error: reason }
+      }
+      const previous = lifecycleResults.value.findIndex((entry) => entry.user === user)
       if (previous === -1) lifecycleResults.value.push(result)
       else lifecycleResults.value[previous] = result
     }
@@ -720,7 +734,7 @@ async function saveProfile() {
 
 // — temporary credentials —
 const credential = ref('')
-const replacePassword = useMutation(api.suite.users.replaceTemporaryPassword)
+const replacePassword = useMutation(api.suite.users.replaceTemporaryPassword, { silent: true })
 const credentialOpen = computed({
   get: () => !!credential.value,
   set: (open) => {
@@ -825,11 +839,7 @@ watch(
   { immediate: true },
 )
 
-function bytes(value: number) {
-  return __('{0} GB', [
-    (value / 1_000_000_000).toLocaleString(undefined, { maximumFractionDigits: 2 }),
-  ])
-}
+const bytes = formatStorage
 
 function grantLabel(role: number) {
   switch (role) {
@@ -863,7 +873,11 @@ async function previewTransfer() {
     })
   } catch (error) {
     previewError.value =
-      error instanceof Error ? error.message : __('Unable to preview this transfer. Try again.')
+      error instanceof TransportError && error.type === 'DriveNotFound'
+        ? __('No folder found at this link or ID.')
+        : error instanceof Error
+          ? error.message
+          : __('Unable to preview this transfer. Try again.')
   } finally {
     previewPending.value = false
   }
@@ -907,6 +921,7 @@ function userActions(user: User) {
     {
       label: user.is_admin ? __('Demote to member') : __('Make Admin'),
       icon: 'lucide-shield',
+      condition: () => user.is_admin || !!user.enabled,
       onClick: () => confirmUserChange(user, 'role'),
     },
     {
@@ -999,7 +1014,15 @@ function confirmUserChange(user: User, kind: 'role' | 'enabled') {
               'Sessions and outgoing access will be revoked. Incoming Mail and retained data are preserved.',
             )
           : __('Access returns after account and Drive readiness checks succeed.'),
-    confirmLabel: __('Confirm'),
+    confirmLabel:
+      kind === 'role'
+        ? user.is_admin
+          ? __('Demote to member')
+          : __('Make Admin')
+        : user.enabled
+          ? __('Disable user')
+          : __('Reactivate user'),
+    theme: kind === 'enabled' && user.enabled ? 'red' : undefined,
     onConfirm: async () => {
       await change.run({
         user: user.name,
