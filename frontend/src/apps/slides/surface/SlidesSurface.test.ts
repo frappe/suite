@@ -19,7 +19,12 @@ import {
 
 import type { DocumentComments, DocumentVersion } from '@/apps/drive'
 import type { StoreSlide } from '@/apps/slides/collab/liveDeck'
-import type { LostAccess, Peer, RoomStatus } from '@/platform/collab'
+import {
+  openSignedInDeviceStore,
+  type LostAccess,
+  type Peer,
+  type RoomStatus,
+} from '@/platform/collab'
 import { requireTestElement } from '@/platform/testing/dom'
 import { translationPlugin } from '@/platform/translation'
 
@@ -3125,6 +3130,15 @@ describe('templates that fail to load', () => {
 })
 
 describe('edit access changing on a converted presentation', () => {
+  // as the client keeps a stopped room's unsent work: one record in the device store
+  async function keptOnDevice(doc: Doc) {
+    const store = (await openSignedInDeviceStore('slides'))!
+    const state = encodeStateAsUpdate(doc)
+    const entry = { doc: 'node-1', sid: 's', seq: 1, bytes: state, sha: '' }
+    await store.saveSession({ doc: 'node-1', sid: 's', lineage: 'L', cid: 1, bound: true })
+    await store.recover('node-1', ['s'], 'lost_access', [entry], { state, title: 'Talk' })
+  }
+
   // a room for one slide, as the server converted it
   function liveRoom() {
     const answer = convertLegacy(
@@ -3141,6 +3155,7 @@ describe('edit access changing on a converted presentation', () => {
       unsentCount: 0,
       restoreRev: 0,
       isKeptOnDevice: true,
+      keptCopyCount: 0,
     }
     const room = {
       doc,
@@ -3163,11 +3178,16 @@ describe('edit access changing on a converted presentation', () => {
         room.status = { ...room.status, ...next }
         changes.forEach((listener) => listener())
       },
-      // As the client does: shut at once, and blocked for the lost right if work is still unsent
+      // As the client does: shut at once, and blocked for the lost right if work is still unsent,
+      // which it then keeps as a copy on the device
       loseAccess: vi.fn(async (lost: LostAccess) => {
         room.setStatus({ canWrite: false })
         if (room.status.unsentCount) {
           room.setStatus({ blockReason: lost })
+          if (room.status.isKeptOnDevice) {
+            await keptOnDevice(doc)
+            room.setStatus({ keptCopyCount: 1 })
+          }
         }
       }),
       // As the client does: a room shut with nothing kept takes edits again
@@ -3195,10 +3215,13 @@ describe('edit access changing on a converted presentation', () => {
     vi.mocked(toast.info).mockClear()
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     collabRoom.open.mockReset()
     localStorage.clear()
     vi.restoreAllMocks()
+    const store = (await openSignedInDeviceStore('slides'))!
+    const records = await store.allRecovery()
+    await Promise.all(records.map((record) => store.discard(record.id)))
   })
 
   it('turns view only and says so when edit access goes', async () => {
@@ -3216,7 +3239,7 @@ describe('edit access changing on a converted presentation', () => {
     expect(viewOnly.value).toBe(true)
   })
 
-  it('keeps unsent edits on this device when edit access goes, and offers them as a download', async () => {
+  it('leaves unsent edits to the copy the room keeps when edit access goes, and offers them as a download', async () => {
     const room = await editing()
     room.setStatus({ unsentCount: 1, saveState: 'unsaved' })
     const files: File[] = []
@@ -3237,7 +3260,8 @@ describe('edit access changing on a converted presentation', () => {
       ),
     )
     expect(room.loseAccess).toHaveBeenCalledWith('lost_edit')
-    expect(readRecovery('node-1')).toMatchObject([{ sticky: true }])
+    // the room's copy is the one Drive lists: a page copy beside it would list the work twice
+    expect(readRecovery('node-1')).toEqual([])
     expect(toast.warning).not.toHaveBeenCalledWith(
       'Editing access changed. This presentation is now view only.',
     )
@@ -3249,6 +3273,52 @@ describe('edit access changing on a converted presentation', () => {
     options.action.onClick()
     const downloaded = JSON.parse(await files[0]!.text())
     expect(JSON.stringify(downloaded.slides)).toContain('one')
+  })
+
+  it("offers the room's copy from the header, and Discard leaves no copy behind", async () => {
+    const room = await editing()
+    room.setStatus({ unsentCount: 1, saveState: 'unsaved' })
+    const download = requireTestElement(
+      mounted!.root.querySelector('[data-download-changes]'),
+      HTMLButtonElement,
+    )
+    mounted!.access.value = { role: 10 }
+    await vi.waitFor(() => expect(download.hidden).toBe(false))
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    const discard = [...mounted!.root.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Discard my changes',
+    )
+    discard!.click()
+
+    await vi.waitFor(() => expect(download.hidden).toBe(true))
+    const store = (await openSignedInDeviceStore('slides'))!
+    expect([await store.allRecovery(), readRecovery('node-1')]).toEqual([[], []])
+  })
+
+  it('keeps the unsent edits on this page when the room could not keep its copy', async () => {
+    const room = await editing()
+    room.setStatus({ unsentCount: 1, saveState: 'unsaved' })
+    room.loseAccess.mockImplementation(async (lost: LostAccess) => {
+      room.setStatus({ canWrite: false, blockReason: lost })
+      room.setStatus({ hasCopyFailed: true })
+    })
+
+    mounted!.access.value = { role: 10 }
+
+    await vi.waitFor(() => expect(readRecovery('node-1')).toMatchObject([{ sticky: true }]))
+  })
+
+  it('keeps no second copy as the tab closes once the room kept its own', async () => {
+    const room = await editing()
+    room.setStatus({ unsentCount: 1, saveState: 'unsaved' })
+    mounted!.access.value = { role: 10 }
+    await vi.waitFor(() => expect(room.status.keptCopyCount).toBe(1))
+    room.setStatus({ saveState: 'failed' })
+
+    window.dispatchEvent(new Event('beforeunload', { cancelable: true }))
+
+    expect(readRecovery('node-1')).toEqual([])
   })
 
   it('says the unsent edits are kept as soon as the server refuses them, with no focus needed', async () => {

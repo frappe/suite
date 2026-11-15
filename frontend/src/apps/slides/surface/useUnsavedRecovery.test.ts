@@ -1,15 +1,22 @@
 import { fromAny, fromPartial } from '@total-typescript/shoehorn'
 import { toast } from 'frappe-ui'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
+import * as Y from 'yjs'
 
 import type { DocumentSession } from '@/apps/drive'
+import { elementText, writeDeck } from '@/apps/slides/collab/deck'
+import { roomCopies } from '@/apps/slides/recovery/copies'
 import { slides } from '@/apps/slides/stores/slide'
+import { openSignedInDeviceStore } from '@/platform/collab'
 
 import { downloadRecovery, downloadSlides, keepRecovery } from './recovery'
 import { useUnsavedRecovery } from './useUnsavedRecovery'
 
-vi.mock('frappe-ui', () => ({ toast: { error: vi.fn(), warning: vi.fn(), info: vi.fn() } }))
+vi.mock('frappe-ui', () => ({
+  toast: { error: vi.fn(), warning: vi.fn(), info: vi.fn() },
+  FileUploadHandler: class {},
+}))
 vi.mock('@/apps/slides/stores/presentation', () => ({ viewOnly: { value: false } }))
 vi.mock('@/apps/slides/stores/slide', async () => {
   const { ref } = await import('vue')
@@ -24,7 +31,7 @@ vi.mock('./recovery', async (original) => ({
 }))
 const stored = await vi.importActual<typeof import('./recovery')>('./recovery')
 
-function recovery() {
+function recovery({ isKeptByRoom = () => false } = {}) {
   return useUnsavedRecovery(
     fromPartial<DocumentSession>({ nodeId: 'n', contentDocname: 'd', title: ref('Talk') }),
     {
@@ -33,6 +40,7 @@ function recovery() {
       load: async () => {},
       loseAccess: async () => false,
       regainAccess: async () => 'editing',
+      isKeptByRoom,
     },
   )
 }
@@ -133,5 +141,70 @@ describe('a device too full to note a discard or a download', () => {
 
     expect(toast.warning).toHaveBeenCalledWith(expect.stringContaining('too full'))
     expect(stored.readRecovery('n')).toEqual([expect.not.objectContaining({ downloaded: true })])
+  })
+})
+
+describe('the copy the live room kept on the device', () => {
+  // as the room keeps its unsent work when it stops: a record in the device store
+  async function keptByRoom(words: string) {
+    const store = (await openSignedInDeviceStore('slides'))!
+    const doc = new Y.Doc()
+    writeDeck(doc, [{ id: 'one', elements: [{ id: 'title', type: 'text' }] }])
+    const paragraph = new Y.XmlElement('paragraph')
+    paragraph.insert(0, [new Y.XmlText(words)])
+    elementText(doc, 'title')!.insert(0, [paragraph])
+    const state = Y.encodeStateAsUpdate(doc)
+    await store.saveSession({ doc: 'n', sid: 's', lineage: 'L', cid: 1, bound: true })
+    const entry = { doc: 'n', sid: 's', seq: 1, bytes: state, sha: '' }
+    await store.recover('n', ['s'], 'lost_access', [entry], { state, title: 'Talk' })
+  }
+
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    vi.clearAllMocks()
+    localStorage.clear()
+    document.cookie = 'user_id=me%40example.com'
+  })
+
+  afterEach(async () => {
+    const store = (await openSignedInDeviceStore('slides'))!
+    const records = await store.allRecovery()
+    await Promise.all(records.map((record) => store.discard(record.id)))
+  })
+
+  it('is offered as a download from the editor, with no page copy', async () => {
+    await keptByRoom('kept by the room')
+    const saved: File[] = []
+    vi.spyOn(URL, 'createObjectURL').mockImplementation((file) => {
+      if (file instanceof File) saved.push(file)
+      return 'blob:copy'
+    })
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    const kept = recovery()
+    await vi.waitFor(() => expect(kept.canDownloadChanges.value).toBe(true))
+
+    kept.downloadChanges()
+
+    expect(saved.map((file) => file.name)).toEqual(['Talk (recovered).json'])
+    expect(await saved[0]!.text()).toContain('kept by the room')
+  })
+
+  it("is gone from the device once the editor's Discard is confirmed", async () => {
+    await keptByRoom('kept by the room')
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const kept = recovery()
+    await vi.waitFor(() => expect(kept.canDownloadChanges.value).toBe(true))
+
+    await kept.discardChanges()
+
+    expect([await roomCopies('n'), kept.canDownloadChanges.value]).toEqual([[], false])
+  })
+
+  it('keeps no page copy beside it as the tab closes', () => {
+    slides.value = JSON.parse(JSON.stringify(typed))
+
+    expect(recovery({ isKeptByRoom: () => true }).retainOrWarn()).toBe(true)
+
+    expect(keepRecovery).not.toHaveBeenCalled()
   })
 })

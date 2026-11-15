@@ -88,6 +88,8 @@ interface RoomHost {
   onVersionRestored: (restored: VersionRestored) => void
   /** Told once when the server refuses this tab's right, which Drive's access may not show yet. */
   onAccessRefused: () => void
+  /** Told each time the room keeps its unsent work as a copy on the device. */
+  onCopyKept: () => void
 }
 
 function hasLostAccess(status: RoomStatus | null) {
@@ -115,6 +117,7 @@ export function useConvertedRoom({
   onThreadsChanged,
   onVersionRestored,
   onAccessRefused,
+  onCopyKept,
 }: RoomHost) {
   const room = shallowRef<CollabRoom | null>(null)
   const status = shallowRef<RoomStatus | null>(null)
@@ -374,14 +377,20 @@ export function useConvertedRoom({
     const { blockReason } = liveStatus
     const hasStopped =
       liveStatus.saveState === 'failed' || (blockReason && !isRecoverable(blockReason))
-    if (hasStopped && liveStatus.unsentCount && !isRecoveryKept) {
+    // the room keeps its own copy on the device, so this page keeps one only where it can't
+    if (hasStopped && isKeptNowhere(liveStatus, isRecoveryKept)) {
       isRecoveryKept = retainStopped()
     }
 
     const isRefused = hasLostAccess(liveStatus) && !hasLostAccess(status.value)
+    const isCopyKept = liveStatus.keptCopyCount > (status.value?.keptCopyCount ?? 0)
     status.value = liveStatus
     if (isRefused) {
       onAccessRefused()
+    }
+
+    if (isCopyKept) {
+      onCopyKept()
     }
   }
 
@@ -453,6 +462,11 @@ export function useConvertedRoom({
     return isKeptNowhere(liveRoom.status, isRecoveryKept) ? 'held' : 'reload'
   }
 
+  /** Whether the room kept its unsent work as a copy on the device itself. */
+  function isKeptByRoom() {
+    return !!status.value && status.value.keptCopyCount > 0 && !status.value.hasCopyFailed
+  }
+
   // The editor goes before the old room, so nothing typed lands in a room that no longer sends
   function leave() {
     resetFocus()
@@ -522,5 +536,6 @@ export function useConvertedRoom({
     saveBeforeVersion,
     loseAccess,
     regainAccess,
+    isKeptByRoom,
   }
 }

@@ -178,6 +178,7 @@ const {
   retainRecovery,
   retainStickyOrOffer,
   retainOrWarn,
+  syncRoomKept,
   downloadChanges,
   discardChanges,
 } = useUnsavedRecovery(props.session, {
@@ -186,6 +187,7 @@ const {
   load,
   loseAccess: (lost) => convertedRoom.loseAccess(lost),
   regainAccess: () => convertedRoom.regainAccess(),
+  isKeptByRoom: () => convertedRoom.isKeptByRoom(),
 })
 const { oldDraftNotice, settleOldDraft, downloadOldDraft, dismissOldDraft } = useOldDraft(
   props.session,
@@ -249,6 +251,7 @@ const convertedRoom = useConvertedRoom({
       void props.session.refreshAccess().catch(() => {})
     }
   },
+  onCopyKept: () => void syncRoomKept(),
 })
 provide('livePresence', convertedRoom.presence)
 const roomPeople = convertedRoom.people
