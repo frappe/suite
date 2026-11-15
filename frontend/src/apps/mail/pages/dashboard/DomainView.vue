@@ -40,6 +40,7 @@
           <Button :label="__('Edit')" @click="showEdit = true" />
           <Button
             :label="__('Verify DNS')"
+            icon-left="lucide-circle-check"
             :loading="verifyDomain.isPending"
             @click="verifyDomainSubmit()"
           />
