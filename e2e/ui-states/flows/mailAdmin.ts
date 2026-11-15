@@ -119,11 +119,11 @@ const machine = setupFlow<Event>().createMachine({
 		domainMissing: { meta: { description: "A link to a domain that does not exist: the page goes back to Domains and a toast says “<name> not found.”" } },
 
 		addDomain: {
-			meta: { description: "Add Domain: it says the admin must already own the domain and publish an ownership record first, then asks for the name and a description. Add Domain is off until a name is typed." },
+			meta: { description: "Add Domain: it asks for the domain, says its ownership record must be published at the DNS provider before it is added, and keeps a place for that record. Add Domain is off until a name is typed." },
 			on: { TYPE_DOMAIN: "addDomainChecked", ADD_TAKEN_DOMAIN: "addDomainFailed" },
 		},
 		addDomainChecked: {
-			meta: { description: "A name typed and the field left: the ownership TXT record to publish shows, with Copy value." },
+			meta: { description: "A name typed and the field left: the ownership TXT record fills its place, with Host and Value each copyable; the dialog does not move." },
 			on: { ADD_DOMAIN_SLOW: "addDomainBusy", ADD_DOMAIN: "domainAdded" },
 		},
 		addDomainBusy: { meta: { description: "Add Domain pressed and the add still out: the fields grey out and the button dims, with no spinner." } },
@@ -470,7 +470,7 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 			const dialog = scene.dialog("Add Domain");
 			await dialog.getByLabel("Domain Name").fill(names.get(scene).added);
 			await dialog.getByLabel("Description").fill("Quay warehouse");
-			await expect(dialog.getByText("Ownership record (TXT)")).toBeVisible();
+			await expect(dialog.getByRole("button", { name: "Copy value" })).toBeVisible();
 		},
 		async ADD_DOMAIN_SLOW(scene) {
 			await scene.hold(method("add_domain"));
