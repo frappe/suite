@@ -73,13 +73,15 @@
 
         <!-- More Options -->
         <div class="relative">
-          <Dropdown :options="moreOptions">
+          <Dropdown v-model:open="isMoreOpen" :options="moreOptions">
             <template #default>
               <Button
                 size="lg"
                 variant="ghost"
                 :label="__('More options')"
-                :tooltip="isVisible ? __('More options') : undefined"
+                :tooltip="isVisible && !isMoreTooltipMuted ? __('More options') : undefined"
+                @pointerleave="isMoreTooltipMuted = isMoreOpen"
+                @blur="isMoreTooltipMuted = isMoreOpen"
               >
                 <template #icon>
                   <MeetMoreIcon />
@@ -346,6 +348,13 @@ const moreOptions = computed(() => [
 ])
 
 const isVisible = ref(true)
+// A closing menu hands focus back to More, which would open its tooltip over the call. The tooltip
+// stays off from the menu opening until the pointer leaves the button or focus moves on.
+const isMoreOpen = ref(false)
+const isMoreTooltipMuted = ref(false)
+watch(isMoreOpen, (open) => {
+  if (open) isMoreTooltipMuted.value = true
+})
 const isHovering = ref(false)
 const showMeetingInfo = ref(false)
 const showSettingsDialog = ref(false)
