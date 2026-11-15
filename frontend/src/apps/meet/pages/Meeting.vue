@@ -64,7 +64,7 @@
       <MeetingPreview
         v-if="showPreview"
         :meeting-id="meetingId"
-        :meeting-title="previewTitle"
+        :meeting-title="givenTitle"
         :is-camera-on="mediaState.isCameraOn"
         :is-mic-on="mediaState.isMicOn"
         :media-stream="mediaState.localStream"
@@ -465,9 +465,10 @@ const previewDetails = useQuery(api.meet.rooms.preview, () =>
       }
     : false,
 )
-const previewTitle = computed(
-  () => meetingDoc.data?.title || previewDetails.data?.title || meetingId.value,
-)
+// The meeting's own title, if it has one. The header falls back to the code; the preview's line
+// above "Ready to join?" does not, since the code is already in the header.
+const givenTitle = computed(() => meetingDoc.data?.title || previewDetails.data?.title || '')
+const previewTitle = computed(() => givenTitle.value || meetingId.value)
 usePageMeta(() => appPageMeta(previewTitle.value, 'Meet'))
 watch(
   () => meetingDoc.error,
