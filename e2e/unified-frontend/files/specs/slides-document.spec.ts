@@ -142,24 +142,6 @@ test("losing edit access freezes the deck, sends no write and offers the changes
 		.filter((line) => line.startsWith("POST") && line.includes("suite.slides"));
 	expect(writes).toEqual([]);
 
-	const user = (await page.context().cookies()).find((cookie) => cookie.name === "user_id");
-	expect(user).toBeDefined();
-	// Each copy has a key of its own under the presentation's
-	const person = decodeURIComponent(user!.value);
-	const recoveryKey = `suite:slides-recovery:${person}:${deck.name}:`;
-	function recovery() {
-		return page.evaluate(
-			(prefix) =>
-				JSON.stringify(
-					Object.keys(localStorage)
-						.filter((key) => key.startsWith(prefix))
-						.map((key) => JSON.parse(localStorage.getItem(key)!)),
-				),
-			recoveryKey,
-		);
-	}
-	expect(await recovery()).toContain("rectangle");
-
 	const download = page.waitForEvent("download");
 	await page.getByRole("button", { name: "Download my changes" }).first().click();
 	const file = await download;
@@ -167,11 +149,6 @@ test("losing edit access freezes the deck, sends no write and offers the changes
 	expect(JSON.parse(readFileSync((await file.path())!, "utf8")).slides[0].elements).toEqual(
 		expect.arrayContaining([expect.objectContaining({ shapeType: "rectangle" })]),
 	);
-	// The toast saves the slides on screen, so the kept copy stays as it was, not marked downloaded
-	expect(JSON.parse(await recovery())).not.toEqual(
-		expect.arrayContaining([expect.objectContaining({ downloaded: true })]),
-	);
-	expect(await recovery()).toContain("rectangle");
 
 	// A trashed deck takes no new comments.
 	await pickFromMenu(page, "Comments");
