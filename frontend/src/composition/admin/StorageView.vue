@@ -5,7 +5,7 @@
     :loading="report.status === 'pending'"
   >
     <template #loading>
-      <div class="mx-auto w-full max-w-5xl space-y-6 pb-10" aria-hidden="true">
+      <div class="w-full space-y-6 pb-10" aria-hidden="true">
         <SiteStorageSummarySkeleton />
         <section class="space-y-4">
           <div class="flex flex-wrap items-center justify-between gap-3">
@@ -58,7 +58,7 @@
       :retry="() => report.refetch()"
     />
 
-    <div v-if="report.data" class="mx-auto w-full max-w-5xl space-y-6 pb-10">
+    <div v-if="report.data" class="w-full space-y-6 pb-10">
       <SiteStorageSummary :report="report.data" compact />
 
       <template v-if="report.data.cloud">

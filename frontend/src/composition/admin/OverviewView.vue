@@ -83,7 +83,7 @@ const kpis = computed(() => {
     :loading="storage.status === 'pending'"
   >
     <template #loading>
-      <div class="mx-auto w-full max-w-5xl space-y-6 pb-10" aria-hidden="true">
+      <div class="w-full space-y-6 pb-10" aria-hidden="true">
         <div class="grid overflow-hidden rounded-5 border border-outline-gray-2 sm:grid-cols-3">
           <div
             v-for="n in 3"
@@ -109,7 +109,7 @@ const kpis = computed(() => {
       :title="__('Could not load storage report')"
       :retry="() => storage.refetch()"
     />
-    <div v-if="storage.data" class="mx-auto w-full max-w-5xl space-y-6 pb-10">
+    <div v-if="storage.data" class="w-full space-y-6 pb-10">
       <div
         class="grid overflow-hidden rounded-5 border border-outline-gray-2"
         :class="storage.data.cloud ? 'sm:grid-cols-3' : 'grid-cols-1'"
