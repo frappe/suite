@@ -1,7 +1,12 @@
 """A new deck under a log opens on one blank slide, written once by the server (Q179)."""
 
+import io
 import json
 import uuid
+from unittest.mock import patch
+
+import frappe
+import pycrdt
 
 from suite import content, drive
 from suite.content import checkpoints, compaction, ingest
@@ -20,6 +25,11 @@ from suite.slides.content.tests.test_registration import admitted
 def slide_ids(state: bytes) -> list[str]:
     doc = compaction.load_doc([state])
     return list(doc.get("slides", type=PART_MAP["slides"]).keys())
+
+
+def picture_of(state: bytes) -> str:
+    doc = compaction.load_doc([state])
+    return doc.get("elements", type=PART_MAP["elements"])["picture1"]["src"]
 
 
 class TestNewDeck(LoggedDeckCase):
@@ -65,7 +75,30 @@ class TestNewDeck(LoggedDeckCase):
         _, copy_state = opened(copied)
         self.assertEqual(slide_ids(copy_state), slide_ids(source_state))
 
-    def test_mode_off_makes_no_log(self):
-        self.turn_off()
+    def test_a_copy_names_its_own_picture_and_the_source_keeps_its_own(self):
+        source = self.new_deck()
+        with patch.object(frappe, "enqueue"):
+            picture = drive.store_file(source, "picture.png", io.BytesIO(b"picture"))
 
-        self.assertIsNone(content.find(APP, self.new_deck()))
+        frappe.db.commit()
+
+        def add_picture(doc: pycrdt.Doc) -> None:
+            [slide] = doc.get("slides", type=PART_MAP["slides"]).keys()
+            element = pycrdt.Map()
+            doc.get("elements", type=PART_MAP["elements"])["picture1"] = element
+            element["type"] = "image"
+            element["parent"] = slide
+            element["src"] = picture
+
+        status, _ = self.push(source, add_picture)
+        self.assertEqual(status, 200)
+
+        copied = drive.copy(source, owner_folder(), title=f"{self._testMethodName} copy")
+        self.addCleanup(delete_log, copied)
+
+        [copied_picture] = frappe.get_all("Drive Node", {"parent_node": copied, "kind": "file"}, pluck="name")
+        self.assertNotEqual(copied_picture, picture)
+        _, copy_state = opened(copied)
+        _, source_state = opened(source)
+        self.assertEqual(picture_of(copy_state), copied_picture)
+        self.assertEqual(picture_of(source_state), picture)

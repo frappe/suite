@@ -18,6 +18,7 @@ import {
   slides,
   slideshowChunkLoads,
   slidesWith,
+  STARTUP_API,
   startupFetched,
   state,
   statusOf,
@@ -29,6 +30,7 @@ const {
   cancelOfflineCopy,
   removeOfflineCopy,
   removeNodeOfflineCopy,
+  removeRowedOfflineCopy,
   refreshOfflineStatus,
   warmOfflineCopyAssets,
   offlineCopyProgress,
@@ -809,5 +811,46 @@ describe('removeOfflineCopy', () => {
     expect(localStorage.getItem('slides-offline-copy:p1')).toBeNull()
     presentationId.value = 'p2'
     expect(statusOf('p2')).toBe('available')
+  })
+})
+
+// Q18′: a copy saved before the presentation went live holds its rows, which offline would open in place of the room
+describe('a copy saved before the presentation went live', () => {
+  const rowed = () =>
+    new Response(JSON.stringify({ message: { name: 'p1', slides: [{ name: 's1' }] } }), {
+      headers: { 'Content-Type': 'application/json' },
+    })
+  const [presentationRead] = STARTUP_API
+
+  async function savedBeforeLive() {
+    await saveOfflineCopy('p1')
+    await cache.put(presentationRead, rowed())
+  }
+
+  it("loses its rows to the owner's refresh", async () => {
+    await savedBeforeLive()
+
+    await warmOfflineCopyAssets('p1')
+
+    expect(await cache.text(presentationRead)).not.toContain('slides')
+  })
+
+  it('is removed with its files for someone who cannot refresh it', async () => {
+    await savedBeforeLive()
+
+    await removeRowedOfflineCopy('p1')
+
+    expect(localStorage.getItem('slides-offline-copy:p1')).toBeNull()
+    expect(cache.has(presentationRead)).toBe(false)
+    expect(cache.has('/private/files/a.png')).toBe(false)
+  })
+
+  it('is kept when it holds no rows', async () => {
+    await saveOfflineCopy('p1')
+
+    await removeRowedOfflineCopy('p1')
+
+    expect(recordedKeys('p1')).toEqual(['/private/files/a.png', '/private/files/b.png'])
+    expect(cache.has(presentationRead)).toBe(true)
   })
 })

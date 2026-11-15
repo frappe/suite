@@ -25,7 +25,9 @@ rollback until an operator runs that command.
 
 Legacy keys are used exactly as `storage_key` decodes them. The production
 bucket holds keys with a leading slash, bare keys at the root and keys in
-per-user folders, and none of them is normalised here or in `BotoBucket`.
+per-user folders, and none of them is normalised here. `BotoBucket` asks
+for each key as it is first; it copies from the key without its leading
+slashes only on a store that dropped them when the object was written.
 
 Resumability has three layers, cheapest first: a linked `File.blob` keeps
 the row out of the query; a matching blob row skips the copy; an object an

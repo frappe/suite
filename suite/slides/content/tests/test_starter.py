@@ -8,21 +8,29 @@ import frappe
 import pycrdt
 from frappe.tests import UnitTestCase
 
-from suite import content, drive
+from suite import drive
 from suite.composition.welcome import _kickoff, _text
 from suite.content import checker, convert
-from suite.slides import slide_row
-from suite.slides.content import APP, CHECKER_BUILD, CONVERTER_BUILD, CONVERTER_VERSION
+from suite.slides.content import CHECKER_BUILD, CONVERTER_BUILD, CONVERTER_VERSION
 from suite.slides.content.conversion import SLIDE_COLUMNS, legacy_deck
 from suite.slides.content.starter import deck_state
-from suite.slides.content.tests.support import OWNER, LoggedDeckCase, delete_log, opened, owner_folder
-from suite.slides.drive import DOCTYPE, docname_for_node
+from suite.slides.content.tests.support import LoggedDeckCase, delete_log, opened, owner_folder
 
 KICKOFF = [
     ["Company kickoff", "Where we are and where we are going"],
     ["This quarter", "Three outcomes we commit to"],
     ["Next steps", "Owners and dates"],
 ]
+
+
+def slide_row(elements: list[dict]) -> dict:
+    # A starter slide as a row held it: `elements` on a white background, with no transition
+    return {
+        "background": "#FFFFFFFF",
+        "elements": json.dumps(elements),
+        "transition": "None",
+        "transition_duration": "0",
+    }
 
 
 def kickoff() -> str:
@@ -242,19 +250,3 @@ class TestStarterRefusesWhatTheKickoffDoesNotHold(UnitTestCase):
 
     def test_the_kickoff_itself_encodes(self):
         self.assertEqual(texts_by_slide(deck_state(kickoff_slides())), KICKOFF)
-
-
-class TestStarterWhileCollaborationIsOff(LoggedDeckCase):
-    def test_the_kickoff_starter_writes_its_slides_as_rows(self):
-        self.turn_off()
-        frappe.set_user(OWNER)
-
-        node = kickoff()
-
-        rows = frappe.get_doc(DOCTYPE, docname_for_node(node)).slides
-        texts = [[element["content"] for element in json.loads(row.elements)] for row in rows]
-        self.assertIsNone(content.find(APP, node))
-        self.assertEqual(len(texts), 3)
-        for shown, (heading, body) in zip(texts, KICKOFF, strict=True):
-            self.assertIn(heading, shown[0])
-            self.assertIn(body, shown[1])

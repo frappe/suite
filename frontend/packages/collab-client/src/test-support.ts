@@ -147,6 +147,18 @@ export function fakeServer(state = 'live', lineage = 'L') {
     { rev: number; q_epoch: number; sid: string; lineage: string }
   >()
   let nextClient = 1
+  // Each writer's next clock among the stored rows, as the server's sessions keep it. A
+  // quarantine doesn't lower it
+  const committed = new Map<number, number>()
+  function commit(bytes: Uint8Array) {
+    for (const struct of yjs.decodeUpdate(bytes).structs) {
+      if (struct instanceof yjs.Skip) continue
+
+      const { client, clock } = struct.id
+      committed.set(client, Math.max(committed.get(client) ?? 0, clock + struct.length))
+    }
+  }
+
   // A compacted state counted this big instead of the checkpoint's own size
   interface CountedState {
     state: number | null
@@ -402,11 +414,17 @@ export function fakeServer(state = 'live', lineage = 'L') {
           )
         }
 
+        const unclosed = unclosedRow(bytes, header.cid, committed)
+        if (unclosed) {
+          return reply(409, unclosed)
+        }
+
         for (const [index, sha] of header.shas.entries()) {
           session.shas[header.from + index] = sha
         }
 
         rows.push({ rev: rows.length + 1, bytes })
+        commit(bytes)
         session.acked = header.to
         let encodedRow: string | null = null
         if (bytes.byteLength <= 32 * 1024) {
@@ -544,6 +562,7 @@ export function fakeServer(state = 'live', lineage = 'L') {
     notice?: Record<string, unknown>,
   ) {
     rows.push({ rev: rows.length + 1, bytes })
+    commit(bytes)
     restore.rev = rows.length
     restore.until = 0
     if (lost !== 'row') {
@@ -594,6 +613,50 @@ export function fakeServer(state = 'live', lineage = 'L') {
     socket,
     roomKeys,
   }
+}
+
+// What a struct follows: its origin, right origin and a parent named by id
+function refsOf(struct: yjs.Item | yjs.GC | yjs.Skip) {
+  if (!(struct instanceof yjs.Item)) {
+    return []
+  }
+
+  const refs = [struct.origin, struct.rightOrigin]
+  if (struct.parent instanceof yjs.ID) {
+    refs.push(struct.parent)
+  }
+
+  return refs
+}
+
+// The server's `ingest.check_follows`: a row continues its writer's clocks, and each origin,
+// right origin, parent and deleted clock is committed or earlier in the row. Null when it is
+function unclosedRow(bytes: Uint8Array, cid: number, committed: ReadonlyMap<number, number>) {
+  const { structs, ds } = yjs.decodeUpdate(bytes)
+  const known = new Map(committed)
+  const next = known.get(cid) ?? 0
+  if (structs.length && structs[0].id.clock !== next) {
+    return { collab: 'clock_gap', clock: next }
+  }
+
+  for (const struct of structs) {
+    const missing = refsOf(struct).find((ref) => ref && ref.clock >= (known.get(ref.client) ?? 0))
+    if (missing) {
+      return { collab: 'missing_dep', client: missing.client, clock: missing.clock }
+    }
+
+    known.set(cid, struct.id.clock + struct.length)
+  }
+
+  for (const [client, ranges] of ds.clients) {
+    const knownClock = known.get(client) ?? 0
+    const past = ranges.find(({ clock, len }) => clock + len > knownClock)
+    if (past) {
+      return { collab: 'missing_dep', client, clock: Math.max(past.clock, knownClock) }
+    }
+  }
+
+  return null
 }
 
 const RESTORING = { collab: 'paused', reason: 'restoring', retry_ms: 1000 }

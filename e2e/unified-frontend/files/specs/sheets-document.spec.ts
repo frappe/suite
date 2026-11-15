@@ -72,7 +72,7 @@ test("renames, comments and opens versions without a legacy Drive call", async (
 	await title.press("Enter");
 	await expect.poll(async () => (await getNode(api, sheet.name)).title).toBe("Renamed sheet");
 
-	await page.getByRole("button", { name: "More document actions" }).click();
+	await page.getByRole("button", { name: "More actions" }).click();
 	await page.getByRole("menuitem", { name: "Comments" }).click();
 	const comments = page.getByRole("complementary", { name: "Comments" });
 	await comments.getByRole("textbox", { name: "New comment" }).fill("Check the A1 total");
@@ -87,7 +87,7 @@ test("renames, comments and opens versions without a legacy Drive call", async (
 	await page.locator("canvas").first().click({ position: { x: 80, y: 40 } });
 	await page.keyboard.type("777");
 	await page.keyboard.press("Enter");
-	await page.getByRole("button", { name: "More document actions" }).click();
+	await page.getByRole("button", { name: "More actions" }).click();
 	await page.getByRole("menuitem", { name: "Versions" }).click();
 	const versions = page.getByRole("complementary", { name: "Versions" });
 	await expect(versions.getByRole("heading", { name: "Versions" })).toBeVisible();
@@ -282,20 +282,21 @@ test("a sheet whose room can't open keeps the rail", async ({ page }) => {
 test("the document actions fit on one row of a 320 px screen", async ({ page }) => {
 	await page.setViewportSize({ width: 320, height: 640 });
 	await openSheet(page);
-	const bar = page.locator(".sheets-header");
-	const edge = (await bar.boundingBox())!;
+	// The header holds the menu and Share; the folded menus sit in the row under it
 	const controls = [
-		["menuitem", "Menu"],
-		["button", "More document actions"],
-		["button", "Share"],
+		[".sheets-header", "button", "More actions"],
+		[".sheets-header", "button", "Share"],
+		[".sheets-menus", "menuitem", "Menu"],
 	] as const;
-	for (const [role, name] of controls) {
+	for (const [row, role, name] of controls) {
+		const bar = page.locator(row);
+		const edge = (await bar.boundingBox())!;
 		const box = (await bar.getByRole(role, { name, exact: true }).boundingBox())!;
 		expect(box, name).not.toBeNull();
 		expect(box.x, name).toBeGreaterThanOrEqual(edge.x);
 		expect(box.x + box.width, name).toBeLessThanOrEqual(edge.x + edge.width);
+		expect(await bar.evaluate((element) => element.scrollWidth <= element.clientWidth), row).toBe(true);
 	}
-	expect(await bar.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
 });
 
 test("the name box keeps one width, so the formula bar never moves", async ({ page }) => {

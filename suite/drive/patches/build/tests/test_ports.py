@@ -225,6 +225,107 @@ class StubClientError(Exception):
         self.response = {"Error": {"Code": code}}
 
 
+class StoreClient:
+    """The S3 calls a copy makes, over a dict of objects by stored key.
+
+    `trims_path_keys` is the one difference between the two stores Build
+    runs on. AWS S3 keeps a leading slash as part of the key. Garage drops
+    the leading slashes of a key in the request path, and keeps them on the
+    key of a copy source, which travels in a header.
+    """
+
+    def __init__(self, objects, trims_path_keys):
+        self.objects = dict(objects)
+        self.trims_path_keys = trims_path_keys
+
+    def _path_key(self, key):
+        return key.lstrip("/") if self.trims_path_keys else key
+
+    def head_object(self, Bucket, Key):
+        body = self.objects.get(self._path_key(Key))
+        if body is None:
+            raise StubClientError("404")
+        return {"ContentLength": len(body), "ETag": hashlib.md5(body).hexdigest()}
+
+    def copy_object(self, Bucket, Key, CopySource):
+        if CopySource["Key"] not in self.objects:
+            raise StubClientError("NoSuchKey")
+        self.objects[self._path_key(Key)] = self.objects[CopySource["Key"]]
+
+    def copy(self, CopySource, Bucket, Key):
+        # boto3's managed copy heads the source for its size, then copies.
+        self.head_object(Bucket=CopySource["Bucket"], Key=CopySource["Key"])
+        self.copy_object(Bucket=Bucket, Key=Key, CopySource=CopySource)
+
+
+class RefusingStoreClient(StoreClient):
+    """A store that refuses every copy with `AccessDenied`, and counts the attempts."""
+
+    copy_attempts = 0
+
+    def copy_object(self, Bucket, Key, CopySource):
+        self.copy_attempts += 1
+        raise StubClientError("AccessDenied")
+
+
+def bucket_over(client):
+    return BotoBucket(SimpleNamespace(bucket="drive-bucket", client=client, _client_error=StubClientError))
+
+
+class TestBotoBucketCopiesSlashNamedKeys(unittest.TestCase):
+    """Legacy Drive wrote keys such as `/team/id`. The copy has to find the
+    same object on a store that kept the slash and on one that dropped it."""
+
+    def copies(self):
+        return (
+            ("copy_object", BotoBucket.copy_object),
+            ("managed_copy", BotoBucket.managed_copy),
+        )
+
+    def test_a_store_that_keeps_the_slash_copies_the_slash_named_object(self):
+        for name, copy in self.copies():
+            with self.subTest(name):
+                # `team/id` is a different object: the key Build asked for wins.
+                client = StoreClient({"/team/id": b"report", "team/id": b"other"}, trims_path_keys=False)
+                copy(bucket_over(client), "/team/id", "private/b1/report.pdf")
+                self.assertEqual(client.objects["private/b1/report.pdf"], b"report")
+
+    def test_a_store_that_dropped_the_slash_still_copies_the_object(self):
+        for name, copy in self.copies():
+            with self.subTest(name):
+                # What the store holds after `/team/id` was written to it.
+                client = StoreClient({"team/id": b"report"}, trims_path_keys=True)
+                copy(bucket_over(client), "/team/id", "private/b1/report.pdf")
+                self.assertEqual(client.objects["private/b1/report.pdf"], b"report")
+
+    def test_a_missing_slash_named_object_is_never_replaced_by_its_namesake(self):
+        for name, copy in self.copies():
+            with self.subTest(name):
+                # On AWS `/team/id` is gone, and `team/id` is someone else's file.
+                client = StoreClient({"team/id": b"other"}, trims_path_keys=False)
+                with self.assertRaises(StubClientError):
+                    copy(bucket_over(client), "/team/id", "private/b1/report.pdf")
+                self.assertEqual(client.objects, {"team/id": b"other"})
+
+    def test_a_missing_object_stays_missing_on_a_store_that_drops_slashes(self):
+        for name, copy in self.copies():
+            with self.subTest(name):
+                client = StoreClient({}, trims_path_keys=True)
+                with self.assertRaises(StubClientError):
+                    copy(bucket_over(client), "/team/id", "private/b1/report.pdf")
+                self.assertEqual(client.objects, {})
+
+    def test_a_refusal_is_not_retried_under_another_name(self):
+        for name, copy in self.copies():
+            with self.subTest(name):
+                # `team/id` exists, so a wrong retry without the slash would succeed.
+                client = RefusingStoreClient({"team/id": b"report"}, trims_path_keys=True)
+                with self.assertRaises(StubClientError):
+                    copy(bucket_over(client), "/team/id", "private/b1/report.pdf")
+                self.assertEqual(client.objects, {"team/id": b"report"})
+                self.assertEqual(client.copy_attempts, 1)
+
+
 class TestBotoBucket(unittest.TestCase):
     def setUp(self):
         self.client = MagicMock()

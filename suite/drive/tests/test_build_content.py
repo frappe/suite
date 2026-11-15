@@ -56,6 +56,7 @@ from suite.drive.patches.build.tests import legacy_schema
 from suite.drive.patches.cleanup.ports import SiteContentRows
 from suite.drive.patches.cleanup.removal import RETAINED_DOCTYPES_STEP_4, phase_content_history
 from suite.drive.patches.cleanup.tests.fakes import FakeSchema, cleanup_environment
+from suite.tests.utils import column_hidden
 
 # One fixed stamp for every source row and for `env.now()`. A fixture with a
 # clock has no exact expected value for the rows Build authors itself.
@@ -557,6 +558,12 @@ class BuildContentCase(IntegrationTestCase):
 
     def node_row(self, name) -> dict:
         return SiteContentTarget().nodes((name,))[name]
+
+    def deck_thumbnail(self, docname):
+        ((thumbnail,),) = frappe.db.sql(
+            "SELECT `thumbnail` FROM `tabPresentation` WHERE `name` = %s", docname
+        )
+        return thumbnail
 
     def media_children(self, node) -> list[dict]:
         return [row for row in SiteContentTarget().child_nodes(node) if row.get("kind") == "file"]
@@ -1336,11 +1343,36 @@ class TestSlideMedia(BuildContentCase):
             [deck["thumbnail"]],
         )
 
+    def test_a_deck_is_read_on_a_site_that_never_had_the_thumbnail_column(self):
+        # a site installed after Presentation's field left has no column for Build to read (Q19')
+        deck = self.deck_fixture()
+        self.enterContext(column_hidden("Presentation", "thumbnail"))
+
+        rows = SiteContentSource(self.prefix).documents("Presentation", "", 10)
+
+        self.assertEqual([(row.name, row.thumbnail) for row in rows], [(deck["docname"], None)])
+
+    def test_hiding_the_thumbnail_column_keeps_its_values(self):
+        deck = self.deck_fixture()
+        # the DDL commits this test's rows, so tearDown's sweep has to commit too
+        self.addCleanup(frappe.db.commit)
+
+        with column_hidden("Presentation", "thumbnail"):
+            self.assertFalse(frappe.db.has_column("Presentation", "thumbnail"))
+
+        with self.assertRaises(SimulatedCrash), column_hidden("Presentation", "thumbnail"):
+            raise SimulatedCrash
+
+        self.assertEqual(self.deck_thumbnail(deck["docname"]), f"/files/{self.prefix}thumb.png")
+
     def test_a_thumbnail_a_slide_uses_is_also_a_media_child(self):
         """§14.7: one File can be both the deck preview and a slide picture."""
         thumb_url = f"/files/{self.prefix}thumb.png"
         deck = self.deck_fixture(elements=[{"type": "image", "src": thumb_url}])
-        self.assertEqual(frappe.db.get_value("Presentation", deck["docname"], "thumbnail"), thumb_url)
+        ((thumbnail,),) = frappe.db.sql(
+            "SELECT `thumbnail` FROM `tabPresentation` WHERE `name` = %s", deck["docname"]
+        )
+        self.assertEqual(thumbnail, thumb_url)
 
         report = convert_slides_and_templates(self.environment())
 

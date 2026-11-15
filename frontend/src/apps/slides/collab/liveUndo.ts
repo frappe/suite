@@ -377,6 +377,15 @@ export function openLiveUndo(doc: Y.Doc, trackedOrigins: unknown[]) {
     }
   }
 
+  /** Drops every step and held value, so nothing from before a restore comes back. */
+  function forget() {
+    manager.clear()
+    ownValues.slides.clear()
+    ownValues.elements.clear()
+    heldAfterDelete = []
+    pending = noItems()
+  }
+
   roots.slides.observeDeep(observers.slides)
   roots.elements.observeDeep(observers.elements)
   manager.on('stack-item-added', fileItems)
@@ -389,6 +398,7 @@ export function openLiveUndo(doc: Y.Doc, trackedOrigins: unknown[]) {
     writeBackOwn,
     endStep,
     write,
+    forget,
     stop() {
       roots.slides.unobserveDeep(observers.slides)
       roots.elements.unobserveDeep(observers.elements)

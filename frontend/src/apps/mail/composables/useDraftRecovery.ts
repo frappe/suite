@@ -58,7 +58,7 @@ export const offerDraftCopies = async ({
         ? __('Kept on this device, apart from files still uploading: {0}', [
             copy.uploading.join(', '),
           ])
-        : __('Kept on this device.'),
+        : __('Kept on this device'),
       duration: Infinity,
       action: {
         label: __('Reopen'),

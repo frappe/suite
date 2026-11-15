@@ -1,6 +1,8 @@
 import { toast } from 'frappe-ui'
 import { onMounted, onUnmounted, ref, watch } from 'vue'
 
+import { translate as __ } from '@/platform/translation'
+
 import { isUnknownRecord } from '../types'
 import { SFURequestError, type SFUClient } from '../utils/SFUClient'
 import { useE2EEState } from './useE2EEState'
@@ -105,7 +107,9 @@ export function useCaptions(deps: { sfuClient: SFUClient }) {
           }
         } else if (requestedEnabled === desiredEnabled) {
           desiredEnabled = isCaptionsEnabled.value
-          toast.error(`Failed to ${requestedEnabled ? 'enable' : 'disable'} captions`)
+          toast.error(
+            requestedEnabled ? __('Could not turn on captions') : __('Could not turn off captions'),
+          )
         }
       }
     }

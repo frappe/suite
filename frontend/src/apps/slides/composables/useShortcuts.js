@@ -1,5 +1,5 @@
 import { useKeyboardShortcut } from 'frappe-ui'
-import { onMounted, onUnmounted } from 'vue'
+import { onMounted, onUnmounted, toValue } from 'vue'
 
 import { useNavigationPanel } from '@/apps/slides/composables/useNavigationPanel'
 import { useTextEditor } from '@/apps/slides/composables/useTextEditor'
@@ -22,14 +22,13 @@ import {
 import { commandHistory } from '@/apps/slides/stores/historyMeta'
 import { cancelCrop, commitCrop, inCropMode } from '@/apps/slides/stores/imageCrop'
 import { commitInteraction, interactionOffset } from '@/apps/slides/stores/interaction'
-import { presentationDoc } from '@/apps/slides/stores/presentation'
+import { flushLive } from '@/apps/slides/stores/liveDeck'
 import {
   addEmptySlide,
   changeEditorSlide,
   changeSlide,
   deleteSlide,
   duplicateSlide,
-  saveSlide,
   selectionBounds,
   slideIndex,
   updateSelectionBounds,
@@ -87,6 +86,11 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
     const target = document.activeElement
     if (!target || target.closest('.ProseMirror')) return false
     return target.isContentEditable || target.tagName == 'INPUT' || target.tagName == 'TEXTAREA'
+  }
+
+  // keys pressed in Drive's side panel, on its buttons or in its comment boxes, are the panel's own
+  function isFocusInSidePanel() {
+    return !!document.activeElement?.closest('[data-document-side-panel]')
   }
 
   // only keyboard focus: a clicked button keeps focus while the canvas is in use
@@ -156,6 +160,8 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 
   const trackTyping = (e) => {
     if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) return
+
+    if (isFocusInSidePanel()) return
     if (isPlainInput(e) || e.target?.isContentEditable) return
     typing = e.timeStamp - lastKeyAt < TYPING_GAP_MS
     lastKeyAt = e.timeStamp
@@ -201,6 +207,8 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
   const handleTypeToEdit = (e) => {
     if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) return
     if (e.key === '?') return
+
+    if (isFocusInSidePanel()) return
     if (e.key === ' ' && isControlFocused()) return
     if (isPlainInput(e) || e.target?.isContentEditable) return
     if (!canStartTextEditing()) return
@@ -237,7 +245,10 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
       description: 'Save',
       group: 'General',
       enabled: inEditMode,
-      handler: (e) => saveSlide(e),
+      handler: (e) => {
+        e.preventDefault()
+        flushLive()
+      },
     },
     {
       combo: 'Mod+Z',
@@ -480,13 +491,15 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
       description: 'Start',
       group: 'Slideshow',
       handler: () => {
-        // a converted presentation plays no slideshow until live editing
-        if (presentationDoc.value?.is_converted) return
-
         if (inEditMode() || inReadonly()) startSlideShow()
       },
     },
   ]
 
-  useKeyboardShortcut(shortcuts)
+  useKeyboardShortcut(
+    shortcuts.map((shortcut) => ({
+      ...shortcut,
+      enabled: () => !isFocusInSidePanel() && toValue(shortcut.enabled ?? true),
+    })),
+  )
 }

@@ -1,7 +1,7 @@
 import { batchCommand, editElementCommand, editSlideCommand } from '@/apps/slides/stores/commands'
 import { activeElementIds, activeElements } from '@/apps/slides/stores/element'
 import { commandHistory } from '@/apps/slides/stores/historyMeta'
-import { markDirty } from '@/apps/slides/stores/saving'
+import { askLivePush } from '@/apps/slides/stores/liveDeck'
 import { currentSlide } from '@/apps/slides/stores/slide'
 
 const editableElements = () => activeElements.value.filter((el) => !el.locked)
@@ -31,7 +31,7 @@ const bindProperty = (getTargets, property, buildCommand, recordCommands) => {
       fn(target)
     }
 
-    markDirty()
+    askLivePush()
   }
 
   function set(value) {

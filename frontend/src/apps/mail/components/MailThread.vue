@@ -879,6 +879,7 @@ import {
 import { mailRow } from '@/apps/mail/utils/threadRows'
 import { UNIFIED_ROUTE, UNIFIED_THREAD_ROUTE } from '@/apps/mail/utils/unifiedFolders'
 import { appDocumentTitle, usePageTitle } from '@/platform/page-meta'
+import { translate as __ } from '@/platform/translation'
 
 const {
   mailbox,
@@ -1495,7 +1496,7 @@ const allowDomain = async (domain: string) => {
   trustHere(domain)
   await screener.allow([domain], {
     account: scopeAccountId.value,
-    message: __('{0} marked as trusted.', [domain.slice(1)]),
+    message: __('{0} marked as trusted', [domain.slice(1)]),
   })
   reload()
 }
@@ -1618,7 +1619,7 @@ function unblockEmailAddressSubmit(email) {
     account: scopeAccountId.value,
     emails: [email],
   }
-  const shown = raiseToast(__('Sender unblocked.'))
+  const shown = raiseToast(__('Sender unblocked'))
   unblockEmailAddress.run(input).then(
     () => screenedAddresses.value.refetch().catch(() => {}),
     () => toast.dismiss(shown),

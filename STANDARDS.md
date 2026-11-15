@@ -329,6 +329,13 @@ frontend/src/
 - User feedback goes through `@/platform/feedback`: `toast`, `confirm`,
   `prompt`. A destructive action confirms first; a reversible change reports
   in a toast with Undo (`features/changeToast.ts`).
+- Toast text is a short phrase in sentence case with no closing period:
+  `Meeting created`, `Moved “Logo.png” to Design reviews`. A period appears
+  only when a second sentence follows: `Could not create the meeting. Try
+  again.` No "successfully", no "!", "…" rather than "...". A failure reads
+  `Could not <verb> <thing>`, never a raw network or browser message; a
+  refusal the server wrote for people (`frappe.throw(_("..."))`) may be shown
+  in its place. Every toast string goes through `__()`.
 
 ### UI
 

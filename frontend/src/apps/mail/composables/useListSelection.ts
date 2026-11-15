@@ -78,7 +78,10 @@ export const useListSelection = ({
     const continues = run && from.length === run.to.length && from.every((k, i) => k === run!.to[i])
     if (!run || !continues)
       run = { anchor: from, to: from, before: selections.value.filter((k) => !from.includes(k)) }
-    const ends = [...run.anchor, ...to].map((key) => all.indexOf(key)).filter((i) => i >= 0)
+    const ends = [...run.anchor, ...to].flatMap((key) => {
+      const index = all.indexOf(key)
+      return index >= 0 ? [index] : []
+    })
     const covered = ends.length ? all.slice(Math.min(...ends), Math.max(...ends) + 1) : []
     selections.value = [...new Set([...run.before, ...covered])]
     run.to = to

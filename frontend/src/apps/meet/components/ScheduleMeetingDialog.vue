@@ -4,20 +4,27 @@
     <template #default>
       <div v-if="readiness !== 'ready'" class="space-y-3">
         <Alert :title="accountMessage" />
-        <Button v-if="readiness !== 'loading'" @click="loadAccount">{{ __('Retry') }}</Button>
-        <Button
-          v-if="
-            readiness === 'missing' &&
-            canManageAccounts &&
-            session.user.value?.is_mail_server_configured
-          "
-          :to="{ name: 'mail-accounts' }"
-        >
-          {{ __('Open Admin users') }}
-        </Button>
+        <div class="flex gap-2">
+          <Button v-if="readiness !== 'loading'" @click="loadAccount">{{ __('Retry') }}</Button>
+          <Button
+            v-if="
+              readiness === 'missing' &&
+              canManageAccounts &&
+              session.user.value?.is_mail_server_configured
+            "
+            :to="{ name: 'mail-accounts' }"
+          >
+            {{ __('Open Admin users') }}
+          </Button>
+        </div>
       </div>
       <div v-else class="space-y-4" @keydown.meta.enter.prevent.stop="submit">
-        <Alert v-if="submitError" theme="red" :title="submitError" />
+        <Alert
+          v-if="submitError"
+          theme="red"
+          :title="__('Could not schedule the meeting')"
+          :description="submitError"
+        />
         <FormControl v-model="title" :label="__('Title')" :placeholder="__('Team meeting')" />
         <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
           <FormControl
@@ -75,6 +82,7 @@ import {
   adjustScheduleEndTime,
   adjustScheduleStartTime,
   calendarDayjs as dayjs,
+  defaultScheduleWindow,
   ParticipantSelector,
   useCalendarUserStore,
 } from '@/apps/calendar'
@@ -119,9 +127,10 @@ const accountMessage = computed(() => {
     : __("You don't have a Mail account. Ask your admin to add one, then retry.")
 })
 const title = ref('')
-const date = ref(dayjs().format('YYYY-MM-DD'))
-const startTime = ref(dayjs().add(1, 'hour').startOf('hour').format('HH:mm'))
-const endTime = ref(dayjs().add(2, 'hour').startOf('hour').format('HH:mm'))
+const opening = defaultScheduleWindow(new Date())
+const date = ref(opening.date)
+const startTime = ref(opening.startTime)
+const endTime = ref(opening.endTime)
 const participants = ref<CalendarParticipant[]>([])
 
 watch(startTime, (value) => {
@@ -188,48 +197,47 @@ async function loadAccount() {
   }
 }
 
-function submit() {
+async function submit() {
   if (scheduleMeeting.isPending || readiness.value !== 'ready') return
   if (!calendarStore.accountId) {
     readiness.value = 'missing'
     return
   }
   if (!isTimeValid.value) {
-    toast.error(__('Enter a valid date and an end time after the start time.'))
+    toast.error(
+      __(
+        'Could not schedule the meeting. Enter a valid date and an end time after the start time.',
+      ),
+    )
     return
   }
   submitError.value = ''
-  toast.promise(
-    scheduleMeeting
-      .run({
-        account: calendarStore.accountId,
-        title: title.value,
-        start: start.value.format('YYYY-MM-DD[T]HH:mm:ss'),
-        duration: duration.value,
-        time_zone: userTimeZone(),
-        participants: scheduledParticipants.value.map((participant) => ({ ...participant })),
-        send_scheduling_messages: scheduledParticipants.value.length > 1,
-      })
-      .then(() => {
-        open.value = false
-        toast.success(__('Meeting scheduled.'))
-        emit('scheduled')
-      }),
-    {
-      loading: __('Scheduling meeting...'),
-      error: (error: unknown) => {
-        submitError.value =
-          error instanceof TransportError &&
-          ['ValidationError', 'BadRequest', 'PermissionError'].includes(error.type) &&
-          error.status >= 400 &&
-          error.status < 500 &&
-          error.message
-            ? error.message
-            : __('Could not schedule the meeting. Your details are kept. Please try again.')
-        return __('Meeting was not scheduled. Review the message and try again.')
-      },
-    },
-  )
+  // The dialog stays open on a failure and says why in its own alert, so no toast repeats it; the
+  // Schedule button's spinner is the progress.
+  try {
+    await scheduleMeeting.run({
+      account: calendarStore.accountId,
+      title: title.value,
+      start: start.value.format('YYYY-MM-DD[T]HH:mm:ss'),
+      duration: duration.value,
+      time_zone: userTimeZone(),
+      participants: scheduledParticipants.value.map((participant) => ({ ...participant })),
+      send_scheduling_messages: scheduledParticipants.value.length > 1,
+    })
+  } catch (error) {
+    submitError.value =
+      error instanceof TransportError &&
+      ['ValidationError', 'BadRequest', 'PermissionError'].includes(error.type) &&
+      error.status >= 400 &&
+      error.status < 500 &&
+      error.message
+        ? error.message
+        : __('Your details are kept. Try again.')
+    return
+  }
+  open.value = false
+  toast.success(__('Meeting scheduled'))
+  emit('scheduled')
 }
 
 defineExpose({ show })

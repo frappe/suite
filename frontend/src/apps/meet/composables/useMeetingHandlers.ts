@@ -3,6 +3,7 @@ import type { Ref } from 'vue'
 import type { Router } from 'vue-router'
 
 import { api, client } from '@/api'
+import { translate as __ } from '@/platform/translation'
 
 import { isUnknownRecord, normalizeJoinPayload, type JoinPayload } from '../types'
 import type { SFUMeetingManager } from '../utils/SFUMeetingManager'
@@ -162,7 +163,9 @@ export function useMeetingHandlers(deps: MeetingHandlersDeps) {
       const shouldBan = ban && participantId.startsWith('guest_')
       const manager = deps.sfuConnection.sfuManager.value
       if (!manager) {
-        toast.error('Cannot remove this participant while disconnected. Reconnect and try again.')
+        toast.error(
+          __('Could not remove this participant while disconnected. Reconnect and try again.'),
+        )
         return
       }
       if (shouldBan) {
@@ -182,8 +185,8 @@ export function useMeetingHandlers(deps: MeetingHandlersDeps) {
       console.error('Failed to kick participant:', error)
       toast.error(
         backendBanRecorded
-          ? 'Guest was banned but could not be disconnected. Use Remove to retry the live removal.'
-          : 'Could not remove this participant. Please try again.',
+          ? __('Could not disconnect the banned guest. Use Remove to retry the live removal.')
+          : __('Could not remove this participant. Try again.'),
       )
     }
   }
@@ -205,12 +208,12 @@ export function useMeetingHandlers(deps: MeetingHandlersDeps) {
       )
 
       if (response.meeting_id) {
-        toast.success('User promoted to co-host')
+        toast.success(__('User promoted to co-host'))
         await deps.refreshMeeting()
       }
     } catch (error) {
       console.error('Failed to promote participant:', error)
-      toast.error('Failed to promote user to co-host')
+      toast.error(__('Could not promote the user to co-host'))
     }
   }
 

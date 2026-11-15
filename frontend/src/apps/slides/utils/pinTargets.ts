@@ -35,13 +35,17 @@ export function mediaListUrl(node: string): string {
   return buildUrl(api.drive.nodes.media, { node })
 }
 
+export function presentationUrl(presentationId: string): string {
+  return buildUrl(api.slides.documents.get, { name: presentationId })
+}
+
 // the reads a /d/<node> page starts with, by the urls the client requests them by
 export function startupUrls(
   node: string,
   presentationId: string,
   { readonly, composite }: { readonly: boolean; composite: boolean },
 ): string[] {
-  const urls = [buildUrl(api.slides.documents.get, { name: presentationId })]
+  const urls = [presentationUrl(presentationId)]
   // an editable deck is never composite; the viewer then renders the referenced decks
   if (readonly && composite) {
     urls.push(buildUrl(api.slides.documents.composite, { name: presentationId }))

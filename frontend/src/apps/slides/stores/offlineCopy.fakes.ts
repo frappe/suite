@@ -62,6 +62,9 @@ export class FakeCache {
   has(key: string) {
     return this.store.has(new URL(key, 'http://localhost').href)
   }
+  async match(key: string) {
+    return this.store.get(new URL(key, 'http://localhost').href)?.clone()
+  }
   text(key: string) {
     return this.store.get(new URL(key, 'http://localhost').href)!.clone().text()
   }

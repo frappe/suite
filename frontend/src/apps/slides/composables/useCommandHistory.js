@@ -1,8 +1,7 @@
 import { computed, ref } from 'vue'
 
 import { isBlockedByLock } from '@/apps/slides/stores/commands'
-import { endLiveStep, isLive, redoLive, undoLive } from '@/apps/slides/stores/liveDeck'
-import { markDirty } from '@/apps/slides/stores/saving'
+import { askLivePush, endLiveStep, isLive, redoLive, undoLive } from '@/apps/slides/stores/liveDeck'
 
 // prosemirror-history's newGroupDelay
 const COALESCE_WINDOW = 500
@@ -65,7 +64,7 @@ export const useCommandHistory = (state, historyMeta = {}) => {
         endLiveStep()
       }
 
-      return markDirty()
+      return askLivePush()
     }
 
     const top = prevCommands.value.at(-1)
@@ -87,7 +86,7 @@ export const useCommandHistory = (state, historyMeta = {}) => {
 
     nextCommands.value = []
 
-    markDirty()
+    askLivePush()
   }
 
   const execute = (command) => {
@@ -119,7 +118,7 @@ export const useCommandHistory = (state, historyMeta = {}) => {
     nextCommands.value.push(command)
     lastRecordedAt = 0
 
-    markDirty()
+    askLivePush()
   }
 
   const redo = () => {
@@ -139,7 +138,7 @@ export const useCommandHistory = (state, historyMeta = {}) => {
     prevCommands.value.push(command)
     lastRecordedAt = 0
 
-    markDirty()
+    askLivePush()
   }
 
   const clearHistory = () => {

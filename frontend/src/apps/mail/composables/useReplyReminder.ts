@@ -10,6 +10,7 @@ import {
   reminderSetMessage,
   setReplyReminder,
 } from '@/apps/mail/utils/reminderPrompt'
+import { translate as __ } from '@/platform/translation'
 
 /**
  * A reminder if nobody replies, for the conversation open in a thread (see suite/mail/reminders.py).
@@ -52,7 +53,7 @@ export const useReplyReminder = (
         account: account(),
         thread_id: threadId()!,
       }),
-      __('Reminder removed.'),
+      __('Reminder removed'),
     )
 
   return { remindAt, remindable, lastSentAt, remind, cancel }

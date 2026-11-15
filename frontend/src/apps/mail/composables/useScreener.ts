@@ -5,6 +5,8 @@ import { api, client, type InputOf } from '@/api'
 import { userStore } from '@/apps/mail/stores/user'
 import { raiseToast } from '@/apps/mail/utils'
 import { useUndo } from '@/apps/mail/utils/composables'
+import { translate as __ } from '@/platform/translation'
+import { TransportError } from '@/platform/transport'
 
 /**
  * The Screener, folded into the Inbox. With screening on, the mail server delivers mail from a
@@ -119,7 +121,11 @@ const createShared = () => {
 
   const failed = (error: unknown) =>
     raiseToast(
-      (error instanceof Error ? error.message : String(error)) || __('Action failed.'),
+      (error instanceof TransportError &&
+      error.type !== 'NetworkError' &&
+      error.type !== 'AbortError'
+        ? __(error.message)
+        : null) || __('Could not update screened senders'),
       'error',
     )
 
@@ -138,8 +144,8 @@ const createShared = () => {
       account = store.accountId,
       destination = 'inbox',
       message = emails.length === 1
-        ? __('Sender marked as trusted.')
-        : __('Senders marked as trusted.'),
+        ? __('Sender marked as trusted')
+        : __('Senders marked as trusted'),
     }: { account?: string; destination?: Destination; message?: string } = {},
   ) => {
     decide(account, emails)
@@ -192,8 +198,8 @@ const createShared = () => {
     settled()
     raiseToast(
       moved.length === 1
-        ? __('1 more moved to Junk.')
-        : __('{0} more moved to Junk.', [String(moved.length)]),
+        ? __('1 more moved to Junk')
+        : __('{0} more moved to Junk', [String(moved.length)]),
       'success',
       { label: __('Undo'), onClick: undo },
     )
@@ -377,7 +383,7 @@ const createShared = () => {
       void reverse()
     })
     raiseToast(
-      emails.length === 1 ? __('Sender marked as trusted.') : __('Senders marked as trusted.'),
+      emails.length === 1 ? __('Sender marked as trusted') : __('Senders marked as trusted'),
       'success',
       { label: __('Undo'), onClick: undo },
     )

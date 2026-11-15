@@ -584,7 +584,7 @@ describe('sending', () => {
 
     expect(open).toBe(true)
     expect(raiseToast).toHaveBeenCalledWith('Not sent. Could not reach the server.', 'error')
-    expect(raiseToast).not.toHaveBeenCalledWith('Message sent.', expect.anything())
+    expect(raiseToast).not.toHaveBeenCalledWith('Message sent', expect.anything())
     expect(copies()[0].mail.html_body).toBe('<p>Words</p>')
     expect(composer.saveState.value.status).toBe('failed')
   })
@@ -594,7 +594,7 @@ describe('sending', () => {
     server.updateDraft.mockResolvedValueOnce({ id: 'draft-1', status: 'Failed', error: null })
     await composer.sendMail()
     expect(open).toBe(true)
-    expect(raiseToast).not.toHaveBeenCalledWith('Message sent.', expect.anything())
+    expect(raiseToast).not.toHaveBeenCalledWith('Message sent', expect.anything())
   })
 
   it('leaves nothing behind once sent', async () => {
@@ -711,7 +711,7 @@ describe('leaving', () => {
 
     expect(toastError).toHaveBeenCalledOnce()
     const [message, options] = toastError.mock.calls[0]
-    expect(message).toBe('Draft not saved.')
+    expect(message).toBe('Draft not saved')
     options.action.onClick()
     expect(requestCompose).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -736,7 +736,7 @@ describe('leaving', () => {
     expect(server.updateDraft).toHaveBeenCalledTimes(2)
     expect(copies()).toEqual([])
     expect(toastDismiss).toHaveBeenCalledWith('toast-id')
-    expect(raiseToast).toHaveBeenCalledWith('Draft saved.')
+    expect(raiseToast).toHaveBeenCalledWith('Draft saved')
 
     server.updateDraft.mockClear()
     await vi.advanceTimersByTimeAsync(120_000)

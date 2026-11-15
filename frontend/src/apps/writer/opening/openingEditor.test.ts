@@ -6,7 +6,7 @@ import Text from '@tiptap/extension-text'
 import { afterEach, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
 
-import { searchUsers } from '@/apps/writer/drive'
+import { client } from '@/api'
 
 import {
   closeOpeningEditor,
@@ -16,9 +16,9 @@ import {
   releaseOpeningEditor,
 } from './openingEditor'
 
-vi.mock('@/apps/writer/drive', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/apps/writer/drive')>()),
-  searchUsers: vi.fn(async () => []),
+vi.mock('@/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/api')>()),
+  client: { query: vi.fn(async () => ({ rows: [] })) },
 }))
 vi.mock('@/platform/session', async (importOriginal) => {
   const session = await importOriginal<typeof import('@/platform/session')>()
@@ -125,5 +125,5 @@ it('closes the opening editor once no page shows it', async () => {
 it('asks about the new document for its mention menu, not the one open before it', () => {
   placeOpeningEditor('doc-new', place())
 
-  expect(vi.mocked(searchUsers).mock.lastCall).toEqual(['', 'doc-new'])
+  expect(vi.mocked(client.query).mock.lastCall?.[1]).toEqual({ node: 'doc-new' })
 })

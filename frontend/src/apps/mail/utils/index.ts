@@ -18,6 +18,8 @@ import {
   type PendingRemoval,
 } from '@/apps/mail/utils/pendingRemovals'
 import { reportMutationError } from '@/platform/feedback'
+import { translate as __ } from '@/platform/translation'
+import { TransportError } from '@/platform/transport'
 
 export const toTitleCase = (str: string) =>
   str
@@ -74,7 +76,7 @@ export const raiseToast = (
   div.innerHTML = message
   // strip html tags
   const text =
-    div.textContent || div.innerText || __('Failed to perform action. Please try again later.')
+    div.textContent || div.innerText || __('Could not perform the action. Try again later.')
   toast.error(text)
 }
 
@@ -93,9 +95,14 @@ export function raiseError(error: unknown): void {
             ? error.message
             : typeof error === 'string'
               ? error
-              : __('Action failed. Please try again later.'),
+              : __('Could not complete the action. Try again later.'),
         )
-  reportMutationError(cause)
+  reportMutationError(
+    (cause instanceof TransportError && cause.type !== 'NetworkError') ||
+      (typeof error === 'object' && error !== null && 'messages' in error)
+      ? cause
+      : new Error(__('Could not complete the action')),
+  )
 }
 
 export const raisePromiseToast = async (
@@ -194,9 +201,9 @@ export const commitAfterUndo = ({
 export const copyToClipBoard = async (text: string) => {
   try {
     await navigator.clipboard.writeText(text)
-    raiseToast(__('Copied to clipboard.'))
+    raiseToast(__('Copied to clipboard'))
   } catch {
-    raiseToast(__('Failed to copy.'), 'error')
+    raiseToast(__('Could not copy'), 'error')
   }
 }
 

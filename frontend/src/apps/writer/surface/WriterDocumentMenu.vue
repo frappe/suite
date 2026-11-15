@@ -1,24 +1,27 @@
 <script setup lang="ts">
 import type { Editor } from '@tiptap/core'
-import { Button, Dropdown, type DropdownOptions } from 'frappe-ui'
 import { computed, ref } from 'vue'
 
-import { PANEL_BUTTONS, type DocumentPanel, type DocumentSession } from '@/apps/drive'
+import {
+  DriveDocumentMenu,
+  waitForFocusBack,
+  type DocumentPanel,
+  type DocumentSession,
+} from '@/apps/drive'
 import { listTabs } from '@/apps/writer/extensions/tabs'
 import { toast } from '@/platform/feedback'
 import { translate as __ } from '@/platform/translation'
 
 import { downloadDocx, downloadMarkdown, exportHTML, type ExportScope } from './exports'
-import { waitForFocusBack } from './focusBack'
 
 /**
- * The Writer document's menu in the Drive header: the side panels, download as DOCX or
- * Markdown, and, with edit access, lock the document or import a DOCX into it. A
- * document with tabs asks in a submenu whether to download the open tab or all
- * of them.
+ * What Writer adds to the document menu in the Drive header: save a version,
+ * export as DOCX or Markdown, and, with edit access, lock the document or
+ * import a DOCX into it. A document with tabs asks in a submenu whether to
+ * export the open tab or all of them.
  */
 const props = defineProps<{
-  session: Pick<DocumentSession, 'nodeId' | 'title' | 'credentials'>
+  session: DocumentSession
   editor: Editor | null
   settings: Record<string, unknown>
   /** The person may change the body. Importing needs it. */
@@ -59,11 +62,12 @@ async function download(save: Download, scope: ExportScope) {
     await save(exportHTML(props.editor, scope))
   } catch (error) {
     console.error(error)
-    toast.error(__('Could not download this document.'))
+    toast.error(__('Could not export this document'))
   }
 }
 
-function downloadOption(label: string, icon: string, save: Download) {
+function exportOption(label: string, save: Download) {
+  const icon = 'lucide-download'
   if (!hasTabs.value) return { label, icon, onClick: () => void download(save, 'document') }
   return {
     label,
@@ -84,52 +88,37 @@ function saveVersionOnFocusBack() {
   focusBack.focused()
 }
 
-function panelOptions() {
-  return (props.panels ?? []).map((name) => ({
-    label: __(PANEL_BUTTONS[name].label),
-    icon: PANEL_BUTTONS[name].icon,
-    selected: props.panel === name,
-    onClick: () => emit('togglePanel', name),
-  }))
-}
+const review = computed(() =>
+  props.canSaveVersion
+    ? [{ label: __('Save version'), icon: 'lucide-bookmark', onClick: pickVersion }]
+    : [],
+)
 
-function documentOptions() {
+const lock = computed(() => {
+  if (!props.canLock) return []
   const isLocked = props.isLocked
-  const lock = {
-    label: isLocked ? __('Unlock document') : __('Lock document'),
-    icon: isLocked ? 'lucide-lock-open' : 'lucide-lock',
-    onClick: () => emit('setLocked', !isLocked),
-  }
   return [
-    ...(props.canSaveVersion
-      ? [{ label: __('Save version'), icon: 'lucide-bookmark', onClick: pickVersion }]
-      : []),
-    ...(props.canLock ? [lock] : []),
+    {
+      label: isLocked ? __('Unlock') : __('Lock'),
+      icon: isLocked ? 'lucide-lock-open' : 'lucide-lock',
+      onClick: () => emit('setLocked', !isLocked),
+    },
   ]
-}
+})
 
-function fileOptions() {
+const transfer = computed(() => {
   const title = props.session.title.value
   return [
-    downloadOption(__('Download as DOCX'), 'lucide-file-text', (html) =>
+    exportOption(__('Export as DOCX'), (html) =>
       downloadDocx(html, title, props.settings, props.session.credentials.fetch),
     ),
-    downloadOption(__('Download as Markdown'), 'lucide-file-code', (html) =>
+    exportOption(__('Export as Markdown'), (html) =>
       downloadMarkdown(html, title, props.session.credentials.fetch),
     ),
     ...(props.editable
-      ? [{ label: __('Import DOCX'), icon: 'lucide-file-up', onClick: pickDocx }]
+      ? [{ label: __('Import DOCX'), icon: 'lucide-upload', onClick: pickDocx }]
       : []),
   ]
-}
-
-const options = computed<DropdownOptions>(() => {
-  const groups = [
-    { group: __('Panels'), hideLabel: true, options: panelOptions() },
-    { group: __('Document'), hideLabel: true, options: documentOptions() },
-    { group: __('File'), hideLabel: true, options: fileOptions() },
-  ]
-  return groups.filter((group) => group.options.length > 0)
 })
 
 /** The picker input is never in the page, so the header holds one input: the title. */
@@ -157,14 +146,16 @@ async function importFile(file: File) {
 </script>
 
 <template>
-  <Dropdown :options="options" align="end" @update:open="noteTabs">
-    <Button
-      variant="ghost"
-      icon="lucide-ellipsis"
-      :tooltip="__('More document actions')"
-      :aria-label="__('More document actions')"
-      :disabled="!editor && !panels?.length"
-      @focus="saveVersionOnFocusBack"
-    />
-  </Dropdown>
+  <DriveDocumentMenu
+    :session="session"
+    :panels="panels"
+    :panel="panel"
+    :review="review"
+    :transfer="transfer"
+    :settings="lock"
+    :disabled="!editor && !panels?.length"
+    @toggle-panel="emit('togglePanel', $event)"
+    @open="noteTabs"
+    @focus-back="saveVersionOnFocusBack"
+  />
 </template>

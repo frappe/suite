@@ -1,5 +1,6 @@
 """Generate small, self-contained Northwind spreadsheets, decks, and uploaded files."""
 
+import base64
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -13,8 +14,11 @@ from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 from PIL import Image, ImageDraw, ImageFont
 
-from suite import drive
+from suite import content, drive
 from suite.composition.demo.cast import PEOPLE_BY_KEY, Person
+from suite.content import checkpoints
+from suite.slides.content import APP as SLIDES
+from suite.slides.content import SCHEMA
 
 # PNGs are 256 px renders of the SVG sources beside them; re-render after editing one.
 BRAND = Path(__file__).parent / "brand"
@@ -118,6 +122,10 @@ REVIEW = [
         "Protect focus: no additional product lines",
     ),
 ]
+# Each presentation's story, by its title
+PRESENTATIONS = {"Q3 review and Q4 priorities": REVIEW, "Beacon collections launch": LAUNCH}
+# Made by `make_presentation_states` from `slide_rows`; rerun it after changing a story
+PRESENTATION_STATES = Path(__file__).with_name("presentation_states.json")
 EQUIPMENT_POLICY = (
     "Northwind Labs",
     "Equipment and remote work policy",
@@ -166,10 +174,9 @@ def spreadsheet(parent: str, imports: str, title: str, sheet: Sheet) -> str:
     return drive.import_document(parent, title, content_doctype="Sheet", from_node=source)
 
 
-def presentation(parent: str, title: str, story: list[tuple[str, str, str]]) -> str:
-    node = drive.create_document(parent, title, content_doctype="Presentation")
-    deck = frappe.get_doc("Presentation", frappe.db.get_value("Presentation", {"node": node}))
-    deck.slides = []
+def slide_rows(story: list[tuple[str, str, str]]) -> list[dict]:
+    """Answer one presentation's old slide rows, the source `make_presentation_states` converts."""
+    rows: list[dict] = []
     for number, (heading, body, callout) in enumerate(story, 1):
         elements = [
             _shape(f"accent-{number}", 56, 50, 66, 6, "#5FE0B5FF"),
@@ -179,16 +186,27 @@ def presentation(parent: str, title: str, story: list[tuple[str, str, str]]) -> 
             _text(f"callout-{number}", callout, 78, 398, 800, 22),
             _text(f"footer-{number}", f"NORTHWIND LABS     /     {number:02}", 56, 492, 800, 13),
         ]
-        deck.append(
-            "slides",
+        rows.append(
             {
                 "background": "#102D29FF",
                 "elements": json.dumps(elements),
                 "transition": "None",
                 "transition_duration": "0",
-            },
+            }
         )
-    deck.save(ignore_permissions=True)
+
+    return rows
+
+
+def presentation(parent: str, title: str) -> str:
+    """Make one demo presentation, starting from the state the converter made once from its rows."""
+    node = drive.create_document(parent, title, content_doctype="Presentation")
+    found = content.find(SLIDES, node)
+    if found is None:
+        raise RuntimeError(f"Slides collaboration must be on to seed {title!r}")
+
+    state = json.loads(PRESENTATION_STATES.read_text(encoding="utf-8"))[title]
+    checkpoints.replace_start(SLIDES, found.id, base64.b64decode(state), SCHEMA.version)
     return node
 
 

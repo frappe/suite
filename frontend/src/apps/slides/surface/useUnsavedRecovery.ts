@@ -1,137 +1,101 @@
 import { toast } from 'frappe-ui'
-import { computed, readonly, ref, shallowRef, watch } from 'vue'
+import { computed, ref, shallowRef } from 'vue'
 
 import type { DocumentSession } from '@/apps/drive'
-import { showsSlides, viewOnly } from '@/apps/slides/stores/presentation'
+import type { DrawnSlide } from '@/apps/slides/collab/drawnDeck'
+import type { StoreItem } from '@/apps/slides/collab/liveDeck'
 import {
-  dirty,
-  isSaving,
-  resumeWrites,
-  retireDraft,
-  saveFailed,
-  saveRefused,
-  savingFor,
-  stopWrites,
-} from '@/apps/slides/stores/saving'
+  discardCopy,
+  downloadCopy,
+  roomCopies,
+  type RecoveryCopy,
+} from '@/apps/slides/recovery/copies'
+import { viewOnly } from '@/apps/slides/stores/presentation'
 import { slides } from '@/apps/slides/stores/slide'
-import { translate } from '@/platform/translation'
+import type { LostAccess } from '@/platform/collab'
+import { translate as __, translate } from '@/platform/translation'
 
 import {
-  clearStaleRecovery,
+  discardRecovery,
   downloadRecovery,
   downloadSlides,
-  forgetRecovery,
-  keepOutlivedRecovery,
   keepRecovery,
+  newestRecovery,
   readRecovery,
-  removeNewestRecovery,
 } from './recovery'
+
+export interface RetainOptions {
+  /** Past any later copy. By default only once edit access has gone. */
+  sticky?: boolean
+}
 
 interface RecoveryHost {
   isWritable: () => boolean
-  isEditable: () => boolean
+  isReadable: () => boolean
   load: () => Promise<void>
-  cancelRunningLoad: () => void
+  /** Shuts the live room for the lost right. True if it still holds unsent work. */
+  loseAccess: (lost: LostAccess) => Promise<boolean>
+  /** Asks the live room to take edits again: `held` when reloading would drop unsent work. */
+  regainAccess: () => Promise<'editing' | 'reload' | 'held'>
+  /** Whether the live room kept its unsent work as a copy on the device itself. */
+  isKeptByRoom: () => boolean
+  /** A drawn element as the slide store holds it, centred text flattened to top-left. */
+  flatten: (element: StoreItem) => StoreItem
 }
 
-/** The state that holds the surface until the person reloads or downloads. */
-interface HeldNotice {
-  message: string
-  reload?: () => void
-}
-
-/** What happens to unsaved edits when the server refuses them or access changes. */
+/** What happens to unsent edits when access changes or the page goes away. */
 export function useUnsavedRecovery(
   session: DocumentSession,
-  { isWritable, isEditable, load, cancelRunningLoad }: RecoveryHost,
+  { isWritable, isReadable, load, loseAccess, regainAccess, isKeptByRoom, flatten }: RecoveryHost,
 ) {
   const hasRecovery = ref(readRecovery(session.nodeId).length > 0)
-  // access narrowed and no copy could be stored: the slides on screen are the only copy
-  const isOnlyCopy = ref(false)
-  const onlyCopyNotice = shallowRef<HeldNotice>()
-  const refusalNotice = shallowRef<HeldNotice>()
-  const heldNotice = computed(() => onlyCopyNotice.value ?? refusalNotice.value)
-  // in the hold, or as the only copy, the live slides can go out with nothing stored
-  const canDownloadChanges = computed(
-    () => hasRecovery.value || saveRefused.value || isOnlyCopy.value,
-  )
+  // What the live room kept on the device, newest first: this page keeps no second copy of it
+  const roomKept = shallowRef<RecoveryCopy[]>([])
+  const canDownloadChanges = computed(() => hasRecovery.value || roomKept.value.length > 0)
+  // Page copies kept while the room had kept none: its write may still be on the way
+  const fallbacks: { id: string; slides: unknown[] }[] = []
+  void syncRoomKept()
 
-  function narrowed() {
-    // First, so no snapshot and no push leaves after this point. `stopWrites`
-    // also cancels a save under way and retires the draft, so it never replays,
-    // unless no copy of an unread draft fits or the store refuses both ways of
-    // retiring it: that one stays for the next load
-    // with no slides on screen yet there is nothing of the screen's to keep, whatever the flags say
-    const unsaved =
-      !!slides.value?.length &&
-      (dirty.value || isSaving.value || saveFailed.value || isOnlyCopy.value)
+  async function narrowed() {
     viewOnly.value = true
-    if (!unsaved) {
-      void stopWrites(session.contentDocname, keepUnreadDraft)
-      toast.warning('Editing access changed. This presentation is now view only.')
+    const shown = liveSlides()
+    const title = session.title.value
+    const isUnsent = await loseAccess(isReadable() ? 'lost_edit' : 'lost_read')
+    if (!isUnsent) {
+      // Access came back within the bound, so nothing turned view only
+      if (!isWritable()) {
+        toast.warning(__('Editing access changed. This presentation is now view only.'))
+      }
+
       return
     }
 
-    void stopWrites(session.contentDocname)
-    isOnlyCopy.value = !retainRecovery()
-
-    if (isOnlyCopy.value) {
-      cancelRunningLoad()
-      showOnlyCopy(translate('Editing access changed. Download your changes before you reload.'))
-      return
-    }
-
-    showKept('Editing access changed. Your unsaved changes are kept on this device.')
+    toast.warning(__('Editing access changed. Your unsaved changes are kept on this device.'), {
+      duration: Number.POSITIVE_INFINITY,
+      action: { label: __('Download my changes'), onClick: () => downloadSlides(shown, title) },
+    })
   }
 
-  function widened() {
-    if (isOnlyCopy.value && !retainRecovery()) {
-      showAccessBack()
+  async function widened() {
+    const regained = await regainAccess()
+    if (regained === 'held') {
       return
     }
 
-    isOnlyCopy.value = false
-    loadAfterAccessBack()
+    toast.info(__('You can edit this presentation again'))
+    if (regained === 'reload') {
+      void load()
+    }
   }
 
-  let hasSettledCopies = false
-
-  // A save that lands with edit access makes the recovery copy stale
-  watch(savingFor, (now, before) => {
-    // a push of the presentation left behind says nothing about this one
-    if (now || before !== session.contentDocname) return
-
-    if (saveFailed.value || !isEditable() || !hasRecovery.value) return
-
-    // the last surface's push can land during this one's first load
-    if (!hasSettledCopies) return
-
-    clearStaleRecovery(session.nodeId)
-    syncHasRecovery()
-  })
-
-  watch(saveRefused, (isRefused) => {
-    if (isRefused) {
-      showRefusal()
-    } else {
-      refusalNotice.value = undefined
-    }
-  })
-  watch(isOnlyCopy, (isOnly) => {
-    if (!isOnly) {
-      onlyCopyNotice.value = undefined
-    }
-  })
-  function retainRecovery() {
-    if (!slides.value?.length) {
+  function retainRecovery({ sticky = !isWritable() }: RetainOptions = {}) {
+    if (!slides.value?.length || isKeptByRoom()) {
       return true
     }
 
     try {
-      // with writes stopped no draft holds these slides, so a landed save can't make them stale
-      keepRecovery(session.nodeId, liveSlides(), {
-        sticky: !isWritable() || isOnlyCopy.value,
-      })
+      const shown = liveSlides()
+      fallbacks.push({ id: keepRecovery(session.nodeId, shown, { sticky }), slides: shown })
       hasRecovery.value = true
       return true
     } catch {
@@ -144,7 +108,7 @@ export function useUnsavedRecovery(
     hasRecovery.value = true
   }
 
-  /** Keeps the slides as they are now, past any later save. With no room, offers them as a download. */
+  /** Keeps the slides as they are now, past any later copy. With no room, offers them as a download. */
   function retainStickyOrOffer() {
     const copy = liveSlides()
     try {
@@ -152,10 +116,10 @@ export function useUnsavedRecovery(
       return true
     } catch {
       const title = session.title.value
-      toast.error(translate('Your latest changes could not be kept on this device.'), {
+      toast.error(__('Could not keep your latest changes on this device'), {
         duration: Number.POSITIVE_INFINITY,
         action: {
-          label: 'Download my changes',
+          label: __('Download my changes'),
           onClick: () => downloadSlides(copy, title),
         },
       })
@@ -163,69 +127,60 @@ export function useUnsavedRecovery(
     }
   }
 
-  // a draft from a killed tab that the first load had not reached when access narrowed
-  function keepUnreadDraft(content: unknown[]) {
-    try {
-      keepSticky(content)
-    } catch {
-      return false
-    }
-
-    showKept(
-      translate('Editing access changed. Unsaved changes from earlier are kept on this device.'),
-    )
-    return true
-  }
-
-  function showKept(message: string) {
-    toast.warning(message, {
-      duration: Number.POSITIVE_INFINITY,
-      action: {
-        label: 'Download my changes',
-        onClick: downloadChanges,
-      },
-    })
-  }
-
   function retainOrWarn() {
     const isKept = retainRecovery()
     if (!isKept) {
-      toast.error('Your latest changes could not be kept on this device.')
+      toast.error(__('Could not keep your latest changes on this device'))
     }
 
     return isKept
   }
 
-  // the server copy is the truth now: reload it rather than replay anything,
-  // though a dirty draft left for lack of room loads like any other
-  function loadAfterAccessBack() {
-    resumeWrites(session.contentDocname)
-    toast.info('You can edit this presentation again.')
-    void load()
+  function syncHasRecovery() {
+    hasRecovery.value = readRecovery(session.nodeId).length > 0
   }
 
-  function showAccessBack() {
-    showOnlyCopy(
-      translate('Editing access is back. Download your changes before you reload.'),
-      reloadAfterAccessBack,
-    )
+  /** Reads again what the live room kept, as it keeps a copy or one is discarded. */
+  async function syncRoomKept() {
+    roomKept.value = await roomCopies(session.nodeId)
+    retireFallbacks()
   }
 
-  function reloadAfterAccessBack() {
-    const isSafe =
-      retainRecovery() ||
-      window.confirm(
-        translate('Your latest changes could not be kept on this device. Reload anyway?'),
-      )
-    if (!isSafe) {
+  // Once the room's own copy holds the same slides, this page's copy of them is a twin
+  function retireFallbacks() {
+    if (!isKeptByRoom()) {
       return
     }
 
-    loadAfterAccessBack()
+    const kept = new Set(roomKept.value.map((copy) => sortedJson(inStoreForm(copy.slides))))
+    const twins = fallbacks.filter((fallback) => kept.has(sortedJson(fallback.slides)))
+    if (!twins.length) {
+      return
+    }
+
+    for (const twin of twins) {
+      discardRecovery(session.nodeId, twin.id, twin)
+      fallbacks.splice(fallbacks.indexOf(twin), 1)
+    }
+
+    syncHasRecovery()
   }
 
-  function syncHasRecovery() {
-    hasRecovery.value = readRecovery(session.nodeId).length > 0
+  // The room keeps centred text centred, where the store a page copy comes from holds it flattened
+  function inStoreForm(drawn: unknown[]) {
+    // SAFETY: the room's copies are read with `drawnSlides`, as `roomCopies` builds them
+    return (drawn as DrawnSlide[]).map((slide) => ({
+      ...slide,
+      elements: slide.elements.map(flatten),
+    }))
+  }
+
+  // The room's newest copy, where no page copy is newer
+  function newerRoomCopy() {
+    const kept = roomKept.value[0]
+    const page = newestRecovery(session.nodeId)
+    const isNewer = !!kept && (!page || kept.savedAt.getTime() >= Date.parse(page.copy.savedAt))
+    return isNewer ? kept : undefined
   }
 
   function liveSlides() {
@@ -234,102 +189,67 @@ export function useUnsavedRecovery(
     return copy
   }
 
-  function showRefusal() {
-    let message = translate(
-      'This presentation changed elsewhere. Your changes are kept on this device.',
-    )
-    try {
-      keepSticky(liveSlides())
-    } catch {
-      message = translate(
-        'This presentation changed elsewhere. Download your changes before you reload.',
-      )
-    }
-
-    refusalNotice.value = { message, reload: () => void load() }
-  }
-
-  function showOnlyCopy(message: string, reload?: () => void) {
-    onlyCopyNotice.value = { message, reload }
-    // its "kept" and its bare Reload no longer hold
-    refusalNotice.value = undefined
-  }
-
   function downloadChanges() {
-    const title = session.title.value
-    if (saveRefused.value || isOnlyCopy.value) {
-      downloadSlides(liveSlides(), title)
+    const kept = newerRoomCopy()
+    if (kept) {
+      downloadCopy({ ...kept, title: session.title.value })
       return
     }
 
-    if (!downloadRecovery(session.nodeId, title)) {
+    const downloaded = downloadRecovery(session.nodeId, session.title.value)
+    if (downloaded === 'none') {
       syncHasRecovery()
-      toast.error('No recovery copy is kept for this presentation.')
+      toast.error(__('No recovery copy is kept for this presentation'))
+    } else if (downloaded === 'unmarked') {
+      toast.warning(__('This device is too full to note that the copy was downloaded'))
     }
   }
 
   async function discardChanges() {
+    // the copy as it is while the person is asked, so one another tab writes meanwhile stays
+    const kept = newerRoomCopy()
+    const shown = kept ? undefined : newestRecovery(session.nodeId)
     if (!window.confirm(translate("Discard your kept changes? This can't be undone."))) {
       return
     }
 
-    if (saveRefused.value) {
-      forgetRecovery(session.nodeId, liveSlides())
-      syncHasRecovery()
-      await retireDraft(session.contentDocname)
-      if (isWritable()) {
-        resumeWrites(session.contentDocname)
+    try {
+      if (kept) {
+        await discardCopy(kept)
+      } else if (shown) {
+        discardRecovery(session.nodeId, shown.id, shown.copy)
       }
-
-      await load()
+    } catch {
+      toast.error(__("Could not discard the copy. It's still kept on this device."))
       return
     }
 
-    if (isOnlyCopy.value) {
-      if (isWritable()) {
-        resumeWrites(session.contentDocname)
-      }
-
-      await load()
-      return
-    }
-
-    removeNewestRecovery(session.nodeId)
     syncHasRecovery()
+    await syncRoomKept()
     // the edits on screen would go into a copy again on leaving
     if (!isWritable()) {
       await load()
     }
   }
 
-  // the server copy replaced the slides on screen
-  function clearOnlyCopy() {
-    isOnlyCopy.value = false
-  }
-
-  function settleCopies() {
-    if (hasSettledCopies) {
-      return
-    }
-
-    hasSettledCopies = true
-    keepOutlivedRecovery(session.nodeId, showsSlides)
-  }
-
   return {
-    isOnlyCopy: readonly(isOnlyCopy),
-    clearOnlyCopy,
     canDownloadChanges,
     narrowed,
     widened,
-    keepSticky,
     retainRecovery,
     retainStickyOrOffer,
     retainOrWarn,
-    reloadAfterAccessBack,
+    syncRoomKept,
     downloadChanges,
     discardChanges,
-    settleCopies,
-    heldNotice,
   }
+}
+
+// JSON with each object's keys sorted: the store changes elements in place, so its field order is its own
+function sortedJson(value: unknown) {
+  return JSON.stringify(value, (_key, item: unknown) =>
+    item && typeof item === 'object' && !Array.isArray(item)
+      ? Object.fromEntries(Object.entries(item).sort(([left], [right]) => (left < right ? -1 : 1)))
+      : item,
+  )
 }

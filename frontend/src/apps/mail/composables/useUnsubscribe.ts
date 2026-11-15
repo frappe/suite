@@ -4,6 +4,7 @@ import { computed, ref } from 'vue'
 import { api, useQuery } from '@/api'
 import type { Mail } from '@/apps/mail/types'
 import { commitAfterUndo } from '@/apps/mail/utils'
+import { translate as __ } from '@/platform/translation'
 
 /**
  * Unsubscribing from a list, from the open thread (see suite/mail/unsubscribe.py; decided in the
@@ -55,14 +56,14 @@ export function useUnsubscribe(
     const key = heldKey(mail)
     hold(key, true)
     commitAfterUndo({
-      message: __('Unsubscribed.'),
+      message: __('Unsubscribed'),
       removal: { kind: 'unsubscribe', account: account(), id: mail.id },
       // Sent, the look-up is read again (see the client policy) and says so itself.
       restore: () => hold(key, false),
       // Refused or unanswered: the sender's page is the way left, where there is one.
       onFailed: () =>
         toast.error(
-          __("Couldn't unsubscribe."),
+          __('Could not unsubscribe'),
           option.link
             ? {
                 action: {

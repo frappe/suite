@@ -7,18 +7,11 @@ import {
 } from '@tiptap/y-tiptap'
 import * as yjs from 'yjs'
 
+import type { ThreadPlace } from '@/apps/drive'
+
 import { encodeAnchor, heldId, readAnchor } from './anchors'
 
-/** Where a thread shows in this tab. */
-export type ThreadPlace =
-  | { kind: 'document' }
-  | { kind: 'text'; from: number; to: number; quote: string }
-  // An end's text hasn't reached this tab yet
-  | { kind: 'arriving'; quote: string }
-  // Every character it was made on is deleted
-  | { kind: 'deleted'; quote: string }
-  // An old comment moved over without its place
-  | { kind: 'unplaced' }
+export type { ThreadPlace }
 
 /** Finds a thread's text in the editor: the part of it still there, never anything outside it. */
 export function placeThread(state: EditorState, anchor: string): ThreadPlace {

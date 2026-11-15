@@ -40,6 +40,7 @@ import { useRouter } from 'vue-router'
 import { api, useMutation } from '@/api'
 import { userStore } from '@/apps/people/stores/user'
 import { raiseToast } from '@/apps/people/utils'
+import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()
 
@@ -59,7 +60,7 @@ async function createAddressBookSubmit() {
   const account = store.accountId
   const id = await createAddressBook.run({ ...addressBook, account })
   show.value = false
-  raiseToast(__('Address book created.'))
+  raiseToast(__('Address book created'))
   await router.push({
     name: 'people-address-book',
     params: { accountId: account, addressBookName: id },

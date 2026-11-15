@@ -4,6 +4,7 @@ import { computed, nextTick, ref, shallowRef, watch } from 'vue'
 
 import {
   DriveDocumentHeader,
+  DriveDocumentMenu,
   driveNodeRoute,
   type DocumentPanel,
   type DocumentSession,
@@ -19,7 +20,6 @@ import { useDocumentLeaveGuard, type DocumentSaveState } from './navigation'
 import type { CellAnchor, SheetVersion } from './records'
 import { clearRecovery, downloadRecovery, keepRecovery, readRecovery } from './recovery'
 import SheetCommentsPanel from './SheetCommentsPanel.vue'
-import SheetDocumentMenu from './SheetDocumentMenu.vue'
 import SheetVersionBar from './SheetVersionBar.vue'
 import SheetVersionsPanel from './SheetVersionsPanel.vue'
 import {
@@ -101,11 +101,11 @@ const access = createSheetAccess(props.session, {
   widened() {
     if (editor.value?.isCollab) {
       void editor.value.regainAccess(() => access.writable.value)
-      toast.info(__('You can edit this spreadsheet again.'))
+      toast.info(__('You can edit this spreadsheet again'))
       return
     }
     bodyRevision.value += 1
-    toast.info(__('You can edit this spreadsheet again.'))
+    toast.info(__('You can edit this spreadsheet again'))
   },
 })
 // A version shown read-only in place of the sheet (the live room closes meanwhile).
@@ -181,7 +181,7 @@ async function previewVersion(version: SheetVersion | null) {
     preview.value = await readPreview(version, bytes, liveState)
     previewStep.value = null
   } catch (error) {
-    toast.error(errorText(error, __('This version could not be shown.')))
+    toast.error(errorText(error, __('This version could not be shown')))
   }
 }
 /** Back to the sheet as it is now; resolves once its editor has loaded. */
@@ -264,7 +264,7 @@ function openInNewTab(node: { name: string; title: string }) {
 }
 function selectAnchor(anchor: CellAnchor) {
   if (!editor.value?.goToCell(anchor.sheet, anchor.cell)) {
-    toast.info(`${anchor.sheet} · ${anchor.cell} is no longer in this spreadsheet.`)
+    toast.info(__('{0} · {1} is no longer in this spreadsheet', [anchor.sheet, anchor.cell]))
   }
 }
 
@@ -320,7 +320,7 @@ async function retainRecovery(): Promise<boolean> {
     hasRecovery.value = true
     return true
   } catch {
-    toast.error('Your latest changes could not be kept on this device.')
+    toast.error(__('Could not keep your latest changes on this device'))
     return false
   } finally {
     copying.value = false
@@ -330,9 +330,9 @@ async function downloadChanges() {
   try {
     const downloaded = await downloadRecovery(props.session.nodeId, props.session.title.value)
     hasRecovery.value = false
-    if (!downloaded) toast.error('No recovery copy is kept for this spreadsheet.')
+    if (!downloaded) toast.error(__('No recovery copy is kept for this spreadsheet'))
   } catch {
-    toast.error('Your changes could not be downloaded. They are still kept on this device.')
+    toast.error(__('Could not download your changes. They are still kept on this device.'))
   }
 }
 useDocumentLeaveGuard({
@@ -374,7 +374,13 @@ useDocumentLeaveGuard({
       @notes-opened="panel = null"
     >
       <template
-        #header="{ viewOnly, status: EditorStatus, menus: EditorMenus, actions: EditorActions }"
+        #header="{
+          viewOnly,
+          status: EditorStatus,
+          menus: EditorMenus,
+          actions: EditorActions,
+          menuItems,
+        }"
       >
         <DriveDocumentHeader
           class="sheets-header"
@@ -383,27 +389,28 @@ useDocumentLeaveGuard({
           :save-state="editor?.saveState ?? null"
           :view-only="viewOnly"
           :recoverable="hasRecovery"
-          layout="menus"
           @download-changes="downloadChanges"
         >
           <template #status>
             <component :is="EditorStatus" />
           </template>
-          <template #menus>
-            <component :is="EditorMenus" />
-          </template>
           <template #actions>
             <component :is="EditorActions" />
           </template>
           <template #menu>
-            <SheetDocumentMenu
-              v-if="session.panels.value.length"
+            <DriveDocumentMenu
+              :session="session"
               :panels="session.panels.value"
               :panel="panel"
+              :transfer="menuItems.transfer"
+              :settings="menuItems.settings"
               @toggle-panel="togglePanel"
             />
           </template>
         </DriveDocumentHeader>
+        <div class="sheets-menus">
+          <component :is="EditorMenus" />
+        </div>
       </template>
 
       <template v-if="preview" #banner>
@@ -455,26 +462,41 @@ useDocumentLeaveGuard({
   min-height: 0;
 }
 
-/* The editor's menu bar answers to the `sn-topbar` container: below 640 px
-   its six menus fold into one. */
-.sheets-header {
+/* The editor's status chips and menu bar answer to the `sn-topbar` container:
+   below 640 px the five menus fold into one. */
+.sheets-header,
+.sheets-menus {
   container: sn-topbar / inline-size;
   /* The bars' colours live on the editor root (SheetEditor.css --sn-bar-*). */
   background: var(--sn-bar-bg);
+}
+.sheets-header {
   border-bottom-color: var(--sn-bar-line);
   position: relative;
   z-index: 10;
 }
-/* Hover and "on" fills follow the bar colours, as in row 2; solid buttons
-   keep their own. */
-.sheets-header :deep(button:not(:disabled, .bg-surface-gray-10):hover) {
+/* The menus' own row, between the header and the tools, with the header's
+   line under it. Its side gutter and the 4px above and below the words are
+   the tools row's. */
+.sheets-menus {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--sn-bar-line);
+}
+/* Hover and "on" fills follow the bar colours, as in the tools row; solid
+   buttons keep their own. Only a panel toggle (`data-panel`) shows the "on" fill. */
+.sheets-header :deep(button:not(:disabled, .bg-surface-gray-10):hover),
+.sheets-menus :deep(button:not(:disabled):hover) {
   background: var(--sn-bar-hover);
 }
 .sheets-header :deep(button[data-state='open']),
-.sheets-header :deep(button[aria-pressed='true']) {
+.sheets-menus :deep(button[data-state='open']),
+.sheets-header :deep(button[data-panel][aria-pressed='true']) {
   background: var(--sn-bar-on);
 }
-.sheets-header :deep(button[aria-pressed='true']) {
+.sheets-header :deep(button[data-panel][aria-pressed='true']) {
   box-shadow: inset 0 0 0 1px var(--sn-bar-on-edge);
 }
 /* Muted text (Saved, the folder) follows the bar, to stay readable on it. */

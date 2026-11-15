@@ -213,6 +213,7 @@ import { raiseToast } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import { translate as __ } from '@/platform/translation'
 
 const store = userStore()
 const { identities } = store
@@ -256,7 +257,7 @@ async function save() {
     bcc: identity.bcc ?? [],
     html_signature: identity.html_signature,
   })
-  raiseToast(__('Identity updated.'))
+  raiseToast(__('Identity updated'))
 }
 function setSignature(value: string) {
   if (draft.value) draft.value.html_signature = value
@@ -302,7 +303,7 @@ async function addIdentitySubmit() {
   }
   const result = await addIdentity.run(input)
   const id = result
-  raiseToast(__('Identity created.'))
+  raiseToast(__('Identity created'))
   showAddIdentityDialog.value = false
   identityName.value = `${store.accountId}|${id}`
 }
@@ -313,7 +314,7 @@ async function deleteIdentitySubmit() {
     names: [identityName.value],
   }
   await deleteIdentity.run(input)
-  raiseToast(__('Identity deleted.'))
+  raiseToast(__('Identity deleted'))
   showDeleteDialog.value = false
   identityName.value = ''
 }

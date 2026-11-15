@@ -17,3 +17,21 @@ export const adjustScheduleStartTime = (startTime: string, endTime: string) => {
   if (!startTime || !endTime || toMinutes(endTime) > toMinutes(startTime)) return startTime
   return toTime(Math.max(toMinutes(endTime) - 60, 0))
 }
+
+/**
+ * The window a new meeting opens on: the next full hour, an hour long. The date is that hour's own,
+ * so after 23:00 it is tomorrow, and the end stops at the day's last slot rather than wrapping past
+ * midnight to before the start.
+ */
+export const defaultScheduleWindow = (now: Date) => {
+  const start = new Date(now)
+  start.setMinutes(0, 0, 0)
+  start.setHours(start.getHours() + 1)
+  const pad = (value: number) => String(value).padStart(2, '0')
+  const startTime = `${pad(start.getHours())}:${pad(start.getMinutes())}`
+  return {
+    date: `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`,
+    startTime,
+    endTime: adjustScheduleEndTime(startTime, startTime),
+  }
+}
