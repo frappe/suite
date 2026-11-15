@@ -3779,6 +3779,7 @@ function _draftEdit() {
 defineExpose({
   activeCell,
   currentSheet,
+  sheetNames,
   saveState,
   flushSave,
   get hasLoadError() {

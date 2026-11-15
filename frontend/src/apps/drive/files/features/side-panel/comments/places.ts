@@ -1,5 +1,7 @@
 import type { ID } from 'yjs'
 
+import type { FileNoun } from '@/platform/collab/restoreNotices'
+
 /** A thread on the whole document rather than on a part of it. */
 export const DOCUMENT_ANCHOR = 'document'
 
@@ -31,4 +33,7 @@ export interface CommentAnchors {
 /** Comments on the whole document only. */
 export const WHOLE_DOCUMENT: CommentAnchors = { quote: () => '', ends: () => [] }
 
-export type { FileNoun } from '@/platform/collab/restoreNotices'
+export type { FileNoun }
+
+/** What the comments call the file they are on. */
+export type CommentNoun = FileNoun | 'spreadsheet'

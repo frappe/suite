@@ -72,13 +72,13 @@ test("renames, comments and opens versions without a legacy Drive call", async (
 	await title.press("Enter");
 	await expect.poll(async () => (await getNode(api, sheet.name)).title).toBe("Renamed sheet");
 
-	await page.getByRole("button", { name: "More actions" }).click();
-	await page.getByRole("menuitem", { name: "Comments" }).click();
+	// The toolbar's Comment starts a comment on the cursor cell
+	await page.locator(".sn-toolbar").getByRole("button", { name: "Comment", exact: true }).click();
 	const comments = page.getByRole("complementary", { name: "Comments" });
-	await comments.getByRole("textbox", { name: "New comment" }).fill("Check the A1 total");
+	await comments.getByLabel("Add a comment on the cell", { exact: true }).fill("Check the A1 total");
 	await comments.getByRole("button", { name: "Comment", exact: true }).click();
-	await expect(comments.getByText("Check the A1 total")).toBeVisible();
-	await expect(comments.getByRole("button", { name: "Sheet1 · A1" })).toBeVisible();
+	const row = comments.locator("li[data-thread]").filter({ hasText: "Check the A1 total" });
+	await expect(row).toContainText("Sheet1 · A1");
 	expect(await threads()).toMatchObject([
 		{ anchor: "sheets:cell:A1!Sheet1", comments: [{ content: "Check the A1 total" }] },
 	]);
