@@ -207,4 +207,18 @@ describe('the copy the live room kept on the device', () => {
 
     expect(keepRecovery).not.toHaveBeenCalled()
   })
+
+  it('leaves a page copy kept meanwhile that holds other work than the copy the room kept', async () => {
+    vi.mocked(keepRecovery).mockImplementation(stored.keepRecovery)
+    slides.value = JSON.parse(JSON.stringify(typed))
+    let isKept = false
+    const kept = recovery({ isKeptByRoom: () => isKept })
+    expect(kept.retainRecovery()).toBe(true)
+
+    await keptByRoom('older words')
+    isKept = true
+    await kept.syncRoomKept()
+
+    expect(stored.readRecovery('n').map((copy) => copy.slides)).toEqual([typed])
+  })
 })

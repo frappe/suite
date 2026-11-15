@@ -48,6 +48,8 @@ export function useUnsavedRecovery(
   // What the live room kept on the device, newest first: this page keeps no second copy of it
   const roomKept = shallowRef<RecoveryCopy[]>([])
   const canDownloadChanges = computed(() => hasRecovery.value || roomKept.value.length > 0)
+  // Page copies kept while the room had kept none: its write may still be on the way
+  const fallbacks: { id: string; slides: unknown[] }[] = []
   void syncRoomKept()
 
   async function narrowed() {
@@ -88,7 +90,8 @@ export function useUnsavedRecovery(
     }
 
     try {
-      keepRecovery(session.nodeId, liveSlides(), { sticky })
+      const shown = liveSlides()
+      fallbacks.push({ id: keepRecovery(session.nodeId, shown, { sticky }), slides: shown })
       hasRecovery.value = true
       return true
     } catch {
@@ -136,6 +139,27 @@ export function useUnsavedRecovery(
   /** Reads again what the live room kept, as it keeps a copy or one is discarded. */
   async function syncRoomKept() {
     roomKept.value = await roomCopies(session.nodeId)
+    retireFallbacks()
+  }
+
+  // Once the room's own copy holds the same slides, this page's copy of them is a twin
+  function retireFallbacks() {
+    if (!isKeptByRoom()) {
+      return
+    }
+
+    const kept = new Set(roomKept.value.map((copy) => JSON.stringify(copy.slides)))
+    const twins = fallbacks.filter((fallback) => kept.has(JSON.stringify(fallback.slides)))
+    if (!twins.length) {
+      return
+    }
+
+    for (const twin of twins) {
+      discardRecovery(session.nodeId, twin.id, twin)
+      fallbacks.splice(fallbacks.indexOf(twin), 1)
+    }
+
+    syncHasRecovery()
   }
 
   // The room's newest copy, where no page copy is newer

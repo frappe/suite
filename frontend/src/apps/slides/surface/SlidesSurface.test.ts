@@ -71,6 +71,7 @@ const { draftsDbName, DRAFTS_DB_NAME, RECORD_PREFIX } =
   await import('@/apps/slides/utils/slidesCaches')
 const { openDraftsDb } = await import('@/apps/slides/utils/drafts')
 const { keepRecovery, readRecovery } = await import('./recovery')
+const { roomCopies } = await import('@/apps/slides/recovery/copies')
 const { dialog, toast, useKeyboardShortcut } = await import('frappe-ui')
 const { changeSlideInSlideshow, showSlideshowEndScreen, shownSlide } =
   await import('@/apps/slides/stores/slideshow')
@@ -3319,6 +3320,62 @@ describe('edit access changing on a converted presentation', () => {
     window.dispatchEvent(new Event('beforeunload', { cancelable: true }))
 
     expect(readRecovery('node-1')).toEqual([])
+  })
+
+  it('keeps one copy when the tab is closed and kept open while the room is still keeping its own', async () => {
+    const room = await editing()
+    room.setStatus({ unsentCount: 1, saveState: 'unsaved' })
+    let writeLands = () => {}
+    const landed = new Promise<void>((resolve) => {
+      writeLands = resolve
+    })
+    // As the client does: shut and failed at once, the device write landing later
+    room.loseAccess.mockImplementation(async (lost: LostAccess) => {
+      room.setStatus({ canWrite: false, blockReason: lost, saveState: 'failed' })
+      await landed
+      await keptOnDevice(room.doc)
+      room.setStatus({ keptCopyCount: 1 })
+    })
+    mounted!.access.value = { role: 10 }
+    await vi.waitFor(() => expect(room.loseAccess).toHaveBeenCalled())
+
+    // the person closes the tab, then stays when the browser asks
+    window.dispatchEvent(new Event('beforeunload', { cancelable: true }))
+    writeLands()
+
+    await vi.waitFor(() => expect(readRecovery('node-1')).toEqual([]))
+    const kept = await roomCopies('node-1')
+    expect(kept.map((copy) => JSON.stringify(copy.slides).includes('one'))).toEqual([true])
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const discard = [...mounted!.root.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Discard my changes',
+    )
+    discard!.click()
+    const store = (await openSignedInDeviceStore('slides'))!
+    await vi.waitFor(async () => expect(await store.allRecovery()).toEqual([]))
+    expect(readRecovery('node-1')).toEqual([])
+  })
+
+  it('keeps the page copy made while the room was keeping its own, once the room could not', async () => {
+    const room = await editing()
+    room.setStatus({ unsentCount: 1, saveState: 'unsaved' })
+    let writeFails = () => {}
+    const failed = new Promise<void>((resolve) => {
+      writeFails = resolve
+    })
+    room.loseAccess.mockImplementation(async (lost: LostAccess) => {
+      room.setStatus({ canWrite: false, blockReason: lost, saveState: 'failed' })
+      await failed
+      room.setStatus({ hasCopyFailed: true })
+    })
+    mounted!.access.value = { role: 10 }
+    await vi.waitFor(() => expect(room.loseAccess).toHaveBeenCalled())
+
+    window.dispatchEvent(new Event('beforeunload', { cancelable: true }))
+    writeFails()
+
+    await vi.waitFor(() => expect(room.status.hasCopyFailed).toBe(true))
+    expect(readRecovery('node-1')).toMatchObject([{ sticky: true }])
   })
 
   it('says the unsent edits are kept as soon as the server refuses them, with no focus needed', async () => {
