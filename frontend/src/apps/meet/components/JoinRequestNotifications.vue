@@ -45,7 +45,12 @@
           </div>
 
           <div class="flex space-x-2">
-            <Button size="sm" class="flex-1" @click="$emit('approve-user', request.user_id)">
+            <Button
+              size="sm"
+              variant="solid"
+              class="flex-1"
+              @click="$emit('approve-user', request.user_id)"
+            >
               <template #prefix>
                 <lucide-check class="w-3 h-3 mr-1" />
               </template>
