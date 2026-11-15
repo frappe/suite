@@ -258,6 +258,16 @@ class StoreClient:
         self.copy_object(Bucket=Bucket, Key=Key, CopySource=CopySource)
 
 
+class RefusingStoreClient(StoreClient):
+    """A store that refuses every copy with `AccessDenied`, and counts the attempts."""
+
+    copy_attempts = 0
+
+    def copy_object(self, Bucket, Key, CopySource):
+        self.copy_attempts += 1
+        raise StubClientError("AccessDenied")
+
+
 def bucket_over(client):
     return BotoBucket(SimpleNamespace(bucket="drive-bucket", client=client, _client_error=StubClientError))
 
@@ -306,12 +316,14 @@ class TestBotoBucketCopiesSlashNamedKeys(unittest.TestCase):
                 self.assertEqual(client.objects, {})
 
     def test_a_refusal_is_not_retried_under_another_name(self):
-        client = MagicMock()
-        client.copy_object.side_effect = StubClientError("AccessDenied")
-        with self.assertRaises(StubClientError):
-            bucket_over(client).copy_object("/team/id", "private/b1/report.pdf")
-        self.assertEqual(client.copy_object.call_count, 1)
-        self.assertEqual(client.head_object.call_count, 0)
+        for name, copy in self.copies():
+            with self.subTest(name):
+                # `team/id` exists, so a wrong retry without the slash would succeed.
+                client = RefusingStoreClient({"team/id": b"report"}, trims_path_keys=True)
+                with self.assertRaises(StubClientError):
+                    copy(bucket_over(client), "/team/id", "private/b1/report.pdf")
+                self.assertEqual(client.objects, {"team/id": b"report"})
+                self.assertEqual(client.copy_attempts, 1)
 
 
 class TestBotoBucket(unittest.TestCase):

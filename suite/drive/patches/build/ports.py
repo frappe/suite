@@ -385,8 +385,8 @@ class BotoBucket:
             stored_key = source_key.lstrip("/")
             if not (
                 self._is_missing(e)
+                and source_key.startswith("/")
                 and stored_key
-                and stored_key != source_key
                 and self._is_one_object(source_key, stored_key)
             ):
                 raise
