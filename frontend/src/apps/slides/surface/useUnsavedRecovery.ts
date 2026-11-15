@@ -2,6 +2,8 @@ import { toast } from 'frappe-ui'
 import { computed, ref, shallowRef } from 'vue'
 
 import type { DocumentSession } from '@/apps/drive'
+import type { DrawnSlide } from '@/apps/slides/collab/drawnDeck'
+import type { StoreItem } from '@/apps/slides/collab/liveDeck'
 import {
   discardCopy,
   downloadCopy,
@@ -37,12 +39,14 @@ interface RecoveryHost {
   regainAccess: () => Promise<'editing' | 'reload' | 'held'>
   /** Whether the live room kept its unsent work as a copy on the device itself. */
   isKeptByRoom: () => boolean
+  /** A drawn element as the slide store holds it, centred text flattened to top-left. */
+  flatten: (element: StoreItem) => StoreItem
 }
 
 /** What happens to unsent edits when access changes or the page goes away. */
 export function useUnsavedRecovery(
   session: DocumentSession,
-  { isWritable, isReadable, load, loseAccess, regainAccess, isKeptByRoom }: RecoveryHost,
+  { isWritable, isReadable, load, loseAccess, regainAccess, isKeptByRoom, flatten }: RecoveryHost,
 ) {
   const hasRecovery = ref(readRecovery(session.nodeId).length > 0)
   // What the live room kept on the device, newest first: this page keeps no second copy of it
@@ -148,8 +152,8 @@ export function useUnsavedRecovery(
       return
     }
 
-    const kept = new Set(roomKept.value.map((copy) => JSON.stringify(copy.slides)))
-    const twins = fallbacks.filter((fallback) => kept.has(JSON.stringify(fallback.slides)))
+    const kept = new Set(roomKept.value.map((copy) => sortedJson(inStoreForm(copy.slides))))
+    const twins = fallbacks.filter((fallback) => kept.has(sortedJson(fallback.slides)))
     if (!twins.length) {
       return
     }
@@ -160,6 +164,15 @@ export function useUnsavedRecovery(
     }
 
     syncHasRecovery()
+  }
+
+  // The room keeps centred text centred, where the store a page copy comes from holds it flattened
+  function inStoreForm(drawn: unknown[]) {
+    // SAFETY: the room's copies are read with `drawnSlides`, as `roomCopies` builds them
+    return (drawn as DrawnSlide[]).map((slide) => ({
+      ...slide,
+      elements: slide.elements.map(flatten),
+    }))
   }
 
   // The room's newest copy, where no page copy is newer
@@ -230,4 +243,13 @@ export function useUnsavedRecovery(
     downloadChanges,
     discardChanges,
   }
+}
+
+// JSON with each object's keys sorted: the store changes elements in place, so its field order is its own
+function sortedJson(value: unknown) {
+  return JSON.stringify(value, (_key, item: unknown) =>
+    item && typeof item === 'object' && !Array.isArray(item)
+      ? Object.fromEntries(Object.entries(item).sort(([left], [right]) => (left < right ? -1 : 1)))
+      : item,
+  )
 }

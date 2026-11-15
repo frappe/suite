@@ -164,6 +164,11 @@ export function useConvertedRoom({
     return waitingOnFonts.has(element.id)
   }
 
+  // centred text as the store holds it, top-left
+  function flatten(element: StoreItem) {
+    return flattenNow(element, measured)
+  }
+
   function measured(element: StoreItem) {
     const key = `${element.width}|${element.lineHeight}|${element.content}`
     const known = sizes.get(element.id)
@@ -276,7 +281,7 @@ export function useConvertedRoom({
     const shared = sharedPresence(liveRoom.presence!)
     deck = openLiveDeck(doc, {
       slides: storeSlides,
-      flatten: (element) => flattenNow(element, measured),
+      flatten,
       boundElementId,
       isSelected: (id) =>
         activeElementIds.value.includes(id) || currentSlide.value?.clientId === id,
@@ -537,5 +542,6 @@ export function useConvertedRoom({
     loseAccess,
     regainAccess,
     isKeptByRoom,
+    flatten,
   }
 }

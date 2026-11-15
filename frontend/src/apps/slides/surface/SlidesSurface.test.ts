@@ -18,6 +18,7 @@ import {
 } from 'yjs'
 
 import type { DocumentComments, DocumentVersion } from '@/apps/drive'
+import type { OldElement } from '@/apps/slides/collab/conversion'
 import type { StoreSlide } from '@/apps/slides/collab/liveDeck'
 import {
   openSignedInDeviceStore,
@@ -3141,11 +3142,8 @@ describe('edit access changing on a converted presentation', () => {
   }
 
   // a room for one slide, as the server converted it
-  function liveRoom() {
-    const answer = convertLegacy(
-      { slides: [{ id: 's1', elements: [{ id: 'e1', type: 'text', content: '<p>one</p>' }] }] },
-      4 * 1024 * 1024,
-    )
+  function liveRoom(elements: OldElement[] = [{ id: 'e1', type: 'text', content: '<p>one</p>' }]) {
+    const answer = convertLegacy({ slides: [{ id: 's1', elements }] }, 4 * 1024 * 1024)
     if (answer.kind !== 'converted') throw new Error(JSON.stringify(answer))
 
     const doc = new Doc()
@@ -3204,12 +3202,44 @@ describe('edit access changing on a converted presentation', () => {
   }
 
   // The room and the surface, drawn and editing
-  async function editing() {
-    const room = liveRoom()
+  async function editing(elements?: OldElement[]) {
+    const room = liveRoom(elements)
     mounted = await openedSurface({ deck: { is_converted: true } })
     await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
     return room
   }
+
+  // As the client does: shut and failed at once, the device write landing once it is let go
+  function keepsLate(room: ReturnType<typeof liveRoom>) {
+    let writeLands = () => {}
+    const landed = new Promise<void>((resolve) => {
+      writeLands = resolve
+    })
+    room.loseAccess.mockImplementation(async (lost: LostAccess) => {
+      room.setStatus({ canWrite: false, blockReason: lost, saveState: 'failed' })
+      await landed
+      await keptOnDevice(room.doc)
+      room.setStatus({ keptCopyCount: 1 })
+    })
+    return writeLands
+  }
+
+  // fonts loaded, as opening measures centred text to draw it top-left
+  function fontsLoaded() {
+    const fonts = { status: 'loaded', ready: Promise.resolve(), check: () => true }
+    Object.defineProperty(document, 'fonts', { configurable: true, value: fonts })
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(40)
+    onTestFinished(() => {
+      Reflect.deleteProperty(document, 'fonts')
+    })
+  }
+
+  const centred = { type: 'text', width: 600, transform: 'translate(-50%, -50%)' }
+  const titled = [
+    { ...centred, id: 'title', content: '<p>Talk</p>', left: 480, top: 200 },
+    { ...centred, id: 'subtitle', content: '<p>Today</p>', left: 480, top: 300 },
+    { id: 'e1', type: 'text', content: '<p>one</p>', left: 100, top: 400 },
+  ]
 
   beforeEach(() => {
     vi.mocked(toast.warning).mockClear()
@@ -3325,17 +3355,7 @@ describe('edit access changing on a converted presentation', () => {
   it('keeps one copy when the tab is closed and kept open while the room is still keeping its own', async () => {
     const room = await editing()
     room.setStatus({ unsentCount: 1, saveState: 'unsaved' })
-    let writeLands = () => {}
-    const landed = new Promise<void>((resolve) => {
-      writeLands = resolve
-    })
-    // As the client does: shut and failed at once, the device write landing later
-    room.loseAccess.mockImplementation(async (lost: LostAccess) => {
-      room.setStatus({ canWrite: false, blockReason: lost, saveState: 'failed' })
-      await landed
-      await keptOnDevice(room.doc)
-      room.setStatus({ keptCopyCount: 1 })
-    })
+    const writeLands = keepsLate(room)
     mounted!.access.value = { role: 10 }
     await vi.waitFor(() => expect(room.loseAccess).toHaveBeenCalled())
 
@@ -3354,6 +3374,45 @@ describe('edit access changing on a converted presentation', () => {
     const store = (await openSignedInDeviceStore('slides'))!
     await vi.waitFor(async () => expect(await store.allRecovery()).toEqual([]))
     expect(readRecovery('node-1')).toEqual([])
+  })
+
+  it('keeps one copy of a presentation whose centred title is untouched, edited elsewhere', async () => {
+    fontsLoaded()
+    const room = await editing(titled)
+    const paragraph = fromPartial<XmlElement>(elementText(room.doc, 'e1')!.get(0))
+    fromPartial<XmlText>(paragraph.get(0)).insert(3, ' more')
+    await vi.waitFor(() => expect(JSON.stringify(editorSlides.value)).toContain('one more'))
+    room.setStatus({ unsentCount: 1, saveState: 'unsaved' })
+    const writeLands = keepsLate(room)
+    mounted!.access.value = { role: 10 }
+    await vi.waitFor(() => expect(room.loseAccess).toHaveBeenCalled())
+
+    window.dispatchEvent(new Event('beforeunload', { cancelable: true }))
+    expect(readRecovery('node-1')).toHaveLength(1)
+    writeLands()
+
+    await vi.waitFor(() => expect(readRecovery('node-1')).toEqual([]))
+    expect((await roomCopies('node-1')).map((copy) => copy.slides.length)).toEqual([1])
+  })
+
+  it("keeps the page copy whose title moved, where the room's copy has it where it was", async () => {
+    fontsLoaded()
+    const room = await editing(titled)
+    room.setStatus({ unsentCount: 1, saveState: 'unsaved' })
+    const writeLands = keepsLate(room)
+    mounted!.access.value = { role: 10 }
+    await vi.waitFor(() => expect(room.loseAccess).toHaveBeenCalled())
+    // a move the shut room no longer takes
+    const [slide] = fromAny<StoreSlide[], unknown>(editorSlides.value)
+    slide!.elements.find((element) => element.id === 'title')!.left += 40
+
+    window.dispatchEvent(new Event('beforeunload', { cancelable: true }))
+    writeLands()
+
+    await vi.waitFor(() => expect(room.status.keptCopyCount).toBe(1))
+    await vi.waitFor(async () => expect(await roomCopies('node-1')).toHaveLength(1))
+    await roomCopies('node-1')
+    expect(JSON.stringify(readRecovery('node-1')[0]?.slides)).toContain('"left":220')
   })
 
   it('keeps the page copy made while the room was keeping its own, once the room could not', async () => {

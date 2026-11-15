@@ -41,6 +41,7 @@ function recovery({ isKeptByRoom = (): boolean => false } = {}) {
       loseAccess: async () => false,
       regainAccess: async () => 'editing',
       isKeptByRoom,
+      flatten: (element) => element,
     },
   )
 }
@@ -220,5 +221,25 @@ describe('the copy the live room kept on the device', () => {
     await kept.syncRoomKept()
 
     expect(stored.readRecovery('n').map((copy) => copy.slides)).toEqual([typed])
+  })
+
+  it('takes back a page copy of the same work as the room kept, its fields in another order', async () => {
+    vi.mocked(keepRecovery).mockImplementation(stored.keepRecovery)
+    await keptByRoom('the same words')
+    const [copy] = await roomCopies('n')
+    // as the store holds it: its elements changed in place, so their fields sit in another order
+    slides.value = JSON.parse(JSON.stringify(copy!.slides), (_key, value: unknown) =>
+      value && typeof value === 'object' && !Array.isArray(value)
+        ? Object.fromEntries(Object.entries(value).reverse())
+        : value,
+    )
+    let isKept = false
+    const kept = recovery({ isKeptByRoom: () => isKept })
+    expect(kept.retainRecovery()).toBe(true)
+
+    isKept = true
+    await kept.syncRoomKept()
+
+    expect(stored.readRecovery('n')).toEqual([])
   })
 })

@@ -188,6 +188,7 @@ const {
   loseAccess: (lost) => convertedRoom.loseAccess(lost),
   regainAccess: () => convertedRoom.regainAccess(),
   isKeptByRoom: () => convertedRoom.isKeptByRoom(),
+  flatten: (element) => convertedRoom.flatten(element),
 })
 const { oldDraftNotice, settleOldDraft, downloadOldDraft, dismissOldDraft } = useOldDraft(
   props.session,
