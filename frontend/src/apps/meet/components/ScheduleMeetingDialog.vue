@@ -19,7 +19,12 @@
         </div>
       </div>
       <div v-else class="space-y-4" @keydown.meta.enter.prevent.stop="submit">
-        <Alert v-if="submitError" theme="red" :title="submitError" />
+        <Alert
+          v-if="submitError"
+          theme="red"
+          :title="__('Could not schedule the meeting')"
+          :description="submitError"
+        />
         <FormControl v-model="title" :label="__('Title')" :placeholder="__('Team meeting')" />
         <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
           <FormControl
@@ -192,7 +197,7 @@ async function loadAccount() {
   }
 }
 
-function submit() {
+async function submit() {
   if (scheduleMeeting.isPending || readiness.value !== 'ready') return
   if (!calendarStore.accountId) {
     readiness.value = 'missing'
@@ -207,37 +212,32 @@ function submit() {
     return
   }
   submitError.value = ''
-  toast.promise(
-    scheduleMeeting
-      .run({
-        account: calendarStore.accountId,
-        title: title.value,
-        start: start.value.format('YYYY-MM-DD[T]HH:mm:ss'),
-        duration: duration.value,
-        time_zone: userTimeZone(),
-        participants: scheduledParticipants.value.map((participant) => ({ ...participant })),
-        send_scheduling_messages: scheduledParticipants.value.length > 1,
-      })
-      .then(() => {
-        open.value = false
-        toast.success(__('Meeting scheduled'))
-        emit('scheduled')
-      }),
-    {
-      loading: __('Scheduling meeting…'),
-      error: (error: unknown) => {
-        submitError.value =
-          error instanceof TransportError &&
-          ['ValidationError', 'BadRequest', 'PermissionError'].includes(error.type) &&
-          error.status >= 400 &&
-          error.status < 500 &&
-          error.message
-            ? error.message
-            : __('Could not schedule the meeting. Your details are kept. Please try again.')
-        return __('Could not schedule the meeting. Review the message and try again.')
-      },
-    },
-  )
+  // The dialog stays open on a failure and says why in its own alert, so no toast repeats it; the
+  // Schedule button's spinner is the progress.
+  try {
+    await scheduleMeeting.run({
+      account: calendarStore.accountId,
+      title: title.value,
+      start: start.value.format('YYYY-MM-DD[T]HH:mm:ss'),
+      duration: duration.value,
+      time_zone: userTimeZone(),
+      participants: scheduledParticipants.value.map((participant) => ({ ...participant })),
+      send_scheduling_messages: scheduledParticipants.value.length > 1,
+    })
+  } catch (error) {
+    submitError.value =
+      error instanceof TransportError &&
+      ['ValidationError', 'BadRequest', 'PermissionError'].includes(error.type) &&
+      error.status >= 400 &&
+      error.status < 500 &&
+      error.message
+        ? error.message
+        : __('Your details are kept. Try again.')
+    return
+  }
+  open.value = false
+  toast.success(__('Meeting scheduled'))
+  emit('scheduled')
 }
 
 defineExpose({ show })

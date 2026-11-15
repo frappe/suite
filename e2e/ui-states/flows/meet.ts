@@ -140,13 +140,13 @@ const machine = setupFlow<Event>().createMachine({
 			on: { SUBMIT: "scheduled", SUBMIT_SLOW: "scheduling", SUBMIT_FAILS: "scheduleFailed" },
 		},
 		scheduling: {
-			meta: { description: "Schedule pressed while the request is out: the button spins and a “Scheduling meeting…” toast shows. The form stays editable." },
+			meta: { description: "Schedule pressed while the request is out: the button spins. The form stays editable." },
 		},
 		scheduled: {
 			meta: { description: "The dialog closes, a “Meeting scheduled” toast shows and Upcoming meetings appears under the actions with the new meeting." },
 		},
 		scheduleFailed: {
-			meta: { description: "The request failed: a red alert at the top of the dialog, “Could not schedule the meeting. Your details are kept. Please t…”, cut off at one line; the form keeps what was typed, and a toast says the meeting was not scheduled." },
+			meta: { description: "The request failed: a red alert at the top of the dialog, “Could not schedule the meeting” with “Your details are kept. Try again.” beneath; the form keeps what was typed, and no toast repeats it." },
 		},
 		joinCode: {
 			meta: { description: "Join with meeting code: one field for a code or link. Join is disabled while the field is empty." },
@@ -529,13 +529,13 @@ export const meet = defineFlow<Event, BaseScene>({
 		async SUBMIT_SLOW(scene) {
 			await scene.hold("**/api/suite/meet/calendar-meetings");
 			await button(scene.page, "Schedule").click();
-			await expect(scene.page.getByText("Scheduling meeting…")).toBeVisible();
+			await expect(button(scene.page, "Schedule")).toHaveAttribute("aria-busy", "true");
 		},
 		async SUBMIT_FAILS(scene) {
 			const hold = await scene.hold("**/api/suite/meet/calendar-meetings");
 			await hold.abort(500);
 			await button(scene.page, "Schedule").click();
-			await expect(scene.page.getByText("Could not schedule the meeting. Your details are kept. Please try again.")).toBeVisible({ timeout: 30_000 });
+			await expect(scene.page.getByText("Your details are kept. Try again.")).toBeVisible({ timeout: 30_000 });
 		},
 		async JOIN_WITH_CODE(scene) {
 			await scene.page.getByRole("button", { name: "Join with code" }).click();
