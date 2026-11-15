@@ -3251,6 +3251,26 @@ describe('edit access changing on a converted presentation', () => {
     expect(JSON.stringify(downloaded.slides)).toContain('one')
   })
 
+  it('says the unsent edits are kept as soon as the server refuses them, with no focus needed', async () => {
+    const room = await editing()
+    room.setStatus({ unsentCount: 1, saveState: 'unsaved' })
+    // what Drive answers when the page asks for the access again
+    mounted!.session.refreshAccess = async () => {
+      mounted!.access.value = { role: 10 }
+    }
+
+    // a push answered 403: the room shuts itself, its work still unsent
+    room.setStatus({ canWrite: false, blockReason: 'lost_edit' })
+
+    await vi.waitFor(() =>
+      expect(toast.warning).toHaveBeenCalledWith(
+        'Editing access changed. Your unsaved changes are kept on this device.',
+        expect.anything(),
+      ),
+    )
+    expect(toast.warning).toHaveBeenCalledTimes(1)
+  })
+
   it('shuts the room for reading when read access goes', async () => {
     const room = await editing()
 

@@ -243,6 +243,12 @@ const convertedRoom = useConvertedRoom({
   retainStickyOrOffer,
   onThreadsChanged: () => void comments.refresh(),
   onVersionRestored: (restored) => void sidePanel.value?.tellRestoredByOther(restored),
+  // Drive reads the access again only on focus or a timer, so its loss shows now, as Writer's refused write does
+  onAccessRefused: () => {
+    if (access.writable.value) {
+      void props.session.refreshAccess().catch(() => {})
+    }
+  },
 })
 provide('livePresence', convertedRoom.presence)
 const roomPeople = convertedRoom.people

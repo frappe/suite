@@ -86,12 +86,17 @@ interface RoomHost {
   onThreadsChanged: () => void
   /** Told when another tab's restore lands. */
   onVersionRestored: (restored: VersionRestored) => void
+  /** Told once when the server refuses this tab's right, which Drive's access may not show yet. */
+  onAccessRefused: () => void
+}
+
+function hasLostAccess(status: RoomStatus | null) {
+  return status?.blockReason === 'lost_edit' || status?.blockReason === 'lost_read'
 }
 
 function allowsEditingIn(status: RoomStatus) {
-  const hasLostAccess = status.blockReason === 'lost_edit' || status.blockReason === 'lost_read'
   const hasStopped = status.saveState === 'failed' || status.blockReason === 'offline'
-  return status.canWrite && !hasLostAccess && !hasStopped
+  return status.canWrite && !hasLostAccess(status) && !hasStopped
 }
 
 function isKeptNowhere(status: RoomStatus, isRecoveryKept: boolean) {
@@ -109,6 +114,7 @@ export function useConvertedRoom({
   retainStickyOrOffer,
   onThreadsChanged,
   onVersionRestored,
+  onAccessRefused,
 }: RoomHost) {
   const room = shallowRef<CollabRoom | null>(null)
   const status = shallowRef<RoomStatus | null>(null)
@@ -372,7 +378,11 @@ export function useConvertedRoom({
       isRecoveryKept = retainStopped()
     }
 
+    const isRefused = hasLostAccess(liveStatus) && !hasLostAccess(status.value)
     status.value = liveStatus
+    if (isRefused) {
+      onAccessRefused()
+    }
   }
 
   async function openRoom(isStale: () => boolean) {
