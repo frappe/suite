@@ -95,8 +95,9 @@ test("renames, exports and comments without a legacy Drive call", async ({ page 
 
 	await pickFromMenu(page, "Comments");
 	const comments = page.getByRole("complementary", { name: "Comments" });
-	await comments.getByRole("textbox", { name: "New comment" }).fill("Tighten the opening slide");
-	await comments.getByRole("button", { name: "Add", exact: true }).click();
+	await comments.getByRole("button", { name: "Add a comment" }).click();
+	await comments.getByLabel("Add a comment", { exact: true }).fill("Tighten the opening slide");
+	await comments.getByRole("button", { name: "Comment", exact: true }).click();
 	await expect(comments.getByText("Tighten the opening slide")).toBeVisible();
 
 	await pickFromMenu(page, "Versions");
@@ -176,7 +177,9 @@ test("losing edit access freezes the deck, sends no write and offers the changes
 	// A trashed deck takes no new comments.
 	await pickFromMenu(page, "Comments");
 	await expect(page.getByRole("heading", { name: "Comments" })).toBeVisible();
-	await expect(page.getByRole("textbox", { name: "New comment" })).toHaveCount(0);
+	const comments = page.getByRole("complementary", { name: "Comments" });
+	await expect(comments.getByRole("button", { name: "Add a comment" })).toHaveCount(0);
+	await expect(comments.getByLabel("Add a comment", { exact: true })).toHaveCount(0);
 	expect(seen.requests.filter((line) => line.includes("suite.drive.api"))).toEqual([]);
 	expect(seen.errors).toEqual([]);
 });
