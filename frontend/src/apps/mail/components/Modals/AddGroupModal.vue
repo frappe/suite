@@ -16,18 +16,12 @@
   >
     <template #default>
       <div class="space-y-4">
-        <FormControl
-          v-model="name"
-          :label="__('Name')"
-          :placeholder="__('e.g. support')"
-          autocomplete="off"
-          :description="__('Together with the domain, this forms the group\'s email address.')"
-        />
-        <FormControl
-          v-model="domain"
-          type="select"
-          :label="__('Domain')"
-          :options="domainOptions"
+        <EmailAddressField
+          v-model:username="name"
+          v-model:domain="domain"
+          :domains="domains.data ?? []"
+          username-placeholder="support"
+          :description="__('Mail sent to this address reaches the group’s members.')"
         />
         <FormControl v-model="description" :label="__('Description')" />
         <MultiSelect
@@ -61,10 +55,11 @@
 
 <script setup lang="ts">
 import { Dialog, ErrorMessage, FormControl, MultiSelect, Switch } from 'frappe-ui'
-import { computed, ref, watch } from 'vue'
+import { ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { api, useMutation, type InputOf } from '@/api'
+import EmailAddressField from '@/apps/mail/components/Controls/EmailAddressField.vue'
 import { useEnabledDomains } from '@/apps/mail/composables/useEnabledDomains'
 import { raiseToast } from '@/apps/mail/utils'
 import { useAccountPicker } from '@/apps/mail/utils/accountPicker'
@@ -81,10 +76,6 @@ const disableReceiving = ref(false)
 
 const { domains, domainsError } = useEnabledDomains(show)
 const picker = useAccountPicker(memberIds)
-
-const domainOptions = computed(() =>
-  (domains.data || []).map((d: string) => ({ label: d, value: d })),
-)
 
 watch(show, () => {
   if (show.value) {

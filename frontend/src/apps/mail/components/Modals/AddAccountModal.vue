@@ -44,37 +44,25 @@
           :aria-busy="addMember.isPending"
         >
           <div class="space-y-3">
-            <div v-for="(email, index) in emails" :key="index" class="space-y-1.5">
-              <label class="text-ink-gray-5 block text-xs">
-                {{ index === 0 ? __('Primary email address') : __('Alias') }}
-              </label>
-              <div class="flex items-center justify-between">
-                <FormControl
-                  v-model="email.username"
-                  placeholder="johndoe"
-                  class="w-full"
-                  :aria-label="index === 0 ? __('Primary email username') : __('Alias username')"
-                />
-                <FeatherIcon class="text-ink-gray-3 mx-2.5 h-4 w-4" name="at-sign" />
-                <FormControl
-                  v-model="email.domain"
-                  type="combobox"
-                  placeholder="yourdomain.com"
-                  class="w-full"
-                  :options="domains.data"
-                  :open-on-click="true"
-                />
-                <Button
-                  v-if="index > 0"
-                  icon="lucide-x"
-                  variant="ghost"
-                  size="sm"
-                  class="ml-2 shrink-0"
-                  :aria-label="__('Remove alias')"
-                  @click="emails.splice(index, 1)"
-                />
-              </div>
-            </div>
+            <EmailAddressField
+              v-for="(email, index) in emails"
+              :key="index"
+              v-model:username="email.username"
+              v-model:domain="email.domain"
+              :domains="domains.data ?? []"
+              :label="index === 0 ? __('Primary email address') : __('Alias')"
+              username-placeholder="johndoe"
+            >
+              <Button
+                v-if="index > 0"
+                icon="lucide-x"
+                variant="ghost"
+                size="sm"
+                class="shrink-0"
+                :aria-label="__('Remove alias')"
+                @click="emails.splice(index, 1)"
+              />
+            </EmailAddressField>
             <Button
               variant="ghost"
               size="sm"
@@ -183,6 +171,7 @@ import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { computed, reactive, ref, watch } from 'vue'
 
 import { api, useMutation, useQuery, type InputOf } from '@/api'
+import EmailAddressField from '@/apps/mail/components/Controls/EmailAddressField.vue'
 import { useAccountOptions } from '@/apps/mail/composables/useAccountOptions'
 import { useEnabledDomains } from '@/apps/mail/composables/useEnabledDomains'
 import { raiseToast } from '@/apps/mail/utils'

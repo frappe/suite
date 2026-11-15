@@ -178,7 +178,7 @@ const machine = setupFlow<Event>().createMachine({
 		},
 		groupsSearchEmpty: { meta: { description: "A search that matches no group: “No matching groups”." } },
 		addGroup: {
-			meta: { description: "Add group: name, a Domain select of active domains, description, members picked from mail accounts, and Disable receiving. Add group is off until a name and a domain are set." },
+			meta: { description: "Add group: its email address on one row (username @ a select of active domains), description, members picked from mail accounts, and Disable receiving. Add group is off until a name and a domain are set." },
 			on: { FILL_GROUP: "addGroupFilled", ADD_TAKEN_GROUP: "addGroupFailed" },
 		},
 		addGroupFilled: {
@@ -236,7 +236,7 @@ const machine = setupFlow<Event>().createMachine({
 		},
 		listsSearchEmpty: { meta: { description: "A search that matches no list: “No matching mailing lists”." } },
 		addList: {
-			meta: { description: "Add mailing list: name, a Domain select of active domains, description and recipients one per line. Add mailing list is off until a name and a domain are set." },
+			meta: { description: "Add mailing list: its email address on one row (username @ a select of active domains), description and recipients one per line. Add mailing list is off until a name and a domain are set." },
 			on: { FILL_LIST: "addListFilled", ADD_TAKEN_LIST: "addListFailed" },
 		},
 		addListFilled: {
@@ -591,7 +591,7 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 		},
 		async FILL_GROUP(scene) {
 			const dialog = scene.dialog("Add group");
-			await dialog.getByLabel("Name").fill(names.get(scene).group);
+			await dialog.getByLabel("Email address username").fill(names.get(scene).group);
 			await pickOption(scene, dialog, LIVE);
 			await dialog.getByLabel("Description").fill("Front desk and visitors");
 			await expect(dialog.getByRole("button", { name: "Add group" })).toBeEnabled();
@@ -612,7 +612,7 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 			const taken = names.get(scene).group;
 			await seedGroup(scene, taken);
 			const dialog = scene.dialog("Add group");
-			await dialog.getByLabel("Name").fill(taken);
+			await dialog.getByLabel("Email address username").fill(taken);
 			await pickOption(scene, dialog, LIVE);
 			await dialog.getByRole("button", { name: "Add group" }).click();
 			await expect(dialog.getByText(/already a Mail Group/)).toBeVisible();
@@ -647,9 +647,8 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 		async ADD_GROUP_EMAIL(scene) {
 			const dialog = scene.dialog("Add email address");
 			const alias = `reception-${names.get(scene).stamp}`;
-			await dialog.getByLabel("Username").fill(alias);
-			await dialog.getByLabel("Domain").fill(LIVE);
-			await scene.page.getByRole("option", { name: LIVE, exact: true }).click();
+			await dialog.getByLabel("Email address username").fill(alias);
+			await pickOption(scene, dialog, LIVE);
 			await dialog.getByLabel("Description").fill("Reception");
 			await dialog.getByRole("button", { name: "Add" }).click();
 			await expect(scene.toast("Email address added.")).toBeVisible();
@@ -706,7 +705,7 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 		},
 		async FILL_LIST(scene) {
 			const dialog = scene.dialog("Add mailing list");
-			await dialog.getByLabel("Name").fill(names.get(scene).list);
+			await dialog.getByLabel("Email address username").fill(names.get(scene).list);
 			await pickOption(scene, dialog, LIVE);
 			await dialog.getByLabel("Description").fill("Quarterly news for the whole company");
 			await dialog.getByLabel("Recipients").fill("leo@northwind.test\nnisha@northwind.test");
@@ -728,7 +727,7 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 			const taken = names.get(scene).list;
 			await seedList(scene, taken);
 			const dialog = scene.dialog("Add mailing list");
-			await dialog.getByLabel("Name").fill(taken);
+			await dialog.getByLabel("Email address username").fill(taken);
 			await pickOption(scene, dialog, LIVE);
 			await dialog.getByRole("button", { name: "Add mailing list" }).click();
 			await expect(dialog.getByText(/already a Mailing List/)).toBeVisible();
@@ -759,9 +758,8 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 		async ADD_LIST_EMAIL(scene) {
 			const dialog = scene.dialog("Add email address");
 			const alias = `news-${names.get(scene).stamp}`;
-			await dialog.getByLabel("Username").fill(alias);
-			await dialog.getByLabel("Domain").fill(LIVE);
-			await scene.page.getByRole("option", { name: LIVE, exact: true }).click();
+			await dialog.getByLabel("Email address username").fill(alias);
+			await pickOption(scene, dialog, LIVE);
 			await dialog.getByLabel("Description").fill("Company news");
 			await dialog.getByRole("button", { name: "Add" }).click();
 			await expect(scene.toast("Email address added.")).toBeVisible();

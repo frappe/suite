@@ -87,7 +87,10 @@ vi.mock('frappe-ui', () => {
     Switch: toggle,
   }
 })
-vi.mock('@/platform/translation', () => ({ translate: (text: string) => text }))
+vi.mock('@/platform/translation', () => ({
+  translate: (text: string, args: unknown[] = []) =>
+    text.replace(/\{(\d+)\}/g, (_, i: string) => String(args[Number(i)])),
+}))
 vi.mock('@/apps/mail/utils', () => ({ raiseToast: vi.fn() }))
 vi.mock('@/platform/time-zone', () => ({ userTimeZone: () => 'Asia/Kolkata' }))
 vi.mock('@/apps/mail/utils/datetime', () => ({
@@ -120,7 +123,8 @@ const fetcher = vi.fn<typeof fetch>()
 const feedback = vi.fn()
 let cleanup: (() => void) | undefined
 beforeEach(() => {
-  window.__ = (text: string) => text
+  window.__ = (text: string, args: unknown[] = []) =>
+    text.replace(/\{(\d+)\}/g, (_, i: string) => String(args[Number(i)]))
   fetcher.mockReset()
   feedback.mockReset()
   reloads.mockReset()
@@ -147,7 +151,8 @@ async function openDialog() {
         onReload: reloads,
       }),
   })
-  app.config.globalProperties.__ = (text: string) => text
+  app.config.globalProperties.__ = (text: string, args: unknown[] = []) =>
+    text.replace(/\{(\d+)\}/g, (_, i: string) => String(args[Number(i)]))
   app.mount(root)
   cleanup = () => {
     app.unmount()
@@ -194,8 +199,8 @@ describe('Add user', () => {
       ),
     )
     const root = await openDialog()
-    fill(root, 'Primary email username', 'lena')
-    fill(root, 'yourdomain.com', 'northwind.test')
+    fill(root, 'Primary email address username', 'lena')
+    fill(root, 'Primary email address domain', 'northwind.test')
     fill(root, 'Role', 'admin')
     fill(root, 'Existing contact email address', 'lena@example.com')
     await nextTick()
@@ -240,8 +245,8 @@ describe('Add user', () => {
       ),
     )
     const root = await openDialog()
-    fill(root, 'Primary email username', 'theo')
-    fill(root, 'yourdomain.com', 'northwind.test')
+    fill(root, 'Primary email address username', 'theo')
+    fill(root, 'Primary email address domain', 'northwind.test')
     root.querySelector<HTMLInputElement>('[aria-label="Send invite"]')!.click()
     await nextTick()
     fill(root, 'First name', 'Theo')
@@ -255,8 +260,8 @@ describe('Add user', () => {
 
   it('asks for a first name before creating an account right away', async () => {
     const root = await openDialog()
-    fill(root, 'Primary email username', 'theo')
-    fill(root, 'yourdomain.com', 'northwind.test')
+    fill(root, 'Primary email address username', 'theo')
+    fill(root, 'Primary email address domain', 'northwind.test')
     root.querySelector<HTMLInputElement>('[aria-label="Send invite"]')!.click()
     await nextTick()
     click(root, 'Add user')
@@ -283,8 +288,8 @@ describe('Add user', () => {
       ),
     )
     const root = await openDialog()
-    fill(root, 'Primary email username', 'theo')
-    fill(root, 'yourdomain.com', 'northwind.test')
+    fill(root, 'Primary email address username', 'theo')
+    fill(root, 'Primary email address domain', 'northwind.test')
     root.querySelector<HTMLInputElement>('[aria-label="Send invite"]')!.click()
     await nextTick()
     fill(root, 'First name', 'Theo')

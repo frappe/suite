@@ -16,18 +16,12 @@
   >
     <template #default>
       <div class="space-y-4">
-        <FormControl
-          v-model="name"
-          :label="__('Name')"
-          placeholder="announce"
-          autocomplete="off"
-          :description="__('Together with the domain, this forms the list\'s email address.')"
-        />
-        <FormControl
-          v-model="domain"
-          type="select"
-          :label="__('Domain')"
-          :options="domainOptions"
+        <EmailAddressField
+          v-model:username="name"
+          v-model:domain="domain"
+          :domains="domains.data ?? []"
+          username-placeholder="announce"
+          :description="__('Mail sent to this address goes to every recipient on the list.')"
         />
         <FormControl v-model="description" :label="__('Description')" type="textarea" />
         <FormControl
@@ -50,10 +44,11 @@
 
 <script setup lang="ts">
 import { Dialog, ErrorMessage, FormControl } from 'frappe-ui'
-import { computed, ref, watch } from 'vue'
+import { ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { api, useMutation, type InputOf } from '@/api'
+import EmailAddressField from '@/apps/mail/components/Controls/EmailAddressField.vue'
 import { useEnabledDomains } from '@/apps/mail/composables/useEnabledDomains'
 import { raiseToast } from '@/apps/mail/utils'
 
@@ -67,9 +62,6 @@ const description = ref('')
 const recipients = ref('')
 
 const { domains, domainsError } = useEnabledDomains(show)
-const domainOptions = computed(() =>
-  (domains.data || []).map((d: string) => ({ label: d, value: d })),
-)
 
 const toLines = (text: string) =>
   text
