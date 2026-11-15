@@ -29,7 +29,10 @@ appended to `<site>/private/drive-legacy-objects-deleted.jsonl`, so a rerun
 skips it, and a legacy key that is already gone (HEAD 404) counts as done.
 Keys pass through unchanged: the production bucket holds leading-slash
 keys, bare keys at the root and per-user folders, and each is HEADed and
-deleted exactly as the ledger spells it.
+deleted exactly as the ledger spells it. On a store that dropped a key's
+leading slash when it stored the object (Garage), `LegacyBucket` removes
+the object the slashed name reaches, and refuses when it cannot show that
+the two names are one object.
 
 `run_delete` is pure over `DeleteEnvironment`'s ports, the way Build and
 Cleanup are, so `tests/test_delete_legacy_objects.py` runs the whole
@@ -51,6 +54,7 @@ from suite.drive.patches.build.copy_ledger import CopiedObject, CopyLedger
 from suite.drive.patches.build.legacy import KEY_SHAPES, key_shape
 from suite.drive.patches.build.state import BuildState
 from suite.drive.patches.cleanup.patch import PHASES
+from suite.drive.patches.cleanup.ports import FRAMEWORK_ROOTS, LegacyBucket
 from suite.drive.patches.cleanup.state import CleanupState
 
 # `DeleteObjects` takes at most this many keys per call, and one batch is
@@ -59,10 +63,6 @@ from suite.drive.patches.cleanup.state import CleanupState
 DELETE_BATCH_SIZE = 1000
 
 DELETED_FILENAME = "drive-legacy-objects-deleted.jsonl"
-
-# The framework S3 driver's own key space. A legacy key under any of these is
-# never Drive's to delete, whatever the ledger says.
-FRAMEWORK_ROOTS = ("private/", "public/", "sites/")
 
 # Why a ledger key is kept, as the report names it.
 UNDER_FRAMEWORK_ROOT = "under the framework's private/, public/ or sites/ root"
@@ -465,11 +465,8 @@ class SiteBucket:
         return self._boto().size(key)
 
     def delete_keys(self, keys: tuple[str, ...]) -> int:
-        from suite.drive.patches.cleanup.ports import LegacyBucket
-
         if self._deleter is None:
-            boto = self._boto()
-            self._deleter = LegacyBucket(boto.bucket, boto.client)
+            self._deleter = LegacyBucket(self._boto())
         return self._deleter.delete_keys(keys)
 
     def _boto(self):
