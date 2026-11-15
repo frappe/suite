@@ -8,6 +8,7 @@ import { translationPlugin } from '@/platform/translation'
 import StorageView from './StorageView.vue'
 
 vi.mock('frappe-ui', async () => ({
+  PageHeader: { template: '<header><slot /></header>' },
   toast: { error: vi.fn() },
   ...(await import('../../../../node_modules/frappe-ui/src/components/Alert')),
   ...(await import('../../../../node_modules/frappe-ui/src/components/Avatar')),
