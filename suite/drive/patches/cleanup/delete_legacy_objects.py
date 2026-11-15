@@ -20,7 +20,11 @@ row recorded under `missing_bytes`, an orphan object nobody referenced) is
 not in the ledger and stays in the bucket; the report says how many such
 rows Build recorded. A ledger key is kept, and reported as kept, when it
 starts with `private/`, `public/` or `sites/` (the framework's own storage roots),
-equals its own destination, or is named by a `File Blob` row.
+equals its own destination, or is named by a `File Blob` row. A key that
+starts with `/` is also kept when its spelling without the leading slashes
+is one of those, a canonical copy, or another kept ledger key: a store that
+drops the slash (Garage) reaches that kept object through it. On AWS the
+two names are different objects, and the slashed one stays in the bucket.
 
 Before each batch of 1000 the command HEADs every destination and requires
 its size to equal the ledger's; a missing or mismatched copy stops the run
@@ -68,6 +72,7 @@ DELETED_FILENAME = "drive-legacy-objects-deleted.jsonl"
 UNDER_FRAMEWORK_ROOT = "under the framework's private/, public/ or sites/ root"
 OWN_DESTINATION = "is its own canonical copy"
 REFERENCED_BY_BLOB = "named by a File Blob"
+REACHES_KEPT_KEY = "starts with / and names a kept key without it, as Garage reads it"
 
 
 class LegacyObjectDeleteError(frappe.ValidationError):
@@ -337,16 +342,37 @@ def run_delete(env: DeleteEnvironment, *, confirm: bool, batch_size: int = DELET
         else:
             candidates.append(entry)
 
-    deletable: list[CopiedObject] = []
+    # A store that drops leading slashes (Garage) reaches the object stored
+    # as `team/id` through `/team/id`, so each key is also looked up, and
+    # judged below, by its spelling without them.
+    referenced: set[str] = set()
+    unreferenced: list[CopiedObject] = []
     for batch in _chunks(candidates, batch_size):
-        referenced = env.blobs.referenced(tuple(entry.legacy_key for entry in batch))
+        spellings = {
+            spelling for entry in batch for spelling in (entry.legacy_key, _stored(entry.legacy_key))
+        }
+        referenced |= env.blobs.referenced(tuple(sorted(spellings)))
         for entry in batch:
             if entry.legacy_key in referenced:
                 tally(entry).keep(REFERENCED_BY_BLOB)
             else:
-                tally(entry).deletable += 1
-                tally(entry).deletable_bytes += entry.size
-                deletable.append(entry)
+                unreferenced.append(entry)
+
+    kept = {_stored(key) for key in referenced}
+    for entry in entries:
+        if entry.legacy_key.startswith(FRAMEWORK_ROOTS) or entry.legacy_key == entry.destination:
+            kept.add(_stored(entry.legacy_key))
+        kept.add(_stored(entry.destination))
+
+    deletable: list[CopiedObject] = []
+    for entry in unreferenced:
+        stored = _stored(entry.legacy_key)
+        if entry.legacy_key != stored and (stored.startswith(FRAMEWORK_ROOTS) or stored in kept):
+            tally(entry).keep(REACHES_KEPT_KEY)
+        else:
+            tally(entry).deletable += 1
+            tally(entry).deletable_bytes += entry.size
+            deletable.append(entry)
 
     if not confirm:
         return report
@@ -442,6 +468,11 @@ def _verify_destinations(env: DeleteEnvironment, report: DeleteReport, batch: li
             "object, then rerun.",
             report,
         )
+
+
+def _stored(key: str) -> str:
+    """`key` as a store that drops leading slashes holds it."""
+    return key.lstrip("/")
 
 
 def _chunks(items: list, size: int) -> Iterator[list]:
