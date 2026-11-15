@@ -2,7 +2,7 @@
   <DashboardLayout
     area="mail"
     :breadcrumbs="[{ label: __('Domains') }]"
-    :button-label="__('Add Domain')"
+    :button-label="isFirstRun ? undefined : __('Add Domain')"
     :button-action="() => (showAddDomain = true)"
   >
     <div class="flex flex-wrap items-center justify-between gap-3">
@@ -126,6 +126,11 @@ const LIST_COLUMNS = [
 // The empty state depends on why the list is empty: a filtered search that found
 // nothing should not present the first-run "add your first domain" pitch.
 const hasActiveFilters = computed(() => !!search.value || status.value !== 'All')
+// With nothing added yet, the empty state's own Add button is the one call to action, under
+// the line that explains it; the header's copy comes back with the first row.
+const isFirstRun = computed(
+  () => list.status === 'success' && !list.rows.length && !hasActiveFilters.value,
+)
 const listOptions = computed(() => ({
   selectable: false,
   showTooltip: false,
