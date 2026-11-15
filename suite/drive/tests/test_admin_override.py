@@ -9,7 +9,7 @@ from frappe.tests import IntegrationTestCase
 from suite import drive
 from suite.drive._core import comments
 from suite.drive._core.access import describe, grant
-from suite.drive._core.nodes import _node, get, purge, store_file, update
+from suite.drive._core.nodes import _node, child_path, get, purge, store_file, update
 from suite.drive._core.roots import usage_for
 from suite.drive.framework import principals_for
 from suite.drive.patches import grant_admin_creators_edit
@@ -123,3 +123,27 @@ class TestSuiteAdminOverride(IntegrationTestCase):
         grant_admin_creators_edit.execute()
         grant_admin_creators_edit.execute()
         self.assertEqual(frappe.db.count("Drive Grant", creator_grant), 1)
+
+    def test_the_patch_leaves_an_admins_picture_to_the_presentation(self):
+        other = self._as(self.other)
+        deck = drive.create_document(self.other_root, "Pitch", content_doctype="Presentation")
+        grant(deck, self.admin, drive.READ, other)
+        grant(self.owner_root, self.admin, drive.UPLOAD, self._as(self.owner))
+        admin = self._as(self.admin)
+        picture = store_file(admin, self.owner_root, "chart.png", BytesIO(b"png"))
+        ordinary = store_file(admin, self.owner_root, "notes.txt", BytesIO(b"mine"))
+        # Build moves a deck's pictures under its node with bulk SQL and skips their creator grant
+        deck_row = _node(deck)
+        frappe.db.set_value(
+            "Drive Node",
+            picture,
+            {"parent_node": deck, "root": deck_row.root, "path": child_path(deck_row)},
+        )
+        frappe.db.delete("Drive Grant", {"node": ("in", (picture, ordinary)), "principal": self.admin})
+
+        frappe.set_user("Administrator")
+        grant_admin_creators_edit.execute()
+        grant_admin_creators_edit.execute()
+        self.assertFalse(frappe.db.exists("Drive Grant", {"node": picture, "principal": self.admin}))
+        self.assertEqual(frappe.db.count("Drive Grant", {"node": ordinary, "principal": self.admin}), 1)
+        self.assertEqual(describe(_node(picture), principals_for(self.admin))["role"], drive.READ)
