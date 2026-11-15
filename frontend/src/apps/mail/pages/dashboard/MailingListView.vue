@@ -161,14 +161,13 @@
     :list-id="listId"
     @reload="reloadAll()"
   />
-  <Dialog v-model:open="showDelete" v-bind="deleteDialogOptions" />
 </template>
 <script setup lang="ts">
 import { refDebounced } from '@vueuse/core'
 import Megaphone from '~icons/lucide/megaphone'
 import {
   Button,
-  Dialog,
+  dialog,
   Dropdown,
   FormControl,
   Skeleton,
@@ -212,7 +211,6 @@ const router = useRouter()
 const showEdit = ref(false)
 const showAddEmail = ref(false)
 const showAddRecipients = ref(false)
-const showDelete = ref(false)
 const recipientSearch = ref('')
 const list = useQuery(api.mail.admin.mailingLists.get, () => ({
   list_id: listId,
@@ -294,27 +292,20 @@ async function deleteListSubmit() {
     ids: [listId],
   }
   await deleteList.run(input)
-  showDelete.value = false
   raiseToast(__('Mailing list deleted.'))
   router.push({
     name: 'mail-mailing-lists',
   })
 }
-const deleteDialogOptions = computed(() => ({
-  title: __('Delete mailing list'),
-  message: __('Are you sure you want to delete this mailing list? This action cannot be undone.'),
-  size: 'xl' as const,
-  icon: 'lucide-alert-triangle',
-  theme: 'amber' as const,
-  actions: [
-    {
-      label: __('Confirm'),
-      variant: 'solid' as const,
-      theme: 'red' as const,
-      onClick: deleteListSubmit,
-    },
-  ],
-}))
+function confirmDeleteList() {
+  dialog.confirm({
+    title: __('Delete this mailing list?'),
+    message: __('The mailing list and its addresses are deleted. This cannot be undone.'),
+    theme: 'red',
+    confirmLabel: __('Delete mailing list'),
+    onConfirm: deleteListSubmit,
+  })
+}
 const dropdownOptions = computed(() => [
   {
     group: '',
@@ -322,7 +313,7 @@ const dropdownOptions = computed(() => [
       {
         label: __('Delete'),
         icon: 'lucide-trash-2',
-        onClick: () => (showDelete.value = true),
+        onClick: confirmDeleteList,
       },
     ],
   },

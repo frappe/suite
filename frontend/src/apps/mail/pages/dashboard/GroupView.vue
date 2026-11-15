@@ -205,14 +205,12 @@
     :current-ids="currentMemberIds"
     @reload="member.refetch().catch(() => {})"
   />
-  <Dialog v-model:open="showToggleReceiving" v-bind="toggleReceivingDialogOptions" />
-  <Dialog v-model:open="showDelete" v-bind="deleteDialogOptions" />
 </template>
 <script setup lang="ts">
 import Users from '~icons/lucide/users'
 import {
   Button,
-  Dialog,
+  dialog,
   Dropdown,
   FormControl,
   Skeleton,
@@ -269,8 +267,6 @@ const router = useRouter()
 const showEdit = ref(false)
 const showAddEmail = ref(false)
 const showAddMembers = ref(false)
-const showToggleReceiving = ref(false)
-const showDelete = ref(false)
 const memberSearch = ref('')
 
 // Named `member` so the quota/card markup mirrors AccountView.vue one-to-one.
@@ -346,56 +342,42 @@ async function setReceiving(enabled: boolean) {
     group_id: groupId,
     enabled,
   })
-  showToggleReceiving.value = false
   raiseToast(enabled ? __('Receiving enabled.') : __('Receiving disabled.'))
 }
-const toggleReceivingDialogOptions = computed(() => {
+function confirmToggleReceiving() {
   const enabling = Boolean(data.value?.disable_receiving)
-  return {
-    title: enabling ? __('Enable receiving') : __('Disable receiving'),
+  dialog.confirm({
+    title: enabling ? __('Enable receiving?') : __('Disable receiving?'),
     message: enabling
-      ? __(
-          'Are you sure you want to enable receiving for this group? Mail addressed to it will be delivered again.',
-        )
+      ? __('Mail addressed to this group will be delivered again.')
       : __(
-          'Are you sure you want to disable receiving for this group? Mail addressed to it will bounce back to the sender.',
+          'Mail addressed to this group bounces back to the sender until receiving is enabled again.',
         ),
-    actions: [
-      {
-        label: __('Confirm'),
-        variant: 'solid' as const,
-        onClick: () => setReceiving(enabling),
-      },
-    ],
-  }
-})
+    theme: enabling ? 'blue' : 'amber',
+    confirmLabel: enabling ? __('Enable receiving') : __('Disable receiving'),
+    onConfirm: () => setReceiving(enabling),
+  })
+}
 const deleteGroup = useMutation(api.mail.admin.groups.delete)
 async function deleteGroupSubmit() {
   const input: InputOf<typeof api.mail.admin.groups.delete> = {
     ids: [groupId],
   }
   await deleteGroup.run(input)
-  showDelete.value = false
   raiseToast(__('Group deleted.'))
   router.push({
     name: 'mail-groups',
   })
 }
-const deleteDialogOptions = computed(() => ({
-  title: __('Delete group'),
-  message: __('Are you sure you want to delete this group? This action cannot be undone.'),
-  size: 'xl' as const,
-  icon: 'lucide-alert-triangle',
-  theme: 'amber' as const,
-  actions: [
-    {
-      label: __('Confirm'),
-      variant: 'solid' as const,
-      theme: 'red' as const,
-      onClick: deleteGroupSubmit,
-    },
-  ],
-}))
+function confirmDeleteGroup() {
+  dialog.confirm({
+    title: __('Delete this group?'),
+    message: __('The group and its addresses are deleted. This cannot be undone.'),
+    theme: 'red',
+    confirmLabel: __('Delete group'),
+    onConfirm: deleteGroupSubmit,
+  })
+}
 const dropdownOptions = computed(() => [
   {
     group: '',
@@ -404,17 +386,17 @@ const dropdownOptions = computed(() => [
         ? {
             label: __('Enable receiving'),
             icon: 'lucide-mail-check',
-            onClick: () => (showToggleReceiving.value = true),
+            onClick: confirmToggleReceiving,
           }
         : {
             label: __('Disable receiving'),
             icon: 'lucide-mail-x',
-            onClick: () => (showToggleReceiving.value = true),
+            onClick: confirmToggleReceiving,
           },
       {
         label: __('Delete'),
         icon: 'lucide-trash-2',
-        onClick: () => (showDelete.value = true),
+        onClick: confirmDeleteGroup,
       },
     ],
   },

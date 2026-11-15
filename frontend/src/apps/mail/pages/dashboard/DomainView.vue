@@ -81,7 +81,6 @@
       </div>
     </template>
   </DashboardLayout>
-  <Dialog v-model:open="showConfirmDialog" v-bind="confirmDialogOptions" />
   <EditDomainModal
     v-if="domain.data"
     v-model="showEdit"
@@ -92,7 +91,7 @@
 <script setup lang="ts">
 import Globe from '~icons/lucide/globe'
 import Info from '~icons/lucide/info'
-import { Button, Dialog, Dropdown, Tooltip, usePageMeta } from 'frappe-ui'
+import { Button, dialog, Dropdown, Tooltip, usePageMeta } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -132,7 +131,6 @@ const { domainId } = defineProps<{
   domainId: string
 }>()
 const router = useRouter()
-const showConfirmDialog = ref(false)
 const showEdit = ref(false)
 const domain = useQuery(api.mail.admin.domains.get, () => ({
   domain_id: domainId,
@@ -174,7 +172,6 @@ async function deleteDomainSubmit() {
   router.push({
     name: 'mail-domains',
   })
-  showConfirmDialog.value = false
   raiseToast('Domain deleted.')
 }
 const setEnabled = useMutation(api.mail.admin.domains.setEnabled)
@@ -186,7 +183,6 @@ async function setEnabledSubmit(values: { enabled: boolean }) {
   const result = await setEnabled.run(input)
   const data = result
   domain.refetch().catch(() => {})
-  showConfirmDialog.value = false
   raiseToast(
     data.is_enabled
       ? __('Domain enabled. Verify its DNS records to bring it live.')
@@ -235,42 +231,28 @@ const BREADCRUMBS = computed(() => [
     label: domain.data?.name || domainId,
   },
 ])
-const confirmDialogAction = ref<'deleteDomain' | 'disableDomain'>('deleteDomain')
 const badge = computed(() => domainStatusBadge(domainData.value?.status))
-const confirmDialogOptions = computed(() => {
-  const config = {
-    disableDomain: {
-      title: __('Disable domain'),
-      message: __(
-        'Mail for this domain stops flowing and its verification is dropped. After enabling it again, its DNS records must be verified before mail flows. Continue?',
-      ),
-      action: () =>
-        setEnabledSubmit({
-          enabled: false,
-        }),
-    },
-    deleteDomain: {
-      title: __('Delete domain'),
-      message: __('Are you sure you want to delete this domain? This action cannot be undone.'),
-      action: deleteDomainSubmit,
-    },
-  }[confirmDialogAction.value]
-  return {
-    title: config.title,
-    message: config.message,
-    size: 'xl' as const,
-    icon: 'lucide-alert-triangle',
-    theme: 'amber' as const,
-    actions: [
-      {
-        label: __('Confirm'),
-        variant: 'solid' as const,
-        theme: 'red' as const,
-        onClick: config.action,
-      },
-    ],
-  }
-})
+// Disabling stops mail but can be undone; deleting cannot, so only that one is red.
+function confirmDisableDomain() {
+  dialog.confirm({
+    title: __('Disable this domain?'),
+    message: __(
+      'Mail for this domain stops flowing and its verification is dropped. After enabling it again, its DNS records must be verified before mail flows.',
+    ),
+    theme: 'amber',
+    confirmLabel: __('Disable domain'),
+    onConfirm: () => setEnabledSubmit({ enabled: false }),
+  })
+}
+function confirmDeleteDomain() {
+  dialog.confirm({
+    title: __('Delete this domain?'),
+    message: __('The domain and its settings are deleted. This cannot be undone.'),
+    theme: 'red',
+    confirmLabel: __('Delete domain'),
+    onConfirm: deleteDomainSubmit,
+  })
+}
 const isEnabled = computed(() => !!domainData.value?.is_enabled)
 
 // Facts under the domain name: the description, when it was added (exact time on hover), and
@@ -362,10 +344,7 @@ const dropdownOptions = computed(() => [
         ? {
             label: __('Disable domain'),
             icon: 'lucide-pause',
-            onClick: () => {
-              confirmDialogAction.value = 'disableDomain'
-              showConfirmDialog.value = true
-            },
+            onClick: confirmDisableDomain,
           }
         : {
             label: __('Enable domain'),
@@ -378,10 +357,7 @@ const dropdownOptions = computed(() => [
       {
         label: __('Delete domain'),
         icon: 'lucide-trash-2',
-        onClick: () => {
-          confirmDialogAction.value = 'deleteDomain'
-          showConfirmDialog.value = true
-        },
+        onClick: confirmDeleteDomain,
       },
     ],
   },

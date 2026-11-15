@@ -156,12 +156,12 @@ const machine = setupFlow<Event>().createMachine({
 		domainUpdated: { meta: { description: "Saved: the dialog closes, “Domain updated.” shows and the header shows the new description." } },
 		editDomainFailed: { meta: { description: "Saving failed: “Something went wrong” shows inside the dialog, which stays open, and again in a toast." } },
 		disableDomainConfirm: {
-			meta: { description: "Disable domain: mail for the domain stops and its verification is dropped. Confirm is red." },
+			meta: { description: "Disable this domain?: mail for the domain stops and its verification is dropped. Cancel, and an amber Disable domain." },
 			on: { CONFIRM_DISABLE_DOMAIN: "domainDisabled" },
 		},
 		domainDisabled: { meta: { description: "“Domain disabled.” shows and the badge turns Disabled, but the blue banner still asks for the DNS records to be added, and Verify DNS is still offered." } },
 		deleteDomainConfirm: {
-			meta: { description: "Delete domain: it cannot be undone. Confirm is red." },
+			meta: { description: "Delete this domain?: it cannot be undone. Cancel, and a red Delete domain." },
 			on: { CONFIRM_DELETE_DOMAIN: "domainDeleted" },
 		},
 		domainDeleted: { meta: { description: "Back on Domains with “Domain deleted.” and the row gone." } },
@@ -214,12 +214,12 @@ const machine = setupFlow<Event>().createMachine({
 		groupEmailAdded: { meta: { description: "“Email address added.” and a second row under Email addresses." } },
 		addGroupMembers: { meta: { description: "Add members: a picker of mail accounts. It is empty here because the stand-in has no accounts." } },
 		receivingConfirm: {
-			meta: { description: "Disable receiving: mail sent to the group bounces back to the sender. Confirm is not red." },
+			meta: { description: "Disable receiving?: mail sent to the group bounces back to the sender. Cancel, and an amber Disable receiving." },
 			on: { CONFIRM_RECEIVING: "receivingDisabled" },
 		},
 		receivingDisabled: { meta: { description: "“Receiving disabled.” and Receiving reads Disabled. The header and the address list do not change." } },
 		deleteGroupConfirm: {
-			meta: { description: "Delete group: it cannot be undone. Confirm is red." },
+			meta: { description: "Delete this group?: it cannot be undone. Cancel, and a red Delete group." },
 			on: { CONFIRM_DELETE_GROUP: "groupDeleted" },
 		},
 		groupDeleted: { meta: { description: "Back on an empty Groups list with “Group deleted.”. In one of two runs an error toast “<address> not found.” covered it instead." } },
@@ -276,7 +276,7 @@ const machine = setupFlow<Event>().createMachine({
 			on: { DELETE_LIST: "deleteListConfirm" },
 		},
 		deleteListConfirm: {
-			meta: { description: "Delete mailing list: it cannot be undone. Confirm is red." },
+			meta: { description: "Delete this mailing list?: it cannot be undone. Cancel, and a red Delete mailing list." },
 			on: { CONFIRM_DELETE_LIST: "listDeleted" },
 		},
 		listDeleted: { meta: { description: "Back on Mailing lists with “Mailing list deleted.”." } },
@@ -544,19 +544,19 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 		},
 		async DISABLE_DOMAIN(scene) {
 			await menuItem(scene, "Disable domain");
-			await expect(scene.dialog("Disable domain")).toBeVisible();
+			await expect(scene.dialog("Disable this domain?")).toBeVisible();
 		},
 		async CONFIRM_DISABLE_DOMAIN(scene) {
-			await scene.dialog("Disable domain").getByRole("button", { name: "Confirm" }).click();
+			await scene.dialog("Disable this domain?").getByRole("button", { name: "Disable domain" }).click();
 			await expect(scene.toast("Domain disabled.")).toBeVisible();
 			await expect(scene.page.getByRole("dialog")).toHaveCount(0);
 		},
 		async DELETE_DOMAIN(scene) {
 			await menuItem(scene, "Delete domain");
-			await expect(scene.dialog("Delete domain")).toBeVisible();
+			await expect(scene.dialog("Delete this domain?")).toBeVisible();
 		},
 		async CONFIRM_DELETE_DOMAIN(scene) {
-			await scene.dialog("Delete domain").getByRole("button", { name: "Confirm" }).click();
+			await scene.dialog("Delete this domain?").getByRole("button", { name: "Delete domain" }).click();
 			await expect(scene.toast("Domain deleted.")).toBeVisible();
 			await expect(scene.page).toHaveURL(/\/admin\/mail\/domains$/);
 			await expect(scene.page.getByText(names.get(scene).pending)).toHaveCount(0);
@@ -661,18 +661,18 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 		},
 		async DISABLE_RECEIVING(scene) {
 			await menuItem(scene, "Disable receiving");
-			await expect(scene.dialog("Disable receiving")).toBeVisible();
+			await expect(scene.dialog("Disable receiving?")).toBeVisible();
 		},
 		async CONFIRM_RECEIVING(scene) {
-			await scene.dialog("Disable receiving").getByRole("button", { name: "Confirm" }).click();
+			await scene.dialog("Disable receiving?").getByRole("button", { name: "Disable receiving" }).click();
 			await expect(scene.toast("Receiving disabled.")).toBeVisible();
 		},
 		async DELETE_GROUP(scene) {
 			await menuItem(scene, "Delete");
-			await expect(scene.dialog("Delete group")).toBeVisible();
+			await expect(scene.dialog("Delete this group?")).toBeVisible();
 		},
 		async CONFIRM_DELETE_GROUP(scene) {
-			await scene.dialog("Delete group").getByRole("button", { name: "Confirm" }).click();
+			await scene.dialog("Delete this group?").getByRole("button", { name: "Delete group" }).click();
 			await expect(scene.toast("Group deleted.")).toBeVisible();
 			await expect(scene.page).toHaveURL(/\/admin\/mail\/groups$/);
 		},
@@ -784,10 +784,10 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 		},
 		async DELETE_LIST(scene) {
 			await menuItem(scene, "Delete");
-			await expect(scene.dialog("Delete mailing list")).toBeVisible();
+			await expect(scene.dialog("Delete this mailing list?")).toBeVisible();
 		},
 		async CONFIRM_DELETE_LIST(scene) {
-			await scene.dialog("Delete mailing list").getByRole("button", { name: "Confirm" }).click();
+			await scene.dialog("Delete this mailing list?").getByRole("button", { name: "Delete mailing list" }).click();
 			await expect(scene.toast("Mailing list deleted.")).toBeVisible();
 			await expect(scene.page).toHaveURL(/\/admin\/mail\/mailing-lists$/);
 		},
