@@ -394,7 +394,7 @@ const dropdownOptions = computed(() => [
             onClick: confirmToggleReceiving,
           },
       {
-        label: __('Delete'),
+        label: __('Delete group'),
         icon: 'lucide-trash-2',
         onClick: confirmDeleteGroup,
       },

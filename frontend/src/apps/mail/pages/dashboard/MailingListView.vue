@@ -311,7 +311,7 @@ const dropdownOptions = computed(() => [
     group: '',
     options: [
       {
-        label: __('Delete'),
+        label: __('Delete mailing list'),
         icon: 'lucide-trash-2',
         onClick: confirmDeleteList,
       },

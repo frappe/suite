@@ -199,7 +199,7 @@ const machine = setupFlow<Event>().createMachine({
 			},
 		},
 		groupMoreMenu: {
-			meta: { description: "The group's more menu: Disable receiving and Delete." },
+			meta: { description: "The group's more menu: Disable receiving and Delete group." },
 			on: { DISABLE_RECEIVING: "receivingConfirm", DELETE_GROUP: "deleteGroupConfirm" },
 		},
 		editGroup: {
@@ -272,7 +272,7 @@ const machine = setupFlow<Event>().createMachine({
 		},
 		recipientsAdded: { meta: { description: "“Recipients added.” and the new address under Recipients." } },
 		listMoreMenu: {
-			meta: { description: "The list's more menu: Delete only." },
+			meta: { description: "The list's more menu: Delete mailing list only." },
 			on: { DELETE_LIST: "deleteListConfirm" },
 		},
 		deleteListConfirm: {
@@ -668,7 +668,7 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 			await expect(scene.toast("Receiving disabled.")).toBeVisible();
 		},
 		async DELETE_GROUP(scene) {
-			await menuItem(scene, "Delete");
+			await menuItem(scene, "Delete group");
 			await expect(scene.dialog("Delete this group?")).toBeVisible();
 		},
 		async CONFIRM_DELETE_GROUP(scene) {
@@ -780,10 +780,10 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 		},
 		async OPEN_LIST_MORE(scene) {
 			await openMore(scene);
-			await expect(scene.page.getByRole("menuitem", { name: "Delete" })).toBeVisible();
+			await expect(scene.page.getByRole("menuitem", { name: "Delete mailing list" })).toBeVisible();
 		},
 		async DELETE_LIST(scene) {
-			await menuItem(scene, "Delete");
+			await menuItem(scene, "Delete mailing list");
 			await expect(scene.dialog("Delete this mailing list?")).toBeVisible();
 		},
 		async CONFIRM_DELETE_LIST(scene) {
