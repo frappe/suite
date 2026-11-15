@@ -21,10 +21,11 @@ not in the ledger and stays in the bucket; the report says how many such
 rows Build recorded. A ledger key is kept, and reported as kept, when it
 starts with `private/`, `public/` or `sites/` (the framework's own storage roots),
 equals its own destination, or is named by a `File Blob` row. A key that
-starts with `/` is also kept when its spelling without the leading slashes
-is one of those, a canonical copy, or another kept ledger key: a store that
-drops the slash (Garage) reaches that kept object through it. On AWS the
-two names are different objects, and the slashed one stays in the bucket.
+starts with `/` is also kept when its name without the leading slashes is
+under those roots, is named by a `File Blob` row, or is a ledger key kept
+for any reason: a store that drops the slash (Garage) reaches that kept
+object through it. On AWS the two names are different objects, and the
+slashed one stays in the bucket.
 
 Before each batch of 1000 the command HEADs every destination and requires
 its size to equal the ledger's; a missing or mismatched copy stops the run
@@ -72,7 +73,7 @@ DELETED_FILENAME = "drive-legacy-objects-deleted.jsonl"
 UNDER_FRAMEWORK_ROOT = "under the framework's private/, public/ or sites/ root"
 OWN_DESTINATION = "is its own canonical copy"
 REFERENCED_BY_BLOB = "named by a File Blob"
-REACHES_KEPT_KEY = "starts with / and names a kept key without it, as Garage reads it"
+REACHES_KEPT_KEY = "its name without the leading / is kept"
 
 
 class LegacyObjectDeleteError(frappe.ValidationError):
@@ -330,21 +331,30 @@ def run_delete(env: DeleteEnvironment, *, confirm: bool, batch_size: int = DELET
     def tally(entry: CopiedObject) -> ShapeReport:
         return report.shapes[key_shape(entry.legacy_key, root_folder)]
 
+    # A store that drops leading slashes (Garage) reaches the object stored
+    # as `team/id` through `/team/id`. Every keep records the name such a
+    # store holds, so a slashed key is judged against all of them once the
+    # whole ledger has been classified.
+    kept_names: set[str] = set()
+
+    def keep(entry: CopiedObject, reason: str) -> None:
+        tally(entry).keep(reason)
+        kept_names.add(_stored(entry.legacy_key))
+
     already_deleted = env.deleted.keys()
     candidates: list[CopiedObject] = []
     for entry in entries:
         if entry.legacy_key in already_deleted:
             tally(entry).already_gone += 1
         elif entry.legacy_key.startswith(FRAMEWORK_ROOTS):
-            tally(entry).keep(UNDER_FRAMEWORK_ROOT)
+            keep(entry, UNDER_FRAMEWORK_ROOT)
         elif entry.legacy_key == entry.destination:
-            tally(entry).keep(OWN_DESTINATION)
+            keep(entry, OWN_DESTINATION)
         else:
             candidates.append(entry)
 
-    # A store that drops leading slashes (Garage) reaches the object stored
-    # as `team/id` through `/team/id`, so each key is also looked up, and
-    # judged below, by its spelling without them.
+    # Each key is also looked up by its name without leading slashes, so a
+    # slashed key whose bare name a `File Blob` names is kept below.
     referenced: set[str] = set()
     unreferenced: list[CopiedObject] = []
     for batch in _chunks(candidates, batch_size):
@@ -354,20 +364,16 @@ def run_delete(env: DeleteEnvironment, *, confirm: bool, batch_size: int = DELET
         referenced |= env.blobs.referenced(tuple(sorted(spellings)))
         for entry in batch:
             if entry.legacy_key in referenced:
-                tally(entry).keep(REFERENCED_BY_BLOB)
+                keep(entry, REFERENCED_BY_BLOB)
             else:
                 unreferenced.append(entry)
-
-    kept = {_stored(key) for key in referenced}
-    for entry in entries:
-        if entry.legacy_key.startswith(FRAMEWORK_ROOTS) or entry.legacy_key == entry.destination:
-            kept.add(_stored(entry.legacy_key))
-        kept.add(_stored(entry.destination))
 
     deletable: list[CopiedObject] = []
     for entry in unreferenced:
         stored = _stored(entry.legacy_key)
-        if entry.legacy_key != stored and (stored.startswith(FRAMEWORK_ROOTS) or stored in kept):
+        if entry.legacy_key != stored and (
+            stored.startswith(FRAMEWORK_ROOTS) or stored in referenced or stored in kept_names
+        ):
             tally(entry).keep(REACHES_KEPT_KEY)
         else:
             tally(entry).deletable += 1
