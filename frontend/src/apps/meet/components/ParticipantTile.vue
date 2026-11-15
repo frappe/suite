@@ -138,22 +138,13 @@
         size="xs"
         class="!rounded-full !text-white hover:!bg-gray-600"
         :tooltip="isTileHovered ? __('Remove participant') : undefined"
-        @click="showKickDialog = true"
+        @click="confirmRemove"
       >
         <template #icon>
           <lucide-user-x class="w-3.5 h-3.5" />
         </template>
       </Button>
     </div>
-
-    <!-- Kick Confirmation Dialog -->
-    <KickParticipantDialog
-      v-if="canShowHostControls"
-      v-model="showKickDialog"
-      :participant-name="resolvedDisplayName || 'this participant'"
-      :can-ban="participant.is_guest === true"
-      @confirm="handleKick"
-    />
   </div>
 </template>
 
@@ -165,9 +156,9 @@ import { translate as __ } from '@/platform/translation'
 
 import { useAudioStream } from '../composables/useAudioLevels'
 import { useMeetingContext } from '../composables/useMeetingContext'
+import { confirmRemoveParticipant } from '../utils/confirmRemoveParticipant'
 import type { Participant } from '../utils/media/ParticipantManager'
 import AudioIndicator from './AudioIndicator.vue'
-import KickParticipantDialog from './KickParticipantDialog.vue'
 import MeetAvatar from './MeetAvatar.vue'
 import NamePill from './NamePill.vue'
 import NetworkIndicator from './NetworkIndicator.vue'
@@ -304,16 +295,16 @@ const showActionToolbar = computed(() => {
   return canShowPinButton.value || canShowHostControls.value
 })
 
-const showKickDialog = ref(false)
-
 const handleMute = () => {
   hostControls?.muteParticipant(props.participant.user_id)
 }
 
-const handleKick = (ban: boolean) => {
-  hostControls?.kickParticipant(props.participant.user_id, ban)
-  showKickDialog.value = false
-}
+const confirmRemove = () =>
+  confirmRemoveParticipant({
+    name: resolvedDisplayName.value,
+    canBan: props.participant.is_guest === true,
+    remove: (ban) => hostControls?.kickParticipant(props.participant.user_id, ban),
+  })
 </script>
 
 <style scoped>

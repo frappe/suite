@@ -358,7 +358,7 @@ const machine = setupFlow<Event>().createMachine({
 			on: { REMOVE: "removeConfirm" },
 		},
 		removeConfirm: {
-			meta: { description: "Remove asks first: “Remove participant”, naming Leo, with Cancel and Remove." },
+			meta: { description: "Remove asks first, the way Leave meeting does: “Remove Leo Park?” with Cancel and a red Remove." },
 			on: { CONFIRM_REMOVE: "removed" },
 		},
 		removed: {
@@ -727,10 +727,10 @@ export const meet = defineFlow<Event, BaseScene>({
 		},
 		async REMOVE(scene) {
 			await scene.page.getByRole("menuitem", { name: "Remove" }).click();
-			await expect(scene.page.getByRole("dialog", { name: "Remove participant" })).toBeVisible();
+			await expect(scene.page.getByRole("dialog", { name: "Remove Leo Park?" })).toBeVisible();
 		},
 		async CONFIRM_REMOVE(scene) {
-			await scene.page.getByRole("dialog", { name: "Remove participant" }).getByRole("button", { name: "Remove" }).click();
+			await scene.page.getByRole("dialog", { name: "Remove Leo Park?" }).getByRole("button", { name: "Remove" }).click();
 			await expect(leo.get(scene).getByText("The host removed you from the meeting")).toBeVisible({ timeout: 20_000 });
 		},
 		async LEO_WRITES(scene) {
