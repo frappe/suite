@@ -109,9 +109,6 @@
             <template #prefix>
               <lucide-speaker class="mr-2 h-4 w-4 text-ink-gray-7" />
             </template>
-            <template #item-prefix="{ selected }">
-              <lucide-check v-if="selected" class="w-4 h-4 text-ink-gray-8" />
-            </template>
           </FormControl>
 
           <Button
@@ -131,7 +128,6 @@
 
 <script setup lang="ts">
 import LucideCamera from '~icons/lucide/camera'
-import LucideCheck from '~icons/lucide/check'
 import LucideSpeaker from '~icons/lucide/speaker'
 import { Button, FormControl, LoadingText, Tooltip } from 'frappe-ui'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
@@ -168,7 +164,7 @@ declare global {
   }
 }
 
-const props = defineProps<{
+defineProps<{
   isDialogOpen?: boolean
 }>()
 
