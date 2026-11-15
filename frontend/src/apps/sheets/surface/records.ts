@@ -1,35 +1,16 @@
 /**
- * Drive's comment and version records, read into the shapes the Sheets panels
- * render. The session returns them untyped, so each field is checked here and
- * a malformed row is dropped rather than rendered half-empty.
+ * Drive's version records, read into the shape the Sheets panel renders. The
+ * session returns them untyped, so each field is checked here and a malformed
+ * row is dropped rather than rendered half-empty.
  *
  * Anchors are Sheets' own: Drive stores the string and never reads it.
  */
 
 import { ironcalcSheetName } from '../utils/legacy-sheet'
 
-export interface SheetComment {
-  name: string
-  content: string
-  /** The user id, or "Guest" for a visitor without a session. */
-  author: string | null
-  /** The name a guest typed. `null` for a user. */
-  author_name: string | null
-  /** The signed-in author as Drive names them. `null` for a guest. */
-  person: CommentPerson | null
-  creation: string | null
-}
-
 export interface CommentPerson {
   full_name: string
   user_image: string | null
-}
-
-export interface SheetThread {
-  name: string
-  anchor: CellAnchor | null
-  resolved: boolean
-  comments: SheetComment[]
 }
 
 export interface SheetVersion {
@@ -95,46 +76,12 @@ function readMigratedAnchor(value: string): CellAnchor | null {
     : null
 }
 
-export function readThreads(payload: unknown): SheetThread[] {
-  const threads = field(payload, 'threads')
-  if (!Array.isArray(threads)) return []
-  return threads.flatMap((row) => {
-    const name = text(field(row, 'name'))
-    if (!name) return []
-    const comments = field(row, 'comments')
-    return [
-      {
-        name,
-        anchor: readAnchor(field(row, 'anchor')),
-        resolved: field(row, 'resolved') === true,
-        comments: Array.isArray(comments) ? comments.flatMap(readComment) : [],
-      },
-    ]
-  })
-}
-
 export function readVersions(payload: unknown): VersionPage {
   const rows = field(payload, 'rows')
   return {
     rows: Array.isArray(rows) ? rows.flatMap(readVersion) : [],
     nextCursor: text(field(payload, 'next_cursor')),
   }
-}
-
-function readComment(row: unknown): SheetComment[] {
-  const name = text(field(row, 'name'))
-  const content = text(field(row, 'content'))
-  if (!name || content === null) return []
-  return [
-    {
-      name,
-      content,
-      author: text(field(row, 'author')),
-      author_name: text(field(row, 'author_name')),
-      person: readPerson(field(row, 'person')),
-      creation: text(field(row, 'creation')),
-    },
-  ]
 }
 
 function readPerson(row: unknown): CommentPerson | null {
