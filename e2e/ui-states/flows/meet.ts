@@ -199,7 +199,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "Pre-join while Leo is in the call: his avatar and “Leo Park is in the meeting”." },
 		},
 		previewSwitchHere: {
-			meta: { description: "Maya opens a meeting she is already in on another device: her own avatar is listed and the button reads “Switch here” instead of “Join meeting”." },
+			meta: { description: "Maya opens a meeting she is already in on another device: “You're in this meeting on another device”, anyone else in the call listed below it, and the button reads “Switch here” instead of “Join meeting”." },
 			on: { SWITCH_HERE: "switchedHere" },
 		},
 		switchedHere: {

@@ -47,9 +47,14 @@
 
           <h2 class="mb-7 text-3xl-semibold text-ink-gray-9">{{ __('Ready to join?') }}</h2>
 
+          <!-- You may be in the call already on another device; the presence list counts that
+               device, which read as if someone else with your name were there. -->
+          <p v-if="!isGuest && isCurrentUserPresent" class="text-base text-ink-gray-7">
+            {{ __("You're in this meeting on another device") }}
+          </p>
           <AvatarGroup
-            v-if="!isGuest"
-            :participants="[...participants]"
+            v-if="!isGuest && (!isCurrentUserPresent || otherParticipants.length)"
+            :participants="otherParticipants"
             :error="presenceError"
             :loading="!hasFetchedParticipants"
             :max-displayed="2"
@@ -196,6 +201,9 @@ const {
   error: presenceError,
   hasFetchedParticipants,
 } = useMeetingPreviewPresence(props.meetingId)
+const otherParticipants = computed(() =>
+  participants.value.filter((participant) => participant.user_id !== session.user?.sessionUser),
+)
 
 watch(guestNameInputRef, (inputRef) => {
   if (inputRef) {
