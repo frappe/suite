@@ -143,24 +143,6 @@ test("losing edit access freezes the deck, sends no write and offers the changes
 		.filter((line) => line.startsWith("POST") && line.includes("suite.slides"));
 	expect(writes).toEqual([]);
 
-	const user = (await page.context().cookies()).find((cookie) => cookie.name === "user_id");
-	expect(user).toBeDefined();
-	// Each copy has a key of its own under the presentation's
-	const person = decodeURIComponent(user!.value);
-	const recoveryKey = `suite:slides-recovery:${person}:${deck.name}:`;
-	function recovery() {
-		return page.evaluate(
-			(prefix) =>
-				JSON.stringify(
-					Object.keys(localStorage)
-						.filter((key) => key.startsWith(prefix))
-						.map((key) => JSON.parse(localStorage.getItem(key)!)),
-				),
-			recoveryKey,
-		);
-	}
-	expect(await recovery()).toContain("rectangle");
-
 	const download = page.waitForEvent("download");
 	await page.getByRole("button", { name: "Download my changes" }).first().click();
 	const file = await download;
@@ -168,11 +150,19 @@ test("losing edit access freezes the deck, sends no write and offers the changes
 	expect(JSON.parse(readFileSync((await file.path())!, "utf8")).slides[0].elements).toEqual(
 		expect.arrayContaining([expect.objectContaining({ shapeType: "rectangle" })]),
 	);
-	// The toast saves the slides on screen, so the kept copy stays as it was, not marked downloaded
-	expect(JSON.parse(await recovery())).not.toEqual(
-		expect.arrayContaining([expect.objectContaining({ downloaded: true })]),
+	// The live room keeps the one copy on this device. The toast saves the slides on screen, so
+	// that copy stays, and Recovery copies offers it with the rectangle
+	const recovery = await page.context().newPage();
+	await recovery.goto("/drive/recovery");
+	const copy = recovery.getByRole("row").filter({ hasText: "Slides journey" });
+	await expect(copy).toHaveCount(1);
+	const kept = recovery.waitForEvent("download");
+	await copy.getByRole("button", { name: /^Actions for the copy from / }).click();
+	await recovery.getByRole("menuitem", { name: "Download" }).click();
+	expect(JSON.parse(readFileSync((await (await kept).path())!, "utf8")).slides[0].elements).toEqual(
+		expect.arrayContaining([expect.objectContaining({ shapeType: "rectangle" })]),
 	);
-	expect(await recovery()).toContain("rectangle");
+	await recovery.close();
 
 	// A trashed deck takes no new comments.
 	await pickFromMenu(page, "Comments");
