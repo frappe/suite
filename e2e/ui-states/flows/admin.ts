@@ -200,11 +200,11 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "A destination that is not a folder: “No folder found at this link or ID.” shows under the field." },
 		},
 		transferPreview: {
-			meta: { description: "The preview: destination user, usage before and after, the item count and size, who gains access, and a confirmation box. Transfer next batch stays off until it is ticked." },
+			meta: { description: "The preview, in plain words: what moves, where it goes, the storage there before and after, and who gets access. Transfer stays off until the box is ticked." },
 			on: { TICK_ACCESS: "transferReady" },
 		},
 		transferReady: {
-			meta: { description: "The access change confirmed: Transfer next batch turns on." },
+			meta: { description: "The access change confirmed: Transfer turns on." },
 			on: { RUN_TRANSFER: "transferDone" },
 		},
 		transferDone: {
@@ -595,12 +595,12 @@ export const admin = defineFlow<Event, BaseScene>({
 		async TICK_ACCESS(scene) {
 			const dialog = scene.dialog("Transfer retained Drive content");
 			await dialog.getByLabel("I confirm the destination access changes").check();
-			await expect(dialog.getByRole("button", { name: "Transfer next batch" })).toBeEnabled();
+			await expect(dialog.getByRole("button", { name: "Transfer", exact: true })).toBeEnabled();
 		},
 		async RUN_TRANSFER(scene) {
 			const dialog = scene.dialog("Transfer retained Drive content");
-			await dialog.getByRole("button", { name: "Transfer next batch" }).click();
-			await expect(dialog.getByText(/Transfer complete|retained nodes remain/)).toBeVisible({ timeout: 30_000 });
+			await dialog.getByRole("button", { name: "Transfer", exact: true }).click();
+			await expect(dialog.getByText(/Transfer complete|left\. Preview again/)).toBeVisible({ timeout: 30_000 });
 		},
 		async DEMOTE_SELF(scene) {
 			await openActions(scene, identityOf("maya").email);

@@ -264,13 +264,13 @@ it('requires the retained address before retrying failed deletion', async () => 
 
 it.each([
   {
-    action: 'Reactivate selected users',
+    action: 'Reactivate',
     confirm: 'Reactivate users',
     enabled: true,
     outcome: 'Reactivated',
   },
   {
-    action: 'Disable selected users',
+    action: 'Disable',
     confirm: 'Disable users',
     enabled: false,
     outcome: 'Disabled',
@@ -315,16 +315,16 @@ it('requires access confirmation and preserves per-item transfer failures for re
     input.dispatchEvent(new Event('input', { bubbles: true }))
   }
   await click('Preview transfer')
-  await vi.waitFor(() => expect(document.body.textContent).toContain('maya@example.com'))
-  expect(document.body.textContent).toContain('Destination usage: 2 GB')
-  expect(document.body.textContent).toContain('Usage after transfer: 4 GB')
-  expect(document.body.textContent).toContain('Destination cap: 10 GB')
-  expect(document.body.textContent).not.toContain('Destination limit: 11 GB')
-  expect(document.body.textContent).not.toContain('Extra storage:')
-  expect(document.body.textContent).toContain('In progress: 1 GB')
-  expect(document.body.textContent).toContain('maya@example.com · Read')
+  await vi.waitFor(() => expect(document.body.textContent).toContain('What moves'))
+  const preview = document.querySelector('[role="dialog"] dl')?.textContent ?? ''
+  expect(preview).toContain('1 item · 2 GB')
+  // The destination's usage before and after, against its cap rather than the cap plus buffer.
+  expect(preview).toContain('2 GB → 4 GB of 10 GB')
+  expect(preview).not.toContain('11 GB')
+  expect(preview).toContain('In progress1 GB')
+  expect(preview).toContain('maya@example.com · Read')
   const transferButton = Array.from(document.querySelectorAll('button')).find(
-    (button) => button.textContent?.trim() === 'Transfer next batch',
+    (button) => button.textContent?.trim() === 'Transfer',
   )
   expect(transferButton?.disabled).toBe(true)
   const checkbox = document.querySelector<HTMLInputElement>(
@@ -332,11 +332,11 @@ it('requires access confirmation and preserves per-item transfer failures for re
   )
   expect(checkbox).not.toBeNull()
   checkbox?.click()
-  await click('Transfer next batch')
+  await click('Transfer')
   await vi.waitFor(() =>
     expect(document.body.textContent).toContain('Handover notes.md: Destination is unavailable'),
   )
-  expect(document.body.textContent).toContain('1 retained nodes remain')
+  expect(document.body.textContent).toContain('1 item is left')
   expect(document.body.textContent).not.toContain('Transfer complete')
 })
 
@@ -363,7 +363,7 @@ it.each(['personal_limit', 'unknown_usage', 'drive_limit'] as const)(
     )
     document.querySelector<HTMLInputElement>('[role="dialog"] input[type="checkbox"]')?.click()
     const button = Array.from(document.querySelectorAll('button')).find(
-      (button) => button.textContent?.trim() === 'Transfer next batch',
+      (button) => button.textContent?.trim() === 'Transfer',
     )
     expect(button?.disabled).toBe(true)
     expect(server.writes).toHaveLength(0)

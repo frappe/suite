@@ -15,7 +15,19 @@
       <Button v-else variant="subtle" :label="__('Invite users')" @click="inviting = true" />
     </template>
 
-    <div class="flex flex-wrap items-center justify-between gap-3">
+    <div v-if="selectedUsers.length" class="flex min-h-7 flex-wrap items-center gap-2">
+      <span class="pr-1 text-base text-ink-gray-7 tabular-nums">{{
+        __('{0} selected', [selectedUsers.length])
+      }}</span>
+      <Button
+        icon-left="lucide-circle-play"
+        :label="__('Reactivate')"
+        @click="openLifecycle(true)"
+      />
+      <Button icon-left="lucide-circle-off" :label="__('Disable')" @click="openLifecycle(false)" />
+      <Button class="ml-auto" variant="ghost" :label="__('Done')" @click="selectedUsers = []" />
+    </div>
+    <div v-else class="flex flex-wrap items-center justify-between gap-3">
       <FormControl
         v-model="search"
         :placeholder="__('Search')"
@@ -161,13 +173,6 @@
         </ListRow>
       </ListRows>
     </List>
-
-    <div v-if="selectedUsers.length" class="flex flex-wrap items-center gap-2">
-      <p class="text-p-sm text-ink-gray-6">{{ __('{0} selected', [selectedUsers.length]) }}</p>
-      <Button :label="__('Reactivate selected users')" @click="openLifecycle(true)" />
-      <Button :label="__('Disable selected users')" @click="openLifecycle(false)" />
-    </div>
-
     <StorageLimitDialog v-if="storageEditing" v-model:open="storageEditing" :users="storageUsers" />
 
     <Dialog
@@ -420,7 +425,7 @@
           <p class="text-p-base text-ink-gray-7">
             {{
               __(
-                'Choose an existing named folder in another Personal or Shared Root. Retained versions and trash move too; trash stays deleted and existing links and explicit grants are preserved.',
+                'Pick a folder in someone else’s Drive or in a shared Drive. Old versions and trashed items move too, and existing links and sharing keep working.',
               )
             }}
           </p>
@@ -440,99 +445,49 @@
           </div>
           <ErrorMessage :message="previewError || transfer.error?.message" />
           <template v-if="transferPreview">
-            <div class="space-y-2 text-p-base text-ink-gray-7">
-              <p>
-                {{
-                  transferPreview.destination_user
-                    ? __('Destination user: {0}', [transferPreview.destination_user])
-                    : __('Shared destination')
-                }}
-              </p>
-              <p>
-                {{
-                  transferPreview.destination_capacity.current_bytes == null
-                    ? __('Destination usage unavailable')
-                    : __('Destination usage: {0}', [
-                        bytes(transferPreview.destination_capacity.current_bytes),
-                      ])
-                }}
-              </p>
-              <p v-if="transferPreview.destination_capacity.reserved_bytes">
-                {{
-                  __('In progress: {0}', [
-                    bytes(transferPreview.destination_capacity.reserved_bytes),
-                  ])
-                }}
-              </p>
-              <p>
-                {{
-                  transferPreview.destination_capacity.projected_bytes == null
-                    ? __('Usage after transfer unavailable')
-                    : __('Usage after transfer: {0}', [
-                        bytes(transferPreview.destination_capacity.projected_bytes),
-                      ])
-                }}
-              </p>
-              <p>
-                {{
-                  transferPreview.destination_capacity.cap_bytes == null
-                    ? __('No personal cap')
-                    : __('Destination cap: {0}', [
-                        bytes(transferPreview.destination_capacity.cap_bytes),
-                      ])
-                }}
-              </p>
-              <ErrorMessage
-                v-if="transferPreview.destination_capacity.blocker"
-                :message="
-                  transferPreview.destination_capacity.blocker === 'unknown_usage'
-                    ? __(
-                        'Destination usage is unavailable. Try again when storage can be measured.',
-                      )
-                    : __(
-                        'The destination does not have enough storage. Choose another folder or increase its limit.',
-                      )
-                "
-              />
-            </div>
-            <p class="text-base text-ink-gray-8">
-              {{
-                transferPreview.item_count === 1
-                  ? __('1 top-level item · {0}', [bytes(transferPreview.bytes)])
-                  : __('{0} top-level items · {1}', [
-                      transferPreview.item_count,
-                      bytes(transferPreview.bytes),
-                    ])
-              }}
-            </p>
-            <p class="text-p-sm text-ink-gray-5">
-              {{
-                __('People with access to the destination will gain access to transferred content.')
-              }}
-            </p>
-            <ul class="space-y-1">
-              <li
-                v-for="grant in transferPreview.inherited_grants"
-                :key="grant.principal"
-                class="text-p-sm text-ink-gray-6"
-              >
-                {{ grant.principal }} · {{ grantLabel(grant.role) }}
-              </li>
-            </ul>
+            <dl class="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2.5 text-p-base">
+              <dt class="text-ink-gray-5">{{ __('What moves') }}</dt>
+              <dd class="text-ink-gray-8">{{ itemsText }}</dd>
+              <dt class="text-ink-gray-5">{{ __('Goes to') }}</dt>
+              <dd class="text-ink-gray-8">{{ destinationText }}</dd>
+              <dt class="text-ink-gray-5">{{ __('Storage there') }}</dt>
+              <dd class="text-ink-gray-8">{{ storageText }}</dd>
+              <template v-if="transferPreview.destination_capacity.reserved_bytes">
+                <dt class="text-ink-gray-5">{{ __('In progress') }}</dt>
+                <dd class="text-ink-gray-8">
+                  {{ bytes(transferPreview.destination_capacity.reserved_bytes) }}
+                </dd>
+              </template>
+              <template v-if="transferPreview.inherited_grants.length">
+                <dt class="text-ink-gray-5">{{ __('Who gets access') }}</dt>
+                <dd class="space-y-1 text-ink-gray-8">
+                  <p v-for="grant in transferPreview.inherited_grants" :key="grant.principal">
+                    {{ personName(grant.principal) }}
+                    <span class="text-ink-gray-5">· {{ grantLabel(grant.role) }}</span>
+                  </p>
+                </dd>
+              </template>
+            </dl>
+            <ErrorMessage
+              v-if="transferPreview.destination_capacity.blocker"
+              :message="blockerText"
+            />
             <FormControl
               v-model="confirmTransferAccess"
               type="checkbox"
-              :label="__('I confirm the destination access changes')"
+              :label="__('I understand these people will get access to the moved items')"
             />
           </template>
           <template v-if="transferResults">
             <p class="text-base text-ink-gray-8">
               {{
                 transferResults.complete
-                  ? __('Transfer complete. The source Personal Root is empty.')
-                  : __('{0} retained nodes remain. Preview again to retry only unfinished work.', [
-                      transferResults.remaining,
-                    ])
+                  ? __('Transfer complete. Nothing is left to move.')
+                  : transferResults.remaining === 1
+                    ? __('1 item is left. Preview again to move it.')
+                    : __('{0} items are left. Preview again to move them.', [
+                        transferResults.remaining,
+                      ])
               }}
             </p>
             <ul class="space-y-1">
@@ -569,7 +524,11 @@
           <Button
             v-else-if="transferPreview"
             variant="solid"
-            :label="__('Transfer next batch')"
+            :label="
+              transferPreview.item_count > TRANSFER_BATCH
+                ? __('Transfer the first {0}', [TRANSFER_BATCH])
+                : __('Transfer')
+            "
             :disabled="
               !confirmTransferAccess ||
               !transferPreview.item_count ||
@@ -604,6 +563,7 @@ import { loadStorageLimitDialog } from '@/apps/mail'
 import { DashboardLayout, DashboardSkeletonText } from '@/platform/dashboard'
 import { Dropdown, failureText } from '@/platform/feedback'
 import { LoadFailed } from '@/platform/load-failed'
+import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 import { TransportError } from '@/platform/transport'
 
@@ -841,6 +801,47 @@ watch(
 
 const bytes = formatStorage
 
+/** How many top-level items one transfer request moves (`transfer_user_drive`). */
+const TRANSFER_BATCH = 50
+const me = computed(() => useSession().user.value?.id)
+function personName(email: string) {
+  return users.data?.find((user) => user.name === email)?.full_name || email
+}
+const itemsText = computed(() => {
+  const preview = transferPreview.value
+  if (!preview) return ''
+  return preview.item_count === 1
+    ? __('1 item · {0}', [bytes(preview.bytes)])
+    : __('{0} items · {1}', [preview.item_count, bytes(preview.bytes)])
+})
+const destinationText = computed(() => {
+  const preview = transferPreview.value
+  if (!preview) return ''
+  return preview.destination_user
+    ? __("{0}'s Drive", [personName(preview.destination_user)])
+    : __('A shared Drive')
+})
+const storageText = computed(() => {
+  const capacity = transferPreview.value?.destination_capacity
+  if (!capacity) return ''
+  if (capacity.current_bytes == null || capacity.projected_bytes == null)
+    return __('Unknown right now')
+  return capacity.cap_bytes == null
+    ? __('{0} → {1}, no limit', [bytes(capacity.current_bytes), bytes(capacity.projected_bytes)])
+    : __('{0} → {1} of {2}', [
+        bytes(capacity.current_bytes),
+        bytes(capacity.projected_bytes),
+        bytes(capacity.cap_bytes),
+      ])
+})
+const blockerText = computed(() =>
+  transferPreview.value?.destination_capacity.blocker === 'unknown_usage'
+    ? __('Destination usage is unavailable. Try again when storage can be measured.')
+    : __(
+        'The destination does not have enough storage. Choose another folder or increase its limit.',
+      ),
+)
+
 function grantLabel(role: number) {
   switch (role) {
     case 10:
@@ -921,12 +922,15 @@ function userActions(user: User) {
     {
       label: user.is_admin ? __('Demote to member') : __('Make Admin'),
       icon: 'lucide-shield',
-      condition: () => user.is_admin || !!user.enabled,
+      // The last active Admin cannot step down; a disabled user is made Admin after reactivation.
+      condition: () => (user.is_admin || !!user.enabled) && !lastAdmin(user),
       onClick: () => confirmUserChange(user, 'role'),
     },
     {
       label: user.enabled ? __('Disable user') : __('Reactivate user'),
       icon: user.enabled ? 'lucide-circle-off' : 'lucide-circle-play',
+      // No one can disable their own account.
+      condition: () => user.name !== me.value,
       theme: user.enabled ? ('red' as const) : ('gray' as const),
       onClick: () => confirmUserChange(user, 'enabled'),
     },
@@ -994,6 +998,11 @@ function userActions(user: User) {
       onClick: () => openTransfer(user.name),
     },
   ]
+}
+
+function lastAdmin(user: User) {
+  const admins = (users.data ?? []).filter((entry) => entry.is_admin && entry.enabled)
+  return user.name === me.value && admins.length === 1 && admins[0].name === user.name
 }
 
 function confirmUserChange(user: User, kind: 'role' | 'enabled') {
