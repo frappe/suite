@@ -8,7 +8,9 @@
         :aria-label="__('Open navigation')"
         @click="openAreaSidebar(sidebarArea)"
       />
-      <Breadcrumbs :items="breadcrumbs" class="mx-2" />
+      <!-- Lines the title's text up with the body's left edge; the crumb's own 2px padding is pulled
+           back on desktop, and the phone keeps a gap after its menu button. -->
+      <Breadcrumbs :items="breadcrumbs" class="mr-2" :class="isMobile ? 'ml-2' : '-ml-0.5'" />
       <Badge v-if="badgeLabel && !loading" :label="badgeLabel" :theme="badgeTheme" />
       <div class="ml-auto flex space-x-2">
         <slot v-if="!loading" name="actions">
