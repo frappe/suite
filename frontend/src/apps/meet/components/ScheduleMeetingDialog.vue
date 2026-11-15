@@ -75,6 +75,7 @@ import {
   adjustScheduleEndTime,
   adjustScheduleStartTime,
   calendarDayjs as dayjs,
+  defaultScheduleWindow,
   ParticipantSelector,
   useCalendarUserStore,
 } from '@/apps/calendar'
@@ -119,9 +120,10 @@ const accountMessage = computed(() => {
     : __("You don't have a Mail account. Ask your admin to add one, then retry.")
 })
 const title = ref('')
-const date = ref(dayjs().format('YYYY-MM-DD'))
-const startTime = ref(dayjs().add(1, 'hour').startOf('hour').format('HH:mm'))
-const endTime = ref(dayjs().add(2, 'hour').startOf('hour').format('HH:mm'))
+const opening = defaultScheduleWindow(new Date())
+const date = ref(opening.date)
+const startTime = ref(opening.startTime)
+const endTime = ref(opening.endTime)
 const participants = ref<CalendarParticipant[]>([])
 
 watch(startTime, (value) => {
