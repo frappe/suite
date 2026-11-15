@@ -37,15 +37,12 @@
       >
         <Skeleton v-for="index in 5" :key="index" class="h-12 w-full" />
       </div>
-      <div
+      <LoadFailed
         v-else-if="feed.status === 'error' && !feed.rows.length"
-        class="flex flex-1 flex-col items-center justify-center gap-3 px-4 text-center"
-      >
-        <p class="text-p-sm text-ink-red-7">
-          {{ feed.error?.message || __('Could not load notifications.') }}
-        </p>
-        <Button :label="__('Retry')" @click="feed.refetch()" />
-      </div>
+        :title="__('Could not load notifications')"
+        :retry="() => feed.refetch()"
+        class="flex-1 px-4"
+      />
       <p
         v-else-if="!feed.rows.length"
         class="flex flex-1 items-center justify-center px-4 text-p-sm text-ink-gray-5"
@@ -112,6 +109,7 @@ import {
   notificationTime,
 } from '@/composition/notifications/notificationPresentation'
 import { toast } from '@/platform/feedback'
+import { LoadFailed } from '@/platform/load-failed'
 import { mentionedByState } from '@/platform/page-meta'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'

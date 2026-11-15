@@ -112,7 +112,7 @@ const machine = setupFlow<Event>().createMachine({
 			},
 		},
 		domainsSkeleton: { meta: { description: "Domains loading: two placeholder rows under the column headers." } },
-		domainsFailed: { meta: { description: "The domain list failed: the error above an empty table, with no empty-state text and no retry." } },
+		domainsFailed: { meta: { description: "The domain list failed: a centred “Could not load domains” block with Retry replaces the rows." } },
 		domainsEmpty: { meta: { description: "No domains (response shaped in the test): “No domains yet” with an Add Domain button." } },
 		domainsSearchEmpty: { meta: { description: "A search that matches nothing: “No matching domains”, without the first-run Add Domain pitch." } },
 		domainsFiltered: { meta: { description: "The Status filter set to Pending Verification: only the domain still waiting for DNS. The select is too narrow and cuts its label to “Pending Verificati”." } },
@@ -171,7 +171,7 @@ const machine = setupFlow<Event>().createMachine({
 			on: { GROUPS_SLOW: "groupsSkeleton", GROUPS_FAIL: "groupsFailed", OPEN_ADD_GROUP: "addGroup" },
 		},
 		groupsSkeleton: { meta: { description: "Groups loading: eight placeholder rows (Domains shows two)." } },
-		groupsFailed: { meta: { description: "The group list failed: the error above an empty table." } },
+		groupsFailed: { meta: { description: "The group list failed: “Could not load groups” and Retry replace the rows." } },
 		groupsList: {
 			meta: { description: "Groups: address, description, storage (“0 B used, unlimited”) and when it was created." },
 			on: { SEARCH_GROUPS_MISS: "groupsSearchEmpty", OPEN_GROUP_SLOW: "groupSkeleton", OPEN_GROUP: "groupView" },
@@ -229,7 +229,7 @@ const machine = setupFlow<Event>().createMachine({
 			on: { LISTS_SLOW: "listsSkeleton", LISTS_FAIL: "listsFailed", OPEN_ADD_LIST: "addList" },
 		},
 		listsSkeleton: { meta: { description: "Mailing lists loading: placeholder rows." } },
-		listsFailed: { meta: { description: "The mailing list list failed: the error above an empty table." } },
+		listsFailed: { meta: { description: "The mailing list failed: “Could not load mailing lists” and Retry replace the rows." } },
 		listsList: {
 			meta: { description: "Mailing lists: address, description and the number of recipients." },
 			on: { SEARCH_LISTS_MISS: "listsSearchEmpty", OPEN_LIST_SLOW: "listSkeleton", OPEN_LIST: "listView" },
@@ -441,7 +441,7 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 			const hold = await scene.hold(method("get_domains"));
 			await hold.abort(500);
 			await scene.page.reload();
-			await expect(scene.page.getByText("Something went wrong").first()).toBeVisible();
+			await expect(scene.page.getByText("Could not load domains").first()).toBeVisible();
 		},
 		async DOMAINS_NONE(scene) {
 			await scene.page.route(method("get_domains"), (route) => route.fulfill({ json: { message: { items: [], total: 0 } } }));
@@ -579,7 +579,7 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 			const hold = await scene.hold(method("get_groups"));
 			await hold.abort(500);
 			await scene.page.reload();
-			await expect(scene.page.getByText("Something went wrong").first()).toBeVisible();
+			await expect(scene.page.getByText("Could not load groups").first()).toBeVisible();
 		},
 		async SEARCH_GROUPS_MISS(scene) {
 			await scene.page.getByPlaceholder("Search").fill("lighthouse");
@@ -694,7 +694,7 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 			const hold = await scene.hold(method("get_mailing_lists"));
 			await hold.abort(500);
 			await scene.page.reload();
-			await expect(scene.page.getByText("Something went wrong").first()).toBeVisible();
+			await expect(scene.page.getByText("Could not load mailing lists").first()).toBeVisible();
 		},
 		async SEARCH_LISTS_MISS(scene) {
 			await scene.page.getByPlaceholder("Search").fill("lighthouse");

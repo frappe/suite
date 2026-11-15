@@ -39,7 +39,7 @@ const machine = setupFlow<Event>().createMachine({
 			on: { LOADS: "populated", FAILS: "failed" },
 		},
 		failed: {
-			meta: { description: "The listing request failed: the server's message and a Retry button." },
+			meta: { description: "The listing request failed: a cloud-off icon, “Could not load files” and Retry replace the rows." },
 			on: { RETRY: "populated" },
 		},
 		populated: {

@@ -118,7 +118,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "The events request still out: the month grid and Upcoming events are drawn empty with nothing saying they are loading, so it looks like an empty month." },
 		},
 		loadFailed: {
-			meta: { description: "The events request failed: a “Something went wrong” toast, and the grid and Upcoming events stay empty with no retry on the page." },
+			meta: { description: "The events request failed: a visible “Could not load calendar events” row with Retry above the calendar." },
 		},
 		monthEmpty: {
 			meta: { description: "A month with no events (January 2031): the plain grid, with no message. Maya's seeded series never end, so the events reply is stubbed as empty here; the mini month still has its dots because it reads them from another request." },

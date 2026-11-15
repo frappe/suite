@@ -94,7 +94,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "The storage report is still loading: three placeholder KPI tiles, a storage bar and a Domains card, although on this site the loaded page has one KPI tile and no Domains card." },
 		},
 		overviewFailed: {
-			meta: { description: "The storage report failed: only the error message shows, with no KPI, no retry and no hint of what to do." },
+			meta: { description: "The storage report failed: “Could not load storage report” and Retry replace the content." },
 		},
 		overviewHealthUnknown: {
 			meta: { description: "The service health check failed: an amber “Could not check service status” alert sits under the KPI, even on a site that has no Suite Cloud to check." },
@@ -137,7 +137,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "The user list is loading: eight placeholder rows and a placeholder count, with search and filters already usable." },
 		},
 		usersFailed: {
-			meta: { description: "The user list failed: “Something went wrong” above an empty table header, the count reads “0 users”, and there is no retry and no empty-state text." },
+			meta: { description: "The user list failed: “Could not load users” and Retry replace the directory content." },
 		},
 		usersSearchEmpty: {
 			meta: { description: "A search that matches nobody: “No users found” with a hint to change the search or filters, and “0 users”." },
@@ -262,7 +262,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "The storage report is loading: a “Where storage goes” card and placeholder rows with checkboxes under “User storage limits”. The loaded page on this site has a different layout: “Workspace storage”, then a “Drive storage” table with Drive, Used and Limit columns and no checkboxes." },
 		},
 		storageFailed: {
-			meta: { description: "The storage report failed: only the error message shows." },
+			meta: { description: "The storage report failed: “Could not load storage report” and Retry replace the content." },
 		},
 		limitDialog: {
 			meta: { description: "Drive storage limit for one person's Drive, opened at 0, which the description calls the workspace default." },
@@ -434,7 +434,7 @@ export const admin = defineFlow<Event, BaseScene>({
 			const hold = await scene.hold(SUITE_STORAGE);
 			await hold.abort(500);
 			await reloadOverview(scene);
-			await expect(scene.page.getByText("Something went wrong").first()).toBeVisible({ timeout: 30_000 });
+			await expect(scene.page.getByText("Could not load storage report").first()).toBeVisible({ timeout: 30_000 });
 		},
 		async HEALTH_FAILS(scene) {
 			const hold = await scene.hold(HEALTH);
@@ -497,7 +497,7 @@ export const admin = defineFlow<Event, BaseScene>({
 			const hold = await scene.hold(SUITE_USERS);
 			await hold.abort(500);
 			await scene.page.reload();
-			await expect(scene.page.getByText("Something went wrong").first()).toBeVisible({ timeout: 30_000 });
+			await expect(scene.page.getByText("Could not load users").first()).toBeVisible({ timeout: 30_000 });
 		},
 		async SEARCH_MISS(scene) {
 			await scene.page.getByRole("textbox", { name: "Search users" }).fill("Rosalind");
@@ -668,7 +668,7 @@ export const admin = defineFlow<Event, BaseScene>({
 			const hold = await scene.hold(SUITE_STORAGE);
 			await hold.abort(500);
 			await scene.page.reload();
-			await expect(scene.page.getByText("Something went wrong").first()).toBeVisible({ timeout: 30_000 });
+			await expect(scene.page.getByText("Could not load storage report").first()).toBeVisible({ timeout: 30_000 });
 		},
 		async EDIT_LIMIT(scene) {
 			await scene.page.getByRole("button", { name: `Edit storage limit for ${casts.get(scene).priya.email}` }).click();

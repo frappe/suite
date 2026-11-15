@@ -54,7 +54,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "The usage request is still out: a skeleton bar and line keep the meter's space." },
 		},
 		meterFailed: {
-			meta: { description: "The usage request failed: the meter disappears, with nothing in its place and no retry." },
+			meta: { description: "The usage request failed: a compact “Could not load storage usage” row offers Retry." },
 		},
 		meterOk: {
 			meta: { description: "Usage rewritten to 2.4 GB of a 10 GB quota: a grey bar and \"2.4 GB of 10 GB used\"." },
@@ -76,7 +76,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "Statistics while its usage request is out: \"Loading…\" and three skeleton rows in each list, in the loaded layout." },
 		},
 		statisticsFailed: {
-			meta: { description: "The usage request fails as Statistics opens: \"Storage use could not load.\" and two empty boxes, with no retry. The sidebar meter, a separate request, still shows." },
+			meta: { description: "The usage request fails as Statistics opens: a compact “Could not load storage usage” row offers Retry. The sidebar meter, a separate request, still shows." },
 		},
 		statisticsTrashOnly: {
 			meta: { description: "Usage rewritten to bytes with no active files behind them: By type explains that Trash and versions still count; Largest files says only \"No files\"." },
@@ -176,7 +176,7 @@ export const settings = defineFlow<Event>({
 			const hold = await scene.hold(BREAKDOWN);
 			await hold.abort(500);
 			await meter(scene).click();
-			await expect(scene.dialog("Settings").getByText("Storage use could not load.")).toBeVisible();
+			await expect(scene.dialog("Settings").getByText("Could not load storage usage")).toBeVisible();
 		},
 		async ONLY_TRASH_LEFT(scene) {
 			await rewriteUsage(scene, { by_type: [], largest: [] });

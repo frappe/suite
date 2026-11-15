@@ -52,7 +52,11 @@
         </section>
       </div>
     </template>
-    <ErrorMessage :message="report.error?.message" />
+    <LoadFailed
+      v-if="report.status === 'error'"
+      :title="__('Could not load storage report')"
+      :retry="() => report.refetch()"
+    />
 
     <div v-if="report.data" class="mx-auto w-full max-w-5xl space-y-6 pb-10">
       <SiteStorageSummary :report="report.data" compact />
@@ -317,6 +321,7 @@ import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { api, useMutation, useQuery, type OutputOf } from '@/api'
 import { loadStorageLimitDialog } from '@/apps/mail'
 import { DashboardLayout, DashboardSkeletonText } from '@/platform/dashboard'
+import { LoadFailed } from '@/platform/load-failed'
 import { translate as __ } from '@/platform/translation'
 
 import SiteStorageSummary from './SiteStorageSummary.vue'

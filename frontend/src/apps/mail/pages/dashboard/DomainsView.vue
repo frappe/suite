@@ -21,15 +21,19 @@
         />
       </div>
     </div>
-    <ErrorMessage :message="list.error?.message" />
     <DashboardList
+      :failure="
+        list.status === 'error'
+          ? { title: __('Could not load domains'), retry: () => list.refetch() }
+          : undefined
+      "
       :columns="LIST_COLUMNS"
       :rows="list.rows"
       row-key="id"
       :loading="list.status === 'pending'"
       :skeleton-rows="2"
       :row-route="listOptions.getRowRoute"
-      :empty-state="list.error ? undefined : listOptions.emptyState"
+      :empty-state="list.status === 'error' ? undefined : listOptions.emptyState"
     >
       <template #cell="{ column, item }">
         <Badge
@@ -64,7 +68,7 @@
 </template>
 <script setup lang="ts">
 import { refDebounced } from '@vueuse/core'
-import { Badge, ErrorMessage, FormControl, usePageMeta } from 'frappe-ui'
+import { Badge, FormControl, usePageMeta } from 'frappe-ui'
 import { computed, ref } from 'vue'
 
 import { api, useInfiniteQuery, type InputOf } from '@/api'

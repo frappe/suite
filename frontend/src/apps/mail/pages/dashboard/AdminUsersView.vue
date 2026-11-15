@@ -10,7 +10,6 @@
     <Tabs v-model="tab" :tabs="tabs">
       <template #tab-panel>
         <div class="flex min-h-0 flex-1 flex-col gap-5 pt-5">
-          <ErrorMessage v-if="tab === 'users'" :message="users.error?.message" />
           <Alert
             v-if="tab === 'users' && onlyActiveAdmin"
             theme="amber"
@@ -61,7 +60,7 @@
 </template>
 
 <script setup lang="ts">
-import { Alert, Button, ErrorMessage, Tabs } from 'frappe-ui'
+import { Alert, Button, Tabs } from 'frappe-ui'
 import { computed, nextTick, ref, useTemplateRef } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 

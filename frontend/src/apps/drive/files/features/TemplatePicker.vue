@@ -14,13 +14,11 @@
         >
           <Skeleton v-for="index in 6" :key="index" class="h-30 w-full rounded-5" />
         </div>
-        <div
-          v-else-if="templates.error && !templateRows.length"
-          class="flex h-full flex-col items-center justify-center gap-3 text-center"
-        >
-          <ErrorMessage :message="templates.error.message" />
-          <Button label="Retry" :loading="templates.isFetching" @click="templates.refetch()" />
-        </div>
+        <LoadFailed
+          v-else-if="templates.status === 'error' && !templateRows.length"
+          :title="__('Could not load templates')"
+          :retry="() => templates.refetch()"
+        />
         <div
           v-else-if="!templateRows.length"
           class="flex h-full flex-col items-center justify-center gap-3 text-center"
@@ -95,13 +93,14 @@
 </template>
 
 <script setup lang="ts">
-import { Button, Dialog, ErrorMessage, FormControl, Skeleton, TabButtons } from 'frappe-ui'
+import { Button, Dialog, FormControl, Skeleton, TabButtons } from 'frappe-ui'
 import { computed, inject, reactive, ref, useTemplateRef, watch } from 'vue'
 
 import { api, useInfiniteQuery, useMutation } from '@/api'
 import { defaultDocumentTitle } from '@/apps/drive/client/nodes'
 import type { DriveNode } from '@/apps/drive/client/types'
 import { DOCUMENT_TYPES_KEY } from '@/platform/contracts'
+import { LoadFailed } from '@/platform/load-failed'
 
 import { nodeIcon, nodeIconTint } from '../internal/icons'
 import { useOpenedKey } from '../internal/openedKey'

@@ -56,10 +56,15 @@
       </div>
     </div>
 
-    <ErrorMessage v-if="users.error" :message="users.error.message" />
+    <LoadFailed
+      v-if="users.status === 'error'"
+      :title="__('Could not load users')"
+      :retry="() => users.refetch()"
+    />
     <ErrorMessage :message="change.error?.message || replacePassword.error?.message" />
 
     <List
+      v-if="users.status !== 'error'"
       v-model:selection="selectedUsers"
       selectable
       class="-mx-3 list-row-px-3"
@@ -222,7 +227,7 @@
     </Dialog>
 
     <div
-      v-if="!loading && !filtered.length && !users.error"
+      v-if="!loading && !filtered.length && users.status !== 'error'"
       class="flex flex-col items-center gap-1 py-16 text-center"
     >
       <span
@@ -589,6 +594,7 @@ import { api, client, useMutation, useQuery, type OutputOf } from '@/api'
 import { loadStorageLimitDialog } from '@/apps/mail'
 import { DashboardLayout, DashboardSkeletonText } from '@/platform/dashboard'
 import { Dropdown } from '@/platform/feedback'
+import { LoadFailed } from '@/platform/load-failed'
 import { translate as __ } from '@/platform/translation'
 
 import StorageUsage from './StorageUsage.vue'

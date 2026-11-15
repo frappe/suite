@@ -12,14 +12,18 @@
         </template>
       </FormControl>
     </div>
-    <ErrorMessage :message="list.error?.message" />
     <DashboardList
+      :failure="
+        list.status === 'error'
+          ? { title: __('Could not load mailing lists'), retry: () => list.refetch() }
+          : undefined
+      "
       :columns="LIST_COLUMNS"
       :rows="list.rows"
       row-key="id"
       :loading="list.status === 'pending'"
       :row-route="listOptions.getRowRoute"
-      :empty-state="list.error ? undefined : listOptions.emptyState"
+      :empty-state="list.status === 'error' ? undefined : listOptions.emptyState"
     >
       <template #cell="{ column, item }">
         <span
@@ -42,7 +46,7 @@
 </template>
 <script setup lang="ts">
 import { refDebounced } from '@vueuse/core'
-import { ErrorMessage, FormControl, usePageMeta } from 'frappe-ui'
+import { FormControl, usePageMeta } from 'frappe-ui'
 import { computed, ref } from 'vue'
 
 import { api, useInfiniteQuery } from '@/api'

@@ -55,10 +55,10 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "Home on a first load in this tab, with its requests out: four grey cards for Recent and three grey rows for Upcoming. Get started is left out entirely, not shown as grey, so it appears later above New and pushes the page down. On a reload Upcoming skips this and shows the events it kept in session storage." },
 		},
 		loadFailed: {
-			meta: { description: "Recent and Upcoming both failed on a first load in this tab, with nothing kept: each panel shows the error's message in red (here “Something went wrong”) with Retry." },
+			meta: { description: "Recent and Upcoming both failed on a first load in this tab, with nothing kept: each section shows a compact “Could not load” title naming its content, with Retry." },
 		},
 		refreshFailed: {
-			meta: { description: "Coming back to Home from Drive more than 30 seconds after it loaded, with the requests now failing: the cached files and events stay, each with a red “could not be refreshed” bar and Retry under it." },
+			meta: { description: "Coming back to Home from Drive more than 30 seconds after it loaded, with the requests now failing: the cached files and events stay, each with a compact “Could not load” row and Retry under it." },
 		},
 		newMenu: {
 			meta: { description: "New in the header, open: Document, Spreadsheet, Presentation and Drawing, the same four as the cards." },
@@ -178,8 +178,8 @@ export const home = defineFlow<Event, BaseScene>({
 			await scene.page.waitForURL("**/drive/recent");
 			await scene.page.goBack();
 			await scene.page.waitForURL("**/home");
-			await expect(scene.page.getByText("Recent files could not be refreshed.")).toBeVisible({ timeout: 20_000 });
-			await expect(scene.page.getByText("Upcoming events could not be refreshed.")).toBeVisible({ timeout: 20_000 });
+			await expect(scene.page.getByText("Could not load recent files")).toBeVisible({ timeout: 20_000 });
+			await expect(scene.page.getByText("Could not load upcoming events")).toBeVisible({ timeout: 20_000 });
 		},
 		async OPEN_NEW_MENU(scene) {
 			await openMenu(scene, "New", "Spreadsheet");

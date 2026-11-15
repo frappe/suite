@@ -49,7 +49,7 @@ const machine = setupFlow<Event>().createMachine({
 			on: { LOADS: "ready", FAILS: "loadError" },
 		},
 		loadError: {
-			meta: { description: "The grants read failed: what failed, the server's message and a Retry that reads again." },
+			meta: { description: "The grants read failed: a cloud-off icon, “Could not load who has access” and Retry that reads again." },
 		},
 		ready: {
 			meta: { description: "Owner first, then people, everyone in the organization, web access, with the picker on top." },
@@ -219,7 +219,7 @@ export const share = defineFlow<Event>({
 		},
 		async FAILS(scene) {
 			await scene.lastHold.abort(417);
-			await expect(dialog(scene.page).getByText("Something went wrong")).toBeVisible();
+			await expect(dialog(scene.page).getByText("Could not load who has access")).toBeVisible();
 		},
 		async TYPE_NAME(scene) {
 			await dialog(scene.page).getByRole("combobox", { name: "Add people, groups or emails" }).fill("Sana");
