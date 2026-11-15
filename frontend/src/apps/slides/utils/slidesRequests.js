@@ -51,6 +51,17 @@ export function shellKey(pathname) {
   return key
 }
 
+const DRIVE_NODE_PATH = '/api/suite/drive/nodes/'
+
+// what a pin may hold: a node's page, its Drive reads, slides' reads and the bundle
+export function isPinnable(request, url) {
+  if (request.mode === 'navigate') {
+    return shellKey(url.pathname) !== null
+  }
+
+  return url.pathname.startsWith(DRIVE_NODE_PATH) || isAPI(url) || isBundleAsset(url)
+}
+
 export const getRequestType = (request, clientState) => {
   const url = new URL(request.url)
   if (isShell(request, url)) return 'shell'
