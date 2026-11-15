@@ -35,8 +35,9 @@ def storage_key(file_url: str) -> str:
 # a hash or a user's email, a fifth start with a slash (the S3 console shows
 # a "/" folder), some are bare file names at the root, and only a handful
 # live under `Drive Disk Settings.root_folder`. Every bucket call takes the
-# key as it is; this classification exists so the dry run, the precondition
-# check and the legacy-object delete can report per layout.
+# key as it is (`BotoBucket` handles a store that drops leading slashes);
+# this classification exists so the dry run, the precondition check and the
+# legacy-object delete can report per layout.
 LEADING_SLASH = "leading slash"
 BARE_ROOT_KEY = "bare key at the bucket root"
 UNDER_ROOT_FOLDER = "under root_folder"
