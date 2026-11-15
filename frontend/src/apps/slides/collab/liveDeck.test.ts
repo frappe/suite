@@ -86,6 +86,9 @@ function tabOn(
     stopWriting: () => {
       canWrite = false
     },
+    fontsLoad: () => {
+      fontsPending = false
+    },
     // the tab draws centred text a little taller or shorter, as a font or zoom change does
     redraw: (higherBy: number) => {
       drawnHigherBy = higherBy
@@ -867,6 +870,86 @@ describe("filling a new presentation's blank slide", () => {
     Y.applyUpdate(one, fromOther, 'wire')
 
     expect(readSlides(other)).toEqual(readSlides(one))
+  })
+
+  describe("with a theme's centred title and subtitle", () => {
+    const centred = (id: string, refId: string, content: string): StoreItem => ({
+      id,
+      type: 'text',
+      left: 500,
+      top: 300,
+      transform: CENTRED,
+      transformOrigin: 'center',
+      refId,
+      content,
+    })
+    const theme = (clientId: string, background: string): StoreSlide => ({
+      clientId,
+      background,
+      elements: [
+        centred(`${clientId}-title`, 'title', '<p style="text-align: center">Title</p>'),
+        centred(`${clientId}-subtitle`, 'subtitle', '<p style="text-align: center">Subtitle</p>'),
+      ],
+    })
+
+    // What one theme's fill leaves in both tabs: its title and subtitle, once
+    function expectOneFill(one: Y.Doc, other: Y.Doc) {
+      const [slide] = readSlides(one)
+      expect(readSlides(other)).toEqual(readSlides(one))
+      expect(slide.elements.map(({ refId }) => refId)).toEqual(['title', 'subtitle'])
+    }
+
+    it('ends on one theme when two tabs pick at once', () => {
+      const [one, other] = apart()
+      const [tabA, tabB] = [tabOn(one), tabOn(other)]
+
+      tabA.deck.fillBlank(theme('light', '#FFFFFFFF'))
+      tabB.deck.fillBlank(theme('dark', '#000000FF'))
+      connect(one, other)
+
+      expectOneFill(one, other)
+    })
+
+    // as the editor does once the theme's font comes: send, then draw at the new size
+    function fontArrives(tab: ReturnType<typeof tabOn>) {
+      tab.deck.push()
+      tab.fontsLoad()
+      tab.redraw(6)
+      tab.deck.redraw()
+      tab.deck.push()
+    }
+
+    it("ends on one theme when the theme's font comes before the other fill", () => {
+      const [one, other] = apart()
+      const [tabA, tabB] = [
+        tabOn(one, { fontsPending: true }),
+        tabOn(other, { fontsPending: true }),
+      ]
+
+      tabA.deck.fillBlank(theme('light', '#FFFFFFFF'))
+      tabB.deck.fillBlank(theme('dark', '#000000FF'))
+      fontArrives(tabA)
+      fontArrives(tabB)
+      connect(one, other)
+
+      expectOneFill(one, other)
+    })
+
+    it("ends on one theme when the theme's font comes after the other fill", () => {
+      const [one, other] = apart()
+      const [tabA, tabB] = [
+        tabOn(one, { fontsPending: true }),
+        tabOn(other, { fontsPending: true }),
+      ]
+
+      tabA.deck.fillBlank(theme('light', '#FFFFFFFF'))
+      tabB.deck.fillBlank(theme('dark', '#000000FF'))
+      connect(one, other)
+      fontArrives(tabA)
+      fontArrives(tabB)
+
+      expectOneFill(one, other)
+    })
   })
 
   it('leaves the undo steps alone when the slide is no longer blank', () => {
