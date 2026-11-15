@@ -115,6 +115,7 @@ import {
 } from '../composables/useConnectionState'
 import { useMeetingPreviewPresence } from '../composables/useMeetingPreviewPresence'
 import { normalizeJoinPayload, type JoinPayload } from '../types'
+import { refusalOr } from '../utils/error'
 import type { Participant } from '../utils/media/ParticipantManager'
 import { getInitials } from '../utils/text'
 
@@ -219,7 +220,7 @@ const handleJoin = async () => {
       clearRetryableGuestSession(props.meetingId)
     } else if (storedSession?.status === 'banned') {
       terminalGuestSession.value = storedSession
-      toast.error(__('Could not join this meeting'))
+      toast.error(__('You can’t join this meeting'))
       return
     }
     if (!guestName.value.trim()) {
@@ -244,7 +245,9 @@ const handleJoin = async () => {
       })
     } catch (error) {
       console.error('Failed to join as guest:', error)
-      toast.error(__('Could not join the meeting as a guest'))
+      // A refusal the server wrote for people ("Guests are not allowed in this meeting") says more
+      // than a generic failure; a network or browser error does not, so it gets the fixed text.
+      toast.error(refusalOr(error, __('Could not join the meeting as a guest')))
     }
   } else {
     emit('join-from-preview', isCurrentUserPresent.value)

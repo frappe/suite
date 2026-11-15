@@ -354,6 +354,7 @@ import { useSFUConnection, type SFUScreenShareData } from '../composables/useSFU
 import { autoHideToolbar, selectedSpeakerId } from '../data/mediaPreferences'
 import { setShowStatsForNerds, showStatsForNerds } from '../data/statsPreferences'
 import { useSocket } from '../socket'
+import { refusalOr } from '../utils/error'
 import { deviceManager } from '../utils/media/DeviceManager'
 import type { Participant } from '../utils/media/ParticipantManager'
 
@@ -443,23 +444,23 @@ async function handleRecordingAction() {
     }
     recordingPreflight.value = await recording.getPreflight()
     recordingDialogOpen.value = true
-  } catch {
-    toast.error(__('Could not manage recording'))
+  } catch (error) {
+    toast.error(refusalOr(error, __('Could not manage recording')))
   }
 }
 async function confirmRecordingStop() {
   try {
     await recording.stop()
     recordingStopDialogOpen.value = false
-  } catch {
-    toast.error(__('Could not stop recording'))
+  } catch (error) {
+    toast.error(refusalOr(error, __('Could not stop recording')))
   }
 }
 async function confirmRecordingStart() {
   try {
     await recording.start()
   } catch (error) {
-    toast.error(__('Could not start recording'))
+    toast.error(refusalOr(error, __('Could not start recording')))
     throw error
   }
 }
