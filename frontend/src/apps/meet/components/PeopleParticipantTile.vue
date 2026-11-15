@@ -12,7 +12,7 @@
 
     <div class="min-w-0 flex-1">
       <div class="flex items-center gap-2">
-        <span class="truncate text-sm text-ink-gray-8 tracking-[0.28px]">
+        <span class="truncate text-sm text-ink-gray-8">
           {{ participant.user_name }}
         </span>
         <span v-if="isCurrentUser" class="text-xs text-ink-gray-5">{{ __('(You)') }}</span>
@@ -20,18 +20,8 @@
     </div>
 
     <div class="ml-auto flex shrink-0 items-center justify-end gap-1">
-      <span
-        v-if="isHost"
-        class="rounded-full bg-surface-gray-4 px-1.5 py-px text-xs leading-tighter text-ink-gray-6 tracking-[0.24px]"
-      >
-        {{ __('Host') }}
-      </span>
-      <span
-        v-if="participant.is_guest"
-        class="rounded-full bg-surface-gray-4 px-1.5 py-px text-xs leading-tighter text-ink-gray-6 tracking-[0.24px]"
-      >
-        {{ __('Guest') }}
-      </span>
+      <Badge v-if="isHost" size="sm">{{ __('Host') }}</Badge>
+      <Badge v-if="participant.is_guest" size="sm">{{ __('Guest') }}</Badge>
     </div>
 
     <div class="flex flex-shrink-0 items-center gap-1">
@@ -96,7 +86,7 @@
 </template>
 
 <script setup lang="ts">
-import { Dropdown, Tooltip } from 'frappe-ui'
+import { Badge, Dropdown, Tooltip } from 'frappe-ui'
 import { computed, ref } from 'vue'
 
 import { translate as __ } from '@/platform/translation'
