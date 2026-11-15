@@ -17,7 +17,7 @@
           </div>
         </DashboardCard>
         <div class="flex flex-col gap-5">
-          <DashboardCard :title="__('Policy Applied')">
+          <DashboardCard :title="__('Policy applied')">
             <div class="flex flex-col">
               <div
                 v-for="row in policyRows"
@@ -122,7 +122,7 @@
 
           <div class="flex flex-col gap-5">
             <!-- The DMARC record as the reporter read it, so a stale policy is visible here. -->
-            <DashboardCard :title="__('Policy Applied')">
+            <DashboardCard :title="__('Policy applied')">
               <div class="flex flex-col">
                 <div
                   v-for="row in policyRows"
@@ -198,13 +198,13 @@ const data = computed(() => report.data as ReportData | undefined)
 
 usePageMeta(() =>
   appPageMeta(
-    data.value ? __('DMARC report for {0}', [data.value.domain ?? '—']) : __('DMARC Report'),
+    data.value ? __('DMARC report for {0}', [data.value.domain ?? '—']) : __('DMARC report'),
     'Mail',
   ),
 )
 
 const BREADCRUMBS = computed(() => [
-  { label: __('DMARC Reports'), route: '/admin/mail/dmarc' },
+  { label: __('DMARC reports'), route: '/admin/mail/dmarc' },
   { label: data.value ? `${data.value.domain} · ${data.value.reporter}` : reportId },
 ])
 

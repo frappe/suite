@@ -11,7 +11,13 @@
     :title="__('Storage')"
     :description="__('Pictures and videos inside a document count towards that document.')"
   >
-    <div class="flex flex-col gap-6">
+    <LoadFailed
+      v-if="failed"
+      variant="section"
+      :title="__('Could not load storage usage')"
+      :retry="retry"
+    />
+    <div v-else class="flex flex-col gap-6">
       <div class="flex flex-col gap-2">
         <Progress :value="percent" size="md" :aria-label="__('Storage used')" />
         <p class="text-base text-ink-gray-7">{{ summary }}</p>
@@ -87,6 +93,7 @@ import { computed } from 'vue'
 
 import { api, useQuery } from '@/api'
 import { formatBytes } from '@/apps/drive/files/internal/format'
+import { LoadFailed } from '@/platform/load-failed'
 import { translate as __ } from '@/platform/translation'
 
 import SettingsPage from './SettingsPage.vue'
@@ -97,6 +104,11 @@ const usage = useQuery(api.drive.roots.usage, () => {
   const personal = discovered.data?.personal.node
   return personal ? { root: personal, expand: 'breakdown' } : false
 })
+
+async function retry() {
+  if (discovered.error) await discovered.refetch()
+  await usage.refetch()
+}
 
 const failed = computed(() => discovered.status === 'error' || usage.status === 'error')
 const data = computed(() => usage.data)
@@ -119,7 +131,6 @@ const percent = computed(() => {
 
 const summary = computed(() => {
   // One line in every state, so nothing moves when the totals arrive.
-  if (failed.value) return __('Storage use could not load.')
   const answer = data.value
   if (!answer) return __('Loading…')
   const used = formatBytes(answer.used_bytes)

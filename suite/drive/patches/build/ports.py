@@ -891,6 +891,10 @@ class LegacyContent(Protocol):
 
     def media_files_by_urls(self, urls: tuple[str, ...]) -> list[MediaFileRow]: ...
 
+    def presentation_media(self, names: tuple[str, ...]) -> set[str]:
+        """Answer which of `names` are media Files attached to a presentation."""
+        ...
+
     def writer_document_is_template(self, name: str) -> bool: ...
 
     def writer_body(self, name: str) -> WriterBody | None: ...
@@ -1455,7 +1459,7 @@ class SiteDrive:
                 ["kind", "!=", "root"],
                 ["owner", "not in", ["Administrator", "Guest", ""]],
             ],
-            fields=["name", "owner", "kind", "root", "path"],
+            fields=["name", "owner", "kind", "root", "path", "parent_node"],
             order_by="name asc",
             limit=limit,
         )
@@ -1725,6 +1729,14 @@ class SiteContentSource:
             order_by="creation asc, name asc",
         )
         return [MediaFileRow(**dict(row)) for row in rows]
+
+    def presentation_media(self, names: tuple[str, ...]) -> set[str]:
+        """Answer which of `names` are media Files attached to a presentation."""
+        if not names:
+            return set()
+
+        filters = [["name", "in", list(names)], ["attached_to_doctype", "=", "Presentation"]]
+        return set(frappe.get_all("File", filters=filters, pluck="name"))
 
     def writer_document_is_template(self, name: str) -> bool:
         """Whether §14.7 step 8 minted this `Writer Document` from a template.

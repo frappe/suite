@@ -364,7 +364,12 @@ export function useExportImport({
     // Open the window before the read: a popup opened after an await is no
     // longer tied to the click, and browsers block it.
     const win = window.open('', '_blank', 'width=900,height=700')
-    if (!win) return
+    if (!win) {
+      toast.error(
+        'The browser blocked the print window. Allow pop-ups for this site, then try again.',
+      )
+      return
+    }
     const names = scope === 'all' ? sheetNames() : [currentSheet.value]
     const sheets = []
     for (const name of names) sheets.push(await _printable(name))

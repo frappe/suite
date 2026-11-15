@@ -3,23 +3,26 @@
     <template #loading>
       <DashboardDetailHeaderSkeleton :actions="2" />
       <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
-        <DashboardCard :title="__('Email Addresses')">
+        <DashboardCard :title="__('Email addresses')">
           <div class="flex flex-col">
             <div
               class="bg-surface-gray-2 text-ink-gray-5 flex items-center rounded-4 px-5 py-2.5 text-sm"
             >
-              <span class="flex-1">{{ __('Email Address') }}</span>
-              <span class="flex-1">{{ __('Description') }}</span>
+              <span class="flex-1">{{ __('Email address') }}</span>
               <span class="w-20 shrink-0 text-center">{{ __('Enabled') }}</span>
               <span class="w-8 shrink-0" />
             </div>
-            <DashboardRowsSkeleton :rows="1" />
+            <!-- An address row with its display name beneath is two lines tall. -->
+            <DashboardRowsSkeleton
+              :rows="1"
+              row-class="flex h-[3.875rem] items-center border-b px-5 last:border-b-0"
+            />
           </div>
         </DashboardCard>
         <DashboardCard :title="__('Recipients')">
           <div class="flex flex-col">
             <div class="px-5 py-2.5"><Skeleton class="h-7 w-full rounded-4" /></div>
-            <DashboardRowsSkeleton :rows="3" />
+            <DashboardRowsSkeleton :rows="1" />
           </div>
         </DashboardCard>
       </div>
@@ -32,14 +35,18 @@
         <template #icon><Megaphone class="h-5 w-5" /></template>
         <template #actions>
           <Button :label="__('Edit')" @click="showEdit = true" />
-          <Dropdown :options="dropdownOptions" :button="{ icon: 'lucide-more-horizontal' }" />
+          <Dropdown
+            :options="dropdownOptions"
+            :button="{ icon: 'lucide-more-horizontal' }"
+            align="end"
+          />
         </template>
       </DashboardDetailHeader>
 
       <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <!-- Email Addresses -->
         <DashboardCard
-          :title="__('Email Addresses')"
+          :title="__('Email addresses')"
           :button-label="__('Add')"
           @action="showAddEmail = true"
         >
@@ -47,8 +54,7 @@
             <div
               class="bg-surface-gray-2 text-ink-gray-5 flex items-center rounded-4 px-5 py-2.5 text-sm"
             >
-              <span class="flex-1">{{ __('Email Address') }}</span>
-              <span class="flex-1">{{ __('Description') }}</span>
+              <span class="flex-1">{{ __('Email address') }}</span>
               <span class="w-20 shrink-0 text-center">{{ __('Enabled') }}</span>
               <span class="w-8 shrink-0" />
             </div>
@@ -64,10 +70,13 @@
                   :disabled="!entry.is_primary"
                 >
                   <div class="flex w-full items-center">
-                    <span class="flex-1 truncate">{{ entry.email }}</span>
-                    <span class="text-ink-gray-5 flex-1 truncate">{{
-                      entry.description || '—'
-                    }}</span>
+                    <!-- The address gets the whole width; its display name sits beneath. -->
+                    <span class="min-w-0 flex-1">
+                      <span class="block truncate">{{ entry.email }}</span>
+                      <span v-if="entry.description" class="text-ink-gray-5 block truncate text-sm">
+                        {{ entry.description }}
+                      </span>
+                    </span>
                     <span class="flex w-20 shrink-0 justify-center">
                       <Switch
                         :model-value="entry.enabled"
@@ -104,7 +113,7 @@
         >
           <div class="flex flex-col">
             <div class="px-5 py-2.5">
-              <FormControl v-model="recipientSearch" :placeholder="__('Search by email')">
+              <FormControl v-model="recipientSearch" :placeholder="__('Search by email address')">
                 <template #prefix>
                   <FeatherIcon name="search" class="text-ink-gray-5 w-4" />
                 </template>
@@ -157,14 +166,13 @@
     :list-id="listId"
     @reload="reloadAll()"
   />
-  <Dialog v-model:open="showDelete" v-bind="deleteDialogOptions" />
 </template>
 <script setup lang="ts">
 import { refDebounced } from '@vueuse/core'
 import Megaphone from '~icons/lucide/megaphone'
 import {
   Button,
-  Dialog,
+  dialog,
   Dropdown,
   FormControl,
   Skeleton,
@@ -208,7 +216,6 @@ const router = useRouter()
 const showEdit = ref(false)
 const showAddEmail = ref(false)
 const showAddRecipients = ref(false)
-const showDelete = ref(false)
 const recipientSearch = ref('')
 const list = useQuery(api.mail.admin.mailingLists.get, () => ({
   list_id: listId,
@@ -247,7 +254,7 @@ const recipientCountLabel = computed(() => {
 })
 const breadcrumbs = computed(() => [
   {
-    label: __('Mailing Lists'),
+    label: __('Mailing lists'),
     route: '/admin/mail/mailing-lists',
   },
   {
@@ -290,35 +297,28 @@ async function deleteListSubmit() {
     ids: [listId],
   }
   await deleteList.run(input)
-  showDelete.value = false
   raiseToast(__('Mailing list deleted.'))
   router.push({
     name: 'mail-mailing-lists',
   })
 }
-const deleteDialogOptions = computed(() => ({
-  title: __('Delete Mailing List'),
-  message: __('Are you sure you want to delete this mailing list? This action cannot be undone.'),
-  size: 'xl' as const,
-  icon: 'lucide-alert-triangle',
-  theme: 'amber' as const,
-  actions: [
-    {
-      label: __('Confirm'),
-      variant: 'solid' as const,
-      theme: 'red' as const,
-      onClick: deleteListSubmit,
-    },
-  ],
-}))
+function confirmDeleteList() {
+  dialog.confirm({
+    title: __('Delete this mailing list?'),
+    message: __('The mailing list and its addresses are deleted. This cannot be undone.'),
+    theme: 'red',
+    confirmLabel: __('Delete mailing list'),
+    onConfirm: deleteListSubmit,
+  })
+}
 const dropdownOptions = computed(() => [
   {
     group: '',
     options: [
       {
-        label: __('Delete'),
+        label: __('Delete mailing list'),
         icon: 'lucide-trash-2',
-        onClick: () => (showDelete.value = true),
+        onClick: confirmDeleteList,
       },
     ],
   },
