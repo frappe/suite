@@ -50,15 +50,19 @@
               ><span class="lucide-keyboard size-4 text-ink-gray-5" aria-hidden="true"
             /></template>
           </TextInput>
+        </form>
+      </template>
+      <!-- In the actions row like Schedule meet's; Enter in the field still submits the form. -->
+      <template #actions>
+        <div class="flex justify-end">
           <Button
-            type="submit"
-            size="md"
-            variant="outline"
+            variant="solid"
             :label="__('Join')"
             :disabled="!parsedMeetingCode"
             data-testid="join-meeting-button"
+            @click="joinWithCode"
           />
-        </form>
+        </div>
       </template>
     </Dialog>
 

@@ -149,7 +149,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "The request failed: a red alert at the top of the dialog, “Could not schedule the meeting” with “Your details are kept. Try again.” beneath; the form keeps what was typed, and no toast repeats it." },
 		},
 		joinCode: {
-			meta: { description: "Join with meeting code: one field for a code or link. Join is disabled while the field is empty." },
+			meta: { description: "Join with meeting code: one field for a code or link, and a solid Join in the actions row, off while the field is empty." },
 			on: { TYPE_TEXT: "joinCodeInvalid", TYPE_CODE: "joinCodeValid" },
 		},
 		joinCodeInvalid: {
