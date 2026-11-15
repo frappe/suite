@@ -8,11 +8,11 @@
     <template v-if="!embedded" #actions>
       <Button
         v-if="storage.data?.cloud"
-        variant="solid"
+        variant="subtle"
         :label="__('Manage invitations')"
         route="/admin/users/invitations"
       />
-      <Button v-else variant="solid" :label="__('Invite users')" @click="inviting = true" />
+      <Button v-else variant="subtle" :label="__('Invite users')" @click="inviting = true" />
     </template>
 
     <div class="flex flex-wrap items-center justify-between gap-3">

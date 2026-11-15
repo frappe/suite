@@ -1352,7 +1352,7 @@ const NOTIFY_MODAL_OPTIONS = {
                   @update:model-value="(view) => updateActiveView(view)"
                 />
                 <Button
-                  variant="solid"
+                  variant="subtle"
                   icon-left="lucide-calendar-plus"
                   :label="__('Event')"
                   :tooltip="__('New Event (E)')"

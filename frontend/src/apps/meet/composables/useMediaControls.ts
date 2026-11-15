@@ -1,6 +1,8 @@
 import { dialog, toast } from 'frappe-ui'
 import { onUnmounted, ref, watch, type Ref } from 'vue'
 
+import { translate as __ } from '@/platform/translation'
+
 import { autoFramingPaused, readBackgroundEffectPreferences } from '../data/backgroundEffects'
 import {
   cameraEnabled as prefCameraEnabled,
@@ -180,9 +182,10 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
   const confirmScreenShareOverride = () =>
     new Promise<boolean>((resolve) => {
       dialog.confirm({
-        title: 'Start Screen Share Anyway?',
-        message:
+        title: __('Start screen share anyway?'),
+        message: __(
           'Someone is already sharing their screen. Starting yours may result in multiple active screen shares.',
+        ),
         onConfirm: () => resolve(true),
         onCancel: () => resolve(false),
       })
@@ -340,12 +343,12 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
     onCameraDisabled: () => {
       mediaState.isCameraOn = false
       setCameraEnabled(false)
-      toast.error('Failed to toggle camera')
+      toast.error(__('Could not turn on the camera'))
     },
     onMicrophoneDisabled: () => {
       mediaState.isMicOn = false
       setMicEnabled(false)
-      toast.error('Failed to toggle microphone')
+      toast.error(__('Could not turn on the microphone'))
     },
     getSelectedDeviceId: (type) =>
       type === 'camera' ? selectedCameraId.value : selectedMicId.value,
@@ -400,7 +403,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
     updateLocalPreview(null)
     mediaState.isCameraOn = false
     setCameraEnabled(false)
-    toast.error('Failed to toggle camera')
+    toast.error(__('Could not turn on the camera'))
     throw error
   }
 
@@ -789,9 +792,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
       updateLocalPreview(null)
       mediaState.isCameraOn = false
       setCameraEnabled(false)
-      toast.error(
-        'Camera stopped and could not be restarted. Check browser permissions and devices.',
-      )
+      toast.error(__('Could not restart the camera. Check browser permissions and devices.'))
     } else {
       try {
         await captureSession.reconcileMicrophone(null, false, createCameraOperation())
@@ -806,9 +807,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
       }
       mediaState.isMicOn = false
       setMicEnabled(false)
-      toast.error(
-        'Microphone stopped and could not be restarted. Check browser permissions and devices.',
-      )
+      toast.error(__('Could not restart the microphone. Check browser permissions and devices.'))
     }
     signalMediaDisabled(kind)
   }
@@ -939,8 +938,10 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
         errorName(error) === 'NotAllowedError' || errorName(error) === 'PermissionDeniedError'
       toast.warning(
         isPermissionError
-          ? 'Media access denied. Enable permissions in browser settings.'
-          : 'Media access failed. You can join without media.',
+          ? __(
+              'Could not access your camera or microphone. Enable permissions in browser settings.',
+            )
+          : __('Could not access your camera or microphone. You can join without them.'),
       )
     }
   }
@@ -948,9 +949,8 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
   const initializeCamera = () => enqueueCameraTransition(initializeCameraImplementation)
 
   const toggleMicrophoneImplementation = async () => {
+    const enable = !mediaState.isMicOn
     try {
-      const enable = !mediaState.isMicOn
-
       if (enable) {
         if (!(await captureSession.enableMicrophoneInTransition())) return
       } else {
@@ -994,7 +994,9 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
     } catch (error) {
       if (isCameraLifecycleAbort(error)) return
       console.error('Failed to toggle microphone:', error)
-      toast.error('Failed to toggle microphone')
+      toast.error(
+        enable ? __('Could not turn on the microphone') : __('Could not turn off the microphone'),
+      )
     }
   }
   const toggleMicrophone = () => enqueueMicrophoneTransition(toggleMicrophoneImplementation)
@@ -1031,8 +1033,8 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
               errorName(err) === 'NotAllowedError' || errorName(err) === 'PermissionDeniedError'
             toast.error(
               isPermissionError
-                ? 'Camera access denied. Enable in browser settings.'
-                : 'Failed to access camera',
+                ? __('Could not turn on the camera. Enable permissions in browser settings.')
+                : __('Could not access the camera'),
             )
             return
           }
@@ -1071,8 +1073,8 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
                 errorName(err) === 'NotAllowedError' || errorName(err) === 'PermissionDeniedError'
               toast.error(
                 isPermissionError
-                  ? 'Camera access denied. Enable in browser settings.'
-                  : 'Could not enable camera',
+                  ? __('Could not turn on the camera. Enable permissions in browser settings.')
+                  : __('Could not turn on the camera'),
               )
               return
             }
@@ -1150,7 +1152,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
         cleanupBackgroundSession()
       }
       console.error('Failed to toggle camera:', error)
-      toast.error('Failed to toggle camera')
+      toast.error(enable ? __('Could not turn on the camera') : __('Could not turn off the camera'))
       throw error
     }
   }
@@ -1292,7 +1294,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
         console.log('User cancelled screen share')
       } else {
         console.error('Screen share failed:', error)
-        toast.error('Failed to start screen sharing')
+        toast.error(__('Could not start screen sharing'))
       }
     }
   }
@@ -1377,7 +1379,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
   // working on the raw track; this just tells the user why denoising is off.
   watch(noiseCancellation.error, (message) => {
     if (message) {
-      toast.warning(`Noise cancellation unavailable: ${message}. Falling back to raw microphone.`)
+      toast.warning(__('Could not use noise cancellation. Using the microphone without it.'))
     }
   })
 

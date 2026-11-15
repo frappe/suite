@@ -132,6 +132,7 @@ const { domainId } = defineProps<{
 }>()
 const router = useRouter()
 const showEdit = ref(false)
+const deleting = ref(false)
 const domain = useQuery(api.mail.admin.domains.get, () => ({
   domain_id: domainId,
 }))
@@ -141,7 +142,9 @@ usePageMeta(() => appPageMeta(domain.data?.name || domainId, 'Mail'))
 watch(
   () => domain.error,
   (error) => {
-    if (!error) return
+    // Once a delete is under way, the refetch of the record it removed fails with "not found";
+    // that is the delete working, not an error to show over its own toast.
+    if (!error || deleting.value) return
     raiseError(error)
     router.replace({
       name: 'mail-domains',
@@ -168,11 +171,15 @@ async function deleteDomainSubmit() {
   const input: InputOf<typeof api.mail.admin.domains.delete> = {
     domain_id: domainId,
   }
-  await deleteDomain.run(input)
+  deleting.value = true
+  await deleteDomain.run(input).catch((error) => {
+    deleting.value = false
+    throw error
+  })
   router.push({
     name: 'mail-domains',
   })
-  raiseToast('Domain deleted.')
+  raiseToast(__('Domain deleted.'))
 }
 const setEnabled = useMutation(api.mail.admin.domains.setEnabled)
 async function setEnabledSubmit(values: { enabled: boolean }) {

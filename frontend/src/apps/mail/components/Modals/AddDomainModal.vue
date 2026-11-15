@@ -64,7 +64,6 @@
           v-model="domainDescription"
           :label="__('Description')"
           :placeholder="__('Primary domain for company email')"
-          type="textarea"
         />
         <ErrorMessage :message="errorMessage" />
       </div>

@@ -1,7 +1,7 @@
 <template>
   <div class="flex min-h-0 min-w-0 flex-1 flex-col bg-surface-base">
     <PageHeader>
-      <h1 class="text-xl font-semibold text-ink-gray-9">{{ __('Meet') }}</h1>
+      <PageHeaderTitle :title="__('Meet')" />
     </PageHeader>
 
     <div class="min-h-0 flex-1 overflow-y-auto">
@@ -50,15 +50,19 @@
               ><span class="lucide-keyboard size-4 text-ink-gray-5" aria-hidden="true"
             /></template>
           </TextInput>
+        </form>
+      </template>
+      <!-- In the actions row like Schedule meet's; Enter in the field still submits the form. -->
+      <template #actions>
+        <div class="flex justify-end">
           <Button
-            type="submit"
-            size="md"
-            variant="outline"
+            variant="solid"
             :label="__('Join')"
             :disabled="!parsedMeetingCode"
             data-testid="join-meeting-button"
+            @click="joinWithCode"
           />
-        </form>
+        </div>
       </template>
     </Dialog>
 
@@ -67,7 +71,7 @@
 </template>
 
 <script setup lang="ts">
-import { Button, Dialog, PageHeader, TextInput } from 'frappe-ui'
+import { Button, Dialog, PageHeader, PageHeaderTitle, TextInput } from 'frappe-ui'
 import { computed, onMounted, onScopeDispose, ref } from 'vue'
 import { useRouter } from 'vue-router'
 

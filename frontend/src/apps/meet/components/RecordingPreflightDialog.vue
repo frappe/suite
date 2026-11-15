@@ -2,6 +2,8 @@
 import { Alert, Dialog } from 'frappe-ui'
 import { computed } from 'vue'
 
+import { translate as __ } from '@/platform/translation'
+
 import type { RecordingPreflight } from '../composables/useRecording'
 import { getRecordingUnavailableReason } from '../utils/recordingPresentation'
 
@@ -13,14 +15,14 @@ const open = defineModel<boolean>('open', { default: false })
 
 const actions = computed(() => {
   const close = {
-    label: props.preflight?.eligible ? 'Cancel' : 'Close',
+    label: props.preflight?.eligible ? __('Cancel') : __('Close'),
     variant: 'subtle' as const,
     onClick: ({ close }: { close: () => void }) => close(),
   }
   if (!props.preflight?.eligible) return [close]
   return [
     {
-      label: 'Start recording',
+      label: __('Start recording'),
       variant: 'solid' as const,
       theme: 'red' as const,
       onClick: async ({ close }: { close: () => void }) => {
@@ -45,11 +47,20 @@ const unavailable = computed(() =>
 </script>
 
 <template>
-  <Dialog v-model:open="open" title="Start recording?" theme="red" size="md" :actions="actions">
+  <Dialog
+    v-model:open="open"
+    :title="__('Start recording?')"
+    theme="red"
+    size="md"
+    :actions="actions"
+  >
     <div v-if="preflight" class="space-y-4">
       <p class="text-p-base text-ink-gray-7">
-        Everyone in the meeting will see a recording notice. The video will be saved privately to
-        the room owner's Drive.
+        {{
+          __(
+            "Everyone in the meeting will see a recording notice. The video will be saved privately to the room owner's Drive.",
+          )
+        }}
       </p>
 
       <Alert
@@ -61,8 +72,8 @@ const unavailable = computed(() =>
       <Alert
         v-else-if="limitedByStorage"
         theme="amber"
-        title="Storage may end the recording early"
-        description="Recording will stop when its available storage budget is reached."
+        :title="__('Storage may end the recording early')"
+        :description="__('Recording will stop when its available storage budget is reached.')"
       />
     </div>
   </Dialog>

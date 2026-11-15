@@ -30,10 +30,10 @@
     >
       <lucide-monitor-up class="w-8 h-8 text-white mb-6" />
       <div v-if="showScreenShareCopy" class="text-white text-lg-medium mb-1">
-        You are sharing your screen
+        {{ __('You are sharing your screen') }}
       </div>
       <div v-if="showScreenShareCopy" class="text-white text-sm-medium">
-        Everyone else can see what you are presenting
+        {{ __('Everyone else can see what you are presenting') }}
       </div>
     </div>
 
@@ -71,7 +71,7 @@
       v-if="showReaction && currentReaction"
       class="absolute top-1 px-2 py-1 rounded-4 text-2xl pointer-events-none animate-pop"
       :class="{ 'left-2': !isHandRaised, 'left-10': isHandRaised }"
-      :aria-label="`Reaction ${currentReaction.emoji} from ${resolvedDisplayName}`"
+      :aria-label="__('Reaction {0} from {1}', [currentReaction.emoji, resolvedDisplayName])"
       role="img"
     >
       <span class="text-3xl">{{ currentReaction.emoji }}</span>
@@ -81,7 +81,7 @@
     <div
       v-if="showRaisedHand && isHandRaised"
       class="absolute top-2 left-2 px-2 py-1 rounded-full !bg-[#e54e17] text-white pointer-events-none flex items-center justify-center"
-      :aria-label="`${resolvedDisplayName} has raised their hand`"
+      :aria-label="__('{0} has raised their hand', [resolvedDisplayName])"
     >
       <lucide-hand class="w-4 h-4" :class="{ wave: isAnimating }" />
     </div>
@@ -108,7 +108,9 @@
         size="xs"
         class="!rounded-full !text-white hover:!bg-gray-600"
         :class="{ '!bg-gray-600': isPinned }"
-        :tooltip="isTileHovered ? (isPinned ? 'Unpin participant' : 'Pin participant') : undefined"
+        :tooltip="
+          isTileHovered ? (isPinned ? __('Unpin participant') : __('Pin participant')) : undefined
+        "
         @click="togglePin"
       >
         <template #icon>
@@ -121,7 +123,7 @@
         variant="ghost"
         size="xs"
         class="!rounded-full !text-white hover:!bg-gray-600"
-        :tooltip="isTileHovered ? 'Mute participant' : undefined"
+        :tooltip="isTileHovered ? __('Mute participant') : undefined"
         @click="handleMute"
       >
         <template #icon>
@@ -133,7 +135,7 @@
         variant="ghost"
         size="xs"
         class="!rounded-full !text-white hover:!bg-gray-600"
-        :tooltip="isTileHovered ? 'Remove participant' : undefined"
+        :tooltip="isTileHovered ? __('Remove participant') : undefined"
         @click="showKickDialog = true"
       >
         <template #icon>
@@ -156,6 +158,8 @@
 <script setup lang="ts">
 import { Button } from 'frappe-ui'
 import { computed, inject, ref, watch, type ComputedRef, type Ref } from 'vue'
+
+import { translate as __ } from '@/platform/translation'
 
 import { useAudioStream } from '../composables/useAudioLevels'
 import { useMeetingContext } from '../composables/useMeetingContext'
@@ -245,7 +249,9 @@ const audioStream = computed(() => props.audioStream || stream.value)
 
 const resolvedDisplayName = computed(() => {
   return (
-    props.displayName || props.participant.user_name || (props.participant.is_guest ? 'Guest' : '')
+    props.displayName ||
+    props.participant.user_name ||
+    (props.participant.is_guest ? __('Guest') : '')
   )
 })
 

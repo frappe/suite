@@ -323,6 +323,6 @@ export function meetingIdFromUrl(page: Page): string {
 
 /** Joins from the preview and waits until the call's controls are up. */
 export async function joinFromPreview(page: Page): Promise<void> {
-	await page.getByRole("button", { name: "Join Meeting" }).click();
-	await expect(page.getByRole("button", { name: "End Call" })).toBeVisible({ timeout: 30_000 });
+	await page.getByRole("button", { name: "Join meeting" }).click();
+	await expect(page.getByRole("button", { name: "End call" })).toBeVisible({ timeout: 30_000 });
 }

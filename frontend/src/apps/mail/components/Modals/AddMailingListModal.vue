@@ -7,7 +7,7 @@
         {
           label: __('Add mailing list'),
           variant: 'solid' as const,
-          disabled: !(name && domain),
+          disabled: !(name && domain) || !recipients.every(isEmail),
           loading: addList.isPending,
           onClick: addListSubmit,
         },
@@ -23,12 +23,12 @@
           username-placeholder="announce"
           :description="__('Mail sent to this address goes to every recipient on the list.')"
         />
-        <FormControl v-model="description" :label="__('Description')" type="textarea" />
-        <FormControl
+        <FormControl v-model="description" :label="__('Description')" />
+        <EmailListInput
           v-model="recipients"
+          v-model:draft="recipientDraft"
           :label="__('Recipients')"
-          type="textarea"
-          :placeholder="__('One email address per line')"
+          :placeholder="__('Type or paste email addresses')"
         />
         <ErrorMessage
           :message="
@@ -49,8 +49,9 @@ import { useRouter } from 'vue-router'
 
 import { api, useMutation, type InputOf } from '@/api'
 import EmailAddressField from '@/apps/mail/components/Controls/EmailAddressField.vue'
+import EmailListInput from '@/apps/mail/components/Controls/EmailListInput.vue'
 import { useEnabledDomains } from '@/apps/mail/composables/useEnabledDomains'
-import { raiseToast } from '@/apps/mail/utils'
+import { isEmail, raiseToast } from '@/apps/mail/utils'
 
 const show = defineModel<boolean>()
 const router = useRouter()
@@ -59,22 +60,18 @@ const emit = defineEmits(['reload'])
 const name = ref('')
 const domain = ref('')
 const description = ref('')
-const recipients = ref('')
+const recipients = ref<string[]>([])
+const recipientDraft = ref('')
 
 const { domains, domainsError } = useEnabledDomains(show)
-
-const toLines = (text: string) =>
-  text
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
 
 watch(show, () => {
   if (show.value) {
     name.value = ''
     domain.value = ''
     description.value = ''
-    recipients.value = ''
+    recipients.value = []
+    recipientDraft.value = ''
     addList.reset()
   }
 })
@@ -85,7 +82,7 @@ async function addListSubmit() {
     name: name.value,
     domain: domain.value,
     description: description.value?.trim() || undefined,
-    recipients: toLines(recipients.value),
+    recipients: recipients.value,
   }
 
   const result = await addList.run(input)

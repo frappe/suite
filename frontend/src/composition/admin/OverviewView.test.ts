@@ -10,6 +10,7 @@ import OverviewView from './OverviewView.vue'
 import SiteStorageSummary from './SiteStorageSummary.vue'
 
 vi.mock('frappe-ui', async () => ({
+  PageHeader: { template: '<header><slot /></header>' },
   ...(await import('../../../../node_modules/frappe-ui/src/components/Alert')),
   ...(await import('../../../../node_modules/frappe-ui/src/components/Avatar')),
   ...(await import('../../../../node_modules/frappe-ui/src/components/Badge')),

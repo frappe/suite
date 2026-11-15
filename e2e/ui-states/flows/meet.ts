@@ -37,7 +37,6 @@ type Event =
 	| { type: "OPEN_LINK_MEDIA_BLOCKED" }
 	| { type: "OPEN_BUSY_LINK" }
 	| { type: "OPEN_LINK_ELSEWHERE" }
-	| { type: "OPEN_AUDIO_TEST" }
 	| { type: "PHONE" }
 	| { type: "MEDIA_OFF" }
 	| { type: "OPEN_SETTINGS" }
@@ -106,7 +105,6 @@ const machine = setupFlow<Event>().createMachine({
 				OPEN_LINK_MEDIA_BLOCKED: "previewMediaBlocked",
 				OPEN_BUSY_LINK: "previewOthersIn",
 				OPEN_LINK_ELSEWHERE: "previewSwitchHere",
-				OPEN_AUDIO_TEST: "audioTest",
 				PHONE: "homePhone",
 			},
 		},
@@ -114,13 +112,13 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "Meet home at phone width: the sidebar is replaced by a bottom tab bar (Home, Drive, Mail, Calendar, Meet, People, Account), and the four actions sit in two columns." },
 		},
 		creating: {
-			meta: { description: "Instant meet pressed while the create request is out: a “Creating meeting...” toast, and Instant meet and Restricted meet are disabled." },
+			meta: { description: "Instant meet pressed while the create request is out: a “Creating meeting…” toast, and Instant meet and Restricted meet are disabled." },
 		},
 		createFailed: {
-			meta: { description: "The create request failed: a “Failed to create meeting. Please try again.” toast, and the home screen is usable again." },
+			meta: { description: "The create request failed: a “Could not create the meeting. Try again.” toast, and the home screen is usable again." },
 		},
 		joinFailedWithoutSfu: {
-			meta: { description: "Instant meet on this site as it is configured: the meeting is created and the call screen opens, then join fails with the server's raw message “SFU secret not configured” and a Try Again button. The creation toast still says “Meeting created successfully!”." },
+			meta: { description: "Instant meet on this site as it is configured: the meeting is created and the call screen opens, then join fails: “Could not join the meeting” with Try again (the server's reason, a missing SFU secret, goes to the console). The creation toast still says “Meeting created”." },
 		},
 		schedule: {
 			meta: { description: "Schedule meet: Title, Date (today), Start and End (the next two whole hours) and a participant picker. Schedule is on before a title is typed." },
@@ -140,16 +138,16 @@ const machine = setupFlow<Event>().createMachine({
 			on: { SUBMIT: "scheduled", SUBMIT_SLOW: "scheduling", SUBMIT_FAILS: "scheduleFailed" },
 		},
 		scheduling: {
-			meta: { description: "Schedule pressed while the request is out: the button spins and a “Scheduling meeting...” toast shows. The form stays editable." },
+			meta: { description: "Schedule pressed while the request is out: the button spins. The form stays editable." },
 		},
 		scheduled: {
-			meta: { description: "The dialog closes, a “Meeting scheduled.” toast shows and Upcoming meetings appears under the actions with the new meeting." },
+			meta: { description: "The dialog closes, a “Meeting scheduled” toast shows and Upcoming meetings appears under the actions with the new meeting." },
 		},
 		scheduleFailed: {
-			meta: { description: "The request failed: a red alert at the top of the dialog, “Could not schedule the meeting. Your details are kept. Please t…”, cut off at one line; the form keeps what was typed, and a toast says the meeting was not scheduled." },
+			meta: { description: "The request failed: a red alert at the top of the dialog, “Could not schedule the meeting” with “Your details are kept. Try again.” beneath; the form keeps what was typed, and no toast repeats it." },
 		},
 		joinCode: {
-			meta: { description: "Join with meeting code: one field for a code or link. Join is disabled while the field is empty." },
+			meta: { description: "Join with meeting code: one field for a code or link, and a solid Join in the actions row, off while the field is empty." },
 			on: { TYPE_TEXT: "joinCodeInvalid", TYPE_CODE: "joinCodeValid" },
 		},
 		joinCodeInvalid: {
@@ -191,17 +189,17 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "Pre-join on this site as it is configured: the people-in-call check fails, a red box shows the raw “SFU secret not configured”, and there is no Join button at all." },
 		},
 		previewMediaBlocked: {
-			meta: { description: "Pre-join after the browser blocked the camera and microphone: Maya's avatar instead of video, both buttons red, no Settings button, and a toast “Media access denied. Enable permissions in browser settings.”" },
+			meta: { description: "Pre-join after the browser blocked the camera and microphone: Maya's avatar instead of video, both buttons red, no Settings button, and a toast “Could not access your camera or microphone. Enable permissions in browser settings.”" },
 			on: { TRY_CAMERA: "previewCameraBlocked" },
 		},
 		previewCameraBlocked: {
-			meta: { description: "The camera button pressed again while the browser still blocks it: a second toast, “Camera access denied. Enable in browser settings.”" },
+			meta: { description: "The camera button pressed again while the browser still blocks it: a second toast, “Could not turn on the camera. Enable permissions in browser settings.”" },
 		},
 		previewOthersIn: {
 			meta: { description: "Pre-join while Leo is in the call: his avatar and “Leo Park is in the meeting”." },
 		},
 		previewSwitchHere: {
-			meta: { description: "Maya opens a meeting she is already in on another device: her own avatar is listed and the button reads “Switch here” instead of “Join Meeting”." },
+			meta: { description: "Maya opens a meeting she is already in on another device: “You're in this meeting on another device”, anyone else in the call listed below it, and the button reads “Switch here” instead of “Join meeting”." },
 			on: { SWITCH_HERE: "switchedHere" },
 		},
 		switchedHere: {
@@ -212,7 +210,7 @@ const machine = setupFlow<Event>().createMachine({
 		},
 		joinFailedAfterRecovery: {
 			meta: {
-				description: "The connection could not be restored after it dropped: “We couldn't restore your meeting connection. Try joining again.” with Try Again. Recovery keeps retrying for longer than a capture path can wait offline.",
+				description: "The connection could not be restored after it dropped: “Could not join the meeting” with Try again. Recovery keeps retrying for longer than a capture path can wait offline.",
 				transient: true,
 			},
 		},
@@ -228,19 +226,16 @@ const machine = setupFlow<Event>().createMachine({
 				transient: true,
 			},
 		},
-		audioTest: {
-			meta: { description: "The audio test at /meet/audio-test, for System Managers only (Maya is sent back to Meet home). Inside the Suite sidebar: one coloured card per notification sound (user joined, user left, join request, chat message, hand raised), each with a Play button and the notes it plays, then Play All Notifications and testing tips. The Play button labels are cut off." },
-		},
 		restrictedAlone: {
 			meta: { description: "Restricted meet: Maya is let straight into her own restricted meeting. Nothing on the call screen says it is restricted." },
 			on: { GUEST_OPENS_LINK: "guestPreview" },
 		},
 		guestPreview: {
-			meta: { description: "A signed-out visitor opens the restricted meeting's link: pre-join with a Your name field and Sign in in the header, and Join Meeting disabled until a name is typed. Guests do not see who is in the call." },
+			meta: { description: "A signed-out visitor opens the restricted meeting's link: pre-join with a Your name field and Sign in in the header, and Join meeting disabled until a name is typed. Guests do not see who is in the call." },
 			on: { GUEST_ASKS: "guestWaiting" },
 		},
 		guestWaiting: {
-			meta: { description: "The guest asked to join: “Waiting to be admitted” with Leave, drawn over the call screen with the guest's own camera and the full toolbar behind the blur." },
+			meta: { description: "The guest asked to join: “Waiting to be admitted” with Leave, straight on the dimmed call screen (no card), drawn over the call screen with the guest's own camera and the full toolbar behind the blur." },
 			on: { HOST_NOTIFIED: "joinRequest" },
 		},
 		joinRequest: {
@@ -339,10 +334,10 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "Reactions: a grid of emoji above the toolbar." },
 		},
 		handRaised: {
-			meta: { description: "Raise Hand: an orange hand badge in the top-left corner of Maya's tile, and the Raise Hand button turns orange." },
+			meta: { description: "Raise hand: an orange hand badge in the top-left corner of Maya's tile, and the Raise hand button turns orange." },
 		},
 		leaveConfirm: {
-			meta: { description: "End Call asks first: “Leave meeting?” with Stay and Leave meeting." },
+			meta: { description: "End call asks first: “Leave meeting?” with Stay and Leave meeting." },
 			on: { LEAVE_CONFIRMED: "left" },
 		},
 		left: {
@@ -359,15 +354,15 @@ const machine = setupFlow<Event>().createMachine({
 			on: { PARTICIPANT_MENU: "participantMenu" },
 		},
 		participantMenu: {
-			meta: { description: "The host's actions for Leo: Mute, Promote to Co-host and Remove." },
+			meta: { description: "The host's actions for Leo: Mute, Promote to co-host and Remove." },
 			on: { REMOVE: "removeConfirm" },
 		},
 		removeConfirm: {
-			meta: { description: "Remove asks first: “Remove Participant”, naming Leo, with Cancel and Remove." },
+			meta: { description: "Remove asks first: “Remove participant”, naming Leo, with Cancel and Remove." },
 			on: { CONFIRM_REMOVE: "removed" },
 		},
 		removed: {
-			meta: { description: "Leo's side after Maya removes him: he is back on Meet home with “You have been removed from the meeting by the host”." },
+			meta: { description: "Leo's side after Maya removes him: he is back on Meet home with “The host removed you from the meeting”." },
 		},
 	},
 });
@@ -387,7 +382,6 @@ const FRAMED = new Map<string, (scene: BaseScene) => Page>([
 	["previewMediaBlocked", (scene) => elsewhere.get(scene)],
 	["previewCameraBlocked", (scene) => elsewhere.get(scene)],
 	["removed", (scene) => leo.get(scene)],
-	["audioTest", (scene) => elsewhere.get(scene)],
 	["scheduleNoAccount", (scene) => elsewhere.get(scene)],
 ]);
 
@@ -404,7 +398,7 @@ function button(page: Page, name: string) {
 }
 
 async function waitInCall(page: Page) {
-	await expect(button(page, "End Call")).toBeVisible({ timeout: 30_000 });
+	await expect(button(page, "End call")).toBeVisible({ timeout: 30_000 });
 }
 
 /** Starts a meeting from a home action and joins it, as Instant and Restricted do. */
@@ -474,13 +468,13 @@ export const meet = defineFlow<Event, BaseScene>({
 		async START_SLOW(scene) {
 			await scene.hold("**/api/suite/meet/rooms");
 			await scene.page.getByRole("button", { name: "Instant meet" }).click();
-			await expect(scene.page.getByText("Creating meeting...")).toBeVisible();
+			await expect(scene.page.getByText("Creating meeting…")).toBeVisible();
 		},
 		async START_FAILS(scene) {
 			const hold = await scene.hold("**/api/suite/meet/rooms");
 			await hold.abort(500);
 			await scene.page.getByRole("button", { name: "Instant meet" }).click();
-			await expect(scene.page.getByText("Failed to create meeting. Please try again.")).toBeVisible({ timeout: 30_000 });
+			await expect(scene.page.getByText("Could not create the meeting. Try again.")).toBeVisible({ timeout: 30_000 });
 		},
 		async INSTANT(scene) {
 			await startFromHome(scene, "Instant meet");
@@ -488,7 +482,7 @@ export const meet = defineFlow<Event, BaseScene>({
 		async INSTANT_WITHOUT_SFU(scene) {
 			useSiteSfuConfig(scene);
 			await scene.page.getByRole("button", { name: "Instant meet" }).click();
-			await expect(button(scene.page, "Try Again")).toBeVisible({ timeout: 30_000 });
+			await expect(button(scene.page, "Try again")).toBeVisible({ timeout: 30_000 });
 			removeMeetingLater(scene, meetingIdFromUrl(scene.page));
 		},
 		async RESTRICTED(scene) {
@@ -523,19 +517,19 @@ export const meet = defineFlow<Event, BaseScene>({
 					data: { account, ids: [data.event_id] },
 				}),
 			);
-			await expect(scene.page.getByText("Meeting scheduled.")).toBeVisible();
+			await expect(scene.page.getByText("Meeting scheduled")).toBeVisible();
 			await expect(scene.page.getByText("Quarterly planning")).toBeVisible();
 		},
 		async SUBMIT_SLOW(scene) {
 			await scene.hold("**/api/suite/meet/calendar-meetings");
 			await button(scene.page, "Schedule").click();
-			await expect(scene.page.getByText("Scheduling meeting...")).toBeVisible();
+			await expect(button(scene.page, "Schedule")).toHaveAttribute("aria-busy", "true");
 		},
 		async SUBMIT_FAILS(scene) {
 			const hold = await scene.hold("**/api/suite/meet/calendar-meetings");
 			await hold.abort(500);
 			await button(scene.page, "Schedule").click();
-			await expect(scene.page.getByText("Could not schedule the meeting. Your details are kept. Please try again.")).toBeVisible({ timeout: 30_000 });
+			await expect(scene.page.getByText("Your details are kept. Try again.")).toBeVisible({ timeout: 30_000 });
 		},
 		async JOIN_WITH_CODE(scene) {
 			await scene.page.getByRole("button", { name: "Join with code" }).click();
@@ -567,7 +561,7 @@ export const meet = defineFlow<Event, BaseScene>({
 			const page = await hostWithMediaBlocked(scene);
 			elsewhere.set(scene, page);
 			await openLink(scene, page, id);
-			await expect(page.getByText("Media access denied. Enable permissions in browser settings.")).toBeVisible({ timeout: 20_000 });
+			await expect(page.getByText("Could not access your camera or microphone. Enable permissions in browser settings.")).toBeVisible({ timeout: 20_000 });
 		},
 		async OPEN_BUSY_LINK(scene) {
 			meetingId.set(scene, await createMeeting(scene));
@@ -584,19 +578,13 @@ export const meet = defineFlow<Event, BaseScene>({
 			await openLink(scene, scene.page, id);
 			await expect(button(scene.page, "Switch here")).toBeVisible({ timeout: 20_000 });
 		},
-		async OPEN_AUDIO_TEST(scene) {
-			const page = await adminPage(scene);
-			elsewhere.set(scene, page);
-			await page.goto("/meet/audio-test");
-			await expect(page.getByRole("heading", { name: "Audio Notification Test" })).toBeVisible({ timeout: 20_000 });
-		},
 		async PHONE(scene) {
 			await scene.page.setViewportSize(PHONE);
 			await scene.settle();
 		},
 		async MEDIA_OFF(scene) {
-			await button(scene.page, "Toggle Audio (Ctrl+D)").click();
-			await button(scene.page, "Toggle Video (Ctrl+E)").click();
+			await button(scene.page, "Toggle audio (Ctrl+D)").click();
+			await button(scene.page, "Toggle video (Ctrl+E)").click();
 			await expect(ownTile(scene.page)).toHaveAttribute("data-video-enabled", "false");
 		},
 		async OPEN_SETTINGS(scene) {
@@ -608,13 +596,13 @@ export const meet = defineFlow<Event, BaseScene>({
 		},
 		async JOIN_SLOW(scene) {
 			await scene.hold("**/api/suite/meet/rooms/joins");
-			await button(scene.page, "Join Meeting").click();
+			await button(scene.page, "Join meeting").click();
 			await expect(scene.page.getByText("Connecting…")).toBeVisible({ timeout: 15_000 });
 		},
 		async TRY_CAMERA(scene) {
 			const page = elsewhere.get(scene);
-			await button(page, "Toggle Video (Ctrl+E)").click();
-			await expect(page.getByText("Camera access denied. Enable in browser settings.")).toBeVisible();
+			await button(page, "Toggle video (Ctrl+E)").click();
+			await expect(page.getByText("Could not turn on the camera. Enable permissions in browser settings.")).toBeVisible();
 		},
 		async SWITCH_HERE(scene) {
 			await button(scene.page, "Switch here").click();
@@ -630,20 +618,20 @@ export const meet = defineFlow<Event, BaseScene>({
 		async GUEST_ASKS(scene) {
 			const page = guest.get(scene);
 			await page.getByPlaceholder("John Doe").fill(GUEST_NAME);
-			await button(page, "Join Meeting").click();
+			await button(page, "Join meeting").click();
 			await expect(page.getByRole("heading", { name: "Waiting to be admitted" })).toBeVisible({ timeout: 20_000 });
 		},
 		async HOST_NOTIFIED(scene) {
 			await expect(scene.page.locator("[data-testid^='join-request-']")).toBeVisible({ timeout: 20_000 });
 			// The eight-second “Meeting created” toast sits on top of the request card until it times out.
-			await expect(scene.page.getByText("Meeting created successfully!")).toBeHidden({ timeout: 15_000 });
+			await expect(scene.page.getByText("Meeting created")).toBeHidden({ timeout: 15_000 });
 		},
 		async OPEN_WAITING_PEOPLE(scene) {
 			// The request card covers People. Its close button is the card's first button; it has no name.
 			const card = scene.page.locator("[data-testid^='join-request-']");
 			await card.getByRole("button").first().click();
 			await expect(card).toBeHidden();
-			await button(scene.page, "Show Participants").click();
+			await button(scene.page, "Show participants").click();
 			await expect(scene.page.getByText("Waiting to join")).toBeVisible();
 		},
 		async LEO_JOINS(scene) {
@@ -673,7 +661,7 @@ export const meet = defineFlow<Event, BaseScene>({
 			await expect(scene.page.getByText("Meeting URL")).toBeVisible();
 		},
 		async OPEN_CHAT(scene) {
-			await button(scene.page, "Show Chat").click();
+			await button(scene.page, "Show chat").click();
 			await expect(scene.page.getByText("No messages yet")).toBeVisible();
 		},
 		async SEND_MESSAGE(scene) {
@@ -685,11 +673,11 @@ export const meet = defineFlow<Event, BaseScene>({
 			// The button works before the call's send transport exists, and a share started then fails with
 			// “not loaded”; give the transport time to come up.
 			await scene.page.waitForTimeout(3_000);
-			await button(scene.page, "Toggle Screen Share").click();
+			await button(scene.page, "Toggle screen share").click();
 			await expect(scene.page.getByText("You are sharing your screen")).toBeVisible({ timeout: 20_000 });
 		},
 		async CAMERA_OFF(scene) {
-			await button(scene.page, "Toggle Video (Ctrl+E)").click();
+			await button(scene.page, "Toggle video (Ctrl+E)").click();
 			await expect(ownTile(scene.page)).toHaveAttribute("data-video-enabled", "false");
 		},
 		async OPEN_REACTIONS(scene) {
@@ -701,14 +689,14 @@ export const meet = defineFlow<Event, BaseScene>({
 			// when the button is pressed right after joining. Wait for the call to settle, then check the hand
 			// is still up after the server's answer.
 			await scene.page.waitForTimeout(3_000);
-			await button(scene.page, "Raise Hand").click();
+			await button(scene.page, "Raise hand").click();
 			const hand = scene.page.getByLabel("Maya Chen has raised their hand").first();
 			await expect(hand).toBeVisible();
 			await scene.page.waitForTimeout(1_500);
 			await expect(hand).toBeVisible();
 		},
 		async LEAVE(scene) {
-			await button(scene.page, "End Call").click();
+			await button(scene.page, "End call").click();
 			await expect(scene.page.getByText("Leave meeting?")).toBeVisible();
 		},
 		async LEAVE_CONFIRMED(scene) {
@@ -730,7 +718,7 @@ export const meet = defineFlow<Event, BaseScene>({
 			await scene.page.waitForTimeout(15_000);
 		},
 		async OPEN_PEOPLE(scene) {
-			await button(scene.page, "Show Participants").click();
+			await button(scene.page, "Show participants").click();
 			await expect(scene.page.getByPlaceholder("Search people")).toBeVisible();
 		},
 		async PARTICIPANT_MENU(scene) {
@@ -739,21 +727,21 @@ export const meet = defineFlow<Event, BaseScene>({
 		},
 		async REMOVE(scene) {
 			await scene.page.getByRole("menuitem", { name: "Remove" }).click();
-			await expect(scene.page.getByRole("dialog", { name: "Remove Participant" })).toBeVisible();
+			await expect(scene.page.getByRole("dialog", { name: "Remove participant" })).toBeVisible();
 		},
 		async CONFIRM_REMOVE(scene) {
-			await scene.page.getByRole("dialog", { name: "Remove Participant" }).getByRole("button", { name: "Remove" }).click();
-			await expect(leo.get(scene).getByText("You have been removed from the meeting by the host")).toBeVisible({ timeout: 20_000 });
+			await scene.page.getByRole("dialog", { name: "Remove participant" }).getByRole("button", { name: "Remove" }).click();
+			await expect(leo.get(scene).getByText("The host removed you from the meeting")).toBeVisible({ timeout: 20_000 });
 		},
 		async LEO_WRITES(scene) {
 			const page = leo.get(scene);
-			await button(page, "Show Chat").click();
+			await button(page, "Show chat").click();
 			await page.getByPlaceholder("Type a message").fill("Morning! I'll share the Q3 numbers in a minute.");
 			await page.keyboard.press("Enter");
 			await expect(scene.page.getByText(/Morning! I'll share the Q3/)).toBeVisible({ timeout: 20_000 });
 		},
 		async LEO_SHARES(scene) {
-			await button(leo.get(scene), "Toggle Screen Share").click();
+			await button(leo.get(scene), "Toggle screen share").click();
 			await expect(scene.page.getByText("Leo Park's screen")).toBeVisible({ timeout: 20_000 });
 		},
 		async OPEN_CHAT_PHONE(scene) {

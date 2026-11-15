@@ -16,10 +16,11 @@
   >
     <template #default>
       <div class="space-y-1.5">
-        <label class="text-ink-gray-5 block text-xs">{{ __('Accounts') }}</label>
         <MultiSelect
           v-model="accountIds"
           v-model:query="picker.query"
+          :label="__('Members')"
+          class="w-full"
           :options="picker.options"
           :filterable="false"
           :placeholder="__('Search accounts')"
