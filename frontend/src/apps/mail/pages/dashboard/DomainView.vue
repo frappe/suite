@@ -47,8 +47,13 @@
           <Dropdown
             :options="exportOptions"
             :button="{ label: __('Export DNS'), iconLeft: 'lucide-download' }"
+            align="end"
           />
-          <Dropdown :options="dropdownOptions" :button="{ icon: 'lucide-more-horizontal' }" />
+          <Dropdown
+            :options="dropdownOptions"
+            :button="{ icon: 'lucide-more-horizontal' }"
+            align="end"
+          />
         </template>
       </DashboardDetailHeader>
       <div

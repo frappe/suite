@@ -32,7 +32,11 @@
         <template #icon><Megaphone class="h-5 w-5" /></template>
         <template #actions>
           <Button :label="__('Edit')" @click="showEdit = true" />
-          <Dropdown :options="dropdownOptions" :button="{ icon: 'lucide-more-horizontal' }" />
+          <Dropdown
+            :options="dropdownOptions"
+            :button="{ icon: 'lucide-more-horizontal' }"
+            align="end"
+          />
         </template>
       </DashboardDetailHeader>
 
