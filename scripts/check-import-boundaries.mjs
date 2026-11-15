@@ -190,7 +190,6 @@ const moduleGraphDebtGroups = [
       'meet/pages/Meeting.vue|@/boot/session',
       'meet/pages/Meeting.vue|@/stores/root',
       'meet/pages/Meeting.vue|@/utils/confirmLeave',
-      'meet/router.ts|@/boot/session',
       'meet/socket.ts|@/realtime',
       'meet/utils/emojiSuggest.ts|@/utils/localStorage',
       'meet/utils/identity/DeviceIdentityProvider.ts|@/utils/localStorage',
