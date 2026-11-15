@@ -217,6 +217,7 @@ const showEdit = ref(false)
 const showAddEmail = ref(false)
 const showAddRecipients = ref(false)
 const recipientSearch = ref('')
+const deleting = ref(false)
 const list = useQuery(api.mail.admin.mailingLists.get, () => ({
   list_id: listId,
 }))
@@ -225,7 +226,9 @@ usePageMeta(() => appPageMeta((list.data as ListData | undefined)?.email || list
 watch(
   () => list.error,
   (error) => {
-    if (!error) return
+    // Once a delete is under way, the refetch of the record it removed fails with "not found";
+    // that is the delete working, not an error to show over its own toast.
+    if (!error || deleting.value) return
     raiseError(error)
     router.replace({
       name: 'mail-mailing-lists',
@@ -296,7 +299,11 @@ async function deleteListSubmit() {
   const input: InputOf<typeof api.mail.admin.mailingLists.delete> = {
     ids: [listId],
   }
-  await deleteList.run(input)
+  deleting.value = true
+  await deleteList.run(input).catch((error) => {
+    deleting.value = false
+    throw error
+  })
   raiseToast(__('Mailing list deleted.'))
   router.push({
     name: 'mail-mailing-lists',

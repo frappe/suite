@@ -222,7 +222,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "Delete this group?: it cannot be undone. Cancel, and a red Delete group." },
 			on: { CONFIRM_DELETE_GROUP: "groupDeleted" },
 		},
-		groupDeleted: { meta: { description: "Back on an empty Groups list with “Group deleted.”. In one of two runs an error toast “<address> not found.” covered it instead." } },
+		groupDeleted: { meta: { description: "Back on an empty Groups list with “Group deleted.”, and no “not found” error from the page that was just deleted." } },
 
 		listsEmpty: {
 			meta: { description: "No mailing lists yet: the first-run pitch with an Add mailing list button. The page title says “Mailing lists”; the sidebar says “Mailing lists”." },

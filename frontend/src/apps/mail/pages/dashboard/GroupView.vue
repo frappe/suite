@@ -268,6 +268,7 @@ const showAddMembers = ref(false)
 const memberSearch = ref('')
 
 // Named `member` so the quota/card markup mirrors AccountView.vue one-to-one.
+const deleting = ref(false)
 const member = useQuery(api.mail.admin.groups.get, () => ({
   group_id: groupId,
 }))
@@ -276,7 +277,9 @@ usePageMeta(() => appPageMeta((member.data as GroupData | undefined)?.email || g
 watch(
   () => member.error,
   (error) => {
-    if (!error) return
+    // Once a delete is under way, the refetch of the record it removed fails with "not found";
+    // that is the delete working, not an error to show over its own toast.
+    if (!error || deleting.value) return
     raiseError(error)
     router.replace({
       name: 'mail-groups',
@@ -361,7 +364,11 @@ async function deleteGroupSubmit() {
   const input: InputOf<typeof api.mail.admin.groups.delete> = {
     ids: [groupId],
   }
-  await deleteGroup.run(input)
+  deleting.value = true
+  await deleteGroup.run(input).catch((error) => {
+    deleting.value = false
+    throw error
+  })
   raiseToast(__('Group deleted.'))
   router.push({
     name: 'mail-groups',
