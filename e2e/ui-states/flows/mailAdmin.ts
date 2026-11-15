@@ -190,7 +190,7 @@ const machine = setupFlow<Event>().createMachine({
 		groupAdded: { meta: { description: "“Group added.” and the group's page opens. The primary address's switch is on but greyed out, so it reads as off." } },
 		groupSkeleton: { meta: { description: "One group loading: placeholder header and cards." } },
 		groupView: {
-			meta: { description: "One group: General information, Mail storage usage (“0 GB · Mail has no storage limit”), Email addresses with an Enabled switch each, and Members with a search." },
+			meta: { description: "One group: General information (receiving and when it was added; the description sits under the title), Mail storage usage (“0 GB · Mail has no storage limit”), Email addresses with an Enabled switch each, and Members with a search." },
 			on: {
 				OPEN_GROUP_MORE: "groupMoreMenu",
 				EDIT_GROUP: "editGroup",

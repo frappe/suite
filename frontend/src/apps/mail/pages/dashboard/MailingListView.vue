@@ -19,7 +19,7 @@
         <DashboardCard :title="__('Recipients')">
           <div class="flex flex-col">
             <div class="px-5 py-2.5"><Skeleton class="h-7 w-full rounded-4" /></div>
-            <DashboardRowsSkeleton :rows="3" />
+            <DashboardRowsSkeleton :rows="1" />
           </div>
         </DashboardCard>
       </div>

@@ -5,9 +5,6 @@
       <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <DashboardCard :title="__('General information')">
           <div>
-            <InformationField :label="__('Description')"
-              ><DashboardSkeletonText width="40%"
-            /></InformationField>
             <InformationField :label="__('Receiving')"
               ><DashboardSkeletonText width="40%"
             /></InformationField>
@@ -37,7 +34,7 @@
         <DashboardCard :title="__('Members')">
           <div class="flex flex-col">
             <div class="px-5 py-2.5"><Skeleton class="h-7 w-full rounded-4" /></div>
-            <DashboardRowsSkeleton :rows="3" />
+            <DashboardRowsSkeleton :rows="1" />
           </div>
         </DashboardCard>
       </div>
@@ -59,13 +56,9 @@
       </DashboardDetailHeader>
 
       <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
-        <!-- General Information -->
+        <!-- The description is already under the title in the header. -->
         <DashboardCard :title="__('General information')">
           <div>
-            <InformationField
-              :label="__('Description')"
-              :value="member.data.description ?? undefined"
-            />
             <InformationField
               :label="__('Receiving')"
               :value="member.data.disable_receiving ? __('Disabled') : __('Enabled')"
