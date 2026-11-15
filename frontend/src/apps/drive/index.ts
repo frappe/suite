@@ -440,6 +440,8 @@ export {
  * viewed version and does the restore and download itself.
  */
 export { default as DriveDocumentSidePanel } from '@/apps/drive/files/features/side-panel/DocumentSidePanel.vue'
+/** The comment threads alone, for an app that lays out its own side panel. */
+export { default as DriveCommentList } from '@/apps/drive/files/features/side-panel/comments/CommentList.vue'
 /** The line over a version shown in the document's place, with Restore and Back to current. */
 export { default as DriveVersionShownBar } from '@/apps/drive/files/features/side-panel/versions/VersionShownBar.vue'
 /** A line across the document under its header, with its actions at the right edge. */

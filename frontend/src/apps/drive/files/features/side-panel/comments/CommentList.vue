@@ -19,7 +19,7 @@ import { useDriveGuestName } from './guestName'
 import { confirmMentionAccess } from './mentionAccess'
 import MentionTextarea from './MentionTextarea.vue'
 import PersonAvatar from './PersonAvatar.vue'
-import { DOCUMENT_ANCHOR, type FileNoun, type ThreadPlaces } from './places'
+import { DOCUMENT_ANCHOR, type CommentNoun, type ThreadPlaces } from './places'
 import { useSeenThreads } from './seenThreads'
 import { threadRows, type ThreadRow } from './threadRows'
 import type { ShownDraft, useCommentDrafts } from './useCommentDrafts'
@@ -60,7 +60,7 @@ const props = defineProps<{
   actions: ThreadActions
   /** Comments not posted yet, on text or on the whole document. */
   drafts: ReturnType<typeof useCommentDrafts>
-  noun: FileNoun
+  noun: CommentNoun
 }>()
 
 /** The thread shown open; its text in the editor stays lit. */
@@ -139,6 +139,10 @@ const emptyText = computed(() => {
 
   if (props.drafts.isWholeDocumentOnly) {
     return 'No open comments. Add one above.'
+  }
+
+  if (props.noun === 'spreadsheet') {
+    return __('No open comments. Select a cell and press Comment, or add one above.')
   }
 
   return 'No open comments. Select text and press Comment, or add one above.'
