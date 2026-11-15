@@ -296,27 +296,32 @@ test("a composite sends the link code of a deck that is shared on its own", asyn
 	await visitor.close();
 });
 
-test("restores a saved version and reloads the deck", async ({ page }) => {
+test("restores a saved version and reloads the deck", async ({ page, browser }) => {
 	await openDeck(page);
 	await pickFromMenu(page, "Versions");
 	const versions = page.getByRole("complementary", { name: "Versions" });
 	await versions.getByRole("button", { name: "Save version" }).click();
-	await page.getByRole("dialog").getByRole("textbox").fill("Empty deck");
-	await page.getByRole("dialog").getByRole("button", { name: "Save", exact: true }).click();
+	await versions.getByRole("textbox", { name: "Version name" }).fill("Empty deck");
+	await versions.getByRole("textbox", { name: "Version name" }).press("Enter");
 	await expect(versions.getByText("Empty deck")).toBeVisible();
-	await versions.getByRole("button", { name: "Close versions" }).click();
+	await versions.getByRole("button", { name: "Close panel" }).click();
 
 	await addRectangle(page);
 	await expect(page.locator('[data-save-state="clean"]')).toBeVisible();
-	await expect.poll(() => rectangles(api, deck.content_docname!)).toBe(1);
+	expect(await showsSavedRectangle(browser)).toBe(true);
 	await expect(page.locator(SHAPE_RECT).first()).toBeVisible();
 
 	await pickFromMenu(page, "Versions");
-	await versions.getByRole("listitem").filter({ hasText: "Empty deck" }).getByRole("button", { name: "Restore" }).click();
+	await versions.getByRole("button", { name: /^Empty deck/ }).click();
+	await page
+		.getByRole("status")
+		.filter({ hasText: "Viewing Empty deck" })
+		.getByRole("button", { name: "Restore this version" })
+		.click();
 	await page.getByRole("dialog").getByRole("button", { name: "Restore", exact: true }).click();
 	await expect(page.getByText("Version restored")).toBeVisible();
 
-	await expect.poll(() => rectangles(api, deck.content_docname!)).toBe(0);
+	expect(await showsSavedRectangle(browser)).toBe(false);
 	// The editor shows the restored copy, not the rectangle it drew.
 	await expect(page.locator(SHAPE_RECT)).toHaveCount(0);
 	await expect(page.getByText("View only", { exact: true })).toHaveCount(0);
@@ -325,15 +330,15 @@ test("restores a saved version and reloads the deck", async ({ page }) => {
 /** A rectangle shape on the canvas. Only shapes set a stroke width in px; icons draw rects too. */
 const SHAPE_RECT = 'svg rect[stroke-width$="px"]';
 
-/** How many rectangles the server copy of a presentation holds. */
-async function rectangles(client: APIRequestContext, docname: string): Promise<number> {
-	const response = await client.get(`/api/resource/Presentation/${encodeURIComponent(docname)}`);
-	const doc = await frappeData<{ slides: Array<{ elements: string }> }>(response);
-	return doc.slides.flatMap((slide) => {
-		const elements: unknown = JSON.parse(slide.elements || "[]");
-		if (!Array.isArray(elements)) throw new Error("Expected slide elements to be an array");
-		return elements.filter((element) => element?.shapeType === "rectangle");
-	}).length;
+/** Whether the server copy of the deck holds a rectangle, as a fresh page on another device opens it. */
+async function showsSavedRectangle(browser: Browser): Promise<boolean> {
+	const other = await browser.newContext();
+	const page = await other.newPage();
+	await openDeck(page);
+	await expect(page.locator('[data-save-state="clean"]')).toBeVisible();
+	const count = await page.locator(SHAPE_RECT).count();
+	await other.close();
+	return count > 0;
 }
 
 declare global {
