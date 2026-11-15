@@ -29,6 +29,7 @@ import {
   textParent,
   threeParagraphs,
   typeQQ,
+  writeThreeParagraphs,
 } from '@/apps/writer/collab/removal-fixtures'
 import { watchRemovals, type Removal } from '@/apps/writer/collab/removals'
 import { blocks, openTabs, sendRow, syncAll } from '@/apps/writer/collab/test-support'
@@ -43,7 +44,7 @@ async function takeOverHeading(heading: string, beforeClose = async (_server: Fa
   fakeTime()
   const server = fakeServer()
   const first = await join(server.endpoints())
-  yjs.applyUpdate(first.doc, threeParagraphs)
+  writeThreeParagraphs(first)
   await first.flush()
   const kept = await device()
   const typing = await join(server.endpoints(), { device: kept })
@@ -113,7 +114,7 @@ describe('a room watching for removals', () => {
     fakeTime()
     const server = fakeServer()
     const first = await join(server.endpoints())
-    yjs.applyUpdate(first.doc, threeParagraphs)
+    writeThreeParagraphs(first)
     await first.flush()
     const kept = await device()
     const closing = await join(offlinePushes(server), { device: kept })
@@ -238,7 +239,7 @@ describe('a room watching for removals', () => {
     try {
       const server = fakeServer()
       const first = await join(server.endpoints())
-      yjs.applyUpdate(first.doc, threeParagraphs)
+      writeThreeParagraphs(first)
       await first.flush()
       const kept = await device()
       const typing = await join(server.endpoints(), { device: kept })
@@ -269,7 +270,7 @@ describe('a room watching for removals', () => {
     fakeTime()
     const server = fakeServer()
     const first = await join(server.endpoints())
-    yjs.applyUpdate(first.doc, threeParagraphs)
+    writeThreeParagraphs(first)
     await first.flush()
     const typing = await join(server.endpoints())
     const other = await join(server.endpoints())
@@ -376,7 +377,7 @@ describe('a room watching for removals', () => {
     fakeTime()
     const server = fakeServer()
     const writing = await join(server.endpoints())
-    yjs.applyUpdate(writing.doc, threeParagraphs)
+    writeThreeParagraphs(writing)
     await writing.flush()
     const typing = await join(offlinePushes(server))
     const reported: Removal[] = []
@@ -397,7 +398,7 @@ describe('a room watching for removals', () => {
     fakeTime()
     const server = fakeServer()
     const writing = await join(server.endpoints())
-    yjs.applyUpdate(writing.doc, threeParagraphs)
+    writeThreeParagraphs(writing)
     await writing.flush()
     const typing = await join(offlinePushes(server))
     const reported: Removal[] = []
@@ -419,7 +420,7 @@ describe('a room watching for removals', () => {
     fakeTime()
     const server = fakeServer()
     const deleting = await join(server.endpoints())
-    yjs.applyUpdate(deleting.doc, threeParagraphs)
+    writeThreeParagraphs(deleting)
     await deleting.flush()
     const restructuring = await join(server.endpoints())
     const typing = await join(offlinePushes(server))
