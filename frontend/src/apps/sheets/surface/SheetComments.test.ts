@@ -54,7 +54,7 @@ vi.mock('frappe-ui', async (importOriginal) => {
     TextInput: Empty,
     Avatar: Empty,
     Dropdown: Empty,
-    toast: {},
+    toast: { error: () => {} },
   }
 })
 
@@ -197,17 +197,22 @@ function thread(name: string, anchor: string, content: string): DocumentThread {
 
 /** Drive as the spreadsheet's comments see it, holding `threads`. */
 function driveHolding(threads: DocumentThread[], canShare: boolean) {
-  // As Drive: a resend under the same client id answers with the first post
+  // As Drive: a resend under the same client id answers with the first post; no id, no check
   const posted = new Map<string, string>()
-  const create = vi.fn(async (anchor: string, text: string, _name?: string, clientId = '') => {
-    if (!posted.has(clientId)) {
-      const number = threads.length + 1
-      const made = thread(`t${number}`, anchor, text)
-      threads.push(made)
+  const create = vi.fn(async (anchor: string, text: string, _name?: string, clientId?: string) => {
+    const earlier = clientId && posted.get(clientId)
+    if (earlier) {
+      return { name: earlier }
+    }
+
+    const number = threads.length + 1
+    const made = thread(`t${number}`, anchor, text)
+    threads.push(made)
+    if (clientId) {
       posted.set(clientId, made.name)
     }
 
-    return { name: posted.get(clientId)! }
+    return { name: made.name }
   })
   const reply = vi.fn(async () => {})
   const resolve = vi.fn(async (name: string, isResolved: boolean) => {
@@ -325,7 +330,7 @@ describe('commenting on a cell', () => {
   })
 
   it('makes one thread when Comment is pressed twice', async () => {
-    const { root } = await mountComments({
+    const { root, create } = await mountComments({
       startOn: cellAnchor({ sheet: 'Sheet1', cell: 'B2' }),
     })
     type(root, CELL_BOX, 'Check this total')
@@ -335,6 +340,28 @@ describe('commenting on a cell', () => {
     form.dispatchEvent(new Event('submit', { cancelable: true }))
     await settle()
 
+    expect(rowLabels(root)).toEqual(['Sheet1 · B2'])
+    const clientIds = new Set(create.mock.calls.map((call) => call[3]))
+    expect(clientIds.size).toBe(1)
+    expect([...clientIds][0]).toMatch(/\S/)
+  })
+
+  it('retries a failed post under the same client id', async () => {
+    const { root, create } = await mountComments({
+      startOn: cellAnchor({ sheet: 'Sheet1', cell: 'B2' }),
+    })
+    create.mockRejectedValueOnce(new Error('offline'))
+    type(root, CELL_BOX, 'Check this total')
+    await submit(root, CELL_BOX)
+    ;[...root.querySelectorAll('button')]
+      .find((button) => button.textContent?.trim() === 'Retry')!
+      .click()
+    await settle()
+
+    expect(create).toHaveBeenCalledTimes(2)
+    const [first, second] = create.mock.calls.map((call) => call[3])
+    expect(first).toMatch(/\S/)
+    expect(second).toBe(first)
     expect(rowLabels(root)).toEqual(['Sheet1 · B2'])
   })
 
