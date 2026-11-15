@@ -111,12 +111,11 @@ const overflowTools = computed(() => [
 <style scoped>
 .drawing-toolbar {
   position: absolute;
-  top: 0;
+  top: 12px;
   right: 0;
-  bottom: 0;
   left: 0;
+  z-index: 1;
   display: flex;
-  align-items: center;
   justify-content: center;
   pointer-events: none;
 }
@@ -125,18 +124,16 @@ const overflowTools = computed(() => [
   display: flex;
   align-items: center;
   gap: 5px;
+  max-width: calc(100% - 32px);
   height: 36px;
   padding: 3px;
-  pointer-events: none;
-}
-
-@media (max-width: 760px) {
-  .drawing-toolbar__surface {
-    position: absolute;
-    top: 50px;
-    left: 50%;
-    transform: translateX(-50%);
-  }
+  overflow-x: auto;
+  scrollbar-width: none;
+  border: 1px solid var(--outline-gray-1);
+  border-radius: 10px;
+  background: var(--surface-base);
+  box-shadow: var(--shadow-sm);
+  pointer-events: auto;
 }
 
 .drawing-toolbar__surface :deep(button) {
@@ -172,12 +169,6 @@ const overflowTools = computed(() => [
     width: 44px;
     min-width: 44px;
     height: 44px;
-  }
-}
-
-@media (max-width: 760px) and (pointer: coarse) {
-  .drawing-toolbar__surface {
-    top: 42px;
   }
 }
 </style>

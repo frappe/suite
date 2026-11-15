@@ -29,7 +29,8 @@ import { remapElementIds } from '@/apps/slides/utils/connectors'
 import { getDocFromHTML, hasListMarkup, sanitizeSlideHTML } from '@/apps/slides/utils/helpers'
 import { handleUploadedMedia } from '@/apps/slides/utils/mediaUploads'
 import { randomId } from '@/platform/random-id'
-import { translate } from '@/platform/translation'
+import { translate as __ } from '@/platform/translation'
+import { TransportError } from '@/platform/transport'
 
 const { activeEditor } = useTextEditor()
 
@@ -54,7 +55,7 @@ const getCopiedSlideJSON = () => {
 const copySlide = (e) => {
   const clipboardJSON = getCopiedSlideJSON()
   e.clipboardData.setData('application/json', clipboardJSON)
-  toast.success('Slide copied to clipboard')
+  toast.success(__('Slide copied to clipboard'))
 }
 
 const copyElements = (e, isCut = false) => {
@@ -102,7 +103,7 @@ const copyToClipboard = async (text) => {
   }
 
   isCopyTriggeredByButton.value = false
-  toast.success('Copied to clipboard')
+  toast.success(__('Copied to clipboard'))
 }
 
 // Paste Handlers
@@ -147,15 +148,12 @@ const handlePastedJSON = async ({ srcPresentation, srcSlide, isCut, elements }) 
 
     // if pasted elements are from a different presentation
     // add file attachments correctly to current presentation + update docnames in json
-    json = await client.mutation(
+    json = await adoptPictures(
       api.slides.media.adoptElements,
-      {
-        presentation: id,
-        elements: pastedArray,
-      },
-      { context: contextFor(id) },
+      { presentation: id, elements: pastedArray },
+      id,
     )
-    if (!stillOpen()) {
+    if (!json || !stillOpen()) {
       return
     }
   }
@@ -171,8 +169,21 @@ function cannotFetchPictures() {
     return false
   }
 
-  toast.error(translate('Connect to the internet to paste from another presentation.'))
+  toast.error(__('Connect to the internet to paste from another presentation'))
   return true
+}
+
+// a refused adoption pastes nothing, and the server's message says why
+async function adoptPictures(mutation, input, id) {
+  try {
+    return await client.mutation(mutation, input, { context: contextFor(id) })
+  } catch (error) {
+    toast.error(
+      (error instanceof TransportError && error.type !== 'NetworkError' && error.message) ||
+        __('Could not paste'),
+    )
+    return null
+  }
 }
 
 const handleSvgText = (svgText) => {
@@ -191,15 +202,12 @@ const handlePastedSlideJSON = async (slideJSON) => {
 
     // if pasted slide is from a different presentation
     // add file attachments correctly to current presentation + update docnames in json
-    slideJSON = await client.mutation(
+    slideJSON = await adoptPictures(
       api.slides.media.adoptSlide,
-      {
-        parent: id,
-        slide: slideJSON,
-      },
-      { context: contextFor(id) },
+      { parent: id, slide: slideJSON },
+      id,
     )
-    if (!stillOpen()) {
+    if (!slideJSON || !stillOpen()) {
       return
     }
     if (typeof slideJSON.elements === 'string') {

@@ -413,7 +413,7 @@ describe('Writer surface', () => {
 
     await vi.waitFor(() => expect(error).toHaveBeenCalledOnce())
     expect([error.mock.calls[0], success.mock.calls]).toEqual([
-      ['The version was not restored.'],
+      ['Could not restore the version'],
       [],
     ])
   })

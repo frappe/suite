@@ -3,10 +3,10 @@ import { useElementSize } from '@vueuse/core'
 import { Button, Skeleton } from 'frappe-ui'
 import { computed, ref, useTemplateRef, watch } from 'vue'
 
-import type { DocumentSession } from '@/apps/drive'
+import { fetchVersion, type DocumentSession } from '@/apps/drive'
 import SlidePreview from '@/apps/slides/components/SlidePreview.vue'
 
-import { fetchVersion, readVersionBody } from './versions'
+import { readVersionBody } from './versions'
 import { versionSlides } from './versionSlides'
 
 const props = defineProps<{

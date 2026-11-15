@@ -41,6 +41,7 @@ import { ref, watch } from 'vue'
 
 import { api, useMutation, type InputOf } from '@/api'
 import { raiseToast } from '@/apps/mail/utils'
+import { translate as __ } from '@/platform/translation'
 
 type GroupData = {
   id: string
@@ -69,6 +70,6 @@ async function updateQuotaSubmit() {
   await updateQuota.run(input)
   show.value = false
   emit('reload')
-  raiseToast(__('Quota updated.'))
+  raiseToast(__('Quota updated'))
 }
 </script>

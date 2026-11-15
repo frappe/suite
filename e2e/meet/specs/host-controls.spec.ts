@@ -15,11 +15,11 @@ test.describe("Host controls", () => {
 			.locator("[data-testid^='participant-tile-guest_']")
 			.first();
 		if ((await guestSelfTile.getAttribute("data-audio-enabled")) === "false") {
-			await guest.page.getByRole("button", { name: /Toggle Audio/ }).click();
+			await guest.page.getByRole("button", { name: /Toggle audio/ }).click();
 			await expect(guestSelfTile).toHaveAttribute("data-audio-enabled", "true");
 		}
 
-		await hostPage.getByRole("button", { name: "Show Participants" }).click();
+		await hostPage.getByRole("button", { name: "Show participants" }).click();
 		await expect(hostPage.getByTestId("people-panel")).toBeVisible();
 
 		const guestRow = hostPage
@@ -57,7 +57,7 @@ test.describe("Host controls", () => {
 
 		await joinHostAndGuest(hostPage, guest, meetingId, guestName);
 
-		await hostPage.getByRole("button", { name: "Show Participants" }).click();
+		await hostPage.getByRole("button", { name: "Show participants" }).click();
 		await expect(hostPage.getByTestId("people-panel")).toBeVisible();
 
 		const guestRow = hostPage
@@ -75,7 +75,7 @@ test.describe("Host controls", () => {
 		await guestRow.getByRole("button", { name: /Actions for/ }).click();
 		await hostPage.getByRole("menuitem", { name: "Remove" }).click();
 
-		await expect(hostPage.getByText("Remove Participant")).toBeVisible();
+		await expect(hostPage.getByText("Remove participant")).toBeVisible();
 		await hostPage.getByRole("button", { name: "Remove", exact: true }).click();
 
 		await expect(guestTileOnHost).toHaveCount(0);

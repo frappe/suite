@@ -28,6 +28,7 @@ import { computed, ref, watch } from 'vue'
 
 import { api, useMutation, type InputOf } from '@/api'
 import { raiseToast } from '@/apps/mail/utils'
+import { translate as __ } from '@/platform/translation'
 
 const { memberId } = defineProps<{
   memberId: string
@@ -63,7 +64,7 @@ async function changePasswordSubmit() {
   }
   await changePassword.run(input)
   show.value = false
-  raiseToast(__('Password updated.'))
+  raiseToast(__('Password updated'))
 }
 watch(show, () => {
   newPassword.value = ''

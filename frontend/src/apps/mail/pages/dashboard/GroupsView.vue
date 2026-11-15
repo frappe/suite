@@ -2,7 +2,7 @@
   <DashboardLayout
     area="mail"
     :breadcrumbs="[{ label: __('Groups') }]"
-    :button-label="__('Add Group')"
+    :button-label="isFirstRun ? undefined : __('Add group')"
     :button-action="() => (showAddGroup = true)"
   >
     <div class="flex items-center space-x-3">
@@ -12,17 +12,22 @@
         </template>
       </FormControl>
     </div>
-    <ErrorMessage :message="list.error?.message" />
     <DashboardList
+      :failure="
+        list.status === 'error'
+          ? { title: __('Could not load groups'), retry: () => list.refetch() }
+          : undefined
+      "
       :columns="LIST_COLUMNS"
       :rows="list.rows"
       row-key="id"
       :loading="list.status === 'pending'"
+      :skeleton-rows="2"
       :row-route="listOptions.getRowRoute"
-      :empty-state="list.error ? undefined : listOptions.emptyState"
+      :empty-state="list.status === 'error' ? undefined : listOptions.emptyState"
     >
       <template #cell="{ column, row, item }">
-        <span v-if="column.key === 'created_at'" class="truncate text-base text-ink-gray-7">
+        <span v-if="column.key === 'created_at'" class="truncate text-sm text-ink-gray-5">
           {{ formatCreatedAt(item as string | undefined) }}
         </span>
         <StorageBar
@@ -51,7 +56,7 @@
 </template>
 <script setup lang="ts">
 import { refDebounced } from '@vueuse/core'
-import { ErrorMessage, FormControl, usePageMeta } from 'frappe-ui'
+import { FormControl, usePageMeta } from 'frappe-ui'
 import { computed, ref } from 'vue'
 
 import { api, useInfiniteQuery } from '@/api'
@@ -76,7 +81,7 @@ const list = useInfiniteQuery(api.mail.admin.groups.list, () => ({
 }))
 const LIST_COLUMNS = [
   {
-    label: __('Email'),
+    label: __('Email address'),
     key: 'email',
   },
   {
@@ -88,24 +93,29 @@ const LIST_COLUMNS = [
     key: 'quota_gb',
   },
   {
-    label: __('Created At'),
+    label: __('Added'),
     key: 'created_at',
   },
 ]
 const hasActiveFilters = computed(() => !!search.value)
+// With nothing added yet, the empty state's own Add button is the one call to action, under
+// the line that explains it; the header's copy comes back with the first row.
+const isFirstRun = computed(
+  () => list.status === 'success' && !list.rows.length && !hasActiveFilters.value,
+)
 const listOptions = computed(() => ({
   selectable: false,
   showTooltip: false,
   emptyState: hasActiveFilters.value
     ? {
         title: __('No matching groups'),
-        description: __('Try adjusting your search or filters.'),
+        description: __('Try a different search.'),
       }
     : {
         title: __('No groups yet'),
         description: __('Create a group to give a team a shared address and mailbox.'),
         button: {
-          label: __('Add Group'),
+          label: __('Add group'),
           variant: 'solid' as const,
           onClick: () => (showAddGroup.value = true),
         },

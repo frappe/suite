@@ -1,14 +1,20 @@
 <template>
-  <AppSettingsHeader title="Audio" description="Configure your audio and microphone settings" />
+  <AppSettingsHeader
+    :title="__('Audio')"
+    :description="__('Configure your audio and microphone settings')"
+  />
   <AppSettingsBody>
     <div>
       <SettingsRow
-        title="Noise Cancellation"
-        description="Reduce background noise from your microphone"
+        :title="__('Noise cancellation')"
+        :description="__('Reduce background noise from your microphone')"
       >
         <Switch v-model="noiseCancellationEnabledLocal" />
       </SettingsRow>
-      <SettingsRow title="Push to Talk" description="Hold spacebar to unmute your microphone">
+      <SettingsRow
+        :title="__('Push to talk')"
+        :description="__('Hold spacebar to unmute your microphone')"
+      >
         <Switch v-model="pushToTalkEnabledLocal" />
       </SettingsRow>
     </div>
@@ -21,6 +27,7 @@ import { ref, watch, type Ref } from 'vue'
 
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import { translate as __ } from '@/platform/translation'
 
 import {
   noiseCancellationEnabled,

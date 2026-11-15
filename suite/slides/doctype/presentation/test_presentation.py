@@ -765,7 +765,9 @@ class TestConvertedRowsAreNotSlides(LoggedDeckCase):
     def test_a_deck_still_on_its_rows_keeps_them(self):
         delete_log(self.node)
 
-        self.assertEqual(len(get_public_presentation(self.deck)["slides"]), 1)
+        with patch.object(frappe, "enqueue"):
+            self.assertEqual(len(get_public_presentation(self.deck)["slides"]), 1)
+
         self.assertEqual(len(client_get("Presentation", self.deck)["slides"]), 1)
 
 

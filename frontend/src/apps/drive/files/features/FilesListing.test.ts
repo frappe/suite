@@ -187,6 +187,18 @@ function mount(options: {
 const rows = [file('a', 'Alpha.png'), file('b', 'Beta.png')]
 
 describe('FilesListing paging', () => {
+  it('replaces a failed first read with a named failure and a retry', async () => {
+    const { root, query } = mount({ rows: [] })
+    Object.assign(query, { status: 'error', error: new Error('Private server detail') })
+    const refetch = vi.spyOn(query, 'refetch')
+    await nextTick()
+    expect(root.querySelector('[role="alert"]')?.textContent).toContain('Could not load files')
+    expect(root.textContent).not.toContain('Private server detail')
+    requireTestElement(root.querySelector('[label="Retry"]'), HTMLButtonElement).click()
+    await nextTick()
+    expect(refetch).toHaveBeenCalledOnce()
+  })
+
   it('waits for a refresh to finish before loading a visible next window', async () => {
     const { query } = mount({ rows })
     query.hasNext = true
@@ -227,7 +239,7 @@ describe('FilesListing paging', () => {
 
   it('waits for an explicit retry after a next window fails', async () => {
     const { root, query } = mount({ rows })
-    Object.assign(query, { hasNext: true, error: new Error('Window failed') })
+    Object.assign(query, { status: 'error', hasNext: true, error: new Error('Window failed') })
     const fetchNext = vi.spyOn(query, 'fetchNext').mockImplementation(() => {
       query.hasNext = false
     })
@@ -238,10 +250,7 @@ describe('FilesListing paging', () => {
       fromPartial<IntersectionObserver>({}),
     )
     expect(fetchNext).not.toHaveBeenCalled()
-    requireTestElement(
-      root.querySelector('[label="Retry loading more"]'),
-      HTMLButtonElement,
-    ).click()
+    requireTestElement(root.querySelector('[label="Retry"]'), HTMLButtonElement).click()
     await nextTick()
     expect(fetchNext).toHaveBeenCalledOnce()
   })

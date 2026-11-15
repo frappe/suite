@@ -81,6 +81,7 @@ import { raiseToast } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import { translate as __ } from '@/platform/translation'
 
 const user = userStore().userResource
 const { isMobile } = useScreenSize()
@@ -99,7 +100,7 @@ const chooseTab = (category: InboxCategory, on: boolean) => {
 }
 const TAB_DESCRIPTIONS: Record<InboxCategory, string> = {
   primary: '',
-  updates: __('Receipts, alerts, confirmations and other mail sent by systems.'),
+  updates: __('Receipts, alerts, confirmations and other mail sent by systems'),
   forums: __('Mailing lists and discussion groups.'),
   promotions: __('Newsletters, offers and marketing.'),
   social: __('Mail from social networks.'),
@@ -126,6 +127,6 @@ const saveLayout = async () => {
     preferences.inbox_tabs = tabsFor(chosenTabs.value)
   }
   await saveSettings.run(preferences)
-  raiseToast(__('Mail layout updated.'))
+  raiseToast(__('Mail layout updated'))
 }
 </script>

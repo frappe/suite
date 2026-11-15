@@ -45,11 +45,16 @@
             {{ props.meetingTitle }}
           </p>
 
-          <h2 class="mb-7 text-3xl-semibold text-ink-gray-9">Ready to join?</h2>
+          <h2 class="mb-7 text-3xl-semibold text-ink-gray-9">{{ __('Ready to join?') }}</h2>
 
+          <!-- You may be in the call already on another device; the presence list counts that
+               device, which read as if someone else with your name were there. -->
+          <p v-if="!isGuest && isCurrentUserPresent" class="text-base text-ink-gray-7">
+            {{ __("You're in this meeting on another device") }}
+          </p>
           <AvatarGroup
-            v-if="!isGuest"
-            :participants="[...participants]"
+            v-if="!isGuest && (!isCurrentUserPresent || otherParticipants.length)"
+            :participants="otherParticipants"
             :error="presenceError"
             :loading="!hasFetchedParticipants"
             :max-displayed="2"
@@ -61,7 +66,7 @@
             v-if="terminalGuestSession"
             class="mt-7 rounded-6 border border-outline-gray-2 bg-surface-gray-1 p-4"
           >
-            <p class="text-sm text-ink-gray-7">You can’t join this meeting.</p>
+            <p class="text-sm text-ink-gray-7">{{ __('You can’t join this meeting.') }}</p>
           </div>
 
           <form v-else class="mt-7 space-y-3" @submit.prevent="handleJoin">
@@ -70,8 +75,8 @@
               ref="guestNameInputRef"
               v-model="guestName"
               type="text"
-              label="Your name"
-              placeholder="John Doe"
+              :label="__('Your name')"
+              :placeholder="__('John Doe')"
               :maxlength="50"
               autocomplete="off"
             />
@@ -88,7 +93,7 @@
               <template #prefix>
                 <lucide-video class="h-5 w-5" />
               </template>
-              {{ isCurrentUserPresent ? 'Switch here' : 'Join Meeting' }}
+              {{ isCurrentUserPresent ? __('Switch here') : __('Join meeting') }}
             </Button>
           </form>
         </div>
@@ -103,6 +108,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 
 import { api, useMutation } from '@/api'
 import { session } from '@/boot/session'
+import { translate as __ } from '@/platform/translation'
 
 import AvatarGroup from '../components/AvatarGroup.vue'
 import ParticipantTile from '../components/ParticipantTile.vue'
@@ -115,7 +121,7 @@ import {
 } from '../composables/useConnectionState'
 import { useMeetingPreviewPresence } from '../composables/useMeetingPreviewPresence'
 import { normalizeJoinPayload, type JoinPayload } from '../types'
-import { getErrorMessage } from '../utils/error'
+import { refusalOr } from '../utils/error'
 import type { Participant } from '../utils/media/ParticipantManager'
 import { getInitials } from '../utils/text'
 
@@ -170,10 +176,11 @@ const joinGuestAPI = useMutation(api.meet.guests.join, { silent: true })
 const isGuest = computed(() => !session.isLoggedIn)
 
 const previewName = computed(() => {
-  if (isGuest.value && guestName.value.trim()) {
-    return guestName.value.trim()
+  // A guest has no account name or initials yet: until they type one, the tile says "You".
+  if (isGuest.value) {
+    return guestName.value.trim() || __('You')
   }
-  return props.currentUserName || props.userInitials || 'You'
+  return props.currentUserName || props.userInitials || __('You')
 })
 
 const previewParticipant = computed<Participant>(() => ({
@@ -195,6 +202,9 @@ const {
   error: presenceError,
   hasFetchedParticipants,
 } = useMeetingPreviewPresence(props.meetingId)
+const otherParticipants = computed(() =>
+  participants.value.filter((participant) => participant.user_id !== session.user?.sessionUser),
+)
 
 watch(guestNameInputRef, (inputRef) => {
   if (inputRef) {
@@ -220,7 +230,7 @@ const handleJoin = async () => {
       clearRetryableGuestSession(props.meetingId)
     } else if (storedSession?.status === 'banned') {
       terminalGuestSession.value = storedSession
-      toast.error('You can’t join this meeting.')
+      toast.error(__('You can’t join this meeting'))
       return
     }
     if (!guestName.value.trim()) {
@@ -245,8 +255,9 @@ const handleJoin = async () => {
       })
     } catch (error) {
       console.error('Failed to join as guest:', error)
-      const errorMessage = getErrorMessage(error) || 'Failed to join meeting as guest.'
-      toast.error(errorMessage)
+      // A refusal the server wrote for people ("Guests are not allowed in this meeting") says more
+      // than a generic failure; a network or browser error does not, so it gets the fixed text.
+      toast.error(refusalOr(error, __('Could not join the meeting as a guest')))
     }
   } else {
     emit('join-from-preview', isCurrentUserPresent.value)

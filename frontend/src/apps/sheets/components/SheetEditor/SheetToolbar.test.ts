@@ -363,7 +363,25 @@ ${selector} {`)
     expect(rule('.sn-tools-scroll')).toContain('overflow-x: auto')
   })
 
-  it('starts the undo icon on the left edge of the row below', () => {
-    expect(rule('.sn-toolbar')).toContain('padding: 0 12px 0 9px')
+  it('starts Undo 12px in, where Writer’s toolbar starts it', () => {
+    expect(rule('.sn-toolbar')).toContain('padding: 0 12px')
+    expect(rule('.sn-toolbar')).not.toContain('9px')
+  })
+
+  it('draws the tool icons in Writer’s toolbar ink', () => {
+    expect(rule('.sn-toolbar :deep(button:not(.bg-surface-gray-10))')).toContain(
+      'color: var(--ink-gray-7)',
+    )
+    expect(rule('.sn-swatch-btn')).toContain('color: var(--ink-gray-7)')
+    expect(rule('.sn-toolbar :deep(button:disabled)')).toContain('opacity: 0.4')
+  })
+})
+
+describe('SheetToolbar text colour', () => {
+  // With no colour set, the swatch under the "T" shows the ink a cell gets
+  // by default (canvas/constants.ts COLORS.cellText).
+  it('shows the default cell ink when the cell has no text colour', () => {
+    const sfc = readFileSync(resolve(__dirname, 'SheetToolbar.vue'), 'utf8')
+    expect(sfc).toContain("activeFormat.color || 'var(--ink-gray-7)'")
   })
 })

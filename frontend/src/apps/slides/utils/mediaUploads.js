@@ -1,6 +1,7 @@
 import { FileUploadHandler, toast } from 'frappe-ui'
 
 import { useSession } from '@/platform/session'
+import { translate as __ } from '@/platform/translation'
 
 import { isMediaNodeId, mediaNodeUrl } from '../stores/documentMedia'
 import { addMediaElement, replaceMediaElement } from '../stores/element'
@@ -84,9 +85,13 @@ const handleFile = (file, toastProps, targetElement) => {
 
 const getToastProps = (file, index, length) => {
   return {
-    loading: `Uploading (${index + 1}/${length})${file.name ? `: ${file.name}` : ' ...'}`,
-    success: `Uploaded (${index + 1}/${length})${file.name ? `: ${file.name}` : ''}`,
-    error: 'Upload failed. Please try again.',
+    loading: file.name
+      ? __('Uploading ({0}/{1}): {2}', [String(index + 1), String(length), file.name])
+      : __('Uploading ({0}/{1})…', [String(index + 1), String(length)]),
+    success: file.name
+      ? __('Uploaded ({0}/{1}): {2}', [String(index + 1), String(length), file.name])
+      : __('Uploaded ({0}/{1})', [String(index + 1), String(length)]),
+    error: __('Could not upload the file. Try again.'),
   }
 }
 

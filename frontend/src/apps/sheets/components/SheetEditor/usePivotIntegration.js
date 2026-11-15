@@ -475,6 +475,7 @@ export function usePivotIntegration({
     return {
       sourceSheet: hit.sourceSheet,
       sourceRange: hit.sourceRange,
+      hasHeader: hit.hasHeader,
       rows: [...(hit.rows || [])],
       cols: [...(hit.cols || [])],
       values: (hit.values || []).map((v) => ({ ...v })),
