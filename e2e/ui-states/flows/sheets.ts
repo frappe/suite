@@ -460,12 +460,12 @@ export const sheets = defineFlow<Event, BaseScene>({
 		async OPEN_COMMENTS(scene) {
 			await scene.page.locator(".sn-toolbar").getByRole("button", { name: "Comment", exact: true }).click();
 			const box = scene.page.getByRole("complementary", { name: "Comments" }).locator("form");
-			await expect(box.getByRole("textbox", { name: "Add a comment on the text" })).toBeVisible();
+			await expect(box.getByLabel("Add a comment on the cell", { exact: true })).toBeVisible();
 			await expect(box).toContainText("Sheet1 · A1");
 		},
 		async POST_COMMENT(scene) {
 			const comments = scene.page.getByRole("complementary", { name: "Comments" });
-			await comments.getByRole("textbox", { name: "Add a comment on the text" }).fill("Leo, can you confirm the North numbers?");
+			await comments.getByLabel("Add a comment on the cell", { exact: true }).fill("Leo, can you confirm the North numbers?");
 			await comments.getByRole("button", { name: "Comment", exact: true }).click();
 			const row = comments.locator("li[data-thread]").filter({ hasText: "Leo, can you confirm the North numbers?" });
 			await expect(row).toContainText("Sheet1 · A1");
