@@ -6,6 +6,7 @@ import {
   DriveDocumentHeader,
   DriveDocumentMenu,
   driveNodeRoute,
+  useDocumentComments,
   type DocumentPanel,
   type DocumentSession,
 } from '@/apps/drive'
@@ -16,10 +17,11 @@ import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 
 import { createSheetAccess } from './access'
+import { cellCommentAnchors } from './commentPlaces'
 import { useDocumentLeaveGuard, type DocumentSaveState } from './navigation'
-import type { CellAnchor, SheetVersion } from './records'
+import { cellAnchor, type CellAnchor, type SheetVersion } from './records'
 import { clearRecovery, downloadRecovery, keepRecovery, readRecovery } from './recovery'
-import SheetCommentsPanel from './SheetCommentsPanel.vue'
+import SheetComments from './SheetComments.vue'
 import SheetVersionBar from './SheetVersionBar.vue'
 import SheetVersionsPanel from './SheetVersionsPanel.vue'
 import {
@@ -37,6 +39,8 @@ import {
 interface SheetEditorHandle {
   readonly activeCell: string
   readonly currentSheet: string
+  /** The workbook's sheets, in order. */
+  readonly sheetNames: readonly string[]
   readonly saveState: DocumentSaveState
   flushSave(): Promise<void>
   /** The workbook, with the cell edit still in progress. */
@@ -147,10 +151,33 @@ watch(
   },
 )
 
+const comments = useDocumentComments(props.session, {
+  isShown: () => props.session.panels.value.includes('comments'),
+  isOpen: () => panel.value === 'comments',
+  anchors: cellCommentAnchors,
+})
+
 /** Comments, Versions and Notes share the right edge: one closes the others. */
 function showPanel(next: DocumentPanel | null) {
   panel.value = next
   if (next) editor.value?.closeNotes()
+}
+
+// Insert > Comment and the toolbar's Comment start a comment on the cursor cell
+function commentOnCell() {
+  if (access.canComment.value && cursor.value) {
+    comments.drafts.start(cellAnchor(cursor.value))
+  }
+
+  showPanel('comments')
+}
+
+const openComments = computed(() =>
+  props.session.panels.value.includes('comments') ? commentOnCell : undefined,
+)
+const sheetNames = computed(() => editor.value?.sheetNames ?? [])
+function goToCell(sheet: string, cell: string) {
+  return editor.value?.goToCell(sheet, cell) ?? false
 }
 function togglePanel(name: DocumentPanel) {
   showPanel(panel.value === name ? null : name)
@@ -262,11 +289,6 @@ function makeCopy(version: SheetVersion) {
 function openInNewTab(node: { name: string; title: string }) {
   window.open(driveNodeRoute(node.name, node.title).path, '_blank', 'noopener')
 }
-function selectAnchor(anchor: CellAnchor) {
-  if (!editor.value?.goToCell(anchor.sheet, anchor.cell)) {
-    toast.info(`${anchor.sheet} · ${anchor.cell} is no longer in this spreadsheet.`)
-  }
-}
 
 /** Save pending edits, or refuse: a version holds only the saved state. */
 async function flushEdits() {
@@ -367,9 +389,7 @@ useDocumentLeaveGuard({
       :request-context="session.credentials.context"
       :collab-session="preview ? undefined : session"
       :version="preview?.bytes"
-      :open-comments="
-        session.panels.value.includes('comments') ? () => showPanel('comments') : undefined
-      "
+      :open-comments="openComments"
       @reopen="bodyRevision += 1"
       @notes-opened="panel = null"
     >
@@ -429,13 +449,15 @@ useDocumentLeaveGuard({
       </template>
 
       <template #side-panel>
-        <SheetCommentsPanel
+        <SheetComments
           v-if="panel === 'comments'"
           :session="session"
-          :cursor="cursor"
+          :comments="comments"
+          :sheets="sheetNames"
           :can-comment="access.canComment.value"
+          :can-edit-document="access.writable.value"
+          :go-to-cell="goToCell"
           @close="panel = null"
-          @select="selectAnchor"
         />
         <SheetVersionsPanel
           v-else-if="panel === 'versions'"
