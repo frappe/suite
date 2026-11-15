@@ -25,18 +25,25 @@ const emit = defineEmits<{ close: [] }>()
 const openThread = ref<string | null>(null)
 const places = computed(() => cellPlaces(props.comments.threads.value, props.sheets))
 
-// An opened thread takes the editor to its cell
-watch(openThread, (name) => {
-  const thread = props.comments.threads.value.find((shown) => shown.name === name)
-  if (!thread) {
-    return
-  }
+const openedThread = computed(() =>
+  props.comments.threads.value.find((shown) => shown.name === openThread.value),
+)
 
-  const cell = readAnchor(thread.anchor)
-  if (cell && !props.goToCell(cell.sheet, cell.cell)) {
-    toast.info(__('{0} is no longer in this spreadsheet', [cellLabel(cell)]))
-  }
-})
+// An opened thread takes the editor to its cell, once it's in the list
+watch(
+  () => openedThread.value?.name,
+  () => {
+    const thread = openedThread.value
+    if (!thread) {
+      return
+    }
+
+    const cell = readAnchor(thread.anchor)
+    if (cell && !props.goToCell(cell.sheet, cell.cell)) {
+      toast.info(__('{0} is no longer in this spreadsheet', [cellLabel(cell)]))
+    }
+  },
+)
 </script>
 
 <template>

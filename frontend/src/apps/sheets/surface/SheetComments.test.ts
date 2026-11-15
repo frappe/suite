@@ -214,6 +214,7 @@ function driveHolding(threads: DocumentThread[], canShare: boolean) {
 
     return { name: made.name }
   })
+  const list = vi.fn(async () => ({ threads: structuredClone(threads) }))
   const reply = vi.fn(async () => {})
   const resolve = vi.fn(async (name: string, isResolved: boolean) => {
     const found = threads.find((one) => one.name === name)!
@@ -222,9 +223,9 @@ function driveHolding(threads: DocumentThread[], canShare: boolean) {
   const session = fromPartial<DocumentSession>({
     nodeId: 'node-1',
     canShare: ref(canShare),
-    comments: { list: async () => ({ threads: structuredClone(threads) }), create, reply, resolve },
+    comments: { list, create, reply, resolve },
   })
-  return { session, create, reply, resolve }
+  return { session, create, list, reply, resolve }
 }
 
 /**
@@ -363,6 +364,23 @@ describe('commenting on a cell', () => {
     expect(first).toMatch(/\S/)
     expect(second).toBe(first)
     expect(rowLabels(root)).toEqual(['Sheet1 · B2'])
+  })
+
+  it('goes to the new thread’s cell once the list holds it, after a failed refresh', async () => {
+    const { root, list, goToCell } = await mountComments({
+      startOn: cellAnchor({ sheet: 'Sheet1', cell: 'B2' }),
+    })
+    list.mockRejectedValueOnce(new Error('offline'))
+    type(root, CELL_BOX, 'Check this total')
+    await submit(root, CELL_BOX)
+    expect(goToCell).not.toHaveBeenCalled()
+
+    window.dispatchEvent(new Event('focus'))
+    await settle()
+    window.dispatchEvent(new Event('focus'))
+    await settle()
+
+    expect(goToCell.mock.calls).toEqual([['Sheet1', 'B2']])
   })
 
   it('posts on the whole spreadsheet from Add a comment', async () => {
