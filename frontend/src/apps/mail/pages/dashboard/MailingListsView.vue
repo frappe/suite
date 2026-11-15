@@ -94,7 +94,7 @@ const listOptions = computed(() => ({
   emptyState: hasActiveFilters.value
     ? {
         title: __('No matching mailing lists'),
-        description: __('Try adjusting your search or filters.'),
+        description: __('Try a different search.'),
       }
     : {
         title: __('No mailing lists yet'),
