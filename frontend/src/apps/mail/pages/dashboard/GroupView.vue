@@ -24,11 +24,14 @@
               class="bg-surface-gray-2 text-ink-gray-5 flex items-center rounded-4 px-5 py-2.5 text-sm"
             >
               <span class="flex-1">{{ __('Email address') }}</span>
-              <span class="flex-1">{{ __('Description') }}</span>
               <span class="w-20 shrink-0 text-center">{{ __('Enabled') }}</span>
               <span class="w-8 shrink-0" />
             </div>
-            <DashboardRowsSkeleton :rows="1" />
+            <!-- An address row with its display name beneath is two lines tall. -->
+            <DashboardRowsSkeleton
+              :rows="1"
+              row-class="flex h-[3.875rem] items-center border-b px-5 last:border-b-0"
+            />
           </div>
         </DashboardCard>
         <DashboardCard :title="__('Members')">
@@ -91,7 +94,6 @@
               class="bg-surface-gray-2 text-ink-gray-5 flex items-center rounded-4 px-5 py-2.5 text-sm"
             >
               <span class="flex-1">{{ __('Email address') }}</span>
-              <span class="flex-1">{{ __('Description') }}</span>
               <span class="w-20 shrink-0 text-center">{{ __('Enabled') }}</span>
               <span class="w-8 shrink-0" />
             </div>
@@ -107,10 +109,13 @@
                   :disabled="!entry.is_primary"
                 >
                   <div class="flex w-full items-center">
-                    <span class="flex-1 truncate">{{ entry.email }}</span>
-                    <span class="text-ink-gray-5 flex-1 truncate">{{
-                      entry.description || '—'
-                    }}</span>
+                    <!-- The address gets the whole width; its display name sits beneath. -->
+                    <span class="min-w-0 flex-1">
+                      <span class="block truncate">{{ entry.email }}</span>
+                      <span v-if="entry.description" class="text-ink-gray-5 block truncate text-sm">
+                        {{ entry.description }}
+                      </span>
+                    </span>
                     <span class="flex w-20 shrink-0 justify-center">
                       <Switch
                         :model-value="entry.enabled"
