@@ -115,7 +115,6 @@ import {
 } from '../composables/useConnectionState'
 import { useMeetingPreviewPresence } from '../composables/useMeetingPreviewPresence'
 import { normalizeJoinPayload, type JoinPayload } from '../types'
-import { getErrorMessage } from '../utils/error'
 import type { Participant } from '../utils/media/ParticipantManager'
 import { getInitials } from '../utils/text'
 
@@ -220,7 +219,7 @@ const handleJoin = async () => {
       clearRetryableGuestSession(props.meetingId)
     } else if (storedSession?.status === 'banned') {
       terminalGuestSession.value = storedSession
-      toast.error('You can’t join this meeting.')
+      toast.error(__('Could not join this meeting'))
       return
     }
     if (!guestName.value.trim()) {
@@ -245,8 +244,7 @@ const handleJoin = async () => {
       })
     } catch (error) {
       console.error('Failed to join as guest:', error)
-      const errorMessage = getErrorMessage(error) || 'Failed to join meeting as guest.'
-      toast.error(errorMessage)
+      toast.error(__('Could not join the meeting as a guest'))
     }
   } else {
     emit('join-from-preview', isCurrentUserPresent.value)

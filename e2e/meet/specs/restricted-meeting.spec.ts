@@ -73,7 +73,7 @@ test.describe("Restricted meeting", () => {
 			timeout: lobbyTransitionTimeout,
 		});
 		await expect(
-			guest.page.getByText("Your join request was denied by the meeting host"),
+			guest.page.getByText("The host denied your join request"),
 		).toBeVisible({ timeout: lobbyTransitionTimeout });
 
 		await guest.page.goto(appUrl(`/meet/${meetingId}`));

@@ -318,7 +318,7 @@ const selectedBackgroundOption = computed({
       setSelectedBackgroundImage(value)
       handleBackgroundImageToggle(true)
       if (customBackgroundImages.value.some((image) => image.name === value)) {
-        toast.info('Your background looks mirrored to you, but others see it correctly.')
+        toast.info(__('Your background looks mirrored to you, but others see it correctly'))
       }
     }
   },
@@ -343,10 +343,10 @@ async function handleFileSelect(event: Event) {
   try {
     const customImage = await addCustomBackgroundImage(file)
     selectedBackgroundOption.value = customImage.name
-    toast.success(`Added custom background: ${file.name}`)
+    toast.success(__('Added custom background “{0}”', [file.name]))
   } catch (error) {
     console.error('Failed to add custom image:', error)
-    toast.error(error instanceof Error ? error.message : 'Failed to add custom background image')
+    toast.error(__('Could not add the custom background image'))
   }
 
   target.value = ''
@@ -355,10 +355,10 @@ async function handleFileSelect(event: Event) {
 async function handleDeleteCustomImage(imageId: string) {
   try {
     await removeCustomBackgroundImage(imageId)
-    toast.success('Custom background removed')
+    toast.success(__('Custom background removed'))
   } catch (error) {
     console.error('Failed to remove custom image:', error)
-    toast.error('Failed to remove custom background')
+    toast.error(__('Could not remove the custom background'))
   }
 }
 

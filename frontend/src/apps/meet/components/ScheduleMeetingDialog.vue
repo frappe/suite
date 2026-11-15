@@ -195,7 +195,11 @@ function submit() {
     return
   }
   if (!isTimeValid.value) {
-    toast.error(__('Enter a valid date and an end time after the start time.'))
+    toast.error(
+      __(
+        'Could not schedule the meeting. Enter a valid date and an end time after the start time.',
+      ),
+    )
     return
   }
   submitError.value = ''
@@ -212,11 +216,11 @@ function submit() {
       })
       .then(() => {
         open.value = false
-        toast.success(__('Meeting scheduled.'))
+        toast.success(__('Meeting scheduled'))
         emit('scheduled')
       }),
     {
-      loading: __('Scheduling meeting...'),
+      loading: __('Scheduling meeting…'),
       error: (error: unknown) => {
         submitError.value =
           error instanceof TransportError &&
@@ -226,7 +230,7 @@ function submit() {
           error.message
             ? error.message
             : __('Could not schedule the meeting. Your details are kept. Please try again.')
-        return __('Meeting was not scheduled. Review the message and try again.')
+        return __('Could not schedule the meeting. Review the message and try again.')
       },
     },
   )

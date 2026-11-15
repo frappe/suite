@@ -374,9 +374,9 @@ function redirectToLogin() {
 async function copyMeetingLink() {
   try {
     await navigator.clipboard.writeText(window.location.href)
-    toast.success('Meeting link copied')
+    toast.success(__('Meeting link copied'))
   } catch {
-    toast.error('Could not copy meeting link')
+    toast.error(__('Could not copy meeting link'))
   }
 }
 const unregisterPaletteGroups = useRootStore().registerPaletteGroups('meet-meeting', [
@@ -443,23 +443,23 @@ async function handleRecordingAction() {
     }
     recordingPreflight.value = await recording.getPreflight()
     recordingDialogOpen.value = true
-  } catch (error) {
-    toast.error(error instanceof Error ? error.message : 'Could not manage recording')
+  } catch {
+    toast.error(__('Could not manage recording'))
   }
 }
 async function confirmRecordingStop() {
   try {
     await recording.stop()
     recordingStopDialogOpen.value = false
-  } catch (error) {
-    toast.error(error instanceof Error ? error.message : 'Could not stop recording')
+  } catch {
+    toast.error(__('Could not stop recording'))
   }
 }
 async function confirmRecordingStart() {
   try {
     await recording.start()
   } catch (error) {
-    toast.error(error instanceof Error ? error.message : 'Could not start recording')
+    toast.error(__('Could not start recording'))
     throw error
   }
 }
@@ -858,7 +858,7 @@ watch(
       ) {
         return
       }
-      toast.loading('Connecting…', {
+      toast.loading(__('Connecting…'), {
         id: CONNECTING_TOAST_ID,
         duration: Number.POSITIVE_INFINITY,
       })
@@ -986,7 +986,7 @@ const showMeetingNotification = (notification: {
                   class: 'block truncate text-p-base font-medium text-ink-base',
                 },
                 notification.type === 'poll'
-                  ? `${notification.fromName} started a poll`
+                  ? __('{0} started a poll', [notification.fromName])
                   : notification.fromName,
               ),
               h(

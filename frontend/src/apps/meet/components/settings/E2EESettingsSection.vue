@@ -71,7 +71,11 @@ watch(
     if (getE2EETransformCapability() === 'none') {
       e2eeEnabled.value = false
       isE2EEMediaSupported.value = false
-      toast.error('E2EE requires encoded media transform support.')
+      toast.error(
+        __(
+          'Could not turn on end-to-end encryption. Your browser does not support encoded media transforms.',
+        ),
+      )
       return
     }
 
@@ -98,11 +102,11 @@ watch(
       )
 
       await props.refresh()
-      toast.success('Meeting is now end-to-end encrypted.')
+      toast.success(__('Meeting is now end-to-end encrypted'))
     } catch (error) {
       console.error('Failed to enable E2EE:', error)
       e2eeEnabled.value = false
-      toast.error('Failed to enable E2EE for this meeting')
+      toast.error(__('Could not turn on end-to-end encryption'))
     } finally {
       isConvertingToE2EE.value = false
     }

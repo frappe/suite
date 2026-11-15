@@ -108,7 +108,7 @@ const saveSettings = debounce(async () => {
     await meetingDoc.refetch()
   } catch (error) {
     console.error('Failed to update meeting settings:', error)
-    toast.error('Failed to update meeting settings')
+    toast.error(__('Could not update meeting settings'))
 
     if (meetingDoc.data?.host_only_chat !== undefined) {
       hostOnlyChat.value = !!meetingDoc.data.host_only_chat
