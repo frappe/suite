@@ -48,11 +48,7 @@ describe('saving a named version', () => {
   it('takes no version when the edits could not be saved, and says why', async () => {
     const { session, taken } = versionsSession()
     async function saveFirst() {
-      throw new TransportError({
-        type: 'ValidationError',
-        message: 'No version was taken: saving is paused.',
-        status: 400,
-      })
+      throw new Error('No version was taken: saving is paused.')
     }
 
     const isTaken = await useDocumentPanel(session).saveVersion('Draft one', saveFirst)
