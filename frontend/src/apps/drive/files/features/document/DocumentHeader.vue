@@ -105,14 +105,7 @@
         />
       </template>
       <slot name="menu">
-        <Dropdown :options="ownMenu" align="end">
-          <Button
-            variant="ghost"
-            icon="lucide-ellipsis"
-            :tooltip="__('More actions')"
-            :aria-label="__('More actions')"
-          />
-        </Dropdown>
+        <DocumentMenu :session="session" />
       </slot>
       <div v-if="$slots.primary" class="ml-1 flex">
         <slot name="primary" />
@@ -123,7 +116,7 @@
 
 <script setup lang="ts">
 import { useNow, useOnline } from '@vueuse/core'
-import { Badge, Button, Dropdown, TextInput } from 'frappe-ui'
+import { Badge, Button, TextInput } from 'frappe-ui'
 import { computed, ref, shallowRef, watch } from 'vue'
 import type { RouteLocationRaw } from 'vue-router'
 
@@ -137,8 +130,9 @@ import { TransportError } from '@/platform/transport'
 
 import { canRename } from '../nodeActions'
 import DocumentEditedNote from './DocumentEditedNote.vue'
+import DocumentMenu from './DocumentMenu.vue'
 import { editedDetails, editedLabel } from './editedLabel'
-import { copyLinkAction, documentTypeIcon, starAction, type DocumentSaveState } from './header'
+import { documentTypeIcon, type DocumentSaveState } from './header'
 
 /**
  * The one header every document surface shows: the Drive type icon, the title
@@ -239,8 +233,6 @@ const badge = computed(() => {
   if (props.viewOnly) return { label: 'View only', theme: 'gray' } as const
   return null
 })
-// A surface with no menu of its own still offers Copy link and Star
-const ownMenu = computed(() => [copyLinkAction(), ...starAction(props.session)])
 const account = useSession()
 const locationTitle = useLocationTitle()
 // With no folder to read a signed-in person goes back to Drive, and a guest has no way back

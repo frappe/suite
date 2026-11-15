@@ -930,7 +930,7 @@ describe('a deck on the content layer', () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
       expect(versionsPanel.namings).toBe(namings)
       requireTestElement(
-        mounted.root.querySelector('[aria-label="Presentation menu"]'),
+        mounted.root.querySelector('[aria-label="More actions"]'),
         HTMLElement,
       ).dispatchEvent(new FocusEvent('focus'))
 
@@ -941,7 +941,7 @@ describe('a deck on the content layer', () => {
       mounted = await openedSurface({ role: 10 })
       await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(served.slides.length))
 
-      expect(menuEntry('Shortcuts')).toBeDefined()
+      expect(menuEntry('Keyboard shortcuts')).toBeDefined()
       expect(menuEntry('Save version')).toBeUndefined()
     })
   })
@@ -1915,7 +1915,7 @@ describe('a deck on the content layer', () => {
       const present = mounted.root.querySelector('header [aria-label="Present"]')
       // the stand-ins are divs, which keep the value as written
       expect(present?.getAttribute('disabled')).toBe('false')
-      expect(menuEntry('Export')).toBeDefined()
+      expect(menuEntry('Export as PDF')).toBeDefined()
     })
   })
 
@@ -1930,7 +1930,7 @@ describe('a deck on the content layer', () => {
     fromPartial<XmlText>(paragraph.get(0)).insert(3, ' more')
     await vi.waitFor(() => expect(drawnTexts()[0]).toContain('one more'))
 
-    pickFromMenu('Export')
+    pickFromMenu('Export as PDF')
 
     await vi.waitFor(() => expect(window.print).toHaveBeenCalledOnce())
     const printed = fromAny<Array<{ elements: Array<{ content?: string }> }>, unknown>(
@@ -2369,7 +2369,7 @@ describe('printing a presentation', () => {
   let print: ReturnType<typeof vi.fn<() => void>>
 
   function clickExport() {
-    pickFromMenu('Export')
+    pickFromMenu('Export as PDF')
   }
 
   beforeEach(() => {

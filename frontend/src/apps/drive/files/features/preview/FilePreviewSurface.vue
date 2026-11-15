@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useEventListener, useMediaQuery } from '@vueuse/core'
-import { Button, Dropdown, TabButtons } from 'frappe-ui'
+import { Button, TabButtons } from 'frappe-ui'
 import { computed, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter, type RouteLocationPathRaw } from 'vue-router'
 
@@ -14,6 +14,7 @@ import { rootPath, trashLocation, useLocationTitle } from '../../internal/locati
 import { previewKind } from '../../internal/previewKind'
 import { announceTrash } from '../changeToast'
 import DocumentHeader from '../document/DocumentHeader.vue'
+import DocumentMenu from '../document/DocumentMenu.vue'
 import { starAction } from '../document/header'
 import { nodeActions } from '../nodeActions'
 import { readPresentationPreference, resolvePresentation } from '../presentation'
@@ -219,57 +220,63 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 })
 
 // The listing's row menu offers the same actions under the same rules (`nodeActions`).
-const menu = computed(() => [
-  ...(opensAsSheet.value
-    ? [{ label: __('Open as spreadsheet'), icon: 'lucide-sheet', onClick: openAsSheet }]
-    : []),
-  ...(can.value.copyLink
-    ? [{ label: 'Copy link', icon: 'lucide-link', onClick: copyFileLink }]
-    : []),
-  ...starAction(props.session),
-  ...(can.value.rename
-    ? [{ label: 'Rename', icon: 'lucide-pencil', onClick: () => header.value?.focusTitle() }]
-    : []),
-  ...(can.value.move ? [{ label: 'Move', icon: 'lucide-folder-input', onClick: move }] : []),
-  ...(can.value.copy
-    ? [
-        {
-          label: 'Make a copy',
-          icon: 'lucide-copy',
-          onClick: () => dialogs.copy(props.session.nodeId),
-        },
-      ]
-    : []),
-  ...(canReplace.value
+const menu = computed(() => ({
+  link: [
+    ...(can.value.copyLink
+      ? [{ label: 'Copy link', icon: 'lucide-link', onClick: copyFileLink }]
+      : []),
+    ...starAction(props.session),
+  ],
+  own: [
+    ...(opensAsSheet.value
+      ? [{ label: __('Open as spreadsheet'), icon: 'lucide-sheet', onClick: openAsSheet }]
+      : []),
+    {
+      label: 'Details',
+      icon: 'lucide-info',
+      onClick: () => void dialogs.showDetails(props.session.nodeId),
+    },
+  ],
+  transfer: canReplace.value
     ? [{ label: 'Upload new version', icon: 'lucide-upload', onClick: () => upload.value?.pick() }]
-    : []),
-  {
-    label: 'Details',
-    icon: 'lucide-info',
-    onClick: () => void dialogs.showDetails(props.session.nodeId),
-  },
-  ...(can.value.trash
-    ? [
-        {
-          label: 'Move to trash',
-          icon: 'lucide-trash-2',
-          theme: 'red' as const,
-          onClick: moveToTrash,
-        },
-      ]
-    : []),
-  ...(can.value.restore ? [{ label: 'Restore', icon: 'lucide-undo-2', onClick: restore }] : []),
-  ...(can.value.deleteForever
-    ? [
-        {
-          label: 'Delete forever',
-          icon: 'lucide-trash-2',
-          theme: 'red' as const,
-          onClick: deleteForever,
-        },
-      ]
-    : []),
-])
+    : [],
+  file: [
+    ...(can.value.rename
+      ? [{ label: 'Rename', icon: 'lucide-pencil', onClick: () => header.value?.focusTitle() }]
+      : []),
+    ...(can.value.move ? [{ label: 'Move', icon: 'lucide-folder-input', onClick: move }] : []),
+    ...(can.value.copy
+      ? [
+          {
+            label: 'Make a copy',
+            icon: 'lucide-copy',
+            onClick: () => dialogs.copy(props.session.nodeId),
+          },
+        ]
+      : []),
+    ...(can.value.trash
+      ? [
+          {
+            label: 'Move to trash',
+            icon: 'lucide-trash-2',
+            theme: 'red' as const,
+            onClick: moveToTrash,
+          },
+        ]
+      : []),
+    ...(can.value.restore ? [{ label: 'Restore', icon: 'lucide-undo-2', onClick: restore }] : []),
+    ...(can.value.deleteForever
+      ? [
+          {
+            label: 'Delete forever',
+            icon: 'lucide-trash-2',
+            theme: 'red' as const,
+            onClick: deleteForever,
+          },
+        ]
+      : []),
+  ],
+}))
 
 const item = computed(() => ({ node: props.session.nodeId, title: props.session.title.value }))
 
@@ -470,14 +477,13 @@ const pagerLoading = computed(() => !!folder.value && siblings.status === 'pendi
         />
       </template>
       <template #menu>
-        <Dropdown :options="menu" align="end">
-          <Button
-            variant="ghost"
-            icon="lucide-ellipsis"
-            tooltip="More file actions"
-            aria-label="More file actions"
-          />
-        </Dropdown>
+        <DocumentMenu
+          :session="session"
+          :link="menu.link"
+          :own="menu.own"
+          :transfer="menu.transfer"
+          :file="menu.file"
+        />
       </template>
     </DocumentHeader>
     <div ref="stage" class="flex min-h-0 flex-1 flex-col bg-surface-base">

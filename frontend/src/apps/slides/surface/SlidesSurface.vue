@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Editor } from '@tiptap/core'
 import { useMediaQuery } from '@vueuse/core'
-import { Button, dialog, Dropdown, Skeleton, toast } from 'frappe-ui'
+import { Button, dialog, Skeleton, toast } from 'frappe-ui'
 import {
   computed,
   defineAsyncComponent,
@@ -21,17 +21,14 @@ import '@/apps/slides/styles/scrollbars.css'
 
 import { api, client } from '@/api'
 import {
-  copyLinkAction,
   DriveDocumentSidePanel as DocumentSidePanel,
   DriveDocumentHeader,
+  DriveDocumentMenu,
   fetchVersion,
   imagesNotice,
   missingImages,
-  PANEL_BUTTONS,
   restoreImages,
-  starAction,
   useDocumentComments,
-  useDriveDocumentActions,
   DriveVersionShownBar as VersionShownBar,
   waitForFocusBack,
   type DocumentPanel,
@@ -377,62 +374,44 @@ watch([showThemeDialog, showThemeChange], (opened) => {
     void drawTemplateLayouts()
   }
 })
-const driveActions = useDriveDocumentActions(props.session)
 // Save version goes once the closing menu has handed focus back to its button
 const menuFocusBack = waitForFocusBack()
 const offlineCopy = ref<InstanceType<typeof OfflineCopyButton> | null>(null)
-const presentationMenu = computed(() => [
+const ownMenuItems = computed(() => [
   {
-    group: '',
-    options: props.session.panels.value.map((name) => ({
-      label: translate(PANEL_BUTTONS[name].label),
-      icon: PANEL_BUTTONS[name].icon,
-      selected: panel.value === name,
-      onClick: () => showPanel(panel.value === name ? null : name),
-    })),
-  },
-  { group: '', options: driveActions.value.back },
-  {
-    group: '',
-    options: [
-      {
-        label: 'Export',
-        icon: 'lucide-file-down',
-        condition: () => !phone.value && !deckUnavailable.value,
-        onClick: exportPdf,
-      },
-      {
-        label: offlineCopy.value?.statusText ?? '',
-        icon: 'lucide-cloud-download',
-        condition: () => showsOfflineCopy.value,
-        onClick: () => offlineCopy.value?.open(),
-      },
-      {
-        label: translate('Save version'),
-        icon: 'lucide-bookmark',
-        condition: () => canRestoreVersions.value,
-        onClick: () => menuFocusBack.wait(() => void sidePanel.value?.nameVersion()),
-      },
-      {
-        label: 'Change theme',
-        icon: 'lucide-swatch-book',
-        condition: () => !inReadonlyMode.value,
-        onClick: () => {
-          showThemeChange.value = true
-        },
-      },
-      { label: 'Shortcuts', icon: 'lucide-keyboard', onClick: openAreaShortcuts },
-      {
-        label: translate('Discard my changes'),
-        icon: 'lucide-trash-2',
-        condition: () => canDownloadChanges.value,
-        onClick: discardChanges,
-      },
-    ],
+    label: translate('Save version'),
+    icon: 'lucide-bookmark',
+    condition: () => canRestoreVersions.value,
+    onClick: () => menuFocusBack.wait(() => void sidePanel.value?.nameVersion()),
   },
   {
-    group: '',
-    options: [copyLinkAction(), ...starAction(props.session), ...driveActions.value.node],
+    label: 'Change theme',
+    icon: 'lucide-swatch-book',
+    condition: () => !inReadonlyMode.value,
+    onClick: () => {
+      showThemeChange.value = true
+    },
+  },
+  { label: translate('Keyboard shortcuts'), icon: 'lucide-keyboard', onClick: openAreaShortcuts },
+  {
+    label: translate('Discard my changes'),
+    icon: 'lucide-trash-2',
+    condition: () => canDownloadChanges.value,
+    onClick: discardChanges,
+  },
+])
+const transferMenuItems = computed(() => [
+  {
+    label: translate('Export as PDF'),
+    icon: 'lucide-download',
+    condition: () => !phone.value && !deckUnavailable.value,
+    onClick: exportPdf,
+  },
+  {
+    label: offlineCopy.value?.statusText ?? '',
+    icon: 'lucide-cloud-download',
+    condition: () => showsOfflineCopy.value,
+    onClick: () => offlineCopy.value?.open(),
   },
 ])
 
@@ -1065,15 +1044,15 @@ onBeforeUnmount(() => {
         <UsersBar v-if="roomPeople.length" :users="roomPeople" />
       </template>
       <template #menu>
-        <Dropdown :options="presentationMenu" align="end">
-          <Button
-            variant="ghost"
-            icon="lucide-ellipsis"
-            :tooltip="__('Presentation menu')"
-            :aria-label="__('Presentation menu')"
-            @focus="menuFocusBack.focused()"
-          />
-        </Dropdown>
+        <DriveDocumentMenu
+          :session="session"
+          :panels="session.panels.value"
+          :panel="panel"
+          :own="ownMenuItems"
+          :transfer="transferMenuItems"
+          @toggle-panel="(name) => showPanel(panel === name ? null : name)"
+          @focus-back="menuFocusBack.focused()"
+        />
         <OfflineCopyButton v-if="showsOfflineCopy" ref="offlineCopy" :trigger="false" />
       </template>
       <template #primary>

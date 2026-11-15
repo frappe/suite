@@ -93,15 +93,15 @@
       </DefineTopbarActions>
 
       <!-- On /d/ the surface draws the Drive document header: title and Share.
-         The editor fills its status, menus and actions, and hands over the
-         export and import items for the header's own menu. -->
+         The editor fills its status, menus and actions, and hands over its
+         own items for the header's menu. -->
       <slot
         name="header"
         :view-only="readOnly"
         :status="ReuseTopbarStatus"
         :menus="ReuseTopbarMenus"
         :actions="ReuseTopbarActions"
-        :file-options="fileDropdownOptions"
+        :menu-items="menuItems"
       />
 
       <!-- Row 2 · the tools (SheetToolbar.vue) -->
@@ -1455,70 +1455,58 @@ const CURRENCY_QUICK_PICKS = [
     symbol: '¥',
   },
 ]
-const fileDropdownOptions = computed(() => [
-  {
-    group: 'Export',
-    options: [
-      {
-        label: 'Export as CSV',
-        icon: 'lucide-download',
-        onClick: () => exportCSV(),
-      },
-      {
-        label: 'Export as XLSX',
-        description: __("Charts and conditional formatting aren't exported yet."),
-        icon: 'lucide-download',
-        onClick: () => exportXLSX(),
-      },
-      {
-        label: __('Print…'),
-        icon: 'lucide-printer',
-        submenu: [
-          { label: __('This sheet'), onClick: () => print('sheet') },
-          { label: __('All sheets'), onClick: () => print('all') },
-        ],
-      },
-    ],
-  },
-  // Import writes cells — hide it for viewers (export/read stays available).
-  ...(readOnly.value
-    ? []
-    : [
-        {
-          group: 'Import',
-          options: [
-            {
-              label: 'Import CSV',
-              icon: 'lucide-upload',
-              onClick: () => csvInputRef.value?.click(),
-            },
-            {
-              label: 'Import XLSX',
-              icon: 'lucide-upload',
-              onClick: () => xlsxInputRef.value?.click(),
-            },
-          ],
-        },
-      ]),
+// The header's menu puts export and import in one group and Sheets' own items in another
+const menuItems = computed(() => ({
+  transfer: [
+    {
+      label: __('Export as CSV'),
+      icon: 'lucide-download',
+      onClick: () => exportCSV(),
+    },
+    {
+      label: __('Export as XLSX'),
+      description: __("Charts and conditional formatting aren't exported yet."),
+      icon: 'lucide-download',
+      onClick: () => exportXLSX(),
+    },
+    {
+      label: __('Print…'),
+      icon: 'lucide-printer',
+      submenu: [
+        { label: __('This sheet'), onClick: () => print('sheet') },
+        { label: __('All sheets'), onClick: () => print('all') },
+      ],
+    },
+    // Import writes cells — hide it for viewers (export/read stays available).
+    ...(readOnly.value
+      ? []
+      : [
+          {
+            label: __('Import CSV'),
+            icon: 'lucide-upload',
+            onClick: () => csvInputRef.value?.click(),
+          },
+          {
+            label: __('Import XLSX'),
+            icon: 'lucide-upload',
+            onClick: () => xlsxInputRef.value?.click(),
+          },
+        ]),
+  ],
   // Only shown to admins — gated server-side via the boot flag so non-admins
   // never see a settings entry they can't use.
-  ...(window.frappe?.boot?.ai_assist_can_configure
+  own: window.frappe?.boot?.ai_assist_can_configure
     ? [
         {
-          group: 'AI',
-          options: [
-            {
-              label: 'AI settings',
-              icon: 'lucide-cpu',
-              onClick: () => {
-                aiSettingsOpen.value = true
-              },
-            },
-          ],
+          label: __('AI settings'),
+          icon: 'lucide-cpu',
+          onClick: () => {
+            aiSettingsOpen.value = true
+          },
         },
       ]
-    : []),
-])
+    : [],
+}))
 
 // ── AI Assist ─────────────────────────────────────────────────────────────────
 // The Ask bar and AI settings (see useAiAssist.js).

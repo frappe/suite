@@ -83,7 +83,7 @@ describe("A document's Drive menu", () => {
     const app = createApp(
       defineComponent({
         setup() {
-          labels = useDriveDocumentActions(session).value.node.map((action) => action.label)
+          labels = useDriveDocumentActions(session).value.map((action) => action.label)
           return () => null
         },
       }),
@@ -94,15 +94,15 @@ describe("A document's Drive menu", () => {
     return labels
   }
 
-  it('offers Duplicate to the owner of the document and its folder', async () => {
-    expect(await nodeActionLabels('mine')).toContain('Duplicate')
+  it('offers Make a copy, then Move to trash, to the owner of the document and its folder', async () => {
+    expect(await nodeActionLabels('mine')).toEqual(['Make a copy', 'Move to trash'])
   })
 
-  it('hides Duplicate from a caller who only views the folder, even with edit on the document', async () => {
-    expect(await nodeActionLabels('in-viewed-folder')).not.toContain('Duplicate')
+  it('hides Make a copy from a caller who only views the folder, even with edit on the document', async () => {
+    expect(await nodeActionLabels('in-viewed-folder')).not.toContain('Make a copy')
   })
 
-  it('hides Duplicate from a caller who can see the document but not its folder', async () => {
-    expect(await nodeActionLabels('shared-alone')).not.toContain('Duplicate')
+  it('hides Make a copy from a caller who can see the document but not its folder', async () => {
+    expect(await nodeActionLabels('shared-alone')).not.toContain('Make a copy')
   })
 })

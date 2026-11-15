@@ -34,7 +34,10 @@ vi.mock('frappe-ui', async () => {
     // An open menu, so a test picks an item without opening it first
     Dropdown: define({
       props: {
-        options: { type: Array<{ label: string; onClick: () => void }>, default: () => [] },
+        options: {
+          type: Array<{ options: { label: string; onClick: () => void }[] }>,
+          default: () => [],
+        },
       },
       setup:
         (props, { slots }) =>
@@ -43,9 +46,11 @@ vi.mock('frappe-ui', async () => {
           render(
             'div',
             { role: 'menu' },
-            props.options.map((option) =>
-              render('button', { role: 'menuitem', onClick: option.onClick }, option.label),
-            ),
+            props.options
+              .flatMap((group) => group.options)
+              .map((option) =>
+                render('button', { role: 'menuitem', onClick: option.onClick }, option.label),
+              ),
           ),
         ],
     }),
@@ -147,6 +152,13 @@ function mount(
         slots,
       ),
   })
+  // The menu's Move to trash goes back to the folder, so the header needs a router
+  app.use(
+    createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/:any(.*)', component: { render: () => null } }],
+    }),
+  )
   app.mount(root)
   cleanup = () => {
     app.unmount()
@@ -164,6 +176,9 @@ function mount(
 
 const badges = (root: HTMLElement) =>
   [...root.querySelectorAll('[data-badge]')].map((el) => el.textContent)
+
+const menuItems = (root: HTMLElement) =>
+  [...root.querySelectorAll('[role="menuitem"]')].map((el) => el.textContent)
 
 /** What the header shows as buttons, by name, leaving out the items inside its menu. */
 const buttons = (root: HTMLElement) =>
@@ -253,11 +268,20 @@ describe('DocumentHeader', () => {
   })
 
   it('offers no star to someone who cannot keep one, and still the link', () => {
-    const linkOnly = session(40)
+    const linkOnly = session(10)
     linkOnly.canStar.value = false
-    const { root } = mount(linkOnly)
-    const items = [...root.querySelectorAll('[role="menuitem"]')].map((el) => el.textContent)
-    expect(items).toEqual(['Copy link'])
+    expect(menuItems(mount(linkOnly).root)).toEqual(['Copy link'])
+  })
+
+  it('gives a surface with no menu of its own the whole document menu', () => {
+    const doc = session(50)
+    doc.folder.value = { name: 'folder-9', title: 'Projects', kind: 'folder', role: 50 }
+    expect(menuItems(mount(doc).root)).toEqual([
+      'Copy link',
+      'Star',
+      'Make a copy',
+      'Move to trash',
+    ])
   })
 
   it.each([

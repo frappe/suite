@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, vi } from 'vitest'
-import { computed, createApp, defineComponent, h, ref, type Ref, type SetupContext } from 'vue'
+import { createApp, defineComponent, h, ref, type Ref, type SetupContext } from 'vue'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import type { Doc } from 'yjs'
 
@@ -328,7 +328,6 @@ vi.mock('@/apps/drive', async (importOriginal) => ({
       }
     },
   },
-  useDriveDocumentActions: () => computed(() => ({ back: [], node: [] })),
 }))
 // a thumbnail that isn't the current slide asks the surface to change to it,
 // and a click in the list stays in it, as the real list's `@click.stop` does
@@ -425,6 +424,7 @@ function session(
     contentDoctype: 'Presentation',
     contentDocname: docname,
     title: ref('Quarterly plan'),
+    folder: ref(null),
     state: ref('Active'),
     access,
     panels: ref(panels),

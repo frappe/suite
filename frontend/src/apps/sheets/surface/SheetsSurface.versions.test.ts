@@ -37,6 +37,7 @@ vi.mock('@/apps/drive', async () => {
         () =>
           slots.menu?.(),
     }),
+    DriveDocumentMenu: capture('menu').default,
   }
 })
 function capture(key: 'menu' | 'panel' | 'bar') {
@@ -57,7 +58,6 @@ function capture(key: 'menu' | 'panel' | 'bar') {
     }),
   }
 }
-vi.mock('./SheetDocumentMenu.vue', () => capture('menu'))
 vi.mock('./SheetVersionsPanel.vue', () => capture('panel'))
 vi.mock('./SheetVersionBar.vue', () => capture('bar'))
 vi.mock('./SheetCommentsPanel.vue', () => ({ default: { render: () => null } }))
@@ -97,7 +97,13 @@ vi.mock('@/apps/sheets/components/SheetEditor/index.vue', () => ({
       })
       return () =>
         h('div', [
-          slots.header?.({ viewOnly: false, status: null, menus: null, actions: null }),
+          slots.header?.({
+            viewOnly: false,
+            status: null,
+            menus: null,
+            actions: null,
+            menuItems: { own: [], transfer: [] },
+          }),
           slots.banner?.(),
           slots['side-panel']?.(),
         ])

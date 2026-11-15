@@ -251,31 +251,29 @@ export function newDocumentRoute(node: DriveNodeSummary): RouteLocationPathRaw {
 export interface DriveDocumentAction {
   label: string
   icon: string
+  theme?: 'red'
   onClick: () => void
 }
 
 /**
- * A document's own Drive actions for its menu: `back` to the folder it is in,
- * and its `node` actions, Duplicate and Delete. Each shows only when the caller
- * may take it: Duplicate copies into the folder, so it needs UPLOAD there.
- * Call it in a component's setup.
+ * A document's own Drive actions for its menu: Make a copy and Move to trash,
+ * under the names Drive's listing gives them. Each shows only when the caller
+ * may take it: the copy goes into the document's folder, so it needs UPLOAD
+ * there. Call it in a component's setup.
  */
 export function useDriveDocumentActions(
   session: DocumentSession,
-): ComputedRef<{ back: DriveDocumentAction[]; node: DriveDocumentAction[] }> {
+): ComputedRef<DriveDocumentAction[]> {
   const account = useSession()
   const actions = documentActions(session)
   return computed(() => {
     const folder = session.folder.value
     const can = nodeActions(actionNodeOf(session), account.status.value === 'authenticated')
     const canUploadToFolder = folder !== null && folder.role >= DRIVE_ROLES.upload
-    return {
-      back: actionsWhere([[folder !== null, actions.back]]),
-      node: actionsWhere([
-        [canUploadToFolder && can.copy, actions.duplicate],
-        [can.trash, actions.delete],
-      ]),
-    }
+    return actionsWhere([
+      [canUploadToFolder && can.copy, actions.copy],
+      [can.trash, actions.trash],
+    ])
   })
 }
 
@@ -287,19 +285,15 @@ function documentActions(session: DocumentSession) {
   }
 
   return {
-    back: {
-      label: __('Back to folder'),
-      icon: 'lucide-arrow-left',
-      onClick: () => void router.push(folderRoute()),
-    },
-    duplicate: {
-      label: __('Duplicate'),
+    copy: {
+      label: __('Make a copy'),
       icon: 'lucide-copy',
       onClick: () => void duplicateDocument(session, session.folder.value, router),
     },
-    delete: {
-      label: __('Delete'),
+    trash: {
+      label: __('Move to trash'),
       icon: 'lucide-trash-2',
+      theme: 'red' as const,
       onClick: () => void trashDocument(session, router, folderRoute()),
     },
   }
@@ -328,7 +322,9 @@ async function duplicateDocument(
   try {
     await router.push(driveNodeRoute(await session.copy(folder.name)))
   } catch (error) {
-    toast.error((error instanceof Error && error.message) || __('Could not duplicate this file.'))
+    toast.error(
+      (error instanceof Error && error.message) || __('Could not make a copy of this file.'),
+    )
   }
 }
 
@@ -337,7 +333,9 @@ async function trashDocument(session: DocumentSession, router: Router, back: Rou
   try {
     await client.mutation(api.drive.nodes.trash, { node: item.node, state: 'Trashed' })
   } catch (error) {
-    toast.error((error instanceof Error && error.message) || __('Could not delete this file.'))
+    toast.error(
+      (error instanceof Error && error.message) || __('Could not move this file to trash.'),
+    )
     return
   }
 
@@ -409,6 +407,13 @@ const loadDocumentHeader = () => import('@/apps/drive/files/features/document/Do
  * `focusTitle()`.
  */
 export const DriveDocumentHeader = defineAsyncComponent(loadDocumentHeader)
+/**
+ * The menu for the header's `menu` slot, the same in every surface: the side
+ * panels, Copy link and Star, the surface's `own` items, its `transfer` items
+ * (export, then import), then Make a copy and Move to trash. Pass `session`,
+ * and `panels` with `panel` and `@toggle-panel`.
+ */
+export { default as DriveDocumentMenu } from '@/apps/drive/files/features/document/DocumentMenu.vue'
 
 /** True while a listing's load is too new for placeholder rows, as Drive waits before drawing them. */
 export { useSkeletonDelay as useDriveSkeletonDelay } from '@/apps/drive/files/features/listSkeleton'
@@ -423,11 +428,6 @@ export const DriveListSkeletonRows = defineAsyncComponent(
 export { default as DriveDocumentHeaderSkeleton } from '@/apps/drive/files/features/document/DocumentHeaderSkeleton.vue'
 export { openingLocation, opensFile } from '@/apps/drive/files/features/document/openingLocation'
 
-export {
-  copyLinkAction,
-  PANEL_BUTTONS,
-  starAction,
-} from '@/apps/drive/files/features/document/header'
 export type { DocumentPanel } from '@/apps/drive/client/types'
 export type { DocumentSaveState } from '@/apps/drive/files/features/document/header'
 /** A version's images that are binned or deleted: which ones, how to bring them back, and what to say. */

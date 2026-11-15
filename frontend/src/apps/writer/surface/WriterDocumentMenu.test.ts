@@ -1,6 +1,9 @@
 import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, ref, type PropType } from 'vue'
+import { createMemoryHistory, createRouter } from 'vue-router'
+
+import type { DocumentSession } from '@/apps/drive'
 
 import WriterDocumentMenu from './WriterDocumentMenu.vue'
 
@@ -52,10 +55,21 @@ vi.mock('frappe-ui', () => {
 vi.mock('@/platform/feedback', () => ({
   toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() },
 }))
+// Naming Drive's roots takes a query, and this menu names no folder
+vi.mock('@/apps/drive/files/internal/locations', async (original) => ({
+  ...(await original()),
+  useLocationTitle: () => (node: { title: string }) => node.title,
+}))
 
-const session = {
+const canStar = ref(true)
+const setStarred = vi.fn(async () => {})
+// A document shared with someone who views it, in a folder they cannot see
+const session = fromPartial<DocumentSession>({
   nodeId: 'doc-1',
   title: ref('Plan'),
+  state: ref<DocumentSession['state']['value']>('Active'),
+  access: ref({ role: 10 }),
+  folder: ref(null),
   credentials: {
     context: { partition: () => 'test', scope: () => ({}) },
     heldContext: { partition: () => 'test', scope: () => ({}) },
@@ -63,10 +77,16 @@ const session = {
     fetch: vi.fn(),
     fetchHeld: vi.fn(),
   },
-  canStar: ref(true),
+  canStar,
   isStarred: ref(false),
-  setStarred: vi.fn(async () => {}),
-}
+  setStarred,
+})
+
+const router = () =>
+  createRouter({
+    history: createMemoryHistory(),
+    routes: [{ path: '/:path(.*)*', component: { render: () => null } }],
+  })
 
 let host: HTMLElement | null = null
 let unmount = () => {}
@@ -93,7 +113,7 @@ function mountMenu(
       ...lock,
     }),
   )
-  app.mount(host)
+  app.use(router()).mount(host)
   unmount = () => app.unmount()
   return [...host.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent)
 }
@@ -118,8 +138,8 @@ afterEach(() => {
   unmount()
   host?.remove()
   host = null
-  session.canStar.value = true
-  session.setStarred.mockClear()
+  canStar.value = true
+  setStarred.mockClear()
 })
 
 describe('Writer document menu', () => {
@@ -145,19 +165,14 @@ describe('Writer document menu', () => {
     }
   })
 
-  it('offers a reader Copy link, Star and the downloads, but not Import DOCX', () => {
-    expect(mountMenu(false)).toEqual([
-      'Copy link',
-      'Star',
-      'Download as DOCX',
-      'Download as Markdown',
-    ])
+  it('offers a reader Copy link, Star and the exports, but not Import DOCX', () => {
+    expect(mountMenu(false)).toEqual(['Copy link', 'Star', 'Export as DOCX', 'Export as Markdown'])
   })
 
   it('offers an editor Import DOCX as well', () => {
     expect(mountMenu(true).slice(-3)).toEqual([
-      'Download as DOCX',
-      'Download as Markdown',
+      'Export as DOCX',
+      'Export as Markdown',
       'Import DOCX',
     ])
   })
@@ -165,7 +180,7 @@ describe('Writer document menu', () => {
   it('stars the document from the menu', () => {
     mountMenu(false)
     pick('Star')
-    expect(session.setStarred).toHaveBeenCalledExactlyOnceWith(true)
+    expect(setStarred).toHaveBeenCalledExactlyOnceWith(true)
   })
 
   it('copies the address of the page from the menu', async () => {
@@ -177,8 +192,8 @@ describe('Writer document menu', () => {
   })
 
   it('offers no Star to someone who cannot keep one, and still the link', () => {
-    session.canStar.value = false
-    expect(mountMenu(false)).toEqual(['Copy link', 'Download as DOCX', 'Download as Markdown'])
+    canStar.value = false
+    expect(mountMenu(false)).toEqual(['Copy link', 'Export as DOCX', 'Export as Markdown'])
   })
 
   it('offers Save version after Star to someone who can save one, and picking it asks for a name', () => {
@@ -188,14 +203,7 @@ describe('Writer document menu', () => {
     pickSaveVersion()
 
     expect([items, onSaveVersion.mock.calls.length]).toEqual([
-      [
-        'Copy link',
-        'Star',
-        'Save version',
-        'Download as DOCX',
-        'Download as Markdown',
-        'Import DOCX',
-      ],
+      ['Copy link', 'Star', 'Save version', 'Export as DOCX', 'Export as Markdown', 'Import DOCX'],
       1,
     ])
   })
@@ -243,7 +251,7 @@ describe('the side panels in the menu', () => {
         onTogglePanel: (panel: string) => toggled.push(panel),
       }),
     )
-    app.mount(host)
+    app.use(router()).mount(host)
     unmount = () => app.unmount()
     return { toggled, items: [...host.querySelectorAll<HTMLElement>('[role="menuitem"]')] }
   }

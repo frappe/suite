@@ -4,6 +4,7 @@ import { computed, nextTick, ref, shallowRef, watch } from 'vue'
 
 import {
   DriveDocumentHeader,
+  DriveDocumentMenu,
   driveNodeRoute,
   type DocumentPanel,
   type DocumentSession,
@@ -19,7 +20,6 @@ import { useDocumentLeaveGuard, type DocumentSaveState } from './navigation'
 import type { CellAnchor, SheetVersion } from './records'
 import { clearRecovery, downloadRecovery, keepRecovery, readRecovery } from './recovery'
 import SheetCommentsPanel from './SheetCommentsPanel.vue'
-import SheetDocumentMenu from './SheetDocumentMenu.vue'
 import SheetVersionBar from './SheetVersionBar.vue'
 import SheetVersionsPanel from './SheetVersionsPanel.vue'
 import {
@@ -379,7 +379,7 @@ useDocumentLeaveGuard({
           status: EditorStatus,
           menus: EditorMenus,
           actions: EditorActions,
-          fileOptions,
+          menuItems,
         }"
       >
         <DriveDocumentHeader
@@ -398,11 +398,12 @@ useDocumentLeaveGuard({
             <component :is="EditorActions" />
           </template>
           <template #menu>
-            <SheetDocumentMenu
+            <DriveDocumentMenu
               :session="session"
               :panels="session.panels.value"
               :panel="panel"
-              :file-options="fileOptions"
+              :own="menuItems.own"
+              :transfer="menuItems.transfer"
               @toggle-panel="togglePanel"
             />
           </template>

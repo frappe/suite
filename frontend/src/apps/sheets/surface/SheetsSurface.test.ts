@@ -29,9 +29,7 @@ vi.mock('@/apps/drive', () => ({
           slots.menu?.(),
         ]),
   }),
-}))
-vi.mock('./SheetDocumentMenu.vue', () => ({
-  default: defineComponent({
+  DriveDocumentMenu: defineComponent({
     props: { panels: { type: Array, default: () => [] } },
     emits: ['togglePanel'],
     setup: (props, { emit }) => {
@@ -113,7 +111,10 @@ vi.mock('@/apps/sheets/components/SheetEditor/index.vue', () => ({
         closeNotes: () => {},
       })
       const menus = () => (props.openComments ? h('button', { 'data-comment-menu': '' }) : null)
-      return () => [slots.header?.({ menus }), slots['side-panel']?.()]
+      return () => [
+        slots.header?.({ menus, menuItems: { own: [], transfer: [] } }),
+        slots['side-panel']?.(),
+      ]
     },
   }),
 }))
