@@ -326,7 +326,8 @@ async function duplicateDocument(
     await router.push(driveNodeRoute(await session.copy(folder.name)))
   } catch (error) {
     toast.error(
-      (error instanceof TransportError && error.message) || __('Could not make a copy of this file'),
+      (error instanceof TransportError && error.message) ||
+        __('Could not make a copy of this file'),
     )
   }
 }
