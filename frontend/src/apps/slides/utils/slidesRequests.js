@@ -54,13 +54,18 @@ export function shellKey(pathname) {
 // only the node read and its media list, as documentSessionUrls names them
 const PINNED_DRIVE_READ = /^\/api\/suite\/drive\/nodes\/[^/]+(\/media)?$/
 
-// what a pin may hold: a node's page, its Drive reads, slides' reads and the bundle
+// what a pin may hold: a node's page, its Drive reads, its pictures, slides' reads and the bundle
 export function isPinnable(request, url) {
   if (request.mode === 'navigate') {
     return shellKey(url.pathname) !== null
   }
 
-  return PINNED_DRIVE_READ.test(url.pathname) || isAPI(url) || isBundleAsset(url)
+  return (
+    PINNED_DRIVE_READ.test(url.pathname) ||
+    url.pathname.startsWith('/private/files/') ||
+    isAPI(url) ||
+    isBundleAsset(url)
+  )
 }
 
 export const getRequestType = (request, clientState) => {

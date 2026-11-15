@@ -145,8 +145,8 @@ describe('a signed picture the page stored', () => {
     expect(await response.text()).toBe('stored')
   })
 
-  it('stays out of the way online', () => {
-    expect(respond(SIGNED)).toBeNull()
+  it('stays out of the way online', async () => {
+    expect(await (await respond(SIGNED)).text()).toBe('network')
   })
 
   it('fails offline when nothing was stored', async () => {
@@ -426,6 +426,33 @@ describe('a pinned presentation offline', () => {
         expect([node!.status, presentation!.status]).toEqual([status, status])
       },
     )
+
+    describe('a picture', () => {
+      const SIGNED_PICTURE = '/private/files/a.png?e=1700000000&s=abc'
+
+      it('comes from the pin under its signed url', async () => {
+        expect(await (await dispatch(get(SIGNED_PICTURE)))!.text()).toBe('picture')
+      })
+
+      it('fails like the network for a file with nothing pinned', async () => {
+        await expect(dispatch(get('/private/files/b.png?e=1700000000&s=abc'))).rejects.toThrow(
+          'Failed to fetch',
+        )
+      })
+
+      it("gives the page the server's 403, never the pin", async () => {
+        vi.stubGlobal('fetch', async () => new Response('refused', { status: 403 }))
+
+        expect((await dispatch(get(SIGNED_PICTURE)))!.status).toBe(403)
+      })
+
+      it('comes from the network while it answers, pinned or not', async () => {
+        networkFails = false
+
+        expect(await (await dispatch(get(SIGNED_PICTURE)))!.text()).toBe('network')
+        expect(await (await dispatch(get('/private/files/w.png?e=1&s=x')))!.text()).toBe('network')
+      })
+    })
 
     it('leaves the rest of the suite to the network', () => {
       expect(dispatch(navigation('/drive/home'))).toBeNull()
