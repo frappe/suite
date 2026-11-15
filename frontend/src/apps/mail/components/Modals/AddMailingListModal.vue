@@ -23,7 +23,7 @@
           username-placeholder="announce"
           :description="__('Mail sent to this address goes to every recipient on the list.')"
         />
-        <FormControl v-model="description" :label="__('Description')" type="textarea" />
+        <FormControl v-model="description" :label="__('Description')" />
         <FormControl
           v-model="recipients"
           :label="__('Recipients')"
