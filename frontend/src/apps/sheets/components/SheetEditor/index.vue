@@ -93,13 +93,15 @@
       </DefineTopbarActions>
 
       <!-- On /d/ the surface draws the Drive document header: title and Share.
-         The editor fills its status, menus and actions. -->
+         The editor fills its status, menus and actions, and hands over the
+         export and import items for the header's own menu. -->
       <slot
         name="header"
         :view-only="readOnly"
         :status="ReuseTopbarStatus"
         :menus="ReuseTopbarMenus"
         :actions="ReuseTopbarActions"
+        :file-options="fileDropdownOptions"
       />
 
       <!-- Row 2 · the tools (SheetToolbar.vue) -->
@@ -406,6 +408,7 @@
         :tab-drag-name="tabDragName"
         :peers-by-sub-sheet="peersBySubSheet"
         :selection-stats="selectionStats"
+        :rename-sheet="renameSheetInPlace"
         @add-sheet="addSheet"
         @drag-start="onTabDragStart"
         @drag-end="onTabDragEnd"
@@ -413,7 +416,6 @@
         @tab-drop="onTabDrop"
         @tab-mousedown="onTabMousedown"
         @tab-click="onTabClick"
-        :rename-sheet="renameSheetInPlace"
         @rename-end="_refocusGridAfterDialog"
         @tab-menu="_onTabMenu"
       />
@@ -1999,7 +2001,6 @@ function _clearContents() {
 const menuBar = computed(() =>
   buildMenuBar({
     readOnly: readOnly.value,
-    fileOptions: fileDropdownOptions.value,
     undo,
     redo,
     canUndo: canUndo.value,

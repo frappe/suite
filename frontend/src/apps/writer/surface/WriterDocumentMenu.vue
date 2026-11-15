@@ -4,7 +4,9 @@ import { Button, Dropdown, type DropdownOptions } from 'frappe-ui'
 import { computed, ref } from 'vue'
 
 import {
+  copyLinkAction,
   PANEL_BUTTONS,
+  starAction,
   waitForFocusBack,
   type DocumentPanel,
   type DocumentSession,
@@ -22,7 +24,10 @@ import { downloadDocx, downloadMarkdown, exportHTML, type ExportScope } from './
  * of them.
  */
 const props = defineProps<{
-  session: Pick<DocumentSession, 'nodeId' | 'title' | 'credentials'>
+  session: Pick<
+    DocumentSession,
+    'nodeId' | 'title' | 'credentials' | 'canStar' | 'isStarred' | 'setStarred'
+  >
   editor: Editor | null
   settings: Record<string, unknown>
   /** The person may change the body. Importing needs it. */
@@ -105,6 +110,8 @@ function documentOptions() {
     onClick: () => emit('setLocked', !isLocked),
   }
   return [
+    copyLinkAction(),
+    ...starAction(props.session),
     ...(props.canSaveVersion
       ? [{ label: __('Save version'), icon: 'lucide-bookmark', onClick: pickVersion }]
       : []),

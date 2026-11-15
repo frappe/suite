@@ -49,7 +49,9 @@ vi.mock('frappe-ui', () => {
     }),
   }
 })
-vi.mock('@/platform/feedback', () => ({ toast: { error: vi.fn() } }))
+vi.mock('@/platform/feedback', () => ({
+  toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() },
+}))
 
 const session = {
   nodeId: 'doc-1',
@@ -61,6 +63,9 @@ const session = {
     fetch: vi.fn(),
     fetchHeld: vi.fn(),
   },
+  canStar: ref(true),
+  isStarred: ref(false),
+  setStarred: vi.fn(async () => {}),
 }
 
 let host: HTMLElement | null = null
@@ -98,9 +103,14 @@ function focusMenuButton() {
   host!.querySelector('button')!.dispatchEvent(new FocusEvent('focus'))
 }
 
+function pick(label: string) {
+  const items = [...host!.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+  items.find((item) => item.textContent === label)!.click()
+}
+
 // Picks Save version, and the menu closes, handing focus back to its button
 function pickSaveVersion() {
-  host!.querySelector<HTMLElement>('[role="menuitem"]')!.click()
+  pick('Save version')
   focusMenuButton()
 }
 
@@ -108,6 +118,8 @@ afterEach(() => {
   unmount()
   host?.remove()
   host = null
+  session.canStar.value = true
+  session.setStarred.mockClear()
 })
 
 describe('Writer document menu', () => {
@@ -125,8 +137,7 @@ describe('Writer document menu', () => {
         label,
       )
 
-      const items = [...host!.querySelectorAll<HTMLElement>('[role="menuitem"]')]
-      items.find((item) => item.textContent === label)!.click()
+      pick(label)
 
       expect(onSetLocked).toHaveBeenCalledExactlyOnceWith(!isLocked)
       unmount()
@@ -134,22 +145,57 @@ describe('Writer document menu', () => {
     }
   })
 
-  it('offers a reader the downloads but not Import DOCX', () => {
-    expect(mountMenu(false)).toEqual(['Download as DOCX', 'Download as Markdown'])
+  it('offers a reader Copy link, Star and the downloads, but not Import DOCX', () => {
+    expect(mountMenu(false)).toEqual([
+      'Copy link',
+      'Star',
+      'Download as DOCX',
+      'Download as Markdown',
+    ])
   })
 
   it('offers an editor Import DOCX as well', () => {
-    expect(mountMenu(true)).toEqual(['Download as DOCX', 'Download as Markdown', 'Import DOCX'])
+    expect(mountMenu(true).slice(-3)).toEqual([
+      'Download as DOCX',
+      'Download as Markdown',
+      'Import DOCX',
+    ])
   })
 
-  it('offers Save version first to someone who can save one, and picking it asks for a name', () => {
+  it('stars the document from the menu', () => {
+    mountMenu(false)
+    pick('Star')
+    expect(session.setStarred).toHaveBeenCalledExactlyOnceWith(true)
+  })
+
+  it('copies the address of the page from the menu', async () => {
+    const writeText = vi.fn(async () => {})
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    mountMenu(false)
+    pick('Copy link')
+    await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith(window.location.href))
+  })
+
+  it('offers no Star to someone who cannot keep one, and still the link', () => {
+    session.canStar.value = false
+    expect(mountMenu(false)).toEqual(['Copy link', 'Download as DOCX', 'Download as Markdown'])
+  })
+
+  it('offers Save version after Star to someone who can save one, and picking it asks for a name', () => {
     const onSaveVersion = vi.fn()
 
     const items = mountMenu(true, true, onSaveVersion)
     pickSaveVersion()
 
     expect([items, onSaveVersion.mock.calls.length]).toEqual([
-      ['Save version', 'Download as DOCX', 'Download as Markdown', 'Import DOCX'],
+      [
+        'Copy link',
+        'Star',
+        'Save version',
+        'Download as DOCX',
+        'Download as Markdown',
+        'Import DOCX',
+      ],
       1,
     ])
   })
@@ -159,7 +205,7 @@ describe('Writer document menu', () => {
     mountMenu(true, true, onSaveVersion)
 
     focusMenuButton()
-    host!.querySelector<HTMLElement>('[role="menuitem"]')!.click()
+    pick('Save version')
     const beforeFocusBack = onSaveVersion.mock.calls.length
     focusMenuButton()
     focusMenuButton()
@@ -171,7 +217,7 @@ describe('Writer document menu', () => {
     const onSaveVersion = vi.fn()
     mountMenu(true, true, onSaveVersion)
 
-    host!.querySelector<HTMLElement>('[role="menuitem"]')!.click()
+    pick('Save version')
     document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }))
     focusMenuButton()
 

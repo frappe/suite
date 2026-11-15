@@ -17,6 +17,7 @@ import { openDriveDocumentSession, type DocumentSession } from '@/apps/drive/cli
 import { DRIVE_ROLES, type DriveBreadcrumb, type DriveNode } from '@/apps/drive/client/types'
 import { announceTrash } from '@/apps/drive/files/features/changeToast'
 import { presentDialog, rememberDialogContext } from '@/apps/drive/files/features/dialogHost'
+import { openingFileState } from '@/apps/drive/files/features/document/openingLocation'
 import { nodeActions, type ActionNode } from '@/apps/drive/files/features/nodeActions'
 import { observePreviewRefresh } from '@/apps/drive/files/features/previewRefresh'
 import { preloadShareDialog, readShare } from '@/apps/drive/files/features/share/opening'
@@ -228,7 +229,9 @@ export function driveNodeRoute(
   const base = `${prefix}/${address}`
   // The history entry carries the title, so the tab names the node before
   // its page loads.
-  return { path: `${base}${slug ? `/${slug}` : ''}`, state: openingTitleState(label) }
+  const state = openingTitleState(label)
+  if (nodeKind === 'file') Object.assign(state, openingFileState())
+  return { path: `${base}${slug ? `/${slug}` : ''}`, state }
 }
 
 /** Drive's nodes by name, for the command palette on pages with no search of their own. */
@@ -398,12 +401,12 @@ export const DriveUnlockScreen = defineAsyncComponent(
 const loadDocumentHeader = () => import('@/apps/drive/files/features/document/DocumentHeader.vue')
 
 /**
- * The header every document surface shows: type icon, title, save status, the
- * surface's actions, side-panel toggles and Share. Pass `session`, `title-label`,
- * and optionally `save-state`, `view-only`, `recoverable` with
- * `@download-changes`, `panels` with `v-model:panel`, `location`, and `mime`
- * for a file. Slots: `status` (after the badges) and `actions` (before the
- * panel toggles). Exposes `focusTitle()` and `focusPanelToggle(name)`.
+ * The header every document surface shows: the way back, type icon, title,
+ * save status, the surface's actions, Share and a menu. Pass `session`,
+ * `title-label`, and optionally `save-state`, `view-only`, `recoverable` with
+ * `@download-changes`, `location`, and `mime` for a file. Slots: `status`
+ * (after the badge), `actions` (before Share), `menu` and `primary`. Exposes
+ * `focusTitle()`.
  */
 export const DriveDocumentHeader = defineAsyncComponent(loadDocumentHeader)
 
@@ -418,9 +421,13 @@ export const DriveListSkeletonRows = defineAsyncComponent(
 
 /** The document header's shape while a document opens. Shows `title` and `location` when they are known. */
 export { default as DriveDocumentHeaderSkeleton } from '@/apps/drive/files/features/document/DocumentHeaderSkeleton.vue'
-export { openingLocation } from '@/apps/drive/files/features/document/openingLocation'
+export { openingLocation, opensFile } from '@/apps/drive/files/features/document/openingLocation'
 
-export { PANEL_BUTTONS } from '@/apps/drive/files/features/document/header'
+export {
+  copyLinkAction,
+  PANEL_BUTTONS,
+  starAction,
+} from '@/apps/drive/files/features/document/header'
 export type { DocumentPanel } from '@/apps/drive/client/types'
 export type { DocumentSaveState } from '@/apps/drive/files/features/document/header'
 /** A version's images that are binned or deleted: which ones, how to bring them back, and what to say. */

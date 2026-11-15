@@ -21,12 +21,15 @@ import '@/apps/slides/styles/scrollbars.css'
 
 import { api, client } from '@/api'
 import {
+  copyLinkAction,
   DriveDocumentSidePanel as DocumentSidePanel,
   DriveDocumentHeader,
   fetchVersion,
   imagesNotice,
   missingImages,
+  PANEL_BUTTONS,
   restoreImages,
+  starAction,
   useDocumentComments,
   useDriveDocumentActions,
   DriveVersionShownBar as VersionShownBar,
@@ -377,11 +380,33 @@ watch([showThemeDialog, showThemeChange], (opened) => {
 const driveActions = useDriveDocumentActions(props.session)
 // Save version goes once the closing menu has handed focus back to its button
 const menuFocusBack = waitForFocusBack()
+const offlineCopy = ref<InstanceType<typeof OfflineCopyButton> | null>(null)
 const presentationMenu = computed(() => [
+  {
+    group: '',
+    options: props.session.panels.value.map((name) => ({
+      label: translate(PANEL_BUTTONS[name].label),
+      icon: PANEL_BUTTONS[name].icon,
+      selected: panel.value === name,
+      onClick: () => showPanel(panel.value === name ? null : name),
+    })),
+  },
   { group: '', options: driveActions.value.back },
   {
     group: '',
     options: [
+      {
+        label: 'Export',
+        icon: 'lucide-file-down',
+        condition: () => !phone.value && !deckUnavailable.value,
+        onClick: exportPdf,
+      },
+      {
+        label: offlineCopy.value?.statusText ?? '',
+        icon: 'lucide-cloud-download',
+        condition: () => showsOfflineCopy.value,
+        onClick: () => offlineCopy.value?.open(),
+      },
       {
         label: translate('Save version'),
         icon: 'lucide-bookmark',
@@ -405,7 +430,10 @@ const presentationMenu = computed(() => [
       },
     ],
   },
-  { group: '', options: driveActions.value.node },
+  {
+    group: '',
+    options: [copyLinkAction(), ...starAction(props.session), ...driveActions.value.node],
+  },
 ])
 
 // The header renames through the session; the deck keeps its own copy of the title.
@@ -1031,36 +1059,22 @@ onBeforeUnmount(() => {
       :save-state="saveState"
       :view-only="!editable"
       :recoverable="canDownloadChanges"
-      :panels="session.panels.value"
-      layout="centered"
-      :panel="panel"
-      @update:panel="showPanel"
       @download-changes="downloadChanges"
     >
-      <template #icon="{ icon }">
-        <Dropdown :options="presentationMenu">
-          <Button
-            variant="ghost"
-            icon-right="lucide-chevron-down"
-            :aria-label="__('Presentation menu')"
-            @focus="menuFocusBack.focused()"
-          >
-            <span class="block size-4.5" :class="icon" aria-hidden="true" />
-          </Button>
-        </Dropdown>
-      </template>
       <template #actions>
         <UsersBar v-if="roomPeople.length" :users="roomPeople" />
-        <OfflineCopyButton v-if="showsOfflineCopy" />
-        <Button
-          icon="lucide-file-down"
-          tooltip="Export"
-          aria-label="Export"
-          variant="ghost"
-          class="max-md:hidden"
-          :disabled="deckUnavailable"
-          @click="exportPdf"
-        />
+      </template>
+      <template #menu>
+        <Dropdown :options="presentationMenu" align="end">
+          <Button
+            variant="ghost"
+            icon="lucide-ellipsis"
+            :tooltip="__('Presentation menu')"
+            :aria-label="__('Presentation menu')"
+            @focus="menuFocusBack.focused()"
+          />
+        </Dropdown>
+        <OfflineCopyButton v-if="showsOfflineCopy" ref="offlineCopy" :trigger="false" />
       </template>
       <template #primary>
         <PresentButton

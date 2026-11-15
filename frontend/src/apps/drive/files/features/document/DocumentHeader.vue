@@ -1,31 +1,20 @@
 <template>
   <header
-    ref="headerElement"
-    class="relative h-12 shrink-0 items-center gap-2 border-b border-outline-gray-1 bg-surface-base px-3 sm:px-4"
-    :class="columns"
+    class="relative flex h-12 shrink-0 items-center gap-2 border-b border-outline-gray-1 bg-surface-base px-3 pt-px"
     :data-save-state="saveState"
   >
     <!-- A centered title lifts the title group into the header, between two
       sides that grow alike; the icon and the way back stay at the start. -->
     <div class="flex min-w-0 flex-1 items-center gap-1" :class="centering.title">
       <div class="contents" :class="centering.start">
-        <template v-if="location">
-          <Button
-            class="md:hidden"
-            variant="ghost"
-            icon="lucide-chevron-left"
-            :route="location.to"
-            :aria-label="`Back to ${location.label}`"
-          />
-          <RouterLink
-            :to="location.to"
-            class="max-w-48 truncate rounded-4 px-1 text-base text-ink-gray-5 hover:text-ink-gray-8 max-md:hidden"
-            :title="location.label"
-          >
-            {{ location.label }}
-          </RouterLink>
-          <span class="text-base text-ink-gray-4 max-md:hidden" aria-hidden="true">/</span>
-        </template>
+        <Button
+          v-if="shownLocation"
+          variant="ghost"
+          icon="lucide-chevron-left"
+          :route="shownLocation.to"
+          :tooltip="`Back to ${shownLocation.label}`"
+          :aria-label="`Back to ${shownLocation.label}`"
+        />
         <slot name="icon" :icon="typeIcon">
           <span class="size-4.5 shrink-0" :class="typeIcon" aria-hidden="true" />
         </slot>
@@ -63,26 +52,17 @@
       >
         {{ titleError }}
       </span>
-      <!-- Takes up what the title leaves, so a longer title moves no badge. -->
-      <span v-if="hasCenteredMenus" class="flex-1" aria-hidden="true" />
-      <Badge v-if="trashed" label="Trashed" theme="red" variant="subtle" class="shrink-0">
-        <template #prefix><span class="lucide-trash-2 size-2.5" aria-hidden="true" /></template>
+      <Badge
+        v-if="badge"
+        :label="badge.label"
+        :theme="badge.theme"
+        variant="subtle"
+        class="shrink-0"
+      >
+        <template v-if="badge.icon" #prefix>
+          <span class="size-2.5" :class="badge.icon" aria-hidden="true" />
+        </template>
       </Badge>
-      <Badge
-        v-else-if="viewOnly"
-        label="View only"
-        theme="gray"
-        variant="subtle"
-        class="shrink-0"
-      />
-      <Badge v-if="!online" label="Offline" theme="amber" variant="subtle" class="shrink-0" />
-      <Badge
-        v-if="saveState === 'failed'"
-        :label="__('Not saved')"
-        theme="amber"
-        variant="subtle"
-        class="shrink-0"
-      />
       <template v-if="recoverable">
         <Button
           class="shrink-0 max-md:hidden"
@@ -101,41 +81,22 @@
         />
       </template>
       <slot name="status" />
-      <slot v-if="!hasCenteredMenus" name="menus" />
     </div>
 
-    <div v-if="hasCenteredMenus" class="flex items-center">
-      <slot name="menus" />
-    </div>
-
-    <div
-      class="flex items-center gap-1"
-      :class="[centering.end, hasCenteredMenus ? 'min-w-0 justify-end' : 'shrink-0']"
-    >
+    <div class="flex shrink-0 items-center gap-1" :class="centering.end">
       <DocumentEditedNote v-if="shownNote" class="mr-1" v-bind="note" />
       <slot name="actions" />
-      <Button
-        v-for="name in panels"
-        :key="name"
-        :variant="panel === name ? 'subtle' : 'ghost'"
-        :icon="PANEL_BUTTONS[name].icon"
-        :tooltip="PANEL_BUTTONS[name].label"
-        :aria-label="PANEL_BUTTONS[name].label"
-        :aria-pressed="panel === name"
-        :data-panel="name"
-        @click="panel = panel === name ? null : name"
-      />
-      <!-- Beside a surface's own primary action, Share is an icon on every width. -->
+      <!-- Share shows its icon and the word from `md` up, and the icon alone below it. -->
       <template v-if="session.canShare.value">
         <Button
-          v-if="showsShareLabel()"
           class="max-md:hidden"
           variant="ghost"
+          icon-left="lucide-share-2"
           label="Share"
           @click="session.share()"
         />
         <Button
-          :class="shareIconClass()"
+          class="md:hidden"
           variant="ghost"
           icon="lucide-share-2"
           tooltip="Share"
@@ -143,29 +104,16 @@
           @click="session.share()"
         />
       </template>
-      <Button
-        class="max-md:hidden"
-        variant="ghost"
-        icon="lucide-link"
-        :tooltip="__('Copy link')"
-        :aria-label="__('Copy link')"
-        @click="copyLink(pageAddress())"
-      />
-      <Button
-        v-if="session.canStar.value"
-        class="max-md:hidden"
-        variant="ghost"
-        :tooltip="session.isStarred.value ? __('Unstar') : __('Star')"
-        :aria-label="session.isStarred.value ? __('Unstar') : __('Star')"
-        :aria-pressed="session.isStarred.value"
-        @click="session.setStarred(!session.isStarred.value)"
-      >
-        <template #icon>
-          <StarredIcon v-if="session.isStarred.value" class="size-4" />
-          <span v-else class="lucide-star size-4" aria-hidden="true" />
-        </template>
-      </Button>
-      <slot name="menu" />
+      <slot name="menu">
+        <Dropdown :options="ownMenu" align="end">
+          <Button
+            variant="ghost"
+            icon="lucide-ellipsis"
+            :tooltip="__('More actions')"
+            :aria-label="__('More actions')"
+          />
+        </Dropdown>
+      </slot>
       <div v-if="$slots.primary" class="ml-1 flex">
         <slot name="primary" />
       </div>
@@ -175,28 +123,28 @@
 
 <script setup lang="ts">
 import { useNow, useOnline } from '@vueuse/core'
-import { Badge, Button, TextInput } from 'frappe-ui'
-import { computed, ref, shallowRef, useSlots, watch } from 'vue'
+import { Badge, Button, Dropdown, TextInput } from 'frappe-ui'
+import { computed, ref, shallowRef, watch } from 'vue'
 import type { RouteLocationRaw } from 'vue-router'
 
+import { driveNodeRoute } from '@/apps/drive'
 import type { DocumentSession } from '@/apps/drive/client/session'
-import type { DocumentPanel } from '@/apps/drive/client/types'
 import { selectStem } from '@/apps/drive/files/internal/filename'
-import StarredIcon from '@/apps/drive/files/internal/StarredIcon.vue'
+import { useLocationTitle } from '@/apps/drive/files/internal/locations'
+import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 import { TransportError } from '@/platform/transport'
 
 import { canRename } from '../nodeActions'
-import { copyLink } from '../share/shareFormat'
 import DocumentEditedNote from './DocumentEditedNote.vue'
 import { editedDetails, editedLabel } from './editedLabel'
-import { documentTypeIcon, PANEL_BUTTONS, type DocumentSaveState } from './header'
+import { copyLinkAction, documentTypeIcon, starAction, type DocumentSaveState } from './header'
 
 /**
  * The one header every document surface shows: the Drive type icon, the title
  * (renamed in place), state badges, the recovery download, when it was last edited, the surface's
- * own actions, the side-panel toggles, Share, Copy link, Star, the surface's menu, then its primary
- * action, always in that order.
+ * own actions, Share, the surface's menu, then its primary action, always in that
+ * order.
  */
 const props = withDefaults(
   defineProps<{
@@ -211,37 +159,32 @@ const props = withDefaults(
     viewOnly?: boolean
     /** A copy of edits that could not be saved is kept on this device. */
     recoverable?: boolean
-    /** The side panels this surface has, in toggle order. */
-    panels?: readonly DocumentPanel[]
-    /** The folder the document is in, shown as a way back. */
+    /** The surface's own state, such as "Locked". It shows in place of View only. */
+    stateBadge?: string
+    /**
+     * The folder the back arrow leads to. Left out, it is the document's own
+     * folder; `null` shows no arrow.
+     */
     location?: { label: string; to: RouteLocationRaw } | null
     /** A file's MIME type picks its icon. Documents have none. */
     mime?: string | null
-    /**
-     * `centered` centers the title across the header on wide screens. `menus`
-     * is for a surface with its own menu bar (the `menus` slot): the menus sit
-     * in the middle of the header, and a long title can move nothing else.
-     */
-    layout?: 'default' | 'centered' | 'menus'
+    /** `centered` centers the title across the header on wide screens. */
+    layout?: 'default' | 'centered'
   }>(),
   {
     saveState: null,
     saveNote: '',
     viewOnly: false,
     recoverable: false,
-    panels: () => [],
-    location: null,
+    stateBadge: '',
     mime: null,
     layout: 'default',
   },
 )
 
 const emit = defineEmits<{ downloadChanges: [] }>()
-const panel = defineModel<DocumentPanel | null>('panel', { default: null })
 
-const slots = useSlots()
 const online = useOnline()
-const headerElement = ref<HTMLElement | null>(null)
 const titleInput = ref<InstanceType<typeof TextInput> | null>(null)
 const titleDraft = ref(props.session.title.value)
 /** A centered title sits between two sides that grow alike. */
@@ -251,13 +194,6 @@ const CENTERED = {
   end: 'md:flex-1 md:justify-end',
 }
 const UNCENTERED = { title: '', start: '', end: '' }
-const hasCenteredMenus = computed(() => props.layout === 'menus')
-// Two sides of one width keep the menus centered; below `lg` they cannot both fit.
-const columns = computed(() =>
-  hasCenteredMenus.value
-    ? 'grid grid-cols-[minmax(0,1fr)_auto_auto] lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]'
-    : 'flex',
-)
 // Starts from the server, then follows this tab's edits. Someone else's show at the next open.
 const editedHere = shallowRef<Date | null>(null)
 watch(
@@ -284,10 +220,9 @@ const noteDetails = computed(() => {
 // A note about saving shows on every width and is announced; the time edited shows on wide screens only
 const note = computed(() => ({
   class: [
-    'whitespace-nowrap text-sm text-ink-gray-5',
+    // Half a pixel down puts the smaller text on the title's baseline
+    'relative top-[0.5px] whitespace-nowrap text-sm text-ink-gray-5',
     props.saveNote ? '' : 'max-md:hidden',
-    // Beside centered menus it gives up its room first, so the buttons stay whole.
-    hasCenteredMenus.value ? 'min-w-0 truncate' : '',
   ],
   'aria-live': props.saveNote ? 'polite' : 'off',
   text: shownNote.value,
@@ -295,24 +230,37 @@ const note = computed(() => ({
 }))
 const centering = computed(() => (props.layout === 'centered' ? CENTERED : UNCENTERED))
 const trashed = computed(() => props.session.state.value === 'Trashed')
+// One badge at most: the first state that holds, in this order
+const badge = computed(() => {
+  if (trashed.value) return { label: 'Trashed', theme: 'red', icon: 'lucide-trash-2' } as const
+  if (props.saveState === 'failed') return { label: __('Not saved'), theme: 'amber' } as const
+  if (!online.value) return { label: 'Offline', theme: 'amber' } as const
+  if (props.stateBadge) return { label: props.stateBadge, theme: 'gray' } as const
+  if (props.viewOnly) return { label: 'View only', theme: 'gray' } as const
+  return null
+})
+// A surface with no menu of its own still offers Copy link and Star
+const ownMenu = computed(() => [copyLinkAction(), ...starAction(props.session)])
+const account = useSession()
+const locationTitle = useLocationTitle()
+// With no folder to read a signed-in person goes back to Drive, and a guest has no way back
+const shownLocation = computed(() => {
+  if (props.location !== undefined) return props.location
+  const folder = props.session.folder.value
+  if (folder) {
+    const label = locationTitle(folder)
+    return { label, to: driveNodeRoute(folder.name, label, 'folder') }
+  }
+  return account.status.value === 'authenticated'
+    ? { label: 'Drive', to: { path: '/drive' } }
+    : null
+})
 const renamable = computed(() =>
   canRename({ state: props.session.state.value, access: props.session.access.value }),
 )
 const typeIcon = computed(() =>
   documentTypeIcon(props.session.contentDoctype, props.session.title.value, props.mime),
 )
-// read on every render: slots are not reactive
-function showsShareLabel() {
-  return !slots.primary
-}
-
-function shareIconClass() {
-  return slots.primary ? '' : 'md:hidden'
-}
-
-function pageAddress() {
-  return window.location.pathname + window.location.search
-}
 
 /** A refused rename, shown beside the title until the title changes. */
 const titleError = ref<string>()
@@ -424,10 +372,6 @@ defineExpose({
     take()
     document.addEventListener('focusin', take, { once: true })
     setTimeout(() => document.removeEventListener('focusin', take), 250)
-  },
-  /** Focuses a side panel's toggle, for a panel closed from inside itself. */
-  focusPanelToggle(name: DocumentPanel) {
-    headerElement.value?.querySelector<HTMLElement>('[data-panel="' + name + '"]')?.focus()
   },
 })
 </script>

@@ -1,9 +1,9 @@
 <template>
-  <!-- File, Edit, View, Insert, Format, Data: every action that has no button
+  <!-- Edit, View, Insert, Format, Data: every action that has no button
   in the toolbar, labelled in words. -->
   <nav ref="nav" class="sn-menubar" :aria-label="__('Spreadsheet menus')">
-    <!-- A narrow header folds the six into one menu, each a submenu. A container
-    query on the header swaps the two bars, so nothing moves on load. They are
+    <!-- A narrow row folds the five into one menu, each a submenu. A container
+    query on the row swaps the two bars, so nothing moves on load. They are
     separate bars so the arrow keys never land on the hidden one. -->
     <MenubarRoot v-for="bar in bars" :key="bar.class" v-model="openMenu" loop :class="bar.class">
       <MenubarMenu v-for="menu in bar.menus" :key="menu.key" :value="menu.key">
@@ -184,7 +184,7 @@ const primitives = {
 .sn-menubar-narrow {
   display: none;
 }
-/* The Drive header on /d/ (SheetsSurface.vue) is the `sn-topbar` container. */
+/* The menu row on /d/ (SheetsSurface.vue) is an `sn-topbar` container. */
 @container sn-topbar (max-width: 640px) {
   .sn-menubar-wide {
     display: none;

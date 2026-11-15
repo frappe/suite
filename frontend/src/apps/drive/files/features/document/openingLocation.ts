@@ -16,3 +16,15 @@ export function openingLocation(state: HistoryState): string | null {
   const label = state[OPENING_LOCATION]
   return typeof label === 'string' && label ? label : null
 }
+
+const OPENING_FILE = 'driveFile'
+
+/** History state that says the entry opens a file's preview, which keeps the rail while it opens. */
+export function openingFileState(): HistoryState {
+  return { [OPENING_FILE]: true }
+}
+
+/** Whether an entry's opener marked it a file's preview through `openingFileState`. */
+export function opensFile(state: HistoryState): boolean {
+  return state[OPENING_FILE] === true
+}

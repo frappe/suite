@@ -266,23 +266,20 @@ vi.mock('@/apps/drive', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   documentSessionUrls: () => [],
   DriveDocumentHeader: {
-    props: { recoverable: Boolean, panels: { type: Array, default: () => [] } },
-    emits: ['download-changes', 'update:panel'],
+    props: { recoverable: Boolean },
+    emits: ['download-changes'],
     setup:
-      (props: { recoverable: boolean; panels: string[] }, { slots, emit }: SetupContext) =>
+      (props: { recoverable: boolean }, { slots, emit }: SetupContext) =>
       () =>
         h('header', [
-          h('output', { 'data-panels': '' }, props.panels.join()),
           slots.actions?.(),
+          slots.menu?.(),
           slots.primary?.(),
-          slots.icon?.({ icon: '' }),
           h('button', {
             'data-download-changes': '',
             hidden: !props.recoverable,
             onClick: () => emit('download-changes'),
           }),
-          h('button', { 'data-versions': '', onClick: () => emit('update:panel', 'versions') }),
-          h('button', { 'data-comments': '', onClick: () => emit('update:panel', 'comments') }),
         ]),
   },
   DriveDocumentSidePanel: {
@@ -396,8 +393,14 @@ vi.doMock('@/apps/slides/components/ThemeDialog.vue', () => ({
   },
 }))
 
+// The copy's dialog, which names its own item in the presentation menu
 vi.doMock('@/apps/slides/components/OfflineCopyButton.vue', () => ({
-  default: { render: () => h('button', { 'data-offline-copy': '' }) },
+  default: {
+    setup(_: unknown, { expose }: SetupContext) {
+      expose({ statusText: 'Save offline copy', open: () => {} })
+      return () => null
+    },
+  },
 }))
 
 vi.doMock('@/apps/slides/pages/Slideshow.vue', () => ({
@@ -439,6 +442,9 @@ function session(
       contentUrl: (seq: string) => `/versions/${seq}`,
     },
     canShare: ref(false),
+    canStar: ref(true),
+    isStarred: ref(false),
+    setStarred: async () => {},
     comments: {
       list: async () => {
         driveComments.reads += 1

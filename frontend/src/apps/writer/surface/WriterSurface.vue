@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Editor } from '@tiptap/core'
-import { Badge, Button, dialog, toast } from 'frappe-ui'
+import { Button, dialog, toast } from 'frappe-ui'
 import {
   computed,
   nextTick,
@@ -323,6 +323,12 @@ const showEditingPaused = computed(
 
 // Someone who can unlock it isn't only viewing
 const showLocked = computed(() => canEdit.value && isDocumentLocked.value)
+
+// The header shows one badge; paused comes before locked
+const stateBadge = computed(() => {
+  if (showEditingPaused.value) return 'Editing paused'
+  return showLocked.value ? __('Locked') : ''
+})
 
 const headerSaveState = computed(() => (hasFailedToOpen.value ? null : saveState.value))
 
@@ -753,23 +759,8 @@ onBeforeUnmount(() => {
       :save-state="headerSaveState"
       :save-note="saveNote"
       :view-only="isViewOnly"
+      :state-badge="stateBadge"
     >
-      <template #status>
-        <Badge
-          v-if="showEditingPaused"
-          label="Editing paused"
-          theme="gray"
-          variant="subtle"
-          class="shrink-0"
-        />
-        <Badge
-          v-else-if="showLocked"
-          :label="__('Locked')"
-          theme="gray"
-          variant="subtle"
-          class="shrink-0"
-        />
-      </template>
       <template #actions>
         <UsersBar v-if="peers.length" :users="peers" />
       </template>

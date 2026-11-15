@@ -374,7 +374,13 @@ useDocumentLeaveGuard({
       @notes-opened="panel = null"
     >
       <template
-        #header="{ viewOnly, status: EditorStatus, menus: EditorMenus, actions: EditorActions }"
+        #header="{
+          viewOnly,
+          status: EditorStatus,
+          menus: EditorMenus,
+          actions: EditorActions,
+          fileOptions,
+        }"
       >
         <DriveDocumentHeader
           class="sheets-header"
@@ -383,27 +389,27 @@ useDocumentLeaveGuard({
           :save-state="editor?.saveState ?? null"
           :view-only="viewOnly"
           :recoverable="hasRecovery"
-          layout="menus"
           @download-changes="downloadChanges"
         >
           <template #status>
             <component :is="EditorStatus" />
-          </template>
-          <template #menus>
-            <component :is="EditorMenus" />
           </template>
           <template #actions>
             <component :is="EditorActions" />
           </template>
           <template #menu>
             <SheetDocumentMenu
-              v-if="session.panels.value.length"
+              :session="session"
               :panels="session.panels.value"
               :panel="panel"
+              :file-options="fileOptions"
               @toggle-panel="togglePanel"
             />
           </template>
         </DriveDocumentHeader>
+        <div class="sheets-menus">
+          <component :is="EditorMenus" />
+        </div>
       </template>
 
       <template v-if="preview" #banner>
@@ -455,24 +461,37 @@ useDocumentLeaveGuard({
   min-height: 0;
 }
 
-/* The editor's menu bar answers to the `sn-topbar` container: below 640 px
-   its six menus fold into one. */
-.sheets-header {
+/* The editor's status chips and menu bar answer to the `sn-topbar` container:
+   below 640 px the five menus fold into one. */
+.sheets-header,
+.sheets-menus {
   container: sn-topbar / inline-size;
   /* The bars' colours live on the editor root (SheetEditor.css --sn-bar-*). */
   background: var(--sn-bar-bg);
+}
+.sheets-header {
   border-bottom-color: var(--sn-bar-line);
   position: relative;
   z-index: 10;
 }
-/* Hover and "on" fills follow the bar colours, as in row 2; solid buttons
-   keep their own. Only a panel toggle (`data-panel`) shows the "on" fill:
-   the Star is pressed while the file is starred, and, as in Writer, it shows
-   that with its filled icon, not with a box. */
-.sheets-header :deep(button:not(:disabled, .bg-surface-gray-10):hover) {
+/* The menus' own row, between the header and the tools, with the header's
+   line under it. Its side gutter and the 4px above and below the words are
+   the tools row's. */
+.sheets-menus {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--sn-bar-line);
+}
+/* Hover and "on" fills follow the bar colours, as in the tools row; solid
+   buttons keep their own. Only a panel toggle (`data-panel`) shows the "on" fill. */
+.sheets-header :deep(button:not(:disabled, .bg-surface-gray-10):hover),
+.sheets-menus :deep(button:not(:disabled):hover) {
   background: var(--sn-bar-hover);
 }
 .sheets-header :deep(button[data-state='open']),
+.sheets-menus :deep(button[data-state='open']),
 .sheets-header :deep(button[data-panel][aria-pressed='true']) {
   background: var(--sn-bar-on);
 }

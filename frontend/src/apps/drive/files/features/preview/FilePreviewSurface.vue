@@ -14,6 +14,7 @@ import { rootPath, trashLocation, useLocationTitle } from '../../internal/locati
 import { previewKind } from '../../internal/previewKind'
 import { announceTrash } from '../changeToast'
 import DocumentHeader from '../document/DocumentHeader.vue'
+import { starAction } from '../document/header'
 import { nodeActions } from '../nodeActions'
 import { readPresentationPreference, resolvePresentation } from '../presentation'
 import { copyLink } from '../share/shareFormat'
@@ -225,6 +226,7 @@ const menu = computed(() => [
   ...(can.value.copyLink
     ? [{ label: 'Copy link', icon: 'lucide-link', onClick: copyFileLink }]
     : []),
+  ...starAction(props.session),
   ...(can.value.rename
     ? [{ label: 'Rename', icon: 'lucide-pencil', onClick: () => header.value?.focusTitle() }]
     : []),

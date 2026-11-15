@@ -109,6 +109,17 @@ vi.mock('@/apps/slides/styles/fonts.css', () => {
 
 let mounted: Awaited<ReturnType<typeof openedSurface>> | null = null
 
+/** An item of the presentation menu, which the header shows open here. */
+function menuEntry(label: string) {
+  return Array.from(mounted!.root.querySelectorAll('header button')).find(
+    (button) => button.textContent === label,
+  )
+}
+
+function pickFromMenu(label: string) {
+  requireTestElement(menuEntry(label), HTMLElement).click()
+}
+
 afterEach(() => {
   mounted?.app.unmount()
   mounted?.root.remove()
@@ -509,7 +520,7 @@ describe('a deck on the content layer', () => {
     convertedRoom('one')
     mounted = await openedSurface({ deck: { is_converted: true } })
     await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
-    requireTestElement(mounted.root.querySelector('[data-comments]'), HTMLButtonElement).click()
+    pickFromMenu('Comments')
     await vi.waitFor(() => expect(driveComments.reads).toBe(1))
 
     const [{ onThreadsChanged }] = fromAny<[{ onThreadsChanged: () => void }], unknown>(
@@ -868,7 +879,7 @@ describe('a deck on the content layer', () => {
       collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
       mounted = await openedSurface({ deck: { is_converted: true } })
       await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
-      requireTestElement(mounted.root.querySelector('[data-versions]'), HTMLElement).click()
+      pickFromMenu('Versions')
       await vi.waitFor(() => expect(versionsPanel.isOpen).toBe(true))
       return room
     }
@@ -909,19 +920,13 @@ describe('a deck on the content layer', () => {
   })
 
   describe('the presentation menu', () => {
-    function menuEntry(label: string) {
-      return Array.from(mounted!.root.querySelectorAll('button')).find(
-        (button) => button.textContent === label,
-      )
-    }
-
     it('has the side panel name a version once the closing menu gives focus back', async () => {
       convertedRoom('one')
       mounted = await openedSurface({ deck: { is_converted: true } })
       await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
       const namings = versionsPanel.namings
 
-      requireTestElement(menuEntry('Save version'), HTMLElement).click()
+      pickFromMenu('Save version')
       await new Promise((resolve) => setTimeout(resolve, 0))
       expect(versionsPanel.namings).toBe(namings)
       requireTestElement(
@@ -959,7 +964,7 @@ describe('a deck on the content layer', () => {
     }
 
     async function openVersions() {
-      requireTestElement(mounted!.root.querySelector('[data-versions]'), HTMLElement).click()
+      pickFromMenu('Versions')
       await vi.waitFor(() => expect(versionsPanel.isOpen).toBe(true))
     }
 
@@ -1908,10 +1913,9 @@ describe('a deck on the content layer', () => {
       await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
 
       const present = mounted.root.querySelector('header [aria-label="Present"]')
-      const exportButton = mounted.root.querySelector('header [aria-label="Export"]')
       // the stand-ins are divs, which keep the value as written
       expect(present?.getAttribute('disabled')).toBe('false')
-      expect(exportButton?.getAttribute('disabled')).toBe('false')
+      expect(menuEntry('Export')).toBeDefined()
     })
   })
 
@@ -1926,7 +1930,7 @@ describe('a deck on the content layer', () => {
     fromPartial<XmlText>(paragraph.get(0)).insert(3, ' more')
     await vi.waitFor(() => expect(drawnTexts()[0]).toContain('one more'))
 
-    mounted.root.querySelector<HTMLElement>('header [aria-label="Export"]')!.click()
+    pickFromMenu('Export')
 
     await vi.waitFor(() => expect(window.print).toHaveBeenCalledOnce())
     const printed = fromAny<Array<{ elements: Array<{ content?: string }> }>, unknown>(
@@ -2365,7 +2369,7 @@ describe('printing a presentation', () => {
   let print: ReturnType<typeof vi.fn<() => void>>
 
   function clickExport() {
-    document.querySelector<HTMLElement>('header [aria-label="Export"]')!.click()
+    pickFromMenu('Export')
   }
 
   beforeEach(() => {
@@ -2468,18 +2472,19 @@ describe('Slides panels', () => {
     mounted = await openedSurface({ panels: [] })
     await nextTick()
 
-    expect(mounted.root.querySelector('[data-panels]')?.textContent).toBe('')
+    expect([menuEntry('Comments'), menuEntry('Versions')]).toEqual([undefined, undefined])
   })
 
-  it('offers everyone else the panels their session names', async () => {
+  it('offers everyone else the panels their session names, first in the menu', async () => {
     mounted = await openedSurface()
     await nextTick()
 
-    expect(mounted.root.querySelector('[data-panels]')?.textContent).toBe('comments,versions')
+    const items = [...mounted.root.querySelectorAll('header button')].map((el) => el.textContent)
+    expect(items.slice(0, 2)).toEqual(['Comments', 'Versions'])
   })
 
   function openComments() {
-    requireTestElement(mounted!.root.querySelector('[data-comments]'), HTMLButtonElement).click()
+    pickFromMenu('Comments')
   }
 
   function panelComments() {
@@ -2529,8 +2534,9 @@ describe('Slides offline copy', () => {
   const register = vi.fn(async () => ({}))
   const unregister = vi.fn(async () => true)
 
-  function offlineCopyButton() {
-    return document.querySelector('[data-offline-copy]')
+  /** The copy's item in the presentation menu. */
+  function offlineCopyItem() {
+    return menuEntry('Save offline copy') ?? null
   }
 
   beforeEach(() => {
@@ -2572,7 +2578,7 @@ describe('Slides offline copy', () => {
   it('offers the copy to the owner and registers the worker', async () => {
     mounted = await openedSurface()
 
-    await vi.waitFor(() => expect(offlineCopyButton()).not.toBeNull())
+    await vi.waitFor(() => expect(offlineCopyItem()).not.toBeNull())
     expect(register).toHaveBeenCalledWith('/service-worker.js')
   })
 
@@ -2592,7 +2598,7 @@ describe('Slides offline copy', () => {
     it('offers no copy, even to the owner', async () => {
       await openedComposite()
 
-      expect(offlineCopyButton()).toBeNull()
+      expect(offlineCopyItem()).toBeNull()
     })
 
     it.each([
@@ -2605,7 +2611,7 @@ describe('Slides offline copy', () => {
 
       await openedComposite()
 
-      expect(offlineCopyButton()).not.toBeNull()
+      expect(offlineCopyItem()).not.toBeNull()
     })
   })
 
@@ -2661,7 +2667,7 @@ describe('Slides offline copy', () => {
     mounted = await openedSurface()
     await nextTick()
 
-    expect(offlineCopyButton()).toBeNull()
+    expect(offlineCopyItem()).toBeNull()
   })
 
   it('hides the copy in a browser without service workers', async () => {
@@ -2669,7 +2675,7 @@ describe('Slides offline copy', () => {
     mounted = await openedSurface()
     await nextTick()
 
-    expect(offlineCopyButton()).toBeNull()
+    expect(offlineCopyItem()).toBeNull()
   })
 
   it('hides the copy and unregisters the worker with the kill switch on', async () => {
@@ -2678,7 +2684,7 @@ describe('Slides offline copy', () => {
 
     await vi.waitFor(() => expect(unregister).toHaveBeenCalledOnce())
     expect(register).not.toHaveBeenCalled()
-    expect(offlineCopyButton()).toBeNull()
+    expect(offlineCopyItem()).toBeNull()
   })
 
   it('forgets every offline copy with the kill switch on', async () => {
@@ -2723,7 +2729,7 @@ describe('Slides offline copy', () => {
     it('offers the copy to the owner', async () => {
       mounted = await openedLive()
 
-      await vi.waitFor(() => expect(offlineCopyButton()).not.toBeNull())
+      await vi.waitFor(() => expect(offlineCopyItem()).not.toBeNull())
     })
 
     it('hides the copy from someone who is not the owner', async () => {
@@ -2731,7 +2737,7 @@ describe('Slides offline copy', () => {
       mounted = await openedLive()
       await vi.waitFor(() => expect(editorSlides.value).toHaveLength(1))
 
-      expect(offlineCopyButton()).toBeNull()
+      expect(offlineCopyItem()).toBeNull()
     })
 
     it("refreshes the owner's copy saved before it went live", async () => {
@@ -2930,7 +2936,7 @@ describe('Slides offline copy', () => {
       mounted = await openedSurface()
 
       await vi.waitFor(() => expect(visits.remember).toHaveBeenCalled())
-      expect(offlineCopyButton()).not.toBeNull()
+      expect(offlineCopyItem()).not.toBeNull()
     })
 
     it('stops the copy when the surface goes away', async () => {
