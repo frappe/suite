@@ -333,8 +333,9 @@ frontend/src/
   `Meeting created`, `Moved “Logo.png” to Design reviews`. A period appears
   only when a second sentence follows: `Could not create the meeting. Try
   again.` No "successfully", no "!", "…" rather than "...". A failure reads
-  `Could not <verb> <thing>`, never the raw server or browser message. Every
-  toast string goes through `__()`.
+  `Could not <verb> <thing>`, never a raw network or browser message; a
+  refusal the server wrote for people (`frappe.throw(_("..."))`) may be shown
+  in its place. Every toast string goes through `__()`.
 
 ### UI
 
