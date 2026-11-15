@@ -39,8 +39,13 @@ function room(peers: Peer[]) {
     awareness.states.set(pid, { cursor: { elements, count: elements.length } })
     awareness.emit('change', [{ added: [], updated: [pid], removed: [] }, 'test'])
   }
+  // a tab with nothing selected and no caret shares no position at all
+  function deselect(pid: number) {
+    awareness.states.set(pid, { cursor: null })
+    awareness.emit('change', [{ added: [], updated: [pid], removed: [] }, 'test'])
+  }
 
-  return { presence, select }
+  return { presence, select, deselect }
 }
 
 function tab(pid: number, user: string, idleSince: number | null = null): Peer {
@@ -203,6 +208,23 @@ describe('PeerOutlines', () => {
     await nextTick()
 
     select(5, ['two'])
+    await nextTick()
+    await nextTick()
+
+    expect(nameIn(host)).not.toBeNull()
+  })
+
+  it('brings the name back when they click away and back on the same element', async () => {
+    const { presence, select, deselect } = room([tab(5, 'asha')])
+    const host = await outlines(presence)
+    select(5, ['one'])
+    await nextTick()
+    vi.advanceTimersByTime(4000)
+    await nextTick()
+
+    deselect(5)
+    await nextTick()
+    select(5, ['one'])
     await nextTick()
     await nextTick()
 
