@@ -88,18 +88,21 @@ function saveVersionOnFocusBack() {
   focusBack.focused()
 }
 
-const own = computed(() => {
+const review = computed(() =>
+  props.canSaveVersion
+    ? [{ label: __('Save version'), icon: 'lucide-bookmark', onClick: pickVersion }]
+    : [],
+)
+
+const lock = computed(() => {
+  if (!props.canLock) return []
   const isLocked = props.isLocked
-  const lock = {
-    label: isLocked ? __('Unlock document') : __('Lock document'),
-    icon: isLocked ? 'lucide-lock-open' : 'lucide-lock',
-    onClick: () => emit('setLocked', !isLocked),
-  }
   return [
-    ...(props.canSaveVersion
-      ? [{ label: __('Save version'), icon: 'lucide-bookmark', onClick: pickVersion }]
-      : []),
-    ...(props.canLock ? [lock] : []),
+    {
+      label: isLocked ? __('Unlock') : __('Lock'),
+      icon: isLocked ? 'lucide-lock-open' : 'lucide-lock',
+      onClick: () => emit('setLocked', !isLocked),
+    },
   ]
 })
 
@@ -147,8 +150,9 @@ async function importFile(file: File) {
     :session="session"
     :panels="panels"
     :panel="panel"
-    :own="own"
+    :review="review"
     :transfer="transfer"
+    :settings="lock"
     :disabled="!editor && !panels?.length"
     @toggle-panel="emit('togglePanel', $event)"
     @open="noteTabs"

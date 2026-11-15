@@ -396,7 +396,7 @@ vi.doMock('@/apps/slides/components/ThemeDialog.vue', () => ({
 vi.doMock('@/apps/slides/components/OfflineCopyButton.vue', () => ({
   default: {
     setup(_: unknown, { expose }: SetupContext) {
-      expose({ statusText: 'Save offline copy', open: () => {} })
+      expose({ statusText: 'Keep offline', open: () => {} })
       return () => null
     },
   },

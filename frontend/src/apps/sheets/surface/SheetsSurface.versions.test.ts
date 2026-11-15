@@ -102,7 +102,7 @@ vi.mock('@/apps/sheets/components/SheetEditor/index.vue', () => ({
             status: null,
             menus: null,
             actions: null,
-            menuItems: { own: [], transfer: [] },
+            menuItems: { transfer: [], settings: [] },
           }),
           slots.banner?.(),
           slots['side-panel']?.(),

@@ -402,8 +402,8 @@ useDocumentLeaveGuard({
               :session="session"
               :panels="session.panels.value"
               :panel="panel"
-              :own="menuItems.own"
               :transfer="menuItems.transfer"
+              :settings="menuItems.settings"
               @toggle-panel="togglePanel"
             />
           </template>

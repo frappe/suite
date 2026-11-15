@@ -11,23 +11,30 @@ import { copyLinkAction, PANEL_BUTTONS, starAction } from './header'
 
 /**
  * The menu every document header shows, so each one reads alike. Its groups
- * keep one order: the side panels, Copy link and Star, the surface's own
- * items, export and import, then the file's actions. A surface passes only
- * what is its own, and a group with nothing in it leaves no gap.
+ * keep one order: the side panels and what goes with them, Copy link with
+ * export and import, the surface's setting above the file's actions, then
+ * what removes it. A surface passes only what is its own, and a group with
+ * nothing in it leaves no gap.
  */
 const props = defineProps<{
   session: DocumentSession
   /** The side panels this person can open, and the one open now. */
   panels?: readonly DocumentPanel[]
   panel?: DocumentPanel | null
-  /** A file's own link items, in place of a document's Copy link and Star. */
+  /** What goes with the panels, such as Save version. */
+  review?: DropdownOption[]
+  /** A file's own items, in place of a document's Copy link. */
   link?: DropdownOption[]
-  /** What only this surface does to its document, such as Save version. */
-  own?: DropdownOption[]
   /** The export items, then the import items. */
   transfer?: DropdownOption[]
-  /** A file's own actions, in place of a document's Make a copy and Move to trash. */
+  /** What sets this surface's document up, such as Lock. */
+  settings?: DropdownOption[]
+  /** A file's own actions, in place of a document's Star and Make a copy. */
   file?: DropdownOption[]
+  /** What throws this person's own work away, such as Discard my changes. */
+  discard?: DropdownOption[]
+  /** A file's own ways out, in place of a document's Move to trash. */
+  remove?: DropdownOption[]
   disabled?: boolean
 }>()
 
@@ -48,14 +55,22 @@ const options = computed<DropdownOptions>(() => {
     selected: props.panel === name,
     onClick: () => emit('togglePanel', name),
   }))
-  const link = props.link ?? [copyLinkAction(), ...starAction(props.session)]
+  const { file, remove } = documentActions.value
   // The dropdown leaves out a group with nothing to show
   return [
-    { group: __('Panels'), options: panels },
-    { group: __('Link'), options: link },
-    { group: __('Document'), options: props.own ?? [] },
-    { group: __('Export and import'), options: props.transfer ?? [] },
-    { group: __('File'), options: props.file ?? documentActions.value },
+    { group: __('Comments and versions'), options: [...panels, ...(props.review ?? [])] },
+    {
+      group: __('Share and export'),
+      options: [...(props.link ?? [copyLinkAction()]), ...(props.transfer ?? [])],
+    },
+    {
+      group: __('File'),
+      options: [
+        ...(props.settings ?? []),
+        ...(props.file ?? [...starAction(props.session), ...file]),
+      ],
+    },
+    { group: __('Remove'), options: [...(props.discard ?? []), ...(props.remove ?? remove)] },
   ].map((group) => ({ ...group, hideLabel: true }))
 })
 </script>

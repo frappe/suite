@@ -96,44 +96,51 @@ async function pick(root: HTMLElement, name: string) {
   await settle()
 }
 
-it('keeps one order: the panels, the link, the surface’s own items, export and import, then the file', async () => {
+it('keeps one order: the panels, the link with export and import, the setting above the file’s actions, then what removes it', async () => {
   const root = mountMenu({
     panels: ['comments', 'versions'],
-    own: [item('Save version'), item('Lock document')],
+    review: [item('Save version')],
     transfer: [item('Export as DOCX'), item('Import DOCX')],
+    settings: [item('Lock')],
+    discard: [item('Discard my changes')],
   })
 
   expect(await openGroups(root)).toEqual([
-    ['Comments', 'Versions'],
-    ['Copy link', 'Star'],
-    ['Save version', 'Lock document'],
-    ['Export as DOCX', 'Import DOCX'],
-    ['Make a copy', 'Move to trash'],
+    ['Comments', 'Versions', 'Save version'],
+    ['Copy link', 'Export as DOCX', 'Import DOCX'],
+    ['Lock', 'Star', 'Make a copy'],
+    ['Discard my changes', 'Move to trash'],
   ])
 })
 
 it('leaves no gap for a surface that adds nothing of its own', async () => {
   expect(await openGroups(mountMenu({}))).toEqual([
-    ['Copy link', 'Star'],
-    ['Make a copy', 'Move to trash'],
+    ['Copy link'],
+    ['Star', 'Make a copy'],
+    ['Move to trash'],
   ])
 })
 
 it('offers someone who only views neither Make a copy nor Move to trash', async () => {
   const root = mountMenu({ transfer: [item('Export as CSV')] }, session(10, 10))
 
-  expect(await openGroups(root)).toEqual([['Copy link', 'Star'], ['Export as CSV']])
+  expect(await openGroups(root)).toEqual([['Copy link', 'Export as CSV'], ['Star']])
 })
 
 it('shows a file’s own link and actions in place of a document’s', async () => {
   const copyFileLink = vi.fn()
   const root = mountMenu({
-    link: [item('Copy link', copyFileLink)],
-    own: [item('Details')],
-    file: [item('Rename'), item('Restore')],
+    link: [item('Copy link', copyFileLink), item('Details')],
+    transfer: [item('Upload new version')],
+    file: [item('Rename')],
+    remove: [item('Restore')],
   })
 
-  expect(await openGroups(root)).toEqual([['Copy link'], ['Details'], ['Rename', 'Restore']])
+  expect(await openGroups(root)).toEqual([
+    ['Copy link', 'Details', 'Upload new version'],
+    ['Rename'],
+    ['Restore'],
+  ])
   await pick(root, 'Copy link')
   expect(copyFileLink).toHaveBeenCalledOnce()
 })

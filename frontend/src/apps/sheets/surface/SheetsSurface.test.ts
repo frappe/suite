@@ -112,7 +112,7 @@ vi.mock('@/apps/sheets/components/SheetEditor/index.vue', () => ({
       })
       const menus = () => (props.openComments ? h('button', { 'data-comment-menu': '' }) : null)
       return () => [
-        slots.header?.({ menus, menuItems: { own: [], transfer: [] } }),
+        slots.header?.({ menus, menuItems: { transfer: [], settings: [] } }),
         slots['side-panel']?.(),
       ]
     },

@@ -104,7 +104,6 @@ import { othersPresentWarning, type RestoreNotice } from '@/platform/collab/rest
 import UsersBar from '@/platform/collab/UsersBar.vue'
 import { useHideRail } from '@/platform/rail'
 import { getCookieSessionUser, useSession } from '@/platform/session'
-import { openAreaShortcuts } from '@/platform/shortcuts'
 import { translate } from '@/platform/translation'
 
 import { createSlidesAccess } from './access'
@@ -377,25 +376,29 @@ watch([showThemeDialog, showThemeChange], (opened) => {
 // Save version goes once the closing menu has handed focus back to its button
 const menuFocusBack = waitForFocusBack()
 const offlineCopy = ref<InstanceType<typeof OfflineCopyButton> | null>(null)
-const ownMenuItems = computed(() => [
+const reviewMenuItems = computed(() => [
   {
     label: translate('Save version'),
     icon: 'lucide-bookmark',
     condition: () => canRestoreVersions.value,
     onClick: () => menuFocusBack.wait(() => void sidePanel.value?.nameVersion()),
   },
+])
+const settingsMenuItems = computed(() => [
   {
-    label: 'Change theme',
+    label: translate('Theme'),
     icon: 'lucide-swatch-book',
     condition: () => !inReadonlyMode.value,
     onClick: () => {
       showThemeChange.value = true
     },
   },
-  { label: translate('Keyboard shortcuts'), icon: 'lucide-keyboard', onClick: openAreaShortcuts },
+])
+const discardMenuItems = computed(() => [
   {
     label: translate('Discard my changes'),
     icon: 'lucide-trash-2',
+    theme: 'red' as const,
     condition: () => canDownloadChanges.value,
     onClick: discardChanges,
   },
@@ -1048,8 +1051,10 @@ onBeforeUnmount(() => {
           :session="session"
           :panels="session.panels.value"
           :panel="panel"
-          :own="ownMenuItems"
+          :review="reviewMenuItems"
           :transfer="transferMenuItems"
+          :settings="settingsMenuItems"
+          :discard="discardMenuItems"
           @toggle-panel="(name) => showPanel(panel === name ? null : name)"
           @focus-back="menuFocusBack.focused()"
         />

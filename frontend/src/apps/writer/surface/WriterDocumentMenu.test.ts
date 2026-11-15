@@ -145,14 +145,14 @@ afterEach(() => {
 describe('Writer document menu', () => {
   it('offers a reader neither Lock nor Unlock', () => {
     expect(mountMenu(false, false, () => {}, { canLock: false, isLocked: true })).not.toContain(
-      'Unlock document',
+      'Unlock',
     )
   })
 
   it('locks an unlocked document and unlocks a locked one', () => {
     for (const isLocked of [false, true]) {
       const onSetLocked = vi.fn()
-      const label = isLocked ? 'Unlock document' : 'Lock document'
+      const label = isLocked ? 'Unlock' : 'Lock'
       expect(mountMenu(false, false, () => {}, { canLock: true, isLocked, onSetLocked })).toContain(
         label,
       )
@@ -165,12 +165,12 @@ describe('Writer document menu', () => {
     }
   })
 
-  it('offers a reader Copy link, Star and the exports, but not Import DOCX', () => {
-    expect(mountMenu(false)).toEqual(['Copy link', 'Star', 'Export as DOCX', 'Export as Markdown'])
+  it('offers a reader Copy link, the exports and Star, but not Import DOCX', () => {
+    expect(mountMenu(false)).toEqual(['Copy link', 'Export as DOCX', 'Export as Markdown', 'Star'])
   })
 
   it('offers an editor Import DOCX as well', () => {
-    expect(mountMenu(true).slice(-3)).toEqual([
+    expect(mountMenu(true).slice(1, 4)).toEqual([
       'Export as DOCX',
       'Export as Markdown',
       'Import DOCX',
@@ -196,14 +196,14 @@ describe('Writer document menu', () => {
     expect(mountMenu(false)).toEqual(['Copy link', 'Export as DOCX', 'Export as Markdown'])
   })
 
-  it('offers Save version after Star to someone who can save one, and picking it asks for a name', () => {
+  it('offers Save version first to someone who can save one, and picking it asks for a name', () => {
     const onSaveVersion = vi.fn()
 
     const items = mountMenu(true, true, onSaveVersion)
     pickSaveVersion()
 
     expect([items, onSaveVersion.mock.calls.length]).toEqual([
-      ['Copy link', 'Star', 'Save version', 'Export as DOCX', 'Export as Markdown', 'Import DOCX'],
+      ['Save version', 'Copy link', 'Export as DOCX', 'Export as Markdown', 'Import DOCX', 'Star'],
       1,
     ])
   })

@@ -1455,7 +1455,7 @@ const CURRENCY_QUICK_PICKS = [
     symbol: '¥',
   },
 ]
-// The header's menu puts export and import in one group and Sheets' own items in another
+// The header's menu puts export and import in one group and Sheets' settings above Star
 const menuItems = computed(() => ({
   transfer: [
     {
@@ -1465,12 +1465,11 @@ const menuItems = computed(() => ({
     },
     {
       label: __('Export as XLSX'),
-      description: __("Charts and conditional formatting aren't exported yet."),
       icon: 'lucide-download',
       onClick: () => exportXLSX(),
     },
     {
-      label: __('Print…'),
+      label: __('Print'),
       icon: 'lucide-printer',
       submenu: [
         { label: __('This sheet'), onClick: () => print('sheet') },
@@ -1495,7 +1494,7 @@ const menuItems = computed(() => ({
   ],
   // Only shown to admins — gated server-side via the boot flag so non-admins
   // never see a settings entry they can't use.
-  own: window.frappe?.boot?.ai_assist_can_configure
+  settings: window.frappe?.boot?.ai_assist_can_configure
     ? [
         {
           label: __('AI settings'),

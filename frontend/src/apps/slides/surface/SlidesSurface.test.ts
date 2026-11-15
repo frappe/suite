@@ -941,7 +941,7 @@ describe('a deck on the content layer', () => {
       mounted = await openedSurface({ role: 10 })
       await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(served.slides.length))
 
-      expect(menuEntry('Keyboard shortcuts')).toBeDefined()
+      expect(menuEntry('Copy link')).toBeDefined()
       expect(menuEntry('Save version')).toBeUndefined()
     })
   })
@@ -2536,7 +2536,7 @@ describe('Slides offline copy', () => {
 
   /** The copy's item in the presentation menu. */
   function offlineCopyItem() {
-    return menuEntry('Save offline copy') ?? null
+    return menuEntry('Keep offline') ?? null
   }
 
   beforeEach(() => {

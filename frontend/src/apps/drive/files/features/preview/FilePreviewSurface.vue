@@ -222,14 +222,11 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 // The listing's row menu offers the same actions under the same rules (`nodeActions`).
 const menu = computed(() => ({
   link: [
-    ...(can.value.copyLink
-      ? [{ label: 'Copy link', icon: 'lucide-link', onClick: copyFileLink }]
-      : []),
-    ...starAction(props.session),
-  ],
-  own: [
     ...(opensAsSheet.value
       ? [{ label: __('Open as spreadsheet'), icon: 'lucide-sheet', onClick: openAsSheet }]
+      : []),
+    ...(can.value.copyLink
+      ? [{ label: 'Copy link', icon: 'lucide-link', onClick: copyFileLink }]
       : []),
     {
       label: 'Details',
@@ -254,6 +251,9 @@ const menu = computed(() => ({
           },
         ]
       : []),
+    ...starAction(props.session),
+  ],
+  remove: [
     ...(can.value.trash
       ? [
           {
@@ -480,9 +480,9 @@ const pagerLoading = computed(() => !!folder.value && siblings.status === 'pendi
         <DocumentMenu
           :session="session"
           :link="menu.link"
-          :own="menu.own"
           :transfer="menu.transfer"
           :file="menu.file"
+          :remove="menu.remove"
         />
       </template>
     </DocumentHeader>

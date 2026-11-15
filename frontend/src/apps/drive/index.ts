@@ -256,24 +256,24 @@ export interface DriveDocumentAction {
 }
 
 /**
- * A document's own Drive actions for its menu: Make a copy and Move to trash,
- * under the names Drive's listing gives them. Each shows only when the caller
- * may take it: the copy goes into the document's folder, so it needs UPLOAD
- * there. Call it in a component's setup.
+ * A document's own Drive actions for its menu, under the names Drive's listing
+ * gives them: Make a copy among the file's actions, and Move to trash apart
+ * from them. Each shows only when the caller may take it: the copy goes into
+ * the document's folder, so it needs UPLOAD there. Call it in a component's setup.
  */
 export function useDriveDocumentActions(
   session: DocumentSession,
-): ComputedRef<DriveDocumentAction[]> {
+): ComputedRef<{ file: DriveDocumentAction[]; remove: DriveDocumentAction[] }> {
   const account = useSession()
   const actions = documentActions(session)
   return computed(() => {
     const folder = session.folder.value
     const can = nodeActions(actionNodeOf(session), account.status.value === 'authenticated')
     const canUploadToFolder = folder !== null && folder.role >= DRIVE_ROLES.upload
-    return actionsWhere([
-      [canUploadToFolder && can.copy, actions.copy],
-      [can.trash, actions.trash],
-    ])
+    return {
+      file: canUploadToFolder && can.copy ? [actions.copy] : [],
+      remove: can.trash ? [actions.trash] : [],
+    }
   })
 }
 
@@ -351,10 +351,6 @@ function actionNodeOf(session: DocumentSession): ActionNode {
     trash_root: null,
     access: session.access.value,
   }
-}
-
-function actionsWhere(items: [boolean, DriveDocumentAction][]): DriveDocumentAction[] {
-  return items.flatMap(([isShown, action]) => (isShown ? [action] : []))
 }
 
 /** What a document session and a file preview session each need of the node, so one read opens either. */

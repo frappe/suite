@@ -83,7 +83,8 @@ describe("A document's Drive menu", () => {
     const app = createApp(
       defineComponent({
         setup() {
-          labels = useDriveDocumentActions(session).value.map((action) => action.label)
+          const { file, remove } = useDriveDocumentActions(session).value
+          labels = [...file, ...remove].map((action) => action.label)
           return () => null
         },
       }),
