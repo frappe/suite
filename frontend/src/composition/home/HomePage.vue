@@ -114,7 +114,7 @@
             v-if="recentQuery.status === 'error' && recentRows.length"
             class="mt-3"
             variant="section"
-            :title="__('Could not load recent files')"
+            :title="__('Could not refresh recent files')"
             :retry="() => recentQuery.refetch()"
           />
         </section>
@@ -185,7 +185,7 @@
             v-if="upcomingQuery.status === 'error' && upcomingEvents.length"
             class="mt-3"
             variant="section"
-            :title="__('Could not load upcoming events')"
+            :title="__('Could not refresh upcoming events')"
             :retry="() => upcomingQuery.refetch()"
           />
         </section>
