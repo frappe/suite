@@ -7,7 +7,6 @@ import type { DocumentSession } from '@/apps/drive/client/session'
 import { requireTestElement } from '@/platform/testing/dom'
 import { TransportError } from '@/platform/transport'
 
-import type { DocumentPanel } from '../../../client/types'
 import DocumentHeader from './DocumentHeader.vue'
 import DocumentHeaderSkeleton from './DocumentHeaderSkeleton.vue'
 import type { DocumentSaveState } from './header'
@@ -19,11 +18,41 @@ vi.mock('frappe-ui', async () => {
     toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() },
     Button: define({
       inheritAttrs: false,
-      props: { label: String },
+      props: { label: String, route: [String, Object] },
       setup:
         (props, { attrs, slots }) =>
         () =>
-          render('button', attrs, props.label ?? slots.icon?.() ?? slots.default?.()),
+          render(
+            'button',
+            {
+              ...attrs,
+              'data-to': typeof props.route === 'string' ? props.route : props.route?.path,
+            },
+            props.label ?? slots.icon?.() ?? slots.default?.(),
+          ),
+    }),
+    // An open menu, so a test picks an item without opening it first
+    Dropdown: define({
+      props: {
+        options: {
+          type: Array<{ options: { label: string; onClick: () => void }[] }>,
+          default: () => [],
+        },
+      },
+      setup:
+        (props, { slots }) =>
+        () => [
+          slots.default?.(),
+          render(
+            'div',
+            { role: 'menu' },
+            props.options
+              .flatMap((group) => group.options)
+              .map((option) =>
+                render('button', { role: 'menuitem', onClick: option.onClick }, option.label),
+              ),
+          ),
+        ],
     }),
     Tooltip: define({
       props: { disabled: Boolean },
@@ -36,7 +65,7 @@ vi.mock('frappe-ui', async () => {
     }),
     Badge: define({
       props: { label: String },
-      setup: (props) => () => render('span', props.label),
+      setup: (props) => () => render('span', { 'data-badge': '' }, props.label),
     }),
     TextInput: define({
       inheritAttrs: false,
@@ -59,8 +88,23 @@ vi.mock('frappe-ui', async () => {
   }
 })
 
+const account = vi.hoisted(() => ({ status: { value: 'authenticated' } }))
+vi.mock('@/platform/session', async (original) => {
+  const actual = await original<typeof import('@/platform/session')>()
+  return { ...actual, useSession: () => ({ ...actual.useSession(), status: account.status }) }
+})
+// Naming Drive's roots takes a query, so here every folder goes by its own title
+vi.mock('@/apps/drive/files/internal/locations', async (original) => ({
+  ...(await original()),
+  useLocationTitle: () => (node: { title: string }) => node.title,
+}))
+
 let cleanup: (() => void) | undefined
-afterEach(() => cleanup?.())
+afterEach(() => {
+  cleanup?.()
+  account.status.value = 'authenticated'
+  vi.restoreAllMocks()
+})
 
 function session(role: number, canShare = true) {
   return {
@@ -68,6 +112,7 @@ function session(role: number, canShare = true) {
     contentDoctype: 'Sheet',
     contentDocname: 'sheet-1',
     title: ref('Budget'),
+    folder: ref<{ name: string; title: string; kind: string; role: number } | null>(null),
     state: ref<DocumentSession['state']['value']>('Active'),
     access: ref({ role }),
     canShare: ref(canShare),
@@ -92,32 +137,28 @@ function mount(
     saveState?: DocumentSaveState | null
     saveNote?: string
     viewOnly?: boolean
-    layout?: 'default' | 'centered' | 'menus'
+    stateBadge?: string
+    layout?: 'default' | 'centered'
   } = {},
   slots: Record<string, () => VNode> = {},
 ) {
-  const panel = ref<DocumentPanel | null>(null)
-  const header = ref<{ focusPanelToggle(name: DocumentPanel): void } | null>(null)
   const root = document.createElement('div')
   document.body.append(root)
   const app = createApp({
     setup: () => () =>
       h(
         DocumentHeader,
-        {
-          ref: header,
-          session: fromPartial<DocumentSession>(doc),
-          titleLabel: 'Spreadsheet title',
-          panels: ['comments', 'versions'],
-          panel: panel.value,
-          'onUpdate:panel': (next: DocumentPanel | null) => {
-            panel.value = next
-          },
-          ...props,
-        },
+        { session: fromPartial<DocumentSession>(doc), titleLabel: 'Spreadsheet title', ...props },
         slots,
       ),
   })
+  // The menu's Move to trash goes back to the folder, so the header needs a router
+  app.use(
+    createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/:any(.*)', component: { render: () => null } }],
+    }),
+  )
   app.mount(root)
   cleanup = () => {
     app.unmount()
@@ -126,8 +167,24 @@ function mount(
   const title = root.querySelector<HTMLInputElement>('input[aria-label="Spreadsheet title"]')!
   const button = (name: string) =>
     root.querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`)
-  return { root, title, button, panel, header }
+  const menuItem = (name: string) =>
+    [...root.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+      (el) => el.textContent === name,
+    )
+  return { root, title, button, menuItem }
 }
+
+const badges = (root: HTMLElement) =>
+  [...root.querySelectorAll('[data-badge]')].map((el) => el.textContent)
+
+const menuItems = (root: HTMLElement) =>
+  [...root.querySelectorAll('[role="menuitem"]')].map((el) => el.textContent)
+
+/** What the header shows as buttons, by name, leaving out the items inside its menu. */
+const buttons = (root: HTMLElement) =>
+  [...root.querySelectorAll('header button:not([role="menuitem"])')].map(
+    (el) => el.getAttribute('aria-label') ?? el.textContent,
+  )
 
 /** The group that holds the title field. */
 function titleGroup(root: HTMLElement) {
@@ -193,28 +250,89 @@ describe('DocumentHeader', () => {
     expect(root.textContent).not.toContain('Edited')
   })
 
-  it('stars and unstars, and offers no star to someone who cannot keep one', async () => {
-    const doc = session(40)
-    const { button } = mount(doc)
-    button('Star')!.click()
-    expect(doc.setStarred).toHaveBeenCalledWith(true)
-    await nextTick()
-    expect(button('Unstar')!.getAttribute('aria-pressed')).toBe('true')
-    expect(button('Unstar')!.querySelector('.fill-current')).toBeTruthy()
-    expect(button('Unstar')!.querySelector('.lucide-star')).toBeNull()
-    cleanup?.()
-
-    const linkOnly = session(40)
-    linkOnly.canStar.value = false
-    expect(mount(linkOnly).button('Star')).toBeNull()
-  })
-
-  it('copies the address of the page', async () => {
+  it('keeps Copy link and Star in its menu, and shows neither as a button', async () => {
     const writeText = vi.fn(async () => {})
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
-    const { button } = mount(session(40))
-    button('Copy link')!.click()
+    const doc = session(40)
+    const { root, menuItem } = mount(doc)
+
+    expect(buttons(root)).toEqual(['Back to Drive', 'Share', 'Share', 'More actions'])
+    menuItem('Copy link')!.click()
     await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith(window.location.href))
+
+    menuItem('Star')!.click()
+    expect(doc.setStarred).toHaveBeenCalledWith(true)
+    await nextTick()
+    menuItem('Unstar')!.click()
+    expect(doc.setStarred).toHaveBeenLastCalledWith(false)
+  })
+
+  it('offers no star to someone who cannot keep one, and still the link', () => {
+    const linkOnly = session(10)
+    linkOnly.canStar.value = false
+    expect(menuItems(mount(linkOnly).root)).toEqual(['Copy link'])
+  })
+
+  it('gives a surface with no menu of its own the whole document menu', () => {
+    const doc = session(50)
+    doc.folder.value = { name: 'folder-9', title: 'Projects', kind: 'folder', role: 50 }
+    expect(menuItems(mount(doc).root)).toEqual([
+      'Copy link',
+      'Star',
+      'Make a copy',
+      'Move to trash',
+    ])
+  })
+
+  it.each([
+    ['a trashed document', { trashed: true, saveState: 'failed', offline: true }, 'Trashed'],
+    ['a failed save', { saveState: 'failed', offline: true }, 'Not saved'],
+    ['no connection', { offline: true }, 'Offline'],
+    ['the surface’s own state', {}, 'Locked'],
+  ] as const)('shows one badge, and %s comes first', (_case, state, expected) => {
+    const doc = session(40)
+    if ('trashed' in state) doc.state.value = 'Trashed'
+    if ('offline' in state) vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+    const saveState = 'saveState' in state ? state.saveState : 'clean'
+
+    const { root } = mount(doc, { saveState, stateBadge: 'Locked', viewOnly: true })
+
+    expect(badges(root)).toEqual([expected])
+  })
+
+  it('shows no badge on a document that is open to edit and saved', () => {
+    expect(badges(mount(session(40), { saveState: 'clean' }).root)).toEqual([])
+  })
+
+  it('leads back to the folder the document is in', () => {
+    const doc = session(40)
+    doc.folder.value = { name: 'folder-9', title: 'Projects', kind: 'folder', role: 40 }
+    const back = mount(doc).button('Back to Projects')!
+    expect(back.dataset.to).toBe('/drive/f/folder-9/projects')
+  })
+
+  it('leads back to Drive when the person cannot read the folder', () => {
+    expect(mount(session(40)).button('Back to Drive')!.dataset.to).toBe('/drive')
+  })
+
+  it('gives a guest no way back', () => {
+    account.status.value = 'guest'
+    expect(buttons(mount(session(10, false)).root)).toEqual(['More actions'])
+  })
+
+  it('puts the way back first, then the icon, the title and the badge', () => {
+    const { root, title, button } = mount(session(10), { viewOnly: true })
+    const order = [
+      button('Back to Drive')!,
+      root.querySelector('.file-icon-sheet')!,
+      title,
+      root.querySelector('[data-badge]')!,
+    ]
+    for (const [at, element] of order.slice(1).entries()) {
+      expect(
+        order[at]!.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
+    }
   })
 
   it('renames on blur, and Escape puts the old title back', async () => {
@@ -281,35 +399,6 @@ describe('DocumentHeader', () => {
     expect(root.textContent).toContain('View only')
   })
 
-  it('toggles one side panel at a time', async () => {
-    const { button, panel } = mount(session(40))
-    button('Comments')!.click()
-    await nextTick()
-    expect(panel.value).toBe('comments')
-    expect(button('Comments')!.getAttribute('aria-pressed')).toBe('true')
-
-    button('Versions')!.click()
-    await nextTick()
-    expect(panel.value).toBe('versions')
-    expect(button('Comments')!.getAttribute('aria-pressed')).toBe('false')
-
-    button('Versions')!.click()
-    await nextTick()
-    expect(panel.value).toBeNull()
-  })
-
-  it('hands focus to the toggle of a panel that closed itself', async () => {
-    const { button, panel, header } = mount(session(40))
-    button('Versions')!.click()
-    await nextTick()
-    panel.value = null
-    await nextTick()
-
-    header.value!.focusPanelToggle('versions')
-
-    expect(document.activeElement).toBe(button('Versions'))
-  })
-
   it('keeps the title beside the icon unless asked to center it', () => {
     const { root } = mount(session(40))
     expect(titleGroup(root).className).toBe('flex min-w-0 flex-1 items-center gap-1')
@@ -337,34 +426,52 @@ describe('DocumentHeader', () => {
   })
 
   it.each([
-    ['with its label', {}, true],
-    [
-      'as an icon on every width, after a primary action',
-      { primary: () => h('button', 'Present') },
-      false,
-    ],
-  ])('shows Share %s', (_label, slots, hasLabel) => {
-    const sharer = session(40)
-    const { root, button } = mount(sharer, {}, slots)
-    const labelled = [...root.querySelectorAll('button')].find((el) => el.textContent === 'Share')
+    ['on its own', {}],
+    ['beside a primary action', { primary: () => h('button', 'Present') }],
+  ])(
+    'shows Share with its icon and the word on wide screens, the icon alone below, %s',
+    (_, slots) => {
+      const sharer = session(40)
+      const { root, button } = mount(sharer, {}, slots)
+      const worded = [...root.querySelectorAll('button')].find((el) => el.textContent === 'Share')!
+      const iconOnly = button('Share')!
 
-    expect(!!labelled).toBe(hasLabel)
-    expect(button('Share')!.classList.contains('md:hidden')).toBe(hasLabel)
-    labelled?.click()
-    button('Share')!.click()
-    expect(sharer.share).toHaveBeenCalledTimes(hasLabel ? 2 : 1)
-  })
+      expect(worded.getAttribute('icon-left')).toBe('lucide-share-2')
+      expect([...worded.classList]).toContain('max-md:hidden')
+      expect(iconOnly.getAttribute('icon')).toBe('lucide-share-2')
+      expect([...iconOnly.classList]).toContain('md:hidden')
+      worded.click()
+      iconOnly.click()
+      expect(sharer.share).toHaveBeenCalledTimes(2)
+    },
+  )
 
-  it('puts the menu after Star and before the primary action', () => {
-    const { root } = mount(
+  it('keeps the order on the right: edited, people, Share, the menu, the primary action', () => {
+    const { root, button } = mount(
       session(40),
-      {},
-      { menu: () => h('button', 'Menu'), primary: () => h('button', 'Present') },
+      { saveState: 'clean' },
+      {
+        actions: () => h('span', { 'data-presence': '' }),
+        menu: () => h('button', 'Menu'),
+        primary: () => h('button', 'Present'),
+      },
     )
-    const labels = [...root.querySelectorAll('header > div:last-child button')].map(
-      (el) => el.getAttribute('aria-label') ?? el.textContent,
-    )
-    expect(labels.slice(-4)).toEqual(['Copy link', 'Star', 'Menu', 'Present'])
+    const named = (text: string) =>
+      [...root.querySelectorAll('header > div:last-child *')].find(
+        (el) => el.children.length === 0 && el.textContent?.trim() === text,
+      )!
+    const order = [
+      named('Edited 3h ago'),
+      root.querySelector('[data-presence]')!,
+      button('Share')!,
+      named('Menu'),
+      named('Present'),
+    ]
+    for (const [at, element] of order.slice(1).entries()) {
+      expect(
+        order[at]!.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
+    }
   })
 
   it('puts the primary action last', () => {
@@ -430,14 +537,15 @@ describe('DocumentHeaderSkeleton', () => {
     }
   }
 
-  it('lays out the folder, the way back and the icon as the loaded file header does', () => {
+  it('lays out the way back and the icon as the loaded file header does', () => {
     const { skeleton, loaded, loadedTitle } = mountPair({
       label: 'Projects',
       to: '/drive/f/projects',
     })
 
     expect(skeleton.before).toEqual(loaded.before)
-    expect(skeleton.before.map(([, text]) => text)).toEqual(['', 'Projects', '/', ''])
+    // The way back then the icon, and the folder's name shows nowhere
+    expect(skeleton.before.map(([, text]) => text)).toEqual(['', ''])
     // Both titles start 8 px in: the skeleton's text, and the copy that sizes the field.
     expect(skeleton.titleStart).toBe('px-2')
     expect(loadedTitle.classList).toContain('ps-2')
@@ -448,114 +556,5 @@ describe('DocumentHeaderSkeleton', () => {
 
     expect(skeleton.before).toEqual(loaded.before)
     expect(skeleton.before).toHaveLength(1)
-  })
-})
-
-describe('DocumentHeader, menus layout (Sheets)', () => {
-  function mountWithMenus(layout: 'default' | 'menus', props: { viewOnly?: boolean } = {}) {
-    const root = document.createElement('div')
-    document.body.append(root)
-    const app = createApp({
-      setup: () => () =>
-        h(
-          DocumentHeader,
-          {
-            session: fromPartial<DocumentSession>(session(40)),
-            titleLabel: 'Spreadsheet title',
-            saveState: 'clean',
-            layout,
-            ...props,
-          },
-          {
-            menus: () => h('nav', { 'aria-label': 'Spreadsheet menus' }, 'File Edit'),
-            actions: () => h('span', { 'data-presence': '' }),
-          },
-        ),
-    })
-    app.mount(root)
-    cleanup = () => {
-      app.unmount()
-      root.remove()
-    }
-    const header = root.querySelector('header')!
-    const edited = [...header.querySelectorAll('span')].find(
-      (el) => el.textContent?.trim() === 'Edited 3h ago',
-    )!
-    const title = header.querySelector<HTMLInputElement>('input')!
-    return { header, edited, title, menus: header.querySelector('nav')! }
-  }
-
-  it('is as tall as the other document headers', () => {
-    expect(mountWithMenus('menus').header.className).toContain('h-12')
-  })
-
-  it('puts the title left, the menus in a column of their own, and the rest right', () => {
-    const { header, edited, menus, title } = mountWithMenus('menus')
-    const [left, middle, right] = header.children
-    expect(header.children).toHaveLength(3)
-    expect(left!.contains(title)).toBe(true)
-    expect(left!.contains(edited)).toBe(false)
-    expect(middle!.contains(menus)).toBe(true)
-    expect(right!.contains(edited)).toBe(true)
-  })
-
-  it('keeps Writer’s order on the right: edited, presence, share, link, star', () => {
-    const { header, edited } = mountWithMenus('menus')
-    const order = [
-      edited,
-      header.querySelector('[data-presence]')!,
-      header.querySelector('button[aria-label="Copy link"]')!,
-      header.querySelector('button[aria-label="Star"]')!,
-    ]
-    for (const [at, element] of order.slice(1).entries()) {
-      expect(
-        order[at]!.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING,
-      ).toBeTruthy()
-    }
-  })
-
-  it('holds the badges apart from the title, so a longer title cannot push them', () => {
-    const { header, title } = mountWithMenus('menus', { viewOnly: true })
-    const badge = [...header.querySelectorAll('span')].find(
-      (el) => el.textContent?.trim() === 'View only',
-    )!
-    const spacer = badge.previousElementSibling!
-    expect(spacer.className).toContain('flex-1')
-    expect(spacer.contains(title)).toBe(false)
-  })
-
-  function makeTitleOverflow(title: HTMLInputElement, overflows: boolean) {
-    Object.defineProperty(title, 'clientWidth', { value: 400 })
-    Object.defineProperty(title, 'scrollWidth', { value: overflows ? 900 : 400 })
-  }
-  const fullTitle = (header: HTMLElement) => header.querySelector('.document-full-title')
-
-  it('shows no box with the whole name when a long title is clicked into', async () => {
-    const { header, title } = mountWithMenus('menus')
-    makeTitleOverflow(title, true)
-
-    title.focus()
-    await nextTick()
-    expect(fullTitle(header)).toBeNull()
-
-    title.value = 'Budget 2027'
-    title.dispatchEvent(new Event('input', { bubbles: true }))
-    await nextTick()
-    await nextTick()
-    expect(fullTitle(header)).toBeNull()
-  })
-
-  it('leaves every other app’s header as it was', async () => {
-    const { header, edited, menus, title } = mountWithMenus('default')
-    makeTitleOverflow(title, true)
-    expect(header.className).toContain('flex')
-    expect(header.className).not.toContain('grid')
-    expect(header.children).toHaveLength(2)
-    expect(header.firstElementChild!.contains(menus)).toBe(true)
-    expect(header.lastElementChild!.contains(edited)).toBe(true)
-
-    title.focus()
-    await nextTick()
-    expect(fullTitle(header)).toBeNull()
   })
 })

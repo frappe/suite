@@ -1,64 +1,18 @@
 import * as Y from 'yjs'
 
 import { api, client } from '@/api'
-import type { DocumentSession, VersionImage } from '@/apps/drive'
+import {
+  askUntilConverted,
+  readStoredState,
+  type ConvertedState,
+  type DocumentSession,
+  type VersionImage,
+} from '@/apps/drive'
 import { ROOT } from '@/apps/slides/collab/deck'
 import { isMediaNodeId } from '@/apps/slides/stores/documentMedia'
 
-/** One row of `GET nodes/<id>/versions`, as the Versions panel shows it. */
-export interface SlidesVersion {
-  seq: string
-  kind: string
-  label: string | null
-  pinned: boolean
-  /** Who took it, by full name; their user id when Drive sent no name. */
-  actor: string | null
-  creation: string | null
-}
-
-export interface VersionPage {
-  rows: SlidesVersion[]
-  nextCursor: string | null
-}
-
-/** Reads a versions page. A row without a positive integer `seq` is dropped. */
-export function readVersions(payload: unknown): VersionPage {
-  const rows = field(payload, 'rows')
-  return {
-    rows: Array.isArray(rows) ? rows.flatMap(readVersion) : [],
-    nextCursor: text(field(payload, 'next_cursor')),
-  }
-}
-
-function readVersion(row: unknown): SlidesVersion[] {
-  const seq = field(row, 'seq')
-  if (typeof seq !== 'number' || !Number.isInteger(seq) || seq < 1) return []
-  return [
-    {
-      seq: String(seq),
-      kind: text(field(row, 'kind')) ?? 'auto',
-      label: text(field(row, 'label')) || null,
-      pinned: Boolean(field(row, 'pinned')),
-      actor: text(field(field(row, 'person'), 'full_name')) || text(field(row, 'actor')),
-      creation: text(field(row, 'creation')),
-    },
-  ]
-}
-
 function field(value: unknown, key: string): unknown {
   return isFieldRecord(value) && key in value ? value[key] : undefined
-}
-
-function text(value: unknown): string | null {
-  return typeof value === 'string' ? value : null
-}
-
-/** A Drive time (`YYYY-MM-DD HH:MM:SS`, site time) as a short local label. */
-export function stampLabel(stamp: string | null): string {
-  if (!stamp) return ''
-  const when = new Date(stamp.replace(' ', 'T'))
-  if (Number.isNaN(when.getTime())) return stamp
-  return when.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 }
 
 function isFieldRecord(value: unknown): value is Record<string, unknown> {
@@ -67,23 +21,6 @@ function isFieldRecord(value: unknown): value is Record<string, unknown> {
 
 /** A stored version's body: the Yjs state of a converted presentation, or an old row version's slides. */
 export type VersionBody = { state: Uint8Array } | { legacySlides: unknown[] }
-
-/** The server's upgrade of an old row version: its Yjs state, a refusal with its reason, or not done yet. */
-export type ConvertedVersion =
-  { state: Uint8Array } | { refused: string | null } | { isPending: true }
-
-const ASK_EVERY_MS = 2000
-const WAIT_MS = 150_000
-
-/** The stored bytes of version `seq`. */
-export async function fetchVersion(session: DocumentSession, seq: number): Promise<Uint8Array> {
-  const response = await session.credentials.fetch(session.versions.contentUrl(String(seq)))
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`)
-  }
-
-  return new Uint8Array(await response.arrayBuffer())
-}
 
 /** Reads a stored Slides version by its schema. Throws on bytes it cannot read. */
 export async function readVersionBody(bytes: Uint8Array): Promise<VersionBody> {
@@ -104,35 +41,12 @@ export async function readVersionBody(bytes: Uint8Array): Promise<VersionBody> {
     throw new Error('This version cannot be read.')
   }
 
-  const stream = new Response(fromBase64(state)).body!.pipeThrough(new DecompressionStream('gzip'))
-  return { state: new Uint8Array(await new Response(stream).arrayBuffer()) }
-}
-
-function fromBase64(value: string) {
-  return Uint8Array.from(atob(value), (char) => char.charCodeAt(0))
+  return { state: await readStoredState(state) }
 }
 
 /** Runs old version `seq` through the server's converter, asking until it answers or the wait runs out. */
-export async function convertedVersion(
-  session: DocumentSession,
-  seq: number,
-): Promise<ConvertedVersion> {
-  const giveUpAt = Date.now() + WAIT_MS
-  let converted = await askToConvert(session, seq)
-  while (converted.pending) {
-    if (Date.now() >= giveUpAt) {
-      return { isPending: true }
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, ASK_EVERY_MS))
-    converted = await askToConvert(session, seq)
-  }
-
-  if (!converted.state) {
-    return { refused: converted.reason ?? null }
-  }
-
-  return { state: fromBase64(converted.state) }
+export function convertedVersion(session: DocumentSession, seq: number): Promise<ConvertedState> {
+  return askUntilConverted(() => askToConvert(session, seq))
 }
 
 function askToConvert(session: DocumentSession, seq: number) {

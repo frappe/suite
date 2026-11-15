@@ -52,6 +52,12 @@ async function openDeck(page: Page, node = deck.name) {
 	return title;
 }
 
+/** Picks an item from the presentation's ⋯ menu. A side panel's item opens or closes it. */
+async function pickFromMenu(page: Page, item: "Comments" | "Versions" | "Export as PDF") {
+	await page.getByRole("button", { name: "More actions" }).click();
+	await page.getByRole("menuitem", { name: item, exact: true }).click();
+}
+
 /** A push of the room's work. */
 function isPush(url: string) {
 	return new URL(url).pathname.endsWith("/updates");
@@ -83,17 +89,17 @@ test("renames, exports and comments without a legacy Drive call", async ({ page 
 	await expect.poll(async () => (await getNode(api, deck.name)).title).toBe("Renamed deck");
 
 	// Export prints one page per slide, then takes the print view away again.
-	await page.getByRole("button", { name: "Export", exact: true }).click();
+	await pickFromMenu(page, "Export as PDF");
 	await expect.poll(() => page.evaluate(() => window.printedPages)).toBe(1);
 	await expect(page.locator(".slides-container")).toHaveCount(0);
 
-	await page.getByRole("button", { name: "Comments" }).click();
+	await pickFromMenu(page, "Comments");
 	const comments = page.getByRole("complementary", { name: "Comments" });
 	await comments.getByRole("textbox", { name: "New comment" }).fill("Tighten the opening slide");
 	await comments.getByRole("button", { name: "Add", exact: true }).click();
 	await expect(comments.getByText("Tighten the opening slide")).toBeVisible();
 
-	await page.getByRole("button", { name: "Versions" }).click();
+	await pickFromMenu(page, "Versions");
 	await expect(page.getByRole("complementary", { name: "Versions" })).toBeVisible();
 	await expect(comments).toHaveCount(0);
 
@@ -168,7 +174,7 @@ test("losing edit access freezes the deck, sends no write and offers the changes
 	expect(await recovery()).toContain("rectangle");
 
 	// A trashed deck takes no new comments.
-	await page.getByRole("button", { name: "Comments" }).click();
+	await pickFromMenu(page, "Comments");
 	await expect(page.getByRole("heading", { name: "Comments" })).toBeVisible();
 	await expect(page.getByRole("textbox", { name: "New comment" })).toHaveCount(0);
 	expect(seen.requests.filter((line) => line.includes("suite.drive.api"))).toEqual([]);
@@ -299,7 +305,7 @@ test("a composite sends the link code of a deck that is shared on its own", asyn
 
 test("restores a saved version and reloads the deck", async ({ page }) => {
 	await openDeck(page);
-	await page.getByRole("button", { name: "Versions" }).click();
+	await pickFromMenu(page, "Versions");
 	const versions = page.getByRole("complementary", { name: "Versions" });
 	await versions.getByRole("button", { name: "Save version" }).click();
 	await page.getByRole("dialog").getByRole("textbox").fill("Empty deck");
@@ -312,7 +318,7 @@ test("restores a saved version and reloads the deck", async ({ page }) => {
 	await expect.poll(() => rectangles(api, deck.content_docname!)).toBe(1);
 	await expect(page.locator(SHAPE_RECT).first()).toBeVisible();
 
-	await page.getByRole("button", { name: "Versions" }).click();
+	await pickFromMenu(page, "Versions");
 	await versions.getByRole("listitem").filter({ hasText: "Empty deck" }).getByRole("button", { name: "Restore" }).click();
 	await page.getByRole("dialog").getByRole("button", { name: "Restore", exact: true }).click();
 	await expect(page.getByText("Version restored")).toBeVisible();

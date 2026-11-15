@@ -1,6 +1,7 @@
 import * as yjs from 'yjs'
 
 import { classifyRefusal, type AccessRoom } from './access'
+import { planAdoption, type Step } from './adoption'
 import { HTTP_OK, readReply } from './answers'
 import type { Device } from './device'
 import { holdLock } from './locks'
@@ -18,6 +19,10 @@ export interface LeftoverRoom extends AccessRoom {
   readonly closed: boolean
   readonly stopReason: string | null
   readonly restoreRev: number
+  // Each writer's next clock in what the server committed, as this tab knew it before adopting anything
+  readonly committed: ReadonlyMap<number, number>
+  // Sessions a claim with no answer left on the device
+  unclaimed: ReadonlySet<string>
   // Adopted outboxes go in ahead of this tab's own
   readonly outboxes: Outbox[]
   readonly ownClients: Set<number>
@@ -79,18 +84,68 @@ async function readableState(device: Device, lineage: string, entries: StoredEnt
   return yjs.mergeUpdates([copy.bytes, ...updates])
 }
 
-// Unsent work other tabs of this document left on the device, once no live tab holds it
-export async function adoptLeftovers(room: LeftoverRoom) {
+// What one adoption pass did with the sessions it met
+class Pass {
+  // Locked by an open tab, outside `only`, or needing one of those: left for a later pass
+  readonly left = new Set<string>()
+  // A claim with no answer, and every session that needs it: asked again before the next pull
+  readonly unanswered = new Set<string>()
+  readonly refused: RefusedChain[] = []
+
+  constructor(private readonly only?: ReadonlySet<string>) {}
+
+  isOutside(sids: string[]) {
+    const only = this.only
+    return !!only && sids.some((sid) => !only.has(sid))
+  }
+
+  // Marks the sessions and goes on with the pass
+  leave(into: Set<string>, sids: string[]) {
+    for (const sid of sids) {
+      into.add(sid)
+    }
+
+    return true
+  }
+}
+
+function releaseAll(releases: (() => void)[]) {
+  for (const release of releases) {
+    release()
+  }
+}
+
+// A refused session and every session that needs its unsent work, kept aside as one copy; locks held until it is written
+interface RefusedChain {
+  reason: string
+  lineage: string
+  sids: string[]
+  releases: (() => void)[]
+}
+
+// Never a server answer: offline, the box waits for the claim the reconnect makes
+const AWAITS_CLAIM = 'awaits_claim'
+
+// Unsent work other tabs of this document left on the device, once no live tab holds it, in an order the server takes;
+// `only` limits the pass to the sessions a claim with no answer left
+export async function adoptLeftovers(room: LeftoverRoom, only?: ReadonlySet<string>) {
   const device = room.device
   if (!device || room.stopReason || !room.writable) return
 
   const sessions = await device.sessions()
-  for (const session of sessions) {
-    const isOpen = await adoptSession(room, device, session)
-    if (!isOpen) {
-      return
-    }
+  const leftovers = await Promise.all(
+    sessions.map(async (session) => ({ session, entries: await device.entries(session.sid) })),
+  )
+  const pass = new Pass(only)
+  let isOpen = true
+  for (const step of planAdoption(leftovers, room.committed)) {
+    isOpen = await takeStep(room, device, pass, step)
+    if (!isOpen) break
   }
+
+  isOpen = await keepRefused(room, device, pass)
+  room.unclaimed = pass.unanswered
+  if (!isOpen) return
 
   room.onUnsentChanged()
   if (room.unsent && room.bound) {
@@ -98,19 +153,99 @@ export async function adoptLeftovers(room: LeftoverRoom) {
   }
 }
 
-function isAdoptable(room: LeftoverRoom, session: StoredSession) {
-  const isHeldHere = room.outboxes.some((box) => box.sid === session.sid)
-  return !isHeldHere && (session.bound || room.bound)
-}
-
-// One tab's leftover work, once no live tab holds it; false once the room closed or shut meanwhile
-async function adoptSession(room: LeftoverRoom, device: Device, session: StoredSession) {
-  if (!isAdoptable(room, session)) {
+// One step of the plan; false once the room closed or shut meanwhile
+async function takeStep(room: LeftoverRoom, device: Device, pass: Pass, step: Step) {
+  const sids = step.leftovers.map((leftover) => leftover.session.sid)
+  const needs = [...step.needs]
+  if (room.outboxes.some((box) => sids.includes(box.sid))) {
     return true
   }
 
+  if (pass.isOutside(sids)) {
+    return pass.leave(pass.left, sids)
+  }
+
+  // Work on a refused session's unsent clocks, or a cycle, can't commit in any order
+  const chains = pass.refused.filter((chain) => chain.sids.some((sid) => step.needs.has(sid)))
+  if (chains.length || sids.length > 1) {
+    return keepWith(room, pass, step, chains)
+  }
+
+  if (needs.some((sid) => pass.unanswered.has(sid))) {
+    return pass.leave(pass.unanswered, sids)
+  }
+
+  if (needs.some((sid) => pass.left.has(sid))) {
+    return pass.leave(pass.left, sids)
+  }
+
+  return adoptSession(room, device, pass, step.leftovers[0].session)
+}
+
+// Every lock, or none when one is held elsewhere
+async function holdLocks(room: LeftoverRoom, sids: string[]) {
+  const releases: (() => void)[] = []
+  for (const sid of sids) {
+    const release = await holdLock(room.lockName(sid))
+    if (!release) {
+      releaseAll(releases)
+      return null
+    }
+
+    releases.push(release)
+  }
+
+  return releases
+}
+
+// The step's locks, held until its chain is written; false once the room closed or shut meanwhile
+async function keepWith(room: LeftoverRoom, pass: Pass, step: Step, chains: RefusedChain[]) {
+  const sids = step.leftovers.map((leftover) => leftover.session.sid)
+  const releases = await holdLocks(room, sids)
+  if (!releases) {
+    return pass.leave(pass.left, sids)
+  }
+
+  if (room.closed || !room.writable) {
+    releaseAll(releases)
+    return false
+  }
+
+  joinChains(pass, step, chains, releases)
+  return true
+}
+
+// The step joins the chains it needs, merged into one, or starts its own as a cycle
+function joinChains(pass: Pass, step: Step, chains: RefusedChain[], releases: (() => void)[]) {
+  const sids = step.leftovers.map((leftover) => leftover.session.sid)
+  const [into, ...merged] = chains
+  if (!into) {
+    // The server's own word for work that needs clocks it hasn't committed
+    const lineage = step.leftovers[0].session.lineage
+    pass.refused.push({ reason: 'missing_dep', lineage, sids, releases })
+    return
+  }
+
+  for (const chain of merged) {
+    into.sids.push(...chain.sids)
+    into.releases.push(...chain.releases)
+    pass.refused.splice(pass.refused.indexOf(chain), 1)
+  }
+
+  into.sids.push(...sids)
+  into.releases.push(...releases)
+}
+
+// One tab's leftover work, once no live tab holds it; false once the room closed or shut meanwhile
+async function adoptSession(
+  room: LeftoverRoom,
+  device: Device,
+  pass: Pass,
+  session: StoredSession,
+) {
   const release = await holdLock(room.lockName(session.sid))
   if (!release) {
+    pass.left.add(session.sid)
     return true
   }
 
@@ -126,7 +261,7 @@ async function adoptSession(room: LeftoverRoom, device: Device, session: StoredS
     return true
   }
 
-  return takeOver(room, device, session, release, entries)
+  return takeOver(room, pass, session, release, entries)
 }
 
 function adoptBox(room: LeftoverRoom, box: Outbox) {
@@ -141,10 +276,10 @@ function adoptBox(room: LeftoverRoom, box: Outbox) {
   room.outboxes.splice(-1, 0, box)
 }
 
-// The work joins this tab's outboxes, or is kept aside when its claim is refused
+// The work joins this tab's outboxes, or waits with its lock held to be kept aside with its chain
 async function takeOver(
   room: LeftoverRoom,
-  device: Device,
+  pass: Pass,
   session: StoredSession,
   release: () => void,
   entries: StoredEntry[],
@@ -156,12 +291,19 @@ async function takeOver(
     return false
   }
 
-  if (claimVerdict !== 'ok') {
-    await keepAside(device, session, claimVerdict, entries)
+  if (claimVerdict === null) {
     release()
+    pass.unanswered.add(session.sid)
     return true
   }
 
+  if (claimVerdict !== 'ok' && claimVerdict !== AWAITS_CLAIM) {
+    const sids = [session.sid]
+    pass.refused.push({ reason: claimVerdict, lineage: session.lineage, sids, releases: [release] })
+    return true
+  }
+
+  box.awaitsClaim = claimVerdict === AWAITS_CLAIM
   adoptBox(room, box)
   return true
 }
@@ -179,20 +321,26 @@ async function claimVerdictOf(room: LeftoverRoom, session: StoredSession, box: O
     return 'ok'
   }
 
+  if (!room.bound) {
+    return AWAITS_CLAIM
+  }
+
   return claimClientId(room, box)
 }
 
-// A refused claim keeps the work as a recovery copy; no verdict leaves it for a later tab
-async function keepAside(
-  device: Device,
-  session: StoredSession,
-  claimVerdict: string | null,
-  entries: StoredEntry[],
-) {
-  if (!claimVerdict) {
-    return
+// Each refused chain as one recovery copy that reads on its own, built before any of its work leaves the store;
+// once the room closed or shut, the locks go and a later tab asks again
+async function keepRefused(room: LeftoverRoom, device: Device, pass: Pass) {
+  const isOpen = !room.closed && room.writable
+  for (const chain of pass.refused) {
+    if (isOpen) {
+      const entries = await Promise.all(chain.sids.map((sid) => device.entries(sid)))
+      const state = await readableState(device, chain.lineage, entries.flat())
+      await device.recover(chain.sids, lostReason(chain.reason), [], state)
+    }
+
+    releaseAll(chain.releases)
   }
 
-  const state = await readableState(device, session.lineage, entries)
-  await device.recover([session.sid], lostReason(claimVerdict), [], state)
+  return isOpen
 }

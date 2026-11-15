@@ -2,7 +2,7 @@
   <Dialog
     v-model:open="show"
     v-bind="{
-      title: __('Add to Groups'),
+      title: __('Add to groups'),
       actions: [
         {
           label: __('Add'),

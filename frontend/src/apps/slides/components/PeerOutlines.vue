@@ -7,35 +7,73 @@
     :style="outline.style"
     data-peer-outline
   >
+    <!-- at screen size, so the outline's line is as wide as the tab's and meets it at any zoom -->
     <div
-      v-if="outline.label"
-      class="pointer-events-auto absolute left-0 top-0 h-0 w-0 origin-top-left"
+      class="absolute left-0 top-0 h-0 w-0 origin-top-left"
       :style="{ transform: `scale(${1 / scale})` }"
-      @mouseenter="hoveredId = outline.elementId"
-      @mouseleave="hoveredId = null"
+      data-peer-layer
     >
-      <span
-        class="absolute -left-1 -top-1 size-2 rounded-full bg-[var(--peer-solid)]"
-        :class="{ 'opacity-0': showsName(outline) }"
-        data-peer-dot
-      />
       <svg
-        v-if="showsName(outline)"
-        class="absolute bottom-0 -left-[0.75px] overflow-visible"
-        :width="tab(outline.label).width"
-        height="16"
+        class="absolute left-0 top-0 overflow-visible"
+        :width="outline.width"
+        :height="outline.height"
       >
-        <path :d="tab(outline.label).fill" fill="var(--peer-tint)" />
-        <path
-          :d="tab(outline.label).stroke"
+        <rect
+          :width="outline.width"
+          :height="outline.height"
           fill="none"
           stroke="var(--peer-solid)"
-          stroke-width="1.5"
+          :stroke-width="LINE_WIDTH"
+          data-peer-line
         />
-        <text :style="{ font: TAB_FONT }" x="6.75" y="12.5" fill="var(--peer-ink)">
-          {{ outline.label }}
-        </text>
       </svg>
+      <div
+        v-if="outline.label"
+        class="pointer-events-auto absolute left-0 top-0 h-0 w-0"
+        @mouseenter="hoveredId = outline.elementId"
+        @mouseleave="hoveredId = null"
+      >
+        <span
+          class="absolute -left-1 -top-1 size-2 rounded-full bg-[var(--peer-solid)]"
+          :class="showsName(outline) ? 'opacity-0' : SHRINKING"
+          data-peer-dot
+        />
+        <!-- an element narrower than the tab's foot takes Writer's name flag, its corner on the outline's -->
+        <div
+          v-if="isNarrow(outline.label, outline.width)"
+          class="absolute -bottom-[0.75px] -left-[0.75px] origin-bottom-left whitespace-nowrap rounded-[6px_6px_6px_1px] bg-[var(--peer-tint)] px-1.5 text-[var(--peer-ink)] shadow-[inset_0_0_0_1.5px_var(--peer-solid)]"
+          :class="{ [`pointer-events-none scale-0 opacity-0 ${SHRINKING}`]: !showsName(outline) }"
+          :style="{ font: TAB_FONT, lineHeight: '16px' }"
+          :data-shrunk="!showsName(outline) || undefined"
+          data-peer-name
+        >
+          {{ outline.label }}
+        </div>
+        <!-- shrinks into the dot, and comes back at once -->
+        <svg
+          v-else
+          class="absolute bottom-0 left-0 origin-bottom-left overflow-visible"
+          :class="{ [`pointer-events-none scale-0 opacity-0 ${SHRINKING}`]: !showsName(outline) }"
+          :width="tab(outline.label).width"
+          height="16"
+          :data-shrunk="!showsName(outline) || undefined"
+          data-peer-name
+        >
+          <!-- drawn 0.75px left, so its line centres on the outline's -->
+          <g transform="translate(-0.75 0)">
+            <path :d="tab(outline.label).fill" fill="var(--peer-tint)" />
+            <path
+              :d="tab(outline.label).stroke"
+              fill="none"
+              stroke="var(--peer-solid)"
+              :stroke-width="LINE_WIDTH"
+            />
+            <text :style="{ font: TAB_FONT }" x="6.75" y="12.5" fill="var(--peer-ink)">
+              {{ outline.label }}
+            </text>
+          </g>
+        </svg>
+      </div>
     </div>
   </div>
 </template>
@@ -54,6 +92,7 @@ import '@/platform/collab/peers.css'
 const NAME_SHOWN_MS = 3000
 const LINE_WIDTH = 1.5
 const TAB_FONT = '500 11px ui-sans-serif, -apple-system, sans-serif'
+const SHRINKING = 'transition duration-200 ease-out motion-reduce:transition-none'
 
 const props = defineProps<{ scale: number }>()
 
@@ -86,10 +125,11 @@ function showsName(outline: PeerOutline) {
   return hoveredId.value === outline.elementId || now.value - outline.person.actedAt < NAME_SHOWN_MS
 }
 
-const placed = shallowRef<(PeerOutline & { style: CSSProperties })[]>([])
+const placed = shallowRef<
+  (PeerOutline & { style: CSSProperties; width: number; height: number })[]
+>([])
 
 function place() {
-  const lineWidth = LINE_WIDTH / props.scale
   placed.value = outlines.value.flatMap((outline) => {
     const element = getElementDiv(outline.elementId)
     if (!element) {
@@ -104,11 +144,12 @@ function place() {
       transformOrigin,
       width: `${element.offsetWidth}px`,
       height: `${element.offsetHeight}px`,
-      outline: `${lineWidth}px solid var(--peer-solid)`,
-      outlineOffset: `${-lineWidth / 2}px`,
       ...(outline.person.colour && colourStyle(outline.person.colour)),
     }
-    return [{ ...outline, style }]
+    // on screen
+    const width = element.offsetWidth * props.scale
+    const height = element.offsetHeight * props.scale
+    return [{ ...outline, style, width, height }]
   })
 }
 
@@ -136,6 +177,11 @@ function textWidth(text: string) {
   const width = measurer.measureText(text).width
   widths.set(text, width)
   return width
+}
+
+// the tab's foot ends 0.75px left of its own right edge
+function isNarrow(label: string, width: number) {
+  return width < tab(label).width - 0.75
 }
 
 // the approved shape: joined to the outline, with a soft curve on its right side

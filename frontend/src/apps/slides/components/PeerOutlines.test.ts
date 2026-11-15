@@ -16,10 +16,13 @@ vi.mock('@/apps/slides/stores/slide', () => ({ currentSlide }))
 const { default: PeerOutlines } = await import('./PeerOutlines.vue')
 const { registerElementDiv } = await import('@/apps/slides/stores/elementRegistry')
 
-function elementAt(id: string, left: string, top: string) {
+function elementAt(id: string, left: string, top: string, width = 400) {
   const div = document.createElement('div')
   div.style.left = left
   div.style.top = top
+  // its size on the slide
+  Object.defineProperty(div, 'offsetWidth', { value: width })
+  Object.defineProperty(div, 'offsetHeight', { value: 100 })
   registerElementDiv(id, div)
 }
 
@@ -36,8 +39,13 @@ function room(peers: Peer[]) {
     awareness.states.set(pid, { cursor: { elements, count: elements.length } })
     awareness.emit('change', [{ added: [], updated: [pid], removed: [] }, 'test'])
   }
+  // a tab with nothing selected and no caret shares no position at all
+  function deselect(pid: number) {
+    awareness.states.set(pid, { cursor: null })
+    awareness.emit('change', [{ added: [], updated: [pid], removed: [] }, 'test'])
+  }
 
-  return { presence, select }
+  return { presence, select, deselect }
 }
 
 function tab(pid: number, user: string, idleSince: number | null = null): Peer {
@@ -46,9 +54,9 @@ function tab(pid: number, user: string, idleSince: number | null = null): Peer {
 
 let app: App | undefined
 
-async function outlines(presence: RoomPresence) {
+async function outlines(presence: RoomPresence, scale = 1) {
   const host = document.createElement('div')
-  app = createApp({ render: () => h(PeerOutlines, { scale: 1 }) })
+  app = createApp({ render: () => h(PeerOutlines, { scale }) })
   app.provide('livePresence', shallowRef(presence))
   app.mount(host)
   await nextTick()
@@ -57,6 +65,14 @@ async function outlines(presence: RoomPresence) {
 
 function outlineIn(host: HTMLElement) {
   return host.querySelector<HTMLElement>('[data-peer-outline]')
+}
+
+function nameIn(host: HTMLElement) {
+  return host.querySelector('[data-peer-name]:not([data-shrunk])')
+}
+
+function scaleOf(element: HTMLElement) {
+  return Number(/scale\((.+)\)/.exec(element.style.transform)![1])
 }
 
 describe('PeerOutlines', () => {
@@ -78,14 +94,14 @@ describe('PeerOutlines', () => {
     await nextTick()
     vi.advanceTimersByTime(3001)
     await nextTick()
-    expect(host.querySelector('svg')).toBeNull()
+    expect(nameIn(host)).toBeNull()
 
     presence.awareness.states.set(5, { cursor: { elements: ['one'], count: 1 }, typed: 1 })
     presence.awareness.emit('change', [{ added: [], updated: [5], removed: [] }, 'test'])
     await nextTick()
     await nextTick()
 
-    expect(host.querySelector('svg')).not.toBeNull()
+    expect(nameIn(host)).not.toBeNull()
   })
 
   it('outlines what a co-editor selects, at that element, under their first name', async () => {
@@ -100,6 +116,51 @@ describe('PeerOutlines', () => {
     expect(outline?.style.left).toBe('40px')
     expect(outline?.style.top).toBe('60px')
     expect(outline?.textContent?.trim()).toBe('Asha')
+  })
+
+  it("draws the outline with the name tab's 1.5px line, whatever the zoom", async () => {
+    const { presence, select } = room([tab(5, 'asha')])
+    const host = await outlines(presence, 0.5)
+
+    select(5, ['one'])
+    await nextTick()
+    await nextTick()
+
+    const layer = host.querySelector<HTMLElement>('[data-peer-layer]')!
+    const line = host.querySelector('[data-peer-line]')!
+    const tabLine = nameIn(host)!.querySelector('path[stroke]')!
+    // the slide's zoom times the layer's
+    const onScreen = 0.5 * scaleOf(layer)
+    expect(Number(line.getAttribute('stroke-width')) * onScreen).toBe(1.5)
+    expect(Number(tabLine.getAttribute('stroke-width')) * onScreen).toBe(1.5)
+    expect(Number(line.getAttribute('width')) * scaleOf(layer)).toBe(400)
+    expect(Number(line.getAttribute('height')) * scaleOf(layer)).toBe(100)
+  })
+
+  it('names a co-editor on an element narrower than the tab in a flag, not the joined tab', async () => {
+    elementAt('one', '40px', '60px', 4)
+    const { presence, select } = room([tab(5, 'asha')])
+    const host = await outlines(presence)
+
+    select(5, ['one'])
+    await nextTick()
+    await nextTick()
+
+    expect(nameIn(host)?.tagName).toBe('DIV')
+    expect(nameIn(host)?.textContent?.trim()).toBe('Asha')
+    expect(host.querySelector('[data-peer-name] path')).toBeNull()
+  })
+
+  it('keeps the joined tab on an element wide enough for it', async () => {
+    const { presence, select } = room([tab(5, 'asha')])
+    const host = await outlines(presence)
+
+    select(5, ['one'])
+    await nextTick()
+    await nextTick()
+
+    expect(nameIn(host)?.tagName).toBe('svg')
+    expect(nameIn(host)?.textContent?.trim()).toBe('Asha')
   })
 
   it('shows nothing while a co-editor has nothing selected', async () => {
@@ -123,17 +184,19 @@ describe('PeerOutlines', () => {
 
     vi.advanceTimersByTime(2999)
     await nextTick()
-    expect(host.querySelector('svg')).not.toBeNull()
+    expect(nameIn(host)).not.toBeNull()
 
     vi.advanceTimersByTime(2)
     await nextTick()
-    expect(host.querySelector('svg')).toBeNull()
+    expect(nameIn(host)).toBeNull()
+    // still there, so it can shrink into the dot rather than vanish
+    expect(host.querySelector('[data-peer-name][data-shrunk]')).not.toBeNull()
 
     host
       .querySelector('[data-peer-dot]')
       ?.parentElement?.dispatchEvent(new MouseEvent('mouseenter'))
     await nextTick()
-    expect(host.querySelector('svg')).not.toBeNull()
+    expect(nameIn(host)).not.toBeNull()
   })
 
   it('brings the name back when they act again', async () => {
@@ -148,7 +211,24 @@ describe('PeerOutlines', () => {
     await nextTick()
     await nextTick()
 
-    expect(host.querySelector('svg')).not.toBeNull()
+    expect(nameIn(host)).not.toBeNull()
+  })
+
+  it('brings the name back when they click away and back on the same element', async () => {
+    const { presence, select, deselect } = room([tab(5, 'asha')])
+    const host = await outlines(presence)
+    select(5, ['one'])
+    await nextTick()
+    vi.advanceTimersByTime(4000)
+    await nextTick()
+
+    deselect(5)
+    await nextTick()
+    select(5, ['one'])
+    await nextTick()
+    await nextTick()
+
+    expect(nameIn(host)).not.toBeNull()
   })
 
   it('dims the outline of someone idle', async () => {

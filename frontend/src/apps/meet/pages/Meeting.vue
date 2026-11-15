@@ -21,7 +21,7 @@
             v-if="showPreview"
             size="sm"
             icon-left="lucide-link-2"
-            label="Copy link"
+            :label="__('Copy link')"
             @click="copyMeetingLink"
           />
           <Button
@@ -30,49 +30,41 @@
             size="sm"
             @click="redirectToLogin"
           >
-            Sign In
+            {{ __('Sign in') }}
           </Button>
         </template>
       </MeetingHeader>
     </div>
 
-    <div v-if="connectionState.connectionMoved" class="grid flex-1 place-items-center px-5 py-16">
-      <div class="flex w-full max-w-sm flex-col items-center text-center">
-        <div class="rounded-full bg-surface-gray-2 p-3 text-ink-gray-5">
-          <span class="lucide-monitor-smartphone block size-6" aria-hidden="true" />
-        </div>
-        <h1 class="mt-4 text-2xl-semibold text-ink-gray-9">Meeting moved to another device</h1>
-        <p class="mt-2 text-p-base text-ink-gray-6">
-          Your audio and video have stopped here because you joined from another device.
-        </p>
-        <Button
-          class="mt-6"
-          variant="solid"
-          theme="gray"
-          icon-left="lucide-arrow-left"
-          label="Back to Meet"
-          @click="router.push('/meet')"
-        />
-      </div>
-    </div>
+    <MeetStatusScreen
+      v-if="connectionState.connectionMoved"
+      icon="lucide-monitor-smartphone"
+      :title="__('Meeting moved to another device')"
+      :description="
+        __('Your audio and video have stopped here because you joined from another device.')
+      "
+      :action-label="__('Back to Meet')"
+      action-icon="lucide-arrow-left"
+      @action="router.push('/meet')"
+    />
 
-    <!-- Error state -->
-    <div v-else-if="hasConnectionError" class="flex-1 flex items-center justify-center">
-      <div class="text-center text-white">
-        <div class="text-red-500 mb-4">
-          <lucide-alert-circle class="w-12 h-12 mx-auto" />
-        </div>
-        <p class="text-lg mb-4">{{ connectionState.connectionError }}</p>
-        <Button variant="outline" theme="red" @click="resetToPreview">Try Again</Button>
-      </div>
-    </div>
+    <!-- The reason can be setup detail (a missing SFU secret); it is logged, not shown. -->
+    <MeetStatusScreen
+      v-else-if="hasConnectionError"
+      icon="lucide-circle-alert"
+      tone="danger"
+      :title="__('Could not join the meeting')"
+      :description="__('Something stopped the call from starting. Try again in a moment.')"
+      :action-label="__('Try again')"
+      @action="resetToPreview"
+    />
 
     <template v-else>
       <!-- Preview mode -->
       <MeetingPreview
         v-if="showPreview"
         :meeting-id="meetingId"
-        :meeting-title="previewTitle"
+        :meeting-title="givenTitle"
         :is-camera-on="mediaState.isCameraOn"
         :is-mic-on="mediaState.isMicOn"
         :media-stream="mediaState.localStream"
@@ -126,7 +118,7 @@
                     <template #prefix>
                       <span class="lucide-lock size-3.5" aria-hidden="true" />
                     </template>
-                    End-to-end encrypted
+                    {{ __('End-to-end encrypted') }}
                   </Badge>
                 </div>
                 <MeetingLayout v-else @open-people-panel="togglePeople" />
@@ -169,7 +161,7 @@
                   :user-name="
                     (currentUser.currentUser.value?.full_name as string) ||
                     (currentUser.currentUser.value?.name as string) ||
-                    'You'
+                    __('You')
                   "
                   :is-host="isCurrentUserHost"
                   :is-cohost="isCurrentUserCohost"
@@ -296,12 +288,14 @@ import {
   ref,
   toRef,
   watch,
+  watchEffect,
 } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 
 import { api, client, useQuery } from '@/api'
 import { session, userResource } from '@/boot/session'
 import { appPageMeta } from '@/platform/page-meta'
+import { translate as __ } from '@/platform/translation'
 import { useRootStore } from '@/stores/root'
 import { confirmLeave } from '@/utils/confirmLeave'
 
@@ -314,6 +308,7 @@ import MeetingHeader from '../components/MeetingHeader.vue'
 import MeetingLayout from '../components/MeetingLayout.vue'
 import MeetingPreview from '../components/MeetingPreview.vue'
 import MeetingToolbar from '../components/MeetingToolbar.vue'
+import MeetStatusScreen from '../components/MeetStatusScreen.vue'
 import PeoplePanel from '../components/PeoplePanel.vue'
 import RecordingIndicator from '../components/RecordingIndicator.vue'
 import RecordingPreflightDialog from '../components/RecordingPreflightDialog.vue'
@@ -354,6 +349,7 @@ import { useSFUConnection, type SFUScreenShareData } from '../composables/useSFU
 import { autoHideToolbar, selectedSpeakerId } from '../data/mediaPreferences'
 import { setShowStatsForNerds, showStatsForNerds } from '../data/statsPreferences'
 import { useSocket } from '../socket'
+import { refusalOr } from '../utils/error'
 import { deviceManager } from '../utils/media/DeviceManager'
 import type { Participant } from '../utils/media/ParticipantManager'
 
@@ -374,9 +370,9 @@ function redirectToLogin() {
 async function copyMeetingLink() {
   try {
     await navigator.clipboard.writeText(window.location.href)
-    toast.success('Meeting link copied')
+    toast.success(__('Meeting link copied'))
   } catch {
-    toast.error('Could not copy meeting link')
+    toast.error(__('Could not copy meeting link'))
   }
 }
 const unregisterPaletteGroups = useRootStore().registerPaletteGroups('meet-meeting', [
@@ -384,8 +380,8 @@ const unregisterPaletteGroups = useRootStore().registerPaletteGroups('meet-meeti
     commands: [
       {
         id: 'meet-copy-link',
-        label: 'Copy meeting link',
-        enterHint: 'copy meeting link',
+        label: __('Copy meeting link'),
+        enterHint: __('copy meeting link'),
         icon: 'lucide-link-2',
         keywords: ['share', 'url'],
         run: copyMeetingLink,
@@ -444,7 +440,7 @@ async function handleRecordingAction() {
     recordingPreflight.value = await recording.getPreflight()
     recordingDialogOpen.value = true
   } catch (error) {
-    toast.error(error instanceof Error ? error.message : 'Could not manage recording')
+    toast.error(refusalOr(error, __('Could not manage recording')))
   }
 }
 async function confirmRecordingStop() {
@@ -452,14 +448,14 @@ async function confirmRecordingStop() {
     await recording.stop()
     recordingStopDialogOpen.value = false
   } catch (error) {
-    toast.error(error instanceof Error ? error.message : 'Could not stop recording')
+    toast.error(refusalOr(error, __('Could not stop recording')))
   }
 }
 async function confirmRecordingStart() {
   try {
     await recording.start()
   } catch (error) {
-    toast.error(error instanceof Error ? error.message : 'Could not start recording')
+    toast.error(refusalOr(error, __('Could not start recording')))
     throw error
   }
 }
@@ -470,9 +466,10 @@ const previewDetails = useQuery(api.meet.rooms.preview, () =>
       }
     : false,
 )
-const previewTitle = computed(
-  () => meetingDoc.data?.title || previewDetails.data?.title || meetingId.value,
-)
+// The meeting's own title, if it has one. The header falls back to the code; the preview's line
+// above "Ready to join?" does not, since the code is already in the header.
+const givenTitle = computed(() => meetingDoc.data?.title || previewDetails.data?.title || '')
+const previewTitle = computed(() => givenTitle.value || meetingId.value)
 usePageMeta(() => appPageMeta(previewTitle.value, 'Meet'))
 watch(
   () => meetingDoc.error,
@@ -498,11 +495,11 @@ const e2eeJoinStatus = ref<'pending' | 'failed' | ''>('')
 const e2eeJoinReason = ref('')
 const e2eeState = useE2EEState()
 const e2eeJoinTitle = computed(() => {
-  if (e2eeJoinStatus.value === 'failed') return 'Could not join encrypted meeting'
+  if (e2eeJoinStatus.value === 'failed') return __('Could not join encrypted meeting')
   if (e2eeJoinReason.value === 'waiting-for-host') {
-    return 'Waiting for the host to join'
+    return __('Waiting for the host to join')
   }
-  return 'Joining encrypted meeting'
+  return __('Joining encrypted meeting')
 })
 interface E2EEJoinDetail {
   status?: string
@@ -533,7 +530,8 @@ function handleE2EEJoinStatus(event: Event): void {
     e2eeJoinStatus.value = 'failed'
     e2eeJoinReason.value = detail.reason || ''
     e2eeJoinPendingMessage.value =
-      detail.message || 'Could not set up encryption for this meeting. Please leave and try again.'
+      detail.message ||
+      __('Could not set up encryption for this meeting. Please leave and try again.')
     return
   }
   e2eeJoinStatus.value = ''
@@ -542,9 +540,9 @@ function handleE2EEJoinStatus(event: Event): void {
 }
 function getE2EEJoinPendingMessage(detail: { reason?: string; message?: string }): string {
   if (detail.reason === 'waiting-for-host') {
-    return "You'll join automatically when the host arrives."
+    return __("You'll join automatically when the host arrives.")
   }
-  return detail.message || 'Waiting for someone already in the encrypted meeting to let you in.'
+  return detail.message || __('Waiting for someone already in the encrypted meeting to let you in.')
 }
 
 // --- Guest session ---
@@ -767,6 +765,13 @@ provide(pollKey, poll)
 // --- Computed properties ---
 const isConnecting = sfuConnection.isConnecting
 const hasConnectionError = computed(() => !!connectionState.connectionError)
+// The screen gives a plain title; the reason, which can be setup detail, goes to the console.
+watch(
+  () => connectionState.connectionError,
+  (reason) => {
+    if (reason) console.error('Could not join the meeting:', reason)
+  },
+)
 const isInLobby = computed(() => lobbyStore.isInLobby || false)
 const isWaitingForApproval = computed(() => lobbyStore.isWaitingForApproval || false)
 const isRejected = computed(() => lobbyStore.isJoinRequestRejected || false)
@@ -785,6 +790,14 @@ const showPreview = computed(() => {
   const joinRequestRejected = lobbyStore.isJoinRequestRejected
   return inPreview || joinRequestRejected
 })
+
+// During the call, toasts rise above the toolbar instead of covering its buttons (People, Chat,
+// Meeting information). The class lives on <html> because the toaster is mounted outside this page.
+const isInCall = computed(
+  () => !showPreview.value && !connectionState.connectionMoved && !hasConnectionError.value,
+)
+watchEffect(() => document.documentElement.classList.toggle('meet-in-call', isInCall.value))
+onUnmounted(() => document.documentElement.classList.remove('meet-in-call'))
 const canLeaveMeeting = ref(false)
 let pendingLeaveConfirmation: Promise<boolean> | null = null
 async function confirmMeetingLeave() {
@@ -795,9 +808,9 @@ async function confirmMeetingLeave() {
     return true
   if (pendingLeaveConfirmation) return pendingLeaveConfirmation
   pendingLeaveConfirmation = confirmLeave({
-    title: 'Leave meeting?',
-    message: 'You will be disconnected from the meeting.',
-    confirmLabel: 'Leave meeting',
+    title: __('Leave meeting?'),
+    message: __('You will be disconnected from the meeting.'),
+    confirmLabel: __('Leave meeting'),
     focusConfirm: true,
   })
   try {
@@ -858,7 +871,7 @@ watch(
       ) {
         return
       }
-      toast.loading('Connecting…', {
+      toast.loading(__('Connecting…'), {
         id: CONNECTING_TOAST_ID,
         duration: Number.POSITIVE_INFINITY,
       })
@@ -986,7 +999,7 @@ const showMeetingNotification = (notification: {
                   class: 'block truncate text-p-base font-medium text-ink-base',
                 },
                 notification.type === 'poll'
-                  ? `${notification.fromName} started a poll`
+                  ? __('{0} started a poll', [notification.fromName])
                   : notification.fromName,
               ),
               h(
@@ -1259,3 +1272,16 @@ onUnmounted(() => {
   }
 })
 </script>
+
+<style>
+html.meet-in-call [data-sonner-toaster][data-y-position='bottom'] {
+  bottom: calc(var(--offset-bottom) + 3.75rem) !important;
+}
+@media (max-width: 600px) {
+  html.meet-in-call [data-sonner-toaster][data-y-position='bottom'] {
+    bottom: calc(
+      var(--mobile-offset-bottom) + 3.75rem + max(env(safe-area-inset-bottom), 0px)
+    ) !important;
+  }
+}
+</style>

@@ -197,7 +197,7 @@ describe('Admin Users', () => {
       await client.query(api.suite.users.list)
       const element = await mount()
       await nextTick()
-      expect(element.textContent?.includes('Only one active Admin')).toBe(warns)
+      expect(element.textContent?.includes('Only one active admin')).toBe(warns)
     },
   )
 

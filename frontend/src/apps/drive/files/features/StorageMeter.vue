@@ -1,11 +1,17 @@
 <!--
   How much of the personal Drive's quota is used, as a thin bar and one line.
   Pressing it opens the Storage tab (`drive.statistics`) in Settings. It keeps its space with a
-  skeleton while it loads, and shows nothing when the read fails.
+  skeleton while it loads, and shows a retry action when the read fails.
 -->
 <template>
+  <LoadFailed
+    v-if="failed"
+    variant="section"
+    :title="__('Could not load storage usage')"
+    :retry="retry"
+  />
   <button
-    v-if="meter"
+    v-else-if="meter"
     type="button"
     class="group flex w-full flex-col gap-2 rounded-4 px-2 py-2 text-start transition-colors hover:bg-surface-gray-3 focus-visible:focus-ring"
     :aria-label="__('Storage: {0}. Open storage settings.', [meter.label])"
@@ -35,6 +41,7 @@ import { Skeleton } from 'frappe-ui'
 import { computed } from 'vue'
 
 import { api, useQuery } from '@/api'
+import { LoadFailed } from '@/platform/load-failed'
 import { openSettings } from '@/platform/settings'
 import { translate as __ } from '@/platform/translation'
 
@@ -51,6 +58,11 @@ const usage = useQuery(api.drive.roots.usage, () => {
   const personal = discovered.data?.personal.node
   return personal ? { root: personal } : false
 })
+async function retry() {
+  if (discovered.error) await discovered.refetch()
+  await usage.refetch()
+}
+
 const failed = computed(() => discovered.status === 'error' || usage.status === 'error')
 const meter = computed(() => (usage.data ? storageMeter(usage.data) : null))
 </script>

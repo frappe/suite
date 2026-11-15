@@ -3,7 +3,7 @@
     <template #loading>
       <DashboardDetailHeaderSkeleton :actions="4" />
       <div class="rounded-4 border">
-        <h2 class="h-13 flex shrink-0 items-center px-4">{{ __('DNS Records') }}</h2>
+        <h2 class="h-13 flex shrink-0 items-center px-4">{{ __('DNS records') }}</h2>
         <div v-for="n in 2" :key="n" class="space-y-4 border-t p-4">
           <div class="space-y-2">
             <DashboardSkeletonText width="6rem" />
@@ -40,14 +40,20 @@
           <Button :label="__('Edit')" @click="showEdit = true" />
           <Button
             :label="__('Verify DNS')"
+            icon-left="lucide-circle-check"
             :loading="verifyDomain.isPending"
             @click="verifyDomainSubmit()"
           />
           <Dropdown
             :options="exportOptions"
             :button="{ label: __('Export DNS'), iconLeft: 'lucide-download' }"
+            align="end"
           />
-          <Dropdown :options="dropdownOptions" :button="{ icon: 'lucide-more-horizontal' }" />
+          <Dropdown
+            :options="dropdownOptions"
+            :button="{ icon: 'lucide-more-horizontal' }"
+            align="end"
+          />
         </template>
       </DashboardDetailHeader>
       <div
@@ -62,7 +68,7 @@
         </div>
       </div>
       <div class="rounded-4 border">
-        <h2 class="h-13 flex shrink-0 items-center px-4">{{ __('DNS Records') }}</h2>
+        <h2 class="h-13 flex shrink-0 items-center px-4">{{ __('DNS records') }}</h2>
         <DNSRecords
           v-for="group in recordGroups"
           :key="group.key"
@@ -75,7 +81,6 @@
       </div>
     </template>
   </DashboardLayout>
-  <Dialog v-model:open="showConfirmDialog" v-bind="confirmDialogOptions" />
   <EditDomainModal
     v-if="domain.data"
     v-model="showEdit"
@@ -86,7 +91,7 @@
 <script setup lang="ts">
 import Globe from '~icons/lucide/globe'
 import Info from '~icons/lucide/info'
-import { Button, Dialog, Dropdown, Tooltip, usePageMeta } from 'frappe-ui'
+import { Button, dialog, Dropdown, Tooltip, usePageMeta } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -126,8 +131,8 @@ const { domainId } = defineProps<{
   domainId: string
 }>()
 const router = useRouter()
-const showConfirmDialog = ref(false)
 const showEdit = ref(false)
+const deleting = ref(false)
 const domain = useQuery(api.mail.admin.domains.get, () => ({
   domain_id: domainId,
 }))
@@ -137,7 +142,9 @@ usePageMeta(() => appPageMeta(domain.data?.name || domainId, 'Mail'))
 watch(
   () => domain.error,
   (error) => {
-    if (!error) return
+    // Once a delete is under way, the refetch of the record it removed fails with "not found";
+    // that is the delete working, not an error to show over its own toast.
+    if (!error || deleting.value) return
     raiseError(error)
     router.replace({
       name: 'mail-domains',
@@ -164,12 +171,15 @@ async function deleteDomainSubmit() {
   const input: InputOf<typeof api.mail.admin.domains.delete> = {
     domain_id: domainId,
   }
-  await deleteDomain.run(input)
+  deleting.value = true
+  await deleteDomain.run(input).catch((error) => {
+    deleting.value = false
+    throw error
+  })
   router.push({
     name: 'mail-domains',
   })
-  showConfirmDialog.value = false
-  raiseToast('Domain deleted.')
+  raiseToast(__('Domain deleted.'))
 }
 const setEnabled = useMutation(api.mail.admin.domains.setEnabled)
 async function setEnabledSubmit(values: { enabled: boolean }) {
@@ -180,7 +190,6 @@ async function setEnabledSubmit(values: { enabled: boolean }) {
   const result = await setEnabled.run(input)
   const data = result
   domain.refetch().catch(() => {})
-  showConfirmDialog.value = false
   raiseToast(
     data.is_enabled
       ? __('Domain enabled. Verify its DNS records to bring it live.')
@@ -229,42 +238,28 @@ const BREADCRUMBS = computed(() => [
     label: domain.data?.name || domainId,
   },
 ])
-const confirmDialogAction = ref<'deleteDomain' | 'disableDomain'>('deleteDomain')
 const badge = computed(() => domainStatusBadge(domainData.value?.status))
-const confirmDialogOptions = computed(() => {
-  const config = {
-    disableDomain: {
-      title: __('Disable Domain'),
-      message: __(
-        'Mail for this domain stops flowing and its verification is dropped. After enabling it again, its DNS records must be verified before mail flows. Continue?',
-      ),
-      action: () =>
-        setEnabledSubmit({
-          enabled: false,
-        }),
-    },
-    deleteDomain: {
-      title: __('Delete Domain'),
-      message: __('Are you sure you want to delete this domain? This action cannot be undone.'),
-      action: deleteDomainSubmit,
-    },
-  }[confirmDialogAction.value]
-  return {
-    title: config.title,
-    message: config.message,
-    size: 'xl' as const,
-    icon: 'lucide-alert-triangle',
-    theme: 'amber' as const,
-    actions: [
-      {
-        label: __('Confirm'),
-        variant: 'solid' as const,
-        theme: 'red' as const,
-        onClick: config.action,
-      },
-    ],
-  }
-})
+// Disabling stops mail but can be undone; deleting cannot, so only that one is red.
+function confirmDisableDomain() {
+  dialog.confirm({
+    title: __('Disable this domain?'),
+    message: __(
+      'Mail for this domain stops flowing and its verification is dropped. After enabling it again, its DNS records must be verified before mail flows.',
+    ),
+    theme: 'amber',
+    confirmLabel: __('Disable domain'),
+    onConfirm: () => setEnabledSubmit({ enabled: false }),
+  })
+}
+function confirmDeleteDomain() {
+  dialog.confirm({
+    title: __('Delete this domain?'),
+    message: __('The domain and its settings are deleted. This cannot be undone.'),
+    theme: 'red',
+    confirmLabel: __('Delete domain'),
+    onConfirm: deleteDomainSubmit,
+  })
+}
 const isEnabled = computed(() => !!domainData.value?.is_enabled)
 
 // Facts under the domain name: the description, when it was added (exact time on hover), and
@@ -331,7 +326,7 @@ const exportOptions = [
     group: '',
     options: [
       {
-        label: __('Zone File'),
+        label: __('Zone file'),
         icon: 'lucide-file-text',
         onClick: downloadDNSZoneSubmit,
       },
@@ -354,15 +349,12 @@ const dropdownOptions = computed(() => [
     options: [
       isEnabled.value
         ? {
-            label: __('Disable Domain'),
+            label: __('Disable domain'),
             icon: 'lucide-pause',
-            onClick: () => {
-              confirmDialogAction.value = 'disableDomain'
-              showConfirmDialog.value = true
-            },
+            onClick: confirmDisableDomain,
           }
         : {
-            label: __('Enable Domain'),
+            label: __('Enable domain'),
             icon: 'lucide-play',
             onClick: () =>
               setEnabledSubmit({
@@ -370,12 +362,9 @@ const dropdownOptions = computed(() => [
               }),
           },
       {
-        label: __('Delete Domain'),
+        label: __('Delete domain'),
         icon: 'lucide-trash-2',
-        onClick: () => {
-          confirmDialogAction.value = 'deleteDomain'
-          showConfirmDialog.value = true
-        },
+        onClick: confirmDeleteDomain,
       },
     ],
   },
@@ -383,7 +372,7 @@ const dropdownOptions = computed(() => [
 
 // Shown while the records are still to be published; an active domain needs no setup pitch.
 const BANNER = {
-  title: __('Set Up Your Domain'),
+  title: __('Set up your domain'),
   message: __("Add the following records to your domain's DNS settings."),
   subtitle: __('DNS changes may take up to 48 hours to propagate globally.'),
 }

@@ -1,5 +1,5 @@
 <template>
-  <Button variant="ghost" :tooltip="statusText" @click="showDialog = true">
+  <Button v-if="trigger" variant="ghost" :tooltip="statusText" @click="showDialog = true">
     <template #icon>
       <component
         :is="icon"
@@ -42,6 +42,9 @@ import {
 import { presentationId } from '@/apps/slides/stores/presentation'
 import { translate } from '@/platform/translation'
 
+/** Without its own button, a menu opens the dialog through `open`. */
+withDefaults(defineProps<{ trigger?: boolean }>(), { trigger: true })
+
 const showDialog = ref(false)
 
 const icon = computed(() => {
@@ -62,7 +65,14 @@ const statusText = computed(() => {
   if (status.value === 'available') return 'Available offline'
   if (status.value === 'outdated') return 'Offline copy out of date'
   if (status.value === 'unusable') return "Offline copy can't open"
-  return 'Save offline copy'
+  return 'Keep offline'
+})
+
+defineExpose({
+  statusText,
+  open: () => {
+    showDialog.value = true
+  },
 })
 
 interface SaveResult {
@@ -178,7 +188,7 @@ const dialog = computed((): DialogProps => {
     }
   }
   return {
-    title: 'Save offline copy',
+    title: 'Keep offline',
     icon: 'lucide-cloud-download',
     message: 'Opens and presents without internet. Videos still need a connection.',
     actions: [cancelAction, { label: 'Save copy', variant: 'solid', onClick: save }],

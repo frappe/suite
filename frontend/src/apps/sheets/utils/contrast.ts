@@ -3,8 +3,8 @@
 // A cell fill is a literal colour: conditional-formatting rules interpolate
 // their own hex stops, and the fill picker stores whatever hex you chose.
 // Neither follows the light/dark theme. The default cell ink does — it
-// resolves `--ink-gray-9`, which is near-white in dark mode. Put the two
-// together and a pale colour-scale fill paints white text on a white cell.
+// resolves `--ink-gray-7`, which is light grey in dark mode. Put the two
+// together and a pale colour-scale fill paints light text on a light cell.
 //
 // So the ink over a fill has to come from the fill, not from the theme.
 

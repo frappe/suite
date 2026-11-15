@@ -1,9 +1,10 @@
+import type { ConvertedState } from '@/apps/drive'
 import { restoreEdit } from '@/apps/slides/collab/restore'
 import type { CollabRoom } from '@/platform/collab'
 import { noticeFor, refusedNotice, type RestoreNotice } from '@/platform/collab/restoreNotices'
 import { translate as __ } from '@/platform/translation'
 
-import { readVersionBody, type ConvertedVersion, type VersionBody } from './versions'
+import { readVersionBody, type VersionBody } from './versions'
 
 type RestoringRoom = Pick<CollabRoom, 'doc' | 'flush' | 'restoreVersion'>
 
@@ -19,7 +20,7 @@ export async function restoreVersion(
   seq: number,
   bytes: Uint8Array,
   beforeEdit: () => void,
-  convert: () => Promise<ConvertedVersion>,
+  convert: () => Promise<ConvertedState>,
 ): Promise<RestoreNotice> {
   let body: VersionBody
   try {

@@ -3,7 +3,7 @@
     <template #loading>
       <DashboardDetailHeaderSkeleton :actions="2" />
       <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
-        <DashboardCard :title="__('General Information')">
+        <DashboardCard :title="__('General information')">
           <div>
             <InformationField :label="__('Role')"
               ><DashboardSkeletonText width="40%"
@@ -14,13 +14,13 @@
             <InformationField :label="__('Locale')"
               ><DashboardSkeletonText width="40%"
             /></InformationField>
-            <InformationField :label="__('Time Zone')"
+            <InformationField :label="__('Time zone')"
               ><DashboardSkeletonText width="40%"
             /></InformationField>
-            <InformationField :label="__('Last Active')"
+            <InformationField :label="__('Last active')"
               ><DashboardSkeletonText width="40%"
             /></InformationField>
-            <InformationField :label="__('Joined On')"
+            <InformationField :label="__('Added')"
               ><DashboardSkeletonText width="40%"
             /></InformationField>
           </div>
@@ -32,13 +32,13 @@
             <DashboardSkeletonText width="40%" />
           </div>
         </DashboardCard>
-        <DashboardCard :title="__('Email Addresses')">
+        <DashboardCard :title="__('Email addresses')">
           <div class="flex flex-col">
             <div
               class="bg-surface-gray-2 text-ink-gray-5 flex items-center rounded-4 px-5 py-2.5 text-sm"
             >
-              <span class="flex-1">{{ __('Email Address') }}</span>
-              <span class="flex-1">{{ __('Full Name') }}</span>
+              <span class="flex-1">{{ __('Email address') }}</span>
+              <span class="flex-1">{{ __('Full name') }}</span>
               <span class="w-20 shrink-0 text-center">{{ __('Enabled') }}</span>
               <span class="w-8 shrink-0" />
             </div>
@@ -53,10 +53,10 @@
             <DashboardRowsSkeleton :rows="2" />
           </div>
         </DashboardCard>
-        <DashboardCard :title="__('Mailing Lists')">
+        <DashboardCard :title="__('Mailing lists')">
           <div class="flex flex-col">
             <div class="bg-surface-gray-2 text-ink-gray-5 rounded-4 px-5 py-2.5 text-sm">
-              {{ __('Mailing List') }}
+              {{ __('Mailing list') }}
             </div>
             <DashboardRowsSkeleton :rows="2" />
           </div>
@@ -78,7 +78,7 @@
 
       <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <!-- General Information -->
-        <DashboardCard :title="__('General Information')">
+        <DashboardCard :title="__('General information')">
           <div>
             <InformationField
               :label="__('Role')"
@@ -90,11 +90,11 @@
             />
             <InformationField :label="__('Locale')" :value="localeLabel(member.data.locale)" />
             <InformationField
-              :label="__('Time Zone')"
+              :label="__('Time zone')"
               :value="member.data.time_zone ?? undefined"
             />
-            <InformationField :label="__('Last Active')" :value="lastActive" />
-            <InformationField :label="__('Joined On')" :value="joinedOn" />
+            <InformationField :label="__('Last active')" :value="lastActive" />
+            <InformationField :label="__('Added')" :value="joinedOn" />
           </div>
         </DashboardCard>
 
@@ -131,7 +131,7 @@
 
         <!-- Email Addresses -->
         <DashboardCard
-          :title="__('Email Addresses')"
+          :title="__('Email addresses')"
           :button-label="__('Add')"
           @action="showAddEmail = true"
         >
@@ -139,8 +139,8 @@
             <div
               class="bg-surface-gray-2 text-ink-gray-5 flex items-center rounded-4 px-5 py-2.5 text-sm"
             >
-              <span class="flex-1">{{ __('Email Address') }}</span>
-              <span class="flex-1">{{ __('Full Name') }}</span>
+              <span class="flex-1">{{ __('Email address') }}</span>
+              <span class="flex-1">{{ __('Full name') }}</span>
               <span class="w-20 shrink-0 text-center">{{ __('Enabled') }}</span>
               <span class="w-8 shrink-0" />
             </div>
@@ -224,13 +224,13 @@
 
         <!-- Mailing Lists -->
         <DashboardCard
-          :title="__('Mailing Lists')"
+          :title="__('Mailing lists')"
           :button-label="__('Add')"
           @action="showAddLists = true"
         >
           <div class="flex flex-col">
             <div class="bg-surface-gray-2 text-ink-gray-5 rounded-4 px-5 py-2.5 text-sm">
-              {{ __('Mailing List') }}
+              {{ __('Mailing list') }}
             </div>
             <template v-if="member.data.mailing_lists.length">
               <div
@@ -516,7 +516,7 @@ async function setEnabled(enabled: boolean) {
 const TOGGLE_ENABLED_OPTIONS = computed(() => {
   const enabling = !data.value?.enabled
   return {
-    title: enabling ? __('Enable Account') : __('Disable Account'),
+    title: enabling ? __('Enable account') : __('Disable account'),
     message: enabling
       ? __('Are you sure you want to enable this account? They will be able to log in again.')
       : __('Are you sure you want to disable this account? They will no longer be able to log in.'),
@@ -540,7 +540,7 @@ async function setReceiving(enabled: boolean) {
 const TOGGLE_RECEIVING_OPTIONS = computed(() => {
   const enabling = Boolean(data.value?.disable_receiving)
   return {
-    title: enabling ? __('Enable Receiving') : __('Disable Receiving'),
+    title: enabling ? __('Enable receiving') : __('Disable receiving'),
     message: enabling
       ? __(
           'Are you sure you want to enable receiving for this account? Mail addressed to it will be delivered again.',
@@ -568,7 +568,7 @@ async function resetPasswordSubmit() {
   raiseToast(__('Reset password link sent to {0}.', [email]))
 }
 const RESET_PASSWORD_OPTIONS = {
-  title: __('Reset Password'),
+  title: __('Reset password'),
   message: __(
     'Send a password reset link to this account? The link will be emailed to their backup email address.',
   ),
@@ -620,7 +620,7 @@ const dropdownOptions = computed(() => [
     group: '',
     options: [
       {
-        label: __('Reset Password'),
+        label: __('Reset password'),
         icon: 'lucide-mail',
         onClick: () => (showResetPassword.value = true),
       },
@@ -636,12 +636,12 @@ const dropdownOptions = computed(() => [
     options: [
       data.value?.disable_receiving
         ? {
-            label: __('Enable Receiving'),
+            label: __('Enable receiving'),
             icon: 'lucide-mail-check',
             onClick: () => (showToggleReceiving.value = true),
           }
         : {
-            label: __('Disable Receiving'),
+            label: __('Disable receiving'),
             icon: 'lucide-mail-x',
             onClick: () => (showToggleReceiving.value = true),
           },

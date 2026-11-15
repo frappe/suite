@@ -147,15 +147,12 @@ const handlePastedJSON = async ({ srcPresentation, srcSlide, isCut, elements }) 
 
     // if pasted elements are from a different presentation
     // add file attachments correctly to current presentation + update docnames in json
-    json = await client.mutation(
+    json = await adoptPictures(
       api.slides.media.adoptElements,
-      {
-        presentation: id,
-        elements: pastedArray,
-      },
-      { context: contextFor(id) },
+      { presentation: id, elements: pastedArray },
+      id,
     )
-    if (!stillOpen()) {
+    if (!json || !stillOpen()) {
       return
     }
   }
@@ -175,6 +172,16 @@ function cannotFetchPictures() {
   return true
 }
 
+// a refused adoption pastes nothing, and the server's message says why
+async function adoptPictures(mutation, input, id) {
+  try {
+    return await client.mutation(mutation, input, { context: contextFor(id) })
+  } catch (error) {
+    toast.error((error instanceof Error && error.message) || translate('Nothing was pasted.'))
+    return null
+  }
+}
+
 const handleSvgText = (svgText) => {
   const svgBlob = new Blob([svgText], { type: 'image/svg+xml' })
   const svgFile = new File([svgBlob], 'pasted-image.svg', { type: 'image/svg+xml' })
@@ -191,15 +198,12 @@ const handlePastedSlideJSON = async (slideJSON) => {
 
     // if pasted slide is from a different presentation
     // add file attachments correctly to current presentation + update docnames in json
-    slideJSON = await client.mutation(
+    slideJSON = await adoptPictures(
       api.slides.media.adoptSlide,
-      {
-        parent: id,
-        slide: slideJSON,
-      },
-      { context: contextFor(id) },
+      { parent: id, slide: slideJSON },
+      id,
     )
-    if (!stillOpen()) {
+    if (!slideJSON || !stillOpen()) {
       return
     }
     if (typeof slideJSON.elements === 'string') {

@@ -98,6 +98,8 @@
 <script setup lang="ts">
 import { computed, inject, onBeforeUnmount, ref, watch, type ComputedRef, type Ref } from 'vue'
 
+import { translate as __ } from '@/platform/translation'
+
 import { useLayout } from '../composables/useLayout'
 import { useMeetingContext } from '../composables/useMeetingContext'
 import { usePinnedTileAnimation } from '../composables/usePinnedTileAnimation'
@@ -276,7 +278,7 @@ const localParticipant = computed(() => {
 
   const user_id =
     typeof userIdRaw === 'string' ? userIdRaw : userIdRaw == null ? 'local' : String(userIdRaw)
-  const displayNameRaw = fullNameRaw || nameRaw || 'You'
+  const displayNameRaw = fullNameRaw || nameRaw || __('You')
   const user_name = typeof displayNameRaw === 'string' ? displayNameRaw : String(displayNameRaw)
   const avatar =
     typeof avatarRaw === 'string' ? avatarRaw : avatarRaw == null ? '' : String(avatarRaw)

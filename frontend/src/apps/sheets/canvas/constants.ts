@@ -38,8 +38,10 @@ export const COLORS = {
   get white() {
     return _token('--surface-base', '#FFFFFF')
   },
+  // One step past the lightest outline, so the grid reads as clearly as
+  // Writer's table borders.
   get gridLine() {
-    return _token('--outline-gray-1', '#EDEDED')
+    return _token('--outline-gray-2', '#E2E2E2')
   },
   get headerBg() {
     return _token('--surface-base', '#FFFFFF')
@@ -47,14 +49,20 @@ export const COLORS = {
   get headerText() {
     return _token('--ink-gray-5', '#7C7C7C')
   },
+  // Text in a cell with no fill and no colour of its own: Writer's body text.
+  // The in-cell editor (overlay.ts) and dropdown chips read it too, so the
+  // text keeps its shade when editing starts.
   get cellText() {
+    return _token('--ink-gray-7', '#525252')
+  },
+  // A selected header's label, darker than the plain header labels.
+  get activeHeaderText() {
     return _token('--ink-gray-9', '#171717')
   },
   // Ink for text sitting on a cell fill. A fill stores a literal colour and
   // ignores the theme, so these must not flip with it either — they read the
-  // raw palette scale, which is fixed in both themes. They are the two values
-  // --ink-gray-9 itself resolves to, so a filled cell keeps the ink it already
-  // had in each theme. utils/contrast.js decides which one a fill gets.
+  // raw palette scale, which is fixed in both themes: its darkest and lightest
+  // greys. utils/contrast.js decides which one a fill gets.
   get inkOnLight() {
     return _token('--gray-950', '#171717')
   },
@@ -83,11 +91,10 @@ export const COLORS = {
   get filterOutline() {
     return _token('--ink-green-3', '#15803D')
   },
-  // Separators between selected headers: one step past the tint on the same
-  // surface scale, so they show on it in both themes. In light mode that is
-  // gridLine's own grey; in dark mode gridLine would sit darker than the tint.
+  // Separators between selected headers: gridLine's grey, which sits off the
+  // tint (activeHeader) in both themes: darker in light mode, lighter in dark.
   get activeHeaderLine() {
-    return _token('--surface-gray-3', '#EDEDED')
+    return _token('--outline-gray-2', '#E2E2E2')
   },
   get freezeLine() {
     return _token('--ink-gray-7', '#525252')

@@ -2,7 +2,7 @@
   <Dialog
     v-model:open="show"
     v-bind="{
-      title: __('Edit Mailing List'),
+      title: __('Edit mailing list'),
       actions: [
         {
           label: __('Save'),

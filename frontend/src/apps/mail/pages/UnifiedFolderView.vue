@@ -22,7 +22,7 @@
 	     modals stay mounted for the views' v-model bindings. -->
   <!-- Stretched, the padding inside, so a split Inbox's tabs can run the header's full height and
        underline on its border — as the mailbox list's header is. -->
-  <header class="hidden items-stretch border-b px-3 sm:flex sm:px-5">
+  <PageHeader class="hidden sm:flex">
     <!-- h-12: one height with or without the Inbox's tabs. The title's crumb stands a little taller
          than the tabs and the actions, and the bar grew with it. -->
     <div class="flex h-12 min-w-0 flex-1 items-center space-x-2 py-2.5">
@@ -44,7 +44,7 @@
     <div class="flex h-12 shrink-0 items-center py-2.5">
       <HeaderActions view-menu :inbox="folder === INBOX_FOLDER" />
     </div>
-  </header>
+  </PageHeader>
 
   <div class="relative flex h-[calc(100dvh-3.05rem)] max-sm:min-h-0 max-sm:flex-1 max-sm:!h-auto">
     <!-- Loading -->
@@ -320,7 +320,7 @@
 </template>
 
 <script setup lang="ts">
-import { Breadcrumbs, Button, Checkbox, Dialog } from 'frappe-ui'
+import { Breadcrumbs, Button, Checkbox, Dialog, PageHeader } from 'frappe-ui'
 import { LoaderCircle, RefreshCw } from 'lucide-vue-next'
 import { computed, h, inject, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
