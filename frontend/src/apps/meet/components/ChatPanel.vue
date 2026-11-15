@@ -354,7 +354,7 @@ const chatItems = computed(() =>
 function time(ts: string) {
   try {
     return new Date(ts).toLocaleTimeString([], {
-      hour: '2-digit',
+      hour: 'numeric',
       minute: '2-digit',
       hour12: true,
     })
