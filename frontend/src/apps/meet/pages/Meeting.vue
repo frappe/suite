@@ -288,6 +288,7 @@ import {
   ref,
   toRef,
   watch,
+  watchEffect,
 } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 
@@ -789,6 +790,14 @@ const showPreview = computed(() => {
   const joinRequestRejected = lobbyStore.isJoinRequestRejected
   return inPreview || joinRequestRejected
 })
+
+// During the call, toasts rise above the toolbar instead of covering its buttons (People, Chat,
+// Meeting information). The class lives on <html> because the toaster is mounted outside this page.
+const isInCall = computed(
+  () => !showPreview.value && !connectionState.connectionMoved && !hasConnectionError.value,
+)
+watchEffect(() => document.documentElement.classList.toggle('meet-in-call', isInCall.value))
+onUnmounted(() => document.documentElement.classList.remove('meet-in-call'))
 const canLeaveMeeting = ref(false)
 let pendingLeaveConfirmation: Promise<boolean> | null = null
 async function confirmMeetingLeave() {
@@ -1263,3 +1272,16 @@ onUnmounted(() => {
   }
 })
 </script>
+
+<style>
+html.meet-in-call [data-sonner-toaster][data-y-position='bottom'] {
+  bottom: calc(var(--offset-bottom) + 3.75rem) !important;
+}
+@media (max-width: 600px) {
+  html.meet-in-call [data-sonner-toaster][data-y-position='bottom'] {
+    bottom: calc(
+      var(--mobile-offset-bottom) + 3.75rem + max(env(safe-area-inset-bottom), 0px)
+    ) !important;
+  }
+}
+</style>
