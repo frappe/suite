@@ -34,7 +34,7 @@ watch(openThread, (name) => {
 
   const cell = readAnchor(thread.anchor)
   if (cell && !props.goToCell(cell.sheet, cell.cell)) {
-    toast.info(__('{0} is no longer in this spreadsheet.', [cellLabel(cell)]))
+    toast.info(__('{0} is no longer in this spreadsheet', [cellLabel(cell)]))
   }
 })
 </script>

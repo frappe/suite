@@ -403,7 +403,7 @@ describe('the thread list', () => {
     rowButton(root, 'Check this').click()
     await settle()
 
-    expect(told.infos).toEqual(['Gone · C4 is no longer in this spreadsheet.'])
+    expect(told.infos).toEqual(['Gone · C4 is no longer in this spreadsheet'])
   })
 
   it('resolves a thread, and replies to one', async () => {
