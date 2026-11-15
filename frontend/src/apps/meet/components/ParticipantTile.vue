@@ -1,6 +1,6 @@
 <template>
   <div
-    class="group relative rounded-4 overflow-hidden min-h-0"
+    class="participant-tile group relative rounded-4 overflow-hidden min-h-0"
     :class="tileBackgroundClass"
     :data-testid="`participant-tile-${participant.user_id}`"
     :data-active-speaker="String(isActiveSpeaker)"
@@ -42,11 +42,13 @@
       class="absolute inset-0 flex items-center justify-center pointer-events-none"
       :class="avatarBackgroundClass"
     >
-      <MeetAvatar
-        size="3xl"
-        :image="participant.avatar"
-        :label="participant.user_name || participant.initials"
-      />
+      <div class="participant-avatar">
+        <MeetAvatar
+          size="3xl"
+          :image="participant.avatar"
+          :label="participant.user_name || participant.initials"
+        />
+      </div>
     </div>
 
     <NamePill :name="resolvedDisplayName" :size="labelSize" :position="labelPosition">
@@ -315,6 +317,22 @@ const handleKick = (ban: boolean) => {
 </script>
 
 <style scoped>
+/* A camera-off avatar grows with its tile: 3xl on a grid or sidebar tile, larger on a big one,
+   where a 3xl avatar alone in the middle read as a loading dot. */
+.participant-tile {
+  container: meet-tile / inline-size;
+}
+@container meet-tile (min-width: 480px) {
+  .participant-avatar {
+    transform: scale(1.5);
+  }
+}
+@container meet-tile (min-width: 800px) {
+  .participant-avatar {
+    transform: scale(2);
+  }
+}
+
 /* Firefox blank video mitigation */
 .remote-video {
   background-color: #000;
