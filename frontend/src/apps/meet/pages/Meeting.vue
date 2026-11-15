@@ -36,36 +36,28 @@
       </MeetingHeader>
     </div>
 
-    <div v-if="connectionState.connectionMoved" class="grid flex-1 place-items-center px-5 py-16">
-      <div class="flex w-full max-w-sm flex-col items-center text-center">
-        <div class="rounded-full bg-surface-gray-2 p-3 text-ink-gray-5">
-          <span class="lucide-monitor-smartphone block size-6" aria-hidden="true" />
-        </div>
-        <h1 class="mt-4 text-2xl-semibold text-ink-gray-9">Meeting moved to another device</h1>
-        <p class="mt-2 text-p-base text-ink-gray-6">
-          Your audio and video have stopped here because you joined from another device.
-        </p>
-        <Button
-          class="mt-6"
-          variant="solid"
-          theme="gray"
-          icon-left="lucide-arrow-left"
-          label="Back to Meet"
-          @click="router.push('/meet')"
-        />
-      </div>
-    </div>
+    <MeetStatusScreen
+      v-if="connectionState.connectionMoved"
+      icon="lucide-monitor-smartphone"
+      :title="__('Meeting moved to another device')"
+      :description="
+        __('Your audio and video have stopped here because you joined from another device.')
+      "
+      :action-label="__('Back to Meet')"
+      action-icon="lucide-arrow-left"
+      @action="router.push('/meet')"
+    />
 
-    <!-- Error state -->
-    <div v-else-if="hasConnectionError" class="flex-1 flex items-center justify-center">
-      <div class="text-center text-white">
-        <div class="text-red-500 mb-4">
-          <lucide-alert-circle class="w-12 h-12 mx-auto" />
-        </div>
-        <p class="text-lg mb-4">{{ connectionState.connectionError }}</p>
-        <Button variant="outline" theme="red" @click="resetToPreview">Try Again</Button>
-      </div>
-    </div>
+    <!-- The reason can be setup detail (a missing SFU secret); it is logged, not shown. -->
+    <MeetStatusScreen
+      v-else-if="hasConnectionError"
+      icon="lucide-circle-alert"
+      tone="danger"
+      :title="__('Could not join the meeting')"
+      :description="__('Something stopped the call from starting. Try again in a moment.')"
+      :action-label="__('Try again')"
+      @action="resetToPreview"
+    />
 
     <template v-else>
       <!-- Preview mode -->
@@ -314,6 +306,7 @@ import MeetingHeader from '../components/MeetingHeader.vue'
 import MeetingLayout from '../components/MeetingLayout.vue'
 import MeetingPreview from '../components/MeetingPreview.vue'
 import MeetingToolbar from '../components/MeetingToolbar.vue'
+import MeetStatusScreen from '../components/MeetStatusScreen.vue'
 import PeoplePanel from '../components/PeoplePanel.vue'
 import RecordingIndicator from '../components/RecordingIndicator.vue'
 import RecordingPreflightDialog from '../components/RecordingPreflightDialog.vue'
@@ -768,6 +761,13 @@ provide(pollKey, poll)
 // --- Computed properties ---
 const isConnecting = sfuConnection.isConnecting
 const hasConnectionError = computed(() => !!connectionState.connectionError)
+// The screen gives a plain title; the reason, which can be setup detail, goes to the console.
+watch(
+  () => connectionState.connectionError,
+  (reason) => {
+    if (reason) console.error('Could not join the meeting:', reason)
+  },
+)
 const isInLobby = computed(() => lobbyStore.isInLobby || false)
 const isWaitingForApproval = computed(() => lobbyStore.isWaitingForApproval || false)
 const isRejected = computed(() => lobbyStore.isJoinRequestRejected || false)

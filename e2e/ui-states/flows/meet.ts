@@ -120,7 +120,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "The create request failed: a “Could not create the meeting. Try again.” toast, and the home screen is usable again." },
 		},
 		joinFailedWithoutSfu: {
-			meta: { description: "Instant meet on this site as it is configured: the meeting is created and the call screen opens, then join fails with the server's raw message “SFU secret not configured” and a Try Again button. The creation toast still says “Meeting created”." },
+			meta: { description: "Instant meet on this site as it is configured: the meeting is created and the call screen opens, then join fails: “Could not join the meeting” with Try again (the server's reason, a missing SFU secret, goes to the console). The creation toast still says “Meeting created”." },
 		},
 		schedule: {
 			meta: { description: "Schedule meet: Title, Date (today), Start and End (the next two whole hours) and a participant picker. Schedule is on before a title is typed." },
@@ -212,7 +212,7 @@ const machine = setupFlow<Event>().createMachine({
 		},
 		joinFailedAfterRecovery: {
 			meta: {
-				description: "The connection could not be restored after it dropped: “We couldn't restore your meeting connection. Try joining again.” with Try Again. Recovery keeps retrying for longer than a capture path can wait offline.",
+				description: "The connection could not be restored after it dropped: “Could not join the meeting” with Try again. Recovery keeps retrying for longer than a capture path can wait offline.",
 				transient: true,
 			},
 		},
@@ -240,7 +240,7 @@ const machine = setupFlow<Event>().createMachine({
 			on: { GUEST_ASKS: "guestWaiting" },
 		},
 		guestWaiting: {
-			meta: { description: "The guest asked to join: “Waiting to be admitted” with Leave, drawn over the call screen with the guest's own camera and the full toolbar behind the blur." },
+			meta: { description: "The guest asked to join: “Waiting to be admitted” with Leave, straight on the dimmed call screen (no card), drawn over the call screen with the guest's own camera and the full toolbar behind the blur." },
 			on: { HOST_NOTIFIED: "joinRequest" },
 		},
 		joinRequest: {
@@ -488,7 +488,7 @@ export const meet = defineFlow<Event, BaseScene>({
 		async INSTANT_WITHOUT_SFU(scene) {
 			useSiteSfuConfig(scene);
 			await scene.page.getByRole("button", { name: "Instant meet" }).click();
-			await expect(button(scene.page, "Try Again")).toBeVisible({ timeout: 30_000 });
+			await expect(button(scene.page, "Try again")).toBeVisible({ timeout: 30_000 });
 			removeMeetingLater(scene, meetingIdFromUrl(scene.page));
 		},
 		async RESTRICTED(scene) {
