@@ -37,7 +37,6 @@ type Event =
 	| { type: "OPEN_LINK_MEDIA_BLOCKED" }
 	| { type: "OPEN_BUSY_LINK" }
 	| { type: "OPEN_LINK_ELSEWHERE" }
-	| { type: "OPEN_AUDIO_TEST" }
 	| { type: "PHONE" }
 	| { type: "MEDIA_OFF" }
 	| { type: "OPEN_SETTINGS" }
@@ -106,7 +105,6 @@ const machine = setupFlow<Event>().createMachine({
 				OPEN_LINK_MEDIA_BLOCKED: "previewMediaBlocked",
 				OPEN_BUSY_LINK: "previewOthersIn",
 				OPEN_LINK_ELSEWHERE: "previewSwitchHere",
-				OPEN_AUDIO_TEST: "audioTest",
 				PHONE: "homePhone",
 			},
 		},
@@ -227,9 +225,6 @@ const machine = setupFlow<Event>().createMachine({
 				description: "Recording: the Start recording item in More, its preflight dialog, the red recording indicator in the header and the stop dialog. Not reached: recording is off in Meet Settings on this site and there is no recorder service.",
 				transient: true,
 			},
-		},
-		audioTest: {
-			meta: { description: "The audio test at /meet/audio-test, for System Managers only (Maya is sent back to Meet home). Inside the Suite sidebar: one coloured card per notification sound (user joined, user left, join request, chat message, hand raised), each with a Play button and the notes it plays, then Play All Notifications and testing tips. The Play button labels are cut off." },
 		},
 		restrictedAlone: {
 			meta: { description: "Restricted meet: Maya is let straight into her own restricted meeting. Nothing on the call screen says it is restricted." },
@@ -387,7 +382,6 @@ const FRAMED = new Map<string, (scene: BaseScene) => Page>([
 	["previewMediaBlocked", (scene) => elsewhere.get(scene)],
 	["previewCameraBlocked", (scene) => elsewhere.get(scene)],
 	["removed", (scene) => leo.get(scene)],
-	["audioTest", (scene) => elsewhere.get(scene)],
 	["scheduleNoAccount", (scene) => elsewhere.get(scene)],
 ]);
 
@@ -583,12 +577,6 @@ export const meet = defineFlow<Event, BaseScene>({
 			await joinFromPreview(other);
 			await openLink(scene, scene.page, id);
 			await expect(button(scene.page, "Switch here")).toBeVisible({ timeout: 20_000 });
-		},
-		async OPEN_AUDIO_TEST(scene) {
-			const page = await adminPage(scene);
-			elsewhere.set(scene, page);
-			await page.goto("/meet/audio-test");
-			await expect(page.getByRole("heading", { name: "Audio Notification Test" })).toBeVisible({ timeout: 20_000 });
 		},
 		async PHONE(scene) {
 			await scene.page.setViewportSize(PHONE);
