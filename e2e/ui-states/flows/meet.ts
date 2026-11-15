@@ -309,7 +309,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "Settings in the call, for the host: “Meeting settings” with a Controls tab for the meeting above the device and display tabs." },
 		},
 		infoPopover: {
-			meta: { description: "Meeting information: the meeting ID and URL, each with a copy button." },
+			meta: { description: "Meeting information: the meeting ID and URL, each truncated on one line with a Copy button beside it that turns to Copied." },
 		},
 		chatEmpty: {
 			meta: { description: "Chat opened: a side panel with “No messages yet” and the message field." },
