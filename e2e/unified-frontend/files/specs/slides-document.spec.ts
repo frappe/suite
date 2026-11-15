@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { frappeData } from "../../../shared/frappe";
 import { expect, test, type APIRequestContext, type Browser, type Page } from "@playwright/test";
@@ -197,6 +198,39 @@ async function shareByLink(node: string, role: number): Promise<string> {
 	return grant.principal.replace("$LINK:", "");
 }
 
+/**
+ * Make `node`'s deck an old-style one, held in its rows alone, as every deck from before
+ * collaboration is. A new deck starts with a live log, and the server refuses row writes to it.
+ * Existing composites are old-style decks, so the composite test starts from one. This removes
+ * the log through the content layer's own purge, as the backend's `old_deck` fixture does.
+ */
+function dropLiveLog(node: string): void {
+	const bench = process.env.BENCH_PATH ?? "/home/faris/benches/suite-bench";
+	const site = process.env.BENCH_SITE ?? "slides.localhost";
+	execFileSync(
+		`${bench}/env/bin/python`,
+		[
+			"-c",
+			`
+import sys
+import frappe
+from suite.content import log
+frappe.init(site=${JSON.stringify(site)})
+frappe.connect()
+if not frappe.conf.allow_tests:
+    raise RuntimeError("the old-style deck fixture requires a test site")
+doc_id = log.mark_purged("slides", sys.argv[1])
+if not doc_id:
+    raise RuntimeError("the deck has no live log to drop")
+log.delete_purged("slides", doc_id)
+frappe.destroy()
+`,
+			node,
+		],
+		{ cwd: `${bench}/sites` },
+	);
+}
+
 /** A browser signed in as the link-only person, holding these links. */
 async function linkOnlyPage(browser: Browser, baseURL: string, links: Record<string, string>) {
 	await ensureLinkOnlyUser();
@@ -238,6 +272,7 @@ test("a person who holds only an edit link opens and saves the deck", async ({ b
 test("a composite sends the link code of a deck that is shared on its own", async ({ browser, baseURL }) => {
 	const part = await createDocument(api, home.name, "Linked part", "Presentation");
 	const hidden = await createDocument(api, home.name, "Private part", "Presentation");
+	dropLiveLog(deck.name);
 	const updated = await api.put(`/api/resource/Presentation/${encodeURIComponent(deck.content_docname!)}`, {
 		data: {
 			is_composite: 1,
