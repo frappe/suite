@@ -176,8 +176,9 @@ const joinGuestAPI = useMutation(api.meet.guests.join, { silent: true })
 const isGuest = computed(() => !session.isLoggedIn)
 
 const previewName = computed(() => {
-  if (isGuest.value && guestName.value.trim()) {
-    return guestName.value.trim()
+  // A guest has no account name or initials yet: until they type one, the tile says "You".
+  if (isGuest.value) {
+    return guestName.value.trim() || __('You')
   }
   return props.currentUserName || props.userInitials || __('You')
 })
