@@ -304,7 +304,7 @@ function rowButton(root: HTMLElement, text: string) {
   )!
 }
 
-const CELL_BOX = 'Add a comment on the text'
+const CELL_BOX = 'Add a comment on the cell'
 const WHOLE_BOX = 'Add a comment'
 
 describe('commenting on a cell', () => {

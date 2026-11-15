@@ -61,6 +61,8 @@ const props = defineProps<{
   /** Comments not posted yet, on text or on the whole document. */
   drafts: ReturnType<typeof useCommentDrafts>
   noun: CommentNoun
+  /** The box's name for a draft on part of the document, when "on the text" doesn't fit. */
+  draftLabel?: string
 }>()
 
 /** The thread shown open; its text in the editor stays lit. */
@@ -655,6 +657,7 @@ function rowClass(thread: DocumentThread) {
       :key="draft.clientId"
       :draft
       :quote="drafts.quoteOf(draft.anchor)"
+      :label="draftLabel"
       @write="writeDraft(draft, $event)"
       @post="postDraft(draft)"
       @discard="discardDraft(draft)"

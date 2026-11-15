@@ -8,15 +8,19 @@ import { DOCUMENT_ANCHOR } from './places'
 import type { ShownDraft } from './useCommentDrafts'
 
 /** `quote` is the words the draft is on, empty for the whole document. */
-const props = defineProps<{ draft: ShownDraft; quote: string }>()
+const props = defineProps<{
+  draft: ShownDraft
+  quote: string
+  /** The box's name for a draft on part of the document. */
+  label?: string
+}>()
 const emit = defineEmits<{ write: [text: string]; post: []; discard: [] }>()
 
 const field = ref<InstanceType<typeof MentionTextarea> | null>(null)
 const isPostDisabled = computed(() => !props.draft.text.trim())
 const isOnDocument = computed(() => props.draft.anchor === DOCUMENT_ANCHOR)
-const boxLabel = computed(() =>
-  isOnDocument.value ? 'Add a comment' : 'Add a comment on the text',
-)
+const partLabel = computed(() => props.label ?? 'Add a comment on the text')
+const boxLabel = computed(() => (isOnDocument.value ? 'Add a comment' : partLabel.value))
 
 function focus() {
   field.value?.focus()

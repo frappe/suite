@@ -70,6 +70,7 @@ watch(openThread, (name) => {
         :actions="comments.actions"
         :drafts="comments.drafts"
         noun="spreadsheet"
+        :draft-label="__('Add a comment on the cell')"
       />
     </div>
   </aside>
