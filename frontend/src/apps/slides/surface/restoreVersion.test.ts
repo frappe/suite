@@ -73,7 +73,7 @@ describe('restoring a version of a converted presentation', () => {
       noUpgrade,
     )
 
-    expect(notice).toEqual({ isRestored: false, message: "This version can't be restored." })
+    expect(notice).toEqual({ isRestored: false, message: "This version can't be restored" })
     expect(room.restoreVersion).not.toHaveBeenCalled()
   })
 

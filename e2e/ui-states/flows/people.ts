@@ -368,7 +368,7 @@ export const people = defineFlow<Event, BaseScene>({
 		},
 		async SAVE_CONTACT(scene) {
 			await scene.dialog("New Contact").getByRole("button", { name: "Save" }).click();
-			await expect(scene.toast("Contact created.")).toBeVisible();
+			await expect(scene.toast("Contact created")).toBeVisible();
 			await expect(scene.page.getByText("General Information")).toBeVisible();
 		},
 		async POPULATE(scene) {
@@ -394,7 +394,7 @@ export const people = defineFlow<Event, BaseScene>({
 		},
 		async CONFIRM_DELETE_SELECTED(scene) {
 			await scene.dialog("Delete Contacts").getByRole("button", { name: "Confirm" }).click();
-			await expect(scene.toast("Contacts deleted.")).toBeVisible();
+			await expect(scene.toast("Contacts deleted")).toBeVisible();
 			await expect(scene.page.getByText("Daniel Okafor")).toBeHidden();
 		},
 		async OPEN_CONTACT(scene) {
@@ -419,7 +419,7 @@ export const people = defineFlow<Event, BaseScene>({
 		},
 		async SAVE_GENERAL(scene) {
 			await scene.dialog("Edit General Information").getByRole("button", { name: "Save" }).click();
-			await expect(scene.toast("Contact updated.")).toBeVisible();
+			await expect(scene.toast("Contact updated")).toBeVisible();
 			await expect(scene.page.getByRole("dialog")).toHaveCount(0);
 			await expect(card(scene, "General Information").getByText("Priya Natarajan-Shaw")).toBeVisible();
 		},
@@ -435,7 +435,7 @@ export const people = defineFlow<Event, BaseScene>({
 		},
 		async SAVE_EMAIL(scene) {
 			await scene.dialog("Add Email").getByRole("button", { name: "Save" }).click();
-			await expect(scene.toast("Contact updated.")).toBeVisible();
+			await expect(scene.toast("Contact updated")).toBeVisible();
 			await expect(card(scene, "Emails").getByText("priya@studio-ns.example")).toBeVisible();
 		},
 		async ADD_PHONE(scene) {
@@ -473,7 +473,7 @@ export const people = defineFlow<Event, BaseScene>({
 		},
 		async CONFIRM_DELETE_CONTACT(scene) {
 			await scene.dialog("Delete Contact").getByRole("button", { name: "Confirm" }).click();
-			await expect(scene.toast("Contact deleted.")).toBeVisible();
+			await expect(scene.toast("Contact deleted")).toBeVisible();
 			await expect(scene.page.getByText("Elena Rossi")).toBeVisible();
 			await expect(scene.page.getByText("Priya Natarajan")).toBeHidden();
 		},
@@ -508,7 +508,7 @@ export const people = defineFlow<Event, BaseScene>({
 		},
 		async SAVE_BOOK(scene) {
 			await scene.dialog("New Address Book").getByRole("button", { name: "Save" }).click();
-			await expect(scene.toast("Address book created.")).toBeVisible();
+			await expect(scene.toast("Address book created")).toBeVisible();
 			await expect(scene.page.getByText("Total Contacts")).toBeVisible();
 		},
 		async OPEN_BOOK(scene) {
@@ -527,7 +527,7 @@ export const people = defineFlow<Event, BaseScene>({
 		},
 		async SAVE_BOOK_EDIT(scene) {
 			await scene.dialog("Edit General Information").getByRole("button", { name: "Save" }).click();
-			await expect(scene.toast("Address book updated.")).toBeVisible();
+			await expect(scene.toast("Address book updated")).toBeVisible();
 			await expect(card(scene, "General Information").getByText(scene.name("Launch agencies"))).toBeVisible();
 		},
 		async ADD_BOOK_CONTACTS(scene) {
@@ -544,7 +544,7 @@ export const people = defineFlow<Event, BaseScene>({
 		},
 		async CONFIRM_DELETE_BOOK(scene) {
 			await scene.dialog("Delete Address Book").getByRole("button", { name: "Confirm" }).click();
-			await expect(scene.toast("Address book deleted.")).toBeVisible();
+			await expect(scene.toast("Address book deleted")).toBeVisible();
 			await expect(scene.page.getByRole("button", { name: "Add Address Book" })).toBeVisible();
 		},
 		async PHONE(scene) {

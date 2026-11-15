@@ -43,6 +43,7 @@ import { ref, watch } from 'vue'
 import { api, useMutation, type InputOf } from '@/api'
 import EmailListInput from '@/apps/mail/components/Controls/EmailListInput.vue'
 import { isEmail, raiseToast } from '@/apps/mail/utils'
+import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()
 const { listId } = defineProps<{
@@ -67,6 +68,6 @@ async function addRecipientsSubmit() {
   await addRecipients.run(input)
   show.value = false
   emit('reload')
-  raiseToast(__('Recipients added.'))
+  raiseToast(__('Recipients added'))
 }
 </script>

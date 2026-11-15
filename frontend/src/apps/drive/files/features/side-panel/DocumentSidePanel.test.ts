@@ -400,7 +400,7 @@ describe('a version restored by someone else', () => {
     await settled()
 
     expect([vi.mocked(toast.info).mock.lastCall, reads]).toEqual([
-      ['Someone restored an earlier version of this presentation.'],
+      ['Someone restored an earlier version of this presentation'],
       ['versions'],
     ])
   })

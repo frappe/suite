@@ -190,7 +190,10 @@ export function useDriveDocumentCreation(): DriveDocumentCreation {
         resolving.value = false
       }
       if (!parent) {
-        const message = discovered.error?.message ?? __('My files is unavailable.')
+        const message =
+          (discovered.error instanceof TransportError && discovered.error.type !== 'NetworkError'
+            ? __(discovered.error.message)
+            : null) ?? __('Could not open My files')
         // Loaded on demand: `@/platform/feedback` pulls frappe-ui into the initial graph.
         void import('@/platform/feedback').then(({ toast }) => toast.error(message))
         throw new Error(message)
@@ -323,7 +326,7 @@ async function duplicateDocument(
     await router.push(driveNodeRoute(await session.copy(folder.name)))
   } catch (error) {
     toast.error(
-      (error instanceof Error && error.message) || __('Could not make a copy of this file.'),
+      (error instanceof TransportError && error.message) || __('Could not make a copy of this file'),
     )
   }
 }
@@ -334,7 +337,7 @@ async function trashDocument(session: DocumentSession, router: Router, back: Rou
     await client.mutation(api.drive.nodes.trash, { node: item.node, state: 'Trashed' })
   } catch (error) {
     toast.error(
-      (error instanceof Error && error.message) || __('Could not move this file to trash.'),
+      (error instanceof TransportError && error.message) || __('Could not move this file to trash'),
     )
     return
   }

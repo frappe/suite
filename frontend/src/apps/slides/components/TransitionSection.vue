@@ -2,11 +2,11 @@
   <Section label="Transition">
     <PropertyRow label="Effect">
       <Select
-        :modelValue="currentSlide.transition || 'None'"
+        :model-value="currentSlide.transition || 'None'"
         variant="ghost"
         :options="transitionOptions"
         class="-me-1"
-        @update:modelValue="setSlideTransition"
+        @update:model-value="setSlideTransition"
       >
         <template #trigger="{ selectedOption }">
           <span :class="selectValueClasses">{{ selectedOption?.label }}</span>
@@ -17,14 +17,14 @@
 
     <template v-if="hasTransition">
       <NumberControl
-        :modelValue="parseFloat(currentSlide.transitionDuration) || 0"
+        :model-value="parseFloat(currentSlide.transitionDuration) || 0"
         label="Duration"
         suffix="s"
         :min="0"
         :max="4"
         :max-digits="1"
         :step="0.1"
-        @update:modelValue="duration.set"
+        @update:model-value="duration.set"
         @change-start="duration.begin"
         @change-end="duration.commit"
       />
@@ -33,8 +33,8 @@
         <Checkbox
           size="sm"
           class="cursor-pointer"
-          :modelValue="currentSlide.fadeUnmatchedElements"
-          @update:modelValue="setFadeUnmatched"
+          :model-value="currentSlide.fadeUnmatchedElements"
+          @update:model-value="setFadeUnmatched"
         />
       </PropertyRow>
     </template>
@@ -64,6 +64,7 @@ import { commandHistory } from '@/apps/slides/stores/historyMeta'
 import { currentSlide, slideIndex, slides } from '@/apps/slides/stores/slide'
 import { getCommandsToSetTransition } from '@/apps/slides/stores/transition'
 import { chevronClasses, selectValueClasses } from '@/apps/slides/utils/constants'
+import { translate as __ } from '@/platform/translation'
 
 const duration = useSlideProperty('transitionDuration')
 
@@ -119,8 +120,8 @@ const applyTransitionToAllSlides = () => {
 
   toast.success(
     hasTransition.value
-      ? 'Transition applied to all slides'
-      : 'Transitions removed from all slides',
+      ? __('Transition applied to all slides')
+      : __('Transitions removed from all slides'),
   )
 }
 </script>

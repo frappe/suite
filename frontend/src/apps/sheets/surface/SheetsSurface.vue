@@ -105,11 +105,11 @@ const access = createSheetAccess(props.session, {
   widened() {
     if (editor.value?.isCollab) {
       void editor.value.regainAccess(() => access.writable.value)
-      toast.info(__('You can edit this spreadsheet again.'))
+      toast.info(__('You can edit this spreadsheet again'))
       return
     }
     bodyRevision.value += 1
-    toast.info(__('You can edit this spreadsheet again.'))
+    toast.info(__('You can edit this spreadsheet again'))
   },
 })
 // A version shown read-only in place of the sheet (the live room closes meanwhile).
@@ -208,7 +208,7 @@ async function previewVersion(version: SheetVersion | null) {
     preview.value = await readPreview(version, bytes, liveState)
     previewStep.value = null
   } catch (error) {
-    toast.error(errorText(error, __('This version could not be shown.')))
+    toast.error(errorText(error, __('This version could not be shown')))
   }
 }
 /** Back to the sheet as it is now; resolves once its editor has loaded. */
@@ -342,7 +342,7 @@ async function retainRecovery(): Promise<boolean> {
     hasRecovery.value = true
     return true
   } catch {
-    toast.error('Your latest changes could not be kept on this device.')
+    toast.error(__('Could not keep your latest changes on this device'))
     return false
   } finally {
     copying.value = false
@@ -352,9 +352,9 @@ async function downloadChanges() {
   try {
     const downloaded = await downloadRecovery(props.session.nodeId, props.session.title.value)
     hasRecovery.value = false
-    if (!downloaded) toast.error('No recovery copy is kept for this spreadsheet.')
+    if (!downloaded) toast.error(__('No recovery copy is kept for this spreadsheet'))
   } catch {
-    toast.error('Your changes could not be downloaded. They are still kept on this device.')
+    toast.error(__('Could not download your changes. They are still kept on this device.'))
   }
 }
 useDocumentLeaveGuard({

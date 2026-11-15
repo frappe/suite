@@ -3,6 +3,7 @@ import { computed, createApp, reactive } from 'vue'
 
 import { useMessageReactions } from '@/apps/mail/composables/useMessageReactions'
 import type { Mail } from '@/apps/mail/types'
+import { TransportError } from '@/platform/transport'
 
 const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
 
@@ -125,7 +126,13 @@ describe('useMessageReactions', () => {
   })
 
   it('takes the reaction off the message and says why when sending fails', async () => {
-    mocks.send.mockRejectedValue(new Error('You cannot react to mail from a mailing list.'))
+    mocks.send.mockRejectedValue(
+      new TransportError({
+        type: 'ValidationError',
+        message: 'You cannot react to mail from a mailing list.',
+        status: 400,
+      }),
+    )
     const { react, reactionsOn } = setup()
     const message = mail()
     react(message, '🎉')

@@ -1,5 +1,7 @@
 import { toast } from 'frappe-ui'
 
+import { translate as __ } from '@/platform/translation'
+
 import { COL_HEADER_H, ROW_HEADER_W } from '../../canvas/constants.js'
 import { DEFAULT_COL_W, DEFAULT_ROW_H, MIN_COL_W, MIN_ROW_H } from '../../core/view-model.js'
 import { renameSheetsInFormula } from '../../engine/formula-adjust.js'
@@ -366,7 +368,7 @@ export function useExportImport({
     const win = window.open('', '_blank', 'width=900,height=700')
     if (!win) {
       toast.error(
-        'The browser blocked the print window. Allow pop-ups for this site, then try again.',
+        __('The browser blocked the print window. Allow pop-ups for this site, then try again.'),
       )
       return
     }
@@ -589,7 +591,10 @@ export function useExportImport({
     }
     if (skipped)
       toast.info(
-        `${skipped} chart${skipped === 1 ? ' was' : 's were'} not imported: only bar, line, area, pie and scatter charts over columns of the file's own sheets come in.`,
+        __(
+          "{0} chart{1} not imported: only bar, line, area, pie and scatter charts over columns of the file's own sheets come in",
+          [skipped, skipped === 1 ? ' was' : 's were'],
+        ),
       )
   }
 

@@ -48,6 +48,7 @@ import { api, useMutation, type InputOf } from '@/api'
 import EmailAddressField from '@/apps/mail/components/Controls/EmailAddressField.vue'
 import { useEnabledDomains } from '@/apps/mail/composables/useEnabledDomains'
 import { raiseToast } from '@/apps/mail/utils'
+import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()
 const { memberId } = defineProps<{
@@ -76,6 +77,6 @@ async function addEmailSubmit() {
   await addEmail.run(input)
   show.value = false
   emit('reload')
-  raiseToast(__('Email address added.'))
+  raiseToast(__('Email address added'))
 }
 </script>

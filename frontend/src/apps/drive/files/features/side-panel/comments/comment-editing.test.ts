@@ -387,7 +387,7 @@ describe('an edit while someone else changes the comment', () => {
 
     expect([editBox(), warnings]).toEqual([
       null,
-      ["This comment was deleted, so your edit wasn't saved."],
+      ["This comment was deleted, so your edit wasn't saved"],
     ])
   })
 

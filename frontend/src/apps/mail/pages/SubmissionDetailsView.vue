@@ -186,6 +186,7 @@ import {
 } from '@/apps/mail/utils/submission'
 import { activityEntries, statusSummary, themeInkClass } from '@/apps/mail/utils/submissionActivity'
 import { appPageMeta } from '@/platform/page-meta'
+import { translate as __ } from '@/platform/translation'
 
 const { accountId, submissionId } = defineProps<{
   accountId: string
@@ -329,7 +330,7 @@ async function rescheduleMailSubmit({ send_at }: { send_at: string }) {
     send_at,
   }
   const result = await rescheduleMail.run(input)
-  raiseToast(__('Delivery rescheduled to {0}.', [formatDateTime(result.send_at)]))
+  raiseToast(__('Delivery rescheduled to {0}', [formatDateTime(result.send_at)]))
   if (result.id) followReplacement(result.id)
 }
 const sendNow = useMutation(api.mail.scheduled.sendNow, {
@@ -343,7 +344,7 @@ async function sendNowSubmit() {
   try {
     const result = await sendNow.run(input)
     showSendNow.value = false
-    raiseToast(__('Message sent.'))
+    raiseToast(__('Message sent'))
     if (result.id) followReplacement(result.id)
   } catch (error) {
     onActionError(error)
@@ -360,7 +361,7 @@ async function retryMailSubmit() {
   try {
     const result = await retryMail.run(input)
     showRetry.value = false
-    raiseToast(__('Message sent.'))
+    raiseToast(__('Message sent'))
     if (result.id) followReplacement(result.id)
   } catch (error) {
     onActionError(error)
@@ -395,7 +396,7 @@ async function cancelScheduleSubmit() {
     raiseToast(
       result.id
         ? __('Delivery cancelled. The message is back in your drafts.')
-        : __('Delivery cancelled.'),
+        : __('Delivery cancelled'),
       'success',
     )
     backToList()

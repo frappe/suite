@@ -2,6 +2,8 @@ import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 
+import { TransportError } from '@/platform/transport'
+
 const activeElementIds = ref<string[]>([])
 const activeElements = ref<any[]>([])
 const presentationDoc = ref<{ is_converted?: number } | null>(null)
@@ -322,7 +324,9 @@ describe('a paste from another presentation', () => {
     // made in the test, so the rejection is awaited before it can count as unhandled
     function refused() {
       vi.mocked(toast.error).mockClear()
-      adoption.answer = Promise.reject(new Error(refusal))
+      adoption.answer = Promise.reject(
+        new TransportError({ type: 'PermissionError', message: refusal, status: 403 }),
+      )
     }
 
     it('says why and adds no slide', async () => {

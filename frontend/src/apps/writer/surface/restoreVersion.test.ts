@@ -153,14 +153,14 @@ describe('restoreVersion', () => {
 
     expect([notice.isRestored, notice.message, room.restoreVersion.mock.calls.length]).toEqual([
       false,
-      "This version can't be restored.",
+      "This version can't be restored",
       0,
     ])
   })
 
   it.each(
     fromPartial<[RestoreResult, boolean, string][]>([
-      [{ outcome: 'unchanged' }, true, 'The document already matches this version.'],
+      [{ outcome: 'unchanged' }, true, 'The document already matches this version'],
       [{ outcome: 'unsent' }, false, 'Your changes are still saving. Try again in a moment.'],
       [
         { outcome: 'refused', refusal: 'restore_recent', retryS: 42 },
@@ -175,9 +175,9 @@ describe('restoreVersion', () => {
       [
         { outcome: 'refused', refusal: 'milestone_failed' },
         false,
-        "The document as it is now couldn't be kept as a version first, so nothing was restored.",
+        "The document as it is now couldn't be kept as a version first, so nothing was restored",
       ],
-      [{ outcome: 'refused' }, false, 'The version was not restored.'],
+      [{ outcome: 'refused' }, false, 'The version was not restored'],
     ]),
   )('tells the person how %o went', async (result, isRestored, message) => {
     const notice = await restoreVersion(fakeRoom(result), 4, html('<p>x</p>'), [], refuseConvert)

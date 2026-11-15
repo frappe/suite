@@ -93,7 +93,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "A trashed folder opened from Trash: the trail starts at Trash, an alert offers Restore and Delete forever, and there is no New." },
 		},
 		trashedFolderEmpty: {
-			meta: { description: "A trashed folder that held nothing: the empty state says it was empty when it was moved to Trash." },
+			meta: { description: "A trashed folder that held nothing: the empty state says it was empty when it was moved to Trash" },
 		},
 	},
 });
@@ -206,7 +206,7 @@ export const trash = defineFlow<Event>({
 		async OPEN_TRASHED_EMPTY(scene) {
 			await scene.page.getByText("Unused assets", { exact: true }).click();
 			await expect(scene.page.getByText("This folder is in Trash")).toBeVisible();
-			await expect(scene.page.getByText("It was empty when it was moved to Trash.")).toBeVisible();
+			await expect(scene.page.getByText("It was empty when it was moved to Trash")).toBeVisible();
 		},
 	},
 });

@@ -195,6 +195,7 @@ import { raiseError, raiseToast } from '@/apps/mail/utils'
 import { DEFAULT_PAGE_LENGTH } from '@/apps/mail/utils/paging'
 import { DashboardCard, DashboardLayout, DashboardRowsSkeleton } from '@/platform/dashboard'
 import { appPageMeta } from '@/platform/page-meta'
+import { translate as __ } from '@/platform/translation'
 
 type ListData = {
   id: string
@@ -276,7 +277,7 @@ const toggleEmailEnabled = async (
     email: entry.email,
     enabled: value ? 1 : 0,
   })
-  raiseToast(value ? __('Email address enabled.') : __('Email address disabled.'))
+  raiseToast(value ? __('Email address enabled') : __('Email address disabled'))
 }
 const removeEmail = async (email: string) => {
   await client.mutation(api.mail.admin.mailingLists.removeEmail, {
@@ -284,7 +285,7 @@ const removeEmail = async (email: string) => {
     email,
   })
   reloadAll()
-  raiseToast(__('Email address removed.'))
+  raiseToast(__('Email address removed'))
 }
 const removeRecipient = async (email: string) => {
   await client.mutation(api.mail.admin.mailingLists.removeRecipient, {
@@ -292,7 +293,7 @@ const removeRecipient = async (email: string) => {
     email,
   })
   reloadAll()
-  raiseToast(__('Recipient removed.'))
+  raiseToast(__('Recipient removed'))
 }
 const deleteList = useMutation(api.mail.admin.mailingLists.delete)
 async function deleteListSubmit() {
@@ -304,7 +305,7 @@ async function deleteListSubmit() {
     deleting.value = false
     throw error
   })
-  raiseToast(__('Mailing list deleted.'))
+  raiseToast(__('Mailing list deleted'))
   router.push({
     name: 'mail-mailing-lists',
   })

@@ -22,6 +22,7 @@ import { mailCopies, mailCopyIds, mailCopyNames, threadStarIds } from '@/apps/ma
 import { isReceived } from '@/apps/mail/utils/receivedMail'
 import { resnooze, type Waited } from '@/apps/mail/utils/resnooze'
 import { snoozedMessage } from '@/apps/mail/utils/snoozeTimes'
+import { translate as __ } from '@/platform/translation'
 
 type SetSeenParams = {
   0?: string[]
@@ -359,7 +360,7 @@ export function useThreadActions(deps: {
     })()
     if (isUndo) {
       // Undo of a remove — immediate confirmation, no further undo.
-      const success = threadIds.length === 1 ? __('Thread added back.') : __('Threads added back.')
+      const success = threadIds.length === 1 ? __('Thread added back') : __('Threads added back')
       return raiseOptimisticToast(forward, success)
     }
 
@@ -373,8 +374,8 @@ export function useThreadActions(deps: {
     )
     const success =
       threadIds.length === 1
-        ? __('Thread added to {0}.', [mailboxName])
-        : __('Threads added to {0}.', [mailboxName])
+        ? __('Thread added to {0}', [mailboxName])
+        : __('Threads added to {0}', [mailboxName])
     raiseOptimisticToast(forward, success, undo)
     return forward.then(
       () => true,
@@ -441,8 +442,8 @@ export function useThreadActions(deps: {
     const mailboxName = mailboxes.data?.find((m) => m.id === mailboxId)?._name
     const success =
       threadIdsToBeUpdated.length === 1
-        ? __('Thread removed from {0}.', [mailboxName])
-        : __('Threads removed from {0}.', [mailboxName])
+        ? __('Thread removed from {0}', [mailboxName])
+        : __('Threads removed from {0}', [mailboxName])
 
     // Undo of an add — immediate confirmation, no further undo.
     if (isUndo) return raiseOptimisticToast(forward, success)
@@ -565,8 +566,8 @@ export function useThreadActions(deps: {
     // The seen flag already flipped — confirm immediately; roll back + error toast only if it fails.
     const success =
       selectedThreads.length === 1
-        ? __('Thread marked as {0}.', [seen ? __('read') : __('unread')])
-        : __('Threads marked as {0}.', [seen ? __('read') : __('unread')])
+        ? __('Thread marked as {0}', [seen ? __('read') : __('unread')])
+        : __('Threads marked as {0}', [seen ? __('read') : __('unread')])
     raiseOptimisticToast(
       setSeenSubmit({
         ids,
@@ -676,11 +677,11 @@ export function useThreadActions(deps: {
       removedThreads = handleSuccessAndRemoveFromList(threadIDs, false)
     const moveToMailboxName = mailboxes.data?.find((m) => m.id === Object.keys(threadIDs)[0])?._name
     const movedBack =
-      selectedThreads.length === 1 ? __('Thread moved back.') : __('Threads moved back.')
+      selectedThreads.length === 1 ? __('Thread moved back') : __('Threads moved back')
     const success =
       selectedThreads.length === 1
-        ? __('Thread moved to {0}.', [moveToMailboxName])
-        : __('Threads moved to {0}.', [moveToMailboxName])
+        ? __('Thread moved to {0}', [moveToMailboxName])
+        : __('Threads moved to {0}', [moveToMailboxName])
 
     // Drop any prior undo so it isn't triggerable while this action is in flight.
     setUndoAction(undefined)
@@ -786,11 +787,11 @@ export function useThreadActions(deps: {
           resetThreads()
           mailboxes.refetch().catch(() => {})
         }
-        raisePromiseToast(undoAction, __('Undoing...'), movedBack)
+        raisePromiseToast(undoAction, __('Undoing…'), movedBack)
       })
       mailboxes.refetch().catch(() => {})
     }
-    const loading = __('Moving to {0}...', [moveToMailboxName])
+    const loading = __('Moving to {0}…', [moveToMailboxName])
     return raisePromiseToast(async () => (await action(), true), loading, success, undo).then(
       (done) => !!done,
     )
@@ -931,7 +932,7 @@ export function useThreadActions(deps: {
           })
           raiseOptimisticToast(
             restore,
-            threadIds.length > 1 ? __('Threads moved back.') : __('Thread moved back.'),
+            threadIds.length > 1 ? __('Threads moved back') : __('Thread moved back'),
           )
         })(),
     )
@@ -953,17 +954,17 @@ export function useThreadActions(deps: {
       [mailboxIds.inbox, mailboxIds.junk, mailboxIds.trash].includes(mailbox.value),
       (filed) =>
         !filed.left_inbox
-          ? __('Added to Archive.')
+          ? __('Added to Archive')
           : threadIds.length > 1
-            ? __('Threads archived.')
-            : __('Thread archived.'),
+            ? __('Threads archived')
+            : __('Thread archived'),
     )
 
   // Archive reversed: the received mail goes back from Archive to the Inbox, every other folder kept,
   // and your own mail stays where it is. Only Archive loses the row.
   const unarchiveThreads = (threadIds: string[]) =>
     fileInPlace('unarchive', threadIds, mailbox.value === mailboxIds.archive, () =>
-      threadIds.length > 1 ? __('Threads unarchived.') : __('Thread unarchived.'),
+      threadIds.length > 1 ? __('Threads unarchived') : __('Thread unarchived'),
     )
 
   // A conversation waits in Snoozed until a chosen time (suite/mail/reminders.py). It leaves the Inbox
@@ -980,7 +981,7 @@ export function useThreadActions(deps: {
 
   const unsnoozeThreads = (threadIds: string[]) =>
     fileInPlace('wake', threadIds, mailbox.value === mailboxIds.snoozed, () =>
-      threadIds.length > 1 ? __('Threads unsnoozed.') : __('Thread unsnoozed.'),
+      threadIds.length > 1 ? __('Threads unsnoozed') : __('Thread unsnoozed'),
     )
 
   const setSpamStatus = (threadIDs: SetSeenParams) => {
@@ -1030,12 +1031,12 @@ export function useThreadActions(deps: {
     // Undo flips the junk status back — name the resulting state, like the forward toast does.
     const restored =
       selectedThreads.length === 1
-        ? __('Thread marked as {0}.', [spam ? __('Not Junk') : __('Junk')])
-        : __('Threads marked as {0}.', [spam ? __('Not Junk') : __('Junk')])
+        ? __('Thread marked as {0}', [spam ? __('Not Junk') : __('Junk')])
+        : __('Threads marked as {0}', [spam ? __('Not Junk') : __('Junk')])
     const success =
       selectedThreads.length === 1
-        ? __('Thread marked as {0}.', [spam ? __('Junk') : __('Not Junk')])
-        : __('Threads marked as {0}.', [spam ? __('Junk') : __('Not Junk')])
+        ? __('Thread marked as {0}', [spam ? __('Junk') : __('Not Junk')])
+        : __('Threads marked as {0}', [spam ? __('Junk') : __('Not Junk')])
 
     // Drop any prior undo so it isn't triggerable while this action is in flight.
     setUndoAction(undefined)
@@ -1099,11 +1100,11 @@ export function useThreadActions(deps: {
           resetThreads()
           mailboxes.refetch().catch(() => {})
         }
-        raisePromiseToast(undoAction, __('Undoing...'), restored)
+        raisePromiseToast(undoAction, __('Undoing…'), restored)
       })
       mailboxes.refetch().catch(() => {})
     }
-    const loading = spam ? __('Marking as Junk...') : __('Marking as Not Junk...')
+    const loading = spam ? __('Marking as Junk…') : __('Marking as Not Junk…')
     raisePromiseToast(action, loading, success, undo)
   }
   const handleDeleteThreads = (thread_ids: string[]) => {
@@ -1125,7 +1126,7 @@ export function useThreadActions(deps: {
       })
     raiseOptimisticToast(
       forward,
-      thread_ids.length === 1 ? __('Thread deleted.') : __('Threads deleted.'),
+      thread_ids.length === 1 ? __('Thread deleted') : __('Threads deleted'),
     )
   }
 
@@ -1148,7 +1149,7 @@ export function useThreadActions(deps: {
       if (removed.length) restoreThreadsToList(removed)
     }
     commitAfterUndo({
-      message: thread_ids.length === 1 ? __('Draft discarded.') : __('Drafts discarded.'),
+      message: thread_ids.length === 1 ? __('Draft discarded') : __('Drafts discarded'),
       removal: { kind: 'messages', names },
       onSent: refillIfEmpty,
       restore,
@@ -1196,13 +1197,13 @@ export function useThreadActions(deps: {
           action: 'move',
           mailbox: target,
         }),
-      __('Mail moved to {0}.', [mailboxName]),
+      __('Mail moved to {0}', [mailboxName]),
       {
         undoReq: () =>
           setMailsMailboxesSubmit({
             mails: snapshot,
           }),
-        undoSuccess: __('Mail moved back.'),
+        undoSuccess: __('Mail moved back'),
       },
     )
   }
@@ -1211,7 +1212,7 @@ export function useThreadActions(deps: {
     // Junk only marks the mail; Not Junk accepts the sender, in the same call (see
     // handleSetSpamStatus).
     const screenForward = spam ? null : 'Accepted'
-    const success = spam ? __('Mail marked as Junk.') : __('Mail marked as Not Junk.')
+    const success = spam ? __('Mail marked as Junk') : __('Mail marked as Not Junk')
     runMailRemoval(
       mail,
       () =>
@@ -1227,7 +1228,7 @@ export function useThreadActions(deps: {
             mails: snapshot,
             screen_action: screenForward ? (spam ? 'Accepted' : 'Spam') : null,
           }),
-        undoSuccess: __('Mail marked as {0}.', [spam ? __('Not Junk') : __('Junk')]),
+        undoSuccess: __('Mail marked as {0}', [spam ? __('Not Junk') : __('Junk')]),
       },
     )
   }
@@ -1238,7 +1239,7 @@ export function useThreadActions(deps: {
         bulkDeleteSubmit({
           names: mailCopyNames(mail),
         }),
-      __('Mail deleted.'),
+      __('Mail deleted'),
     )
   const getOriginalState = (
     selectedThreads: string[],

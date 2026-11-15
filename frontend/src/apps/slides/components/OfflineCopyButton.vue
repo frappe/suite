@@ -40,7 +40,7 @@ import {
   offlineCopyStatus as status,
 } from '@/apps/slides/stores/offlineCopy'
 import { presentationId } from '@/apps/slides/stores/presentation'
-import { translate } from '@/platform/translation'
+import { translate as __, translate } from '@/platform/translation'
 
 /** Without its own button, a menu opens the dialog through `open`. */
 withDefaults(defineProps<{ trigger?: boolean }>(), { trigger: true })
@@ -84,24 +84,27 @@ interface SaveResult {
 
 const reportSave = (result: SaveResult) => {
   if (result.uncontrolled && !result.registered) {
-    toast.error('Offline copies are turned off on this site')
+    toast.error(__('Offline copies are turned off on this site'))
   } else if (result.uncontrolled) {
-    toast.error('Could not start saving', {
-      description: 'Reload the page and try again.',
+    toast.error(__('Could not start saving'), {
+      description: __('Reload the page and try again'),
     })
   } else if (result.failed?.some((failure) => failure.status === 'quota')) {
-    toast.error('Browser storage is full', {
-      description: 'Remove other offline copies to make room.',
+    toast.error(__('Browser storage is full'), {
+      description: __('Remove other offline copies to make room'),
     })
   } else if (result.failed?.length) {
-    toast.warning(`${result.failed.length} of ${result.count} images not saved`, {
-      description: result.failed.every((failure) => failure.status === 'refused')
-        ? 'You may not have access to them.'
-        : 'Check your connection and try again.',
-    })
+    toast.warning(
+      __('{0} of {1} images not saved', [String(result.failed.length), String(result.count)]),
+      {
+        description: result.failed.every((failure) => failure.status === 'refused')
+          ? __('You may not have access to them')
+          : __('Check your connection and try again'),
+      },
+    )
   } else {
-    toast.success('Available offline', {
-      description: 'Opens and presents without internet.',
+    toast.success(__('Available offline'), {
+      description: __('Opens and presents without internet'),
     })
   }
 }
@@ -112,7 +115,7 @@ const save = async ({ close }: DialogActionContext) => {
     const result = await saveOfflineCopy(presentationId.value)
     if (result) reportSave(result)
   } catch {
-    toast.error('Could not save the offline copy')
+    toast.error(__('Could not save the offline copy'))
   }
   refreshOfflineStatus(presentationId.value)
 }
@@ -121,11 +124,11 @@ const remove = async ({ close }: DialogActionContext) => {
   close()
   try {
     await removeOfflineCopy(presentationId.value)
-    toast('Offline copy removed', {
-      description: 'Needs internet to open.',
+    toast(__('Offline copy removed'), {
+      description: __('Needs internet to open'),
     })
   } catch {
-    toast.error('Could not remove the offline copy')
+    toast.error(__('Could not remove the offline copy'))
   }
   refreshOfflineStatus(presentationId.value)
 }
@@ -133,8 +136,8 @@ const remove = async ({ close }: DialogActionContext) => {
 const cancel = ({ close }: DialogActionContext) => {
   cancelOfflineCopy()
   close()
-  toast('Saving stopped', {
-    description: 'Saved images are kept.',
+  toast(__('Saving stopped'), {
+    description: __('Saved images are kept'),
   })
 }
 

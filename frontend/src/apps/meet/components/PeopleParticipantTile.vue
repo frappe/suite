@@ -60,7 +60,7 @@
 
       <!-- Host Controls -->
       <div v-if="canControlParticipant" class="relative">
-        <Dropdown :options="hostOptions">
+        <Dropdown :options="hostOptions" align="end">
           <template #default>
             <button
               class="flex items-center justify-center rounded-6 p-1.5 text-ink-gray-6 hover:bg-surface-gray-3"
@@ -75,19 +75,11 @@
       <div v-else-if="reserveHostControlSpace" class="w-7 shrink-0" aria-hidden="true" />
     </div>
   </div>
-
-  <!-- Kick Confirmation Dialog -->
-  <KickParticipantDialog
-    v-model="showKickDialog"
-    :participant-name="participant.user_name || 'this participant'"
-    :can-ban="participant.is_guest === true"
-    @confirm="handleKickConfirm"
-  />
 </template>
 
 <script setup lang="ts">
 import { Badge, Dropdown, Tooltip } from 'frappe-ui'
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 
 import { translate as __ } from '@/platform/translation'
 
@@ -96,8 +88,8 @@ import MeetCameraIcon from '../icons/MeetCameraIcon.vue'
 import MeetCameraOffIcon from '../icons/MeetCameraOffIcon.vue'
 import MeetMicIcon from '../icons/MeetMicIcon.vue'
 import MeetMicOffIcon from '../icons/MeetMicOffIcon.vue'
+import { confirmRemoveParticipant } from '../utils/confirmRemoveParticipant'
 import type { Participant } from '../utils/media/ParticipantManager'
-import KickParticipantDialog from './KickParticipantDialog.vue'
 import MeetAvatar from './MeetAvatar.vue'
 
 interface Props {
@@ -125,17 +117,17 @@ const emit = defineEmits<{
 }>()
 
 const meetingCtx = useMeetingContext()
-const showKickDialog = ref(false)
-
 const isHandRaised = computed(() => {
   if (!meetingCtx?.raiseHandStore?.raisedHands) return false
   return !!meetingCtx.raiseHandStore.raisedHands[props.participant.user_id]
 })
 
-const handleKickConfirm = (ban: boolean) => {
-  emit('kickParticipant', props.participant.user_id, ban)
-  showKickDialog.value = false
-}
+const confirmRemove = () =>
+  confirmRemoveParticipant({
+    name: props.participant.user_name,
+    canBan: props.participant.is_guest === true,
+    remove: (ban) => emit('kickParticipant', props.participant.user_id, ban),
+  })
 
 const hostOptions = computed(() => {
   return [
@@ -160,9 +152,7 @@ const hostOptions = computed(() => {
     {
       icon: 'lucide-user-x',
       label: __('Remove'),
-      onClick: () => {
-        showKickDialog.value = true
-      },
+      onClick: confirmRemove,
     },
   ]
 })

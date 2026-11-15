@@ -21,27 +21,26 @@ const RESTORE_EVERY_SECONDS = 60
 const LINES = {
   document: {
     notKept: () =>
-      __("The document as it is now couldn't be kept as a version first, so nothing was restored."),
-    unchanged: () => __('The document already matches this version.'),
+      __("The document as it is now couldn't be kept as a version first, so nothing was restored"),
+    unchanged: () => __('The document already matches this version'),
     openOne: (name: string) =>
       __('{0} has this document open now and will be told you restored it.', [name]),
     openMany: (names: string) =>
       __('{0} have this document open now and will be told you restored it.', [names]),
-    restoredEarlier: (who: string) =>
-      __('{0} restored an earlier version of this document.', [who]),
+    restoredEarlier: (who: string) => __('{0} restored an earlier version of this document', [who]),
   },
   presentation: {
     notKept: () =>
       __(
-        "The presentation as it is now couldn't be kept as a version first, so nothing was restored.",
+        "The presentation as it is now couldn't be kept as a version first, so nothing was restored",
       ),
-    unchanged: () => __('The presentation already matches this version.'),
+    unchanged: () => __('The presentation already matches this version'),
     openOne: (name: string) =>
       __('{0} has this presentation open now and will be told you restored it.', [name]),
     openMany: (names: string) =>
       __('{0} have this presentation open now and will be told you restored it.', [names]),
     restoredEarlier: (who: string) =>
-      __('{0} restored an earlier version of this presentation.', [who]),
+      __('{0} restored an earlier version of this presentation', [who]),
   },
 }
 
@@ -51,7 +50,7 @@ const REFUSALS = new Map<string, (noun: FileNoun) => string>(
     restoring: () => __('Someone else is restoring a version. Try again once it is done.'),
     behind: () => __('This tab is still catching up. Try again in a moment.'),
     milestone_failed: (noun: FileNoun) => LINES[noun].notKept(),
-    paused: () => __('Saving is paused, so nothing was restored.'),
+    paused: () => __('Saving is paused, so nothing was restored'),
   }),
 )
 
@@ -96,7 +95,7 @@ export function noticeFor(result: RestoreResult, noun: FileNoun): RestoreNotice 
   const explain = REFUSALS.get(refusal)
   if (explain) return { isRestored: false, message: explain(noun) }
 
-  return { isRestored: false, message: __('The version was not restored.') }
+  return { isRestored: false, message: __('The version was not restored') }
 }
 
 /**
@@ -134,12 +133,12 @@ export async function restoredByOther({ by, version }: VersionRestored, noun: Fi
   }
 
   if (version.label) {
-    return __('{0} restored the version “{1}”.', [who, version.label])
+    return __('{0} restored the version “{1}”', [who, version.label])
   }
 
   const taken = { creation: version.takenAt }
   const day = dayOrTime(taken)
   const time = versionTime(taken)
   const when = day === time ? time : `${day}, ${time}`
-  return __('{0} restored the version from {1}.', [who, when])
+  return __('{0} restored the version from {1}', [who, when])
 }

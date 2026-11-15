@@ -55,6 +55,8 @@ import { useScreenSize } from '@/composables/useScreenSize'
 import { LoadFailed } from '@/platform/load-failed'
 import { appPageMeta } from '@/platform/page-meta'
 import { userTimeZone } from '@/platform/time-zone'
+import { translate as __ } from '@/platform/translation'
+import { TransportError } from '@/platform/transport'
 import { useRootStore } from '@/stores/root'
 
 const dayjs = inject('$dayjs')
@@ -331,7 +333,16 @@ const visibleCalendars = computed(
 )
 watch(
   () => calendars.error,
-  (error) => error && raiseToast(error.message, 'error'),
+  (error) =>
+    error &&
+    raiseToast(
+      (error instanceof TransportError &&
+      error.type !== 'NetworkError' &&
+      error.type !== 'AbortError'
+        ? __(error.message)
+        : null) || __('Could not load calendars'),
+      'error',
+    ),
 )
 
 const calendarColor = (name: string) => colorOf(calendars.data, name)
@@ -460,7 +471,15 @@ watch(
   () => eventSearch.status,
   (status) => {
     if (status !== 'pending') searchSettled.value = true
-    if (eventSearch.error) raiseToast(eventSearch.error.message, 'error')
+    if (eventSearch.error)
+      raiseToast(
+        (eventSearch.error instanceof TransportError &&
+        eventSearch.error.type !== 'NetworkError' &&
+        eventSearch.error.type !== 'AbortError'
+          ? __(eventSearch.error.message)
+          : null) || __('Could not search events'),
+        'error',
+      )
   },
 )
 
@@ -1038,7 +1057,7 @@ const handleUpdate = (e) => {
   // word of why, or it reads as the drag not taking.
   if (!canEditEvent(e, calendars.data)) {
     revertUpdate()
-    return toast.info(__("This event can't be edited."))
+    return toast.info(__("This event can't be edited"))
   }
   Object.assign(eventToBeUpdated, withActualTitle(e))
   // Both remembered before the drag overwrites them: an occurrence's override has to keep the
@@ -1167,12 +1186,19 @@ const instanceStart = () => {
 // to confirm it and refresh, and a failure has to put the pill back where it was.
 const onEventSaved = {
   onSuccess: () => {
-    raiseToast(__('Event updated.'), 'success')
+    raiseToast(__('Event updated'), 'success')
     reloadEvents()
   },
   onError: (error) => {
     revertUpdate()
-    raiseToast(error.message, 'error')
+    raiseToast(
+      (error instanceof TransportError &&
+      error.type !== 'NetworkError' &&
+      error.type !== 'AbortError'
+        ? __(error.message)
+        : null) || __('Could not update the event'),
+      'error',
+    )
   },
 }
 

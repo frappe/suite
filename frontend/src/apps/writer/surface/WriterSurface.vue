@@ -228,7 +228,7 @@ function refusesComment() {
     return false
   }
 
-  toast.warning(__("You can't comment on this document."))
+  toast.warning(__("You can't comment on this document"))
   return true
 }
 
@@ -307,7 +307,7 @@ async function setDocumentLocked(lock: boolean) {
     await documentResource.setLocked(lock)
   } catch (error) {
     console.error(error)
-    toast.error(lock ? __('Could not lock this document.') : __('Could not unlock this document.'))
+    toast.error(lock ? __('Could not lock this document') : __('Could not unlock this document'))
   }
 }
 
@@ -411,7 +411,7 @@ async function downloadVersion(shown: DocumentVersion) {
     await downloadHTML(html, `${props.session.title.value} (${name})`)
   } catch (error) {
     console.error(error)
-    toast.error(__('Could not download this version.'))
+    toast.error(__('Could not download this version'))
   }
 }
 
@@ -428,7 +428,7 @@ async function confirmRestore(shown: DocumentVersion) {
     images = await missingImages(props.session, versionImages(body))
   } catch (error) {
     console.error(error)
-    toast.error(__("This version's images couldn't be checked, so nothing was restored."))
+    toast.error(__("This version's images could not be checked, so nothing was restored"))
     return
   } finally {
     isRestoringVersion.value = false
@@ -476,7 +476,7 @@ async function restoreShownVersion(shown: DocumentVersion, images: MissingImage[
     void moveThreadsBack(notice.anchors)
   } catch (error) {
     console.error(error)
-    toast.error(__('The version was not restored.'))
+    toast.error(__('Could not restore the version'))
   } finally {
     isRestoringVersion.value = false
   }
@@ -501,7 +501,7 @@ async function moveThreadsBack(anchors: Record<string, string>) {
 async function restoreBody(shown: DocumentVersion): Promise<VersionRestore> {
   const liveRoom = room.value
   if (!liveRoom) {
-    return { isRestored: false, message: __('The version was not restored.'), anchors: {} }
+    return { isRestored: false, message: __('The version was not restored'), anchors: {} }
   }
 
   const bytes = await fetchVersion(props.session, shown.seq)
@@ -611,7 +611,7 @@ async function downloadChanges(html: string | undefined) {
 
   const [latest] = await listCopies(props.session.nodeId)
   if (!latest) {
-    toast.error(__('No recovery copy is kept for this document.'))
+    toast.error(__('No recovery copy is kept for this document'))
     return
   }
 

@@ -13,7 +13,7 @@ import {
 import { viewOnly } from '@/apps/slides/stores/presentation'
 import { slides } from '@/apps/slides/stores/slide'
 import type { LostAccess } from '@/platform/collab'
-import { translate } from '@/platform/translation'
+import { translate as __, translate } from '@/platform/translation'
 
 import {
   discardRecovery,
@@ -64,15 +64,15 @@ export function useUnsavedRecovery(
     if (!isUnsent) {
       // Access came back within the bound, so nothing turned view only
       if (!isWritable()) {
-        toast.warning('Editing access changed. This presentation is now view only.')
+        toast.warning(__('Editing access changed. This presentation is now view only.'))
       }
 
       return
     }
 
-    toast.warning('Editing access changed. Your unsaved changes are kept on this device.', {
+    toast.warning(__('Editing access changed. Your unsaved changes are kept on this device.'), {
       duration: Number.POSITIVE_INFINITY,
-      action: { label: 'Download my changes', onClick: () => downloadSlides(shown, title) },
+      action: { label: __('Download my changes'), onClick: () => downloadSlides(shown, title) },
     })
   }
 
@@ -82,7 +82,7 @@ export function useUnsavedRecovery(
       return
     }
 
-    toast.info('You can edit this presentation again.')
+    toast.info(__('You can edit this presentation again'))
     if (regained === 'reload') {
       void load()
     }
@@ -116,10 +116,10 @@ export function useUnsavedRecovery(
       return true
     } catch {
       const title = session.title.value
-      toast.error(translate('Your latest changes could not be kept on this device.'), {
+      toast.error(__('Could not keep your latest changes on this device'), {
         duration: Number.POSITIVE_INFINITY,
         action: {
-          label: 'Download my changes',
+          label: __('Download my changes'),
           onClick: () => downloadSlides(copy, title),
         },
       })
@@ -130,7 +130,7 @@ export function useUnsavedRecovery(
   function retainOrWarn() {
     const isKept = retainRecovery()
     if (!isKept) {
-      toast.error('Your latest changes could not be kept on this device.')
+      toast.error(__('Could not keep your latest changes on this device'))
     }
 
     return isKept
@@ -199,9 +199,9 @@ export function useUnsavedRecovery(
     const downloaded = downloadRecovery(session.nodeId, session.title.value)
     if (downloaded === 'none') {
       syncHasRecovery()
-      toast.error('No recovery copy is kept for this presentation.')
+      toast.error(__('No recovery copy is kept for this presentation'))
     } else if (downloaded === 'unmarked') {
-      toast.warning(translate('This device is too full to note that the copy was downloaded.'))
+      toast.warning(__('This device is too full to note that the copy was downloaded'))
     }
   }
 
@@ -220,7 +220,7 @@ export function useUnsavedRecovery(
         discardRecovery(session.nodeId, shown.id, shown.copy)
       }
     } catch {
-      toast.error(translate("Couldn't discard the copy. It's still kept on this device."))
+      toast.error(__("Could not discard the copy. It's still kept on this device."))
       return
     }
 
