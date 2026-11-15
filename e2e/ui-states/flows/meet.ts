@@ -341,7 +341,7 @@ const machine = setupFlow<Event>().createMachine({
 			on: { LEAVE_CONFIRMED: "left" },
 		},
 		left: {
-			meta: { description: "After leaving, Maya is back on Meet home. Nothing says the call ended." },
+			meta: { description: "After leaving, Maya is back on Meet home: earlier toasts are cleared and “You left the meeting” offers Rejoin." },
 		},
 		movedAway: {
 			meta: { description: "Maya switched the call to another device: this tab stops her audio and video and says “Meeting moved to another device”, with Back to Meet." },
