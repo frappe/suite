@@ -767,38 +767,30 @@ class LegacyBucket:
             )
             errors = response.get("Errors") or []
             refused = [error for error in errors if error.get("Code") != "NoSuchKey"]
+            missing = [error for error in errors if error.get("Code") == "NoSuchKey"]
             if refused:
                 first = refused[0]
                 raise RuntimeError(
                     f"S3 refused to delete {len(refused)} of {len(batch)} legacy keys (for example "
                     f"{first.get('Key')!r}: {first.get('Code')} {first.get('Message')})"
                 )
-            for error in errors:
+            for error in missing:
                 if error["Key"].startswith("/"):
                     self._delete_stored_without_slash(error["Key"])
-            deleted += len(response.get("Deleted") or []) + len(errors)
+            deleted += len(response.get("Deleted") or []) + len(missing)
         return deleted
 
     def _delete_stored_without_slash(self, key: str) -> None:
         """Delete `/team/id` on a store that holds it as `team/id`, or find it gone.
 
-        Garage drops the leading slashes of a key in a request path, so it
-        stored the upload of `/team/id` as `team/id`, and a HEAD or a
-        single-object DELETE of `/team/id` reaches that object. A key in
-        the `DeleteObjects` body keeps its slash, misses, and comes back
-        `NoSuchKey`.
-
-        The object goes only when the store shows that `/team/id` names it:
-        HEAD of both names answers with one object (same ETag and size).
-        It is then deleted by its legacy name, so the store resolves the
-        name the way it resolved the upload and this code never names
-        `team/id` itself. AWS keeps the slash, so `DeleteObjects` already
-        removed `/team/id` there, or reported it gone under `Deleted`, and
-        a different `team/id` is never touched. A stored name under the framework's roots is refused: the
-        object there is one Suite still serves, whatever legacy name also
-        reaches it.
+        The object goes only when HEAD shows that both names are one object,
+        and it is deleted by its legacy name, so this code never names
+        `team/id` itself. On AWS the slash is part of the key, so a different
+        `team/id` is never touched. A stored name under the framework's roots
+        is refused: Suite still serves that object. `BotoBucket._copy_from`
+        says how Garage treats a key in the request path.
         """
-        if self.boto._head(key) is None:
+        if self.boto.head(key) is None:
             return
         stored_key = key.lstrip("/")
         if not stored_key or stored_key.startswith(FRAMEWORK_ROOTS):
@@ -806,13 +798,13 @@ class LegacyBucket:
                 f"Legacy key {key!r} reaches the object stored as {stored_key!r}, under the "
                 "framework's own roots. Refusing to delete it."
             )
-        if not self.boto._is_one_object(key, stored_key):
+        if not self.boto.is_one_object(key, stored_key):
             raise RuntimeError(
                 f"S3 reports legacy key {key!r} missing on delete but present on HEAD, and "
                 f"{stored_key!r} is not the same object. Refusing to guess which object it names."
             )
         self.boto.client.delete_object(Bucket=self.boto.bucket, Key=key)
-        if self.boto._head(key) is not None:
+        if self.boto.head(key) is not None:
             raise RuntimeError(f"Legacy key {key!r} is still in the bucket after deleting it.")
 
 

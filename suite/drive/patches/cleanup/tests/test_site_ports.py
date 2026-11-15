@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, patch
 import frappe
 
 import suite.drive.patches.cleanup as cleanup
-from suite.drive.patches.build.tests.test_ports import StoreClient, bucket_over
+from suite.drive.patches.build.tests.fakes import StoreClient, bucket_over
 from suite.drive.patches.cleanup.ports import (
     SNAPSHOT_FIELDS,
     LegacyBucket,
@@ -601,18 +601,12 @@ class DeletingStoreClient(StoreClient):
 
 
 class DenyingStoreClient(DeletingStoreClient):
-    """A store that answers `AccessDenied` for every key, and counts single deletes."""
-
-    single_deletes = 0
+    """A store that answers `AccessDenied` for every key."""
 
     def delete_objects(self, Bucket, Delete):
         self.batches.append([item["Key"] for item in Delete["Objects"]])
         errors = [{"Key": item["Key"], "Code": "AccessDenied", "Message": "no"} for item in Delete["Objects"]]
         return {"Deleted": [], "Errors": errors}
-
-    def delete_object(self, Bucket, Key):
-        self.single_deletes += 1
-        super().delete_object(Bucket, Key)
 
 
 def legacy_bucket(client):
@@ -675,7 +669,6 @@ class TestLegacyBucket(unittest.TestCase):
                 with self.assertRaises(RuntimeError) as caught:
                     legacy_bucket(client).delete_keys(("/team/id", "team/id"))
                 self.assertIn("AccessDenied", str(caught.exception))
-                self.assertEqual(client.single_deletes, 0)
                 self.assertIn("team/id", client.objects)
 
 
