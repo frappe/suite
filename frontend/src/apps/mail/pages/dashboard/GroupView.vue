@@ -237,6 +237,7 @@ import {
   InformationField,
 } from '@/platform/dashboard'
 import { appPageMeta } from '@/platform/page-meta'
+import { translate as __ } from '@/platform/translation'
 
 type GroupData = {
   id: string
@@ -320,7 +321,7 @@ const toggleEmailEnabled = async (
     email: entry.email,
     enabled: value ? 1 : 0,
   })
-  raiseToast(value ? __('Email address enabled.') : __('Email address disabled.'))
+  raiseToast(value ? __('Email address enabled') : __('Email address disabled'))
 }
 const removeEmail = async (email: string) => {
   await client.mutation(api.mail.admin.groups.removeEmail, {
@@ -328,7 +329,7 @@ const removeEmail = async (email: string) => {
     email,
   })
   member.refetch().catch(() => {})
-  raiseToast(__('Email address removed.'))
+  raiseToast(__('Email address removed'))
 }
 const removeMember = async (accountId: string) => {
   await client.mutation(api.mail.admin.groups.removeMember, {
@@ -336,14 +337,14 @@ const removeMember = async (accountId: string) => {
     account_id: accountId,
   })
   member.refetch().catch(() => {})
-  raiseToast(__('Member removed.'))
+  raiseToast(__('Member removed'))
 }
 async function setReceiving(enabled: boolean) {
   await client.mutation(api.mail.admin.groups.setReceivingEnabled, {
     group_id: groupId,
     enabled,
   })
-  raiseToast(enabled ? __('Receiving enabled.') : __('Receiving disabled.'))
+  raiseToast(enabled ? __('Receiving enabled') : __('Receiving disabled'))
 }
 function confirmToggleReceiving() {
   const enabling = Boolean(data.value?.disable_receiving)
@@ -369,7 +370,7 @@ async function deleteGroupSubmit() {
     deleting.value = false
     throw error
   })
-  raiseToast(__('Group deleted.'))
+  raiseToast(__('Group deleted'))
   router.push({
     name: 'mail-groups',
   })

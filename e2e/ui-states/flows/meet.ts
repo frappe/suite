@@ -309,7 +309,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "Settings in the call, for the host: “Meeting settings” with a Controls tab for the meeting above the device and display tabs." },
 		},
 		infoPopover: {
-			meta: { description: "Meeting information: the meeting ID and URL, each with a copy button." },
+			meta: { description: "Meeting information: the meeting ID and URL, each truncated on one line with a Copy button beside it that turns to Copied." },
 		},
 		chatEmpty: {
 			meta: { description: "Chat opened: a side panel with “No messages yet” and the message field." },
@@ -322,10 +322,10 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "Leo writes while Maya's chat is closed: a toast with his avatar, name and the start of the message. The toast sits over the side-panel buttons, so the unread dot on Chat is hidden while it shows." },
 		},
 		sharingScreen: {
-			meta: { description: "Maya shares her screen: her screen becomes the large tile with “You are sharing your screen” over it, and the camera tiles move to a column." },
+			meta: { description: "Maya shares her screen: her screen becomes the large tile, labelled “Your screen” in the usual bottom-left name pill, with “You are sharing your screen” over it, and the camera tiles move to a column." },
 		},
 		watchingShare: {
-			meta: { description: "Leo shares his screen: it fills the large tile, labelled “Leo Park's screen”, with the camera tiles beside it." },
+			meta: { description: "Leo shares his screen: it fills the large tile, labelled “Leo Park's screen” in the usual bottom-left name pill, with the camera tiles beside it." },
 		},
 		callCameraOff: {
 			meta: { description: "Maya turns her camera off in the call: her tile shows her avatar and the camera button turns red." },
@@ -341,7 +341,7 @@ const machine = setupFlow<Event>().createMachine({
 			on: { LEAVE_CONFIRMED: "left" },
 		},
 		left: {
-			meta: { description: "After leaving, Maya is back on Meet home. Nothing says the call ended." },
+			meta: { description: "After leaving, Maya is back on Meet home: earlier toasts are cleared and “You left the meeting” offers Rejoin." },
 		},
 		movedAway: {
 			meta: { description: "Maya switched the call to another device: this tab stops her audio and video and says “Meeting moved to another device”, with Back to Meet." },
@@ -358,7 +358,7 @@ const machine = setupFlow<Event>().createMachine({
 			on: { REMOVE: "removeConfirm" },
 		},
 		removeConfirm: {
-			meta: { description: "Remove asks first: “Remove participant”, naming Leo, with Cancel and Remove." },
+			meta: { description: "Remove asks first, the way Leave meeting does: “Remove Leo Park?” with Cancel and a red Remove." },
 			on: { CONFIRM_REMOVE: "removed" },
 		},
 		removed: {
@@ -727,10 +727,10 @@ export const meet = defineFlow<Event, BaseScene>({
 		},
 		async REMOVE(scene) {
 			await scene.page.getByRole("menuitem", { name: "Remove" }).click();
-			await expect(scene.page.getByRole("dialog", { name: "Remove participant" })).toBeVisible();
+			await expect(scene.page.getByRole("dialog", { name: "Remove Leo Park?" })).toBeVisible();
 		},
 		async CONFIRM_REMOVE(scene) {
-			await scene.page.getByRole("dialog", { name: "Remove participant" }).getByRole("button", { name: "Remove" }).click();
+			await scene.page.getByRole("dialog", { name: "Remove Leo Park?" }).getByRole("button", { name: "Remove" }).click();
 			await expect(leo.get(scene).getByText("The host removed you from the meeting")).toBeVisible({ timeout: 20_000 });
 		},
 		async LEO_WRITES(scene) {

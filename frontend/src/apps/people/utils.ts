@@ -1,5 +1,7 @@
 import { toast } from 'frappe-ui'
 
+import { translate as __ } from '@/platform/translation'
+
 export const raiseToast = (message: string, type = 'success') => {
   if (type === 'success') return toast.success(message)
 
@@ -7,7 +9,7 @@ export const raiseToast = (message: string, type = 'success') => {
   div.innerHTML = message
   // strip html tags
   const text =
-    div.textContent || div.innerText || __('Failed to perform action. Please try again later.')
+    div.textContent || div.innerText || __('Could not perform the action. Try again later.')
   toast.error(text)
 }
 

@@ -557,7 +557,7 @@ export const suiteSettings = defineFlow<Event, BaseScene>({
 		async SAVE(scene) {
 			await answerMailSave(scene, MAIL_ACCOUNT_SETTINGS);
 			await dialog(scene.page).getByRole("button", { name: "Save" }).click();
-			await expect(scene.toast("Account updated.")).toBeVisible();
+			await expect(scene.toast("Account updated")).toBeVisible();
 			await expect(accountSwitch(scene.page)).toBeChecked();
 		},
 		async SAVE_SLOWLY(scene) {
@@ -579,7 +579,7 @@ export const suiteSettings = defineFlow<Event, BaseScene>({
 			await dialog(scene.page).getByRole("combobox").first().click();
 			await scene.page.getByRole("option", { name: "10 seconds" }).click();
 			await dialog(scene.page).getByRole("button", { name: "Save" }).click();
-			await expect(scene.toast("Compose settings updated.")).toBeVisible();
+			await expect(scene.toast("Compose settings updated")).toBeVisible();
 			await expect(dialog(scene.page).getByRole("button", { name: "Save" })).toBeDisabled();
 		},
 	},

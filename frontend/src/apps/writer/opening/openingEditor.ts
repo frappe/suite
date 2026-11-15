@@ -65,7 +65,7 @@ export function handOverOpeningEditor(node: string, editor: Editor): void {
   opening.value = null
   if (!typed.isEmpty) {
     if (editor.isEditable) moveTyped(typed, editor)
-    else toast.error(__('This document does not take edits, so what you typed was not added.'))
+    else toast.error(__('This document does not take edits, so what you typed was not added'))
   }
   typed.destroy()
   editor.view.focus()

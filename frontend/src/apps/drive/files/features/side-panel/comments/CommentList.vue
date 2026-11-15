@@ -284,7 +284,7 @@ function writeDraft(draft: ShownDraft, text: string) {
 function fitsInComment(text: string) {
   const isFitting = new TextEncoder().encode(text).length <= MAX_COMMENT_BYTES
   if (!isFitting) {
-    toast.error('This comment is too long. Shorten it and try again.')
+    toast.error(__('This comment is too long. Shorten it and try again.'))
   }
 
   return isFitting
@@ -375,7 +375,7 @@ async function submitReply(thread: DocumentThread) {
 }
 
 function offerUndoResolve(thread: DocumentThread) {
-  toast.success('Comment resolved', {
+  toast.success(__('Comment resolved'), {
     duration: RESOLVED_MESSAGE_MS,
     action: { label: 'Undo', onClick: () => void setResolved(thread.name, false) },
   })
@@ -555,7 +555,7 @@ function dropDeletedEdit() {
   }
 
   stopEdit()
-  toast.warning("This comment was deleted, so your edit wasn't saved.")
+  toast.warning(__("This comment was deleted, so your edit wasn't saved"))
 }
 
 watch(() => props.threads, dropDeletedEdit)

@@ -191,6 +191,7 @@ import EditContactModal from '@/apps/people/components/Modals/EditContactModal.v
 import { raiseToast } from '@/apps/people/utils'
 import { DashboardCard, DashboardLayout, InformationField } from '@/platform/dashboard'
 import { appPageMeta } from '@/platform/page-meta'
+import { translate as __ } from '@/platform/translation'
 
 const { accountId, contactName } = defineProps<{ accountId: string; contactName: string }>()
 
@@ -214,7 +215,7 @@ type Changes = InputOf<typeof api.mail.contacts.update>['changes']
 
 async function saveChanges(changes: Changes): Promise<void> {
   await updateContact.run({ account: accountId, id: contactName, changes })
-  raiseToast(__('Contact updated.'))
+  raiseToast(__('Contact updated'))
 }
 async function saveGeneral(value: { fullName: string; kind: string }) {
   await saveChanges({ full_name: value.fullName, kind: value.kind })
@@ -235,7 +236,7 @@ async function addAddress(value: NonNullable<Changes['addresses']>[number]) {
 async function deleteContact() {
   await removeContact.run({ account: accountId, ids: [contactName] })
   showDeleteContact.value = false
-  raiseToast(__('Contact deleted.'))
+  raiseToast(__('Contact deleted'))
   await router.push({ name: 'people-contacts', params: { accountId } })
 }
 

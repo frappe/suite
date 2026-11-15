@@ -54,6 +54,7 @@ import { ref, watch } from 'vue'
 import { api, useMutation, type InputOf } from '@/api'
 import { useAccountOptions } from '@/apps/mail/composables/useAccountOptions'
 import { raiseToast } from '@/apps/mail/utils'
+import { translate as __ } from '@/platform/translation'
 
 type MemberData = {
   name: string
@@ -104,6 +105,6 @@ async function updateMemberSubmit() {
   await updateMember.run(input)
   show.value = false
   emit('reload')
-  raiseToast(__('Account updated.'))
+  raiseToast(__('Account updated'))
 }
 </script>

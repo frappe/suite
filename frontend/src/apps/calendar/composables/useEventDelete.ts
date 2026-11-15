@@ -11,6 +11,8 @@ import {
   scopeOptions,
   type RecurringScope,
 } from '@/apps/calendar/utils/recurringScope'
+import { translate as __ } from '@/platform/translation'
+import { TransportError } from '@/platform/transport'
 
 /** The part of a calendar event that deleting one reads. */
 interface DeletableEvent {
@@ -126,12 +128,15 @@ export function useEventDelete(getEvent: () => DeletableEvent | undefined, onDel
     const run = (sendEmail: boolean) => {
       showNotifyModal.value = false
       toast.promise(submit(sendEmail), {
-        loading: recurring ? __('Deleting events...') : __('Deleting event...'),
-        success: recurring ? __('Events deleted.') : __('Event deleted.'),
+        loading: recurring ? __('Deleting events…') : __('Deleting event…'),
+        success: recurring ? __('Events deleted') : __('Event deleted'),
         // The refusal's own message, as the request layer shows it for a non-silent call.
         error: (error: unknown) =>
-          (error instanceof Error && error.message) ||
-          __('Action failed. Please try again in some time.'),
+          (error instanceof TransportError &&
+          error.type !== 'NetworkError' &&
+          error.type !== 'AbortError'
+            ? __(error.message)
+            : null) || __('Could not delete the event'),
       })
     }
 

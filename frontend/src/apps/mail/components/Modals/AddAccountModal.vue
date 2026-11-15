@@ -177,6 +177,7 @@ import { useEnabledDomains } from '@/apps/mail/composables/useEnabledDomains'
 import { raiseToast } from '@/apps/mail/utils'
 import { utcFromNow } from '@/apps/mail/utils/datetime'
 import { userTimeZone } from '@/platform/time-zone'
+import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()
 const temporaryPassword = ref('')
@@ -309,7 +310,7 @@ async function addMemberSubmit() {
     return
   }
   temporaryPassword.value = result.temporary_password || ''
-  raiseToast(accountRequest.send_invite ? __('Invitation sent.') : __('Account added.'))
+  raiseToast(accountRequest.send_invite ? __('Invitation sent') : __('Account added'))
   if (!temporaryPassword.value) show.value = false
 }
 </script>

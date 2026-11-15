@@ -8,6 +8,8 @@ import { normalizeColor } from '@/apps/slides/utils/color'
 import { migrateShadow } from '@/apps/slides/utils/oldShadow'
 import { appDocumentTitle } from '@/platform/page-meta'
 import { randomId } from '@/platform/random-id'
+import { translate as __ } from '@/platform/translation'
+import { TransportError } from '@/platform/transport'
 
 import { recordVisit } from './driveVisit'
 import { commandHistory } from './historyMeta'
@@ -150,7 +152,7 @@ const parseElements = (value, slide) => {
     } catch (err) {
       console.error('Failed to parse slide elements', err)
       toast.error(
-        'A slide could not be read. Its content is preserved but hidden; avoid saving over it.',
+        __('A slide could not be read. Its content is preserved but hidden; avoid saving over it.'),
       )
       if (slide) slide.corruptElements = value
       return []
@@ -300,7 +302,10 @@ const loadTemplates = async () => {
     templateList.value = await client.query(api.slides.templates.list, {}, { cache: 'prefer' })
   } catch (error) {
     if (navigator.onLine) {
-      toast.error(error.message || 'Could not load templates')
+      toast.error(
+        (error instanceof TransportError ? __(error.message) : null) ||
+          __('Could not load templates'),
+      )
     }
   }
 }

@@ -30,7 +30,7 @@ export async function restoreVersion(
   try {
     body = await readVersionBody(bytes)
   } catch {
-    return { isRestored: false, message: __("This version can't be restored."), anchors: {} }
+    return { isRestored: false, message: __("This version can't be restored"), anchors: {} }
   }
 
   if ('legacy' in body) {

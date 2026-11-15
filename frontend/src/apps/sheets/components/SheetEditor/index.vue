@@ -2652,7 +2652,7 @@ function _setupGridInstance() {
             toast.error(
               v.message
                 ? __("This value isn't allowed. {0}", [v.message])
-                : __("This value isn't allowed."),
+                : __("This value isn't allowed"),
             )
             // Force a re-render so the canvas repaints with the pre-edit value
             // (we never called sheet.setCell so the engine still has it).

@@ -16,6 +16,9 @@ import {
 } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
+import { translate as __ } from '@/platform/translation'
+import { TransportError } from '@/platform/transport'
+
 import '@/apps/slides/styles/fonts.css'
 import '@/apps/slides/styles/scrollbars.css'
 
@@ -320,8 +323,9 @@ async function writeTheme(theme: string) {
     )
     await load()
   } catch (error) {
-    const message = error instanceof Error && error.message
-    toast.error(message || 'Could not change the theme.')
+    const message =
+      error instanceof TransportError && error.type !== 'NetworkError' && error.message
+    toast.error(message || __('Could not change the theme'))
   } finally {
     restoring.value = false
   }
@@ -338,7 +342,7 @@ async function fillTheme(theme: string) {
   await drawTemplateLayouts([theme])
   const layout = firstLayout(template)
   if (!layout) {
-    toast.error(translate('This theme has no slides to start from'))
+    toast.error(__('This theme has no slides to start from'))
     return
   }
 
@@ -354,12 +358,13 @@ async function fillTheme(theme: string) {
       ? [{ ...adopted, elements: JSON.parse(String(adopted.elements)) }]
       : rowSlides([adopted])
     if (!convertedRoom.fillBlank(slide)) {
-      toast.error(translate('Only a new, empty presentation can take a theme'))
+      toast.error(__('Only a new, empty presentation can take a theme'))
       return
     }
   } catch (error) {
-    const message = error instanceof Error && error.message
-    toast.error(message || translate('Could not change the theme.'))
+    const message =
+      error instanceof TransportError && error.type !== 'NetworkError' && error.message
+    toast.error(message || __('Could not change the theme'))
     return
   }
 
@@ -476,7 +481,7 @@ function confirmRestore(version: DocumentVersion) {
     confirmLabel: translate('Restore'),
     onConfirm: async () => {
       await restoreRows(version)
-      toast.success(translate('Version restored'))
+      toast.success(__('Version restored'))
       void sidePanel.value?.reloadVersions()
     },
   })
@@ -505,12 +510,9 @@ function storedFile(version: DocumentVersion, bytes: Uint8Array) {
 // Bytes no preview can draw: the person keeps them as the stored file
 function offerStoredFile(version: DocumentVersion, bytes: Uint8Array) {
   const file = storedFile(version, bytes)
-  toast.error(
-    translate("This version can't be read, so it can't be restored. You can download it."),
-    {
-      action: { label: translate('Download'), onClick: () => saveThroughBrowser(file) },
-    },
-  )
+  toast.error(__("This version can't be read, so it can't be restored. You can download it."), {
+    action: { label: __('Download'), onClick: () => saveThroughBrowser(file) },
+  })
 }
 
 // The version's bytes and its pictures binned or deleted now; null once the person is told why not
@@ -526,7 +528,7 @@ async function versionToRestore(version: DocumentVersion) {
     return { bytes, images: await missingImages(props.session, versionImages(body)) }
   } catch (error) {
     console.error(error)
-    toast.error(translate("This version's images couldn't be checked, so nothing was restored."))
+    toast.error(__("This version's images could not be checked, so nothing was restored"))
     return null
   }
 }
@@ -571,7 +573,7 @@ async function restoreLive(version: DocumentVersion, bytes: Uint8Array, images: 
     previewCapture.value?.captureAfterPause()
   } catch (error) {
     console.error(error)
-    toast.error(translate('The version was not restored.'))
+    toast.error(__('Could not restore the version'))
   }
 }
 
@@ -582,7 +584,7 @@ function tellNotRestored(version: DocumentVersion, bytes: Uint8Array, refused: R
   }
 
   toast.error(refused.message, {
-    action: { label: translate('Download'), onClick: () => void downloadVersion(version, bytes) },
+    action: { label: __('Download'), onClick: () => void downloadVersion(version, bytes) },
   })
 }
 
@@ -609,7 +611,7 @@ async function downloadListedVersion(version: DocumentVersion) {
     bytes = await fetchVersion(props.session, version.seq)
   } catch (error) {
     console.error(error)
-    toast.error(translate('Could not download this version.'))
+    toast.error(__('Could not download this version'))
     return
   }
 

@@ -29,7 +29,8 @@ import { remapElementIds } from '@/apps/slides/utils/connectors'
 import { getDocFromHTML, hasListMarkup, sanitizeSlideHTML } from '@/apps/slides/utils/helpers'
 import { handleUploadedMedia } from '@/apps/slides/utils/mediaUploads'
 import { randomId } from '@/platform/random-id'
-import { translate } from '@/platform/translation'
+import { translate as __ } from '@/platform/translation'
+import { TransportError } from '@/platform/transport'
 
 const { activeEditor } = useTextEditor()
 
@@ -54,7 +55,7 @@ const getCopiedSlideJSON = () => {
 const copySlide = (e) => {
   const clipboardJSON = getCopiedSlideJSON()
   e.clipboardData.setData('application/json', clipboardJSON)
-  toast.success('Slide copied to clipboard')
+  toast.success(__('Slide copied to clipboard'))
 }
 
 const copyElements = (e, isCut = false) => {
@@ -102,7 +103,7 @@ const copyToClipboard = async (text) => {
   }
 
   isCopyTriggeredByButton.value = false
-  toast.success('Copied to clipboard')
+  toast.success(__('Copied to clipboard'))
 }
 
 // Paste Handlers
@@ -168,7 +169,7 @@ function cannotFetchPictures() {
     return false
   }
 
-  toast.error(translate('Connect to the internet to paste from another presentation.'))
+  toast.error(__('Connect to the internet to paste from another presentation'))
   return true
 }
 
@@ -177,7 +178,10 @@ async function adoptPictures(mutation, input, id) {
   try {
     return await client.mutation(mutation, input, { context: contextFor(id) })
   } catch (error) {
-    toast.error((error instanceof Error && error.message) || translate('Nothing was pasted.'))
+    toast.error(
+      (error instanceof TransportError && error.type !== 'NetworkError' && error.message) ||
+        __('Could not paste'),
+    )
     return null
   }
 }

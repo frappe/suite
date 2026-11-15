@@ -6,6 +6,7 @@ import { api, client } from '@/api'
 
 import type { DriveFailure } from '@/apps/drive/client/types'
 import { toast } from '@/platform/feedback'
+import { translate as __ } from '@/platform/translation'
 
 import { inBatches, refusal } from './batches'
 
@@ -131,9 +132,9 @@ async function takeBack<Item extends ChangedItem>(
  */
 export function announceMove(items: readonly MovedItem[], destination: string): void {
   announce(items, {
-    done: `Moved ${subject(items)} to ${escapeHtml(destination)}`,
-    undone: `Moved ${subject(items)} back`,
-    stuck: (what) => `Could not move ${what} back`,
+    done: __('Moved {0} to {1}', [subject(items), escapeHtml(destination)]),
+    undone: __('Moved {0} back', [subject(items)]),
+    stuck: (what) => __('Could not move {0} back', [what]),
     undo: (moved) => (moved.length === 1 ? moveBack(moved[0]!) : moveAllBack(moved)),
   })
 }
@@ -141,24 +142,24 @@ export function announceMove(items: readonly MovedItem[], destination: string): 
 /** Reports items moved to Trash. Undo restores them. */
 export function announceTrash(items: readonly ChangedItem[]): void {
   announce(items, {
-    done: `Moved ${subject(items)} to Trash`,
-    undone: `Restored ${subject(items)}`,
-    stuck: (what) => `Could not restore ${what}`,
+    done: __('Moved {0} to Trash', [subject(items)]),
+    undone: __('Restored {0}', [subject(items)]),
+    stuck: (what) => __('Could not restore {0}', [what]),
     undo: (trashed) => setState(trashed, 'Active'),
   })
 }
 
 /** Reports a copy. A copy is a new item the user can delete, so its toast offers no Undo. */
 export function announceCopy(item: ChangedItem, destination: string): void {
-  toast.success(`Copied ${subject([item])} to ${escapeHtml(destination)}`)
+  toast.success(__('Copied {0} to {1}', [subject([item]), escapeHtml(destination)]))
 }
 
 /** Reports items restored from Trash, to where they were or to a folder the user chose. Undo moves them back to Trash. */
 export function announceRestore(items: readonly ChangedItem[]): void {
   announce(items, {
-    done: `Restored ${subject(items)}`,
-    undone: `Moved ${subject(items)} back to Trash`,
-    stuck: (what) => `Could not move ${what} back to Trash`,
+    done: __('Restored {0}', [subject(items)]),
+    undone: __('Moved {0} back to Trash', [subject(items)]),
+    stuck: (what) => __('Could not move {0} back to Trash', [what]),
     undo: (restored) => setState(restored, 'Trashed'),
   })
 }
@@ -219,7 +220,7 @@ async function setState(
 
 /** “Report.pdf” for one item, “3 items” for several. */
 export function subject(items: readonly ChangedItem[]): string {
-  return items.length === 1 ? `“${escapeHtml(items[0]!.title)}”` : `${items.length} items`
+  return items.length === 1 ? `“${escapeHtml(items[0]!.title)}”` : __('{0} items', [items.length])
 }
 
 /** The toast renders its message as limited HTML, so a title shows as typed. */

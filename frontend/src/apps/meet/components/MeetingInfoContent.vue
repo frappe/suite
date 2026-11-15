@@ -10,15 +10,15 @@
     </div>
     <div class="space-y-2">
       <p class="text-sm-medium text-ink-gray-8">{{ __('Meeting ID') }}</p>
-      <ClickToCopyField :text-content="meetingId || ''" :break-lines="false" />
+      <ClickToCopyField :text-content="meetingId || ''" />
     </div>
     <div class="space-y-2">
       <p class="text-sm-medium text-ink-gray-8">{{ __('Meeting URL') }}</p>
-      <ClickToCopyField :text-content="meetingUrl" :break-lines="false" />
+      <ClickToCopyField :text-content="meetingUrl" />
     </div>
     <div v-if="e2eeFingerprint" class="space-y-2">
       <p class="text-sm-medium text-ink-gray-8">{{ __('Encryption fingerprint') }}</p>
-      <ClickToCopyField :text-content="e2eeFingerprint" :break-lines="false" />
+      <ClickToCopyField :text-content="e2eeFingerprint" mono />
       <p class="text-xs text-ink-gray-6">
         {{ __('Everyone in this meeting should see the same fingerprint') }}
       </p>

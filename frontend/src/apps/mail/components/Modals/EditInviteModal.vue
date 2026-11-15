@@ -115,6 +115,7 @@ import { computed, ref, watch } from 'vue'
 import { api, useMutation, useQuery, type OutputOf } from '@/api'
 import { raiseToast } from '@/apps/mail/utils'
 import { fromLocalInput, toLocalInput } from '@/apps/mail/utils/datetime'
+import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()
 const { inviteID } = defineProps<{ inviteID: string }>()
@@ -189,12 +190,12 @@ async function saveInvite() {
     is_admin: !!draft.value.is_admin,
   })
   show.value = false
-  raiseToast(__('Invite updated.'))
+  raiseToast(__('Invite updated'))
   emit('reloadInvites')
 }
 async function sendInvitationEmail() {
   if (!canSendInvite.value) return
   await send.run({ name: inviteID })
-  raiseToast(__('Invitation email sent.'))
+  raiseToast(__('Invitation email sent'))
 }
 </script>

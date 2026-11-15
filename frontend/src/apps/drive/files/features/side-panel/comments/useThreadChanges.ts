@@ -157,7 +157,7 @@ export function useThreadChanges({ session, readThreads, readAt, refresh }: Thre
         const isTaken = await send(
           change,
           () => comments.reply(thread, text, authorName, clientId),
-          __('Could not add the reply.'),
+          __('Could not add the reply'),
         )
         change.isNotSent = !isTaken
         changes.value = [...changes.value]

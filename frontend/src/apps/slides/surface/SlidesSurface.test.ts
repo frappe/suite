@@ -2021,7 +2021,7 @@ describe('a deck on the content layer', () => {
     mounted = await openedSurface({ deck: { is_converted: true } })
 
     await vi.waitFor(() =>
-      expect(mounted!.root.textContent).toContain('Could not open this presentation.'),
+      expect(mounted!.root.textContent).toContain('Could not open this presentation'),
     )
     expect(thumbnails(mounted.root)).toHaveLength(0)
   })
@@ -3496,7 +3496,7 @@ describe('edit access changing on a converted presentation', () => {
     send()
 
     await vi.waitFor(() =>
-      expect(toast.info).toHaveBeenCalledWith('You can edit this presentation again.'),
+      expect(toast.info).toHaveBeenCalledWith('You can edit this presentation again'),
     )
     // a load would close this room on its way to opening another
     await new Promise((resolve) => setTimeout(resolve, 20))
@@ -3596,7 +3596,7 @@ describe('edit access changing on a converted presentation', () => {
     shut()
 
     await vi.waitFor(() =>
-      expect(toast.info).toHaveBeenCalledWith('You can edit this presentation again.'),
+      expect(toast.info).toHaveBeenCalledWith('You can edit this presentation again'),
     )
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(toast.warning).not.toHaveBeenCalled()
@@ -3627,7 +3627,7 @@ describe('edit access changing on a converted presentation', () => {
     mounted.access.value = { role: 50 }
 
     await vi.waitFor(() =>
-      expect(toast.info).toHaveBeenCalledWith('You can edit this presentation again.'),
+      expect(toast.info).toHaveBeenCalledWith('You can edit this presentation again'),
     )
     expect(viewOnly.value).toBe(false)
   })

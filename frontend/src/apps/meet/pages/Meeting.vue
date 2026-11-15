@@ -822,7 +822,21 @@ async function confirmMeetingLeave() {
 async function confirmAndEndCall() {
   if (!(await confirmMeetingLeave())) return
   canLeaveMeeting.value = true
+  const leftMeetingId = meetingId.value
+  const canRejoin = session.isLoggedIn
   await sfuConnection.endCall()
+  // Back on Meet home, say the call ended for you and offer the way back; toasts from the call
+  // (such as "Meeting created") no longer apply.
+  toast.dismiss()
+  if (!canRejoin) return
+  toast.success(__('You left the meeting'), {
+    duration: 8000,
+    action: {
+      label: __('Rejoin'),
+      onClick: () =>
+        void router.push({ name: 'meet-meeting', params: { meetingId: leftMeetingId } }),
+    },
+  })
 }
 onBeforeRouteLeave(confirmMeetingLeave)
 onBeforeRouteUpdate((to, from) => {

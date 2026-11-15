@@ -80,6 +80,7 @@ import { mailCopyIds } from '@/apps/mail/utils/mailCopies'
 import { isReceived } from '@/apps/mail/utils/receivedMail'
 import { UNIFIED_ROUTE, UNIFIED_THREAD_ROUTE } from '@/apps/mail/utils/unifiedFolders'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
+import { translate as __ } from '@/platform/translation'
 
 const {
   mailbox,
@@ -336,7 +337,7 @@ function setMailsSeenSubmit({ ids }: { ids: string[] }) {
     seen: false,
   }
   const shown = raiseToast(
-    __('{0} marked as unread.', [ids.length === 1 ? __('Mail') : __('Mails')]),
+    __('{0} marked as unread', [ids.length === 1 ? __('Mail') : __('Mails')]),
   )
   // Through the client, not a mutation of this menu's: the thread is left at once, and a write of
   // the menu's own would be canceled as it goes.
@@ -381,7 +382,7 @@ const isDomainTrusted = (email: string) =>
   )
 // Said on the click; a refusal takes the toast down and says why.
 const trustDomain = () => {
-  const shown = raiseToast(__('Domain marked as trusted.'))
+  const shown = raiseToast(__('Domain marked as trusted'))
   client
     .mutation(api.mail.screening.set, {
       account: scopeAccountId.value,
@@ -401,16 +402,16 @@ const unblockSender = (isUndo = false) => {
     { account: scopeAccountId.value, emails: [mail.from_email] },
     { silent: true },
   )
-  if (isUndo) return raiseOptimisticToast(forward, __('Sender blocked.'))
+  if (isUndo) return raiseOptimisticToast(forward, __('Sender blocked'))
   setUndoAction(() => {
     const back = client.mutation(
       api.mail.screening.set,
       { account: scopeAccountId.value, emails: [mail.from_email], action: 'Spam' },
       { silent: true },
     )
-    raiseOptimisticToast(back, __('Sender blocked.'))
+    raiseOptimisticToast(back, __('Sender blocked'))
   })
-  raiseOptimisticToast(forward, __('Sender unblocked.'), undo)
+  raiseOptimisticToast(forward, __('Sender unblocked'), undo)
 }
 
 // Blocking sends the sender's future mail to Junk, and this message with it — they were blocked while
@@ -442,7 +443,7 @@ const blockSender = () => {
         ),
         client.mutation(api.mail.messages.spam, { account, ids, spam: false }, { silent: true }),
       ]).then(() => reloadMails(true))
-      raiseOptimisticToast(back, __('Sender unblocked.'))
+      raiseOptimisticToast(back, __('Sender unblocked'))
     },
     landed,
     account,

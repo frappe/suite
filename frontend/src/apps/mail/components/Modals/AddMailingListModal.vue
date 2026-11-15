@@ -52,6 +52,7 @@ import EmailAddressField from '@/apps/mail/components/Controls/EmailAddressField
 import EmailListInput from '@/apps/mail/components/Controls/EmailListInput.vue'
 import { useEnabledDomains } from '@/apps/mail/composables/useEnabledDomains'
 import { isEmail, raiseToast } from '@/apps/mail/utils'
+import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()
 const router = useRouter()
@@ -91,7 +92,7 @@ async function addListSubmit() {
   if (!data) return
   show.value = false
   emit('reload')
-  raiseToast(__('Mailing list added.'))
+  raiseToast(__('Mailing list added'))
   router.push({ name: 'mail-mailing-list', params: { listId: data } })
 }
 </script>

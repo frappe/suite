@@ -6,6 +6,7 @@ import { getState, type Doc, type ID } from 'yjs'
 import type { DocumentSession } from '@/apps/drive'
 import type { CollabRoom } from '@/platform/collab'
 import { randomId } from '@/platform/random-id'
+import { translate as __ } from '@/platform/translation'
 
 import {
   dropDraft,
@@ -89,13 +90,15 @@ function followOtherTabs(user: string, node: string, drafts: Ref<ShownDraft[]>) 
 // Whether the server holds the commented text, telling the person when it doesn't
 async function hasSavedText(current: CollabRoom | null, items: ID[]) {
   if (current && !isInCopy(current.doc, items)) {
-    toast.error("The text this comment is on wasn't saved, so it wasn't posted.")
+    toast.error(__("The text this comment is on wasn't saved, so it wasn't posted"))
     return false
   }
 
   const isSaved = await whenSaved(current, items)
   if (!isSaved) {
-    toast.error("The text wasn't saved, so the comment wasn't posted. It's kept on this device.")
+    toast.error(
+      __("The text wasn't saved, so the comment wasn't posted. It's kept on this device."),
+    )
     return false
   }
 
@@ -160,9 +163,11 @@ async function sendDraft(session: DraftOptions['session'], draft: ShownDraft, au
     return thread.name
   } catch (error) {
     if (error && typeof error === 'object' && 'type' in error && error.type === 'DriveConflict') {
-      toast.error('This comment was already posted with different words. Discard it to remove it.')
+      toast.error(
+        __('This comment was already posted with different words. Discard it to remove it.'),
+      )
     } else {
-      showError(error, 'Could not add the comment.')
+      showError(error, __('Could not add the comment'))
     }
 
     return null

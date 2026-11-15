@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref, shallowRef } from 'vue'
 
 import type { DocumentSession, DocumentThread } from '@/apps/drive'
+import { TransportError } from '@/platform/transport'
 
 import { useThreadChanges } from './useThreadChanges'
 
@@ -31,7 +32,11 @@ function drive(read: DocumentThread[]) {
     return (...args: unknown[]) =>
       new Promise<void>((take, reject) => {
         sent.push(`${name} ${args.filter(Boolean).join(' ')}`)
-        answers.push({ take, refuse: (reason) => reject(new Error(reason)) })
+        answers.push({
+          take,
+          refuse: (reason) =>
+            reject(new TransportError({ type: 'ValidationError', message: reason, status: 400 })),
+        })
       })
   }
 

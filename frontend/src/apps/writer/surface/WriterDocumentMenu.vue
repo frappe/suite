@@ -62,7 +62,7 @@ async function download(save: Download, scope: ExportScope) {
     await save(exportHTML(props.editor, scope))
   } catch (error) {
     console.error(error)
-    toast.error(__('Could not export this document.'))
+    toast.error(__('Could not export this document'))
   }
 }
 

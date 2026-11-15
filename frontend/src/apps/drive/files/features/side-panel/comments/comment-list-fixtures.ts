@@ -4,6 +4,7 @@ import { createApp, h, nextTick, ref, type App } from 'vue'
 
 import type { DocumentSession, DocumentThread } from '@/apps/drive'
 import { translationPlugin } from '@/platform/translation'
+import { TransportError } from '@/platform/transport'
 
 import { access, confirmed, errors, me, toasts, warnings } from './comment-list-fakes'
 import CommentList from './CommentList.vue'
@@ -177,7 +178,11 @@ export function showList({
       await heldReplies
       refusalsLeft -= 1
       if (refusalsLeft >= 0) {
-        throw new Error('The reply was refused.')
+        throw new TransportError({
+          type: 'ValidationError',
+          message: 'The reply was refused.',
+          status: 400,
+        })
       }
 
       changeListed((listedThread) =>
@@ -197,7 +202,11 @@ export function showList({
     resolve: async (thread: string, isResolved: boolean) => {
       await record(`resolve ${thread} ${isResolved}`)
       if (isRefusingResolve) {
-        throw new Error('The thread was not changed.')
+        throw new TransportError({
+          type: 'ValidationError',
+          message: 'The thread was not changed.',
+          status: 400,
+        })
       }
 
       changeListed((listedThread) =>
@@ -207,7 +216,11 @@ export function showList({
     edit: async (name: string, text: string) => {
       await record(`edit ${name} "${text}"`)
       if (isRefusingEdit) {
-        throw new Error('The comment was not saved.')
+        throw new TransportError({
+          type: 'ValidationError',
+          message: 'The comment was not saved.',
+          status: 400,
+        })
       }
 
       changeListed((listedThread) => ({
@@ -220,7 +233,11 @@ export function showList({
     remove: async (name: string) => {
       await record(`remove ${name}`)
       if (isRefusingRemove) {
-        throw new Error('The comment was not deleted.')
+        throw new TransportError({
+          type: 'ValidationError',
+          message: 'The comment was not deleted.',
+          status: 400,
+        })
       }
 
       changeListed((listedThread) => ({
