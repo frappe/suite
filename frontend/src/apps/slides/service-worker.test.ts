@@ -385,15 +385,18 @@ describe('a pinned presentation offline', () => {
     const SLIDES_API =
       '/api/method/suite.slides.doctype.presentation.presentation.get_public_presentation?name=p1'
     const OTHER_NODE = '/api/suite/drive/nodes/n2?expand=access%2Cpreview%2Cbreadcrumbs'
+    const MEDIA_LIST = '/api/suite/drive/nodes/n1/media'
 
     beforeEach(() => {
       online = true
       pinned.set(SLIDES_API, text('{"pinned":1}', 'application/json'))
+      pinned.set(MEDIA_LIST, text('{"media":[]}', 'application/json'))
     })
 
     it("opens the node's page, its Drive read and its chunks from the pin", async () => {
       expect(await (await dispatch(navigation('/d/n1/quarterly-plan')))!.text()).toBe('shell')
       expect(await (await dispatch(get(API), 'c3'))!.text()).toBe('{}')
+      expect(await (await dispatch(get(MEDIA_LIST), 'c3'))!.text()).toBe('{"media":[]}')
       expect(await (await dispatch(get(ASSET), 'c3'))!.text()).toBe('chunk')
     })
 
@@ -426,7 +429,8 @@ describe('a pinned presentation offline', () => {
 
     it('leaves the rest of the suite to the network', () => {
       expect(dispatch(navigation('/drive/home'))).toBeNull()
-      expect(dispatch(get('/api/suite/drive/nodes?parent=root'))).toBeNull()
+      expect(dispatch(get('/api/suite/drive/nodes/n1/children'))).toBeNull()
+      expect(dispatch(get('/api/suite/drive/nodes/n1/threads'))).toBeNull()
       expect(dispatch(get('/api/suite/drive/uploads/u1'))).toBeNull()
       expect(dispatch(get('/assets/frappe/dist/js/desk.bundle.js'))).toBeNull()
     })
