@@ -4,17 +4,19 @@
     <template #default>
       <div v-if="readiness !== 'ready'" class="space-y-3">
         <Alert :title="accountMessage" />
-        <Button v-if="readiness !== 'loading'" @click="loadAccount">{{ __('Retry') }}</Button>
-        <Button
-          v-if="
-            readiness === 'missing' &&
-            canManageAccounts &&
-            session.user.value?.is_mail_server_configured
-          "
-          :to="{ name: 'mail-accounts' }"
-        >
-          {{ __('Open Admin users') }}
-        </Button>
+        <div class="flex gap-2">
+          <Button v-if="readiness !== 'loading'" @click="loadAccount">{{ __('Retry') }}</Button>
+          <Button
+            v-if="
+              readiness === 'missing' &&
+              canManageAccounts &&
+              session.user.value?.is_mail_server_configured
+            "
+            :to="{ name: 'mail-accounts' }"
+          >
+            {{ __('Open Admin users') }}
+          </Button>
+        </div>
       </div>
       <div v-else class="space-y-4" @keydown.meta.enter.prevent.stop="submit">
         <Alert v-if="submitError" theme="red" :title="submitError" />
