@@ -341,7 +341,7 @@ class BotoBucket:
             raise
 
     def size(self, key: str) -> int | None:
-        head = self._head(key)
+        head = self.head(key)
         return head["ContentLength"] if head else None
 
     def sizes_under(self, prefix: str) -> dict[str, int]:
@@ -376,7 +376,7 @@ class BotoBucket:
         `team/id`, and then reports `/team/id` missing as a copy source.
 
         The second attempt runs only when the store shows that both names
-        are one object (`_is_one_object`). On AWS a missing `/team/id` stays
+        are one object (`is_one_object`). On AWS a missing `/team/id` stays
         missing, even when a different `team/id` exists.
         """
         try:
@@ -387,14 +387,16 @@ class BotoBucket:
                 self._is_missing(e)
                 and source_key.startswith("/")
                 and stored_key
-                and self._is_one_object(source_key, stored_key)
+                and self.is_one_object(source_key, stored_key)
             ):
                 raise
             copy(stored_key)
 
-    def _is_one_object(self, key: str, other_key: str) -> bool:
-        """Whether the store answers for both keys with the same object."""
-        head, other = self._head(key), self._head(other_key)
+    def is_one_object(self, key: str, other_key: str) -> bool:
+        """Whether the store answers for both keys with the same object: same
+        ETag and size. The copy (`_copy_from`) and the legacy delete
+        (`cleanup.ports.LegacyBucket`) rely on it to tell one object from two."""
+        head, other = self.head(key), self.head(other_key)
         return bool(
             head
             and other
@@ -402,7 +404,7 @@ class BotoBucket:
             and head["ContentLength"] == other["ContentLength"]
         )
 
-    def _head(self, key: str) -> dict | None:
+    def head(self, key: str) -> dict | None:
         try:
             return self.client.head_object(Bucket=self.bucket, Key=key)
         except self.driver._client_error as e:
