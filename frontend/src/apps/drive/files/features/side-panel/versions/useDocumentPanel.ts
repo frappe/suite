@@ -66,8 +66,8 @@ async function saveVersion(
   try {
     await saveFirst()
   } catch (error) {
-    // The product already put why in the writer's words
-    toast.error(reasonOf(error))
+    // Its reason is written for the person, not a server or browser failure
+    toast.error(error instanceof Error ? error.message : __('Could not save a version'))
     return false
   }
 
@@ -81,14 +81,6 @@ async function saveVersion(
   toast.success(__('Version saved'))
   await loadVersions(session, lists)
   return true
-}
-
-function reasonOf(error: unknown) {
-  if (error instanceof Error) {
-    return error.message
-  }
-
-  return __('Could not save a version')
 }
 
 // Naming an automatic version also keeps it, as the daily thinner deletes only unpinned automatic ones

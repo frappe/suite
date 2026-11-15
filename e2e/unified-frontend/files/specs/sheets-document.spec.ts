@@ -146,9 +146,9 @@ test("losing edit access freezes the sheet, stops sending its edits and offers t
 	// A trashed document shows Trashed in place of View only; the frozen toolbar shows the lock.
 	await expect(page.getByText("View only", { exact: true })).toHaveCount(0);
 	await expect(page.getByRole("button", { name: "Bold" })).toBeDisabled();
-	// The room's strip says so, and the edit it could not send is not saved.
+	// The room's strip says so. The header shows one badge, and Trashed comes before Not saved.
 	await expect(page.getByRole("status").filter({ hasText: "You can no longer edit this spreadsheet." })).toBeVisible();
-	await expect(page.getByText("Not saved", { exact: true })).toBeVisible();
+	await expect(page.getByText("Not saved", { exact: true })).toHaveCount(0);
 	await page.waitForTimeout(3_000);
 
 	// What did not reach the server, the text still in the cell editor too, is

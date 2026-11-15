@@ -1,5 +1,6 @@
 import { REMOTE } from '@suite/collab-client'
-import type { JSONContent } from '@tiptap/core'
+import { getSchema, type JSONContent } from '@tiptap/core'
+import { prosemirrorJSONToYXmlFragment } from '@tiptap/y-tiptap'
 import { fromPartial } from '@total-typescript/shoehorn'
 import { expect } from 'vitest'
 import * as yjs from 'yjs'
@@ -12,9 +13,9 @@ import {
   sendRow,
   stored,
   syncAll,
-  writeInto,
   type Tab,
 } from '@/apps/writer/collab/test-support'
+import { writerSchema } from '@/apps/writer/schema'
 import type { CollabRoom } from '@/platform/collab'
 
 /** The parent a legacy inline fixture inserted its text into. */
@@ -34,13 +35,19 @@ export function text(value: string) {
   return { type: 'text', text: value }
 }
 
-const paragraphs = [paragraph(text('abc')), paragraph(text('defgh')), paragraph(text('xyz'))]
+const threeParagraphsContent = [
+  paragraph(text('abc')),
+  paragraph(text('defgh')),
+  paragraph(text('xyz')),
+]
 
-export const threeParagraphs = stored(...paragraphs)
+export const threeParagraphs = stored(...threeParagraphsContent)
 
-/** Gives a room the three paragraphs as its own typing: a server takes no row of another writer's. */
+// Writes the three paragraphs into `room` as its own edit. The server refuses a row that holds
+// another writer's clocks, so a room can't send `threeParagraphs` as its own
 export function writeThreeParagraphs(room: CollabRoom) {
-  writeInto(room.doc, ...paragraphs)
+  const doc = { type: 'doc', content: threeParagraphsContent }
+  prosemirrorJSONToYXmlFragment(getSchema(writerSchema()), doc, room.doc.getXmlFragment(BODY_FIELD))
 }
 
 export function makeHeading(tab: Tab, word: string) {

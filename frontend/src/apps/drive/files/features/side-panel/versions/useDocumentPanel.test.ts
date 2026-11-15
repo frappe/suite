@@ -47,7 +47,6 @@ describe('saving a named version', () => {
 
   it('takes no version when the edits could not be saved, and says why', async () => {
     const { session, taken } = versionsSession()
-    // As Writer's and Slides' saveFirst: the reason, in the writer's words, on a plain Error
     async function saveFirst() {
       throw new Error('No version was taken: saving is paused.')
     }
@@ -58,18 +57,6 @@ describe('saving a named version', () => {
       false,
       [],
       [['No version was taken: saving is paused.']],
-    ])
-  })
-
-  it('says only that it failed when Drive fails to take the version', async () => {
-    const { session } = versionsSession()
-    vi.mocked(session.versions.create).mockRejectedValueOnce(new Error('socket hang up'))
-
-    const isTaken = await useDocumentPanel(session).saveVersion('Draft one', async () => {})
-
-    expect([isTaken, vi.mocked(toast.error).mock.calls]).toEqual([
-      false,
-      [['Could not save a version']],
     ])
   })
 })

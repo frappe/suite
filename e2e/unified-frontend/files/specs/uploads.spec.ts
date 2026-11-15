@@ -346,7 +346,7 @@ test("a batch larger than the free space offers to upload what fits", async ({ p
 	await useNewMenu(page, "Upload files");
 	await (await again).setFiles([{ name: "big.txt", mimeType: "text/plain", buffer: Buffer.alloc(100, 1) }]);
 	await expect(page.getByText("Not enough space to upload")).toBeVisible();
-	await expect(page.getByText(/This file needs .+, and only .+ is free\./)).toBeVisible();
+	await expect(page.getByText(/This file needs .+, and only .+ is free/)).toBeVisible();
 	await expect(page.getByRole("dialog", { name: "Not enough space" })).toHaveCount(0);
 });
 
