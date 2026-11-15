@@ -1,23 +1,27 @@
 <template>
   <AppSettingsHeader
-    title="Devices"
-    description="Select your preferred camera, microphone, and speaker"
+    :title="__('Devices')"
+    :description="__('Select your preferred camera, microphone, and speaker')"
   />
   <AppSettingsBody>
-    <LoadingText v-if="isLoadingDevices" class="mx-auto w-max my-32" :text="'Loading devices...'" />
+    <LoadingText
+      v-if="isLoadingDevices"
+      class="mx-auto w-max my-32"
+      :text="__('Loading devices…')"
+    />
     <div v-else class="space-y-6">
       <div class="space-y-1.5">
-        <label class="block text-base text-ink-gray-5">Camera</label>
+        <label class="block text-base text-ink-gray-5">{{ __('Camera') }}</label>
         <div class="flex items-center gap-2">
           <div class="relative w-full">
             <FormControl
+              v-model="selectedCameraIdLocal"
               class="device-select"
               type="combobox"
               trigger="button"
-              v-model="selectedCameraIdLocal"
               :options="hasVideoPermission ? cameraSelectOptions : []"
               :disabled="!hasVideoPermission"
-              placeholder="Camera access required"
+              :placeholder="__('Camera access required')"
             >
               <template #prefix>
                 <lucide-camera class="mr-2 h-4 w-4 text-ink-gray-7" />
@@ -27,7 +31,7 @@
               v-if="!hasVideoPermission"
               type="button"
               class="absolute inset-0 cursor-pointer rounded-4 bg-transparent focus-visible:focus-ring disabled:cursor-wait"
-              aria-label="Allow camera access"
+              :aria-label="__('Allow camera access')"
               :disabled="isRequestingVideoPermission"
               @click="requestPermission('video')"
             />
@@ -44,17 +48,17 @@
       </div>
 
       <div class="space-y-1.5">
-        <label class="block text-base text-ink-gray-5">Microphone</label>
+        <label class="block text-base text-ink-gray-5">{{ __('Microphone') }}</label>
         <div class="flex items-center gap-2">
           <div class="relative w-full">
             <FormControl
+              v-model="selectedMicIdLocal"
               class="device-select"
               type="combobox"
               trigger="button"
-              v-model="selectedMicIdLocal"
               :options="hasAudioPermission ? micSelectOptions : []"
               :disabled="!hasAudioPermission"
-              placeholder="Microphone access required"
+              :placeholder="__('Microphone access required')"
             >
               <template #prefix>
                 <lucide-mic class="mr-2 h-4 w-4 text-ink-gray-7" />
@@ -66,7 +70,7 @@
                   :is-active="true"
                   :sensitivity="2"
                   :max-height="16"
-                  activeColorClass="bg-surface-gray-7"
+                  active-color-class="bg-surface-gray-7"
                 />
                 <span class="lucide-chevron-down size-4 shrink-0 text-ink-gray-4" />
               </template>
@@ -75,7 +79,7 @@
               v-if="!hasAudioPermission"
               type="button"
               class="absolute inset-0 cursor-pointer rounded-4 bg-transparent focus-visible:focus-ring disabled:cursor-wait"
-              aria-label="Allow microphone access"
+              :aria-label="__('Allow microphone access')"
               :disabled="isRequestingAudioPermission"
               @click="requestPermission('audio')"
             />
@@ -92,15 +96,15 @@
       </div>
 
       <div class="space-y-1.5">
-        <label class="block text-base text-ink-gray-5">Speaker</label>
+        <label class="block text-base text-ink-gray-5">{{ __('Speaker') }}</label>
         <div class="flex">
           <FormControl
+            v-model="selectedSpeakerIdLocal"
             :class="['w-full', selectedSpeakerIdLocal && '!rounded-r-none']"
             type="combobox"
             trigger="button"
-            v-model="selectedSpeakerIdLocal"
             :options="speakerSelectOptions"
-            placeholder="Select speaker"
+            :placeholder="__('Select speaker')"
           >
             <template #prefix>
               <lucide-speaker class="mr-2 h-4 w-4 text-ink-gray-7" />
@@ -113,11 +117,11 @@
           <Button
             v-if="selectedSpeakerIdLocal"
             class="-ml-px !rounded-l-none"
-            @click="testSpeaker"
             :loading="isTestingAudio"
             icon-left="lucide-volume-2"
+            @click="testSpeaker"
           >
-            Test
+            {{ __('Test') }}
           </Button>
         </div>
       </div>
@@ -134,6 +138,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import { translate as __ } from '@/platform/translation'
 
 import {
   selectedCameraId,

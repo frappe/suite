@@ -15,6 +15,8 @@
 import { Popover } from 'frappe-ui'
 import { computed } from 'vue'
 
+import { translate as __ } from '@/platform/translation'
+
 import { useE2EEState } from '../composables/useE2EEState'
 import MeetInfoIcon from '../icons/MeetInfoIcon.vue'
 import MeetingInfoContent from './MeetingInfoContent.vue'
@@ -41,7 +43,7 @@ const show = computed({
 const { isContextReady: isE2EEActive } = useE2EEState()
 const title = computed(() =>
   isE2EEActive.value
-    ? 'Meeting information - This is an end-to-end encrypted call'
-    : 'Meeting information',
+    ? __('Meeting information - This is an end-to-end encrypted call')
+    : __('Meeting information'),
 )
 </script>

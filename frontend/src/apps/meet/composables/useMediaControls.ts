@@ -182,9 +182,10 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
   const confirmScreenShareOverride = () =>
     new Promise<boolean>((resolve) => {
       dialog.confirm({
-        title: 'Start Screen Share Anyway?',
-        message:
+        title: __('Start screen share anyway?'),
+        message: __(
           'Someone is already sharing their screen. Starting yours may result in multiple active screen shares.',
+        ),
         onConfirm: () => resolve(true),
         onCancel: () => resolve(false),
       })

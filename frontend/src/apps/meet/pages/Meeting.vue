@@ -21,7 +21,7 @@
             v-if="showPreview"
             size="sm"
             icon-left="lucide-link-2"
-            label="Copy link"
+            :label="__('Copy link')"
             @click="copyMeetingLink"
           />
           <Button
@@ -30,7 +30,7 @@
             size="sm"
             @click="redirectToLogin"
           >
-            Sign In
+            {{ __('Sign in') }}
           </Button>
         </template>
       </MeetingHeader>
@@ -118,7 +118,7 @@
                     <template #prefix>
                       <span class="lucide-lock size-3.5" aria-hidden="true" />
                     </template>
-                    End-to-end encrypted
+                    {{ __('End-to-end encrypted') }}
                   </Badge>
                 </div>
                 <MeetingLayout v-else @open-people-panel="togglePeople" />
@@ -161,7 +161,7 @@
                   :user-name="
                     (currentUser.currentUser.value?.full_name as string) ||
                     (currentUser.currentUser.value?.name as string) ||
-                    'You'
+                    __('You')
                   "
                   :is-host="isCurrentUserHost"
                   :is-cohost="isCurrentUserCohost"
@@ -294,6 +294,7 @@ import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vu
 import { api, client, useQuery } from '@/api'
 import { session, userResource } from '@/boot/session'
 import { appPageMeta } from '@/platform/page-meta'
+import { translate as __ } from '@/platform/translation'
 import { useRootStore } from '@/stores/root'
 import { confirmLeave } from '@/utils/confirmLeave'
 
@@ -378,8 +379,8 @@ const unregisterPaletteGroups = useRootStore().registerPaletteGroups('meet-meeti
     commands: [
       {
         id: 'meet-copy-link',
-        label: 'Copy meeting link',
-        enterHint: 'copy meeting link',
+        label: __('Copy meeting link'),
+        enterHint: __('copy meeting link'),
         icon: 'lucide-link-2',
         keywords: ['share', 'url'],
         run: copyMeetingLink,
@@ -492,11 +493,11 @@ const e2eeJoinStatus = ref<'pending' | 'failed' | ''>('')
 const e2eeJoinReason = ref('')
 const e2eeState = useE2EEState()
 const e2eeJoinTitle = computed(() => {
-  if (e2eeJoinStatus.value === 'failed') return 'Could not join encrypted meeting'
+  if (e2eeJoinStatus.value === 'failed') return __('Could not join encrypted meeting')
   if (e2eeJoinReason.value === 'waiting-for-host') {
-    return 'Waiting for the host to join'
+    return __('Waiting for the host to join')
   }
-  return 'Joining encrypted meeting'
+  return __('Joining encrypted meeting')
 })
 interface E2EEJoinDetail {
   status?: string
@@ -527,7 +528,8 @@ function handleE2EEJoinStatus(event: Event): void {
     e2eeJoinStatus.value = 'failed'
     e2eeJoinReason.value = detail.reason || ''
     e2eeJoinPendingMessage.value =
-      detail.message || 'Could not set up encryption for this meeting. Please leave and try again.'
+      detail.message ||
+      __('Could not set up encryption for this meeting. Please leave and try again.')
     return
   }
   e2eeJoinStatus.value = ''
@@ -536,9 +538,9 @@ function handleE2EEJoinStatus(event: Event): void {
 }
 function getE2EEJoinPendingMessage(detail: { reason?: string; message?: string }): string {
   if (detail.reason === 'waiting-for-host') {
-    return "You'll join automatically when the host arrives."
+    return __("You'll join automatically when the host arrives.")
   }
-  return detail.message || 'Waiting for someone already in the encrypted meeting to let you in.'
+  return detail.message || __('Waiting for someone already in the encrypted meeting to let you in.')
 }
 
 // --- Guest session ---
@@ -796,9 +798,9 @@ async function confirmMeetingLeave() {
     return true
   if (pendingLeaveConfirmation) return pendingLeaveConfirmation
   pendingLeaveConfirmation = confirmLeave({
-    title: 'Leave meeting?',
-    message: 'You will be disconnected from the meeting.',
-    confirmLabel: 'Leave meeting',
+    title: __('Leave meeting?'),
+    message: __('You will be disconnected from the meeting.'),
+    confirmLabel: __('Leave meeting'),
     focusConfirm: true,
   })
   try {

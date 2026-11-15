@@ -67,7 +67,7 @@ async function expectScreenShareReceiving(page: Page): Promise<void> {
 }
 
 async function clickScreenShare(page: Page): Promise<void> {
-	await page.locator('button[aria-label="Toggle Screen Share"]').evaluate((button) => {
+	await page.locator('button[aria-label="Toggle screen share"]').evaluate((button) => {
 		if (!(button instanceof HTMLButtonElement)) throw new Error("Expected a screen share button");
 		button.click();
 	});

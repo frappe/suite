@@ -201,7 +201,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "Pre-join while Leo is in the call: his avatar and “Leo Park is in the meeting”." },
 		},
 		previewSwitchHere: {
-			meta: { description: "Maya opens a meeting she is already in on another device: her own avatar is listed and the button reads “Switch here” instead of “Join Meeting”." },
+			meta: { description: "Maya opens a meeting she is already in on another device: her own avatar is listed and the button reads “Switch here” instead of “Join meeting”." },
 			on: { SWITCH_HERE: "switchedHere" },
 		},
 		switchedHere: {
@@ -236,7 +236,7 @@ const machine = setupFlow<Event>().createMachine({
 			on: { GUEST_OPENS_LINK: "guestPreview" },
 		},
 		guestPreview: {
-			meta: { description: "A signed-out visitor opens the restricted meeting's link: pre-join with a Your name field and Sign in in the header, and Join Meeting disabled until a name is typed. Guests do not see who is in the call." },
+			meta: { description: "A signed-out visitor opens the restricted meeting's link: pre-join with a Your name field and Sign in in the header, and Join meeting disabled until a name is typed. Guests do not see who is in the call." },
 			on: { GUEST_ASKS: "guestWaiting" },
 		},
 		guestWaiting: {
@@ -339,10 +339,10 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "Reactions: a grid of emoji above the toolbar." },
 		},
 		handRaised: {
-			meta: { description: "Raise Hand: an orange hand badge in the top-left corner of Maya's tile, and the Raise Hand button turns orange." },
+			meta: { description: "Raise hand: an orange hand badge in the top-left corner of Maya's tile, and the Raise hand button turns orange." },
 		},
 		leaveConfirm: {
-			meta: { description: "End Call asks first: “Leave meeting?” with Stay and Leave meeting." },
+			meta: { description: "End call asks first: “Leave meeting?” with Stay and Leave meeting." },
 			on: { LEAVE_CONFIRMED: "left" },
 		},
 		left: {
@@ -359,11 +359,11 @@ const machine = setupFlow<Event>().createMachine({
 			on: { PARTICIPANT_MENU: "participantMenu" },
 		},
 		participantMenu: {
-			meta: { description: "The host's actions for Leo: Mute, Promote to Co-host and Remove." },
+			meta: { description: "The host's actions for Leo: Mute, Promote to co-host and Remove." },
 			on: { REMOVE: "removeConfirm" },
 		},
 		removeConfirm: {
-			meta: { description: "Remove asks first: “Remove Participant”, naming Leo, with Cancel and Remove." },
+			meta: { description: "Remove asks first: “Remove participant”, naming Leo, with Cancel and Remove." },
 			on: { CONFIRM_REMOVE: "removed" },
 		},
 		removed: {
@@ -404,7 +404,7 @@ function button(page: Page, name: string) {
 }
 
 async function waitInCall(page: Page) {
-	await expect(button(page, "End Call")).toBeVisible({ timeout: 30_000 });
+	await expect(button(page, "End call")).toBeVisible({ timeout: 30_000 });
 }
 
 /** Starts a meeting from a home action and joins it, as Instant and Restricted do. */
@@ -595,8 +595,8 @@ export const meet = defineFlow<Event, BaseScene>({
 			await scene.settle();
 		},
 		async MEDIA_OFF(scene) {
-			await button(scene.page, "Toggle Audio (Ctrl+D)").click();
-			await button(scene.page, "Toggle Video (Ctrl+E)").click();
+			await button(scene.page, "Toggle audio (Ctrl+D)").click();
+			await button(scene.page, "Toggle video (Ctrl+E)").click();
 			await expect(ownTile(scene.page)).toHaveAttribute("data-video-enabled", "false");
 		},
 		async OPEN_SETTINGS(scene) {
@@ -608,12 +608,12 @@ export const meet = defineFlow<Event, BaseScene>({
 		},
 		async JOIN_SLOW(scene) {
 			await scene.hold("**/api/suite/meet/rooms/joins");
-			await button(scene.page, "Join Meeting").click();
+			await button(scene.page, "Join meeting").click();
 			await expect(scene.page.getByText("Connecting…")).toBeVisible({ timeout: 15_000 });
 		},
 		async TRY_CAMERA(scene) {
 			const page = elsewhere.get(scene);
-			await button(page, "Toggle Video (Ctrl+E)").click();
+			await button(page, "Toggle video (Ctrl+E)").click();
 			await expect(page.getByText("Could not turn on the camera. Enable permissions in browser settings.")).toBeVisible();
 		},
 		async SWITCH_HERE(scene) {
@@ -630,7 +630,7 @@ export const meet = defineFlow<Event, BaseScene>({
 		async GUEST_ASKS(scene) {
 			const page = guest.get(scene);
 			await page.getByPlaceholder("John Doe").fill(GUEST_NAME);
-			await button(page, "Join Meeting").click();
+			await button(page, "Join meeting").click();
 			await expect(page.getByRole("heading", { name: "Waiting to be admitted" })).toBeVisible({ timeout: 20_000 });
 		},
 		async HOST_NOTIFIED(scene) {
@@ -643,7 +643,7 @@ export const meet = defineFlow<Event, BaseScene>({
 			const card = scene.page.locator("[data-testid^='join-request-']");
 			await card.getByRole("button").first().click();
 			await expect(card).toBeHidden();
-			await button(scene.page, "Show Participants").click();
+			await button(scene.page, "Show participants").click();
 			await expect(scene.page.getByText("Waiting to join")).toBeVisible();
 		},
 		async LEO_JOINS(scene) {
@@ -673,7 +673,7 @@ export const meet = defineFlow<Event, BaseScene>({
 			await expect(scene.page.getByText("Meeting URL")).toBeVisible();
 		},
 		async OPEN_CHAT(scene) {
-			await button(scene.page, "Show Chat").click();
+			await button(scene.page, "Show chat").click();
 			await expect(scene.page.getByText("No messages yet")).toBeVisible();
 		},
 		async SEND_MESSAGE(scene) {
@@ -685,11 +685,11 @@ export const meet = defineFlow<Event, BaseScene>({
 			// The button works before the call's send transport exists, and a share started then fails with
 			// “not loaded”; give the transport time to come up.
 			await scene.page.waitForTimeout(3_000);
-			await button(scene.page, "Toggle Screen Share").click();
+			await button(scene.page, "Toggle screen share").click();
 			await expect(scene.page.getByText("You are sharing your screen")).toBeVisible({ timeout: 20_000 });
 		},
 		async CAMERA_OFF(scene) {
-			await button(scene.page, "Toggle Video (Ctrl+E)").click();
+			await button(scene.page, "Toggle video (Ctrl+E)").click();
 			await expect(ownTile(scene.page)).toHaveAttribute("data-video-enabled", "false");
 		},
 		async OPEN_REACTIONS(scene) {
@@ -701,14 +701,14 @@ export const meet = defineFlow<Event, BaseScene>({
 			// when the button is pressed right after joining. Wait for the call to settle, then check the hand
 			// is still up after the server's answer.
 			await scene.page.waitForTimeout(3_000);
-			await button(scene.page, "Raise Hand").click();
+			await button(scene.page, "Raise hand").click();
 			const hand = scene.page.getByLabel("Maya Chen has raised their hand").first();
 			await expect(hand).toBeVisible();
 			await scene.page.waitForTimeout(1_500);
 			await expect(hand).toBeVisible();
 		},
 		async LEAVE(scene) {
-			await button(scene.page, "End Call").click();
+			await button(scene.page, "End call").click();
 			await expect(scene.page.getByText("Leave meeting?")).toBeVisible();
 		},
 		async LEAVE_CONFIRMED(scene) {
@@ -730,7 +730,7 @@ export const meet = defineFlow<Event, BaseScene>({
 			await scene.page.waitForTimeout(15_000);
 		},
 		async OPEN_PEOPLE(scene) {
-			await button(scene.page, "Show Participants").click();
+			await button(scene.page, "Show participants").click();
 			await expect(scene.page.getByPlaceholder("Search people")).toBeVisible();
 		},
 		async PARTICIPANT_MENU(scene) {
@@ -739,21 +739,21 @@ export const meet = defineFlow<Event, BaseScene>({
 		},
 		async REMOVE(scene) {
 			await scene.page.getByRole("menuitem", { name: "Remove" }).click();
-			await expect(scene.page.getByRole("dialog", { name: "Remove Participant" })).toBeVisible();
+			await expect(scene.page.getByRole("dialog", { name: "Remove participant" })).toBeVisible();
 		},
 		async CONFIRM_REMOVE(scene) {
-			await scene.page.getByRole("dialog", { name: "Remove Participant" }).getByRole("button", { name: "Remove" }).click();
+			await scene.page.getByRole("dialog", { name: "Remove participant" }).getByRole("button", { name: "Remove" }).click();
 			await expect(leo.get(scene).getByText("The host removed you from the meeting")).toBeVisible({ timeout: 20_000 });
 		},
 		async LEO_WRITES(scene) {
 			const page = leo.get(scene);
-			await button(page, "Show Chat").click();
+			await button(page, "Show chat").click();
 			await page.getByPlaceholder("Type a message").fill("Morning! I'll share the Q3 numbers in a minute.");
 			await page.keyboard.press("Enter");
 			await expect(scene.page.getByText(/Morning! I'll share the Q3/)).toBeVisible({ timeout: 20_000 });
 		},
 		async LEO_SHARES(scene) {
-			await button(leo.get(scene), "Toggle Screen Share").click();
+			await button(leo.get(scene), "Toggle screen share").click();
 			await expect(scene.page.getByText("Leo Park's screen")).toBeVisible({ timeout: 20_000 });
 		},
 		async OPEN_CHAT_PHONE(scene) {

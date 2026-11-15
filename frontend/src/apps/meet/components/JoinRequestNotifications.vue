@@ -21,10 +21,11 @@
 
               <div class="flex-1 min-w-0">
                 <p class="text-sm text-ink-gray-7">
+                  {{ __('{0} wants to join the meeting').split('{0}')[0] }}
                   <span class="font-semibold text-ink-gray-9">
                     {{ request.user_name || request.user_id }}
                   </span>
-                  wants to join the meeting
+                  {{ __('{0} wants to join the meeting').split('{0}')[1] }}
                 </p>
               </div>
             </div>
@@ -33,9 +34,9 @@
               variant="ghost"
               theme="gray"
               size="sm"
-              tooltip="Dismiss request"
-              @click="forceHide(request.user_id)"
+              :tooltip="__('Dismiss request')"
               class="-mr-1 -mt-1 ml-4"
+              @click="forceHide(request.user_id)"
             >
               <template #icon>
                 <lucide-x class="w-4 h-4" />
@@ -44,17 +45,17 @@
           </div>
 
           <div class="flex space-x-2">
-            <Button size="sm" @click="$emit('approve-user', request.user_id)" class="flex-1">
+            <Button size="sm" class="flex-1" @click="$emit('approve-user', request.user_id)">
               <template #prefix>
                 <lucide-check class="w-3 h-3 mr-1" />
               </template>
-              Admit
+              {{ __('Admit') }}
             </Button>
-            <Button size="sm" @click="$emit('reject-user', request.user_id)" class="flex-1">
+            <Button size="sm" class="flex-1" @click="$emit('reject-user', request.user_id)">
               <template #prefix>
                 <lucide-x class="w-3 h-3 mr-1" />
               </template>
-              Deny
+              {{ __('Deny') }}
             </Button>
           </div>
         </div>
@@ -66,6 +67,8 @@
 <script setup lang="ts">
 import { Button } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
+
+import { translate as __ } from '@/platform/translation'
 
 import MeetAvatar from './MeetAvatar.vue'
 

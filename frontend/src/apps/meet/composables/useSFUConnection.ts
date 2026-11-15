@@ -192,11 +192,12 @@ export function useSFUConnection(deps: {
   const confirmParticipantConnectionSwitch = () =>
     new Promise<boolean>((resolve) => {
       dialog.confirm({
-        title: 'Switch to this device?',
-        message:
+        title: __('Switch to this device?'),
+        message: __(
           "You're already in this meeting on another device. Continuing will move the meeting here.",
-        confirmLabel: 'Switch to this device',
-        cancelLabel: 'Cancel',
+        ),
+        confirmLabel: __('Switch to this device'),
+        cancelLabel: __('Cancel'),
         onConfirm: () => resolve(true),
         onCancel: () => resolve(false),
       })
@@ -415,7 +416,7 @@ export function useSFUConnection(deps: {
                 name:
                   currentUser.currentUser.value?.full_name ||
                   currentUser.currentUser.value?.name ||
-                  'You',
+                  __('You'),
                 userId: currentUser.currentUser.value?.user_id || '',
                 avatar: currentUser.currentUser.value?.avatar || '',
                 is_guest: false,

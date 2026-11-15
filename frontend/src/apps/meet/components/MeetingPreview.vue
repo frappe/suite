@@ -45,7 +45,7 @@
             {{ props.meetingTitle }}
           </p>
 
-          <h2 class="mb-7 text-3xl-semibold text-ink-gray-9">Ready to join?</h2>
+          <h2 class="mb-7 text-3xl-semibold text-ink-gray-9">{{ __('Ready to join?') }}</h2>
 
           <AvatarGroup
             v-if="!isGuest"
@@ -61,7 +61,7 @@
             v-if="terminalGuestSession"
             class="mt-7 rounded-6 border border-outline-gray-2 bg-surface-gray-1 p-4"
           >
-            <p class="text-sm text-ink-gray-7">You can’t join this meeting.</p>
+            <p class="text-sm text-ink-gray-7">{{ __('You can’t join this meeting.') }}</p>
           </div>
 
           <form v-else class="mt-7 space-y-3" @submit.prevent="handleJoin">
@@ -70,8 +70,8 @@
               ref="guestNameInputRef"
               v-model="guestName"
               type="text"
-              label="Your name"
-              placeholder="John Doe"
+              :label="__('Your name')"
+              :placeholder="__('John Doe')"
               :maxlength="50"
               autocomplete="off"
             />
@@ -88,7 +88,7 @@
               <template #prefix>
                 <lucide-video class="h-5 w-5" />
               </template>
-              {{ isCurrentUserPresent ? 'Switch here' : 'Join Meeting' }}
+              {{ isCurrentUserPresent ? __('Switch here') : __('Join meeting') }}
             </Button>
           </form>
         </div>
@@ -103,6 +103,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 
 import { api, useMutation } from '@/api'
 import { session } from '@/boot/session'
+import { translate as __ } from '@/platform/translation'
 
 import AvatarGroup from '../components/AvatarGroup.vue'
 import ParticipantTile from '../components/ParticipantTile.vue'
@@ -173,7 +174,7 @@ const previewName = computed(() => {
   if (isGuest.value && guestName.value.trim()) {
     return guestName.value.trim()
   }
-  return props.currentUserName || props.userInitials || 'You'
+  return props.currentUserName || props.userInitials || __('You')
 })
 
 const previewParticipant = computed<Participant>(() => ({

@@ -21,8 +21,8 @@ test.describe("Restricted meeting", () => {
 		const guestNameInput = guest.page.getByPlaceholder("John Doe");
 		await guestNameInput.fill(guestName);
 		await expect(guestNameInput).toHaveValue(guestName);
-		await expect(guest.page.getByRole("button", { name: "Join Meeting" })).toBeEnabled();
-		await guest.page.getByRole("button", { name: "Join Meeting" }).click();
+		await expect(guest.page.getByRole("button", { name: "Join meeting" })).toBeEnabled();
+		await guest.page.getByRole("button", { name: "Join meeting" }).click();
 
 		await expect(
 			guest.page.getByRole("heading", { name: "Waiting to be admitted" }),
@@ -35,7 +35,7 @@ test.describe("Restricted meeting", () => {
 		await joinRequest.getByRole("button", { name: "Admit" }).click();
 
 		await expect(guest.page.getByTestId("meeting-layout")).toBeVisible();
-		await expect(guest.page.getByRole("button", { name: "End Call" })).toBeVisible();
+		await expect(guest.page.getByRole("button", { name: "End call" })).toBeVisible();
 	});
 
 	test("guest in restricted lobby can't join meeting when rejected", async ({
@@ -55,8 +55,8 @@ test.describe("Restricted meeting", () => {
 		const guestNameInput = guest.page.getByPlaceholder("John Doe");
 		await guestNameInput.fill(guestName);
 		await expect(guestNameInput).toHaveValue(guestName);
-		await expect(guest.page.getByRole("button", { name: "Join Meeting" })).toBeEnabled();
-		await guest.page.getByRole("button", { name: "Join Meeting" }).click();
+		await expect(guest.page.getByRole("button", { name: "Join meeting" })).toBeEnabled();
+		await guest.page.getByRole("button", { name: "Join meeting" }).click();
 
 		await expect(
 			guest.page.getByRole("heading", { name: "Waiting to be admitted" }),
@@ -79,7 +79,7 @@ test.describe("Restricted meeting", () => {
 		await guest.page.goto(appUrl(`/meet/${meetingId}`));
 		await expect(guest.page.getByRole("heading", { name: "Ready to join?" })).toBeVisible();
 		await guest.page.getByPlaceholder("John Doe").fill(guestName);
-		await guest.page.getByRole("button", { name: "Join Meeting" }).click();
+		await guest.page.getByRole("button", { name: "Join meeting" }).click();
 
 		await expect(
 			guest.page.getByRole("heading", { name: "Waiting to be admitted" }),

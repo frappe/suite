@@ -1,5 +1,5 @@
 <template>
-  <SettingsRow title="End-to-end encryption" :description="e2eeDescription">
+  <SettingsRow :title="__('End-to-end encryption')" :description="e2eeDescription">
     <Switch v-model="e2eeEnabled" :disabled="isToggleDisabled" data-testid="e2ee-toggle" />
   </SettingsRow>
 </template>
@@ -9,6 +9,7 @@ import { SettingsRow, Switch, toast } from 'frappe-ui'
 import { computed, onMounted, ref, watch } from 'vue'
 
 import { api, useMutation } from '@/api'
+import { translate as __ } from '@/platform/translation'
 
 import { useDeviceIdentity } from '../../composables/useDeviceIdentity'
 import { getE2EETransformCapability } from '../../utils/media/e2ee'
@@ -34,9 +35,11 @@ let syncingFromDocument = false
 
 const e2eeDescription = computed(() => {
   if (isE2EEMediaSupported.value === false) {
-    return 'E2EE requires encoded media transform support. Update your browser to enable it.'
+    return __('E2EE requires encoded media transform support. Update your browser to enable it.')
   }
-  return 'Converts this meeting to E2EE for extra privacy. Only participants can access the meeting content.'
+  return __(
+    'Converts this meeting to E2EE for extra privacy. Only participants can access the meeting content.',
+  )
 })
 
 const isToggleDisabled = computed(

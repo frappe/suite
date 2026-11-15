@@ -10,7 +10,7 @@
       <div
         class="col-start-2 flex items-center gap-1.5 pointer-events-auto transition-all duration-500 px-2 py-1"
         role="toolbar"
-        aria-label="Meeting controls"
+        :aria-label="__('Meeting controls')"
         @mouseenter="onMouseEnter"
         @mouseleave="onMouseLeave"
       >
@@ -18,7 +18,7 @@
         <ToolbarButton
           :variant="isMicOn ? 'default' : 'muted'"
           :show-tooltip="isVisible"
-          :title="`Toggle Audio (${$platform === 'mac' ? '⌘+D' : 'Ctrl+D'})`"
+          :title="__('Toggle audio ({0})', [$platform === 'mac' ? '⌘+D' : 'Ctrl+D'])"
           @click="$emit('toggle-microphone')"
         >
           <MeetMicIcon v-if="isMicOn" />
@@ -29,7 +29,7 @@
         <ToolbarButton
           :variant="isCameraOn ? 'default' : 'muted'"
           :show-tooltip="isVisible"
-          :title="`Toggle Video (${$platform === 'mac' ? '⌘+E' : 'Ctrl+E'})`"
+          :title="__('Toggle video ({0})', [$platform === 'mac' ? '⌘+E' : 'Ctrl+E'])"
           @click="$emit('toggle-camera')"
         >
           <MeetCameraIcon v-if="isCameraOn" />
@@ -41,7 +41,7 @@
           v-if="canScreenShare()"
           :variant="isScreenSharing ? 'muted' : 'default'"
           :show-tooltip="isVisible"
-          title="Toggle Screen Share"
+          :title="__('Toggle screen share')"
           @click="$emit('toggle-screen-share')"
         >
           <MeetPresentPauseIcon v-if="isScreenSharing" />
@@ -52,7 +52,7 @@
         <ToolbarButton
           :variant="isHandRaised ? 'muted' : 'default'"
           :show-tooltip="isVisible"
-          title="Raise Hand"
+          :title="__('Raise hand')"
           @click="$emit('toggle-raise-hand')"
         >
           <MeetHandIcon />
@@ -65,7 +65,7 @@
           @update:open="updateReactionPickerOpen"
         >
           <template #trigger>
-            <ToolbarButton :show-tooltip="isVisible" title="Reactions" @click="() => {}">
+            <ToolbarButton :show-tooltip="isVisible" :title="__('Reactions')" @click="() => {}">
               <MeetSmileIcon />
             </ToolbarButton>
           </template>
@@ -78,8 +78,8 @@
               <Button
                 size="lg"
                 variant="ghost"
-                label="More options"
-                :tooltip="isVisible ? 'More options' : undefined"
+                :label="__('More options')"
+                :tooltip="isVisible ? __('More options') : undefined"
               >
                 <template #icon>
                   <MeetMoreIcon />
@@ -93,7 +93,7 @@
         <ToolbarButton
           variant="active"
           :show-tooltip="isVisible"
-          title="End Call"
+          :title="__('End call')"
           @click="$emit('end-call')"
         >
           <MeetPhoneOffIcon class="text-ink-red-6 size-5" />
@@ -103,7 +103,7 @@
       <div
         class="col-start-3 flex items-center justify-self-end gap-1.5 pointer-events-auto transition-all duration-500 px-2 py-1"
         role="group"
-        aria-label="Meeting side panels"
+        :aria-label="__('Meeting side panels')"
         @mouseenter="onMouseEnter"
         @mouseleave="onMouseLeave"
       >
@@ -120,7 +120,7 @@
           :active="isPeopleOpen"
           :show-tooltip="isVisible"
           variant="default"
-          title="Show Participants"
+          :title="__('Show participants')"
           @click="$emit('toggle-people')"
         >
           <MeetPeopleIcon />
@@ -136,7 +136,7 @@
           :active="isChatOpen"
           :show-tooltip="isVisible"
           variant="default"
-          title="Show Chat"
+          :title="__('Show chat')"
           @click="$emit('toggle-chat')"
         >
           <MeetChatIcon />
@@ -152,11 +152,16 @@
 
   <SettingsDialog
     v-model:open="showSettingsDialog"
-    :meetingId="meetingId"
-    :isPreview="false"
+    :meeting-id="meetingId"
+    :is-preview="false"
     @device-changed="$emit('device-changed', $event)"
   />
-  <Dialog v-if="isMobile" v-model:open="showMeetingInfo" title="Meeting information" size="sm">
+  <Dialog
+    v-if="isMobile"
+    v-model:open="showMeetingInfo"
+    :title="__('Meeting information')"
+    size="sm"
+  >
     <template #default>
       <MeetingInfoContent :meeting-id="meetingId" :show-heading="false" />
     </template>
@@ -170,6 +175,7 @@ import LucideCaptionsOff from '~icons/lucide/captions-off'
 import { Button, Dialog, Dropdown } from 'frappe-ui'
 import { computed, onMounted, onScopeDispose, onUnmounted, ref, watch, type Component } from 'vue'
 
+import { translate as __ } from '@/platform/translation'
 import { useRootStore } from '@/stores/root'
 
 import { useE2EEState } from '../composables/useE2EEState'
@@ -257,10 +263,10 @@ const moreOptions = computed(() => [
             : 'lucide-disc',
           label:
             props.recordingStatus === 'Pending'
-              ? 'Starting recording...'
+              ? __('Starting recording…')
               : ['Recording', 'Interrupted', 'Stopping'].includes(props.recordingStatus || '')
-                ? 'Stop recording'
-                : 'Start recording',
+                ? __('Stop recording')
+                : __('Start recording'),
           disabled:
             props.recordingLoading || ['Pending', 'Stopping'].includes(props.recordingStatus || ''),
           onClick: () => {
@@ -274,7 +280,7 @@ const moreOptions = computed(() => [
     ? [
         {
           icon: props.isCaptionsEnabled ? LucideCaptionsOff : LucideCaptions,
-          label: props.isCaptionsEnabled ? 'Disable captions' : 'Enable captions',
+          label: props.isCaptionsEnabled ? __('Disable captions') : __('Enable captions'),
           onClick: () => {
             emit('toggle-captions')
             resetHideTimer()
@@ -284,7 +290,7 @@ const moreOptions = computed(() => [
     : []),
   {
     icon: 'lucide-activity',
-    label: props.statsVisible ? 'Hide stats for nerds' : 'Stats for nerds',
+    label: props.statsVisible ? __('Hide stats for nerds') : __('Stats for nerds'),
     onClick: () => {
       emit('toggle-stats')
       resetHideTimer()
@@ -292,7 +298,7 @@ const moreOptions = computed(() => [
   },
   {
     icon: LucideBug,
-    label: 'Report an issue',
+    label: __('Report an issue'),
     onClick: () => {
       emit('report-problem')
       resetHideTimer(true)
@@ -300,7 +306,7 @@ const moreOptions = computed(() => [
   },
   {
     icon: props.isFullscreen ? 'lucide-minimize' : 'lucide-maximize',
-    label: props.isFullscreen ? 'Exit full screen' : 'Enter full screen',
+    label: props.isFullscreen ? __('Exit full screen') : __('Enter full screen'),
     onClick: () => {
       emit('toggle-fullscreen')
       resetHideTimer()
@@ -310,7 +316,7 @@ const moreOptions = computed(() => [
     ? [
         {
           icon: 'lucide-info',
-          label: 'Meeting information',
+          label: __('Meeting information'),
           onClick: () => {
             showMeetingInfo.value = true
             resetHideTimer()
@@ -318,14 +324,14 @@ const moreOptions = computed(() => [
         },
         {
           icon: 'lucide-users',
-          label: 'People',
+          label: __('People'),
           onClick: () => {
             emit('toggle-people')
           },
         },
         {
           icon: 'lucide-message-square',
-          label: 'Chat',
+          label: __('Chat'),
           onClick: () => {
             emit('toggle-chat')
           },
@@ -334,7 +340,7 @@ const moreOptions = computed(() => [
     : []),
   {
     icon: 'lucide-settings',
-    label: 'Settings',
+    label: __('Settings'),
     onClick: openSettings,
   },
 ])
@@ -380,8 +386,8 @@ const unregisterPaletteGroups = useRootStore().registerPaletteGroups('meet-meeti
     commands: [
       {
         id: 'meet-settings',
-        label: 'Settings',
-        enterHint: 'open meet settings',
+        label: __('Settings'),
+        enterHint: __('open Meet settings'),
         icon: 'lucide-settings',
         keywords: ['audio', 'video', 'camera', 'microphone', 'devices'],
         run: openSettings,

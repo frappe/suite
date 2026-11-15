@@ -1,13 +1,13 @@
 <template>
   <AppSettingsHeader
-    title="Controls"
-    description="Manage join rules, chat, and security for this meeting."
+    :title="__('Controls')"
+    :description="__('Manage join rules, chat, and security for this meeting.')"
   />
   <AppSettingsBody>
     <div>
       <SettingsRow
-        title="Allow Guests"
-        description="Allow non-registered users to join this meeting"
+        :title="__('Allow guests')"
+        :description="__('Allow non-registered users to join this meeting')"
       >
         <Switch
           v-model="allowGuest"
@@ -16,8 +16,8 @@
       </SettingsRow>
 
       <SettingsRow
-        title="Require host approval"
-        description="People wait in the lobby until a host or co-host admits them"
+        :title="__('Require host approval')"
+        :description="__('People wait in the lobby until a host or co-host admits them')"
       >
         <Switch
           v-model="requireHostApproval"
@@ -26,8 +26,8 @@
       </SettingsRow>
 
       <SettingsRow
-        title="Host Only Chat"
-        description="Restrict chat so only hosts and co-hosts can send messages"
+        :title="__('Host only chat')"
+        :description="__('Restrict chat so only hosts and co-hosts can send messages')"
       >
         <Switch
           v-model="hostOnlyChat"
@@ -53,6 +53,7 @@ import { api, useMutation, useQuery } from '@/api'
 import { useChatStore } from '@/apps/meet/composables/useChatStore'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import { translate as __ } from '@/platform/translation'
 
 import E2EESettingsSection from './E2EESettingsSection.vue'
 

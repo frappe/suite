@@ -7,18 +7,18 @@
         <lucide-x-circle class="w-6 h-6 text-red-600" />
       </div>
 
-      <h2 class="text-2xl-semibold text-ink-gray-9">Entry denied</h2>
+      <h2 class="text-2xl-semibold text-ink-gray-9">{{ __('Entry denied') }}</h2>
 
       <p class="text-ink-gray-6 text-base">
-        The meeting host has denied your request to join this meeting.
+        {{ __('The meeting host has denied your request to join this meeting.') }}
       </p>
 
       <div class="flex flex-col gap-3">
-        <Button variant="outline" @click="$emit('leave')" class="w-full">
+        <Button variant="outline" class="w-full" @click="$emit('leave')">
           <template #prefix>
             <lucide-home class="w-4 h-4" />
           </template>
-          Go home
+          {{ __('Go home') }}
         </Button>
       </div>
     </div>
@@ -27,6 +27,8 @@
 
 <script setup lang="ts">
 import { Button } from 'frappe-ui'
+
+import { translate as __ } from '@/platform/translation'
 
 defineEmits<{
   leave: []

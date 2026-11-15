@@ -292,7 +292,7 @@ export async function runCaptionCase(options: {
 		setPhase("observer-join");
 		await observer.goto(`/meet/${meetingId}`);
 		await joinFromPreview(observer);
-		await observer.getByRole("button", { name: /^Toggle Audio/ }).click();
+		await observer.getByRole("button", { name: /^Toggle audio/ }).click();
 		setPhase("speaker-join");
 		await speaker.goto(`/meet/${meetingId}`);
 		await speaker.getByPlaceholder("John Doe").fill(speakerName);
