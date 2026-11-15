@@ -27,7 +27,7 @@
       :empty-state="list.status === 'error' ? undefined : listOptions.emptyState"
     >
       <template #cell="{ column, row, item }">
-        <span v-if="column.key === 'created_at'" class="truncate text-base text-ink-gray-7">
+        <span v-if="column.key === 'created_at'" class="truncate text-sm text-ink-gray-5">
           {{ formatCreatedAt(item as string | undefined) }}
         </span>
         <StorageBar
