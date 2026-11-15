@@ -245,6 +245,13 @@ class TestConfirmedDelete(unittest.TestCase):
         framework = "private/5e1f0c3a9b7d/k3x9q2m7pa/framework.pdf"
         cases = (
             ("named by a File Blob", ("team/id", "/team/id"), {"team/id"}, "team/id", REFERENCED_BY_BLOB),
+            (
+                "named by a File Blob, listed after its slashed name",
+                ("/team/id", "team/id"),
+                {"team/id"},
+                "team/id",
+                REFERENCED_BY_BLOB,
+            ),
             ("only its bare name is named by a File Blob", ("/team/id",), {"team/id"}, "team/id", None),
             (
                 "under the framework roots",
@@ -262,7 +269,9 @@ class TestConfirmedDelete(unittest.TestCase):
                     blob_keys=blob_keys,
                 )
                 site.bucket = TrimmingBucket(site.bucket.sizes)
-                report = run_delete(site.environment(), confirm=True)
+                # One key per batch: the slashed key and its bare name are
+                # looked up in different batches.
+                report = run_delete(site.environment(), confirm=True, batch_size=1)
 
                 self.assertEqual(site.bucket.deleted_keys, ["team/plain"])
                 self.assertIn(survivor, site.bucket.sizes)
