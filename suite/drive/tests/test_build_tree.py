@@ -135,6 +135,8 @@ class BuildTreeCase(IntegrationTestCase):
             open_bucket=lambda: None,
             tree=SiteTree(self.prefix),
             drive=SiteDrive(),
+            # Step 6's creator grants ask it which owned Files are presentation media.
+            content=SiteContentSource(self.prefix),
             docshare_journal=self.docshare_journal,
         )
 
