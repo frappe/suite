@@ -231,11 +231,11 @@ export const guest = defineFlow<Event>({
 		async OPEN_DOCUMENT_LINK(scene) {
 			const page = await visit(scene, links.get(scene).document);
 			await expect(page.getByTestId("guest-frame")).toBeVisible();
-			await expect(page.getByRole("button", { name: "More document actions" })).toBeVisible();
+			await expect(page.getByRole("button", { name: "More actions" })).toBeVisible();
 		},
 		async OPEN_COMMENTS(scene) {
 			const page = visitorPage();
-			await page.getByRole("button", { name: "More document actions" }).click();
+			await page.getByRole("button", { name: "More actions" }).click();
 			await page.getByRole("menuitem", { name: "Comments" }).click();
 			await expect(page.getByLabel("Your name")).toBeVisible();
 			// The closed menu hands focus back to its trigger, whose tooltip would cover the header.

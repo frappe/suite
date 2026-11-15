@@ -29,7 +29,6 @@ type Event =
 	| { type: "RIGHT_CLICK_TAB" }
 	| { type: "RENAME_TAB" }
 	| { type: "ADD_SHEET" }
-	| { type: "OPEN_FILE" }
 	| { type: "OPEN_EDIT" }
 	| { type: "OPEN_VIEW" }
 	| { type: "OPEN_INSERT" }
@@ -82,7 +81,6 @@ const machine = setupFlow<Event>().createMachine({
 				RIGHT_CLICK_CELL: "cellMenu",
 				RIGHT_CLICK_TAB: "tabMenu",
 				ADD_SHEET: "secondSheet",
-				OPEN_FILE: "fileMenu",
 				OPEN_EDIT: "editMenu",
 				OPEN_VIEW: "viewMenu",
 				OPEN_INSERT: "insertMenu",
@@ -111,7 +109,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "The node read failed: “Could not open this document”, “Something went wrong” and Try again." },
 		},
 		gridLoading: {
-			meta: { description: "The node is open and the workbook is still loading: an empty grid under a spinner. The owner's header says View only and offers only File, Edit, View and Insert until the sheet joins its room." },
+			meta: { description: "The node is open and the workbook is still loading: an empty grid under a spinner. The owner's header says View only and offers only Edit, View and Insert until the sheet joins its room." },
 			on: { BODY_FAILS: "loadFailed" },
 		},
 		loadFailed: {
@@ -145,9 +143,6 @@ const machine = setupFlow<Event>().createMachine({
 		secondSheet: {
 			meta: { description: "Add sheet: an empty Sheet2, its tab selected." },
 		},
-		fileMenu: {
-			meta: { description: "File: export as CSV or XLSX (with a note on what XLSX leaves out), Print, and import CSV or XLSX." },
-		},
 		editMenu: {
 			meta: { description: "Edit: undo, redo, find and replace, paste special, clear, delete and move." },
 		},
@@ -168,7 +163,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "Sort range: the range's address in the title, the column to sort by and the order." },
 		},
 		documentMenu: {
-			meta: { description: "More document actions: Comments and Versions." },
+			meta: { description: "More actions: Comments and Versions, then Copy link, Export as CSV or XLSX, Print and Import CSV or XLSX, then Star and Make a copy, then Move to trash." },
 		},
 		findReplace: {
 			meta: { description: "Find & Replace opens at the top right: Find, Replace with, Find next, Replace and All." },
@@ -218,13 +213,13 @@ const machine = setupFlow<Event>().createMachine({
 			on: { PREVIEW_VERSION: "versionPreview" },
 		},
 		versionPreview: {
-			meta: { description: "The automatic version, taken when the sheet was empty, shown read-only next to the versions list. The bar over the grid has Back, the version's name and time, Name this version, Make a copy and Restore this version. It says “No cells differ from the current version”, though every filled cell differs. The header switches to View only with four menus." },
+			meta: { description: "The automatic version, taken when the sheet was empty, shown read-only next to the versions list. The bar over the grid has Back, the version's name and time, Name this version, Make a copy and Restore this version. It says “No cells differ from the current version”, though every filled cell differs. The header switches to View only with three menus." },
 		},
 		offlineUnsaved: {
 			meta: { description: "Offline with an edit not yet sent: an Offline badge in the header and the edit kept in the grid. Unlike Writer, the header still says Edited just now, not that changes will sync." },
 		},
 		phone: {
-			meta: { description: "At phone width the six menus fold into Menu, the toolbar keeps what fits, and the app's tab bar sits under the sheet tabs. Crossing to this width reopens the grid: a spinner and a View only badge show for a moment first." },
+			meta: { description: "At phone width the five menus fold into Menu, the toolbar keeps what fits, and the app's tab bar sits under the sheet tabs. Crossing to this width reopens the grid: a spinner and a View only badge show for a moment first." },
 		},
 		presence: {
 			meta: {
@@ -285,7 +280,7 @@ async function openMenu(page: Page, name: string, item: string): Promise<void> {
 }
 
 async function openDocumentMenu(page: Page, item: string): Promise<void> {
-	await page.getByRole("button", { name: "More document actions" }).click();
+	await page.getByRole("button", { name: "More actions" }).click();
 	await page.getByRole("menuitem", { name: item }).click();
 }
 
@@ -382,9 +377,6 @@ export const sheets = defineFlow<Event, BaseScene>({
 			await scene.page.getByRole("button", { name: "Add sheet" }).click();
 			await expect(scene.page.getByRole("tab", { name: "Sheet2", selected: true })).toBeVisible();
 		},
-		async OPEN_FILE(scene) {
-			await openMenu(scene.page, "File", "Export as CSV");
-		},
 		async OPEN_EDIT(scene) {
 			await openMenu(scene.page, "Edit", "Find and replace");
 		},
@@ -406,7 +398,7 @@ export const sheets = defineFlow<Event, BaseScene>({
 			await expect(scene.page.getByRole("dialog", { name: /^Sort / })).toBeVisible();
 		},
 		async OPEN_DOCUMENT_MENU(scene) {
-			await scene.page.getByRole("button", { name: "More document actions" }).click();
+			await scene.page.getByRole("button", { name: "More actions" }).click();
 			await expect(scene.page.getByRole("menuitem", { name: "Versions" })).toBeVisible();
 		},
 		async FIND(scene) {

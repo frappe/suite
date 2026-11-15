@@ -3,6 +3,7 @@ import { createDocument, grantAccess, ROLE, trashAndPurge, type DriveNode } from
 import { demoUser, openDemoScene } from "../demo";
 import { defineFlow, setupFlow } from "../flow";
 import { perScene, type BaseScene } from "../scene";
+import { header } from "./writer-sheets-helpers";
 
 type Event =
 	| { type: "OPEN_BLANK" }
@@ -46,7 +47,7 @@ const machine = setupFlow<Event>().createMachine({
 	initial: "canvas",
 	states: {
 		canvas: {
-			meta: { description: "A saved flowchart: a title, Brief, Review and Ship joined by arrows, with the tool rail in the header and “Saved” beside it." },
+			meta: { description: "A saved flowchart: a title, Brief, Review and Ship joined by arrows, with the tool rail over the top of the canvas, under the header." },
 			on: {
 				OPEN_BLANK: "emptyCanvas",
 				DRAW_RECTANGLE: "rectangleDrawn",
@@ -71,11 +72,11 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "A new drawing: an empty dotted canvas with the tool rail, zoom and history controls, and no hint of where to start." },
 		},
 		rectangleDrawn: {
-			meta: { description: "The Rectangle tool: a rectangle dragged out and selected, the property bar at the bottom of the screen, and “Saving…” in the header." },
+			meta: { description: "The Rectangle tool: a rectangle dragged out and selected, and the property bar at the bottom of the screen." },
 			on: { UNDO: "undone" },
 		},
 		undone: {
-			meta: { description: "Undo removes the new rectangle: Redo is now enabled and the header says “Unsaved changes”." },
+			meta: { description: "Undo removes the new rectangle: Redo is now enabled." },
 		},
 		diamondDrawn: {
 			meta: { description: "The Diamond tool: a diamond dragged out and selected." },
@@ -90,7 +91,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "The Arrows tool: an arrow dragged out and selected." },
 		},
 		penStroke: {
-			meta: { description: "The Draw tool: a freehand wave under the flowchart, and “Unsaved changes” in the header." },
+			meta: { description: "The Draw tool: a freehand wave under the flowchart." },
 			on: { ERASE: "erasing" },
 		},
 		erasing: {
@@ -131,30 +132,30 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "Zoom in: the canvas at 110%, shown in the zoom control at the bottom left." },
 		},
 		renaming: {
-			meta: { description: "Clicking the title turns it into a text field with the whole name selected." },
+			meta: { description: "Clicking the title selects the whole name, ready to type over." },
 		},
 		loading: {
-			meta: { description: "The drawing is still loading: the header says “Loading…” over an empty canvas, and the tool rail looks ready to use." },
+			meta: { description: "The drawing is still loading: an empty canvas under the header, and the tool rail looks ready to use." },
 			on: { LOAD_FAILS: "loadFailed" },
 		},
 		loadFailed: {
-			meta: { description: "The drawing failed to load: a banner above the header says “Something went wrong” with Reload, the header says “Could not load”, and the canvas is empty with the tool rail still shown." },
+			meta: { description: "The drawing failed to load: a banner under the header says “Something went wrong” with Reload, and the canvas is empty with the tool rail still shown." },
 		},
 		saving: {
-			meta: { description: "A change on its way to the server: the status says “Saving…”." },
+			meta: { description: "A change on its way to the server: the header says “Edited just now”, the same as once it is saved." },
 			on: { SAVE_FAILS: "saveFailed" },
 		},
 		saveFailed: {
-			meta: { description: "The save failed: a banner says “Something went wrong” with Download recovery and Retry save, the header says “Unsaved changes”, and the new rectangle stays on screen." },
+			meta: { description: "The save failed: a banner says “Something went wrong” with Download recovery and Retry save, the header shows a “Not saved” badge, and the new rectangle stays on screen." },
 		},
 		conflict: {
-			meta: { description: "Leo saved first, then Maya changed the drawing: the banner shows the bare word “Conflict” with Download recovery and Save recovered copy, and a line below says “Recovery preview · editing paused”." },
+			meta: { description: "Leo saved first, then Maya changed the drawing: the banner shows the bare word “Conflict” with Download recovery and Save recovered copy, and the header shows a “Not saved” badge." },
 		},
 		viewOnly: {
-			meta: { description: "Leo has View access: “View only” above the header, “Saved” and no Share button. The tool rail still shows and looks usable, though it does not respond." },
+			meta: { description: "Leo has View access: a “View only” badge beside the title and no Share button. The tool rail still shows and looks usable, though it does not respond." },
 		},
 		phone: {
-			meta: { description: "At phone width the tool rail moves to a second row and the app's bottom tab bar shows. The drawing opens at 100% and is not fitted, so only Review is fully in view." },
+			meta: { description: "At phone width the tool rail stays over the top of the canvas and the app's bottom tab bar shows. The drawing opens at 100% and is not fitted, so only Review is fully in view." },
 		},
 	},
 });
@@ -216,12 +217,8 @@ async function writeDrawing(api: APIRequestContext, node: string, content: Recor
 	if (!write.ok()) throw new Error(`Seeding the drawing failed: ${write.status()}`);
 }
 
-function status(page: Page, text: string) {
-	return page.getByRole("status").filter({ hasText: new RegExp(`^${text}$`) });
-}
-
 async function expectSaved(page: Page): Promise<void> {
-	await expect(status(page, "Saved")).toBeVisible({ timeout: 20_000 });
+	await expect(header(page, "clean")).toBeVisible({ timeout: 20_000 });
 }
 
 function objects(page: Page, selected: number, total: number) {
@@ -416,23 +413,22 @@ export const draw = defineFlow<Event, BaseScene>({
 			await expect(scene.page.getByRole("button", { name: "Reset zoom to 100%" })).toHaveText(/110%/);
 		},
 		async RENAME(scene) {
-			await scene.page.getByRole("button", { name: "Rename drawing" }).click();
+			await scene.page.getByRole("textbox", { name: "Drawing title" }).click();
 			await expect(scene.page.getByRole("textbox", { name: "Drawing title" })).toBeFocused();
 		},
 		async OPEN_HELD(scene) {
 			await scene.hold(DOCUMENTS);
 			await scene.page.reload();
-			await expect(status(scene.page, "Loading…")).toBeVisible();
+			await expect(header(scene.page)).toBeVisible();
 		},
 		async LOAD_FAILS(scene) {
 			await scene.lastHold.abort(500);
-			await expect(status(scene.page, "Could not load")).toBeVisible({ timeout: 30_000 });
-			await expect(scene.page.getByRole("alert")).toBeVisible();
+			await expect(scene.page.getByRole("alert").getByRole("button", { name: "Reload" })).toBeVisible({ timeout: 30_000 });
 		},
 		async SAVE_HELD(scene) {
 			writes.set(scene, await gateWrites(scene.page));
 			await drawShape(scene.page, "Rectangle");
-			await expect(status(scene.page, "Saving…")).toBeVisible();
+			await expect(header(scene.page, "saving")).toBeVisible();
 		},
 		async SAVE_FAILS(scene) {
 			await writes.get(scene).fail();
@@ -441,6 +437,8 @@ export const draw = defineFlow<Event, BaseScene>({
 		async OTHER_EDITS(scene) {
 			const leo = await openAs(scene, ROLE.EDIT);
 			await expectSaved(leo);
+			// The header reads clean before the drawing has loaded
+			await expect(objects(leo, 0, FLOWCHART_OBJECTS)).toBeAttached({ timeout: 20_000 });
 			const saved = leo.waitForResponse(
 				(response) => DOCUMENTS.test(response.url()) && response.request().method() === "PUT" && response.ok(),
 				{ timeout: 20_000 },

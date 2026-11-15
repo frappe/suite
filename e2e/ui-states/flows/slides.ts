@@ -32,7 +32,6 @@ type Event =
 	| { type: "PICK_LAYOUT" }
 	| { type: "OPEN_DECK_MENU" }
 	| { type: "CHANGE_THEME" }
-	| { type: "SHORTCUTS" }
 	| { type: "OPEN_PRESENT_OPTIONS" }
 	| { type: "PRESENT" }
 	| { type: "NEXT" }
@@ -171,14 +170,11 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "The Title layout added as slide 6 and opened: a white slide with “Title” in the middle." },
 		},
 		deckMenu: {
-			meta: { description: "The presentation menu: Back to folder, Change theme, Shortcuts, Duplicate and Delete." },
-			on: { CHANGE_THEME: "themeChanger", SHORTCUTS: "shortcuts" },
+			meta: { description: "More actions: Comments, Versions and Save version, then Copy link, Export as PDF and Keep offline, then Theme, Star and Make a copy, then Move to trash." },
+			on: { CHANGE_THEME: "themeChanger" },
 		},
 		themeChanger: {
-			meta: { description: "Change theme opens “Set theme”, with a tick under Light, the deck's current theme, and a close button." },
-		},
-		shortcuts: {
-			meta: { description: "Keyboard shortcuts, opened from the presentation menu: Suite, Insert, Edit, Move, Format text and Slideshow, with a search box." },
+			meta: { description: "Theme opens “Set theme”, with a tick under Light, the deck's current theme, and a close button." },
 		},
 		presentOptions: {
 			meta: { description: "The menu beside Present: From the start and On loop." },
@@ -203,7 +199,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "Back leaves the slideshow and opens the editor at the slide where the show ended, 5 of 5." },
 		},
 		exportPrint: {
-			meta: { description: "Export opens the browser's print: in print media the editor is gone and the slides are laid out one after another." },
+			meta: { description: "Export as PDF opens the browser's print: in print media the editor is gone and the slides are laid out one after another." },
 		},
 		commentsEmpty: {
 			meta: { description: "The comments panel on a deck with no comments: an “Add a comment” box at the top and “No open comments. Add one above.” A deck takes comments on the whole deck only, not on a slide or its text." },
@@ -228,11 +224,11 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "The named version is listed with its time, Maya's name and Restore, and a toast says “Version saved”." },
 		},
 		offlineDialog: {
-			meta: { description: "The offline-copy button asks before keeping a copy on this device: “Save offline copy”." },
+			meta: { description: "Keep offline, in the menu, asks before keeping a copy on this device: “Keep offline”." },
 			on: { SAVE_COPY: "availableOffline" },
 		},
 		availableOffline: {
-			meta: { description: "The copy is kept: a toast says “Available offline” and the cloud button's tooltip says the same." },
+			meta: { description: "The copy is kept: a toast says “Available offline” and the menu item now says the same." },
 		},
 		saving: {
 			meta: {
@@ -432,16 +428,12 @@ export const slides = defineFlow<Event, BaseScene>({
 			await expect(scene.page.getByText("6 of 6", { exact: true })).toBeVisible();
 		},
 		async OPEN_DECK_MENU(scene) {
-			await scene.page.getByRole("button", { name: "Presentation menu" }).click();
-			await expect(scene.page.getByRole("menuitem", { name: "Change theme" })).toBeVisible();
+			await scene.page.getByRole("button", { name: "More actions" }).click();
+			await expect(scene.page.getByRole("menuitem", { name: "Theme" })).toBeVisible();
 		},
 		async CHANGE_THEME(scene) {
-			await scene.page.getByRole("menuitem", { name: "Change theme" }).click();
+			await scene.page.getByRole("menuitem", { name: "Theme" }).click();
 			await expect(scene.page.getByText("Set theme")).toBeVisible();
-		},
-		async SHORTCUTS(scene) {
-			await scene.page.getByRole("menuitem", { name: "Shortcuts" }).click();
-			await expect(scene.page.getByRole("dialog")).toBeVisible();
 		},
 		async OPEN_PRESENT_OPTIONS(scene) {
 			await scene.page.getByRole("button", { name: "Presentation options" }).click();
@@ -473,12 +465,14 @@ export const slides = defineFlow<Event, BaseScene>({
 			await page.evaluate(() => {
 				window.print = () => undefined;
 			});
-			await page.getByRole("button", { name: "Export", exact: true }).click();
+			await page.getByRole("button", { name: "More actions" }).click();
+			await page.getByRole("menuitem", { name: "Export as PDF" }).click();
 			await expect(page.locator(".slide-page")).toHaveCount(5);
 			await page.emulateMedia({ media: "print" });
 		},
 		async OPEN_COMMENTS(scene) {
-			await scene.page.getByRole("button", { name: "Comments" }).click();
+			await scene.page.getByRole("button", { name: "More actions" }).click();
+			await scene.page.getByRole("menuitem", { name: "Comments" }).click();
 			await expect(commentsPanel(scene.page).getByText("No open comments. Add one above.")).toBeVisible();
 		},
 		async START_COMMENT(scene) {
@@ -494,7 +488,8 @@ export const slides = defineFlow<Event, BaseScene>({
 			await expect(panel.getByText("No open comments", { exact: false })).toBeHidden();
 		},
 		async OPEN_VERSIONS(scene) {
-			await scene.page.getByRole("button", { name: "Versions" }).click();
+			await scene.page.getByRole("button", { name: "More actions" }).click();
+			await scene.page.getByRole("menuitem", { name: "Versions" }).click();
 			await expect(scene.page.getByRole("button", { name: "Save version" })).toBeVisible();
 		},
 		async SAVE_VERSION(scene) {
@@ -509,8 +504,9 @@ export const slides = defineFlow<Event, BaseScene>({
 			await expect(scene.page.getByText("Before the board review")).toBeVisible({ timeout: 15_000 });
 		},
 		async OPEN_OFFLINE(scene) {
-			await scene.page.locator("button:has(svg.lucide-cloud-download)").click();
-			await expect(scene.page.getByRole("dialog", { name: "Save offline copy" })).toBeVisible();
+			await scene.page.getByRole("button", { name: "More actions" }).click();
+			await scene.page.getByRole("menuitem", { name: "Keep offline" }).click();
+			await expect(scene.page.getByRole("dialog", { name: "Keep offline" })).toBeVisible();
 		},
 		async SAVE_COPY(scene) {
 			await scene.page.getByRole("button", { name: "Save copy" }).click();

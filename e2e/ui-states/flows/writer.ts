@@ -200,7 +200,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "Clicking a link shows its address with Open, Edit and Remove link." },
 		},
 		documentMenu: {
-			meta: { description: "More document actions: Comments, Versions, Save version, Lock document, Download as DOCX or Markdown, and Import DOCX." },
+			meta: { description: "More actions: Comments, Versions and Save version, then Copy link, Export as DOCX or Markdown and Import DOCX, then Lock, Star and Make a copy, then Move to trash." },
 			on: { LOCK: "locked" },
 		},
 		locked: {
@@ -326,7 +326,7 @@ async function newLine(page: Page): Promise<void> {
 }
 
 async function openDocumentMenu(page: Page): Promise<void> {
-	await page.getByRole("button", { name: "More document actions" }).click();
+	await page.getByRole("button", { name: "More actions" }).click();
 	await expect(page.getByRole("menuitem", { name: "Versions" })).toBeVisible();
 }
 
@@ -483,7 +483,7 @@ export const writer = defineFlow<Event, BaseScene>({
 			await openDocumentMenu(scene.page);
 		},
 		async LOCK(scene) {
-			await scene.page.getByRole("menuitem", { name: "Lock document" }).click();
+			await scene.page.getByRole("menuitem", { name: "Lock", exact: true }).click();
 			await expect(scene.page.getByText("Locked", { exact: true })).toBeVisible();
 		},
 		async OPEN_COMMENTS(scene) {

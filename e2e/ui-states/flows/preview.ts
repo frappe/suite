@@ -83,7 +83,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "A file the user cannot read: the lock and \"You don’t have access to this document.\", with no header." },
 		},
 		menu: {
-			meta: { description: "The header's menu for a file the user can edit: Copy link, Rename, Move, Make a copy, Upload new version, Details, Move to trash." },
+			meta: { description: "The header's menu for a file the user can edit: Copy link, Details and Upload new version, then Rename, Move, Make a copy and Star, then Move to trash." },
 			on: { PICK_NEW_VERSION: "confirmReplace" },
 		},
 		confirmReplace: {
@@ -232,7 +232,7 @@ export const preview = defineFlow<Event>({
 			await expect(scene.page.getByText("You don’t have access to this document.")).toBeVisible();
 		},
 		async OPEN_MENU(scene) {
-			await scene.page.getByRole("button", { name: "More file actions" }).click();
+			await scene.page.getByRole("button", { name: "More actions" }).click();
 			await expect(scene.page.getByRole("menuitem", { name: "Upload new version" })).toBeVisible();
 		},
 		async PICK_NEW_VERSION(scene) {
