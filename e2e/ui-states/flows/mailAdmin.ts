@@ -236,7 +236,7 @@ const machine = setupFlow<Event>().createMachine({
 		},
 		listsSearchEmpty: { meta: { description: "A search that matches no list: “No matching mailing lists”." } },
 		addList: {
-			meta: { description: "Add mailing list: its email address on one row (username @ a select of active domains), description and recipients one per line. Add mailing list is off until a name and a domain are set." },
+			meta: { description: "Add mailing list: its email address on one row (username @ a select of active domains), description and recipients as chips. Add mailing list is off until a name and a domain are set and every recipient is an address." },
 			on: { FILL_LIST: "addListFilled", ADD_TAKEN_LIST: "addListFailed" },
 		},
 		addListFilled: {
@@ -267,7 +267,7 @@ const machine = setupFlow<Event>().createMachine({
 		},
 		listEmailAdded: { meta: { description: "“Email address added.” and a second row under Email addresses." } },
 		addRecipients: {
-			meta: { description: "Add recipients: one address field per row, with Add another." },
+			meta: { description: "Add recipients: one field that takes many addresses, typed or pasted, each shown as a chip." },
 			on: { ADD_RECIPIENT: "recipientsAdded" },
 		},
 		recipientsAdded: { meta: { description: "“Recipients added.” and the new address under Recipients." } },
@@ -708,7 +708,11 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 			await dialog.getByLabel("Email address username").fill(names.get(scene).list);
 			await pickOption(scene, dialog, LIVE);
 			await dialog.getByLabel("Description").fill("Quarterly news for the whole company");
-			await dialog.getByLabel("Recipients").fill("leo@northwind.test\nnisha@northwind.test");
+			const recipients = dialog.getByLabel("Recipients");
+			for (const address of ["leo@northwind.test", "nisha@northwind.test"]) {
+				await recipients.fill(address);
+				await recipients.press("Enter");
+			}
 			await expect(dialog.getByRole("button", { name: "Add mailing list" })).toBeEnabled();
 			scene.defer(() => quietly(scene, "delete_mailing_lists", { ids: [`${names.get(scene).list}@${LIVE}`] }));
 		},
@@ -771,7 +775,8 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 		},
 		async ADD_RECIPIENT(scene) {
 			const dialog = scene.dialog("Add recipients");
-			await dialog.getByPlaceholder("someone@example.com").first().fill("theo@northwind.test");
+			// Left as typed, not a chip yet: leaving the field for Add turns it into one.
+			await dialog.getByLabel("Recipients").fill("theo@northwind.test");
 			await dialog.getByRole("button", { name: "Add", exact: true }).click();
 			await expect(scene.toast("Recipients added.")).toBeVisible();
 			await expect(scene.page.getByText("theo@northwind.test")).toBeVisible();
