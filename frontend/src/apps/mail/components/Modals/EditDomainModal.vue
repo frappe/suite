@@ -27,17 +27,15 @@
             )
           "
         />
-        <FormControl
+        <Switch
           v-model="subAddressing"
-          type="checkbox"
           :label="__('Sub-addressing')"
           :description="
             __('Deliver mail sent to user+tag@{0} to the mailbox of user@{0}.', [domain.name])
           "
         />
-        <FormControl
+        <Switch
           v-model="allowRelaying"
-          type="checkbox"
           :label="__('Allow relaying')"
           :description="
             __(
@@ -60,7 +58,7 @@
 </template>
 
 <script setup lang="ts">
-import { Dialog, ErrorMessage, FormControl } from 'frappe-ui'
+import { Dialog, ErrorMessage, FormControl, Switch } from 'frappe-ui'
 import { ref, watch } from 'vue'
 
 import { api, useMutation, type InputOf } from '@/api'
