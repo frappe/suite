@@ -19,8 +19,13 @@ const emit = defineEmits<{ write: [text: string]; post: []; discard: [] }>()
 const field = ref<InstanceType<typeof MentionTextarea> | null>(null)
 const isPostDisabled = computed(() => !props.draft.text.trim())
 const isOnDocument = computed(() => props.draft.anchor === DOCUMENT_ANCHOR)
-const partLabel = computed(() => props.label ?? 'Add a comment on the text')
-const boxLabel = computed(() => (isOnDocument.value ? 'Add a comment' : partLabel.value))
+const boxLabel = computed(() => {
+  if (isOnDocument.value) {
+    return 'Add a comment'
+  }
+
+  return props.label ?? 'Add a comment on the text'
+})
 
 function focus() {
   field.value?.focus()
