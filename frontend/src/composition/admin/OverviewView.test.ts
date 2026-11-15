@@ -377,7 +377,7 @@ describe('Site storage summary', () => {
         effective_allowance_bytes: null,
       }),
     })
-    expect(root.textContent).toContain('0 GB used · no limit')
+    expect(root.textContent).toContain('0 MB used · no limit')
     expect(root.querySelector('[role="alert"]')).toBeNull()
     expect(root.textContent).not.toContain('Unavailable')
   })
