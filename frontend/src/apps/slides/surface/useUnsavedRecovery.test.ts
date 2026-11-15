@@ -31,7 +31,7 @@ vi.mock('./recovery', async (original) => ({
 }))
 const stored = await vi.importActual<typeof import('./recovery')>('./recovery')
 
-function recovery({ isKeptByRoom = () => false } = {}) {
+function recovery({ isKeptByRoom = (): boolean => false } = {}) {
   return useUnsavedRecovery(
     fromPartial<DocumentSession>({ nodeId: 'n', contentDocname: 'd', title: ref('Talk') }),
     {
@@ -155,7 +155,7 @@ describe('the copy the live room kept on the device', () => {
     elementText(doc, 'title')!.insert(0, [paragraph])
     const state = Y.encodeStateAsUpdate(doc)
     await store.saveSession({ doc: 'n', sid: 's', lineage: 'L', cid: 1, bound: true })
-    const entry = { doc: 'n', sid: 's', seq: 1, bytes: state, sha: '' }
+    const entry = { doc: 'n', sid: 's', seq: 1, bytes: state, sha: '', seenRev: 0 }
     await store.recover('n', ['s'], 'lost_access', [entry], { state, title: 'Talk' })
   }
 
@@ -169,7 +169,7 @@ describe('the copy the live room kept on the device', () => {
   afterEach(async () => {
     const store = (await openSignedInDeviceStore('slides'))!
     const records = await store.allRecovery()
-    await Promise.all(records.map((record) => store.discard(record.id)))
+    await Promise.all(records.map((record) => store.discard(record.id!)))
   })
 
   it('is offered as a download from the editor, with no page copy', async () => {

@@ -3134,7 +3134,7 @@ describe('edit access changing on a converted presentation', () => {
   async function keptOnDevice(doc: Doc) {
     const store = (await openSignedInDeviceStore('slides'))!
     const state = encodeStateAsUpdate(doc)
-    const entry = { doc: 'node-1', sid: 's', seq: 1, bytes: state, sha: '' }
+    const entry = { doc: 'node-1', sid: 's', seq: 1, bytes: state, sha: '', seenRev: 0 }
     await store.saveSession({ doc: 'node-1', sid: 's', lineage: 'L', cid: 1, bound: true })
     await store.recover('node-1', ['s'], 'lost_access', [entry], { state, title: 'Talk' })
   }
@@ -3221,7 +3221,7 @@ describe('edit access changing on a converted presentation', () => {
     vi.restoreAllMocks()
     const store = (await openSignedInDeviceStore('slides'))!
     const records = await store.allRecovery()
-    await Promise.all(records.map((record) => store.discard(record.id)))
+    await Promise.all(records.map((record) => store.discard(record.id!)))
   })
 
   it('turns view only and says so when edit access goes', async () => {
