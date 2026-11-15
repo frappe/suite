@@ -1,5 +1,5 @@
 <template>
-  <DashboardLayout area="admin" :breadcrumbs="[{ label: __('Business settings') }]">
+  <DashboardLayout area="admin" :breadcrumbs="[{ label: __('General') }]">
     <WorkspaceGeneral />
   </DashboardLayout>
 </template>
