@@ -128,7 +128,7 @@ describe('a device too full to note a discard or a download', () => {
 
     await recovery().discardChanges()
 
-    expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("Couldn't discard"))
+    expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('Could not discard'))
     expect(stored.readRecovery('n').map((copy) => copy.slides)).toEqual([[{ clientId: 'old' }]])
   })
 

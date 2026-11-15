@@ -245,7 +245,7 @@ describe('posting a comment on text', () => {
       [null, [], [true]],
     )
     expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
-      "The text this comment is on wasn't saved, so it wasn't posted.",
+      "The text this comment is on wasn't saved, so it wasn't posted",
     )
   })
 
@@ -271,7 +271,7 @@ describe('posting a comment on text', () => {
     await settled()
 
     expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
-      "The text this comment is on wasn't saved, so it wasn't posted.",
+      "The text this comment is on wasn't saved, so it wasn't posted",
     )
   })
 })

@@ -2,6 +2,7 @@ import { beforeEach, expect, it, vi } from 'vitest'
 
 import { raiseOptimisticToast, raisePromiseToast } from '@/apps/mail/utils'
 import { reportMutationError } from '@/platform/feedback'
+import { TransportError } from '@/platform/transport'
 
 const toast = vi.hoisted(() => ({
   dismiss: vi.fn(),
@@ -25,7 +26,11 @@ it('confirms only successful writes and reports a handled refusal once', async (
   expect(toast.success).toHaveBeenCalledWith('Archived', undefined)
 
   vi.clearAllMocks()
-  const refusal = new Error('Permission denied')
+  const refusal = new TransportError({
+    type: 'PermissionError',
+    message: 'Permission denied',
+    status: 403,
+  })
   reportMutationError(refusal)
   await raisePromiseToast(() => Promise.reject(refusal), 'Archiving', 'Archived')
   expect(toast.error.mock.calls).toEqual([['Permission denied']])

@@ -26,7 +26,7 @@ export async function restoreVersion(
   try {
     body = await readVersionBody(bytes)
   } catch {
-    return { isRestored: false, message: __("This version can't be restored.") }
+    return { isRestored: false, message: __("This version can't be restored") }
   }
 
   if (!('state' in body)) {

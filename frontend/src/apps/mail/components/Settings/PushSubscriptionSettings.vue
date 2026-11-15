@@ -73,6 +73,7 @@ import AddPushSubscriptionModal from '@/apps/mail/components/Modals/AddPushSubsc
 import type { PushSubscription } from '@/apps/mail/types'
 import { raiseError, raiseToast } from '@/apps/mail/utils'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import { translate as __ } from '@/platform/translation'
 
 const user = inject<import('@/apps/mail/types').UserResource>('$user')
 if (!user) throw new Error('Missing Mail user resource')
@@ -138,7 +139,7 @@ const renewSelected = async () => {
         id: row.id,
       })
     }
-    raiseToast(__('Selected subscriptions renewed.'))
+    raiseToast(__('Selected subscriptions renewed'))
     listViewRef.value?.toggleAllRows()
   } catch (error) {
     raiseError(error)
@@ -155,7 +156,7 @@ async function deletePushSubscriptionsSubmit() {
     names: selectedNames(),
   }
   await deletePushSubscriptions.run(input)
-  raiseToast(__('Selected subscriptions deleted.'))
+  raiseToast(__('Selected subscriptions deleted'))
   showDeleteModal.value = false
   listViewRef.value?.toggleAllRows()
   pushSubscriptions.refetch().catch(() => {})

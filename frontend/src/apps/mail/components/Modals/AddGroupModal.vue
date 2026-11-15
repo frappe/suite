@@ -63,6 +63,7 @@ import EmailAddressField from '@/apps/mail/components/Controls/EmailAddressField
 import { useEnabledDomains } from '@/apps/mail/composables/useEnabledDomains'
 import { raiseToast } from '@/apps/mail/utils'
 import { useAccountPicker } from '@/apps/mail/utils/accountPicker'
+import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()
 const router = useRouter()
@@ -106,7 +107,7 @@ async function addGroupSubmit() {
   if (!data) return
   show.value = false
   emit('reload')
-  raiseToast(__('Group added.'))
+  raiseToast(__('Group added'))
   router.push({ name: 'mail-group', params: { groupId: data } })
 }
 </script>

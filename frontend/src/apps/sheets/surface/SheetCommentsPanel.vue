@@ -9,6 +9,7 @@ import {
   type DocumentSession,
 } from '@/apps/drive'
 import { translate as __ } from '@/platform/translation'
+import { TransportError } from '@/platform/transport'
 
 import {
   cellAnchor,
@@ -88,7 +89,7 @@ async function create() {
   draft.value = ''
   const posted = await run(
     () => props.session.comments.create(anchor, text, takeGuestName()),
-    'Could not add the comment.',
+    __('Could not add the comment'),
   )
   pending.value = null
   if (!posted && !draft.value) draft.value = text
@@ -100,7 +101,7 @@ async function reply(thread: string) {
   if (
     await run(
       () => props.session.comments.reply(thread, text, takeGuestName()),
-      'Could not add the reply.',
+      __('Could not add the reply'),
     )
   ) {
     replies.value[thread] = ''
@@ -110,7 +111,7 @@ async function reply(thread: string) {
 function resolve(thread: SheetThread) {
   void run(
     () => props.session.comments.resolve(thread.name, !thread.resolved),
-    thread.resolved ? 'Could not reopen the thread.' : 'Could not resolve the thread.',
+    thread.resolved ? __('Could not reopen the thread') : __('Could not resolve the thread'),
   )
 }
 
@@ -120,7 +121,9 @@ function authorLabel(comment: SheetComment) {
 }
 
 function message(error: unknown, fallback: string): string {
-  return error instanceof Error && error.message ? error.message : fallback
+  return error instanceof TransportError && error.type !== 'NetworkError' && error.message
+    ? error.message
+    : fallback
 }
 
 onMounted(() => {

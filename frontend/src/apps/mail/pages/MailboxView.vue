@@ -466,6 +466,7 @@ import { timeMenuOptions } from '@/apps/mail/utils/timeMenuOptions'
 import { mailboxParam } from '@/apps/mail/utils/unifiedFolders'
 import { useThreadActions } from '@/apps/mail/utils/useThreadActions'
 import { appDocumentTitle, usePageTitle } from '@/platform/page-meta'
+import { translate as __ } from '@/platform/translation'
 
 const {
   accountId,
@@ -1361,9 +1362,9 @@ const rowArchive = (mail: Thread) => {
     return crossAccountMoveOut(
       mail,
       mail.archive,
-      __('Archiving...'),
-      __('Thread archived.'),
-      __('No Archive folder for this account.'),
+      __('Archiving…'),
+      __('Thread archived'),
+      __('No Archive folder for this account'),
     )
   return handleArchiveThreads([mail.thread_id])
 }
@@ -1373,9 +1374,9 @@ const rowTrash = (mail: Thread) => {
     return crossAccountMoveOut(
       mail,
       mail.trash,
-      __('Moving to Trash...'),
-      __('Thread moved to Trash.'),
-      __('No Trash folder for this account.'),
+      __('Moving to Trash…'),
+      __('Thread moved to Trash'),
+      __('No Trash folder for this account'),
     )
   return handleMoveThreads({ [mailboxIds.trash]: [mail.thread_id] })
 }
@@ -1404,7 +1405,7 @@ async function emptyMailboxSubmit() {
     mailbox,
   }
   await emptyMailbox.run(input)
-  raiseToast(__('{0} emptied.', [mailboxName.value]))
+  raiseToast(__('{0} emptied', [mailboxName.value]))
   resetThreads()
 }
 // How much goes, that it goes for good, and a button that says so.

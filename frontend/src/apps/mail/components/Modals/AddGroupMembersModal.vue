@@ -43,6 +43,7 @@ import { ref, watch } from 'vue'
 import { api, useMutation, type InputOf } from '@/api'
 import { raiseToast } from '@/apps/mail/utils'
 import { useAccountPicker } from '@/apps/mail/utils/accountPicker'
+import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()
 const { groupId, currentIds } = defineProps<{
@@ -70,6 +71,6 @@ async function addMembersSubmit() {
   await addMembers.run(input)
   show.value = false
   emit('reload')
-  raiseToast(__('Members added.'))
+  raiseToast(__('Members added'))
 }
 </script>

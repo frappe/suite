@@ -65,6 +65,7 @@ import { api, useMutation, type InputOf } from '@/api'
 import { userStore } from '@/apps/mail/stores/user'
 import type { SieveScript } from '@/apps/mail/types'
 import { getScriptName, isSystemScript, raiseToast } from '@/apps/mail/utils'
+import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()
 const { selectedScript } = defineProps<{
@@ -96,7 +97,7 @@ async function createScriptSubmit() {
     ...script,
   }
   await createScript.run(input)
-  raiseToast(__('Sieve script created.'))
+  raiseToast(__('Sieve script created'))
   show.value = false
 }
 const updateScript = useMutation(api.mail.sieve.update)
@@ -107,7 +108,7 @@ async function updateScriptSubmit() {
     ...script,
   }
   await updateScript.run(input)
-  raiseToast(__('Sieve script updated.'))
+  raiseToast(__('Sieve script updated'))
   show.value = false
 }
 watch(show, (val) => {

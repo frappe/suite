@@ -35,6 +35,7 @@ import { computed, ref, watch } from 'vue'
 
 import { api, useMutation, useQuery, type InputOf } from '@/api'
 import { raiseToast } from '@/apps/mail/utils'
+import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()
 const { memberId, currentIds } = defineProps<{
@@ -71,6 +72,6 @@ async function addListsSubmit() {
   await addLists.run(input)
   show.value = false
   emit('reload')
-  raiseToast(__('Added to mailing lists.'))
+  raiseToast(__('Added to mailing lists'))
 }
 </script>

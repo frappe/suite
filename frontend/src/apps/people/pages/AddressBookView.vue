@@ -107,6 +107,7 @@ import { raiseToast } from '@/apps/people/utils'
 import { DashboardCard, DashboardLayout, InformationField } from '@/platform/dashboard'
 import { Dropdown } from '@/platform/feedback'
 import { appPageMeta } from '@/platform/page-meta'
+import { translate as __ } from '@/platform/translation'
 
 const { accountId, addressBookName } = defineProps<{
   accountId: string
@@ -133,7 +134,7 @@ async function saveGeneral(value: { name: string; description: string; isDefault
       default: value.isDefault,
     },
   })
-  raiseToast(__('Address book updated.'))
+  raiseToast(__('Address book updated'))
 }
 const search = ref('')
 const debouncedSearch = refDebounced(search, 300)
@@ -177,7 +178,7 @@ async function deleteAddressBook() {
     ids: [addressBookName],
   })
   showDeleteAddressBook.value = false
-  raiseToast(__('Address book deleted.'))
+  raiseToast(__('Address book deleted'))
   await router.push({
     name: 'people-address-books',
     params: {
@@ -194,7 +195,7 @@ async function addContacts(ids: string[]) {
     ids,
     address_book_id: addressBookName,
   })
-  raiseToast(__('Contacts added.'))
+  raiseToast(__('Contacts added'))
 }
 async function removeContacts() {
   await removeFromBook.run({
@@ -204,7 +205,7 @@ async function removeContacts() {
   })
   showRemoveContacts.value = false
   listView.value?.toggleAllRows()
-  raiseToast(__('Contacts removed.'))
+  raiseToast(__('Contacts removed'))
 }
 const deleteAddressBookOptions = computed(() => ({
   title: __('Delete Address Book'),

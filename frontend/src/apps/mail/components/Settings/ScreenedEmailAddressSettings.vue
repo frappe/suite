@@ -140,6 +140,7 @@ import { getFormattedDate, raiseToast } from '@/apps/mail/utils'
 import { formatSystemDateTime } from '@/apps/mail/utils/datetime'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import { translate as __ } from '@/platform/translation'
 
 const store = userStore()
 const { screenedAddresses } = store
@@ -230,7 +231,7 @@ async function editScreenedAddressesSubmit({ action }: { action: ScreeningAction
     action,
   }
   await editScreenedAddresses.run(input)
-  raiseToast(__('Action updated.'))
+  raiseToast(__('Action updated'))
   listViewRef.value?.toggleAllRows()
 }
 const bulkActionOptions = (['Accepted', 'Spam'] satisfies ScreeningAction[]).map((action) => ({
@@ -250,7 +251,7 @@ async function unscreenEmailAddressesSubmit() {
     emails: selectedEmails(),
   }
   await unscreenEmailAddresses.run(input)
-  raiseToast(__('Senders removed.'))
+  raiseToast(__('Senders removed'))
   showRemoveModal.value = false
   listViewRef.value?.toggleAllRows()
 }

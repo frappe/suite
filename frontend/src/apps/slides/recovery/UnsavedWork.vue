@@ -16,6 +16,7 @@ import {
 } from '@/apps/drive'
 import { slidesDocument } from '@/apps/slides'
 import { confirm, Dropdown, toast } from '@/platform/feedback'
+import { translate as __ } from '@/platform/translation'
 
 import { discardCopy, downloadCopy, listCopies, savedAtLabel, type RecoveryCopy } from './copies'
 
@@ -83,7 +84,7 @@ async function discard(copy: RecoveryCopy) {
   try {
     await discardCopy(copy)
   } catch {
-    toast.error("Couldn't discard the copy. It's still kept on this device.")
+    toast.error(__("Could not discard the copy. It's still kept on this device."))
   }
   await refresh()
 }

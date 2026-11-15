@@ -3,6 +3,8 @@ import { computed, getCurrentInstance, ref } from 'vue'
 import { api, useMutation, useQuery } from '@/api'
 import { canManage, type DriveBatchResult } from '@/apps/drive/client/types'
 import { confirm, toast } from '@/platform/feedback'
+import { translate as __ } from '@/platform/translation'
+import { TransportError } from '@/platform/transport'
 
 import { inBatches } from '../batches'
 import type { BatchVerb } from '../batchResult'
@@ -134,7 +136,7 @@ export function useTrashActions(root: () => string | null) {
         (nodes) => purging.run({ nodes }),
       )
       const deleted = items.filter((item) => result.ok.includes(item.node))
-      if (deleted.length) toast.success(`Deleted ${subject(deleted)} forever`)
+      if (deleted.length) toast.success(__('Deleted {0} forever', [subject(deleted)]))
       show(result, 'deleted forever')
       return result
     } catch {
@@ -161,7 +163,9 @@ export function useTrashActions(root: () => string | null) {
       })
       outcome.value = null
       toast.success(
-        result.count === 1 ? 'Deleted 1 item forever' : `Deleted ${result.count} items forever`,
+        result.count === 1
+          ? __('Deleted 1 item forever')
+          : __('Deleted {0} items forever', [result.count]),
       )
       return result.count
     } catch {
@@ -172,13 +176,18 @@ export function useTrashActions(root: () => string | null) {
 
   /** A whole request failed. Retry sends the same request, with no new questions. */
   function offerRetry(error: Error | null, again: () => unknown) {
-    toast.error(error?.message ?? 'The request failed.', {
-      duration: 10_000,
-      action: {
-        label: 'Retry',
-        onClick: () => void again(),
+    toast.error(
+      (error instanceof TransportError && error.type !== 'NetworkError'
+        ? __(error.message)
+        : null) ?? __('Could not complete the action'),
+      {
+        duration: 10_000,
+        action: {
+          label: __('Retry'),
+          onClick: () => void again(),
+        },
       },
-    })
+    )
   }
   function show(result: DriveBatchResult, nextVerb: BatchVerb) {
     outcome.value = result

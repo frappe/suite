@@ -123,6 +123,7 @@ import FailedCreationActions from '@/apps/mail/pages/dashboard/FailedCreationAct
 import { raiseToast } from '@/apps/mail/utils'
 import { DEFAULT_PAGE_LENGTH } from '@/apps/mail/utils/paging'
 import { DashboardSkeletonText } from '@/platform/dashboard'
+import { translate as __ } from '@/platform/translation'
 
 type InviteStatusLabel = 'Pending' | 'Accepted' | 'Expired' | 'Setup failed'
 type InviteStatus = 'All' | InviteStatusLabel
@@ -192,7 +193,7 @@ async function deleteInvitesSubmit() {
   }
   await deleteInvites.run(input)
   showDeleteInvites.value = false
-  raiseToast(__('Invites deleted.'))
+  raiseToast(__('Invites deleted'))
   selectedInvites.value = []
 }
 const DELETE_INVITES_OPTIONS = {

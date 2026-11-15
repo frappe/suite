@@ -366,6 +366,7 @@ import {
   InformationField,
 } from '@/platform/dashboard'
 import { appPageMeta } from '@/platform/page-meta'
+import { translate as __ } from '@/platform/translation'
 
 type MemberData = {
   name: string
@@ -452,7 +453,7 @@ const toggleEmailEnabled = async (
     email: entry.email,
     enabled: value ? 1 : 0,
   })
-  raiseToast(value ? __('Email address enabled.') : __('Email address disabled.'))
+  raiseToast(value ? __('Email address enabled') : __('Email address disabled'))
 }
 const removeEmail = async (email: string) => {
   await client.mutation(api.mail.admin.members.removeEmail, {
@@ -460,7 +461,7 @@ const removeEmail = async (email: string) => {
     email,
   })
   member.refetch().catch(() => {})
-  raiseToast(__('Email address removed.'))
+  raiseToast(__('Email address removed'))
 }
 const removeGroup = async (groupId: string) => {
   await client.mutation(api.mail.admin.groups.removeMemberFromGroup, {
@@ -468,7 +469,7 @@ const removeGroup = async (groupId: string) => {
     group_id: groupId,
   })
   member.refetch().catch(() => {})
-  raiseToast(__('Removed from group.'))
+  raiseToast(__('Removed from group'))
 }
 const removeList = async (listId: string) => {
   await client.mutation(api.mail.admin.mailingLists.removeMemberFromMailingList, {
@@ -476,7 +477,7 @@ const removeList = async (listId: string) => {
     list_id: listId,
   })
   member.refetch().catch(() => {})
-  raiseToast(__('Removed from mailing list.'))
+  raiseToast(__('Removed from mailing list'))
 }
 const badge = computed<{
   label: string
@@ -511,7 +512,7 @@ async function setEnabled(enabled: boolean) {
     enabled,
   })
   showToggleEnabled.value = false
-  raiseToast(enabled ? __('Account enabled.') : __('Account disabled.'))
+  raiseToast(enabled ? __('Account enabled') : __('Account disabled'))
 }
 const TOGGLE_ENABLED_OPTIONS = computed(() => {
   const enabling = !data.value?.enabled
@@ -535,7 +536,7 @@ async function setReceiving(enabled: boolean) {
     enabled,
   })
   showToggleReceiving.value = false
-  raiseToast(enabled ? __('Receiving enabled.') : __('Receiving disabled.'))
+  raiseToast(enabled ? __('Receiving enabled') : __('Receiving disabled'))
 }
 const TOGGLE_RECEIVING_OPTIONS = computed(() => {
   const enabling = Boolean(data.value?.disable_receiving)
@@ -565,7 +566,7 @@ async function resetPasswordSubmit() {
   const result = await resetPassword.run(input)
   const email = result
   showResetPassword.value = false
-  raiseToast(__('Reset password link sent to {0}.', [email]))
+  raiseToast(__('Reset password link sent to {0}', [email]))
 }
 const RESET_PASSWORD_OPTIONS = {
   title: __('Reset password'),

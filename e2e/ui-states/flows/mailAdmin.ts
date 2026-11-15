@@ -480,7 +480,7 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 		},
 		async ADD_DOMAIN(scene) {
 			await scene.dialog("Add domain").getByRole("button", { name: "Add domain" }).click();
-			await expect(scene.toast("Domain added.")).toBeVisible();
+			await expect(scene.toast("Domain added")).toBeVisible();
 			await expect(scene.page).toHaveURL(new RegExp(`/admin/mail/domains/${names.get(scene).added.replace(/\./g, "\\.")}$`));
 			await expect(scene.page.getByText("Set up your domain")).toBeVisible();
 		},
@@ -531,7 +531,7 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 			const dialog = scene.dialog("Edit domain");
 			await dialog.getByLabel("Description").fill("Harbor office and loading bay");
 			await dialog.getByRole("button", { name: "Save" }).click();
-			await expect(scene.toast("Domain updated.")).toBeVisible();
+			await expect(scene.toast("Domain updated")).toBeVisible();
 			await expect(scene.page.getByText("Harbor office and loading bay").first()).toBeVisible();
 		},
 		async SAVE_DOMAIN_FAILS(scene) {
@@ -548,7 +548,7 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 		},
 		async CONFIRM_DISABLE_DOMAIN(scene) {
 			await scene.dialog("Disable this domain?").getByRole("button", { name: "Disable domain" }).click();
-			await expect(scene.toast("Domain disabled.")).toBeVisible();
+			await expect(scene.toast("Domain disabled")).toBeVisible();
 			await expect(scene.page.getByRole("dialog")).toHaveCount(0);
 		},
 		async DELETE_DOMAIN(scene) {
@@ -557,7 +557,7 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 		},
 		async CONFIRM_DELETE_DOMAIN(scene) {
 			await scene.dialog("Delete this domain?").getByRole("button", { name: "Delete domain" }).click();
-			await expect(scene.toast("Domain deleted.")).toBeVisible();
+			await expect(scene.toast("Domain deleted")).toBeVisible();
 			await expect(scene.page).toHaveURL(/\/admin\/mail\/domains$/);
 			await expect(scene.page.getByText(names.get(scene).pending)).toHaveCount(0);
 		},
@@ -605,7 +605,7 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 		},
 		async ADD_GROUP(scene) {
 			await scene.dialog("Add group").getByRole("button", { name: "Add group" }).click();
-			await expect(scene.toast("Group added.")).toBeVisible();
+			await expect(scene.toast("Group added")).toBeVisible();
 			await expect(scene.page.getByText("General information")).toBeVisible();
 		},
 		async ADD_TAKEN_GROUP(scene) {
@@ -638,7 +638,7 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 			const dialog = scene.dialog("Edit group");
 			await dialog.getByLabel("Description").fill("Front desk, visitors and deliveries");
 			await dialog.getByRole("button", { name: "Save" }).click();
-			await expect(scene.toast("Group updated.")).toBeVisible();
+			await expect(scene.toast("Group updated")).toBeVisible();
 		},
 		async OPEN_ADD_GROUP_EMAIL(scene) {
 			await scene.page.getByRole("button", { name: "Add" }).first().click();
@@ -651,7 +651,7 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 			await pickOption(scene, dialog, LIVE);
 			await dialog.getByLabel("Description").fill("Reception");
 			await dialog.getByRole("button", { name: "Add" }).click();
-			await expect(scene.toast("Email address added.")).toBeVisible();
+			await expect(scene.toast("Email address added")).toBeVisible();
 			await expect(scene.page.getByText(`${alias}@${LIVE}`)).toBeVisible();
 		},
 		async OPEN_ADD_GROUP_MEMBERS(scene) {
@@ -664,7 +664,7 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 		},
 		async CONFIRM_RECEIVING(scene) {
 			await scene.dialog("Disable receiving?").getByRole("button", { name: "Disable receiving" }).click();
-			await expect(scene.toast("Receiving disabled.")).toBeVisible();
+			await expect(scene.toast("Receiving disabled")).toBeVisible();
 		},
 		async DELETE_GROUP(scene) {
 			await menuItem(scene, "Delete group");
@@ -672,7 +672,7 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 		},
 		async CONFIRM_DELETE_GROUP(scene) {
 			await scene.dialog("Delete this group?").getByRole("button", { name: "Delete group" }).click();
-			await expect(scene.toast("Group deleted.")).toBeVisible();
+			await expect(scene.toast("Group deleted")).toBeVisible();
 			await expect(scene.page).toHaveURL(/\/admin\/mail\/groups$/);
 		},
 
@@ -753,7 +753,7 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 			const dialog = scene.dialog("Edit mailing list");
 			await dialog.getByLabel("Description").fill("Monthly news for the whole company");
 			await dialog.getByRole("button", { name: "Save" }).click();
-			await expect(scene.toast("Mailing list updated.")).toBeVisible();
+			await expect(scene.toast("Mailing list updated")).toBeVisible();
 		},
 		async OPEN_ADD_LIST_EMAIL(scene) {
 			await scene.page.getByRole("button", { name: "Add" }).first().click();
@@ -766,7 +766,7 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 			await pickOption(scene, dialog, LIVE);
 			await dialog.getByLabel("Description").fill("Company news");
 			await dialog.getByRole("button", { name: "Add" }).click();
-			await expect(scene.toast("Email address added.")).toBeVisible();
+			await expect(scene.toast("Email address added")).toBeVisible();
 			await expect(scene.page.getByText(`${alias}@${LIVE}`)).toBeVisible();
 		},
 		async OPEN_ADD_RECIPIENTS(scene) {
@@ -778,7 +778,7 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 			// Left as typed, not a chip yet: leaving the field for Add turns it into one.
 			await dialog.getByLabel("Recipients").fill("theo@northwind.test");
 			await dialog.getByRole("button", { name: "Add", exact: true }).click();
-			await expect(scene.toast("Recipients added.")).toBeVisible();
+			await expect(scene.toast("Recipients added")).toBeVisible();
 			await expect(scene.page.getByText("theo@northwind.test")).toBeVisible();
 		},
 		async OPEN_LIST_MORE(scene) {
@@ -791,7 +791,7 @@ export const mailAdmin = defineFlow<Event, BaseScene>({
 		},
 		async CONFIRM_DELETE_LIST(scene) {
 			await scene.dialog("Delete this mailing list?").getByRole("button", { name: "Delete mailing list" }).click();
-			await expect(scene.toast("Mailing list deleted.")).toBeVisible();
+			await expect(scene.toast("Mailing list deleted")).toBeVisible();
 			await expect(scene.page).toHaveURL(/\/admin\/mail\/mailing-lists$/);
 		},
 	},

@@ -5,6 +5,7 @@ import { api, client } from '@/api'
 import { userStore } from '@/apps/calendar/stores/user'
 import { raiseToast } from '@/apps/calendar/utils'
 import type { CalendarRow } from '@/apps/calendar/utils/calendars'
+import { translate as __ } from '@/platform/translation'
 
 /**
  * What can be done to a calendar, for the two places that list them: the sidebar
@@ -25,7 +26,7 @@ export const useCalendarActions = () => {
       id: calendar.id,
       default: true,
     })
-    raiseToast(__('Default calendar changed.'))
+    raiseToast(__('Default calendar changed'))
   }
 
   // Shown at once and saved behind: a toggle that waited on the server would feel broken,

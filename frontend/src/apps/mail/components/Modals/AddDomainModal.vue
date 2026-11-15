@@ -78,6 +78,7 @@ import { useRouter } from 'vue-router'
 
 import { api, useMutation, useQuery, type InputOf } from '@/api'
 import { copyToClipBoard, raiseToast } from '@/apps/mail/utils'
+import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()
 const router = useRouter()
@@ -126,7 +127,7 @@ async function addDomainSubmit() {
   if (!data) return
   show.value = false
   emit('reloadDomains')
-  raiseToast(__('Domain added.'))
+  raiseToast(__('Domain added'))
   router.push({
     name: 'mail-domain',
     params: {

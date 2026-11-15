@@ -193,7 +193,7 @@ export const mailViews = defineFlow<Event, BaseScene>({
 			const dialog = scene.dialog("New Folder");
 			await dialog.getByRole("textbox").first().fill(FOLDER_NAME);
 			await dialog.getByRole("button", { name: "Save" }).click();
-			await expect(scene.toast("Folder created.")).toBeVisible();
+			await expect(scene.toast("Folder created")).toBeVisible();
 			await expect(folderLink(scene.page)).toBeVisible();
 		},
 		async OPEN_FOLDER(scene) {
@@ -218,7 +218,7 @@ export const mailViews = defineFlow<Event, BaseScene>({
 		},
 		async CONFIRM_DELETE(scene) {
 			await scene.dialog(`Delete ${FOLDER_NAME}`).getByRole("button", { name: "Confirm" }).click();
-			await expect(scene.toast("Folder deleted.")).toBeVisible();
+			await expect(scene.toast("Folder deleted")).toBeVisible();
 			await expect(folderLink(scene.page)).toHaveCount(0);
 		},
 		async RAW_SLOW(scene) {

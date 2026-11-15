@@ -3,6 +3,7 @@ import { reactive } from 'vue'
 
 import type { DocumentSession, DocumentVersion } from '@/apps/drive'
 import { translate as __ } from '@/platform/translation'
+import { TransportError } from '@/platform/transport'
 
 type PanelSession = Pick<DocumentSession, 'versions'>
 
@@ -16,8 +17,8 @@ interface PanelLists {
 type VersionChanges = Parameters<PanelSession['versions']['update']>[1]
 
 export function showError(error: unknown, fallback: string) {
-  if (error instanceof Error) {
-    toast.error(error.message)
+  if (error instanceof TransportError && error.type !== 'NetworkError') {
+    toast.error(__(error.message))
     return
   }
 
@@ -31,7 +32,7 @@ async function loadVersions(session: PanelSession, lists: PanelLists) {
     lists.versions = page.rows
     lists.versionsCursor = page.next_cursor
   } catch (error) {
-    showError(error, __('Could not load this panel.'))
+    showError(error, __('Could not load this panel'))
   } finally {
     lists.isLoading = false
   }
@@ -49,7 +50,7 @@ async function loadMoreVersions(session: PanelSession, lists: PanelLists) {
     lists.versionsCursor = page.next_cursor
   } catch (error) {
     // A failed next page keeps the rows already shown
-    showError(error, __('Could not load more versions.'))
+    showError(error, __('Could not load more versions'))
   } finally {
     lists.isLoadingMore = false
   }
@@ -66,7 +67,7 @@ async function saveVersion(
     await saveFirst()
     await session.versions.create('named', label)
   } catch (error) {
-    showError(error, __('Could not save a version.'))
+    showError(error, __('Could not save a version'))
     return false
   }
 
@@ -97,12 +98,12 @@ async function renameVersion(
   } catch (error) {
     // The daily thinner can remove an automatic version while its name box is open
     if (error && typeof error === 'object' && 'type' in error && error.type === 'DriveNotFound') {
-      toast.error(__('This version no longer exists.'))
+      toast.error(__('This version no longer exists'))
       await loadVersions(session, lists)
       return null
     }
 
-    showError(error, __('Could not rename the version.'))
+    showError(error, __('Could not rename the version'))
     return null
   }
 

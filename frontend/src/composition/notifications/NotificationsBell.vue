@@ -143,7 +143,7 @@ async function openNotification(notification: DriveNotification) {
     node = await loadDriveNodeSummary(notification.activity.node)
   } catch (error) {
     if (!isRefusal(error)) {
-      toast.error(__('Could not open this notification.'), {
+      toast.error(__('Could not open this notification'), {
         action: { label: __('Retry'), onClick: () => void openNotification(notification) },
       })
       return

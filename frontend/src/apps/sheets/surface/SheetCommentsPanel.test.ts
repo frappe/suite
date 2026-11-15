@@ -159,7 +159,7 @@ describe('SheetCommentsPanel', () => {
     await nextTick()
     root.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }))
     await settle()
-    expect(toast.error).toHaveBeenCalledWith('Offline')
+    expect(toast.error).toHaveBeenCalledWith('Could not add the comment')
     expect(root.textContent).not.toContain('Posting…')
     expect(
       root.querySelector<HTMLTextAreaElement>('textarea[aria-label="New comment"]')!.value,
