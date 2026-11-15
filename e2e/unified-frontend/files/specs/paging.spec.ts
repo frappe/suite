@@ -92,12 +92,12 @@ test("a failed next window keeps the loaded rows and offers a retry", async ({ p
 	await rows.last().scrollIntoViewIfNeeded();
 	await expect.poll(() => failed, { message: "a next-window request was sent and failed" }).toBeGreaterThan(0);
 
-	await expect(page.getByRole("button", { name: "Retry loading more" })).toBeVisible();
+	const failure = page.getByRole("alert").filter({ hasText: "Could not load files" });
+	await expect(failure, `failed next-window requests so far: ${failed}`).toBeVisible();
 	await expect(rows).toHaveCount(60);
-	await expect(page.getByText("Could not refresh files"), `failed next-window requests so far: ${failed}`).toBeVisible();
 
 	// Bring the explicit retry into view while requests still fail.
-	const retry = page.getByRole("button", { name: "Retry loading more" });
+	const retry = failure.getByRole("button", { name: "Retry" });
 	await retry.scrollIntoViewIfNeeded();
 	await expect(retry).toBeInViewport();
 	failing = false;
