@@ -112,10 +112,9 @@ class TrelisRecognizer:
         generation.forced_decoder_ids = None
         generation.condition_on_prev_tokens = False
         with torch.inference_mode():
+            encoder_outputs = self.model.get_encoder()(inputs.input_features)
             language = int(
-                self.model.detect_language(
-                    input_features=inputs.input_features, generation_config=generation
-                )[0]
+                self.model.detect_language(encoder_outputs=encoder_outputs, generation_config=generation)[0]
             )
         tokenizer = self.processor.tokenizer
         language_token = tokenizer.convert_ids_to_tokens(language)
@@ -152,7 +151,7 @@ class TrelisRecognizer:
             # Prompt hints precede SOT. Generation scores suppress this token, so
             # read the unsuppressed first-step output scores explicitly.
             first = self.model(
-                input_features=inputs.input_features,
+                encoder_outputs=encoder_outputs,
                 decoder_input_ids=torch.tensor([prefix[: len(prompt_ids) + 1]], device=self.model.device),
             )
             no_speech = float(
@@ -160,7 +159,8 @@ class TrelisRecognizer:
             )
             del first
             output = self.model.generate(
-                **inputs,
+                encoder_outputs=encoder_outputs,
+                attention_mask=inputs.attention_mask,
                 generation_config=generation,
                 decoder_input_ids=torch.tensor([prefix], device=self.model.device),
                 return_timestamps=False,

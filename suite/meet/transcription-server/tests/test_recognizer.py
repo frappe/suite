@@ -49,3 +49,83 @@ class InputTests(unittest.TestCase):
     def test_exact_digital_silence_does_not_require_model_output(self):
         recognizer = TrelisRecognizer.__new__(TrelisRecognizer)
         self.assertEqual(recognizer.transcribe(b"\0\0" * (30 * 24000), 24000), "")
+
+
+class EncoderReuseTests(unittest.TestCase):
+    def test_speech_uses_one_encoder_pass_with_prompt_aware_scoring(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock, patch
+
+        try:
+            import numpy as np
+            import torch
+        except ImportError:
+            self.skipTest("Requires the worker's Torch and NumPy dependencies")
+
+        from protocol import CONFIGURATION
+
+        encoder = Mock(return_value=object())
+        tokenizer = Mock()
+        tokenizer.convert_ids_to_tokens.return_value = "<|en|>"
+        tokenizer.convert_tokens_to_ids.side_effect = {
+            "<|startoftranscript|>": 1,
+            "<|transcribe|>": 3,
+            "<|notimestamps|>": 4,
+            "<|nospeech|>": 5,
+        }.__getitem__
+        tokenizer.get_prompt_ids.return_value = np.array([8, 9])
+        tokenizer.decode.return_value = "Hello"
+        prefix = [8, 9, 1, 2, CONFIGURATION["mixedcode_token_id"], 3, 4]
+        features = torch.ones((1, 80, 3000))
+
+        class Inputs(dict):
+            __getattr__ = dict.__getitem__
+
+            def to(self, *args, **kwargs):
+                return self
+
+        def encoded(kwargs):
+            # Model entry points encode features if no cached output is supplied.
+            return kwargs.get("encoder_outputs") or encoder(kwargs["input_features"])
+
+        def detect_language(**kwargs):
+            encoded(kwargs)
+            return [2]
+
+        def first_step(**kwargs):
+            encoded(kwargs)
+            self.assertEqual(kwargs["decoder_input_ids"].tolist(), [[8, 9, 1]])
+            return SimpleNamespace(logits=torch.zeros((1, 3, 10)))
+
+        def generate(**kwargs):
+            encoded(kwargs)
+            self.assertEqual(kwargs["decoder_input_ids"].tolist(), [prefix])
+            self.assertEqual(kwargs["attention_mask"].tolist(), [[1]])
+            scores = torch.zeros((1, 10))
+            scores[0, 6] = 10
+            return SimpleNamespace(sequences=torch.tensor([[*prefix, 6]]), scores=(scores,))
+
+        model = Mock(side_effect=first_step)
+        model.device, model.dtype = "cpu", torch.float32
+        model.config = SimpleNamespace(max_target_positions=448)
+        model.generation_config = SimpleNamespace(lang_to_id={"<|en|>": 2}, eos_token_id=6)
+        model.get_encoder.return_value = encoder
+        model.detect_language.side_effect = detect_language
+        model.generate.side_effect = generate
+        recognizer = TrelisRecognizer.__new__(TrelisRecognizer)
+        recognizer.torch, recognizer.model, recognizer.metrics = torch, model, None
+        recognizer.processor = Mock(
+            return_value=Inputs(input_features=features, attention_mask=torch.ones((1, 1)))
+        )
+        recognizer.processor.tokenizer = tokenizer
+        functional = SimpleNamespace(resample=lambda waveform, *_: waveform)
+        with (
+            patch.dict(
+                sys.modules,
+                {"torchaudio": SimpleNamespace(functional=functional), "torchaudio.functional": functional},
+            ),
+            patch("recognizer.hint_phrases", return_value=["Hello"]),
+        ):
+            self.assertEqual(recognizer.transcribe(b"\1\0" * 240, 24000), "Hello")
+        self.assertEqual(encoder.call_count, 1)
+        self.assertIs(encoder.call_args.args[0], features)
