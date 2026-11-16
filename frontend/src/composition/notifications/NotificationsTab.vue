@@ -1,6 +1,11 @@
 <!-- The phone bottom bar's Notifications tab: the bell's place on a phone, with the same count. -->
 <template>
-  <MobileNavItem :label="__('Notifications')" route="/notifications">
+  <!-- Active by its route: the page is in no area, so the bar's areas leave it out. -->
+  <MobileNavItem
+    :label="__('Notifications')"
+    route="/notifications"
+    :active="route.name === 'notifications'"
+  >
     <template #default="{ active }">
       <span class="relative grid size-6 place-items-center">
         <span
@@ -22,9 +27,11 @@
 
 <script setup lang="ts">
 import { MobileNavItem } from 'frappe-ui'
+import { useRoute } from 'vue-router'
 
 import { unreadLabel, useUnreadNotifications } from '@/composition/notifications/unread'
 import { translate as __ } from '@/platform/translation'
 
+const route = useRoute()
 const { unread } = useUnreadNotifications()
 </script>
