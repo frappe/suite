@@ -8,11 +8,21 @@ const generateUniqueId = () => {
 
 const cloneObj = (obj: any) => JSON.parse(JSON.stringify(obj))
 
-const getThumbnailCardStyles = (thumbnail: string) => ({
-  backgroundImage: `url(${getAttachmentUrl(thumbnail)})`,
-  backgroundSize: 'cover',
-  backgroundPosition: 'center',
-})
+interface CardStyles {
+  backgroundSize: string
+  backgroundPosition: string
+  backgroundImage?: string
+}
+
+const getThumbnailCardStyles = (thumbnail: string) => {
+  const styles: CardStyles = { backgroundSize: 'cover', backgroundPosition: 'center' }
+  // a layout with no picture is drawn instead: an empty url() is fetched and timed under no address
+  if (thumbnail) {
+    styles.backgroundImage = `url(${getAttachmentUrl(thumbnail)})`
+  }
+
+  return styles
+}
 
 const getDocFromHTML = (html: string) => {
   const parser = new DOMParser()

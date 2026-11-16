@@ -304,6 +304,8 @@ import { useEditorMenu } from '@/apps/mail/utils/editorMenu'
 import { uploadFunction } from '@/apps/mail/utils/text-editor'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import { useKeyboardInsets } from '@/composables/useKeyboardInsets'
+import { translate as __ } from '@/platform/translation'
+import { TransportError } from '@/platform/transport'
 
 const router = useRouter()
 
@@ -546,7 +548,11 @@ const onFilesSelected = async (e: Event) => {
       mail.attachments.push({ ...doc, disposition: 'attachment' })
     } catch (error) {
       raiseToast(
-        error instanceof Error ? error.message : __('Could not attach {0}.', [file.name]),
+        (error instanceof TransportError &&
+        error.type !== 'NetworkError' &&
+        error.type !== 'AbortError'
+          ? __(error.message)
+          : null) || __('Could not attach {0}', [file.name]),
         'error',
       )
     } finally {

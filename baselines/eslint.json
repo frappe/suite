@@ -36,7 +36,6 @@
   "frontend/src/apps/meet/components/PeopleWaitingSection.vue|@typescript-eslint/no-unused-vars": 1,
   "frontend/src/apps/meet/components/PollMessageCard.vue|@typescript-eslint/no-unused-vars": 1,
   "frontend/src/apps/meet/components/ReactionPicker.vue|@typescript-eslint/no-unused-vars": 1,
-  "frontend/src/apps/meet/components/settings/DeviceSettingsTab.vue|@typescript-eslint/no-unused-vars": 1,
   "frontend/src/apps/meet/composables/useBackgroundEffects.ts|@typescript-eslint/no-unused-vars": 1,
   "frontend/src/apps/meet/composables/useMediaControls.test.ts|@typescript-eslint/no-this-alias": 1,
   "frontend/src/apps/meet/composables/useMediaControls.test.ts|@typescript-eslint/no-unused-vars": 1,

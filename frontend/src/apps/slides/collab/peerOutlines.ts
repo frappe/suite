@@ -139,6 +139,8 @@ export function usePeopleSelecting(presenceRef: ShallowRef<RoomPresence | null>)
     const byPerson = new Map<string, SelectingPerson>()
     for (const peer of presence.peers) {
       const cursor = states.get(peer.pid)?.cursor
+      // a deselect is an act too, so a click back on the same element counts as new
+      const at = actedAt(peer.pid, [cursor, states.get(peer.pid)?.typed ?? null])
       const selection = selectionOf(cursor)
       if (!selection) {
         continue
@@ -155,7 +157,7 @@ export function usePeopleSelecting(presenceRef: ShallowRef<RoomPresence | null>)
         name: shownName(peer),
         colour: colours.get(peer.pid),
         ...selection,
-        actedAt: actedAt(peer.pid, [cursor, states.get(peer.pid)?.typed ?? null]),
+        actedAt: at,
         isIdle: personIdleSince(presence.peers, peer.pid) !== null,
       }
       const known = byPerson.get(key)

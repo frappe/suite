@@ -16,6 +16,8 @@
 import { Tooltip } from 'frappe-ui'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
+import { translate as __ } from '@/platform/translation'
+
 import WifiAlertIcon from '../icons/WifiAlertIcon.vue'
 import type { MediaHealthState } from '../utils/media/MediaHealthMonitor'
 
@@ -28,7 +30,7 @@ const props = withDefaults(
     participantName?: string
     isLocal?: boolean
   }>(),
-  { participantName: 'This participant', isLocal: false },
+  { participantName: __('This participant'), isLocal: false },
 )
 const now = ref(Date.now())
 let timer: ReturnType<typeof setInterval> | undefined
@@ -59,10 +61,10 @@ const message = computed(() => {
   const local = props.isLocal || !!props.health
   if (severity.value === 'critical')
     return local
-      ? 'Your internet connection is unstable. Video and audio might lag or drop.'
-      : `${props.participantName}'s internet connection is unstable.`
+      ? __('Your internet connection is unstable. Video and audio might lag or drop.')
+      : __("{0}'s internet connection is unstable.", [props.participantName])
   return local
-    ? 'Your internet connection is weak. You might notice some lag.'
-    : `${props.participantName}'s internet connection is weak.`
+    ? __('Your internet connection is weak. You might notice some lag.')
+    : __("{0}'s internet connection is weak.", [props.participantName])
 })
 </script>

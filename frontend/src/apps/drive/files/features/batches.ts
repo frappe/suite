@@ -1,4 +1,5 @@
 import type { DriveBatchResult, DriveFailure } from '@/apps/drive/client/types'
+import { translate as __ } from '@/platform/translation'
 import { TransportError } from '@/platform/transport'
 
 /** The most nodes one Drive request may name. The server refuses more. */
@@ -36,6 +37,9 @@ export function refusal(node: string, cause: unknown): DriveFailure {
   return {
     node,
     type: cause instanceof TransportError ? cause.type : 'Error',
-    message: cause instanceof Error ? cause.message : 'The action failed.',
+    message:
+      cause instanceof TransportError && cause.type !== 'NetworkError'
+        ? __(cause.message)
+        : __('Could not complete the action'),
   }
 }

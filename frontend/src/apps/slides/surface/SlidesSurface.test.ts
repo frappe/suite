@@ -5,8 +5,8 @@ import { Document } from '@tiptap/extension-document'
 import { Paragraph } from '@tiptap/extension-paragraph'
 import { Text } from '@tiptap/extension-text'
 import { fromAny, fromPartial } from '@total-typescript/shoehorn'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { nextTick, ref, type Ref } from 'vue'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
+import { createApp, defineComponent, h, nextTick, provide, ref, type Ref } from 'vue'
 import { Awareness } from 'y-protocols/awareness'
 import {
   applyUpdate,
@@ -17,10 +17,17 @@ import {
   type XmlText,
 } from 'yjs'
 
-import type { useCommentDrafts } from '@/apps/drive'
+import type { DocumentComments, DocumentVersion } from '@/apps/drive'
+import type { OldElement } from '@/apps/slides/collab/conversion'
 import type { StoreSlide } from '@/apps/slides/collab/liveDeck'
-import type { LostAccess, RoomStatus } from '@/platform/collab'
+import {
+  openSignedInDeviceStore,
+  type LostAccess,
+  type Peer,
+  type RoomStatus,
+} from '@/platform/collab'
 import { requireTestElement } from '@/platform/testing/dom'
+import { translationPlugin } from '@/platform/translation'
 
 import {
   collabRoom,
@@ -50,6 +57,8 @@ import {
 
 const {
   addEmptySlide,
+  changeSlide,
+  focusedSlide,
   handleInsertSlide,
   slideIndex,
   slides: editorSlides,
@@ -63,6 +72,7 @@ const { draftsDbName, DRAFTS_DB_NAME, RECORD_PREFIX } =
   await import('@/apps/slides/utils/slidesCaches')
 const { openDraftsDb } = await import('@/apps/slides/utils/drafts')
 const { keepRecovery, readRecovery } = await import('./recovery')
+const { roomCopies } = await import('@/apps/slides/recovery/copies')
 const { dialog, toast, useKeyboardShortcut } = await import('frappe-ui')
 const { changeSlideInSlideshow, showSlideshowEndScreen, shownSlide } =
   await import('@/apps/slides/stores/slideshow')
@@ -72,7 +82,10 @@ const editorStore = await import('@/apps/slides/composables/useTextEditor')
 // the old stores are untyped; the tests set them as the surface reads them
 const focusElementId = fromAny<Ref<string | null>, unknown>(elementStore.focusElementId)
 const activeEditor = fromAny<Ref<Editor | null>, unknown>(editorStore.activeEditor)
+const focused = fromAny<Ref<number | null>, unknown>(focusedSlide)
 const { registerElementDiv } = await import('@/apps/slides/stores/elementRegistry')
+const { default: FrameSection } = await import('@/apps/slides/components/FrameSection.vue')
+const { default: SelectionBox } = await import('@/apps/slides/components/SelectionBox.vue')
 const { convertLegacy } = await import('@/apps/slides/collab/conversion')
 const {
   addElement,
@@ -95,6 +108,17 @@ vi.mock('@/apps/slides/styles/fonts.css', () => {
 })
 
 let mounted: Awaited<ReturnType<typeof openedSurface>> | null = null
+
+/** An item of the presentation menu, which the header shows open here. */
+function menuEntry(label: string) {
+  return Array.from(mounted!.root.querySelectorAll('header button')).find(
+    (button) => button.textContent === label,
+  )
+}
+
+function pickFromMenu(label: string) {
+  requireTestElement(menuEntry(label), HTMLElement).click()
+}
 
 afterEach(() => {
   mounted?.app.unmount()
@@ -279,6 +303,8 @@ function roomOf(...texts: string[]) {
   const doc = new Doc()
   applyUpdate(doc, answer.state)
   const changes = new Set<() => void>()
+  const presenceChanges = new Set<() => void>()
+  const peers: Peer[] = []
   const room = {
     doc,
     close: vi.fn(async () => {}),
@@ -291,10 +317,13 @@ function roomOf(...texts: string[]) {
     status: { canWrite: true, saveState: 'clean', unsentCount: 0, restoreRev: 0 },
     presence: {
       awareness: new Awareness(doc),
-      peers: [],
+      peers,
       ownPid: 1,
       ownArrival: 1,
-      onChange: () => () => {},
+      onChange(listener: () => void) {
+        presenceChanges.add(listener)
+        return () => presenceChanges.delete(listener)
+      },
     },
     onChange(listener: () => void) {
       changes.add(listener)
@@ -303,6 +332,11 @@ function roomOf(...texts: string[]) {
     setStatus(next: Partial<RoomStatus>) {
       room.status = { ...room.status, ...next }
       changes.forEach((listener) => listener())
+    },
+    // another tab opens the presentation, as the realtime service tells this one
+    join(peer: Peer) {
+      room.presence.peers = [...room.presence.peers, peer]
+      presenceChanges.forEach((listener) => listener())
     },
   }
   return room
@@ -486,7 +520,7 @@ describe('a deck on the content layer', () => {
     convertedRoom('one')
     mounted = await openedSurface({ deck: { is_converted: true } })
     await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
-    requireTestElement(mounted.root.querySelector('[data-comments]'), HTMLButtonElement).click()
+    pickFromMenu('Comments')
     await vi.waitFor(() => expect(driveComments.reads).toBe(1))
 
     const [{ onThreadsChanged }] = fromAny<[{ onThreadsChanged: () => void }], unknown>(
@@ -521,6 +555,19 @@ describe('a deck on the content layer', () => {
 
     room.setStatus({ canWrite: true, pauseReason: null })
     await vi.waitFor(() => expect(viewOnly.value).toBe(false))
+  })
+
+  it('shows someone who opens the presentation after this tab in the circles', async () => {
+    const room = roomOf('one')
+    collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
+    mounted = await openedSurface({ deck: { is_converted: true } })
+    await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+    const circles = () => document.querySelector('header [aria-label$="is here"]')
+    expect(circles()).toBeNull()
+
+    room.join({ pid: 2, user: 'kiran@example.com', arrival: 2, idleSince: null })
+
+    await vi.waitFor(() => expect(circles()).not.toBeNull())
   })
 
   describe('a draft this device kept from before the live room', () => {
@@ -832,20 +879,19 @@ describe('a deck on the content layer', () => {
       collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
       mounted = await openedSurface({ deck: { is_converted: true } })
       await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
-      requireTestElement(mounted.root.querySelector('[data-versions]'), HTMLElement).click()
-      await vi.waitFor(() => expect(versionsPanel.confirmRestore).not.toBeNull())
+      pickFromMenu('Versions')
+      await vi.waitFor(() => expect(versionsPanel.isOpen).toBe(true))
       return room
     }
 
     afterEach(() => {
       vi.useRealTimers()
-      versionsPanel.confirmRestore = null
     })
 
     it('goes ahead once the edits are saved, sending them first', async () => {
       const room = await openedLive()
 
-      await versionsPanel.flush()
+      await versionsPanel.saveFirst()
 
       expect(room.flush).toHaveBeenCalled()
     })
@@ -854,7 +900,7 @@ describe('a deck on the content layer', () => {
       const room = await openedLive()
       room.setStatus({ saveState: 'failed', unsentCount: 1 })
 
-      await expect(versionsPanel.flush()).rejects.toThrow(
+      await expect(versionsPanel.saveFirst()).rejects.toThrow(
         'No version was taken: your changes could not be saved.',
       )
     })
@@ -864,7 +910,7 @@ describe('a deck on the content layer', () => {
       room.setStatus({ saveState: 'unsaved', unsentCount: 1 })
       vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
 
-      const naming = expect(versionsPanel.flush()).rejects.toThrow(
+      const naming = expect(versionsPanel.saveFirst()).rejects.toThrow(
         'No version was taken: your changes are still saving. Try again in a moment.',
       )
       await vi.advanceTimersByTimeAsync(10_000)
@@ -873,10 +919,38 @@ describe('a deck on the content layer', () => {
     })
   })
 
-  describe('restoring a version', () => {
-    beforeEach(() => {
-      versionsPanel.confirmRestore = null
+  describe('the presentation menu', () => {
+    it('has the side panel name a version once the closing menu gives focus back', async () => {
+      convertedRoom('one')
+      mounted = await openedSurface({ deck: { is_converted: true } })
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+      const namings = versionsPanel.namings
+
+      pickFromMenu('Save version')
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(versionsPanel.namings).toBe(namings)
+      requireTestElement(
+        mounted.root.querySelector('[aria-label="More actions"]'),
+        HTMLElement,
+      ).dispatchEvent(new FocusEvent('focus'))
+
+      await vi.waitFor(() => expect(versionsPanel.namings).toBe(namings + 1))
     })
+
+    it('offers no Save version to someone who can only view', async () => {
+      mounted = await openedSurface({ role: 10 })
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(served.slides.length))
+
+      expect(menuEntry('Copy link')).toBeDefined()
+      expect(menuEntry('Save version')).toBeUndefined()
+    })
+  })
+
+  describe('restoring a version', () => {
+    // a version as the panel lists it
+    function listed(seq: number) {
+      return fromPartial<DocumentVersion>({ seq, kind: 'auto', label: null })
+    }
 
     // a version as the server stores one: the Yjs state gzipped, then base64, in a JSON record
     async function storedVersion(doc: Doc) {
@@ -890,8 +964,8 @@ describe('a deck on the content layer', () => {
     }
 
     async function openVersions() {
-      requireTestElement(mounted!.root.querySelector('[data-versions]'), HTMLElement).click()
-      await vi.waitFor(() => expect(versionsPanel.confirmRestore).not.toBeNull())
+      pickFromMenu('Versions')
+      await vi.waitFor(() => expect(versionsPanel.isOpen).toBe(true))
     }
 
     it('asks first, then restores it in the editor for everyone and lists the versions again', async () => {
@@ -903,12 +977,12 @@ describe('a deck on the content layer', () => {
       await openVersions()
       const reloads = versionsPanel.reloads
 
-      versionsPanel.confirmRestore!('3')
+      versionsPanel.restore(listed(3))
       await vi.waitFor(() => expect(dialog.confirm).toHaveBeenCalled())
       const [asked] = fromAny<[{ message: string; onConfirm: () => Promise<void> }], unknown>(
         vi.mocked(dialog.confirm).mock.lastCall,
       )
-      expect(versionsPanel.writable).toBe(true)
+      expect(versionsPanel.canRestore).toBe(true)
       expect(asked.message).toBe(
         'The presentation goes back to this version for everyone. Its current state is kept as a version first.',
       )
@@ -933,8 +1007,8 @@ describe('a deck on the content layer', () => {
       await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
       await openVersions()
 
-      versionsPanel.confirmRestore!('3')
-      const message = "This version can't be read, so it can't be restored. You can download it."
+      versionsPanel.restore(listed(3))
+      const message = "This version can't be restored"
       await vi.waitFor(() => expect(toast.error).toHaveBeenCalledWith(message, expect.anything()))
       const [, options] = fromAny<
         [string, { action: { label: string; onClick: () => void } }],
@@ -954,7 +1028,7 @@ describe('a deck on the content layer', () => {
       return root.querySelector('[aria-label="Version preview"]')
     }
 
-    it('shows a version read-only in the canvas place, steps through its slides, and Escape goes back', async () => {
+    it('shows a version read-only in the canvas place, steps through its slides, and the panel’s Escape goes back', async () => {
       const live = convertedRoom('now')
       versionBytes.current = await storedVersion(roomOf('first', 'second').doc)
       mounted = await openedSurface({ deck: { is_converted: true } })
@@ -964,18 +1038,18 @@ describe('a deck on the content layer', () => {
       const writes = vi.fn()
       live.on('update', writes)
 
-      versionsPanel.preview('3')
+      versionsPanel.preview(listed(3))
       await vi.waitFor(() => expect(previewOf(mounted!.root)?.textContent).toContain('first'))
       const preview = requireTestElement(previewOf(mounted.root), HTMLElement)
       expect(preview.textContent).toContain('1 of 2')
       expect(mounted.root.querySelector('[data-toolbar]')).toBeNull()
-      expect(versionsPanel.previewed).toBe('3')
+      expect(versionsPanel.previewed?.seq).toBe(3)
 
       requireTestElement(preview.querySelector('[aria-label="Next slide"]'), HTMLElement).click()
       await vi.waitFor(() => expect(preview.textContent).toContain('second'))
       expect(preview.textContent).toContain('2 of 2')
 
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+      versionsPanel.back()
       await vi.waitFor(() => expect(previewOf(mounted!.root)).toBeNull())
       expect(versionsPanel.previewed).toBeNull()
       expect(mounted.root.querySelector('[data-toolbar]')).not.toBeNull()
@@ -991,7 +1065,7 @@ describe('a deck on the content layer', () => {
       mounted = await openedSurface({ deck: { is_converted: true } })
       await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
       await openVersions()
-      versionsPanel.preview('3')
+      versionsPanel.preview(listed(3))
       await vi.waitFor(() => expect(previewOf(mounted!.root)?.textContent).toContain('first'))
       const before = Array.from(encodeStateAsUpdate(live))
 
@@ -1011,7 +1085,7 @@ describe('a deck on the content layer', () => {
       await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
       await openVersions()
 
-      versionsPanel.preview('1')
+      versionsPanel.preview(listed(1))
 
       await vi.waitFor(() =>
         expect(previewOf(mounted!.root)?.textContent).toContain('before collaboration'),
@@ -1030,19 +1104,21 @@ describe('a deck on the content layer', () => {
       await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
       await openVersions()
 
-      versionsPanel.confirmRestore!('1')
+      versionsPanel.restore(listed(1))
       await vi.waitFor(() => expect(dialog.confirm).toHaveBeenCalled())
       const [asked] = fromAny<[{ onConfirm: () => Promise<void> }], unknown>(
         vi.mocked(dialog.confirm).mock.lastCall,
       )
       await asked.onConfirm()
-      const message =
-        "This version couldn't be upgraded, so it can't be restored. You can download it. Reason: some of its content can't be upgraded."
+      const message = "This version can't be restored"
       const [, options] = fromAny<
-        [string, { action: { label: string; onClick: () => void } }],
+        [string, { description: string; action: { label: string; onClick: () => void } }],
         unknown
       >(vi.mocked(toast.error).mock.calls.find(([text]) => text === message))
-      expect(options.action.label).toBe('Download')
+      expect([options.description, options.action.label]).toEqual([
+        "Reason: some of its content can't be upgraded.",
+        'Download',
+      ])
       options.action.onClick()
     }
 
@@ -1070,7 +1146,7 @@ describe('a deck on the content layer', () => {
         '<p>old two</p>',
       ])
       expect(previewOf(mounted!.root)?.textContent).toContain('old one')
-      expect(versionsPanel.previewed).toBe('1')
+      expect(versionsPanel.previewed?.seq).toBe(1)
       expect(room.restoreVersion).not.toHaveBeenCalled()
       expect(Array.from(encodeStateAsUpdate(room.doc))).toEqual(before)
     })
@@ -1096,20 +1172,97 @@ describe('a deck on the content layer', () => {
       expect(room.restoreVersion).not.toHaveBeenCalled()
     })
 
-    it('leaves a presentation on its rows to the panel and the server', async () => {
-      mounted = await openedSurface()
-      requireTestElement(mounted.root.querySelector('[data-versions]'), HTMLElement).click()
-      await vi.waitFor(() => expect(versionsPanel.writable).toBe(true))
+    it("prints a version's slides when the list's Download is picked, and restores nothing", async () => {
+      const room = roomOf('now')
+      collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
+      versionBytes.current = await storedVersion(roomOf('then one', 'then two').doc)
+      const print = vi.fn()
+      window.print = print
+      mounted = await openedSurface({ deck: { is_converted: true } })
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+      await openVersions()
 
-      expect(versionsPanel.confirmRestore).toBeNull()
+      versionsPanel.download(listed(3))
+
+      await vi.waitFor(() => expect(print).toHaveBeenCalledOnce())
+      const printed = fromAny<Array<{ elements: Array<{ content: string }> }>, unknown>(
+        exported.slides,
+      )
+      expect(printed.map((slide) => slide.elements[0].content)).toEqual([
+        expect.stringContaining('then one'),
+        expect.stringContaining('then two'),
+      ])
+      expect(room.restoreVersion).not.toHaveBeenCalled()
+      expect(drawnTexts()).toEqual([expect.stringContaining('>now</p>')])
     })
 
-    it('tells this tab when someone else restored a version, and lists the versions again', async () => {
+    it("restores from the bar over a shown version, and the bar's Back to current leaves it", async () => {
+      const room = roomOf('now')
+      collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
+      versionBytes.current = await storedVersion(roomOf('then').doc)
+      mounted = await openedSurface({ deck: { is_converted: true } })
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+      await openVersions()
+      versionsPanel.preview(listed(3))
+      await vi.waitFor(() => expect(previewOf(mounted!.root)?.textContent).toContain('then'))
+      vi.mocked(dialog.confirm).mockClear()
+
+      requireTestElement(
+        mounted.root.querySelector('[aria-label="Restore this version"]'),
+        HTMLElement,
+      ).click()
+      await vi.waitFor(() => expect(dialog.confirm).toHaveBeenCalled())
+      expect(room.restoreVersion).not.toHaveBeenCalled()
+
+      // the Button stub keeps its label as an attribute
+      requireTestElement(
+        mounted.root.querySelector('[label="Back to current"]'),
+        HTMLElement,
+      ).click()
+      await vi.waitFor(() => expect(previewOf(mounted!.root)).toBeNull())
+      expect(versionsPanel.previewed).toBeNull()
+      expect(drawnTexts()).toEqual([expect.stringContaining('>now</p>')])
+    })
+
+    it('asks first, then has the server restore a presentation on its rows and reads it again', async () => {
+      mounted = await openedSurface()
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(served.slides.length))
+      await openVersions()
+      const restores = vi.spyOn(mounted.session.versions, 'restore')
+      const reloads = versionsPanel.reloads
+      // the rows the server holds once it has restored the version
+      const restored = [...served.slides, { clientId: 'c3', background: '#ffffffff', elements: [] }]
+      mounted.loads.push(
+        Promise.resolve(
+          new Response(
+            JSON.stringify({ message: { ...served, name: mounted.docname, slides: restored } }),
+          ),
+        ),
+      )
+
+      versionsPanel.restore(listed(3))
+      await vi.waitFor(() => expect(dialog.confirm).toHaveBeenCalled())
+      const [asked] = fromAny<[{ message: string; onConfirm: () => Promise<void> }], unknown>(
+        vi.mocked(dialog.confirm).mock.lastCall,
+      )
+      expect(asked.message).toBe(
+        'The presentation goes back to this version. Its current state is kept as a new version first.',
+      )
+      expect(restores).not.toHaveBeenCalled()
+      await asked.onConfirm()
+
+      expect(restores).toHaveBeenCalledWith('3')
+      await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(3))
+      expect(toast.success).toHaveBeenCalledWith('Version restored')
+      expect(versionsPanel.reloads).toBe(reloads + 1)
+    })
+
+    it('hands a restore by someone else to the side panel, which tells this tab', async () => {
       convertedRoom('one')
       mounted = await openedSurface({ deck: { is_converted: true } })
       await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
       await openVersions()
-      const reloads = versionsPanel.reloads
+      versionsPanel.restoredByOther = []
 
       const [{ onVersionRestored }] = fromAny<
         [{ onVersionRestored: (restored: unknown) => void }],
@@ -1117,12 +1270,7 @@ describe('a deck on the content layer', () => {
       >(collabRoom.open.mock.lastCall)
       onVersionRestored({ by: null, version: null })
 
-      await vi.waitFor(() =>
-        expect(toast.info).toHaveBeenCalledWith(
-          'Someone restored an earlier version of this presentation.',
-        ),
-      )
-      expect(versionsPanel.reloads).toBe(reloads + 1)
+      expect(versionsPanel.restoredByOther).toEqual([{ by: null, version: null }])
     })
   })
 
@@ -1135,12 +1283,20 @@ describe('a deck on the content layer', () => {
     const browser = {
       status: 'loaded',
       height: FONT_HEIGHT,
+      // the face that loads; empty for the one every text draws in
+      loadingFace: '',
       ready: Promise.resolve<unknown>(undefined),
       fontArrives: () => {},
+      check: (face: string) => browser.status !== 'loading' || !face.includes(browser.loadingFace),
     }
 
     beforeEach(() => {
-      Object.assign(browser, { status: 'loaded', height: FONT_HEIGHT, ready: Promise.resolve() })
+      Object.assign(browser, {
+        status: 'loaded',
+        height: FONT_HEIGHT,
+        loadingFace: '',
+        ready: Promise.resolve(),
+      })
       Object.defineProperty(document, 'fonts', { configurable: true, value: browser })
       vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(
         () => browser.height,
@@ -1279,6 +1435,144 @@ describe('a deck on the content layer', () => {
 
       expect(saved()).toMatchObject({ left: 400, transform: 'none' })
     })
+
+    it("moves nothing and keeps the caret when a font the text doesn't use arrives mid-typing", async () => {
+      const room = roomOf('one')
+      collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
+      const id = 'element-one'
+      setElement(room.doc, id, { frame: { left: 500, top: 300, transform: CENTRED } })
+      mounted = await openedSurface({ deck: { is_converted: true } })
+      await vi.waitFor(() => expect(viewOnly.value).toBe(false))
+      focusElementId.value = id
+      await vi.waitFor(() => expect(activeEditor.value).toBeTruthy())
+      await nextTick()
+      const editor: Editor = fromAny(activeEditor.value)
+      const drawn = () =>
+        fromPartial<Array<{ elements: Array<{ left: number; top: number }> }>>(
+          editorSlides.value,
+        )[0].elements[0]
+      const shown = { left: drawn().left, top: drawn().top }
+      const saved = () => room.doc.getMap<Map<string, unknown>>(ROOT.elements).get(id)!.get('frame')
+
+      fontStartsLoading()
+      // an icon font, say: the text draws the same while it loads
+      browser.height = FONT_HEIGHT
+      editor.chain().setTextSelection(2).insertContent('x').run()
+      await nextTick()
+      browser.fontArrives()
+      await browser.ready
+      await nextTick()
+      // saved only once the font's redraw has run
+      editor.commands.insertContent('y')
+      await nextTick()
+
+      await vi.waitFor(() => expect(saved()).toMatchObject({ ...shown, transform: 'none' }))
+      expect(drawn()).toMatchObject(shown)
+      expect(editor.getText()).toBe('oxyne')
+      expect(editor.state.selection.from).toBe(4)
+    })
+
+    it('grows a title downwards on a first Enter while a font only other text uses loads', async () => {
+      const room = roomOf('one')
+      collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
+      const id = 'element-one'
+      setElement(room.doc, id, { frame: { left: 500, top: 300, transform: CENTRED } })
+      mounted = await openedSurface({ deck: { is_converted: true } })
+      await vi.waitFor(() => expect(viewOnly.value).toBe(false))
+      focusElementId.value = id
+      await vi.waitFor(() => expect(activeEditor.value).toBeTruthy())
+      await nextTick()
+      const editor: Editor = fromAny(activeEditor.value)
+      const drawn = () =>
+        fromPartial<Array<{ elements: Array<{ left: number; top: number }> }>>(
+          editorSlides.value,
+        )[0].elements[0]
+      const shown = { left: drawn().left, top: drawn().top }
+      const saved = () => room.doc.getMap<Map<string, unknown>>(ROOT.elements).get(id)!.get('frame')
+
+      // Anton, picked on another element after open
+      fontStartsLoading()
+      Object.assign(browser, { loadingFace: 'Anton', height: FONT_HEIGHT * 2 })
+      editor.chain().setTextSelection(4).splitBlock().run()
+      await nextTick()
+
+      expect(saved()).toMatchObject({ ...shown, transform: 'none' })
+
+      browser.fontArrives()
+      await browser.ready
+      await nextTick()
+      await nextTick()
+
+      expect(drawn()).toMatchObject(shown)
+      expect(saved()).toMatchObject({ ...shown, transform: 'none' })
+      expect(drawnSlides(room.doc)[0].elements[0]).toMatchObject(shown)
+    })
+  })
+
+  describe('a selected element another tab moves', () => {
+    it('moves the selection box and the Frame panel to where the other tab put it', async () => {
+      const room = roomOf('one')
+      collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
+      const id = 'element-one'
+      setElement(room.doc, id, { frame: { left: 100, top: 100, width: 300 } })
+      mounted = await openedSurface({ deck: { is_converted: true } })
+      await vi.waitFor(() => expect(viewOnly.value).toBe(false))
+      const panel = document.createElement('div')
+      document.body.append(panel)
+      // the canvas is stubbed here, so its selection box and the Frame panel are mounted beside it
+      const canvas = defineComponent({
+        setup() {
+          provide('resizer', { currentResizer: ref(null), startResize: () => {} })
+          provide('cornerRadius', { isHovered: ref(false), isRounding: ref(false) })
+          return () => [h(SelectionBox), h(FrameSection)]
+        },
+      })
+      const frame = createApp(canvas).use(translationPlugin)
+      frame.mount(panel)
+      onTestFinished(() => frame.unmount())
+      const shown = () => {
+        const box = requireTestElement(panel.querySelector('[data-selection-box]'), HTMLElement)
+        const field = (label: string) => {
+          const name = [...panel.querySelectorAll('span')].find(
+            (span) => span.textContent === label,
+          )
+          return Number(name?.parentElement?.querySelector('input')?.value)
+        }
+        return {
+          box: { left: box.style.left, top: box.style.top },
+          panel: { left: field('Left'), top: field('Top') },
+        }
+      }
+
+      // the canvas draws the element 300 by 80
+      const drawn = Object.defineProperties(document.createElement('div'), {
+        offsetWidth: { value: 300 },
+        offsetHeight: { value: 80 },
+      })
+      registerElementDiv(id, drawn)
+      onTestFinished(() => registerElementDiv(id, null))
+      // the editor page, stubbed here, shows the first slide, and the canvas fits the box to it
+      slideIndex.value = 0
+      elementStore.setActiveElements([id])
+      elementStore.cropSelectionToFitContent([id])
+      await vi.waitFor(() =>
+        expect(shown()).toEqual({
+          box: { left: '100px', top: '100px' },
+          panel: { left: 100, top: 100 },
+        }),
+      )
+      room.doc.transact(
+        () => setElement(room.doc, id, { frame: { left: 400, top: 250, width: 300 } }),
+        'peer',
+      )
+
+      await vi.waitFor(() =>
+        expect(shown()).toEqual({
+          box: { left: '400px', top: '250px' },
+          panel: { left: 400, top: 250 },
+        }),
+      )
+    })
   })
 
   describe('with a text editor open when the room stops taking writes', () => {
@@ -1379,6 +1673,48 @@ describe('a deck on the content layer', () => {
 
     await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(2))
     expect(shownText()).toContain('>two</p>')
+  })
+
+  it('keeps the focused slide and the address on the shown slide when a co-editor adds one before it', async () => {
+    // the owner's case: B on slide 6, A duplicates slide 5, so the copy takes 6
+    const doc = convertedRoom('one', 'two', 'three', 'four', 'five', 'six', 'seven')
+    mounted = await openedSurface({ deck: { is_converted: true } })
+    const { router } = mounted
+    const unwired = slidesRouter.currentRoute
+    onTestFinished(() => {
+      Object.assign(slidesRouter, { currentRoute: unwired })
+      vi.mocked(slidesRouter.replace).mockReset()
+    })
+    Object.assign(slidesRouter, { currentRoute: router.currentRoute })
+    vi.mocked(slidesRouter.replace).mockImplementation((to) => router.replace(to))
+    await vi.waitFor(() => expect(editorSlides.value).toHaveLength(7))
+    changeSlide(5)
+    await vi.waitFor(() => expect(router.currentRoute.value.query.slide).toBe('6'))
+
+    addSlide(doc, {}, 'five')
+
+    await vi.waitFor(() => expect(editorSlides.value).toHaveLength(8))
+    expect(shownText()).toContain('>six</p>')
+    expect(drawnTexts()[focused.value ?? -1]).toContain('>six</p>')
+    await vi.waitFor(() => expect(router.currentRoute.value.query.slide).toBe('7'))
+  })
+
+  it('drops the slide focus on a click outside the list, so Delete then removes no slide', async () => {
+    const doc = convertedRoom('one', 'two', 'three')
+    mounted = await openedSurface({ deck: { is_converted: true } })
+    await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(3))
+    thumbnails(mounted.root)[2].click()
+    await nextTick()
+    expect(focused.value).toBe(2)
+
+    mounted.root.querySelector<HTMLElement>('[data-toolbar]')!.click()
+    await nextTick()
+    expect(focused.value).toBeNull()
+
+    await press('Delete')
+    await press('Backspace')
+    expect(thumbnails(mounted.root)).toHaveLength(3)
+    expect(drawnSlides(doc)).toHaveLength(3)
   })
 
   it('drops a room that opens after its presentation was left, so the next one keeps its own slides', async () => {
@@ -1579,10 +1915,9 @@ describe('a deck on the content layer', () => {
       await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
 
       const present = mounted.root.querySelector('header [aria-label="Present"]')
-      const exportButton = mounted.root.querySelector('header [aria-label="Export"]')
       // the stand-ins are divs, which keep the value as written
       expect(present?.getAttribute('disabled')).toBe('false')
-      expect(exportButton?.getAttribute('disabled')).toBe('false')
+      expect(menuEntry('Export as PDF')).toBeDefined()
     })
   })
 
@@ -1597,7 +1932,7 @@ describe('a deck on the content layer', () => {
     fromPartial<XmlText>(paragraph.get(0)).insert(3, ' more')
     await vi.waitFor(() => expect(drawnTexts()[0]).toContain('one more'))
 
-    mounted.root.querySelector<HTMLElement>('header [aria-label="Export"]')!.click()
+    pickFromMenu('Export as PDF')
 
     await vi.waitFor(() => expect(window.print).toHaveBeenCalledOnce())
     const printed = fromAny<Array<{ elements: Array<{ content?: string }> }>, unknown>(
@@ -1688,7 +2023,7 @@ describe('a deck on the content layer', () => {
     mounted = await openedSurface({ deck: { is_converted: true } })
 
     await vi.waitFor(() =>
-      expect(mounted!.root.textContent).toContain('Could not open this presentation.'),
+      expect(mounted!.root.textContent).toContain('Could not open this presentation'),
     )
     expect(thumbnails(mounted.root)).toHaveLength(0)
   })
@@ -2036,7 +2371,7 @@ describe('printing a presentation', () => {
   let print: ReturnType<typeof vi.fn<() => void>>
 
   function clickExport() {
-    document.querySelector<HTMLElement>('header [aria-label="Export"]')!.click()
+    pickFromMenu('Export as PDF')
   }
 
   beforeEach(() => {
@@ -2139,18 +2474,23 @@ describe('Slides panels', () => {
     mounted = await openedSurface({ panels: [] })
     await nextTick()
 
-    expect(mounted.root.querySelector('[data-panels]')?.textContent).toBe('')
+    expect([menuEntry('Comments'), menuEntry('Versions')]).toEqual([undefined, undefined])
   })
 
-  it('offers everyone else the panels their session names', async () => {
+  it('offers everyone else the panels their session names, first in the menu', async () => {
     mounted = await openedSurface()
     await nextTick()
 
-    expect(mounted.root.querySelector('[data-panels]')?.textContent).toBe('comments,versions')
+    const items = [...mounted.root.querySelectorAll('header button')].map((el) => el.textContent)
+    expect(items.slice(0, 2)).toEqual(['Comments', 'Versions'])
   })
 
   function openComments() {
-    requireTestElement(mounted!.root.querySelector('[data-comments]'), HTMLButtonElement).click()
+    pickFromMenu('Comments')
+  }
+
+  function panelComments() {
+    return fromAny<DocumentComments, unknown>(commentPanel.attrs.comments)
   }
 
   it('shows the presentation’s threads in the shared comment panel, named as a presentation', async () => {
@@ -2161,9 +2501,9 @@ describe('Slides panels', () => {
 
     openComments()
 
-    await vi.waitFor(() => expect(commentPanel.attrs.threads).toHaveLength(1))
-    const { threads, noun, places } = commentPanel.attrs
-    const [thread] = fromAny<{ name: string }[], unknown>(threads)
+    await vi.waitFor(() => expect(panelComments().threads.value).toHaveLength(1))
+    const { noun, places } = commentPanel.attrs
+    const [thread] = panelComments().threads.value
     const flags = [commentPanel.attrs['can-comment'], commentPanel.attrs['can-edit-document']]
     expect([thread.name, noun, places, flags]).toEqual([
       'thread-1',
@@ -2173,11 +2513,26 @@ describe('Slides panels', () => {
     ])
   })
 
+  it('keeps the properties out of reach under an open panel, and in reach once it closes', async () => {
+    convertedRoom('now')
+    mounted = await openedSurface({ deck: { is_converted: true } })
+    await vi.waitFor(() => expect(mounted!.root.querySelector('[data-properties]')).not.toBeNull())
+    const properties = () =>
+      requireTestElement(mounted!.root.querySelector('[data-properties]'), HTMLElement)
+    expect(properties().hasAttribute('inert')).toBe(false)
+
+    openComments()
+    await vi.waitFor(() => expect(properties().hasAttribute('inert')).toBe(true))
+
+    openComments()
+    await vi.waitFor(() => expect(properties().hasAttribute('inert')).toBe(false))
+  })
+
   it('posts a comment on the whole presentation, with no text in the room to wait for', async () => {
     mounted = await openedSurface({ role: 20 })
     openComments()
     await vi.waitFor(() => expect(driveComments.reads).toBe(1))
-    const drafts = fromAny<ReturnType<typeof useCommentDrafts>, unknown>(commentPanel.attrs.drafts)
+    const { drafts } = panelComments()
 
     drafts.start('document')
     const [draft] = drafts.drafts.value
@@ -2196,8 +2551,9 @@ describe('Slides offline copy', () => {
   const register = vi.fn(async () => ({}))
   const unregister = vi.fn(async () => true)
 
-  function offlineCopyButton() {
-    return document.querySelector('[data-offline-copy]')
+  /** The copy's item in the presentation menu. */
+  function offlineCopyItem() {
+    return menuEntry('Keep offline') ?? null
   }
 
   beforeEach(() => {
@@ -2239,7 +2595,7 @@ describe('Slides offline copy', () => {
   it('offers the copy to the owner and registers the worker', async () => {
     mounted = await openedSurface()
 
-    await vi.waitFor(() => expect(offlineCopyButton()).not.toBeNull())
+    await vi.waitFor(() => expect(offlineCopyItem()).not.toBeNull())
     expect(register).toHaveBeenCalledWith('/service-worker.js')
   })
 
@@ -2259,7 +2615,7 @@ describe('Slides offline copy', () => {
     it('offers no copy, even to the owner', async () => {
       await openedComposite()
 
-      expect(offlineCopyButton()).toBeNull()
+      expect(offlineCopyItem()).toBeNull()
     })
 
     it.each([
@@ -2272,7 +2628,7 @@ describe('Slides offline copy', () => {
 
       await openedComposite()
 
-      expect(offlineCopyButton()).not.toBeNull()
+      expect(offlineCopyItem()).not.toBeNull()
     })
   })
 
@@ -2328,7 +2684,7 @@ describe('Slides offline copy', () => {
     mounted = await openedSurface()
     await nextTick()
 
-    expect(offlineCopyButton()).toBeNull()
+    expect(offlineCopyItem()).toBeNull()
   })
 
   it('hides the copy in a browser without service workers', async () => {
@@ -2336,7 +2692,7 @@ describe('Slides offline copy', () => {
     mounted = await openedSurface()
     await nextTick()
 
-    expect(offlineCopyButton()).toBeNull()
+    expect(offlineCopyItem()).toBeNull()
   })
 
   it('hides the copy and unregisters the worker with the kill switch on', async () => {
@@ -2345,7 +2701,7 @@ describe('Slides offline copy', () => {
 
     await vi.waitFor(() => expect(unregister).toHaveBeenCalledOnce())
     expect(register).not.toHaveBeenCalled()
-    expect(offlineCopyButton()).toBeNull()
+    expect(offlineCopyItem()).toBeNull()
   })
 
   it('forgets every offline copy with the kill switch on', async () => {
@@ -2390,7 +2746,7 @@ describe('Slides offline copy', () => {
     it('offers the copy to the owner', async () => {
       mounted = await openedLive()
 
-      await vi.waitFor(() => expect(offlineCopyButton()).not.toBeNull())
+      await vi.waitFor(() => expect(offlineCopyItem()).not.toBeNull())
     })
 
     it('hides the copy from someone who is not the owner', async () => {
@@ -2398,7 +2754,7 @@ describe('Slides offline copy', () => {
       mounted = await openedLive()
       await vi.waitFor(() => expect(editorSlides.value).toHaveLength(1))
 
-      expect(offlineCopyButton()).toBeNull()
+      expect(offlineCopyItem()).toBeNull()
     })
 
     it("refreshes the owner's copy saved before it went live", async () => {
@@ -2597,7 +2953,7 @@ describe('Slides offline copy', () => {
       mounted = await openedSurface()
 
       await vi.waitFor(() => expect(visits.remember).toHaveBeenCalled())
-      expect(offlineCopyButton()).not.toBeNull()
+      expect(offlineCopyItem()).not.toBeNull()
     })
 
     it('stops the copy when the surface goes away', async () => {
@@ -2799,12 +3155,18 @@ describe('templates that fail to load', () => {
 })
 
 describe('edit access changing on a converted presentation', () => {
+  // as the client keeps a stopped room's unsent work: one record in the device store
+  async function keptOnDevice(doc: Doc) {
+    const store = (await openSignedInDeviceStore('slides'))!
+    const state = encodeStateAsUpdate(doc)
+    const entry = { doc: 'node-1', sid: 's', seq: 1, bytes: state, sha: '', seenRev: 0 }
+    await store.saveSession({ doc: 'node-1', sid: 's', lineage: 'L', cid: 1, bound: true })
+    await store.recover('node-1', ['s'], 'lost_access', [entry], { state, title: 'Talk' })
+  }
+
   // a room for one slide, as the server converted it
-  function liveRoom() {
-    const answer = convertLegacy(
-      { slides: [{ id: 's1', elements: [{ id: 'e1', type: 'text', content: '<p>one</p>' }] }] },
-      4 * 1024 * 1024,
-    )
+  function liveRoom(elements: OldElement[] = [{ id: 'e1', type: 'text', content: '<p>one</p>' }]) {
+    const answer = convertLegacy({ slides: [{ id: 's1', elements }] }, 4 * 1024 * 1024)
     if (answer.kind !== 'converted') throw new Error(JSON.stringify(answer))
 
     const doc = new Doc()
@@ -2815,6 +3177,7 @@ describe('edit access changing on a converted presentation', () => {
       unsentCount: 0,
       restoreRev: 0,
       isKeptOnDevice: true,
+      keptCopyCount: 0,
     }
     const room = {
       doc,
@@ -2837,11 +3200,16 @@ describe('edit access changing on a converted presentation', () => {
         room.status = { ...room.status, ...next }
         changes.forEach((listener) => listener())
       },
-      // As the client does: shut at once, and blocked for the lost right if work is still unsent
+      // As the client does: shut at once, and blocked for the lost right if work is still unsent,
+      // which it then keeps as a copy on the device
       loseAccess: vi.fn(async (lost: LostAccess) => {
         room.setStatus({ canWrite: false })
         if (room.status.unsentCount) {
           room.setStatus({ blockReason: lost })
+          if (room.status.isKeptOnDevice) {
+            await keptOnDevice(doc)
+            room.setStatus({ keptCopyCount: 1 })
+          }
         }
       }),
       // As the client does: a room shut with nothing kept takes edits again
@@ -2857,22 +3225,57 @@ describe('edit access changing on a converted presentation', () => {
   }
 
   // The room and the surface, drawn and editing
-  async function editing() {
-    const room = liveRoom()
+  async function editing(elements?: OldElement[]) {
+    const room = liveRoom(elements)
     mounted = await openedSurface({ deck: { is_converted: true } })
     await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
     return room
   }
+
+  // As the client does: shut and failed at once, the device write landing once it is let go
+  function keepsLate(room: ReturnType<typeof liveRoom>) {
+    let writeLands = () => {}
+    const landed = new Promise<void>((resolve) => {
+      writeLands = resolve
+    })
+    room.loseAccess.mockImplementation(async (lost: LostAccess) => {
+      room.setStatus({ canWrite: false, blockReason: lost, saveState: 'failed' })
+      await landed
+      await keptOnDevice(room.doc)
+      room.setStatus({ keptCopyCount: 1 })
+    })
+    return writeLands
+  }
+
+  // fonts loaded, as opening measures centred text to draw it top-left
+  function fontsLoaded() {
+    const fonts = { status: 'loaded', ready: Promise.resolve(), check: () => true }
+    Object.defineProperty(document, 'fonts', { configurable: true, value: fonts })
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(40)
+    onTestFinished(() => {
+      Reflect.deleteProperty(document, 'fonts')
+    })
+  }
+
+  const centred = { type: 'text', width: 600, transform: 'translate(-50%, -50%)' }
+  const titled = [
+    { ...centred, id: 'title', content: '<p>Talk</p>', left: 480, top: 200 },
+    { ...centred, id: 'subtitle', content: '<p>Today</p>', left: 480, top: 300 },
+    { id: 'e1', type: 'text', content: '<p>one</p>', left: 100, top: 400 },
+  ]
 
   beforeEach(() => {
     vi.mocked(toast.warning).mockClear()
     vi.mocked(toast.info).mockClear()
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     collabRoom.open.mockReset()
     localStorage.clear()
     vi.restoreAllMocks()
+    const store = (await openSignedInDeviceStore('slides'))!
+    const records = await store.allRecovery()
+    await Promise.all(records.map((record) => store.discard(record.id!)))
   })
 
   it('turns view only and says so when edit access goes', async () => {
@@ -2883,14 +3286,12 @@ describe('edit access changing on a converted presentation', () => {
     mounted.access.value = { role: 10 }
 
     await vi.waitFor(() =>
-      expect(toast.warning).toHaveBeenCalledWith(
-        'Editing access changed. This presentation is now view only.',
-      ),
+      expect(toast.warning).toHaveBeenCalledWith('This presentation is now view only'),
     )
     expect(viewOnly.value).toBe(true)
   })
 
-  it('keeps unsent edits on this device when edit access goes, and offers them as a download', async () => {
+  it('leaves unsent edits to the copy the room keeps when edit access goes, and offers them as a download', async () => {
     const room = await editing()
     room.setStatus({ unsentCount: 1, saveState: 'unsaved' })
     const files: File[] = []
@@ -2906,23 +3307,173 @@ describe('edit access changing on a converted presentation', () => {
 
     await vi.waitFor(() =>
       expect(toast.warning).toHaveBeenCalledWith(
-        'Editing access changed. Your unsaved changes are kept on this device.',
+        "Can't edit now. Unsaved changes are kept on this device.",
         expect.anything(),
       ),
     )
     expect(room.loseAccess).toHaveBeenCalledWith('lost_edit')
-    expect(readRecovery('node-1')).toMatchObject([{ sticky: true }])
-    expect(toast.warning).not.toHaveBeenCalledWith(
-      'Editing access changed. This presentation is now view only.',
-    )
+    // the room's copy is the one Drive lists: a page copy beside it would list the work twice
+    expect(readRecovery('node-1')).toEqual([])
+    expect(toast.warning).not.toHaveBeenCalledWith('This presentation is now view only')
     const [, options] = fromAny<
       [string, { action: { label: string; onClick: () => void } }],
       unknown
     >(vi.mocked(toast.warning).mock.lastCall)
-    expect(options.action.label).toBe('Download my changes')
+    expect(options.action.label).toBe('Download')
     options.action.onClick()
     const downloaded = JSON.parse(await files[0]!.text())
     expect(JSON.stringify(downloaded.slides)).toContain('one')
+  })
+
+  it("offers the room's copy from the header, and Discard leaves no copy behind", async () => {
+    const room = await editing()
+    room.setStatus({ unsentCount: 1, saveState: 'unsaved' })
+    const download = requireTestElement(
+      mounted!.root.querySelector('[data-download-changes]'),
+      HTMLButtonElement,
+    )
+    mounted!.access.value = { role: 10 }
+    await vi.waitFor(() => expect(download.hidden).toBe(false))
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    const discard = [...mounted!.root.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Discard my changes',
+    )
+    discard!.click()
+
+    await vi.waitFor(() => expect(download.hidden).toBe(true))
+    const store = (await openSignedInDeviceStore('slides'))!
+    expect([await store.allRecovery(), readRecovery('node-1')]).toEqual([[], []])
+  })
+
+  it('keeps the unsent edits on this page when the room could not keep its copy', async () => {
+    const room = await editing()
+    room.setStatus({ unsentCount: 1, saveState: 'unsaved' })
+    room.loseAccess.mockImplementation(async (lost: LostAccess) => {
+      room.setStatus({ canWrite: false, blockReason: lost })
+      room.setStatus({ hasCopyFailed: true })
+    })
+
+    mounted!.access.value = { role: 10 }
+
+    await vi.waitFor(() => expect(readRecovery('node-1')).toMatchObject([{ sticky: true }]))
+  })
+
+  it('keeps no second copy as the tab closes once the room kept its own', async () => {
+    const room = await editing()
+    room.setStatus({ unsentCount: 1, saveState: 'unsaved' })
+    mounted!.access.value = { role: 10 }
+    await vi.waitFor(() => expect(room.status.keptCopyCount).toBe(1))
+    room.setStatus({ saveState: 'failed' })
+
+    window.dispatchEvent(new Event('beforeunload', { cancelable: true }))
+
+    expect(readRecovery('node-1')).toEqual([])
+  })
+
+  it('keeps one copy when the tab is closed and kept open while the room is still keeping its own', async () => {
+    const room = await editing()
+    room.setStatus({ unsentCount: 1, saveState: 'unsaved' })
+    const writeLands = keepsLate(room)
+    mounted!.access.value = { role: 10 }
+    await vi.waitFor(() => expect(room.loseAccess).toHaveBeenCalled())
+
+    // the person closes the tab, then stays when the browser asks
+    window.dispatchEvent(new Event('beforeunload', { cancelable: true }))
+    writeLands()
+
+    await vi.waitFor(() => expect(readRecovery('node-1')).toEqual([]))
+    const kept = await roomCopies('node-1')
+    expect(kept.map((copy) => JSON.stringify(copy.slides).includes('one'))).toEqual([true])
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const discard = [...mounted!.root.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Discard my changes',
+    )
+    discard!.click()
+    const store = (await openSignedInDeviceStore('slides'))!
+    await vi.waitFor(async () => expect(await store.allRecovery()).toEqual([]))
+    expect(readRecovery('node-1')).toEqual([])
+  })
+
+  it('keeps one copy of a presentation whose centred title is untouched, edited elsewhere', async () => {
+    fontsLoaded()
+    const room = await editing(titled)
+    const paragraph = fromPartial<XmlElement>(elementText(room.doc, 'e1')!.get(0))
+    fromPartial<XmlText>(paragraph.get(0)).insert(3, ' more')
+    await vi.waitFor(() => expect(JSON.stringify(editorSlides.value)).toContain('one more'))
+    room.setStatus({ unsentCount: 1, saveState: 'unsaved' })
+    const writeLands = keepsLate(room)
+    mounted!.access.value = { role: 10 }
+    await vi.waitFor(() => expect(room.loseAccess).toHaveBeenCalled())
+
+    window.dispatchEvent(new Event('beforeunload', { cancelable: true }))
+    expect(readRecovery('node-1')).toHaveLength(1)
+    writeLands()
+
+    await vi.waitFor(() => expect(readRecovery('node-1')).toEqual([]))
+    expect((await roomCopies('node-1')).map((copy) => copy.slides.length)).toEqual([1])
+  })
+
+  it("keeps the page copy whose title moved, where the room's copy has it where it was", async () => {
+    fontsLoaded()
+    const room = await editing(titled)
+    room.setStatus({ unsentCount: 1, saveState: 'unsaved' })
+    const writeLands = keepsLate(room)
+    mounted!.access.value = { role: 10 }
+    await vi.waitFor(() => expect(room.loseAccess).toHaveBeenCalled())
+    // a move the shut room no longer takes
+    const [slide] = fromAny<StoreSlide[], unknown>(editorSlides.value)
+    slide!.elements.find((element) => element.id === 'title')!.left += 40
+
+    window.dispatchEvent(new Event('beforeunload', { cancelable: true }))
+    writeLands()
+
+    await vi.waitFor(() => expect(room.status.keptCopyCount).toBe(1))
+    await vi.waitFor(async () => expect(await roomCopies('node-1')).toHaveLength(1))
+    await roomCopies('node-1')
+    expect(JSON.stringify(readRecovery('node-1')[0]?.slides)).toContain('"left":220')
+  })
+
+  it('keeps the page copy made while the room was keeping its own, once the room could not', async () => {
+    const room = await editing()
+    room.setStatus({ unsentCount: 1, saveState: 'unsaved' })
+    let writeFails = () => {}
+    const failed = new Promise<void>((resolve) => {
+      writeFails = resolve
+    })
+    room.loseAccess.mockImplementation(async (lost: LostAccess) => {
+      room.setStatus({ canWrite: false, blockReason: lost, saveState: 'failed' })
+      await failed
+      room.setStatus({ hasCopyFailed: true })
+    })
+    mounted!.access.value = { role: 10 }
+    await vi.waitFor(() => expect(room.loseAccess).toHaveBeenCalled())
+
+    window.dispatchEvent(new Event('beforeunload', { cancelable: true }))
+    writeFails()
+
+    await vi.waitFor(() => expect(room.status.hasCopyFailed).toBe(true))
+    expect(readRecovery('node-1')).toMatchObject([{ sticky: true }])
+  })
+
+  it('says the unsent edits are kept as soon as the server refuses them, with no focus needed', async () => {
+    const room = await editing()
+    room.setStatus({ unsentCount: 1, saveState: 'unsaved' })
+    // what Drive answers when the page asks for the access again
+    mounted!.session.refreshAccess = async () => {
+      mounted!.access.value = { role: 10 }
+    }
+
+    // a push answered 403: the room shuts itself, its work still unsent
+    room.setStatus({ canWrite: false, blockReason: 'lost_edit' })
+
+    await vi.waitFor(() =>
+      expect(toast.warning).toHaveBeenCalledWith(
+        "Can't edit now. Unsaved changes are kept on this device.",
+        expect.anything(),
+      ),
+    )
+    expect(toast.warning).toHaveBeenCalledTimes(1)
   })
 
   it('shuts the room for reading when read access goes', async () => {
@@ -2958,7 +3509,7 @@ describe('edit access changing on a converted presentation', () => {
     send()
 
     await vi.waitFor(() =>
-      expect(toast.info).toHaveBeenCalledWith('You can edit this presentation again.'),
+      expect(toast.info).toHaveBeenCalledWith('You can edit this presentation again'),
     )
     // a load would close this room on its way to opening another
     await new Promise((resolve) => setTimeout(resolve, 20))
@@ -3058,7 +3609,7 @@ describe('edit access changing on a converted presentation', () => {
     shut()
 
     await vi.waitFor(() =>
-      expect(toast.info).toHaveBeenCalledWith('You can edit this presentation again.'),
+      expect(toast.info).toHaveBeenCalledWith('You can edit this presentation again'),
     )
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(toast.warning).not.toHaveBeenCalled()
@@ -3072,9 +3623,7 @@ describe('edit access changing on a converted presentation', () => {
     mounted!.access.value = { role: 10 }
 
     await vi.waitFor(() =>
-      expect(toast.warning).toHaveBeenCalledWith(
-        'Editing access changed. This presentation is now view only.',
-      ),
+      expect(toast.warning).toHaveBeenCalledWith('This presentation is now view only'),
     )
     expect(viewOnly.value).toBe(true)
   })
@@ -3089,7 +3638,7 @@ describe('edit access changing on a converted presentation', () => {
     mounted.access.value = { role: 50 }
 
     await vi.waitFor(() =>
-      expect(toast.info).toHaveBeenCalledWith('You can edit this presentation again.'),
+      expect(toast.info).toHaveBeenCalledWith('You can edit this presentation again'),
     )
     expect(viewOnly.value).toBe(false)
   })

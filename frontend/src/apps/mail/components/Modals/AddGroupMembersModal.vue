@@ -2,7 +2,7 @@
   <Dialog
     v-model:open="show"
     v-bind="{
-      title: __('Add Members'),
+      title: __('Add members'),
       actions: [
         {
           label: __('Add'),
@@ -16,10 +16,11 @@
   >
     <template #default>
       <div class="space-y-1.5">
-        <label class="text-ink-gray-5 block text-xs">{{ __('Accounts') }}</label>
         <MultiSelect
           v-model="accountIds"
           v-model:query="picker.query"
+          :label="__('Members')"
+          class="w-full"
           :options="picker.options"
           :filterable="false"
           :placeholder="__('Search accounts')"
@@ -42,6 +43,7 @@ import { ref, watch } from 'vue'
 import { api, useMutation, type InputOf } from '@/api'
 import { raiseToast } from '@/apps/mail/utils'
 import { useAccountPicker } from '@/apps/mail/utils/accountPicker'
+import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()
 const { groupId, currentIds } = defineProps<{
@@ -69,6 +71,6 @@ async function addMembersSubmit() {
   await addMembers.run(input)
   show.value = false
   emit('reload')
-  raiseToast(__('Members added.'))
+  raiseToast(__('Members added'))
 }
 </script>

@@ -1,9 +1,10 @@
 import { toast } from 'frappe-ui'
 import type { InjectionKey } from 'vue'
 
+import { translate as __ } from '@/platform/translation'
+
 import { PollPayloadFE } from '../types'
 import audioNotificationManager from '../utils/audioNotifications'
-import { getErrorMessage } from '../utils/error'
 import { E2EEMeeting } from '../utils/media/E2EEMeeting'
 import type { SFUClient } from '../utils/SFUClient'
 import { useChatStore } from './useChatStore'
@@ -308,7 +309,7 @@ export function usePoll(deps: {
 
   const createPoll = async (question: string, options: { text: string }[]) => {
     if (!sfuClient.isConnected()) {
-      toast.error('Not connected to meeting server')
+      toast.error(__('Could not connect to the meeting server'))
       return
     }
 
@@ -332,19 +333,19 @@ export function usePoll(deps: {
           if (!decrypted) return
           pollStore.addPoll(decrypted)
         }
-        toast.success('Poll created!')
+        toast.success(__('Poll created'))
       } else {
-        toast.error(response?.error || 'Failed to create poll')
+        toast.error(__('Could not create the poll'))
       }
     } catch (error) {
       console.error('Failed to create poll:', error)
-      toast.error(getErrorMessage(error) || 'Failed to create poll')
+      toast.error(__('Could not create the poll'))
     }
   }
 
   const submitVote = async (pollId: string, optionId: string) => {
     if (!sfuClient.isConnected()) {
-      toast.error('Not connected to meeting server')
+      toast.error(__('Could not connect to the meeting server'))
       return
     }
 
@@ -361,7 +362,7 @@ export function usePoll(deps: {
       pollStore.markPollAsVoted(pollId)
     } catch (error) {
       console.error('Failed to submit vote:', error)
-      toast.error(getErrorMessage(error))
+      toast.error(__('Could not submit the vote'))
       throw error
     }
   }

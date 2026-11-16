@@ -2,7 +2,7 @@
   <DashboardLayout
     area="mail"
     :breadcrumbs="[{ label: __('Domains') }]"
-    :button-label="__('Add Domain')"
+    :button-label="isFirstRun ? undefined : __('Add domain')"
     :button-action="() => (showAddDomain = true)"
   >
     <div class="flex flex-wrap items-center justify-between gap-3">
@@ -21,15 +21,19 @@
         />
       </div>
     </div>
-    <ErrorMessage :message="list.error?.message" />
     <DashboardList
+      :failure="
+        list.status === 'error'
+          ? { title: __('Could not load domains'), retry: () => list.refetch() }
+          : undefined
+      "
       :columns="LIST_COLUMNS"
       :rows="list.rows"
       row-key="id"
       :loading="list.status === 'pending'"
       :skeleton-rows="2"
       :row-route="listOptions.getRowRoute"
-      :empty-state="list.error ? undefined : listOptions.emptyState"
+      :empty-state="list.status === 'error' ? undefined : listOptions.emptyState"
     >
       <template #cell="{ column, item }">
         <Badge
@@ -64,7 +68,7 @@
 </template>
 <script setup lang="ts">
 import { refDebounced } from '@vueuse/core'
-import { Badge, ErrorMessage, FormControl, usePageMeta } from 'frappe-ui'
+import { Badge, FormControl, usePageMeta } from 'frappe-ui'
 import { computed, ref } from 'vue'
 
 import { api, useInfiniteQuery, type InputOf } from '@/api'
@@ -110,7 +114,7 @@ const LIST_COLUMNS = [
     key: 'description',
   },
   {
-    label: __('Last Verified'),
+    label: __('Last verified'),
     key: 'last_verified_at',
   },
   {
@@ -122,6 +126,11 @@ const LIST_COLUMNS = [
 // The empty state depends on why the list is empty: a filtered search that found
 // nothing should not present the first-run "add your first domain" pitch.
 const hasActiveFilters = computed(() => !!search.value || status.value !== 'All')
+// With nothing added yet, the empty state's own Add button is the one call to action, under
+// the line that explains it; the header's copy comes back with the first row.
+const isFirstRun = computed(
+  () => list.status === 'success' && !list.rows.length && !hasActiveFilters.value,
+)
 const listOptions = computed(() => ({
   selectable: false,
   showTooltip: false,
@@ -134,7 +143,7 @@ const listOptions = computed(() => ({
         title: __('No domains yet'),
         description: __('Add a domain to send and receive mail with your own addresses.'),
         button: {
-          label: __('Add Domain'),
+          label: __('Add domain'),
           variant: 'solid' as const,
           onClick: () => (showAddDomain.value = true),
         },

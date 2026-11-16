@@ -5,6 +5,7 @@ import type { DriveNode } from '@/apps/drive/client/types'
 import { toast, type ToastId } from '@/platform/feedback'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
+import { TransportError } from '@/platform/transport'
 
 import { formatBytes } from '../internal/format'
 import { MAX_BATCH_NODES } from './batches'
@@ -47,7 +48,7 @@ export async function downloadItems(
   }
   // One zip is one request, and the server takes at most this many nodes in one.
   if (rows.length > MAX_BATCH_NODES) {
-    toast.error(__('Download up to {0} items at a time.', [MAX_BATCH_NODES]))
+    toast.error(__('Download up to {0} items at a time', [MAX_BATCH_NODES]))
     return
   }
   const name = subject(rows.map((row) => ({ node: row.name, title: row.title })))
@@ -70,7 +71,7 @@ export async function downloadItems(
     const description =
       asked.delivery === 'Inbox'
         ? __('The download starts here when the zip is ready. You will also get a notification.')
-        : __('The download starts here when the zip is ready.')
+        : __('The download starts here when the zip is ready')
     // Keyed by the download, so asking again for the same selection updates
     // this toast instead of adding one. It sets no `duration`: vue-sonner reads
     // it once, when a toast mounts, so an infinite one would never close; a
@@ -95,7 +96,10 @@ export async function downloadItems(
       if (waiting !== undefined) settle('success', __('Downloading {0}', [name]), size)
     } else settle('error', __('Could not download {0}', [name]), settled.error ?? undefined)
   } catch (error) {
-    const reason = error instanceof Error ? error.message : undefined
+    const reason =
+      error instanceof TransportError && error.type !== 'NetworkError'
+        ? __(error.message)
+        : undefined
     settle('error', __('Could not download {0}', [name]), reason)
   }
 }

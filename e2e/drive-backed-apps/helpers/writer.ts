@@ -48,7 +48,7 @@ export async function openWriterDocument(page: Page, node: string): Promise<void
 
 /** Opens or closes a side panel from the document's ⋯ menu. */
 export async function toggleWriterPanel(page: Page, name: "Comments" | "Versions"): Promise<void> {
-	await page.getByRole("button", { name: "More document actions" }).click();
+	await page.getByRole("button", { name: "More actions" }).click();
 	await page.getByRole("menuitem", { name }).click();
 }
 
@@ -76,7 +76,7 @@ export function documentTitle(page: Page): Locator {
 }
 
 export function documentMenuButton(page: Page): Locator {
-	return page.getByRole("button", { name: "More document actions" });
+	return page.getByRole("button", { name: "More actions" });
 }
 
 /** Type `content` into the editor and save with the keyboard shortcut. */

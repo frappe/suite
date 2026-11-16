@@ -139,6 +139,7 @@ import { useScreenSize } from '@/apps/mail/utils/composables'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import StorageMeter from '@/components/StorageMeter.vue'
+import { translate as __ } from '@/platform/translation'
 
 const { isMobile } = useScreenSize()
 const { isLimited, usedPercentage, label } = useQuota()
@@ -234,6 +235,6 @@ const save = async () => {
       ...draft.value,
     },
   })
-  raiseToast(__('Account updated.'))
+  raiseToast(__('Account updated'))
 }
 </script>

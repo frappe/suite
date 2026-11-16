@@ -16,7 +16,7 @@ import { cellId } from '../utils/cells.js'
 import { COL_HEADER_H, ROW_HEADER_W } from './constants.js'
 import { createRenderer } from './renderer.js'
 
-const GRID_LINE = '#EDEDED' // COLORS.gridLine's fallback, with no theme set
+const GRID_LINE = '#E2E2E2' // COLORS.gridLine's fallback, with no theme set
 const FILL = '#92b9c6'
 const OTHER_FILL = '#f6c343'
 

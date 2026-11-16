@@ -69,6 +69,7 @@ import { useRoute } from 'vue-router'
 import type { AreaDefinition } from '@/platform/contracts'
 import { toast } from '@/platform/feedback'
 import { useDevicePush, useInstallOffer } from '@/platform/pwa'
+import { translate as __ } from '@/platform/translation'
 
 const props = defineProps<{
   /** The area of the page, when it installs as an app of its own. */
@@ -102,9 +103,9 @@ const ask = computed(() => !!props.app && props.app.id === linkedApp.value && pu
 const turnOn = async () => {
   try {
     if (!(await push.enable()))
-      toast.error(__('Notifications are blocked for this site in the browser settings.'))
-  } catch (error) {
-    toast.error(error instanceof Error ? error.message : String(error))
+      toast.error(__('Notifications are blocked for this site in the browser settings'))
+  } catch {
+    toast.error(__('Could not enable notifications'))
   }
 }
 </script>

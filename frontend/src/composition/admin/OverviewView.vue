@@ -1,11 +1,12 @@
 <!-- A KPI strip and focused area summaries; exceptions stay beside the area that owns their remediation. -->
 <script setup lang="ts">
-import { Alert, Button, ErrorMessage, Skeleton } from 'frappe-ui'
+import { Alert, Button, Skeleton } from 'frappe-ui'
 import { computed, watchEffect } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import { api, useInfiniteQuery, useQuery, type OutputOf } from '@/api'
 import { DashboardLayout, DashboardSkeletonText } from '@/platform/dashboard'
+import { LoadFailed } from '@/platform/load-failed'
 import { translate as __ } from '@/platform/translation'
 
 import SiteStorageSummary from './SiteStorageSummary.vue'
@@ -14,7 +15,8 @@ import SiteStorageSummarySkeleton from './SiteStorageSummarySkeleton.vue'
 type DomainRow = OutputOf<typeof api.mail.admin.domains.list>['items'][number]
 const storage = useQuery(api.suite.storage.get)
 const users = useQuery(api.suite.users.list)
-const health = useQuery(api.suite.admin.health)
+// Only a Suite Cloud site has a service to check.
+const health = useQuery(api.suite.admin.health, () => (storage.data?.cloud ? {} : false))
 const domains = useInfiniteQuery(api.mail.admin.domains.list, () =>
   storage.data?.cloud ? { page_length: 500 } : false,
 )
@@ -82,12 +84,12 @@ const kpis = computed(() => {
     :loading="storage.status === 'pending'"
   >
     <template #loading>
-      <div class="mx-auto w-full max-w-5xl space-y-6 pb-10" aria-hidden="true">
+      <div class="w-full space-y-6 pb-10" aria-hidden="true">
         <div class="grid overflow-hidden rounded-5 border border-outline-gray-2 sm:grid-cols-3">
           <div
             v-for="n in 3"
             :key="n"
-            class="flex items-center justify-between gap-3 border-b border-outline-gray-2 px-5 py-3 last:border-b-0 sm:block sm:space-y-1.5 sm:py-4 sm:border-b-0 sm:border-r sm:last:border-r-0"
+            class="flex items-center justify-between gap-3 border-b border-outline-gray-2 px-4 py-3 sm:px-5 last:border-b-0 sm:block sm:space-y-1.5 sm:py-4 sm:border-b-0 sm:border-r sm:last:border-r-0"
           >
             <DashboardSkeletonText class="text-sm" width="7rem" />
             <DashboardSkeletonText class="text-3xl" width="3rem" />
@@ -103,24 +105,50 @@ const kpis = computed(() => {
         </section>
       </div>
     </template>
-    <ErrorMessage :message="storage.error?.message" />
-    <div v-if="storage.data" class="mx-auto w-full max-w-5xl space-y-6 pb-10">
+    <LoadFailed
+      v-if="storage.status === 'error'"
+      :title="__('Could not load storage report')"
+      :retry="() => storage.refetch()"
+    />
+    <div v-if="storage.data" class="w-full space-y-6 pb-10">
       <div
         class="grid overflow-hidden rounded-5 border border-outline-gray-2"
         :class="storage.data.cloud ? 'sm:grid-cols-3' : 'grid-cols-1'"
         :aria-label="__('Workspace summary')"
       >
-        <RouterLink
-          v-for="kpi in kpis"
-          :key="kpi.label"
-          :to="kpi.route"
-          class="flex items-center justify-between gap-3 border-b border-outline-gray-2 px-5 py-3 last:border-b-0 sm:block sm:space-y-1.5 sm:py-4 hover:bg-surface-gray-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-outline-gray-3 sm:border-b-0 sm:border-r sm:last:border-r-0"
-        >
-          <p class="text-sm text-ink-gray-5">{{ kpi.label }}</p>
-          <p class="text-3xl font-semibold tabular-nums text-ink-gray-9">
-            {{ kpi.value }}
-          </p>
-        </RouterLink>
+        <template v-for="kpi in kpis" :key="kpi.label">
+          <div
+            v-if="users.error && kpi.route === '/admin/users'"
+            class="flex items-center justify-between gap-3 border-b border-outline-gray-2 px-4 py-3 sm:px-5 last:border-b-0 sm:block sm:space-y-1.5 sm:py-4 sm:border-b-0 sm:border-r sm:last:border-r-0"
+          >
+            <div class="flex items-center justify-between gap-2">
+              <p class="text-sm text-ink-gray-5">{{ kpi.label }}</p>
+              <Button
+                size="sm"
+                variant="ghost"
+                icon="lucide-rotate-cw"
+                :aria-label="__('Retry')"
+                :tooltip="__('Retry')"
+                :loading="users.isFetching"
+                @click="users.refetch()"
+              />
+            </div>
+            <p class="flex items-center gap-1.5 text-p-base text-ink-gray-6">
+              <span class="lucide-circle-alert size-4 text-ink-red-4" aria-hidden="true" />
+              {{ __('Could not load') }}
+            </p>
+          </div>
+          <RouterLink
+            v-else
+            :to="kpi.route"
+            class="flex items-center justify-between gap-3 border-b border-outline-gray-2 px-4 py-3 sm:px-5 last:border-b-0 sm:block sm:space-y-1.5 sm:py-4 hover:bg-surface-gray-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-outline-gray-3 sm:border-b-0 sm:border-r sm:last:border-r-0"
+          >
+            <p class="text-sm text-ink-gray-5">{{ kpi.label }}</p>
+            <p class="text-3xl font-semibold tabular-nums text-ink-gray-9">
+              {{ kpi.value }}
+            </p>
+          </RouterLink>
+        </template>
       </div>
 
       <Alert
@@ -136,7 +164,7 @@ const kpis = computed(() => {
         :description="__('Try again later. Your files and mail are still available.')"
       />
       <Alert
-        v-if="health.error"
+        v-if="storage.data.cloud && health.error"
         theme="amber"
         :title="__('Could not check service status')"
         :description="__('Refresh the page to try again.')"
@@ -210,13 +238,6 @@ const kpis = computed(() => {
           </ul>
         </template>
       </section>
-
-      <Alert
-        v-if="users.error"
-        theme="amber"
-        :title="__('Could not load users')"
-        :description="__('Open Users to try again.')"
-      />
     </div>
   </DashboardLayout>
 </template>

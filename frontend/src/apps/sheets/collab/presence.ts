@@ -14,17 +14,18 @@ import type * as Y from 'yjs'
 
 import type { Peer, RoomPresence } from '@/platform/collab'
 import { GUEST_USER, personKey, roomColours, type PeerColour } from '@/platform/collab/colours'
+import { personIdleSince } from '@/platform/collab/peers'
 
 import { readSavedSelection, selectionFromIds, selectionToIds, type Selection } from './selection'
 
-/** An avatar in the header (SheetTopbarActions, SheetTabsBar). */
+/** An avatar in the header (UsersBar) and a dot on their sheet's tab (SheetTabsBar). */
 export interface PresentUser {
   user: string
   full_name: string
   first_name: string
-  initials: string
-  user_image: string
   colour: PeerColour
+  /** When their last tab went idle; null while any is in use. */
+  idleSince: number | null
   /** The sheet they are on; null for a viewer, whose selection isn't sent. */
   sub_sheet: string | null
 }
@@ -52,25 +53,16 @@ export interface RemoteCursor {
   moveKey: string
 }
 
-/** A person's name and picture; their user id until it is known. */
+/** A person's name; their user id until it is known. */
 export interface Person {
   fullName: string
-  image: string
 }
 
 function nameOf(user: string, pid: number, person: (user: string) => Person): Person {
   if (user === GUEST_USER) {
-    return { fullName: `Guest ${pid.toString(36).slice(-4).toUpperCase()}`, image: '' }
+    return { fullName: `Guest ${pid.toString(36).slice(-4).toUpperCase()}` }
   }
   return person(user)
-}
-
-function initialsOf(fullName: string): string {
-  const words = fullName.trim().split(/\s+/).filter(Boolean)
-  return words
-    .slice(0, 2)
-    .map((w) => w[0]!.toUpperCase())
-    .join('')
 }
 
 // A label always names two people; past this many characters the rest fold into "+N".
@@ -117,9 +109,8 @@ export function readPresence(
   const seen = new Set<string>()
   for (const peer of presence.peers) {
     if (peer.user === me && me !== GUEST_USER) continue // this person's other tabs
-    const { fullName, image } = nameOf(peer.user, peer.pid, person)
+    const { fullName } = nameOf(peer.user, peer.pid, person)
     const first = fullName.trim().split(/\s+/)[0] || fullName
-    const initials = initialsOf(fullName)
     const colour = colours.get(peer.pid)!
     const key = personKey(peer.user, peer.pid)
     const saved = readSavedSelection(states.get(peer.pid)?.cursor)
@@ -154,9 +145,8 @@ export function readPresence(
       user: key,
       full_name: fullName,
       first_name: first,
-      initials,
-      user_image: image,
       colour,
+      idleSince: personIdleSince(presence.peers, peer.pid),
       sub_sheet: sel?.sheet ?? null,
     })
   }

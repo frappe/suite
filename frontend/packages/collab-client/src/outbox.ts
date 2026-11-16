@@ -27,6 +27,8 @@ export class Outbox {
   pending: Entry[]
   nextSeq: number
   acked: number
+  // Adopted offline under a clientID the server hasn't accepted yet; nothing of it goes out until it does
+  awaitsClaim = false
 
   constructor(
     readonly sid: string,

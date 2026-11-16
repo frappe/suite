@@ -223,6 +223,8 @@ describe('useRecording', () => {
 
     expect(recording.state.value).toBeNull()
     expect(toast.success).not.toHaveBeenCalled()
-    expect(toast.error).toHaveBeenCalledWith('Recording capacity is unavailable')
+    expect(toast.error).toHaveBeenCalledWith(
+      'Could not start recording. Recording capacity is unavailable.',
+    )
   })
 })

@@ -29,7 +29,7 @@ const { activeElementIds, focusElementId, setAutoWidth } =
   await import('@/apps/slides/stores/element')
 const { setCommandHistory } = await import('@/apps/slides/stores/historyMeta')
 const { useCommandHistory } = await import('./useCommandHistory')
-const { useTextEditor } = await import('./useTextEditor')
+const { resetGrowthBaseline, useTextEditor } = await import('./useTextEditor')
 const { setLiveSeat } = await import('@/apps/slides/stores/liveDeck')
 const { openLiveDeck } = await import('@/apps/slides/collab/liveDeck')
 const { ROOT, writeDeck } = await import('@/apps/slides/collab/deck')
@@ -183,7 +183,9 @@ describe('centred auto-width text typed into while its font loads', () => {
     deck.push()
     fonts.pending = false
     Reflect.set(fakeDiv, 'offsetWidth', 160)
+    // as the room does once the fonts load
     deck.redraw()
+    await resetGrowthBaseline()
 
     typeAtEnd('y', 180)
     deck.push()

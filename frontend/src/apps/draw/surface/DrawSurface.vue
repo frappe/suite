@@ -1,9 +1,14 @@
 <script setup lang="ts">
 import { Button } from 'frappe-ui'
-import { onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRouter } from 'vue-router'
 
-import { driveNodeRoute, useDriveDocumentCreation, type DocumentSession } from '@/apps/drive'
+import {
+  DriveDocumentHeader,
+  driveNodeRoute,
+  useDriveDocumentCreation,
+  type DocumentSession,
+} from '@/apps/drive'
 import { useHideRail } from '@/platform/rail'
 import { translate as __ } from '@/platform/translation'
 
@@ -30,6 +35,11 @@ const {
   readable,
 } = persistence
 useHideRail(() => readable.value && !loadError.value)
+const saveState = computed(() => {
+  if (error.value && dirty.value) return 'failed'
+  if (saving.value) return 'saving'
+  return dirty.value ? 'unsaved' : 'clean'
+})
 
 function reload() {
   location.reload()
@@ -88,6 +98,13 @@ onBeforeUnmount(() => {
       />
     </div>
     <template v-else>
+      <DriveDocumentHeader
+        :session="session"
+        title-label="Drawing title"
+        :save-state="saveState"
+        :view-only="!editable && !drawingLoading && !loadError"
+        :state-badge="conflict ? 'Editing paused' : ''"
+      />
       <div
         v-if="error || conflict || !recoveryAvailable"
         class="flex flex-wrap items-center gap-2 border-b border-outline-gray-2 px-3 py-2 text-sm"
@@ -118,13 +135,6 @@ onBeforeUnmount(() => {
           @click="persistence.saveDrawing"
         />
         <Button v-if="loadError" :label="__('Reload')" @click="reload" />
-      </div>
-      <div
-        v-if="!editable && !drawingLoading && !loadError"
-        class="px-3 py-1 text-sm text-ink-gray-6"
-        role="status"
-      >
-        {{ conflict ? __('Recovery preview · editing paused') : __('View only') }}
       </div>
       <DrawEditor ref="editor" class="min-h-0 flex-1" />
     </template>

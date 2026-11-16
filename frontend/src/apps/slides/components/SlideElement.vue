@@ -100,8 +100,8 @@ const elementStyle = computed(() => {
 
   return {
     position: 'absolute',
-    // Text with no saved colour draws in the browser's own, not the app's ink
-    color: 'canvastext',
+    // Text with no saved colour draws black, as old Slides did, whatever the app's theme
+    color: '#000000',
     width: elementWidth,
     height: elementHeight,
     left: `${box.left}px`,

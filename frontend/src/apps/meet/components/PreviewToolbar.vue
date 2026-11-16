@@ -6,7 +6,7 @@
       <!-- Microphone -->
       <ToolbarButton
         :variant="isMicOn ? 'default' : 'muted'"
-        :title="`Toggle Audio (${$platform === 'mac' ? '⌘+D' : 'Ctrl+D'})`"
+        :title="__('Toggle audio ({0})', [$platform === 'mac' ? '⌘+D' : 'Ctrl+D'])"
         @click="$emit('toggle-microphone')"
       >
         <MeetMicIcon v-if="isMicOn" />
@@ -16,7 +16,7 @@
       <!-- Camera -->
       <ToolbarButton
         :variant="isCameraOn ? 'default' : 'muted'"
-        :title="`Toggle Video (${$platform === 'mac' ? '⌘+E' : 'Ctrl+E'})`"
+        :title="__('Toggle video ({0})', [$platform === 'mac' ? '⌘+E' : 'Ctrl+E'])"
         @click="$emit('toggle-camera')"
       >
         <MeetCameraIcon v-if="isCameraOn" />
@@ -26,7 +26,7 @@
       <!-- Settings -->
       <ToolbarButton
         v-if="cameraPermissionGranted || microphonePermissionGranted"
-        title="Settings"
+        :title="__('Settings')"
         @click="showSettingsDialog = true"
       >
         <MeetSettingsIcon />
@@ -36,8 +36,8 @@
 
   <SettingsDialog
     v-model:open="showSettingsDialog"
-    :meetingId="meetingId"
-    :isPreview="true"
+    :meeting-id="meetingId"
+    :is-preview="true"
     @device-changed="$emit('device-changed', $event)"
   />
 </template>
@@ -45,6 +45,7 @@
 <script setup lang="ts">
 import { onScopeDispose } from 'vue'
 
+import { translate as __ } from '@/platform/translation'
 import { useRootStore } from '@/stores/root'
 
 import MeetCameraIcon from '../icons/MeetCameraIcon.vue'
@@ -95,7 +96,7 @@ const unregisterPaletteGroups = useRootStore().registerPaletteGroups('meet-previ
           commands: [
             {
               id: 'meet-settings',
-              label: 'Settings',
+              label: __('Settings'),
               enterHint: 'open meet settings',
               icon: 'lucide-settings',
               keywords: ['audio', 'video', 'camera', 'microphone', 'devices'],
