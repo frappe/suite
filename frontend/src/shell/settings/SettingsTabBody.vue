@@ -1,45 +1,37 @@
 <!--
-  One tab's body, loaded on the tab's first open. Until the chunk arrives, a
-  loading state fills the same box, so nothing moves when the body shows.
+  One tab's body, loaded on the tab's first open. Until the chunk arrives, the
+  tab's header and the settings loading state show, in the place the loaded
+  tab puts them, so nothing jumps when the body shows.
 -->
 <template>
   <component :is="body" />
 </template>
 
 <script lang="ts">
-import { LoadingIndicator } from 'frappe-ui'
 import { defineAsyncComponent, defineComponent, h, type Component } from 'vue'
 
+import { SettingsPage } from '@/platform/settings-tab'
 import { translate as __ } from '@/platform/translation'
 import type { SettingsTab } from '@/shell/settings/settings'
 
-const Loading = defineComponent({
-  name: 'SettingsTabLoading',
-  setup: () => () =>
-    h(
-      'div',
-      {
-        class: 'flex min-h-0 flex-1 items-center justify-center',
-        role: 'status',
-        'aria-label': __('Loading'),
-      },
-      h(LoadingIndicator, { class: 'size-5 text-ink-gray-5' }),
-    ),
-})
-
-const Failed = defineComponent({
-  name: 'SettingsTabFailed',
-  setup: () => () =>
-    h(
-      'div',
-      { class: 'flex min-h-0 flex-1 items-center justify-center px-6 text-center' },
+function placeholder(tab: SettingsTab, failed: boolean): Component {
+  return defineComponent({
+    name: failed ? 'SettingsTabFailed' : 'SettingsTabLoading',
+    setup: () => () =>
       h(
-        'p',
-        { class: 'text-p-base text-ink-gray-6' },
-        __('This tab could not load. Reload the page and try again.'),
+        SettingsPage,
+        { title: tab.label(), loading: !failed },
+        failed
+          ? () =>
+              h(
+                'p',
+                { class: 'py-16 text-center text-p-base text-ink-gray-6' },
+                __('This tab could not load. Reload the page and try again.'),
+              )
+          : undefined,
       ),
-    ),
-})
+  })
+}
 
 // One async component per tab for the whole session: a second open reuses
 // the loaded chunk and shows no loading state.
@@ -50,8 +42,8 @@ function bodyOf(tab: SettingsTab): Component {
   if (loaded) return loaded
   const body = defineAsyncComponent({
     loader: tab.body,
-    loadingComponent: Loading,
-    errorComponent: Failed,
+    loadingComponent: placeholder(tab, false),
+    errorComponent: placeholder(tab, true),
     delay: 0,
   })
   bodies.set(tab.id, body)

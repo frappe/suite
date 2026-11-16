@@ -83,13 +83,9 @@ import { Button } from 'frappe-ui'
 import { DialogContent, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
 import { onBeforeUnmount, onMounted, provide, shallowRef, watch } from 'vue'
 
+import { SETTINGS_PAGE_ACTIONS_ID, SETTINGS_PHONE_PAGE } from '@/platform/settings'
 import { translate as __ } from '@/platform/translation'
-import {
-  SETTINGS_PAGE_ACTIONS_ID,
-  SETTINGS_PHONE_PAGE,
-  type SettingsTab,
-  type VisibleSettingsGroup,
-} from '@/shell/settings/settings'
+import type { SettingsTab, VisibleSettingsGroup } from '@/shell/settings/settings'
 import SettingsList from '@/shell/settings/SettingsList.vue'
 import SettingsTabBody from '@/shell/settings/SettingsTabBody.vue'
 
@@ -97,10 +93,14 @@ const props = defineProps<{
   groups: readonly VisibleSettingsGroup[] | null
   failed: number
   retry: () => Promise<void>
-  /** The tab to open over the list once the groups resolve. */
-  tab?: string
 }>()
 const open = defineModel<boolean>('open', { default: false })
+/**
+ * The tab page on screen. Set from outside, it opens that tab's page: over the
+ * list once the groups resolve, or over the current page while open. It
+ * follows the page, so asking again for a tab left earlier still opens it.
+ */
+const tab = defineModel<string | undefined>('tab')
 
 provide(SETTINGS_PHONE_PAGE, true)
 
@@ -196,8 +196,8 @@ watch(
       if (depth > 0) return
       openId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
       push({ suiteSettings: 'list' })
-      pendingTab = props.tab
-      openedAtTab = !!props.tab
+      pendingTab = tab.value
+      openedAtTab = !!tab.value
       openPending()
     } else {
       page.value = null
@@ -218,6 +218,17 @@ watch(
     if (open.value && pendingTab) openPending()
   },
 )
+
+watch(page, (shown) => {
+  if (open.value) tab.value = shown?.id
+})
+
+// A tab asked for while open, such as a link from one tab to another.
+watch(tab, (requested) => {
+  if (!open.value || !requested || requested === page.value?.id) return
+  pendingTab = requested
+  openPending()
+})
 
 onMounted(() => window.addEventListener('popstate', onPopState))
 onBeforeUnmount(() => window.removeEventListener('popstate', onPopState))

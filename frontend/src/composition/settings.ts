@@ -5,7 +5,8 @@ import { loadAccountSettings } from '@/shell/settings/accountSettings'
 import type { SettingsGroupLoader, SettingsTabIdOf } from '@/shell/settings/settings'
 
 /**
- * The one Settings list, in heading order. Each loader imports its group
+ * The one Settings list, in heading order: Account, then the apps in rail
+ * order (`areaDefinitions` in `appRegistry.ts`). Each loader imports its group
  * module when Settings opens [T016].
  *
  * Meet is absent: its settings only mean anything inside a call, so the

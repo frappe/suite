@@ -19,6 +19,9 @@ class Preferences(TypedDict):
     language: str | None
     time_zone: str | None
     desk_theme: str | None
+    # Not a preference: read here so Account > Security knows whether a key exists. The secret
+    # is never read back.
+    api_key: str | None
 
 
 class PreferenceChanges(TypedDict, total=False):

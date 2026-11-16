@@ -15,6 +15,12 @@ const account = {
       icon: 'lucide-sliders-horizontal',
       body: () => import('@/shell/settings/PreferencesSettings.vue'),
     },
+    {
+      id: 'account.security',
+      label: () => __('Security'),
+      icon: 'lucide-shield',
+      body: () => import('@/shell/settings/SecuritySettings.vue'),
+    },
   ],
 } as const
 

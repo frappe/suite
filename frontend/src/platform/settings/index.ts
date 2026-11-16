@@ -15,11 +15,29 @@ export type SettingsTabId = Extract<keyof SettingsTabIds, string>
  * product can open Settings without importing the shell.
  */
 export const showSettings = ref(false)
-/** The tab `openSettings` asked for. Unset opens the first tab, or the phone list. */
+/**
+ * The tab Settings shows. `openSettings` sets it, and the dialog writes back
+ * the tab the user picks, so a later `openSettings(tab)` from inside a tab
+ * always switches. Unset opens the first tab, or the phone list.
+ */
 export const settingsTab = ref<SettingsTabId | undefined>()
 
-/** Opens Settings on `tab`. On phone, `tab` opens that tab's page over the list. */
+/**
+ * Opens Settings on `tab`. On phone, `tab` opens that tab's page over the list.
+ * Called while Settings is open, it switches to `tab`.
+ */
 export function openSettings(tab?: SettingsTabId): void {
   settingsTab.value = tab
   showSettings.value = true
 }
+
+/**
+ * Provided as `true` by the phone settings page. A tab then drops the dialog
+ * header and padding, because the page bar already shows the title.
+ *
+ * A string, not a symbol: Drive's own settings page still injects it by value.
+ */
+export const SETTINGS_PHONE_PAGE = 'app-settings-mobile-page'
+
+/** The id of the phone page bar's slot for a tab's header actions. */
+export const SETTINGS_PAGE_ACTIONS_ID = 'app-settings-page-actions'

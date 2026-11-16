@@ -41,7 +41,7 @@ export const mutationEffects = {
   'site_patch.complete_onboarding': { invalidates: ['site_get', 'account_get', 'drive.view_list'] },
   'site_patch.update_site_settings': { invalidates: ['site_get', 'workspace_get'] },
   account_patch: { invalidates: ['account_get', 'drive.view_list'] },
-  'suite.generate_user_keys': { invalidates: ['drive.webdav_get'] },
+  'suite.generate_user_keys': { invalidates: ['drive.webdav_get', 'get_preferences'] },
   invitations_post: {
     invalidates: ['invitations_get', 'users_get', 'people_get', 'people_lookup'],
   },

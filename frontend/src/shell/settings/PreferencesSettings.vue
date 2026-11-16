@@ -1,8 +1,14 @@
+<!--
+  Account > Preferences: how Suite looks and behaves for this person. Every
+  control saves on change.
+-->
 <template>
-  <SettingsTabHeader :title="__('Preferences')" />
-  <SettingsTabContent>
-    <!-- pt-2.5 + first row's py-3.5 = 24px, level with the profile tab's pt-6 -->
-    <div class="divide-y divide-outline-gray-1 pt-2.5">
+  <SettingsPage
+    :title="__('Preferences')"
+    :description="__('How Suite looks, its language and time zone, and notifications')"
+    :loading="!user.data"
+  >
+    <SettingsSection>
       <SettingsRow
         :title="__('Appearance')"
         :description="__('Choose a light, dark, or system-matched interface')"
@@ -53,22 +59,36 @@
           @update:model-value="(value) => saveUserField('time_zone', value)"
         />
       </SettingsRow>
-    </div>
-  </SettingsTabContent>
+      <!-- A phone has no keyboard to press the shortcuts with. -->
+      <SettingsRow
+        v-if="!phonePage"
+        :title="__('Keyboard shortcuts')"
+        :description="__('The keys for common actions in the app you are in')"
+      >
+        <Button :label="__('View shortcuts')" @click="viewShortcuts" />
+      </SettingsRow>
+    </SettingsSection>
+
+    <SettingsSection :title="__('Notifications')">
+      <DeviceNotificationsRow />
+    </SettingsSection>
+  </SettingsPage>
 </template>
 
 <script setup lang="ts">
-import { Combobox, Select, SettingsRow } from 'frappe-ui'
-import { computed } from 'vue'
+import { Button, Combobox, Select, SettingsRow } from 'frappe-ui'
+import { computed, inject } from 'vue'
 
 import { api, useMutation, useQuery } from '@/api'
 import { useCursor, type CursorMode } from '@/platform/cursor'
 import { toast } from '@/platform/feedback'
 import { useSession } from '@/platform/session'
+import { SETTINGS_PHONE_PAGE, showSettings } from '@/platform/settings'
+import { SettingsPage, SettingsSection } from '@/platform/settings-tab'
+import { openAreaShortcuts } from '@/platform/shortcuts'
 import { useTheme, type ThemeMode } from '@/platform/theme'
 import { translate as __ } from '@/platform/translation'
-import SettingsTabContent from '@/shell/settings/SettingsTabContent.vue'
-import SettingsTabHeader from '@/shell/settings/SettingsTabHeader.vue'
+import DeviceNotificationsRow from '@/shell/settings/DeviceNotificationsRow.vue'
 import { normalizeTimezone, useTimezones } from '@/shell/useTimezones'
 
 const THEME_OPTIONS: {
@@ -113,6 +133,15 @@ function selectCursor(value?: string | number | null) {
   const option = CURSOR_OPTIONS.find((candidate) => candidate.value === value)
   if (option) cursor.set(option.value)
 }
+const phonePage = inject(SETTINGS_PHONE_PAGE, false)
+
+// Settings closes first: the shortcuts list is a dialog of its own, and two
+// modal dialogs would fight over focus.
+function viewShortcuts() {
+  showSettings.value = false
+  openAreaShortcuts()
+}
+
 const theme = useTheme()
 const cursor = useCursor()
 useSession()
