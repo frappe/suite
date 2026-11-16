@@ -1,3 +1,4 @@
+import type { Transaction } from '@tiptap/pm/state'
 import { watchDebounced } from '@vueuse/core'
 import { toast } from 'frappe-ui'
 import { Mention } from 'frappe-ui/editor'
@@ -39,6 +40,7 @@ interface EditorHost {
       insertContent: (content: string) => void
       focus: () => void
       setTextSelection: (range: { from: number; to: number }) => void
+      command: (fn: (props: { tr: Transaction }) => boolean) => boolean
     }
     state: {
       doc: {
@@ -322,8 +324,19 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   // reloaded since still shows it by an earlier one, so a discard has to hold all of them.
   const formerIds = new Set<string>()
   let pendingSave: Promise<void> | undefined
+  // From Send until the send is answered. The send uploads before it reaches the server (see
+  // outgoingBody), and a save starting in between would create a second draft beside it, or race it
+  // to the same one.
+  let isSending = false
   const saveDraft = async () => {
-    if (pendingSave || discarded || !isDraftUpdated.value || isLoading.value || isDiscarding.value)
+    if (
+      pendingSave ||
+      isSending ||
+      discarded ||
+      !isDraftUpdated.value ||
+      isLoading.value ||
+      isDiscarding.value
+    )
       return
     isSavingDraft.value = true
     pendingSave = mail.id
@@ -394,6 +407,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     }
     sendMode.value = sendAt ? 'scheduled' : 'undo'
     isSavingDraft.value = false
+    isSending = true
     try {
       await pendingSave
       sentAs = scopeAccountId.value
@@ -412,6 +426,8 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       close()
     } catch (error) {
       if (sendAt) throw error /* Keep the composer open after refusal. */
+    } finally {
+      isSending = false
     }
   }
   // The composer is gone and its last save was refused: the draft lives only in this copy, which a
@@ -646,7 +662,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     send_at?: string
     undo_send?: boolean
   }) {
-    await uploadStrandedImages()
+    const body = await outgoingBody({ sending: !save_as_draft })
     const input: InputOf<typeof api.mail.messages.create> = {
       account: scopeAccountId.value,
       from_email: mail.from_email,
@@ -657,9 +673,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       in_reply_to: mail.in_reply_to,
       in_reply_to_id: mail.in_reply_to_id,
       forwarded_from_id: mail.forwarded_from_id,
-      ...processInlineImages(mail, {
-        sending: !save_as_draft,
-      }),
+      ...body,
       from_name: getIdentity(mail.from_email)?._name ?? '',
       save_as_draft,
       send_at,
@@ -670,16 +684,29 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     await onMailUpdateSuccess(result)
   }
   const updateDraft = useMutation(api.mail.messages.updateDraft)
-  // An image left in the body as a data URL goes as a file, not as base64 in the HTML (see
-  // uploadEmbeddedImages). Not while the editor's own uploads are running: one of those is about to
-  // replace its image, and uploading it here as well would send it twice. The host's upload counts
-  // towards that too, so a save starting meanwhile leaves these alone. The files are pointed at in
-  // the body as it is once they are up, which holds whatever was typed while they went.
-  async function uploadStrandedImages() {
-    if (options.isUploading?.()) return
-    const pointAtFiles = await uploadEmbeddedImages(mail.html_body, options.uploadInlineImage)
-    const body = pointAtFiles(mail.html_body)
-    if (body !== mail.html_body) mail.html_body = body
+  // The body and its inline attachments as a save or a send carries them. An image left in the body
+  // or the quote as a data URL goes as a file, not as base64 in the HTML (see uploadEmbeddedImages).
+  // Not while the editor's own uploads are running: one of those is about to replace its image, and
+  // uploading it here as well would send it twice. The host's upload counts towards that too, so a
+  // save starting meanwhile leaves these alone. The files are pointed at in the body as it is once
+  // they are up, which holds whatever was typed while they went: in the editor's own document when
+  // one is mounted, so its caret and anything it is still uploading stay put.
+  async function outgoingBody({ sending }: { sending: boolean }) {
+    if (!options.isUploading?.()) {
+      const uploads = await uploadEmbeddedImages(
+        mail.html_body + mail.quoted_content,
+        options.uploadInlineImage,
+      )
+      if (uploads.uploaded) {
+        const editor = host()?.editor
+        if (editor) {
+          editor.commands.command(({ tr }) => uploads.inDocument(tr.setMeta('addToHistory', false)))
+          onEditorChange(editor.getHTML())
+        } else mail.html_body = uploads.inHtml(mail.html_body)
+        mail.quoted_content = uploads.inHtml(mail.quoted_content)
+      }
+    }
+    return processInlineImages(mail, { sending })
   }
   async function updateDraftSubmit({
     submit,
@@ -690,7 +717,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     send_at?: string
     undo_send?: boolean
   }) {
-    await uploadStrandedImages()
+    const body = await outgoingBody({ sending: submit })
     const input: InputOf<typeof api.mail.messages.updateDraft> = {
       account: scopeAccountId.value,
       id: mail.id,
@@ -699,9 +726,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       cc: mail.cc,
       bcc: mail.bcc,
       subject: mail.subject,
-      ...processInlineImages(mail, {
-        sending: submit,
-      }),
+      ...body,
       from_name: getIdentity(mail.from_email)?._name ?? '',
       submit,
       send_at,

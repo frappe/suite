@@ -1,3 +1,5 @@
+import type { Transaction } from '@tiptap/pm/state'
+
 import { randomString } from '@/apps/mail/utils'
 
 /**
@@ -10,13 +12,14 @@ import { randomString } from '@/apps/mail/utils'
  * send path turns into an inline attachment like any other (processInlineImages).
  *
  * The uploads take a while and the body goes on being edited meanwhile, so this uploads from the
- * body as it was and hands back the change to make, for whatever the body is once they are done.
- * An upload that fails leaves its image as it is, for the next save to try again.
+ * body as it was and hands back the change to make, to whatever the body is once they are done:
+ * as HTML, or in an editor's document. An upload that fails leaves its image as it is, for the
+ * next save to try again.
  */
 export const uploadEmbeddedImages = async (
   html: string,
   upload: (file: File) => Promise<{ file_url: string }>,
-): Promise<(current: string) => string> => {
+) => {
   const fileUrls = new Map<string, string>()
   for (const url of new Set(dataUrlsIn(html))) {
     const file = fileOf(url)
@@ -27,7 +30,28 @@ export const uploadEmbeddedImages = async (
       // Left as a data URL; the next save tries again.
     }
   }
-  return (current) => (fileUrls.size ? pointAtFiles(current, fileUrls) : current)
+  return {
+    uploaded: fileUrls.size > 0,
+    /** `current` with each uploaded image pointed at its file. */
+    inHtml: (current: string) => (fileUrls.size ? pointAtFiles(current, fileUrls) : current),
+    /**
+     * The same change, made by `tr` to an editor's document node by node. Setting the editor's
+     * content instead would throw the caret to the end, and lose an image the editor is still
+     * uploading: that one has no `src` yet, and an image without one doesn't parse back in.
+     */
+    inDocument: (tr: Transaction) => {
+      tr.doc.descendants((node, pos) => {
+        const fileUrl = node.type.name === 'image' && fileUrls.get(node.attrs.src)
+        if (!fileUrl) return
+        tr.setNodeMarkup(pos, undefined, {
+          ...node.attrs,
+          src: fileUrl,
+          'data-cid': node.attrs['data-cid'] || randomString(10),
+        })
+      })
+      return tr.docChanged
+    },
+  }
 }
 
 const dataUrlsIn = (html: string) => {

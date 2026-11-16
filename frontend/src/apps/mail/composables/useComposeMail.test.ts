@@ -1,9 +1,10 @@
+import type { Editor as TiptapEditor } from '@tiptap/core'
 import { Editor, EditorContent } from 'frappe-ui/editor'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, onMounted, useTemplateRef } from 'vue'
 
 import type { ComposeMailData } from '@/apps/mail/types'
-import { mailEditorKit } from '@/apps/mail/utils/text-editor'
+import { CustomImageExtension, mailEditorKit } from '@/apps/mail/utils/text-editor'
 
 import { useComposeMail } from './useComposeMail'
 
@@ -40,8 +41,9 @@ vi.mock('@/api', () => ({
 }))
 vi.mock('@/apps/mail/utils', () => ({
   commitAfterUndo: vi.fn(),
+  // The body goes out with the quote below it, as the real one sends it.
   processInlineImages: (mail: ComposeMailData) => ({
-    html_body: mail.html_body,
+    html_body: mail.html_body! + (mail.quoted_content ?? ''),
     attachments: mail.attachments,
   }),
   raiseError: vi.fn(),
@@ -292,11 +294,13 @@ describe('an image held in the body as a data URL', () => {
   // A 1×1 transparent PNG.
   const png =
     'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
-  const imageOf = (html: string) =>
-    new DOMParser().parseFromString(html, 'text/html').querySelector('img')?.getAttribute('src')
+  const imagesOf = (html: string) =>
+    [...new DOMParser().parseFromString(html, 'text/html').querySelectorAll('img')].map((image) =>
+      image.getAttribute('src'),
+    )
   const savedBody = (call: number) => server.updateDraft.mock.calls[call][0].html_body
-
-  it('keeps what was typed while it uploaded', async () => {
+  // An upload that waits until the test lets it through.
+  const heldUpload = () => {
     let finish!: () => void
     const upload = vi.fn<Upload>(
       () =>
@@ -304,6 +308,11 @@ describe('an image held in the body as a data URL', () => {
           finish = () => resolve(fromPartial({ file_url: '/private/files/pasted.png' }))
         }),
     )
+    return { upload, finish: () => finish() }
+  }
+
+  it('keeps what was typed while it uploaded', async () => {
+    const { upload, finish } = heldUpload()
     const composer = compose({ upload })
     server.updateDraft.mockResolvedValue({ id: 'draft-1', status: 'Drafted', error: null })
     composer.onEditorChange(`<div>See this:</div><img src="${png}">`)
@@ -316,8 +325,110 @@ describe('an image held in the body as a data URL', () => {
 
     for (const body of [composer.mail.html_body, savedBody(0)]) {
       expect(body).toContain('See this, and the rest:')
-      expect(imageOf(body)).toBe('/private/files/pasted.png')
+      expect(imagesOf(body)).toEqual(['/private/files/pasted.png'])
     }
+  })
+
+  it('leaves the caret, and an image the editor is still uploading, where they were', async () => {
+    const { upload, finish } = heldUpload()
+    let editor!: TiptapEditor
+    let composer!: ReturnType<typeof useComposeMail>
+    const app = createApp(
+      defineComponent({
+        setup() {
+          const host = useTemplateRef<NonNullable<ComposerHost>>('editor')
+          composer = useComposeMail({
+            mailDetails: { ...draft, html_body: `<div>See this</div><img src="${png}">` },
+            reloadMails: vi.fn(),
+            close: vi.fn(),
+            isOpen: () => true,
+            host: () => host.value,
+            uploadInlineImage: upload,
+          })
+          onMounted(() => composer.onOpened())
+          return () =>
+            h(
+              Editor,
+              {
+                ref: 'editor',
+                modelValue: composer.editorContent.value,
+                extensions: mailEditorKit({ image: CustomImageExtension }),
+                onChange: composer.onEditorChange,
+              },
+              {
+                default: (slot: { editor: TiptapEditor }) => {
+                  editor = slot.editor
+                  return h(EditorContent, { editor: slot.editor })
+                },
+              },
+            )
+        },
+      }),
+    )
+    app.provide('$user', { data: { name: 'maya@example.com' } })
+    app.mount(document.body.appendChild(document.createElement('div')))
+    apps.push(app)
+    await nextTick()
+    server.updateDraft.mockResolvedValue({ id: 'draft-1', status: 'Drafted', error: null })
+
+    // The caret at the end of the first line, and an edit there to save.
+    editor.commands.setTextSelection({ from: 9, to: 9 })
+    editor.commands.insertContent(':')
+    const saving = composer.saveDraft()
+    await vi.waitFor(() => expect(upload).toHaveBeenCalledOnce())
+    // Meanwhile another image is pasted, below the caret, and starts its own upload.
+    editor
+      .chain()
+      .insertContentAt(
+        editor.state.doc.content.size,
+        { type: 'image', attrs: { src: null, uploadId: 'pasting' } },
+        { updateSelection: false },
+      )
+      .run()
+    finish()
+    await saving
+    editor.commands.insertContent(' and the rest')
+
+    const images: Record<string, unknown>[] = []
+    editor.state.doc.descendants((node) => {
+      if (node.type.name === 'image') images.push(node.attrs)
+    })
+    expect(images).toMatchObject([
+      { src: '/private/files/pasted.png' },
+      { src: null, uploadId: 'pasting' },
+    ])
+    expect(editor.getHTML()).toMatch(/^<div>See this: and the rest<\/div>/)
+    expect(imagesOf(savedBody(0))[0]).toBe('/private/files/pasted.png')
+  })
+
+  it('goes as a file from a forwarded mail’s quote too', async () => {
+    const { upload, finish } = heldUpload()
+    const composer = compose({ upload })
+    server.updateDraft.mockResolvedValue({ id: 'sent-1', status: 'Submitted', error: null })
+    composer.mail.quoted_content = `<blockquote><img src="${png}"></blockquote>`
+
+    const sending = composer.sendMail()
+    await vi.waitFor(() => expect(upload).toHaveBeenCalledOnce())
+    finish()
+    await sending
+
+    expect(imagesOf(savedBody(0))).toEqual(['/private/files/pasted.png'])
+  })
+
+  it('holds back a save that comes while a send uploads it', async () => {
+    const { upload, finish } = heldUpload()
+    const composer = compose({ upload })
+    server.updateDraft.mockResolvedValue({ id: 'sent-1', status: 'Submitted', error: null })
+    composer.onEditorChange(`<div>See this:</div><img src="${png}">`)
+
+    const sending = composer.sendMail()
+    await vi.waitFor(() => expect(upload).toHaveBeenCalledOnce())
+    await composer.saveDraft()
+    finish()
+    await sending
+
+    expect(server.updateDraft).toHaveBeenCalledOnce()
+    expect(server.updateDraft.mock.calls[0][0]).toMatchObject({ submit: true })
   })
 
   it('still saves when its upload is refused, and uploads it on the next save', async () => {
@@ -331,12 +442,12 @@ describe('an image held in the body as a data URL', () => {
     composer.onEditorChange(`<div>See this:</div><img src="${png}">`)
     await composer.saveDraft()
     expect(composer.isSaveFailed.value).toBe(false)
-    expect(imageOf(savedBody(0))).toBe(png)
+    expect(imagesOf(savedBody(0))).toEqual([png])
 
     composer.onEditorChange(`<div>See this, again:</div><img src="${png}">`)
     await composer.saveDraft()
     expect(upload).toHaveBeenCalledTimes(2)
-    expect(imageOf(savedBody(1))).toBe('/private/files/pasted.png')
+    expect(imagesOf(savedBody(1))).toEqual(['/private/files/pasted.png'])
   })
 })
 
