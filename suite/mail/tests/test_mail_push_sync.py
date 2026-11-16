@@ -26,6 +26,7 @@ CORE = "urn:ietf:params:jmap:core"
 MAIL = "urn:ietf:params:jmap:mail"
 ACCOUNT = "f7"
 USER = "user@example.test"
+COLLEAGUE = "colleague@example.test"
 
 
 def _server() -> FakeJMAPServer:
@@ -185,6 +186,36 @@ class FetchChangesRealtime(unittest.TestCase):
         draft = {"id": "e3", "draft": 1, "seen": 1, "mailboxes": [{"mailbox_id": "drafts"}]}
 
         self.assertEqual(self._created(draft), [mock.call("new_mail_created", ["drafts"], user=USER)])
+
+    def test_a_shared_account_announces_changes_to_every_member(self):
+        # The sync state is the account's: once this fetch moves it on, the other member's fetch
+        # never sees these changes, so the other member hears them now or not at all.
+        with mock.patch.object(mail_message, "get_account_users", return_value=[USER, COLLEAGUE]):
+            events = self._events(updated=["e1"])
+
+        self.assertEqual(
+            events, [mock.call("mail_changed", user=USER), mock.call("mail_changed", user=COLLEAGUE)]
+        )
+
+    def test_new_mail_in_a_shared_account_is_announced_to_every_member(self):
+        received = {
+            "id": "e1",
+            "thread_id": "t1",
+            "draft": 0,
+            "seen": 0,
+            "mailboxes": [{"mailbox_id": "inbox"}],
+        }
+
+        with mock.patch.object(mail_message, "get_account_users", return_value=[COLLEAGUE, USER]):
+            events = self._created(received)
+
+        self.assertCountEqual(
+            events,
+            [
+                mock.call("new_mail_created", ["inbox"], user=USER),
+                mock.call("new_mail_created", ["inbox"], user=COLLEAGUE),
+            ],
+        )
 
     def test_mail_in_an_unsubscribed_folder_moves_no_list(self):
         hidden = {"id": "e4", "thread_id": "t1", "draft": 0, "seen": 0, "mailboxes": [{"mailbox_id": "old"}]}
@@ -356,11 +387,12 @@ class SyncChanges(unittest.TestCase):
         self.assertEqual(record.msg["account"], "a1")
         self.assertIsInstance(record.exc_info[1], RuntimeError)
 
-    def test_a_state_the_server_cannot_answer_from_is_answered_as_failed_with_no_error_log_row(self):
-        # The client asks every few seconds: an error out of the request would put an Error Log row
-        # on each ask while it lasts. It hears `failed` instead, and waits longer.
+    def test_a_state_the_server_cannot_answer_from_starts_the_account_over_from_now(self):
+        # The server answers cannotCalculateChanges for that state on every ask, so treating it as
+        # passing would leave the lists still for good and every account at the backoff.
         server = _server()
         server.fail("Email/changes", "cannotCalculateChanges")
+        server.respond("Email/get", {"accountId": ACCOUNT, "state": "s9", "list": [], "notFound": []})
 
         with (
             mock.patch.object(mail_message, "acquire_lock", return_value="lock-1"),
@@ -368,13 +400,18 @@ class SyncChanges(unittest.TestCase):
             mock.patch.object(mail_message, "get_sync_state", return_value="s1"),
             mock.patch.object(mail_message, "update_sync_state") as update_sync_state,
             mock.patch.object(mail_message, "get_jmap_client", return_value=_client(server)),
-            mock.patch.object(mail_message, "log_mail_error") as log_mail_error,
+            mock.patch.object(mail_message, "get_data_store") as get_data_store,
+            mock.patch.object(mail_message, "get_account_users", return_value=[USER]),
+            mock.patch.object(mail_message.frappe, "publish_realtime") as publish_realtime,
         ):
             found = self._sync([ACCOUNT])
 
-        self.assertEqual(found, {"new_mail_in": [], "changed": False, "failed": True})
-        log_mail_error.assert_not_called()
-        update_sync_state.assert_not_called()
+        self.assertEqual(found, {"new_mail_in": [], "changed": True, "failed": False})
+        update_sync_state.assert_called_once_with(ACCOUNT, type="email", state="s9")
+        # What changed in between is unknown: no cached message is trusted, and every list reads again.
+        get_data_store.assert_called_once_with(ACCOUNT)
+        get_data_store.return_value.delete_all.assert_called_once_with(mail_message.Entity.EMAIL)
+        self.assertEqual(publish_realtime.call_args_list, [mock.call("mail_changed", user=USER)])
 
 
 class FetchChangesReactions(unittest.TestCase):

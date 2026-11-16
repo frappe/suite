@@ -22,11 +22,12 @@ from frappe.utils import (
     random_string,
     time_diff_in_seconds,
 )
+from jmap import MethodError
 
 from suite.mail import classification
 from suite.mail.doctype.mail_queue.mail_queue import MailQueue
 from suite.mail.doctype.sieve_script.sieve_script import UNSCREENED_KEYWORD
-from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
+from suite.mail.doctype.user_account.user_account import get_account_users, get_user_for_jmap_account
 from suite.mail.jmap import (
     SetResult,
     SuiteJMAPClient,
@@ -1814,6 +1815,31 @@ def _fetch_changes_lock(user: str, account: str) -> str:
     return f"fetch_changes:{user}:{account}"
 
 
+def _announce(user: str, account: str, event: str, *message) -> None:
+    """Tell the open tabs of every user of the account, not only of the user whose fetch ran.
+
+    The sync state is the account's: once one member's fetch moves it on, no other member's fetch
+    sees these changes again, so a shared mailbox's other members hear them now or never.
+    """
+
+    for member in dict.fromkeys([user, *get_account_users(account)]):
+        frappe.publish_realtime(event, *message, user=member)
+
+
+def _start_over(user: str, account: str, server_state: str) -> ListChanges:
+    """The server can't tell what changed since the stored state, so the account starts again from now.
+
+    Waiting would not help: the server answers the same for that state every time, and the lists would
+    never move again. What changed in between is unknown, so no cached message is trusted and every
+    list reads again in full.
+    """
+
+    get_data_store(account).delete_all(Entity.EMAIL)
+    update_sync_state(account, type="email", state=server_state)
+    _announce(user, account, "mail_changed")
+    return ListChanges(new_mail_in=[], changed=True)
+
+
 def fetch_changes(
     user: str, account: str, email_state: str | None = None, ctx: dict | None = None
 ) -> ListChanges:
@@ -1864,9 +1890,16 @@ def fetch_changes(
         with client.batch() as b:
             h = b.mail.email.changes(since_state=current_state)
 
-        # A method-level failure (e.g. cannotCalculateChanges) raises here, landing in the
-        # except below — the sync state must not advance past changes we never processed.
-        result = h.result
+        # A method-level failure raises here, landing in the except below — the sync state must
+        # not advance past changes we never processed.
+        try:
+            result = h.result
+        except MethodError as e:
+            # Only the server's current state, read off an empty Email/get, lets the account start over.
+            if e.type != "cannotCalculateChanges" or not (server_state := get_email_state(client)):
+                raise
+            logger.warning("email-changes-not-calculable", new_state=server_state)
+            return _start_over(user, account, server_state)
 
         if created_ids := result.created:
             logger.info("new-messages-created", count=len(created_ids))
@@ -1942,7 +1975,7 @@ def fetch_changes(
 
                 if mailboxes_to_reload:
                     found["new_mail_in"] = list(mailboxes_to_reload)
-                    frappe.publish_realtime("new_mail_created", found["new_mail_in"], user=user)
+                    _announce(user, account, "new_mail_created", found["new_mail_in"])
 
                 try:
                     # Imported here: suite.mail.reminders imports this module.
@@ -1957,7 +1990,7 @@ def fetch_changes(
                     logger.info("marking-reactions-read", count=len(reactions))
                     try_set_seen(account, reactions, True)
                     found["changed"] = True
-                    frappe.publish_realtime("mail_changed", user=user)
+                    _announce(user, account, "mail_changed")
 
         if updated_ids := _without_classification_echoes(account, client, result.updated):
             logger.info("messages-updated", count=len(updated_ids))
@@ -1971,7 +2004,7 @@ def fetch_changes(
             # Read, moved or deleted on another device: no new mail, but the lists this user has
             # open elsewhere are stale.
             found["changed"] = True
-            frappe.publish_realtime("mail_changed", user=user)
+            _announce(user, account, "mail_changed")
 
         new_state = result.new_state
 
