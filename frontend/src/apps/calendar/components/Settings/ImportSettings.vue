@@ -1,6 +1,5 @@
 <template>
-  <AppSettingsHeader :title="__('Import')" />
-  <AppSettingsBody>
+  <SettingsSection :title="__('Import')">
     <div class="flex flex-col gap-5">
       <FormControl
         v-model="calendarImport.format"
@@ -52,7 +51,7 @@
         class="mb-2.5"
       />
     </div>
-  </AppSettingsBody>
+  </SettingsSection>
 </template>
 
 <script setup lang="ts">
@@ -64,8 +63,7 @@ import { useCalendarSocket } from '@/apps/calendar/socket'
 import { userStore } from '@/apps/calendar/stores/user'
 import { raiseToast } from '@/apps/calendar/utils'
 import { destinationOptions } from '@/apps/calendar/utils/calendars'
-import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
-import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import SettingsSection from '@/platform/settings/SettingsSection.vue'
 import { translate as __ } from '@/platform/translation'
 import { useChunkedUpload } from '@/utils/useChunkedUpload'
 

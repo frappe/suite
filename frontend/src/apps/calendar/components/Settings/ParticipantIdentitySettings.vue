@@ -1,5 +1,5 @@
 <template>
-  <AppSettingsHeader :title="__('Participant Identity')">
+  <SettingsSection :title="__('Invite addresses')">
     <template #actions>
       <Button
         v-if="form"
@@ -11,8 +11,6 @@
       />
       <Button icon-left="lucide-plus" :label="__('New')" variant="outline" @click="showAddDialog" />
     </template>
-  </AppSettingsHeader>
-  <AppSettingsBody>
     <template v-if="participantIdentities?.data?.length">
       <div class="flex min-h-full flex-col">
         <div class="flex-1 space-y-4">
@@ -125,7 +123,7 @@
         ],
       }"
     />
-  </AppSettingsBody>
+  </SettingsSection>
 </template>
 
 <script setup lang="ts">
@@ -135,8 +133,7 @@ import { computed, ref, watch } from 'vue'
 import { api, useMutation, type InputOf } from '@/api'
 import { userStore } from '@/apps/calendar/stores/user'
 import { raiseToast } from '@/apps/calendar/utils'
-import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
-import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import SettingsSection from '@/platform/settings/SettingsSection.vue'
 import { translate as __ } from '@/platform/translation'
 
 const store = userStore()

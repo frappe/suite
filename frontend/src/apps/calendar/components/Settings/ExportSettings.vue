@@ -1,6 +1,5 @@
 <template>
-  <AppSettingsHeader :title="__('Export')" />
-  <AppSettingsBody>
+  <SettingsSection :title="__('Export')">
     <div class="flex flex-col gap-5">
       <FormControl
         v-model="calendarExport.format"
@@ -77,7 +76,7 @@
         class="mb-2.5"
       />
     </div>
-  </AppSettingsBody>
+  </SettingsSection>
 </template>
 
 <script setup lang="ts">
@@ -88,8 +87,7 @@ import { api, useMutation, useQuery, type InputOf } from '@/api'
 import { useCalendarSocket } from '@/apps/calendar/socket'
 import { userStore } from '@/apps/calendar/stores/user'
 import { utcDayEnd, utcDayStart } from '@/apps/calendar/utils/datetime'
-import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
-import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import SettingsSection from '@/platform/settings/SettingsSection.vue'
 
 const store = userStore()
 const { accountId } = store

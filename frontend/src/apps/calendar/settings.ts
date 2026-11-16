@@ -1,6 +1,5 @@
 import { defineComponent, h, type Component } from 'vue'
 
-import { api, client } from '@/api'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 
@@ -20,7 +19,7 @@ function scoped(load: () => Promise<BodyModule>) {
   }
 }
 
-const calendar = {
+export const calendarSettings = {
   label: () => __('Calendar'),
   condition: () => useSession().capabilities.value.jmap,
   tabs: [
@@ -31,26 +30,6 @@ const calendar = {
       body: scoped(() => import('@/apps/calendar/components/Settings/CalendarsSettings.vue')),
     },
     {
-      id: 'calendar.participant-identity',
-      label: () => __('Participant Identity'),
-      icon: 'lucide-contact',
-      body: scoped(
-        () => import('@/apps/calendar/components/Settings/ParticipantIdentitySettings.vue'),
-      ),
-    },
-    {
-      id: 'calendar.import',
-      label: () => __('Import'),
-      icon: 'lucide-hard-drive-download',
-      body: scoped(() => import('@/apps/calendar/components/Settings/ImportSettings.vue')),
-    },
-    {
-      id: 'calendar.export',
-      label: () => __('Export'),
-      icon: 'lucide-hard-drive-upload',
-      body: scoped(() => import('@/apps/calendar/components/Settings/ExportSettings.vue')),
-    },
-    {
       id: 'calendar.advanced',
       label: () => __('Advanced'),
       icon: 'lucide-code',
@@ -58,16 +37,3 @@ const calendar = {
     },
   ],
 } as const
-
-/** Reads the client config for the Advanced tab, then resolves the group. */
-export async function calendarSettings() {
-  const config = useSession().capabilities.value.jmap
-    ? await client.query(api.mail.calendar.clientConfig).catch(() => undefined)
-    : undefined
-  return {
-    ...calendar,
-    tabs: calendar.tabs.filter(
-      (tab) => tab.id !== 'calendar.advanced' || Boolean(config?.server_url),
-    ),
-  }
-}
