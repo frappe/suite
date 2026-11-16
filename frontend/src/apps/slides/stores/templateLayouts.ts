@@ -1,6 +1,7 @@
-import { toRaw } from 'vue'
+import { reactive, toRaw } from 'vue'
 import type * as Y from 'yjs'
 
+import { api, client } from '@/api'
 import type { GetTemplatesOutputTemplate } from '@/apps/slides/client/generated'
 import { drawnSlides } from '@/apps/slides/collab/drawnDeck'
 import { templateList } from '@/apps/slides/stores/presentation'
@@ -23,6 +24,15 @@ let readSaved: ReadSaved | null = null
 // one read per listed template; a failed or empty one is forgotten, so the next need tries again
 const drawings = new WeakMap<GetTemplatesOutputTemplate, Promise<void>>()
 
+// a signed url lasts fifteen minutes
+const MEDIA_FRESH_MS = 10 * 60_000
+const picturedNodes = new Set<string>()
+const mediaReadAt = new Map<string, number>()
+const mediaUrls = reactive(new Map<string, string>())
+
+/** The url of a picture a converted template holds, or '' when no listed template holds it. */
+export const templateMediaUrl = (id: string) => mediaUrls.get(id) ?? ''
+
 /** The surface hands over how to read a saved presentation, since the stores hold no credentials. */
 export function setTemplateReader(read: ReadSaved) {
   readSaved = read
@@ -39,6 +49,27 @@ export async function drawTemplateLayouts(names?: string[]) {
     (template) => template.is_converted && (!names || names.includes(template.name)),
   )
   await Promise.all(templates.map(drawOnce))
+  templates.forEach(({ node }) => readMedia(node))
+}
+
+// the open presentation's session lists only its own media, so a template's are read from it
+function readMedia(node: string) {
+  const isFresh = Date.now() - (mediaReadAt.get(node) ?? -Infinity) < MEDIA_FRESH_MS
+  if (isFresh || !picturedNodes.has(node)) {
+    return
+  }
+
+  mediaReadAt.set(node, Date.now())
+  client
+    .query(api.drive.nodes.media, { node })
+    .then(({ media }) => {
+      for (const { node: id, url } of media) {
+        mediaUrls.set(id, url)
+      }
+    })
+    .catch(() => {
+      mediaReadAt.delete(node)
+    })
 }
 
 function drawOnce(template: GetTemplatesOutputTemplate) {
@@ -57,11 +88,12 @@ function drawOnce(template: GetTemplatesOutputTemplate) {
           return
         }
 
+        const slides = drawnSlides(doc)
+        if (slides.some(({ elements }) => elements.some(({ src, poster }) => src || poster))) {
+          picturedNodes.add(template.node)
+        }
         // SAFETY: a drawn slide carries a row's fields under their row names, its elements as a list
-        template.layouts = withPictures(
-          drawnSlides(doc),
-          template.thumbnails,
-        ) as typeof template.layouts
+        template.layouts = withPictures(slides, template.thumbnails) as typeof template.layouts
       })
       .catch(() => {
         drawings.delete(listed)

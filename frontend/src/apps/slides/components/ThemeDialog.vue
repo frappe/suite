@@ -39,12 +39,12 @@
 
 <script setup lang="ts">
 import { Dialog } from 'frappe-ui'
-import { computed } from 'vue'
+import { computed, provide } from 'vue'
 
 import type { GetTemplatesOutputTemplate } from '@/apps/slides/client/generated'
 import SlidePreview from '@/apps/slides/components/SlidePreview.vue'
 import { presentationTheme, templateList } from '@/apps/slides/stores/presentation'
-import { firstLayout } from '@/apps/slides/stores/templateLayouts'
+import { firstLayout, templateMediaUrl } from '@/apps/slides/stores/templateLayouts'
 import { getThumbnailCardStyles } from '@/apps/slides/utils/helpers'
 
 type Theme = GetTemplatesOutputTemplate
@@ -62,6 +62,8 @@ const props = defineProps({
 const showThemeDialog = defineModel<boolean>('open', { required: true })
 
 const emit = defineEmits(['create', 'update'])
+
+provide('templateMediaUrl', templateMediaUrl)
 
 const dialogTitle = computed(() => (props.update ? 'Set theme' : 'Select theme'))
 const dialogDescription = computed(() =>
