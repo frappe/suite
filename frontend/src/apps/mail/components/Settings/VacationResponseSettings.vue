@@ -10,7 +10,9 @@
   >
     <SettingsSection v-if="vacationResponse.data">
       <SettingsForm :dirty="dirty" :save="handleSave">
+        <!-- -mt-2 takes back the form's top padding: the row has its own. -->
         <SettingsRow
+          class="-mt-2"
           :title="__('Send a vacation response')"
           :description="__('People who write to you between these dates get the message below')"
         >
@@ -37,7 +39,7 @@
           :disabled="!draft.enabled"
         />
         <div class="flex flex-col gap-1.5">
-          <span class="text-xs text-ink-gray-5">{{ __('Message') }}</span>
+          <span class="text-sm leading-tighter text-ink-gray-6">{{ __('Message') }}</span>
           <MailRichTextField
             v-model="draft.html_body"
             :placeholder="__('I am away until…')"

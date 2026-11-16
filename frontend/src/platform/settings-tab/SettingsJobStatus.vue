@@ -1,7 +1,7 @@
 <!--
-  The last row of the Import and Export forms: whether a job is running, a
-  link to it or to past jobs, and the button that starts one (default slot).
-  Styled as Mail's Import & export status line.
+  The last row of an import or export form: whether a background job is
+  running, a link to it or to past jobs, and the button that starts one
+  (default slot). Put it in the `SettingsSection` under the rows it starts.
 -->
 <template>
   <div class="flex flex-wrap items-center justify-between gap-3 py-3.5">

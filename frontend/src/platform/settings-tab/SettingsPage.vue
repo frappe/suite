@@ -4,8 +4,10 @@
 
   - The title equals the tab's sidebar label; the description is one line
     that says what the tab is for.
-  - `#actions` sits right of the title. Keep it for actions on the whole tab;
-    a "New" button belongs to its section, and Save to its form.
+  - `#actions` sits right of the title, for actions on the whole tab. When
+    the body is one untitled list (Folders, Calendars), its "New" button goes
+    here; when the tab has several titled lists, each "New" goes in its
+    section header. Save belongs to its form.
   - `loading` shows the one loading state in place of the body. Pass it while
     the data the tab renders is still on its way, so no tab shows blank.
 
@@ -20,10 +22,12 @@
     <Teleport v-if="$slots.actions" defer :to="`#${SETTINGS_PAGE_ACTIONS_ID}`">
       <slot name="actions" />
     </Teleport>
-    <div class="flex flex-col gap-8 px-4 pb-8 pt-4">
+    <div class="flex flex-col gap-6 px-4 pb-8 pt-4">
       <p v-if="description" class="text-p-base text-ink-gray-6">{{ description }}</p>
-      <SettingsLoading v-if="loading" />
-      <slot v-else />
+      <div class="flex flex-col gap-8">
+        <SettingsLoading v-if="loading" />
+        <slot v-else />
+      </div>
     </div>
   </template>
   <template v-else>

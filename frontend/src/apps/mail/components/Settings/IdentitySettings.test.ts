@@ -5,6 +5,7 @@ import IdentitySettings from './IdentitySettings.vue'
 
 type IdentityRow = { name: string; id: string; email: string; _name: string; may_delete: 0 | 1 }
 
+// SAFETY: the empty literals only seed the mock state; the tests fill them with these shapes.
 const state = vi.hoisted(() => ({
   identities: { data: [] as IdentityRow[] },
   runs: [] as { id: string; input: unknown }[],
@@ -47,6 +48,7 @@ vi.mock('@/platform/settings-tab', async () => {
       setup: (props) => () =>
         h('div', { 'data-row': props.title }, [
           props.title,
+          // SAFETY: the tab passes DropdownOptions items, each with a label and onClick.
           ...((props.menu ?? []) as { label: string; onClick: () => void }[]).map((item) =>
             h('button', { onClick: item.onClick }, item.label),
           ),

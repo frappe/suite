@@ -48,7 +48,6 @@
         <SettingsLoading v-if="!screenedAddresses.data" />
         <SettingsEmpty
           v-else-if="!screenedAddresses.data.length"
-          icon="lucide-user-check"
           :title="__('No screened senders yet')"
           :description="
             __('Accept or block a sender, or a whole domain such as @example.com, to list it here.')

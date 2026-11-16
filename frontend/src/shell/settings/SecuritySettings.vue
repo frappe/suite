@@ -11,52 +11,52 @@
     :description="__('Your password, and the key apps use to sign in for you')"
     :loading="!user.data"
   >
-    <template v-if="user.data">
-      <SettingsSection>
-        <SettingsRow
-          :title="__('Password')"
-          :description="__('Change the password you sign in with')"
-        >
-          <Button :label="__('Change password')" @click="showPasswordDialog = true" />
-        </SettingsRow>
-      </SettingsSection>
-
-      <SettingsSection
-        :title="__('API key')"
-        :description="
-          __(
-            'WebDAV clients for Drive, and scripts that use the API, can sign in with a key and secret in place of your password.',
-          )
-        "
+    <SettingsSection v-if="user.data">
+      <SettingsRow
+        :title="__('Password')"
+        :description="__('Change the password you sign in with')"
       >
-        <template v-if="user.data.api_key">
-          <SettingsCopyField :label="__('API key')" :value="user.data.api_key" />
-          <SettingsRow
-            :title="__('Regenerate secret')"
-            :description="__('Apps that use the current secret stop signing in')"
-          >
+        <Button :label="__('Change password')" @click="showPasswordDialog = true" />
+      </SettingsRow>
+      <!-- A SettingsRow, with the key under the description: the left side
+           of frappe-ui's row takes no slot. -->
+      <div class="flex items-center gap-8 py-3.5">
+        <div class="flex min-w-0 flex-1 flex-col gap-1">
+          <span class="text-base-medium leading-tighter text-ink-gray-8">{{ __('API key') }}</span>
+          <p class="text-base leading-5 text-ink-gray-6">
+            {{
+              __(
+                'WebDAV clients for Drive, and scripts that use the API, sign in with a key and secret in place of your password',
+              )
+            }}
+          </p>
+          <div v-if="user.data.api_key" class="mt-1 flex min-w-0 items-center gap-1">
+            <code class="truncate font-mono text-sm text-ink-gray-8">{{ user.data.api_key }}</code>
             <Button
-              :label="__('Regenerate')"
-              :loading="generate.isPending"
-              @click="regenerateKeys"
+              variant="ghost"
+              size="sm"
+              icon="lucide-copy"
+              :aria-label="__('Copy {0}', [__('API key')])"
+              @click="copyKey(user.data.api_key)"
             />
-          </SettingsRow>
-        </template>
-        <SettingsEmpty
+          </div>
+        </div>
+        <Button
+          v-if="user.data.api_key"
+          class="shrink-0"
+          :label="__('Regenerate')"
+          :loading="generate.isPending"
+          @click="regenerateKeys"
+        />
+        <Button
           v-else
-          icon="lucide-key-round"
-          :title="__('No API key yet')"
-          :description="__('Generate one to connect an app without your password.')"
-        >
-          <Button
-            variant="solid"
-            :label="__('Generate key')"
-            :loading="generate.isPending"
-            @click="generateKeys"
-          />
-        </SettingsEmpty>
-      </SettingsSection>
-    </template>
+          class="shrink-0"
+          :label="__('Generate key')"
+          :loading="generate.isPending"
+          @click="generateKeys"
+        />
+      </div>
+    </SettingsSection>
   </SettingsPage>
 
   <Dialog v-model:open="showPasswordDialog" v-bind="passwordDialogOptions">
@@ -122,12 +122,7 @@ import { computed, ref, watch } from 'vue'
 import { api, useMutation, useQuery } from '@/api'
 import { confirm, toast } from '@/platform/feedback'
 import { useSession } from '@/platform/session'
-import {
-  SettingsCopyField,
-  SettingsEmpty,
-  SettingsPage,
-  SettingsSection,
-} from '@/platform/settings-tab'
+import { SettingsCopyField, SettingsPage, SettingsSection } from '@/platform/settings-tab'
 import { translate as __ } from '@/platform/translation'
 
 const session = useSession()
@@ -193,6 +188,15 @@ const showSecret = ref(false)
 async function generateKeys() {
   keys.value = await generate.run({ user: userId })
   showSecret.value = true
+}
+
+async function copyKey(key: string) {
+  try {
+    await navigator.clipboard.writeText(key)
+    toast.success(__('Copied'))
+  } catch {
+    toast.error(__('Could not copy. Select the text and copy it.'))
+  }
 }
 
 async function regenerateKeys() {

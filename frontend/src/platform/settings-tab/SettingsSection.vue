@@ -5,7 +5,9 @@
   - `title` is the one section heading style; leave it out only for a tab's
     first section when the tab title already says what it holds.
   - `description` is one line under the heading.
-  - `#actions` sits right of the heading: the "New" button of a list.
+  - `#actions` sits right of the heading: the "New" button of a titled list.
+    A tab whose body is one untitled list puts it in `SettingsPage`'s
+    `#actions` instead.
   - The default slot holds the content: `SettingsRow`s (from frappe-ui),
     `SettingsListRow`s, a `SettingsEmpty` or a `SettingsForm`. Its direct
     children are divided by a hairline, so rows need no borders of their own.

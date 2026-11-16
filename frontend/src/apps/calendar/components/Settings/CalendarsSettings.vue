@@ -9,10 +9,10 @@
     :description="__('Your calendars and the ones shared with you')"
     :loading="!calendars.data"
   >
+    <template #actions>
+      <Button icon-left="lucide-plus" :label="__('New')" @click="create" />
+    </template>
     <SettingsSection v-if="calendars.data">
-      <template #actions>
-        <Button icon-left="lucide-plus" :label="__('New')" @click="create" />
-      </template>
       <SettingsListRow
         v-for="calendar in calendars.data"
         :key="calendar.name"
@@ -34,7 +34,6 @@
       </SettingsListRow>
       <SettingsEmpty
         v-if="!calendars.data.length"
-        icon="lucide-calendar-days"
         :title="__('No calendars yet')"
         :description="__('Events live in a calendar. Make one to start adding events.')"
       />

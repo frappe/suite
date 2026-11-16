@@ -1,29 +1,37 @@
+<!--
+  The Import side of Mail > Import & export, for mail: a file of messages goes into one folder.
+  The file uploads first; Start import then queues the job, and the status line tracks it.
+-->
 <template>
-  <div class="flex flex-col gap-4 py-3.5">
-    <FormControl
-      v-model="mailImport.format"
-      :label="__('Format')"
-      type="select"
-      :options="FORMAT_OPTIONS"
-      required
+  <SettingsRow :title="__('Format')" :description="__('The kind of file you are importing')">
+    <Select
+      :model-value="mailImport.format"
+      :options="FORMATS"
+      @update:model-value="selectFormat"
     />
-    <div
-      v-if="['eml', 'mbox', 'maildir'].includes(mailImport.format)"
-      class="grid gap-4 sm:grid-cols-2"
-    >
-      <FormControl
-        v-model="mailImport.mailbox"
-        :label="__('Folder')"
-        type="select"
+  </SettingsRow>
+  <!-- The folder and read state apply to .eml, mbox and Maildir imports only. -->
+  <template v-if="FOLDER_FORMATS.includes(mailImport.format)">
+    <SettingsRow :title="__('Folder')" :description="__('The folder the messages go into')">
+      <Select
+        :model-value="mailImport.mailbox ?? ''"
         :options="mailboxOptions"
+        class="max-w-48 sm:max-w-64"
+        :placeholder="__('Select folder')"
+        @update:model-value="selectMailbox"
       />
-      <FormControl
-        v-model="mailImport.seen"
-        :label="__('Mark as read')"
-        type="select"
-        :options="markAsReadOptions"
+    </SettingsRow>
+    <SettingsRow
+      :title="__('Mark as read')"
+      :description="__('Import the messages as already read')"
+    >
+      <Switch
+        :model-value="mailImport.seen ?? true"
+        @update:model-value="(on: boolean) => (mailImport.seen = on)"
       />
-    </div>
+    </SettingsRow>
+  </template>
+  <SettingsRow :title="__('File')" :description="fileDescription">
     <input
       ref="fileInput"
       type="file"
@@ -31,57 +39,73 @@
       :accept="acceptTypes"
       @change="onFileSelected"
     />
-    <div class="flex flex-col gap-1.5">
-      <span class="text-xs text-ink-gray-5">{{ __('File') }}</span>
-      <div class="flex items-center gap-3">
-        <Button
-          icon-left="lucide-upload"
-          :label="uploading ? __('Uploading ({0}%)', [progress]) : __('Choose file')"
-          :loading="uploading"
-          @click="fileInput?.click()"
-        />
-        <span class="min-w-0 truncate text-p-sm text-ink-gray-5">{{ fileUploadSubtitle }}</span>
-      </div>
-    </div>
-    <div class="flex flex-wrap items-center justify-between gap-3">
-      <p class="text-p-sm text-ink-gray-5">
-        {{ importSubtitle }}
-        <a class="text-ink-gray-7 underline underline-offset-2" :href="importHref" target="_blank">
-          {{ importLinkText }}
-        </a>
-      </p>
-      <Button
-        variant="solid"
-        :label="__('Start import')"
-        :loading="Boolean(ongoingImport.data?.name) || createMailImport.isPending"
-        :disabled="ongoingImport.isFetching || Boolean(ongoingImport.error) || !mailImport.file"
-        @click="createMailImportSubmit()"
-      />
-    </div>
-    <ErrorMessage v-if="createMailImport.error" :message="createMailImport.error?.message" />
-  </div>
+    <Button
+      icon-left="lucide-upload"
+      :label="uploading ? __('Uploading ({0}%)', [progress]) : __('Choose file')"
+      :loading="uploading"
+      @click="fileInput?.click()"
+    />
+  </SettingsRow>
+  <SettingsJobStatus :status="importSubtitle" :href="importHref" :link-label="importLinkText">
+    <Button
+      variant="solid"
+      :label="__('Start import')"
+      :loading="Boolean(ongoingImport.data?.name) || createMailImport.isPending"
+      :disabled="ongoingImport.isFetching || Boolean(ongoingImport.error) || !mailImport.file"
+      @click="createMailImportSubmit()"
+    />
+  </SettingsJobStatus>
+  <ErrorMessage
+    v-if="createMailImport.error"
+    class="py-2"
+    :message="createMailImport.error?.message"
+  />
 </template>
 
 <script setup lang="ts">
-import { Button, ErrorMessage, FormControl } from 'frappe-ui'
+import { Button, ErrorMessage, Select, SettingsRow, Switch } from 'frappe-ui'
 import { computed, onScopeDispose, reactive, ref, watch } from 'vue'
 
 import { api, useMutation, useQuery, type InputOf } from '@/api'
 import { useMailSocket } from '@/apps/mail/socket'
 import { userStore } from '@/apps/mail/stores/user'
 import { raiseError } from '@/apps/mail/utils'
+import { SettingsJobStatus } from '@/platform/settings-tab'
 import { useChunkedUpload } from '@/utils/useChunkedUpload'
+
+type ImportInput = InputOf<typeof api.mail.exchanges.importMail>
+
+const FORMATS: { label: string; value: ImportInput['format'] }[] = [
+  { label: __('Email files (.eml)'), value: 'eml' },
+  { label: __('JMAP archive'), value: 'jmap' },
+  { label: __('mbox'), value: 'mbox' },
+  { label: __('Maildir'), value: 'maildir' },
+  { label: __('Maildir, nested folders'), value: 'maildir-nested' },
+]
+
+const FOLDER_FORMATS: ImportInput['format'][] = ['eml', 'mbox', 'maildir']
 
 const store = userStore()
 const { mailboxes } = store
 const user = store.userResource
 const socket = useMailSocket()
-const mailImport = reactive<Omit<InputOf<typeof api.mail.exchanges.importMail>, 'account'>>({
+const mailImport = reactive<Omit<ImportInput, 'account'>>({
   format: 'eml',
   file: '',
   mailbox: '',
   seen: true,
 })
+const fileName = ref('')
+
+function selectFormat(value?: string | number | null) {
+  const format = FORMATS.find((option) => option.value === value)?.value
+  if (format) mailImport.format = format
+}
+
+function selectMailbox(value?: string | number | null) {
+  if (typeof value === 'string') mailImport.mailbox = value
+}
+
 const fileInput = ref<HTMLInputElement | null>(null)
 const { uploading, progress, upload } = useChunkedUpload()
 const acceptTypes = computed(() => (mailImport.format === 'eml' ? '.eml' : '.zip,.tgz,.tar.gz'))
@@ -100,6 +124,7 @@ const onFileSelected = async (event: Event) => {
       private: true,
     })
     mailImport.file = uploaded.file_url
+    fileName.value = file.name
   } catch (error) {
     raiseError(error)
   }
@@ -110,20 +135,10 @@ const mailboxOptions = computed(() =>
     value: m.id,
   })),
 )
-const markAsReadOptions = computed(() => [
-  {
-    label: __('Yes'),
-    value: true,
-  },
-  {
-    label: __('No'),
-    value: false,
-  },
-])
-const fileUploadSubtitle = computed(() => {
-  if (mailImport.file) return __('Uploaded {0}', [mailImport.file.split('/').pop() ?? ''])
-  if (mailImport.format === 'eml') return __('Supported file format: .eml')
-  return __('Supported file formats: .zip, .tar, .tgz')
+const fileDescription = computed(() => {
+  if (mailImport.file) return __('Uploaded: {0}', [fileName.value])
+  if (mailImport.format === 'eml') return __('An .eml file')
+  return __('A .zip, .tar or .tgz archive')
 })
 watch(
   mailboxOptions,
@@ -175,5 +190,4 @@ const importLinkText = computed(() => {
   if (ongoingImport.data?.name) return __('Track status')
   return __('View history')
 })
-const FORMAT_OPTIONS = ['eml', 'jmap', 'mbox', 'maildir', 'maildir-nested']
 </script>

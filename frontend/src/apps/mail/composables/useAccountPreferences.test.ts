@@ -3,6 +3,7 @@ import { createApp, defineComponent, nextTick, reactive } from 'vue'
 
 import { useAccountPreferences } from './useAccountPreferences'
 
+// SAFETY: the null and empty literals only seed the mock state; the tests fill them with these shapes.
 const state = vi.hoisted(() => ({
   saved: null as { data: Record<string, unknown> | undefined } | null,
   sent: [] as unknown[],

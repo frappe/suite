@@ -10,7 +10,7 @@
 
         <div class="flex flex-col gap-1.5">
           <div class="flex items-end justify-between gap-2">
-            <span class="text-xs text-ink-gray-5">{{ __('Signature') }}</span>
+            <span class="text-sm leading-tighter text-ink-gray-6">{{ __('Signature') }}</span>
             <Dropdown v-if="signatureOptions.length" :options="signatureOptions" align="end">
               <Button
                 variant="ghost"

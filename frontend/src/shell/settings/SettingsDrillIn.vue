@@ -20,7 +20,7 @@
         @pointer-down-outside.prevent
         @focus-outside.prevent
       >
-        <div class="flex h-14 shrink-0 items-center border-b px-3">
+        <div class="flex h-14 shrink-0 items-center border-b px-4">
           <Button
             variant="ghost"
             icon="lucide-chevron-left"
@@ -52,7 +52,7 @@
             role="region"
             :aria-label="page.label()"
           >
-            <div class="flex h-14 shrink-0 items-center border-b px-3">
+            <div class="flex h-14 shrink-0 items-center border-b px-4">
               <Button
                 variant="ghost"
                 icon="lucide-chevron-left"

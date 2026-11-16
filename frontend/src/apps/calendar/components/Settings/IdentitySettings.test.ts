@@ -37,6 +37,7 @@ vi.mock('@/platform/feedback', async () => {
   }
 })
 
+// SAFETY: undefined is the loading state; the tests set rows later.
 const identities = vi.hoisted(() => ({ data: undefined as unknown[] | undefined }))
 vi.mock('@/apps/calendar/stores/user', async () => {
   const { reactive } = await import('vue')

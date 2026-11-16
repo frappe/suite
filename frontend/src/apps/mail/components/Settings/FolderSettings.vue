@@ -8,10 +8,10 @@
     :description="__('Make, rename and arrange the folders you file mail into')"
     :loading="!mailboxes.data"
   >
+    <template #actions>
+      <Button icon-left="lucide-plus" :label="__('New')" @click="editMailbox()" />
+    </template>
     <SettingsSection>
-      <template #actions>
-        <Button icon-left="lucide-plus" :label="__('New')" @click="editMailbox()" />
-      </template>
       <template v-if="mailboxes.data?.length">
         <SettingsListRow
           v-for="mailbox in mailboxes.data"
@@ -32,7 +32,6 @@
       </template>
       <SettingsEmpty
         v-else
-        icon="lucide-folder"
         :title="__('No folders yet')"
         :description="__('Folders keep related mail together.')"
       />

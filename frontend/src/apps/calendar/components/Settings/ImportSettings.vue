@@ -1,6 +1,6 @@
 <!--
   The Import side of Calendar > Import & export: a file of events goes into
-  one of the account's calendars. The file uploads first; Import then queues
+  one of the account's calendars. The file uploads first; Start import queues
   the job, and the status line tracks it.
 -->
 <template>
@@ -16,6 +16,7 @@
       <Select
         :model-value="calendarImport.calendar"
         :options="calendarOptions"
+        class="max-w-48 sm:max-w-64"
         :placeholder="__('Select calendar')"
         @update:model-value="selectCalendar"
       />
@@ -35,19 +36,19 @@
         @click="fileInput?.click()"
       />
     </SettingsRow>
-    <ExchangeStatus
+    <SettingsJobStatus
       :status="status"
       :href="statusHref"
       :link-label="ongoing.data?.name ? __('Track status') : __('View history')"
     >
       <Button
         variant="solid"
-        :label="__('Import')"
+        :label="__('Start import')"
         :loading="Boolean(ongoing.data?.name) || createImport.isPending"
         :disabled="ongoing.isFetching || Boolean(ongoing.error) || !calendarImport.file"
         @click="startImport"
       />
-    </ExchangeStatus>
+    </SettingsJobStatus>
   </SettingsSection>
 </template>
 
@@ -60,11 +61,9 @@ import { useCalendarSocket } from '@/apps/calendar/socket'
 import { userStore } from '@/apps/calendar/stores/user'
 import { destinationOptions } from '@/apps/calendar/utils/calendars'
 import { toast } from '@/platform/feedback'
-import { SettingsSection } from '@/platform/settings-tab'
+import { SettingsJobStatus, SettingsSection } from '@/platform/settings-tab'
 import { translate as __ } from '@/platform/translation'
 import { useChunkedUpload } from '@/utils/useChunkedUpload'
-
-import ExchangeStatus from './ExchangeStatus.vue'
 
 type ImportInput = InputOf<typeof api.mail.calendar.import>
 

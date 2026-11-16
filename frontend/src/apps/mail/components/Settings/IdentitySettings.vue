@@ -29,7 +29,6 @@
       </template>
       <SettingsEmpty
         v-else
-        icon="lucide-fingerprint"
         :title="__('No identities yet')"
         :description="__('Add an address to send mail as.')"
       />
@@ -54,7 +53,6 @@
       </template>
       <SettingsEmpty
         v-else
-        icon="lucide-feather"
         :title="__('No saved signatures yet')"
         :description="__('Save a signature once, then use it on any identity.')"
       />

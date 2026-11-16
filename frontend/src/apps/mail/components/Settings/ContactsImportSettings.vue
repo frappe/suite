@@ -1,20 +1,28 @@
+<!--
+  The Import side of Mail > Import & export, for contacts: a file of contacts goes into one address
+  book. The file uploads first; Start import then queues the job, and the status line tracks it.
+-->
 <template>
-  <div class="flex flex-col gap-4 py-3.5">
-    <div class="grid gap-4 sm:grid-cols-2">
-      <FormControl
-        v-model="contactsImport.format"
-        :label="__('Format')"
-        type="select"
-        :options="FORMAT_OPTIONS"
-        required
-      />
-      <FormControl
-        v-model="contactsImport.address_book"
-        :label="__('Address book')"
-        type="select"
-        :options="addressBookOptions"
-      />
-    </div>
+  <SettingsRow :title="__('Format')" :description="__('The kind of file you are importing')">
+    <Select
+      :model-value="contactsImport.format"
+      :options="FORMATS"
+      @update:model-value="selectFormat"
+    />
+  </SettingsRow>
+  <SettingsRow
+    :title="__('Address book')"
+    :description="__('The address book the contacts go into')"
+  >
+    <Select
+      :model-value="contactsImport.address_book ?? ''"
+      :options="addressBookOptions"
+      class="max-w-48 sm:max-w-64"
+      :placeholder="__('Select address book')"
+      @update:model-value="selectAddressBook"
+    />
+  </SettingsRow>
+  <SettingsRow :title="__('File')" :description="fileDescription">
     <input
       ref="fileInput"
       type="file"
@@ -22,60 +30,65 @@
       :accept="acceptTypes"
       @change="onFileSelected"
     />
-    <div class="flex flex-col gap-1.5">
-      <span class="text-xs text-ink-gray-5">{{ __('File') }}</span>
-      <div class="flex items-center gap-3">
-        <Button
-          icon-left="lucide-upload"
-          :label="uploading ? __('Uploading ({0}%)', [progress]) : __('Choose file')"
-          :loading="uploading"
-          @click="fileInput?.click()"
-        />
-        <span class="min-w-0 truncate text-p-sm text-ink-gray-5">{{ fileUploadSubtitle }}</span>
-      </div>
-    </div>
-    <div class="flex flex-wrap items-center justify-between gap-3">
-      <p class="text-p-sm text-ink-gray-5">
-        {{ importSubtitle }}
-        <a class="text-ink-gray-7 underline underline-offset-2" :href="importHref" target="_blank">
-          {{ importLinkText }}
-        </a>
-      </p>
-      <Button
-        variant="solid"
-        :label="__('Start import')"
-        :loading="Boolean(ongoingImport.data?.name) || createContactsImport.isPending"
-        :disabled="ongoingImport.isFetching || Boolean(ongoingImport.error) || !contactsImport.file"
-        @click="createContactsImportSubmit()"
-      />
-    </div>
-    <ErrorMessage
-      v-if="createContactsImport.error"
-      :message="createContactsImport.error?.message"
+    <Button
+      icon-left="lucide-upload"
+      :label="uploading ? __('Uploading ({0}%)', [progress]) : __('Choose file')"
+      :loading="uploading"
+      @click="fileInput?.click()"
     />
-  </div>
+  </SettingsRow>
+  <SettingsJobStatus :status="importSubtitle" :href="importHref" :link-label="importLinkText">
+    <Button
+      variant="solid"
+      :label="__('Start import')"
+      :loading="Boolean(ongoingImport.data?.name) || createContactsImport.isPending"
+      :disabled="ongoingImport.isFetching || Boolean(ongoingImport.error) || !contactsImport.file"
+      @click="createContactsImportSubmit()"
+    />
+  </SettingsJobStatus>
+  <ErrorMessage
+    v-if="createContactsImport.error"
+    class="py-2"
+    :message="createContactsImport.error?.message"
+  />
 </template>
 
 <script setup lang="ts">
-import { Button, ErrorMessage, FormControl } from 'frappe-ui'
+import { Button, ErrorMessage, Select, SettingsRow } from 'frappe-ui'
 import { computed, onScopeDispose, reactive, ref, watch } from 'vue'
 
 import { api, useMutation, useQuery, type InputOf } from '@/api'
 import { useMailSocket } from '@/apps/mail/socket'
 import { userStore } from '@/apps/mail/stores/user'
 import { raiseError } from '@/apps/mail/utils'
+import { SettingsJobStatus } from '@/platform/settings-tab'
 import { useChunkedUpload } from '@/utils/useChunkedUpload'
+
+type ImportInput = InputOf<typeof api.mail.exchanges.importContacts>
+
+const FORMATS: { label: string; value: ImportInput['format'] }[] = [
+  { label: __('vCard (.vcf)'), value: 'vcf' },
+  { label: __('JMAP archive'), value: 'jmap' },
+]
 
 const store = userStore()
 const user = store.userResource
 const socket = useMailSocket()
-const contactsImport = reactive<Omit<InputOf<typeof api.mail.exchanges.importContacts>, 'account'>>(
-  {
-    format: 'vcf',
-    file: '',
-    address_book: '',
-  },
-)
+const contactsImport = reactive<Omit<ImportInput, 'account'>>({
+  format: 'vcf',
+  file: '',
+  address_book: '',
+})
+const fileName = ref('')
+
+function selectFormat(value?: string | number | null) {
+  const format = FORMATS.find((option) => option.value === value)?.value
+  if (format) contactsImport.format = format
+}
+
+function selectAddressBook(value?: string | number | null) {
+  if (typeof value === 'string') contactsImport.address_book = value
+}
 const fileInput = ref<HTMLInputElement | null>(null)
 const { uploading, progress, upload } = useChunkedUpload()
 const acceptTypes = computed(() => (contactsImport.format === 'vcf' ? '.vcf' : '.zip,.tgz,.tar.gz'))
@@ -94,6 +107,7 @@ const onFileSelected = async (event: Event) => {
       private: true,
     })
     contactsImport.file = uploaded.file_url
+    fileName.value = file.name
   } catch (error) {
     raiseError(error)
   }
@@ -120,10 +134,10 @@ const addressBookOptions = computed(() =>
     value: b.id,
   })),
 )
-const fileUploadSubtitle = computed(() => {
-  if (contactsImport.file) return __('Uploaded {0}', [contactsImport.file.split('/').pop() ?? ''])
-  if (contactsImport.format === 'vcf') return __('Supported file format: .vcf')
-  return __('Supported file formats: .zip, .tar, .tgz')
+const fileDescription = computed(() => {
+  if (contactsImport.file) return __('Uploaded: {0}', [fileName.value])
+  if (contactsImport.format === 'vcf') return __('A .vcf file')
+  return __('A .zip, .tar or .tgz archive')
 })
 const createContactsImport = useMutation(api.mail.exchanges.importContacts)
 async function createContactsImportSubmit() {
@@ -165,5 +179,4 @@ const importLinkText = computed(() => {
   if (ongoingImport.data?.name) return __('Track status')
   return __('View history')
 })
-const FORMAT_OPTIONS = ['vcf', 'jmap']
 </script>

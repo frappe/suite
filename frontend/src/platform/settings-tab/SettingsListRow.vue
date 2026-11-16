@@ -10,22 +10,29 @@
   - `menu`: the row's actions, behind one "…" button.
   - `@open`: the row's main action, usually "edit". With a listener the whole
     row is the button for it and shows the hover; without one it is static.
+
+  The row's content and its divider stay on the content column's edges, like
+  a `SettingsRow`. Only the hover background reaches 8px past them, so the
+  text does not sit against its edge.
 -->
 <template>
   <div
-    class="relative -mx-2 flex min-h-12 items-center gap-3 rounded-6 px-2 py-2"
-    :class="{ 'hover:bg-surface-gray-1': onOpen }"
+    class="relative isolate flex min-h-12 items-center gap-3 py-2"
+    :class="{
+      'before:absolute before:-inset-x-2 before:inset-y-0 before:-z-10 before:rounded-6 hover:before:bg-surface-gray-1':
+        onOpen,
+    }"
   >
     <div v-if="$slots.leading" class="flex shrink-0 items-center">
       <slot name="leading" />
     </div>
     <div class="flex min-w-0 flex-1 flex-col gap-1">
-      <!-- The title button stretches over the row (after:inset-0), so the
+      <!-- The title button stretches over the row and its hover area, so the
            row opens on a click anywhere, and the menu stays its own button. -->
       <button
         v-if="onOpen"
         type="button"
-        class="truncate text-left text-base text-ink-gray-8 outline-none after:absolute after:inset-0 after:rounded-6 focus-visible:after:ring-2 focus-visible:after:ring-outline-gray-3"
+        class="truncate text-left text-base text-ink-gray-8 outline-none after:absolute after:-inset-x-2 after:inset-y-0 after:rounded-6 focus-visible:after:ring-2 focus-visible:after:ring-outline-gray-3"
         @click="onOpen"
       >
         {{ title }}

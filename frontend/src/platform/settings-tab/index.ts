@@ -10,6 +10,7 @@
  *       SettingsEmpty       a list or section with nothing in it
  *       SettingsForm        several text fields with one Save button
  *       SettingsCopyField   a read-only value with a copy button
+ *       SettingsJobStatus   the status line and start button of an import or export
  *
  * A tab is loaded only when it opens, so this module stays apart from
  * `@/platform/settings` (tab ids and `openSettings`), which loads with the app.
@@ -21,6 +22,7 @@
 export { default as SettingsCopyField } from './SettingsCopyField.vue'
 export { default as SettingsEmpty } from './SettingsEmpty.vue'
 export { default as SettingsForm } from './SettingsForm.vue'
+export { default as SettingsJobStatus } from './SettingsJobStatus.vue'
 export { default as SettingsListRow } from './SettingsListRow.vue'
 export { default as SettingsLoading } from './SettingsLoading.vue'
 export { default as SettingsPage } from './SettingsPage.vue'

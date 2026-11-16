@@ -1,5 +1,4 @@
 import { expect, type Locator, type Page, type Route } from "@playwright/test";
-import { acrossRestarts } from "../bench";
 import { demoUser, openDemoScene } from "../demo";
 import { defineFlow, setupFlow, type StateMeta } from "../flow";
 import { perScene, type BaseScene } from "../scene";
@@ -14,26 +13,19 @@ interface AppTab {
 }
 
 const MAIL_TABS = {
-	mailCredentials: { nav: "Credentials", marker: "App Password", description: "Mail > Credentials: the server URL set by the administrator, the username, an App Password field left blank to keep it, and a Backup Email for recovery." },
-	mailAccount: { nav: "Account", marker: "Default Outgoing Email", description: "Mail > Account: outgoing and incoming switches, When Blocking a Sender, and the mailbox storage line. Save stays off until something changes." },
-	mailIdentity: { nav: "Identity", marker: "Display Name", description: "Mail > Identity: the identity picker, display name, Reply To and Bcc lists with their empty rows, and the default signature editor." },
-	mailLayout: { nav: "Layout", marker: "Split View", description: "Mail > Layout (titled \"Mail layout\"): Split View, Group by date, and the Inbox categories with a switch each." },
-	mailFolders: { nav: "Folders", marker: "Trash", description: "Mail > Folders: the six system folders, each with a menu, and New." },
-	mailSignatures: { nav: "Signatures", marker: "Signatures let you", description: "Mail > Signatures with none saved: \"No signatures found.\" and what a signature is for." },
-	mailCompose: { nav: "Compose", marker: "Undo Send", description: "Mail > Compose: one row, how long Undo Send holds a sent message." },
-	mailVacation: { nav: "Vacation Response", marker: "From Date", description: "Mail > Vacation Response, off: the switch, dates, subject and an empty message editor are all shown and editable while it is off." },
-	mailAutomation: { nav: "Automation", marker: "Rebuild Automation", description: "Mail > Automation with no scripts: \"No sieve scripts found.\", Rebuild Automation and New." },
-	mailPush: { nav: "Push Subscriptions", marker: "Push subscriptions let", description: "Mail > Push Subscriptions with none: an empty message, a refresh button and New." },
-	mailScreener: { nav: "Screener", marker: "Screened Senders", description: "Mail > Screener: the Screen New Senders switch, then the screened senders with search, sort and a checkbox per row." },
-	mailImport: { nav: "Import", marker: "Upload File", description: "Mail > Import: Mail and Contacts tabs, format, folder and Mark as Read, Upload File, and a Create Import that stays off until a file is uploaded." },
-	mailExport: { nav: "Export", marker: "Create Export", description: "Mail > Export: Mail and Contacts tabs, format, archive type, Custom Selection off, and Create Export." },
-	mailAdvanced: { nav: "Advanced", marker: "API Access", description: "Mail > Advanced: no API key yet, so only Generate Keys under API Access." },
+	mailGeneral: { nav: "General", marker: "Block remote images", description: "Mail > General: Reading, Inbox, Sending, Storage and (on a provider site) Regional sections. Every switch and select saves on change, so there is no Save button." },
+	mailIdentities: { nav: "Identities & signatures", marker: "Saved signatures you can put on any identity", description: "Mail > Identities & signatures: Maya's identity as a row with a menu, New in each section header, and with no saved signatures a quiet \"No saved signatures yet\" line." },
+	mailFolders: { nav: "Folders", marker: "Trash", description: "Mail > Folders: the six system folders, each with a menu, and New in the page header." },
+	mailScreener: { nav: "Screener", marker: "Screened senders", description: "Mail > Screener: the Screen new senders switch, When blocking a sender, then the screened senders with search and a menu per row." },
+	mailVacation: { nav: "Vacation response", marker: "Send a vacation response", description: "Mail > Vacation response, off: the switch, dates, subject and message editor, with Save off until something changes." },
+	mailTransfer: { nav: "Import & export", marker: "Messages from another mail service", description: "Mail > Import & export, on Import: Mail and Contacts sections as rows (format, folder or address book, Mark as read, file), each with Start import off until a file is uploaded. The switch at the top shows Export instead." },
+	mailAdvanced: { nav: "Advanced", marker: "How Suite signs in to your mailbox", description: "Mail > Advanced: Connection (server URL, username, app password, backup email, Save), Mail clients when the site gives the server details, Automation and Push subscriptions." },
 } as const satisfies Record<string, AppTab>;
 
 const CALENDAR_TABS = {
-	calendarCalendars: { nav: "Calendars", last: true, marker: "Default", description: "Calendar > Calendars: Maya's own calendar with its colour dot, marked Default, with a menu, and New in the section header." },
+	calendarCalendars: { nav: "Calendars", last: true, marker: "Default", description: "Calendar > Calendars: Maya's own calendar with its colour dot, marked Default, with a menu, and New in the page header." },
 	calendarIdentity: { nav: "Identity", last: true, marker: "shown to people you invite", description: "Calendar > Identity: each participant identity as a row (name, then email), the default one marked Default, and New. With none, \"No identities yet\" says what an identity is for." },
-	calendarTransfer: { nav: "Import & export", last: true, marker: "No imports in progress", description: "Calendar > Import & export, on Import: format, the calendar the events go into, Choose file, and Import off until a file is uploaded. The switch at the top shows Export instead." },
+	calendarTransfer: { nav: "Import & export", last: true, marker: "No imports in progress", description: "Calendar > Import & export, on Import: format, the calendar the events go into, Choose file, and Start import off until a file is uploaded. The switch at the top shows Export instead." },
 	calendarAdvanced: { nav: "Advanced", last: true, marker: "CalDAV", description: "Calendar > Advanced: the CalDAV server URL, calendar URL and username, each with Copy, and a line that calendar apps sign in with the mail account password." },
 } as const satisfies Record<string, AppTab>;
 
@@ -68,31 +60,10 @@ type Event =
 	| { type: "STORAGE" }
 	| { type: "EXTERNAL_ACCESS" }
 	| { type: "MAIL_ACCOUNT_SLOWLY" }
-	| { type: "MAIL_ACCOUNT_FAILS" }
-	| { type: "TOGGLE" }
-	| { type: "SAVE" }
-	| { type: "SAVE_SLOWLY" }
-	| { type: "SAVE_FAILS" }
-	| { type: "CHANGE_UNDO_SEND" };
+	| { type: "MAIL_ACCOUNT_FAILS" };
 
-/** A settings tab as a machine state. */
-type AppTabNode = { meta: StateMeta; on?: Record<string, string> };
-
-/** Tabs whose saves lead further. */
-const APP_TAB_EDGES = new Map<string, Record<string, string>>([
-	["mailAccount", { TOGGLE: "mailAccountDirty" }],
-	["mailCompose", { CHANGE_UNDO_SEND: "composeSaved" }],
-]);
-
-function appTabStates() {
-	return Object.fromEntries(
-		[...APP_TABS].map(([state, tab]) => {
-			const node: AppTabNode = { meta: { description: tab.description } };
-			const on = APP_TAB_EDGES.get(state);
-			if (on) node.on = on;
-			return [state, node];
-		}),
-	);
+function appTabStates(): Record<string, { meta: StateMeta }> {
+	return Object.fromEntries([...APP_TABS].map(([state, tab]) => [state, { meta: { description: tab.description } }]));
 }
 
 function appTabTransitions() {
@@ -144,7 +115,7 @@ const machine = setupFlow<Event>().createMachine({
 			},
 		},
 		profile: {
-			meta: { description: "Settings opens on Account > Profile for Maya, a Suite Admin: her photo, name and email, then first and last name fields with Save, off until a name changes. The sidebar lists Account (Profile, Preferences, Security), Drive with External access, Mail and Calendar." },
+			meta: { description: "Settings opens on Account > Profile for Maya, a Suite Admin: her photo, name and email with Change photo, then first and last name fields with Save, off until a name changes. The sidebar lists Account (Profile, Preferences, Security), Drive with External access, Mail and Calendar." },
 			on: {
 				...appTabTransitions(),
 				RENAME: "nameSaved",
@@ -180,7 +151,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "First name emptied and Save pressed: the field is required, so the browser asks for it and nothing saves." },
 		},
 		avatarMenu: {
-			meta: { description: "Maya has a photo, so clicking it opens a menu: Change image and Remove image." },
+			meta: { description: "Maya has a photo, so Change photo, beside it, opens a menu: Upload new photo and Remove photo." },
 		},
 		passwordDialog: {
 			meta: { description: "Account > Security, Change password: current, new and confirm fields, and Confirm off until the first two are filled and the last matches." },
@@ -222,29 +193,13 @@ const machine = setupFlow<Event>().createMachine({
 		},
 		...appTabStates(),
 		mailAccountLoading: {
-			meta: { description: "Mail > Account before its settings arrive (held): the title, no Save, and an empty body." },
+			meta: { description: "Mail > General before the account's settings arrive (held): the title and description over the settings spinner." },
 		},
 		mailAccountFailed: {
-			meta: { description: "Mail > Account when its settings fail: the same empty body as loading. The error message is inside the part that never renders." },
-		},
-		mailAccountDirty: {
-			meta: { description: "A switch turned on: Save turns on. Nothing else marks the change." },
-			on: { SAVE: "mailAccountSaved", SAVE_SLOWLY: "mailAccountSaving", SAVE_FAILS: "mailAccountSaveFailed" },
-		},
-		mailAccountSaving: {
-			meta: { description: "Save pressed and the request still out: the button spins." },
-		},
-		mailAccountSaved: {
-			meta: { description: "Saved: \"Account updated.\" in a toast (answered in the browser, so the seeded setting stays)." },
-		},
-		mailAccountSaveFailed: {
-			meta: { description: "The save failed: an error toast, and the switch stays on with Save still on to try again." },
-		},
-		composeSaved: {
-			meta: { description: "Undo Send changed to 10 seconds and saved: \"Compose settings updated.\" in a toast (answered in the browser)." },
+			meta: { description: "Mail > General when the account's settings fail: the spinner stays, with no message and no retry." },
 		},
 		mailTabWaiting: {
-			meta: { description: "The mail account request failed at page load: Mail > Credentials shows a spinner, and it stays, with no error and no retry. The Mail group is still listed, as it reads the session, not the account." },
+			meta: { description: "The mail account request failed at page load: Mail > General shows a spinner, and it stays, with no error and no retry. The Mail group is still listed, as it reads the session, not the account." },
 			on: { OPEN_CALENDAR_TAB: "calendarTabWaiting" },
 		},
 		calendarTabWaiting: {
@@ -326,42 +281,10 @@ async function failPreferenceSave(scene: BaseScene): Promise<void> {
 	);
 }
 
-/**
- * Answers a Mail settings save (no output) in the browser, and lays the saved
- * fields over the server's answer to the reads after it (`reads`, which is the
- * save's own URL unless the app refetches elsewhere), so the screen shows the
- * save and the site keeps Maya's seeded settings.
- */
-async function answerMailSave(scene: BaseScene, url: RegExp, reads: RegExp = url): Promise<void> {
-	let saved: Record<string, unknown> | null = null;
-	const overlay = async (route: Route) => {
-		if (!saved) return route.continue();
-		const response = await acrossRestarts(scene.baseURL, () => route.fetch());
-		// SAFETY: Mail reads answer an object under `data` (REST) or `message` (method).
-		const body = (await response.json()) as { data?: Record<string, unknown>; message?: Record<string, unknown> };
-		const key = body.data ? "data" : "message";
-		await route.fulfill({ response, json: { ...body, [key]: { ...body[key], ...saved } } });
-	};
-	await scene.page.route(url, async (route) => {
-		if (route.request().method() === "PATCH") {
-			// SAFETY: the PATCH body is the changed fields, under `changes` for Mail > Account.
-			const body = route.request().postDataJSON() as { changes?: Record<string, unknown> } & Record<string, unknown>;
-			saved = { ...saved, ...(body.changes ?? body) };
-			return route.fulfill({ json: { data: null } });
-		}
-		return overlay(route);
-	});
-	if (reads !== url) await scene.page.route(reads, overlay);
-}
-
 async function typeName(scene: BaseScene, label: string, value: string): Promise<void> {
 	const field = dialog(scene.page).getByLabel(label, { exact: true });
 	await field.fill(value);
 	await dialog(scene.page).getByRole("button", { name: "Save" }).click();
-}
-
-function accountSwitch(page: Page): Locator {
-	return dialog(page).getByRole("switch").first();
 }
 
 async function openPasswordDialog(page: Page): Promise<Locator> {
@@ -440,7 +363,7 @@ export const suiteSettings = defineFlow<Event, BaseScene>({
 			await scene.page.reload();
 			await expect(scene.page.getByText("Recent", { exact: true })).toBeVisible();
 			await openSettings(scene.page);
-			await tab(scene.page, "Credentials").click();
+			await tab(scene.page, "General").click();
 			await expect(dialog(scene.page).getByRole("status", { name: "Loading" }).first()).toBeVisible();
 			await scene.page.waitForTimeout(5000);
 			await expect(dialog(scene.page).getByRole("status", { name: "Loading" }).first()).toBeVisible();
@@ -478,8 +401,8 @@ export const suiteSettings = defineFlow<Event, BaseScene>({
 			await expect(scene.toast("First name is required")).toBeVisible();
 		},
 		async AVATAR_MENU(scene) {
-			await dialog(scene.page).getByRole("button", { name: "Profile picture options" }).click();
-			await expect(scene.page.getByRole("menuitem", { name: "Remove image" })).toBeVisible();
+			await dialog(scene.page).getByRole("button", { name: "Change photo" }).click();
+			await expect(scene.page.getByRole("menuitem", { name: "Remove photo" })).toBeVisible();
 		},
 		async CHANGE_PASSWORD(scene) {
 			await openPasswordDialog(scene.page);
@@ -539,48 +462,16 @@ export const suiteSettings = defineFlow<Event, BaseScene>({
 		},
 		async MAIL_ACCOUNT_SLOWLY(scene) {
 			await scene.hold(MAIL_ACCOUNT_SETTINGS);
-			await tab(scene.page, "Account").click();
-			await expect(dialog(scene.page).getByText("Storage", { exact: true }).last()).toBeVisible();
-			await expect(dialog(scene.page).getByText("Default Outgoing Email")).toHaveCount(0);
+			await tab(scene.page, "General").click();
+			await expect(dialog(scene.page).getByRole("status", { name: "Loading" }).first()).toBeVisible();
+			await expect(dialog(scene.page).getByText("Block remote images")).toHaveCount(0);
 		},
 		async MAIL_ACCOUNT_FAILS(scene) {
 			const hold = await scene.hold(MAIL_ACCOUNT_SETTINGS);
 			await hold.abort(500);
-			await tab(scene.page, "Account").click();
+			await tab(scene.page, "General").click();
 			await scene.page.waitForTimeout(5000);
-			await expect(dialog(scene.page).getByText("Default Outgoing Email")).toHaveCount(0);
-		},
-		async TOGGLE(scene) {
-			await accountSwitch(scene.page).click();
-			await expect(dialog(scene.page).getByRole("button", { name: "Save" })).toBeEnabled();
-		},
-		async SAVE(scene) {
-			await answerMailSave(scene, MAIL_ACCOUNT_SETTINGS);
-			await dialog(scene.page).getByRole("button", { name: "Save" }).click();
-			await expect(scene.toast("Account updated")).toBeVisible();
-			await expect(accountSwitch(scene.page)).toBeChecked();
-		},
-		async SAVE_SLOWLY(scene) {
-			await scene.hold(MAIL_ACCOUNT_SETTINGS);
-			await dialog(scene.page).getByRole("button", { name: "Save" }).click();
-			await expect(dialog(scene.page).getByRole("button", { name: "Save" })).toBeDisabled();
-		},
-		async SAVE_FAILS(scene) {
-			await scene.page.route(MAIL_ACCOUNT_SETTINGS, (route) =>
-				route.request().method() === "PATCH"
-					? route.fulfill({ status: 417, json: { exc_type: "ValidationError", message: "The mail server refused the change." } })
-					: route.continue(),
-			);
-			await dialog(scene.page).getByRole("button", { name: "Save" }).click();
-			await expect(scene.page.getByText("The mail server refused the change.").first()).toBeVisible();
-		},
-		async CHANGE_UNDO_SEND(scene) {
-			await answerMailSave(scene, /\/api\/suite\/mail\/settings\/preferences(\?|$)/, MAIL_USER);
-			await dialog(scene.page).getByRole("combobox").first().click();
-			await scene.page.getByRole("option", { name: "10 seconds" }).click();
-			await dialog(scene.page).getByRole("button", { name: "Save" }).click();
-			await expect(scene.toast("Compose settings updated")).toBeVisible();
-			await expect(dialog(scene.page).getByRole("button", { name: "Save" })).toBeDisabled();
+			await expect(dialog(scene.page).getByText("Block remote images")).toHaveCount(0);
 		},
 	},
 	frame(scene, state) {

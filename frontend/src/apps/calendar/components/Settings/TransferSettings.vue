@@ -8,9 +8,13 @@
     :title="__('Import & export')"
     :description="__('Bring in events from a file, or download a copy of your calendars')"
   >
-    <TabButtons v-model="direction" class="self-start" :options="DIRECTIONS" />
-    <ImportSettings v-if="direction === 'import'" />
-    <ExportSettings v-else />
+    <!-- The switch belongs to the form under it, so it sits closer to it than
+         the page gap. -->
+    <div class="flex flex-col gap-2">
+      <TabButtons v-model="direction" class="self-start" :options="DIRECTIONS" />
+      <ImportSettings v-if="direction === 'import'" />
+      <ExportSettings v-else />
+    </div>
   </SettingsPage>
 </template>
 

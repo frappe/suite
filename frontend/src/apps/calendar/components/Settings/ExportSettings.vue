@@ -44,19 +44,19 @@
         :options="SORTS"
       />
     </div>
-    <ExchangeStatus
+    <SettingsJobStatus
       :status="status"
       :href="statusHref"
       :link-label="ongoing.data?.name ? __('Track status') : __('View history')"
     >
       <Button
         variant="solid"
-        :label="__('Export')"
+        :label="__('Start export')"
         :loading="Boolean(ongoing.data?.name) || createExport.isPending"
         :disabled="ongoing.isFetching || Boolean(ongoing.error) || createExport.isPending"
         @click="startExport"
       />
-    </ExchangeStatus>
+    </SettingsJobStatus>
   </SettingsSection>
 </template>
 
@@ -68,15 +68,13 @@ import { api, useMutation, useQuery, type InputOf } from '@/api'
 import { useCalendarSocket } from '@/apps/calendar/socket'
 import { userStore } from '@/apps/calendar/stores/user'
 import { utcDayEnd, utcDayStart } from '@/apps/calendar/utils/datetime'
-import { SettingsSection } from '@/platform/settings-tab'
+import { SettingsJobStatus, SettingsSection } from '@/platform/settings-tab'
 import { translate as __ } from '@/platform/translation'
-
-import ExchangeStatus from './ExchangeStatus.vue'
 
 type ExportInput = InputOf<typeof api.mail.calendar.export>
 
 const FORMATS: { label: string; value: ExportInput['format'] }[] = [
-  { label: __('JMAP'), value: 'jmap' },
+  { label: __('JMAP archive'), value: 'jmap' },
   { label: __('iCalendar (.ics)'), value: 'ics' },
 ]
 const ARCHIVE_TYPES: { label: string; value: ExportInput['archive_type'] }[] = [

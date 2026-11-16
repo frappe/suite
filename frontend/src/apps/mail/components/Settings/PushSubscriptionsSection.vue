@@ -26,7 +26,6 @@
     </template>
     <SettingsEmpty
       v-else
-      icon="lucide-bell-ring"
       :title="__('No push subscriptions')"
       :description="__('Add one to let an app know when your mail changes.')"
     />

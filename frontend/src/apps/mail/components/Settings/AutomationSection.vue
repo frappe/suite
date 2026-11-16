@@ -30,7 +30,6 @@
       </SettingsListRow>
       <SettingsEmpty
         v-if="!scripts.length"
-        icon="lucide-zap"
         :title="__('No rules of your own')"
         :description="
           __(

@@ -4,7 +4,7 @@
 -->
 <template>
   <div class="flex flex-col gap-1.5">
-    <span class="text-xs text-ink-gray-5">{{ label }}</span>
+    <span class="text-sm leading-tighter text-ink-gray-6">{{ label }}</span>
     <ul
       v-if="addresses.length"
       class="divide-y divide-outline-gray-1 rounded-6 border border-outline-gray-2"

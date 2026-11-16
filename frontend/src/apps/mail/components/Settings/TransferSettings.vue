@@ -8,32 +8,39 @@
     :title="__('Import & export')"
     :description="__('Bring in mail and contacts from a file, or download a copy of them')"
   >
-    <TabButtons v-model="direction" class="self-start" :options="DIRECTIONS" />
-    <template v-if="direction === 'import'">
+    <!-- The switch belongs to the forms under it, so it sits closer to the
+         first one than the page gap. -->
+    <div class="flex flex-col gap-6">
+      <TabButtons v-model="direction" class="self-start" :options="DIRECTIONS" />
       <SettingsSection
+        v-if="direction === 'import'"
         :title="__('Mail')"
         :description="__('Messages from another mail service, in .eml, mbox or Maildir files')"
       >
         <MailImportSettings />
       </SettingsSection>
       <SettingsSection
-        :title="__('Contacts')"
-        :description="__('People from another address book, in .vcf files')"
-      >
-        <ContactsImportSettings />
-      </SettingsSection>
-    </template>
-    <template v-else>
-      <SettingsSection
+        v-else
         :title="__('Mail')"
         :description="__('An archive of your messages, to keep or to move to another service')"
       >
         <MailExportSettings />
       </SettingsSection>
-      <SettingsSection :title="__('Contacts')" :description="__('An archive of your contacts')">
-        <ContactsExportSettings />
-      </SettingsSection>
-    </template>
+    </div>
+    <SettingsSection
+      v-if="direction === 'import'"
+      :title="__('Contacts')"
+      :description="__('People from another address book, in .vcf files')"
+    >
+      <ContactsImportSettings />
+    </SettingsSection>
+    <SettingsSection
+      v-else
+      :title="__('Contacts')"
+      :description="__('An archive of your contacts')"
+    >
+      <ContactsExportSettings />
+    </SettingsSection>
   </SettingsPage>
 </template>
 

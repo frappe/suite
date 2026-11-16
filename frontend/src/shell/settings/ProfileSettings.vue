@@ -8,8 +8,9 @@
     :description="__('Your photo and name, as other people see them')"
     :loading="!user.data"
   >
-    <template v-if="user.data">
-      <SettingsSection>
+    <SettingsSection v-if="user.data">
+      <!-- One child, so the section draws no line between photo and name. -->
+      <div class="flex flex-col gap-6">
         <FileUploader
           file-types="image/png,image/jpeg,image/jpg"
           :private="false"
@@ -17,49 +18,43 @@
           @success="onAvatarUploaded"
         >
           <template #default="{ openFileSelector, uploading, error }">
-            <div class="flex items-center gap-4">
-              <Dropdown
-                v-if="user.data.user_image"
-                :options="avatarMenuOptions(openFileSelector)"
-                align="start"
-              >
-                <button
-                  type="button"
-                  class="flex rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
-                  :aria-label="__('Profile picture options')"
-                  :disabled="uploading || updateUser.isPending"
-                >
-                  <Avatar
-                    :image="user.data.user_image"
-                    :label="displayName"
-                    size="3xl"
-                    class="!h-16 !w-16"
-                  />
-                </button>
-              </Dropdown>
-              <button
-                v-else
-                type="button"
-                class="flex rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
-                :aria-label="__('Upload profile picture')"
-                :disabled="uploading || updateUser.isPending"
-                @click="openFileSelector"
-              >
-                <Avatar :label="displayName" size="3xl" class="!h-16 !w-16" />
-              </button>
-              <div class="flex min-w-0 flex-col gap-1">
+            <div class="flex items-center gap-3 sm:gap-4">
+              <Avatar
+                :image="user.data.user_image ?? undefined"
+                :label="displayName"
+                size="3xl"
+                class="!size-12 shrink-0 sm:!size-16"
+              />
+              <div class="flex min-w-0 flex-1 flex-col gap-1">
                 <div class="truncate text-xl-semibold text-ink-gray-8">{{ displayName }}</div>
                 <p class="truncate text-base text-ink-gray-6">
                   {{ uploading ? __('Uploading…') : user.data.email }}
                 </p>
                 <ErrorMessage v-if="error" :message="error" />
               </div>
+              <Dropdown
+                v-if="user.data.user_image"
+                :options="avatarMenuOptions(openFileSelector)"
+                align="end"
+              >
+                <Button
+                  class="shrink-0"
+                  :label="__('Change photo')"
+                  icon-right="lucide-chevron-down"
+                  :disabled="uploading || updateUser.isPending"
+                />
+              </Dropdown>
+              <Button
+                v-else
+                class="shrink-0"
+                :label="__('Add photo')"
+                :disabled="uploading || updateUser.isPending"
+                @click="openFileSelector"
+              />
             </div>
           </template>
         </FileUploader>
-      </SettingsSection>
 
-      <SettingsSection :title="__('Name')">
         <SettingsForm :dirty="nameDirty" :save="saveName">
           <div class="grid gap-4 sm:grid-cols-2">
             <FormControl
@@ -75,13 +70,13 @@
             />
           </div>
         </SettingsForm>
-      </SettingsSection>
-    </template>
+      </div>
+    </SettingsSection>
   </SettingsPage>
 </template>
 
 <script setup lang="ts">
-import { Avatar, ErrorMessage, FileUploader, FormControl } from 'frappe-ui'
+import { Avatar, Button, ErrorMessage, FileUploader, FormControl } from 'frappe-ui'
 import { computed, reactive, watch } from 'vue'
 
 import { api, useMutation, useQuery } from '@/api'
@@ -120,8 +115,8 @@ const displayName = computed(() => {
 
 function avatarMenuOptions(openFileSelector: () => void) {
   return [
-    { label: __('Change image'), icon: 'lucide-image-up', onClick: openFileSelector },
-    { label: __('Remove image'), icon: 'lucide-trash-2', onClick: removeAvatar },
+    { label: __('Upload new photo'), icon: 'lucide-image-up', onClick: openFileSelector },
+    { label: __('Remove photo'), icon: 'lucide-trash-2', onClick: removeAvatar },
   ]
 }
 

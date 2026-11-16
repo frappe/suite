@@ -9,10 +9,10 @@
     :description="__('The name and email shown to people you invite')"
     :loading="!participantIdentities.data"
   >
+    <template #actions>
+      <Button icon-left="lucide-plus" :label="__('New')" @click="openNew" />
+    </template>
     <SettingsSection v-if="participantIdentities.data">
-      <template #actions>
-        <Button icon-left="lucide-plus" :label="__('New')" @click="openNew" />
-      </template>
       <SettingsListRow
         v-for="identity in participantIdentities.data"
         :key="identity.name"
@@ -27,7 +27,6 @@
       </SettingsListRow>
       <SettingsEmpty
         v-if="!participantIdentities.data.length"
-        icon="lucide-contact"
         :title="__('No identities yet')"
         :description="
           __('Add the name and email you want people to see when you invite them to events.')
