@@ -642,6 +642,12 @@ class LegacyTree(Protocol):
     def sheet_entity(self, sheet: str) -> str | None:
         """The `File` id backing one `Sheet`, which is also its node id."""
 
+    def people(self) -> dict[str, tuple[str, ...]]:
+        """Every `User` but Administrator and Guest, with their `User Group` names."""
+
+    def suite_admins(self) -> set[str]:
+        """Every `User` holding Suite Admin. Legacy gave them every right everywhere."""
+
 
 class DriveTarget(Protocol):
     """Everything Build writes into Drive's own tables.
@@ -709,6 +715,9 @@ class DriveTarget(Protocol):
     def effective_role(self, node: dict, user: str) -> int:
         """The role the engine answers for `user` on `node` from the grants
         written so far. Build asks the engine rather than re-deriving §4."""
+
+    def grants_on(self, nodes: tuple[str, ...]) -> dict[str, list[tuple[str, int]]]:
+        """`(principal, role)` of every stored grant on these nodes, links left out."""
 
     def has_link_grant(self, node: str) -> bool:
         """Whether any `$LINK:` grant already names this node.
@@ -1390,6 +1399,18 @@ class SiteTree:
             "name",
         )
 
+    def people(self) -> dict[str, tuple[str, ...]]:
+        users = frappe.get_all("User", filters=[["name", "not in", ["Administrator", "Guest"]]], pluck="name")
+        groups: dict[str, list[str]] = {}
+        for row in frappe.get_all("User Group Member", fields=["parent", "user"]):
+            groups.setdefault(row.user, []).append(row.parent)
+        return {user: tuple(sorted(groups.get(user, ()))) for user in users}
+
+    def suite_admins(self) -> set[str]:
+        return set(
+            frappe.get_all("Has Role", filters={"role": "Suite Admin", "parenttype": "User"}, pluck="parent")
+        )
+
     def _clauses(self) -> list:
         """The narrowing filter as `frappe.get_all` takes it."""
         return [["name", "like", self.name_prefix + "%"]] if self.name_prefix else []
@@ -1539,6 +1560,19 @@ class SiteDrive:
         name = frappe.db.get_value("Drive Grant", {"node": node, "principal": principal}, "name")
         if name:
             frappe.db.set_value("Drive Grant", name, "role", role, update_modified=False)
+
+    def grants_on(self, nodes: tuple[str, ...]) -> dict[str, list[tuple[str, int]]]:
+        found: dict[str, list[tuple[str, int]]] = {}
+        if not nodes:
+            return found
+        rows = frappe.get_all(
+            "Drive Grant",
+            filters=[["node", "in", list(nodes)], ["principal", "not like", "$LINK:%"]],
+            fields=["node", "principal", "role"],
+        )
+        for row in rows:
+            found.setdefault(row.node, []).append((row.principal, cint(row.role)))
+        return found
 
     def has_link_grant(self, node: str) -> bool:
         return bool(
