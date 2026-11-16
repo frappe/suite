@@ -2593,7 +2593,7 @@ class TestVersionRoutes(DriveHTTPCase):
             {"node": self.node, "seq": 1},
             {"actor": "Guest", "owner": "deleted-author@example.com"},
         )
-        token = grant(self.node, "$LINK", EDIT, OWNER)["principal"].split(":", 1)[1]
+        token = grant(self.node, "$LINK", EDIT, self.owner)["principal"].split(":", 1)[1]
         frappe.db.commit()
         path = f"{PREFIX}/nodes/{self.node}/versions"
         signed_in = self.data(self.as_owner("GET", path))["rows"][0]
