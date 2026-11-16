@@ -941,6 +941,10 @@ class LegacyContent(Protocol):
 
     def media_files_by_urls(self, urls: tuple[str, ...]) -> list[MediaFileRow]: ...
 
+    def drive_files_by_urls(self, urls: tuple[str, ...]) -> list[MediaFileRow]:
+        """Answer the File rows with these URLs that are not attached to a presentation, with `deck` empty."""
+        ...
+
     def presentation_media(self, names: tuple[str, ...]) -> set[str]:
         """Answer which of `names` are media Files attached to a presentation."""
         ...
@@ -1777,6 +1781,21 @@ class SiteContentSource:
                 "file_modified",
             ],
             order_by="creation asc, name asc",
+        )
+        return [MediaFileRow(**dict(row)) for row in rows]
+
+    def drive_files_by_urls(self, urls: tuple[str, ...]) -> list[MediaFileRow]:
+        if not urls:
+            return []
+        rows = frappe.db.sql(
+            """SELECT `name`, '' AS `deck`, `file_name`, `file_url`, `blob`, `attached_to_field`,
+                      `owner`, `creation`, `modified`, `modified_by`, `file_modified`
+               FROM `tabFile`
+               WHERE `file_url` IN %(urls)s AND `is_folder` = 0
+                 AND IFNULL(`attached_to_doctype`, '') != 'Presentation'
+               ORDER BY `creation`, `name`""",
+            {"urls": urls},
+            as_dict=True,
         )
         return [MediaFileRow(**dict(row)) for row in rows]
 
