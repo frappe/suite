@@ -65,4 +65,40 @@ describe('remote content in a message’s CSS', () => {
     expect(css).toContain('a[href^="https://"]')
     expect(analyzeRemoteAssets(html).hasRemote).toBe(true)
   })
+
+  // The browser drops a comment inside a bracket, quotes and all, so the rule below it still
+  // fetches. A quote there must not read as a string that runs past the bracket and hides it.
+  it.each([
+    [
+      'a double quote in a selector',
+      `*:not([a=/* " */b]) { background: url(https://evil.example/x.png) } /* " ] */`,
+    ],
+    [
+      'a single quote in a selector',
+      `*:not([a=/* ' */b]) { background: url(https://evil.example/x.png) } /* ' ] */`,
+    ],
+    [
+      'an image-set() after it',
+      `*:not([a=/* " */b]) { background: image-set("https://evil.example/x.png" 1x) } /* " ] */`,
+    ],
+    [
+      'a bracket in a declaration value',
+      `.a { --x: [/* " */]; background: url(https://evil.example/x.png) } /* " ] */`,
+    ],
+  ])('withholds what follows a comment holding %s', (_, css) => {
+    const html = `<style>${css}</style><p>Hello</p>`
+
+    expect(stylesheets(blockRemoteAssets(html))).not.toContain('evil.example')
+    expect(analyzeRemoteAssets(html).hasRemote).toBe(true)
+  })
+
+  // The browser reads a backslash before CR LF as one line continuation, so the string closes at
+  // the next quote; reading the escape as backslash-CR would leave the LF breaking the string, and
+  // open a new one at the closing quote that hides the url() after it.
+  it('withholds a url() after a string continued over a CR LF line break', () => {
+    const html = `<div style='--x: [a="\\&#13;&#10;"]; background: url(https://evil.example/x.png)'>Hi</div>`
+
+    expect(blockRemoteAssets(html)).not.toContain('evil.example')
+    expect(analyzeRemoteAssets(html).hasRemote).toBe(true)
+  })
 })

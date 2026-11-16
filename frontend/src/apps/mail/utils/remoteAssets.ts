@@ -39,14 +39,21 @@ const cssLetter = (letter: string) => {
   return String.raw`(?:${letter}|\\(?:0{0,4}(?:${codes.join('|')})(?:\r\n|[ \t\r\n\f]|(?![\da-f]))|${letter}))`
 }
 
+// A backslash and the character after it, where CR LF counts as one: the browser reads it as a
+// single newline, so a backslash before it continues a string rather than leaving the LF to end it.
+const CSS_ESCAPED = String.raw`\\(?:\r\n|\r(?!\n)|[^\r])`
+// A comment that ends at its first `*/`, spelled so it can't also match a run of comments as one.
+const CSS_COMMENT = String.raw`/\*[^*]*\*+(?:[^*/][^*]*\*+)*/`
+
 // A string runs to its closing quote or the end of the stylesheet; one broken by a newline is no
 // string to the browser either, so it doesn't match.
-const CSS_STRING = String.raw`"(?:[^"\\\n\r\f]|\\[\s\S])*(?:"|$)|'(?:[^'\\\n\r\f]|\\[\s\S])*(?:'|$)`
-const CSS_UNQUOTED_URL = String.raw`(?:[^)\s"'(\\]|\\[\s\S])*`
+const CSS_STRING = String.raw`"(?:[^"\\\n\r\f]|${CSS_ESCAPED})*(?:"|$)|'(?:[^'\\\n\r\f]|${CSS_ESCAPED})*(?:'|$)`
+const CSS_UNQUOTED_URL = String.raw`(?:[^)\s"'(\\]|${CSS_ESCAPED})*`
 
 // An attribute selector (`a[href^="https://"]`), whose string is a value to compare against, never
 // fetched. It holds no brace, paren or semicolon outside its strings, so it can't run on into a rule.
-const CSS_ATTRIBUTE_SELECTOR = String.raw`\[(?:[^\][{}();"'\\]|\\[\s\S]|${CSS_STRING})*\]`
+// Its comments are taken whole, so a quote inside one can't open a string that runs past the `]`.
+const CSS_ATTRIBUTE_SELECTOR = String.raw`\[(?:${CSS_COMMENT}|/(?!\*)|[^\][{}();"'\\/]|${CSS_ESCAPED}|${CSS_STRING})*\]`
 
 // Read left to right as the browser tokenizes, so a quote inside a comment or an escaped one can't
 // hide what follows it: comments, escapes and attribute selectors pass through untouched, and every
@@ -56,7 +63,7 @@ const CSS_REFERENCE = new RegExp(
     String.raw`|${[...'url'].map(cssLetter).join('')}\(\s*(${CSS_STRING}|${CSS_UNQUOTED_URL})` +
     `|${CSS_ATTRIBUTE_SELECTOR}` +
     `|(${CSS_STRING})` +
-    String.raw`|\\[\s\S]`,
+    `|${CSS_ESCAPED}`,
   'gi',
 )
 
