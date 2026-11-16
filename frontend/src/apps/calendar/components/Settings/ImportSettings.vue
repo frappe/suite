@@ -1,57 +1,50 @@
 <template>
-  <SettingsSection :title="__('Import')">
-    <div class="flex flex-col gap-5">
-      <FormControl
-        v-model="calendarImport.format"
-        :label="__('Format')"
-        type="select"
-        variant="outline"
-        :options="FORMAT_OPTIONS"
-        required
-      />
-      <FormControl
-        v-model="calendarImport.calendar"
-        :label="__('Calendar')"
-        type="select"
-        variant="outline"
-        :options="importOptions"
-      />
-      <input
-        ref="fileInput"
-        type="file"
-        class="hidden"
-        :accept="acceptTypes"
-        @change="onFileSelected"
-      />
-      <Button
-        class="w-full"
-        :label="uploading ? __('Uploading ({0}%)', [progress]) : __('Upload File')"
-        :loading="uploading"
-        @click="fileInput?.click()"
-      />
-      <p class="text-ink-gray-5 mt-2 flex text-sm">{{ fileUploadSubtitle }}</p>
+  <div class="flex flex-col gap-5">
+    <FormControl
+      v-model="calendarImport.format"
+      :label="__('Format')"
+      type="select"
+      variant="outline"
+      :options="FORMAT_OPTIONS"
+      required
+    />
+    <FormControl
+      v-model="calendarImport.calendar"
+      :label="__('Calendar')"
+      type="select"
+      variant="outline"
+      :options="importOptions"
+    />
+    <input
+      ref="fileInput"
+      type="file"
+      class="hidden"
+      :accept="acceptTypes"
+      @change="onFileSelected"
+    />
+    <Button class="w-full" :label="uploadLabel" :loading="uploading" @click="fileInput?.click()" />
+    <p class="text-ink-gray-5 mt-2 flex text-sm">{{ fileUploadSubtitle }}</p>
 
-      <Button
-        class="min-h-7"
-        :label="__('Create Import')"
-        variant="solid"
-        :loading="Boolean(ongoingImport.data?.name) || createCalendarImport.isPending"
-        :disabled="ongoingImport.isFetching || Boolean(ongoingImport.error) || !calendarImport.file"
-        @click="createCalendarImport.run(makeInput())"
-      />
-      <div class="!mt-3 space-x-1 text-base">
-        <span class="text-ink-gray-5">{{ importSubtitle }}</span>
-        <a class="hover:underline" :href="importHref" target="_blank">
-          {{ importLinkText }}
-        </a>
-      </div>
-      <ErrorMessage
-        v-if="createCalendarImport.error"
-        :message="createCalendarImport.error?.message"
-        class="mb-2.5"
-      />
+    <Button
+      class="min-h-7"
+      :label="__('Create Import')"
+      variant="solid"
+      :loading="isImporting"
+      :disabled="isImportBlocked"
+      @click="createCalendarImport.run(makeInput())"
+    />
+    <div class="!mt-3 space-x-1 text-base">
+      <span class="text-ink-gray-5">{{ importSubtitle }}</span>
+      <a class="hover:underline" :href="importHref" target="_blank">
+        {{ importLinkText }}
+      </a>
     </div>
-  </SettingsSection>
+    <ErrorMessage
+      v-if="createCalendarImport.error"
+      :message="createCalendarImport.error?.message"
+      class="mb-2.5"
+    />
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -63,7 +56,6 @@ import { useCalendarSocket } from '@/apps/calendar/socket'
 import { userStore } from '@/apps/calendar/stores/user'
 import { raiseToast } from '@/apps/calendar/utils'
 import { destinationOptions } from '@/apps/calendar/utils/calendars'
-import SettingsSection from '@/platform/settings/SettingsSection.vue'
 import { translate as __ } from '@/platform/translation'
 import { useChunkedUpload } from '@/utils/useChunkedUpload'
 
@@ -79,6 +71,13 @@ const calendarImport = reactive<Omit<InputOf<typeof api.mail.calendar.import>, '
 const fileInput = ref<HTMLInputElement | null>(null)
 const { uploading, progress, upload } = useChunkedUpload()
 const acceptTypes = computed(() => (calendarImport.format === 'ics' ? '.ics' : '.zip,.tgz,.tar.gz'))
+const uploadLabel = computed(() => {
+  if (uploading.value) {
+    return __('Uploading ({0}%)', [progress.value])
+  }
+
+  return __('Upload File')
+})
 
 // Upload in chunks so large import archives aren't blocked by the web server's request-size limit.
 const onFileSelected = async (event: Event) => {
@@ -137,6 +136,12 @@ const ongoingImport = useQuery(api.mail.calendar.ongoingExchange, () =>
         },
       }
     : false,
+)
+const isImporting = computed(
+  () => Boolean(ongoingImport.data?.name) || createCalendarImport.isPending,
+)
+const isImportBlocked = computed(
+  () => ongoingImport.isFetching || Boolean(ongoingImport.error) || !calendarImport.file,
 )
 const onExchangeCompleted = (payload: { action: 'Import' | 'Export' }) => {
   if (payload.action === 'Import') ongoingImport.refetch().catch(() => {})

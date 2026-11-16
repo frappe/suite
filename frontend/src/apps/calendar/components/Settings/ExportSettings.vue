@@ -1,82 +1,73 @@
 <template>
-  <SettingsSection :title="__('Export')">
-    <div class="flex flex-col gap-5">
+  <div class="flex flex-col gap-5">
+    <FormControl
+      v-model="calendarExport.format"
+      :label="__('Format')"
+      type="select"
+      variant="outline"
+      :options="FORMAT_OPTIONS"
+    />
+    <FormControl
+      v-model="calendarExport.archive_type"
+      :label="__('Archive Type')"
+      type="select"
+      variant="outline"
+      :options="ARCHIVE_TYPE_OPTIONS"
+    />
+    <SettingsRow
+      class="!py-0"
+      :title="__('Custom Selection')"
+      :description="__('Apply filters to select specific events for export.')"
+    >
+      <Switch v-model="customSelection" />
+    </SettingsRow>
+    <template v-if="customSelection">
       <FormControl
-        v-model="calendarExport.format"
-        :label="__('Format')"
+        v-model="filter.inCalendar"
+        :label="__('Calendar')"
         type="select"
         variant="outline"
-        :options="FORMAT_OPTIONS"
+        :options="calendarOptions"
+      />
+      <FormControl v-model="filter.title" type="text" variant="outline" :label="__('Title')" />
+      <FormControl v-model="filter.after" type="date" variant="outline" :label="__('From Date')" />
+      <FormControl v-model="filter.before" type="date" variant="outline" :label="__('To Date')" />
+      <FormControl
+        v-model="calendarExport.limit"
+        :label="__('Max Number of Events')"
+        type="number"
+        variant="outline"
+        placeholder="1000"
       />
       <FormControl
-        v-model="calendarExport.archive_type"
-        :label="__('Archive Type')"
+        v-if="hasLimit"
+        v-model="calendarExport.sort"
+        :label="__('Start From')"
         type="select"
         variant="outline"
-        :options="ARCHIVE_TYPE_OPTIONS"
+        :options="sortOptions"
       />
-      <SettingsRow
-        class="!py-0"
-        :title="__('Custom Selection')"
-        :description="__('Apply filters to select specific events for export.')"
-      >
-        <Switch v-model="customSelection" />
-      </SettingsRow>
-      <template v-if="customSelection">
-        <FormControl
-          v-model="filter.inCalendar"
-          :label="__('Calendar')"
-          type="select"
-          variant="outline"
-          :options="calendarOptions"
-        />
-        <FormControl v-model="filter.title" type="text" variant="outline" :label="__('Title')" />
-        <FormControl
-          v-model="filter.after"
-          type="date"
-          variant="outline"
-          :label="__('From Date')"
-        />
-        <FormControl v-model="filter.before" type="date" variant="outline" :label="__('To Date')" />
-        <FormControl
-          v-model="calendarExport.limit"
-          :label="__('Max Number of Events')"
-          type="number"
-          variant="outline"
-          placeholder="1000"
-        />
-        <FormControl
-          v-if="calendarExport.limit && calendarExport.limit > 0"
-          v-model="calendarExport.sort"
-          :label="__('Start From')"
-          type="select"
-          variant="outline"
-          :options="sortOptions"
-        />
-      </template>
+    </template>
 
-      <Button
-        class="min-h-7"
-        :label="__('Create Export')"
-        :loading="Boolean(ongoingExport.data?.name) || createCalendarExport.isPending"
-        :disabled="
-          ongoingExport.isFetching || Boolean(ongoingExport.error) || createCalendarExport.isPending
-        "
-        @click="createCalendarExport.run(makeInput())"
-      />
-      <div class="!mt-3 space-x-1 text-base">
-        <span class="text-ink-gray-5">{{ exportSubtitle }}</span>
-        <a class="hover:underline" :href="exportHref" target="_blank">
-          {{ exportLinkText }}
-        </a>
-      </div>
-      <ErrorMessage
-        v-if="createCalendarExport.error"
-        :message="createCalendarExport.error?.message"
-        class="mb-2.5"
-      />
+    <Button
+      class="min-h-7"
+      :label="__('Create Export')"
+      :loading="isExporting"
+      :disabled="isExportBlocked"
+      @click="createCalendarExport.run(makeInput())"
+    />
+    <div class="!mt-3 space-x-1 text-base">
+      <span class="text-ink-gray-5">{{ exportSubtitle }}</span>
+      <a class="hover:underline" :href="exportHref" target="_blank">
+        {{ exportLinkText }}
+      </a>
     </div>
-  </SettingsSection>
+    <ErrorMessage
+      v-if="createCalendarExport.error"
+      :message="createCalendarExport.error?.message"
+      class="mb-2.5"
+    />
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -87,7 +78,6 @@ import { api, useMutation, useQuery, type InputOf } from '@/api'
 import { useCalendarSocket } from '@/apps/calendar/socket'
 import { userStore } from '@/apps/calendar/stores/user'
 import { utcDayEnd, utcDayStart } from '@/apps/calendar/utils/datetime'
-import SettingsSection from '@/platform/settings/SettingsSection.vue'
 
 const store = userStore()
 const { accountId } = store
@@ -123,6 +113,7 @@ const sortOptions = computed(() => [
     value: 'Start (DESC)',
   },
 ])
+const hasLimit = computed(() => !!calendarExport.limit && calendarExport.limit > 0)
 const createCalendarExport = useMutation(api.mail.calendar.export)
 function makeInput(): InputOf<typeof api.mail.calendar.export> {
   const cleanedFilter = Object.fromEntries(
@@ -155,6 +146,12 @@ const ongoingExport = useQuery(api.mail.calendar.ongoingExchange, () =>
         },
       }
     : false,
+)
+const isExporting = computed(
+  () => Boolean(ongoingExport.data?.name) || createCalendarExport.isPending,
+)
+const isExportBlocked = computed(
+  () => ongoingExport.isFetching || Boolean(ongoingExport.error) || createCalendarExport.isPending,
 )
 const onExchangeCompleted = (payload: { action: 'Import' | 'Export' }) => {
   if (payload.action === 'Export') ongoingExport.refetch().catch(() => {})
