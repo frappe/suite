@@ -286,7 +286,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "Saving the limit failed: “Something went wrong” shows inside the dialog and again in a toast, and the typed limit stays." },
 		},
 		settings: {
-			meta: { description: "General settings: the logo, the workspace name with a pencil that makes it editable (it saves when the field loses focus), and the site address." },
+			meta: { description: "General settings: the logo (the same control as setup: click it to replace, and an × on hover removes it), the workspace name with a pencil that makes it editable (it saves when the field loses focus), and the site address." },
 		},
 	},
 });
