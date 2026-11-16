@@ -4701,8 +4701,11 @@ Cases left as they are, on purpose, each counted under §14.9's
   The pairs that end above legacy's role are counted, not pinned:
   `exceeded`, and of those `exceeded_by_public_deny`, where a `$PUBLIC`
   deny binds only people with no grant of their own (§6.5) while legacy
-  applied it to everyone. Owner decision, 2026-11-16: decide only if a
-  run counts any.
+  applied it to everyone. When this rule pins a pair that the mapping
+  left above legacy's role under a public deny, it pins it at that higher
+  role, and the pin stays even if the person later joins a group whose
+  row there would have lowered them. Owner decision, 2026-11-16: decide only if a run counts
+  any.
 - A raise left out because a deny row for a group or a person is on its
   path: `raises_skipped`. A person who joins that group after Build gets
   the unraised grant, which can be less than legacy gave them.
