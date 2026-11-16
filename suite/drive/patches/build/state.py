@@ -41,6 +41,9 @@ CUMULATIVE_FIELDS = frozenset(
         # either count would read zero after a resume.
         "creator_grants_minted",
         "creator_denies_overridden",
+        # A kept right is written once; the rerun finds the person at their
+        # legacy role and writes nothing.
+        "legacy_rights_kept",
         # Governed DocShare rows and content documents whose every File is
         # Removed are deleted once. A later pass cannot derive the deleted or
         # dropped totals from source rows that no longer exist.
@@ -339,6 +342,11 @@ class GrantConversion:
     creator_grants_minted: int = 0
     creator_denies_overridden: int = 0
     creator_owners_dead: int = 0
+    # `grants._keep_legacy_rights`: grants written or raised so a person
+    # keeps the role legacy merged for them from several rows, and the
+    # losses left because the engine denies that person on purpose.
+    legacy_rights_kept: int = 0
+    legacy_rights_behind_deny: int = 0
     # Node ids only. The tokens live in `Drive Grant.principal`, and a
     # migration record on disk is not the place for a second copy of a
     # secret that authorises access.

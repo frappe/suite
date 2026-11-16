@@ -4630,6 +4630,46 @@ own files and could not restore the ones they had trashed. §14.9 reports
 `creator_grants_minted` (rows written or raised from a lower positive
 role) and `creator_denies_overridden`; the two are disjoint.
 
+Kept rights: legacy decided each flag on its own, from the nearest row
+that set it, and inside one folder it read a person's own row first, then
+their groups' rows, then `$GENERAL`, then the public row. A Sheet
+`DocShare` added its role on top of that. So upload from a far folder
+survived a nearer comment row, a group's edit row survived the person's
+own comment row on the same folder, and an `everyone` edit share survived
+the person's own read share. The engine is nearest-wins (§5), so each of
+these grants would end lower than legacy gave. After the creator grants,
+Build compares, for every person and every node that holds a legacy row
+or Sheet share naming them, their group, or `$GENERAL`, the role legacy
+gave there with the role the engine answers. Legacy's role needs read,
+and takes MANAGE only from `write` with `share`. Where the engine answers
+less, Build writes grants in this order:
+
+1. A group or `$GENERAL` grant that came from a legacy row is raised to
+   the lowest role legacy gave anyone it decides, on any node, when that
+   is above its own role. One row then serves everyone it decides.
+2. Each person still below legacy gets `(node, person, legacy role)`, or
+   their own grant there is raised. Nodes are taken from the root down.
+3. Where a grant from 1 or 2 would carry a person past what they held on a
+   lower node, for example past a public deny there, Build writes
+   `(lower node, person, what they held)`.
+
+An item with no row of its own inherits the same thing in both models, so
+these grants give nobody more than legacy did. Three cases are left as
+they are, on purpose:
+
+- Public rows count only by their denies. §14.5 turns a public grant into
+  `$PUBLIC` READ plus a link, and this rule does not undo that.
+- A person the engine denies stays denied, because a deny rounds up to a
+  total deny (above). §14.9's evidence counts each one under
+  `legacy_rights_behind_deny`.
+- Media under a presentation takes its rights from the presentation, as in
+  the creator rule.
+
+The Sheet shares are read back from the `DocShare` journal, because step 6
+has deleted them by then. A rerun finds every person at their legacy role
+and writes nothing. §14.9's evidence counts the grants written or raised
+under `legacy_rights_kept`.
+
 ### 14.6 Side tables and content-app data
 
 | Source | Target | Rule |

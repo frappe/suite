@@ -13,6 +13,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import frappe
+
+from suite.drive._core import access
+from suite.drive._core.access import chain_ids
+from suite.drive._core.principals import Principals
 from suite.drive._core.roles import COMMENT, EDIT, MANAGE, NONE, READ, UPLOAD
 from suite.drive.patches.build import grants as grants_module
 from suite.drive.patches.build.ports import ACTIVE, DocShareRow, PermissionRow
@@ -20,6 +25,7 @@ from suite.drive.patches.build.root_pairs import ARCHIVED, PERSONAL, SHARED, Roo
 from suite.drive.patches.build.state import BuildState, GrantConversion
 from suite.drive.patches.build.tests.fakes import (
     BUILD_STAMP,
+    FakeDocShareJournal,
     FakeDrive,
     FakeTree,
     InterruptedRun,
@@ -734,6 +740,171 @@ class CreatorGrantTest(GrantCase):
         report = self.run_grants(batch_size=2)
         self.assertEqual(report.creator_grants_minted, 5)
         self.assertEqual(len(self.drive.grant_rows), 5)
+
+
+class KeptRightsTest(GrantCase):
+    """§14.5: nobody ends with less than legacy merged for them from several rows.
+
+    Each expectation is the role legacy gave, worked out by hand from its
+    rule: every flag comes from the nearest row that sets it, and inside one
+    folder a person's own row comes before their group's, then `$GENERAL`,
+    then the public row. The answer is read from the engine itself.
+
+    The tree: Shared root > `folderupper` > `folderlower` > `filelower1`.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.add_tree_node("folderupper", "", kind="folder")
+        self.add_tree_node("folderlower", "/folderupper", kind="folder")
+        self.add_tree_node("filelower1", "/folderupper/folderlower")
+        self.legacy.users["other@example.com"] = True
+        self.legacy.groups.add("Design")
+        self.legacy.members["Design"] = {FRIEND}
+        # One journal across runs, as on a site: a rerun reads back the
+        # `DocShare` rows the first run deleted.
+        self.journal = FakeDocShareJournal()
+
+    def run_grants(self, batch_size=1000, plans=()):
+        self.env = build_environment(
+            self.path, tree=self.legacy, drive=self.drive, docshare_journal=self.journal
+        )
+        grants_module.convert_grants(self.env, self.report, list(plans), batch_size=batch_size)
+        return self.report
+
+    def add_tree_node(self, name, path, kind="file"):
+        parent = path.rsplit("/", 1)[-1] or SHARED_ROOT
+        self.drive.node_rows[name] = {
+            "name": name,
+            "kind": kind,
+            "root": SHARED_ROOT,
+            "parent_node": parent,
+            "path": path,
+            "state": ACTIVE,
+        }
+
+    def role_of(self, user, node):
+        """The engine's answer for a signed-in `user` from the stored grants."""
+        row = self.drive.node_rows[node]
+        chain = chain_ids(row)
+        groups = tuple(f"$GROUP:{group}" for group, members in self.legacy.members.items() if user in members)
+        principals = Principals(user=user, own=(user, *groups, "$GENERAL"), open=("$PUBLIC",))
+        grants = [frappe._dict(grant) for grant in self.drive.grant_rows.values() if grant["node"] in chain]
+        return access._resolve_rows(grants, {name: depth for depth, name in enumerate(chain)}, principals)
+
+    def test_upload_from_a_far_folder_survives_a_nearer_comment_row(self):
+        """Upload on the upper folder and comment on the lower one gave upload on both."""
+        self.legacy.permissions_rows = [
+            permission("p1", "folderupper", FRIEND, read=1, upload=1),
+            permission("p2", "folderlower", FRIEND, read=1, comment=1),
+        ]
+        report = self.run_grants()
+        self.assertEqual(self.role_of(FRIEND, "folderlower"), UPLOAD)
+        self.assertEqual(self.role_of(FRIEND, "filelower1"), UPLOAD)
+        self.assertEqual(report.legacy_rights_kept, 1)
+
+    def test_everyones_edit_survives_a_persons_nearer_comment_row(self):
+        """`$GENERAL` write above and a person's comment row below gave that person edit."""
+        self.legacy.permissions_rows = [
+            permission("p1", "folderupper", "$GENERAL", read=1, write=1),
+            permission("p2", "folderlower", FRIEND, read=1, comment=1),
+        ]
+        self.run_grants()
+        self.assertEqual(self.role_of(FRIEND, "filelower1"), EDIT)
+        self.assertEqual(self.role_of("other@example.com", "filelower1"), EDIT)
+
+    def test_a_groups_full_row_survives_the_persons_own_comment_row_beside_it(self):
+        """On one folder legacy read the person's comment flags, then took the rest from the group."""
+        self.legacy.permissions_rows = [
+            permission("p1", "folderlower", "$GROUP:Design", read=1, write=1, share=1),
+            permission("p2", "folderlower", FRIEND, read=1, comment=1),
+        ]
+        self.run_grants()
+        self.assertEqual(self.role_of(FRIEND, "filelower1"), MANAGE)
+        self.assertEqual(self.role_of("other@example.com", "filelower1"), NONE)
+
+    def test_everyones_edit_share_on_a_sheet_survives_a_persons_read_share(self):
+        """Legacy took the higher of the person's own share and the sheet's `everyone` share."""
+        self.legacy.sheets["sheet-1"] = "filelower1"
+        self.legacy.docshare_rows = [
+            docshare("d1", "sheet-1", user=FRIEND, read=1),
+            docshare("d2", "sheet-1", everyone=1, read=1, write=1),
+        ]
+        self.run_grants()
+        self.assertEqual(self.role_of(FRIEND, "filelower1"), EDIT)
+
+    def test_everyones_upload_is_kept_by_one_grant_for_everyone(self):
+        """`$GENERAL` upload above and `$GENERAL` comment below gave everyone upload below."""
+        self.legacy.permissions_rows = [
+            permission("p1", "folderupper", "$GENERAL", read=1, upload=1),
+            permission("p2", "folderlower", "$GENERAL", read=1, comment=1),
+        ]
+        self.run_grants()
+        self.assertEqual(self.role_of(FRIEND, "filelower1"), UPLOAD)
+        self.assertEqual(self.role_of("other@example.com", "filelower1"), UPLOAD)
+        self.assertEqual(self.roles("folderlower"), {"$GENERAL": UPLOAD})
+
+    def test_a_kept_right_does_not_pass_a_public_deny_below_it(self):
+        """The file's public row denied upload, so legacy gave comment there, not upload."""
+        self.legacy.permissions_rows = [
+            permission("p1", "folderupper", FRIEND, read=1, upload=1),
+            permission("p2", "folderlower", FRIEND, read=1, comment=1),
+            permission("p3", "filelower1", "", upload=1, deny=1),
+        ]
+        self.run_grants()
+        self.assertEqual(self.role_of(FRIEND, "folderlower"), UPLOAD)
+        self.assertEqual(self.role_of(FRIEND, "filelower1"), COMMENT)
+
+    def test_nobody_gains_a_right_a_nearer_row_took_away(self):
+        """A nearer deny of upload, from the person or the public row, still holds."""
+        self.legacy.permissions_rows = [
+            permission("p1", "folderupper", "$GENERAL", read=1, upload=1),
+            permission("p2", "folderlower", FRIEND, read=1, comment=1),
+            permission("p3", "folderlower", "", upload=1, deny=1),
+        ]
+        self.run_grants()
+        self.assertEqual(self.role_of(FRIEND, "filelower1"), COMMENT)
+
+    def test_a_public_row_is_not_kept_for_signed_in_people(self):
+        """§14.5 narrows a public row to `$PUBLIC` READ and a link, on purpose."""
+        self.legacy.permissions_rows = [
+            permission("p1", "folderupper", "", read=1, write=1),
+            permission("p2", "folderlower", FRIEND, read=1, comment=1),
+        ]
+        self.run_grants()
+        self.assertEqual(self.role_of(FRIEND, "filelower1"), COMMENT)
+
+    def test_a_deny_is_not_reopened(self):
+        """§14.5 rounds a deny up to a total deny; the person stays out and is counted."""
+        self.legacy.permissions_rows = [
+            permission("p1", "folderupper", FRIEND, read=1, write=1),
+            permission("p2", "folderlower", FRIEND, upload=1, deny=1),
+        ]
+        report = self.run_grants()
+        self.assertEqual(self.role_of(FRIEND, "filelower1"), NONE)
+        self.assertEqual((report.legacy_rights_kept, report.legacy_rights_behind_deny), (0, 1))
+
+    def test_a_rerun_writes_nothing_more(self):
+        """The second run finds the person at their legacy role, and the count stays."""
+        self.legacy.sheets["sheet-1"] = "filelower1"
+        self.legacy.permissions_rows = [
+            permission("p1", "folderupper", FRIEND, read=1, upload=1),
+            permission("p2", "folderlower", FRIEND, read=1, comment=1),
+        ]
+        self.legacy.docshare_rows = [
+            docshare("d1", "sheet-1", user="other@example.com", read=1),
+            docshare("d2", "sheet-1", everyone=1, read=1, write=1),
+        ]
+        first = self.run_grants()
+        rows = {key: dict(row) for key, row in self.drive.grant_rows.items()}
+        kept = first.legacy_rights_kept
+        self.report = GrantConversion.from_dict(first.as_dict())
+        self.report.begin_run()
+        second = self.run_grants()
+        self.assertEqual(kept, 2)
+        self.assertEqual(second.legacy_rights_kept, 2)
+        self.assertEqual(self.drive.grant_rows, rows)
+        self.assertEqual(self.role_of("other@example.com", "filelower1"), EDIT)
 
 
 class RowShapeTest(GrantCase):
