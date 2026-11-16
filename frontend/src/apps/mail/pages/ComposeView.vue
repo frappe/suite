@@ -317,7 +317,6 @@ const subjectInput = useTemplateRef<HTMLInputElement>('subjectInput')
 const fileInput = useTemplateRef<HTMLInputElement>('fileInput')
 const scroller = useTemplateRef<HTMLElement>('scroller')
 const pendingUploads = ref(0)
-const isUploading = computed(() => pendingUploads.value > 0 || isAttachingFromDrive.value)
 
 const uploadInlineImage = async (file: File) => {
   pendingUploads.value++
@@ -361,8 +360,9 @@ const {
   setRemindAt,
   openQuotedContent,
   openAttachment,
+  attachFile,
   attachFromDrive,
-  isAttachingFromDrive,
+  isUploading,
   editorExtensions,
   editorContent,
   onEditorChange,
@@ -374,7 +374,7 @@ const {
   // The page is the composer, so it is open right up until the route leaves.
   isOpen: () => !leaving,
   host: () => textEditor.value,
-  isUploading: () => isUploading.value,
+  isUploading: () => pendingUploads.value > 0,
   uploadInlineImage,
 })
 
@@ -548,7 +548,7 @@ const onFilesSelected = async (e: Event) => {
     pendingUploads.value++
     try {
       const doc = await uploadFunction(file)
-      mail.attachments.push({ ...doc, disposition: 'attachment' })
+      attachFile(doc, file.type)
     } catch (error) {
       raiseToast(
         (error instanceof TransportError &&

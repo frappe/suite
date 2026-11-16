@@ -7,7 +7,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { api, client, useMutation, type InputOf, type OutputOf } from '@/api'
 import { useDriveDialogs } from '@/apps/drive'
 import { getAttachmentUrl } from '@/apps/mail/resources'
-import type { ComposeMailData, DraftRecipient, Identity, UserResource } from '@/apps/mail/types'
+import type {
+  Attachment,
+  ComposeMailData,
+  DraftRecipient,
+  Identity,
+  UserResource,
+} from '@/apps/mail/types'
 import { commitAfterUndo, processInlineImages, raiseError, raiseToast } from '@/apps/mail/utils'
 import { injectAccountScope } from '@/apps/mail/utils/accountScope'
 import {
@@ -382,7 +388,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   const sendMode = ref<'undo' | 'scheduled'>('undo')
   let sentAs = scopeAccountId.value
   const sendMail = async (sendAt?: string) => {
-    if (options.isUploading?.() || attachingFromDrive.value) {
+    if (isUploading.value) {
       const message = __('Wait for attachments to finish uploading')
       if (sendAt) throw new Error(message)
       return raiseToast(message, 'error')
@@ -702,7 +708,43 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 
   // ── Attachments ─────────────────────────────────────────────────────────────────────────────
 
-  // ── Attaching from Drive ────────────────────────────────────────────────────────────────────
+  const openAttachment = async (blob_id?: string, type?: string) => {
+    if (!blob_id) return
+
+    // Opened up front, while the click's user activation is still live: Safari blocks
+    // window.open() once the gesture has expired, which it has by the time the attachment has
+    // been fetched. A null tab means the popup blocker got it — retrying after the fetch would
+    // hit the same block, so just say so.
+    const tab = window.open('', '_blank')
+    if (!tab) return raiseToast(__('Allow popups to open attachments'), 'error')
+    try {
+      tab.location.href = await getAttachmentUrl(blob_id, type, scopeAccountId.value)
+    } catch {
+      tab.close()
+    }
+  }
+
+  /**
+   * Puts a file just stored on the site on the mail: an upload from the device, or a copy from
+   * Drive. It has no blob until the draft is saved, so until then it opens from its URL.
+   */
+  const attachFile = (
+    doc: { file_name?: string; file_url?: string; file_size?: number },
+    type?: string,
+  ) => {
+    const file: Attachment & { file_name: string; file_size: number } = {
+      filename: doc.file_name ?? '',
+      file_name: doc.file_name ?? '',
+      blob_id: '',
+      // Kept for the pill's icon; the server reads the type from the file itself.
+      type: type ?? '',
+      size: doc.file_size ?? 0,
+      file_size: doc.file_size ?? 0,
+      file_url: doc.file_url ?? null,
+      disposition: 'attachment',
+    }
+    mail.attachments.push(file)
+  }
 
   // Drive's own picker, then copies made on the server (attach_drive_files): what the mail carries
   // is the file as it was picked, under the name Drive gives it. A refusal — a file too large, too
@@ -721,40 +763,13 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       const attached = await client.mutation(api.mail.attachments.fromDrive, {
         nodes: files.map(({ name }) => name),
       })
-      mail.attachments.push(
-        // As an upload's file is kept (see ComposeMailEditor's attachDoc): no blob yet, so it opens
-        // from its URL until the draft is saved.
-        ...attached.map((file) => ({
-          filename: file.file_name,
-          file_name: file.file_name,
-          blob_id: '',
-          type: '',
-          size: file.file_size,
-          file_size: file.file_size,
-          file_url: file.file_url,
-          disposition: 'attachment',
-        })),
-      )
+      for (const file of attached) attachFile(file)
     } finally {
       attachingFromDrive.value--
     }
   }
-
-  const openAttachment = async (blob_id?: string, type?: string) => {
-    if (!blob_id) return
-
-    // Opened up front, while the click's user activation is still live: Safari blocks
-    // window.open() once the gesture has expired, which it has by the time the attachment has
-    // been fetched. A null tab means the popup blocker got it — retrying after the fetch would
-    // hit the same block, so just say so.
-    const tab = window.open('', '_blank')
-    if (!tab) return raiseToast(__('Allow popups to open attachments'), 'error')
-    try {
-      tab.location.href = await getAttachmentUrl(blob_id, type, scopeAccountId.value)
-    } catch {
-      tab.close()
-    }
-  }
+  // Whether a file is still on its way to the mail, from the device or from Drive. Sending waits.
+  const isUploading = computed(() => !!options.isUploading?.() || attachingFromDrive.value > 0)
 
   // ── Mentions ────────────────────────────────────────────────────────────────────────────────
 
@@ -862,8 +877,9 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     setRemindAt,
     openQuotedContent,
     openAttachment,
+    attachFile,
     attachFromDrive,
-    isAttachingFromDrive: computed(() => attachingFromDrive.value > 0),
+    isUploading,
     editorExtensions,
     appendEmoji,
     editorContent,
