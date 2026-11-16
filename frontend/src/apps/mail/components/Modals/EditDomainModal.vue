@@ -63,6 +63,7 @@ import { ref, watch } from 'vue'
 
 import { api, useMutation, type InputOf } from '@/api'
 import { raiseToast } from '@/apps/mail/utils'
+import { translate as __ } from '@/platform/translation'
 
 type DomainData = {
   id: string
@@ -102,6 +103,6 @@ async function updateDomainSubmit() {
   await updateDomain.run(input)
   show.value = false
   emit('reload')
-  raiseToast(__('Domain updated.'))
+  raiseToast(__('Domain updated'))
 }
 </script>

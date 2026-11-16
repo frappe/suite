@@ -51,6 +51,7 @@ import { useRouter } from 'vue-router'
 import { api, useMutation } from '@/api'
 import { userStore } from '@/apps/people/stores/user'
 import { raiseToast } from '@/apps/people/utils'
+import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()
 
@@ -71,7 +72,7 @@ async function createContactSubmit() {
   const account = store.accountId
   const id = await createContact.run({ ...contact, account })
   show.value = false
-  raiseToast(__('Contact created.'))
+  raiseToast(__('Contact created'))
   await router.push({ name: 'people-contact', params: { accountId: account, contactName: id } })
 }
 

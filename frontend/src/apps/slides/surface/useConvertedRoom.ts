@@ -59,7 +59,7 @@ import {
 } from '@/platform/collab'
 import { peopleOf, presenceColours } from '@/platform/collab/peers'
 import type { RestoreNotice } from '@/platform/collab/restoreNotices'
-import { translate } from '@/platform/translation'
+import { translate as __ } from '@/platform/translation'
 
 import { restoreVersion } from './restoreVersion'
 import { saveFirst } from './saveFirst'
@@ -245,8 +245,8 @@ export function useConvertedRoom({
     if (isBlocked) {
       toast.warning(
         direction === 'undo'
-          ? translate("Couldn't undo: a co-editor changed this")
-          : translate("Couldn't redo: a co-editor changed this"),
+          ? __('Could not undo: a co-editor changed this')
+          : __('Could not redo: a co-editor changed this'),
       )
     }
 
@@ -270,8 +270,8 @@ export function useConvertedRoom({
     const name = selectorOf(id)
     toast.warning(
       name
-        ? translate('{0} deleted this element. Your text is in a recovery copy.', [name])
-        : translate('A co-editor deleted this element. Your text is in a recovery copy.'),
+        ? __('{0} deleted this element. Your text is in a recovery copy.', [name])
+        : __('A co-editor deleted this element. Your text is in a recovery copy.'),
     )
   }
 
@@ -516,7 +516,7 @@ export function useConvertedRoom({
     const liveRoom = room.value
     const liveDeck = deck
     if (!liveRoom || !liveDeck) {
-      return { isRestored: false, message: translate('The version was not restored.') }
+      return { isRestored: false, message: __('Could not restore the version') }
     }
 
     liveDeck.push()

@@ -7,6 +7,8 @@ import { raiseToast } from '@/apps/mail/utils'
 import { useUndo } from '@/apps/mail/utils/composables'
 import { hasReacted } from '@/apps/mail/utils/reactions'
 import { undoSendPeriodOf } from '@/apps/mail/utils/undoSend'
+import { translate as __ } from '@/platform/translation'
+import { TransportError } from '@/platform/transport'
 
 /**
  * Reacting to the messages of one open conversation.
@@ -48,7 +50,7 @@ export function useMessageReactions(
   function react(mail: Mail, emoji: string) {
     if (mail.cannot_react) return void raiseToast(mail.cannot_react, 'error')
     if (hasReacted(reactionsOn(mail), emoji, ownEmails.value))
-      return void raiseToast(__('You already reacted with {0}.', [emoji]))
+      return void raiseToast(__('You already reacted with {0}', [emoji]))
 
     const from_email = [...ownEmails.value][0] ?? null
     sending.set(mail.id, [...(sending.get(mail.id) ?? []), { emoji, from_name: null, from_email }])
@@ -64,9 +66,11 @@ export function useMessageReactions(
       } catch (error) {
         stopShowing(mail, emoji)
         raiseToast(
-          error instanceof Error && error.message
-            ? error.message
-            : __('Could not react to this message.'),
+          (error instanceof TransportError &&
+          error.type !== 'NetworkError' &&
+          error.type !== 'AbortError'
+            ? __(error.message)
+            : null) || __('Could not react to this message'),
           'error',
         )
       }

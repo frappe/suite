@@ -106,7 +106,7 @@ describe('a picture added offline', () => {
       vi.mocked(toast.promise).mock.lastCall,
     )
     await expect(upload).rejects.toThrow('Failed to fetch')
-    expect(shown.error).toBe('Upload failed. Please try again.')
+    expect(shown.error).toBe('Could not upload the file. Try again.')
     expect(addMediaElement).not.toHaveBeenCalled()
   })
 })

@@ -3,6 +3,7 @@ import { toast } from 'frappe-ui'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { DocumentSession } from '@/apps/drive'
+import { TransportError } from '@/platform/transport'
 
 import { useDocumentPanel } from './useDocumentPanel'
 
@@ -74,7 +75,9 @@ function renamingSession(refusal?: string) {
       update: (seq: string, changes: Parameters<DocumentSession['versions']['update']>[1]) => {
         sent.push([seq, changes])
         if (refusal) {
-          return Promise.reject(new Error(refusal))
+          return Promise.reject(
+            new TransportError({ type: 'PermissionError', message: refusal, status: 403 }),
+          )
         }
 
         return Promise.resolve()
@@ -161,6 +164,6 @@ describe('renaming a version', () => {
       renamed,
       panel.lists.versions.map((row) => row.seq),
       vi.mocked(toast.error).mock.calls,
-    ]).toEqual([null, [3], [['This version no longer exists.']]])
+    ]).toEqual([null, [3], [['This version no longer exists']]])
   })
 })

@@ -153,7 +153,7 @@ describe('a save that left pictures out', () => {
     await saveAnswering({ ok: false, count: 2, failed: [{ status: 'refused' }] })
 
     expect(toast.warning).toHaveBeenCalledWith('1 of 2 images not saved', {
-      description: 'You may not have access to them.',
+      description: 'You may not have access to them',
     })
   })
 
@@ -165,7 +165,7 @@ describe('a save that left pictures out', () => {
     })
 
     expect(toast.warning).toHaveBeenCalledWith('2 of 3 images not saved', {
-      description: 'Check your connection and try again.',
+      description: 'Check your connection and try again',
     })
   })
 })

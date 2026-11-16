@@ -31,12 +31,18 @@
           </button>
         </div>
         <div class="flex min-w-0 flex-1 flex-col">
-          <div class="relative -ms-1.5">
+          <!-- The hidden copy sizes the field to its text, so the pencil sits beside the name. -->
+          <div class="relative -ms-1.5 inline-grid max-w-full self-start">
+            <span
+              class="invisible col-start-1 row-start-1 whitespace-pre border border-transparent ps-1.5 pe-6 py-1 text-xl-semibold"
+              aria-hidden="true"
+              >{{ name || __('Acme Inc.') }}</span
+            >
             <input
               v-model="name"
               type="text"
               maxlength="20"
-              class="w-full rounded-4 border border-transparent bg-transparent hover:border-outline-gray-2 ps-1.5 pe-6 py-1 text-xl-semibold text-ink-gray-8 placeholder-ink-gray-4 focus:border-outline-gray-4 focus:shadow-sm focus:outline-none focus:ring-0"
+              class="col-start-1 row-start-1 w-full min-w-0 rounded-4 border border-transparent bg-transparent hover:border-outline-gray-2 ps-1.5 pe-6 py-1 text-xl-semibold text-ink-gray-8 placeholder-ink-gray-4 focus:border-outline-gray-4 focus:shadow-sm focus:outline-none focus:ring-0"
               :placeholder="__('Acme Inc.')"
               :disabled="saveWorkspace.isPending"
               @blur="saveName"

@@ -1,47 +1,46 @@
+<!-- A value with a Copy button beside it, not over it: the value truncates and the button says "Copied" for a moment after a copy. -->
 <template>
-  <div class="relative rounded-6 border border-outline-gray-2 bg-surface-gray-2 p-3">
-    <div class="select-all break-all text-xs text-ink-gray-8">
-      <pre
-        :class="{
-          'whitespace-pre-wrap': breakLines,
-          'overflow-x-auto': !breakLines,
-        }"
-        :style="
-          !breakLines
-            ? 'scrollbar-width: none; -ms-overflow-style: none; -webkit-scrollbar: none;'
-            : ''
-        "
-        >{{ textContent }}</pre>
-    </div>
-    <button
-      type="button"
-      class="absolute right-2 top-2 rounded-1 border border-outline-gray-2 bg-surface-gray-1 px-2 py-1 text-xs leading-tighter text-ink-gray-7 hover:bg-surface-gray-3"
-      @click="copyTextContentToClipboard"
+  <div
+    class="flex items-center gap-2 rounded-6 border border-outline-gray-2 bg-surface-gray-2 py-1.5 pl-3 pr-1.5"
+  >
+    <span
+      class="min-w-0 flex-1 select-all truncate text-sm text-ink-gray-8"
+      :class="{ 'font-mono': mono }"
+      :title="textContent"
     >
-      {{ copied ? 'copied' : 'copy' }}
-    </button>
+      {{ textContent }}
+    </span>
+    <Button
+      size="sm"
+      :icon-left="copied ? 'lucide-check' : 'lucide-copy'"
+      :label="copied ? __('Copied') : __('Copy')"
+      class="shrink-0"
+      @click="copyTextContentToClipboard"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { toast } from 'frappe-ui'
-import { ref } from 'vue'
+import { Button } from 'frappe-ui'
+import { onScopeDispose, ref } from 'vue'
+
+import { translate as __ } from '@/platform/translation'
 
 const props = defineProps<{
   textContent: string
-  breakLines?: boolean
+  /** For values read character by character, like an encryption fingerprint. */
+  mono?: boolean
 }>()
 
 const copied = ref(false)
+let reset: ReturnType<typeof setTimeout> | undefined
 
-function copyTextContentToClipboard() {
-  const clipboard = window.navigator.clipboard
-  clipboard.writeText(props.textContent).then(() => {
-    copied.value = true
-    setTimeout(() => {
-      copied.value = false
-    }, 4000)
-    toast.success(__('Copied'))
-  })
+async function copyTextContentToClipboard() {
+  await window.navigator.clipboard.writeText(props.textContent)
+  copied.value = true
+  clearTimeout(reset)
+  reset = setTimeout(() => (copied.value = false), 2000)
 }
+
+onScopeDispose(() => clearTimeout(reset))
 </script>

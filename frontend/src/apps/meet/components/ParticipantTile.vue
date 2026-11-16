@@ -1,6 +1,6 @@
 <template>
   <div
-    class="group relative rounded-4 overflow-hidden min-h-0"
+    class="participant-tile group relative rounded-4 overflow-hidden min-h-0"
     :class="tileBackgroundClass"
     :data-testid="`participant-tile-${participant.user_id}`"
     :data-active-speaker="String(isActiveSpeaker)"
@@ -42,11 +42,13 @@
       class="absolute inset-0 flex items-center justify-center pointer-events-none"
       :class="avatarBackgroundClass"
     >
-      <MeetAvatar
-        size="3xl"
-        :image="participant.avatar"
-        :label="participant.user_name || participant.initials"
-      />
+      <div class="participant-avatar">
+        <MeetAvatar
+          size="3xl"
+          :image="participant.avatar"
+          :label="participant.user_name || participant.initials"
+        />
+      </div>
     </div>
 
     <NamePill :name="resolvedDisplayName" :size="labelSize" :position="labelPosition">
@@ -136,22 +138,13 @@
         size="xs"
         class="!rounded-full !text-white hover:!bg-gray-600"
         :tooltip="isTileHovered ? __('Remove participant') : undefined"
-        @click="showKickDialog = true"
+        @click="confirmRemove"
       >
         <template #icon>
           <lucide-user-x class="w-3.5 h-3.5" />
         </template>
       </Button>
     </div>
-
-    <!-- Kick Confirmation Dialog -->
-    <KickParticipantDialog
-      v-if="canShowHostControls"
-      v-model="showKickDialog"
-      :participant-name="resolvedDisplayName || 'this participant'"
-      :can-ban="participant.is_guest === true"
-      @confirm="handleKick"
-    />
   </div>
 </template>
 
@@ -163,9 +156,9 @@ import { translate as __ } from '@/platform/translation'
 
 import { useAudioStream } from '../composables/useAudioLevels'
 import { useMeetingContext } from '../composables/useMeetingContext'
+import { confirmRemoveParticipant } from '../utils/confirmRemoveParticipant'
 import type { Participant } from '../utils/media/ParticipantManager'
 import AudioIndicator from './AudioIndicator.vue'
-import KickParticipantDialog from './KickParticipantDialog.vue'
 import MeetAvatar from './MeetAvatar.vue'
 import NamePill from './NamePill.vue'
 import NetworkIndicator from './NetworkIndicator.vue'
@@ -302,19 +295,35 @@ const showActionToolbar = computed(() => {
   return canShowPinButton.value || canShowHostControls.value
 })
 
-const showKickDialog = ref(false)
-
 const handleMute = () => {
   hostControls?.muteParticipant(props.participant.user_id)
 }
 
-const handleKick = (ban: boolean) => {
-  hostControls?.kickParticipant(props.participant.user_id, ban)
-  showKickDialog.value = false
-}
+const confirmRemove = () =>
+  confirmRemoveParticipant({
+    name: resolvedDisplayName.value,
+    canBan: props.participant.is_guest === true,
+    remove: (ban) => hostControls?.kickParticipant(props.participant.user_id, ban),
+  })
 </script>
 
 <style scoped>
+/* A camera-off avatar grows with its tile: 3xl on a grid or sidebar tile, larger on a big one,
+   where a 3xl avatar alone in the middle read as a loading dot. */
+.participant-tile {
+  container: meet-tile / inline-size;
+}
+@container meet-tile (min-width: 480px) {
+  .participant-avatar {
+    transform: scale(1.5);
+  }
+}
+@container meet-tile (min-width: 800px) {
+  .participant-avatar {
+    transform: scale(2);
+  }
+}
+
 /* Firefox blank video mitigation */
 .remote-video {
   background-color: #000;

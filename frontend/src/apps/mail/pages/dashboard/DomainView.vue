@@ -105,6 +105,7 @@ import { formatDateTime, fromNow } from '@/apps/mail/utils/datetime'
 import { domainStatusBadge, type DomainStatus } from '@/apps/mail/utils/domainStatus'
 import { DashboardLayout, DashboardList, DashboardSkeletonText } from '@/platform/dashboard'
 import { appPageMeta } from '@/platform/page-meta'
+import { translate as __ } from '@/platform/translation'
 
 type DNSRecord = Record<string, string | number | boolean | null | undefined>
 type RecordGroup = {
@@ -179,7 +180,7 @@ async function deleteDomainSubmit() {
   router.push({
     name: 'mail-domains',
   })
-  raiseToast(__('Domain deleted.'))
+  raiseToast(__('Domain deleted'))
 }
 const setEnabled = useMutation(api.mail.admin.domains.setEnabled)
 async function setEnabledSubmit(values: { enabled: boolean }) {
@@ -193,7 +194,7 @@ async function setEnabledSubmit(values: { enabled: boolean }) {
   raiseToast(
     data.is_enabled
       ? __('Domain enabled. Verify its DNS records to bring it live.')
-      : __('Domain disabled.'),
+      : __('Domain disabled'),
   )
 }
 const downloadFile = (content: string, extension: string, mimeType: string) => {

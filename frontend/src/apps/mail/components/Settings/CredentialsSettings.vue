@@ -59,6 +59,7 @@ import { api, useMutation, useQuery, type InputOf } from '@/api'
 import { raiseToast } from '@/apps/mail/utils'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import { translate as __ } from '@/platform/translation'
 
 const userSettings = useQuery(api.mail.settings.credentials)
 
@@ -98,7 +99,7 @@ async function save() {
   if (appPassword.value) credentials.app_password = appPassword.value
   await saveSettings.run(credentials)
   appPassword.value = ''
-  raiseToast(__('Credentials updated.'))
+  raiseToast(__('Credentials updated'))
   await userSettings.refetch()
 }
 </script>

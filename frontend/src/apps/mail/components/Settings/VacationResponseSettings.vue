@@ -73,6 +73,7 @@ import { fromLocalInput, toLocalInput } from '@/apps/mail/utils/datetime'
 import dayjs from '@/apps/mail/utils/dayjs'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import { translate as __ } from '@/platform/translation'
 
 const store = userStore()
 const { isMobile } = useScreenSize()
@@ -131,7 +132,7 @@ async function updateVacationResponseSubmit() {
   }
   await updateVacationResponse.run(input)
   await vacationResponse.refetch()
-  raiseToast(__('Vacation response updated.'))
+  raiseToast(__('Vacation response updated'))
   showConfirmDialog.value = false
 }
 </script>

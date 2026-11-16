@@ -569,7 +569,7 @@ export const calendar = defineFlow<Event, BaseScene>({
 		},
 		async SAVE_CALENDAR(scene) {
 			await scene.dialog("New Calendar").getByRole("button", { name: "Save" }).click();
-			await expect(scene.toast("Calendar created.")).toBeVisible();
+			await expect(scene.toast("Calendar created")).toBeVisible();
 			await expect(myCalendars(scene).getByRole("button", { name: scene.name("Travel"), exact: true })).toBeVisible();
 		},
 		async DEFAULT_CALENDAR_MENU(scene) {
@@ -597,7 +597,7 @@ export const calendar = defineFlow<Event, BaseScene>({
 		},
 		async SAVE_CALENDAR_EDIT(scene) {
 			await scene.dialog("Edit Calendar").getByRole("button", { name: "Save" }).click();
-			await expect(scene.toast("Calendar updated.")).toBeVisible();
+			await expect(scene.toast("Calendar updated")).toBeVisible();
 			await expect(myCalendars(scene).getByRole("button", { name: scene.name("Weekend projects"), exact: true })).toBeVisible();
 		},
 		async DELETE_CALENDAR(scene) {
@@ -606,7 +606,7 @@ export const calendar = defineFlow<Event, BaseScene>({
 		},
 		async CONFIRM_DELETE_CALENDAR(scene) {
 			await scene.dialog(`Delete ${scene.name("Side projects")}?`).getByRole("button", { name: "Delete" }).click();
-			await expect(scene.toast("Calendar deleted.")).toBeVisible();
+			await expect(scene.toast("Calendar deleted")).toBeVisible();
 			await expect(myCalendars(scene).getByRole("button", { name: scene.name("Side projects"), exact: true })).toHaveCount(0);
 		},
 		async OPEN_EVENT(scene) {
@@ -661,13 +661,13 @@ export const calendar = defineFlow<Event, BaseScene>({
 		},
 		async SKIP_NOTIFY(scene) {
 			await stacked(scene, "Notify Participants").getByRole("button", { name: "Skip", includeHidden: true }).click();
-			await expect(scene.toast("Event created.")).toBeVisible();
+			await expect(scene.toast("Event created")).toBeVisible();
 			await expect(scene.page.getByText(scene.name("Venue walkthrough")).first()).toBeVisible();
 		},
 		async SAVE_SLOW(scene) {
 			await scene.hold("**/api/method/suite.calendar.doctype.calendar_event.calendar_event.add_calendar_event");
 			await eventForm(scene).getByRole("button", { name: "Save", exact: true }).click();
-			await expect(scene.toast("Creating event...")).toBeVisible();
+			await expect(scene.toast("Creating event…")).toBeVisible();
 		},
 		async REPEAT(scene) {
 			await eventForm(scene).getByText("Repeat", { exact: true }).click();
@@ -689,7 +689,7 @@ export const calendar = defineFlow<Event, BaseScene>({
 			deferEvents(scene, title);
 			await eventForm(scene).getByRole("textbox", { name: "Add title" }).fill(title);
 			await scene.page.keyboard.press("Escape");
-			await expect(scene.toast("Draft saved.")).toBeVisible();
+			await expect(scene.toast("Draft saved")).toBeVisible();
 		},
 		async OPEN_OWN_EVENT(scene) {
 			const title = scene.name("Supplier call");
@@ -707,7 +707,7 @@ export const calendar = defineFlow<Event, BaseScene>({
 		},
 		async SKIP_CANCELLATION(scene) {
 			await stacked(scene, "Notify Participants").getByRole("button", { name: "Skip", includeHidden: true }).click();
-			await expect(scene.toast("Event deleted.")).toBeVisible();
+			await expect(scene.toast("Event deleted")).toBeVisible();
 			await expect(scene.page.getByText(scene.name("Supplier call"))).toHaveCount(0);
 		},
 		async OPEN_SERIES(scene) {
@@ -737,7 +737,7 @@ export const calendar = defineFlow<Event, BaseScene>({
 		},
 		async CONFIRM_SCOPE(scene) {
 			await stacked(scene, "Update repeating event").getByRole("button", { name: "Update", includeHidden: true }).click();
-			await expect(scene.toast("Event updated.")).toBeVisible();
+			await expect(scene.toast("Event updated")).toBeVisible();
 			await expect(scene.page.getByText(scene.name("Evening review, moved")).first()).toBeVisible();
 		},
 		async OPEN_INVITE(scene) {
@@ -749,7 +749,7 @@ export const calendar = defineFlow<Event, BaseScene>({
 		async ANSWER_YES(scene) {
 			const popover = card(scene, scene.name("Press briefing"));
 			await popover.getByRole("radio", { name: "Yes" }).click();
-			await expect(scene.toast("Response sent.")).toBeVisible();
+			await expect(scene.toast("Response sent")).toBeVisible();
 		},
 		async OPEN_RECURRING_INVITE(scene) {
 			const title = scene.name("Launch retro");

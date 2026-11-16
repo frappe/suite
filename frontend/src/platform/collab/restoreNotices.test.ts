@@ -52,7 +52,7 @@ describe('told about another person’s restore', () => {
     }
 
     expect(await restoredByOther(restored, 'document')).toBe(
-      'Amira Haddad restored the version “Draft for review”.',
+      'Amira Haddad restored the version “Draft for review”',
     )
   })
 
@@ -67,16 +67,16 @@ describe('told about another person’s restore', () => {
     })
 
     expect(await restoredByOther(restored(today), 'document')).toMatch(
-      /^Amira Haddad restored the version from 10:42\sAM\.$/,
+      /^Amira Haddad restored the version from 10:42\sAM$/,
     )
     expect(await restoredByOther(restored(earlier), 'document')).toMatch(
-      /^Amira Haddad restored the version from (Oct 12|12 Oct), 10:42\sAM\.$/,
+      /^Amira Haddad restored the version from (Oct 12|12 Oct), 10:42\sAM$/,
     )
   })
 
   it('still tells the reader when the notice names no person or no version', async () => {
     expect(await restoredByOther({ by: null, version: null }, 'document')).toBe(
-      'Someone restored an earlier version of this document.',
+      'Someone restored an earlier version of this document',
     )
   })
 })
@@ -102,14 +102,14 @@ describe('restore messages for a presentation', () => {
       noticeFor({ outcome: 'unchanged' }, 'presentation').message,
       noticeFor({ outcome: 'refused', refusal: 'milestone_failed' }, 'presentation').message,
     ]).toEqual([
-      'The presentation already matches this version.',
-      "The presentation as it is now couldn't be kept as a version first, so nothing was restored.",
+      'The presentation already matches this version',
+      "The presentation as it is now couldn't be kept as a version first, so nothing was restored",
     ])
   })
 
   it('names the presentation when another person’s restore names no version', async () => {
     expect(await restoredByOther({ by: null, version: null }, 'presentation')).toBe(
-      'Someone restored an earlier version of this presentation.',
+      'Someone restored an earlier version of this presentation',
     )
   })
 })

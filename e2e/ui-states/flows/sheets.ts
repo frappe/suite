@@ -202,7 +202,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "Insert chart from the table: source range, chart types, axis, series, options and a live preview." },
 		},
 		commentsEmpty: {
-			meta: { description: "The comments panel on A1: a box to comment on the selected cell, and “No comments yet.”" },
+			meta: { description: "The comments panel from the toolbar’s Comment: a box to comment on the selected cell, A1." },
 			on: { POST_COMMENT: "commentPosted" },
 		},
 		commentPosted: {
@@ -458,15 +458,17 @@ export const sheets = defineFlow<Event, BaseScene>({
 			await expect(scene.page.getByRole("dialog", { name: "Insert chart" })).toBeVisible();
 		},
 		async OPEN_COMMENTS(scene) {
-			await openDocumentMenu(scene.page, "Comments");
-			await expect(scene.page.getByRole("complementary", { name: "Comments" }).getByText("No comments yet.")).toBeVisible();
+			await scene.page.locator(".sn-toolbar").getByRole("button", { name: "Comment", exact: true }).click();
+			const box = scene.page.getByRole("complementary", { name: "Comments" }).locator("form");
+			await expect(box.getByLabel("Add a comment on the cell", { exact: true })).toBeVisible();
+			await expect(box).toContainText("Sheet1 · A1");
 		},
 		async POST_COMMENT(scene) {
 			const comments = scene.page.getByRole("complementary", { name: "Comments" });
-			await comments.getByRole("textbox", { name: "New comment" }).fill("Leo, can you confirm the North numbers?");
+			await comments.getByLabel("Add a comment on the cell", { exact: true }).fill("Leo, can you confirm the North numbers?");
 			await comments.getByRole("button", { name: "Comment", exact: true }).click();
-			await expect(comments.getByText("No comments yet.")).toBeHidden();
-			await expect(comments.getByText("Leo, can you confirm the North numbers?").first()).toBeVisible();
+			const row = comments.locator("li[data-thread]").filter({ hasText: "Leo, can you confirm the North numbers?" });
+			await expect(row).toContainText("Sheet1 · A1");
 		},
 		async OPEN_VERSIONS(scene) {
 			await openDocumentMenu(scene.page, "Versions");

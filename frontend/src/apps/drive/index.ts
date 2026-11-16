@@ -190,7 +190,10 @@ export function useDriveDocumentCreation(): DriveDocumentCreation {
         resolving.value = false
       }
       if (!parent) {
-        const message = discovered.error?.message ?? __('My files is unavailable.')
+        const message =
+          (discovered.error instanceof TransportError && discovered.error.type !== 'NetworkError'
+            ? __(discovered.error.message)
+            : null) ?? __('Could not open My files')
         // Loaded on demand: `@/platform/feedback` pulls frappe-ui into the initial graph.
         void import('@/platform/feedback').then(({ toast }) => toast.error(message))
         throw new Error(message)
@@ -323,7 +326,8 @@ async function duplicateDocument(
     await router.push(driveNodeRoute(await session.copy(folder.name)))
   } catch (error) {
     toast.error(
-      (error instanceof Error && error.message) || __('Could not make a copy of this file.'),
+      (error instanceof TransportError && error.message) ||
+        __('Could not make a copy of this file'),
     )
   }
 }
@@ -334,7 +338,7 @@ async function trashDocument(session: DocumentSession, router: Router, back: Rou
     await client.mutation(api.drive.nodes.trash, { node: item.node, state: 'Trashed' })
   } catch (error) {
     toast.error(
-      (error instanceof Error && error.message) || __('Could not move this file to trash.'),
+      (error instanceof TransportError && error.message) || __('Could not move this file to trash'),
     )
     return
   }
@@ -440,6 +444,8 @@ export {
  * viewed version and does the restore and download itself.
  */
 export { default as DriveDocumentSidePanel } from '@/apps/drive/files/features/side-panel/DocumentSidePanel.vue'
+/** The comment threads alone, for an app that lays out its own side panel. */
+export { default as DriveCommentList } from '@/apps/drive/files/features/side-panel/comments/CommentList.vue'
 /** The line over a version shown in the document's place, with Restore and Back to current. */
 export { default as DriveVersionShownBar } from '@/apps/drive/files/features/side-panel/versions/VersionShownBar.vue'
 /** A line across the document under its header, with its actions at the right edge. */

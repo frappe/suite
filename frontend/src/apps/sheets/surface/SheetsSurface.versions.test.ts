@@ -38,6 +38,7 @@ vi.mock('@/apps/drive', async () => {
           slots.menu?.(),
     }),
     DriveDocumentMenu: capture('menu').default,
+    useDocumentComments: () => ({ drafts: { start: () => {} } }),
   }
 })
 function capture(key: 'menu' | 'panel' | 'bar') {
@@ -60,7 +61,7 @@ function capture(key: 'menu' | 'panel' | 'bar') {
 }
 vi.mock('./SheetVersionsPanel.vue', () => capture('panel'))
 vi.mock('./SheetVersionBar.vue', () => capture('bar'))
-vi.mock('./SheetCommentsPanel.vue', () => ({ default: { render: () => null } }))
+vi.mock('./SheetComments.vue', () => ({ default: { render: () => null } }))
 
 /** The live sheet: A1 = "now". Version 3 held A1 = "then". */
 const docs = vi.hoisted(() => ({ live: fromPartial<Uint8Array | null>(null) }))

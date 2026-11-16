@@ -532,7 +532,7 @@ export const compose = defineFlow<Event, BaseScene>({
 		},
 		async SEND_GOES_THROUGH(scene) {
 			await scene.lastHold.release();
-			await expect(scene.toast("Message sent.")).toBeVisible({ timeout: 15_000 });
+			await expect(scene.toast("Message sent")).toBeVisible({ timeout: 15_000 });
 		},
 		async SEND_FAILS(scene) {
 			const answered = scene.page.waitForResponse((response) => UPDATE_DRAFT.test(response.url()) && response.status() === 500);
@@ -554,11 +554,11 @@ export const compose = defineFlow<Event, BaseScene>({
 		},
 		async PICK_TOMORROW(scene) {
 			await scene.dialog("Schedule send").getByRole("button", { name: /Tomorrow morning/ }).click();
-			await expect(scene.toast("Send scheduled.")).toBeVisible({ timeout: 15_000 });
+			await expect(scene.toast("Send scheduled")).toBeVisible({ timeout: 15_000 });
 		},
 		async DISCARD(scene) {
 			await composer(scene.page).getByRole("button", { name: "Discard" }).click();
-			await expect(scene.toast("Draft discarded.")).toBeVisible();
+			await expect(scene.toast("Draft discarded")).toBeVisible();
 		},
 		async UNDO_DISCARD(scene) {
 			await scene.page.getByRole("button", { name: "Undo", exact: true }).click();
