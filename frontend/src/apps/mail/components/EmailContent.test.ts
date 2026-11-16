@@ -1,3 +1,4 @@
+import { JSDOM } from 'jsdom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, nextTick, type App } from 'vue'
 
@@ -56,6 +57,31 @@ const rendered = (root: HTMLElement) =>
 const stylesheets = (doc: Document) =>
   [...doc.querySelectorAll('style')].map((style) => style.textContent).join('\n')
 const placeholder = (root: HTMLElement) => root.querySelector('.animate-pulse')
+
+// The frame's document with its own scripts run, as the frame runs them. Nothing is laid out
+// here, so the pane's width and the width the message takes up are given; changing them and
+// sending a resize stands in for the pane changing size.
+const framed = (root: HTMLElement, pane: { width: number; content: number }) =>
+  new JSDOM(frame(root)!.getAttribute('srcdoc')!, {
+    runScripts: 'dangerously',
+    beforeParse(window) {
+      const measure = (pick: () => number) => ({
+        get(this: Element) {
+          return this === this.ownerDocument.documentElement ? pick() : 0
+        },
+      })
+      Object.defineProperty(
+        window.Element.prototype,
+        'clientWidth',
+        measure(() => pane.width),
+      )
+      Object.defineProperty(
+        window.Element.prototype,
+        'scrollWidth',
+        measure(() => pane.content),
+      )
+    },
+  })
 
 beforeEach(() => {
   window.__ = (message: string) => message
@@ -152,29 +178,46 @@ describe('EmailContent renders mail as it was sent', () => {
     expect(rendered(root).body.textContent).toContain('Hello')
   })
 
-  it('keeps every cell of a table quoted in a reply, with its borders', async () => {
+  // The table is wider than a phone's pane, and the quote it sits in can't reflow it: it has to
+  // be scaled down to the pane, never cut off at its edge, and come back to full size when the
+  // pane is wide enough again.
+  it('scales a table quoted in a reply down to a narrow pane, and back up when it fits', async () => {
     const root = mount(fixture('bordered-table-in-quote'))
     await nextTick()
 
-    const table = rendered(root).querySelector('table')!
-    const rows = [...table.querySelectorAll('tr')].map((row) =>
-      [...row.querySelectorAll('td')].map((cell) => cell.textContent!.trim()),
-    )
-    expect(rows).toEqual([
-      ['Ticket size', 'Upon registration', 'Upon auto-debit'],
-      ['If amount is < INR 250', '₹ 5.00', '₹ 5.00'],
-      ['INR 250 - INR 1000', '₹ 6.00', '₹ 7.00'],
-      ['If amount is > INR 1000', '₹ 8.00', '₹ 18.00'],
-    ])
-    expect(table.getAttribute('border')).toBe('1')
-    expect(table.querySelector('td')!.getAttribute('style')).toContain('border: 1px solid #000000')
+    const pane = { width: 360, content: 540 }
+    const { window } = framed(root, pane)
+    const { body } = window.document
+    expect(Number(body.style.zoom)).toBeCloseTo(360 / 540)
+    expect(body.querySelectorAll('table td')).toHaveLength(12)
+
+    Object.assign(pane, { width: 800, content: 800 })
+    window.dispatchEvent(new window.Event('resize'))
+    expect(body.style.zoom).toBe('')
   })
 
-  it("keeps a code block's lines", async () => {
+  it('leaves a message that fits the pane at full size', async () => {
+    const root = mount(fixture('bordered-table-in-quote'))
+    await nextTick()
+
+    const { window } = framed(root, { width: 800, content: 800 })
+    expect(window.document.body.style.zoom).toBe('')
+  })
+
+  // A long line wraps inside the pane instead of widening the message past it or scrolling
+  // sideways, and the block keeps its line breaks and indentation.
+  it("wraps a code block's long lines and keeps its own", async () => {
     const root = mount(fixture('code-in-notification'))
     await nextTick()
 
-    expect(rendered(root).querySelector('pre')!.textContent).toBe(
+    const { window } = framed(root, { width: 360, content: 360 })
+    const pre = window.document.querySelector('pre')!
+    const code = window.document.querySelector('p code')!
+    for (const block of [pre, code]) {
+      expect(window.getComputedStyle(block).whiteSpace).toBe('pre-wrap')
+      expect(['auto', 'scroll']).not.toContain(window.getComputedStyle(block).overflowX)
+    }
+    expect(pre.textContent).toBe(
       'def get_messages(account, ids):\n' +
         '    cached = _get_cached_messages(account, ids)\n' +
         '    return [cached[id] for id in ids]\n',
