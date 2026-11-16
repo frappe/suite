@@ -3,11 +3,7 @@
        folder that takes a few seconds, Trash on a large account, shows a list on its way rather
        than a bare spinner. Fixed widths, so the rows don't shuffle on each render. -->
   <div class="animate-pulse" role="status" :aria-label="__('Loading mail')">
-    <div
-      v-for="(row, i) in ROWS"
-      :key="i"
-      class="flex space-x-2.5 border-b px-3.5 py-2.5 sm:space-x-5 sm:px-5 sm:py-2"
-    >
+    <div v-for="(row, i) in ROWS" :key="i" :class="ROW_BOX_CLASS">
       <div class="bg-surface-gray-3 h-8 w-8 shrink-0 rounded-full max-sm:h-10 max-sm:w-10" />
       <div class="min-w-0 flex-1 space-y-2 py-1">
         <div class="flex justify-between">
@@ -22,6 +18,8 @@
 </template>
 
 <script setup lang="ts">
+import { ROW_BOX_CLASS } from '@/apps/mail/constants'
+
 // Sender, subject and preview widths per row.
 const ROWS = [
   ['28%', '62%', '88%'],
