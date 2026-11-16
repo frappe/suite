@@ -86,13 +86,6 @@
       @update:selected-option="nextTick(setFocus)"
     >
       <template #suffix> <span /> </template>
-      <template #item-prefix="{ item, query }">
-        <Avatar :image="item.image" :label="item.display_name || item.email || query" size="lg" />
-      </template>
-      <template #item-label="{ item }">
-        <ContactOption :contact="item" :query="searchText" />
-      </template>
-      <template #item-create="{ query }"> {{ query }} </template>
     </Combobox>
 
     <!--
@@ -200,9 +193,9 @@ const emit = defineEmits<{
 }>()
 
 /**
- * Where to render the suggestion list, when it should be in flow rather than in the Combobox's
- * floating panel. Set by the mobile composer, which wants the full-width Gmail-style list; left
- * unset on desktop, where the panel is the right shape and the popover behaviour is kept.
+ * Where to render the suggestion list: in the page below the field, taking room rather than
+ * floating over the fields beneath it. Null until the composer's target has mounted, and no list
+ * shows until then.
  */
 const { field, suggestionsTo = null } = defineProps<{
   /** Which of the draft's recipient lists this is, so a move can name where it came from. */
@@ -318,14 +311,10 @@ watch(searchText, (text) => {
   if (!text) showSuggestions.value = false
 })
 
-// Suggestions only exist for a typed query — with an empty input the popover
-// would show stale results from the previous query (or a bare "No results"
-// panel), so block reka's focus/arrow-key opens too, not just hide options.
-//
-// With an inline list the popover is suppressed outright: the same suggestions would otherwise
-// appear twice, once floating over the list showing them in flow.
+// The Combobox's own popover never opens: the suggestions are the list in the page, and they
+// would otherwise appear twice, once floating over the list showing them in flow.
 watch(showSuggestions, (open) => {
-  if (open && (!searchText.value || suggestionsTo)) showSuggestions.value = false
+  if (open) showSuggestions.value = false
 })
 
 /**
@@ -346,17 +335,13 @@ const typedRecipient = computed<DraftRecipient | null>(() => {
 // expanded window instead.
 const isDismissed = ref(false)
 /**
- * Real contacts only — the Combobox's own custom rows aren't ones. Capped at five: the list
- * sits in flow above the keyboard, and more than that just pushes the message body off the
- * screen.
+ * Capped at five: the list sits in flow above the keyboard, and more than that just pushes the
+ * message body off the screen.
  */
-type ContactSuggestion = (typeof contacts.value)[number]
 const inlineSuggestions = computed(() => {
   if (!suggestionsTo || !isFocused.value || isDismissed.value) return []
 
-  const contacts = options.value.filter(
-    (option): option is ContactSuggestion => 'email' in option && typeof option.email === 'string',
-  )
+  const contacts = options.value
   const typed = typedRecipient.value
   const isSuggested = contacts.some((c) => c.email.toLowerCase() === typed?.email.toLowerCase())
 
@@ -443,14 +428,13 @@ const handleFieldFocus = () => {
   isDismissed.value = false
 }
 
-// Leaving the field commits it too: dismissing the keyboard and tapping elsewhere never
-// send a key at all, and a typed address left behind as loose text reads as lost. Inline
-// mode only — on desktop the blur is usually a click into the popover, which is about to
-// add its own recipient.
+// Leaving the field commits it too: dismissing the keyboard and tapping elsewhere never send a
+// key at all, and a typed address left behind as loose text reads as lost. A press on a suggestion
+// doesn't take focus, so this is never a pick on its way.
 const handleFieldBlur = () => {
   isSearchFocused.value = false
   isDismissed.value = false
-  if (suggestionsTo) commitTyped()
+  commitTyped()
 }
 
 const pickSuggestion = (option: DraftRecipient) => {
@@ -714,17 +698,7 @@ const contacts = computed(() =>
 
 const options = computed(() => {
   if (!searchText.value) return []
-  return [
-    ...(contacts.value.filter((option) => !selectedEmails.value.includes(option.email)) || []),
-    {
-      type: 'custom' as const,
-      key: 'create-recipient',
-      label: searchText.value,
-      slot: 'create',
-      condition: () => !contacts.value.length,
-      onClick: ({ query }: { query: string }) => addValues(query),
-    },
-  ]
+  return contacts.value.filter((option) => !selectedEmails.value.includes(option.email))
 })
 </script>
 
