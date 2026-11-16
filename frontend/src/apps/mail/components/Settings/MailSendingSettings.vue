@@ -14,8 +14,14 @@
             <IdentitySettings @saved="close" />
           </template>
         </SettingsDialogRow>
+        <SettingsDialogRow
+          :title="__('Signatures')"
+          :description="__('Saved signatures you can add to a message.')"
+          :action="__('Manage')"
+        >
+          <SignatureSettings />
+        </SettingsDialogRow>
       </div>
-      <SignatureSettings />
       <VacationResponseSettings />
     </div>
   </AppSettingsBody>

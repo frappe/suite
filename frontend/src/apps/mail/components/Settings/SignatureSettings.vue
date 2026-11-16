@@ -1,13 +1,12 @@
 <template>
-  <SettingsSection :title="__('Signatures')">
-    <template #actions>
-      <Button
-        icon-left="lucide-plus"
-        :label="__('New')"
-        :size="isMobile ? 'md' : 'sm'"
-        @click="showAddSignature = true"
-      />
-    </template>
+  <div class="flex flex-col gap-3">
+    <Button
+      class="self-end"
+      icon-left="lucide-plus"
+      :label="__('New')"
+      :size="buttonSize"
+      @click="addSignature"
+    />
     <div v-if="signatures?.data?.length">
       <div
         v-for="signature in signatures?.data"
@@ -52,13 +51,13 @@
       :signature-i-d="selectedSignature"
       @reload-signatures="signatures.refetch().catch(() => {})"
     />
-  </SettingsSection>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { Button } from 'frappe-ui'
 import { Edit2, Ellipsis, Pin, Trash2 } from 'lucide-vue-next'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 
 import { api, useMutation, useQuery, type OutputOf } from '@/api'
 import AddSignatureModal from '@/apps/mail/components/Modals/AddSignatureModal.vue'
@@ -66,11 +65,15 @@ import EditSignatureModal from '@/apps/mail/components/Modals/EditSignatureModal
 import SetDefaultSignatureModal from '@/apps/mail/components/Modals/SetDefaultSignatureModal.vue'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
-import SettingsSection from '@/platform/settings/SettingsSection.vue'
 
 const { isMobile } = useScreenSize()
+const buttonSize = computed(() => (isMobile.value ? 'md' : 'sm'))
 
 const showAddSignature = ref(false)
+function addSignature() {
+  showAddSignature.value = true
+}
+
 const selectedSignature = ref('')
 const showSetSignature = ref(false)
 const showEditSignature = ref(false)
