@@ -75,7 +75,7 @@ test.describe("Host controls", () => {
 		await guestRow.getByRole("button", { name: /Actions for/ }).click();
 		await hostPage.getByRole("menuitem", { name: "Remove" }).click();
 
-		await expect(hostPage.getByText("Remove participant")).toBeVisible();
+		await expect(hostPage.getByText(`Remove ${guestName}?`)).toBeVisible();
 		await hostPage.getByRole("button", { name: "Remove", exact: true }).click();
 
 		await expect(guestTileOnHost).toHaveCount(0);
