@@ -57,7 +57,11 @@
         />
         <slot v-else />
       </ContentPane>
-      <AccountSheet v-model:open="accountSheetOpen" :areas="accountAreas(areas)" />
+      <AccountSheet
+        v-model:open="accountSheetOpen"
+        :areas="accountSheetAreas(areas)"
+        :badges="badges"
+      />
       <template v-if="!pageOwnsPhoneChrome" #nav>
         <!-- Everything under the page, measured: what floats over the page (a compose button)
              stands on it through --suite-phone-nav-height, whatever it holds. -->
@@ -111,7 +115,7 @@ import { railHidden } from '@/platform/rail'
 import { missingCapabilities, useSession } from '@/platform/session'
 import { shellShortcutsOpen, ShortcutsDialog, useShortcutsKey } from '@/platform/shortcuts'
 import { translate as __ } from '@/platform/translation'
-import { accountAreas } from '@/shell/accountMenu'
+import { accountSheetAreas } from '@/shell/accountMenu'
 import AccountSheet from '@/shell/AccountSheet.vue'
 import { progressDetail, useAreaProgress } from '@/shell/areaProgress'
 import AreaProgressDot from '@/shell/AreaProgressDot.vue'

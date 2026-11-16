@@ -1,7 +1,7 @@
 import { ItemListRow, KeyboardShortcut, type DropdownOptions } from 'frappe-ui'
 import { computed, h, type ComputedRef } from 'vue'
 
-import type { AccountArea, AreaDefinition } from '@/platform/contracts'
+import type { AccountArea, AccountSheetArea, AreaDefinition } from '@/platform/contracts'
 import { useSession } from '@/platform/session'
 import { openAreaShortcuts } from '@/platform/shortcuts'
 import { translate as __ } from '@/platform/translation'
@@ -9,6 +9,17 @@ import { translate as __ } from '@/platform/translation'
 /** The areas whose entry is a row in the account menu and the phone account sheet. */
 export function accountAreas(areas: readonly AreaDefinition[]): AccountArea[] {
   return areas.filter((area): area is AccountArea => area.placement === 'account')
+}
+
+/**
+ * The areas listed as rows in the phone account sheet, in registry order: the
+ * account areas, and the rail areas that leave the bottom bar on a phone.
+ */
+export function accountSheetAreas(areas: readonly AreaDefinition[]): AccountSheetArea[] {
+  return areas.filter(
+    (area): area is AccountSheetArea =>
+      area.placement === 'account' || area.phonePlacement === 'account',
+  )
 }
 
 /**

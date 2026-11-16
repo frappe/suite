@@ -70,21 +70,34 @@ interface AreaBase {
 /**
  * Where an area's entry sits. `rail` (the default) is the desktop rail and the
  * phone bottom nav. `workspace` areas open from the workspace menu, and
- * `account` areas from the account menu and the phone account sheet. Every
- * area stays in the command palette's app switcher and reachable by URL.
+ * `account` areas from the account menu and the phone account sheet. A rail
+ * area with `phonePlacement: 'account'` keeps its rail entry on desktop and is
+ * a row in the phone account sheet instead of a bottom nav tab. Every area
+ * stays in the command palette's app switcher and reachable by URL.
  */
 export type AreaDefinition = AreaBase &
   (
-    | { placement?: 'rail' | 'workspace'; menuIcon?: never }
+    | { placement?: 'rail'; phonePlacement?: never; menuIcon?: never }
+    | {
+        placement?: 'rail'
+        phonePlacement: 'account'
+        /** Lucide class for the area's row in the phone account sheet. */
+        menuIcon: string
+      }
+    | { placement: 'workspace'; phonePlacement?: never; menuIcon?: never }
     | {
         placement: 'account'
+        phonePlacement?: never
         /** Lucide class for the area's row, so every account menu row has the same icon style. */
         menuIcon: string
       }
   )
 
-/** An area whose entry is a row in the account menu and the phone account sheet. */
+/** An area whose entry is a row in the desktop account menu (and the phone account sheet). */
 export type AccountArea = Extract<AreaDefinition, { placement: 'account' }>
+
+/** An area with a row in the phone account sheet: an account area, or a rail area moved there on a phone. */
+export type AccountSheetArea = Extract<AreaDefinition, { menuIcon: string }>
 
 export interface DocumentTypeDefinition {
   /** Stable name for the type, for example `sheets`. */

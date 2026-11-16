@@ -6,7 +6,7 @@ import { defineComponent, h, ref } from 'vue'
 import type { AreaDefinition } from '@/platform/contracts'
 import type { Session } from '@/platform/session'
 import { shellShortcutsOpen } from '@/platform/shortcuts'
-import { accountAreas, useAccountMenu } from '@/shell/accountMenu'
+import { accountAreas, accountSheetAreas, useAccountMenu } from '@/shell/accountMenu'
 
 vi.mock('frappe-ui', () => ({ ItemListRow: {}, KeyboardShortcut: {} }))
 
@@ -22,6 +22,15 @@ vi.mock('@/platform/session', () => ({
 const icon = defineComponent({ setup: () => () => h('span') })
 const areas: AreaDefinition[] = [
   { id: 'home', label: () => 'Home', icon, to: '/home', loadRoutes: vi.fn() },
+  {
+    id: 'mail',
+    label: () => 'Mail',
+    icon,
+    to: '/mail',
+    phonePlacement: 'account',
+    menuIcon: 'lucide-mail',
+    loadRoutes: vi.fn(),
+  },
   {
     id: 'people',
     label: () => 'People',
@@ -93,5 +102,11 @@ describe('account menu', () => {
     shortcuts.onClick?.(new Event('click'))
 
     expect(shellShortcutsOpen.value).toBe(true)
+  })
+})
+
+describe('phone account sheet', () => {
+  it('lists the rail areas placed there on a phone, then the account areas, in registry order', () => {
+    expect(accountSheetAreas(areas).map((area) => area.label())).toEqual(['Mail', 'People'])
   })
 })

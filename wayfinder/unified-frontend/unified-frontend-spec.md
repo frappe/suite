@@ -296,16 +296,21 @@ only.
 - An area's `placement` decides where its entry sits: `rail` (the default)
   on the rail and the bottom nav, `workspace` in the workspace menu, and
   `account` as a row in the account menu and the phone account sheet. People
-  is an `account` area. Every area stays in the `>` app switcher and
-  reachable by URL [Faris, 2026-11-16].
+  is an `account` area. A `rail` area with `phonePlacement: 'account'` keeps
+  its rail entry on desktop and is a row in the phone account sheet instead
+  of a bottom nav tab. Mail and Calendar are such areas; their rows show the
+  rail's count (unread mail, upcoming events). Every area stays in the `>`
+  app switcher and reachable by URL [Faris, 2026-11-16].
 - The rail has no Shortcuts button. Keyboard shortcuts is a row in the
   account menu, and `?` still opens the list [Faris, 2026-11-16].
 - The bell is shell chrome, not an area. It has no registry entry
   (section 11.5) [T012]. It lives in `composition/notifications/` and the
   shell mounts it through a slot [IMPL].
 - The Drive rail item shows upload progress (section 6.3) [T007].
-- The phone bottom nav shows the areas plus an account entry. The account
-  entry is an avatar that opens a sheet (section 12.4) [T010].
+- The phone bottom nav shows Home, Drive, Meet, Notifications and Account.
+  Notifications opens the Notifications page (section 11.5) and shows the
+  unread count. The account entry is an avatar that opens a sheet (section
+  12.4) [T010; Faris, 2026-11-16].
 - The bottom nav reads the same registry as the rail [T002].
 - A tap on the active area's bottom-nav item dispatches the existing
   `suite:open-active-area-panel` window event with `{ area }`. The page's
