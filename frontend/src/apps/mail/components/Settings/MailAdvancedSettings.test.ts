@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, reactive } from 'vue'
 
+import { openSettings, settingsSection } from '@/platform/settings'
 import { requireTestElement } from '@/platform/testing/dom'
 
 import MailAdvancedSettings from './MailAdvancedSettings.vue'
@@ -150,6 +151,7 @@ beforeEach(() => {
   state.servers = [{ protocol: 'IMAP', hostname: 'mail.example.com', port: 993 }]
   state.asked.clear()
   state.save.mockReset().mockResolvedValue(undefined)
+  settingsSection.value = undefined
 })
 afterEach(() => app.unmount())
 
@@ -178,4 +180,12 @@ it('keeps Login details open, with the reason, when the save is refused', async 
   const root = mount()
   await saveNewUsername(await openLoginDetails(root))
   expect(root.querySelector('dialog')?.textContent).toContain('Wrong app password')
+})
+it.each([
+  ['login-details', 'Login details'],
+  ['client-setup', 'Mail client setup'],
+  ['api-access', 'API access'],
+] as const)('opens %s when Settings is opened on it', (section, title) => {
+  openSettings('mail.advanced', section)
+  expect(mount().querySelector('dialog')?.getAttribute('aria-label')).toBe(title)
 })

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, reactive } from 'vue'
 
+import { openSettings, settingsSection } from '@/platform/settings'
 import { requireTestElement } from '@/platform/testing/dom'
 
 import MailSendingSettings from './MailSendingSettings.vue'
@@ -149,6 +150,7 @@ async function saveField(dialog: HTMLElement, label: string, value: string) {
 beforeEach(() => {
   window.__ = (text: string) => text
   state.save.mockReset().mockResolvedValue(undefined)
+  settingsSection.value = undefined
 })
 afterEach(() => app.unmount())
 
@@ -187,4 +189,12 @@ it('keeps Auto-reply open, with what was typed, when the save is refused', async
   await saveField(await openRow(root, 'Auto-reply'), 'Subject', 'Back on Monday')
   const subject = root.querySelector('dialog input[aria-label="Subject"]')
   expect(requireTestElement(subject, HTMLInputElement).value).toBe('Back on Monday')
+})
+it.each([
+  ['send-as', 'Send-as addresses'],
+  ['signatures', 'Signatures'],
+  ['auto-reply', 'Auto-reply'],
+] as const)('opens %s when Settings is opened on it', (section, title) => {
+  openSettings('mail.sending', section)
+  expect(mount().querySelector('dialog')?.getAttribute('aria-label')).toBe(title)
 })

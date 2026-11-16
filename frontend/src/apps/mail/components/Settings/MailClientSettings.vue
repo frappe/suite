@@ -2,6 +2,7 @@
   <SettingsDialogRow
     v-if="configRows.length"
     :title="__('Mail client setup')"
+    section="mail.advanced.client-setup"
     :description="__('Server details for apps such as Thunderbird or the Gmail app.')"
     :action="__('Show')"
     size="2xl"
@@ -48,7 +49,12 @@
     </div>
   </SettingsDialogRow>
 
-  <SettingsDialogRow :title="__('API access')" :description="apiAccess" :action="__('Manage')">
+  <SettingsDialogRow
+    :title="__('API access')"
+    section="mail.advanced.api-access"
+    :description="apiAccess"
+    :action="__('Manage')"
+  >
     <div class="flex flex-col gap-5">
       <CopyControl
         v-if="user.data?.api_key"

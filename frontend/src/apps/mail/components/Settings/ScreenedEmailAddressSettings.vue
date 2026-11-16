@@ -27,6 +27,7 @@
   </SettingsRow>
   <SettingsDialogRow
     :title="__('Screened senders')"
+    section="mail.inbox.screened-senders"
     :description="__('The senders and domains you accept or block.')"
     :action="__('Manage')"
     size="3xl"

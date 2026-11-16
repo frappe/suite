@@ -48,6 +48,7 @@
       <div class="divide-y divide-outline-gray-1">
         <SettingsDialogRow
           :title="__('Invite addresses')"
+          section="calendar.calendars.invite-addresses"
           :description="__('The addresses you organize and attend events as.')"
           :action="__('Manage')"
         >

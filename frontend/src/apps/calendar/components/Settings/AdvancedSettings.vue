@@ -4,6 +4,7 @@
     <div class="divide-y divide-outline-gray-1">
       <SettingsDialogRow
         :title="__('Import')"
+        section="calendar.advanced.import"
         :description="__('Bring events in from a file.')"
         :action="__('Import')"
       >
@@ -11,6 +12,7 @@
       </SettingsDialogRow>
       <SettingsDialogRow
         :title="__('Export')"
+        section="calendar.advanced.export"
         :description="__('Download a copy of your events.')"
         :action="__('Export')"
       >
@@ -20,6 +22,7 @@
       <SettingsDialogRow
         v-if="config.server_url"
         :title="__('Calendar client setup')"
+        section="calendar.advanced.client-setup"
         :description="__('Server details for apps such as Thunderbird or Apple Calendar.')"
         :action="__('Show')"
         size="xl"

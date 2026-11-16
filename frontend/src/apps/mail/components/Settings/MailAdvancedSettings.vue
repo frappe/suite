@@ -6,6 +6,7 @@
     <div class="divide-y divide-outline-gray-1">
       <SettingsDialogRow
         :title="__('Import')"
+        section="mail.advanced.import"
         :description="__('Bring in mail or contacts from a file.')"
         :action="__('Import')"
       >
@@ -13,6 +14,7 @@
       </SettingsDialogRow>
       <SettingsDialogRow
         :title="__('Export')"
+        section="mail.advanced.export"
         :description="__('Download a copy of your mail or contacts.')"
         :action="__('Export')"
       >
@@ -20,6 +22,7 @@
       </SettingsDialogRow>
       <SettingsDialogRow
         :title="__('Login details')"
+        section="mail.advanced.login-details"
         :description="__('The username and app password Mail connects with.')"
         :action="__('Edit')"
       >
@@ -31,6 +34,7 @@
       <MailClientSettings />
       <SettingsDialogRow
         :title="__('Push subscriptions')"
+        section="mail.advanced.push-subscriptions"
         :description="__('The devices and apps that are told when your mail changes.')"
         :action="__('Manage')"
         size="2xl"

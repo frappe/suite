@@ -7,6 +7,7 @@
       <InboxCategorySettings />
       <SettingsDialogRow
         :title="__('Folders')"
+        section="mail.inbox.folders"
         :description="__('Your own folders for filing mail.')"
         :action="__('Manage')"
       >
@@ -14,6 +15,7 @@
       </SettingsDialogRow>
       <SettingsDialogRow
         :title="__('Rules')"
+        section="mail.inbox.rules"
         :description="__('Scripts that sort and file incoming mail for you.')"
         :action="__('Manage')"
         size="xl"

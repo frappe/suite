@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, reactive } from 'vue'
 
+import { openSettings, settingsSection } from '@/platform/settings'
 import { requireTestElement } from '@/platform/testing/dom'
 
 import AdvancedSettings from './AdvancedSettings.vue'
@@ -59,6 +60,7 @@ function mount() {
 beforeEach(() => {
   window.__ = (text: string) => text
   state.config = { server_url: '', calendar_url: '', username: '' }
+  settingsSection.value = undefined
 })
 afterEach(() => app.unmount())
 
@@ -84,4 +86,13 @@ it('shows the CalDAV details once Calendar client setup is opened', async () => 
   const dialog = requireTestElement(root.querySelector('dialog'), HTMLElement)
   expect(dialog.textContent).toContain('https://dav.example.com/maya/personal')
   expect(dialog.textContent).toContain('maya@example.com')
+})
+it.each([
+  ['import', 'Import'],
+  ['export', 'Export'],
+  ['client-setup', 'Calendar client setup'],
+] as const)('opens %s when Settings is opened on it', (section, title) => {
+  state.config = { server_url: 'https://dav.example.com', calendar_url: '', username: '' }
+  openSettings('calendar.advanced', section)
+  expect(mount().querySelector('dialog')?.getAttribute('aria-label')).toBe(title)
 })

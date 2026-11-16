@@ -5,6 +5,7 @@
       <ComposeSettings />
       <SettingsDialogRow
         :title="__('Send-as addresses')"
+        section="mail.sending.send-as"
         :description="__('The addresses you send mail as, each with its own name and signature.')"
         :action="__('Manage')"
         size="2xl"
@@ -15,6 +16,7 @@
       </SettingsDialogRow>
       <SettingsDialogRow
         :title="__('Signatures')"
+        section="mail.sending.signatures"
         :description="__('Saved signatures you can add to a message.')"
         :action="__('Manage')"
       >
@@ -22,6 +24,7 @@
       </SettingsDialogRow>
       <SettingsDialogRow
         :title="__('Auto-reply')"
+        section="mail.sending.auto-reply"
         :description="__('A reply sent for you while you’re away.')"
         :action="__('Edit')"
         size="2xl"
