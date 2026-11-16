@@ -231,7 +231,7 @@ const emptyState = computed(() =>
 )
 const STATUS_OPTIONS = [
   {
-    label: __('All'),
+    label: __('All invitations'),
     value: 'All',
   },
   {

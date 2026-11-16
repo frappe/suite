@@ -62,7 +62,7 @@
             type="select"
             :aria-label="__('Status')"
             :options="[
-              { label: __('All statuses'), value: 'all' },
+              { label: __('Any status'), value: 'all' },
               { label: __('Active'), value: 'enabled' },
               { label: __('Disabled'), value: 'disabled' },
             ]"
