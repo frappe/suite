@@ -363,7 +363,7 @@ async function restoreVersion(seq: string) {
 async function keepForDownload() {
   if (!(await retainRecovery())) return
   if (offer !== null) toast.dismiss(offer)
-  offer = toast.warning(__("You can't edit now. Your changes are kept."), {
+  offer = toast.warning(__("Can't edit now. Unsaved changes are kept on this device."), {
     duration: Number.POSITIVE_INFINITY,
     action: {
       label: __('Download'),

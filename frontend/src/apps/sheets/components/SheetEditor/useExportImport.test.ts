@@ -543,7 +543,8 @@ describe('xlsx charts, and importing into a new file', () => {
     await back.importXLSX(file(await zip.generateAsync({ type: 'arraybuffer' })))
     expect(back.charts.list()).toEqual([])
     expect(toast.info).toHaveBeenCalledWith('1 chart not imported', {
-      description: 'Only bar, line, area, pie and scatter charts come in',
+      description:
+        "Only bar, line, area, pie and scatter charts come in. Data must be in columns on the file's own sheets.",
     })
   })
 

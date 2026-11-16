@@ -595,7 +595,9 @@ export function useExportImport({
       }
 
       toast.info(title, {
-        description: __('Only bar, line, area, pie and scatter charts come in'),
+        description: __(
+          "Only bar, line, area, pie and scatter charts come in. Data must be in columns on the file's own sheets.",
+        ),
       })
     }
   }

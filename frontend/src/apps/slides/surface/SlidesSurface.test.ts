@@ -3307,7 +3307,7 @@ describe('edit access changing on a converted presentation', () => {
 
     await vi.waitFor(() =>
       expect(toast.warning).toHaveBeenCalledWith(
-        "You can't edit now. Your changes are kept.",
+        "Can't edit now. Unsaved changes are kept on this device.",
         expect.anything(),
       ),
     )
@@ -3469,7 +3469,7 @@ describe('edit access changing on a converted presentation', () => {
 
     await vi.waitFor(() =>
       expect(toast.warning).toHaveBeenCalledWith(
-        "You can't edit now. Your changes are kept.",
+        "Can't edit now. Unsaved changes are kept on this device.",
         expect.anything(),
       ),
     )

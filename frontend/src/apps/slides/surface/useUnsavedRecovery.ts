@@ -70,7 +70,7 @@ export function useUnsavedRecovery(
       return
     }
 
-    toast.warning(__("You can't edit now. Your changes are kept."), {
+    toast.warning(__("Can't edit now. Unsaved changes are kept on this device."), {
       duration: Number.POSITIVE_INFINITY,
       action: { label: __('Download'), onClick: () => downloadSlides(shown, title) },
     })
