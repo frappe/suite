@@ -7,6 +7,8 @@ import { api, client, useMutation, type InputOf, type OutputOf } from '@/api'
 import {
   classifySaveError,
   createDraftSaver,
+  type SaveFailure,
+  type SaveStatus,
   type WriteOptions,
 } from '@/apps/mail/composables/draftSaver'
 import {
@@ -88,6 +90,17 @@ interface ComposeMailOptions {
   uploadInlineImage: typeof uploadFunction
 }
 
+/** How the draft stands, for the save state on screen. */
+export interface SaveState {
+  status: SaveStatus
+  failure?: SaveFailure
+  isCopyKept: boolean
+  /** A write is on the wire: a retry, or any other. */
+  isWriting: boolean
+  /** Files still on their way up, so not in the draft yet. */
+  isUploading: boolean
+}
+
 /**
  * Everything a composition *is*, with no opinion on how it's laid out: the draft itself, saving
  * (see draftSaver), sending, scheduling, discarding, attachments and mentions.
@@ -96,8 +109,6 @@ interface ComposeMailOptions {
  * mobile — and the only way to keep those from drifting into two subtly different mail clients is
  * for the behaviour to live in one place and only the markup to differ.
  */
-const newDraftKey = () => randomId()
-
 export const useComposeMail = (options: ComposeMailOptions) => {
   const { mailDetails, isInThread = false, reloadMails, close, isOpen, host } = options
 
@@ -157,7 +168,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     // Set as the draft is handed to another composer with text not yet saved; see `handOff`.
     restored: false,
     // Which composition this is, across the id each save gives it (see `draft_key` on the server).
-    draft_key: mailDetails?.draft_key || newDraftKey(),
+    draft_key: mailDetails?.draft_key || randomId(),
   })
   // Everything written in the mail, and nothing the server gives back: what a save carries, and
   // what a local copy holds.
@@ -375,18 +386,12 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   })
   watch(writing, () => saver.edited())
 
-  /**
-   * Save now: a decision rather than a leftover timer, and not gated on the composer still being
-   * there, because the composer makes one on the way out. Resolves true if the server has it all.
-   */
-  const saveDraft = () => saver.saveNow()
-
   // What the save state shows. Uploads come first: until a file is up, "Saved" would be untrue.
-  const saveState = computed(() => ({
+  const saveState = computed<SaveState>(() => ({
     status: saver.status.value,
     failure: saver.failure.value,
     isCopyKept: localCopy.isKept.value,
-    isRetrying: saver.isWriting.value,
+    isWriting: saver.isWriting.value,
     isUploading: isUploading.value,
   }))
 
@@ -525,7 +530,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     mail.id = ''
     // The server knows the old key as the draft that went away. What it answers or forwards stays:
     // a reply kept as a new draft is still that reply.
-    mail.draft_key = newDraftKey()
+    mail.draft_key = randomId()
   }
   const keepAsNewDraft = () => {
     detachFromGoneDraft()
@@ -1020,7 +1025,6 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     identities,
     getIdentity,
     onOpened,
-    isDraftUpdated: saver.isDirty,
     isRecipientsEmpty,
     moveRecipient,
     isBodyEmpty,
@@ -1030,8 +1034,6 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     isSending,
     isDiscarding,
     saveState,
-    isSafeToClose,
-    saveDraft,
     retrySave: saver.retry,
     keepAsNewDraft,
     recoverableCopy,

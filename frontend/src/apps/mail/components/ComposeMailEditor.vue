@@ -363,7 +363,6 @@
          and the bar each carry their own inset. The phone's sticky bar insets itself. -->
         <ComposeMailToolbar
           :is-recipients-empty
-          :is-uploading
           :is-sending
           :save-state
           :in-thread="isInThread"
@@ -502,7 +501,6 @@ const {
   restoreCopy,
   ignoreCopy,
   isSending,
-  isUploading,
   trackUpload,
   leave,
   handOff,

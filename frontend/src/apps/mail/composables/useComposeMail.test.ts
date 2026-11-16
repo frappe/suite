@@ -179,6 +179,14 @@ afterEach(() => {
 })
 
 const tick = () => vi.advanceTimersByTimeAsync(0)
+// A save the way a composer makes one: the edit is seen, and the autosave delay runs out.
+const autosave = () => vi.advanceTimersByTimeAsync(2000)
+// Whether the browser would ask before closing the page.
+const unload = () => {
+  const event = new Event('beforeunload', { cancelable: true })
+  window.dispatchEvent(event)
+  return event.defaultPrevented
+}
 
 describe('the From address', () => {
   it('moves to the mailbox once the identities load, when the composer opened before them', async () => {
@@ -286,37 +294,46 @@ describe('saving a draft', () => {
     const composer = compose()
     server.updateDraft.mockRejectedValueOnce(new Error('Attachment is not a site file'))
     composer.mail.html_body = '<p>See the brief. Edited.</p>'
-    await composer.saveDraft()
+    await autosave()
     expect(composer.saveState.value.status).toBe('failed')
 
     server.updateDraft.mockResolvedValueOnce(saved('draft-2'))
-    await composer.saveDraft()
+    await composer.retrySave()
     expect(server.updateDraft).toHaveBeenCalledTimes(2)
     expect(composer.saveState.value.status).toBe('saved')
   })
 
   it('does not start a second save while one is under way', async () => {
     const composer = compose()
-    server.updateDraft.mockResolvedValueOnce(saved('draft-2'))
+    server.updateDraft.mockReturnValueOnce(deferred().promise)
     composer.mail.html_body = '<p>See the brief. Edited.</p>'
-    await Promise.all([composer.saveDraft(), composer.saveDraft()])
+    await autosave()
+    composer.mail.html_body = '<p>See the brief. Edited again.</p>'
+    await autosave()
+    void composer.retrySave()
+    await tick()
     expect(server.updateDraft).toHaveBeenCalledOnce()
   })
 
-  it('keeps the draft dirty when the server answers with an error', async () => {
+  it('takes a save the server answered with an error for unsaved, and sends it again', async () => {
     const composer = compose()
     server.updateDraft.mockResolvedValueOnce({ id: 'draft-1', status: 'Failed', error: 'Refused' })
     composer.mail.subject = 'Fwd: Brief v2'
-    await composer.saveDraft()
+    await autosave()
     expect(composer.saveState.value.status).toBe('failed')
-    expect(composer.isDraftUpdated.value).toBe(true)
+
+    server.updateDraft.mockResolvedValueOnce(saved('draft-2'))
+    await composer.retrySave()
+    expect(server.updateDraft).toHaveBeenCalledTimes(2)
+    expect(server.updateDraft.mock.calls[1][0].subject).toBe('Fwd: Brief v2')
+    expect(composer.saveState.value.status).toBe('saved')
   })
 
   it('does not take a failed status without an error for a save', async () => {
     const composer = compose()
     server.updateDraft.mockResolvedValueOnce({ id: 'draft-1', status: 'Failed', error: null })
     composer.mail.subject = 'Fwd: Brief v2'
-    await composer.saveDraft()
+    await autosave()
     expect(composer.saveState.value.status).toBe('failed')
   })
 
@@ -327,12 +344,11 @@ describe('saving a draft', () => {
     server.updateDraft.mockResolvedValue(saved('draft-3'))
 
     composer.mail.html_body = '<p>One</p>'
-    const saving = composer.saveDraft()
-    await tick()
+    await autosave()
     composer.mail.html_body = '<p>One two</p>'
     await nextTick()
     first.resolve(saved('draft-2'))
-    await saving
+    await autosave()
 
     const lastSave = server.updateDraft.mock.calls.at(-1)![0]
     expect(lastSave.html_body).toBe('<p>One two</p>')
@@ -348,12 +364,11 @@ describe('saving a draft', () => {
     server.updateDraft.mockResolvedValue(saved('draft-3'))
 
     composer.mail.html_body = '<p>Edited</p>'
-    const saving = composer.saveDraft()
-    await tick()
+    await autosave()
     composer.mail.attachments.push(uploaded('/private/files/brief.pdf'))
     await nextTick()
     first.resolve(saved('draft-2'))
-    await saving
+    await autosave()
 
     expect(server.updateDraft.mock.calls.at(-1)![0].attachments).toEqual([
       uploaded('/private/files/brief.pdf'),
@@ -364,9 +379,9 @@ describe('saving a draft', () => {
     const composer = compose()
     server.updateDraft.mockResolvedValue(saved('draft-2'))
     composer.mail.subject = 'A'
-    await composer.saveDraft()
+    await autosave()
     composer.mail.subject = 'B'
-    await composer.saveDraft()
+    await autosave()
     const [first, second] = server.updateDraft.mock.calls
     expect(first[0].draft_key).toBeTruthy()
     expect(second[0].draft_key).toBe(first[0].draft_key)
@@ -377,7 +392,7 @@ describe('saving a draft', () => {
     server.updateDraft.mockResolvedValue(saved('draft-2'))
     scopeAccount.value = 'other-account'
     composer.mail.subject = 'A'
-    await composer.saveDraft()
+    await autosave()
     expect(server.updateDraft.mock.calls[0][0].account).toBe('account')
   })
 })
@@ -400,7 +415,7 @@ describe('the local copy', () => {
     const composer = compose()
     server.updateDraft.mockRejectedValueOnce(networkDown())
     composer.mail.html_body = '<p>Words</p>'
-    await composer.saveDraft()
+    await autosave()
 
     expect(copies()).toHaveLength(1)
     expect(copies()[0]).toMatchObject({
@@ -421,7 +436,7 @@ describe('the local copy', () => {
     const composer = compose()
     server.updateDraft.mockRejectedValue(networkDown())
     composer.mail.html_body = '<p>One</p>'
-    await composer.saveDraft()
+    await autosave()
     composer.mail.html_body = '<p>One two</p>'
     await nextTick()
     expect(copies()[0].mail.html_body).toBe('<p>One two</p>')
@@ -432,7 +447,7 @@ describe('the local copy', () => {
     server.updateDraft.mockRejectedValue(networkDown())
     void composer.trackUpload('brief.pdf', new Promise(() => {}))
     composer.mail.html_body = '<p>One</p>'
-    await composer.saveDraft()
+    await autosave()
     expect(copies()[0].uploading).toEqual(['brief.pdf'])
   })
 
@@ -441,13 +456,13 @@ describe('the local copy', () => {
     const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new DOMException('Blocked', 'SecurityError')
     })
-    server.updateDraft.mockRejectedValueOnce(networkDown())
+    server.updateDraft.mockRejectedValue(networkDown())
     composer.mail.html_body = '<p>One</p>'
-    await composer.saveDraft()
+    await autosave()
     expect(composer.saveState.value).toMatchObject({ status: 'failed', isCopyKept: false })
-    expect(composer.isSafeToClose.value).toBe(false)
+    expect(unload()).toBe(true)
 
-    server.updateDraft.mockResolvedValueOnce(saved('draft-2'))
+    server.updateDraft.mockResolvedValue(saved('draft-2'))
     await composer.retrySave()
     expect(composer.saveState.value.status).toBe('saved')
     setItem.mockRestore()
@@ -457,7 +472,7 @@ describe('the local copy', () => {
     const first = compose()
     server.updateDraft.mockRejectedValue(networkDown())
     first.mail.html_body = '<p>Not on the server</p>'
-    await first.saveDraft()
+    await autosave()
     stopDraftSavers()
 
     const second = compose()
@@ -481,7 +496,7 @@ describe('the local copy', () => {
     const first = compose()
     server.updateDraft.mockRejectedValue(networkDown())
     first.mail.html_body = '<p>Not on the server</p>'
-    await first.saveDraft()
+    await autosave()
     stopDraftSavers()
 
     const second = compose()
@@ -489,7 +504,7 @@ describe('the local copy', () => {
     server.updateDraft.mockReset()
     server.updateDraft.mockResolvedValue(saved('draft-2'))
     second.mail.subject = 'Typed before restoring'
-    await second.saveDraft()
+    await autosave()
     const ownKey = second.mail.draft_key
 
     server.updateDraft.mockResolvedValue(saved('draft-3'))
@@ -506,7 +521,7 @@ describe('the local copy', () => {
     const first = compose()
     server.updateDraft.mockRejectedValue(networkDown())
     first.mail.html_body = '<p>Not on the server</p>'
-    await first.saveDraft()
+    await autosave()
     stopDraftSavers()
 
     const second = compose()
@@ -520,7 +535,7 @@ describe('the local copy', () => {
     const first = compose()
     server.updateDraft.mockRejectedValue(networkDown())
     first.mail.html_body = '<p>Private</p>'
-    await first.saveDraft()
+    await autosave()
     stopDraftSavers()
 
     const someoneElse = compose(draft, {}, 'sam@example.com')
@@ -551,8 +566,7 @@ describe('sending', () => {
     server.updateDraft.mockResolvedValueOnce(sent)
 
     composer.mail.html_body = '<p>One</p>'
-    void composer.saveDraft()
-    await tick()
+    await autosave()
     composer.mail.html_body = '<p>One two</p>'
     const sending = composer.sendMail()
     await tick()
@@ -574,8 +588,7 @@ describe('sending', () => {
     server.updateDraft.mockResolvedValueOnce(sent)
 
     composer.mail.html_body = '<p>One</p>'
-    void composer.saveDraft()
-    await tick()
+    await autosave()
     const sending = composer.sendMail()
     landing.reject(serverDown())
     await sending
@@ -626,7 +639,7 @@ describe('sending', () => {
     const composer = compose()
     server.updateDraft.mockRejectedValueOnce(networkDown())
     composer.mail.html_body = '<p>Words</p>'
-    await composer.saveDraft()
+    await autosave()
     expect(copies()).toHaveLength(1)
 
     server.updateDraft.mockResolvedValueOnce(sent)
@@ -663,7 +676,7 @@ describe('sending', () => {
     // The send went through earlier and its answer was lost; the server says so to the next save.
     server.updateDraft.mockResolvedValue(sent)
     composer.mail.html_body = '<p>Still here</p>'
-    await composer.saveDraft()
+    await autosave()
 
     expect(open).toBe(false)
     expect(raiseToast).toHaveBeenCalledWith('Message sent', 'success', undefined)
@@ -694,7 +707,7 @@ describe('a draft gone from the server', () => {
     const composer = compose(details)
     server.updateDraft.mockRejectedValueOnce(noSuchDraft())
     composer.mail.html_body = '<p>Mine</p>'
-    await composer.saveDraft()
+    await autosave()
     return composer
   }
 
@@ -892,11 +905,6 @@ describe('leaving', () => {
 
   it('warns before the page closes while text is only on screen', async () => {
     const composer = compose()
-    const unload = () => {
-      const event = new Event('beforeunload', { cancelable: true })
-      window.dispatchEvent(event)
-      return event.defaultPrevented
-    }
     expect(unload()).toBe(false)
 
     server.updateDraft.mockResolvedValue(saved('draft-2'))
@@ -911,18 +919,14 @@ describe('leaving', () => {
     const composer = compose()
     server.updateDraft.mockRejectedValue(networkDown())
     composer.mail.html_body = '<p>Words</p>'
-    await composer.saveDraft()
-    const event = new Event('beforeunload', { cancelable: true })
-    window.dispatchEvent(event)
-    expect(event.defaultPrevented).toBe(false)
+    await autosave()
+    expect(unload()).toBe(false)
   })
 
   it('warns while a file is uploading', async () => {
     const composer = compose()
     void composer.trackUpload('brief.pdf', new Promise(() => {}))
-    const event = new Event('beforeunload', { cancelable: true })
-    window.dispatchEvent(event)
-    expect(event.defaultPrevented).toBe(true)
+    expect(unload()).toBe(true)
   })
 
   it('saves as the page is put away, with a request that outlives it', async () => {
@@ -954,7 +958,7 @@ describe('leaving', () => {
     const composer = compose()
     server.updateDraft.mockRejectedValue(networkDown())
     composer.mail.html_body = '<p>Words</p>'
-    await composer.saveDraft()
+    await autosave()
     await composer.discardMail()
     expect(copies()).toEqual([])
   })
@@ -967,7 +971,7 @@ describe('a reminder if nobody replies', () => {
 
     server.updateDraft.mockResolvedValueOnce({ id: 'draft-1', status: 'Drafted', error: null })
     composer.mail.html_body = '<p>Still writing.</p>'
-    await composer.saveDraft()
+    await autosave()
     expect(server.updateDraft.mock.calls[0][0].remind_at).toBeUndefined()
 
     server.updateDraft.mockResolvedValueOnce({ id: 'sent-1', status: 'Submitted', error: null })

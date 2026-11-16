@@ -20,7 +20,7 @@
           variant="solid"
           :label="__('Send')"
           :tooltip="__('Send ({0}+Enter)', [modifier])"
-          :disabled="isRecipientsEmpty || isUploading"
+          :disabled="isRecipientsEmpty || saveState.isUploading"
           :loading="isSending"
           class="!rounded-r-none !pr-2"
           @click="emit('sendMail')"
@@ -30,7 +30,7 @@
             variant="solid"
             :aria-label="__('Schedule send')"
             :tooltip="__('Schedule send ({0}+Shift+Enter)', [modifier])"
-            :disabled="isRecipientsEmpty || isUploading"
+            :disabled="isRecipientsEmpty || saveState.isUploading"
             class="!rounded-l-none border-l border-white/20 dark:border-black/20"
           >
             <template #icon>
@@ -76,7 +76,7 @@
            Short of room, it wraps before the editor buttons scroll out of sight: a failing save is
            no time to lose Attach. -->
       <ComposeSaveState
-        v-if="saveState && inThread"
+        v-if="inThread"
         :state="saveState"
         class="ml-auto shrink-[100]"
         @retry="emit('retrySave')"
@@ -104,15 +104,15 @@ import { computed, useTemplateRef } from 'vue'
 import ComposeReminderButton from '@/apps/mail/components/ComposeReminderButton.vue'
 import ComposeSaveState from '@/apps/mail/components/ComposeSaveState.vue'
 import EmojiPicker from '@/apps/mail/components/EmojiPicker.vue'
+import type { SaveState } from '@/apps/mail/composables/useComposeMail'
 import { isMac } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { useEditorMenu } from '@/apps/mail/utils/editorMenu'
 
-const { isRecipientsEmpty, isUploading, isSending, saveState, inThread, remindAt } = defineProps<{
+const { isRecipientsEmpty, isSending, saveState, inThread, remindAt } = defineProps<{
   isRecipientsEmpty: boolean
-  isUploading?: boolean
   isSending?: boolean
-  saveState?: InstanceType<typeof ComposeSaveState>['$props']['state']
+  saveState: SaveState
   // A reply in a thread has no title bar, so its save state stays on this one.
   inThread?: boolean
   // When to be reminded if nobody replies, once asked for (see useComposeMail).

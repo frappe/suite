@@ -2,7 +2,9 @@ import { defineAsyncComponent, watch } from 'vue'
 
 import { api, useQuery } from '@/api'
 import MailIcon from '@/apps/mail/AreaIcon.vue'
+import { flushDraftSavers, stopDraftSavers } from '@/apps/mail/composables/draftSaver'
 import { showMailReminder } from '@/apps/mail/reminders'
+import { clearDraftCopies } from '@/apps/mail/utils/draftCopies'
 import type { AreaDefinition } from '@/platform/contracts'
 import { realtime } from '@/platform/realtime'
 import type { Reminder } from '@/platform/reminders'
@@ -46,6 +48,20 @@ export function installMailReminders({ open }: { open: (path: string) => void })
     stopWatching()
     stopListening?.()
   }
+}
+
+/**
+ * Ends Mail's drafts with the session: open composers land what they can first, then nothing still
+ * running may write, and the person's local draft copies leave the device. Call it once at boot.
+ */
+export function installDraftSessionEnd(): void {
+  const session = useSession()
+  session.onLogout(flushDraftSavers, { whileSignedIn: true })
+  session.onLogout(() => {
+    const user = session.user.value?.id
+    stopDraftSavers()
+    if (user) clearDraftCopies(user)
+  })
 }
 
 /** Mail's Settings group. Loads when Settings opens. */

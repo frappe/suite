@@ -17,8 +17,8 @@
       variant="ghost"
       size="sm"
       class="shrink-0"
-      :label="state.isRetrying ? __('Retrying…') : __('Retry')"
-      :disabled="state.isRetrying"
+      :label="state.isWriting ? __('Retrying…') : __('Retry')"
+      :disabled="state.isWriting"
       @click="emit('retry')"
     />
   </span>
@@ -28,17 +28,9 @@
 import { Button } from 'frappe-ui'
 import { computed } from 'vue'
 
-import type { SaveFailure, SaveStatus } from '@/apps/mail/composables/draftSaver'
+import type { SaveState } from '@/apps/mail/composables/useComposeMail'
 
-const { state } = defineProps<{
-  state: {
-    status: SaveStatus
-    failure?: SaveFailure
-    isCopyKept: boolean
-    isRetrying: boolean
-    isUploading: boolean
-  }
-}>()
+const { state } = defineProps<{ state: SaveState }>()
 const emit = defineEmits(['retry'])
 
 const isFailing = computed(() => state.status === 'failed' || state.status === 'gone')
