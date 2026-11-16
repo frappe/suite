@@ -20,6 +20,7 @@ import * as Y from 'yjs'
 import type { api, OutputOf } from '@/api'
 import { type CollabSession, type LostAccess, type RoomStatus } from '@/platform/collab'
 import { GUEST_USER } from '@/platform/collab/colours'
+import { fullName } from '@/platform/collab/names'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 
@@ -31,7 +32,6 @@ import {
   saveStateOf,
   upgradingBanner,
 } from '../../collab/messages'
-import { createPeople } from '../../collab/people'
 import { readPresence, sendSelection } from '../../collab/presence'
 import { restoreVersion, type RestoreNotice } from '../../collab/restore'
 import { openSheetRoom, type SheetRoom } from '../../collab/room'
@@ -92,7 +92,6 @@ export function useCollabRoom({
   const canUndo = shallowRef(false)
   const canRedo = shallowRef(false)
   const presenceTick = shallowRef(0)
-  const people = createPeople()
   const me = useSession().user.value?.id ?? GUEST_USER
   let undo: Undo | null = null
   let offs: (() => void)[] = []
@@ -240,7 +239,7 @@ export function useCollabRoom({
     void presenceTick.value
     const s = sheet.value
     if (!s?.room.presence) return { users: [], cursors: new Map() }
-    return readPresence(s.room.presence, s.doc, me, people.person)
+    return readPresence(s.room.presence, s.doc, me, (user) => ({ fullName: fullName(user) }))
   })
   const users = computed(() => presence.value.users)
   const cursors = computed(() => presence.value.cursors)

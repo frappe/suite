@@ -135,7 +135,7 @@ test("losing edit access freezes the deck, sends no write and offers the changes
 	// A trashed item is read-only; its Trashed badge takes the place of View only.
 	await expect(page.getByText("Trashed", { exact: true })).toBeVisible();
 	// The edit is still unsent, so the toast says it is kept, not only that the deck is view only
-	await expect(page.getByText("Editing access changed. Your unsaved changes are kept on this device.")).toBeVisible();
+	await expect(page.getByText("Can't edit now. Unsaved changes are kept on this device.")).toBeVisible();
 	const frozenAt = seen.requests.length;
 	await page.waitForTimeout(3_000);
 	// The room may still send its unsent work once, within a short bound; this test's route aborts it

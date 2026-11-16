@@ -1,33 +1,10 @@
 /**
- * Drive's version records, read into the shape the Sheets panel renders. The
- * session returns them untyped, so each field is checked here and a malformed
- * row is dropped rather than rendered half-empty.
+ * What Sheets reads from Drive's records: a comment's anchor and a time stamp.
  *
  * Anchors are Sheets' own: Drive stores the string and never reads it.
  */
 
 import { ironcalcSheetName } from '../utils/legacy-sheet'
-
-export interface CommentPerson {
-  full_name: string
-  user_image: string | null
-}
-
-export interface SheetVersion {
-  seq: string
-  kind: string
-  label: string | null
-  pinned: boolean
-  actor: string | null
-  /** Who took it, as Drive names them. */
-  person: CommentPerson | null
-  creation: string | null
-}
-
-export interface VersionPage {
-  rows: SheetVersion[]
-  nextCursor: string | null
-}
 
 /** One cell on one worksheet of the workbook. */
 export interface CellAnchor {
@@ -76,51 +53,10 @@ function readMigratedAnchor(value: string): CellAnchor | null {
     : null
 }
 
-export function readVersions(payload: unknown): VersionPage {
-  const rows = field(payload, 'rows')
-  return {
-    rows: Array.isArray(rows) ? rows.flatMap(readVersion) : [],
-    nextCursor: text(field(payload, 'next_cursor')),
-  }
-}
-
-function readPerson(row: unknown): CommentPerson | null {
-  const fullName = text(field(row, 'full_name'))
-  return fullName ? { full_name: fullName, user_image: text(field(row, 'user_image')) } : null
-}
-
-function readVersion(row: unknown): SheetVersion[] {
-  const seq = field(row, 'seq')
-  if (typeof seq !== 'number' || !Number.isInteger(seq) || seq < 1) return []
-  return [
-    {
-      seq: String(seq),
-      kind: text(field(row, 'kind')) ?? 'auto',
-      label: text(field(row, 'label')) || null,
-      pinned: Boolean(field(row, 'pinned')),
-      actor: text(field(row, 'actor')),
-      person: readPerson(field(row, 'person')),
-      creation: text(field(row, 'creation')),
-    },
-  ]
-}
-
-function field(value: unknown, key: string): unknown {
-  return isFieldRecord(value) && key in value ? value[key] : undefined
-}
-
-function text(value: unknown): string | null {
-  return typeof value === 'string' ? value : null
-}
-
 /** A Drive time (`YYYY-MM-DD HH:MM:SS`, site time) as a short local label. */
 export function stampLabel(stamp: string | null): string {
   if (!stamp) return ''
   const when = new Date(stamp.replace(' ', 'T'))
   if (Number.isNaN(when.getTime())) return stamp
   return when.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
-}
-
-function isFieldRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
 }

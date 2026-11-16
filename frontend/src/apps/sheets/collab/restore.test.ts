@@ -122,7 +122,7 @@ describe('restoreVersion', () => {
     const notice = await restoreVersion(r, 2, versionBytes(version))
     expect(notice).toEqual({
       isRestored: false,
-      message: 'Someone else is restoring a version. Try again once it is done.',
+      message: 'Someone else is restoring. Try again soon.',
     })
   })
 

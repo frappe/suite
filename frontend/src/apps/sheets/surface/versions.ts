@@ -1,104 +1,34 @@
 /**
- * The Versions panel's work beyond Drive's list: reading a stored version,
+ * Sheets' work on a version from Drive's list: reading a stored version,
  * the cells it holds differently from the sheet as it is now, and a new
  * spreadsheet made from it.
  */
 
-import { ref } from 'vue'
 import * as Y from 'yjs'
 
 import { api, client } from '@/api'
-import type { DocumentSession } from '@/apps/drive'
+import type { DocumentSession, DocumentVersion } from '@/apps/drive'
 import { translate as __ } from '@/platform/translation'
 import { TransportError } from '@/platform/transport'
 
 import { changedCells, type ChangedCell } from '../collab/changes'
 import { readStoredVersion, writeVersionToCopy } from '../collab/restore'
-import { readVersions, stampLabel, type SheetVersion } from './records'
+import { stampLabel } from './records'
 
 /** One version shown read-only in the editor. */
 export interface VersionPreview {
-  version: SheetVersion
+  version: DocumentVersion
   bytes: Uint8Array<ArrayBuffer>
   /** Cells that differ from the sheet as it was when the preview opened; null when they can't be listed. */
   changes: ChangedCell[] | null
 }
 
-/** The sheet's versions, page by page, newest first. */
-export function useVersionList(session: DocumentSession) {
-  const versions = ref<SheetVersion[]>([])
-  const nextCursor = ref<string | null>(null)
-  const loading = ref(true)
-  const loadingMore = ref(false)
-  const loadError = ref('')
-  // Where the panel was scrolled to, so a remounted panel comes back there.
-  const scrollTop = ref(0)
-
-  async function load(cursor?: string) {
-    try {
-      const page = readVersions(await session.versions.list(cursor))
-      versions.value = cursor ? [...versions.value, ...page.rows] : page.rows
-      nextCursor.value = page.nextCursor
-      if (!cursor) loadError.value = ''
-    } catch (error) {
-      // A failed next page keeps the rows already shown.
-      if (!cursor) loadError.value = errorText(error, __('Check your connection, then try again.'))
-      else throw error
-    } finally {
-      loading.value = false
-    }
-  }
-
-  async function loadMore() {
-    if (!nextCursor.value) return
-    loadingMore.value = true
-    try {
-      await load(nextCursor.value)
-    } finally {
-      loadingMore.value = false
-    }
-  }
-
-  async function retry() {
-    loading.value = true
-    await load()
-  }
-
-  function rememberScroll(top: number) {
-    scrollTop.value = top
-  }
-
-  /** Names a version; an empty name clears it. */
-  async function rename(version: SheetVersion, label: string) {
-    await session.versions.update(version.seq, { label })
-    const named = { ...version, label: label || null }
-    versions.value = versions.value.map((row) => (row.seq === version.seq ? named : row))
-    return named
-  }
-
-  return {
-    versions,
-    nextCursor,
-    loading,
-    loadingMore,
-    loadError,
-    scrollTop,
-    load,
-    loadMore,
-    retry,
-    rememberScroll,
-    rename,
-  }
-}
-
-export type VersionList = ReturnType<typeof useVersionList>
-
 /** The stored bytes of version `seq`. */
 export async function fetchVersion(
   session: DocumentSession,
-  seq: string,
+  seq: number,
 ): Promise<Uint8Array<ArrayBuffer>> {
-  const response = await session.credentials.fetch(session.versions.contentUrl(seq))
+  const response = await session.credentials.fetch(session.versions.contentUrl(String(seq)))
   if (!response.ok) throw new Error(__('The version could not be read.'))
   return new Uint8Array(await response.arrayBuffer())
 }
@@ -109,7 +39,7 @@ export async function fetchVersion(
  * changed cells can't be listed.
  */
 export async function readPreview(
-  version: SheetVersion,
+  version: DocumentVersion,
   bytes: Uint8Array<ArrayBuffer>,
   current: Uint8Array | null,
 ): Promise<VersionPreview> {
@@ -185,13 +115,13 @@ const KIND_LABELS = new Map<string, () => string>(
 )
 
 /** A version's name, or what kind of version it is. */
-export function versionTitle(version: SheetVersion): string {
+export function versionTitle(version: DocumentVersion): string {
   return version.label || KIND_LABELS.get(version.kind)?.() || __('Version')
 }
 
 /** When a version was taken, and by whom. */
-export function versionByline(version: SheetVersion): string {
-  const who = version.person?.full_name ?? version.actor
+export function versionByline(version: DocumentVersion): string {
+  const who = version.person.full_name || version.actor
   return [stampLabel(version.creation), who].filter(Boolean).join(' · ')
 }
 

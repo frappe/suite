@@ -211,7 +211,7 @@ test.describe("Writer collaboration", () => {
 
 		await pasteText(owner.page, "z".repeat(4.5 * 2 ** 20));
 
-		await expect(owner.page.getByText("This is too large to add in one go. Add it in smaller parts.")).toBeVisible();
+		await expect(owner.page.getByText("Too large to add at once. Add it in parts.")).toBeVisible();
 		await expect(writerEditor(owner.page)).not.toContainText("zzzz");
 		await expectSaved(owner.page);
 		const saved = (await serverBlocks(testApi, node)).join("");

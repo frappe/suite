@@ -265,6 +265,8 @@ const isNoticeBesidePanel = computed(() => !phone.value && isNavigationPanelOpen
 // stores keep their own `inReadonlyMode`, which follows access and a refused save
 const canvasReadonly = computed(() => inReadonlyMode.value || phone.value)
 const editing = computed(() => !canvasReadonly.value)
+// Comments and Versions take the properties panel's place, so the slide stays where it is
+const isPanelOverProperties = computed(() => editing.value && !previewed.value)
 const { open: showThemeDialog, offer: offerTheme } = useNewPresentationTheme(
   props.session.contentDocname,
   computed(() => !inReadonlyMode.value),
@@ -510,7 +512,7 @@ function storedFile(version: DocumentVersion, bytes: Uint8Array) {
 // Bytes no preview can draw: the person keeps them as the stored file
 function offerStoredFile(version: DocumentVersion, bytes: Uint8Array) {
   const file = storedFile(version, bytes)
-  toast.error(__("This version can't be read, so it can't be restored. You can download it."), {
+  toast.error(__("This version can't be restored"), {
     action: { label: __('Download'), onClick: () => saveThroughBrowser(file) },
   })
 }
@@ -528,7 +530,7 @@ async function versionToRestore(version: DocumentVersion) {
     return { bytes, images: await missingImages(props.session, versionImages(body)) }
   } catch (error) {
     console.error(error)
-    toast.error(__("This version's images could not be checked, so nothing was restored"))
+    toast.error(__('Could not restore the version'))
     return null
   }
 }
@@ -584,6 +586,7 @@ function tellNotRestored(version: DocumentVersion, bytes: Uint8Array, refused: R
   }
 
   toast.error(refused.message, {
+    description: refused.detail,
     action: { label: __('Download'), onClick: () => void downloadVersion(version, bytes) },
   })
 }
@@ -1161,28 +1164,34 @@ onBeforeUnmount(() => {
           </div>
           <NavigationPanel class="absolute inset-y-0 left-0" @change-slide="changeEditorSlide" />
           <Toolbar v-if="editing && presentationDoc" />
-          <PropertiesPanel v-if="editing" class="absolute inset-y-0 right-0" />
+          <PropertiesPanel
+            v-if="editing"
+            class="absolute inset-y-0 right-0"
+            :inert="panel !== null || undefined"
+          />
         </template>
       </div>
-      <DocumentSidePanel
-        ref="sidePanel"
-        v-model:panel="panel"
-        v-model:previewed-version="previewed"
-        :session="session"
-        :can-comment="access.canComment.value"
-        :can-edit-document="access.writable.value"
-        :can-share="session.canShare.value"
-        :can-restore-version="canRestoreVersions"
-        :can-save-version="canRestoreVersions"
-        :is-restoring-version="restoring"
-        :comments
-        :places="null"
-        :save-first="convertedRoom.saveBeforeVersion"
-        noun="presentation"
-        @restore-version="confirmRestore"
-        @download-version="downloadListedVersion"
-        @back="previewed = null"
-      />
+      <div :class="isPanelOverProperties ? 'absolute inset-y-0 right-0 z-20 flex' : 'contents'">
+        <DocumentSidePanel
+          ref="sidePanel"
+          v-model:panel="panel"
+          v-model:previewed-version="previewed"
+          :session="session"
+          :can-comment="access.canComment.value"
+          :can-edit-document="access.writable.value"
+          :can-share="session.canShare.value"
+          :can-restore-version="canRestoreVersions"
+          :can-save-version="canRestoreVersions"
+          :is-restoring-version="restoring"
+          :comments
+          :places="null"
+          :save-first="convertedRoom.saveBeforeVersion"
+          noun="presentation"
+          @restore-version="confirmRestore"
+          @download-version="downloadListedVersion"
+          @back="previewed = null"
+        />
+      </div>
     </div>
 
     <SurfaceNotice
