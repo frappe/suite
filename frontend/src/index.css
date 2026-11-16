@@ -86,6 +86,27 @@ body {
   }
 }
 
+/* A row in a list of rows, such as the sidebar's folders, sits closer than 44px to the next one, so
+   an area grown over its neighbours would take their taps. Its link or button takes the hit area
+   beneath the boxes around it instead: a tap on a row, or on the list between rows, goes where it
+   did, and the area takes only taps past the ends of the list. So the first and last rows reach
+   out, and the rows between keep their own box. The list must be `isolate`, or the area sinks
+   beneath the page around it and takes nothing. */
+@media (pointer: coarse) {
+  .touch-target-row > :is(a, button) {
+    position: relative;
+  }
+  .touch-target-row > :is(a, button)::after {
+    content: '';
+    position: absolute;
+    inset-inline: 0;
+    top: 50%;
+    z-index: -1;
+    height: max(100%, 44px);
+    transform: translateY(-50%);
+  }
+}
+
 /* frappe-ui's toast centres its icon on the whole message, so a two-line message
    leaves the icon between its lines. The icon and message start at the top
    instead, so the icon sits on the first line. The margin centres one text line

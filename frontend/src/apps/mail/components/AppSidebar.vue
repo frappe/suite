@@ -8,12 +8,14 @@
     <!-- The active account leads. Its menu lists the accounts, and every account at once. With
          one account, or on the dashboard, there is nothing to pick: it is just named. A phone
          switches accounts on the Profile page instead, so its folders sheet is folders only. -->
-    <SidebarSection v-if="!isMobile" class="!mt-0">
+    <!-- Rows look the same on a touch screen: touch-target-row grows their hit area only where no
+         other row is, and needs its section isolated. -->
+    <SidebarSection v-if="!isMobile" class="isolate !mt-0">
       <Dropdown v-if="accountMenu.length" :options="accountMenu" :match-trigger-width="true">
         <SidebarItem
           :label="subtitle || __('Account')"
           icon="lucide-circle-user-round"
-          class="[@media(pointer:coarse)]:!h-11"
+          class="touch-target-row"
         >
           <template #suffix>
             <span
@@ -27,7 +29,7 @@
         v-else
         :label="subtitle || __('Account')"
         icon="lucide-circle-user-round"
-        class="[@media(pointer:coarse)]:!h-11"
+        class="touch-target-row"
       />
     </SidebarSection>
     <!-- A section's own action (the folders' "+") sits over the right end of its heading:
@@ -49,7 +51,7 @@
         :label="section.label"
         :collapsible="section.collapsible"
         :collapsed="isSectionCollapsed(section)"
-        class="!mt-0"
+        class="isolate !mt-0"
         @update:collapsed="(collapsed) => setSectionCollapsed(section.key, collapsed)"
       >
         <SidebarItem
@@ -64,7 +66,7 @@
           "
           :active="item.activeFor?.includes(activeKey)"
           :on-click="item.onClick"
-          class="group has-[>:is(a,button):focus-visible]:focus-ring [&>:is(a,button):focus-visible]:!outline-none [@media(pointer:coarse)]:!h-11"
+          class="group has-[>:is(a,button):focus-visible]:focus-ring [&>:is(a,button):focus-visible]:!outline-none touch-target-row"
           @dragover="onFolderDragOver($event, item)"
           @dragleave="onFolderDragLeave(item)"
           @drop="onFolderDrop($event, item)"
@@ -74,11 +76,12 @@
                  suffix. -->
             <div v-if="!isMoreToggle(item)" class="flex items-center">
               <!-- The menu shows on hover, on a touch screen (no hover to show it), and when Tab
-                   reaches it: hidden then, its focus ring ringed nothing. -->
+                   reaches it: hidden then, its focus ring ringed nothing. Its touch area is the
+                   row's height, so it doesn't take taps meant for the rows above and below. -->
               <Dropdown v-if="item.menuOptions && !isMobile" :options="item.menuOptions">
                 <Button
                   variant="ghost"
-                  class="touch-target !bg-transparent"
+                  class="touch-target !bg-transparent [@media(pointer:coarse)]:after:!h-7"
                   :aria-label="__('{0} options', [item.label])"
                   @click.stop
                 >
