@@ -177,7 +177,7 @@ async function startDocumentComment() {
 // Someone else restored a version: the list reads again, and the person is told who and which
 async function tellRestoredByOther(restored: VersionRestored) {
   void loadVersions()
-  // Sheets lists a spreadsheet's versions in its own panel, which tells its own restores
+  // The restore notices have no words for a spreadsheet
   if (props.noun !== 'spreadsheet') {
     toast.info(await restoredByOther(restored, props.noun))
   }

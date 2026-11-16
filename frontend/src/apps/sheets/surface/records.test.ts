@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { cellAnchor, readAnchor, readVersions, WORKBOOK_ANCHOR } from './records'
+import { cellAnchor, readAnchor, WORKBOOK_ANCHOR } from './records'
 
 describe('Sheets comment anchors', () => {
   it('names a cell on a worksheet and reads it back, whatever the sheet name holds', () => {
@@ -33,51 +33,5 @@ describe('Sheets comment anchors', () => {
 
   it("falls back to the workbook when a sheet name would pass Drive's anchor limit", () => {
     expect(cellAnchor({ sheet: 'x'.repeat(260), cell: 'A1' })).toBe(WORKBOOK_ANCHOR)
-  })
-})
-
-describe('Drive records for Sheets', () => {
-  it('reads a version page and drops rows without a sequence', () => {
-    expect(
-      readVersions({
-        rows: [
-          {
-            seq: 3,
-            kind: 'named',
-            label: 'Before import',
-            pinned: 1,
-            actor: 'ann@example.com',
-            person: { id: 'ann@example.com', full_name: 'Ann Lee', user_image: null },
-            creation: '2026-09-29 11:00:00',
-          },
-          { seq: 2, kind: 'auto', label: null, pinned: 0, actor: null, creation: null },
-          { seq: '1', kind: 'auto' },
-        ],
-        next_cursor: 'abc',
-      }),
-    ).toEqual({
-      rows: [
-        {
-          seq: '3',
-          kind: 'named',
-          label: 'Before import',
-          pinned: true,
-          actor: 'ann@example.com',
-          person: { full_name: 'Ann Lee', user_image: null },
-          creation: '2026-09-29 11:00:00',
-        },
-        {
-          seq: '2',
-          kind: 'auto',
-          label: null,
-          pinned: false,
-          actor: null,
-          person: null,
-          creation: null,
-        },
-      ],
-      nextCursor: 'abc',
-    })
-    expect(readVersions(null)).toEqual({ rows: [], nextCursor: null })
   })
 })

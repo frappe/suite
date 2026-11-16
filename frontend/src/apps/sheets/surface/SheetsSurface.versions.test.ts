@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, createApp, defineComponent, h, nextTick, ref } from 'vue'
 import * as Y from 'yjs'
 
-import type { DocumentSession } from '@/apps/drive'
+import type { DocumentSession, DocumentVersion } from '@/apps/drive'
 
 import { addSheet, axis, cellKey, initDoc, roots } from '../collab/schema'
 import SheetsSurface from './SheetsSurface.vue'
@@ -24,8 +24,10 @@ const seen = vi.hoisted(() => ({
   panel: fromPartial<{ emit: Emit; props: Record<string, unknown> } | null>(null),
   bar: fromPartial<{ emit: Emit; props: Record<string, unknown> } | null>(null),
   editors: fromPartial<
-    { props: Record<string, unknown>; showChanges: unknown[]; goTo: string[] }[]
+    { props: Record<string, unknown>; showChanges: unknown[]; goTo: string[]; exports: number }[]
   >([]),
+  /** How many times the side panel was made anew. */
+  panelMounts: 0,
 }))
 vi.mock('@/apps/drive', async () => {
   const { defineComponent } = await import('vue')
@@ -59,9 +61,29 @@ function capture(key: 'menu' | 'panel' | 'bar') {
     }),
   }
 }
-vi.mock('./SheetVersionsPanel.vue', () => capture('panel'))
 vi.mock('./SheetVersionBar.vue', () => capture('bar'))
-vi.mock('./SheetComments.vue', () => ({ default: { render: () => null } }))
+// The side panel as the surface sees it: its two models, and a mark for where it sits on the page
+vi.mock('./SheetSidePanel.vue', () => ({
+  default: defineComponent({
+    inheritAttrs: false,
+    props: {
+      panel: { type: String, default: null },
+      previewedVersion: { type: Object, default: null },
+    },
+    setup: (props, { attrs, expose }) => {
+      seen.panelMounts++
+      expose({ reloadVersions: async () => {} })
+      const emit: Emit = (event, ...args) => {
+        const listener = attrs[`on${event[0]!.toUpperCase()}${event.slice(1)}`]
+        if (typeof listener === 'function') listener(...args)
+      }
+      return () => {
+        seen.panel = { emit, props: { ...props } }
+        return h('aside', { 'data-side-panel': '' })
+      }
+    },
+  }),
+}))
 
 /** The live sheet: A1 = "now". Version 3 held A1 = "then". */
 const docs = vi.hoisted(() => ({ live: fromPartial<Uint8Array | null>(null) }))
@@ -77,6 +99,7 @@ vi.mock('@/apps/sheets/components/SheetEditor/index.vue', () => ({
         props,
         showChanges: fromPartial<unknown[]>([]),
         goTo: fromPartial<string[]>([]),
+        exports: 0,
       }
       seen.editors.push(record)
       expose({
@@ -93,11 +116,14 @@ vi.mock('@/apps/sheets/components/SheetEditor/index.vue', () => ({
           return true
         },
         closeNotes: () => {},
+        exportXLSX: async () => {
+          record.exports++
+        },
         hasDraft: () => false,
         hasUnsentWork: () => false,
       })
       return () =>
-        h('div', [
+        h('div', { 'data-editor': '' }, [
           slots.header?.({
             viewOnly: false,
             status: null,
@@ -106,7 +132,7 @@ vi.mock('@/apps/sheets/components/SheetEditor/index.vue', () => ({
             menuItems: { transfer: [], settings: [] },
           }),
           slots.banner?.(),
-          slots['side-panel']?.(),
+          slots.aside?.(),
         ])
     },
   }),
@@ -138,14 +164,15 @@ const stored = new TextEncoder().encode(
     state: gzipSync(Y.encodeStateAsUpdate(versionDoc)).toString('base64'),
   }),
 )
-const version = {
+const version = fromPartial<DocumentVersion>({
   seq: 3,
   kind: 'named',
   label: 'Before import',
   pinned: 0,
   actor: 'ann@example.com',
+  person: { id: 'ann@example.com', full_name: 'Ann Lee', user_image: null },
   creation: null,
-}
+})
 
 const fetchVersion = vi.fn(async () => new Response(stored))
 const session = fromPartial<DocumentSession>({
@@ -158,7 +185,6 @@ const session = fromPartial<DocumentSession>({
   folder: ref({ name: 'folder-1', title: 'Finance' }),
   credentials: { context: {}, fetch: fetchVersion },
   versions: {
-    list: vi.fn(async () => ({ rows: [version], next_cursor: null })),
     contentUrl: (seq: string) => `/versions/${seq}/content`,
   },
 })
@@ -168,6 +194,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   seen.editors = []
   seen.panel = seen.bar = null
+  seen.panelMounts = 0
   const live = new Y.Doc()
   Y.applyUpdate(live, Y.encodeStateAsUpdate(versionDoc))
   const sheetId = roots(live).sheets.get(0)
@@ -205,13 +232,17 @@ async function openVersions() {
 }
 const lastEditor = () => seen.editors.at(-1)!
 
+/** As a click on the version in the panel's list. */
+async function show(shown: DocumentVersion) {
+  seen.panel!.emit('update:previewedVersion', shown)
+  await settle()
+}
+
 describe('SheetsSurface version preview', () => {
   it('shows a version read-only in place of the live sheet and washes the cells it changed', async () => {
     await openVersions()
-    const [row] = versionRows()
 
-    seen.panel!.emit('preview', row)
-    await settle()
+    await show(version)
 
     expect(fetchVersion).toHaveBeenCalledWith('/versions/3/content')
     const shown = lastEditor()
@@ -219,14 +250,12 @@ describe('SheetsSurface version preview', () => {
     expect(shown.props.collabSession).toBeNull()
     expect(shown.props.writable).toBe(false)
     expect(shown.showChanges).toEqual([[{ sheet: 'Sheet1', cell: 'A1' }]])
-    expect(seen.panel!.props.previewed).toBe('3')
+    expect(seen.panel!.props.previewedVersion).toEqual(version)
   })
 
   it('steps to each changed cell, and back to the live sheet on exit', async () => {
     await openVersions()
-    const [row] = versionRows()
-    seen.panel!.emit('preview', row)
-    await settle()
+    await show(version)
 
     seen.bar!.emit('step', 1)
     await settle()
@@ -237,33 +266,63 @@ describe('SheetsSurface version preview', () => {
     await settle()
     expect(lastEditor().props.version).toBeNull()
     expect(lastEditor().props.collabSession).toBe(session)
-    expect(seen.panel!.props.previewed).toBeNull()
+    expect(seen.panel!.props.previewedVersion).toBeNull()
   })
 
   it('ends the preview when the Versions panel closes', async () => {
     await openVersions()
-    const [row] = versionRows()
-    seen.panel!.emit('preview', row)
-    await settle()
+    await show(version)
 
-    seen.panel!.emit('close')
+    seen.panel!.emit('update:panel', null)
     await settle()
 
     expect(lastEditor().props.version).toBeNull()
   })
-})
 
-function versionRows() {
-  const list = seen.panel?.props.list
-  if (!list || typeof list !== 'object' || !('versions' in list))
-    throw new Error('Expected a versions panel')
-  const versions = list.versions
-  if (
-    !versions ||
-    typeof versions !== 'object' ||
-    !('value' in versions) ||
-    !Array.isArray(versions.value)
-  )
-    throw new Error('Expected version rows')
-  return versions.value
-}
+  it('goes back to the live sheet on Escape from the panel', async () => {
+    await openVersions()
+    await show(version)
+
+    seen.panel!.emit('back')
+    await settle()
+
+    expect(lastEditor().props.version).toBeNull()
+    expect(seen.panel!.props.panel).toBe('versions')
+  })
+
+  it('keeps the one panel beside the grid while the editor is made anew for a version', async () => {
+    await openVersions()
+    const editorsBefore = seen.editors.length
+
+    await show(version)
+
+    expect(seen.editors.length).toBeGreaterThan(editorsBefore)
+    expect(seen.panelMounts).toBe(1)
+    expect(document.querySelectorAll('[data-editor] [data-side-panel]')).toHaveLength(1)
+  })
+
+  it('takes a new name for the version it shows without reading it again', async () => {
+    await openVersions()
+    await show(version)
+    const editors = seen.editors.length
+
+    await show({ ...version, label: 'After import' })
+
+    expect(seen.bar!.props.preview).toMatchObject({ version: { seq: 3, label: 'After import' } })
+    expect(fetchVersion).toHaveBeenCalledOnce()
+    expect(seen.editors).toHaveLength(editors)
+  })
+
+  it('downloads a version as the Excel file of the sheet it shows', async () => {
+    await openVersions()
+    const live = lastEditor()
+
+    seen.panel!.emit('downloadVersion', version)
+    await settle()
+
+    const shown = lastEditor()
+    expect(shown.props.version).toBeInstanceOf(Uint8Array)
+    expect(shown.exports).toBe(1)
+    expect(live.exports).toBe(0)
+  })
+})

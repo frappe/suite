@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { dialog, toast } from 'frappe-ui'
-import { computed, nextTick, ref, shallowRef, watch } from 'vue'
+import { computed, nextTick, ref, shallowRef, useTemplateRef, watch } from 'vue'
 
 import {
   DriveDocumentHeader,
@@ -9,6 +9,7 @@ import {
   useDocumentComments,
   type DocumentPanel,
   type DocumentSession,
+  type DocumentVersion,
 } from '@/apps/drive'
 import type { ChangedCell } from '@/apps/sheets/collab/changes'
 import SheetEditor from '@/apps/sheets/components/SheetEditor/index.vue'
@@ -19,18 +20,16 @@ import { translate as __ } from '@/platform/translation'
 import { createSheetAccess } from './access'
 import { cellCommentAnchors } from './commentPlaces'
 import { useDocumentLeaveGuard, type DocumentSaveState } from './navigation'
-import { cellAnchor, type CellAnchor, type SheetVersion } from './records'
+import { cellAnchor, type CellAnchor } from './records'
 import { clearRecovery, downloadRecovery, keepRecovery, readRecovery } from './recovery'
-import SheetComments from './SheetComments.vue'
+import SheetSidePanel from './SheetSidePanel.vue'
 import SheetVersionBar from './SheetVersionBar.vue'
-import SheetVersionsPanel from './SheetVersionsPanel.vue'
 import {
   copyFromVersion,
   errorText,
   fetchVersion,
   nextStep,
   readPreview,
-  useVersionList,
   versionTitle,
   type VersionPreview,
 } from './versions'
@@ -66,6 +65,8 @@ interface SheetEditorHandle {
   docState(): Uint8Array | null
   /** Washes the cells a previewed version changed; null clears them. */
   showChanges(cells: readonly ChangedCell[] | null): void
+  /** Saves the workbook it shows through the browser, as an Excel file. */
+  exportXLSX(): Promise<void>
 }
 const props = defineProps<{
   session: DocumentSession
@@ -117,7 +118,13 @@ const preview = shallowRef<VersionPreview | null>(null)
 const previewStep = ref<number | null>(null)
 // The live room's doc when the first preview opened: each version is compared with it.
 let liveState: Uint8Array | null = null
-const versionList = useVersionList(props.session)
+const sidePanel = useTemplateRef('sidePanel')
+/**
+ * The editor's aside, where the side panel sits. A shown version or a restore remounts the editor,
+ * and the panel moves to the new aside with its list, name box and drafts.
+ */
+const panelDock = shallowRef<HTMLElement>()
+let scrolled: { list: Element; top: number } | null = null
 const account = useSession()
 const canCopy = computed(
   () => props.session.folder.value !== null && account.status.value === 'authenticated',
@@ -182,11 +189,26 @@ function goToCell(sheet: string, cell: string) {
 function togglePanel(name: DocumentPanel) {
   showPanel(panel.value === name ? null : name)
 }
-// The list is read each time the panel opens; closing it ends a preview.
+// Closing the versions ends a preview
 watch(panel, (now) => {
-  if (now === 'versions') void versionList.load()
-  else void leavePreview()
+  if (now !== 'versions') void leavePreview()
 })
+// An editor going away hands back null, which leaves the panel where it is until the next aside
+function keepPanelDock(aside: unknown) {
+  if (aside instanceof HTMLElement) panelDock.value = aside
+}
+function rememberScroll(event: Event) {
+  if (event.target instanceof Element)
+    scrolled = { list: event.target, top: event.target.scrollTop }
+}
+// A list moved to the new aside comes back scrolled to the top
+watch(
+  panelDock,
+  () => {
+    if (scrolled) scrolled.list.scrollTop = scrolled.top
+  },
+  { flush: 'post' },
+)
 // A preview's editor washes the cells its version changed once it has loaded.
 watch(editor, async (current) => {
   const shown = preview.value
@@ -195,9 +217,13 @@ watch(editor, async (current) => {
   if (editor.value === current) current.showChanges(shown.changes)
 })
 
-async function previewVersion(version: SheetVersion | null) {
+async function previewVersion(version: DocumentVersion | null) {
   if (!version) return leavePreview()
-  if (preview.value?.version.seq === version.seq) return
+  // The panel hands back the shown version once it is renamed
+  if (preview.value?.version.seq === version.seq) {
+    preview.value = { ...preview.value, version }
+    return
+  }
   try {
     if (!preview.value) {
       // The sheet closes while a version is shown: its edits are saved first.
@@ -225,26 +251,7 @@ function stepThroughChanges(delta: 1 | -1) {
   const target = previewStep.value === null ? undefined : changes[previewStep.value]
   if (target) editor.value?.goToCell(target.sheet, target.cell)
 }
-function renameVersion(version: SheetVersion) {
-  dialog.prompt({
-    title: version.label ? __('Rename version') : __('Name this version'),
-    fields: [
-      {
-        name: 'label',
-        label: __('Name'),
-        defaultValue: version.label ?? '',
-        placeholder: __('Before the Q3 import'),
-      },
-    ],
-    confirmLabel: __('Save'),
-    onConfirm: async ({ values }) => {
-      const named = await versionList.rename(version, String(values.label ?? '').trim())
-      if (preview.value?.version.seq === named.seq)
-        preview.value = { ...preview.value, version: named }
-    },
-  })
-}
-function confirmRestore(version: SheetVersion) {
+function confirmRestore(version: DocumentVersion) {
   dialog.confirm({
     title: __('Restore this version?'),
     message: __(
@@ -252,13 +259,25 @@ function confirmRestore(version: SheetVersion) {
     ),
     confirmLabel: __('Restore'),
     onConfirm: async () => {
-      await restoreVersion(version.seq)
+      await restoreVersion(String(version.seq))
       toast.success(__('Version restored'))
-      await versionList.load()
+      await sidePanel.value?.reloadVersions()
     },
   })
 }
-function makeCopy(version: SheetVersion) {
+// The list's Download: the version is shown, then saved as the editor's Excel export
+async function downloadVersion(version: DocumentVersion) {
+  await previewVersion(version)
+  if (preview.value?.version.seq !== version.seq) return
+  try {
+    await nextTick()
+    await editor.value?.whenLoaded()
+    await editor.value?.exportXLSX()
+  } catch {
+    toast.error(__('Could not download this version'))
+  }
+}
+function makeCopy(version: DocumentVersion) {
   const folder = props.session.folder.value
   if (!folder) return
   dialog.prompt({
@@ -379,105 +398,99 @@ useDocumentLeaveGuard({
         You no longer have permission to read this spreadsheet.
       </p>
     </div>
-    <SheetEditor
-      v-else
-      :id="session.contentDocname"
-      :key="editorKey"
-      ref="editor"
-      :writable="editorWritable"
-      :title="session.title.value"
-      :request-context="session.credentials.context"
-      :collab-session="preview ? undefined : session"
-      :version="preview?.bytes"
-      :open-comments="openComments"
-      @reopen="bodyRevision += 1"
-      @notes-opened="panel = null"
-    >
-      <template
-        #header="{
-          viewOnly,
-          status: EditorStatus,
-          menus: EditorMenus,
-          actions: EditorActions,
-          menuItems,
-        }"
+    <template v-else>
+      <SheetEditor
+        :id="session.contentDocname"
+        :key="editorKey"
+        ref="editor"
+        :writable="editorWritable"
+        :title="session.title.value"
+        :request-context="session.credentials.context"
+        :collab-session="preview ? undefined : session"
+        :version="preview?.bytes"
+        :open-comments="openComments"
+        @reopen="bodyRevision += 1"
+        @notes-opened="panel = null"
       >
-        <DriveDocumentHeader
-          class="sheets-header"
-          :session="session"
-          title-label="Spreadsheet title"
-          :save-state="editor?.saveState ?? null"
-          :view-only="viewOnly"
-          :recoverable="hasRecovery"
-          @download-changes="downloadChanges"
+        <template
+          #header="{
+            viewOnly,
+            status: EditorStatus,
+            menus: EditorMenus,
+            actions: EditorActions,
+            menuItems,
+          }"
         >
-          <template #status>
-            <component :is="EditorStatus" />
-          </template>
-          <template #actions>
-            <component :is="EditorActions" />
-          </template>
-          <template #menu>
-            <DriveDocumentMenu
-              :session="session"
-              :panels="session.panels.value"
-              :panel="panel"
-              :transfer="menuItems.transfer"
-              :settings="menuItems.settings"
-              @toggle-panel="togglePanel"
-            />
-          </template>
-        </DriveDocumentHeader>
-        <div class="sheets-menus">
-          <component :is="EditorMenus" />
-        </div>
-      </template>
+          <DriveDocumentHeader
+            class="sheets-header"
+            :session="session"
+            title-label="Spreadsheet title"
+            :save-state="editor?.saveState ?? null"
+            :view-only="viewOnly"
+            :recoverable="hasRecovery"
+            @download-changes="downloadChanges"
+          >
+            <template #status>
+              <component :is="EditorStatus" />
+            </template>
+            <template #actions>
+              <component :is="EditorActions" />
+            </template>
+            <template #menu>
+              <DriveDocumentMenu
+                :session="session"
+                :panels="session.panels.value"
+                :panel="panel"
+                :transfer="menuItems.transfer"
+                :settings="menuItems.settings"
+                @toggle-panel="togglePanel"
+              />
+            </template>
+          </DriveDocumentHeader>
+          <div class="sheets-menus">
+            <component :is="EditorMenus" />
+          </div>
+        </template>
 
-      <template v-if="preview" #banner>
-        <SheetVersionBar
-          :preview="preview"
-          :step="previewStep"
-          :writable="access.writable.value"
-          :can-copy="canCopy"
-          :restoring="restoring"
-          @exit="leavePreview"
-          @step="stepThroughChanges"
-          @rename="renameVersion(preview.version)"
-          @copy="makeCopy(preview.version)"
-          @restore="confirmRestore(preview.version)"
-        />
-      </template>
+        <template v-if="preview" #banner>
+          <SheetVersionBar
+            :preview="preview"
+            :step="previewStep"
+            :writable="access.writable.value"
+            :can-copy="canCopy"
+            :restoring="restoring"
+            @exit="leavePreview"
+            @step="stepThroughChanges"
+            @copy="makeCopy(preview.version)"
+            @restore="confirmRestore(preview.version)"
+          />
+        </template>
 
-      <template #aside>
-        <SheetComments
-          :open="panel === 'comments'"
+        <template #aside>
+          <div :ref="keepPanelDock" class="contents" />
+        </template>
+      </SheetEditor>
+      <Teleport v-if="panelDock" :to="panelDock">
+        <SheetSidePanel
+          ref="sidePanel"
+          v-model:panel="panel"
           :session="session"
           :comments="comments"
           :sheets="sheetNames"
           :can-comment="access.canComment.value"
           :can-edit-document="access.writable.value"
           :go-to-cell="goToCell"
-          @close="panel = null"
+          :previewed-version="preview?.version ?? null"
+          :is-restoring-version="restoring"
+          :save-first="flushEdits"
+          @update:previewed-version="previewVersion"
+          @restore-version="confirmRestore"
+          @download-version="downloadVersion"
+          @back="leavePreview"
+          @scroll.capture.passive="rememberScroll"
         />
-      </template>
-
-      <template #side-panel>
-        <SheetVersionsPanel
-          v-if="panel === 'versions'"
-          :session="session"
-          :list="versionList"
-          :writable="access.writable.value"
-          :can-copy="canCopy"
-          :previewed="preview?.version.seq ?? null"
-          :flush="flushEdits"
-          @close="panel = null"
-          @preview="previewVersion"
-          @rename="renameVersion"
-          @copy="makeCopy"
-          @restore="confirmRestore"
-        />
-      </template>
-    </SheetEditor>
+      </Teleport>
+    </template>
   </div>
 </template>
 

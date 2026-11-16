@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, useTemplateRef, watch } from 'vue'
 
 import {
   DriveDocumentSidePanel,
   type DocumentComments,
   type DocumentPanel,
   type DocumentSession,
+  type DocumentVersion,
 } from '@/apps/drive'
 import { toast } from '@/platform/feedback'
 import { translate as __ } from '@/platform/translation'
@@ -13,10 +14,8 @@ import { translate as __ } from '@/platform/translation'
 import { cellLabel, cellPlaces } from './commentPlaces'
 import { readAnchor } from './records'
 
-/** The spreadsheet's comments, on its cells or on all of it, in the panel Writer and Slides use. */
+/** The spreadsheet's comments, on its cells or on all of it, and its versions, in the panel Writer and Slides use. */
 const props = defineProps<{
-  /** Whether the panel shows; it stays mounted so it can slide in and out. */
-  open: boolean
   session: DocumentSession
   comments: DocumentComments
   /** The workbook's sheets, in order. */
@@ -25,26 +24,23 @@ const props = defineProps<{
   canEditDocument: boolean
   /** Moves the editor to a cell; false when the cell is no longer there. */
   goToCell: (sheet: string, cell: string) => boolean
+  isRestoringVersion: boolean
+  /** Saves the spreadsheet's pending edits, throwing why it couldn't. */
+  saveFirst: () => Promise<void>
 }>()
-const emit = defineEmits<{ close: [] }>()
+const emit = defineEmits<{
+  restoreVersion: [version: DocumentVersion]
+  downloadVersion: [version: DocumentVersion]
+  /** Escape over a shown version. */
+  back: []
+}>()
+/** Which of the two shows; null hides the panel, which stays mounted so it can slide in and out. */
+const panel = defineModel<DocumentPanel | null>('panel', { required: true })
+/** The version the surface shows; a click in the list asks for another. */
+const previewedVersion = defineModel<DocumentVersion | null>('previewedVersion', { required: true })
 
-const shown = computed<DocumentPanel | null>({
-  get: () => (props.open ? 'comments' : null),
-  set: (panel) => {
-    if (!panel) {
-      emit('close')
-    }
-  },
-})
-
-// The shared panel lists versions too, which Sheets still shows in its own panel
-const noVersions = {
-  canRestoreVersion: false,
-  canSaveVersion: false,
-  isRestoringVersion: false,
-  previewedVersion: null,
-  saveFirst: async () => {},
-}
+const sharedPanel = useTemplateRef('sharedPanel')
+defineExpose({ reloadVersions: () => sharedPanel.value?.reloadVersions() })
 
 const openThread = ref<string | null>(null)
 const places = computed(() => cellPlaces(props.comments.threads.value, props.sheets))
@@ -68,23 +64,38 @@ watch(
     }
   },
 )
+
+// Escape goes on to the page, where the shared panel hears it to leave a shown version
+function keepFromGrid(event: KeyboardEvent) {
+  if (event.key !== 'Escape') {
+    event.stopPropagation()
+  }
+}
 </script>
 
 <template>
   <!-- Keys and clicks in the panel stay out of the grid -->
-  <div class="contents" @click.stop @keydown.stop>
+  <div class="contents" @click.stop @keydown="keepFromGrid">
     <DriveDocumentSidePanel
-      v-model:panel="shown"
+      ref="sharedPanel"
+      v-model:panel="panel"
       v-model:open-thread="openThread"
+      v-model:previewed-version="previewedVersion"
       :session
       :comments
       :places
       :can-comment
       :can-edit-document
       :can-share="session.canShare.value"
-      v-bind="noVersions"
+      :can-restore-version="canEditDocument"
+      :can-save-version="canEditDocument"
+      :is-restoring-version
+      :save-first
       noun="spreadsheet"
       :draft-label="__('Add a comment on the cell')"
+      @restore-version="emit('restoreVersion', $event)"
+      @download-version="emit('downloadVersion', $event)"
+      @back="emit('back')"
     />
   </div>
 </template>

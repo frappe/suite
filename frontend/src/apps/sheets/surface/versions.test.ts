@@ -1,13 +1,11 @@
 import { gzipSync } from 'node:zlib'
 import { describe, expect, it, vi } from 'vitest'
-import { ref } from 'vue'
 import * as Y from 'yjs'
 
-import type { DocumentSession } from '@/apps/drive'
+import type { DocumentSession, DocumentVersion } from '@/apps/drive'
 
 import { addSheet, axis, cellKey, initDoc, roots } from '../collab/schema'
-import type { SheetVersion } from './records'
-import { copyFromVersion, nextStep, readPreview, useVersionList } from './versions'
+import { copyFromVersion, nextStep, readPreview } from './versions'
 
 const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
 
@@ -17,15 +15,13 @@ vi.mock('@/api', () => ({
   client: { mutation: api.mutation },
 }))
 
-const version: SheetVersion = {
-  seq: '4',
+const version = fromPartial<DocumentVersion>({
+  seq: 4,
   kind: 'named',
   label: 'Before import',
-  pinned: false,
   actor: 'ann@example.com',
-  person: null,
   creation: '2026-10-01 09:00:00',
-}
+})
 
 /** A one-sheet doc with `cells` ("row,col" → input) and the sheet's id. */
 function sheetDoc(cells: Record<string, string>) {
@@ -164,28 +160,5 @@ describe('copyFromVersion', () => {
       'before editing together',
     )
     expect(copy).not.toHaveBeenCalled()
-  })
-})
-
-describe('useVersionList', () => {
-  it('renames a version through Drive and shows the new name in the list', async () => {
-    const update = vi.fn(async () => ({}))
-    const list = vi.fn(async () => ({
-      rows: [{ ...version, seq: 4, pinned: 0 }],
-      next_cursor: null,
-    }))
-    const versions = useVersionList(
-      fromPartial<DocumentSession>({
-        versions: { list, update },
-        title: ref('Budget'),
-      }),
-    )
-    await versions.load()
-
-    const named = await versions.rename(versions.versions.value[0]!, 'Q3 close')
-
-    expect(update).toHaveBeenCalledWith('4', { label: 'Q3 close' })
-    expect(named.label).toBe('Q3 close')
-    expect(versions.versions.value[0]!.label).toBe('Q3 close')
   })
 })

@@ -43,13 +43,13 @@ vi.mock('@/apps/drive', () => ({
     },
   }),
 }))
-vi.mock('./SheetComments.vue', () => ({
+vi.mock('./SheetSidePanel.vue', () => ({
   default: defineComponent({
-    props: { open: Boolean },
-    setup: (props) => () => (props.open ? h('aside', { 'data-comments': '' }) : null),
+    props: { panel: { type: String, default: null } },
+    setup: (props) => () =>
+      props.panel === 'comments' ? h('aside', { 'data-comments': '' }) : null,
   }),
 }))
-vi.mock('./SheetVersionsPanel.vue', () => ({ default: { render: () => null } }))
 vi.mock('./navigation', () => ({ useDocumentLeaveGuard: vi.fn() }))
 
 type Draft = { sheet: string; cell: string; value: string }
@@ -127,7 +127,6 @@ vi.mock('@/apps/sheets/components/SheetEditor/index.vue', () => ({
       return () => [
         slots.header?.({ menus, menuItems: { transfer: [], settings: [] } }),
         slots.aside?.(),
-        slots['side-panel']?.(),
       ]
     },
   }),

@@ -269,9 +269,6 @@
               @resize="onChartResize"
             />
 
-            <!-- The surface's versions panel floats over the same edge -->
-            <slot name="side-panel" />
-
             <!-- Notes side panel (NotesPanel.vue) -->
             <NotesPanel
               v-if="notesPanel.open"
@@ -872,7 +869,7 @@ import { useWorkbook } from './useWorkbook.js'
 import ValidationDialog from './ValidationDialog.vue'
 
 // Mounted by the /d/ surface (SheetsSurface.vue). The surface fills the
-// `header` and `side-panel` slots, owns the title, sharing and the leave
+// `header` and `aside` slots, owns the title, sharing and the leave
 // guard, and its Drive session records the visit. The `header` slot receives
 // `viewOnly`, and the editor's `status`, `menus` and `actions` as components
 // to place; the save state is on the exposed handle.
@@ -3824,6 +3821,7 @@ defineExpose({
   /** The live room's doc as one Yjs update; null outside a room. */
   docState: () => collab.docState(),
   showChanges,
+  exportXLSX,
 })
 // Restores version `seq` through the live room (collab/restore.ts). Throws
 // with the message to show when it didn't land.
