@@ -49,7 +49,7 @@
   <div class="relative flex h-[calc(100dvh-3.05rem)] max-sm:min-h-0 max-sm:flex-1 max-sm:!h-auto">
     <!-- Loading: the list's rows in outline, in the list's own column. -->
     <ThreadPane v-if="isLoading" :thread-open="false">
-      <template #list><MailListSkeleton /></template>
+      <template #list><MailListSkeleton :hide-avatar="!isMobile" /></template>
     </ThreadPane>
 
     <template v-else-if="threadRows.length || inboxTab || filter || filterChanged">

@@ -59,7 +59,7 @@
   >
     <!-- Loading: the list's rows in outline, in the list's own column. -->
     <ThreadPane v-if="isLoading" :thread-open="false">
-      <template #list><MailListSkeleton /></template>
+      <template #list><MailListSkeleton :selectable="!isAllAccountsSearch" /></template>
     </ThreadPane>
 
     <template

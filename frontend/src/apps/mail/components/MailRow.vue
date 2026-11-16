@@ -39,7 +39,7 @@
       <!-- Wide: a flex box, as the day headers' is, so the checkbox (an inline-flex) centres on the
            row's line rather than sitting on a text line's baseline, a few pixels above it. -->
       <div
-        v-if="!isMobile && selectable"
+        v-if="showCheckbox"
         class="checkbox-hitbox -m-3 cursor-pointer p-3"
         :class="{ flex: isFullWidth }"
         @click.stop.prevent="emit('setSelected', !isSelected)"
@@ -170,13 +170,12 @@
 <script setup lang="ts">
 import { Avatar, Checkbox } from 'frappe-ui'
 import { Check } from 'lucide-vue-next'
-import { computed, inject, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { RouterLink, type RouteLocationRaw } from 'vue-router'
 
 import MailDate from '@/apps/mail/components/MailDate.vue'
+import { useRowLayout } from '@/apps/mail/composables/useRowLayout'
 import { ROW_BOX_CLASS } from '@/apps/mail/constants'
-import type { UserResource } from '@/apps/mail/types'
-import { useScreenSize } from '@/apps/mail/utils/composables'
 
 // The shared skeleton of a row in the mail list: selection column, sender line with its date, subject,
 // preview, and the trailing slot the star or chevron sits in. It owns the layout and nothing else —
@@ -239,18 +238,14 @@ const emit = defineEmits<{
   dragEnd: []
 }>()
 
-const user = inject<UserResource>('$user')
-if (!user) throw new Error('Missing required user provider')
-const { isMobile } = useScreenSize()
+const { isFullWidth, showCheckbox, showAvatar, showLeading } = useRowLayout(() => ({
+  selectable,
+  hideAvatar,
+  isSelected,
+}))
 
 // Only a row with pills to move takes a second line; any other keeps the single wide line.
 const pillsBelow = computed(() => isFullWidth.value && hasExtra)
-
-const showAvatar = computed(() => !isSelected && (isMobile.value || !selectable) && !hideAvatar)
-// With no checkbox, no check circle and no avatar there is nothing left to reserve space for.
-const showLeading = computed(
-  () => (!isMobile.value && selectable) || isSelected || showAvatar.value,
-)
 
 const isHovered = ref(false)
 
@@ -279,10 +274,6 @@ const onRowClick = (e: MouseEvent) => {
   e.stopPropagation()
   emit('setSelected', !isSelected)
 }
-
-// With the reading pane hidden the list has the window to itself, so a row lays out as one wide line
-// instead of a stacked block.
-const isFullWidth = computed(() => !(user.data.show_reading_pane || isMobile.value))
 
 // A stack member's sender is worth dropping only in the stacked layout, where the sender owns a whole
 // line and repeating the same name down a run costs a third of every row's height. Full-width keeps it:
