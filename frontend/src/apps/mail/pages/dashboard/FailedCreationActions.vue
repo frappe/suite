@@ -72,9 +72,10 @@ const retry = useMutation(api.mail.admin.members.retryCreation)
 async function retrySubmit() {
   const result = await retry.run({ name: props.request.name })
   emit('settled')
-  if (!result.success) return raiseToast(result.error || __('Account setup failed again.'), 'error')
+  if (!result.success)
+    return raiseToast(result.error || __('Could not set up the account'), 'error')
   temporaryPassword.value = result.temporary_password || ''
-  if (!temporaryPassword.value) raiseToast(__('Account added.'))
+  if (!temporaryPassword.value) raiseToast(__('Account added'))
 }
 
 const removing = ref(false)
@@ -82,7 +83,7 @@ const remove = useMutation(api.mail.admin.members.removeFailedCreation)
 async function removeSubmit() {
   await remove.run({ name: props.request.name })
   removing.value = false
-  raiseToast(__('Account removed.'))
+  raiseToast(__('Account removed'))
   emit('settled')
 }
 </script>

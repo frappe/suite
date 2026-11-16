@@ -125,7 +125,7 @@ describe('trusting a sender', () => {
   it('says so on the click, and Undo waits for it to land', async () => {
     const screener = await load()
     const done = screener.allow(['news@example.com'])
-    expect(shown.map((toast) => toast.message)).toEqual(['Sender marked as trusted.'])
+    expect(shown.map((toast) => toast.message)).toEqual(['Sender marked as trusted'])
     shown[0].action!.onClick()
     await settle()
     expect(calls).toEqual(['allow'])

@@ -1,4 +1,4 @@
-// The menu bar's six menus (File, Edit, View, Insert, Format, Data). Every
+// The menu bar's five menus (Edit, View, Insert, Format, Data). Every
 // action the toolbar, the right-click menu or a shortcut offers is listed here
 // by name, so the toolbar can stay short. `a` holds the editor's callbacks and
 // state; the factory only arranges them. Each menu has a `key` to find it
@@ -243,8 +243,6 @@ export function buildMenuBar(a) {
   ]
 
   return [
-    // The editor's export / import menu, which already leaves Import out for viewers.
-    { key: 'file', label: __('File'), options: a.fileOptions },
     { key: 'edit', label: __('Edit'), options: forViewers(edit, a.readOnly) },
     { key: 'view', label: __('View'), options: forViewers(view, a.readOnly) },
     { key: 'insert', label: __('Insert'), options: forViewers(insert, a.readOnly) },

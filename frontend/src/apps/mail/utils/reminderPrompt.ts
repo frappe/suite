@@ -1,6 +1,7 @@
 import { api, client } from '@/api'
 import type { Mail } from '@/apps/mail/types'
 import { formatDateTime } from '@/apps/mail/utils/datetime'
+import { translate as __ } from '@/platform/translation'
 
 /** Mail of yours: it is in your Sent. */
 export const isYours = (mail: Pick<Mail, 'mailboxes'>, sent: string) =>
@@ -28,4 +29,4 @@ export const setReplyReminder = async (account: string, ids: string[], at: strin
 }
 
 export const reminderSetMessage = (at: string) =>
-  __('Reminder set for {0}.', [formatDateTime(at, 'ddd, MMM D, h:mm A')])
+  __('Reminder set for {0}', [formatDateTime(at, 'ddd, MMM D, h:mm A')])

@@ -195,23 +195,26 @@ function holds(copy: RecoveryCopy, slides: readonly unknown[]) {
   return JSON.stringify(copy.slides) === JSON.stringify(slides)
 }
 
-/** Throws when the browser's store is full. */
+/** Throws when the browser's store is full. Returns the copy's entry id, as `discardRecovery` takes it. */
 export function keepRecovery(
   node: string,
   slides: readonly unknown[],
   { sticky = false, now = new Date() } = {},
-): void {
+): string {
   const own = recordKey(node, PAGE_LOAD)
   const ownCopy = storedRecords(node).find(({ id }) => id === PAGE_LOAD)?.copy
   const isOwnSame = !!ownCopy && holds(ownCopy, slides)
   // this page's download of the same slides still counts for its sticky copy
   const downloaded = sticky && isOwnSame && ownCopy.downloaded ? { downloaded: true } : {}
   const copy = { savedAt: now.toISOString(), slides: [...slides], sticky, ...downloaded }
-  localStorage.setItem(recordKey(node, sticky ? randomId() : PAGE_LOAD), stored(copy))
+  const id = sticky ? randomId() : PAGE_LOAD
+  localStorage.setItem(recordKey(node, id), stored(copy))
   // this page's unsent copy of the same slides is kept sticky now
   if (sticky && isOwnSame) {
     localStorage.removeItem(own)
   }
+
+  return `${id}@${copy.savedAt}`
 }
 
 function stored(copy: RecoveryCopy) {

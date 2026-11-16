@@ -66,10 +66,14 @@
         />
       </DefineTopbarStatus>
       <DefineTopbarMenus>
-        <SheetMenuBar :menus="menuBar" :open-comments="openComments" />
+        <SheetMenuBar
+          :menus="menuBar"
+          :open-comments="openComments"
+          @item-ran="_refocusGridAfterDialog"
+        />
       </DefineTopbarMenus>
       <DefineTopbarActions>
-        <SheetTopbarActions :present-users="presentUsers" :current-sheet="currentSheet" />
+        <UsersBar v-if="peopleHere.length" :users="peopleHere" />
         <input
           ref="csvInputRef"
           name="csv-import"
@@ -89,330 +93,337 @@
       </DefineTopbarActions>
 
       <!-- On /d/ the surface draws the Drive document header: title and Share.
-         The editor fills its status, menus and actions. -->
+         The editor fills its status, menus and actions, and hands over its
+         own items for the header's menu. -->
       <slot
         name="header"
         :view-only="readOnly"
         :status="ReuseTopbarStatus"
         :menus="ReuseTopbarMenus"
         :actions="ReuseTopbarActions"
+        :menu-items="menuItems"
       />
 
-      <!-- Row 2 · the tools (SheetToolbar.vue) -->
-      <SheetToolbar
-        v-model:show-sort-filter="showSortFilter"
-        :read-only="readOnly"
-        :active-format="activeFormat"
-        :number-format-dropdown-options="numberFormatDropdownOptions"
-        :number-format-label="numberFormatLabel"
-        :currency-dropdown-options="currencyDropdownOptions"
-        :active-number-format-type="activeNumberFormatType"
-        :active-currency-symbol="activeCurrencySymbol"
-        :align-dropdown-options="alignDropdownOptions"
-        :h-align-icon="hAlignIcon"
-        :can-undo="canUndo"
-        :can-redo="canRedo"
-        :is-painting-format="isPaintingFormat"
-        :text-wrap-dropdown-options="textWrapDropdownOptions"
-        :text-wrap-icon="textWrapIcon"
-        :border-dropdown-options="borderDropdownOptions"
-        :format-menu-options="formatMenuOptions"
-        :font-family-dropdown-options="fontFamilyDropdownOptions"
-        :font-family-label="activeFontFamilyLabel"
-        :open-comments="openComments"
-        @number-format="toggleNumberFmt"
-        @adjust-decimals="adjustDecimals"
-        @adjust-font-size="adjustFontSize"
-        @set-font-size="setFontSize"
-        @toggle-format="toggleFmt"
-        @set-color="setColor"
-        @undo="undo"
-        @redo="redo"
-        @toggle-format-painter="toggleFormatPainter"
-        @merge="toggleMerge"
-        @sort="openQuickFilterForActive"
-        @insert-link="openHyperlinkDialog()"
-        @insert-chart="openChartDialog()"
-      />
+      <!-- The tools, the formula bar and the grid, with the surface's docked panel beside them -->
+      <div class="sn-body">
+        <div class="sn-main">
+          <!-- Row 2 · the tools (SheetToolbar.vue) -->
+          <SheetToolbar
+            v-model:show-sort-filter="showSortFilter"
+            :read-only="readOnly"
+            :active-format="activeFormat"
+            :number-format-dropdown-options="numberFormatDropdownOptions"
+            :number-format-label="numberFormatLabel"
+            :currency-dropdown-options="currencyDropdownOptions"
+            :active-number-format-type="activeNumberFormatType"
+            :active-currency-symbol="activeCurrencySymbol"
+            :align-dropdown-options="alignDropdownOptions"
+            :h-align-icon="hAlignIcon"
+            :can-undo="canUndo"
+            :can-redo="canRedo"
+            :is-painting-format="isPaintingFormat"
+            :text-wrap-dropdown-options="textWrapDropdownOptions"
+            :text-wrap-icon="textWrapIcon"
+            :border-dropdown-options="borderDropdownOptions"
+            :format-menu-options="formatMenuOptions"
+            :font-family-dropdown-options="fontFamilyDropdownOptions"
+            :font-family-label="activeFontFamilyLabel"
+            :open-comments="openComments"
+            @number-format="toggleNumberFmt"
+            @adjust-decimals="adjustDecimals"
+            @adjust-font-size="adjustFontSize"
+            @set-font-size="setFontSize"
+            @toggle-format="toggleFmt"
+            @set-color="setColor"
+            @undo="undo"
+            @redo="redo"
+            @toggle-format-painter="toggleFormatPainter"
+            @merge="toggleMerge"
+            @sort="openQuickFilterForActive"
+            @insert-link="openHyperlinkDialog()"
+            @insert-chart="openChartDialog()"
+          />
 
-      <!-- Row 3 · the formula bar: name box, a divider, then fx and the cell's value -->
-      <div class="sn-formula-row">
-        <!-- A fixed width; a long reference ends in an ellipsis, and the
+          <!-- Row 3 · the formula bar: name box, a divider, then fx and the cell's value -->
+          <div class="sn-formula-row">
+            <!-- A fixed width; a long reference ends in an ellipsis, and the
              tooltip and the focused box show all of it. -->
-        <Tooltip :text="__('{0}: type a cell or range, then Enter', [nameBox])">
-          <input
-            class="sn-cell-ref"
-            name="name-box"
-            :aria-label="__('Name box')"
-            :value="nameBoxText"
-            :style="{ '--sn-name-ch': nameBoxText.length + 1 }"
-            spellcheck="false"
-            autocomplete="off"
-            @focus="$event.target.select()"
-            @input="nameBoxTyped = $event.target.value"
-            @keydown.enter.prevent="onNameBoxEnter"
-            @keydown.esc.prevent="onNameBoxDone"
-            @blur="nameBoxTyped = null"
-          />
-        </Tooltip>
-        <span class="sn-formula-divider" aria-hidden="true" />
-        <div class="sn-formula-wrap">
-          <span class="sn-fx-label" aria-hidden="true">fx</span>
-          <input
-            ref="formulaInputRef"
-            name="formula-bar"
-            aria-label="Cell value or formula"
-            class="sn-formula-input"
-            :value="formulaValue"
-            :readonly="readOnly"
-            :placeholder="readOnly ? '' : 'Enter value or formula'"
-            spellcheck="false"
-            autocomplete="off"
-            @input="onFormulaInput"
-            @keydown="onFormulaKey"
-            @blur="closeAc"
-          />
-          <div v-if="acVisible" class="sn-ac-list" :class="{ 'sn-ac-list--up': acUp }">
-            <div
-              v-for="(item, i) in acItems"
-              :key="item.name + item.kind"
-              class="sn-ac-item"
-              :class="{ active: i === acIdx }"
-              @mousedown.prevent="commitAc(item)"
-            >
-              <span class="sn-ac-name">{{ item.name }}</span>
-              <span v-if="item.kind === 'fn'" class="sn-ac-sig">{{ AC_FUNS.get(item.name) }}</span>
-              <span v-else class="sn-ac-badge">sheet</span>
+            <Tooltip :text="__('{0}: type a cell or range, then Enter', [nameBox])">
+              <input
+                class="sn-cell-ref"
+                name="name-box"
+                :aria-label="__('Name box')"
+                :value="nameBoxText"
+                :style="{ '--sn-name-ch': nameBoxText.length + 1 }"
+                spellcheck="false"
+                autocomplete="off"
+                @focus="$event.target.select()"
+                @input="nameBoxTyped = $event.target.value"
+                @keydown.enter.prevent="onNameBoxEnter"
+                @keydown.esc.prevent="onNameBoxDone"
+                @blur="nameBoxTyped = null"
+              />
+            </Tooltip>
+            <span class="sn-formula-divider" aria-hidden="true" />
+            <div class="sn-formula-wrap">
+              <span class="sn-fx-label" aria-hidden="true">fx</span>
+              <input
+                ref="formulaInputRef"
+                name="formula-bar"
+                aria-label="Cell value or formula"
+                class="sn-formula-input"
+                :value="formulaValue"
+                :readonly="readOnly"
+                :placeholder="readOnly ? '' : 'Enter value or formula'"
+                spellcheck="false"
+                autocomplete="off"
+                @input="onFormulaInput"
+                @keydown="onFormulaKey"
+                @blur="closeAc"
+              />
+              <div v-if="acVisible" class="sn-ac-list" :class="{ 'sn-ac-list--up': acUp }">
+                <div
+                  v-for="(item, i) in acItems"
+                  :key="item.name + item.kind"
+                  class="sn-ac-item"
+                  :class="{ active: i === acIdx }"
+                  @mousedown.prevent="commitAc(item)"
+                >
+                  <span class="sn-ac-name">{{ item.name }}</span>
+                  <span v-if="item.kind === 'fn'" class="sn-ac-sig">{{
+                    AC_FUNS.get(item.name)
+                  }}</span>
+                  <span v-else class="sn-ac-badge">sheet</span>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
 
-      <!-- Saving, offline, full, lost access (collab/messages.ts), as Writer's strip -->
-      <div
-        v-if="collab.banner.value"
-        class="flex min-h-[41px] shrink-0 items-center justify-between gap-3 border-b border-outline-gray-1 bg-surface-amber-2 px-5 py-1.5 text-sm text-ink-amber-7"
-        role="status"
-      >
-        <p>
-          {{ collab.banner.value.text
-          }}<a
-            v-if="collab.banner.value.link"
-            :href="collab.banner.value.link.href"
-            target="_blank"
-            class="underline"
-            >{{ collab.banner.value.link.label }}</a
-          >{{ collab.banner.value.after }}
-        </p>
-        <Button
-          v-if="collab.banner.value.canReload"
-          size="sm"
-          variant="ghost"
-          :label="__('Reload')"
-          @click="reloadPage"
-        />
-      </div>
-      <!-- The surface's version preview bar -->
-      <slot name="banner" />
+          <!-- Saving, offline, full, lost access (collab/messages.ts), as Writer's strip -->
+          <div
+            v-if="collab.banner.value"
+            class="flex min-h-[41px] shrink-0 items-center justify-between gap-3 border-b border-outline-gray-1 bg-surface-amber-2 px-5 py-1.5 text-sm text-ink-amber-7"
+            role="status"
+          >
+            <p>
+              {{ collab.banner.value.text
+              }}<a
+                v-if="collab.banner.value.link"
+                :href="collab.banner.value.link.href"
+                target="_blank"
+                class="underline"
+                >{{ collab.banner.value.link.label }}</a
+              >{{ collab.banner.value.after }}
+            </p>
+            <Button
+              v-if="collab.banner.value.canReload"
+              size="sm"
+              variant="ghost"
+              :label="__('Reload')"
+              @click="reloadPage"
+            />
+          </div>
+          <!-- The surface's version preview bar -->
+          <slot name="banner" />
 
-      <!-- Canvas grid + filter overlay -->
-      <!-- wheel.capture: the link hover card is anchored to a cell's pixel rect,
+          <!-- Canvas grid + filter overlay -->
+          <!-- wheel.capture: the link hover card is anchored to a cell's pixel rect,
          which any scroll invalidates — hide it rather than let it float. -->
-      <div
-        ref="gridWrapRef"
-        class="sn-grid-wrap"
-        :class="{ 'sn-painting-format': isPaintingFormat }"
-        @wheel.capture.passive="linkCard.open = false"
-        @mousemove="remoteCursorNames.trackPointer"
-        @mouseleave="remoteCursorNames.clearPointer"
-      >
-        <canvas ref="canvasRef" />
+          <div
+            ref="gridWrapRef"
+            class="sn-grid-wrap"
+            :class="{ 'sn-painting-format': isPaintingFormat }"
+            @wheel.capture.passive="linkCard.open = false"
+            @mousemove="remoteCursorNames.trackPointer"
+            @mouseleave="remoteCursorNames.clearPointer"
+          >
+            <canvas ref="canvasRef" />
 
-        <!-- Initial-load shim. The canvas is mounted (so grid.resize / event
+            <!-- Initial-load shim. The canvas is mounted (so grid.resize / event
            wiring works) but blank until the workbook has loaded —
            without this overlay the first paint looks like a deleted sheet
            for the first 100–500 ms on slow networks. -->
-        <div v-if="isInitialLoad" class="sn-canvas-loading" aria-busy="true">
-          <Spinner class="sn-canvas-loading-spinner" />
-        </div>
+            <div v-if="isInitialLoad" class="sn-canvas-loading" aria-busy="true">
+              <Spinner class="sn-canvas-loading-spinner" />
+            </div>
 
-        <!-- Non-blocking spinner while a large pivot aggregates in the background. -->
-        <div v-if="pivotBuilding" class="sn-pivot-building" aria-busy="true">
-          <Spinner class="sn-canvas-loading-spinner" />
-          <span>Building pivot…</span>
-        </div>
+            <!-- Non-blocking spinner while a large pivot aggregates in the background. -->
+            <div v-if="pivotBuilding" class="sn-pivot-building" aria-busy="true">
+              <Spinner class="sn-canvas-loading-spinner" />
+              <span>Building pivot…</span>
+            </div>
 
-        <!-- Floating charts (filtered to current sub-sheet by the overlay). -->
-        <ChartOverlay
-          :charts="chartList"
-          :current-sheet="currentSheet"
-          :get-source="getChartSource"
-          :data-version="chartMatrixVersion"
-          :selected-id="selectedChartId"
-          :suppressed="chartDialogOpen"
-          @select="selectChart"
-          @edit="openChartEdit"
-          @delete="onChartDelete"
-          @refresh="onChartRefresh"
-          @move="onChartMove"
-          @resize="onChartResize"
-        />
+            <!-- Floating charts (filtered to current sub-sheet by the overlay). -->
+            <ChartOverlay
+              :charts="chartList"
+              :current-sheet="currentSheet"
+              :get-source="getChartSource"
+              :data-version="chartMatrixVersion"
+              :selected-id="selectedChartId"
+              :suppressed="chartDialogOpen"
+              @select="selectChart"
+              @edit="openChartEdit"
+              @delete="onChartDelete"
+              @refresh="onChartRefresh"
+              @move="onChartMove"
+              @resize="onChartResize"
+            />
 
-        <!-- The surface's Drive panels (comments, versions) dock the same edge. -->
-        <slot name="side-panel" />
+            <!-- Notes side panel (NotesPanel.vue) -->
+            <NotesPanel
+              v-if="notesPanel.open"
+              :groups="notesGrouped"
+              :count="allNotes.length"
+              :active-cell="activeCell"
+              :current-sheet="currentSheet"
+              @close="notesPanel.open = false"
+              @add="addNoteFromPanel"
+              @jump="jumpToNote"
+            />
 
-        <!-- Notes side panel (NotesPanel.vue) -->
-        <NotesPanel
-          v-if="notesPanel.open"
-          :groups="notesGrouped"
-          :count="allNotes.length"
-          :active-cell="activeCell"
-          :current-sheet="currentSheet"
-          @close="notesPanel.open = false"
-          @add="addNoteFromPanel"
-          @jump="jumpToNote"
-        />
+            <SplitTextPopover
+              :open="splitText.open"
+              :anchor="splitText.anchor"
+              :selected="splitText.choice"
+              @choose="onSplitChoose"
+              @apply="onSplitApply"
+              @cancel="onSplitCancel"
+            />
 
-        <SplitTextPopover
-          :open="splitText.open"
-          :anchor="splitText.anchor"
-          :selected="splitText.choice"
-          @choose="onSplitChoose"
-          @apply="onSplitApply"
-          @cancel="onSplitCancel"
-        />
+            <LinkPreviewCard
+              :open="linkCard.open"
+              :anchor="linkCard.anchor"
+              :url="linkCard.url"
+              :preview="linkCard.preview"
+              :can-edit="!readOnly"
+              :offer-replace="linkCard.offerReplace"
+              @enter="onLinkCardEnter"
+              @leave="onLinkCardLeave"
+              @open="openLinkCardUrl"
+              @edit="editLinkCardCell"
+              @unlink="unlinkLinkCardCell"
+              @replace="replaceLinkWithTitle"
+            />
 
-        <LinkPreviewCard
-          :open="linkCard.open"
-          :anchor="linkCard.anchor"
-          :url="linkCard.url"
-          :preview="linkCard.preview"
-          :can-edit="!readOnly"
-          :offer-replace="linkCard.offerReplace"
-          @enter="onLinkCardEnter"
-          @leave="onLinkCardLeave"
-          @open="openLinkCardUrl"
-          @edit="editLinkCardCell"
-          @unlink="unlinkLinkCardCell"
-          @replace="replaceLinkWithTitle"
-        />
+            <!-- Filter chevrons on row 0 (the user's header row of data) -->
+            <div v-if="showSortFilter" class="sn-filter-overlay">
+              <button
+                v-for="col in visibleFilterCols"
+                :key="col.col"
+                class="sn-filter-btn"
+                :class="{ active: filterConfig[col.col] }"
+                :style="col.style"
+                :aria-label="`Filter column ${colLabel(col.col)}`"
+                @click="openFilterPanel(col.col)"
+              >
+                <FeatherIcon name="chevron-down" class="sn-filter-btn-icon" />
+              </button>
+            </div>
 
-        <!-- Filter chevrons on row 0 (the user's header row of data) -->
-        <div v-if="showSortFilter" class="sn-filter-overlay">
-          <button
-            v-for="col in visibleFilterCols"
-            :key="col.col"
-            class="sn-filter-btn"
-            :class="{ active: filterConfig[col.col] }"
-            :style="col.style"
-            :aria-label="`Filter column ${colLabel(col.col)}`"
-            @click="openFilterPanel(col.col)"
-          >
-            <FeatherIcon name="chevron-down" class="sn-filter-btn-icon" />
-          </button>
-        </div>
-
-        <!-- Remote cursor overlays — one per peer on the same sub-sheet.
+            <!-- Remote cursor overlays — one per peer on the same sub-sheet.
            `data-moved` flips when the peer's (row,col) actually changes so
            the CSS only animates left/top/width/height on real motion, not
            on the local viewport scroll. -->
-        <div
-          v-for="cur in visibleRemoteCursors"
-          :key="cur.user"
-          class="sn-remote-cursor sn-peer"
-          :class="{
-            'sn-remote-cursor--moved': cur.justMoved,
-            'sn-remote-cursor--labelled': cur.label,
-            'sn-remote-cursor--folded': remoteCursorNames.isFolded(cur),
-          }"
-          :style="cur.style"
-        >
-          <span v-if="cur.label" class="sn-remote-cursor-label">{{ cur.label }}</span>
-        </div>
+            <div
+              v-for="cur in visibleRemoteCursors"
+              :key="cur.user"
+              class="sn-remote-cursor sn-peer"
+              :class="{
+                'sn-remote-cursor--moved': cur.justMoved,
+                'sn-remote-cursor--labelled': cur.label,
+                'sn-remote-cursor--folded': remoteCursorNames.isFolded(cur),
+              }"
+              :style="cur.style"
+            >
+              <span v-if="cur.label" class="sn-remote-cursor-label">{{ cur.label }}</span>
+            </div>
 
-        <!-- Pivot highlight overlay — thin coloured border drawn over the
+            <!-- Pivot highlight overlay — thin coloured border drawn over the
            pivot output range so users can tell it's a generated table.
            pointer-events:none so the canvas keeps receiving clicks. -->
-        <div
-          v-if="activePivotConfig && pivotHighlightStyle"
-          class="sn-pivot-highlight"
-          :style="pivotHighlightStyle"
-          aria-hidden="true"
-        />
+            <div
+              v-if="activePivotConfig && pivotHighlightStyle"
+              class="sn-pivot-highlight"
+              :style="pivotHighlightStyle"
+              aria-hidden="true"
+            />
 
-        <!-- Pivot FAB — floats below the Grand Total row, like Google Sheets -->
-        <Dropdown v-if="activePivotConfig && pivotFabStyle" :options="pivotBannerMenuOptions">
-          <template #default="{ open }">
-            <button
-              class="sn-pivot-fab"
-              :class="{ open }"
-              :style="pivotFabStyle"
-              title="Pivot table options"
-            >
-              <FeatherIcon name="pencil" class="sn-pivot-fab-icon" />
-            </button>
-          </template>
-        </Dropdown>
+            <!-- Pivot FAB — floats below the Grand Total row, like Google Sheets -->
+            <Dropdown v-if="activePivotConfig && pivotFabStyle" :options="pivotBannerMenuOptions">
+              <template #default="{ open }">
+                <button
+                  class="sn-pivot-fab"
+                  :class="{ open }"
+                  :style="pivotFabStyle"
+                  title="Pivot table options"
+                >
+                  <FeatherIcon name="pencil" class="sn-pivot-fab-icon" />
+                </button>
+              </template>
+            </Dropdown>
 
-        <!-- Inline filter panel (FilterPanel.vue) -->
-        <FilterPanel
-          v-if="filterPanel.open"
-          :key="filterPanel.seq"
-          :style="filterPanelStyle"
-          :col="filterPanel.col"
-          :all-values="filterPanel.allValues"
-          :spec="filterPanel.spec"
-          @sort="(dir) => doSort(filterPanel.col, dir)"
-          @apply="applyFilter"
-          @clear="clearFilterCol"
-          @close="filterPanel.open = false"
-        />
+            <!-- Inline filter panel (FilterPanel.vue) -->
+            <FilterPanel
+              v-if="filterPanel.open"
+              :key="filterPanel.seq"
+              :style="filterPanelStyle"
+              :col="filterPanel.col"
+              :all-values="filterPanel.allValues"
+              :spec="filterPanel.spec"
+              @sort="(dir) => doSort(filterPanel.col, dir)"
+              @apply="applyFilter"
+              @clear="clearFilterCol"
+              @close="filterPanel.open = false"
+            />
+          </div>
+
+          <!-- Add-more-rows strip — only when the user has scrolled near the bottom -->
+          <div v-if="showAddRows" class="sn-addrows">
+            <span class="sn-addrows-label">Add</span>
+            <input
+              v-model.number="addRowsCount"
+              name="add-rows-count"
+              aria-label="Number of rows to add"
+              class="sn-addrows-input"
+              type="number"
+              min="1"
+              max="10000"
+            />
+            <span class="sn-addrows-label">more rows at the bottom</span>
+            <Button
+              variant="subtle"
+              size="sm"
+              icon-left="lucide-plus"
+              label="Add"
+              @click="doAddMoreRows"
+            />
+          </div>
+
+          <!-- Bottom · sheet tabs + selection stats (SheetTabsBar.vue) -->
+          <SheetTabsBar
+            ref="tabsBarRef"
+            :read-only="readOnly"
+            :sheet-names="sheetNames"
+            :current-sheet="currentSheet"
+            :is-pivot-sheet="isPivotSheet"
+            :tab-drag-over="tabDragOver"
+            :tab-drag-name="tabDragName"
+            :peers-by-sub-sheet="peersBySubSheet"
+            :selection-stats="selectionStats"
+            :rename-sheet="renameSheetInPlace"
+            @add-sheet="addSheet"
+            @drag-start="onTabDragStart"
+            @drag-end="onTabDragEnd"
+            @drag-over="onTabDragOver"
+            @tab-drop="onTabDrop"
+            @tab-mousedown="onTabMousedown"
+            @tab-click="onTabClick"
+            @rename-end="_refocusGridAfterDialog"
+            @tab-menu="_onTabMenu"
+          />
+        </div>
+        <slot name="aside" />
       </div>
-
-      <!-- Add-more-rows strip — only when the user has scrolled near the bottom -->
-      <div v-if="showAddRows" class="sn-addrows">
-        <span class="sn-addrows-label">Add</span>
-        <input
-          v-model.number="addRowsCount"
-          name="add-rows-count"
-          aria-label="Number of rows to add"
-          class="sn-addrows-input"
-          type="number"
-          min="1"
-          max="10000"
-        />
-        <span class="sn-addrows-label">more rows at the bottom</span>
-        <Button
-          variant="subtle"
-          size="sm"
-          icon-left="lucide-plus"
-          label="Add"
-          @click="doAddMoreRows"
-        />
-      </div>
-
-      <!-- Bottom · sheet tabs + selection stats (SheetTabsBar.vue) -->
-      <SheetTabsBar
-        ref="tabsBarRef"
-        :read-only="readOnly"
-        :sheet-names="sheetNames"
-        :current-sheet="currentSheet"
-        :is-pivot-sheet="isPivotSheet"
-        :tab-drag-over="tabDragOver"
-        :tab-drag-name="tabDragName"
-        :peers-by-sub-sheet="peersBySubSheet"
-        :selection-stats="selectionStats"
-        @add-sheet="addSheet"
-        @drag-start="onTabDragStart"
-        @drag-end="onTabDragEnd"
-        @drag-over="onTabDragOver"
-        @tab-drop="onTabDrop"
-        @tab-mousedown="onTabMousedown"
-        @tab-click="onTabClick"
-        :rename-sheet="renameSheetInPlace"
-        @rename-end="_refocusGridAfterDialog"
-        @tab-menu="_onTabMenu"
-      />
 
       <!-- Sheet-tab context menu (SheetTabMenu.vue) -->
       <SheetTabMenu
@@ -687,6 +698,7 @@
         </div>
 
         <textarea
+          ref="noteBoxRef"
           v-model="commentPanel.draft"
           class="sn-comment-ta"
           rows="2"
@@ -766,7 +778,7 @@
 
 <script setup>
 import { createReusableTemplate } from '@vueuse/core'
-import { Badge, Button, Dialog, Dropdown, FormControl, Spinner, Tooltip } from 'frappe-ui'
+import { Badge, Button, Dialog, Dropdown, FormControl, Spinner, toast, Tooltip } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import * as Y from 'yjs'
@@ -774,6 +786,7 @@ import * as Y from 'yjs'
 import { api, client } from '@/api'
 import { useCurrentUser } from '@/boot/session'
 import { colourStyle } from '@/platform/collab/colours'
+import UsersBar from '@/platform/collab/UsersBar.vue'
 import { ShortcutsDialog } from '@/platform/shortcuts'
 import { translate as __ } from '@/platform/translation'
 
@@ -798,6 +811,7 @@ import { deleteMap, insertMap, moveMap } from '../../engine/ref-remap.js'
 import { createSlicerEngine } from '../../engine/slicers.js'
 import { createSortFilter } from '../../engine/sortFilter.js'
 import { parseSparkline, sparkSpec } from '../../engine/sparkline.js'
+import { clearTypedFormats, resetFormatCommands } from '../../engine/typed-formats.js'
 import { createValidationEngine } from '../../engine/validation.js'
 import { numFmtFromEngine } from '../../engine/xlsx-io.js'
 import { cellId, colLabel, parseCellId } from '../../utils/cells.js'
@@ -825,7 +839,6 @@ import SheetMenuBar from './SheetMenuBar.vue'
 import SheetTabMenu from './SheetTabMenu.vue'
 import SheetTabsBar from './SheetTabsBar.vue'
 import SheetToolbar from './SheetToolbar.vue'
-import SheetTopbarActions from './SheetTopbarActions.vue'
 import SlicerPanel from './SlicerPanel.vue'
 import SortDialog from './SortDialog.vue'
 import SplitTextPopover from './SplitTextPopover.vue'
@@ -856,7 +869,7 @@ import { useWorkbook } from './useWorkbook.js'
 import ValidationDialog from './ValidationDialog.vue'
 
 // Mounted by the /d/ surface (SheetsSurface.vue). The surface fills the
-// `header` and `side-panel` slots, owns the title, sharing and the leave
+// `header` and `aside` slots, owns the title, sharing and the leave
 // guard, and its Drive session records the visit. The `header` slot receives
 // `viewOnly`, and the editor's `status`, `menus` and `actions` as components
 // to place; the save state is on the exposed handle.
@@ -1447,70 +1460,57 @@ const CURRENCY_QUICK_PICKS = [
     symbol: '¥',
   },
 ]
-const fileDropdownOptions = computed(() => [
-  {
-    group: 'Export',
-    options: [
-      {
-        label: 'Export as CSV',
-        icon: 'lucide-download',
-        onClick: () => exportCSV(),
-      },
-      {
-        label: 'Export as XLSX',
-        description: __("Charts and conditional formatting aren't exported yet."),
-        icon: 'lucide-download',
-        onClick: () => exportXLSX(),
-      },
-      {
-        label: __('Print…'),
-        icon: 'lucide-printer',
-        submenu: [
-          { label: __('This sheet'), onClick: () => print('sheet') },
-          { label: __('All sheets'), onClick: () => print('all') },
-        ],
-      },
-    ],
-  },
-  // Import writes cells — hide it for viewers (export/read stays available).
-  ...(readOnly.value
-    ? []
-    : [
-        {
-          group: 'Import',
-          options: [
-            {
-              label: 'Import CSV',
-              icon: 'lucide-upload',
-              onClick: () => csvInputRef.value?.click(),
-            },
-            {
-              label: 'Import XLSX',
-              icon: 'lucide-upload',
-              onClick: () => xlsxInputRef.value?.click(),
-            },
-          ],
-        },
-      ]),
+// The header's menu puts export and import in one group and Sheets' settings above Star
+const menuItems = computed(() => ({
+  transfer: [
+    {
+      label: __('Export as CSV'),
+      icon: 'lucide-download',
+      onClick: () => exportCSV(),
+    },
+    {
+      label: __('Export as XLSX'),
+      icon: 'lucide-download',
+      onClick: () => exportXLSX(),
+    },
+    {
+      label: __('Print'),
+      icon: 'lucide-printer',
+      submenu: [
+        { label: __('This sheet'), onClick: () => print('sheet') },
+        { label: __('All sheets'), onClick: () => print('all') },
+      ],
+    },
+    // Import writes cells — hide it for viewers (export/read stays available).
+    ...(readOnly.value
+      ? []
+      : [
+          {
+            label: __('Import CSV'),
+            icon: 'lucide-upload',
+            onClick: () => csvInputRef.value?.click(),
+          },
+          {
+            label: __('Import XLSX'),
+            icon: 'lucide-upload',
+            onClick: () => xlsxInputRef.value?.click(),
+          },
+        ]),
+  ],
   // Only shown to admins — gated server-side via the boot flag so non-admins
   // never see a settings entry they can't use.
-  ...(window.frappe?.boot?.ai_assist_can_configure
+  settings: window.frappe?.boot?.ai_assist_can_configure
     ? [
         {
-          group: 'AI',
-          options: [
-            {
-              label: 'AI settings',
-              icon: 'lucide-cpu',
-              onClick: () => {
-                aiSettingsOpen.value = true
-              },
-            },
-          ],
+          label: __('AI settings'),
+          icon: 'lucide-cpu',
+          onClick: () => {
+            aiSettingsOpen.value = true
+          },
         },
       ]
-    : []),
-])
+    : [],
+}))
 
 // ── AI Assist ─────────────────────────────────────────────────────────────────
 // The Ask bar and AI settings (see useAiAssist.js).
@@ -1570,14 +1570,21 @@ async function _readEngineFormats(rect, sn) {
   return out
 }
 
-// Sets cells back to IronCalc's general number format (Clear formatting).
+// Sets cells back to IronCalc's general number format, in this tab only
+// (Number format > General, sort).
 function _resetEngineFormats(ids, sn) {
-  const commands = ids.map((id) => {
-    const p = parseCellId(id)
-    const range = { r1: p.row + 1, c1: p.col + 1, r2: p.row + 1, c2: p.col + 1 }
-    return _command('setRangeStyle', { sheet: sn, range, style: { num_fmt: 'general' } })
-  })
+  const commands = resetFormatCommands(ids, sn, _command)
   if (commands.length) _dispatch(_command('batch', { commands }))
+}
+
+// Clear formatting for the cells IronCalc formatted itself, for every tab
+// and reload (engine/typed-formats.ts).
+function _clearEngineFormats(ids, sn) {
+  return clearTypedFormats(ids, sn, {
+    dispatch: _dispatch,
+    command: _command,
+    readInputs: async (sheet, rect) => (await _readRect(sheet, rect)).inputs,
+  })
 }
 const hAlignIcon = computed(() => {
   if (activeFormat.value?.align === 'center') return 'lucide-align-center'
@@ -1757,7 +1764,7 @@ const {
     isDirty.value = true
   },
   readEngineFormats: _readEngineFormats,
-  resetEngineFormats: _resetEngineFormats,
+  clearEngineFormats: _clearEngineFormats,
 })
 
 // Selection + grid bounds, so full-column / full-row / whole-sheet selections
@@ -1986,7 +1993,6 @@ function _clearContents() {
 const menuBar = computed(() =>
   buildMenuBar({
     readOnly: readOnly.value,
-    fileOptions: fileDropdownOptions.value,
     undo,
     redo,
     canUndo: canUndo.value,
@@ -2170,6 +2176,7 @@ const {
   openTabMenu,
 } = useContextMenu({
   getGrid: () => grid,
+  refocusGrid: () => _refocusGridAfterDialog(),
 })
 
 // The right-click menu is entirely mutation actions (insert/delete/freeze/
@@ -2265,6 +2272,7 @@ const {
   history,
   isDirty,
   getGrid: () => grid,
+  usedCellIds: () => _usedCellIds(),
 })
 // The chart dialog's preview: shown values and their number formats (a
 // scatter chart reads dates with them; the type can change after the read).
@@ -2272,6 +2280,15 @@ const _readChartDialogRange = (sn, rect) => _readRect(sn, rect, { numFmts: true 
 
 // Who else is here and what they have selected (collab/presence.ts).
 const presentUsers = collab.users
+// The header's bar is the one Writer and Slides use, which reads a person by id and name
+const peopleHere = computed(() =>
+  presentUsers.value.map((u) => ({
+    id: u.user,
+    name: u.full_name,
+    colour: u.colour,
+    idleSince: u.idleSince,
+  })),
+)
 const remoteCursors = collab.cursors
 function broadcastCursor(row, col, subSheet, range) {
   const r = range ?? { r0: row, c0: col, r1: row, c1: col }
@@ -2645,11 +2662,12 @@ function _setupGridInstance() {
           // 'warn' rules let the value through but surface a transient notice;
           // 'reject' (default) blocks the edit and repaints the pre-edit value.
           if (!v.valid && v.severity !== 'warn') {
-            const msg = v.message || 'Value rejected by data validation rule'
-            saveError.value = msg
-            setTimeout(() => {
-              if (saveError.value === msg) saveError.value = ''
-            }, 3500)
+            // A toast, not the top bar's small badge, which went unseen (ISSUES #152).
+            toast.error(
+              v.message
+                ? __("This value isn't allowed. {0}", [v.message])
+                : __("This value isn't allowed"),
+            )
             // Force a re-render so the canvas repaints with the pre-edit value
             // (we never called sheet.setCell so the engine still has it).
             grid?.render?.()
@@ -3660,7 +3678,11 @@ function openCommentPanel() {
   commentPanel.draft = ''
   _loadCommentThread()
   commentPanel.open = true
+  // Opened to write a note (Insert > Note, Shift+F2): the cursor goes in the
+  // box, not back on the menu that opened it (ISSUES #150).
+  void nextTick(() => noteBoxRef.value?.focus())
 }
+const noteBoxRef = ref(null)
 
 // Mirror the engine's thread for `commentPanel.id` into the reactive panel.
 function _loadCommentThread() {
@@ -3771,6 +3793,7 @@ function _draftEdit() {
 defineExpose({
   activeCell,
   currentSheet,
+  sheetNames,
   saveState,
   flushSave,
   get hasLoadError() {
@@ -3798,6 +3821,7 @@ defineExpose({
   /** The live room's doc as one Yjs update; null outside a room. */
   docState: () => collab.docState(),
   showChanges,
+  exportXLSX,
 })
 // Restores version `seq` through the live room (collab/restore.ts). Throws
 // with the message to show when it didn't land.
@@ -3884,6 +3908,12 @@ function openDropdown(id, rule, pos = {}) {
   dropdownPanel.w = pos.w ?? 120
   dropdownPanel.open = true
 }
+// The picker belongs to its cell: it closes once the selection leaves it,
+// rather than staying open over the next cells (ISSUES #152).
+watch([activeCell, currentSheet], ([id], [, sheetBefore]) => {
+  if (dropdownPanel.open && (id !== dropdownPanel.id || currentSheet.value !== sheetBefore))
+    dropdownPanel.open = false
+})
 async function pickDropdownOption(opt) {
   const id = dropdownPanel.id
   const sn = currentSheet.value
@@ -3967,6 +3997,9 @@ const {
   contextMenu,
   history,
   getGrid: () => grid,
+  // Slicers are fixed to the window; the grid's cell rects are canvas-local.
+  getGridOrigin: () => canvasRef.value?.getBoundingClientRect() ?? null,
+  usedCellIds: () => _usedCellIds(),
   detectContiguousBlock: _detectContiguousBlock,
   repopulateGrid: () => _repopulateGrid(),
   applyHiddenRows: () => _applyHiddenRows(),

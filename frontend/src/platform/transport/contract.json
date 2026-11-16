@@ -760,6 +760,10 @@
                 "title": "Node",
                 "type": "string"
               },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              },
               "success": {
                 "title": "Success",
                 "type": "boolean"
@@ -778,6 +782,7 @@
             },
             "required": [
               "node",
+              "title",
               "success",
               "error"
             ],

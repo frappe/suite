@@ -1,5 +1,7 @@
 import { toast } from 'frappe-ui'
 
+import { translate as __ } from '@/platform/translation'
+
 import { isUnknownRecord } from '../types'
 import audioNotificationManager from '../utils/audioNotifications'
 import { E2EEMeeting } from '../utils/media/E2EEMeeting'
@@ -208,7 +210,9 @@ export function useChat(deps: {
 
     sfuClient.on('sfu_error', (value: unknown) => {
       if (isUnknownRecord(value) && value.code === 'HOST_ONLY_CHAT') {
-        toast.error('The host has restricted chat to hosts and co-hosts only.')
+        toast.error(
+          __('Could not send the message. The host restricted chat to hosts and co-hosts.'),
+        )
         chatStore.hostOnlyChat = true
       }
     })
@@ -228,7 +232,7 @@ export function useChat(deps: {
           const key = await getChatKey()
           if (!key) {
             toast.error(
-              'Encrypted chat is not ready yet. Wait for encryption to finish, then try again.',
+              __('Could not send the message. Wait for encryption to finish, then try again.'),
             )
             return
           }
@@ -261,7 +265,7 @@ export function useChat(deps: {
       chatStore.addMessage(message)
     } catch (error) {
       console.error('Failed to send chat message:', error)
-      toast.error('Failed to send message')
+      toast.error(__('Could not send the message'))
     }
   }
 
@@ -280,7 +284,7 @@ export function useChat(deps: {
       }
     } catch (error) {
       console.error('Failed to pin chat message:', error)
-      toast.error('Failed to pin message')
+      toast.error(__('Could not pin the message'))
     }
   }
 

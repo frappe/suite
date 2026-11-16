@@ -47,6 +47,7 @@ import { api, useMutation, type InputOf } from '@/api'
 import { userStore } from '@/apps/mail/stores/user'
 import type { ScreenedAddress, ScreeningAction } from '@/apps/mail/types'
 import { isEmailOrDomain, raiseToast } from '@/apps/mail/utils'
+import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()
 const store = userStore()
@@ -86,7 +87,7 @@ async function screenEmailAddressSubmit() {
     action: action.value,
   }
   await screenEmailAddress.run(input)
-  raiseToast(__('Sender screened.'))
+  raiseToast(__('Sender screened'))
   show.value = false
 }
 

@@ -334,7 +334,7 @@ describe('Meet upcoming list', () => {
   it('shows today’s Meet events with date badges and participants and joins the selected room', async () => {
     const root = await mount()
     expect(root.textContent).toContain('Design review')
-    expect(root.textContent).toContain('10:00 am – 11:00 am')
+    expect(root.textContent).toContain('10:00 AM – 11:00 AM')
     expect(root.textContent).toContain('Team planning')
     expect(root.textContent).toContain('Sep')
     expect(root.textContent).toContain('30')

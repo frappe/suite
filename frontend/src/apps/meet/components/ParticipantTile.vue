@@ -1,6 +1,6 @@
 <template>
   <div
-    class="group relative rounded-4 overflow-hidden min-h-0"
+    class="participant-tile group relative rounded-4 overflow-hidden min-h-0"
     :class="tileBackgroundClass"
     :data-testid="`participant-tile-${participant.user_id}`"
     :data-active-speaker="String(isActiveSpeaker)"
@@ -30,10 +30,10 @@
     >
       <lucide-monitor-up class="w-8 h-8 text-white mb-6" />
       <div v-if="showScreenShareCopy" class="text-white text-lg-medium mb-1">
-        You are sharing your screen
+        {{ __('You are sharing your screen') }}
       </div>
       <div v-if="showScreenShareCopy" class="text-white text-sm-medium">
-        Everyone else can see what you are presenting
+        {{ __('Everyone else can see what you are presenting') }}
       </div>
     </div>
 
@@ -42,11 +42,13 @@
       class="absolute inset-0 flex items-center justify-center pointer-events-none"
       :class="avatarBackgroundClass"
     >
-      <MeetAvatar
-        size="3xl"
-        :image="participant.avatar"
-        :label="participant.user_name || participant.initials"
-      />
+      <div class="participant-avatar">
+        <MeetAvatar
+          size="3xl"
+          :image="participant.avatar"
+          :label="participant.user_name || participant.initials"
+        />
+      </div>
     </div>
 
     <NamePill :name="resolvedDisplayName" :size="labelSize" :position="labelPosition">
@@ -71,7 +73,7 @@
       v-if="showReaction && currentReaction"
       class="absolute top-1 px-2 py-1 rounded-4 text-2xl pointer-events-none animate-pop"
       :class="{ 'left-2': !isHandRaised, 'left-10': isHandRaised }"
-      :aria-label="`Reaction ${currentReaction.emoji} from ${resolvedDisplayName}`"
+      :aria-label="__('Reaction {0} from {1}', [currentReaction.emoji, resolvedDisplayName])"
       role="img"
     >
       <span class="text-3xl">{{ currentReaction.emoji }}</span>
@@ -81,7 +83,7 @@
     <div
       v-if="showRaisedHand && isHandRaised"
       class="absolute top-2 left-2 px-2 py-1 rounded-full !bg-[#e54e17] text-white pointer-events-none flex items-center justify-center"
-      :aria-label="`${resolvedDisplayName} has raised their hand`"
+      :aria-label="__('{0} has raised their hand', [resolvedDisplayName])"
     >
       <lucide-hand class="w-4 h-4" :class="{ wave: isAnimating }" />
     </div>
@@ -108,7 +110,9 @@
         size="xs"
         class="!rounded-full !text-white hover:!bg-gray-600"
         :class="{ '!bg-gray-600': isPinned }"
-        :tooltip="isTileHovered ? (isPinned ? 'Unpin participant' : 'Pin participant') : undefined"
+        :tooltip="
+          isTileHovered ? (isPinned ? __('Unpin participant') : __('Pin participant')) : undefined
+        "
         @click="togglePin"
       >
         <template #icon>
@@ -121,7 +125,7 @@
         variant="ghost"
         size="xs"
         class="!rounded-full !text-white hover:!bg-gray-600"
-        :tooltip="isTileHovered ? 'Mute participant' : undefined"
+        :tooltip="isTileHovered ? __('Mute participant') : undefined"
         @click="handleMute"
       >
         <template #icon>
@@ -133,23 +137,14 @@
         variant="ghost"
         size="xs"
         class="!rounded-full !text-white hover:!bg-gray-600"
-        :tooltip="isTileHovered ? 'Remove participant' : undefined"
-        @click="showKickDialog = true"
+        :tooltip="isTileHovered ? __('Remove participant') : undefined"
+        @click="confirmRemove"
       >
         <template #icon>
           <lucide-user-x class="w-3.5 h-3.5" />
         </template>
       </Button>
     </div>
-
-    <!-- Kick Confirmation Dialog -->
-    <KickParticipantDialog
-      v-if="canShowHostControls"
-      v-model="showKickDialog"
-      :participant-name="resolvedDisplayName || 'this participant'"
-      :can-ban="participant.is_guest === true"
-      @confirm="handleKick"
-    />
   </div>
 </template>
 
@@ -157,11 +152,13 @@
 import { Button } from 'frappe-ui'
 import { computed, inject, ref, watch, type ComputedRef, type Ref } from 'vue'
 
+import { translate as __ } from '@/platform/translation'
+
 import { useAudioStream } from '../composables/useAudioLevels'
 import { useMeetingContext } from '../composables/useMeetingContext'
+import { confirmRemoveParticipant } from '../utils/confirmRemoveParticipant'
 import type { Participant } from '../utils/media/ParticipantManager'
 import AudioIndicator from './AudioIndicator.vue'
-import KickParticipantDialog from './KickParticipantDialog.vue'
 import MeetAvatar from './MeetAvatar.vue'
 import NamePill from './NamePill.vue'
 import NetworkIndicator from './NetworkIndicator.vue'
@@ -245,7 +242,9 @@ const audioStream = computed(() => props.audioStream || stream.value)
 
 const resolvedDisplayName = computed(() => {
   return (
-    props.displayName || props.participant.user_name || (props.participant.is_guest ? 'Guest' : '')
+    props.displayName ||
+    props.participant.user_name ||
+    (props.participant.is_guest ? __('Guest') : '')
   )
 })
 
@@ -296,19 +295,35 @@ const showActionToolbar = computed(() => {
   return canShowPinButton.value || canShowHostControls.value
 })
 
-const showKickDialog = ref(false)
-
 const handleMute = () => {
   hostControls?.muteParticipant(props.participant.user_id)
 }
 
-const handleKick = (ban: boolean) => {
-  hostControls?.kickParticipant(props.participant.user_id, ban)
-  showKickDialog.value = false
-}
+const confirmRemove = () =>
+  confirmRemoveParticipant({
+    name: resolvedDisplayName.value,
+    canBan: props.participant.is_guest === true,
+    remove: (ban) => hostControls?.kickParticipant(props.participant.user_id, ban),
+  })
 </script>
 
 <style scoped>
+/* A camera-off avatar grows with its tile: 3xl on a grid or sidebar tile, larger on a big one,
+   where a 3xl avatar alone in the middle read as a loading dot. */
+.participant-tile {
+  container: meet-tile / inline-size;
+}
+@container meet-tile (min-width: 480px) {
+  .participant-avatar {
+    transform: scale(1.5);
+  }
+}
+@container meet-tile (min-width: 800px) {
+  .participant-avatar {
+    transform: scale(2);
+  }
+}
+
 /* Firefox blank video mitigation */
 .remote-video {
   background-color: #000;

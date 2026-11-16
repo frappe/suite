@@ -44,6 +44,8 @@ import { scopeOptions, type RecurringScope } from '@/apps/calendar/utils/recurri
 import LinkifiedText from '@/components/LinkifiedText.vue'
 import { meetLogo } from '@/platform/brand'
 import { useSession } from '@/platform/session'
+import { translate as __ } from '@/platform/translation'
+import { TransportError } from '@/platform/transport'
 
 const { calendarEvent, variant = 'popover' } = defineProps<{
   calendarEvent: any
@@ -121,12 +123,15 @@ const pendingResponse = ref('')
 const submitResponse = (response: string, scope: RecurringScope) => {
   showRsvpScopeModal.value = false
   toast.promise(respond(response, scope), {
-    loading: __('Sending response...'),
-    success: __('Response sent.'),
+    loading: __('Sending response…'),
+    success: __('Response sent'),
     // The refusal's own message, as the request layer shows it for a non-silent call.
     error: (error: unknown) =>
-      (error instanceof Error && error.message) ||
-      __('Action failed. Please try again in some time.'),
+      (error instanceof TransportError &&
+      error.type !== 'NetworkError' &&
+      error.type !== 'AbortError'
+        ? __(error.message)
+        : null) || __('Could not send the response'),
   })
 }
 
@@ -444,7 +449,7 @@ const meetLinkDisplay = computed(() =>
 
 const copyMeetLink = async () => {
   await navigator.clipboard.writeText(new URL(meetUrl.value, window.location.origin).href)
-  toast.success(__('Frappe Meet link copied.'))
+  toast.success(__('Frappe Meet link copied'))
 }
 
 /**
@@ -478,7 +483,7 @@ const copyInvite = async () => {
     link,
   ]
   await navigator.clipboard.writeText(lines.filter(Boolean).join('\n'))
-  toast.success(__('Invite copied.'))
+  toast.success(__('Invite copied'))
 }
 
 const joinMeet = () => {

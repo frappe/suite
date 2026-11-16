@@ -18,7 +18,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   exit: []
   step: [delta: 1 | -1]
-  rename: []
   copy: []
   restore: []
 }>()
@@ -78,14 +77,6 @@ const stepText = computed(() =>
       </template>
     </div>
     <div class="flex shrink-0 items-center gap-1.5">
-      <Button
-        v-if="writable"
-        size="sm"
-        variant="ghost"
-        icon-left="lucide-pencil"
-        :label="preview.version.label ? __('Rename') : __('Name this version')"
-        @click="emit('rename')"
-      />
       <Button
         v-if="canCopy"
         size="sm"

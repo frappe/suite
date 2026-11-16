@@ -44,6 +44,8 @@ import {
 import { useScreenSize } from '@/composables/useScreenSize'
 import { meetLogo } from '@/platform/brand'
 import { userTimeZone } from '@/platform/time-zone'
+import { translate as __ } from '@/platform/translation'
+import { TransportError } from '@/platform/transport'
 
 const show = defineModel<boolean>()
 const { selectedEvent } = defineProps<{
@@ -298,7 +300,7 @@ const pendingMeetAttach = computed(
 )
 const copyMeetLink = async () => {
   await navigator.clipboard.writeText(new URL(meetUrl.value, window.location.origin).href)
-  toast.success(__('Frappe Meet link copied.'))
+  toast.success(__('Frappe Meet link copied'))
 }
 const meetLinkDisplay = computed(() =>
   meetUrl.value
@@ -569,17 +571,17 @@ const submitEvent = (sendEmail: boolean) => {
         : editEventSubmit
   const messages = isDraft.value
     ? {
-        loading: __('Sending event...'),
-        success: __('Event sent.'),
+        loading: __('Sending event…'),
+        success: __('Event sent'),
       }
     : isNew.value
       ? {
-          loading: __('Creating event...'),
-          success: __('Event created.'),
+          loading: __('Creating event…'),
+          success: __('Event created'),
         }
       : {
-          loading: __('Updating event...'),
-          success: __('Event updated.'),
+          loading: __('Updating event…'),
+          success: __('Event updated'),
         }
 
   // Attaching a Meet link to an existing event: mint the room first, then send the
@@ -610,8 +612,9 @@ const submitEvent = (sendEmail: boolean) => {
     ...messages,
     // The refusal's own message, as the request layer shows it for a non-silent call.
     error: (error: unknown) =>
-      (error instanceof Error && error.message) ||
-      __('Action failed. Please try again in some time.'),
+      (error instanceof TransportError && error.type !== 'NetworkError'
+        ? __(error.message)
+        : null) || __('Could not save the event'),
   })
   showNotifyParticipantsModal.value = false
 }
@@ -665,7 +668,7 @@ const discardDraftInput = ({ id, account }: { id: string; account: string }) => 
 })
 async function discardDraftSubmit(input: { id: string; account: string }) {
   const result = await discardDraft.run(discardDraftInput(input))
-  toast.success(__('Draft discarded.'))
+  toast.success(__('Draft discarded'))
   emit('reloadEvents')
   return result
 }
@@ -684,18 +687,18 @@ const saveDraftAndLeave = async () => {
       sendEmail: false,
     })
     const id = isNew.value ? result : serverEventId(selectedEvent.calendarEvent)
-    toast.success(__('Draft saved.'), {
+    toast.success(__('Draft saved'), {
       action: {
         label: __('Discard'),
         onClick: () =>
           discardDraftSubmit({
             id,
             account,
-          }).catch(() => toast.error(__('Could not discard the draft. Please try again.'))),
+          }).catch(() => toast.error(__('Could not discard the draft. Try again.'))),
       },
     })
   } catch {
-    toast.error(__('Could not save the draft. Please try again.'))
+    toast.error(__('Could not save the draft. Try again.'))
   } finally {
     savingDraft.value = false
   }
@@ -875,7 +878,7 @@ const DISCARD_MODAL_OPTIONS = computed(() => ({
   title: __('Discard changes?'),
   icon: 'lucide-trash-2',
   message: isNew.value
-    ? __('This event has not been saved and will be lost.')
+    ? __('This event has not been saved and will be lost')
     : __('Your unsaved edits to this event will be lost.'),
 }))
 const recurringScopeModalProps = computed(() => ({

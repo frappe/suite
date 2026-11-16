@@ -53,8 +53,11 @@ import {
   type RecurringScope,
 } from '@/apps/calendar/utils/recurringScope'
 import { useScreenSize } from '@/composables/useScreenSize'
+import { LoadFailed } from '@/platform/load-failed'
 import { appPageMeta } from '@/platform/page-meta'
 import { userTimeZone } from '@/platform/time-zone'
+import { translate as __ } from '@/platform/translation'
+import { TransportError } from '@/platform/transport'
 import { useRootStore } from '@/stores/root'
 
 const dayjs = inject('$dayjs')
@@ -331,7 +334,16 @@ const visibleCalendars = computed(
 )
 watch(
   () => calendars.error,
-  (error) => error && raiseToast(error.message, 'error'),
+  (error) =>
+    error &&
+    raiseToast(
+      (error instanceof TransportError &&
+      error.type !== 'NetworkError' &&
+      error.type !== 'AbortError'
+        ? __(error.message)
+        : null) || __('Could not load calendars'),
+      'error',
+    ),
 )
 
 const calendarColor = (name: string) => colorOf(calendars.data, name)
@@ -385,6 +397,10 @@ const events = useQuery(api.calendar.events.sharedWindow, () => {
     time_zone: userTimeZone(),
   }
 })
+async function retryEvents() {
+  if (calendars.error) await calendars.refetch()
+  await Promise.all([events.refetch(), todayEvents.refetch()])
+}
 const eventRows = computed(() => events.data?.map(transformEvent))
 const todayEvents = useQuery(api.calendar.events.sharedWindow, () => {
   if (!store.accountId) return false
@@ -397,12 +413,6 @@ const todayEvents = useQuery(api.calendar.events.sharedWindow, () => {
   }
 })
 const todayRows = computed(() => todayEvents.data?.map(transformEvent))
-watch(
-  () => events.error ?? todayEvents.error,
-  (error) => {
-    if (error) raiseToast(error.message, 'error')
-  },
-)
 
 // Asked again as the date turns: a list of today's events fetched yesterday is
 // yesterday's, and the clock the list already runs on says when.
@@ -429,7 +439,7 @@ const withCalendarColor = (event) => ({
  * `loading` alone is not that: it is false in the moment between mounting and the
  * request going out, and the Agenda — which has nothing to draw until events arrive —
  * used that moment to say the span had nothing on it. No data and no error yet is the
- * same not-knowing, so it counts too. An error does not: the toast has said what
+ * same not-knowing, so it counts too. An error does not: the failure row says what
  * happened, and a list waiting forever says nothing.
  */
 const eventsPending = computed(() => events.isFetching || (!eventRows.value && !events.error))
@@ -462,7 +472,15 @@ watch(
   () => eventSearch.status,
   (status) => {
     if (status !== 'pending') searchSettled.value = true
-    if (eventSearch.error) raiseToast(eventSearch.error.message, 'error')
+    if (eventSearch.error)
+      raiseToast(
+        (eventSearch.error instanceof TransportError &&
+        eventSearch.error.type !== 'NetworkError' &&
+        eventSearch.error.type !== 'AbortError'
+          ? __(eventSearch.error.message)
+          : null) || __('Could not search events'),
+        'error',
+      )
   },
 )
 
@@ -1043,7 +1061,7 @@ const handleUpdate = (e) => {
   // word of why, or it reads as the drag not taking.
   if (!canEditEvent(e, calendars.data)) {
     revertUpdate()
-    return toast.info(__("This event can't be edited."))
+    return toast.info(__("This event can't be edited"))
   }
   Object.assign(eventToBeUpdated, withActualTitle(e))
   // Both remembered before the drag overwrites them: an occurrence's override has to keep the
@@ -1172,12 +1190,19 @@ const instanceStart = () => {
 // to confirm it and refresh, and a failure has to put the pill back where it was.
 const onEventSaved = {
   onSuccess: () => {
-    raiseToast(__('Event updated.'), 'success')
+    raiseToast(__('Event updated'), 'success')
     reloadEvents()
   },
   onError: (error) => {
     revertUpdate()
-    raiseToast(error.message, 'error')
+    raiseToast(
+      (error instanceof TransportError &&
+      error.type !== 'NetworkError' &&
+      error.type !== 'AbortError'
+        ? __(error.message)
+        : null) || __('Could not update the event'),
+      'error',
+    )
   },
 }
 
@@ -1271,6 +1296,13 @@ const NOTIFY_MODAL_OPTIONS = {
 		     bottom nav's sheet on a phone, so it is mounted once, outside the two
 		     trees. The month card and the upcoming list read the desktop grid;
 		     the phone has neither. -->
+    <LoadFailed
+      v-if="events.status === 'error' || todayEvents.status === 'error'"
+      variant="section"
+      class="shrink-0 p-4"
+      :title="__('Could not load calendar events')"
+      :retry="retryEvents"
+    />
     <AppSidebar
       :is-mobile="isMobile"
       :calendar-color="calendarColor"
@@ -1350,7 +1382,7 @@ const NOTIFY_MODAL_OPTIONS = {
                   @update:model-value="(view) => updateActiveView(view)"
                 />
                 <Button
-                  variant="solid"
+                  variant="subtle"
                   icon-left="lucide-calendar-plus"
                   :label="__('Event')"
                   :tooltip="__('New Event (E)')"

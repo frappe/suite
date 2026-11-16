@@ -104,7 +104,7 @@ export function createHeaderPainter(
     ctx.fillStyle = COLORS.activeHeader
     ctx.fillRect(x, y, w, h)
     ctx.font = MARKED_FONT
-    ctx.fillStyle = COLORS.cellText
+    ctx.fillStyle = COLORS.activeHeaderText
   }
 
   function _plainLabel(): void {

@@ -12,7 +12,11 @@
     /></template>
   </MailUsers>
   <LocalUsers v-else-if="storage.data" />
-  <ErrorMessage v-else-if="storage.error" :message="storage.error.message" />
+  <LoadFailed
+    v-else-if="storage.status === 'error'"
+    :title="__('Could not load users')"
+    :retry="() => storage.refetch()"
+  />
   <DashboardLayout v-else area="admin" :breadcrumbs="[{ label: __('Users') }]">
     <!-- Same tabs as the Mail users page; the directory below shows its own placeholder rows. -->
     <Tabs
@@ -30,13 +34,14 @@
 </template>
 
 <script setup lang="ts">
-import { ErrorMessage, Tabs } from 'frappe-ui'
+import { Tabs } from 'frappe-ui'
 import { computed, defineAsyncComponent } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { api, useQuery } from '@/api'
 import { loadMailAdminUsers } from '@/apps/mail'
 import { DashboardLayout } from '@/platform/dashboard'
+import { LoadFailed } from '@/platform/load-failed'
 import { translate as __ } from '@/platform/translation'
 
 const storage = useQuery(api.suite.storage.get)

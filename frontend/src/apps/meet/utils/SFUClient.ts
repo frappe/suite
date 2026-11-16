@@ -12,6 +12,7 @@ import type {
 } from 'mediasoup-client/types'
 
 import { api, client } from '@/api'
+import { translate as __ } from '@/platform/translation'
 
 import type { JoinRoomRequest } from '../../../../../suite/meet/types'
 import { parseCameraLayerDemand } from '../../../../../suite/meet/types/cameraLayers'
@@ -127,7 +128,7 @@ export function connectionDetailsFromJoinPayload(
       payload.user_data ||
       (isGuest
         ? {
-            name: options.guestName || payload.guest_name || 'Guest',
+            name: options.guestName || payload.guest_name || __('Guest'),
             is_guest: true,
           }
         : undefined),

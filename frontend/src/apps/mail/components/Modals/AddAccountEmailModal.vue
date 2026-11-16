@@ -2,7 +2,7 @@
   <Dialog
     v-model:open="show"
     v-bind="{
-      title: __('Add Email Address'),
+      title: __('Add email address'),
       actions: [
         {
           label: __('Add'),
@@ -16,30 +16,16 @@
   >
     <template #default>
       <div class="space-y-4">
-        <div class="flex items-center justify-between">
-          <FormControl
-            v-model="username"
-            :label="__('Username')"
-            placeholder="johndoe"
-            class="w-full"
-          />
-          <FeatherIcon class="text-ink-gray-3 mx-2.5 mb-1.5 mt-auto h-4 w-4" name="at-sign" />
-          <FormControl
-            v-model="domain"
-            type="combobox"
-            :label="__('Domain')"
-            placeholder="yourdomain.com"
-            class="w-full"
-            :options="domains.data"
-            :open-on-click="true"
-          />
-        </div>
-        <p class="text-ink-gray-4 -mt-2 text-xs">
-          {{ __("Mail sent to this address is delivered to this account's mailbox.") }}
-        </p>
+        <EmailAddressField
+          v-model:username="username"
+          v-model:domain="domain"
+          :domains="domains.data ?? []"
+          username-placeholder="johndoe"
+          :description="__('Mail sent to this address is delivered to this account\'s mailbox.')"
+        />
         <FormControl
           v-model="description"
-          :label="__('Full Name')"
+          :label="__('Full name')"
           :placeholder="__('Used as the display name for this address')"
         />
         <ErrorMessage
@@ -56,12 +42,13 @@
 
 <script setup lang="ts">
 import { Dialog, ErrorMessage, FormControl } from 'frappe-ui'
-import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { ref, watch } from 'vue'
 
 import { api, useMutation, type InputOf } from '@/api'
+import EmailAddressField from '@/apps/mail/components/Controls/EmailAddressField.vue'
 import { useEnabledDomains } from '@/apps/mail/composables/useEnabledDomains'
 import { raiseToast } from '@/apps/mail/utils'
+import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()
 const { memberId } = defineProps<{
@@ -90,6 +77,6 @@ async function addEmailSubmit() {
   await addEmail.run(input)
   show.value = false
   emit('reload')
-  raiseToast(__('Email address added.'))
+  raiseToast(__('Email address added'))
 }
 </script>

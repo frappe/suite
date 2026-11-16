@@ -47,10 +47,12 @@ const settle = async () => {
   }
 }
 
-function mountBar(menus: SheetMenu[], openComments?: () => void) {
+function mountBar(menus: SheetMenu[], openComments?: () => void, onItemRan?: () => void) {
   const root = document.createElement('div')
   document.body.append(root)
-  const app = createApp({ setup: () => () => h(SheetMenuBar, { menus, openComments }) })
+  const app = createApp({
+    setup: () => () => h(SheetMenuBar, { menus, openComments, onItemRan }),
+  })
   app.mount(root)
   cleanup = () => {
     app.unmount()
@@ -223,7 +225,8 @@ describe('SheetMenuBar', () => {
   // target under jsdom; the browser check covers it.
   it('closes on Escape, back to the label, without running anything', async () => {
     const { list, exportCsv } = menus()
-    const root = mountBar(list)
+    const itemRan = vi.fn()
+    const root = mountBar(list, undefined, itemRan)
     trigger(root, 'File').focus()
     press(trigger(root, 'File'), 'Enter')
     await settle()
@@ -233,6 +236,42 @@ describe('SheetMenuBar', () => {
     expect(openMenu()).toBeNull()
     expect(document.activeElement).toBe(trigger(root, 'File'))
     expect(exportCsv).not.toHaveBeenCalled()
+    expect(itemRan).not.toHaveBeenCalled()
+  })
+
+  // ISSUES #150. The label kept focus after an item ran, so typed keys, arrows
+  // and Ctrl+C/V went nowhere and Enter opened the menu again. The editor takes
+  // focus back on `itemRan`, unless the item opened something that has it.
+  it('leaves the label once an item has run, and says so', async () => {
+    const { list, zoomIn } = menus()
+    const itemRan = vi.fn()
+    const root = mountBar(list, undefined, itemRan)
+    trigger(root, 'View').focus()
+    press(trigger(root, 'View'), 'Enter')
+    await settle()
+    menuItem('Zoom in')!.click()
+    await settle()
+    expect(zoomIn).toHaveBeenCalledOnce()
+    expect(document.activeElement).not.toBe(trigger(root, 'View'))
+    expect(itemRan).toHaveBeenCalledOnce()
+  })
+
+  it('leaves the label after an item in a submenu has run', async () => {
+    const options = [{ label: 'Zoom', submenu: [{ label: 'Reset zoom', onClick: vi.fn() }] }]
+    const itemRan = vi.fn()
+    const root = mountBar([{ key: 'view', label: 'View', options }], undefined, itemRan)
+    trigger(root, 'View').focus()
+    press(trigger(root, 'View'), 'Enter')
+    await settle()
+    const row = menuItem('Zoom')!
+    row.focus()
+    press(row, 'ArrowRight')
+    await settle()
+    menuItem('Reset zoom')!.click()
+    await settle()
+    expect(openMenu()).toBeNull()
+    expect(document.activeElement).not.toBe(trigger(root, 'View'))
+    expect(itemRan).toHaveBeenCalledOnce()
   })
 
   it('adds Insert → Comment when the surface has a comments panel', async () => {

@@ -15,7 +15,7 @@ from frappe.query_builder.functions import Count
 from frappe.utils import cstr, flt
 
 from suite import drive
-from suite.content import log
+from suite.content import jobs, log
 from suite.content.conversions import conversion_status
 from suite.slides import drive as slides_drive
 from suite.slides.content import APP
@@ -433,6 +433,8 @@ def get_public_presentation(name: str):
             # every tab opens through here, so the rows must not read as the deck's slides (Q20')
             answer.pop("slides")
         else:
+            # An opened deck converts, paused or not, as an opened Writer document does
+            jobs.request_conversion(APP, deck.node)
             answer["conversion"] = conversion_status(APP, deck.node)
 
     return answer

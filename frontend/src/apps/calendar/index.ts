@@ -15,7 +15,11 @@ import { translate as __ } from '@/platform/translation'
 export { default as ParticipantSelector } from './components/ParticipantSelector.vue'
 export { userStore as useCalendarUserStore } from './stores/user'
 export { default as calendarDayjs } from './utils/dayjs'
-export { adjustScheduleEndTime, adjustScheduleStartTime } from './utils/scheduleTime'
+export {
+  adjustScheduleEndTime,
+  adjustScheduleStartTime,
+  defaultScheduleWindow,
+} from './utils/scheduleTime'
 
 export type { CalendarEvent } from '@/apps/calendar/client/events'
 export { upcomingEventWindow } from './upcomingWindow'

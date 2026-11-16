@@ -59,6 +59,7 @@ import { userStore } from '@/apps/people/stores/user'
 import { raiseToast } from '@/apps/people/utils'
 import { DashboardLayout } from '@/platform/dashboard'
 import { appPageMeta } from '@/platform/page-meta'
+import { translate as __ } from '@/platform/translation'
 
 const { accountId } = defineProps<{
   accountId: string
@@ -94,7 +95,7 @@ async function deleteContacts() {
     ids: Array.from(listView.value?.selections ?? [], String),
   })
   showDeleteContacts.value = false
-  raiseToast(__('Contacts deleted.'))
+  raiseToast(__('Contacts deleted'))
   listView.value?.toggleAllRows()
 }
 const listOptions = computed(() => ({
