@@ -132,6 +132,9 @@ class NotificationShape(TypedDict):
     # The node as it is now and who acted, joined when the list is read (§9.5).
     node_title: str
     node_kind: str
+    # What kind of file or document it is, for its icon.
+    node_mime: str | None
+    node_content_doctype: str | None
     actor: Person
 
 
@@ -920,6 +923,8 @@ def notification_shape(row: Mapping, known: Mapping[str, Person]) -> Notificatio
         "activity": activity_shape(activity),
         "node_title": row["node_title"],
         "node_kind": row["node_kind"],
+        "node_mime": row.get("node_mime"),
+        "node_content_doctype": row.get("node_content_doctype"),
         "actor": known[activity["actor"]],
     }
 

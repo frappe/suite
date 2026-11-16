@@ -1481,7 +1481,7 @@ def _write_activity(
     *,
     tell_target: bool = True,
 ) -> None:
-    from suite.drive._core.activity import notify_users, record
+    from suite.drive._core.activity import notify_users, record, supersede_share_notices
 
     activity = record(principals, node, action, detail=detail)
     targets = tuple(
@@ -1494,6 +1494,7 @@ def _write_activity(
     emit_for_principals(targets)
     target = detail.get("principal")
     if tell_target and isinstance(target, str) and target and not target.startswith("$"):
+        supersede_share_notices(node, principals.user, target)
         notify_users(activity, (target,))
 
 
