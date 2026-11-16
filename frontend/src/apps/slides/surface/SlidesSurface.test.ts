@@ -2511,6 +2511,21 @@ describe('Slides panels', () => {
     ])
   })
 
+  it('keeps the properties out of reach under an open panel, and in reach once it closes', async () => {
+    convertedRoom('now')
+    mounted = await openedSurface({ deck: { is_converted: true } })
+    await vi.waitFor(() => expect(mounted!.root.querySelector('[data-properties]')).not.toBeNull())
+    const properties = () =>
+      requireTestElement(mounted!.root.querySelector('[data-properties]'), HTMLElement)
+    expect(properties().hasAttribute('inert')).toBe(false)
+
+    openComments()
+    await vi.waitFor(() => expect(properties().hasAttribute('inert')).toBe(true))
+
+    openComments()
+    await vi.waitFor(() => expect(properties().hasAttribute('inert')).toBe(false))
+  })
+
   it('posts a comment on the whole presentation, with no text in the room to wait for', async () => {
     mounted = await openedSurface({ role: 20 })
     openComments()
