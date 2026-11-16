@@ -33,7 +33,13 @@ import { inUserTimeZone } from '@/apps/calendar/utils/datetime'
 import dayjs from '@/apps/calendar/utils/dayjs'
 import { serverEventId } from '@/apps/calendar/utils/eventIdentity'
 import { VISIBILITY_OPTIONS } from '@/apps/calendar/utils/eventOptions'
-import { formEventFields, formStart, occurrenceStart } from '@/apps/calendar/utils/eventWrite'
+import {
+  endFollowingStart,
+  formEventFields,
+  formStart,
+  occurrenceStart,
+  startPrecedingEnd,
+} from '@/apps/calendar/utils/eventWrite'
 import { getRepeatMessage, type EventAlert } from '@/apps/calendar/utils/format'
 import {
   draftGuests,
@@ -374,26 +380,29 @@ watch(
       event.endDate = dayjs(startDate).add(Math.max(days, 0), 'day').format('YYYY-MM-DD')
       return
     }
-    const start = dayjs(`${startDate}T${startTime}`)
-    if (!start.isValid()) return
-    const gap = dayjs(`${event.endDate}T${event.endTime}`).diff(
-      dayjs(`${previous.date}T${previous.time}`),
-      'minute',
+    const end = endFollowingStart(
+      previous,
+      { date: startDate, time: startTime },
+      { date: event.endDate, time: event.endTime },
+      DEFAULT_DURATION_MINUTES,
     )
-    const end = start.add(gap > 0 ? gap : DEFAULT_DURATION_MINUTES, 'minute')
-    event.endDate = end.format('YYYY-MM-DD')
-    event.endTime = end.format('HH:mm')
+    if (!end) return
+    event.endDate = end.date
+    event.endTime = end.time
   },
 )
 watch(
   () => [event.endDate, event.endTime],
   ([endDate, endTime]) => {
-    if (event.isAllDay || !endDate || !endTime) return
-    const end = dayjs(`${endDate}T${endTime}`)
-    if (!end.isValid() || end.isAfter(startsAt.value)) return
-    const start = end.subtract(DEFAULT_DURATION_MINUTES, 'minute')
-    event.startDate = start.format('YYYY-MM-DD')
-    event.startTime = start.format('HH:mm')
+    if (event.isAllDay) return
+    const start = startPrecedingEnd(
+      { date: event.startDate, time: event.startTime },
+      { date: endDate, time: endTime },
+      DEFAULT_DURATION_MINUTES,
+    )
+    if (!start) return
+    event.startDate = start.date
+    event.startTime = start.time
   },
 )
 const showRepeatSettings = ref(false)

@@ -1,7 +1,14 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { api } from '@/apps/calendar/client/api'
-import { formEventFields, gridEventFields, type EventForm } from '@/apps/calendar/utils/eventWrite'
+import {
+  endFollowingStart,
+  formEventFields,
+  gridEventFields,
+  startPrecedingEnd,
+  type EventForm,
+  type FormMoment,
+} from '@/apps/calendar/utils/eventWrite'
 import { api as meet } from '@/apps/meet/client/api'
 
 vi.mock('@/platform/session', () => ({
@@ -161,5 +168,52 @@ describe('calendar event writes', () => {
     await expect(
       send(api.events.create, { account: 'm', ...fields, user: maya.email }),
     ).rejects.toThrow('add_calendar_event input.user is not allowed')
+  })
+})
+
+describe('moving a timed event’s start or end', () => {
+  const day = '2026-11-16'
+
+  /** A form whose times are both still empty, as a new event from a mail opens. */
+  function form() {
+    let start: FormMoment = { date: day, time: '' }
+    let end: FormMoment = { date: day, time: '' }
+    return {
+      pickStart(time: string) {
+        const previous = start
+        start = { date: day, time }
+        end = endFollowingStart(previous, start, end, 60) ?? end
+      },
+      pickEnd(time: string) {
+        end = { date: day, time }
+        start = startPrecedingEnd(start, end, 60) ?? start
+      },
+      get times() {
+        return { start: start.time, end: end.time }
+      },
+    }
+  }
+
+  it('keeps an end picked first when the start is picked after it', () => {
+    const event = form()
+    event.pickEnd('11:00')
+    expect(event.times).toEqual({ start: '', end: '11:00' })
+    event.pickStart('10:00')
+    expect(event.times).toEqual({ start: '10:00', end: '11:00' })
+  })
+
+  it('keeps the length the user set when the start moves again', () => {
+    const event = form()
+    event.pickEnd('12:30')
+    event.pickStart('10:00')
+    event.pickStart('11:00')
+    expect(event.times).toEqual({ start: '11:00', end: '13:30' })
+  })
+
+  it('gives an hour when the start is picked past an end picked first', () => {
+    const event = form()
+    event.pickEnd('09:00')
+    event.pickStart('10:00')
+    expect(event.times).toEqual({ start: '10:00', end: '11:00' })
   })
 })
