@@ -43,6 +43,7 @@ services:
       context: ../../../..
       dockerfile: suite/meet/recorder-server/Dockerfile
       target: integration
+    cpus: 4
     shm_size: 1gb
     depends_on:
       sfu:
