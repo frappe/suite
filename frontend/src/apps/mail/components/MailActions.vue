@@ -305,7 +305,7 @@ const moreActions = (mail: Mail): GroupedAction[] => [
     options: [
       {
         label: __('Print'),
-        onClick: () => emit('print'),
+        onClick: () => emit('print', mail),
         icon: Printer,
         condition: () => !mail.draft,
       },

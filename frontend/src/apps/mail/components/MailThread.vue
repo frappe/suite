@@ -231,7 +231,7 @@
                             (m: Mail, spam: boolean) => emit('markMailSpam', m, spam)
                           "
                           @delete-mail="(m: Mail) => emit('deleteMail', m)"
-                          @print="printMail(mail)"
+                          @print="printMail"
                         />
                       </div>
                       <!-- An expanded mail always needs the gap between header and body —
@@ -499,7 +499,7 @@
                                     (m: Mail, spam: boolean) => emit('markMailSpam', m, spam)
                                   "
                                   @delete-mail="(m: Mail) => emit('deleteMail', m)"
-                                  @print="printMail(mail)"
+                                  @print="printMail"
                                 />
                               </div>
                             </div>
@@ -2126,14 +2126,15 @@ const getPlainTextBody = (mail: Mail) => decodeHtmlEntities(mail.html_body || ma
 // Deliberately not a <pre>: the editor parses one as a code block, so quoting or forwarding
 // a plain-text mail used to hand the recipient the sender's prose in monospace that never
 // wrapped. plainTextToHtml keeps the line breaks without asking for that.
-const getBodyContent = (mail: Mail) => {
-  // Contained, not verbatim: the original's body/html style rules would otherwise
-  // repaint the entire outgoing mail (e.g. a marketing mail's dark backdrop
-  // bleeding over the sender's own text).
-  if (hasHtmlContent(mail.html_body)) return containEmailHtml(mail.html_body)
+const bodyHtml = (mail: Mail) => {
+  if (hasHtmlContent(mail.html_body)) return mail.html_body
   const text = getPlainTextBody(mail)
   return `<div style="white-space: pre-wrap">${text ? plainTextToHtml(text) : '&nbsp;'}</div>`
 }
+// Contained, not verbatim: the original's body/html style rules would otherwise
+// repaint the entire outgoing mail (e.g. a marketing mail's dark backdrop
+// bleeding over the sender's own text).
+const getBodyContent = (mail: Mail) => containEmailHtml(bodyHtml(mail))
 // ── Printing ────────────────────────────────────────────────────────────────────────────────────
 
 // A message as it goes on paper: its own body, with remote content held back where the reader holds
@@ -2147,9 +2148,7 @@ const printed = (mail: Mail): PrintedMessage => {
     cc,
     bcc,
     receivedAt: mail.received_at,
-    body: hasHtmlContent(mail.html_body)
-      ? mail.html_body
-      : `<div style="white-space: pre-wrap">${plainTextToHtml(getPlainTextBody(mail))}</div>`,
+    body: bodyHtml(mail),
     blockRemote: isBlocked(mail),
     attachments: filteredAttachments(mail).map((attachment) => attachment.filename),
   }

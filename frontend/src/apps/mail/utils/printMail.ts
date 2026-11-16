@@ -44,7 +44,7 @@ const line = (label: string, value: string) =>
   value ? `<div><span>${escapeHtml(label)}:</span> ${escapeHtml(value)}</div>` : ''
 
 /** The page that prints `messages` under `subject`. */
-export const printPage = (subject: string, messages: readonly PrintedMessage[]): string => {
+const printPage = (subject: string, messages: readonly PrintedMessage[]): string => {
   const title = escapeHtml(subject || __('[No Subject]'))
   const sections = messages
     .map((message) => {

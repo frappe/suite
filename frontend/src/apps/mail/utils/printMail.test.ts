@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { printMessages, printPage } from '@/apps/mail/utils/printMail'
+import { printMessages, type PrintedMessage } from '@/apps/mail/utils/printMail'
 
 // Dates print in the zone from the user's Settings, here one that is neither UTC nor the machine's.
 vi.mock('@/platform/time-zone', () => ({ userTimeZone: () => 'America/Los_Angeles' }))
@@ -13,7 +13,12 @@ afterEach(() => {
   document.querySelectorAll('iframe').forEach((frame) => frame.remove())
 })
 
-const page = (html: string) => new DOMParser().parseFromString(html, 'text/html')
+// The page as the print frame holds it.
+const printPage = (subject: string, messages: PrintedMessage[]) => {
+  printMessages(subject, messages)
+  const frame = document.querySelector('iframe')!
+  return new DOMParser().parseFromString(frame.getAttribute('srcdoc')!, 'text/html')
+}
 
 const message = {
   from: 'Ana Silva <ana@example.com>',
@@ -52,7 +57,7 @@ const remoteLoads = (doc: Document) => {
 
 describe('the printed page', () => {
   it('heads each message with who sent it, to whom and when, and names its attachments', () => {
-    const doc = page(printPage('Invoice for October', [message]))
+    const doc = printPage('Invoice for October', [message])
 
     expect(doc.title).toBe('Invoice for October')
     expect(doc.querySelector('h1')!.textContent).toBe('Invoice for October')
@@ -67,14 +72,14 @@ describe('the printed page', () => {
 
   // Bcc is on the sender's own copy only; there it is part of who the message went to.
   it('lists the Bcc recipients on a copy that has them', () => {
-    const doc = page(printPage('Invoice', [{ ...message, bcc: 'Cy <cy@example.com>' }]))
+    const doc = printPage('Invoice', [{ ...message, bcc: 'Cy <cy@example.com>' }])
 
     const header = doc.querySelector('.header')!.textContent!.replace(/\s+/g, ' ')
     expect(header).toContain('To: Bo <bo@example.com> Bcc: Cy <cy@example.com>')
   })
 
   it("keeps the body's words and leaves out its scripts", () => {
-    const doc = page(printPage('Invoice', [message]))
+    const doc = printPage('Invoice', [message])
 
     expect(doc.querySelector('.message p')!.textContent).toBe('The invoice is attached.')
     expect(doc.querySelector('script')).toBeNull()
@@ -86,7 +91,7 @@ describe('the printed page', () => {
         div { color: red }
         .cta { color: #c00 }
       </style></head><body><div><p class="cta">Shop the sale</p></div></body></html>`
-    const doc = page(printPage('Sale', [{ ...message, body: newsletter, attachments: [] }]))
+    const doc = printPage('Sale', [{ ...message, body: newsletter, attachments: [] }])
 
     const section = doc.querySelector('.message')!
     const header = section.querySelector('.header')!
@@ -109,8 +114,8 @@ describe('the printed page', () => {
         <div style="background-image: url(https://t.example/px.gif)">Hello</div>
       </td></tr></table>
       <style>.hero { background: url('https://t.example/hero.png') }</style>`
-    const blocked = page(printPage('News', [{ ...message, body: tracked, blockRemote: true }]))
-    const allowed = page(printPage('News', [{ ...message, body: tracked, blockRemote: false }]))
+    const blocked = printPage('News', [{ ...message, body: tracked, blockRemote: true }])
+    const allowed = printPage('News', [{ ...message, body: tracked, blockRemote: false }])
 
     expect(blocked.querySelector('.message')!.textContent).toContain('Hello')
     expect(remoteLoads(blocked)).toEqual([])
@@ -126,7 +131,7 @@ describe('the printed page', () => {
       body: '<p>Thanks!</p>',
       attachments: [],
     }
-    const doc = page(printPage('Invoice', [message, reply]))
+    const doc = printPage('Invoice', [message, reply])
 
     expect([...doc.querySelectorAll('.message .from')].map((e) => e.textContent)).toEqual([
       'Ana Silva <ana@example.com>',
