@@ -151,20 +151,24 @@ def rights_to_keep(
             # such row, and raising one could reach a node nobody compared.
             if shared is not None and shared[0] in by_principal.get(shared[1], ()):
                 decided[shared] = min(decided.get(shared, had), had)
-            entries.append((name, chain, had, acc.answer()))
+            entries.append((name, chain, had, acc.answer(), acc.own == NONE))
         views.append((principals, members, entries))
 
+    raised = set()
     for (name, principal), floor in sorted(decided.items()):
         if floor > working[name][principal]:
             working[name][principal] = floor
+            raised.add(name)
             result.rights.append(KeptRight(name, principal, floor))
 
     for principals, members, entries in views:
         own: dict[str, int] = {}
-        for name, chain, had, base in entries:
-            acc = _engine(chain, working, principals, own)
-            holds = acc.answer()
-            if holds < had and acc.own == NONE:
+        for name, chain, had, base, denied in entries:
+            holds = base
+            if any(node in raised or node in own for node in chain):
+                acc = _engine(chain, working, principals, own)
+                holds, denied = acc.answer(), acc.own == NONE
+            if holds < had and denied:
                 result.behind_deny += len(members)
                 continue
             if holds < had:
@@ -215,8 +219,12 @@ def _legacy_role(legacy: LegacyRights, chain: list[str], tiers: Mapping[str, int
     """Each flag from the nearest row that sets it, then the legacy ladder."""
     decided: dict[str, bool] = {}
     for name in reversed(chain):
-        rows = [row for row in legacy.rows.get(name, ()) if row.principal in tiers]
-        rows.sort(key=lambda row: (tiers[row.principal], not row.flags["deny"]))
+        here = legacy.rows.get(name)
+        if not here:
+            continue
+        rows = [row for row in here if row.principal in tiers]
+        if len(rows) > 1:
+            rows.sort(key=lambda row: (tiers[row.principal], not row.flags["deny"]))
         for row in rows:
             for flag in FLAGS:
                 if row.flags[flag] and flag not in decided:
@@ -254,8 +262,14 @@ def _engine(
     """The engine's nearest-wins pass (§5), with `own` as the person's extra grants."""
     acc = Acc()
     for depth, name in enumerate(chain):
-        for principal, role in grants.get(name, {}).items():
-            acc.offer(principal, role, depth, principals)
+        here = grants.get(name)
+        if here:
+            # A busy folder holds grants for many people; ask only for this
+            # person's own principals rather than offering every row.
+            for principal in principals.all():
+                role = here.get(principal)
+                if role is not None:
+                    acc.offer(principal, role, depth, principals)
         if own and name in own:
             acc.offer(principals.user, own[name], depth, principals)
     return acc
