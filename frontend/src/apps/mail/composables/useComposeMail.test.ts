@@ -477,6 +477,31 @@ describe('the local copy', () => {
     expect(copies()).toEqual([])
   })
 
+  it("restored after the composer saved, goes over the composer's own draft", async () => {
+    const first = compose()
+    server.updateDraft.mockRejectedValue(networkDown())
+    first.mail.html_body = '<p>Not on the server</p>'
+    await first.saveDraft()
+    stopDraftSavers()
+
+    const second = compose()
+    await tick()
+    server.updateDraft.mockReset()
+    server.updateDraft.mockResolvedValue(saved('draft-2'))
+    second.mail.subject = 'Typed before restoring'
+    await second.saveDraft()
+    const ownKey = second.mail.draft_key
+
+    server.updateDraft.mockResolvedValue(saved('draft-3'))
+    second.restoreCopy()
+    await tick()
+    const [input] = server.updateDraft.mock.calls.at(-1)!
+    expect(input).toMatchObject({ id: 'draft-2', draft_key: ownKey })
+    expect(input.html_body).toBe('<p>Not on the server</p>')
+    expect(second.saveState.value.status).toBe('saved')
+    expect(copies()).toEqual([])
+  })
+
   it('is removed if ignored', async () => {
     const first = compose()
     server.updateDraft.mockRejectedValue(networkDown())
@@ -633,6 +658,22 @@ describe('sending', () => {
     expect(open).toBe(true)
   })
 
+  it('takes a save answered as sent for sent, and saves no more', async () => {
+    const composer = compose()
+    // The send went through earlier and its answer was lost; the server says so to the next save.
+    server.updateDraft.mockResolvedValue(sent)
+    composer.mail.html_body = '<p>Still here</p>'
+    await composer.saveDraft()
+
+    expect(open).toBe(false)
+    expect(raiseToast).toHaveBeenCalledWith('Message sent', 'success', undefined)
+    expect(copies()).toEqual([])
+    server.updateDraft.mockClear()
+    composer.mail.html_body = '<p>Still here, edited</p>'
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(server.updateDraft).not.toHaveBeenCalled()
+  })
+
   it('does not send a draft that was sent, discarded or saved over elsewhere', async () => {
     const composer = compose()
     server.updateDraft.mockRejectedValueOnce(noSuchDraft())
@@ -649,8 +690,8 @@ describe('sending', () => {
 })
 
 describe('a draft gone from the server', () => {
-  const goneComposer = async () => {
-    const composer = compose()
+  const goneComposer = async (details: ComposeMailData = draft) => {
+    const composer = compose(details)
     server.updateDraft.mockRejectedValueOnce(noSuchDraft())
     composer.mail.html_body = '<p>Mine</p>'
     await composer.saveDraft()
@@ -680,6 +721,22 @@ describe('a draft gone from the server', () => {
     expect(composer.mail.id).toBe('new-1')
     expect(composer.saveState.value.status).toBe('saved')
     expect(copies()).toEqual([])
+  })
+
+  it('is still a reply when kept as a new draft', async () => {
+    const composer = await goneComposer({
+      ...draft,
+      subject: 'Re: Brief',
+      in_reply_to: 'brief@brightwave.example',
+      in_reply_to_id: 'brief-1',
+    })
+    server.create.mockResolvedValueOnce(saved('new-1'))
+    await composer.keepAsNewDraft()
+
+    expect(server.create.mock.calls[0][0]).toMatchObject({
+      in_reply_to: 'brief@brightwave.example',
+      in_reply_to_id: 'brief-1',
+    })
   })
 
   it('has nothing on the server to remove when discarded', async () => {
@@ -878,6 +935,19 @@ describe('leaving', () => {
     await tick()
     vi.restoreAllMocks()
     expect(server.updateDraft.mock.calls[0][1]).toMatchObject({ keepalive: true })
+  })
+
+  it('saves a page put away the ordinary way when the mail is more than such a request can carry', async () => {
+    const composer = compose()
+    server.updateDraft.mockResolvedValue(saved('draft-2'))
+    // Short in characters, three times that in bytes: past what a browser lets outlive the page.
+    composer.mail.html_body = `<p>${'€'.repeat(25_000)}</p>`
+    await nextTick()
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+    document.dispatchEvent(new Event('visibilitychange'))
+    await tick()
+    vi.restoreAllMocks()
+    expect(server.updateDraft.mock.calls[0][1]).not.toMatchObject({ keepalive: true })
   })
 
   it('removes the copy when discarded', async () => {

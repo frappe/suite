@@ -449,7 +449,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   // a body over 64KB outright, so a long mail goes as an ordinary request and takes its chances.
   const KEEPALIVE_LIMIT = 60_000
   const leavingOptions = (): WriteOptions =>
-    writing().length < KEEPALIVE_LIMIT ? { keepalive: true } : {}
+    new TextEncoder().encode(writing()).length < KEEPALIVE_LIMIT ? { keepalive: true } : {}
 
   const onBeforeUnload = (event: BeforeUnloadEvent) => {
     if (isSafeToClose.value) return
@@ -548,7 +548,11 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     if (!copy) return
     recoverableCopy.value = undefined
     withdrawDraftCopyOffer(copy.key)
-    Object.assign(mail, copy.mail, { draft_key: copy.key })
+    // On top of what this composer has, under its own key: the copy's key may still lead the server
+    // to the draft as it was when the copy was written, and writing there finds it gone. Kept on
+    // the device from here, if at all, as this composer's copy.
+    removeDraftCopy(copy.user, copy.account, copy.key)
+    Object.assign(mail, copy.mail)
     void saver.saveNow()
   }
   const ignoreCopy = () => {
@@ -569,15 +573,9 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     formerIds.clear()
     savedIn = ''
     mail.id = ''
-    // The server knows the old key as the draft that went away.
+    // The server knows the old key as the draft that went away. What it answers or forwards stays:
+    // a reply kept as a new draft is still that reply.
     mail.draft_key = newDraftKey()
-    // A draft opened from the list carries its own message id here rather than what it answers,
-    // and the conversation it was written against may not be there any more.
-    if (mailDetails?.id) {
-      mail.in_reply_to = ''
-      mail.in_reply_to_id = ''
-      mail.forwarded_from_id = ''
-    }
   }
   const keepAsNewDraft = () => {
     detachFromGoneDraft()
@@ -837,6 +835,13 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     if (status !== 'Drafted' && status !== 'Submitted')
       throw new Error(__('The server could not process this message.'))
     if (isDiscarding.value) return
+    // Sent, even though this was only a save: the send went through and its answer never came
+    // back. Saving on would only put the message back in Drafts, so the composer is done with it.
+    if (status === 'Submitted' && !isSending.value) {
+      dropCopy()
+      finish()
+      close()
+    }
     if (!isInThread || status === 'Submitted') reloadMails()
     // In a thread the list is where the messages come from — the pane is built from the rows the
     // list is holding, not from a fetch of its own. So a draft saved in here goes to the server

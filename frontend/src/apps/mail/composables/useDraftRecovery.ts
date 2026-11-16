@@ -51,7 +51,9 @@ export const offerDraftCopies = async ({
   const copies = listDraftCopies(user).filter((copy) => accounts.includes(copy.account))
   if (!copies.length) return
   const held = await heldDraftCopyKeys()
-  for (const copy of copies.filter((copy) => !held.has(copy.key)).slice(0, MAX_OFFERS)) {
+  // Asked again when the layout mounts again: a copy already on offer has its toast up.
+  const fresh = copies.filter((copy) => !held.has(copy.key) && !offers.has(copy.key))
+  for (const copy of fresh.slice(0, Math.max(0, MAX_OFFERS - offers.size))) {
     const subject = copy.mail.subject?.trim() || __('No subject')
     const offer = toast.warning(__('A draft was not saved: {0}', [subject]), {
       description: copy.uploading.length

@@ -3,6 +3,8 @@ import io
 import os
 import re
 import zipfile
+from collections.abc import Iterator
+from contextlib import contextmanager, suppress
 from datetime import datetime
 
 import frappe
@@ -14,6 +16,7 @@ from frappe.rate_limiter import rate_limit
 from frappe.utils import add_to_date, cint, now, random_string
 from jmap import MethodError, RequestError, TransportError
 from jmap.core.errors import CapabilityNotSupportedError
+from redis.exceptions import LockError
 from werkzeug.wrappers import Response
 
 from suite.mail import classification, unsubscribe
@@ -1502,6 +1505,44 @@ def _remember_answer(account: str, draft_key: str | None, answer: dict) -> None:
         frappe.cache.set_value(_draft_key_cache_key(account, draft_key), answer, expires_in_sec=DRAFT_KEY_TTL)
 
 
+def _no_longer_a_draft() -> None:
+    frappe.throw(_("This message is no longer a draft."), frappe.DoesNotExistError)
+
+
+# The client gives up on a request after 30 seconds and tries again, and the mail server can take
+# longer than that. Held for longer than any one request runs, and waited on for as long as the
+# client's own patience.
+DRAFT_KEY_LOCK_TIMEOUT = 150
+DRAFT_KEY_LOCK_WAIT = 30
+
+
+@contextmanager
+def _one_request_per_composition(account: str, draft_key: str | None) -> Iterator[None]:
+    """Holds a composition to one request at a time. A retry that arrives while the try it repeats is
+    still running would start from the same last answer, so both would create a draft, or one would
+    send and the other leave a draft beside it. Waiting for the first, it picks up from its answer."""
+
+    if not draft_key:
+        yield
+        return
+
+    lock = frappe.cache.lock(
+        f"mail-draft-key:{frappe.local.site}:{_draft_key_cache_key(account, draft_key)}",
+        timeout=DRAFT_KEY_LOCK_TIMEOUT,
+    )
+    if not lock.acquire(blocking=True, blocking_timeout=DRAFT_KEY_LOCK_WAIT):
+        frappe.throw(
+            _("This draft is still being saved. Try again in a moment."), frappe.TooManyRequestsError
+        )
+
+    try:
+        yield
+    finally:
+        # A lock that ran out is no longer ours to release, and no reason to fail the save.
+        with suppress(LockError):
+            lock.release()
+
+
 @frappe.whitelist()
 def create_mail(
     account: str,
@@ -1527,11 +1568,55 @@ def create_mail(
     `draft_key` identifies the composition: see `_last_answer`.
     `remind_at` (UTC `...Z`) asks to be reminded then if nobody has answered (see suite.mail.reminders)."""
 
+    with _one_request_per_composition(account, draft_key):
+        return _create_mail(
+            account,
+            from_email,
+            to,
+            cc,
+            bcc,
+            subject,
+            html_body,
+            from_name,
+            attachments,
+            in_reply_to,
+            in_reply_to_id,
+            forwarded_from_id,
+            save_as_draft,
+            send_at,
+            undo_send,
+            draft_key,
+            remind_at,
+        )
+
+
+def _create_mail(
+    account: str,
+    from_email: str,
+    to: list[dict],
+    cc: list[dict],
+    bcc: list[dict],
+    subject: str | None,
+    html_body: str | None,
+    from_name: str,
+    attachments: list[dict] | None,
+    in_reply_to: str | None,
+    in_reply_to_id: str | None,
+    forwarded_from_id: str | None,
+    save_as_draft: bool,
+    send_at: str | None,
+    undo_send: bool,
+    draft_key: str | None,
+    remind_at: str | None,
+) -> dict:
     if answer := _last_answer(account, draft_key):
-        # The answer to an earlier try got lost. Already sent stays sent, once.
+        # The answer to an earlier try got lost. Already sent stays sent, once: a send asked again
+        # is told so, and a save can't put the message back into Drafts.
         if answer["status"] == "Submitted":
+            if save_as_draft:
+                _no_longer_a_draft()
             return answer
-        return update_draft_mail(
+        return _update_draft_mail(
             account,
             answer["id"],
             from_email,
@@ -1626,15 +1711,54 @@ def update_draft_mail(
     id, so that means someone else got there first: another tab saved over it, or it was sent or
     deleted. The caller's text has not overwritten theirs, and it is the caller's to decide about."""
 
+    with _one_request_per_composition(account, draft_key):
+        return _update_draft_mail(
+            account,
+            id,
+            from_email,
+            to,
+            cc,
+            bcc,
+            subject,
+            html_body,
+            from_name,
+            attachments,
+            submit=submit,
+            send_at=send_at,
+            undo_send=undo_send,
+            draft_key=draft_key,
+            remind_at=remind_at,
+        )
+
+
+def _update_draft_mail(
+    account: str,
+    id: str,
+    from_email: str,
+    to: list[dict],
+    cc: list[dict],
+    bcc: list[dict],
+    subject: str | None,
+    html_body: str | None,
+    from_name: str,
+    attachments: list[dict] | None,
+    submit: bool,
+    send_at: str | None,
+    undo_send: bool,
+    draft_key: str | None,
+    remind_at: str | None,
+) -> dict:
     if answer := _last_answer(account, draft_key):
         if answer["status"] == "Submitted":
+            if not submit:
+                _no_longer_a_draft()
             return answer
         id = answer["id"]
 
     message = frappe.get_doc("Mail Message", f"{account}|{id}")
     message.check_permission(permtype="write")
     if not message.draft:
-        frappe.throw(_("This message is no longer a draft."), frappe.DoesNotExistError)
+        _no_longer_a_draft()
     remind_due = check_reminder_time(remind_at, from_utc_z(send_at)) if submit else None
 
     message.from_email = from_email

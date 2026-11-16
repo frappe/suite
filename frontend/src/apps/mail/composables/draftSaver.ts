@@ -185,10 +185,9 @@ export const createDraftSaver = (options: DraftSaverOptions) => {
 
   const run = async (sending: string, writeOptions: WriteOptions) => {
     const controller = new AbortController()
-    // A keepalive write is for a page on its way out, with nobody left to act on a timeout.
-    const timeout = writeOptions.keepalive
-      ? undefined
-      : setTimeout(() => controller.abort(), WRITE_TIMEOUT_MS)
+    // A keepalive write too: the page it was for may well stay, put away and brought back, and every
+    // write after it would wait on one that never answers.
+    const timeout = setTimeout(() => controller.abort(), WRITE_TIMEOUT_MS)
     isWriting.value = true
     try {
       await write({ ...writeOptions, signal: controller.signal })

@@ -44,6 +44,8 @@ const offered = () => toast.warning.mock.calls
 
 beforeEach(() => {
   localStorage.clear()
+  // Offers stand until dealt with, so a test's own are taken back before the next.
+  for (const key of ['k1', 'a', 'b', 'c', 'd', 'e']) withdrawDraftCopyOffer(key)
   toast.warning.mockClear()
   toast.dismiss.mockClear()
 })
@@ -111,6 +113,13 @@ describe('offering local copies back', () => {
     for (const key of ['a', 'b', 'c', 'd', 'e']) writeDraftCopy(copy({ key }))
     await offerDraftCopies({ user: USER, accounts: ['a1'], reopen: vi.fn() })
     expect(toast.warning).toHaveBeenCalledTimes(3)
+  })
+
+  it('offers a copy once, however often the page asks', async () => {
+    writeDraftCopy(copy())
+    await offerDraftCopies({ user: USER, accounts: ['a1'], reopen: vi.fn() })
+    await offerDraftCopies({ user: USER, accounts: ['a1'], reopen: vi.fn() })
+    expect(toast.warning).toHaveBeenCalledOnce()
   })
 
   it('takes an offer back once the copy is dealt with elsewhere', async () => {

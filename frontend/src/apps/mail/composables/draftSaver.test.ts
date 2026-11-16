@@ -217,6 +217,37 @@ describe('when saving fails', () => {
     expect(saver.status.value).toBe('saved')
   })
 
+  it('gives up on an unanswered save made for a page on its way out, so later saves can go', async () => {
+    let answers = 0
+    const write = vi.fn(
+      ({ signal, keepalive }: { signal?: AbortSignal; keepalive?: boolean }) =>
+        new Promise<void>((resolve, reject) => {
+          if (!keepalive) {
+            answers += 1
+            return resolve()
+          }
+          signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))
+        }),
+    )
+    let text = 'x'
+    const saver = createDraftSaver({
+      read: () => text,
+      canSave: () => true,
+      write,
+      keepCopy: vi.fn(),
+      dropCopy: vi.fn(),
+      isOnline: () => true,
+    })
+    void saver.saveNow({ keepalive: true })
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(saver.status.value).toBe('failed')
+
+    text = 'xy'
+    await saver.saveNow()
+    expect(answers).toBe(1)
+    expect(saver.status.value).toBe('saved')
+  })
+
   it('treats an unanswered request as a failure rather than saving forever', async () => {
     const write = vi.fn(
       ({ signal }: { signal?: AbortSignal }) =>
