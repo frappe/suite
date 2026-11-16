@@ -13,6 +13,7 @@ from frappe.tests import UnitTestCase
 
 from suite.mail.api import mail
 from suite.mail.api.mail import create_mail, get_mailboxes, get_thread, get_threads, update_draft_mail
+from suite.mail.doctype.mail_queue import mail_queue
 from suite.mail.tests.base import StalwartIntegrationTestCase, unique_name
 
 
@@ -90,6 +91,23 @@ class TestDraftKey(StalwartIntegrationTestCase):
         self.assertEqual(again, sent)
         self.wait_until(self.received, timeout=60, message="The mail did not arrive.")
         self.assertEqual(len(self.received()), 1)
+
+    def test_a_save_after_a_refused_send_lands_on_the_draft_the_send_left(self):
+        with self.set_user(self.sender.email):
+            draft = create_mail(**self.compose(save_as_draft=True, draft_key=self.key))
+            # The mail server takes the draft, under a new id, and then refuses to send it.
+            with mock.patch.object(mail_queue, "get_identity_id_by_email", return_value="no-such-identity"):
+                refused = update_draft_mail(**self.compose(id=draft["id"], submit=True, draft_key=self.key))
+            self.assertEqual(refused["status"], "Failed to Submit")
+
+            # The composer stays open on the id the refusal named, and goes on saving.
+            saved = update_draft_mail(
+                **self.compose(id=refused["id"], html_body="<p>After</p>", draft_key=self.key)
+            )
+
+            self.assertEqual(saved["status"], "Drafted")
+            drafts = self.wait_until(self.drafts, message="The draft is not in Drafts.")
+            self.assertEqual([row["messages"][-1]["id"] for row in drafts], [saved["id"]])
 
     def test_a_save_after_a_send_whose_answer_was_lost_finds_the_draft_gone(self):
         with self.set_user(self.sender.email):

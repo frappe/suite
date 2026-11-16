@@ -1501,7 +1501,13 @@ def _last_answer(account: str, draft_key: str | None) -> dict | None:
 
 
 def _remember_answer(account: str, draft_key: str | None, answer: dict) -> None:
-    if draft_key and answer["id"] and answer["status"] in ("Drafted", "Submitted"):
+    if not draft_key or not answer["id"]:
+        return
+    # A send the server refused still made the draft it was to send, under a new id, and destroyed
+    # the one before: that is where the composition now is, as a draft.
+    if answer["status"] == "Failed to Submit":
+        answer = {**answer, "status": "Drafted", "error": None}
+    if answer["status"] in ("Drafted", "Submitted"):
         frappe.cache.set_value(_draft_key_cache_key(account, draft_key), answer, expires_in_sec=DRAFT_KEY_TTL)
 
 
