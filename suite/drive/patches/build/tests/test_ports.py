@@ -38,7 +38,7 @@ from suite.drive.patches.build.ports import (
     SiteTree,
     TreeRow,
 )
-from suite.drive.patches.build.tests.fakes import FakeDrive
+from suite.drive.patches.build.tests.fakes import FakeDrive, StoreClient, StubClientError, bucket_over
 
 
 class StubbedDatabase(unittest.TestCase):
@@ -219,45 +219,6 @@ class TestSiteStorage(StubbedDatabase):
         blob.insert.assert_called_once_with(ignore_permissions=True, set_name="b7x2k9q4mz")
 
 
-class StubClientError(Exception):
-    def __init__(self, code):
-        super().__init__(code)
-        self.response = {"Error": {"Code": code}}
-
-
-class StoreClient:
-    """The S3 calls a copy makes, over a dict of objects by stored key.
-
-    `trims_path_keys` is the one difference between the two stores Build
-    runs on. AWS S3 keeps a leading slash as part of the key. Garage drops
-    the leading slashes of a key in the request path, and keeps them on the
-    key of a copy source, which travels in a header.
-    """
-
-    def __init__(self, objects, trims_path_keys):
-        self.objects = dict(objects)
-        self.trims_path_keys = trims_path_keys
-
-    def _path_key(self, key):
-        return key.lstrip("/") if self.trims_path_keys else key
-
-    def head_object(self, Bucket, Key):
-        body = self.objects.get(self._path_key(Key))
-        if body is None:
-            raise StubClientError("404")
-        return {"ContentLength": len(body), "ETag": hashlib.md5(body).hexdigest()}
-
-    def copy_object(self, Bucket, Key, CopySource):
-        if CopySource["Key"] not in self.objects:
-            raise StubClientError("NoSuchKey")
-        self.objects[self._path_key(Key)] = self.objects[CopySource["Key"]]
-
-    def copy(self, CopySource, Bucket, Key):
-        # boto3's managed copy heads the source for its size, then copies.
-        self.head_object(Bucket=CopySource["Bucket"], Key=CopySource["Key"])
-        self.copy_object(Bucket=Bucket, Key=Key, CopySource=CopySource)
-
-
 class RefusingStoreClient(StoreClient):
     """A store that refuses every copy with `AccessDenied`, and counts the attempts."""
 
@@ -266,10 +227,6 @@ class RefusingStoreClient(StoreClient):
     def copy_object(self, Bucket, Key, CopySource):
         self.copy_attempts += 1
         raise StubClientError("AccessDenied")
-
-
-def bucket_over(client):
-    return BotoBucket(SimpleNamespace(bucket="drive-bucket", client=client, _client_error=StubClientError))
 
 
 class TestBotoBucketCopiesSlashNamedKeys(unittest.TestCase):

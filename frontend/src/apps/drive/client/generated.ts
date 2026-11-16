@@ -2612,6 +2612,8 @@ export type NotificationsListOutputNotificationShape = {
   activity: NotificationsListOutputActivityShape
   node_title: string
   node_kind: string
+  node_mime: string | null
+  node_content_doctype: string | null
   actor: NotificationsListOutputPerson
 }
 

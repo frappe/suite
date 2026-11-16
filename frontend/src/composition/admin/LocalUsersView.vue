@@ -15,17 +15,32 @@
       <Button v-else variant="subtle" :label="__('Invite users')" @click="inviting = true" />
     </template>
 
-    <div class="flex flex-wrap items-center justify-between gap-3">
-      <FormControl
-        v-model="search"
-        :placeholder="__('Search')"
-        :aria-label="__('Search users')"
-        class="w-full sm:w-80"
-      >
-        <template #prefix>
-          <span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" />
-        </template>
-      </FormControl>
+    <div v-if="selectedUsers.length" class="flex min-h-7 flex-wrap items-center gap-2">
+      <span class="pr-1 text-base text-ink-gray-7 tabular-nums">{{
+        __('{0} selected', [selectedUsers.length])
+      }}</span>
+      <Button
+        icon-left="lucide-circle-play"
+        :label="__('Reactivate')"
+        @click="openLifecycle(true)"
+      />
+      <Button icon-left="lucide-circle-off" :label="__('Disable')" @click="openLifecycle(false)" />
+      <Button class="ml-auto" variant="ghost" :label="__('Done')" @click="selectedUsers = []" />
+    </div>
+    <div v-else class="flex flex-wrap items-center justify-between gap-3">
+      <div class="flex w-full flex-wrap items-center gap-3 sm:w-auto">
+        <slot name="lead" />
+        <FormControl
+          v-model="search"
+          :placeholder="__('Search')"
+          :aria-label="__('Search users')"
+          class="w-full sm:w-80"
+        >
+          <template #prefix>
+            <span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" />
+          </template>
+        </FormControl>
+      </div>
       <div class="flex w-full flex-wrap items-center gap-3 sm:w-auto">
         <DashboardSkeletonText v-if="loading" class="flex-none text-sm" width="4rem" />
         <p v-else class="text-sm text-ink-gray-5">{{ __('{0} users', [filtered.length]) }}</p>
@@ -47,7 +62,7 @@
             type="select"
             :aria-label="__('Status')"
             :options="[
-              { label: __('All statuses'), value: 'all' },
+              { label: __('Any status'), value: 'all' },
               { label: __('Active'), value: 'enabled' },
               { label: __('Disabled'), value: 'disabled' },
             ]"
@@ -61,7 +76,6 @@
       :title="__('Could not load users')"
       :retry="() => users.refetch()"
     />
-    <ErrorMessage :message="change.error?.message || replacePassword.error?.message" />
 
     <List
       v-if="users.status !== 'error'"
@@ -162,13 +176,6 @@
         </ListRow>
       </ListRows>
     </List>
-
-    <div v-if="selectedUsers.length" class="flex flex-wrap items-center gap-2">
-      <p class="text-p-sm text-ink-gray-6">{{ __('{0} selected', [selectedUsers.length]) }}</p>
-      <Button :label="__('Reactivate selected users')" @click="openLifecycle(true)" />
-      <Button :label="__('Disable selected users')" @click="openLifecycle(false)" />
-    </div>
-
     <StorageLimitDialog v-if="storageEditing" v-model:open="storageEditing" :users="storageUsers" />
 
     <Dialog
@@ -191,6 +198,7 @@
             <li
               v-for="result in lifecycleResults"
               :key="result.user"
+              class="text-p-sm"
               :class="result.success ? 'text-ink-green-6' : 'text-ink-red-6'"
             >
               {{ result.user }}:
@@ -211,14 +219,21 @@
       <template #actions>
         <div class="flex justify-end gap-2">
           <Button
-            :label="__('Close')"
+            :label="lifecycleResults.length ? __('Close') : __('Cancel')"
             :disabled="lifecyclePending"
             @click="lifecycleOpen = false"
           />
           <Button
             v-if="!lifecycleResults.length || lifecycleResults.some((result) => !result.success)"
             variant="solid"
-            :label="lifecycleResults.length ? __('Retry failed users') : __('Confirm')"
+            :theme="lifecycleEnabled ? 'gray' : 'red'"
+            :label="
+              lifecycleResults.length
+                ? __('Retry failed users')
+                : lifecycleEnabled
+                  ? __('Reactivate users')
+                  : __('Disable users')
+            "
             :loading="lifecyclePending"
             @click="runLifecycle"
           />
@@ -247,27 +262,24 @@
       </p>
     </div>
 
-    <Dialog v-model:open="inviting" :title="__('Invite users')" :dismissible="!invite.isPending">
+    <Dialog v-model:open="inviting" :title="__('Invite users')" :dismissible="!inviteStep?.loading">
       <template #default>
-        <div class="space-y-4">
-          <FormControl
-            v-model="emails"
-            type="textarea"
-            :label="__('Email addresses')"
-            :placeholder="__('one address per line')"
-          />
-          <ErrorMessage :message="invite.error?.message" />
-        </div>
+        <InviteStep
+          ref="inviteStep"
+          :description="__('Separate multiple email addresses with commas or new lines')"
+          autofocus
+          @sent="onInvitesSent"
+        />
       </template>
       <template #actions>
         <div class="flex justify-end gap-2">
-          <Button :label="__('Cancel')" :disabled="invite.isPending" @click="inviting = false" />
+          <Button :label="__('Cancel')" :disabled="inviteStep?.loading" @click="inviting = false" />
           <Button
             variant="solid"
             :label="__('Send invitations')"
-            :loading="invite.isPending"
-            :disabled="!emails.trim()"
-            @click="sendInvites"
+            :loading="inviteStep?.loading"
+            :disabled="!inviteStep?.canSubmit"
+            @click="inviteStep?.submit()"
           />
         </div>
       </template>
@@ -280,6 +292,7 @@
     >
       <template #default>
         <div class="space-y-4">
+          <p class="text-p-base text-ink-gray-6">{{ editingProfile }}</p>
           <FormControl v-model="profileName" :label="__('Display name')" />
           <ErrorMessage :message="change.error?.message" />
         </div>
@@ -409,120 +422,76 @@
     >
       <template #default>
         <div class="space-y-4">
-          <p class="text-p-base text-ink-gray-7">
-            {{
-              __(
-                'Choose an existing named folder in another Personal or Shared Root. Retained versions and trash move too; trash stays deleted and existing links and explicit grants are preserved.',
-              )
-            }}
-          </p>
-          <FormControl
-            v-model="destinationFolder"
-            :disabled="previewPending || transfer.isPending"
-            :label="__('Destination folder')"
-            :placeholder="__('Paste a folder link or paste its ID')"
-          />
-          <div class="flex justify-end">
+          <template v-if="!transferResults">
+            <Combobox
+              v-model="transferTarget"
+              :label="__('Transfer to')"
+              :options="transferTargetOptions"
+              :placeholder="__('Choose a person or a shared Drive')"
+              :disabled="previewPending || transfer.isPending"
+            />
+            <p class="-mt-2 text-p-sm text-ink-gray-5">
+              {{
+                __(
+                  'Everything goes into a new folder, “{0}”. Old versions and trashed items move too, and existing links and sharing keep working.',
+                  [transferFolderTitle],
+                )
+              }}
+            </p>
+          </template>
+          <div v-if="!transferPreview && !transferResults" class="flex justify-end">
             <Button
               :label="__('Preview transfer')"
               :loading="previewPending"
-              :disabled="!destinationFolder.trim() || transfer.isPending"
+              :disabled="!transferTarget || transfer.isPending"
               @click="previewTransfer"
             />
           </div>
           <ErrorMessage :message="previewError || transfer.error?.message" />
           <template v-if="transferPreview">
-            <div class="space-y-2 text-p-base text-ink-gray-7">
-              <p>
-                {{
-                  transferPreview.destination_user
-                    ? __('Destination user: {0}', [transferPreview.destination_user])
-                    : __('Shared destination')
-                }}
-              </p>
-              <p>
-                {{
-                  transferPreview.destination_capacity.current_bytes == null
-                    ? __('Destination usage unavailable')
-                    : __('Destination usage: {0}', [
-                        bytes(transferPreview.destination_capacity.current_bytes),
-                      ])
-                }}
-              </p>
-              <p v-if="transferPreview.destination_capacity.reserved_bytes">
-                {{
-                  __('In progress: {0}', [
-                    bytes(transferPreview.destination_capacity.reserved_bytes),
-                  ])
-                }}
-              </p>
-              <p>
-                {{
-                  transferPreview.destination_capacity.projected_bytes == null
-                    ? __('Usage after transfer unavailable')
-                    : __('Usage after transfer: {0}', [
-                        bytes(transferPreview.destination_capacity.projected_bytes),
-                      ])
-                }}
-              </p>
-              <p>
-                {{
-                  transferPreview.destination_capacity.cap_bytes == null
-                    ? __('No personal cap')
-                    : __('Destination cap: {0}', [
-                        bytes(transferPreview.destination_capacity.cap_bytes),
-                      ])
-                }}
-              </p>
-              <ErrorMessage
-                v-if="transferPreview.destination_capacity.blocker"
-                :message="
-                  transferPreview.destination_capacity.blocker === 'unknown_usage'
-                    ? __(
-                        'Destination usage is unavailable. Try again when storage can be measured.',
-                      )
-                    : __(
-                        'The destination does not have enough storage. Choose another folder or increase its limit.',
-                      )
-                "
-              />
-            </div>
-            <p class="text-base text-ink-gray-8">
-              {{
-                __('{0} top-level items · {1}', [
-                  transferPreview.item_count,
-                  bytes(transferPreview.bytes),
-                ])
-              }}
-            </p>
-            <p class="text-p-sm text-ink-gray-5">
-              {{
-                __('People with access to the destination will gain access to transferred content.')
-              }}
-            </p>
-            <ul class="space-y-1">
-              <li
-                v-for="grant in transferPreview.inherited_grants"
-                :key="grant.principal"
-                class="text-p-sm text-ink-gray-6"
-              >
-                {{ grant.principal }} · {{ grantLabel(grant.role) }}
-              </li>
-            </ul>
+            <dl class="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2.5 text-p-base">
+              <dt class="text-ink-gray-5">{{ __('What moves') }}</dt>
+              <dd class="text-ink-gray-8">{{ itemsText }}</dd>
+              <dt class="text-ink-gray-5">{{ __('Goes to') }}</dt>
+              <dd class="text-ink-gray-8">{{ destinationText }}</dd>
+              <dt class="text-ink-gray-5">{{ __('Storage there') }}</dt>
+              <dd class="text-ink-gray-8">{{ storageText }}</dd>
+              <template v-if="transferPreview.destination_capacity.reserved_bytes">
+                <dt class="text-ink-gray-5">{{ __('In progress') }}</dt>
+                <dd class="text-ink-gray-8">
+                  {{ bytes(transferPreview.destination_capacity.reserved_bytes) }}
+                </dd>
+              </template>
+              <template v-if="transferPreview.inherited_grants.length">
+                <dt class="text-ink-gray-5">{{ __('Who gets access') }}</dt>
+                <dd class="space-y-1 text-ink-gray-8">
+                  <p v-for="grant in transferPreview.inherited_grants" :key="grant.principal">
+                    {{ personName(grant.principal) }}
+                    <span class="text-ink-gray-5">· {{ grantLabel(grant.role) }}</span>
+                  </p>
+                </dd>
+              </template>
+            </dl>
+            <ErrorMessage
+              v-if="transferPreview.destination_capacity.blocker"
+              :message="blockerText"
+            />
             <FormControl
               v-model="confirmTransferAccess"
               type="checkbox"
-              :label="__('I confirm the destination access changes')"
+              :label="__('I understand these people will get access to the moved items')"
             />
           </template>
           <template v-if="transferResults">
             <p class="text-base text-ink-gray-8">
               {{
                 transferResults.complete
-                  ? __('Transfer complete. The source Personal Root is empty.')
-                  : __('{0} retained nodes remain. Preview again to retry only unfinished work.', [
-                      transferResults.remaining,
-                    ])
+                  ? __('Everything has moved to {0}.', [movedTo])
+                  : transferResults.remaining === 1
+                    ? __('1 item is left. Preview again to move it.')
+                    : __('{0} items are left. Preview again to move them.', [
+                        transferResults.remaining,
+                      ])
               }}
             </p>
             <ul class="space-y-1">
@@ -530,9 +499,9 @@
                 v-for="result in transferResults.results"
                 :key="result.node"
                 class="text-p-sm"
-                :class="result.success ? 'text-ink-green-6' : 'text-ink-red-6'"
+                :class="result.success ? 'text-ink-gray-7' : 'text-ink-red-6'"
               >
-                {{ result.node }}:
+                {{ result.title }}:
                 {{
                   result.success
                     ? __('Moved')
@@ -546,13 +515,12 @@
       <template #actions>
         <div class="flex justify-end gap-2">
           <Button
-            v-if="transferResults"
-            :label="__('Close')"
-            :disabled="transfer.isPending"
+            :label="transferResults ? __('Close') : __('Cancel')"
+            :disabled="transfer.isPending || previewPending"
             @click="transferOpen = false"
           />
           <Button
-            v-if="transferResults"
+            v-if="transferResults && !transferResults.complete"
             variant="solid"
             :label="__('Preview again')"
             @click="resetTransfer"
@@ -560,7 +528,11 @@
           <Button
             v-else-if="transferPreview"
             variant="solid"
-            :label="__('Transfer next batch')"
+            :label="
+              transferPreview.item_count > TRANSFER_BATCH
+                ? __('Transfer the first {0}', [TRANSFER_BATCH])
+                : __('Transfer')
+            "
             :disabled="
               !confirmTransferAccess ||
               !transferPreview.item_count ||
@@ -580,23 +552,28 @@ import {
   Avatar,
   Badge,
   Button,
+  Combobox,
   Dialog,
   dialog,
   ErrorMessage,
   FormControl,
   Skeleton,
+  toast,
   Tooltip,
 } from 'frappe-ui'
 import { List, ListCell, ListHeader, ListHeaderCell, ListRow, ListRows } from 'frappe-ui/list'
-import { computed, defineAsyncComponent, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, ref, useTemplateRef, watch } from 'vue'
 
 import { api, client, useMutation, useQuery, type OutputOf } from '@/api'
 import { loadStorageLimitDialog } from '@/apps/mail'
 import { DashboardLayout, DashboardSkeletonText } from '@/platform/dashboard'
-import { Dropdown } from '@/platform/feedback'
+import { Dropdown, failureText } from '@/platform/feedback'
 import { LoadFailed } from '@/platform/load-failed'
+import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
+import InviteStep from '@/shell/InviteStep.vue'
 
+import { formatStorage } from './storageFormat'
 import StorageUsage from './StorageUsage.vue'
 
 type User = OutputOf<typeof api.suite.users.list>[number]
@@ -615,8 +592,10 @@ const users = useQuery(api.suite.users.list)
 const loading = computed(() => users.status === 'pending')
 const SKELETON_ROWS = Array.from({ length: 8 }, (_, index) => ({ name: `skeleton-${index}` }))
 const storage = useQuery(api.suite.storage.get)
-const change = useMutation(api.suite.users.update)
-const invite = useMutation(api.suite.invitations.create)
+// Every user change runs inside a dialog that shows its own error, so none of them also toasts.
+const change = useMutation(api.suite.users.update, { silent: true })
+// `lead` starts the filter row, e.g. the Users / Invitations switch.
+defineSlots<{ lead?: () => unknown }>()
 const search = ref('')
 const roleFilter = ref('all')
 const statusFilter = ref('all')
@@ -637,7 +616,7 @@ const selectedUsers = ref<string[]>([])
 const lifecycleOpen = ref(false)
 const lifecycleEnabled = ref(false)
 const lifecyclePending = ref(false)
-type LifecycleResult = OutputOf<typeof api.mail.admin.members.enable>[number]
+type LifecycleResult = { user: string; success: boolean; error: string | null }
 const lifecycleResults = ref<LifecycleResult[]>([])
 function openLifecycle(enabled: boolean) {
   lifecycleEnabled.value = enabled
@@ -648,26 +627,22 @@ async function runLifecycle() {
   const targets = lifecycleResults.value.length
     ? lifecycleResults.value.filter((result) => !result.success).map((result) => result.user)
     : [...selectedUsers.value]
+  const enabled = lifecycleEnabled.value
   lifecyclePending.value = true
+  // One change per user, so one refusal (the last Admin, your own account) keeps the others.
   try {
-    const results = await client.mutation(
-      lifecycleEnabled.value ? api.mail.admin.members.enable : api.mail.admin.members.disable,
-      { names: targets },
-      { silent: true },
-    )
-    for (const result of results) {
-      if (result.success)
-        selectedUsers.value = selectedUsers.value.filter((name) => name !== result.user)
-      const previous = lifecycleResults.value.findIndex((previous) => previous.user === result.user)
-      if (previous === -1) lifecycleResults.value.push(result)
-      else lifecycleResults.value[previous] = result
-    }
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : __('Unable to change access. Try again.')
     for (const user of targets) {
-      const previous = lifecycleResults.value.findIndex((result) => result.user === user)
-      const result = { user, success: false, error: message }
+      let result: LifecycleResult
+      try {
+        await client.mutation(api.suite.users.update, { user, enabled }, { silent: true })
+        result = { user, success: true, error: null }
+        selectedUsers.value = selectedUsers.value.filter((name) => name !== user)
+      } catch (error) {
+        const reason =
+          error instanceof Error ? failureText(error) : __('Could not change access. Try again.')
+        result = { user, success: false, error: reason }
+      }
+      const previous = lifecycleResults.value.findIndex((entry) => entry.user === user)
       if (previous === -1) lifecycleResults.value.push(result)
       else lifecycleResults.value[previous] = result
     }
@@ -698,10 +673,10 @@ function setupNote(user: User): string | undefined {
 
 // — invite —
 const inviting = ref(false)
-const emails = ref('')
-async function sendInvites() {
-  await invite.run({ emails: emails.value })
+const inviteStep = useTemplateRef<InstanceType<typeof InviteStep>>('inviteStep')
+function onInvitesSent(summary: string) {
   inviting.value = false
+  toast.success(summary)
 }
 
 // — profile —
@@ -720,7 +695,7 @@ async function saveProfile() {
 
 // — temporary credentials —
 const credential = ref('')
-const replacePassword = useMutation(api.suite.users.replaceTemporaryPassword)
+const replacePassword = useMutation(api.suite.users.replaceTemporaryPassword, { silent: true })
 const credentialOpen = computed({
   get: () => !!credential.value,
   set: (open) => {
@@ -786,12 +761,41 @@ async function deleteAccount() {
 
 // — retained Drive transfer —
 const transferUser = ref('')
-const destinationFolder = ref('')
+/** A person's email, or `drive:` and a shared Drive's id. */
+const transferTarget = ref<string | null>(null)
+const sharedDrives = useQuery(api.suite.admin.sharedDrives.list, () =>
+  transferUser.value ? {} : false,
+)
+const transferTargetOptions = computed(() => [
+  {
+    group: __('People'),
+    options: (users.data ?? [])
+      .filter((user) => user.enabled && user.name !== transferUser.value)
+      .map((user) => ({ label: user.full_name, value: user.name, description: user.email })),
+  },
+  {
+    group: __('Shared Drives'),
+    options: (sharedDrives.data ?? []).map((drive) => ({
+      label: drive.title,
+      value: `drive:${drive.id}`,
+      icon: 'lucide-hard-drive',
+    })),
+  },
+])
+const transferFolderTitle = computed(() => __("{0}'s files", [personName(transferUser.value)]))
+function transferTo() {
+  const target = transferTarget.value ?? ''
+  return target.startsWith('drive:')
+    ? { to_user: null, to_drive: target.slice('drive:'.length) }
+    : { to_user: target, to_drive: null }
+}
 const confirmTransferAccess = ref(false)
 const transferPreview = ref<OutputOf<typeof api.suite.users.previewTransfer>>()
 const transferResults = ref<OutputOf<typeof api.suite.users.transferDrive>>()
 const transfer = useMutation(api.suite.users.transferDrive)
 const previewPending = ref(false)
+/** Where the last batch went, kept after the preview clears so the result can name it. */
+const movedTo = ref('')
 const previewError = ref('')
 const transferOpen = computed({
   get: () => !!transferUser.value,
@@ -799,13 +803,13 @@ const transferOpen = computed({
     if (!open) transferUser.value = ''
   },
 })
-watch(destinationFolder, () => {
+watch(transferTarget, () => {
   transferPreview.value = undefined
   confirmTransferAccess.value = false
 })
 function openTransfer(user: string) {
   transferUser.value = user
-  destinationFolder.value = ''
+  transferTarget.value = null
   confirmTransferAccess.value = false
   transferPreview.value = undefined
   transferResults.value = undefined
@@ -825,11 +829,48 @@ watch(
   { immediate: true },
 )
 
-function bytes(value: number) {
-  return __('{0} GB', [
-    (value / 1_000_000_000).toLocaleString(undefined, { maximumFractionDigits: 2 }),
-  ])
+const bytes = formatStorage
+
+/** How many top-level items one transfer request moves (`transfer_user_drive`). */
+const TRANSFER_BATCH = 50
+const me = computed(() => useSession().user.value?.id)
+function personName(email: string) {
+  return users.data?.find((user) => user.name === email)?.full_name || email
 }
+const itemsText = computed(() => {
+  const preview = transferPreview.value
+  if (!preview) return ''
+  return preview.item_count === 1
+    ? __('1 item · {0}', [bytes(preview.bytes)])
+    : __('{0} items · {1}', [preview.item_count, bytes(preview.bytes)])
+})
+const destinationText = computed(() => {
+  const preview = transferPreview.value
+  if (!preview) return ''
+  return preview.destination_user
+    ? __('“{0}” in {1}’s Drive', [preview.folder_title, preview.destination_title])
+    : __('“{0}” in {1}', [preview.folder_title, preview.destination_title])
+})
+const storageText = computed(() => {
+  const capacity = transferPreview.value?.destination_capacity
+  if (!capacity) return ''
+  if (capacity.current_bytes == null || capacity.projected_bytes == null)
+    return __('Unknown right now')
+  return capacity.cap_bytes == null
+    ? __('{0} → {1}, no limit', [bytes(capacity.current_bytes), bytes(capacity.projected_bytes)])
+    : __('{0} → {1} of {2}', [
+        bytes(capacity.current_bytes),
+        bytes(capacity.projected_bytes),
+        bytes(capacity.cap_bytes),
+      ])
+})
+const blockerText = computed(() =>
+  transferPreview.value?.destination_capacity.blocker === 'unknown_usage'
+    ? __('Destination usage is unavailable. Try again when storage can be measured.')
+    : __(
+        'The destination does not have enough storage. Choose another folder or increase its limit.',
+      ),
+)
 
 function grantLabel(role: number) {
   switch (role) {
@@ -849,9 +890,6 @@ function grantLabel(role: number) {
 }
 
 async function previewTransfer() {
-  const destination =
-    destinationFolder.value.trim().match(/\/drive\/f\/([^/?#]+)/)?.[1] ??
-    destinationFolder.value.trim()
   confirmTransferAccess.value = false
   transferPreview.value = undefined
   previewError.value = ''
@@ -859,7 +897,7 @@ async function previewTransfer() {
   try {
     transferPreview.value = await client.query(api.suite.users.previewTransfer, {
       user: transferUser.value,
-      destination,
+      ...transferTo(),
     })
   } catch (error) {
     previewError.value =
@@ -873,10 +911,11 @@ async function runTransfer() {
   if (!transferPreview.value) return
   transferResults.value = await transfer.run({
     user: transferUser.value,
-    destination: transferPreview.value.destination,
+    ...transferTo(),
     fingerprint: transferPreview.value.fingerprint,
     confirm_access: confirmTransferAccess.value,
   })
+  movedTo.value = destinationText.value
   transferPreview.value = undefined
 }
 
@@ -907,11 +946,15 @@ function userActions(user: User) {
     {
       label: user.is_admin ? __('Demote to member') : __('Make Admin'),
       icon: 'lucide-shield',
+      // The last active Admin cannot step down; a disabled user is made Admin after reactivation.
+      condition: () => (user.is_admin || !!user.enabled) && !lastAdmin(user),
       onClick: () => confirmUserChange(user, 'role'),
     },
     {
       label: user.enabled ? __('Disable user') : __('Reactivate user'),
       icon: user.enabled ? 'lucide-circle-off' : 'lucide-circle-play',
+      // No one can disable their own account.
+      condition: () => user.name !== me.value,
       theme: user.enabled ? ('red' as const) : ('gray' as const),
       onClick: () => confirmUserChange(user, 'enabled'),
     },
@@ -981,6 +1024,11 @@ function userActions(user: User) {
   ]
 }
 
+function lastAdmin(user: User) {
+  const admins = (users.data ?? []).filter((entry) => entry.is_admin && entry.enabled)
+  return user.name === me.value && admins.length === 1 && admins[0].name === user.name
+}
+
 function confirmUserChange(user: User, kind: 'role' | 'enabled') {
   dialog.confirm({
     title:
@@ -999,7 +1047,15 @@ function confirmUserChange(user: User, kind: 'role' | 'enabled') {
               'Sessions and outgoing access will be revoked. Incoming Mail and retained data are preserved.',
             )
           : __('Access returns after account and Drive readiness checks succeed.'),
-    confirmLabel: __('Confirm'),
+    confirmLabel:
+      kind === 'role'
+        ? user.is_admin
+          ? __('Demote to member')
+          : __('Make Admin')
+        : user.enabled
+          ? __('Disable user')
+          : __('Reactivate user'),
+    theme: kind === 'enabled' && user.enabled ? 'red' : undefined,
     onConfirm: async () => {
       await change.run({
         user: user.name,

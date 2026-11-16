@@ -151,9 +151,7 @@ const parseElements = (value, slide) => {
       parsed = JSON.parse(value)
     } catch (err) {
       console.error('Failed to parse slide elements', err)
-      toast.error(
-        __('A slide could not be read. Its content is preserved but hidden; avoid saving over it.'),
-      )
+      toast.error(__('A slide could not be read. It is kept but hidden.'))
       if (slide) slide.corruptElements = value
       return []
     }

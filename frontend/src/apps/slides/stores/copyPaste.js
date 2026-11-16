@@ -169,7 +169,7 @@ function cannotFetchPictures() {
     return false
   }
 
-  toast.error(__('Connect to the internet to paste from another presentation'))
+  toast.error(__('Go online to paste from another presentation'))
   return true
 }
 

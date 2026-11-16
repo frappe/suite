@@ -8,11 +8,14 @@ import { translationPlugin } from '@/platform/translation'
 import LocalUsersView from './LocalUsersView.vue'
 
 vi.mock('frappe-ui', async () => ({
+  PageHeader: { template: '<header><slot /></header>' },
   toast: { error: vi.fn(), success: vi.fn() },
   FrappeUIProvider: { template: '<slot />' },
   ...(await import('../../../../node_modules/frappe-ui/src/components/Avatar')),
   ...(await import('../../../../node_modules/frappe-ui/src/components/Badge')),
+  ...(await import('../../../../node_modules/frappe-ui/src/components/Breadcrumbs')),
   ...(await import('../../../../node_modules/frappe-ui/src/components/Button')),
+  ...(await import('../../../../node_modules/frappe-ui/src/components/Combobox')),
   ...(await import('../../../../node_modules/frappe-ui/src/components/Dialog')),
   ...(await import('../../../../node_modules/frappe-ui/src/components/Dropdown')),
   ...(await import('../../../../node_modules/frappe-ui/src/components/ErrorMessage')),
@@ -22,6 +25,9 @@ vi.mock('frappe-ui', async () => ({
   ...(await import('../../../../node_modules/frappe-ui/src/components/TextInput')),
   ...(await import('../../../../node_modules/frappe-ui/src/components/Tooltip')),
 }))
+// jsdom has no layout; the dropdown scrolls its highlighted option into view.
+Element.prototype.scrollIntoView = () => {}
+vi.mock('@/platform/area-sidebar', () => ({ openAreaSidebar: vi.fn() }))
 
 const server = vi.hoisted(() => {
   type AdminServerState = {
@@ -29,7 +35,12 @@ const server = vi.hoisted(() => {
     account: string
     writes: unknown[]
     bulk: boolean
+    cloud: boolean
     failLeah: boolean
+    transferMovesAll: boolean
+    previews: Record<string, string>[]
+    /** Adds Omar, an active colleague a departed user's Drive can go to. */
+    colleague: boolean
     blocker: 'personal_limit' | 'unknown_usage' | 'drive_limit' | null
   }
   const state: AdminServerState = {
@@ -37,25 +48,16 @@ const server = vi.hoisted(() => {
     account: 'leah@example.com',
     writes: [],
     bulk: false,
+    cloud: true,
     failLeah: true,
+    transferMovesAll: false,
+    previews: [],
+    colleague: false,
     blocker: null,
   }
   globalThis.fetch = async (url: RequestInfo | URL, init: RequestInit = {}) => {
     const path = new URL(String(url), 'http://suite.test').pathname
     const json = (data: unknown) => new Response(JSON.stringify({ data }))
-    if (path.endsWith('enable_members') || path.endsWith('disable_members')) {
-      const body = JSON.parse(String(init.body))
-      state.writes.push({ path, body })
-      return new Response(
-        JSON.stringify({
-          message: body.names.map((user: string) => ({
-            user,
-            success: user !== 'leah@example.com' || !state.failLeah,
-            error: user === 'leah@example.com' && state.failLeah ? 'Mail setup is not ready' : null,
-          })),
-        }),
-      )
-    }
     if (init.method === 'PATCH') {
       const body = JSON.parse(String(init.body))
       state.writes.push(body)
@@ -80,11 +82,33 @@ const server = vi.hoisted(() => {
             }
           : write,
       )
+      if (path === '/api/suite/invitations')
+        return json({
+          disabled_user_emails: [],
+          accepted_invite_emails: [],
+          pending_invite_emails: [],
+          invited_emails: write.body.emails.split(', '),
+        })
+      if (path.endsWith('/drive-transfer') && state.transferMovesAll)
+        return json({
+          complete: true,
+          remaining: 0,
+          results: [
+            { node: 'retained-file', title: 'Handover notes.md', success: true, error: null },
+          ],
+        })
       if (path.endsWith('/drive-transfer'))
         return json({
           complete: false,
           remaining: 1,
-          results: [{ node: 'retained-file', success: false, error: 'Destination is unavailable' }],
+          results: [
+            {
+              node: 'retained-file',
+              title: 'Handover notes.md',
+              success: false,
+              error: 'Destination is unavailable',
+            },
+          ],
         })
       return json({
         success: false,
@@ -95,11 +119,18 @@ const server = vi.hoisted(() => {
         expires_at: null,
       })
     }
-    if (path.endsWith('/drive-transfer'))
+    if (path === '/api/suite/admin/shared-drives')
+      return json([{ id: 'drive-finance', title: 'Finance' }])
+    if (path.endsWith('/drive-transfer')) {
+      const query = Object.fromEntries(new URL(String(url), 'http://suite.test').searchParams)
+      state.previews.push(query)
+      const shared = !!query.to_drive
       return json({
         source_root: 'source-root',
-        destination_user: 'maya@example.com',
-        destination: 'destination-folder',
+        destination_user: shared ? null : 'omar@example.com',
+        destination_title: shared ? 'Finance' : 'Omar Haddad',
+        folder_title: "Leah's files",
+        destination: 'destination-root',
         fingerprint: 'preview-token',
         item_count: 1,
         bytes: 2e9,
@@ -117,6 +148,7 @@ const server = vi.hoisted(() => {
         },
         inherited_grants: [{ principal: 'maya@example.com', role: 10 }],
       })
+    }
     if (path === '/api/suite/users')
       return json([
         {
@@ -130,6 +162,21 @@ const server = vi.hoisted(() => {
           setup_status: state.status,
           must_change_password: false,
         },
+        ...(state.colleague
+          ? [
+              {
+                name: 'omar@example.com',
+                email: 'omar@example.com',
+                full_name: 'Omar Haddad',
+                user_image: null,
+                enabled: true,
+                is_admin: false,
+                account: 'omar@example.com',
+                setup_status: 'Active',
+                must_change_password: false,
+              },
+            ]
+          : []),
         ...(state.bulk
           ? [
               {
@@ -148,7 +195,7 @@ const server = vi.hoisted(() => {
       ])
     if (path === '/api/suite/storage')
       return json({
-        cloud: true,
+        cloud: state.cloud,
         users: [],
         roots: [],
         drive_bytes: 0,
@@ -176,19 +223,23 @@ beforeEach(() => {
   server.account = 'leah@example.com'
   server.writes = []
   server.bulk = false
+  server.cloud = true
   server.failLeah = true
+  server.transferMovesAll = false
+  server.previews = []
+  server.colleague = false
   server.blocker = null
 })
 afterEach(() => {
   app?.unmount()
   document.body.innerHTML = ''
 })
-async function mount(openActions = true, initialTransferUser?: string) {
+async function mount(openActions = true, initialTransferUser?: string, embedded = true) {
   await client.query(api.suite.users.list)
   await client.query(api.suite.storage.get)
   const element = document.createElement('div')
   document.body.append(element)
-  app = createApp(LocalUsersView, { embedded: true, initialTransferUser })
+  app = createApp(LocalUsersView, { embedded, initialTransferUser })
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -204,6 +255,24 @@ async function mount(openActions = true, initialTransferUser?: string) {
   await vi.waitFor(() => expect(document.body.textContent).toContain('Leah'))
   if (openActions) await click('Actions for leah@example.com')
 }
+/** Opens the Transfer to dropdown and picks the option with this label. */
+async function pickTarget(label: string) {
+  const field = () => document.querySelector<HTMLInputElement>('[role="dialog"] [role="combobox"]')
+  await vi.waitFor(() => expect(field()).not.toBeNull())
+  field()!.focus()
+  field()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+  await vi.waitFor(() =>
+    expect(
+      Array.from(document.querySelectorAll('[role="option"]')).some((o) =>
+        o.textContent?.includes(label),
+      ),
+    ).toBe(true),
+  )
+  Array.from(document.querySelectorAll<HTMLElement>('[role="option"]'))
+    .find((o) => o.textContent?.includes(label))!
+    .click()
+}
+
 async function click(label: string) {
   await vi.waitFor(() => {
     const element = Array.from(
@@ -269,33 +338,39 @@ it('requires the retained address before retrying failed deletion', async () => 
 })
 
 it.each([
-  { action: 'Reactivate selected users', endpoint: 'enable_members', outcome: 'Reactivated' },
-  { action: 'Disable selected users', endpoint: 'disable_members', outcome: 'Disabled' },
+  {
+    action: 'Reactivate',
+    confirm: 'Reactivate users',
+    enabled: true,
+    outcome: 'Reactivated',
+  },
+  {
+    action: 'Disable',
+    confirm: 'Disable users',
+    enabled: false,
+    outcome: 'Disabled',
+  },
 ])(
   'preserves successful $outcome outcomes and retries only failed users',
-  async ({ action, endpoint, outcome }) => {
+  async ({ action, confirm, enabled, outcome }) => {
     server.bulk = true
     await mount(false)
     await click('Select all')
     await click(action)
-    await click('Confirm')
+    await click(confirm)
     await vi.waitFor(() =>
       expect(document.body.textContent).toContain(`maya@example.com: ${outcome}`),
     )
+    // The server's own reason for the refusal, not a generic failure.
     expect(document.body.textContent).toContain('leah@example.com: Mail setup is not ready')
     expect(server.writes).toEqual([
-      {
-        path: `/api/method/suite.mail.api.admin.${endpoint}`,
-        body: { names: ['leah@example.com', 'maya@example.com'] },
-      },
+      { user: 'leah@example.com', enabled },
+      { user: 'maya@example.com', enabled },
     ])
     server.failLeah = false
     await click('Retry failed users')
-    await vi.waitFor(() => expect(server.writes).toHaveLength(2))
-    expect(server.writes[1]).toEqual({
-      path: `/api/method/suite.mail.api.admin.${endpoint}`,
-      body: { names: ['leah@example.com'] },
-    })
+    await vi.waitFor(() => expect(server.writes).toHaveLength(3))
+    expect(server.writes[2]).toEqual({ user: 'leah@example.com', enabled })
     await vi.waitFor(() =>
       expect(document.body.textContent).toContain(`leah@example.com: ${outcome}`),
     )
@@ -303,28 +378,22 @@ it.each([
 )
 
 it('requires access confirmation and preserves per-item transfer failures for retry', async () => {
-  await mount()
-  await click('Transfer Drive')
-  await vi.waitFor(() => expect(document.body.textContent).toContain('Destination folder'))
-  const input = document.querySelector<HTMLInputElement>(
-    'input[placeholder="Paste a folder link or paste its ID"]',
-  )
-  expect(input).not.toBeNull()
-  if (input) {
-    input.value = 'destination-folder'
-    input.dispatchEvent(new Event('input', { bubbles: true }))
-  }
+  server.colleague = true
+  // Opened as the row's Transfer Drive link does; the menu path is covered above.
+  await mount(false, 'leah@example.com')
+  await vi.waitFor(() => expect(document.body.textContent).toContain('Transfer to'))
+  await pickTarget('Omar Haddad')
   await click('Preview transfer')
-  await vi.waitFor(() => expect(document.body.textContent).toContain('maya@example.com'))
-  expect(document.body.textContent).toContain('Destination usage: 2 GB')
-  expect(document.body.textContent).toContain('Usage after transfer: 4 GB')
-  expect(document.body.textContent).toContain('Destination cap: 10 GB')
-  expect(document.body.textContent).not.toContain('Destination limit: 11 GB')
-  expect(document.body.textContent).not.toContain('Extra storage:')
-  expect(document.body.textContent).toContain('In progress: 1 GB')
-  expect(document.body.textContent).toContain('maya@example.com · Read')
+  await vi.waitFor(() => expect(document.body.textContent).toContain('What moves'))
+  const preview = document.querySelector('[role="dialog"] dl')?.textContent ?? ''
+  expect(preview).toContain('1 item · 2 GB')
+  // The destination's usage before and after, against its cap rather than the cap plus buffer.
+  expect(preview).toContain('2 GB → 4 GB of 10 GB')
+  expect(preview).not.toContain('11 GB')
+  expect(preview).toContain('In progress1 GB')
+  expect(preview).toContain('maya@example.com · Read')
   const transferButton = Array.from(document.querySelectorAll('button')).find(
-    (button) => button.textContent?.trim() === 'Transfer next batch',
+    (button) => button.textContent?.trim() === 'Transfer',
   )
   expect(transferButton?.disabled).toBe(true)
   const checkbox = document.querySelector<HTMLInputElement>(
@@ -332,27 +401,72 @@ it('requires access confirmation and preserves per-item transfer failures for re
   )
   expect(checkbox).not.toBeNull()
   checkbox?.click()
-  await click('Transfer next batch')
+  await click('Transfer')
   await vi.waitFor(() =>
-    expect(document.body.textContent).toContain('retained-file: Destination is unavailable'),
+    expect(document.body.textContent).toContain('Handover notes.md: Destination is unavailable'),
   )
-  expect(document.body.textContent).toContain('1 retained nodes remain')
+  expect(document.body.textContent).toContain('1 item is left')
   expect(document.body.textContent).not.toContain('Transfer complete')
+})
+
+it('moves a departed user’s Drive into a folder in the picked person’s Drive and ends on where it went', async () => {
+  server.transferMovesAll = true
+  server.colleague = true
+  // Opened as the row's Transfer Drive link does; the menu path is covered above.
+  await mount(false, 'leah@example.com')
+  await vi.waitFor(() => expect(document.body.textContent).toContain('Transfer to'))
+  // Before anything is picked, the admin already sees the folder everything will land in.
+  expect(document.body.textContent).toContain("Everything goes into a new folder, “Leah's files”")
+  await pickTarget('Omar Haddad')
+  await click('Preview transfer')
+  await vi.waitFor(() => expect(document.body.textContent).toContain('What moves'))
+  expect(server.previews.at(-1)).toMatchObject({ to_user: 'omar@example.com' })
+  expect(server.previews.at(-1)).not.toHaveProperty('to_drive', 'drive-finance')
+  expect(document.querySelector('[role="dialog"] dl')?.textContent).toContain(
+    "Goes to“Leah's files” in Omar Haddad’s Drive",
+  )
+  document.querySelector<HTMLInputElement>('[role="dialog"] input[type="checkbox"]')?.click()
+  await click('Transfer')
+  await vi.waitFor(() =>
+    expect(document.body.textContent).toContain(
+      "Everything has moved to “Leah's files” in Omar Haddad’s Drive.",
+    ),
+  )
+  expect(server.writes).toContainEqual(
+    expect.objectContaining({
+      body: expect.objectContaining({ to_user: 'omar@example.com', to_drive: null }),
+    }),
+  )
+  expect(document.body.textContent).toContain('Handover notes.md: Moved')
+  expect(document.querySelector('[role="dialog"] input')).toBeNull()
+  const labels = Array.from(document.querySelectorAll('[role="dialog"] button')).map((button) =>
+    button.textContent?.trim(),
+  )
+  expect(labels).toContain('Close')
+  expect(labels).not.toContain('Preview again')
+})
+
+it('offers shared Drives by name and previews a transfer into one', async () => {
+  // Opened as the row's Transfer Drive link does; the menu path is covered above.
+  await mount(false, 'leah@example.com')
+  await pickTarget('Finance')
+  await click('Preview transfer')
+  await vi.waitFor(() => expect(document.body.textContent).toContain('What moves'))
+  expect(server.previews.at(-1)).toMatchObject({ to_drive: 'drive-finance' })
+  expect(server.previews.at(-1)).not.toHaveProperty('to_user', 'omar@example.com')
+  expect(document.querySelector('[role="dialog"] dl')?.textContent).toContain(
+    "Goes to“Leah's files” in Finance",
+  )
 })
 
 it.each(['personal_limit', 'unknown_usage', 'drive_limit'] as const)(
   'keeps transfer blocked when the destination reports %s',
   async (blocker) => {
     server.blocker = blocker
+    server.colleague = true
     await mount(false, 'leah@example.com')
-    await vi.waitFor(() => expect(document.body.textContent).toContain('Destination folder'))
-    const input = document.querySelector<HTMLInputElement>(
-      'input[placeholder="Paste a folder link or paste its ID"]',
-    )
-    if (input) {
-      input.value = 'destination-folder'
-      input.dispatchEvent(new Event('input', { bubbles: true }))
-    }
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Transfer to'))
+    await pickTarget('Omar Haddad')
     await click('Preview transfer')
     await vi.waitFor(() =>
       expect(document.body.textContent).toContain(
@@ -363,9 +477,38 @@ it.each(['personal_limit', 'unknown_usage', 'drive_limit'] as const)(
     )
     document.querySelector<HTMLInputElement>('[role="dialog"] input[type="checkbox"]')?.click()
     const button = Array.from(document.querySelectorAll('button')).find(
-      (button) => button.textContent?.trim() === 'Transfer next batch',
+      (button) => button.textContent?.trim() === 'Transfer',
     )
     expect(button?.disabled).toBe(true)
     expect(server.writes).toHaveLength(0)
   },
 )
+
+it('catches a bad invite address before sending, then sends commas-separated addresses and closes', async () => {
+  server.cloud = false
+  await mount(false, undefined, false)
+  await click('Invite users')
+  const box = () => document.querySelector<HTMLTextAreaElement>('[role="dialog"] textarea')
+  await vi.waitFor(() => expect(box()).not.toBeNull())
+  const type = (value: string) => {
+    const textarea = box()!
+    textarea.value = value
+    textarea.dispatchEvent(new Event('input'))
+  }
+
+  type('new@example.com, dana.whitfield@')
+  await click('Send invitations')
+  await vi.waitFor(() =>
+    expect(document.body.textContent).toContain(
+      '"dana.whitfield@" doesn\'t look like a valid email address.',
+    ),
+  )
+  expect(server.writes).toEqual([])
+
+  type('new@example.com,\nother@example.com')
+  await click('Send invitations')
+  await vi.waitFor(() => expect(box()).toBeNull())
+  expect(server.writes).toEqual([
+    { path: '/api/suite/invitations', body: { emails: 'new@example.com, other@example.com' } },
+  ])
+})

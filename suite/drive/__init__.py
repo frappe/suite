@@ -201,17 +201,29 @@ def set_user_active(user: str, *, active: bool) -> str:
     return transition(user, active=active)
 
 
-def preview_user_transfer(user: str, destination: str) -> dict:
+def list_shared_drives() -> list[dict]:
+    """List active Shared Drives for site administration."""
+    from suite.suite_core.administration import require_admin
+
+    require_admin()
+    from suite.drive._core.offboarding import shared_drives
+
+    return shared_drives()
+
+
+def preview_user_transfer(user: str, to_user: str | None = None, to_drive: str | None = None) -> dict:
     """Preview retained bytes and destination inheritance without exposing content bodies."""
     from suite.suite_core.administration import require_admin
 
     require_admin()
     from suite.drive._core.offboarding import preview
 
-    return preview(user, destination, _principals())
+    return preview(user, to_user, to_drive, _principals())
 
 
-def transfer_user_drive(user: str, destination: str, fingerprint: str, *, confirm_access: bool) -> dict:
+def transfer_user_drive(
+    user: str, to_user: str | None, to_drive: str | None, fingerprint: str, *, confirm_access: bool
+) -> dict:
     """Move up to fifty retained top-level subtrees and report per-item outcomes.
 
     The caller's transaction commits successful items. Failures roll back only
@@ -223,7 +235,7 @@ def transfer_user_drive(user: str, destination: str, fingerprint: str, *, confir
     require_admin()
     from suite.drive._core.offboarding import transfer
 
-    return transfer(user, destination, fingerprint, _principals(), confirm_access=confirm_access)
+    return transfer(user, to_user, to_drive, fingerprint, _principals(), confirm_access=confirm_access)
 
 
 from collections.abc import Iterable
@@ -660,6 +672,7 @@ __all__ = (
     "import_document",
     "install_threads",
     "legacy_node",
+    "list_shared_drives",
     "list_versions",
     "node_field",
     "node_owner",

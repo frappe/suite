@@ -30,6 +30,7 @@ it('confirms only successful writes and reports a handled refusal once', async (
     type: 'PermissionError',
     message: 'Permission denied',
     status: 403,
+    fromServer: true,
   })
   reportMutationError(refusal)
   await raisePromiseToast(() => Promise.reject(refusal), 'Archiving', 'Archived')

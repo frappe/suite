@@ -749,7 +749,7 @@ const addMediaElement = async (file, type, targetSlide, localFile) => {
   // a co-editor may have deleted that slide while the upload ran
   if (isLive() && !slides.value.includes(targetSlide)) {
     targetSlide = currentSlide.value
-    toast.info(__('The slide this was added to was deleted, so it is on this slide'))
+    toast.info(__('Its slide was deleted, so it was added here'))
   }
 
   const slideIdx = slides.value.indexOf(targetSlide)

@@ -489,6 +489,51 @@
       "bytes": false
     },
     {
+      "id": "shared_drives_list",
+      "kind": "query",
+      "publicName": "admin.sharedDrives.list",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "admin/shared-drives",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "$defs": {
+          "SharedDrive": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "title"
+            ],
+            "title": "SharedDrive",
+            "type": "object"
+          }
+        },
+        "items": {
+          "$ref": "#/$defs/SharedDrive"
+        },
+        "type": "array"
+      },
+      "errors": [
+        "PermissionError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
       "id": "user_transfer_preview",
       "kind": "query",
       "publicName": "users.previewTransfer",
@@ -505,14 +550,33 @@
             "title": "User",
             "type": "string"
           },
-          "destination": {
-            "title": "Destination",
-            "type": "string"
+          "to_user": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To User"
+          },
+          "to_drive": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Drive"
           }
         },
         "required": [
           "user",
-          "destination"
+          "to_user",
+          "to_drive"
         ],
         "title": "PreviewInput",
         "type": "object"
@@ -667,6 +731,14 @@
             ],
             "title": "Destination User"
           },
+          "folder_title": {
+            "title": "Folder Title",
+            "type": "string"
+          },
+          "destination_title": {
+            "title": "Destination Title",
+            "type": "string"
+          },
           "bytes": {
             "title": "Bytes",
             "type": "integer"
@@ -692,6 +764,8 @@
           "source_root",
           "destination",
           "destination_user",
+          "folder_title",
+          "destination_title",
           "bytes",
           "item_count",
           "fingerprint",
@@ -730,9 +804,27 @@
             "title": "User",
             "type": "string"
           },
-          "destination": {
-            "title": "Destination",
-            "type": "string"
+          "to_user": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To User"
+          },
+          "to_drive": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Drive"
           },
           "fingerprint": {
             "title": "Fingerprint",
@@ -745,7 +837,8 @@
         },
         "required": [
           "user",
-          "destination",
+          "to_user",
+          "to_drive",
           "fingerprint",
           "confirm_access"
         ],
@@ -758,6 +851,10 @@
             "properties": {
               "node": {
                 "title": "Node",
+                "type": "string"
+              },
+              "title": {
+                "title": "Title",
                 "type": "string"
               },
               "success": {
@@ -778,6 +875,7 @@
             },
             "required": [
               "node",
+              "title",
               "success",
               "error"
             ],

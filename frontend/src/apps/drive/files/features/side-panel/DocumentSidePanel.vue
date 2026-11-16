@@ -8,7 +8,7 @@ import type { VersionRestored } from '@/platform/collab'
 import { restoredByOther } from '@/platform/collab/restoreNotices'
 
 import CommentList from './comments/CommentList.vue'
-import type { FileNoun, ThreadPlaces } from './comments/places'
+import type { CommentNoun, ThreadPlaces } from './comments/places'
 import type { DocumentComments } from './comments/useDocumentComments'
 import { useDocumentPanel } from './versions/useDocumentPanel'
 import VersionList from './versions/VersionList.vue'
@@ -31,7 +31,9 @@ const props = defineProps<{
   /** Saves the document's pending edits, throwing why it couldn't. */
   saveFirst: () => Promise<void>
   /** What the app calls the file, in the comment panel's messages. */
-  noun: FileNoun
+  noun: CommentNoun
+  /** The box's name for a draft on part of the document, when "on the text" doesn't fit. */
+  draftLabel?: string
 }>()
 
 const panel = defineModel<DocumentPanel | null>('panel', { required: true })
@@ -175,7 +177,10 @@ async function startDocumentComment() {
 // Someone else restored a version: the list reads again, and the person is told who and which
 async function tellRestoredByOther(restored: VersionRestored) {
   void loadVersions()
-  toast.info(await restoredByOther(restored, props.noun))
+  // The restore notices have no words for a spreadsheet
+  if (props.noun !== 'spreadsheet') {
+    toast.info(await restoredByOther(restored, props.noun))
+  }
 }
 
 defineExpose({
@@ -243,6 +248,7 @@ defineExpose({
             :actions="comments.actions"
             :drafts="comments.drafts"
             :noun
+            :draft-label
             @sent="emit('commentSent')"
           />
           <p v-else-if="lists.isLoading" class="px-2 text-sm text-ink-gray-5">

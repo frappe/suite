@@ -66,7 +66,7 @@ const { keepPageCopy, listCopies } = await import('@/apps/writer/recovery/copies
 
 afterEach(resetSurface)
 
-// Types a line the room has yet to send, shuts the write gate, and takes the file the toast's Download my changes saves
+// Types a line the room has yet to send, shuts the write gate, and takes the file the toast's Download saves
 async function downloadedChanges(afterClose: (root: Element) => unknown = () => {}, role = 30) {
   const room = liveRoom()
   room.status = { ...room.status, saveState: 'unsaved', unsentCount: 1 }
@@ -235,9 +235,7 @@ describe('Writer surface', () => {
     access.value = { role: 30 }
 
     await vi.waitFor(() => expect(warning).toHaveBeenCalled())
-    expect(warning.mock.calls).toEqual([
-      ['Editing access changed. This document is now read-only.'],
-    ])
+    expect(warning.mock.calls).toEqual([['This document is now view only']])
   })
 
   it('still shows the read-only notice when the room fails to settle the lost access', async () => {
@@ -251,9 +249,7 @@ describe('Writer surface', () => {
     access.value = { role: 30 }
 
     await vi.waitFor(() => expect(warning).toHaveBeenCalled())
-    expect(warning.mock.calls).toEqual([
-      ['Editing access changed. This document is now read-only.'],
-    ])
+    expect(warning.mock.calls).toEqual([['This document is now view only']])
   })
 
   it('gives the room editing back and shows no notice when access returns before the room settles', async () => {

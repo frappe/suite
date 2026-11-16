@@ -120,6 +120,11 @@ export { formatBytes as formatDriveBytes } from '@/apps/drive/files/internal/for
 
 /** A document type's icon and its ink, as Drive's listings draw it. */
 export { documentIcon as driveDocumentIcon } from '@/apps/drive/files/internal/icons'
+/** A node's icon and its ink, from its kind, title, mime and document type. */
+export {
+  nodeIcon as driveNodeIcon,
+  nodeIconTint as driveNodeIconTint,
+} from '@/apps/drive/files/internal/icons'
 
 export type { DriveNotification } from '@/apps/drive/client/notifications'
 export { DRIVE_ROLES } from '@/apps/drive/client/types'
@@ -444,8 +449,6 @@ export {
  * viewed version and does the restore and download itself.
  */
 export { default as DriveDocumentSidePanel } from '@/apps/drive/files/features/side-panel/DocumentSidePanel.vue'
-/** The comment threads alone, for an app that lays out its own side panel. */
-export { default as DriveCommentList } from '@/apps/drive/files/features/side-panel/comments/CommentList.vue'
 /** The line over a version shown in the document's place, with Restore and Back to current. */
 export { default as DriveVersionShownBar } from '@/apps/drive/files/features/side-panel/versions/VersionShownBar.vue'
 /** A line across the document under its header, with its actions at the right edge. */
