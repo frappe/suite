@@ -106,17 +106,15 @@ const alerts = computed(() => {
           :style="{ width: `${((segment.value ?? 0) / scale) * 100}%` }"
         />
       </div>
-      <ul class="grid grid-cols-2 gap-x-6 gap-y-4 pt-2 sm:flex sm:flex-wrap sm:gap-x-10">
+      <ul class="flex flex-wrap gap-x-5 gap-y-2">
         <li
           v-for="segment in segments"
           :key="segment.label"
-          class="grid grid-cols-[auto_1fr] items-center gap-x-2 gap-y-1 text-sm text-ink-gray-6"
+          class="flex items-center gap-1.5 text-p-sm text-ink-gray-6"
         >
           <span :class="segment.tone" class="size-2 shrink-0 rounded-full" aria-hidden="true" />
           {{ segment.label }}
-          <span class="col-start-2 text-base font-medium tabular-nums text-ink-gray-8">{{
-            bytes(segment.value)
-          }}</span>
+          <span class="font-medium tabular-nums text-ink-gray-8">{{ bytes(segment.value) }}</span>
         </li>
       </ul>
     </div>
