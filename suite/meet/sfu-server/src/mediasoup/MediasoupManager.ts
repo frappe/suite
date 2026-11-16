@@ -187,8 +187,6 @@ export class MediasoupManager {
 				({ score }) => Number.isFinite(score) && score >= 0 && score <= 10,
 			);
 			if (encodings.length === 0) continue;
-			// Simulcast layers the sender deliberately stops score 0; averaging them
-			// would flag a healthy uplink. The best live layer reflects the path.
 			scores.push(Math.max(...encodings.map(({ score }) => score)));
 		}
 		// A muted/idle peer has no current measurement. Let subscribers expire its

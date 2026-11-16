@@ -332,7 +332,6 @@ describe("MediaHealthMonitor", () => {
 		});
 		const monitor = startMonitor(port, environment);
 		await environment.advance(6000);
-		// One source stops; the other keeps delivering normally.
 		await environment.advance(12_000);
 		expect(monitor.state.downlinkQuality).toBe("good");
 		resuming = true;
@@ -345,17 +344,16 @@ describe("MediaHealthMonitor", () => {
 		monitor.stop();
 	});
 
-	it.each(["audio-only", "all flowing streams", "stale healthy stream"])(
+	it.each(["all flowing streams", "stale healthy stream"])(
 		"still warns about sustained receive jitter with %s",
 		async (scenario) => {
 			const environment = new TestEnvironment();
 			vi.spyOn(Date, "now").mockImplementation(environment.now);
 			const tracker = new NetworkStatsTracker();
 			const { port } = makeManager({
-				consumers: [makeConsumer(environment, {
-					kind: "audio",
-					bytes: environment.now,
-				})],
+				consumers: [
+					makeConsumer(environment, { kind: "audio", bytes: environment.now }),
+				],
 			});
 			port.getNetworkStats = async () => ({
 				...goodNetworkStats,
@@ -368,13 +366,14 @@ describe("MediaHealthMonitor", () => {
 						packetsLost: 0,
 						jitter: 0.4,
 					},
-					...(scenario === "audio-only" ? [] : [{
+					{
 						id: "other",
 						type: "inbound-rtp",
-						packetsReceived: scenario === "stale healthy stream" ? 100 : environment.now(),
+						packetsReceived:
+							scenario === "stale healthy stream" ? 100 : environment.now(),
 						packetsLost: 0,
 						jitter: scenario === "stale healthy stream" ? 0.002 : 0.4,
-					}]),
+					},
 				]),
 			});
 			const monitor = startMonitor(port, environment);

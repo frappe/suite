@@ -451,8 +451,6 @@ export class MediaHealthMonitor {
 				if (quality === "unknown" && bytes > 0) quality = "good";
 			}
 		}
-		// Media still arriving from another sender proves the local downlink works;
-		// a single frozen stream then belongs to its sender, not to this network.
 		if (stallQuality && !flowing)
 			quality =
 				stallQuality === "critical" || quality === "critical"
