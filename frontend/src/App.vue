@@ -5,6 +5,9 @@
       <template #bell>
         <NotificationsBell />
       </template>
+      <template #bell-tab>
+        <NotificationsTab />
+      </template>
     </ShellLayout>
     <DriveUploadTracker v-if="areaWork.showUploadTracker.value" />
   </FeedbackProvider>
@@ -27,6 +30,9 @@ const FeedbackProvider = defineAsyncComponent(() =>
 const ShellLayout = defineAsyncComponent(() => import('@/shell/ShellLayout.vue'))
 const NotificationsBell = defineAsyncComponent(
   () => import('@/composition/notifications/NotificationsBell.vue'),
+)
+const NotificationsTab = defineAsyncComponent(
+  () => import('@/composition/notifications/NotificationsTab.vue'),
 )
 const registry = useAppRegistry()
 const route = useRoute()
