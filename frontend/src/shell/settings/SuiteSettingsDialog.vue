@@ -157,6 +157,15 @@ watch(
   { immediate: true },
 )
 
+// A section left unanswered must not open on a later visit to its tab
+function dropSectionOfAnotherTab(tab: string | undefined) {
+  if (settingsSection.value && !settingsSection.value.startsWith(`${tab}.`)) {
+    settingsSection.value = undefined
+  }
+}
+
+watch(activeTab, dropSectionOfAnotherTab)
+
 const query = ref('')
 const found = computed(() => searchSettings(groups.value ?? [], query.value))
 const isNothingFound = computed(() => !!query.value.trim() && found.value.length === 0)
