@@ -458,6 +458,7 @@ async function restoreShownVersion(shown: DocumentVersion, images: MissingImage[
     const notice = await restoreBody(shown)
     if (notice.canDownload) {
       toast.error(notice.message, {
+        description: notice.detail,
         action: { label: __('Download'), onClick: () => void downloadVersion(shown) },
       })
       return

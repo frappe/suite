@@ -1110,13 +1110,15 @@ describe('a deck on the content layer', () => {
         vi.mocked(dialog.confirm).mock.lastCall,
       )
       await asked.onConfirm()
-      const message =
-        "This version couldn't be upgraded, so it can't be restored. You can download it. Reason: some of its content can't be upgraded."
+      const message = "This version can't be restored"
       const [, options] = fromAny<
-        [string, { action: { label: string; onClick: () => void } }],
+        [string, { description: string; action: { label: string; onClick: () => void } }],
         unknown
       >(vi.mocked(toast.error).mock.calls.find(([text]) => text === message))
-      expect(options.action.label).toBe('Download')
+      expect([options.description, options.action.label]).toEqual([
+        "Reason: some of its content can't be upgraded.",
+        'Download',
+      ])
       options.action.onClick()
     }
 

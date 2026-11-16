@@ -586,6 +586,7 @@ function tellNotRestored(version: DocumentVersion, bytes: Uint8Array, refused: R
   }
 
   toast.error(refused.message, {
+    description: refused.detail,
     action: { label: __('Download'), onClick: () => void downloadVersion(version, bytes) },
   })
 }
