@@ -70,10 +70,10 @@
           <h2 class="text-ink-gray-9 mr-auto truncate !text-base font-medium">
             {{ title }}
           </h2>
-          <!-- Folded away, the bar is all there is of the window, so it says how the draft stands
-               wherever the state otherwise sits. -->
+          <!-- The title bar has room to spare, so the bottom bar keeps every button; and folded
+               away, the bar is all there is of the window. -->
           <ComposeSaveState
-            v-if="editor?.saveState && (minimised || draftSavePlacement === 'title')"
+            v-if="editor?.saveState"
             :state="editor.saveState"
             class="mr-1 shrink-0"
             @retry="editor.retrySave()"
@@ -139,7 +139,6 @@ import ComposeSaveState from '@/apps/mail/components/ComposeSaveState.vue'
 import { claimComposeWindow } from '@/apps/mail/composables/useComposeWindow'
 import type { ComposeMailData } from '@/apps/mail/types'
 import { provideAccountScope } from '@/apps/mail/utils/accountScope'
-import { draftSavePlacement } from '@/apps/mail/utils/draftSavePlacement'
 
 const show = defineModel<boolean>()
 

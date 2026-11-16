@@ -8,21 +8,11 @@
   </component>
   <ShortcutsModal v-model:open="showShortcuts" />
   <OldMailDialog v-if="!mailServerUnavailable" />
-  <ComposeSaveTweak v-if="ComposeSaveTweak" />
 </template>
 
 <script setup lang="ts">
 import { providePortalTarget } from 'frappe-ui'
-import {
-  computed,
-  defineAsyncComponent,
-  nextTick,
-  onMounted,
-  onScopeDispose,
-  onUnmounted,
-  provide,
-  watch,
-} from 'vue'
+import { computed, nextTick, onMounted, onScopeDispose, onUnmounted, provide, watch } from 'vue'
 import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 
 import DefaultLayout from '@/apps/mail/components/DefaultLayout.vue'
@@ -71,11 +61,6 @@ import { useRootStore } from '@/stores/root'
 const { userResource, mailboxIds, accountId } = userStore()
 const { isMobile } = useScreenSize()
 const { requestCompose } = useComposeMail()
-// Dev only, and left out of a production build: the condition is replaced at build time, taking the
-// import with it.
-const ComposeSaveTweak = import.meta.env.DEV
-  ? defineAsyncComponent(() => import('@/apps/mail/components/ComposeSaveTweak.vue'))
-  : null
 const router = useRouter()
 const route = useRoute()
 

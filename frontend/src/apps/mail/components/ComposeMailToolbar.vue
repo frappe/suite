@@ -40,13 +40,6 @@
         </Dropdown>
       </div>
 
-      <ComposeSaveState
-        v-if="saveState && draftSavePlacement === 'send'"
-        :state="saveState"
-        class="shrink-[100]"
-        @retry="emit('retrySave')"
-      />
-
       <template v-if="!isMobile">
         <ComposeReminderButton
           :remind-at
@@ -77,12 +70,13 @@
         <input ref="fileInput" type="file" class="hidden" multiple @change="onFilesSelected" />
       </div>
 
-      <!-- Stays until a save lands, so a refused save cannot pass for a kept draft. Next to
+      <!-- A reply in a thread has no title bar to say how the draft stands, so it says it here.
+           Stays until a save lands, so a refused save cannot pass for a kept draft. Next to
            Discard, the one other thing on the bar that is about the draft rather than its text.
            Short of room, it wraps before the editor buttons scroll out of sight: a failing save is
            no time to lose Attach. -->
       <ComposeSaveState
-        v-if="saveState && (draftSavePlacement === 'toolbar' || inThread)"
+        v-if="saveState && inThread"
         :state="saveState"
         class="ml-auto shrink-[100]"
         @retry="emit('retrySave')"
@@ -91,7 +85,7 @@
         v-if="!isMobile"
         variant="ghost"
         class="shrink-0"
-        :class="{ 'ml-auto': draftSavePlacement !== 'toolbar' && !inThread }"
+        :class="{ 'ml-auto': !inThread }"
         :aria-label="__('Discard')"
         :tooltip="__('Discard ({0}+D)', [modifier])"
         @click="emit('discardMail')"
@@ -112,7 +106,6 @@ import ComposeSaveState from '@/apps/mail/components/ComposeSaveState.vue'
 import EmojiPicker from '@/apps/mail/components/EmojiPicker.vue'
 import { isMac } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
-import { draftSavePlacement } from '@/apps/mail/utils/draftSavePlacement'
 import { useEditorMenu } from '@/apps/mail/utils/editorMenu'
 
 const { isRecipientsEmpty, isUploading, isSending, saveState, inThread, remindAt } = defineProps<{

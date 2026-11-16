@@ -35,18 +35,8 @@
         <h2 class="text-ink-gray-8 truncate text-base font-medium">
           {{ __('Compose Mail') }}
         </h2>
-        <ComposeSaveState
-          v-if="draftSavePlacement !== 'send'"
-          :state="saveState"
-          @retry="retrySave()"
-        />
+        <ComposeSaveState :state="saveState" @retry="retrySave()" />
       </div>
-      <ComposeSaveState
-        v-if="draftSavePlacement === 'send'"
-        :state="saveState"
-        class="shrink-0"
-        @retry="retrySave()"
-      />
       <!-- In the header, where it can always be reached: in the formatting row it only appeared once
            the body had the caret, so a mail that was nothing but an attachment had no way to it. -->
       <Button variant="ghost" :label="__('Attach files')" @click="fileInput?.click()">
@@ -322,7 +312,6 @@ import { takePendingCompose } from '@/apps/mail/composables/composeHandoff'
 import { useComposeMail } from '@/apps/mail/composables/useComposeMail'
 import type { Attachment, Identity } from '@/apps/mail/types'
 import { formatBytes, raiseToast } from '@/apps/mail/utils'
-import { draftSavePlacement } from '@/apps/mail/utils/draftSavePlacement'
 import { useEditorMenu } from '@/apps/mail/utils/editorMenu'
 import { uploadFunction } from '@/apps/mail/utils/text-editor'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
