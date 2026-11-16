@@ -161,8 +161,8 @@ export const filesArea: AreaDefinition = {
 
 /** Drive's Settings group. Loads when Settings opens. */
 export const loadDriveSettings = () =>
-  import('@/apps/drive/files/features/settings/settingsGroup').then((module) =>
-    module.driveSettings(),
+  import('@/apps/drive/files/features/settings/settingsGroup').then(
+    (module) => module.driveSettings,
   )
 
 export interface DriveDocumentCreation {

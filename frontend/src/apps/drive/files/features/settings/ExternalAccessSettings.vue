@@ -1,13 +1,15 @@
 <!--
-  WebDAV access to Drive. A Drive admin turns it on for the site. Each user
-  then turns it on for their own files and reads the connection details.
+  WebDAV access to Drive, the last part of Drive's Storage page. A Drive admin
+  turns it on for the site. Each user then turns it on for their own files and
+  reads the connection details.
 -->
 <template>
-  <SettingsPage
-    :title="__('External access')"
-    :description="__('Connect Drive to desktop, mobile, and other file apps')"
-  >
-    <div class="flex flex-col gap-6">
+  <!-- The route answers `{}` when WebDAV is off and the caller is no admin: nothing to show. -->
+  <SettingsSection v-if="isOffered" :title="__('External access')">
+    <p class="text-base text-ink-gray-6">
+      {{ __('Connect Drive to desktop, mobile, and other file apps') }}
+    </p>
+    <div class="mt-4 flex flex-col gap-6">
       <SettingsRow
         v-if="answer.is_admin"
         :title="__('Enable WebDAV')"
@@ -95,7 +97,7 @@
         <CopyField v-if="keys" :label="__('API secret')" :value="keys.api_secret" />
       </div>
     </Dialog>
-  </SettingsPage>
+  </SettingsSection>
 </template>
 
 <script setup lang="ts">
@@ -104,15 +106,16 @@ import { computed, ref, watch } from 'vue'
 
 import { api, useMutation, useQuery } from '@/api'
 import type { WebdavGetOutput } from '@/apps/drive/client/generated'
+import SettingsSection from '@/platform/settings/SettingsSection.vue'
 import { translate as __ } from '@/platform/translation'
 
 import { locationLabel } from '../../internal/locations'
 import CopyField from './CopyField.vue'
-import SettingsPage from './SettingsPage.vue'
 
 type Connection = Extract<WebdavGetOutput, { server_url: string }>
 
 const webdavAnswer = useQuery(api.drive.webdav.get, {})
+const isOffered = computed(() => Object.keys(webdavAnswer.data ?? {}).length > 0)
 const answer = computed<Partial<Connection>>(() => webdavAnswer.data ?? {})
 const connection = computed(() => {
   const data = webdavAnswer.data
