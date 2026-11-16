@@ -259,27 +259,24 @@
       </p>
     </div>
 
-    <Dialog v-model:open="inviting" :title="__('Invite users')" :dismissible="!invite.isPending">
+    <Dialog v-model:open="inviting" :title="__('Invite users')" :dismissible="!inviteStep?.loading">
       <template #default>
-        <div class="space-y-4">
-          <FormControl
-            v-model="emails"
-            type="textarea"
-            :label="__('Email addresses')"
-            :placeholder="__('one address per line')"
-          />
-          <ErrorMessage :message="inviteError" />
-        </div>
+        <InviteStep
+          ref="inviteStep"
+          :description="__('Separate multiple email addresses with commas or new lines')"
+          autofocus
+          @sent="onInvitesSent"
+        />
       </template>
       <template #actions>
         <div class="flex justify-end gap-2">
-          <Button :label="__('Cancel')" :disabled="invite.isPending" @click="inviting = false" />
+          <Button :label="__('Cancel')" :disabled="inviteStep?.loading" @click="inviting = false" />
           <Button
             variant="solid"
             :label="__('Send invitations')"
-            :loading="invite.isPending"
-            :disabled="!emails.trim()"
-            @click="sendInvites"
+            :loading="inviteStep?.loading"
+            :disabled="!inviteStep?.canSubmit"
+            @click="inviteStep?.submit()"
           />
         </div>
       </template>
@@ -553,10 +550,11 @@ import {
   ErrorMessage,
   FormControl,
   Skeleton,
+  toast,
   Tooltip,
 } from 'frappe-ui'
 import { List, ListCell, ListHeader, ListHeaderCell, ListRow, ListRows } from 'frappe-ui/list'
-import { computed, defineAsyncComponent, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, ref, useTemplateRef, watch } from 'vue'
 
 import { api, client, useMutation, useQuery, type OutputOf } from '@/api'
 import { loadStorageLimitDialog } from '@/apps/mail'
@@ -566,6 +564,7 @@ import { LoadFailed } from '@/platform/load-failed'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 import { TransportError } from '@/platform/transport'
+import InviteStep from '@/shell/InviteStep.vue'
 
 import { formatStorage } from './storageFormat'
 import StorageUsage from './StorageUsage.vue'
@@ -588,13 +587,6 @@ const SKELETON_ROWS = Array.from({ length: 8 }, (_, index) => ({ name: `skeleton
 const storage = useQuery(api.suite.storage.get)
 // Every user change runs inside a dialog that shows its own error, so none of them also toasts.
 const change = useMutation(api.suite.users.update, { silent: true })
-const invite = useMutation(api.suite.invitations.create, { silent: true })
-const inviteError = computed(() => {
-  const error = invite.error
-  if (error instanceof TransportError && error.type === 'OutgoingEmailError')
-    return __('Outgoing email is not set up. Ask your system administrator to set it up.')
-  return error?.message ?? ''
-})
 const search = ref('')
 const roleFilter = ref('all')
 const statusFilter = ref('all')
@@ -672,10 +664,10 @@ function setupNote(user: User): string | undefined {
 
 // — invite —
 const inviting = ref(false)
-const emails = ref('')
-async function sendInvites() {
-  await invite.run({ emails: emails.value })
+const inviteStep = useTemplateRef<InstanceType<typeof InviteStep>>('inviteStep')
+function onInvitesSent(summary: string) {
   inviting.value = false
+  toast.success(summary)
 }
 
 // — profile —

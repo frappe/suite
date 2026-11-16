@@ -232,7 +232,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { formerly: ["bulkRefused"], description: "Both users disabled: one line per user says Disabled, and only Close is left." },
 		},
 		invite: {
-			meta: { description: "Invite users: one address per line, and Send invitations off until something is typed." },
+			meta: { description: "Invite users: the same box as setup, taking addresses separated by commas or new lines, and Send invitations off until a valid address is typed." },
 			on: { TYPE_EMAILS: "inviteFilled", SEND_INVALID: "inviteFailed" },
 		},
 		inviteFilled: {
@@ -243,14 +243,14 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "Send pressed and the invitation still out: the button spins and Cancel is off." },
 		},
 		inviteFailed: {
-			meta: { description: "An address that is not valid: the server's message shows under the field and the dialog stays open." },
+			meta: { description: "One address that is not valid among good ones: the box names it under the field before anything is sent, and the dialog stays open." },
 		},
 		inviteRefused: {
-			meta: { description: "A valid address, but the site has no outgoing email account: Frappe's admin message, “Please setup default outgoing Email Account from Tools > Email Account”, shows under the field. It points to Desk, which a Suite Admin may not have." },
+			meta: { description: "A valid address, but the site has no outgoing email account: “Outgoing email is not set up. Ask your system administrator to set it up.” shows under the field." },
 		},
 		inviteSent: {
 			meta: {
-				description: "The dialog closes on success. Unreachable here: the demo site has no outgoing email account, so every invitation is refused. Without Suite Cloud nothing on the page would list the pending invitation either.",
+				description: "The dialog closes on success and a toast says how many invites go out. Unreachable here: the demo site has no outgoing email account, so every invitation is refused. Without Suite Cloud nothing on the page would list the pending invitation either.",
 				transient: true,
 			},
 		},
@@ -638,7 +638,7 @@ export const admin = defineFlow<Event, BaseScene>({
 		},
 		async TYPE_EMAILS(scene) {
 			const dialog = scene.dialog("Invite users");
-			await dialog.getByLabel("Email addresses").fill(inviteAddress(scene));
+			await dialog.getByRole("textbox").fill(inviteAddress(scene));
 			await expect(dialog.getByRole("button", { name: "Send invitations" })).toBeEnabled();
 		},
 		async SEND_SLOW(scene) {
@@ -650,14 +650,14 @@ export const admin = defineFlow<Event, BaseScene>({
 		},
 		async SEND_INVALID(scene) {
 			const dialog = scene.dialog("Invite users");
-			await dialog.getByLabel("Email addresses").fill("dana.whitfield@");
+			await dialog.getByRole("textbox").fill(`${inviteAddress(scene)}, dana.whitfield@`);
 			await dialog.getByRole("button", { name: "Send invitations" }).click();
-			await expect(dialog.getByText(/not a valid Email Address/)).toBeVisible();
+			await expect(dialog.getByText("\"dana.whitfield@\" doesn't look like a valid email address.")).toBeVisible();
 		},
 		async SEND(scene) {
 			const dialog = scene.dialog("Invite users");
 			await dialog.getByRole("button", { name: "Send invitations" }).click();
-			await expect(dialog.getByText(/outgoing Email Account/)).toBeVisible();
+			await expect(dialog.getByText("Outgoing email is not set up.", { exact: false })).toBeVisible();
 		},
 		async STORAGE_SLOW(scene) {
 			await scene.hold(SUITE_STORAGE);

@@ -8,10 +8,12 @@ import { translationPlugin } from '@/platform/translation'
 import LocalUsersView from './LocalUsersView.vue'
 
 vi.mock('frappe-ui', async () => ({
+  PageHeader: { template: '<header><slot /></header>' },
   toast: { error: vi.fn(), success: vi.fn() },
   FrappeUIProvider: { template: '<slot />' },
   ...(await import('../../../../node_modules/frappe-ui/src/components/Avatar')),
   ...(await import('../../../../node_modules/frappe-ui/src/components/Badge')),
+  ...(await import('../../../../node_modules/frappe-ui/src/components/Breadcrumbs')),
   ...(await import('../../../../node_modules/frappe-ui/src/components/Button')),
   ...(await import('../../../../node_modules/frappe-ui/src/components/Dialog')),
   ...(await import('../../../../node_modules/frappe-ui/src/components/Dropdown')),
@@ -22,6 +24,7 @@ vi.mock('frappe-ui', async () => ({
   ...(await import('../../../../node_modules/frappe-ui/src/components/TextInput')),
   ...(await import('../../../../node_modules/frappe-ui/src/components/Tooltip')),
 }))
+vi.mock('@/platform/area-sidebar', () => ({ openAreaSidebar: vi.fn() }))
 
 const server = vi.hoisted(() => {
   type AdminServerState = {
@@ -29,6 +32,7 @@ const server = vi.hoisted(() => {
     account: string
     writes: unknown[]
     bulk: boolean
+    cloud: boolean
     failLeah: boolean
     blocker: 'personal_limit' | 'unknown_usage' | 'drive_limit' | null
   }
@@ -37,6 +41,7 @@ const server = vi.hoisted(() => {
     account: 'leah@example.com',
     writes: [],
     bulk: false,
+    cloud: true,
     failLeah: true,
     blocker: null,
   }
@@ -67,6 +72,13 @@ const server = vi.hoisted(() => {
             }
           : write,
       )
+      if (path === '/api/suite/invitations')
+        return json({
+          disabled_user_emails: [],
+          accepted_invite_emails: [],
+          pending_invite_emails: [],
+          invited_emails: write.body.emails.split(', '),
+        })
       if (path.endsWith('/drive-transfer'))
         return json({
           complete: false,
@@ -142,7 +154,7 @@ const server = vi.hoisted(() => {
       ])
     if (path === '/api/suite/storage')
       return json({
-        cloud: true,
+        cloud: state.cloud,
         users: [],
         roots: [],
         drive_bytes: 0,
@@ -170,6 +182,7 @@ beforeEach(() => {
   server.account = 'leah@example.com'
   server.writes = []
   server.bulk = false
+  server.cloud = true
   server.failLeah = true
   server.blocker = null
 })
@@ -177,12 +190,12 @@ afterEach(() => {
   app?.unmount()
   document.body.innerHTML = ''
 })
-async function mount(openActions = true, initialTransferUser?: string) {
+async function mount(openActions = true, initialTransferUser?: string, embedded = true) {
   await client.query(api.suite.users.list)
   await client.query(api.suite.storage.get)
   const element = document.createElement('div')
   document.body.append(element)
-  app = createApp(LocalUsersView, { embedded: true, initialTransferUser })
+  app = createApp(LocalUsersView, { embedded, initialTransferUser })
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -369,3 +382,32 @@ it.each(['personal_limit', 'unknown_usage', 'drive_limit'] as const)(
     expect(server.writes).toHaveLength(0)
   },
 )
+
+it('catches a bad invite address before sending, then sends commas-separated addresses and closes', async () => {
+  server.cloud = false
+  await mount(false, undefined, false)
+  await click('Invite users')
+  const box = () => document.querySelector<HTMLTextAreaElement>('[role="dialog"] textarea')
+  await vi.waitFor(() => expect(box()).not.toBeNull())
+  const type = (value: string) => {
+    const textarea = box()!
+    textarea.value = value
+    textarea.dispatchEvent(new Event('input'))
+  }
+
+  type('new@example.com, dana.whitfield@')
+  await click('Send invitations')
+  await vi.waitFor(() =>
+    expect(document.body.textContent).toContain(
+      '"dana.whitfield@" doesn\'t look like a valid email address.',
+    ),
+  )
+  expect(server.writes).toEqual([])
+
+  type('new@example.com,\nother@example.com')
+  await click('Send invitations')
+  await vi.waitFor(() => expect(box()).toBeNull())
+  expect(server.writes).toEqual([
+    { path: '/api/suite/invitations', body: { emails: 'new@example.com, other@example.com' } },
+  ])
+})
