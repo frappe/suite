@@ -645,6 +645,9 @@ class LegacyTree(Protocol):
     def people(self) -> dict[str, tuple[str, ...]]:
         """Every `User` but Administrator and Guest, with their `User Group` names."""
 
+    def suite_admins(self) -> set[str]:
+        """Every `User` holding Suite Admin. Legacy gave them every right everywhere."""
+
 
 class DriveTarget(Protocol):
     """Everything Build writes into Drive's own tables.
@@ -1398,6 +1401,11 @@ class SiteTree:
         for row in frappe.get_all("User Group Member", fields=["parent", "user"]):
             groups.setdefault(row.user, []).append(row.parent)
         return {user: tuple(sorted(groups.get(user, ()))) for user in users}
+
+    def suite_admins(self) -> set[str]:
+        return set(
+            frappe.get_all("Has Role", filters={"role": "Suite Admin", "parenttype": "User"}, pluck="parent")
+        )
 
     def _clauses(self) -> list:
         """The narrowing filter as `frappe.get_all` takes it."""

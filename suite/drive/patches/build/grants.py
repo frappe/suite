@@ -36,10 +36,12 @@ the same commit as the grant it produced. `LegacyTree` is still reads only;
 the delete goes through `DriveTarget`.
 """
 
+from collections import Counter
+
 from suite.drive._core.access import chain_ids
 from suite.drive._core.roles import EDIT, NONE, READ
 from suite.drive.patches.build.environment import BUILD_BATCH_SIZE, BuildEnvironment
-from suite.drive.patches.build.kept_rights import LegacyRights, rights_to_keep
+from suite.drive.patches.build.kept_rights import PERSON, PIN, RAISE, LegacyRights, rights_to_keep
 from suite.drive.patches.build.mapping import (
     ANONYMOUS,
     GENERAL,
@@ -58,7 +60,7 @@ from suite.drive.patches.build.mapping import (
 )
 from suite.drive.patches.build.ports import ACTIVE
 from suite.drive.patches.build.root_pairs import PERSONAL, SHARED
-from suite.drive.patches.build.state import GrantConversion
+from suite.drive.patches.build.state import GrantConversion, KeptRightsPlan
 
 # §14.5's drop reasons, which are also §14.9's report keys.
 DEAD_PRINCIPAL = "dead_principal"
@@ -166,11 +168,10 @@ def _convert_pair(env, grants: GrantConversion, nodes, batch, pair) -> None:
 
     kind = principal_kind(user)
     if kind == "anonymous":
-        if role == NONE:
-            # Legacy let a public deny take a right away from everyone, so
-            # the kept-rights pass has to see it. A public grant it does not
-            # see: §14.5 narrows that to `$PUBLIC` READ plus a link.
-            nodes.legacy.add_row(node["name"], ANONYMOUS, flags)
+        # Legacy let a public deny take a right away from everyone, so the
+        # kept-rights pass has to see it. A public grant it does not see:
+        # §14.5 narrows that to `$PUBLIC` READ plus a link.
+        _record_legacy(nodes, node, ANONYMOUS, [row for row in rows if row.deny])
         _convert_anonymous(env, grants, nodes, batch, node, role)
         return
 
@@ -184,8 +185,19 @@ def _convert_pair(env, grants: GrantConversion, nodes, batch, pair) -> None:
         # meant much: Drive's own read path let the owner in regardless.
         grants.drop(ROOT_GUARDRAIL)
         return
-    nodes.legacy.add_row(node["name"], principal, flags)
+    _record_legacy(nodes, node, principal, rows)
     batch.add(node["name"], principal, role)
+
+
+def _record_legacy(nodes, node, principal: str, rows) -> None:
+    """Hand the kept-rights pass each source row, uncollapsed.
+
+    Legacy read duplicate rows one by one, so a grant row beside a deny row
+    still gave the flags the deny did not set. The collapse above follows
+    the dedupe patch instead, which keeps the deny alone.
+    """
+    for row in rows:
+        nodes.legacy.add_row(node["name"], principal, row.flags())
 
 
 def _convert_anonymous(env, grants: GrantConversion, nodes, batch, node, role: int) -> None:
@@ -479,22 +491,39 @@ def is_presentation_media(nodes: _NodeFacts, row: dict) -> bool:
 
 
 def _keep_legacy_rights(env, grants: GrantConversion, nodes, batch, batch_size: int) -> None:
-    """§14.5: nobody ends with less than legacy gave them, on any item.
+    """§14.5 Kept rights: nobody ends with less than legacy gave them, or with more from this pass.
 
     Legacy merged each right from the nearest row that set it, so upload
     from a far folder survived a nearer comment row, and a group's edit on a
     folder survived the person's own comment row there. The engine lets the
     nearest grant decide the whole role, which loses both (`kept_rights`).
-    This pass runs last, over every grant the steps above wrote. It raises a
-    group or `$GENERAL` grant where everyone it decides had more, and gives
-    a person their own grant where they still have less.
+    This pass runs last, over every grant the steps above wrote.
 
-    The Sheet `DocShare` rows are read back from the journal: by now every
-    one is deleted, and on a rerun some were deleted by an earlier run. A
-    rerun finds every person at their legacy role and writes nothing, which
-    is why `legacy_rights_kept` is cumulative.
+    It decides once. The decision is read from the grants the steps above
+    stored, so it is saved, fsynced, before the first write, and every run
+    after that replays it: a run killed part way through its writes then
+    ends with exactly the grants an uninterrupted run writes. The writes
+    are idempotent, so a replay over grants already written changes
+    nothing.
     """
     batch.flush()
+    plan = env.state.kept_rights()
+    if plan is None:
+        plan = _plan_kept_rights(env, nodes, batch_size)
+        env.state.put_kept_rights(plan)
+    _write_kept_rights(env, grants, plan, batch_size)
+    grants.legacy_rights = dict(plan.counts)
+    env.state.put_grants(grants)
+
+
+def _plan_kept_rights(env, nodes, batch_size: int) -> KeptRightsPlan:
+    """Compare legacy with the engine on every node a legacy row names.
+
+    The Sheet `DocShare` rows are read back from the journal: by now every
+    one is deleted, and on a rerun some were deleted by an earlier run.
+    Media under a presentation is left out: it takes its rights from the
+    presentation (owner ruling, 2026-11-13), as in the creator pass.
+    """
     legacy = nodes.legacy
     for row in env.docshare_journal.restore_plan():
         if row.get("share_doctype") != "Sheet":
@@ -510,22 +539,57 @@ def _keep_legacy_rights(env, grants: GrantConversion, nodes, batch, batch_size: 
     rows: dict[str, dict] = {}
     for start in range(0, len(names), batch_size):
         rows.update(env.drive.nodes(tuple(names[start : start + batch_size])))
-    chain_nodes = sorted({name for row in rows.values() for name in chain_ids(row)})
+    media = set()
+    for start in range(0, len(names), batch_size):
+        media |= env.content.presentation_media(tuple(names[start : start + batch_size]))
+    compared = {
+        name: row for name, row in rows.items() if name not in media and not is_presentation_media(nodes, row)
+    }
+    chain_nodes = sorted({name for row in compared.values() for name in chain_ids(row)})
     stored: dict[str, list[tuple[str, int]]] = {}
     for start in range(0, len(chain_nodes), batch_size):
         stored.update(env.drive.grants_on(tuple(chain_nodes[start : start + batch_size])))
 
-    result = rights_to_keep(legacy, rows, stored, env.tree.people())
-    grants.legacy_rights_behind_deny = result.behind_deny
-    targets = tuple(sorted({right.node for right in result.rights}))
-    media = env.content.presentation_media(targets) if targets else set()
-    for right in result.rights:
-        # Media takes its rights from the presentation, as in the creator pass.
-        if right.node in media or is_presentation_media(nodes, rows[right.node]):
+    result = rights_to_keep(legacy, compared, stored, env.tree.people(), env.tree.suite_admins())
+    rights = result.rights
+    kinds = Counter(right.kind for right in rights)
+    counts = {
+        "kept": len(rights),
+        "group_raises": kinds[RAISE],
+        "person_grants": kinds[PERSON],
+        "pins": kinds[PIN],
+        "pins_refused": result.pins_refused,
+        "from_groups": result.from_groups,
+        "behind_deny": result.behind_deny,
+        "exceeded": result.exceeded,
+        "exceeded_by_public_deny": result.exceeded_by_public_deny,
+        "upload_added": result.upload_added,
+        "share_lost": result.share_lost,
+    }
+    return KeptRightsPlan([[right.node, right.principal, right.role] for right in rights], counts)
+
+
+def _write_kept_rights(env, grants: GrantConversion, plan: KeptRightsPlan, batch_size: int) -> None:
+    """Write the plan in one commit, merging with what is stored (§14.5)."""
+    targets = sorted({node for node, _principal, _role in plan.rights})
+    stored: dict[tuple[str, str], int] = {}
+    for start in range(0, len(targets), batch_size):
+        found = env.drive.grants_on(tuple(targets[start : start + batch_size]))
+        stored.update({(node, principal): role for node, held in found.items() for principal, role in held})
+    fresh = []
+    for node, principal, role in plan.rights:
+        key = (node, principal)
+        if key not in stored:
+            fresh.append(_grant_row(env, node, principal, role))
+            stored[key] = role
             continue
-        batch.add(right.node, right.principal, right.role)
-        grants.legacy_rights_kept += 1
-    batch.flush()
+        merged = merged_role(stored[key], role)
+        if merged != stored[key]:
+            env.drive.raise_grant(node, principal, merged)
+            stored[key] = merged
+    env.drive.insert_grants(fresh)
+    grants.grants_written += len(fresh)
+    env.drive.commit()
 
 
 # ---------------------------------------------------------------- node facts

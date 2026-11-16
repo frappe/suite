@@ -22,6 +22,9 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 STATE_FILENAME = "drive-build-state.json"
+# Beside the record, not in it: the plan names people and nodes, and the
+# report copies the grant record into its evidence.
+KEPT_RIGHTS_FILENAME = "drive-build-kept-rights.json"
 STATE_VERSION = 1
 
 CUMULATIVE_FIELDS = frozenset(
@@ -41,9 +44,6 @@ CUMULATIVE_FIELDS = frozenset(
         # either count would read zero after a resume.
         "creator_grants_minted",
         "creator_denies_overridden",
-        # A kept right is written once; the rerun finds the person at their
-        # legacy role and writes nothing.
-        "legacy_rights_kept",
         # Governed DocShare rows and content documents whose every File is
         # Removed are deleted once. A later pass cannot derive the deleted or
         # dropped totals from source rows that no longer exist.
@@ -290,6 +290,28 @@ class TreeConversion:
 # §14.9's `grant_rows_dropped`, spelled exactly as the report prints it.
 DROP_REASONS = ("dead_principal", "unmigrated_entity", "no_flags", "root_guardrail")
 
+# §14.5 Kept rights, in §14.9's `legacy_rights`. Writes: `kept` is the sum of
+# `group_raises`, `person_grants`, and `pins`; `from_groups` is the part of
+# `person_grants` a group or `$GENERAL` row gave. Findings, in person-item
+# pairs: `behind_deny` stays below legacy behind a deny, `exceeded` ends
+# above it (`exceeded_by_public_deny` of them because of a public deny),
+# `upload_added` gets upload from a `write` row, `share_lost` loses a
+# `share` granted without `write`, and `pins_refused` keeps a role a pin
+# would have denied inside the person's own Personal root.
+LEGACY_RIGHTS_COUNTS = (
+    "kept",
+    "group_raises",
+    "person_grants",
+    "pins",
+    "from_groups",
+    "behind_deny",
+    "exceeded",
+    "exceeded_by_public_deny",
+    "upload_added",
+    "share_lost",
+    "pins_refused",
+)
+
 
 def _blank_drops() -> dict:
     return dict.fromkeys(DROP_REASONS, 0)
@@ -342,11 +364,10 @@ class GrantConversion:
     creator_grants_minted: int = 0
     creator_denies_overridden: int = 0
     creator_owners_dead: int = 0
-    # `grants._keep_legacy_rights`: grants written or raised so a person
-    # keeps the role legacy merged for them from several rows, and the
-    # losses left because the engine denies that person on purpose.
-    legacy_rights_kept: int = 0
-    legacy_rights_behind_deny: int = 0
+    # `grants._keep_legacy_rights`, §14.5 Kept rights: the grants written
+    # and what the comparison found (`KeptRightsPlan.counts`). Copied from
+    # the saved plan on every run, so a rerun reports the same numbers.
+    legacy_rights: dict = field(default_factory=dict)
     # Node ids only. The tokens live in `Drive Grant.principal`, and a
     # migration record on disk is not the place for a second copy of a
     # secret that authorises access.
@@ -405,6 +426,33 @@ class GrantConversion:
         grants.grant_rows_dropped = {**_blank_drops(), **(grants.grant_rows_dropped or {})}
         grants.docshare_dropped_by_reason = {**_blank_drops(), **(grants.docshare_dropped_by_reason or {})}
         return grants
+
+
+@dataclass
+class KeptRightsPlan:
+    """What `grants._keep_legacy_rights` decided to write, saved before it writes.
+
+    The pass decides from the grants the earlier steps stored. Once its own
+    writes land, a second decision would read them back and could skip a
+    pin the first one needed, so a rerun replays this plan instead of
+    deciding again. `rights` holds `[node, principal, role]`.
+    """
+
+    rights: list[list] = field(default_factory=list)
+    counts: dict[str, int] = field(default_factory=dict)
+
+    def as_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> KeptRightsPlan:
+        rights = [
+            [row[0], row[1], int(row[2])]
+            for row in data.get("rights") or []
+            if isinstance(row, list) and len(row) == 3
+        ]
+        counts = {key: int(value) for key, value in (data.get("counts") or {}).items()}
+        return cls(rights=rights, counts=counts)
 
 
 @dataclass
@@ -978,6 +1026,17 @@ class BuildState:
 
     def put_grants(self, grants: GrantConversion) -> None:
         self.save({**self.load(), "grants": grants.as_dict()})
+
+    def kept_rights(self) -> KeptRightsPlan | None:
+        """The kept-rights plan, or None before the pass has decided."""
+        stored = self._kept_rights_store().load().get("plan")
+        return KeptRightsPlan.from_dict(stored) if isinstance(stored, dict) else None
+
+    def put_kept_rights(self, plan: KeptRightsPlan) -> None:
+        self._kept_rights_store().save({"plan": plan.as_dict()})
+
+    def _kept_rights_store(self) -> BuildState:
+        return BuildState(self.path.with_name(KEPT_RIGHTS_FILENAME))
 
     def content(self) -> ContentConversion:
         stored = self.load().get("content")

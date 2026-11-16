@@ -478,6 +478,7 @@ class FakeTree:
         self.groups = set(groups)
         # `User Group` name to member addresses, for `people`.
         self.members: dict[str, set[str]] = {}
+        self.admins: set[str] = set()
         self.composite_decks = set()
         self.public_decks: set[str] = set()
         self.sheets = {}
@@ -547,6 +548,9 @@ class FakeTree:
             for user, enabled in self.users.items()
             if enabled is not None and user not in ("Administrator", "Guest")
         }
+
+    def suite_admins(self):
+        return set(self.admins)
 
 
 class FakeDrive:
