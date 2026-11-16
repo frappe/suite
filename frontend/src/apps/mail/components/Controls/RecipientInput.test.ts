@@ -363,6 +363,17 @@ describe('RecipientInput suggestions in the page', () => {
     ])
   })
 
+  it("adds a contact's address typed out in full under the contact's name when the field is left", async () => {
+    const { root, model } = mountWithSuggestions([samAtWork])
+    const input = await typeInto(root, 'sam@work.example')
+
+    fire(input, new FocusEvent('focusout', { bubbles: true }))
+    await nextTick()
+    expect(model.value.map((r) => [r.email, r.display_name])).toEqual([
+      ['sam@work.example', 'Sam Rao'],
+    ])
+  })
+
   it('adds nobody else on Enter for an address already in the field, and clears the typing', async () => {
     const { root, model, list } = mountWithSuggestions([sasha], [amy])
     const input = await typeInto(root, 'amy@example.com')

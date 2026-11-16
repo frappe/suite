@@ -304,13 +304,6 @@ const selectedEmails = computed(() => selectedRecipients.value.map((v) => v.emai
 const searchText = ref('')
 const showSuggestions = ref(false)
 
-// The query is bound rather than merely observed, so picking a suggestion from the inline
-// list can clear the typed text — that path never touches the Combobox's own model, which
-// is what normally syncs the input back down after a selection.
-watch(searchText, (text) => {
-  if (!text) showSuggestions.value = false
-})
-
 // The Combobox's own popover never opens: the suggestions are the list in the page, and they
 // would otherwise appear twice, once floating over the list showing them in flow.
 watch(showSuggestions, (open) => {
@@ -318,10 +311,8 @@ watch(showSuggestions, (open) => {
 })
 
 /**
- * A typed address that is nobody's contact is still a recipient — the Combobox has a
- * synthetic row for exactly this, but that row lives in the popover the inline list
- * replaces, so the list carries its own. Suppressed once a suggestion says the same thing,
- * which would otherwise be the same address twice.
+ * A typed address that is nobody's contact is still a recipient, so the list carries a row for it,
+ * suppressed once a suggestion says the same thing, which would otherwise be the same address twice.
  */
 const typedRecipient = computed<DraftRecipient | null>(() => {
   const email = searchText.value.trim()
@@ -390,6 +381,9 @@ watch(
   { flush: 'post' },
 )
 
+// The query is bound rather than merely observed so that this can clear the typed text: adding a
+// recipient never touches the Combobox's own model, which is what normally syncs the input back
+// down after a selection.
 const clearTyped = () => {
   searchText.value = ''
   input.value = ''
