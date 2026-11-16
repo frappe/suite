@@ -60,7 +60,8 @@ from suite.drive.patches.build.mapping import (
 )
 from suite.drive.patches.build.ports import ACTIVE
 from suite.drive.patches.build.root_pairs import PERSONAL, SHARED
-from suite.drive.patches.build.state import GrantConversion, KeptRightsPlan
+from suite.drive.patches.build.state import KEPT_RIGHTS_FILENAME, GrantConversion, KeptRightsPlan
+from suite.drive.patches.database_marker import MARKER_FIELD, ForeignRecordError
 
 # §14.5's drop reasons, which are also §14.9's report keys.
 DEAD_PRINCIPAL = "dead_principal"
@@ -505,12 +506,26 @@ def _keep_legacy_rights(env, grants: GrantConversion, nodes, batch, batch_size: 
     ends with exactly the grants an uninterrupted run writes. The writes
     are idempotent, so a replay over grants already written changes
     nothing.
+
+    The plan carries the Build record's database marker. A plan decided
+    under another record is refused, not replayed: it names the people and
+    grants of whatever data that run read, and the operator who moved the
+    record aside to start over may have left the plan behind.
     """
     batch.flush()
+    marker = env.state.load().get(MARKER_FIELD)
     plan = env.state.kept_rights()
     if plan is None:
         plan = _plan_kept_rights(env, nodes, batch_size)
+        plan.marker = marker
         env.state.put_kept_rights(plan)
+    elif plan.marker != marker:
+        raise ForeignRecordError(
+            f"The kept-rights plan {KEPT_RIGHTS_FILENAME} beside {env.state.path} was decided under "
+            f"database marker {plan.marker!r}, but the Build record carries {marker!r}. It is left from "
+            "another Build run. Move it aside with the other `drive-build-*` files only when starting "
+            "Build over on this database."
+        )
     _write_kept_rights(env, grants, plan, batch_size)
     grants.legacy_rights = dict(plan.counts)
     env.state.put_grants(grants)
@@ -567,7 +582,7 @@ def _plan_kept_rights(env, nodes, batch_size: int) -> KeptRightsPlan:
         "upload_added": result.upload_added,
         "share_lost": result.share_lost,
     }
-    return KeptRightsPlan([[right.node, right.principal, right.role] for right in rights], counts)
+    return KeptRightsPlan([(right.node, right.principal, right.role) for right in rights], counts)
 
 
 def _write_kept_rights(env, grants: GrantConversion, plan: KeptRightsPlan, batch_size: int) -> None:

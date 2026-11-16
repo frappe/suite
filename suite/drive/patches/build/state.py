@@ -431,6 +431,10 @@ class GrantConversion:
         return grants
 
 
+class KeptRightsPlanError(ValueError):
+    """The saved kept-rights plan exists but cannot be read back whole."""
+
+
 @dataclass
 class KeptRightsPlan:
     """What `grants._keep_legacy_rights` decided to write, saved before it writes.
@@ -438,24 +442,52 @@ class KeptRightsPlan:
     The pass decides from the grants the earlier steps stored. Once its own
     writes land, a second decision would read them back and could skip a
     pin the first one needed, so a rerun replays this plan instead of
-    deciding again. `rights` holds `[node, principal, role]`.
+    deciding again. `rights` holds `(node, principal, role)`. `marker` is
+    the database marker of the Build record the plan was decided under
+    (`database_marker`), so a plan left from another record is refused.
     """
 
-    rights: list[list] = field(default_factory=list)
+    rights: list[tuple[str, str, int]] = field(default_factory=list)
     counts: dict[str, int] = field(default_factory=dict)
+    marker: str | None = None
 
     def as_dict(self) -> dict:
-        return asdict(self)
+        return {
+            "rights": [list(right) for right in self.rights],
+            "counts": self.counts,
+            "marker": self.marker,
+        }
 
     @classmethod
     def from_dict(cls, data: dict) -> KeptRightsPlan:
-        rights = [
-            [row[0], row[1], int(row[2])]
-            for row in data.get("rights") or []
-            if isinstance(row, list) and len(row) == 3
-        ]
-        counts = {key: int(value) for key, value in (data.get("counts") or {}).items()}
-        return cls(rights=rights, counts=counts)
+        """Read a saved plan, or raise `KeptRightsPlanError` on any row it cannot read.
+
+        A dropped row would be a kept right never written, so nothing is
+        skipped quietly.
+        """
+        rights = data.get("rights")
+        counts = data.get("counts")
+        marker = data.get("marker")
+        if not isinstance(rights, list) or not isinstance(counts, dict):
+            raise KeptRightsPlanError("the plan has no `rights` list or no `counts` object")
+        if marker is not None and not isinstance(marker, str):
+            raise KeptRightsPlanError(f"the plan's marker {marker!r} is not a string")
+        plan = cls(marker=marker)
+        for row in rights:
+            if not (
+                isinstance(row, list)
+                and len(row) == 3
+                and isinstance(row[0], str)
+                and isinstance(row[1], str)
+                and type(row[2]) is int
+            ):
+                raise KeptRightsPlanError(f"the plan holds a malformed right {row!r}")
+            plan.rights.append((row[0], row[1], row[2]))
+        for key, value in counts.items():
+            if type(value) is not int:
+                raise KeptRightsPlanError(f"the plan's count {key!r} is not a number: {value!r}")
+            plan.counts[key] = value
+        return plan
 
 
 @dataclass
@@ -993,11 +1025,14 @@ class BuildState:
             return {"version": STATE_VERSION}
         return data
 
-    def save(self, data: dict) -> None:
+    def save(self, data: dict, *, mode: int | None = None) -> None:
+        """Replace the document atomically; `mode` sets the file's permission bits."""
         data = {**data, "version": STATE_VERSION}
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temp = self._temp_path()
         with open(temp, "w", encoding="utf-8") as f:
+            if mode is not None:
+                os.fchmod(f.fileno(), mode)
             json.dump(data, f, indent=2, sort_keys=True)
             f.flush()
             os.fsync(f.fileno())
@@ -1031,15 +1066,37 @@ class BuildState:
         self.save({**self.load(), "grants": grants.as_dict()})
 
     def kept_rights(self) -> KeptRightsPlan | None:
-        """The kept-rights plan, or None before the pass has decided."""
-        stored = self._kept_rights_store().load().get("plan")
-        return KeptRightsPlan.from_dict(stored) if isinstance(stored, dict) else None
+        """The kept-rights plan, or None before the pass has decided.
+
+        Unlike the record, an unreadable plan is not quarantined and decided
+        again: a second decision reads grants the first one may already
+        have raised (`KeptRightsPlan`). It raises `KeptRightsPlanError`, and
+        the operator moves the file aside only when starting Build over.
+        """
+        path = self._kept_rights_path()
+        try:
+            # A fixed file name beside the record, never a caller's value.
+            # nosemgrep: frappe-semgrep-rules.rules.security.frappe-security-file-traversal
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+        except FileNotFoundError:
+            return None
+        except (json.JSONDecodeError, UnicodeDecodeError) as error:
+            raise KeptRightsPlanError(f"The kept-rights plan {path} cannot be parsed: {error}") from error
+        stored = data.get("plan") if isinstance(data, dict) else None
+        if not isinstance(stored, dict):
+            raise KeptRightsPlanError(f"The kept-rights plan {path} holds no plan")
+        try:
+            return KeptRightsPlan.from_dict(stored)
+        except KeptRightsPlanError as error:
+            raise KeptRightsPlanError(f"The kept-rights plan {path} cannot be read: {error}") from error
 
     def put_kept_rights(self, plan: KeptRightsPlan) -> None:
-        self._kept_rights_store().save({"plan": plan.as_dict()})
+        """Save the plan readable by the site's own account only: it maps who can reach what."""
+        BuildState(self._kept_rights_path()).save({"plan": plan.as_dict()}, mode=0o600)
 
-    def _kept_rights_store(self) -> BuildState:
-        return BuildState(self.path.with_name(KEPT_RIGHTS_FILENAME))
+    def _kept_rights_path(self) -> Path:
+        return self.path.with_name(KEPT_RIGHTS_FILENAME)
 
     def content(self) -> ContentConversion:
         stored = self.load().get("content")

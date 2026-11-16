@@ -114,7 +114,7 @@ def _refuse_record_without_target(env) -> None:
         f"The Build record at {env.state.path} says the tree conversion completed over "
         f"{tree.roots_seen} legacy roots, but this site holds no Drive Root row. The database was "
         "restored without the site's private directory. Restore both from the same backup, or move "
-        "the Build record (and the journals beside it) aside to start Build over on this database."
+        "the Build record and every `drive-build-*` file beside it aside to start Build over on this database."
     )
 
 
