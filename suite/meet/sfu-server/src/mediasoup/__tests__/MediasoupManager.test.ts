@@ -656,6 +656,29 @@ describe('MediasoupManager network quality refresh', () => {
 		expect(listener).not.toHaveBeenCalled();
 	});
 
+	it('does not report a healthy camera as degraded when its unused simulcast layers stop', () => {
+		// Inactive simulcast layers report score 0 while the live layer is perfect.
+		const { producers, listener } = fixture([[10, 0, 0]]);
+		vi.advanceTimersByTime(5000);
+		expect(listener).toHaveBeenLastCalledWith('room-1', 'media-peer', 'good');
+		producers[0]!.score = [{ score: 10 }, { score: 10 }, { score: 0 }];
+		vi.advanceTimersByTime(5000);
+		expect(listener).toHaveBeenLastCalledWith('room-1', 'media-peer', 'good');
+	});
+
+	it('still reports loss on the layers a camera is actually sending', () => {
+		const { producers, listener } = fixture([[6, 0, 0]]);
+		vi.advanceTimersByTime(5000);
+		expect(listener).toHaveBeenLastCalledWith('room-1', 'media-peer', 'poor');
+		producers[0]!.score = [{ score: 3 }, { score: 2 }, { score: 0 }];
+		vi.advanceTimersByTime(5000);
+		expect(listener).toHaveBeenLastCalledWith(
+			'room-1',
+			'media-peer',
+			'critical',
+		);
+	});
+
 	it('stops refreshing at cleanup even when its prior room snapshot remains available', async () => {
 		const { manager, listener } = fixture([[10]]);
 		vi.advanceTimersByTime(5000);

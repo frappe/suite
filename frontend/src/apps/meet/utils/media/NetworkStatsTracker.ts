@@ -154,7 +154,14 @@ export class NetworkStatsTracker {
 					: received + lost > 0
 						? (lost * 100) / (received + lost)
 						: null,
-			jitter: jitter.length ? Math.max(...jitter) : null,
+			// One sender's timing discontinuity (for example after resuming) is
+			// not evidence of local downlink jitter while another stream arrives
+			// normally. Only fresh, flowing inbound streams contribute above.
+			jitter: jitter.length
+				? direction === "recv"
+					? Math.min(...jitter)
+					: Math.max(...jitter)
+				: null,
 			isValid,
 			flowing,
 			hasMedia,
