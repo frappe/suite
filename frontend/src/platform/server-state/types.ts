@@ -36,14 +36,14 @@ export interface QueryState<T> {
   refetch(): Promise<T | undefined>
   cancel(): void
 }
-export interface InfiniteQueryState<Row> {
+export interface InfiniteQueryState<Row, Page = unknown> {
   readonly status: 'pending' | 'success' | 'error'
   readonly isFetching: boolean
   refetch(): Promise<void>
   readonly rows: readonly Row[]
   readonly total: number | undefined
   /** The loaded pages as they came, oldest first, for what they say about the list beside the rows. */
-  readonly pages?: readonly unknown[]
+  readonly pages: readonly Page[]
   readonly hasNext: boolean
   readonly isFetchingNext: boolean
   readonly error: Error | null

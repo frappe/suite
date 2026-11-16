@@ -6,6 +6,7 @@ import {
   hasSearchConditions,
   searchQueryFrom,
   searchWords,
+  shownSearchResults,
   toggledFilter,
   withAllAccounts,
   withEditedLine,
@@ -98,5 +99,19 @@ describe('the words to mark', () => {
 
   it('is empty for a search with no words', () => {
     expect(searchWords(undefined, [])).toBe('')
+  })
+})
+
+describe('what a search page found', () => {
+  it('leaves out a conversation only a reaction was found in, from the results and their count', () => {
+    const found = shownSearchResults(
+      [
+        { id: 'written', reaction_only: 0 as const },
+        { id: 'reacted', reaction_only: 1 as const },
+      ],
+      12,
+    )
+    expect(found.rows.map((row) => row.id)).toEqual(['written'])
+    expect(found.total).toBe(11)
   })
 })

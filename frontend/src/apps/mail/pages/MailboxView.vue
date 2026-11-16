@@ -523,6 +523,7 @@ import { archivable, holdsReceivedMail, unarchivable } from '@/apps/mail/utils/r
 import {
   searchQueryFrom,
   searchWords,
+  shownSearchResults,
   withAllAccounts,
   withoutFilters,
 } from '@/apps/mail/utils/searchFilters'
@@ -966,12 +967,7 @@ const searchCanWiden = computed(
 // Each page asks every account again, so an account missed by any page loaded has mail missing
 // from the list.
 const unavailableAccounts = computed(() => [
-  ...new Set(
-    // SAFETY: this query's pages are the search endpoint's, where this field is declared.
-    (searchResults.pages as readonly { unavailable_accounts?: string[] }[] | undefined)?.flatMap(
-      (page) => page.unavailable_accounts ?? [],
-    ),
-  ),
+  ...new Set(searchResults.pages.flatMap((page) => page.unavailable_accounts ?? [])),
 ])
 
 // An optimistic removal emptied the list but more threads exist, so a refill is coming once the server
@@ -1575,9 +1571,6 @@ const currentThread = computed(() =>
 usePageTitle(() =>
   threadID ? '' : appDocumentTitle(`${unreadThreadsPrefix.value} ${mailboxName.value}`, 'Mail'),
 )
-const hiddenSearchRows = computed(
-  () => searchResults.rows.filter((row) => 'reaction_only' in row && row.reaction_only).length,
-)
 const title = computed(() => {
   if (selections.value.length)
     return selections.value.length === 1
@@ -1588,8 +1581,7 @@ const title = computed(() => {
     if (searchResults.error && !searchResults.rows.length) return ''
     // Null until the current search resolves — show a neutral label rather than a stale/zero count.
     if (searchTotal.value === null) return __('Searching…')
-    // The server counts what it found, and only here is it known what of that a reaction found.
-    const total = Math.max(searchTotal.value - hiddenSearchRows.value, 0)
+    const { total } = shownSearchResults(searchResults.rows, searchTotal.value)
     return total === 1 ? __('1 result') : __('{0} results', [String(total)])
   }
   return filterTitle.value

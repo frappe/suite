@@ -100,12 +100,12 @@ export function createApiClient(
   function useInfiniteQuery<I, Row, O>(
     reference: PageRef<I, Row, string, O>,
     ...args: ObserveArgs<I>
-  ): InfiniteQueryState<Row> {
+  ): InfiniteQueryState<Row, O> {
     if (reference.kind !== 'query' || !reference.page)
       throw new TypeError('Expected a page reference')
-    // SAFETY: PageRef declares the rows field as Row[]; observe reads that field only from validated cached output for this reference.
+    // SAFETY: PageRef declares the rows field as Row[] of output O; observe reads the pages and that field only from validated cached output for this reference.
     return observe(reads, owner(reference.owner), reference, args[0], true)
-      .infinite as InfiniteQueryState<Row>
+      .infinite as InfiniteQueryState<Row, O>
   }
   function useMutation<I, O>(
     reference: MutationRef<I, O>,

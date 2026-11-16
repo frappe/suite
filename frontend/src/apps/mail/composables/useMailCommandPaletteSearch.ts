@@ -19,6 +19,7 @@ import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
 import { userStore } from '@/apps/mail/stores/user'
 import { getIcon } from '@/apps/mail/utils'
 import { utcDayEnd, utcDayStart } from '@/apps/mail/utils/datetime'
+import { shownSearchResults } from '@/apps/mail/utils/searchFilters'
 import { getSessionUser } from '@/utils/session'
 
 export interface MailFilterOption {
@@ -249,18 +250,12 @@ export function useMailCommandPaletteSearch(query: Ref<string>, active: Ref<bool
   const rows = computed(() =>
     searchInput.value === false ? [] : (searchResource.data?.rows ?? []),
   )
-  // A conversation only a reaction was found in is on the page for paging, and not a result. The
-  // server's count takes it in: only here is it known.
-  const shownRows = computed(() => rows.value.filter((row) => !row.reaction_only))
-  const total = computed(() =>
-    searchInput.value === false
-      ? 0
-      : (searchResource.data?.total ?? 0) - (rows.value.length - shownRows.value.length),
-  )
+  const shown = computed(() => shownSearchResults(rows.value, searchResource.data?.total ?? 0))
+  const total = computed(() => (searchInput.value === false ? 0 : shown.value.total))
   const results = computed<MailSearchResult[]>(() =>
     searchInput.value === false
       ? []
-      : shownRows.value.map((mail) => ({
+      : shown.value.rows.map((mail) => ({
           ...mail,
           from_name: mail.from_name ?? undefined,
           attachments: mail.attachments.map((attachment) => ({

@@ -735,6 +735,9 @@ const listingQuery: InfiniteQueryState<DriveNode> = {
   get total() {
     return activeListing.value.total
   },
+  get pages() {
+    return activeListing.value.pages
+  },
   get hasNext() {
     return activeListing.value.hasNext
   },

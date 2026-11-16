@@ -19,6 +19,7 @@ function listing() {
     rows: [],
     isFetching: false,
     total: undefined,
+    pages: [],
     hasNext: false,
     isFetchingNext: false,
     error: null,

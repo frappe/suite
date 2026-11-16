@@ -97,3 +97,16 @@ export function activeDatePreset(query: SearchQuery, today = new Date()): DatePr
 export function searchWords(typed: string | undefined, marked: string[] | undefined): string {
   return [...(marked ?? []), (typed ?? '').replace(/"/g, ' ')].join(' ').trim()
 }
+
+/**
+ * A search page's results and how many there are. A conversation only a reaction was found in is on
+ * the page so that paging by row count holds, but it isn't a result; the server's count takes it in,
+ * and only the page knows which rows are such.
+ */
+export function shownSearchResults<Row extends { reaction_only?: 0 | 1 }>(
+  rows: readonly Row[],
+  total: number,
+) {
+  const shown = rows.filter((row) => !row.reaction_only)
+  return { rows: shown, total: Math.max(total - (rows.length - shown.length), 0) }
+}
