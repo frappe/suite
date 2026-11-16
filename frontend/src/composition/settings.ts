@@ -2,7 +2,7 @@ import { loadCalendarSettings } from '@/apps/calendar'
 import { loadDriveSettings } from '@/apps/drive'
 import { loadMailSettings } from '@/apps/mail'
 import { loadAccountSettings } from '@/shell/settings/accountSettings'
-import type { SettingsGroupLoader, SettingsTabIdOf } from '@/shell/settings/settings'
+import type { SettingsGroupLoader, SettingsSectionIdsOf } from '@/shell/settings/settings'
 
 /**
  * The one Settings list, in heading order. Each loader imports its group
@@ -18,11 +18,11 @@ export const settingsGroups = [
   loadCalendarSettings,
 ] as const satisfies readonly SettingsGroupLoader[]
 
-type CompositionTabId = SettingsTabIdOf<(typeof settingsGroups)[number]>
+type CompositionSectionIds = SettingsSectionIdsOf<(typeof settingsGroups)[number]>
 
-// Fills the shell's tab id interface, so `openSettings(tab)` takes exactly
-// these ids and a misspelled id fails the type check.
+// Fills the shell's tab id interface, so `openSettings(tab, section)` takes
+// exactly these ids and a misspelled id fails the type check
 declare module '@/platform/settings' {
   // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-  interface SettingsTabIds extends Record<CompositionTabId, true> {}
+  interface SettingsTabIds extends CompositionSectionIds {}
 }

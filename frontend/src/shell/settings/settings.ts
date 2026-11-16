@@ -1,6 +1,19 @@
 import type { AsyncComponentLoader, InjectionKey } from 'vue'
 
 /**
+ * One part of a tab's page that can be found by name: a row, or the dialog a
+ * row opens. The page is a lazy chunk, so the tab names its parts here.
+ */
+export interface SettingsSection {
+  /** Unique in its tab, for example `'import'`. */
+  readonly id: string
+  /** The part's title on the page. */
+  readonly label: () => string
+  /** Other words people look for it by, for example `'vacation'`. */
+  readonly keywords?: () => string
+}
+
+/**
  * One row in the Settings dialog sidebar and in the phone list.
  *
  * The body is a pure component. It renders its own header and body, and it
@@ -16,6 +29,7 @@ export interface SettingsTab {
   readonly condition?: () => boolean
   /** Loads the body when its tab first opens. */
   readonly body: AsyncComponentLoader
+  readonly sections?: readonly SettingsSection[]
 }
 
 /** One product's heading, named after the product, with its tabs. */
@@ -36,17 +50,22 @@ export interface SettingsGroup {
  */
 export type SettingsGroupLoader = () => Promise<SettingsGroup>
 
-/**
- * The tab ids a group loader resolves to. A group module declares its object
- * `as const`, so the ids stay literal and need no shell import.
- */
-export type SettingsTabIdOf<Loader> = Loader extends () => Promise<infer Group>
-  ? Group extends { readonly tabs: readonly (infer Tab)[] }
-    ? Tab extends { readonly id: infer Id extends string }
-      ? Id
-      : never
-    : never
+type TabOf<Loader> = Loader extends () => Promise<{ readonly tabs: readonly (infer Tab)[] }>
+  ? Tab
   : never
+type IdOf<Named> = Named extends { readonly id: infer Id extends string } ? Id : never
+type SectionOf<Tab> = Tab extends { readonly sections: readonly (infer Section)[] }
+  ? Section
+  : never
+
+/**
+ * Each tab id a group loader resolves to, with the ids of that tab's sections.
+ * A group module declares its object `as const`, so the ids stay literal and
+ * need no shell import.
+ */
+export type SettingsSectionIdsOf<Loader> = {
+  [Id in IdOf<TabOf<Loader>>]: IdOf<SectionOf<Extract<TabOf<Loader>, { readonly id: Id }>>>
+}
 
 // The tab ids live in the platform, so a product can name a tab too.
 export type { SettingsTabId, SettingsTabIds } from '@/platform/settings'

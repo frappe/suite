@@ -29,12 +29,25 @@ export const calendarSettings = {
       label: () => __('Calendars'),
       icon: 'lucide-calendar-days',
       body: scoped(() => import('@/apps/calendar/components/Settings/CalendarsSettings.vue')),
+      sections: [
+        { id: 'your-calendars', label: () => __('Your calendars') },
+        { id: 'invite-addresses', label: () => __('Invite addresses') },
+      ],
     },
     {
       id: 'calendar.advanced',
       label: () => __('Advanced'),
       icon: 'lucide-code',
       body: scoped(() => import('@/apps/calendar/components/Settings/AdvancedSettings.vue')),
+      sections: [
+        { id: 'import', label: () => __('Import') },
+        { id: 'export', label: () => __('Export'), keywords: () => __('download, backup') },
+        {
+          id: 'client-setup',
+          label: () => __('Calendar client setup'),
+          keywords: () => __('CalDAV'),
+        },
+      ],
     },
   ],
 } as const

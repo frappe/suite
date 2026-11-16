@@ -10,6 +10,13 @@ export const driveSettings = {
       label: () => __('Storage'),
       icon: 'lucide-chart-pie',
       body: () => import('./StatisticsSettings.vue'),
+      sections: [
+        {
+          id: 'external-access',
+          label: () => __('External access'),
+          keywords: () => __('WebDAV, API key'),
+        },
+      ],
     },
   ],
 } as const

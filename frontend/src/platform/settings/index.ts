@@ -1,9 +1,10 @@
 import { ref } from 'vue'
 
 /**
- * The tab ids of the composition settings list. `composition/settings.ts`
- * fills this interface through declaration merging, so a misspelled id fails
- * the type check without the platform importing composition.
+ * The tab ids of the composition settings list, each with the ids of its
+ * sections. `composition/settings.ts` fills this interface through declaration
+ * merging, so a misspelled id fails the type check without the platform
+ * importing composition.
  */
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface SettingsTabIds {}
