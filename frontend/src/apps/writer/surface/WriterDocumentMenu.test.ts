@@ -55,11 +55,6 @@ vi.mock('frappe-ui', () => {
 vi.mock('@/platform/feedback', () => ({
   toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() },
 }))
-// Naming Drive's roots takes a query, and this menu names no folder
-vi.mock('@/apps/drive/files/internal/locations', async (original) => ({
-  ...(await original()),
-  useLocationTitle: () => (node: { title: string }) => node.title,
-}))
 
 const canStar = ref(true)
 const setStarred = vi.fn(async () => {})

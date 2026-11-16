@@ -98,8 +98,7 @@ const extensions = [
   PasteSizeGuard.configure({
     limits: () => props.room.status.limits,
     atLimit: () => props.room.status.isAtLimit,
-    onTooLarge: () =>
-      toast.error(__('This is too large to add in one go. Add it in smaller parts.')),
+    onTooLarge: () => toast.error(__('Too large to add at once. Add it in parts.')),
     onNearFull: () => toast.warning(__('This document is nearly full. Some changes may not save.')),
   }),
   ThreadHighlights.configure({

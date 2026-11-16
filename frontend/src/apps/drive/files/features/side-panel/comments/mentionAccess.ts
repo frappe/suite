@@ -3,29 +3,32 @@ import { translate as __ } from '@/platform/translation'
 
 import { mentionedIn } from './commentMentions'
 import { peopleWithoutAccess, type MentionUser } from './people'
-import type { FileNoun } from './places'
+import type { CommentNoun } from './places'
 
 interface MentionAccessOptions {
   /** Whether the writer manages the document, so Drive shares it with the people they mention. */
   canShare: boolean
   /** The people the comment named before an edit; they were asked about already. */
   mentionedBefore?: readonly string[]
-  noun: FileNoun
+  noun: CommentNoun
 }
 
 // Whole sentences per noun, so each translates as one
 const LINES = {
   document: {
-    unshared: (names: string) =>
-      __('{0} can’t open this document until someone who manages it shares it', [names]),
+    unshared: (names: string) => __('{0} can’t open this document until it’s shared', [names]),
     blockedOne: (name: string) => __('{0} has been blocked from this document', [name]),
     blockedMany: (names: string) => __('{0} have been blocked from this document', [names]),
   },
   presentation: {
-    unshared: (names: string) =>
-      __('{0} can’t open this presentation until someone who manages it shares it', [names]),
+    unshared: (names: string) => __('{0} can’t open this presentation until it’s shared', [names]),
     blockedOne: (name: string) => __('{0} has been blocked from this presentation', [name]),
     blockedMany: (names: string) => __('{0} have been blocked from this presentation', [names]),
+  },
+  spreadsheet: {
+    unshared: (names: string) => __('{0} can’t open this spreadsheet until it’s shared', [names]),
+    blockedOne: (name: string) => __('{0} has been blocked from this spreadsheet', [name]),
+    blockedMany: (names: string) => __('{0} have been blocked from this spreadsheet', [names]),
   },
 }
 
@@ -57,7 +60,7 @@ export async function confirmMentionAccess(
   }
 }
 
-function confirmBlocked(blocked: MentionUser[], lines: (typeof LINES)[FileNoun]) {
+function confirmBlocked(blocked: MentionUser[], lines: (typeof LINES)[CommentNoun]) {
   return confirm({
     title:
       blocked.length === 1

@@ -40,8 +40,22 @@ const PRODUCTS: Product[] = [
 		boxLabel: "Add a comment",
 		start: "Add a comment",
 	},
-	{ label: "Sheets", doctype: "Sheet", title: "Guest names sheet", post: "Comment", boxLabel: "New comment" },
-	{ label: "Slides", doctype: "Presentation", title: "Guest names deck", post: "Add", boxLabel: "New comment" },
+	{
+		label: "Sheets",
+		doctype: "Sheet",
+		title: "Guest names sheet",
+		post: "Comment",
+		boxLabel: "Add a comment",
+		start: "Add a comment",
+	},
+	{
+		label: "Slides",
+		doctype: "Presentation",
+		title: "Guest names deck",
+		post: "Comment",
+		boxLabel: "Add a comment",
+		start: "Add a comment",
+	},
 ];
 
 let api: APIRequestContext;

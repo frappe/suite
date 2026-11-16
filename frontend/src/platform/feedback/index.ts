@@ -6,7 +6,12 @@ import {
 } from 'frappe-ui'
 import { defineComponent, h } from 'vue'
 
-import type { PlatformError } from '@/platform/transport'
+import { translate as __ } from '@/platform/translation'
+import {
+  isTransientStatus,
+  MIN_SERVER_ERROR_STATUS,
+  type PlatformError,
+} from '@/platform/transport'
 
 export { default as ContextMenu } from './ContextMenu.vue'
 export { default as Dropdown } from './Dropdown.vue'
@@ -116,5 +121,29 @@ const reportedErrors = new WeakSet<Error | PlatformError>()
 export function reportMutationError(error: Error | PlatformError): void {
   if (('name' in error && error.name === 'AbortError') || reportedErrors.has(error)) return
   reportedErrors.add(error)
-  frappeToast.error(error.message)
+  frappeToast.error(failureText(error))
+}
+
+/**
+ * What to tell a person about a failed action: the server's own reason when it gave one, a plain
+ * sentence for a network or server failure, never the raw status line or a browser's error text.
+ */
+export function failureText(error: Error | PlatformError): string {
+  const status = 'status' in error && typeof error.status === 'number' ? error.status : null
+  if (status === null) {
+    // Code that means to say something throws a plain Error with its message; a TypeError or the
+    // like is a fault, not something to show.
+    return error instanceof Error && error.name === 'Error' && error.message
+      ? error.message
+      : __('Could not complete the request. Try again.')
+  }
+  if (status === 0) return __("Couldn't reach the server. Check your connection and try again.")
+  if (isTransientStatus(status)) return __('The server is busy. Try again in a moment.')
+  if (status >= MIN_SERVER_ERROR_STATUS)
+    return __('The server had a problem. Try again in a moment.')
+  const details =
+    'details' in error && error.details && typeof error.details === 'object' ? error.details : error
+  return 'fromServer' in details && details.fromServer === true && error.message
+    ? error.message
+    : __('Could not complete the request. Try again.')
 }

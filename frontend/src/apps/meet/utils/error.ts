@@ -1,5 +1,5 @@
 /** Whether the server refused with messages written for people, as `frappe.throw` sends them. */
-export function hasServerMessages(error: unknown): boolean {
+function hasServerMessages(error: unknown): boolean {
   return (
     error instanceof Error &&
     'messages' in error &&

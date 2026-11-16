@@ -90,15 +90,13 @@ function followOtherTabs(user: string, node: string, drafts: Ref<ShownDraft[]>) 
 // Whether the server holds the commented text, telling the person when it doesn't
 async function hasSavedText(current: CollabRoom | null, items: ID[]) {
   if (current && !isInCopy(current.doc, items)) {
-    toast.error(__("The text this comment is on wasn't saved, so it wasn't posted"))
+    toast.error(__("Comment not posted, as its text wasn't saved"))
     return false
   }
 
   const isSaved = await whenSaved(current, items)
   if (!isSaved) {
-    toast.error(
-      __("The text wasn't saved, so the comment wasn't posted. It's kept on this device."),
-    )
+    toast.error(__("Comment not posted. It's kept on this device."))
     return false
   }
 
@@ -163,9 +161,7 @@ async function sendDraft(session: DraftOptions['session'], draft: ShownDraft, au
     return thread.name
   } catch (error) {
     if (error && typeof error === 'object' && 'type' in error && error.type === 'DriveConflict') {
-      toast.error(
-        __('This comment was already posted with different words. Discard it to remove it.'),
-      )
+      toast.error(__('Already posted with other words. Discard this one.'))
     } else {
       showError(error, __('Could not add the comment'))
     }

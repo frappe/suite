@@ -1008,7 +1008,7 @@ describe('a deck on the content layer', () => {
       await openVersions()
 
       versionsPanel.restore(listed(3))
-      const message = "This version can't be read, so it can't be restored. You can download it."
+      const message = "This version can't be restored"
       await vi.waitFor(() => expect(toast.error).toHaveBeenCalledWith(message, expect.anything()))
       const [, options] = fromAny<
         [string, { action: { label: string; onClick: () => void } }],
@@ -1110,13 +1110,15 @@ describe('a deck on the content layer', () => {
         vi.mocked(dialog.confirm).mock.lastCall,
       )
       await asked.onConfirm()
-      const message =
-        "This version couldn't be upgraded, so it can't be restored. You can download it. Reason: some of its content can't be upgraded."
+      const message = "This version can't be restored"
       const [, options] = fromAny<
-        [string, { action: { label: string; onClick: () => void } }],
+        [string, { description: string; action: { label: string; onClick: () => void } }],
         unknown
       >(vi.mocked(toast.error).mock.calls.find(([text]) => text === message))
-      expect(options.action.label).toBe('Download')
+      expect([options.description, options.action.label]).toEqual([
+        "Reason: some of its content can't be upgraded.",
+        'Download',
+      ])
       options.action.onClick()
     }
 
@@ -2511,6 +2513,21 @@ describe('Slides panels', () => {
     ])
   })
 
+  it('keeps the properties out of reach under an open panel, and in reach once it closes', async () => {
+    convertedRoom('now')
+    mounted = await openedSurface({ deck: { is_converted: true } })
+    await vi.waitFor(() => expect(mounted!.root.querySelector('[data-properties]')).not.toBeNull())
+    const properties = () =>
+      requireTestElement(mounted!.root.querySelector('[data-properties]'), HTMLElement)
+    expect(properties().hasAttribute('inert')).toBe(false)
+
+    openComments()
+    await vi.waitFor(() => expect(properties().hasAttribute('inert')).toBe(true))
+
+    openComments()
+    await vi.waitFor(() => expect(properties().hasAttribute('inert')).toBe(false))
+  })
+
   it('posts a comment on the whole presentation, with no text in the room to wait for', async () => {
     mounted = await openedSurface({ role: 20 })
     openComments()
@@ -3269,9 +3286,7 @@ describe('edit access changing on a converted presentation', () => {
     mounted.access.value = { role: 10 }
 
     await vi.waitFor(() =>
-      expect(toast.warning).toHaveBeenCalledWith(
-        'Editing access changed. This presentation is now view only.',
-      ),
+      expect(toast.warning).toHaveBeenCalledWith('This presentation is now view only'),
     )
     expect(viewOnly.value).toBe(true)
   })
@@ -3292,21 +3307,19 @@ describe('edit access changing on a converted presentation', () => {
 
     await vi.waitFor(() =>
       expect(toast.warning).toHaveBeenCalledWith(
-        'Editing access changed. Your unsaved changes are kept on this device.',
+        "Can't edit now. Unsaved changes are kept on this device.",
         expect.anything(),
       ),
     )
     expect(room.loseAccess).toHaveBeenCalledWith('lost_edit')
     // the room's copy is the one Drive lists: a page copy beside it would list the work twice
     expect(readRecovery('node-1')).toEqual([])
-    expect(toast.warning).not.toHaveBeenCalledWith(
-      'Editing access changed. This presentation is now view only.',
-    )
+    expect(toast.warning).not.toHaveBeenCalledWith('This presentation is now view only')
     const [, options] = fromAny<
       [string, { action: { label: string; onClick: () => void } }],
       unknown
     >(vi.mocked(toast.warning).mock.lastCall)
-    expect(options.action.label).toBe('Download my changes')
+    expect(options.action.label).toBe('Download')
     options.action.onClick()
     const downloaded = JSON.parse(await files[0]!.text())
     expect(JSON.stringify(downloaded.slides)).toContain('one')
@@ -3456,7 +3469,7 @@ describe('edit access changing on a converted presentation', () => {
 
     await vi.waitFor(() =>
       expect(toast.warning).toHaveBeenCalledWith(
-        'Editing access changed. Your unsaved changes are kept on this device.',
+        "Can't edit now. Unsaved changes are kept on this device.",
         expect.anything(),
       ),
     )
@@ -3610,9 +3623,7 @@ describe('edit access changing on a converted presentation', () => {
     mounted!.access.value = { role: 10 }
 
     await vi.waitFor(() =>
-      expect(toast.warning).toHaveBeenCalledWith(
-        'Editing access changed. This presentation is now view only.',
-      ),
+      expect(toast.warning).toHaveBeenCalledWith('This presentation is now view only'),
     )
     expect(viewOnly.value).toBe(true)
   })
