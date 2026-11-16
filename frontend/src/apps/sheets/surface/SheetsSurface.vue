@@ -116,10 +116,14 @@ const access = createSheetAccess(props.session, {
 // A version shown read-only in place of the sheet (the live room closes meanwhile).
 const preview = shallowRef<VersionPreview | null>(null)
 const previewStep = ref<number | null>(null)
+// The version last picked in the panel, which `preview` catches up with once it has loaded
+const picked = shallowRef<DocumentVersion | null>(null)
 // The live room's doc when the first preview opened: each version is compared with it.
 let liveState: Uint8Array | null = null
 // Counts each pick of a version or the way back, so a slower load can tell it was passed
 let previewPick = 0
+// The load of the picked version, for a Download that asks for it while it loads
+let pickLoad: Promise<void> = Promise.resolve()
 const sidePanel = useTemplateRef('sidePanel')
 /**
  * The editor's aside, where the side panel sits. A shown version or a restore remounts the editor,
@@ -219,14 +223,18 @@ watch(editor, async (current) => {
   if (editor.value === current) current.showChanges(shown.changes)
 })
 
-async function previewVersion(version: DocumentVersion | null) {
+function previewVersion(version: DocumentVersion | null) {
   if (!version) return leavePreview()
-  // The panel hands back the shown version once it is renamed, which is no new pick
-  if (preview.value?.version.seq === version.seq) {
-    preview.value = { ...preview.value, version }
-    return
-  }
-  const pick = ++previewPick
+  const isPicked = picked.value?.seq === version.seq
+  picked.value = version
+  if (preview.value?.version.seq === version.seq) preview.value = { ...preview.value, version }
+  // The panel holds the pick, so the same version back from it is a new name and no new pick
+  if (!isPicked) pickLoad = loadPick(version, ++previewPick)
+  return pickLoad
+}
+async function loadPick(version: DocumentVersion, pick: number) {
+  // A pick of the version already shown only drops a slower load of another one
+  if (preview.value?.version.seq === version.seq) return
   try {
     if (!preview.value) {
       // The sheet closes while a version is shown: its edits are saved first.
@@ -237,16 +245,19 @@ async function previewVersion(version: DocumentVersion | null) {
     const read = await readPreview(version, bytes, liveState)
     // Another version or the way back was picked while this one loaded
     if (pick !== previewPick) return
-    preview.value = read
+    // It may have been renamed while it loaded
+    preview.value = { ...read, version: picked.value ?? version }
     previewStep.value = null
   } catch (error) {
     if (pick !== previewPick) return
+    picked.value = preview.value?.version ?? null
     toast.error(errorText(error, __('This version could not be shown')))
   }
 }
 /** Back to the sheet as it is now; resolves once its editor has loaded. */
 async function leavePreview() {
   previewPick += 1
+  picked.value = null
   if (!preview.value) return
   preview.value = null
   liveState = null
@@ -492,7 +503,7 @@ useDocumentLeaveGuard({
           :can-comment="access.canComment.value"
           :can-edit-document="access.writable.value"
           :go-to-cell="goToCell"
-          :previewed-version="preview?.version ?? null"
+          :previewed-version="picked"
           :is-restoring-version="restoring"
           :save-first="flushEdits"
           @update:previewed-version="previewVersion"

@@ -179,6 +179,7 @@ const version = fromPartial<DocumentVersion>({
   creation: null,
 })
 
+const newer = fromPartial<DocumentVersion>({ ...version, seq: 4, label: 'After import' })
 const fetchVersion = vi.fn(async () => new Response(stored))
 const session = fromPartial<DocumentSession>({
   nodeId: 'node-1',
@@ -335,19 +336,59 @@ describe('SheetsSurface version preview', () => {
     expect(seen.editors).toHaveLength(editors)
   })
 
-  it('still shows a newer pick when a rename of the shown version lands before it loads', async () => {
+  it('still shows a newer pick when a rename of the version it left lands before it loads', async () => {
     await openVersions()
     await show(version)
     let send = (_: Response) => {}
     fetchVersion.mockReturnValueOnce(new Promise((resolve) => (send = resolve)))
 
-    seen.panel!.emit('update:previewedVersion', { ...version, seq: 4, label: 'After import' })
-    await show({ ...version, label: 'Renamed' })
-    expect(seen.bar!.props.preview).toMatchObject({ version: { seq: 3, label: 'Renamed' } })
+    await show(newer)
+    // The panel hands a new name back only for the version it holds, so this rename stays with it
+    expect(seen.panel!.props.previewedVersion).toMatchObject({ seq: 4 })
     send(new Response(stored))
     await settle()
 
     expect(seen.bar!.props.preview).toMatchObject({ version: { seq: 4, label: 'After import' } })
+  })
+
+  it('keeps the version shown when it is picked again before another one has loaded', async () => {
+    await openVersions()
+    await show(version)
+    let send = (_: Response) => {}
+    fetchVersion.mockReturnValueOnce(new Promise((resolve) => (send = resolve)))
+
+    await show(newer)
+    await show(version)
+    send(new Response(stored))
+    await settle()
+
+    expect(seen.bar!.props.preview).toMatchObject({ version: { seq: 3 } })
+    expect(seen.panel!.props.previewedVersion).toMatchObject({ seq: 3 })
+  })
+
+  it('shows a version under the name it got while it loaded, reading it once', async () => {
+    await openVersions()
+    let send = (_: Response) => {}
+    fetchVersion.mockReturnValueOnce(new Promise((resolve) => (send = resolve)))
+
+    await show(newer)
+    await show({ ...newer, label: 'Renamed' })
+    send(new Response(stored))
+    await settle()
+
+    expect(seen.bar!.props.preview).toMatchObject({ version: { seq: 4, label: 'Renamed' } })
+    expect(fetchVersion).toHaveBeenCalledOnce()
+  })
+
+  it('goes back to the version shown in the panel when the next pick can’t be read', async () => {
+    await openVersions()
+    await show(version)
+    fetchVersion.mockRejectedValueOnce(new Error('offline'))
+
+    await show(newer)
+
+    expect(seen.bar!.props.preview).toMatchObject({ version: { seq: 3 } })
+    expect(seen.panel!.props.previewedVersion).toMatchObject({ seq: 3 })
   })
 
   it('downloads a version as the Excel file of the sheet it shows', async () => {
@@ -361,6 +402,21 @@ describe('SheetsSurface version preview', () => {
     expect(shown.props.version).toBeInstanceOf(Uint8Array)
     expect(shown.exports).toBe(1)
     expect(live.exports).toBe(0)
+  })
+
+  it('downloads a version picked a moment before, once its one read has landed', async () => {
+    await openVersions()
+    let send = (_: Response) => {}
+    fetchVersion.mockReturnValueOnce(new Promise((resolve) => (send = resolve)))
+
+    await show(version)
+    seen.panel!.emit('downloadVersion', version)
+    send(new Response(stored))
+    await settle()
+
+    expect(lastEditor().props.version).not.toBeNull()
+    expect(lastEditor().exports).toBe(1)
+    expect(fetchVersion).toHaveBeenCalledOnce()
   })
 
   it('exports nothing when another version is picked while the download loads its sheet', async () => {

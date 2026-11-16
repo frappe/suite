@@ -414,8 +414,8 @@ describe('renaming a version in the Versions panel', () => {
     creation: null,
   })
 
-  // The panel viewing an automatic version, recording each version it is told to show
-  async function openViewingPanel(canSaveVersion: boolean) {
+  // The panel viewing a version, recording each version it is told to show
+  async function openViewingPanel(canSaveVersion: boolean, viewed = automatic) {
     const shown: (string | null | undefined)[] = []
     const session = fromPartial<DocumentSession>({
       comments: {},
@@ -429,7 +429,7 @@ describe('renaming a version in the Versions panel', () => {
     const app = createApp(() =>
       h(DocumentSidePanel, {
         panel: 'versions',
-        previewedVersion: automatic,
+        previewedVersion: viewed,
         'onUpdate:previewedVersion': (version: DocumentVersion | null) =>
           shown.push(version?.label),
         session,
@@ -457,18 +457,31 @@ describe('renaming a version in the Versions panel', () => {
     )
   }
 
-  it('gives the version being viewed its new name', async () => {
-    const { host, shown } = await openViewingPanel(true)
-
+  async function renameTo(host: Element, name: string) {
     renameItem(host)!.click()
     await nextTick()
     const box = document.querySelector<HTMLInputElement>('input[aria-label="New version name"]')!
-    box.value = 'Before the review'
+    box.value = name
     box.dispatchEvent(new Event('input'))
     box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     await settled()
+  }
+
+  it('gives the version being viewed its new name', async () => {
+    const { host, shown } = await openViewingPanel(true)
+
+    await renameTo(host, 'Before the review')
 
     expect(shown).toEqual(['Before the review'])
+  })
+
+  it('renames a version in the list without handing it back when another one is viewed', async () => {
+    const { host, shown } = await openViewingPanel(true, { ...automatic, seq: 9 })
+
+    await renameTo(host, 'Before the review')
+
+    expect(host.textContent).toContain('Before the review')
+    expect(shown).toEqual([])
   })
 
   it('offers no Rename to someone who can’t save versions', async () => {
