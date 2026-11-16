@@ -146,7 +146,11 @@ const regional = useQuery(api.mail.settings.regional, () => hasProvider.value &&
 const locales = computed(() => regional.data?.locales ?? [])
 const timeZones = computed(() => regional.data?.time_zones ?? [])
 const region = ref<Region>()
+let regionSaves = 0
 function showSavedRegion() {
+  // A read that lands while a save is out is older than the choice being saved
+  if (regionSaves > 0) return
+
   region.value = regional.data && {
     locale: regional.data.locale,
     time_zone: regional.data.time_zone,
@@ -159,10 +163,14 @@ watch(() => regional.data, showSavedRegion, { immediate: true })
 async function changeRegion(field: keyof Region, value: unknown) {
   if (!region.value || typeof value !== 'string') return
 
-  region.value = { ...region.value, [field]: value }
+  const choice = { ...region.value, [field]: value }
+  region.value = choice
+  regionSaves += 1
   try {
-    await client.mutation(api.mail.settings.updateRegional, { ...region.value })
+    await client.mutation(api.mail.settings.updateRegional, choice)
+    regionSaves -= 1
   } catch {
+    regionSaves -= 1
     // The refusal is reported where every failed save is; here the choice goes back
     showSavedRegion()
   }

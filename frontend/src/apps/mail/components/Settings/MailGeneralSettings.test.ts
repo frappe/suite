@@ -168,6 +168,23 @@ it('shows configured provider read failures', () => {
   state.regional.error = new Error('Provider unavailable')
   expect(mount().textContent).toContain('Provider unavailable')
 })
+it('keeps a later regional choice when the read after an earlier save lands', async () => {
+  const saves: Array<() => void> = []
+  state.save.mockImplementation(() => new Promise<void>((resolve) => saves.push(resolve)))
+  const root = mount()
+  await choose(control(root, 'Locale', HTMLInputElement), 'fr-FR')
+  await choose(control(root, 'Time zone', HTMLInputElement), 'Europe/Paris')
+  // The first save is answered and its read lands, from before the time zone was chosen
+  saves[0]?.()
+  reactive(state.regional).data = { locale: 'fr-FR', time_zone: 'UTC', locales: [], time_zones: [] }
+  await nextTick()
+  expect(control(root, 'Time zone', HTMLInputElement).value).toBe('Europe/Paris')
+  await choose(control(root, 'Locale', HTMLInputElement), 'de-DE')
+  expect(state.save).toHaveBeenLastCalledWith('update_regional_preferences', {
+    locale: 'de-DE',
+    time_zone: 'Europe/Paris',
+  })
+})
 it('puts a regional choice back when its save is refused', async () => {
   state.save.mockRejectedValue(new Error('Provider refused the update'))
   const root = mount()
