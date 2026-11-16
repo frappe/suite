@@ -10,6 +10,10 @@ import { ref } from 'vue'
 export interface SettingsTabIds {}
 
 export type SettingsTabId = Extract<keyof SettingsTabIds, string>
+/** One section of one tab, as `<tab id>.<section id>`: the name its row on the page answers to. */
+export type SettingsSectionKey = {
+  [Tab in SettingsTabId]: `${Tab}.${SettingsTabIds[Tab] & string}`
+}[SettingsTabId]
 
 /**
  * Whether Settings is open. The shell renders the dialog from this, so a
@@ -19,8 +23,25 @@ export const showSettings = ref(false)
 /** The tab `openSettings` asked for. Unset opens the first tab, or the phone list. */
 export const settingsTab = ref<SettingsTabId | undefined>()
 
-/** Opens Settings on `tab`. On phone, `tab` opens that tab's page over the list. */
-export function openSettings(tab?: SettingsTabId): void {
+/**
+ * The section `openSettings` asked for, as `<tab id>.<section id>`. The row on the page that goes by
+ * this name opens its dialog and unsets it.
+ */
+export const settingsSection = ref<string | undefined>()
+
+/**
+ * Opens Settings on `tab`, and on that tab opens the dialog of `section`. On phone, `tab` opens that
+ * tab's page over the list.
+ */
+export function openSettings<Tab extends SettingsTabId>(
+  tab?: Tab,
+  section?: SettingsTabIds[Tab] & string,
+): void {
   settingsTab.value = tab
+  settingsSection.value = undefined
+  if (tab && section) {
+    settingsSection.value = `${tab}.${section}`
+  }
+
   showSettings.value = true
 }

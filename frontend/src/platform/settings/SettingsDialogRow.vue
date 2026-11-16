@@ -11,8 +11,9 @@
 
 <script setup lang="ts">
 import { Button, Dialog, SettingsRow, type DialogSize } from 'frappe-ui'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
+import { settingsSection, type SettingsSectionKey } from '@/platform/settings'
 import { translate as __ } from '@/platform/translation'
 
 interface Props {
@@ -21,6 +22,8 @@ interface Props {
   /** The button's word, such as "Edit". */
   action: string
   size?: DialogSize
+  /** The name this row goes by. Asked for by it, the row opens its dialog. */
+  section?: SettingsSectionKey
 }
 const props = defineProps<Props>()
 defineSlots<{ default?: (scope: { close: () => void }) => unknown }>()
@@ -36,4 +39,14 @@ function open() {
 function close() {
   isOpen.value = false
 }
+
+function openWhenAskedFor() {
+  if (props.section && settingsSection.value === props.section) {
+    // Answered once: coming back to the page later must not open it again
+    settingsSection.value = undefined
+    open()
+  }
+}
+
+watch(settingsSection, openWhenAskedFor, { immediate: true })
 </script>

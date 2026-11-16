@@ -82,6 +82,7 @@ import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { useSession } from '@/platform/session'
+import { settingsSection } from '@/platform/settings'
 import { translate as __ } from '@/platform/translation'
 import { resolveSettingsTab, type SettingsTabId } from '@/shell/settings/settings'
 import SettingsDrillIn from '@/shell/settings/SettingsDrillIn.vue'
@@ -122,7 +123,13 @@ watch(
 watch(
   open,
   (isOpen) => {
-    if (isOpen) void load()
+    if (isOpen) {
+      void load()
+      return
+    }
+
+    // A section whose row never showed must not open the next time Settings does
+    settingsSection.value = undefined
   },
   { immediate: true },
 )
