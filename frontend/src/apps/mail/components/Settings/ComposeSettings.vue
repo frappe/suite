@@ -37,6 +37,7 @@ import { useScreenSize } from '@/apps/mail/utils/composables'
 import { UNDO_SEND_PERIODS, undoSendPeriodOf } from '@/apps/mail/utils/undoSend'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import { translate as __ } from '@/platform/translation'
 
 const user = userStore().userResource
 const { isMobile } = useScreenSize()
@@ -52,7 +53,7 @@ async function save() {
   const period = undoSendPeriod.value
   if (period !== '5' && period !== '10' && period !== '20' && period !== '30') return
   await saveSettings.run({ undo_send_period: period })
-  raiseToast(__('Compose settings updated.'))
+  raiseToast(__('Compose settings updated'))
 }
 
 const UNDO_SEND_OPTIONS = UNDO_SEND_PERIODS.map((seconds) => ({

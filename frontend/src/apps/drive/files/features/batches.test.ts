@@ -30,7 +30,11 @@ describe('inBatches', () => {
     expect(calls).toBe(2)
     expect(result.ok).toEqual(names(200))
     expect(result.failed).toHaveLength(250)
-    expect(result.failed[0]).toEqual({ node: 'n200', type: 'Error', message: 'Network down' })
+    expect(result.failed[0]).toEqual({
+      node: 'n200',
+      type: 'Error',
+      message: 'Could not complete the action',
+    })
   })
 
   it('throws when the first request fails, since nothing changed', async () => {

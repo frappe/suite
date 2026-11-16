@@ -10,7 +10,7 @@ test.describe("Joining and leaving", () => {
 		await hostPage.goto(`/meet/${meetingId}`);
 		await joinFromPreview(hostPage);
 
-		await hostPage.getByRole("button", { name: "End Call" }).click();
+		await hostPage.getByRole("button", { name: "End call" }).click();
 		await hostPage.getByRole("button", { name: "Leave meeting" }).click();
 
 		await hostPage.waitForURL(/\/meet\/?$/);
@@ -27,6 +27,6 @@ test.describe("Joining and leaving", () => {
 		await guest.joinAsGuest(meetingId, `Guest ${test.info().parallelIndex}`);
 
 		await expect(guest.page.getByTestId("meeting-layout")).toBeVisible();
-		await expect(guest.page.getByRole("button", { name: "End Call" })).toBeVisible();
+		await expect(guest.page.getByRole("button", { name: "End call" })).toBeVisible();
 	});
 });

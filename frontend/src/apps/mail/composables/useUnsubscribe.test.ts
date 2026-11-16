@@ -88,7 +88,7 @@ describe('useUnsubscribe', () => {
     unsubscribe(mail('a'))
     held[0].onFailed(new Error('refused'))
     expect(toastError).toHaveBeenCalledWith(
-      "Couldn't unsubscribe.",
+      'Could not unsubscribe',
       expect.objectContaining({ action: expect.objectContaining({ label: 'Open their page' }) }),
     )
   })

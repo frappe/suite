@@ -3,6 +3,7 @@ import { computed, defineAsyncComponent, h, onUnmounted, shallowRef, type Ref } 
 import { useRouter } from 'vue-router'
 
 import { api, client, useMutation } from '@/api'
+import { translate as __ } from '@/platform/translation'
 
 import MeetAvatar from '../components/MeetAvatar.vue'
 import { useSocket } from '../socket'
@@ -191,11 +192,12 @@ export function useSFUConnection(deps: {
   const confirmParticipantConnectionSwitch = () =>
     new Promise<boolean>((resolve) => {
       dialog.confirm({
-        title: 'Switch to this device?',
-        message:
+        title: __('Switch to this device?'),
+        message: __(
           "You're already in this meeting on another device. Continuing will move the meeting here.",
-        confirmLabel: 'Switch to this device',
-        cancelLabel: 'Cancel',
+        ),
+        confirmLabel: __('Switch to this device'),
+        cancelLabel: __('Cancel'),
         onConfirm: () => resolve(true),
         onCancel: () => resolve(false),
       })
@@ -254,7 +256,7 @@ export function useSFUConnection(deps: {
 
     audioNotificationManager.playJoinNotification(participant.user_id)
 
-    toast(`${participantName} joined the meeting`, {
+    toast(__('{0} joined the meeting', [participantName]), {
       icon: h(MeetAvatar, {
         image: participant.avatar,
         label: participant.user_name || participant.user_id,
@@ -274,7 +276,7 @@ export function useSFUConnection(deps: {
       return
     }
 
-    toast(`${participantName} left the meeting`, {
+    toast(__('{0} left the meeting', [participantName]), {
       icon: h(MeetAvatar, {
         image: participant?.avatar,
         label: participantName,
@@ -339,9 +341,9 @@ export function useSFUConnection(deps: {
         if (data.banned) {
           preserveGuestSessionOnEnd = true
           markGuestSessionStatus('banned')
-          toast.error('You have been banned from this meeting by the host')
+          toast.error(__('The host banned you from this meeting'))
         } else {
-          toast.error('You have been removed from the meeting by the host')
+          toast.error(__('The host removed you from the meeting'))
         }
         onHostKickedYou()
       },
@@ -414,7 +416,7 @@ export function useSFUConnection(deps: {
                 name:
                   currentUser.currentUser.value?.full_name ||
                   currentUser.currentUser.value?.name ||
-                  'You',
+                  __('You'),
                 userId: currentUser.currentUser.value?.user_id || '',
                 avatar: currentUser.currentUser.value?.avatar || '',
                 is_guest: false,
@@ -490,7 +492,7 @@ export function useSFUConnection(deps: {
                     ? getErrorMessage(publication.audioError)
                     : undefined,
                 })
-                toast.error('Some media could not be started. Trying to restore your connection.')
+                toast.error(__('Could not start some media. Trying to restore your connection.'))
                 throw new Error('Initial media publication recovery exhausted')
               }
             },
@@ -499,7 +501,7 @@ export function useSFUConnection(deps: {
       })
       if (wasAutomaticallyMuted) {
         const MicOffIcon = defineAsyncComponent(() => import('~icons/lucide/mic-off'))
-        toast('Mic muted automatically in large meetings.', {
+        toast(__('Your mic was muted because the meeting is large'), {
           duration: 5000,
           icon: h(MicOffIcon, { class: '-scale-x-100' }),
         })
@@ -609,7 +611,7 @@ export function useSFUConnection(deps: {
       } catch (error) {
         console.error('Error connecting admitted guest:', error)
         connectionState.connectionError = getErrorMessage(error)
-        toast.error('Could not verify your guest admission. Please try again.')
+        toast.error(__('Could not verify your guest admission. Try again.'))
       } finally {
         joiningInProgress.value = false
         approvedGuestConnectionPromise = null
@@ -638,9 +640,9 @@ export function useSFUConnection(deps: {
   const handleTerminalGuestStatus = (status: 'rejected' | 'banned' | 'expired') => {
     markGuestSessionStatus(status)
     const messages = {
-      rejected: 'Your join request was denied by the meeting host',
-      banned: 'You have been banned from this meeting',
-      expired: 'Your guest session has expired',
+      rejected: __('The host denied your join request'),
+      banned: __('You have been banned from this meeting'),
+      expired: __('Your guest session has expired'),
     }
     toast.error(messages[status])
   }
@@ -654,7 +656,7 @@ export function useSFUConnection(deps: {
     onError: (error) => {
       console.error('Guest realtime subscription failed:', error)
       connectionState.connectionError = error.message
-      toast.error('Could not verify your guest session. Please reconnect.')
+      toast.error(__('Could not verify your guest session. Reconnect to try again.'))
     },
   })
   guestRealtime.start()
@@ -696,12 +698,12 @@ export function useSFUConnection(deps: {
         } else {
           console.error('Failed to get SFU connection:', sfuResult)
           lobbyStore.isJoinRequestRejected = true
-          toast.error('Failed to join meeting after approval')
+          toast.error(__('Could not join the meeting after approval'))
         }
       } catch (error) {
         console.error('Error after approval:', error)
         connectionState.connectionError = getErrorMessage(error)
-        toast.error('Failed to join meeting after approval')
+        toast.error(__('Could not join the meeting after approval'))
       }
     }
   }
@@ -714,7 +716,7 @@ export function useSFUConnection(deps: {
       lobbyStore.isJoinRequestRejected = true
       lobbyStore.isWaitingForApproval = false
 
-      toast.error('Your join request was denied by the meeting host')
+      toast.error(__('The host denied your join request'))
     }
   }
 
@@ -739,10 +741,10 @@ export function useSFUConnection(deps: {
 
     try {
       await Promise.all([sfuClient.refreshToken({ forceNewRequest: true }), onCohostPromoted?.()])
-      toast.success('You are now a co-host')
+      toast.success(__('You are now a co-host'))
     } catch (error) {
       console.error('Failed to activate co-host permissions:', error)
-      toast.error('Could not activate co-host permissions')
+      toast.error(__('Could not activate co-host permissions'))
     }
   }
 

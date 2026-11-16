@@ -1,5 +1,6 @@
 import { REMOTE } from '@suite/collab-client'
-import type { JSONContent } from '@tiptap/core'
+import { getSchema, type JSONContent } from '@tiptap/core'
+import { prosemirrorJSONToYXmlFragment } from '@tiptap/y-tiptap'
 import { fromPartial } from '@total-typescript/shoehorn'
 import { expect } from 'vitest'
 import * as yjs from 'yjs'
@@ -14,6 +15,7 @@ import {
   syncAll,
   type Tab,
 } from '@/apps/writer/collab/test-support'
+import { writerSchema } from '@/apps/writer/schema'
 import type { CollabRoom } from '@/platform/collab'
 
 /** The parent a legacy inline fixture inserted its text into. */
@@ -33,11 +35,20 @@ export function text(value: string) {
   return { type: 'text', text: value }
 }
 
-export const threeParagraphs = stored(
+const threeParagraphsContent = [
   paragraph(text('abc')),
   paragraph(text('defgh')),
   paragraph(text('xyz')),
-)
+]
+
+export const threeParagraphs = stored(...threeParagraphsContent)
+
+// Writes the three paragraphs into `room` as its own edit. The server refuses a row that holds
+// another writer's clocks, so a room can't send `threeParagraphs` as its own
+export function writeThreeParagraphs(room: CollabRoom) {
+  const doc = { type: 'doc', content: threeParagraphsContent }
+  prosemirrorJSONToYXmlFragment(getSchema(writerSchema()), doc, room.doc.getXmlFragment(BODY_FIELD))
+}
 
 export function makeHeading(tab: Tab, word: string) {
   tab.editor.chain().setTextSelection(inside(tab, word)).setNode('heading', { level: 2 }).run()

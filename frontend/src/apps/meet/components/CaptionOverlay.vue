@@ -8,8 +8,8 @@
     leave-to-class="opacity-0 translate-y-2"
   >
     <div
-      data-testid="caption-overlay"
       v-show="isCaptionsEnabled && lines.length > 0"
+      data-testid="caption-overlay"
       class="pointer-events-none z-[40] flex shrink-0 justify-center px-3 pb-2 pt-1 sm:px-6"
     >
       <div
@@ -91,7 +91,7 @@ const props = defineProps({
 const getParticipant = (participantId) => {
   if (props.currentUser?.user_id === participantId) {
     return {
-      name: props.currentUser.full_name || props.currentUser.name || 'You',
+      name: props.currentUser.full_name || props.currentUser.name || __('You'),
       avatar: props.currentUser.avatar || '',
     }
   }

@@ -2,6 +2,7 @@ import { api, client } from '@/api'
 import { tabName, type InboxCategory } from '@/apps/mail/composables/useInboxTabs'
 import { raiseOptimisticToast, raiseToast } from '@/apps/mail/utils'
 import { useUndo } from '@/apps/mail/utils/composables'
+import { translate as __ } from '@/platform/translation'
 
 /** Where a list is being cleared: an account's mailbox, or a folder across every account. */
 export type ClearTarget = { account: string; mailbox: string } | { folder: string }
@@ -46,10 +47,10 @@ const mailOf = ({ name, filter }: ClearScope) => {
 
 const said = (action: ClearAction, mail: string) =>
   action === 'read'
-    ? [__('{0} marked as read.', [mail]), __('{0} marked as unread.', [mail])]
+    ? [__('{0} marked as read', [mail]), __('{0} marked as unread', [mail])]
     : [
-        action === 'archive' ? __('{0} archived.', [mail]) : __('{0} moved to Trash.', [mail]),
-        __('{0} moved back.', [mail]),
+        action === 'archive' ? __('{0} archived', [mail]) : __('{0} moved to Trash', [mail]),
+        __('{0} moved back', [mail]),
       ]
 
 /**
@@ -90,12 +91,12 @@ export const useClearList = (target: () => ClearTarget) => {
     } else if (!failed.length)
       raiseToast(
         filter_by
-          ? __('Nothing to clear.')
+          ? __('Nothing to clear')
           : action === 'read'
             ? __('Nothing unread in {0}.', [name])
             : __('Nothing in {0}.', [name]),
       )
-    if (failed.length) raiseToast(__('Not all {0} could be cleared.', [mail]), 'error')
+    if (failed.length) raiseToast(__('Could not clear all {0}', [mail]), 'error')
   }
 
   const menuFor = (scope: ClearScope) => [

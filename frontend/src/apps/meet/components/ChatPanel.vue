@@ -13,7 +13,9 @@
         data-testid="chat-panel"
       >
         <div class="flex items-center justify-between gap-3 px-4 py-5 shrink-0">
-          <div class="min-w-0 truncate text-sm-medium text-ink-gray-8 tracking-[0.21px]">Chat</div>
+          <div class="min-w-0 truncate text-sm-medium text-ink-gray-8 tracking-[0.21px]">
+            {{ __('Chat') }}
+          </div>
           <div class="flex shrink-0 items-center gap-1">
             <Dropdown v-if="isHost || isCohost" :options="pollMenuOptions">
               <Button variant="ghost" icon="lucide-more-horizontal" />
@@ -48,8 +50,8 @@
             size="xs"
             icon="lucide-pin-off"
             class="!bg-surface-gray-1 !text-ink-gray-5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 hover:!bg-surface-gray-3 hover:!text-ink-gray-8"
-            label="Unpin"
-            tooltip="Unpin message"
+            :label="__('Unpin')"
+            :tooltip="__('Unpin message')"
             @click.stop="emit('unpin')"
           />
         </div>
@@ -133,8 +135,8 @@
                           'absolute -top-2.5 -right-2.5 !rounded-full border border-outline-gray-2 !bg-surface-gray-1 !p-0 !text-ink-gray-5 shadow-sm hover:!bg-surface-gray-2 hover:!text-ink-gray-8',
                           isPinned(message) ? '!opacity-100' : 'opacity-0 group-hover:opacity-100',
                         ]"
-                        :label="isPinned(message) ? 'Unpin message' : 'Pin message'"
-                        :tooltip="isPinned(message) ? 'Unpin message' : 'Pin message'"
+                        :label="isPinned(message) ? __('Unpin message') : __('Pin message')"
+                        :tooltip="isPinned(message) ? __('Unpin message') : __('Pin message')"
                         @click="togglePin(message)"
                       />
                       <template v-for="(token, i) in tokenizeChatMessage(message.message)" :key="i">
@@ -156,7 +158,7 @@
           </div>
 
           <div v-if="chatItems.length === 0" class="mt-8 text-center text-sm text-ink-gray-5">
-            No messages yet
+            {{ __('No messages yet') }}
           </div>
         </div>
 
@@ -170,7 +172,7 @@
                 v-if="emojiMenuActive"
                 class="absolute bottom-full left-0 z-50 mb-1 max-h-[220px] min-w-[12rem] overflow-y-auto rounded-6 border border-outline-gray-2 bg-surface-elevation-2 p-1 shadow-lg"
                 role="listbox"
-                aria-label="Emoji suggestions"
+                :aria-label="__('Emoji suggestions')"
                 data-testid="chat-emoji-suggestions"
               >
                 <button
@@ -193,19 +195,25 @@
                   v-if="emojiSuggestions.length === 0"
                   class="px-2 py-1.5 text-sm text-ink-gray-4"
                 >
-                  No results
+                  {{ __('No results') }}
                 </div>
               </div>
               <textarea
                 ref="inputEl"
                 v-model="draft"
                 rows="1"
-                placeholder="Type a message"
+                :placeholder="__('Type a message')"
                 class="chat-composer-input min-h-7 min-w-0 flex-1 resize-none border-0 bg-transparent py-1.5 text-base text-ink-gray-8 shadow-none outline-none ring-0 placeholder-ink-gray-4 focus:border-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
                 @input="onInput"
                 @keydown="onKeydown"
               />
-              <Button type="submit" variant="subtle" theme="gray" size="sm" label="Send message">
+              <Button
+                type="submit"
+                variant="subtle"
+                theme="gray"
+                size="sm"
+                :label="__('Send message')"
+              >
                 <template #icon>
                   <lucide-send class="h-4 w-4" />
                 </template>
@@ -216,7 +224,7 @@
             v-else
             class="m-2 rounded-6 border border-outline-gray-2 bg-surface-gray-2 py-3 text-center text-sm text-ink-gray-5"
           >
-            The host has restricted chat to hosts and co-hosts only.
+            {{ __('The host has restricted chat to hosts and co-hosts only.') }}
           </div>
         </form>
         <CreatePollModal v-model="showPollModal" @submit="handlePollSubmit" />
@@ -229,6 +237,8 @@
 import LucideChartColumn from '~icons/lucide/chart-column'
 import { Button, Dropdown } from 'frappe-ui'
 import { computed, inject, markRaw, nextTick, onMounted, ref, watch } from 'vue'
+
+import { translate as __ } from '@/platform/translation'
 
 import { pollKey } from '../composables/usePoll'
 import { usePollStore } from '../composables/usePollStore'
@@ -277,7 +287,7 @@ const showPollModal = ref(false)
 const activePolls = computed(() => pollStore.activePolls)
 const pollMenuOptions = [
   {
-    label: 'Create Poll',
+    label: __('Create poll'),
     icon: markRaw(LucideChartColumn),
     onClick: () => {
       showPollModal.value = true
@@ -344,7 +354,7 @@ const chatItems = computed(() =>
 function time(ts: string) {
   try {
     return new Date(ts).toLocaleTimeString([], {
-      hour: '2-digit',
+      hour: 'numeric',
       minute: '2-digit',
       hour12: true,
     })
@@ -354,7 +364,7 @@ function time(ts: string) {
 }
 
 function pollCreatorName(poll: PollPayloadFE) {
-  if (poll.createdBy === props.userId) return props.userName || 'You'
+  if (poll.createdBy === props.userId) return props.userName || __('You')
   return poll.createdByName || poll.createdBy
 }
 

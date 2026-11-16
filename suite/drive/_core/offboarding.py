@@ -150,8 +150,8 @@ def transfer(
                 retained_transfer=True,
             )
         except frappe.ValidationError as exc:
-            results.append({"node": item.name, "success": False, "error": str(exc)})
+            results.append({"node": item.name, "title": item.title, "success": False, "error": str(exc)})
         else:
-            results.append({"node": item.name, "success": True, "error": None})
+            results.append({"node": item.name, "title": item.title, "success": True, "error": None})
     remaining = frappe.db.count("Drive Node", {"root": current["source_root"]})
     return {"results": results, "remaining": remaining, "complete": remaining == 0}

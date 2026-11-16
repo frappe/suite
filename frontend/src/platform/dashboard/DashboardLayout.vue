@@ -1,16 +1,20 @@
 <template>
   <div class="flex h-full flex-col">
-    <header class="flex items-center border-b px-3 py-2.5 sm:px-5">
-      <Button
-        v-if="isMobile"
-        icon="lucide-menu"
-        variant="ghost"
-        :aria-label="__('Open navigation')"
-        @click="openAreaSidebar(sidebarArea)"
-      />
-      <Breadcrumbs :items="breadcrumbs" class="mx-2" />
-      <Badge v-if="badgeLabel && !loading" :label="badgeLabel" :theme="badgeTheme" />
-      <div class="ml-auto flex space-x-2">
+    <PageHeader>
+      <div class="flex min-w-0 items-center">
+        <Button
+          v-if="isMobile"
+          icon="lucide-menu"
+          variant="ghost"
+          :aria-label="__('Open navigation')"
+          @click="openAreaSidebar(sidebarArea)"
+        />
+        <!-- Lines the title's text up with the body's left edge; the crumb's own 2px padding is pulled
+           back on desktop, and the phone keeps a gap after its menu button. -->
+        <Breadcrumbs :items="breadcrumbs" class="mr-2" :class="isMobile ? 'ml-2' : '-ml-0.5'" />
+        <Badge v-if="badgeLabel && !loading" :label="badgeLabel" :theme="badgeTheme" />
+      </div>
+      <div class="ml-auto flex shrink-0 space-x-2">
         <slot v-if="!loading" name="actions">
           <Button
             v-if="buttonLabel"
@@ -20,7 +24,7 @@
           />
         </slot>
       </div>
-    </header>
+    </PageHeader>
     <!-- min-h-0 lets the body shrink to the viewport and scroll itself, which is what the
 		     sticky list footer relies on; without it the body grows and the outer page scrolls. -->
     <div
@@ -38,7 +42,7 @@
 </template>
 
 <script setup lang="ts">
-import { Badge, Breadcrumbs, Button } from 'frappe-ui'
+import { Badge, Breadcrumbs, Button, PageHeader } from 'frappe-ui'
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 

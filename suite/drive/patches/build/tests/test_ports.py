@@ -38,7 +38,7 @@ from suite.drive.patches.build.ports import (
     SiteTree,
     TreeRow,
 )
-from suite.drive.patches.build.tests.fakes import FakeDrive
+from suite.drive.patches.build.tests.fakes import FakeDrive, StoreClient, StubClientError, bucket_over
 
 
 class StubbedDatabase(unittest.TestCase):
@@ -219,10 +219,68 @@ class TestSiteStorage(StubbedDatabase):
         blob.insert.assert_called_once_with(ignore_permissions=True, set_name="b7x2k9q4mz")
 
 
-class StubClientError(Exception):
-    def __init__(self, code):
-        super().__init__(code)
-        self.response = {"Error": {"Code": code}}
+class RefusingStoreClient(StoreClient):
+    """A store that refuses every copy with `AccessDenied`, and counts the attempts."""
+
+    copy_attempts = 0
+
+    def copy_object(self, Bucket, Key, CopySource):
+        self.copy_attempts += 1
+        raise StubClientError("AccessDenied")
+
+
+class TestBotoBucketCopiesSlashNamedKeys(unittest.TestCase):
+    """Legacy Drive wrote keys such as `/team/id`. The copy has to find the
+    same object on a store that kept the slash and on one that dropped it."""
+
+    def copies(self):
+        return (
+            ("copy_object", BotoBucket.copy_object),
+            ("managed_copy", BotoBucket.managed_copy),
+        )
+
+    def test_a_store_that_keeps_the_slash_copies_the_slash_named_object(self):
+        for name, copy in self.copies():
+            with self.subTest(name):
+                # `team/id` is a different object: the key Build asked for wins.
+                client = StoreClient({"/team/id": b"report", "team/id": b"other"}, trims_path_keys=False)
+                copy(bucket_over(client), "/team/id", "private/b1/report.pdf")
+                self.assertEqual(client.objects["private/b1/report.pdf"], b"report")
+
+    def test_a_store_that_dropped_the_slash_still_copies_the_object(self):
+        for name, copy in self.copies():
+            with self.subTest(name):
+                # What the store holds after `/team/id` was written to it.
+                client = StoreClient({"team/id": b"report"}, trims_path_keys=True)
+                copy(bucket_over(client), "/team/id", "private/b1/report.pdf")
+                self.assertEqual(client.objects["private/b1/report.pdf"], b"report")
+
+    def test_a_missing_slash_named_object_is_never_replaced_by_its_namesake(self):
+        for name, copy in self.copies():
+            with self.subTest(name):
+                # On AWS `/team/id` is gone, and `team/id` is someone else's file.
+                client = StoreClient({"team/id": b"other"}, trims_path_keys=False)
+                with self.assertRaises(StubClientError):
+                    copy(bucket_over(client), "/team/id", "private/b1/report.pdf")
+                self.assertEqual(client.objects, {"team/id": b"other"})
+
+    def test_a_missing_object_stays_missing_on_a_store_that_drops_slashes(self):
+        for name, copy in self.copies():
+            with self.subTest(name):
+                client = StoreClient({}, trims_path_keys=True)
+                with self.assertRaises(StubClientError):
+                    copy(bucket_over(client), "/team/id", "private/b1/report.pdf")
+                self.assertEqual(client.objects, {})
+
+    def test_a_refusal_is_not_retried_under_another_name(self):
+        for name, copy in self.copies():
+            with self.subTest(name):
+                # `team/id` exists, so a wrong retry without the slash would succeed.
+                client = RefusingStoreClient({"team/id": b"report"}, trims_path_keys=True)
+                with self.assertRaises(StubClientError):
+                    copy(bucket_over(client), "/team/id", "private/b1/report.pdf")
+                self.assertEqual(client.objects, {"team/id": b"report"})
+                self.assertEqual(client.copy_attempts, 1)
 
 
 class TestBotoBucket(unittest.TestCase):

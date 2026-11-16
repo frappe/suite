@@ -38,30 +38,16 @@ test.describe("Meet in the shell", () => {
 		await expect(meetHeader(page)).toHaveCount(0);
 	});
 
-	test("the audio test sits in the shell and a call stays outside it", async ({ page }) => {
-		await page.goto("/meet/audio-test");
-		await expect(page.getByRole("heading", { name: "Audio Notification Test" })).toBeVisible();
-		await expect(rail(page)).toBeVisible();
-
-		await rail(page).getByRole("link", { name: "Meet" }).click();
+	test("Meet home sits in the shell and a call stays outside it", async ({ page }) => {
+		await page.goto("/meet");
 		await expect(meetHome(page)).toBeVisible();
+		await expect(rail(page)).toBeVisible();
 
 		await page.goto("/meet/uf5-no-such-call");
 		await expect(page).toHaveURL(/\/meet\/uf5-no-such-call$/);
 		await expect(page.locator("#app")).not.toBeEmpty();
 		await expect(rail(page)).toHaveCount(0);
 		await expect(meetHome(page)).toHaveCount(0);
-	});
-
-	test("Meet's guard sends a user who is not a System Manager from the audio test to Meet", async ({ page }) => {
-		await patchAccount(page, {
-			roles: { system_manager: false, suite_admin: false },
-			capabilities: { jmap: true, systemManager: false },
-		});
-		await page.goto("/meet/audio-test");
-		await expect(page).toHaveURL(/\/meet$/);
-		await expect(meetHome(page)).toBeVisible();
-		await expect(page.getByRole("heading", { name: "Audio Notification Test" })).toHaveCount(0);
 	});
 
 	test("a guest opens an open call without a login redirect", async ({ browser, baseURL }) => {

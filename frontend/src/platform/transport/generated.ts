@@ -241,6 +241,7 @@ const operationUserTransferPreview: QueryRef<
 
 export type UserTransferOutputTransferItem = {
   node: string
+  title: string
   success: boolean
   error: string | null
 }

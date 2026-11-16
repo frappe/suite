@@ -22,10 +22,10 @@ test.describe("Reactions and raise hand", () => {
 		await expect(hostPage.locator("[aria-label^='Reaction 👍']")).toBeVisible();
 
 		await guest.page.getByRole("button", { name: "Reactions" }).click();
-		await guest.page.getByRole("button", { name: "Raise Hand" }).click();
+		await guest.page.getByRole("button", { name: "Raise hand" }).click();
 
 		await expect(hostPage.locator("[aria-label*='has raised their hand']")).toBeVisible();
-		await hostPage.getByRole("button", { name: "Show Participants" }).click();
+		await hostPage.getByRole("button", { name: "Show participants" }).click();
 		await expect(
 			hostPage.getByTestId("people-panel").getByLabel(/has raised their hand/),
 		).toBeVisible();

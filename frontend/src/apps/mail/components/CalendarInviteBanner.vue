@@ -88,6 +88,7 @@ import type { Attachment } from '@/apps/mail/types'
 import { raiseToast } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { userTimeZone } from '@/platform/time-zone'
+import { translate as __ } from '@/platform/translation'
 
 type InviteDetails = NonNullable<OutputOf<typeof api.calendar.invites.get>>
 const { attachment, account } = defineProps<{
@@ -189,7 +190,7 @@ async function addInviteSubmit() {
         event,
       },
     }
-  raiseToast(__('Event added to your calendar.'))
+  raiseToast(__('Event added to your calendar'))
 }
 
 // --- RSVP (the same segmented control the calendar app's event detail card uses) ---
@@ -235,7 +236,7 @@ async function respond(response: 'accepted' | 'tentative' | 'declined') {
           : null,
       },
     }
-  raiseToast(__('Response sent.'))
+  raiseToast(__('Response sent'))
   // The open card holds its own copy, so hand it the fresh one or it would keep showing the
   // previous answer.
   if (isOpen.value) openEvent(event)

@@ -24,6 +24,7 @@ import {
   roomText,
   textParent,
   threeParagraphs,
+  writeThreeParagraphs,
 } from '@/apps/writer/collab/removal-fixtures'
 import { watchRemovals, type Removal } from '@/apps/writer/collab/removals'
 import { ADOPT } from '@/platform/collab'
@@ -221,7 +222,7 @@ describe("work a tab takes on that the doc already held as another tab's (R310)"
     try {
       const server = fakeServer()
       const first = await join(server.endpoints())
-      yjs.applyUpdate(first.doc, threeParagraphs)
+      writeThreeParagraphs(first)
       await first.flush()
       const kept = await device()
       const live = await join(server.endpoints(), { device: kept })

@@ -1,8 +1,8 @@
 <template>
   <DashboardLayout
     area="mail"
-    :breadcrumbs="[{ label: __('Mailing Lists') }]"
-    :button-label="__('Add Mailing List')"
+    :breadcrumbs="[{ label: __('Mailing lists') }]"
+    :button-label="isFirstRun ? undefined : __('Add mailing list')"
     :button-action="() => (showAdd = true)"
   >
     <div class="flex items-center space-x-3">
@@ -12,14 +12,19 @@
         </template>
       </FormControl>
     </div>
-    <ErrorMessage :message="list.error?.message" />
     <DashboardList
+      :failure="
+        list.status === 'error'
+          ? { title: __('Could not load mailing lists'), retry: () => list.refetch() }
+          : undefined
+      "
       :columns="LIST_COLUMNS"
       :rows="list.rows"
       row-key="id"
       :loading="list.status === 'pending'"
+      :skeleton-rows="2"
       :row-route="listOptions.getRowRoute"
-      :empty-state="list.error ? undefined : listOptions.emptyState"
+      :empty-state="list.status === 'error' ? undefined : listOptions.emptyState"
     >
       <template #cell="{ column, item }">
         <span
@@ -42,7 +47,7 @@
 </template>
 <script setup lang="ts">
 import { refDebounced } from '@vueuse/core'
-import { ErrorMessage, FormControl, usePageMeta } from 'frappe-ui'
+import { FormControl, usePageMeta } from 'frappe-ui'
 import { computed, ref } from 'vue'
 
 import { api, useInfiniteQuery } from '@/api'
@@ -53,7 +58,7 @@ import { DEFAULT_PAGE_LENGTH } from '@/apps/mail/utils/paging'
 import { DashboardLayout, DashboardList } from '@/platform/dashboard'
 import { appPageMeta } from '@/platform/page-meta'
 
-usePageMeta(() => appPageMeta(__('Mailing Lists'), 'Mail'))
+usePageMeta(() => appPageMeta(__('Mailing lists'), 'Mail'))
 const showAdd = ref(false)
 useAddOnArrival(showAdd)
 const search = ref('')
@@ -65,7 +70,7 @@ const list = useInfiniteQuery(api.mail.admin.mailingLists.list, () => ({
 }))
 const LIST_COLUMNS = [
   {
-    label: __('Email'),
+    label: __('Email address'),
     key: 'email',
   },
   {
@@ -78,19 +83,24 @@ const LIST_COLUMNS = [
   },
 ]
 const hasActiveFilters = computed(() => !!search.value)
+// With nothing added yet, the empty state's own Add button is the one call to action, under
+// the line that explains it; the header's copy comes back with the first row.
+const isFirstRun = computed(
+  () => list.status === 'success' && !list.rows.length && !hasActiveFilters.value,
+)
 const listOptions = computed(() => ({
   selectable: false,
   showTooltip: false,
   emptyState: hasActiveFilters.value
     ? {
         title: __('No matching mailing lists'),
-        description: __('Try adjusting your search or filters.'),
+        description: __('Try a different search.'),
       }
     : {
         title: __('No mailing lists yet'),
         description: __('Create a mailing list to broadcast mail to many recipients at once.'),
         button: {
-          label: __('Add Mailing List'),
+          label: __('Add mailing list'),
           variant: 'solid' as const,
           onClick: () => (showAdd.value = true),
         },

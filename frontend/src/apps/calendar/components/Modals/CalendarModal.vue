@@ -51,6 +51,7 @@ import { userStore } from '@/apps/calendar/stores/user'
 import { raiseToast } from '@/apps/calendar/utils'
 import { CALENDAR_COLORS, type CalendarRow } from '@/apps/calendar/utils/calendars'
 import { eventColor } from '@/apps/calendar/utils/color'
+import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()
 
@@ -120,7 +121,7 @@ const savePending = computed(() => createCalendar.isPending || editCalendar.isPe
 const save = async () => {
   if (isNew.value) {
     await createCalendar.run({ account: store.accountId, name: form.name, color: form.color })
-    onSaved(__('Calendar created.'))
+    onSaved(__('Calendar created'))
   } else if (calendar) {
     await editCalendar.run({
       account: calendar.account,
@@ -128,7 +129,7 @@ const save = async () => {
       name: form.name,
       color: form.color,
     })
-    onSaved(__('Calendar updated.'))
+    onSaved(__('Calendar updated'))
   }
 }
 </script>

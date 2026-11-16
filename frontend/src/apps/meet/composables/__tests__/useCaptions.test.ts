@@ -209,7 +209,7 @@ describe('useCaptions', () => {
 
     expect(captions.isCaptionsEnabled.value).toBe(false)
     expect(toast.error).toHaveBeenCalledOnce()
-    expect(toast.error).toHaveBeenCalledWith('Failed to enable captions')
+    expect(toast.error).toHaveBeenCalledWith('Could not turn on captions')
   })
 
   it('handles and deduplicates E2EE cleanup rejection', async () => {

@@ -1,7 +1,7 @@
 import { toast } from 'frappe-ui'
 import { ref } from 'vue'
 
-import { translate } from '@/platform/translation'
+import { translate as __ } from '@/platform/translation'
 
 const PAGE_BUILD = Number(__SUITE_BUILD__)
 
@@ -18,13 +18,13 @@ let namedProducts: ReadonlySet<string> | null = null
 function productLabel(product: string) {
   const labelMap = new Map<string, string>(
     Object.entries({
-      calendar: translate('Calendar'),
-      drive: translate('Drive'),
-      mail: translate('Mail'),
-      meet: translate('Meet'),
-      sheets: translate('Sheets'),
-      slides: translate('Slides'),
-      writer: translate('Writer'),
+      calendar: __('Calendar'),
+      drive: __('Drive'),
+      mail: __('Mail'),
+      meet: __('Meet'),
+      sheets: __('Sheets'),
+      slides: __('Slides'),
+      writer: __('Writer'),
     }),
   )
   return labelMap.get(product) ?? product[0].toUpperCase() + product.slice(1)
@@ -40,11 +40,11 @@ function showBanner(pausedProducts: string[] = []) {
   const productLabels = pausedProducts.map(productLabel)
   let description: string | undefined
   if (productLabels.length) {
-    description = translate('Reload to keep editing in {0}.', [productLabels.join(', ')])
+    description = __('Reload to keep editing in {0}', [productLabels.join(', ')])
   }
 
   const reloadAction = {
-    label: translate('Reload'),
+    label: __('Reload'),
     onClick: () => window.location.reload(),
   }
   const options = {
@@ -53,7 +53,7 @@ function showBanner(pausedProducts: string[] = []) {
     description,
     action: reloadAction,
   }
-  toast.info(translate('A newer version is available'), options)
+  toast.info(__('A newer version is available'), options)
 }
 
 // Each product's minimum build; a header that isn't a map of builds is ignored

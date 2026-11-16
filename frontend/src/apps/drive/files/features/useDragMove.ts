@@ -214,7 +214,7 @@ export function useDragMove(options: {
     try {
       change = await previewMoveAccess(dragged.items, target.node, workspace.value)
     } catch {
-      toast.error(__('Could not check who would get access. Nothing was moved.'))
+      toast.error(__('Could not check access, so nothing moved'))
       return
     }
     if (change && !(await confirmAccess(change))) return
