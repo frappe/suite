@@ -78,10 +78,16 @@ const showConfirmDialog = ref(false)
 const activeSieveScript = computed(
   () => store.sieveScripts.data?.find((s) => s.active && s._name !== 'vacation')?._name,
 )
-const handleSave = () => {
-  if (activeSieveScript.value && draft.enabled) showConfirmDialog.value = true
-  else updateVacationResponseSubmit()
+// Awaited, so a refused save is reported where every failed save is, not as a stray error
+async function handleSave() {
+  if (activeSieveScript.value && draft.enabled) {
+    showConfirmDialog.value = true
+    return
+  }
+
+  await updateVacationResponseSubmit()
 }
+
 const draft = reactive({
   enabled: false,
   from_date: '',

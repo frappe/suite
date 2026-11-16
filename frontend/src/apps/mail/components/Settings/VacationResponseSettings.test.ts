@@ -4,6 +4,8 @@ import { createApp, nextTick } from 'vue'
 import VacationResponseSettings from './VacationResponseSettings.vue'
 
 const saved = vi.hoisted<{ value: Record<string, unknown> | null }>(() => ({ value: null }))
+const run = vi.hoisted(() => vi.fn())
+const reported = vi.hoisted(() => vi.fn())
 
 vi.mock('frappe-ui', async () => {
   const { defineComponent, h } = await import('vue')
@@ -36,7 +38,7 @@ vi.mock('frappe-ui', async () => {
 vi.mock('@/api', () => ({
   api: { mail: { vacation: { get: {}, update: {} } } },
   useQuery: () => ({ data: saved.value }),
-  useMutation: () => ({ run: vi.fn(), loading: false }),
+  useMutation: () => ({ run, loading: false }),
 }))
 vi.mock('@/apps/mail/stores/user', () => ({
   userStore: () => ({ accountId: 'account', sieveScripts: { data: [] } }),
@@ -73,14 +75,17 @@ const mount = async (enabled: 0 | 1, dates: { from: string; to: string }) => {
   const root = document.createElement('div')
   const app = createApp(VacationResponseSettings)
   app.config.globalProperties.__ = (message: string) => message
+  app.config.errorHandler = reported
   app.mount(root)
   await nextTick()
   const field = (label: string) => root.querySelector<HTMLInputElement>(`[data-label="${label}"]`)!
-  return { field, editor: root.querySelector('[data-editable]')! }
+  return { root, field, editor: root.querySelector('[data-editable]')! }
 }
 
 beforeEach(() => {
   window.__ = (message: string) => message
+  run.mockReset()
+  reported.mockReset()
 })
 
 it('starts from no dates once an absence is off and over, keeping its words', async () => {
@@ -110,4 +115,13 @@ it('lets nothing be edited while the responder is off', async () => {
   const on = await mount(1, AHEAD)
   expect(on.field('Subject').disabled).toBe(false)
   expect(on.editor.getAttribute('data-editable')).toBe('true')
+})
+
+it('hands a refused save to the app, where failed saves are reported', async () => {
+  const refusal = new Error('The dates are the wrong way round')
+  run.mockRejectedValue(refusal)
+  const { root } = await mount(1, AHEAD)
+  root.querySelector<HTMLElement>('[label="Save"]')!.click()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(reported.mock.calls[0]?.[0]).toBe(refusal)
 })
