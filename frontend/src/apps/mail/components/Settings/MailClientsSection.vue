@@ -23,7 +23,7 @@
       :title="__('Password')"
       :description="
         __(
-          'Sign in with your mail password. It is separate from your Suite password. When Suite hosts your mail, changing your password in Security sets your mail password to match.',
+          'Sign in with your mail password. If you do not know it, change your Suite password in Security. When Suite hosts your mail, that sets your mail password to the same one.',
         )
       "
     >
