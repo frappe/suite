@@ -484,13 +484,18 @@ def _media_mapping(env, deck, files, host, writer, titles, result):
         title = titles.claim(_media_title(source))
         if source.blob:
             collapsed += len(rows) - 1
-            blob = _ready_blob(target, source.blob)
+            # The group's blob can belong to a row that never became media:
+            # `_one_blob_per_content` collapses before `_thumbnail_file`
+            # excludes the thumbnail, and an earlier run may have taken another
+            # winner. The source's own stored node wins when it holds the same
+            # picture, so the plan does not depend on which blob won.
+            source_node = target.nodes((source.name,)).get(source.name)
+            blob = _ready_blob(target, _held_blob(target, source, source_node))
             matches = [
-                row for row in writer.children if row.get("kind") == "file" and row.get("blob") == source.blob
+                row for row in writer.children if row.get("kind") == "file" and row.get("blob") == blob.name
             ]
             if len(matches) > 1:
                 raise InvalidLegacyContent(f"Presentation {deck.name} has duplicate media nodes")
-            source_node = target.nodes((source.name,)).get(source.name)
             if source_node and not source_node.get("blob"):
                 if matches and matches[0]["name"] != source.name:
                     raise InvalidLegacyContent(f"media placeholder {source.name} conflicts with a blob node")
@@ -884,19 +889,29 @@ def _stored_node_blobs(target, files):
     row of the same bytes. §13 validates the stored node exactly, so the node
     wins: the plan names the blob the node holds, and nothing is rewritten.
 
-    Only a private Ready blob of the same checksum and size is taken. A node
-    that holds other bytes keeps the row's own blob, and `_media_mapping`
-    still refuses the deck.
+    `_media_mapping` applies the same rule to each group's source row once
+    the thumbnail is excluded. This earlier pass is still needed: it groups a
+    row whose node holds blob S with the rows whose own blob is S, so the deck
+    gets one node for that picture, not two nodes holding S.
     """
     nodes = target.nodes(tuple(sorted({row.name for row in files if row.blob})))
-    output = []
-    for row in files:
-        node = nodes.get(row.name)
-        stored = node.get("blob") if node and node.get("kind") == "file" else None
-        if row.blob and stored and stored != row.blob and _same_private_content(target, stored, row.blob):
-            row = replace(row, blob=stored)
-        output.append(row)
-    return output
+    return [
+        replace(row, blob=_held_blob(target, row, nodes.get(row.name))) if row.blob else row for row in files
+    ]
+
+
+def _held_blob(target, row, node):
+    """The blob `row`'s media node is planned with, given its stored `node`.
+
+    That is the blob the node holds when it is a private Ready blob of the
+    same checksum and size as `row.blob`, and `row.blob` otherwise. A node
+    that holds other bytes, a public blob, or a blob that is not Ready leaves
+    `row.blob`, and `exact_fields` still refuses the deck.
+    """
+    stored = node.get("blob") if node and node.get("kind") == "file" else None
+    if stored and stored != row.blob and _same_private_content(target, stored, row.blob):
+        return stored
+    return row.blob
 
 
 def _same_private_content(target, name, other):
@@ -1112,8 +1127,8 @@ def _same_content_blob(target, names, prefer=()):
     3. the lowest blob name.
 
     A deck's own media do not take this winner: `_one_blob_per_content` takes
-    the oldest row's blob, which is the blob its node holds when §14.4 stored
-    one.
+    the oldest row's blob, and `_media_mapping` keeps the blob a stored node
+    holds.
 
     Returns None unless every candidate is Ready and carries one checksum and
     one size. A blob with no checksum, one that is not Ready, and two rows of
@@ -1153,11 +1168,12 @@ def _one_blob_per_content(target, rows, host=""):
     two different names are two pictures as far as any reference can tell, and
     §7.1 charges a root per node, so Build leaves them as two nodes.
 
-    The oldest row's blob wins, not `_same_content_blob`'s lowest name.
-    `_media_mapping` names the node after that row, and `_stored_node_blobs`
-    has already pointed the row at the blob its node holds, so the plan agrees
-    with the stored node. `File Blob` names are random, so a winner taken by
-    name would refuse the deck on some runs and not on others.
+    The oldest row's blob wins, not `_same_content_blob`'s lowest name, so a
+    fresh run plans the same blobs whatever the random `File Blob` names are.
+    The winner need not be the blob a stored node holds: the oldest row can
+    be the thumbnail, which never becomes media, and an earlier run may have
+    taken another winner. `_media_mapping` keeps the stored node's blob in
+    both cases.
     """
     contested = defaultdict(set)
     for row in rows:

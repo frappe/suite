@@ -1042,6 +1042,162 @@ class SlidesTest(unittest.TestCase):
         self.assertEqual(target.node_rows["media-a"]["blob"], "blob-other")
         self.assertEqual(json.loads(source.slide_rows["slide-1"].elements), [{"src": row.file_url}])
 
+    def deck_media_node(self, target, name, blob, data, **values):
+        """The media node an earlier run left under the deck for File `name`."""
+        return self.tree_node(
+            target,
+            name,
+            "deck-node",
+            root="root",
+            path="/deck-node/",
+            title=f"{name}.png",
+            blob=blob,
+            size=len(data),
+            mime=target.blob(blob).mime_type,
+            **values,
+        )
+
+    def a_thumbnail_and_its_private_twin(self, *, copy, local):
+        """A deck thumbnail whose picture a second, private File also holds.
+
+        The older File is the deck's public thumbnail, `/files/logo.webp`. The
+        newer one is `/private/files/logo.webp` with the same bytes, and no
+        slide names either File. `copy` is the private copy Build makes of the
+        thumbnail's public blob; it is added before `local`, the newer File's
+        own blob, so the fake's `private_blob` answers with it. Each spelling
+        names both Files, so they are one picture through two blobs, but only
+        the older File is the thumbnail: the newer one stays deck media.
+        """
+        picture = webp_bytes()
+        thumb = media("thumb-file", blob="public-blob", url="/files/logo.webp", field="thumbnail")
+        newer = replace(
+            media("newer-file", blob=local, url="/private/files/logo.webp"),
+            creation="2024-01-02 03:14:05.000000",
+        )
+        source = FakeContent(
+            documents=[deck(thumbnail=thumb.file_url)],
+            slides=[],
+            media=[thumb, newer],
+            users={"Administrator": True},
+        )
+        env, target = self.environment(source)
+        target.add_blob("public-blob", picture, mime_type="image/webp", is_private=0)
+        target.add_blob(copy, picture, mime_type="image/webp", driver="s3")
+        target.add_blob(local, picture, mime_type="image/webp")
+        return env, target, picture, newer
+
+    def assert_a_rerun_changes_nothing(self, env, target, first):
+        nodes = {name: dict(row) for name, row in target.node_rows.items()}
+        blobs = dict(target.blob_rows)
+        previews = {name: dict(row) for name, row in target.preview_rows.items()}
+
+        again = convert_slides_and_templates(env)
+
+        self.assertEqual(target.node_rows, nodes)
+        self.assertEqual(target.blob_rows, blobs)
+        self.assertEqual(target.preview_rows, previews)
+        self.assertEqual(again.media_nodes_created, first.media_nodes_created)
+        self.assertEqual(again.deck_previews_created, first.deck_previews_created)
+
+    def test_a_thumbnails_private_twin_keeps_the_blob_its_filed_node_holds(self):
+        # The thumbnail is not deck media, so the newer File is the one that
+        # becomes the deck's node. Its tree node holds its own blob, and that
+        # node is adopted with it, whether or not the tree filed the thumbnail
+        # too, and whatever the random blob names are.
+        for copy, local in (("blob-a", "blob-b"), ("blob-b", "blob-a")):
+            for thumbnail_filed in (False, True):
+                with self.subTest(copy=copy, local=local, thumbnail_filed=thumbnail_filed):
+                    env, target, picture, newer = self.a_thumbnail_and_its_private_twin(
+                        copy=copy, local=local
+                    )
+                    facts = {"size": len(picture), "mime": "image/webp"}
+                    if thumbnail_filed:
+                        self.tree_node(target, "thumb-file", "root", title="logo.webp", blob=copy, **facts)
+                    self.tree_node(
+                        target,
+                        "newer-file",
+                        "root",
+                        title="logo (2).webp",
+                        blob=local,
+                        creation=newer.creation,
+                        **facts,
+                    )
+                    thumb_node = dict(target.node_rows.get("thumb-file") or {})
+                    blobs = dict(target.blob_rows)
+
+                    first = convert_slides_and_templates(env)
+
+                    children = self.media_children(target, "deck-node")
+                    self.assertEqual(
+                        [(row["name"], row["blob"]) for row in children], [("newer-file", local)]
+                    )
+                    self.assertEqual(first.media_nodes_created, 1)
+                    # The preview is built from the thumbnail's own bytes.
+                    preview = target.preview_rows["deck-node"]
+                    self.assertEqual((preview["name"], preview["blob"]), ("thumb-file", copy))
+                    self.assertEqual(target.blob_bytes[preview["blob"]], picture)
+                    self.assertEqual(first.deck_previews_created, 1)
+                    self.assertEqual(dict(target.node_rows.get("thumb-file") or {}), thumb_node)
+                    self.assertEqual(target.blob_rows, blobs)
+
+                    self.assert_a_rerun_changes_nothing(env, target, first)
+
+    def test_a_deck_an_earlier_run_converted_with_a_thumbnails_twin_converts_again(self):
+        # The earlier run took the lowest blob name for both Files, so the
+        # newer File's node and the preview hold that blob. This run reads the
+        # same picture through another blob, and keeps what is stored.
+        for copy, local in (("blob-a", "blob-b"), ("blob-b", "blob-a")):
+            with self.subTest(copy=copy, local=local):
+                env, target, picture, newer = self.a_thumbnail_and_its_private_twin(copy=copy, local=local)
+                earlier = min(copy, local)
+                self.deck_media_node(target, "newer-file", earlier, picture, creation=newer.creation)
+                target.preview_rows["deck-node"] = {
+                    "name": "thumb-file",
+                    "node": "deck-node",
+                    "source_blob": None,
+                    "blob": earlier,
+                    "owner": OWNER,
+                    "creation": STAMP,
+                    "modified": STAMP,
+                    "modified_by": OWNER,
+                }
+                nodes = {name: dict(row) for name, row in target.node_rows.items()}
+                previews = {name: dict(row) for name, row in target.preview_rows.items()}
+
+                first = convert_slides_and_templates(env)
+
+                # Build also makes the owner's root; only the stored rows matter.
+                self.assertEqual({name: target.node_rows[name] for name in nodes}, nodes)
+                self.assertEqual(target.preview_rows, previews)
+                children = self.media_children(target, "deck-node")
+                self.assertEqual([(row["name"], row["blob"]) for row in children], [("newer-file", earlier)])
+                self.assertEqual((first.media_nodes_created, first.deck_previews_created), (1, 1))
+                self.assert_a_rerun_changes_nothing(env, target, first)
+
+    def test_a_deck_an_earlier_run_converted_with_a_picture_filed_twice_converts_again(self):
+        # The earlier run took the lowest blob name for both Files, and the
+        # older File had no tree node, so its node under the deck holds that
+        # blob. Neither the node nor the slide is rewritten.
+        for copy, local in (("blob-a", "blob-b"), ("blob-b", "blob-a")):
+            with self.subTest(copy=copy, local=local):
+                env, target, source = self.one_picture_filed_twice(copy=copy, local=local)
+                data = b"one picture"
+                del target.node_rows["older-file"]
+                self.deck_media_node(target, "older-file", min(copy, local), data)
+                converted = json.dumps([{"src": "older-file"}, {"src": "older-file"}])
+                source.slide_rows["slide-1"] = replace(source.slide_rows["slide-1"], elements=converted)
+                nodes = {name: dict(row) for name, row in target.node_rows.items()}
+
+                first = convert_slides_and_templates(env)
+
+                # Build also makes the owner's root; only the stored rows matter.
+                self.assertEqual({name: target.node_rows[name] for name in nodes}, nodes)
+                self.assertEqual(source.slide_rows["slide-1"].elements, converted)
+                children = self.media_children(target, "deck-node")
+                self.assertEqual([row["name"] for row in children], ["older-file"])
+                self.assertEqual(first.media_nodes_created, 1)
+                self.assert_a_rerun_changes_nothing(env, target, first)
+
     def test_a_picture_another_deck_holds_is_copied_into_the_deck_that_shows_it(self):
         # B112: a deck pasted from another, non-template deck shows the same
         # picture after Build. It gets its own node for the same blob, and the
