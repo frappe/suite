@@ -4,12 +4,12 @@
       <div class="space-y-4">
         <FormControl
           v-model="draft.signature_name"
-          :label="__('Signature Name')"
+          :label="__('Name')"
           :placeholder="__('Work signature')"
           variant="outline"
         />
         <div class="space-y-1.5">
-          <label class="text-ink-gray-5 block text-xs">{{ __('Signature Body') }}</label>
+          <label class="text-ink-gray-5 block text-xs">{{ __('Signature') }}</label>
           <MailRichTextField
             v-model="draft.html_body"
             :placeholder="__('Write your signature here')"
@@ -26,7 +26,7 @@ import { computed, reactive, watch } from 'vue'
 
 import { api, useMutation, useQuery } from '@/api'
 import MailRichTextField from '@/apps/mail/components/Controls/MailRichTextField.vue'
-import { raiseToast } from '@/apps/mail/utils'
+import { toast } from '@/platform/feedback'
 import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()
@@ -55,12 +55,12 @@ const updateSignature = useMutation(api.mail.signatures.update)
 async function save() {
   await updateSignature.run({ name: signatureID, ...draft })
   show.value = false
-  raiseToast(__('Signature updated'))
+  toast.success(__('Signature updated'))
   emit('reloadSignatures')
 }
 
 const addSignatureOptions = computed(() => ({
-  title: __('Edit Signature'),
+  title: __('Edit signature'),
   actions: [
     {
       label: __('Save'),

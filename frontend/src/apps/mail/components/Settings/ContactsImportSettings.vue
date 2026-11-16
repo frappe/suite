@@ -1,53 +1,59 @@
 <template>
-  <FormControl
-    v-model="contactsImport.format"
-    :label="__('Format')"
-    type="select"
-    variant="outline"
-    :options="FORMAT_OPTIONS"
-    required
-  />
-  <FormControl
-    v-model="contactsImport.address_book"
-    :label="__('Address Book')"
-    type="select"
-    variant="outline"
-    :options="addressBookOptions"
-  />
-  <input
-    ref="fileInput"
-    type="file"
-    class="hidden"
-    :accept="acceptTypes"
-    @change="onFileSelected"
-  />
-  <Button
-    class="w-full"
-    :label="uploading ? __('Uploading ({0}%)', [progress]) : __('Upload File')"
-    :loading="uploading"
-    @click="fileInput?.click()"
-  />
-  <p class="text-ink-gray-5 mt-2 flex text-sm">{{ fileUploadSubtitle }}</p>
-
-  <Button
-    class="min-h-7"
-    :label="__('Create Import')"
-    variant="solid"
-    :loading="Boolean(ongoingImport.data?.name) || createContactsImport.isPending"
-    :disabled="ongoingImport.isFetching || Boolean(ongoingImport.error) || !contactsImport.file"
-    @click="createContactsImportSubmit()"
-  />
-  <div class="!mt-3 space-x-1 text-base">
-    <span class="text-ink-gray-5">{{ importSubtitle }}</span>
-    <a class="hover:underline" :href="importHref" target="_blank">
-      {{ importLinkText }}
-    </a>
+  <div class="flex flex-col gap-4 py-3.5">
+    <div class="grid gap-4 sm:grid-cols-2">
+      <FormControl
+        v-model="contactsImport.format"
+        :label="__('Format')"
+        type="select"
+        :options="FORMAT_OPTIONS"
+        required
+      />
+      <FormControl
+        v-model="contactsImport.address_book"
+        :label="__('Address book')"
+        type="select"
+        :options="addressBookOptions"
+      />
+    </div>
+    <input
+      ref="fileInput"
+      type="file"
+      class="hidden"
+      :accept="acceptTypes"
+      @change="onFileSelected"
+    />
+    <div class="flex flex-col gap-1.5">
+      <span class="text-xs text-ink-gray-5">{{ __('File') }}</span>
+      <div class="flex items-center gap-3">
+        <Button
+          icon-left="lucide-upload"
+          :label="uploading ? __('Uploading ({0}%)', [progress]) : __('Choose file')"
+          :loading="uploading"
+          @click="fileInput?.click()"
+        />
+        <span class="min-w-0 truncate text-p-sm text-ink-gray-5">{{ fileUploadSubtitle }}</span>
+      </div>
+    </div>
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <p class="text-p-sm text-ink-gray-5">
+        {{ importSubtitle }}
+        <a class="text-ink-gray-7 underline underline-offset-2" :href="importHref" target="_blank">
+          {{ importLinkText }}
+        </a>
+      </p>
+      <Button
+        variant="solid"
+        :label="__('Start import')"
+        :loading="Boolean(ongoingImport.data?.name) || createContactsImport.isPending"
+        :disabled="ongoingImport.isFetching || Boolean(ongoingImport.error) || !contactsImport.file"
+        @click="createContactsImportSubmit()"
+      />
+    </div>
+    <ErrorMessage
+      v-if="createContactsImport.error"
+      :message="createContactsImport.error?.message"
+    />
   </div>
-  <ErrorMessage
-    v-if="createContactsImport.error"
-    :message="createContactsImport.error?.message"
-    class="mb-2.5"
-  />
 </template>
 
 <script setup lang="ts">
@@ -115,7 +121,7 @@ const addressBookOptions = computed(() =>
   })),
 )
 const fileUploadSubtitle = computed(() => {
-  if (contactsImport.file) return __('File uploaded: {0}', [contactsImport.file])
+  if (contactsImport.file) return __('Uploaded {0}', [contactsImport.file.split('/').pop() ?? ''])
   if (contactsImport.format === 'vcf') return __('Supported file format: .vcf')
   return __('Supported file formats: .zip, .tar, .tgz')
 })

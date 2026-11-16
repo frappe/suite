@@ -1,64 +1,64 @@
 <template>
-  <FormControl
-    v-model="contactsExport.format"
-    :label="__('Format')"
-    type="select"
-    variant="outline"
-    :options="FORMAT_OPTIONS"
-  />
-  <FormControl
-    v-model="contactsExport.archive_type"
-    :label="__('Archive Type')"
-    type="select"
-    variant="outline"
-    :options="ARCHIVE_TYPE_OPTIONS"
-  />
-  <SettingsRow
-    class="!py-0"
-    :title="__('Custom Selection')"
-    :description="__('Apply filters to select specific contacts for export.')"
-  >
-    <Switch v-model="customSelection" />
-  </SettingsRow>
-  <template v-if="customSelection">
-    <FormControl
-      v-model="filter.inAddressBook"
-      :label="__('Address Book')"
-      type="select"
-      variant="outline"
-      :options="addressBookOptions"
+  <div class="flex flex-col gap-4 py-3.5">
+    <div class="grid gap-4 sm:grid-cols-2">
+      <FormControl
+        v-model="contactsExport.format"
+        :label="__('Format')"
+        type="select"
+        :options="FORMAT_OPTIONS"
+      />
+      <FormControl
+        v-model="contactsExport.archive_type"
+        :label="__('Archive type')"
+        type="select"
+        :options="ARCHIVE_TYPE_OPTIONS"
+      />
+    </div>
+    <SettingsRow
+      class="!py-0"
+      :title="__('Only some contacts')"
+      :description="__('Choose an address book, a name or an email')"
+    >
+      <Switch v-model="customSelection" />
+    </SettingsRow>
+    <div v-if="customSelection" class="grid gap-4 sm:grid-cols-2">
+      <FormControl
+        v-model="filter.inAddressBook"
+        :label="__('Address book')"
+        type="select"
+        :options="addressBookOptions"
+      />
+      <FormControl v-model="filter.name" type="text" :label="__('Name')" />
+      <FormControl v-model="filter.email" type="text" :label="__('Email')" />
+      <FormControl
+        v-model="contactsExport.limit"
+        :label="__('Most contacts')"
+        type="number"
+        placeholder="1000"
+      />
+    </div>
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <p class="text-p-sm text-ink-gray-5">
+        {{ exportSubtitle }}
+        <a class="text-ink-gray-7 underline underline-offset-2" :href="exportHref" target="_blank">
+          {{ exportLinkText }}
+        </a>
+      </p>
+      <Button
+        variant="solid"
+        :label="__('Start export')"
+        :loading="Boolean(ongoingExport.data?.name) || createContactsExport.isPending"
+        :disabled="
+          ongoingExport.isFetching || Boolean(ongoingExport.error) || createContactsExport.isPending
+        "
+        @click="createContactsExportSubmit()"
+      />
+    </div>
+    <ErrorMessage
+      v-if="createContactsExport.error"
+      :message="createContactsExport.error?.message"
     />
-    <FormControl v-model="filter.name" type="text" variant="outline" :label="__('Name')" />
-    <FormControl v-model="filter.email" type="text" variant="outline" :label="__('Email')" />
-    <FormControl
-      v-model="contactsExport.limit"
-      :label="__('Max Number of Contacts')"
-      type="number"
-      variant="outline"
-      placeholder="1000"
-    />
-  </template>
-
-  <Button
-    class="min-h-7"
-    :label="__('Create Export')"
-    :loading="Boolean(ongoingExport.data?.name) || createContactsExport.isPending"
-    :disabled="
-      ongoingExport.isFetching || Boolean(ongoingExport.error) || createContactsExport.isPending
-    "
-    @click="createContactsExportSubmit()"
-  />
-  <div class="!mt-3 space-x-1 text-base">
-    <span class="text-ink-gray-5">{{ exportSubtitle }}</span>
-    <a class="hover:underline" :href="exportHref" target="_blank">
-      {{ exportLinkText }}
-    </a>
   </div>
-  <ErrorMessage
-    v-if="createContactsExport.error"
-    :message="createContactsExport.error?.message"
-    class="mb-2.5"
-  />
 </template>
 
 <script setup lang="ts">

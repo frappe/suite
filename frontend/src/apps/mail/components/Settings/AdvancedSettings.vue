@@ -1,119 +1,24 @@
+<!--
+  Mail > Advanced: how Suite connects to the mail server, the details for other mail apps, the
+  server-side rules, and push subscriptions. Each section loads on its own.
+-->
 <template>
-  <AppSettingsHeader :title="__('Advanced')" />
-  <AppSettingsBody>
-    <div class="flex flex-col gap-5">
-      <h2 class="text-base-semibold text-ink-gray-8">{{ __('API Access') }}</h2>
-      <CopyControl
-        v-if="user.data?.api_key"
-        :label="__('API Key')"
-        :value="user.data?.api_key ?? ''"
-      />
-      <p v-else class="text-base">
-        {{ __(`You don't have an API key yet. Generate one to access the API.`) }}
-      </p>
-      <Button
-        class="min-h-7 self-start"
-        :label="user.data?.api_key ? __('Regenerate Secret') : __('Generate Keys')"
-        @click="generateKeysSubmit()"
-      />
-
-      <Dialog v-model:open="showSecret" v-bind="{ title: __('API Access') }">
-        <template #default>
-          <p class="text-base">
-            {{ __(`Please copy the API secret now. You won’t be able to see it again!`) }}
-          </p>
-          <CopyControl :label="__('API Key')" :value="user.data?.api_key ?? ''" />
-          <CopyControl :label="__('API Secret')" :value="apiSecret" />
-        </template>
-      </Dialog>
-
-      <div v-if="configRows.length" class="space-y-4 border-t pt-5">
-        <div class="space-y-1">
-          <h2 class="text-base-semibold text-ink-gray-8">
-            {{ __('Mail Client Configuration') }}
-          </h2>
-          <p class="text-ink-gray-6 text-base">
-            {{
-              __(
-                'Use these details to connect a third-party mail client such as Thunderbird or the Gmail app.',
-              )
-            }}
-          </p>
-        </div>
-
-        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div v-for="row in configRows" :key="row.key" class="space-y-3 rounded-6 border p-4">
-            <div class="flex items-center justify-between gap-2">
-              <span class="text-ink-gray-8 font-medium">{{ row.protocol }}</span>
-              <Badge :label="row.connection_security" theme="gray" variant="subtle" />
-            </div>
-            <div class="space-y-2 text-base">
-              <div
-                v-for="field in row.fields"
-                :key="field.label"
-                class="flex items-center justify-between gap-3"
-              >
-                <span class="text-ink-gray-5">{{ field.label }}</span>
-                <Tooltip :text="__('Click to copy')">
-                  <span
-                    class="text-ink-gray-8 cursor-copy truncate"
-                    @click="copyToClipBoard(field.value)"
-                  >
-                    {{ field.value }}
-                  </span>
-                </Tooltip>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <CopyControl :label="__('Username')" :value="user.data?.email ?? ''" />
-        <p class="text-ink-gray-5 text-sm">
-          {{ __('Sign in using your existing mail account password.') }}
-        </p>
-      </div>
-    </div>
-  </AppSettingsBody>
+  <SettingsPage
+    :title="__('Advanced')"
+    :description="__('Your mail server connection, other mail apps, and server-side rules')"
+  >
+    <ConnectionSection />
+    <MailClientsSection />
+    <AutomationSection />
+    <PushSubscriptionsSection />
+  </SettingsPage>
 </template>
+
 <script setup lang="ts">
-import { Badge, Button, Dialog, Tooltip } from 'frappe-ui'
-import { computed, ref } from 'vue'
-
-import { api, useMutation, useQuery } from '@/api'
-import { userStore } from '@/apps/mail/stores/user'
-import { copyToClipBoard } from '@/apps/mail/utils'
-import CopyControl from '@/components/CopyControl.vue'
-import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
-import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
-
-const user = userStore().userResource
-const showSecret = ref(false)
-const apiSecret = ref('')
-const generateKeys = useMutation(api.suite.account.generateKeys)
-async function generateKeysSubmit() {
-  if (!user.data) return
-  const data = await generateKeys.run({
-    user: user.data.name,
-  })
-  apiSecret.value = data.api_secret
-  showSecret.value = true
-}
-const clientConfig = useQuery(api.mail.settings.clientConfig, () => ({}))
-const configRows = computed(() =>
-  (clientConfig.data ?? []).map((row, index: number) => ({
-    key: `${row.protocol}-${row.port}-${index}`,
-    protocol: row.protocol,
-    connection_security: row.connection_security,
-    fields: [
-      {
-        label: __('Hostname'),
-        value: String(row.hostname),
-      },
-      {
-        label: __('Port'),
-        value: String(row.port),
-      },
-    ],
-  })),
-)
+import AutomationSection from '@/apps/mail/components/Settings/AutomationSection.vue'
+import ConnectionSection from '@/apps/mail/components/Settings/ConnectionSection.vue'
+import MailClientsSection from '@/apps/mail/components/Settings/MailClientsSection.vue'
+import PushSubscriptionsSection from '@/apps/mail/components/Settings/PushSubscriptionsSection.vue'
+import { SettingsPage } from '@/platform/settings-tab'
+import { translate as __ } from '@/platform/translation'
 </script>

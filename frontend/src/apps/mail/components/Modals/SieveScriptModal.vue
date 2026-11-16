@@ -2,7 +2,7 @@
   <Dialog
     v-model:open="show"
     v-bind="{
-      title: selectedScript ? __('Edit Sieve Script') : __('New Sieve Script'),
+      title: selectedScript ? __('Edit rule script') : __('New rule script'),
       size: '3xl' as const,
       actions: [
         {
@@ -64,7 +64,8 @@ import { computed, reactive, watch } from 'vue'
 import { api, useMutation, type InputOf } from '@/api'
 import { userStore } from '@/apps/mail/stores/user'
 import type { SieveScript } from '@/apps/mail/types'
-import { getScriptName, isSystemScript, raiseToast } from '@/apps/mail/utils'
+import { getScriptName, isSystemScript } from '@/apps/mail/utils'
+import { toast } from '@/platform/feedback'
 import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()
@@ -97,7 +98,7 @@ async function createScriptSubmit() {
     ...script,
   }
   await createScript.run(input)
-  raiseToast(__('Sieve script created'))
+  toast.success(__('Sieve script created'))
   show.value = false
 }
 const updateScript = useMutation(api.mail.sieve.update)
@@ -108,7 +109,7 @@ async function updateScriptSubmit() {
     ...script,
   }
   await updateScript.run(input)
-  raiseToast(__('Sieve script updated'))
+  toast.success(__('Sieve script updated'))
   show.value = false
 }
 watch(show, (val) => {

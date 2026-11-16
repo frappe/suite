@@ -1,66 +1,52 @@
+<!--
+  Mail > Folders: the active account's folders. A row opens the folder's settings; its menu hides,
+  shows or deletes it.
+-->
 <template>
-  <AppSettingsHeader :title="__('Folders')">
-    <template #actions>
-      <Button
-        icon-left="lucide-plus"
-        :label="__('New')"
-        :size="isMobile ? 'md' : 'sm'"
-        @click="editMailbox()"
+  <SettingsPage
+    :title="__('Folders')"
+    :description="__('Make, rename and arrange the folders you file mail into')"
+    :loading="!mailboxes.data"
+  >
+    <SettingsSection>
+      <template #actions>
+        <Button icon-left="lucide-plus" :label="__('New')" @click="editMailbox()" />
+      </template>
+      <template v-if="mailboxes.data?.length">
+        <SettingsListRow
+          v-for="mailbox in mailboxes.data"
+          :key="mailbox.name"
+          :title="mailbox._name"
+          :subtitle="summary(mailbox)"
+          :menu="mailboxMenu(mailbox)"
+          @open="editMailbox(mailbox)"
+        >
+          <template #leading>
+            <Icon
+              :name="getIcon(mailbox)"
+              class="size-4 shrink-0"
+              :class="mailbox.color ? FOLDER_ICON_COLOR_MAP[mailbox.color] : 'text-ink-gray-6'"
+            />
+          </template>
+        </SettingsListRow>
+      </template>
+      <SettingsEmpty
+        v-else
+        icon="lucide-folder"
+        :title="__('No folders yet')"
+        :description="__('Folders keep related mail together.')"
       />
-    </template>
-  </AppSettingsHeader>
-  <AppSettingsBody>
-    <div v-if="managedMailboxes.length">
-      <div
-        v-for="mailbox in managedMailboxes"
-        :key="mailbox.name"
-        class="hover:bg-surface-gray-1 -mx-2 flex cursor-pointer items-center justify-between rounded-4 px-3 py-1 max-sm:-mx-4 max-sm:px-4 max-sm:py-2"
-        @click="editMailbox(mailbox)"
-      >
-        <div class="flex items-center gap-2 max-sm:gap-3">
-          <Icon
-            :name="getIcon(mailbox)"
-            class="icon shrink-0"
-            :class="mailbox.color ? FOLDER_ICON_COLOR_MAP[mailbox.color] : undefined"
-          />
-          <span class="text-base">{{ mailbox._name }}</span>
-        </div>
-        <div class="flex items-center gap-3 max-sm:-mr-1.5">
-          <EyeOff v-if="!mailbox.subscribed" class="text-ink-gray-5 h-4 w-4" />
-          <!-- .stop lives on the wrapper: AdaptiveDropdown's mobile trigger opens
-					     via the click bubbling to its own span, so stopping on the Button
-					     itself would keep the sheet from opening. -->
-          <div class="flex" @click.stop>
-            <AdaptiveDropdown :options="mailboxOptions(mailbox)" :title="mailbox._name">
-              <Button variant="ghost">
-                <template #icon>
-                  <Ellipsis class="text-ink-gray-5 h-4 w-4" />
-                </template>
-              </Button>
-            </AdaptiveDropdown>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div v-else class="text-ink-gray-6 flex flex-col space-y-2 text-sm">
-      <p class="text-base-medium">{{ __('No folders found.') }}</p>
-
-      <p>
-        {{ __('Folders let you organize your emails into different categories.') }}
-      </p>
-    </div>
+    </SettingsSection>
 
     <FolderModal v-model="showFolderModal" :mailbox="selectedMailbox" />
     <DeleteFolderModal v-model="showDeleteFolderModal" :mailbox="selectedMailbox" />
-  </AppSettingsBody>
+  </SettingsPage>
 </template>
 
 <script setup lang="ts">
 import { Button } from 'frappe-ui'
 import { Icon } from 'frappe-ui/experimental'
-import { Ellipsis, Eye, EyeOff, Settings, Trash2 } from 'lucide-vue-next'
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 
 import { api, useMutation } from '@/api'
 import DeleteFolderModal from '@/apps/mail/components/Modals/DeleteFolderModal.vue'
@@ -69,40 +55,51 @@ import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
 import { userStore } from '@/apps/mail/stores/user'
 import type { MailboxData } from '@/apps/mail/types'
 import { getIcon } from '@/apps/mail/utils'
-import { useScreenSize } from '@/apps/mail/utils/composables'
-import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
-import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
-import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import {
+  SettingsEmpty,
+  SettingsListRow,
+  SettingsPage,
+  SettingsSection,
+} from '@/platform/settings-tab'
+import { translate as __ } from '@/platform/translation'
 
 const { mailboxes } = userStore()
-const { isMobile } = useScreenSize()
-
-const managedMailboxes = computed(() => mailboxes?.data ?? [])
 const showFolderModal = ref(false)
 const selectedMailbox = ref<MailboxData>()
 const showDeleteFolderModal = ref(false)
+
 const editMailbox = (mailbox?: MailboxData) => {
   selectedMailbox.value = mailbox
   showFolderModal.value = true
 }
-const mailboxOptions = (mailbox: MailboxData) => [
+
+/** What is set on the folder, where it differs from a plain folder. */
+function summary(mailbox: MailboxData) {
+  const parts: string[] = []
+  if (!mailbox.subscribed) parts.push(__('Hidden'))
+  if (mailbox.disable_push_notification) parts.push(__('Notifications off'))
+  if (mailbox.automation_rules) parts.push(__('Files mail by rule'))
+  return parts.join(' · ') || undefined
+}
+
+const subscribe = useMutation(api.mail.mailboxes.subscribe)
+const mailboxMenu = (mailbox: MailboxData) => [
   {
     label: mailbox.subscribed ? __('Hide') : __('Show'),
-    icon: mailbox.subscribed ? EyeOff : Eye,
+    icon: mailbox.subscribed ? 'lucide-eye-off' : 'lucide-eye',
     onClick: () =>
-      updateFolder.run({
-        name: mailbox.name,
-        subscribed: mailbox.subscribed ? 0 : 1,
-      }),
+      void subscribe
+        .run({ name: mailbox.name, subscribed: mailbox.subscribed ? 0 : 1 })
+        .catch(() => {}),
   },
   {
-    label: __('Configure'),
-    icon: Settings,
+    label: __('Edit'),
+    icon: 'lucide-pencil',
     onClick: () => editMailbox(mailbox),
   },
   {
     label: __('Delete'),
-    icon: Trash2,
+    icon: 'lucide-trash-2',
     theme: 'red' as const,
     onClick: () => {
       selectedMailbox.value = mailbox
@@ -110,5 +107,4 @@ const mailboxOptions = (mailbox: MailboxData) => [
     },
   },
 ]
-const updateFolder = useMutation(api.mail.mailboxes.subscribe)
 </script>

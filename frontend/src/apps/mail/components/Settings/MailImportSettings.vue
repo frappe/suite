@@ -1,62 +1,65 @@
 <template>
-  <FormControl
-    v-model="mailImport.format"
-    :label="__('Format')"
-    type="select"
-    variant="outline"
-    :options="FORMAT_OPTIONS"
-    required
-  />
-  <template v-if="['eml', 'mbox', 'maildir'].includes(mailImport.format)">
+  <div class="flex flex-col gap-4 py-3.5">
     <FormControl
-      v-model="mailImport.mailbox"
-      :label="__('Folder')"
+      v-model="mailImport.format"
+      :label="__('Format')"
       type="select"
-      variant="outline"
-      :options="mailboxOptions"
+      :options="FORMAT_OPTIONS"
+      required
     />
-    <FormControl
-      v-model="mailImport.seen"
-      :label="__('Mark as Read')"
-      type="select"
-      variant="outline"
-      :options="markAsReadOptions"
+    <div
+      v-if="['eml', 'mbox', 'maildir'].includes(mailImport.format)"
+      class="grid gap-4 sm:grid-cols-2"
+    >
+      <FormControl
+        v-model="mailImport.mailbox"
+        :label="__('Folder')"
+        type="select"
+        :options="mailboxOptions"
+      />
+      <FormControl
+        v-model="mailImport.seen"
+        :label="__('Mark as read')"
+        type="select"
+        :options="markAsReadOptions"
+      />
+    </div>
+    <input
+      ref="fileInput"
+      type="file"
+      class="hidden"
+      :accept="acceptTypes"
+      @change="onFileSelected"
     />
-  </template>
-  <input
-    ref="fileInput"
-    type="file"
-    class="hidden"
-    :accept="acceptTypes"
-    @change="onFileSelected"
-  />
-  <Button
-    class="w-full"
-    :label="uploading ? __('Uploading ({0}%)', [progress]) : __('Upload File')"
-    :loading="uploading"
-    @click="fileInput?.click()"
-  />
-  <p class="text-ink-gray-5 mt-2 flex text-sm">{{ fileUploadSubtitle }}</p>
-
-  <Button
-    class="min-h-7"
-    :label="__('Create Import')"
-    variant="solid"
-    :loading="Boolean(ongoingImport.data?.name) || createMailImport.isPending"
-    :disabled="ongoingImport.isFetching || Boolean(ongoingImport.error) || !mailImport.file"
-    @click="createMailImportSubmit()"
-  />
-  <div class="!mt-3 space-x-1 text-base">
-    <span class="text-ink-gray-5">{{ importSubtitle }}</span>
-    <a class="hover:underline" :href="importHref" target="_blank">
-      {{ importLinkText }}
-    </a>
+    <div class="flex flex-col gap-1.5">
+      <span class="text-xs text-ink-gray-5">{{ __('File') }}</span>
+      <div class="flex items-center gap-3">
+        <Button
+          icon-left="lucide-upload"
+          :label="uploading ? __('Uploading ({0}%)', [progress]) : __('Choose file')"
+          :loading="uploading"
+          @click="fileInput?.click()"
+        />
+        <span class="min-w-0 truncate text-p-sm text-ink-gray-5">{{ fileUploadSubtitle }}</span>
+      </div>
+    </div>
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <p class="text-p-sm text-ink-gray-5">
+        {{ importSubtitle }}
+        <a class="text-ink-gray-7 underline underline-offset-2" :href="importHref" target="_blank">
+          {{ importLinkText }}
+        </a>
+      </p>
+      <Button
+        variant="solid"
+        :label="__('Start import')"
+        :loading="Boolean(ongoingImport.data?.name) || createMailImport.isPending"
+        :disabled="ongoingImport.isFetching || Boolean(ongoingImport.error) || !mailImport.file"
+        @click="createMailImportSubmit()"
+      />
+    </div>
+    <ErrorMessage v-if="createMailImport.error" :message="createMailImport.error?.message" />
   </div>
-  <ErrorMessage
-    v-if="createMailImport.error"
-    :message="createMailImport.error?.message"
-    class="mb-2.5"
-  />
 </template>
 
 <script setup lang="ts">
@@ -118,7 +121,7 @@ const markAsReadOptions = computed(() => [
   },
 ])
 const fileUploadSubtitle = computed(() => {
-  if (mailImport.file) return __('File uploaded: {0}', [mailImport.file])
+  if (mailImport.file) return __('Uploaded {0}', [mailImport.file.split('/').pop() ?? ''])
   if (mailImport.format === 'eml') return __('Supported file format: .eml')
   return __('Supported file formats: .zip, .tar, .tgz')
 })

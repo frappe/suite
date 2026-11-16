@@ -1,86 +1,80 @@
 <template>
-  <FormControl
-    v-model="mailExport.format"
-    :label="__('Format')"
-    type="select"
-    variant="outline"
-    :options="FORMAT_OPTIONS"
-  />
-  <FormControl
-    v-model="mailExport.archive_type"
-    :label="__('Archive Type')"
-    type="select"
-    variant="outline"
-    :options="ARCHIVE_TYPE_OPTIONS"
-  />
-  <SettingsRow
-    class="!py-0"
-    :title="__('Custom Selection')"
-    :description="__('Apply filters to select specific emails for export.')"
-  >
-    <Switch v-model="customSelection" />
-  </SettingsRow>
-  <template v-if="customSelection">
-    <FormControl
-      v-model="filter.inMailbox"
-      :label="__('Folder')"
-      type="select"
-      variant="outline"
-      :options="mailboxOptions"
-    />
-    <FormControl v-model="filter.after" type="date" variant="outline" :label="__('From Date')" />
-    <FormControl v-model="filter.before" type="date" variant="outline" :label="__('To Date')" />
-    <FormControl
-      v-model="filter.hasAttachment"
-      type="select"
-      variant="outline"
-      :label="__('Attachments')"
-      :options="getAttachmentOptions()"
-    />
-    <FormControl
-      v-model="filter.isRead"
-      type="select"
-      variant="outline"
-      :label="__('Read Status')"
-      :options="getReadStatusOptions()"
-    />
-    <FormControl
-      v-model="mailExport.limit"
-      :label="__('Max Number of Emails')"
-      type="number"
-      variant="outline"
-      placeholder="1000"
-    />
-    <FormControl
-      v-if="mailExport.limit && mailExport.limit > 0"
-      v-model="mailExport.sort"
-      :label="__('Start From')"
-      type="select"
-      variant="outline"
-      :options="sortOptions"
-    />
-  </template>
-
-  <Button
-    class="min-h-7"
-    :label="__('Create Export')"
-    :loading="Boolean(ongoingExport.data?.name) || createMailExport.isPending"
-    :disabled="
-      ongoingExport.isFetching || Boolean(ongoingExport.error) || createMailExport.isPending
-    "
-    @click="createMailExportSubmit()"
-  />
-  <div class="!mt-3 space-x-1 text-base">
-    <span class="text-ink-gray-5">{{ exportSubtitle }}</span>
-    <a class="hover:underline" :href="exportHref" target="_blank">
-      {{ exportLinkText }}
-    </a>
+  <div class="flex flex-col gap-4 py-3.5">
+    <div class="grid gap-4 sm:grid-cols-2">
+      <FormControl
+        v-model="mailExport.format"
+        :label="__('Format')"
+        type="select"
+        :options="FORMAT_OPTIONS"
+      />
+      <FormControl
+        v-model="mailExport.archive_type"
+        :label="__('Archive type')"
+        type="select"
+        :options="ARCHIVE_TYPE_OPTIONS"
+      />
+    </div>
+    <SettingsRow
+      class="!py-0"
+      :title="__('Only some mail')"
+      :description="__('Choose a folder, dates or other filters')"
+    >
+      <Switch v-model="customSelection" />
+    </SettingsRow>
+    <div v-if="customSelection" class="grid gap-4 sm:grid-cols-2">
+      <FormControl
+        v-model="filter.inMailbox"
+        :label="__('Folder')"
+        type="select"
+        :options="mailboxOptions"
+      />
+      <FormControl
+        v-model="filter.hasAttachment"
+        type="select"
+        :label="__('Attachments')"
+        :options="getAttachmentOptions()"
+      />
+      <FormControl v-model="filter.after" type="date" :label="__('From date')" />
+      <FormControl v-model="filter.before" type="date" :label="__('To date')" />
+      <FormControl
+        v-model="filter.isRead"
+        type="select"
+        :label="__('Read status')"
+        :options="getReadStatusOptions()"
+      />
+      <FormControl
+        v-model="mailExport.limit"
+        :label="__('Most messages')"
+        type="number"
+        placeholder="1000"
+      />
+      <FormControl
+        v-if="mailExport.limit && mailExport.limit > 0"
+        v-model="mailExport.sort"
+        :label="__('Start from')"
+        type="select"
+        :options="sortOptions"
+      />
+    </div>
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <p class="text-p-sm text-ink-gray-5">
+        {{ exportSubtitle }}
+        <a class="text-ink-gray-7 underline underline-offset-2" :href="exportHref" target="_blank">
+          {{ exportLinkText }}
+        </a>
+      </p>
+      <Button
+        variant="solid"
+        :label="__('Start export')"
+        :loading="Boolean(ongoingExport.data?.name) || createMailExport.isPending"
+        :disabled="
+          ongoingExport.isFetching || Boolean(ongoingExport.error) || createMailExport.isPending
+        "
+        @click="createMailExportSubmit()"
+      />
+    </div>
+    <ErrorMessage v-if="createMailExport.error" :message="createMailExport.error?.message" />
   </div>
-  <ErrorMessage
-    v-if="createMailExport.error"
-    :message="createMailExport.error?.message"
-    class="mb-2.5"
-  />
 </template>
 
 <script setup lang="ts">

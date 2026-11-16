@@ -19,7 +19,7 @@ import { Dialog } from 'frappe-ui'
 import { api, useMutation, type InputOf } from '@/api'
 import { userStore } from '@/apps/mail/stores/user'
 import type { SieveScript } from '@/apps/mail/types'
-import { raiseToast } from '@/apps/mail/utils'
+import { toast } from '@/platform/feedback'
 import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()
@@ -34,7 +34,7 @@ async function deleteScriptSubmit() {
     id: script.id,
   }
   await deleteScript.run(input)
-  raiseToast(__('Sieve script deleted'))
+  toast.success(__('Sieve script deleted'))
   show.value = false
 }
 </script>
