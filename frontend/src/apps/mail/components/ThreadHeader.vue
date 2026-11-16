@@ -350,6 +350,8 @@ const laterOptions = computed(() => [
         },
       ]
     : []),
+  // A phone's toolbar has no room for it beside More.
+  ...(!inDrafts.value ? [{ label: __('Print'), icon: Printer, onClick: () => emit('print') }] : []),
 ])
 
 const moreActions = computed((): Action[] => [
@@ -420,12 +422,12 @@ const moreActions = computed((): Action[] => [
     icon: Trash2,
     condition: () => threadMailboxes.value.includes(mailboxIds.value.trash),
   },
-  // The conversation on paper, or as a PDF from the same dialog. A phone has no keys to name.
+  // The conversation on paper, or as a PDF from the same dialog. A phone prints from More.
   {
-    label: isMobile.value ? __('Print') : isMac ? __('Print (⌘P)') : __('Print (Ctrl+P)'),
+    label: isMac ? __('Print (⌘P)') : __('Print (Ctrl+P)'),
     onClick: () => emit('print'),
     icon: Printer,
-    condition: () => !inDrafts.value,
+    condition: () => !inDrafts.value && !isMobile.value,
   },
 ])
 

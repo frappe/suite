@@ -136,6 +136,7 @@ let app: App | undefined
 let root: HTMLElement
 const onSnooze = vi.fn()
 const onRemind = vi.fn()
+const onPrint = vi.fn()
 
 beforeEach(() => {
   window.__ = (text: string) => text
@@ -145,6 +146,7 @@ beforeEach(() => {
   document.body.append(root)
   onSnooze.mockClear()
   onRemind.mockClear()
+  onPrint.mockClear()
 })
 afterEach(() => {
   app?.unmount()
@@ -160,7 +162,7 @@ const show = async (thread: Mail[], remindable: boolean) => {
   app = createApp(
     defineComponent({
       setup: () => () =>
-        h(ThreadHeader, { thread, threads: ['t'], remindable, onSnooze, onRemind }),
+        h(ThreadHeader, { thread, threads: ['t'], remindable, onSnooze, onRemind, onPrint }),
     }),
   )
   app.config.globalProperties.__ = (text: string) => text
@@ -231,7 +233,9 @@ describe('the clock', () => {
   it('offers a phone nothing there either', async () => {
     screen.mobile = true
     await show(ONLY_IN_SENT, true)
-    expect(root.querySelector('[aria-label="More"]')).toBeNull()
+    root.querySelector<HTMLElement>('[aria-label="More"]')!.click()
+    await nextTick()
+    expect(rows().map((item) => item.textContent)).toEqual(['Print'])
   })
 })
 
@@ -299,13 +303,32 @@ describe('viewing Sent', () => {
 describe('Print', () => {
   const printButton = () => root.querySelector('svg.lucide-printer')?.closest('button')
 
-  it('names its shortcut on a desktop, and none on a phone, which has no keys to press', async () => {
+  it('stands in the toolbar on a desktop, naming its shortcut', async () => {
     await show(THEIR_LAST_WORD, false)
     expect(printButton()?.dataset.tooltip).toMatch(/^Print \((⌘P|Ctrl\+P)\)$/)
+    printButton()!.click()
+    expect(onPrint).toHaveBeenCalledTimes(1)
+  })
+
+  it("is in a phone's More sheet, leaving the toolbar room for More", async () => {
+    screen.mobile = true
+    await show(THEIR_LAST_WORD, false)
+    expect(printButton()).toBeFalsy()
+
+    root.querySelector<HTMLElement>('[aria-label="More"]')!.click()
+    await nextTick()
+    await clickRow('Print')
+    expect(onPrint).toHaveBeenCalledTimes(1)
+  })
+
+  it('is offered for no draft, on either width', async () => {
+    viewing('dr')
+    await show([mail('a', ['dr'])], false)
+    expect(printButton()).toBeFalsy()
     app?.unmount()
 
     screen.mobile = true
-    await show(THEIR_LAST_WORD, false)
-    expect(printButton()?.dataset.tooltip).toBe('Print')
+    await show([mail('a', ['dr'])], false)
+    expect(root.querySelector('[aria-label="More"]')).toBeNull()
   })
 })
