@@ -47,6 +47,41 @@ describe('an event from a mail', () => {
     )
   })
 
+  it('leaves the quoted trail out of a mail sent as text alone', () => {
+    const text = (text_body: string) => eventFromMail({ ...mail, html_body: '', text_body }, [])
+
+    // A reply on top, the trail and the line that introduces it below.
+    expect(
+      text('Thursday works for me.\n\nOn Mon, 10 Nov 2026, Lena wrote:\n> Can we meet?\n> Lena')
+        .description,
+    ).toBe('Thursday works for me.')
+
+    // Answers between the lines they answer: the answers stay, the quoted lines go.
+    expect(
+      text('On Mon, Lena wrote:\n> Room 4?\nYes, room 4.\n\n> At ten?\nTen is fine.').description,
+    ).toBe('Yes, room 4.\n\nTen is fine.')
+
+    // A signature above the trail does not carry the trail in with it.
+    const signed = text('Sure.\n-- \nPriya\n\nOn Mon, Lena wrote:\n> Budget numbers attached')
+    expect(signed.description).toMatch(/^Sure\./)
+    expect(signed.description).not.toContain('Budget numbers')
+  })
+
+  it('keeps a long description to 2,000 characters, its ellipsis among them', () => {
+    const long = eventFromMail({ ...mail, html_body: '', text_body: 'word '.repeat(1000) }, [])
+    expect(long.description!.length).toBeLessThanOrEqual(2000)
+    expect(long.description).toMatch(/word…$/)
+
+    // An emoji is two UTF-16 units; the cut must not land between them.
+    const emoji = eventFromMail(
+      { ...mail, html_body: '', text_body: 'a'.repeat(1998) + '😀'.repeat(10) },
+      [],
+    )
+    expect(emoji.description!.length).toBeLessThanOrEqual(2000)
+    expect(emoji.description).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/)
+    expect(emoji.description).toMatch(/…$/)
+  })
+
   it('invites everyone on the mail but you, and nobody who was only Bcc’d', () => {
     expect(eventFromMail(mail, ['ME@example.com']).participants).toEqual([
       { email: 'priya@example.com', name: 'Priya Nair' },

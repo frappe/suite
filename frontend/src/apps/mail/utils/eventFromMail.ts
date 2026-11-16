@@ -1,5 +1,6 @@
 import type { NewEventDraft } from '@/apps/calendar'
 import type { Mail } from '@/apps/mail/types'
+import { splitPlainText } from '@/apps/mail/utils/plainTextBlocks'
 import { findQuoteRoots } from '@/apps/mail/utils/quotedContent'
 
 // "Re:", "Fwd:" and their kin, however many deep: what the meeting is about is what the thread is.
@@ -38,21 +39,46 @@ export const eventFromMail = (
   }
 }
 
-// The HTML part, when there is one, over the text part: only HTML marks its quoted trail well
-// enough to leave out (Outlook's text replies carry theirs unmarked).
+// The HTML part, when there is one, over the text part: HTML marks its quoted trail, and a text
+// part only by its `>` lines.
 const words = (mail: Pick<Mail, 'html_body' | 'text_body'>) => {
-  let text = mail.text_body ?? ''
+  let text: string
   if (mail.html_body) {
     const doc = new DOMParser().parseFromString(mail.html_body, 'text/html')
     doc.querySelectorAll('style, script, title').forEach((element) => element.remove())
     findQuoteRoots(doc).forEach((quote) => quote.remove())
     text = renderedText(doc.body)
-  }
+  } else text = ownLines(mail.text_body ?? '')
   text = text
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim()
-  return text.length > DESCRIPTION_LIMIT ? `${text.slice(0, DESCRIPTION_LIMIT).trimEnd()}…` : text
+  return cut(text)
+}
+
+// A text part without its quoted lines, the "On …, Lena wrote:" line above the first of them, or
+// the signature, which runs to the end and so takes in any trail below it.
+const ownLines = (text: string) => {
+  const blocks = splitPlainText(text)
+  const trail = blocks.findIndex((block) => block.kind === 'quote')
+  const lead = blocks[trail - 1]
+  if (lead?.kind === 'body') {
+    const lines = lead.text.trimEnd().split('\n')
+    if (lines.at(-1)?.trimEnd().endsWith(':')) lead.text = lines.slice(0, -1).join('\n')
+  }
+  return blocks
+    .filter((block) => block.kind === 'body')
+    .map((block) => block.text)
+    .join('\n\n')
+}
+
+// At most the limit, its ellipsis counted, and never half of a character outside the BMP.
+const cut = (text: string) => {
+  if (text.length <= DESCRIPTION_LIMIT) return text
+  let end = DESCRIPTION_LIMIT - 1
+  const last = text.charCodeAt(end - 1)
+  if (last >= 0xd800 && last <= 0xdbff) end -= 1
+  return `${text.slice(0, end).trimEnd()}…`
 }
 
 // Stand-ins for the line breaks a browser draws at a block's edges: one around a block, two around
