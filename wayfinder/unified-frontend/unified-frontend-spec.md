@@ -1900,6 +1900,10 @@ Home lives in `composition/home/` because it composes product seams
 - The badge reads `GET /notifications/unread-count` [T012, Drive §11.2].
 - The bell opens a popover over the rail. The paged feed scrolls inside it
   [T012].
+- The Notifications page, `/notifications`, shows the same feed with the
+  same actions. A phone has no rail and no bell, so its bottom nav has a
+  Notifications tab that opens the page. On desktop the page opens by URL
+  [Faris, 2026-11-16].
 - Opening the popover marks nothing [T012].
 - Clicking a row marks that row read and navigates to its node. **Mark all
   read** clears the rest. Both use `POST /notifications/read` [T012,

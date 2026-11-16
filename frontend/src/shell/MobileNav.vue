@@ -18,6 +18,8 @@
         <AreaProgressDot :progress="progressOf(item.id)" :label="item.label" />
       </span>
     </FrappeMobileNavItem>
+    <!-- The bell's place on a phone, which has no rail; composition draws it. -->
+    <slot name="bell-tab" />
     <FrappeMobileNavItem :label="__('Account')" @click="$emit('open-account')">
       <Avatar :image="session.user.value?.avatar ?? undefined" :label="accountLabel" size="md" />
     </FrappeMobileNavItem>
@@ -47,6 +49,7 @@ const props = defineProps<{
   activeArea?: string
 }>()
 defineEmits<{ 'open-account': [] }>()
+defineSlots<{ 'bell-tab'?: () => unknown }>()
 
 const session = useSession()
 const accountLabel = computed(

@@ -76,7 +76,9 @@
             :areas="areas"
             :active-area="activeArea?.id"
             @open-account="accountSheetOpen = true"
-          />
+          >
+            <template #bell-tab><slot name="bell-tab" /></template>
+          </MobileNav>
         </div>
       </template>
     </MobileShell>
@@ -135,7 +137,13 @@ const props = defineProps<{
   badges: Readonly<Record<string, number>>
 }>()
 
-defineSlots<{ default?: () => unknown; bell?: () => unknown }>()
+defineSlots<{
+  default?: () => unknown
+  /** The notifications bell, on the desktop rail. */
+  bell?: () => unknown
+  /** The notifications tab, in the phone bottom bar. */
+  'bell-tab'?: () => unknown
+}>()
 
 const route = useRoute()
 const SuiteSettingsDialog = defineAsyncComponent(
