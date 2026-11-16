@@ -68,7 +68,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { api, client, type InputOf } from '@/api'
 import { useScreener } from '@/apps/mail/composables/useScreener'
 import { FLAGGED_STAR_STYLE } from '@/apps/mail/constants'
-import type { ComposeMailData, Identity, Mail, ScreenedAddress } from '@/apps/mail/types'
+import type { BodyView, ComposeMailData, Identity, Mail, ScreenedAddress } from '@/apps/mail/types'
 import {
   downloadUrlAsFile,
   matchesScreenedValue,
@@ -116,7 +116,7 @@ const {
   /** The host draws the star itself — a folded row, which keeps it at its far right. */
   hideStar?: boolean
   /** How the message's body is shown in the dark theme; absent when it isn't remapped. */
-  bodyView?: 'adapted' | 'asSent'
+  bodyView?: BodyView
 }>()
 const emit = defineEmits([
   'setFlagged',

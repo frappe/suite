@@ -45,7 +45,7 @@ import {
   remapEmailForDarkMode,
 } from '@/apps/mail/utils/darkMail'
 import { highlightBody } from '@/apps/mail/utils/highlightBody'
-import { escapeBracketedAddresses, mailPurifier } from '@/apps/mail/utils/html'
+import { escapeBracketedAddresses, sanitizeMail } from '@/apps/mail/utils/html'
 import { parseMailto } from '@/apps/mail/utils/mailto'
 import { findQuoteRoots } from '@/apps/mail/utils/quotedContent'
 
@@ -54,14 +54,15 @@ import { findQuoteRoots } from '@/apps/mail/utils/quotedContent'
 // `highlight`: the words a search found the message by, marked in its body.
 // `asSent`: the reader asked to see the message as its sender designed it, on a light canvas,
 // because the dark-theme remap spoiled it. Only the thread knows that, and it learns whether
-// the remap applies at all from `adapted`, which says so for the theme the app is in.
+// the remap applies at all from `adaptable`, which says so for the theme the app is in, shown
+// as sent or not.
 const {
   content,
   blockImages = false,
   highlight = '',
   asSent = false,
 } = defineProps<{ content: string; blockImages?: boolean; highlight?: string; asSent?: boolean }>()
-const emit = defineEmits<{ adapted: [adapted: boolean] }>()
+const emit = defineEmits<{ adaptable: [adaptable: boolean] }>()
 
 const { dataTheme } = useTheme()
 const { isMobile } = useScreenSize()
@@ -146,7 +147,7 @@ const collapseQuotes = (doc: Document) => {
 }
 
 const body = computed(() => {
-  let sanitized = mailPurifier.sanitize(escapeBracketedAddresses(content), DOMPURIFY_CONFIG)
+  let sanitized = sanitizeMail(escapeBracketedAddresses(content))
   if (blockImages) sanitized = blockRemoteAssets(sanitized)
   const doc = new DOMParser().parseFromString(sanitized, 'text/html')
   // Two kinds of email render exactly as authored, dark theme or not: those
@@ -169,9 +170,16 @@ const body = computed(() => {
   return { html: doc.documentElement.outerHTML, adapts, remapped }
 })
 
+watch(
+  () => body.value.adapts,
+  (adapts) => emit('adaptable', adapts),
+  { immediate: true },
+)
+
 // As sent, the frame takes the light theme whatever the app's: the sender's design on the
 // canvas it was drawn for.
-const colors = computed(() => THEME_CONFIG[asSent ? 'light' : dataTheme.value])
+const frameTheme = computed(() => (asSent ? 'light' : dataTheme.value))
+const colors = computed(() => THEME_CONFIG[frameTheme.value])
 
 const srcdoc = computed(() => {
   const { html: transformedContent, remapped } = body.value
@@ -181,7 +189,7 @@ const srcdoc = computed(() => {
 		<html>
 		<head>
 			<meta name="viewport" content="width=device-width, initial-scale=1">
-			<meta name="color-scheme" content="${asSent ? 'light' : dataTheme.value}">
+			<meta name="color-scheme" content="${frameTheme.value}">
 			<meta charset="UTF-8">
 			<style>
 				body {
@@ -521,98 +529,6 @@ const srcdoc = computed(() => {
 	`
 })
 
-const DOMPURIFY_CONFIG = {
-  ALLOWED_TAGS: [
-    'html',
-    'head',
-    'body',
-    'title',
-    'meta',
-    'style',
-    'table',
-    'tbody',
-    'thead',
-    'tfoot',
-    'tr',
-    'td',
-    'th',
-    'div',
-    'span',
-    'p',
-    'br',
-    'strong',
-    'b',
-    'em',
-    'i',
-    'u',
-    // Highlighted text. Without it KEEP_CONTENT hands the words back unstyled, so a
-    // highlight applied in our own composer came back to the reader as plain text —
-    // while the text colour beside it, which rides a <span>, survived.
-    'mark',
-    'h1',
-    'h2',
-    'h3',
-    'h4',
-    'h5',
-    'h6',
-    'a',
-    'img',
-    'blockquote',
-    'ul',
-    'ol',
-    'li',
-    'pre',
-    'code',
-  ],
-  ALLOWED_ATTR: [
-    'style',
-    'class',
-    'id',
-    'width',
-    'height',
-    'align',
-    'valign',
-    'cellpadding',
-    'cellspacing',
-    // Without colspan/rowspan a table email's grid falls apart: rows stop
-    // agreeing on column count, cells get crushed to slivers, and text can
-    // land outside its authored background (seen as invisible/vertical text).
-    'colspan',
-    'rowspan',
-    'border',
-    'bgcolor',
-    'color',
-    'href',
-    'src',
-    'alt',
-    'title',
-    'target',
-    'data-type',
-    'data-id',
-    'data-label',
-    'data-list',
-    'data-email-footer',
-    // Suite's own templates opt out of the dark-mode remap with this (see
-    // declaresFixedPalette); stripping it would silently re-enable remapping.
-    'data-fixed-palette',
-    // Apple Mail and Thunderbird mark a quoted trail with <blockquote type="cite">, the one thing
-    // that tells it apart from a quote the writer made (see findQuoteRoots); without it the trail
-    // was never folded away.
-    'type',
-    'xmlns',
-    'content',
-    'name',
-    'http-equiv',
-    'charset',
-  ],
-  KEEP_CONTENT: true,
-  ALLOW_UNKNOWN_PROTOCOLS: false,
-  WHOLE_DOCUMENT: true,
-  ADD_TAGS: ['meta', 'style', 'pre', 'code'],
-  ADD_ATTR: ['cellpadding', 'cellspacing', 'border', 'bgcolor', 'xmlns', 'charset'],
-  REMOVE_EMPTY: false,
-}
-
 const THEME_CONFIG = {
   light: {
     background: '#FFFFFF',
@@ -632,11 +548,4 @@ const THEME_CONFIG = {
     link: '#6CB6FF',
   },
 }
-
-// Last, because `immediate` reads the body now, and the body reads the constants above.
-watch(
-  () => body.value.adapts,
-  (adapts) => emit('adapted', adapts),
-  { immediate: true },
-)
 </script>

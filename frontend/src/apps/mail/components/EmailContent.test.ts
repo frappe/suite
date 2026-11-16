@@ -193,22 +193,22 @@ describe('EmailContent renders mail as it was sent', () => {
 
   it('says a message is adapted to the dark theme, and recolours it', async () => {
     theme.value = 'dark'
-    const adapted = vi.fn()
-    const root = mount(fixture('dark-scheme-rules'), { onAdapted: adapted })
+    const adaptable = vi.fn()
+    const root = mount(fixture('dark-scheme-rules'), { onAdaptable: adaptable })
     await nextTick()
 
-    expect(adapted).toHaveBeenLastCalledWith(true)
+    expect(adaptable).toHaveBeenLastCalledWith(true)
     expect(stylesheets(rendered(root))).not.toContain('background-color: #ffffff')
   })
 
   it('shows an adapted message as sent: every colour as written, on a light canvas', async () => {
     theme.value = 'dark'
-    const adapted = vi.fn()
-    const root = mount(fixture('dark-scheme-rules'), { asSent: true, onAdapted: adapted })
+    const adaptable = vi.fn()
+    const root = mount(fixture('dark-scheme-rules'), { asSent: true, onAdaptable: adaptable })
     await nextTick()
 
     const doc = rendered(root)
-    expect(adapted).toHaveBeenLastCalledWith(true)
+    expect(adaptable).toHaveBeenLastCalledWith(true)
     expect(doc.querySelector('meta[name="color-scheme"]')!.getAttribute('content')).toBe('light')
     expect(stylesheets(doc)).toContain('.card { background-color: #ffffff; color: #1f2328; }')
     expect(stylesheets(doc)).toMatch(/body \{[^}]*background-color: #FFFFFF/)
@@ -217,10 +217,10 @@ describe('EmailContent renders mail as it was sent', () => {
   })
 
   it('in the light theme adapts nothing, so there is nothing to show as sent', async () => {
-    const adapted = vi.fn()
-    mount(fixture('dark-scheme-rules'), { onAdapted: adapted })
+    const adaptable = vi.fn()
+    mount(fixture('dark-scheme-rules'), { onAdaptable: adaptable })
     await nextTick()
 
-    expect(adapted).toHaveBeenLastCalledWith(false)
+    expect(adaptable).toHaveBeenLastCalledWith(false)
   })
 })

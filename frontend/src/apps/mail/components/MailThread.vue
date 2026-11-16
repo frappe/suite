@@ -620,7 +620,7 @@
                             :block-images="isBlocked(mail)"
                             :highlight="isMatch(mail) ? searchTerm : ''"
                             :as-sent="bodyViews[mail.name] === 'asSent'"
-                            @adapted="(adapted: boolean) => onBodyAdapted(mail, adapted)"
+                            @adaptable="(adaptable: boolean) => onBodyAdaptable(mail, adaptable)"
                           />
 
                           <!-- font-sans is the system stack, not Inter: the preset leaves
@@ -836,6 +836,7 @@ import { isMailRoute } from '@/apps/mail/router'
 import { userStore } from '@/apps/mail/stores/user'
 import type {
   Attachment,
+  BodyView,
   ComposeMailData,
   Identity,
   Mail,
@@ -1714,11 +1715,11 @@ const dsnReplacesBody = (mail: Mail) =>
 
 // In the dark theme a message's colours are remapped onto the dark canvas, which can spoil a
 // design, so each message the remap applies to offers to show it as sent instead, on a light
-// canvas. The choice is not kept past a reload. `adapted` is EmailContent's word on whether
+// canvas. The choice is not kept past a reload. `adaptable` is EmailContent's word on whether
 // the remap applies: a message that renders as authored anyway offers nothing.
-const bodyViews = ref<Record<string, 'adapted' | 'asSent'>>({})
-const onBodyAdapted = (mail: Mail, adapted: boolean) => {
-  if (!adapted) delete bodyViews.value[mail.name]
+const bodyViews = ref<Record<string, BodyView>>({})
+const onBodyAdaptable = (mail: Mail, adaptable: boolean) => {
+  if (!adaptable) delete bodyViews.value[mail.name]
   else bodyViews.value[mail.name] ??= 'adapted'
 }
 const toggleAsSent = (mail: Mail) => {
