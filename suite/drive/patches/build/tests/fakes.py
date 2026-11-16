@@ -854,6 +854,25 @@ class FakeContent:
         wanted = set(urls)
         return [row for row in self.media_rows if row.file_url in wanted]
 
+    def drive_files_by_urls(self, urls):
+        wanted = set(urls)
+        return [
+            MediaFileRow(
+                name=row.name,
+                deck="",
+                file_name=row.file_name,
+                file_url=row.file_url,
+                blob=row.blob,
+                owner=row.owner,
+                creation=row.creation,
+                modified=row.modified,
+                modified_by=row.modified_by,
+                file_modified=row.file_modified,
+            )
+            for row in self.file_rows
+            if row.file_url in wanted and not row.is_folder
+        ]
+
     def presentation_media(self, names):
         return {row.name for row in self.media_rows if row.name in names}
 
