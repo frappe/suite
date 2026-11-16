@@ -4817,7 +4817,10 @@ From the [012] amendment to [011]:
   Trashed with it. The reference is rewritten to the new node, and the
   other document keeps its own node. Build adds no grant: the copy is read
   through the grants of the document that shows it. Build copies only a
-  stored file below another document whose blob is Ready. Any other
+  stored file below another document whose blob is Ready, and, for a deck,
+  a Drive file that no other deck's media spells: a slide can name a plain
+  upload by its old `/private/files/` address, and Cleanup deletes the
+  `File` row that served it. Any other
   reference stays in the body as it is and is reported as missing. A
   document that already holds a node for the same blob reuses it, so a
   rerun copies nothing and rewrites nothing. Writer bodies are rewritten in
