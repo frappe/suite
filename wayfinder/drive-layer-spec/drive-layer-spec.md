@@ -4639,36 +4639,62 @@ own comment row on the same folder, and an `everyone` edit share survived
 the person's own read share. The engine is nearest-wins (§5), so each of
 these grants would end lower than legacy gave. After the creator grants,
 Build compares, for every person and every node that holds a legacy row
-or Sheet share naming them, their group, or `$GENERAL`, the role legacy
-gave there with the role the engine answers. Legacy's role needs read,
-and takes MANAGE only from `write` with `share`. Where the engine answers
-less, Build writes grants in this order:
+or Sheet share, the role legacy gave there with the role the engine
+answers. Legacy's role needs read, and takes MANAGE only from `write` with
+`share`. Legacy's rows are read one by one, so a grant row beside a deny
+row for the same principal still gives its flags. Where the engine answers
+less, Build writes:
 
-1. A group or `$GENERAL` grant that came from a legacy row is raised to
-   the lowest role legacy gave anyone it decides, on any node, when that
-   is above its own role. One row then serves everyone it decides.
-2. Each person still below legacy gets `(node, person, legacy role)`, or
-   their own grant there is raised. Nodes are taken from the root down.
-3. Where a grant from 1 or 2 would carry a person past what they held on a
-   lower node, for example past a public deny there, Build writes
-   `(lower node, person, what they held)`.
+1. **Raises.** A group or `$GENERAL` grant that came from a legacy row is
+   raised to the lowest role legacy gave anyone it decides, on any node,
+   but never above the role legacy gave somebody who holds that principal
+   alone. A person who joins the group, or signs up, after Build gets no
+   more from the grant than legacy would have given them.
+2. **Person grants.** Each person still below legacy gets
+   `(node, person, legacy role)`, or their own grant there is raised.
+3. **Pins.** Where a grant from 1 or 2 would carry a person past what they
+   had on a lower node, for example past a public deny there, Build writes
+   `(lower node, person, role)` at the higher of legacy's role and the role
+   Build gave them before this pass. A pin never denies; a pin that would
+   is left out and counted.
 
-An item with no row of its own inherits the same thing in both models, so
-these grants give nobody more than legacy did. Three cases are left as
-they are, on purpose:
+An item's owner and the Suite Admins are left out of the counts below:
+legacy gave them everything, so no role Build gives them is above legacy's,
+and the creator rule and ADR 0001 already decide what they lose.
 
-- Public rows count only by their denies. §14.5 turns a public grant into
-  `$PUBLIC` READ plus a link, and this rule does not undo that.
+Build decides all of these once and saves the list beside its record
+(`drive-build-kept-rights.json`) before it writes any of them, in one
+commit. A run killed before that commit, or a rerun, writes the saved list
+again rather than comparing anew against grants it already raised. So a
+kill at any point ends with the roles an uninterrupted run gives, and a
+rerun writes nothing.
+
+Cases left as they are, on purpose, each counted under §14.9's
+`legacy_rights`:
+
 - A person the engine denies stays denied, because a deny rounds up to a
-  total deny (above). §14.9's evidence counts each one under
-  `legacy_rights_behind_deny`.
+  total deny (above): `behind_deny`.
+- Legacy could grant `write` without `upload`. The ladder has no role for
+  that, so the kept grant is EDIT, as the per-row mapping already does:
+  `upload_added`. One switch in `kept_rights.py`
+  (`KEEP_WRITE_WITHOUT_UPLOAD`) keeps only the role below upload instead.
+- Legacy let `share` work without `write`. The ladder gives MANAGE only
+  with EDIT, so the share right is lost: `share_lost`.
+- This rule does not take away what the per-row mapping gave above legacy.
+  The pairs that end above legacy's role are counted, not pinned:
+  `exceeded`, and of those `exceeded_by_public_deny`, where a `$PUBLIC`
+  deny binds only people with no grant of their own (§6.5) while legacy
+  applied it to everyone.
+- Public grant rows count only by their denies. §14.5 turns a public grant
+  into `$PUBLIC` READ plus a link, and this rule does not undo that.
 - Media under a presentation takes its rights from the presentation, as in
-  the creator rule.
+  the creator rule, and is not compared.
 
-The Sheet shares are read back from the `DocShare` journal, because step 6
-has deleted them by then. A rerun finds every person at their legacy role
-and writes nothing. §14.9's evidence counts the grants written or raised
-under `legacy_rights_kept`.
+A person grant written because of a group's row (`from_groups`) stays when
+that person leaves the group. The other counts are `kept` (grants written
+or raised), `group_raises`, `person_grants`, `pins` and `pins_refused`. The
+Sheet shares are read back from the `DocShare` journal, because step 6 has
+deleted them by then.
 
 ### 14.6 Side tables and content-app data
 
@@ -4834,6 +4860,10 @@ Printed and saved as JSON under the site's private directory [011].
   "grant_rows_dropped": { "dead_principal": 0, "unmigrated_entity": 0,
                           "no_flags": 0, "root_guardrail": 0 },
   "links_minted": 0, "creator_grants_minted": 0, "creator_denies_overridden": 0,
+  "legacy_rights": { "kept": 0, "group_raises": 0, "person_grants": 0,
+                     "pins": 0, "from_groups": 0, "behind_deny": 0,
+                     "exceeded": 0, "exceeded_by_public_deny": 0,
+                     "upload_added": 0, "share_lost": 0, "pins_refused": 0 },
   "docshare_rows_dropped": 0,
   "trash_disagreements": 0, "orphan_content_docs_adopted": 0,
   "activity_rows_dropped": 0, "activity_verbs_derived": 0,
