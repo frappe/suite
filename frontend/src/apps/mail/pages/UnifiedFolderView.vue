@@ -374,7 +374,6 @@ import {
   useSwipeNav,
   useUndo,
 } from '@/apps/mail/utils/composables'
-import { beginListRead } from '@/apps/mail/utils/draftsInList'
 import { useListFilter } from '@/apps/mail/utils/listFilter'
 import {
   hasCursor,
@@ -467,6 +466,8 @@ const rowKeys = (row: NavRow): string[] =>
 const openKey = computed(() => (accountId && threadID ? `${accountId}:${threadID}` : undefined))
 const {
   container: mailListRef,
+  refetch: refetchThreads,
+  refresh: refreshList,
   loadingMore,
   isFetching,
   canGoNext,
@@ -577,19 +578,13 @@ const resetThreads = () => {
   expandedStacks.value = new Set()
   // Ticked threads belong to the list they were ticked in; another folder or filter starts clear.
   resetSelections()
-  void threads.refetch().catch(() => {})
+  void refetchThreads()
   refreshCounts()
 }
 
 // Refresh the loaded windows without changing the reader's selection.
 const refreshThreads = (reloadCounts = true) => {
-  if (isFetching.value) return
-  // A draft discarded, deleted or sent elsewhere loses its Draft badge here (see beginListRead).
-  const settleDrafts = beginListRead()
-  void threads
-    .refetch()
-    .then(() => settleDrafts(threadRows.value))
-    .catch(() => {})
+  refreshList()
   if (reloadCounts) refreshCounts()
 }
 

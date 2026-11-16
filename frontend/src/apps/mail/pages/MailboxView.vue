@@ -449,7 +449,6 @@ import {
   useUndo,
 } from '@/apps/mail/utils/composables'
 import { utcDayEnd, utcDayStart } from '@/apps/mail/utils/datetime'
-import { beginListRead } from '@/apps/mail/utils/draftsInList'
 import { useListFilter } from '@/apps/mail/utils/listFilter'
 import {
   hasCursor,
@@ -501,6 +500,8 @@ const showReadingPane = useReadingPane()
 // merge, the removal suppression, the sentinel, the edge crossing. See there.
 const {
   container: mailListRef,
+  refetch: refetchThreads,
+  refresh: refreshList,
   loadingMore,
   isFetching,
   canGoNext,
@@ -1042,7 +1043,7 @@ const resetThreads: (reloadMailboxes?: boolean, mailboxRoles?: MailboxRole[]) =>
       return
     }
   }
-  void activeThreads.value.refetch().catch(() => {})
+  void refetchThreads()
   if (reloadMailboxes) void store.refreshCounts()
 }
 
@@ -1057,13 +1058,7 @@ watch(screener.version, () => refreshThreads(false))
 // threads not already loaded (see onResetSuccess), keeping scroll position and the loaded rows. Used by
 // the Refresh button, the periodic poll, and the new-mail socket. Selections are preserved.
 const refreshThreads = (reloadMailboxes = true) => {
-  if (isFetching.value) return
-  // A draft discarded, deleted or sent elsewhere loses its Draft badge here (see beginListRead).
-  const settleDrafts = beginListRead()
-  void activeThreads.value
-    .refetch()
-    .then(() => settleDrafts(threadRows.value))
-    .catch(() => {})
+  refreshList()
   if (reloadMailboxes) void store.refreshCounts()
 }
 
@@ -1096,7 +1091,7 @@ const restoreThreadsToList = (rows: Thread[]) => {
     const at = removedFrom.get(row)
     if (at !== undefined) keptRead.restore([row], at)
   }
-  void activeThreads.value.refetch().catch(() => {})
+  void refetchThreads()
 }
 watch(
   () => [mailbox, accountId],

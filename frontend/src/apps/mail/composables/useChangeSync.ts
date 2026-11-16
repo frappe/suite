@@ -39,6 +39,8 @@ export function useChangeSync(socket: Socket, serverUnavailable: () => boolean) 
     if (document.visibilityState !== 'visible' || !navigator.onLine) return scheduleNext()
     // Back from a sleep the socket may have given up; the changes it would carry need it up.
     if (socket.disconnected) socket.connect()
+    // The server announces what it finds while the ask is out: only a socket up for all of it hears.
+    const heardLive = socket.connected
     inFlight = true
     void client
       .mutation(api.mail.changes.sync, undefined, { silent: true })
@@ -47,7 +49,7 @@ export function useChangeSync(socket: Socket, serverUnavailable: () => boolean) 
         failures = found.failed ? failures + 1 : 0
         // The socket brings this tab the same as every other; without one, the answer does, to the
         // same listeners.
-        if (socket.connected) return
+        if (heardLive && socket.connected) return
         const hear = (event: string, ...args: unknown[]) =>
           socket.listeners(event).forEach((listener) => listener(...args))
         if (found.new_mail_in.length) hear('new_mail_created', found.new_mail_in)

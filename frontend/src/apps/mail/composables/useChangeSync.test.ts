@@ -8,6 +8,8 @@ const server = vi.hoisted<{
   syncs: number
   failing: boolean
   found: { new_mail_in: string[]; changed: boolean; failed: boolean }
+  // What happens on this side while the ask is out.
+  meanwhile?: () => void
 }>(() => ({
   syncs: 0,
   failing: false,
@@ -20,6 +22,8 @@ vi.mock('@/api', () => ({
   client: {
     mutation: async () => {
       server.syncs += 1
+      await Promise.resolve()
+      server.meanwhile?.()
       if (server.failing) throw new Error('Internal Server Error')
       return server.found
     },
@@ -56,6 +60,7 @@ beforeEach(() => {
   server.failing = false
   serverUnavailable = false
   server.found = { new_mail_in: [], changed: false, failed: false }
+  server.meanwhile = undefined
   visibility = 'visible'
   vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility)
 })
@@ -125,6 +130,22 @@ describe('useChangeSync keeps the lists up with the mail server', () => {
 
     expect(newMail).toHaveBeenCalledWith(['inbox'])
     expect(changed).toHaveBeenCalled()
+  })
+
+  it('hands it on too when the socket came up only while the ask was out', async () => {
+    // The server may have announced it before this tab's socket joined.
+    server.found = { new_mail_in: ['inbox'], changed: false, failed: false }
+    const socket = start()
+    await vi.advanceTimersByTimeAsync(0)
+    socket.connected = false
+    const newMail = vi.fn()
+    socket.on('new_mail_created', newMail)
+    server.meanwhile = () => (socket.connected = true)
+
+    socket.reconnect()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(newMail).toHaveBeenCalledWith(['inbox'])
   })
 
   it('leaves it to the socket while the socket is up', async () => {
