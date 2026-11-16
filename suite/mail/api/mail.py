@@ -110,7 +110,6 @@ from suite.mail.reminders import (
     unsnooze,
 )
 from suite.mail.search_matches import (
-    MAX_SHOWN_MATCHES,
     add_match_words,
     conversation_match,
     matching_messages,
@@ -1871,7 +1870,6 @@ def search_mails(
     limit: int = 5,
     start: int = 0,
     all_accounts: bool = False,
-    shown_matches: int = 1,
 ) -> dict:
     """Returns search results for the given query.
 
@@ -1879,8 +1877,7 @@ def search_mails(
     across every JMAP account the user owns and the results are merged newest-first, so a mail can be
     found without remembering which account it landed in. Either way each result is tagged with its
     owning account (and that account's Inbox/Archive/Trash mailbox ids) so the client can open — and
-    act on — it in the correct account. `shown_matches` is how many of each row's matches the page
-    shows with their words, and so how many are read for them.
+    act on — it in the correct account.
     """
 
     # `filter` may arrive carrying the search-page query blob (see MailboxView), which includes the
@@ -1892,14 +1889,13 @@ def search_mails(
 
     # The flag crosses the wire as a bool, an int, or a "true"/"1" string depending on the caller, so
     # normalize all truthy forms (cint("true") would be 0).
-    shown_matches = min(max(cint(shown_matches), 1), MAX_SHOWN_MATCHES)
     if str(all_accounts).lower() in ("1", "true"):
-        return _search_all_accounts(filter, limit=limit, start=start, shown_matches=shown_matches)
+        return _search_all_accounts(filter, limit=limit, start=start)
 
     limit = min(max(cint(limit), 1), ALL_INBOX_MAX_LIMIT)
     normalized_filter = normalize_filter(filter)
     rows, total = search_threads(account, normalized_filter, cint(start), limit)
-    add_match_words(account, normalized_filter, rows, shown_matches)
+    add_match_words(account, normalized_filter, rows)
     _tag_search_results(account, rows)
 
     return {"rows": rows, "total": total}
@@ -2007,7 +2003,7 @@ def get_recent_threads_from(account: str, email: str, limit: int = 4) -> list[di
     return sorted(rows, key=lambda row: row["received_at"], reverse=True)
 
 
-def _search_all_accounts(filter: dict, limit: int, start: int, shown_matches: int = 1) -> dict:
+def _search_all_accounts(filter: dict, limit: int, start: int) -> dict:
     """Search across every JMAP account the user owns, returning a merged newest-first page.
 
     Mirrors the unified folder fan-out (`get_unified_threads`): each account is over-fetched to the
@@ -2060,7 +2056,6 @@ def _search_all_accounts(filter: dict, limit: int, start: int, shown_matches: in
             account["name"],
             normalized_filter,
             [row for row in page if row["account"] == account["name"]],
-            shown_matches,
         )
     return {"rows": page, "total": total, **({"unavailable_accounts": unavailable} if unavailable else {})}
 

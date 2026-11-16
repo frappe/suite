@@ -1252,9 +1252,7 @@ const scrollToLanding = (data: Mail[]): boolean => {
 }
 watch(
   () => [mailboxIds.value.drafts, landOn],
-  ([, match], [, previous]) => {
-    // Another match of the open thread was asked for: it lands again, there.
-    if (match && previous && match !== previous) landsPending = true
+  () => {
     if (landsPending && thread.value.length && scrollToLanding(thread.value)) landsPending = false
   },
 )

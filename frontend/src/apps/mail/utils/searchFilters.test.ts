@@ -43,11 +43,10 @@ describe('editing a search', () => {
   })
 
   it('widening to every account drops the folder, which only means something in one', () => {
-    expect(withAllAccounts({ text: 'a', inMailbox: 'b' }, true)).toEqual({
+    expect(withAllAccounts({ text: 'a', inMailbox: 'b' })).toEqual({
       text: 'a',
       all_accounts: '1',
     })
-    expect(withAllAccounts({ text: 'a', all_accounts: '1' }, false)).toEqual({ text: 'a' })
   })
 
   it('offers widening only while the widened search still asks something', () => {

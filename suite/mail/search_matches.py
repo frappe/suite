@@ -35,9 +35,6 @@ from suite.mail.jmap import JMAP_ERRORS, get_account_client
 # How far past the top of a page the uncollapsed query looks. A conversation's older matches can lie
 # below this on a mailbox full of hits, where the row just counts fewer of them.
 MATCH_WINDOW = 300
-# The most of a conversation's matches a row has room to show with their words. Reading one fetches
-# the whole mail, so a row reads only as many as its look shows: one, unless it lists its matches.
-MAX_SHOWN_MATCHES = 3
 SNIPPET_MAX_IDS = 100
 
 TERM_CONDITIONS = ("text", "subject", "body")
@@ -182,13 +179,13 @@ def conversation_match(
     )
 
 
-def add_match_words(account: str, filter: dict[str, Any], rows: list[dict], shown_matches: int = 1) -> None:
-    """Reads the words of the matches a page's rows show, `shown_matches` of each. Asked once the page
-    is settled, because it fetches every mail it reads: a search across accounts lists far more rows
-    than it returns."""
+def add_match_words(account: str, filter: dict[str, Any], rows: list[dict]) -> None:
+    """Reads the words of the match each of a page's rows shows: its newest. Asked once the page is
+    settled, because it fetches every mail it reads: a search across accounts lists far more rows than
+    it returns."""
 
     shown = [row for row in rows if not row.get("reaction_only")]
-    ids = [match["id"] for row in shown for match in row["matches"][:shown_matches]]
+    ids = [row["matches"][0]["id"] for row in shown if row["matches"]]
     snippets = get_snippets(account, filter, ids)
     if not snippets:
         return
@@ -196,7 +193,7 @@ def add_match_words(account: str, filter: dict[str, Any], rows: list[dict], show
     for row in shown:
         messages = {copy["id"]: copy for m in row["messages"] for copy in [m, *m.get("duplicates", [])]}
         words: list[str] = []
-        for match in row["matches"][:shown_matches]:
+        for match in row["matches"][:1]:
             snippet = snippets.get(match["id"])
             match["snippet"] = snippet["preview"] if snippet else None
             match["in_attachment"] = cint(found_in_attachment(messages.get(match["id"], {}), snippet))

@@ -226,14 +226,14 @@ def row_matching(*ids: str) -> dict:
 
 
 class TestMatchWords(UnitTestCase):
-    def test_no_more_matches_are_read_than_a_row_can_show(self):
+    def test_a_search_reads_the_words_of_each_rows_newest_match_only(self):
         with patch.object(mail, "search_threads", return_value=([row_matching("a1", "a2", "a3", "a4")], 1)):
             with (
                 patch.object(search_matches, "get_snippets", return_value={}) as get_snippets,
                 patch.object(mail, "_tag_search_results"),
             ):
-                mail.search_mails("account", {"text": "numbers"}, shown_matches=50)
-        self.assertEqual(get_snippets.call_args.args[2], ["a1", "a2", "a3"])
+                mail.search_mails("account", {"text": "numbers"})
+        self.assertEqual(get_snippets.call_args.args[2], ["a1"])
 
 
 class TestPageTop(UnitTestCase):

@@ -285,7 +285,6 @@
                     :pinnable="pinnable"
                     :class="rowClasses(row)"
                     :data-row-key="row.key"
-                    @open-match="(id: string) => openMatch(row.thread, id)"
                     @set-pinned="(pinned: boolean) => pinThreads([row.thread], pinned, mailbox)"
                     @drag-start="(e: DragEvent) => startThreadDrag(row.thread, e)"
                     @drag-end="threadDrag.end()"
@@ -338,7 +337,7 @@
               :can-widen="searchCanWiden"
               @retry="resetThreads(false)"
               @clear-filters="searchWith(withoutFilters(searchQuery))"
-              @widen="searchWith(withAllAccounts(searchQuery, true))"
+              @widen="searchWith(withAllAccounts(searchQuery))"
             />
             <p v-else class="text-ink-gray-5">
               {{
@@ -359,7 +358,7 @@
           :thread-i-d
           :threads="threadIDs"
           :messages="currentThread?.messages"
-          :land-on="mailbox === 'search' ? (askedMatch ?? currentThread?.match_id) : undefined"
+          :land-on="mailbox === 'search' ? currentThread?.match_id : undefined"
           :search-words="
             mailbox === 'search'
               ? searchWords(searchQuery.text, currentThread?.marked_words)
@@ -437,14 +436,12 @@
     :actions="selectActions"
     :extra-options="folderSelectionOptions"
   />
-  <SearchTweakPanel v-if="SearchTweakPanel && mailbox === 'search'" />
 </template>
 <script setup lang="ts">
 import { Breadcrumbs, Button, Checkbox, Dialog, PageHeader } from 'frappe-ui'
 import { FolderInput, Folders, LoaderCircle } from 'lucide-vue-next'
 import {
   computed,
-  defineAsyncComponent,
   h,
   inject,
   nextTick,
@@ -485,7 +482,6 @@ import { useListRows, type NavRow } from '@/apps/mail/composables/useListRows'
 import { useListSelection } from '@/apps/mail/composables/useListSelection'
 import { PAGE_LENGTH, usePaginatedThreads } from '@/apps/mail/composables/usePaginatedThreads'
 import { useScreener } from '@/apps/mail/composables/useScreener'
-import { useSearchTweaks } from '@/apps/mail/composables/useSearchTweaks'
 import { useThreadDrag } from '@/apps/mail/composables/useThreadDrag'
 import { useThreadPin } from '@/apps/mail/composables/useThreadPin'
 import { takesPins, userStore, type MailboxRole } from '@/apps/mail/stores/user'
@@ -546,11 +542,6 @@ const {
   mailbox: string
   threadID?: string
 }>()
-// Only a development build carries the Tweak panel: see useSearchTweaks.
-const SearchTweakPanel = import.meta.env.DEV
-  ? defineAsyncComponent(() => import('@/apps/mail/components/SearchTweakPanel.vue'))
-  : null
-
 const route = useRoute()
 const router = useRouter()
 const { isMobile } = useScreenSize()
@@ -923,10 +914,7 @@ const pinSelected = (pinned: boolean) => {
 // lose: the list stays in sight and in position, and the arrows and j/k step down it as they do in a
 // folder. Until one is open the list has the width to itself, and nothing is opened or marked read
 // that wasn't picked.
-const { tweaks: searchTweaks, shownMatches } = useSearchTweaks()
-const readsBesideResults = computed(
-  () => mailbox === 'search' && !!threadID && searchTweaks.value.opening === 'beside',
-)
+const readsBesideResults = computed(() => mailbox === 'search' && !!threadID)
 // With Split View off, that narrows the list and restacks every row in it, which moves the row just
 // opened by however much the rows above it grew. It is held where it was clicked. Measured before
 // the restack is drawn (the watcher runs ahead of the render) and put back once it is.
@@ -942,20 +930,6 @@ watch(readsBesideResults, (beside) => {
     list.scrollTop += offsetIn(row) - before
   })
 })
-
-// A row's own message, when one of its matches was picked rather than the row (see MailListItem).
-const askedMatch = ref<string>()
-watch(
-  () => threadID,
-  () => (pickingMatch ? (pickingMatch = false) : (askedMatch.value = undefined)),
-)
-let pickingMatch = false
-const openMatch = (thread: Thread, id: string) => {
-  askedMatch.value = id
-  if (thread.thread_id === threadID) return
-  pickingMatch = true
-  goToThread(thread.thread_id)
-}
 
 const searchQuery = computed(() => searchQueryFrom(route.query))
 const searchWith = useSearchWith()
@@ -1021,7 +995,6 @@ const searchResults = useInfiniteQuery(api.mail.messages.search, () =>
         limit: PAGE_LENGTH,
         start: 0,
         all_accounts: isAllAccountsSearch.value,
-        shown_matches: shownMatches.value,
       }
     : false,
 )

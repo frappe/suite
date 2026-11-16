@@ -219,8 +219,7 @@ const {
   // Whether the row can be dragged onto a folder. Off on touch, where the browser
   // gives HTML5 drag no events at all and a long press already means selection.
   draggable?: boolean
-  // Lines stacked even with the reading pane off: for a row with more to say than a column holds, or
-  // a list that has just made room for a thread beside it.
+  // Lines stacked even with the reading pane off: a list that has just made room for a thread beside it.
   stacked?: boolean
 }>()
 

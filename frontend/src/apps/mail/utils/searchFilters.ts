@@ -45,16 +45,16 @@ export function withoutFilters(query: SearchQuery) {
   return next
 }
 
-/** A folder belongs to one account, so it cannot survive the widening. */
-export function withAllAccounts(query: SearchQuery, allAccounts: boolean): SearchQuery {
-  const next = withFilter(query, SCOPE_KEY, allAccounts ? '1' : undefined)
-  if (allAccounts) delete next.inMailbox
+/** The search widened to every account. A folder belongs to one account, so it cannot survive. */
+export function withAllAccounts(query: SearchQuery): SearchQuery {
+  const next = withFilter(query, SCOPE_KEY, '1')
+  delete next.inMailbox
   return next
 }
 
 /** Whether widening still leaves something to search: a search of only a folder has nothing left. */
 export const canWidenToAllAccounts = (query: SearchQuery) =>
-  hasSearchConditions(withAllAccounts(query, true))
+  hasSearchConditions(withAllAccounts(query))
 
 /**
  * The query after the words on the query line were edited. Operators typed there become filters,

@@ -18168,10 +18168,6 @@
           "all_accounts": {
             "title": "All Accounts",
             "type": "boolean"
-          },
-          "shown_matches": {
-            "title": "Shown Matches",
-            "type": "integer"
           }
         },
         "required": [
