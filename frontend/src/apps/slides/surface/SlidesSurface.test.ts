@@ -2341,6 +2341,44 @@ describe('a deck on the content layer', () => {
 
         await vi.waitFor(() => expect(slideIds(room.doc)).toHaveLength(2))
         expect(shownTexts(room.doc)[1]).toEqual([expect.stringContaining('Brand first')])
+        expect(calls('update_slide_attachments')).toEqual([])
+      })
+
+      const pictured = { elements: [{ id: 'cover', type: 'image', src: 'template-photo' }] }
+
+      async function openedLive() {
+        const room = roomOf('one')
+        collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
+        await opened([], '')
+        await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+        return room.doc
+      }
+
+      it("adds a layout with the template's picture made this presentation's own", async () => {
+        const doc = await openedLive()
+
+        handleInsertSlide(0, structuredClone(pictured))
+
+        await vi.waitFor(() => expect(slideIds(doc)).toHaveLength(2))
+        expect(shownTexts(doc)[1]).toEqual(['adopted:template-photo'])
+        expect(bodyOf('update_slide_attachments')).toMatchObject({ parent: mounted!.docname })
+      })
+
+      it('adds no slide when the picture cannot be taken', async () => {
+        const doc = await openedLive()
+        const offline = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+
+        try {
+          handleInsertSlide(0, structuredClone(pictured))
+
+          await vi.waitFor(() =>
+            expect(toast.error).toHaveBeenCalledWith('Go online to add this slide'),
+          )
+        } finally {
+          offline.mockRestore()
+        }
+        expect(slideIds(doc)).toHaveLength(1)
+        expect(calls('update_slide_attachments')).toEqual([])
       })
     })
   })
