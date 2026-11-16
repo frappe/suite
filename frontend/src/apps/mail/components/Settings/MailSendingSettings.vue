@@ -3,7 +3,18 @@
   <AppSettingsBody>
     <div class="flex flex-col gap-10">
       <ComposeSettings />
-      <IdentitySettings />
+      <div class="divide-y divide-outline-gray-1">
+        <SettingsDialogRow
+          :title="__('Send-as addresses')"
+          :description="__('The addresses you send mail as, each with its own name and signature.')"
+          :action="__('Manage')"
+          size="2xl"
+        >
+          <template #default="{ close }">
+            <IdentitySettings @saved="close" />
+          </template>
+        </SettingsDialogRow>
+      </div>
       <SignatureSettings />
       <VacationResponseSettings />
     </div>
@@ -17,5 +28,6 @@ import SignatureSettings from '@/apps/mail/components/Settings/SignatureSettings
 import VacationResponseSettings from '@/apps/mail/components/Settings/VacationResponseSettings.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import SettingsDialogRow from '@/platform/settings/SettingsDialogRow.vue'
 import { translate as __ } from '@/platform/translation'
 </script>

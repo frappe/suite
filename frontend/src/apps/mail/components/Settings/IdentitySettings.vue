@@ -1,23 +1,13 @@
 <template>
-  <SettingsSection :title="__('Send-as addresses')">
-    <template #actions>
-      <Button
-        v-if="draft"
-        :label="__('Save')"
-        variant="solid"
-        :size="isMobile ? 'md' : 'sm'"
-        :disabled="identities.isFetching || JSON.stringify(draft) === JSON.stringify(selected)"
-        :loading="saveIdentity.isPending"
-        @click="save()"
-      />
-      <Button
-        icon-left="lucide-plus"
-        :label="__('New')"
-        :size="isMobile ? 'md' : 'sm'"
-        variant="outline"
-        @click="showAddIdentity"
-      />
-    </template>
+  <div class="flex flex-col gap-5">
+    <Button
+      class="self-end"
+      icon-left="lucide-plus"
+      :label="__('New')"
+      :size="buttonSize"
+      variant="outline"
+      @click="showAddIdentity"
+    />
     <template v-if="identities?.data?.length">
       <div class="flex min-h-full flex-col">
         <div class="flex-1 space-y-4">
@@ -145,6 +135,16 @@
         {{ __('Identities are the addresses you send mail as. Create one to get started.') }}
       </p>
     </div>
+    <Button
+      v-if="draft"
+      class="self-end"
+      :label="__('Save')"
+      variant="solid"
+      :size="buttonSize"
+      :disabled="isSaveBlocked"
+      :loading="saveIdentity.isPending"
+      @click="save()"
+    />
 
     <Dialog
       v-model:open="showAddIdentityDialog"
@@ -195,7 +195,7 @@
         ],
       }"
     />
-  </SettingsSection>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -209,12 +209,14 @@ import { userStore } from '@/apps/mail/stores/user'
 import type { Identity } from '@/apps/mail/types'
 import { raiseToast } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
-import SettingsSection from '@/platform/settings/SettingsSection.vue'
 import { translate as __ } from '@/platform/translation'
+
+const emit = defineEmits<{ saved: [] }>()
 
 const store = userStore()
 const { identities } = store
 const { isMobile } = useScreenSize()
+const buttonSize = computed(() => (isMobile.value ? 'md' : 'sm'))
 const signatures = useQuery(api.mail.signatures.list)
 const identityName = ref(identities.data?.[0]?.name ?? '')
 const selected = computed(() =>
@@ -242,6 +244,10 @@ watch(
     immediate: true,
   },
 )
+// Nothing to save until the form differs from the address as it was read
+const isSaveBlocked = computed(
+  () => identities.isFetching || JSON.stringify(draft.value) === JSON.stringify(selected.value),
+)
 const saveIdentity = useMutation(api.mail.identities.save)
 async function save() {
   const identity = draft.value
@@ -255,6 +261,7 @@ async function save() {
     html_signature: identity.html_signature,
   })
   raiseToast(__('Identity updated'))
+  emit('saved')
 }
 function setSignature(value: string) {
   if (draft.value) draft.value.html_signature = value
