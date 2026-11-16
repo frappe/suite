@@ -29,6 +29,7 @@ from suite.drive._core.versions import (
     _retention_bucket,
     _thin_node,
     delete_version,
+    get_version,
     label_version,
     list_versions,
     read_version,
@@ -36,6 +37,7 @@ from suite.drive._core.versions import (
     take_version,
     thin,
 )
+from suite.drive.http import shapes
 from suite.drive.jobs import thin_versions
 from suite.drive.tests.fixtures import ensure_rootless_user
 from suite.drive.tests.test_content import registered as registered_content
@@ -254,6 +256,44 @@ class TestVersionWorkflows(IntegrationTestCase):
 
         with read_version(reader, node, 1) as stream:
             self.assertEqual(stream.read(), b"head")
+
+    def test_a_version_ported_from_a_deleted_account_names_its_author_to_signed_in_readers_only(self):
+        """The legacy port credits a version to Guest when its author's account
+        is gone and keeps their email as the row's owner. A Guest credit is also
+        real: a link editor saves as Guest, and a sweep credits a Guest's edits
+        while running as Administrator. Neither of those has a deleted author."""
+        node = self._file(b"head")
+        ported = take_version(self.admin, node, actor="Guest")
+        frappe.db.set_value("Drive Node Version", {"node": node, "seq": ported}, "owner", "gone@example.com")
+        swept = take_version(self.admin, node, actor="Guest")
+        link = grant(node, "$LINK", EDIT, self.admin)["principal"]
+        link_editor = Principals("Guest", (), ("$PUBLIC", link))
+        frappe.set_user("Guest")
+        saved_by_guest = take_version(link_editor, node)
+        frappe.set_user("Administrator")
+        by_reader = take_version(self.admin, node, actor=OTHER)
+        grant(node, OTHER, READ, self.admin)
+        reader = Principals(OTHER, (OTHER, "$GENERAL"), ("$PUBLIC",))
+
+        def authors(principals):
+            rows = shapes.version_shapes(list_versions(principals, node)["rows"])
+            return {row["seq"]: (row["actor"], row["deleted_author"]) for row in rows}
+
+        self.assertEqual(
+            authors(reader),
+            {
+                ported: ("Guest", "gone@example.com"),
+                swept: ("Guest", None),
+                saved_by_guest: ("Guest", None),
+                by_reader: (OTHER, None),
+            },
+        )
+        self.assertEqual(
+            {seq: deleted for seq, (_, deleted) in authors(link_editor).items()},
+            {ported: None, swept: None, saved_by_guest: None, by_reader: None},
+        )
+        single = shapes.version_shape(get_version(reader, node, ported))
+        self.assertEqual(single["deleted_author"], "gone@example.com")
 
     def test_a_sequence_that_was_never_taken_is_refused(self):
         node = self._file(b"head")

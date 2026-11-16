@@ -47,10 +47,6 @@ vi.mock('frappe-ui', async () => {
   }
 })
 
-vi.mock('@/platform/collab/names', () => ({
-  fullName: (user: string) => ({ 'ana@example.com': 'Ana Silva' })[user] ?? user,
-}))
-
 const NOW = new Date(2026, 9, 15, 18, 0)
 
 const named = version(3, 'Before review', new Date(2026, 9, 15, 14, 14))
@@ -74,7 +70,15 @@ afterEach(() => {
 
 function version(seq: number, label: string | null, takenAt: Date) {
   const kind = label ? 'named' : 'auto'
-  const shape = { seq, kind, label, actor: 'ana@example.com', creation: takenAt.toISOString() }
+  const shape = {
+    seq,
+    kind,
+    label,
+    actor: 'ana@example.com',
+    person: { id: 'ana@example.com', full_name: 'Ana Silva', user_image: null },
+    deleted_author: null,
+    creation: takenAt.toISOString(),
+  }
   return fromPartial<DocumentVersion>(shape)
 }
 
@@ -83,6 +87,7 @@ function milestone(seq: number, takenAt: Date) {
 }
 
 interface ListOptions {
+  versions?: DocumentVersion[]
   canRestore?: boolean
   isRestoring?: boolean
   canSaveVersion?: boolean
@@ -91,6 +96,7 @@ interface ListOptions {
 }
 
 function mountList({
+  versions = VERSIONS,
   canRestore = true,
   isRestoring = false,
   canSaveVersion = true,
@@ -105,7 +111,7 @@ function mountList({
   document.body.append(host)
   const app = createApp(() =>
     h(VersionList, {
-      versions: VERSIONS,
+      versions,
       canRestore,
       isRestoring,
       canSaveVersion,
@@ -192,6 +198,37 @@ describe('the versions list', () => {
       null,
       'true',
     ])
+  })
+})
+
+describe('who took a version', () => {
+  const guest = { id: 'Guest', full_name: 'Guest', user_image: null }
+  const takenAt = (hour: number) => new Date(2026, 9, 15, hour).toISOString()
+
+  it('names the deleted author of a ported version, and keeps Guest for a guest’s own', () => {
+    const portedFromDeletedAccount = fromPartial<DocumentVersion>({
+      ...automatic,
+      seq: 7,
+      actor: 'Guest',
+      person: guest,
+      deleted_author: 'gone@example.com',
+      creation: takenAt(12),
+    })
+    const savedByGuest = fromPartial<DocumentVersion>({
+      ...automatic,
+      seq: 6,
+      actor: 'Guest',
+      person: guest,
+      deleted_author: null,
+      creation: takenAt(11),
+    })
+    const savedByAna = fromPartial<DocumentVersion>({ ...automatic, seq: 5, creation: takenAt(10) })
+    const { host } = mountList({ versions: [portedFromDeletedAccount, savedByGuest, savedByAna] })
+    const bylines = [...host.querySelectorAll('button[aria-pressed] p:last-child')].map(
+      (line) => line.textContent,
+    )
+
+    expect(bylines).toEqual(['gone@example.com', 'Guest', 'Ana Silva'])
   })
 })
 

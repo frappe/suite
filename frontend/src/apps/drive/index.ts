@@ -456,6 +456,7 @@ export { default as DriveDocumentStrip } from '@/apps/drive/files/features/Docum
 export { showError } from '@/apps/drive/files/features/side-panel/versions/useDocumentPanel'
 export { readStoredState } from '@/apps/drive/files/features/side-panel/versions/storedState'
 export { fetchVersion } from '@/apps/drive/files/features/side-panel/versions/fetchVersion'
+export { versionAuthor } from '@/apps/drive/files/features/side-panel/versions/versionAuthor'
 export {
   askUntilConverted,
   type ConvertedState,
