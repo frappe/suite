@@ -143,6 +143,8 @@ NOTIFICATION_SHAPE_FIELDS = {
     "activity",
     "node_title",
     "node_kind",
+    "node_mime",
+    "node_content_doctype",
     "actor",
 }
 
@@ -2840,6 +2842,10 @@ class TestNotificationRoutes(DriveHTTPCase):
         self.assertEqual(row["read"], 0)
         self.assertEqual(row["activity"]["name"], self.activity)
         self.assertEqual(row["activity"]["node"], self.node)
+        # A folder is neither a file with a mime type nor a document of a DocType.
+        self.assertEqual(
+            (row["node_title"], row["node_mime"], row["node_content_doctype"]), ("Notified", None, None)
+        )
 
     def test_unread_count_is_the_callers_exact_scalar(self):
         answer = self.data(self.as_owner("GET", f"{PREFIX}/notifications/unread-count"))

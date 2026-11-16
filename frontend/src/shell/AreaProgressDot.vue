@@ -5,18 +5,18 @@
          region: screen readers hear it when it changes. Always rendered, as a
          live region must exist before its text changes. -->
     <span data-slot="area-progress-status" role="status" class="sr-only">{{ status }}</span>
-    <!-- One dot at the icon's top-right corner: red when the work needs
-         attention, else orange while it runs or is paused. It fades out when
-         the work is done. -->
+    <!-- One dot at the icon's top-right corner (see iconDot.ts): red when the
+         work needs attention, else orange while it runs or is paused. It fades
+         out when the work is done. -->
     <Transition leave-active-class="transition-opacity duration-500" leave-to-class="opacity-0">
       <span
         v-if="progress && shown"
         data-slot="area-progress-dot"
+        data-icon-dot
         :data-tone="progress.tone"
         :data-attention="progress.attention"
         aria-hidden="true"
-        class="absolute -right-0.5 -top-0.5 block size-2 rounded-full border border-[var(--surface-base)]"
-        :class="progress.attention ? 'bg-surface-red-6' : 'bg-surface-orange-6'"
+        :class="[ICON_DOT, progress.attention ? 'bg-surface-red-6' : 'bg-surface-orange-6']"
       />
     </Transition>
   </span>
@@ -26,6 +26,7 @@
 import { computed } from 'vue'
 
 import { progressState, type AreaProgress } from '@/shell/areaProgress'
+import { ICON_DOT } from '@/shell/iconDot'
 
 const props = defineProps<{
   progress: AreaProgress | null

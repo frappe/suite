@@ -123,6 +123,14 @@ export const canonicalRoutes: RouteRecordRaw[] = [
 
 export const routes: RouteRecordRaw[] = [
   ...canonicalRoutes,
+  // The bell's list as a page, in the shell but in no area: the phone bottom bar's
+  // Notifications tab opens it, as a phone has no rail and so no bell.
+  {
+    path: '/notifications',
+    name: 'notifications',
+    component: () => import('@/composition/notifications/NotificationsPage.vue'),
+    meta: { frame: 'shell', scroll: 'content', title: 'Notifications' },
+  },
   // Joining a workspace (spec 001 §4.1): an invitation link, the sign-in for a
   // temporary password, and, once signed in, the welcome, which starts with the
   // forced password change. One view walks them all.
