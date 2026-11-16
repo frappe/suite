@@ -292,18 +292,21 @@ DROP_REASONS = ("dead_principal", "unmigrated_entity", "no_flags", "root_guardra
 
 # §14.5 Kept rights, in §14.9's `legacy_rights`. Writes: `kept` is the sum of
 # `group_raises`, `person_grants`, and `pins`; `from_groups` is the part of
-# `person_grants` a group or `$GENERAL` row gave. Findings, in person-item
-# pairs: `behind_deny` stays below legacy behind a deny, `exceeded` ends
-# above it (`exceeded_by_public_deny` of them because of a public deny),
-# `upload_added` gets upload from a `write` row, `share_lost` loses a
-# `share` granted without `write`, and `pins_refused` keeps a role a pin
-# would have denied inside the person's own Personal root.
+# `person_grants` a group or `$GENERAL` row gave; `raises_skipped` counts the
+# group or `$GENERAL` raises left out because a deny row for a group or a
+# person sits on their path. Findings, in person-item pairs: `behind_deny`
+# stays below legacy behind a deny, `exceeded` ends above it
+# (`exceeded_by_public_deny` of them because of a public deny),
+# `upload_added` gets upload from a `write` row, `share_lost` loses a `share`
+# granted without `write`, and `pins_refused` keeps a role a pin would have
+# had to deny.
 LEGACY_RIGHTS_COUNTS = (
     "kept",
     "group_raises",
     "person_grants",
     "pins",
     "from_groups",
+    "raises_skipped",
     "behind_deny",
     "exceeded",
     "exceeded_by_public_deny",
@@ -367,7 +370,7 @@ class GrantConversion:
     # `grants._keep_legacy_rights`, §14.5 Kept rights: the grants written
     # and what the comparison found (`KeptRightsPlan.counts`). Copied from
     # the saved plan on every run, so a rerun reports the same numbers.
-    legacy_rights: dict = field(default_factory=dict)
+    legacy_rights: dict[str, int] = field(default_factory=dict)
     # Node ids only. The tokens live in `Drive Grant.principal`, and a
     # migration record on disk is not the place for a second copy of a
     # secret that authorises access.

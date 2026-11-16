@@ -560,6 +560,7 @@ def _plan_kept_rights(env, nodes, batch_size: int) -> KeptRightsPlan:
         "pins": kinds[PIN],
         "pins_refused": result.pins_refused,
         "from_groups": result.from_groups,
+        "raises_skipped": result.raises_skipped,
         "behind_deny": result.behind_deny,
         "exceeded": result.exceeded,
         "exceeded_by_public_deny": result.exceeded_by_public_deny,

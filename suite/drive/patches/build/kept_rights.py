@@ -21,9 +21,13 @@ back what legacy gave them there. Three rules bound what it writes:
 
 - A group or `$GENERAL` grant is raised only as far as every current person
   it decides had, and no further than legacy gave somebody who holds that
-  principal alone. A person who joins the group later, or signs up later,
-  gets no more from it than legacy would have given them. Everyone else
-  gets their own grant.
+  principal alone. Where no deny row for a group or a person sits on the
+  path, legacy gave a member of more groups at least what it gave a member
+  of fewer, so that cap also holds for whoever joins the group, or signs
+  up, after Build. Where such a deny row does sit on the path, legacy could
+  give a member of two groups less than a member of one, so the grant is
+  not raised at all (`raises_skipped`) and today's people get their own
+  grants. Everyone else the raise cannot serve gets their own grant too.
 - A grant it writes that would carry a person past what they had on a lower
   node is held back there by the person's own grant (a pin), at the higher
   of what legacy gave them and what Build had given them before this pass.
@@ -31,10 +35,14 @@ back what legacy gave them there. Three rules bound what it writes:
 - A person the engine denies is left alone. §14.5 rounds a deny up to a
   total deny on purpose, and this rule does not reopen it.
 
+A person's own grant is nearest-wins like any other, so it does not follow
+a group deny that person meets later by joining the group. Only rows on a
+path that holds a deny row for a group can do that.
+
 It does not take away what Build's per-row mapping already gave above
 legacy. Those pairs are counted (`exceeded`), not pinned: §14.5 lets a
-`$PUBLIC` deny bind only people with no grant of their own (§6.5), and the
-owner decides whether to hold such pairs back.
+`$PUBLIC` deny bind only people with no grant of their own (§6.5). Owner
+decision, 2026-11-16: count them, and decide only if a run counts any.
 
 Reads no site. `grants.py` collects the inputs and writes the answer.
 """
@@ -49,14 +57,6 @@ from suite.drive._core.roles import COMMENT, EDIT, MANAGE, NONE, READ, UPLOAD
 from suite.drive.patches.build.mapping import ANONYMOUS, GENERAL, GROUP_PREFIX, PUBLIC
 
 FLAGS = ("read", "comment", "upload", "write", "share")
-
-# Owner decision pending (review 1 of #1242, finding 3). Legacy could grant
-# `write` without `upload`: a person edited files in a folder they could not
-# add to. The ladder has no role for that. True keeps edit, and with it
-# upload, the way §14.5's per-row mapping already turns `write` into EDIT;
-# each pair this pass lifts that way is counted in `upload_added`. False
-# keeps only what lies below upload.
-KEEP_WRITE_WITHOUT_UPLOAD = True
 
 # Inside one folder, legacy read a person's own row first, then their
 # groups', then `$GENERAL`, then the public row.
@@ -124,12 +124,17 @@ class LegacyRights:
 class KeptRightsResult:
     """The grants to write, and what the comparison found, in person-item pairs.
 
-    A pair is one person on one node that holds a legacy row or share.
-    Owners and Suite Admins held everything in legacy, so `exceeded` and
-    `share_lost` leave them out.
+    A pair is one person on one node that holds a legacy row or share. A
+    position inherited from a folder is counted again on every node below
+    it that holds a row of its own. Owners and Suite Admins held everything
+    in legacy, so `exceeded`, `exceeded_by_public_deny` and `share_lost`
+    leave them out. The other pair counts include them.
     """
 
     rights: list[KeptRight] = field(default_factory=list)
+    # Group or `$GENERAL` grants not raised because a deny row for a group
+    # or a person sits on a path they decide. Their people got own grants.
+    raises_skipped: int = 0
     # Below legacy, held there by a deny the engine keeps on purpose.
     behind_deny: int = 0
     # Above legacy after this pass. Build's own mapping put them there.
@@ -139,7 +144,7 @@ class KeptRightsResult:
     # grant of their own.
     exceeded_by_public_deny: int = 0
     # Lifted by this pass from below UPLOAD to EDIT although legacy had not
-    # granted upload (`KEEP_WRITE_WITHOUT_UPLOAD`).
+    # granted upload (`_ladder`).
     upload_added: int = 0
     # Legacy granted `share` without `write`. The ladder has no role for it
     # below MANAGE, which would add edit, so it is lost (§14.5's table).
@@ -161,6 +166,16 @@ class _Entry:
     had: int
     base: int
     denied: bool
+
+
+@dataclass(frozen=True)
+class _Class:
+    """People the rows cannot tell apart, and what pass 1 found for them."""
+
+    principals: Principals
+    tiers: Mapping[str, int]
+    members: list[str]
+    entries: list[_Entry]
 
 
 def rights_to_keep(
@@ -187,19 +202,23 @@ def rights_to_keep(
     2. A group or `$GENERAL` grant is raised to the lowest role legacy gave
        anyone it decides, those stand-ins included, when that is above its
        own role. A grant tied with another at the same depth and tier
-       decides for its whole tie.
+       decides for its whole tie. A grant that decides a node whose path
+       holds a deny row for a group or a person is not raised: the
+       stand-ins hold one group each, and such a row can give a member of
+       two groups less than either stand-in had.
     3. Each class, from the root down, gets its own grant where it is still
        below legacy, and a pin where a grant written above would carry it
        past `max(had, base)` on a lower node.
     """
     result = KeptRightsResult()
-    admins = frozenset(admins)
     chains = {name: chain_ids(node) for name, node in nodes.items()}
     working = {name: dict(rows) for name, rows in grants.items()}
     by_principal = _named_nodes(legacy)
+    named_denies = _named_deny_nodes(legacy)
 
-    views = []
+    classes = []
     decided: dict[tuple[str, str], int] = {}
+    unsafe: set[tuple[str, str]] = set()
     for user, members, groups in _alike(people, by_principal, working):
         tiers = _tiers(user, groups)
         principals = _principals(user, tiers)
@@ -210,6 +229,7 @@ def rights_to_keep(
             flags = _legacy_flags(legacy, chain, tiers)
             had = max(_ladder(flags), _shared_role(legacy, name, tiers))
             acc = _engine(chain, working, principals)
+            denied_on_path = any(node in named_denies for node in chain)
             # Only a grant that came from a legacy row: every holder of the
             # principal then meets it here, so `decided` sees every node it
             # decides for anyone. A root anchor or a creator grant has no
@@ -217,30 +237,49 @@ def rights_to_keep(
             for shared in _shared_winners(chain, working, principals, acc):
                 if shared[0] in by_principal.get(shared[1], ()):
                     decided[shared] = min(decided.get(shared, had), had)
+                    if denied_on_path:
+                        unsafe.add(shared)
             entries.append(_Entry(name, chain, flags, had, acc.answer(), acc.own == NONE))
-        views.append((principals, tiers, members, entries))
+        classes.append(_Class(principals, tiers, members, entries))
 
     raised = set()
     for (name, principal), floor in sorted(decided.items()):
-        if floor > working[name][principal]:
-            working[name][principal] = floor
-            raised.add(name)
-            result.rights.append(KeptRight(name, principal, floor, RAISE))
+        if floor <= working[name][principal]:
+            continue
+        if (name, principal) in unsafe:
+            result.raises_skipped += 1
+            continue
+        working[name][principal] = floor
+        raised.add(name)
+        result.rights.append(KeptRight(name, principal, floor, RAISE))
 
-    for principals, tiers, members, entries in views:
-        _keep_for_class(result, legacy, nodes, working, raised, admins, principals, tiers, members, entries)
+    held_everything = frozenset(admins)
+    for alike in classes:
+        _keep_for_class(
+            result, alike, legacy=legacy, nodes=nodes, working=working, raised=raised, admins=held_everything
+        )
     return result
 
 
-def _keep_for_class(result, legacy, nodes, working, raised, admins, principals, tiers, members, entries):
+def _keep_for_class(
+    result: KeptRightsResult,
+    alike: _Class,
+    *,
+    legacy: LegacyRights,
+    nodes: Mapping[str, Mapping],
+    working: Mapping[str, Mapping[str, int]],
+    raised: set[str],
+    admins: frozenset[str],
+) -> None:
     """Pass 3 for one class: own grants and pins, root first, and the counts."""
+    principals, members = alike.principals, alike.members
     own: dict[str, int] = {}
-    for entry in entries:
+    for entry in alike.entries:
         holds, denied = entry.base, entry.denied
         if any(node in raised or node in own for node in entry.chain):
             acc = _engine(entry.chain, working, principals, own)
             holds, denied = acc.answer(), acc.own == NONE
-        kind = None
+        kind: Kind | None = None
         if holds < entry.had and denied:
             result.behind_deny += len(members)
         elif holds < entry.had:
@@ -249,9 +288,9 @@ def _keep_for_class(result, legacy, nodes, working, raised, admins, principals, 
             own[entry.name], kind = max(entry.had, entry.base), PIN
         elif holds > max(entry.had, entry.base):
             # A pin at NONE would be a total deny on a person who holds no
-            # deny row, and inside their own Personal root §5.9 refusal 11
-            # forbids it outright. Build's own grants never ask for one;
-            # the person keeps `holds` and is counted.
+            # deny row there, so no pin denies, wherever it would sit. Build's
+            # own grants never ask for one; the person keeps `holds` and is
+            # counted.
             result.pins_refused += len(members)
         final = own[entry.name] if kind else holds
         if kind:
@@ -269,7 +308,9 @@ def _keep_for_class(result, legacy, nodes, working, raised, admins, principals, 
             result.share_lost += counted
         if final > entry.had:
             result.exceeded += counted
-            unshadowed = {principal: tier for principal, tier in tiers.items() if principal != ANONYMOUS}
+            unshadowed = {
+                principal: tier for principal, tier in alike.tiers.items() if principal != ANONYMOUS
+            }
             if final <= _ladder(_legacy_flags(legacy, entry.chain, unshadowed)):
                 result.exceeded_by_public_deny += counted
 
@@ -295,6 +336,20 @@ def _named_nodes(legacy: LegacyRights) -> dict[str, set[str]]:
         for principal, _role in shares:
             by_principal.setdefault(principal, set()).add(name)
     return by_principal
+
+
+def _named_deny_nodes(legacy: LegacyRights) -> set[str]:
+    """The nodes holding a deny row for a group or a person.
+
+    A `$GENERAL` or public deny binds everyone alike, so the one-group
+    stand-ins already meet it. A deny for a group or a person binds only
+    some, and a person can hold it beside the group a raise serves.
+    """
+    return {
+        name
+        for name, rows in legacy.rows.items()
+        if any(row.flags["deny"] and row.principal not in (GENERAL, ANONYMOUS) for row in rows)
+    }
 
 
 def _alike(
@@ -362,10 +417,17 @@ def _legacy_flags(legacy: LegacyRights, chain: list[str], tiers: Mapping[str, in
 
 
 def _ladder(decided: Mapping[str, bool]) -> int:
-    """Legacy showed nothing without read, and shared only alongside write."""
+    """Legacy showed nothing without read, and shared only alongside write.
+
+    Legacy could grant `write` without `upload`: a person edited files in a
+    folder they could not add to, and the ladder has no role for that. Owner
+    decision, 2026-11-16: that person keeps EDIT and so gains upload, the
+    way §14.5's per-row mapping already turns `write` into EDIT. Each pair
+    this pass lifts that way is counted in `upload_added`.
+    """
     if not decided.get("read"):
         return NONE
-    if decided.get("write") and (KEEP_WRITE_WITHOUT_UPLOAD or decided.get("upload")):
+    if decided.get("write"):
         return MANAGE if decided.get("share") else EDIT
     if decided.get("upload"):
         return UPLOAD
