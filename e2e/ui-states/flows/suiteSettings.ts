@@ -21,8 +21,8 @@ const MAIL_TABS = {
 } as const satisfies Record<string, AppTab>;
 
 const CALENDAR_TABS = {
-	calendarCalendars: { nav: "Calendars", last: true, marker: "Your calendars", description: "Calendar > Calendars: Your calendars, with Maya's own marked Default, a menu and New; then Invite addresses, with the address picker, name, email, the default checkbox and Delete." },
-	calendarAdvanced: { nav: "Advanced", last: true, marker: "Calendar client setup", description: "Calendar > Advanced: Import (.ics into a chosen calendar), Export, and Calendar client setup with the CalDAV server URL, calendar URL and username, each with Copy." },
+	calendarCalendars: { nav: "Calendars", last: true, marker: "Your calendars", description: "Calendar > Calendars: Your calendars, with Maya's own marked Default, a menu and New; then Invite addresses, a row with a button that opens the addresses in a dialog." },
+	calendarAdvanced: { nav: "Advanced", last: true, marker: "Calendar client setup", description: "Calendar > Advanced: one short list of Import, Export and Calendar client setup, each with a button that opens it in a dialog." },
 } as const satisfies Record<string, AppTab>;
 
 const APP_TABS = new Map<string, AppTab>(Object.entries({ ...MAIL_TABS, ...CALENDAR_TABS }));
