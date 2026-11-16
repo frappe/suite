@@ -29,11 +29,11 @@ test.describe("Meet in the shell", () => {
 
 		// The rail labels carry the Mail unread count, so read each label's first word.
 		const items = rail(page).getByRole("link");
-		await expect(items).toHaveCount(6);
+		await expect(items).toHaveCount(5);
 		const labels = await items.evaluateAll((links) =>
 			links.map((link) => link.getAttribute("aria-label")?.split(",")[0]),
 		);
-		expect(labels).toEqual(["Home", "Drive", "Mail", "Calendar", "Meet", "People"]);
+		expect(labels).toEqual(["Home", "Drive", "Mail", "Calendar", "Meet"]);
 		await expect(rail(page).getByRole("link", { name: "Meet" })).toHaveAttribute("aria-current", "page");
 		await expect(meetHeader(page)).toHaveCount(0);
 	});
