@@ -70,7 +70,7 @@ function remove(address: string) {
         class="flex min-w-0 items-center gap-1 rounded-4 border py-0.5 pl-1.5 pr-0.5 text-base"
         :class="
           isEmail(address)
-            ? 'bg-surface-white border-outline-gray-2 text-ink-gray-8'
+            ? 'bg-surface-base border-outline-gray-2 text-ink-gray-8'
             : 'bg-surface-red-2 border-outline-red-2 text-ink-red-7'
         "
         :title="isEmail(address) ? undefined : __('Not an email address')"

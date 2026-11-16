@@ -133,7 +133,7 @@ async function drawPage(box: HTMLElement) {
         v-for="page in pageCount"
         :key="page"
         :data-page="page"
-        class="overflow-hidden rounded-2 bg-surface-white shadow-sm"
+        class="overflow-hidden rounded-2 bg-white shadow-sm"
         :style="{ aspectRatio: pageShape }"
       >
         <canvas
