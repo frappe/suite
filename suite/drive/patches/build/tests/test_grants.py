@@ -36,7 +36,7 @@ from suite.drive.patches.build.tests.fakes import (
     InterruptedRun,
     build_environment,
 )
-from suite.drive.patches.database_marker import ForeignRecordError
+from suite.drive.patches.database_marker import ForeignRecordError, refuse_foreign_record, stamp_record
 
 PERSONAL_ROOT = "personal01"
 SHARED_ROOT = "sharedroot"
@@ -788,6 +788,10 @@ class KeptRightsTest(GrantCase):
             docshare_journal=self.journal,
             make_id=self.ids,
         )
+        # As `run_build` does before step 1, so a resume compares the plan's
+        # marker with the record's, two real markers, as on a site.
+        refuse_foreign_record(self.env.state, self.drive)
+        stamp_record(self.env.state, self.drive)
         grants_module.convert_grants(self.env, self.report, list(plans), batch_size=batch_size)
         return self.report
 
@@ -1273,14 +1277,25 @@ class KeptRightsTest(GrantCase):
         self.assertEqual(self.plan_path().stat().st_mode & 0o777, 0o600)
 
     def test_a_plan_left_from_another_build_record_is_refused(self):
-        """The record was moved aside and stamped anew, but the old plan stayed beside it."""
+        """The record was moved aside and stamped anew, but the old plan stayed beside it.
+
+        The old plan names a grant this data would not produce, so replaying
+        it would write a row.
+        """
         self.kept_plan()
-        state = BuildState(self.path / "drive-build-state.json")
-        state.save({**state.load(), "database_marker": "a-fresh-record"})
-        rows = dict(self.drive.grant_rows)
+        intruder = "intruder@example.com"
+        self.legacy.users[intruder] = True
+        plan = {
+            "rights": [["folderlower", intruder, EDIT]],
+            "counts": {"kept": 1},
+            "marker": "another-record",
+        }
+        self.plan_path().write_text(json.dumps({"plan": plan}))
+        rows = {key: dict(row) for key, row in self.drive.grant_rows.items()}
         with self.assertRaises(ForeignRecordError):
             self.run_grants()
         self.assertEqual(self.drive.grant_rows, rows)
+        self.assertEqual(self.role_of(intruder, "folderlower"), NONE)
 
     def test_an_unreadable_plan_stops_the_run_instead_of_deciding_again(self):
         """Deciding again would read grants the first plan may already have raised."""

@@ -534,22 +534,34 @@ def _keep_legacy_rights(env, grants: GrantConversion, nodes, batch, batch_size: 
     record aside to start over may have left the plan behind.
     """
     batch.flush()
-    marker = env.state.load().get(MARKER_FIELD)
-    plan = env.state.kept_rights()
+    plan = saved_kept_rights(env.state)
     if plan is None:
         plan = _plan_kept_rights(env, nodes, batch_size)
-        plan.marker = marker
+        plan.marker = env.state.load().get(MARKER_FIELD)
         env.state.put_kept_rights(plan)
-    elif plan.marker != marker:
+    _write_kept_rights(env, grants, plan, batch_size)
+    grants.legacy_rights = dict(plan.counts)
+    env.state.put_grants(grants)
+
+
+def saved_kept_rights(state) -> KeptRightsPlan | None:
+    """The kept-rights plan this Build record decided, or None before it has decided.
+
+    Raises `ForeignRecordError` for a plan decided under another record, and
+    `KeptRightsPlanError` for one it cannot read. `run_build` calls it at
+    the start too, so the operator learns of a plan left behind before
+    step 1 rather than hours later at step 6.
+    """
+    plan = state.kept_rights()
+    marker = state.load().get(MARKER_FIELD)
+    if plan is not None and plan.marker != marker:
         raise ForeignRecordError(
-            f"The kept-rights plan {KEPT_RIGHTS_FILENAME} beside {env.state.path} was decided under "
+            f"The kept-rights plan {KEPT_RIGHTS_FILENAME} beside {state.path} was decided under "
             f"database marker {plan.marker!r}, but the Build record carries {marker!r}. It is left from "
             "another Build run. Move it aside with the other `drive-build-*` files only when starting "
             "Build over on this database."
         )
-    _write_kept_rights(env, grants, plan, batch_size)
-    grants.legacy_rights = dict(plan.counts)
-    env.state.put_grants(grants)
+    return plan
 
 
 def _plan_kept_rights(env, nodes, batch_size: int) -> KeptRightsPlan:
