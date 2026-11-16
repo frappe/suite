@@ -33,11 +33,12 @@
     <!-- A section's own action (the folders' "+") sits over the right end of its heading:
 	     SidebarSection draws the heading itself and leaves no place in it for one. -->
     <div v-for="section in sidebarItems" :key="section.key ?? section.label" class="relative mt-4">
-      <!-- Small and muted, lined up with the folders' counts below it. -->
+      <!-- Small and muted, lined up with the folders' counts below it. On a touch screen its area
+           is the heading's height, h-7, and stops short of the first folder row's ⋯ below. -->
       <Tooltip v-if="sectionAction(section)" :text="sectionAction(section)!.label">
         <button
           type="button"
-          class="touch-target text-ink-gray-5 hover:text-ink-gray-8 absolute right-2 top-1.5 z-10 flex size-4 items-center justify-center"
+          class="touch-target text-ink-gray-5 hover:text-ink-gray-8 absolute right-2 top-1.5 z-10 flex size-4 items-center justify-center [@media(pointer:coarse)]:after:!h-7"
           :aria-label="sectionAction(section)!.label"
           @click="sectionAction(section)!.onClick()"
         >

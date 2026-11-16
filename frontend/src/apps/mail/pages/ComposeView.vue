@@ -30,16 +30,23 @@
         </template>
       </Button>
       <h2 class="text-ink-gray-8 flex-1 text-base font-medium">{{ __('Compose Mail') }}</h2>
+      <!-- Each of the header's controls takes the touch target, or a neighbour's covers it. -->
       <Button
         v-if="isSaveFailed"
         variant="ghost"
         theme="red"
+        class="touch-target"
         :label="__('Not saved · Retry')"
         @click="saveDraft()"
       />
       <!-- In the header, where it can always be reached: in the formatting row it only appeared once
            the body had the caret, so a mail that was nothing but an attachment had no way to it. -->
-      <Button variant="ghost" :label="__('Attach files')" @click="fileInput?.click()">
+      <Button
+        variant="ghost"
+        class="touch-target"
+        :label="__('Attach files')"
+        @click="fileInput?.click()"
+      >
         <template #icon>
           <Paperclip class="text-ink-gray-5 size-5" />
         </template>
