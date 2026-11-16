@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ConsumerEntry } from "../ConsumerManager";
+import { NetworkStatsTracker } from "../NetworkStatsTracker";
 import {
 	MediaHealthMonitor,
 	type MediaHealthEnvironment,
@@ -267,6 +268,121 @@ describe("MediaHealthMonitor", () => {
 		expect(monitor.state.status).toBe("degraded");
 		expect(monitor.state.issue).toBe("receive");
 	});
+
+	it("does not blame the local downlink for one sender's frozen media while other media flows", async () => {
+		const environment = new TestEnvironment();
+		const { port } = makeManager({
+			consumers: [
+				makeConsumer(environment),
+				makeConsumer(environment, {
+					id: "consumer-2",
+					participantId: "participant-2",
+					producerId: "producer-2",
+					kind: "audio",
+					bytes: () => environment.now(),
+				}),
+			],
+		});
+		const monitor = startMonitor(port, environment);
+		await environment.advance(12_000);
+		expect(monitor.state.downlinkQuality).toBe("good");
+		expect(monitor.state.issue).toBeNull();
+	});
+
+	it("keeps the receiver healthy when one sender resumes with high jitter while another stays healthy", async () => {
+		const environment = new TestEnvironment();
+		vi.spyOn(Date, "now").mockImplementation(environment.now);
+		const tracker = new NetworkStatsTracker();
+		let resuming = false;
+		let senderBytes = 1000;
+		const { port } = makeManager({
+			consumers: [
+				makeConsumer(environment, {
+					bytes: () => senderBytes,
+					framesDecoded: () => senderBytes / 100,
+				}),
+				makeConsumer(environment, {
+					id: "healthy",
+					participantId: "participant-2",
+					producerId: "producer-2",
+					bytes: environment.now,
+					framesDecoded: environment.now,
+				}),
+			],
+		});
+		port.getNetworkStats = async () => ({
+			...goodNetworkStats,
+			timestamp: environment.now(),
+			downlink: tracker.sample("recv", "transport", [
+				{
+					id: "resuming",
+					type: "inbound-rtp",
+					packetsReceived: senderBytes,
+					packetsLost: 0,
+					jitter: resuming ? 0.4 : 0.002,
+				},
+				{
+					id: "healthy",
+					type: "inbound-rtp",
+					packetsReceived: environment.now(),
+					packetsLost: 0,
+					jitter: 0.002,
+				},
+			]),
+		});
+		const monitor = startMonitor(port, environment);
+		await environment.advance(6000);
+		await environment.advance(12_000);
+		expect(monitor.state.downlinkQuality).toBe("good");
+		resuming = true;
+		for (let sample = 0; sample < 6; sample++) {
+			senderBytes += 1000;
+			await environment.advance(3000);
+			expect(monitor.state.downlinkQuality).toBe("good");
+			expect(monitor.state.issue).toBeNull();
+		}
+		monitor.stop();
+	});
+
+	it.each(["all flowing streams", "stale healthy stream"])(
+		"still warns about sustained receive jitter with %s",
+		async (scenario) => {
+			const environment = new TestEnvironment();
+			vi.spyOn(Date, "now").mockImplementation(environment.now);
+			const tracker = new NetworkStatsTracker();
+			const { port } = makeManager({
+				consumers: [
+					makeConsumer(environment, { kind: "audio", bytes: environment.now }),
+				],
+			});
+			port.getNetworkStats = async () => ({
+				...goodNetworkStats,
+				timestamp: environment.now(),
+				downlink: tracker.sample("recv", "transport", [
+					{
+						id: "audio",
+						type: "inbound-rtp",
+						packetsReceived: environment.now(),
+						packetsLost: 0,
+						jitter: 0.4,
+					},
+					{
+						id: "other",
+						type: "inbound-rtp",
+						packetsReceived:
+							scenario === "stale healthy stream" ? 100 : environment.now(),
+						packetsLost: 0,
+						jitter: scenario === "stale healthy stream" ? 0.002 : 0.4,
+					},
+				]),
+			});
+			const monitor = startMonitor(port, environment);
+			await environment.advance(12_000);
+			expect(monitor.state.downlinkQuality).toBe("critical");
+			expect(monitor.state.issue).toBe("receive");
+			monitor.stop();
+		},
+	);
 
 	it("does not clear a receiving warning on one good sample", async () => {
 		const environment = new TestEnvironment();
