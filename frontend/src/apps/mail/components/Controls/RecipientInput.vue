@@ -81,7 +81,7 @@
       @keydown.enter.capture="handleInlineEnter"
       @keydown.delete.capture.stop="handleDelete($event.target.value)"
       @paste="handlePaste"
-      @focusin="isSearchFocused = true"
+      @focusin="handleFieldFocus"
       @focusout="handleFieldBlur"
       @update:selected-option="nextTick(setFocus)"
     >
@@ -118,9 +118,9 @@
 					     lands on nothing. Selection happens on the click that follows. -->
           <button
             role="option"
-            :aria-selected="i === activeSuggestion"
+            :aria-selected="i === enterIndex"
             class="hover:bg-surface-gray-2 flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm"
-            :class="{ 'bg-surface-gray-2': i === activeSuggestion }"
+            :class="{ 'bg-surface-gray-2': i === enterIndex }"
             @mousedown.prevent
             @click="pickSuggestion(option)"
           >
@@ -341,15 +341,16 @@ const typedRecipient = computed<DraftRecipient | null>(() => {
   return { email }
 })
 
+// Put away by Esc, until the typing changes or the field is left. The typed text stays: Esc is "not
+// these", not "start over", and the key must not reach the composer, where it would dock an
+// expanded window instead.
+const isDismissed = ref(false)
 /**
  * Real contacts only — the Combobox's own custom rows aren't ones. Capped at five: the list
  * sits in flow above the keyboard, and more than that just pushes the message body off the
  * screen.
  */
 type ContactSuggestion = (typeof contacts.value)[number]
-// Put away by Esc, until the typing changes. The typed text stays: Esc is "not these", not "start
-// over", and the key must not reach the composer, where it would dock an expanded window instead.
-const isDismissed = ref(false)
 const inlineSuggestions = computed(() => {
   if (!suggestionsTo || !isFocused.value || isDismissed.value) return []
 
@@ -377,13 +378,24 @@ const namesShared = computed(() => {
   return shared
 })
 
-// The suggestion the arrow keys are on, -1 until they move. Enter takes it; untouched, Enter takes
-// what was typed when that is an address, and on a desktop the first suggestion otherwise, which is
-// what Enter took from the floating list the inline one replaced there.
+// The suggestion the arrow keys are on, -1 until they move.
 const activeSuggestion = ref(-1)
 watch(searchText, () => {
   activeSuggestion.value = -1
   isDismissed.value = false
+})
+
+/**
+ * The row Enter adds, and the one shown highlighted: where the arrows are; untouched, an address
+ * typed out in full when it has a row; or, on a desktop and short of a full address, the first
+ * suggestion, which is what Enter took from the floating list the inline one replaced there.
+ */
+const enterIndex = computed(() => {
+  if (activeSuggestion.value >= 0) return activeSuggestion.value
+  const typed = searchText.value.trim().toLowerCase()
+  if (isEmail(typed))
+    return inlineSuggestions.value.findIndex((o) => o.email.toLowerCase() === typed)
+  return isMobile.value ? -1 : 0
 })
 // The list sits in the header's scroller, which can be shorter than it: the row the arrows land on
 // is scrolled to, so Enter never adds one that is out of sight.
@@ -393,14 +405,20 @@ watch(
   { flush: 'post' },
 )
 
-const commitTyped = () => {
-  const typed = typedRecipient.value
-  if (!typed) return false
-
-  selectedRecipients.value.push(typed)
+const clearTyped = () => {
   searchText.value = ''
   input.value = ''
-  return true
+}
+
+/**
+ * An address typed out in full joins the field, named if it is a contact. One already in the field
+ * isn't added twice: the text just goes.
+ */
+const commitTyped = () => {
+  const email = searchText.value.trim()
+  if (!isEmail(email)) return
+  if (!selectedEmails.value.some((v) => v.toLowerCase() === email.toLowerCase())) addValue(email)
+  clearTyped()
 }
 
 // Return — and the phone keyboard's Go / Done / Search, which is the same keydown — commits
@@ -409,15 +427,20 @@ const commitTyped = () => {
 const handleInlineEnter = (e: KeyboardEvent) => {
   // The Enter that confirms an input method's composition belongs to the composition.
   if (!suggestionsTo || e.isComposing) return
-  const chosen =
-    inlineSuggestions.value[activeSuggestion.value] ??
-    (!typedRecipient.value && !isMobile.value ? inlineSuggestions.value[0] : undefined)
-  if (!chosen && !typedRecipient.value) return
+  // ⌘Enter sends the mail (the composer has it first, on the window): it adds nobody on the way.
+  if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return
+  const chosen = inlineSuggestions.value[enterIndex.value]
+  if (!chosen && !isEmail(searchText.value.trim())) return
   e.preventDefault()
   e.stopPropagation()
   if (chosen) return pickSuggestion(chosen)
   commitTyped()
   nextTick(setFocus)
+}
+
+const handleFieldFocus = () => {
+  isSearchFocused.value = true
+  isDismissed.value = false
 }
 
 // Leaving the field commits it too: dismissing the keyboard and tapping elsewhere never
@@ -426,13 +449,13 @@ const handleInlineEnter = (e: KeyboardEvent) => {
 // add its own recipient.
 const handleFieldBlur = () => {
   isSearchFocused.value = false
+  isDismissed.value = false
   if (suggestionsTo) commitTyped()
 }
 
 const pickSuggestion = (option: DraftRecipient) => {
-  selectedRecipients.value.push(option)
-  searchText.value = ''
-  input.value = ''
+  addValue(option.email)
+  clearTyped()
   nextTick(setFocus)
 }
 
@@ -458,18 +481,16 @@ const handleClick = () => {
 defineExpose({ setFocus })
 
 const handleContainerKeydown = (e: KeyboardEvent) => {
-  // Up and down walk the inline suggestions, round from either end.
+  // Keys mid-composition belong to the input method's own candidate list.
+  if (e.isComposing) return
+  // Up and down walk the inline suggestions from the highlighted one, round from either end.
   const count = inlineSuggestions.value.length
   if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && count) {
     e.preventDefault()
     e.stopPropagation()
     const step = e.key === 'ArrowDown' ? 1 : -1
-    activeSuggestion.value =
-      activeSuggestion.value < 0
-        ? step > 0
-          ? 0
-          : count - 1
-        : (activeSuggestion.value + step + count) % count
+    const from = enterIndex.value
+    activeSuggestion.value = from < 0 && step < 0 ? count - 1 : (from + step + count) % count
     return
   }
   // Esc puts the suggestions away, and goes no further while they are showing.

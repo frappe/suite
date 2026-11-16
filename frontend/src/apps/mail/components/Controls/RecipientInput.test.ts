@@ -31,9 +31,13 @@ vi.mock('frappe-ui', async () => {
       inheritAttrs: false,
       emits: ['update:query'],
       setup(_props, { attrs, emit }) {
-        // The field's own key handlers land on the input, as they do on the real one.
+        // The field's own key and focus handlers land on the input, as they do on the real one.
         const keys = () =>
-          Object.fromEntries(Object.entries(attrs).filter(([name]) => name.startsWith('onKeydown')))
+          Object.fromEntries(
+            Object.entries(attrs).filter(
+              ([name]) => name.startsWith('onKeydown') || name.startsWith('onFocus'),
+            ),
+          )
         return () =>
           h('input', {
             ...keys(),
@@ -249,6 +253,20 @@ describe('RecipientInput suggestions in the page', () => {
   const samAtHome = { email: 'sam@home.example', name: 'Sam Rao' }
   const sasha = { email: 'sasha@work.example', name: 'Sasha Iyer' }
 
+  beforeEach(() => {
+    isMobile.value = false
+  })
+
+  /** The field, with the address book answering `contacts` and the list rendered into the page. */
+  const mountWithSuggestions = (
+    contacts: typeof suggested.value,
+    recipients: DraftRecipient[] = [],
+  ) => {
+    suggested.value = contacts
+    const list = document.createElement('div')
+    document.body.appendChild(list)
+    return { ...mount(recipients, 'to', list), list }
+  }
   const typeInto = async (root: HTMLElement, text: string) => {
     fire(root.querySelector('[data-recipient-input]'), new MouseEvent('click', { bubbles: true }))
     const input = root.querySelector('input')!
@@ -258,18 +276,19 @@ describe('RecipientInput suggestions in the page', () => {
     await nextTick()
     return input
   }
-  const press = async (input: HTMLInputElement, key: string, isComposing = false) => {
-    fire(input, new KeyboardEvent('keydown', { key, isComposing, bubbles: true, cancelable: true }))
+  const press = async (input: HTMLInputElement, key: string, init: KeyboardEventInit = {}) => {
+    fire(input, new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init }))
     await nextTick()
   }
   const options = (list: HTMLElement) => [...list.querySelectorAll('[role="option"]')]
+  const selected = (list: HTMLElement) =>
+    options(list).map((o) => o.getAttribute('aria-selected') === 'true')
+  /** The address line of a suggestion row: the second line under the name. */
+  const address = (option: Element) => option.querySelectorAll(':scope > div > div')[1]
+  const textOf = (spans: Element[]) => spans.map((span) => span.textContent).join('')
 
   it('puts the weight on the domain where two suggestions share a name', async () => {
-    isMobile.value = false
-    suggested.value = [samAtWork, samAtHome, sasha]
-    const list = document.createElement('div')
-    document.body.appendChild(list)
-    const { root } = mount([], 'to', list)
+    const { root, list } = mountWithSuggestions([samAtWork, samAtHome, sasha])
     await typeInto(root, 'sa')
 
     const domains = options(list).map((option) =>
@@ -280,56 +299,91 @@ describe('RecipientInput suggestions in the page', () => {
     expect(domains).toEqual([[true], [true], []])
   })
 
+  it('keeps the domain dark once the typing reaches past the @', async () => {
+    const { root, list } = mountWithSuggestions([samAtWork, samAtHome])
+    await typeInto(root, 'sam@')
+
+    const dark = options(list).map((option) =>
+      textOf([...address(option).querySelectorAll('span.text-ink-gray-8')]),
+    )
+    expect(dark).toEqual(['sam@work.example', 'sam@home.example'])
+  })
+
+  it('marks the typing once in an address, even where the domain has it too', async () => {
+    const { root, list } = mountWithSuggestions([samAtWork, samAtHome])
+    await typeInto(root, 'm')
+
+    const marked = options(list).map((option) =>
+      textOf(
+        [...address(option).querySelectorAll('span')].filter((span) =>
+          span.className.includes('font-medium'),
+        ),
+      ),
+    )
+    expect(marked).toEqual(['m', 'm'])
+  })
+
   it('walks the suggestions with the arrow keys, and Enter adds the one it is on', async () => {
-    isMobile.value = false
-    suggested.value = [samAtWork, samAtHome, sasha]
-    const list = document.createElement('div')
-    document.body.appendChild(list)
-    const { root, model } = mount([], 'to', list)
+    const { root, model, list } = mountWithSuggestions([samAtWork, samAtHome, sasha])
     const input = await typeInto(root, 'sa')
 
     await press(input, 'ArrowDown')
-    await press(input, 'ArrowDown')
-    expect(options(list).map((o) => o.getAttribute('aria-selected'))).toEqual([
-      'false',
-      'true',
-      'false',
-    ])
+    expect(selected(list)).toEqual([false, true, false])
 
     await press(input, 'Enter')
     expect(model.value.map((r) => r.email)).toEqual(['sam@home.example'])
   })
 
-  it('adds the first suggestion on Enter at a desk, as the floating list did', async () => {
-    isMobile.value = false
-    suggested.value = [sasha, samAtWork]
-    const list = document.createElement('div')
-    document.body.appendChild(list)
-    const { root, model } = mount([], 'to', list)
+  it('adds the first suggestion on Enter at a desk, and shows it as the one Enter will add', async () => {
+    const { root, model, list } = mountWithSuggestions([sasha, samAtWork])
     const input = await typeInto(root, 'sa')
+    expect(selected(list)).toEqual([true, false])
 
     await press(input, 'Enter')
     expect(model.value.map((r) => r.email)).toEqual(['sasha@work.example'])
   })
 
   it('adds an address typed out in full on Enter, rather than a suggestion', async () => {
-    isMobile.value = false
-    suggested.value = [{ email: 'sam@work.example.org', name: 'Sam Rao' }]
-    const list = document.createElement('div')
-    document.body.appendChild(list)
-    const { root, model } = mount([], 'to', list)
+    const { root, model } = mountWithSuggestions([
+      { email: 'sam@work.example.org', name: 'Sam Rao' },
+    ])
     const input = await typeInto(root, 'sam@work.example')
 
     await press(input, 'Enter')
     expect(model.value.map((r) => r.email)).toEqual(['sam@work.example'])
   })
 
+  it("adds a contact's address typed out in full under the contact's name", async () => {
+    const { root, model } = mountWithSuggestions([samAtWork])
+    const input = await typeInto(root, 'sam@work.example')
+
+    await press(input, 'Enter')
+    expect(model.value.map((r) => [r.email, r.display_name])).toEqual([
+      ['sam@work.example', 'Sam Rao'],
+    ])
+  })
+
+  it('adds nobody else on Enter for an address already in the field, and clears the typing', async () => {
+    const { root, model, list } = mountWithSuggestions([sasha], [amy])
+    const input = await typeInto(root, 'amy@example.com')
+
+    await press(input, 'Enter')
+    expect(model.value.map((r) => r.email)).toEqual(['amy@example.com'])
+    expect(options(list)).toEqual([])
+  })
+
+  it('adds nobody on ⌘Enter or Ctrl+Enter, which send the mail', async () => {
+    const { root, model, list } = mountWithSuggestions([sasha, samAtWork])
+    const input = await typeInto(root, 'sa')
+
+    await press(input, 'Enter', { metaKey: true })
+    await press(input, 'Enter', { ctrlKey: true })
+    expect(model.value).toEqual([])
+    expect(options(list)).toHaveLength(2)
+  })
+
   it('brings the row the arrow keys land on into view, so Enter never adds one out of sight', async () => {
-    isMobile.value = false
-    suggested.value = [samAtWork, samAtHome, sasha]
-    const list = document.createElement('div')
-    document.body.appendChild(list)
-    const { root } = mount([], 'to', list)
+    const { root, list } = mountWithSuggestions([samAtWork, samAtHome, sasha])
     const input = await typeInto(root, 'sa')
 
     // Up from the start goes round to the last row, the one a short scroller cuts off.
@@ -339,25 +393,19 @@ describe('RecipientInput suggestions in the page', () => {
     expect(scrolled instanceof Element && scrolled.contains(options(list)[2])).toBe(true)
   })
 
-  it('leaves the suggestions alone on the Enter that confirms an input method', async () => {
-    isMobile.value = false
-    suggested.value = [sasha, samAtWork]
-    const list = document.createElement('div')
-    document.body.appendChild(list)
-    const { root, model } = mount([], 'to', list)
+  it('leaves the suggestions alone on keys that belong to an input method', async () => {
+    const { root, model, list } = mountWithSuggestions([sasha, samAtWork])
     const input = await typeInto(root, 'sa')
 
-    await press(input, 'Enter', true)
+    await press(input, 'ArrowDown', { isComposing: true })
+    await press(input, 'Escape', { isComposing: true })
+    await press(input, 'Enter', { isComposing: true })
     expect(model.value).toEqual([])
-    expect(options(list)).toHaveLength(2)
+    expect(selected(list)).toEqual([true, false])
   })
 
   it('puts the suggestions away on Esc, keeping it from the composer until they are gone', async () => {
-    isMobile.value = false
-    suggested.value = [sasha, samAtWork]
-    const list = document.createElement('div')
-    document.body.appendChild(list)
-    const { root, model } = mount([], 'to', list)
+    const { root, model, list } = mountWithSuggestions([sasha, samAtWork])
     const input = await typeInto(root, 'sa')
     // The composer listens on the window: Esc there docks an expanded window.
     let composerEscapes = 0
@@ -381,5 +429,18 @@ describe('RecipientInput suggestions in the page', () => {
     } finally {
       window.removeEventListener('keydown', composerEsc)
     }
+  })
+
+  it('brings the suggestions Esc put away back when the field is left and returned to', async () => {
+    const { root, list } = mountWithSuggestions([sasha, samAtWork])
+    const input = await typeInto(root, 'sa')
+
+    await press(input, 'Escape')
+    expect(options(list)).toEqual([])
+
+    fire(input, new FocusEvent('focusout', { bubbles: true }))
+    fire(input, new FocusEvent('focusin', { bubbles: true }))
+    await nextTick()
+    expect(options(list)).toHaveLength(2)
   })
 })

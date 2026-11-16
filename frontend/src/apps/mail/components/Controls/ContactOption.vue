@@ -17,10 +17,7 @@
     >
       <template v-for="(part, i) in addressParts" :key="i">
         <span
-          :class="{
-            'text-ink-gray-8 !font-medium': part.match,
-            'text-ink-gray-8': part.domain && !part.match,
-          }"
+          :class="{ 'text-ink-gray-8': part.match || part.domain, '!font-medium': part.match }"
           >{{ part.text }}</span
         >
       </template>
@@ -56,16 +53,23 @@ const {
   domainTellsApart?: boolean
 }>()
 
-/** The address's parts, with the domain marked when it is what tells this contact apart. */
+/**
+ * The address's parts, with the domain marked when it is what tells this contact apart. The typing
+ * is marked once across the whole address, then cut at the @, so a match that spans it stays one.
+ */
 const addressParts = computed(() => {
-  const at = contact.email.lastIndexOf('@')
-  // Typing across the @ marks the whole address as one match; the split would lose it.
-  if (!domainTellsApart || at < 0 || query.includes('@'))
-    return highlight(contact.email).map((p) => ({ ...p, domain: false }))
-  return [
-    ...highlight(contact.email.slice(0, at)).map((p) => ({ ...p, domain: false })),
-    ...highlight(contact.email.slice(at)).map((p) => ({ ...p, domain: true })),
-  ]
+  const at = domainTellsApart ? contact.email.lastIndexOf('@') : -1
+  let start = 0
+  return highlight(contact.email).flatMap((part) => {
+    const cut = at - start
+    start += part.text.length
+    if (at < 0 || cut >= part.text.length) return [{ ...part, domain: false }]
+    if (cut <= 0) return [{ ...part, domain: true }]
+    return [
+      { text: part.text.slice(0, cut), match: part.match, domain: false },
+      { text: part.text.slice(cut), match: part.match, domain: true },
+    ]
+  })
 })
 
 /** `text` split around the first case-insensitive occurrence of the query. */
