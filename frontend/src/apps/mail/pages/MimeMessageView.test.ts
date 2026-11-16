@@ -7,7 +7,8 @@ import { translate } from '@/platform/translation'
 
 import MimeMessageView from './MimeMessageView.vue'
 
-const { SOURCE } = vi.hoisted(() => ({
+const { SOURCE, server } = vi.hoisted(() => ({
+  server: { down: false },
   SOURCE: [
     'From: Jordan Lee <jordan@northwind.test>',
     'To: sam@example.test',
@@ -17,7 +18,8 @@ const { SOURCE } = vi.hoisted(() => ({
   ].join('\r\n'),
 }))
 
-// A small Frappe: one message whose source it hands out, one it has not, one that never answers.
+// A small Frappe: one message whose source it hands out, one it has not, one that never answers,
+// and one it fails on while it is down.
 vi.hoisted(() => {
   globalThis.fetch = async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input), 'http://localhost')
@@ -31,7 +33,8 @@ vi.hoisted(() => {
     const body: unknown = JSON.parse(String(init?.body ?? '{}'))
     const name = body && typeof body === 'object' && 'name' in body ? body.name : undefined
     if (name === 'slow') return new Promise<Response>(() => {})
-    if (name !== 'acc|m1')
+    if (name === 'flaky' && server.down) return reply({ exc_type: 'Exception' }, 500)
+    if (name !== 'acc|m1' && name !== 'flaky')
       return reply(
         {
           exc_type: 'DoesNotExistError',
@@ -113,13 +116,25 @@ describe('MIME message page', () => {
     expect(errors).toEqual([])
   })
 
-  it('says why when the message cannot be had', async () => {
+  it('says plainly that a missing message is gone, and offers no Retry', async () => {
     const { element, errors } = await open('not-a-name')
 
     await vi.waitFor(() =>
-      expect(element.textContent).toContain('Mail Message not-a-name not found'),
+      expect(element.textContent).toContain('This message could not be found.'),
     )
+    expect(button(element, 'Retry')).toBeUndefined()
+    expect(button(element, 'Go to Mail')).toBeDefined()
     expect(errors).toEqual([])
+  })
+
+  it('offers Retry when loading fails for another reason, and Retry loads the message', async () => {
+    server.down = true
+    const { element } = await open('flaky')
+
+    await vi.waitFor(() => expect(element.textContent).toContain('Could not load this message.'))
+    server.down = false
+    button(element, 'Retry')!.click()
+    await vi.waitFor(() => expect(element.querySelector('pre')?.textContent).toBe(SOURCE))
   })
 
   it('shows that it is loading until the message arrives', async () => {
