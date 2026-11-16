@@ -152,19 +152,30 @@ class TestOneRequestPerComposition(UnitTestCase):
         self.addCleanup(patcher.stop)
         self.key = str(uuid4())
 
+    def another_request(self):
+        """What a second request for the composition starts with: none of the first one's locks."""
+
+        return mock.patch.object(frappe.local, "mail_draft_keys_held", set(), create=True)
+
     def test_a_second_request_for_a_composition_still_running_is_turned_away_to_retry(self):
         with mail._one_request_per_composition("account", self.key):
-            with self.assertRaises(frappe.TooManyRequestsError):
+            with self.another_request(), self.assertRaises(frappe.TooManyRequestsError):
                 with mail._one_request_per_composition("account", self.key):
                     pass
 
+    def test_the_request_holding_a_composition_goes_on_into_it(self):
+        # A create that finds the composition already saved carries on as a save of it.
+        with mail._one_request_per_composition("account", self.key):
+            with mail._one_request_per_composition("account", self.key):
+                pass
+
     def test_another_composition_goes_ahead(self):
         with mail._one_request_per_composition("account", self.key):
-            with mail._one_request_per_composition("account", str(uuid4())):
+            with self.another_request(), mail._one_request_per_composition("account", str(uuid4())):
                 pass
 
     def test_the_composition_is_free_again_once_the_request_ends(self):
         with mail._one_request_per_composition("account", self.key):
             pass
-        with mail._one_request_per_composition("account", self.key):
+        with self.another_request(), mail._one_request_per_composition("account", self.key):
             pass

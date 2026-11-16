@@ -1532,18 +1532,26 @@ def _one_request_per_composition(account: str, draft_key: str | None) -> Iterato
         yield
         return
 
-    lock = frappe.cache.lock(
-        f"mail-draft-key:{frappe.local.site}:{_draft_key_cache_key(account, draft_key)}",
-        timeout=DRAFT_KEY_LOCK_TIMEOUT,
-    )
+    # Held already by this request: a create that turns out to be a save goes on into it.
+    if not hasattr(frappe.local, "mail_draft_keys_held"):
+        frappe.local.mail_draft_keys_held = set()
+    held: set[str] = frappe.local.mail_draft_keys_held
+    name = f"mail-draft-key:{frappe.local.site}:{_draft_key_cache_key(account, draft_key)}"
+    if name in held:
+        yield
+        return
+
+    lock = frappe.cache.lock(name, timeout=DRAFT_KEY_LOCK_TIMEOUT)
     if not lock.acquire(blocking=True, blocking_timeout=DRAFT_KEY_LOCK_WAIT):
         frappe.throw(
             _("This draft is still being saved. Try again in a moment."), frappe.TooManyRequestsError
         )
 
+    held.add(name)
     try:
         yield
     finally:
+        held.discard(name)
         # A lock that ran out is no longer ours to release, and no reason to fail the save.
         with suppress(LockError):
             lock.release()
@@ -1575,119 +1583,79 @@ def create_mail(
     `remind_at` (UTC `...Z`) asks to be reminded then if nobody has answered (see suite.mail.reminders)."""
 
     with _one_request_per_composition(account, draft_key):
-        return _create_mail(
-            account,
-            from_email,
-            to,
-            cc,
-            bcc,
-            subject,
-            html_body,
-            from_name,
-            attachments,
-            in_reply_to,
-            in_reply_to_id,
-            forwarded_from_id,
-            save_as_draft,
-            send_at,
-            undo_send,
-            draft_key,
-            remind_at,
-        )
+        if answer := _last_answer(account, draft_key):
+            # The answer to an earlier try got lost. Already sent stays sent, once: a send asked again
+            # is told so, and a save can't put the message back into Drafts.
+            if answer["status"] == "Submitted":
+                if save_as_draft:
+                    _no_longer_a_draft()
+                return answer
+            return update_draft_mail(
+                account,
+                answer["id"],
+                from_email,
+                to,
+                cc,
+                bcc,
+                subject,
+                html_body,
+                from_name,
+                attachments,
+                submit=not save_as_draft,
+                send_at=send_at,
+                undo_send=undo_send,
+                draft_key=draft_key,
+                remind_at=remind_at,
+            )
 
+        remind_due = None if save_as_draft else check_reminder_time(remind_at, from_utc_z(send_at))
+        doc_attachments = attachment_rows(attachments)
 
-def _create_mail(
-    account: str,
-    from_email: str,
-    to: list[dict],
-    cc: list[dict],
-    bcc: list[dict],
-    subject: str | None,
-    html_body: str | None,
-    from_name: str,
-    attachments: list[dict] | None,
-    in_reply_to: str | None,
-    in_reply_to_id: str | None,
-    forwarded_from_id: str | None,
-    save_as_draft: bool,
-    send_at: str | None,
-    undo_send: bool,
-    draft_key: str | None,
-    remind_at: str | None,
-) -> dict:
-    if answer := _last_answer(account, draft_key):
-        # The answer to an earlier try got lost. Already sent stays sent, once: a send asked again
-        # is told so, and a save can't put the message back into Drafts.
-        if answer["status"] == "Submitted":
-            if save_as_draft:
-                _no_longer_a_draft()
-            return answer
-        return _update_draft_mail(
-            account,
-            answer["id"],
-            from_email,
-            to,
-            cc,
-            bcc,
-            subject,
-            html_body,
-            from_name,
-            attachments,
-            submit=not save_as_draft,
+        recipients = []
+        for type, emails in [("To", to), ("Cc", cc), ("Bcc", bcc)]:
+            recipients += [
+                {"type": type, "email": email.get("email"), "display_name": email.get("display_name")}
+                for email in emails
+            ]
+
+        send_at = from_utc_z(send_at)
+        undo_send_period = None
+        if undo_send and not send_at and not save_as_draft:
+            undo_send_period, send_at = get_undo_send_hold()
+
+        doc = MailQueue._create(
+            user=get_user_for_jmap_account(account, raise_exception=True),
+            account=account,
+            from_email=from_email,
+            from_name=from_name,
+            subject=subject,
+            html_body=html_body,
+            in_reply_to=in_reply_to,
+            in_reply_to_id=in_reply_to_id,
+            forwarded_from_id=forwarded_from_id,
+            attachments=doc_attachments,
+            recipients=recipients,
+            save_as_draft=save_as_draft,
             send_at=send_at,
-            undo_send=undo_send,
-            draft_key=draft_key,
-            remind_at=remind_at,
         )
 
-    remind_due = None if save_as_draft else check_reminder_time(remind_at, from_utc_z(send_at))
-    doc_attachments = attachment_rows(attachments)
+        if not save_as_draft and doc.status == "Submitted":
+            create_contacts_if_not_exists(account, doc.recipients)
+            auto_accept_recipients(account, doc.recipients)
+            remind_after_send(account, doc.thread_id, doc.id, remind_due)
 
-    recipients = []
-    for type, emails in [("To", to), ("Cc", cc), ("Bcc", bcc)]:
-        recipients += [
-            {"type": type, "email": email.get("email"), "display_name": email.get("display_name")}
-            for email in emails
-        ]
-
-    send_at = from_utc_z(send_at)
-    undo_send_period = None
-    if undo_send and not send_at and not save_as_draft:
-        undo_send_period, send_at = get_undo_send_hold()
-
-    doc = MailQueue._create(
-        user=get_user_for_jmap_account(account, raise_exception=True),
-        account=account,
-        from_email=from_email,
-        from_name=from_name,
-        subject=subject,
-        html_body=html_body,
-        in_reply_to=in_reply_to,
-        in_reply_to_id=in_reply_to_id,
-        forwarded_from_id=forwarded_from_id,
-        attachments=doc_attachments,
-        recipients=recipients,
-        save_as_draft=save_as_draft,
-        send_at=send_at,
-    )
-
-    if not save_as_draft and doc.status == "Submitted":
-        create_contacts_if_not_exists(account, doc.recipients)
-        auto_accept_recipients(account, doc.recipients)
-        remind_after_send(account, doc.thread_id, doc.id, remind_due)
-
-    answer = {
-        "name": doc.name,
-        "id": doc.id,
-        "status": doc.status,
-        "error": doc.error_message,
-        "thread_id": doc.thread_id,
-        "submission_id": doc.submission_id,
-        "send_at": to_utc_z(doc.send_at),
-        "undo_send_period": undo_send_period,
-    }
-    _remember_answer(account, draft_key, answer)
-    return answer
+        answer = {
+            "name": doc.name,
+            "id": doc.id,
+            "status": doc.status,
+            "error": doc.error_message,
+            "thread_id": doc.thread_id,
+            "submission_id": doc.submission_id,
+            "send_at": to_utc_z(doc.send_at),
+            "undo_send_period": undo_send_period,
+        }
+        _remember_answer(account, draft_key, answer)
+        return answer
 
 
 @frappe.whitelist()
@@ -1718,98 +1686,62 @@ def update_draft_mail(
     deleted. The caller's text has not overwritten theirs, and it is the caller's to decide about."""
 
     with _one_request_per_composition(account, draft_key):
-        return _update_draft_mail(
-            account,
-            id,
-            from_email,
-            to,
-            cc,
-            bcc,
-            subject,
-            html_body,
-            from_name,
-            attachments,
-            submit=submit,
-            send_at=send_at,
-            undo_send=undo_send,
-            draft_key=draft_key,
-            remind_at=remind_at,
-        )
+        if answer := _last_answer(account, draft_key):
+            if answer["status"] == "Submitted":
+                if not submit:
+                    _no_longer_a_draft()
+                return answer
+            id = answer["id"]
 
+        message = frappe.get_doc("Mail Message", f"{account}|{id}")
+        message.check_permission(permtype="write")
+        if not message.draft:
+            _no_longer_a_draft()
+        remind_due = check_reminder_time(remind_at, from_utc_z(send_at)) if submit else None
 
-def _update_draft_mail(
-    account: str,
-    id: str,
-    from_email: str,
-    to: list[dict],
-    cc: list[dict],
-    bcc: list[dict],
-    subject: str | None,
-    html_body: str | None,
-    from_name: str,
-    attachments: list[dict] | None,
-    submit: bool,
-    send_at: str | None,
-    undo_send: bool,
-    draft_key: str | None,
-    remind_at: str | None,
-) -> dict:
-    if answer := _last_answer(account, draft_key):
-        if answer["status"] == "Submitted":
-            if not submit:
-                _no_longer_a_draft()
-            return answer
-        id = answer["id"]
+        message.from_email = from_email
+        message.from_name = from_name
+        message.subject = subject
 
-    message = frappe.get_doc("Mail Message", f"{account}|{id}")
-    message.check_permission(permtype="write")
-    if not message.draft:
-        _no_longer_a_draft()
-    remind_due = check_reminder_time(remind_at, from_utc_z(send_at)) if submit else None
+        held = {a.cid: a for a in message.attachments if a.cid}
+        message.attachments = []
+        for row in attachment_rows(attachments, held):
+            message.append("attachments", row)
 
-    message.from_email = from_email
-    message.from_name = from_name
-    message.subject = subject
+        message.html_body = html_body
 
-    held = {a.cid: a for a in message.attachments if a.cid}
-    message.attachments = []
-    for row in attachment_rows(attachments, held):
-        message.append("attachments", row)
+        message.recipients = []
+        for type, emails in [("To", to), ("Cc", cc), ("Bcc", bcc)]:
+            for email in emails:
+                message.append(
+                    "recipients",
+                    {"type": type, "email": email.get("email"), "display_name": email.get("display_name")},
+                )
 
-    message.html_body = html_body
+        send_at = from_utc_z(send_at)
+        undo_send_period = None
+        if undo_send and submit and not send_at:
+            undo_send_period, send_at = get_undo_send_hold()
 
-    message.recipients = []
-    for type, emails in [("To", to), ("Cc", cc), ("Bcc", bcc)]:
-        for email in emails:
-            message.append(
-                "recipients",
-                {"type": type, "email": email.get("email"), "display_name": email.get("display_name")},
-            )
+        queue = message.submit(send_at=send_at) if submit else message.save_draft()
 
-    send_at = from_utc_z(send_at)
-    undo_send_period = None
-    if undo_send and submit and not send_at:
-        undo_send_period, send_at = get_undo_send_hold()
+        if submit and queue.status == "Submitted":
+            create_contacts_if_not_exists(account, message.recipients)
+            auto_accept_recipients(account, message.recipients)
+            remind_after_send(account, queue.thread_id, queue.id, remind_due)
 
-    queue = message.submit(send_at=send_at) if submit else message.save_draft()
-
-    if submit and queue.status == "Submitted":
-        create_contacts_if_not_exists(account, message.recipients)
-        auto_accept_recipients(account, message.recipients)
-        remind_after_send(account, queue.thread_id, queue.id, remind_due)
-
-    answer = {
-        "name": queue.name,
-        "id": queue.id,
-        "status": queue.status,
-        "error": queue.error_message,
-        "thread_id": queue.thread_id,
-        "submission_id": queue.submission_id,
-        "send_at": to_utc_z(queue.send_at),
-        "undo_send_period": undo_send_period,
-    }
-    _remember_answer(account, draft_key, answer)
-    return answer
+        answer = {
+            "name": queue.name,
+            "id": queue.id,
+            "status": queue.status,
+            "error": queue.error_message,
+            "thread_id": queue.thread_id,
+            "submission_id": queue.submission_id,
+            "send_at": to_utc_z(queue.send_at),
+            "undo_send_period": undo_send_period,
+        }
+        _remember_answer(account, draft_key, answer)
+        return answer
 
 
 @frappe.whitelist()
