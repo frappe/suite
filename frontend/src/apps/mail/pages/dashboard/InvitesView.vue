@@ -1,10 +1,13 @@
 <template>
-  <div class="flex items-center justify-between gap-3">
-    <FormControl v-model="search" :placeholder="__('Search')" class="w-80">
-      <template #prefix>
-        <span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" />
-      </template>
-    </FormControl>
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <div class="flex flex-wrap items-center gap-3">
+      <slot name="lead" />
+      <FormControl v-model="search" :placeholder="__('Search')" class="w-80">
+        <template #prefix>
+          <span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" />
+        </template>
+      </FormControl>
+    </div>
     <div class="flex items-center gap-3">
       <FormControl
         v-model="status"
@@ -136,6 +139,8 @@ type InviteRow = {
   is_verified: number | boolean
   status: InviteStatusLabel
 }
+// `lead` starts the filter row, e.g. the Users / Invitations switch.
+defineSlots<{ lead?: () => unknown }>()
 const search = ref('')
 // The overview links here with ?status=Expired; the filter follows the query on arrival.
 const route = useRoute()
@@ -226,7 +231,7 @@ const emptyState = computed(() =>
 )
 const STATUS_OPTIONS = [
   {
-    label: __('All'),
+    label: __('All invitations'),
     value: 'All',
   },
   {

@@ -54,21 +54,40 @@
           v-for="notification in feed.rows"
           :key="notification.name"
           type="button"
-          class="flex w-full gap-3 border-b border-outline-gray-1 px-3 py-3 text-left hover:bg-surface-gray-2"
-          :class="notification.read ? 'text-ink-gray-7' : 'text-ink-gray-8'"
+          class="flex w-full items-start gap-3 border-b border-outline-gray-1 px-3 py-3 text-left hover:bg-surface-gray-2"
           @click="openNotification(notification)"
         >
-          <span
-            class="mt-1 size-2 shrink-0 rounded-full"
-            :class="notification.read ? 'bg-surface-gray-3' : 'bg-surface-amber-7'"
-            aria-hidden="true"
-          />
-          <span class="min-w-0 flex-1">
+          <!-- Who acted, with what kind of item on their badge; a download shows its own icon. -->
+          <span class="relative mt-0.5 shrink-0">
+            <Avatar
+              v-if="'activity' in notification"
+              size="lg"
+              :label="notification.actor.full_name"
+              :image="notification.actor.user_image ?? undefined"
+            />
             <span
-              class="line-clamp-2 block break-words"
-              :class="notification.read ? 'text-base' : 'text-base-semibold'"
+              v-else
+              class="flex size-8 items-center justify-center rounded-full bg-surface-gray-2"
             >
-              {{ notificationSentence(notification, session.user.value?.id) }}
+              <span class="lucide-download size-4 text-ink-gray-6" aria-hidden="true" />
+            </span>
+            <span
+              v-if="'activity' in notification"
+              class="absolute -bottom-1 -right-1 flex size-[18px] items-center justify-center rounded-full bg-surface-white ring-1 ring-outline-gray-1"
+              aria-hidden="true"
+            >
+              <span class="size-3" :class="itemIcon(notification)" />
+            </span>
+          </span>
+          <span class="min-w-0 flex-1">
+            <span class="line-clamp-2 block break-words text-base text-ink-gray-7">
+              <template
+                v-for="(part, index) in notificationParts(notification, session.user.value?.id)"
+                :key="index"
+              >
+                <span v-if="part.strong" class="font-medium text-ink-gray-8">{{ part.text }}</span>
+                <template v-else>{{ part.text }}</template>
+              </template>
             </span>
             <span
               v-if="notificationExcerpt(notification)"
@@ -80,6 +99,12 @@
               {{ notificationTime(notificationAt(notification)) }}
             </span>
           </span>
+          <span
+            v-if="!notification.read"
+            class="mt-2 size-2 shrink-0 rounded-full bg-surface-amber-7"
+            role="img"
+            :aria-label="__('Unread')"
+          />
         </button>
         <div v-if="feed.hasNext" class="flex justify-center p-2">
           <Button
@@ -95,17 +120,23 @@
 </template>
 
 <script setup lang="ts">
-import { Button, Popover, ScrollArea, Skeleton } from 'frappe-ui'
+import { Avatar, Button, Popover, ScrollArea, Skeleton } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { api, useInfiniteQuery, useMutation, useQuery } from '@/api'
-import { driveNodeRoute, loadDriveNodeSummary, type DriveNotification } from '@/apps/drive'
+import {
+  driveNodeIcon,
+  driveNodeIconTint,
+  driveNodeRoute,
+  loadDriveNodeSummary,
+  type DriveNotification,
+} from '@/apps/drive'
 import {
   isDownloadExpired,
   notificationAt,
   notificationExcerpt,
-  notificationSentence,
+  notificationParts,
   notificationTime,
 } from '@/composition/notifications/notificationPresentation'
 import { toast } from '@/platform/feedback'
@@ -164,6 +195,16 @@ async function openNotification(notification: DriveNotification) {
     ...destination,
     state: { ...destination.state, ...mentionedByState(mentionedBy) },
   })
+}
+
+function itemIcon(notification: Extract<DriveNotification, { activity: unknown }>) {
+  const node = {
+    kind: notification.node_kind,
+    title: notification.node_title,
+    mime: notification.node_mime,
+    content_doctype: notification.node_content_doctype,
+  }
+  return [driveNodeIcon(node), driveNodeIconTint(node)]
 }
 
 async function markAllRead() {

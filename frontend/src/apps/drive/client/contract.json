@@ -10319,6 +10319,28 @@
                 "title": "Node Kind",
                 "type": "string"
               },
+              "node_mime": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Node Mime"
+              },
+              "node_content_doctype": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Node Content Doctype"
+              },
               "actor": {
                 "$ref": "#/$defs/Person"
               }
@@ -10330,6 +10352,8 @@
               "activity",
               "node_title",
               "node_kind",
+              "node_mime",
+              "node_content_doctype",
               "actor"
             ],
             "title": "NotificationShape",

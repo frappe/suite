@@ -7,60 +7,56 @@
         </template>
       </Button>
     </template>
-    <Tabs v-model="tab" :tabs="tabs">
-      <template #tab-panel>
-        <div class="flex min-h-0 flex-1 flex-col gap-5 pt-5">
-          <Alert
-            v-if="tab === 'users' && onlyActiveAdmin"
-            theme="amber"
-            :title="__('Only one active admin')"
-            :description="
-              __('Make another user an admin so someone else can manage the workspace.')
-            "
-          />
-          <section
-            v-if="tab === 'users' && failedUsers.length"
-            class="space-y-3"
-            :aria-label="__('User accounts needing attention')"
-          >
-            <Alert
-              v-for="user in failedUsers"
-              :key="user.name"
-              class="account-alert"
-              theme="red"
-              :title="
-                user.setup_status === 'Setup failed'
-                  ? __('{0}: Mail account setup failed', [user.full_name])
-                  : __('{0}: Mail deletion needs a retry', [user.full_name])
-              "
-              :description="user.account || user.email"
-            >
-              <template v-if="user.account" #actions>
-                <FailedCreationActions
-                  v-if="failedCreation(user.account)"
-                  :request="failedCreation(user.account)!"
-                  @settled="reloadUsers"
-                />
-                <Button
-                  v-else
-                  variant="ghost"
-                  :label="__('Review account')"
-                  :route="`/admin/mail/accounts/${encodeURIComponent(user.account)}`"
-                />
-              </template>
-            </Alert>
-          </section>
-          <slot v-if="tab === 'users'" name="users" />
-          <InvitesView v-else ref="invitations" />
-        </div>
-      </template>
-    </Tabs>
+    <div class="flex min-h-0 flex-1 flex-col gap-5">
+      <Alert
+        v-if="tab === 'users' && onlyActiveAdmin"
+        theme="amber"
+        :title="__('Only one active admin')"
+        :description="__('Make another user an admin so someone else can manage the workspace.')"
+      />
+      <section
+        v-if="tab === 'users' && failedUsers.length"
+        class="space-y-3"
+        :aria-label="__('User accounts needing attention')"
+      >
+        <Alert
+          v-for="user in failedUsers"
+          :key="user.name"
+          class="account-alert"
+          theme="red"
+          :title="
+            user.setup_status === 'Setup failed'
+              ? __('{0}: Mail account setup failed', [user.full_name])
+              : __('{0}: Mail deletion needs a retry', [user.full_name])
+          "
+          :description="user.account || user.email"
+        >
+          <template v-if="user.account" #actions>
+            <FailedCreationActions
+              v-if="failedCreation(user.account)"
+              :request="failedCreation(user.account)!"
+              @settled="reloadUsers"
+            />
+            <Button
+              v-else
+              variant="ghost"
+              :label="__('Review account')"
+              :route="`/admin/mail/accounts/${encodeURIComponent(user.account)}`"
+            />
+          </template>
+        </Alert>
+      </section>
+      <slot v-if="tab === 'users'" name="users" />
+      <InvitesView v-else ref="invitations">
+        <template #lead><slot name="tabs" /></template>
+      </InvitesView>
+    </div>
   </DashboardLayout>
   <AddAccountModal v-model="adding" @reload="reload" />
 </template>
 
 <script setup lang="ts">
-import { Alert, Button, Tabs } from 'frappe-ui'
+import { Alert, Button } from 'frappe-ui'
 import { computed, nextTick, ref, useTemplateRef } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -73,7 +69,8 @@ import { DashboardLayout } from '@/platform/dashboard'
 import { translate as __ } from '@/platform/translation'
 
 // Suite composition supplies its preserved-identity directory; Mail owns invitations (§4.3).
-defineSlots<{ users: () => unknown }>()
+// `tabs` switches between the two and leads each page's filter row.
+defineSlots<{ users: () => unknown; tabs: () => unknown }>()
 
 const route = useRoute()
 const router = useRouter()
@@ -102,10 +99,6 @@ function failedCreation(account: string) {
   return failedCreations.data?.items.find((request) => request.account === account)
 }
 const reloadUsers = () => Promise.all([users.refetch(), failedCreations.refetch()]).catch(() => {})
-const tabs = [
-  { value: 'users', label: __('Users') },
-  { value: 'invitations', label: __('Invitations') },
-]
 const adding = ref(false)
 useAddOnArrival(adding)
 const invitations = useTemplateRef('invitations')

@@ -1,5 +1,5 @@
 import { expect, type APIRequestContext, type Locator, type Page } from "@playwright/test";
-import { createFolder, uploadFile } from "../../drive-backed-apps/helpers/drive";
+import { uploadFile } from "../../drive-backed-apps/helpers/drive";
 import type { Credentials } from "../../shared/auth";
 import { frappeData } from "../../shared/frappe";
 import { DEMO_URL, demoUser, identityOf, openDemoScene, setSuiteCloudStandIn } from "../demo";
@@ -37,7 +37,6 @@ type Event =
 	| { type: "OPEN_DISABLED_MENU" }
 	| { type: "REACTIVATE" }
 	| { type: "TRANSFER" }
-	| { type: "PREVIEW_UNKNOWN" }
 	| { type: "PREVIEW" }
 	| { type: "TICK_ACCESS" }
 	| { type: "RUN_TRANSFER" }
@@ -193,11 +192,8 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "Reactivate Priya Shah? Access returns once the readiness checks pass." },
 		},
 		transferDialog: {
-			meta: { description: "Transfer retained Drive content: a field for a destination folder link or ID, Preview transfer, and Cancel. There is no folder picker." },
-			on: { PREVIEW_UNKNOWN: "transferPreviewFailed", PREVIEW: "transferPreview" },
-		},
-		transferPreviewFailed: {
-			meta: { description: "A destination that is not a folder: “No folder found at this link or ID.” shows under the field." },
+			meta: { description: "Transfer retained Drive content: a Transfer to dropdown of people and shared Drives, a note that everything goes into a new “Priya Shah's files” folder, Preview transfer, and Cancel." },
+			on: { PREVIEW: "transferPreview" },
 		},
 		transferPreview: {
 			meta: { description: "The preview, in plain words: what moves, where it goes, the storage there before and after, and who gets access. Transfer stays off until the box is ticked." },
@@ -208,7 +204,7 @@ const machine = setupFlow<Event>().createMachine({
 			on: { RUN_TRANSFER: "transferDone" },
 		},
 		transferDone: {
-			meta: { description: "The transfer finished: “Transfer complete” and one line per moved item, by name." },
+			meta: { description: "The transfer finished: it says whose Drive everything moved to, lists each moved item by name, and offers only Close." },
 		},
 		demoteSelfConfirm: {
 			meta: { description: "Maya, the only Admin, picks Demote to member on her own row: the confirm opens like any other." },
@@ -259,7 +255,7 @@ const machine = setupFlow<Event>().createMachine({
 			on: { STORAGE_SLOW: "storageSkeleton", STORAGE_FAILS: "storageFailed", EDIT_LIMIT: "limitDialog" },
 		},
 		storageSkeleton: {
-			meta: { description: "The storage report is loading: a “Where storage goes” card and placeholder rows with checkboxes under “User storage limits”. The loaded page on this site has a different layout: “Workspace storage”, then a “Drive storage” table with Drive, Used and Limit columns and no checkboxes." },
+			meta: { description: "The storage report is loading: a storage card (total, bar and legend) and placeholder rows with checkboxes under “User storage limits”. The loaded page on this site has a different layout: the same storage card, then a “Drive storage” table with Drive, Used and Limit columns and no checkboxes." },
 		},
 		storageFailed: {
 			meta: { description: "The storage report failed: “Could not load storage report” and Retry replace the content." },
@@ -310,7 +306,6 @@ interface Cast {
 
 const casts = perScene<Cast>("admin: cast");
 const memberPage = perScene<Page>("admin: member page");
-const transferFolder = perScene<string>("admin: transfer folder");
 
 /** The password the path's own users sign in with, to seed their Drives. */
 const CAST_PASSWORD = "Northwind-Cast-2026!";
@@ -422,7 +417,7 @@ export const admin = defineFlow<Event, BaseScene>({
 		casts.set(scene, await provisionCast(scene));
 		await scene.goto("/admin");
 		await expect(scene.page.getByRole("link", { name: /Active users/ })).toBeVisible();
-		await expect(scene.page.getByText("Where storage goes")).toBeVisible();
+		await expect(scene.page.getByRole("region", { name: "Site storage" })).toBeVisible();
 	},
 	events: {
 		async OVERVIEW_SLOW(scene) {
@@ -559,10 +554,9 @@ export const admin = defineFlow<Event, BaseScene>({
 			await expect(scene.dialog("Disable Priya Shah?")).toBeVisible();
 		},
 		async CONFIRM_DISABLE(scene) {
-			// While Priya can still sign in, she leaves a file behind; Omar gets a folder to receive it.
-			const { priya, omar } = casts.get(scene);
+			// While Priya can still sign in, she leaves a file behind for Omar to receive.
+			const { priya } = casts.get(scene);
 			await uploadFile(await scene.as(priya), "Handover notes.md", Buffer.from("# Handover\n\nOpen accounts and who to call.\n"), priya.personal_root, "text/markdown");
-			transferFolder.set(scene, (await createFolder(await scene.as(omar), "From Priya", omar.personal_root)).name);
 			await scene.dialog("Disable Priya Shah?").getByRole("button", { name: "Disable user" }).click();
 			await expect(scene.page.getByRole("dialog")).toHaveCount(0);
 			await expect(userRow(scene.page, "Priya Shah").getByText("Disabled")).toBeVisible();
@@ -577,30 +571,24 @@ export const admin = defineFlow<Event, BaseScene>({
 		},
 		async TRANSFER(scene) {
 			await pick(scene, "Transfer Drive");
-			await expect(scene.dialog("Transfer retained Drive content").getByLabel("Destination folder")).toBeVisible();
-		},
-		async PREVIEW_UNKNOWN(scene) {
-			const dialog = scene.dialog("Transfer retained Drive content");
-			await dialog.getByLabel("Destination folder").fill("no-such-folder");
-			await dialog.getByRole("button", { name: "Preview transfer" }).click();
-			await expect(dialog.getByRole("button", { name: "Preview transfer" })).toBeEnabled();
-			await expect(dialog.locator(".text-ink-red-4, [role=alert], .text-ink-red-6, .text-ink-red-5").first()).toBeVisible({ timeout: 30_000 });
+			await expect(scene.dialog("Transfer retained Drive content").getByPlaceholder("Choose a person or a shared Drive")).toBeVisible();
 		},
 		async PREVIEW(scene) {
 			const dialog = scene.dialog("Transfer retained Drive content");
-			await dialog.getByLabel("Destination folder").fill(`${scene.baseURL}/drive/f/${transferFolder.get(scene)}`);
+			await dialog.getByPlaceholder("Choose a person or a shared Drive").click();
+			await scene.page.getByRole("option", { name: /Omar Haddad/ }).click();
 			await dialog.getByRole("button", { name: "Preview transfer" }).click();
-			await expect(dialog.getByLabel("I confirm the destination access changes")).toBeVisible();
+			await expect(dialog.getByLabel("I understand these people will get access to the moved items")).toBeVisible();
 		},
 		async TICK_ACCESS(scene) {
 			const dialog = scene.dialog("Transfer retained Drive content");
-			await dialog.getByLabel("I confirm the destination access changes").check();
+			await dialog.getByLabel("I understand these people will get access to the moved items").check();
 			await expect(dialog.getByRole("button", { name: "Transfer", exact: true })).toBeEnabled();
 		},
 		async RUN_TRANSFER(scene) {
 			const dialog = scene.dialog("Transfer retained Drive content");
 			await dialog.getByRole("button", { name: "Transfer", exact: true }).click();
-			await expect(dialog.getByText(/Transfer complete|left\. Preview again/)).toBeVisible({ timeout: 30_000 });
+			await expect(dialog.getByText(/Everything has moved to|left\. Preview again/)).toBeVisible({ timeout: 30_000 });
 		},
 		async DEMOTE_SELF(scene) {
 			await openActions(scene, identityOf("maya").email);

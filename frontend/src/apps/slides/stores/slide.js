@@ -1,9 +1,13 @@
+import { toast } from 'frappe-ui'
 import { computed, reactive, ref } from 'vue'
 
+import { api, client } from '@/api'
 import { router } from '@/apps/slides/router'
 import { flushPendingBlur, resetFocus } from '@/apps/slides/stores/element'
 import { commandHistory } from '@/apps/slides/stores/historyMeta'
+import { isLive } from '@/apps/slides/stores/liveDeck'
 import {
+  contextFor,
   currentOpening,
   inReadonlyMode,
   presentationId,
@@ -15,6 +19,8 @@ import {
 import { remapElementIds } from '@/apps/slides/utils/connectors'
 import { cloneObj } from '@/apps/slides/utils/helpers'
 import { randomId } from '@/platform/random-id'
+import { translate as __ } from '@/platform/translation'
+import { TransportError } from '@/platform/transport'
 
 import { addSlideCommand, editSlideCommand, removeSlideCommand } from './commands'
 import { inSlideShowMode } from './slideshow'
@@ -162,6 +168,30 @@ const changeEditorSlide = (index, focus = true) => {
   return changeSlide(index, focus)
 }
 
+// a layout's pictures belong to its template: the slide takes this presentation's own
+const adoptLayoutMedia = async (slide) => {
+  if (isLive() && !navigator.onLine) {
+    toast.error(__('Go online to add this slide'))
+    return null
+  }
+
+  const id = presentationId.value
+  try {
+    const adopted = await client.mutation(
+      api.slides.media.adoptSlide,
+      { parent: id, slide },
+      { context: contextFor(id) },
+    )
+    return typeof adopted.elements === 'string' ? JSON.parse(adopted.elements) : adopted.elements
+  } catch (error) {
+    toast.error(
+      (error instanceof TransportError && error.type !== 'NetworkError' && error.message) ||
+        __('Could not add the slide'),
+    )
+    return null
+  }
+}
+
 const insertDuplicateSlide = async (index, layoutObj, toDuplicate) => {
   if (index == null) index = slideIndex.value
 
@@ -170,6 +200,13 @@ const insertDuplicateSlide = async (index, layoutObj, toDuplicate) => {
 
   if (!toDuplicate) {
     const stillOpen = currentOpening()
+    if (newSlide.elements.some((element) => element.src || element.poster)) {
+      const adopted = await adoptLayoutMedia(newSlide)
+      if (!adopted || !stillOpen()) {
+        return
+      }
+      newSlide.elements = adopted
+    }
     newSlide.elements = await transformElements(newSlide.elements)
     if (!stillOpen()) {
       return

@@ -8,7 +8,7 @@ import { translate as __ } from '@/platform/translation'
 
 import { formatStorage } from './storageFormat'
 
-const props = defineProps<{ report: OutputOf<typeof api.suite.storage.get>; compact?: boolean }>()
+const props = defineProps<{ report: OutputOf<typeof api.suite.storage.get> }>()
 
 function bytes(value: number | null) {
   return value === null ? __('Unavailable') : formatStorage(value)
@@ -90,33 +90,15 @@ const alerts = computed(() => {
     class="space-y-4 rounded-5 border border-outline-gray-2 p-4 sm:p-5"
     :aria-label="__('Site storage')"
   >
-    <div v-if="!compact" class="flex flex-wrap items-center justify-between gap-3">
-      <h2 class="text-lg-medium text-ink-gray-9">{{ __('Where storage goes') }}</h2>
-      <slot name="actions" />
-    </div>
-    <div
-      class="space-y-3"
-      :class="
-        compact
-          ? 'sm:grid sm:grid-cols-[14rem_1fr] sm:items-center sm:gap-x-6 sm:space-y-0'
-          : undefined
-      "
-    >
-      <p v-if="compact" class="text-p-sm text-ink-gray-5 sm:col-start-1">
-        {{ __('Workspace storage') }}
-      </p>
-      <p
-        v-if="summary"
-        class="text-xl font-semibold tabular-nums tracking-tight text-ink-gray-9"
-        :class="compact ? 'sm:col-start-1 sm:row-start-2' : undefined"
-      >
+    <!-- The total heads the card; the bar and legend below say where it goes. -->
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <p v-if="summary" class="text-xl font-semibold tabular-nums tracking-tight text-ink-gray-9">
         {{ summary }}
       </p>
-      <div
-        class="flex h-2.5 overflow-hidden rounded-full bg-surface-gray-2"
-        aria-hidden="true"
-        :class="compact ? 'sm:col-start-2 sm:row-start-1' : undefined"
-      >
+      <slot name="actions" />
+    </div>
+    <div class="space-y-3">
+      <div class="flex h-2.5 overflow-hidden rounded-full bg-surface-gray-2" aria-hidden="true">
         <div
           v-for="segment in segments"
           :key="segment.label"
@@ -124,37 +106,17 @@ const alerts = computed(() => {
           :style="{ width: `${((segment.value ?? 0) / scale) * 100}%` }"
         />
       </div>
-      <ul
-        :class="
-          compact
-            ? 'flex flex-wrap gap-x-4 gap-y-2 text-p-sm sm:col-start-2 sm:row-start-2'
-            : 'grid grid-cols-2 gap-x-6 gap-y-4 pt-2 sm:flex sm:flex-wrap sm:gap-x-10'
-        "
-      >
+      <ul class="grid grid-cols-2 gap-x-6 gap-y-4 pt-2 sm:flex sm:flex-wrap sm:gap-x-10">
         <li
           v-for="segment in segments"
           :key="segment.label"
-          :class="
-            compact
-              ? 'flex items-center gap-1 text-p-sm text-ink-gray-6'
-              : 'grid grid-cols-[auto_1fr] items-center gap-x-2 gap-y-1 text-sm text-ink-gray-6'
-          "
+          class="grid grid-cols-[auto_1fr] items-center gap-x-2 gap-y-1 text-sm text-ink-gray-6"
         >
-          <span
-            v-if="!compact"
-            :class="segment.tone"
-            class="size-2 shrink-0 rounded-full"
-            aria-hidden="true"
-          />
+          <span :class="segment.tone" class="size-2 shrink-0 rounded-full" aria-hidden="true" />
           {{ segment.label }}
-          <span
-            :class="
-              compact
-                ? 'tabular-nums text-ink-gray-8'
-                : 'col-start-2 text-base font-medium tabular-nums text-ink-gray-8'
-            "
-            >{{ bytes(segment.value) }}</span
-          >
+          <span class="col-start-2 text-base font-medium tabular-nums text-ink-gray-8">{{
+            bytes(segment.value)
+          }}</span>
         </li>
       </ul>
     </div>
