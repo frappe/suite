@@ -749,7 +749,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   // Drive's own picker, then copies made on the server (attach_drive_files): what the mail carries
   // is the file as it was picked, under the name Drive gives it. A refusal — a file too large, too
   // much at once, or one the user can no longer read — comes back in the server's words, as an
-  // upload's does. While it runs the mail waits to be sent.
+  // upload's does, and attaches none of the picked files.
   const driveDialogs = useDriveDialogs()
   const attachingFromDrive = ref(0)
   const attachFromDrive = async () => {
@@ -764,6 +764,8 @@ export const useComposeMail = (options: ComposeMailOptions) => {
         nodes: files.map(({ name }) => name),
       })
       for (const file of attached) attachFile(file)
+    } catch {
+      // The refusal has been shown already, as every refused write is.
     } finally {
       attachingFromDrive.value--
     }
