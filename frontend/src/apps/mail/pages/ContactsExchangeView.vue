@@ -6,6 +6,7 @@
         v-if="user.data.is_system_manager"
         :options="dropdownOptions"
         :button="{ icon: 'lucide-more-horizontal' }"
+        :aria-label="__('More')"
       />
     </header>
     <div class="mx-auto my-5 rounded-4 border p-12 sm:w-[60rem]">

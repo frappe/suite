@@ -53,6 +53,7 @@
           <Dropdown
             :options="dropdownOptions"
             :button="{ icon: 'lucide-more-horizontal' }"
+            :aria-label="__('More')"
             align="end"
           />
         </template>

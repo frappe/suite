@@ -295,3 +295,23 @@ describe('viewing Sent', () => {
     expect(unsnooze()).toBeNull()
   })
 })
+
+describe('the toolbar', () => {
+  const names = () =>
+    [...root.querySelectorAll('button')].map((button) => button.getAttribute('aria-label'))
+
+  it('names every one of its icon buttons', async () => {
+    await show(THEIR_LAST_WORD, false)
+    expect(names()).not.toContain(null)
+    expect(names()).toEqual(
+      expect.arrayContaining(['Back', 'Move To', 'Previous Thread', 'Next Thread']),
+    )
+  })
+
+  it('names them on a phone too', async () => {
+    screen.mobile = true
+    await show(THEIR_LAST_WORD, false)
+    expect(names()).not.toContain(null)
+    expect(names()).toEqual(expect.arrayContaining(['Back', 'Move To', 'More']))
+  })
+})

@@ -72,7 +72,11 @@
       >
         <template #actions>
           <Button :label="__('Edit')" @click="showEdit = true" />
-          <Dropdown :options="dropdownOptions" :button="{ icon: 'lucide-more-horizontal' }" />
+          <Dropdown
+            :options="dropdownOptions"
+            :button="{ icon: 'lucide-more-horizontal' }"
+            :aria-label="__('More')"
+          />
         </template>
       </DashboardDetailHeader>
 
