@@ -59,7 +59,7 @@
     />
 
     <div v-if="report.data" class="w-full space-y-6 pb-10">
-      <SiteStorageSummary :report="report.data" compact />
+      <SiteStorageSummary :report="report.data" />
 
       <template v-if="report.data.cloud">
         <section v-if="attentionUsers.length" class="space-y-3" :aria-label="__('Storage alerts')">

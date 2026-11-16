@@ -255,7 +255,7 @@ const machine = setupFlow<Event>().createMachine({
 			on: { STORAGE_SLOW: "storageSkeleton", STORAGE_FAILS: "storageFailed", EDIT_LIMIT: "limitDialog" },
 		},
 		storageSkeleton: {
-			meta: { description: "The storage report is loading: a “Where storage goes” card and placeholder rows with checkboxes under “User storage limits”. The loaded page on this site has a different layout: “Workspace storage”, then a “Drive storage” table with Drive, Used and Limit columns and no checkboxes." },
+			meta: { description: "The storage report is loading: a storage card (total, bar and legend) and placeholder rows with checkboxes under “User storage limits”. The loaded page on this site has a different layout: the same storage card, then a “Drive storage” table with Drive, Used and Limit columns and no checkboxes." },
 		},
 		storageFailed: {
 			meta: { description: "The storage report failed: “Could not load storage report” and Retry replace the content." },
@@ -417,7 +417,7 @@ export const admin = defineFlow<Event, BaseScene>({
 		casts.set(scene, await provisionCast(scene));
 		await scene.goto("/admin");
 		await expect(scene.page.getByRole("link", { name: /Active users/ })).toBeVisible();
-		await expect(scene.page.getByText("Where storage goes")).toBeVisible();
+		await expect(scene.page.getByRole("region", { name: "Site storage" })).toBeVisible();
 	},
 	events: {
 		async OVERVIEW_SLOW(scene) {
