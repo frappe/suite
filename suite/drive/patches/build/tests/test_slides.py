@@ -1174,6 +1174,31 @@ class SlidesTest(unittest.TestCase):
                 self.assertEqual((first.media_nodes_created, first.deck_previews_created), (1, 1))
                 self.assert_a_rerun_changes_nothing(env, target, first)
 
+    def test_a_rerun_handed_another_private_copy_keeps_the_stored_node(self):
+        # `put_blob` deduplicates only best effort, so a rerun can be handed
+        # another private copy of the thumbnail's bytes than the first run
+        # got. The newer File had no tree node, so the first run wrote its
+        # node; the rerun keeps the blob that node holds.
+        for copy, local in (("blob-a", "blob-b"), ("blob-b", "blob-a")):
+            with self.subTest(copy=copy, local=local):
+                env, target, picture, _newer = self.a_thumbnail_and_its_private_twin(copy=copy, local=local)
+                first = convert_slides_and_templates(env)
+                nodes = {name: dict(row) for name, row in target.node_rows.items()}
+                target.add_blob("another-copy", picture, mime_type="image/webp", driver="s3")
+                private_blob = target.private_blob
+
+                def another_copy(name, file_name, private_blob=private_blob):
+                    return "another-copy" if name == "public-blob" else private_blob(name, file_name)
+
+                target.private_blob = another_copy
+
+                again = convert_slides_and_templates(env)
+
+                self.assertEqual(target.node_rows, nodes)
+                children = self.media_children(target, "deck-node")
+                self.assertEqual([(row["name"], row["blob"]) for row in children], [("newer-file", copy)])
+                self.assertEqual(again.media_nodes_created, first.media_nodes_created)
+
     def test_a_deck_an_earlier_run_converted_with_a_picture_filed_twice_converts_again(self):
         # The earlier run took the lowest blob name for both Files, and the
         # older File had no tree node, so its node under the deck holds that
