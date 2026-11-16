@@ -459,8 +459,12 @@ const handleClick = () => {
 defineExpose({ setFocus })
 
 const handleContainerKeydown = (e: KeyboardEvent) => {
-  // Keys mid-composition belong to the input method's own candidate list.
-  if (e.isComposing) return
+  // Keys mid-composition belong to the input method's own candidate list. An Esc there cancels the
+  // candidate, and must not reach the composer, where it would dock an expanded window.
+  if (e.isComposing) {
+    if (e.key === 'Escape') e.stopPropagation()
+    return
+  }
   // Up and down walk the inline suggestions from the highlighted one, round from either end.
   const count = inlineSuggestions.value.length
   if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && count) {

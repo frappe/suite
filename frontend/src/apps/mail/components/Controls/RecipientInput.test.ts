@@ -415,6 +415,25 @@ describe('RecipientInput suggestions in the page', () => {
     expect(selected(list)).toEqual([true, false])
   })
 
+  it('keeps an Esc that cancels an input method candidate from the composer', async () => {
+    const { root, list } = mountWithSuggestions([sasha, samAtWork])
+    const input = await typeInto(root, 'sa')
+    // The composer listens on the window: Esc there docks an expanded window.
+    let composerEscapes = 0
+    const composerEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') composerEscapes++
+    }
+    window.addEventListener('keydown', composerEsc)
+
+    try {
+      await press(input, 'Escape', { isComposing: true })
+      expect(composerEscapes).toBe(0)
+      expect(options(list)).toHaveLength(2)
+    } finally {
+      window.removeEventListener('keydown', composerEsc)
+    }
+  })
+
   it('puts the suggestions away on Esc, keeping it from the composer until they are gone', async () => {
     const { root, model, list } = mountWithSuggestions([sasha, samAtWork])
     const input = await typeInto(root, 'sa')
