@@ -719,7 +719,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     attachingFromDrive.value++
     try {
       const attached = await client.mutation(api.mail.attachments.fromDrive, {
-        nodes: files.map(({ node }) => node),
+        nodes: files.map(({ name }) => name),
       })
       mail.attachments.push(
         // As an upload's file is kept (see ComposeMailEditor's attachDoc): no blob yet, so it opens

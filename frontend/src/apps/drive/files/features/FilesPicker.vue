@@ -73,7 +73,6 @@ import { translate as __ } from '@/platform/translation'
 import { formatBytes } from '../internal/format'
 import { nodeIcon, nodeIconTint } from '../internal/icons'
 import DriveBrowser from './DriveBrowser.vue'
-import type { PickedFile } from './filePicker'
 
 defineProps<{
   /** The dialog's title; "Choose files" by default. */
@@ -82,20 +81,20 @@ defineProps<{
   action?: string
 }>()
 const open = defineModel<boolean>('open', { required: true })
-const emit = defineEmits<{ picked: [files: PickedFile[]] }>()
+const emit = defineEmits<{ picked: [nodes: DriveNode[]] }>()
 
 // Kept across folders and roots: picking from two folders is one choice.
-const picked = ref<PickedFile[]>([])
+const picked = ref<DriveNode[]>([])
 watch(open, () => (picked.value = []))
 
 const isFolder = (node: DriveNode) => node.kind === 'folder'
 const isFile = (node: DriveNode) => node.kind === 'file'
-const isPicked = (node: DriveNode) => picked.value.some((file) => file.node === node.name)
+const isPicked = (node: DriveNode) => picked.value.some((file) => file.name === node.name)
 
 function toggle(node: DriveNode) {
   picked.value = isPicked(node)
-    ? picked.value.filter((file) => file.node !== node.name)
-    : [...picked.value, { node: node.name, title: node.title, size: node.size }]
+    ? picked.value.filter((file) => file.name !== node.name)
+    : [...picked.value, node]
 }
 function choose() {
   if (!picked.value.length) return

@@ -101,9 +101,10 @@ describe('Files picker', () => {
     await vi.waitFor(() => expect(attach().disabled).toBe(false))
     attach().click()
 
-    expect(onPicked).toHaveBeenCalledWith([
-      { node: 'invoice', title: 'Invoice.pdf', size: 2048 },
-      { node: 'plan', title: 'Plan.xlsx', size: 4096 },
+    expect(onPicked).toHaveBeenCalledOnce()
+    expect(onPicked.mock.calls[0][0].map(({ title }: { title: string }) => title)).toEqual([
+      'Invoice.pdf',
+      'Plan.xlsx',
     ])
   })
 

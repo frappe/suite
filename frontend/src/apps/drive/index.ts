@@ -18,7 +18,6 @@ import { DRIVE_ROLES, type DriveBreadcrumb, type DriveNode } from '@/apps/drive/
 import { announceTrash } from '@/apps/drive/files/features/changeToast'
 import { presentDialog, rememberDialogContext } from '@/apps/drive/files/features/dialogHost'
 import { openingFileState } from '@/apps/drive/files/features/document/openingLocation'
-import type { PickedFile as PickedDriveFile } from '@/apps/drive/files/features/filePicker'
 import { nodeActions, type ActionNode } from '@/apps/drive/files/features/nodeActions'
 import { observePreviewRefresh } from '@/apps/drive/files/features/previewRefresh'
 import { preloadShareDialog, readShare } from '@/apps/drive/files/features/share/opening'
@@ -481,10 +480,8 @@ export interface DriveDialogs {
    * Opens the files picker, titled `title`, its button naming what is done with the files.
    * Resolves with the files picked, or `undefined` when cancelled. Only files can be picked.
    */
-  pickFiles(options?: { title?: string; action?: string }): Promise<PickedDriveFile[] | undefined>
+  pickFiles(options?: { title?: string; action?: string }): Promise<DriveNodeSummary[] | undefined>
 }
-
-export type { PickedDriveFile }
 
 /** Drive dialogs, opened by function call. Call it in a component's setup. */
 export function useDriveDialogs(): DriveDialogs {
@@ -526,7 +523,7 @@ export function useDriveDialogs(): DriveDialogs {
         'choose',
       ),
     pickFiles: (options = {}) =>
-      presentDialog<PickedDriveFile[]>(
+      presentDialog<DriveNodeSummary[]>(
         context,
         () => import('@/apps/drive/files/features/FilesPicker.vue'),
         options,
