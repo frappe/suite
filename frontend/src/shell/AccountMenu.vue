@@ -24,17 +24,26 @@
 </template>
 
 <script setup lang="ts">
-import { Avatar, Dropdown } from 'frappe-ui'
+import { Avatar } from 'frappe-ui'
 import { computed } from 'vue'
 
+import type { AccountArea } from '@/platform/contracts'
+import { Dropdown } from '@/platform/feedback'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 import { useAccountMenu } from '@/shell/accountMenu'
 
-withDefaults(defineProps<{ rail?: boolean }>(), { rail: false })
+const props = withDefaults(
+  defineProps<{
+    /** The areas listed as rows in this menu, already filtered by capability. */
+    areas: readonly AccountArea[]
+    rail?: boolean
+  }>(),
+  { rail: false },
+)
 
 const session = useSession()
-const accountOptions = useAccountMenu()
+const accountOptions = useAccountMenu(() => props.areas)
 const accountLabel = computed(
   () => session.user.value?.fullName || session.user.value?.id || __('Account'),
 )

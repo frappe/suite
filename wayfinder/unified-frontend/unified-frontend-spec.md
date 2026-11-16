@@ -293,6 +293,13 @@ only.
   14.8) [T018, Faris, 2026-09-29].
 - The Settings gear opens the one Suite settings dialog (section 12)
   [T010].
+- An area's `placement` decides where its entry sits: `rail` (the default)
+  on the rail and the bottom nav, `workspace` in the workspace menu, and
+  `account` as a row in the account menu and the phone account sheet. People
+  is an `account` area. Every area stays in the `>` app switcher and
+  reachable by URL [Faris, 2026-11-16].
+- The rail has no Shortcuts button. Keyboard shortcuts is a row in the
+  account menu, and `?` still opens the list [Faris, 2026-11-16].
 - The bell is shell chrome, not an area. It has no registry entry
   (section 11.5) [T012]. It lives in `composition/notifications/` and the
   shell mounts it through a slot [IMPL].
@@ -1994,8 +2001,8 @@ There is one Settings group per product, named after the product. Order
 
 | Surface | Items |
 |---|---|
-| Desktop rail avatar menu | Name and email header, Settings, Open Desk (system managers), Upgrade plan (system managers; disabled until ask S5), Log out. Between the flips it also holds the temporary Apps submenu (section 3.5) [Faris, 2026-09-29] |
-| Phone avatar sheet | Header, Settings, Theme, Log out. Between the flips it also holds the temporary Apps drill-in (section 3.5) |
+| Desktop rail avatar menu | Name and email header; People and Keyboard shortcuts; Open Desk (system managers) and Upgrade plan (system managers; not shown until ask S5); Log out. Settings is the rail's gear, directly above the avatar [Faris, 2026-11-16] |
+| Phone avatar sheet | Header, People, Settings, Theme, Log out [Faris, 2026-11-16] |
 
 [T010, T016]
 
@@ -2009,7 +2016,8 @@ There is one Settings group per product, named after the product. Order
   console, and the Suite roles do not open it, so a "system user" is whoever
   holds some other Desk role [T016, T021].
 - Open Desk is a plain `<a href="/app">`: a full page load in the same tab,
-  placed after Settings and before Upgrade plan [T021].
+  in its own group after Keyboard shortcuts and before Upgrade plan [T021,
+  Faris, 2026-11-16].
 - Upgrade plan stays disabled with the tooltip "Not available yet" until
   the site resource carries `upgrade_url` (ask S5) [T021].
 - Shortcuts stays in each app. Mail's mailbox switcher stays in Mail's

@@ -53,21 +53,13 @@
            lets the styles below size and ink it like the items around it. It
            also holds the bell's 34 px while the async component loads, so the
            group below does not move once the bell arrives. -->
-      <RailItem
-        :label="__('Shortcuts')"
-        description="?"
-        variant="ghost"
-        @click="openAreaShortcuts()"
-      >
-        <span class="lucide-keyboard size-4" aria-hidden="true" />
-      </RailItem>
       <div class="rail-bell flex min-h-[34px]">
         <slot name="bell" />
       </div>
       <RailItem :label="__('Settings')" variant="ghost" @click="openSettings()">
         <span class="lucide-settings size-4" aria-hidden="true" />
       </RailItem>
-      <AccountMenu rail />
+      <AccountMenu rail :areas="accountMenuAreas" />
     </div>
   </FrappeRail>
 </template>
@@ -85,8 +77,8 @@ import {
 } from 'vue'
 
 import type { AreaDefinition } from '@/platform/contracts'
-import { openAreaShortcuts } from '@/platform/shortcuts'
 import { useWorkspace } from '@/platform/workspace'
+import { accountAreas } from '@/shell/accountMenu'
 import AccountMenu from '@/shell/AccountMenu.vue'
 import { useAreaProgress } from '@/shell/areaProgress'
 import RailItem from '@/shell/RailItem.vue'
@@ -100,8 +92,11 @@ const props = defineProps<{
   badges: Readonly<Record<string, number>>
 }>()
 
-const railAreas = computed(() => props.areas.filter((area) => area.placement !== 'workspace'))
+const railAreas = computed(() =>
+  props.areas.filter((area) => (area.placement ?? 'rail') === 'rail'),
+)
 const workspaceAreas = computed(() => props.areas.filter((area) => area.placement === 'workspace'))
+const accountMenuAreas = computed(() => accountAreas(props.areas))
 
 defineSlots<{ bell?: () => unknown }>()
 

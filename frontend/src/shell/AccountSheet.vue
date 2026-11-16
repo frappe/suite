@@ -1,6 +1,7 @@
 <!--
   The phone account sheet, opened from the avatar in the bottom nav [T010]:
-  who is signed in, then Settings and Theme, and Log out set apart. The sheet shows no title,
+  who is signed in, the account areas (People), Settings and Theme, and Log out set apart.
+  It lists the same account areas as the desktop account menu. The sheet shows no title,
   so a visually hidden one names the dialog "Account".
 -->
 <template>
@@ -18,6 +19,14 @@
 
         <nav :aria-label="__('Account')">
           <div class="space-y-0.5">
+            <SidebarItem
+              v-for="area in areas"
+              :key="area.id"
+              :label="area.label()"
+              :icon="area.menuIcon"
+              :route="area.to"
+              @click="close"
+            />
             <SidebarItem :label="__('Settings')" icon="lucide-settings" @click="showSettings" />
             <div class="flex h-7 items-center justify-between gap-3 pl-2">
               <span class="flex items-center gap-2 text-sm text-ink-gray-8">
@@ -48,12 +57,17 @@ import { Avatar, BottomSheet, SidebarItem, TabButtons } from 'frappe-ui'
 import { DialogTitle } from 'reka-ui'
 import { computed } from 'vue'
 
+import type { AccountArea } from '@/platform/contracts'
 import { useSession } from '@/platform/session'
 import { useTheme, type ThemeMode } from '@/platform/theme'
 import { translate as __ } from '@/platform/translation'
 import { openSettings } from '@/shell/settings/useSettingsDialog'
 
-defineProps<{ open: boolean }>()
+defineProps<{
+  open: boolean
+  /** The areas listed as rows here, already filtered by capability. */
+  areas: readonly AccountArea[]
+}>()
 const emit = defineEmits<{ 'update:open': [value: boolean] }>()
 
 const session = useSession()

@@ -58,7 +58,11 @@ const area = (id: string, label: string, to = `/${id}`): AreaDefinition => ({
   to,
   loadRoutes: vi.fn(),
 })
-const areas = [area('home', 'Home'), area('files', 'Drive', '/drive')]
+const areas: AreaDefinition[] = [
+  area('home', 'Home'),
+  area('files', 'Drive', '/drive'),
+  { ...area('people', 'People'), placement: 'account', menuIcon: 'lucide-users' },
+]
 
 const FilesPage = defineComponent({
   setup: () => () =>
@@ -121,6 +125,12 @@ describe('phone bottom nav', () => {
 
     item('Home').click()
     await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe('/home'))
+  })
+
+  it('leaves out an area placed in the account menu', async () => {
+    const { item } = await mountAt('/home')
+    expect(item('Home')).not.toBeNull()
+    expect(item('People')).toBeNull()
   })
 
   it('navigates to the area when the active page draws no sidebar', async () => {

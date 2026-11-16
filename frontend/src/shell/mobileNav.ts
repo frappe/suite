@@ -19,7 +19,8 @@ export function deriveMobileNav(
   hasSidebar: (area: string) => boolean,
 ): MobileNavItemDefinition[] {
   return areas.flatMap((area) => {
-    if (area.placement === 'workspace') return []
+    // Workspace and account areas open from their menus, not from the bar.
+    if ((area.placement ?? 'rail') !== 'rail') return []
     const { id, label, icon, to } = area
     const active = id === activeArea
     return [

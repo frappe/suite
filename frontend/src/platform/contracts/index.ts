@@ -43,7 +43,7 @@ declare module 'vue-router' {
   }
 }
 
-export interface AreaDefinition {
+interface AreaBase {
   id: string
   /** Translated label, evaluated at render time. */
   label: () => string
@@ -54,8 +54,6 @@ export interface AreaDefinition {
   requires?: PlatformCapability[]
   /** What the rail's dot counts, in its tooltip ("3 unread"). Translated; "unread" when unset. */
   badgeNoun?: () => string
-  /** `workspace` areas open from the workspace menu instead of the desktop rail. Defaults to `rail`. */
-  placement?: 'rail' | 'workspace'
   /**
    * Installs on a phone as an app of its own, from its own pages: they link
    * the manifest in `public/pwa/<id>/`, scoped to `to` (ticket 047).
@@ -68,6 +66,25 @@ export interface AreaDefinition {
    */
   phoneNav?: Component
 }
+
+/**
+ * Where an area's entry sits. `rail` (the default) is the desktop rail and the
+ * phone bottom nav. `workspace` areas open from the workspace menu, and
+ * `account` areas from the account menu and the phone account sheet. Every
+ * area stays in the command palette's app switcher and reachable by URL.
+ */
+export type AreaDefinition = AreaBase &
+  (
+    | { placement?: 'rail' | 'workspace'; menuIcon?: never }
+    | {
+        placement: 'account'
+        /** Lucide class for the area's row, so every account menu row has the same icon style. */
+        menuIcon: string
+      }
+  )
+
+/** An area whose entry is a row in the account menu and the phone account sheet. */
+export type AccountArea = Extract<AreaDefinition, { placement: 'account' }>
 
 export interface DocumentTypeDefinition {
   /** Stable name for the type, for example `sheets`. */
