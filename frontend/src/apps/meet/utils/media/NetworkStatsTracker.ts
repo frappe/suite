@@ -134,7 +134,11 @@ export class NetworkStatsTracker {
           : received + lost > 0
             ? (lost * 100) / (received + lost)
             : null,
-      jitter: jitter.length ? Math.max(...jitter) : null,
+      jitter: jitter.length
+        ? direction === 'recv'
+          ? Math.min(...jitter)
+          : Math.max(...jitter)
+        : null,
       isValid,
       flowing,
       hasMedia,

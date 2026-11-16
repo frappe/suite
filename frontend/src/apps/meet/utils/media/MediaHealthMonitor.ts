@@ -359,6 +359,8 @@ export class MediaHealthMonitor {
     let quality = this.receiveQuality
     let observed = false
     let missingMeasurement = false
+    let flowing = false
+    let stallQuality: 'poor' | 'critical' | null = null
     for (const { entry, bytes, framesDecoded } of results) {
       if (this.port.isConsumerPaused(entry)) {
         this.receiveProgress.delete(entry.id)
@@ -394,13 +396,18 @@ export class MediaHealthMonitor {
       // Static screens may send no new frames; detect their decode stalls only when RTP arrives.
       const deadline = entry.isScreen ? 15_000 : 6000
       if (stalledFor >= deadline) {
-        quality = 'critical'
+        stallQuality = 'critical'
         continue
       }
       if (stalledFor >= deadline / 2) {
-        if (quality !== 'critical') quality = 'poor'
-      } else if (quality === 'unknown' && bytes > 0) quality = 'good'
+        if (stallQuality !== 'critical') stallQuality = 'poor'
+      } else {
+        if (previous && bytesAt === now) flowing = true
+        if (quality === 'unknown' && bytes > 0) quality = 'good'
+      }
     }
+    if (stallQuality && !flowing)
+      quality = stallQuality === 'critical' || quality === 'critical' ? 'critical' : 'poor'
     if (
       (missingMeasurement || !observed) &&
       quality !== 'poor' &&
