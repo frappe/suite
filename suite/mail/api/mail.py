@@ -116,6 +116,7 @@ from suite.mail.reminders import (
 )
 from suite.mail.utils import get_config, log_mail_error
 from suite.mail.utils.dt import from_utc_z, normalize_utc_z, to_user_timezone, to_utc_z
+from suite.mail.utils.logger import get_push_logger
 from suite.mail.utils.reaction import (
     MAILING_LIST_PROPERTIES,
     emoji_key,
@@ -702,7 +703,8 @@ def sync_changes() -> SyncedChanges:
         try:
             found = merge_list_changes(found, sync_account_changes(user, account["name"]))
         except Exception:
-            # fetch_changes logs it as an event; an Error Log row on each ask would pile up.
+            # To the push log rather than as an Error Log row, which would pile up on each ask.
+            get_push_logger({"source": "sync", "account": account["name"]}).exception("sync-account-failed")
             failed = True
     return SyncedChanges(**found, failed=failed)
 

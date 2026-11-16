@@ -20,6 +20,7 @@ from suite.mail.doctype.push_subscription.push_subscription import (
     unfreeze_jmap_push_notifications,
 )
 from suite.mail.jmap import MailServerUnavailableError, SuiteJMAPClient
+from suite.mail.utils.logger import get_push_logger
 
 CORE = "urn:ietf:params:jmap:core"
 MAIL = "urn:ietf:params:jmap:mail"
@@ -343,7 +344,19 @@ class SyncChanges(unittest.TestCase):
 
         self.assertEqual(found, {"new_mail_in": ["a2-inbox", "a3-inbox"], "changed": True, "failed": True})
 
-    def test_a_state_the_server_cannot_answer_from_is_answered_as_failed_and_logs_nothing(self):
+    def test_an_account_that_fails_is_written_to_the_push_log_with_its_traceback(self):
+        # Without push nothing else reads this account, so the log is all there is to go by.
+        def sync_account_changes(user: str, account: str) -> dict:
+            raise RuntimeError("no sync state")
+
+        with self.assertLogs(get_push_logger().logger, "ERROR") as logs:
+            self._sync(["a1"], sync_account_changes=sync_account_changes)
+
+        [record] = logs.records
+        self.assertEqual(record.msg["account"], "a1")
+        self.assertIsInstance(record.exc_info[1], RuntimeError)
+
+    def test_a_state_the_server_cannot_answer_from_is_answered_as_failed_with_no_error_log_row(self):
         # The client asks every few seconds: an error out of the request would put an Error Log row
         # on each ask while it lasts. It hears `failed` instead, and waits longer.
         server = _server()
