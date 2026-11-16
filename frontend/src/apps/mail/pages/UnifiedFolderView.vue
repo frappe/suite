@@ -363,8 +363,9 @@ import {
   isMac,
   raiseError,
   raiseOptimisticToast,
-  raiseToast,
+  raisePerAccountToast,
   shouldIgnoreKeypress,
+  type ToastTiming,
 } from '@/apps/mail/utils'
 import { useAccountScope } from '@/apps/mail/utils/accountScope'
 import {
@@ -407,7 +408,6 @@ import {
 import { deleteForeverOptions } from '@/apps/mail/utils/useThreadActions'
 import { appDocumentTitle, usePageTitle } from '@/platform/page-meta'
 import { translate as __ } from '@/platform/translation'
-import { TransportError } from '@/platform/transport'
 
 const { isMobile } = useScreenSize()
 const { listReloadRequest } = useListReload()
@@ -1010,15 +1010,14 @@ const handleAddToMailbox = (mailboxId: string) => {
   // the folder before an "add" must stay in it afterwards.
   const undoAction = afterLanding(forward, () => {
     syncFolderTag(mailboxId, false)
-    raiseOptimisticToast(
-      restoreMails(thread.account, snapshot),
-      folder ? __('Thread removed from {0}', [folder]) : __('Thread removed from folder'),
-    )
+    raiseOptimisticToast(restoreMails(thread.account, snapshot), {
+      onClick: folder ? __('Thread removed from {0}', [folder]) : __('Thread removed from folder'),
+    })
   })
   setUndoAction(undoAction)
   raiseOptimisticToast(
     forward,
-    folder ? __('Thread added to {0}', [folder]) : __('Thread added to folder'),
+    { onClick: folder ? __('Thread added to {0}', [folder]) : __('Thread added to folder') },
     undoAction,
   )
 }
@@ -1045,12 +1044,16 @@ const handleRemoveFromMailbox = (mailboxId: string) => {
   // Undo replays the exact membership rather than the inverse call.
   const undoAction = afterLanding(forward, () => {
     syncFolderTag(mailboxId, true)
-    raiseOptimisticToast(restoreMails(thread.account, snapshot), __('Thread added back'))
+    raiseOptimisticToast(restoreMails(thread.account, snapshot), {
+      onClick: __('Thread added back'),
+    })
   })
   setUndoAction(undoAction)
   raiseOptimisticToast(
     forward,
-    folder ? __('Thread removed from {0}', [folder]) : __('Thread removed from folder'),
+    {
+      onClick: folder ? __('Thread removed from {0}', [folder]) : __('Thread removed from folder'),
+    },
     undoAction,
   )
 }
@@ -1162,7 +1165,9 @@ const handleSetSeen = (thread: Thread, seen: boolean, silent = false) => {
     })
   // The auto mark-as-read on opening a thread is silent (no toast); still roll back on failure.
   if (silent) return void request.catch(() => {})
-  raiseOptimisticToast(request, __('Thread marked as {0}', [seen ? __('read') : __('unread')]))
+  raiseOptimisticToast(request, {
+    onClick: __('Thread marked as {0}', [seen ? __('read') : __('unread')]),
+  })
 }
 
 // Star/unstar, from a list row (which names no mails, so its own representative one) or from the
@@ -1276,13 +1281,8 @@ const fileThreads = (
   if (action === 'trash' || action === 'junk') closeComposeWindowFor(copyIds(threads))
   const one = threads.length === 1
   const folderOfTarget = target ? folderName(target) : undefined
-  const done = (answers: unknown[]) => {
-    if (action === 'archive')
-      return !answers.some((a) => !!a && typeof a === 'object' && 'left_inbox' in a && a.left_inbox)
-        ? __('Added to Archive')
-        : one
-          ? __('Thread archived')
-          : __('Threads archived')
+  const said = () => {
+    if (action === 'archive') return one ? __('Thread archived') : __('Threads archived')
     if (action === 'unarchive') return one ? __('Thread unarchived') : __('Threads unarchived')
     if (action === 'trash') return one ? __('Thread moved to Trash') : __('Threads moved to Trash')
     if (action === 'junk' || action === 'not_junk') {
@@ -1295,6 +1295,17 @@ const fileThreads = (
         : __('Threads moved to {0}', [folderOfTarget])
       : __('Thread moved')
   }
+  // Said on the click, but for an archive from a list the rows stay on: only the answer says whether
+  // it left the Inbox or was only added to Archive.
+  const done: ToastTiming<unknown[]> =
+    action === 'archive' && !leaves
+      ? {
+          onAnswer: (answers) =>
+            answers.some((a) => !!a && typeof a === 'object' && 'left_inbox' in a && a.left_inbox)
+              ? said()
+              : __('Added to Archive'),
+        }
+      : { onClick: said() }
   const undone =
     action === 'junk'
       ? one
@@ -1325,7 +1336,8 @@ const fileThreads = (
           return filed
         }),
     done,
-    undone,
+    // Rows that left come back on the Undo's click; a list that kept them reads them again.
+    leaves ? { onClick: undone } : { onAnswer: undone },
     {
       // Not junk accepted the senders; Undo puts them back as junk senders, as it puts the mail
       // back in Junk.
@@ -1372,8 +1384,11 @@ const snoozeTo = (threads: Thread[], until: string) => {
         until,
         leaves: leaves ? folder : null,
       }),
-    snoozedMessage(threads.length, until),
-    threads.length === 1 ? __('Thread moved back') : __('Threads moved back'),
+    { onClick: snoozedMessage(threads.length, until) },
+    // Rows that left come back on the Undo's click; a list that kept them reads them again.
+    leaves
+      ? { onClick: threads.length === 1 ? __('Thread moved back') : __('Threads moved back') }
+      : { onAnswer: threads.length === 1 ? __('Thread moved back') : __('Threads moved back') },
     { putBack },
   )
 }
@@ -1387,8 +1402,8 @@ const unsnoozeThreads = (threads: Thread[]) => {
       client
         .mutation(api.mail.messages.unsnooze, { account, ids: copyIds(rows), leaves: folder })
         .then((answer) => waited.set(account, answer.waited)),
-    threads.length === 1 ? __('Thread unsnoozed') : __('Threads unsnoozed'),
-    threads.length === 1 ? __('Thread moved back') : __('Threads moved back'),
+    { onClick: threads.length === 1 ? __('Thread unsnoozed') : __('Threads unsnoozed') },
+    { onClick: threads.length === 1 ? __('Thread moved back') : __('Threads moved back') },
     { putBack, restore: (account) => resnooze(account, waited.get(account) ?? []) },
   )
 }
@@ -1420,12 +1435,12 @@ const copySnapshot = (threads: Thread[]) =>
 // Runs `request` once per account, and arms an Undo that puts back exactly the accounts whose request
 // went through, as they were. The Undo waits for every account to answer (a restore that ran first
 // would be overwritten), so when one account fails the others can still be taken back: the error
-// toast offers the Undo too.
+// toast offers the Undo too. The toast is timed as a single account's (see raisePerAccountToast).
 const actPerAccount = (
   threads: Thread[],
   request: (account: string, rows: Thread[]) => Promise<unknown>,
-  done: string | ((answers: unknown[]) => string),
-  undoSuccess: string,
+  done: ToastTiming<unknown[]>,
+  undoSuccess: ToastTiming,
   {
     undoScreen = null,
     putBack,
@@ -1469,27 +1484,11 @@ const actPerAccount = (
     // put back as it was, since its Undo is gone.
     const refused = snapshots.filter((_, i) => results[i].status === 'rejected')
     refused.forEach(([account, mails]) => void restoreMails(account, mails).catch(() => {}))
-    if (refused.length)
-      putBack?.(
-        groups.filter((_, i) => results[i].status === 'rejected').flatMap(([, rows]) => rows),
-      )
-    const failure = results.find((r): r is PromiseRejectedResult => r.status === 'rejected')
-    const undo = { label: __('Undo'), onClick: undoAction }
-    const answers = results.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []))
-    if (!failure)
-      return raiseToast(typeof done === 'string' ? done : done(answers), 'success', undo)
+    if (!refused.length) return
+    putBack?.(groups.filter((_, i) => results[i].status === 'rejected').flatMap(([, rows]) => rows))
     refreshThreads()
-    const someLanded = results.some((r) => r.status === 'fulfilled')
-    raiseToast(
-      (failure.reason instanceof TransportError &&
-      failure.reason.type !== 'NetworkError' &&
-      failure.reason.type !== 'AbortError'
-        ? __(failure.reason.message)
-        : null) || __('Could not complete the action'),
-      'error',
-      someLanded ? undo : undefined,
-    )
   })
+  raisePerAccountToast(settled, done, undoAction)
 }
 
 const setThreadsSeen = (threads: Thread[], seen: boolean) => {
@@ -1510,7 +1509,7 @@ const setThreadsSeen = (threads: Thread[], seen: boolean) => {
         applySeen(seen ? 0 : 1) // revert the optimistic update
         throw error
       }),
-    __('Threads marked as {0}', [seen ? __('read') : __('unread')]),
+    { onClick: __('Threads marked as {0}', [seen ? __('read') : __('unread')]) },
   )
 }
 
@@ -1662,7 +1661,7 @@ const handleDelete = (rows: Thread[]) => {
       refreshThreads()
       throw error
     }),
-    rows.length === 1 ? __('Thread deleted') : __('Threads deleted'),
+    { onClick: rows.length === 1 ? __('Thread deleted') : __('Threads deleted') },
   )
 }
 

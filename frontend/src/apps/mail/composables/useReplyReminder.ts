@@ -54,7 +54,7 @@ export const useReplyReminder = (
         account: account(),
         thread_id: threadId()!,
       }),
-      () => __('Reminder removed'),
+      { onAnswer: __('Reminder removed') },
     )
 
   return { remindAt, remindable, lastSentAt, remind, cancel }

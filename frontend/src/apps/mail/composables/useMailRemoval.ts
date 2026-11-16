@@ -121,7 +121,7 @@ export const useMailRemoval = ({
       }
     })()
 
-    if (!opts.undoReq) return raiseOptimisticToast(forwardPromise, success)
+    if (!opts.undoReq) return raiseOptimisticToast(forwardPromise, { onClick: success })
 
     const { undoReq } = opts
     setUndoAction(
@@ -141,11 +141,11 @@ export const useMailRemoval = ({
               if (emptied) restoreRow = removeRow(mail, thread)
               throw error
             }),
-          opts.undoSuccess ?? success,
+          { onClick: opts.undoSuccess ?? success },
         )
       }),
     )
-    raiseOptimisticToast(forwardPromise, success, undo)
+    raiseOptimisticToast(forwardPromise, { onClick: success }, undo)
   }
 
   return { runMailRemoval }

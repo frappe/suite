@@ -54,9 +54,10 @@ vi.mock('@/apps/mail/utils', () => ({
   raiseToast: (message: string) => toasts.push(message),
   raiseOptimisticToast: async (
     done: Promise<unknown>,
-    message: string | ((result: unknown) => string),
+    timing: { onClick: string } | { onAnswer: string | ((result: unknown) => string) },
   ) => {
     const result = await done
+    const message = 'onClick' in timing ? timing.onClick : timing.onAnswer
     toasts.push(typeof message === 'string' ? message : message(result))
   },
 }))

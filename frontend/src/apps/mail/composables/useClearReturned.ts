@@ -30,7 +30,9 @@ export const useClearReturned = () => {
     )
     raiseOptimisticToast(
       cleared,
-      many ? __('Threads removed from Reminders') : __('Thread removed from Reminders'),
+      {
+        onClick: many ? __('Threads removed from Reminders') : __('Thread removed from Reminders'),
+      },
       () =>
         raiseOptimisticToast(
           cleared.then((done) =>
@@ -45,7 +47,7 @@ export const useClearReturned = () => {
             ),
           ),
           // Said once it lands: the rows come back only then.
-          () => (many ? __('Threads moved back') : __('Thread moved back')),
+          { onAnswer: many ? __('Threads moved back') : __('Thread moved back') },
         ),
     )
   }

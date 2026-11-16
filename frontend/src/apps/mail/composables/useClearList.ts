@@ -85,7 +85,7 @@ export const useClearList = (target: () => ClearTarget) => {
                 : client.mutation(api.mail.messages.setFolders, { account, mails: mails ?? [] }),
             ),
           ),
-          () => undone,
+          { onAnswer: undone },
         ),
       )
       raiseToast(done, 'success', { label: __('Undo'), onClick: undo })

@@ -15,6 +15,7 @@ import {
   getIcon,
   raiseOptimisticToast,
   raisePromiseToast,
+  type ToastTiming,
 } from '@/apps/mail/utils'
 import { useDiscardingDrafts, useUndo } from '@/apps/mail/utils/composables'
 import { folderTicks } from '@/apps/mail/utils/folderTicks'
@@ -362,7 +363,7 @@ export function useThreadActions(deps: {
     if (isUndo) {
       // Undo of a remove — immediate confirmation, no further undo.
       const success = threadIds.length === 1 ? __('Thread added back') : __('Threads added back')
-      return raiseOptimisticToast(forward, success)
+      return raiseOptimisticToast(forward, { onClick: success })
     }
 
     // Undo = remove again, but only once the add has actually landed (no-op if it failed).
@@ -373,7 +374,7 @@ export function useThreadActions(deps: {
       threadIds.length === 1
         ? __('Thread added to {0}', [mailboxName])
         : __('Threads added to {0}', [mailboxName])
-    raiseOptimisticToast(forward, success, undo)
+    raiseOptimisticToast(forward, { onClick: success }, undo)
     return forward.then(
       () => true,
       () => false,
@@ -443,13 +444,13 @@ export function useThreadActions(deps: {
         : __('Threads removed from {0}', [mailboxName])
 
     // Undo of an add — immediate confirmation, no further undo.
-    if (isUndo) return raiseOptimisticToast(forward, success)
+    if (isUndo) return raiseOptimisticToast(forward, { onClick: success })
 
     // Undo = add back, but only once the remove has landed (no-op if it failed).
     setUndoAction(
       afterLanding(forward, () => void addThreadsToMailbox(mailboxId, threadIdsToBeUpdated, true)),
     )
-    raiseOptimisticToast(forward, success, undo)
+    raiseOptimisticToast(forward, { onClick: success }, undo)
   }
   const showJunkOrDeleteThreads = ref(false)
   const threadsToBeDeleted = ref<string[]>([])
@@ -569,7 +570,7 @@ export function useThreadActions(deps: {
         rollback()
         throw error
       }),
-      success,
+      { onClick: success },
     )
   }
 
@@ -708,10 +709,10 @@ export function useThreadActions(deps: {
               removeThreadsFromList(removedThreads.map((t) => t.thread_id))
               throw error
             })
-          raiseOptimisticToast(restore, movedBack)
+          raiseOptimisticToast(restore, { onClick: movedBack })
         }),
       )
-      raiseOptimisticToast(forwardPromise, success, undo)
+      raiseOptimisticToast(forwardPromise, { onClick: success }, undo)
       return forwardPromise.then(
         () => true,
         () => false,
@@ -739,10 +740,11 @@ export function useThreadActions(deps: {
           const restore = setMailsMailboxesSubmit({
             mails: snapshot,
           }).then(() => mailboxes.refetch().catch(() => {}))
-          raiseOptimisticToast(restore, movedBack)
+          // Said once it lands: the folder tags change back only then.
+          raiseOptimisticToast(restore, { onAnswer: movedBack })
         }),
       )
-      raiseOptimisticToast(forwardPromise, success, undo)
+      raiseOptimisticToast(forwardPromise, { onClick: success }, undo)
       return forwardPromise.then(
         () => true,
         () => false,
@@ -838,13 +840,13 @@ export function useThreadActions(deps: {
   }
 
   // Archive and Unarchive file a conversation in place: the rows leave only the list named as left,
-  // and Undo puts each message back exactly. `told` is what the toast says: on the click where the
-  // outcome is already known, or read off the server's answer where only that can say.
+  // and Undo puts each message back exactly. `told` is what the toast says and when: on the click
+  // where the outcome is already known, or read off the server's answer where only that can say.
   const fileInPlace = (
     action: 'archive' | 'unarchive' | 'snooze' | 'wake',
     threadIds: string[],
     leaves: boolean,
-    told: string | ((filed: { left_inbox: boolean }) => string),
+    told: ToastTiming<{ left_inbox: boolean }>,
     until?: string,
   ) => {
     if (!threadIds.length) return
@@ -908,10 +910,9 @@ export function useThreadActions(deps: {
           mailboxes.refetch().catch(() => {})
           if (mailbox.value === 'search') resetThreads()
         })
-        raiseOptimisticToast(
-          restore,
-          threadIds.length > 1 ? __('Threads moved back') : __('Thread moved back'),
-        )
+        // Rows that left come back on the click; rows that stayed change back once it lands.
+        const movedBack = threadIds.length > 1 ? __('Threads moved back') : __('Thread moved back')
+        raiseOptimisticToast(restore, leaves ? { onClick: movedBack } : { onAnswer: movedBack })
       }),
     )
     raiseOptimisticToast(forward, told, undo)
@@ -933,19 +934,18 @@ export function useThreadActions(deps: {
       'archive',
       threadIds,
       leaves,
-      leaves ? archived : (filed) => (filed.left_inbox ? archived : __('Added to Archive')),
+      leaves
+        ? { onClick: archived }
+        : { onAnswer: (filed) => (filed.left_inbox ? archived : __('Added to Archive')) },
     )
   }
 
   // Archive reversed: the received mail goes back from Archive to the Inbox, every other folder kept,
   // and your own mail stays where it is. Only Archive loses the row.
   const unarchiveThreads = (threadIds: string[]) =>
-    fileInPlace(
-      'unarchive',
-      threadIds,
-      mailbox.value === mailboxIds.archive,
-      threadIds.length > 1 ? __('Threads unarchived') : __('Thread unarchived'),
-    )
+    fileInPlace('unarchive', threadIds, mailbox.value === mailboxIds.archive, {
+      onClick: threadIds.length > 1 ? __('Threads unarchived') : __('Thread unarchived'),
+    })
 
   // A conversation waits in Snoozed until a chosen time (suite/mail/reminders.py). It leaves the Inbox
   // and Archive lists; in Starred or a folder of yours it stays. Asked of what is already snoozed, this
@@ -955,17 +955,14 @@ export function useThreadActions(deps: {
       'snooze',
       threadIds,
       [mailboxIds.inbox, mailboxIds.archive].includes(mailbox.value),
-      snoozedMessage(threadIds.length, until),
+      { onClick: snoozedMessage(threadIds.length, until) },
       until,
     )
 
   const unsnoozeThreads = (threadIds: string[]) =>
-    fileInPlace(
-      'wake',
-      threadIds,
-      mailbox.value === mailboxIds.snoozed,
-      threadIds.length > 1 ? __('Threads unsnoozed') : __('Thread unsnoozed'),
-    )
+    fileInPlace('wake', threadIds, mailbox.value === mailboxIds.snoozed, {
+      onClick: threadIds.length > 1 ? __('Threads unsnoozed') : __('Thread unsnoozed'),
+    })
 
   const setSpamStatus = (threadIDs: SetSeenParams) => {
     const selectedThreads = Object.values(threadIDs).flat()
@@ -1047,10 +1044,10 @@ export function useThreadActions(deps: {
               removeThreadsFromList(removedThreads.map((t) => t.thread_id))
               throw error
             })
-          raiseOptimisticToast(undoReq, restored)
+          raiseOptimisticToast(undoReq, { onClick: restored })
         }),
       )
-      return raiseOptimisticToast(forwardPromise, success, undo)
+      return raiseOptimisticToast(forwardPromise, { onClick: success }, undo)
     }
 
     // Reconcile (search/starred/sent): the list only changes once the server responds. Sent keeps the
@@ -1102,10 +1099,9 @@ export function useThreadActions(deps: {
         if (removed.length) restoreThreadsToList(removed)
         throw error
       })
-    raiseOptimisticToast(
-      forward,
-      thread_ids.length === 1 ? __('Thread deleted') : __('Threads deleted'),
-    )
+    raiseOptimisticToast(forward, {
+      onClick: thread_ids.length === 1 ? __('Thread deleted') : __('Threads deleted'),
+    })
   }
 
   // Drafts leave the list at once and are deleted once the toast's Undo has passed; Undo puts the
