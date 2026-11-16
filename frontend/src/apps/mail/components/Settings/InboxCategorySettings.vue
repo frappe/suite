@@ -1,30 +1,29 @@
 <template>
-  <!-- Whether the Inbox is split into categories, and which; off, it is one list, and the choice
-       is kept for when it is on again. Nothing where the site doesn't sort mail into them. -->
-  <SettingsSection v-if="offered" :title="__('Inbox categories')">
-    <div class="divide-y divide-outline-gray-1">
+  <!-- Rows of the Inbox page's list: whether the Inbox is split into categories, and which; off, it
+       is one list, and the choice is kept for when it is on again. Nothing where the site doesn't
+       sort mail into them. -->
+  <template v-if="offered">
+    <SettingsRow
+      :title="__('Split Inbox into categories')"
+      :description="__('Mail that isn’t personal moves out of Primary into its own category.')"
+    >
+      <Switch :model-value="split" @update:model-value="setSplit" />
+    </SettingsRow>
+    <template v-if="split">
       <SettingsRow
-        :title="__('Split Inbox into categories')"
-        :description="__('Mail that isn’t personal moves out of Primary into its own category.')"
+        v-for="choice in choices"
+        :key="choice.category"
+        :title="choice.label"
+        :description="TAB_DESCRIPTIONS[choice.category]"
       >
-        <Switch :model-value="split" @update:model-value="setSplit" />
+        <Switch
+          :model-value="choice.on"
+          :disabled="isLastOn(choice)"
+          @update:model-value="(on) => setTab(choice.category, on)"
+        />
       </SettingsRow>
-      <template v-if="split">
-        <SettingsRow
-          v-for="choice in choices"
-          :key="choice.category"
-          :title="choice.label"
-          :description="TAB_DESCRIPTIONS[choice.category]"
-        >
-          <Switch
-            :model-value="choice.on"
-            :disabled="isLastOn(choice)"
-            @update:model-value="(on) => setTab(choice.category, on)"
-          />
-        </SettingsRow>
-      </template>
-    </div>
-  </SettingsSection>
+    </template>
+  </template>
 </template>
 
 <script setup lang="ts">
@@ -32,7 +31,6 @@ import { SettingsRow, Switch } from 'frappe-ui'
 import { computed } from 'vue'
 
 import { useTabChoice, type InboxCategory } from '@/apps/mail/composables/useInboxTabs'
-import SettingsSection from '@/platform/settings/SettingsSection.vue'
 import { translate as __ } from '@/platform/translation'
 
 const { offered, split, choices, setTab, setSplit } = useTabChoice()

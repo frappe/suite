@@ -5,8 +5,8 @@
       <!-- First, so the link from a screened sender's mail opens on it. -->
       <div class="divide-y divide-outline-gray-1">
         <ScreenedEmailAddressSettings />
+        <InboxCategorySettings />
       </div>
-      <InboxCategorySettings />
       <FolderSettings />
       <AutomationSettings />
     </div>
