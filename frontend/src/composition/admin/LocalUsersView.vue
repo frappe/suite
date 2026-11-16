@@ -81,7 +81,7 @@
       v-if="users.status !== 'error'"
       v-model:selection="selectedUsers"
       selectable
-      class="-mx-3 list-row-px-3"
+      class="-mx-3 list-row-px-3 [--_list-row-height:3.5rem] sm:[--_list-row-height:2.75rem]"
       :columns="
         storage.data?.cloud
           ? {
@@ -93,7 +93,6 @@
               sm: ['minmax(0,1fr)', 'minmax(0,1.2fr)', '10rem', '3rem'],
             }
       "
-      :row-height="56"
     >
       <ListHeader>
         <ListHeaderCell>{{ __('User') }}</ListHeaderCell>
@@ -129,7 +128,11 @@
         </ListRow>
       </ListRows>
       <ListRows v-else v-slot="{ item: user }" :items="filtered" row-key="name">
-        <ListRow :value="user.name">
+        <!-- Phones stack the address under the name; a setup note under the status needs room too. -->
+        <ListRow
+          :value="user.name"
+          :class="setupNote(user) ? '[--_list-row-height:auto] py-2' : undefined"
+        >
           <ListCell>
             <Avatar :label="user.full_name" :image="user.user_image ?? undefined" size="sm" />
             <div class="ml-3 min-w-0">
