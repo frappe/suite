@@ -1,7 +1,9 @@
+<!-- The import and export jobs of one kind: mail, contacts or calendar. The three kinds share
+     this page and differ only in the doctype they list and the words they use. -->
 <template>
-  <div class="flex h-screen flex-col">
+  <div class="flex h-screen flex-col text-ink-gray-8">
     <header class="flex items-center border-b px-5 py-2.5">
-      <Breadcrumbs :items="[{ label: __('Calendar Exchanges') }]" />
+      <Breadcrumbs :items="[{ label: kindOf.listLabel() }]" />
     </header>
     <!-- The tab list carries no padding of its own: inset it to the header's,
 		     and pad it evenly so the 28px triggers sit in a 40px band like the header
@@ -9,7 +11,7 @@
 		     stays on the rail rather than tracking the label. -->
     <Tabs
       v-model="operation"
-      :tabs="TABS"
+      :tabs="tabs"
       class="[&>[data-slot=tab-list]]:px-5 [&>[data-slot=tab-list]]:py-1.5"
       @update:model-value="$router.replace({ query: { operation } })"
     >
@@ -24,35 +26,31 @@
               class="w-40"
             />
           </div>
-          <DashboardListSkeleton
-            v-if="calendarExchanges.status === 'pending'"
-            :columns="listColumns.length"
-            :rows="6"
-          />
-          <ListView
-            v-else-if="calendarExchanges.status === 'success'"
-            :columns="listColumns"
+          <DashboardList
+            :columns="columns"
             :rows="rows"
-            :options="LIST_OPTIONS"
             row-key="name"
-            class="flex-1"
+            :loading="exchanges.status === 'pending'"
+            :skeleton-rows="6"
+            :row-route="(row) => ({ name: kindOf.detailRoute, params: { id: row.name } })"
+            :empty-state="exchanges.error ? undefined : { title: kindOf.emptyLabel() }"
           >
-            <ListHeader />
-            <ListRows>
-              <template v-if="rows.length">
-                <ListRow v-for="row in rows" :key="row.name" v-slot="{ item, column }" :row="row">
-                  <ListRowItem :item="item">
-                    <Badge v-if="column.key == 'status'" :theme="getTheme(item)" :label="item" />
-                  </ListRowItem>
-                </ListRow>
-              </template>
-              <ListEmptyState v-else />
-            </ListRows>
-          </ListView>
-          <ErrorMessage
-            v-if="calendarExchanges.error"
-            :message="calendarExchanges.error?.message"
-          />
+            <template #cell="{ column, item }">
+              <Badge
+                v-if="column.key === 'status'"
+                :theme="getTheme(String(item))"
+                :label="String(item)"
+              />
+              <span
+                v-else
+                class="truncate text-base"
+                :class="column.key === 'started_at' ? 'text-ink-gray-8' : 'text-ink-gray-7'"
+              >
+                {{ item ?? '—' }}
+              </span>
+            </template>
+          </DashboardList>
+          <ErrorMessage v-if="exchanges.error" :message="exchanges.error?.message" />
         </div>
       </template>
     </Tabs>
@@ -61,22 +59,17 @@
 
 <script setup lang="ts">
 import { Badge, Breadcrumbs, ErrorMessage, FormControl, Tabs } from 'frappe-ui'
-import {
-  ListEmptyState,
-  ListHeader,
-  ListRow,
-  ListRowItem,
-  ListRows,
-  ListView,
-} from 'frappe-ui/experimental'
-import { CalendarPlus, CalendarRange } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { api, useInfiniteQuery } from '@/api'
 import { getTheme } from '@/apps/mail/utils'
 import { formatSystemDateTime } from '@/apps/mail/utils/datetime'
-import { DashboardListSkeleton } from '@/platform/dashboard'
+import { EXCHANGE_KINDS, type ExchangeKind } from '@/apps/mail/utils/exchangeKinds'
+import { DashboardList, type DashboardListColumn } from '@/platform/dashboard'
+
+const { kind } = defineProps<{ kind: ExchangeKind }>()
+const kindOf = computed(() => EXCHANGE_KINDS[kind])
 
 const route = useRoute()
 
@@ -95,42 +88,33 @@ const STATUS_OPTIONS = [
   { label: __('Cancelled'), value: 'Cancelled' },
 ]
 
-const calendarExchanges = useInfiniteQuery(api.mail.exchanges.list, () => ({
-  doctype: 'Calendar Exchange',
+const exchanges = useInfiniteQuery(api.mail.exchanges.list, () => ({
+  doctype: kindOf.value.doctype,
   operation: operation.value,
   status: status.value === ' ' ? undefined : status.value,
   start: 0,
   page_length: 100,
 }))
 const rows = computed(() =>
-  calendarExchanges.rows.map((row) => ({
+  exchanges.rows.map((row) => ({
     ...row,
     started_at: row.started_at ? formatSystemDateTime(row.started_at, 'MMM D, YYYY h:mm A') : '-',
   })),
 )
 
-const listColumns = computed(() => {
-  const columns = [
+const columns = computed(() => {
+  const list: DashboardListColumn[] = [
     { label: __('Started'), key: 'started_at' },
     { label: __('Status'), key: 'status' },
-    {
-      label: __('Format'),
-      key: isExport.value ? 'export_format' : 'import_format',
-    },
+    { label: __('Format'), key: isExport.value ? 'export_format' : 'import_format' },
   ]
-  if (isExport.value) columns.push({ label: __('Archive Type'), key: 'export_archive_type' })
-  return columns
+  if (isExport.value) list.push({ label: __('Archive Type'), key: 'export_archive_type' })
+  return list
 })
 
-const LIST_OPTIONS = {
-  selectable: false,
-  getRowRoute: (row) => ({ name: 'mail-calendar-exchange', params: { id: row.name } }),
-  emptyState: { description: __('No calendar exchanges found.') },
-}
-
 // iconLeft, not icon: `icon` makes an icon-only trigger and drops the label.
-const TABS = [
-  { value: 'Import', label: __('Import'), iconLeft: CalendarPlus },
-  { value: 'Export', label: __('Export'), iconLeft: CalendarRange },
-]
+const tabs = computed(() => [
+  { value: 'Import', label: __('Import'), iconLeft: kindOf.value.icons.Import },
+  { value: 'Export', label: __('Export'), iconLeft: kindOf.value.icons.Export },
+])
 </script>

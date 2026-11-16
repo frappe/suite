@@ -1,13 +1,11 @@
 import { createPinia } from 'pinia'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createApp, defineComponent, h, type Component } from 'vue'
+import { createApp, defineComponent, h } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import { translate } from '@/platform/translation'
 
-import CalendarExchangesView from './CalendarExchangesView.vue'
-import ContactsExchangesView from './ContactsExchangesView.vue'
-import MailExchangesView from './MailExchangesView.vue'
+import ExchangesView from './ExchangesView.vue'
 
 // Each pending list request, waiting for the test to answer it with no jobs.
 const answers = vi.hoisted((): (() => void)[] => [])
@@ -44,7 +42,7 @@ afterEach(() => {
   answers.length = 0
 })
 
-async function mount(view: Component) {
+async function mount(kind: 'mail' | 'contacts' | 'calendar') {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [{ path: '/', component: { render: () => null } }],
@@ -52,7 +50,7 @@ async function mount(view: Component) {
   await router.push('/')
   const element = document.createElement('div')
   document.body.append(element)
-  const app = createApp({ render: () => h(view) })
+  const app = createApp({ render: () => h(ExchangesView, { kind }) })
   app.config.globalProperties.__ = translate
   app.use(createPinia())
   app.use(router)
@@ -62,20 +60,21 @@ async function mount(view: Component) {
 }
 
 describe.each([
-  ['Mail', MailExchangesView],
-  ['Contacts', ContactsExchangesView],
-  ['Calendar', CalendarExchangesView],
-])('%s exchanges list', (_, view) => {
-  // The list itself (frappe-ui's experimental ListView, with its empty state) is not stubbed
-  // here, so the test follows the loading placeholder: shown while the request is out, gone
-  // once the answer lands and the list takes its place.
-  it('shows a loading placeholder until the list arrives', async () => {
-    const element = await mount(view)
+  ['mail', 'No mail exchanges found.'],
+  ['contacts', 'No contacts exchanges found.'],
+  ['calendar', 'No calendar exchanges found.'],
+] as const)('%s exchanges list', (kind, emptyText) => {
+  // Before the list arrives the page must not claim there are none: it is busy, with no
+  // empty message. Once an empty answer lands, it says so.
+  it('shows it is loading, not empty, until the list arrives', async () => {
+    const element = await mount(kind)
     await vi.waitFor(() => expect(answers).toHaveLength(1))
 
-    expect(element.querySelector('[role="status"]')?.getAttribute('aria-label')).toBe('Loading')
+    expect(element.querySelector('[aria-busy="true"]')).not.toBeNull()
+    expect(element.textContent).not.toContain(emptyText)
 
     answers[0]()
-    await vi.waitFor(() => expect(element.querySelector('[role="status"]')).toBeNull())
+    await vi.waitFor(() => expect(element.textContent).toContain(emptyText))
+    expect(element.querySelector('[aria-busy="true"]')).toBeNull()
   })
 })

@@ -26,11 +26,14 @@
           <template v-if="attachment.data?.file_url">
             <hr class="my-8" />
             <a
-              class="flex cursor-pointer items-center gap-2 text-base hover:underline"
+              class="flex cursor-pointer items-start gap-2 text-base hover:underline"
               :href="attachment.data.file_url"
               target="_blank"
             >
-              <Download class="h-4 w-4 shrink-0 text-ink-gray-4" />
+              <!-- One text line tall, so a name that wraps keeps the icon on its first line. -->
+              <span class="flex h-[1lh] shrink-0 items-center">
+                <Download class="size-4 text-ink-gray-4" />
+              </span>
               <span class="min-w-0 break-all">
                 {{
                   __('{0} ({1})', [
@@ -63,36 +66,12 @@ import CopyCode from '@/apps/mail/components/CopyCode.vue'
 import type { UserResource } from '@/apps/mail/types'
 import { formatBytes, getTheme, raiseError } from '@/apps/mail/utils'
 import { formatSystemDateTime } from '@/apps/mail/utils/datetime'
+import { EXCHANGE_KINDS, type ExchangeKind } from '@/apps/mail/utils/exchangeKinds'
 import { DashboardSkeletonText } from '@/platform/dashboard'
 
-const { id, kind } = defineProps<{ id: string; kind: 'mail' | 'contacts' | 'calendar' }>()
+const { id, kind } = defineProps<{ id: string; kind: ExchangeKind }>()
 
-// The titles stay whole sentences per kind so each translates on its own.
-const KINDS = {
-  mail: {
-    doctype: 'Mail Exchange',
-    listRoute: 'mail-exchanges',
-    deskPath: 'mail-exchange',
-    listLabel: () => __('Mail Exchanges'),
-    title: (operation: string) => __('Mail {0}', [__(operation)]),
-  },
-  contacts: {
-    doctype: 'Contacts Exchange',
-    listRoute: 'mail-contacts-exchanges',
-    deskPath: 'contacts-exchange',
-    listLabel: () => __('Contacts Exchanges'),
-    title: (operation: string) => __('Contacts {0}', [__(operation)]),
-  },
-  calendar: {
-    doctype: 'Calendar Exchange',
-    listRoute: 'mail-calendar-exchanges',
-    deskPath: 'calendar-exchange',
-    listLabel: () => __('Calendar Exchanges'),
-    title: (operation: string) => __('Calendar {0}', [__(operation)]),
-  },
-} as const
-
-const kindOf = computed(() => KINDS[kind])
+const kindOf = computed(() => EXCHANGE_KINDS[kind])
 
 const router = useRouter()
 const user = inject<UserResource>('$user')
