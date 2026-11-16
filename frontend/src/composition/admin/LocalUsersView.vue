@@ -86,14 +86,18 @@
         storage.data?.cloud
           ? {
               base: ['minmax(0,1fr)', '4.5rem', '2rem'],
-              sm: ['minmax(0,1fr)', '10rem', '10rem', '3rem'],
+              sm: ['minmax(0,1fr)', 'minmax(0,1.2fr)', '10rem', '10rem', '3rem'],
             }
-          : { base: ['minmax(0,1fr)', '4.5rem', '2rem'], sm: ['minmax(0,1fr)', '10rem', '3rem'] }
+          : {
+              base: ['minmax(0,1fr)', '4.5rem', '2rem'],
+              sm: ['minmax(0,1fr)', 'minmax(0,1.2fr)', '10rem', '3rem'],
+            }
       "
       :row-height="56"
     >
       <ListHeader>
         <ListHeaderCell>{{ __('User') }}</ListHeaderCell>
+        <ListHeaderCell class="max-sm:hidden">{{ __('Email') }}</ListHeaderCell>
         <ListHeaderCell>{{ __('Status') }}</ListHeaderCell>
         <ListHeaderCell v-if="storage.data?.cloud" class="max-sm:hidden">{{
           __('Storage')
@@ -108,8 +112,11 @@
             <Skeleton class="size-6 shrink-0 rounded-full" />
             <div class="ml-3 min-w-0 flex-1">
               <DashboardSkeletonText class="text-base" width="40%" />
-              <DashboardSkeletonText class="text-p-sm" width="55%" />
+              <DashboardSkeletonText class="text-p-sm sm:hidden" width="55%" />
             </div>
+          </ListCell>
+          <ListCell class="max-sm:hidden">
+            <DashboardSkeletonText class="flex-1 text-base" width="60%" />
           </ListCell>
           <ListCell><Skeleton class="h-5 w-14 rounded-4" /></ListCell>
           <ListCell v-if="storage.data?.cloud" class="max-sm:hidden">
@@ -136,10 +143,14 @@
                   />
                 </Tooltip>
               </div>
-              <p class="truncate text-p-sm text-ink-gray-5">
+              <!-- On a phone the address sits under the name; on desktop it has its own column. -->
+              <p class="truncate text-p-sm text-ink-gray-5 sm:hidden">
                 {{ user.account || user.email }}
               </p>
             </div>
+          </ListCell>
+          <ListCell class="max-sm:hidden">
+            <span class="truncate text-base text-ink-gray-6">{{ user.account || user.email }}</span>
           </ListCell>
           <ListCell>
             <div class="min-w-0">
