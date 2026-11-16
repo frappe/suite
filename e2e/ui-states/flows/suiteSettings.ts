@@ -7,7 +7,7 @@ import { perScene, type BaseScene } from "../scene";
 /** One tab of an app's group: its name in the sidebar, which of the same names it is, and text only its loaded body shows. */
 interface AppTab {
 	nav: string;
-	/** Mail and Calendar both have Import, Export and Advanced: Mail's come first. */
+	/** Mail and Calendar share some tab names (Identity, Advanced): Mail's come first. */
 	last?: boolean;
 	marker: string;
 	description: string;
@@ -31,11 +31,10 @@ const MAIL_TABS = {
 } as const satisfies Record<string, AppTab>;
 
 const CALENDAR_TABS = {
-	calendarCalendars: { nav: "Calendars", last: true, marker: "Default", description: "Calendar > Calendars: Maya's own calendar marked Default, with a menu, and New." },
-	calendarIdentity: { nav: "Participant Identity", last: true, marker: "Email Address", description: "Calendar > Participant Identity: the identity picker, name, email, the default checkbox and Delete." },
-	calendarImport: { nav: "Import", last: true, marker: "Upload File", description: "Calendar > Import: .ics into a chosen calendar, with Create Import off until a file is uploaded." },
-	calendarExport: { nav: "Export", last: true, marker: "Create Export", description: "Calendar > Export: format, archive type, Custom Selection and Create Export." },
-	calendarAdvanced: { nav: "Advanced", last: true, marker: "Calendar Client Configuration", description: "Calendar > Advanced: the CalDAV server URL, calendar URL and username, each with Copy." },
+	calendarCalendars: { nav: "Calendars", last: true, marker: "Default", description: "Calendar > Calendars: Maya's own calendar with its colour dot, marked Default, with a menu, and New in the section header." },
+	calendarIdentity: { nav: "Identity", last: true, marker: "shown to people you invite", description: "Calendar > Identity: each participant identity as a row (name, then email), the default one marked Default, and New. With none, \"No identities yet\" says what an identity is for." },
+	calendarTransfer: { nav: "Import & export", last: true, marker: "No imports in progress", description: "Calendar > Import & export, on Import: format, the calendar the events go into, Choose file, and Import off until a file is uploaded. The switch at the top shows Export instead." },
+	calendarAdvanced: { nav: "Advanced", last: true, marker: "CalDAV", description: "Calendar > Advanced: the CalDAV server URL, calendar URL and username, each with Copy, and a line that calendar apps sign in with the mail account password." },
 } as const satisfies Record<string, AppTab>;
 
 const APP_TABS = new Map<string, AppTab>(Object.entries({ ...MAIL_TABS, ...CALENDAR_TABS }));
@@ -145,7 +144,7 @@ const machine = setupFlow<Event>().createMachine({
 			},
 		},
 		profile: {
-			meta: { description: "Settings opens on Account > Profile for Maya, a Suite Admin: her photo, name and email, first and last name fields that save on blur, and Update password. The sidebar lists Account, Drive with External access, Mail and Calendar." },
+			meta: { description: "Settings opens on Account > Profile for Maya, a Suite Admin: her photo, name and email, then first and last name fields with Save, off until a name changes. The sidebar lists Account (Profile, Preferences, Security), Drive with External access, Mail and Calendar." },
 			on: {
 				...appTabTransitions(),
 				RENAME: "nameSaved",
@@ -163,28 +162,28 @@ const machine = setupFlow<Event>().createMachine({
 			},
 		},
 		profileLoading: {
-			meta: { description: "Profile before Maya's preferences arrive (request held from page load): the Profile title over an empty body, with no spinner." },
+			meta: { description: "Profile before Maya's preferences arrive (request held from page load): the Profile title and description over the settings spinner." },
 		},
 		profileFailed: {
-			meta: { description: "Maya's preferences failed to load: the same empty body as loading, with no message and no retry." },
+			meta: { description: "Maya's preferences failed to load: the spinner stays, with no message and no retry." },
 		},
 		memberProfile: {
 			meta: { description: "Leo, a member, opens Settings: the same list without Drive's External access, which only an admin sees while WebDAV is off." },
 		},
 		nameSaved: {
-			meta: { description: "A last name typed and the field left: \"Name saved\" in a toast, and the field keeps the new name (the save is answered in the browser, so Maya's name stays as seeded on the site)." },
+			meta: { description: "A last name typed and Save pressed: \"Name saved\" in a toast, Save turns off, and the field keeps the new name (the save is answered in the browser, so Maya's name stays as seeded on the site)." },
 		},
 		nameSaveFailed: {
-			meta: { description: "The name save failed: \"Could not save name\" in a toast, and the field keeps the typed name with no mark that it is unsaved." },
+			meta: { description: "The name save failed: \"Could not save name\" in a toast, and the field keeps the typed name with Save still on to try again." },
 		},
 		firstNameRequired: {
-			meta: { description: "First name emptied and left: \"First name is required\" in a toast, and the field fills back with the saved name." },
+			meta: { description: "First name emptied and Save pressed: the field is required, so the browser asks for it and nothing saves." },
 		},
 		avatarMenu: {
 			meta: { description: "Maya has a photo, so clicking it opens a menu: Change image and Remove image." },
 		},
 		passwordDialog: {
-			meta: { description: "Update password opens Change password: current, new and confirm fields, and Confirm off until the first two are filled and the last matches." },
+			meta: { description: "Account > Security, Change password: current, new and confirm fields, and Confirm off until the first two are filled and the last matches." },
 			on: { MISTYPE_CONFIRMATION: "passwordMismatch", WRONG_CURRENT_PASSWORD: "passwordRefused" },
 		},
 		passwordMismatch: {
@@ -206,7 +205,7 @@ const machine = setupFlow<Event>().createMachine({
 			},
 		},
 		preferences: {
-			meta: { description: "Account > Preferences: Appearance, Cursor, Language (unset, so \"Select language\") and Time zone." },
+			meta: { description: "Account > Preferences: Appearance, Cursor, Language (unset, so \"Select language\"), Time zone and Keyboard shortcuts, then a Notifications section with the device notifications switch." },
 			on: { CHANGE_TIME_ZONE: "timeZoneSaved", CHANGE_TIME_ZONE_FAILS: "preferencesSaveFailed" },
 		},
 		timeZoneSaved: {
@@ -358,7 +357,7 @@ async function answerMailSave(scene: BaseScene, url: RegExp, reads: RegExp = url
 async function typeName(scene: BaseScene, label: string, value: string): Promise<void> {
 	const field = dialog(scene.page).getByLabel(label, { exact: true });
 	await field.fill(value);
-	await field.blur();
+	await dialog(scene.page).getByRole("button", { name: "Save" }).click();
 }
 
 function accountSwitch(page: Page): Locator {
@@ -366,7 +365,8 @@ function accountSwitch(page: Page): Locator {
 }
 
 async function openPasswordDialog(page: Page): Promise<Locator> {
-	await dialog(page).getByRole("button", { name: "Update password" }).click();
+	await tab(page, "Security").click();
+	await dialog(page).getByRole("button", { name: "Change password" }).click();
 	const change = page.getByRole("dialog", { name: "Change password" });
 	await expect(change.getByLabel("Current password")).toBeVisible();
 	return change;

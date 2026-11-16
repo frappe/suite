@@ -78,7 +78,7 @@ test.describe("desktop", () => {
 
 		for (const body of [
 			"PreferencesSettings.vue",
-			"StatisticsSettings.vue",
+			"StorageSettings.vue",
 			"CredentialsSettings.vue",
 			"CalendarsSettings.vue",
 		]) {
@@ -87,7 +87,7 @@ test.describe("desktop", () => {
 
 		await settings.getByRole("tab", { name: "Storage" }).click();
 		await expect(settings.getByRole("tabpanel").getByRole("heading", { name: "Storage" })).toBeVisible();
-		expect(served.has("StatisticsSettings.vue")).toBe(true);
+		expect(served.has("StorageSettings.vue")).toBe(true);
 		expect(served.has("PreferencesSettings.vue")).toBe(false);
 	});
 

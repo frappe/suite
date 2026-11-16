@@ -1,151 +1,149 @@
+<!--
+  The Export side of Calendar > Import & export: the account's events as an
+  archive, emailed when ready. "Only some events" narrows the export by
+  calendar, title, date range and count.
+-->
 <template>
-  <AppSettingsHeader :title="__('Export')" />
-  <AppSettingsBody>
-    <div class="flex flex-col gap-5">
+  <SettingsSection>
+    <SettingsRow :title="__('Format')" :description="__('The kind of file the events go into')">
+      <Select
+        :model-value="calendarExport.format"
+        :options="FORMATS"
+        @update:model-value="selectFormat"
+      />
+    </SettingsRow>
+    <SettingsRow :title="__('Archive type')" :description="__('How the files are packed')">
+      <Select
+        :model-value="calendarExport.archive_type"
+        :options="ARCHIVE_TYPES"
+        @update:model-value="selectArchiveType"
+      />
+    </SettingsRow>
+    <SettingsRow
+      :title="__('Only some events')"
+      :description="__('Pick a calendar, a title or a date range')"
+    >
+      <Switch v-model="customSelection" />
+    </SettingsRow>
+    <div v-if="customSelection" class="grid gap-4 py-3.5 sm:grid-cols-2">
       <FormControl
-        v-model="calendarExport.format"
-        :label="__('Format')"
+        v-model="filter.inCalendar"
+        :label="__('Calendar')"
         type="select"
-        variant="outline"
-        :options="FORMAT_OPTIONS"
+        :options="calendarOptions"
       />
+      <FormControl v-model="filter.title" type="text" :label="__('Title contains')" />
+      <FormControl v-model="filter.after" type="date" :label="__('From')" />
+      <FormControl v-model="filter.before" type="date" :label="__('To')" />
+      <FormControl v-model="calendarExport.limit" :label="__('Most events')" type="number" />
       <FormControl
-        v-model="calendarExport.archive_type"
-        :label="__('Archive Type')"
+        v-if="calendarExport.limit && calendarExport.limit > 0"
+        v-model="calendarExport.sort"
+        :label="__('Start from')"
         type="select"
-        variant="outline"
-        :options="ARCHIVE_TYPE_OPTIONS"
-      />
-      <SettingsRow
-        class="!py-0"
-        :title="__('Custom Selection')"
-        :description="__('Apply filters to select specific events for export.')"
-      >
-        <Switch v-model="customSelection" />
-      </SettingsRow>
-      <template v-if="customSelection">
-        <FormControl
-          v-model="filter.inCalendar"
-          :label="__('Calendar')"
-          type="select"
-          variant="outline"
-          :options="calendarOptions"
-        />
-        <FormControl v-model="filter.title" type="text" variant="outline" :label="__('Title')" />
-        <FormControl
-          v-model="filter.after"
-          type="date"
-          variant="outline"
-          :label="__('From Date')"
-        />
-        <FormControl v-model="filter.before" type="date" variant="outline" :label="__('To Date')" />
-        <FormControl
-          v-model="calendarExport.limit"
-          :label="__('Max Number of Events')"
-          type="number"
-          variant="outline"
-          placeholder="1000"
-        />
-        <FormControl
-          v-if="calendarExport.limit && calendarExport.limit > 0"
-          v-model="calendarExport.sort"
-          :label="__('Start From')"
-          type="select"
-          variant="outline"
-          :options="sortOptions"
-        />
-      </template>
-
-      <Button
-        class="min-h-7"
-        :label="__('Create Export')"
-        :loading="Boolean(ongoingExport.data?.name) || createCalendarExport.isPending"
-        :disabled="
-          ongoingExport.isFetching || Boolean(ongoingExport.error) || createCalendarExport.isPending
-        "
-        @click="createCalendarExport.run(makeInput())"
-      />
-      <div class="!mt-3 space-x-1 text-base">
-        <span class="text-ink-gray-5">{{ exportSubtitle }}</span>
-        <a class="hover:underline" :href="exportHref" target="_blank">
-          {{ exportLinkText }}
-        </a>
-      </div>
-      <ErrorMessage
-        v-if="createCalendarExport.error"
-        :message="createCalendarExport.error?.message"
-        class="mb-2.5"
+        :options="SORTS"
       />
     </div>
-  </AppSettingsBody>
+    <ExchangeStatus
+      :status="status"
+      :href="statusHref"
+      :link-label="ongoing.data?.name ? __('Track status') : __('View history')"
+    >
+      <Button
+        variant="solid"
+        :label="__('Export')"
+        :loading="Boolean(ongoing.data?.name) || createExport.isPending"
+        :disabled="ongoing.isFetching || Boolean(ongoing.error) || createExport.isPending"
+        @click="startExport"
+      />
+    </ExchangeStatus>
+  </SettingsSection>
 </template>
 
 <script setup lang="ts">
-import { Button, ErrorMessage, FormControl, SettingsRow, Switch } from 'frappe-ui'
+import { Button, FormControl, Select, SettingsRow, Switch } from 'frappe-ui'
 import { computed, onScopeDispose, reactive, ref } from 'vue'
 
 import { api, useMutation, useQuery, type InputOf } from '@/api'
 import { useCalendarSocket } from '@/apps/calendar/socket'
 import { userStore } from '@/apps/calendar/stores/user'
 import { utcDayEnd, utcDayStart } from '@/apps/calendar/utils/datetime'
-import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
-import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import { SettingsSection } from '@/platform/settings-tab'
+import { translate as __ } from '@/platform/translation'
+
+import ExchangeStatus from './ExchangeStatus.vue'
+
+type ExportInput = InputOf<typeof api.mail.calendar.export>
+
+const FORMATS: { label: string; value: ExportInput['format'] }[] = [
+  { label: __('JMAP'), value: 'jmap' },
+  { label: __('iCalendar (.ics)'), value: 'ics' },
+]
+const ARCHIVE_TYPES: { label: string; value: ExportInput['archive_type'] }[] = [
+  { label: '.zip', value: '.zip' },
+  { label: '.tgz', value: '.tgz' },
+  { label: '.tar.gz', value: '.tar.gz' },
+]
+const SORTS: { label: string; value: ExportInput['sort'] }[] = [
+  { label: __('Oldest events'), value: 'Start (ASC)' },
+  { label: __('Newest events'), value: 'Start (DESC)' },
+]
 
 const store = userStore()
-const { accountId } = store
 const user = store.userResource
 const socket = useCalendarSocket()
-const calendarExport = reactive<Omit<InputOf<typeof api.mail.calendar.export>, 'account'>>({
+
+const calendarExport = reactive<Omit<ExportInput, 'account' | 'filter'>>({
   format: 'jmap',
   archive_type: '.zip',
   sort: 'Start (ASC)',
   limit: undefined,
 })
+
+function selectFormat(value?: string | number | null) {
+  const format = FORMATS.find((option) => option.value === value)?.value
+  if (format) calendarExport.format = format
+}
+
+function selectArchiveType(value?: string | number | null) {
+  const type = ARCHIVE_TYPES.find((option) => option.value === value)?.value
+  if (type) calendarExport.archive_type = type
+}
+
 const customSelection = ref(false)
-const filter = reactive({
-  inCalendar: '',
-  title: '',
-  after: '',
-  before: '',
-})
+const filter = reactive({ inCalendar: '', title: '', after: '', before: '' })
 const calendarOptions = computed(() => [
-  {
-    label: __(''),
-    value: ' ',
-  },
-  ...store.accountCalendarOptions(accountId),
+  { label: __('All calendars'), value: '' },
+  ...store.accountCalendarOptions(store.accountId).map(({ label, value }) => ({ label, value })),
 ])
-const sortOptions = computed(() => [
-  {
-    label: __('Oldest Events'),
-    value: 'Start (ASC)',
-  },
-  {
-    label: __('Newest Events'),
-    value: 'Start (DESC)',
-  },
-])
-const createCalendarExport = useMutation(api.mail.calendar.export)
-function makeInput(): InputOf<typeof api.mail.calendar.export> {
-  const cleanedFilter = Object.fromEntries(
+
+const createExport = useMutation(api.mail.calendar.export)
+
+function makeInput(): ExportInput {
+  if (!customSelection.value)
+    return { account: store.accountId, ...calendarExport, limit: undefined, filter: {} }
+  const cleaned = Object.fromEntries(
     Object.entries(filter)
-      .map(([k, v]) => [k, typeof v === 'string' ? v.trim() : v])
-      .filter(([, v]) => Boolean(v)),
+      .map(([key, value]) => [key, value.trim()])
+      .filter(([, value]) => Boolean(value)),
   )
   // The date pickers give local days; the API listens UTC, so send the day's bounds
   // in the user's zone or the first/last hours of the range get cut off.
-  if (typeof cleanedFilter.after === 'string' && cleanedFilter.after)
-    cleanedFilter.after = utcDayStart(cleanedFilter.after)
-  if (typeof cleanedFilter.before === 'string' && cleanedFilter.before)
-    cleanedFilter.before = utcDayEnd(cleanedFilter.before)
+  if (cleaned.after) cleaned.after = utcDayStart(cleaned.after)
+  if (cleaned.before) cleaned.before = utcDayEnd(cleaned.before)
   return {
     account: store.accountId,
     ...calendarExport,
     limit: calendarExport.limit || undefined,
-    filter: cleanedFilter,
+    filter: cleaned,
   }
 }
-const ongoingExport = useQuery(api.mail.calendar.ongoingExchange, () =>
+
+async function startExport() {
+  await createExport.run(makeInput())
+}
+
+const ongoing = useQuery(api.mail.calendar.ongoingExchange, () =>
   user.data && store.accountId
     ? {
         doctype: 'Calendar Exchange',
@@ -159,22 +157,19 @@ const ongoingExport = useQuery(api.mail.calendar.ongoingExchange, () =>
     : false,
 )
 const onExchangeCompleted = (payload: { action: 'Import' | 'Export' }) => {
-  if (payload.action === 'Export') ongoingExport.refetch().catch(() => {})
+  if (payload.action === 'Export') ongoing.refetch().catch(() => {})
 }
 socket.on('calendar_exchange_completed', onExchangeCompleted)
 onScopeDispose(() => socket.off('calendar_exchange_completed', onExchangeCompleted))
-const exportSubtitle = computed(() => {
-  if (ongoingExport.data?.name) return __("Export in progress. We'll email you when it's ready.")
-  return __('No exports in progress.')
-})
-const exportHref = computed(() => {
-  if (ongoingExport.data?.name) return `/mail/calendar-exchanges/${ongoingExport.data.name}`
-  return '/mail/calendar-exchanges?operation=Export'
-})
-const exportLinkText = computed(() => {
-  if (ongoingExport.data?.name) return __('Track status')
-  return __('View history')
-})
-const FORMAT_OPTIONS = ['jmap', 'ics']
-const ARCHIVE_TYPE_OPTIONS = ['.zip', '.tgz', '.tar.gz']
+
+const status = computed(() =>
+  ongoing.data?.name
+    ? __("Export in progress. We'll email you when it's ready.")
+    : __('No exports in progress.'),
+)
+const statusHref = computed(() =>
+  ongoing.data?.name
+    ? `/mail/calendar-exchanges/${ongoing.data.name}`
+    : '/mail/calendar-exchanges?operation=Export',
+)
 </script>

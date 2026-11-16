@@ -34,8 +34,6 @@ export function openSettings(tab?: SettingsTabId): void {
 /**
  * Provided as `true` by the phone settings page. A tab then drops the dialog
  * header and padding, because the page bar already shows the title.
- *
- * A string, not a symbol: Drive's own settings page still injects it by value.
  */
 export const SETTINGS_PHONE_PAGE = 'app-settings-mobile-page'
 

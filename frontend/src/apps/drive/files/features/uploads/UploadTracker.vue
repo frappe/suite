@@ -63,7 +63,7 @@
       :primary-action="{ label: __('Retry all'), onClick: () => queue.retryAll() }"
       :secondary-action="{
         label: __('Manage storage'),
-        onClick: () => openSettings('drive.statistics'),
+        onClick: () => openSettings('drive.storage'),
       }"
     />
     <ul class="min-h-0 flex-1 divide-y divide-outline-gray-1 overflow-y-auto">

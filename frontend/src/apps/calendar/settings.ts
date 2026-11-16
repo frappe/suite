@@ -6,8 +6,12 @@ import { translate as __ } from '@/platform/translation'
 
 type BodyModule = { default: Component }
 
-/** Wraps a Calendar tab body in the Calendar injections, loaded with the body. */
-function scoped(load: () => Promise<BodyModule>) {
+/**
+ * Wraps a Calendar tab body in the Calendar injections, loaded with the body.
+ * The scope shows the tab's header and the loading state until the account is
+ * in, so `title` is the tab's label.
+ */
+function scoped(title: () => string, load: () => Promise<BodyModule>) {
   return async (): Promise<Component> => {
     const [{ default: Body }, { default: Scope }] = await Promise.all([
       load(),
@@ -15,10 +19,15 @@ function scoped(load: () => Promise<BodyModule>) {
     ])
     return defineComponent({
       name: 'CalendarSettingsTab',
-      setup: () => () => h(Scope, null, { default: () => h(Body) }),
+      setup: () => () => h(Scope, { title: title() }, { default: () => h(Body) }),
     })
   }
 }
+
+const calendarsLabel = () => __('Calendars')
+const identityLabel = () => __('Identity')
+const transferLabel = () => __('Import & export')
+const advancedLabel = () => __('Advanced')
 
 const calendar = {
   label: () => __('Calendar'),
@@ -26,35 +35,39 @@ const calendar = {
   tabs: [
     {
       id: 'calendar.calendars',
-      label: () => __('Calendars'),
+      label: calendarsLabel,
       icon: 'lucide-calendar-days',
-      body: scoped(() => import('@/apps/calendar/components/Settings/CalendarsSettings.vue')),
-    },
-    {
-      id: 'calendar.participant-identity',
-      label: () => __('Participant Identity'),
-      icon: 'lucide-contact',
       body: scoped(
-        () => import('@/apps/calendar/components/Settings/ParticipantIdentitySettings.vue'),
+        calendarsLabel,
+        () => import('@/apps/calendar/components/Settings/CalendarsSettings.vue'),
       ),
     },
     {
-      id: 'calendar.import',
-      label: () => __('Import'),
-      icon: 'lucide-hard-drive-download',
-      body: scoped(() => import('@/apps/calendar/components/Settings/ImportSettings.vue')),
+      id: 'calendar.identity',
+      label: identityLabel,
+      icon: 'lucide-contact',
+      body: scoped(
+        identityLabel,
+        () => import('@/apps/calendar/components/Settings/IdentitySettings.vue'),
+      ),
     },
     {
-      id: 'calendar.export',
-      label: () => __('Export'),
-      icon: 'lucide-hard-drive-upload',
-      body: scoped(() => import('@/apps/calendar/components/Settings/ExportSettings.vue')),
+      id: 'calendar.transfer',
+      label: transferLabel,
+      icon: 'lucide-arrow-down-up',
+      body: scoped(
+        transferLabel,
+        () => import('@/apps/calendar/components/Settings/TransferSettings.vue'),
+      ),
     },
     {
       id: 'calendar.advanced',
-      label: () => __('Advanced'),
+      label: advancedLabel,
       icon: 'lucide-code',
-      body: scoped(() => import('@/apps/calendar/components/Settings/AdvancedSettings.vue')),
+      body: scoped(
+        advancedLabel,
+        () => import('@/apps/calendar/components/Settings/AdvancedSettings.vue'),
+      ),
     },
   ],
 } as const

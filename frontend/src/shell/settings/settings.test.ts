@@ -26,7 +26,7 @@ function group(label: string, tabs: [id: string, shown?: boolean][], shown = tru
 describe('settings groups', () => {
   const groups = visibleSettingsGroups([
     group('Account', [['account.profile'], ['account.preferences']]),
-    group('Drive', [['drive.statistics'], ['drive.external-access', false]]),
+    group('Drive', [['drive.storage'], ['drive.external-access', false]]),
     group('Mail', [['mail.credentials']], false),
     group('Chat', [['chat.layout', false]]),
     group('Workspace', [['workspace.general'], ['workspace.users']]),
@@ -35,7 +35,7 @@ describe('settings groups', () => {
   it('keeps heading order and drops hidden groups, hidden tabs, and groups left empty', () => {
     expect(groups.map((visible) => [visible.label, visible.tabs.map((tab) => tab.id)])).toEqual([
       ['Account', ['account.profile', 'account.preferences']],
-      ['Drive', ['drive.statistics']],
+      ['Drive', ['drive.storage']],
       ['Workspace', ['workspace.general', 'workspace.users']],
     ])
   })
@@ -51,7 +51,7 @@ describe('settings groups', () => {
     // Runs under the type check: each id below must stay a real tab id.
     const known = () => {
       openSettings('mail.screener')
-      openSettings('drive.statistics')
+      openSettings('drive.storage')
       openSettings('account.profile')
       // @ts-expect-error A misspelled tab id fails the type check.
       openSettings('mail.screner')
@@ -66,7 +66,7 @@ describe('loading the settings groups', () => {
     const account = async () => group('Account', [['account.profile']])
     const drive = async () => {
       if (!driveUp) throw new Error('chunk failed')
-      return group('Drive', [['drive.statistics']])
+      return group('Drive', [['drive.storage']])
     }
     let mailUp = false
     const mail = async () => {
