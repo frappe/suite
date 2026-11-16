@@ -390,6 +390,7 @@ class SyncChanges(unittest.TestCase):
     def test_a_state_the_server_cannot_answer_from_starts_the_account_over_from_now(self):
         # The server answers cannotCalculateChanges for that state on every ask, so treating it as
         # passing would leave the lists still for good and every account at the backoff.
+        user = mail_api.frappe.session.user
         server = _server()
         server.fail("Email/changes", "cannotCalculateChanges")
         server.respond("Email/get", {"accountId": ACCOUNT, "state": "s9", "list": [], "notFound": []})
@@ -401,7 +402,7 @@ class SyncChanges(unittest.TestCase):
             mock.patch.object(mail_message, "update_sync_state") as update_sync_state,
             mock.patch.object(mail_message, "get_jmap_client", return_value=_client(server)),
             mock.patch.object(mail_message, "get_data_store") as get_data_store,
-            mock.patch.object(mail_message, "get_account_users", return_value=[USER]),
+            mock.patch.object(mail_message, "get_account_users", return_value=[user]),
             mock.patch.object(mail_message.frappe, "publish_realtime") as publish_realtime,
         ):
             found = self._sync([ACCOUNT])
@@ -411,7 +412,7 @@ class SyncChanges(unittest.TestCase):
         # What changed in between is unknown: no cached message is trusted, and every list reads again.
         get_data_store.assert_called_once_with(ACCOUNT)
         get_data_store.return_value.delete_all.assert_called_once_with(mail_message.Entity.EMAIL)
-        self.assertEqual(publish_realtime.call_args_list, [mock.call("mail_changed", user=USER)])
+        self.assertEqual(publish_realtime.call_args_list, [mock.call("mail_changed", user=user)])
 
 
 class FetchChangesReactions(unittest.TestCase):
