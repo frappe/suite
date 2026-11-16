@@ -13,6 +13,7 @@ from jmap.auth import BasicAuth
 from jmap.core.retry import RetryPolicy
 from jmap.testing.fake import FakeJMAPServer
 
+from suite.mail.api import mail as mail_api
 from suite.mail.doctype.mail_message import mail_message
 from suite.mail.doctype.push_subscription.push_subscription import (
     freeze_jmap_push_notifications,
@@ -68,7 +69,8 @@ def _changes(**changes: list[str]) -> dict:
 
 
 class FetchChanges(unittest.TestCase):
-    """``fetch_changes`` — server failures are logged and leave the sync state untouched."""
+    """The push job, ``locked_fetch_changes`` — server failures are logged and leave the sync state
+    untouched."""
 
     def _run(self, server: FakeJMAPServer) -> tuple[mock.Mock, mock.Mock]:
         client = _client(server)
@@ -77,8 +79,9 @@ class FetchChanges(unittest.TestCase):
             mock.patch.object(mail_message, "update_sync_state") as update_sync_state,
             mock.patch.object(mail_message, "get_jmap_client", return_value=client),
             mock.patch.object(mail_message, "log_mail_error") as log_mail_error,
+            mock.patch.object(mail_message, "release_lock"),
         ):
-            mail_message.fetch_changes(USER, ACCOUNT, email_state="s2")
+            mail_message.locked_fetch_changes(USER, ACCOUNT, "s2", "lock-1")
 
         return update_sync_state, log_mail_error
 
@@ -99,6 +102,20 @@ class FetchChanges(unittest.TestCase):
 
         log_mail_error.assert_not_called()
         update_sync_state.assert_called_once_with(ACCOUNT, type="email", state="s2")
+
+    def test_a_direct_caller_hears_the_failure_and_the_state_holds(self):
+        server = _server()
+        server.fail("Email/changes", "forbidden")
+
+        with (
+            mock.patch.object(mail_message, "get_sync_state", return_value="s1"),
+            mock.patch.object(mail_message, "update_sync_state") as update_sync_state,
+            mock.patch.object(mail_message, "get_jmap_client", return_value=_client(server)),
+            self.assertRaises(MethodError),
+        ):
+            mail_message.fetch_changes(USER, ACCOUNT, email_state="s2")
+
+        update_sync_state.assert_not_called()
 
 
 class FetchChangesRealtime(unittest.TestCase):
@@ -289,55 +306,62 @@ class SyncAccountChanges(unittest.TestCase):
 
         release.assert_called_once_with(f"fetch_changes:{USER}:{ACCOUNT}", "lock-1")
 
-    def test_does_nothing_while_an_import_has_push_frozen(self):
-        freeze_jmap_push_notifications(USER)
-        self.addCleanup(unfreeze_jmap_push_notifications, USER)
+
+class SyncChanges(unittest.TestCase):
+    """``sync_changes`` — the client's ask, over every account the user holds."""
+
+    def _sync(self, accounts: list[str], sync_account_changes=mail_message.sync_account_changes) -> dict:
+        """`sync_changes` for a user holding `accounts`, each synced by `sync_account_changes`."""
 
         with (
-            mock.patch.object(mail_message, "acquire_lock", return_value="lock-1"),
-            mock.patch.object(mail_message, "release_lock"),
-            mock.patch.object(mail_message, "fetch_changes") as fetch_changes,
+            mock.patch.object(mail_api, "is_jmap_configured", return_value=True),
+            mock.patch.object(
+                mail_api, "get_user_jmap_accounts", return_value=[{"name": a} for a in accounts]
+            ),
+            mock.patch.object(mail_api, "sync_account_changes", sync_account_changes),
         ):
-            found = mail_message.sync_account_changes(USER, ACCOUNT)
+            return mail_api.sync_changes()
 
-        fetch_changes.assert_not_called()
-        self.assertEqual(found, {"new_mail_in": [], "changed": False})
+    def test_does_nothing_while_an_import_has_push_frozen(self):
+        user = mail_api.frappe.session.user
+        freeze_jmap_push_notifications(user)
+        self.addCleanup(unfreeze_jmap_push_notifications, user)
+        sync_account_changes = mock.Mock()
 
-    def _sync_against(self, server: FakeJMAPServer) -> tuple[Exception | None, mock.Mock]:
-        """Sync against `server`: what reached the caller, and the Error Log writer."""
+        found = self._sync([ACCOUNT], sync_account_changes=sync_account_changes)
 
-        client = _client(server)
+        sync_account_changes.assert_not_called()
+        self.assertEqual(found, {"new_mail_in": [], "changed": False, "failed": False})
+
+    def test_an_account_that_fails_leaves_the_others_to_sync(self):
+        def sync_account_changes(user: str, account: str) -> dict:
+            if account == "a1":
+                raise MailServerUnavailableError
+            return {"new_mail_in": [f"{account}-inbox"], "changed": account == "a3"}
+
+        found = self._sync(["a1", "a2", "a3"], sync_account_changes=sync_account_changes)
+
+        self.assertEqual(found, {"new_mail_in": ["a2-inbox", "a3-inbox"], "changed": True, "failed": True})
+
+    def test_a_state_the_server_cannot_answer_from_is_answered_as_failed_and_logs_nothing(self):
+        # The client asks every few seconds: an error out of the request would put an Error Log row
+        # on each ask while it lasts. It hears `failed` instead, and waits longer.
+        server = _server()
+        server.fail("Email/changes", "cannotCalculateChanges")
+
         with (
             mock.patch.object(mail_message, "acquire_lock", return_value="lock-1"),
             mock.patch.object(mail_message, "release_lock"),
             mock.patch.object(mail_message, "get_sync_state", return_value="s1"),
-            mock.patch.object(mail_message, "update_sync_state"),
-            mock.patch.object(mail_message, "get_jmap_client", return_value=client),
+            mock.patch.object(mail_message, "update_sync_state") as update_sync_state,
+            mock.patch.object(mail_message, "get_jmap_client", return_value=_client(server)),
             mock.patch.object(mail_message, "log_mail_error") as log_mail_error,
         ):
-            try:
-                mail_message.sync_account_changes(USER, ACCOUNT)
-            except Exception as failure:
-                return failure, log_mail_error
-        return None, log_mail_error
+            found = self._sync([ACCOUNT])
 
-    def test_a_state_the_server_cannot_answer_from_reaches_the_client_unlogged(self):
-        # The client waits longer after a failure, and logs nothing on each ask while it lasts.
-        server = _server()
-        server.fail("Email/changes", "cannotCalculateChanges")
-
-        failure, log_mail_error = self._sync_against(server)
-
-        self.assertIsInstance(failure, MethodError)
+        self.assertEqual(found, {"new_mail_in": [], "changed": False, "failed": True})
         log_mail_error.assert_not_called()
-
-    def test_an_unreachable_mail_server_reaches_the_client_as_unavailable(self):
-        server = _server()
-        server.quirks.scripted_failures.append(httpx.Response(503))
-
-        failure, _ = self._sync_against(server)
-
-        self.assertIsInstance(failure, MailServerUnavailableError)
+        update_sync_state.assert_not_called()
 
 
 class FetchChangesReactions(unittest.TestCase):
@@ -409,7 +433,7 @@ class FetchChangesReactions(unittest.TestCase):
 
 
 class FetchChangesInit(unittest.TestCase):
-    """``fetch_changes`` with no stored sync state — how the state gets seeded.
+    """The push job with no stored sync state — how the state gets seeded.
 
     A webhook carries the new state and initializes from it directly. A manual or
     scheduled run carries none; storing that None would leave the account
@@ -440,8 +464,9 @@ class FetchChangesInit(unittest.TestCase):
             mock.patch.object(mail_message, "update_sync_state") as update_sync_state,
             mock.patch.object(mail_message, "get_jmap_client", return_value=client),
             mock.patch.object(mail_message, "log_mail_error") as log_mail_error,
+            mock.patch.object(mail_message, "release_lock"),
         ):
-            mail_message.fetch_changes(USER, ACCOUNT, email_state=email_state)
+            mail_message.locked_fetch_changes(USER, ACCOUNT, email_state, "lock-1")
 
         gets = [
             call[1]

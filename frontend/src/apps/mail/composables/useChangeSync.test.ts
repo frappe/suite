@@ -7,11 +7,11 @@ import { useChangeSync } from '@/apps/mail/composables/useChangeSync'
 const server = vi.hoisted<{
   syncs: number
   failing: boolean
-  found: { new_mail_in: string[]; changed: boolean }
+  found: { new_mail_in: string[]; changed: boolean; failed: boolean }
 }>(() => ({
   syncs: 0,
   failing: false,
-  found: { new_mail_in: [], changed: false },
+  found: { new_mail_in: [], changed: false, failed: false },
 }))
 
 // The server's side: what a fetch of changes found, and how often it was asked.
@@ -55,7 +55,7 @@ beforeEach(() => {
   server.syncs = 0
   server.failing = false
   serverUnavailable = false
-  server.found = { new_mail_in: [], changed: false }
+  server.found = { new_mail_in: [], changed: false, failed: false }
   visibility = 'visible'
   vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility)
 })
@@ -112,7 +112,7 @@ describe('useChangeSync keeps the lists up with the mail server', () => {
   })
 
   it("hands what it found to the lists' own listeners while the socket is down", async () => {
-    server.found = { new_mail_in: ['inbox'], changed: true }
+    server.found = { new_mail_in: ['inbox'], changed: true, failed: false }
     const socket = start()
     socket.connected = false
     const newMail = vi.fn()
@@ -128,7 +128,7 @@ describe('useChangeSync keeps the lists up with the mail server', () => {
   })
 
   it('leaves it to the socket while the socket is up', async () => {
-    server.found = { new_mail_in: ['inbox'], changed: true }
+    server.found = { new_mail_in: ['inbox'], changed: true, failed: false }
     const socket = start()
     const newMail = vi.fn()
     socket.on('new_mail_created', newMail)
@@ -152,6 +152,20 @@ describe('useChangeSync keeps the lists up with the mail server', () => {
     expect(inFirstFiveMinutes).toBeLessThan(10)
     expect(server.syncs - inFirstFiveMinutes).toBeGreaterThan(0)
     expect(server.syncs - inFirstFiveMinutes).toBeLessThan(inFirstFiveMinutes)
+  })
+
+  it('asks less often while some account keeps failing, and hands on what the others found', async () => {
+    server.found = { new_mail_in: ['inbox'], changed: false, failed: true }
+    const socket = start()
+    socket.connected = false
+    const newMail = vi.fn()
+    socket.on('new_mail_created', newMail)
+
+    await vi.advanceTimersByTimeAsync(5 * 60_000)
+
+    expect(newMail).toHaveBeenCalledWith(['inbox'])
+    // Every 15 s would be 20 asks in five minutes.
+    expect(server.syncs).toBeLessThan(10)
   })
 
   it('goes back to every 15 seconds once the server answers again', async () => {

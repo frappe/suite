@@ -4,6 +4,7 @@ import os
 import re
 import zipfile
 from datetime import datetime
+from typing import TypedDict
 
 import frappe
 import pydenticon
@@ -36,7 +37,9 @@ from suite.mail.doctype.mail_message.mail_message import (
     get_messages,
     get_messages_mailboxes,
     is_unscreened_message,
+    merge_list_changes,
     move_messages_to_mailbox,
+    no_list_changes,
     query_message_ids,
     query_threads,
     remove_messages_from_mailbox,
@@ -56,6 +59,7 @@ from suite.mail.doctype.mailbox_settings.mailbox_settings import (
     automation_rules_to_settings,
     set_mailbox_settings,
 )
+from suite.mail.doctype.push_subscription.push_subscription import is_jmap_push_notifications_frozen
 from suite.mail.doctype.screened_email_address.screened_email_address import (
     get_global_accepted_values,
     get_global_screened_email_addresses,
@@ -666,27 +670,41 @@ def get_user_jmap_accounts() -> list[dict]:
     return accounts
 
 
+class SyncedChanges(ListChanges):
+    """What a sync found for the lists, and whether some account's changes could not be fetched."""
+
+    # The client waits longer before it asks again.
+    failed: bool
+
+
 @frappe.whitelist(methods=["POST"])
-def sync_changes() -> ListChanges:
+def sync_changes() -> SyncedChanges:
     """Catch the user's open lists up with their mail server now.
 
     What arrived or changed since the last look reaches every open list as a push's changes do,
     through the socket, and is returned for the one that asked. Mailbox ids are per account, so
     `new_mail_in` can name another account's folder; a list that reads one as its own only reads
-    again for nothing. A failure ends the round and reaches the client, which waits longer before it
-    asks again; an unreachable mail server answers 503, as on any other call.
+    again for nothing.
+
+    While an import has push frozen it does nothing, as a push does nothing then: the imported mail
+    would be announced, and notified, as new mail arriving.
+
+    An account that fails leaves the others to sync, and is answered as `failed` rather than as an
+    error: the client asks every few seconds, and an error would log each ask.
     """
 
-    found = ListChanges(new_mail_in=[], changed=False)
+    found, failed = no_list_changes(), False
     user = frappe.session.user
-    if not is_jmap_configured(user):
-        return found
+    if not is_jmap_configured(user) or is_jmap_push_notifications_frozen(user):
+        return SyncedChanges(**found, failed=failed)
 
     for account in get_user_jmap_accounts():
-        changes = sync_account_changes(user, account["name"])
-        found["new_mail_in"] = [*found["new_mail_in"], *changes["new_mail_in"]]
-        found["changed"] = found["changed"] or changes["changed"]
-    return found
+        try:
+            found = merge_list_changes(found, sync_account_changes(user, account["name"]))
+        except Exception:
+            # fetch_changes logs it as an event; an Error Log row on each ask would pile up.
+            failed = True
+    return SyncedChanges(**found, failed=failed)
 
 
 def mailbox_slug(mailbox: dict) -> str | None:

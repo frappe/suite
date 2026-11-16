@@ -2862,13 +2862,14 @@ export const operationSyncChanges: Validators<SyncChangesInput, SyncChangesOutpu
       value,
       {
         description:
-          'What a fetch of changes found for the lists: as announced over the socket, and returned.',
+          "What a sync found for the lists, and whether some account's changes could not be fetched.",
         properties: {
           new_mail_in: { items: { type: 'string' }, title: 'New Mail In', type: 'array' },
           changed: { title: 'Changed', type: 'boolean' },
+          failed: { title: 'Failed', type: 'boolean' },
         },
-        required: ['new_mail_in', 'changed'],
-        title: 'ListChanges',
+        required: ['new_mail_in', 'changed', 'failed'],
+        title: 'SyncedChanges',
         type: 'object',
       },
       'sync_changes output',

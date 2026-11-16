@@ -43,7 +43,8 @@ export function useChangeSync(socket: Socket, serverUnavailable: () => boolean) 
     void client
       .mutation(api.mail.changes.sync, undefined, { silent: true })
       .then((found) => {
-        failures = 0
+        // Some account could not be fetched; the others were, and are handed on below.
+        failures = found.failed ? failures + 1 : 0
         // The socket brings this tab the same as every other; without one, the answer does, to the
         // same listeners.
         if (socket.connected) return

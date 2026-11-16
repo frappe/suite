@@ -1741,7 +1741,7 @@ const operationScreenEmailAddresses: MutationRef<
 
 export type SyncChangesInput = Record<string, never>
 
-export type SyncChangesOutput = { new_mail_in: Array<string>; changed: boolean }
+export type SyncChangesOutput = { new_mail_in: Array<string>; changed: boolean; failed: boolean }
 
 export type SyncChangesError = 'PermissionError' | 'AuthenticationError'
 

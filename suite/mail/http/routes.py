@@ -91,6 +91,7 @@ from suite.mail.api.contacts import (
     get_contacts,
 )
 from suite.mail.api.mail import (
+    SyncedChanges,
     add_mails_to_mailbox,
     allow_screening_senders,
     block_senders,
@@ -170,7 +171,6 @@ from suite.mail.doctype.contact_card.contact_card import (
     contact_card_remove_from_address_book,
     delete_contact_cards,
 )
-from suite.mail.doctype.mail_message.mail_message import ListChanges
 from suite.mail.doctype.vacation_response.vacation_response import (
     get_vacation_response,
     update_vacation_response,
@@ -464,7 +464,7 @@ CONTRACT_ROUTES += (
         "sync_changes",
         kind="mutation",
         public_name="changes.sync",
-        output=ListChanges,
+        output=SyncedChanges,
         envelope="message",
         errors=(
             frappe.PermissionError,

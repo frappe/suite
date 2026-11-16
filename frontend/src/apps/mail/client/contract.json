@@ -5533,7 +5533,7 @@
       "query": null,
       "body": null,
       "output": {
-        "description": "What a fetch of changes found for the lists: as announced over the socket, and returned.",
+        "description": "What a sync found for the lists, and whether some account's changes could not be fetched.",
         "properties": {
           "new_mail_in": {
             "items": {
@@ -5545,13 +5545,18 @@
           "changed": {
             "title": "Changed",
             "type": "boolean"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "boolean"
           }
         },
         "required": [
           "new_mail_in",
-          "changed"
+          "changed",
+          "failed"
         ],
-        "title": "ListChanges",
+        "title": "SyncedChanges",
         "type": "object"
       },
       "errors": [
