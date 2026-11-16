@@ -343,6 +343,27 @@ describe('RecipientInput suggestions in the page', () => {
     expect(model.value.map((r) => r.email)).toEqual(['sasha@work.example'])
   })
 
+  it("adds the first suggestion on a phone keyboard's Done too, and shows it as the one Done will add", async () => {
+    isMobile.value = true
+    const { root, model, list } = mountWithSuggestions([sasha, samAtWork])
+    const input = await typeInto(root, 'sa')
+    expect(selected(list)).toEqual([true, false])
+
+    await press(input, 'Enter')
+    expect(model.value.map((r) => r.email)).toEqual(['sasha@work.example'])
+  })
+
+  it('adds an address typed out in full on a phone, rather than a suggestion', async () => {
+    isMobile.value = true
+    const { root, model } = mountWithSuggestions([
+      { email: 'sam@work.example.org', name: 'Sam Rao' },
+    ])
+    const input = await typeInto(root, 'sam@work.example')
+
+    await press(input, 'Enter')
+    expect(model.value.map((r) => r.email)).toEqual(['sam@work.example'])
+  })
+
   it('adds an address typed out in full on Enter, rather than a suggestion', async () => {
     const { root, model } = mountWithSuggestions([
       { email: 'sam@work.example.org', name: 'Sam Rao' },

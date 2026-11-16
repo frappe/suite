@@ -363,15 +363,15 @@ watch(searchText, () => {
 
 /**
  * The row Enter adds, and the one shown highlighted: where the arrows are; untouched, an address
- * typed out in full when it has a row; or, on a desktop and short of a full address, the first
- * suggestion, which is what Enter took from the floating list the inline one replaced there.
+ * typed out in full when it has a row; or, short of a full address, the first suggestion. A phone
+ * keyboard's Done is the same Enter, so it follows the same rule.
  */
 const enterIndex = computed(() => {
   if (activeSuggestion.value >= 0) return activeSuggestion.value
   const typed = searchText.value.trim().toLowerCase()
   if (isEmail(typed))
     return inlineSuggestions.value.findIndex((o) => o.email.toLowerCase() === typed)
-  return isMobile.value ? -1 : 0
+  return 0
 })
 // The list sits in the header's scroller, which can be shorter than it: the row the arrows land on
 // is scrolled to, so Enter never adds one that is out of sight.
