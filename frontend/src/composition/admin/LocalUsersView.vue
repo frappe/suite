@@ -28,16 +28,19 @@
       <Button class="ml-auto" variant="ghost" :label="__('Done')" @click="selectedUsers = []" />
     </div>
     <div v-else class="flex flex-wrap items-center justify-between gap-3">
-      <FormControl
-        v-model="search"
-        :placeholder="__('Search')"
-        :aria-label="__('Search users')"
-        class="w-full sm:w-80"
-      >
-        <template #prefix>
-          <span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" />
-        </template>
-      </FormControl>
+      <div class="flex w-full flex-wrap items-center gap-3 sm:w-auto">
+        <slot name="lead" />
+        <FormControl
+          v-model="search"
+          :placeholder="__('Search')"
+          :aria-label="__('Search users')"
+          class="w-full sm:w-80"
+        >
+          <template #prefix>
+            <span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" />
+          </template>
+        </FormControl>
+      </div>
       <div class="flex w-full flex-wrap items-center gap-3 sm:w-auto">
         <DashboardSkeletonText v-if="loading" class="flex-none text-sm" width="4rem" />
         <p v-else class="text-sm text-ink-gray-5">{{ __('{0} users', [filtered.length]) }}</p>
@@ -419,25 +422,28 @@
     >
       <template #default>
         <div class="space-y-4">
-          <p v-if="!transferResults" class="text-p-base text-ink-gray-7">
-            {{
-              __(
-                'Pick a folder in someone else’s Drive or in a shared Drive. Old versions and trashed items move too, and existing links and sharing keep working.',
-              )
-            }}
-          </p>
-          <FormControl
-            v-if="!transferResults"
-            v-model="destinationFolder"
-            :disabled="previewPending || transfer.isPending"
-            :label="__('Destination folder')"
-            :placeholder="__('Paste a folder link or paste its ID')"
-          />
+          <template v-if="!transferResults">
+            <Combobox
+              v-model="transferTarget"
+              :label="__('Transfer to')"
+              :options="transferTargetOptions"
+              :placeholder="__('Choose a person or a shared Drive')"
+              :disabled="previewPending || transfer.isPending"
+            />
+            <p class="-mt-2 text-p-sm text-ink-gray-5">
+              {{
+                __(
+                  'Everything goes into a new folder, “{0}”. Old versions and trashed items move too, and existing links and sharing keep working.',
+                  [transferFolderTitle],
+                )
+              }}
+            </p>
+          </template>
           <div v-if="!transferPreview && !transferResults" class="flex justify-end">
             <Button
               :label="__('Preview transfer')"
               :loading="previewPending"
-              :disabled="!destinationFolder.trim() || transfer.isPending"
+              :disabled="!transferTarget || transfer.isPending"
               @click="previewTransfer"
             />
           </div>
@@ -546,6 +552,7 @@ import {
   Avatar,
   Badge,
   Button,
+  Combobox,
   Dialog,
   dialog,
   ErrorMessage,
@@ -564,7 +571,6 @@ import { Dropdown, failureText } from '@/platform/feedback'
 import { LoadFailed } from '@/platform/load-failed'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
-import { TransportError } from '@/platform/transport'
 import InviteStep from '@/shell/InviteStep.vue'
 
 import { formatStorage } from './storageFormat'
@@ -588,6 +594,8 @@ const SKELETON_ROWS = Array.from({ length: 8 }, (_, index) => ({ name: `skeleton
 const storage = useQuery(api.suite.storage.get)
 // Every user change runs inside a dialog that shows its own error, so none of them also toasts.
 const change = useMutation(api.suite.users.update, { silent: true })
+// `lead` starts the filter row, e.g. the Users / Invitations switch.
+defineSlots<{ lead?: () => unknown }>()
 const search = ref('')
 const roleFilter = ref('all')
 const statusFilter = ref('all')
@@ -753,7 +761,34 @@ async function deleteAccount() {
 
 // — retained Drive transfer —
 const transferUser = ref('')
-const destinationFolder = ref('')
+/** A person's email, or `drive:` and a shared Drive's id. */
+const transferTarget = ref<string | null>(null)
+const sharedDrives = useQuery(api.suite.admin.sharedDrives.list, () =>
+  transferUser.value ? {} : false,
+)
+const transferTargetOptions = computed(() => [
+  {
+    group: __('People'),
+    options: (users.data ?? [])
+      .filter((user) => user.enabled && user.name !== transferUser.value)
+      .map((user) => ({ label: user.full_name, value: user.name, description: user.email })),
+  },
+  {
+    group: __('Shared Drives'),
+    options: (sharedDrives.data ?? []).map((drive) => ({
+      label: drive.title,
+      value: `drive:${drive.id}`,
+      icon: 'lucide-hard-drive',
+    })),
+  },
+])
+const transferFolderTitle = computed(() => __("{0}'s files", [personName(transferUser.value)]))
+function transferTo() {
+  const target = transferTarget.value ?? ''
+  return target.startsWith('drive:')
+    ? { to_user: null, to_drive: target.slice('drive:'.length) }
+    : { to_user: target, to_drive: null }
+}
 const confirmTransferAccess = ref(false)
 const transferPreview = ref<OutputOf<typeof api.suite.users.previewTransfer>>()
 const transferResults = ref<OutputOf<typeof api.suite.users.transferDrive>>()
@@ -768,13 +803,13 @@ const transferOpen = computed({
     if (!open) transferUser.value = ''
   },
 })
-watch(destinationFolder, () => {
+watch(transferTarget, () => {
   transferPreview.value = undefined
   confirmTransferAccess.value = false
 })
 function openTransfer(user: string) {
   transferUser.value = user
-  destinationFolder.value = ''
+  transferTarget.value = null
   confirmTransferAccess.value = false
   transferPreview.value = undefined
   transferResults.value = undefined
@@ -813,8 +848,8 @@ const destinationText = computed(() => {
   const preview = transferPreview.value
   if (!preview) return ''
   return preview.destination_user
-    ? __("{0}'s Drive", [personName(preview.destination_user)])
-    : __('A shared Drive')
+    ? __('“{0}” in {1}’s Drive', [preview.folder_title, preview.destination_title])
+    : __('“{0}” in {1}', [preview.folder_title, preview.destination_title])
 })
 const storageText = computed(() => {
   const capacity = transferPreview.value?.destination_capacity
@@ -855,9 +890,6 @@ function grantLabel(role: number) {
 }
 
 async function previewTransfer() {
-  const destination =
-    destinationFolder.value.trim().match(/\/drive\/f\/([^/?#]+)/)?.[1] ??
-    destinationFolder.value.trim()
   confirmTransferAccess.value = false
   transferPreview.value = undefined
   previewError.value = ''
@@ -865,15 +897,11 @@ async function previewTransfer() {
   try {
     transferPreview.value = await client.query(api.suite.users.previewTransfer, {
       user: transferUser.value,
-      destination,
+      ...transferTo(),
     })
   } catch (error) {
     previewError.value =
-      error instanceof TransportError && error.type === 'DriveNotFound'
-        ? __('No folder found at this link or ID.')
-        : error instanceof Error
-          ? error.message
-          : __('Unable to preview this transfer. Try again.')
+      error instanceof Error ? error.message : __('Unable to preview this transfer. Try again.')
   } finally {
     previewPending.value = false
   }
@@ -883,7 +911,7 @@ async function runTransfer() {
   if (!transferPreview.value) return
   transferResults.value = await transfer.run({
     user: transferUser.value,
-    destination: transferPreview.value.destination,
+    ...transferTo(),
     fingerprint: transferPreview.value.fingerprint,
     confirm_access: confirmTransferAccess.value,
   })

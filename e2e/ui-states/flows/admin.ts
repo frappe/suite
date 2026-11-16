@@ -1,5 +1,5 @@
 import { expect, type APIRequestContext, type Locator, type Page } from "@playwright/test";
-import { createFolder, uploadFile } from "../../drive-backed-apps/helpers/drive";
+import { uploadFile } from "../../drive-backed-apps/helpers/drive";
 import type { Credentials } from "../../shared/auth";
 import { frappeData } from "../../shared/frappe";
 import { DEMO_URL, demoUser, identityOf, openDemoScene, setSuiteCloudStandIn } from "../demo";
@@ -37,7 +37,6 @@ type Event =
 	| { type: "OPEN_DISABLED_MENU" }
 	| { type: "REACTIVATE" }
 	| { type: "TRANSFER" }
-	| { type: "PREVIEW_UNKNOWN" }
 	| { type: "PREVIEW" }
 	| { type: "TICK_ACCESS" }
 	| { type: "RUN_TRANSFER" }
@@ -193,11 +192,8 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "Reactivate Priya Shah? Access returns once the readiness checks pass." },
 		},
 		transferDialog: {
-			meta: { description: "Transfer retained Drive content: a field for a destination folder link or ID, Preview transfer, and Cancel. There is no folder picker." },
-			on: { PREVIEW_UNKNOWN: "transferPreviewFailed", PREVIEW: "transferPreview" },
-		},
-		transferPreviewFailed: {
-			meta: { description: "A destination that is not a folder: “No folder found at this link or ID.” shows under the field." },
+			meta: { description: "Transfer retained Drive content: a Transfer to dropdown of people and shared Drives, a note that everything goes into a new “Priya Shah's files” folder, Preview transfer, and Cancel." },
+			on: { PREVIEW: "transferPreview" },
 		},
 		transferPreview: {
 			meta: { description: "The preview, in plain words: what moves, where it goes, the storage there before and after, and who gets access. Transfer stays off until the box is ticked." },
@@ -310,7 +306,6 @@ interface Cast {
 
 const casts = perScene<Cast>("admin: cast");
 const memberPage = perScene<Page>("admin: member page");
-const transferFolder = perScene<string>("admin: transfer folder");
 
 /** The password the path's own users sign in with, to seed their Drives. */
 const CAST_PASSWORD = "Northwind-Cast-2026!";
@@ -559,10 +554,9 @@ export const admin = defineFlow<Event, BaseScene>({
 			await expect(scene.dialog("Disable Priya Shah?")).toBeVisible();
 		},
 		async CONFIRM_DISABLE(scene) {
-			// While Priya can still sign in, she leaves a file behind; Omar gets a folder to receive it.
-			const { priya, omar } = casts.get(scene);
+			// While Priya can still sign in, she leaves a file behind for Omar to receive.
+			const { priya } = casts.get(scene);
 			await uploadFile(await scene.as(priya), "Handover notes.md", Buffer.from("# Handover\n\nOpen accounts and who to call.\n"), priya.personal_root, "text/markdown");
-			transferFolder.set(scene, (await createFolder(await scene.as(omar), "From Priya", omar.personal_root)).name);
 			await scene.dialog("Disable Priya Shah?").getByRole("button", { name: "Disable user" }).click();
 			await expect(scene.page.getByRole("dialog")).toHaveCount(0);
 			await expect(userRow(scene.page, "Priya Shah").getByText("Disabled")).toBeVisible();
@@ -577,18 +571,12 @@ export const admin = defineFlow<Event, BaseScene>({
 		},
 		async TRANSFER(scene) {
 			await pick(scene, "Transfer Drive");
-			await expect(scene.dialog("Transfer retained Drive content").getByLabel("Destination folder")).toBeVisible();
-		},
-		async PREVIEW_UNKNOWN(scene) {
-			const dialog = scene.dialog("Transfer retained Drive content");
-			await dialog.getByLabel("Destination folder").fill("no-such-folder");
-			await dialog.getByRole("button", { name: "Preview transfer" }).click();
-			await expect(dialog.getByRole("button", { name: "Preview transfer" })).toBeEnabled();
-			await expect(dialog.locator(".text-ink-red-4, [role=alert], .text-ink-red-6, .text-ink-red-5").first()).toBeVisible({ timeout: 30_000 });
+			await expect(scene.dialog("Transfer retained Drive content").getByPlaceholder("Choose a person or a shared Drive")).toBeVisible();
 		},
 		async PREVIEW(scene) {
 			const dialog = scene.dialog("Transfer retained Drive content");
-			await dialog.getByLabel("Destination folder").fill(`${scene.baseURL}/drive/f/${transferFolder.get(scene)}`);
+			await dialog.getByPlaceholder("Choose a person or a shared Drive").click();
+			await scene.page.getByRole("option", { name: /Omar Haddad/ }).click();
 			await dialog.getByRole("button", { name: "Preview transfer" }).click();
 			await expect(dialog.getByLabel("I understand these people will get access to the moved items")).toBeVisible();
 		},
