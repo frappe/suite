@@ -2687,7 +2687,19 @@ def attach_drive_files(nodes: JSONList[str]) -> list[AttachedFile]:
 
     picked, total = [], 0
     for node in nodes:
-        stream, mime = drive.read_file(node)
+        try:
+            stream, mime = drive.read_file(node)
+        except drive.DriveError as error:
+            # Raised as it is, the refusal reaches the client as its type alone, so it is thrown
+            # again with words. They name no file: the title of one the user can't read isn't
+            # theirs to learn.
+            gone = isinstance(error, drive.DriveNotFound | drive.DriveForbidden)
+            frappe.throw(
+                _("A file you picked is no longer in Drive, or no longer shared with you.")
+                if gone
+                else _("A file you picked could not be read from Drive. Try again."),
+                type(error),
+            )
         # After the read: `node_title` checks no role, and the read has just checked READ.
         filename = _drive_attachment_name(drive.node_title(node), mime)
         with closing(stream):

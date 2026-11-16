@@ -117,10 +117,15 @@ class TestAttachDriveFiles(IntegrationTestCase):
         own = _unique("Notes.txt")
         mine = self._in_drive(own, b"Notes")
 
+        frappe.clear_messages()
         with self.assertRaises(drive.DriveError):
             mail.attach_drive_files([mine, theirs])
 
         self.assertFalse(frappe.db.exists("File", {"file_name": ["in", [own, others]]}))
+        # The refusal reaches the composer in words, and they don't give away the file's title.
+        said = " ".join(message["message"] for message in frappe.get_message_log())
+        self.assertIn("no longer shared with you", said)
+        self.assertNotIn(others, said)
 
     def test_an_existing_site_gets_a_limit_on_attaching_from_drive(self):
         method_path = "suite.mail.api.mail.attach_drive_files"
