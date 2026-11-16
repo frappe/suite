@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   activeDatePreset,
+  canWidenToAllAccounts,
   datePresetStart,
   hasSearchConditions,
   searchQueryFrom,
@@ -47,6 +48,12 @@ describe('editing a search', () => {
       all_accounts: '1',
     })
     expect(withAllAccounts({ text: 'a', all_accounts: '1' }, false)).toEqual({ text: 'a' })
+  })
+
+  it('offers widening only while the widened search still asks something', () => {
+    expect(canWidenToAllAccounts({ inMailbox: 'archive' })).toBe(false)
+    expect(canWidenToAllAccounts({ inMailbox: 'archive', text: 'budget' })).toBe(true)
+    expect(canWidenToAllAccounts({ from: 'ana@x.test' })).toBe(true)
   })
 
   it('a scope alone is not a search', () => {

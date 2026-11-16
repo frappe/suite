@@ -52,6 +52,10 @@ export function withAllAccounts(query: SearchQuery, allAccounts: boolean): Searc
   return next
 }
 
+/** Whether widening still leaves something to search: a search of only a folder has nothing left. */
+export const canWidenToAllAccounts = (query: SearchQuery) =>
+  hasSearchConditions(withAllAccounts(query, true))
+
 /**
  * The query after the words on the query line were edited. Operators typed there become filters,
  * replacing the same filter already set; anything not typed again is left alone, since the words

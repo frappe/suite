@@ -521,6 +521,7 @@ import { commonMailboxIds } from '@/apps/mail/utils/mailboxTargets'
 import { threadMailIds, threadStarIds } from '@/apps/mail/utils/mailCopies'
 import { archivable, holdsReceivedMail, unarchivable } from '@/apps/mail/utils/receivedMail'
 import {
+  canWidenToAllAccounts,
   searchQueryFrom,
   searchWords,
   shownSearchResults,
@@ -962,7 +963,10 @@ const searchHasFilters = computed(() =>
   Object.keys(searchQuery.value).some((key) => !['text', 'all_accounts'].includes(key)),
 )
 const searchCanWiden = computed(
-  () => !isAllAccountsSearch.value && (store.userResource.data?.accounts?.length ?? 0) > 1,
+  () =>
+    !isAllAccountsSearch.value &&
+    (store.userResource.data?.accounts?.length ?? 0) > 1 &&
+    canWidenToAllAccounts(searchQuery.value),
 )
 // Each page asks every account again, so an account missed by any page loaded has mail missing
 // from the list.
