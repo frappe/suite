@@ -63,8 +63,15 @@ const {
   slideIndex,
   slides: editorSlides,
 } = await import('@/apps/slides/stores/slide')
-const { inReadonlyMode, loadTemplates, presentationId, presentationTheme, templateList, viewOnly } =
-  await import('@/apps/slides/stores/presentation')
+const {
+  inReadonlyMode,
+  loadTemplates,
+  presentationDoc,
+  presentationId,
+  presentationTheme,
+  templateList,
+  viewOnly,
+} = await import('@/apps/slides/stores/presentation')
 const { drawnSlides } = await import('@/apps/slides/collab/drawnDeck')
 const { askLivePush, undoLive } = await import('@/apps/slides/stores/liveDeck')
 const { offlineCopyStatus } = await import('@/apps/slides/stores/offlineCopy')
@@ -3792,11 +3799,13 @@ describe('a presentation left while a request is out', () => {
 
       return readB(url, init)
     })
+    const { theme, modified } = presentationDoc.value
     write.resolve()
     await new Promise((resolve) => setTimeout(resolve, 50))
 
     expect(presentationId.value).toBe(mounted.docname)
     expect(shownBackgrounds()).toEqual(['#000000ff'])
+    expect(presentationDoc.value).toMatchObject({ theme, modified })
   })
   it('keeps the next presentation when a layout slide of the left one is measured', async () => {
     mounted = await openedSurface()
