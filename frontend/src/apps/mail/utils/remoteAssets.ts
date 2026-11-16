@@ -3,97 +3,24 @@
 // images, fonts, imported stylesheets). Kept out of the utils barrel so it can be tested without
 // pulling in its Vue-component and frappe-ui imports.
 
-// An externally-hosted reference (http/https or protocol-relative //), or anything the URL parser
-// resolves to another host, since it forgives spellings a pattern misses (`https:\\host`, a tab in
-// the scheme). cid: (inline attachments) and data: URIs are part of the message, so they're never
-// remote.
+// An externally-hosted reference (http/https or protocol-relative //). cid: (inline attachments) and
+// data: URIs are part of the message, so they're never remote.
 const REMOTE_URL = /^\s*(?:https?:)?\/\//i
+const REMOTE_CSS_URL = /url\(\s*['"]?(?:https?:)?\/\//i
+// A stylesheet imported by a bare string (`@import "https://…"`) rather than a url(). The string
+// runs to its closing quote, or to a newline or the end of the stylesheet if it has none.
+const REMOTE_CSS_IMPORT =
+  /(@import\s*)(["'])\s*(?:https?:)?\/\/(?:(?!\2)[^\\\n\r\f]|\\[\s\S])*(?:\2|(?=[\n\r\f])|$)/gi
 
-const isRemote = (url: string) => {
-  if (REMOTE_URL.test(url)) return true
-  try {
-    const { protocol, origin } = new URL(url, window.location.href)
-    return (protocol === 'http:' || protocol === 'https:') && origin !== window.location.origin
-  } catch {
-    return false
-  }
-}
-
-// CSS may spell any character as an escape: `u\72l(` is `url(`, `\68ttps:` is `https:`.
-const CSS_ESCAPE = /\\(?:([\da-f]{1,6})(?:\r\n|[ \t\r\n\f])?|(\r\n|[\n\r\f])|([\s\S]))/gi
-
-const unescapeCss = (text: string) =>
-  text.replace(CSS_ESCAPE, (_, hex?: string, newline?: string, char?: string) => {
-    if (newline !== undefined) return ''
-    if (hex === undefined) return char ?? ''
-    const code = parseInt(hex, 16)
-    const invalid = code === 0 || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)
-    return invalid ? '�' : String.fromCodePoint(code)
-  })
-
-// A letter of a CSS name, as written or escaped (`r`, `\72`, `\000052 `, `\r`).
-const cssLetter = (letter: string) => {
-  const codes = [letter.toLowerCase(), letter.toUpperCase()].map((c) =>
-    c.charCodeAt(0).toString(16),
-  )
-  return String.raw`(?:${letter}|\\(?:0{0,4}(?:${codes.join('|')})(?:\r\n|[ \t\r\n\f]|(?![\da-f]))|${letter}))`
-}
-
-// A backslash and the character after it, where CR LF counts as one: the browser reads it as a
-// single newline, so a backslash before it continues a string rather than leaving the LF to end it.
-const CSS_ESCAPED = String.raw`\\(?:\r\n|\r(?!\n)|[^\r])`
-// A comment that ends at its first `*/`, spelled so it can't also match a run of comments as one.
-const CSS_COMMENT = String.raw`/\*[^*]*\*+(?:[^*/][^*]*\*+)*/`
-
-// The scan must end every string, url and name where the browser's tokenizer does (CSS Syntax 3,
-// "Consume a token"), or a quote or `/*` it reads as opening something can hide a url() after it.
-
-// Whitespace as CSS has it. Unlike `\s` it takes no no-break space, so a url( that starts with one
-// and a quote is an unquoted url.
-const CSS_WHITESPACE = String.raw`[ \t\n\r\f]`
-// A string runs to its closing quote or the end of the stylesheet. One broken by a newline ends
-// just before it, and the browser reads on from the newline.
-const CSS_STRING = String.raw`"(?:[^"\\\n\r\f]|${CSS_ESCAPED})*(?:"|$|(?=[\n\r\f]))|'(?:[^'\\\n\r\f]|${CSS_ESCAPED})*(?:'|$|(?=[\n\r\f]))`
-// An unquoted url runs to the next unescaped `)`. A space, quote, `(` or comment inside makes it a
-// bad url to the browser, which still runs to that `)` ("Consume the remnants of a bad url").
-const CSS_UNQUOTED_URL = String.raw`(?:[^)\\]|${CSS_ESCAPED})*`
-// A run of name characters, with the `#` or `@` that starts a hash or at-keyword. The browser reads
-// `xurl(`, `#url(`, `\78 url(` or `\Aurl(` as one name and a `(`, never as a url, so a `url(` only
-// counts where a name starts. A backslash before a newline is no escape and ends the name.
-const CSS_NAME = String.raw`[#@]?(?:[\w\-\0\u0080-\uffff]|\\[\da-f]{1,6}(?:\r\n|[ \t\r\n\f])?|\\[^\r\n\f\da-f])+`
-
-// An attribute selector (`a[href^="https://"]`), whose string is a value to compare against, never
-// fetched. It holds no brace, paren or semicolon outside its strings, so it can't run on into a rule.
-// Its comments are taken whole, so a quote inside one can't open a string that runs past the `]`.
-const CSS_ATTRIBUTE_SELECTOR = String.raw`\[(?:${CSS_COMMENT}|/(?!\*)|[^\][{}();"'\\/]|${CSS_ESCAPED}|${CSS_STRING})*\]`
-
-// Read left to right as the browser tokenizes, so a quote inside a comment or an escaped one can't
-// hide what follows it: comments, escapes, names and attribute selectors pass through untouched, and
-// every other url(…) and string (`@import "…"`, `image-set("…")`) is judged by what it decodes to.
-const CSS_REFERENCE = new RegExp(
-  String.raw`/\*[\s\S]*?(?:\*/|$)` +
-    String.raw`|${[...'url'].map(cssLetter).join('')}\(${CSS_WHITESPACE}*(${CSS_STRING}|${CSS_UNQUOTED_URL})` +
-    `|${CSS_ATTRIBUTE_SELECTOR}` +
-    `|(${CSS_STRING})` +
-    `|${CSS_NAME}` +
-    `|${CSS_ESCAPED}`,
-  'gi',
-)
-
-const unquote = (text: string) => text.replace(/^(["'])([\s\S]*?)\1?$/, '$2')
-
-// Blank remote references in a CSS string: a url(…) keeps its name and loses its address, a string
-// is emptied. Regex here is unavoidable — there's no DOM API to rewrite a url() inside a style string
-// without pulling in the full CSSOM — and it only ever cuts the text, never writes a decoded
-// character back, so nothing it decodes can close the <style> it sits in.
+// Blank remote url(...) and imported stylesheets in a CSS string. Regex here is unavoidable — there's
+// no DOM API to rewrite a url() inside a style string without pulling in the full CSSOM.
 const blankRemoteCssUrls = (css: string) =>
-  css.replace(CSS_REFERENCE, (token: string, url?: string, string?: string) => {
-    const reference = url ?? string
-    if (reference === undefined || !isRemote(unescapeCss(unquote(reference)))) return token
-    return url === undefined ? '""' : token.slice(0, token.length - url.length)
-  })
+  css
+    .replace(/url\(\s*(['"]?)(?:https?:)?\/\/[^'")]*\1\s*\)/gi, 'url()')
+    .replace(REMOTE_CSS_IMPORT, '$1""')
 
-const hasRemoteCss = (css: string) => blankRemoteCssUrls(css) !== css
+const hasRemoteCss = (css: string) =>
+  REMOTE_CSS_URL.test(css) || css.replace(REMOTE_CSS_IMPORT, '') !== css
 
 // Inspect the HTML for externally-hosted assets via the DOM (one parse): counts remote <img>, and flags
 // whether any remote asset is present at all — a remote <img>, or a remote reference in an inline style
@@ -104,7 +31,7 @@ export const analyzeRemoteAssets = (html?: string) => {
   const doc = new DOMParser().parseFromString(html, 'text/html')
 
   const images = Array.from(doc.querySelectorAll('img')).filter((img) =>
-    isRemote(img.getAttribute('src') || ''),
+    REMOTE_URL.test(img.getAttribute('src') || ''),
   ).length
 
   const hasRemoteStyle =
@@ -124,7 +51,7 @@ export const blockRemoteAssets = (html: string) => {
 
   doc.querySelectorAll('img').forEach((img) => {
     const src = img.getAttribute('src') || ''
-    if (!isRemote(src)) return
+    if (!REMOTE_URL.test(src)) return
     img.setAttribute('data-blocked-src', src)
     img.removeAttribute('src')
     img.setAttribute('data-blocked-image', '')

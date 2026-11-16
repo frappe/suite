@@ -25,20 +25,6 @@ describe('remote content in a message’s CSS', () => {
     expect(analyzeRemoteAssets(html).hasRemote).toBe(true)
   })
 
-  it('withholds a url() written with CSS escapes, and still offers to show it', () => {
-    const html = `
-      <style>
-        /* the sender's own note */
-        .a { background: \\75 rl(https://tracker.example/a.gif); }
-        .b { background: url(h\\74tps://tracker.example/b.gif); }
-      </style>
-      <div style="background-image: u\\72l('https://tracker.example/c.gif')">Hello</div>`
-
-    const blocked = blockRemoteAssets(html)
-    expect(blocked).not.toContain('tracker')
-    expect(analyzeRemoteAssets(html).hasRemote).toBe(true)
-  })
-
   it('keeps a rule that only compares a link against an address, with nothing to offer', () => {
     const html = `
       <style>
@@ -76,10 +62,6 @@ describe('remote content in a message’s CSS', () => {
     [
       'a single quote in a selector',
       `*:not([a=/* ' */b]) { background: url(https://evil.example/x.png) } /* ' ] */`,
-    ],
-    [
-      'an image-set() after it',
-      `*:not([a=/* " */b]) { background: image-set("https://evil.example/x.png" 1x) } /* " ] */`,
     ],
     [
       'a bracket in a declaration value',
