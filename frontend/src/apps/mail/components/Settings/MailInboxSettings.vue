@@ -6,8 +6,14 @@
       <div class="divide-y divide-outline-gray-1">
         <ScreenedEmailAddressSettings />
         <InboxCategorySettings />
+        <SettingsDialogRow
+          :title="__('Folders')"
+          :description="__('Your own folders for filing mail.')"
+          :action="__('Manage')"
+        >
+          <FolderSettings />
+        </SettingsDialogRow>
       </div>
-      <FolderSettings />
       <AutomationSettings />
     </div>
   </AppSettingsBody>
@@ -20,5 +26,6 @@ import InboxCategorySettings from '@/apps/mail/components/Settings/InboxCategory
 import ScreenedEmailAddressSettings from '@/apps/mail/components/Settings/ScreenedEmailAddressSettings.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import SettingsDialogRow from '@/platform/settings/SettingsDialogRow.vue'
 import { translate as __ } from '@/platform/translation'
 </script>
