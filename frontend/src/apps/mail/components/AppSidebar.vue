@@ -79,7 +79,7 @@
                 <Button
                   variant="ghost"
                   class="touch-target !bg-transparent"
-                  :aria-label="__('{0} options', [item.label ?? ''])"
+                  :aria-label="__('{0} options', [item.label])"
                   @click.stop
                 >
                   <template #icon>
@@ -200,7 +200,7 @@ const moreToggle = (holds: string[]) => {
   }
 }
 interface SidebarItem {
-  label?: string
+  label: string
   mailboxId?: string
   moreToggle?: boolean
   icon?: string | Component | VNode
@@ -286,7 +286,7 @@ watch(threadDrag.isDragging, (dragging) => {
   springOpened.value = false
 })
 
-const onFolderDragOver = (e: DragEvent, item: { mailboxId?: string }) => {
+const onFolderDragOver = (e: DragEvent, item: SidebarItem) => {
   if (isMoreToggle(item)) {
     if (!threadDrag.isDragging.value || moreOpen.value || springTimer) return
     springTimer = setTimeout(() => {
@@ -303,7 +303,7 @@ const onFolderDragOver = (e: DragEvent, item: { mailboxId?: string }) => {
   threadDrag.overMailbox.value = item.mailboxId!
 }
 
-const onFolderDragLeave = (item: { mailboxId?: string }) => {
+const onFolderDragLeave = (item: SidebarItem) => {
   if (isMoreToggle(item)) cancelSpring()
   if (threadDrag.overMailbox.value === item.mailboxId) threadDrag.overMailbox.value = ''
 }

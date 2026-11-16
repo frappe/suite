@@ -204,7 +204,7 @@
                 @clear="clearAllReturned"
               >
                 <!-- Mobile: group select ("all of Today") appears only in selection mode. -->
-                <template #lead>
+                <template #lead="{ label }">
                   <div
                     v-if="!isAllAccountsSearch && (!isMobile || mobileSelectionMode)"
                     class="checkbox-hitbox -mx-3 -my-2.5 flex cursor-pointer items-center py-2.5 pl-3 pr-8"
@@ -214,7 +214,7 @@
                       :model-value="isGroupSelected(key)"
                       size="md"
                       class="pointer-events-none [&_input]:mt-0"
-                      :aria-label="__('Select all of {0}', [dateGroupLabel(key)])"
+                      :aria-label="__('Select all of {0}', [label])"
                     />
                   </div>
                 </template>
@@ -448,7 +448,6 @@ import {
   useSwipeNav,
   useUndo,
 } from '@/apps/mail/utils/composables'
-import { dateGroupLabel } from '@/apps/mail/utils/dateGroups'
 import { utcDayEnd, utcDayStart } from '@/apps/mail/utils/datetime'
 import { useListFilter } from '@/apps/mail/utils/listFilter'
 import {
