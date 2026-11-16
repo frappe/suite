@@ -1,16 +1,12 @@
 <template>
-  <SettingsSection :title="__('Invite addresses')">
-    <template #actions>
-      <Button
-        v-if="form"
-        :label="__('Save')"
-        variant="solid"
-        :disabled="!changed"
-        :loading="updateIdentity.isPending"
-        @click="save()"
-      />
-      <Button icon-left="lucide-plus" :label="__('New')" variant="outline" @click="showAddDialog" />
-    </template>
+  <div class="flex flex-col gap-5">
+    <Button
+      class="self-end"
+      icon-left="lucide-plus"
+      :label="__('New')"
+      variant="outline"
+      @click="showAddDialog"
+    />
     <template v-if="participantIdentities?.data?.length">
       <div class="flex min-h-full flex-col">
         <div class="flex-1 space-y-4">
@@ -68,6 +64,15 @@
         }}
       </p>
     </div>
+    <Button
+      v-if="form"
+      class="self-end"
+      :label="__('Save')"
+      variant="solid"
+      :disabled="isSaveBlocked"
+      :loading="updateIdentity.isPending"
+      @click="save()"
+    />
 
     <Dialog
       v-model:open="showAddDialogState"
@@ -123,7 +128,7 @@
         ],
       }"
     />
-  </SettingsSection>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -133,8 +138,9 @@ import { computed, ref, watch } from 'vue'
 import { api, useMutation, type InputOf } from '@/api'
 import { userStore } from '@/apps/calendar/stores/user'
 import { raiseToast } from '@/apps/calendar/utils'
-import SettingsSection from '@/platform/settings/SettingsSection.vue'
 import { translate as __ } from '@/platform/translation'
+
+const emit = defineEmits<{ saved: [] }>()
 
 const store = userStore()
 const { participantIdentities } = store
@@ -169,11 +175,13 @@ const changed = computed(() => {
       Boolean(original.default) !== draft.default),
   )
 })
+const isSaveBlocked = computed(() => !changed.value)
 const updateIdentity = useMutation(api.mail.participantIdentities.update)
 async function save() {
   if (!form.value) return
   await updateIdentity.run({ ...form.value })
   raiseToast(__('Participant identity updated'))
+  emit('saved')
 }
 const addIdentity = useMutation(api.mail.participantIdentities.create)
 const deleteIdentity = useMutation(api.mail.participantIdentities.delete)

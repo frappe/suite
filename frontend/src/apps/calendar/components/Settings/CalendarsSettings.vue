@@ -45,7 +45,17 @@
           </div>
         </div>
       </SettingsSection>
-      <ParticipantIdentitySettings />
+      <div class="divide-y divide-outline-gray-1">
+        <SettingsDialogRow
+          :title="__('Invite addresses')"
+          :description="__('The addresses you organize and attend events as.')"
+          :action="__('Manage')"
+        >
+          <template #default="{ close }">
+            <ParticipantIdentitySettings @saved="close" />
+          </template>
+        </SettingsDialogRow>
+      </div>
     </div>
 
     <CalendarModal v-model="showEdit" :calendar="selected" />
@@ -68,6 +78,7 @@ import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import { useScreenSize } from '@/composables/useScreenSize'
+import SettingsDialogRow from '@/platform/settings/SettingsDialogRow.vue'
 import SettingsSection from '@/platform/settings/SettingsSection.vue'
 
 const { calendars } = userStore()
