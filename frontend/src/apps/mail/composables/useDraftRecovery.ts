@@ -79,13 +79,7 @@ const listUnclaimedCopies = async (user: string) => {
   return copies.filter((copy) => !held.has(copy.key))
 }
 
-/** The copy left behind of a draft opened by id, under any id it has had. */
-export const findUnclaimedCopy = async (user: string, account: string, id: string) =>
-  (await listUnclaimedCopies(user)).find(
-    (copy) => copy.account === account && copy.ids.includes(id),
-  )
-
-/** A copy left behind has been dealt with: restored, ignored or discarded. It is neither kept nor offered. */
+/** A copy left behind is discarded from its offer. It is neither kept nor offered. */
 export const discardDraftCopy = (copy: DraftCopy) => {
   withdrawOffer(copy.key)
   removeDraftCopy(copy.user, copy.account, copy.key)

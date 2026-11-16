@@ -1,8 +1,10 @@
+import { toast } from 'frappe-ui'
 import { Editor, EditorContent } from 'frappe-ui/editor'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, onMounted, ref, useTemplateRef } from 'vue'
 
 import { stopDraftSavers } from '@/apps/mail/composables/draftSaver'
+import { offerDraftCopies } from '@/apps/mail/composables/useDraftRecovery'
 import type { Attachment, ComposeMailData } from '@/apps/mail/types'
 import { mailEditorKit } from '@/apps/mail/utils/text-editor'
 import { TransportError } from '@/platform/transport'
@@ -468,79 +470,25 @@ describe('the local copy', () => {
     setItem.mockRestore()
   })
 
-  it('is offered when the same draft is opened again, and only applied if restored', async () => {
+  it('outlives the same draft opened and saved again, and stays on offer until answered', async () => {
     const first = compose()
     server.updateDraft.mockRejectedValue(networkDown())
     first.mail.html_body = '<p>Not on the server</p>'
     await autosave()
     stopDraftSavers()
-
-    const second = compose()
-    await tick()
-    expect(second.recoverableCopy.value?.mail.html_body).toBe('<p>Not on the server</p>')
-    expect(second.mail.html_body).toBe(draft.html_body)
-    expect(server.updateDraft).toHaveBeenCalledOnce()
-
-    server.updateDraft.mockReset()
-    server.updateDraft.mockResolvedValue(saved('draft-2'))
-    second.restoreCopy()
-    expect(second.mail.html_body).toBe('<p>Not on the server</p>')
-    await vi.advanceTimersByTimeAsync(0)
-    await nextTick()
-    await vi.advanceTimersByTimeAsync(0)
-    expect(server.updateDraft.mock.calls[0][0].html_body).toBe('<p>Not on the server</p>')
-    expect(copies()).toEqual([])
-  })
-
-  it("restored after the composer saved, goes over the composer's own draft", async () => {
-    const first = compose()
-    server.updateDraft.mockRejectedValue(networkDown())
-    first.mail.html_body = '<p>Not on the server</p>'
-    await autosave()
-    stopDraftSavers()
+    vi.mocked(toast.warning).mockReturnValue('offer')
+    await offerDraftCopies({ user: 'maya@example.com', accounts: ['account'], reopen: vi.fn() })
 
     const second = compose()
     await tick()
     server.updateDraft.mockReset()
     server.updateDraft.mockResolvedValue(saved('draft-2'))
-    second.mail.subject = 'Typed before restoring'
+    second.mail.subject = 'Edited elsewhere'
     await autosave()
-    const ownKey = second.mail.draft_key
-
-    server.updateDraft.mockResolvedValue(saved('draft-3'))
-    second.restoreCopy()
-    await tick()
-    const [input] = server.updateDraft.mock.calls.at(-1)!
-    expect(input).toMatchObject({ id: 'draft-2', draft_key: ownKey })
-    expect(input.html_body).toBe('<p>Not on the server</p>')
     expect(second.saveState.value.status).toBe('saved')
-    expect(copies()).toEqual([])
-  })
-
-  it('is removed if ignored', async () => {
-    const first = compose()
-    server.updateDraft.mockRejectedValue(networkDown())
-    first.mail.html_body = '<p>Not on the server</p>'
-    await autosave()
-    stopDraftSavers()
-
-    const second = compose()
-    await tick()
-    second.ignoreCopy()
-    expect(copies()).toEqual([])
     expect(second.mail.html_body).toBe(draft.html_body)
-  })
-
-  it('is not offered to a different person on the same browser', async () => {
-    const first = compose()
-    server.updateDraft.mockRejectedValue(networkDown())
-    first.mail.html_body = '<p>Private</p>'
-    await autosave()
-    stopDraftSavers()
-
-    const someoneElse = compose(draft, {}, 'sam@example.com')
-    await tick()
-    expect(someoneElse.recoverableCopy.value).toBeUndefined()
+    expect(copies().map((copy) => copy.mail.html_body)).toEqual(['<p>Not on the server</p>'])
+    expect(toastDismiss).not.toHaveBeenCalledWith('offer')
   })
 })
 

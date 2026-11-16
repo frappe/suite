@@ -11,11 +11,7 @@ import {
   type SaveStatus,
   type WriteOptions,
 } from '@/apps/mail/composables/draftSaver'
-import {
-  createDraftCopy,
-  discardDraftCopy,
-  findUnclaimedCopy,
-} from '@/apps/mail/composables/useDraftRecovery'
+import { createDraftCopy } from '@/apps/mail/composables/useDraftRecovery'
 import { getAttachmentUrl } from '@/apps/mail/resources'
 import type { ComposeMailData, DraftRecipient, Identity, UserResource } from '@/apps/mail/types'
 import { commitAfterUndo, processInlineImages, raiseToast } from '@/apps/mail/utils'
@@ -26,7 +22,7 @@ import {
   useListReload,
   useUndo,
 } from '@/apps/mail/utils/composables'
-import { DRAFT_COPY_FIELDS, type DraftCopy } from '@/apps/mail/utils/draftCopies'
+import { DRAFT_COPY_FIELDS } from '@/apps/mail/utils/draftCopies'
 import { createEditorBody } from '@/apps/mail/utils/editorBody'
 import { createMentionSuggestion, type MentionCandidate } from '@/apps/mail/utils/mentionSuggestion'
 import { QuotedContentExtension } from '@/apps/mail/utils/quotedContentExtension'
@@ -486,36 +482,6 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   const onOpened = () => {
     if (mailDetails?.restored) void saver.saveNow()
     else saver.baseline(!!mailDetails?.id)
-    void offerCopyOfThisDraft()
-  }
-
-  // ── Recovering ──────────────────────────────────────────────────────────────────────────────
-
-  // A local copy of the very draft just opened, written on the id it opened with or an earlier one,
-  // so the server hasn't moved on: the copy is the newer. It is only offered: the writer may have
-  // meant to leave it. One another tab is still working on isn't this tab's to offer.
-  const recoverableCopy = ref<DraftCopy>()
-  const offerCopyOfThisDraft = async () => {
-    const owner = user.data?.name
-    if (!owner || !mailDetails?.id || mailDetails.restored) return
-    recoverableCopy.value = await findUnclaimedCopy(owner, draftAccount(), mailDetails.id)
-  }
-  const restoreCopy = () => {
-    const copy = recoverableCopy.value
-    if (!copy) return
-    recoverableCopy.value = undefined
-    // On top of what this composer has, under its own key: the copy's key may still lead the server
-    // to the draft as it was when the copy was written, and writing there finds it gone. Kept on
-    // the device from here, if at all, as this composer's copy.
-    discardDraftCopy(copy)
-    Object.assign(mail, copy.mail)
-    void saver.saveNow()
-  }
-  const ignoreCopy = () => {
-    const copy = recoverableCopy.value
-    if (!copy) return
-    recoverableCopy.value = undefined
-    discardDraftCopy(copy)
   }
 
   /**
@@ -1036,9 +1002,6 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     saveState,
     retrySave: saver.retry,
     keepAsNewDraft,
-    recoverableCopy,
-    restoreCopy,
-    ignoreCopy,
     isUploading,
     trackUpload,
     leave,

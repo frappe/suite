@@ -32,11 +32,8 @@
       <template #default="{ editor }">
         <ComposeDraftNotice
           :is-gone="saveState.status === 'gone'"
-          :copy="recoverableCopy"
           @keep-as-new="keepAsNewDraft"
           @discard="discardMail"
-          @restore="restoreCopy"
-          @ignore="ignoreCopy"
         />
         <!-- Desktop, in the composer window and in a thread alike: one row per field, each led by its
            name in a column of its own, so the values line up down the page; neither host pads the
@@ -497,9 +494,6 @@ const {
   saveState,
   retrySave,
   keepAsNewDraft,
-  recoverableCopy,
-  restoreCopy,
-  ignoreCopy,
   isSending,
   trackUpload,
   leave,

@@ -2,12 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { writeDraftCopy, type DraftCopy } from '@/apps/mail/utils/draftCopies'
 
-import {
-  createDraftCopy,
-  discardDraftCopy,
-  findUnclaimedCopy,
-  offerDraftCopies,
-} from './useDraftRecovery'
+import { createDraftCopy, discardDraftCopy, offerDraftCopies } from './useDraftRecovery'
 
 type OfferOptions = {
   description: string
@@ -127,39 +122,11 @@ describe('offering local copies back', () => {
     expect(toast.warning).toHaveBeenCalledOnce()
   })
 
-  it('takes an offer back once the copy is restored or ignored in a composer', async () => {
-    writeDraftCopy(copy())
-    await offerDraftCopies({ user: USER, accounts: ['a1'], reopen: vi.fn() })
-    discardDraftCopy(copy())
-    expect(toast.dismiss).toHaveBeenCalledWith('offer')
-    expect(localStorage.length).toBe(0)
-  })
-
   it('takes an offer back once a composer of that draft has saved it', async () => {
     writeDraftCopy(copy())
     await offerDraftCopies({ user: USER, accounts: ['a1'], reopen: vi.fn() })
     createDraftCopy(() => ({ user: USER, account: 'a1', key: 'k1' })).drop()
     expect(toast.dismiss).toHaveBeenCalledWith('offer')
     expect(localStorage.length).toBe(0)
-  })
-})
-
-describe('the copy of a draft opened again', () => {
-  it('is found by any id the draft has had', async () => {
-    writeDraftCopy(copy())
-    expect((await findUnclaimedCopy(USER, 'a1', 'draft-1'))?.key).toBe('k1')
-    expect((await findUnclaimedCopy(USER, 'a1', 'draft-2'))?.key).toBe('k1')
-    expect(await findUnclaimedCopy(USER, 'a1', 'draft-3')).toBeUndefined()
-    expect(await findUnclaimedCopy(USER, 'a2', 'draft-1')).toBeUndefined()
-  })
-
-  it('is not found while a live composer holds it', async () => {
-    writeDraftCopy(copy())
-    vi.stubGlobal('navigator', {
-      locks: { query: async () => ({ held: [{ name: 'suite.mail.draftCopy.v1:k1' }] }) },
-    })
-    expect(await findUnclaimedCopy(USER, 'a1', 'draft-1')).toBeUndefined()
-    vi.unstubAllGlobals()
-    vi.stubGlobal('__', (text: string) => text)
   })
 })

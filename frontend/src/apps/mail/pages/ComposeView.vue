@@ -74,11 +74,8 @@
 
     <ComposeDraftNotice
       :is-gone="saveState.status === 'gone'"
-      :copy="recoverableCopy"
       @keep-as-new="keepAsNewDraft"
       @discard="discardMail"
-      @restore="restoreCopy"
-      @ignore="ignoreCopy"
     />
 
     <!-- flex-1 so the body claims the rest of the page: a tap anywhere in the empty space below
@@ -357,9 +354,6 @@ const {
   saveState,
   retrySave,
   keepAsNewDraft,
-  recoverableCopy,
-  restoreCopy,
-  ignoreCopy,
   isSending,
   isUploading,
   trackUpload,
