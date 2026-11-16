@@ -3,7 +3,9 @@
   <AppSettingsBody>
     <div class="flex flex-col gap-10">
       <!-- First, so the link from a screened sender's mail opens on it. -->
-      <ScreenedEmailAddressSettings />
+      <div class="divide-y divide-outline-gray-1">
+        <ScreenedEmailAddressSettings />
+      </div>
       <InboxCategorySettings />
       <FolderSettings />
       <AutomationSettings />

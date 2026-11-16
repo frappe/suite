@@ -1,39 +1,38 @@
 <template>
-  <SettingsSection :title="__('Screener')">
+  <!-- Rows of the Inbox page's list. The screened senders are a long list, so they open in a dialog. -->
+  <SettingsRow
+    :title="__('Screen new senders')"
+    :description="
+      __(
+        'Emails from new senders go to the Screener instead of your Inbox. Only accepted senders reach your Inbox.',
+      )
+    "
+  >
+    <Switch
+      :model-value="screeningEnabled"
+      :disabled="setScreening.isPending"
+      @update:model-value="toggleScreening"
+    />
+  </SettingsRow>
+  <SettingsRow
+    :title="__('When blocking a sender')"
+    :description="__('What to do with their mail already in your Inbox.')"
+  >
+    <Select
+      :model-value="activeAccount?.on_block_old_mail"
+      :options="ON_BLOCK_OLD_MAIL_OPTIONS"
+      :disabled="setScreening.isPending"
+      @update:model-value="setOnBlockOldMail"
+    />
+  </SettingsRow>
+  <SettingsDialogRow
+    :title="__('Screened senders')"
+    :description="__('The senders and domains you accept or block.')"
+    :action="__('Manage')"
+    size="3xl"
+  >
     <div class="flex flex-col gap-5">
-      <div class="divide-y divide-outline-gray-1">
-        <SettingsRow
-          :title="__('Screen new senders')"
-          :description="
-            __(
-              'Emails from new senders go to the Screener instead of your Inbox. Only accepted senders reach your Inbox.',
-            )
-          "
-        >
-          <Switch
-            :model-value="screeningEnabled"
-            :disabled="setScreening.isPending"
-            @update:model-value="toggleScreening"
-          />
-        </SettingsRow>
-        <SettingsRow
-          :title="__('When blocking a sender')"
-          :description="__('What to do with their mail already in your Inbox.')"
-        >
-          <Select
-            :model-value="activeAccount?.on_block_old_mail"
-            :options="ON_BLOCK_OLD_MAIL_OPTIONS"
-            :disabled="setScreening.isPending"
-            @update:model-value="setOnBlockOldMail"
-          />
-        </SettingsRow>
-      </div>
-
       <template v-if="screenedAddresses.data?.length">
-        <div class="flex shrink-0 items-center justify-between">
-          <h2 class="text-base-semibold text-ink-gray-8">{{ __('Screened Senders') }}</h2>
-          <Button icon-left="lucide-plus" :label="__('New')" @click="showAddModal = true" />
-        </div>
         <div class="flex shrink-0 gap-2">
           <FormControl
             v-model="search"
@@ -65,9 +64,10 @@
               @click="toggleSortDir"
             />
           </div>
+          <Button icon-left="lucide-plus" :label="__('New')" @click="addSender" />
         </div>
 
-        <!-- A long list scrolls in its own box, so the sections under it stay within reach. -->
+        <!-- A long list scrolls in its own box, so the dialog keeps its size. -->
         <div v-if="rows.length" class="flex max-h-80 flex-col">
           <ListView ref="listView" class="!w-full" :columns="COLUMNS" :rows="rows" row-key="email">
             <ListHeader />
@@ -107,18 +107,13 @@
       <div v-else class="text-ink-gray-6 flex flex-col space-y-2 text-sm">
         <p class="text-base font-medium">{{ __('No screened senders.') }}</p>
         <p>{{ MESSAGE }}</p>
-        <Button
-          icon-left="lucide-plus"
-          :label="__('New')"
-          class="w-fit"
-          @click="showAddModal = true"
-        />
+        <Button icon-left="lucide-plus" :label="__('New')" class="w-fit" @click="addSender" />
       </div>
 
       <AddScreenedSenderModal v-model="showAddModal" />
       <Dialog v-model:open="showRemoveModal" v-bind="removeModalOptions" />
     </div>
-  </SettingsSection>
+  </SettingsDialogRow>
 </template>
 
 <script setup lang="ts">
@@ -139,7 +134,7 @@ import type { ScreenedAddress, ScreeningAction } from '@/apps/mail/types'
 import { getFormattedDate, raiseToast } from '@/apps/mail/utils'
 import { formatSystemDateTime } from '@/apps/mail/utils/datetime'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
-import SettingsSection from '@/platform/settings/SettingsSection.vue'
+import SettingsDialogRow from '@/platform/settings/SettingsDialogRow.vue'
 import { translate as __ } from '@/platform/translation'
 
 const store = userStore()
@@ -147,6 +142,10 @@ const { screenedAddresses } = store
 const search = ref('')
 const listViewRef = useTemplateRef('listView')
 const showAddModal = ref(false)
+function addSender() {
+  showAddModal.value = true
+}
+
 const showRemoveModal = ref(false)
 
 // Read the flag from the shared user data (not a document draft) so the inbox reacts to a toggle
