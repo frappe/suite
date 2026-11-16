@@ -11,7 +11,8 @@ const DESCRIPTION_LIMIT = 2000
 
 /**
  * A calendar event as a mail suggests it: named after the conversation, the mail's own words (the
- * quoted trail left out) as its description, and everyone on the mail but you invited. When it
+ * quoted trail left out) as its description, and everyone on the mail but the Bcc'd as its people.
+ * The reader is among them: Calendar knows which addresses are theirs and leaves them out. When it
  * happens is the reader's to say — a date read out of prose would be a guess.
  */
 export const eventFromMail = (
@@ -19,13 +20,11 @@ export const eventFromMail = (
     Mail,
     'subject' | 'html_body' | 'text_body' | 'from_email' | 'from_name' | 'recipients'
   >,
-  ownAddresses: readonly string[],
 ): NewEventDraft => {
-  const own = new Set(ownAddresses.map((address) => address.toLowerCase()))
   const people = new Map<string, { email: string; name?: string }>()
   const invite = (email: string | undefined, name?: string | null) => {
     const key = email?.trim().toLowerCase()
-    if (!key || own.has(key) || people.has(key)) return
+    if (!key || people.has(key)) return
     people.set(key, { email: email!.trim(), name: name || undefined })
   }
   invite(mail.from_email, mail.from_name)

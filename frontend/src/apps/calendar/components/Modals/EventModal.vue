@@ -35,7 +35,13 @@ import { serverEventId } from '@/apps/calendar/utils/eventIdentity'
 import { VISIBILITY_OPTIONS } from '@/apps/calendar/utils/eventOptions'
 import { formEventFields, formStart, occurrenceStart } from '@/apps/calendar/utils/eventWrite'
 import { getRepeatMessage, type EventAlert } from '@/apps/calendar/utils/format'
-import { draftGuests, seatOrganizer, type NewEventDraft } from '@/apps/calendar/utils/newEventDraft'
+import {
+  draftGuests,
+  newEventTimes,
+  seatOrganizer,
+  withoutReader,
+  type NewEventDraft,
+} from '@/apps/calendar/utils/newEventDraft'
 import {
   isFirstOccurrence,
   scopeOptions,
@@ -145,9 +151,16 @@ const defaultStartTime = (date: string) =>
 // "7:30 am" reads the 7 and stops.
 const SLOT_TIME_FORMATS = ['h:mm a', 'h a', 'HH:mm']
 const getDefaultEventData = () => {
-  const startTime = selectedEvent?.time
-    ? dayjs(selectedEvent.time, SLOT_TIME_FORMATS).format('HH:mm')
-    : defaultStartTime(selectedEvent.date)
+  // Filled in by another area (an event from a mail): its title and words, and the people in it
+  // as participants beside the organizer, each still to reply. When is left to the reader.
+  const prefill: NewEventDraft | undefined = selectedEvent?.prefill
+  const { startTime, endTime } = newEventTimes(
+    prefill,
+    selectedEvent?.time
+      ? dayjs(selectedEvent.time, SLOT_TIME_FORMATS).format('HH:mm')
+      : defaultStartTime(selectedEvent.date),
+    DEFAULT_DURATION_MINUTES,
+  )
 
   // A new event is a timed one. Only a click in the all-day lane says otherwise — that is
   // the reader pointing at the all-day row, not the absence of a time: a month cell and the
@@ -158,10 +171,7 @@ const getDefaultEventData = () => {
   // Shared calendars are never writable, so the default is always the account's own.
   const calendar = defaultCalendar(calendars.data)
   const identity = store.organizerIdentity
-  // Filled in by another area (an event from a mail): its title and words, and the people in it
-  // as participants beside the organizer, each still to reply.
-  const prefill: NewEventDraft | undefined = selectedEvent?.prefill
-  const guests = draftGuests(prefill)
+  const guests = withoutReader(draftGuests(prefill), ownAddresses())
   return {
     title: prefill?.title ?? '',
     organizer: identity?.email,
@@ -173,7 +183,7 @@ const getDefaultEventData = () => {
     startDate: dayjs(selectedEvent.date).format('YYYY-MM-DD'),
     startTime,
     endDate: dayjs(selectedEvent.date).format('YYYY-MM-DD'),
-    endTime: dayjs(startTime, 'HH:mm').add(DEFAULT_DURATION_MINUTES, 'minute').format('HH:mm'),
+    endTime,
     locations: [],
     links: [],
     alerts: [defaultAlert(isAllDay, dayjs(selectedEvent.date).format('YYYY-MM-DD'))],
@@ -181,9 +191,7 @@ const getDefaultEventData = () => {
     description: prefill?.description ?? '',
     free_busy_status: 'Busy',
     privacy: 'Public',
-    participants: identity
-      ? seatOrganizer(guests, organizerParticipant(identity), ownAddresses())
-      : guests,
+    participants: identity ? seatOrganizer(guests, organizerParticipant(identity)) : guests,
     recurrence_rule: {},
     addMeetLink: false,
   }
@@ -326,17 +334,21 @@ watch(show, (val) => {
 })
 
 // Identities can land after the modal opened; give the new event its organizer then,
-// ahead of any attendee already added, and drop a guest who turns out to be the reader.
+// ahead of any attendee already added,
 watch(
   () => store.organizerIdentity,
   (identity) => {
     if (!show.value || !identity || !isNew.value || event.organizer) return
     event.organizer = identity.email
-    event.participants = seatOrganizer(
-      event.participants ?? [],
-      organizerParticipant(identity),
-      ownAddresses(),
-    )
+    event.participants = seatOrganizer(event.participants ?? [], organizerParticipant(identity))
+  },
+)
+// and drop a guest who turns out to be the reader, organizer or not.
+watch(
+  () => ownAddresses().join(),
+  () => {
+    if (!show.value || !isNew.value) return
+    event.participants = withoutReader(event.participants ?? [], ownAddresses(), event.organizer)
   },
 )
 watch(

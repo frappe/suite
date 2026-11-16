@@ -120,7 +120,6 @@ const emit = defineEmits(['setFlagged', 'syncUnseen', 'moveMail', 'markMailSpam'
 const { isMobile } = useScreenSize()
 // An event from this mail: Calendar opens on it, filled in, for the reader to finish and save.
 const createEvent = useNewCalendarEvent()
-const ownAddresses = () => identities.value.data?.map((identity: Identity) => identity.email) ?? []
 const route = useRoute()
 const router = useRouter()
 // Everything account-scoped resolves through the enclosing pane's scope — the
@@ -303,7 +302,7 @@ const moreActions = (mail: Mail): GroupedAction[] => [
     options: [
       {
         label: __('Create Event'),
-        onClick: () => createEvent(eventFromMail(mail, ownAddresses())),
+        onClick: () => createEvent(eventFromMail(mail)),
         icon: CalendarPlus,
         condition: () => !mail.draft,
       },

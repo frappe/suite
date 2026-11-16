@@ -55,6 +55,7 @@ import {
 import { useScreenSize } from '@/composables/useScreenSize'
 import { LoadFailed } from '@/platform/load-failed'
 import { appPageMeta } from '@/platform/page-meta'
+import { pageLoadNeededFor } from '@/platform/pwa'
 import { userTimeZone } from '@/platform/time-zone'
 import { translate as __ } from '@/platform/translation'
 import { TransportError } from '@/platform/transport'
@@ -712,7 +713,9 @@ const newEventDate = () => {
 // The phone's new-event button (CalendarLayout) and other areas ask for a new event through the URL
 // (?new=1). Consume the flag so reload or Back does not reopen the modal.
 const openNewEventFromRoute = (flag) => {
-  if (!flag) return
+  // On an iPhone, arriving from another app loads the page afresh right after this mounts. Leave
+  // the flag, and the draft it names, to the page that loads.
+  if (!flag || pageLoadNeededFor(route.path)) return
   const { new: _new, ...query } = route.query
   router.replace({ query })
   handleOpenEvent({
