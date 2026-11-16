@@ -193,12 +193,13 @@
           class="-mx-3 list-row-px-3"
           :columns="{
             base: ['minmax(0,1fr)', '4rem', '6rem'],
-            sm: ['minmax(0,1fr)', '9rem', '12rem'],
+            sm: ['minmax(0,1fr)', 'minmax(0,1.2fr)', '9rem', '12rem'],
           }"
-          :row-height="56"
+          :row-height="52"
         >
           <ListHeader>
             <ListHeaderCell>{{ __('Drive') }}</ListHeaderCell>
+            <ListHeaderCell class="max-sm:hidden">{{ __('Email') }}</ListHeaderCell>
             <ListHeaderCell>{{ __('Used') }}</ListHeaderCell>
             <ListHeaderCell>{{ __('Limit') }}</ListHeaderCell>
           </ListHeader>
@@ -214,10 +215,16 @@
                   <p class="truncate text-base text-ink-gray-8">
                     {{ root.user ? ownerName(root.user) : __('Shared Drive') }}
                   </p>
-                  <p v-if="root.user" class="truncate text-p-sm text-ink-gray-5">{{ root.user }}</p>
+                  <!-- On a phone the address sits under the name; on desktop it has its own column. -->
+                  <p v-if="root.user" class="truncate text-p-sm text-ink-gray-5 sm:hidden">
+                    {{ root.user }}
+                  </p>
                 </div>
                 <Badge v-if="root.state !== 'Active'" :label="root.state" theme="gray" />
               </div>
+            </ListCell>
+            <ListCell class="max-sm:hidden">
+              <span class="truncate text-base text-ink-gray-6">{{ root.user ?? '' }}</span>
             </ListCell>
             <ListCell>
               <span class="text-base text-ink-gray-7">{{ formatStorage(root.stored_bytes) }}</span>
