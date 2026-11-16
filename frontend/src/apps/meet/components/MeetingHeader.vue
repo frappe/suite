@@ -2,7 +2,7 @@
 import { Breadcrumbs } from 'frappe-ui'
 import { computed } from 'vue'
 
-import FrappeMeetingLogo from '../icons/FrappeMeetingLogo.vue'
+import MeetIcon from '../AreaIcon.vue'
 
 const props = defineProps<{
   meetingId?: string
@@ -22,11 +22,9 @@ const crumbs = computed(() => [
 
 <template>
   <div class="flex items-center justify-between px-4 py-4 shrink-0 z-30">
-    <!-- Left: Logo + Breadcrumb -->
+    <!-- Left: Meet's icon in Meet's own colour (its logo's), then the way back. -->
     <div class="flex items-center gap-2">
-      <div class="size-7 rounded-4 overflow-hidden">
-        <FrappeMeetingLogo class="w-full h-full" />
-      </div>
+      <MeetIcon class="size-5 shrink-0 text-[#E54E17]" />
       <Breadcrumbs :items="crumbs" />
     </div>
     <!-- Right: optional slot -->
