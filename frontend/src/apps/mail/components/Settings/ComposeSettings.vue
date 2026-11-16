@@ -1,48 +1,45 @@
 <template>
-  <SettingsSection v-if="preferences" :title="__('Outgoing mail')">
-    <div class="divide-y divide-outline-gray-1">
-      <SettingsRow
-        :title="__('Default outgoing email')"
-        :description="__('The address selected automatically when composing a message.')"
-      >
-        <Combobox
-          trigger="button"
-          align="end"
-          :model-value="preferences.default_outgoing_email"
-          :options="addresses"
-          @update:model-value="setDefaultOutgoing"
-        />
-      </SettingsRow>
-      <SettingsRow
-        :title="__('Undo send')"
-        :description="
-          __('How long a sent message waits before delivery, so you can still take it back.')
-        "
-      >
-        <!-- The saved value goes through the fallback the composer uses, so an unset one reads as
-             the default. -->
-        <Select
-          :model-value="String(undoSendPeriodOf(user.data))"
-          :options="UNDO_SEND_OPTIONS"
-          @update:model-value="saveUndoSend"
-        />
-      </SettingsRow>
-      <SettingsRow
-        :title="__('Create contacts after sending email')"
-        :description="
-          __('Automatically creates contacts for new recipients after an email is sent.')
-        "
-      >
-        <Switch v-model="createContacts" />
-      </SettingsRow>
-      <SettingsRow
-        :title="__('Keep forwarded email in thread')"
-        :description="__('Keep forwarded emails in the original thread.')"
-      >
-        <Switch v-model="keepForwardedInThread" />
-      </SettingsRow>
-    </div>
-  </SettingsSection>
+  <!-- Rows of the Sending page's list, there once the preferences are read. -->
+  <template v-if="preferences">
+    <SettingsRow
+      :title="__('Default outgoing email')"
+      :description="__('The address selected automatically when composing a message.')"
+    >
+      <Combobox
+        trigger="button"
+        align="end"
+        :model-value="preferences.default_outgoing_email"
+        :options="addresses"
+        @update:model-value="setDefaultOutgoing"
+      />
+    </SettingsRow>
+    <SettingsRow
+      :title="__('Undo send')"
+      :description="
+        __('How long a sent message waits before delivery, so you can still take it back.')
+      "
+    >
+      <!-- The saved value goes through the fallback the composer uses, so an unset one reads as
+           the default. -->
+      <Select
+        :model-value="String(undoSendPeriodOf(user.data))"
+        :options="UNDO_SEND_OPTIONS"
+        @update:model-value="saveUndoSend"
+      />
+    </SettingsRow>
+    <SettingsRow
+      :title="__('Create contacts after sending email')"
+      :description="__('Automatically creates contacts for new recipients after an email is sent.')"
+    >
+      <Switch v-model="createContacts" />
+    </SettingsRow>
+    <SettingsRow
+      :title="__('Keep forwarded email in thread')"
+      :description="__('Keep forwarded emails in the original thread.')"
+    >
+      <Switch v-model="keepForwardedInThread" />
+    </SettingsRow>
+  </template>
 </template>
 
 <script setup lang="ts">
@@ -54,7 +51,6 @@ import { useAccountPreferences } from '@/apps/mail/composables/useAccountPrefere
 import { userStore } from '@/apps/mail/stores/user'
 import type { Identity } from '@/apps/mail/types'
 import { UNDO_SEND_PERIODS, undoSendPeriodOf } from '@/apps/mail/utils/undoSend'
-import SettingsSection from '@/platform/settings/SettingsSection.vue'
 import { translate as __ } from '@/platform/translation'
 
 const { identities, userResource: user } = userStore()
