@@ -77,14 +77,23 @@
           <!-- The search view's own header: the query (click to edit) + removable filter pills, above
 					     the results toolbar. It owns the query surface; the results below just read the route. -->
           <SearchResultsHeader v-if="mailbox === 'search'" :count="isMobile ? title : undefined" />
-          <p
+          <div
             v-if="mailbox === 'search' && unavailableAccounts.length"
-            class="text-p-sm text-ink-amber-6 border-b px-3.5 py-2 sm:px-5"
+            class="flex items-center justify-between gap-2 border-b px-3.5 py-1.5 sm:px-5"
           >
-            {{
-              __("Couldn't reach {0}, so its mail isn't here.", [unavailableAccounts.join(', ')])
-            }}
-          </p>
+            <p class="text-p-sm text-ink-amber-6">
+              {{
+                __("Couldn't reach {0}, so its mail isn't here.", [unavailableAccounts.join(', ')])
+              }}
+            </p>
+            <Button
+              variant="ghost"
+              class="shrink-0"
+              :label="__('Try again')"
+              :loading="searchResults.isFetching"
+              @click="resetThreads(false)"
+            />
+          </div>
 
           <!-- Mobile header: title row (folders · mailbox + count · search) over
 					     a toolbar row (filter selector on the left, filter/refresh pills on the
@@ -494,6 +503,7 @@ import {
   useMobileSearch,
   useReadingPane,
   useScreenSize,
+  useSearchWith,
   useSwipeNav,
   useUndo,
 } from '@/apps/mail/utils/composables'
@@ -515,7 +525,6 @@ import {
   searchWords,
   withAllAccounts,
   withoutFilters,
-  type SearchQuery,
 } from '@/apps/mail/utils/searchFilters'
 import { selectActions as buildSelectActions } from '@/apps/mail/utils/selectActions'
 import { snoozeChoices } from '@/apps/mail/utils/snoozeTimes'
@@ -947,8 +956,7 @@ const openMatch = (thread: Thread, id: string) => {
 }
 
 const searchQuery = computed(() => searchQueryFrom(route.query))
-const searchWith = (query: SearchQuery) =>
-  router.push({ name: 'mail-mailbox', params: { accountId, mailbox: 'search' }, query })
+const searchWith = useSearchWith()
 const searchHasFilters = computed(() =>
   Object.keys(searchQuery.value).some((key) => !['text', 'all_accounts'].includes(key)),
 )

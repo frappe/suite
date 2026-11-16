@@ -7,6 +7,7 @@ import router from '@/apps/mail/router'
 import type { mailSettings } from '@/apps/mail/settings'
 import { userStore } from '@/apps/mail/stores/user'
 import type { ComposeMailData, Identity, Thread } from '@/apps/mail/types'
+import { hasSearchConditions, type SearchQuery } from '@/apps/mail/utils/searchFilters'
 import { createSwipeGesture } from '@/apps/mail/utils/swipeGesture'
 import {
   INBOX_FOLDER,
@@ -167,6 +168,23 @@ export const mailSearchRoute = (accountId: string, query: Record<string, string>
   },
   query,
 })
+/**
+ * Runs a search as the results page edited it. With nothing left to search it leaves the search view
+ * for the Inbox: a search of nothing has no results to show.
+ */
+export const useSearchWith = () => {
+  const router = useRouter()
+  const store = userStore()
+  return (next: SearchQuery) =>
+    router.push(
+      hasSearchConditions(next)
+        ? mailSearchRoute(store.accountId, next)
+        : {
+            name: 'mail-mailbox',
+            params: { accountId: store.accountId, mailbox: store.mailboxIds.inbox },
+          },
+    )
+}
 /**
  * Whether a route query holds a mail search. `all_accounts` is the search's scope, not a
  * condition: a route carrying only that has no search on it.

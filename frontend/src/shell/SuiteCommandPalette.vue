@@ -281,13 +281,16 @@
 
       <MailSearchSuggestions :suggestions="mailSuggestions" :roomy="mailSearchOnly" />
 
-      <!-- A search of every account that missed one says so, as the results page does. -->
+      <!-- A search of every account that missed one says so, as the results page does, and Enter
+           takes it there, where it can be tried again. -->
       <p
         v-if="mailResults.length && mailUnavailableAccounts.length"
         class="px-3 py-1.5 text-p-sm text-ink-gray-6"
       >
         {{
-          __("Couldn't reach {0}, so its mail isn't here.", [mailUnavailableAccounts.join(', ')])
+          __("Couldn't reach {0}, so its mail isn't here. Press Enter to try again.", [
+            mailUnavailableAccounts.join(', '),
+          ])
         }}
       </p>
       <CommandPaletteGroup v-if="mailResults.length" :label="resultsLabel('Messages')">
@@ -1085,9 +1088,10 @@ const emptyMessage = computed(() => {
   if (mailSearchActive.value && mailSearchFailed.value)
     return __("Couldn't search your mail. Press Enter to try again.")
   if (mailSearchActive.value && mailUnavailableAccounts.value.length)
-    return __("Nothing found, and couldn't reach {0} to search its mail.", [
-      mailUnavailableAccounts.value.join(', '),
-    ])
+    return __(
+      "Nothing found, and couldn't reach {0} to search its mail. Press Enter to try again.",
+      [mailUnavailableAccounts.value.join(', ')],
+    )
   if (mailAppliedFilters.value.length) return 'No mail matches these filters'
   // A filter-only search has no words to quote back, so it names the filters instead.
   if (calendarFilterAsked.value && !text) return 'No events match these filters'

@@ -48,18 +48,12 @@
 import { FormControl } from 'frappe-ui'
 import { Search } from 'lucide-vue-next'
 import { computed, inject, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 
 import SearchFilters from '@/apps/mail/components/SearchFilters.vue'
-import { userStore } from '@/apps/mail/stores/user'
 import type { UserResource } from '@/apps/mail/types'
-import { mailSearchRoute, useScreenSize } from '@/apps/mail/utils/composables'
-import {
-  hasSearchConditions,
-  searchQueryFrom,
-  withEditedLine,
-  type SearchQuery,
-} from '@/apps/mail/utils/searchFilters'
+import { useScreenSize, useSearchWith } from '@/apps/mail/utils/composables'
+import { searchQueryFrom, withEditedLine } from '@/apps/mail/utils/searchFilters'
 import { useRootStore } from '@/stores/root'
 
 // The search view's own header: the query line and the filters. It owns the whole search-query
@@ -72,11 +66,9 @@ defineProps<{
 }>()
 
 const route = useRoute()
-const router = useRouter()
 const user = inject<UserResource>('$user')
 if (!user) throw new Error('Missing required user provider')
 const { isMobile } = useScreenSize()
-const store = userStore()
 const root = useRootStore()
 
 const showReadingPane = computed(() => !!user.data?.show_reading_pane)
@@ -92,17 +84,6 @@ const resetLine = (event: KeyboardEvent) => {
   line.value = searchText.value
   if (event.target instanceof HTMLElement) event.target.blur()
 }
+const searchWith = useSearchWith()
 const commitLine = () => searchWith(withEditedLine(query.value, line.value))
-
-// Re-run the search as edited. When nothing is left to search, leave the search view for the Inbox.
-const searchWith = (next: SearchQuery) => {
-  if (!hasSearchConditions(next)) return exitSearch()
-  router.push(mailSearchRoute(store.accountId, next))
-}
-
-const exitSearch = () =>
-  router.push({
-    name: 'mail-mailbox',
-    params: { accountId: store.accountId, mailbox: store.mailboxIds.inbox },
-  })
 </script>
