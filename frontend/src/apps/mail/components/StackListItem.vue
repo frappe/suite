@@ -6,6 +6,7 @@
     :account-label="accountLabel"
     :unread="!!unreadCount"
     :avatar-label="avatarLabel"
+    :select-label="selectLabel"
     :avatar-image="latest.user_image"
     :datetime="latest.received_at"
     :subject-italic="!latest.subject"
@@ -118,6 +119,13 @@ const participants = computed(() => threadParticipants(latest.value.messages, ow
 const sender = computed(() => threadDisplayName(participants.value, latest.value))
 
 const avatarLabel = computed(() => threadAvatarLabel(participants.value, latest.value))
+
+// What the checkbox ticks: the whole run, by its count and whose it is.
+const selectLabel = computed(() =>
+  sender.value
+    ? __('Select {0} conversations from {1}', [threads.length, sender.value])
+    : __('Select {0} conversations', [threads.length]),
+)
 
 const unreadCount = computed(() => threads.filter((t) => !t.seen).length)
 </script>

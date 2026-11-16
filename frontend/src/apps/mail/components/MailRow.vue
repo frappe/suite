@@ -45,7 +45,7 @@
           :model-value="isSelected"
           size="md"
           class="pointer-events-none"
-          :aria-label="__('Select mail from {0}', [avatarLabel])"
+          :aria-label="selectLabel"
         />
       </div>
       <div
@@ -68,9 +68,10 @@
     <!-- The leading column set the row's height in the wide layout; without it (hideAvatar)
 		     rows shrank to their text and no longer lined up with the day headers. Hold that
 		     height here so the rhythm survives the column going away. -->
-    <!-- min-w-0 rather than truncate here and on the preview line: each line truncates itself, and
-         clipping these too would cut the star's hit area down to the glyph. That area runs past the
-         row's right edge, which the row itself clips, so the list can't scroll sideways. -->
+    <!-- min-w-0 rather than truncate here and on the preview line: each line truncates itself, the
+         chips clip themselves (below), and clipping these too would cut the star's hit area down to
+         the glyph. That area runs past the row's right edge, which the row itself clips, so the
+         list can't scroll sideways. -->
     <div
       class="min-w-0 grow"
       :class="[
@@ -141,11 +142,21 @@
         </div>
       </div>
 
-      <!-- Its own line under the subject, so the first line stays a plain row's. -->
-      <div v-if="pillsBelow" class="col-span-2 col-start-2 -mt-1 flex">
+      <!-- Its own line under the subject, so the first line stays a plain row's. Here and in the
+           stacked layout, chips that don't fit are cut off at the column's edge, short of the date
+           and the star, and only sideways, so a chip's focus ring still shows. -->
+      <div v-if="pillsBelow" class="col-span-2 col-start-2 -mt-1 flex min-w-0 overflow-x-clip">
         <slot name="extra" :is-full-width="isFullWidth" />
       </div>
-      <slot v-else name="extra" :is-full-width="isFullWidth" />
+      <!-- The wide line without pills has none to show (see hasExtra). Stacked, they get a block
+           spaced inside as the column is, so its lines sit as they would without it, and hidden
+           when there is nothing in it, so it adds no gap. -->
+      <div
+        v-else-if="!isFullWidth"
+        class="min-w-0 space-y-1 overflow-x-clip empty:hidden sm:space-y-0.5"
+      >
+        <slot name="extra" :is-full-width="isFullWidth" />
+      </div>
     </div>
 
     <div
@@ -189,6 +200,7 @@ const {
   unread = false,
   hideSender = false,
   avatarLabel,
+  selectLabel,
   avatarImage,
   datetime,
   subjectItalic = false,
@@ -209,6 +221,9 @@ const {
   // repeating it on every row is noise.
   hideSender?: boolean
   avatarLabel: string
+  // The name of the row's checkbox: what ticking it selects, said in full, where the avatar has
+  // only an initial.
+  selectLabel: string
   avatarImage?: string
   datetime: string
   subjectItalic?: boolean
