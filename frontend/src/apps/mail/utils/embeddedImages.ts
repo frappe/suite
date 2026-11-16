@@ -22,10 +22,9 @@ export const uploadEmbeddedImages = async (
 ) => {
   const fileUrls = new Map<string, string>()
   for (const url of new Set(dataUrlsIn(html))) {
-    const file = fileOf(url)
-    if (!file) continue
     try {
-      fileUrls.set(url, (await upload(file)).file_url)
+      const file = await fileOf(url)
+      if (file) fileUrls.set(url, (await upload(file)).file_url)
     } catch {
       // Left as a data URL; the next save tries again.
     }
@@ -78,18 +77,14 @@ const pointAtFiles = (html: string, fileUrls: Map<string, string>) => {
   return changed ? doc.body.innerHTML : html
 }
 
-/** The file a data URL holds, or nothing for one that isn't well formed. */
-const fileOf = (url: string): File | undefined => {
-  const match = /^data:(image\/[\w.+-]+)?(;base64)?,(.*)$/s.exec(url)
-  if (!match) return
-  const type = match[1] ?? 'image/png'
-  let bytes: Uint8Array<ArrayBuffer>
-  try {
-    const data = match[2] ? atob(match[3]) : decodeURIComponent(match[3])
-    bytes = Uint8Array.from(data, (c) => c.charCodeAt(0))
-  } catch {
-    return
-  }
+/**
+ * The image a data URL holds, decoded the way the browser reads one, parameters (`;name=`,
+ * `;charset=`) and all. Nothing for one that holds something other than an image.
+ */
+const fileOf = async (url: string) => {
+  const response = await fetch(url)
+  const type = response.headers.get('content-type')?.split(';')[0].trim() ?? ''
+  if (!type.startsWith('image/')) return
   const extension = type.split('/')[1].split('+')[0]
-  return new File([bytes], `image.${extension}`, { type })
+  return new File([await response.arrayBuffer()], `image.${extension}`, { type })
 }

@@ -28,6 +28,27 @@ describe('uploadEmbeddedImages', () => {
     expect(body).toContain('<div>See this:</div>')
   })
 
+  it('reads a data URL with parameters, and text beyond Latin-1', async () => {
+    const uploaded: File[] = []
+    const upload = async (file: File) => {
+      uploaded.push(file)
+      return { file_url: '/private/files/image.png' }
+    }
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg"><text>✓ ok</text></svg>'
+    const html =
+      `<img src="${PNG.replace(';base64', ';name=dot.png;base64')}">` +
+      `<img src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}">`
+
+    const uploads = await uploadEmbeddedImages(html, upload)
+
+    expect(uploaded.map((file) => [file.type, file.size])).toEqual([
+      ['image/png', 68],
+      ['image/svg+xml', new TextEncoder().encode(svg).length],
+    ])
+    expect(await uploaded[1].text()).toBe(svg)
+    expect(uploads.inHtml(html)).not.toContain('data:')
+  })
+
   it('leaves a body without data URLs exactly as it was', async () => {
     const upload = vi.fn()
     const html = '<div>Hi</div><img src="/private/files/a.png" data-cid="x">'
