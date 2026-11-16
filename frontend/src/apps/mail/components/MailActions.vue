@@ -303,7 +303,7 @@ const moreActions = (mail: Mail): GroupedAction[] => [
     options: [
       {
         label: __('Create Event'),
-        onClick: () => void createEvent(eventFromMail(mail, ownAddresses())),
+        onClick: () => createEvent(eventFromMail(mail, ownAddresses())),
         icon: CalendarPlus,
         condition: () => !mail.draft,
       },

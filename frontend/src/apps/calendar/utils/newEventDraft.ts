@@ -1,3 +1,5 @@
+import { newGuest } from '@/apps/calendar/utils'
+
 /**
  * A new event another area asks for, filled in from what it was looking at — a mail, say.
  *
@@ -37,21 +39,12 @@ export function createNewEventDrafts(): NewEventDrafts {
   }
 }
 
-const singleton = createNewEventDrafts()
-
-export function useNewEventDrafts(): NewEventDrafts {
-  return singleton
-}
+/** The drafts held between the asking area and Calendar's new-event form. */
+export const newEventDrafts = createNewEventDrafts()
 
 /** The draft's people as guests of the new event, each still to reply. */
 export const draftGuests = (draft: NewEventDraft | undefined) =>
-  (draft?.participants ?? []).map((person) => ({
-    email: person.email,
-    _name: person.name,
-    participation_status: 'NEEDS-ACTION',
-    expect_reply: true,
-    isNew: true,
-  }))
+  (draft?.participants ?? []).map((person) => newGuest(person.email, person.name))
 
 /**
  * `participants` with `organizer` first, and none of the reader's own addresses — the organizer's
