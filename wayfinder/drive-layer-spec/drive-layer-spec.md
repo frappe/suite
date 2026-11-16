@@ -3453,8 +3453,11 @@ one union for the page. There is no per-row access or breadcrumb query. Every no
 | PATCH | `/comments/<id>` | EDIT or author | `{text}` | comment row |
 | DELETE | `/comments/<id>` | EDIT or author | none | `{count}` |
 
-A version row is `{name, node, seq, kind, label, pinned, actor, size,
-creation}`. A thread row is `{name, node, anchor, resolved, resolved_by,
+A version row is `{name, node, seq, kind, label, pinned, actor, person,
+deleted_author, size, creation}`. `person` is the actor's name and avatar.
+`deleted_author` is the email of whoever took a version that the legacy port
+credited to Guest because their account was deleted; it is `null` on every
+other version, and always `null` to a reader who is not signed in. A thread row is `{name, node, anchor, resolved, resolved_by,
 resolved_at, creation, comments: [...]}` and a comment row is `{name, thread,
 node, content, author, author_name, mentions, creation, modified}`.
 
