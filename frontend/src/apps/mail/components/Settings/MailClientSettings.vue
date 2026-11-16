@@ -1,5 +1,11 @@
 <template>
-  <SettingsSection v-if="configRows.length" :title="__('Mail client setup')">
+  <SettingsDialogRow
+    v-if="configRows.length"
+    :title="__('Mail client setup')"
+    :description="__('Server details for apps such as Thunderbird or the Gmail app.')"
+    :action="__('Show')"
+    size="2xl"
+  >
     <div class="flex flex-col gap-4">
       <p class="text-ink-gray-6 text-base">
         {{
@@ -40,9 +46,9 @@
         {{ __('Sign in using your existing mail account password.') }}
       </p>
     </div>
-  </SettingsSection>
+  </SettingsDialogRow>
 
-  <SettingsSection :title="__('API access')">
+  <SettingsDialogRow :title="__('API access')" :description="apiAccess" :action="__('Manage')">
     <div class="flex flex-col gap-5">
       <CopyControl
         v-if="user.data?.api_key"
@@ -68,7 +74,7 @@
         </template>
       </Dialog>
     </div>
-  </SettingsSection>
+  </SettingsDialogRow>
 </template>
 
 <script setup lang="ts">
@@ -79,9 +85,16 @@ import { api, useMutation, useQuery } from '@/api'
 import { userStore } from '@/apps/mail/stores/user'
 import { copyToClipBoard } from '@/apps/mail/utils'
 import CopyControl from '@/components/CopyControl.vue'
-import SettingsSection from '@/platform/settings/SettingsSection.vue'
+import SettingsDialogRow from '@/platform/settings/SettingsDialogRow.vue'
 
 const user = userStore().userResource
+const apiAccess = computed(() => {
+  if (user.data?.api_key) {
+    return __('You have an API key.')
+  }
+
+  return __('You have no API key yet.')
+})
 const showSecret = ref(false)
 const apiSecret = ref('')
 const generateKeys = useMutation(api.suite.account.generateKeys)

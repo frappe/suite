@@ -1,6 +1,6 @@
 <template>
-  <SettingsSection :title="__('Push subscriptions')">
-    <template #actions>
+  <div class="flex flex-col gap-3">
+    <div class="flex justify-end gap-2">
       <Button
         variant="outline"
         icon="lucide-refresh-cw"
@@ -9,9 +9,9 @@
         @click="pushSubscriptions.refetch().catch(() => {})"
       />
       <Button icon-left="lucide-plus" :label="__('New')" @click="showAddModal = true" />
-    </template>
+    </div>
     <template v-if="rows.length">
-      <!-- A long list scrolls in its own box, so the page stays short. -->
+      <!-- A long list scrolls in its own box, so the dialog stays short. -->
       <div class="flex max-h-80 flex-col">
         <ListView ref="listView" :columns="COLUMNS" :rows="rows" row-key="name">
           <ListHeader />
@@ -48,7 +48,7 @@
       @created="pushSubscriptions.refetch().catch(() => {})"
     />
     <Dialog v-model:open="showDeleteModal" v-bind="deleteModalOptions" />
-  </SettingsSection>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -60,7 +60,6 @@ import { api, client, useMutation, useQuery, type InputOf } from '@/api'
 import AddPushSubscriptionModal from '@/apps/mail/components/Modals/AddPushSubscriptionModal.vue'
 import type { PushSubscription } from '@/apps/mail/types'
 import { raiseError, raiseToast } from '@/apps/mail/utils'
-import SettingsSection from '@/platform/settings/SettingsSection.vue'
 import { translate as __ } from '@/platform/translation'
 
 const user = inject<import('@/apps/mail/types').UserResource>('$user')

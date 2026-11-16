@@ -1,52 +1,47 @@
 <template>
-  <SettingsSection :title="__('Login details')">
-    <template v-if="userSettings.data" #actions>
-      <Button
-        :label="__('Save')"
-        variant="solid"
-        :loading="saveSettings.isPending"
-        :disabled="isNotDirty"
-        @click="() => save()"
-      />
-    </template>
-    <template v-if="userSettings.data">
-      <div class="flex flex-col gap-5">
-        <h2 class="text-base-semibold text-ink-gray-8">{{ __('Connection') }}</h2>
-        <FormControl
-          :model-value="userSettings.data.server_url"
-          :label="__('Server URL')"
-          variant="outline"
-          disabled
-          :placeholder="__('Not configured')"
-          :description="__('The mail server this account connects to. Set by your administrator.')"
-        />
-        <FormControl
-          v-model="username"
-          :label="__('Username')"
-          variant="outline"
-          :placeholder="__('user@example.com')"
-        />
-        <FormControl
-          v-model="appPassword"
-          type="password"
-          :label="__('App Password')"
-          variant="outline"
-          :placeholder="hasPassword ? __('Leave blank to keep unchanged') : ''"
-          :description="__('Used to connect to your mailbox.')"
-        />
+  <div v-if="userSettings.data" class="flex flex-col gap-5">
+    <h2 class="text-base-semibold text-ink-gray-8">{{ __('Connection') }}</h2>
+    <FormControl
+      :model-value="userSettings.data.server_url"
+      :label="__('Server URL')"
+      variant="outline"
+      disabled
+      :placeholder="__('Not configured')"
+      :description="__('The mail server this account connects to. Set by your administrator.')"
+    />
+    <FormControl
+      v-model="username"
+      :label="__('Username')"
+      variant="outline"
+      :placeholder="__('user@example.com')"
+    />
+    <FormControl
+      v-model="appPassword"
+      type="password"
+      :label="__('App Password')"
+      variant="outline"
+      :placeholder="hasPassword ? __('Leave blank to keep unchanged') : ''"
+      :description="__('Used to connect to your mailbox.')"
+    />
 
-        <h2 class="text-base-semibold text-ink-gray-8">{{ __('Recovery') }}</h2>
-        <FormControl
-          v-model="backupEmail"
-          :label="__('Backup Email')"
-          variant="outline"
-          :description="__(`We'll contact you here if there's an issue with your main account.`)"
-        />
+    <h2 class="text-base-semibold text-ink-gray-8">{{ __('Recovery') }}</h2>
+    <FormControl
+      v-model="backupEmail"
+      :label="__('Backup Email')"
+      variant="outline"
+      :description="__(`We'll contact you here if there's an issue with your main account.`)"
+    />
 
-        <ErrorMessage :message="saveSettings.error?.message" />
-      </div>
-    </template>
-  </SettingsSection>
+    <ErrorMessage :message="saveSettings.error?.message" />
+    <Button
+      class="self-end"
+      :label="__('Save')"
+      variant="solid"
+      :loading="saveSettings.isPending"
+      :disabled="isNotDirty"
+      @click="() => save()"
+    />
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -55,8 +50,9 @@ import { computed, ref, watch } from 'vue'
 
 import { api, useMutation, useQuery, type InputOf } from '@/api'
 import { raiseToast } from '@/apps/mail/utils'
-import SettingsSection from '@/platform/settings/SettingsSection.vue'
 import { translate as __ } from '@/platform/translation'
+
+const emit = defineEmits<{ saved: [] }>()
 
 const userSettings = useQuery(api.mail.settings.credentials)
 
@@ -98,5 +94,6 @@ async function save() {
   appPassword.value = ''
   raiseToast(__('Credentials updated'))
   await userSettings.refetch()
+  emit('saved')
 }
 </script>
