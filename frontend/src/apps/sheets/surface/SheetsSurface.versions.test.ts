@@ -28,6 +28,8 @@ const seen = vi.hoisted(() => ({
   >([]),
   /** How many times the side panel was made anew. */
   panelMounts: 0,
+  /** Set to hold every new editor's load open until the test lets it go. */
+  loadGate: fromPartial<Promise<void> | null>(null),
 }))
 vi.mock('@/apps/drive', async () => {
   const { defineComponent } = await import('vue')
@@ -102,13 +104,16 @@ vi.mock('@/apps/sheets/components/SheetEditor/index.vue', () => ({
         exports: 0,
       }
       seen.editors.push(record)
+      const gate = seen.loadGate
       expose({
         activeCell: 'A1',
         currentSheet: 'Sheet1',
         saveState: 'clean',
         isCollab: !props.version,
         flushSave: async () => {},
-        whenLoaded: async () => {},
+        whenLoaded: async () => {
+          await gate
+        },
         docState: () => (props.version ? null : docs.live),
         showChanges: (cells: unknown) => record.showChanges.push(cells),
         goToCell: (sheet: string, cell: string) => {
@@ -195,6 +200,7 @@ beforeEach(() => {
   seen.editors = []
   seen.panel = seen.bar = null
   seen.panelMounts = 0
+  seen.loadGate = null
   const live = new Y.Doc()
   Y.applyUpdate(live, Y.encodeStateAsUpdate(versionDoc))
   const sheetId = roots(live).sheets.get(0)
@@ -269,14 +275,30 @@ describe('SheetsSurface version preview', () => {
     expect(seen.panel!.props.previewedVersion).toBeNull()
   })
 
-  it('ends the preview when the Versions panel closes', async () => {
+  it('keeps the version shown when the Versions panel closes, until Back', async () => {
     await openVersions()
     await show(version)
 
     seen.panel!.emit('update:panel', null)
     await settle()
 
+    expect(lastEditor().props.version).toBeInstanceOf(Uint8Array)
+    expect(seen.bar!.props.preview).toMatchObject({ version: { seq: 3 } })
+
+    seen.bar!.emit('exit')
+    await settle()
     expect(lastEditor().props.version).toBeNull()
+  })
+
+  it('goes back to the live sheet when Comments opens over a shown version', async () => {
+    await openVersions()
+    await show(version)
+
+    seen.menu!.emit('togglePanel', 'comments')
+    await settle()
+
+    expect(lastEditor().props.version).toBeNull()
+    expect(lastEditor().props.collabSession).toBe(session)
   })
 
   it('goes back to the live sheet on Escape from the panel', async () => {
@@ -324,5 +346,35 @@ describe('SheetsSurface version preview', () => {
     expect(shown.props.version).toBeInstanceOf(Uint8Array)
     expect(shown.exports).toBe(1)
     expect(live.exports).toBe(0)
+  })
+
+  it('exports nothing when another version is picked while the download loads its sheet', async () => {
+    await openVersions()
+    let letLoad = () => {}
+    seen.loadGate = new Promise((resolve) => (letLoad = resolve))
+
+    seen.panel!.emit('downloadVersion', version)
+    await settle()
+    await show({ ...version, seq: 4, label: 'After import' })
+    letLoad()
+    await settle()
+
+    expect(seen.bar!.props.preview).toMatchObject({ version: { seq: 4 } })
+    expect(seen.editors.map((editor) => editor.exports)).not.toContain(1)
+  })
+
+  it('exports nothing when the way back is taken while the download reads its version', async () => {
+    await openVersions()
+    let send = (_: Response) => {}
+    fetchVersion.mockReturnValueOnce(new Promise((resolve) => (send = resolve)))
+
+    seen.panel!.emit('downloadVersion', version)
+    await settle()
+    seen.panel!.emit('update:previewedVersion', null)
+    send(new Response(stored))
+    await settle()
+
+    expect(lastEditor().props.version).toBeNull()
+    expect(seen.editors.map((editor) => editor.exports)).not.toContain(1)
   })
 })

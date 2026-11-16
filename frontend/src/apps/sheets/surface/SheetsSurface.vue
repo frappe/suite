@@ -118,6 +118,8 @@ const preview = shallowRef<VersionPreview | null>(null)
 const previewStep = ref<number | null>(null)
 // The live room's doc when the first preview opened: each version is compared with it.
 let liveState: Uint8Array | null = null
+// Counts each pick of a version or the way back, so a slower load can tell it was passed
+let previewPick = 0
 const sidePanel = useTemplateRef('sidePanel')
 /**
  * The editor's aside, where the side panel sits. A shown version or a restore remounts the editor,
@@ -189,9 +191,9 @@ function goToCell(sheet: string, cell: string) {
 function togglePanel(name: DocumentPanel) {
   showPanel(panel.value === name ? null : name)
 }
-// Closing the versions ends a preview
+// Comments are on the current cells, so opening them ends a preview; closing the panel keeps it
 watch(panel, (now) => {
-  if (now !== 'versions') void leavePreview()
+  if (now === 'comments') void leavePreview()
 })
 // An editor going away hands back null, which leaves the panel where it is until the next aside
 function keepPanelDock(aside: unknown) {
@@ -219,6 +221,7 @@ watch(editor, async (current) => {
 
 async function previewVersion(version: DocumentVersion | null) {
   if (!version) return leavePreview()
+  const pick = ++previewPick
   // The panel hands back the shown version once it is renamed
   if (preview.value?.version.seq === version.seq) {
     preview.value = { ...preview.value, version }
@@ -231,14 +234,19 @@ async function previewVersion(version: DocumentVersion | null) {
       liveState = editor.value?.docState() ?? null
     }
     const bytes = await fetchVersion(props.session, version.seq)
-    preview.value = await readPreview(version, bytes, liveState)
+    const read = await readPreview(version, bytes, liveState)
+    // Another version or the way back was picked while this one loaded
+    if (pick !== previewPick) return
+    preview.value = read
     previewStep.value = null
   } catch (error) {
+    if (pick !== previewPick) return
     toast.error(errorText(error, __('This version could not be shown')))
   }
 }
 /** Back to the sheet as it is now; resolves once its editor has loaded. */
 async function leavePreview() {
+  previewPick += 1
   if (!preview.value) return
   preview.value = null
   liveState = null
@@ -268,11 +276,15 @@ function confirmRestore(version: DocumentVersion) {
 // The list's Download: the version is shown, then saved as the editor's Excel export
 async function downloadVersion(version: DocumentVersion) {
   await previewVersion(version)
-  if (preview.value?.version.seq !== version.seq) return
+  await nextTick()
+  const shown = editor.value
+  const isStillShown = () => editor.value === shown && preview.value?.version.seq === version.seq
+  if (!shown || !isStillShown()) return
   try {
-    await nextTick()
-    await editor.value?.whenLoaded()
-    await editor.value?.exportXLSX()
+    await shown.whenLoaded()
+    // Another version or the way back was picked while this one loaded
+    if (!isStillShown()) return
+    await shown.exportXLSX()
   } catch {
     toast.error(__('Could not download this version'))
   }
