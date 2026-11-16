@@ -1,6 +1,6 @@
 import { computed, ref, watch } from 'vue'
 
-import { api, useMutation, useQuery, type InputOf, type OutputOf } from '@/api'
+import { api, client, useQuery, type InputOf, type OutputOf } from '@/api'
 import { userStore } from '@/apps/mail/stores/user'
 
 type Preferences = OutputOf<typeof api.mail.settings.account>
@@ -23,7 +23,11 @@ export function useAccountPreferences() {
     api.mail.settings.account,
     () => !!store.accountId && { account: store.accountId },
   )
-  const save = useMutation(api.mail.settings.updateAccount)
+  // Not a component's mutation: that one is cancelled when its page goes, and a switch flipped just
+  // before leaving the page must still be saved
+  function save(changes: Changes) {
+    return client.mutation(api.mail.settings.updateAccount, { account: store.accountId, changes })
+  }
 
   const preferences = ref<Preferences>()
   function showSaved() {
@@ -37,7 +41,7 @@ export function useAccountPreferences() {
 
     preferences.value = { ...preferences.value, ...changes }
     // The refusal is reported where every failed save is; here the switch goes back
-    await save.run({ account: store.accountId, changes }).catch(showSaved)
+    await save(changes).catch(showSaved)
   }
 
   /** One on/off preference, as a switch's `v-model`. */

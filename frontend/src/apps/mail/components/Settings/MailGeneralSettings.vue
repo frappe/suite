@@ -95,7 +95,7 @@
 import { Combobox, ErrorMessage, SettingsRow, Switch } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 
-import { api, useMutation, useQuery, type InputOf } from '@/api'
+import { api, client, useQuery, type InputOf } from '@/api'
 import { useAccountPreferences } from '@/apps/mail/composables/useAccountPreferences'
 import { useQuota } from '@/apps/mail/composables/useQuota'
 import { userStore } from '@/apps/mail/stores/user'
@@ -115,10 +115,11 @@ const dropSentMail = flag('destroy_email_after_submit')
 const dropSentNewsletters = flag('destroy_newsletter_after_submit')
 
 const hasListLayout = computed(() => !!user.data?.is_jmap_configured && !isMobile.value)
-const layout = useMutation(api.mail.settings.updatePreferences)
+// Saves here are not a component's mutations: those are cancelled when the page goes, and a choice
+// made just before leaving the page must still be saved
 async function saveLayout(choice: InputOf<typeof api.mail.settings.updatePreferences>) {
   try {
-    await layout.run(choice)
+    await client.mutation(api.mail.settings.updatePreferences, choice)
   } catch {
     // The refusal is reported where every failed save is, and the switch goes back with the read
   }
@@ -144,7 +145,6 @@ const hasProvider = computed(() => !!user.data?.is_suite_cloud_configured)
 const regional = useQuery(api.mail.settings.regional, () => hasProvider.value && {})
 const locales = computed(() => regional.data?.locales ?? [])
 const timeZones = computed(() => regional.data?.time_zones ?? [])
-const saveRegional = useMutation(api.mail.settings.updateRegional)
 const region = ref<Region>()
 function showSavedRegion() {
   region.value = regional.data && {
@@ -161,7 +161,7 @@ async function changeRegion(field: keyof Region, value: unknown) {
 
   region.value = { ...region.value, [field]: value }
   try {
-    await saveRegional.run({ ...region.value })
+    await client.mutation(api.mail.settings.updateRegional, { ...region.value })
   } catch {
     // The refusal is reported where every failed save is; here the choice goes back
     showSavedRegion()

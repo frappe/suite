@@ -35,20 +35,8 @@ vi.mock('@/api', async () => {
         ? reactive(state.regional)
         : reactive(state.account)
     },
-    useMutation: (reference: { id: string }) => {
-      const result = reactive({
-        error: fromPartial<Error | null>(null),
-        isPending: false,
-        run: async (input: unknown) => {
-          try {
-            await state.save(reference.id, input)
-          } catch (error) {
-            result.error = fromPartial<Error>(error)
-            throw error
-          }
-        },
-      })
-      return result
+    client: {
+      mutation: (reference: { id: string }, input: unknown) => state.save(reference.id, input),
     },
   }
 })

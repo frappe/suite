@@ -46,7 +46,7 @@
 import { Combobox, Select, SettingsRow, Switch } from 'frappe-ui'
 import { computed } from 'vue'
 
-import { api, useMutation } from '@/api'
+import { api, client } from '@/api'
 import { useAccountPreferences } from '@/apps/mail/composables/useAccountPreferences'
 import { userStore } from '@/apps/mail/stores/user'
 import type { Identity } from '@/apps/mail/types'
@@ -73,10 +73,10 @@ const UNDO_SEND_OPTIONS = UNDO_SEND_PERIODS.map((seconds) => ({
   label: __('{0} seconds', [String(seconds)]),
   value: String(seconds),
 }))
-const undoSend = useMutation(api.mail.settings.updatePreferences)
+// Not a component's mutation: that one is cancelled when the page goes
 async function saveUndoSend(period: unknown) {
   if (period !== '5' && period !== '10' && period !== '20' && period !== '30') return
 
-  await undoSend.run({ undo_send_period: period })
+  await client.mutation(api.mail.settings.updatePreferences, { undo_send_period: period })
 }
 </script>
