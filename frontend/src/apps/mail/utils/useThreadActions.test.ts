@@ -12,8 +12,12 @@ const mocks = vi.hoisted(() => ({
   useMutation: vi.fn<typeof import('@/api').useMutation>(),
   mutation: vi.fn(),
   holdDraft: vi.fn(),
-  raiseOptimisticToast: vi.fn(),
   setUndoAction: vi.fn(),
+  toast: { success: vi.fn(), error: vi.fn(), dismiss: vi.fn() },
+}))
+vi.mock('frappe-ui', async (original) => ({
+  ...(await original<typeof import('frappe-ui')>()),
+  toast: mocks.toast,
 }))
 vi.mock('@/api', async (original) => ({
   ...(await original<typeof import('@/api')>()),
@@ -21,9 +25,9 @@ vi.mock('@/api', async (original) => ({
   client: { mutation: mocks.mutation },
 }))
 vi.mock('@/apps/mail/composables/useComposeWindow', () => ({ closeComposeWindowFor: vi.fn() }))
-vi.mock('@/apps/mail/utils', () => ({
+vi.mock('@/apps/mail/utils', async (original) => ({
+  ...(await original<typeof import('@/apps/mail/utils')>()),
   getIcon: vi.fn(),
-  raiseOptimisticToast: mocks.raiseOptimisticToast,
   raisePromiseToast: vi.fn(),
   commitAfterUndo: vi.fn(),
 }))
@@ -52,6 +56,10 @@ let scope: ReturnType<typeof effectScope>
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // The translator echoes its message, so the words the reader sees are the ones checked.
+  vi.stubGlobal('__', (message: string, args?: (string | number)[]) =>
+    args ? message.replace(/\{(\d+)\}/g, (_, i) => String(args[Number(i)])) : message,
+  )
   store.accountId = 'account-a'
   scope = effectScope()
   engine = createApiClient(
@@ -63,6 +71,7 @@ beforeEach(() => {
 afterEach(() => {
   scope.stop()
   engine.dispose()
+  vi.unstubAllGlobals()
 })
 
 it('stars reading-pane messages in the current account and permits retry after refusal', async () => {
@@ -146,12 +155,10 @@ it('undoing an unsnooze waits again for the time each conversation had, not just
   )
   mocks.mutation.mockResolvedValue({ updated: ['m1'], left_inbox: true })
 
-  vi.stubGlobal('__', (text: string) => text)
   await actions.unsnoozeThreads(['t1'])
   const undo = mocks.setUndoAction.mock.calls.findLast(([action]) => action)![0]
   undo()
   await vi.waitFor(() => expect(mocks.mutation).toHaveBeenCalledOnce())
-  vi.unstubAllGlobals()
 
   expect(mocks.mutation.mock.calls[0][1]).toEqual({
     account: 'account-a',
@@ -190,9 +197,7 @@ it('discarding a reply draft from the list holds only the draft, not the mail it
     }),
   )!
 
-  vi.stubGlobal('__', (text: string) => text)
   actions.junkOrDeleteThreads(['t1'], false)
-  vi.unstubAllGlobals()
 
   expect(mocks.holdDraft.mock.calls.map(([id]) => id)).toEqual(['reply'])
 })
@@ -218,34 +223,36 @@ const archiveFrom = (mailbox: string) => {
   )!
 }
 
-// raiseOptimisticToast says a plain message on the click, and waits for the answer to work out one
-// it has to read off it.
-it('names an archive out of the Inbox outright, so its toast can come with the click', () => {
-  fetcher.mockReturnValue(new Promise(() => {}))
-  vi.stubGlobal('__', (text: string) => text)
-  archiveFrom('inbox').handleArchiveThreads(['t1'])
-  vi.unstubAllGlobals()
+const answer = (filed: { updated: string[]; left_inbox: boolean }) =>
+  new Response(JSON.stringify({ message: filed }))
 
-  expect(mocks.raiseOptimisticToast.mock.calls.at(-1)?.[1]).toBe('Thread archived')
+it('says an archive out of the Inbox on the click, before the server answers', () => {
+  fetcher.mockReturnValue(new Promise(() => {}))
+  archiveFrom('inbox').handleArchiveThreads(['t1'])
+
+  expect(mocks.toast.success).toHaveBeenCalledWith('Thread archived', {
+    action: { label: 'Undo', onClick: expect.any(Function) },
+  })
 })
 
-it('leaves the toast to the answer when archiving from a list the row stays on', () => {
-  fetcher.mockReturnValue(new Promise(() => {}))
-  vi.stubGlobal('__', (text: string) => text)
+it('waits for the answer to say an archive from a list the row stays on', async () => {
+  let land: ((response: Response) => void) | undefined
+  fetcher.mockReturnValue(
+    new Promise((resolve) => {
+      land = resolve
+    }),
+  )
   archiveFrom('a-folder').handleArchiveThreads(['t1'])
-  const told = mocks.raiseOptimisticToast.mock.calls.at(-1)?.[1]
-  expect(told({ left_inbox: false })).toBe('Added to Archive')
-  expect(told({ left_inbox: true })).toBe('Thread archived')
-  vi.unstubAllGlobals()
+  expect(mocks.toast.success).not.toHaveBeenCalled()
+
+  await vi.waitFor(() => expect(land).toBeDefined())
+  land?.(answer({ updated: ['m1'], left_inbox: false }))
+  await vi.waitFor(() =>
+    expect(mocks.toast.success).toHaveBeenCalledWith('Added to Archive', expect.anything()),
+  )
 })
 
 describe('the confirmation for deleting conversations forever', () => {
-  // The translator echoes its message, so the words the reader sees are the ones checked.
-  beforeEach(() => {
-    window.__ = (message: string, args?: (string | number)[]) =>
-      args ? message.replace(/\{(\d+)\}/g, (_, i) => String(args[Number(i)])) : message
-  })
-
   it('names how many, says it is for good, and its button says what it does', () => {
     const confirm = vi.fn()
     const options = deleteForeverOptions(3, confirm)
