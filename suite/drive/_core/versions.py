@@ -75,6 +75,7 @@ def take_version(
     label: str | None = None,
     actor: str | None = None,
     activity: bool = True,
+    site_limit_only: bool = False,
 ) -> int:
     """Capture one file head or content document body as immutable bytes, credited to `actor` or the caller."""
     _validate_kind_and_label(kind, label)
@@ -86,7 +87,7 @@ def take_version(
     savepoint = f"drive_take_version_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
     try:
-        admit(current.root, size)
+        admit(current.root, size, site_limit_only=site_limit_only)
         seq = _insert_version(
             current,
             principals,
