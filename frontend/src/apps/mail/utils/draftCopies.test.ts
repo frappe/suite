@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   clearDraftCopies,
   DRAFT_COPY_MAX_AGE_MS,
-  findDraftCopy,
   heldDraftCopyKeys,
   listDraftCopies,
   removeDraftCopy,
@@ -37,20 +36,12 @@ beforeEach(() => localStorage.clear())
 afterEach(() => vi.restoreAllMocks())
 
 describe('draft copies', () => {
-  it('finds a copy by any id the draft has had', () => {
-    writeDraftCopy(copy())
-    expect(findDraftCopy('maya@example.com', 'a1', 'draft-1')?.key).toBe('k1')
-    expect(findDraftCopy('maya@example.com', 'a1', 'draft-2')?.key).toBe('k1')
-    expect(findDraftCopy('maya@example.com', 'a1', 'draft-3')).toBeUndefined()
-  })
-
   it('keeps people and accounts apart', () => {
     writeDraftCopy(copy())
     writeDraftCopy(copy({ user: 'sam@example.com' }))
     writeDraftCopy(copy({ key: 'k2', account: 'a2' }))
     expect(listDraftCopies('maya@example.com').map((c) => c.key)).toHaveLength(2)
     expect(listDraftCopies('sam@example.com')).toHaveLength(1)
-    expect(findDraftCopy('maya@example.com', 'a3', 'draft-1')).toBeUndefined()
 
     removeDraftCopy('maya@example.com', 'a1', 'k1')
     expect(listDraftCopies('maya@example.com').map((c) => c.key)).toEqual(['k2'])
@@ -106,7 +97,6 @@ describe('draft copies', () => {
     })
     expect(writeDraftCopy(copy())).toBe(false)
     expect(listDraftCopies('maya@example.com')).toEqual([])
-    expect(findDraftCopy('maya@example.com', 'a1', 'draft-1')).toBeUndefined()
     expect(() => removeDraftCopy('maya@example.com', 'a1', 'k1')).not.toThrow()
     expect(() => clearDraftCopies('maya@example.com')).not.toThrow()
     blocked.mockRestore()

@@ -9,7 +9,11 @@ import {
   createDraftSaver,
   type WriteOptions,
 } from '@/apps/mail/composables/draftSaver'
-import { withdrawDraftCopyOffer } from '@/apps/mail/composables/useDraftRecovery'
+import {
+  createDraftCopy,
+  discardDraftCopy,
+  findUnclaimedCopy,
+} from '@/apps/mail/composables/useDraftRecovery'
 import { getAttachmentUrl } from '@/apps/mail/resources'
 import type { ComposeMailData, DraftRecipient, Identity, UserResource } from '@/apps/mail/types'
 import { commitAfterUndo, processInlineImages, raiseToast } from '@/apps/mail/utils'
@@ -20,14 +24,7 @@ import {
   useListReload,
   useUndo,
 } from '@/apps/mail/utils/composables'
-import {
-  findDraftCopy,
-  heldDraftCopyKeys,
-  holdDraftCopy,
-  removeDraftCopy,
-  writeDraftCopy,
-  type DraftCopy,
-} from '@/apps/mail/utils/draftCopies'
+import { DRAFT_COPY_FIELDS, type DraftCopy } from '@/apps/mail/utils/draftCopies'
 import { createEditorBody } from '@/apps/mail/utils/editorBody'
 import { createMentionSuggestion, type MentionCandidate } from '@/apps/mail/utils/mentionSuggestion'
 import { QuotedContentExtension } from '@/apps/mail/utils/quotedContentExtension'
@@ -162,18 +159,9 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     // Which composition this is, across the id each save gives it (see `draft_key` on the server).
     draft_key: mailDetails?.draft_key || newDraftKey(),
   })
-  // Everything that makes up what the writer sees, and nothing the server gives back.
-  const writing = () =>
-    JSON.stringify([
-      mail.from_email,
-      mail.to,
-      mail.cc,
-      mail.bcc,
-      mail.subject,
-      mail.html_body,
-      mail.quoted_content,
-      mail.attachments,
-    ])
+  // Everything written in the mail, and nothing the server gives back: what a save carries, and
+  // what a local copy holds.
+  const writing = () => JSON.stringify(DRAFT_COPY_FIELDS.map((field) => mail[field]))
 
   // ── What's in the mail ──────────────────────────────────────────────────────────────────────
 
@@ -351,49 +339,11 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 
   // ── The local copy, for while the server can't take the draft ───────────────────────────────
 
-  const copyUser = () => user.data?.name
-  // What can't be saved is kept here only if this says so. Blocked or full storage leaves nothing
-  // behind, which is what leaving warns about.
-  const isCopyKept = ref(false)
-  let releaseCopy: (() => void) | undefined
-  const keepCopy = () => {
-    const owner = copyUser()
-    if (!owner) return
-    const copy: DraftCopy = {
-      key: mail.draft_key,
-      user: owner,
-      account: draftAccount(),
-      ids: [mail.id, ...formerIds].filter(Boolean),
-      savedAt: Date.now(),
-      uploading: [...uploads.value],
-      mail: JSON.parse(
-        JSON.stringify({
-          from_email: mail.from_email,
-          to: mail.to,
-          cc: mail.cc,
-          bcc: mail.bcc,
-          subject: mail.subject,
-          html_body: mail.html_body,
-          quoted_content: mail.quoted_content,
-          attachments: mail.attachments,
-          in_reply_to: mail.in_reply_to,
-          in_reply_to_id: mail.in_reply_to_id,
-          forwarded_from_id: mail.forwarded_from_id,
-        }),
-      ),
-    }
-    isCopyKept.value = writeDraftCopy(copy)
-    // While this composer runs, the copy is its own and not one for another tab to offer back.
-    if (isCopyKept.value) releaseCopy ??= holdDraftCopy(mail.draft_key)
-  }
-  const dropCopy = () => {
-    const owner = copyUser()
-    if (owner) removeDraftCopy(owner, draftAccount(), mail.draft_key)
-    withdrawDraftCopyOffer(mail.draft_key)
-    isCopyKept.value = false
-    releaseCopy?.()
-    releaseCopy = undefined
-  }
+  const localCopy = createDraftCopy(() => ({
+    user: user.data?.name,
+    account: draftAccount(),
+    key: mail.draft_key,
+  }))
 
   // ── Saving ──────────────────────────────────────────────────────────────────────────────────
 
@@ -405,9 +355,14 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       mail.id
         ? updateDraftSubmit({ submit: false }, options)
         : createMailSubmit({ save_as_draft: true }, options),
-    keepCopy,
+    keepCopy: () =>
+      localCopy.keep({
+        mail,
+        ids: [mail.id, ...formerIds].filter(Boolean),
+        uploading: [...uploads.value],
+      }),
     dropCopy: () => {
-      dropCopy()
+      localCopy.drop()
       settledAfterLeaving()
     },
     onRefused: (message) => raiseToast(__('Draft not saved. {0}', [message]), 'error'),
@@ -415,8 +370,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       finished = true
       window.removeEventListener('beforeunload', onBeforeUnload)
       document.removeEventListener('visibilitychange', onHidden)
-      releaseCopy?.()
-      releaseCopy = undefined
+      localCopy.release()
     },
   })
   watch(writing, () => saver.edited())
@@ -431,7 +385,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   const saveState = computed(() => ({
     status: saver.status.value,
     failure: saver.failure.value,
-    isCopyKept: isCopyKept.value,
+    isCopyKept: localCopy.isKept.value,
     isRetrying: saver.isWriting.value,
     isUploading: isUploading.value,
   }))
@@ -442,7 +396,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   const isSafeToClose = computed(
     () =>
       !isUploading.value &&
-      (!saver.hasUnsaved.value || (saver.status.value !== 'saving' && isCopyKept.value)),
+      (!saver.hasUnsaved.value || (saver.status.value !== 'saving' && localCopy.isKept.value)),
   )
 
   // Beyond a page's last moments only a keepalive request gets through, and browsers refuse one with
@@ -537,21 +491,18 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   // meant to leave it. One another tab is still working on isn't this tab's to offer.
   const recoverableCopy = ref<DraftCopy>()
   const offerCopyOfThisDraft = async () => {
-    const owner = copyUser()
+    const owner = user.data?.name
     if (!owner || !mailDetails?.id || mailDetails.restored) return
-    const copy = findDraftCopy(owner, draftAccount(), mailDetails.id)
-    if (!copy || (await heldDraftCopyKeys()).has(copy.key)) return
-    recoverableCopy.value = copy
+    recoverableCopy.value = await findUnclaimedCopy(owner, draftAccount(), mailDetails.id)
   }
   const restoreCopy = () => {
     const copy = recoverableCopy.value
     if (!copy) return
     recoverableCopy.value = undefined
-    withdrawDraftCopyOffer(copy.key)
     // On top of what this composer has, under its own key: the copy's key may still lead the server
     // to the draft as it was when the copy was written, and writing there finds it gone. Kept on
     // the device from here, if at all, as this composer's copy.
-    removeDraftCopy(copy.user, copy.account, copy.key)
+    discardDraftCopy(copy)
     Object.assign(mail, copy.mail)
     void saver.saveNow()
   }
@@ -559,8 +510,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     const copy = recoverableCopy.value
     if (!copy) return
     recoverableCopy.value = undefined
-    withdrawDraftCopyOffer(copy.key)
-    removeDraftCopy(copy.user, copy.account, copy.key)
+    discardDraftCopy(copy)
   }
 
   /**
@@ -569,7 +519,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
    * nothing written elsewhere is overwritten and both stay in Drafts.
    */
   const detachFromGoneDraft = () => {
-    dropCopy()
+    localCopy.drop()
     formerIds.clear()
     savedIn = ''
     mail.id = ''
@@ -636,7 +586,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
           undo_send: !sendAt,
         })
       // Sent, so there's nothing left to keep.
-      dropCopy()
+      localCopy.drop()
       finish()
       close()
     } catch (error) {
@@ -663,7 +613,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     const draft: ComposeMailData = JSON.parse(JSON.stringify(mail))
     const account = scopeAccountId.value
     unsavedToast = toast.error(__('Draft not saved'), {
-      description: isCopyKept.value
+      description: localCopy.isKept.value
         ? __('Kept on this device until it saves or you reopen it')
         : __('Your changes are kept here until you reopen the draft'),
       duration: Infinity,
@@ -684,7 +634,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     await saver.hold()
     // Nothing of it left on the server, so there is nothing there to remove.
     if (saver.status.value === 'gone') detachFromGoneDraft()
-    dropCopy()
+    localCopy.drop()
     finish()
     const draft: ComposeMailData = JSON.parse(JSON.stringify(mail))
     const account = scopeAccountId.value
@@ -838,7 +788,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     // Sent, even though this was only a save: the send went through and its answer never came
     // back. Saving on would only put the message back in Drafts, so the composer is done with it.
     if (status === 'Submitted' && !isSending.value) {
-      dropCopy()
+      localCopy.drop()
       finish()
       close()
     }

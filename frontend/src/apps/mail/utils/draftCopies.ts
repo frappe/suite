@@ -1,4 +1,4 @@
-import type { Attachment, DraftRecipient } from '@/apps/mail/types'
+import type { ComposeMailData } from '@/apps/mail/types'
 
 /**
  * The copy of a draft this browser keeps while the server cannot take it.
@@ -23,19 +23,28 @@ export interface DraftCopy {
   mail: DraftCopyMail
 }
 
-export interface DraftCopyMail {
-  from_email?: string
-  to: DraftRecipient[]
-  cc: DraftRecipient[]
-  bcc: DraftRecipient[]
-  subject: string
-  html_body: string
-  quoted_content: string
-  attachments: Attachment[]
-  in_reply_to: string
-  in_reply_to_id: string
-  forwarded_from_id: string
-}
+/** What of a mail a copy holds: everything written in it, and what it answers or forwards. */
+export const DRAFT_COPY_FIELDS = [
+  'from_email',
+  'to',
+  'cc',
+  'bcc',
+  'subject',
+  'html_body',
+  'quoted_content',
+  'attachments',
+  'in_reply_to',
+  'in_reply_to_id',
+  'forwarded_from_id',
+] as const satisfies readonly (keyof ComposeMailData)[]
+
+export type DraftCopyMail = Pick<ComposeMailData, (typeof DRAFT_COPY_FIELDS)[number]>
+
+/** The part of a mail a copy holds, detached from the mail it came from. */
+export const pickDraftCopyMail = (mail: DraftCopyMail): DraftCopyMail =>
+  JSON.parse(
+    JSON.stringify(Object.fromEntries(DRAFT_COPY_FIELDS.map((field) => [field, mail[field]]))),
+  )
 
 const PREFIX = 'suite.mail.draftCopy.v1'
 // Long enough to come back after a weekend away, short enough that a forgotten copy doesn't sit on a
@@ -121,10 +130,6 @@ export const listDraftCopies = (user: string, now = Date.now()): DraftCopy[] => 
   }
   return copies.sort((a, b) => b.savedAt - a.savedAt)
 }
-
-/** The copy of a draft opened by id, under any id it has had. */
-export const findDraftCopy = (user: string, account: string, id: string) =>
-  listDraftCopies(user).find((copy) => copy.account === account && copy.ids.includes(id))
 
 export const clearDraftCopies = (user: string) => storedKeys(userPrefix(user)).forEach(removeStored)
 
