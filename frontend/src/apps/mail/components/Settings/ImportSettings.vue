@@ -1,11 +1,10 @@
 <template>
-  <AppSettingsHeader :title="__('Import')" />
-  <AppSettingsBody>
+  <SettingsSection :title="__('Import')">
     <div class="flex flex-col gap-5">
       <TabButtons v-model="activeType" :options="typeButtons" />
       <component :is="activeComponent" :key="activeType" />
     </div>
-  </AppSettingsBody>
+  </SettingsSection>
 </template>
 
 <script setup lang="ts">
@@ -14,8 +13,7 @@ import { computed, markRaw, ref, type Component } from 'vue'
 
 import ContactsImportSettings from '@/apps/mail/components/Settings/ContactsImportSettings.vue'
 import MailImportSettings from '@/apps/mail/components/Settings/MailImportSettings.vue'
-import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
-import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import SettingsSection from '@/platform/settings/SettingsSection.vue'
 
 const activeType = ref<'mail' | 'contacts'>('mail')
 

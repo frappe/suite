@@ -7,7 +7,7 @@ import type { AsyncComponentLoader, InjectionKey } from 'vue'
  * does not read the dialog's state.
  */
 export interface SettingsTab {
-  /** Namespaced as `<group>.<tab>`, for example `'mail.screener'`. */
+  /** Namespaced as `<group>.<tab>`, for example `'mail.inbox'`. */
   readonly id: string
   readonly label: () => string
   /** A lucide class, for example `'lucide-key-round'`. */

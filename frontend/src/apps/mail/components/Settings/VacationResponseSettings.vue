@@ -1,5 +1,5 @@
 <template>
-  <AppSettingsHeader :title="__('Vacation Response')">
+  <SettingsSection :title="__('Auto-reply')">
     <template v-if="vacationResponse.data" #actions>
       <Button
         :label="__('Save')"
@@ -10,8 +10,6 @@
         @click="handleSave"
       />
     </template>
-  </AppSettingsHeader>
-  <AppSettingsBody>
     <div v-if="vacationResponse.data" class="flex flex-col gap-5">
       <SettingsRow
         class="!py-0"
@@ -56,7 +54,7 @@
         :action="updateVacationResponseSubmit"
       />
     </div>
-  </AppSettingsBody>
+  </SettingsSection>
 </template>
 
 <script setup lang="ts">
@@ -71,8 +69,7 @@ import { raiseToast } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { fromLocalInput, toLocalInput } from '@/apps/mail/utils/datetime'
 import dayjs from '@/apps/mail/utils/dayjs'
-import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
-import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import SettingsSection from '@/platform/settings/SettingsSection.vue'
 import { translate as __ } from '@/platform/translation'
 
 const store = userStore()

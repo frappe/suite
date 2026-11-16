@@ -1,5 +1,5 @@
 <template>
-  <AppSettingsHeader :title="__('Identity')">
+  <SettingsSection :title="__('Send-as addresses')">
     <template #actions>
       <Button
         v-if="draft"
@@ -18,8 +18,6 @@
         @click="showAddIdentity"
       />
     </template>
-  </AppSettingsHeader>
-  <AppSettingsBody>
     <template v-if="identities?.data?.length">
       <div class="flex min-h-full flex-col">
         <div class="flex-1 space-y-4">
@@ -197,7 +195,7 @@
         ],
       }"
     />
-  </AppSettingsBody>
+  </SettingsSection>
 </template>
 
 <script setup lang="ts">
@@ -211,8 +209,7 @@ import { userStore } from '@/apps/mail/stores/user'
 import type { Identity } from '@/apps/mail/types'
 import { raiseToast } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
-import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
-import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import SettingsSection from '@/platform/settings/SettingsSection.vue'
 import { translate as __ } from '@/platform/translation'
 
 const store = userStore()

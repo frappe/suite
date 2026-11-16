@@ -107,21 +107,6 @@ vi.mock('@/api', async () => {
 vi.mock('@/apps/mail/components/Controls/MailRichTextField.vue', () => ({
   default: defineComponent({ render: () => h('div') }),
 }))
-vi.mock('@/components/settings/AppSettingsHeader.vue', () => ({
-  default: defineComponent({
-    inheritAttrs: false,
-    setup(_props, { slots }) {
-      return () => h('div', slots.actions?.())
-    },
-  }),
-}))
-vi.mock('@/components/settings/AppSettingsBody.vue', () => ({
-  default: defineComponent({
-    setup(_props, { slots }) {
-      return () => h('div', slots.default?.())
-    },
-  }),
-}))
 vi.mock('@/apps/mail/components/IdentitySettingsListView.vue', () => ({
   default: defineComponent({ render: () => h('div') }),
 }))

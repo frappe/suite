@@ -1,5 +1,5 @@
 <template>
-  <AppSettingsHeader :title="__('Folders')">
+  <SettingsSection :title="__('Folders')">
     <template #actions>
       <Button
         icon-left="lucide-plus"
@@ -8,8 +8,6 @@
         @click="editMailbox()"
       />
     </template>
-  </AppSettingsHeader>
-  <AppSettingsBody>
     <div v-if="managedMailboxes.length">
       <div
         v-for="mailbox in managedMailboxes"
@@ -53,7 +51,7 @@
 
     <FolderModal v-model="showFolderModal" :mailbox="selectedMailbox" />
     <DeleteFolderModal v-model="showDeleteFolderModal" :mailbox="selectedMailbox" />
-  </AppSettingsBody>
+  </SettingsSection>
 </template>
 
 <script setup lang="ts">
@@ -71,8 +69,7 @@ import type { MailboxData } from '@/apps/mail/types'
 import { getIcon } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
-import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
-import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import SettingsSection from '@/platform/settings/SettingsSection.vue'
 
 const { mailboxes } = userStore()
 const { isMobile } = useScreenSize()

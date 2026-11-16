@@ -1,5 +1,5 @@
 <template>
-  <AppSettingsHeader :title="__('Credentials')">
+  <SettingsSection :title="__('Login details')">
     <template v-if="userSettings.data" #actions>
       <Button
         :label="__('Save')"
@@ -9,8 +9,6 @@
         @click="() => save()"
       />
     </template>
-  </AppSettingsHeader>
-  <AppSettingsBody>
     <template v-if="userSettings.data">
       <div class="flex flex-col gap-5">
         <h2 class="text-base-semibold text-ink-gray-8">{{ __('Connection') }}</h2>
@@ -48,7 +46,7 @@
         <ErrorMessage :message="saveSettings.error?.message" />
       </div>
     </template>
-  </AppSettingsBody>
+  </SettingsSection>
 </template>
 
 <script setup lang="ts">
@@ -57,8 +55,7 @@ import { computed, ref, watch } from 'vue'
 
 import { api, useMutation, useQuery, type InputOf } from '@/api'
 import { raiseToast } from '@/apps/mail/utils'
-import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
-import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import SettingsSection from '@/platform/settings/SettingsSection.vue'
 import { translate as __ } from '@/platform/translation'
 
 const userSettings = useQuery(api.mail.settings.credentials)

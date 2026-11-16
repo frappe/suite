@@ -442,7 +442,7 @@ export const useFilterBySender = () => {
   }
 }
 
-/** A Mail tab in the Suite Settings list, for example `'mail.screener'`. */
+/** A Mail tab in the Suite Settings list, for example `'mail.inbox'`. */
 export type MailSettingsTabId = (typeof mailSettings.tabs)[number]['id']
 
 // Every Mail entry point opens the Suite Settings dialog on a Mail tab. This is Mail's one

@@ -1,63 +1,86 @@
 <template>
-  <AppSettingsHeader :title="__('Compose')">
-    <template #actions>
-      <Button
-        :label="__('Save')"
-        variant="solid"
-        :size="isMobile ? 'md' : 'sm'"
-        :loading="saveSettings.isPending"
-        :disabled="isNotDirty"
-        @click="save()"
-      />
-    </template>
-  </AppSettingsHeader>
-  <AppSettingsBody>
-    <div class="flex flex-col gap-5">
+  <SettingsSection v-if="preferences" :title="__('Outgoing mail')">
+    <div class="divide-y divide-outline-gray-1">
       <SettingsRow
-        class="!py-0"
-        :title="__('Undo Send')"
+        :title="__('Default outgoing email')"
+        :description="__('The address selected automatically when composing a message.')"
+      >
+        <Combobox
+          trigger="button"
+          align="end"
+          :model-value="preferences.default_outgoing_email"
+          :options="addresses"
+          @update:model-value="setDefaultOutgoing"
+        />
+      </SettingsRow>
+      <SettingsRow
+        :title="__('Undo send')"
         :description="
           __('How long a sent message waits before delivery, so you can still take it back.')
         "
       >
-        <Select v-model="undoSendPeriod" :options="UNDO_SEND_OPTIONS" />
+        <!-- The saved value goes through the fallback the composer uses, so an unset one reads as
+             the default. -->
+        <Select
+          :model-value="String(undoSendPeriodOf(user.data))"
+          :options="UNDO_SEND_OPTIONS"
+          @update:model-value="saveUndoSend"
+        />
+      </SettingsRow>
+      <SettingsRow
+        :title="__('Create contacts after sending email')"
+        :description="
+          __('Automatically creates contacts for new recipients after an email is sent.')
+        "
+      >
+        <Switch v-model="createContacts" />
+      </SettingsRow>
+      <SettingsRow
+        :title="__('Keep forwarded email in thread')"
+        :description="__('Keep forwarded emails in the original thread.')"
+      >
+        <Switch v-model="keepForwardedInThread" />
       </SettingsRow>
     </div>
-  </AppSettingsBody>
+  </SettingsSection>
 </template>
 
 <script setup lang="ts">
-import { Button, Select, SettingsRow } from 'frappe-ui'
-import { computed, ref } from 'vue'
+import { Combobox, Select, SettingsRow, Switch } from 'frappe-ui'
+import { computed } from 'vue'
 
 import { api, useMutation } from '@/api'
+import { useAccountPreferences } from '@/apps/mail/composables/useAccountPreferences'
 import { userStore } from '@/apps/mail/stores/user'
-import { raiseToast } from '@/apps/mail/utils'
-import { useScreenSize } from '@/apps/mail/utils/composables'
+import type { Identity } from '@/apps/mail/types'
 import { UNDO_SEND_PERIODS, undoSendPeriodOf } from '@/apps/mail/utils/undoSend'
-import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
-import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import SettingsSection from '@/platform/settings/SettingsSection.vue'
 import { translate as __ } from '@/platform/translation'
 
-const user = userStore().userResource
-const { isMobile } = useScreenSize()
+const { identities, userResource: user } = userStore()
+const { preferences, change, flag } = useAccountPreferences()
+const createContacts = flag('create_contacts_after_email_submit')
+const keepForwardedInThread = flag('keep_forwarded_email_in_thread')
 
-// The select speaks the Select field's strings; the saved value is compared through the same
-// fallback the composer uses, so an unset row reads as the default rather than as dirty.
-const savedPeriod = computed(() => String(undoSendPeriodOf(user.data)))
-const undoSendPeriod = ref(savedPeriod.value)
-const isNotDirty = computed(() => undoSendPeriod.value === savedPeriod.value)
+const addresses = computed(() =>
+  (identities.data ?? []).map((identity: Identity) => identity.email),
+)
 
-const saveSettings = useMutation(api.mail.settings.updatePreferences)
-async function save() {
-  const period = undoSendPeriod.value
-  if (period !== '5' && period !== '10' && period !== '20' && period !== '30') return
-  await saveSettings.run({ undo_send_period: period })
-  raiseToast(__('Compose settings updated'))
+// The control can also hand back nothing; an address is all there is to save
+async function setDefaultOutgoing(email: unknown) {
+  if (typeof email !== 'string') return
+
+  await change({ default_outgoing_email: email })
 }
 
 const UNDO_SEND_OPTIONS = UNDO_SEND_PERIODS.map((seconds) => ({
   label: __('{0} seconds', [String(seconds)]),
   value: String(seconds),
 }))
+const undoSend = useMutation(api.mail.settings.updatePreferences)
+async function saveUndoSend(period: unknown) {
+  if (period !== '5' && period !== '10' && period !== '20' && period !== '30') return
+
+  await undoSend.run({ undo_send_period: period })
+}
 </script>

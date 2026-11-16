@@ -1,5 +1,5 @@
 <template>
-  <AppSettingsHeader :title="__('Signatures')">
+  <SettingsSection :title="__('Signatures')">
     <template #actions>
       <Button
         icon-left="lucide-plus"
@@ -8,8 +8,6 @@
         @click="showAddSignature = true"
       />
     </template>
-  </AppSettingsHeader>
-  <AppSettingsBody>
     <div v-if="signatures?.data?.length">
       <div
         v-for="signature in signatures?.data"
@@ -54,7 +52,7 @@
       :signature-i-d="selectedSignature"
       @reload-signatures="signatures.refetch().catch(() => {})"
     />
-  </AppSettingsBody>
+  </SettingsSection>
 </template>
 
 <script setup lang="ts">
@@ -68,8 +66,7 @@ import EditSignatureModal from '@/apps/mail/components/Modals/EditSignatureModal
 import SetDefaultSignatureModal from '@/apps/mail/components/Modals/SetDefaultSignatureModal.vue'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
-import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
-import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import SettingsSection from '@/platform/settings/SettingsSection.vue'
 
 const { isMobile } = useScreenSize()
 

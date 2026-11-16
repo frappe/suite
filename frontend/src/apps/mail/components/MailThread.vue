@@ -568,7 +568,7 @@
                             <button
                               type="button"
                               class="underline underline-offset-2"
-                              @click="openSettings('mail.screener')"
+                              @click="openSettings('mail.inbox')"
                             >
                               {{ __('block list') }}</button
                             >{{ __('. Their mail goes to Junk.') }}

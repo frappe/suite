@@ -1,5 +1,5 @@
 <template>
-  <AppSettingsHeader :title="__('Automation')">
+  <SettingsSection :title="__('Rules')">
     <template #actions>
       <Button
         icon-left="lucide-refresh-cw"
@@ -10,8 +10,6 @@
       />
       <Button icon-left="lucide-plus" :label="__('New')" @click="addScript" />
     </template>
-  </AppSettingsHeader>
-  <AppSettingsBody>
     <div v-if="filteredScripts.length">
       <div
         v-for="script in filteredScripts"
@@ -60,7 +58,7 @@
       v-model="showDeleteScript"
       :script="selectedScript"
     />
-  </AppSettingsBody>
+  </SettingsSection>
 </template>
 
 <script setup lang="ts">
@@ -75,8 +73,7 @@ import SieveScriptModal from '@/apps/mail/components/Modals/SieveScriptModal.vue
 import { userStore } from '@/apps/mail/stores/user'
 import type { SieveScript } from '@/apps/mail/types'
 import { raiseToast } from '@/apps/mail/utils'
-import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
-import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import SettingsSection from '@/platform/settings/SettingsSection.vue'
 import { translate as __ } from '@/platform/translation'
 
 const store = userStore()

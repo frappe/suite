@@ -1,5 +1,5 @@
 <template>
-  <AppSettingsHeader :title="__('Push Subscriptions')">
+  <SettingsSection :title="__('Push subscriptions')">
     <template #actions>
       <Button
         variant="outline"
@@ -10,41 +10,29 @@
       />
       <Button icon-left="lucide-plus" :label="__('New')" @click="showAddModal = true" />
     </template>
-  </AppSettingsHeader>
-  <div class="flex min-h-0 flex-1 flex-col overflow-hidden px-[4.4rem] pb-8 pt-6">
     <template v-if="rows.length">
-      <div class="relative min-h-0 flex-1">
-        <!-- Force ListView root to full panel height so overflow-x scrollbar is at the bottom -->
-        <div
-          class="absolute inset-0 flex min-h-0 flex-col overflow-hidden [&>div]:h-full [&>div]:min-h-0"
-        >
-          <ListView
-            ref="listView"
-            class="h-full min-h-0"
-            :columns="COLUMNS"
-            :rows="rows"
-            row-key="name"
-          >
-            <ListHeader />
-            <ListRows />
-            <ListSelectBanner>
-              <template #actions>
-                <Button
-                  variant="ghost"
-                  :label="__('Renew')"
-                  :loading="renewing"
-                  @click="renewSelected"
-                />
-                <Button
-                  variant="ghost"
-                  theme="red"
-                  :label="__('Delete')"
-                  @click="showDeleteModal = true"
-                />
-              </template>
-            </ListSelectBanner>
-          </ListView>
-        </div>
+      <!-- A long list scrolls in its own box, so the page stays short. -->
+      <div class="flex max-h-80 flex-col">
+        <ListView ref="listView" :columns="COLUMNS" :rows="rows" row-key="name">
+          <ListHeader />
+          <ListRows />
+          <ListSelectBanner>
+            <template #actions>
+              <Button
+                variant="ghost"
+                :label="__('Renew')"
+                :loading="renewing"
+                @click="renewSelected"
+              />
+              <Button
+                variant="ghost"
+                theme="red"
+                :label="__('Delete')"
+                @click="showDeleteModal = true"
+              />
+            </template>
+          </ListSelectBanner>
+        </ListView>
       </div>
     </template>
     <div
@@ -60,7 +48,7 @@
       @created="pushSubscriptions.refetch().catch(() => {})"
     />
     <Dialog v-model:open="showDeleteModal" v-bind="deleteModalOptions" />
-  </div>
+  </SettingsSection>
 </template>
 
 <script setup lang="ts">
@@ -72,7 +60,7 @@ import { api, client, useMutation, useQuery, type InputOf } from '@/api'
 import AddPushSubscriptionModal from '@/apps/mail/components/Modals/AddPushSubscriptionModal.vue'
 import type { PushSubscription } from '@/apps/mail/types'
 import { raiseError, raiseToast } from '@/apps/mail/utils'
-import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import SettingsSection from '@/platform/settings/SettingsSection.vue'
 import { translate as __ } from '@/platform/translation'
 
 const user = inject<import('@/apps/mail/types').UserResource>('$user')
