@@ -49,14 +49,12 @@ function mount() {
   return root
 }
 
-it('turns the switch off and says how to unblock when the site is blocked', () => {
+it('shows no switch and says how to unblock when the site is blocked', () => {
   vi.stubGlobal('Notification', { permission: 'denied', requestPermission: vi.fn() })
   const root = mount()
 
-  const toggle = root.querySelector<HTMLButtonElement>('[role="switch"]')!
-  expect(toggle.disabled).toBe(true)
-  expect(toggle.getAttribute('aria-checked')).toBe('false')
-  expect(root.textContent).toContain('Allow them in your browser settings')
+  expect(root.querySelector('[role="switch"]')).toBeNull()
+  expect(root.textContent).toContain('open the site settings')
 })
 
 it('offers the switch while the person has not decided', () => {
@@ -70,6 +68,15 @@ it('offers the switch while the person has not decided', () => {
 it('says the browser cannot show notifications when it has no Notification API', () => {
   const root = mount()
 
-  expect(root.querySelector<HTMLButtonElement>('[role="switch"]')!.disabled).toBe(true)
+  expect(root.querySelector('[role="switch"]')).toBeNull()
   expect(root.textContent).toContain('This browser cannot show notifications')
+})
+
+it('shows no switch when the site has no notification relay', () => {
+  window.push_relay_server_url = undefined
+  vi.stubGlobal('Notification', { permission: 'default', requestPermission: vi.fn() })
+  const root = mount()
+
+  expect(root.querySelector('[role="switch"]')).toBeNull()
+  expect(root.textContent).toContain('Notifications are not set up on this site')
 })

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Button, useKeyboardShortcut } from 'frappe-ui'
 import { CalendarPlus } from 'lucide-vue-next'
-import { computed, onMounted, onUnmounted, provide } from 'vue'
+import { computed, onMounted, onScopeDispose, onUnmounted, provide } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import ShortcutsModal from '@/apps/calendar/components/Modals/ShortcutsModal.vue'
@@ -10,6 +10,7 @@ import { useCalendarSocket } from '@/apps/calendar/socket'
 import { userStore } from '@/apps/calendar/stores/user'
 import dayjs from '@/apps/calendar/utils/dayjs'
 import { useScreenSize } from '@/composables/useScreenSize'
+import { toast } from '@/platform/feedback'
 import { provideAreaShortcuts } from '@/platform/shortcuts'
 
 /**
@@ -20,7 +21,8 @@ import { provideAreaShortcuts } from '@/platform/shortcuts'
  *   - provides the calendar-local `$user` (mail/calendar userResource) and `$dayjs`
  *     injections that calendar components depend on,
  *   - holds Calendar's site socket while mounted (event reminders listen on the shell's
- *     connection, see `installEventReminders`),
+ *     connection, see `installEventReminders`), and announces a finished calendar import or
+ *     export on it, as Mail's inbox does for its own,
  *   - registers the app-wide shortcuts and the dialog that lists them,
  *   - on a phone, draws the new-event button above the shell's bottom nav,
  *   - renders the nested <router-view>.
@@ -34,7 +36,11 @@ const router = useRouter()
 provideAreaShortcuts(openShortcuts)
 provide('$user', userResource)
 provide('$dayjs', dayjs)
-useCalendarSocket()
+const socket = useCalendarSocket()
+const onExchangeCompleted = (payload: { success: boolean; message: string }) =>
+  payload.success ? toast.success(payload.message) : toast.error(payload.message)
+socket.on('calendar_exchange_completed', onExchangeCompleted)
+onScopeDispose(() => socket.off('calendar_exchange_completed', onExchangeCompleted))
 
 // Mark <body> while calendar is mounted so the `.icon` helper below (see <style>) can
 // reach frappe-ui Dropdowns/Dialogs, which teleport to <body> — outside the calendar tree.

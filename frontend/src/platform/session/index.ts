@@ -85,7 +85,10 @@ export function createSession(client: Transport = defaultTransport): Session {
       status.value = 'guest'
       return
     }
-    status.value = 'loading'
+    // A signed-in session stays signed in while its account is read again:
+    // the shell renders signed-in surfaces such as Settings from this status,
+    // and a reload after a profile save must not unmount them.
+    if (status.value !== 'authenticated') status.value = 'loading'
     const refreshGeneration = generation
     const read: Promise<AccountResponse | null> =
       client === defaultTransport && accountReader

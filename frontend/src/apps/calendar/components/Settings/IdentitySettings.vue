@@ -2,14 +2,20 @@
   Calendar > Identity: the names and addresses the user organizes and attends
   events as (participant identities). The default one is the organizer of a
   new event. A row opens its edit dialog; New opens the same dialog empty.
+  The server takes only the account's own addresses, with one identity each,
+  so New offers only an address that has none, and hides when none is left.
 -->
 <template>
   <SettingsPage
     :title="__('Identity')"
-    :description="__('The name and email shown to people you invite')"
-    :loading="!participantIdentities.data"
+    :description="
+      freeAddresses.length
+        ? __('The name and email shown to people you invite')
+        : __('The name shown to people you invite. Each of your addresses has one identity.')
+    "
+    :loading="!participantIdentities.data || !mailIdentities.data"
   >
-    <template #actions>
+    <template v-if="freeAddresses.length" #actions>
       <Button icon-left="lucide-plus" :label="__('New')" @click="openNew" />
     </template>
     <SettingsSection v-if="participantIdentities.data">
@@ -44,10 +50,9 @@
         />
         <FormControl
           v-model="draft.email"
-          type="email"
+          type="select"
           :label="__('Email')"
-          :placeholder="__('jane@example.com')"
-          autocomplete="email"
+          :options="emailOptions"
           required
         />
         <FormControl v-model="draft.default" type="checkbox" :label="__('Use for new events')" />
@@ -76,7 +81,7 @@ import { translate as __ } from '@/platform/translation'
 type Identity = OutputOf<typeof api.mail.participantIdentities.list>[number]
 
 const store = userStore()
-const { participantIdentities } = store
+const { participantIdentities, identities: mailIdentities } = store
 
 const create = useMutation(api.mail.participantIdentities.create)
 const update = useMutation(api.mail.participantIdentities.update)
@@ -86,6 +91,20 @@ const remove = useMutation(api.mail.participantIdentities.delete)
 const editing = ref<Identity>()
 const showForm = ref(false)
 const draft = reactive({ name: '', email: '', default: false })
+
+// The account's addresses are the ones its mail identities send as.
+const freeAddresses = computed(() => {
+  const taken = new Set(participantIdentities.data?.map((identity) => identity.email.toLowerCase()))
+  const own = new Set(mailIdentities.data?.map((identity) => identity.email.toLowerCase()))
+  return [...own].filter((email) => !taken.has(email))
+})
+
+const emailOptions = computed(() =>
+  [...(editing.value ? [editing.value.email] : []), ...freeAddresses.value].map((email) => ({
+    label: email,
+    value: email,
+  })),
+)
 
 const formDialog = computed(() => ({
   title: editing.value ? __('Edit identity') : __('New identity'),
@@ -102,7 +121,7 @@ const formDialog = computed(() => ({
 
 function openNew() {
   editing.value = undefined
-  Object.assign(draft, { name: '', email: '', default: false })
+  Object.assign(draft, { name: '', email: freeAddresses.value[0] ?? '', default: false })
   showForm.value = true
 }
 

@@ -52,6 +52,25 @@ def update_password(
         frappe.flags.in_update_password = previous
 
 
+def _verify_current_password(old_password: str) -> None:
+    """Refuse a wrong current password with a validation error.
+
+    Frappe raises AuthenticationError here, and its request handler clears the
+    session cookies on that error, so a mistyped current password signed the
+    user out. A wrong guess still counts toward the sign-in lockout, so an open
+    session cannot be used to guess the password.
+    """
+    from frappe.auth import get_login_attempt_tracker
+    from frappe.utils.password import check_password
+
+    tracker = get_login_attempt_tracker(frappe.session.user)
+    try:
+        check_password(frappe.session.user, old_password)
+    except frappe.AuthenticationError:
+        tracker.add_failure_attempt()
+        frappe.throw(_("Incorrect password"))
+
+
 def _update_password(
     new_password: str, logout_all_sessions: int, key: str | None, old_password: str | None
 ) -> Any:
@@ -62,6 +81,9 @@ def _update_password(
 
     if len(new_password) > MAX_PASSWORD_SIZE:
         frappe.throw(_("Password size exceeded the maximum allowed size."))
+
+    if old_password and not key:
+        _verify_current_password(old_password)
 
     if not is_suite_cloud_configured():
         return update_frappe_password(

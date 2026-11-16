@@ -1,6 +1,8 @@
 <!--
   Calendar > Advanced: the CalDAV details a third-party calendar app needs.
-  The group shows this tab only when the server has a CalDAV URL.
+  The group shows this tab only when the server has a CalDAV URL. The
+  password row says what Mail > Advanced > Mail clients says: apps sign in
+  with the mail password, which Security sets only on a password change.
 -->
 <template>
   <SettingsPage
@@ -23,18 +25,23 @@
       <SettingsRow
         :title="__('Password')"
         :description="
-          __('Calendar apps sign in with your mail account password, not with your API key.')
+          __(
+            'Sign in with your mail password. It is separate from your Suite password. When Suite hosts your mail, changing your password in Security sets your mail password to match.',
+          )
         "
-      />
+      >
+        <Button :label="__('Open Security')" @click="openSettings('account.security')" />
+      </SettingsRow>
     </SettingsSection>
   </SettingsPage>
 </template>
 
 <script setup lang="ts">
-import { SettingsRow } from 'frappe-ui'
+import { Button, SettingsRow } from 'frappe-ui'
 import { computed } from 'vue'
 
 import { api, useQuery } from '@/api'
+import { openSettings } from '@/platform/settings'
 import { SettingsCopyField, SettingsPage, SettingsSection } from '@/platform/settings-tab'
 import { translate as __ } from '@/platform/translation'
 

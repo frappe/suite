@@ -13,7 +13,16 @@
     :tab="requestedTab"
     @update:tab="selectTab"
   />
-  <SettingsDialog v-else v-model:open="open" :tab="activeTab" size="5xl" @update:tab="selectTab">
+  <!-- The command palette binds the Settings key (`useSettingsShortcut`),
+       so frappe-ui's own binding, which only toggles the dialog, is off. -->
+  <SettingsDialog
+    v-else
+    v-model:open="open"
+    :tab="activeTab"
+    size="5xl"
+    :keyboard-shortcut="false"
+    @update:tab="selectTab"
+  >
     <template #title>{{ __('Settings') }}</template>
     <!-- SettingsDialog draws no close button. This one sits where Dialog
          puts its own. -->
@@ -50,7 +59,7 @@
         <SettingsLoadFailed v-if="failed" class="px-2 py-1.5" :retry="load" />
       </SettingsSidebar>
       <SettingsContent>
-        <SettingsPanel v-for="tab in tabs" :key="tab.id" :value="tab.id">
+        <SettingsPanel v-for="tab in tabs" :key="tab.id" :value="tab.id" tabindex="-1">
           <SettingsTabBody :tab="tab" />
         </SettingsPanel>
       </SettingsContent>

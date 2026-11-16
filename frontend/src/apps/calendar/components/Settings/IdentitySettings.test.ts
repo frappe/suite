@@ -11,7 +11,7 @@ vi.mock('frappe-ui', async (original) => {
   const slot = defineComponent(
     (_, { slots }) =>
       () =>
-        h('div', slots.default?.()),
+        h('div', [slots.default?.(), slots.actions?.()]),
   )
   const labelled = defineComponent({
     props: { label: { type: String, default: '' } },
@@ -39,10 +39,21 @@ vi.mock('@/platform/feedback', async () => {
 
 // SAFETY: undefined is the loading state; the tests set rows later.
 const identities = vi.hoisted(() => ({ data: undefined as unknown[] | undefined }))
+// The account's addresses, as its mail identities name them.
+const mailIdentities = vi.hoisted(() => ({
+  data: [{ email: 'maya@northwind.test' }, { email: 'events@northwind.test' }] as unknown[],
+}))
 vi.mock('@/apps/calendar/stores/user', async () => {
   const { reactive } = await import('vue')
   const participantIdentities = reactive(identities)
-  return { userStore: () => ({ participantIdentities, accountId: 'maya@northwind.test' }) }
+  const mail = reactive(mailIdentities)
+  return {
+    userStore: () => ({
+      participantIdentities,
+      identities: mail,
+      accountId: 'maya@northwind.test',
+    }),
+  }
 })
 
 let unmount: (() => void) | undefined
@@ -86,5 +97,31 @@ describe('Calendar > Identity', () => {
     expect(root.textContent).toContain('events@northwind.test')
     expect(root.textContent).toContain('Default')
     expect(root.textContent).not.toContain('No identities yet')
+  })
+
+  it('offers New only while one of the addresses has no identity', async () => {
+    identities.data = reactive([
+      {
+        name: 'a|1',
+        account: 'a',
+        id: '1',
+        _name: 'Maya',
+        email: 'maya@northwind.test',
+        default: 1,
+      },
+    ])
+    const root = mount()
+    const newButton = () => root.querySelector('button[label="New"]')
+    await vi.waitFor(() => expect(newButton()).not.toBeNull())
+
+    identities.data.push({
+      name: 'a|2',
+      account: 'a',
+      id: '2',
+      _name: '',
+      email: 'events@northwind.test',
+      default: 0,
+    })
+    await vi.waitFor(() => expect(newButton()).toBeNull())
   })
 })

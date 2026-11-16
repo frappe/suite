@@ -44,6 +44,12 @@ const extensions = mailEditorKit({ divParagraphs })
 const menu = useEditorMenu()
 
 const onChange = (value: unknown) => {
-  if (typeof value === 'string') html.value = value
+  if (typeof value === 'string') html.value = isBlank(value) ? '' : value
+}
+
+// An emptied editor still holds an empty paragraph (`<div></div>`); it saves as no value.
+function isBlank(value: string): boolean {
+  const body = new DOMParser().parseFromString(value, 'text/html').body
+  return !body.textContent?.trim() && !body.querySelector('img, video, iframe, hr, table')
 }
 </script>

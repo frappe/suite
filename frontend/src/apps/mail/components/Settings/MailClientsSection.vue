@@ -4,21 +4,31 @@
   details: an administrator turns them on in Mail Settings, and enters them or lets Suite Cloud
   read them from DNS (`get_mail_client_config`).
 
-  Clients sign in with the mail account's own password. Suite Cloud sets it to the Suite password
-  whenever that changes (`suite.mail.events.update_password`). The app password under Connection is
-  a different secret, used only by Suite.
+  Clients sign in with the mail account's own password. Provisioning sets it to a random token
+  (`account_lifecycle.provision`); Suite Cloud sets it to the Suite password only when the user
+  changes that (`complete_password_change`). So the copy never says the two are the same, and links
+  to Security. Calendar > Advanced says the same for CalDAV. The app password under Connection is a
+  different secret, used only by Suite.
 -->
 <template>
   <SettingsSection
     v-if="clientConfig.data?.length"
     :title="__('Mail clients')"
     :description="
-      __(
-        'To use another mail app, such as Thunderbird or Apple Mail, enter these details in it. Sign in with this username and your mail account password. When Suite hosts your mail, that is your Suite password.',
-      )
+      __('To use another mail app, such as Thunderbird or Apple Mail, enter these details in it.')
     "
   >
     <SettingsCopyField :label="__('Username')" :value="user.data?.email ?? ''" />
+    <SettingsRow
+      :title="__('Password')"
+      :description="
+        __(
+          'Sign in with your mail password. It is separate from your Suite password. When Suite hosts your mail, changing your password in Security sets your mail password to match.',
+        )
+      "
+    >
+      <Button :label="__('Open Security')" @click="openSettings('account.security')" />
+    </SettingsRow>
     <div
       v-for="server in clientConfig.data"
       :key="`${server.protocol}-${server.port}`"
@@ -37,10 +47,11 @@
 </template>
 
 <script setup lang="ts">
-import { Badge } from 'frappe-ui'
+import { Badge, Button, SettingsRow } from 'frappe-ui'
 
 import { api, useQuery } from '@/api'
 import { userStore } from '@/apps/mail/stores/user'
+import { openSettings } from '@/platform/settings'
 import { SettingsCopyField, SettingsSection } from '@/platform/settings-tab'
 import { translate as __ } from '@/platform/translation'
 
