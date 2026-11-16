@@ -246,6 +246,7 @@ async function mountComments({
   const drive = driveHolding(threads, canShare)
   const sheets = ['Sheet1', 'Sheet2']
   const goToCell = vi.fn((sheet: string) => sheets.includes(sheet))
+  const onClose = vi.fn()
   const root = document.createElement('div')
   document.body.append(root)
   const app = createApp(
@@ -262,12 +263,14 @@ async function mountComments({
 
         return () =>
           h(SheetComments, {
+            open: true,
             session: drive.session,
             comments,
             sheets,
             canComment: true,
             canEditDocument: true,
             goToCell,
+            onClose,
           })
       },
     }),
@@ -280,7 +283,7 @@ async function mountComments({
   }
 
   await settle()
-  return { root, goToCell, ...drive }
+  return { root, goToCell, onClose, ...drive }
 }
 
 function type(root: HTMLElement, label: string, text: string) {
@@ -312,6 +315,32 @@ function rowButton(root: HTMLElement, text: string) {
 
 const CELL_BOX = 'Add a comment on the cell'
 const WHOLE_BOX = 'Add a comment'
+
+describe('the panel beside the grid', () => {
+  it('keeps keys typed in a comment out of the grid', async () => {
+    const { root } = await mountComments({
+      startOn: cellAnchor({ sheet: 'Sheet1', cell: 'B2' }),
+    })
+    const reachedGrid = vi.fn()
+    window.addEventListener('keydown', reachedGrid)
+
+    root
+      .querySelector(`textarea[aria-label="${CELL_BOX}"]`)!
+      .dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }))
+    window.removeEventListener('keydown', reachedGrid)
+
+    expect(reachedGrid).not.toHaveBeenCalled()
+  })
+
+  it('asks the surface to close it from its Close button', async () => {
+    const { root, onClose } = await mountComments()
+
+    root.querySelector<HTMLElement>('button[aria-label="Close panel"]')!.click()
+    await nextTick()
+
+    expect(onClose).toHaveBeenCalledOnce()
+  })
+})
 
 describe('commenting on a cell', () => {
   it('puts the cursor in a box for the cell, and posts on that cell', async () => {

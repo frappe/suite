@@ -315,6 +315,19 @@
   padding: 1px 5px;
 }
 /* ── Canvas grid ─────────────────────────────────────────────────────────── */
+/* The editor's column under the menus and the docked panel's; a phone's panel covers the row */
+.sn-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+.sn-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
 .sn-grid-wrap {
   flex: 1;
   overflow: hidden;

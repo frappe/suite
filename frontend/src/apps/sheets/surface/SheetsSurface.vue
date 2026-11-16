@@ -448,9 +448,9 @@ useDocumentLeaveGuard({
         />
       </template>
 
-      <template #side-panel>
+      <template #aside>
         <SheetComments
-          v-if="panel === 'comments'"
+          :open="panel === 'comments'"
           :session="session"
           :comments="comments"
           :sheets="sheetNames"
@@ -459,8 +459,11 @@ useDocumentLeaveGuard({
           :go-to-cell="goToCell"
           @close="panel = null"
         />
+      </template>
+
+      <template #side-panel>
         <SheetVersionsPanel
-          v-else-if="panel === 'versions'"
+          v-if="panel === 'versions'"
           :session="session"
           :list="versionList"
           :writable="access.writable.value"
