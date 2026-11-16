@@ -8,7 +8,7 @@
       :active="item.active"
       @click="select(item)"
     >
-      <span class="relative grid size-6 place-items-center">
+      <span class="relative grid size-6 place-items-center" :class="ICON_DOT_HOST">
         <component
           :is="item.icon"
           class="size-6"
@@ -39,6 +39,7 @@ import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 import { useAreaProgress } from '@/shell/areaProgress'
 import AreaProgressDot from '@/shell/AreaProgressDot.vue'
+import { ICON_DOT_HOST } from '@/shell/iconDot'
 import { deriveMobileNav, type MobileNavItemDefinition } from '@/shell/mobileNav'
 
 const props = defineProps<{

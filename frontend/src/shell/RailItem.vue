@@ -11,16 +11,20 @@
   >
     <!-- An area's duotone icon is drawn at 22 px; a slotted utility icon
          (Settings) stays a 16 px Lucide glyph. -->
-    <span class="relative grid place-items-center" :class="icon ? 'size-[22px]' : 'size-4'">
+    <span
+      class="relative grid place-items-center"
+      :class="[ICON_DOT_HOST, icon ? 'size-[22px]' : 'size-4']"
+    >
       <component :is="icon" v-if="icon" class="size-[22px]" aria-hidden="true" />
       <slot v-else />
       <AreaProgressDot :progress="progress" :label="label" />
-      <!-- The unread dot hangs off the icon's corner, where the progress dot sits,
-           rather than off the item's: frappe-ui places its own at the item's. -->
+      <!-- The unread dot sits on the icon's corner, where the progress dot sits,
+           rather than on the item's: frappe-ui places its own at the item's. -->
       <span
         v-if="unreadDot"
+        data-icon-dot
         aria-hidden="true"
-        class="absolute -right-0.5 -top-0.5 block size-2 rounded-full border border-[var(--surface-base)] bg-surface-red-6"
+        :class="[ICON_DOT, 'bg-surface-red-6']"
       />
       <span v-if="hasBadgeSlot" class="absolute -right-2.5 -top-2.5">
         <slot name="badge" />
@@ -36,6 +40,7 @@ import { useRoute, type RouteLocationRaw } from 'vue-router'
 
 import { progressDetail, type AreaProgress } from '@/shell/areaProgress'
 import AreaProgressDot from '@/shell/AreaProgressDot.vue'
+import { ICON_DOT, ICON_DOT_HOST } from '@/shell/iconDot'
 
 const props = withDefaults(
   defineProps<{
