@@ -227,7 +227,7 @@ describe('IdentitySettings delete', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     await nextTick()
     expect(confirmDialog(root)).toBeNull()
-    expect(toasts).toHaveBeenCalledWith('Identity deleted.')
+    expect(toasts).toHaveBeenCalledWith('Identity deleted')
 
     // The reload answers without the deleted row.
     identities.data = [alias]

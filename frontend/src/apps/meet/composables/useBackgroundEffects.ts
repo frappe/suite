@@ -5,6 +5,8 @@ import type {
 import { toast } from 'frappe-ui'
 import { onUnmounted, ref, type Ref } from 'vue'
 
+import { translate as __ } from '@/platform/translation'
+
 import { availableBackgroundImages, framingCrop, setFramingCrop } from '../data/backgroundEffects'
 import { CameraFramingProcessor } from '../utils/cameraFraming'
 import {
@@ -142,7 +144,7 @@ export function useBackgroundEffects({
     } catch (error) {
       manager?.dispose()
       console.warn('WebGL initialization failed:', error)
-      toast.warning('WebGL is not available. Background blur effects will be disabled.')
+      toast.warning(__('Could not use background blur. WebGL is unavailable.'))
       webglManager = null
     }
   }
@@ -269,7 +271,7 @@ export function useBackgroundEffects({
       }
       console.error('Failed to load MediaPipe Selfie Segmentation model:', err)
       error.value = 'Failed to load background effects model'
-      toast.error('Failed to load the background effects model. Please try again.')
+      toast.error(__('Could not load background effects. Try again.'))
       throw err
     }
   }
@@ -640,12 +642,14 @@ export function useBackgroundEffects({
             } catch (error) {
               if (error instanceof CompositingError && error.code === 'WEBGL_UNAVAILABLE') {
                 toast.error(
-                  "Background blur requires WebGL but it's not available on this device. Blur effects have been disabled.",
+                  __('Could not use background blur. WebGL is unavailable on this device.'),
                 )
                 settings.backgroundBlurEnabled = false
               } else if (error instanceof CompositingError && error.code === 'WEBGL_BLUR_FAILED') {
                 toast.error(
-                  'Background blur failed due to WebGL error. Blur effects have been disabled.',
+                  __(
+                    'Could not use background blur. Blur effects were turned off after a WebGL error.',
+                  ),
                 )
                 settings.backgroundBlurEnabled = false
               } else {
@@ -971,7 +975,7 @@ export function useBackgroundEffects({
           } catch (error) {
             if (isDisposed || signal?.aborted) throw error
             console.error('Failed to update background image:', error)
-            toast.error('Failed to update the selected background image. Reverting to original.')
+            toast.error(__('Could not update the background image. Using the original video.'))
             settings.backgroundImageEnabled = false
             settings.selectedBackgroundImage = null
             backgroundImageData = null
@@ -989,7 +993,7 @@ export function useBackgroundEffects({
       }
       console.error('Background effects processing error:', err)
       error.value = err instanceof Error ? err.message : 'Unknown error'
-      toast.error('Failed to apply background effects. Using original video.')
+      toast.error(__('Could not apply background effects. Using the original video.'))
       await haltProcessing({ disposeWebGL: true })
       await resetSegmentationState()
       return {

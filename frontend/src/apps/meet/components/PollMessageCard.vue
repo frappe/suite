@@ -48,7 +48,12 @@
           </span>
           <template v-if="hasVoted">
             <span class="text-xs text-ink-gray-6 font-medium shrink-0"
-              >{{ option.votes }} votes &bull; {{ getPercentage(option.votes) }}%</span
+              >{{
+                option.votes === 1
+                  ? __('{0} vote', [option.votes])
+                  : __('{0} votes', [option.votes])
+              }}
+              &bull; {{ getPercentage(option.votes) }}%</span
             >
           </template>
         </div>
@@ -56,14 +61,16 @@
     </div>
 
     <div class="text-sm text-ink-gray-6">
-      {{ totalVotes }} {{ totalVotes === 1 ? 'vote' : 'votes' }}
-      <span v-if="isGuest">&bull; Guests can't vote in polls</span>
+      {{ totalVotes === 1 ? __('{0} vote', [totalVotes]) : __('{0} votes', [totalVotes]) }}
+      <span v-if="isGuest">{{ __("• Guests can't vote in polls") }}</span>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, inject, ref } from 'vue'
+
+import { translate as __ } from '@/platform/translation'
 
 import { pollKey } from '../composables/usePoll'
 import { usePollStore } from '../composables/usePollStore'

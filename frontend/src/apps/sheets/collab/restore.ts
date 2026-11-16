@@ -104,16 +104,10 @@ export function alignDoc(current: Y.Doc, version: Y.Doc): void {
 
 // Literal __() calls, so the extractor finds them; called when shown.
 const REFUSALS = new Map<string, () => string>([
-  ['restoring', () => __('Someone else is restoring a version. Try again once it is done.')],
+  ['restoring', () => __('Someone else is restoring. Try again soon.')],
   ['behind', () => __('This tab is still catching up. Try again in a moment.')],
-  [
-    'milestone_failed',
-    () =>
-      __(
-        "The spreadsheet as it is now couldn't be kept as a version first, so nothing was restored.",
-      ),
-  ],
-  ['paused', () => __('Saving is paused, so nothing was restored.')],
+  ['milestone_failed', () => __('Could not save the current state, so nothing was restored')],
+  ['paused', () => __('Saving is paused, so nothing was restored')],
 ])
 
 /** Restore version `seq` (its stored bytes) into the room. */
@@ -150,7 +144,7 @@ export async function restoreVersion(
         const known = result.refusal && REFUSALS.has(result.refusal)
         return {
           isRestored: false,
-          message: known ? REFUSALS.get(result.refusal!)!() : __('The version was not restored.'),
+          message: known ? REFUSALS.get(result.refusal!)!() : __('The version was not restored'),
         }
       }
     }

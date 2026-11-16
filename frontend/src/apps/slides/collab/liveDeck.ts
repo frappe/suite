@@ -69,8 +69,8 @@ export interface LiveDeckHost {
   canWrite: () => boolean
   /** The room's count of restores so far. It moves before the restore's rows arrive. */
   restoreRev: () => number
-  /** A font is still loading, so a top-left `flatten` works out now is only good for drawing. */
-  fontsPending: () => boolean
+  /** A font the element's text draws in is still loading, so its `flatten` is only good for drawing. */
+  fontsPending: (element: StoreItem) => boolean
   onRenamed: (renames: Map<string, string>) => void
   /** The store took the room's slides; these were its slides before. */
   onMerged: (previousSlides: StoreSlide[]) => void
@@ -397,7 +397,7 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
       const fields = changedFields(elementFields(before), elementFields(after))
       const isEdited = Object.keys(fields).length > 0 || !sameValue(before.content, after.content)
       const isFlattened = savedFrame(id)?.transform === CENTRED && after.transform !== CENTRED
-      if (isEdited && isFlattened && !host.fontsPending()) {
+      if (isEdited && isFlattened && !host.fontsPending(after)) {
         fields.frame = elementFields(after).frame
       }
 
@@ -427,41 +427,11 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
     }
   }
 
-  // Typing changes a centred element's height, so its top-left is worked out again
-  // Moved by hand, it keeps where it was put and saves that
-  function reflattenBound() {
-    const boundId = host.boundElementId()
-    const element = host
-      .slides()
-      .flatMap((slide) => slide.elements)
-      .find(({ id }) => id === boundId)
-    const previous = boundId && mirror.elements.get(boundId)
-    if (!element || !previous) {
-      return
-    }
-
-    const frame = savedFrame(element.id)
-    const before = JSON.parse(previous)
-    const isHeld = element.left === before.left && element.top === before.top
-    if (!isHeld || frame?.transform !== CENTRED) {
-      return
-    }
-
-    const { left, top } = host.flatten({ ...toRaw(element), ...frame })
-    if (host.fontsPending()) {
-      return
-    }
-
-    element.left = left
-    element.top = top
-  }
-
   function push() {
     if (!host.canWrite()) {
       return
     }
 
-    reflattenBound()
     let now = mirrorOf(host.slides())
     // SAFETY: only widens null; the write below sets it, and TypeScript doesn't follow into it
     let boundText = null as { html: string | null } | null
@@ -707,7 +677,13 @@ export function openLiveDeck(doc: Y.Doc, host: LiveDeckHost) {
     pull,
     /** Puts the layout on the presentation's one blank slide. False if it isn't blank any more. */
     fillBlank,
-    holdsPosition: (id: string) => savedFrame(id)?.transform === CENTRED && host.fontsPending(),
+    holdsPosition: (id: string) => {
+      const element = host
+        .slides()
+        .flatMap((slide) => slide.elements)
+        .find((item) => item.id === id)
+      return savedFrame(id)?.transform === CENTRED && !!element && host.fontsPending(element)
+    },
     undo: () => takeStep('undo'),
     redo: () => takeStep('redo'),
     /** The change just made is one undo step, and nothing after it joins that step. */

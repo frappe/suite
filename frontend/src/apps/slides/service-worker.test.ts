@@ -145,8 +145,8 @@ describe('a signed picture the page stored', () => {
     expect(await response.text()).toBe('stored')
   })
 
-  it('stays out of the way online', () => {
-    expect(respond(SIGNED)).toBeNull()
+  it('stays out of the way online', async () => {
+    expect(await (await respond(SIGNED)).text()).toBe('network')
   })
 
   it('fails offline when nothing was stored', async () => {
@@ -372,12 +372,95 @@ describe('a pinned presentation offline', () => {
     networkFails = false
     enter('c1')
 
-    expect(dispatch(navigation('/d/n1/quarterly-plan'))).toBeNull()
+    expect(await (await dispatch(navigation('/d/n1/quarterly-plan')))!.text()).toBe('network')
     expect(await (await dispatch(get(ASSET)))!.text()).toBe('network')
     expect(await (await dispatch(get(MEDIA_URL.slice(location.origin.length))))!.text()).toBe(
       'picture',
     )
-    expect(dispatch(get(API))).toBeNull()
+    expect(await (await dispatch(get(API)))!.text()).toBe('network')
+  })
+
+  // a browser on Wi-Fi with no internet, or a worker that emulation never reached, says online
+  describe('while the worker says online and the network fails', () => {
+    const SLIDES_API =
+      '/api/method/suite.slides.doctype.presentation.presentation.get_public_presentation?name=p1'
+    const OTHER_NODE = '/api/suite/drive/nodes/n2?expand=access%2Cpreview%2Cbreadcrumbs'
+    const MEDIA_LIST = '/api/suite/drive/nodes/n1/media'
+
+    beforeEach(() => {
+      online = true
+      pinned.set(SLIDES_API, text('{"pinned":1}', 'application/json'))
+      pinned.set(MEDIA_LIST, text('{"media":[]}', 'application/json'))
+    })
+
+    it("opens the node's page, its Drive read and its chunks from the pin", async () => {
+      expect(await (await dispatch(navigation('/d/n1/quarterly-plan')))!.text()).toBe('shell')
+      expect(await (await dispatch(get(API), 'c3'))!.text()).toBe('{}')
+      expect(await (await dispatch(get(MEDIA_LIST), 'c3'))!.text()).toBe('{"media":[]}')
+      expect(await (await dispatch(get(ASSET), 'c3'))!.text()).toBe('chunk')
+    })
+
+    it('reads the presentation and a later chunk from the pin once the tab says it is slides', async () => {
+      enter('c2')
+
+      expect(await (await dispatch(get(SLIDES_API), 'c2'))!.text()).toBe('{"pinned":1}')
+      expect(await (await dispatch(get(ASSET), 'c2'))!.text()).toBe('chunk')
+    })
+
+    it.each([
+      ['a page', navigation('/d/n2/notes')],
+      ['a Drive read', get(OTHER_NODE)],
+    ])('passes the error on for %s of a node with nothing pinned', async (_label, request) => {
+      await expect(dispatch(request)).rejects.toThrow('Failed to fetch')
+    })
+
+    it.each([403, 500])(
+      "gives the page the server's %i for the Drive and presentation reads, never the pin",
+      async (status) => {
+        enter('c2')
+        vi.stubGlobal('fetch', async () => new Response('refused', { status }))
+
+        const node = await dispatch(get(API), 'c2')
+        const presentation = await dispatch(get(SLIDES_API), 'c2')
+
+        expect([node!.status, presentation!.status]).toEqual([status, status])
+      },
+    )
+
+    describe('a picture', () => {
+      const SIGNED_PICTURE = '/private/files/a.png?e=1700000000&s=abc'
+
+      it('comes from the pin under its signed url', async () => {
+        expect(await (await dispatch(get(SIGNED_PICTURE)))!.text()).toBe('picture')
+      })
+
+      it('fails like the network for a file with nothing pinned', async () => {
+        await expect(dispatch(get('/private/files/b.png?e=1700000000&s=abc'))).rejects.toThrow(
+          'Failed to fetch',
+        )
+      })
+
+      it("gives the page the server's 403, never the pin", async () => {
+        vi.stubGlobal('fetch', async () => new Response('refused', { status: 403 }))
+
+        expect((await dispatch(get(SIGNED_PICTURE)))!.status).toBe(403)
+      })
+
+      it('comes from the network while it answers, pinned or not', async () => {
+        networkFails = false
+
+        expect(await (await dispatch(get(SIGNED_PICTURE)))!.text()).toBe('network')
+        expect(await (await dispatch(get('/private/files/w.png?e=1&s=x')))!.text()).toBe('network')
+      })
+    })
+
+    it('leaves the rest of the suite to the network', () => {
+      expect(dispatch(navigation('/drive/home'))).toBeNull()
+      expect(dispatch(get('/api/suite/drive/nodes/n1/children'))).toBeNull()
+      expect(dispatch(get('/api/suite/drive/nodes/n1/threads'))).toBeNull()
+      expect(dispatch(get('/api/suite/drive/uploads/u1'))).toBeNull()
+      expect(dispatch(get('/assets/frappe/dist/js/desk.bundle.js'))).toBeNull()
+    })
   })
 })
 
@@ -679,9 +762,12 @@ describe('a presentation opened online, offline', () => {
     online = true
     networkFails = false
 
-    expect(dispatch(navigation('/d/n1/quarterly-plan'))).toBeNull()
-    expect(dispatch(get(API))).toBeNull()
-    expect(dispatch(get(ASSET))).toBeNull()
+    expect(await (await dispatch(navigation('/d/n1/quarterly-plan')))!.text()).toBe('network')
+    expect(await (await dispatch(get(API)))!.text()).toBe('network')
+    expect(await (await dispatch(get(ASSET)))!.text()).toBe('network')
+
+    networkFails = true
+    await expect(dispatch(navigation('/d/n1/quarterly-plan'))).rejects.toThrow('Failed to fetch')
   })
 
   it('leaves every request a capture or a pin makes to the network', async () => {

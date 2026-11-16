@@ -928,7 +928,7 @@ describe('Downloading a folder', () => {
     expect(assign).toHaveBeenCalledWith(url)
     expect(feedback.toasts.map((shown) => shown.kind)).toEqual(['loading', 'success'])
     expect(feedback.toasts[0]?.options?.description).toBe(
-      'The download starts here when the zip is ready.',
+      'The download starts here when the zip is ready',
     )
   })
 
@@ -1190,7 +1190,7 @@ describe('Select all in a folder with more to load', () => {
     await vi.waitFor(() => expect(feedback.toasts).toHaveLength(1))
     expect(feedback.toasts[0]).toMatchObject({
       kind: 'error',
-      message: 'Download up to 200 items at a time.',
+      message: 'Download up to 200 items at a time',
     })
     expect(server.calls.filter((call) => call.id === 'download_start')).toEqual([])
   })

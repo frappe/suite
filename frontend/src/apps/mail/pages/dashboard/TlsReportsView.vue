@@ -1,5 +1,5 @@
 <template>
-  <DashboardLayout area="mail" :breadcrumbs="[{ label: __('TLS Reports') }]">
+  <DashboardLayout area="mail" :breadcrumbs="[{ label: __('TLS reports') }]">
     <!-- Filters in one row; the domain and period scope both the summary and the list. -->
     <div class="flex flex-wrap items-center justify-between gap-3">
       <FormControl
@@ -27,12 +27,18 @@
       </div>
     </div>
 
-    <TlsStatTiles :totals="summary.data?.totals" />
+    <LoadFailed
+      v-if="summary.status === 'error'"
+      variant="section"
+      :title="__('Could not load report summary')"
+      :retry="() => summary.refetch()"
+    />
+    <TlsStatTiles v-if="summary.status !== 'error'" :totals="summary.data?.totals" />
 
-    <div class="grid grid-cols-1 gap-5 xl:grid-cols-2">
+    <div v-if="summary.status !== 'error'" class="grid grid-cols-1 gap-5 xl:grid-cols-2">
       <!-- What went wrong, biggest first: the failure type says whether a certificate, the
 			     MTA-STS policy or STARTTLS itself is to blame. -->
-      <DashboardCard :title="__('Failure Types')">
+      <DashboardCard :title="__('Failure types')">
         <div v-if="failures.length" class="flex max-h-72 flex-col overflow-y-auto">
           <div
             v-for="row in failures"
@@ -70,15 +76,19 @@
       </DashboardCard>
     </div>
 
-    <ErrorMessage :message="summary.error?.message || list.error?.message" />
     <div class="flex shrink-0 flex-col">
       <DashboardList
+        :failure="
+          list.status === 'error'
+            ? { title: __('Could not load TLS reports'), retry: () => list.refetch() }
+            : undefined
+        "
         :columns="LIST_COLUMNS"
         :rows="list.rows"
         row-key="id"
         :loading="list.status === 'pending'"
         :row-route="listOptions.getRowRoute"
-        :empty-state="list.error ? undefined : listOptions.emptyState"
+        :empty-state="list.status === 'error' ? undefined : listOptions.emptyState"
       >
         <template #cell="{ column, row, item }">
           <template v-if="column.key === 'success_rate'">
@@ -119,7 +129,7 @@
 
 <script setup lang="ts">
 import { refDebounced } from '@vueuse/core'
-import { Badge, ErrorMessage, FormControl, usePageMeta } from 'frappe-ui'
+import { Badge, FormControl, usePageMeta } from 'frappe-ui'
 import { computed, ref } from 'vue'
 
 import { api, useInfiniteQuery, useQuery } from '@/api'
@@ -131,9 +141,10 @@ import { DEFAULT_PAGE_LENGTH } from '@/apps/mail/utils/paging'
 import { DEFAULT_PERIOD, formatRate, PERIOD_OPTIONS, rateTheme } from '@/apps/mail/utils/reports'
 import { resultTypeLabel, type TlsFailureType, type TlsReportRow } from '@/apps/mail/utils/tls'
 import { DashboardCard, DashboardLayout, DashboardList } from '@/platform/dashboard'
+import { LoadFailed } from '@/platform/load-failed'
 import { appPageMeta } from '@/platform/page-meta'
 
-usePageMeta(() => appPageMeta(__('TLS Reports'), 'Mail'))
+usePageMeta(() => appPageMeta(__('TLS reports'), 'Mail'))
 const search = ref('')
 const domain = ref('')
 const period = ref(DEFAULT_PERIOD)
@@ -190,7 +201,7 @@ const LIST_COLUMNS = [
     key: 'failed',
   },
   {
-    label: __('Success Rate'),
+    label: __('Success rate'),
     key: 'success_rate',
   },
   {

@@ -85,9 +85,11 @@ RETAINED_DOCTYPES_STEP_4 = (
 # per `suite/sheets/doctype/sheet/sheet.json`); Presentation carries none of
 # them, only `title`. `Sheet.head_snapshot` pointed at `Sheet Snapshot`,
 # dropped in step 4; Build read it with raw SQL (`build/history.py`), so
-# it stays in the table until here.
+# it stays in the table until here. `Presentation.thumbnail` left the
+# DocType the same way: Build turned it into a deck preview (§14.7), and
+# Cleanup drops it (§11.7).
 CONTENT_DROPPED_COLUMNS = (
-    ("Presentation", ("title",)),
+    ("Presentation", ("title", "thumbnail")),
     ("Sheet", ("title", "trashed", "trashed_on", "trashed_by", "head_snapshot")),
 )
 

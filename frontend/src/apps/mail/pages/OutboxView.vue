@@ -143,6 +143,7 @@ import {
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import { DashboardListSkeleton } from '@/platform/dashboard'
 import { appPageMeta } from '@/platform/page-meta'
+import { translate as __ } from '@/platform/translation'
 
 usePageMeta(() => appPageMeta(__('Outbox'), 'Mail'))
 const store = userStore()
@@ -243,11 +244,11 @@ const EMPTY_STATES: Record<
 > = {
   pending: {
     title: __('No pending submissions'),
-    description: __('Scheduled emails and deliveries still in flight will wait here.'),
+    description: __('Scheduled emails and deliveries still in flight will wait here'),
   },
   final: {
     title: __('No final submissions'),
-    description: __('Concluded deliveries — delivered, sent, or failed — will appear here.'),
+    description: __('Concluded deliveries — delivered, sent, or failed — will appear here'),
   },
   canceled: {
     title: __('No cancelled submissions'),
@@ -338,7 +339,7 @@ async function rescheduleMailSubmit({ send_at }: { send_at: string }) {
   const result = await rescheduleMail.run(input)
   const data = result
   refresh()
-  raiseToast(__('Delivery rescheduled to {0}.', [formatDateTime(data.send_at)]))
+  raiseToast(__('Delivery rescheduled to {0}', [formatDateTime(data.send_at)]))
 }
 const sendNow = useMutation(api.mail.scheduled.sendNow, {
   silent: true,
@@ -353,7 +354,7 @@ async function sendNowSubmit() {
     await sendNow.run(input)
     showSendNow.value = false
     refresh()
-    raiseToast(__('Message sent.'))
+    raiseToast(__('Message sent'))
   } catch (error) {
     onActionError(error)
   }
@@ -371,7 +372,7 @@ async function retryMailSubmit() {
     await retryMail.run(input)
     showRetry.value = false
     refresh()
-    raiseToast(__('Message sent.'))
+    raiseToast(__('Message sent'))
   } catch (error) {
     onActionError(error)
   }
@@ -407,7 +408,7 @@ async function cancelScheduleSubmit() {
     showCancel.value = false
     refresh()
     // No message was moved when the email had been deleted — don't point at Drafts.
-    if (!data.id) raiseToast(__('Delivery cancelled.'), 'success')
+    if (!data.id) raiseToast(__('Delivery cancelled'), 'success')
     raiseToast(
       __('Delivery cancelled. The message is back in your drafts.'),
       'success',

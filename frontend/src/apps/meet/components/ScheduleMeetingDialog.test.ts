@@ -2,6 +2,7 @@ import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick } from 'vue'
 
+import { toast } from '@/platform/feedback'
 import { requireTestElement } from '@/platform/testing/dom'
 import { TransportError } from '@/platform/transport'
 
@@ -29,8 +30,6 @@ vi.mock('@/platform/feedback', () => ({
   toast: {
     error: vi.fn(),
     success: vi.fn(),
-    promise: (promise: Promise<unknown>, options: { error: (error: unknown) => string }) =>
-      promise.catch(options.error),
   },
 }))
 vi.mock('@/api', async (importOriginal) => ({
@@ -68,9 +67,13 @@ vi.mock('@/apps/calendar', async (importOriginal) => ({
 }))
 vi.mock('frappe-ui', () => ({
   Alert: defineComponent({
-    props: ['title', 'theme'],
+    props: ['title', 'description', 'theme'],
     setup(props) {
-      return () => h('div', { role: props.theme === 'red' ? 'alert' : 'status' }, props.title)
+      return () =>
+        h('div', { role: props.theme === 'red' ? 'alert' : 'status' }, [
+          props.title,
+          props.description && ` ${props.description}`,
+        ])
     },
   }),
   Dialog: defineComponent({
@@ -199,7 +202,7 @@ describe('Shared meeting scheduler', () => {
     ],
     [
       new TransportError({ type: 'NetworkError', status: 0, message: 'private network details' }),
-      'Your details are kept. Please try again.',
+      'Your details are kept. Try again.',
     ],
   ])('retains fields after %s and succeeds on retry', async (error, message) => {
     state.run.mockRejectedValueOnce(error)
@@ -227,6 +230,8 @@ describe('Shared meeting scheduler', () => {
     )
     expect(root.textContent).not.toContain('private')
     expect(scheduled).not.toHaveBeenCalled()
+    // The alert in the open dialog is the one message; no toast repeats it.
+    expect(toast.error).not.toHaveBeenCalled()
     expect(root.querySelector<HTMLInputElement>('input[aria-label="Title"]')?.value).toBe(
       'Design review',
     )

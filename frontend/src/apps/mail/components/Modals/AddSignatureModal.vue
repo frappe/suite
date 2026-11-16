@@ -27,6 +27,7 @@ import { computed, reactive, watch } from 'vue'
 import { api, useMutation } from '@/api'
 import MailRichTextField from '@/apps/mail/components/Controls/MailRichTextField.vue'
 import { raiseToast } from '@/apps/mail/utils'
+import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()
 
@@ -38,7 +39,7 @@ const createSignature = useMutation(api.mail.signatures.create)
 async function save() {
   await createSignature.run({ ...draft })
   show.value = false
-  raiseToast(__('Signature created.'))
+  raiseToast(__('Signature created'))
   emit('reloadSignatures')
 }
 

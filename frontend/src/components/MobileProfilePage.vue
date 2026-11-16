@@ -142,6 +142,7 @@ import MobileSettingsCard from '@/apps/mail/components/mobile/MobileSettingsCard
 import MobileSettingsRow from '@/apps/mail/components/mobile/MobileSettingsRow.vue'
 import { toast } from '@/platform/feedback'
 import { useDevicePush } from '@/platform/pwa'
+import { translate as __ } from '@/platform/translation'
 import type { SettingsTabId } from '@/shell/settings/settings'
 import SettingsList from '@/shell/settings/SettingsList.vue'
 import { openSettings, useSettingsGroups } from '@/shell/settings/useSettingsDialog'
@@ -192,9 +193,9 @@ const toggleNotifications = async () => {
   try {
     if (push.enabled.value) await push.disable()
     else if (!(await push.enable()))
-      toast.error(__('Notifications are blocked for this site in the browser settings.'))
-  } catch (error) {
-    toast.error(error instanceof Error ? error.message : String(error))
+      toast.error(__('Notifications are blocked for this site in the browser settings'))
+  } catch {
+    toast.error(__('Could not enable notifications'))
   } finally {
     switching.value = false
   }

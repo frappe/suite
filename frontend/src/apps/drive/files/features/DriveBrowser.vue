@@ -67,13 +67,11 @@
             <Skeleton class="h-2 rounded-full" :class="[SKELETON_BAR, width]" />
           </div>
         </div>
-        <div
-          v-else-if="rows.error && !rows.rows.length"
-          class="flex h-full flex-col items-center justify-center gap-3 px-4 text-center"
-        >
-          <ErrorMessage :message="rows.error.message" />
-          <Button :label="__('Retry')" :loading="rows.isFetching" @click="rows.refetch()" />
-        </div>
+        <LoadFailed
+          v-else-if="rows.status === 'error' && !rows.rows.length"
+          :title="__('Could not load files')"
+          :retry="() => rows.refetch()"
+        />
         <p
           v-else-if="!rows.rows.length && newFolderTitle === null"
           class="flex h-full items-center justify-center px-4 text-center text-p-sm text-ink-gray-5"
@@ -103,6 +101,7 @@ import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
 
 import { api, useInfiniteQuery, useMutation, useQuery } from '@/api'
 import type { DriveAccess, DriveNode } from '@/apps/drive/client/types'
+import { LoadFailed } from '@/platform/load-failed'
 import { translate as __ } from '@/platform/translation'
 
 import { nodeIcon, nodeIconTint } from '../internal/icons'

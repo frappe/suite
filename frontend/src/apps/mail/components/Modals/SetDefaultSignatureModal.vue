@@ -36,6 +36,7 @@ import MailRichTextField from '@/apps/mail/components/Controls/MailRichTextField
 import { userStore } from '@/apps/mail/stores/user'
 import type { Identity } from '@/apps/mail/types'
 import { raiseToast } from '@/apps/mail/utils'
+import { translate as __ } from '@/platform/translation'
 
 const { identities } = userStore()
 const show = defineModel<boolean>()
@@ -64,6 +65,6 @@ async function setSignatureSubmit() {
     signature,
   }
   await setSignature.run(input)
-  raiseToast(__('Identity updated.'))
+  raiseToast(__('Identity updated'))
 }
 </script>

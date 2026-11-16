@@ -1,9 +1,9 @@
 <template>
-  <!-- File, Edit, View, Insert, Format, Data: every action that has no button
+  <!-- Edit, View, Insert, Format, Data: every action that has no button
   in the toolbar, labelled in words. -->
-  <nav class="sn-menubar" :aria-label="__('Spreadsheet menus')">
-    <!-- A narrow header folds the six into one menu, each a submenu. A container
-    query on the header swaps the two bars, so nothing moves on load. They are
+  <nav ref="nav" class="sn-menubar" :aria-label="__('Spreadsheet menus')">
+    <!-- A narrow row folds the five into one menu, each a submenu. A container
+    query on the row swaps the two bars, so nothing moves on load. They are
     separate bars so the arrow keys never land on the hidden one. -->
     <MenubarRoot v-for="bar in bars" :key="bar.class" v-model="openMenu" loop :class="bar.class">
       <MenubarMenu v-for="menu in bar.menus" :key="menu.key" :value="menu.key">
@@ -25,6 +25,7 @@
             align="start"
             :side-offset="4"
             :collision-padding="WINDOW_MARGIN"
+            @close-auto-focus="onCloseAutoFocus"
           >
             <Menu
               :groups="normalizeMenuOptions(menu.options)"
@@ -52,7 +53,7 @@ import {
   MenubarSubTrigger,
   MenubarTrigger,
 } from 'reka-ui'
-import { computed, h, ref, type FunctionalComponent } from 'vue'
+import { computed, h, mergeProps, ref, type FunctionalComponent } from 'vue'
 
 import { translate as __ } from '@/platform/translation'
 
@@ -70,6 +71,10 @@ const props = defineProps<{
   menus: SheetMenu[]
   /** Opens the surface's comments panel; the editor alone has none. */
   openComments?: (() => void) | null
+}>()
+const emit = defineEmits<{
+  /** An item ran and its menu has closed: focus is the editor's to place. */
+  itemRan: []
 }>()
 
 const commentGroup = computed(() => ({
@@ -124,8 +129,37 @@ const SubContent: FunctionalComponent = (_, { attrs, slots }) =>
     slots,
   )
 
+// A menu hands focus back to its label when it closes (reka does it while the
+// menu unmounts, and a preventDefault does not stop it). That is right after
+// Escape, but after an item has run the label kept it, so typed keys, arrows
+// and Ctrl+C/V went nowhere until a click on the grid (ISSUES #150). So an
+// item marks that it ran, and once the close has settled the label lets go of
+// focus and the editor is told, which takes it unless something else has it.
+// A dialog or note box the item opened focuses after the label, so it keeps it.
+const nav = ref<HTMLElement | null>(null)
+let itemRan = false
+const Item: FunctionalComponent = (_, { attrs, slots }) =>
+  h(
+    MenubarItem,
+    mergeProps(attrs, {
+      onSelect: () => {
+        itemRan = true
+      },
+    }),
+    slots,
+  )
+function onCloseAutoFocus() {
+  if (!itemRan) return
+  itemRan = false
+  setTimeout(() => {
+    const focused = document.activeElement
+    if (focused instanceof HTMLElement && nav.value?.contains(focused)) focused.blur()
+    emit('itemRan')
+  })
+}
+
 const primitives = {
-  Item: MenubarItem,
+  Item,
   Label: MenubarLabel,
   Portal: MenubarPortal,
   Sub: MenubarSub,
@@ -150,7 +184,7 @@ const primitives = {
 .sn-menubar-narrow {
   display: none;
 }
-/* The Drive header on /d/ (SheetsSurface.vue) is the `sn-topbar` container. */
+/* The menu row on /d/ (SheetsSurface.vue) is an `sn-topbar` container. */
 @container sn-topbar (max-width: 640px) {
   .sn-menubar-wide {
     display: none;

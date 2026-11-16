@@ -137,6 +137,7 @@ import { userStore } from '@/apps/calendar/stores/user'
 import { raiseToast } from '@/apps/calendar/utils'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import { translate as __ } from '@/platform/translation'
 
 const store = userStore()
 const { participantIdentities } = store
@@ -175,7 +176,7 @@ const updateIdentity = useMutation(api.mail.participantIdentities.update)
 async function save() {
   if (!form.value) return
   await updateIdentity.run({ ...form.value })
-  raiseToast(__('Participant Identity updated.'))
+  raiseToast(__('Participant identity updated'))
 }
 const addIdentity = useMutation(api.mail.participantIdentities.create)
 const deleteIdentity = useMutation(api.mail.participantIdentities.delete)
@@ -198,14 +199,14 @@ async function createIdentity() {
     email: newEmail.value,
     default: newDefault.value,
   })
-  raiseToast(__('Participant Identity created.'))
+  raiseToast(__('Participant identity created'))
   showAddDialogState.value = false
   identityName.value = `${account}|${id}`
 }
 async function removeIdentity() {
   if (!identityName.value) return
   await deleteIdentity.run({ names: [identityName.value] })
-  raiseToast(__('Participant Identity deleted.'))
+  raiseToast(__('Participant identity deleted'))
   showDeleteDialog.value = false
   identityName.value = ''
 }

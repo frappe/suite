@@ -1,6 +1,7 @@
 import { toast } from 'frappe-ui'
 import { computed, nextTick, shallowRef, watch, type Ref } from 'vue'
 
+import type { ConvertedState } from '@/apps/drive'
 import { slidesAdapter } from '@/apps/slides/collab/adapter'
 import { elementText } from '@/apps/slides/collab/deck'
 import { drawnSlides } from '@/apps/slides/collab/drawnDeck'
@@ -16,6 +17,7 @@ import { liveTextExtensions } from '@/apps/slides/collab/liveText'
 import { lastSelector, usePeopleSelecting } from '@/apps/slides/collab/peerOutlines'
 import { resetGrowthBaseline } from '@/apps/slides/composables/useTextEditor'
 import {
+  cropSelectionToFitContent,
   resetFocus,
   activeElementIds as storeActiveIds,
   focusElementId as storeFocusId,
@@ -31,11 +33,19 @@ import {
 } from '@/apps/slides/stores/liveDeck'
 import {
   flattenNow,
+  fontsLoadedFor,
   measureNow,
   slidesLength,
   transformElements,
 } from '@/apps/slides/stores/presentation'
-import { currentSlide, setSlideIndex, slideIndex, slides } from '@/apps/slides/stores/slide'
+import {
+  changeSlide,
+  currentSlide,
+  focusedSlide,
+  setSlideIndex,
+  slideIndex,
+  slides,
+} from '@/apps/slides/stores/slide'
 import { holdShownSlide } from '@/apps/slides/stores/slideshow'
 import {
   isRecoverable,
@@ -47,13 +57,13 @@ import {
   type RoomStatus,
   type VersionRestored,
 } from '@/platform/collab'
+import { peopleOf, presenceColours } from '@/platform/collab/peers'
 import type { RestoreNotice } from '@/platform/collab/restoreNotices'
-import { translate } from '@/platform/translation'
+import { translate as __ } from '@/platform/translation'
 
 import { restoreVersion } from './restoreVersion'
 import { saveFirst } from './saveFirst'
 import type { RetainOptions } from './useUnsavedRecovery'
-import type { ConvertedVersion } from './versions'
 
 // SAFETY: the untyped element store holds the selected element ids
 const activeElementIds = storeActiveIds as Ref<string[]>
@@ -76,12 +86,19 @@ interface RoomHost {
   onThreadsChanged: () => void
   /** Told when another tab's restore lands. */
   onVersionRestored: (restored: VersionRestored) => void
+  /** Told once when the server refuses this tab's right, which Drive's access may not show yet. */
+  onAccessRefused: () => void
+  /** Told each time the room keeps its unsent work as a copy on the device. */
+  onCopyKept: () => void
+}
+
+function hasLostAccess(status: RoomStatus | null) {
+  return status?.blockReason === 'lost_edit' || status?.blockReason === 'lost_read'
 }
 
 function allowsEditingIn(status: RoomStatus) {
-  const hasLostAccess = status.blockReason === 'lost_edit' || status.blockReason === 'lost_read'
   const hasStopped = status.saveState === 'failed' || status.blockReason === 'offline'
-  return status.canWrite && !hasLostAccess && !hasStopped
+  return status.canWrite && !hasLostAccess(status) && !hasStopped
 }
 
 function isKeptNowhere(status: RoomStatus, isRecoveryKept: boolean) {
@@ -99,10 +116,14 @@ export function useConvertedRoom({
   retainStickyOrOffer,
   onThreadsChanged,
   onVersionRestored,
+  onAccessRefused,
+  onCopyKept,
 }: RoomHost) {
   const room = shallowRef<CollabRoom | null>(null)
   const status = shallowRef<RoomStatus | null>(null)
   const presence = shallowRef<RoomPresence | null>(null)
+  // Everyone else here, one entry per person, read again each time the room says who is
+  const people = shallowRef<ReturnType<typeof peopleOf>>([])
   const selectorOf = lastSelector(usePeopleSelecting(presence))
   let deck: LiveDeck | null = null
   let stopWatching = () => {}
@@ -114,6 +135,8 @@ export function useConvertedRoom({
 
   const sizes = new Map<string, { key: string; size: { width: number; height: number } }>()
   let isFontPending = false
+  // measured while a font their own text draws in was loading
+  const waitingOnFonts = new Set<string>()
 
   // Until the font comes, edits leave the saved centre alone: nothing waits, a save included
   function redrawWhenFontsLoad() {
@@ -125,9 +148,25 @@ export function useConvertedRoom({
     void document.fonts.ready.then(() => {
       deck?.push()
       isFontPending = false
+      waitingOnFonts.clear()
       deck?.redraw()
       void resetGrowthBaseline()
     })
+  }
+
+  // A font only other text draws in leaves this element's shown position good to save
+  function waitsOnFonts(element: StoreItem) {
+    if (document.fonts.status === 'loading' && !fontsLoadedFor(element)) {
+      waitingOnFonts.add(element.id)
+      redrawWhenFontsLoad()
+    }
+
+    return waitingOnFonts.has(element.id)
+  }
+
+  // centred text as the store holds it, top-left
+  function flatten(element: StoreItem) {
+    return flattenNow(element, measured)
   }
 
   function measured(element: StoreItem) {
@@ -138,8 +177,7 @@ export function useConvertedRoom({
     }
 
     const size = measureNow(element)
-    if (document.fonts.status === 'loading') {
-      redrawWhenFontsLoad()
+    if (waitsOnFonts(element)) {
       return size
     }
 
@@ -166,8 +204,11 @@ export function useConvertedRoom({
 
       const last = isPresenting() ? total : total - 1
       const next = kept === -1 ? Math.min(at, last) : kept
-      if (next !== at) {
+      if (next !== at && isPresenting()) {
         setSlideIndex(next + 1)
+      } else if (next !== at) {
+        // the focused slide and the address follow the slide still shown
+        changeSlide(next, focusedSlide.value != null)
       }
     }
 
@@ -179,6 +220,13 @@ export function useConvertedRoom({
     if (activeElementIds.value.some((id: string) => !present.has(id))) {
       activeElementIds.value = activeElementIds.value.filter((id: string) => present.has(id))
     }
+
+    // a selected element another tab moved takes its box and Frame panel along
+    nextTick(() => {
+      if (activeElementIds.value.length) {
+        cropSelectionToFitContent(activeElementIds.value)
+      }
+    })
 
     if (focusElementId.value && !present.has(focusElementId.value)) {
       focusElementId.value = null
@@ -197,8 +245,8 @@ export function useConvertedRoom({
     if (isBlocked) {
       toast.warning(
         direction === 'undo'
-          ? translate("Couldn't undo: a co-editor changed this")
-          : translate("Couldn't redo: a co-editor changed this"),
+          ? __('Could not undo: a co-editor changed this')
+          : __('Could not redo: a co-editor changed this'),
       )
     }
 
@@ -222,8 +270,8 @@ export function useConvertedRoom({
     const name = selectorOf(id)
     toast.warning(
       name
-        ? translate('{0} deleted this element. Your text is in a recovery copy.', [name])
-        : translate('A co-editor deleted this element. Your text is in a recovery copy.'),
+        ? __('{0} deleted this element. Your text is in a recovery copy.', [name])
+        : __('A co-editor deleted this element. Your text is in a recovery copy.'),
     )
   }
 
@@ -233,14 +281,14 @@ export function useConvertedRoom({
     const shared = sharedPresence(liveRoom.presence!)
     deck = openLiveDeck(doc, {
       slides: storeSlides,
-      flatten: (element) => flattenNow(element, measured),
+      flatten,
       boundElementId,
       isSelected: (id) =>
         activeElementIds.value.includes(id) || currentSlide.value?.clientId === id,
       setBoundText,
       canWrite,
       restoreRev: () => liveRoom.status.restoreRev,
-      fontsPending: () => isFontPending || document.fonts.status === 'loading',
+      fontsPending: waitsOnFonts,
       onRenamed: applyRenames,
       onMerged: keepShownSlide,
       onStep: showStep,
@@ -276,6 +324,12 @@ export function useConvertedRoom({
       },
     })
     presence.value = liveRoom.presence
+    const roomPresence = liveRoom.presence!
+    const readPeople = () => {
+      people.value = peopleOf(roomPresence.peers, presenceColours(roomPresence))
+    }
+    readPeople()
+    const stopPeople = roomPresence.onChange(readPeople)
     const stopRestores = liveRoom.onChange(() => liveDeck.followRestore())
     // leaving the show runs the repair a writable open runs, so an emptied presentation gets its blank
     const stopRepair = watch(canWrite, (writable) => {
@@ -293,6 +347,8 @@ export function useConvertedRoom({
       { immediate: true },
     )
     return () => {
+      stopPeople()
+      people.value = []
       stopRestores()
       stopRepair()
       stopSelection()
@@ -326,11 +382,21 @@ export function useConvertedRoom({
     const { blockReason } = liveStatus
     const hasStopped =
       liveStatus.saveState === 'failed' || (blockReason && !isRecoverable(blockReason))
-    if (hasStopped && liveStatus.unsentCount && !isRecoveryKept) {
+    // the room keeps its own copy on the device, so this page keeps one only where it can't
+    if (hasStopped && isKeptNowhere(liveStatus, isRecoveryKept)) {
       isRecoveryKept = retainStopped()
     }
 
+    const isRefused = hasLostAccess(liveStatus) && !hasLostAccess(status.value)
+    const isCopyKept = liveStatus.keptCopyCount > (status.value?.keptCopyCount ?? 0)
     status.value = liveStatus
+    if (isRefused) {
+      onAccessRefused()
+    }
+
+    if (isCopyKept) {
+      onCopyKept()
+    }
   }
 
   async function openRoom(isStale: () => boolean) {
@@ -401,6 +467,11 @@ export function useConvertedRoom({
     return isKeptNowhere(liveRoom.status, isRecoveryKept) ? 'held' : 'reload'
   }
 
+  /** Whether the room kept its unsent work as a copy on the device itself. */
+  function isKeptByRoom() {
+    return !!status.value && status.value.keptCopyCount > 0 && !status.value.hasCopyFailed
+  }
+
   // The editor goes before the old room, so nothing typed lands in a room that no longer sends
   function leave() {
     resetFocus()
@@ -440,12 +511,12 @@ export function useConvertedRoom({
   async function restore(
     seq: number,
     bytes: Uint8Array,
-    convert: () => Promise<ConvertedVersion>,
+    convert: () => Promise<ConvertedState>,
   ): Promise<RestoreNotice> {
     const liveRoom = room.value
     const liveDeck = deck
     if (!liveRoom || !liveDeck) {
-      return { isRestored: false, message: translate('The version was not restored.') }
+      return { isRestored: false, message: __('Could not restore the version') }
     }
 
     liveDeck.push()
@@ -462,6 +533,7 @@ export function useConvertedRoom({
     allowsEditing,
     saveState,
     presence,
+    people,
     open,
     close,
     restore,
@@ -469,5 +541,7 @@ export function useConvertedRoom({
     saveBeforeVersion,
     loseAccess,
     regainAccess,
+    isKeptByRoom,
+    flatten,
   }
 }
