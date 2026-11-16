@@ -1,42 +1,49 @@
 import { describe, expect, it, vi } from 'vitest'
 
+import { processInlineImages } from '@/apps/mail/utils'
 import { uploadEmbeddedImages } from '@/apps/mail/utils/embeddedImages'
 
-vi.mock('@/apps/mail/utils', () => ({ randomString: () => 'cid1' }))
+// A 1×1 transparent PNG, 68 bytes.
+const PNG_BASE64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
+const PNG = `data:image/png;base64,${PNG_BASE64}`
 
-// A 1×1 transparent PNG.
-const PNG =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
+const uploadedTo = (fileUrl: string) => {
+  const uploaded: File[] = []
+  const upload = async (file: File) => {
+    uploaded.push(file)
+    return { file_url: fileUrl }
+  }
+  return { uploaded, upload }
+}
 
 describe('uploadEmbeddedImages', () => {
-  it('uploads an image held as a data URL and points the body at its file, ready to go inline', async () => {
-    const uploaded: File[] = []
-    const upload = async (file: File) => {
-      uploaded.push(file)
-      return { file_url: '/private/files/image.png' }
-    }
+  it('uploads an image held as a data URL, and the mail carries it as an inline attachment', async () => {
+    const { uploaded, upload } = uploadedTo('/private/files/image.png')
 
     const html = `<div>See this:</div><img src="${PNG}">`
     const body = (await uploadEmbeddedImages(html, upload)).inHtml(html)
+    const sent = processInlineImages({ html_body: body, quoted_content: '', attachments: [] })
 
-    expect(uploaded.map((file) => [file.name, file.type, file.size])).toEqual([
-      ['image.png', 'image/png', 68],
+    expect(uploaded.map((file) => [file.type, file.size])).toEqual([['image/png', 68]])
+    const image = new DOMParser().parseFromString(sent.html_body, 'text/html').querySelector('img')!
+    expect(sent.attachments).toEqual([
+      {
+        file_url: '/private/files/image.png',
+        disposition: 'inline',
+        cid: image.getAttribute('src')!.replace(/^cid:/, ''),
+      },
     ])
-    const image = new DOMParser().parseFromString(body, 'text/html').querySelector('img')!
-    expect(image.getAttribute('src')).toBe('/private/files/image.png')
-    expect(image.getAttribute('data-cid')).toBe('cid1')
-    expect(body).toContain('<div>See this:</div>')
+    expect(image.getAttribute('src')).toMatch(/^cid:./)
+    expect(sent.html_body).not.toContain('base64')
+    expect(sent.html_body).toContain('<div>See this:</div>')
   })
 
   it('reads a data URL with parameters, and text beyond Latin-1', async () => {
-    const uploaded: File[] = []
-    const upload = async (file: File) => {
-      uploaded.push(file)
-      return { file_url: '/private/files/image.png' }
-    }
+    const { uploaded, upload } = uploadedTo('/private/files/image.png')
     const svg = '<svg xmlns="http://www.w3.org/2000/svg"><text>✓ ok</text></svg>'
     const html =
-      `<img src="${PNG.replace(';base64', ';name=dot.png;base64')}">` +
+      `<img src="data:image/png;name=dot.png;base64,${PNG_BASE64}">` +
       `<img src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}">`
 
     const uploads = await uploadEmbeddedImages(html, upload)
