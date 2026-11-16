@@ -26,7 +26,7 @@ from suite.drive.patches.build import grants as grants_module
 from suite.drive.patches.build import kept_rights
 from suite.drive.patches.build.ports import ACTIVE, DocShareRow, PermissionRow
 from suite.drive.patches.build.root_pairs import ARCHIVED, PERSONAL, SHARED, RootPlan
-from suite.drive.patches.build.state import BuildState, GrantConversion
+from suite.drive.patches.build.state import BuildState, GrantConversion, KeptRightsPlanError
 from suite.drive.patches.build.tests.fakes import (
     BUILD_STAMP,
     Counter,
@@ -36,11 +36,13 @@ from suite.drive.patches.build.tests.fakes import (
     InterruptedRun,
     build_environment,
 )
+from suite.drive.patches.database_marker import ForeignRecordError
 
 PERSONAL_ROOT = "personal01"
 SHARED_ROOT = "sharedroot"
 OWNER = "owner@example.com"
 FRIEND = "friend@example.com"
+ADMIN = "admin@example.com"
 
 
 def permission(name, entity, user, **flags):
@@ -1003,14 +1005,97 @@ class KeptRightsTest(GrantCase):
         }
 
     def test_a_member_of_two_tied_groups_ends_at_their_own_role(self):
-        """Raising Design on the file reaches the friend through the tie, so the raise stops at upload."""
+        """The friend's own deny sits above the file, so Design is not raised there at all.
+
+        Each member today gets their own grant instead. A newcomer holds
+        Design's comment grant on the file, tied with Ops's read: comment.
+        Legacy gave a newcomer edit there (read and comment from the file,
+        upload and write from the far row). That loss is the counted price
+        of not raising a grant past a deny row (`raises_skipped`); a raise
+        to edit would also have reached the friend through the tie.
+        """
         expected = self.tie()
-        self.run_grants()
+        report = self.run_grants()
         self.assertEqual(self.everyone_on_every_node(), expected)
-        # Legacy gave a newcomer in Design, or in both groups, edit on the file.
-        self.assertLessEqual(self.role_of("newcomer@example.com", "filelower1", groups=("Design",)), EDIT)
-        self.assertLessEqual(
-            self.role_of("newcomer@example.com", "filelower1", groups=("Design", "Ops")), EDIT
+        self.assertEqual(self.role_of("newcomer@example.com", "filelower1", groups=("Design",)), COMMENT)
+        self.assertEqual(
+            self.role_of("newcomer@example.com", "filelower1", groups=("Design", "Ops")), COMMENT
+        )
+        self.assertEqual(self.roles("filelower1")["$GROUP:Design"], COMMENT)
+        self.assertEqual(report.legacy_rights["raises_skipped"], 1)
+
+    def test_a_raise_does_not_pass_a_deny_for_another_group_a_member_may_join(self):
+        """Review 2's Scenario A: a Contractors deny above Design's read row.
+
+        The upper folder gives `$GENERAL` read and write, and denies
+        Contractors upload and write. The lower folder gives Design read.
+        Legacy, on the lower folder: a Design member takes read there and
+        write from `$GENERAL` above, so edit. A Contractors member who joins
+        Design takes read there, and the Contractors deny above takes write
+        and upload before `$GENERAL` can give them: read. A newcomer in both
+        groups is the same: read. Raising Design to edit would give both of
+        them edit, so the friend gets their own edit grant instead.
+        """
+        self.legacy.groups.add("Contractors")
+        self.legacy.members = {"Design": {FRIEND}, "Contractors": {self.OTHER}}
+        self.legacy.permissions_rows = [
+            permission("p1", "folderupper", "$GENERAL", read=1, write=1),
+            permission("p2", "folderupper", "$GROUP:Contractors", upload=1, write=1, deny=1),
+            permission("p3", "folderlower", "$GROUP:Design", read=1),
+        ]
+        report = self.run_grants()
+        self.assertEqual(self.role_of(FRIEND, "folderlower"), EDIT)
+        self.assertEqual(self.role_of(self.OTHER, "folderlower", groups=("Design", "Contractors")), READ)
+        self.assertEqual(
+            self.role_of("newcomer@example.com", "folderlower", groups=("Design", "Contractors")), READ
+        )
+        self.assertEqual(self.roles("folderlower")["$GROUP:Design"], READ)
+        self.assertEqual(
+            {key: report.legacy_rights[key] for key in ("group_raises", "person_grants", "raises_skipped")},
+            {"group_raises": 0, "person_grants": 1, "raises_skipped": 1},
+        )
+
+    def test_a_share_only_row_on_a_folder_still_gives_its_share_below(self):
+        """Review 2's Scenario C: `$GENERAL` share on the upper folder, read, comment and write below.
+
+        Legacy took share from the upper folder and the rest from the lower
+        one, so everyone had manage on the lower folder and the file. The
+        upper folder showed nothing: no row there gave read. Build drops
+        the share-only row (no content flag), so the pass has to see it to
+        keep manage.
+        """
+        self.legacy.permissions_rows = [
+            permission("p1", "folderupper", "$GENERAL", share=1),
+            permission("p2", "folderlower", "$GENERAL", read=1, comment=1, write=1),
+        ]
+        report = self.run_grants()
+        for user in (OWNER, FRIEND, self.OTHER):
+            self.assertEqual(self.role_of(user, "folderupper"), NONE)
+            self.assertEqual(self.role_of(user, "folderlower"), MANAGE)
+            self.assertEqual(self.role_of(user, "filelower1"), MANAGE)
+        self.assertEqual(self.role_of("newcomer@example.com", "filelower1", groups=()), MANAGE)
+        self.assertEqual(report.grant_rows_dropped["no_flags"], 1)
+        self.assertEqual(self.roles("folderupper"), {})
+
+    def test_a_raise_for_everyone_from_a_sheets_everyone_share(self):
+        """The sheet's `everyone` read share, under a folder where `$GENERAL` could write.
+
+        Legacy took the higher of Drive's flags and the sheet's share:
+        Drive gave read and write from the folder, so edit, for everyone,
+        including whoever signs up later. The `everyone` share became a
+        `$GENERAL` read grant on the sheet, which is nearer, so the pass
+        raises that one grant to edit.
+        """
+        self.legacy.sheets["sheet-1"] = "filelower1"
+        self.legacy.permissions_rows = [permission("p1", "folderupper", "$GENERAL", read=1, write=1)]
+        self.legacy.docshare_rows = [docshare("d1", "sheet-1", everyone=1, read=1)]
+        report = self.run_grants()
+        for user in (OWNER, FRIEND, self.OTHER):
+            self.assertEqual(self.role_of(user, "filelower1"), EDIT)
+        self.assertEqual(self.role_of("newcomer@example.com", "filelower1", groups=()), EDIT)
+        self.assertEqual(self.roles("filelower1"), {"$GENERAL": EDIT})
+        self.assertEqual(
+            (report.legacy_rights["group_raises"], report.legacy_rights["person_grants"]), (1, 0)
         )
 
     def public_deny_below_a_kept_right(self):
@@ -1117,6 +1202,104 @@ class KeptRightsTest(GrantCase):
         report = self.run_grants()
         self.assertEqual(self.role_of(FRIEND, "folderupper"), READ)
         self.assertEqual(report.legacy_rights["share_lost"], 1)
+
+    def test_share_lost_counts_each_node_with_a_row_and_leaves_out_owners_and_admins(self):
+        """`$GENERAL` read and share on the upper folder, then a row on each node below.
+
+        Four people: the owner (who owns the upper folder), the friend, the
+        other person and a Suite Admin. Legacy gave each of them read and
+        share without write wherever they meet a row:
+
+        - upper folder, every person: the friend and the other person count;
+          the folder's owner and the admin do not (2);
+        - lower folder, only the friend's own row names anyone there (1);
+        - file, the public deny names everyone: the owner owns only the
+          folder above, so they count here with the friend and the other
+          person; the admin does not (3).
+        """
+        self.legacy.users[ADMIN] = True
+        self.legacy.admins = {ADMIN}
+        self.drive.node_rows["folderupper"]["owner"] = OWNER
+        self.legacy.permissions_rows = [
+            permission("p1", "folderupper", "$GENERAL", read=1, share=1),
+            permission("p2", "folderlower", FRIEND, read=1, comment=1),
+            permission("p3", "filelower1", "", upload=1, deny=1),
+        ]
+        report = self.run_grants()
+        self.assertEqual(report.legacy_rights["share_lost"], 2 + 1 + 3)
+
+    def test_exceeded_counts_each_node_with_a_row_and_leaves_out_owners_and_admins(self):
+        """`$GENERAL` read and upload above, and a public upload deny on each node below.
+
+        Legacy took upload from everyone on both lower nodes: read. The
+        engine lets the public deny bind only people with no grant of their
+        own, and `$GENERAL` is one, so everyone ends at upload there, above
+        legacy, because of a public deny. Counted per node: the lower folder
+        has the owner, the friend and the other person (3); the file has
+        the owner and the other person, since the friend owns it (2). The
+        Suite Admin counts on neither.
+        """
+        self.legacy.users[ADMIN] = True
+        self.legacy.admins = {ADMIN}
+        self.drive.node_rows["filelower1"]["owner"] = FRIEND
+        self.legacy.permissions_rows = [
+            permission("p1", "folderupper", "$GENERAL", read=1, upload=1),
+            permission("p2", "folderlower", "", upload=1, deny=1),
+            permission("p3", "filelower1", "", upload=1, deny=1),
+        ]
+        report = self.run_grants()
+        self.assertEqual(self.role_of(self.OTHER, "filelower1"), UPLOAD)
+        self.assertEqual(self.role_of(ADMIN, "folderlower"), UPLOAD)
+        self.assertEqual(report.legacy_rights["exceeded"], 3 + 2)
+        self.assertEqual(report.legacy_rights["exceeded_by_public_deny"], 3 + 2)
+
+    # -- the saved plan
+
+    def plan_path(self):
+        return self.path / "drive-build-kept-rights.json"
+
+    def kept_plan(self):
+        self.legacy.permissions_rows = [
+            permission("p1", "folderupper", FRIEND, read=1, upload=1),
+            permission("p2", "folderlower", FRIEND, read=1, comment=1),
+        ]
+        first = self.run_grants()
+        self.report = GrantConversion.from_dict(first.as_dict())
+        self.report.begin_run()
+
+    def test_the_plan_is_readable_by_the_site_account_only(self):
+        """It maps who can reach what, so no other local account may read it."""
+        self.kept_plan()
+        self.assertEqual(self.plan_path().stat().st_mode & 0o777, 0o600)
+
+    def test_a_plan_left_from_another_build_record_is_refused(self):
+        """The record was moved aside and stamped anew, but the old plan stayed beside it."""
+        self.kept_plan()
+        state = BuildState(self.path / "drive-build-state.json")
+        state.save({**state.load(), "database_marker": "a-fresh-record"})
+        rows = dict(self.drive.grant_rows)
+        with self.assertRaises(ForeignRecordError):
+            self.run_grants()
+        self.assertEqual(self.drive.grant_rows, rows)
+
+    def test_an_unreadable_plan_stops_the_run_instead_of_deciding_again(self):
+        """Deciding again would read grants the first plan may already have raised."""
+        broken = {
+            "not json": "{",
+            "no plan": json.dumps({"version": 1}),
+            "a short row": json.dumps({"plan": {"rights": [["folderlower", FRIEND]], "counts": {}}}),
+            "a role that is not a number": json.dumps(
+                {"plan": {"rights": [["folderlower", FRIEND, "30"]], "counts": {}}}
+            ),
+        }
+        for label, content in broken.items():
+            with self.subTest(label):
+                self.setUp()
+                self.kept_plan()
+                self.plan_path().write_text(content)
+                with self.assertRaises(KeptRightsPlanError):
+                    self.run_grants()
+                self.assertEqual(self.plan_path().read_text(), content)
 
 
 class KeptRightsRuleTest(unittest.TestCase):
