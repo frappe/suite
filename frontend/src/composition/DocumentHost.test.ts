@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createApp, defineComponent, h, ref, type VNode } from 'vue'
+import { createApp, defineComponent, h, ref, toValue, type VNode } from 'vue'
 import { createMemoryHistory, createRouter, RouterView, type HistoryState } from 'vue-router'
 
 import type { DocumentSession } from '@/apps/drive'
@@ -17,13 +17,14 @@ const testState = vi.hoisted(() => ({
   dispose: vi.fn(),
   nodeLocked: vi.fn(),
   forget: vi.fn(),
+  hideRail: vi.fn(),
   surface: { name: 'WriterTestSurface', render: (): VNode | null => null },
   preview: { name: 'FileTestSurface', props: ['session'], render: (): VNode | null => null },
 }))
 
 vi.mock('@/apps/drive', async () => {
   const { defineComponent: define, h: render } = await import('vue')
-  const { driveNodeRoute, openingLocation } =
+  const { driveNodeRoute, openingLocation, opensFile } =
     await vi.importActual<typeof import('@/apps/drive')>('@/apps/drive')
   return {
     // Stands in for the password form: a click is a right password.
@@ -44,6 +45,7 @@ vi.mock('@/apps/drive', async () => {
     openDocumentSession: testState.open,
     driveNodeRoute,
     openingLocation,
+    opensFile,
     DriveDocumentHeaderSkeleton: define({
       props: { title: String, location: String },
       setup: (props) => () =>
@@ -51,6 +53,10 @@ vi.mock('@/apps/drive', async () => {
     }),
   }
 })
+
+// The host's own request to the shell, as an open document's surface makes its own
+vi.mock('@/platform/rail', () => ({ useHideRail: testState.hideRail }))
+const asksToHideRail = () => toValue(testState.hideRail.mock.lastCall?.[0])
 
 vi.mock('@/composition/documentRegistry', () => ({
   documentTypes: [
@@ -118,6 +124,7 @@ afterEach(() => {
   testState.dispose.mockReset()
   testState.nodeLocked.mockReset()
   testState.forget.mockReset()
+  testState.hideRail.mockReset()
   document.cookie = 'user_id=; expires=Thu, 01 Jan 1970 00:00:00 GMT'
   document.body.innerHTML = ''
 })
@@ -281,6 +288,33 @@ describe('DocumentHost', () => {
     await router.push('/d/node-2')
     await vi.waitFor(() => expect(skeleton()?.textContent).toBe(''))
     expect(skeleton()?.hasAttribute('data-location')).toBe(false)
+    app.unmount()
+  })
+
+  it('hides the rail from the moment a link starts to open, and gives it back on a refusal', async () => {
+    let refuse!: (error: unknown) => void
+    testState.open.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        refuse = reject
+      }),
+    )
+    const { root, app } = await mountHost()
+
+    expect(asksToHideRail()).toBe(true)
+    refuse(refusal(403, 'Refused'))
+    await vi.waitFor(() =>
+      expect(root.textContent).toContain('You don’t have access to this document.'),
+    )
+    expect(asksToHideRail()).toBe(false)
+    app.unmount()
+  })
+
+  it('keeps the rail while a file opened from Drive loads its preview', async () => {
+    testState.open.mockReturnValue(new Promise(() => {}))
+    const { driveNodeRoute } = await vi.importActual<typeof import('@/apps/drive')>('@/apps/drive')
+    const { app } = await mountHost(undefined, driveNodeRoute('node-1', 'Budget.pdf', 'file').state)
+
+    expect(asksToHideRail()).toBe(false)
     app.unmount()
   })
 

@@ -66,7 +66,11 @@
         />
       </DefineTopbarStatus>
       <DefineTopbarMenus>
-        <SheetMenuBar :menus="menuBar" :open-comments="openComments" />
+        <SheetMenuBar
+          :menus="menuBar"
+          :open-comments="openComments"
+          @item-ran="_refocusGridAfterDialog"
+        />
       </DefineTopbarMenus>
       <DefineTopbarActions>
         <SheetTopbarActions :present-users="presentUsers" :current-sheet="currentSheet" />
@@ -89,13 +93,15 @@
       </DefineTopbarActions>
 
       <!-- On /d/ the surface draws the Drive document header: title and Share.
-         The editor fills its status, menus and actions. -->
+         The editor fills its status, menus and actions, and hands over its
+         own items for the header's menu. -->
       <slot
         name="header"
         :view-only="readOnly"
         :status="ReuseTopbarStatus"
         :menus="ReuseTopbarMenus"
         :actions="ReuseTopbarActions"
+        :menu-items="menuItems"
       />
 
       <!-- Row 2 · the tools (SheetToolbar.vue) -->
@@ -402,6 +408,7 @@
         :tab-drag-name="tabDragName"
         :peers-by-sub-sheet="peersBySubSheet"
         :selection-stats="selectionStats"
+        :rename-sheet="renameSheetInPlace"
         @add-sheet="addSheet"
         @drag-start="onTabDragStart"
         @drag-end="onTabDragEnd"
@@ -409,7 +416,6 @@
         @tab-drop="onTabDrop"
         @tab-mousedown="onTabMousedown"
         @tab-click="onTabClick"
-        :rename-sheet="renameSheetInPlace"
         @rename-end="_refocusGridAfterDialog"
         @tab-menu="_onTabMenu"
       />
@@ -687,6 +693,7 @@
         </div>
 
         <textarea
+          ref="noteBoxRef"
           v-model="commentPanel.draft"
           class="sn-comment-ta"
           rows="2"
@@ -766,7 +773,7 @@
 
 <script setup>
 import { createReusableTemplate } from '@vueuse/core'
-import { Badge, Button, Dialog, Dropdown, FormControl, Spinner, Tooltip } from 'frappe-ui'
+import { Badge, Button, Dialog, Dropdown, FormControl, Spinner, toast, Tooltip } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import * as Y from 'yjs'
@@ -798,6 +805,7 @@ import { deleteMap, insertMap, moveMap } from '../../engine/ref-remap.js'
 import { createSlicerEngine } from '../../engine/slicers.js'
 import { createSortFilter } from '../../engine/sortFilter.js'
 import { parseSparkline, sparkSpec } from '../../engine/sparkline.js'
+import { clearTypedFormats, resetFormatCommands } from '../../engine/typed-formats.js'
 import { createValidationEngine } from '../../engine/validation.js'
 import { numFmtFromEngine } from '../../engine/xlsx-io.js'
 import { cellId, colLabel, parseCellId } from '../../utils/cells.js'
@@ -1447,70 +1455,57 @@ const CURRENCY_QUICK_PICKS = [
     symbol: '¥',
   },
 ]
-const fileDropdownOptions = computed(() => [
-  {
-    group: 'Export',
-    options: [
-      {
-        label: 'Export as CSV',
-        icon: 'lucide-download',
-        onClick: () => exportCSV(),
-      },
-      {
-        label: 'Export as XLSX',
-        description: __("Charts and conditional formatting aren't exported yet."),
-        icon: 'lucide-download',
-        onClick: () => exportXLSX(),
-      },
-      {
-        label: __('Print…'),
-        icon: 'lucide-printer',
-        submenu: [
-          { label: __('This sheet'), onClick: () => print('sheet') },
-          { label: __('All sheets'), onClick: () => print('all') },
-        ],
-      },
-    ],
-  },
-  // Import writes cells — hide it for viewers (export/read stays available).
-  ...(readOnly.value
-    ? []
-    : [
-        {
-          group: 'Import',
-          options: [
-            {
-              label: 'Import CSV',
-              icon: 'lucide-upload',
-              onClick: () => csvInputRef.value?.click(),
-            },
-            {
-              label: 'Import XLSX',
-              icon: 'lucide-upload',
-              onClick: () => xlsxInputRef.value?.click(),
-            },
-          ],
-        },
-      ]),
+// The header's menu puts export and import in one group and Sheets' settings above Star
+const menuItems = computed(() => ({
+  transfer: [
+    {
+      label: __('Export as CSV'),
+      icon: 'lucide-download',
+      onClick: () => exportCSV(),
+    },
+    {
+      label: __('Export as XLSX'),
+      icon: 'lucide-download',
+      onClick: () => exportXLSX(),
+    },
+    {
+      label: __('Print'),
+      icon: 'lucide-printer',
+      submenu: [
+        { label: __('This sheet'), onClick: () => print('sheet') },
+        { label: __('All sheets'), onClick: () => print('all') },
+      ],
+    },
+    // Import writes cells — hide it for viewers (export/read stays available).
+    ...(readOnly.value
+      ? []
+      : [
+          {
+            label: __('Import CSV'),
+            icon: 'lucide-upload',
+            onClick: () => csvInputRef.value?.click(),
+          },
+          {
+            label: __('Import XLSX'),
+            icon: 'lucide-upload',
+            onClick: () => xlsxInputRef.value?.click(),
+          },
+        ]),
+  ],
   // Only shown to admins — gated server-side via the boot flag so non-admins
   // never see a settings entry they can't use.
-  ...(window.frappe?.boot?.ai_assist_can_configure
+  settings: window.frappe?.boot?.ai_assist_can_configure
     ? [
         {
-          group: 'AI',
-          options: [
-            {
-              label: 'AI settings',
-              icon: 'lucide-cpu',
-              onClick: () => {
-                aiSettingsOpen.value = true
-              },
-            },
-          ],
+          label: __('AI settings'),
+          icon: 'lucide-cpu',
+          onClick: () => {
+            aiSettingsOpen.value = true
+          },
         },
       ]
-    : []),
-])
+    : [],
+}))
 
 // ── AI Assist ─────────────────────────────────────────────────────────────────
 // The Ask bar and AI settings (see useAiAssist.js).
@@ -1570,14 +1565,21 @@ async function _readEngineFormats(rect, sn) {
   return out
 }
 
-// Sets cells back to IronCalc's general number format (Clear formatting).
+// Sets cells back to IronCalc's general number format, in this tab only
+// (Number format > General, sort).
 function _resetEngineFormats(ids, sn) {
-  const commands = ids.map((id) => {
-    const p = parseCellId(id)
-    const range = { r1: p.row + 1, c1: p.col + 1, r2: p.row + 1, c2: p.col + 1 }
-    return _command('setRangeStyle', { sheet: sn, range, style: { num_fmt: 'general' } })
-  })
+  const commands = resetFormatCommands(ids, sn, _command)
   if (commands.length) _dispatch(_command('batch', { commands }))
+}
+
+// Clear formatting for the cells IronCalc formatted itself, for every tab
+// and reload (engine/typed-formats.ts).
+function _clearEngineFormats(ids, sn) {
+  return clearTypedFormats(ids, sn, {
+    dispatch: _dispatch,
+    command: _command,
+    readInputs: async (sheet, rect) => (await _readRect(sheet, rect)).inputs,
+  })
 }
 const hAlignIcon = computed(() => {
   if (activeFormat.value?.align === 'center') return 'lucide-align-center'
@@ -1757,7 +1759,7 @@ const {
     isDirty.value = true
   },
   readEngineFormats: _readEngineFormats,
-  resetEngineFormats: _resetEngineFormats,
+  clearEngineFormats: _clearEngineFormats,
 })
 
 // Selection + grid bounds, so full-column / full-row / whole-sheet selections
@@ -1986,7 +1988,6 @@ function _clearContents() {
 const menuBar = computed(() =>
   buildMenuBar({
     readOnly: readOnly.value,
-    fileOptions: fileDropdownOptions.value,
     undo,
     redo,
     canUndo: canUndo.value,
@@ -2170,6 +2171,7 @@ const {
   openTabMenu,
 } = useContextMenu({
   getGrid: () => grid,
+  refocusGrid: () => _refocusGridAfterDialog(),
 })
 
 // The right-click menu is entirely mutation actions (insert/delete/freeze/
@@ -2265,6 +2267,7 @@ const {
   history,
   isDirty,
   getGrid: () => grid,
+  usedCellIds: () => _usedCellIds(),
 })
 // The chart dialog's preview: shown values and their number formats (a
 // scatter chart reads dates with them; the type can change after the read).
@@ -2645,11 +2648,12 @@ function _setupGridInstance() {
           // 'warn' rules let the value through but surface a transient notice;
           // 'reject' (default) blocks the edit and repaints the pre-edit value.
           if (!v.valid && v.severity !== 'warn') {
-            const msg = v.message || 'Value rejected by data validation rule'
-            saveError.value = msg
-            setTimeout(() => {
-              if (saveError.value === msg) saveError.value = ''
-            }, 3500)
+            // A toast, not the top bar's small badge, which went unseen (ISSUES #152).
+            toast.error(
+              v.message
+                ? __("This value isn't allowed. {0}", [v.message])
+                : __("This value isn't allowed"),
+            )
             // Force a re-render so the canvas repaints with the pre-edit value
             // (we never called sheet.setCell so the engine still has it).
             grid?.render?.()
@@ -3660,7 +3664,11 @@ function openCommentPanel() {
   commentPanel.draft = ''
   _loadCommentThread()
   commentPanel.open = true
+  // Opened to write a note (Insert > Note, Shift+F2): the cursor goes in the
+  // box, not back on the menu that opened it (ISSUES #150).
+  void nextTick(() => noteBoxRef.value?.focus())
 }
+const noteBoxRef = ref(null)
 
 // Mirror the engine's thread for `commentPanel.id` into the reactive panel.
 function _loadCommentThread() {
@@ -3771,6 +3779,7 @@ function _draftEdit() {
 defineExpose({
   activeCell,
   currentSheet,
+  sheetNames,
   saveState,
   flushSave,
   get hasLoadError() {
@@ -3884,6 +3893,12 @@ function openDropdown(id, rule, pos = {}) {
   dropdownPanel.w = pos.w ?? 120
   dropdownPanel.open = true
 }
+// The picker belongs to its cell: it closes once the selection leaves it,
+// rather than staying open over the next cells (ISSUES #152).
+watch([activeCell, currentSheet], ([id], [, sheetBefore]) => {
+  if (dropdownPanel.open && (id !== dropdownPanel.id || currentSheet.value !== sheetBefore))
+    dropdownPanel.open = false
+})
 async function pickDropdownOption(opt) {
   const id = dropdownPanel.id
   const sn = currentSheet.value
@@ -3967,6 +3982,9 @@ const {
   contextMenu,
   history,
   getGrid: () => grid,
+  // Slicers are fixed to the window; the grid's cell rects are canvas-local.
+  getGridOrigin: () => canvasRef.value?.getBoundingClientRect() ?? null,
+  usedCellIds: () => _usedCellIds(),
   detectContiguousBlock: _detectContiguousBlock,
   repopulateGrid: () => _repopulateGrid(),
   applyHiddenRows: () => _applyHiddenRows(),

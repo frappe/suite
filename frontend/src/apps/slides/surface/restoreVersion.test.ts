@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
 
+import type { ConvertedState } from '@/apps/drive'
 import { writeDeck } from '@/apps/slides/collab/deck'
 import { drawnSlides } from '@/apps/slides/collab/drawnDeck'
 import type { RestoreResult } from '@/platform/collab'
 
 import { restoreVersion } from './restoreVersion'
-import type { ConvertedVersion } from './versions'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
 
@@ -32,7 +32,7 @@ const ROW_VERSION = new TextEncoder().encode(
   JSON.stringify({ schema: 'presentation/1', slides: [] }),
 )
 
-function noUpgrade(): Promise<ConvertedVersion> {
+function noUpgrade(): Promise<ConvertedState> {
   throw new Error('A converted version needs no upgrade')
 }
 
@@ -73,7 +73,7 @@ describe('restoring a version of a converted presentation', () => {
       noUpgrade,
     )
 
-    expect(notice).toEqual({ isRestored: false, message: "This version can't be restored." })
+    expect(notice).toEqual({ isRestored: false, message: "This version can't be restored" })
     expect(room.restoreVersion).not.toHaveBeenCalled()
   })
 

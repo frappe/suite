@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Button } from 'frappe-ui'
 import { List, ListCell, ListHeader, ListHeaderCell, ListRow } from 'frappe-ui/list'
-import { computed, onMounted, shallowRef } from 'vue'
+import { computed, onMounted, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import {
@@ -30,6 +30,16 @@ const isLoading = shallowRef(true)
 // Drive's order: nothing for a fast read, placeholder rows for a slow one, then the list
 const isBlank = useDriveSkeletonDelay(isLoading)
 const hasNoCopies = computed(() => !isLoading.value && !copies.value.length)
+// Drive's page says it once when no type keeps a copy
+const emit = defineEmits<{ counted: [count: number] }>()
+watch(
+  () => (isLoading.value ? null : copies.value.length),
+  (count) => {
+    if (count !== null) {
+      emit('counted', count)
+    }
+  },
+)
 // Drive's listing tracks; a phone drops the saved time, as Drive drops Modified
 const COLUMNS = {
   base: ['minmax(0,1fr)', '6rem', '2.5rem'],
@@ -103,18 +113,8 @@ function details(copy: RecoveryCopy) {
     </div>
   </article>
   <div v-else-if="isBlank" aria-busy="true" />
-  <div
-    v-else-if="hasNoCopies"
-    class="flex flex-col items-center justify-center gap-2 py-16 text-center"
-  >
-    <span class="lucide-folder-open size-6 text-ink-gray-4" aria-hidden="true" />
-    <p class="text-base text-ink-gray-5">{{ __('No recovery copies') }}</p>
-    <p class="text-p-sm text-ink-gray-5">
-      {{ __("Changes that couldn't be saved stay here, on this device, until you discard them.") }}
-    </p>
-  </div>
   <List
-    v-else
+    v-else-if="!hasNoCopies"
     :columns="COLUMNS"
     :row-height="40"
     class="-mx-3 list-row-px-3"

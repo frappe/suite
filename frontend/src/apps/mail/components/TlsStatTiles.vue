@@ -57,7 +57,7 @@ const tiles = computed(() => {
       warn,
     },
     {
-      label: __('Failed Sessions'),
+      label: __('Failed sessions'),
       value: failed.toLocaleString(),
       sub: sessions ? __('{0} of all sessions', [formatRate(share(failed, sessions))]) : '',
       warn: warn && failed > 0,

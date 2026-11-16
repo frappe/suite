@@ -7,6 +7,7 @@ import { useKeyboardShortcuts } from '@/apps/meet/composables/useKeyboardShortcu
 import { disposeSocket, initSocket } from '@/apps/meet/socket'
 import { getPlatform } from '@/apps/meet/utils/device'
 import { provideAreaShortcuts } from '@/platform/shortcuts'
+import { translate as __ } from '@/platform/translation'
 
 // One site socket per mount, closed on unmount so a return to Meet does not add one.
 initSocket()
@@ -25,8 +26,8 @@ provideAreaShortcuts(() => (showShortcutsDialog.value = true))
 
 useKeyboardShortcut({
   combo: 'Shift+Slash',
-  description: 'View shortcuts',
-  group: 'General',
+  description: __('View shortcuts'),
+  group: __('General'),
   allowInDialog: true,
   handler: () => (showShortcutsDialog.value = true),
 })

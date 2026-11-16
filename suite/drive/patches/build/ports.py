@@ -13,6 +13,7 @@ and `DriveTarget` for everything it writes into Drive's own.
 
 import re
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import IO, Protocol
 
@@ -340,12 +341,8 @@ class BotoBucket:
             raise
 
     def size(self, key: str) -> int | None:
-        try:
-            return self.client.head_object(Bucket=self.bucket, Key=key)["ContentLength"]
-        except self.driver._client_error as e:
-            if self._is_missing(e):
-                return None
-            raise
+        head = self.head(key)
+        return head["ContentLength"] if head else None
 
     def sizes_under(self, prefix: str) -> dict[str, int]:
         # One page is enough: Build keeps at most one object per blob folder.
@@ -353,14 +350,67 @@ class BotoBucket:
         return {item["Key"]: item["Size"] for item in listed.get("Contents", [])}
 
     def copy_object(self, source_key: str, destination_key: str) -> None:
-        self.client.copy_object(
-            Bucket=self.bucket,
-            Key=destination_key,
-            CopySource={"Bucket": self.bucket, "Key": source_key},
+        self._copy_from(
+            source_key,
+            lambda key: self.client.copy_object(
+                Bucket=self.bucket,
+                Key=destination_key,
+                CopySource={"Bucket": self.bucket, "Key": key},
+            ),
         )
 
     def managed_copy(self, source_key: str, destination_key: str) -> None:
-        self.client.copy({"Bucket": self.bucket, "Key": source_key}, self.bucket, destination_key)
+        self._copy_from(
+            source_key,
+            lambda key: self.client.copy({"Bucket": self.bucket, "Key": key}, self.bucket, destination_key),
+        )
+
+    def _copy_from(self, source_key: str, copy: Callable[[str], object]) -> None:
+        """Run `copy` from `source_key`, and once more without its leading
+        slashes on a store that dropped them.
+
+        A fifth of the legacy keys start with a slash. AWS S3 keeps the slash
+        as part of the key. Garage, which Frappe Cloud's object storage runs,
+        drops the leading slashes of the key in a request path but not of the
+        key in a copy source: it stores, reads and heads `/team/id` as
+        `team/id`, and then reports `/team/id` missing as a copy source.
+
+        The second attempt runs only when the store shows that both names
+        are one object (`is_one_object`). On AWS a missing `/team/id` stays
+        missing, even when a different `team/id` exists.
+        """
+        try:
+            copy(source_key)
+        except self.driver._client_error as e:
+            stored_key = source_key.lstrip("/")
+            if not (
+                self._is_missing(e)
+                and source_key.startswith("/")
+                and stored_key
+                and self.is_one_object(source_key, stored_key)
+            ):
+                raise
+            copy(stored_key)
+
+    def is_one_object(self, key: str, other_key: str) -> bool:
+        """Whether the store answers for both keys with the same object: same
+        ETag and size. The copy (`_copy_from`) and the legacy delete
+        (`cleanup.ports.LegacyBucket`) rely on it to tell one object from two."""
+        head, other = self.head(key), self.head(other_key)
+        return bool(
+            head
+            and other
+            and head["ETag"] == other["ETag"]
+            and head["ContentLength"] == other["ContentLength"]
+        )
+
+    def head(self, key: str) -> dict | None:
+        try:
+            return self.client.head_object(Bucket=self.bucket, Key=key)
+        except self.driver._client_error as e:
+            if self._is_missing(e):
+                return None
+            raise
 
     def _is_missing(self, error) -> bool:
         from frappe.storage.s3_driver import MISSING_KEY_CODES
@@ -890,6 +940,10 @@ class LegacyContent(Protocol):
     def media_files(self, deck: str, after: tuple[str, str], limit: int) -> list[MediaFileRow]: ...
 
     def media_files_by_urls(self, urls: tuple[str, ...]) -> list[MediaFileRow]: ...
+
+    def presentation_media(self, names: tuple[str, ...]) -> set[str]:
+        """Answer which of `names` are media Files attached to a presentation."""
+        ...
 
     def writer_document_is_template(self, name: str) -> bool: ...
 
@@ -1455,7 +1509,7 @@ class SiteDrive:
                 ["kind", "!=", "root"],
                 ["owner", "not in", ["Administrator", "Guest", ""]],
             ],
-            fields=["name", "owner", "kind", "root", "path"],
+            fields=["name", "owner", "kind", "root", "path", "parent_node"],
             order_by="name asc",
             limit=limit,
         )
@@ -1725,6 +1779,14 @@ class SiteContentSource:
             order_by="creation asc, name asc",
         )
         return [MediaFileRow(**dict(row)) for row in rows]
+
+    def presentation_media(self, names: tuple[str, ...]) -> set[str]:
+        """Answer which of `names` are media Files attached to a presentation."""
+        if not names:
+            return set()
+
+        filters = [["name", "in", list(names)], ["attached_to_doctype", "=", "Presentation"]]
+        return set(frappe.get_all("File", filters=filters, pluck="name"))
 
     def writer_document_is_template(self, name: str) -> bool:
         """Whether §14.7 step 8 minted this `Writer Document` from a template.

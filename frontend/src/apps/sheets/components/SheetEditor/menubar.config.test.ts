@@ -75,7 +75,6 @@ function actions(overrides: Record<string, unknown> = {}) {
       'protectRange',
       'unprotectRange',
       'askAi',
-      'file',
       'numberFormats',
       'currencies',
       'fonts',
@@ -99,7 +98,6 @@ function actions(overrides: Record<string, unknown> = {}) {
       showFormulas: false,
       notesCount: 2,
       filterOn: false,
-      fileOptions: [{ group: 'Export', options: handed('File', fns.file) }],
       numberFormatOptions: handed('Number', fns.numberFormats),
       currencyOptions: handed('Currency', fns.currencies),
       fontFamilyOptions: handed('Font', fns.fonts),
@@ -123,10 +121,10 @@ const menu = (menus: Menu[], label: string) => menus.find((m) => m.label === lab
 const keys = (menus: Menu[]) => menus.map((m) => m.key)
 
 describe('buildMenuBar', () => {
-  it('builds File, Edit, View, Insert, Format and Data, in that order', () => {
+  it('builds Edit, View, Insert, Format and Data, in that order, and no File', () => {
     const menus: Menu[] = buildMenuBar(actions().args)
-    expect(menus.map((m) => m.label)).toEqual(['File', 'Edit', 'View', 'Insert', 'Format', 'Data'])
-    expect(keys(menus)).toEqual(['file', 'edit', 'view', 'insert', 'format', 'data'])
+    expect(menus.map((m) => m.label)).toEqual(['Edit', 'View', 'Insert', 'Format', 'Data'])
+    expect(keys(menus)).toEqual(['edit', 'view', 'insert', 'format', 'data'])
   })
 
   it('reaches every action it is given, each labelled in words', () => {
@@ -190,7 +188,6 @@ describe('buildMenuBar', () => {
 
   it('groups the asked-for actions under their menus', () => {
     const menus: Menu[] = buildMenuBar(actions().args)
-    expect(labels(menu(menus, 'File'))).toContain('File option')
     expect(labels(menu(menus, 'Edit'))).toEqual(
       expect.arrayContaining(['Undo', 'Redo', 'Find and replace', 'Clear contents']),
     )
@@ -236,7 +233,7 @@ describe('buildMenuBar', () => {
 
   it('leaves viewers only what reads the sheet', () => {
     const menus: Menu[] = buildMenuBar(actions({ readOnly: true }).args)
-    expect(menus.map((m) => m.label)).toEqual(['File', 'Edit', 'View'])
+    expect(menus.map((m) => m.label)).toEqual(['Edit', 'View'])
     expect(labels(menu(menus, 'Edit'))).toEqual(['Find and replace'])
     expect(labels(menu(menus, 'View'))).toEqual([
       'Zoom in',

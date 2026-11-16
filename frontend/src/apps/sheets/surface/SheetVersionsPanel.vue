@@ -56,7 +56,7 @@ async function loadMore() {
   try {
     await props.list.loadMore()
   } catch (error) {
-    toast.error(errorText(error, __('Could not load more versions.')))
+    toast.error(errorText(error, __('Could not load more versions')))
   }
 }
 

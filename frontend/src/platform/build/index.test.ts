@@ -42,7 +42,7 @@ describe('build watcher', () => {
 
     expect(tab.belowMinBuild('writer')).toBe(true)
     expect(tab.belowMinBuild('slides')).toBe(false)
-    expect(toastInfo.mock.calls.at(-1)![1].description).toBe('Reload to keep editing in Writer.')
+    expect(toastInfo.mock.calls.at(-1)![1].description).toBe('Reload to keep editing in Writer')
   })
 
   it('names a product paused after the banner showed for another', async () => {
@@ -53,7 +53,7 @@ describe('build watcher', () => {
     tab.watchBuild()
     await window.fetch('/api/method/ping')
 
-    expect(toastInfo.mock.calls.at(-1)![1].description).toBe('Reload to keep editing in Slides.')
+    expect(toastInfo.mock.calls.at(-1)![1].description).toBe('Reload to keep editing in Slides')
   })
 
   it('ignores the build headers of another origin', async () => {

@@ -3,15 +3,12 @@
     <template #loading>
       <DashboardDetailHeaderSkeleton :actions="2" />
       <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
-        <DashboardCard :title="__('General Information')">
+        <DashboardCard :title="__('General information')">
           <div>
-            <InformationField :label="__('Description')"
-              ><DashboardSkeletonText width="40%"
-            /></InformationField>
             <InformationField :label="__('Receiving')"
               ><DashboardSkeletonText width="40%"
             /></InformationField>
-            <InformationField :label="__('Created At')"
+            <InformationField :label="__('Added')"
               ><DashboardSkeletonText width="40%"
             /></InformationField>
           </div>
@@ -21,23 +18,26 @@
             <DashboardSkeletonText width="30%" />
           </div>
         </DashboardCard>
-        <DashboardCard :title="__('Email Addresses')">
+        <DashboardCard :title="__('Email addresses')">
           <div class="flex flex-col">
             <div
               class="bg-surface-gray-2 text-ink-gray-5 flex items-center rounded-4 px-5 py-2.5 text-sm"
             >
-              <span class="flex-1">{{ __('Email Address') }}</span>
-              <span class="flex-1">{{ __('Description') }}</span>
+              <span class="flex-1">{{ __('Email address') }}</span>
               <span class="w-20 shrink-0 text-center">{{ __('Enabled') }}</span>
               <span class="w-8 shrink-0" />
             </div>
-            <DashboardRowsSkeleton :rows="1" />
+            <!-- An address row with its display name beneath is two lines tall. -->
+            <DashboardRowsSkeleton
+              :rows="1"
+              row-class="flex h-[3.875rem] items-center border-b px-5 last:border-b-0"
+            />
           </div>
         </DashboardCard>
         <DashboardCard :title="__('Members')">
           <div class="flex flex-col">
             <div class="px-5 py-2.5"><Skeleton class="h-7 w-full rounded-4" /></div>
-            <DashboardRowsSkeleton :rows="3" />
+            <DashboardRowsSkeleton :rows="1" />
           </div>
         </DashboardCard>
       </div>
@@ -50,23 +50,23 @@
         <template #icon><Users class="h-5 w-5" /></template>
         <template #actions>
           <Button :label="__('Edit')" @click="showEdit = true" />
-          <Dropdown :options="dropdownOptions" :button="{ icon: 'lucide-more-horizontal' }" />
+          <Dropdown
+            :options="dropdownOptions"
+            :button="{ icon: 'lucide-more-horizontal' }"
+            align="end"
+          />
         </template>
       </DashboardDetailHeader>
 
       <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
-        <!-- General Information -->
-        <DashboardCard :title="__('General Information')">
+        <!-- The description is already under the title in the header. -->
+        <DashboardCard :title="__('General information')">
           <div>
-            <InformationField
-              :label="__('Description')"
-              :value="member.data.description ?? undefined"
-            />
             <InformationField
               :label="__('Receiving')"
               :value="member.data.disable_receiving ? __('Disabled') : __('Enabled')"
             />
-            <InformationField :label="__('Created At')" :value="createdAt" />
+            <InformationField :label="__('Added')" :value="createdAt" />
           </div>
         </DashboardCard>
 
@@ -85,7 +85,7 @@
 
         <!-- Email Addresses -->
         <DashboardCard
-          :title="__('Email Addresses')"
+          :title="__('Email addresses')"
           :button-label="__('Add')"
           @action="showAddEmail = true"
         >
@@ -93,8 +93,7 @@
             <div
               class="bg-surface-gray-2 text-ink-gray-5 flex items-center rounded-4 px-5 py-2.5 text-sm"
             >
-              <span class="flex-1">{{ __('Email Address') }}</span>
-              <span class="flex-1">{{ __('Description') }}</span>
+              <span class="flex-1">{{ __('Email address') }}</span>
               <span class="w-20 shrink-0 text-center">{{ __('Enabled') }}</span>
               <span class="w-8 shrink-0" />
             </div>
@@ -110,10 +109,13 @@
                   :disabled="!entry.is_primary"
                 >
                   <div class="flex w-full items-center">
-                    <span class="flex-1 truncate">{{ entry.email }}</span>
-                    <span class="text-ink-gray-5 flex-1 truncate">{{
-                      entry.description || '—'
-                    }}</span>
+                    <!-- The address gets the whole width; its display name sits beneath. -->
+                    <span class="min-w-0 flex-1">
+                      <span class="block truncate">{{ entry.email }}</span>
+                      <span v-if="entry.description" class="text-ink-gray-5 block truncate text-sm">
+                        {{ entry.description }}
+                      </span>
+                    </span>
                     <span class="flex w-20 shrink-0 justify-center">
                       <Switch
                         :model-value="entry.enabled"
@@ -150,7 +152,7 @@
         >
           <div class="flex flex-col">
             <div class="px-5 py-2.5">
-              <FormControl v-model="memberSearch" :placeholder="__('Search by email')">
+              <FormControl v-model="memberSearch" :placeholder="__('Search by email address')">
                 <template #prefix>
                   <FeatherIcon name="search" class="text-ink-gray-5 w-4" />
                 </template>
@@ -201,14 +203,12 @@
     :current-ids="currentMemberIds"
     @reload="member.refetch().catch(() => {})"
   />
-  <Dialog v-model:open="showToggleReceiving" v-bind="toggleReceivingDialogOptions" />
-  <Dialog v-model:open="showDelete" v-bind="deleteDialogOptions" />
 </template>
 <script setup lang="ts">
 import Users from '~icons/lucide/users'
 import {
   Button,
-  Dialog,
+  dialog,
   Dropdown,
   FormControl,
   Skeleton,
@@ -237,6 +237,7 @@ import {
   InformationField,
 } from '@/platform/dashboard'
 import { appPageMeta } from '@/platform/page-meta'
+import { translate as __ } from '@/platform/translation'
 
 type GroupData = {
   id: string
@@ -265,11 +266,10 @@ const router = useRouter()
 const showEdit = ref(false)
 const showAddEmail = ref(false)
 const showAddMembers = ref(false)
-const showToggleReceiving = ref(false)
-const showDelete = ref(false)
 const memberSearch = ref('')
 
 // Named `member` so the quota/card markup mirrors AccountView.vue one-to-one.
+const deleting = ref(false)
 const member = useQuery(api.mail.admin.groups.get, () => ({
   group_id: groupId,
 }))
@@ -278,7 +278,9 @@ usePageMeta(() => appPageMeta((member.data as GroupData | undefined)?.email || g
 watch(
   () => member.error,
   (error) => {
-    if (!error) return
+    // Once a delete is under way, the refetch of the record it removed fails with "not found";
+    // that is the delete working, not an error to show over its own toast.
+    if (!error || deleting.value) return
     raiseError(error)
     router.replace({
       name: 'mail-groups',
@@ -319,7 +321,7 @@ const toggleEmailEnabled = async (
     email: entry.email,
     enabled: value ? 1 : 0,
   })
-  raiseToast(value ? __('Email address enabled.') : __('Email address disabled.'))
+  raiseToast(value ? __('Email address enabled') : __('Email address disabled'))
 }
 const removeEmail = async (email: string) => {
   await client.mutation(api.mail.admin.groups.removeEmail, {
@@ -327,7 +329,7 @@ const removeEmail = async (email: string) => {
     email,
   })
   member.refetch().catch(() => {})
-  raiseToast(__('Email address removed.'))
+  raiseToast(__('Email address removed'))
 }
 const removeMember = async (accountId: string) => {
   await client.mutation(api.mail.admin.groups.removeMember, {
@@ -335,82 +337,72 @@ const removeMember = async (accountId: string) => {
     account_id: accountId,
   })
   member.refetch().catch(() => {})
-  raiseToast(__('Member removed.'))
+  raiseToast(__('Member removed'))
 }
 async function setReceiving(enabled: boolean) {
   await client.mutation(api.mail.admin.groups.setReceivingEnabled, {
     group_id: groupId,
     enabled,
   })
-  showToggleReceiving.value = false
-  raiseToast(enabled ? __('Receiving enabled.') : __('Receiving disabled.'))
+  raiseToast(enabled ? __('Receiving enabled') : __('Receiving disabled'))
 }
-const toggleReceivingDialogOptions = computed(() => {
+function confirmToggleReceiving() {
   const enabling = Boolean(data.value?.disable_receiving)
-  return {
-    title: enabling ? __('Enable Receiving') : __('Disable Receiving'),
+  dialog.confirm({
+    title: enabling ? __('Enable receiving?') : __('Disable receiving?'),
     message: enabling
-      ? __(
-          'Are you sure you want to enable receiving for this group? Mail addressed to it will be delivered again.',
-        )
+      ? __('Mail addressed to this group will be delivered again.')
       : __(
-          'Are you sure you want to disable receiving for this group? Mail addressed to it will bounce back to the sender.',
+          'Mail addressed to this group bounces back to the sender until receiving is enabled again.',
         ),
-    actions: [
-      {
-        label: __('Confirm'),
-        variant: 'solid' as const,
-        onClick: () => setReceiving(enabling),
-      },
-    ],
-  }
-})
+    theme: enabling ? 'blue' : 'amber',
+    confirmLabel: enabling ? __('Enable receiving') : __('Disable receiving'),
+    onConfirm: () => setReceiving(enabling),
+  })
+}
 const deleteGroup = useMutation(api.mail.admin.groups.delete)
 async function deleteGroupSubmit() {
   const input: InputOf<typeof api.mail.admin.groups.delete> = {
     ids: [groupId],
   }
-  await deleteGroup.run(input)
-  showDelete.value = false
-  raiseToast(__('Group deleted.'))
+  deleting.value = true
+  await deleteGroup.run(input).catch((error) => {
+    deleting.value = false
+    throw error
+  })
+  raiseToast(__('Group deleted'))
   router.push({
     name: 'mail-groups',
   })
 }
-const deleteDialogOptions = computed(() => ({
-  title: __('Delete Group'),
-  message: __('Are you sure you want to delete this group? This action cannot be undone.'),
-  size: 'xl' as const,
-  icon: 'lucide-alert-triangle',
-  theme: 'amber' as const,
-  actions: [
-    {
-      label: __('Confirm'),
-      variant: 'solid' as const,
-      theme: 'red' as const,
-      onClick: deleteGroupSubmit,
-    },
-  ],
-}))
+function confirmDeleteGroup() {
+  dialog.confirm({
+    title: __('Delete this group?'),
+    message: __('The group and its addresses are deleted. This cannot be undone.'),
+    theme: 'red',
+    confirmLabel: __('Delete group'),
+    onConfirm: deleteGroupSubmit,
+  })
+}
 const dropdownOptions = computed(() => [
   {
     group: '',
     options: [
       data.value?.disable_receiving
         ? {
-            label: __('Enable Receiving'),
+            label: __('Enable receiving'),
             icon: 'lucide-mail-check',
-            onClick: () => (showToggleReceiving.value = true),
+            onClick: confirmToggleReceiving,
           }
         : {
-            label: __('Disable Receiving'),
+            label: __('Disable receiving'),
             icon: 'lucide-mail-x',
-            onClick: () => (showToggleReceiving.value = true),
+            onClick: confirmToggleReceiving,
           },
       {
-        label: __('Delete'),
+        label: __('Delete group'),
         icon: 'lucide-trash-2',
-        onClick: () => (showDelete.value = true),
+        onClick: confirmDeleteGroup,
       },
     ],
   },

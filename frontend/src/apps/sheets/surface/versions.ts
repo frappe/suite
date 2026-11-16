@@ -10,6 +10,7 @@ import * as Y from 'yjs'
 import { api, client } from '@/api'
 import type { DocumentSession } from '@/apps/drive'
 import { translate as __ } from '@/platform/translation'
+import { TransportError } from '@/platform/transport'
 
 import { changedCells, type ChangedCell } from '../collab/changes'
 import { readStoredVersion, writeVersionToCopy } from '../collab/restore'
@@ -195,5 +196,7 @@ export function versionByline(version: SheetVersion): string {
 }
 
 export function errorText(error: unknown, fallback: string): string {
-  return error instanceof Error && error.message ? error.message : fallback
+  return error instanceof TransportError && error.type !== 'NetworkError' && error.message
+    ? error.message
+    : fallback
 }

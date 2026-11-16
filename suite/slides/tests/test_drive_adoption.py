@@ -60,6 +60,8 @@ from suite.tests.utils import ensure_user
 
 USER = "slides-adoption-user@example.com"
 OTHER = "slides-adoption-other@example.com"
+# The words a refused paste shows, whatever the reason the picture cannot come
+PASTE_REFUSAL = "Some pictures can't be copied here, so nothing was pasted."
 
 DOCTYPE = "Presentation"
 SATELLITE = "Slide"
@@ -390,6 +392,12 @@ class TestSlidesInDrive(IntegrationTestCase):
         frappe.set_user(user)
         self.addCleanup(frappe.set_user, "Administrator")
 
+    def refusal(self, paste) -> str:
+        with self.assertRaises(frappe.ValidationError) as refused:
+            paste()
+
+        return str(refused.exception)
+
     # creation, and the immutable link
 
     def test_a_new_deck_carries_its_node_and_its_node_carries_it(self):
@@ -618,6 +626,88 @@ class TestSlidesInDrive(IntegrationTestCase):
 
         self.assertEqual(mapping, {})
         self.assertEqual(frappe.db.count("Drive Node", {"parent_node": mine, "kind": "file"}), 0)
+
+    def test_a_paster_who_can_view_the_source_brings_its_picture_along(self):
+        source = self._deck(title="Viewed source")
+        picture = self._media(source, "seen.png", png("blue"))
+        mine = self._deck(title="Viewer's destination", parent=self.other_root.node)
+        grant(source, OTHER, drive.READ, self.admin)
+        frappe.db.commit()
+
+        self._as(OTHER)
+        answered = api.update_slide_attachments(self._docname(mine), {"elements": elements_naming(picture)})
+        frappe.set_user("Administrator")
+
+        [element] = json.loads(answered["elements"])
+        self.assertEqual(frappe.db.get_value("Drive Node", element["src"], "parent_node"), mine)
+
+    def test_a_paste_naming_a_picture_the_paster_cannot_read_is_refused_whole(self):
+        # a skipped picture pastes as a broken one, so Slides refuses the paste
+        # and keeps nothing, not even the pictures it could have brought along
+        shared = self._deck(title="Shared with them")
+        readable = self._media(shared, "shared.png", png("blue"))
+        hidden = self._deck(title="Not for them")
+        unreadable = self._media(hidden, "secret.png", png("black"))
+        mine = self._deck(title="Theirs to edit")
+        grant(shared, OTHER, drive.READ, self.admin)
+        grant(mine, OTHER, drive.EDIT, self.admin)
+        docname = self._docname(mine)
+        before = self._used_bytes()
+        frappe.db.commit()
+
+        self._as(OTHER)
+        refusals = {
+            self.refusal(
+                lambda: api.update_slide_attachments(
+                    docname, {"elements": elements_naming(readable, unreadable)}
+                )
+            ),
+            self.refusal(
+                lambda: api.get_updated_json(
+                    docname, [{"type": "image", "src": readable}, {"type": "image", "src": unreadable}]
+                )
+            ),
+        }
+        frappe.set_user("Administrator")
+
+        self.assertEqual(refusals, {PASTE_REFUSAL})
+        self.assertEqual(frappe.db.count("Drive Node", {"parent_node": mine, "kind": "file"}), 0)
+        self.assertEqual(self._used_bytes(), before, "nothing was charged for the refused paste")
+
+    def test_a_word_typed_as_an_old_slides_background_still_pastes(self):
+        # develop's picker saved the typed text, and "blu" is shaped like a node id
+        source = self._deck(title="Typed background")
+        picture = self._media(source, "kept.png", png("blue"))
+        mine = self._deck(title="Pasted into")
+
+        answered = api.update_slide_attachments(
+            self._docname(mine), {"background": "blu", "elements": elements_naming(picture)}
+        )
+
+        self.assertEqual(answered["background"], "blu")
+        [element] = json.loads(answered["elements"])
+        self.assertEqual(frappe.db.get_value("Drive Node", element["src"], "parent_node"), mine)
+
+    def test_an_unreadable_a_trashed_and_an_unknown_picture_get_one_refusal(self):
+        # §5.4: the refusal must not tell a paster whether a picture exists, so
+        # a picture trashed from their own presentation gets the very same words
+        hidden = self._deck(title="Not for them")
+        unreadable = self._media(hidden, "secret.png", png("black"))
+        theirs = self._deck(title="Their source", parent=self.other_root.node)
+        trashed = self._media(theirs, "gone.png", png("green"))
+        update(self.admin, trashed, state="Trashed")
+        docname = self._docname(self._deck(title="Their destination", parent=self.other_root.node))
+        frappe.db.commit()
+
+        self._as(OTHER)
+        refusals: list[str] = []
+        for picture in (unreadable, trashed, "no-such-node"):
+            slide = {"elements": elements_naming(picture)}
+            refusals.append(self.refusal(lambda: api.update_slide_attachments(docname, slide)))
+
+        frappe.set_user("Administrator")
+
+        self.assertEqual(refusals, [PASTE_REFUSAL] * 3)
 
     def test_a_paste_that_names_something_other_than_media_is_refused(self):
         folder = create_folder(self.admin, self.root.node, "Not media")

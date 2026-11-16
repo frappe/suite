@@ -83,7 +83,7 @@ test.describe("Multi participant", () => {
 			await delayed.page.getByPlaceholder("John Doe").fill("Delayed Capture");
 			await delayed.page.waitForFunction(() => window.__meetCaptureGate?.waiting === true);
 			try {
-				await expect(delayed.page.getByRole("button", { name: /Join Meeting$/ })).toBeDisabled();
+				await expect(delayed.page.getByRole("button", { name: /Join meeting$/ })).toBeDisabled();
 			} finally {
 				await delayed.page.evaluate((allow) => window.__meetCaptureGate!.release(allow), allowCapture);
 			}
@@ -129,7 +129,7 @@ test.describe("Multi participant", () => {
 			expectRemoteVideoReceiving(guestOne.page, meetHostName),
 			expectRemoteVideoReceiving(guestTwo.page, meetHostName),
 		]);
-		await hostPage.getByRole("button", { name: "Show Participants" }).click();
+		await hostPage.getByRole("button", { name: "Show participants" }).click();
 
 		const peoplePanel = hostPage.getByTestId("people-panel");
 		await expect(peoplePanel).toContainText("People");

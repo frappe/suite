@@ -1,6 +1,8 @@
 import { toast } from 'frappe-ui'
 import { computed, ref } from 'vue'
 
+import { translate as __ } from '@/platform/translation'
+
 import { getBorderInset, getCoverCrop, isFullRect } from '../utils/cropGeometry'
 import { getAttachmentUrl } from '../utils/mediaUploads'
 import { batchCommand, editElementCommand } from './commands'
@@ -28,7 +30,7 @@ const probeNaturalAspect = async (element) => {
   try {
     return await getNaturalAspectRatio(getAttachmentUrl(element.src))
   } catch {
-    toast.error('Failed to load the image.')
+    toast.error(__('Could not load the image'))
   }
 }
 

@@ -1,11 +1,12 @@
 <!-- A KPI strip and focused area summaries; exceptions stay beside the area that owns their remediation. -->
 <script setup lang="ts">
-import { Alert, Button, ErrorMessage, Skeleton } from 'frappe-ui'
+import { Alert, Button, Skeleton } from 'frappe-ui'
 import { computed, watchEffect } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import { api, useInfiniteQuery, useQuery, type OutputOf } from '@/api'
 import { DashboardLayout, DashboardSkeletonText } from '@/platform/dashboard'
+import { LoadFailed } from '@/platform/load-failed'
 import { translate as __ } from '@/platform/translation'
 
 import SiteStorageSummary from './SiteStorageSummary.vue'
@@ -82,7 +83,7 @@ const kpis = computed(() => {
     :loading="storage.status === 'pending'"
   >
     <template #loading>
-      <div class="mx-auto w-full max-w-5xl space-y-6 pb-10" aria-hidden="true">
+      <div class="w-full space-y-6 pb-10" aria-hidden="true">
         <div class="grid overflow-hidden rounded-5 border border-outline-gray-2 sm:grid-cols-3">
           <div
             v-for="n in 3"
@@ -103,8 +104,12 @@ const kpis = computed(() => {
         </section>
       </div>
     </template>
-    <ErrorMessage :message="storage.error?.message" />
-    <div v-if="storage.data" class="mx-auto w-full max-w-5xl space-y-6 pb-10">
+    <LoadFailed
+      v-if="storage.status === 'error'"
+      :title="__('Could not load storage report')"
+      :retry="() => storage.refetch()"
+    />
+    <div v-if="storage.data" class="w-full space-y-6 pb-10">
       <div
         class="grid overflow-hidden rounded-5 border border-outline-gray-2"
         :class="storage.data.cloud ? 'sm:grid-cols-3' : 'grid-cols-1'"

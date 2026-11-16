@@ -2,6 +2,7 @@ import { beforeEach, expect, it, vi } from 'vitest'
 
 import { afterLanding, raiseOptimisticToast, raisePromiseToast } from '@/apps/mail/utils'
 import { reportMutationError } from '@/platform/feedback'
+import { TransportError } from '@/platform/transport'
 
 const toast = vi.hoisted(() => ({
   dismiss: vi.fn(),
@@ -28,7 +29,14 @@ it('says an optimistic write on the click, and takes it back when it is refused'
     action: { label: 'Undo', onClick: expect.any(Function) },
   })
 
-  refuse?.(new Error('Mail server is down'))
+  refuse?.(
+    new TransportError({
+      type: 'ValidationError',
+      message: 'Mail server is down',
+      status: 417,
+      fromServer: true,
+    }),
+  )
   await pending.catch(() => {})
   await vi.waitFor(() => expect(toast.dismiss).toHaveBeenCalledWith('archived'))
   expect(toast.error.mock.calls).toEqual([['Mail server is down']])
@@ -49,7 +57,12 @@ it('waits for the answer when what it says is read off it', async () => {
 })
 
 it('reports a handled refusal once', async () => {
-  const refusal = new Error('Permission denied')
+  const refusal = new TransportError({
+    type: 'PermissionError',
+    message: 'Permission denied',
+    status: 403,
+    fromServer: true,
+  })
   reportMutationError(refusal)
   await raisePromiseToast(() => Promise.reject(refusal), 'Archiving', 'Archived')
   expect(toast.error.mock.calls).toEqual([['Permission denied']])

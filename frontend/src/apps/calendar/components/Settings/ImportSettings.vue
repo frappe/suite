@@ -66,6 +66,7 @@ import { raiseToast } from '@/apps/calendar/utils'
 import { destinationOptions } from '@/apps/calendar/utils/calendars'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import { translate as __ } from '@/platform/translation'
 import { useChunkedUpload } from '@/utils/useChunkedUpload'
 
 const store = userStore()
@@ -95,8 +96,8 @@ const onFileSelected = async (event: Event) => {
       private: true,
     })
     calendarImport.file = uploaded.file_url
-  } catch (error) {
-    raiseToast(error instanceof Error ? error.message : String(error), 'error')
+  } catch {
+    raiseToast(__('Could not import the calendar'), 'error')
   }
 }
 

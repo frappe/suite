@@ -270,7 +270,7 @@ export function useCollabRoom({
 
   async function restore(seq: number, bytes: Uint8Array): Promise<RestoreNotice> {
     const s = sheet.value
-    if (!s) return { isRestored: false, message: __('The version was not restored.') }
+    if (!s) return { isRestored: false, message: __('The version was not restored') }
     await commit()
     await s.glue.settled()
     return restoreVersion(s.room, seq, bytes)

@@ -17,6 +17,7 @@ import { openDriveDocumentSession, type DocumentSession } from '@/apps/drive/cli
 import { DRIVE_ROLES, type DriveBreadcrumb, type DriveNode } from '@/apps/drive/client/types'
 import { announceTrash } from '@/apps/drive/files/features/changeToast'
 import { presentDialog, rememberDialogContext } from '@/apps/drive/files/features/dialogHost'
+import { openingFileState } from '@/apps/drive/files/features/document/openingLocation'
 import { nodeActions, type ActionNode } from '@/apps/drive/files/features/nodeActions'
 import { observePreviewRefresh } from '@/apps/drive/files/features/previewRefresh'
 import { preloadShareDialog, readShare } from '@/apps/drive/files/features/share/opening'
@@ -50,48 +51,37 @@ export function rememberDriveLink(token: string, node: string): void {
 }
 
 /** The "Your name" field of a comment composer. Call it in a component's setup (spec §10.5). */
-export { useDriveGuestName } from '@/apps/drive/files/features/comments/guestName'
+export { useDriveGuestName } from '@/apps/drive/files/features/side-panel/comments/guestName'
 
 export { GUEST_NAME_LIMIT, type GuestCommentName } from '@/apps/drive/client/guestName'
 
 /** A comment's author: a guest's name and the Guest marker, or the product's own label in the slot. */
 export { default as DriveCommentAuthor } from '@/apps/drive/files/features/CommentAuthor.vue'
 
-/**
- * A document's comment panel: threads, replies, resolve and Undo, edit, delete,
- * unread marks, device drafts and retry, and the mention box with its access
- * messages. Pass the threads, their places, the drafts and the thread actions.
- */
-export { default as DriveCommentList } from '@/apps/drive/files/features/comments/CommentList.vue'
-export { useDocumentThreads } from '@/apps/drive/files/features/comments/useDocumentThreads'
 export {
-  useThreadChanges,
-  type ThreadActions,
-} from '@/apps/drive/files/features/comments/useThreadChanges'
-export {
-  useCommentDrafts,
-  type ShownDraft,
-} from '@/apps/drive/files/features/comments/useCommentDrafts'
+  useDocumentComments,
+  type DocumentComments,
+} from '@/apps/drive/files/features/side-panel/comments/useDocumentComments'
 export {
   keepDraft as keepCommentDraft,
   readDrafts as readCommentDrafts,
   type CommentDraft,
-} from '@/apps/drive/files/features/comments/commentDrafts'
+} from '@/apps/drive/files/features/side-panel/comments/commentDrafts'
 /** Where a product's comments point. A product with whole-document comments only passes none. */
 export type {
   CommentAnchors,
   ThreadPlace,
   ThreadPlaces,
-} from '@/apps/drive/files/features/comments/places'
+} from '@/apps/drive/files/features/side-panel/comments/places'
 
 /** The `@` menu's rows, and the people it offers for the open document. */
-export { default as DriveMentionList } from '@/apps/drive/files/features/comments/MentionList.vue'
+export { default as DriveMentionList } from '@/apps/drive/files/features/side-panel/comments/MentionList.vue'
 export {
   rankMentionsFor,
   searchMentions,
   useUsers,
-} from '@/apps/drive/files/features/comments/useUsers'
-export type { MentionUser } from '@/apps/drive/files/features/comments/people'
+} from '@/apps/drive/files/features/side-panel/comments/useUsers'
+export type { MentionUser } from '@/apps/drive/files/features/side-panel/comments/people'
 
 /**
  * A file's card, as Drive's grid shows it. Pass `node` and `meta`. The card picks
@@ -200,7 +190,10 @@ export function useDriveDocumentCreation(): DriveDocumentCreation {
         resolving.value = false
       }
       if (!parent) {
-        const message = discovered.error?.message ?? __('My files is unavailable.')
+        const message =
+          (discovered.error instanceof TransportError && discovered.error.type !== 'NetworkError'
+            ? __(discovered.error.message)
+            : null) ?? __('Could not open My files')
         // Loaded on demand: `@/platform/feedback` pulls frappe-ui into the initial graph.
         void import('@/platform/feedback').then(({ toast }) => toast.error(message))
         throw new Error(message)
@@ -239,7 +232,9 @@ export function driveNodeRoute(
   const base = `${prefix}/${address}`
   // The history entry carries the title, so the tab names the node before
   // its page loads.
-  return { path: `${base}${slug ? `/${slug}` : ''}`, state: openingTitleState(label) }
+  const state = openingTitleState(label)
+  if (nodeKind === 'file') Object.assign(state, openingFileState())
+  return { path: `${base}${slug ? `/${slug}` : ''}`, state }
 }
 
 /** Drive's nodes by name, for the command palette on pages with no search of their own. */
@@ -259,18 +254,19 @@ export function newDocumentRoute(node: DriveNodeSummary): RouteLocationPathRaw {
 export interface DriveDocumentAction {
   label: string
   icon: string
+  theme?: 'red'
   onClick: () => void
 }
 
 /**
- * A document's own Drive actions for its menu: `back` to the folder it is in,
- * and its `node` actions, Duplicate and Delete. Each shows only when the caller
- * may take it: Duplicate copies into the folder, so it needs UPLOAD there.
- * Call it in a component's setup.
+ * A document's own Drive actions for its menu, under the names Drive's listing
+ * gives them: Make a copy among the file's actions, and Move to trash apart
+ * from them. Each shows only when the caller may take it: the copy goes into
+ * the document's folder, so it needs UPLOAD there. Call it in a component's setup.
  */
 export function useDriveDocumentActions(
   session: DocumentSession,
-): ComputedRef<{ back: DriveDocumentAction[]; node: DriveDocumentAction[] }> {
+): ComputedRef<{ file: DriveDocumentAction[]; remove: DriveDocumentAction[] }> {
   const account = useSession()
   const actions = documentActions(session)
   return computed(() => {
@@ -278,11 +274,8 @@ export function useDriveDocumentActions(
     const can = nodeActions(actionNodeOf(session), account.status.value === 'authenticated')
     const canUploadToFolder = folder !== null && folder.role >= DRIVE_ROLES.upload
     return {
-      back: actionsWhere([[folder !== null, actions.back]]),
-      node: actionsWhere([
-        [canUploadToFolder && can.copy, actions.duplicate],
-        [can.trash, actions.delete],
-      ]),
+      file: canUploadToFolder && can.copy ? [actions.copy] : [],
+      remove: can.trash ? [actions.trash] : [],
     }
   })
 }
@@ -295,19 +288,15 @@ function documentActions(session: DocumentSession) {
   }
 
   return {
-    back: {
-      label: __('Back to folder'),
-      icon: 'lucide-arrow-left',
-      onClick: () => void router.push(folderRoute()),
-    },
-    duplicate: {
-      label: __('Duplicate'),
+    copy: {
+      label: __('Make a copy'),
       icon: 'lucide-copy',
       onClick: () => void duplicateDocument(session, session.folder.value, router),
     },
-    delete: {
-      label: __('Delete'),
+    trash: {
+      label: __('Move to trash'),
       icon: 'lucide-trash-2',
+      theme: 'red' as const,
       onClick: () => void trashDocument(session, router, folderRoute()),
     },
   }
@@ -336,7 +325,10 @@ async function duplicateDocument(
   try {
     await router.push(driveNodeRoute(await session.copy(folder.name)))
   } catch (error) {
-    toast.error((error instanceof Error && error.message) || __('Could not duplicate this file.'))
+    toast.error(
+      (error instanceof TransportError && error.message) ||
+        __('Could not make a copy of this file'),
+    )
   }
 }
 
@@ -345,7 +337,9 @@ async function trashDocument(session: DocumentSession, router: Router, back: Rou
   try {
     await client.mutation(api.drive.nodes.trash, { node: item.node, state: 'Trashed' })
   } catch (error) {
-    toast.error((error instanceof Error && error.message) || __('Could not delete this file.'))
+    toast.error(
+      (error instanceof TransportError && error.message) || __('Could not move this file to trash'),
+    )
     return
   }
 
@@ -361,10 +355,6 @@ function actionNodeOf(session: DocumentSession): ActionNode {
     trash_root: null,
     access: session.access.value,
   }
-}
-
-function actionsWhere(items: [boolean, DriveDocumentAction][]): DriveDocumentAction[] {
-  return items.flatMap(([isShown, action]) => (isShown ? [action] : []))
 }
 
 /** What a document session and a file preview session each need of the node, so one read opens either. */
@@ -409,14 +399,21 @@ export const DriveUnlockScreen = defineAsyncComponent(
 const loadDocumentHeader = () => import('@/apps/drive/files/features/document/DocumentHeader.vue')
 
 /**
- * The header every document surface shows: type icon, title, save status, the
- * surface's actions, side-panel toggles and Share. Pass `session`, `title-label`,
- * and optionally `save-state`, `view-only`, `recoverable` with
- * `@download-changes`, `panels` with `v-model:panel`, `location`, and `mime`
- * for a file. Slots: `status` (after the badges) and `actions` (before the
- * panel toggles). Exposes `focusTitle()` and `focusPanelToggle(name)`.
+ * The header every document surface shows: the way back, type icon, title,
+ * save status, the surface's actions, Share and a menu. Pass `session`,
+ * `title-label`, and optionally `save-state`, `view-only`, `recoverable` with
+ * `@download-changes`, `location`, and `mime` for a file. Slots: `status`
+ * (after the badge), `actions` (before Share), `menu` and `primary`. Exposes
+ * `focusTitle()`.
  */
 export const DriveDocumentHeader = defineAsyncComponent(loadDocumentHeader)
+/**
+ * The menu for the header's `menu` slot, the same in every surface: the side
+ * panels, Copy link and Star, the surface's `own` items, its `transfer` items
+ * (export, then import), then Make a copy and Move to trash. Pass `session`,
+ * and `panels` with `panel` and `@toggle-panel`.
+ */
+export { default as DriveDocumentMenu } from '@/apps/drive/files/features/document/DocumentMenu.vue'
 
 /** True while a listing's load is too new for placeholder rows, as Drive waits before drawing them. */
 export { useSkeletonDelay as useDriveSkeletonDelay } from '@/apps/drive/files/features/listSkeleton'
@@ -429,9 +426,8 @@ export const DriveListSkeletonRows = defineAsyncComponent(
 
 /** The document header's shape while a document opens. Shows `title` and `location` when they are known. */
 export { default as DriveDocumentHeaderSkeleton } from '@/apps/drive/files/features/document/DocumentHeaderSkeleton.vue'
-export { openingLocation } from '@/apps/drive/files/features/document/openingLocation'
+export { openingLocation, opensFile } from '@/apps/drive/files/features/document/openingLocation'
 
-export { PANEL_BUTTONS } from '@/apps/drive/files/features/document/header'
 export type { DocumentPanel } from '@/apps/drive/client/types'
 export type { DocumentSaveState } from '@/apps/drive/files/features/document/header'
 /** A version's images that are binned or deleted: which ones, how to bring them back, and what to say. */
@@ -441,7 +437,27 @@ export {
   restoreImages,
   type MissingImage,
   type VersionImage,
-} from '@/apps/drive/files/features/document/versionImages'
+} from '@/apps/drive/files/features/side-panel/versions/versionImages'
+/**
+ * A document's side panel: its comments or its versions, one at a time. Versions sit under
+ * the day each was taken, with view, restore, download, rename and save; the app shows a
+ * viewed version and does the restore and download itself.
+ */
+export { default as DriveDocumentSidePanel } from '@/apps/drive/files/features/side-panel/DocumentSidePanel.vue'
+/** The comment threads alone, for an app that lays out its own side panel. */
+export { default as DriveCommentList } from '@/apps/drive/files/features/side-panel/comments/CommentList.vue'
+/** The line over a version shown in the document's place, with Restore and Back to current. */
+export { default as DriveVersionShownBar } from '@/apps/drive/files/features/side-panel/versions/VersionShownBar.vue'
+/** A line across the document under its header, with its actions at the right edge. */
+export { default as DriveDocumentStrip } from '@/apps/drive/files/features/DocumentStrip.vue'
+export { showError } from '@/apps/drive/files/features/side-panel/versions/useDocumentPanel'
+export { readStoredState } from '@/apps/drive/files/features/side-panel/versions/storedState'
+export { fetchVersion } from '@/apps/drive/files/features/side-panel/versions/fetchVersion'
+export {
+  askUntilConverted,
+  type ConvertedState,
+} from '@/apps/drive/files/features/side-panel/versions/askUntilConverted'
+export { waitForFocusBack } from '@/apps/drive/files/features/focusBack'
 
 export const filePreviewSurface = defineAsyncComponent(
   () => import('@/apps/drive/files/features/preview/FilePreviewSurface.vue'),

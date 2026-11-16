@@ -113,7 +113,7 @@ const REFUSALS = new Map<string, () => string>([
         "The spreadsheet as it is now couldn't be kept as a version first, so nothing was restored.",
       ),
   ],
-  ['paused', () => __('Saving is paused, so nothing was restored.')],
+  ['paused', () => __('Saving is paused, so nothing was restored')],
 ])
 
 /** Restore version `seq` (its stored bytes) into the room. */
@@ -150,7 +150,7 @@ export async function restoreVersion(
         const known = result.refusal && REFUSALS.has(result.refusal)
         return {
           isRestored: false,
-          message: known ? REFUSALS.get(result.refusal!)!() : __('The version was not restored.'),
+          message: known ? REFUSALS.get(result.refusal!)!() : __('The version was not restored'),
         }
       }
     }

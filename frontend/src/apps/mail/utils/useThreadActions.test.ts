@@ -226,7 +226,7 @@ it('names an archive out of the Inbox outright, so its toast can come with the c
   archiveFrom('inbox').handleArchiveThreads(['t1'])
   vi.unstubAllGlobals()
 
-  expect(mocks.raiseOptimisticToast.mock.calls.at(-1)?.[1]).toBe('Thread archived.')
+  expect(mocks.raiseOptimisticToast.mock.calls.at(-1)?.[1]).toBe('Thread archived')
 })
 
 it('leaves the toast to the answer when archiving from a list the row stays on', () => {
@@ -234,8 +234,8 @@ it('leaves the toast to the answer when archiving from a list the row stays on',
   vi.stubGlobal('__', (text: string) => text)
   archiveFrom('a-folder').handleArchiveThreads(['t1'])
   const told = mocks.raiseOptimisticToast.mock.calls.at(-1)?.[1]
-  expect(told({ left_inbox: false })).toBe('Added to Archive.')
-  expect(told({ left_inbox: true })).toBe('Thread archived.')
+  expect(told({ left_inbox: false })).toBe('Added to Archive')
+  expect(told({ left_inbox: true })).toBe('Thread archived')
   vi.unstubAllGlobals()
 })
 

@@ -374,10 +374,13 @@ def adopt_slide_media(docname: str, slide: dict) -> dict:
     pasting one logo onto twenty slides is one node and one charge (§8.9).
     """
     elements = _element_list(slide.get("elements"))
-    named = _value_ids(slide.get("background"))
+    pictures: set[str] = set()
     for element in elements:
-        named |= _element_ids(element)
-    mapping = drive.adopt_media(node_of(docname), sorted(named))
+        pictures |= _element_ids(element)
+
+    # The editor draws a background only as a colour, and an old deck's picker
+    # saved whatever was typed there, so a miss on it never refuses the paste
+    mapping = adopt_all(docname, pictures, _value_ids(slide.get("background")))
     if not mapping:
         slide["elements"] = json.dumps(elements)
         return slide
@@ -395,10 +398,34 @@ def adopt_element_media(docname: str, elements: list[dict]) -> list[dict]:
     named: set[str] = set()
     for element in elements:
         named |= _element_ids(element)
-    mapping = drive.adopt_media(node_of(docname), sorted(named))
+
+    mapping = adopt_all(docname, named, set())
     for element in elements:
         _remap_element(element, mapping)
+
     return elements
+
+
+def adopt_all(docname: str, pictures: set[str], background: set[str]) -> dict[str, str]:
+    """Adopt every picture, or refuse the paste and keep none of them."""
+    # `drive.adopt_media` skips an id it cannot adopt, and a skipped picture
+    # pastes as a broken one. Unreadable, trashed and unknown ids get the same
+    # refusal, so it tells no one whether a node exists (§5.4)
+    suffix = frappe.generate_hash(length=12)
+    savepoint = f"slides_adopt_media_{suffix}"
+    frappe.db.savepoint(savepoint)
+    try:
+        mapping = drive.adopt_media(node_of(docname), sorted(pictures | background))
+        if pictures - mapping.keys():
+            frappe.throw(
+                _("Some pictures can't be copied here, so nothing was pasted."), frappe.ValidationError
+            )
+    except Exception as error:
+        drive.rollback_savepoint(savepoint, error)
+        raise
+
+    frappe.db.release_savepoint(savepoint)
+    return mapping
 
 
 def refuse_unreadable_references(deck) -> None:

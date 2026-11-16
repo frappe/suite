@@ -2,7 +2,7 @@
   <Dialog
     v-model:open="show"
     v-bind="{
-      title: __('Edit Mailing List'),
+      title: __('Edit mailing list'),
       actions: [
         {
           label: __('Save'),
@@ -33,6 +33,7 @@ import { ref, watch } from 'vue'
 
 import { api, useMutation, type InputOf } from '@/api'
 import { raiseToast } from '@/apps/mail/utils'
+import { translate as __ } from '@/platform/translation'
 
 type ListData = {
   id: string
@@ -59,6 +60,6 @@ async function updateListSubmit() {
   await updateList.run(input)
   show.value = false
   emit('reload')
-  raiseToast(__('Mailing list updated.'))
+  raiseToast(__('Mailing list updated'))
 }
 </script>

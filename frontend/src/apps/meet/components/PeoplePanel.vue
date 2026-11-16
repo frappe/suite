@@ -14,7 +14,7 @@
       >
         <div class="flex items-center justify-between gap-3 px-4 py-5 shrink-0">
           <div class="min-w-0 truncate text-sm-medium text-ink-gray-8 tracking-[0.21px]">
-            People
+            {{ __('People') }}
           </div>
           <Button variant="ghost" icon="lucide-x" @click="$emit('close')" />
         </div>
@@ -23,7 +23,7 @@
           <FormControl
             v-model="searchQuery"
             type="text"
-            placeholder="Search people"
+            :placeholder="__('Search people')"
             autocomplete="off"
             data-testid="people-search"
           >
@@ -36,7 +36,7 @@
         <div class="flex-1 overflow-y-auto px-2">
           <PeopleWaitingSection
             v-if="isHostOrCohost"
-            :lobbyUsers="filteredLobbyUsers"
+            :lobby-users="filteredLobbyUsers"
             @approve="handleApproveLobbyUser"
             @reject="handleRejectLobbyUser"
             @approve-all="handleApproveAllLobbyUsers"
@@ -53,15 +53,15 @@
               v-for="participant in allVisibleParticipants"
               :key="participant.user_id"
               :participant="participant.participantData"
-              :isCurrentUser="participant.isCurrentUser"
-              :isHost="participant.isHost"
-              :canControlParticipant="participant.canControlParticipant"
-              :canPromoteToCohost="participant.canPromoteToCohost"
-              :reserveHostControlSpace="isHostOrCohost"
-              @muteParticipant="handleMuteParticipant"
-              @kickParticipant="handleKickParticipant"
-              @lowerHand="handleLowerHand"
-              @promoteToCohost="handlePromoteToCohost"
+              :is-current-user="participant.isCurrentUser"
+              :is-host="participant.isHost"
+              :can-control-participant="participant.canControlParticipant"
+              :can-promote-to-cohost="participant.canPromoteToCohost"
+              :reserve-host-control-space="isHostOrCohost"
+              @mute-participant="handleMuteParticipant"
+              @kick-participant="handleKickParticipant"
+              @lower-hand="handleLowerHand"
+              @promote-to-cohost="handlePromoteToCohost"
             />
           </div>
 
@@ -69,7 +69,7 @@
             v-if="allVisibleParticipants.length === 0 && filteredLobbyUsers.length === 0"
             class="text-ink-gray-5 text-sm text-center mt-8 px-4"
           >
-            {{ searchQuery ? 'No participants found' : 'No other participants' }}
+            {{ searchQuery ? __('No participants found') : __('No other participants') }}
           </div>
         </div>
       </div>
@@ -80,6 +80,8 @@
 <script setup lang="ts">
 import { Button, FormControl } from 'frappe-ui'
 import { computed, ref } from 'vue'
+
+import { translate as __ } from '@/platform/translation'
 
 import { useMeetingContext } from '../composables/useMeetingContext'
 import type { Participant } from '../utils/media/ParticipantManager'
@@ -249,9 +251,9 @@ const allVisibleParticipants = computed(() => {
 
 const currentUserData = computed<Participant>(() => ({
   user_id: props.currentUser?.user_id || '',
-  user_name: props.currentUser?.full_name || props.currentUser?.name || 'You',
+  user_name: props.currentUser?.full_name || props.currentUser?.name || __('You'),
   avatar: props.currentUser?.avatar || '',
-  initials: getInitials(props.currentUser?.full_name || props.currentUser?.name || 'You'),
+  initials: getInitials(props.currentUser?.full_name || props.currentUser?.name || __(__('You'))),
   audio_enabled: props.isMicOn,
   video_enabled: props.isCameraOn,
   is_guest: props.currentUser?.is_guest || false,

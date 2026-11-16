@@ -285,9 +285,13 @@ export function createClipboard({
         const raw = data[key]
         if (raw === undefined) throw new Error('Captured clipboard cell is missing')
         if (kind === 'all' || kind === 'formulas') {
+          // A copy turns refs pushed off the sheet into #REF!; a cut moves
+          // cells, so it keeps its current handling.
           writes[id] =
             typeof raw === 'string' && raw.startsWith('=')
-              ? adjustFormula(raw, r - (srcSel.r0 + dr), c - (srcSel.c0 + dc))
+              ? adjustFormula(raw, r - (srcSel.r0 + dr), c - (srcSel.c0 + dc), {
+                  keepOffSheet: _mode === 'cut',
+                })
               : raw
         } else {
           // 'values' — formulas paste as the value they showed when copied.

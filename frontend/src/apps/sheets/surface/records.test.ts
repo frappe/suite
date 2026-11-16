@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { cellAnchor, readAnchor, readThreads, readVersions, WORKBOOK_ANCHOR } from './records'
+import { cellAnchor, readAnchor, readVersions, WORKBOOK_ANCHOR } from './records'
 
 describe('Sheets comment anchors', () => {
   it('names a cell on a worksheet and reads it back, whatever the sheet name holds', () => {
@@ -37,65 +37,6 @@ describe('Sheets comment anchors', () => {
 })
 
 describe('Drive records for Sheets', () => {
-  it("reads threads as Drive publishes them, with each signed-in author's name and a guest's typed name", () => {
-    const threads = readThreads({
-      threads: [
-        {
-          name: 't1',
-          node: 'n1',
-          anchor: 'sheets:cell:C4!Sheet1',
-          resolved: false,
-          comments: [
-            {
-              name: 'c1',
-              content: 'Check this total',
-              author: 'ann@example.com',
-              author_name: null,
-              person: { id: 'ann@example.com', full_name: 'Ann Lee', user_image: null },
-              creation: '2026-09-29 10:00:00',
-            },
-            {
-              name: 'c2',
-              content: 'Fixed',
-              author: 'Guest',
-              author_name: 'Visitor',
-              creation: '2026-09-29 10:05:00',
-            },
-          ],
-        },
-        { name: 't2', anchor: 'document', resolved: true, comments: [] },
-        { anchor: 'sheets:workbook' },
-      ],
-    })
-
-    expect(threads).toEqual([
-      {
-        name: 't1',
-        anchor: { sheet: 'Sheet1', cell: 'C4' },
-        resolved: false,
-        comments: [
-          {
-            name: 'c1',
-            content: 'Check this total',
-            author: 'ann@example.com',
-            author_name: null,
-            person: { full_name: 'Ann Lee', user_image: null },
-            creation: '2026-09-29 10:00:00',
-          },
-          {
-            name: 'c2',
-            content: 'Fixed',
-            author: 'Guest',
-            author_name: 'Visitor',
-            person: null,
-            creation: '2026-09-29 10:05:00',
-          },
-        ],
-      },
-      { name: 't2', anchor: null, resolved: true, comments: [] },
-    ])
-  })
-
   it('reads a version page and drops rows without a sequence', () => {
     expect(
       readVersions({

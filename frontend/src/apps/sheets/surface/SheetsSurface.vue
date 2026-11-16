@@ -4,7 +4,9 @@ import { computed, nextTick, ref, shallowRef, watch } from 'vue'
 
 import {
   DriveDocumentHeader,
+  DriveDocumentMenu,
   driveNodeRoute,
+  useDocumentComments,
   type DocumentPanel,
   type DocumentSession,
 } from '@/apps/drive'
@@ -15,11 +17,11 @@ import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 
 import { createSheetAccess } from './access'
+import { cellCommentAnchors } from './commentPlaces'
 import { useDocumentLeaveGuard, type DocumentSaveState } from './navigation'
-import type { CellAnchor, SheetVersion } from './records'
+import { cellAnchor, type CellAnchor, type SheetVersion } from './records'
 import { clearRecovery, downloadRecovery, keepRecovery, readRecovery } from './recovery'
-import SheetCommentsPanel from './SheetCommentsPanel.vue'
-import SheetDocumentMenu from './SheetDocumentMenu.vue'
+import SheetComments from './SheetComments.vue'
 import SheetVersionBar from './SheetVersionBar.vue'
 import SheetVersionsPanel from './SheetVersionsPanel.vue'
 import {
@@ -37,6 +39,8 @@ import {
 interface SheetEditorHandle {
   readonly activeCell: string
   readonly currentSheet: string
+  /** The workbook's sheets, in order. */
+  readonly sheetNames: readonly string[]
   readonly saveState: DocumentSaveState
   flushSave(): Promise<void>
   /** The workbook, with the cell edit still in progress. */
@@ -101,11 +105,11 @@ const access = createSheetAccess(props.session, {
   widened() {
     if (editor.value?.isCollab) {
       void editor.value.regainAccess(() => access.writable.value)
-      toast.info(__('You can edit this spreadsheet again.'))
+      toast.info(__('You can edit this spreadsheet again'))
       return
     }
     bodyRevision.value += 1
-    toast.info(__('You can edit this spreadsheet again.'))
+    toast.info(__('You can edit this spreadsheet again'))
   },
 })
 // A version shown read-only in place of the sheet (the live room closes meanwhile).
@@ -147,10 +151,33 @@ watch(
   },
 )
 
+const comments = useDocumentComments(props.session, {
+  isShown: () => props.session.panels.value.includes('comments'),
+  isOpen: () => panel.value === 'comments',
+  anchors: cellCommentAnchors,
+})
+
 /** Comments, Versions and Notes share the right edge: one closes the others. */
 function showPanel(next: DocumentPanel | null) {
   panel.value = next
   if (next) editor.value?.closeNotes()
+}
+
+// Insert > Comment and the toolbar's Comment start a comment on the cursor cell
+function commentOnCell() {
+  if (access.canComment.value && cursor.value) {
+    comments.drafts.start(cellAnchor(cursor.value))
+  }
+
+  showPanel('comments')
+}
+
+const openComments = computed(() =>
+  props.session.panels.value.includes('comments') ? commentOnCell : undefined,
+)
+const sheetNames = computed(() => editor.value?.sheetNames ?? [])
+function goToCell(sheet: string, cell: string) {
+  return editor.value?.goToCell(sheet, cell) ?? false
 }
 function togglePanel(name: DocumentPanel) {
   showPanel(panel.value === name ? null : name)
@@ -181,7 +208,7 @@ async function previewVersion(version: SheetVersion | null) {
     preview.value = await readPreview(version, bytes, liveState)
     previewStep.value = null
   } catch (error) {
-    toast.error(errorText(error, __('This version could not be shown.')))
+    toast.error(errorText(error, __('This version could not be shown')))
   }
 }
 /** Back to the sheet as it is now; resolves once its editor has loaded. */
@@ -262,11 +289,6 @@ function makeCopy(version: SheetVersion) {
 function openInNewTab(node: { name: string; title: string }) {
   window.open(driveNodeRoute(node.name, node.title).path, '_blank', 'noopener')
 }
-function selectAnchor(anchor: CellAnchor) {
-  if (!editor.value?.goToCell(anchor.sheet, anchor.cell)) {
-    toast.info(`${anchor.sheet} · ${anchor.cell} is no longer in this spreadsheet.`)
-  }
-}
 
 /** Save pending edits, or refuse: a version holds only the saved state. */
 async function flushEdits() {
@@ -320,7 +342,7 @@ async function retainRecovery(): Promise<boolean> {
     hasRecovery.value = true
     return true
   } catch {
-    toast.error('Your latest changes could not be kept on this device.')
+    toast.error(__('Could not keep your latest changes on this device'))
     return false
   } finally {
     copying.value = false
@@ -330,9 +352,9 @@ async function downloadChanges() {
   try {
     const downloaded = await downloadRecovery(props.session.nodeId, props.session.title.value)
     hasRecovery.value = false
-    if (!downloaded) toast.error('No recovery copy is kept for this spreadsheet.')
+    if (!downloaded) toast.error(__('No recovery copy is kept for this spreadsheet'))
   } catch {
-    toast.error('Your changes could not be downloaded. They are still kept on this device.')
+    toast.error(__('Could not download your changes. They are still kept on this device.'))
   }
 }
 useDocumentLeaveGuard({
@@ -367,14 +389,18 @@ useDocumentLeaveGuard({
       :request-context="session.credentials.context"
       :collab-session="preview ? undefined : session"
       :version="preview?.bytes"
-      :open-comments="
-        session.panels.value.includes('comments') ? () => showPanel('comments') : undefined
-      "
+      :open-comments="openComments"
       @reopen="bodyRevision += 1"
       @notes-opened="panel = null"
     >
       <template
-        #header="{ viewOnly, status: EditorStatus, menus: EditorMenus, actions: EditorActions }"
+        #header="{
+          viewOnly,
+          status: EditorStatus,
+          menus: EditorMenus,
+          actions: EditorActions,
+          menuItems,
+        }"
       >
         <DriveDocumentHeader
           class="sheets-header"
@@ -383,27 +409,28 @@ useDocumentLeaveGuard({
           :save-state="editor?.saveState ?? null"
           :view-only="viewOnly"
           :recoverable="hasRecovery"
-          layout="menus"
           @download-changes="downloadChanges"
         >
           <template #status>
             <component :is="EditorStatus" />
           </template>
-          <template #menus>
-            <component :is="EditorMenus" />
-          </template>
           <template #actions>
             <component :is="EditorActions" />
           </template>
           <template #menu>
-            <SheetDocumentMenu
-              v-if="session.panels.value.length"
+            <DriveDocumentMenu
+              :session="session"
               :panels="session.panels.value"
               :panel="panel"
+              :transfer="menuItems.transfer"
+              :settings="menuItems.settings"
               @toggle-panel="togglePanel"
             />
           </template>
         </DriveDocumentHeader>
+        <div class="sheets-menus">
+          <component :is="EditorMenus" />
+        </div>
       </template>
 
       <template v-if="preview" #banner>
@@ -422,13 +449,15 @@ useDocumentLeaveGuard({
       </template>
 
       <template #side-panel>
-        <SheetCommentsPanel
+        <SheetComments
           v-if="panel === 'comments'"
           :session="session"
-          :cursor="cursor"
+          :comments="comments"
+          :sheets="sheetNames"
           :can-comment="access.canComment.value"
+          :can-edit-document="access.writable.value"
+          :go-to-cell="goToCell"
           @close="panel = null"
-          @select="selectAnchor"
         />
         <SheetVersionsPanel
           v-else-if="panel === 'versions'"
@@ -455,26 +484,41 @@ useDocumentLeaveGuard({
   min-height: 0;
 }
 
-/* The editor's menu bar answers to the `sn-topbar` container: below 640 px
-   its six menus fold into one. */
-.sheets-header {
+/* The editor's status chips and menu bar answer to the `sn-topbar` container:
+   below 640 px the five menus fold into one. */
+.sheets-header,
+.sheets-menus {
   container: sn-topbar / inline-size;
   /* The bars' colours live on the editor root (SheetEditor.css --sn-bar-*). */
   background: var(--sn-bar-bg);
+}
+.sheets-header {
   border-bottom-color: var(--sn-bar-line);
   position: relative;
   z-index: 10;
 }
-/* Hover and "on" fills follow the bar colours, as in row 2; solid buttons
-   keep their own. */
-.sheets-header :deep(button:not(:disabled, .bg-surface-gray-10):hover) {
+/* The menus' own row, between the header and the tools, with the header's
+   line under it. Its side gutter and the 4px above and below the words are
+   the tools row's. */
+.sheets-menus {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--sn-bar-line);
+}
+/* Hover and "on" fills follow the bar colours, as in the tools row; solid
+   buttons keep their own. Only a panel toggle (`data-panel`) shows the "on" fill. */
+.sheets-header :deep(button:not(:disabled, .bg-surface-gray-10):hover),
+.sheets-menus :deep(button:not(:disabled):hover) {
   background: var(--sn-bar-hover);
 }
 .sheets-header :deep(button[data-state='open']),
-.sheets-header :deep(button[aria-pressed='true']) {
+.sheets-menus :deep(button[data-state='open']),
+.sheets-header :deep(button[data-panel][aria-pressed='true']) {
   background: var(--sn-bar-on);
 }
-.sheets-header :deep(button[aria-pressed='true']) {
+.sheets-header :deep(button[data-panel][aria-pressed='true']) {
   box-shadow: inset 0 0 0 1px var(--sn-bar-on-edge);
 }
 /* Muted text (Saved, the folder) follows the bar, to stay readable on it. */

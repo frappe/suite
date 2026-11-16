@@ -36,6 +36,10 @@ function drawnFaces(root: Element) {
   return faces
 }
 
+// false while a font some of its text draws in is still to come
+export const drawnFontsReady = (root: Element) =>
+  [...drawnFaces(root)].every(([face, text]) => document.fonts.check(face, text))
+
 // Hidden text starts no font load, so print would draw it in a fallback
 export const drawnFontsLoaded = (root: Element): Promise<unknown> => {
   if (!document.fonts?.load) return Promise.resolve()

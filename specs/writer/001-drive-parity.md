@@ -66,7 +66,7 @@ Things checked and found equal or better are not listed. These include DOCX and 
 
 | Gap | Before | Now | Done |
 |---|---|---|---|
-| Lock (done) | A document could be locked. It was read-only until unlocked, and a header button unlocked it temporarily. | The document menu has Lock document and Unlock document. There is no temporary unlock. See 1.2. | A menu item locks and unlocks the document. |
+| Lock (done) | A document could be locked. It was read-only until unlocked, and a header button unlocked it temporarily. | The document menu has Lock and Unlock. There is no temporary unlock. See 1.2. | A menu item locks and unlocks the document. |
 
 - **Where it was:** `fe/writer/components/Navbar.vue` (View submenu), `fe/writer/pages/Document.vue` (lock buttons)
 - **Where it goes:** `fe/writer/surface/WriterDocumentMenu.vue`

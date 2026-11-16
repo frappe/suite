@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Editor } from '@tiptap/core'
-import { onKeyStroke, useMediaQuery } from '@vueuse/core'
-import { Button, dialog, Dropdown, Skeleton, toast } from 'frappe-ui'
+import { useMediaQuery } from '@vueuse/core'
+import { Button, dialog, Skeleton, toast } from 'frappe-ui'
 import {
   computed,
   defineAsyncComponent,
@@ -16,23 +16,27 @@ import {
 } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
+import { translate as __ } from '@/platform/translation'
+import { TransportError } from '@/platform/transport'
+
 import '@/apps/slides/styles/fonts.css'
 import '@/apps/slides/styles/scrollbars.css'
 
 import { api, client } from '@/api'
 import {
-  DriveCommentList,
+  DriveDocumentSidePanel as DocumentSidePanel,
   DriveDocumentHeader,
+  DriveDocumentMenu,
+  fetchVersion,
   imagesNotice,
   missingImages,
-  rankMentionsFor,
   restoreImages,
-  useCommentDrafts,
-  useDocumentThreads,
-  useDriveDocumentActions,
-  useThreadChanges,
+  useDocumentComments,
+  DriveVersionShownBar as VersionShownBar,
+  waitForFocusBack,
   type DocumentPanel,
   type DocumentSession,
+  type DocumentVersion,
   type MissingImage,
 } from '@/apps/drive'
 import LayoutDialog from '@/apps/slides/components/LayoutDialog.vue'
@@ -80,6 +84,7 @@ import {
 } from '@/apps/slides/stores/presentation'
 import {
   changeEditorSlide,
+  focusedSlide,
   handleInsertSlide,
   setSlideIndex,
   slideIndex,
@@ -97,17 +102,11 @@ import { drawnFontsLoaded, warmBundledFonts } from '@/apps/slides/utils/bundledF
 import { isMediaOwner } from '@/apps/slides/utils/mediaUploads'
 import { collectMediaSources } from '@/apps/slides/utils/pinTargets'
 import { postToServiceWorker, registerSlidesWorker } from '@/apps/slides/utils/serviceWorker'
-import { readSavedDocument, watchConversion, type VersionRestored } from '@/platform/collab'
-import { peopleOf, presenceColours } from '@/platform/collab/peers'
-import {
-  othersPresentWarning,
-  restoredByOther,
-  type RestoreNotice,
-} from '@/platform/collab/restoreNotices'
+import { readSavedDocument, watchConversion } from '@/platform/collab'
+import { othersPresentWarning, type RestoreNotice } from '@/platform/collab/restoreNotices'
 import UsersBar from '@/platform/collab/UsersBar.vue'
 import { useHideRail } from '@/platform/rail'
 import { getCookieSessionUser, useSession } from '@/platform/session'
-import { openAreaShortcuts } from '@/platform/shortcuts'
 import { translate } from '@/platform/translation'
 
 import { createSlidesAccess } from './access'
@@ -127,14 +126,11 @@ import { useNewPresentationTheme } from './newPresentation'
 import PreviewCapture from './PreviewCapture.vue'
 import { fileTitle, saveThroughBrowser } from './recovery'
 import SlidesVersionPreview from './SlidesVersionPreview.vue'
-import SlidesVersionsPanel from './SlidesVersionsPanel.vue'
 import SurfaceNotice from './SurfaceNotice.vue'
 import { useConvertedRoom } from './useConvertedRoom'
 import { useUnsavedRecovery } from './useUnsavedRecovery'
-import { convertedVersion, fetchVersion, readVersionBody, versionImages } from './versions'
+import { convertedVersion, readVersionBody, versionImages } from './versions'
 import { versionSlides } from './versionSlides'
-
-type Panel = DocumentPanel
 
 const CONVERSION_POLL_MS = 15_000
 
@@ -158,44 +154,21 @@ const presentedSlide = computed(() => Math.max(1, Math.trunc(Number(route.query.
 const online = ref(typeof navigator === 'undefined' ? true : navigator.onLine)
 const composite = ref(false)
 const compositeItems = ref<CompositeItem[]>([])
-const panel = ref<Panel | null>(null)
+const panel = ref<DocumentPanel | null>(null)
 // The version shown read-only in the canvas's place (Q7); it shows only beside the versions panel
-const previewed = ref<string | null>(null)
+const previewed = ref<DocumentVersion | null>(null)
 watch(panel, (shown) => {
   if (shown !== 'versions') {
     previewed.value = null
   }
 })
-// Escape goes back to the presentation, unless a dialog or menu over the preview takes the key
-onKeyStroke(
-  'Escape',
-  (event) => {
-    const isOverlayOpen = document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')
-    if (!event.defaultPrevented && previewed.value && !isOverlayOpen) {
-      previewed.value = null
-    }
-  },
-  { target: document },
-)
-const {
-  threads: readThreads,
-  readAt: threadsReadAt,
-  refresh: refreshThreads,
-} = useDocumentThreads(props.session, () => panel.value === 'comments')
-const { threads, actions: threadActions } = useThreadChanges({
-  session: props.session,
-  readThreads,
-  readAt: threadsReadAt,
-  refresh: refreshThreads,
-})
 // Comments are on the whole presentation, so a draft waits on no text in the room
-const commentDrafts = useCommentDrafts({
-  session: props.session,
-  user: userSession.user.value?.id ?? 'Guest',
-  room: () => null,
-  refreshThreads,
+// Slides shows comments only in the panel, so it reads them only while the panel is open
+const isCommentsOpen = () => panel.value === 'comments'
+const comments = useDocumentComments(props.session, {
+  isShown: isCommentsOpen,
+  isOpen: isCommentsOpen,
 })
-rankMentionsFor(props.session.nodeId)
 const exporting = ref(false)
 // A version's slides to print in place of the presentation's, for a version that can't be restored
 const printedSlides = shallowRef<Record<string, unknown>[] | null>(null)
@@ -207,6 +180,7 @@ const {
   retainRecovery,
   retainStickyOrOffer,
   retainOrWarn,
+  syncRoomKept,
   downloadChanges,
   discardChanges,
 } = useUnsavedRecovery(props.session, {
@@ -215,6 +189,8 @@ const {
   load,
   loseAccess: (lost) => convertedRoom.loseAccess(lost),
   regainAccess: () => convertedRoom.regainAccess(),
+  isKeptByRoom: () => convertedRoom.isKeptByRoom(),
+  flatten: (element) => convertedRoom.flatten(element),
 })
 const { oldDraftNotice, settleOldDraft, downloadOldDraft, dismissOldDraft } = useOldDraft(
   props.session,
@@ -224,7 +200,7 @@ const { oldDraftNotice, settleOldDraft, downloadOldDraft, dismissOldDraft } = us
 )
 const previewCapture = useTemplateRef<InstanceType<typeof PreviewCapture>>('previewCapture')
 const exportView = useTemplateRef<InstanceType<typeof ExportView>>('exportView')
-const versionsPanel = useTemplateRef<InstanceType<typeof SlidesVersionsPanel>>('versionsPanel')
+const sidePanel = useTemplateRef<InstanceType<typeof DocumentSidePanel>>('sidePanel')
 const access = createSlidesAccess(props.session, {
   narrowed: () => void narrowed(),
   widened: () => void widened(),
@@ -260,8 +236,6 @@ const canRestoreVersions = computed(
     !restoring.value &&
     (!onLayer.value || (isConverted.value && convertedRoom.allowsEditing.value)),
 )
-// A converted presentation asks and restores itself. A row presentation leaves both to the panel
-const liveRestore = computed(() => (isConverted.value ? confirmLiveRestore : undefined))
 // Phones get a viewer: the slide fitted to the screen with previous and next. The
 // editor's panels need a wide screen. Same breakpoint as the shell's phone layout.
 const phone = useMediaQuery('(max-width: 767px)')
@@ -272,14 +246,18 @@ const convertedRoom = useConvertedRoom({
   isPresenting: () => route.name === 'slides-slideshow',
   retainRecovery,
   retainStickyOrOffer,
-  onThreadsChanged: () => void refreshThreads(),
-  onVersionRestored: (restored) => void tellRestoredByOther(restored),
+  onThreadsChanged: () => void comments.refresh(),
+  onVersionRestored: (restored) => void sidePanel.value?.tellRestoredByOther(restored),
+  // Drive reads the access again only on focus or a timer, so its loss shows now, as Writer's refused write does
+  onAccessRefused: () => {
+    if (access.writable.value) {
+      void props.session.refreshAccess().catch(() => {})
+    }
+  },
+  onCopyKept: () => void syncRoomKept(),
 })
 provide('livePresence', convertedRoom.presence)
-const roomPeople = computed(() => {
-  const presence = convertedRoom.presence.value
-  return presence ? peopleOf(presence.peers, presenceColours(presence)) : []
-})
+const roomPeople = convertedRoom.people
 const { isNavigationPanelOpen } = useNavigationPanel()
 // the side panel floats over the slide area, so a notice starts at its edge
 const isNoticeBesidePanel = computed(() => !phone.value && isNavigationPanelOpen.value)
@@ -345,8 +323,9 @@ async function writeTheme(theme: string) {
     )
     await load()
   } catch (error) {
-    const message = error instanceof Error && error.message
-    toast.error(message || 'Could not change the theme.')
+    const message =
+      error instanceof TransportError && error.type !== 'NetworkError' && error.message
+    toast.error(message || __('Could not change the theme'))
   } finally {
     restoring.value = false
   }
@@ -363,7 +342,7 @@ async function fillTheme(theme: string) {
   await drawTemplateLayouts([theme])
   const layout = firstLayout(template)
   if (!layout) {
-    toast.error(translate('This theme has no slides to start from'))
+    toast.error(__('This theme has no slides to start from'))
     return
   }
 
@@ -379,12 +358,13 @@ async function fillTheme(theme: string) {
       ? [{ ...adopted, elements: JSON.parse(String(adopted.elements)) }]
       : rowSlides([adopted])
     if (!convertedRoom.fillBlank(slide)) {
-      toast.error(translate('Only a new, empty presentation can take a theme'))
+      toast.error(__('Only a new, empty presentation can take a theme'))
       return
     }
   } catch (error) {
-    const message = error instanceof Error && error.message
-    toast.error(message || translate('Could not change the theme.'))
+    const message =
+      error instanceof TransportError && error.type !== 'NetworkError' && error.message
+    toast.error(message || __('Could not change the theme'))
     return
   }
 
@@ -398,30 +378,49 @@ watch([showThemeDialog, showThemeChange], (opened) => {
     void drawTemplateLayouts()
   }
 })
-const driveActions = useDriveDocumentActions(props.session)
-const presentationMenu = computed(() => [
-  { group: '', options: driveActions.value.back },
+// Save version goes once the closing menu has handed focus back to its button
+const menuFocusBack = waitForFocusBack()
+const offlineCopy = ref<InstanceType<typeof OfflineCopyButton> | null>(null)
+const reviewMenuItems = computed(() => [
   {
-    group: '',
-    options: [
-      {
-        label: 'Change theme',
-        icon: 'lucide-swatch-book',
-        condition: () => !inReadonlyMode.value,
-        onClick: () => {
-          showThemeChange.value = true
-        },
-      },
-      { label: 'Shortcuts', icon: 'lucide-keyboard', onClick: openAreaShortcuts },
-      {
-        label: translate('Discard my changes'),
-        icon: 'lucide-trash-2',
-        condition: () => canDownloadChanges.value,
-        onClick: discardChanges,
-      },
-    ],
+    label: translate('Save version'),
+    icon: 'lucide-bookmark',
+    condition: () => canRestoreVersions.value,
+    onClick: () => menuFocusBack.wait(() => void sidePanel.value?.nameVersion()),
   },
-  { group: '', options: driveActions.value.node },
+])
+const settingsMenuItems = computed(() => [
+  {
+    label: translate('Theme'),
+    icon: 'lucide-swatch-book',
+    condition: () => !inReadonlyMode.value,
+    onClick: () => {
+      showThemeChange.value = true
+    },
+  },
+])
+const discardMenuItems = computed(() => [
+  {
+    label: translate('Discard my changes'),
+    icon: 'lucide-trash-2',
+    theme: 'red' as const,
+    condition: () => canDownloadChanges.value,
+    onClick: discardChanges,
+  },
+])
+const transferMenuItems = computed(() => [
+  {
+    label: translate('Export as PDF'),
+    icon: 'lucide-download',
+    condition: () => !phone.value && !deckUnavailable.value,
+    onClick: exportPdf,
+  },
+  {
+    label: offlineCopy.value?.statusText ?? '',
+    icon: 'lucide-cloud-download',
+    condition: () => showsOfflineCopy.value,
+    onClick: () => offlineCopy.value?.open(),
+  },
 ])
 
 // The header renames through the session; the deck keeps its own copy of the title.
@@ -463,14 +462,35 @@ function showSlide(step: number) {
   changeEditorSlide((slideIndex.value ?? 0) + step, false)
 }
 
-function showPanel(next: Panel | null) {
+function showPanel(next: DocumentPanel | null) {
   panel.value = next
 }
 
-async function restoreVersion(seq: string) {
+// A converted presentation restores in the editor; one on its rows is rewritten by the server
+function confirmRestore(version: DocumentVersion) {
+  if (isConverted.value) {
+    void confirmLiveRestore(version)
+    return
+  }
+
+  dialog.confirm({
+    title: translate('Restore this version?'),
+    message: translate(
+      'The presentation goes back to this version. Its current state is kept as a new version first.',
+    ),
+    confirmLabel: translate('Restore'),
+    onConfirm: async () => {
+      await restoreRows(version)
+      toast.success(__('Version restored'))
+      void sidePanel.value?.reloadVersions()
+    },
+  })
+}
+
+async function restoreRows(version: DocumentVersion) {
   restoring.value = true
   try {
-    await props.session.versions.restore(seq)
+    await props.session.versions.restore(String(version.seq))
     previewed.value = null
     await load()
     // A reload that failed leaves the old slides in place, and they are not the restored version.
@@ -480,48 +500,47 @@ async function restoreVersion(seq: string) {
   }
 }
 
-function storedFile(seq: string, bytes: Uint8Array) {
+function storedFile(version: DocumentVersion, bytes: Uint8Array) {
   const title = fileTitle(props.session.title.value)
-  return new File([new Uint8Array(bytes)], `${title} (v${seq}).json`, { type: 'application/json' })
+  return new File([new Uint8Array(bytes)], `${title} (v${version.seq}).json`, {
+    type: 'application/json',
+  })
 }
 
 // Bytes no preview can draw: the person keeps them as the stored file
-function offerStoredFile(seq: string, bytes: Uint8Array) {
-  const file = storedFile(seq, bytes)
-  toast.error(
-    translate("This version can't be read, so it can't be restored. You can download it."),
-    {
-      action: { label: translate('Download'), onClick: () => saveThroughBrowser(file) },
-    },
-  )
+function offerStoredFile(version: DocumentVersion, bytes: Uint8Array) {
+  const file = storedFile(version, bytes)
+  toast.error(__("This version can't be read, so it can't be restored. You can download it."), {
+    action: { label: __('Download'), onClick: () => saveThroughBrowser(file) },
+  })
 }
 
-// Version `seq`'s bytes and its pictures binned or deleted now; null once the person is told why not
-async function versionToRestore(seq: string) {
+// The version's bytes and its pictures binned or deleted now; null once the person is told why not
+async function versionToRestore(version: DocumentVersion) {
   try {
-    const bytes = await fetchVersion(props.session, Number(seq))
+    const bytes = await fetchVersion(props.session, version.seq)
     const body = await readVersionBody(bytes).catch(() => null)
     if (!body) {
-      offerStoredFile(seq, bytes)
+      offerStoredFile(version, bytes)
       return null
     }
 
     return { bytes, images: await missingImages(props.session, versionImages(body)) }
   } catch (error) {
     console.error(error)
-    toast.error(translate("This version's images couldn't be checked, so nothing was restored."))
+    toast.error(__("This version's images could not be checked, so nothing was restored"))
     return null
   }
 }
 
 // A converted presentation restores in the editor, for everyone at once (Q5)
-async function confirmLiveRestore(seq: string) {
-  const version = await versionToRestore(seq)
-  if (!version) {
+async function confirmLiveRestore(version: DocumentVersion) {
+  const stored = await versionToRestore(version)
+  if (!stored) {
     return
   }
 
-  const { bytes, images } = version
+  const { bytes, images } = stored
   const message = [
     translate(
       'The presentation goes back to this version for everyone. Its current state is kept as a version first.',
@@ -533,62 +552,72 @@ async function confirmLiveRestore(seq: string) {
     title: translate('Restore this version?'),
     message: message.filter(Boolean).join(' '),
     confirmLabel: translate('Restore'),
-    onConfirm: () => restoreLive(seq, bytes, images),
+    onConfirm: () => restoreLive(version, bytes, images),
   })
 }
 
-async function restoreLive(seq: string, bytes: Uint8Array, images: MissingImage[]) {
+async function restoreLive(version: DocumentVersion, bytes: Uint8Array, images: MissingImage[]) {
   try {
     await restoreImages(props.session, images)
-    const restored = await convertedRoom.restore(Number(seq), bytes, () =>
-      convertedVersion(props.session, Number(seq)),
+    const restored = await convertedRoom.restore(version.seq, bytes, () =>
+      convertedVersion(props.session, version.seq),
     )
     if (!restored.isRestored) {
-      tellNotRestored(seq, bytes, restored)
+      tellNotRestored(version, bytes, restored)
       return
     }
 
     toast.success(restored.message)
     previewed.value = null
-    void versionsPanel.value?.reload()
+    void sidePanel.value?.reloadVersions()
     previewCapture.value?.captureAfterPause()
   } catch (error) {
     console.error(error)
-    toast.error(translate('The version was not restored.'))
+    toast.error(__('Could not restore the version'))
   }
 }
 
-function tellNotRestored(seq: string, bytes: Uint8Array, refused: RestoreNotice) {
+function tellNotRestored(version: DocumentVersion, bytes: Uint8Array, refused: RestoreNotice) {
   if (!refused.canDownload) {
     toast.error(refused.message)
     return
   }
 
   toast.error(refused.message, {
-    action: { label: translate('Download'), onClick: () => void downloadVersion(seq, bytes) },
+    action: { label: __('Download'), onClick: () => void downloadVersion(version, bytes) },
   })
 }
 
 // A version that can be drawn shows in the preview and prints as a PDF; one that can't goes out as stored
-async function downloadVersion(seq: string, bytes: Uint8Array) {
+async function downloadVersion(version: DocumentVersion, bytes: Uint8Array) {
   let shown: Record<string, unknown>[]
   try {
     shown = versionSlides(await readVersionBody(bytes))
   } catch {
-    saveThroughBrowser(storedFile(seq, bytes))
+    saveThroughBrowser(storedFile(version, bytes))
     return
   }
 
   panel.value = 'versions'
-  previewed.value = seq
+  previewed.value = version
   printedSlides.value = shown
   exportPdf()
 }
 
-async function tellRestoredByOther(restored: VersionRestored) {
-  void versionsPanel.value?.reload()
-  toast.info(await restoredByOther(restored, 'presentation'))
+// The versions panel's Download: the version as its slides
+async function downloadListedVersion(version: DocumentVersion) {
+  let bytes: Uint8Array
+  try {
+    bytes = await fetchVersion(props.session, version.seq)
+  } catch (error) {
+    console.error(error)
+    toast.error(__('Could not download this version'))
+    return
+  }
+
+  await downloadVersion(version, bytes)
 }
+
 let isWaitingToPrint = false
 async function printDrawnPages() {
   const pages = exportView.value?.$el
@@ -1002,9 +1031,11 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <!-- the slide list stops its own clicks, so a click anywhere else drops its focus -->
   <div
     class="relative flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden bg-surface-base"
     :inert="presenting"
+    @click="focusedSlide = null"
   >
     <DriveDocumentHeader
       :session="session"
@@ -1012,35 +1043,24 @@ onBeforeUnmount(() => {
       :save-state="saveState"
       :view-only="!editable"
       :recoverable="canDownloadChanges"
-      :panels="session.panels.value"
-      layout="centered"
-      :panel="panel"
-      @update:panel="showPanel"
       @download-changes="downloadChanges"
     >
-      <template #icon="{ icon }">
-        <Dropdown :options="presentationMenu">
-          <Button
-            variant="ghost"
-            icon-right="lucide-chevron-down"
-            :aria-label="__('Presentation menu')"
-          >
-            <span class="block size-4.5" :class="icon" aria-hidden="true" />
-          </Button>
-        </Dropdown>
-      </template>
       <template #actions>
         <UsersBar v-if="roomPeople.length" :users="roomPeople" />
-        <OfflineCopyButton v-if="showsOfflineCopy" />
-        <Button
-          icon="lucide-file-down"
-          tooltip="Export"
-          aria-label="Export"
-          variant="ghost"
-          class="max-md:hidden"
-          :disabled="deckUnavailable"
-          @click="exportPdf"
+      </template>
+      <template #menu>
+        <DriveDocumentMenu
+          :session="session"
+          :panels="session.panels.value"
+          :panel="panel"
+          :review="reviewMenuItems"
+          :transfer="transferMenuItems"
+          :settings="settingsMenuItems"
+          :discard="discardMenuItems"
+          @toggle-panel="(name) => showPanel(panel === name ? null : name)"
+          @focus-back="menuFocusBack.focused()"
         />
+        <OfflineCopyButton v-if="showsOfflineCopy" ref="offlineCopy" :trigger="false" />
       </template>
       <template #primary>
         <PresentButton
@@ -1086,52 +1106,83 @@ onBeforeUnmount(() => {
       <span class="lucide-lock-keyhole mx-auto block size-6 text-ink-gray-5" aria-hidden="true" />
       <p class="mt-2 text-p-sm text-ink-gray-6">{{ loadError }}</p>
     </div>
-    <div v-else class="relative flex min-h-0 flex-1 flex-col bg-surface-gray-1">
-      <p
-        v-if="notice"
-        role="status"
-        class="shrink-0 border-b border-outline-gray-1 bg-surface-amber-1 px-4 py-2 text-sm text-ink-amber-7"
-        :class="{ 'ml-56': isNoticeBesidePanel }"
-      >
-        {{ notice }}
-      </p>
-      <SlidesVersionPreview v-if="previewed" :session="session" :seq="previewed" />
-      <template v-else-if="phone">
-        <div class="relative flex min-h-0 flex-1">
-          <SlideContainer v-if="presentationDoc" fit />
-        </div>
-        <nav
-          v-if="slidesLength"
-          class="flex shrink-0 items-center justify-center gap-4 border-t border-outline-gray-1 bg-surface-base px-3 py-2"
-          aria-label="Slides"
+    <div v-else class="relative flex min-h-0 flex-1">
+      <div class="relative flex min-h-0 min-w-0 flex-1 flex-col bg-surface-gray-1">
+        <p
+          v-if="notice"
+          role="status"
+          class="shrink-0 border-b border-outline-gray-1 bg-surface-amber-1 px-4 py-2 text-sm text-ink-amber-7"
+          :class="{ 'ml-56': isNoticeBesidePanel }"
         >
-          <Button
-            icon="lucide-chevron-left"
-            aria-label="Previous slide"
-            variant="ghost"
-            :disabled="slidePosition <= 1"
-            @click="showSlide(-1)"
+          {{ notice }}
+        </p>
+        <template v-if="previewed">
+          <VersionShownBar
+            class="bg-surface-base"
+            :version="previewed"
+            :can-restore="canRestoreVersions"
+            :is-restoring="restoring"
+            @restore="confirmRestore"
+            @back="previewed = null"
           />
-          <span class="text-sm tabular-nums text-ink-gray-6"
-            >{{ slidePosition }} of {{ slidesLength }}</span
+          <SlidesVersionPreview :session="session" :seq="String(previewed.seq)" />
+        </template>
+        <template v-else-if="phone">
+          <div class="relative flex min-h-0 flex-1">
+            <SlideContainer v-if="presentationDoc" fit />
+          </div>
+          <nav
+            v-if="slidesLength"
+            class="flex shrink-0 items-center justify-center gap-4 border-t border-outline-gray-1 bg-surface-base px-3 py-2"
+            aria-label="Slides"
           >
-          <Button
-            icon="lucide-chevron-right"
-            aria-label="Next slide"
-            variant="ghost"
-            :disabled="slidePosition >= slidesLength"
-            @click="showSlide(1)"
-          />
-        </nav>
-      </template>
-      <template v-else>
-        <div class="relative flex min-h-0 flex-1">
-          <SlideContainer v-if="presentationDoc" />
-        </div>
-        <NavigationPanel class="absolute inset-y-0 left-0" @change-slide="changeEditorSlide" />
-        <Toolbar v-if="editing && presentationDoc" />
-        <PropertiesPanel v-if="editing" class="absolute inset-y-0 right-0" />
-      </template>
+            <Button
+              icon="lucide-chevron-left"
+              aria-label="Previous slide"
+              variant="ghost"
+              :disabled="slidePosition <= 1"
+              @click="showSlide(-1)"
+            />
+            <span class="text-sm tabular-nums text-ink-gray-6"
+              >{{ slidePosition }} of {{ slidesLength }}</span
+            >
+            <Button
+              icon="lucide-chevron-right"
+              aria-label="Next slide"
+              variant="ghost"
+              :disabled="slidePosition >= slidesLength"
+              @click="showSlide(1)"
+            />
+          </nav>
+        </template>
+        <template v-else>
+          <div class="relative flex min-h-0 flex-1">
+            <SlideContainer v-if="presentationDoc" />
+          </div>
+          <NavigationPanel class="absolute inset-y-0 left-0" @change-slide="changeEditorSlide" />
+          <Toolbar v-if="editing && presentationDoc" />
+          <PropertiesPanel v-if="editing" class="absolute inset-y-0 right-0" />
+        </template>
+      </div>
+      <DocumentSidePanel
+        ref="sidePanel"
+        v-model:panel="panel"
+        v-model:previewed-version="previewed"
+        :session="session"
+        :can-comment="access.canComment.value"
+        :can-edit-document="access.writable.value"
+        :can-share="session.canShare.value"
+        :can-restore-version="canRestoreVersions"
+        :can-save-version="canRestoreVersions"
+        :is-restoring-version="restoring"
+        :comments
+        :places="null"
+        :save-first="convertedRoom.saveBeforeVersion"
+        noun="presentation"
+        @restore-version="confirmRestore"
+        @download-version="downloadListedVersion"
+        @back="previewed = null"
+      />
     </div>
 
     <SurfaceNotice
@@ -1154,42 +1205,6 @@ onBeforeUnmount(() => {
       <Button variant="ghost" :label="__('Download')" @click="downloadOldDraft" />
       <Button variant="ghost" :label="__('Dismiss')" @click="dismissOldDraft" />
     </SurfaceNotice>
-
-    <aside
-      v-if="panel === 'comments'"
-      class="absolute bottom-0 right-0 top-12 z-30 flex w-full flex-col md:w-80 border-l border-outline-gray-1 bg-surface-elevation-1 shadow-xl"
-      aria-label="Comments"
-    >
-      <div class="flex min-h-12 items-center justify-between border-b border-outline-gray-1 px-4">
-        <h2 class="text-lg-semibold">Comments</h2>
-        <Button icon="lucide-x" aria-label="Close panel" variant="ghost" @click="panel = null" />
-      </div>
-      <div class="min-h-0 flex-1 overflow-y-auto p-4">
-        <DriveCommentList
-          :threads
-          :read-at="threadsReadAt"
-          :node="session.nodeId"
-          :places="null"
-          :can-comment="access.canComment.value"
-          :can-edit-document="access.writable.value"
-          :can-share="session.canShare.value"
-          :actions="threadActions"
-          :drafts="commentDrafts"
-          noun="presentation"
-        />
-      </div>
-    </aside>
-    <SlidesVersionsPanel
-      v-else-if="panel === 'versions'"
-      ref="versionsPanel"
-      v-model:previewed="previewed"
-      :session="session"
-      :writable="canRestoreVersions"
-      :flush="convertedRoom.saveBeforeVersion"
-      :restore="restoreVersion"
-      :confirm-restore="liveRestore"
-      @close="panel = null"
-    />
 
     <LayoutDialog v-model:open="showLayoutDialog" @insert="insertLayout" />
     <ThemeDialog v-model:open="showThemeDialog" @create="fillTheme($event)" />

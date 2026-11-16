@@ -28,6 +28,7 @@ import {
   driveNodeRoute,
   DriveUnlockScreen,
   openingLocation as historyOpeningLocation,
+  opensFile as historyOpensFile,
   isDriveLocked,
   isDriveNodeLocked,
   openDocumentSession,
@@ -41,6 +42,7 @@ import {
   newDocumentType,
   usePageTitle,
 } from '@/platform/page-meta'
+import { useHideRail } from '@/platform/rail'
 import { getCookieSessionUser } from '@/platform/session'
 import { TransportError } from '@/platform/transport'
 
@@ -78,6 +80,12 @@ const openingTitle = computed(() =>
 const openingLocation = computed(() =>
   nodeId.value ? historyOpeningLocation(router.options.history.state) : null,
 )
+
+// An editor's rail hides as its file starts to open so it never jumps away; a preview keeps it
+const opensFilePreview = computed(
+  () => !!nodeId.value && historyOpensFile(router.options.history.state),
+)
+useHideRail(() => loading.value && !opensFilePreview.value)
 
 // A document the opener has just created takes typing in its type's opening
 // editor while it opens; its surface takes over what was typed.

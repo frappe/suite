@@ -37,6 +37,8 @@ vi.mock('@/apps/drive', async () => {
         () =>
           slots.menu?.(),
     }),
+    DriveDocumentMenu: capture('menu').default,
+    useDocumentComments: () => ({ drafts: { start: () => {} } }),
   }
 })
 function capture(key: 'menu' | 'panel' | 'bar') {
@@ -57,10 +59,9 @@ function capture(key: 'menu' | 'panel' | 'bar') {
     }),
   }
 }
-vi.mock('./SheetDocumentMenu.vue', () => capture('menu'))
 vi.mock('./SheetVersionsPanel.vue', () => capture('panel'))
 vi.mock('./SheetVersionBar.vue', () => capture('bar'))
-vi.mock('./SheetCommentsPanel.vue', () => ({ default: { render: () => null } }))
+vi.mock('./SheetComments.vue', () => ({ default: { render: () => null } }))
 
 /** The live sheet: A1 = "now". Version 3 held A1 = "then". */
 const docs = vi.hoisted(() => ({ live: fromPartial<Uint8Array | null>(null) }))
@@ -97,7 +98,13 @@ vi.mock('@/apps/sheets/components/SheetEditor/index.vue', () => ({
       })
       return () =>
         h('div', [
-          slots.header?.({ viewOnly: false, status: null, menus: null, actions: null }),
+          slots.header?.({
+            viewOnly: false,
+            status: null,
+            menus: null,
+            actions: null,
+            menuItems: { transfer: [], settings: [] },
+          }),
           slots.banner?.(),
           slots['side-panel']?.(),
         ])
