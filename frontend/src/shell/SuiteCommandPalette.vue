@@ -85,18 +85,6 @@
           <span class="lucide-x size-3" aria-hidden="true" />
         </button>
       </span>
-      <!-- Where the search looks, in sight rather than among the advanced filters: results missing
-           another account gave no sign of it. -->
-      <Button
-        v-if="hasMultipleMailAccounts"
-        :variant="mailAllAccounts ? 'subtle' : 'outline'"
-        size="sm"
-        class="!h-7 text-xs"
-        :aria-pressed="mailAllAccounts"
-        :label="__('All accounts')"
-        @mousedown.prevent
-        @click="mailAllAccounts = !mailAllAccounts"
-      />
       <Button
         v-for="option in availableMailFilterOptions"
         :key="option.key"
@@ -148,8 +136,7 @@
     <MailFilterPanel
       v-else-if="mailSearchActive && showFilters"
       v-model:filters="mailPanelFilters"
-      v-model:all-accounts="mailAllAccounts"
-      :has-multiple-accounts="hasMultipleMailAccounts"
+      :all-accounts="mailSearchesAllAccounts"
     />
 
     <CommandPaletteList v-else>
@@ -427,8 +414,8 @@ import {
 import { userStore } from '@/apps/mail/stores/user'
 import {
   hasMailSearchQuery,
-  isUnifiedRoute,
   mailSearchRoute,
+  searchesAllAccountsFrom,
   useScreenSize,
 } from '@/apps/mail/utils/composables'
 import HighlightedText from '@/components/HighlightedText.vue'
@@ -559,8 +546,6 @@ const isMailSearchRoute = computed(
 )
 const mailSearchActive = computed(() => activeApp.value === 'mail')
 const {
-  allAccounts: mailAllAccounts,
-  scopeOpening: scopeMailOpening,
   unavailableAccounts: mailUnavailableAccounts,
   appliedFilters: mailAppliedFilters,
   availableFilterOptions: availableMailFilterOptions,
@@ -594,7 +579,7 @@ const {
   forgetSearch: forgetMailSearch,
   clearRecentSearches: clearRecentMailSearches,
   searchKey: mailSearchKey,
-} = useMailCommandPaletteSearch(query, mailSearchActive)
+} = useMailCommandPaletteSearch(query, mailSearchActive, () => searchesAllAccountsFrom(route))
 const showFilters = ref(false)
 const calendarSearchActive = computed(() => activeApp.value === 'calendar')
 const hasFilterPanel = computed(() => mailSearchActive.value || calendarSearchActive.value)
@@ -974,7 +959,7 @@ watch(
 )
 
 watch(
-  [query, mailAppliedFilters, mailAllAccounts, showFilters, calendarFilterParams],
+  [query, mailAppliedFilters, mailSearchesAllAccounts, showFilters, calendarFilterParams],
   ([value]) => {
     // Nothing to search for while the filter panel is up: its results are not on screen, every
     // keystroke in a field would ask for a set nobody is reading — and nothing is in flight to
@@ -1039,18 +1024,12 @@ watch(
     resetSearches()
     if (isMailSearchRoute.value) {
       query.value = typeof route.query.text === 'string' ? route.query.text : ''
-      // The search being edited says what it searched, so it wins over the remembered
-      // preference for as long as the palette is reopened on top of it.
-      scopeMailOpening(route.query.all_accounts != null)
       const filters: Record<string, string> = {}
       for (const [key, value] of Object.entries(route.query)) {
         if (key !== 'text' && key !== 'all_accounts' && typeof value === 'string')
           filters[key] = value
       }
       setMailFilters(filters)
-    } else if (isUnifiedRoute(route.name)) {
-      // Reading every account at once, a search of one would miss what's on the screen.
-      scopeMailOpening(true)
     }
   },
 )

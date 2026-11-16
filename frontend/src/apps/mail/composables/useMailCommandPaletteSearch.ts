@@ -1,5 +1,5 @@
 import { refDebounced, useStorage } from '@vueuse/core'
-import { computed, ref, watch, type Ref } from 'vue'
+import { computed, ref, toValue, type MaybeRefOrGetter, type Ref } from 'vue'
 
 import { api, useQuery, type InputOf } from '@/api'
 import {
@@ -42,11 +42,9 @@ const mailFilterOptions: MailFilterOption[] = [
   { key: 'hasAttachment', label: 'With attachments', value: 'true' },
 ]
 
-const ALL_ACCOUNTS_STORAGE_KEY = 'mail-search-all-accounts'
-
 // The searches the reader ran last, for the phone's search page to offer before anything is
 // typed. Five, since the page is a list and this is its whole content until a word arrives;
-// in the browser, like the all-accounts preference — a convenience of the device someone
+// in the browser — a convenience of the device someone
 // searches from, and not worth a round trip on every opening. Under the user's name, since a
 // browser is shared more often than a search is: what one person looked for is not the next
 // person's to see on their empty page.
@@ -83,39 +81,24 @@ const FILTER_OPERATORS = new Map<string, string>([
 ])
 const operatorFor = (key: string) => FILTER_OPERATORS.get(key) ?? key
 
-export function useMailCommandPaletteSearch(query: Ref<string>, active: Ref<boolean>) {
+/**
+ * The palette's mail search. `allAccounts` is where it looks, which the page it was opened over
+ * decides (see searchesAllAccountsFrom): it is not a choice made in the palette.
+ */
+export function useMailCommandPaletteSearch(
+  query: Ref<string>,
+  active: Ref<boolean>,
+  allAccounts: MaybeRefOrGetter<boolean> = false,
+) {
   const appliedFilters = ref<MailSearchFilterBadge[]>([])
   let mailUser: ReturnType<typeof userStore> | undefined
   const getMailUser = () => (mailUser ??= userStore())
 
-  // Searching every account is a property of the search, not a filter on it: it widens where the
-  // same filters are asked, so it sits beside them rather than among them. The choice is
-  // remembered, because someone who keeps several accounts open searches the same way each time.
   const hasMultipleAccounts = computed(
     () => (getMailUser().userResource.data?.accounts?.length ?? 0) > 1,
   )
-  const rememberedAllAccounts = useStorage(ALL_ACCOUNTS_STORAGE_KEY, false)
-  // Where the palette was opened can say what to search for that one opening: a search being
-  // edited, or a list of every account. That is no choice of the reader's, so it is not remembered;
-  // flipping the toggle is, and is.
-  const openedScope = ref<boolean>()
-  const allAccounts = computed({
-    get: () => openedScope.value ?? rememberedAllAccounts.value,
-    set: (value: boolean) => {
-      openedScope.value = undefined
-      rememberedAllAccounts.value = value
-    },
-  })
-  const scopeOpening = (value: boolean) => {
-    openedScope.value = value
-  }
-  // A preference remembered from when there were several accounts must not quietly widen a search
-  // for someone who now has one — it is the toggle's own state that is kept, not its effect.
-  const searchesAllAccounts = computed(() => allAccounts.value && hasMultipleAccounts.value)
-  // A folder belongs to one account, so it cannot survive the widening.
-  watch(allAccounts, (value) => {
-    if (value) removeFilter('inMailbox')
-  })
+  // With one account there is nowhere else to look, whatever the page.
+  const searchesAllAccounts = computed(() => toValue(allAccounts) && hasMultipleAccounts.value)
 
   // The filters held as badges, keyed: what the filter panel edits, and what the parsed query
   // line is laid over to make the search. `absorbQueryFilters` moves typed operators across
@@ -529,13 +512,10 @@ export function useMailCommandPaletteSearch(query: Ref<string>, active: Ref<bool
   }
   function reset() {
     account.value = ''
-    openedScope.value = undefined
     cancel()
   }
 
   return {
-    allAccounts,
-    scopeOpening,
     appliedFilters,
     searchesAllAccounts,
     unavailableAccounts,

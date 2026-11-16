@@ -605,25 +605,30 @@ describe('what a search found', () => {
 })
 
 describe('searching every account', () => {
-  it('asks the server for every account only once it is turned on', async () => {
-    const search = openSearch()
+  // Where the palette looks is the page's to say: see searchesAllAccountsFrom.
+  function openSearchOver(allAccounts: boolean) {
+    const query = ref('')
+    return { query, ...useMailCommandPaletteSearch(query, ref(true), () => allAccounts) }
+  }
 
+  it('asks the server for every account when opened over every account', async () => {
+    const search = openSearchOver(true)
+    search.search('invoice', 'work')
+    await settle()
+    expect(searches.at(-1)).toMatchObject({ all_accounts: true })
+  })
+
+  it('asks for one account when opened over one', async () => {
+    const search = openSearchOver(false)
     search.search('invoice', 'work')
     await settle()
     expect(searches.at(-1)).toMatchObject({ all_accounts: false })
-
-    search.allAccounts.value = true
-    search.search('invoice', 'work')
-    await settle()
-
-    expect(searches.at(-1)).toMatchObject({ all_accounts: true })
   })
 
   it('does not widen a search for someone who only has one account', async () => {
     accounts.value = ['work']
-    const search = openSearch()
+    const search = openSearchOver(true)
 
-    search.allAccounts.value = true
     search.search('invoice', 'work')
     await settle()
 
@@ -631,51 +636,8 @@ describe('searching every account', () => {
     expect(searches.at(-1)).toMatchObject({ all_accounts: false })
   })
 
-  it('drops the folder filter, which belongs to a single account', async () => {
-    const search = openSearch()
-    search.applyFilter('inMailbox', 'mailbox-1')
-
-    search.allAccounts.value = true
-    await nextTick()
-
-    expect(search.filterValues.value.inMailbox).toBeUndefined()
-  })
-
-  it('remembers the choice for the next search', async () => {
-    const first = openSearch()
-    first.allAccounts.value = true
-    await nextTick()
-
-    expect(openSearch().allAccounts.value).toBe(true)
-  })
-
-  // Opened over All Inboxes, the palette searches what's on the screen; the next search of one
-  // account must not quietly search them all.
-  it('searches every account for one opening without making that the choice', async () => {
-    const opening = openSearch()
-    opening.scopeOpening(true)
-    opening.search('invoice', 'work')
-    await settle()
-    expect(searches.at(-1)).toMatchObject({ all_accounts: true })
-
-    opening.reset()
-    expect(opening.allAccounts.value).toBe(false)
-    expect(openSearch().allAccounts.value).toBe(false)
-  })
-
-  it('remembers the toggle flipped during an opening that had its own scope', async () => {
-    const opening = openSearch()
-    opening.scopeOpening(false)
-    opening.allAccounts.value = true
-    opening.reset()
-    await nextTick()
-
-    expect(openSearch().allAccounts.value).toBe(true)
-  })
-
   it('names the accounts a search of every account could not reach', async () => {
-    const search = openSearch()
-    search.allAccounts.value = true
+    const search = openSearchOver(true)
     search.search('invoice', 'work')
     await settle()
     expect(search.unavailableAccounts.value).toEqual([])
