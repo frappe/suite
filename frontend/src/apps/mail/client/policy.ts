@@ -157,8 +157,27 @@ export const registration: OwnerRegistration = {
           ],
         },
       }
-    if (reference.id === 'update_regional_preferences')
-      return { effects: { invalidates: ['mail.regional_preferences'] } }
+
+    if (reference.id === 'update_regional_preferences') {
+      return {
+        effects: {
+          invalidates: ['mail.regional_preferences'],
+          // The cached read holds the choice from the save on: a page shown again before the next
+          // read lands builds on it, not on the region from before
+          optimisticReads: {
+            references: ['mail.regional_preferences'],
+            update(input, _query, data) {
+              if (!isRecord(input) || !isRecord(data)) {
+                return undefined
+              }
+
+              return { ...data, ...input }
+            },
+          },
+        },
+      }
+    }
+
     if (reference.id === 'update_account_preferences')
       return {
         effects: {

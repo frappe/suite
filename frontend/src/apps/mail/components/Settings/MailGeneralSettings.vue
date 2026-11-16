@@ -93,11 +93,12 @@
 
 <script setup lang="ts">
 import { Combobox, ErrorMessage, SettingsRow, Switch } from 'frappe-ui'
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 
-import { api, client, useQuery, type InputOf } from '@/api'
+import { api, client, type InputOf } from '@/api'
 import { useAccountPreferences } from '@/apps/mail/composables/useAccountPreferences'
 import { useQuota } from '@/apps/mail/composables/useQuota'
+import { useRegionalPreferences } from '@/apps/mail/composables/useRegionalPreferences'
 import { userStore } from '@/apps/mail/stores/user'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
@@ -136,43 +137,7 @@ function layoutFlag(field: 'show_reading_pane' | 'group_by_date') {
 const splitView = layoutFlag('show_reading_pane')
 const groupByDate = layoutFlag('group_by_date')
 
-// The mail provider's own locale and time zone; a site without one has neither
-interface Region {
-  locale: string
-  time_zone: string
-}
-const hasProvider = computed(() => !!user.data?.is_suite_cloud_configured)
-const regional = useQuery(api.mail.settings.regional, () => hasProvider.value && {})
+const { hasProvider, regional, region, change: changeRegion } = useRegionalPreferences()
 const locales = computed(() => regional.data?.locales ?? [])
 const timeZones = computed(() => regional.data?.time_zones ?? [])
-const region = ref<Region>()
-let regionSaves = 0
-function showSavedRegion() {
-  // A read that lands while a save is out is older than the choice being saved
-  if (regionSaves > 0) return
-
-  region.value = regional.data && {
-    locale: regional.data.locale,
-    time_zone: regional.data.time_zone,
-  }
-}
-
-watch(() => regional.data, showSavedRegion, { immediate: true })
-
-// The control can also hand back nothing; a name is all there is to save
-async function changeRegion(field: keyof Region, value: unknown) {
-  if (!region.value || typeof value !== 'string') return
-
-  const choice = { ...region.value, [field]: value }
-  region.value = choice
-  regionSaves += 1
-  try {
-    await client.mutation(api.mail.settings.updateRegional, choice)
-    regionSaves -= 1
-  } catch {
-    regionSaves -= 1
-    // The refusal is reported where every failed save is; here the choice goes back
-    showSavedRegion()
-  }
-}
 </script>
