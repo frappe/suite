@@ -144,6 +144,7 @@ import { computed, reactive, ref, watch } from 'vue'
 
 import { api, useMutation, useQuery } from '@/api'
 import { useSession } from '@/platform/session'
+import { onSettingsSectionAsked } from '@/platform/settings'
 import { translate as __ } from '@/platform/translation'
 import SettingsTabContent from '@/shell/settings/SettingsTabContent.vue'
 import SettingsTabHeader from '@/shell/settings/SettingsTabHeader.vue'
@@ -166,6 +167,11 @@ watch(
 )
 
 const showPasswordDialog = ref(false)
+function showPassword() {
+  showPasswordDialog.value = true
+}
+
+onSettingsSectionAsked(() => 'account.profile.password', showPassword)
 const currentPassword = ref('')
 const newPassword = ref('')
 const confirmPassword = ref('')

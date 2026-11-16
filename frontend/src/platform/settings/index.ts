@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 
 /**
  * The tab ids of the composition settings list, each with the ids of its
@@ -24,10 +24,29 @@ export const showSettings = ref(false)
 export const settingsTab = ref<SettingsTabId | undefined>()
 
 /**
- * The section `openSettings` asked for, as `<tab id>.<section id>`. The row on the page that goes by
- * this name opens its dialog and unsets it.
+ * The section `openSettings` asked for, as `<tab id>.<section id>`. The part of the page that goes
+ * by this name shows itself and unsets it.
  */
 export const settingsSection = ref<string | undefined>()
+
+/**
+ * Runs `show` when Settings asks for this section. Each asking is answered once: the page shown
+ * again later does not show the section again. Called in a component's setup.
+ */
+export function onSettingsSectionAsked(
+  section: () => SettingsSectionKey | undefined,
+  show: () => void,
+): void {
+  function answer() {
+    const name = section()
+    if (name && settingsSection.value === name) {
+      settingsSection.value = undefined
+      show()
+    }
+  }
+
+  watch(settingsSection, answer, { immediate: true })
+}
 
 /**
  * Opens Settings on `tab`, and on that tab opens the dialog of `section`. On phone, `tab` opens that

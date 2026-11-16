@@ -11,9 +11,9 @@
 
 <script setup lang="ts">
 import { Button, Dialog, SettingsRow, type DialogSize } from 'frappe-ui'
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 
-import { settingsSection, type SettingsSectionKey } from '@/platform/settings'
+import { onSettingsSectionAsked, type SettingsSectionKey } from '@/platform/settings'
 import { translate as __ } from '@/platform/translation'
 
 interface Props {
@@ -40,13 +40,5 @@ function close() {
   isOpen.value = false
 }
 
-function openWhenAskedFor() {
-  if (props.section && settingsSection.value === props.section) {
-    // Answered once: coming back to the page later must not open it again
-    settingsSection.value = undefined
-    open()
-  }
-}
-
-watch(settingsSection, openWhenAskedFor, { immediate: true })
+onSettingsSectionAsked(() => props.section, open)
 </script>
