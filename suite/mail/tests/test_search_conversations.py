@@ -2,13 +2,14 @@
 # For license information, please see license.txt
 """A search lists conversations, one row each, described by the newest message that matched."""
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import frappe
 from frappe.tests import UnitTestCase
 
 from suite.mail import search_matches
 from suite.mail.api import mail
+from suite.mail.doctype.mail_message import mail_message
 from suite.mail.jmap import MailServerUnavailableError
 
 MAILBOXES = [
@@ -234,3 +235,22 @@ class TestMatchWords(UnitTestCase):
                 mail.search_mails("account", {"text": "numbers"}, shown_matches=50)
         self.assertEqual(get_snippets.call_args.args[2], ["a1", "a2", "a3"])
 
+
+class TestPageTop(UnitTestCase):
+    """The newest matches start from the top of the page, which only the query's order says."""
+
+    def test_the_newest_matches_keep_the_querys_order_whatever_order_the_get_returns(self):
+        batch = MagicMock()
+        batch.__enter__.return_value = batch
+        batch.mail.email.query.return_value.result.ids = ["top", "below"]
+        batch.mail.email.query.return_value.result.total = 2
+        batch.mail.email.get.return_value.result.items = [
+            MagicMock(to_wire=MagicMock(return_value={"id": "below", "threadId": "b"})),
+            MagicMock(to_wire=MagicMock(return_value={"id": "top", "threadId": "a"})),
+        ]
+        batch.mail.thread.get.return_value.result.items = []
+        client = MagicMock()
+        client.batch.return_value = batch
+        with patch.object(mail_message, "get_account_client", return_value=client):
+            _, newest, _ = mail_message.query_threads("account", {"text": "numbers"})
+        self.assertEqual(list(newest.items()), [("a", "top"), ("b", "below")])

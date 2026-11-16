@@ -835,7 +835,8 @@ def query_threads(
     sort: list[dict] | None = None,
 ) -> tuple[dict[str, list[dict]], dict[str, str], int]:
     """A page of threads matching the filter, as `fetch_threads` returns them, with each thread's
-    newest message that matched (by id, keyed by thread) and, if asked, how many threads match."""
+    newest message that matched (by id, keyed by thread, in the query's order: the top of the page
+    first) and, if asked, how many threads match."""
 
     client = get_account_client(account)
     with client.batch() as b:
@@ -850,8 +851,10 @@ def query_threads(
         g = b.mail.email.get(ids=q.ref_ids(), properties=["id", "threadId"])
         t = b.mail.thread.get(ids=g.ref_list("threadId"), properties=["id", "emailIds"])
 
-    # One match per thread: the query collapses each to its newest matching message.
-    matches = {email["threadId"]: email["id"] for email in (e.to_wire() for e in g.result.items)}
+    # One match per thread: the query collapses each to its newest matching message. A get need not
+    # answer in the order of its ids (RFC 8620 §5.1), so the query's order is kept from its ids.
+    thread_of = {email["id"]: email["threadId"] for email in (e.to_wire() for e in g.result.items)}
+    matches = {thread_of[id]: id for id in q.result.ids if id in thread_of}
     total = q.result.total or 0
     thread_email_ids = {
         thread["id"]: thread.get("emailIds", []) for thread in (th.to_wire() for th in t.result.items)
