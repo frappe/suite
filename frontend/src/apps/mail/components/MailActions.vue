@@ -404,7 +404,6 @@ const unblockSender = (isUndo = false) => {
     { silent: true },
   )
   if (isUndo) return raiseOptimisticToast(forward, __('Sender blocked'))
-  // Blocked again only once the unblock has landed: see afterLanding.
   setUndoAction(
     afterLanding(forward, () => {
       const back = client.mutation(

@@ -135,11 +135,8 @@ export const raisePromiseToast = async (
 export const afterLanding = (forward: Promise<unknown>, undo: () => void) => () =>
   void forward.then(undo, () => {})
 
-// The rows change on the click, and so does the toast that says so, Undo and all: waiting for the
-// server put "Archived · Undo" on screen after the reader had moved on, on a slow link seconds
-// later. A refusal takes the toast down and says why; the write's own rollback puts the rows back,
-// and an Undo pressed meanwhile waits for the write (each caller's undo does). Only a message read
-// off the write's answer, where what happened decides what it says, still waits for it.
+// A plain message shows on the click, with its Undo, and comes down with the error if the write is
+// refused. A message given as a function of the answer waits for it.
 export const raiseOptimisticToast = <T>(
   forward: Promise<T>,
   success: string | ((result: T) => string),

@@ -2,7 +2,7 @@ import { type Ref } from 'vue'
 
 import { userStore } from '@/apps/mail/stores/user'
 import type { Mail, Thread } from '@/apps/mail/types'
-import { raiseOptimisticToast } from '@/apps/mail/utils'
+import { afterLanding, raiseOptimisticToast } from '@/apps/mail/utils'
 import { useUndo } from '@/apps/mail/utils/composables'
 import { resummariseRow } from '@/apps/mail/utils/threadSummary'
 
@@ -108,11 +108,9 @@ export const useMailRemoval = ({
     }
 
     setUndoAction(undefined)
-    let forwardOk = false
     const forwardPromise = (async () => {
       try {
         await req()
-        forwardOk = true
         mailboxes.refetch().catch(() => {})
         afterForward?.()
         opts.afterSuccess?.()
@@ -125,29 +123,27 @@ export const useMailRemoval = ({
 
     if (!opts.undoReq) return raiseOptimisticToast(forwardPromise, success)
 
+    const { undoReq } = opts
     setUndoAction(
-      () =>
-        void (async () => {
-          await forwardPromise.catch(() => {})
-          if (!forwardOk) return
-          restoreUi()
-          setUndoAction(undefined)
-          raiseOptimisticToast(
-            opts.undoReq!()
-              .then(() => mailboxes.refetch().catch(() => {}))
-              .catch((error) => {
-                // The undo didn't land server-side — re-remove so the UI matches the server
-                // instead of showing the mail (and its row) as restored. The pane stays where
-                // it is: it was already taken elsewhere once, and the reader has since asked
-                // to come back.
-                mailThreadRef.value?.removeMailFromView(mail.id)
-                restoreFromRow = dropFromRow()
-                if (emptied) restoreRow = removeRow(mail, thread)
-                throw error
-              }),
-            opts.undoSuccess ?? success,
-          )
-        })(),
+      afterLanding(forwardPromise, () => {
+        restoreUi()
+        setUndoAction(undefined)
+        raiseOptimisticToast(
+          undoReq()
+            .then(() => mailboxes.refetch().catch(() => {}))
+            .catch((error) => {
+              // The undo didn't land server-side — re-remove so the UI matches the server
+              // instead of showing the mail (and its row) as restored. The pane stays where
+              // it is: it was already taken elsewhere once, and the reader has since asked
+              // to come back.
+              mailThreadRef.value?.removeMailFromView(mail.id)
+              restoreFromRow = dropFromRow()
+              if (emptied) restoreRow = removeRow(mail, thread)
+              throw error
+            }),
+          opts.undoSuccess ?? success,
+        )
+      }),
     )
     raiseOptimisticToast(forwardPromise, success, undo)
   }

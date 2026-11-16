@@ -1007,8 +1007,7 @@ const handleAddToMailbox = (mailboxId: string) => {
     throw error
   })
   // Undo replays the exact membership rather than the inverse call: a mail that was already in
-  // the folder before an "add" must stay in it afterwards. Only once the add has landed: see
-  // afterLanding.
+  // the folder before an "add" must stay in it afterwards.
   const undoAction = afterLanding(forward, () => {
     syncFolderTag(mailboxId, false)
     raiseOptimisticToast(
@@ -1043,8 +1042,7 @@ const handleRemoveFromMailbox = (mailboxId: string) => {
     syncFolderTag(mailboxId, true)
     throw error
   })
-  // Undo replays the exact membership rather than the inverse call, and only once the remove has
-  // landed: see afterLanding.
+  // Undo replays the exact membership rather than the inverse call.
   const undoAction = afterLanding(forward, () => {
     syncFolderTag(mailboxId, true)
     raiseOptimisticToast(restoreMails(thread.account, snapshot), __('Thread added back'))

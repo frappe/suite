@@ -680,11 +680,9 @@ export function useThreadActions(deps: {
     setUndoAction(undefined)
     if (!keptInList && !reconcileView) {
       // Optimistic path: confirm immediately, arm undo now, fire the request in the background.
-      let forwardOk = false
       const forwardPromise = (async () => {
         try {
           for (const op of forward) await op()
-          forwardOk = true
           mailboxes.refetch().catch(() => {})
           refillIfEmpty()
         } catch (error) {
@@ -699,23 +697,19 @@ export function useThreadActions(deps: {
         }
       })()
       setUndoAction(
-        () =>
-          void (async () => {
-            // Wait for the forward to settle (instant if already done); no-op if it failed.
-            await forwardPromise.catch(() => {})
-            if (!forwardOk) return
-            restoreThreadsToList(removedThreads)
-            setUndoAction(undefined)
-            const restore = setMailsMailboxesSubmit({
-              mails: snapshot,
+        afterLanding(forwardPromise, () => {
+          restoreThreadsToList(removedThreads)
+          setUndoAction(undefined)
+          const restore = setMailsMailboxesSubmit({
+            mails: snapshot,
+          })
+            .then(() => mailboxes.refetch().catch(() => {}))
+            .catch((error) => {
+              removeThreadsFromList(removedThreads.map((t) => t.thread_id))
+              throw error
             })
-              .then(() => mailboxes.refetch().catch(() => {}))
-              .catch((error) => {
-                removeThreadsFromList(removedThreads.map((t) => t.thread_id))
-                throw error
-              })
-            raiseOptimisticToast(restore, movedBack)
-          })(),
+          raiseOptimisticToast(restore, movedBack)
+        }),
       )
       raiseOptimisticToast(forwardPromise, success, undo)
       return forwardPromise.then(
@@ -727,11 +721,9 @@ export function useThreadActions(deps: {
       // The rows stay (Sent keeps its sent copy; a Starred thread keeps a non-junk/trash copy), but
       // their folder tags change: the request carries the folders expected (`shows`), which the
       // client policy shows at once and takes back if the request fails.
-      let forwardOk = false
       const forwardPromise = (async () => {
         try {
           for (const op of forward) await op()
-          forwardOk = true
           mailboxes.refetch().catch(() => {})
         } catch (error) {
           setMailsMailboxesSubmit({
@@ -742,16 +734,13 @@ export function useThreadActions(deps: {
         }
       })()
       setUndoAction(
-        () =>
-          void (async () => {
-            await forwardPromise.catch(() => {})
-            if (!forwardOk) return
-            setUndoAction(undefined)
-            const restore = setMailsMailboxesSubmit({
-              mails: snapshot,
-            }).then(() => mailboxes.refetch().catch(() => {}))
-            raiseOptimisticToast(restore, movedBack)
-          })(),
+        afterLanding(forwardPromise, () => {
+          setUndoAction(undefined)
+          const restore = setMailsMailboxesSubmit({
+            mails: snapshot,
+          }).then(() => mailboxes.refetch().catch(() => {}))
+          raiseOptimisticToast(restore, movedBack)
+        }),
       )
       raiseOptimisticToast(forwardPromise, success, undo)
       return forwardPromise.then(
@@ -867,7 +856,6 @@ export function useThreadActions(deps: {
     }))
     setUndoAction(undefined)
     const removed = leaves ? handleSuccessAndRemoveFromList(threadIds, false) : []
-    let forwardOk = false
     let waited: Waited[] = []
     const account = store.accountId
     const ids = mails.map((m) => m.id)
@@ -891,7 +879,6 @@ export function useThreadActions(deps: {
             })
     ).then(
       (filed) => {
-        forwardOk = true
         mailboxes.refetch().catch(() => {})
         if (leaves) refillIfEmpty()
         else if (mailbox.value === 'search') resetThreads()
@@ -909,26 +896,23 @@ export function useThreadActions(deps: {
       },
     )
     setUndoAction(
-      () =>
-        void (async () => {
-          await forward.catch(() => {})
-          if (!forwardOk) return
-          restoreThreadsToList(removed)
-          setUndoAction(undefined)
-          // Unsnoozing ended its wait: only snoozing again has it come back at its time.
-          const restore = (
-            action === 'wake'
-              ? resnooze(account, waited)
-              : setMailsMailboxesSubmit({ mails: snapshot })
-          ).then(() => {
-            mailboxes.refetch().catch(() => {})
-            if (mailbox.value === 'search') resetThreads()
-          })
-          raiseOptimisticToast(
-            restore,
-            threadIds.length > 1 ? __('Threads moved back') : __('Thread moved back'),
-          )
-        })(),
+      afterLanding(forward, () => {
+        restoreThreadsToList(removed)
+        setUndoAction(undefined)
+        // Unsnoozing ended its wait: only snoozing again has it come back at its time.
+        const restore = (
+          action === 'wake'
+            ? resnooze(account, waited)
+            : setMailsMailboxesSubmit({ mails: snapshot })
+        ).then(() => {
+          mailboxes.refetch().catch(() => {})
+          if (mailbox.value === 'search') resetThreads()
+        })
+        raiseOptimisticToast(
+          restore,
+          threadIds.length > 1 ? __('Threads moved back') : __('Thread moved back'),
+        )
+      }),
     )
     raiseOptimisticToast(forward, told, undo)
     return forward.then(
@@ -1041,11 +1025,9 @@ export function useThreadActions(deps: {
     setUndoAction(undefined)
     if (!reconcileView) {
       // Optimistic path: confirm immediately, arm undo now, fire in the background.
-      let forwardOk = false
       const forwardPromise = (async () => {
         try {
           await forward()
-          forwardOk = true
           mailboxes.refetch().catch(() => {})
           refillIfEmpty()
         } catch (error) {
@@ -1056,20 +1038,17 @@ export function useThreadActions(deps: {
         }
       })()
       setUndoAction(
-        () =>
-          void (async () => {
-            await forwardPromise.catch(() => {})
-            if (!forwardOk) return
-            restoreThreadsToList(removedThreads)
-            setUndoAction(undefined)
-            const undoReq = setMailsMailboxesSubmit(restore)
-              .then(() => mailboxes.refetch().catch(() => {}))
-              .catch((error) => {
-                removeThreadsFromList(removedThreads.map((t) => t.thread_id))
-                throw error
-              })
-            raiseOptimisticToast(undoReq, restored)
-          })(),
+        afterLanding(forwardPromise, () => {
+          restoreThreadsToList(removedThreads)
+          setUndoAction(undefined)
+          const undoReq = setMailsMailboxesSubmit(restore)
+            .then(() => mailboxes.refetch().catch(() => {}))
+            .catch((error) => {
+              removeThreadsFromList(removedThreads.map((t) => t.thread_id))
+              throw error
+            })
+          raiseOptimisticToast(undoReq, restored)
+        }),
       )
       return raiseOptimisticToast(forwardPromise, success, undo)
     }
