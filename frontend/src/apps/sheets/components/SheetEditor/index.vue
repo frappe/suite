@@ -73,7 +73,7 @@
         />
       </DefineTopbarMenus>
       <DefineTopbarActions>
-        <SheetTopbarActions :present-users="presentUsers" :current-sheet="currentSheet" />
+        <UsersBar v-if="peopleHere.length" :users="peopleHere" />
         <input
           ref="csvInputRef"
           name="csv-import"
@@ -781,6 +781,7 @@ import * as Y from 'yjs'
 import { api, client } from '@/api'
 import { useCurrentUser } from '@/boot/session'
 import { colourStyle } from '@/platform/collab/colours'
+import UsersBar from '@/platform/collab/UsersBar.vue'
 import { ShortcutsDialog } from '@/platform/shortcuts'
 import { translate as __ } from '@/platform/translation'
 
@@ -833,7 +834,6 @@ import SheetMenuBar from './SheetMenuBar.vue'
 import SheetTabMenu from './SheetTabMenu.vue'
 import SheetTabsBar from './SheetTabsBar.vue'
 import SheetToolbar from './SheetToolbar.vue'
-import SheetTopbarActions from './SheetTopbarActions.vue'
 import SlicerPanel from './SlicerPanel.vue'
 import SortDialog from './SortDialog.vue'
 import SplitTextPopover from './SplitTextPopover.vue'
@@ -2275,6 +2275,15 @@ const _readChartDialogRange = (sn, rect) => _readRect(sn, rect, { numFmts: true 
 
 // Who else is here and what they have selected (collab/presence.ts).
 const presentUsers = collab.users
+// The header's bar is the one Writer and Slides use, which reads a person by id and name
+const peopleHere = computed(() =>
+  presentUsers.value.map((u) => ({
+    id: u.user,
+    name: u.full_name,
+    colour: u.colour,
+    idleSince: u.idleSince,
+  })),
+)
 const remoteCursors = collab.cursors
 function broadcastCursor(row, col, subSheet, range) {
   const r = range ?? { r0: row, c0: col, r1: row, c1: col }
