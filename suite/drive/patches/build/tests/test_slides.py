@@ -926,6 +926,122 @@ class SlidesTest(unittest.TestCase):
         self.assertEqual(self.media_children(target, "deck-node"), children)
         self.assertEqual((again.media_nodes_created, again.media_duplicates_collapsed), (1, 1))
 
+    def one_picture_filed_twice(self, *, copy, local):
+        """One picture on one deck as two Files that the tree also filed.
+
+        The older File is public, the newer one private, and the bytes are the
+        same. §14.4 gave each File a node under a root: the older one holds
+        `copy`, the private copy Build made on the active `s3` driver, and the
+        newer one holds `local`, its own private blob. Three `File Blob` rows
+        hold one picture. `copy` is added before `local` so the fake's
+        `private_blob` answers with it, as `put_blob` does by deduplicating on
+        the active driver.
+        """
+        older = media("older-file", blob="public-blob", url="/files/logo.png")
+        newer = replace(
+            media("newer-file", blob=local, url="/private/files/logo.png"),
+            creation="2024-01-02 03:14:05.000000",
+        )
+        source = FakeContent(
+            documents=[deck()],
+            slides=[
+                SlideRow(
+                    "slide-1",
+                    "deck-1",
+                    1,
+                    json.dumps([{"src": "/files/logo.png"}, {"src": "/private/files/logo.png"}]),
+                )
+            ],
+            media=[older, newer],
+            users={"Administrator": True},
+        )
+        env, target = self.environment(source)
+        target.add_blob("public-blob", b"one picture", mime_type="image/png", is_private=0)
+        target.add_blob(copy, b"one picture", mime_type="image/png", driver="s3")
+        target.add_blob(local, b"one picture", mime_type="image/png")
+        facts = {"size": len(b"one picture"), "mime": "image/png"}
+        self.tree_node(target, older.name, "root", title="logo.png", blob=copy, **facts)
+        self.tree_node(
+            target, newer.name, "root", title="logo (2).png", blob=local, creation=newer.creation, **facts
+        )
+        return env, target, source
+
+    def test_a_picture_filed_twice_keeps_the_older_files_node_whatever_the_blob_names(self):
+        # `File Blob` names are random. Each order of the two private blobs'
+        # names is one fresh migration, and both must give the same deck.
+        for copy, local in (("blob-a", "blob-b"), ("blob-b", "blob-a")):
+            with self.subTest(copy=copy, local=local):
+                env, target, source = self.one_picture_filed_twice(copy=copy, local=local)
+                newer_node = dict(target.node_rows["newer-file"])
+                blobs = dict(target.blob_rows)
+
+                convert_slides_and_templates(env)
+
+                children = self.media_children(target, "deck-node")
+                self.assertEqual([(row["name"], row["blob"]) for row in children], [("older-file", copy)])
+                # Both spellings name the one picture, so both reach the node.
+                self.assertEqual(
+                    json.loads(source.slide_rows["slide-1"].elements),
+                    [{"src": "older-file"}, {"src": "older-file"}],
+                )
+                # The newer File's node is not deck media, so it stays where
+                # the tree filed it, and no blob row changes.
+                self.assertEqual(target.node_rows["newer-file"], newer_node)
+                self.assertEqual(target.blob_rows, blobs)
+
+                convert_slides_and_templates(env)
+
+                self.assertEqual(self.media_children(target, "deck-node"), children)
+                self.assertEqual(target.node_rows["newer-file"], newer_node)
+                self.assertEqual(
+                    json.loads(source.slide_rows["slide-1"].elements),
+                    [{"src": "older-file"}, {"src": "older-file"}],
+                )
+
+    def test_a_filed_media_node_keeps_its_own_copy_when_the_private_copy_is_another_row(self):
+        # `put_blob` deduplicates only best effort, so asking again for a
+        # private copy can name another row of the same bytes than §14.4 did.
+        row = media("media-a", blob="public-blob")
+        source = FakeContent(
+            documents=[deck()],
+            slides=[SlideRow("slide-1", "deck-1", 1, json.dumps([{"src": row.file_url}]))],
+            media=[row],
+            users={"Administrator": True},
+        )
+        env, target = self.environment(source)
+        target.add_blob("public-blob", b"a", mime_type="image/png", is_private=0)
+        target.add_blob("another-copy", b"a", mime_type="image/png")
+        target.add_blob("tree-copy", b"a", mime_type="image/png", driver="s3")
+        self.tree_node(target, "media-a", "root", blob="tree-copy", size=1, mime="image/png")
+
+        convert_slides_and_templates(env)
+        again = convert_slides_and_templates(env)
+
+        stored = target.node_rows["media-a"]
+        self.assertEqual((stored["parent_node"], stored["blob"]), ("deck-node", "tree-copy"))
+        self.assertEqual(json.loads(source.slide_rows["slide-1"].elements), [{"src": "media-a"}])
+        self.assertEqual(again.media_nodes_created, 1)
+
+    def test_a_filed_media_node_with_other_bytes_still_refuses_the_deck(self):
+        row = media("media-a", blob="blob-a")
+        source = FakeContent(
+            documents=[deck()],
+            slides=[SlideRow("slide-1", "deck-1", 1, json.dumps([{"src": row.file_url}]))],
+            media=[row],
+            users={"Administrator": True},
+        )
+        env, target = self.environment(source)
+        target.add_blob("blob-a", b"a", mime_type="image/png")
+        target.add_blob("blob-other", b"other bytes", mime_type="image/png")
+        self.tree_node(target, "media-a", "root", blob="blob-other", size=11, mime="image/png")
+
+        with self.assertRaises(BuildSlidesError) as caught:
+            convert_slides_and_templates(env)
+
+        self.assertIn("field blob", str(caught.exception))
+        self.assertEqual(target.node_rows["media-a"]["blob"], "blob-other")
+        self.assertEqual(json.loads(source.slide_rows["slide-1"].elements), [{"src": row.file_url}])
+
     def test_a_picture_another_deck_holds_is_copied_into_the_deck_that_shows_it(self):
         # B112: a deck pasted from another, non-template deck shows the same
         # picture after Build. It gets its own node for the same blob, and the

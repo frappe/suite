@@ -171,6 +171,7 @@ def _convert_deck(env, deck, batch_size, result):
         lambda row: (str(row.creation or ""), row.name),
     )
     files = _private_media(env.content_target, files)
+    files = _stored_node_blobs(env.content_target, files)
     files = _one_blob_per_content(env.content_target, files, host)
     thumbnail, excluded = _thumbnail_file(deck, files, result, host)
     references = _references(parsed, slides)
@@ -473,7 +474,7 @@ def _media_mapping(env, deck, files, host, writer, titles, result):
     collapsed = 0
     blobless = 0
     for _key, rows in sorted(groups.items(), key=lambda item: (str(item[0]), item[1][0].name)):
-        rows.sort(key=lambda row: (str(row.creation or ""), row.name))
+        rows.sort(key=_age)
         source = rows[0]
         # One claim per stored node. Two media Files of one deck can carry the
         # same `file_name`, and `_refuse_sibling_collision` bars two Active
@@ -874,6 +875,36 @@ def _private_media(target, files):
     ]
 
 
+def _stored_node_blobs(target, files):
+    """Point each `File` row at the blob its own node already holds.
+
+    §14.4 gave a media File the tree also filed a node, with a private copy
+    of a public blob. `_private_media` asks for that copy again, and `put_blob`
+    deduplicates only best effort, so it can answer with another `File Blob`
+    row of the same bytes. §13 validates the stored node exactly, so the node
+    wins: the plan names the blob the node holds, and nothing is rewritten.
+
+    Only a private Ready blob of the same checksum and size is taken. A node
+    that holds other bytes keeps the row's own blob, and `_media_mapping`
+    still refuses the deck.
+    """
+    nodes = target.nodes(tuple(sorted({row.name for row in files if row.blob})))
+    output = []
+    for row in files:
+        node = nodes.get(row.name)
+        stored = node.get("blob") if node and node.get("kind") == "file" else None
+        if row.blob and stored and stored != row.blob and _same_private_content(target, stored, row.blob):
+            row = replace(row, blob=stored)
+        output.append(row)
+    return output
+
+
+def _same_private_content(target, name, other):
+    """Whether blob `name` is private and holds the same bytes as `other`."""
+    blob = target.blob(name)
+    return bool(blob and blob.is_private) and _same_content_blob(target, {name, other}) is not None
+
+
 def _aliases(row, host=""):
     """Every complete string that names this File, and nothing wider.
 
@@ -1080,6 +1111,10 @@ def _same_content_blob(target, names, prefer=()):
     2. the private row, the state §7 keeps Drive media in;
     3. the lowest blob name.
 
+    A deck's own media do not take this winner: `_one_blob_per_content` takes
+    the oldest row's blob, which is the blob its node holds when §14.4 stored
+    one.
+
     Returns None unless every candidate is Ready and carries one checksum and
     one size. A blob with no checksum, one that is not Ready, and two rows of
     different bytes all stay ambiguous, and the caller still refuses the deck.
@@ -1117,6 +1152,12 @@ def _one_blob_per_content(target, rows, host=""):
     Only a contested alias is collapsed. Two blobs with the same bytes under
     two different names are two pictures as far as any reference can tell, and
     §7.1 charges a root per node, so Build leaves them as two nodes.
+
+    The oldest row's blob wins, not `_same_content_blob`'s lowest name.
+    `_media_mapping` names the node after that row, and `_stored_node_blobs`
+    has already pointed the row at the blob its node holds, so the plan agrees
+    with the stored node. `File Blob` names are random, so a winner taken by
+    name would refuse the deck on some runs and not on others.
     """
     contested = defaultdict(set)
     for row in rows:
@@ -1133,12 +1174,18 @@ def _one_blob_per_content(target, rows, host=""):
             by_content[(blob.checksum, int(blob.file_size))].add(name)
     winners = {}
     for group in by_content.values():
-        chosen = _same_content_blob(target, group) if len(group) > 1 else None
-        if chosen:
-            winners.update({name: chosen for name in group})
+        if len(group) < 2 or _same_content_blob(target, group) is None:
+            continue
+        oldest = min((row for row in rows if row.blob in group), key=_age)
+        winners.update({name: oldest.blob for name in group})
     if not winners:
         return rows
     return [replace(row, blob=winners[row.blob]) if row.blob in winners else row for row in rows]
+
+
+def _age(row):
+    """Oldest first. `_media_mapping` takes its `source` row by this order."""
+    return (str(row.creation or ""), row.name)
 
 
 def _rewrite_elements(elements, mapping, local_mapping, host=""):
