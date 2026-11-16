@@ -21,8 +21,17 @@
         >
           <SignatureSettings />
         </SettingsDialogRow>
+        <SettingsDialogRow
+          :title="__('Auto-reply')"
+          :description="__('A reply sent for you while you’re away.')"
+          :action="__('Edit')"
+          size="2xl"
+        >
+          <template #default="{ close }">
+            <VacationResponseSettings @saved="close" />
+          </template>
+        </SettingsDialogRow>
       </div>
-      <VacationResponseSettings />
     </div>
   </AppSettingsBody>
 </template>

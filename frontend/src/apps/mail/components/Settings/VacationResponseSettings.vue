@@ -1,60 +1,57 @@
 <template>
-  <SettingsSection :title="__('Auto-reply')">
-    <template v-if="vacationResponse.data" #actions>
-      <Button
-        :label="__('Save')"
-        variant="solid"
-        :size="isMobile ? 'md' : 'sm'"
-        :disabled="vacationResponse.isFetching || JSON.stringify(draft) === original"
-        :loading="updateVacationResponse.isPending"
-        @click="handleSave"
-      />
-    </template>
-    <div v-if="vacationResponse.data" class="flex flex-col gap-5">
-      <SettingsRow
-        class="!py-0"
-        :title="__('Enabled')"
-        :description="__('Auto-reply to incoming mails while you’re away.')"
-      >
-        <Switch v-model="draft.enabled" />
-      </SettingsRow>
-      <FormControl
-        v-model="draft.from_date"
-        type="datetime-local"
-        :label="__('From Date')"
-        variant="outline"
-        :disabled="!draft.enabled"
-      />
-      <FormControl
-        v-model="draft.to_date"
-        type="datetime-local"
-        :label="__('To Date')"
-        variant="outline"
-        :disabled="!draft.enabled"
-      />
-      <FormControl
-        v-model="draft.subject"
-        :label="__('Subject')"
-        :placeholder="__('Out of office')"
-        variant="outline"
-        :disabled="!draft.enabled"
-      />
-      <div class="space-y-1.5">
-        <label class="text-ink-gray-5 block text-xs">{{ __('Message') }}</label>
-        <MailRichTextField
-          v-model="draft.html_body"
-          :placeholder="__('Type something...')"
-          :div-paragraphs="false"
-          :editable="draft.enabled"
-        />
-      </div>
-      <SetSieveScriptStateModal
-        v-model="showConfirmDialog"
-        :script="{ _name: 'vacation', active: 0 }"
-        :action="updateVacationResponseSubmit"
+  <div v-if="vacationResponse.data" class="flex flex-col gap-5">
+    <SettingsRow
+      class="!py-0"
+      :title="__('Enabled')"
+      :description="__('Auto-reply to incoming mails while you’re away.')"
+    >
+      <Switch v-model="draft.enabled" />
+    </SettingsRow>
+    <FormControl
+      v-model="draft.from_date"
+      type="datetime-local"
+      :label="__('From Date')"
+      variant="outline"
+      :disabled="isOff"
+    />
+    <FormControl
+      v-model="draft.to_date"
+      type="datetime-local"
+      :label="__('To Date')"
+      variant="outline"
+      :disabled="isOff"
+    />
+    <FormControl
+      v-model="draft.subject"
+      :label="__('Subject')"
+      :placeholder="__('Out of office')"
+      variant="outline"
+      :disabled="isOff"
+    />
+    <div class="space-y-1.5">
+      <label class="text-ink-gray-5 block text-xs">{{ __('Message') }}</label>
+      <MailRichTextField
+        v-model="draft.html_body"
+        :placeholder="__('Type something...')"
+        :div-paragraphs="false"
+        :editable="draft.enabled"
       />
     </div>
-  </SettingsSection>
+    <Button
+      class="self-end"
+      :label="__('Save')"
+      variant="solid"
+      :size="buttonSize"
+      :disabled="isSaveBlocked"
+      :loading="updateVacationResponse.isPending"
+      @click="handleSave"
+    />
+    <SetSieveScriptStateModal
+      v-model="showConfirmDialog"
+      :script="{ _name: 'vacation', active: 0 }"
+      :action="updateVacationResponseSubmit"
+    />
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -69,11 +66,13 @@ import { raiseToast } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { fromLocalInput, toLocalInput } from '@/apps/mail/utils/datetime'
 import dayjs from '@/apps/mail/utils/dayjs'
-import SettingsSection from '@/platform/settings/SettingsSection.vue'
 import { translate as __ } from '@/platform/translation'
+
+const emit = defineEmits<{ saved: [] }>()
 
 const store = userStore()
 const { isMobile } = useScreenSize()
+const buttonSize = computed(() => (isMobile.value ? 'md' : 'sm'))
 const showConfirmDialog = ref(false)
 const activeSieveScript = computed(
   () => store.sieveScripts.data?.find((s) => s.active && s._name !== 'vacation')?._name,
@@ -95,6 +94,7 @@ const draft = reactive({
   subject: '',
   html_body: '',
 })
+const isOff = computed(() => !draft.enabled)
 const original = ref('')
 const vacationResponse = useQuery(api.mail.vacation.get, () =>
   store.accountId
@@ -123,6 +123,10 @@ watch(
     immediate: true,
   },
 )
+// Nothing to save until the form differs from the reply as it was read
+const isSaveBlocked = computed(
+  () => vacationResponse.isFetching || JSON.stringify(draft) === original.value,
+)
 const updateVacationResponse = useMutation(api.mail.vacation.update)
 async function updateVacationResponseSubmit() {
   const input: InputOf<typeof api.mail.vacation.update> = {
@@ -137,5 +141,6 @@ async function updateVacationResponseSubmit() {
   await vacationResponse.refetch()
   raiseToast(__('Vacation response updated'))
   showConfirmDialog.value = false
+  emit('saved')
 }
 </script>

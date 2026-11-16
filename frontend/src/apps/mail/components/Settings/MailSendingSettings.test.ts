@@ -9,6 +9,7 @@ const state = vi.hoisted(() => ({ save: vi.fn() }))
 vi.mock('@/apps/mail/stores/user', () => ({
   userStore: () => ({
     accountId: 'personal',
+    sieveScripts: { data: [] },
     identities: reactive({
       isFetching: false,
       data: [
@@ -34,18 +35,30 @@ vi.mock('@/apps/mail/utils/composables', () => ({
 // The parts this file doesn't open
 vi.mock('./ComposeSettings.vue', () => ({ default: { render: () => null } }))
 vi.mock('./SignatureSettings.vue', () => ({ default: { render: () => null } }))
-vi.mock('./VacationResponseSettings.vue', () => ({ default: { render: () => null } }))
 vi.mock('@/apps/mail/components/Controls/MailRichTextField.vue', () => ({
   default: { render: () => null },
 }))
 vi.mock('@/apps/mail/components/IdentitySettingsListView.vue', () => ({
   default: { render: () => null },
 }))
+vi.mock('@/apps/mail/components/Modals/SetSieveScriptStateModal.vue', () => ({
+  default: { render: () => null },
+}))
 vi.mock('@/api', async () => {
   const { api } = await import('@/apps/mail/client/generated')
   return {
     api: { mail: api },
-    useQuery: () => reactive({ data: [] }),
+    useQuery: (reference: { id: string }) => {
+      if (reference.id !== 'get_vacation_response') {
+        return reactive({ data: [] })
+      }
+
+      return reactive({
+        isFetching: false,
+        data: { enabled: 1, from_date: null, to_date: null, subject: 'Away', html_body: '' },
+        refetch: async () => {},
+      })
+    },
     useMutation: (reference: { id: string }) =>
       reactive({ isPending: false, run: (input: unknown) => state.save(reference.id, input) }),
   }
@@ -88,6 +101,7 @@ vi.mock('frappe-ui', () => ({
         })
     },
   }),
+  Switch: { render: () => null },
   SettingsRow: defineComponent({
     props: { title: { type: String, default: '' } },
     setup(props, { slots }) {
@@ -157,4 +171,20 @@ it('keeps Send-as addresses open, with what was typed, when the save is refused'
   await saveField(await openRow(root, 'Send-as addresses'), 'Display Name', 'Maya K')
   const name = root.querySelector('dialog input[aria-label="Display Name"]')
   expect(requireTestElement(name, HTMLInputElement).value).toBe('Maya K')
+})
+it('closes Auto-reply once the reply is saved', async () => {
+  const root = mount()
+  await saveField(await openRow(root, 'Auto-reply'), 'Subject', 'Back on Monday')
+  expect(state.save).toHaveBeenCalledWith(
+    'update_vacation_response',
+    expect.objectContaining({ account: 'personal', enabled: true, subject: 'Back on Monday' }),
+  )
+  expect(root.querySelector('dialog')).toBeNull()
+})
+it('keeps Auto-reply open, with what was typed, when the save is refused', async () => {
+  state.save.mockRejectedValue(new Error('Dates are the wrong way round'))
+  const root = mount()
+  await saveField(await openRow(root, 'Auto-reply'), 'Subject', 'Back on Monday')
+  const subject = root.querySelector('dialog input[aria-label="Subject"]')
+  expect(requireTestElement(subject, HTMLInputElement).value).toBe('Back on Monday')
 })
