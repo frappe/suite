@@ -130,9 +130,21 @@ function runBuffer(
 }
 
 function startFfmpeg(args: string[]): ChildProcess {
+	const destination = args.at(-1);
+	if (!destination) throw new Error('Publisher destination is required');
 	const child = spawn(
 		'/usr/bin/ffmpeg',
-		['-hide_banner', '-loglevel', 'warning', ...args],
+		[
+			'-hide_banner',
+			'-loglevel',
+			'warning',
+			'-filter_threads',
+			'1',
+			...args.slice(0, -1),
+			'-threads',
+			'1',
+			destination,
+		],
 		{ stdio: ['ignore', 'ignore', 'pipe'] },
 	);
 	let diagnostics = '';
@@ -663,6 +675,26 @@ try {
 		throw new Error(
 			`997 Hz energy was not sustained across the artifact ` +
 				`(energetic=${energeticSamples.length}/${energySamples.length}, quarters=${coveredQuarters}/4)`,
+		);
+	const continuity = await run('/usr/bin/ffmpeg', [
+		'-hide_banner',
+		'-nostats',
+		'-ss',
+		'1',
+		'-i',
+		artifact,
+		'-t',
+		String(durationSeconds - 2),
+		'-vn',
+		'-af',
+		'silencedetect=noise=-50dB:d=0.1',
+		'-f',
+		'null',
+		'-',
+	]);
+	if (continuity.stderr.includes('silence_start:'))
+		throw new Error(
+			`Captured continuous tones contain audio dropouts: ${continuity.stderr}`,
 		);
 	await Promise.all(
 		producer.processes.map((process) => stopProducerProcess(process)),
