@@ -37,6 +37,7 @@ the delete goes through `DriveTarget`.
 """
 
 from collections import Counter
+from collections.abc import Callable
 
 from suite.drive._core.access import chain_ids
 from suite.drive._core.roles import EDIT, NONE, READ
@@ -163,11 +164,12 @@ def _convert_pair(env, grants: GrantConversion, nodes, batch, pair) -> None:
 
     flags = collapse([row.flags() for row in rows])
     role = role_for_flags(flags)
+    kind = principal_kind(user)
     if role is None:
         grants.drop(NO_FLAGS)
+        _record_share_only(nodes, node, user, kind, rows)
         return
 
-    kind = principal_kind(user)
     if kind == "anonymous":
         # Legacy let a public deny take a right away from everyone, so the
         # kept-rights pass has to see it. A public grant it does not see:
@@ -176,7 +178,7 @@ def _convert_pair(env, grants: GrantConversion, nodes, batch, pair) -> None:
         _convert_anonymous(env, grants, nodes, batch, node, role)
         return
 
-    principal = _principal_for(nodes, grants, user, kind)
+    principal = _principal_for(nodes, user, kind, grants.drop)
     if principal is None:
         return
     if role == NONE and _is_own_personal_root(nodes, node, user):
@@ -188,6 +190,21 @@ def _convert_pair(env, grants: GrantConversion, nodes, batch, pair) -> None:
         return
     _record_legacy(nodes, node, principal, rows)
     batch.add(node["name"], principal, role)
+
+
+def _record_share_only(nodes, node, user: str, kind: str, rows) -> None:
+    """Hand the kept-rights pass a row that granted only `share`.
+
+    It writes no grant: §14.5 drops a row with no content flag. But legacy
+    read `share` from the nearest row that set it, so a share-only row on a
+    folder gave MANAGE below it to anyone a nearer row gave read and write.
+    A public share-only row is left out, as public grant rows are.
+    """
+    if kind == "anonymous":
+        return
+    principal = _principal_for(nodes, user, kind, lambda _reason: None)
+    if principal is not None:
+        _record_legacy(nodes, node, principal, rows)
 
 
 def _record_legacy(nodes, node, principal: str, rows) -> None:
@@ -257,32 +274,36 @@ def _convert_anonymous(env, grants: GrantConversion, nodes, batch, node, role: i
     batch.add(node["name"], _link_principal(env), minted, link=True)
 
 
-def _principal_for(nodes, grants: GrantConversion, user: str, kind: str) -> str | None:
-    """One legacy `user` value as a §4.4 principal, or None when it is dead."""
+def _principal_for(nodes, user: str, kind: str, drop: Callable[[str], None]) -> str | None:
+    """One legacy `user` value as a §4.4 principal, or None when it is dead.
+
+    `drop` counts a dead principal under its reason; a caller that writes
+    no grant passes one that counts nothing.
+    """
     if kind == "general":
         return GENERAL
     if kind == "unknown":
         # A `$`-prefixed value Drive never wrote. `_principal_kind` in the
         # engine would refuse to classify it, so the grant would decide
         # nothing for anybody.
-        grants.drop(DEAD_PRINCIPAL)
+        drop(DEAD_PRINCIPAL)
         return None
     if kind == "group":
         name = user[len(GROUP_PREFIX) :]
         if not name or not nodes.group_exists(name):
-            grants.drop(DEAD_PRINCIPAL)
+            drop(DEAD_PRINCIPAL)
             return None
-        return _within_column(grants, user, grants.drop)
+        return _within_column(user, drop)
     # A disabled User still exists, so §14.5 keeps the row: "rows naming a
     # User or User Group that no longer exists" is the drop rule, and
     # re-enabling an account must not silently lose what it could reach.
     if nodes.user_enabled(user) is None:
-        grants.drop(DEAD_PRINCIPAL)
+        drop(DEAD_PRINCIPAL)
         return None
-    return _within_column(grants, user, grants.drop)
+    return _within_column(user, drop)
 
 
-def _within_column(grants: GrantConversion, principal: str, count) -> str | None:
+def _within_column(principal: str, count: Callable[[str], None]) -> str | None:
     """`Drive Grant.principal` is `varchar(200)` (§3.3). Truncation is not an option.
 
     A cut principal is a different principal: `$GROUP:` plus a 200-character
@@ -370,7 +391,7 @@ def _convert_docshare(env, grants: GrantConversion, nodes, batch, row) -> None:
     if not row.user or nodes.user_enabled(row.user) is None:
         grants.drop_docshare(DEAD_PRINCIPAL)
         return
-    principal = _within_column(grants, row.user, grants.drop_docshare)
+    principal = _within_column(row.user, grants.drop_docshare)
     if principal is None:
         return
     batch.add(node["name"], principal, role)
