@@ -419,7 +419,7 @@
     >
       <template #default>
         <div class="space-y-4">
-          <p class="text-p-base text-ink-gray-7">
+          <p v-if="!transferResults" class="text-p-base text-ink-gray-7">
             {{
               __(
                 'Pick a folder in someone else’s Drive or in a shared Drive. Old versions and trashed items move too, and existing links and sharing keep working.',
@@ -427,6 +427,7 @@
             }}
           </p>
           <FormControl
+            v-if="!transferResults"
             v-model="destinationFolder"
             :disabled="previewPending || transfer.isPending"
             :label="__('Destination folder')"
@@ -479,7 +480,7 @@
             <p class="text-base text-ink-gray-8">
               {{
                 transferResults.complete
-                  ? __('Transfer complete. Nothing is left to move.')
+                  ? __('Everything has moved to {0}.', [movedTo])
                   : transferResults.remaining === 1
                     ? __('1 item is left. Preview again to move it.')
                     : __('{0} items are left. Preview again to move them.', [
@@ -492,7 +493,7 @@
                 v-for="result in transferResults.results"
                 :key="result.node"
                 class="text-p-sm"
-                :class="result.success ? 'text-ink-green-6' : 'text-ink-red-6'"
+                :class="result.success ? 'text-ink-gray-7' : 'text-ink-red-6'"
               >
                 {{ result.title }}:
                 {{
@@ -513,7 +514,7 @@
             @click="transferOpen = false"
           />
           <Button
-            v-if="transferResults"
+            v-if="transferResults && !transferResults.complete"
             variant="solid"
             :label="__('Preview again')"
             @click="resetTransfer"
@@ -758,6 +759,8 @@ const transferPreview = ref<OutputOf<typeof api.suite.users.previewTransfer>>()
 const transferResults = ref<OutputOf<typeof api.suite.users.transferDrive>>()
 const transfer = useMutation(api.suite.users.transferDrive)
 const previewPending = ref(false)
+/** Where the last batch went, kept after the preview clears so the result can name it. */
+const movedTo = ref('')
 const previewError = ref('')
 const transferOpen = computed({
   get: () => !!transferUser.value,
@@ -884,6 +887,7 @@ async function runTransfer() {
     fingerprint: transferPreview.value.fingerprint,
     confirm_access: confirmTransferAccess.value,
   })
+  movedTo.value = destinationText.value
   transferPreview.value = undefined
 }
 

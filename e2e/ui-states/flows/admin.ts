@@ -208,7 +208,7 @@ const machine = setupFlow<Event>().createMachine({
 			on: { RUN_TRANSFER: "transferDone" },
 		},
 		transferDone: {
-			meta: { description: "The transfer finished: “Transfer complete” and one line per moved item, by name." },
+			meta: { description: "The transfer finished: it says whose Drive everything moved to, lists each moved item by name, and offers only Close." },
 		},
 		demoteSelfConfirm: {
 			meta: { description: "Maya, the only Admin, picks Demote to member on her own row: the confirm opens like any other." },
@@ -590,17 +590,17 @@ export const admin = defineFlow<Event, BaseScene>({
 			const dialog = scene.dialog("Transfer retained Drive content");
 			await dialog.getByLabel("Destination folder").fill(`${scene.baseURL}/drive/f/${transferFolder.get(scene)}`);
 			await dialog.getByRole("button", { name: "Preview transfer" }).click();
-			await expect(dialog.getByLabel("I confirm the destination access changes")).toBeVisible();
+			await expect(dialog.getByLabel("I understand these people will get access to the moved items")).toBeVisible();
 		},
 		async TICK_ACCESS(scene) {
 			const dialog = scene.dialog("Transfer retained Drive content");
-			await dialog.getByLabel("I confirm the destination access changes").check();
+			await dialog.getByLabel("I understand these people will get access to the moved items").check();
 			await expect(dialog.getByRole("button", { name: "Transfer", exact: true })).toBeEnabled();
 		},
 		async RUN_TRANSFER(scene) {
 			const dialog = scene.dialog("Transfer retained Drive content");
 			await dialog.getByRole("button", { name: "Transfer", exact: true }).click();
-			await expect(dialog.getByText(/Transfer complete|left\. Preview again/)).toBeVisible({ timeout: 30_000 });
+			await expect(dialog.getByText(/Everything has moved to|left\. Preview again/)).toBeVisible({ timeout: 30_000 });
 		},
 		async DEMOTE_SELF(scene) {
 			await openActions(scene, identityOf("maya").email);

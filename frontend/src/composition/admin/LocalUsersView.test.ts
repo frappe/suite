@@ -34,6 +34,7 @@ const server = vi.hoisted(() => {
     bulk: boolean
     cloud: boolean
     failLeah: boolean
+    transferMovesAll: boolean
     blocker: 'personal_limit' | 'unknown_usage' | 'drive_limit' | null
   }
   const state: AdminServerState = {
@@ -43,6 +44,7 @@ const server = vi.hoisted(() => {
     bulk: false,
     cloud: true,
     failLeah: true,
+    transferMovesAll: false,
     blocker: null,
   }
   globalThis.fetch = async (url: RequestInfo | URL, init: RequestInit = {}) => {
@@ -78,6 +80,14 @@ const server = vi.hoisted(() => {
           accepted_invite_emails: [],
           pending_invite_emails: [],
           invited_emails: write.body.emails.split(', '),
+        })
+      if (path.endsWith('/drive-transfer') && state.transferMovesAll)
+        return json({
+          complete: true,
+          remaining: 0,
+          results: [
+            { node: 'retained-file', title: 'Handover notes.md', success: true, error: null },
+          ],
         })
       if (path.endsWith('/drive-transfer'))
         return json({
@@ -184,6 +194,7 @@ beforeEach(() => {
   server.bulk = false
   server.cloud = true
   server.failLeah = true
+  server.transferMovesAll = false
   server.blocker = null
 })
 afterEach(() => {
@@ -351,6 +362,36 @@ it('requires access confirmation and preserves per-item transfer failures for re
   )
   expect(document.body.textContent).toContain('1 item is left')
   expect(document.body.textContent).not.toContain('Transfer complete')
+})
+
+it('ends a finished transfer on where everything went, without the pasted link or a retry', async () => {
+  server.transferMovesAll = true
+  await mount()
+  await click('Transfer Drive')
+  await vi.waitFor(() => expect(document.body.textContent).toContain('Destination folder'))
+  const input = document.querySelector<HTMLInputElement>(
+    'input[placeholder="Paste a folder link or paste its ID"]',
+  )
+  if (input) {
+    input.value = 'https://suite.test/drive/f/destination-folder'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+  await click('Preview transfer')
+  await vi.waitFor(() => expect(document.body.textContent).toContain('What moves'))
+  document.querySelector<HTMLInputElement>('[role="dialog"] input[type="checkbox"]')?.click()
+  await click('Transfer')
+  await vi.waitFor(() =>
+    expect(document.body.textContent).toContain(
+      "Everything has moved to maya@example.com's Drive.",
+    ),
+  )
+  expect(document.body.textContent).toContain('Handover notes.md: Moved')
+  expect(document.querySelector('[role="dialog"] input')).toBeNull()
+  const labels = Array.from(document.querySelectorAll('[role="dialog"] button')).map((button) =>
+    button.textContent?.trim(),
+  )
+  expect(labels).toContain('Close')
+  expect(labels).not.toContain('Preview again')
 })
 
 it.each(['personal_limit', 'unknown_usage', 'drive_limit'] as const)(
