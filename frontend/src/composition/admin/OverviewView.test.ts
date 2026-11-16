@@ -277,13 +277,21 @@ describe('Admin overview', () => {
     )
   })
 
-  it('does not replace failed user counts with a fabricated zero', async () => {
+  it('says the user count could not load, without a fabricated zero, and retries in the tile', async () => {
     server.failUsers = true
     const root = await mount(OverviewView)
-    await vi.waitFor(() => expect(root.textContent).toContain('Could not load users'))
-    expect(root.querySelector('[aria-label="Workspace summary"] a')?.textContent).toContain('—')
+    const summary = () => root.querySelector('[aria-label="Workspace summary"]')
+    await vi.waitFor(() => expect(summary()?.textContent).toContain('Could not load'))
+    expect(summary()?.textContent).not.toMatch(/Active users\s*0/)
     expect(root.querySelector('section[aria-label="Site storage"]')?.textContent).toContain(
       '95 GB of 100 GB used',
+    )
+
+    server.failUsers = false
+    summary()?.querySelector<HTMLButtonElement>('button[aria-label="Retry"]')?.click()
+    await vi.waitFor(() => expect(summary()?.textContent).not.toContain('Could not load'))
+    expect(summary()?.querySelector('a[href="/admin/users"]')?.textContent).toMatch(
+      /Active users\s*\d+/,
     )
   })
 

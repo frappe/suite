@@ -106,7 +106,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "Suite Cloud could not be reached (response shaped in the test): an amber alert says files and mail are still available." },
 		},
 		overviewUsersFailed: {
-			meta: { description: "The user list failed while the storage report loaded: Active users shows a dash and an amber alert at the bottom says to open Users." },
+			meta: { description: "The user list failed while the storage report loaded: the Active users tile says Could not load, with a Retry icon in its corner." },
 		},
 		memberRedirected: {
 			meta: { description: "Leo, a member, opens /admin: the router sends him to Home without a message, and Admin is not in his switcher." },
@@ -229,7 +229,7 @@ const machine = setupFlow<Event>().createMachine({
 			on: { CONFIRM_BULK: "bulkDone" },
 		},
 		bulkDone: {
-			meta: { description: "Both users disabled: one line per user says Disabled, and only Close is left." },
+			meta: { formerly: ["bulkRefused"], description: "Both users disabled: one line per user says Disabled, and only Close is left." },
 		},
 		invite: {
 			meta: { description: "Invite users: one address per line, and Send invitations off until something is typed." },
@@ -454,7 +454,7 @@ export const admin = defineFlow<Event, BaseScene>({
 			const hold = await scene.hold(SUITE_USERS);
 			await hold.abort(500);
 			await reloadOverview(scene);
-			await expect(scene.page.getByText("Could not load users")).toBeVisible({ timeout: 30_000 });
+			await expect(scene.page.getByLabel("Workspace summary").getByText("Could not load")).toBeVisible({ timeout: 30_000 });
 		},
 		async AS_MEMBER(scene) {
 			const page = await scene.pageAs(demoUser("leo"));
