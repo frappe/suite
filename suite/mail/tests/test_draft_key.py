@@ -109,19 +109,36 @@ class TestDraftKey(StalwartIntegrationTestCase):
             drafts = self.wait_until(self.drafts, message="The draft is not in Drafts.")
             self.assertEqual([row["messages"][-1]["id"] for row in drafts], [saved["id"]])
 
-    def test_a_save_after_a_send_whose_answer_was_lost_finds_the_draft_gone(self):
+    def test_a_save_after_a_send_whose_answer_was_lost_is_told_it_was_sent(self):
         with self.set_user(self.sender.email):
             draft = create_mail(**self.compose(save_as_draft=True, draft_key=self.key))
             sent = update_draft_mail(**self.compose(id=draft["id"], submit=True, draft_key=self.key))
             self.assertEqual(sent["status"], "Submitted", sent.get("error"))
 
             # The composer never heard that it was sent, and goes on saving what is on screen.
-            with self.assertRaises(frappe.DoesNotExistError):
-                update_draft_mail(**self.compose(id=draft["id"], draft_key=self.key))
-            with self.assertRaises(frappe.DoesNotExistError):
-                create_mail(**self.compose(save_as_draft=True, draft_key=self.key))
+            saved = update_draft_mail(**self.compose(id=draft["id"], draft_key=self.key))
+            created = create_mail(**self.compose(save_as_draft=True, draft_key=self.key))
 
+            for answer in (saved, created):
+                self.assertEqual(answer["status"], "Submitted")
+                self.assertEqual(answer["id"], sent["id"])
             self.assertEqual(self.drafts(), [])
+
+    def test_a_send_whose_answer_was_lost_goes_out_once_whatever_the_composer_does_next(self):
+        with self.set_user(self.sender.email):
+            draft = create_mail(**self.compose(save_as_draft=True, draft_key=self.key))
+            sent = update_draft_mail(**self.compose(id=draft["id"], submit=True, draft_key=self.key))
+            self.assertEqual(sent["status"], "Submitted", sent.get("error"))
+
+            # The answer was lost: the composer saves, is told it was sent, and the writer, unsure,
+            # presses Send again, from the draft and as a new one.
+            saved = update_draft_mail(**self.compose(id=draft["id"], draft_key=self.key))
+            self.assertEqual(saved["status"], "Submitted")
+            update_draft_mail(**self.compose(id=draft["id"], submit=True, draft_key=self.key))
+            create_mail(**self.compose(draft_key=self.key))
+
+        self.wait_until(self.received, timeout=60, message="The mail did not arrive.")
+        self.assertEqual(len(self.received()), 1)
 
     def test_another_composition_of_a_replaced_draft_finds_it_gone(self):
         with self.set_user(self.sender.email):

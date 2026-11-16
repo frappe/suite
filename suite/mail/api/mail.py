@@ -1584,11 +1584,9 @@ def create_mail(
 
     with _one_request_per_composition(account, draft_key):
         if answer := _last_answer(account, draft_key):
-            # The answer to an earlier try got lost. Already sent stays sent, once: a send asked again
-            # is told so, and a save can't put the message back into Drafts.
+            # The answer to an earlier try got lost. Already sent stays sent, once: a send or a save
+            # asked again is told so, and nothing puts the message back into Drafts or out again.
             if answer["status"] == "Submitted":
-                if save_as_draft:
-                    _no_longer_a_draft()
                 return answer
             return update_draft_mail(
                 account,
@@ -1681,15 +1679,14 @@ def update_draft_mail(
     undo toast. `draft_key` identifies the composition: see `_last_answer`. `remind_at` as in
     `create_mail`.
 
-    Raises DoesNotExistError when `id` is no longer a draft. Each save replaces a draft under a new
-    id, so that means someone else got there first: another tab saved over it, or it was sent or
-    deleted. The caller's text has not overwritten theirs, and it is the caller's to decide about."""
+    A composition already sent, whose answer got lost, is told so again, a save as much as a send.
+    Otherwise raises DoesNotExistError when `id` is no longer a draft. Each save replaces a draft
+    under a new id, so that means someone else got there first: another tab saved over it, or it was
+    sent or deleted. The caller's text has not overwritten theirs, and it is the caller's to decide about."""
 
     with _one_request_per_composition(account, draft_key):
         if answer := _last_answer(account, draft_key):
             if answer["status"] == "Submitted":
-                if not submit:
-                    _no_longer_a_draft()
                 return answer
             id = answer["id"]
 
