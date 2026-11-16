@@ -47,10 +47,16 @@ const tweaks: Ref<Tweaks> | null = import.meta.env.DEV
   ? useStorage<Tweaks>('mail-search-tweaks', defaults, undefined, { mergeDefaults: true })
   : null
 
+// How many of a conversation's matches a row lists, when it lists them.
+export const MATCHES_LISTED = 3
+
 export const useSearchTweaks = () => {
   const current = computed(() => tweaks?.value ?? defaults)
   return {
     tweaks: current,
+    // How many of each row's matches the page shows with their words, and so has read for them:
+    // each one read fetches its whole mail on the server.
+    shownMatches: computed(() => (current.value.match === 'messages' ? MATCHES_LISTED : 1)),
     set: <K extends TweakKey>(key: K, value: Tweaks[K]) => {
       if (tweaks) tweaks.value = { ...tweaks.value, [key]: value }
     },

@@ -268,7 +268,7 @@ import MailRowActions from '@/apps/mail/components/MailRowActions.vue'
 import SearchMatch from '@/apps/mail/components/SearchMatch.vue'
 import { useClearReturned } from '@/apps/mail/composables/useClearReturned'
 import { useScreener } from '@/apps/mail/composables/useScreener'
-import { useSearchTweaks } from '@/apps/mail/composables/useSearchTweaks'
+import { MATCHES_LISTED, useSearchTweaks } from '@/apps/mail/composables/useSearchTweaks'
 import { getAttachmentUrl } from '@/apps/mail/resources'
 import { userStore } from '@/apps/mail/stores/user'
 import type { Attachment, Thread } from '@/apps/mail/types'
@@ -471,7 +471,6 @@ const markedWords = computed(() =>
 
 // How the row says which of its messages matched.
 const { tweaks } = useSearchTweaks()
-const MATCHES_LISTED = 3
 const newestMatch = computed(() => (isSearchRow.value ? mail.matches?.[0] : undefined))
 const earlierMatches = computed(() => Math.max((mail.matches?.length ?? 0) - 1, 0))
 const shownMatches = computed(() => mail.matches?.slice(0, MATCHES_LISTED) ?? [])

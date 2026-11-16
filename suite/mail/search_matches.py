@@ -34,14 +34,20 @@ from suite.mail.jmap import MailServerUnavailableError, get_account_client
 # How far past the top of a page the uncollapsed query looks. A conversation's older matches can lie
 # below this on a mailbox full of hits, where the row just counts fewer of them.
 MATCH_WINDOW = 300
-# How many of a conversation's matches are read for their words: reading one fetches the whole mail,
-# and a row has room for this many.
-SHOWN_MATCHES = 3
+# The most of a conversation's matches a row has room to show with their words. Reading one fetches
+# the whole mail, so a row reads only as many as its look shows: one, unless it lists its matches.
+MAX_SHOWN_MATCHES = 3
 SNIPPET_MAX_IDS = 100
 
 JMAP_ERRORS = (AuthenticationError, MailServerUnavailableError, MethodError, RequestError, TransportError)
 TERM_CONDITIONS = ("text", "subject", "body")
 MARK = re.compile(r"<mark>(.*?)</mark>", re.DOTALL)
+# Tags that can fall inside a word, as an editor's bold or a link does, and so join what they split.
+INLINE_TAG = re.compile(
+    r"</?(?:a|abbr|b|code|em|font|i|mark|s|small|span|strike|strong|sub|sup|u)\b[^>]*>", re.IGNORECASE
+)
+TAG = re.compile(r"<[^>]*>")
+SPACE = re.compile(r"\s+")
 
 
 class Segment(TypedDict):
@@ -102,15 +108,18 @@ def matching_messages(
                 limit=MATCH_WINDOW,
             )
             g = b.mail.email.get(ids=q.ref_ids(), properties=["id", "threadId"])
-        emails = [email.to_wire() for email in g.result.items]
+        ids = list(q.result.ids)
+        threads = {email["id"]: email["threadId"] for email in (item.to_wire() for item in g.result.items)}
     except JMAP_ERRORS:
         frappe.log_error(title="Mail search: listing matches", message=frappe.get_traceback())
         return found, False
 
-    for email in emails:
-        if email["threadId"] in newest_matches:
-            found.setdefault(email["threadId"], []).append(email["id"])
-    return found, len(emails) < MATCH_WINDOW
+    # The query's order is the newest-first one asked for; a get's need not follow its ids.
+    for id in ids:
+        thread_id = threads.get(id)
+        if thread_id in newest_matches:
+            found.setdefault(thread_id, []).append(id)
+    return found, len(ids) < MATCH_WINDOW
 
 
 def get_snippets(account: str, filter: dict[str, Any], ids: list[str]) -> dict[str, Snippet]:
@@ -155,6 +164,17 @@ def found_in_attachment(message: dict, snippet: Snippet | None) -> bool:
 
     if not snippet or not snippet["preview"] or not message.get("attachments"):
         return False
-    body = f"{message.get('text_body') or ''} {message.get('html_body') or ''}".lower()
-    hits = [segment["text"].lower() for segment in snippet["preview"] if segment["hit"]]
+    body = plain_text(f"{message.get('text_body') or ''} {html_text(message.get('html_body') or '')}")
+    hits = [plain_text(segment["text"]) for segment in snippet["preview"] if segment["hit"]]
     return bool(hits) and not any(hit in body for hit in hits)
+
+
+def html_text(html: str) -> str:
+    """The words an HTML body shows, as a snippet would quote them: a word split by a tag in the
+    middle is whole again, and an entity is the character it stands for."""
+
+    return unescape(TAG.sub(" ", INLINE_TAG.sub("", html)))
+
+
+def plain_text(text: str) -> str:
+    return SPACE.sub(" ", text).strip().lower()

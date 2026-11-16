@@ -206,3 +206,42 @@ class TestSearchAcrossAccounts(UnitTestCase):
 
         page = self.across(search_threads)
         self.assertEqual([row["account"] for row in page["rows"]], ["home", "work"])
+
+    def test_with_no_account_reached_the_search_fails_rather_than_finding_nothing(self):
+        def search_threads(*_):
+            raise MailServerUnavailableError()
+
+        with (
+            patch.object(frappe, "log_error"),
+            patch.object(frappe, "get_traceback", return_value=""),
+            self.assertRaises(MailServerUnavailableError),
+        ):
+            self.across(search_threads)
+
+
+def row_matching(*ids: str) -> dict:
+    return {"matches": [{"id": id} for id in ids], "messages": []}
+
+
+class TestMatchWords(UnitTestCase):
+    def words_read_for(self, rows: list[dict], **kwargs) -> list[str]:
+        with patch.object(mail, "get_snippets", return_value={}) as get_snippets:
+            mail.add_match_words("account", {"text": "numbers"}, rows, **kwargs)
+        return get_snippets.call_args.args[2]
+
+    def test_a_row_reads_only_its_newest_matchs_words_by_default(self):
+        rows = [row_matching("a1", "a2", "a3"), row_matching("b1", "b2")]
+        self.assertEqual(self.words_read_for(rows), ["a1", "b1"])
+
+    def test_a_row_listing_its_matches_reads_the_words_of_each_it_lists(self):
+        rows = [row_matching("a1", "a2", "a3", "a4")]
+        self.assertEqual(self.words_read_for(rows, shown_matches=3), ["a1", "a2", "a3"])
+
+    def test_no_more_matches_are_read_than_a_row_can_show(self):
+        with patch.object(mail, "search_threads", return_value=([row_matching("a1", "a2", "a3", "a4")], 1)):
+            with (
+                patch.object(mail, "get_snippets", return_value={}) as get_snippets,
+                patch.object(mail, "_tag_search_results"),
+            ):
+                mail.search_mails("account", {"text": "numbers"}, shown_matches=50)
+        self.assertEqual(get_snippets.call_args.args[2], ["a1", "a2", "a3"])

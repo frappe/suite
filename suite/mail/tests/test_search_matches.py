@@ -36,6 +36,7 @@ class FakeBatch:
         self.mail.search_snippet.get.side_effect = self.search_snippet_get
         self.mail.email.query.side_effect = self.email_query
         self.mail.email.get.return_value.result.items = []
+        self.query_ids = []
 
     def __enter__(self):
         if self.error:
@@ -53,7 +54,9 @@ class FakeBatch:
 
     def email_query(self, **kwargs):
         self.calls.append(kwargs)
-        return MagicMock()
+        handle = MagicMock()
+        handle.result.ids = self.query_ids
+        return handle
 
 
 def client_with(batch: FakeBatch) -> MagicMock:
@@ -140,8 +143,11 @@ class TestGetSnippets(UnitTestCase):
 
 
 class TestMatchingMessages(UnitTestCase):
-    def listed(self, emails: list[dict], newest: dict[str, str]):
+    def listed(self, emails: list[dict], newest: dict[str, str], order: list[str] | None = None):
+        """`emails` as a get returns them, and `order` as the query listed them, if not the same."""
+
         batch = FakeBatch()
+        batch.query_ids = order or [email["id"] for email in emails]
         batch.mail.email.get.return_value.result.items = [
             MagicMock(to_wire=MagicMock(return_value=email)) for email in emails
         ]
@@ -157,6 +163,11 @@ class TestMatchingMessages(UnitTestCase):
         (found, saw_all), _ = self.listed(emails, {"t": "r"})
         self.assertEqual(found, {"t": ["r", "q"]})
         self.assertTrue(saw_all)
+
+    def test_matches_are_newest_first_as_the_query_listed_them_whatever_order_the_get_returns(self):
+        emails = [{"id": "older", "threadId": "t"}, {"id": "newer", "threadId": "t"}]
+        (found, _), _ = self.listed(emails, {"t": "newer"}, order=["newer", "older"])
+        self.assertEqual(found, {"t": ["newer", "older"]})
 
     def test_it_starts_from_the_top_of_the_page_uncollapsed(self):
         _, batch = self.listed([], {"t": "r", "u": "s"})
@@ -177,6 +188,20 @@ class TestFoundInAttachment(UnitTestCase):
     def test_words_the_body_holds_are_the_bodys(self):
         mail = {"html_body": "<p>The invoice is due</p>", "attachments": [{"filename": "notes.txt"}]}
         self.assertFalse(found_in_attachment(mail, INVOICE_SNIPPET))
+
+    def test_words_the_body_writes_with_entities_are_the_bodys(self):
+        mail = {"html_body": "<p>Q&amp;A on the inv&#111;ice</p>", "attachments": [{"filename": "a.txt"}]}
+        snippet = {"subject": None, "preview": parse_snippet("<mark>invoice</mark> for Q&amp;A")}
+        self.assertFalse(found_in_attachment(mail, snippet))
+
+    def test_a_word_split_by_formatting_in_the_body_is_the_bodys(self):
+        mail = {"html_body": "<p>The <b>inv</b>oice is due</p>", "attachments": [{"filename": "a.txt"}]}
+        self.assertFalse(found_in_attachment(mail, INVOICE_SNIPPET))
+
+    def test_words_only_across_two_paragraphs_arent_taken_for_the_bodys(self):
+        snippet = {"subject": None, "preview": parse_snippet("<mark>dueinvoice</mark>")}
+        mail = {"html_body": "<p>due</p><p>invoice</p>", "attachments": [{"filename": "a.txt"}]}
+        self.assertTrue(found_in_attachment(mail, snippet))
 
     def test_a_mail_with_no_attachment_is_never_said_to_have_one(self):
         self.assertFalse(found_in_attachment({"text_body": "x", "attachments": []}, INVOICE_SNIPPET))

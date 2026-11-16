@@ -438,6 +438,7 @@ import {
   defineAsyncComponent,
   h,
   inject,
+  nextTick,
   onMounted,
   onUnmounted,
   ref,
@@ -597,6 +598,11 @@ const screener = useScreener()
 // Pinned mail heads the list, and a row can be pinned here (see suite/mail/pins.py).
 const pinnable = computed(() => takesPins(mailboxes.data?.find((m) => m.id === mailbox)))
 
+// Rows are keyed by mail name, prefixed with the account in an all-accounts search — where two
+// accounts' rows sit in one list and a name alone need not be unique.
+const rowKey = (mail: Thread) =>
+  isAllAccountsSearch.value ? `${mail.account}:${mail.name}` : mail.name
+
 // The date groups, the stacks and the keyboard cursor that walks them — all shared with the merged All
 // Inboxes list (see useListRows).
 const {
@@ -620,10 +626,7 @@ const {
   revealThread,
 } = useListRows({
   threads: () => threadRows.value ?? [],
-  // Rows are keyed by mail name, prefixed with the account in an all-accounts search — where two
-  // accounts' rows sit in one list and a name alone need not be unique.
-  rowKey: (mail: Thread) =>
-    isAllAccountsSearch.value ? `${mail.account}:${mail.name}` : mail.name,
+  rowKey,
   stackingEnabled: () => stackingEnabled.value,
   pinsLead: () => pinnable.value,
   hasMore: () => canGoNext.value,
@@ -909,10 +912,25 @@ const pinSelected = (pinned: boolean) => {
 // lose: the list stays in sight and in position, and the arrows and j/k step down it as they do in a
 // folder. Until one is open the list has the width to itself, and nothing is opened or marked read
 // that wasn't picked.
-const { tweaks: searchTweaks } = useSearchTweaks()
+const { tweaks: searchTweaks, shownMatches } = useSearchTweaks()
 const readsBesideResults = computed(
   () => mailbox === 'search' && !!threadID && searchTweaks.value.opening === 'beside',
 )
+// With Split View off, that narrows the list and restacks every row in it, which moves the row just
+// opened by however much the rows above it grew. It is held where it was clicked. Measured before
+// the restack is drawn (the watcher runs ahead of the render) and put back once it is.
+watch(readsBesideResults, (beside) => {
+  const list = mailListRef.value
+  const opened = threadRows.value?.find((thread) => thread.thread_id === threadID)
+  const row = opened && list?.querySelector(`[data-row-key="${rowKey(opened)}"]`)
+  if (!beside || !list || !row) return
+  const offsetIn = (element: Element) =>
+    element.getBoundingClientRect().top - list.getBoundingClientRect().top
+  const before = offsetIn(row)
+  void nextTick(() => {
+    list.scrollTop += offsetIn(row) - before
+  })
+})
 
 // A row's own message, when one of its matches was picked rather than the row (see MailListItem).
 const askedMatch = ref<string>()
@@ -937,12 +955,16 @@ const searchHasFilters = computed(() =>
 const searchCanWiden = computed(
   () => !isAllAccountsSearch.value && (store.userResource.data?.accounts?.length ?? 0) > 1,
 )
-const unavailableAccounts = computed(
-  () =>
+// Each page asks every account again, so an account missed by any page loaded has mail missing
+// from the list.
+const unavailableAccounts = computed(() => [
+  ...new Set(
     // SAFETY: this query's pages are the search endpoint's, where this field is declared.
-    (searchResults.lastPage as { unavailable_accounts?: string[] } | undefined)
-      ?.unavailable_accounts ?? [],
-)
+    (searchResults.pages as readonly { unavailable_accounts?: string[] }[] | undefined)?.flatMap(
+      (page) => page.unavailable_accounts ?? [],
+    ),
+  ),
+])
 
 // An optimistic removal emptied the list but more threads exist, so a refill is coming once the server
 // mutation lands. Keeps the loading state (not the empty state) during the gap before the refill fetch.
@@ -991,6 +1013,7 @@ const searchResults = useInfiniteQuery(api.mail.messages.search, () =>
         limit: PAGE_LENGTH,
         start: 0,
         all_accounts: isAllAccountsSearch.value,
+        shown_matches: shownMatches.value,
       }
     : false,
 )

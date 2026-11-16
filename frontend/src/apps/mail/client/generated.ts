@@ -5992,6 +5992,7 @@ export type SearchMailsInput = {
   limit?: number
   start?: number
   all_accounts?: boolean
+  shown_matches?: number
 }
 
 export type SearchMailsOutput = {

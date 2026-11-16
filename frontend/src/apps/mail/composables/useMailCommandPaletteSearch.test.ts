@@ -10,7 +10,9 @@ const accounts = vi.hoisted(() => ({ value: ['work', 'personal'] }))
 // Every payload the search endpoint was submitted with, oldest first.
 const searches = vi.hoisted(() => fromPartial<Record<string, unknown>[]>([]))
 
-const answer = vi.hoisted(() => ({ value: async (_rows?: unknown[], _matched?: number) => {} }))
+const answer = vi.hoisted(() => ({
+  value: async (_rows?: unknown[], _matched?: number, _page?: Record<string, unknown>) => {},
+}))
 const refuse = vi.hoisted(() => ({ value: async () => {} }))
 const engines = vi.hoisted(() => ({ dispose: () => {} }))
 vi.mock('@vueuse/core', async (importOriginal) => ({
@@ -34,10 +36,11 @@ vi.mock('@/api', async () => {
                 reject(new Error('The mail server did not answer'))
                 await new Promise((done) => setTimeout(done, 0))
               }
-              answer.value = async (rows = [], total = 0) => {
+              answer.value = async (rows = [], total = 0, page = {}) => {
                 resolve({
                   rows: rows.map((row) => ({ attachments: [], mailboxes: [], ...row })),
                   total,
+                  ...page,
                 })
                 await new Promise((done) => setTimeout(done, 0))
               }
@@ -644,6 +647,42 @@ describe('searching every account', () => {
     await nextTick()
 
     expect(openSearch().allAccounts.value).toBe(true)
+  })
+
+  // Opened over All Inboxes, the palette searches what's on the screen; the next search of one
+  // account must not quietly search them all.
+  it('searches every account for one opening without making that the choice', async () => {
+    const opening = openSearch()
+    opening.scopeOpening(true)
+    opening.search('invoice', 'work')
+    await settle()
+    expect(searches.at(-1)).toMatchObject({ all_accounts: true })
+
+    opening.reset()
+    expect(opening.allAccounts.value).toBe(false)
+    expect(openSearch().allAccounts.value).toBe(false)
+  })
+
+  it('remembers the toggle flipped during an opening that had its own scope', async () => {
+    const opening = openSearch()
+    opening.scopeOpening(false)
+    opening.allAccounts.value = true
+    opening.reset()
+    await nextTick()
+
+    expect(openSearch().allAccounts.value).toBe(true)
+  })
+
+  it('names the accounts a search of every account could not reach', async () => {
+    const search = openSearch()
+    search.allAccounts.value = true
+    search.search('invoice', 'work')
+    await settle()
+    expect(search.unavailableAccounts.value).toEqual([])
+
+    await answer.value([{ id: 'found' }], 1, { unavailable_accounts: ['personal'] })
+
+    expect(search.unavailableAccounts.value).toEqual(['personal'])
   })
 })
 

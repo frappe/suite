@@ -281,6 +281,15 @@
 
       <MailSearchSuggestions :suggestions="mailSuggestions" :roomy="mailSearchOnly" />
 
+      <!-- A search of every account that missed one says so, as the results page does. -->
+      <p
+        v-if="mailResults.length && mailUnavailableAccounts.length"
+        class="px-3 py-1.5 text-p-sm text-ink-gray-6"
+      >
+        {{
+          __("Couldn't reach {0}, so its mail isn't here.", [mailUnavailableAccounts.join(', ')])
+        }}
+      </p>
       <CommandPaletteGroup v-if="mailResults.length" :label="resultsLabel('Messages')">
         <!-- First, so it is what Enter does: a search goes to its results, with nothing opened and
              marked read that wasn't picked. The arrows reach a row from here. -->
@@ -548,6 +557,8 @@ const isMailSearchRoute = computed(
 const mailSearchActive = computed(() => activeApp.value === 'mail')
 const {
   allAccounts: mailAllAccounts,
+  scopeOpening: scopeMailOpening,
+  unavailableAccounts: mailUnavailableAccounts,
   appliedFilters: mailAppliedFilters,
   availableFilterOptions: availableMailFilterOptions,
   filter: mailFilter,
@@ -681,10 +692,10 @@ const mailSearchPageLabel = computed(() => {
 // What a search covers, said before it runs. With one account there is nothing else it could be.
 const mailScopePlaceholder = computed(() => {
   if (!mailSearchActive.value || !hasMultipleMailAccounts.value) return undefined
-  if (mailSearchesAllAccounts.value) return 'Search all accounts'
+  if (mailSearchesAllAccounts.value) return __('Search all accounts')
   const store = userStore()
   const name = store.userResource.data?.accounts?.find((a) => a.id === store.accountId)?._name
-  return name ? `Search ${name}` : undefined
+  return name ? __('Search {0}', [name]) : undefined
 })
 let openSelectionInNewTab = false
 
@@ -1027,7 +1038,7 @@ watch(
       query.value = typeof route.query.text === 'string' ? route.query.text : ''
       // The search being edited says what it searched, so it wins over the remembered
       // preference for as long as the palette is reopened on top of it.
-      mailAllAccounts.value = route.query.all_accounts != null
+      scopeMailOpening(route.query.all_accounts != null)
       const filters: Record<string, string> = {}
       for (const [key, value] of Object.entries(route.query)) {
         if (key !== 'text' && key !== 'all_accounts' && typeof value === 'string')
@@ -1036,7 +1047,7 @@ watch(
       setMailFilters(filters)
     } else if (isUnifiedRoute(route.name)) {
       // Reading every account at once, a search of one would miss what's on the screen.
-      mailAllAccounts.value = true
+      scopeMailOpening(true)
     }
   },
 )
@@ -1072,7 +1083,11 @@ const emptyMessage = computed(() => {
   if (!contextSearchLabel.value) return `No commands match "${text}"`
   if (isSearching.value) return 'Searching…'
   if (mailSearchActive.value && mailSearchFailed.value)
-    return "Couldn't search your mail. Press Enter to try again."
+    return __("Couldn't search your mail. Press Enter to try again.")
+  if (mailSearchActive.value && mailUnavailableAccounts.value.length)
+    return __("Nothing found, and couldn't reach {0} to search its mail.", [
+      mailUnavailableAccounts.value.join(', '),
+    ])
   if (mailAppliedFilters.value.length) return 'No mail matches these filters'
   // A filter-only search has no words to quote back, so it names the filters instead.
   if (calendarFilterAsked.value && !text) return 'No events match these filters'

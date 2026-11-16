@@ -42,8 +42,8 @@ export interface InfiniteQueryState<Row> {
   refetch(): Promise<void>
   readonly rows: readonly Row[]
   readonly total: number | undefined
-  /** The newest page as it came, for what it says about the list beside the rows. */
-  readonly lastPage?: unknown
+  /** The loaded pages as they came, oldest first, for what they say about the list beside the rows. */
+  readonly pages?: readonly unknown[]
   readonly hasNext: boolean
   readonly isFetchingNext: boolean
   readonly error: Error | null

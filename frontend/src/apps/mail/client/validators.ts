@@ -8101,6 +8101,7 @@ export const operationSearchMails: Validators<SearchMailsInput, SearchMailsOutpu
           limit: { title: 'Limit', type: 'integer' },
           start: { title: 'Start', type: 'integer' },
           all_accounts: { title: 'All Accounts', type: 'boolean' },
+          shown_matches: { title: 'Shown Matches', type: 'integer' },
         },
         required: ['account'],
         additionalProperties: false,

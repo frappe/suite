@@ -67,6 +67,7 @@ class SearchInput(AccountInput):
     limit: NotRequired[int]
     start: NotRequired[int]
     all_accounts: NotRequired[bool]
+    shown_matches: NotRequired[int]
 
 
 class IdInput(AccountInput):

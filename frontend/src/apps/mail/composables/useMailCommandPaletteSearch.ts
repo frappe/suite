@@ -93,7 +93,21 @@ export function useMailCommandPaletteSearch(query: Ref<string>, active: Ref<bool
   const hasMultipleAccounts = computed(
     () => (getMailUser().userResource.data?.accounts?.length ?? 0) > 1,
   )
-  const allAccounts = useStorage(ALL_ACCOUNTS_STORAGE_KEY, false)
+  const rememberedAllAccounts = useStorage(ALL_ACCOUNTS_STORAGE_KEY, false)
+  // Where the palette was opened can say what to search for that one opening: a search being
+  // edited, or a list of every account. That is no choice of the reader's, so it is not remembered;
+  // flipping the toggle is, and is.
+  const openedScope = ref<boolean>()
+  const allAccounts = computed({
+    get: () => openedScope.value ?? rememberedAllAccounts.value,
+    set: (value: boolean) => {
+      openedScope.value = undefined
+      rememberedAllAccounts.value = value
+    },
+  })
+  const scopeOpening = (value: boolean) => {
+    openedScope.value = value
+  }
   // A preference remembered from when there were several accounts must not quietly widen a search
   // for someone who now has one — it is the toggle's own state that is kept, not its effect.
   const searchesAllAccounts = computed(() => allAccounts.value && hasMultipleAccounts.value)
@@ -225,6 +239,12 @@ export function useMailCommandPaletteSearch(query: Ref<string>, active: Ref<bool
   // Asked and refused, which an empty list must not be taken for.
   const failed = computed(
     () => searchInput.value !== false && !pending.value && searchResource.status === 'error',
+  )
+  // The accounts a search of every account couldn't reach, whose mail the results can't hold.
+  const unavailableAccounts = computed(() =>
+    searchInput.value === false || pending.value
+      ? []
+      : (searchResource.data?.unavailable_accounts ?? []),
   )
   const rows = computed(() =>
     searchInput.value === false ? [] : (searchResource.data?.rows ?? []),
@@ -514,13 +534,16 @@ export function useMailCommandPaletteSearch(query: Ref<string>, active: Ref<bool
   }
   function reset() {
     account.value = ''
+    openedScope.value = undefined
     cancel()
   }
 
   return {
     allAccounts,
+    scopeOpening,
     appliedFilters,
     searchesAllAccounts,
+    unavailableAccounts,
     availableFilterOptions,
     filter,
     filterValues,
