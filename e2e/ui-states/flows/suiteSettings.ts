@@ -16,7 +16,7 @@ interface AppTab {
 const MAIL_TABS = {
 	mailGeneral: { nav: "General", marker: "Block remote images", description: "Mail > General: Reading (Split view, Group by date, Block remote images), Sent copies, and the mailbox storage line. Each switch saves as it is flipped; the page has no Save." },
 	mailSending: { nav: "Sending", marker: "Undo send", description: "Mail > Sending: one short list. The default address, Undo send and two switches are set in place; Send-as addresses, Signatures and Auto-reply each have a button that opens them in a dialog." },
-	mailInbox: { nav: "Inbox", marker: "Screen new senders", description: "Mail > Inbox: the Screener with its switch and the screened senders, Inbox categories, Folders, and Rules." },
+	mailInbox: { nav: "Inbox", marker: "Screen new senders", description: "Mail > Inbox: one short list. Screen new senders, what blocking does and the Inbox categories are set in place; Screened senders, Folders and Rules each have a button that opens them in a dialog." },
 	mailAdvanced: { nav: "Advanced", marker: "Login details", description: "Mail > Advanced: one short list of Import, Export, Login details, Mail client setup, API access and Push subscriptions, each with a button that opens it in a dialog." },
 } as const satisfies Record<string, AppTab>;
 
