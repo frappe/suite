@@ -1,6 +1,6 @@
 import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { effectScope, nextTick, ref } from 'vue'
+import { effectScope, ref } from 'vue'
 
 import { useListRows } from '@/apps/mail/composables/useListRows'
 import { CURSOR_BAR_CLASS } from '@/apps/mail/constants'
@@ -35,48 +35,43 @@ const mountRows = () =>
     }),
   )!
 
+// Whether the cursor's bar is drawn on the first row.
+const barOnFirstRow = (rows: ReturnType<typeof mountRows>) => {
+  const row = rows.navigableRows.value[0]
+  return row.type === 'group' ? undefined : rows.rowClasses(row)[CURSOR_BAR_CLASS]
+}
+
 beforeEach(() => {
   scope = effectScope()
 })
-afterEach(() => scope.stop())
+afterEach(() => {
+  scope.stop()
+  vi.useRealTimers()
+})
 
-// A thread opened with the mouse leaves the cursor on its row, so the keys carry on from there. Once
-// its pane is closed, a bar left on that row would read as the thread still being open.
-it('draws the cursor bar while the list is walked from the keyboard, not after a click', async () => {
+it('draws the cursor bar when the keys move the cursor, and a click takes it away', () => {
   const rows = mountRows()
-  const barOnFirstRow = () => {
-    const row = rows.navigableRows.value[0]
-    return row.type === 'group' ? undefined : rows.rowClasses(row)[CURSOR_BAR_CLASS]
-  }
-  window.dispatchEvent(new PointerEvent('pointerdown'))
   rows.focusRow(rows.navigableRows.value[0])
-  await nextTick()
-  expect(rows.focusedRowKey.value).toBe('one')
-  expect(barOnFirstRow()).toBe(false)
-
-  window.dispatchEvent(new KeyboardEvent('keydown', { key: 'j' }))
-  expect(barOnFirstRow()).toBe(true)
+  expect(barOnFirstRow(rows)).toBe(true)
 
   // The click takes the bar away, and leaves the cursor where it is for the next key.
   window.dispatchEvent(new PointerEvent('pointerdown'))
-  expect(barOnFirstRow()).toBe(false)
+  expect(barOnFirstRow(rows)).toBe(false)
   expect(rows.focusedRowKey.value).toBe('one')
 })
 
-// j, k and the arrows typed into a search box or the composer are text, not a walk down the list.
-it('leaves the cursor bar off for list keys typed into a field', async () => {
+// A thread opened with the mouse leaves the cursor on its row, so the keys carry on from there. Once
+// its pane is closed, a bar left on that row would read as the thread still being open.
+it('leaves no bar on the row of a thread opened with the mouse', () => {
+  vi.useFakeTimers()
   const rows = mountRows()
-  const barOnFirstRow = () => {
-    const row = rows.navigableRows.value[0]
-    return row.type === 'group' ? undefined : rows.rowClasses(row)[CURSOR_BAR_CLASS]
-  }
-  rows.focusRow(rows.navigableRows.value[0])
   window.dispatchEvent(new PointerEvent('pointerdown'))
-  await nextTick()
+  rows.revealThread('one')
+  vi.runAllTimers()
+  expect(rows.focusedRowKey.value).toBe('one')
+  expect(barOnFirstRow(rows)).toBe(false)
 
-  const search = document.body.appendChild(document.createElement('input'))
-  for (const key of ['j', 'k', 'ArrowDown', 'g'])
-    search.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
-  search.remove()
-  expect(barOnFirstRow()).toBe(false)
+  // The next key carries on from that row, and draws the bar where it lands.
+  rows.focusRow(rows.navigableRows.value[1])
+  expect(rows.cursorRowKey.value).toBe('two')
 })

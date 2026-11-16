@@ -197,7 +197,7 @@
                 :date-key="key"
                 :collapsed="collapsedGroups.includes(key)"
                 :collapsible="!isLastGroup(key)"
-                :focused="cursorShown && focusedRowKey === `group:${key}`"
+                :focused="cursorRowKey === `group:${key}`"
                 :selected="isGroupSelected(key)"
                 @toggle="toggleGroupCollapse(key)"
                 @clear="clearAllReturned"
@@ -548,7 +548,7 @@ const {
   visibleThreadCount,
   navigableRows,
   focusedRowKey,
-  cursorShown,
+  cursorRowKey,
   onListFocusIn,
   focusedRow,
   focusRow,

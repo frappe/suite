@@ -4,10 +4,8 @@ import { computed, nextTick, ref, watch, type Ref } from 'vue'
 import { CURSOR_BAR_CLASS, OPEN_BAR_CLASS } from '@/apps/mail/constants'
 import { userStore } from '@/apps/mail/stores/user'
 import type { Thread } from '@/apps/mail/types'
-import { shouldIgnoreKeypress } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { dateGroup, PINNED_GROUP, RETURNED_GROUP } from '@/apps/mail/utils/dateGroups'
-import { isNavigationKey } from '@/apps/mail/utils/listNavigation'
 import { buildListRows, type ListRow, type StackRow } from '@/apps/mail/utils/threadStacks'
 
 /**
@@ -222,9 +220,16 @@ export const useListRows = ({
     })
   }
 
-  const focusRowKey = (key: string) => {
+  /** Puts the cursor on a row and brings it into view, without drawing its bar (see cursorShown). */
+  const placeCursor = (key: string) => {
     focusedRowKey.value = key
     scrollRowIntoView(key)
+  }
+
+  /** The keys move the cursor: it lands on the row, with its bar. */
+  const focusRowKey = (key: string) => {
+    placeCursor(key)
+    cursorShown.value = true
   }
 
   const focusRow = (row?: NavRow) => {
@@ -248,18 +253,15 @@ export const useListRows = ({
 
   /**
    * Whether the cursor's bar is drawn: while the list is walked from the keyboard, not after a
-   * click. A thread opened with the mouse leaves the cursor on its row (see focusOnThread), so the
+   * click. A thread opened with the mouse leaves the cursor on its row (see revealThread), so the
    * keys carry on from there; but once its pane was closed, the bar left on that row read as the
-   * thread still being open. The cursor stays where it is, unmarked, until a key moves it.
+   * thread still being open. The cursor stays where it is, unmarked, until a key moves it (focusRow).
    */
   const cursorShown = ref(false)
-  // Only keys the list acts on: j, k or an arrow typed into compose or search moves nothing here.
-  useEventListener(window, 'keydown', (event: KeyboardEvent) => {
-    if (shouldIgnoreKeypress(event)) return
-    if (isNavigationKey(event.key.toLowerCase()) || event.key.toLowerCase() === 'g')
-      cursorShown.value = true
-  })
   useEventListener(window, 'pointerdown', () => (cursorShown.value = false))
+
+  /** The row the cursor's bar is drawn on, if any: the cursor's row while its bar shows. */
+  const cursorRowKey = computed(() => (cursorShown.value ? focusedRowKey.value : undefined))
 
   /**
    * The row that stands for a thread on screen: its own row when rendered, the collapsed stack that
@@ -299,7 +301,7 @@ export const useListRows = ({
     // gray-1. "You are here" is a bar down the left side — 1.5px for the keyboard's cursor, 3px for the open row,
     // which is how a ticked row under the cursor and the one being read tell apart.
     [OPEN_BAR_CLASS]: isOpenRow(row),
-    [CURSOR_BAR_CLASS]: cursorShown.value && row.key === focusedRowKey.value && !isOpenRow(row),
+    [CURSOR_BAR_CLASS]: row.key === cursorRowKey.value && !isOpenRow(row),
     '!bg-surface-gray-1': isOpenRow(row),
     '!pl-10 sm:!pl-12': row.type === 'thread' && !!row.inStack,
   })
@@ -355,12 +357,16 @@ export const useListRows = ({
    * is always visible in the list, and the cursor is left where keyboard navigation should resume.
    *
    * The focus is deferred a tick because the row may only just have been revealed by the two lines
-   * above it, and because callers run this from a watcher whose immediate run fires mid-setup.
+   * above it, and because callers run this from a watcher whose immediate run fires mid-setup. The
+   * route opened the thread, not a key, so the cursor's bar is left as it was.
    */
   const revealThread = (key: string) => {
     expandedStacks.value.add(key)
 
-    setTimeout(() => focusOnThread(key))
+    setTimeout(() => {
+      const row = rowForThread(key)
+      if (row) placeCursor(row.key)
+    })
 
     for (const group of collapsedGroups.value) {
       if (getGroupThreads(group)?.includes(key))
@@ -379,7 +385,7 @@ export const useListRows = ({
     visibleThreadCount,
     navigableRows,
     focusedRowKey,
-    cursorShown,
+    cursorRowKey,
     onListFocusIn,
     focusedRow,
     focusRow,
