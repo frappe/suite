@@ -19,6 +19,7 @@ const message = {
   from: 'Ana Silva <ana@example.com>',
   to: 'Bo <bo@example.com>',
   cc: '',
+  bcc: '',
   // 2 AM UTC on the 19th is still the evening of the 18th in Los Angeles (PDT, UTC−7).
   receivedAt: '2026-10-19T02:00:00Z',
   body: '<p>The <b>invoice</b> is attached.</p><script>alert(1)</script>',
@@ -62,6 +63,14 @@ describe('the printed page', () => {
     expect(doc.querySelector('.attachments')!.textContent).toBe(
       '2 attachments: invoice.pdf, terms.pdf',
     )
+  })
+
+  // Bcc is on the sender's own copy only; there it is part of who the message went to.
+  it('lists the Bcc recipients on a copy that has them', () => {
+    const doc = page(printPage('Invoice', [{ ...message, bcc: 'Cy <cy@example.com>' }]))
+
+    const header = doc.querySelector('.header')!.textContent!.replace(/\s+/g, ' ')
+    expect(header).toContain('To: Bo <bo@example.com> Bcc: Cy <cy@example.com>')
   })
 
   it("keeps the body's words and leaves out its scripts", () => {

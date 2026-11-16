@@ -769,7 +769,6 @@
 </template>
 
 <script setup lang="ts">
-import { useEventListener } from '@vueuse/core'
 import { Avatar, Badge, Button, Popover, toast } from 'frappe-ui'
 import {
   Ban,
@@ -851,6 +850,8 @@ import {
   getFormattedDate,
   getGroupedRecipients,
   hasHtmlContent,
+  isMac,
+  isOverlayPresent,
   matchesScreenedValue,
   plainTextToHtml,
   raiseError,
@@ -1845,8 +1846,17 @@ const discardLocalDraft = (mail: string) => {
 const handleKeydown = (e: KeyboardEvent) => {
   // Read-only views (the Screener) expose no reply/forward, so their shortcuts are inert too.
   // The listener sits on window, so it only acts while a Mail route is active.
-  if (readonly || !isMailRoute(route) || shouldIgnoreKeypress(e)) return
+  if (readonly || !isMailRoute(route)) return
   const key = e.key.toLowerCase()
+  // ⌘P / Ctrl+P prints the conversation rather than the app around it — from a field too, which
+  // shouldIgnoreKeypress would rule out. Over a dialog or the attachment viewer it is the browser's.
+  if (key === 'p' && (isMac ? e.metaKey : e.ctrlKey) && !e.shiftKey && !e.altKey) {
+    if (isOverlayPresent() || !printableMails.value.length) return
+    e.preventDefault()
+    printThread()
+    return
+  }
+  if (shouldIgnoreKeypress(e)) return
   const lastMail = thread.value?.at(-1)
   if (!lastMail || lastMail.draft) return
 
@@ -2129,11 +2139,13 @@ const getBodyContent = (mail: Mail) => {
 // A message as it goes on paper: its own body, with remote content held back where the reader holds
 // it back — printing is no reason to load what the reader chose not to.
 const printed = (mail: Mail): PrintedMessage => {
-  const { to, cc } = getGroupedRecipients(mail.recipients ?? [], true, true)
+  // Bcc is only ever on the sender's own copy, which is theirs to print.
+  const { to, cc, bcc } = getGroupedRecipients(mail.recipients ?? [], true, true)
   return {
     from: mail.from_name ? `${mail.from_name} <${mail.from_email}>` : mail.from_email,
     to,
     cc,
+    bcc,
     receivedAt: mail.received_at,
     body: hasHtmlContent(mail.html_body)
       ? mail.html_body
@@ -2144,17 +2156,11 @@ const printed = (mail: Mail): PrintedMessage => {
 }
 const printMail = (mail: Mail) => printMessages(mail.subject, [printed(mail)])
 // The whole conversation, drafts aside, as it reads from the top.
+const printableMails = computed(() => thread.value.filter((mail) => !mail.draft))
 const printThread = () => {
-  const mails = thread.value.filter((mail) => !mail.draft)
+  const mails = printableMails.value
   if (mails.length) printMessages(mails[0].subject, mails.map(printed))
 }
-// ⌘P / Ctrl+P prints the conversation rather than the app around it.
-useEventListener(window, 'keydown', (event: KeyboardEvent) => {
-  if (readonly || !thread.value.length) return
-  if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'p' || event.shiftKey) return
-  event.preventDefault()
-  printThread()
-})
 
 const getQuotedContent = (mail: Mail) => `
 		<div class="frappe_mail_quote">

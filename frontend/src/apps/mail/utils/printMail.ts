@@ -17,6 +17,7 @@ export interface PrintedMessage {
   from: string
   to: string
   cc: string
+  bcc: string
   receivedAt: string
   body: string
   blockRemote: boolean
@@ -62,6 +63,7 @@ export const printPage = (subject: string, messages: readonly PrintedMessage[]):
           <div class="from">${escapeHtml(message.from)}</div>
           ${line(__('To'), message.to)}
           ${line(__('Cc'), message.cc)}
+          ${line(__('Bcc'), message.bcc)}
           ${line(__('Date'), inUserTimeZone(message.receivedAt).format('ddd, D MMM YYYY [at] h:mm A'))}
         </div>
         ${body}

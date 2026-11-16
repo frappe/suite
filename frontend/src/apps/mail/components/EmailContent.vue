@@ -36,6 +36,7 @@ import iframeResizerChildScript from '@iframe-resizer/child/index.umd.js?raw'
 import IframeResizer from '@iframe-resizer/vue/iframe-resizer.vue'
 import { computed, onMounted, onUnmounted, ref, useTemplateRef } from 'vue'
 
+import { isMac } from '@/apps/mail/utils'
 import { useComposeMail, useScreenSize, useTheme } from '@/apps/mail/utils/composables'
 import {
   declaresFixedPalette,
@@ -92,7 +93,9 @@ const handleMessage = (event: MessageEvent) => {
     iframe.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' }))
     return
   }
-  if (event.data?.type !== 'keyboard') return
+  // Only this message's own keys: every expanded message hears every frame's, and replaying them
+  // all would press each key once per message.
+  if (event.data?.type !== 'keyboard' || event.source !== frame.value?.$el?.contentWindow) return
 
   // Create a synthetic keyboard event in the parent
   const keyboardEvent = new KeyboardEvent(event.data.eventType, {
@@ -394,9 +397,9 @@ const srcdoc = computed(() => {
 				// Forward keyboard events to parent
 				['keydown', 'keyup', 'keypress'].forEach(eventType => {
 					document.addEventListener(eventType, (e) => {
-						// ⌘P / Ctrl+P is the thread's: forwarded, it prints the conversation. Left to the
-						// browser too, it would first print the whole app around this frame.
-						if (eventType === 'keydown' && (e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'p')
+						// ⌘P on a Mac, Ctrl+P elsewhere, is the thread's: forwarded, it prints the
+						// conversation. Left to the browser too, it would first print the whole app.
+						if (eventType === 'keydown' && e.${isMac ? 'metaKey' : 'ctrlKey'} && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'p')
 							e.preventDefault();
 						window.parent.postMessage({
 							type: 'keyboard',
