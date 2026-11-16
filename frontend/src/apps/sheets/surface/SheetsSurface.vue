@@ -221,12 +221,12 @@ watch(editor, async (current) => {
 
 async function previewVersion(version: DocumentVersion | null) {
   if (!version) return leavePreview()
-  const pick = ++previewPick
-  // The panel hands back the shown version once it is renamed
+  // The panel hands back the shown version once it is renamed, which is no new pick
   if (preview.value?.version.seq === version.seq) {
     preview.value = { ...preview.value, version }
     return
   }
+  const pick = ++previewPick
   try {
     if (!preview.value) {
       // The sheet closes while a version is shown: its edits are saved first.

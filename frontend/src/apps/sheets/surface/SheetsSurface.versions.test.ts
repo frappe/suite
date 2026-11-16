@@ -335,6 +335,21 @@ describe('SheetsSurface version preview', () => {
     expect(seen.editors).toHaveLength(editors)
   })
 
+  it('still shows a newer pick when a rename of the shown version lands before it loads', async () => {
+    await openVersions()
+    await show(version)
+    let send = (_: Response) => {}
+    fetchVersion.mockReturnValueOnce(new Promise((resolve) => (send = resolve)))
+
+    seen.panel!.emit('update:previewedVersion', { ...version, seq: 4, label: 'After import' })
+    await show({ ...version, label: 'Renamed' })
+    expect(seen.bar!.props.preview).toMatchObject({ version: { seq: 3, label: 'Renamed' } })
+    send(new Response(stored))
+    await settle()
+
+    expect(seen.bar!.props.preview).toMatchObject({ version: { seq: 4, label: 'After import' } })
+  })
+
   it('downloads a version as the Excel file of the sheet it shows', async () => {
     await openVersions()
     const live = lastEditor()
