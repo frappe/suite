@@ -25,6 +25,7 @@ import { Dialog } from 'frappe-ui'
 import { api, useMutation } from '@/api'
 import { raiseToast } from '@/apps/calendar/utils'
 import type { CalendarRow } from '@/apps/calendar/utils/calendars'
+import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()
 
@@ -34,7 +35,7 @@ const deleteCalendar = useMutation(api.calendar.calendars.delete)
 async function deleteCalendarSubmit() {
   if (!calendar) return
   await deleteCalendar.run({ account: calendar.account, id: calendar.id })
-  raiseToast(__('Calendar deleted.'))
+  raiseToast(__('Calendar deleted'))
   show.value = false
 }
 </script>

@@ -9,6 +9,7 @@ import { computed } from 'vue'
 import { api, useMutation, type InputOf } from '@/api'
 import { userStore } from '@/apps/mail/stores/user'
 import { getScriptName, isSystemScript, raiseToast } from '@/apps/mail/utils'
+import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()
 const { script, action } = defineProps<{
@@ -85,7 +86,7 @@ async function setScriptStateSubmit() {
   await setScriptState.run(input)
   raiseToast(
     script.active
-      ? __('{0} deactivated.', [getScriptName(script._name)])
+      ? __('{0} deactivated', [getScriptName(script._name)])
       : __('{0} {1}.', [
           getScriptName(script._name),
           isSystemScript(script._name) ? __('enabled') : __('activated'),

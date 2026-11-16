@@ -137,7 +137,7 @@ test("Upload new version replaces a file's bytes from its preview", async ({ pag
 	await expect(page.getByRole("heading", { name: "No preview" })).toBeVisible();
 
 	const chooser = page.waitForEvent("filechooser");
-	await page.getByRole("button", { name: "More file actions" }).click();
+	await page.getByRole("button", { name: "More actions" }).click();
 	await page.getByRole("menuitem", { name: "Upload new version" }).click();
 	const replacement = Buffer.from("the new version, longer than the old one");
 	await (await chooser).setFiles({ name: "anything.bin", mimeType: "application/octet-stream", buffer: replacement });
@@ -345,8 +345,8 @@ test("a batch larger than the free space offers to upload what fits", async ({ p
 	const again = page.waitForEvent("filechooser");
 	await useNewMenu(page, "Upload files");
 	await (await again).setFiles([{ name: "big.txt", mimeType: "text/plain", buffer: Buffer.alloc(100, 1) }]);
-	await expect(page.getByText("Not enough space to upload")).toBeVisible();
-	await expect(page.getByText(/This file needs .+, and only .+ is free\./)).toBeVisible();
+	await expect(page.getByText("Not enough space", { exact: true })).toBeVisible();
+	await expect(page.getByText(/Needs .+, only .+ free/)).toBeVisible();
 	await expect(page.getByRole("dialog", { name: "Not enough space" })).toHaveCount(0);
 });
 

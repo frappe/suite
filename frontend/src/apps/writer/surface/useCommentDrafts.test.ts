@@ -10,7 +10,7 @@ import {
   type ID,
 } from 'yjs'
 
-import { readCommentDrafts, useCommentDrafts, type DocumentSession } from '@/apps/drive'
+import { readCommentDrafts, useDocumentComments, type DocumentSession } from '@/apps/drive'
 import {
   anchorEnds,
   anchorQuote,
@@ -20,6 +20,17 @@ import {
 import type { CollabRoom } from '@/platform/collab'
 
 vi.mock('frappe-ui', () => ({ toast: { error: vi.fn() } }))
+// Ann is signed in; her mention menu's people answer none
+vi.mock('@/platform/session', async (importOriginal) => {
+  const { computed } = await import('vue')
+  const user = computed(() => ({ id: 'ann', fullName: 'Ann', avatar: null }))
+  const session = await importOriginal<typeof import('@/platform/session')>()
+  return { ...session, useSession: () => ({ ...session.useSession(), user }) }
+})
+vi.mock('@/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/api')>()),
+  client: { query: async () => ({ rows: [] }) },
+}))
 
 afterEach(() => {
   vi.clearAllMocks()
@@ -99,14 +110,18 @@ function driveComments(answers: (() => Promise<unknown>)[] = []) {
 }
 
 function openDrafts(session: ReturnType<typeof driveComments>['session'], room: CollabRoom | null) {
-  const refreshThreads = vi.fn(async () => {})
-  const drafts = useCommentDrafts({
-    session,
-    user: 'ann',
-    room: () => room,
-    refreshThreads,
-    anchors: { quote: anchorQuote, ends: anchorEnds },
-  })
+  const refreshThreads = vi.fn(async () => ({ threads: [] }))
+  const { drafts } = useDocumentComments(
+    { ...session, comments: { ...session.comments, list: refreshThreads } },
+    {
+      isShown: () => true,
+      isOpen: () => false,
+      room: () => room,
+      anchors: { quote: anchorQuote, ends: anchorEnds },
+    },
+  )
+  // The first read of the threads comes with them; each later one is a refresh
+  refreshThreads.mockClear()
   return { ...drafts, refreshThreads }
 }
 
@@ -230,7 +245,7 @@ describe('posting a comment on text', () => {
       [null, [], [true]],
     )
     expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
-      "The text this comment is on wasn't saved, so it wasn't posted.",
+      "Comment not posted, as its text wasn't saved",
     )
   })
 
@@ -256,7 +271,7 @@ describe('posting a comment on text', () => {
     await settled()
 
     expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
-      "The text this comment is on wasn't saved, so it wasn't posted.",
+      "Comment not posted, as its text wasn't saved",
     )
   })
 })
@@ -293,7 +308,7 @@ describe('posting a comment on the whole document', () => {
     expect([thread, drafts.value.length, vi.mocked(toast.error).mock.calls]).toEqual([
       null,
       1,
-      [['This comment was already posted with different words. Discard it to remove it.']],
+      [['Already posted with other words. Discard this one.']],
     ])
   })
 

@@ -17,14 +17,14 @@ test.describe("Chat", () => {
 			`Guest Chat ${test.info().parallelIndex}`,
 		);
 
-		await hostPage.getByRole("button", { name: "Show Chat" }).click();
+		await hostPage.getByRole("button", { name: "Show chat" }).click();
 		const hostChatInput = hostPage.getByPlaceholder("Type a message");
 		await hostChatInput.click();
 		await expect(hostChatInput).toBeFocused();
 		await hostChatInput.fill(message);
 		await hostPage.getByRole("button", { name: "Send message" }).click();
 
-		await guest.page.getByRole("button", { name: "Show Chat" }).click();
+		await guest.page.getByRole("button", { name: "Show chat" }).click();
 		await expect(
 			guest.page.getByTestId("chat-panel").getByText(message, { exact: true }),
 		).toBeVisible();
@@ -46,12 +46,12 @@ test.describe("Chat", () => {
 			`Guest Unread ${test.info().parallelIndex}`,
 		);
 
-		const chatButton = hostPage.getByRole("button", { name: "Show Chat" });
+		const chatButton = hostPage.getByRole("button", { name: "Show chat" });
 		const unreadBadge = hostPage.getByTestId("toolbar-chat-unread");
 
 		await expect(unreadBadge).toHaveCount(0);
 
-		await guest.page.getByRole("button", { name: "Show Chat" }).click();
+		await guest.page.getByRole("button", { name: "Show chat" }).click();
 		await guest.page.getByPlaceholder("Type a message").fill(message);
 		await guest.page.getByRole("button", { name: "Send message" }).click();
 

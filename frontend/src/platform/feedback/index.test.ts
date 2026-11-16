@@ -1,6 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { confirm, hostChallenge, prompt, reportMutationError } from './index'
+import { createTransport, type Operation, type TransportError } from '@/platform/transport'
+
+import { confirm, failureText, hostChallenge, prompt, reportMutationError } from './index'
+
+const PROBE: Operation = {
+  id: 'probe',
+  owner: 'test',
+  method: 'POST',
+  path: 'probe',
+  kind: 'mutation',
+}
 
 const mocks = vi.hoisted(() => ({
   confirm: vi.fn(),
@@ -35,7 +45,7 @@ describe('feedback', () => {
     await expect(
       prompt({ title: 'Unlock', fields: [{ name: 'password', type: 'text' }] }),
     ).resolves.toEqual({ password: 'secret' })
-    reportMutationError({ type: 'DriveLocked', message: 'Locked', status: 403 })
+    reportMutationError({ type: 'DriveLocked', message: 'Locked', status: 403, fromServer: true })
     expect(mocks.error).toHaveBeenCalledWith('Locked')
   })
 
@@ -98,5 +108,42 @@ describe('feedback', () => {
     await registered?.({ type: 'DriveLocked', message: 'Locked', status: 403 }, retry)
     expect(resolve).not.toHaveBeenCalled()
     expect(retry).not.toHaveBeenCalled()
+  })
+
+  describe('failureText', () => {
+    // Real failures from the real transport, so what the server sends decides the text.
+    const failWith = (fetch: typeof globalThis.fetch) =>
+      createTransport({ fetch })
+        .request(PROBE, {})
+        .then(
+          () => 'request did not fail',
+          (error: TransportError) => failureText(error),
+        )
+    const answer = (body: unknown, status: number) => async () =>
+      new Response(JSON.stringify(body), { status })
+
+    it("shows the reason the server wrote, and hides a bare status it didn't", async () => {
+      const reason = JSON.stringify([JSON.stringify({ message: 'Guests are not allowed' })])
+      await expect(failWith(answer({ _server_messages: reason }, 417))).resolves.toBe(
+        'Guests are not allowed',
+      )
+      await expect(failWith(answer({}, 403))).resolves.toBe(
+        'Could not complete the request. Try again.',
+      )
+    })
+
+    it('puts a crashed server in plain words, not its traceback', async () => {
+      await expect(
+        failWith(answer({ message: 'Traceback (most recent call last)' }, 500)),
+      ).resolves.toBe('The server had a problem. Try again in a moment.')
+    })
+
+    it('puts a network failure in plain words, not the browser text', async () => {
+      await expect(
+        failWith(async () => {
+          throw new TypeError('Failed to fetch')
+        }),
+      ).resolves.toBe("Couldn't reach the server. Check your connection and try again.")
+    })
   })
 })

@@ -20,7 +20,12 @@ row recorded under `missing_bytes`, an orphan object nobody referenced) is
 not in the ledger and stays in the bucket; the report says how many such
 rows Build recorded. A ledger key is kept, and reported as kept, when it
 starts with `private/`, `public/` or `sites/` (the framework's own storage roots),
-equals its own destination, or is named by a `File Blob` row.
+equals its own destination, or is named by a `File Blob` row. A key that
+starts with `/` is also kept when its name without the leading slashes is
+under those roots, is named by a `File Blob` row, or is a ledger key kept
+for any reason: a store that drops the slash (Garage) reaches that kept
+object through it. On AWS the two names are different objects, and the
+slashed one stays in the bucket.
 
 Before each batch of 1000 the command HEADs every destination and requires
 its size to equal the ledger's; a missing or mismatched copy stops the run
@@ -29,7 +34,10 @@ appended to `<site>/private/drive-legacy-objects-deleted.jsonl`, so a rerun
 skips it, and a legacy key that is already gone (HEAD 404) counts as done.
 Keys pass through unchanged: the production bucket holds leading-slash
 keys, bare keys at the root and per-user folders, and each is HEADed and
-deleted exactly as the ledger spells it.
+deleted exactly as the ledger spells it. On a store that dropped a key's
+leading slash when it stored the object (Garage), `LegacyBucket` removes
+the object the slashed name reaches, and refuses when it cannot show that
+the two names are one object.
 
 `run_delete` is pure over `DeleteEnvironment`'s ports, the way Build and
 Cleanup are, so `tests/test_delete_legacy_objects.py` runs the whole
@@ -51,6 +59,7 @@ from suite.drive.patches.build.copy_ledger import CopiedObject, CopyLedger
 from suite.drive.patches.build.legacy import KEY_SHAPES, key_shape
 from suite.drive.patches.build.state import BuildState
 from suite.drive.patches.cleanup.patch import PHASES
+from suite.drive.patches.cleanup.ports import FRAMEWORK_ROOTS, LegacyBucket
 from suite.drive.patches.cleanup.state import CleanupState
 
 # `DeleteObjects` takes at most this many keys per call, and one batch is
@@ -60,14 +69,11 @@ DELETE_BATCH_SIZE = 1000
 
 DELETED_FILENAME = "drive-legacy-objects-deleted.jsonl"
 
-# The framework S3 driver's own key space. A legacy key under any of these is
-# never Drive's to delete, whatever the ledger says.
-FRAMEWORK_ROOTS = ("private/", "public/", "sites/")
-
 # Why a ledger key is kept, as the report names it.
 UNDER_FRAMEWORK_ROOT = "under the framework's private/, public/ or sites/ root"
 OWN_DESTINATION = "is its own canonical copy"
 REFERENCED_BY_BLOB = "named by a File Blob"
+REACHES_KEPT_KEY = "its name without the leading / is kept"
 
 
 class LegacyObjectDeleteError(frappe.ValidationError):
@@ -325,28 +331,54 @@ def run_delete(env: DeleteEnvironment, *, confirm: bool, batch_size: int = DELET
     def tally(entry: CopiedObject) -> ShapeReport:
         return report.shapes[key_shape(entry.legacy_key, root_folder)]
 
+    # A store that drops leading slashes (Garage) reaches the object stored
+    # as `team/id` through `/team/id`. Every keep records the name such a
+    # store holds, so a slashed key is judged against all of them once the
+    # whole ledger has been classified.
+    kept_names: set[str] = set()
+
+    def keep(entry: CopiedObject, reason: str) -> None:
+        tally(entry).keep(reason)
+        kept_names.add(_stored(entry.legacy_key))
+
     already_deleted = env.deleted.keys()
     candidates: list[CopiedObject] = []
     for entry in entries:
         if entry.legacy_key in already_deleted:
             tally(entry).already_gone += 1
         elif entry.legacy_key.startswith(FRAMEWORK_ROOTS):
-            tally(entry).keep(UNDER_FRAMEWORK_ROOT)
+            keep(entry, UNDER_FRAMEWORK_ROOT)
         elif entry.legacy_key == entry.destination:
-            tally(entry).keep(OWN_DESTINATION)
+            keep(entry, OWN_DESTINATION)
         else:
             candidates.append(entry)
 
-    deletable: list[CopiedObject] = []
+    # Each key is also looked up by its name without leading slashes, so a
+    # slashed key whose bare name a `File Blob` names is kept below.
+    referenced: set[str] = set()
+    unreferenced: list[CopiedObject] = []
     for batch in _chunks(candidates, batch_size):
-        referenced = env.blobs.referenced(tuple(entry.legacy_key for entry in batch))
+        spellings = {
+            spelling for entry in batch for spelling in (entry.legacy_key, _stored(entry.legacy_key))
+        }
+        referenced |= env.blobs.referenced(tuple(sorted(spellings)))
         for entry in batch:
             if entry.legacy_key in referenced:
-                tally(entry).keep(REFERENCED_BY_BLOB)
+                keep(entry, REFERENCED_BY_BLOB)
             else:
-                tally(entry).deletable += 1
-                tally(entry).deletable_bytes += entry.size
-                deletable.append(entry)
+                unreferenced.append(entry)
+
+    deletable: list[CopiedObject] = []
+    for entry in unreferenced:
+        stored = _stored(entry.legacy_key)
+        if entry.legacy_key != stored and (
+            stored.startswith(FRAMEWORK_ROOTS) or stored in referenced or stored in kept_names
+        ):
+            tally(entry).keep(REACHES_KEPT_KEY)
+        else:
+            tally(entry).deletable += 1
+            tally(entry).deletable_bytes += entry.size
+            deletable.append(entry)
 
     if not confirm:
         return report
@@ -444,6 +476,11 @@ def _verify_destinations(env: DeleteEnvironment, report: DeleteReport, batch: li
         )
 
 
+def _stored(key: str) -> str:
+    """`key` as a store that drops leading slashes holds it."""
+    return key.lstrip("/")
+
+
 def _chunks(items: list, size: int) -> Iterator[list]:
     for start in range(0, len(items), size):
         yield items[start : start + size]
@@ -465,11 +502,8 @@ class SiteBucket:
         return self._boto().size(key)
 
     def delete_keys(self, keys: tuple[str, ...]) -> int:
-        from suite.drive.patches.cleanup.ports import LegacyBucket
-
         if self._deleter is None:
-            boto = self._boto()
-            self._deleter = LegacyBucket(boto.bucket, boto.client)
+            self._deleter = LegacyBucket(self._boto())
         return self._deleter.delete_keys(keys)
 
     def _boto(self):

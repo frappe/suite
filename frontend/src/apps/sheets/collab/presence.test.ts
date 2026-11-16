@@ -40,7 +40,7 @@ function presenceOf(doc: Y.Doc, peers: Peer[], cursors: Record<number, unknown>)
   }
 }
 
-const names = (user: string) => ({ fullName: user === 'ann@x' ? 'Ann Lee' : user, image: '' })
+const names = (user: string) => ({ fullName: user === 'ann@x' ? 'Ann Lee' : user })
 
 describe('presence', () => {
   it("draws a peer's selected range in their colour, with their name", () => {
@@ -107,10 +107,29 @@ describe('presence', () => {
     expect(readPresence(p, doc, 'me@x', names).users.map((u) => u.user)).toEqual(['ann@x'])
   })
 
+  it('calls a person idle only once every tab of theirs is, from the last to go', () => {
+    const doc = sheetDoc()
+    const idle = (pid: number, user: string, idleSince: number | null) => ({
+      ...peer(pid, user, pid),
+      idleSince,
+    })
+    const peers = [
+      idle(3, 'ann@x', 500),
+      idle(4, 'ann@x', 900),
+      idle(5, 'bob@x', 500),
+      idle(6, 'bob@x', null),
+    ]
+    const { users } = readPresence(presenceOf(doc, peers, {}), doc, 'me@x', names)
+    expect(users.map((u) => [u.user, u.idleSince])).toEqual([
+      ['ann@x', 900],
+      ['bob@x', null],
+    ])
+  })
+
   it('tells two guests apart', () => {
     const doc = sheetDoc()
     const p = presenceOf(doc, [peer(36, 'Guest', 2), peer(37, 'Guest', 3)], {})
-    const names = readPresence(p, doc, 'me@x', (u) => ({ fullName: u, image: '' })).users.map(
+    const names = readPresence(p, doc, 'me@x', (u) => ({ fullName: u })).users.map(
       (u) => u.full_name,
     )
     expect(names).toHaveLength(2)
@@ -166,7 +185,7 @@ describe('presence', () => {
           selectionToIds(doc, { sheet, r0, c0, r1, c1: c0 }),
         ]),
       )
-      const full = (u: string) => ({ fullName: u, image: '' })
+      const full = (u: string) => ({ fullName: u })
       const { cursors } = readPresence(presenceOf(doc, peers, states), doc, 'me@x', full)
       return new Map([...cursors].map(([pid, cursor]) => [pid, cursor.label]))
     }

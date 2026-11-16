@@ -77,6 +77,7 @@ import type { SieveScript } from '@/apps/mail/types'
 import { raiseToast } from '@/apps/mail/utils'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import { translate as __ } from '@/platform/translation'
 
 const store = userStore()
 const { sieveScripts } = store
@@ -86,7 +87,7 @@ async function rebuildAutomationSubmit() {
     account: store.accountId,
   }
   await rebuildAutomation.run(input)
-  raiseToast(__('Folder automation rebuilt from your saved rules.'))
+  raiseToast(__('Folder automation rebuilt from your saved rules'))
 }
 const showSieveScript = ref(false)
 const selectedScript = ref<SieveScript>()

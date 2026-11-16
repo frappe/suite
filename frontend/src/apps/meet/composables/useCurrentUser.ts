@@ -1,6 +1,7 @@
 import { computed, ref, type ComputedRef } from 'vue'
 
 import { session } from '@/boot/session'
+import { translate as __ } from '@/platform/translation'
 
 import { getInitials } from '../utils/text'
 
@@ -35,7 +36,7 @@ export function useCurrentUser(): CurrentUser {
   })
 
   const userInitials = computed(() => {
-    const name = currentUser.value?.full_name || currentUser.value?.name || 'You'
+    const name = currentUser.value?.full_name || currentUser.value?.name || __('You')
     return getInitials(name)
   })
 

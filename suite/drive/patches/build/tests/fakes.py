@@ -17,6 +17,7 @@ reading the rows. Both are covered against the real thing in
 import hashlib
 from copy import deepcopy
 from dataclasses import replace
+from types import SimpleNamespace
 
 from suite.drive.patches.build.copy_ledger import CopyLedger
 from suite.drive.patches.build.docshare_journal import DOCSHARE_COLUMNS, row_values
@@ -29,6 +30,7 @@ from suite.drive.patches.build.ports import (
     ACTIVE,
     PERSONAL,
     BlobRow,
+    BotoBucket,
     ChainRow,
     ClaimedBlob,
     ContentRow,
@@ -852,6 +854,9 @@ class FakeContent:
         wanted = set(urls)
         return [row for row in self.media_rows if row.file_url in wanted]
 
+    def presentation_media(self, names):
+        return {row.name for row in self.media_rows if row.name in names}
+
     def writer_document_is_template(self, name):
         return any(row.name == name for row in self.writer_template_rows)
 
@@ -1640,3 +1645,46 @@ class FakeUsage:
 
     def commit(self):
         self.commits += 1
+
+
+class StubClientError(Exception):
+    def __init__(self, code):
+        super().__init__(code)
+        self.response = {"Error": {"Code": code}}
+
+
+class StoreClient:
+    """The S3 calls a copy makes, over a dict of objects by stored key.
+
+    `trims_path_keys` is the one difference between the two stores Build
+    runs on. AWS S3 keeps a leading slash as part of the key. Garage drops
+    the leading slashes of a key in the request path, and keeps them on the
+    key of a copy source, which travels in a header.
+    """
+
+    def __init__(self, objects, trims_path_keys):
+        self.objects = dict(objects)
+        self.trims_path_keys = trims_path_keys
+
+    def _path_key(self, key):
+        return key.lstrip("/") if self.trims_path_keys else key
+
+    def head_object(self, Bucket, Key):
+        body = self.objects.get(self._path_key(Key))
+        if body is None:
+            raise StubClientError("404")
+        return {"ContentLength": len(body), "ETag": hashlib.md5(body).hexdigest()}
+
+    def copy_object(self, Bucket, Key, CopySource):
+        if CopySource["Key"] not in self.objects:
+            raise StubClientError("NoSuchKey")
+        self.objects[self._path_key(Key)] = self.objects[CopySource["Key"]]
+
+    def copy(self, CopySource, Bucket, Key):
+        # boto3's managed copy heads the source for its size, then copies.
+        self.head_object(Bucket=CopySource["Bucket"], Key=CopySource["Key"])
+        self.copy_object(Bucket=Bucket, Key=Key, CopySource=CopySource)
+
+
+def bucket_over(client):
+    return BotoBucket(SimpleNamespace(bucket="drive-bucket", client=client, _client_error=StubClientError))

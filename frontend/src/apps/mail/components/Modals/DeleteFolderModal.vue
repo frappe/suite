@@ -21,6 +21,7 @@ import { api, useMutation, type InputOf } from '@/api'
 import { userStore } from '@/apps/mail/stores/user'
 import type { MailboxData } from '@/apps/mail/types'
 import { raiseToast } from '@/apps/mail/utils'
+import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()
 const { mailbox } = defineProps<{
@@ -35,7 +36,7 @@ async function deleteFolderSubmit() {
     name: mailbox._name,
   }
   await deleteFolder.run(input)
-  raiseToast(__('Folder deleted.'))
+  raiseToast(__('Folder deleted'))
   show.value = false
 }
 </script>

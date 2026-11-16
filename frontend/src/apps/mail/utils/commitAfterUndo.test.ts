@@ -42,7 +42,7 @@ describe('commitAfterUndo', () => {
 
   it('writes the removal down while it waits, so a closed page leaves it to send later', async () => {
     const commitAfterUndo = await load()
-    commitAfterUndo({ message: 'Draft discarded.', removal, restore: vi.fn() })
+    commitAfterUndo({ message: 'Draft discarded', removal, restore: vi.fn() })
     expect([...stored.values()]).toEqual([removal])
     expect(sent).toEqual([])
   })
@@ -50,7 +50,7 @@ describe('commitAfterUndo', () => {
   it('puts the rows back on Undo, sends nothing and forgets it', async () => {
     const commitAfterUndo = await load()
     const restore = vi.fn()
-    commitAfterUndo({ message: 'Draft discarded.', removal, restore })
+    commitAfterUndo({ message: 'Draft discarded', removal, restore })
     shown[0].action.onClick()
     shown[0].onDismiss()
     expect(restore).toHaveBeenCalledOnce()
@@ -61,7 +61,7 @@ describe('commitAfterUndo', () => {
   it('sends the removal once the toast is gone, only once, then forgets it', async () => {
     const commitAfterUndo = await load()
     const onSent = vi.fn()
-    commitAfterUndo({ message: 'Draft discarded.', removal, restore: vi.fn(), onSent })
+    commitAfterUndo({ message: 'Draft discarded', removal, restore: vi.fn(), onSent })
     shown[0].onAutoClose()
     shown[0].onDismiss()
     expect(sent).toEqual([removal])
@@ -73,7 +73,7 @@ describe('commitAfterUndo', () => {
     const commitAfterUndo = await load()
     refuse = true
     const restore = vi.fn()
-    commitAfterUndo({ message: 'Draft discarded.', removal, restore })
+    commitAfterUndo({ message: 'Draft discarded', removal, restore })
     shown[0].onDismiss()
     await vi.waitFor(() => expect(restore).toHaveBeenCalledOnce())
     await vi.waitFor(() => expect(stored.size).toBe(0))
@@ -87,7 +87,7 @@ describe('commitAfterUndo', () => {
       if (slot === action) slot = undefined
     }
     commitAfterUndo({
-      message: 'Draft discarded.',
+      message: 'Draft discarded',
       removal,
       restore,
       undoSlot: { set: (action) => (slot = action), retire },
@@ -102,7 +102,7 @@ describe('commitAfterUndo', () => {
     const commitAfterUndo = await load()
     let slot: (() => void) | undefined
     commitAfterUndo({
-      message: 'Draft discarded.',
+      message: 'Draft discarded',
       removal,
       restore: vi.fn(),
       undoSlot: {
@@ -120,7 +120,7 @@ describe('commitAfterUndo', () => {
     const commitAfterUndo = await load()
     refuse = true
     const onFailed = vi.fn()
-    commitAfterUndo({ message: 'Unsubscribed.', removal, restore: vi.fn(), onFailed })
+    commitAfterUndo({ message: 'Unsubscribed', removal, restore: vi.fn(), onFailed })
     shown[0].onDismiss()
     await vi.waitFor(() => expect(onFailed).toHaveBeenCalledOnce())
   })

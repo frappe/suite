@@ -8,12 +8,33 @@ import DrawSurface from './DrawSurface.vue'
 
 const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
 
+interface Opened {
+  readable: Ref<boolean>
+  loadError: Ref<boolean>
+  editable: Ref<boolean>
+  conflict: Ref<boolean>
+}
 const drawing = vi.hoisted(() => ({
-  opened: fromPartial<{ readable: Ref<boolean>; loadError: Ref<boolean> } | null>(null),
+  opened: fromPartial<Opened | null>(null),
+  // What the surface last told the shared header, null while it shows none
+  header: fromPartial<Record<string, unknown> | null>(null),
 }))
 
 vi.mock('frappe-ui', () => ({ Button: { render: () => null } }))
-vi.mock('@/apps/drive', () => ({ useDriveDocumentCreation: () => ({}), driveNodeRoute: vi.fn() }))
+vi.mock('@/apps/drive', () => ({
+  useDriveDocumentCreation: () => ({}),
+  driveNodeRoute: vi.fn(),
+  DriveDocumentHeader: {
+    inheritAttrs: false,
+    render(this: { $attrs: Record<string, unknown> }) {
+      drawing.header = { ...this.$attrs }
+      return null
+    },
+    unmounted() {
+      drawing.header = null
+    },
+  },
+}))
 vi.mock('@/platform/translation', () => ({ translate: (text: string) => text }))
 vi.mock('vue-router', () => ({
   onBeforeRouteLeave: vi.fn(),
@@ -86,4 +107,30 @@ it('brings the rail back when read access goes', async () => {
   await nextTick()
 
   expect(railHidden.value).toBe(false)
+})
+
+it('shows the shared header, with the drawing’s title in it', () => {
+  openDrawing()
+  expect(drawing.header).toMatchObject({ 'title-label': 'Drawing title', 'view-only': false })
+})
+
+it('says view only for a reader, and editing paused once the saved drawing changed', async () => {
+  const opened = openDrawing()
+
+  opened.editable.value = false
+  await nextTick()
+  expect(drawing.header).toMatchObject({ 'view-only': true, 'state-badge': '' })
+
+  opened.conflict.value = true
+  await nextTick()
+  expect(drawing.header).toMatchObject({ 'state-badge': 'Editing paused' })
+})
+
+it('shows no header once read access goes', async () => {
+  const opened = openDrawing()
+
+  opened.readable.value = false
+  await nextTick()
+
+  expect(drawing.header).toBeNull()
 })

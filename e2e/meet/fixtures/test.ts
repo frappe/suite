@@ -103,14 +103,14 @@ async function waitForMeetingReady(page: Page): Promise<void> {
 		timeout: meetingReadyTimeout,
 	});
 	await expect(page.getByRole("toolbar", { name: "Meeting controls" })).toBeVisible();
-	await expect(page.getByRole("button", { name: "End Call" })).toBeVisible();
+	await expect(page.getByRole("button", { name: "End call" })).toBeVisible();
 }
 
 async function joinFromPreview(page: Page): Promise<void> {
 	const preview = page.getByRole("heading", { name: "Ready to join?" });
 	const meetingLayout = page.getByTestId("meeting-layout");
 	const joinButton = page.getByRole("button", {
-		name: /^(Join Meeting|Switch here)$/,
+		name: /^(Join meeting|Switch here)$/,
 	});
 
 	await expect(preview.or(meetingLayout)).toBeVisible({ timeout: previewTimeout });
@@ -195,7 +195,7 @@ async function buildParticipant(browser: Browser): Promise<Participant> {
 			const guestNameInput = page.getByPlaceholder("John Doe");
 			await guestNameInput.fill(guestName);
 			await expect(guestNameInput).toHaveValue(guestName);
-			await expect(page.getByRole("button", { name: "Join Meeting" })).toBeEnabled({
+			await expect(page.getByRole("button", { name: "Join meeting" })).toBeEnabled({
 				timeout: previewTimeout,
 			});
 			await joinFromPreview(page);

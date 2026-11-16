@@ -1,10 +1,15 @@
 <template>
-  <AppSettingsHeader title="Layout" description="Customize the meeting interface layout" />
+  <AppSettingsHeader
+    :title="__('Layout')"
+    :description="__('Customize the meeting interface layout')"
+  />
   <AppSettingsBody>
     <div class="space-y-6">
       <SettingsRow
-        title="Auto-hide header and controls"
-        description="Automatically hide the header and toolbar after 10 seconds of inactivity"
+        :title="__('Auto-hide header and controls')"
+        :description="
+          __('Automatically hide the header and toolbar after 10 seconds of inactivity')
+        "
       >
         <Switch v-model="autoHideToolbarLocal" />
       </SettingsRow>
@@ -18,6 +23,7 @@ import { ref, watch, type Ref } from 'vue'
 
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import { translate as __ } from '@/platform/translation'
 
 import { autoHideToolbar, setAutoHideToolbar } from '../../data/mediaPreferences'
 

@@ -595,14 +595,15 @@ function decodeError(body: unknown, status: number, fallback: string): PlatformE
   const envelope = isRecord(body) ? body : {}
   const first = Array.isArray(envelope.errors) ? envelope.errors[0] : envelope.error
   const type = stringValue(first?.type) ?? stringValue(envelope.exc_type) ?? 'RequestError'
-  const message =
+  const written =
     stringValue(first?.message) ??
     serverMessage(envelope._server_messages) ??
-    (typeof envelope.message === 'string' ? envelope.message : null) ??
-    stringValue(fallback) ??
-    'Request failed'
-  if (isRecord(first)) return { ...first, type, message, status }
-  return { type, message, status }
+    (typeof envelope.message === 'string' ? envelope.message : null)
+  const message = written ?? stringValue(fallback) ?? 'Request failed'
+  // Whether the server wrote the message (a `frappe.throw` reason) rather than the status line.
+  const fromServer = written !== null
+  if (isRecord(first)) return { ...first, type, message, status, fromServer }
+  return { type, message, status, fromServer }
 }
 
 function serverMessage(encoded: unknown): string | null {

@@ -14,7 +14,13 @@ import {
   VISITED_SHELL_KEY,
   withCachedTime,
 } from './utils/slidesCaches'
-import { getRequestType, isBundleAsset, isCacheable, shellKey } from './utils/slidesRequests'
+import {
+  getRequestType,
+  isBundleAsset,
+  isCacheable,
+  isPinnable,
+  shellKey,
+} from './utils/slidesRequests'
 
 const DAY = 24 * 60 * 60 * 1000
 
@@ -209,6 +215,29 @@ function pinnedKey(request, url) {
   return canonicalMediaKey(url.href) ?? `${url.pathname}${url.search}`
 }
 
+function matchPinnedKey(key) {
+  if (!key) {
+    return null
+  }
+
+  return caches.match(key, { cacheName: PINNED_CACHE_NAME }).catch(() => null)
+}
+
+// onLine can say online with no working network, so a failed fetch still finds the pin;
+// a server's answer, a refusal included, always reaches the page
+async function pinnedOnFailure(event, url, answer) {
+  try {
+    return await answer
+  } catch (err) {
+    const pinned = await matchPinnedKey(pinnedKey(event.request, url))
+    if (pinned) {
+      return respondFromCache(event, pinned)
+    }
+
+    throw err
+  }
+}
+
 function matchVisited(key) {
   return caches.match(key, { cacheName: VISITED_CACHE_NAME }).catch(() => null)
 }
@@ -241,8 +270,7 @@ async function getVisitedResponse(request, url) {
 // both caches only ever hold this user's own copies, so offline they may answer any tab
 async function getOfflineResponse(event, type, url) {
   const key = pinnedKey(event.request, url)
-  const pinned =
-    key && (await caches.match(key, { cacheName: PINNED_CACHE_NAME }).catch(() => null))
+  const pinned = await matchPinnedKey(key)
 
   if (pinned) {
     return respondFromCache(event, pinned)
@@ -284,10 +312,16 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(getOfflineResponse(event, requestType, url))
     return
   }
+
   // the shell document is the whole suite's, not slides': a stored copy would
   // keep serving old code after a flip or a deploy, so online it always comes
-  // from the network (unified frontend spec §14.9)
-  if (requestType === 'other' || requestType === 'shell') return
+  // from the network first (unified frontend spec §14.9)
+  if (requestType === 'other' || requestType === 'shell') {
+    if (!isPinnable(request, url)) return
 
-  event.respondWith(getResponseForRequest(event, requestType, url))
+    event.respondWith(pinnedOnFailure(event, url, fetch(request)))
+    return
+  }
+
+  event.respondWith(pinnedOnFailure(event, url, getResponseForRequest(event, requestType, url)))
 })

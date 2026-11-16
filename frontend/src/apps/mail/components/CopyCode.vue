@@ -17,6 +17,7 @@
 import { Button } from 'frappe-ui'
 
 import { raiseToast } from '@/apps/mail/utils'
+import { translate as __ } from '@/platform/translation'
 
 const { code } = defineProps<{ code: string }>()
 
@@ -24,5 +25,5 @@ const copyToClipBoard = () =>
   navigator.clipboard
     .writeText(code)
     .then(() => raiseToast(__('Code copied to clipboard')))
-    .catch(() => raiseToast(__('Failed to copy code'), 'error'))
+    .catch(() => raiseToast(__('Could not copy code'), 'error'))
 </script>

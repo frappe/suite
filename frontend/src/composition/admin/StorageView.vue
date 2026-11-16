@@ -5,7 +5,7 @@
     :loading="report.status === 'pending'"
   >
     <template #loading>
-      <div class="mx-auto w-full max-w-5xl space-y-6 pb-10" aria-hidden="true">
+      <div class="w-full space-y-6 pb-10" aria-hidden="true">
         <SiteStorageSummarySkeleton />
         <section class="space-y-4">
           <div class="flex flex-wrap items-center justify-between gap-3">
@@ -52,9 +52,13 @@
         </section>
       </div>
     </template>
-    <ErrorMessage :message="report.error?.message" />
+    <LoadFailed
+      v-if="report.status === 'error'"
+      :title="__('Could not load storage report')"
+      :retry="() => report.refetch()"
+    />
 
-    <div v-if="report.data" class="mx-auto w-full max-w-5xl space-y-6 pb-10">
+    <div v-if="report.data" class="w-full space-y-6 pb-10">
       <SiteStorageSummary :report="report.data" compact />
 
       <template v-if="report.data.cloud">
@@ -185,7 +189,7 @@
             base: ['minmax(0,1fr)', '4rem', '6rem'],
             sm: ['minmax(0,1fr)', '9rem', '12rem'],
           }"
-          :row-height="44"
+          :row-height="56"
         >
           <ListHeader>
             <ListHeaderCell>{{ __('Drive') }}</ListHeaderCell>
@@ -199,10 +203,15 @@
                 class="size-4 shrink-0 text-ink-gray-5"
                 aria-hidden="true"
               />
-              <span class="ml-3 truncate text-base text-ink-gray-8">
-                {{ root.user || __('Shared Drive') }}
-              </span>
-              <span class="ml-2 truncate text-p-sm text-ink-gray-5">{{ root.state }}</span>
+              <div class="ml-3 flex min-w-0 items-center gap-2">
+                <div class="min-w-0">
+                  <p class="truncate text-base text-ink-gray-8">
+                    {{ root.user ? ownerName(root.user) : __('Shared Drive') }}
+                  </p>
+                  <p v-if="root.user" class="truncate text-p-sm text-ink-gray-5">{{ root.user }}</p>
+                </div>
+                <Badge v-if="root.state !== 'Active'" :label="root.state" theme="gray" />
+              </div>
             </ListCell>
             <ListCell>
               <span class="text-base text-ink-gray-7">{{ formatStorage(root.stored_bytes) }}</span>
@@ -317,6 +326,7 @@ import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { api, useMutation, useQuery, type OutputOf } from '@/api'
 import { loadStorageLimitDialog } from '@/apps/mail'
 import { DashboardLayout, DashboardSkeletonText } from '@/platform/dashboard'
+import { LoadFailed } from '@/platform/load-failed'
 import { translate as __ } from '@/platform/translation'
 
 import SiteStorageSummary from './SiteStorageSummary.vue'
@@ -331,8 +341,13 @@ const SKELETON_ROWS = Array.from({ length: 6 }, (_, index) => ({ id: `skeleton-$
 
 const report = useQuery(api.suite.storage.get)
 const StorageLimitDialog = defineAsyncComponent(loadStorageLimitDialog)
-const saveDefault = useMutation(api.suite.storage.setDefault)
-const saveLocalQuota = useMutation(api.drive.roots.setQuota)
+// Both dialogs show their own error, so neither also toasts it.
+const saveDefault = useMutation(api.suite.storage.setDefault, { silent: true })
+const saveLocalQuota = useMutation(api.drive.roots.setQuota, { silent: true })
+
+function ownerName(user: string) {
+  return report.data?.users.find((entry) => entry.name === user)?.full_name || user
+}
 
 // — future-user default —
 const defaultStorageOpen = ref(false)

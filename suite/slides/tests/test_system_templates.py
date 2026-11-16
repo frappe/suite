@@ -59,13 +59,16 @@ class TestSystemTemplates(IntegrationTestCase):
         for template in shipped:
             with self.subTest(template=template["title"]):
                 expected = EXPECTED[template["title"]]
-                layouts = template["layouts"]
-                self.assertEqual(len(layouts), 7)
-                self.assertEqual({layout["background"] for layout in layouts}, {expected["background"]})
+                # A seeded deck lives in its log, so the picker reads its layouts from the saved slides
+                self.assertTrue(template["is_converted"])
                 self.assertEqual(
-                    [layout["thumbnail"] for layout in layouts],
+                    template["thumbnails"],
                     [f"{expected['thumbnail']}thumbnail-{index}.webp" for index in range(1, 8)],
                 )
+                _header, state = opened(template["node"])
+                slides = read_deck(state)
+                self.assertEqual(len(slides), 7)
+                self.assertEqual({slide["background"] for slide in slides}, {expected["background"]})
                 deck = frappe.get_doc("Presentation", template["name"])
                 self.assertFalse(
                     deck.theme, "a template names no theme; a deck made from it names the template"
@@ -89,7 +92,7 @@ class TestSystemTemplates(IntegrationTestCase):
         theme = templates.get(deck.theme, {})
 
         self.assertEqual(theme.get("title"), "Light")
-        self.assertEqual(len(theme.get("layouts", [])), 7)
+        self.assertEqual(len(theme.get("thumbnails", [])), 7)
 
     def test_a_template_made_in_drive_names_no_theme(self):
         seed_system_templates()

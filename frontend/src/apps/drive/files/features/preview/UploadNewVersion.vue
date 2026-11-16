@@ -67,7 +67,11 @@ watch(
       emit('replaced')
       entry.value = null
     } else if (state === 'failed' || state === 'held') {
-      toast.error(entry.value?.error ?? __('The new version could not be uploaded.'))
+      toast.error(
+        state === 'held' && entry.value?.error
+          ? __(entry.value.error)
+          : __('Could not upload the new version'),
+      )
       entry.value = null
     }
   },

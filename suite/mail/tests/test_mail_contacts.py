@@ -121,7 +121,6 @@ class TestMailContacts(StalwartIntegrationTestCase):
                 message="Contact did not move between address books.",
             )
 
-
             delete_contact_cards(self.account, [card_id])
             self.wait_until(
                 lambda: not get_contact_cards(self.account, {"text": contact_name})["rows"],

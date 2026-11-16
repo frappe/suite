@@ -72,13 +72,13 @@ test("renames, comments and opens versions without a legacy Drive call", async (
 	await title.press("Enter");
 	await expect.poll(async () => (await getNode(api, sheet.name)).title).toBe("Renamed sheet");
 
-	await page.getByRole("button", { name: "More document actions" }).click();
-	await page.getByRole("menuitem", { name: "Comments" }).click();
+	// The toolbar's Comment starts a comment on the cursor cell
+	await page.locator(".sn-toolbar").getByRole("button", { name: "Comment", exact: true }).click();
 	const comments = page.getByRole("complementary", { name: "Comments" });
-	await comments.getByRole("textbox", { name: "New comment" }).fill("Check the A1 total");
+	await comments.getByLabel("Add a comment on the cell", { exact: true }).fill("Check the A1 total");
 	await comments.getByRole("button", { name: "Comment", exact: true }).click();
-	await expect(comments.getByText("Check the A1 total")).toBeVisible();
-	await expect(comments.getByRole("button", { name: "Sheet1 · A1" })).toBeVisible();
+	const row = comments.locator("li[data-thread]").filter({ hasText: "Check the A1 total" });
+	await expect(row).toContainText("Sheet1 · A1");
 	expect(await threads()).toMatchObject([
 		{ anchor: "sheets:cell:A1!Sheet1", comments: [{ content: "Check the A1 total" }] },
 	]);
@@ -87,15 +87,14 @@ test("renames, comments and opens versions without a legacy Drive call", async (
 	await page.locator("canvas").first().click({ position: { x: 80, y: 40 } });
 	await page.keyboard.type("777");
 	await page.keyboard.press("Enter");
-	await page.getByRole("button", { name: "More document actions" }).click();
+	await page.getByRole("button", { name: "More actions" }).click();
 	await page.getByRole("menuitem", { name: "Versions" }).click();
 	const versions = page.getByRole("complementary", { name: "Versions" });
 	await expect(versions.getByRole("heading", { name: "Versions" })).toBeVisible();
 	await expect(comments).toHaveCount(0);
 	await versions.getByRole("button", { name: "Save version" }).click();
-	const prompt = page.getByRole("dialog", { name: "Save a version" });
-	await prompt.getByRole("textbox").fill("Journey version");
-	await prompt.getByRole("button", { name: "Save" }).click();
+	await versions.getByRole("textbox", { name: "Version name" }).fill("Journey version");
+	await versions.getByRole("textbox", { name: "Version name" }).press("Enter");
 	await expect(versions.getByText("Journey version")).toBeVisible();
 	const order = seen.requests.filter(
 		(line) => PUSH.test(line) || (line.includes(`/nodes/${sheet.name}/versions`) && line.startsWith("POST")),
@@ -104,15 +103,16 @@ test("renames, comments and opens versions without a legacy Drive call", async (
 	expect(order.at(-1)).toContain("/versions");
 
 	// The room keeps the state a restore replaces as a version of its own.
-	const before = versions.getByRole("listitem").filter({ hasText: "Before restoring “Journey version”" });
+	const before = versions.getByRole("button", { name: /^Before restoring “Journey version”/ });
 	await expect(before).toHaveCount(0);
-	await versions.getByRole("listitem").filter({ hasText: "Journey version" }).getByRole("button", { name: "More version actions" }).click();
-	await page.getByRole("menuitem", { name: "Restore this version" }).click();
+	// A row's Restore shows once the pointer is on the row
+	await versions.getByRole("button", { name: /^Journey version/ }).hover();
+	await versions.getByRole("button", { name: "Restore this version" }).click();
 	await page.getByRole("dialog", { name: "Restore this version?" }).getByRole("button", { name: "Restore" }).click();
 	await expect(page.getByText("Version restored")).toBeVisible();
 	await expect(before).toHaveCount(1);
 	// The first row is the current version; the newest saved version comes next.
-	await expect(versions.getByRole("listitem").nth(1)).toContainText("Before restoring “Journey version”");
+	await expect(versions.locator("button[aria-pressed]").nth(1)).toContainText("Before restoring “Journey version”");
 	await expect(page.getByRole("textbox", { name: "Spreadsheet title" })).toHaveValue("Renamed sheet");
 
 	// Share opens the Drive share dialog for a manager (stage 9).
@@ -146,9 +146,9 @@ test("losing edit access freezes the sheet, stops sending its edits and offers t
 	// A trashed document shows Trashed in place of View only; the frozen toolbar shows the lock.
 	await expect(page.getByText("View only", { exact: true })).toHaveCount(0);
 	await expect(page.getByRole("button", { name: "Bold" })).toBeDisabled();
-	// The room's strip says so, and the edit it could not send is not saved.
+	// The room's strip says so. The header shows one badge, and Trashed comes before Not saved.
 	await expect(page.getByRole("status").filter({ hasText: "You can no longer edit this spreadsheet." })).toBeVisible();
-	await expect(page.getByText("Not saved", { exact: true })).toBeVisible();
+	await expect(page.getByText("Not saved", { exact: true })).toHaveCount(0);
 	await page.waitForTimeout(3_000);
 
 	// What did not reach the server, the text still in the cell editor too, is
@@ -282,20 +282,21 @@ test("a sheet whose room can't open keeps the rail", async ({ page }) => {
 test("the document actions fit on one row of a 320 px screen", async ({ page }) => {
 	await page.setViewportSize({ width: 320, height: 640 });
 	await openSheet(page);
-	const bar = page.locator(".sheets-header");
-	const edge = (await bar.boundingBox())!;
+	// The header holds the menu and Share; the folded menus sit in the row under it
 	const controls = [
-		["menuitem", "Menu"],
-		["button", "More document actions"],
-		["button", "Share"],
+		[".sheets-header", "button", "More actions"],
+		[".sheets-header", "button", "Share"],
+		[".sheets-menus", "menuitem", "Menu"],
 	] as const;
-	for (const [role, name] of controls) {
+	for (const [row, role, name] of controls) {
+		const bar = page.locator(row);
+		const edge = (await bar.boundingBox())!;
 		const box = (await bar.getByRole(role, { name, exact: true }).boundingBox())!;
 		expect(box, name).not.toBeNull();
 		expect(box.x, name).toBeGreaterThanOrEqual(edge.x);
 		expect(box.x + box.width, name).toBeLessThanOrEqual(edge.x + edge.width);
+		expect(await bar.evaluate((element) => element.scrollWidth <= element.clientWidth), row).toBe(true);
 	}
-	expect(await bar.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
 });
 
 test("the name box keeps one width, so the formula bar never moves", async ({ page }) => {

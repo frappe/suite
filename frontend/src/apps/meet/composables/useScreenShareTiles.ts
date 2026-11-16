@@ -1,5 +1,7 @@
 import { computed, watch, type Ref } from 'vue'
 
+import { translate as __ } from '@/platform/translation'
+
 import { getInitials } from '../utils/text'
 import type { GridLayout, PinnedTile } from './useGridLayout'
 
@@ -7,12 +9,6 @@ interface ScreenShare {
   consumerId: string
   participantId: string
   source: 'local' | 'remote'
-}
-
-interface CurrentUser {
-  user_id?: string
-  full_name?: string
-  name?: string
 }
 
 interface ScreenShareTileParticipant {
@@ -32,7 +28,6 @@ export interface ScreenShareTile {
 interface UseScreenShareTilesOptions {
   displayScreenShares: Ref<ScreenShare[]>
   pinnedTiles: Ref<PinnedTile[]>
-  currentUser: Ref<CurrentUser | null | undefined>
   gridLayout: GridLayout
   getParticipantName: (participantId: string) => string
 }
@@ -40,7 +35,6 @@ interface UseScreenShareTilesOptions {
 export function useScreenShareTiles({
   displayScreenShares,
   pinnedTiles,
-  currentUser,
   gridLayout,
   getParticipantName,
 }: UseScreenShareTilesOptions) {
@@ -82,8 +76,7 @@ export function useScreenShareTiles({
     return displayScreenShares.value.map((share) => {
       const participantName = getParticipantName(share.participantId)
       const isLocalSharer = share.source === 'local'
-      const localName = currentUser.value?.full_name || currentUser.value?.name
-      const displayName = `${isLocalSharer ? localName : participantName}'s screen`
+      const displayName = isLocalSharer ? __('Your screen') : __("{0}'s screen", [participantName])
 
       return {
         pinId: share.participantId,

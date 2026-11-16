@@ -226,10 +226,10 @@ describe('the Inbox tabs', () => {
     await undoSlot.action?.()
 
     expect(toasts).toEqual([
-      'Updates mail marked as read.',
-      'Updates mail marked as unread.',
-      'Updates mail archived.',
-      'Updates mail moved back.',
+      'Updates mail marked as read',
+      'Updates mail marked as unread',
+      'Updates mail archived',
+      'Updates mail moved back',
     ])
     expect(saved).toContainEqual({
       action: 'archive',
@@ -261,9 +261,9 @@ describe('the Inbox tabs', () => {
     await undoSlot.action?.()
 
     expect(toasts).toEqual([
-      'Updates mail marked as read.',
-      'Not all Updates mail could be cleared.',
-      'Updates mail marked as unread.',
+      'Updates mail marked as read',
+      'Could not clear all Updates mail',
+      'Updates mail marked as unread',
     ])
     expect(saved).toContainEqual({ account: 'ih', ids: ['a'], seen: false })
   })
@@ -295,9 +295,9 @@ describe('the Inbox tabs', () => {
       filter_by: 'unread',
     })
     expect(toasts).toEqual([
-      'Social mail from unknown senders archived.',
-      'Social mail from unknown senders moved back.',
-      'Unread Social mail marked as read.',
+      'Social mail from unknown senders archived',
+      'Social mail from unknown senders moved back',
+      'Unread Social mail marked as read',
     ])
   })
 })

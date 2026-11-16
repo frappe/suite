@@ -1,14 +1,16 @@
-import { reactive } from 'vue'
+import { reactive, watch } from 'vue'
 
 // Estimated rendered heights per menu mode (px). Used to pre-flip before first paint.
 const MENU_HEIGHT_EST = { cell: 660, colHeader: 240, rowHeader: 240 }
 
 /**
- * @param {{ getGrid: () => object, getViewport?: () => { width: number, height: number } }} opts
+ * @param {{ getGrid: () => object, getViewport?: () => { width: number, height: number },
+ *   refocusGrid?: () => void }} opts
  */
 export function useContextMenu({
   getGrid,
   getViewport = () => ({ width: window.innerWidth, height: window.innerHeight }),
+  refocusGrid,
 }) {
   const contextMenu = reactive({
     open: false,
@@ -23,6 +25,16 @@ export function useContextMenu({
   })
 
   const tabMenu = reactive({ open: false, x: 0, bottom: 0, name: '' })
+
+  // A menu's buttons go when it closes, and the focus they had falls to <body>,
+  // where typed keys, arrows and Ctrl+C/V do nothing (ISSUES #150). The grid
+  // takes it back, unless something else (a dialog the item opened) has it.
+  watch(
+    () => contextMenu.open || tabMenu.open,
+    (open, was) => {
+      if (was && !open) refocusGrid?.()
+    },
+  )
 
   function openCanvasContextMenu(e) {
     e.preventDefault()

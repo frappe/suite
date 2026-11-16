@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
-import { computePivot, parseRangeRect, rangeReader } from './pivot.js'
+import {
+  computePivot,
+  computePivotModelAsync,
+  parseRangeRect,
+  pivotFieldNames,
+  rangeReader,
+} from './pivot.js'
 
 describe('parseRangeRect', () => {
   it('reads a range in either corner order, and a single cell', () => {
@@ -80,5 +86,45 @@ describe('pivot over formatted numbers', () => {
       rangeReader({ r0: 0, c0: 0, r1: 2, c1: 1 }, data),
     )
     expect(table[1].slice(0, 2)).toEqual(['North', 1001.5])
+  })
+})
+
+// ISSUES #153: a source without a header row. Its fields are named by
+// position, and its first row is data.
+describe('pivot without a header row', () => {
+  const data = [
+    ['10', 'Apple'],
+    ['20', 'Banana'],
+    ['30', 'Apple'],
+  ]
+  const config = {
+    sourceSheet: 'S',
+    sourceRange: 'A1:B3',
+    hasHeader: false,
+    rows: ['Column B'],
+    values: [{ field: 'Column A', agg: 'sum' }],
+  }
+
+  it('counts the first row as data', () => {
+    const table = computePivot(config, rangeReader({ r0: 0, c0: 0, r1: 2, c1: 1 }, data))
+    expect(table.slice(1).map((r) => r.slice(0, 2))).toEqual([
+      ['Apple', 40],
+      ['Banana', 20],
+      ['Grand Total', 60],
+    ])
+  })
+
+  it('does the same in blocks', async () => {
+    const model = await computePivotModelAsync(
+      config,
+      rangeReader({ r0: 0, c0: 0, r1: 2, c1: 1 }, data),
+      { blockRows: 2 },
+    )
+    expect(model?.table.at(-1)?.slice(0, 2)).toEqual(['Grand Total', 60])
+  })
+
+  it('names the fields by column', () => {
+    expect(pivotFieldNames(['10', 'Apple'], false)).toEqual(['Column A', 'Column B'])
+    expect(pivotFieldNames(['Score', 'Fruit'], true)).toEqual(['Score', 'Fruit'])
   })
 })

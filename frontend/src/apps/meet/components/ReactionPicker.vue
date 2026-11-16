@@ -17,10 +17,10 @@
             v-for="emoji in reactionEmojis"
             :key="emoji"
             type="button"
-            @click="handleReactionSelect(emoji)"
             class="mx-auto flex items-center justify-center size-9 rounded-6 bg-surface-gray-2 hover:bg-surface-gray-3 transition-colors text-lg"
-            :aria-label="`Send ${emoji} reaction`"
+            :aria-label="__('Send {0} reaction', [emoji])"
             :data-testid="`reaction-${emoji}`"
+            @click="handleReactionSelect(emoji)"
           >
             {{ emoji }}
           </button>
@@ -32,6 +32,8 @@
 
 <script setup lang="ts">
 import { PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from 'reka-ui'
+
+import { translate as __ } from '@/platform/translation'
 
 const props = defineProps<{
   isOpen?: boolean

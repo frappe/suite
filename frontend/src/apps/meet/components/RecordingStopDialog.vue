@@ -1,18 +1,24 @@
 <template>
-  <Dialog v-model:open="open" title="Stop recording?" size="sm">
+  <Dialog v-model:open="open" :title="__('Stop recording?')" size="sm">
     <template #default>
       <p class="text-base text-ink-gray-7">
-        The recording will stop and the video will be saved privately to the room owner's Drive.
+        {{
+          __(
+            "The recording will stop and the video will be saved privately to the room owner's Drive.",
+          )
+        }}
       </p>
     </template>
     <template #actions>
       <div class="flex w-full justify-end gap-2">
-        <Button variant="subtle" :disabled="loading" @click="open = false">Cancel</Button>
+        <Button variant="subtle" :disabled="loading" @click="open = false">{{
+          __('Cancel')
+        }}</Button>
         <Button
           variant="solid"
           theme="red"
           icon-left="lucide-circle-stop"
-          label="Stop recording"
+          :label="__('Stop recording')"
           :loading="loading"
           @click="emit('confirm')"
         />
@@ -24,6 +30,8 @@
 <script setup lang="ts">
 import { Button, Dialog } from 'frappe-ui'
 import { computed } from 'vue'
+
+import { translate as __ } from '@/platform/translation'
 
 const props = withDefaults(defineProps<{ modelValue?: boolean; loading?: boolean }>(), {
   modelValue: false,
