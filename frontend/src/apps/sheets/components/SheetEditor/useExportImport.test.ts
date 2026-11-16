@@ -542,7 +542,10 @@ describe('xlsx charts, and importing into a new file', () => {
     const back = editor({ Sales: sales })
     await back.importXLSX(file(await zip.generateAsync({ type: 'arraybuffer' })))
     expect(back.charts.list()).toEqual([])
-    expect(toast.info).toHaveBeenCalledWith(expect.stringContaining('1 chart'))
+    expect(toast.info).toHaveBeenCalledWith('1 chart not imported', {
+      description:
+        "Only bar, line, area, pie and scatter charts come in. Data must be in columns on the file's own sheets.",
+    })
   })
 
   it("replaces a new file's empty Sheet1 instead of keeping it first", async () => {

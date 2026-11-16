@@ -6,13 +6,12 @@ import { computed } from 'vue'
 import type { api, OutputOf } from '@/api'
 import { translate as __ } from '@/platform/translation'
 
+import { formatStorage } from './storageFormat'
+
 const props = defineProps<{ report: OutputOf<typeof api.suite.storage.get>; compact?: boolean }>()
 
 function bytes(value: number | null) {
-  if (value === null) return __('Unavailable')
-  return __('{0} GB', [
-    (value / 1_000_000_000).toLocaleString(undefined, { maximumFractionDigits: 2 }),
-  ])
+  return value === null ? __('Unavailable') : formatStorage(value)
 }
 
 const segments = computed(() => [

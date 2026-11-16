@@ -373,7 +373,7 @@ vi.doMock('@/apps/slides/components/Toolbar.vue', () => ({
 }))
 
 vi.doMock('@/apps/slides/components/PropertiesPanel.vue', () => ({
-  default: { render: () => null },
+  default: { render: () => h('div', { 'data-properties': '' }) },
 }))
 
 vi.doMock('@/apps/slides/components/ThemeDialog.vue', () => ({

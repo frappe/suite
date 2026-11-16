@@ -65,6 +65,13 @@ async function saveVersion(
 ) {
   try {
     await saveFirst()
+  } catch (error) {
+    // Its reason is written for the person, not a server or browser failure
+    toast.error(error instanceof Error ? error.message : __('Could not save a version'))
+    return false
+  }
+
+  try {
     await session.versions.create('named', label)
   } catch (error) {
     showError(error, __('Could not save a version'))

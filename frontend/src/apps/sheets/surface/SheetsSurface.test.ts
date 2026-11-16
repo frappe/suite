@@ -17,7 +17,10 @@ const toast = vi.hoisted(() => ({
   dismiss: vi.fn(),
 }))
 vi.mock('frappe-ui', () => ({ toast }))
+/** The anchors comment drafts were started on. */
+const drafted = vi.hoisted((): string[] => [])
 vi.mock('@/apps/drive', () => ({
+  useDocumentComments: () => ({ drafts: { start: (anchor: string) => drafted.push(anchor) } }),
   DriveDocumentHeader: defineComponent({
     props: { panels: { type: Array, default: () => [] } },
     setup:
@@ -40,10 +43,13 @@ vi.mock('@/apps/drive', () => ({
     },
   }),
 }))
-vi.mock('./SheetCommentsPanel.vue', () => ({
-  default: { render: () => h('aside', { 'data-comments': '' }) },
+vi.mock('./SheetSidePanel.vue', () => ({
+  default: defineComponent({
+    props: { panel: { type: String, default: null } },
+    setup: (props) => () =>
+      props.panel === 'comments' ? h('aside', { 'data-comments': '' }) : null,
+  }),
 }))
-vi.mock('./SheetVersionsPanel.vue', () => ({ default: { render: () => null } }))
 vi.mock('./navigation', () => ({ useDocumentLeaveGuard: vi.fn() }))
 
 type Draft = { sheet: string; cell: string; value: string }
@@ -79,6 +85,7 @@ vi.mock('@/apps/sheets/components/SheetEditor/index.vue', () => ({
       expose({
         activeCell: 'A1',
         currentSheet: 'Sheet1',
+        sheetNames: ['Sheet1'],
         isCollab: true,
         get saveState() {
           return editor.saveState
@@ -110,10 +117,16 @@ vi.mock('@/apps/sheets/components/SheetEditor/index.vue', () => ({
         goToCell: () => true,
         closeNotes: () => {},
       })
-      const menus = () => (props.openComments ? h('button', { 'data-comment-menu': '' }) : null)
+      function menus() {
+        if (!props.openComments) {
+          return null
+        }
+
+        return h('button', { 'data-comment-menu': '', onClick: props.openComments })
+      }
       return () => [
         slots.header?.({ menus, menuItems: { transfer: [], settings: [] } }),
-        slots['side-panel']?.(),
+        slots.aside?.(),
       ]
     },
   }),
@@ -137,6 +150,7 @@ let unmount: (() => void) | undefined
 beforeEach(() => {
   localStorage.clear()
   vi.clearAllMocks()
+  drafted.length = 0
   state.value = 'Active'
   role.value = 40
   panels.value = ['comments', 'versions']
@@ -163,9 +177,9 @@ const settle = async () => {
   }
 }
 
-/** The "Download my changes" toast, if one was shown. */
+/** The toast offering the kept changes, if one was shown. */
 const downloadOffer = () =>
-  toast.warning.mock.calls.find(([, options]) => options?.action?.label === 'Download my changes')
+  toast.warning.mock.calls.find(([, options]) => options?.action?.label === 'Download')
 
 it('hides the rail while the spreadsheet is open', async () => {
   await mountSurface()
@@ -225,6 +239,23 @@ it('keeps Comments and Versions out of the header row, in the ⋯ menu', async (
   comments.click()
   await nextTick()
   expect(document.querySelector('[data-comments]')).toBeNull()
+})
+
+it("starts a comment on the cursor cell from the editor's Comment, for a commenter only", async () => {
+  role.value = 20
+  await mountSurface()
+  document.querySelector<HTMLElement>('[data-comment-menu]')!.click()
+  await nextTick()
+  expect(drafted).toEqual(['sheets:cell:A1!Sheet1'])
+  expect(document.querySelector('[data-comments]')).not.toBeNull()
+
+  unmount?.()
+  role.value = 10
+  await mountSurface()
+  document.querySelector<HTMLElement>('[data-comment-menu]')!.click()
+  await nextTick()
+  expect(drafted).toEqual(['sheets:cell:A1!Sheet1'])
+  expect(document.querySelector('[data-comments]')).not.toBeNull()
 })
 
 describe('SheetsSurface losing edit access in the live room', () => {

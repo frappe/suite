@@ -66,7 +66,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "Send invites pressed and the request still out: the button spins, and the box, Back and Skip are off." },
 		},
 		inviteNoOutgoingEmail: {
-			meta: { description: "This site has no outgoing email account, so the invitation is refused with “Outgoing email account not set up.” Skip is the only way on; the wizard offers no link to set email up." },
+			meta: { description: "This site has no outgoing email account, so the invitation is refused with “Outgoing email is not set up. Ask your system administrator to set it up.” Skip is the only way on; the wizard offers no link to set email up." },
 		},
 		invitesSent: {
 			meta: {
@@ -185,7 +185,7 @@ export const setup = defineFlow<Event, BaseScene>({
 		},
 		async SEND(scene) {
 			await sendInvites(scene, "sam@harbor.example, jordan@harbor.example");
-			await expect(scene.page.getByText("Outgoing email account not set up.")).toBeVisible();
+			await expect(scene.page.getByText("Outgoing email is not set up.", { exact: false })).toBeVisible();
 		},
 		async SKIP_INVITES(scene) {
 			await scene.page.getByRole("button", { name: "Skip" }).click();

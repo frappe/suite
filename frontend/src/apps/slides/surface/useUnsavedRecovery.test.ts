@@ -140,7 +140,7 @@ describe('a device too full to note a discard or a download', () => {
 
     recovery().downloadChanges()
 
-    expect(toast.warning).toHaveBeenCalledWith(expect.stringContaining('too full'))
+    expect(toast.warning).toHaveBeenCalledWith(expect.stringContaining('this device is full'))
     expect(stored.readRecovery('n')).toEqual([expect.not.objectContaining({ downloaded: true })])
   })
 })
