@@ -17,15 +17,13 @@
     >
       <template #tab-panel>
         <div class="m-5 flex flex-1 flex-col space-y-5 overflow-y-auto">
-          <div class="flex items-center space-x-3">
-            <FormControl
-              v-model="status"
-              :label="__('Status')"
-              type="select"
-              :options="STATUS_OPTIONS"
-              class="w-40"
-            />
-          </div>
+          <FormControl
+            v-model="status"
+            :placeholder="__('Status')"
+            type="select"
+            :options="STATUS_OPTIONS"
+            class="w-full sm:w-48"
+          />
           <DashboardList
             :columns="columns"
             :rows="rows"
@@ -76,10 +74,10 @@ const route = useRoute()
 // The tab value is the operation itself, so it doubles as the query param.
 const operation = ref<'Import' | 'Export'>(route.query.operation === 'Export' ? 'Export' : 'Import')
 const isExport = computed(() => operation.value === 'Export')
-const status = ref(' ')
+const status = ref('All')
 
 const STATUS_OPTIONS = [
-  { label: '', value: ' ' },
+  { label: __('All'), value: 'All' },
   { label: __('Draft'), value: 'Draft' },
   { label: __('Queued'), value: 'Queued' },
   { label: __('In Progress'), value: 'In Progress' },
@@ -91,7 +89,7 @@ const STATUS_OPTIONS = [
 const exchanges = useInfiniteQuery(api.mail.exchanges.list, () => ({
   doctype: kindOf.value.doctype,
   operation: operation.value,
-  status: status.value === ' ' ? undefined : status.value,
+  status: status.value === 'All' ? undefined : status.value,
   start: 0,
   page_length: 100,
 }))
