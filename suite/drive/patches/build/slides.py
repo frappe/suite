@@ -762,7 +762,7 @@ def thumbnail_preview(target, source):
 
             image.thumbnail((512, 512))
             output = io.BytesIO()
-            image.convert("RGB").save(output, "WEBP")
+            image.convert("RGBA" if image.has_transparency_data else "RGB").save(output, "WEBP")
     except Exception as error:
         raise UnusableThumbnail(f"thumbnail is unreadable ({type(error).__name__})") from error
 

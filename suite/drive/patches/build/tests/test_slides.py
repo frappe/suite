@@ -111,6 +111,12 @@ def image_bytes(fmt, size=(32, 24), **save):
     return output.getvalue()
 
 
+def encoded(image, fmt, **save):
+    output = io.BytesIO()
+    image.save(output, fmt, **save)
+    return output.getvalue()
+
+
 def rotated_jpeg(size=(40, 20)):
     """A JPEG whose EXIF orientation 6 swaps its stored width and height."""
     image = Image.new("RGB", size, "red")
@@ -151,6 +157,11 @@ def png_with_broken_chunk(width=64, height=48):
 def preview_size(target):
     with Image.open(io.BytesIO(target.blob_bytes[target.preview_rows["deck-node"]["blob"]])) as image:
         return image.size
+
+
+def preview_alpha(target, point):
+    with Image.open(io.BytesIO(target.blob_bytes[target.preview_rows["deck-node"]["blob"]])) as image:
+        return image.convert("RGBA").getchannel("A").getpixel(point)
 
 
 class SlidesTest(unittest.TestCase):
@@ -1515,6 +1526,33 @@ class SlidesTest(unittest.TestCase):
                 self.assertEqual(preview_blob.is_private, 1)
                 self.assertEqual(preview_size(target), (64, 48))
                 self.assertEqual(target.blob_bytes["thumb-blob"], image_bytes(fmt, (64, 48)))
+
+    def test_a_see_through_thumbnail_keeps_its_transparency_and_an_opaque_one_stays_opaque(self):
+        see_through = Image.new("RGBA", (64, 48), (0, 0, 0, 0))
+        see_through.paste((255, 0, 0, 255), (16, 12, 48, 36))
+        palette = Image.new("P", (64, 48), 0)
+        palette.putpalette([0, 0, 0, 255, 0, 0])
+        palette.paste(1, (16, 12, 48, 36))
+        cases = (
+            ("rgba", "png", "image/png", encoded(see_through, "PNG"), (0, 255)),
+            ("palette", "png", "image/png", encoded(palette, "PNG", transparency=0), (0, 255)),
+            ("jpeg", "jpg", "image/jpeg", image_bytes("JPEG", (64, 48)), (255, 255)),
+        )
+        for case, suffix, mime, raw, (corner_alpha, centre_alpha) in cases:
+            with self.subTest(case=case):
+                row = media("thumb", blob="thumb-blob", url=f"/files/thumb.{suffix}", field="thumbnail")
+                source = FakeContent(
+                    documents=[deck(thumbnail=row.file_url)],
+                    media=[row],
+                    users={"Administrator": True},
+                )
+                env, target = self.environment(source)
+                target.add_blob("thumb-blob", raw, mime_type=mime)
+
+                convert_slides_and_templates(env)
+
+                self.assertEqual(preview_alpha(target, (0, 0)), corner_alpha)
+                self.assertEqual(preview_alpha(target, (32, 24)), centre_alpha)
 
     def test_a_truncated_thumbnail_is_reported_and_the_next_deck_converts(self):
         row = media("thumb", blob="thumb-blob", url="/files/thumb.png", field="thumbnail")
