@@ -4,51 +4,47 @@
     :breadcrumbs="[{ label: __('Storage') }]"
     :loading="report.status === 'pending'"
   >
-    <template v-if="report.data?.cloud" #actions>
-      <Button variant="subtle" :label="__('Default storage')" @click="openDefaultStorage" />
-    </template>
     <template #loading>
       <div class="w-full space-y-6 pb-10" aria-hidden="true">
         <SiteStorageSummarySkeleton />
         <section class="space-y-4">
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <h2 class="text-lg font-medium text-ink-gray-9">{{ __('User storage limits') }}</h2>
-            <div class="flex flex-wrap items-center gap-2">
-              <Skeleton class="h-7 w-20 rounded-4" />
+          <div class="flex flex-wrap items-center gap-2">
+            <Skeleton class="h-7 w-full rounded-4 sm:w-64" />
+            <div class="flex w-full items-center gap-2 sm:ml-auto sm:w-auto">
+              <Skeleton class="h-7 min-w-0 flex-1 rounded-4 sm:w-36 sm:flex-none" />
+              <Skeleton class="size-7 shrink-0 rounded-4" />
+              <Skeleton class="h-7 w-24 shrink-0 rounded-4" />
             </div>
           </div>
           <List
             selectable
-            class="pointer-events-none -mx-3 list-row-px-3 list-gap-2 sm:list-gap-6"
+            class="pointer-events-none -mx-3 list-row-px-3 list-gap-3 sm:list-gap-6 [--_list-row-height:3.5rem] sm:[--_list-row-height:2.75rem]"
             :columns="{
-              base: ['minmax(0,1fr)', '2rem'],
-              sm: ['minmax(0,1fr)', '16rem', '2rem'],
+              base: ['minmax(0,1fr)', '6rem', '2rem'],
+              sm: ['minmax(0,1fr)', 'minmax(0,1.2fr)', '10rem', '2rem'],
             }"
-            :row-height="64"
           >
             <ListHeader>
               <ListHeaderCell>{{ __('User') }}</ListHeaderCell>
-              <ListHeaderCell class="max-sm:hidden">{{ __('Usage') }}</ListHeaderCell>
+              <ListHeaderCell class="max-sm:hidden">{{ __('Email') }}</ListHeaderCell>
+              <ListHeaderCell>{{ __('Used') }}</ListHeaderCell>
               <ListHeaderCell />
             </ListHeader>
             <ListRows v-slot="{ item }" :items="SKELETON_ROWS" row-key="id">
-              <ListRow :value="item.id" class="h-auto gap-y-2 py-3 sm:h-16 sm:py-0">
+              <ListRow :value="item.id">
                 <ListCell>
-                  <Skeleton class="size-6 shrink-0 rounded-full" />
-                  <div class="ml-3 min-w-0 flex-1">
-                    <DashboardSkeletonText class="text-base" width="35%" />
-                    <DashboardSkeletonText class="text-p-sm" width="50%" />
-                  </div>
-                </ListCell>
-                <ListCell class="max-sm:col-start-1 max-sm:row-start-2">
                   <div class="min-w-0 flex-1">
-                    <DashboardSkeletonText class="text-base" width="60%" />
-                    <DashboardSkeletonText class="text-p-sm" width="45%" />
+                    <DashboardSkeletonText class="text-base" width="45%" />
+                    <DashboardSkeletonText class="text-p-sm sm:hidden" width="60%" />
                   </div>
                 </ListCell>
-                <ListCell class="max-sm:col-start-2 max-sm:row-span-2 max-sm:row-start-1">
-                  <Skeleton class="size-7 rounded-4" />
+                <ListCell class="max-sm:hidden">
+                  <DashboardSkeletonText class="flex-1 text-base" width="60%" />
                 </ListCell>
+                <ListCell>
+                  <DashboardSkeletonText class="flex-1 text-p-sm" width="50%" />
+                </ListCell>
+                <ListCell><Skeleton class="size-7 rounded-4" /></ListCell>
               </ListRow>
             </ListRows>
           </List>
@@ -97,57 +93,60 @@
           </div>
         </section>
         <section class="space-y-4" :aria-label="__('User storage limits')">
-          <!-- One row at every width: search takes what is left, then narrowing and order. -->
-          <div class="flex items-center gap-2">
+          <!-- Desktop: one row. Phone: search on its own row, the rest under it. -->
+          <div class="flex flex-wrap items-center gap-2">
             <FormControl
               v-model="search"
               :aria-label="__('Search users')"
               :placeholder="__('Search users')"
-              class="min-w-0 flex-1 sm:max-w-64"
+              class="w-full sm:w-64"
             >
               <template #prefix>
                 <span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" />
               </template>
             </FormControl>
-            <span
-              v-if="selected.length"
-              class="ml-auto shrink-0 text-p-sm text-ink-gray-5 max-sm:hidden"
-              >{{ __('{0} selected', [selected.length]) }}</span
-            >
-            <Button
-              v-if="selected.length"
-              variant="solid"
-              class="shrink-0"
-              :label="__('Set limits')"
-              @click="editing = true"
-            />
-            <div class="w-32 shrink-0 sm:w-36" :class="{ 'sm:ml-auto': !selected.length }">
-              <FormControl
-                v-model="filter"
-                type="select"
-                :aria-label="__('Filter users')"
-                :options="[
-                  { label: __('All users'), value: 'all' },
-                  { label: __('Needs attention'), value: 'attention' },
-                ]"
+            <div class="flex w-full items-center gap-2 sm:ml-auto sm:w-auto">
+              <span
+                v-if="selected.length"
+                class="shrink-0 text-p-sm text-ink-gray-5 max-sm:hidden"
+                >{{ __('{0} selected', [selected.length]) }}</span
+              >
+              <Button
+                v-if="selected.length"
+                variant="solid"
+                class="shrink-0"
+                :label="__('Set limits')"
+                @click="editing = true"
               />
+              <div class="min-w-0 flex-1 sm:w-36 sm:flex-none">
+                <FormControl
+                  v-model="filter"
+                  type="select"
+                  :aria-label="__('Filter users')"
+                  :options="[
+                    { label: __('All users'), value: 'all' },
+                    { label: __('Needs attention'), value: 'attention' },
+                  ]"
+                />
+              </div>
+              <Button
+                class="shrink-0"
+                icon="lucide-arrow-down-up"
+                :label="descending ? __('Most used first') : __('Least used first')"
+                @click="descending = !descending"
+              />
+              <!-- The limit a new person starts with; its dialog shows the value. -->
+              <Button class="shrink-0" :label="__('Default limit')" @click="openDefaultStorage" />
             </div>
-            <Button
-              class="shrink-0"
-              icon="lucide-arrow-down-up"
-              :label="descending ? __('Most used first') : __('Least used first')"
-              @click="descending = !descending"
-            />
           </div>
           <List
             v-model:selection="selected"
             selectable
-            class="storage-users -mx-3 list-row-px-3 list-gap-3 sm:list-gap-6"
+            class="storage-users -mx-3 list-row-px-3 list-gap-3 sm:list-gap-6 [--_list-row-height:3.5rem] sm:[--_list-row-height:2.75rem]"
             :columns="{
               base: ['minmax(0,1fr)', '6rem', '2rem'],
               sm: ['minmax(0,1fr)', 'minmax(0,1.2fr)', '10rem', '2rem'],
             }"
-            :row-height="52"
           >
             <ListHeader>
               <ListHeaderCell>{{ __('User') }}</ListHeaderCell>
@@ -190,15 +189,15 @@
       <section v-else class="space-y-4">
         <h2 class="text-lg font-medium text-ink-gray-9">{{ __('Drive storage') }}</h2>
         <List
-          class="-mx-3 list-row-px-3"
+          class="-mx-3 list-row-px-3 [--_list-row-height:3.5rem] sm:[--_list-row-height:2.75rem]"
           :columns="{
             base: ['minmax(0,1fr)', '4rem', '6rem'],
-            sm: ['minmax(0,1fr)', '9rem', '12rem'],
+            sm: ['minmax(0,1fr)', 'minmax(0,1.2fr)', '9rem', '12rem'],
           }"
-          :row-height="56"
         >
           <ListHeader>
             <ListHeaderCell>{{ __('Drive') }}</ListHeaderCell>
+            <ListHeaderCell class="max-sm:hidden">{{ __('Email') }}</ListHeaderCell>
             <ListHeaderCell>{{ __('Used') }}</ListHeaderCell>
             <ListHeaderCell>{{ __('Limit') }}</ListHeaderCell>
           </ListHeader>
@@ -214,10 +213,16 @@
                   <p class="truncate text-base text-ink-gray-8">
                     {{ root.user ? ownerName(root.user) : __('Shared Drive') }}
                   </p>
-                  <p v-if="root.user" class="truncate text-p-sm text-ink-gray-5">{{ root.user }}</p>
+                  <!-- On a phone the address sits under the name; on desktop it has its own column. -->
+                  <p v-if="root.user" class="truncate text-p-sm text-ink-gray-5 sm:hidden">
+                    {{ root.user }}
+                  </p>
                 </div>
                 <Badge v-if="root.state !== 'Active'" :label="root.state" theme="gray" />
               </div>
+            </ListCell>
+            <ListCell class="max-sm:hidden">
+              <span class="truncate text-base text-ink-gray-6">{{ root.user ?? '' }}</span>
             </ListCell>
             <ListCell>
               <span class="text-base text-ink-gray-7">{{ formatStorage(root.stored_bytes) }}</span>

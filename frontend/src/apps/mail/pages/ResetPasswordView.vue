@@ -43,7 +43,7 @@ watch(
   () => [user.status, user.data],
   () => {
     if (user.status === 'error' || (user.status === 'success' && !user.data))
-      router.replace({ name: 'mail-forgot-password' })
+      router.replace({ name: 'mail-forgot-password', query: { expired: '1' } })
   },
 )
 const resetPassword = useMutation(api.suite.account.resetPassword, { silent: true })

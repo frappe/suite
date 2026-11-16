@@ -529,15 +529,26 @@ def take_version(
     label: str | None = None,
     actor: str | None = None,
     activity: bool = True,
+    site_limit_only: bool = False,
 ) -> int:
     """Store a node's current bytes as an immutable version and return its seq; needs EDIT.
 
     `actor` credits someone other than the caller, as a sweep versioning other people's edits does.
     `activity=False` records no edit, for a version the system keeps that nobody's edit made.
+    `site_limit_only` counts the bytes against the whole site's limit only, not the owner's quota, for a
+    version the system needs that the owner didn't ask for.
     """
     from suite.drive._core.versions import take_version as _take_version
 
-    return _take_version(_principals(), node, kind=kind, label=label, actor=actor, activity=activity)
+    return _take_version(
+        _principals(),
+        node,
+        kind=kind,
+        label=label,
+        actor=actor,
+        activity=activity,
+        site_limit_only=site_limit_only,
+    )
 
 
 def check_history_reader(node: str) -> None:

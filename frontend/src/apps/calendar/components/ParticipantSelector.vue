@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { refDebounced } from '@vueuse/core'
-import { Avatar, Combobox, FormControl, toast } from 'frappe-ui'
+import { Avatar, Combobox, FormControl, toast, type ComboboxEmits } from 'frappe-ui'
 import { computed, nextTick, ref, watch } from 'vue'
 
 import { api, useQuery } from '@/api'
@@ -153,17 +153,18 @@ const selectSuggestion = (option: ContactOption) => {
   searchText.value = ''
 }
 
-// Picking a contact commits it as the Combobox's selected value — add it and clear the control so the
-// input clears for the next participant, rather than sitting there showing the one just added.
+// Picking a contact commits it as the Combobox's selected option — add it and clear the control so
+// the input clears for the next participant, rather than sitting there showing the one just added.
+// The option is the suggestion itself, name and photo included, and it has to be used as it comes:
+// the Combobox closes before it commits, closing empties the query, and with no query there are no
+// suggestions left to look the address up in, so the participant was added as a bare address.
 // The clear waits a tick: this handler fires mid-commit, and the Combobox writes the option's label
 // into its input right after we return, which would undo a synchronous clear.
-const handleParticipantSelect = async (email: string | null) => {
-  if (!email) return
+const handleParticipantSelect = async (option: ComboboxEmits['update:selectedOption'][0]) => {
+  if (!option || option.type === 'custom') return
   justSelectedOption.value = true
-  const contact = contacts.value?.find(
-    (option) => option.email.toLowerCase() === email.toLowerCase(),
-  )
-  addParticipant(email, contact)
+  const email = String(option.value)
+  addParticipant(email, { email, name: option.name, user_image: option.user_image })
   await nextTick()
   combobox.value?.clear()
 }
@@ -209,7 +210,7 @@ const removeParticipant = (email: string) => {
         :filterable="false"
         :placeholder="placeholder"
         @update:query="handleInput($event)"
-        @update:model-value="handleParticipantSelect($event)"
+        @update:selected-option="handleParticipantSelect($event)"
         @keyup.enter="handleParticipantEnter($event)"
       >
         <template #item-prefix="{ item }">
